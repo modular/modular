@@ -43,6 +43,11 @@ void EliminateDeadSymbolsPass::runOnOperation() {
   // Now walk the used symbols and find symbols that they use.
   llvm::SetVector<StringAttr> worklist = {usedSymbols.begin(),
                                           usedSymbols.end()};
+  mlir::AttrTypeWalker walker;
+  walker.addWalk([&](FlatSymbolRefAttr ref) {
+    if (usedSymbols.insert(ref.getAttr()).second)
+      worklist.insert(ref.getAttr());
+  });
   while (!worklist.empty()) {
     StringAttr symbolRef = worklist.pop_back_val();
     auto callee = analysis.getTopLevelSymbolTable().lookup<FuncOp>(symbolRef);
@@ -51,10 +56,12 @@ void EliminateDeadSymbolsPass::runOnOperation() {
     // Walk the callee and add any symbol uses to the worklist as long as
     // we haven't already seen them.
     callee.walk([&](Operation *op) {
-      op->getAttrDictionary().walk([&](SymbolRefAttr attr) {
-        if (usedSymbols.insert(attr.getRootReference()).second)
-          worklist.insert(attr.getRootReference());
-      });
+      walker.walk(op->getAttrDictionary());
+      for (Type type : op->getResultTypes())
+        walker.walk(type);
+      for (Region &region : op->getRegions())
+        for (Type type : region.getArgumentTypes())
+          walker.walk(type);
     });
   }
 
