@@ -9,21 +9,6 @@ lit.func @dead_code() {
 
 // -----
 
-lit.func @disagreed_result_parameters<() -> index>(%c: i1) {
-  hlcf.if %c {
-    // expected-note @below {{see conflicting result meta-parameters here}}
-    lit.return<5>
-    hlcf.yield
-  } else {
-    hlcf.yield
-  }
-  // expected-error @below {{function return defines different result meta-parameters than previous return statement}}
-  lit.return<6>
-  lit.end_func
-}
-
-// -----
-
 lit.func @no_return_result() -> i32 {
   // expected-error @below {{return expected at end of function with results}}
   lit.end_func
@@ -32,7 +17,7 @@ lit.func @no_return_result() -> i32 {
 // -----
 
 lit.func @no_return_result<() -> index>() -> !lit.none {
-  // expected-error @below {{return expected at end of function with results}}
+  // expected-error @below {{missing parameter return for function with result parameters}}
   lit.end_func
 }
 
@@ -40,5 +25,27 @@ lit.func @no_return_result<() -> index>() -> !lit.none {
 
 // expected-error @below {{function throws but no 'Error' type was found}}
 lit.func @throws() throws -> !lit.none {
+  lit.end_func
+}
+
+// -----
+
+lit.func @result_params<() -> r0>() {
+  lit.return
+  // expected-error @below {{missing parameter return for function with result parameters}}
+  lit.end_func
+}
+
+// -----
+
+lit.func @result_params<() -> r0>() {
+  // expected-error @below {{result parameters are not defined along all branches}}
+  kgen.param.if <1> {
+    lit.param_return<1>
+    kgen.param.yield
+  } else {
+    kgen.param.yield
+  }
+  lit.return
   lit.end_func
 }

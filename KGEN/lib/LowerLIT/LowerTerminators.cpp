@@ -80,6 +80,58 @@ static Value createUnwrapOrPropagate(ImplicitLocOpBuilder &b, LIT::FuncOp func,
 // lowerLexicalTerminators
 //===----------------------------------------------------------------------===//
 
+static FailureOr<std::optional<ArrayRef<TypedAttr>>>
+threadParamIfResultBindings(ParamIfOp ifOp);
+
+/// Bubble `param_return` operations up to the top-level return. Start from a
+/// post-order traversal to visit the innermost `param.if` operations first.
+LogicalResult findParamReturn(Region &region,
+                              std::optional<ArrayRef<TypedAttr>> &result) {
+  WalkResult walk = region.walk<mlir::WalkOrder::PreOrder>([&](Operation *op)
+                                                               -> WalkResult {
+    if (auto ifOp = dyn_cast<ParamIfOp>(op)) {
+      FailureOr<std::optional<ArrayRef<TypedAttr>>> nestedValues =
+          threadParamIfResultBindings(ifOp);
+      if (failed(nestedValues))
+        return WalkResult::interrupt();
+      if (*nestedValues) {
+        if (result) {
+          return emitError(op->getLoc(),
+                           "result parameters already defined in this branch");
+        }
+        result = *nestedValues;
+      }
+      return WalkResult::skip();
+    }
+    if (auto bind = dyn_cast<LIT::ParamReturnOp>(op)) {
+      if (result) {
+        return emitError(op->getLoc(),
+                         "result parameters already defined in this branch");
+      }
+      result = bind.getParameters();
+    }
+    return WalkResult::advance();
+  });
+  return success(!walk.wasInterrupted());
+}
+
+static FailureOr<std::optional<ArrayRef<TypedAttr>>>
+threadParamIfResultBindings(ParamIfOp ifOp) {
+  // Try to find a param return in each branch.
+  std::optional<ArrayRef<TypedAttr>> thenParams, elseParams;
+  if (failed(findParamReturn(ifOp.getThenRegion(), thenParams)) ||
+      failed(findParamReturn(ifOp.getElseRegion(), elseParams)))
+    return failure();
+  if (thenParams.has_value() != elseParams.has_value()) {
+    return emitError(ifOp.getLoc(),
+                     "result parameters are not defined along all branches");
+  }
+  if (!thenParams)
+    return thenParams;
+  return ifOp.emitError(
+      "threading result parameters through `kgen.param.if` is a TODO");
+}
+
 /// Lower all lexical terminators in the function and remove dead code.
 static LogicalResult lowerLexicalTerminators(DeclRefType errType,
                                              LIT::FuncOp func) {
@@ -92,6 +144,18 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
     auto b = OpBuilder::atBlockBegin(func.getBody());
     coroHdl = b.create<CoroutineHandleOp>(
         func.getLoc(), CoroutineType::get(func.getSignature()));
+  }
+
+  // If the function has result parameters, process them here.
+  std::optional<ArrayRef<TypedAttr>> resultParams;
+  if (!func.getResultParams().empty()) {
+    if (failed(findParamReturn(func.getBodyRegion(), resultParams)))
+      return failure();
+    if (!resultParams) {
+      return emitError(
+          func.getBody()->getTerminator()->getLoc(),
+          "missing parameter return for function with result parameters");
+    }
   }
 
   // While we walk the IR, we are going to determine if the top-level
@@ -127,6 +191,9 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
   WalkResult result = func.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
     if (op != func && isa<LIT::FuncOp>(op)) {
       return WalkResult::skip();
+
+    } else if (isa<LIT::ParamReturnOp>(op)) {
+      toErase.push_back(op);
 
     } else if (isa<HLCF::ControlFlowNode, HLCF::ControlFlowTerminator>(op) &&
                liveCfOps.contains(op)) {
@@ -220,8 +287,6 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
   auto errorOr = [&] {
     return VariantType::get({errType, func.getResultType()});
   };
-  LIT::ReturnOp firstResultParamsReturn;
-  ParameterExprArrayAttr resultParams;
   SmallVector<Block *> deadBlocks;
   for (Operation *op : terminators) {
     // Ignore dead operations.
@@ -229,47 +294,34 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
       continue;
 
     ImplicitLocOpBuilder b(op->getLoc(), OpBuilder(op));
-    auto createReturn = [&](ArrayRef<TypedAttr> params, ValueRange operands) {
+    auto createReturn = [&](ValueRange operands) {
       // In a coroutine, materialize the finalize machinery.
       if (func.isAsync()) {
         createCoroutineFinalize(b, errType, coroHdl, operands);
         operands = coroHdl;
       }
       if (op->getParentOp() == func)
-        b.create<KGEN::ReturnOp>(params, operands);
+        b.create<KGEN::ReturnOp>(resultParams.value_or(std::nullopt), operands);
       else
         b.create<HLCF::ReturnOp>(operands);
     };
     if (auto returnOp = dyn_cast<LIT::ReturnOp>(op)) {
-      if (resultParams && returnOp.getParametersAttr() != resultParams) {
-        return returnOp
-                   .emitError("function return defines different result "
-                              "meta-parameters than previous return statement")
-                   .attachNote(firstResultParamsReturn.getLoc())
-               << "see conflicting result meta-parameters here";
-      }
-      firstResultParamsReturn = returnOp;
-      resultParams = returnOp.getParametersAttr();
-
       ValueRange operands = returnOp.getOperands();
       Value result;
       if (func.isThrows()) {
         result = b.create<VariantCreateOp>(errorOr(), operands.front());
         operands = result;
       }
-      createReturn(resultParams, operands);
+      createReturn(operands);
 
     } else if (auto raiseOp = dyn_cast<LIT::RaiseOp>(op)) {
       auto tryOp = raiseOp->getParentOfType<LIT::TryOp>();
       if (tryOp &&
-          tryOp.getTryRegion().isAncestor(raiseOp->getBlock()->getParent())) {
+          tryOp.getTryRegion().isAncestor(raiseOp->getBlock()->getParent()))
         b.create<LIT::TryRaiseOp>(raiseOp.getError());
-      } else {
-        // TODO(#6449): Can't have result parameters in a function that
-        // raises.
-        Value err = b.create<VariantCreateOp>(errorOr(), raiseOp.getError());
-        createReturn({}, err);
-      }
+      else
+        createReturn(
+            Value(b.create<VariantCreateOp>(errorOr(), raiseOp.getError())));
 
     } else if (auto breakOp = dyn_cast<LIT::BreakOp>(op)) {
       b.create<HLCF::BreakOp>();

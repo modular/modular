@@ -138,14 +138,6 @@ lit.func @mismatched_return_types(%arg0: i64) -> i32 {
 
 // -----
 
-lit.func @mismatched_result_parameter<() -> r1: i32>() {
-  // expected-error @below {{'lit.return' op parameter #0 has type 'i64' but should be 'i32'}}
-  lit.return<:i64 0>
-  lit.end_func
-}
-
-// -----
-
 lit.func @does_not_throw(%err: !kgen.declref<@Error>) {
   // expected-error @below {{'lit.raise' op must be nested inside the 'try' region of a `lit.try` operation or within a `lit.func` that throws}}
   lit.raise %err : <@Error>
