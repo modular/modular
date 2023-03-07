@@ -248,13 +248,12 @@ LogicalResult verifyOneBlockOrCached(Operation *op);
 /// Check the parameter result types.
 LogicalResult checkResultParameterTypes(Operation *op,
                                         ArrayRef<TypedAttr> resultParams,
-                                        ArrayRef<ParamDeclAttr> paramResults);
+                                        FuncInterface func);
 
 /// Check the value and parameter result types.
 LogicalResult checkResultArgumentTypes(Operation *op,
                                        ArrayRef<TypedAttr> resultParams,
-                                       ArrayRef<ParamDeclAttr> paramResults,
-                                       TypeRange resultTypes);
+                                       FuncInterface func);
 
 } // namespace M::KGEN
 

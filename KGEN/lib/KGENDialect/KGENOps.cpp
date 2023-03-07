@@ -34,8 +34,7 @@ static LogicalResult checkReturnArguments(T op) {
   // If we have a return op, then we can check the argument types. Otherwise, we
   // just don't have the return op.
   if (ReturnOp returnOp = op.getReturnOp())
-    return checkResultArgumentTypes(returnOp, returnOp.getParameters(),
-                                    op.getResultParams(), op.getResultTypes());
+    return checkResultArgumentTypes(returnOp, returnOp.getParameters(), op);
   return success();
 }
 
@@ -139,9 +138,8 @@ static void printRegionDeclaration(OpAsmPrinter &p, Operation *op,
 
 LogicalResult ParamDeclareRegionOp::verifyRegions() {
   auto returnOp = cast<ReturnOp>(getBody()->getTerminator());
-  if (failed(checkResultArgumentTypes(returnOp, returnOp.getParameters(),
-                                      getResultParams(),
-                                      getSignature().getValueResults())))
+  if (failed(
+          checkResultArgumentTypes(returnOp, returnOp.getParameters(), *this)))
     return failure();
   if (getBody()->getArgumentTypes() != getSignature().getValueInputs())
     return emitOpError("signature mismatches body");

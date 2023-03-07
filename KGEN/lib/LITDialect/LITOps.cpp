@@ -731,8 +731,7 @@ LogicalResult ParamReturnOp::verify() {
   auto func = (*this)->getParentOfType<LIT::FuncOp>();
   if (!func)
     return emitOpError("expected to be nested inside a `lit.func` operation");
-  return checkResultParameterTypes(*this, getParameters(),
-                                   func.getResultParams());
+  return checkResultParameterTypes(*this, getParameters(), func);
 }
 
 //===----------------------------------------------------------------------===//
@@ -743,8 +742,7 @@ LogicalResult LIT::ReturnOp::verify() {
   auto func = (*this)->getParentOfType<LIT::FuncOp>();
   if (!func)
     return emitOpError("expected to be nested inside a `lit.func` operation");
-  return checkResultArgumentTypes(
-      *this, getParameters(), func.getResultParams(), func.getResultTypes());
+  return checkResultArgumentTypes(*this, getParameters(), func);
 }
 
 ErrorTreeOr<SuccessType> LIT::ReturnOp::interpret(ArrayRef<Attribute> operands,

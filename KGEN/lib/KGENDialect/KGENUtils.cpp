@@ -1741,10 +1741,11 @@ LogicalResult KGEN::verifyOneBlockOrCached(Operation *op) {
   return success();
 }
 
-LogicalResult
-KGEN::checkResultParameterTypes(Operation *op, ArrayRef<TypedAttr> resultParams,
-                                ArrayRef<ParamDeclAttr> paramResults) {
+LogicalResult KGEN::checkResultParameterTypes(Operation *op,
+                                              ArrayRef<TypedAttr> resultParams,
+                                              FuncInterface func) {
   // Check the parameters match up.
+  ArrayRef<ParamDeclAttr> paramResults = func.getResultParams();
   if (resultParams.size() != paramResults.size())
     return op->emitOpError("expected ")
            << paramResults.size() << " parameters for enclosing op";
@@ -1759,13 +1760,12 @@ KGEN::checkResultParameterTypes(Operation *op, ArrayRef<TypedAttr> resultParams,
   return success();
 }
 
-LogicalResult
-KGEN::checkResultArgumentTypes(Operation *op, ArrayRef<TypedAttr> resultParams,
-                               ArrayRef<ParamDeclAttr> paramResults,
-                               TypeRange resultTypes) {
-  if (failed(checkResultParameterTypes(op, resultParams, paramResults)))
+LogicalResult KGEN::checkResultArgumentTypes(Operation *op,
+                                             ArrayRef<TypedAttr> resultParams,
+                                             FuncInterface func) {
+  if (failed(checkResultParameterTypes(op, resultParams, func)))
     return failure();
-  return checkResultTypes(op, resultTypes);
+  return checkResultTypes(op, func.getResultTypes());
 }
 
 DenseMap<StringAttr, StringAttr> KGEN::getExportedSymbols(ModuleOp module) {
