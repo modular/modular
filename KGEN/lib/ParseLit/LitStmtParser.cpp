@@ -106,6 +106,7 @@ struct LitStmtParser : public LitParserBase {
 
   // Simple statements.
   ParseResult parseReturnStmt(size_t returnIndent);
+  ParseResult parseParamReturnStmt(size_t returnIndent);
   ParseResult parseRaiseStmt(size_t raiseIndent);
   ParseResult parseBreakOrContinueStmt(LitToken::Kind kind, StringRef name,
                                        StringRef opName);
@@ -400,6 +401,9 @@ ParseResult LitStmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
   case LitToken::kw_return:
     rejectDecorator(); // Decorators not allowed.
     return parseReturnStmt(stmtIndent);
+  case LitToken::kw_param_return:
+    rejectDecorator(); // Decorators not allowed.
+    return parseParamReturnStmt(stmtIndent);
   case LitToken::kw_raise:
     rejectDecorator(); // Decorators not allowed.
     return parseRaiseStmt(stmtIndent);
@@ -443,31 +447,10 @@ ParseResult LitStmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
 // Simple statements.
 //===----------------------------------------------------------------------===//
 
-/// return_stmt ::= "return"(return_param_spec)? [expression_list]
-/// return_param_spec ::= "[" expression ("," expression)* "]"
-///
-/// The return param spec is required if the enclosing function has return
-/// parameters, otherwise it is absent.
+/// return_stmt ::= "return" [expression_list]
 ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
-  LIT::FuncOp decl = dyn_cast<LIT::FuncOp>(containingDecl);
-
+  auto decl = dyn_cast<LIT::FuncOp>(containingDecl);
   auto loc = consumeToken(LitToken::kw_return).getLoc();
-
-  // If this function declaration requires result parameters, parse them
-  // specially.  'decl' may be missing in an invalid return.  This handles the
-  // ambiguity where there may be result parameters /and/ a list-display in
-  // square brackets may also be used as a normal result.
-  ExprNode *resultParams = nullptr;
-  if (decl && !decl.getResultParams().empty()) {
-    auto numResultParams = decl.getResultParams().size();
-    // Catch obvious missed parameter list.
-    if (getToken().isNot(LitToken::l_square)) {
-      emitError(loc, "expected '[' in function that returns ")
-          << numResultParams << " result parameter" << plural(numResultParams);
-    } else if (parseExpression(resultParams, returnIndent)) {
-      return failure();
-    }
-  }
 
   // If there is an expression list present, parse it.
   SmallVector<ExprNode *> operandExprs;
@@ -517,27 +500,6 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
     resultValue = emitter.emitExprRValue(operandExprs[0], ValueDest::none());
   }
 
-  // Check the result parameters if present.
-  SmallVector<TypedAttr> resultParamValues;
-  if (resultParams) {
-    auto resultParamList = dyn_cast<ListNode>(resultParams);
-    size_t numResultParams = decl.getResultParams().size();
-    if (!resultParamList || resultParamList->exprs.size() != numResultParams) {
-      emitError(resultParamList->getLoc(), "expected ")
-          << numResultParams << " result parameter" << plural(numResultParams)
-          << resultParams->getRange();
-      return success();
-    }
-    for (auto [paramExpr, param] :
-         llvm::zip(resultParamList->exprs, decl.getResultParams())) {
-      auto result = emitter.emitExprPRValue(paramExpr, EC_ReturnResultParamList,
-                                            param.getType());
-      if (!result)
-        return success();
-      resultParamValues.push_back(result);
-    }
-  }
-
   // Convert the returned value to the returned type of the function.  If the
   // function is a 'raising' function we need to remove the extra variant type
   // to get the normal result type.
@@ -546,10 +508,55 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   if (!resultSRValue)
     return {};
 
-  Location retLoc = translateLocation(loc);
-  if (!resultParamValues.empty())
-    builder.create<LIT::ParamReturnOp>(retLoc, resultParamValues);
-  builder.create<LIT::ReturnOp>(retLoc, resultSRValue);
+  builder.create<LIT::ReturnOp>(translateLocation(loc), resultSRValue);
+  return success();
+}
+
+/// param_return_stmt ::= "param_return" "[" expression ("," expression)* "]"
+ParseResult LitStmtParser::parseParamReturnStmt(size_t returnIndent) {
+  SMLoc loc = consumeToken(LitToken::kw_param_return).getLoc();
+  auto decl = dyn_cast<LIT::FuncOp>(containingDecl);
+  if (!decl) {
+    emitError(loc, "invalid context for parameter return");
+    return success();
+  }
+
+  // Parse the result parameter list.
+  SMLoc startLoc, endLoc;
+  if (parseToken(LitToken::l_square, "expected '[' to begin parameter list",
+                 &startLoc))
+    return success();
+  SmallVector<ExprNode *> exprs;
+  if (!consumeIf(LitToken::r_square, &endLoc)) {
+    // TODO use hadTrailingSep to return a singleton tuple ex. `return 1,`
+    if (parseExpressionList(exprs, returnIndent,
+                            /*hasTrailingComma=*/nullptr))
+      return failure();
+    if (parseToken(LitToken::r_square, "expected ']' at end of parameter list",
+                   &endLoc))
+      return success();
+  }
+
+  // Check the number of result parameters.
+  size_t numResultParams = decl.getResultParams().size();
+  if (exprs.size() != numResultParams) {
+    emitError(startLoc, "expected ")
+        << numResultParams << " result parameter" << plural(numResultParams)
+        << LitSourceRange(startLoc, endLoc);
+    return success();
+  }
+
+  // Emit the result parameters into PRValues.
+  SmallVector<TypedAttr> paramValues;
+  for (auto [paramExpr, param] : llvm::zip(exprs, decl.getResultParams())) {
+    auto result = getEmitter().emitExprPRValue(
+        paramExpr, EC_ReturnResultParamList, param.getType());
+    if (!result)
+      return success();
+    paramValues.push_back(result);
+  }
+
+  builder.create<LIT::ParamReturnOp>(translateLocation(loc), paramValues);
   return success();
 }
 

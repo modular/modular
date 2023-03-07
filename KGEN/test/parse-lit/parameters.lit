@@ -210,16 +210,17 @@ fn no_result_param[a: __mlir_type.index]():
 
 # CHECK-LABEL: lit.func @"idx_result_params()"<a -> b, c>()
 fn idx_result_params[a: __mlir_type.index -> b: __mlir_type.index, c: __mlir_type.index]() -> Int:
+  # CHECK-NEXT: lit.param_return<a, add(a, 1)>
+  param_return[a,a+1]
   # CHECK: %0 = kgen.param.constant = <add(a, 2)>
   # CHECK: %1 = kgen.call{{.*}}__new__{{.*}}(%0)
-  # CHECK-NEXT: lit.param_return<a, add(a, 1)>
   # CHECK-NEXT: lit.return %1
-  return[a,a+1] a+2
+  return a+2
 
 # CHECK-LABEL: lit.func @"just_result_params()"<() -> a>()
 fn just_result_params[() -> a: __mlir_type.index]():
   # CHECK: lit.param_return<42>
-  return[42]
+  param_return[42]
 
 
 # A bit grotty, but effective way to provide a kgen.param.fork over three
@@ -239,7 +240,7 @@ fn search3[a: __mlir_type.index, b: __mlir_type.index, c: __mlir_type.index
    # CHECK: kgen.param.declare result = <result_hidden>
    alias result = __mlir_attr.`#kgen.param.decl.ref<"result_hidden"> : index`
    # CHECK: lit.param_return<result>
-   return[result]
+   param_return[result]
 
 # CHECK-LABEL: lit.func @"useResultParams
 fn useResultParams(i: Int):
@@ -271,8 +272,30 @@ fn useResultParams(i: Int):
 # Issue #6904: Parameter results don't get implicit conversions
 # CHECK: lit.func @"testResultParamConversion
 fn testResultParamConversion[() -> b: Int](a: Int):
-  # CHECK: lit.param_return<:@"$Int"::@Int #lit.struct<{{.*}}4}
-  return[4]
+  # CHECK: lit.param_return<:@"$Int"::@Int #lit.struct<{{.*}} 4}
+  param_return[4]
+
+struct Error:
+
+# lit.func @"testResultParamThrowing()"<() -> b:
+@raises
+fn testResultParamThrowing[() -> b: Int]():
+  # CHECK: lit.param_return<:@"$Int"::@Int #lit.struct<{{.*}} 1}
+  param_return[1]
+  # CHECK: lit.raise
+  raise Error{}
+
+# lit.func @"testMultipleParamReturn()"<a: {{.*}} -> b:
+fn testMultipleParamReturn[a: Bool -> b: Int]():
+    # CHECK: kgen.param.if
+    @parameter
+    if a:
+        # CHECK: lit.param_return<{{.*}} 1}
+        param_return[1]
+    # CHECK: else
+    else:
+        # CHECK: lit.param_return<{{.*}} 2}
+        param_return[2]
 
 ##===----------------------------------------------------------------------===##
 # First-class functions as parameters.
