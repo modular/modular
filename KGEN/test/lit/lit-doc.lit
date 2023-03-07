@@ -22,6 +22,8 @@ struct ParameterClass[_type: __mlir_type.`!kgen.dtype`]:
         _type: This is a parameter.
     """
 
+    pass
+
 
 # CHECK: ## `` empty_fn() ``:
 # CHECK: This is a function summary.

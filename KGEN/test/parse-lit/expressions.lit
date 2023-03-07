@@ -4,7 +4,7 @@
 
 from prolog import Error, F32, Int, SIMD, object
 
-fn noop():
+fn noop(): pass
 
 # CHECK-LABEL: lit.struct.decl @MemoryPrimaryInt
 @__memory_primary

@@ -10,6 +10,7 @@ def invalid_conversion(a: Int, b: __mlir_type.index):
   b = a # expected-error {{'$Int::Int' value cannot be converted to '__mlir_type.index' in assignment}}
 
 struct NotBoolConvertible:
+  pass
 
 # Issue #6600
 fn negBuiltinType(x: __mlir_type.f64) :
@@ -27,15 +28,15 @@ struct LValuesRvalues:
     return LValuesRvalues{}
 
   fn __clone__(self&) -> Self:
-      return LValuesRvalues{}
+    return LValuesRvalues{}
 
-  def normalMethod(self):
+  def normalMethod(self): pass
   # expected-note @+1 {{function declared here}}
-  def mutatingMethod(self&):
+  def mutatingMethod(self&): pass
   # expected-note @+1 {{function declared here}}
-  def takesByRef(self, x&: LValuesRvalues):
+  def takesByRef(self, x&: LValuesRvalues): pass
 
-  def normalMethod3(self, a: F32):
+  def normalMethod3(self, a: F32): pass
 
 @__memory_primary
 struct MemoryPrimaryPair:

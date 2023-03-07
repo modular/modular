@@ -68,6 +68,17 @@ public:
     return success();
   }
 
+  /// Return the location of the current token, or a location at the end of the
+  /// previous line if it is on a new line.  This is used when there was a
+  /// problem with the previous token to make sure we report the error on that
+  /// line.
+  SMLoc getTokenLocOrEndOfPreviousLineIfOnNewLine() const {
+    SMLoc loc = getToken().getLoc();
+    if (getToken().getIndentation().has_value())
+      return lexer.findEndOfPreviousLine(loc);
+    return loc;
+  }
+
   //===--------------------------------------------------------------------===//
   // Token Parsing
   //===--------------------------------------------------------------------===//

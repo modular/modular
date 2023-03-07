@@ -7,6 +7,8 @@ from prolog import DType, Error, F32, Int, object
 ##===----------------------------------------------------------------------===##
 
 struct ParametricOnInt[a: Int]:
+  pass
+
 fn Rec2[
   a: ParametricOnInt[b], # expected-error {{use of unknown declaration 'b'}}
   b: ParametricOnInt[a]]():
@@ -14,6 +16,7 @@ fn Rec2[
 
 # expected-note @+1 {{'Thing' declared here}}
 struct Thing[a: __mlir_type.index, b: __mlir_type.index]:
+  pass
 
 def GoodUseOfThing(a: Thing[4, 5]):
   pass
@@ -36,10 +39,12 @@ def WeirdMetaParams(a: Thing[1, 1.5]):
 struct Parameterized[p1: __mlir_type.index]:
   # expected-error @+1 {{invalid redefinition of 'p1'}}
   fn a[p1: Int](self):  # Cannot shadow parameter names.
+    pass
 
   # expected-error @below {{invalid redefinition of 'p2'}}
   # expected-note @below {{previous definition here}}
-  fn b[p2: Int, p2: Int, p3: Int](self):  # Cannot shadow parameter names.
+  fn b[p2: Int, p2: Int, p3: Int](self): # Cannot shadow parameter names.
+    pass
 
   fn __new__() -> Parameterized[p1]:
     return Self{}
@@ -63,6 +68,7 @@ fn testTestParamStruct(a: Parameterized[4]):
 struct MySIMD[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
   # expected-note @below {{function declared here}}
   fn __add__(self, rhs: MySIMD[size, type]):
+    pass
 
 fn testSIMD(a: MySIMD[1, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`],
             b: MySIMD[2, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]):
@@ -72,6 +78,7 @@ fn testSIMD(a: MySIMD[1, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`],
 
 fn badReboundType[type: __mlir_type.`!kgen.dtype`,
                   val: __mlir_type[`!pop.scalar<`, type, `>`]]():
+  pass
 
 fn badCallReboundType[val: __mlir_type.`!pop.scalar<f32>`]():
   # expected-error @+1 {{'__mlir_type.!pop.scalar<f32>' value cannot be converted to '__mlir_type.!pop.scalar<f64>' in call parameter}}
@@ -83,6 +90,7 @@ fn partialBindSignature[callable: __mlir_type.`!kgen.signature<<a, b>() -> ()>`,
 
 # expected-note @+1 {{function declared here}}
 def generic_fn[a: DType, b: __mlir_type.index](c : __mlir_type.index):
+  pass
 
 def call_generic[dt: DType]():
   generic_fn[dt, 1, 42](57) # expected-error {{invalid call to 'generic_fn': callee expects 2 input parameters but 3 were provided}}
@@ -109,9 +117,11 @@ fn funnyArgs[a: Int, /, b: Int, *,
 
 # expected-error @+1 {{result parameters may not be variadic}}
 fn variadicResultParams[() -> *b: Int]():
+  pass
 
 # expected-note @+1 {{function declared here}}
 fn variadicIntParams[*a: Int]():
+  pass
 
 fn callVariadic():
   variadicIntParams() # OK
@@ -128,6 +138,7 @@ fn callVariadic():
 
 # expected-error @+1 {{struct declarations do not support result parameters}}
 struct ResultParams[a: Int -> b: Int, c: F32]:
+  pass
 
 # expected-note @+1 {{function declared here}}
 fn hasResultParam[a: __mlir_type.index -> b: __mlir_type.index]():
@@ -135,6 +146,7 @@ fn hasResultParam[a: __mlir_type.index -> b: __mlir_type.index]():
 
 # expected-note @+1 {{function declared here}}
 fn hasInputParam[a: __mlir_type.index]():
+  pass
 
 fn useResultParams():
   # expected-error @+1 {{invalid call to 'hasResultParam': callee expects 1 result parameter but 0 were provided}}

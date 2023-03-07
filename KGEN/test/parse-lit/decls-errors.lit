@@ -64,7 +64,7 @@ fn badPropertyError(a: InvalidType):
   _ = a.value
   return
 
-struct NotBoolConvertible:
+struct NotBoolConvertible: pass
 # expected-note @+1 {{function declared here}}
 def test_bool_context(a: NotBoolConvertible): pass
 
@@ -80,7 +80,7 @@ fn missing_ret_val() -> __mlir_type.index:
 fn ret_type_mismatch() -> __mlir_type.index:
   return 4.0 # expected-error {{'__mlir_type.f64' value cannot be converted to '__mlir_type.index' in return}}
 
-async fn testAsyncVoid():
+async fn testAsyncVoid(): pass
 async fn testAsyncInt() -> Int: return 42
 
 fn callsWith():
@@ -91,6 +91,7 @@ fn callsWith():
 struct ThingWithStaticMethod:
    @staticmethod
    fn splat(x: Int): # expected-note {{function declared here}}
+     pass
 
 fn testThingWithStaticMethod():
   # expected-error @+1 {{invalid call to 'splat': argument #0 cannot be converted from '__mlir_type.f64' to '$Int::Int'}}
@@ -102,27 +103,27 @@ fn testThingWithStaticMethod():
 ##===----------------------------------------------------------------------===##
 
 # expected-error @+1 {{non-default argument follows default argument}}
-fn nonDefaultArgumentFollowsDefaultArgument(a: Int = 0, b: Int):
+fn nonDefaultArgumentFollowsDefaultArgument(a: Int = 0, b: Int): pass
 
 # expected-error @+1 {{use of unknown declaration 'unknown'}}
-fn defaultArgumentUnknownDeclaration(a: Int = unknown):
+fn defaultArgumentUnknownDeclaration(a: Int = unknown): pass
 
 # expected-error @+1 {{use of unknown declaration 'a'}}
-fn defaultArgumentReferencesArgument(a: Int = 0, b: Int = a):
+fn defaultArgumentReferencesArgument(a: Int = 0, b: Int = a): pass
 
 # expected-error @+1 {{'__mlir_type.f64' value cannot be converted to '$Int::Int' in default argument}}
-fn defaultArgumentBadType(a: Int = 1.0):
+fn defaultArgumentBadType(a: Int = 1.0): pass
 
 # expected-error @+1 {{'**' marker must be at end of argument list}}
-fn starStarLast(**a: Int, b: Int):
+fn starStarLast(**a: Int, b: Int): pass
 
 # expected-error @+1 {{variadic arguments may not have defaults}}
-fn noDefaultVariadics(*a: Int = 42):
+fn noDefaultVariadics(*a: Int = 42): pass
 
 # expected-note @+1 {{function declared here}}
-fn exampleVariadic(a: F32, *b: Int):
+fn exampleVariadic(a: F32, *b: Int): pass
 # expected-note @+1 {{function declared here}}
-fn exampleByRefVariadic(a: F32, *b&: Int):
+fn exampleByRefVariadic(a: F32, *b&: Int): pass
 
 fn badCalls(arg: Int):
   # expected-error @+1 {{argument #1 cannot be converted from '__mlir_type.f64' to '$Int::Int'}}
@@ -140,31 +141,31 @@ fn badCalls(arg: Int):
   exampleByRefVariadic(1.0, x, 1)
 
 # expected-error @+1 {{variadic arguments may not also be variadic parameter packs}}
-fn invalidVariadicPack[Ts*: __mlir_type.`!kgen.mlirtype`](*x*: Ts):
+fn invalidVariadicPack[Ts*: __mlir_type.`!kgen.mlirtype`](*x*: Ts): pass
 
 # expected-error @+1 {{variadic parameter packs may not have input conventions}}
-fn invalidPackByRef[Ts*: __mlir_type.`!kgen.mlirtype`](x*&: Ts):
+fn invalidPackByRef[Ts*: __mlir_type.`!kgen.mlirtype`](x*&: Ts): pass
 
 # expected-error @+1 {{variadic parameter packs may not have defaults}}
-fn invalidPackWithDefault[Ts*: __mlir_type.`!kgen.mlirtype`](x*: Ts = (1, 2.0)):
+fn invalidPackWithDefault[Ts*: __mlir_type.`!kgen.mlirtype`](x*: Ts = (1, 2.0)): pass
 
 ##===----------------------------------------------------------------------===##
 # Keyword Arguments
 ##===----------------------------------------------------------------------===##
 
 # expected-error @+1 {{TODO: keyword arguments not supported yet}}
-def kw1(a, *, *, b): # expected-error {{cannot have two '*' markers in the same argument list}}
-def kw2(a, /, /, b): # expected-error {{cannot have two '/' markers in the same argument list}}
+def kw1(a, *, *, b): pass # expected-error {{cannot have two '*' markers in the same argument list}}
+def kw2(a, /, /, b): pass # expected-error {{cannot have two '/' markers in the same argument list}}
 # expected-error @+1 {{TODO: keyword arguments not supported yet}}
-def kw3(a, /, *, b): # OK
+def kw3(a, /, *, b): pass # OK
 # expected-error @+1 {{TODO: keyword arguments not supported yet}}
-def kw4(a, *, /, b): # expected-error {{cannot specify '/' marker after '*' marker}}
-def kw5(/, a):       # expected-error {{'/' marker cannot be used at the start of the argument list}}
-def kw6(a, *):       # expected-error {{'*' marker is not allowed at end of argument list}}
+def kw4(a, *, /, b): pass # expected-error {{cannot specify '/' marker after '*' marker}}
+def kw5(/, a):       pass # expected-error {{'/' marker cannot be used at the start of the argument list}}
+def kw6(a, *):       pass # expected-error {{'*' marker is not allowed at end of argument list}}
 # expected-error @+1 {{TODO: keyword arguments not supported yet}}
-def kw7(*a, *b): # expected-error {{cannot have two '*' markers in the same argument list}}
+def kw7(*a, *b): pass # expected-error {{cannot have two '*' markers in the same argument list}}
 # expected-error @+1 {{TODO: keyword arguments not supported yet}}
-def kw8[Ts*: __mlir_type.`!kgen.mlirtype`](a*: Ts, b*: Ts): # expected-error {{cannot have two '*' markers in the same argument list}}
+def kw8[Ts*: __mlir_type.`!kgen.mlirtype`](a*: Ts, b*: Ts): pass # expected-error {{cannot have two '*' markers in the same argument list}}
 
 ##===----------------------------------------------------------------------===##
 # Function Overloading
@@ -181,31 +182,32 @@ def fn_redecl():
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: argument #0 cannot be converted from '$decls-errors::TestOverloading' to '$Int::Int'}}
 # expected-note @below {{candidate not viable: callee expects 1 argument}}
-fn overloadIntF32(a: Int):
+fn overloadIntF32(a: Int): pass
 
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: argument #0 cannot be converted from '$decls-errors::TestOverloading' to '$F32::F32'}}
 # expected-note @below {{candidate not viable: callee expects 1 argument}}
-fn overloadIntF32(a: F32):
+fn overloadIntF32(a: F32): pass
 
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: callee expects 2 arguments}}
 # expected-note @below {{candidate not viable: argument #1 cannot be converted from '$F32::F32' to '$Int::Int'}}
-fn overloadIntF32(a: Int, b: Int):
+fn overloadIntF32(a: Int, b: Int): pass
 
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: callee expects 2 arguments}}
 # expected-note @below {{argument #1 must be mutable in order to pass as a by-ref argument}}
-fn overloadIntF32(a: Int, b&: F32):
+fn overloadIntF32(a: Int, b&: F32): pass
 
 # expected-note @below {{callee expects at least 3 arguments, but only 1 specified}}
 # expected-note @below {{callee expects at least 3 arguments, but only 2 specified}}
 # expected-note @below {{candidate declared here}}
-fn overloadIntF32(a: Int, b&: F32, c: Int, *args: Int):
+fn overloadIntF32(a: Int, b&: F32, c: Int, *args: Int): pass
 
 struct TestOverloading:
   var a: Int   # expected-note {{cannot overload with this non-function definition}}
   fn a(self):  # expected-error {{invalid redefinition of 'a'}}
+    pass
 
   fn test(self, a: Int, b: F32):
     # expected-error @+1 {{cannot form a reference to overloaded declaration}}
@@ -223,10 +225,10 @@ struct ConvertibleFromInt:
 
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: argument #1 cannot be converted from '$decls-errors::ConvertibleFromInt' to '$Int::Int'}}
-fn ambiguousConversions(a: ConvertibleFromInt, b: Int):
+fn ambiguousConversions(a: ConvertibleFromInt, b: Int): pass
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: argument #0 cannot be converted from '$decls-errors::ConvertibleFromInt' to '$Int::Int'}}
-fn ambiguousConversions(a: Int, b: ConvertibleFromInt):
+fn ambiguousConversions(a: Int, b: ConvertibleFromInt): pass
 
 fn testAmbiguousConversions(a: Int, b: ConvertibleFromInt):
   ambiguousConversions(a, b) # ok
@@ -248,7 +250,7 @@ fn testAmbiguousConversions(a: Int, b: ConvertibleFromInt):
 ##===----------------------------------------------------------------------===##
 
 @decorator  # expected-error {{unsupported decorator: @decorator}}
-struct DecoratedStruct:
+struct DecoratedStruct: pass
 
 @decorator # expected-error {{decorators not supported on this statement}}
 var DecoratedVar: Int
@@ -281,13 +283,14 @@ struct StructMemberRedefinition:
 struct SpecialFunctions:
   # expected-error @+1 {{special function must have 2 operands}}
   fn __add__(self):
+    pass
 
   # This is ok, SpecialFunctions may be a reference semantic struct like Object.
   # Issue #7573: Cannot have LValue or RValue overloads of special methods
-  fn __iadd__(a: SpecialFunctions, b: SpecialFunctions):
+  fn __iadd__(a: SpecialFunctions, b: SpecialFunctions): pass
 
   # expected-error @+1 {{'__iadd__' result type must be elided (or None)}}
-  fn __iadd__(self&, rhs: SpecialFunctions) -> SpecialFunctions:
+  fn __iadd__(self&, rhs: SpecialFunctions) -> SpecialFunctions: pass
 
   fn failures(self):
     self+self # Supports this, even though it isn't valid.  Shouldn't crash.
@@ -356,7 +359,7 @@ struct MLIRAttrWithinStruct: # expected-note {{previously used here}}
 
 # In register structs may only have stored properties of other in-reg values.
 @__memory_primary
-struct InMemStruct:
+struct InMemStruct: pass
 
 # expected-error @+1 {{all members of register primary struct must themselves be register primary}}
 struct InRegStruct:
@@ -368,6 +371,7 @@ struct OtherInMemStruct:
   var x: Int # ok
   var y: InMemStruct # ok
 
+def noop():  # expected-error {{expected body statements; use 'pass' if none is required}}
 
 ##===----------------------------------------------------------------------===##
 # Exported Functions

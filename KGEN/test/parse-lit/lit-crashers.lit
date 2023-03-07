@@ -3,8 +3,9 @@
 struct Crash1[XXX: __mlir_type.index]:
   fn __new__(a: __mlir_type.f32)
   # expected-error @-1 {{expected ':' in function definition}}
+    pass
 
-  fn f(self):
+  fn f(self): pass
 
 // -----
 
@@ -17,7 +18,7 @@ struct F32:
 
 // -----
 
-def foo(a): # expected-error {{could not find an 'object' type}}
+def foo(a): pass # expected-error {{could not find an 'object' type}}
 
 // -----
 # Crashed at top level.
@@ -30,10 +31,10 @@ __mlir_attr.`#index<cmp_predicate eq>`
 // -----
 # MLIR Symbol Redefinition crash
 
-struct Foo: # expected-note {{previous definition here}}
-struct Foo: # expected-error {{invalid redefinition of 'Foo'}}
+struct Foo: pass # expected-note {{previous definition here}}
+struct Foo: pass # expected-error {{invalid redefinition of 'Foo'}}
 
-fn x(a: Foo):
+fn x(a: Foo): pass
 
 // -----
 
