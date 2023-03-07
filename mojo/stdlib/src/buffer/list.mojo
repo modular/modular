@@ -596,28 +596,105 @@ fn _contains_impl[
 # ===----------------------------------------------------------------------===#
 
 
-fn product[
-    size: __mlir_type.index
+fn product_range[
+    start_idx: __mlir_type.index,
+    end_idx: __mlir_type.index,
+    size: __mlir_type.index,
 ](lst: __mlir_type[`!kgen.list<index[`, size, `]>`]) -> Int:
-    return _product_impl[0, size](lst)
+    return _product_range_impl[start_idx, start_idx, end_idx, size](lst)
 
 
 @adaptive
-fn _product_impl[
-    idx: __mlir_type.index, size: __mlir_type.index
+fn _product_range_impl[
+    idx: __mlir_type.index,
+    start_idx: __mlir_type.index,
+    end_idx: __mlir_type.index,
+    size: __mlir_type.index,
 ](lst: __mlir_type[`!kgen.list<index[`, size, `]>`]) -> Int:
-    assert_param[idx == size]()
+    assert_param[idx == end_idx]()
     return 1
 
 
 @adaptive
-fn _product_impl[
-    idx: __mlir_type.index, size: __mlir_type.index
+fn _product_range_impl[
+    idx: __mlir_type.index,
+    start_idx: __mlir_type.index,
+    end_idx: __mlir_type.index,
+    size: __mlir_type.index,
 ](lst: __mlir_type[`!kgen.list<index[`, size, `]>`]) -> Int:
-    assert_param[idx < size]()
+    assert_param[idx < end_idx]()
     return _get_kgen_list_item[idx, size, __mlir_type.index](
         lst
-    ) * _product_impl[idx + 1, size](lst)
+    ) * _product_range_impl[idx + 1, start_idx, end_idx, size](lst)
+
+
+fn product[
+    size: __mlir_type.index
+](lst: __mlir_type[`!kgen.list<index[`, size, `]>`]) -> Int:
+    return product_range[0, size, size](lst)
+
+
+fn product_or_unknown[
+    rank: __mlir_type.index,
+    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    start_idx: __mlir_type.index,
+    end_idx: __mlir_type.index,
+]() -> __mlir_type.index:
+    if is_all_known_range[start_idx, end_idx, rank, shape]():
+        return product_range[start_idx, end_idx, rank](shape).__as_mlir_index()
+    return __mlir_attr.`#kgen.unknown : index`
+
+
+# ===----------------------------------------------------------------------===#
+# is_all_known
+# ===----------------------------------------------------------------------===#
+
+
+fn is_all_known[
+    rank: __mlir_type.index, shape: __mlir_type[`!kgen.list<index[`, rank, `]>`]
+]() -> Bool:
+    return is_all_known_range[0, rank, rank, shape]()
+
+
+fn is_all_known_range[
+    start_idx: __mlir_type.index,
+    end_idx: __mlir_type.index,
+    rank: __mlir_type.index,
+    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+]() -> Bool:
+    return is_all_known_range_impl[start_idx, start_idx, end_idx, rank, shape]()
+
+
+@adaptive
+fn is_all_known_range_impl[
+    index: __mlir_type.index,
+    start_idx: __mlir_type.index,
+    end_idx: __mlir_type.index,
+    rank: __mlir_type.index,
+    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+]() -> Bool:
+    assert_param[index == end_idx]()
+    return True
+
+
+@adaptive
+fn is_all_known_range_impl[
+    index: __mlir_type.index,
+    start_idx: __mlir_type.index,
+    end_idx: __mlir_type.index,
+    rank: __mlir_type.index,
+    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+]() -> Bool:
+    assert_param[index < end_idx]()
+    alias static_dim_value = _get_kgen_list_item[
+        index, rank, __mlir_type.index
+    ](shape)
+    return (
+        Bool(static_dim_value != __mlir_attr.`#kgen.unknown : index`)
+        and is_all_known_range_impl[
+            index + 1, start_idx, end_idx, rank, shape
+        ]()
+    )
 
 
 # ===----------------------------------------------------------------------===#

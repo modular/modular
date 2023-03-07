@@ -13,6 +13,7 @@ from List import (
     product,
     contains,
     _get_kgen_list_item,
+    is_all_known,
     create_kgen_list_unknown,
     VariadicList,
 )
@@ -380,38 +381,6 @@ fn _compute_ndbuffer_offset[
     for i in range(1, rank):
         result = fma(buf.dim(i), result, idx[i])
     return result
-
-
-fn is_all_known[
-    rank: __mlir_type.index, shape: __mlir_type[`!kgen.list<index[`, rank, `]>`]
-]() -> Bool:
-    return is_all_known_impl[0, rank, shape]()
-
-
-@adaptive
-fn is_all_known_impl[
-    index: __mlir_type.index,
-    rank: __mlir_type.index,
-    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-]() -> Bool:
-    assert_param[index == rank]()
-    return True
-
-
-@adaptive
-fn is_all_known_impl[
-    index: __mlir_type.index,
-    rank: __mlir_type.index,
-    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-]() -> Bool:
-    assert_param[index < rank]()
-    alias static_dim_value = _get_kgen_list_item[
-        index, rank, __mlir_type.index
-    ](shape)
-    return (
-        Bool(static_dim_value != __mlir_attr.`#kgen.unknown : index`)
-        and is_all_known_impl[index + 1, rank, shape]()
-    )
 
 
 # ===----------------------------------------------------------------------===#
