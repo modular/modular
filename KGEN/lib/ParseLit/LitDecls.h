@@ -209,6 +209,9 @@ private:
   /// cyclic dependencies.
   DenseMap<ASTDecl *, llvm::SMLoc> declsCurrentlyProcessing;
 
+  /// Allow access to private fields.
+  friend LitSharedState;
+
   DeclResolver(const DeclResolver &) = delete;
   DeclResolver &operator=(const DeclResolver &) = delete;
 };

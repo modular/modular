@@ -32,6 +32,8 @@ add_modular_conversion_library(ParseLit
   KGENDialect
   POPDialect
 
+  MLIRBytecodeReader
+  MLIRBytecodeWriter
   MLIRIndexDialect
   MLIRTranslateLib
 )

@@ -51,7 +51,7 @@ class LitSharedState {
 public:
   LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context,
                  const CompilationOptions &options, bool useMLIRDiagnostics,
-                 LLCL::Runtime &runtime);
+                 LLCL::Runtime &runtime, bool enableCaching = true);
   ~LitSharedState();
 
   LitDiags diags; // Contains SourceMgr and MLIRContext pointers.
@@ -157,6 +157,9 @@ public:
                         const llvm::MemoryBuffer *moduleBuffer,
                         FileLineColLoc loc);
 
+  /// Cache the state of any modules that we parsed.
+  void cacheParsedModules();
+
   /// Get the list of files included while processing all modules.
   ArrayRef<std::string> getIncludedFiles() const;
 
@@ -167,13 +170,32 @@ public:
   ASTDecl &getCompilerBuiltInDecl();
 
 private:
+  /// The internal state of an imported module.
+  struct ModuleState;
+
   /// Add magic things to the builtins decl when parsing starts.
   void addBuiltinTypes(ASTDecl &builtinsDecl);
+
+  /// Import the specified module, returning the module state. Always returns a
+  /// valid module state, even if the module could not be found.
+  ModuleState &importModuleState(StringRef moduleName, llvm::SMLoc loc);
+
+  /// Create a new module state with the given name, location, and body.
+  ModuleState &createModuleState(StringRef moduleName,
+                                 const llvm::MemoryBuffer *moduleBuffer,
+                                 FileLineColLoc loc);
+
+  /// Resolve the dependencies of the given module.
+  void resolveModuleDependencies(ModuleState &module, StringRef moduleBuffer);
+
+  /// Attempt to get a cached version of the given modules. If loading from the
+  /// cache fails, the modules will be processed as normal.
+  void loadModulesFromCache(MutableArrayRef<ModuleState *> moduleStates);
 
   /// This is used for memory that lives as long as the global parser does.
   llvm::BumpPtrAllocator persistentAllocator;
 
-  class Impl;
+  struct Impl;
   std::unique_ptr<Impl> impl;
 };
 
