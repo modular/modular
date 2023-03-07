@@ -1742,9 +1742,8 @@ LogicalResult KGEN::verifyOneBlockOrCached(Operation *op) {
 }
 
 LogicalResult
-KGEN::checkResultArgumentTypes(Operation *op, ArrayRef<TypedAttr> resultParams,
-                               ArrayRef<ParamDeclAttr> paramResults,
-                               TypeRange resultTypes) {
+KGEN::checkResultParameterTypes(Operation *op, ArrayRef<TypedAttr> resultParams,
+                                ArrayRef<ParamDeclAttr> paramResults) {
   // Check the parameters match up.
   if (resultParams.size() != paramResults.size())
     return op->emitOpError("expected ")
@@ -1757,7 +1756,15 @@ KGEN::checkResultArgumentTypes(Operation *op, ArrayRef<TypedAttr> resultParams,
       return op->emitOpError("parameter #") << i << " has type " << actualTy
                                             << " but should be " << expectedTy;
   }
+  return success();
+}
 
+LogicalResult
+KGEN::checkResultArgumentTypes(Operation *op, ArrayRef<TypedAttr> resultParams,
+                               ArrayRef<ParamDeclAttr> paramResults,
+                               TypeRange resultTypes) {
+  if (failed(checkResultParameterTypes(op, resultParams, paramResults)))
+    return failure();
   return checkResultTypes(op, resultTypes);
 }
 
