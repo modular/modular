@@ -19,6 +19,7 @@
 #include "mlir/IR/OpImplementation.h"
 
 namespace M::KGEN {
+class DeclInterface;
 class FuncInterface;
 
 /// Given a module operation, return its exported symbols and aliases.
@@ -248,7 +249,7 @@ LogicalResult verifyOneBlockOrCached(Operation *op);
 /// Check the parameter result types.
 LogicalResult checkResultParameterTypes(Operation *op,
                                         ArrayRef<TypedAttr> resultParams,
-                                        FuncInterface func);
+                                        DeclInterface decl);
 
 /// Check the value and parameter result types.
 LogicalResult checkResultArgumentTypes(Operation *op,

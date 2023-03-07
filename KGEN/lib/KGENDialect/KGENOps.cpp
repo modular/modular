@@ -200,6 +200,24 @@ void ParamForkOp::walkDefinitions(
 }
 
 //===----------------------------------------------------------------------===//
+// ParamResultBind
+//===----------------------------------------------------------------------===//
+
+void ParamResultBindOp::walkDefinitions(
+    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {
+  auto scope = (*this)->getParentOfType<DeclInterface>();
+  for (auto [decl, value] : llvm::zip(scope.getResultParams(), getParameters()))
+    walkDef(decl, value);
+}
+
+LogicalResult ParamResultBindOp::verify() {
+  auto scope = (*this)->getParentOfType<DeclInterface>();
+  if (!scope)
+    return emitOpError("expected to be nested beneath a declaration scope");
+  return checkResultParameterTypes(*this, getParameters(), scope);
+}
+
+//===----------------------------------------------------------------------===//
 // ReturnOp
 //===----------------------------------------------------------------------===//
 
