@@ -82,34 +82,25 @@ struct ConvertPOPNeg : public ConvertPOPToLLVMPattern<NegOp> {
   matchAndRewrite(NegOp op, NegOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     KGENDType dtype = *op.getType().getResolvedDType();
-    if (dtype.isInt() || dtype.isIndex()) {
-      Type type = adaptor.getOperand().getType();
-      Value zero;
-      if (auto vec = dyn_cast<VectorType>(type)) {
-        auto eltType = vec.getElementType();
-        if (eltType.isInteger(1))
-          zero = rewriter.create<LLVM::ConstantOp>(
-              op.getLoc(), DenseIntElementsAttr::get(vec, (bool)false));
-        else if (eltType.isInteger(8))
-          zero = rewriter.create<LLVM::ConstantOp>(
-              op.getLoc(), DenseIntElementsAttr::get(vec, (unsigned char)0));
-        else if (eltType.isInteger(16))
-          zero = rewriter.create<LLVM::ConstantOp>(
-              op.getLoc(), DenseIntElementsAttr::get(vec, (unsigned short)0));
-        else if (eltType.isInteger(32))
-          zero = rewriter.create<LLVM::ConstantOp>(
-              op.getLoc(), DenseIntElementsAttr::get(vec, (unsigned)0));
-        else if (eltType.isInteger(64))
-          zero = rewriter.create<LLVM::ConstantOp>(
-              op.getLoc(), DenseIntElementsAttr::get(vec, (uint64_t)0));
-        else
-          return op.emitError("could not integer type");
-      } else
-        zero = rewriter.create<LLVM::ConstantOp>(op.getLoc(), type, 0);
-      rewriter.replaceOpWithNewOp<LLVM::SubOp>(op, zero, adaptor.getOperand());
-    } else {
+    if (!dtype.isInt() && !dtype.isIndex()) {
       rewriter.replaceOpWithNewOp<LLVM::FNegOp>(op, adaptor.getOperand());
+      return success();
     }
+
+    Type type = adaptor.getOperand().getType();
+    Value zero;
+    if (auto vec = dyn_cast<VectorType>(type)) {
+      auto intType = dyn_cast<IntegerType>(vec.getElementType());
+      if (!intType)
+        return op.emitError("could not handle integer type");
+      auto apZero = APInt::getZero(intType.getWidth());
+      zero = rewriter.create<LLVM::ConstantOp>(
+          op.getLoc(), DenseIntElementsAttr::get(vec, apZero));
+    } else {
+      zero = rewriter.create<LLVM::ConstantOp>(op.getLoc(), type, 0);
+    }
+
+    rewriter.replaceOpWithNewOp<LLVM::SubOp>(op, zero, adaptor.getOperand());
     return success();
   }
 };
