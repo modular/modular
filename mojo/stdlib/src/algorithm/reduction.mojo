@@ -5,11 +5,22 @@
 # ===----------------------------------------------------------------------=== #
 
 from Assert import debug_assert
-from Buffer import Buffer
+from Buffer import Buffer, NDBuffer
 from SIMD import SIMD
 from Numerics import inf, neginf
 from Int import Int
+from List import (
+    _get_kgen_list_item,
+    create_kgen_list,
+    create_kgen_list_unknown,
+    product_range,
+    product_or_unknown,
+    is_all_known_range,
+)
 from Range import range
+from Index import StaticIntTuple
+from TargetInfo import dtype_simd_width, sizeof, dtype_sizeof
+from Functional import vectorize, unroll
 
 # ===----------------------------------------------------------------------===#
 # reduce
@@ -60,6 +71,202 @@ fn reduce[
     for ii in range(vector_end, len):  # TODO(#8365) use `i`
         acc = map_fn[1, acc_type, type](acc, src.__getitem__(ii))
     return acc.__getitem__(0)
+
+
+@always_inline
+fn _reduce_3D[
+    simd_width: __mlir_type.index,
+    input_shape: __mlir_type[`!kgen.list<index[3]>`],
+    output_shape: __mlir_type[`!kgen.list<index[2]>`],
+    type: __mlir_type.`!kgen.dtype`,
+    acc_type: __mlir_type.`!kgen.dtype`,
+    map_fn: __mlir_type[
+        `!kgen.signature<<simd_width, acc_type: dtype, type: dtype>(`,
+        SIMD[simd_width, `acc_type`],
+        `,`,
+        SIMD[simd_width, `type`],
+        `) -> `,
+        SIMD[simd_width, `acc_type`],
+        `>`,
+    ],
+    reduce_fn: __mlir_type[
+        `!kgen.signature<<simd_width, type: dtype>(`,
+        SIMD[simd_width, `type`],
+        `) -> `,
+        SIMD[1, `type`],
+        `>`,
+    ],
+](
+    src: NDBuffer[3, input_shape, type],
+    dst: NDBuffer[
+        2,
+        output_shape,
+        acc_type,
+    ],
+    init: SIMD[1, acc_type],
+):
+    """Performs a reduction across axis 1 of a 3D input buffer."""
+
+    let h = src.dim[0]()
+    let w = src.dim[1]()
+    let c = src.dim[2]()
+
+    # If c is 1, we are reducing across the innermost axis, and we can launch H
+    # reductions that each reduce W elements of a contiguous buffer.
+    if c == 1:
+
+        @always_inline
+        fn reduce_inner_axis():
+            alias sz = _get_kgen_list_item[1, 3, __mlir_type.index](input_shape)
+
+            @always_inline
+            fn get_buf[
+                size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`
+            ](idx: Int) -> Buffer[size, type]:
+                let offset = src._offset(StaticIntTuple[3](idx, 0, 0))
+
+                @parameter
+                if size == __mlir_attr.`#kgen.unknown : index`:
+                    return Buffer[size, type](offset.address, w)
+                else:
+                    return Buffer[size, type](offset.address)
+
+            # TODO: parallelize
+            for i in range(h):
+                let val = reduce[
+                    simd_width, sz, type, acc_type, map_fn, reduce_fn
+                ](get_buf[sz, type](i), init)
+                dst.__setitem__(StaticIntTuple[2](i, 0), val)
+
+        reduce_inner_axis()
+        return
+
+    # If c is not 1, the elements to reduce are not contiguous. If we reduce
+    # cache_line_size rows at once, then we get better reuse of the loaded data.
+
+    # The width of this should be a multiple of the cache line size in order to
+    # reuse the full cache line when an element of C is loaded.
+    alias cache_line_size = 64
+
+    fn get_unroll_factor[
+        simd_width: __mlir_type.index, dtype_size: __mlir_type.index
+    ]() -> __mlir_type.index:
+        return cache_line_size // (simd_width * dtype_size)
+
+    alias unroll_factor = get_unroll_factor[
+        simd_width, dtype_sizeof[type]().__as_mlir_index()
+    ]()
+    alias usimd_width = unroll_factor * simd_width
+    for i in range(h):
+
+        @always_inline
+        fn reduce_w_chunked[simd_width: __mlir_type.index](idx: Int):
+            var accum = SIMD[simd_width, acc_type].splat(init)
+            for j in range(w):
+                let chunk = src.simd_load[simd_width](
+                    StaticIntTuple[3](i, j, idx)
+                )
+                accum = map_fn[simd_width, acc_type, type](accum, chunk)
+            dst.simd_store[simd_width](StaticIntTuple[2](i, idx), accum)
+
+        vectorize[usimd_width, reduce_w_chunked](c)
+
+
+fn _prod_dims[
+    start_dim: __mlir_type.index,
+    end_dim: __mlir_type.index,
+    rank: __mlir_type.index,
+    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    type: __mlir_type.`!kgen.dtype`,
+](x: NDBuffer[rank, shape, type]) -> Int:
+    var product: Int = 1
+
+    @always_inline
+    fn _compute_product[idx: __mlir_type.index]():
+        product *= x.dim[idx + start_dim]()
+
+    unroll[end_dim - start_dim, _compute_product]()
+    return product
+
+
+@always_inline
+fn reduce[
+    simd_width: __mlir_type.index,
+    input_rank: __mlir_type.index,
+    input_shape: __mlir_type[`!kgen.list<index[`, input_rank, `]>`],
+    output_rank: __mlir_type.index,
+    output_shape: __mlir_type[`!kgen.list<index[`, output_rank, `]>`],
+    type: __mlir_type.`!kgen.dtype`,
+    acc_type: __mlir_type.`!kgen.dtype`,
+    map_fn: __mlir_type[
+        `!kgen.signature<<simd_width, acc_type: dtype, type: dtype>(`,
+        SIMD[simd_width, `acc_type`],
+        `,`,
+        SIMD[simd_width, `type`],
+        `) -> `,
+        SIMD[simd_width, `acc_type`],
+        `>`,
+    ],
+    reduce_fn: __mlir_type[
+        `!kgen.signature<<simd_width, type: dtype>(`,
+        SIMD[simd_width, `type`],
+        `) -> `,
+        SIMD[1, `type`],
+        `>`,
+    ],
+    reduce_axis: __mlir_type.index,
+](
+    src: NDBuffer[input_rank, input_shape, type],
+    dst: NDBuffer[output_rank, output_shape, acc_type],
+    init: SIMD[1, acc_type],
+):
+    """Performs a reduction across reduce_axis of an NDBuffer (src) and stores
+    the result in an NDBuffer (dst).
+
+    First src is reshaped into a 3D tensor. Without loss of generality, the three
+    axes will be referred to as [H,W,C], where the axis to reduce across is W,
+    the axes before the reduce axis are packed into H, and the axes after the
+    reduce axis are packed into C. i.e. a tensor with dims [D1, D2, ..., Di, ..., Dn]
+    reducing across axis i gets packed into a 3D tensor with dims [H, W, C],
+    where H=prod(D1,...,Di-1), W = Di, and C = prod(Di+1,...,Dn).
+    """
+
+    let h_dynamic = _prod_dims[0, reduce_axis](src)
+    let w_dynamic = src.dim[reduce_axis]()
+    let c_dynamic = _prod_dims[reduce_axis + 1, input_rank](src)
+
+    alias h_static = product_or_unknown[
+        input_rank, input_shape, 0, reduce_axis
+    ]()
+    alias w_static = _get_kgen_list_item[
+        reduce_axis, input_rank, __mlir_type.index
+    ](input_shape)
+    alias c_static = product_or_unknown[
+        input_rank, input_shape, reduce_axis + 1, input_rank
+    ]()
+
+    alias input_3d_shape = create_kgen_list[__mlir_type.index](
+        h_static, w_static, c_static
+    )
+    alias output_3d_shape = create_kgen_list[__mlir_type.index](
+        h_static, c_static
+    )
+    let input_3d = NDBuffer[3, input_3d_shape, type](
+        src.data, input_3d_shape, type
+    )
+    let output_3d = NDBuffer[2, output_3d_shape, acc_type](
+        dst.data, output_3d_shape, acc_type
+    )
+
+    _reduce_3D[
+        simd_width,
+        input_3d_shape,
+        output_3d_shape,
+        type,
+        acc_type,
+        map_fn,
+        reduce_fn,
+    ](input_3d, output_3d, init)
 
 
 # ===----------------------------------------------------------------------===#
@@ -180,6 +387,33 @@ fn sum[
     return reduce[
         simd_width, size, type, type, _simd_sum_elementwise, _simd_sum
     ](src, 0)
+
+
+fn sum[
+    simd_width: __mlir_type.index,
+    input_rank: __mlir_type.index,
+    input_shape: __mlir_type[`!kgen.list<index[`, input_rank, `]>`],
+    output_rank: __mlir_type.index,
+    output_shape: __mlir_type[`!kgen.list<index[`, output_rank, `]>`],
+    type: __mlir_type.`!kgen.dtype`,
+    reduce_axis: __mlir_type.index,
+](
+    src: NDBuffer[input_rank, input_shape, type],
+    dst: NDBuffer[output_rank, output_shape, type],
+):
+    """Computes the sum across reduce_axis of an NDBuffer."""
+    return reduce[
+        simd_width,
+        input_rank,
+        input_shape,
+        output_rank,
+        output_shape,
+        type,
+        type,
+        _simd_sum_elementwise,
+        _simd_sum,
+        reduce_axis,
+    ](src, dst, 0)
 
 
 # ===----------------------------------------------------------------------===#

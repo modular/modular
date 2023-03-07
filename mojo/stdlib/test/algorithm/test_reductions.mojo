@@ -5,12 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: lit %s | FileCheck %s
 
-from Buffer import Buffer
+from Buffer import Buffer, NDBuffer
 from DType import DType
 from Reductions import sum, product, max, min, mean, variance
 from Int import Int
+from Index import StaticIntTuple
 from IO import print
 from Range import range
+from List import create_kgen_list, _get_kgen_list_item
 
 
 # CHECK-LABEL: test_reductions
@@ -74,7 +76,77 @@ fn test_mean_variance():
     print(variance[simd_width](vector))
 
 
+fn test_3d_reductions():
+    print("== test_3d_reductions\n")
+    alias simd_width = 4
+
+    @always_inline
+    fn _test_3d_reductions[
+        input_shape: __mlir_type[`!kgen.list<index[3]>`],
+        output_shape: __mlir_type[`!kgen.list<index[2]>`],
+        reduce_axis: __mlir_type.index,
+    ]():
+        let input = NDBuffer[3, input_shape, DType.f32.value].stack_allocation()
+        let output = (
+            NDBuffer[2, output_shape, DType.f32.value]
+            .stack_allocation()
+            .fill(0)
+        )
+        for i in range(input.size()):
+            input.flatten().__setitem__(i, i)
+
+        sum[
+            simd_width,
+            3,
+            input_shape,
+            2,
+            output_shape,
+            DType.f32.value,
+            reduce_axis,
+        ](input, output)
+
+        for ii in range(output.size()):
+            print(output.flatten().__getitem__(ii))
+
+    # CHECK: [6.000000]
+    # CHECK-NEXT: [22.000000]
+    # CHECK-NEXT: [38.000000]
+    # CHECK-NEXT: [54.000000]
+    _test_3d_reductions[
+        create_kgen_list[__mlir_type.index](2, 2, 4),
+        create_kgen_list[__mlir_type.index](2, 2),
+        2,
+    ]()
+    # CHECK: [4.000000]
+    # CHECK-NEXT: [6.000000]
+    # CHECK-NEXT: [8.000000]
+    # CHECK-NEXT: [10.000000]
+    # CHECK-NEXT: [20.000000]
+    # CHECK-NEXT: [22.000000]
+    # CHECK-NEXT: [24.000000]
+    # CHECK-NEXT: [26.000000]
+    _test_3d_reductions[
+        create_kgen_list[__mlir_type.index](2, 2, 4),
+        create_kgen_list[__mlir_type.index](2, 4),
+        1,
+    ]()
+    # CHECK: [8.000000]
+    # CHECK-NEXT: [10.000000]
+    # CHECK-NEXT: [12.000000]
+    # CHECK-NEXT: [14.000000]
+    # CHECK-NEXT: [16.000000]
+    # CHECK-NEXT: [18.000000]
+    # CHECK-NEXT: [20.000000]
+    # CHECK-NEXT: [22.000000]
+    _test_3d_reductions[
+        create_kgen_list[__mlir_type.index](2, 2, 4),
+        create_kgen_list[__mlir_type.index](2, 4),
+        0,
+    ]()
+
+
 fn main():
     test_reductions()
     test_product()
     test_mean_variance()
+    test_3d_reductions()
