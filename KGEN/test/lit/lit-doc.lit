@@ -85,7 +85,7 @@ fn fn_with_params[param: __mlir_type.`!kgen.dtype`]():
 
 # CHECK: | Returns ($Int::Int) |
 # CHECK: | :---- |
-# CHECK: | Returns: This is a return value.  |
+# CHECK: | This is a return value.  |
 
 
 fn fn_with_params_and_return(arg: Int) -> Int:
