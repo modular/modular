@@ -207,7 +207,7 @@ public:
     child->parent->expansions.erase(found);
     // Re-parent it under this parent.
     child->parent = this;
-    expansions.push_back(*found);
+    expansions.push_back(child);
   }
 
   /// Update the debug info on the concretization of the current node. This
