@@ -749,9 +749,7 @@ struct MatmulInnerLoopBPacked[
         self,
         c_local: NDBuffer[
             2,
-            create_kgen_list[__mlir_type.index](
-                a_row_size, pack_inner_size * simd_size
-            ),
+            create_kgen_list[__mlir_type.index](a_row_size, pack_inner_size),
             accum_type,
         ],
     ):
@@ -773,9 +771,7 @@ struct MatmulInnerLoopBPacked[
         self,
         c_local: NDBuffer[
             2,
-            create_kgen_list[__mlir_type.index](
-                a_row_size, pack_inner_size * simd_size
-            ),
+            create_kgen_list[__mlir_type.index](a_row_size, pack_inner_size),
             accum_type,
         ],
         # indexing within tile, in (m,n)
@@ -832,9 +828,7 @@ struct MatmulInnerLoopBPacked[
         self,
         c_local: NDBuffer[
             2,
-            create_kgen_list[__mlir_type.index](
-                a_row_size, pack_inner_size * simd_size
-            ),
+            create_kgen_list[__mlir_type.index](a_row_size, pack_inner_size),
             accum_type,
         ],
         tile_idx: StaticIntTuple[2],
@@ -884,9 +878,7 @@ struct MatmulInnerLoopBPacked[
         self,
         c_local: NDBuffer[
             2,
-            create_kgen_list[__mlir_type.index](
-                a_row_size, pack_inner_size * simd_size
-            ),
+            create_kgen_list[__mlir_type.index](a_row_size, pack_inner_size),
             accum_type,
         ],
         tile_n_k_idx: StaticIntTuple[2],
@@ -934,9 +926,7 @@ struct MatmulInnerLoopBPacked[
         # Allocate accumulation buffer.
         var c_local = NDBuffer[
             2,
-            create_kgen_list[__mlir_type.index](
-                a_row_size, pack_inner_size * simd_size
-            ),
+            create_kgen_list[__mlir_type.index](a_row_size, pack_inner_size),
             accum_type,
         ].stack_allocation()
 
