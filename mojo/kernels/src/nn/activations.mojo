@@ -7,7 +7,7 @@
 
 from Assert import assert_param_bool_msg
 from DType import DType
-from Math import erf, exp, tanh
+from Math import erf, exp, tanh, clamp
 from SIMD import SIMD
 
 # ===----------------------------------------------------------------------===#
@@ -31,6 +31,29 @@ fn relu[
         SIMD[simd_width, type]: The result of the RELU operation.
     """
     return x.max(0)
+
+
+# ===----------------------------------------------------------------------===#
+# relu6
+# ===----------------------------------------------------------------------===#
+
+
+fn relu6[
+    simd_width: __mlir_type.index, type: __mlir_type.`!kgen.dtype`
+](x: SIMD[simd_width, type]) -> SIMD[simd_width, type]:
+    """Compute the Relu6 Op using the equation $min(max(0,x),6)$.
+
+    Parameters:
+        simd_width: SIMD width used for the computation.
+        type: dtype used for the computation.
+
+    Args:
+        x (SIMD[simd_width, type]): The value to compute the RELU6 operation on.
+
+    Returns:
+        SIMD[simd_width, type]: The result of the RELU6 operation.
+    """
+    return clamp(x, 0, 6)
 
 
 # ===----------------------------------------------------------------------===#
