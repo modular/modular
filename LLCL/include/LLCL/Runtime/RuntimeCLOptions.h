@@ -93,12 +93,25 @@ protected:
   // Return the workqueue type to use, resolving kDefault into a concrete kind.
   WorkQueueType getWorkQueueType() const {
     // The default behavior picks a thread count based on the -num-threads
-    // command line setting, but can be overridden.
-    if (workQueueType == WorkQueueType::kDefault)
-      return numThreads == 1 ? WorkQueueType::kSingleThread
-                             : WorkQueueType::kThreadPool;
+    // command line setting, but can be overridden. -num-threads=0 means using
+    // the default work queue.
+    if (workQueueType == WorkQueueType::kDefault) {
+      if (numThreads == 0)
+        return defaultWorkQueue;
+      if (numThreads == 1)
+        return WorkQueueType::kSingleThread;
+      return WorkQueueType::kThreadPool;
+    }
     return workQueueType;
   }
+
+  /// Constructor allows to specify default work queue (e.g. to force always
+  /// using single thread)
+  RuntimeWorkQueueCLOptions(
+      WorkQueueType defaultWorkQueue = WorkQueueType::kThreadPool)
+      : defaultWorkQueue(defaultWorkQueue) {}
+
+  WorkQueueType defaultWorkQueue;
 
 public:
   /// Return the number of threads to use. If the command line num-threads
