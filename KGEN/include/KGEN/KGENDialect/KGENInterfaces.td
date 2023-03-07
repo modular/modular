@@ -53,7 +53,7 @@ def DeclInterface : OpInterface<"DeclInterface"> {
       are visible to the operations at or below the parameter scope defined by
       this operation. The `DeclInterface` is allowed to have a circular
       reference to these parameters only.
-    }], "ArrayRef<ParamDeclAttr>", "getInputParamDecls">,
+    }], "ArrayRef<ParamDeclAttr>", "getInputParams">,
 
     InterfaceMethod<[{
       Return the constraints on the input parameters at this `DeclInterface`
@@ -118,12 +118,12 @@ def FuncInterface : OpInterface<"FuncInterface"> {
     }
 
     /// Return the input parameter declarations that live in the function body.
-    ParamDeclArrayAttr getInputParamDeclsAttr() {
+    ParamDeclArrayAttr getInputParamsAttr() {
       return $_op.getSignature().getInputParams();
     }
     /// Return the list of input parameters.
-    ArrayRef<ParamDeclAttr> getInputParamDecls() {
-      return getInputParamDeclsAttr().getValue();
+    ArrayRef<ParamDeclAttr> getInputParams() {
+      return getInputParamsAttr().getValue();
     }
 
     /// Return the result parameter declarations returned from the function

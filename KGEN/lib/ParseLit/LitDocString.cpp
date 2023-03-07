@@ -302,7 +302,7 @@ private:
 
     // Grab the types of the parameters to the function.
     llvm::StringMap<std::string> paramNameToType;
-    for (auto [index, value] : llvm::enumerate(funcOp.getInputParamDecls()))
+    for (auto [index, value] : llvm::enumerate(funcOp.getInputParams()))
       paramNameToType[value.getName()] = generateTypeString(value.getType());
 
     // Grab the result type, if it's non-none.
@@ -394,7 +394,7 @@ private:
 
       // Grab the types of the parameters to the struct.
       llvm::StringMap<std::string> paramNameToType;
-      for (auto [index, value] : llvm::enumerate(structOp.getInputParamDecls()))
+      for (auto [index, value] : llvm::enumerate(structOp.getInputParams()))
         paramNameToType[value.getName()] = generateTypeString(value.getType());
 
       processStructDocDescription(docStr->getDescription(), paramNameToType);

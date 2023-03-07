@@ -779,7 +779,7 @@ static StringAttr mangleParameterValues(GeneratorOp generator,
   llvm::raw_string_ostream os(result);
   os << generator.getName();
 
-  auto inputParamDecls = generator.getInputParamDeclsAttr();
+  auto inputParamDecls = generator.getInputParamsAttr();
   for (auto [inputDecl, value] : llvm::zip(inputParamDecls, inputParamValues)) {
     os << ',' << inputDecl.getName().str() << '=';
     printParameterValue(value, os);
@@ -992,7 +992,7 @@ ElaboratorImpl::getConcreteFunction(Location loc, SymbolRefAttr symbolRef,
     topLevelTrees[{funcItf, vals}] = node;
   }
 
-  for (auto [decl, value] : llvm::zip(funcItf.getInputParamDecls(), vals))
+  for (auto [decl, value] : llvm::zip(funcItf.getInputParams(), vals))
     node->evaluator.setOrOverwriteParameterValue(decl, value);
 
   if (auto gen = dyn_cast<GeneratorOp>(funcItf.getOperation())) {
@@ -1037,7 +1037,7 @@ ElaboratorImpl::getAllConcreteFunctions(Location loc, SymbolRefAttr symbolRef,
     topLevelTrees[{funcItf, vals}] = node;
   }
 
-  for (auto [decl, value] : llvm::zip(funcItf.getInputParamDecls(), vals))
+  for (auto [decl, value] : llvm::zip(funcItf.getInputParams(), vals))
     node->evaluator.setOrOverwriteParameterValue(decl, value);
 
   if (auto gen = dyn_cast<GeneratorOp>(funcItf.getOperation())) {
@@ -1731,7 +1731,7 @@ ElaboratorImpl::specializeGenerator(ExpansionTreeNode *genNode) {
 
   // Bind all parameter values in this scope.
   ArrayRef<Attribute> inputParamValues = genNode->inputParams.getValue();
-  auto inputParamDecls = generator.getInputParamDecls();
+  auto inputParamDecls = generator.getInputParams();
   assert(inputParamValues.size() == inputParamDecls.size() &&
          "incorrect # input parameter values");
   IREvaluator &evaluator = genNode->evaluator;
@@ -1800,7 +1800,7 @@ ElaboratorImpl::specializeGenerator(ExpansionTreeNode *genNode) {
     return ErrorTree(newFunc.getLoc(), err.takeError());
 
   // Kick off the expansion for the new function.
-  return specializeFunction(newFuncNode, generator.getInputParamDeclsAttr());
+  return specializeFunction(newFuncNode, generator.getInputParamsAttr());
 }
 
 //===----------------------------------------------------------------------===//
@@ -2045,7 +2045,7 @@ public:
     // These are the only generators that will be elaborated.
     SmallVector<GeneratorOp> primaryGenerators;
     for (auto gen : theModule.getOps<GeneratorOp>())
-      if (gen.getInputParamDecls().empty() &&
+      if (gen.getInputParams().empty() &&
           (exports.empty() || exports.contains(gen)))
         primaryGenerators.push_back(gen);
 

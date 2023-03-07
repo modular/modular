@@ -217,16 +217,16 @@ void VerifyingParameterCollector::verifyRefType(DeclRefType refType) {
     return;
   }
 
-  if (refType.getParamValues().empty() && decl.getInputParamDecls().empty())
+  if (refType.getParamValues().empty() && decl.getInputParams().empty())
     return;
 
   // We have to specialize the type's parameter decls.
   ParameterEvaluator evaluator;
   for (auto [value, decl] :
-       llvm::zip(refType.getParamValues(), decl.getInputParamDecls()))
+       llvm::zip(refType.getParamValues(), decl.getInputParams()))
     evaluator.setParameterValue(decl, value.getValue());
   SmallVector<ParamDeclAttr, 8> specializedDecls;
-  for (ParamDeclAttr decl : decl.getInputParamDecls())
+  for (ParamDeclAttr decl : decl.getInputParams())
     specializedDecls.push_back(
         cast<ParamDeclAttr>(evaluator.getReboundAttribute(decl)));
 
@@ -564,7 +564,7 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
           return recordDecl(*this, decl, op, *scope);
         };
         // A declaration declares input parameters but does not define them.
-        for (ParamDeclAttr decl : decl.getInputParamDecls())
+        for (ParamDeclAttr decl : decl.getInputParams())
           if (failed(recordDeclWrapper(decl)))
             return failure();
         if (auto func = dyn_cast<FuncInterface>(op)) {
