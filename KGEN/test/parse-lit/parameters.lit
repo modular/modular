@@ -15,6 +15,7 @@ struct OurSIMD[size: index, dt: DType]:
   pass
 
 struct StructWithIntParam[size: Int]:
+  pass
 
 # CHECK-LABEL: lit.func @"paramArith{{.*}}"<x>(%y: index) -> !lit.none {
 fn paramArith[x: __mlir_type.index](y : __mlir_type.index):
@@ -46,6 +47,7 @@ fn fancy_signature[dt: DType, size: __mlir_type.index]
 
 
 fn generic_fn[a: DType, b: __mlir_type.index, c: __mlir_type.`!kgen.mlirtype`](d : __mlir_type.index):
+  pass
 
 # CHECK: lit.func @"call_generic()"<dt: @"$prolog"::@DType>()
 fn call_generic[dt: DType]():
@@ -276,6 +278,7 @@ fn testResultParamConversion[() -> b: Int](a: Int):
   param_return[4]
 
 struct Error:
+  pass
 
 # lit.func @"testResultParamThrowing()"<() -> b:
 @raises
@@ -400,6 +403,7 @@ struct MyDType:
   alias ui16 = MyDType{state: 7}
 
 struct MyVector[size: Int, dtype: MyDType]:
+  pass
 
 fn testMyDType[dt: MyDType](a: MyVector[4, MyDType.f32],
                             b: MyVector[4, dt]):
@@ -422,10 +426,12 @@ struct UnqualAliasLookup[param: __mlir_type.index]:
 # CHECK-LABEL: lit.func @"fnWithVariadics
 # CHECK-SAME: <b: variadic<@"$Int"::@Int>>
 fn fnWithVariadics[*b: Int]():
+  pass
 
 # CHECK-LABEL: lit.struct.decl @StructWithVariadics
 # CHECK-SAME: <b: variadic<@"$Int"::@Int>>
 struct StructWithVariadics[*b: Int]:
+  pass
 
 # CHECK-LABEL: lit.func @"useParamVariadics
 fn useParamVariadics():
@@ -476,12 +482,12 @@ struct StaticVec[size: index]:
   fn thing[type: __mlir_type.`!kgen.dtype`](v: __mlir_type[`!pop.simd<`, size, `, `, type, `>`]):
       return
 
-fn callee1[size: index](v: StaticVec[size]):
-fn callee2[T: __mlir_type.`!kgen.mlirtype`](v: T):
+fn callee1[size: index](v: StaticVec[size]): pass
+fn callee2[T: __mlir_type.`!kgen.mlirtype`](v: T): pass
 fn callee3[size: index, type: __mlir_type.`!kgen.dtype`]
-   (v:  __mlir_type[`!pop.simd<`, size, `, `, type, `>`]):
+   (v:  __mlir_type[`!pop.simd<`, size, `, `, type, `>`]): pass
 fn callee4[T: __mlir_type.`!kgen.mlirtype`]
-   (v:  __mlir_type[`!pop.pointer<`, T, `>`]):
+   (v:  __mlir_type[`!pop.pointer<`, T, `>`]): pass
 
 # CHECK-LABEL: lit.func @"testParamInference
 fn testParamInference[size: index](a: StaticVec[4], b: StaticVec[size],

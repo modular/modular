@@ -68,7 +68,7 @@ def var_decls():
 # CHECK-LABEL: lit.func @"empty_def()"() -> !lit.none {
 # CHECK-NEXT: lit.end_func
 fn empty_def():
-  # Pass isn't required.
+  pass
 
 # Method overloading.
 # CHECK-LABEL: lit.func @"testThing($Int::Int)"
@@ -114,6 +114,7 @@ struct NoDebugInlineTest:
 # CHECK-SAME: always_inline_no_debug {
 @always_inline("nodebug")
 fn testAlwaysInlineNoDebug():
+  pass
 
 # CHECK-LABEL: lit.func @"math{{.*}} always_inline_no_debug
 @always_inline("nodebug")
@@ -146,6 +147,7 @@ fn pleaseInline() -> __mlir_type.index:
 struct AlwaysInlineByRef:
   @always_inline("nodebug")
   fn doByRef(self&):
+    pass
 
 fn testInlineByRef(a&: AlwaysInlineByRef):
   a.doByRef()
@@ -288,7 +290,7 @@ fn raisesReturnsNone():
 # COM: We can return an variant of error and index in a non-throwing function.
 # CHECK-LABEL: lit.func @"raisesReturnsVariant()"() -> !pop.variant<@"$prolog"::@Error, index>
 fn raisesReturnsVariant() -> __mlir_type.`!pop.variant<@"$prolog"::@Error, index>`:
-    return __mlir_op.`pop.variant.create`[_type: __mlir_type.`!pop.variant<@"$prolog"::@Error, index>`](1)
+  return __mlir_op.`pop.variant.create`[_type: __mlir_type.`!pop.variant<@"$prolog"::@Error, index>`](1)
 
 # CHECK-LABEL: lit.func @"return_impl_convert_raises
 @raises
@@ -302,7 +304,7 @@ fn return_impl_convert_raises(a: Error) -> Error:
 
 # CHECK-LABEL: lit.struct.decl @EmptyStruct attributes {isRegisterPrimary} {
 struct EmptyStruct:
-  # No body
+  pass
 # CHECK-NEXT: }
 
 # CHECK-LABEL: lit.struct.decl @OneLineStruct<size: @"$Int"::@Int> {
@@ -328,7 +330,7 @@ struct StructExample:
 
   # CHECK: lit.func @"mutatingMethod($decls::StructExample&)"(%self: !pop.pointer<@"$decls"::@StructExample> byref) -> !lit.none
   fn mutatingMethod(self&):
-
+    pass
 # CHECK: }
 # CHECK-NEXT: }
 

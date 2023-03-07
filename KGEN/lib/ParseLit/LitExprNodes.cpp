@@ -937,6 +937,15 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
     }
   }
 
+  // Check for an unregistered operation, because otherwise MLIR will crash when
+  // assertions are enabled.
+  if (!state.name.getDialect() &&
+      !emitter.getContext()->allowsUnregisteredDialects()) {
+    emitter.emitError(call.getLoc(), "use of unregistered MLIR operation ")
+        << unboundOp.getName() << call.getRange();
+    return {};
+  }
+
   Operation *resultOp = emitter.builder->create(state);
 
   // Explicitly run the verifier on the new operation so we make sure to
@@ -975,19 +984,28 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   if (succeeded(resultOp->fold(constOperands, foldResults)) &&
       foldResults.size() == 1) {
     auto folded = PointerUnion<Attribute, Value>(foldResults[0]);
+    Type foldedType;
     // If the result was some other value that already exists, use it.
     if (auto val = dyn_cast<Value>(folded)) {
-      assert(val.getType() == resultOp->getResult(0).getType());
-      resultOp->erase();
-      return SRValue(val);
-    }
-
-    if (auto attr = dyn_cast<TypedAttr>(cast<Attribute>(folded))) {
-      assert(attr.getType() == resultOp->getResult(0).getType());
+      if (val.getType() == resultOp->getResult(0).getType()) {
+        resultOp->erase();
+        return SRValue(val);
+      }
+      foldedType = val.getType();
+    } else {
       // If it is a constant, make an PRValue result.
-      resultOp->erase();
-      return PRValue(attr);
+      auto attr = cast<TypedAttr>(cast<Attribute>(folded));
+      if (attr.getType() == resultOp->getResult(0).getType()) {
+        resultOp->erase();
+        return PRValue(attr);
+      }
+      foldedType = val.getType();
     }
+    emitter.emitError(call.getLoc())
+        << unboundOp.getName() << " operation folded to result type "
+        << ASTType(foldedType) << " but we expected it to be "
+        << ASTType(resultOp->getResult(0).getType()) << call.getRange();
+    return {};
   }
 
   // If folding failed, return the operation normally.

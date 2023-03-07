@@ -195,7 +195,13 @@ ParseResult LitStmtParser::parseSuite(ssize_t curIndent) {
 
   // If there is a newline, then parse a list of statements which can be either
   // a statement list or a compount_stmt.  Parse all the statements that are
-  // more nested than this suite.
+  // more nested than this suite, and reject it if there are none.
+  if (ssize_t(*indent) <= curIndent) {
+    emitError(getTokenLocOrEndOfPreviousLineIfOnNewLine())
+        << "expected body statements; use 'pass' if none is required";
+    return success();
+  }
+
   while (getToken().isNot(LitToken::eof)) {
     auto indent = getToken().getIndentation();
     if (!indent.has_value())
