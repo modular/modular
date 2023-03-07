@@ -123,13 +123,20 @@ public:
   ASTType getTypeIfKnown() const;
 
   /// Project a ValueDest into an lvalue with the specified underlying (RValue)
-  /// type.  This uses 'resultType' for inference when the ValueDest is untyped
-  /// (e.g. `var x = expr`), but may return an LValue of another type when the
-  /// dest is typed (e.g. `var x : F32 = 1`).
+  /// type.
   ///
-  /// This consumes the ValueDest.
-  LValue takeLValueForResult(SMLoc loc, ASTType resultType,
-                             ExprEmitter &emitter);
+  /// When `allowIncompatibleTypes` is true, the method is allowed to return an
+  /// LValue of a different type when the underlying storage requires this. This
+  /// is a guarantee from the caller that it is prepared to handle a type
+  /// conversion on its side, eliminating a temporary buffer in register-primary
+  /// cases like `var x : F32 = 1`.
+  ///
+  /// When `allowIncompatibleTypes` is false, this always returns an LValue of
+  /// the requested type, which may return a temporary buffer.  In this case it
+  /// will not consume the ValueDest, so any user should reemit the ultimate
+  /// value through it with emitResult.
+  LValue getLValueForResult(SMLoc loc, ASTType resultType,
+                            bool allowIncompatibleTypes, ExprEmitter &emitter);
 
   /// When an error is emitted instead of generating IR, this method resets the
   /// ValueDest so it doesn't complain when emission is done.

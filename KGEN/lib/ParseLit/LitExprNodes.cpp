@@ -1439,7 +1439,9 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
   // buffer.
   LValue memoryPrimaryBase;
   if (!structOp.getIsRegisterPrimary())
-    memoryPrimaryBase = dest.takeLValueForResult(getLoc(), initType, emitter);
+    memoryPrimaryBase =
+        dest.getLValueForResult(getLoc(), initType,
+                                /*allowIncompatibleTypes=*/false, emitter);
 
   DenseMap<StringAttr, ASTExprAnd<AnyValue>> fieldMapping;
   bool allInitializersPRValues = true;
@@ -1548,7 +1550,7 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
   // If this is memory primary, we've initialized all the fields.  Just return
   // the result.
   if (!structOp.getIsRegisterPrimary())
-    return MRValue(memoryPrimaryBase);
+    return emitter.emitResult(MRValue(memoryPrimaryBase), this, dest);
 
   // If all the fields are PRValues, form a new PRValue.
   if (allInitializersPRValues) {

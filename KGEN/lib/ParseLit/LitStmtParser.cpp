@@ -437,8 +437,8 @@ ParseResult LitStmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     return success();
 
   // Emit a warning if the result is a value we should warn when unused.
-  if (!getBlockParentOfType<LIT::FuncOp>(builder.getInsertionBlock())
-           .getIsDef())
+  auto funcOp = getBlockParentOfType<LIT::FuncOp>(builder.getInsertionBlock());
+  if (!funcOp || !funcOp.getIsDef())
     diagnoseIgnoredResult(expr, result, shared);
   return success();
 }
