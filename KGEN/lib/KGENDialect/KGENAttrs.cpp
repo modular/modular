@@ -323,6 +323,14 @@ bool TypeConstantAttr::classof(Attribute attr) {
   return attr.isa<ConcreteTypeConstantAttr, ParameterizedTypeConstantAttr>();
 }
 
+bool TypeConstantAttr::isConcreteType(Type type) {
+  // If this is a ParamRefType, then we're unwrapping a wrapper. Remove this to
+  // keep the types canonical.
+  if (auto refType = ::dyn_cast<ParamRefType>(type))
+    return ::isa<ConcreteTypeConstantAttr>(refType.getParam());
+  return !isParameterizedType(type);
+}
+
 //===----------------------------------------------------------------------===//
 // ConcreteTypeConstantAttr
 //===----------------------------------------------------------------------===//

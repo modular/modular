@@ -207,7 +207,7 @@ ErrorTreeOr<Type> IREvaluator::concretizeParameterExpr(Location loc,
   if (error)
     return std::move(*error);
 
-  if (isa<ConcreteTypeConstantAttr>(TypeConstantAttr::get(result)))
+  if (TypeConstantAttr::isConcreteType(result))
     return result;
   return ErrorTree(loc, Error("could not simplify type: " +
                               getParamAsString(TypeConstantAttr::get(result))));
