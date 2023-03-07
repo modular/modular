@@ -229,7 +229,7 @@ private:
     os << "| :---- |\n";
 
     // Extract the argument name and description.
-    os << "| " << lines[line].trim();
+    os << "| " << lines[++line].trim();
 
     // Merge in additional description lines that have equal or larger
     // indentation.
