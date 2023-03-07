@@ -214,7 +214,7 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
   }
 
   // Remove all dead code.
-  for (Block *block : deadBlocks)
+  for (Block *block : llvm::reverse(deadBlocks))
     block->erase();
 
   // Check if the function lacks a top-level terminator. If the function
