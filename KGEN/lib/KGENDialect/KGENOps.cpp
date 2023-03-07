@@ -628,7 +628,7 @@ LogicalResult ParamIfOp::verify() {
 
   // Check that the result parameters work.
   auto checkResultParams = [&](Operation *terminator) -> LogicalResult {
-    if (getParamDecls().empty())
+    if (getResultParams().empty())
       return success();
 
     if (!isa<ParamYieldOp>(terminator))
@@ -639,7 +639,7 @@ LogicalResult ParamIfOp::verify() {
 
     auto yieldOp = cast<ParamYieldOp>(terminator);
     for (auto [decl, value] :
-         llvm::zip(getParamDecls(), yieldOp.getParameters()))
+         llvm::zip(getResultParams(), yieldOp.getParameters()))
       if (decl.getType() != value.getType())
         return (mlir::emitError(
                     terminator->getLoc(),
@@ -675,18 +675,18 @@ ValueRange ParamIfOp::getEntryArguments(std::optional<unsigned> target) {
 }
 
 void ParamIfOp::walkDeclarations(function_ref<void(ParamDeclAttr)> walkDecl) {
-  llvm::for_each(getParamDecls(), walkDecl);
+  llvm::for_each(getResultParams(), walkDecl);
 }
 
 void ParamIfOp::walkDefinitions(
     function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {
   ParamDefValue value(getCond(), {&getThenRegion(), &getElseRegion()});
-  for (ParamDeclAttr decl : getParamDecls())
+  for (ParamDeclAttr decl : getResultParams())
     walkDef(decl, value);
 }
 
 void ParamIfOp::renameDeclarations(ArrayRef<ParamDeclAttr> decls) {
-  setParamDeclsAttr(ParamDeclArrayAttr::get(getContext(), decls));
+  setResultParams(decls);
 }
 
 bool ParamIfOp::isImplicitlyParametric() { return true; }
@@ -713,7 +713,7 @@ void ParamYieldOp::getBranchTargets(
 void ParamYieldOp::walkDefinitions(
     function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {
   for (auto [decl, value] :
-       llvm::zip(cast<ParamIfOp>((*this)->getParentOp()).getParamDecls(),
+       llvm::zip(cast<ParamIfOp>((*this)->getParentOp()).getResultParams(),
                  getParameters()))
     walkDef(decl, value);
 }

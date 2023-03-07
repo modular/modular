@@ -563,16 +563,12 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
           isDecl = true;
           return recordDecl(*this, decl, op, *scope);
         };
-        // A declaration declares input parameters but does not define them.
-        for (ParamDeclAttr decl : decl.getInputParams())
+        // A declaration declares input and/or result parameters but does not
+        // define them.
+        for (ParamDeclAttr decl : llvm::concat<const ParamDeclAttr>(
+                 decl.getInputParams(), decl.getResultParams()))
           if (failed(recordDeclWrapper(decl)))
             return failure();
-        if (auto func = dyn_cast<FuncInterface>(op)) {
-          // A function declares result parameters but does not define them.
-          for (ParamDeclAttr decl : func.getResultParams())
-            if (failed(recordDeclWrapper(decl)))
-              return failure();
-        }
       }
     }
 

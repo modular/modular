@@ -49,11 +49,19 @@ def DeclInterface : OpInterface<"DeclInterface"> {
       [{}], [{ }]>,
 
     InterfaceMethod<[{
-      Return the parameters declared at this parameter scope. These parameters
-      are visible to the operations at or below the parameter scope defined by
-      this operation. The `DeclInterface` is allowed to have a circular
-      reference to these parameters only.
+      Get the input parameters to this parameter scope. These parameters are
+      visible to the operations at or below the parameter scope defined by this
+      operation. The `DeclInterface` is allowed to have a circular reference to
+      these parameters.
     }], "ArrayRef<ParamDeclAttr>", "getInputParams">,
+
+    InterfaceMethod<[{
+      Get the result parameters declared at this parameter scope. These
+      parameters are visible to the operations at or below the parameter scope
+      defined by this operation. The `DeclInterface` is allowed to have a
+      circular reference to these parameters only. These parameters must be
+      defined by an operation inside the sopce.
+    }], "ArrayRef<ParamDeclAttr>", "getResultParams">,
 
     InterfaceMethod<[{
       Return the constraints on the input parameters at this `DeclInterface`
