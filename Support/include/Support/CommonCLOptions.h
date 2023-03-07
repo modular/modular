@@ -131,7 +131,7 @@ public:
 
   /// Determine an output file name and open it.
   std::unique_ptr<llvm::ToolOutputFile>
-  getOutputFile(bool hasBinaryOutput) const;
+  getOutputFile(bool hasBinaryOutput, StringRef fileExtension = ".mef") const;
 
   /// This method creates an MLIR context with the specified memory buffer as
   /// the primary file configured in the source mgr.  It configures it for

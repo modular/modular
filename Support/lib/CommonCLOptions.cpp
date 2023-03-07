@@ -11,14 +11,15 @@
 using namespace M;
 
 std::unique_ptr<llvm::ToolOutputFile>
-CommonCLOptions::getOutputFile(bool hasBinaryOutput) const {
+CommonCLOptions::getOutputFile(bool hasBinaryOutput,
+                               StringRef fileExtension) const {
   // We generally listen to the `-o filename` command, unless we're being
   // asked to emit a binary file format to the console.  In that case, we
   // default to emitting a variant of the input filename.
   std::string outFile = outputFilename.getValue();
   if (hasBinaryOutput && inputFilename != "-" &&
       outputFilename.getNumOccurrences() == 0) {
-    outFile = inputFilename.getValue() + ".mef";
+    outFile = inputFilename.getValue() + fileExtension.str();
     llvm::outs() << "Emitting binary file to " << outFile << ".\n";
   }
 
