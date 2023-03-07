@@ -142,12 +142,6 @@ public:
   /// Return the name of the operation this node represents.
   StringAttr getNameAttr() { return op.getNameAttr(); }
 
-  /// Given an operation and its input params, find the node in the subtree that
-  /// has the correct operation and input params. The max depth is related to
-  /// the type of the thing you're looking for - 1 for interfaces, 2 for
-  /// generators, and 3 for concretized functions.
-  ExpansionTreeNode *find(Operation *op, ArrayAttr inputParams);
-
   /// Get the root of the tree. This is useful for when you need to add a new
   /// generator to multi-version a call, for example. There is always a single
   /// root.
@@ -295,41 +289,6 @@ ExpansionTreeNode::ExpansionTreeNode(
         "elaborator expansion is 129 levels deep - infinite recursion?");
   }
   LLVM_DEBUG(print(logger << "Constructing "));
-}
-
-ExpansionTreeNode *ExpansionTreeNode::find(Operation *op,
-                                           ArrayAttr inputParams) {
-  // Compute the max depth automatically based on the op's type.
-  unsigned maxDepth = 0;
-  if (isa<GeneratorOp>(op))
-    maxDepth = 1;
-  else if (isa<FuncOp>(op))
-    maxDepth = 3;
-
-  // Do a depth-limited DFS search of the children.
-  std::stack<std::pair<ExpansionTreeNode *, unsigned>> toExplore;
-  toExplore.emplace(this, 0);
-  for (auto &child : expansions)
-    toExplore.emplace(child, 1);
-
-  while (!toExplore.empty()) {
-    auto [front, depth] = toExplore.top();
-    toExplore.pop();
-    // If we found it, great. Return it.
-    if (front->op == op && front->inputParams == inputParams)
-      return front;
-
-    // If we're going too deep in the stack, then don't explore any further
-    // children.
-    if (depth >= maxDepth)
-      continue;
-
-    // Otherwise, put the children of this child onto the stack.
-    for (auto child : front->expansions)
-      toExplore.emplace(child, depth + 1);
-  }
-
-  return nullptr;
 }
 
 bool ExpansionTreeNode::isConcrete() {
@@ -998,6 +957,9 @@ private:
   llvm::SpecificBumpPtrAllocator<ExpansionTreeNode> alloc;
   /// The root of the expansion tree.
   ExpansionTreeNode root;
+  /// Hash table to speed up lookups of generators in the expansion tree.
+  DenseMap<std::pair<Operation *, ArrayAttr>, ExpansionTreeNode *>
+      topLevelTrees;
 
   /// Evaluation semaphore - this ensures we benchmark one thing at a time. We
   /// initialize it to 1 so that the first thing to evaluate something doesn't
@@ -1026,15 +988,17 @@ ElaboratorImpl::getConcreteFunction(Location loc, SymbolRefAttr symbolRef,
   auto vals = ArrayAttr::get(symbolRef.getContext(), inputParams);
 
   // Lookup the node if it already exists.
-  ExpansionTreeNode *node = root.find(funcItf, vals);
+  ExpansionTreeNode *node = topLevelTrees.lookup({funcItf, vals});
   // If the node has already been elaborated, just use that result.
   if (node && node->isConcrete())
     return node->getFirstConcrete();
 
   // Otherwise, if the node doesn't exist, then create a new one.
-  if (!node)
+  if (!node) {
     node =
         ExpansionTreeNode::create(funcItf, vals, &root, IREvaluator(*this), 0);
+    topLevelTrees[{funcItf, vals}] = node;
+  }
 
   for (auto [decl, value] : llvm::zip(funcItf.getInputParamDecls(), vals))
     node->evaluator.setOrOverwriteParameterValue(decl, value);
@@ -1067,7 +1031,7 @@ ElaboratorImpl::getAllConcreteFunctions(Location loc, SymbolRefAttr symbolRef,
   auto vals = ArrayAttr::get(symbolRef.getContext(), inputParams);
 
   // Lookup the node if it already exists.
-  ExpansionTreeNode *node = root.find(funcItf, vals);
+  ExpansionTreeNode *node = topLevelTrees.lookup({funcItf, vals});
   // If the node has already been elaborated, just use that result.
   if (node && node->isConcrete()) {
     node->getAllConcrete(funcs);
@@ -1075,9 +1039,11 @@ ElaboratorImpl::getAllConcreteFunctions(Location loc, SymbolRefAttr symbolRef,
   }
 
   // Otherwise, if the node doesn't exist, then create a new one.
-  if (!node)
+  if (!node) {
     node =
         ExpansionTreeNode::create(funcItf, vals, &root, IREvaluator(*this), 0);
+    topLevelTrees[{funcItf, vals}] = node;
+  }
 
   for (auto [decl, value] : llvm::zip(funcItf.getInputParamDecls(), vals))
     node->evaluator.setOrOverwriteParameterValue(decl, value);
@@ -1253,7 +1219,7 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
   }
 
   // Find the tree node that corresponds to the thing we're calling.
-  auto callee = root.find(calleeOp, inputParamKey);
+  auto callee = topLevelTrees.lookup({calleeOp, inputParamKey});
   // If we haven't found this callee yet, we have to add it to the tree!
   if (!callee) {
     // Use the parent of the call to show the expansion depth, and inherit the
@@ -1263,6 +1229,8 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
                                   IREvaluator(*this), parent->expansionDepth);
     if (calleeNode->error)
       return std::move(calleeNode->error);
+
+    topLevelTrees[{calleeOp, inputParamKey}] = calleeNode;
 
     if (isa<GeneratorOp>(calleeOp)) {
       if (auto err = specializeGenerator(calleeNode))
@@ -1788,7 +1756,8 @@ ElaboratorImpl::specializeGenerator(ExpansionTreeNode *genNode) {
   // If we already have something in the tree then don't re-specialize.
   StringAttr mangledName = mangleParameterValues(generator, inputParamValues);
   if (Operation *op = lookup(mangledName)) {
-    if (auto found = genNode->getRoot()->find(op, genNode->inputParams)) {
+    if (ExpansionTreeNode *found =
+            topLevelTrees.lookup({op, genNode->inputParams})) {
       LLVM_DEBUG(logger << "Result: Generator has already been specialized\n");
 
       // If we have the node, then take it as a child.
@@ -1860,10 +1829,13 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
     LLVM_DEBUG(logger.logOp("Elaborating primary generator", gen));
     // This has no input parameters, so we can create the expansion node with
     // no input parameters.
-    ExpansionTreeNode *generatorNode = root.find(gen, emptyInputParamKey);
-    if (!generatorNode)
+    ExpansionTreeNode *generatorNode =
+        topLevelTrees.lookup({gen, emptyInputParamKey});
+    if (!generatorNode) {
       generatorNode = ExpansionTreeNode::create(gen, emptyInputParamKey, &root,
                                                 IREvaluator(*this), 0);
+      topLevelTrees[{gen, emptyInputParamKey}] = generatorNode;
+    }
 
     // Now we can begin to construct the expansion tree rooted at this
     // generator.
@@ -1881,7 +1853,7 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
   // We have to walk all the generators in the module because we have to rename
   // each one to its first implementation.
   for (auto gen : theModule.getOps<GeneratorOp>()) {
-    auto genNode = root.find(gen, emptyInputParamKey);
+    auto genNode = topLevelTrees.lookup({gen, emptyInputParamKey});
     if (!genNode)
       continue;
 
@@ -1911,7 +1883,7 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
   // If we have failed, emit your errors and return failure.
   if (failed) {
     for (auto gen : primaryGenerators) {
-      auto genNode = root.find(gen, emptyInputParamKey);
+      auto genNode = topLevelTrees.lookup({gen, emptyInputParamKey});
       assert(genNode && "We must have a node for a primary generator");
       genNode->trimFailedExpansions(toErase);
       if (genNode->error)
