@@ -295,3 +295,19 @@ lit.func @topFunc() -> !lit.none {
   kgen.param.declare mid: () -> !lit.none = <midFunc>
   lit.end_func
 }
+
+// CHECK-LABEL: lit.func @return_after_return
+lit.func @return_after_return() -> !lit.none {
+  %0 = kgen.param.constant: !lit.none = <#lit.none>
+  // CHECK: kgen.return %0 : !lit.none
+  lit.return %0 : !lit.none
+  %1 = kgen.param.constant: i1 = <1>
+  hlcf.if %1 {
+    %2 = kgen.param.constant: !lit.none = <#lit.none>
+    lit.return %2 : !lit.none
+    hlcf.yield
+  } else {
+    hlcf.yield
+  }
+  lit.end_func
+}
