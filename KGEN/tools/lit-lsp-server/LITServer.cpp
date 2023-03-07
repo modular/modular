@@ -8,6 +8,7 @@
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/ParseLit.h"
+#include "LLCL/Runtime/Runtime.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Support/Timing.h"
@@ -81,7 +82,8 @@ namespace {
 /// document.
 struct LITDocument {
   LITDocument(const lsp::URIForFile &uri, StringRef contents, int64_t version,
-              std::vector<lsp::Diagnostic> &diagnostics);
+              std::vector<lsp::Diagnostic> &diagnostics,
+              LLCL::Runtime &runtime);
   LITDocument(const LITDocument &) = delete;
   LITDocument &operator=(const LITDocument &) = delete;
 
@@ -131,13 +133,17 @@ struct LITDocument {
   /// of the file.
   std::map<std::pair<lsp::Range, std::string>, std::vector<lsp::CodeAction>>
       fixits;
+
+  /// The runtime used when parsing the file.
+  LLCL::Runtime &runtime;
 };
 } // namespace
 
 LITDocument::LITDocument(const lsp::URIForFile &uri, StringRef contents,
                          int64_t version,
-                         std::vector<lsp::Diagnostic> &diagnostics)
-    : contents(contents.str()), version(version) {
+                         std::vector<lsp::Diagnostic> &diagnostics,
+                         LLCL::Runtime &runtime)
+    : contents(contents.str()), version(version), runtime(runtime) {
   initialize(uri, diagnostics);
 }
 
@@ -179,7 +185,7 @@ void LITDocument::initialize(const lsp::URIForFile &uri,
   MLIRContext context(MLIRContext::Threading::DISABLED);
   mlir::TimingScope ts;
   M::importLitFile(sourceMgr, &context, ts, KGEN::CompilationOptions(),
-                   /*useMLIRDiagnostics=*/false);
+                   /*useMLIRDiagnostics=*/false, runtime);
 
   // Process the collected diagnostics.
   for (ArrayRef<llvm::SMDiagnostic> diags : handlerCtx.smDiagnostics) {
@@ -366,6 +372,10 @@ void LITDocument::getCodeActions(const lsp::URIForFile &uri,
 //===----------------------------------------------------------------------===//
 
 struct LITServer::Impl {
+  /// The runtime used when processing files.
+  LLCL::Runtime runtime{LLCL::createMallocAllocator(),
+                        LLCL::createThreadPoolWorkQueue()};
+
   /// The files held by the server, mapped by their URI file name.
   llvm::StringMap<std::unique_ptr<LITDocument>> files;
 };
@@ -380,8 +390,8 @@ LITServer::~LITServer() = default;
 void LITServer::addDocument(const lsp::URIForFile &uri, StringRef contents,
                             int64_t version,
                             std::vector<lsp::Diagnostic> &diagnostics) {
-  impl->files[uri.file()] =
-      std::make_unique<LITDocument>(uri, contents, version, diagnostics);
+  impl->files[uri.file()] = std::make_unique<LITDocument>(
+      uri, contents, version, diagnostics, impl->runtime);
 }
 
 void LITServer::updateDocument(

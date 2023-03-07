@@ -21,6 +21,9 @@ namespace M {
 namespace KGEN {
 class CompilationOptions;
 } // namespace KGEN
+namespace LLCL {
+class Runtime;
+} // namespace LLCL
 
 /// Parse a single .lit file and return the MLIR module for it.
 ///
@@ -33,7 +36,7 @@ class CompilationOptions;
 OwningOpRef<ModuleOp>
 importLitFile(llvm::SourceMgr &sourceMgr, MLIRContext *context,
               mlir::TimingScope &ts, const KGEN::CompilationOptions &options,
-              bool useMLIRDiagnostics,
+              bool useMLIRDiagnostics, LLCL::Runtime &runtime,
               SmallVectorImpl<std::string> *includedFiles = nullptr);
 
 /// Parse a single .lit file and produce an appropriate document detailing the
@@ -41,7 +44,8 @@ importLitFile(llvm::SourceMgr &sourceMgr, MLIRContext *context,
 /// provided output stream, in markdown format.
 LogicalResult generateLitDoc(llvm::SourceMgr &sourceMgr, MLIRContext *context,
                              raw_ostream &outputOS, mlir::TimingScope &ts,
-                             const KGEN::CompilationOptions &options);
+                             const KGEN::CompilationOptions &options,
+                             LLCL::Runtime &runtime);
 } // namespace M
 
 #endif // KGEN_PARSELIT_H

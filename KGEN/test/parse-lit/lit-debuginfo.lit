@@ -1,4 +1,4 @@
-# RUN: kgen-translate -import-lit -I %S -split-input-file -import-lit-debug-level=full -mlir-print-debuginfo %s -I %S/../lit-examples/ | FileCheck %s
+# RUN: kgen-translate -import-lit -I %S -split-input-file -debug-level=full -mlir-print-debuginfo %s -I %S/../lit-examples/ | FileCheck %s
 
 from prolog import Int
 import imported_module

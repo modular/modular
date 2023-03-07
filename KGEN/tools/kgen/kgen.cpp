@@ -191,6 +191,9 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
                                        /*genLocalReproducer=*/true);
   }
 
+  // Set up the runtime.
+  std::unique_ptr<LLCL::Runtime> runtime = clOptions.createRuntime();
+
   // The set of files included during processing, used to generate the
   // dependency file.
   SmallVector<std::string> includedFiles;
@@ -198,7 +201,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   if (inputFileName.ends_with(".lit")) {
     TimingScope litScope = timing.nest("Import Lit");
     theModule = importLitFile(mgr, ctx, litScope, compilationOptions,
-                              clOptions.enableMLIRDiagnostics, &includedFiles);
+                              clOptions.enableMLIRDiagnostics, *runtime,
+                              &includedFiles);
   } else if (compilationOptions.getDebugInfoLevelForInput()) {
     theModule = DebugInfo::parseSourceFileWithDebugInfo(
         mgr, ctx, compilationOptions.getDIEmissionKind());
@@ -207,9 +211,6 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   }
   if (!theModule)
     return failure(clOptions.reportError("could not parse the module"));
-
-  // Set up the runtime.
-  std::unique_ptr<LLCL::Runtime> runtime = clOptions.createRuntime();
 
   // Find a target specification or construct one using the commandline options.
   TargetInfoAttr target = getTargetInfo(*theModule);

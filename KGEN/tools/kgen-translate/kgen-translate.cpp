@@ -4,8 +4,12 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/CLOptions.h"
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/ParseLit.h"
+#include "LLCL/Runtime/Allocator.h"
+#include "LLCL/Runtime/Runtime.h"
+#include "LLCL/Runtime/WorkQueue.h"
 #include "Support/MDialect/MDialect.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Support/Timing.h"
@@ -20,33 +24,19 @@
 using namespace M;
 
 int main(int argc, char *argv[]) {
-  // Register the lit parser.
-  llvm::cl::opt<KGEN::CompilationOptions::DebugInfoLevel> debugInfoLevel{
-      "import-lit-debug-level",
-      llvm::cl::desc("The level of debug info to use during import"),
-      llvm::cl::values(
-          clEnumValN(KGEN::CompilationOptions::kNoDebug, "none",
-                     "Disable all debug info."),
-          clEnumValN(KGEN::CompilationOptions::kLineTablesOnly, "line-tables",
-                     "Only generate debug info for line number tables."),
-          clEnumValN(KGEN::CompilationOptions::kFullDebugInfo, "full",
-                     "Generate full debug info.")),
-      llvm::cl::init(KGEN::CompilationOptions::kNoDebug)};
-
-  // TODO: This should be upstreamed directly into mlirTranslateMain.
-  llvm::cl::list<std::string> searchPaths{
-      "I", llvm::cl::desc("Paths to use when searching for included files.")};
+  KGEN::KGENCommonOptions clOptions;
 
   mlir::TranslateToMLIRRegistration fromLit(
       "import-lit", "Import 'lit' from source",
       [&](llvm::SourceMgr &sourceMgr, MLIRContext *context) {
-        sourceMgr.setIncludeDirs(searchPaths);
+        sourceMgr.setIncludeDirs(clOptions.searchPaths);
 
+        // Set up the runtime.
+        std::unique_ptr<LLCL::Runtime> runtime = clOptions.createRuntime();
         mlir::TimingScope ts;
-        KGEN::CompilationOptions options;
-        options.debugLevel = debugInfoLevel;
+        KGEN::CompilationOptions options = clOptions.getCompilationOptions();
         return importLitFile(sourceMgr, context, ts, options,
-                             /*useMLIRForDiagnostics*/ true);
+                             /*useMLIRDiagnostics=*/true, *runtime);
       });
 
   // Register LLVM IR generation.

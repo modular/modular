@@ -86,9 +86,9 @@ public:
 
 LitSharedState::LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context,
                                const CompilationOptions &options,
-                               bool useMLIRDiagnostics)
+                               bool useMLIRDiagnostics, LLCL::Runtime &runtime)
     : diags(sourceMgr, context, useMLIRDiagnostics), options(options),
-      declResolver(std::make_unique<DeclResolver>(*this)),
+      declResolver(std::make_unique<DeclResolver>(*this)), runtime(runtime),
       impl(std::make_unique<Impl>()) {
   impl->stdlibPath = getStandardLibraryPath();
 
