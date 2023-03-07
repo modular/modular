@@ -20,6 +20,7 @@
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LitDecls.h"
+#include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/HLCFDialect/HLCFDialect.h"
 #include "mlir/AsmParser/AsmParser.h"
@@ -64,6 +65,10 @@ static std::optional<std::string> getStandardLibraryPath() {
 class LitSharedState::Impl {
 public:
   SymbolTableCollection symbolTables;
+
+  /// A map of symbol tables to unique counters for names within those
+  /// symbol tables.
+  DenseMap<std::pair<SymbolTable *, StringAttr>, unsigned> symbolTableCounters;
 
   /// The path of the standard library, or nullopt if it is not available.
   std::optional<std::string> stdlibPath;
@@ -211,16 +216,26 @@ Operation *LitSharedState::setResolvedDeclSymbol(Operation *declOp) {
 
   // Insert the operation into the symbol table and see if it got renamed.
   // Restore the original position of the operation after.
-  auto origName = SymbolTable::getSymbolName(declOp);
   Block *prevBlock = declOp->getBlock();
   Block::iterator prevPos = std::next(declOp->getIterator());
   declOp->remove();
   auto resetPos =
       llvm::make_scope_exit([&] { declOp->moveBefore(prevBlock, prevPos); });
-  if (symTab.insert(declOp) == origName)
-    return nullptr; // No conflict, done.
 
-  return symTab.lookup(origName);
+  StringAttr origName = SymbolTable::getSymbolName(declOp);
+  Operation *existingOp = symTab.lookup(origName);
+  if (existingOp && existingOp != declOp) {
+    unsigned &counter = impl->symbolTableCounters[{&symTab, origName}];
+    SymbolTable::setSymbolName(
+        declOp, getUniqueSymbolName(origName.str(), symTab, counter));
+  } else {
+    existingOp = nullptr;
+  }
+
+  auto newName = symTab.insert(declOp);
+  assert(newName == SymbolTable::getSymbolName(declOp) &&
+         "symbol table insertion changed the name");
+  return existingOp;
 }
 
 //===----------------------------------------------------------------------===//
