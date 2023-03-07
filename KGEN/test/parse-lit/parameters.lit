@@ -212,12 +212,13 @@ fn no_result_param[a: __mlir_type.index]():
 fn idx_result_params[a: __mlir_type.index -> b: __mlir_type.index, c: __mlir_type.index]() -> Int:
   # CHECK: %0 = kgen.param.constant = <add(a, 2)>
   # CHECK: %1 = kgen.call{{.*}}__new__{{.*}}(%0)
-  # CHECK: lit.return<a, add(a, 1)> %1
+  # CHECK-NEXT: lit.param_return<a, add(a, 1)>
+  # CHECK-NEXT: lit.return %1
   return[a,a+1] a+2
 
 # CHECK-LABEL: lit.func @"just_result_params()"<() -> a>()
 fn just_result_params[() -> a: __mlir_type.index]():
-  # CHECK: lit.return<42>
+  # CHECK: lit.param_return<42>
   return[42]
 
 
@@ -237,7 +238,7 @@ fn search3[a: __mlir_type.index, b: __mlir_type.index, c: __mlir_type.index
    ]()
    # CHECK: kgen.param.declare result = <result_hidden>
    alias result = __mlir_attr.`#kgen.param.decl.ref<"result_hidden"> : index`
-   # CHECK: lit.return<result>
+   # CHECK: lit.param_return<result>
    return[result]
 
 # CHECK-LABEL: lit.func @"useResultParams
@@ -270,7 +271,7 @@ fn useResultParams(i: Int):
 # Issue #6904: Parameter results don't get implicit conversions
 # CHECK: lit.func @"testResultParamConversion
 fn testResultParamConversion[() -> b: Int](a: Int):
-  # CHECK: lit.return<:@"$Int"::@Int #lit.struct<{{.*}}4}
+  # CHECK: lit.param_return<:@"$Int"::@Int #lit.struct<{{.*}}4}
   return[4]
 
 ##===----------------------------------------------------------------------===##

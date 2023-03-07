@@ -546,8 +546,10 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   if (!resultSRValue)
     return {};
 
-  builder.create<LIT::ReturnOp>(translateLocation(loc), resultSRValue,
-                                resultParamValues);
+  Location retLoc = translateLocation(loc);
+  if (!resultParamValues.empty())
+    builder.create<LIT::ParamReturnOp>(retLoc, resultParamValues);
+  builder.create<LIT::ReturnOp>(retLoc, resultSRValue);
   return success();
 }
 
