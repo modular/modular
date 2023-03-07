@@ -111,9 +111,10 @@ importLitFileImpl(SourceMgr &sourceMgr, LitSharedState &sharedState,
 OwningOpRef<mlir::ModuleOp>
 M::importLitFile(SourceMgr &sourceMgr, MLIRContext *context,
                  mlir::TimingScope &ts, const KGEN::CompilationOptions &options,
-                 bool useMLIRDiagnostics,
+                 bool useMLIRDiagnostics, LLCL::Runtime &runtime,
                  SmallVectorImpl<std::string> *includedFiles) {
-  LitSharedState sharedState(sourceMgr, context, options, useMLIRDiagnostics);
+  LitSharedState sharedState(sourceMgr, context, options, useMLIRDiagnostics,
+                             runtime);
   auto [module, topLevelDecl] =
       importLitFileImpl(sourceMgr, sharedState, ts, includedFiles);
   return std::move(module);
@@ -122,9 +123,10 @@ M::importLitFile(SourceMgr &sourceMgr, MLIRContext *context,
 LogicalResult M::generateLitDoc(llvm::SourceMgr &sourceMgr,
                                 MLIRContext *context, raw_ostream &outputOS,
                                 mlir::TimingScope &ts,
-                                const KGEN::CompilationOptions &options) {
+                                const KGEN::CompilationOptions &options,
+                                LLCL::Runtime &runtime) {
   LitSharedState sharedState(sourceMgr, context, options,
-                             /*useMLIRDiagnostics=*/false);
+                             /*useMLIRDiagnostics=*/false, runtime);
   auto [module, moduleDecl] = importLitFileImpl(sourceMgr, sharedState, ts);
   if (!module)
     return failure();

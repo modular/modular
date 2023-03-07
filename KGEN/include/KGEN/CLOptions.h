@@ -67,11 +67,8 @@ public:
 // CLOptions
 //===----------------------------------------------------------------------===//
 
-class KGENCommonOptions : public CommonCLOptions,
-                          public LLCL::RuntimeWorkQueueCLOptions {
+class KGENCommonOptions : public LLCL::RuntimeWorkQueueCLOptions {
 public:
-  using CommonCLOptions::CommonCLOptions;
-
   cl::opt<CompilationOptions::DebugInfoLevel> debugInfoLevel{
       "debug-level",
       cl::desc("The level of debug info to use during compilation"),
@@ -163,9 +160,9 @@ private:
                           cl::desc("Aggresively enable all optimizations")};
 };
 
-class KGENCLOptions : public KGENCommonOptions {
+class KGENCLOptions : public KGENCommonOptions, public CommonCLOptions {
 public:
-  using KGENCommonOptions::KGENCommonOptions;
+  using CommonCLOptions::CommonCLOptions;
 
   cl::opt<Command> cmd{
       cl::desc("The command to execute"),
@@ -200,10 +197,16 @@ public:
 
 /// Common trace profiler setup.
 struct TraceProfiler {
-  TraceProfiler(const KGENCommonOptions &clOptions);
+  template <typename OptionsT>
+  TraceProfiler(const OptionsT &clOptions) {
+    if (clOptions.timeTrace)
+      initialize(clOptions.timeTraceGranularity, clOptions);
+  }
   ~TraceProfiler();
 
 private:
+  void initialize(int timeTraceGranularity, const CLOptionsBase &options);
+
   std::optional<TimeTraceProfiler> profiler;
   std::filesystem::path outputFilePath;
 };

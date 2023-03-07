@@ -46,9 +46,9 @@ enum class LitCommand {
   kExecute,
 };
 
-class CLOptions : public KGENCommonOptions {
+class CLOptions : public KGENCommonOptions, public CommonCLOptions {
 public:
-  using KGENCommonOptions::KGENCommonOptions;
+  using CommonCLOptions::CommonCLOptions;
 
   cl::opt<LitCommand> cmd{
       cl::desc("The command to execute"),
@@ -143,14 +143,15 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   if (clOptions.cmd == LitCommand::kDocGen) {
     std::unique_ptr<llvm::ToolOutputFile> os =
         clOptions.getOutputFile(/*hasBinaryOutput=*/false);
-    if (failed(
-            generateLitDoc(mgr, ctx, os->os(), litScope, compilationOptions)))
+    if (failed(generateLitDoc(mgr, ctx, os->os(), litScope, compilationOptions,
+                              *runtime)))
       return clOptions.reportError("could not generate documentation");
     os->keep();
     return EXIT_SUCCESS;
   }
 
-  theModule = importLitFile(mgr, ctx, litScope, compilationOptions, false);
+  theModule = importLitFile(mgr, ctx, litScope, compilationOptions,
+                            /*useMLIRDiagnostics=*/false, *runtime);
 
   if (!theModule)
     return clOptions.reportError("could not parse the module");

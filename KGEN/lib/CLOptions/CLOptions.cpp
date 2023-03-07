@@ -127,10 +127,9 @@ bool CommandLineFuncParser::parse(llvm::cl::Option &o, StringRef argName,
 // TraceProfiler
 //===--------------------------------------------------------------------===//
 
-TraceProfiler::TraceProfiler(const KGENCommonOptions &clOptions) {
-  if (!clOptions.timeTrace)
-    return;
-  profiler.emplace(clOptions.timeTraceGranularity, "kgen");
+void TraceProfiler::initialize(int timeTraceGranularity,
+                               const CLOptionsBase &clOptions) {
+  profiler.emplace(timeTraceGranularity, "kgen");
 
   std::error_code ec;
   std::filesystem::path derived = std::filesystem::absolute(

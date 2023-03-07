@@ -24,9 +24,11 @@ add_modular_conversion_library(ParseLit
   MLIRKGENPasses
 
   LINK_LIBS PUBLIC
+  CacheDialect
   DebugInfoDialect
   HLCFDialect
   LITDialect
+  LLCLRuntime
   KGENDialect
   POPDialect
 

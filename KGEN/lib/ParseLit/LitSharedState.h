@@ -23,7 +23,11 @@ class DIBuilder;
 namespace M::KGEN {
 class CompilationOptions;
 class ParamDeclAttr;
-}
+} // namespace M::KGEN
+
+namespace M::LLCL {
+class Runtime;
+} // namespace M::LLCL
 
 namespace M::KGEN::LIT {
 class DeclResolver;
@@ -46,7 +50,8 @@ inline const char *plural(size_t value, const char *one = "",
 class LitSharedState {
 public:
   LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context,
-                 const CompilationOptions &options, bool useMLIRDiagnostics);
+                 const CompilationOptions &options, bool useMLIRDiagnostics,
+                 LLCL::Runtime &runtime);
   ~LitSharedState();
 
   LitDiags diags; // Contains SourceMgr and MLIRContext pointers.
@@ -54,6 +59,7 @@ public:
 
   std::unique_ptr<DeclResolver> declResolver;
   std::unique_ptr<DebugInfo::DIBuilder> diBuilder;
+  LLCL::Runtime &runtime;
 
   const mlir::StringAttr bufferNameIdentifier;
 
