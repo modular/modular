@@ -1566,6 +1566,7 @@ struct ConvIm2ColNCHW[
                 self.a,
                 b_packed,
                 global_offset + GemmShape(row_idx, 0, 0),
+                GemmShape(self.c.dim[0](), self.c.dim[1](), self.a.dim[1]()),
                 sub_tile_n_k,
             )
             row_idx += RowSize
