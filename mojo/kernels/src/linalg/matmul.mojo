@@ -305,6 +305,7 @@ struct PackMatrixRows[
         original_matrix: NDBuffer[2, original_shape, type],
         global_offset: StaticIntTuple[2],
         pack_tile_dim: StaticIntTuple[2],
+        valid_data_dim: StaticIntTuple[2],
     ):
         """Interface function to run the packing routine.
         Args:
@@ -319,12 +320,6 @@ struct PackMatrixRows[
         """
         assert_param[row_inner_size % simd_size == 0]()
 
-        # Calculate amount of valid data range on each dimension of the original
-        #  matrix.
-        let valid_data_dim = Index(
-            original_matrix.dim[0]() - global_offset[0],
-            original_matrix.dim[1]() - global_offset[1],
-        )
         let instance = Self {
             packed_matrix: packed_matrix,
             original_matrix: original_matrix,
@@ -537,6 +532,7 @@ struct PackMatrixCols[
         original_matrix: NDBuffer[2, original_shape, type],
         global_offset: StaticIntTuple[2],
         pack_tile_dim: StaticIntTuple[2],
+        valid_data_dim: StaticIntTuple[2],
     ):
         """Interface function to run the packing routine.
         Args:
@@ -560,10 +556,7 @@ struct PackMatrixCols[
             original_matrix: original_matrix,
             global_offset: global_offset,
             pack_tile_dim: pack_tile_dim,
-            valid_data_dim: Index(
-                original_matrix.dim[0]() - global_offset[0],
-                original_matrix.dim[1]() - global_offset[1],
-            ),
+            valid_data_dim: valid_data_dim,
         }
 
         instance._pack()
@@ -1021,7 +1014,12 @@ struct TiledMatmul[
     var b: NDBuffer[2, config.shape_b, value_type]
     # Dynamic tile parameter.
     var tile_n_k: StaticIntTuple[2]
-    var gemm_shape: GemmShape
+
+    # Tile starting points on the (M,N,K) coordinates.
+    var global_tile_offset: GemmShape
+
+    # Tile sizes this routine will process on the (M,N,K) coordinates.
+    var global_tile_shape: GemmShape
 
     fn __clone__(self&) -> Self:
         return Self {
@@ -1029,7 +1027,8 @@ struct TiledMatmul[
             a: self.a,
             b: self.b,
             tile_n_k: self.tile_n_k,
-            gemm_shape: self.gemm_shape,
+            global_tile_shape: self.global_tile_shape,
+            global_tile_offset: self.global_tile_offset,
         }
 
     # Interface method
@@ -1050,7 +1049,7 @@ struct TiledMatmul[
             transpose_b: True if b is in transposed layout.
         """
 
-        let gemm_shape = GemmShape.get[
+        let global_tile_shape = GemmShape.get[
             config.shape_c,
             config.shape_a,
             config.shape_b,
@@ -1060,9 +1059,32 @@ struct TiledMatmul[
             transpose_b,
         ](c, a, b)
 
+        Self.run(c, a, b, GemmShape(0, 0, 0), global_tile_shape)
+
+    # Interface method
+    @staticmethod
+    fn run(
+        c: NDBuffer[2, config.shape_c, accum_type],
+        a: NDBuffer[2, config.shape_a, value_type],
+        b: NDBuffer[2, config.shape_b, value_type],
+        global_tile_offset: GemmShape,
+        global_tile_shape: GemmShape,
+    ):
+        """Interface function to run tiled matmul on a given sub-tile.
+
+        Args:
+            c(NDBuffer): Pre-allocated buffer space for result.
+            a(NDBuffer): Operand A of the matmul.
+            b(NDBuffer): Operand B of the mamtul.
+            transpose_a: True if a is in transposed layout.
+            transpose_b: True if b is in transposed layout.
+            global_tile_offset(GemmShape): tile offset on the original buffer.
+            global_tile_shape(GemmShape): tile shape this call will process.
+        """
+
         let tile_n_k = calculate_tile_n_k[
             config.pack_data_size, config.pack_inner_size
-        ](gemm_shape)
+        ](global_tile_shape)
 
         let matmul = TiledMatmul[
             config,
@@ -1070,7 +1092,14 @@ struct TiledMatmul[
             value_type,
             transpose_a,
             transpose_b,
-        ] {c: c, a: a, b: b, tile_n_k: tile_n_k, gemm_shape: gemm_shape}
+        ] {
+            c: c,
+            a: a,
+            b: b,
+            tile_n_k: tile_n_k,
+            global_tile_offset: global_tile_offset,
+            global_tile_shape: global_tile_shape,
+        }
 
         matmul._run()
 
@@ -1112,6 +1141,8 @@ struct TiledMatmul[
                 # Input is [N, K]:
                 Index(global_offset.N, global_offset.K),
                 Index(sub_tile_n, sub_tile_k),
+                # Valid input dimension
+                Index(self.global_tile_shape.N, self.global_tile_shape.K),
             )
         else:
             PackMatrixCols[
@@ -1126,11 +1157,17 @@ struct TiledMatmul[
                 # Input is [K, N]:
                 Index(global_offset.K, global_offset.N),
                 Index(sub_tile_k, sub_tile_n),
+                # Valid input dimension
+                Index(self.global_tile_shape.K, self.global_tile_shape.N),
             )
 
         # Launch the MLoop
         let sub_tile_n_k = Index(sub_tile_n, sub_tile_k)
-        let valid_row_count = self.gemm_shape.M - global_offset.M
+        let valid_row_count = (
+            self.global_tile_shape.M
+            + self.global_tile_offset.M
+            - global_offset.M
+        )
 
         @always_inline
         fn row_iteration[tile_size: Int](row_offset: Int):
@@ -1149,7 +1186,7 @@ struct TiledMatmul[
                 self.a,
                 b_packed,
                 global_offset + GemmShape(row_offset, 0, 0),
-                self.gemm_shape,
+                self.global_tile_shape,
                 sub_tile_n_k,
             )
 
@@ -1180,7 +1217,11 @@ struct TiledMatmul[
             sub_tile_n(Int): Dynamic tile size to use on N dimension.
             sub_tile_k(Int): Dynamic tile size to use on K dimension.
         """
-        let valid_col_count = self.gemm_shape.N - global_offset.N
+        let valid_col_count = (
+            self.global_tile_shape.N
+            + self.global_tile_offset.N
+            - global_offset.N
+        )
 
         # The whole subtile is within valid columns,
         #  no need to check boundary when loading C
@@ -1250,7 +1291,11 @@ struct TiledMatmul[
                 matmul problem space.
             sub_tile_k(Int): Dynamic tile size to use on K dimension.
         """
-        let valid_col_count: Int = self.gemm_shape.N - global_offset.N
+        let valid_col_count: Int = (
+            self.global_tile_shape.N
+            + self.global_tile_offset.N
+            - global_offset.N
+        )
         let tile_n: Int = self.tile_n_k[0]
 
         # Remap buffer indices for current tile.
@@ -1308,11 +1353,15 @@ struct TiledMatmul[
         # Each tiled iteration on the k dimension.
         @always_inline
         fn k_iteration(k_offset: Int, k_tile_size: Int):
-            self._outer_n_loop(b_packed, GemmShape(0, 0, k_offset), k_tile_size)
+            self._outer_n_loop(
+                b_packed,
+                GemmShape(0, 0, k_offset) + self.global_tile_offset,
+                k_tile_size,
+            )
 
         tile[k_iteration](
             0,  # k offset
-            self.gemm_shape.K,  # valid K count
+            self.global_tile_shape.K,  # valid K count
             self.tile_n_k[1],  # max tile k size
         )
 
