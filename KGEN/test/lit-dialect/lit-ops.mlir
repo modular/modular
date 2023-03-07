@@ -246,3 +246,17 @@ lit.func @call_async_fn() {
   %0 = lit.async_call[<>() async -> (): @async_fn]()
   lit.end_func
 }
+
+// CHECK-LABEL: lit.func @param_return
+lit.func @param_return<() -> r0: dtype, r1>() {
+  // CHECK-NEXT lit.param_return<:dtype si32, 2>
+  lit.param_return<:dtype si32, 2>
+  lit.end_func
+}
+
+// CHECK-LABEL: lit.func @param_return_no_results
+lit.func @param_return_no_results<() -> ()>() {
+  // CHECK-NEXT: lit.param_return
+  lit.param_return
+  lit.end_func
+}

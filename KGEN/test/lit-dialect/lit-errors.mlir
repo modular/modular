@@ -258,3 +258,11 @@ lit.func @unbound_region() {
   }) : () -> ()
   kgen.return
 }
+
+// -----
+
+lit.func @bad_param_results<() -> r0: dtype>() {
+  // expected-error @below {{'lit.param_return' op parameter #0 has type 'index' but should be '!kgen.dtype'}}
+  lit.param_return<2>
+  lit.end_func
+}

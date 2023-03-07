@@ -245,6 +245,11 @@ verifyParamDeclsMatch(StringRef paramKind, StringRef originatorName,
 /// Check that the op has exactly one block in its region, or it's been cached.
 LogicalResult verifyOneBlockOrCached(Operation *op);
 
+/// Check the parameter result types.
+LogicalResult checkResultParameterTypes(Operation *op,
+                                        ArrayRef<TypedAttr> resultParams,
+                                        ArrayRef<ParamDeclAttr> paramResults);
+
 /// Check the value and parameter result types.
 LogicalResult checkResultArgumentTypes(Operation *op,
                                        ArrayRef<TypedAttr> resultParams,
