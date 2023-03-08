@@ -391,7 +391,7 @@ fn tile[
             workgroup_function[tile_size_list[idx]](current_offset)
             current_offset += tile_size
 
-    unroll[tile_size_list.size().__as_mlir_index(), static_tile_impl]()
+    unroll[tile_size_list.__len__().__as_mlir_index(), static_tile_impl]()
 
 
 @always_inline
@@ -412,7 +412,7 @@ fn tile[
     # Initialize the work_idx with the starting offset.
     var work_idx = offset
     # Iterate on the list of given tile sizes.
-    for tile_idx in range(tile_size_list.size()):
+    for tile_idx in range(tile_size_list.__len__()):
         let tile_size = tile_size_list[tile_idx]
         # Launch workloads on the current tile sizes until cannot proceed.
         while work_idx <= upperbound - tile_size:
