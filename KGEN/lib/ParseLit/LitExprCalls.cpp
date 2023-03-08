@@ -397,6 +397,22 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
       PRValue paramValue = handleSingleParameterValue(binding, decl.getType());
       if (!paramValue)
         return {};
+
+      // Check to ensure that a memory-primary type isn't being emitted as a
+      // type parameter.  In the absence of a traits system, we cannot know what
+      // the __clone__ method or other mechanics are for working with this.
+      if (auto type = paramValue.getIfTypeValue()) {
+        if (!type.isRegisterPrimary(binding.expr->getLoc(), emitter.shared)) {
+          emitter.emitError(binding.expr->getLoc(),
+                            "cannot use a memory-only type ")
+              << type << " as generic type parameter"
+              << binding.expr->getRange();
+          incorrectBindingNo = newBindings.size();
+          incorrectBindingExpectedType = type;
+          return {};
+        }
+      }
+
       setParamValue(paramValue);
       continue;
     }
@@ -652,7 +668,7 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
         // The actual value must be an lvalue if callee takes things by-ref.
         auto argVal = operand.ir.getIfLValue();
         if (!argVal)
-          return {kArgNotLValue, providedValueIdx, operand.ir.getType(),
+          return {kArgNotLValue, providedValueIdx, operand.ir.getRValueType(),
                   newBindings};
 
         // By-ref argument types must exactly match, no conversions are allowed.

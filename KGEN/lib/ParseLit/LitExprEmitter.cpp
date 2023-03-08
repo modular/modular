@@ -416,7 +416,7 @@ PRValue ExprEmitter::emitPRValue(ASTExprAnd<AnyValue> value,
 
   // Otherwise diagnose this as "not a parameter".
   emitError(value.expr->getLoc(), "cannot use a dynamic value")
-      << getContextMessage(context);
+      << getContextMessage(context) << value.expr->getRange();
   return {};
 }
 
