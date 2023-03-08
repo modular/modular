@@ -327,6 +327,8 @@ LogicalResult KGEN::inlineGeneratorCall(
     StringAttr label =
         b.getStringAttr(topScopeName.getValue() + "_param_inlined_cf_" +
                         callee.getSymName() + "_" + Twine(labelCounter++));
+    // Use a LoopOp to be able to break to a label - any returns inlined from
+    // callee must only exit the inlined block.
     auto scope = b.create<HLCF::LoopOp>(call.getLoc(), call->getResultTypes(),
                                         ValueRange(), label);
     b.createBlock(&scope.getBody());
