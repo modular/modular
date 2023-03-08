@@ -876,6 +876,11 @@ public:
     return lookup(symbol.getRootReference());
   }
 
+  /// Once a concrete function has finished specializing, finish processing the
+  /// function and call the verifier.
+  void finalizeAndVerifyFunction(mlir::SymbolTableAnalysis &analysis,
+                                 ExpansionTreeNode *node, FuncOp func);
+
   /// Process a kgen.param.fork op. This will create a clone for each value of
   /// the parameter search, and will mark the parent as an error. This results
   /// in a very clean model where the parent of the current parent (a generator)
@@ -977,6 +982,49 @@ private:
   Semaphore evalSemaphore;
 };
 } // namespace
+
+//===----------------------------------------------------------------------===//
+// finalizeAndVerifyFunction
+//===----------------------------------------------------------------------===//
+void ElaboratorImpl::finalizeAndVerifyFunction(
+    mlir::SymbolTableAnalysis &analysis, ExpansionTreeNode *node, FuncOp func) {
+  // Erase any unreachable blocks that might have arisen.
+  mlir::IRRewriter b(func.getContext());
+  (void)mlir::eraseUnreachableBlocks(b, func.getBodyRegion());
+
+  // Check that the thing we just built is correct IR!  We want to catch any
+  // errors produced by the verify pass, we don't want them to actually get
+  // emitted.
+  std::string verificationErrorStr;
+  llvm::raw_string_ostream verificationError(verificationErrorStr);
+  Optional<Location> verificationLoc;
+  mlir::ScopedDiagnosticHandler diagHandler(
+      func.getContext(), [&](Diagnostic &diag) -> LogicalResult {
+        // Combine multiple verification errors.
+        if (verificationLoc) {
+          verificationError << "; " << diag.str();
+          verificationLoc =
+              FusedLoc::get(verificationLoc->getContext(),
+                            {*verificationLoc, diag.getLocation()});
+        } else {
+          verificationError << diag.str();
+          verificationLoc = diag.getLocation();
+        }
+        return success();
+      });
+
+  // Verify the function and invoke the symbol user verifier on all its
+  // contained ops to verify parameter references.
+  auto verifySymbolUses = [&](mlir::SymbolUserOpInterface user) -> WalkResult {
+    return user.verifySymbolUses(analysis.getSymbolTables());
+  };
+  if (failed(verify(func)) || func.walk(verifySymbolUses).wasInterrupted()) {
+    node->error = ErrorTree(*verificationLoc, Twine("verification error: ") +
+                                                  verificationError.str());
+    LLVM_DEBUG(logger.scope("Result: Failure")
+               << verificationError.str() << "\n");
+  }
+}
 
 //===----------------------------------------------------------------------===//
 // ElaboratorImpl::getConcreteFunction
@@ -1178,9 +1226,7 @@ ElaboratorImpl::spawnParamForkClone(ParamForkOp forkOp, Attribute value,
   if (newFuncNode->error)
     return newFuncNode->error->copy();
 
-  // Erase any unreachable blocks that might have arisen.
-  mlir::IRRewriter b(newFunc.getContext());
-  (void)mlir::eraseUnreachableBlocks(b, newFunc.getBodyRegion());
+  finalizeAndVerifyFunction(analysis, newFuncNode, newFunc);
 
   return std::nullopt;
 }
@@ -1328,8 +1374,7 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
     // Process the rest of the worklist in this new scope.
     processScope(newNode, remaining);
 
-    mlir::IRRewriter b(newOp->getContext());
-    (void)mlir::eraseUnreachableBlocks(b, newOp->getRegions());
+    finalizeAndVerifyFunction(analysis, newNode, cast<FuncOp>(newOp));
   }
 
   // Bind this concrete impl to this callee for this node.
@@ -1658,45 +1703,7 @@ ElaboratorImpl::specializeFunction(ExpansionTreeNode *funcNode,
   if (funcNode->error)
     return std::nullopt;
 
-  // Erase any unreachable blocks that might have arisen.
-  mlir::IRRewriter b(func.getContext());
-  (void)mlir::eraseUnreachableBlocks(b, func.getBodyRegion());
-
-  // Check that the thing we just built is correct IR!  We want to catch any
-  // errors produced by the verify pass, we don't want them to actually get
-  // emitted.
-  std::string verificationErrorStr;
-  llvm::raw_string_ostream verificationError(verificationErrorStr);
-  Optional<Location> verificationLoc;
-  mlir::ScopedDiagnosticHandler diagHandler(
-      func.getContext(), [&](Diagnostic &diag) -> LogicalResult {
-        // Combine multiple verification errors.
-        if (verificationLoc) {
-          verificationError << "; " << diag.str();
-          verificationLoc =
-              FusedLoc::get(verificationLoc->getContext(),
-                            {*verificationLoc, diag.getLocation()});
-        } else {
-          verificationError << diag.str();
-          verificationLoc = diag.getLocation();
-        }
-        return success();
-      });
-
-  // Verify the function and invoke the symbol user verifier on all its
-  // contained ops to verify parameter references.
-  auto verifySymbolUses = [&](mlir::SymbolUserOpInterface user) -> WalkResult {
-    return user.verifySymbolUses(analysis.getSymbolTables());
-  };
-  if (failed(verify(func)) || func.walk(verifySymbolUses).wasInterrupted()) {
-    funcNode->error =
-        ErrorTree(*verificationLoc,
-                  Twine("verification error: ") + verificationError.str());
-    LLVM_DEBUG(logger.scope("Result: Failure")
-               << verificationError.str() << "\n");
-    return std::nullopt;
-  }
-
+  finalizeAndVerifyFunction(analysis, funcNode, func);
   return std::nullopt;
 }
 
