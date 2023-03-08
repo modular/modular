@@ -9,6 +9,7 @@ from SIMD import SIMD
 from Int import Int
 
 
+@register_passable
 struct Complex[size: Int, type: DType]:
     var re: SIMD[size.__as_mlir_index(), type.value]
     var im: SIMD[size.__as_mlir_index(), type.value]
