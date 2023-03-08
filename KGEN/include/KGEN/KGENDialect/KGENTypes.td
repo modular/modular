@@ -209,7 +209,7 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
 
     /// Return true if this signature has a first argument is a result from the
     /// function returned through memory.
-    bool hasMemoryPrimaryResult();
+    bool hasMemoryOnlyResult();
 
     /// Get the function default arguments.
     ArrayRef<TypedAttr> getDefaultArguments() {

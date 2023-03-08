@@ -103,14 +103,14 @@ def KGEN_ValueInputConvention : I32EnumAttr<"ValueInputConvention",
     "Function value input convention", [
   /// This is used for register-primary values that are passed by copy.  The
   /// MLIR type may be anything passable by copy (but notably not a
-  /// memory-primary type).
+  /// memory-only type).
   I32EnumAttrCase<"ByVal", 0, "byval">,
 
-  /// This is for memory-primary arguments to the function that are passed
+  /// This is for memory-only arguments to the function that are passed
   /// by-copy.
   ///
   /// The MLIR type is always a POP::PointerType, and the underlying type is a
-  /// memory-primary type.  The value is initialized on entry to the function
+  /// memory-only type.  The value is initialized on entry to the function
   /// and uninitialized when the function if it returns (the caller destroys).
   I32EnumAttrCase<"ByValInMem", 1, "byval-in-mem">,
 
@@ -122,7 +122,7 @@ def KGEN_ValueInputConvention : I32EnumAttr<"ValueInputConvention",
   I32EnumAttrCase<"ByRef", 2, "byref">,
 
   /// This is used on the first argument of a function that returns a
-  /// memory-primary value, requiring it to be returned through memory.
+  /// memory-only value, requiring it to be returned through memory.
   ///
   /// The MLIR type is always a POP::PointerType, and the underlying type can be
   /// anything.  The value is uninitialized on entry to the function and defined

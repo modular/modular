@@ -358,16 +358,16 @@ struct MLIRAttrWithinStruct: # expected-note {{previously used here}}
 
 
 # In register structs may only have stored properties of other in-reg values.
-@__memory_primary
+@__memory_only
 struct InMemStruct: pass
 
-# expected-error @+2 {{all members of register primary struct must themselves be register primary}}
+# expected-error @+2 {{all members of `@register_passable` struct must themselves be register passable}}
 @register_passable
 struct InRegStruct:
   var x: Int # ok
-  var y: InMemStruct # expected-note {{'y' declared with memory-primary type '$decls-errors::InMemStruct'}}
+  var y: InMemStruct # expected-note {{'y' declared with memory-only type '$decls-errors::InMemStruct'}}
 
-@__memory_primary
+@__memory_only
 struct OtherInMemStruct:
   var x: Int # ok
   var y: InMemStruct # ok

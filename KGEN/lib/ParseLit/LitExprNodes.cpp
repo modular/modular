@@ -938,7 +938,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   }
 
   for (auto type : state.types)
-    if (!ASTType(type).isRegisterPrimary(call.getLoc(), emitter.shared)) {
+    if (!ASTType(type).isRegisterPassable(call.getLoc(), emitter.shared)) {
       emitter.emitError(call.getLoc())
           << ASTType(type)
           << " cannot be returned directly from __mlir_op as it is not a "
@@ -1471,11 +1471,11 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
   for (StructFieldOp field : structOp.getFieldDecls())
     fieldNameMap[field.getNameAttr()] = field;
 
-  // If this is a memory primary struct, initialize the fields into the result
+  // If this is a memory-only struct, initialize the fields into the result
   // buffer.
-  LValue memoryPrimaryBase;
+  LValue memoryOnlyBase;
   if (!structOp.getIsRegisterPassable())
-    memoryPrimaryBase =
+    memoryOnlyBase =
         dest.getLValueForResult(getLoc(), initType,
                                 /*allowIncompatibleTypes=*/false, emitter);
 
@@ -1517,13 +1517,13 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
       return {};
     }
 
-    // If we are memory primary, emit the initializers directly into the fields.
+    // If we are memory-only, emit the initializers directly into the fields.
     ValueDest fieldDest;
-    if (memoryPrimaryBase) {
-      // For a memory primary aggregate, emit the field into the memory for the
+    if (memoryOnlyBase) {
+      // For a memory-only aggregate, emit the field into the memory for the
       // field in the aggregate.
       auto fieldPtr = emitter.builder->create<StructGEPOp>(
-          getLocation(emitter), memoryPrimaryBase, field);
+          getLocation(emitter), memoryOnlyBase, field);
       fieldDest = ValueDest(LValue(fieldPtr), EC_FieldInitValue);
     } else {
       // For register values, make sure we convert to the right dest field type.
@@ -1551,8 +1551,8 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
     }
   }
 
-  // If it is register primary, we build a list of field values+names.  For
-  // memory primary, we just check that each value got emitted.
+  // If it is register-passable, we build a list of field values+names.  For
+  // memory-only, we just check that each value got emitted.
   SmallVector<StringAttr> fieldNames;
   SmallVector<Value> fieldSRValues;
   SmallVector<std::tuple<StringAttr, TypedAttr>> fieldParamValues;
@@ -1564,7 +1564,7 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
       return {};
     }
 
-    // Memory primary values have already been handled.
+    // Memory-only values have already been handled.
     if (!structOp.getIsRegisterPassable())
       continue;
 
@@ -1583,10 +1583,10 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
     fieldSRValues.push_back(srValue);
   }
 
-  // If this is memory primary, we've initialized all the fields.  Just return
+  // If this is memory-only, we've initialized all the fields.  Just return
   // the result.
   if (!structOp.getIsRegisterPassable())
-    return emitter.emitResult(MRValue(memoryPrimaryBase), this, dest);
+    return emitter.emitResult(MRValue(memoryOnlyBase), this, dest);
 
   // If all the fields are PRValues, form a new PRValue.
   if (allInitializersPRValues) {
@@ -1602,7 +1602,7 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
     return {};
   }
 
-  // If this is register primary, then bundle all the values up and return them.
+  // For register-passable types, bundle all the values up and return them.
   auto result = SRValue(emitter.builder->create<StructCreateOp>(
       getLocation(emitter), initType.mlirType, fieldSRValues,
       StringArrayAttr::get(emitter.getContext(), fieldNames)));

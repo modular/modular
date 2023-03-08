@@ -894,7 +894,7 @@ parseOptionalParameterSignature(LitParserBase &p, ASTDecl &declScope,
         type = TypeCheckErrorType::get(p.getContext());
 
       // Parameters must be register passable for now.
-      if (!type.isRegisterPrimary(arg.loc, p.shared)) {
+      if (!type.isRegisterPassable(arg.loc, p.shared)) {
         p.emitError(arg.loc, "cannot use type ")
             << type
             << " in a parameter: only @register_passable types are supported "
@@ -1076,10 +1076,10 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
           << arg.typeExpr->getRange();
     }
 
-    // Memory-primary byval argument are passed with a layer of indirection and
+    // memory-only byval argument are passed with a layer of indirection and
     // use a specific convention to model this.
     if (arg.convention == ValueInputConvention::ByVal &&
-        !ASTType(type).isRegisterPrimary(arg.loc, shared))
+        !ASTType(type).isRegisterPassable(arg.loc, shared))
       arg.convention = ValueInputConvention::ByValInMem;
   }
 
@@ -1448,9 +1448,9 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
       decl.hasReferenceError = true;
     }
 
-    // Memory primary types get passed as the first argument to the function
+    // Memory-only types get passed as the first argument to the function
     // by-reference.
-    if (!resultType.isRegisterPrimary(resultTypeExpr->getLoc(), shared)) {
+    if (!resultType.isRegisterPassable(resultTypeExpr->getLoc(), shared)) {
       // Synthesize a result argument for this, and use None as the actual
       // function result.
       ParsedArgument resultArg;
@@ -1809,7 +1809,7 @@ LogicalResult DeclResolver::resolveSignature(VarLetDeclOp varOp,
   rejectDecorators(decorators, decl, shared);
 
   // Now that this has been fully checked, we can promote to a LetRegDeclOp if
-  // this was a non-parameteric register-primary `let` declaration with an
+  // this was a non-parameteric register-passable `let` declaration with an
   // initializer.  We don't care about the address being available and this
   // produces smaller IR.
   ASTType inferredRValueType = varOp.getType().getResolvedElementType();
@@ -1818,7 +1818,7 @@ LogicalResult DeclResolver::resolveSignature(VarLetDeclOp varOp,
       // will need to build out better support when we have traits, but this is
       // important for kernels in practice today.
       (!inferredRValueType ||
-       inferredRValueType.isRegisterPrimary(initExpr->getLoc(), shared))) {
+       inferredRValueType.isRegisterPassable(initExpr->getLoc(), shared))) {
     // There should be exactly one store to the original op, sanity check this.
     assert(varOp->hasOneUse() && "Should have one store use");
     auto theStore = cast<POP::StoreOp>(*varOp->user_begin());
@@ -1982,14 +1982,14 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   // the self type.
   decl.setSelfType(decl.computeSelfTypeForStruct(shared));
 
-  // TODO: Flip the decorator from @__memory_primary to @register_passable (or
+  // TODO: Flip the decorator from @__memory_only to @register_passable (or
   // something similar) when the memory model for types matures.
   structOp.setIsRegisterPassable(true);
 
   // Now that we have the basic struct set up, process any known decorators.
   for (ExprNode *decorator : decoratorExprs) {
     if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
-      if (declRef->spelling == "__memory_primary") {
+      if (declRef->spelling == "__memory_only") {
         structOp.setIsRegisterPassable(false);
         continue;
       }
@@ -2032,19 +2032,23 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, LitLexer &lexer,
       if (failed(resolveSignature(fieldASTDecl, fieldASTDecl.getLoc())))
         continue;
 
-      // If the field is register-primary, then we're happy.
+      // If the field is register-passable, then we're happy.
       if (ASTType(field.getType())
-              .isRegisterPrimary(fieldASTDecl.getLoc(), shared))
+              .isRegisterPassable(fieldASTDecl.getLoc(), shared))
         continue;
 
       auto diag = emitError(structOp.getLoc(),
-                            "all members of register primary struct must "
-                            "themselves be register primary");
+                            "all members of `@register_passable` struct must "
+                            "themselves be register passable");
       diag.attachNote(fieldASTDecl.getLoc())
-          << field.getNameAttr() << " declared with memory-primary type "
+          << field.getNameAttr() << " declared with memory-only type "
           << ASTType(field.getType());
-      structOp.setIsRegisterPassable(false);
-      break;
+
+      // We cannot support IRGen'ing references to this type, since it will
+      // break invariant about being register passable without being composed of
+      // such types.
+      decl.hasReferenceError = true;
+      return failure();
     }
   }
 

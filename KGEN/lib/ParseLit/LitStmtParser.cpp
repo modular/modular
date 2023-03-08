@@ -490,12 +490,10 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
 
   auto emitter = getEmitter();
 
-  // If the result is memory primary, return into the result slot.
-  bool isMemoryPrimaryResult = decl.getSignature().hasMemoryPrimaryResult();
-
   // Materialize the expression values into IR.
   RValue resultValue;
-  if (isMemoryPrimaryResult) {
+  if (decl.getSignature().hasMemoryOnlyResult()) {
+    // If the result is memory-only, return into the result slot.
     ValueDest resultDest(LValue(decl.getArgument(0)), EC_ReturnValue);
     if (!emitter.emitExprRValue(operandExprs[0], resultDest)) {
       resultDest.resetForError();
@@ -825,7 +823,7 @@ ParseResult LitStmtParser::parseTryStmt(size_t curIndent) {
   if (!errorType)
     return failure();
 
-  if (!errorType.isRegisterPrimary(errValLoc, shared)) {
+  if (!errorType.isRegisterPassable(errValLoc, shared)) {
     emitError(errValLoc) << errorType << " is not a @register_passable type";
     return failure();
   }
