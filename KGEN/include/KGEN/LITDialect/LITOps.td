@@ -150,7 +150,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [Symbol, SymbolTable,
     }
     ```
 
-    The `isRegisterPrimary` bit is used to indicate structs that are preferrably
+    The `isRegisterPassable` is used to indicate structs that are preferrably
     passed around as SSA values instead of being processed in memory.  This is
     true for simple values like F32 and Bool but not for complex aggregates like
     a SmallVector that can't be bitwise copied around or a Dictionary that
@@ -160,7 +160,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [Symbol, SymbolTable,
   let arguments = (ins SymbolNameAttr:$sym_name,
                        KGEN_ParamDeclArrayAttr:$inputParams,
                        UnitAttr:$paramVarargs,
-                       UnitAttr:$isRegisterPrimary);
+                       UnitAttr:$isRegisterPassable);
   let regions = (region SizedRegion<1>:$fields);
   let assemblyFormat = [{
     $sym_name `` custom<OptionalParameterSpec>($inputParams)

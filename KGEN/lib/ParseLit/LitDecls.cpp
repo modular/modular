@@ -834,17 +834,17 @@ struct ParsedArgument {
 } // namespace
 
 //===----------------------------------------------------------------------===//
-// Meta signature implementation
+// Parameter signature implementation
 //===----------------------------------------------------------------------===//
 
 /// meta_signature    ::= "[" meta_param_list ("->" meta_result_types)? "]"
 /// meta_param_list   ::= argument_list | "(" ")"
 /// meta_result_types ::= expression ("," expression)*
 static ParseResult
-parseOptionalMetaSignature(LitParserBase &p, ASTDecl &declScope,
-                           SmallVector<ParamDeclAttr> &inputParams,
-                           SmallVector<ParamDeclAttr> &resultParams,
-                           bool &paramVararg) {
+parseOptionalParameterSignature(LitParserBase &p, ASTDecl &declScope,
+                                SmallVector<ParamDeclAttr> &inputParams,
+                                SmallVector<ParamDeclAttr> &resultParams,
+                                bool &paramVararg) {
   if (!p.consumeIf(LitToken::l_square) || p.consumeIf(LitToken::r_square))
     return success();
 
@@ -885,11 +885,17 @@ parseOptionalMetaSignature(LitParserBase &p, ASTDecl &declScope,
         p.emitError(arg.loc,
                     "TODO: default values in parameters not supported");
 
+      if (!arg.typeExpr)
+        p.emitError(arg.loc, "parameters must always have a type");
+
       ASTType type =
           arg.typeExpr ? emitter.emitExprType(arg.typeExpr) : ASTType();
-      if (!type) {
-        if (!arg.typeExpr)
-          p.emitError(arg.loc, "parameters must always have a type");
+      if (!type)
+        type = TypeCheckErrorType::get(p.getContext());
+
+      // Parameters must be register passable for now.
+      if (!type.isRegisterPrimary(arg.loc, p.shared)) {
+        p.emitError(arg.loc, "parameters must have @register_passable type");
         type = TypeCheckErrorType::get(p.getContext());
       }
 
@@ -1393,8 +1399,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   // value signature list so the types and parameters can resolve to the bound
   // values.
   bool paramVararg = false;
-  if (parseOptionalMetaSignature(p, decl, inputParamDecls, resultParamDecls,
-                                 paramVararg) ||
+  if (parseOptionalParameterSignature(p, decl, inputParamDecls,
+                                      resultParamDecls, paramVararg) ||
       p.parseToken(LitToken::l_paren, "expected '(' for parameter list"))
     return failure();
 
@@ -1955,8 +1961,8 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
                    "internal error: checked by stmt parser") ||
       p.parseToken(LitToken::identifier,
                    "internal error: checked by stmt parser") ||
-      parseOptionalMetaSignature(p, decl, inputParamDecls, resultParamDecls,
-                                 paramVarargs) ||
+      parseOptionalParameterSignature(p, decl, inputParamDecls,
+                                      resultParamDecls, paramVarargs) ||
       p.parseToken(LitToken::colon, "expected ':' in struct definition"))
     return failure();
 
@@ -1972,15 +1978,19 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   // the self type.
   decl.setSelfType(decl.computeSelfTypeForStruct(shared));
 
-  // TODO: Flip the decorator from @__memory_primary to @register_primary (or
+  // TODO: Flip the decorator from @__memory_primary to @register_passable (or
   // something similar) when the memory model for types matures.
-  structOp.setIsRegisterPrimary(true);
+  structOp.setIsRegisterPassable(true);
 
   // Now that we have the basic struct set up, process any known decorators.
   for (ExprNode *decorator : decoratorExprs) {
     if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
       if (declRef->spelling == "__memory_primary") {
-        structOp.setIsRegisterPrimary(false);
+        structOp.setIsRegisterPassable(false);
+        continue;
+      }
+      if (declRef->spelling == "register_passable") {
+        structOp.setIsRegisterPassable(true);
         continue;
       }
 
@@ -2004,12 +2014,12 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, LitLexer &lexer,
   // Mark the declaration as fully resolved so we can lookup into it.
   decl.resolvedness = DeclResolvedness::fully;
 
-  // Register primary structs may only contain register-primary stored values.
+  // Register-passable structs may only contain register-passable stored values.
   // TODO(traits): We need to type constrain mlirtype parameters to being
   // register-only types to support things like this correctly:
   //  struct P[T: mlirtype]:
   //    var storage : T
-  if (structOp.getIsRegisterPrimary()) {
+  if (structOp.getIsRegisterPassable()) {
     for (StructFieldOp field : structOp.getFieldDecls()) {
       // Make sure the field is fully resolved.
       auto elt = decl.lookupInCurrentScope(field.getNameAttr());
@@ -2029,7 +2039,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, LitLexer &lexer,
       diag.attachNote(fieldASTDecl.getLoc())
           << field.getNameAttr() << " declared with memory-primary type "
           << ASTType(field.getType());
-      structOp.setIsRegisterPrimary(false);
+      structOp.setIsRegisterPassable(false);
       break;
     }
   }

@@ -314,9 +314,13 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> value,
     return rvalue;
 
   // Make sure this method isn't getting called inappropriately.
-  assert(value.ir.getRValueType().isRegisterPrimary(value.expr->getLoc(),
-                                                    shared) &&
-         "cannot emit a memory-primary type as an SRValue");
+  if (!value.ir.getRValueType().isRegisterPrimary(value.expr->getLoc(),
+                                                  shared)) {
+    emitError(value.expr->getLoc(), "TODO: cannot use value of type ")
+        << value.ir.getRValueType()
+        << " in this context, it cannot be loaded into an SSA register";
+    return {};
+  }
 
   // If this is a parameter, we need to materialize it, either as an
   // index.constant or as a parameter expression.
@@ -584,6 +588,8 @@ AnyValue ExprEmitter::emitNamedMethodCall(
     ValueDest &dest, CallSyntax syntax, const ExprNode *callNode) {
   assert(!argValues.empty() && "Cannot emit a method call without a receiver!");
   ASTType type = argValues.front().ir.getRValueType();
+  if (!type)
+    return {};
 
   auto emitNoMethodError = [&]() {
     auto diag = emitError(callNode->getLoc(), "")
@@ -655,9 +661,10 @@ RValue ExprEmitter::emitConditionValueAsI1(ASTExprAnd<AnyValue> value,
     return {};
 
   boolResult = value.ir;
+  ASTType valueRValueType = value.ir.getRValueType();
 
   // If this is already an 'i1', then we're done.
-  if (value.ir.getType().mlirType.isInteger(1))
+  if (valueRValueType.mlirType.isInteger(1))
     return emitRValue(value, ValueDest::none());
 
   // TODO: Python manual includes this off-hand comment:
@@ -666,7 +673,7 @@ RValue ExprEmitter::emitConditionValueAsI1(ASTExprAnd<AnyValue> value,
 
   // Check for the presence of a __lit_bool method.  If it exists, we can avoid
   // a redundant call to __bool__ for Bool types.
-  if (!OverloadSet(value.ir.getType(), "__lit_bool", value.expr,
+  if (!OverloadSet(valueRValueType, "__lit_bool", value.expr,
                    CallSyntax::kImplicitConvert, shared,
                    [&]() { /*no error*/ })) {
     // Use the __bool__ method to convert the user defined type to

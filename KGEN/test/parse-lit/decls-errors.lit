@@ -266,7 +266,7 @@ def StaticMethod(): pass
 ##===----------------------------------------------------------------------===##
 
 # FIXME(Issue#5975): This isn't quite right, we shouldn't be able to resolve Rec here.
-struct Rec[param: Rec]:
+struct Rec[param: Rec]: # expected-error {{parameters must have @register_passable type}}
   pass
 
 # expected-error @+1 {{'def' statement must be on its own line}}

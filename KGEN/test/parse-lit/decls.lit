@@ -302,7 +302,7 @@ fn return_impl_convert_raises(a: Error) -> Error:
 # Structs
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.struct.decl @EmptyStruct attributes {isRegisterPrimary} {
+# CHECK-LABEL: lit.struct.decl @EmptyStruct attributes {isRegisterPassable} {
 struct EmptyStruct:
   pass
 # CHECK-NEXT: }
