@@ -122,7 +122,9 @@ public:
 
   /// Simple method to get the hash of a key via the KeyInfo struct. This is
   /// useful if (for example) we already have the object in the cache.
-  std::string getHash(KeyTy key) const { return KeyInfo::hashKey(key); }
+  std::string getHash(KeyTy key) const {
+    return KeyInfo::hashKey(std::forward<KeyTy>(key));
+  }
 
   /// Store an item in the provided backends. On a collision, the backends are
   /// expected to overwrite the existing contents, so it is incumbent on the
@@ -130,7 +132,7 @@ public:
   /// this can be used for speeding up future hash computations or simply
   /// discarded.
   LLCL::AsyncValueRef<ErrorOr<std::string>> insert(KeyTy key, BufferRef obj) {
-    std::string keyHash = KeyInfo::hashKey(key);
+    std::string keyHash = KeyInfo::hashKey(std::forward<KeyTy>(key));
     auto insertAsync =
         backendList->insert(Buffer::get(keyHash), std::move(obj));
 
@@ -152,14 +154,14 @@ public:
   /// Check if any of the provided backends have the item.
   LLCL::AsyncValueRef<bool>
   contains(KeyTy key, std::optional<EncodedLocation> loc = std::nullopt) const {
-    auto hash = Buffer::get(KeyInfo::hashKey(key));
+    auto hash = Buffer::get(KeyInfo::hashKey(std::forward<KeyTy>(key)));
     return backendList->contains(std::move(hash), std::move(loc));
   }
 
   /// Get the item from any of the provided backends.
   LLCL::AsyncValueRef<std::optional<BufferRef>>
   find(KeyTy key, std::optional<EncodedLocation> loc = std::nullopt) {
-    auto hash = Buffer::get(KeyInfo::hashKey(key));
+    auto hash = Buffer::get(KeyInfo::hashKey(std::forward<KeyTy>(key)));
     return backendList->find(std::move(hash), std::move(loc));
   }
 
