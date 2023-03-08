@@ -136,6 +136,8 @@ def tuple_return():
 # Other Specific expression forms
 ##===----------------------------------------------------------------------===##
 
+# TODO: Implement support for logical operators on memory-only types.
+@register_passable
 struct WeirdBoolish:
   fn __bool__(self) -> Int: return Int(0)
 

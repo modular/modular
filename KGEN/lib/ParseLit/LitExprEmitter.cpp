@@ -317,8 +317,8 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> value,
   if (!value.ir.getRValueType().isRegisterPrimary(value.expr->getLoc(),
                                                   shared)) {
     emitError(value.expr->getLoc(), "TODO: cannot use value of type ")
-        << value.ir.getRValueType()
-        << " in this context, it cannot be loaded into an SSA register";
+        << value.ir.getRValueType() << getContextMessage(context)
+        << ", it cannot be loaded into an SSA register";
     return {};
   }
 

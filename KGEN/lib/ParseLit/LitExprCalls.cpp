@@ -184,6 +184,10 @@ ParameterInferenceState::infer(SignatureType signature,
     ValueInputConvention expectedConvention =
         signature.getInputConvention(expectedArgIdx);
 
+    // There is no provided operand for a by-ref result.
+    if (expectedConvention == ValueInputConvention::ByRefResult)
+      continue;
+
     // Handle case when there are no more provided arguments.
     if (providedValueIdx == operands.size()) {
       // If the argument is a varargs argument list, then it can be initialized

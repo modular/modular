@@ -32,6 +32,7 @@ fn printInt(x: Int):
 # ===----------------------------------------------------------------------=== #
 
 # NOTE: This would be more naturally modeled as an enum, but this works for now.
+@register_passable
 struct DType:
     var value: __mlir_type.`!kgen.dtype`
 
@@ -44,6 +45,7 @@ struct DType:
     alias si64 = DType(__mlir_attr.`#kgen.dtype.constant<si64> : !kgen.dtype`)
 
 
+@register_passable
 struct Scalar[type: DType]:
     pass
 
@@ -53,6 +55,7 @@ struct Scalar[type: DType]:
 # ===----------------------------------------------------------------------=== #
 
 
+@register_passable
 struct StringRef:
     var data: __mlir_type.`!pop.pointer<!pop.scalar<si8>>`
     var size: Int
