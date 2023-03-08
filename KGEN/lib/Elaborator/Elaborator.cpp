@@ -1475,20 +1475,14 @@ ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent) {
   // then elaborate them. We can do this by splicing the op list into the parent
   // block. We splice it this way to avoid remapping the ops when we process
   // them later.
-  Operation *terminator;
   Region *toProcess = nullptr;
   auto resultInt = cast<IntegerAttr>(cast<Attribute>(errorOrValue.takeValue()));
-  if (!resultInt.getValue().isZero()) {
-    // Get the terminator.
-    terminator = op.getThenRegion().front().getTerminator();
-    // Get the op list
+  // Get the appropriate region.
+  if (!resultInt.getValue().isZero())
     toProcess = &op.getThenRegion();
-  } else {
-    // Get the terminator.
-    terminator = op.getElseRegion().front().getTerminator();
-    // Get the op list
+  else
     toProcess = &op.getElseRegion();
-  }
+
   auto foundNestedScope = parent->paramGraph->nestedScopes.find(toProcess);
   if (foundNestedScope == parent->paramGraph->nestedScopes.end())
     return ErrorTree(op.getLoc(), "expected a nested parameter scope");
@@ -1511,8 +1505,10 @@ ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent) {
   }
   processScope(parent, opsToRewrite);
 
-  // Splice the ops into the parent.
+  // Splice the ops into the parent. Grab the terminator before the iterators
+  // invalidate.
   Block::iterator iter = op->getIterator();
+  Operation *terminator = toProcess->front().getTerminator();
   op->getBlock()->getOperations().splice(iter,
                                          toProcess->front().getOperations());
 

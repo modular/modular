@@ -1896,3 +1896,25 @@ kgen.generator @pointer_attr_elaborate() {
   %0 = kgen.param.constant: pointer<type1> = <#M.pointer<0>>
   kgen.return
 }
+
+// COM: https://github.com/modularml/modular/issues/9745
+
+// CHECK-LABEL: kgen.func @true_inside_false_param_if
+kgen.generator @true_inside_false_param_if() {
+  // CHECK-NEXT: should.appear
+  // CHECK-NEXT: kgen.return
+  kgen.param.if <0> {
+    "should.not.appear"() : () -> ()
+    kgen.return
+  } else {
+    kgen.param.if <1> {
+      "should.appear"() : () -> ()
+      kgen.return
+    } else {
+      "should.not.appear"() : () -> ()
+      kgen.param.yield
+    }
+    kgen.param.yield
+  }
+  kgen.return
+}
