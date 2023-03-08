@@ -303,6 +303,7 @@ fn return_impl_convert_raises(a: Error) -> Error:
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.struct.decl @EmptyStruct attributes {isRegisterPassable} {
+@register_passable
 struct EmptyStruct:
   pass
 # CHECK-NEXT: }
@@ -313,6 +314,7 @@ struct OneLineStruct[size: Int]: pass; pass
 # CHECK-NEXT: }
 
 # CHECK-LABEL: lit.struct.decl @StructExample
+@register_passable
 struct StructExample:
   fn __clone__(self&) -> Self:
     return Self{}

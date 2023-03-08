@@ -895,7 +895,10 @@ parseOptionalParameterSignature(LitParserBase &p, ASTDecl &declScope,
 
       // Parameters must be register passable for now.
       if (!type.isRegisterPrimary(arg.loc, p.shared)) {
-        p.emitError(arg.loc, "parameters must have @register_passable type");
+        p.emitError(arg.loc, "cannot use type ")
+            << type
+            << " in a parameter: only @register_passable types are supported "
+               "right now";
         type = TypeCheckErrorType::get(p.getContext());
       }
 

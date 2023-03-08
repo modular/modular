@@ -125,6 +125,7 @@ fn memoryPrimaryOps(a&: MemoryPrimaryPair) -> MemoryPrimaryPair:
   return v2
 
 # CHECK-LABEL: lit.struct.decl @M
+@register_passable
 struct M:
   var value : __mlir_type.index
   # CHECK-LABEL: lit.func @"__new__
@@ -281,6 +282,7 @@ fn comparisons(a: Int, b: Int):
    # CHECK: kgen.call @"$Int"::@Int::@"__ne__{{.*}}(%a, %b)
    res = a != b
 
+@register_passable
 struct Boolish:
   fn __bool__(self) -> Bool: return Bool.true()
 

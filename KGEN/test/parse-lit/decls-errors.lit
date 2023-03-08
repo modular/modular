@@ -266,7 +266,7 @@ def StaticMethod(): pass
 ##===----------------------------------------------------------------------===##
 
 # FIXME(Issue#5975): This isn't quite right, we shouldn't be able to resolve Rec here.
-struct Rec[param: Rec]: # expected-error {{parameters must have @register_passable type}}
+struct Rec[param: Rec]: # expected-error {{only @register_passable types are supported right now}}
   pass
 
 # expected-error @+1 {{'def' statement must be on its own line}}
@@ -361,7 +361,8 @@ struct MLIRAttrWithinStruct: # expected-note {{previously used here}}
 @__memory_primary
 struct InMemStruct: pass
 
-# expected-error @+1 {{all members of register primary struct must themselves be register primary}}
+# expected-error @+2 {{all members of register primary struct must themselves be register primary}}
+@register_passable
 struct InRegStruct:
   var x: Int # ok
   var y: InMemStruct # expected-note {{'y' declared with memory-primary type '$decls-errors::InMemStruct'}}
