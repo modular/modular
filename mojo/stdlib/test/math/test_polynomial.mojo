@@ -8,7 +8,7 @@
 from DType import DType
 from Polynomial import polynomial_evaluate, _horner_evaluate
 from IO import print
-from List import VariadicList, create_kgen_list
+from List import VariadicList
 
 
 # CHECK-LABEL: test_polynomial_evaluate_degree3
@@ -16,7 +16,7 @@ fn test_polynomial_evaluate_degree3():
     print("== test_polynomial_evaluate_degree3\n")
 
     alias simd_width = 1
-    alias coeefs = create_kgen_list[__mlir_type.f64](
+    alias coeefs = VariadicList[__mlir_type.f64](
         1000.0,
         1.0,
         1.0,
@@ -26,7 +26,6 @@ fn test_polynomial_evaluate_degree3():
         __mlir_type.f64,
         DType.f64.value,
         simd_width,
-        3,
         coeefs,
     ](1.0)
 
@@ -37,7 +36,6 @@ fn test_polynomial_evaluate_degree3():
         __mlir_type.f64,
         DType.f64.value,
         simd_width,
-        3,
         coeefs,
     ](1.0)
 
@@ -48,7 +46,6 @@ fn test_polynomial_evaluate_degree3():
         __mlir_type.f64,
         DType.f64.value,
         simd_width,
-        3,
         coeefs,
     ](0.1)
 
@@ -59,7 +56,6 @@ fn test_polynomial_evaluate_degree3():
         __mlir_type.f64,
         DType.f64.value,
         simd_width,
-        3,
         coeefs,
     ](0.1)
 
@@ -72,7 +68,7 @@ fn test_polynomial_evaluate_degree4():
     print("== test_polynomial_evaluate_degree4\n")
 
     alias simd_width = 1
-    alias coeefs = create_kgen_list[__mlir_type.f64](
+    alias coeefs = VariadicList[__mlir_type.f64](
         1000.0,
         99.0,
         -43.0,
@@ -84,7 +80,6 @@ fn test_polynomial_evaluate_degree4():
         __mlir_type.f64,
         DType.f64.value,
         simd_width,
-        5,
         coeefs,
     ](1.0)
 
@@ -95,7 +90,6 @@ fn test_polynomial_evaluate_degree4():
         __mlir_type.f64,
         DType.f64.value,
         simd_width,
-        5,
         coeefs,
     ](1.0)
 
@@ -106,7 +100,6 @@ fn test_polynomial_evaluate_degree4():
         __mlir_type.f64,
         DType.f64.value,
         simd_width,
-        5,
         coeefs,
     ](0.1)
 
@@ -117,7 +110,6 @@ fn test_polynomial_evaluate_degree4():
         __mlir_type.f64,
         DType.f64.value,
         simd_width,
-        5,
         coeefs,
     ](0.1)
 
@@ -130,7 +122,7 @@ fn test_polynomial_evaluate_degree10():
     print("== test_polynomial_evaluate_degree10\n")
 
     alias simd_width = 1
-    alias coeefs = create_kgen_list[__mlir_type.f64](
+    alias coeefs = VariadicList[__mlir_type.f64](
         20.0,
         9.0,
         1.0,
@@ -150,7 +142,6 @@ fn test_polynomial_evaluate_degree10():
         __mlir_type.f64,
         DType.f64.value,
         simd_width,
-        11,
         coeefs,
     ](1.0)
 
@@ -161,7 +152,6 @@ fn test_polynomial_evaluate_degree10():
         __mlir_type.f64,
         DType.f64.value,
         simd_width,
-        11,
         coeefs,
     ](1.0)
 
@@ -172,7 +162,6 @@ fn test_polynomial_evaluate_degree10():
         __mlir_type.f64,
         DType.f64.value,
         simd_width,
-        11,
         coeefs,
     ](0.1)
 
@@ -183,7 +172,6 @@ fn test_polynomial_evaluate_degree10():
         __mlir_type.f64,
         DType.f64.value,
         simd_width,
-        11,
         coeefs,
     ](0.1)
 
