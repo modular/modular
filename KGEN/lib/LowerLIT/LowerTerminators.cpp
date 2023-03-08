@@ -10,6 +10,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "Support/HLCFDialect/HLCFOps.h"
+#include "Support/STLExtras.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Matchers.h"
@@ -80,18 +81,29 @@ static Value createUnwrapOrPropagate(ImplicitLocOpBuilder &b, LIT::FuncOp func,
 // lowerLexicalTerminators
 //===----------------------------------------------------------------------===//
 
-static FailureOr<std::optional<ArrayRef<TypedAttr>>>
-threadParamIfResultBindings(ParamIfOp ifOp);
+namespace {
+/// This contains information about a set of result parameters.
+struct ResultParams {
+  /// The result parameter values.
+  SmallVector<TypedAttr> values;
+  /// A location value.
+  Location loc;
+};
+} // namespace
+
+static FailureOr<std::optional<ResultParams>>
+threadParamIfResultBindings(ParamIfOp ifOp, unsigned &nameCounter);
 
 /// Bubble `param_return` operations up to the top-level return. Start from a
 /// post-order traversal to visit the innermost `param.if` operations first.
 LogicalResult findParamReturn(Region &region,
-                              std::optional<ArrayRef<TypedAttr>> &result) {
+                              std::optional<ResultParams> &result,
+                              unsigned &nameCounter) {
   WalkResult walk = region.walk<mlir::WalkOrder::PreOrder>([&](Operation *op)
                                                                -> WalkResult {
     if (auto ifOp = dyn_cast<ParamIfOp>(op)) {
-      FailureOr<std::optional<ArrayRef<TypedAttr>>> nestedValues =
-          threadParamIfResultBindings(ifOp);
+      FailureOr<std::optional<ResultParams>> nestedValues =
+          threadParamIfResultBindings(ifOp, nameCounter);
       if (failed(nestedValues))
         return WalkResult::interrupt();
       if (*nestedValues) {
@@ -108,19 +120,20 @@ LogicalResult findParamReturn(Region &region,
         return emitError(op->getLoc(),
                          "result parameters already defined in this branch");
       }
-      result = bind.getParameters();
+      result =
+          ResultParams{llvm::to_vector(bind.getParameters()), bind.getLoc()};
     }
     return WalkResult::advance();
   });
   return success(!walk.wasInterrupted());
 }
 
-static FailureOr<std::optional<ArrayRef<TypedAttr>>>
-threadParamIfResultBindings(ParamIfOp ifOp) {
+static FailureOr<std::optional<ResultParams>>
+threadParamIfResultBindings(ParamIfOp ifOp, unsigned &nameCounter) {
   // Try to find a param return in each branch.
-  std::optional<ArrayRef<TypedAttr>> thenParams, elseParams;
-  if (failed(findParamReturn(ifOp.getThenRegion(), thenParams)) ||
-      failed(findParamReturn(ifOp.getElseRegion(), elseParams)))
+  std::optional<ResultParams> thenParams, elseParams;
+  if (failed(findParamReturn(ifOp.getThenRegion(), thenParams, nameCounter)) ||
+      failed(findParamReturn(ifOp.getElseRegion(), elseParams, nameCounter)))
     return failure();
   if (thenParams.has_value() != elseParams.has_value()) {
     return emitError(ifOp.getLoc(),
@@ -128,8 +141,23 @@ threadParamIfResultBindings(ParamIfOp ifOp) {
   }
   if (!thenParams)
     return thenParams;
-  return ifOp.emitError(
-      "threading result parameters through `kgen.param.if` is a TODO");
+  // Pass the return parameters through using result parameters on the if.
+  SmallVector<ParamDeclAttr> resultParams;
+  SmallVector<TypedAttr> resultValues;
+  OpBuilder b(ifOp.getContext());
+  for (auto [idx, param] : llvm::enumerate(thenParams->values)) {
+    StringAttr name =
+        b.getStringAttr("(branch_result_" + Twine(nameCounter++) + ")");
+    resultParams.push_back(ParamDeclAttr::get(name, param.getType()));
+    resultValues.push_back(ParamDeclRefAttr::get(name, param.getType()));
+  }
+  ifOp.setResultParams(resultParams);
+  b.setInsertionPoint(&ifOp.getThenOps().back());
+  b.create<ParamResultBindOp>(thenParams->loc, thenParams->values);
+  b.setInsertionPoint(&ifOp.getElseOps().back());
+  b.create<ParamResultBindOp>(elseParams->loc, elseParams->values);
+  return {ResultParams{std::move(resultValues),
+                       b.getFusedLoc({thenParams->loc, elseParams->loc})}};
 }
 
 /// Lower all lexical terminators in the function and remove dead code.
@@ -147,9 +175,11 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
   }
 
   // If the function has result parameters, process them here.
-  std::optional<ArrayRef<TypedAttr>> resultParams;
+  std::optional<ResultParams> resultParams;
   if (!func.getResultParams().empty()) {
-    if (failed(findParamReturn(func.getBodyRegion(), resultParams)))
+    unsigned nameCounter = 0;
+    if (failed(
+            findParamReturn(func.getBodyRegion(), resultParams, nameCounter)))
       return failure();
     if (!resultParams) {
       return emitError(
@@ -164,6 +194,7 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
   // and see if we can reach the end of the function body.
   DenseSet<Operation *> liveCfOps;
   auto markNextInBlockAsLive = [&](Block *block, Block::iterator it) {
+    assert(it != block->end());
     for (Operation &op : llvm::make_range(it, block->end())) {
       if (!isa<HLCF::ControlFlowNode, HLCF::ControlFlowTerminator,
                LIT::ReturnOp, LIT::RaiseOp, LIT::BreakOp, LIT::ContinueOp,
@@ -196,7 +227,7 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
       toErase.push_back(op);
 
     } else if (isa<HLCF::ControlFlowNode, HLCF::ControlFlowTerminator>(op) &&
-               liveCfOps.contains(op)) {
+               !isa<HLCF::ReturnOp>(op) && liveCfOps.contains(op)) {
       SmallVector<Attribute> operands;
       for (Value operand : op->getOperands())
         mlir::matchPattern(operand, mlir::m_Constant(&operands.emplace_back()));
@@ -347,7 +378,7 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
   // Bind the result parameter values if there are any.
   if (resultParams) {
     OpBuilder b(terminator);
-    b.create<ParamResultBindOp>(terminator->getLoc(), *resultParams);
+    b.create<ParamResultBindOp>(resultParams->loc, resultParams->values);
   }
 
   // If the function is explicitly terminated with a `return`, we're good.
