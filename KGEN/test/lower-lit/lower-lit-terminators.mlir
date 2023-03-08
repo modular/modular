@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -lower-lit-terminators -split-input-file | FileCheck %s
+// RUN: kgen-opt %s -lower-lit-terminators -verify-parameters -split-input-file | FileCheck %s
 
 lit.struct.decl @Error {}
 
@@ -405,5 +405,41 @@ lit.func @coroutine() async -> index {
     hlcf.break
   }
   // CHECK: kgen.static.undef
+  lit.end_func
+}
+
+// CHECK-LABEL: lit.func @bubble_result_params
+lit.func @bubble_result_params<() -> r0, r1: dtype>() {
+  // CHECK: kgen.param.if
+  kgen.param.if <1> {
+    kgen.param.yield
+  } else {
+    kgen.param.yield
+  }
+
+  // CHECK: kgen.param.if <1 ->
+  kgen.param.if <1> {
+    // CHECK-NEXT: result_bind<1, :dtype si8>
+    lit.param_return<1, :dtype si8>
+    // CHECK-NEXT: hlcf.return
+    hlcf.return
+  // CHECK: else
+  } else {
+    // CHECK: kgen.param.if <1 -> *"(branch_result_0)", *"(branch_result_1)": dtype>
+    kgen.param.if <1> {
+      // CHECK-NEXT: result_bind<2, :dtype si16>
+      lit.param_return<2, :dtype si16>
+      kgen.param.yield
+    // CHECK: else
+    } else {
+      // CHECK-NEXT: result_bind<3, :dtype si32>
+      lit.param_return<3, :dtype si32>
+      kgen.param.yield
+    }
+    // CHECK: result_bind<*"(branch_result_0)", :dtype *"(branch_result_1)">
+    kgen.param.yield
+  }
+  // CHECK: result_bind<*"(branch_result_2)", :dtype *"(branch_result_3)">
+  lit.return
   lit.end_func
 }
