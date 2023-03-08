@@ -422,7 +422,8 @@ fn tile[
     #  the remaining workload size.
     # Note: This is the key difference from the static version of tile
     #  generator.
-    workgroup_function(work_idx, upperbound - work_idx)
+    if work_idx < upperbound:
+        workgroup_function(work_idx, upperbound - work_idx)
 
 
 # ===----------------------------------------------------------------------===#
