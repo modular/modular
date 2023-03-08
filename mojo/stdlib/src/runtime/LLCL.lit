@@ -37,6 +37,7 @@ fn num_cores() -> Int:
 # ===----------------------------------------------------------------------===#
 
 
+@register_passable
 struct Chain:
     """This is an opaque instance of the C++ class `AsyncValueRef<Chain>`, whose
     size is the same as the pointer width.
@@ -49,6 +50,9 @@ struct Chain:
         return Self {storage: self.storage}
 
 
+# FIXME(traits): This shouldn't be a register_passable type but we need this
+# until we have traits for proper parametric types.
+@register_passable
 struct AsyncContext:
     """This struct models the coroutine context contained in every coroutine
     instance. The struct consists of a unary callback function that accepts a
@@ -125,7 +129,9 @@ fn _async_complete(chain: Pointer[Chain]):
 # Runtime
 # ===----------------------------------------------------------------------===#
 
-
+# FIXME(traits): This shouldn't be a register_passable type but we need this
+# until we have traits for proper parametric types.
+@register_passable
 struct Runtime:
     alias ptr_type = DTypePointer[DType.invalid.value]
     var ptr: ptr_type
@@ -263,7 +269,9 @@ struct Task[type: typename]:
 # TaskGroup
 # ===----------------------------------------------------------------------===#
 
-
+# FIXME(traits): This shouldn't be a register_passable type but we need this
+# until we have traits for proper parametric types.
+@register_passable
 struct TaskGroupContext:
     alias tg_callback_fn_type = __mlir_type[
         `(!pop.pointer<`, TaskGroup, `>) -> !lit.none`
@@ -273,6 +281,9 @@ struct TaskGroupContext:
     var task_group: Pointer[TaskGroup]
 
 
+# FIXME(traits): This shouldn't be a register_passable type but we need this
+# until we have traits for proper parametric types.
+@register_passable
 struct TaskGroup:
     var counter: Atomic[DType.index.value]
     var chain: Chain
