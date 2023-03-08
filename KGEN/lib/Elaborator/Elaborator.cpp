@@ -1536,12 +1536,18 @@ ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent) {
   // it's been handled, and we don't want anyone else touching it later
   // considering we're about to delete the op itself.
   ParameterUseDefGraph &paramGraph = *parent->paramGraph;
-  paramGraph.nestedScopes.erase(&op.getThenRegion());
-  paramGraph.nestedScopes.erase(&op.getElseRegion());
-  auto newEnd = llvm::remove_if(paramGraph.nestedDecls, [&](Region *r) {
-    return r == &op.getThenRegion() || r == &op.getElseRegion();
-  });
-  paramGraph.nestedDecls.erase(newEnd, paramGraph.nestedDecls.end());
+  auto eraseIfScopes = [op](ParameterUseDefGraph &graph) mutable {
+    graph.nestedScopes.erase(&op.getThenRegion());
+    graph.nestedScopes.erase(&op.getElseRegion());
+    auto newEnd = llvm::remove_if(graph.nestedDecls, [&](Region *r) {
+      return r == &op.getThenRegion() || r == &op.getElseRegion();
+    });
+    graph.nestedDecls.erase(newEnd, graph.nestedDecls.end());
+  };
+  // Delete references to this nested declaration from all nested graphs.
+  eraseIfScopes(paramGraph);
+  for (auto &[scope, graph] : paramGraph.nestedScopes)
+    eraseIfScopes(graph);
   op->erase();
   LLVM_DEBUG(
       logger.logOp("param.if parent scope (after processing)", parent->op));
