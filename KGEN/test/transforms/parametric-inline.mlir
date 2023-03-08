@@ -293,7 +293,8 @@ kgen.generator @callee<B>() always_inline {
 }
 
 kgen.generator @result_params<() -> A>() {
-  kgen.return<0>
+  kgen.param.result_bind<0>
+  kgen.return
 }
 
 // -----
@@ -310,7 +311,8 @@ kgen.generator @parent<B>() {
 
 // CHECK-LABEL: kgen.generator @callee
 kgen.generator @callee<A -> B>() always_inline {
-  kgen.return<A>
+  kgen.param.result_bind<A>
+  kgen.return
 }
 
 // -----
@@ -336,7 +338,8 @@ kgen.generator @callee<A -> B>() always_inline {
     kgen.param.constant = <B>
     kgen.return
   }
-  kgen.return<A>
+  kgen.param.result_bind<A>
+  kgen.return
 }
 
 // -----
@@ -362,7 +365,8 @@ kgen.generator @callee<A -> B>() always_inline {
     kgen.param.constant = <B>
     kgen.return
   }
-  kgen.return<A>
+  kgen.param.result_bind<A>
+  kgen.return
 }
 
 // -----
@@ -595,7 +599,8 @@ kgen.generator @call_me<rank, shape: list<index[rank]>>() {
 // CHECK-LABEL: kgen.generator @callee
 kgen.generator @callee<rank, shape: list<index[rank]> -> output: list<index[rank]>>() always_inline {
   kgen.call @call_me<rank = rank, shape: list<index[rank]> = shape>() : () -> ()
-  kgen.return<:list<index[rank]> shape>
+  kgen.param.result_bind<:list<index[rank]> shape>
+  kgen.return
 }
 
 // -----

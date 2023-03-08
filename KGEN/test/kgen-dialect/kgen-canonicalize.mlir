@@ -39,7 +39,8 @@ kgen.func @cast_to_folds(%arg0: f32) -> f32 {
 }
 
 kgen.generator @producesResultParam<() -> r1>() {
-  kgen.return<42>
+  kgen.param.result_bind<42>
+  kgen.return
 }
 
 

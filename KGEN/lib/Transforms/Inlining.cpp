@@ -399,14 +399,14 @@ LogicalResult KGEN::inlineGeneratorCall(
         mangler.mangleElementsIn(cloned);
       }
     }
-    for (auto &[name, decl] : calleeParams.decls) {
+    for (auto &[name, def] : calleeParams.defs) {
       // Skip the parent decl. It's handled after.
-      if (decl.declOp == callee)
+      if (def.defOp == callee)
         continue;
-      Operation *cloned = map.lookup(decl.declOp);
+      Operation *cloned = map.lookup(def.defOp);
       mangler.mangleElementsIn(cloned);
       // Rename declarations.
-      auto itf = cast<ParamOpInterface>(decl.declOp);
+      auto itf = cast<ParamOpInterface>(def.defOp);
       SmallVector<ParamDeclAttr> newDecls;
       itf.walkDeclarations([&](ParamDeclAttr decl) {
         newDecls.push_back(mangler.mangleDecl(decl, needsMangling));
@@ -467,39 +467,36 @@ LogicalResult KGEN::inlineGeneratorCall(
     });
 
     // Handle all terminators.
-    auto newReturn = cast<KGEN::ReturnOp>(map.lookup(callee.getReturnOp()));
-    b.setInsertionPoint(newReturn);
-    for (auto [decl, value] :
-         llvm::zip(call.getParamDecls(), newReturn.getParameters())) {
-      b.create<ParamDeclareOp>(newReturn.getLoc(), decl,
-                               ParamOperatorAttr::get(b.getContext(),
-                                                      POC::Rebind, value,
-                                                      decl.getType()));
-    }
-    b.create<HLCF::BreakOp>(newReturn.getLoc(),
-                            rebindReturnOperands(b, newReturn, call), label);
-    newReturn.erase();
-
-    bool hasNestedReturn = false;
+    unsigned numReturns = 0;
     callee.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
       // Walk over nested functions. Control-flow does not cross them.
       if (op != callee && isa<FuncInterface>(op))
         return WalkResult::skip();
-      auto returnOp = dyn_cast<HLCF::ReturnOp>(op);
-      if (!returnOp)
+      if (!isa<ReturnOp, HLCF::ReturnOp, ParamResultBindOp>(op))
         return WalkResult::advance();
-      hasNestedReturn = true;
-      auto cloned = cast<HLCF::ReturnOp>(map.lookup(returnOp));
+
+      Operation *cloned = map.lookup(op);
       b.setInsertionPoint(cloned);
-      b.create<HLCF::BreakOp>(cloned.getLoc(),
-                              rebindReturnOperands(b, cloned, call), label);
-      cloned.erase();
+      if (auto bind = dyn_cast<ParamResultBindOp>(cloned)) {
+        for (auto [decl, value] :
+             llvm::zip(call.getParamDecls(), bind.getParameters())) {
+          auto rebound = ParamOperatorAttr::get(b.getContext(), POC::Rebind,
+                                                value, decl.getType());
+          b.create<ParamDeclareOp>(bind.getLoc(), decl, rebound);
+        }
+      } else {
+        ++numReturns;
+        b.create<HLCF::BreakOp>(cloned->getLoc(),
+                                rebindReturnOperands(b, cloned, call), label);
+      }
+      cloned->erase();
       return WalkResult::advance();
     });
     b.replaceOp(call, scope.getResults());
 
     // If the scope was trivial (one return), fold it away.
-    if (!hasNestedReturn) {
+    assert(numReturns > 0);
+    if (numReturns == 1) {
       for (Operation &op : llvm::make_early_inc_range(
                scope.getBody().front().without_terminator()))
         op.moveBefore(scope);

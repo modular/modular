@@ -296,8 +296,9 @@ void OutlineClosuresPass::runOnOperation() {
           regionDecl.getLoc(), lifted.getSignature().getValueResults(),
           liftedCallSymbol, ParamDeclArrayAttr::get(&getContext(), resultDecls),
           callArgs);
-      b.create<ReturnOp>(regionDecl.getLoc(), returnRefs,
-                         ValueRange(callResults.getResults()));
+      if (!returnRefs.empty())
+        b.create<ParamResultBindOp>(regionDecl.getLoc(), returnRefs);
+      b.create<ReturnOp>(regionDecl.getLoc(), callResults.getResults());
 
       LLVM_DEBUG(llvm::dbgs()
                  << "Created lifted region wrapper: " << liftedWrapper << "\n");

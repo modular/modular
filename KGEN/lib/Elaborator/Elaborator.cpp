@@ -501,6 +501,47 @@ static std::optional<ErrorTree> processParamDeclareOp(IREvaluator &evaluator,
 }
 
 //===----------------------------------------------------------------------===//
+// processParamResultBindOp
+//===----------------------------------------------------------------------===//
+
+/// Process a `kgen.param.result_bind` operation by setting the result parameter
+/// values of the parent operation.
+static std::optional<ErrorTree>
+processParamResultBindOp(ParamResultBindOp op, ExpansionTreeNode *parentNode) {
+  // Concretize the result parameter values.
+  IREvaluator &evaluator = parentNode->evaluator;
+  SmallVector<Attribute> resultValues;
+
+  // Retrieve the required parameter decls from the nearest declaration.
+  // However, if it refers to the function being elaborated, the declarations
+  // are in the generator.
+  ArrayRef<ParamDeclAttr> resultParams;
+  auto parentDecl = op->getParentOfType<DeclInterface>();
+  bool isFunc = isa<FuncOp>(parentDecl.getOperation());
+  if (isFunc)
+    resultParams = cast<GeneratorOp>(parentNode->parent->op).getResultParams();
+  else
+    resultParams = parentDecl.getResultParams();
+
+  for (auto [decl, value] : llvm::zip(resultParams, op.getParameters())) {
+    ErrorTreeOr<Attribute> concValue =
+        evaluator.concretizeParameterExpr(op.getLoc(), value);
+    if (concValue.isError())
+      return concValue.takeError();
+    resultValues.push_back(concValue.takeValue());
+    evaluator.setOrOverwriteParameterValue(decl, resultValues.back());
+  }
+
+  // If this operation binds values for the result parameters of the generator,
+  // set them in the node.
+  if (isFunc)
+    parentNode->resultParams = ArrayAttr::get(op.getContext(), resultValues);
+
+  op.erase();
+  return {};
+}
+
+//===----------------------------------------------------------------------===//
 // processParamAssertOp
 //===----------------------------------------------------------------------===//
 
@@ -606,35 +647,6 @@ static std::optional<ErrorTree> processGenericOp(IREvaluator &evaluator,
 }
 
 //===----------------------------------------------------------------------===//
-// completeReturnProcessing
-//===----------------------------------------------------------------------===//
-
-/// Complete processing of a ReturnOp by binding its result parameters to the
-/// node's result parameters.
-static std::optional<ErrorTree>
-completeReturnProcessing(Logger &logger, ReturnOp returnOp,
-                         ExpansionTreeNode *parent) {
-  // Erase any unreachable blocks generated during scope processing.
-  mlir::IRRewriter b{OpBuilder(parent->op)};
-  (void)mlir::eraseUnreachableBlocks(b, parent->op->getRegions());
-
-  LLVM_DEBUG(logger.logOp("Processing ReturnOp", returnOp));
-  SmallVector<Attribute> resultParams;
-  for (auto param : returnOp.getParameters()) {
-    auto concreteOr =
-        parent->evaluator.concretizeParameterExpr(returnOp.getLoc(), param);
-    if (concreteOr.isError())
-      return concreteOr.takeError();
-
-    resultParams.push_back(param);
-  }
-  parent->resultParams = ArrayAttr::get(returnOp.getContext(), resultParams);
-
-  returnOp.setParameters({});
-  return std::nullopt;
-}
-
-//===----------------------------------------------------------------------===//
 // completeGeneratorUserProcessing
 //===----------------------------------------------------------------------===//
 
@@ -720,6 +732,7 @@ static void completeCallProcessing(KGENCallOpInterface user,
     return;
 
   // Bind the result parameters to the output parameter decls.
+  assert(decls.size() == resultParams.size());
   for (auto [decl, bindValue] : llvm::zip(decls, resultParams)) {
     LLVM_DEBUG(thisNode->logger << "Binding " << decl << " to " << bindValue
                                 << "\n");
@@ -1164,8 +1177,9 @@ ElaboratorImpl::spawnParamForkClone(ParamForkOp forkOp, Attribute value,
   if (newFuncNode->error)
     return newFuncNode->error->copy();
 
-  // And handle the return processing.
-  completeReturnProcessing(logger, newFunc.getReturnOp(), newFuncNode);
+  // Erase any unreachable blocks that might have arisen.
+  mlir::IRRewriter b(newFunc.getContext());
+  (void)mlir::eraseUnreachableBlocks(b, newFunc.getBodyRegion());
 
   return std::nullopt;
 }
@@ -1313,9 +1327,8 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
     // Process the rest of the worklist in this new scope.
     processScope(newNode, remaining);
 
-    // And handle the return.
-    completeReturnProcessing(logger, cast<FuncOp>(newOp).getReturnOp(),
-                             newNode);
+    mlir::IRRewriter b(newOp->getContext());
+    (void)mlir::eraseUnreachableBlocks(b, newOp->getRegions());
   }
 
   // Bind this concrete impl to this callee for this node.
@@ -1436,7 +1449,7 @@ ElaboratorImpl::processParamDeclareRegionOp(ParamDeclareRegionOp regionDecl,
   // Set the region's parameter decl as the value for this name. That will
   // signal to the call_param handler that it needs to inline the region it
   // finds for that decl.
-  parent->evaluator.setParameterValue(
+  parent->evaluator.setOrOverwriteParameterValue(
       regionDecl.getParamDecl().getName(),
       RegionAttr::get(regionDecl.getParamDecl()));
   return std::nullopt;
@@ -1508,17 +1521,6 @@ ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent) {
     // RAUW the op's results with the terminator's inputs.
     op->getResults().replaceAllUsesWith(yieldOp.getOperands());
 
-    for (auto [decl, value] :
-         llvm::zip(op.getResultParams(), yieldOp.getParameters())) {
-      // Concretize the value.
-      auto concreteVal =
-          parent->evaluator.concretizeParameterExpr(yieldOp.getLoc(), value);
-      if (concreteVal.isError())
-        return concreteVal.takeError();
-
-      parent->evaluator.setOrOverwriteParameterValue(decl,
-                                                     concreteVal.takeValue());
-    }
     // Erase the terminator.
     terminator->erase();
   } else if (auto hlcfTerm =
@@ -1530,9 +1532,7 @@ ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent) {
     if (isa<HLCF::ReturnOp>(hlcfTerm) &&
         hlcfTerm->getParentOp() == parent->op) {
       mlir::IRRewriter b{OpBuilder(hlcfTerm)};
-      b.replaceOpWithNewOp<ReturnOp>(
-          hlcfTerm, b.getAttr<ParameterExprArrayAttr>(ArrayRef<TypedAttr>{}),
-          hlcfTerm->getOperands());
+      b.replaceOpWithNewOp<ReturnOp>(hlcfTerm, hlcfTerm->getOperands());
     }
     // Drop all uses of the if op because any of its uses will be null and void
     // at this point.
@@ -1583,10 +1583,12 @@ void ElaboratorImpl::processScope(ExpansionTreeNode *parentNode,
     logger.logOp("Op", op);
 
     std::optional<ErrorTree> result = std::nullopt;
-    if (auto bind = dyn_cast<ParamDeclareOp>(op)) {
-      result = processParamDeclareOp(parentNode->evaluator, bind);
+    if (auto declare = dyn_cast<ParamDeclareOp>(op)) {
+      result = processParamDeclareOp(parentNode->evaluator, declare);
     } else if (auto declare = dyn_cast<ParamDeclareRegionOp>(op)) {
       result = processParamDeclareRegionOp(declare, parentNode);
+    } else if (auto bind = dyn_cast<ParamResultBindOp>(op)) {
+      result = processParamResultBindOp(bind, parentNode);
     } else if (auto fork = dyn_cast<ParamForkOp>(op)) {
       result = processParamForkOp(parentNode, fork, remainingWorklist);
     } else if (auto assertOp = dyn_cast<ParamAssertOp>(op)) {
@@ -1660,9 +1662,9 @@ ElaboratorImpl::specializeFunction(ExpansionTreeNode *funcNode,
   if (funcNode->error)
     return std::nullopt;
 
-  // Store the return parameters.
-  if (auto err = completeReturnProcessing(logger, func.getReturnOp(), funcNode))
-    return err;
+  // Erase any unreachable blocks that might have arisen.
+  mlir::IRRewriter b(func.getContext());
+  (void)mlir::eraseUnreachableBlocks(b, func.getBodyRegion());
 
   // Check that the thing we just built is correct IR!  We want to catch any
   // errors produced by the verify pass, we don't want them to actually get

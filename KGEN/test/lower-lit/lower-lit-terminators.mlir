@@ -98,7 +98,7 @@ lit.func @result_parameters<() -> r1: i32, r2: i64>(%c: i1) {
   } else {
     hlcf.yield
   }
-  // CHECK: kgen.return<:i32 1, :i64 2>
+  // CHECK: kgen.param.result_bind<:i32 1, :i64 2>
   lit.return
   lit.end_func
 }
@@ -270,7 +270,7 @@ lit.struct.decl @StructWithNestedFn<a_param> {
 
     // CHECK: kgen.param.declare.region paramNestedFunc = <b_param -> c_param>()
     lit.func paramNestedFunc<b_param -> c_param>() {
-      // CHECK-NEXT: kgen.return<b_param>
+      // CHECK-NEXT: kgen.param.result_bind<b_param>
       lit.param_return<b_param>
       lit.return
       lit.end_func

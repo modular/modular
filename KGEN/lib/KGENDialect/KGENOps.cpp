@@ -16,6 +16,7 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "Support/Compiler/OperationUtils.h"
+#include "Support/Compiler/VerifyUtils.h"
 #include "Support/STLExtras.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -34,7 +35,7 @@ static LogicalResult checkReturnArguments(T op) {
   // If we have a return op, then we can check the argument types. Otherwise, we
   // just don't have the return op.
   if (ReturnOp returnOp = op.getReturnOp())
-    return checkResultArgumentTypes(returnOp, returnOp.getParameters(), op);
+    return checkResultTypes(returnOp, op.getResultTypes());
   return success();
 }
 
@@ -138,8 +139,7 @@ static void printRegionDeclaration(OpAsmPrinter &p, Operation *op,
 
 LogicalResult ParamDeclareRegionOp::verifyRegions() {
   auto returnOp = cast<ReturnOp>(getBody()->getTerminator());
-  if (failed(
-          checkResultArgumentTypes(returnOp, returnOp.getParameters(), *this)))
+  if (failed(checkResultTypes(returnOp, getResultTypes())))
     return failure();
   if (getBody()->getArgumentTypes() != getSignature().getValueInputs())
     return emitOpError("signature mismatches body");
@@ -210,23 +210,14 @@ void ParamResultBindOp::walkDefinitions(
     walkDef(decl, value);
 }
 
+/// This operation is parametric even if it defines no parameters.
+bool ParamResultBindOp::isImplicitlyParametric() { return true; }
+
 LogicalResult ParamResultBindOp::verify() {
   auto scope = (*this)->getParentOfType<DeclInterface>();
   if (!scope)
     return emitOpError("expected to be nested beneath a declaration scope");
   return checkResultParameterTypes(*this, getParameters(), scope);
-}
-
-//===----------------------------------------------------------------------===//
-// ReturnOp
-//===----------------------------------------------------------------------===//
-
-void ReturnOp::walkDefinitions(
-    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {
-  for (auto [decl, value] :
-       llvm::zip(cast<FuncInterface>((*this)->getParentOp()).getResultParams(),
-                 getParameters()))
-    walkDef(decl, value);
 }
 
 //===----------------------------------------------------------------------===//
@@ -625,58 +616,6 @@ void ParamIfOp::notifyKnownIsolatedFromAbove(unsigned regionNum) {
   }
 }
 
-LogicalResult ParamIfOp::verify() {
-  TypeRange resultTypes = getResultTypes();
-  auto checkTypesMatch = [&](ValueRange other) -> LogicalResult {
-    for (auto [ifResult, operand] : llvm::zip(resultTypes, other))
-      if (ifResult != operand.getType())
-        return mlir::emitError(operand.getLoc())
-               << "expected type " << ifResult << " but got "
-               << operand.getType();
-    return success();
-  };
-
-  // Check that the yields in both have the same input types as result types.
-  if (failed(checkTypesMatch(
-          getThenRegion().front().getTerminator()->getOperands())))
-    return failure();
-  if (failed(checkTypesMatch(
-          getElseRegion().front().getTerminator()->getOperands())))
-    return failure();
-
-  // Check that the result parameters work.
-  auto checkResultParams = [&](Operation *terminator) -> LogicalResult {
-    if (getResultParams().empty())
-      return success();
-
-    if (!isa<ParamYieldOp>(terminator))
-      return emitError("expected a kgen.param.yield in order to return result "
-                       "parameters")
-                 .attachNote(terminator->getLoc())
-             << "unknown terminator defined here";
-
-    auto yieldOp = cast<ParamYieldOp>(terminator);
-    for (auto [decl, value] :
-         llvm::zip(getResultParams(), yieldOp.getParameters()))
-      if (decl.getType() != value.getType())
-        return (mlir::emitError(
-                    terminator->getLoc(),
-                    "result parameter type did not match, expected ")
-                << decl.getType() << " but got " << value.getType())
-                   .attachNote(getLoc())
-               << "result parameter defined here";
-
-    return success();
-  };
-
-  if (failed(checkResultParams(getThenRegion().front().getTerminator())))
-    return failure();
-  if (failed(checkResultParams(getElseRegion().front().getTerminator())))
-    return failure();
-
-  return success();
-}
-
 void ParamIfOp::getEntryTargets(
     ArrayRef<Attribute> operands,
     SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
@@ -718,6 +657,11 @@ void ParamIfOp::collectParameterUsesBelow(
 // ParamYieldOp
 //===----------------------------------------------------------------------===//
 
+LogicalResult ParamYieldOp::verify() {
+  return checkResultTypes(
+      *this, cast<ParamIfOp>((*this)->getParentOp()).getResultTypes());
+}
+
 bool ParamYieldOp::isParentNode(Operation *op) { return isa<ParamIfOp>(op); }
 
 void ParamYieldOp::getBranchTargets(
@@ -726,14 +670,6 @@ void ParamYieldOp::getBranchTargets(
   assert(operands.size() == getNumOperands());
   // Branch to after the if operation.
   targets.emplace_back(std::nullopt, getOperands());
-}
-
-void ParamYieldOp::walkDefinitions(
-    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {
-  for (auto [decl, value] :
-       llvm::zip(cast<ParamIfOp>((*this)->getParentOp()).getResultParams(),
-                 getParameters()))
-    walkDef(decl, value);
 }
 
 //===----------------------------------------------------------------------===//

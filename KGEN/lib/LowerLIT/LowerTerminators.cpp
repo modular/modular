@@ -301,7 +301,7 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
         operands = coroHdl;
       }
       if (op->getParentOp() == func)
-        b.create<KGEN::ReturnOp>(resultParams.value_or(std::nullopt), operands);
+        b.create<KGEN::ReturnOp>(operands);
       else
         b.create<HLCF::ReturnOp>(operands);
     };
@@ -343,8 +343,14 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
   for (Block *block : llvm::reverse(deadBlocks))
     block->erase();
 
-  // If the function is explicitly terminated with a `return`, we're good.
   Operation *terminator = func.getBody()->getTerminator();
+  // Bind the result parameter values if there are any.
+  if (resultParams) {
+    OpBuilder b(terminator);
+    b.create<ParamResultBindOp>(terminator->getLoc(), *resultParams);
+  }
+
+  // If the function is explicitly terminated with a `return`, we're good.
   if (!isa<LIT::EndFuncOp>(terminator))
     return success();
 
@@ -371,7 +377,7 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
     createCoroutineFinalize(b, errType, coroHdl, retVal);
     retVal = coroHdl;
   }
-  b.create<KGEN::ReturnOp>(ArrayRef<TypedAttr>(), retVal);
+  b.create<KGEN::ReturnOp>(retVal);
   terminator->erase();
   return success();
 }

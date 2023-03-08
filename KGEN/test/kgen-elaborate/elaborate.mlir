@@ -7,7 +7,8 @@
 // CHECK-NEXT: }
 kgen.generator @test0<() -> result>() -> index {
   %0 = kgen.param.constant = <1>
-  kgen.return <123456> %0 : index
+  kgen.param.result_bind<123456>
+  kgen.return %0 : index
 }
 
 // CHECK-LABEL: kgen.func @parameter_use_chain()
@@ -55,7 +56,8 @@ kgen.generator @genA<size, type: dtype, val: f32 -> result: index>(%arg0: si32) 
   // Silly op so we know when something used this.
   "genA.op"() { value = #kgen.param.decl.ref<"size"> : index} : () -> !pop.scalar<type>
 
-  kgen.return<mul(size, 2)> %arg0 : si32
+  kgen.param.result_bind<mul(size, 2)>
+  kgen.return %arg0 : si32
 }
 // CHECK-LABEL: kgen.func @"genA,size=42,type=f32,val=2"
 // CHECK-SAME: (%[[ARG0:.*]]: si32) -> si32 {
@@ -187,7 +189,8 @@ kgen.generator @use_Itf2one() {
 // CHECK-NOT: kgen.func @track_expansions
 
 kgen.generator @genItf<x -> result>(%arg0: si32) -> si32{
-  kgen.return<x> %arg0 : si32
+  kgen.param.result_bind<x>
+  kgen.return %arg0 : si32
 }
 
 kgen.generator @itfUser(%arg0: si32) -> index {
@@ -243,11 +246,14 @@ kgen.generator @test_f32() -> f32 {
 
 kgen.generator @getSIMDLength<dt: dtype -> length>() {
   kgen.param.if <eq(:dtype dt, f32) -> dtype_length: index> {
-    kgen.param.yield<4>
+    kgen.param.result_bind<4>
+    kgen.param.yield
   } else {
-    kgen.param.yield<2>
+    kgen.param.result_bind<2>
+    kgen.param.yield
   }
-  kgen.return<dtype_length>
+  kgen.param.result_bind<dtype_length>
+  kgen.return
 }
 
 // CHECK-LABEL: kgen.func @paramAssertExample()
@@ -507,7 +513,8 @@ kgen.generator @bar<T:type>(%a: !kgen.paramref<T>) -> !kgen.paramref<T> {
 }
 
 kgen.generator @baz<() -> result>() {
-  kgen.return<50>
+  kgen.param.result_bind<50>
+  kgen.return
 }
 
 // CHECK-LABEL: kgen.func @parametric_addressof
@@ -989,7 +996,8 @@ kgen.generator @passTypeList() {
 }
 
 kgen.generator @type_of_unknown<T: type, value: !kgen.paramref<T> -> is_unknown: i1>() {
-  kgen.return<:i1 eq(:!kgen.paramref<T> value, ?)>
+  kgen.param.result_bind<:i1 eq(:!kgen.paramref<T> value, ?)>
+  kgen.return
 }
 
 // CHECK-LABEL: @check
@@ -1324,7 +1332,8 @@ kgen.generator @rebind_it() {
 // -----
 
 kgen.generator @result<() -> x>() {
-  kgen.return<3>
+  kgen.param.result_bind<3>
+  kgen.return
 }
 
 // CHECK-LABEL @"add,x=3,y=1"
@@ -1401,11 +1410,13 @@ kgen.generator @constexprIfBasic() {
   %0 = kgen.param.if <lt(cond_var, 10) -> next> -> index {
     %1 = "should.not.appear"() : () -> index
     kgen.param.declare next_lt = <add(cond_var, 10)>
-    kgen.param.yield<next_lt> %1 : index
+    kgen.param.result_bind<next_lt>
+    kgen.param.yield %1 : index
   } else {
     %3 = "should.appear"() : () -> index
     kgen.param.declare next_gt = <add(cond_var, 20)>
-    kgen.param.yield<next_gt> %3 : index
+    kgen.param.result_bind<next_gt>
+    kgen.param.yield %3 : index
   }
   // CHECK-NEXT: param.constant = <52>
   %4 = kgen.param.constant = <next>
@@ -1422,18 +1433,22 @@ kgen.generator @nestedConstexprIf() {
   %0 = kgen.param.if <lt(cond_var, 10) -> next> -> index {
     %1 = "should.not.appear"() : () -> index
     kgen.param.declare next_lt = <add(cond_var, 10)>
-    kgen.param.yield<next_lt> %1 : index
+    kgen.param.result_bind<next_lt>
+    kgen.param.yield %1 : index
   } else {
     %3 = kgen.param.if <gt(cond_var, 30) -> next_gt> -> index {
       %4 = "should.appear"() : () -> index
       kgen.param.declare next_gt_gt = <add(cond_var, 20)>
-      kgen.param.yield<next_gt_gt> %4 : index
+      kgen.param.result_bind<next_gt_gt>
+      kgen.param.yield %4 : index
     } else {
       %4 = "should.not.appear"() : () -> index
       kgen.param.declare next_gt_lt = <add(cond_var, 1)>
-      kgen.param.yield<next_gt_lt> %4 : index
+      kgen.param.result_bind<next_gt_lt>
+      kgen.param.yield %4 : index
     }
-    kgen.param.yield<next_gt> %3 : index
+    kgen.param.result_bind<next_gt>
+    kgen.param.yield %3 : index
   }
   // CHECK-NEXT: param.constant = <52>
   %4 = kgen.param.constant = <next>
@@ -1448,7 +1463,8 @@ kgen.generator @nestedConstexprIf2() {
   %0 = kgen.param.if <lt(cond_var, 10) -> next> -> index {
     %1 = "should.not.appear"() : () -> index
     kgen.param.declare next_lt = <add(cond_var, 10)>
-    kgen.param.yield<next_lt> %1 : index
+    kgen.param.result_bind<next_lt>
+    kgen.param.yield %1 : index
   } else {
     // CHECK-NEXT: param.constant: i1 = <1>
     %condition = kgen.param.constant : i1 = <gt(cond_var, 30)>
@@ -1467,7 +1483,8 @@ kgen.generator @nestedConstexprIf2() {
       hlcf.yield %4 : index
     }
     // CHECK-NOT: param.yield
-    kgen.param.yield<next_inner> %3 : index
+    kgen.param.result_bind<next_inner>
+    kgen.param.yield %3 : index
   }
   // CHECK: param.constant = <35>
   %const = kgen.param.constant = <next>
@@ -1504,12 +1521,14 @@ kgen.generator @constexprIfWithSearch() {
     %1 = "should.appear"() : () -> index
     kgen.call @someFunc<x = inParam>() : () -> ()
     kgen.param.declare next_lt = <add(cond_var, 10)>
-    kgen.param.yield<next_lt> %1 : index
+    kgen.param.result_bind<next_lt>
+    kgen.param.yield %1 : index
   } else {
     %3 = "should.not.appear"() : () -> index
     kgen.call @someFunc<x = inParam>() : () -> ()
     kgen.param.declare next_gt = <add(cond_var, 20)>
-    kgen.param.yield<next_gt> %3 : index
+    kgen.param.result_bind<next_gt>
+    kgen.param.yield %3 : index
   }
   %4 = kgen.param.constant = <next>
 
@@ -1558,7 +1577,8 @@ kgen.generator @constexprIfWithParamSearchCall() {
 // -----
 
 kgen.generator @someFunc<x -> y>() {
-  kgen.return<and(x, 2)>
+  kgen.param.result_bind<and(x, 2)>
+  kgen.return
 }
 
 // CHECK-LABEL: @constexprIfWithReturnedCondition_concrete_2()
@@ -1581,10 +1601,12 @@ kgen.generator @constexprIfWithReturnedCondition() {
 
   kgen.param.if <eq(cond_var, 2) -> next> {
     kgen.param.declare next_lt = <add(cond_var, 10)>
-    kgen.param.yield<next_lt>
+    kgen.param.result_bind<next_lt>
+    kgen.param.yield
   } else {
     kgen.param.declare next_gt = <add(cond_var, 20)>
-    kgen.param.yield<next_gt>
+    kgen.param.result_bind<next_gt>
+    kgen.param.yield
   }
 
   kgen.call @someFunc<x = inParam -> cond_var = y>() : () -> ()
@@ -1602,11 +1624,13 @@ kgen.generator @constexprIfInputParam<x>() {
   %0 = kgen.param.if <gt(x, 10) -> next> -> index {
     %1 = "should.appear"() : () -> index
     kgen.param.declare next_lt = <add(x, 10)>
-    kgen.param.yield<next_lt> %1 : index
+    kgen.param.result_bind<next_lt>
+    kgen.param.yield %1 : index
   } else {
     %3 = "should.not.appear"() : () -> index
     kgen.param.declare next_gt = <add(x, 20)>
-    kgen.param.yield<next_gt> %3 : index
+    kgen.param.result_bind<next_gt>
+    kgen.param.yield %3 : index
   }
   // CHECK-NEXT: param.constant = <21>
   %4 = kgen.param.constant = <next>
@@ -1848,12 +1872,15 @@ kgen.generator @produce_one() -> index {
 
 kgen.generator @paramRecurse<in -> out>() {
   kgen.param.if <eq(in, 0) -> v> {
-    kgen.param.yield<0>
+    kgen.param.result_bind<0>
+    kgen.param.yield
   } else {
     kgen.call @paramRecurse<in = add(in, -1) -> val = out>() : () -> ()
-    kgen.param.yield<val>
+    kgen.param.result_bind<val>
+    kgen.param.yield
   }
-  kgen.return<v>
+  kgen.param.result_bind<v>
+  kgen.return
 }
 
 kgen.generator @caller() {
