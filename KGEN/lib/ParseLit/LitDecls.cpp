@@ -1121,7 +1121,8 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
   }
 
   // Verify the operand count lines up.
-  if (fnInfo.numOperands != -1 && size_t(fnInfo.numOperands) != args.size()) {
+  if (fnInfo.numOperands != -1 &&
+      size_t(fnInfo.numOperands + selfArgNumber) != args.size()) {
     size_t numOperands = fnInfo.numOperands;
     emitError("special function must have ")
         << numOperands << " operand" << plural(numOperands);

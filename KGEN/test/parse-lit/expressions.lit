@@ -2,7 +2,7 @@
 
 # CHECK: module {
 
-from prolog import Error, F32, Int, SIMD, object
+from prolog import Error, F32, Int, SIMD, DType, object
 
 fn noop(): pass
 
@@ -59,6 +59,9 @@ struct MemoryPrimaryPair:
     # CHECK: %5 = kgen.call @"{{.*}}__add__{{.*}}"(%1, %4)
     _ = self.y+arg.x
 
+fn inferred_function_with_memory_result[
+  width: __mlir_type.index](x: SIMD[width, DType.f32.value]) -> MemoryPrimaryInt: pass
+
 # CHECK-LABEL: lit.func @"memoryPrimaryOps
 fn memoryPrimaryOps(a&: MemoryPrimaryPair) -> MemoryPrimaryPair:
   # CHECK-NEXT: %v1 = lit.varlet.decl "v1", var = true : <@"$expressions"::@MemoryPrimaryPair>
@@ -109,6 +112,12 @@ fn memoryPrimaryOps(a&: MemoryPrimaryPair) -> MemoryPrimaryPair:
   # CHECK-NEXT: kgen.call @{{.*}}__clone__{{.*}}([[TMPINT]], %14)
   # CHECK-NEXT: kgen.call {{.*}}__new__{{.*}}(%mpFloat, [[TMPINT]])
   let mpFloat : MemoryPrimaryF64 = v2.x
+
+  # CHECK-NEXT: kgen.param.constant: variadic<@"$SIMD"::@SIMD
+  # CHECK-NEXT: kgen.call @"$SIMD"::@SIMD::@"__new__
+  # CHECK-NEXT: %__3 = lit.varlet.decl "_", var = false
+  # CHECK-NEXT: kgen.call @"$expressions"::@"inferred_function_with_memory_result($expressions::MemoryPrimaryInt=&,$SIMD::SIMD[width, #lit.struct.extract<:_\22$prolog\22::_DType apply(:(!kgen.dtype) -> !kgen.declref<_\22$prolog\22::_DType> _\22$prolog\22::_DType::_\22__new__(__mlir_type.!kgen.dtype)\22, f32), \22value\22>])"<width = 4>(%__3, %18) : (!pop.pointer<@"$expressions"::@MemoryPrimaryInt> byref-result, !kgen.declref<@"$SIMD"::@SIMD<size = 4, type: dtype = #lit.struct.extract<:@"$prolog"::@DType apply(:(!kgen.dtype) -> !kgen.declref<@"$prolog"::@DType> @"$prolog"::@DType::@"__new__(__mlir_type.!kgen.dtype)", f32), "value">>>) -> !lit.none
+  _ = inferred_function_with_memory_result(SIMD[4, DType.f32.value]())
 
   # CHECK-NEXT: kgen.call {{.*}}__clone__{{.*}}(%__result__, %v2)
   # CHECK-NEXT: [[NONEVAL:%.*]] = kgen.param.constant: !lit.none = <#lit.none>
