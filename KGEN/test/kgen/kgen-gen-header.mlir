@@ -108,15 +108,15 @@ kgen.func @oneVariadic(%arg0: !kgen.variadic<f32>) -> !pop.struct<i32> {
   kgen.return %0 : !pop.struct<i32>
 }
 
-// ONEVARIADIC: extern int32_t oneVariadic_c(float *, ssize_t);
+// ONEVARIADIC: extern int32_t oneVariadic_c(void *, ssize_t);
 
-kgen.func @twoVariadic(%arg0: !kgen.variadic<f32>,
+kgen.func @twoVariadic(%arg0: !kgen.variadic<!pop.struct<i32, i32>>,
                        %arg1: !kgen.variadic<i32>) -> !pop.struct<i32> {
   %0 = kgen.param.constant: struct<i32> = <{ 0 }>
   kgen.return %0 : !pop.struct<i32>
 }
 
-// TWOVARIADIC: extern int32_t twoVariadic_c(float *, ssize_t, int32_t *, ssize_t);
+// TWOVARIADIC: extern int32_t twoVariadic_c(void *, ssize_t, void *, ssize_t);
 
 kgen.export @someKernel
 kgen.export @someBufferKernel
