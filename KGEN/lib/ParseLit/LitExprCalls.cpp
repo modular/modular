@@ -401,22 +401,6 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
       PRValue paramValue = handleSingleParameterValue(binding, decl.getType());
       if (!paramValue)
         return {};
-
-      // Check to ensure that a memory-only type isn't being emitted as a
-      // type parameter.  In the absence of a traits system, we cannot know what
-      // the __clone__ method or other mechanics are for working with this.
-      if (auto type = paramValue.getIfTypeValue()) {
-        if (!type.isRegisterPassable(binding.expr->getLoc(), emitter.shared)) {
-          emitter.emitError(binding.expr->getLoc(),
-                            "cannot use a memory-only type ")
-              << type << " as generic type parameter"
-              << binding.expr->getRange();
-          incorrectBindingNo = newBindings.size();
-          incorrectBindingExpectedType = type;
-          return {};
-        }
-      }
-
       setParamValue(paramValue);
       continue;
     }
@@ -507,6 +491,8 @@ struct OverloadFitness {
     kArgNotLValue,     //< By-ref argument requires an lvalue, but got an rvalue
     kArgWrongLVType,   //< By-ref argument and provided l-value types mismatch.
     kArgWrongType,     //< An argument value not convertible to expected type
+    kArgGenericMem,    //< Argument bound from mlirtype to a memory-only type.
+    kResultGenericMem, //< Result bound from mlirtype to a memory-only type.
   } kind;
 
   /// The interpretation of this payload depends on the 'kind' field:
@@ -520,6 +506,8 @@ struct OverloadFitness {
   ///  kArgNotLValue:     the argument # that mismatches.
   ///  kArgWrongLVType:   the argument # that mismatches.
   ///  kArgWrongType:     the argument # that mismatches.
+  ///  kArgGenericMem:    the argument # that is a problem.
+  ///  kResultGenericMem: the result #, always 0.
   size_t payload;
 
   /// For type mismatches, this is the actual or expected type, otherwise null.
@@ -584,6 +572,13 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
   std::tie(signature, newBindings) =
       getUnboundSpecializedSignature(signature, newBindings);
 
+  // Check that the result didn't bind to a type that would require changing to
+  // a different result convention.
+  for (auto output : signature.getValueResults())
+    if (!ASTType(output).isRegisterPassable(callable.expr->getLoc(),
+                                            emitter.shared))
+      return {kResultGenericMem, 0, output, newBindings};
+
   // Ok, the parameters all line up, check the argument list.  We generally want
   // to diagnose problems where too few or too many arguments are passed if that
   // is the problem, rather than complaining about a type error of some argument
@@ -642,6 +637,14 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
       continue;
 
     Type expectedType = evaluator.refineType(unboundExpectedType);
+
+    // If the arguments or results got bound to a memory-only type then their
+    // argument convention needs to change.  We cannot support this until we get
+    // proper type traits.  Note that the POP::PointerType is considered a valid
+    // register passable type, so things passed byref are ok.
+    if (!ASTType(expectedType)
+             .isRegisterPassable(callable.expr->getLoc(), emitter.shared))
+      return {kArgGenericMem, expectedArgIdx, expectedType, newBindings};
 
     // Handle case when there are no more provided arguments.
     if (providedValueIdx == operands.size()) {
@@ -741,6 +744,28 @@ void OverloadFitness::diagnose(SignatureType signature,
                                const OverloadSet &callable,
                                ArrayRef<ASTExprAnd<AnyValue>> operands,
                                LitDiagnostic &diag) {
+  auto describePayloadArgumentNo = [&]() {
+    // If this is a method syntax call, don't count the receiver.
+    if (callable.syntax == CallSyntax::kMethodCall) {
+      // it is probably possible for this assert to fire, if it does we should
+      // tailor the error message.
+      assert(payload != 0 && "TODO: unexpected self mismatch");
+      diag << "method argument #" << (payload - 1);
+    } else if (callable.syntax == CallSyntax::kOperator && payload == 1) {
+      diag << "right side";
+    } else if (callable.syntax == CallSyntax::kReversedOperator &&
+               payload == 0) {
+      diag << "left side";
+    } else if (callable.syntax == CallSyntax::kSubscript && payload != 0) {
+      if (payload == 1 && operands.size() == 2)
+        diag << "index";
+      else
+        diag << "index #" << (payload - 1);
+    } else {
+      diag << "argument #" << payload;
+    }
+  };
+
   // TODO: Would be really nice to range underline the operand in question!
   switch (kind) {
   case kValid:
@@ -802,27 +827,17 @@ void OverloadFitness::diagnose(SignatureType signature,
   }
 
   case kArgWrongType:
-    // If this is a method syntax call, don't count the receiver.
-    if (callable.syntax == CallSyntax::kMethodCall) {
-      // it is probably possible for this assert to fire, if it does we should
-      // tailor the error message.
-      assert(payload != 0 && "TODO: unexpected self mismatch");
-      diag << "method argument #" << (payload - 1);
-    } else if (callable.syntax == CallSyntax::kOperator && payload == 1) {
-      diag << "right side";
-    } else if (callable.syntax == CallSyntax::kReversedOperator &&
-               payload == 0) {
-      diag << "left side";
-    } else if (callable.syntax == CallSyntax::kSubscript && payload != 0) {
-      if (payload == 1 && operands.size() == 2)
-        diag << "index";
-      else
-        diag << "index #" << (payload - 1);
-    } else {
-      diag << "argument #" << payload;
-    }
+    describePayloadArgumentNo();
     diag << " cannot be converted from " << operands[payload].ir.getRValueType()
          << " to " << type << operands[payload].expr->getRange();
+    break;
+
+  case kArgGenericMem:
+    describePayloadArgumentNo();
+    diag << " cannot bind generic !mlirtype to memory-only type " << type;
+    break;
+  case kResultGenericMem:
+    diag << "result cannot bind generic !mlirtype to memory-only type " << type;
     break;
   }
 }
