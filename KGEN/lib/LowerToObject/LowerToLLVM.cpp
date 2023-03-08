@@ -53,19 +53,24 @@ static void attachXRayAttributes(llvm::Module &module,
 std::unique_ptr<llvm::Module>
 ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx) {
   OwningOpRef<ModuleOp> module = produceStandaloneModule();
-  return lowerAllFuncsToLLVM(ctx, *module);
+  return lowerAllFuncsToLLVM(ctx, *module, /*isJIT=*/false);
 }
 
 std::unique_ptr<llvm::Module>
-ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
+ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module,
+                                    bool isJIT) {
   TimeTraceScope<> traceScope("lower-to-llvm");
   mgr.clear();
 
+  // We only need to run the elaborator cleanup passes if we are JITing. In
+  // non-JIT mode, we know these cleanup passes have already run.
   // TODO (#7846): Remove this once the elaborator does inlining. Maybe keep
-  //   `force-inline`.
-  mgr.addPass(createForceInline());
-  mgr.addNestedPass<KGEN::FuncOp>(createCleanupCompilerGlobals());
-  mgr.addNestedPass<KGEN::FuncOp>(mlir::createCanonicalizerPass());
+  //               `force-inline`.
+  if (isJIT) {
+    mgr.addPass(createForceInline());
+    mgr.addNestedPass<KGEN::FuncOp>(createCleanupCompilerGlobals());
+    mgr.addNestedPass<KGEN::FuncOp>(mlir::createCanonicalizerPass());
+  }
 
   // If we aren't generating debug information, make sure it's been stripped.
   if (options.debugLevel == CompilationOptions::kNoDebug)
