@@ -59,6 +59,7 @@ fn _raw_stack_allocation[
 # ===----------------------------------------------------------------------===#
 
 
+@register_passable
 struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
     """Defines a Buffer which can be parametrized on a static size and Dtype.
     The Buffer does not own its underlying pointer.
@@ -400,6 +401,7 @@ fn _compute_ndbuffer_offset[
 # ===----------------------------------------------------------------------===#
 
 
+@register_passable
 struct NDBuffer[
     rank: __mlir_type.index,
     shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
@@ -747,6 +749,7 @@ fn partial_simd_store[
 # ===----------------------------------------------------------------------===#
 
 
+@register_passable
 struct DynamicRankBuffer:
     """This buffer struct does not assume the rank to be static. It is not as
     efficient as the statically ranked buffer, but is useful when interacting
