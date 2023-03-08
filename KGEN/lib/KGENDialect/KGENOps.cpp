@@ -221,6 +221,19 @@ LogicalResult ParamResultBindOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// ReturnOp
+//===----------------------------------------------------------------------===//
+
+bool ReturnOp::isParentNode(Operation *op) { return isa<FuncInterface>(op); }
+
+void ReturnOp::getBranchTargets(
+    ArrayRef<Attribute> operands,
+    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
+  assert(operands.size() == getNumOperands());
+  targets.emplace_back(std::nullopt, getOperands());
+}
+
+//===----------------------------------------------------------------------===//
 // ParamAssertOp
 //===----------------------------------------------------------------------===//
 

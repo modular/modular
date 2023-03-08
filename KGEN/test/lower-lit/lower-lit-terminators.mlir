@@ -8,7 +8,7 @@ lit.struct.decl @SomeStruct {
   lit.func @dead_returns(%c: i1, %a: i32, %b: i32) -> i32 {
     // CHECK: hlcf.if %c
     hlcf.if %c {
-      // CHECK-NEXT: hlcf.return %b : i32
+      // CHECK-NEXT: kgen.return %b : i32
       lit.return %b: i32
       lit.return %a: i32
       hlcf.yield
@@ -39,13 +39,13 @@ lit.file_module @FileModule {
       // CHECK-NEXT: except (%arg0:
       } except (%err: !kgen.declref<@Error>) {
         // CHECK-NEXT: %[[R:.*]] = pop.variant.create %arg0
-        // CHECK-NEXT: hlcf.return %[[R]]
+        // CHECK-NEXT: kgen.return %[[R]]
         lit.raise %err : !kgen.declref<@Error>
         lit.try.yield
       // CHECK-NEXT: else
       } else {
         // CHECK-NEXT: %[[R:.*]] = pop.variant.create
-        // CHECK-NEXT: hlcf.return %[[R]]
+        // CHECK-NEXT: kgen.return %[[R]]
         lit.return %a : i32
         lit.try.yield
       // CHECK-NEXT: }
@@ -76,7 +76,7 @@ lit.file_module @FileModule {
         hlcf.yield
       // CHECK-NEXT: }
       }
-      // CHECK-NEXT: hlcf.return
+      // CHECK-NEXT: kgen.return
       lit.return
       hlcf.continue
     // CHECK-NEXT: }
@@ -91,7 +91,7 @@ lit.file_module @FileModule {
 lit.func @result_parameters<() -> r1: i32, r2: i64>(%c: i1) {
   // CHECK: hlcf.if
   hlcf.if %c {
-    // CHECK-NEXT: hlcf.return
+    // CHECK-NEXT: kgen.return
     lit.param_return<:i32 1, :i64 2>
     lit.return
     hlcf.yield
@@ -146,13 +146,13 @@ lit.func @ref(%e: !kgen.declref<@Error>,
     lit.try.yield
   } except (%err: !kgen.declref<@Error>) {
     // CHECK: %[[R:.*]] = pop.variant.create %arg0
-    // CHECK-NEXT: hlcf.return %[[R]]
+    // CHECK-NEXT: kgen.return %[[R]]
     lit.raise %err : !kgen.declref<@Error>
     lit.try.yield
   } else {
     // CHECK: %[[V:.*]] = kgen.param.constant: !lit.none
     // CHECK-NEXT: %[[R:.*]] = pop.variant.create %[[V]]
-    // CHECK-NEXT: hlcf.return %[[R]]
+    // CHECK-NEXT: kgen.return %[[R]]
     %none = kgen.param.constant: !lit.none = <#lit.none>
     lit.return %none : !lit.none
     lit.try.yield
@@ -221,7 +221,7 @@ lit.func @throwing_coro<cond: i1, a>(%err: !kgen.declref<@Error>) async|throws -
     %a = kgen.param.constant = <a>
     // CHECK-NEXT: %[[RESULT:.*]] = pop.variant.create %[[A]]
     // CHECK: pop.store %[[RESULT]]
-    // CHECK-NEXT: hlcf.return %[[HDL]]
+    // CHECK-NEXT: kgen.return %[[HDL]]
     lit.return %a : index
     hlcf.yield
   } else {
@@ -421,8 +421,8 @@ lit.func @bubble_result_params<() -> r0, r1: dtype>() {
   kgen.param.if <1> {
     // CHECK-NEXT: result_bind<1, :dtype si8>
     lit.param_return<1, :dtype si8>
-    // CHECK-NEXT: hlcf.return
-    hlcf.return
+    // CHECK-NEXT: kgen.return
+    kgen.return
   // CHECK: else
   } else {
     // CHECK: kgen.param.if <1 -> *"(branch_result_0)", *"(branch_result_1)": dtype>

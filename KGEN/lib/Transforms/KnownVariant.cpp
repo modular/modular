@@ -203,10 +203,7 @@ void PruneImpossibleVariantsPass::runOnOperation() {
 
     // Reduce the known variant types across all returns.
     SmallVector<Operation *> returns;
-    func.walk([&](Operation *op) {
-      if (isa<ReturnOp, HLCF::ReturnOp>(op))
-        returns.push_back(op);
-    });
+    func.walk([&](ReturnOp op) { returns.push_back(op); });
 
     SmallVector<std::optional<VariantTypes>> types;
     for (auto [i, type] : llvm::enumerate(func.getResultTypes())) {

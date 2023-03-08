@@ -156,8 +156,8 @@ kgen.func @hlcf_scf_loops(%list: !kgen.list<!kgen.list<index[1]>[1]>, %cond: i1,
     } else {
       hlcf.yield
     }
-    // CHECK: hlcf.return %{{.*}} : index
-    hlcf.return %3 : !kgen.list<!kgen.list<index[1]>[1]>
+    // CHECK: kgen.return %{{.*}} : index
+    kgen.return %3 : !kgen.list<!kgen.list<index[1]>[1]>
   }
   kgen.return %2 : !kgen.list<!kgen.list<index[1]>[1]>
 }

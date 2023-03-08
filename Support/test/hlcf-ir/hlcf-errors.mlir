@@ -1,13 +1,5 @@
 // RUN: support-dialect-opt %s -allow-unregistered-dialect -verify-diagnostics -split-input-file
 
-// expected-note @below {{see invalid parent here}}
-func.func @hlcf_parent_op() {
-  // expected-error @below {{'hlcf.return' op expected parent operation to be a control-flow operation but got 'func.func'}}
-  hlcf.return
-}
-
-// -----
-
 func.func @loop_args() {
   // expected-error @below {{'hlcf.loop' op operand types do not match body region argument types}}
   "hlcf.loop"() ({

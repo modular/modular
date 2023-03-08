@@ -44,7 +44,7 @@ kgen.func @top1() -> index {
 
 kgen.func @two_returns(%a: i1, %b: index, %c: index) -> index always_inline {
   hlcf.if %a {
-    hlcf.return %b : index
+    kgen.return %b : index
   } else {
     hlcf.yield
   }

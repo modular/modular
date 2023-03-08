@@ -72,7 +72,7 @@ static Value createUnwrapOrPropagate(ImplicitLocOpBuilder &b, LIT::FuncOp func,
       createCoroutineFinalize(b, errType, coroHdl, result);
       result = coroHdl;
     }
-    b.create<HLCF::ReturnOp>(result);
+    b.create<ReturnOp>(result);
   }
   return ifOp.getResult(0);
 }
@@ -227,7 +227,7 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
       toErase.push_back(op);
 
     } else if (isa<HLCF::ControlFlowNode, HLCF::ControlFlowTerminator>(op) &&
-               !isa<HLCF::ReturnOp>(op) && liveCfOps.contains(op)) {
+               !isa<ReturnOp>(op) && liveCfOps.contains(op)) {
       SmallVector<Attribute> operands;
       for (Value operand : op->getOperands())
         mlir::matchPattern(operand, mlir::m_Constant(&operands.emplace_back()));
@@ -331,10 +331,7 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
         createCoroutineFinalize(b, errType, coroHdl, operands);
         operands = coroHdl;
       }
-      if (op->getParentOp() == func)
-        b.create<KGEN::ReturnOp>(operands);
-      else
-        b.create<HLCF::ReturnOp>(operands);
+      b.create<KGEN::ReturnOp>(operands);
     };
     if (auto returnOp = dyn_cast<LIT::ReturnOp>(op)) {
       ValueRange operands = returnOp.getOperands();

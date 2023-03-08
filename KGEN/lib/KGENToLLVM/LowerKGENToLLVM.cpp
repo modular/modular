@@ -166,22 +166,6 @@ struct ConvertKGENReturn : public ConvertPOPToLLVMPattern<ReturnOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertHLCFReturn
-//===----------------------------------------------------------------------===//
-
-/// Convert `hlcf.return` here as well to maintain correctness.
-struct ConvertHLCFReturn : public ConvertPOPToLLVMPattern<HLCF::ReturnOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(HLCF::ReturnOp op, HLCF::ReturnOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    return HLCF::lowerReturnOperationToLLVM(op, adaptor.getOperands(), rewriter,
-                                            *getTypeConverter());
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // ConvertKGENParamValue
 //===----------------------------------------------------------------------===//
 
@@ -221,8 +205,7 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertKGENAddressOf,
       ConvertKGENCall,
       ConvertKGENParamConstant,
-      ConvertKGENReturn,
-      ConvertHLCFReturn
+      ConvertKGENReturn
       // clang-format on
       >(typeConverter);
   patterns.insert<ConvertKGENFunc>(typeConverter, symtab);
