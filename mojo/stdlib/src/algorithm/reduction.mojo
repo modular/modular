@@ -20,7 +20,9 @@ from List import (
 from Range import range
 from Index import StaticIntTuple
 from TargetInfo import dtype_simd_width, sizeof, dtype_sizeof
+from TypeUtilities import rebind
 from Functional import vectorize, unroll
+from Numerics import inf, neginf
 
 # ===----------------------------------------------------------------------===#
 # reduce
@@ -181,10 +183,9 @@ fn _prod_dims[
 @always_inline
 fn reduce[
     simd_width: __mlir_type.index,
-    input_rank: __mlir_type.index,
-    input_shape: __mlir_type[`!kgen.list<index[`, input_rank, `]>`],
-    output_rank: __mlir_type.index,
-    output_shape: __mlir_type[`!kgen.list<index[`, output_rank, `]>`],
+    rank: __mlir_type.index,
+    input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
     type: __mlir_type.`!kgen.dtype`,
     acc_type: __mlir_type.`!kgen.dtype`,
     map_fn: __mlir_type[
@@ -205,8 +206,8 @@ fn reduce[
     ],
     reduce_axis: __mlir_type.index,
 ](
-    src: NDBuffer[input_rank, input_shape, type],
-    dst: NDBuffer[output_rank, output_shape, acc_type],
+    src: NDBuffer[rank, input_shape, type],
+    dst: NDBuffer[rank, output_shape, acc_type],
     init: SIMD[1, acc_type],
 ):
     """Performs a reduction across reduce_axis of an NDBuffer (src) and stores
@@ -222,16 +223,14 @@ fn reduce[
 
     let h_dynamic = _prod_dims[0, reduce_axis](src)
     let w_dynamic = src.dim[reduce_axis]()
-    let c_dynamic = _prod_dims[reduce_axis + 1, input_rank](src)
+    let c_dynamic = _prod_dims[reduce_axis + 1, rank](src)
 
-    alias h_static = product_or_unknown[
-        input_rank, input_shape, 0, reduce_axis
-    ]()
-    alias w_static = _get_kgen_list_item[
-        reduce_axis, input_rank, __mlir_type.index
-    ](input_shape)
+    alias h_static = product_or_unknown[rank, input_shape, 0, reduce_axis]()
+    alias w_static = _get_kgen_list_item[reduce_axis, rank, __mlir_type.index](
+        input_shape
+    )
     alias c_static = product_or_unknown[
-        input_rank, input_shape, reduce_axis + 1, input_rank
+        rank, input_shape, reduce_axis + 1, rank
     ]()
 
     alias input_3d_shape = create_kgen_list[__mlir_type.index](
@@ -240,11 +239,12 @@ fn reduce[
     alias output_3d_shape = create_kgen_list[__mlir_type.index](
         h_static, c_static
     )
+
     let input_3d = NDBuffer[3, input_3d_shape, type](
-        src.data, input_3d_shape, type
+        src.data, StaticIntTuple[3](h_dynamic, w_dynamic, c_dynamic), type
     )
     let output_3d = NDBuffer[2, output_3d_shape, acc_type](
-        dst.data, output_3d_shape, acc_type
+        dst.data, StaticIntTuple[2](h_dynamic, c_dynamic), acc_type
     )
 
     _reduce_3D[
@@ -298,6 +298,31 @@ fn max[
     ](src, src.__getitem__(0))
 
 
+fn max[
+    simd_width: __mlir_type.index,
+    rank: __mlir_type.index,
+    input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    type: __mlir_type.`!kgen.dtype`,
+    reduce_axis: __mlir_type.index,
+](
+    src: NDBuffer[rank, input_shape, type],
+    dst: NDBuffer[rank, output_shape, type],
+):
+    """Computes the max across reduce_axis of an NDBuffer."""
+    return reduce[
+        simd_width,
+        rank,
+        input_shape,
+        output_shape,
+        type,
+        type,
+        _simd_max_elementwise,
+        _simd_max,
+        reduce_axis,
+    ](src, dst, neginf[type]())
+
+
 # ===----------------------------------------------------------------------===#
 # min
 # ===----------------------------------------------------------------------===#
@@ -336,6 +361,31 @@ fn min[
     return reduce[
         simd_width, size, type, type, _simd_min_elementwise, _simd_min
     ](src, src.__getitem__(0))
+
+
+fn min[
+    simd_width: __mlir_type.index,
+    rank: __mlir_type.index,
+    input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    type: __mlir_type.`!kgen.dtype`,
+    reduce_axis: __mlir_type.index,
+](
+    src: NDBuffer[rank, input_shape, type],
+    dst: NDBuffer[rank, output_shape, type],
+):
+    """Computes the min across reduce_axis of an NDBuffer."""
+    return reduce[
+        simd_width,
+        rank,
+        input_shape,
+        output_shape,
+        type,
+        type,
+        _simd_min_elementwise,
+        _simd_min,
+        reduce_axis,
+    ](src, dst, inf[type]())
 
 
 # ===----------------------------------------------------------------------===#
@@ -380,22 +430,20 @@ fn sum[
 
 fn sum[
     simd_width: __mlir_type.index,
-    input_rank: __mlir_type.index,
-    input_shape: __mlir_type[`!kgen.list<index[`, input_rank, `]>`],
-    output_rank: __mlir_type.index,
-    output_shape: __mlir_type[`!kgen.list<index[`, output_rank, `]>`],
+    rank: __mlir_type.index,
+    input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
     type: __mlir_type.`!kgen.dtype`,
     reduce_axis: __mlir_type.index,
 ](
-    src: NDBuffer[input_rank, input_shape, type],
-    dst: NDBuffer[output_rank, output_shape, type],
+    src: NDBuffer[rank, input_shape, type],
+    dst: NDBuffer[rank, output_shape, type],
 ):
     """Computes the sum across reduce_axis of an NDBuffer."""
     return reduce[
         simd_width,
-        input_rank,
+        rank,
         input_shape,
-        output_rank,
         output_shape,
         type,
         type,
@@ -445,6 +493,31 @@ fn product[
     ](src, 1)
 
 
+fn product[
+    simd_width: __mlir_type.index,
+    rank: __mlir_type.index,
+    input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    type: __mlir_type.`!kgen.dtype`,
+    reduce_axis: __mlir_type.index,
+](
+    src: NDBuffer[rank, input_shape, type],
+    dst: NDBuffer[rank, output_shape, type],
+):
+    """Computes the product across reduce_axis of an NDBuffer."""
+    return reduce[
+        simd_width,
+        rank,
+        input_shape,
+        output_shape,
+        type,
+        type,
+        _simd_product_elementwise,
+        _simd_product,
+        reduce_axis,
+    ](src, dst, 1)
+
+
 # ===----------------------------------------------------------------------===#
 # mean
 # ===----------------------------------------------------------------------===#
@@ -462,6 +535,41 @@ fn mean[
     return (
         SIMD[1, type](sum[simd_width, size, type](src)) / src.__len__()
     ).__getitem__(0)
+
+
+fn mean[
+    simd_width: __mlir_type.index,
+    rank: __mlir_type.index,
+    input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    type: __mlir_type.`!kgen.dtype`,
+    reduce_axis: __mlir_type.index,
+](
+    src: NDBuffer[rank, input_shape, type],
+    dst: NDBuffer[rank, output_shape, type],
+):
+    """Computes the mean across reduce_axis of an NDBuffer."""
+
+    sum[
+        simd_width,
+        rank,
+        input_shape,
+        output_shape,
+        type,
+        reduce_axis,
+    ](src, dst)
+
+    let n = src.dim[reduce_axis]()
+    let n_recip = SIMD[1, type](1) / n
+    let dst_1d = dst.flatten()
+
+    @always_inline
+    fn div[simd_width: __mlir_type.index](idx: Int):
+        let elem = dst_1d.simd_load[simd_width](idx)
+        let to_store = elem * n_recip
+        dst_1d.simd_store[simd_width](idx, to_store)
+
+    vectorize[simd_width, div](dst_1d.__len__())
 
 
 # ===----------------------------------------------------------------------===#

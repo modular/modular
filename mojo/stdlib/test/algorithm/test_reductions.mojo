@@ -83,12 +83,12 @@ fn test_3d_reductions():
     @always_inline
     fn _test_3d_reductions[
         input_shape: __mlir_type[`!kgen.list<index[3]>`],
-        output_shape: __mlir_type[`!kgen.list<index[2]>`],
+        output_shape: __mlir_type[`!kgen.list<index[3]>`],
         reduce_axis: __mlir_type.index,
     ]():
         let input = NDBuffer[3, input_shape, DType.f32.value].stack_allocation()
         let output = (
-            NDBuffer[2, output_shape, DType.f32.value]
+            NDBuffer[3, output_shape, DType.f32.value]
             .stack_allocation()
             .fill(0)
         )
@@ -99,7 +99,6 @@ fn test_3d_reductions():
             simd_width,
             3,
             input_shape,
-            2,
             output_shape,
             DType.f32.value,
             reduce_axis,
@@ -114,7 +113,7 @@ fn test_3d_reductions():
     # CHECK-NEXT: [54.000000]
     _test_3d_reductions[
         create_kgen_list[__mlir_type.index](2, 2, 4),
-        create_kgen_list[__mlir_type.index](2, 2),
+        create_kgen_list[__mlir_type.index](2, 2, 1),
         2,
     ]()
     # CHECK: [4.000000]
@@ -127,7 +126,7 @@ fn test_3d_reductions():
     # CHECK-NEXT: [26.000000]
     _test_3d_reductions[
         create_kgen_list[__mlir_type.index](2, 2, 4),
-        create_kgen_list[__mlir_type.index](2, 4),
+        create_kgen_list[__mlir_type.index](2, 1, 4),
         1,
     ]()
     # CHECK: [8.000000]
@@ -140,7 +139,7 @@ fn test_3d_reductions():
     # CHECK-NEXT: [22.000000]
     _test_3d_reductions[
         create_kgen_list[__mlir_type.index](2, 2, 4),
-        create_kgen_list[__mlir_type.index](2, 4),
+        create_kgen_list[__mlir_type.index](1, 2, 4),
         0,
     ]()
 
