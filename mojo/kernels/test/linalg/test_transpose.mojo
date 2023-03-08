@@ -439,6 +439,84 @@ fn test_transpose_3d():
     print(output[2, 1, 1])
 
 
+# CHECK-LABEL: test_transpose_si64
+fn test_transpose_si64():
+    print("== test_transpose_si64\n")
+
+    alias in_shape = create_kgen_list[__mlir_type.index](2, 2, 3)
+    # Create an input matrix of the form
+    # [[[1, 2, 3],
+    #   [4, 5, 6]],
+    #  [[7, 8, 9],
+    #   [10, 11, 12]]]
+    var input = NDBuffer[3, in_shape, DType.si64.value].stack_allocation()
+    input.__setitem__(StaticIntTuple[3](0, 0, 0), 1)
+    input.__setitem__(StaticIntTuple[3](0, 0, 1), 2)
+    input.__setitem__(StaticIntTuple[3](0, 0, 2), 3)
+    input.__setitem__(StaticIntTuple[3](0, 1, 0), 4)
+    input.__setitem__(StaticIntTuple[3](0, 1, 1), 5)
+    input.__setitem__(StaticIntTuple[3](0, 1, 2), 6)
+    input.__setitem__(StaticIntTuple[3](1, 0, 0), 7)
+    input.__setitem__(StaticIntTuple[3](1, 0, 1), 8)
+    input.__setitem__(StaticIntTuple[3](1, 0, 2), 9)
+    input.__setitem__(StaticIntTuple[3](1, 1, 0), 10)
+    input.__setitem__(StaticIntTuple[3](1, 1, 1), 11)
+    input.__setitem__(StaticIntTuple[3](1, 1, 2), 12)
+
+    # Create a identity permutation array of the form
+    # [2, 1, 0]
+    var perm = Buffer[3, DType.index.value].stack_allocation()
+    perm.__setitem__(0, 2)
+    perm.__setitem__(1, 1)
+    perm.__setitem__(2, 0)
+
+    # Create an output matrix of the form
+    # [[[-1, -1, -1],
+    #   [-1, -1, -1]],
+    #  [[-1, -1, -1],
+    #   [-1, -1, -1]]]
+    alias out_shape = create_kgen_list[__mlir_type.index](3, 2, 2)
+    var output = (
+        NDBuffer[3, out_shape, DType.si64.value].stack_allocation().fill(0)
+    )
+
+    # transpose
+    transpose(output, input, perm.data)
+
+    # output should have form (easily verifiable via numpy)
+    # [[[1, 4],
+    #   [7, 10]],
+    #  [[2, 5],
+    #   [8, 11]]
+    #  [[3, 6],
+    #   [9, 12]]]
+
+    # check: 1
+    print(output[0, 0, 0])
+    # check: 7
+    print(output[0, 0, 1])
+    # check: 4
+    print(output[0, 1, 0])
+    # check: 10
+    print(output[0, 1, 1])
+    # check: 2
+    print(output[1, 0, 0])
+    # check: 8
+    print(output[1, 0, 1])
+    # check: 5
+    print(output[1, 1, 0])
+    # check: 11
+    print(output[1, 1, 1])
+    # check: 3
+    print(output[2, 0, 0])
+    # check: 6
+    print(output[2, 0, 1])
+    # check: 9
+    print(output[2, 1, 0])
+    # check: 12
+    print(output[2, 1, 1])
+
+
 fn main():
     test_transpose_4x4()
     test_transpose_8x8()
@@ -447,3 +525,4 @@ fn main():
     test_transpose_2d()
     test_transpose_3d_identity()
     test_transpose_3d()
+    test_transpose_si64()
