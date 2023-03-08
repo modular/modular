@@ -1301,7 +1301,7 @@ kgen.generator @early_return(%cond: i1) -> index {
     hlcf.yield %idx0 : index
   } else {
     %idx1 = index.constant 1
-    hlcf.return %idx1 : index
+    kgen.return %idx1 : index
   }
   kgen.return %result : index
 }
@@ -1652,7 +1652,7 @@ kgen.generator @constexprIfEarlyExit() -> index {
   %0 = kgen.param.if <gt(x, 10)> -> index {
     %1 = "should.appear"() : () -> index
     // CHECK-NEXT: kgen.return [[RES]]
-    hlcf.return %1 : index
+    kgen.return %1 : index
   } else {
     %3 = "should.not.appear"() : () -> index
     kgen.param.yield %3 : index
@@ -1672,7 +1672,7 @@ kgen.generator @constexprIfEarlyExit2() -> index {
   %0 = kgen.param.if <gt(x, 10)> -> index {
     %1 = "should.appear"() : () -> index
     // CHECK-NEXT: kgen.return [[RES]]
-    hlcf.return %1 : index
+    kgen.return %1 : index
   } else {
     %3 = "should.not.appear"() : () -> index
     kgen.param.yield %3 : index
@@ -1681,8 +1681,8 @@ kgen.generator @constexprIfEarlyExit2() -> index {
   kgen.param.if <gt(x, 10)> {
     "should.not.appear"() : () -> ()
     %4 = index.constant 3
-    // CHECK-NOT: hlcf.return
-    hlcf.return %4 : index
+    // CHECK-NOT: kgen.return
+    kgen.return %4 : index
   } else {
     kgen.param.yield
   }
@@ -1698,7 +1698,7 @@ kgen.generator @constexprIfEarlyExitWithParam() -> index {
   %0 = kgen.param.if <gt(x, 10)> -> index {
     %1 = "should.appear"() : () -> index
     // CHECK-NEXT: kgen.return [[RES]]
-    hlcf.return %1 : index
+    kgen.return %1 : index
   } else {
     %3 = "should.not.appear"() : () -> index
     kgen.param.yield %3 : index
@@ -1718,7 +1718,7 @@ kgen.generator @constexprIfEarlyExitWithParam2() -> index {
   %1 = kgen.param.if <1> -> index {
     %2 = "should.appear"() : () -> index
     // CHECK-NEXT: kgen.return [[RES]]
-    hlcf.return %2 : index
+    kgen.return %2 : index
   } else {
     %3 = "should.not.appear"() : () -> index
     kgen.param.yield %3 : index

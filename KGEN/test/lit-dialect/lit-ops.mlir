@@ -114,8 +114,8 @@ lit.func @raises_error(%raise: i1, %err: !kgen.declref<@Error>, %value: !kgen.de
   hlcf.if %raise {
     // CHECK: %[[ERR:.*]] = pop.variant.create %err
     %result = pop.variant.create %err : !kgen.declref<@Error> -> !pop.variant<@Error, @Int>
-    // CHECK: hlcf.return %[[ERR]]
-    hlcf.return %result : !pop.variant<@Error, @Int>
+    // CHECK: kgen.return %[[ERR]]
+    kgen.return %result : !pop.variant<@Error, @Int>
   } else {
     hlcf.yield
   }

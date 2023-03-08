@@ -20,7 +20,7 @@ kgen.generator @callee() -> index always_inline {
   %0 = index.constant 0
   %false = index.bool.constant false
   hlcf.if %false {
-    hlcf.return %0 : index
+    kgen.return %0 : index
   } else {
     hlcf.yield
   }
@@ -46,7 +46,7 @@ kgen.generator @callee() -> index always_inline {
   %cond = "some.cond"() : () -> i1
   hlcf.if %cond {
     %0 = index.constant 1
-    hlcf.return %0 : index
+    kgen.return %0 : index
   } else {
     hlcf.yield
   }
@@ -74,7 +74,7 @@ kgen.generator @callee<T: type>() -> !kgen.paramref<T> always_inline {
   %0 = "some.producer"() : () -> !kgen.paramref<T>
   %cond = "some.cond"() : () -> i1
   hlcf.if %cond {
-    hlcf.return %0 : !kgen.paramref<T>
+    kgen.return %0 : !kgen.paramref<T>
   } else {
     hlcf.yield
   }
@@ -432,7 +432,7 @@ kgen.generator @callee() always_inline {
 kgen.generator @parent() {
   // CHECK: declare.region F
     // CHECK-NEXT: hlcf.if
-      // CHECK-NEXT: hlcf.return
+      // CHECK-NEXT: kgen.return
   // CHECK: hlcf.if
   // CHECK-NEXT: hlcf.break "[[LABEL:.*]]"
   kgen.call @callee() : () -> ()
@@ -444,14 +444,14 @@ kgen.generator @callee() always_inline {
   %cond = "some.cond"() : () -> i1
   kgen.param.declare.region F = () {
     hlcf.if %cond {
-      hlcf.return
+      kgen.return
     } else {
       hlcf.yield
     }
     kgen.return
   }
   hlcf.if %cond {
-    hlcf.return
+    kgen.return
   } else {
     hlcf.yield
   }

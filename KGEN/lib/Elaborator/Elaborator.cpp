@@ -1526,15 +1526,8 @@ ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent) {
     terminator->erase();
   } else if (auto hlcfTerm =
                  dyn_cast<HLCF::ControlFlowTerminator>(terminator)) {
-    // If it's an hlcf.return op, we have to split the block after the return.
+    // If it's an kgen.return op, we have to split the block after the return.
     hlcfTerm->getBlock()->splitBlock(++hlcfTerm->getIterator());
-    // If the terminator is a return op on the func we're elaborating, replace
-    // it with a kgen.return.
-    if (isa<HLCF::ReturnOp>(hlcfTerm) &&
-        hlcfTerm->getParentOp() == parent->op) {
-      mlir::IRRewriter b{OpBuilder(hlcfTerm)};
-      b.replaceOpWithNewOp<ReturnOp>(hlcfTerm, hlcfTerm->getOperands());
-    }
     // Drop all uses of the if op because any of its uses will be null and void
     // at this point.
     op->dropAllDefinedValueUses();

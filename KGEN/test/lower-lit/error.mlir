@@ -8,8 +8,8 @@ lit.func @return_raise_or(%cond: i1, %err: !kgen.declref<@Error>) -> !pop.varian
   hlcf.if %cond {
     // CHECK: %[[ERR:.*]] = pop.variant.create %arg1
     %0 = pop.variant.create %err : !kgen.declref<@Error> -> !pop.variant<@Error, !lit.none>
-    // CHECK-NEXT: hlcf.return %[[ERR]]
-    hlcf.return %0 : !pop.variant<@Error, !lit.none>
+    // CHECK-NEXT: kgen.return %[[ERR]]
+    kgen.return %0 : !pop.variant<@Error, !lit.none>
   } else {
     hlcf.yield
   }

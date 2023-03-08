@@ -26,9 +26,9 @@ kgen.generator @use_in_region(%arg0: index, %arg1: i1) -> index {
 
   // CHECK-NEXT: hlcf.if
   hlcf.if %arg1 {
-    // CHECK-NEXT: hlcf.return %arg0
+    // CHECK-NEXT: kgen.return %arg0
     %1 = pop.load %0 : !pop.pointer<index>
-    hlcf.return %1 : index
+    kgen.return %1 : index
   } else {
     hlcf.yield
   }
@@ -47,7 +47,7 @@ kgen.generator @store_in_region(%arg0: index, %arg1: index, %arg2: i1) -> index 
 
   hlcf.if %arg2 {
     %1 = pop.load %0 : !pop.pointer<index>
-    hlcf.return %1 : index
+    kgen.return %1 : index
   } else {
     pop.store %arg1, %0 : !pop.pointer<index>
     hlcf.yield

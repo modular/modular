@@ -472,7 +472,7 @@ LogicalResult KGEN::inlineGeneratorCall(
       // Walk over nested functions. Control-flow does not cross them.
       if (op != callee && isa<FuncInterface>(op))
         return WalkResult::skip();
-      if (!isa<ReturnOp, HLCF::ReturnOp, ParamResultBindOp>(op))
+      if (!isa<ReturnOp, ParamResultBindOp>(op))
         return WalkResult::advance();
 
       Operation *cloned = map.lookup(op);
@@ -692,7 +692,7 @@ static LogicalResult inlineFunctionCall(FuncOp func,
       }
 
       // Replace all returns with breaks to the control flow scope.
-      if (!isa<KGEN::ReturnOp, HLCF::ReturnOp>(op))
+      if (!isa<ReturnOp>(op))
         return;
       b.setInsertionPoint(op);
       b.replaceOpWithNewOp<HLCF::BreakOp>(op, op->getOperands(), label);

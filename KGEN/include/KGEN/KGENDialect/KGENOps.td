@@ -499,7 +499,8 @@ def KGEN_ParamResultBindOp : KGENOp<"param.result_bind",
 // ReturnOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_ReturnOp : KGENOp<"return", [Terminator, ReturnLike]> {
+def KGEN_ReturnOp : KGENOp<"return", [Terminator, ReturnLike,
+    DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
   let summary = "return operation for kgen declarations";
   let description = [{
     The `kgen.return` operation specifies the returned values for a `kgen.func`

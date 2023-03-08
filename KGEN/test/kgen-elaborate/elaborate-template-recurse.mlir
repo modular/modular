@@ -16,7 +16,7 @@
 module {
   kgen.generator @recurse<axis>(%arg0: index) -> index {
     kgen.param.if <eq(axis, 0)> {
-      hlcf.return %arg0 : index
+      kgen.return %arg0 : index
     } else {
       kgen.param.yield
     }

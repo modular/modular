@@ -169,7 +169,8 @@ LogicalResult HLCF::verifyControlFlowNode(ControlFlowNode op) {
 LogicalResult HLCF::verifyControlFlowTerminator(ControlFlowTerminator op) {
   // Verify that the terminator's parent is an HLCF operation.
   Operation *parent = op->getParentOp();
-  if (isa<ControlFlowNode>(parent))
+  if (isa<ControlFlowNode>(parent) || (op->hasTrait<OpTrait::ReturnLike>() &&
+                                       isa<mlir::FunctionOpInterface>(parent)))
     return success();
   return (op->emitOpError("expected parent operation to be a control-flow "
                           "operation but got '")
