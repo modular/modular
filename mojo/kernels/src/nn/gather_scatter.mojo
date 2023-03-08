@@ -21,6 +21,7 @@ from TypeUtilities import rebind
 from SIMD import SIMD
 
 # Argument for gather task
+@register_passable
 struct GatherArgs[
     type: __mlir_type.`!kgen.dtype`,
     indices_rank: __mlir_type.index,

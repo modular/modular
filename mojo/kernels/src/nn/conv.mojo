@@ -149,6 +149,7 @@ struct ImageData[
         self.data.__setitem__(self._get_index(n, c, h, w), value)
 
 
+@register_passable
 struct ConvShape:
     """A shape struct describing the convolution dimensions"""
 
@@ -1111,6 +1112,7 @@ struct PackIm2ColNCHW[
 #  Could drastically clean up when non-inlined closure is supported or without
 #   language support the conv op and matmul op should share a "gemm skeleton"
 #   library to de-duplicate.
+@register_passable
 struct ConvIm2ColNCHW[
     shape_input: __mlir_type[`!kgen.list<index[4]>`],
     shape_filter: __mlir_type[`!kgen.list<index[4]>`],
@@ -2136,6 +2138,7 @@ fn get_partitioned_workload(
 #  Could drastically clean up when non-inlined closure is supported or without
 #   language support the conv op and matmul op should share a "gemm skeleton"
 #   library to de-duplicate.
+@register_passable
 struct ConvIm2ColNHWC[
     shape_input: __mlir_type[`!kgen.list<index[4]>`],
     shape_filter: __mlir_type[`!kgen.list<index[4]>`],
