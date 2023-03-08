@@ -515,7 +515,7 @@ LitSharedState::importModuleState(StringRef moduleName, llvm::SMLoc loc) {
     emitError(loc, "unable to locate module '") << moduleName << "'";
 
     // Don't bail if we can't find the module, create a dummy decl so that we
-    // can have better error recorvery/messages.
+    // can have better error recovery/messages.
     ASTDecl &moduleDecl =
         declResolver->addErroneousDecl(mangledName, loc, impl->topLevelDecl);
     impl->importedModules.insert(

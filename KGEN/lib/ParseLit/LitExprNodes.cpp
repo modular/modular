@@ -937,6 +937,15 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
     }
   }
 
+  for (auto type : state.types)
+    if (!ASTType(type).isRegisterPrimary(call.getLoc(), emitter.shared)) {
+      emitter.emitError(call.getLoc())
+          << ASTType(type)
+          << " cannot be returned directly from __mlir_op as it is not a "
+             "'@register_passable' types";
+      return {};
+    }
+
   // Check for an unregistered operation, because otherwise MLIR will crash when
   // assertions are enabled.
   if (!state.name.getDialect() &&
@@ -1465,7 +1474,7 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
   // If this is a memory primary struct, initialize the fields into the result
   // buffer.
   LValue memoryPrimaryBase;
-  if (!structOp.getIsRegisterPrimary())
+  if (!structOp.getIsRegisterPassable())
     memoryPrimaryBase =
         dest.getLValueForResult(getLoc(), initType,
                                 /*allowIncompatibleTypes=*/false, emitter);
@@ -1555,8 +1564,8 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
       return {};
     }
 
-    // Memory primary values have alreayd been handled.
-    if (!structOp.getIsRegisterPrimary())
+    // Memory primary values have already been handled.
+    if (!structOp.getIsRegisterPassable())
       continue;
 
     // If all the initializers are PRValues, we can emit this as a StructAttr.
@@ -1576,7 +1585,7 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
 
   // If this is memory primary, we've initialized all the fields.  Just return
   // the result.
-  if (!structOp.getIsRegisterPrimary())
+  if (!structOp.getIsRegisterPassable())
     return emitter.emitResult(MRValue(memoryPrimaryBase), this, dest);
 
   // If all the fields are PRValues, form a new PRValue.

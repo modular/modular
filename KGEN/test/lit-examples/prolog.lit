@@ -79,6 +79,7 @@ struct StringRef:
         )
 
 
+@register_passable
 struct Error:
     var msg: StringRef
 

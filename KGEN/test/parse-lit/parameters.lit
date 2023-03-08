@@ -10,7 +10,7 @@ alias index = __mlir_type.index
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.struct.decl @OurSIMD<size, dt: @"$prolog"::@DType>
-# CHECK-SAME: attributes {isRegisterPrimary} {
+# CHECK-SAME: attributes {isRegisterPassable} {
 struct OurSIMD[size: index, dt: DType]:
   pass
 
@@ -277,6 +277,7 @@ fn testResultParamConversion[() -> b: Int](a: Int):
   # CHECK: lit.param_return<:@"$Int"::@Int #lit.struct<{{.*}} 4}
   param_return[4]
 
+@register_passable
 struct Error:
   pass
 

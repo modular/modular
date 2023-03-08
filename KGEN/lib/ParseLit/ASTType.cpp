@@ -60,7 +60,7 @@ bool ASTType::isRegisterPrimary(SMLoc loc, LitSharedState &shared) const {
 
   auto structOp = dyn_cast<StructDeclOp>(*decl);
   assert(structOp && "only one user-defined type so far");
-  return structOp.getIsRegisterPrimary();
+  return structOp.getIsRegisterPassable();
 }
 
 /// Given a POP::PointerType, return the element as an ASTType.  This aborts

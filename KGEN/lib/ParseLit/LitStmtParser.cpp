@@ -731,16 +731,15 @@ ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
 
   // For Loop condition: if the length of the range is greater than zero,
   // continue. Otherwise break
-  SRValue loaded_range = SRValue(builder.create<POP::LoadOp>(
-      translateLocation(seqExp->getLoc()), rangeRef, std::nullopt));
-  AnyValue current_length = getEmitter().emitNamedMethodCall(
-      "__len__", {{loaded_range, seqExp}}, ValueDest::none(),
+  AnyValue currentLength = getEmitter().emitNamedMethodCall(
+      "__len__", {{LValue(rangeRef), seqExp}}, ValueDest::none(),
       CallSyntax::kImplicitConvert, seqExp);
-  if (!current_length)
+  SRValue lengthSRVal =
+      getEmitter().emitSRValue({currentLength, seqExp}, EC_ForIterator);
+  if (!lengthSRVal)
     return {};
-  SRValue pop_length = getEmitter().emitBoxedIntAsPopScalar(
-      current_length.getIfSRValue(), seqExp);
-  if (!pop_length)
+  SRValue popLength = getEmitter().emitBoxedIntAsPopScalar(lengthSRVal, seqExp);
+  if (!popLength)
     return {};
   Value pop_zero = builder.create<POP::CastFromBuiltinOp>(
       translateLocation(seqExp->getLoc()),
@@ -748,7 +747,7 @@ ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
                          KGENDType(KGENDType::ExtraCases::index)),
       builder.create<mlir::index::ConstantOp>(forLoc, 0));
   POP::CmpOp cmpOp = builder.create<POP::CmpOp>(
-      forLoc, KGEN::POP::CmpPredicate::GT, pop_length, pop_zero);
+      forLoc, KGEN::POP::CmpPredicate::GT, popLength, pop_zero);
   POP::CastToBuiltinOp should_continue =
       builder.create<POP::CastToBuiltinOp>(forLoc, builder.getI1Type(), cmpOp);
 
@@ -825,6 +824,11 @@ ParseResult LitStmtParser::parseTryStmt(size_t curIndent) {
   auto errorType = shared.lookupErrorType(errValLoc, containingDecl);
   if (!errorType)
     return failure();
+
+  if (!errorType.isRegisterPrimary(errValLoc, shared)) {
+    emitError(errValLoc) << errorType << " is not a @register_passable type";
+    return failure();
+  }
 
   Block *exceptBlock = builder.createBlock(&tryOp.getExceptRegion());
   Value errVal =
