@@ -772,12 +772,13 @@ struct VariadicList[type: __mlir_type.`!kgen.mlirtype`]:
         """
         return Self {value: value}
 
-    fn size(self) -> Int:
-        """Accessor for the size of the list of variadic elements.
+    fn __len__(self) -> Int:
+        """Gets the size of the list.
 
-        Returns (VariadicList):
+        Returns:
             The number of elements on the variadic list.
         """
+
         return __mlir_op.`pop.variadic.size`(self.value)
 
     fn __getitem__(self, index: Int) -> type:
