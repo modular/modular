@@ -735,6 +735,7 @@ fn create_kgen_list_unknown[
 # ===----------------------------------------------------------------------===#
 
 
+@register_passable
 struct VariadicList[type: __mlir_type.`!kgen.mlirtype`]:
     """A utility class to access variadic function arguments. Provides a "list"
     view of the function argument so that the size of the argument list and each
