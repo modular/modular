@@ -319,6 +319,9 @@ struct PackMatrixRows[
                 original matrix.
             pack_tile_dim(StaticIntTuple): 2D dimension tuple describing the
                 size of the packed tile.
+            valid_data_dim(StaticIntTuple): 2D dimension tuple describing the
+                amount of valid data on the global buffer starting from the
+                offset.
         """
         assert_param[row_inner_size % simd_size == 0]()
 
@@ -494,8 +497,8 @@ struct PackMatrixRows[
             col_idx = 0
             while col_idx < self.pack_tile_dim[1]:
                 unswitch[transpose_pack_unit](
-                    row_idx < valid_tile_simd_dim[0],
-                    col_idx < valid_tile_simd_dim[1],
+                    row_idx + simd_size <= valid_tile_simd_dim[0],
+                    col_idx + simd_size <= valid_tile_simd_dim[1],
                 )
                 col_idx += simd_size
             row_idx += simd_size
@@ -546,6 +549,9 @@ struct PackMatrixCols[
                 original matrix.
             pack_tile_dim(StaticIntTuple): 2D dimension tuple describing the
                 size of the packed tile.
+            valid_data_dim(StaticIntTuple): 2D dimension tuple describing the
+                amount of valid data on the global buffer starting from the
+                offset.
         """
         assert_param[column_inner_size % simd_size == 0]()
         debug_assert(
@@ -1141,10 +1147,12 @@ struct TiledMatmul[
                 b_packed,
                 self.b,
                 # Input is [N, K]:
+                # Starting global offset for packing.
                 Index(global_offset.N, global_offset.K),
                 Index(sub_tile_n, sub_tile_k),
-                # Valid input dimension
-                Index(self.global_tile_shape.N, self.global_tile_shape.K),
+                # Valid amount of input from the starting offset.
+                Index(self.global_tile_shape.N, self.global_tile_shape.K)
+                - Index(global_offset.N, global_offset.K),
             )
         else:
             PackMatrixCols[
@@ -1157,10 +1165,12 @@ struct TiledMatmul[
                 b_packed,
                 self.b,
                 # Input is [K, N]:
+                # Starting global offset for packing.
                 Index(global_offset.K, global_offset.N),
                 Index(sub_tile_k, sub_tile_n),
-                # Valid input dimension
-                Index(self.global_tile_shape.K, self.global_tile_shape.N),
+                # Valid amount of input from the starting offset.
+                Index(self.global_tile_shape.K, self.global_tile_shape.N)
+                - Index(global_offset.K, global_offset.N),
             )
 
         # Launch the MLoop
