@@ -43,12 +43,15 @@ struct MemoryPrimaryPair:
   var x: Int
   var y: Int
   fn __new__() -> Self: return Self {x: 0, y: 0}
+  fn __clone__(self&) -> Self: return Self {x: 0, y: 0}
 
 struct NonCopyable: # expected-note {{type declared here}}
   fn __new__() -> Self: return Self {}
 
 # expected-note @+1 {{function declared here}}
-fn generic_on_type[T: __mlir_type.`!kgen.mlirtype`](): pass
+fn generic_on_type_bad[T: __mlir_type.`!kgen.mlirtype`](a: T): pass
+
+fn generic_on_type_ok[T: __mlir_type.`!kgen.mlirtype`](): pass
 
 def testLValuesRvalues():
   # Test with lvalues
@@ -81,9 +84,11 @@ def testLValuesRvalues():
   let mpPair = MemoryPrimaryPair()
   mpPair.x = 1 # expected-error {{cannot assign to immutable expression}}
 
-  # expected-error @+2 {{invalid call to 'generic_on_type': callee parameter 'T' has '$expressions-errors::MemoryPrimaryPair' type, but value has type '__mlir_type.!kgen.mlirtype'}}
-  # expected-error @+1 {{cannot use a memory-only type '$expressions-errors::MemoryPrimaryPair' as generic type parameter}}
-  generic_on_type[MemoryPrimaryPair]()
+  # expected-error @+1 {{invalid call to 'generic_on_type_bad': argument #0 cannot bind generic !mlirtype to memory-only type '$expressions-errors::MemoryPrimaryPair'}}
+  generic_on_type_bad[MemoryPrimaryPair](mpPair)
+
+  # This should be allowed.
+  generic_on_type_ok[MemoryPrimaryPair]()
 
 # expected-note @+1 {{function declared here}}
 fn badRef(val&: Int):
