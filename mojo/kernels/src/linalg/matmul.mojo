@@ -41,6 +41,7 @@ fn get_pack_data_size() -> Int:
     return 131_072
 
 
+@register_passable
 struct MatmulConfig:
     """Static configuration of tiled matmul algorithms."""
 
@@ -69,6 +70,7 @@ struct MatmulConfig:
     var pack_data_size: __mlir_type.index
 
 
+@register_passable
 struct GemmShape:
     """Helper class to unpack gemm dimension and layout."""
 
