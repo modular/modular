@@ -614,3 +614,67 @@ fn unswitch[
             switched_func[False, static_switch]()
 
         unswitch[switched_a_false](dynamic_switch_b)
+
+
+# ===----------------------------------------------------------------------===#
+# TileWithUnswitch
+# ===----------------------------------------------------------------------===#
+
+"""
+Signature of a tiled function that performs some work with a static tile size
+  and an offset. i.e. func<tile_size: Int> (offset: Int)
+"""
+alias Static1DTileUnswitchUnitFunc = __mlir_type[
+    `!kgen.signature<<tile_size:`,
+    Int,
+    `, static_switch:`,
+    Bool,
+    `>(`,
+    Int,
+    `,`,
+    Int,
+    `) -> !lit.none>`,
+]
+
+
+@always_inline
+fn tile_and_unswitch[
+    workgroup_function: Static1DTileUnswitchUnitFunc,
+    tile_size_list: VariadicList[Int],
+](offset: Int, upperbound: Int):
+    """A variant of static tile given a workgroup function that can be
+    unswitched. This generator is a fused version of tile and unswitch, where
+    the static unswitch is true throughout the "inner" portion of the workload
+    and is false only on the residue tile.
+
+    Args:
+        workgroup_function(Static1DTileUnitFunc): workgroup function that processes one
+            tile of workload.
+        tile_size_list(VariadicList[Int]): List of tile sizes to launch work.
+        offset(Int): The initial index to start the work from.
+        upperbound(Int): The runtime upperbound that the work function should not exceed.
+    """
+
+    # Initialize where to start on the overall work load.
+    var current_offset: Int = offset
+
+    @always_inline
+    fn static_tile_impl[idx: __mlir_type.index]():
+        # Get the tile size to proceed with.
+        let tile_size = tile_size_list[idx]
+
+        # Process work with the tile size until there's not enough remaining work
+        #  to fit in a tile.
+        while current_offset <= upperbound - tile_size:
+            workgroup_function[tile_size_list[idx], True](
+                current_offset, upperbound
+            )
+            current_offset += tile_size
+
+    unroll[tile_size_list.__len__().__as_mlir_index(), static_tile_impl]()
+
+    # Use the last tile size to process the residue.
+    if current_offset < upperbound:
+        workgroup_function[tile_size_list[tile_size_list.__len__() - 1], False](
+            current_offset, upperbound
+        )

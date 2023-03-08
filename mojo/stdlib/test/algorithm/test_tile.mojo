@@ -6,7 +6,7 @@
 # RUN: lit %s | FileCheck %s
 
 from Int import Int
-from Functional import tile, unswitch
+from Functional import tile, unswitch, tile_and_unswitch
 from List import VariadicList
 from IO import print
 from Index import Index, StaticIntTuple
@@ -123,8 +123,44 @@ fn test_unswitched_2d_tile():
     switched_tile[2, 3](Index(1, 2), Index(4, 4))
 
 
+# CHECK-LABEL: test_tile_and_unswitch
+fn test_tile_and_unswitch():
+    print("test_tile_and_unswitch\n")
+    # Helper workgroup function to test static workgroup tiling.
+    @always_inline
+    fn print_number_static_unswitched[
+        tile_size: Int, static_switch: Bool
+    ](data_idx: Int, upperbound: Int):
+        print(Index(data_idx, tile_size, upperbound))
+        print("Unswitched: ")
+        print(static_switch)
+
+    # CHECK: (0, 4, 6)
+    # CHECK: Unswitched: True
+    # CHECK: (4, 2, 6)
+    # CHECK: Unswitched: True
+    tile_and_unswitch[
+        print_number_static_unswitched, VariadicList[Int](4, 3, 2)
+    ](0, 6)
+    # CHECK: (0, 4, 8)
+    # CHECK: Unswitched: True
+    # CHECK: (4, 4, 8)
+    # CHECK: Unswitched: True
+    tile_and_unswitch[
+        print_number_static_unswitched, VariadicList[Int](4, 3, 2)
+    ](0, 8)
+    # CHECK: (1, 4, 6)
+    # CHECK: Unswitched: True
+    # CHECK: (5, 2, 6)
+    # CHECK: Unswitched: False
+    tile_and_unswitch[
+        print_number_static_unswitched, VariadicList[Int](4, 3, 2)
+    ](1, 6)
+
+
 fn main():
     test_static_tile()
     test_dynamic_tile()
     test_unswitched_tile()
     test_unswitched_2d_tile()
+    test_tile_and_unswitch()
