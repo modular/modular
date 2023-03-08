@@ -631,8 +631,9 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
   // Use a LitParameterEvaluator to substitute 'apply' expressions in the
   // argument types.
   LitParameterEvaluator evaluator(emitter.getDeclResolver());
-  for (auto [expectedArgIdx, unboundExpectedType] :
+  for (auto [expectedArgIdxX, unboundExpectedType] :
        llvm::enumerate(signature.getValueInputs())) {
+    size_t expectedArgIdx = expectedArgIdxX; // Workaround lambda problem.
     ValueInputConvention expectedConvention =
         signature.getInputConvention(expectedArgIdx);
 
@@ -640,7 +641,6 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
     if (expectedConvention == ValueInputConvention::ByRefResult)
       continue;
 
-    unsigned argIdx = expectedArgIdx;
     Type expectedType = evaluator.refineType(unboundExpectedType);
 
     // Handle case when there are no more provided arguments.
@@ -649,10 +649,10 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
       // with zero values no problem.
       if (signature.isVararg(expectedArgIdx))
         break;
-      // We don't need a provided value for this index if we can use a default
-      // value, which has already been converted to the expected type.
-      if (providedValueIdx >= signature.getValueInputs().size() -
-                                  signature.getDefaultArguments().size())
+      // We don't need to provide value for this argument if it has a default
+      // value.
+      if (expectedArgIdx >= signature.getValueInputs().size() -
+                                signature.getDefaultArguments().size())
         // In the callee, arguments with default values must be followed only by
         // other arguments with default values, so we do not need to enumerate
         // any more of the callee arguments.
@@ -664,7 +664,7 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
     auto checkOneOperand = [&](ASTType expectedType) -> OverloadFitness {
       // We'll bind the next provided value.
       auto operand = operands[providedValueIdx];
-      assert(!signature.isKWVararg(argIdx) &&
+      assert(!signature.isKWVararg(expectedArgIdx) &&
              "keyword arguments and `**arg` variadics not supported yet");
       switch (expectedConvention) {
       case ValueInputConvention::ByRef:
@@ -1577,9 +1577,15 @@ AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
     // create a variadic sequence.
     SmallVector<Value> variadicArgs;
     for (auto &operand : variadicOperands) {
-      // TODO(memory_only): Emit into memory directly.
-      SRValue argVal =
-          emitSRValue({emitOneArgVal(operand), operand.expr}, EC_CallArgValue);
+      Value argVal;
+      // Convert any PRValues to an SRValue for variadic create.
+      if (convention == ValueInputConvention::ByVal) {
+        argVal = emitSRValue({operand.ir, operand.expr}, EC_CallArgValue);
+      } else {
+        assert(convention == ValueInputConvention::ByValInMem);
+        argVal = operand.ir.getIfMRValue();
+        assert(argVal && "Passing variadic argument in a strange way");
+      }
       if (!argVal)
         return {};
       variadicArgs.push_back(argVal);
@@ -1625,25 +1631,32 @@ AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
     return emitResult(result, callExpr, dest);
   }
 
-  // Otherwise, materialize PRValue arguments as SRValues.
+  // Otherwise, materialize PRValue arguments as SSA values for emission.
   SmallVector<Value> callArgs;
   Location loc = translateLocation(callExpr->getLoc());
-  for (auto [argValAndExpr, calleeArgType, convention] :
-       llvm::zip(argumentValues, calleeSig.getValueInputs(),
-                 calleeSig.getValueInputConventions())) {
+  for (auto [argValAndExpr, convention, calleeArgTypeAndIdx] :
+       llvm::zip(argumentValues, calleeSig.getValueInputConventions(),
+                 llvm::enumerate(calleeSig.getValueInputs()))) {
+    auto calleeArgType = calleeArgTypeAndIdx.value();
+    auto argIdx = calleeArgTypeAndIdx.index();
+
     Value arg;
-    if (convention == ValueInputConvention::ByRef ||
-        convention == ValueInputConvention::ByRefResult) {
-      arg = argValAndExpr.ir.getIfLValue();
-    } else if (convention == ValueInputConvention::ByValInMem) {
-      arg = argValAndExpr.ir.getIfMRValue();
-    } else {
-      assert(convention == ValueInputConvention::ByVal);
+    if (convention == ValueInputConvention::ByVal ||
+        calleeSig.isVararg(argIdx)) {
       arg = emitSRValue(argValAndExpr, EC_CallArgValue);
       if (!arg)
         return {};
+    } else if (convention == ValueInputConvention::ByRef ||
+               convention == ValueInputConvention::ByRefResult) {
+      arg = argValAndExpr.ir.getIfLValue();
+    } else if (convention == ValueInputConvention::ByValInMem) {
+      arg = argValAndExpr.ir.getIfMRValue();
     }
-    assert(arg && "Didn't get value?");
+    if (!arg) {
+      llvm::errs() << "CALL ARG MISMATCH: " << int(convention) << " ";
+      argValAndExpr.ir.dump();
+      llvm_unreachable("didn't get a value as expected");
+    }
     if (arg.getType() != calleeArgType)
       arg = builder->create<RebindOp>(loc, calleeArgType, arg);
     callArgs.push_back(arg);
