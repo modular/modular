@@ -239,7 +239,7 @@ bool SignatureType::isKWVararg(size_t index) {
 
 /// Return true if this signature has a first argument is a result from the
 /// function returned through memory.
-bool SignatureType::hasMemoryPrimaryResult() {
+bool SignatureType::hasMemoryOnlyResult() {
   auto conventions = getValueInputConventions();
   return conventions.size() >= 1 &&
          conventions[0] == ValueInputConvention::ByRefResult;

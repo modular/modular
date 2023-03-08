@@ -402,11 +402,11 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
       if (!paramValue)
         return {};
 
-      // Check to ensure that a memory-primary type isn't being emitted as a
+      // Check to ensure that a memory-only type isn't being emitted as a
       // type parameter.  In the absence of a traits system, we cannot know what
       // the __clone__ method or other mechanics are for working with this.
       if (auto type = paramValue.getIfTypeValue()) {
-        if (!type.isRegisterPrimary(binding.expr->getLoc(), emitter.shared)) {
+        if (!type.isRegisterPassable(binding.expr->getLoc(), emitter.shared)) {
           emitter.emitError(binding.expr->getLoc(),
                             "cannot use a memory-only type ")
               << type << " as generic type parameter"
@@ -1278,7 +1278,6 @@ CRValue OverloadSet::emitAsCRValue(ExprEmitter &emitter, ValueDest &dest) {
   case ValueInputConvention::ByVal:
     // Otherwise we can have either an lvalue or rvalue, but we need to convert
     // to an rvalue if we have an lvalue.
-    // TODO(memory_primary): Emit 'self' into memory directly.
     firstArgValue = emitter.emitSRValue(baseValue, EC_CallArgValue);
     if (!firstArgValue)
       return {};
@@ -1483,7 +1482,7 @@ AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
 
     // If this is the return slot for a call, propagate the ValueDest into it.
     if (convention == ValueInputConvention::ByRefResult) {
-      assert(idx == 0 && calleeSig.hasMemoryPrimaryResult());
+      assert(idx == 0 && calleeSig.hasMemoryOnlyResult());
       auto rvalueType = ASTType(expectedType).getPointerElementType();
       LValue result =
           dest.getLValueForResult(callExpr->getLoc(), rvalueType,
@@ -1578,7 +1577,7 @@ AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
     // create a variadic sequence.
     SmallVector<Value> variadicArgs;
     for (auto &operand : variadicOperands) {
-      // TODO(memory_primary): Emit into memory directly.
+      // TODO(memory_only): Emit into memory directly.
       SRValue argVal =
           emitSRValue({emitOneArgVal(operand), operand.expr}, EC_CallArgValue);
       if (!argVal)
@@ -1683,15 +1682,15 @@ AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
 
   // If there is a memory result slot, the value we filled in is our MRValue
   // result and we've already handled the ValueDest by emitting into it.
-  if (calleeSig.hasMemoryPrimaryResult()) {
+  if (calleeSig.hasMemoryOnlyResult()) {
     auto resultVal = argumentValues[0].ir.getIfLValue();
-    assert(resultVal && "memory primary result always emitted into an LValue");
+    assert(resultVal && "memory-only result always emitted into an LValue");
     // Re-emit the value in case a conversion was required and we emitted into
     // a temporary slot.
     return emitResult(MRValue(resultVal), callExpr, dest);
   }
 
-  // Otherwise, register-primary results are the call result which may need to
+  // Otherwise, register-passable results are the call result which may need to
   // be emitted into a ValueDest.
   return emitResult(SRValue(callOp->getResult(0)), callExpr, dest);
 }

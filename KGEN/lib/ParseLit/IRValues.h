@@ -19,11 +19,11 @@
 //   RValue       <- with an owned immutable value
 //     ORValue      <- with an unresolved overload set
 //     CRValue      <- with a concrete resolved type
-//       SRValue      <- with a register-primary value in an SSA register
-//       MRValue      <- with a memory-primary value in memory
+//       SRValue      <- with a register-passable value in an SSA register
+//       MRValue      <- with a memory-only value in memory
 //       PRValue      <- with a parameter value
 //
-// Note that SRValue is not compatible with memory-primary types, but MRValue
+// Note that SRValue is not compatible with memory-only types, but MRValue
 // can hold any type, including a register compatible type.
 //
 //===----------------------------------------------------------------------===//
@@ -77,7 +77,7 @@ struct ASTExprAnd {
 class NullRepresentation {};
 
 /// Instances of SRValue model a dynamic value loaded into an SSA value.  This
-/// representation can only be used with register-primary types.
+/// representation can only be used with register-passable types.
 class SRValue : public Value {
 public:
   using Value::Value;
@@ -89,7 +89,7 @@ public:
 
 /// Instances of MRValue model a dynamic value stored into memory whose address
 /// is represented with an SSA value.  This representation is typically used
-/// with memory-primary types, but may also be used with register-primary types,
+/// with memory-only types, but may also be used with register-passable types,
 /// (e.g.) when initializing a var declaration.  Values of this type are owned
 /// instances of a value that needs to be consumed, akin to an x-value in C++.
 class MRValue : public Value {

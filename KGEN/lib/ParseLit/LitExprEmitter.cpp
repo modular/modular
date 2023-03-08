@@ -108,7 +108,7 @@ ASTType ValueDest::getTypeIfKnown() const {
 /// When `allowIncompatibleTypes` is true, the method is allowed to return an
 /// LValue of a different type when the underlying storage requires this. This
 /// is a guarantee from the caller that it is prepared to handle a type
-/// conversion on its side, eliminating a temporary buffer in register-primary
+/// conversion on its side, eliminating a temporary buffer in register-passable
 /// cases like `var x : F32 = 1`.
 ///
 /// When `allowIncompatibleTypes` is false, this always returns an LValue of
@@ -298,7 +298,7 @@ CRValue ExprEmitter::emitCRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
 /// This helper emits the specified value as a SRValue which has an SSA
 /// value representation, materializing PRValues and loading LValues as
 /// needed.  This returns null if emission fails, and should never be used with
-/// values that are memory-primary.
+/// values that are memory-only.
 SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> value,
                                  ExprContext context, ASTType resultType) {
   // Emit using resultType if present, and eliminate LValue/ORValue's.
@@ -314,8 +314,8 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> value,
     return rvalue;
 
   // Make sure this method isn't getting called inappropriately.
-  if (!value.ir.getRValueType().isRegisterPrimary(value.expr->getLoc(),
-                                                  shared)) {
+  if (!value.ir.getRValueType().isRegisterPassable(value.expr->getLoc(),
+                                                   shared)) {
     emitError(value.expr->getLoc(), "TODO: cannot use value of type ")
         << value.ir.getRValueType() << getContextMessage(context)
         << ", it cannot be loaded into an SSA register";
@@ -331,7 +331,7 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> value,
   }
 
   auto attr = value.ir.getIfPRValue().get();
-  assert(attr && "must be PRValue if register primary and not SRValue");
+  assert(attr && "must be PRValue if register-passable and not SRValue");
 
   // If the value being materialized is itself parameterized, then we cannot
   // materialize it as an SSA value - there will be no way to bind parameters to
@@ -504,8 +504,8 @@ static AnyValue emitConversionTo(CRValue value, const ExprNode *expr,
 /// accepts (and silently propagates) null values.
 ///
 /// Note that the `value` provided here may require an implicit conversion into
-/// the destination slot, so the input may be memory-primary and result be
-/// register-primary (and visa-versa).
+/// the destination slot, so the input may be memory-only and result be
+/// register-passable (and visa-versa).
 AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *node,
                                  ValueDest &dest) {
   if (!value)

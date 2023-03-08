@@ -54,7 +54,7 @@ const char *getContextMessage(ExprContext context);
 /// emitted, when it may produce an RValue.  Example destinations include:
 ///   - an LValue:
 ///       This handles cases like `a.b = 42` or `var x: Int = 42`, as well as
-///       a return slot with memory-primary results in `return x()`.  In this
+///       a return slot with memory-only results in `return x()`.  In this
 ///       case, the emitted expression must conform to type of the LValue.
 ///   - an untyped let/var decl, e.g. `var x = 42`
 ///       In this case, the ExprNode conforms to the initializer expression.
@@ -128,8 +128,8 @@ public:
   /// When `allowIncompatibleTypes` is true, the method is allowed to return an
   /// LValue of a different type when the underlying storage requires this. This
   /// is a guarantee from the caller that it is prepared to handle a type
-  /// conversion on its side, eliminating a temporary buffer in register-primary
-  /// cases like `var x : F32 = 1`.
+  /// conversion on its side, eliminating a temporary buffer in
+  /// register-passable cases like `var x : F32 = 1`.
   ///
   /// When `allowIncompatibleTypes` is false, this always returns an LValue of
   /// the requested type, which may return a temporary buffer.  In this case it
@@ -184,7 +184,7 @@ public:
   /// This helper emits the specified value as a SRValue which has an SSA
   /// value representation, materializing PRValues and loading LValues as
   /// needed.  This returns null if emission fails, and should never be used
-  /// with values that are memory-primary.
+  /// with values that are memory-only.
   SRValue emitSRValue(ASTExprAnd<AnyValue> value, ExprContext context,
                       ASTType resultType = {});
 

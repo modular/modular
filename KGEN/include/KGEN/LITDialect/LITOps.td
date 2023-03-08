@@ -474,7 +474,7 @@ def LIT_LetRegDeclOp : LITOp<"letreg.decl",
 }
 
 /// This declaration is used for var declarations, let declarations with an
-/// out-of-line initializer, and for memory-primary let declarations.
+/// out-of-line initializer, and for memory-only let declarations.
 /// It enables these use-cases by exposing an address.
 def LIT_VarLetDeclOp : LITOp<"varlet.decl",
          [DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>]> {

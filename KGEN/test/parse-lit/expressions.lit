@@ -7,7 +7,7 @@ from prolog import Error, F32, Int, SIMD, DType, object
 fn noop(): pass
 
 # CHECK-LABEL: lit.struct.decl @MemoryPrimaryInt
-@__memory_primary
+@__memory_only
 struct MemoryPrimaryInt:
   var x: __mlir_type.index
 
@@ -22,14 +22,14 @@ struct MemoryPrimaryInt:
     return Self{x: self.x}
 
 # This type is used to test implicit conversion from MemoryPrimaryInt
-@__memory_primary
+@__memory_only
 struct MemoryPrimaryF64:
   var x: __mlir_type.f64
   fn __new__(value: MemoryPrimaryInt) -> Self:
     return Self {x: 1.0}
 
 # CHECK-LABEL: lit.struct.decl @MemoryPrimaryPair
-@__memory_primary
+@__memory_only
 struct MemoryPrimaryPair:
   var x: MemoryPrimaryInt
   var y: Int
@@ -105,7 +105,7 @@ fn memoryPrimaryOps(a&: MemoryPrimaryPair) -> MemoryPrimaryPair:
   # CHECK-NEXT: lit.letreg.decl "v2xx" = %13
   let v2xx = v2.x.x
 
-  # Implicit conversion between memory-primary types.
+  # Implicit conversion between memory-only types.
   # CHECK-NEXT: %mpFloat = lit.varlet.decl "mpFloat", var = false
   # CHECK-NEXT: %14 = lit.struct.gep %v2[x]
   # CHECK-NEXT:[[TMPINT:%.*]] = lit.varlet.decl "<anonymous>", var = false : <@"$expressions"::@MemoryPrimaryInt>

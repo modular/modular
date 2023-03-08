@@ -57,12 +57,12 @@ public:
   /// the specified other type.
   bool isEqualCanon(ASTType other) const;
 
-  /// Return true if this type is a register-primary type that can be passed
+  /// Return true if this type is a register-passable type that can be passed
   /// around and copied in SSA values instead of having to live in memory.
   ///
   /// The location specifies the location of the reference in case the use is
   /// invalid in this location.
-  bool isRegisterPrimary(llvm::SMLoc loc, LitSharedState &shared) const;
+  bool isRegisterPassable(llvm::SMLoc loc, LitSharedState &shared) const;
 
   /// Given a POP::PointerType, return the element as an ASTType.  This aborts
   /// if the current type isn't a pointer.

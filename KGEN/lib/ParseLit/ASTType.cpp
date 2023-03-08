@@ -44,15 +44,15 @@ bool ASTType::isEqualCanon(ASTType other) const {
   return mlirType == other.mlirType;
 }
 
-/// Return true if this type is a register-primary type that can be passed
+/// Return true if this type is a register-passable type that can be passed
 /// around and copied in SSA values instead of having to live in memory.
 ///
 /// The location specifies the location of the reference in case the use is
 /// invalid in this location.
-bool ASTType::isRegisterPrimary(SMLoc loc, LitSharedState &shared) const {
+bool ASTType::isRegisterPassable(SMLoc loc, LitSharedState &shared) const {
   ASTDecl *decl = getDecl(shared);
   if (!decl)
-    return true; // MLIR types are assumed to be register primary.
+    return true; // MLIR types are assumed to be register-passable.
 
   // Make sure we know about the signature of the type.
   if (failed(shared.declResolver->resolveSignature(*decl, loc)))
