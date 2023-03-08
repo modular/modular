@@ -35,8 +35,9 @@ def LowerLITTerminators : Pass<"lower-lit-terminators", "mlir::ModuleOp"> {
 
     ```mlir
     lit.func @foo<() -> index>(%arg0: i32, %arg1: i32) -> i32 {
-      lit.return<2> %arg0 : i32
-      lit.return<2> %arg1 : i32
+      lit.param_return<2>
+      lit.return %arg0 : i32
+      lit.return %arg1 : i32
       lit.end_func
     }
     ```
@@ -45,7 +46,8 @@ def LowerLITTerminators : Pass<"lower-lit-terminators", "mlir::ModuleOp"> {
 
     ```mlir
     lit.func @foo<() -> index>(%arg0: i32, %arg1: i32) -> i32 {
-      kgen.return<2> %arg0 : i32
+      kgen.param.result_bind<2>
+      kgen.return %arg0 : i32
     }
     ```
   }];

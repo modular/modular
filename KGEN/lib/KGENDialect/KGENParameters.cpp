@@ -395,7 +395,7 @@ void impl::scanAllAttrsAndTypes(Operation *op,
 /// otherwise unresolved parameter operators, indicate that the operation is
 /// parametric.
 static void collectUses(ParameterUseDefGraph &g, VerifyingParameterCollector &c,
-                        Operation *op, bool isDecl) {
+                        Operation *op, bool isDefOrDecl) {
   TimeTraceScope<> traceScope("collectUses");
 
   // Track whether parameter uses or expressions were found.
@@ -426,10 +426,10 @@ static void collectUses(ParameterUseDefGraph &g, VerifyingParameterCollector &c,
 
   // If the operation is parametric, add it to the list.
   if (hasConstExpr || !uses.empty()) {
-    if (!isDecl)
+    if (!isDefOrDecl)
       g.paramOps.push_back(op);
     g.opUses[op] = std::move(uses);
-  } else if (!isDecl && itf && itf.isImplicitlyParametric()) {
+  } else if (!isDefOrDecl && itf && itf.isImplicitlyParametric()) {
     // Track implicitly parametric operations only when they don't already
     // declare parameters.
     g.paramOps.push_back(op);
@@ -455,13 +455,17 @@ static LogicalResult recordDecl(ParameterUseDefGraph &g, ParamDeclAttr decl,
   return success();
 }
 
-static ParamDefinition &recordDef(ParameterUseDefGraph &g, ParamDeclAttr decl,
-                                  Operation *op) {
+static FailureOr<ParamDefinition *>
+recordDef(ParameterUseDefGraph &g, ParamDeclAttr decl, Operation *op) {
   ParamDefinition &paramDef = g.defs[decl.getName()];
-  assert(!paramDef.defOp && "parameter redefinitions are not possible");
+  if (paramDef.defOp) {
+    return (op->emitError("redefinition of parameter ") << decl.getName())
+               .attachNote(paramDef.defOp->getLoc())
+           << "see previous definition here";
+  }
   g.params.push_back(decl.getName());
   paramDef.defOp = op;
-  return paramDef;
+  return &paramDef;
 }
 
 /// Cycles detected in the definition of a parameter are always forbidden. When
@@ -543,9 +547,10 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
     // to report errors.
     c.op = op;
 
-    // Track whether the operation declares parameters. Operations that declare
-    // parameters are treated differently than those that simply use parameters.
-    bool isDecl = false;
+    // Track whether the operation declares or defines parameters. Operations
+    // that declare or define parameters are treated differently than those that
+    // simply use parameters.
+    bool isDefOrDecl = false;
 
     // Check if this operation defines a parameter scope.
     auto result = WalkResult::advance();
@@ -560,7 +565,7 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
       } else {
         // Record parameter declarations for the top-level declaration.
         auto recordDeclWrapper = [&](ParamDeclAttr decl) -> LogicalResult {
-          isDecl = true;
+          isDefOrDecl = true;
           return recordDecl(*this, decl, op, *scope);
         };
         // A declaration declares input and/or result parameters.
@@ -570,8 +575,10 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
             return failure();
         // The input parameters are defined by the declaration.
         for (auto [idx, inputParam] : llvm::enumerate(decl.getInputParams())) {
-          ParamDefinition &def = recordDef(*this, inputParam, decl);
-          def.index = idx;
+          FailureOr<ParamDefinition *> def = recordDef(*this, inputParam, decl);
+          if (failed(def))
+            return failure();
+          (*def)->index = idx;
         }
       }
     }
@@ -582,7 +589,7 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
       // Check declarations.
       bool hadError = false;
       itf.walkDeclarations([&](ParamDeclAttr decl) {
-        isDecl = true;
+        isDefOrDecl = true;
         if (failed(recordDecl(*this, decl, op, *scope)))
           hadError = true;
       });
@@ -592,26 +599,34 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
       // Check definitions.
       ssize_t index = 0;
       itf.walkDefinitions([&](ParamDeclAttr decl, const ParamDefValue &value) {
-        ParamDefinition &def = recordDef(*this, decl, op);
-        def.index = index++;
+        FailureOr<ParamDefinition *> def = recordDef(*this, decl, op);
+        if (failed(def)) {
+          hadError = true;
+          return;
+        }
+        isDefOrDecl = true;
+        (*def)->index = index++;
         bool unused;
         for (Attribute expr : value.exprs)
-          c.collectUsesFromAttr(expr, def.uses, unused);
+          c.collectUsesFromAttr(expr, (*def)->uses, unused);
         // If the definition of this parameter depends on a region, defer
         // processing of the nested region uses.
         if (!value.regions.empty())
           regionValues.emplace_back(decl, value.regions);
       });
+      if (hadError)
+        return WalkResult::interrupt();
     }
 
     // Collect parameter uses from this operation.
-    collectUses(*this, c, op, isDecl);
+    collectUses(*this, c, op, isDefOrDecl);
     return result;
   };
 
   // Process the scope's parent op - don't recurse because the parent op might
   // have multiple regions.
-  processOp(scope->getParentOp());
+  if (processOp(scope->getParentOp()).wasInterrupted())
+    return failure();
 
   // Now walk the scope and not sibling regions!
   WalkResult result = scope->walk<mlir::WalkOrder::PreOrder>(processOp);

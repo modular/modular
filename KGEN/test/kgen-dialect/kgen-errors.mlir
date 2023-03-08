@@ -174,7 +174,8 @@ kgen.generator @g2<()>() {
 
 // expected-note @below {{@only_returns declared here}}
 kgen.generator @only_returns<p1 -> p2>() {
-  kgen.return<p1>
+  kgen.param.result_bind<p1>
+  kgen.return
 }
 
 kgen.func @test_only_returns() {
@@ -187,7 +188,8 @@ kgen.func @test_only_returns() {
 
 // expected-note @below {{@only_returns declared here}}
 kgen.generator @only_returns<() -> p1: i4>() {
-  kgen.return <:i4 2>
+  kgen.param.result_bind<:i4 2>
+  kgen.return
 }
 
 kgen.func @test_only_returns() {
@@ -229,7 +231,8 @@ kgen.func @result_type(%a: i1) {
 // -----
 
 kgen.generator @take_and_return<p1 -> p2>() {
-  kgen.return<0>
+  kgen.param.result_bind<0>
+  kgen.return
 }
 
 // expected-error @below {{cyclic reference between expressions defining and using parameters}}
@@ -243,7 +246,8 @@ kgen.generator @self_cyclic() {
 // -----
 
 kgen.generator @take_and_return<p1 -> r1>() {
-  kgen.return<0>
+  kgen.param.result_bind<0>
+  kgen.return
 }
 
 // expected-error @below {{cyclic reference between expressions defining and using parameters}}
@@ -344,7 +348,8 @@ kgen.generator @hasInputParam<param>() {
   kgen.return
 }
 kgen.generator @nothing<() -> param>() {
-  kgen.return<42>
+  kgen.param.result_bind<42>
+  kgen.return
 }
 
 kgen.func @test() {  // expected-note {{within 'kgen.func' @test}}
@@ -731,7 +736,8 @@ kgen.generator @differentType() {
 // -----
 
 kgen.generator @fwd<in -> out>() {
-  kgen.return<in>
+  kgen.param.result_bind<in>
+  kgen.return
 }
 
 // expected-error @below {{cyclic reference between expressions}}
@@ -742,9 +748,11 @@ kgen.generator @cyclicIf() {
   // expected-note @below {{parameter "M2" is defined here}}
   kgen.param.if <cond_var -> M2> {
     kgen.call @fwd<in = N -> outM = out>() : () -> ()
-    kgen.param.yield<outM>
+    kgen.param.result_bind<outM>
+    kgen.param.yield
   } else {
-    kgen.param.yield<N>
+    kgen.param.result_bind<N>
+    kgen.param.yield
   }
   // This forwards the output parameter of the if statement back around to N,
   // creating a cycle.
@@ -755,28 +763,15 @@ kgen.generator @cyclicIf() {
 
 // -----
 
-kgen.generator @noResultParam() {
-  kgen.param.declare cond_var: i1 = <1>
-  // expected-error @below {{expected a kgen.param.yield in order to return result parameters}}
-  kgen.param.if <cond_var -> out> {
-    kgen.param.yield<3>
-  } else {
-    // expected-note @below {{unknown terminator defined here}}
-    hlcf.return
-  }
-  kgen.return
-}
-
-// -----
-
 kgen.generator @badResultParam() {
   kgen.param.declare cond_var: i1 = <1>
-  // expected-note @below {{result parameter defined here}}
   kgen.param.if <cond_var -> out> {
-    // expected-error @below {{result parameter type did not match, expected 'index' but got 'i1'}}
-    kgen.param.yield<:i1 1>
+    // expected-error @below {{'kgen.param.result_bind' op parameter #0 has type 'i1' but should be 'index'}}
+    kgen.param.result_bind<:i1 1>
+    kgen.param.yield
   } else {
-    kgen.param.yield<:i1 0>
+    kgen.param.result_bind<:i1 0>
+    kgen.param.yield
   }
   kgen.return
 }
@@ -794,5 +789,22 @@ kgen.generator @declareWrongType() {
 kgen.generator @noArgumentForGetAllImpl() {
   // expected-error @below {{'get_all_impls' expects one operand}}
   kgen.param.declare impls: variadic<!kgen.signature<() -> index>> = <get_all_impls()>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @duplicate_def<() -> out>() {
+  // expected-note @below {{see previous definition here}}
+  kgen.param.result_bind<1>
+  // expected-error @below {{redefinition of parameter "out"}}
+  kgen.param.result_bind<2>
+  kgen.return
+}
+
+// -----
+
+// expected-error @below {{parameter "out" has no definition}}
+kgen.generator @missing_def<() -> out>() {
   kgen.return
 }

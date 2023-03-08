@@ -36,7 +36,8 @@ kgen.generator @use_Itf3two() {
 kgen.generator @getSIMDLength<dt: dtype -> length>() {
   // This could be implemented as a constraint.
   kgen.param.assert <eq(:dtype dt, f32)>, "this only works for f32"
-  kgen.return <4>
+  kgen.param.result_bind<4>
+  kgen.return
 }
 
 // expected-error @+1 {{no viable expansions found}}
@@ -137,13 +138,16 @@ kgen.generator @brokenVLenAssert() {
 
 kgen.generator @paramRecurse<in -> out>() {
   kgen.param.if <eq(in, 0) -> v> {
-    kgen.param.yield<0>
+    kgen.param.result_bind<0>
+    kgen.param.yield
   } else {
     // expected-note @below {{could not resolve callee's necessary result parameters, infinite recursive loop?}}
     kgen.call @paramRecurse<in = in -> val = out>() : () -> ()
-    kgen.param.yield<sub(in, 1)>
+    kgen.param.result_bind<sub(in, 1)>
+    kgen.param.yield
   }
-  kgen.return<v>
+  kgen.param.result_bind<v>
+  kgen.return
 }
 
 // expected-error @below {{no viable expansions found}}

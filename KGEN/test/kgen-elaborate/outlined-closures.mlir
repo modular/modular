@@ -3,7 +3,8 @@
 kgen.generator @call_region<fn: <A -> E>() -> index -> E>() -> index always_inline {
   kgen.param.declare BoundFn: <() -> E>() -> index = <bind_signature(:<A -> E>() -> index fn, 2)>
   %0 = kgen.call_param[<() -> E>() -> index: BoundFn]<() -> Result>()
-  kgen.return<Result> %0 : index
+  kgen.param.result_bind<Result>
+  kgen.return %0 : index
 }
 
 lit.struct.decl @raiseClosure_context {
@@ -16,14 +17,16 @@ kgen.generator @raiseClosure_0<C, A, B -> E>(%arg0: index) -> index always_inlin
   %2 = pop.cast_from_builtin %arg0 : index to !pop.scalar<index>
   %3 = pop.add %1, %2 : !pop.scalar<index>
   %4 = pop.cast_to_builtin %3 : !pop.scalar<index> to index
-  kgen.return<add(mul(A, -1), C)> %4 : index
+  kgen.param.result_bind<add(mul(A, -1), C)>
+  kgen.return %4 : index
 }
 
 kgen.generator @raiseClosure_wrapper<C, A, B -> E>() -> index always_inline {
   %0 = pop.compiler.global_load "raiseClosure_context_var" : !kgen.declref<@raiseClosure_context>
   %1 = lit.struct.extract %0[field_0] : index from !kgen.declref<@raiseClosure_context>
   %2 = kgen.call @raiseClosure_0<C = C, A = A, B = B -> __resultParam_0 = E>(%1) : (index) -> index
-  kgen.return<__resultParam_0> %2 : index
+  kgen.param.result_bind<__resultParam_0>
+  kgen.return %2 : index
 }
 
 // COM: All this should be inlined and all that we care about is the raiseClosure func.
@@ -48,7 +51,7 @@ kgen.generator @raiseClosure<() -> E>() -> (index, index) {
   kgen.param.declare BoundFn: <A -> E>() -> index = <bind_signature(:<A, B -> E>() -> index Fn, #kgen.unbound, 1)>
   %1 = kgen.call @call_region<fn: <A -> E>() -> index = BoundFn -> Result = E>() : () -> index
   %2 = kgen.param.constant = <Result>
-  kgen.return<Result> %1, %2 : index, index
+  kgen.return %1, %2 : index, index
 }
 
 kgen.export @raiseClosure

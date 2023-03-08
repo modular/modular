@@ -7,7 +7,8 @@
 // CHECK-NEXT: constraints <[eq(:dtype type, si32), "this only works for si32", #
 lit.func @numeric_limits.digits.i32<type: dtype -> index>() {
   kgen.param.assert <eq(:dtype type, si32)>, "this only works for si32"
-  kgen.return<31>
+  kgen.param.result_bind<31>
+  kgen.return
 }
 
 lit.struct.decl @FooStruct {

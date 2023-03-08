@@ -224,7 +224,8 @@ def KGEN_CallOp : KGEN_CallOpBase<"call",
 
     ```mlir
     kgen.generator @add2<N -> index>() {
-      kgen.return<add(N, 2)>
+      kgem.param.result_bind<add(N, 2)>
+      kgen.return
     }
 
     kgen.call @add2<N = 2 -> NPlus2>() : () -> ()
@@ -396,7 +397,8 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
     ```mlir
     kgen.param.declare.region LessThan2 = <N -> index>()
         constraints <[lt(N, 2), "must be less than 2"]> {
-      kgen.return<add(N, 2)>
+      kgem.param.result_bind<add(N, 2)>
+      kgen.return
     }
     ```
 
@@ -462,7 +464,8 @@ def KGEN_ParamForkOp : KGENOp<"param.fork",
 //===----------------------------------------------------------------------===//
 
 def KGEN_ParamResultBindOp : KGENOp<"param.result_bind",
-    [DeclareOpInterfaceMethods<ParamOpInterface>]>, NoParamDecls {
+    [DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric"]>]>,
+    NoParamDecls {
   let summary = "bind values for the result parameters of the nearest scope";
   let description = [{
     The `kgen.param.result_bind` operation binds values for the result
@@ -496,12 +499,11 @@ def KGEN_ParamResultBindOp : KGENOp<"param.result_bind",
 // ReturnOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_ReturnOp : KGENOp<"return", [Terminator, ReturnLike,
-    DeclareOpInterfaceMethods<ParamOpInterface>]>, NoParamDecls {
+def KGEN_ReturnOp : KGENOp<"return", [Terminator, ReturnLike]> {
   let summary = "return operation for kgen declarations";
   let description = [{
-    The `kgen.return` operation specifies the returned values and output
-    parameters for a `kgen.func` or generator.
+    The `kgen.return` operation specifies the returned values for a `kgen.func`
+    or `kgen.generator`.
 
     The operation takes variable number of operands and produces no results.
     The operand number and types must match the signature of the
@@ -516,12 +518,8 @@ def KGEN_ReturnOp : KGENOp<"return", [Terminator, ReturnLike,
     ```
   }];
 
-  let arguments = (ins KGEN_ParameterExprArrayAttr:$parameters,
-                       Variadic<AnyType>:$operands);
-  let assemblyFormat = [{
-    `` custom<ParameterValues>($parameters) attr-dict
-    ($operands^ `:` type($operands))?
-  }];
+  let arguments = (ins Variadic<AnyType>:$operands);
+  let assemblyFormat = "attr-dict ($operands^ `:` type($operands))?";
 }
 
 //===----------------------------------------------------------------------===//
@@ -612,7 +610,6 @@ def KGEN_ParamIfOp : KGENOp<"param.if", [DeclInterface,
     custom<OptionalParamDecls>($resultParams) `>` (`->` type($results)^)?
     $thenRegion `else` $elseRegion attr-dict
   }];
-  let hasVerifier = 1;
 
   let builders = [OpBuilder<(ins "TypedAttr":$cond), [{
     build($_builder, $_state, {}, cond,
@@ -625,8 +622,7 @@ def KGEN_ParamIfOp : KGENOp<"param.if", [DeclInterface,
 //===----------------------------------------------------------------------===//
 
 def KGEN_ParamYieldOp : KGENOp<"param.yield", [Pure, HasParent<"ParamIfOp">,
-    Terminator, DeclareOpInterfaceMethods<ControlFlowTerminator>,
-    DeclareOpInterfaceMethods<ParamOpInterface>]>, NoParamDecls {
+    Terminator, DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
   let summary = "conditional yield operation";
   let description = [{
     The `kgen.param.yield` operation is used to denote the terminator of a
@@ -645,34 +641,20 @@ def KGEN_ParamYieldOp : KGENOp<"param.yield", [Pure, HasParent<"ParamIfOp">,
     } else {
       kgen.param.yield %arg2 : index
     }
-
-    kgen.param.if <condition -> result> {
-      kgen.param.yield<1> // `then` definition for `result`
-    } else {
-      kgen.param.yield<0> // `else` definition for `result`
-    }
-    %0 = kgen.param.constant = <result>
     ```
 
     This operation can always be marked pure because the control-flow edge from
     this operation leads only to after the parent operation.
   }];
 
-  let arguments = (ins Variadic<AnyType>:$operands,
-                       KGEN_ParameterExprArrayAttr:$parameters);
+  let arguments = (ins Variadic<AnyType>:$operands);
 
   let builders = [
-    OpBuilder<(ins), [{
-      return build($_builder, $_state, {},
-                   $_builder.getAttr<ParameterExprArrayAttr>(
-                     ArrayRef<TypedAttr>{}));
-    }]>
+    OpBuilder<(ins), [{ return build($_builder, $_state, {}); }]>
   ];
 
-  let assemblyFormat = [{
-    `` custom<ParameterValues>($parameters) attr-dict
-    ($operands^ `:` type($operands))?
-  }];
+  let assemblyFormat = "attr-dict ($operands^ `:` type($operands))?";
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
