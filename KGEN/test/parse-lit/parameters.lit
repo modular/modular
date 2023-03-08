@@ -11,9 +11,11 @@ alias index = __mlir_type.index
 
 # CHECK-LABEL: lit.struct.decl @OurSIMD<size, dt: @"$prolog"::@DType>
 # CHECK-SAME: attributes {isRegisterPassable} {
+@register_passable
 struct OurSIMD[size: index, dt: DType]:
   pass
 
+@register_passable
 struct StructWithIntParam[size: Int]:
   pass
 
@@ -60,6 +62,7 @@ fn call_generic[dt: DType]():
   generic_fn[dt, 13, OurSIMD[4, dt]](57)
 
 # CHECK-LABEL: lit.struct.decl @TestParamStruct<A>
+@register_passable
 struct TestParamStruct[A: __mlir_type.index]:
 
   fn __clone__(self&) -> Self:
@@ -138,6 +141,7 @@ fn implConversion[a: StructWithIntParam[42]]():
   pass
 
 # CHECK-LABEL: lit.struct.decl @Pair<dt: @"$prolog"::@DType>
+@register_passable
 struct Pair[dt: DType]:
  # CHECK: lit.struct.field a : !kgen.declref<@"$parameters"::@OurSIMD<size = 42, dt: @"$prolog"::@DType = dt>>
  # CHECK: lit.struct.field b : !kgen.declref<@"$Int"::@Int>
@@ -384,6 +388,7 @@ fn testUseOfAliases(a: Bool):
   # CHECK: kgen.param.declare y = <44>
   alias y = A[2].member
 
+@register_passable
 struct MyDType:
   var state : __mlir_type.index
 
@@ -475,6 +480,7 @@ fn pass_variadic[elems: __mlir_type.`!kgen.variadic<index>`]():
 # Parameter Inference
 ##===----------------------------------------------------------------------===##
 
+@register_passable
 struct StaticVec[size: index]:
   fn __new__[type: __mlir_type.`!kgen.dtype`](v: __mlir_type[`!pop.simd<`, size, `, `, type, `>`]) -> StaticVec[size]:
       return Self{}
@@ -513,6 +519,7 @@ fn testParamInference[size: index](a: StaticVec[4], b: StaticVec[size],
   # CHECK: kgen.call @{{.*}}@"thing{{.*}}<size = 17, type: dtype = f32>(%c)
   StaticVec.thing(c)
 
+@register_passable
 struct Abstraction[a: Int]:
   alias val = a.__as_mlir_index()
 
@@ -556,7 +563,7 @@ fn testParameterEvaluator():
 fn takeAbstraction2(value: Abstraction[2]):
     return
 
-
+@register_passable
 struct AnotherAbstraction[a: Int]:
     var value : Abstraction[a + 1]
 

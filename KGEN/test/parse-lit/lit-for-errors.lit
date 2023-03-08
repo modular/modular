@@ -118,7 +118,7 @@ struct MyList_no_iter:
         let ptr = self.start + idx
         return ptr.load()
 
-
+@register_passable
 struct MyInteger:
     var value: __mlir_type.`!pop.scalar<index>`
 

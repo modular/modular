@@ -5,7 +5,7 @@ from Int import Int
 from Range import range
 from IO import print
 
-
+@register_passable
 struct my_iter:
     var start: Int
     var end: Int
@@ -31,7 +31,7 @@ struct my_iter:
             return self.end - self.start
         return 0
 
-
+@register_passable
 struct MyList:
     var start: Pointer[Int]
     var size: Int
@@ -60,7 +60,7 @@ struct MyList:
 fn printInt(x: Int):
     print(x)
 
-
+# CHECK-LABEL: lit.func @"main()"
 fn main():
     let buffer = __mlir_op.`pop.stack_allocation`[
         count:3, _type : __mlir_type[`!pop.pointer<`, Int, `>`]
