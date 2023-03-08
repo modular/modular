@@ -1918,3 +1918,19 @@ kgen.generator @true_inside_false_param_if() {
   }
   kgen.return
 }
+
+// CHECK-LABEL: kgen.func @fork_unreachable_blocks_{{.*}}
+// CHECK-NEXT: kgen.param.constant = <2>
+
+// CHECK-LABEL: kgen.func @fork_unreachable_blocks
+// CHECK-NEXT: kgen.return
+kgen.generator @fork_unreachable_blocks() {
+  kgen.param.fork g = <[1, 2]>
+  kgen.param.if <eq(g, 2)> {
+    kgen.param.constant = <g>
+    kgen.return
+  } else {
+    kgen.return
+  }
+  kgen.return
+}
