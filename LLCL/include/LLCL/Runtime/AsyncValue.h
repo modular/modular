@@ -12,10 +12,6 @@
 #ifndef LLCL_RUNTIME_ASYNCVALUE_H
 #define LLCL_RUNTIME_ASYNCVALUE_H
 
-#ifdef NO_LLCL_RUNTIME
-#error Unintended dependency on the LLCL Runtime
-#endif
-
 #include "LLCL/Runtime/CompactRuntimePtr.h"
 #include "LLCL/Runtime/TypeID.h"
 #include "LLCL/Runtime/WorkQueue.h"

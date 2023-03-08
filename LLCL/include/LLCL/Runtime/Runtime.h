@@ -15,10 +15,6 @@
 #ifndef LLCL_RUNTIME_H
 #define LLCL_RUNTIME_H
 
-#ifdef NO_LLCL_RUNTIME
-#error Unintended dependency on the LLCL Runtime
-#endif
-
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Runtime/AnyAsyncValueRef.h"
 #include "LLCL/Runtime/AsyncValueRef.h"
