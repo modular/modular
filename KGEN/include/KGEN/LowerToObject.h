@@ -78,8 +78,8 @@ private:
 
   /// Lower the given module to LLVM. Returns the LLVM module on success, and
   /// nullptr on failure.
-  std::unique_ptr<llvm::Module> lowerAllFuncsToLLVM(llvm::LLVMContext &ctx,
-                                                    ModuleOp module);
+  std::unique_ptr<llvm::Module>
+  lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module, bool isJIT);
 
   /// The caches needed for compilation.
   LLCL::RCRef<Cache::BlobCache<Cache::TransformCacheKey>> transformCache;

@@ -151,7 +151,7 @@ ErrorOr<BufferRef> ObjectCompiler::produceStandaloneObject(bool isJIT) {
     auto output = LLCL::AsyncValueRef<BufferRef>::allocate(runtime);
     chain.andThenSync([this, op, isJIT, &ctx, output = output.copy(),
                        buf = buf.copy()]() mutable {
-      auto llvmModule = lowerAllFuncsToLLVM(ctx, cast<ModuleOp>(op));
+      auto llvmModule = lowerAllFuncsToLLVM(ctx, cast<ModuleOp>(op), isJIT);
       if (!llvmModule) {
         return std::move(output).setToError(LLCL::getMLIRDiagnostic(
             "failed to lower module to LLVM IR for object compilation",
@@ -245,7 +245,7 @@ ObjectCompiler::produceStandaloneAssembly(TargetInfoAttr target,
 
   OwningOpRef<ModuleOp> slicedModule = produceStandaloneModule();
   llvm::LLVMContext ctx;
-  auto llvmModule = lowerAllFuncsToLLVM(ctx, *slicedModule);
+  auto llvmModule = lowerAllFuncsToLLVM(ctx, *slicedModule, /*isJIT=*/false);
   if (!llvmModule)
     return Error("failed to lower module to LLVM IR");
 
