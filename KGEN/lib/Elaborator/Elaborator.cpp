@@ -510,32 +510,33 @@ static std::optional<ErrorTree>
 processParamResultBindOp(ParamResultBindOp op, ExpansionTreeNode *parentNode) {
   // Concretize the result parameter values.
   IREvaluator &evaluator = parentNode->evaluator;
-  SmallVector<Attribute> resultValues;
+  SmallVector<Attribute> resultParams;
 
   // Retrieve the required parameter decls from the nearest declaration.
   // However, if it refers to the function being elaborated, the declarations
   // are in the generator.
-  ArrayRef<ParamDeclAttr> resultParams;
+  ArrayRef<ParamDeclAttr> resultParamDecls;
   auto parentDecl = op->getParentOfType<DeclInterface>();
   bool isFunc = isa<FuncOp>(parentDecl.getOperation());
   if (isFunc)
-    resultParams = cast<GeneratorOp>(parentNode->parent->op).getResultParams();
+    resultParamDecls =
+        cast<GeneratorOp>(parentNode->parent->op).getResultParams();
   else
-    resultParams = parentDecl.getResultParams();
+    resultParamDecls = parentDecl.getResultParams();
 
-  for (auto [decl, value] : llvm::zip(resultParams, op.getParameters())) {
+  for (auto [decl, value] : llvm::zip(resultParamDecls, op.getParameters())) {
     ErrorTreeOr<Attribute> concValue =
         evaluator.concretizeParameterExpr(op.getLoc(), value);
     if (concValue.isError())
       return concValue.takeError();
-    resultValues.push_back(concValue.takeValue());
-    evaluator.setOrOverwriteParameterValue(decl, resultValues.back());
+    resultParams.push_back(concValue.takeValue());
+    evaluator.setOrOverwriteParameterValue(decl, resultParams.back());
   }
 
   // If this operation binds values for the result parameters of the generator,
   // set them in the node.
   if (isFunc)
-    parentNode->resultParams = ArrayAttr::get(op.getContext(), resultValues);
+    parentNode->resultParams = ArrayAttr::get(op.getContext(), resultParams);
 
   op.erase();
   return {};
