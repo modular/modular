@@ -125,7 +125,11 @@ public:
   /// succeeds.
   ASTDecl &getDeclForTypeSymbol(SymbolRefAttr symbol) const {
     auto it = declForTypeSymbol.find(symbol);
+#ifndef NDEBUG
+    if (it == declForTypeSymbol.end())
+      symbol.dump();
     assert(it != declForTypeSymbol.end() && "Unknown decl symbol!");
+#endif
     return *it->second;
   }
 

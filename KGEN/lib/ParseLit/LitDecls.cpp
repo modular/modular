@@ -1982,9 +1982,8 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   // the self type.
   decl.setSelfType(decl.computeSelfTypeForStruct(shared));
 
-  // TODO: Flip the decorator from @__memory_only to @register_passable (or
-  // something similar) when the memory model for types matures.
-  structOp.setIsRegisterPassable(true);
+  // Structs are memory-only unless they opt-in to being passed in registers.
+  structOp.setIsRegisterPassable(false);
 
   // Now that we have the basic struct set up, process any known decorators.
   for (ExprNode *decorator : decoratorExprs) {
