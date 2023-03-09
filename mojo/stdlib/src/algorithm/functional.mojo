@@ -69,7 +69,9 @@ alias fn_sig_type = __mlir_type[
 ]
 
 alias fn_simd_sig_type = __mlir_type[
-    `!kgen.signature<<simd_width>(`,
+    `!kgen.signature<<simd_width:`,
+    Int,
+    `>(`,
     Int,
     `) -> !lit.none>`,
 ]
@@ -77,9 +79,11 @@ alias fn_simd_sig_type = __mlir_type[
 
 @always_inline
 fn vectorize[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     func: __mlir_type[
-        `!kgen.signature<<simd_width>(`,
+        `!kgen.signature<<simd_width:`,
+        Int,
+        `>(`,
         Int,
         `) -> !lit.none>`,
     ],
@@ -115,7 +119,7 @@ fn variadic_get(
 
 @always_inline
 fn vectorize_unroll[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     unroll_factor: __mlir_type.index,
     func: fn_simd_sig_type,
 ](size: Int):

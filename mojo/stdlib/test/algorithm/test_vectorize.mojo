@@ -28,7 +28,7 @@ fn test_vectorize():
     vector.__setitem__(4, 5.0)
 
     @always_inline
-    fn add_two[simd_width: __mlir_type.index](idx: Int):
+    fn add_two[simd_width: Int](idx: Int):
         vector.simd_store[simd_width](
             idx, vector.simd_load[simd_width](idx) + 2
         )
@@ -47,7 +47,7 @@ fn test_vectorize():
     print(vector.__getitem__(4))
 
     @always_inline
-    fn add[simd_width: __mlir_type.index](idx: Int):
+    fn add[simd_width: Int](idx: Int):
         vector.simd_store[simd_width](
             idx,
             vector.simd_load[simd_width](idx)
@@ -81,14 +81,14 @@ fn test_vectorize_unroll():
         ref.__setitem__(i, i)
 
     @always_inline
-    fn double_ref[simd_width: __mlir_type.index](idx: Int):
+    fn double_ref[simd_width: Int](idx: Int):
         ref.simd_store[simd_width](
             idx,
             ref.simd_load[simd_width](idx) + ref.simd_load[simd_width](idx),
         )
 
     @always_inline
-    fn double_vec[simd_width: __mlir_type.index](idx: Int):
+    fn double_vec[simd_width: Int](idx: Int):
         vec.simd_store[simd_width](
             idx,
             vec.simd_load[simd_width](idx) + vec.simd_load[simd_width](idx),

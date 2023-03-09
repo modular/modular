@@ -35,12 +35,14 @@ from Numerics import inf, neginf
 #      with simd_width=1.
 @always_inline
 fn reduce[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     size: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
     acc_type: __mlir_type.`!kgen.dtype`,
     map_fn: __mlir_type[
-        `!kgen.signature<<simd_width, acc_type: dtype, type: dtype>(`,
+        `!kgen.signature<<simd_width:`,
+        Int,
+        `, acc_type: dtype, type: dtype>(`,
         SIMD[simd_width, `acc_type`],
         `,`,
         SIMD[simd_width, `type`],
@@ -49,7 +51,9 @@ fn reduce[
         `>`,
     ],
     reduce_fn: __mlir_type[
-        `!kgen.signature<<simd_width, type: dtype>(`,
+        `!kgen.signature<<simd_width:`,
+        Int,
+        `, type: dtype>(`,
         SIMD[simd_width, `type`],
         `) -> `,
         SIMD[1, `type`],
@@ -77,13 +81,15 @@ fn reduce[
 
 @always_inline
 fn _reduce_3D[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     input_shape: __mlir_type[`!kgen.list<index[3]>`],
     output_shape: __mlir_type[`!kgen.list<index[2]>`],
     type: __mlir_type.`!kgen.dtype`,
     acc_type: __mlir_type.`!kgen.dtype`,
     map_fn: __mlir_type[
-        `!kgen.signature<<simd_width, acc_type: dtype, type: dtype>(`,
+        `!kgen.signature<<simd_width: `,
+        Int,
+        `, acc_type: dtype, type: dtype>(`,
         SIMD[simd_width, `acc_type`],
         `,`,
         SIMD[simd_width, `type`],
@@ -92,7 +98,9 @@ fn _reduce_3D[
         `>`,
     ],
     reduce_fn: __mlir_type[
-        `!kgen.signature<<simd_width, type: dtype>(`,
+        `!kgen.signature<<simd_width:`,
+        Int,
+        `, type: dtype>(`,
         SIMD[simd_width, `type`],
         `) -> `,
         SIMD[1, `type`],
@@ -140,8 +148,8 @@ fn _reduce_3D[
     alias cache_line_size = 64
 
     fn get_unroll_factor[
-        simd_width: __mlir_type.index, dtype_size: __mlir_type.index
-    ]() -> __mlir_type.index:
+        simd_width: Int, dtype_size: __mlir_type.index
+    ]() -> Int:
         return cache_line_size // (simd_width * dtype_size)
 
     alias unroll_factor = get_unroll_factor[
@@ -151,7 +159,7 @@ fn _reduce_3D[
     for i in range(h):
 
         @always_inline
-        fn reduce_w_chunked[simd_width: __mlir_type.index](idx: Int):
+        fn reduce_w_chunked[simd_width: Int](idx: Int):
             var accum = SIMD[simd_width, acc_type].splat(init)
             for j in range(w):
                 let chunk = src.simd_load[simd_width](
@@ -182,14 +190,16 @@ fn _prod_dims[
 
 @always_inline
 fn reduce[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     rank: __mlir_type.index,
     input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
     output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
     type: __mlir_type.`!kgen.dtype`,
     acc_type: __mlir_type.`!kgen.dtype`,
     map_fn: __mlir_type[
-        `!kgen.signature<<simd_width, acc_type: dtype, type: dtype>(`,
+        `!kgen.signature<<simd_width:`,
+        Int,
+        `, acc_type: dtype, type: dtype>(`,
         SIMD[simd_width, `acc_type`],
         `,`,
         SIMD[simd_width, `type`],
@@ -198,7 +208,9 @@ fn reduce[
         `>`,
     ],
     reduce_fn: __mlir_type[
-        `!kgen.signature<<simd_width, type: dtype>(`,
+        `!kgen.signature<<simd_width:`,
+        Int,
+        `, type: dtype>(`,
         SIMD[simd_width, `type`],
         `) -> `,
         SIMD[1, `type`],
@@ -265,7 +277,7 @@ fn reduce[
 
 @always_inline
 fn _simd_max[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     type: __mlir_type.`!kgen.dtype`,
 ](x: SIMD[simd_width, type]) -> SIMD[1, type]:
     """Helper function that computes the max element in a simd vector and is
@@ -275,7 +287,7 @@ fn _simd_max[
 
 @always_inline
 fn _simd_max_elementwise[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     acc_type: __mlir_type.`!kgen.dtype`,
     type: __mlir_type.`!kgen.dtype`,
 ](x: SIMD[simd_width, acc_type], y: SIMD[simd_width, type]) -> SIMD[
@@ -288,7 +300,7 @@ fn _simd_max_elementwise[
 
 
 fn max[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     size: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
 ](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type, `>`]:
@@ -299,7 +311,7 @@ fn max[
 
 
 fn max[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     rank: __mlir_type.index,
     input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
     output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
@@ -330,7 +342,7 @@ fn max[
 
 @always_inline
 fn _simd_min[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     type: __mlir_type.`!kgen.dtype`,
 ](x: SIMD[simd_width, type]) -> SIMD[1, type]:
     """Helper function that computes the min element in a simd vector and is
@@ -340,7 +352,7 @@ fn _simd_min[
 
 @always_inline
 fn _simd_min_elementwise[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     acc_type: __mlir_type.`!kgen.dtype`,
     type: __mlir_type.`!kgen.dtype`,
 ](x: SIMD[simd_width, acc_type], y: SIMD[simd_width, type]) -> SIMD[
@@ -353,7 +365,7 @@ fn _simd_min_elementwise[
 
 
 fn min[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     size: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
 ](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type, `>`]:
@@ -364,7 +376,7 @@ fn min[
 
 
 fn min[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     rank: __mlir_type.index,
     input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
     output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
@@ -395,7 +407,7 @@ fn min[
 
 @always_inline
 fn _simd_sum[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     type: __mlir_type.`!kgen.dtype`,
 ](x: SIMD[simd_width, type]) -> SIMD[1, type]:
     """Helper function that computes the sum of elements in a simd vector and is
@@ -405,7 +417,7 @@ fn _simd_sum[
 
 @always_inline
 fn _simd_sum_elementwise[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     acc_type: __mlir_type.`!kgen.dtype`,
     type: __mlir_type.`!kgen.dtype`,
 ](x: SIMD[simd_width, acc_type], y: SIMD[simd_width, type]) -> SIMD[
@@ -418,7 +430,7 @@ fn _simd_sum_elementwise[
 
 
 fn sum[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     size: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
 ](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type, `>`]:
@@ -429,7 +441,7 @@ fn sum[
 
 
 fn sum[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     rank: __mlir_type.index,
     input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
     output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
@@ -460,7 +472,7 @@ fn sum[
 
 @always_inline
 fn _simd_product[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     type: __mlir_type.`!kgen.dtype`,
 ](x: SIMD[simd_width, type]) -> SIMD[1, type]:
     """Helper function that computes the product of elements in a simd vector and is
@@ -470,7 +482,7 @@ fn _simd_product[
 
 @always_inline
 fn _simd_product_elementwise[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     acc_type: __mlir_type.`!kgen.dtype`,
     type: __mlir_type.`!kgen.dtype`,
 ](x: SIMD[simd_width, acc_type], y: SIMD[simd_width, type]) -> SIMD[
@@ -483,7 +495,7 @@ fn _simd_product_elementwise[
 
 
 fn product[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     size: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
 ](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type, `>`]:
@@ -494,7 +506,7 @@ fn product[
 
 
 fn product[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     rank: __mlir_type.index,
     input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
     output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
@@ -524,7 +536,7 @@ fn product[
 
 
 fn mean[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     size: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
 ](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type, `>`]:
@@ -538,7 +550,7 @@ fn mean[
 
 
 fn mean[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     rank: __mlir_type.index,
     input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
     output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
@@ -564,7 +576,7 @@ fn mean[
     let dst_1d = dst.flatten()
 
     @always_inline
-    fn div[simd_width: __mlir_type.index](idx: Int):
+    fn div[simd_width: Int](idx: Int):
         let elem = dst_1d.simd_load[simd_width](idx)
         let to_store = elem * n_recip
         dst_1d.simd_store[simd_width](idx, to_store)
@@ -578,7 +590,7 @@ fn mean[
 
 
 fn variance[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     size: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
 ](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type, `>`]:
@@ -590,7 +602,7 @@ fn variance[
 
     @always_inline
     fn _simd_variance_elementwise[
-        simd_width: __mlir_type.index,
+        simd_width: Int,
         acc_type: __mlir_type.`!kgen.dtype`,
         type: __mlir_type.`!kgen.dtype`,
     ](x: SIMD[simd_width, acc_type], y: SIMD[simd_width, type]) -> SIMD[
