@@ -262,14 +262,20 @@ RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
 
   // Finally, if this is a BValue or LValue, emit a __clone__, a load for a
   // primitive MLIR type, or an error if neither approach works.
-  if (auto mrValue = value.ir.getIfMBValue()) {
-    // TODO(ownership): The signature for clone currently takes a byref self
-    // so pass the pointer as an LValue even though it should be MBValue.  We
-    // should eventually support decaying an LValue to MRValue, but we're not
-    // ready for that.
-    value.ir = LValue(mrValue);
+  auto mbValue = value.ir.getIfMBValue();
+  if (!mbValue) {
+    // Decay an LValue to an MBValue.
+    assert(value.ir.getIfLValue());
+    mbValue = MBValue(value.ir.getIfLValue());
   }
 
+  return emitLoadOfMBValue({mbValue, value.expr}, dest);
+}
+
+/// Given an MBValue, produce a standalone rvalue in the specified destination
+/// by emitting a load / clone.
+RValue ExprEmitter::emitLoadOfMBValue(ASTExprAnd<MBValue> value,
+                                      ValueDest &dest) {
   auto loc = value.expr->getLocation(*this);
 
   // If this is a primitive MLIR type, we can emit a direct load for it.
@@ -281,15 +287,8 @@ RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
           << value.expr->getRange();
       return {};
     }
-
-    Value pointer;
-    if (auto lv = value.ir.getIfLValue())
-      pointer = lv;
-    else
-      pointer = value.ir.getIfMBValue();
-    assert(pointer);
     auto result =
-        SRValue(builder->create<POP::LoadOp>(loc, pointer,
+        SRValue(builder->create<POP::LoadOp>(loc, value.ir,
                                              /*alignment=*/std::nullopt));
     return emitResult(result, value.expr, dest).getIfRValue();
   }
@@ -307,8 +306,14 @@ RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   if (clone.isNull())
     return {};
 
+  // TODO(ownership): The signature for clone currently takes a byref self
+  // so pass the pointer as an LValue even though it should be MBValue.  We
+  // should eventually support decaying an LValue to MRValue, but we're not
+  // ready for that.
+  ASTExprAnd<AnyValue> cloneArgValue{LValue(value.ir), value.expr};
+
   // Ok, cool we know it will succeed; do it.
-  auto result = clone.emitCall(value, dest, *this);
+  auto result = clone.emitCall(cloneArgValue, dest, *this);
   if (!result)
     return {};
   assert(result.getIfRValue() &&
@@ -594,7 +599,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *node,
   // If we have an MRValue in the wrong spot, emit a __clone__ call into the
   // destination using MBValue -> RValue conversion.
   if (auto mrValue = value.getIfMRValue())
-    return emitRValue({MBValue(mrValue), node}, dest);
+    return emitLoadOfMBValue({MBValue(mrValue), node}, dest);
 
   // We know we have a SRValue or PRValue, and the destination is some kind of
   // LValue.  Emit the value and figure out where to store it.

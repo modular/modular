@@ -328,6 +328,10 @@ public:
   /// Given a value convertable to a pop int via index conversion, emit
   /// the casting code and return the pop scalar index value
   SRValue emitBoxedIntAsPopScalar(Value numberValue, const ExprNode *source);
+
+  /// Given an MBValue, produce a standalone rvalue in the specified destination
+  /// by emitting a load / clone.
+  RValue emitLoadOfMBValue(ASTExprAnd<MBValue> value, ValueDest &dest);
 };
 
 } // namespace M::KGEN::LIT
