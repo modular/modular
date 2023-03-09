@@ -55,8 +55,13 @@ M::ErrorOr<size_t> M::getHostCPUCacheSize(size_t cacheLevel) {
                      std::to_string(cacheLevel - 1) + "/size";
 
   std::ifstream fs(path, std::ios::in);
+
+  // There are some times, for example inside of a Docker container on mac,
+  // where the file is not there as expected. For now, hardcoding returning
+  // 0 in that case, with maybe a bit of smarts in the future where the host
+  // can specify what the cache is.
   if (!fs)
-    return M::Error(Twine("Unable to read '") + path + "' file");
+    return 0;
 
   std::string contents;
   std::getline(fs, contents);
