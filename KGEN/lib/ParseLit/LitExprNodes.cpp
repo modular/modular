@@ -280,21 +280,6 @@ ExprNode::~ExprNode() { llvm_unreachable("never called"); }
 llvm::SMLoc ExprNode::getRangeStart() const { return getRange().getStart(); }
 llvm::SMLoc ExprNode::getRangeEnd() const { return getRange().getEnd(); }
 
-LValue ExprNode::getLValueForResult(ASTType resultType,
-                                    ExprEmitter &emitter) const {
-  // Emit this node to see if it is a general LValue.
-  AnyValue aValue = emitIR(ValueDest::none(), emitter);
-  if (!aValue)
-    return {};
-  LValue lValue = aValue.getIfLValue();
-  if (lValue)
-    return lValue;
-
-  emitter.emitError(getLoc(), "cannot assign to immutable expression")
-      << getRange();
-  return {};
-}
-
 /// Return the 'loc' for this node translated to an MLIR location.
 Location ExprNode::getLocation(ExprEmitter &emitter) const {
   return emitter.translateLocation(getLoc());
@@ -392,9 +377,9 @@ AnyValue NoneLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   return emitter.emitResult(emitter.shared.getNoneAttr(), this, dest);
 }
 
-/// This handles emission of a value into a DeclRefNode as a pattern.
-LValue DeclRefNode::getLValueForResult(ASTType resultType,
-                                       ExprEmitter &emitter) const {
+/// Emit IR for an unqualified declaration reference "x" looked up in current
+/// context.
+AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   ASTDecl &container = emitter.declScope;
 
   // Perform a lookup of the specified decl in the current container.
@@ -404,8 +389,10 @@ LValue DeclRefNode::getLValueForResult(ASTType resultType,
   // This creates an untyped VarLetDeclOp which is then inferred from its
   // initializer.  `isVar` indicates whether this should be considered mutable.
   auto createVarDecl = [&](OpBuilder &builder, bool isVar) -> VarLetDeclOp {
+    auto contextualType = dest.getIfLValueInitializerType();
+    assert(contextualType && "must have contextual type");
     auto loc = getLocation(emitter);
-    Type declIRType = POP::PointerType::get(resultType);
+    Type declIRType = POP::PointerType::get(contextualType);
     auto nameAttr = StringAttr::get(loc.getContext(), spelling);
     return builder.create<VarLetDeclOp>(loc, declIRType, nameAttr, isVar);
   };
@@ -413,13 +400,24 @@ LValue DeclRefNode::getLValueForResult(ASTType resultType,
   // If the unresolved name is `_`, then we have a discard pattern.  Materialize
   // a destination to store into.  We cannot just discard the result in
   // generality, because the value may have a destructor that needs to be run.
-  if (lookup.isFailure() && spelling == "_" && emitter.builder)
-    return LValue(createVarDecl(*emitter.builder, /*isVar=*/false));
+  if (lookup.isFailure() && spelling == "_" && emitter.builder) {
+    // We can only create an implicitly declared value if we have a contextual
+    // type to infer from.
+    if (!dest.getIfLValueInitializerType()) {
+      emitter.emitError(getLoc(),
+                        "discard pattern requires an initializing expression");
+      return {};
+    }
+    auto result = LValue(createVarDecl(*emitter.builder, /*isVar=*/false));
+    return emitter.emitResult(result, this, dest);
+  }
 
   // If that lookup failed, but we can synthesize a variable declaration in this
   // scope, do that.  We can only do this if there is a varDeclCursor,
-  // indicating that we're in a `def` node.
-  if (lookup.isFailure() && emitter.varDeclCursor) {
+  // indicating that we're in a `def` node, and if we have a contextual type
+  // (which tells us we need to emit an LValue).
+  if (lookup.isFailure() && emitter.varDeclCursor &&
+      dest.getIfLValueInitializerType()) {
     // Use this builder to place any VarLetDeclOps. In Python there is only one
     // scope per function and all variables belong to that scope, so builders
     // should reflect that.
@@ -430,45 +428,8 @@ LValue DeclRefNode::getLValueForResult(ASTType resultType,
     // subsequent uses find this one.
     emitter.getDeclResolver().addFullyResolvedDecl(
         varDecl, getLoc(), varDecl.getNameAttr(), &container);
-    return LValue(varDecl);
+    return emitter.emitResult(LValue(varDecl), this, dest);
   }
-
-  ArrayRef<ASTDecl *> decls = lookup.getIfSuccess();
-  if (decls.empty()) {
-    if (lookup.isErroneous())
-      return {}; // Error already diagnosed.
-
-    // By policy in order to produce a more predictable programming model,
-    // implicit declarations of variables are only allowed in `def` contexts,
-    // not in `fn`, structs, or top level.
-    auto funcContext =
-        dyn_cast_or_null<LIT::FuncOp>(emitter.declScope.getIfOperation());
-    if (!funcContext || !funcContext.getIsDef()) {
-      auto diag = emitter.emitError(getLoc()) << "use of unknown declaration '"
-                                              << spelling << "'" << getRange();
-      if (funcContext)
-        diag << ", `fn` declarations require explicit variable declarations";
-      return {};
-    }
-
-    auto diag = emitter.emitError(getLoc()) << getRange();
-    diag << "use of unknown declaration '" << spelling << "'";
-    return {};
-  }
-
-  // The majority cases are references to LValues, which emitIR handles. Let our
-  // base class handle this delegation.
-  return ExprNode::getLValueForResult(resultType, emitter);
-}
-
-/// Emit IR for an unqualified declaration reference "x" looked up in current
-/// context.
-AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
-  ASTDecl &container = emitter.declScope;
-
-  // Perform a lookup of the specified decl in the current container.
-  LookupResult lookup = emitter.shared.lookupAndResolveDecl(
-      spelling, getLoc(), container, /*searchParentScopes=*/true);
 
   ArrayRef<ASTDecl *> decls = lookup.getIfSuccess();
   if (decls.empty()) {
@@ -836,7 +797,8 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
     Value value;
     if (numParens >= 3)
       value = emitter.emitExprLValue(call.getLoc(), operand,
-                                     "((())) operand must be an lvalue");
+                                     "((())) operand must be an lvalue",
+                                     ValueDest::none());
     else
       value = emitter.emitExprSRValue(operand, EC_MLIRMagic);
     if (!value)
@@ -1388,11 +1350,6 @@ AnyValue ParenNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   return subExpr->emitIR(dest, emitter);
 }
 
-LValue ParenNode::getLValueForResult(ASTType resultType,
-                                     ExprEmitter &emitter) const {
-  return subExpr->getLValueForResult(resultType, emitter);
-}
-
 AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Emit each of the index values to generate error messages.
   SmallVector<RValue> exprValues;
@@ -1792,8 +1749,9 @@ AnyValue BinOpNode::emitInplace(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Inplace operations evaluate the LHS first, so emit the LHS pattern as an
   // lvalue.
-  LValue lhsLV = emitter.emitExprLValue(
-      getLoc(), lhs, "cannot assign to immutable expression");
+  LValue lhsLV = emitter.emitExprLValue(getLoc(), lhs,
+                                        "cannot assign to immutable expression",
+                                        ValueDest::none());
   if (!lhsLV)
     return {};
 

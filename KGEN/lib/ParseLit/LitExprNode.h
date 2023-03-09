@@ -137,15 +137,6 @@ public:
   /// into, e.g. the a/b target in `def f(): (a,b) = (1,2)`.  On success, the
   /// ValueDest /must/ be emitted into.
   virtual AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const = 0;
-
-  /// This node is being used as the LHS target/pattern of an assignment,
-  /// initialized with the specified RHS value of some type.  Generate an LValue
-  /// that can be initialized or emit an error and return null.  This uses
-  /// 'resultType' for inference when the ValueDest is untyped (e.g. `var x =
-  /// expr`), but may return an LValue of another type when the dest is typed
-  /// (e.g. `var x : F32 = 1`).
-  virtual LValue getLValueForResult(ASTType resultType,
-                                    ExprEmitter &emitter) const;
 };
 
 } // namespace M::KGEN::LIT
