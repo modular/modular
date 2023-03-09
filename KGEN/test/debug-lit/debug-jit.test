@@ -1,15 +1,15 @@
-# RUN: exit 0
 # COM: I can't figure out how to get this to work on linux, I keep getting "ModuleNotFoundError: No module named 'lldb'"
-# XUN: %lldb -b -o 'settings set plugin.jit-loader.gdb.enable on' -o 'b jitbp' \
-# XUN:       -o 'run %S/Inputs/test.lit --debug-level=full -O0' lit | FileCheck %s
+# RUN: %lldb -b -o 'settings set plugin.jit-loader.gdb.enable on' -o 'b %S/Inputs/test.lit:5' \
+# RUN:       -o 'run %S/Inputs/test.lit --debug-level=full -O0' lit | FileCheck %s
 
-# COM: This should work on linux :( # XHAIL: system-darwin, system-windows
+# XFAIL: system-linux, system-windows
 
-# XHECK: Breakpoint 1: no locations (pending).
-# XHECK: (lldb) run {{.*}}
-# XHECK-NOT: hello
-# XHECK: Process {{.*}} stopped
-# XHECK: JIT(0x{{.*}})`$test::jitbp() at jitbp.lit:3:4
-# XHECK: -> 1    fn jitbp():
-# XHECK:    2    fn main():
-# XHECK: Process {{.*}} launched: {{.*}}
+# CHECK: Breakpoint 1: no locations (pending).
+# CHECK: (lldb) run {{.*}}
+# CHECK-NOT: hello
+# CHECK: Process {{.*}} stopped
+# CHECK: stop reason = breakpoint 1.1
+# CHECK: JIT(0x{{.*}})`$test::jitbp() at test.lit:5:11
+# CHECK:    4 fn jitbp():
+# CHECK: -> 5 print("hello\n")
+# CHECK: Process {{.*}} launched: {{.*}}
