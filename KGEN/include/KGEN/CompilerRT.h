@@ -48,6 +48,18 @@ MODULAR_EXPORT MODULAR_ATTRIBUTE_USED void
 KGEN_CompilerRT_LLCL_DestroyRuntime(void *runtimeRef);
 
 //===----------------------------------------------------------------------===//
+// Memory.cpp
+//===----------------------------------------------------------------------===//
+
+namespace M::KGEN {
+/// Register the Memory functions.
+void registerMemory(std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);
+} // namespace M::KGEN
+
+MODULAR_EXPORT MODULAR_ATTRIBUTE_USED void *
+KGEN_CompilerRT_AlignedAlloc(ssize_t alignment, ssize_t size);
+
+//===----------------------------------------------------------------------===//
 // Print.cpp
 //===----------------------------------------------------------------------===//
 
