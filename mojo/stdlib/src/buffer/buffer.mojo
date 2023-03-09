@@ -180,7 +180,7 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
         """
         return self.simd_load[1](idx)
 
-    fn simd_load[width: __mlir_type.index](self, idx: Int) -> SIMD[width, type]:
+    fn simd_load[width: Int](self, idx: Int) -> SIMD[width, type]:
         """Loads a simd value from the buffer at the specified index.
 
         Args:
@@ -218,7 +218,7 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
         self.simd_store[1](idx, val)
 
     fn simd_store[
-        width: __mlir_type.index
+        width: Int,
     ](self, idx: Int, val: SIMD[width, type]):
         """Stores a simd value into the buffer at the specified index.
 
@@ -250,7 +250,7 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
         memset_zero(self.data, self.bytecount())
 
     fn simd_fill[
-        simd_width: __mlir_type.index
+        simd_width: Int
     ](self, val: SIMD[1, type]) -> Buffer[size, type]:
         """Assigns val to all elements in the Buffer in chunks of size
         simd_width.
@@ -263,7 +263,7 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
             return self
 
         @always_inline
-        fn _fill[simd_width: __mlir_type.index](idx: Int):
+        fn _fill[simd_width: Int](idx: Int):
             self.simd_store[simd_width](idx, val)
 
         vectorize[simd_width, _fill](self.__len__())
@@ -520,17 +520,17 @@ struct NDBuffer[
         return self.simd_load[1](idx)
 
     fn simd_load[
-        width: __mlir_type.index
+        width: Int,
     ](self, idx: VariadicList[Int]) -> SIMD[width, type]:
         return self._offset(idx).simd_load[width]()
 
     fn simd_load[
-        width: __mlir_type.index
+        width: Int,
     ](self, idx: StaticIntTuple[rank]) -> SIMD[width, type]:
         return self.simd_load[width](idx.as_tuple())
 
     fn simd_load[
-        width: __mlir_type.index
+        width: Int,
     ](self, idx: StaticTuple[rank, __mlir_type.index]) -> SIMD[width, type]:
         return self._offset(idx).simd_load[width]()
 
@@ -545,13 +545,13 @@ struct NDBuffer[
         self.simd_store[1](idx, val)
 
     fn simd_store[
-        width: __mlir_type.index
+        width: Int
     ](self, idx: StaticIntTuple[rank], val: SIMD[width, type]):
         # Stores a simd value into thendbuffer at the specified index
         self.simd_store[width](idx.as_tuple(), val)
 
     fn simd_store[
-        width: __mlir_type.index
+        width: Int
     ](self, idx: StaticTuple[rank, __mlir_type.index], val: SIMD[width, type]):
         # Stores a simd value into thendbuffer at the specified index
         self._offset(idx).simd_store[width](val)
@@ -587,7 +587,7 @@ struct NDBuffer[
         memset_zero(self.data, self.bytecount())
 
     fn simd_fill[
-        simd_width: __mlir_type.index
+        simd_width: Int
     ](self, val: SIMD[1, type]) -> NDBuffer[rank, shape, type]:
         """Assigns val to all elements in the NDBuffer in chunks of size
         simd_width.
@@ -657,7 +657,7 @@ fn _neg[val: __mlir_type.i1]() -> __mlir_type.i1:
 
 
 fn partial_simd_load[
-    width: __mlir_type.index, type: __mlir_type.`!kgen.dtype`
+    width: Int, type: __mlir_type.`!kgen.dtype`
 ](
     storage: DTypePointer[type],
     lbound: Int,
@@ -686,7 +686,7 @@ fn partial_simd_load[
             The SIMD vector loaded and zero-filled.
     """
     # Create a buffer view of the allocated space.
-    let vector = Buffer[width, type].stack_allocation()
+    let vector = Buffer[width.__as_mlir_index(), type].stack_allocation()
 
     # Initialize vector with pad values.
     vector.simd_store[width](0, SIMD[width, type].splat(pad_value))
@@ -705,7 +705,7 @@ fn partial_simd_load[
 
 
 fn partial_simd_store[
-    width: __mlir_type.index, type: __mlir_type.`!kgen.dtype`
+    width: Int, type: __mlir_type.`!kgen.dtype`
 ](
     storage: DTypePointer[type],
     lbound: Int,
@@ -729,7 +729,7 @@ fn partial_simd_store[
             data: The vector value to store.
     """
     # Create a buffer view of the storage space.
-    let vector = Buffer[width, type].stack_allocation()
+    let vector = Buffer[width.__as_mlir_index(), type].stack_allocation()
 
     # Put the given vector data in the allocated buffer.
     vector.simd_store[width](0, data)
