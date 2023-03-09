@@ -510,6 +510,13 @@ static void printAddressOfOp(OpAsmPrinter &p, Operation *op,
   printSignatureValues(p, calleeCst.getType());
 }
 
+void AddressOfOp::concretizeCallee(mlir::IRRewriter &b,
+                                   SymbolConstantAttr callee,
+                                   TypeRange resultTypes) {
+  b.replaceOpWithNewOp<AddressOfOp>(*this, resultTypes.front(), callee,
+                                    ArrayRef<ParamDeclAttr>());
+}
+
 //===----------------------------------------------------------------------===//
 // CallOp
 //===----------------------------------------------------------------------===//
@@ -558,6 +565,12 @@ mlir::CallInterfaceCallable CallOp::getCallableForCallee() {
   return getCalleeSymbol();
 }
 
+void CallOp::concretizeCallee(mlir::IRRewriter &b, SymbolConstantAttr callee,
+                              TypeRange resultTypes) {
+  b.replaceOpWithNewOp<CallOp>(*this, resultTypes, callee,
+                               ArrayRef<ParamDeclAttr>(), getOperands());
+}
+
 //===----------------------------------------------------------------------===//
 // CallParamOp
 //===----------------------------------------------------------------------===//
@@ -572,6 +585,13 @@ LogicalResult CallParamOp::canonicalize(CallParamOp op,
   rewriter.replaceOpWithNewOp<CallOp>(op, op.getResultTypes(), callee,
                                       op.getParamDecls(), op.getOperands());
   return success();
+}
+
+void CallParamOp::concretizeCallee(mlir::IRRewriter &b,
+                                   SymbolConstantAttr callee,
+                                   TypeRange resultTypes) {
+  b.replaceOpWithNewOp<CallOp>(*this, resultTypes, callee,
+                               ArrayRef<ParamDeclAttr>(), getOperands());
 }
 
 //===----------------------------------------------------------------------===//

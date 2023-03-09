@@ -648,7 +648,7 @@ static std::optional<ErrorTree> processGenericOp(IREvaluator &evaluator,
 }
 
 //===----------------------------------------------------------------------===//
-// completeGeneratorUserProcessing
+// completeCallProcessing
 //===----------------------------------------------------------------------===//
 
 /// Complete processing of a generator user by resolving any bound result types
@@ -693,21 +693,10 @@ static void completeCallProcessing(KGENCallOpInterface user,
   // Now that we resolved the call to a new thing, build a new call to replace
   // the old one.
   mlir::IRRewriter b{OpBuilder(user)};
-  if (isa<CallOp, CallParamOp>(user)) {
-    b.replaceOpWithNewOp<CallOp>(
-        user, resultTypes,
-        SymbolConstantAttr::get(
-            FlatSymbolRefAttr::get(newCalleeFunc.getNameAttr()),
-            newCalleeFunc.getSignature()),
-        ArrayRef<ParamDeclAttr>(), user->getOperands());
-  } else if (isa<AddressOfOp>(user)) {
-    b.replaceOpWithNewOp<AddressOfOp>(
-        user, resultTypes.front(),
-        SymbolConstantAttr::get(
-            FlatSymbolRefAttr::get(newCalleeFunc.getNameAttr()),
-            newCalleeFunc.getSignature()),
-        ArrayRef<ParamDeclAttr>());
-  }
+  auto newCallee = SymbolConstantAttr::get(
+      FlatSymbolRefAttr::get(newCalleeFunc.getNameAttr()),
+      newCalleeFunc.getSignature());
+  user.concretizeCallee(b, newCallee, resultTypes);
 
   // Get the result params from the concretization of this node, if we have
   // them.
@@ -898,13 +887,17 @@ public:
                       ExpansionTreeNode *forkParentNode,
                       ArrayRef<Operation *> remainingWorklist);
 
+  /// Process a call op by binding any necessary input parameters from the
+  /// symbol or the call and passing them on to processGeneratorUser.
+  std::optional<ErrorTree>
+  processCallOp(KGENCallOpInterface call, ExpansionTreeNode *parent,
+                ArrayRef<Operation *> remainingWorklist);
+
   /// Process a generator user. In general, this is anything that can call into
   /// a generator and might therefore need to be multi-versioned.
-  std::optional<ErrorTree>
-  processGeneratorUser(ArrayRef<ParamDeclAttr> decls, KGENCallOpInterface user,
-                       SymbolConstantAttr calleeSymbol,
-                       ExpansionTreeNode *parent,
-                       ArrayRef<Operation *> remainingWorklist);
+  std::optional<ErrorTree> processGeneratorUser(
+      KGENCallOpInterface user, SymbolConstantAttr calleeSymbol,
+      ExpansionTreeNode *parent, ArrayRef<Operation *> remainingWorklist);
 
   /// Resolve call input parameters - this is a complex function because calls
   /// can have regions. We take the body of those regions and put it into a
@@ -917,12 +910,6 @@ public:
   ErrorTreeOr<ArrayAttr> resolveCallInputParams(KGENCallOpInterface call,
                                                 ExpansionTreeNode *parentNode,
                                                 ParamBindArrayAttr inputValues);
-
-  /// Process a call_param op by binding any necessary input parameters from the
-  /// symbol or the call and passing them on to processGeneratorUser.
-  std::optional<ErrorTree>
-  processCallParamOp(CallParamOp call, ExpansionTreeNode *parent,
-                     ArrayRef<Operation *> remainingWorklist);
 
   /// Process a param.declare.region op by creating a generator with the correct
   /// captures. We don't specialize the generator until the call-site because we
@@ -1237,9 +1224,8 @@ ElaboratorImpl::spawnParamForkClone(ParamForkOp forkOp, Attribute value,
 
 /// Process a generator user like a call.
 std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
-    ArrayRef<ParamDeclAttr> decls, KGENCallOpInterface user,
-    SymbolConstantAttr calleeSymbol, ExpansionTreeNode *parent,
-    ArrayRef<Operation *> remainingWorklist) {
+    KGENCallOpInterface user, SymbolConstantAttr calleeSymbol,
+    ExpansionTreeNode *parent, ArrayRef<Operation *> remainingWorklist) {
   auto _ = logger.scope("Processing Generator User");
   LLVM_DEBUG(logger.logOp("User", user));
 
@@ -1265,6 +1251,7 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
   });
 
   // If we already have a binding for this, we're done.
+  ArrayRef<ParamDeclAttr> decls = user.getParamDecls();
   auto found = parent->bindings.find({calleeOp, inputParamKey});
   if (found != parent->bindings.end()) {
     LLVM_DEBUG(
@@ -1421,16 +1408,16 @@ ElaboratorImpl::resolveCallInputParams(KGENCallOpInterface call,
 
 /// Process a call_param op.
 std::optional<ErrorTree>
-ElaboratorImpl::processCallParamOp(CallParamOp call, ExpansionTreeNode *parent,
-                                   ArrayRef<Operation *> remainingWorklist) {
-  auto symbol = parent->evaluator.concretizeParameterExpr(call.getLoc(),
-                                                          call.getCallee());
+ElaboratorImpl::processCallOp(KGENCallOpInterface call,
+                              ExpansionTreeNode *parent,
+                              ArrayRef<Operation *> remainingWorklist) {
+  ErrorTreeOr<Attribute> symbol = parent->evaluator.concretizeParameterExpr(
+      call.getLoc(), call.getCallee());
   if (symbol.isError())
     return symbol.takeError();
 
   if (auto sym = dyn_cast<SymbolConstantAttr>(*symbol))
-    return processGeneratorUser(call.getParamDecls(), call, sym, parent,
-                                remainingWorklist);
+    return processGeneratorUser(call, sym, parent, remainingWorklist);
 
   auto decl = dyn_cast<RegionAttr>(*symbol);
   if (!decl)
@@ -1477,7 +1464,7 @@ ElaboratorImpl::processCallParamOp(CallParamOp call, ExpansionTreeNode *parent,
 
   // And we're done; RAUW the call's results, erase the call_param op, and
   // erase the region terminator that was cloned over.
-  call.replaceAllUsesWith(map.lookup(regionTerminator)->getOperands());
+  call->replaceAllUsesWith(map.lookup(regionTerminator)->getOperands());
   call.erase();
   map.lookup(regionTerminator)->erase();
   return std::nullopt;
@@ -1636,16 +1623,8 @@ void ElaboratorImpl::processScope(ExpansionTreeNode *parentNode,
       result = processParamAssertOp(parentNode->evaluator, assertOp);
     } else if (auto ifOp = dyn_cast<ParamIfOp>(op)) {
       result = processParamIfOp(ifOp, parentNode);
-    } else if (auto addressof = dyn_cast<AddressOfOp>(op)) {
-      result = processGeneratorUser(addressof.getParamDecls(), addressof,
-                                    addressof.getCallee(), parentNode,
-                                    remainingWorklist);
-    } else if (auto call = dyn_cast<CallOp>(op)) {
-      result =
-          processGeneratorUser(call.getParamDecls(), call, call.getCallee(),
-                               parentNode, remainingWorklist);
-    } else if (auto callParam = dyn_cast<CallParamOp>(op)) {
-      result = processCallParamOp(callParam, parentNode, remainingWorklist);
+    } else if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
+      result = processCallOp(call, parentNode, remainingWorklist);
     } else {
       result = processGenericOp(parentNode->evaluator, op);
     }

@@ -14,6 +14,10 @@
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/Region.h"
 
+namespace mlir {
+class IRRewriter;
+} // namespace mlir
+
 namespace M::KGEN {
 class DeclInterface;
 class KGENCallOpInterface;
