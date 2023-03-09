@@ -321,7 +321,7 @@ def KGEN_VariadicAttr : KGEN_ExprAttr<"Variadic", "variadic", [
   let builders = [
     AttrBuilderWithInferredContext<(ins "ArrayRef<TypedAttr>":$values,
                                         "VariadicType":$type), [{
-      return get(type.getContext(), values, type);
+      return $_get(type.getContext(), values, type);
     }]>
   ];
 

@@ -1934,3 +1934,37 @@ kgen.generator @fork_unreachable_blocks() {
   }
   kgen.return
 }
+
+// -----
+
+kgen.generator @box(%a: index) -> !pop.struct<index> {
+  %0 = pop.struct.construct(%a) : !pop.struct<index>
+  kgen.return %0 : !pop.struct<index>
+}
+
+kgen.generator @unbox(%a: !pop.struct<index>) -> index {
+  %0 = pop.struct.extract %a[0] : !pop.struct<index>
+  kgen.return %0 : index
+}
+
+kgen.generator @callee<a: !pop.struct<index>>(
+    %a: !pop.array<apply(:(!pop.struct<index>) -> index @unbox, a), index>) {
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @unbox_in_result_sig
+kgen.generator @unbox_in_result_sig() {
+  // CHECK-NEXT: constant: (!pop.array<2, index>) -> () = <@callee<a: struct<index> = { 2 }>>
+  kgen.param.declare a = <2>
+  kgen.param.declare fn: <a: !pop.struct<index>>(
+    !pop.array< apply(:(!pop.struct<index>) -> index @unbox, a), index>
+  ) -> () = <@callee>
+  kgen.param.constant: (
+    !pop.array<apply(:(!pop.struct<index>) -> index @unbox,
+                     apply(:(index) -> !pop.struct<index> @box, a)),
+               index>) -> () =
+    <bind_signature(:<a: !pop.struct<index>>(
+      !pop.array<apply(:(!pop.struct<index>) -> index @unbox, a), index>
+     ) -> () fn, apply(:(index) -> !pop.struct<index> @box, a))>
+  kgen.return
+}
