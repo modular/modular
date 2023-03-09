@@ -228,8 +228,6 @@ ParameterInferenceState::infer(SignatureType signature,
         expectedType = expectedType.getPointerElementType();
         // TODO: Consider implicit conversions?
         return matchTypes(operand.ir.getRValueType(), expectedType);
-      default:
-        llvm_unreachable("unknown value input convention");
       }
     };
 
@@ -1097,7 +1095,13 @@ PRValue OverloadSet::getCallee(ExprEmitter &emitter) const {
   });
   // Pull out the type, and construct a list attr to be returned.
   auto calleeType = symbols.front().getType();
-  auto variadic = VariadicAttr::get(symbols, VariadicType::get(calleeType));
+  auto variadic = VariadicAttr::getChecked(
+      [&] {
+        return mlir::emitError(emitter.translateLocation(expr->getLoc()));
+      },
+      symbols, VariadicType::get(calleeType));
+  if (!variadic)
+    return {};
 
   // If the callee is a list, create a param.fork op and create a
   // CallParam on that. We want to get the name of the function that is

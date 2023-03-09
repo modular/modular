@@ -69,8 +69,6 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in return value";
   case EC_MLIRMagic:
     return " in MLIR magic";
-  default:
-    llvm_unreachable("unknown expression context");
   }
 }
 
