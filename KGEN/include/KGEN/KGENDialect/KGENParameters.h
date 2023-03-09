@@ -185,6 +185,9 @@ struct ParameterUseDefGraph {
   /// `map`.
   ParameterUseDefGraph copy(const IRMapping &map) const;
 
+  /// Print the graph to llvm::errs().
+  void dump() const;
+
 private:
   /// Calculate the parameter use-def graph and perform verification if a symbol
   /// table is provided.

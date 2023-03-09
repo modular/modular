@@ -789,3 +789,31 @@ ParameterUseDefGraph ParameterUseDefGraph::copy(const IRMapping &map) const {
 
   return out;
 }
+
+void ParameterUseDefGraph::dump() const {
+  llvm::errs() << "Decls: ";
+  llvm::interleaveComma(decls, llvm::errs(), [&](const auto &nameAndDecl) {
+    llvm::errs() << nameAndDecl.first;
+  });
+  llvm::errs() << "\n";
+
+  llvm::errs() << "Defs: ";
+  llvm::interleaveComma(defs, llvm::errs(), [&](const auto &nameAndDef) {
+    llvm::errs() << nameAndDef.first;
+  });
+  llvm::errs() << "\n";
+
+  llvm::errs() << "Uses: ";
+  llvm::interleaveComma(opUses, llvm::errs(), [&](const auto &opAndUses) {
+    llvm::interleaveComma(opAndUses.second, llvm::errs(), [&](const auto &use) {
+      llvm::errs() << use.getName();
+    });
+  });
+  llvm::errs() << "\n";
+
+  for (auto [idx, nestedDecl] : llvm::enumerate(nestedDecls)) {
+    llvm::errs() << "Nested scope " << idx << " {\n";
+    nestedScopes.at(nestedDecl).dump();
+    llvm::errs() << "}\n";
+  }
+}
