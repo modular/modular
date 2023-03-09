@@ -66,9 +66,11 @@ fn gather_reduce[
     type: __mlir_type.`!kgen.dtype`,
     gather_axis: __mlir_type.index,
     reduce_axis: __mlir_type.index,
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     reduce_fn: __mlir_type[
-        `!kgen.signature<<simd_width, type: dtype>(`,
+        `!kgen.signature<<simd_width:`,
+        Int,
+        `, type: dtype>(`,
         SIMD[simd_width, `type`],
         `,`,
         SIMD[simd_width, `type`],
@@ -126,7 +128,7 @@ fn gather_reduce[
         )
 
         @always_inline
-        fn _gather_contiguous[simd_width: __mlir_type.index](i: Int, j: Int):
+        fn _gather_contiguous[simd_width: Int](i: Int, j: Int):
             """Computes output[i,k] = input[indices[i,j],k] + output[i,k]
             for k in range [0,input.dim[1])"""
             let idx = indices[i, j].value
@@ -140,7 +142,7 @@ fn gather_reduce[
             ]((next_idx + prefetch_offset).value, 0)
 
             @always_inline
-            fn _simd_gather[simd_width: __mlir_type.index](k: Int):
+            fn _simd_gather[simd_width: Int](k: Int):
                 let in_idx = StaticIntTuple[2](idx, k)
                 let out_idx = StaticIntTuple[2](i, k)
 
@@ -248,7 +250,7 @@ fn gather[
             let input_row_ptr = input.data.offset((indices[i] * row_size).value)
 
             @always_inline
-            fn func_wrapper[simd_width: __mlir_type.index](idx: Int):
+            fn func_wrapper[simd_width: Int](idx: Int):
                 output_row_ptr.simd_store[simd_width](
                     idx, input_row_ptr.simd_load[simd_width](idx)
                 )

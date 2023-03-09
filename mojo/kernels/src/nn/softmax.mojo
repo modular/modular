@@ -23,8 +23,8 @@ from TypeUtilities import rebind
 
 
 fn reduce_add_simd[
-    simd_width: __mlir_type.index,
-    step_simd_width: __mlir_type.index,
+    simd_width: Int,
+    step_simd_width: Int,
     type: __mlir_type.`!kgen.dtype`,
 ](
     scalar&: SIMD[1, type],
@@ -52,7 +52,7 @@ fn reduce_add_simd[
 
 
 fn _softmax_2_pass_step1[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     buffer_size: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
 ](input: Buffer[buffer_size, type]) -> StaticTuple[
@@ -106,7 +106,7 @@ fn _softmax_2_pass_step1[
 
 
 fn _softmax_2_pass_step2[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     unroll_factor: __mlir_type.index,
     buffer_size: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
@@ -122,7 +122,7 @@ fn _softmax_2_pass_step2[
     #   end for
 
     @always_inline
-    fn _step_2[simd_width: __mlir_type.index](idx: Int):
+    fn _step_2[simd_width: Int](idx: Int):
         let running_max_simd = SIMD[simd_width, type].splat(running_max)
         let running_sum_simd = SIMD[simd_width, type].splat(running_sum)
         let input_val = input.simd_load[simd_width](idx)
@@ -136,7 +136,7 @@ fn _softmax_2_pass_step2[
 
 
 fn softmax_2_pass[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     buffer_size: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
 ](output: Buffer[buffer_size, type], input: Buffer[buffer_size, type]):
@@ -190,19 +190,23 @@ fn softmax_2_pass[
 
 
 fn _softmax_3_pass_step_2[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     unroll_factor: __mlir_type.index,
     buffer_size: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
     pre_update_func: __mlir_type[
-        `!kgen.signature<<simd_width, type: dtype>(`,
+        `!kgen.signature<<simd_width:`,
+        Int,
+        `, type: dtype>(`,
         SIMD[simd_width, type],
         `) -> `,
         SIMD[simd_width, type],
         `>`,
     ],
     post_update_func: __mlir_type[
-        `!kgen.signature<<simd_width, type: dtype>(`,
+        `!kgen.signature<<simd_width:`,
+        Int,
+        `, type: dtype>(`,
         SIMD[simd_width, type],
         `) -> `,
         SIMD[simd_width, type],
@@ -224,7 +228,7 @@ fn _softmax_3_pass_step_2[
     var accum_simd: SIMD[outer_simd_width, type] = 0
 
     @always_inline
-    fn step_2[simd_width: __mlir_type.index](idx: Int):
+    fn step_2[simd_width: Int](idx: Int):
         var elem = input.simd_load[simd_width](idx) - SIMD[
             simd_width, type
         ].splat(max_val)
@@ -242,19 +246,23 @@ fn _softmax_3_pass_step_2[
 
 
 fn _softmax_3_pass_step_3[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     unroll_factor: __mlir_type.index,
     buffer_size: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
     accum_proc_func: __mlir_type[
-        `!kgen.signature<<simd_width, type: dtype>(`,
+        `!kgen.signature<<simd_width: `,
+        Int,
+        `, type: dtype>(`,
         SIMD[simd_width, type],
         `) -> `,
         SIMD[simd_width, type],
         `>`,
     ],
     accum_apply_func: __mlir_type[
-        `!kgen.signature<<simd_width, type: dtype>(`,
+        `!kgen.signature<<simd_width: `,
+        Int,
+        `, type: dtype>(`,
         SIMD[simd_width, type],
         `, `,
         SIMD[simd_width, type],
@@ -271,7 +279,7 @@ fn _softmax_3_pass_step_3[
     let accum_proc = accum_proc_func[1, type](accum)
 
     @always_inline
-    fn step_3[simd_width: __mlir_type.index](idx: Int):
+    fn step_3[simd_width: Int](idx: Int):
         let accum_simd = SIMD[simd_width, type].splat(accum_proc)
         var elem = output.simd_load[simd_width](idx)
         elem = accum_apply_func[simd_width, type](elem, accum_simd)
@@ -281,32 +289,40 @@ fn _softmax_3_pass_step_3[
 
 
 fn _softmax_3_pass_base[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     buffer_size: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
     step2_pre_update_func: __mlir_type[
-        `!kgen.signature<<simd_width, type: dtype>(`,
+        `!kgen.signature<<simd_width:`,
+        Int,
+        `, type: dtype>(`,
         SIMD[simd_width, type],
         `) -> `,
         SIMD[simd_width, type],
         `>`,
     ],
     step2_post_update_func: __mlir_type[
-        `!kgen.signature<<simd_width, type: dtype>(`,
+        `!kgen.signature<<simd_width:`,
+        Int,
+        `, type: dtype>(`,
         SIMD[simd_width, type],
         `) -> `,
         SIMD[simd_width, type],
         `>`,
     ],
     step3_accum_proc_func: __mlir_type[
-        `!kgen.signature<<simd_width, type: dtype>(`,
+        `!kgen.signature<<simd_width:`,
+        Int,
+        `, type: dtype>(`,
         SIMD[simd_width, type],
         `) -> `,
         SIMD[simd_width, type],
         `>`,
     ],
     step3_accum_apply_func: __mlir_type[
-        `!kgen.signature<<simd_width, type: dtype>(`,
+        `!kgen.signature<<simd_width:`,
+        Int,
+        `, type: dtype>(`,
         SIMD[simd_width, type],
         `, `,
         SIMD[simd_width, type],
@@ -355,7 +371,7 @@ fn _softmax_3_pass_base[
 
 
 fn softmax_3_pass[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     buffer_size: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
 ](output: Buffer[buffer_size, type], input: Buffer[buffer_size, type]):
@@ -399,7 +415,7 @@ fn softmax_3_pass[
 
 
 fn logsoftmax[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     buffer_size: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
 ](output: Buffer[buffer_size, type], input: Buffer[buffer_size, type]):
