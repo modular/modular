@@ -118,9 +118,9 @@ fn testSIMD(a: SIMD[1, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`],
   # Test calls to methods and operators on parameterized type.
   _ = a.fma(a, a)
   _ = b.fma(b, b)
-  # CHECK: kgen.call @"$SIMD"::@SIMD::@"__add__{{.*}}<size = 1, type: dtype = f64>(%a, %a)
+  # CHECK: kgen.call @"$SIMD"::@SIMD::@"__add__{{.*}}<size{{.*}} = 1{{.*}}, type: dtype = f64>(%a, %a)
   var x = a+a
-  # CHECK: kgen.call @"$SIMD"::@SIMD::@"__add__{{.*}}<size = 1, type: dtype = si32>(%b, %b)
+  # CHECK: kgen.call @"$SIMD"::@SIMD::@"__add__{{.*}}<size{{.*}} = 1{{.*}}, type: dtype = si32>(%b, %b)
   var y = b+b
 
 # Show that forward references of parameter names can be correctly resolved.
