@@ -627,15 +627,15 @@ void LitSharedState::loadModulesFromCache(
 
   // Collect the referenced types that need to be resolved.
   llvm::SetVector<DeclRefType> typesToResolve;
+  mlir::AttrTypeWalker typeWalker;
+  typeWalker.addWalk([&](DeclRefType type) { typesToResolve.insert(type); });
   auto resolveTypes = [&](ASTDecl *context, TypeRange types) {
     for (Type type : types)
-      if (auto declRef = dyn_cast<DeclRefType>(type))
-        typesToResolve.insert(declRef);
+      typeWalker.walk(type);
   };
   auto resolveParams = [&](ASTDecl *context, ArrayRef<ParamDeclAttr> params) {
     for (ParamDeclAttr param : params)
-      if (auto declRef = dyn_cast<DeclRefType>(param.getType()))
-        typesToResolve.insert(declRef);
+      typeWalker.walk(param);
   };
 
   while (!declsToFill.empty()) {
