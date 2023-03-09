@@ -11,17 +11,17 @@
 // Emitting an expression to MLIR may produce one of the follow representations,
 // from a hierarchy of value kinds:
 //
-// AnyValue     <- Expr emitted to MLIR...
-//   LValue       <- with a runtime address that may be stored to.
-//   BValue (TODO)  <- with a borrowed value
-//     MBValue        <- value is in memory
-//     SBValue (TODO) <- value is in SSA register
-//   RValue       <- with an owned immutable value
-//     ORValue      <- with an unresolved overload set
-//     CRValue      <- with a concrete resolved type
-//       SRValue      <- with a register-passable value in an SSA register
-//       MRValue      <- with a memory-only value in memory
-//       PRValue      <- with a parameter value
+// AnyValue       <- Expr emitted to MLIR...
+//   LValue           <- mutable reference to storage
+//   BValue (TODO)    <- with a borrowed value
+//     MBValue          <- value is in memory
+//     SBValue (TODO)   <- value is in SSA register
+//   RValue         <- with an owned immutable value
+//     ORValue        <- with an unresolved overload set
+//     CRValue        <- with a concrete resolved type
+//       SRValue        <- with a register-passable value in an SSA register
+//       MRValue        <- with a memory-only value in memory
+//       PRValue        <- with a parameter value
 //
 // Note that SRValue is not compatible with memory-only types, but MRValue
 // can hold any type, including a register compatible type.
@@ -119,8 +119,8 @@ public:
   ASTType getType() const { return ASTType(Value::getType()); }
 };
 
-/// Instances of LValue model a storable dynamic address, which will always have
-/// pointer type.
+/// Instances of LValue model a loadable/storable address.  Its SSA value
+/// always has pointer type.
 class LValue : public Value {
 public:
   using Value::Value;
@@ -211,37 +211,6 @@ struct VariantValueStorage {
   VariantValueStorage()
       : storage(NullRepresentation()) {} // All are default constructible.
 
-  // These are common constructors all VariantValueStorage's have.
-  VariantValueStorage(PRValue value) {
-    if (value)
-      storage = value;
-  }
-  VariantValueStorage(TypedAttr value) : VariantValueStorage(PRValue(value)) {}
-  VariantValueStorage(Attribute value) : VariantValueStorage(TypedAttr(value)) {
-    assert(isa<TypedAttr>(value) && "invalid value attribute");
-  }
-  VariantValueStorage(Type value) : VariantValueStorage(PRValue(value)) {}
-  VariantValueStorage(ASTType value) : VariantValueStorage(PRValue(value)) {}
-  VariantValueStorage(SRValue value) {
-    if (value)
-      storage = value;
-  }
-  VariantValueStorage(MRValue value) {
-    if (value)
-      storage = value;
-  }
-
-  PRValue getIfPRValue() const { return dyn_cast<PRValue>(storage); }
-  SRValue getIfSRValue() const { return dyn_cast<SRValue>(storage); }
-  MRValue getIfMRValue() const { return dyn_cast<MRValue>(storage); }
-
-  /// If this value is a PRValue for a type, then return the type.
-  ASTType getIfTypeValue() const {
-    if (auto mValue = getIfPRValue())
-      return mValue.getIfTypeValue();
-    return {};
-  }
-
   bool isNull() const { return isa<NullRepresentation>(storage); }
   bool operator!() const { return isNull(); }
   explicit operator bool() const { return !isNull(); }
@@ -252,16 +221,64 @@ struct VariantValueStorage {
     return result;
   }
 
-  Storage getStorage() const { return storage; }
+  Storage &getStorage() { return storage; }
+  const Storage &getStorage() const { return storage; }
 
 protected:
   Storage storage;
 };
 
+template <typename DerivedType>
+struct VariantRValue {
+  VariantRValue() {}
+  // These are common constructors all VariantValueStorage's have.
+  VariantRValue(PRValue value) {
+    if (value)
+      getStorageR() = value;
+  }
+  VariantRValue(TypedAttr value) : VariantRValue(PRValue(value)) {}
+  VariantRValue(Attribute value) : VariantRValue(TypedAttr(value)) {
+    assert(isa<TypedAttr>(value) && "invalid value attribute");
+  }
+  VariantRValue(Type value) : VariantRValue(PRValue(value)) {}
+  VariantRValue(ASTType value) : VariantRValue(PRValue(value)) {}
+  VariantRValue(SRValue value) {
+    if (value)
+      getStorageR() = value;
+  }
+  VariantRValue(MRValue value) {
+    if (value)
+      getStorageR() = value;
+  }
+
+  PRValue getIfPRValue() const { return dyn_cast<PRValue>(getStorageR()); }
+  SRValue getIfSRValue() const { return dyn_cast<SRValue>(getStorageR()); }
+  MRValue getIfMRValue() const { return dyn_cast<MRValue>(getStorageR()); }
+
+  /// If this value is a PRValue for a type, then return the type.
+  ASTType getIfTypeValue() const {
+    if (auto mValue = getIfPRValue())
+      return mValue.getIfTypeValue();
+    return {};
+  }
+
+private:
+  // These are named getStorageR instead of getStorage to easy
+  // multiple-inheritence name lookup issues.
+  typename VariantValueStorage<DerivedType>::Storage &getStorageR() {
+    return static_cast<DerivedType *>(this)->getStorage();
+  }
+  const typename VariantValueStorage<DerivedType>::Storage &
+  getStorageR() const {
+    return static_cast<const DerivedType *>(this)->getStorage();
+  }
+};
+
 /// Concrete RValue: CRValue = PRValue|SRValue|MRValue.
-class CRValue : public VariantValueStorage<CRValue> {
+class CRValue : public VariantValueStorage<CRValue>,
+                public VariantRValue<CRValue> {
 public:
-public:
+  using VariantRValue::VariantRValue;
   using VariantValueStorage::VariantValueStorage;
 
   static CRValue getFrom(Storage storage) {
@@ -283,8 +300,10 @@ public:
 raw_ostream &operator<<(raw_ostream &os, CRValue value);
 
 /// RValue = CRValue|ORValue.
-class RValue : public VariantValueStorage<RValue> {
+class RValue : public VariantValueStorage<RValue>,
+               public VariantRValue<RValue> {
 public:
+  using VariantRValue::VariantRValue;
   using VariantValueStorage::VariantValueStorage;
   RValue(ORValue value) {
     if (value)
@@ -309,8 +328,10 @@ public:
 raw_ostream &operator<<(raw_ostream &os, RValue value);
 
 /// AnyValue = LValue|MBValue|RValue.
-class AnyValue : public VariantValueStorage<AnyValue> {
+class AnyValue : public VariantValueStorage<AnyValue>,
+                 public VariantRValue<AnyValue> {
 public:
+  using VariantRValue::VariantRValue;
   using VariantValueStorage::VariantValueStorage;
   AnyValue(ORValue value) {
     if (value)
