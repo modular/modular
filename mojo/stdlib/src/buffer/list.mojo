@@ -16,6 +16,7 @@ from TypeUtilities import rebind
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline("nodebug")
 fn create_kgen_list[
     type: __mlir_type.`!kgen.mlirtype`
 ](e0: type) -> __mlir_type[`!kgen.list<`, type, `[1]>`]:
@@ -33,6 +34,7 @@ fn create_kgen_list[
     ](e0)
 
 
+@always_inline("nodebug")
 fn create_kgen_list[
     type: __mlir_type.`!kgen.mlirtype`
 ](e0: type, e1: type) -> __mlir_type[`!kgen.list<`, type, `[2]>`]:
@@ -51,6 +53,7 @@ fn create_kgen_list[
     ](e0, e1)
 
 
+@always_inline("nodebug")
 fn create_kgen_list[
     type: __mlir_type.`!kgen.mlirtype`
 ](e0: type, e1: type, e2: type) -> __mlir_type[`!kgen.list<`, type, `[3]>`]:
@@ -70,6 +73,7 @@ fn create_kgen_list[
     ](e0, e1, e2)
 
 
+@always_inline("nodebug")
 fn create_kgen_list[
     type: __mlir_type.`!kgen.mlirtype`
 ](e0: type, e1: type, e2: type, e3: type) -> __mlir_type[
@@ -92,6 +96,7 @@ fn create_kgen_list[
     ](e0, e1, e2, e3)
 
 
+@always_inline("nodebug")
 fn create_kgen_list[
     type: __mlir_type.`!kgen.mlirtype`
 ](e0: type, e1: type, e2: type, e3: type, e4: type,) -> __mlir_type[
@@ -115,6 +120,7 @@ fn create_kgen_list[
     ](e0, e1, e2, e3, e4)
 
 
+@always_inline("nodebug")
 fn create_kgen_list[
     type: __mlir_type.`!kgen.mlirtype`
 ](e0: type, e1: type, e2: type, e3: type, e4: type, e5: type) -> __mlir_type[
@@ -139,6 +145,7 @@ fn create_kgen_list[
     ](e0, e1, e2, e3, e4, e5)
 
 
+@always_inline("nodebug")
 fn create_kgen_list[
     type: __mlir_type.`!kgen.mlirtype`
 ](
@@ -170,6 +177,7 @@ fn create_kgen_list[
     ](e0, e1, e2, e3, e4, e5, e6)
 
 
+@always_inline("nodebug")
 fn create_kgen_list[
     type: __mlir_type.`!kgen.mlirtype`
 ](
@@ -203,6 +211,7 @@ fn create_kgen_list[
     ](e0, e1, e2, e3, e4, e5, e6, e7)
 
 
+@always_inline("nodebug")
 fn create_kgen_list[
     type: __mlir_type.`!kgen.mlirtype`
 ](
@@ -238,6 +247,7 @@ fn create_kgen_list[
     ](e0, e1, e2, e3, e4, e5, e6, e7, e8)
 
 
+@always_inline("nodebug")
 fn create_kgen_list[
     type: __mlir_type.`!kgen.mlirtype`
 ](
@@ -275,6 +285,7 @@ fn create_kgen_list[
     ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9)
 
 
+@always_inline("nodebug")
 fn create_kgen_list[
     type: __mlir_type.`!kgen.mlirtype`
 ](
@@ -314,6 +325,7 @@ fn create_kgen_list[
     ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10)
 
 
+@always_inline("nodebug")
 fn create_kgen_list[
     type: __mlir_type.`!kgen.mlirtype`
 ](
@@ -355,6 +367,7 @@ fn create_kgen_list[
     ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11)
 
 
+@always_inline("nodebug")
 fn create_kgen_list[
     type: __mlir_type.`!kgen.mlirtype`
 ](
@@ -398,6 +411,7 @@ fn create_kgen_list[
     ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12)
 
 
+@always_inline("nodebug")
 fn create_kgen_list[
     type: __mlir_type.`!kgen.mlirtype`
 ](
@@ -443,6 +457,7 @@ fn create_kgen_list[
     ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13)
 
 
+@always_inline("nodebug")
 fn create_kgen_list[
     type: __mlir_type.`!kgen.mlirtype`
 ](
@@ -490,6 +505,7 @@ fn create_kgen_list[
     ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14)
 
 
+@always_inline("nodebug")
 fn create_kgen_list[
     type: __mlir_type.`!kgen.mlirtype`
 ](
@@ -544,6 +560,7 @@ fn create_kgen_list[
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline("nodebug")
 fn _get_kgen_list_item[
     index: __mlir_type.index,
     size: __mlir_type.index,
@@ -688,6 +705,7 @@ fn is_all_known_range_impl[
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline("nodebug")
 fn create_kgen_list_unknown[
     len: __mlir_type.index
 ]() -> __mlir_type[`!kgen.list<`, __mlir_type.index, `[`, len, `]>`]:
