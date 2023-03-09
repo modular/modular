@@ -55,7 +55,7 @@ void ParameterCollector::collectUsesFromAttr(
   // Save the number of nested parameters before recursing and check whether the
   // attribute has a nested constant expression.
   size_t oldSize = uses.size();
-  bool hasNestedConstExpr = false;
+  bool hasNestedConstExpr = isa<ParameterizedTypeConstantAttr>(attr);
 
   // Otherwise we haven't processed this, check the attribute's type if it has
   // one.
