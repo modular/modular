@@ -796,9 +796,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
 
     Value value;
     if (numParens >= 3)
-      value = emitter.emitExprLValue(call.getLoc(), operand,
-                                     "((())) operand must be an lvalue",
-                                     ValueDest::none());
+      value = emitter.emitExprLValue(operand, EC_MLIRMagic);
     else
       value = emitter.emitExprSRValue(operand, EC_MLIRMagic);
     if (!value)
@@ -1749,9 +1747,7 @@ AnyValue BinOpNode::emitInplace(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Inplace operations evaluate the LHS first, so emit the LHS pattern as an
   // lvalue.
-  LValue lhsLV = emitter.emitExprLValue(getLoc(), lhs,
-                                        "cannot assign to immutable expression",
-                                        ValueDest::none());
+  LValue lhsLV = emitter.emitExprLValue(lhs, EC_InplaceBinOpDest);
   if (!lhsLV)
     return {};
 
