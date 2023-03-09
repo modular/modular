@@ -1,0 +1,22 @@
+# RUN: lit %s | FileCheck %s
+
+from Int import Int
+from IO import print
+
+
+fn print_or(value: Int, condition: Bool):
+    @always_inline
+    fn do_print(value: Int):
+        if condition:
+            print(value)
+            return
+        print("refuse\n")
+
+    do_print(value)
+
+
+fn main():
+    # CHECK: 5
+    print_or(5, True)
+    # CHECK: refuse
+    print_or(9, False)
