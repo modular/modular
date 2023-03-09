@@ -10,17 +10,15 @@
 #loc = loc(fused<#subprogram>["test.mlir":1:1])
 
 module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
-  // CHECK-LABEL: llvm.func @"kernel()"
-  kgen.func @"kernel()"() {
-    kgen.return
+  kgen.func @kernel() {
+    kgen.return loc(#loc)
   } loc(#loc)
-  kgen.export @"kernel()"
+  kgen.export @kernel as @kernel_special_name
 
-  // CHECK-LABEL: llvm.func @kernel___c
-  // CHECK-NEXT: llvm.call {{.*}} loc(#[[LOC:.*]])
-  // CHECK-NEXT: llvm.return{{.*}}loc(#[[LOC]])
+  // CHECK-LABEL: llvm.func @kernel_special_name
+  // CHECK-NEXT: llvm.return{{.*}}loc(#[[LOC:.*]])
   // CHECK-NEXT: loc(#[[LOC]])
 
-  // CHECK: #[[SP1:.*]] = #debuginfo.subprogram<{{.*}} "kernel", linkageName = "kernel___c"
-  // CHECK: #[[LOC]] = loc(fused<#[[SP1]]>[#{{.*}}])
+  // CHECK: #[[SP1:.*]] = #debuginfo.subprogram<{{.*}} "kernel", linkageName = "kernel_special_name"
+  // CHECK-DAG: #[[LOC]] = loc(fused<#[[SP1]]>[#{{.*}}])
 }

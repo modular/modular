@@ -745,14 +745,10 @@ OpFoldResult RebindOp::fold(FoldAdaptor adaptor) {
 static ParseResult parseExportOp(OpAsmParser &p, SymbolRefAttr &exported,
                                  StringAttr &alias) {
   if (p.parseOptionalKeyword("as")) {
-    alias = StringAttr::get(
-        p.getContext(),
-        makeCWrapperName(exported.getLeafReference().getValue()));
+    alias = exported.getLeafReference();
     return success();
   }
-  if (p.parseSymbolName(alias))
-    return failure();
-  return success();
+  return p.parseSymbolName(alias);
 }
 
 static void printExportOp(OpAsmPrinter &p, Operation *op,
@@ -780,9 +776,10 @@ LogicalResult ExportOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 }
 
 LogicalResult ExportOp::verify() {
-  if (!isCIdentifier(getAlias()))
+  if (getIsCExport() && !isCIdentifier(getAlias())) {
     return emitError("The alias name is not a valid C identifier, allowed "
                      "characters: [a-zA-Z0-9_]");
+  }
   return success();
 }
 

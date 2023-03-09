@@ -26,11 +26,10 @@ static ErrorOr<Cache::BufferRef>
 produceObjectFromExports(LLCL::Runtime &runtime, SymbolTable &symtab,
                          TargetInfoAttr target, ArrayRef<FuncOp> exports) {
   // Create the set of symbols to export.
-  llvm::MapVector<StringAttr, StringAttr> exportedSymbols;
+  llvm::MapVector<StringAttr, ExportedSymbol> exportedSymbols;
   for (auto e : exports) {
-    std::string aliasName = makeCWrapperName(e.getSymNameAttr());
-    exportedSymbols.insert(
-        {e.getSymNameAttr(), StringAttr::get(e.getContext(), aliasName)});
+    StringAttr symName = e.getSymNameAttr();
+    exportedSymbols.insert({symName, ExportedSymbol(symName)});
   }
 
   mlir::PassManager mgr(target.getContext());

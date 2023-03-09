@@ -7,4 +7,4 @@ kgen.func @kernel(%a: !pop.simd<1, f16>) -> !pop.simd<1, f16> {
   kgen.return %a : !pop.simd<1, f16>
 }
 
-kgen.export @kernel
+kgen.export @kernel to C

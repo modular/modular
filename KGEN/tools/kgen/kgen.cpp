@@ -336,35 +336,40 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return failure(clOptions.reportError(err.getError()));
 
   // Helper to execute a func.
-  auto execFunc = [&](FuncOp theFunc,
+  auto execFunc = [&](FuncOp theFunc, StringAttr name,
                       const CommandLineFunc &clFunc) -> LogicalResult {
-    TimeTraceScope<> traceScope("execute-function", theFunc.getSymName());
-    auto compiledFuncOr = engine.lookup("exec", theFunc.getNameAttr());
+    TimeTraceScope<> traceScope("execute-function", name);
+    auto compiledFuncOr = engine.lookup("exec", name);
     if (failed(compiledFuncOr))
       return failure(clOptions.reportError(compiledFuncOr.getError()));
 
     if (auto err = clFunc.verifyFuncSignature(theFunc.getFunctionType())) {
       mlir::emitError(theFunc.getLoc(), err.getError());
-      return mlir::failure(!clOptions.ignoreFailures);
+      return failure(!clOptions.ignoreFailures);
     }
 
     if (auto err = clFunc.executeAndPrint(*compiledFuncOr)) {
       mlir::emitError(theFunc.getLoc(), err.getError());
-      return mlir::failure(!clOptions.ignoreFailures);
+      return failure(!clOptions.ignoreFailures);
     }
     return mlir::success();
   };
 
+  // Loop over the functions, executing as necessary.
   llvm::DenseSet<StringRef> foundFuncs;
-  // Loop over the funcs and maybe emit the func as an object file or maybe
-  // execute it.
+  llvm::MapVector<StringAttr, ExportedSymbol> exportedSymbols =
+      KGEN::getExportedSymbols(*theModule);
   for (auto fn : theModule->getOps<FuncOp>()) {
-    TimeTraceScope<> traceScope("emit", fn.getName());
-    foundFuncs.insert(fn.getName());
+    StringAttr name = fn.getNameAttr();
+
+    // If this function was exported, grab the alias it was exported as.
+    auto it = exportedSymbols.find(name);
+    if (it != exportedSymbols.end())
+      name = it->second.alias;
 
     // If we were asked to handle this func, do so.
     if (std::optional<CommandLineFunc> clFunc =
-            clOptions.shouldExecuteFunc(fn.getName())) {
+            clOptions.shouldExecuteFunc(name)) {
       switch (clOptions.cmd) {
       case Command::kGenLibraryFile:
       case Command::kElaborate:
@@ -373,11 +378,12 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       case Command::kEmit:
         break;
       case Command::kExecute: {
-        if (failed(execFunc(fn, *clFunc)))
+        if (failed(execFunc(fn, name, *clFunc)))
           return failure();
       }
       }
     }
+    foundFuncs.insert(name);
   }
 
   // Validate that the user didn't pass in any funcs we don't have. This would

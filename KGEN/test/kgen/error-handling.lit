@@ -1,8 +1,8 @@
-# RUN: kgen -execute -func='$error-handling::run_me():index()' %s | FileCheck %s
+# RUN: kgen -execute -func='run_me:index()' %s | FileCheck %s
 
 # CHECK: first success
 # CHECK-NEXT: second had an error
-# CHECK-NEXT: --- '$error-handling::run_me()' returned 0
+# CHECK-NEXT: --- 'run_me' returned 0
 
 from IO import print
 from Int import Int

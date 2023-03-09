@@ -1,4 +1,4 @@
-// RUN: kgen %s -execute -func="my_kernel:f32(f32)" -I %S/../kernels | FileCheck %s -check-prefix=EXEC
+// RUN: kgen %s -execute -func="my_exported_kernel:f32(f32)" -I %S/../kernels | FileCheck %s -check-prefix=EXEC
 // RUN: kgen %s -emit -o %t_my_kernel.o -I %S/../kernels
 // COM: Check the object file.
 // RUN: llvm-objdump %t_my_kernel.o -t | FileCheck %s -check-prefix=OBJ
@@ -9,12 +9,11 @@ kgen.generator @my_kernel(%arg0: f32) -> f32 {
   kgen.return %arg0 : f32
 }
 
-kgen.export @my_kernel as @my_exported_kernel
+kgen.export @my_kernel to C as @my_exported_kernel
 
-// EXEC: --- 'my_kernel' returned 1.0
+// EXEC: --- 'my_exported_kernel' returned 1.0
 
 // OBJ-LABEL: SYMBOL TABLE
-// OBJ-DAG: F {{.*}}my_kernel
 // OBJ-DAG: F {{.*}}my_exported_kernel
 
 // HDR-LABEL: extern float my_exported_kernel(float);
