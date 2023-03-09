@@ -38,7 +38,7 @@ ErrorOr<ObjectCompiler>
 ObjectCompiler::create(LLCL::Runtime &runtime, mlir::PassManager &mgr,
                        StringRef basePath, SymbolTable &symtab,
                        const CompilationOptions &options) {
-  llvm::MapVector<StringAttr, StringAttr> exports =
+  llvm::MapVector<StringAttr, ExportedSymbol> exports =
       getExportedSymbols(cast<ModuleOp>(symtab.getOp()));
   return create(runtime, mgr, basePath, symtab, std::move(exports), options);
 }
@@ -46,7 +46,7 @@ ObjectCompiler::create(LLCL::Runtime &runtime, mlir::PassManager &mgr,
 ErrorOr<ObjectCompiler>
 ObjectCompiler::create(LLCL::Runtime &runtime, mlir::PassManager &mgr,
                        StringRef basePath, SymbolTable &symtab,
-                       llvm::MapVector<StringAttr, StringAttr> &&exports,
+                       llvm::MapVector<StringAttr, ExportedSymbol> &&exports,
                        const CompilationOptions &options) {
   auto transformCache = Cache::getDefaultBackendChain(
       runtime, (std::filesystem::path(basePath.str()) / "transform").string());
@@ -58,7 +58,7 @@ ObjectCompiler::create(LLCL::Runtime &runtime, mlir::PassManager &mgr,
 
 ObjectCompiler::ObjectCompiler(
     LLCL::Runtime &runtime, mlir::PassManager &mgr, SymbolTable &symtab,
-    llvm::MapVector<StringAttr, StringAttr> &&exports,
+    llvm::MapVector<StringAttr, ExportedSymbol> &&exports,
     LLCL::RCRef<Cache::BlobCacheBackend> transformCache,
     const CompilationOptions &options)
     : transformCache(

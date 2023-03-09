@@ -1769,11 +1769,13 @@ LogicalResult KGEN::checkResultArgumentTypes(Operation *op,
   return checkResultTypes(op, func.getResultTypes());
 }
 
-llvm::MapVector<StringAttr, StringAttr>
+llvm::MapVector<StringAttr, ExportedSymbol>
 KGEN::getExportedSymbols(ModuleOp module) {
-  llvm::MapVector<StringAttr, StringAttr> exportedSymbols;
-  for (auto e : module.getOps<ExportOp>())
+  llvm::MapVector<StringAttr, ExportedSymbol> exportedSymbols;
+  for (auto e : module.getOps<ExportOp>()) {
     exportedSymbols.insert(
-        {cast<FlatSymbolRefAttr>(e.getExported()).getAttr(), e.getAliasAttr()});
+        {cast<FlatSymbolRefAttr>(e.getExported()).getAttr(),
+         ExportedSymbol(e.getAliasAttr(), e.getIsCExport())});
+  }
   return exportedSymbols;
 }

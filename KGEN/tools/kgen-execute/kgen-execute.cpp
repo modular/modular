@@ -100,8 +100,23 @@ struct ProcessBuffer {
     if (clOptions.cmd == Command::kEmit)
       return clOptions.emitObject(standaloneObject->getBuffer());
 
+    llvm::MapVector<StringAttr, ExportedSymbol> exportedSymbols =
+        KGEN::getExportedSymbols(*module);
+    DenseMap<StringAttr, KGEN::FuncOp> exportedFuncs;
+    for (auto &p : exportedSymbols)
+      if (auto func = symtab.lookup<KGEN::FuncOp>(p.first))
+        exportedFuncs.insert({p.second.alias, func});
+
     auto lookupFunc = [&](StringRef funcName) -> ErrorOr<KGEN::FuncOp> {
-      auto func = symtab.lookup<KGEN::FuncOp>(funcName);
+      StringAttr funcNameAttr = StringAttr::get(ctx, funcName);
+
+      // Check the exported symbols.
+      auto it = exportedFuncs.find(funcNameAttr);
+      if (it != exportedFuncs.end())
+        return it->second;
+
+      // Fallback to checking the module.
+      auto func = symtab.lookup<KGEN::FuncOp>(funcNameAttr);
       if (!func)
         return Error("could not find func '" + funcName + "'.");
       return func;
@@ -126,7 +141,7 @@ struct ProcessBuffer {
         return failure(clOptions.reportError(funcOr.getError()));
 
       KGEN::FuncOp func = *funcOr;
-      auto compiledFuncOr = execEngine.lookup("exec", func.getNameAttr());
+      auto compiledFuncOr = execEngine.lookup("exec", k.name);
       if (failed(compiledFuncOr))
         return failure(clOptions.reportError(compiledFuncOr.getError()));
 

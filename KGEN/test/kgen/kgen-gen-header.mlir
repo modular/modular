@@ -40,25 +40,25 @@
 kgen.func @someKernel(%arg1: f32, %arg2: index) -> f32 {
   kgen.return %arg1 : f32
 }
-// SCALAR: extern float someKernel_c(float, ssize_t);
+// SCALAR: extern float someKernel(float, ssize_t);
 
 kgen.func @someBufferKernel(%a: !pop.struct<pointer<simd<1, invalid>>, index, !kgen.dtype>) -> index {
   %size = pop.struct.extract %a[1] : !pop.struct<pointer<simd<1, invalid>>, index, !kgen.dtype>
   kgen.return %size : index
 }
-// BUFFER: extern ssize_t someBufferKernel_c(void *, ssize_t, uint8_t);
+// BUFFER: extern ssize_t someBufferKernel(void *, ssize_t, uint8_t);
 
 
 kgen.func @someNDBufferKernel(%a: !pop.struct<pointer<simd<1, invalid>>, index, array<5, index>, !kgen.dtype>) -> index {
   %size = pop.struct.extract %a[1] : !pop.struct<pointer<simd<1, invalid>>, index, array<5, index>, !kgen.dtype>
   kgen.return %size : index
 }
-// NDBUFFER: extern ssize_t someNDBufferKernel_c(void *, ssize_t, ssize_t[5], uint8_t);
+// NDBUFFER: extern ssize_t someNDBufferKernel(void *, ssize_t, ssize_t[5], uint8_t);
 
 kgen.func @someMetaScalarKernel(%arg0: !pop.simd<1, f32>) -> !pop.simd<1, f32> {
   kgen.return %arg0 : !pop.simd<1, f32>
 }
-// SCALARMETA: extern float someMetaScalarKernel_c(float);
+// SCALARMETA: extern float someMetaScalarKernel(float);
 
 lit.struct.decl @Foo<DT:dtype> {
   lit.struct.field value : !pop.scalar<DT>
@@ -72,7 +72,7 @@ lit.struct.decl @Bar {
 kgen.func @nestedParametricStruct(%a: !kgen.declref<@Bar>) {
   kgen.return
 }
-// STRUCT: extern void nestedParametricStruct_c(float, double)
+// STRUCT: extern void nestedParametricStruct(float, double)
 
 
 kgen.func @litNoneKernel() -> !kgen.list<i1[0]> {
@@ -80,35 +80,35 @@ kgen.func @litNoneKernel() -> !kgen.list<i1[0]> {
   kgen.return %0 : !kgen.list<i1[0]>
 }
 
-// VOID: extern void litNoneKernel_c();
+// VOID: extern void litNoneKernel();
 
 kgen.func @listOneElem() -> !kgen.list<f32[1]> {
   %0 = kgen.param.constant: list<f32[1]> = <[1.0]>
   kgen.return %0 : !kgen.list<f32[1]>
 }
 
-// LISTF32: extern float listOneElem_c();
+// LISTF32: extern float listOneElem();
 
 kgen.func @oneElemStruct(%arg0: i32) -> !pop.struct<i32> {
   %0 = kgen.param.constant: struct<i32> = <{ 0 }>
   kgen.return %0 : !pop.struct<i32>
 }
 
-// ONESTRUCT: extern int32_t oneElemStruct_c(int32_t);
+// ONESTRUCT: extern int32_t oneElemStruct(int32_t);
 
 kgen.func @twoElemStruct(%arg0: i32) -> !pop.struct<i32, i32> {
   %0 = kgen.param.constant: struct<i32, i32> = <{ 0, 0 }>
   kgen.return %0 : !pop.struct<i32, i32>
 }
 
-// TWOSTRUCT: extern void twoElemStruct_c(int32_t, int32_t *, int32_t *);
+// TWOSTRUCT: extern void twoElemStruct(int32_t, int32_t *, int32_t *);
 
 kgen.func @oneVariadic(%arg0: !kgen.variadic<f32>) -> !pop.struct<i32> {
   %0 = kgen.param.constant: struct<i32> = <{ 0 }>
   kgen.return %0 : !pop.struct<i32>
 }
 
-// ONEVARIADIC: extern int32_t oneVariadic_c(void *, ssize_t);
+// ONEVARIADIC: extern int32_t oneVariadic(void *, ssize_t);
 
 kgen.func @twoVariadic(%arg0: !kgen.variadic<!pop.struct<i32, i32>>,
                        %arg1: !kgen.variadic<i32>) -> !pop.struct<i32> {
@@ -116,16 +116,16 @@ kgen.func @twoVariadic(%arg0: !kgen.variadic<!pop.struct<i32, i32>>,
   kgen.return %0 : !pop.struct<i32>
 }
 
-// TWOVARIADIC: extern int32_t twoVariadic_c(void *, ssize_t, void *, ssize_t);
+// TWOVARIADIC: extern int32_t twoVariadic(void *, ssize_t, void *, ssize_t);
 
-kgen.export @someKernel
-kgen.export @someBufferKernel
-kgen.export @someNDBufferKernel
-kgen.export @someMetaScalarKernel
-kgen.export @nestedParametricStruct
-kgen.export @litNoneKernel
-kgen.export @listOneElem
-kgen.export @oneElemStruct
-kgen.export @twoElemStruct
-kgen.export @oneVariadic
-kgen.export @twoVariadic
+kgen.export @someKernel to C
+kgen.export @someBufferKernel to C
+kgen.export @someNDBufferKernel to C
+kgen.export @someMetaScalarKernel to C
+kgen.export @nestedParametricStruct to C
+kgen.export @litNoneKernel to C
+kgen.export @listOneElem to C
+kgen.export @oneElemStruct to C
+kgen.export @twoElemStruct to C
+kgen.export @oneVariadic to C
+kgen.export @twoVariadic to C

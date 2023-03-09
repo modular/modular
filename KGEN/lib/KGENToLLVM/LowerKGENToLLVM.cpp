@@ -272,15 +272,13 @@ static void flattenResultStruct(ImplicitLocOpBuilder &b,
   }
 }
 
-/// Rewrite the given arguments and result type to be compatible with C calling
-/// conventions. Break up the structs in the given arguments and result type and
-/// rewrite arrays to be pass-by-reference. Append new arguments to `body` and
-/// populate `newArgs` with the packed structs created at the top of the body.
-/// Return the slice of arguments that represent the result arguments.
-static ArrayRef<BlockArgument>
-convertCallingConvention(Location loc, Block *body,
-                         ArrayRef<BlockArgument> args, Type resultTy,
-                         SmallVectorImpl<Value> &newArgs) {
+/// Rewrite the given arguments to be compatible with C calling conventions.
+/// Break up the structs in the given arguments and result type and rewrite
+/// arrays to be pass-by-reference. Append new arguments to `body` and populate
+/// `newArgs` with the packed structs created at the top of the body.
+static void convertArgCallingConvention(Location loc, Block *body,
+                                        ArrayRef<BlockArgument> args,
+                                        SmallVectorImpl<Value> &newArgs) {
   // Flatten structs in the argument list.
   ImplicitLocOpBuilder b(loc, loc.getContext());
   b.setInsertionPointToStart(body);
@@ -288,14 +286,20 @@ convertCallingConvention(Location loc, Block *body,
     b.setLoc(arg.getLoc());
     newArgs.push_back(convertArgCallingConvention(b, arg.getType(), body));
   }
+}
 
+/// Rewrite the given result type to be compatible with C calling conventions.
+/// Break up the structs in the given result type. Append new arguments to
+/// `body`, and return the slice of arguments that represent the result
+/// arguments.
+static ArrayRef<BlockArgument>
+convertResultCallingConvention(Location loc, Block *body, Type resultTy) {
   // Flatten the results if necessary at all the return points.
   ArrayRef<BlockArgument> results;
   if (auto structTy = dyn_cast<LLVM::LLVMStructType>(resultTy)) {
     unsigned numAdded = flattenResultStruct(loc, structTy, body);
     results = body->getArguments().take_back(numAdded);
   }
-
   return results;
 }
 
@@ -327,9 +331,10 @@ static void emitCWrapper(LLVM::LLVMFuncOp func, StringAttr wrapperName,
 
   // Convert the calling convention.
   SmallVector<Value> newArgs;
+  convertArgCallingConvention(loc, body, func.getArguments(), newArgs);
   Type resultType = func.getResultTypes().front();
-  ArrayRef<BlockArgument> results = convertCallingConvention(
-      loc, body, func.getArguments(), resultType, newArgs);
+  ArrayRef<BlockArgument> results =
+      convertResultCallingConvention(loc, body, resultType);
 
   ImplicitLocOpBuilder b(loc, loc.getContext());
   b.setInsertionPointToEnd(body);
@@ -350,6 +355,118 @@ static void emitCWrapper(LLVM::LLVMFuncOp func, StringAttr wrapperName,
       wrapperName, LLVM::LLVMFunctionType::get(
                        resultType, llvm::to_vector(body->getArgumentTypes())));
   wrapper.getBody().push_back(body);
+}
+
+/// Update the name and linkage of the given function, using the provided alias
+/// name.
+static void updateExportedFunctionNameAndLinkage(
+    LLVM::LLVMFuncOp func, StringAttr aliasName,
+    mlir::SymbolUserMap &symbolUsers, SymbolTable &symtab) {
+  MLIRContext *ctx = func.getContext();
+  NamedAttrList attrs(func->getAttrDictionary());
+
+  // Update the linkage.
+  attrs.set(func.getLinkageAttrName(),
+            LLVM::LinkageAttr::get(ctx, LLVM::Linkage::External));
+
+  // If the name is the same, there's nothing more to do.
+  if (func.getSymNameAttr() == aliasName) {
+    func->setAttrs(attrs.getDictionary(ctx));
+    return;
+  }
+  assert(symtab.lookup(aliasName) == nullptr && "aliasName is not unique");
+
+  // Generate a new subprogram scope if necessary with the updated linkage
+  // name.
+  if (auto funcSp =
+          DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(func.getLoc())) {
+    DebugInfo::DIAttrTypeReplacer replacer;
+    replacer.addReplacement([&](DebugInfo::DISubprogramAttr sp) {
+      if (sp != funcSp)
+        return sp;
+      // The symbol name corresponds to the linkage name.
+      return DebugInfo::DISubprogramAttr::get(
+          sp.getCompileUnit(), sp.getScope(), sp.getName(), aliasName,
+          sp.getFile(), sp.getLine(), sp.getScopeLine(),
+          sp.getSubprogramFlags(), sp.getType());
+    });
+    replacer.recursivelyReplaceElementsIn(func);
+  }
+
+  // Update any uses of the function.
+  symbolUsers.replaceAllUsesWith(func, aliasName);
+
+  // Update the name within the symbol table.
+  symtab.remove(func);
+  attrs.set(func.getSymNameAttrName(), aliasName);
+  func->setAttrs(attrs.getDictionary(ctx));
+  symtab.insert(func);
+}
+
+/// Process the given function which is exported to C. If possible this will try
+/// to update the function in place, otherwise a wrapper is emitted that
+/// internally invokes the provided function.
+static void processCExportedFunction(LLVM::LLVMFuncOp func,
+                                     StringAttr aliasName,
+                                     mlir::SymbolUserMap &symbolUsers,
+                                     SymbolTable &symtab) {
+  // Check if we need to update the function arguments or results to be
+  // C-compatible.
+  ArrayRef<Type> currentFunctionTypes = func.getArgumentTypes();
+  Type resultType = func.getResultTypes().front();
+  bool needUpdatedArgTypes = llvm::any_of(currentFunctionTypes, [](Type type) {
+    return isa<LLVM::LLVMArrayType, LLVM::LLVMStructType>(type);
+  });
+  bool needUpdatedResultType = isa<LLVM::LLVMStructType>(resultType);
+
+  // If we need to update the calling convention and we have internal users,
+  // emit a wrapper function as the structure of the function will have to
+  // change.
+  bool hasInternalUsers = !symbolUsers.getUsers(func).empty();
+  if ((needUpdatedArgTypes || needUpdatedResultType) && hasInternalUsers)
+    return emitCWrapper(func, aliasName, symtab);
+
+  // Otherwise, we can update the function in place.
+  updateExportedFunctionNameAndLinkage(func, aliasName, symbolUsers, symtab);
+
+  // If we don't need to update the calling convention, we're done.
+  if (!needUpdatedArgTypes && !needUpdatedResultType)
+    return;
+  Block *entryBlock = &func.getBody().front();
+
+  // Check to see if we need to update any of the function arguments.
+  if (needUpdatedArgTypes) {
+    SmallVector<Value> newArgs;
+    convertArgCallingConvention(func.getLoc(), entryBlock,
+                                llvm::to_vector(func.getArguments()), newArgs);
+
+    // Replace the original arguments with the new ones.
+    for (unsigned i = 0, e = newArgs.size(); i != e; ++i)
+      func.getArgument(i).replaceAllUsesWith(newArgs[i]);
+    entryBlock->eraseArguments(0, currentFunctionTypes.size());
+  }
+
+  // Check if the result type needs updating.
+  if (needUpdatedResultType) {
+    ArrayRef<BlockArgument> results =
+        convertResultCallingConvention(func.getLoc(), entryBlock, resultType);
+
+    // Replace the original results with the new ones.
+    auto structTy = cast<LLVM::LLVMStructType>(resultType);
+    resultType = LLVM::LLVMVoidType::get(func.getContext());
+
+    // Update all of the returns within the function.
+    func.walk([&](LLVM::ReturnOp returnOp) {
+      unsigned idx = 0;
+      ImplicitLocOpBuilder b(returnOp.getLoc(), returnOp);
+      flattenResultStruct(b, structTy, returnOp.getArg(), results, idx);
+      returnOp->setOperands(ValueRange());
+    });
+  }
+
+  // Update the function type.
+  func.setType(LLVM::LLVMFunctionType::get(
+      resultType, llvm::to_vector(entryBlock->getArgumentTypes())));
 }
 
 //===----------------------------------------------------------------------===//
@@ -382,7 +499,7 @@ void LowerKGENToLLVMPass::runOnOperation() {
   target.addLegalOp<StaticUndefOp>();
 
   // Capture all the public symbols declared by kgen.export declarations.
-  llvm::MapVector<StringAttr, StringAttr> publicSymbols =
+  llvm::MapVector<StringAttr, ExportedSymbol> publicSymbols =
       getExportedSymbols(theModule);
 
   // Configure the type converter.
@@ -406,8 +523,9 @@ void LowerKGENToLLVMPass::runOnOperation() {
 
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());
-  SymbolTable symtab =
-      getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
+
+  auto &symtabAnalysis = getAnalysis<mlir::SymbolTableAnalysis>();
+  SymbolTable &symtab = symtabAnalysis.getTopLevelSymbolTable();
   populateKGENToLLVMPatterns(typeConverter, patterns, symtab);
   DebugInfo::populateTypeConversionPatterns(patterns, typeConverter);
   target.addDynamicallyLegalDialect<DebugInfo::DebugInfoDialect>(
@@ -417,12 +535,19 @@ void LowerKGENToLLVMPass::runOnOperation() {
           mlir::applyPartialConversion(theModule, target, std::move(patterns))))
     return signalPassFailure();
 
-  // Set the linkage of symbols marked as public to external.
-  for (auto [sym, alias] : publicSymbols) {
-    auto func = symtab.lookup<LLVM::LLVMFuncOp>(sym);
-    func.setLinkage(LLVM::Linkage::External);
-    // And emit a C wrapper for it.
-    emitCWrapper(func, alias, symtab);
+  // Process updates to any exported functions.
+  mlir::SymbolUserMap symbolUsers(symtabAnalysis.getSymbolTables(), theModule);
+  for (auto [sym, exportSymbol] : publicSymbols) {
+    LLVM::LLVMFuncOp func = symtab.lookup<LLVM::LLVMFuncOp>(sym);
+
+    // If we aren't exporting to C, we just need to update the name and linkage.
+    if (!exportSymbol.isCExport) {
+      updateExportedFunctionNameAndLinkage(func, exportSymbol.alias,
+                                           symbolUsers, symtab);
+      continue;
+    }
+
+    processCExportedFunction(func, exportSymbol.alias, symbolUsers, symtab);
   }
 
   // Convert the debug info within the IR.

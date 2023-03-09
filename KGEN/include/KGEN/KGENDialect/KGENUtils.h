@@ -22,8 +22,20 @@ namespace M::KGEN {
 class DeclInterface;
 class FuncInterface;
 
+/// This struct represents the data for an exported symbol.
+struct ExportedSymbol {
+  ExportedSymbol(StringAttr alias, bool isCExport = false)
+      : alias(alias), isCExport(isCExport) {}
+
+  /// The alias name for the export.
+  StringAttr alias;
+
+  /// A flag indicating whether the export is a C export.
+  bool isCExport = false;
+};
+
 /// Given a module operation, return its exported symbols and aliases.
-llvm::MapVector<StringAttr, StringAttr> getExportedSymbols(ModuleOp module);
+llvm::MapVector<StringAttr, ExportedSymbol> getExportedSymbols(ModuleOp module);
 
 /// Return the string form for an attribute value that is printed in a <>
 /// context in the .mlir file.

@@ -11,6 +11,7 @@
 #include "Cache/CacheDialect/CachedTransform.h"
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "mlir/IR/BuiltinOps.h"
 #include <filesystem>
 #include <string>
@@ -35,7 +36,8 @@ public:
   /// Construct an ObjectCompiler with a specific set of exports.
   static ErrorOr<ObjectCompiler>
   create(LLCL::Runtime &runtime, mlir::PassManager &mgr, StringRef basePath,
-         SymbolTable &symtab, llvm::MapVector<StringAttr, StringAttr> &&exports,
+         SymbolTable &symtab,
+         llvm::MapVector<StringAttr, ExportedSymbol> &&exports,
          const CompilationOptions &options);
 
   /// Lower all exported `kgen.func` to llvm. Returns the LLVM module on
@@ -68,7 +70,7 @@ private:
   /// Construct an ObjectCompiler with a specific set of exports.
   ObjectCompiler(LLCL::Runtime &runtime, mlir::PassManager &mgr,
                  SymbolTable &symtab,
-                 llvm::MapVector<StringAttr, StringAttr> &&exports,
+                 llvm::MapVector<StringAttr, ExportedSymbol> &&exports,
                  LLCL::RCRef<Cache::BlobCacheBackend> transformCache,
                  const CompilationOptions &options);
 
@@ -96,9 +98,8 @@ private:
   /// This is a symbol table we maintain for easy lookups.
   SymbolTable &symtab;
 
-  /// This is a list of exported symbol names and respective aliases so we
-  /// don't constantly recompute it.
-  llvm::MapVector<StringAttr, StringAttr> exportedSymbols;
+  /// A mapping from a symbol to its export information.
+  llvm::MapVector<StringAttr, ExportedSymbol> exportedSymbols;
 
   /// The compilation options to use.
   CompilationOptions options;

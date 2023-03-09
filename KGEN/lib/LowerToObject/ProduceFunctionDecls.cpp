@@ -180,10 +180,10 @@ static LogicalResult emitSignature(raw_ostream &os, SymbolTable &symtab,
 LogicalResult ObjectCompiler::produceFunctionDecls(llvm::raw_ostream &os) {
   for (auto f : module.getOps<FuncOp>()) {
     auto itExported = exportedSymbols.find(f.getNameAttr());
-    if (itExported == exportedSymbols.end())
+    if (itExported == exportedSymbols.end() || !itExported->second.isCExport)
       continue;
     // The symbol was exported, use its alias name.
-    StringAttr aliasName = itExported->second;
+    StringAttr aliasName = itExported->second.alias;
     if (failed(emitSignature(os, symtab, f, aliasName)))
       return mlir::emitError(f.getLoc(),
                              "during header emission for this function");

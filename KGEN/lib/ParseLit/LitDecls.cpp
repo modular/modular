@@ -409,9 +409,9 @@ void DeclResolver::exportMain(ASTDecl *containingDecl,
     return;
   // main was not exported explicitly, export it.
   OpBuilder builder = containingDecl->getDeclEndBuilder();
-  auto exportOp =
-      builder.create<ExportOp>(builder.getUnknownLoc(), symbolName,
-                               StringAttr::get(getContext(), kMainSymbolName));
+  auto exportOp = builder.create<ExportOp>(
+      builder.getUnknownLoc(), symbolName,
+      StringAttr::get(getContext(), kMainSymbolName), /*isCExport=*/true);
   exportedSymbolNames.insert({mainAttr, exportOp.getLoc()});
 }
 
@@ -1312,7 +1312,8 @@ void FnDecorators::applyLateExport(Location loc, SymbolRefAttr symbolName,
   ASTDecl *containingDecl = decl.getParentDecl();
   auto builder = containingDecl->getDeclEndBuilder();
   auto exportOp = builder.create<ExportOp>(
-      loc, symbolName, StringAttr::get(getContext(), aliasName));
+      loc, symbolName, StringAttr::get(getContext(), aliasName),
+      /*isCExport=*/true);
   getDeclResolver().registerAndCheckExport(exportOp);
 }
 

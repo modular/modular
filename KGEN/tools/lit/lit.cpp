@@ -62,9 +62,8 @@ public:
 };
 } // namespace
 
-/// Look for a main() in the module. Return it if found, otherwise
-/// return a nullptr.
-static FuncOp findMain(ModuleOp theModule, SymbolTable &symtab) {
+/// Returns true if the given module exports a main() function, false otherwise.
+static bool moduleExportsMain(ModuleOp theModule, SymbolTable &symtab) {
   auto emptyListType =
       KGEN::ListType::get(IntegerType::get(theModule.getContext(), 1), 0);
   for (auto exportOp : theModule.getOps<ExportOp>()) {
@@ -78,12 +77,9 @@ static FuncOp findMain(ModuleOp theModule, SymbolTable &symtab) {
     FunctionType funcType = func.getFunctionType();
     if (funcType.getNumInputs() != 0 || funcType.getNumResults() != 1)
       continue;
-    if (auto listType = dyn_cast<KGEN::ListType>(funcType.getResult(0));
-        listType == emptyListType)
-      return func;
+    return dyn_cast<KGEN::ListType>(funcType.getResult(0)) == emptyListType;
   }
-  // No main found.
-  return nullptr;
+  return false;
 }
 
 /// Runs the tool pipeline on the file fragment passed in. The pipeline does not
@@ -245,23 +241,17 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   if (auto err = engine.add("exec", std::move(standaloneObject)))
     return clOptions.reportError(err.getError());
 
-  // Helper to execute a func.
-  auto execMain = [&](FuncOp theFunc) -> int {
-    TimeTraceScope<> traceScope("execute-function", theFunc.getSymName());
-    auto compiledFuncOr = engine.lookup("exec", theFunc.getNameAttr());
-    if (failed(compiledFuncOr))
-      return clOptions.reportError(compiledFuncOr.getError());
-    compiledFuncOr->invoke<void>();
-    return EXIT_SUCCESS;
-  };
-
-  FuncOp mainFunc = findMain(*theModule, symtab);
-  if (!mainFunc)
+  if (!moduleExportsMain(*theModule, symtab))
     return clOptions.reportError(
         "could not find 'fn main():', please provide a main function with no "
         "arguments / return values.");
 
-  return (execMain(mainFunc));
+  TimeTraceScope<> traceScope("execute-main");
+  auto compiledFuncOr = engine.lookup("exec", "main");
+  if (failed(compiledFuncOr))
+    return clOptions.reportError(compiledFuncOr.getError());
+  compiledFuncOr->invoke<void>();
+  return EXIT_SUCCESS;
 }
 
 int main(int argc, char **argv) {
