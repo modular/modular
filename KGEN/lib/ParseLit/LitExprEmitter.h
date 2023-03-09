@@ -26,7 +26,8 @@ class VarLetDeclOp;
 /// diagnostics more specific.  Each comment gives an example where the
 /// expression is named "x".
 enum ExprContext {
-  EC_Silent, // Do not emit a diagnostic at all.
+  EC_Unknown, // No context known.
+  EC_Silent,  // Do not emit a diagnostic at all.
 
   EC_VarInit,               // var thing = x
   EC_LetInit,               // let thing = x
@@ -39,6 +40,7 @@ enum ExprContext {
   EC_TypeParamValue,        // Vector[x]
   EC_CallParamValue,        // f[x]()
   EC_OperatorOperandValue,  // x + y
+  EC_InplaceBinOpDest,      // x += 42
   EC_FieldInitValue,        // SomeType{value: x}
   EC_DefaultArgument,       // def f(arg = x):
   EC_BoolCondition,         // if x  /  while x  /  x and y  /  a if x else b
@@ -47,7 +49,6 @@ enum ExprContext {
   EC_ReturnResultParamList, // return[x] y
   EC_ReturnValue,           // return x;
   EC_MLIRMagic,             // __mlir_type[x] / __mlir_attr[x]
-  EC_ExprDest,              // x = foo()
 };
 const char *getContextMessage(ExprContext context);
 
@@ -86,7 +87,8 @@ struct LValueInitializerType {
 class ValueDest {
 public:
   /*implicit*/
-  ValueDest() : representation(NullRepresentation()) {}
+  ValueDest(ExprContext context = EC_Unknown)
+      : representation(NullRepresentation()), context(context) {}
   ValueDest(const ExprNode *target, ExprContext context)
       : representation(target), context(context) {
     assert(target);
@@ -303,18 +305,20 @@ public:
                           ASTType resultType = {});
 
   /// Emit the specified expression as an LValue which can be loaded and stored.
-  /// If contextualType is non-null, then an implicitly declared LValue will be
-  /// assigned that type.
+  /// The ValueDest may specify an inferred type for the LValue.
   ///
   /// This diagnoses the expression with the specified message if it isn't a
   /// valid LValue.
-  LValue emitExprLValue(SMLoc loc, const ExprNode *node, const Twine &message,
-                        ValueDest &dest);
+  LValue emitExprLValue(const ExprNode *expr, ValueDest &dest);
+  LValue emitExprLValue(const ExprNode *expr, ExprContext context) {
+    ValueDest dest(context);
+    return emitExprLValue(expr, dest);
+  }
 
   /// This helper emits the specified expression tree as a type, e.g. turning
   /// "Int" into the type for it.  This emits an error and returns null on
   /// failure.
-  ASTType emitExprType(const ExprNode *node);
+  ASTType emitExprType(const ExprNode *expr);
 
   /// Emit the specified expression as a condition, converting it to an MLIR I1
   /// value that we can test directly.  This reports and error and returns null

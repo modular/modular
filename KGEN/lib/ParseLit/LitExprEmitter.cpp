@@ -29,6 +29,8 @@ using namespace M::KGEN::LIT;
 const char *LIT::getContextMessage(ExprContext context) {
   switch (context) {
   case EC_Silent:
+    llvm_unreachable("Should never be emitted");
+  case EC_Unknown:
     return "";
 
   case EC_VarInit:
@@ -53,6 +55,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in call parameter";
   case EC_OperatorOperandValue:
     return " in operator argument";
+  case EC_InplaceBinOpDest:
+    return " for in-place operator destination";
   case EC_FieldInitValue:
     return " in field initializer";
   case EC_DefaultArgument:
@@ -69,8 +73,6 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in return value";
   case EC_MLIRMagic:
     return " in MLIR magic";
-  case EC_ExprDest:
-    return " in value destination";
   }
 }
 
@@ -119,12 +121,11 @@ ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
   // implicitly declared variables and discard patterns can know their type.
   ValueDest dest;
   if (existingValueType)
-    dest = ValueDest(LValueInitializerType{existingValueType}, EC_ExprDest);
+    dest = ValueDest(LValueInitializerType{existingValueType}, context);
 
   /// Emit the target as an LValue to understand what we're assigning into.  If
   /// this fails, it will produce an error.
-  LValue exprLValue = emitter.emitExprLValue(
-      loc, expr, "cannot assign to immutable expression", dest);
+  LValue exprLValue = emitter.emitExprLValue(expr, dest);
   if (!exprLValue) {
     dest.resetForError();
     representation = NullRepresentation();
@@ -182,9 +183,8 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
 
     // If we have an expression node destination, then we need to bind this
     // value to a pattern (aka "target" in Python internals nomenclature).
-    ValueDest dest(LValueInitializerType{resultType}, EC_ExprDest);
-    LValue lValue = emitter.emitExprLValue(
-        loc, target, "cannot assign to immutable expression", dest);
+    ValueDest dest(LValueInitializerType{resultType}, getContext());
+    LValue lValue = emitter.emitExprLValue(target, dest);
     if (!lValue)
       dest.resetForError();
 
@@ -789,22 +789,23 @@ PRValue ExprEmitter::emitExprPRValue(const ExprNode *node, ExprContext context,
 ///
 /// This diagnoses the expression with the specified message if it isn't a
 /// valid LValue.
-LValue ExprEmitter::emitExprLValue(SMLoc loc, const ExprNode *node,
-                                   const Twine &message, ValueDest &dest) {
-  AnyValue anyValue = node->emitIR(dest, *this);
+LValue ExprEmitter::emitExprLValue(const ExprNode *expr, ValueDest &dest) {
+  AnyValue anyValue = expr->emitIR(dest, *this);
   if (!anyValue)
     return {}; // Error already diagnosed.
   if (LValue lValue = anyValue.getIfLValue())
     return lValue;
-  emitError(loc, message) << node->getRange();
+  emitError(expr->getLoc())
+      << "expression must mutable" << getContextMessage(dest.context)
+      << expr->getRange();
   return {};
 }
 
 /// This helper emits the specified expression tree as a type, e.g. turning
 /// "Int" into the type for it.  This emits an error and returns null on
 /// failure.
-ASTType ExprEmitter::emitExprType(const ExprNode *node) {
-  auto value = emitExprPRValue(node, EC_Type);
+ASTType ExprEmitter::emitExprType(const ExprNode *expr) {
+  auto value = emitExprPRValue(expr, EC_Type);
   if (!value)
     return {};
 
@@ -828,7 +829,7 @@ ASTType ExprEmitter::emitExprType(const ExprNode *node) {
     ssize_t incorrectBindingNo = 0;
     ASTType incorrectBindingExpectedType;
     auto bindingAttr = paramBindings.verifyBindings(
-        structDecl.getInputParamsAttr(), structDecl.getName(), node->getLoc(),
+        structDecl.getInputParamsAttr(), structDecl.getName(), expr->getLoc(),
         incorrectBindingNo, incorrectBindingExpectedType, *this, structDecl,
         structDecl.getParamVarargs());
     if (!bindingAttr)
@@ -850,7 +851,7 @@ ASTType ExprEmitter::emitExprType(const ExprNode *node) {
   if (isa<NoneAttr>(value.get()))
     return shared.getNoneType();
 
-  emitError(node->getLoc(), "expected a type, not a value"), node->getRange();
+  emitError(expr->getLoc(), "expected a type, not a value") << expr->getRange();
   return {};
 }
 

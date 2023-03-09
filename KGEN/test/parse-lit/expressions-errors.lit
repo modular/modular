@@ -21,7 +21,7 @@ fn negBuiltinType(x: __mlir_type.f64) :
 # LValue and RValues
 ##===----------------------------------------------------------------------===##
 
-42 = 17 # expected-error {{cannot assign to immutable expression}}
+42 = 17 # expected-error {{expression must mutable in assignment}}
 
 struct LValuesRvalues:
   fn __new__() -> LValuesRvalues:
@@ -82,7 +82,7 @@ def testLValuesRvalues():
   let nc4 = nc2 # expected-error {{cannot clone this value: '$expressions-errors::NonCopyable' doesn't implement '__clone__'}}
 
   let mpPair = MemoryPrimaryPair()
-  mpPair.x = 1 # expected-error {{cannot assign to immutable expression}}
+  mpPair.x = 1 # expected-error {{expression must mutable in assignment}}
 
   # expected-error @+1 {{invalid call to 'generic_on_type_bad': argument #0 cannot bind generic !mlirtype to memory-only type '$expressions-errors::MemoryPrimaryPair'}}
   generic_on_type_bad[MemoryPrimaryPair](mpPair)
@@ -221,7 +221,7 @@ def bad_exprs(aaaa: Bool, bbbb: F32, cccc: Int):
   _ = idx/idx
 
 def bad_assignment0(a: Int, b: Int):
-   # expected-error @+1 {{cannot assign to immutable expression}}
+   # expected-error @+1 {{expression must mutable for in-place operator destination}}
    a = b += b
 
 def bad_assignment1(a: Int, b: Int):
