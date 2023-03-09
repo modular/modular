@@ -68,6 +68,7 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module,
   //               `force-inline`.
   if (isJIT) {
     mgr.addPass(createForceInline());
+    mgr.addPass(createEliminateDeadSymbols());
     mgr.addNestedPass<KGEN::FuncOp>(createCleanupCompilerGlobals());
     mgr.addNestedPass<KGEN::FuncOp>(mlir::createCanonicalizerPass());
   }
