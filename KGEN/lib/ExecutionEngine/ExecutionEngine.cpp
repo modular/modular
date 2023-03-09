@@ -80,8 +80,7 @@ ExecutionEngine::create(const CompilationOptions &options) {
   std::optional<BufferRef> rtBuf = std::move(*orcRTBuf);
   if (rtBuf) {
     // Write the runtime to the temp file.
-    std::error_code ec;
-    llvm::raw_fd_ostream tmp(path.c_str(), ec);
+    llvm::raw_fd_ostream tmp(path.string().c_str(), ec);
     if (ec)
       return Error(ec.message());
 
@@ -101,14 +100,14 @@ ExecutionEngine::create(const CompilationOptions &options) {
     if (rtBuf && tt.isOSBinFormatMachO()) {
       if (auto platform = llvm::orc::MachOPlatform::Create(
               session, cast<llvm::orc::ObjectLinkingLayer>(objLinkingLayer),
-              platformStdlib, path.c_str()))
+              platformStdlib, path.string().c_str()))
         session.setPlatform(std::move(*platform));
       else
         outError = Error(toString(platform.takeError()));
     } else if (rtBuf && tt.isOSBinFormatELF()) {
       if (auto platform = llvm::orc::ELFNixPlatform::Create(
               session, cast<llvm::orc::ObjectLinkingLayer>(objLinkingLayer),
-              platformStdlib, path.c_str()))
+              platformStdlib, path.string().c_str()))
         session.setPlatform(std::move(*platform));
       else
         outError = Error(toString(platform.takeError()));
@@ -131,7 +130,7 @@ ExecutionEngine::create(const CompilationOptions &options) {
 
       if (auto platform = llvm::orc::COFFPlatform::Create(
               session, cast<llvm::orc::ObjectLinkingLayer>(objLinkingLayer),
-              platformStdlib, path.c_str(), loadDynamicLibrary))
+              platformStdlib, path.string().c_str(), loadDynamicLibrary))
         session.setPlatform(std::move(*platform));
       else
         outError = Error(toString(platform.takeError()));
@@ -207,6 +206,7 @@ ExecutionEngine::create(const CompilationOptions &options) {
 
   // Create the JIT.
   auto jitOr = llvm::orc::LLJITBuilder()
+                   .setPlatformSetUp(llvm::orc::setUpOrcPlatform)
                    .setObjectLinkingLayerCreator(objectLinkingLayerCreator)
                    .create();
   if (!jitOr)

@@ -211,7 +211,7 @@ int main(int argc, char **argv) {
       if (bufOr.isError())
         return clOptions.reportError(bufOr.getError());
 
-      auto insert = cache->insert((*bufOr).copy(), std::move(*bufOr));
+      auto insert = cache->insert((*bufOr).copy(), (*bufOr).copy());
       auto outCh = AsyncValueRef<std::string>::allocate(runtime);
       std::move(insert).andThenSync(
           [outCh = outCh.copy(),
