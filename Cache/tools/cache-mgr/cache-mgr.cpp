@@ -160,7 +160,7 @@ std::filesystem::path CLOptions::getFsPath() const {
     reportError(ec.message());
     exit(1);
   }
-  llvm::errs() << "[WARNING] Using temporary file path at " << out
+  llvm::errs() << "[WARNING] Using temporary file path at " << out.string()
                << " for CAS filesystem base path.\n";
   return out;
 }
