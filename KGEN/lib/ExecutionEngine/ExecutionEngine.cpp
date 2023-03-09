@@ -6,6 +6,7 @@
 
 #include "KGEN/ExecutionEngine.h"
 #include "KGEN/CompilationOptions.h"
+#include "KGEN/ExecutionEngine/ORCCASID.h"
 #include "KGEN/LowerToObject.h"
 #include "Support/ErrorOr.h"
 #include "Support/MDialect/MAttrs.h"
