@@ -40,6 +40,7 @@ struct Conv2DLayout:
     alias RSCF = 2  # TF filter layout for channels last input.
 
 
+@register_passable
 struct ImageData[
     shape: __mlir_type[`!kgen.list<index[4]>`],
     type: __mlir_type.`!kgen.dtype`,
