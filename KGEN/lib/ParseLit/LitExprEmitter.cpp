@@ -69,6 +69,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in return value";
   case EC_MLIRMagic:
     return " in MLIR magic";
+  case EC_ExprDest:
+    return " in value destination";
   }
 }
 
@@ -79,10 +81,20 @@ const char *LIT::getContextMessage(ExprContext context) {
 ValueDest::ValueDest(VarLetDeclOp dest, ExprContext context)
     : representation(dest.getOperation()), context(context) {}
 
-/// If this value destination has a known type, e.g. "var x : Int = 42" or
-/// "x = 42", return it.  If not (e.g. _ = 42) then return null.
-ASTType ValueDest::getTypeIfKnown() const {
-  if (representation.isNull())
+/// Inspect the ValueDest to see if it implies a specific type for the value
+/// being computed, emiting ExprNode targets if present to get their implied
+/// type if present.  This returns null if there is no implied type.
+///
+/// This may be used in concrete value context with a known type (in which
+/// case 'existingValueType' will hold the known value type) or in ambiguous
+/// cases where this is being used to resolve a type (in which case it will be
+/// null).
+///
+/// Note that this will mutate the ValueDest if it is an ExprNode, turning it
+/// into an LValue to store to.
+ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
+                                      ExprEmitter &emitter) {
+  if (isa<NullRepresentation>(representation))
     return {};
 
   // If we have an lvalue already specified, return it.
@@ -93,11 +105,33 @@ ASTType ValueDest::getTypeIfKnown() const {
   if (ASTType type = dyn_cast<ASTType>(representation))
     return type;
 
-  // TODO: Infer from expression target like:
-  //   var x : FunctionType; x = overloadedFn
+  // Inferred VarDecls have no implied type.
+  if (isa<Operation *>(representation))
+    return {};
 
-  // Can't infer from an Operation*, since it is inferring from the initializer.
-  return {};
+  assert(!isa<LValueInitializerType>(representation) &&
+         "LValueInitializerType should be resolved before this");
+
+  auto *expr = cast<const ExprNode *>(representation);
+  assert(expr);
+
+  // If we have a contextual type available, pass that down to the emitter so
+  // implicitly declared variables and discard patterns can know their type.
+  ValueDest dest;
+  if (existingValueType)
+    dest = ValueDest(LValueInitializerType{existingValueType}, EC_ExprDest);
+
+  /// Emit the target as an LValue to understand what we're assigning into.  If
+  /// this fails, it will produce an error.
+  LValue exprLValue = emitter.emitExprLValue(
+      loc, expr, "cannot assign to immutable expression", dest);
+  if (!exprLValue) {
+    dest.resetForError();
+    representation = NullRepresentation();
+    return {};
+  }
+  representation = exprLValue;
+  return exprLValue.getRValueType();
 }
 
 /// Project a ValueDest into an lvalue with the specified underlying (RValue)
@@ -119,7 +153,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
   // If we are inferring the type for a var or let declaration, then we can
   // always succeed and consume this ValueDest.
   if (auto *opDest = dyn_cast_or_null<Operation *>(representation)) {
-    representation = nullptr; // Consumed!
+    representation = NullRepresentation(); // Consumed!
 
     auto varOp = cast<VarLetDeclOp>(opDest);
     assert(isa<UnresolvedType>(varOp.getType().getResolvedElementType()) &&
@@ -138,7 +172,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
     // If asking for a buffer of this type, then we can directly return it.
     if (allowIncompatibleTypes ||
         lValue.getRValueType().isEqualCanon(resultType)) {
-      representation = nullptr; // Consumed!
+      representation = NullRepresentation(); // Consumed!
       return lValue;
     }
 
@@ -148,12 +182,16 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
 
     // If we have an expression node destination, then we need to bind this
     // value to a pattern (aka "target" in Python internals nomenclature).
-    LValue lValue = target->getLValueForResult(resultType, emitter);
+    ValueDest dest(LValueInitializerType{resultType}, EC_ExprDest);
+    LValue lValue = emitter.emitExprLValue(
+        loc, target, "cannot assign to immutable expression", dest);
+    if (!lValue)
+      dest.resetForError();
 
     // If asking for a buffer of this type, then we can directly return it.
     if (lValue && (lValue.getRValueType().isEqualCanon(resultType) ||
                    allowIncompatibleTypes)) {
-      representation = nullptr; // Consumed!
+      representation = NullRepresentation(); // Consumed!
       return lValue;
     }
 
@@ -167,7 +205,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
   // Finally, if no destination specifies otherwise, we synthesize a new
   // LValue on demand.
   if (!emitter.builder) {
-    representation = nullptr; // Consumed!
+    representation = NullRepresentation(); // Consumed!
     emitter.emitError(
         loc, "cannot synthesize lvalue in parameter expression context");
     return {};
@@ -180,7 +218,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
   if (auto requiredType = dyn_cast_or_null<ASTType>(representation)) {
     if (allowIncompatibleTypes || requiredType.isEqualCanon(slotType)) {
       slotType = requiredType;
-      representation = nullptr; // Consumed!
+      representation = NullRepresentation(); // Consumed!
     }
   }
 
@@ -512,9 +550,12 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *node,
   // Attempt to further specialize the result value.
   value = refineResultValue(value, node->getLoc(), *this);
 
-  // If no destination is specified, then we can propagate the value directly.
-  if (!dest.isSpecified())
+  // If no destination is specified or it is just a contextual type hint, then
+  // we can propagate the value directly.
+  if (!dest.isSpecified() || isa<LValueInitializerType>(dest.representation)) {
+    dest.representation = NullRepresentation();
     return value;
+  }
 
   // OK, if there is a destination specified, handle them by converging the set
   // of value types we have.
@@ -530,15 +571,18 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *node,
     return emitCRValue({value, node}, dest);
 
   // We know we have a CRValue now.
+  auto rvalueType = value.getRValueType();
 
   // If there is a known type for the destination but the value disagrees, emit
   // an implicit conversion directly into the destination.  This keeps values in
   // registers and avoids a "convert + clone" pair for memory->memory
   // conversions.
-  ASTType requiredType = dest.getTypeIfKnown();
-  if (requiredType && !requiredType.isEqualCanon(value.getRValueType()))
-    return emitConversionTo(value.getIfCRValue(), node, requiredType, dest,
-                            *this);
+  if (ASTType requiredType =
+          dest.resolveImpliedType(node->getLoc(), rvalueType, *this)) {
+    if (!requiredType.isEqualCanon(rvalueType))
+      return emitConversionTo(value.getIfCRValue(), node, requiredType, dest,
+                              *this);
+  }
 
   // If the destination is just a required type, then we now know it must agree
   // and therefore don't need to do anything more.
@@ -554,7 +598,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *node,
 
   // We know we have a SRValue or PRValue, and the destination is some kind of
   // LValue.  Emit the value and figure out where to store it.
-  auto destLV = dest.getLValueForResult(node->getLoc(), value.getRValueType(),
+  auto destLV = dest.getLValueForResult(node->getLoc(), rvalueType,
                                         /*allowIncompatibleTypes=*/true, *this);
   if (!destLV)
     return {};
@@ -746,8 +790,8 @@ PRValue ExprEmitter::emitExprPRValue(const ExprNode *node, ExprContext context,
 /// This diagnoses the expression with the specified message if it isn't a
 /// valid LValue.
 LValue ExprEmitter::emitExprLValue(SMLoc loc, const ExprNode *node,
-                                   const Twine &message) {
-  AnyValue anyValue = node->emitIR(ValueDest::none(), *this);
+                                   const Twine &message, ValueDest &dest) {
+  AnyValue anyValue = node->emitIR(dest, *this);
   if (!anyValue)
     return {}; // Error already diagnosed.
   if (LValue lValue = anyValue.getIfLValue())

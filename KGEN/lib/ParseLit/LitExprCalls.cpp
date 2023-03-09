@@ -1231,10 +1231,14 @@ OverloadSet::OverloadSet(ASTType type, StringRef methodName,
 /// Emit this as a CRValue if it can be resolved, otherwise emit an ambiguity
 /// error and return null.
 CRValue OverloadSet::emitAsCRValue(ExprEmitter &emitter, ValueDest &dest) {
-  // If the ValueDest implies a type, use it to filter the overload set.
-  if (ASTType expectedType = dest.getTypeIfKnown()) {
-    if (failed(filterOverloadSetForValueType(expectedType, emitter)))
-      return {};
+  // If we have an overload set with multiple possibilities, we'll fail to emit
+  // this as a CRValue.  Try to resolve it based on the destination's type.
+  if (fnDecls.size() > 1) {
+    if (ASTType expectedType = dest.resolveImpliedType(
+            expr->getLoc(), /*no implied type*/ Type(), emitter)) {
+      if (failed(filterOverloadSetForValueType(expectedType, emitter)))
+        return {};
+    }
   }
 
   // We allow unbound symbols here which can be emitted as an PRValue.  In the

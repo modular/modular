@@ -91,6 +91,10 @@ fn callOverload(a: Int):
   var f1 : IntToF32Type = testThing
 
   # CHECK: %3 = kgen.param.constant: {{.*}} = <@"$decls"::@"testThing($Int::Int)">
+  # CHECK-NEXT: pop.store %3, %f1
+  f1 = testThing
+
+  # CHECK: %4 = kgen.param.constant: {{.*}} = <@"$decls"::@"testThing($Int::Int)">
   let f2 : IntToF32Type = testThing
 
   # CHECK: kgen.call @"$decls"::@"takeIntToF32Param()"<f: (!kgen.declref<@"$Int"::@Int>) -> !kgen.declref<@"$F32"::@F32> = @"$decls"::@"testThing($Int::Int)">()

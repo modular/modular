@@ -123,6 +123,8 @@ def no_unused_values_in_def():
   x+1 # DRValue
   testLValuesRvalues
 
+  _ # expected-error {{discard pattern requires an initializing expression}}
+
 ##===----------------------------------------------------------------------===##
 # Tuples
 ##===----------------------------------------------------------------------===##

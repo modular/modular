@@ -47,8 +47,16 @@ enum ExprContext {
   EC_ReturnResultParamList, // return[x] y
   EC_ReturnValue,           // return x;
   EC_MLIRMagic,             // __mlir_type[x] / __mlir_attr[x]
+  EC_ExprDest,              // x = foo()
 };
 const char *getContextMessage(ExprContext context);
+
+/// This is used in ValueDest when emitting an LValue expression whose type may
+/// be inferred from the RHS value in an assignment.  This allows implicitly
+/// declared variables and discard patterns to infer their type in `_ = foo()`.
+struct LValueInitializerType {
+  ASTType type;
+};
 
 /// This class represents the destination context than an expression is being
 /// emitted, when it may produce an RValue.  Example destinations include:
@@ -68,6 +76,9 @@ const char *getContextMessage(ExprContext context);
 ///       This indicates that the result may be treated in any way (e.g. dumping
 ///       into a temporary memory location as an MRValue or returned in an SSA
 ///       register as an SRValue) but needs to have the specified RValue type.
+///   - LValueInitializerType:
+///       This is used when emitting LValues when there is an inferred type for
+///       the LValue, e.g. in `_ = foo()`.
 ///
 /// Any expression may also have no proscribed result (as in the case of
 /// `someExpr()` with an ignored result), in which case emission will create
@@ -75,21 +86,28 @@ const char *getContextMessage(ExprContext context);
 class ValueDest {
 public:
   /*implicit*/
-  ValueDest() {}
+  ValueDest() : representation(NullRepresentation()) {}
   ValueDest(const ExprNode *target, ExprContext context)
-      : representation(target), context(context) {}
+      : representation(target), context(context) {
+    assert(target);
+  }
   ValueDest(LValue dest, ExprContext context)
       : representation(dest), context(context) {}
-  ValueDest(VarLetDeclOp dest,
-            ExprContext context); // Infer type from init expression.
+  ValueDest(VarLetDeclOp dest, ExprContext context);
   ValueDest(ASTType requiredType, ExprContext context)
-      : representation(requiredType), context(context) {}
+      : representation(requiredType), context(context) {
+    if (!requiredType)
+      representation = NullRepresentation();
+  }
+  ValueDest(LValueInitializerType type, ExprContext context)
+      : representation(type), context(context) {}
+
   ValueDest(ValueDest &&rhs)
-      : representation(rhs.representation), context(rhs.context) {
+      : representation(std::move(rhs.representation)), context(rhs.context) {
     rhs.resetForError();
   }
   ValueDest &operator=(ValueDest &&rhs) {
-    representation = rhs.representation;
+    representation = std::move(rhs.representation);
     context = rhs.context;
     rhs.resetForError();
     return *this;
@@ -116,11 +134,28 @@ public:
 
   /// Return true if there is a specification for this destination.  If not,
   /// an expression will be emitted to generate a PRValue, SRValue, LValue, etc.
-  bool isSpecified() const { return !representation.isNull(); }
+  bool isSpecified() const { return !isa<NullRepresentation>(representation); }
 
-  /// If this value destination has a known type, e.g. "var x : Int = 42" or
-  /// "x = 42", return it.  If not (e.g. _ = 42) then return null.
-  ASTType getTypeIfKnown() const;
+  /// Return the LValueInitializerType this contains if it is one.
+  ASTType getIfLValueInitializerType() const {
+    if (isa<LValueInitializerType>(representation))
+      return cast<LValueInitializerType>(representation).type;
+    return {};
+  }
+
+  /// Inspect the ValueDest to see if it implies a specific type for the value
+  /// being computed, emiting ExprNode targets if present to get their implied
+  /// type if present.  This returns null if there is no implied type.
+  ///
+  /// This may be used in concrete value context with a known type (in which
+  /// case 'existingValueType' will hold the known value type) or in ambiguous
+  /// cases where this is being used to resolve a type (in which case it will be
+  /// null).
+  ///
+  /// Note that this will mutate the ValueDest if it is an ExprNode, turning it
+  /// into an LValue to store to.
+  ASTType resolveImpliedType(SMLoc loc, Type existingValueType,
+                             ExprEmitter &emitter);
 
   /// Project a ValueDest into an lvalue with the specified underlying (RValue)
   /// type.
@@ -140,12 +175,14 @@ public:
 
   /// When an error is emitted instead of generating IR, this method resets the
   /// ValueDest so it doesn't complain when emission is done.
-  void resetForError() { representation = nullptr; }
+  void resetForError() { representation = NullRepresentation(); }
 
 private:
   //  This should only be accessed by ExprEmitter::emitResult.
   friend class ExprEmitter;
-  PointerUnion<LValue, const ExprNode *, Operation *, ASTType> representation;
+  SmartVariant<NullRepresentation, LValue, const ExprNode *, Operation *,
+               ASTType, LValueInitializerType>
+      representation;
   ExprContext context;
 };
 
@@ -271,7 +308,8 @@ public:
   ///
   /// This diagnoses the expression with the specified message if it isn't a
   /// valid LValue.
-  LValue emitExprLValue(SMLoc loc, const ExprNode *node, const Twine &message);
+  LValue emitExprLValue(SMLoc loc, const ExprNode *node, const Twine &message,
+                        ValueDest &dest);
 
   /// This helper emits the specified expression tree as a type, e.g. turning
   /// "Int" into the type for it.  This emits an error and returns null on
