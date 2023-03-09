@@ -45,6 +45,81 @@ struct ReadOnlyKey {
 };
 } // namespace
 
+/// Write the orc_rt buffer to a temporary path so we can pass that path. This
+/// is a temporary work-around until COFF can be called with a memory buffer.
+/// See #10097.
+static ErrorOrSuccess writeORCRTToFile(BufferRef &buf, std::string &outPath) {
+  std::error_code ec;
+  std::filesystem::path path = std::filesystem::temp_directory_path(ec);
+  if (ec)
+    return Error(ec.message());
+
+  path = path / "liborc_rt.a";
+  outPath = path.string();
+
+  // Write the runtime to the temp file.
+  llvm::raw_fd_ostream tmp(outPath.c_str(), ec);
+  if (ec)
+    return Error(ec.message());
+
+  tmp << buf->getBuffer();
+  return success();
+}
+
+/// Set up the ORC platform for the various different binary formats/platforms
+/// we support. This requires that we have an ExecutionSession *and* an
+/// ObjectLinkingLayer.
+///
+/// The main reason to use the platform like this is that it automatically sets
+/// up the various symbols that complex code will need to execute on a target.
+static ErrorOrSuccess
+setupPlatform(StringRef orcRTPath, llvm::TargetMachine &tm,
+              llvm::orc::ExecutionSession &session,
+              llvm::orc::ObjectLinkingLayer &objLinkingLayer) {
+  llvm::orc::JITDylib &platformStdlib =
+      session.createBareJITDylib(platformStdlibName.str());
+  const llvm::Triple &tt = session.getTargetTriple();
+  if (tt.isOSBinFormatMachO()) {
+    if (auto platform = llvm::orc::MachOPlatform::Create(
+            session, cast<llvm::orc::ObjectLinkingLayer>(objLinkingLayer),
+            platformStdlib, orcRTPath.data()))
+      session.setPlatform(std::move(*platform));
+    else
+      return Error(toString(platform.takeError()));
+  } else if (tt.isOSBinFormatELF()) {
+    if (auto platform = llvm::orc::ELFNixPlatform::Create(
+            session, cast<llvm::orc::ObjectLinkingLayer>(objLinkingLayer),
+            platformStdlib, orcRTPath.data()))
+      session.setPlatform(std::move(*platform));
+    else
+      return Error(toString(platform.takeError()));
+  } else if (tt.isOSBinFormatCOFF()) {
+    // Windows needs some help to load dylibs, apparently.
+    auto loadDynamicLibrary = [tt, &tm](llvm::orc::JITDylib &jd,
+                                        StringRef dllName) -> llvm::Error {
+      if (!dllName.endswith_insensitive(".dll"))
+        return llvm::make_error<llvm::StringError>(
+            "DLLName not ending with .dll", llvm::inconvertibleErrorCode());
+
+      if (auto dylibGeneratorOr =
+              llvm::orc::DynamicLibrarySearchGenerator::Load(
+                  dllName.data(), tm.createDataLayout().getGlobalPrefix()))
+        jd.addGenerator(std::move(*dylibGeneratorOr));
+      else
+        return dylibGeneratorOr.takeError();
+      return llvm::Error::success();
+    };
+
+    if (auto platform = llvm::orc::COFFPlatform::Create(
+            session, cast<llvm::orc::ObjectLinkingLayer>(objLinkingLayer),
+            platformStdlib, orcRTPath.data(), loadDynamicLibrary))
+      session.setPlatform(std::move(*platform));
+    else
+      return Error(toString(platform.takeError()));
+  }
+  return success();
+}
+
 M::ErrorOr<ExecutionEngine>
 ExecutionEngine::create(const CompilationOptions &options) {
   // Create a BlobCache ref.
@@ -64,78 +139,19 @@ ExecutionEngine::create(const CompilationOptions &options) {
     return tmOr.takeError();
   std::unique_ptr<llvm::TargetMachine> tm = std::move(*tmOr);
 
-  // Write the orc_rt file to a temporary path so we can pass that path. This is
-  // a temporary work-around until COFF can be called with a memory buffer.
-  std::error_code ec;
-  std::filesystem::path path = std::filesystem::temp_directory_path(ec);
-  if (ec)
-    return Error(ec.message());
-
-  path = path / "liborc_rt.a";
-
   // Write the object to the path.
   LLCL::await(orcRTBuf);
   if (orcRTBuf.isError())
     return std::move(orcRTBuf.takeDiagnostic().getMessage());
   std::optional<BufferRef> rtBuf = std::move(*orcRTBuf);
-  if (rtBuf) {
-    // Write the runtime to the temp file.
-    llvm::raw_fd_ostream tmp(path.string().c_str(), ec);
-    if (ec)
-      return Error(ec.message());
-
-    tmp << (*rtBuf)->getBuffer();
-  }
+  std::string orcRTPath;
+  if (rtBuf)
+    if (auto err = writeORCRTToFile(*rtBuf, orcRTPath))
+      return err.takeError();
 
   // Define an optional error we can set to something if we hit an error in a
   // nested closure.
   std::optional<Error> outError = std::nullopt;
-
-  // Setup the platform.
-  auto setupPlatform = [&](llvm::orc::ExecutionSession &session,
-                           llvm::orc::ObjectLinkingLayer &objLinkingLayer) {
-    llvm::orc::JITDylib &platformStdlib =
-        session.createBareJITDylib(platformStdlibName.str());
-    const llvm::Triple &tt = session.getTargetTriple();
-    if (rtBuf && tt.isOSBinFormatMachO()) {
-      if (auto platform = llvm::orc::MachOPlatform::Create(
-              session, cast<llvm::orc::ObjectLinkingLayer>(objLinkingLayer),
-              platformStdlib, path.string().c_str()))
-        session.setPlatform(std::move(*platform));
-      else
-        outError = Error(toString(platform.takeError()));
-    } else if (rtBuf && tt.isOSBinFormatELF()) {
-      if (auto platform = llvm::orc::ELFNixPlatform::Create(
-              session, cast<llvm::orc::ObjectLinkingLayer>(objLinkingLayer),
-              platformStdlib, path.string().c_str()))
-        session.setPlatform(std::move(*platform));
-      else
-        outError = Error(toString(platform.takeError()));
-    } else if (rtBuf && tt.isOSBinFormatCOFF()) {
-      // Windows needs some help to load dylibs, apparently.
-      auto loadDynamicLibrary = [tt, &tm](llvm::orc::JITDylib &jd,
-                                          StringRef dllName) -> llvm::Error {
-        if (!dllName.endswith_insensitive(".dll"))
-          return llvm::make_error<llvm::StringError>(
-              "DLLName not ending with .dll", llvm::inconvertibleErrorCode());
-
-        if (auto dylibGeneratorOr =
-                llvm::orc::DynamicLibrarySearchGenerator::Load(
-                    dllName.data(), tm->createDataLayout().getGlobalPrefix()))
-          jd.addGenerator(std::move(*dylibGeneratorOr));
-        else
-          return dylibGeneratorOr.takeError();
-        return llvm::Error::success();
-      };
-
-      if (auto platform = llvm::orc::COFFPlatform::Create(
-              session, cast<llvm::orc::ObjectLinkingLayer>(objLinkingLayer),
-              platformStdlib, path.string().c_str(), loadDynamicLibrary))
-        session.setPlatform(std::move(*platform));
-      else
-        outError = Error(toString(platform.takeError()));
-    }
-  };
 
   // Callback to create the object layer with symbol resolution to current
   // process and dynamically linked libraries.
@@ -145,10 +161,12 @@ ExecutionEngine::create(const CompilationOptions &options) {
     auto objectLayer = std::make_unique<llvm::orc::ObjectLinkingLayer>(session);
 
     // Set up the platform support now that we have an object layer.
-    setupPlatform(session, *objectLayer);
-    // Bail if we hit an error.
-    if (outError)
-      return nullptr;
+    if (rtBuf) {
+      if (auto err = setupPlatform(orcRTPath, *tm, session, *objectLayer)) {
+        outError = err.takeError();
+        return nullptr;
+      }
+    }
 
     // COFF format binaries (Windows) need special handling to deal with
     // exported symbol visibility.
