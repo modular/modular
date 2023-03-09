@@ -88,10 +88,13 @@ ExecutionEngine::create(const CompilationOptions &options) {
     tmp << (*rtBuf)->getBuffer();
   }
 
+  // Define an optional error we can set to something if we hit an error in a
+  // nested closure.
+  std::optional<Error> outError = std::nullopt;
+
   // Setup the platform.
-  auto setupPlatform =
-      [&](llvm::orc::ExecutionSession &session,
-          llvm::orc::ObjectLinkingLayer &objLinkingLayer) -> llvm::Error {
+  auto setupPlatform = [&](llvm::orc::ExecutionSession &session,
+                           llvm::orc::ObjectLinkingLayer &objLinkingLayer) {
     llvm::orc::JITDylib &platformStdlib =
         session.createBareJITDylib(platformStdlibName.str());
     const llvm::Triple &tt = session.getTargetTriple();
@@ -101,14 +104,14 @@ ExecutionEngine::create(const CompilationOptions &options) {
               platformStdlib, path.c_str()))
         session.setPlatform(std::move(*platform));
       else
-        return platform.takeError();
+        outError = Error(toString(platform.takeError()));
     } else if (rtBuf && tt.isOSBinFormatELF()) {
       if (auto platform = llvm::orc::ELFNixPlatform::Create(
               session, cast<llvm::orc::ObjectLinkingLayer>(objLinkingLayer),
               platformStdlib, path.c_str()))
         session.setPlatform(std::move(*platform));
       else
-        return platform.takeError();
+        outError = Error(toString(platform.takeError()));
     } else if (rtBuf && tt.isOSBinFormatCOFF()) {
       // Windows needs some help to load dylibs, apparently.
       auto loadDynamicLibrary = [tt, &tm](llvm::orc::JITDylib &jd,
@@ -131,9 +134,8 @@ ExecutionEngine::create(const CompilationOptions &options) {
               platformStdlib, path.c_str(), loadDynamicLibrary))
         session.setPlatform(std::move(*platform));
       else
-        return platform.takeError();
+        outError = Error(toString(platform.takeError()));
     }
-    return llvm::Error::success();
   };
 
   // Callback to create the object layer with symbol resolution to current
@@ -144,7 +146,10 @@ ExecutionEngine::create(const CompilationOptions &options) {
     auto objectLayer = std::make_unique<llvm::orc::ObjectLinkingLayer>(session);
 
     // Set up the platform support now that we have an object layer.
-    llvm::cantFail(setupPlatform(session, *objectLayer));
+    setupPlatform(session, *objectLayer);
+    // Bail if we hit an error.
+    if (outError)
+      return nullptr;
 
     // COFF format binaries (Windows) need special handling to deal with
     // exported symbol visibility.
@@ -157,13 +162,18 @@ ExecutionEngine::create(const CompilationOptions &options) {
     if (options.debugLevel == CompilationOptions::kNoDebug)
       return objectLayer;
 
+    auto returnError = [&](llvm::Error &&err) {
+      outError = Error(toString(std::move(err)));
+      return nullptr;
+    };
+
     // Get the registrar for the GDB JIT loader interface.
     if (tt.isOSBinFormatMachO()) {
       llvm::orc::JITDylib &dylib =
           *session.getJITDylibByName(platformStdlibName);
       // We have to explicitly define these wrapper symbols on macOS because
       // they're hidden visibility.
-      cantFail(dylib.define(llvm::orc::absoluteSymbols(
+      auto err = dylib.define(llvm::orc::absoluteSymbols(
           {{session.intern("_llvm_orc_registerJITLoaderGDBWrapper"),
             {llvm::pointerToJITTargetAddress(
                  &llvm_orc_registerJITLoaderGDBWrapper),
@@ -172,17 +182,24 @@ ExecutionEngine::create(const CompilationOptions &options) {
             {llvm::pointerToJITTargetAddress(
                  &llvm_orc_registerJITLoaderGDBAllocAction),
              llvm::JITSymbolFlags::Exported |
-                 llvm::JITSymbolFlags::Absolute}}})));
+                 llvm::JITSymbolFlags::Absolute}}}));
+      if (err)
+        return returnError(std::move(err));
 
-      objectLayer->addPlugin(
-          cantFail(llvm::orc::GDBJITDebugInfoRegistrationPlugin::Create(
-              session, dylib, tt)));
+      if (auto plugin = llvm::orc::GDBJITDebugInfoRegistrationPlugin::Create(
+              session, dylib, tt))
+        objectLayer->addPlugin(std::move(*plugin));
+      else
+        return returnError(plugin.takeError());
     } else if (tt.isOSBinFormatELF()) {
       // Register the DebugObjectManagerPlugin.
-      objectLayer->addPlugin(
-          std::make_unique<llvm::orc::DebugObjectManagerPlugin>(
-              session,
-              cantFail(llvm::orc::createJITLoaderGDBRegistrar(session))));
+      if (auto plugin = llvm::orc::createJITLoaderGDBRegistrar(session)) {
+        objectLayer->addPlugin(
+            std::make_unique<llvm::orc::DebugObjectManagerPlugin>(
+                session, std::move(*plugin)));
+      } else {
+        return returnError(plugin.takeError());
+      }
     }
 
     return objectLayer;
@@ -194,6 +211,10 @@ ExecutionEngine::create(const CompilationOptions &options) {
                    .create();
   if (!jitOr)
     return M::Error(llvm::toString(jitOr.takeError()));
+
+  // If we hit an error during object layer creation, return it.
+  if (outError)
+    return std::move(*outError);
 
   ee.jit = std::move(*jitOr);
   return ee;
