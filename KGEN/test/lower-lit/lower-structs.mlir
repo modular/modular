@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -lower-structs | FileCheck %s
+// RUN: kgen-opt %s -lower-structs -split-input-file | FileCheck %s
 
 // CHECK-NOT: lit.struct.decl
 lit.struct.decl @SmallVector<N, T: type> {
@@ -147,4 +147,24 @@ kgen.generator @use_struct_param(%arg0: !kgen.declref<@StructParam<param: @Struc
   lit.struct.extract %arg0[value] : !pop.array<apply(:(!kgen.declref<@Struct>) -> index @return_one, #lit.struct<{}>), index>
     from !kgen.declref<@StructParam<param: @Struct = #lit.struct<{}>>>
   kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: kgen.generator @parameterized_declref_type
+kgen.generator @parameterized_declref_type() {
+  // CHECK-NEXT: !pop.struct<array<2, struct<simd<apply(:(!pop.struct<>) -> index @unbox, {  }), f32>>>>
+  %3 = pop.stack_allocation 1 x !kgen.declref<@StaticTuple<size = 2,
+    type: type = !kgen.declref<@SIMD<size: @Int = #lit.struct<{}>, type: dtype = f32>>>>
+  kgen.return
+}
+
+lit.struct.decl @SIMD<size: @Int, type: dtype> {
+  lit.struct.field value : !pop.simd<apply(:(!kgen.declref<@Int>) -> index @unbox, size), type>
+}
+
+lit.struct.decl @Int {}
+
+lit.struct.decl @StaticTuple<size, type: type> {
+  lit.struct.field array : !pop.array<size, type>
 }
