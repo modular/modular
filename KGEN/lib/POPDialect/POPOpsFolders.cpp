@@ -392,8 +392,6 @@ static bool compareConstants(CmpPredicate pred, ArgT lhs, ArgT rhs) {
     return lhs <= rhs;
   case CmpPredicate::GE:
     return lhs >= rhs;
-  default:
-    llvm_unreachable("unknown comparison predicate kind");
   }
 }
 

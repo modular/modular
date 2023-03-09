@@ -132,7 +132,8 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
 //===----------------------------------------------------------------------===//
 
 class KGEN_CallOpBase<string mnemonic, list<Trait> traits = []>
-    : KGENOp<mnemonic, traits # [KGEN_CallOpInterface,
+    : KGENOp<mnemonic, traits # [
+        DeclareOpInterfaceMethods<KGEN_CallOpInterface>,
         DeclareOpInterfaceMethods<ParamOpInterface,
                                   ["isImplicitlyParametric"]>]> {
   code extraDefinition = [{}];
