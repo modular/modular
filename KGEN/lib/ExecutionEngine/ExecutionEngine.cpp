@@ -8,24 +8,20 @@
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/ExecutionEngine/ORCCASID.h"
 #include "KGEN/LowerToObject.h"
+#include "LLCL/Runtime/Algorithms.h"
 #include "Support/ErrorOr.h"
 #include "Support/MDialect/MAttrs.h"
+#include "llvm/ExecutionEngine/Orc/COFFPlatform.h"
 #include "llvm/ExecutionEngine/Orc/Core.h"
 #include "llvm/ExecutionEngine/Orc/DebugObjectManagerPlugin.h"
 #include "llvm/ExecutionEngine/Orc/DebuggerSupportPlugin.h"
+#include "llvm/ExecutionEngine/Orc/ELFNixPlatform.h"
 #include "llvm/ExecutionEngine/Orc/EPCDebugObjectRegistrar.h"
 #include "llvm/ExecutionEngine/Orc/EPCEHFrameRegistrar.h"
+#include "llvm/ExecutionEngine/Orc/MachOPlatform.h"
 #include "llvm/ExecutionEngine/Orc/ObjectLinkingLayer.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/TargetParser/Host.h"
-
-#if defined(_MSC_VER) && !defined(__INTEL_COMPILER)
-#include <Windows.h>
-EXTERN_C IMAGE_DOS_HEADER __ImageBase;
-#else
-// Just need *a* definition here. It is fully unused for non-windows builds.
-static void *__ImageBase = nullptr;
-#endif // _MSC_VER
 
 using namespace M;
 using namespace KGEN;
@@ -40,12 +36,105 @@ static constexpr StringLiteral platformStdlibName = "$platform-stdlib";
 // ExecutionEngine implementation
 //===----------------------------------------------------------------------===//
 
+namespace {
+/// Provide a key that doesn't do any hashing - we only want to read things from
+/// keys provided to this.
+struct ReadOnlyKey {
+  using KeyTy = StringRef;
+  static std::string hashKey(KeyTy key) { return key.str(); }
+};
+} // namespace
+
 M::ErrorOr<ExecutionEngine>
 ExecutionEngine::create(const CompilationOptions &options) {
+  // Create a BlobCache ref.
+  RuntimeAndCache<ReadOnlyKey> runtimeAndCache(".kgen_cache/orc");
+  if (auto err = runtimeAndCache.setup())
+    return err.takeError();
+
+  BlobCache<ReadOnlyKey> &orcCache = runtimeAndCache.getCache();
+  AsyncValueRef<std::optional<BufferRef>> orcRTBuf =
+      orcCache.find(MODULAR_ORC_RT_CAS_ID);
+
   ExecutionEngine ee(nullptr, options);
 
   // Create the target machine.
-  RETURN_ERROR(KGEN::createTargetMachine(options, /*isJIT=*/false));
+  auto tmOr = KGEN::createTargetMachine(options, /*isJIT=*/false);
+  if (tmOr.isError())
+    return tmOr.takeError();
+  std::unique_ptr<llvm::TargetMachine> tm = std::move(*tmOr);
+
+  // Write the orc_rt file to a temporary path so we can pass that path. This is
+  // a temporary work-around until COFF can be called with a memory buffer.
+  std::error_code ec;
+  std::filesystem::path path = std::filesystem::temp_directory_path(ec);
+  if (ec)
+    return Error(ec.message());
+
+  path = path / "liborc_rt.a";
+
+  // Write the object to the path.
+  LLCL::await(orcRTBuf);
+  if (orcRTBuf.isError())
+    return std::move(orcRTBuf.takeDiagnostic().getMessage());
+  std::optional<BufferRef> rtBuf = std::move(*orcRTBuf);
+  if (rtBuf) {
+    // Write the runtime to the temp file.
+    std::error_code ec;
+    llvm::raw_fd_ostream tmp(path.c_str(), ec);
+    if (ec)
+      return Error(ec.message());
+
+    tmp << (*rtBuf)->getBuffer();
+  }
+
+  // Setup the platform.
+  auto setupPlatform =
+      [&](llvm::orc::ExecutionSession &session,
+          llvm::orc::ObjectLinkingLayer &objLinkingLayer) -> llvm::Error {
+    llvm::orc::JITDylib &platformStdlib =
+        session.createBareJITDylib(platformStdlibName.str());
+    const llvm::Triple &tt = session.getTargetTriple();
+    if (rtBuf && tt.isOSBinFormatMachO()) {
+      if (auto platform = llvm::orc::MachOPlatform::Create(
+              session, cast<llvm::orc::ObjectLinkingLayer>(objLinkingLayer),
+              platformStdlib, path.c_str()))
+        session.setPlatform(std::move(*platform));
+      else
+        return platform.takeError();
+    } else if (rtBuf && tt.isOSBinFormatELF()) {
+      if (auto platform = llvm::orc::ELFNixPlatform::Create(
+              session, cast<llvm::orc::ObjectLinkingLayer>(objLinkingLayer),
+              platformStdlib, path.c_str()))
+        session.setPlatform(std::move(*platform));
+      else
+        return platform.takeError();
+    } else if (rtBuf && tt.isOSBinFormatCOFF()) {
+      // Windows needs some help to load dylibs, apparently.
+      auto loadDynamicLibrary = [tt, &tm](llvm::orc::JITDylib &jd,
+                                          StringRef dllName) -> llvm::Error {
+        if (!dllName.endswith_insensitive(".dll"))
+          return llvm::make_error<llvm::StringError>(
+              "DLLName not ending with .dll", llvm::inconvertibleErrorCode());
+
+        if (auto dylibGeneratorOr =
+                llvm::orc::DynamicLibrarySearchGenerator::Load(
+                    dllName.data(), tm->createDataLayout().getGlobalPrefix()))
+          jd.addGenerator(std::move(*dylibGeneratorOr));
+        else
+          return dylibGeneratorOr.takeError();
+        return llvm::Error::success();
+      };
+
+      if (auto platform = llvm::orc::COFFPlatform::Create(
+              session, cast<llvm::orc::ObjectLinkingLayer>(objLinkingLayer),
+              platformStdlib, path.c_str(), loadDynamicLibrary))
+        session.setPlatform(std::move(*platform));
+      else
+        return platform.takeError();
+    }
+    return llvm::Error::success();
+  };
 
   // Callback to create the object layer with symbol resolution to current
   // process and dynamically linked libraries.
@@ -54,20 +143,14 @@ ExecutionEngine::create(const CompilationOptions &options) {
       -> std::unique_ptr<llvm::orc::ObjectLinkingLayer> {
     auto objectLayer = std::make_unique<llvm::orc::ObjectLinkingLayer>(session);
 
+    // Set up the platform support now that we have an object layer.
+    llvm::cantFail(setupPlatform(session, *objectLayer));
+
     // COFF format binaries (Windows) need special handling to deal with
     // exported symbol visibility.
     if (tt.isOSBinFormatCOFF()) {
       objectLayer->setOverrideObjectFlagsWithResponsibilityFlags(true);
       objectLayer->setAutoClaimResponsibilityForObjectSymbols(true);
-
-      // COFF requires __ImageBase.
-      llvm::orc::JITDylib &dylib =
-          session.createBareJITDylib(platformStdlibName.str());
-      llvm::cantFail(dylib.define(llvm::orc::absoluteSymbols(
-          {{session.intern("__ImageBase"),
-            {llvm::pointerToJITTargetAddress(&__ImageBase),
-             llvm::JITSymbolFlags::Exported |
-                 llvm::JITSymbolFlags::Absolute}}})));
     }
 
     // If we don't want any debugging in this binary, then stop here.
@@ -77,7 +160,7 @@ ExecutionEngine::create(const CompilationOptions &options) {
     // Get the registrar for the GDB JIT loader interface.
     if (tt.isOSBinFormatMachO()) {
       llvm::orc::JITDylib &dylib =
-          session.createBareJITDylib(platformStdlibName.str());
+          *session.getJITDylibByName(platformStdlibName);
       // We have to explicitly define these wrapper symbols on macOS because
       // they're hidden visibility.
       cantFail(dylib.define(llvm::orc::absoluteSymbols(
@@ -180,6 +263,7 @@ ErrorOr<CompiledFunc> ExecutionEngine::lookup(StringRef libName,
 
 ErrorOr<llvm::orc::JITDylib *>
 ExecutionEngine::getOrCreateDylib(StringRef libName) {
+  assert(jit && "must have the JIT already constructed");
   llvm::orc::JITDylib *dylib = jit->getJITDylibByName(libName);
   if (!dylib) {
     auto dylibOr = jit->createJITDylib(libName.str());
