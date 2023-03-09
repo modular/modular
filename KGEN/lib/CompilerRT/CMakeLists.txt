@@ -7,6 +7,7 @@
 add_modular_mlir_library(KGENCompilerRT
   Initialize.cpp
   LLCL.cpp
+  Memory.cpp
   Print.cpp
   Tracing.cpp
   System.cpp

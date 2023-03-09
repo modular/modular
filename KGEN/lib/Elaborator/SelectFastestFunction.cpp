@@ -60,6 +60,7 @@ M::KGEN::evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
   std::vector<std::pair<StringLiteral, void *>> compilerRTFunctions;
   KGEN::registerIntelAMX(compilerRTFunctions);
   KGEN::registerLLCL(compilerRTFunctions);
+  KGEN::registerMemory(compilerRTFunctions);
   KGEN::registerPrint(compilerRTFunctions);
   KGEN::registerSystem(compilerRTFunctions);
   KGEN::registerTracing(compilerRTFunctions);
