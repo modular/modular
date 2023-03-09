@@ -803,13 +803,8 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << "'get_alignof' should return an index";
     break;
   case POC::BindSignature: {
-    FailureOr<SignatureType> actualType =
-        verifyBindSignature(operands, emitError);
-    if (failed(actualType))
+    if (failed(verifyBindSignature(operands, emitError)))
       return failure();
-    if (*actualType != type)
-      return emitError() << "'bind_signature' expected to return " << type
-                         << " but actually returns " << *actualType;
     break;
   }
   case POC::Apply:
@@ -1411,14 +1406,17 @@ static Attribute simplifyBindSignature(ArrayRef<TypedAttr> operands,
   if (operands.size() == 1)
     return operands[0];
 
-  // Otherwise, compute the result type. If an error is producted, just abort.
-  auto resultSigOr =
-      verifyBindSignature(operands, [&]() -> mlir::InFlightDiagnostic {
-        return mlir::emitError(UnknownLoc::get(resultType.getContext()));
-      });
-  if (failed(resultSigOr))
-    llvm::report_fatal_error("invalid bind_signature operator");
-  resultType = *resultSigOr;
+  // Otherwise, compute the result type if requested. If an error is producted,
+  // just abort.
+  if (!resultType) {
+    auto resultSigOr =
+        verifyBindSignature(operands, [&]() -> mlir::InFlightDiagnostic {
+          return mlir::emitError(UnknownLoc::get(resultType.getContext()));
+        });
+    if (failed(resultSigOr))
+      llvm::report_fatal_error("invalid bind_signature operator");
+    resultType = *resultSigOr;
+  }
 
   auto processSignatureLike = [&](auto attr, auto getFirstOperand) {
     bool hasUnboundParameters = attr.getParamValues().empty();
@@ -1664,7 +1662,9 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
   assert(!operandsIn.empty() && "Cannot have expr with no operands");
   // All operands must have the same type.  The result type is usually the
   // same as the operands, but is i1 for comparisons (overridden below).
-  auto resultType = operandsIn.front().getType();
+  Type resultType;
+  if (opcode != POC::BindSignature)
+    resultType = operandsIn.front().getType();
   assert(llvm::is_contained({POC::BindSignature, POC::Apply, POC::Evaluate,
                              POC::TargetHasFeature, POC::TargetGetField,
                              POC::BuildInfoGetField, POC::GetSizeOf,
