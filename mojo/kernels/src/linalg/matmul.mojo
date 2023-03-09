@@ -1152,6 +1152,7 @@ struct TiledMatmul[
                 Index(sub_tile_n, sub_tile_k),
                 # Valid amount of input from the starting offset.
                 Index(self.global_tile_shape.N, self.global_tile_shape.K)
+                + Index(self.global_tile_offset.N, self.global_tile_offset.K)
                 - Index(global_offset.N, global_offset.K),
             )
         else:
@@ -1170,6 +1171,7 @@ struct TiledMatmul[
                 Index(sub_tile_k, sub_tile_n),
                 # Valid amount of input from the starting offset.
                 Index(self.global_tile_shape.K, self.global_tile_shape.N)
+                + Index(self.global_tile_offset.K, self.global_tile_offset.N)
                 - Index(global_offset.K, global_offset.N),
             )
 
@@ -1198,7 +1200,7 @@ struct TiledMatmul[
                 self.a,
                 b_packed,
                 global_offset + GemmShape(row_offset, 0, 0),
-                self.global_tile_shape,
+                self.global_tile_offset + self.global_tile_shape,
                 sub_tile_n_k,
             )
 
