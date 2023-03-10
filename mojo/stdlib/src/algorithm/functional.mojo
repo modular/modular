@@ -439,6 +439,7 @@ struct NullaryClosure[result_type: __mlir_type.`!kgen.mlirtype`]:
     alias closure_type = __mlir_type[`!pop.closure<() -> `, result_type, `>`]
     var value: closure_type
 
+    @always_inline("nodebug")
     fn __new__(value: closure_type) -> Self:
         """Create a nullary closure.
 
@@ -450,6 +451,19 @@ struct NullaryClosure[result_type: __mlir_type.`!kgen.mlirtype`]:
         """
         return Self {value: value}
 
+    @always_inline("nodebug")
+    fn __clone__(self&) -> Self:
+        """Clone a nullary closure.
+
+        Arguments:
+          self: the value to clone
+
+        Returns:
+          A new nullary closure.
+        """
+        return Self {value: self.value}
+
+    @always_inline("nodebug")
     fn __call__(self) -> result_type:
         """Call a nullary closure.
 
@@ -468,6 +482,7 @@ struct UnaryClosure[
     ]
     var value: closure_type
 
+    @always_inline("nodebug")
     fn __new__(value: closure_type) -> Self:
         """Create a unary closure.
 
@@ -479,6 +494,19 @@ struct UnaryClosure[
         """
         return Self {value: value}
 
+    @always_inline("nodebug")
+    fn __clone__(self&) -> Self:
+        """Clone a unary closure.
+
+        Arguments:
+          self: the value to clone
+
+        Returns:
+          A new unary closure.
+        """
+        return Self {value: self.value}
+
+    @always_inline("nodebug")
     fn __call__(self, input: input_type) -> result_type:
         """Call a unary closure.
 
@@ -503,6 +531,7 @@ struct BinaryClosure[
     ]
     var value: closure_type
 
+    @always_inline("nodebug")
     fn __new__(value: closure_type) -> Self:
         """Create a binary closure.
 
@@ -514,6 +543,19 @@ struct BinaryClosure[
         """
         return Self {value: value}
 
+    @always_inline("nodebug")
+    fn __clone__(self&) -> Self:
+        """Clone a binary closure.
+
+        Arguments:
+          self: the value to clone
+
+        Returns:
+          A new binary closure.
+        """
+        return Self {value: self.value}
+
+    @always_inline("nodebug")
     fn __call__(self, lhs: lhs_type, rhs: rhs_type) -> result_type:
         """Call a binary closure.
 
