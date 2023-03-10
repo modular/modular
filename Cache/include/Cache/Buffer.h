@@ -9,6 +9,7 @@
 
 #include "LLCL/Support/RCRef.h"
 #include "LLCL/Support/ReferenceCounted.h"
+#include "Support/AlignedAlloc.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -64,8 +65,9 @@ protected:
   /// initialize empty read-only buffers.
   Buffer() : mallocd(), kind(kMalloc) {}
 
-  /// Create a Buffer of given size.
-  Buffer(size_t size) : mallocd(size), kind(kMalloc) {}
+  /// Create a Buffer of given size and alignment.
+  Buffer(size_t size, std::optional<size_t> alignment)
+      : mallocd(size, alignment), kind(kMalloc) {}
 
   /// Construct the Buffer where it has to copy its data.
   Buffer(StringRef data);
@@ -87,17 +89,25 @@ protected:
   struct AllocatedBuffer {
     void *data = nullptr;
     size_t size = 0;
+    size_t align = 0;
 
-    /// Default-construct a mallocd buffer to nullptr/0.
-    AllocatedBuffer() : data(nullptr), size(0) {}
-    AllocatedBuffer(size_t size) : data(malloc(size)), size(size) {}
-    ~AllocatedBuffer() { free(data); }
+    /// Default-construct a mallocd buffer to nullptr/0 with the given
+    /// alignment.
+    AllocatedBuffer()
+        : data(nullptr), size(0), align(alignof(std::max_align_t)) {}
+    AllocatedBuffer(size_t size, std::optional<size_t> alignment)
+        : data(nullptr), size(size),
+          align(alignment.value_or(alignof(std::max_align_t))) {
+      data = alignedAlloc(align, size);
+    }
+    ~AllocatedBuffer() { alignedFree(data); }
 
     /// Moving a MallocdBuffer should transfer ownership.
     AllocatedBuffer(AllocatedBuffer &&other)
-        : data(other.data), size(other.size) {
+        : data(other.data), size(other.size), align(other.align) {
       other.data = nullptr;
       other.size = 0;
+      other.align = 0;
     }
 
     /// Move the other buffer into `this`.
@@ -130,14 +140,20 @@ public:
   /// Initialize an empty WriteableBuffer that can be written to.
   WriteableBuffer() : Buffer() { SetUnbuffered(); }
   /// Create a WriteableBuffer with initial size (this sets both the capacity
-  /// and the number of bytes stored in the buffer to `size`).
-  WriteableBuffer(size_t size) : Buffer(size) { SetUnbuffered(); }
+  /// and the number of bytes stored in the buffer to `size`). The user can also
+  /// provide an alignment for the underlying allocation.
+  WriteableBuffer(size_t size, std::optional<size_t> alignment = std::nullopt)
+      : Buffer(size, alignment) {
+    SetUnbuffered();
+  }
 
   static WriteableBufferRef get() { return WriteableBufferRef::create(); }
   /// Create a WriteableBuffer with initial size (this sets both the capacity
-  /// and the number of bytes stored in the buffer to `size`).
-  static WriteableBufferRef get(size_t size) {
-    return WriteableBufferRef::create(size);
+  /// and the number of bytes stored in the buffer to `size`). The user can also
+  /// provide an alignment for the underlying allocation.
+  static WriteableBufferRef
+  get(size_t size, std::optional<size_t> alignment = std::nullopt) {
+    return WriteableBufferRef::create(size, alignment);
   }
 
   /// Map in a file and use it as the backing storage for the BufferRef. If

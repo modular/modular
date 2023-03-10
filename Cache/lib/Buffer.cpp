@@ -137,7 +137,7 @@ StringRef Buffer::getBuffer() const {
 }
 
 //===----------------------------------------------------------------------===//
-// Buffer::MallocdBuffer
+// Buffer::AllocatedBuffer
 //===----------------------------------------------------------------------===//
 
 Buffer::AllocatedBuffer::AllocatedBuffer(StringRef str) {
@@ -145,6 +145,7 @@ Buffer::AllocatedBuffer::AllocatedBuffer(StringRef str) {
   assert(data && "malloc failed!");
   size = str.size();
   memcpy(data, str.begin(), size);
+  align = sizeof(void *);
 }
 
 //===----------------------------------------------------------------------===//
@@ -194,9 +195,16 @@ WriteableBuffer::getFile(const std::filesystem::path &filepath, size_t size,
 
 void WriteableBuffer::write_impl(const char *ptr, size_t size) {
   assert(kind == kMalloc && "cannot write to an mmap'd file");
-  void *tmp = realloc(this->mallocd.data, this->mallocd.size + size);
-  assert(tmp && "realloc failed");
+  // We don't have an aligned realloc, so allocate an aligned buffer.
+  void *tmp = alignedAlloc(this->mallocd.align, this->mallocd.size + size);
+  assert(tmp && "alignedAlloc failed");
+  // Copy the data in mallocd into tmp.
+  memcpy(tmp, this->mallocd.data, this->mallocd.size);
+  // Free the old thing now we've copied the data over.
+  alignedFree(this->mallocd.data);
+  // Set mallocd to tmp to complete the 'realloc'
   this->mallocd.data = tmp;
+  // Finally, copy the new data in.
   memcpy((char *)this->mallocd.data + this->mallocd.size, ptr, size);
   this->mallocd.size += size;
 }
