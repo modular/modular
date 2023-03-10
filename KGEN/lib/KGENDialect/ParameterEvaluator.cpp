@@ -45,11 +45,6 @@ void KGEN::collectParameterReferences(
 /// TODO: This isn't an efficient method, it walks the entire type graph without
 /// caching.
 bool KGEN::isParameterizedType(Type type) {
-  // Types that reference external symbols must be treated as implicitly
-  // parametric because the external type definition could contain parametric
-  // types. We don't want to assume that the type is concrete.
-  if (isa<DeclRefType>(type))
-    return true;
   SmallVector<ParamDeclRefAttr> paramDecls;
   bool hasConstExpr = false;
   collectParameterReferences(type, paramDecls, hasConstExpr);
