@@ -52,7 +52,7 @@ public:
 
   /// If this declaration is defined by its value (e.g. a parameter value or an
   /// SSA value) then return it.
-  LValue getIfLValue() const { return dyn_cast<LValue>(irValue); }
+  SLValue getIfLValue() const { return dyn_cast<SLValue>(irValue); }
 
   /// If the IRValue is an Operation*, return it, otherwise return null.
   Operation *getIfOperation() const { return dyn_cast<Operation *>(irValue); }

@@ -70,7 +70,7 @@ MLIRContext *ASTDecl::getContext() const {
     return dr.getContext();
   if (auto value = dyn_cast_or_null<MRValue>(irValue))
     return value.getContext();
-  return cast<LValue>(getIRValue()).getContext();
+  return cast<SLValue>(getIRValue()).getContext();
 }
 
 /// If this is an RValue, return it otherwise return null.
@@ -1645,7 +1645,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
 
     // Arguments passed by-reference can be directly used.
     if (parsedArg.convention == ValueInputConvention::ByRef) {
-      addFullyResolvedDecl(LValue(bbArg), parsedArg.name, parsedArg.loc, &decl);
+      addFullyResolvedDecl(SLValue(bbArg), parsedArg.name, parsedArg.loc,
+                           &decl);
       continue;
     }
 
@@ -1653,7 +1654,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
     // ByValInMem passes ownership of the argument into the callee so we can
     // directly mutate it if we want to.
     if (parsedArg.convention == ValueInputConvention::ByValInMem) {
-      auto declStorage = funcOp.getIsDef() ? DeclIRValue(LValue(bbArg))
+      auto declStorage = funcOp.getIsDef() ? DeclIRValue(SLValue(bbArg))
                                            : DeclIRValue(MRValue(bbArg));
       addFullyResolvedDecl(declStorage, parsedArg.name, parsedArg.loc, &decl);
       continue;
@@ -1782,7 +1783,7 @@ LogicalResult DeclResolver::resolveSignature(VarLetDeclOp varOp,
     ExprContext exprContext = varOp.getIsVar() ? EC_VarInit : EC_LetInit;
     if (parsedType) {
       varOp.getResult().setType(POP::PointerType::get(parsedType));
-      dest = ValueDest(LValue(varOp), exprContext);
+      dest = ValueDest(SLValue(varOp), exprContext);
     } else {
       // If we don't, we emit into the varOp itself, because this will infer the
       // type of the varOp from the initializer expression.

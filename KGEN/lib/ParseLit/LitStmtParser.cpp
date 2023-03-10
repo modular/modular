@@ -494,7 +494,7 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   RValue resultValue;
   if (decl.getSignature().hasMemoryOnlyResult()) {
     // If the result is memory-only, return into the result slot.
-    ValueDest resultDest(LValue(decl.getArgument(0)), EC_ReturnValue);
+    ValueDest resultDest(SLValue(decl.getArgument(0)), EC_ReturnValue);
     if (!emitter.emitExprRValue(operandExprs[0], resultDest)) {
       resultDest.resetForError();
       return success();
@@ -717,7 +717,7 @@ ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
   LIT::VarLetDeclOp rangeRef = builder.create<LIT::VarLetDeclOp>(
       forLoc, POP::PointerType::get(rangeValue.getRValueType()), "$RANGE",
       /*isVar*/ true);
-  ValueDest rangeDest = {LValue(rangeRef), EC_ForIterator};
+  ValueDest rangeDest = {SLValue(rangeRef), EC_ForIterator};
   if (!getEmitter().emitRValue({rangeValue, seqExp}, rangeDest)) {
     rangeDest.resetForError();
     return {};
@@ -730,7 +730,7 @@ ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
   // For Loop condition: if the length of the range is greater than zero,
   // continue. Otherwise break
   AnyValue currentLength = getEmitter().emitNamedMethodCall(
-      "__len__", {{LValue(rangeRef), seqExp}}, ValueDest::none(),
+      "__len__", {{SLValue(rangeRef), seqExp}}, ValueDest::none(),
       CallSyntax::kImplicitConvert, seqExp);
   SRValue lengthSRVal =
       getEmitter().emitSRValue({currentLength, seqExp}, EC_ForIterator);
@@ -762,7 +762,7 @@ ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
   // Create the body. Add Target element to the continue block by calling next
   builder.setInsertionPointAfter(condOp);
   AnyValue nextCall = getEmitter().emitNamedMethodCall(
-      "__next__", {{LValue(rangeRef), seqExp}}, ValueDest::none(),
+      "__next__", {{SLValue(rangeRef), seqExp}}, ValueDest::none(),
       CallSyntax::kImplicitConvert, seqExp);
   if (!nextCall) {
     return {};
