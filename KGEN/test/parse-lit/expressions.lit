@@ -39,7 +39,7 @@ struct MemoryOnlyPair:
   var y: Int
 
   # CHECK: lit.func @"__clone__{{.*}}"(
-  # CHECK-SAME: %__result__: !pop.pointer<@"$expressions"::@MemoryOnlyPair> byref-result,
+  # CHECK-SAME: %__result__: !pop.pointer<@"$expressions"::@MemoryOnlyPair> byref_result,
   # CHECK-SAME: %self: !pop.pointer<@"$expressions"::@MemoryOnlyPair> byref) -> !lit.none {
   fn __clone__(self&: MemoryOnlyPair) -> MemoryOnlyPair:
     # CHECK-NEXT: %0 = lit.struct.gep %__result__[x]
@@ -52,8 +52,8 @@ struct MemoryOnlyPair:
     return MemoryOnlyPair {x: self.x, y: self.y}
 
   # CHECK: lit.func @"method{{.*}}"(
-  # CHECK-SAME: %self: !pop.pointer<@"$expressions"::@MemoryOnlyPair> byval-in-mem,
-  # CHECK-SAME: %arg: !pop.pointer<@"$expressions"::@MemoryOnlyInt> byval-in-mem)
+  # CHECK-SAME: %self: !pop.pointer<@"$expressions"::@MemoryOnlyPair> byval_in_mem,
+  # CHECK-SAME: %arg: !pop.pointer<@"$expressions"::@MemoryOnlyInt> byval_in_mem)
   fn method(self, arg: MemoryOnlyInt):
     # CHECK: %0 = lit.struct.gep %self[y]
     # CHECK: %1 = kgen.call @"{{.*}}__clone__{{.*}}"(%0)
@@ -69,7 +69,7 @@ fn inferred_function_with_memory_result[
 # CHECK-LABEL: lit.func @"memoryOnlyOps
 fn memoryOnlyOps(a&: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: %v1 = lit.varlet.decl "v1", var = true : <@"$expressions"::@MemoryOnlyPair>
-  # CHECK-NEXT: kgen.call @"$expressions"::@MemoryOnlyPair::@"__clone__($expressions::MemoryOnlyPair=&,$expressions::MemoryOnlyPair&)"(%v1, %a) : (!pop.pointer<@"$expressions"::@MemoryOnlyPair> byref-result, !pop.pointer<@"$expressions"::@MemoryOnlyPair> byref)
+  # CHECK-NEXT: kgen.call @"$expressions"::@MemoryOnlyPair::@"__clone__($expressions::MemoryOnlyPair=&,$expressions::MemoryOnlyPair&)"(%v1, %a) : (!pop.pointer<@"$expressions"::@MemoryOnlyPair> byref_result, !pop.pointer<@"$expressions"::@MemoryOnlyPair> byref)
   var v1 = a
 
   # CHECK-NEXT: %v2 = lit.varlet.decl "v2", var = false
@@ -130,9 +130,9 @@ fn memoryOnlyOps(a&: MemoryOnlyPair) -> MemoryOnlyPair:
   _ = MemoryOnlyInt()
 
   # CHECK-NEXT: [[TMP1:%.*]] = lit.varlet.decl "<anonymous>", var = false
-  # CHECK-NEXT: kgen.call @{{.*}}__clone__{{.*}}([[TMP1]], %regX) : (!pop.pointer<@"$expressions"::@MemoryOnlyInt> byref-result, !pop.pointer<@"$expressions"::@MemoryOnlyInt> byref) -> !lit.none
+  # CHECK-NEXT: kgen.call @{{.*}}__clone__{{.*}}([[TMP1]], %regX) : (!pop.pointer<@"$expressions"::@MemoryOnlyInt> byref_result, !pop.pointer<@"$expressions"::@MemoryOnlyInt> byref) -> !lit.none
   # CHECK-NEXT: [[TMP2:%.*]] = lit.varlet.decl "<anonymous>", var = false : <@"$expressions"::@MemoryOnlyInt>
-  # CHECK-NEXT: kgen.call @{{.*}}__clone__{{.*}}([[TMP2]], %regX) : (!pop.pointer<@"$expressions"::@MemoryOnlyInt> byref-result, !pop.pointer<@"$expressions"::@MemoryOnlyInt> byref) -> !lit.none
+  # CHECK-NEXT: kgen.call @{{.*}}__clone__{{.*}}([[TMP2]], %regX) : (!pop.pointer<@"$expressions"::@MemoryOnlyInt> byref_result, !pop.pointer<@"$expressions"::@MemoryOnlyInt> byref) -> !lit.none
   # CHECK-NEXT: [[VARIADIC:%.*]]  = pop.variadic.create [[[TMP1]], [[TMP2]]]
   # CHECK-NEXT: kgen.call @{{.*}}variadic{{.*}}([[VARIADIC]])
   MemoryOnlyInt.variadic(regX, regX)
