@@ -53,9 +53,7 @@ static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
   llvm::SetVector<Value> captures;
   (void)operationIsIsolatedFromAbove(op, &captures);
   Region &body = op.getBodyRegion();
-  SmallVector<Value> operands;
   for (Value capture : captures) {
-    operands.push_back(capture);
     BlockArgument arg = body.addArgument(capture.getType(), capture.getLoc());
     capture.replaceUsesWithIf(
         arg, [&](OpOperand &use) { return op->isAncestor(use.getOwner()); });
@@ -92,7 +90,7 @@ static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
   b.setInsertionPoint(op);
   auto call = b.create<CallOp>(
       op.getType(), SymbolConstantAttr::get(FlatSymbolRefAttr::get(name), sig),
-      ArrayRef<ParamDeclAttr>(), operands);
+      ArrayRef<ParamDeclAttr>(), captures.getArrayRef());
   op.replaceAllUsesWith(call);
   op.erase();
 }
@@ -125,6 +123,7 @@ static LogicalResult lowerAsyncFunction(FuncOp func,
       if (auto ret = dyn_cast<ReturnOp>(op)) {
         createCoroutineFinalize(b, coroHdl, ret);
         ret->setOperands(coroHdl);
+        return WalkResult::advance();
       }
     }
     // Replace async calls with a simple `kgen.call`.
@@ -151,7 +150,7 @@ static LogicalResult lowerAsyncFunction(FuncOp func,
     } else if (auto exec = dyn_cast<LIT::AsyncExecuteOp>(op)) {
       lowerAsyncExecute(func, exec, sharedTable);
     }
-    return mlir::success();
+    return WalkResult::advance();
   });
   return failure(result.wasInterrupted());
 }
