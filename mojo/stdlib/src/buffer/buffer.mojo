@@ -229,6 +229,18 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
         """
         self.data.simd_store[width](idx, val)
 
+    fn simd_nt_store[width: Int](self, idx: Int, val: SIMD[width, type]):
+        """Stores a simd value into the buffer at the specified index
+           using non-temporal store. The address must be properly
+           aligned, 64B for avx512, 32B for avx2, and 16B for avx.
+
+        Args:
+            width (__mlir_type.index): The width of the simd vector.
+            idx (Idx): The index into the Buffer.
+            val (SIMD[width, type]): The value to store.
+        """
+        self.data.simd_nt_store[width](idx, val)
+
     @always_inline
     fn prefetch[params: PrefetchOptions](self, idx: Int):
         """Prefetch the data at the given index.
@@ -547,14 +559,28 @@ struct NDBuffer[
     fn simd_store[
         width: Int
     ](self, idx: StaticIntTuple[rank], val: SIMD[width, type]):
-        # Stores a simd value into thendbuffer at the specified index
+        # Stores a simd value into the ndbuffer at the specified index
         self.simd_store[width](idx.as_tuple(), val)
 
     fn simd_store[
         width: Int
     ](self, idx: StaticTuple[rank, __mlir_type.index], val: SIMD[width, type]):
-        # Stores a simd value into thendbuffer at the specified index
+        # Stores a simd value into the ndbuffer at the specified index
         self._offset(idx).simd_store[width](val)
+
+    fn simd_nt_store[
+        width: Int
+    ](self, idx: StaticIntTuple[rank], val: SIMD[width, type]):
+        # Stores a simd value into the ndbuffer at the specified index.
+        # The address must properly aligned, see Buffer::simd_nt_store.
+        self.simd_nt_store[width](idx.as_tuple(), val)
+
+    fn simd_nt_store[
+        width: Int
+    ](self, idx: StaticTuple[rank, __mlir_type.index], val: SIMD[width, type]):
+        # Stores a simd value into the ndbuffer at the specified index
+        # The address must properly aligned, see Buffer::simd_nt_store.
+        self._offset(idx).simd_nt_store[width](val)
 
     fn dim[index: __mlir_type.index](self) -> Int:
         # First try to extract the static info on this dimension, could be either a
