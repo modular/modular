@@ -490,20 +490,20 @@ def LIT_VarLetDeclOp : LITOp<"varlet.decl",
 // AsyncCallOp
 //===----------------------------------------------------------------------===//
 
-def LIT_AsyncCallOp : LITOp<"async_call", [CalleeArgumentTypes,
+def LIT_AsyncCallOp : LITOp<"async.call", [CalleeArgumentTypes,
     DeclareOpInterfaceMethods<KGEN_CallOpInterface>,
     TypesMatchWith<"coroutine of callee result types", "callee", "coroutine",
                     "getCoroutineOfResultTypes($_self)">]> {
   let summary = "Call to an async function.";
   let description = [{
-    The `lit.async_call` operation calls an `async` parametric callable. It
+    The `lit.async.call` operation calls an `async` parametric callable. It
     returns a `!pop.coroutine` of the callable's result types.
 
     Example:
 
     ```mlir
     // `%coro` has type `!pop.coroutine<index>`.
-    %coro = lit.async_call<() -> bar>[:<() -> index>() -> index: @foo]()
+    %coro = lit.async.call<() -> bar>[:<() -> index>() -> index: @foo]()
     ```
   }];
 

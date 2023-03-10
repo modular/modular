@@ -200,8 +200,8 @@ lit.func @coroutine() async -> index {
 // CHECK-SAME: coro: <>() async -> !lit.none
 // CHECK-SAME: ) async -> !lit.none
 lit.func @call_coroutine<coro: <>() async -> !lit.none>() async -> !lit.none {
-  // CHECK-NEXT: lit.async_call[<>() async -> !lit.none: coro]()
-  lit.async_call[<>() async -> !lit.none: coro]()
+  // CHECK-NEXT: lit.async.call[<>() async -> !lit.none: coro]()
+  lit.async.call[<>() async -> !lit.none: coro]()
   lit.end_func
 }
 
@@ -231,8 +231,8 @@ lit.func @call_throwing_coro(%err: !kgen.declref<@Error>) async|throws -> !lit.n
   // CHECK-SAME: = <@throwing_coro<cond: i1 = 1, a = 0>>
   kgen.param.declare callee: <>(!kgen.declref<@Error>) async|throws -> index
     = <@throwing_coro<cond: i1 = 1, a = 0>>
-  // CHECK: lit.async_call[<>(!kgen.declref<@Error>) async -> !pop.variant<@Error, index>: callee](%err)
-  %hdl = lit.async_call[<>(!kgen.declref<@Error>) async|throws -> index: callee](%err)
+  // CHECK: lit.async.call[<>(!kgen.declref<@Error>) async -> !pop.variant<@Error, index>: callee](%err)
+  %hdl = lit.async.call[<>(!kgen.declref<@Error>) async|throws -> index: callee](%err)
   lit.end_func
 }
 
