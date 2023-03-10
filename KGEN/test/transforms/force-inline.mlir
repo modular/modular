@@ -127,3 +127,31 @@ kgen.func @call_it() -> index {
 }
 
 // CHECK: #[[NODEBUG_LOC]] = loc("within split
+
+// -----
+
+kgen.func @async_fn(%arg0: index) async -> index always_inline {
+  %0 = pop.compiler.global_load "cond" : i1
+  hlcf.if %0 {
+    %idx1 = index.constant 1
+    kgen.return %idx1 : index
+  } else {
+    hlcf.yield
+  }
+  kgen.return %arg0 : index
+}
+
+// CHECK-LABEL: kgen.func @call_it
+kgen.func @call_it() -> !pop.coroutine<() -> (index)> {
+  %idx2 = index.constant 2
+  %true = index.bool.constant true
+  pop.compiler.global_store "cond", %true : i1
+  // CHECK: %0 = lit.async.execute <() -> index>
+  // CHECK:   %1 = pop.compiler.global_load
+  // CHECK:   hlcf.if %1
+  // CHECK:     lit.async.return %idx1
+  // CHECK:   lit.async.return %idx2
+  %coroHdl = lit.async.call[(index) async -> index: @async_fn](%idx2)
+  // CHECK: kgen.return %0
+  kgen.return %coroHdl : !pop.coroutine<() -> (index)>
+}

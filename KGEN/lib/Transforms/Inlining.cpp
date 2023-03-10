@@ -8,6 +8,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENPasses.h"
+#include "KGEN/LITDialect/LITOps.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/HLCFDialect/HLCFDialect.h"
@@ -648,9 +649,15 @@ static LogicalResult inlineFunctionCall(FuncOp func,
     calls.emplace_back(EndStack{});
 
     mlir::IRRewriter b{OpBuilder(call)};
-    auto scope = b.create<HLCF::LoopOp>(call.getLoc(), call->getResultTypes(),
-                                        ValueRange(), label);
-    b.createBlock(&scope.getBody());
+    Operation *scope;
+    if (isa<CallOp>(call.getOperation())) {
+      scope = b.create<HLCF::LoopOp>(call.getLoc(), call->getResultTypes(),
+                                     ValueRange(), label);
+    } else {
+      auto asyncCall = cast<LIT::AsyncCallOp>(call.getOperation());
+      scope = b.create<LIT::AsyncExecuteOp>(call.getLoc(), asyncCall.getType());
+    }
+    b.createBlock(&scope->getRegions().front());
 
     IRMapping map;
     for (auto [value, arg] :
@@ -660,7 +667,7 @@ static LogicalResult inlineFunctionCall(FuncOp func,
       b.clone(op, map);
     unsigned numReturns = 0;
     AlwaysInlineLevel level = callee.getAlwaysInlineLevel();
-    scope.walk([&](Operation *op) {
+    scope->walk([&](Operation *op) {
       if (op != scope) {
         // If this is an `always_inline(nodebug)`, erase the location of the
         // inlined operations by replacing them with the location of the call.
@@ -689,18 +696,22 @@ static LogicalResult inlineFunctionCall(FuncOp func,
       if (!isa<ReturnOp>(op))
         return;
       b.setInsertionPoint(op);
-      b.replaceOpWithNewOp<HLCF::BreakOp>(op, op->getOperands(), label);
+      if (isa<CallOp>(call.getOperation()))
+        b.replaceOpWithNewOp<HLCF::BreakOp>(op, op->getOperands(), label);
+      else
+        b.replaceOpWithNewOp<LIT::AsyncReturnOp>(op, op->getOperands());
+
       ++numReturns;
     });
-    b.replaceOp(call, scope.getResults());
-    // If the scope was trivial (one return), fold it away.
+    b.replaceOp(call, scope->getResults());
+
+    // If the loop scope was trivial (one return), fold it away.
     assert(numReturns > 0);
-    if (numReturns == 1) {
+    if (auto loop = dyn_cast<HLCF::LoopOp>(scope); loop && numReturns == 1) {
       for (Operation &op : llvm::make_early_inc_range(
-               scope.getBody().front().without_terminator()))
-        op.moveBefore(scope);
-      b.replaceOp(scope,
-                  scope.getBody().front().getTerminator()->getOperands());
+               loop.getBody().front().without_terminator()))
+        op.moveBefore(loop);
+      b.replaceOp(loop, loop.getBody().front().getTerminator()->getOperands());
     }
   }
   assert(callstack.empty() && seenFuncs.empty());
