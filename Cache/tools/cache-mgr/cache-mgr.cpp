@@ -155,7 +155,7 @@ std::filesystem::path CLOptions::getFsPath() const {
   }
 
   // Default to some temp directory.
-  out = std::filesystem::temp_directory_path(ec);
+  out = std::filesystem::temp_directory_path(ec) / "modular" / "cache";
   if (ec) {
     reportError(ec.message());
     exit(1);

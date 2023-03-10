@@ -189,7 +189,7 @@ ErrorOr<LLCL::RCRef<BlobCacheBackend>>
 getDefaultBackendChain(LLCL::Runtime &runtime,
                        const std::filesystem::path &cacheDir = "");
 
-/// Helper class to hold a BlobStare over KeyT and associated runtime.
+/// Helper class to hold a BlobStore over KeyT and associated runtime.
 /// If no existing runtime is available a default runtime is created.
 /// The BlobStore will be instantiated using the 'default' backend chain
 /// using the given cacheDir.
