@@ -524,6 +524,19 @@ Attribute M::convertDenseElements(Attribute attr) {
   return IntArrayElementsAttr::get(denseElements.getType(), values);
 }
 
+ElementsAttr M::getInlineAttrForTensorData(ShapedType type, ArrayRef<char> data,
+                                           Optional<size_t> optAlignment,
+                                           bool mustBeAligned) {
+  if (optAlignment && mustBeAligned) {
+    return AlignedBytesAttr::get(
+        type.getContext(), static_cast<uint64_t>(*optAlignment),
+        ArrayRef<uint8_t>(reinterpret_cast<const uint8_t *>(data.data()),
+                          data.size()));
+  }
+  return ArrayElementsAttr::get(
+      {reinterpret_cast<const uint8_t *>(data.data()), data.size()}, type);
+}
+
 ElementsAttr M::getAttrForTensorData(
     ShapedType type, StringRef bufferName, ArrayRef<char> data,
     DenseResourceElementsHandleManager &resourceManager,
@@ -533,15 +546,7 @@ ElementsAttr M::getAttrForTensorData(
   // resource blob, while "small" data is stored inline in the context.
   if (!(forceOutOfLine ||
         shouldUseOutOfLineAttrStorage(type.getNumElements()))) {
-    if (optAlignment && mustBeAligned) {
-      return AlignedBytesAttr::get(
-          type.getContext(), static_cast<uint64_t>(*optAlignment),
-          ArrayRef<uint8_t>(reinterpret_cast<const uint8_t *>(data.data()),
-                            data.size()));
-    } else {
-      return ArrayElementsAttr::get(
-          {reinterpret_cast<const uint8_t *>(data.data()), data.size()}, type);
-    }
+    return getInlineAttrForTensorData(type, data, optAlignment, mustBeAligned);
   }
 
   // TODO: In many cases we should be able to use `UnmanagedAsmResourceBlob`
