@@ -647,13 +647,13 @@ ErrorOr<TypedAttr> VariantType::readFrom(intptr_t addr,
 //===----------------------------------------------------------------------===//
 
 std::optional<int64_t> ClosureType::getTypeSize(TargetInfoAttr target) const {
-  // FIXME: Implement this.
-  llvm_unreachable("TODO: unimplemented");
+  // This type is lowered to a pair of pointers.
+  return 2 * llvm::divideCeil(target.getDataLayout().getPointerBitWidth(),
+                              CHAR_BIT);
 }
 
 std::optional<int64_t> ClosureType::getTypeAlign(TargetInfoAttr target) const {
-  // FIXME: Implement this.
-  llvm_unreachable("TODO: unimplemented");
+  return target.getDataLayout().getPointerABIAlign();
 }
 
 //===----------------------------------------------------------------------===//
