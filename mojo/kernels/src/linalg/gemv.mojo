@@ -42,7 +42,7 @@ fn gemv[
     while row_idx < vector_end_row:
 
         @always_inline
-        fn _set_zero[idx: __mlir_type.index]():
+        fn _set_zero[idx: Int]():
             let zero = SIMD[col_block_size, type](0)
             accums.simd_store[col_block_size](Index(idx, 0), zero)
 
@@ -52,7 +52,7 @@ fn gemv[
         while col_idx < vector_end_col:
 
             @always_inline
-            fn _do_accum[idx: __mlir_type.index]():
+            fn _do_accum[idx: Int]():
                 # Row `idx`
                 let accum_idx = Index(idx, 0)
                 let accum = accums.simd_load[col_block_size](accum_idx)

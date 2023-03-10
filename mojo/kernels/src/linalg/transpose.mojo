@@ -346,8 +346,8 @@ fn _fill_strides[
     strides.__setitem__(rank - 1, 1)
 
     @always_inline
-    fn _fill_stride_at_idx[idx: __mlir_type.index]():
-        alias axis = rank - idx - 2
+    fn _fill_stride_at_idx[idx: Int]():
+        alias axis = rank - idx.__as_mlir_index() - 2
         let next_axis_stride = strides[axis + 1]
         let next_axis_dim = buf.dim[axis + 1]()
         let curr_axis_stride = next_axis_stride * next_axis_dim
