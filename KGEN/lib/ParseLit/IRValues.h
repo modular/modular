@@ -312,6 +312,9 @@ class RValue : public VariantValueStorage<RValue>,
 public:
   using VariantRValue::VariantRValue;
   using VariantValueStorage::VariantValueStorage;
+
+  RValue() {}
+
   RValue(ORValue value) {
     if (value)
       storage = std::move(value);
@@ -391,6 +394,8 @@ public:
   using VariantLValue::VariantLValue;
   using VariantRValue::VariantRValue;
   using VariantValueStorage::VariantValueStorage;
+
+  AnyValue() {}
 
   AnyValue(ORValue value) {
     if (value)
