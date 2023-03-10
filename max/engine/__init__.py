@@ -4,7 +4,20 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import modular.engine.core as mecore
-from modular.engine.core import InferenceSession, Model, DType
+from enum import Enum
+from pathlib import Path
+from sys import version_info
 
-__version__ = mecore.__version__
+from .api import DType
+from .api import InferenceSession
+from .api import Model
+from .api import TensorSpec
+from .api import version_string
+
+__doc__ = (
+    "Modular engine provides methods to compile and execute saved models from"
+    " TensorFlow, PyTorch and ONNX."
+)
+__version__ = version_string
+
+del api
