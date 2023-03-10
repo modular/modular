@@ -486,8 +486,8 @@ struct NDBuffer[
         var product: Int = 1
 
         @always_inline
-        fn _compute_product[idx: __mlir_type.index]():
-            product *= self.dim[idx]()
+        fn _compute_product[idx: Int]():
+            product *= self.dim[idx.__as_mlir_index()]()
 
         unroll[rank, _compute_product]()
         return product
@@ -866,8 +866,10 @@ struct DynamicRankBuffer:
         var result: StaticIntTuple[rank]
 
         @always_inline
-        fn _fill[idx: __mlir_type.index]():
-            result.__setitem__[idx](self.dim(idx).__as_mlir_index())
+        fn _fill[idx: Int]():
+            result.__setitem__[idx.__as_mlir_index()](
+                self.dim(idx).__as_mlir_index()
+            )
 
         unroll[rank, _fill]()
 
