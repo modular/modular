@@ -22,7 +22,7 @@ from Memory import stack_allocation
 from Pointer import DTypePointer
 from Range import range
 from SIMD import SIMD
-from TargetInfo import simd_byte_width
+from TargetInfo import simd_byte_width, os_is_macos
 from Transpose import transpose_inplace
 from Tuple import StaticTuple
 from Functional import tile, unswitch
@@ -38,7 +38,13 @@ fn get_pack_data_size() -> Int:
         # Only use the large cache size for release build as debug build may
         #  contain additional data could cause stack overflow.
         return 1024
-    return 131_072
+
+    if os_is_macos():
+        # TODO: macos has lower stack limit so lower this allocation too.
+        return 16 * 1024
+
+    # TODO: This should be 1/2 of L2 cache size on Intel.
+    return 128 * 1024
 
 
 @register_passable
