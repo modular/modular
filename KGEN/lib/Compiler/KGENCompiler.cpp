@@ -65,4 +65,7 @@ void KGEN::elaborateModule(mlir::PassManager &pm, LLCL::Runtime &runtime,
   // See: https://github.com/modularml/modular/issues/7158
   pm.addPass(createPruneImpossibleVariants());
 #endif
+
+  // Lower async functions as late as possible.
+  pm.addNestedPass<KGEN::FuncOp>(createLowerAsyncFunctions());
 }

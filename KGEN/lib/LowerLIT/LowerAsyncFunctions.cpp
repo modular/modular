@@ -1,0 +1,103 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/POPDialect/POPDialect.h"
+#include "KGEN/POPDialect/POPOps.h"
+#include "KGEN/POPDialect/POPTypes.h"
+#include "mlir/IR/ImplicitLocOpBuilder.h"
+#include "mlir/Pass/Pass.h"
+
+using namespace M;
+using namespace KGEN;
+using namespace POP;
+
+//===----------------------------------------------------------------------===//
+// Pass Definition
+//===----------------------------------------------------------------------===//
+
+namespace M::KGEN {
+#define GEN_PASS_DEF_LOWERASYNCFUNCTIONS
+#include "KGEN/KGENPasses.h.inc"
+} // namespace M::KGEN
+
+namespace {
+struct LowerAsyncFunctionsPass
+    : impl::LowerAsyncFunctionsBase<LowerAsyncFunctionsPass> {
+  using LowerAsyncFunctionsBase::LowerAsyncFunctionsBase;
+
+  void runOnOperation() override;
+};
+} // namespace
+
+/// Generate the code to store the results of the coroutine into the coroutine
+/// promise. This code is inserted at every return site.
+static void createCoroutineFinalize(ImplicitLocOpBuilder &b, Value hdl,
+                                    ValueRange results) {
+  Value promise = b.create<CoroutinePromiseOp>(hdl);
+  for (auto [idx, result] : llvm::enumerate(results))
+    b.create<StoreOp>(result, b.create<POP::StructGEPOp>(promise, idx));
+}
+
+/// To lower an async function, we stick a `pop.coroutine.handle` operation in
+/// it, marshall results through a `pop.coroutine.promise`, and return the
+/// handle directly.
+void LowerAsyncFunctionsPass::runOnOperation() {
+  FuncOp func = getOperation();
+  Value coroHdl;
+  ImplicitLocOpBuilder b(func.getLoc(),
+                         OpBuilder::atBlockBegin(func.getBody()));
+  bool isAsyncFn = func.isAsync();
+  if (isAsyncFn) {
+    // Create the coroutine handle. The coroutine result types are the function
+    // result types.
+    auto coroType = CoroutineType::get(
+        SignatureType::get(b.getFunctionType({}, func.getResultTypes())));
+    coroHdl = b.create<CoroutineHandleOp>(coroType);
+
+    // Update the function result type.
+    SignatureType origSig = func.getSignature();
+    func.setSignature(SignatureType::get(
+        b.getFunctionType(origSig.getValueInputs(), coroType)));
+  }
+
+  WalkResult result = func.walk([&](Operation *op) -> WalkResult {
+    // If this is an async function, update the return sites.
+    if (isAsyncFn) {
+      if (auto ret = dyn_cast<ReturnOp>(op)) {
+        b.setLoc(ret.getLoc());
+        b.setInsertionPoint(ret);
+        createCoroutineFinalize(b, coroHdl, ret.getOperands());
+        ret->setOperands(coroHdl);
+      }
+    }
+    // Replace async calls with a simple `kgen.call`.
+    if (auto call = dyn_cast<LIT::AsyncCallOp>(op)) {
+      b.setLoc(call.getLoc());
+      b.setInsertionPoint(call);
+      // Be defensive about pass ordering.
+      auto callee = dyn_cast<SymbolConstantAttr>(call.getCallee());
+      if (LLVM_UNLIKELY(!callee)) {
+        return op->emitOpError("callee is not a symbol constant, did you "
+                               "forget to run `elaborate-generators`?");
+      }
+      SignatureType origSig = callee.getType();
+      auto asyncSig = SignatureType::get(b.getFunctionType(
+          origSig.getValueInputs(),
+          CoroutineType::get(SignatureType::get(
+              b.getFunctionType({}, origSig.getValueResults())))));
+      auto newCall = b.create<CallOp>(
+          call.getType(), SymbolConstantAttr::get(callee.getSymbol(), asyncSig),
+          ArrayRef<ParamDeclAttr>(), call.getOperands());
+      call.replaceAllUsesWith(newCall);
+      call.erase();
+    }
+    return mlir::success();
+  });
+  if (result.wasInterrupted())
+    return signalPassFailure();
+}

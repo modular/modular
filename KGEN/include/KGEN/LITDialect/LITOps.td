@@ -491,6 +491,7 @@ def LIT_VarLetDeclOp : LITOp<"varlet.decl",
 //===----------------------------------------------------------------------===//
 
 def LIT_AsyncCallOp : LITOp<"async_call", [CalleeArgumentTypes,
+    DeclareOpInterfaceMethods<KGEN_CallOpInterface>,
     TypesMatchWith<"coroutine of callee result types", "callee", "coroutine",
                     "getCoroutineOfResultTypes($_self)">]> {
   let summary = "Call to an async function.";

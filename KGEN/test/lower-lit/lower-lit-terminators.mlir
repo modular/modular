@@ -188,58 +188,50 @@ lit.file_module @Module {
   }
 }
 
-// CHECK-LABEL: lit.func @coroutine() -> !pop.coroutine<() -> index>
+// CHECK-LABEL: lit.func @coroutine() async -> index
 lit.func @coroutine() async -> index {
-  // CHECK-NEXT: %[[HDL:.*]] = pop.coroutine.handle
   %idx0 = index.constant 0
-  // CHECK: %[[PROMISE:.*]] = pop.coroutine.promise %[[HDL]]
-  // CHECK-NEXT: %[[RES:.*]] = pop.struct.gep %[[PROMISE:.*]][0]
-  // CHECK-NEXT: pop.store %idx0, %[[RES:.*]]
-  // CHECK-NEXT: return %[[HDL]]
+  // CHECK: return %idx0
   lit.return %idx0 : index
   lit.end_func
 }
 
 // CHECK-LABEL: lit.func @call_coroutine
-// CHECK-SAME: coro: () -> !pop.coroutine<() -> !lit.none>
-// CHECK-SAME: ) -> !pop.coroutine<() -> !lit.none>
+// CHECK-SAME: coro: <>() async -> !lit.none
+// CHECK-SAME: ) async -> !lit.none
 lit.func @call_coroutine<coro: <>() async -> !lit.none>() async -> !lit.none {
-  // CHECK-NEXT: %[[CURHDL:.*]] = pop.coroutine.handle
-  // CHECK-NEXT: %[[HDL:.*]] = kgen.call_param[() -> !pop.coroutine<() -> !lit.none>: coro]()
+  // CHECK-NEXT: lit.async_call[<>() async -> !lit.none: coro]()
   lit.async_call[<>() async -> !lit.none: coro]()
-  // CHECK: return %[[CURHDL]]
   lit.end_func
 }
 
 // CHECK-LABEL: lit.func @throwing_coro
-// CHECK-SAME: ) -> !pop.coroutine<() -> !pop.variant<@Error, index>>
+// CHECK-SAME: ) async -> !pop.variant<@Error, index>
 lit.func @throwing_coro<cond: i1, a>(%err: !kgen.declref<@Error>) async|throws -> index {
-  // CHECK: %[[HDL:.*]] = pop.coroutine.handle : <() -> !pop.variant<@Error, index>>
   %c = kgen.param.constant: i1 = <cond>
   hlcf.if %c {
     // CHECK: %[[A:.*]] = kgen.param.constant = <a>
     %a = kgen.param.constant = <a>
     // CHECK-NEXT: %[[RESULT:.*]] = pop.variant.create %[[A]]
-    // CHECK: pop.store %[[RESULT]]
-    // CHECK-NEXT: kgen.return %[[HDL]]
+    // CHECK-NEXT: kgen.return %[[RESULT]]
     lit.return %a : index
     hlcf.yield
   } else {
     hlcf.yield
   }
   // CHECK: %[[ERR:.*]] = pop.variant.create %err
-  // CHECK: pop.store
-  // CHECK-NEXT: kgen.return %[[HDL]]
+  // CHECK-NEXT: kgen.return %[[ERR]]
   lit.raise %err : !kgen.declref<@Error>
   lit.end_func
 }
 
-// CHECK-LABEL: lit.func @call_throwing_coro
+// CHECK-LABEL: lit.func @call_throwing_coro({{.*}}) async ->
 lit.func @call_throwing_coro(%err: !kgen.declref<@Error>) async|throws -> !lit.none {
-  kgen.param.declare callee: <>(!kgen.declref<@Error>) async|throws -> index =
-    <bind_signature(:<cond: i1, a>(!kgen.declref<@Error>) async|throws -> index @throwing_coro,
-                    1, 0)>
-  // CHECK: kgen.call_param[(!kgen.declref<@Error>) -> !pop.coroutine<() -> !pop.variant<@Error, index>>: callee](%err)
+  // CHECK-NEXT: callee: <>(!kgen.declref<@Error>) async -> !pop.variant<@Error, index>
+  // CHECK-SAME: = <@throwing_coro<cond: i1 = 1, a = 0>>
+  kgen.param.declare callee: <>(!kgen.declref<@Error>) async|throws -> index
+    = <@throwing_coro<cond: i1 = 1, a = 0>>
+  // CHECK: lit.async_call[<>(!kgen.declref<@Error>) async -> !pop.variant<@Error, index>: callee](%err)
   %hdl = lit.async_call[<>(!kgen.declref<@Error>) async|throws -> index: callee](%err)
   lit.end_func
 }

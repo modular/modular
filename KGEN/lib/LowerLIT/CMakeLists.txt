@@ -7,6 +7,7 @@
 add_modular_conversion_library(LowerLIT
   ConstraintReduction.cpp
   ConstraintSet.cpp
+  LowerAsyncFunctions.cpp
   LowerLIT.cpp
   LowerStructs.cpp
   LowerTerminators.cpp
