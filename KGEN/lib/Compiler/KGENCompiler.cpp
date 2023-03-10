@@ -67,5 +67,5 @@ void KGEN::elaborateModule(mlir::PassManager &pm, LLCL::Runtime &runtime,
 #endif
 
   // Lower async functions as late as possible.
-  pm.addNestedPass<KGEN::FuncOp>(createLowerAsyncFunctions());
+  pm.addPass(createLowerAsyncFunctions());
 }

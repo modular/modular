@@ -9,45 +9,99 @@
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "Support/Compiler/OperationUtils.h"
+#include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
+#include "mlir/IR/Threading.h"
 #include "mlir/Pass/Pass.h"
+#include "llvm/Support/RWMutex.h"
 
 using namespace M;
 using namespace KGEN;
 using namespace POP;
 
 //===----------------------------------------------------------------------===//
-// Pass Definition
+// lowerAsyncFunction
 //===----------------------------------------------------------------------===//
 
-namespace M::KGEN {
-#define GEN_PASS_DEF_LOWERASYNCFUNCTIONS
-#include "KGEN/KGENPasses.h.inc"
-} // namespace M::KGEN
-
 namespace {
-struct LowerAsyncFunctionsPass
-    : impl::LowerAsyncFunctionsBase<LowerAsyncFunctionsPass> {
-  using LowerAsyncFunctionsBase::LowerAsyncFunctionsBase;
-
-  void runOnOperation() override;
+/// A shared symbol table.
+struct LockedSymbolTable {
+  SymbolTable &symtab;
+  llvm::sys::SmartRWMutex<true> mutex;
 };
 } // namespace
 
 /// Generate the code to store the results of the coroutine into the coroutine
 /// promise. This code is inserted at every return site.
 static void createCoroutineFinalize(ImplicitLocOpBuilder &b, Value hdl,
-                                    ValueRange results) {
+                                    Operation *ret) {
+  b.setLoc(ret->getLoc());
+  b.setInsertionPoint(ret);
   Value promise = b.create<CoroutinePromiseOp>(hdl);
-  for (auto [idx, result] : llvm::enumerate(results))
+  for (auto [idx, result] : llvm::enumerate(ret->getOperands()))
     b.create<StoreOp>(result, b.create<POP::StructGEPOp>(promise, idx));
+}
+
+/// Lower an async execute by making it isolated from above and hoisting it into
+/// a function. The conversion is done post-order, so there should be no nested
+/// `lit.async.execute` operations nested beneath this one when the function
+/// gets called.
+static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
+                              LockedSymbolTable &sharedTable) {
+  // Isolate the region from above.
+  llvm::SetVector<Value> captures;
+  (void)operationIsIsolatedFromAbove(op, &captures);
+  Region &body = op.getBodyRegion();
+  SmallVector<Value> operands;
+  for (Value capture : captures) {
+    operands.push_back(capture);
+    BlockArgument arg = body.addArgument(capture.getType(), capture.getLoc());
+    capture.replaceUsesWithIf(
+        arg, [&](OpOperand &use) { return op->isAncestor(use.getOwner()); });
+  }
+
+  // Insert the coroutine handle.
+  ImplicitLocOpBuilder b(op.getLoc(), OpBuilder::atBlockBegin(&body.front()));
+  Value coroHdl = b.create<CoroutineHandleOp>(op.getType());
+
+  // Replace all returns.
+  op.walk([&](LIT::AsyncReturnOp ret) {
+    createCoroutineFinalize(b, coroHdl, ret);
+    b.create<ReturnOp>(coroHdl);
+    ret.erase();
+  });
+
+  // Move the body into a function.
+  b.clearInsertionPoint();
+  b.setLoc(op.getLoc());
+  StringAttr name = b.getStringAttr(parent.getSymName() + "_async_closure");
+  auto sig = SignatureType::get(
+      b.getFunctionType(body.getArgumentTypes(), op.getType()));
+  auto lifted = b.create<FuncOp>(name, sig, AlwaysInlineLevel::Disabled);
+  lifted.getBodyRegion().takeBody(body);
+
+  // Insert the function into the symbol table. Lock the symbol table, which
+  // also locks the linked list of operations in the module block.
+  {
+    llvm::sys::SmartScopedWriter<true> lock(sharedTable.mutex);
+    name = sharedTable.symtab.insert(lifted, parent->getIterator());
+  }
+
+  // Create the call with a dummy callee.
+  b.setInsertionPoint(op);
+  auto call = b.create<CallOp>(
+      op.getType(), SymbolConstantAttr::get(FlatSymbolRefAttr::get(name), sig),
+      ArrayRef<ParamDeclAttr>(), operands);
+  op.replaceAllUsesWith(call);
+  op.erase();
 }
 
 /// To lower an async function, we stick a `pop.coroutine.handle` operation in
 /// it, marshall results through a `pop.coroutine.promise`, and return the
 /// handle directly.
-void LowerAsyncFunctionsPass::runOnOperation() {
-  FuncOp func = getOperation();
+static LogicalResult lowerAsyncFunction(FuncOp func,
+                                        LockedSymbolTable &sharedTable) {
   Value coroHdl;
   ImplicitLocOpBuilder b(func.getLoc(),
                          OpBuilder::atBlockBegin(func.getBody()));
@@ -69,9 +123,7 @@ void LowerAsyncFunctionsPass::runOnOperation() {
     // If this is an async function, update the return sites.
     if (isAsyncFn) {
       if (auto ret = dyn_cast<ReturnOp>(op)) {
-        b.setLoc(ret.getLoc());
-        b.setInsertionPoint(ret);
-        createCoroutineFinalize(b, coroHdl, ret.getOperands());
+        createCoroutineFinalize(b, coroHdl, ret);
         ret->setOperands(coroHdl);
       }
     }
@@ -95,9 +147,40 @@ void LowerAsyncFunctionsPass::runOnOperation() {
           ArrayRef<ParamDeclAttr>(), call.getOperands());
       call.replaceAllUsesWith(newCall);
       call.erase();
+
+    } else if (auto exec = dyn_cast<LIT::AsyncExecuteOp>(op)) {
+      lowerAsyncExecute(func, exec, sharedTable);
     }
     return mlir::success();
   });
-  if (result.wasInterrupted())
-    return signalPassFailure();
+  return failure(result.wasInterrupted());
 }
+
+//===----------------------------------------------------------------------===//
+// Pass Definition
+//===----------------------------------------------------------------------===//
+
+namespace M::KGEN {
+#define GEN_PASS_DEF_LOWERASYNCFUNCTIONS
+#include "KGEN/KGENPasses.h.inc"
+} // namespace M::KGEN
+
+namespace {
+struct LowerAsyncFunctionsPass
+    : impl::LowerAsyncFunctionsBase<LowerAsyncFunctionsPass> {
+  using LowerAsyncFunctionsBase::LowerAsyncFunctionsBase;
+
+  void runOnOperation() override {
+    SymbolTable &symtab =
+        getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
+    LockedSymbolTable sharedTable{symtab, {}};
+
+    auto eachFn = [&](FuncOp func) {
+      return lowerAsyncFunction(func, sharedTable);
+    };
+    if (failed(mlir::failableParallelForEach(
+            &getContext(), getOperation().getOps<FuncOp>(), eachFn)))
+      return signalPassFailure();
+  }
+};
+} // namespace

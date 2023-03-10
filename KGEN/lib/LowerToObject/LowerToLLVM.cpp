@@ -79,7 +79,7 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module,
     mgr.addPass(createPruneImpossibleVariants());
 #endif
     // Lower async functions as late as possible.
-    mgr.addNestedPass<KGEN::FuncOp>(createLowerAsyncFunctions());
+    mgr.addPass(createLowerAsyncFunctions());
   }
 
   // If we aren't generating debug information, make sure it's been stripped.

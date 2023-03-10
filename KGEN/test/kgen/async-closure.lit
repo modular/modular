@@ -1,0 +1,37 @@
+# RUN: lit %s | FileCheck %s
+
+from Coroutine import Coroutine
+from Int import Int
+from IO import print
+
+
+@always_inline
+async fn just_call_it[
+    func: __mlir_type[
+        `!kgen.signature<<c: `, Int, `>(`, Int, `) async -> `, Int, `>`
+    ]
+]() -> Int:
+    let coro: Coroutine[Int] = func[3](2)
+    let result = await coro
+    coro.__del__()
+    return result
+
+
+fn foobar[pref: Int](a: Int):
+    @always_inline
+    async fn but_async[c: Int](b: Int) -> Int:
+        return a + b + c
+
+    let coro: Coroutine[Int] = just_call_it[but_async]()
+    print(pref)
+    print(coro.__call__())
+    coro.__del__()
+
+
+fn main():
+    # CHECK: 10
+    # CHECK: 6
+    foobar[10](1)
+    # CHECK: 20
+    # CHECK: 7
+    foobar[20](2)
