@@ -20,16 +20,18 @@ from TargetInfo import dtype_sizeof
 from TypeUtilities import rebind
 from SIMD import SIMD
 
+
 # Argument for gather task
 @register_passable
 struct GatherArgs[
     type: __mlir_type.`!kgen.dtype`,
+    indices_type: __mlir_type.`!kgen.dtype`,
     indices_rank: __mlir_type.index,
     indices_shape: __mlir_type[`!kgen.list<index[`, indices_rank, `]>`],
 ]:
     var output: NDBuffer[2, create_kgen_list_unknown[2](), type]
     var input: NDBuffer[2, create_kgen_list_unknown[2](), type]
-    var indices: NDBuffer[indices_rank, indices_shape, DType.si32.value]
+    var indices: NDBuffer[indices_rank, indices_shape, indices_type]
     var num_chunks_per_task: Int
 
     fn __clone__(self&) -> Self:
@@ -43,9 +45,9 @@ struct GatherArgs[
     fn __new__(
         output: NDBuffer[2, create_kgen_list_unknown[2](), type],
         input: NDBuffer[2, create_kgen_list_unknown[2](), type],
-        indices: NDBuffer[indices_rank, indices_shape, DType.si32.value],
+        indices: NDBuffer[indices_rank, indices_shape, indices_type],
         num_chunks_per_task: Int,
-    ) -> GatherArgs[type, indices_rank, indices_shape]:
+    ) -> GatherArgs[type, indices_type, indices_rank, indices_shape]:
         return Self {
             output: output,
             input: input,
@@ -107,7 +109,9 @@ fn gather_reduce[
 
     fn task_func(
         task_id: Int,
-        ptr: Pointer[GatherArgs[type, indices_rank, indices_shape]],
+        ptr: Pointer[
+            GatherArgs[type, DType.si32.value, indices_rank, indices_shape]
+        ],
     ):
         alias unroll_factor = 2
         alias prefetch_offset = 6
@@ -179,15 +183,17 @@ fn gather_reduce[
     let indices_bind = rebind[
         NDBuffer[indices_rank, indices_shape, DType.si32.value]
     ](indices)
-    var args = GatherArgs[type, indices_rank, indices_shape](
+    var args = GatherArgs[type, DType.si32.value, indices_rank, indices_shape](
         output_bind, input_bind, indices_bind, num_chunks_per_task
     )
     let args_address = Pointer[
-        GatherArgs[type, indices_rank, indices_shape]
+        GatherArgs[type, DType.si32.value, indices_rank, indices_shape]
     ].address_of(args)
 
     parallelForEachN[
-        Pointer[GatherArgs[type, indices_rank, indices_shape]],
+        Pointer[
+            GatherArgs[type, DType.si32.value, indices_rank, indices_shape]
+        ],
         task_func,
     ](runtime, num_tasks, args_address)
 
@@ -202,16 +208,13 @@ fn gather[
     indices_rank: __mlir_type.index,
     indices_shape: __mlir_type[`!kgen.list<index[`, indices_rank, `]>`],
     type: __mlir_type.`!kgen.dtype`,
+    indices_type: __mlir_type.`!kgen.dtype`,
     axis: __mlir_type.index,
     simd_width: __mlir_type.index,
 ](
     output: NDBuffer[output_rank, output_shape, type],
     input: NDBuffer[input_rank, input_shape, type],
-    indices: NDBuffer[
-        indices_rank,
-        indices_shape,
-        DType.si32.value,
-    ],
+    indices: NDBuffer[indices_rank, indices_shape, indices_type],
     runtime: Runtime.ptr_type,
 ):
     """Computes output[i, j] = input[indices[i], j]"""
@@ -224,7 +227,9 @@ fn gather[
 
     fn task_func(
         task_id: Int,
-        ptr: Pointer[GatherArgs[type, indices_rank, indices_shape]],
+        ptr: Pointer[
+            GatherArgs[type, indices_type, indices_rank, indices_shape]
+        ],
     ):
         let args = ptr.load()
         let output = args.output
@@ -244,10 +249,12 @@ fn gather[
         for i in range(start_offset, end_offset):
             input.prefetch[
                 PrefetchOptions().for_read().high_locality().to_data_cache()
-            ]((indices[i + prefetch_offset]).value, 0)
+            ]((Int.from_integral(indices[i + prefetch_offset].value)).value, 0)
 
             let output_row_ptr = output.data.offset(i * row_size)
-            let input_row_ptr = input.data.offset((indices[i] * row_size).value)
+            let input_row_ptr = input.data.offset(
+                (Int.from_integral(indices[i].value) * row_size).value
+            )
 
             @always_inline
             fn func_wrapper[simd_width: Int](idx: Int):
@@ -280,15 +287,16 @@ fn gather[
     let input_bind = rebind[NDBuffer[2, create_kgen_list_unknown[2](), type]](
         input
     )
-    var args = GatherArgs[type, indices_rank, indices_shape](
+    var args = GatherArgs[type, indices_type, indices_rank, indices_shape](
         output_bind, input_bind, indices, num_chunks_per_task
     )
     let args_address = Pointer[
-        GatherArgs[type, indices_rank, indices_shape]
+        GatherArgs[type, indices_type, indices_rank, indices_shape]
     ].address_of(args)
 
     parallelForEachN[
-        Pointer[GatherArgs[type, indices_rank, indices_shape]], task_func
+        Pointer[GatherArgs[type, indices_type, indices_rank, indices_shape]],
+        task_func,
     ](runtime, num_tasks, args_address)
 
 
@@ -302,6 +310,7 @@ fn gather[
     indices_rank: __mlir_type.index,
     indices_shape: __mlir_type[`!kgen.list<index[`, indices_rank, `]>`],
     type: __mlir_type.`!kgen.dtype`,
+    indices_type: __mlir_type.`!kgen.dtype`,
     axis: __mlir_type.index,
     simd_width: __mlir_type.index,
 ](
@@ -310,7 +319,7 @@ fn gather[
     indices: NDBuffer[
         indices_rank,
         indices_shape,
-        DType.si32.value,
+        indices_type,
     ],
     runtime: Runtime.ptr_type,
 ):
@@ -322,7 +331,7 @@ fn gather[
 
     for i in range(output.dim[0]()):
         for j in range(output.dim[1]()):
-            let idx: Int = indices[j].value
+            let idx: Int = Int.from_integral(indices[j].value)
             output.__setitem__(
                 StaticIntTuple[output_rank](i, j),
                 input[i, idx],
