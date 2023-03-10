@@ -77,3 +77,20 @@ TEST(BufferTest, TestReadWriteFile) {
   // Clean up the file.
   llvm::sys::fs::remove("tmpFile");
 }
+
+TEST(BufferTest, AlignmentWorks) {
+  auto buffer = WriteableBuffer::get(32, 1024);
+  // Just make sure the memory buffer is aligned like we expect it to be.
+  EXPECT_TRUE(((uintptr_t)buffer->getBufferStart() & 1023) == 0);
+  EXPECT_TRUE(buffer->getBufferSize() == 32);
+  std::string originalContents(buffer->getBufferStart(),
+                               buffer->getBufferEnd());
+
+  // Resize the buffer now.
+  buffer->write("hello", 5);
+  // Make sure it's still aligned correctly.
+  EXPECT_TRUE(((uintptr_t)buffer->getBufferStart() & 1023) == 0);
+  // And ensure we still have all the data we put in.
+  originalContents += "hello";
+  EXPECT_TRUE(((Cache::Buffer &)*buffer).getBuffer() == originalContents);
+}
