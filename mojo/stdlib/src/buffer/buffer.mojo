@@ -788,6 +788,10 @@ struct DynamicRankBuffer:
     fn to_ndbuffer[
         rank: __mlir_type.index, type: __mlir_type.`!kgen.dtype`
     ](self) -> NDBuffer[rank, create_kgen_list_unknown[rank](), type]:
+        debug_assert(
+            self.rank == rank,
+            "rank of DynamicRankBuffer must equal rank of NDBuffer",
+        )
         return NDBuffer[rank, create_kgen_list_unknown[rank](), type](
             self.data.bitcast[type](),
             self._shape_to_static_tuple[rank](),
