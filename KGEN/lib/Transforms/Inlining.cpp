@@ -601,14 +601,19 @@ struct ForceInlinePass : impl::ForceInlineBase<ForceInlinePass> {
 };
 } // namespace
 
+static StringAttr getCalleeSymbol(KGENCallOpInterface call) {
+  return cast<FlatSymbolRefAttr>(
+             cast<SymbolConstantAttr>(call.getCallee()).getSymbol())
+      .getAttr();
+}
+
 static LogicalResult inlineFunctionCall(FuncOp func,
                                         const SymbolTable &symtab) {
   // Collect all calls that inline in this function.
   struct EndStack {};
   SmallVector<SmartVariant<Operation *, EndStack>> calls;
-  func.walk([&](CallOp call) {
-    auto callee = symtab.lookup<FuncOp>(
-        cast<FlatSymbolRefAttr>(call.getCallee().getSymbol()).getAttr());
+  func.walk([&](KGENCallOpInterface call) {
+    auto callee = symtab.lookup<FuncOp>(getCalleeSymbol(call));
     if (callee.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled)
       calls.emplace_back(call);
   });
@@ -626,10 +631,8 @@ static LogicalResult inlineFunctionCall(FuncOp func,
       seenFuncs.pop_back();
       continue;
     }
-    auto call = cast<CallOp>(cast<Operation *>(next));
-
-    auto callee = symtab.lookup<FuncOp>(
-        cast<FlatSymbolRefAttr>(call.getCallee().getSymbol()).getAttr());
+    auto call = cast<KGENCallOpInterface>(cast<Operation *>(next));
+    auto callee = symtab.lookup<FuncOp>(getCalleeSymbol(call));
 
     // If we recursed onto the same function, give up and emit an error.
     if (!seenFuncs.insert(callee)) {
@@ -659,7 +662,7 @@ static LogicalResult inlineFunctionCall(FuncOp func,
 
     IRMapping map;
     for (auto [value, arg] :
-         llvm::zip(call.getOperands(), callee.getArguments()))
+         llvm::zip(call->getOperands(), callee.getArguments()))
       map.map(arg, value);
     for (Operation &op : *callee.getBody())
       b.clone(op, map);
@@ -684,9 +687,8 @@ static LogicalResult inlineFunctionCall(FuncOp func,
       }
 
       // Check for a call to recursively inline.
-      if (auto call = dyn_cast<CallOp>(op)) {
-        auto callee = symtab.lookup<FuncOp>(
-            cast<FlatSymbolRefAttr>(call.getCallee().getSymbol()).getAttr());
+      if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
+        auto callee = symtab.lookup<FuncOp>(getCalleeSymbol(call));
         if (callee.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled)
           calls.emplace_back(call);
       }
