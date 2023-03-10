@@ -317,10 +317,10 @@ LogicalResult KGEN::inlineGeneratorCall(
     const ParameterUseDefGraph &calleeParams = getGraph(paramCache, callee);
     // Get the parameters in-scope at the callsite.
     auto [_, scopeRegion] = getNearestDeclAndRegion(call);
-    ParameterUseDefGraph &callScope =
+    ParameterUseDefGraph *callScope =
         scopeRegion == topLevelGraph.scope
-            ? topLevelGraph
-            : topLevelGraph.nestedScopes.find(scopeRegion)->second;
+            ? &topLevelGraph
+            : &topLevelGraph.nestedScopes.find(scopeRegion)->second;
 
     mlir::IRRewriter b{OpBuilder(call)};
     // Use a LoopOp to be able to break to a label - any returns inlined from
@@ -330,7 +330,7 @@ LogicalResult KGEN::inlineGeneratorCall(
     b.createBlock(&scope.getBody());
 
     AttrTypeMangler mangler(manglerCache);
-    bool needsMangling = mangler.populate(b, callScope, calleeParams);
+    bool needsMangling = mangler.populate(b, *callScope, calleeParams);
 
     // Make sure to rebind the call operands based on the mangled types of the
     // callee's argument types.
@@ -377,10 +377,15 @@ LogicalResult KGEN::inlineGeneratorCall(
         assert(inserted);
       }
     });
+    // Re-acquire `callScope` since the reference could have been invalidated
+    // by the insertions into `calleeParams.nestedScopes`.
+    callScope = scopeRegion == topLevelGraph.scope
+                    ? &topLevelGraph
+                    : &topLevelGraph.nestedScopes.find(scopeRegion)->second;
     // Decl scopes that were nested under the callee are now nested under the
     // current call scope.
     for (Region *nestedDecl : calleeParams.nestedDecls) {
-      callScope.nestedDecls.push_back(
+      callScope->nestedDecls.push_back(
           &map.lookup(nestedDecl->getParentOp())
                ->getRegion(nestedDecl->getRegionNumber()));
     }
@@ -409,7 +414,7 @@ LogicalResult KGEN::inlineGeneratorCall(
       });
       cast<ParamOpInterface>(cloned).renameDeclarations(newDecls);
       // Populate the new declarations into the call scope graph.
-      propagateNewDecls(newDecls, topLevelGraph, callScope, cloned,
+      propagateNewDecls(newDecls, topLevelGraph, *callScope, cloned,
                         scopeRegion);
     }
     if (needsMangling) {
@@ -431,7 +436,7 @@ LogicalResult KGEN::inlineGeneratorCall(
           ParamOperatorAttr::get(b.getContext(), POC::Rebind, value.getValue(),
                                  decl.getType()));
       // Register the new declaration.
-      propagateNewDecls(decl, topLevelGraph, callScope, declOp, scopeRegion);
+      propagateNewDecls(decl, topLevelGraph, *callScope, declOp, scopeRegion);
     }
 
     bool stripDebugInfo =

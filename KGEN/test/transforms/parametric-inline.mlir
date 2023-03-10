@@ -801,3 +801,144 @@ kgen.generator @root() {
   kgen.call @recursive<cond: i1 = 1>() : () -> ()
   kgen.return
 }
+
+// -----
+
+// COM: This is testing a DenseMap invalidation for nested parameter scopes.
+// COM: https://github.com/modularml/modular/issues/10174
+
+kgen.generator @deeply_nested_paramif<value>() always_inline {
+  kgen.param.if<eq(value, 0)> {
+    kgen.param.yield
+  } else {
+    kgen.param.if<eq(value, 1)> {
+      kgen.param.yield
+    } else {
+      kgen.param.if<eq(value, 2)> {
+        kgen.param.yield
+      } else {
+        kgen.param.if<eq(value, 3)> {
+          kgen.param.yield
+        } else {
+          kgen.param.if<eq(value, 4)> {
+            kgen.param.yield
+          } else {
+            kgen.param.if<eq(value, 5)> {
+              kgen.param.yield
+            } else {
+              kgen.param.if<eq(value, 6)> {
+                kgen.call @deeply_nested_paramif_0<value = 1>() : () -> ()
+                kgen.param.yield
+              } else {
+                kgen.param.if<eq(value, 7)> {
+                  kgen.param.yield
+                } else {
+                  kgen.param.if<eq(value, 8)> {
+                    kgen.param.yield
+                  } else {
+                    kgen.param.if<eq(value, 9)> {
+                      kgen.param.yield
+                    } else {
+                      kgen.param.if<eq(value, 10)> {
+                        kgen.param.yield
+                      } else {
+                        kgen.param.if<eq(value, 11)> {
+                          kgen.param.yield
+                        } else {
+                          kgen.param.yield
+                        }
+                        kgen.param.yield
+                      }
+                      kgen.param.yield
+                    }
+                    kgen.param.yield
+                  }
+                  kgen.param.yield
+                }
+                kgen.param.yield
+              }
+              kgen.param.yield
+            }
+            kgen.param.yield
+          }
+          kgen.param.yield
+        }
+        kgen.param.yield
+      }
+      kgen.param.yield
+    }
+    kgen.param.yield
+  }
+  kgen.return
+}
+
+kgen.generator @deeply_nested_paramif_0<value>() always_inline {
+  kgen.param.if<eq(value, 0)> {
+    kgen.param.yield
+  } else {
+    kgen.param.if<eq(value, 1)> {
+      kgen.param.yield
+    } else {
+      kgen.param.if<eq(value, 2)> {
+        kgen.param.yield
+      } else {
+        kgen.param.if<eq(value, 3)> {
+          kgen.param.yield
+        } else {
+          kgen.param.if<eq(value, 4)> {
+            kgen.param.yield
+          } else {
+            kgen.param.if<eq(value, 5)> {
+              kgen.param.yield
+            } else {
+              kgen.param.if<eq(value, 6)> {
+                kgen.param.yield
+              } else {
+                kgen.param.if<eq(value, 7)> {
+                  kgen.param.yield
+                } else {
+                  kgen.param.if<eq(value, 8)> {
+                    kgen.param.yield
+                  } else {
+                    kgen.param.if<eq(value, 9)> {
+                      kgen.param.yield
+                    } else {
+                      kgen.param.if<eq(value, 10)> {
+                        kgen.param.yield
+                      } else {
+                        kgen.param.if<eq(value, 11)> {
+                          kgen.param.yield
+                        } else {
+                          kgen.param.yield
+                        }
+                        kgen.param.yield
+                      }
+                      kgen.param.yield
+                    }
+                    kgen.param.yield
+                  }
+                  kgen.param.yield
+                }
+                kgen.param.yield
+              }
+              kgen.param.yield
+            }
+            kgen.param.yield
+          }
+          kgen.param.yield
+        }
+        kgen.param.yield
+      }
+      kgen.param.yield
+    }
+    kgen.param.yield
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @call_it
+kgen.generator @call_it() {
+  // CHECK: kgen.param.if
+  kgen.call @deeply_nested_paramif<value = 10>() : () -> ()
+  kgen.return
+}
