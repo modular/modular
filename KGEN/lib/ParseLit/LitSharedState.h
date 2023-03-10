@@ -51,7 +51,7 @@ class LitSharedState {
 public:
   LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context,
                  const CompilationOptions &options, bool useMLIRDiagnostics,
-                 LLCL::Runtime &runtime, bool enableCaching = true);
+                 LLCL::Runtime &runtime, bool enableCaching = false);
   ~LitSharedState();
 
   LitDiags diags; // Contains SourceMgr and MLIRContext pointers.
