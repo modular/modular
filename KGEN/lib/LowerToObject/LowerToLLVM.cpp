@@ -72,7 +72,11 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module,
     mgr.addNestedPass<KGEN::FuncOp>(createCleanupCompilerGlobals());
     mgr.addNestedPass<KGEN::FuncOp>(mlir::createCanonicalizerPass());
 #if 0
-  pm.addPass(createPruneImpossibleVariants());
+    // TODO(Issue #7158): This pass is causing a compile time explosion and
+    // needs to be investigated.  It is "just" a performance optimization for
+    // raised exceptions, so disable it until we can investigate it more.
+    // See: https://github.com/modularml/modular/issues/7158
+    mgr.addPass(createPruneImpossibleVariants());
 #endif
     // Lower async functions as late as possible.
     mgr.addNestedPass<KGEN::FuncOp>(createLowerAsyncFunctions());
