@@ -48,9 +48,11 @@ public:
            std::optional<EncodedLocation> loc = std::nullopt);
 
   /// Get the item with key hash `keyHash` from this backend or any of its
-  /// delegates.
+  /// delegates. If `buf` is provided, write into that (and return a read-only
+  /// reference to it if found).
   LLCL::AsyncValueRef<std::optional<BufferRef>>
-  find(BufferRef keyHash, std::optional<EncodedLocation> loc = std::nullopt);
+  find(BufferRef keyHash, std::optional<WriteableBufferRef> buf = std::nullopt,
+       std::optional<EncodedLocation> loc = std::nullopt);
 
   /// Clear out this backend and its delegates.
   LLCL::AsyncValueRef<ErrorOrSuccess> clear();
@@ -69,9 +71,11 @@ protected:
   /// item exists.
   virtual ErrorOr<bool> containsImpl(StringRef keyHash) const = 0;
   /// Subclasses should use this to provide the implementation of getting an
-  /// item from storage.
+  /// item from storage. If `buf` is provided, write directly into `buf`,
+  /// returning std::nullopt if the item isn't found as usual.
   virtual ErrorOr<std::optional<BufferRef>>
-  findImpl(StringRef keyHash) const = 0;
+  findImpl(StringRef keyHash,
+           std::optional<WriteableBufferRef> buf = std::nullopt) const = 0;
   /// Subclasses should use this to provide the implementation of clearing the
   /// cache. Subclasses may choose not to provide this, for example, a cloud
   /// storage backend may not wish to actually clear all its storage. Backends
@@ -162,7 +166,16 @@ public:
   LLCL::AsyncValueRef<std::optional<BufferRef>>
   find(KeyTy key, std::optional<EncodedLocation> loc = std::nullopt) {
     auto hash = Buffer::get(KeyInfo::hashKey(std::forward<KeyTy>(key)));
-    return backendList->find(std::move(hash), std::move(loc));
+    return backendList->find(std::move(hash), std::nullopt, std::move(loc));
+  }
+
+  /// Get the item from any of the provided backends, reading it directly into
+  /// `buf`. Returns `true` if the value was found, `false` otherwise.
+  LLCL::AsyncValueRef<std::optional<BufferRef>>
+  find(KeyTy key, WriteableBufferRef buf,
+       std::optional<EncodedLocation> loc = std::nullopt) {
+    auto hash = Buffer::get(KeyInfo::hashKey(std::forward<KeyTy>(key)));
+    return backendList->find(std::move(hash), std::move(buf), std::move(loc));
   }
 
   LLCL::AsyncValueRef<ErrorOrSuccess> clear() { return backendList->clear(); }
@@ -210,7 +223,7 @@ public:
         optExistingRuntime,
         LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
         LLCL::createSingleThreadWorkQueue());
-    auto backendList = Cache::getDefaultBackendChain(*ownedRuntime, cacheDir);
+    auto backendList = getDefaultBackendChain(*ownedRuntime, cacheDir);
     if (backendList.isError())
       return backendList.takeError();
     cacheRef = CacheRef::create(std::move(*backendList));

@@ -96,21 +96,25 @@ BlobCacheBackend::contains(BufferRef keyHash,
 }
 
 AsyncValueRef<std::optional<BufferRef>>
-BlobCacheBackend::find(BufferRef keyHash, std::optional<EncodedLocation> loc) {
+BlobCacheBackend::find(BufferRef keyHash, std::optional<WriteableBufferRef> buf,
+                       std::optional<EncodedLocation> loc) {
   auto result = AsyncValueRef<std::optional<BufferRef>>::allocate(runtime);
   addTask(runtime, [thisRef = copyRCRef(this), keyHash = keyHash.copy(),
-                    result = result.copy(),
+                    result = result.copy(), buf = std::move(buf),
                     getError = GetError{std::move(loc)}]() mutable {
     // Check if the key is contained at this cache level (return an error if
     // containsOr returns an error).
-    auto containsOr = thisRef->containsImpl(keyHash->getBuffer());
+    ErrorOr<bool> containsOr = thisRef->containsImpl(keyHash->getBuffer());
     if (containsOr.isError())
       return std::move(result).setToError(getError(containsOr.takeError()));
 
     // If we have it, return it and don't bother delegating.
     if (*containsOr) {
       // If this was an error, return that error in the AsyncValue.
-      auto bufOr = thisRef->findImpl(keyHash->getBuffer());
+      ErrorOr<std::optional<BufferRef>> bufOr = thisRef->findImpl(
+          keyHash->getBuffer(),
+          (buf ? std::optional<WriteableBufferRef>(buf->copy())
+               : std::nullopt));
       if (bufOr.isError())
         return std::move(result).setToError(getError(bufOr.takeError()));
 
@@ -121,7 +125,9 @@ BlobCacheBackend::find(BufferRef keyHash, std::optional<EncodedLocation> loc) {
     if (!thisRef->delegate)
       return std::move(result).emplace(std::nullopt);
 
-    auto itemOr = thisRef->delegate->find(keyHash.copy());
+    auto itemOr = thisRef->delegate->find(
+        keyHash.copy(),
+        (buf ? std::optional<WriteableBufferRef>(buf->copy()) : std::nullopt));
     std::move(itemOr).andThenSync(
         [thisRef = thisRef.copy(), keyHash = keyHash.copy(),
          getError = std::move(getError),
@@ -193,14 +199,27 @@ struct InMemoryBackend : public BlobCacheBackend {
     return cache.count(keyHash);
   }
 
-  ErrorOr<std::optional<BufferRef>> findImpl(StringRef keyHash) const override {
+  ErrorOr<std::optional<BufferRef>>
+  findImpl(StringRef keyHash,
+           std::optional<WriteableBufferRef> buf) const override {
     std::shared_lock<std::shared_mutex> lock(mutex);
     auto found = cache.find(keyHash);
     if (found == cache.end())
       return std::nullopt;
+    // No buffer provided, give back a ref to the buffer we have.
+    if (!buf)
+      return found->second.copy();
 
-    // Get a copy of the buffer that holds this data.
-    return (*found).second.copy();
+    // If we were passed in a buffer...
+    Buffer &foundBuf = *found->second;
+    // If the buffer already contains the data, don't bother doing anything.
+    if ((*buf)->getBufferStart() == foundBuf.getBufferStart())
+      return found->second.copy();
+
+    // Write the contents of the buffer we found to offset 0.
+    (*buf)->pwrite(foundBuf.getBufferStart(), foundBuf.getBufferSize(), 0);
+    // And return a ref to *that* buffer.
+    return buf->copy();
   }
 
   ErrorOrSuccess clearImpl() override {
@@ -298,7 +317,9 @@ struct FilesystemBackend : public BlobCacheBackend {
     return std::filesystem::exists(abs) && !std::filesystem::is_directory(abs);
   }
 
-  ErrorOr<std::optional<BufferRef>> findImpl(StringRef keyHash) const override {
+  ErrorOr<std::optional<BufferRef>>
+  findImpl(StringRef keyHash,
+           std::optional<WriteableBufferRef> buf) const override {
     // Get the file path and open it.
     std::filesystem::path filePath = getAbsolutePathForKey(keyHash);
     auto bufOr = Buffer::getFile(filePath);
@@ -331,8 +352,14 @@ struct FilesystemBackend : public BlobCacheBackend {
                             /*offset=*/0);
     if (failed(bufOr))
       return bufOr.takeError();
-    // Otherwise, we're done.
-    return std::move(*bufOr);
+
+    // No buffer provided, return the mapped thing.
+    if (!buf)
+      return std::move(*bufOr);
+
+    // Return a copy of the ref of the buffer we just wrote the data into.
+    (*buf)->pwrite((*bufOr)->getBufferStart(), (*bufOr)->getBufferSize(), 0);
+    return buf->copy();
   }
 
   ErrorOrSuccess clearImpl() override {

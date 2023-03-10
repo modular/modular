@@ -114,6 +114,39 @@ TEST_F(BlobCacheTest, FindItemThatExists) {
   });
 }
 
+TEST_F(BlobCacheTest, FindItemThatExistsWithPreallocatedBuf) {
+  // Get an uninitialized buffer. We don't care what's in this, as long as it
+  // goes in and comes out the same.
+  auto zerosDataBuf = WriteableBuffer::get();
+  zerosDataBuf->write(0);
+  BufferRef zerosBuf = std::move(zerosDataBuf);
+
+  auto insertOr = cache->insert("zeros", zerosBuf.copy());
+  insertOr.andThenSync([cache = cache.copy(), insertOr = insertOr.copy()] {
+    EXPECT_FALSE(insertOr->isError()) << insertOr->getError() << '\n';
+    EXPECT_FALSE(insertOr->takeValue().empty())
+        << "expected to receive the hash key\v";
+
+    auto contains = cache->contains("zeros");
+    contains.andThenSync([contains = contains.copy()] {
+      EXPECT_TRUE(*contains) << "expected to have item named 'zeros'\n";
+    });
+  });
+
+  // Get a buffer to read into.
+  auto readBuf = WriteableBuffer::get(32);
+
+  auto zerosOr = cache->find("zeros", readBuf.copy());
+  zerosOr.andThenSync([zerosOr = zerosOr.copy(), zerosBuf = zerosBuf.copy(),
+                       readBuf = std::move(readBuf)]() mutable {
+    EXPECT_TRUE(zerosOr->has_value()) << zerosOr.getDiagnostic().getMessage();
+    ASSERT_TRUE(readBuf->getBufferSize() == 32)
+        << "output buffer size did not match expected buffer size\n";
+    EXPECT_TRUE(readBuf->getBuffer()[0] == '\0')
+        << "buffer returned did not match the buffer inputted\n";
+  });
+}
+
 TEST_F(BlobCacheTest, FindItemThatExistsThenClear) {
   // Get an uninitialized buffer. We don't care what's in this, as long as it
   // goes in and comes out the same.
@@ -186,6 +219,51 @@ TEST_F(BlobCacheTest, FileSystemFindItemThatExists) {
   EXPECT_TRUE(outZeros->getBuffer() ==
               StringRef(zerosBuf->getBufferStart(), zerosBuf->getBufferSize()))
       << "buffer returned did not match the buffer inputted\n";
+}
+
+TEST_F(BlobCacheTest, FileSystemFindItemThatExistsWithPreallocatedBuffer) {
+  // Get an uninitialized buffer. We don't care what's in this, as long as it
+  // goes in and comes out the same.
+  auto zerosDataBuf = WriteableBuffer::get();
+  zerosDataBuf->write(0);
+  BufferRef zerosBuf = std::move(zerosDataBuf);
+
+  auto err = cache->insert("zeros", zerosBuf.copy());
+  await(err);
+  ASSERT_FALSE(failed(*err)) << err->getError() << '\n';
+
+  // Reset the cache so that we are forced to look it up from the file system.
+  auto fsCache = LLCL::RCRef<BlobCache<StringKeyInfo>>::create(
+      getDefaultBackendChain(runtime, STRINGIFY(CACHE_TEST_DIR)).takeValue());
+
+  // Get a buffer to read into.
+  auto readBuf = WriteableBuffer::get(32);
+  const char *readBufStart = readBuf->getBufferStart();
+
+  // Check that the cache holds the new item, and it's the same data as before.
+  auto zerosOr = fsCache->find("zeros", readBuf.copy());
+  await(zerosOr);
+  EXPECT_TRUE(zerosOr->has_value()) << zerosOr.getDiagnostic().getMessage();
+
+  ASSERT_TRUE(readBuf->getBufferSize() == 32)
+      << "output buffer size did not match input buffer size\n";
+  EXPECT_TRUE(readBuf->getBuffer()[0] == '\0')
+      << "buffer returned did not match the buffer input\n";
+
+  // Do the find again, and ensure that the read buffer's pointer hasn't
+  // changed (it should have hit the in-memory cache, which should be literally
+  // holding a read-only reference to the buffer).
+  auto zerosOrAgain = fsCache->find("zeros", readBuf.copy());
+  await(zerosOrAgain);
+  EXPECT_TRUE(zerosOrAgain->has_value())
+      << zerosOr.getDiagnostic().getMessage();
+
+  ASSERT_TRUE(readBuf->getBufferSize() == 32)
+      << "output buffer size did not match input buffer size\n";
+  ASSERT_TRUE(readBuf->getBufferStart() == readBufStart)
+      << "read buffer pointer changed\n";
+  EXPECT_TRUE(readBuf->getBuffer()[0] == '\0')
+      << "buffer returned did not match the buffer input\n";
 }
 
 TEST_F(BlobCacheTest, FileSystemTestOldVersionDeletion) {
