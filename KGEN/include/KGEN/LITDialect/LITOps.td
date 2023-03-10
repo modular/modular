@@ -522,6 +522,61 @@ def LIT_AsyncCallOp : LITOp<"async.call", [CalleeArgumentTypes,
 }
 
 //===----------------------------------------------------------------------===//
+// AsyncExecuteOp
+//===----------------------------------------------------------------------===//
+
+def LIT_AsyncExecuteOp : LITOp<"async.execute", [SingleBlock]> {
+  let summary = "Execute an async region.";
+  let description = [{
+    The `lit.async.execute` operation asynchronously executes a region and
+    returns a coroutine handle to the region. This operation can represent
+    an inlined post-elaboration async function.
+
+    Example:
+
+    ```mlir
+    %0 = kgen.param.constant: i32 = <3>
+    %coroHdl = lit.async.execute <() -> (i32, i64)> {
+      %1 = kgen.param.constant: i64 = <5>
+      lit.async.return %0, %1 : i32, i64
+    }
+    ```
+  }];
+
+  let results = (outs POP_CoroutineType:$coroutine);
+  let regions = (region SizedRegion<1>:$region);
+  let assemblyFormat = "type($coroutine) $region attr-dict";
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// AsyncReturnOp
+//===----------------------------------------------------------------------===//
+
+def LIT_AsyncReturnOp : LITOp<"async.return", [Terminator]> {
+  let summary = "Terminator to an async region.";
+  let description = [{
+    The `lit.async.return` operation is the terminator for the region to a
+    `lit.async.execute`. Its operands correspond to the promised return values
+    of the async region.
+
+    Example:
+
+    ```mlir
+    // No results.
+    lit.async.return
+
+    // Two results.
+    lit.async.return %0, %1 : i32, i64
+    ```
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$operands);
+  let assemblyFormat = "$operands attr-dict (`:` type($operands)^)?";
+}
+
+//===----------------------------------------------------------------------===//
 // ParamReturnOp
 //===----------------------------------------------------------------------===//
 

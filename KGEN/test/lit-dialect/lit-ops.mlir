@@ -247,6 +247,19 @@ lit.func @call_async_fn() {
   lit.end_func
 }
 
+// CHECK-LABEL: lit.func @async_execute
+lit.func @async_execute() -> !pop.coroutine<() -> (i32, i64)> {
+  %0 = kgen.param.constant: i32 = <3>
+  // CHECK: %[[HDL:.*]] = lit.async.execute <() -> (i32, i64)> {
+  %coroHdl = lit.async.execute <() -> (i32, i64)> {
+    %1 = kgen.param.constant: i64 = <5>
+    // CHECK: lit.async.return %0, %2 : i32, i64
+    lit.async.return %0, %1 : i32, i64
+  }
+  // CHECK: kgen.return %[[HDL]]
+  kgen.return %coroHdl : !pop.coroutine<() -> (i32, i64)>
+}
+
 // CHECK-LABEL: lit.func @param_return
 lit.func @param_return<() -> r0: dtype, r1>() {
   // CHECK-NEXT lit.param_return<:dtype si32, 2>
