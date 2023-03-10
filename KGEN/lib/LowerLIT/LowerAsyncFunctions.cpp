@@ -178,8 +178,9 @@ struct LowerAsyncFunctionsPass
     auto eachFn = [&](FuncOp func) {
       return lowerAsyncFunction(func, sharedTable);
     };
-    if (failed(mlir::failableParallelForEach(
-            &getContext(), getOperation().getOps<FuncOp>(), eachFn)))
+    std::vector<FuncOp> funcs;
+    llvm::append_range(funcs, getOperation().getOps<FuncOp>());
+    if (failed(mlir::failableParallelForEach(&getContext(), funcs, eachFn)))
       return signalPassFailure();
   }
 };
