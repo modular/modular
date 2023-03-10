@@ -181,8 +181,8 @@ fn _prod_dims[
     var product: Int = 1
 
     @always_inline
-    fn _compute_product[idx: __mlir_type.index]():
-        product *= x.dim[idx + start_dim]()
+    fn _compute_product[idx: Int]():
+        product *= x.dim[idx.__as_mlir_index() + start_dim]()
 
     unroll[end_dim - start_dim, _compute_product]()
     return product

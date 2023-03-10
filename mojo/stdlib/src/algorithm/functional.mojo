@@ -36,8 +36,8 @@ fn map[
 
 @always_inline
 fn unroll[
-    count: __mlir_type.index,
-    func: __mlir_type[`!kgen.signature<<idx>() -> !lit.none>`],
+    count: Int,
+    func: __mlir_type[`!kgen.signature<<idx: `, Int, `>() -> !lit.none>`],
 ]():
     """
     Reateadly evaluate a function `count` times.
@@ -47,9 +47,9 @@ fn unroll[
 
 @always_inline
 fn _unroll_impl[
-    idx: __mlir_type.index,
-    count: __mlir_type.index,
-    func: __mlir_type[`!kgen.signature<<idx>() -> !lit.none>`],
+    idx: Int,
+    count: Int,
+    func: __mlir_type[`!kgen.signature<<idx: `, Int, `>() -> !lit.none>`],
 ]():
     @parameter
     if idx < count:
@@ -171,7 +171,7 @@ fn vectorize_unroll[
     @always_inline
     fn unrolled_func(unrolled_simd_idx: Int):
         @always_inline
-        fn unroll_iter[idx: __mlir_type.index]():
+        fn unroll_iter[idx: Int]():
             vector_func_impl(unrolled_simd_idx + idx * simd_width)
 
         unroll[unroll_factor, unroll_iter]()
@@ -385,7 +385,7 @@ fn tile[
     var current_offset: Int = offset
 
     @always_inline
-    fn static_tile_impl[idx: __mlir_type.index]():
+    fn static_tile_impl[idx: Int]():
         # Get the tile size to proceed with.
         let tile_size = tile_size_list[idx]
 
@@ -663,7 +663,7 @@ fn tile_and_unswitch[
     var current_offset: Int = offset
 
     @always_inline
-    fn static_tile_impl[idx: __mlir_type.index]():
+    fn static_tile_impl[idx: Int]():
         # Get the tile size to proceed with.
         let tile_size = tile_size_list[idx]
 
