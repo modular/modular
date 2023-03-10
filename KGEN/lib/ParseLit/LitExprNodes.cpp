@@ -408,7 +408,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
                         "discard pattern requires an initializing expression");
       return {};
     }
-    auto result = LValue(createVarDecl(*emitter.builder, /*isVar=*/false));
+    auto result = SLValue(createVarDecl(*emitter.builder, /*isVar=*/false));
     return emitter.emitResult(result, this, dest);
   }
 
@@ -428,7 +428,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // subsequent uses find this one.
     emitter.getDeclResolver().addFullyResolvedDecl(
         varDecl, getLoc(), varDecl.getNameAttr(), &container);
-    return emitter.emitResult(LValue(varDecl), this, dest);
+    return emitter.emitResult(SLValue(varDecl), this, dest);
   }
 
   ArrayRef<ASTDecl *> decls = lookup.getIfSuccess();
@@ -725,11 +725,14 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     }
 
     // If the base is an lvalue, then we can return an lvalue to the field.
-    if (LValue baseLV = baseVal.getIfLValue()) {
+    if (SLValue baseLV = baseVal.getIfSLValue()) {
       auto fieldPtr =
           emitter.builder->create<StructGEPOp>(mlirLoc, baseLV, fieldOp);
-      return emitter.emitResult(LValue(fieldPtr), this, dest);
+      return emitter.emitResult(SLValue(fieldPtr), this, dest);
     }
+
+    assert(!baseVal.getIfLValue() && "TODO(clvalue): project attr reference");
+
     // If the base is an MRValue or MBValue, reference the field as an
     // MBValue so we lazy copy only the piece that is needed in the case of
     // `x.y.z.w`
@@ -795,10 +798,16 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
     }
 
     Value value;
-    if (numParens >= 3)
-      value = emitter.emitExprLValue(operand, EC_MLIRMagic);
-    else
+    if (numParens < 3) {
       value = emitter.emitExprSRValue(operand, EC_MLIRMagic);
+    } else {
+      // Pass physical address.
+      auto lvalue = emitter.emitExprLValue(operand, EC_MLIRMagic);
+      value = lvalue.getIfSLValue();
+      if (lvalue && !value)
+        emitter.emitError(call.getLoc(),
+                          "cannot pass computed lvalue with ((()))");
+    }
     if (!value)
       return {};
     opOperands.push_back(value);
@@ -1428,11 +1437,14 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
 
   // If this is a memory-only struct, initialize the fields into the result
   // buffer.
-  LValue memoryOnlyBase;
-  if (!structOp.getIsRegisterPassable())
-    memoryOnlyBase =
+  SLValue memoryOnlyBase;
+  if (!structOp.getIsRegisterPassable()) {
+    LValue lv =
         dest.getLValueForResult(getLoc(), initType,
                                 /*allowIncompatibleTypes=*/false, emitter);
+    memoryOnlyBase = lv.getIfSLValue();
+    assert(memoryOnlyBase && "TODO(clvalue): computed writeback");
+  }
 
   DenseMap<StringAttr, ASTExprAnd<AnyValue>> fieldMapping;
   bool allInitializersPRValues = true;
@@ -1479,7 +1491,7 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
       // field in the aggregate.
       auto fieldPtr = emitter.builder->create<StructGEPOp>(
           getLocation(emitter), memoryOnlyBase, field);
-      fieldDest = ValueDest(LValue(fieldPtr), EC_FieldInitValue);
+      fieldDest = ValueDest(SLValue(fieldPtr), EC_FieldInitValue);
     } else {
       // For register values, make sure we convert to the right dest field type.
       fieldDest = ValueDest(paramEvaluator.getReboundType(field.getType()),

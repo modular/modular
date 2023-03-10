@@ -160,7 +160,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
     assert(isa<UnresolvedType>(varOp.getType().getResolvedElementType()) &&
            "Cannot resolve an already-resolved vardecl");
     varOp.getResult().setType(POP::PointerType::get(resultType));
-    return LValue(varOp);
+    return SLValue(varOp);
   }
 
   // Otherwise, we have one of a few cases where we can produce an LValue but
@@ -227,7 +227,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
   // We model this as an immutable let value with a separately stored
   // initializer.  We return an LValue for it because this method is used for
   // the initialization.
-  return LValue(emitter.builder->create<VarLetDeclOp>(
+  return SLValue(emitter.builder->create<VarLetDeclOp>(
       emitter.translateLocation(loc), declIRType, nameAttr, /*isVar*/ 0));
 }
 
@@ -266,7 +266,8 @@ RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   if (!mbValue) {
     // Decay an LValue to an MBValue.
     assert(value.ir.getIfLValue());
-    mbValue = MBValue(value.ir.getIfLValue());
+    assert(value.ir.getIfSLValue() && "TODO(clvalue)");
+    mbValue = MBValue(value.ir.getIfSLValue());
   }
 
   return emitLoadOfMBValue({mbValue, value.expr}, dest);
@@ -489,8 +490,8 @@ static AnyValue refineResultValue(AnyValue value, SMLoc loc,
     return emitter.builder->create<RebindOp>(emitter.translateLocation(loc),
                                              refinedType, value);
   };
-  if (auto lvalue = value.getIfLValue())
-    return LValue(rebind(lvalue));
+  if (auto lvalue = value.getIfSLValue())
+    return SLValue(rebind(lvalue));
   if (auto mrValue = value.getIfMRValue())
     return MRValue(rebind(mrValue));
   if (auto mbValue = value.getIfMBValue())
@@ -608,13 +609,15 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *node,
   if (!destLV)
     return {};
 
+  Value destPtr = destLV.getIfSLValue();
+  assert(destPtr && "TODO(clvalue): computed writeback");
   SRValue rv =
       emitSRValue({value, node}, dest.getContext(), destLV.getRValueType());
   if (!rv)
     return {};
 
   auto loc = translateLocation(node->getLoc());
-  builder->create<POP::StoreOp>(loc, rv, destLV, /*alignment=*/std::nullopt);
+  builder->create<POP::StoreOp>(loc, rv, destPtr, /*alignment=*/std::nullopt);
   return rv;
 }
 

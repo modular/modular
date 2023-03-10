@@ -48,10 +48,14 @@ static raw_ostream &printStorage(raw_ostream &os,
     if (isDump)
       os << "OR: ";
     os << '"' << val->baseName << "\" " << val->fnDecls.size() << " candidates";
-  } else if (auto val = dyn_cast<LValue>(storage)) {
+  } else if (auto val = dyn_cast<SLValue>(storage)) {
     if (isDump)
-      os << "LV: ";
+      os << "SLV: ";
     os << val;
+  } else if (isa<CLValue>(storage)) {
+    if (isDump)
+      os << "CLV: ";
+    assert(0 && "TODO(clvalue): computed Lvalue not implemented yet");
   } else {
     os << "<UNKNOWN IRVALUE>";
   }
@@ -70,6 +74,9 @@ raw_ostream &LIT::operator<<(raw_ostream &os, CRValue value) {
 raw_ostream &LIT::operator<<(raw_ostream &os, RValue value) {
   return printStorage(os, value.getStorage());
 }
+raw_ostream &operator<<(raw_ostream &os, LValue value) {
+  return printStorage(os, value.getStorage());
+}
 raw_ostream &LIT::operator<<(raw_ostream &os, AnyValue value) {
   return printStorage(os, value.getStorage());
 }
@@ -78,6 +85,9 @@ void CRValue::dump() const {
   printStorage(llvm::errs(), getStorage(), true) << '\n';
 }
 void RValue::dump() const {
+  printStorage(llvm::errs(), getStorage(), true) << '\n';
+}
+void LValue::dump() const {
   printStorage(llvm::errs(), getStorage(), true) << '\n';
 }
 void AnyValue::dump() const {
@@ -93,8 +103,12 @@ static ASTType getTypeFrom(AnyValue::Storage storage) {
     return value.getType();
   if (auto value = dyn_cast<MBValue>(storage))
     return value.getType();
-  if (auto value = dyn_cast<LValue>(storage))
+  if (auto value = dyn_cast<SLValue>(storage))
     return value.getType();
+  if (isa<CLValue>(storage)) {
+    // TODO(clvalue)
+    assert(0 && "CLValue unimp");
+  }
   assert(!isa<ORValue>(storage) && "overloaded rvalue has no type");
 
   // Otherwise null.
@@ -103,6 +117,7 @@ static ASTType getTypeFrom(AnyValue::Storage storage) {
 
 ASTType CRValue::getType() const { return getTypeFrom(storage); }
 ASTType RValue::getType() const { return getTypeFrom(storage); }
+ASTType LValue::getType() const { return getTypeFrom(storage); }
 ASTType AnyValue::getType() const { return getTypeFrom(storage); }
 
 PRValue::PRValue(Type value)
@@ -125,7 +140,13 @@ ASTType PRValue::getIfTypeValue() const {
 /// This method looks through the pointer in a MRValue to return the
 /// underlying type.
 ASTType CRValue::getRValueType() const {
-  if (isa_and_nonnull<MRValue>(storage))
+  if (isa<MRValue>(storage))
+    return getType().getPointerElementType();
+  return getType();
+}
+
+ASTType LValue::getRValueType() const {
+  if (isa<SLValue>(storage))
     return getType().getPointerElementType();
   return getType();
 }
@@ -133,7 +154,7 @@ ASTType CRValue::getRValueType() const {
 /// This method returns the type of this value when projected as an RValue.
 /// If this is an LValue, MBValue, or MRValue, it strips off the pointer type.
 ASTType AnyValue::getRValueType() const {
-  if (isa_and_nonnull<LValue, MRValue, MBValue>(storage))
+  if (isa<SLValue, MRValue, MBValue>(storage))
     return getType().getPointerElementType();
   return getType();
 }

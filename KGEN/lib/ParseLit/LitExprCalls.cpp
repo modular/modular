@@ -1289,7 +1289,10 @@ CRValue OverloadSet::emitAsCRValue(ExprEmitter &emitter, ValueDest &dest) {
           << baseValue.ir.getType() << baseValue.expr->getRange();
       return {};
     }
-    firstArgValue = baseLV;
+
+    // TODO(clvalue)
+    assert(baseLV.getIfSLValue() && "CLValues not supported yet");
+    firstArgValue = baseLV.getIfSLValue();
 
     // Using partial application over an lvalue isn't safe until we support an
     // ownership models with mutable borrows.
@@ -1671,7 +1674,8 @@ AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
         return {};
     } else if (convention == ValueInputConvention::ByRef ||
                convention == ValueInputConvention::ByRefResult) {
-      arg = argValAndExpr.ir.getIfLValue();
+      assert(argValAndExpr.ir.getIfSLValue() && "TODO(clvalue)");
+      arg = argValAndExpr.ir.getIfSLValue();
     } else if (convention == ValueInputConvention::ByValInMem) {
       arg = argValAndExpr.ir.getIfMRValue();
     }
@@ -1719,7 +1723,8 @@ AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
   // If there is a memory result slot, the value we filled in is our MRValue
   // result and we've already handled the ValueDest by emitting into it.
   if (calleeSig.hasMemoryOnlyResult()) {
-    auto resultVal = argumentValues[0].ir.getIfLValue();
+    auto resultVal = argumentValues[0].ir.getIfSLValue();
+    assert(resultVal && "TODO(clvalue) - need writeback");
     assert(resultVal && "memory-only result always emitted into an LValue");
     // Re-emit the value in case a conversion was required and we emitted into
     // a temporary slot.

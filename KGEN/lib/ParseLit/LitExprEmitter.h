@@ -93,7 +93,7 @@ public:
       : representation(target), context(context) {
     assert(target);
   }
-  ValueDest(LValue dest, ExprContext context)
+  ValueDest(SLValue dest, ExprContext context)
       : representation(dest), context(context) {}
   ValueDest(VarLetDeclOp dest, ExprContext context);
   ValueDest(ASTType requiredType, ExprContext context)
