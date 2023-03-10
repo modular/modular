@@ -23,15 +23,13 @@ add_subdirectory(unittests)
 #             INPUT_NAMES "MODULAR_ORC_RT_CAS_ID")
 function(cache_files target)
   cmake_parse_arguments(CACHE_MGR "" "BASE_DIR;HEADER_NAME" "INPUTS;INPUT_NAMES" ${ARGN})
-
-  add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/hashes.out
-    COMMAND $<TARGET_FILE:cache-mgr> -base-dir=${CACHE_MGR_BASE_DIR} -input=${CACHE_MGR_INPUTS} > ${CMAKE_CURRENT_BINARY_DIR}/hashes.out
-    DEPENDS cache-mgr)
   # Set the variables the script is gonna need.
   set(FILENAME ${CMAKE_CURRENT_BINARY_DIR}/hashes.out)
   set(OUTFILE ${CACHE_MGR_HEADER_NAME})
   set(NAMES ${CACHE_MGR_INPUT_NAMES})
   configure_file(${CMAKE_SOURCE_DIR}/Cache/cmake/ReadHashes.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/ReadHashes.cmake @ONLY)
   # Add a target to run that script to generate the header file.
-  add_custom_target(${target} COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/ReadHashes.cmake DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/hashes.out)
+  add_custom_target(${target} ALL
+    COMMAND $<TARGET_FILE:cache-mgr> -base-dir=${CACHE_MGR_BASE_DIR} -input=${CACHE_MGR_INPUTS} -o=${CMAKE_CURRENT_BINARY_DIR}/hashes.out
+    COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/ReadHashes.cmake)
 endfunction()

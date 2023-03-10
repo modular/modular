@@ -10,4 +10,5 @@ add_modular_tool(cache-mgr
   LINK_LIBS PRIVATE
   MCache
   MSupport
+  MLIRSupport
   )
