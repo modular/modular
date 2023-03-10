@@ -71,7 +71,7 @@ def LowerLIT : Pass<"lower-lit", "mlir::ModuleOp"> {
 // LowerAsyncFunctions
 //===----------------------------------------------------------------------===//
 
-def LowerAsyncFunctions : Pass<"lower-async-functions", "FuncOp"> {
+def LowerAsyncFunctions : Pass<"lower-async-functions", "mlir::ModuleOp"> {
   let summary = "Lower `async` functions by generating coroutine machinery.";
   let description = [{
     The `lower-async-functions` pass transforms `async` functions into normal
