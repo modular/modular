@@ -21,6 +21,7 @@
 #include "llvm/ExecutionEngine/Orc/MachOPlatform.h"
 #include "llvm/ExecutionEngine/Orc/ObjectLinkingLayer.h"
 #include "llvm/MC/TargetRegistry.h"
+#include "llvm/Support/Base64.h"
 #include "llvm/TargetParser/Host.h"
 
 using namespace M;
@@ -78,7 +79,20 @@ setupPlatform(StringRef orcRTPath, llvm::TargetMachine &tm,
               llvm::orc::ObjectLinkingLayer &objLinkingLayer) {
   llvm::orc::JITDylib &platformStdlib =
       session.createBareJITDylib(platformStdlibName.str());
+
+  // Add the current process symbols in.
+  if (auto generator =
+          llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
+              tm.createDataLayout().getGlobalPrefix()))
+    platformStdlib.addGenerator(std::move(*generator));
+  else
+    return Error(toString(generator.takeError()));
+
   const llvm::Triple &tt = session.getTargetTriple();
+  // TODO: (#10184) Ensure we have no memory leaks on non-COFF platforms.
+  if (!tt.isOSBinFormatCOFF())
+    return success();
+
   if (tt.isOSBinFormatMachO()) {
     if (auto platform = llvm::orc::MachOPlatform::Create(
             session, cast<llvm::orc::ObjectLinkingLayer>(objLinkingLayer),
@@ -123,13 +137,22 @@ setupPlatform(StringRef orcRTPath, llvm::TargetMachine &tm,
 M::ErrorOr<ExecutionEngine>
 ExecutionEngine::create(const CompilationOptions &options) {
   // Create a BlobCache ref.
-  RuntimeAndCache<ReadOnlyKey> runtimeAndCache(".kgen_cache/orc");
+  std::filesystem::path base = ".kgen_cache";
+  base /= "orc";
+  RuntimeAndCache<ReadOnlyKey> runtimeAndCache(base.string());
   if (auto err = runtimeAndCache.setup())
     return err.takeError();
 
   BlobCache<ReadOnlyKey> &orcCache = runtimeAndCache.getCache();
+
+  // Decode the base64 CAS ID to do the lookup with the raw bytes.
+  std::vector<char> bytes;
+  bytes.reserve(32);
+  llvm::cantFail(llvm::decodeBase64(MODULAR_ORC_RT_CAS_ID, bytes));
   AsyncValueRef<std::optional<BufferRef>> orcRTBuf =
-      orcCache.find(MODULAR_ORC_RT_CAS_ID);
+      orcCache.find(StringRef(bytes.data(), bytes.size()));
+  // Await the orc runtime buffer.
+  LLCL::await(orcRTBuf);
 
   ExecutionEngine ee(nullptr, options);
 
@@ -139,15 +162,16 @@ ExecutionEngine::create(const CompilationOptions &options) {
     return tmOr.takeError();
   std::unique_ptr<llvm::TargetMachine> tm = std::move(*tmOr);
 
-  // Write the object to the path.
-  LLCL::await(orcRTBuf);
   if (orcRTBuf.isError())
     return std::move(orcRTBuf.takeDiagnostic().getMessage());
+
   std::optional<BufferRef> rtBuf = std::move(*orcRTBuf);
   std::string orcRTPath;
-  if (rtBuf)
-    if (auto err = writeORCRTToFile(*rtBuf, orcRTPath))
-      return err.takeError();
+  if (!rtBuf.has_value())
+    return Error("could not find orc_rt in the cache");
+
+  if (auto err = writeORCRTToFile(*rtBuf, orcRTPath))
+    return err.takeError();
 
   // Define an optional error we can set to something if we hit an error in a
   // nested closure.
