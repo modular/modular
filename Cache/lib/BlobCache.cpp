@@ -398,8 +398,9 @@ M::Cache::getDefaultBackendChain(LLCL::Runtime &runtime,
       // `base` and the directory 'filename' must not match
       // MODULAR_VERSION_STRING in order for it to be deleted.
       if (std::filesystem::is_directory(dirEntry.path(), ec) &&
-          dirEntry.path().parent_path() == base &&
-          dirEntry.path().filename() != MODULAR_VERSION_STRING) {
+          (std::filesystem::canonical(dirEntry.path().parent_path()) ==
+           std::filesystem::canonical(base)) &&
+          (dirEntry.path().filename() != MODULAR_VERSION_STRING)) {
         std::filesystem::remove_all(dirEntry, ec);
       }
     }

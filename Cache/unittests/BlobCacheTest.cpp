@@ -187,3 +187,24 @@ TEST_F(BlobCacheTest, FileSystemFindItemThatExists) {
               StringRef(zerosBuf->getBufferStart(), zerosBuf->getBufferSize()))
       << "buffer returned did not match the buffer inputted\n";
 }
+
+TEST_F(BlobCacheTest, FileSystemTestOldVersionDeletion) {
+  // Mock the existence of an old version of the cache.
+  // Specifically create the directory to have a trailing path separator to
+  // test canonicalization of paths when figuring out deletion criteria.
+  auto cacheDir = std::filesystem::path(STRINGIFY(CACHE_TEST_DIR)) / "";
+  auto tempDirectory = cacheDir / "ModularOldVersionString";
+
+  std::error_code ec;
+  std::filesystem::create_directory(tempDirectory, ec);
+  ASSERT_FALSE(ec) << "failed to create directory: " << ec.message() << "\n";
+
+  // Upon creating a new cache, all of the old versions on the filesystem
+  // should be deleted.
+  LLCL::Runtime runtime(createLeakCheckAllocator(createMallocAllocator()),
+                        createThreadPoolWorkQueue());
+  auto fsCache = LLCL::RCRef<BlobCache<StringKeyInfo>>::create(
+      getDefaultBackendChain(runtime, cacheDir).takeValue());
+  ASSERT_TRUE(!std::filesystem::exists(tempDirectory))
+      << "expected the temp directory to be deleted by cacheDir creation\n";
+}
