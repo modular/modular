@@ -274,8 +274,6 @@ LogicalResult KGEN::inlineGeneratorCall(
   // Collect all calls that inline in this function.
   struct EndStack {};
   SmallVector<SmartVariant<KGENCallOpInterface, EndStack>> calls = {topCall};
-  StringAttr topScopeName =
-      topCall->getParentOfType<mlir::SymbolOpInterface>().getNameAttr();
 
   // A cache of attributes that have no references inside them. This is used by
   // the attribute mangler.
@@ -286,7 +284,7 @@ LogicalResult KGEN::inlineGeneratorCall(
   llvm::SetVector<Operation *, SmallVector<Operation *, 16>,
                   SmallPtrSet<Operation *, 16>>
       seenFuncs;
-  unsigned labelCounter = 0;
+  StringAttr label = StringAttr::get(topCall.getContext(), "inlined_cf_scope");
   while (!calls.empty()) {
     SmartVariant<KGENCallOpInterface, EndStack> next = calls.pop_back_val();
     if (isa<EndStack>(next)) {
@@ -324,9 +322,6 @@ LogicalResult KGEN::inlineGeneratorCall(
             : topLevelGraph.nestedScopes.find(scopeRegion)->second;
 
     mlir::IRRewriter b{OpBuilder(call)};
-    StringAttr label =
-        b.getStringAttr(topScopeName.getValue() + "_param_inlined_cf_" +
-                        callee.getSymName() + "_" + Twine(labelCounter++));
     // Use a LoopOp to be able to break to a label - any returns inlined from
     // callee must only exit the inlined block.
     auto scope = b.create<HLCF::LoopOp>(call.getLoc(), call->getResultTypes(),
@@ -623,7 +618,7 @@ static LogicalResult inlineFunctionCall(FuncOp func,
   llvm::SetVector<Operation *, SmallVector<Operation *, 16>,
                   SmallPtrSet<Operation *, 16>>
       seenFuncs;
-  unsigned labelCounter = 0;
+  StringAttr label = StringAttr::get(func.getContext(), "inlined_cf_scope");
   while (!calls.empty()) {
     SmartVariant<Operation *, EndStack> next = calls.pop_back_val();
     if (isa<EndStack>(next)) {
@@ -653,9 +648,6 @@ static LogicalResult inlineFunctionCall(FuncOp func,
     calls.emplace_back(EndStack{});
 
     mlir::IRRewriter b{OpBuilder(call)};
-    StringAttr label =
-        b.getStringAttr(func.getSymName() + "_inlined_cf_" +
-                        callee.getSymName() + "_" + Twine(labelCounter++));
     auto scope = b.create<HLCF::LoopOp>(call.getLoc(), call->getResultTypes(),
                                         ValueRange(), label);
     b.createBlock(&scope.getBody());
