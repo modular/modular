@@ -14,4 +14,7 @@
 /* Include the generated modular version information. */
 #include "Version.h.inc"
 
+/* Define the MODULAR_DERIVED_DIR */
+#define MODULAR_DERIVED_DIR "@MODULAR_DERIVED_DIR@"
+
 #endif /* MODULAR_CONFIG_H */

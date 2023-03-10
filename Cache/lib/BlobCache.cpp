@@ -402,16 +402,19 @@ M::Cache::getDefaultBackendChain(LLCL::Runtime &runtime,
                                  const std::filesystem::path &cacheDir) {
   auto backend = getInMemoryBackend(runtime);
 
-  // Default to be in the `.derived` folder if we can.
   std::error_code ec;
-  std::filesystem::path derived = std::filesystem::absolute(
-      llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH").value_or("."), ec);
-  if (ec)
-    return Error(ec.message());
-
   std::filesystem::path base = cacheDir;
-  if (!base.is_absolute())
+  if (!base.is_absolute()) {
+    // Default to be in the `.derived` folder if we can.
+    std::filesystem::path derived = std::filesystem::absolute(
+        llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH")
+            .value_or(MODULAR_DERIVED_DIR),
+        ec);
+    if (ec)
+      return Error("getting absolute path to derived dir: " + ec.message());
+
     base = derived / cacheDir;
+  }
 
   // Erase everything that lives in basePath other than `base/version` if
   // we (a) have a `base`, (b) it exists, and (c) it's a directory.
