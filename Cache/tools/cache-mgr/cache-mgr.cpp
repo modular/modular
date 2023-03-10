@@ -10,9 +10,11 @@
 #include "LLCL/Support/UnknownLocationDecoder.h"
 #include "Support/CommonCLOptions.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "mlir/Support/FileUtilities.h"
 #include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/Base64.h"
 #include "llvm/Support/Regex.h"
+#include "llvm/Support/ToolOutputFile.h"
 #include <filesystem>
 
 using namespace M;
@@ -41,7 +43,9 @@ struct BinaryBlobCacheKey {
 /// Describes an input file, or a cached object request. An input file is simply
 /// a path, while a cached object request is `<hash>:<output-path>`. This format
 /// could easily be extended to include things like extra data to be included in
-/// the hash.
+/// the hash. The output path can be `-`, in which case the output is written to
+/// `-o` (which itself could be stdout or a file) with a newline after each
+/// object retrieved.
 struct FileOrCachedObjectRequest {
   std::string hashOrFilename;
   std::string outFileName;
@@ -81,6 +85,10 @@ public:
       cl::desc("Filesystem path for the CAS local storage. Defaults to a "
                "temporary directory."),
       llvm::cl::init("")};
+
+  cl::opt<std::string> outFile{
+      "o", cl::desc("File path to use for program outputs."),
+      llvm::cl::init("-")};
 
   /// Get the filesystem path for the CAS. Defaults to a temporary directory.
   std::filesystem::path getFsPath() const;
@@ -233,19 +241,26 @@ int main(int argc, char **argv) {
   }
   // Await for all the results to quiesce.
   await(results);
+
+  std::string errMsg;
+  std::unique_ptr<llvm::ToolOutputFile> outFile =
+      mlir::openOutputFile(clOptions.outFile, &errMsg);
+  if (!outFile)
+    return clOptions.reportError(errMsg);
+
   // Report any errors we might have.
   for (auto [r, input] : llvm::zip(results, clOptions.inputs)) {
     if (r.isError())
       return clOptions.reportError(r.getDiagnostic().getMessage().get());
     // Emit a semicolon-separated list of hashes for the provided PUTs in order.
     if (r.isType<std::string>()) {
-      llvm::outs() << r.get<std::string>() << ";";
+      outFile->os() << r.get<std::string>() << ";";
     } else if (r.isType<BufferRef>()) {
       std::filesystem::path outPath = input.getOutputFilename();
       StringRef buf = r.get<BufferRef>()->getBuffer();
-      // Emit to stdout, so print it and carry on.
+      // Emit to stdout (or the file), so print it and carry on.
       if (outPath == "-") {
-        llvm::outs() << buf << "\n";
+        outFile->os() << buf << "\n";
         continue;
       }
 
@@ -258,5 +273,7 @@ int main(int argc, char **argv) {
       (*writeableBuf)->pwrite(buf.data(), buf.size(), 0);
     }
   }
+  // Keep the output file.
+  outFile->keep();
   return 0;
 }
