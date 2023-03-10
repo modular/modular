@@ -25,11 +25,6 @@ struct EliminateDeadSymbolsPass
 
 void EliminateDeadSymbolsPass::runOnOperation() {
   ModuleOp theModule = getOperation();
-  if (!theModule.getOps<GeneratorOp>().empty()) {
-    mlir::emitError(theModule.getLoc())
-        << "cannot run EliminateDeadSymbols before elaboration";
-    return signalPassFailure();
-  }
 
   auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
 
@@ -50,12 +45,12 @@ void EliminateDeadSymbolsPass::runOnOperation() {
   });
   while (!worklist.empty()) {
     StringAttr symbolRef = worklist.pop_back_val();
-    auto callee = analysis.getTopLevelSymbolTable().lookup<FuncOp>(symbolRef);
+    Operation *callee = analysis.getTopLevelSymbolTable().lookup(symbolRef);
     if (!callee)
       continue;
     // Walk the callee and add any symbol uses to the worklist as long as
     // we haven't already seen them.
-    callee.walk([&](Operation *op) {
+    callee->walk([&](Operation *op) {
       walker.walk(op->getAttrDictionary());
       for (Type type : op->getResultTypes())
         walker.walk(type);
