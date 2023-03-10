@@ -83,8 +83,10 @@ static void sliceDependencies(Operation *op, SymbolTable &sliceSymtab,
     // and recurse.
     StringAttr ref =
         llvm::TypeSwitch<Operation *, StringAttr>(op)
-            .Case<CallOp, AddressOfOp>([&](auto op) {
-              return op.getCalleeSymbol().getRootReference();
+            .Case<KGENCallOpInterface>([&](auto op) {
+              return cast<SymbolConstantAttr>(op.getCallee())
+                  .getSymbol()
+                  .getRootReference();
             })
             .Case([&](ParamConstantOp op) {
               if (auto symbol = dyn_cast<SymbolConstantAttr>(op.getValue()))
