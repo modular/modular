@@ -11,71 +11,12 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "Support/HLCFDialect/HLCFOps.h"
 #include "Support/STLExtras.h"
-#include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Matchers.h"
-#include "mlir/IR/PatternMatch.h"
 
 using namespace M;
 using namespace KGEN;
 using namespace POP;
-
-//===----------------------------------------------------------------------===//
-// Coroutine Machinery
-//===----------------------------------------------------------------------===//
-
-/// Generate the code to get the coroutine promise, checking the coroutine
-/// throws.
-static Value getCoroutinePromise(ImplicitLocOpBuilder &b, DeclRefType errType,
-                                 TypedValue<CoroutineType> hdl) {
-  StructType promiseType;
-  if (hdl.getType().getSignature().isThrows())
-    promiseType = StructType::get(
-        VariantType::get({errType, hdl.getType().getResultTypes().front()}));
-  else
-    promiseType = b.getType<StructType>(hdl.getType().getResultTypes());
-  return b.create<CoroutinePromiseOp>(PointerType::get(promiseType), hdl);
-}
-
-/// Generate the code to store the results of the coroutine into the coroutine
-/// promise. This code is inserted at every return site.
-static void createCoroutineFinalize(ImplicitLocOpBuilder &b,
-                                    DeclRefType errType, Value hdl,
-                                    ValueRange results) {
-  Value promise =
-      getCoroutinePromise(b, errType, cast<TypedValue<CoroutineType>>(hdl));
-  for (auto [idx, result] : llvm::enumerate(results))
-    b.create<StoreOp>(result, b.create<POP::StructGEPOp>(promise, idx));
-}
-
-/// Given the result of a throwable call, generate the code to check if the
-/// result type is an error, and if so, propagate the error.
-static Value createUnwrapOrPropagate(ImplicitLocOpBuilder &b, LIT::FuncOp func,
-                                     Value errOr, DeclRefType errType,
-                                     Type type, Value coroHdl) {
-  auto ifOp =
-      b.create<HLCF::IfOp>(type, b.create<POP::VariantIsOp>(errOr, errType));
-
-  b.createBlock(&ifOp.getElseRegion());
-  Value value = b.create<POP::VariantGetOp>(type, errOr);
-  b.create<HLCF::YieldOp>(b.getLoc(), value);
-
-  b.createBlock(&ifOp.getThenRegion());
-  Value err = b.create<POP::VariantGetOp>(errType, errOr);
-  if (auto tryOp = ifOp->getParentOfType<LIT::TryOp>();
-      tryOp && tryOp.getTryRegion().findAncestorOpInRegion(*ifOp)) {
-    b.create<LIT::TryRaiseOp>(err);
-  } else {
-    Value result = b.create<POP::VariantCreateOp>(
-        POP::VariantType::get({errType, func.getResultType()}), err);
-    if (func.isAsync()) {
-      createCoroutineFinalize(b, errType, coroHdl, result);
-      result = coroHdl;
-    }
-    b.create<ReturnOp>(result);
-  }
-  return ifOp.getResult(0);
-}
 
 //===----------------------------------------------------------------------===//
 // lowerLexicalTerminators
@@ -160,19 +101,36 @@ threadParamIfResultBindings(ParamIfOp ifOp, unsigned &nameCounter) {
                        b.getFusedLoc({thenParams->loc, elseParams->loc})}};
 }
 
+/// Given the result of a throwable call, generate the code to check if the
+/// result type is an error, and if so, propagate the error.
+static Value createUnwrapOrPropagate(ImplicitLocOpBuilder &b, LIT::FuncOp func,
+                                     Value errOr, DeclRefType errType,
+                                     Type type) {
+  auto ifOp =
+      b.create<HLCF::IfOp>(type, b.create<POP::VariantIsOp>(errOr, errType));
+
+  b.createBlock(&ifOp.getElseRegion());
+  Value value = b.create<POP::VariantGetOp>(type, errOr);
+  b.create<HLCF::YieldOp>(b.getLoc(), value);
+
+  b.createBlock(&ifOp.getThenRegion());
+  Value err = b.create<POP::VariantGetOp>(errType, errOr);
+  if (auto tryOp = ifOp->getParentOfType<LIT::TryOp>();
+      tryOp && tryOp.getTryRegion().findAncestorOpInRegion(*ifOp)) {
+    b.create<LIT::TryRaiseOp>(err);
+  } else {
+    Value result = b.create<POP::VariantCreateOp>(
+        POP::VariantType::get({errType, func.getResultType()}), err);
+    b.create<ReturnOp>(result);
+  }
+  return ifOp.getResult(0);
+}
+
 /// Lower all lexical terminators in the function and remove dead code.
 static LogicalResult lowerLexicalTerminators(DeclRefType errType,
                                              LIT::FuncOp func) {
   if (func.isThrows() && !errType)
     return func.emitError("function throws but no 'Error' type was found");
-
-  // If this is an async function, insert a coroutine handle.
-  Value coroHdl;
-  if (func.isAsync()) {
-    auto b = OpBuilder::atBlockBegin(func.getBody());
-    coroHdl = b.create<CoroutineHandleOp>(
-        func.getLoc(), CoroutineType::get(func.getSignature()));
-  }
 
   // If the function has result parameters, process them here.
   std::optional<ResultParams> resultParams;
@@ -272,7 +230,8 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
       if (isLive)
         markNextOperationAsLive(op);
 
-      if (!cast<SignatureType>(call.getCallee().getType()).isThrows())
+      SignatureType signature = call.getCalleeType();
+      if (!signature.isThrows())
         return WalkResult::advance();
       // FIXME: `kgen.addressof` returns a `FunctionType` (function pointer),
       // which is an important feature to have, but that means we can't globally
@@ -288,23 +247,17 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
         if (auto tryOp = op->getParentOfType<LIT::TryOp>())
           markNextInRegionAsLive(tryOp.getExceptRegion());
 
+      // Nothing to do if this is an async call.
+      if (signature.isAsync())
+        return WalkResult::advance();
+
       // We need to update the result types of the function.
       ImplicitLocOpBuilder b(call.getLoc(), OpBuilder(call->getNextNode()));
       Operation *newCall = b.clone(*call);
       Type resultType = call->getResultTypes().front();
       newCall->getResult(0).setType(VariantType::get({errType, resultType}));
       call->replaceAllUsesWith(ArrayRef(createUnwrapOrPropagate(
-          b, func, newCall->getResult(0), errType, resultType, coroHdl)));
-      toErase.push_back(call);
-
-    } else if (auto call = dyn_cast<LIT::AsyncCallOp>(op)) {
-      // Replace the async call with a `call_param`.
-      ImplicitLocOpBuilder b(call.getLoc(), OpBuilder(call));
-      auto newCall = b.create<CallParamOp>(
-          call.getLoc(), call->getResultTypes(), call.getCallee(),
-          call.getParamDeclsAttr(), call.getOperands());
-      Value result = newCall.getResult(0);
-      call.replaceAllUsesWith(result);
+          b, func, newCall->getResult(0), errType, resultType)));
       toErase.push_back(call);
     }
     return WalkResult::advance();
@@ -325,14 +278,6 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
       continue;
 
     ImplicitLocOpBuilder b(op->getLoc(), OpBuilder(op));
-    auto createReturn = [&](ValueRange operands) {
-      // In a coroutine, materialize the finalize machinery.
-      if (func.isAsync()) {
-        createCoroutineFinalize(b, errType, coroHdl, operands);
-        operands = coroHdl;
-      }
-      b.create<KGEN::ReturnOp>(operands);
-    };
     if (auto returnOp = dyn_cast<LIT::ReturnOp>(op)) {
       ValueRange operands = returnOp.getOperands();
       Value result;
@@ -340,7 +285,7 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
         result = b.create<VariantCreateOp>(errorOr(), operands.front());
         operands = result;
       }
-      createReturn(operands);
+      b.create<KGEN::ReturnOp>(operands);
 
     } else if (auto raiseOp = dyn_cast<LIT::RaiseOp>(op)) {
       auto tryOp = raiseOp->getParentOfType<LIT::TryOp>();
@@ -348,7 +293,7 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
           tryOp.getTryRegion().isAncestor(raiseOp->getBlock()->getParent()))
         b.create<LIT::TryRaiseOp>(raiseOp.getError());
       else
-        createReturn(
+        b.create<KGEN::ReturnOp>(
             Value(b.create<VariantCreateOp>(errorOr(), raiseOp.getError())));
 
     } else if (auto breakOp = dyn_cast<LIT::BreakOp>(op)) {
@@ -401,50 +346,37 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
   // Wrap the result value if necessary.
   if (func.isThrows())
     retVal = b.create<VariantCreateOp>(errorOr(), retVal);
-  if (func.isAsync()) {
-    createCoroutineFinalize(b, errType, coroHdl, retVal);
-    retVal = coroHdl;
-  }
   b.create<KGEN::ReturnOp>(retVal);
   terminator->erase();
   return success();
 }
 
 //===----------------------------------------------------------------------===//
-// lowerThrowsAndAsync
+// lowerThrows
 //===----------------------------------------------------------------------===//
 
-/// Lower `<...>(...) throws -> T` to `<...>(...) -> ErrorOr<T>`, and then
-/// `<...>(...) async -> T` to `<...>(...) -> Task<T>` in that order.
-/// So, an `async|throws` function will become `Task<ErrorOr<T>>`. Update all
+/// Lower `<...>(...) throws -> T` to `<...>(...) -> ErrorOr<T>`. Update all
 /// callsites to signature types to reflect this change.
-static void lowerThrowsAndAsync(DeclRefType errType, Operation *op) {
+static void lowerThrows(DeclRefType errType, Operation *op) {
   // Replace every throwing signature type with a variant result type and
   // every async signature type with a coroutine handle result type.
   Builder b(op->getContext());
   mlir::AttrTypeReplacer replacer;
   replacer.addReplacement([&](SignatureType sigType) {
-    if (!bitEnumContainsAny(sigType.getFnEffects(),
-                            FnEffects::Throws | FnEffects::Async))
+    if (!sigType.isThrows())
       return sigType;
     // Wrap the result type with the appropriate type.
-    Type type = sigType.getValueResults().front();
-    if (sigType.isThrows())
-      type = VariantType::get({errType, type});
-    if (sigType.isAsync())
-      type = CoroutineType::get(type);
-    // Clear the `throws` and `async` bits.
+    Type type = VariantType::get({errType, sigType.getValueResults().front()});
+    // Clear the `throws` bit.
     return SignatureType::get(
         sigType.getInputParams(), sigType.getResultParams(),
         b.getFunctionType(sigType.getValueInputs(), type),
         b.getAttr<MetadataAttr>(
             sigType.getValueInputConventions(), sigType.getDefaultArguments(),
-            bitEnumClear(sigType.getFnEffects(),
-                         FnEffects::Throws | FnEffects::Async)));
+            bitEnumClear(sigType.getFnEffects(), FnEffects::Throws)));
   });
-  replacer.recursivelyReplaceElementsIn(op, /*replaceAttrs=*/true,
-                                        /*replaceLocs=*/false,
-                                        /*replaceTypes=*/true);
+  replacer.recursivelyReplaceElementsIn(
+      op, /*replaceAttrs=*/true, /*replaceLocs=*/false, /*replaceTypes=*/true);
 }
 
 //===----------------------------------------------------------------------===//
@@ -511,7 +443,7 @@ struct LowerTerminatorsPass
 
     // Lower all functions that throw.
     if (errType)
-      lowerThrowsAndAsync(errType, getOperation());
+      lowerThrows(errType, getOperation());
 
     // Lower nested functions by converting them to region declarations. Walk
     // all top-level functions and gather nested functions.

@@ -68,17 +68,17 @@ def LowerLIT : Pass<"lower-lit", "mlir::ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
-// OutlineClosures
+// LowerAsyncFunctions
 //===----------------------------------------------------------------------===//
 
-def OutlineClosures : Pass<"outline-closures", "mlir::ModuleOp"> {
-  let summary = "Outlines region parameters into explicit closures.";
+def LowerAsyncFunctions : Pass<"lower-async-functions", "FuncOp"> {
+  let summary = "Lower `async` functions by generating coroutine machinery.";
   let description = [{
-    This pass outlines region parameters into functions that are called with
-    a struct that contains all captures.
+    The `lower-async-functions` pass transforms `async` functions into normal
+    `kgen.func` by adding the required POP-level coroutine machinery.
   }];
 
-  let dependentDialects = ["KGENDialect", "POP::POPDialect"];
+  let dependentDialects = ["POPDialect"];
 }
 
 //===----------------------------------------------------------------------===//
@@ -93,6 +93,20 @@ def LowerStructs : Pass<"lower-structs", "mlir::ModuleOp"> {
   }];
 
   let dependentDialects = ["POP::POPDialect"];
+}
+
+//===----------------------------------------------------------------------===//
+// OutlineClosures
+//===----------------------------------------------------------------------===//
+
+def OutlineClosures : Pass<"outline-closures", "mlir::ModuleOp"> {
+  let summary = "Outlines region parameters into explicit closures.";
+  let description = [{
+    This pass outlines region parameters into functions that are called with
+    a struct that contains all captures.
+  }];
+
+  let dependentDialects = ["KGENDialect", "POP::POPDialect"];
 }
 
 //===----------------------------------------------------------------------===//

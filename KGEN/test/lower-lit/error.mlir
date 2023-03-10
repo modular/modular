@@ -22,7 +22,7 @@ lit.func @return_raise_or(%cond: i1, %err: !kgen.declref<@Error>) -> !pop.varian
 }
 
 // CHECK-LABEL: kgen.generator @removeMetadata
-// CHECK-SAME: (%arg0: !pop.pointer<index>) ->
+// CHECK-SAME: (%arg0: !pop.pointer<index>) throws ->
 lit.func @removeMetadata(%arg0: !pop.pointer<index> byref) throws -> index {
   %0 = index.constant 0
   kgen.return %0 : index

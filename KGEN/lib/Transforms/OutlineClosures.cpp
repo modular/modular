@@ -173,7 +173,10 @@ void OutlineClosuresPass::runOnOperation() {
           regionDecl.getLoc(), getUniqueName("_" + regionName),
           TypeAttr::get(liftedSignature),
           b.getAttr<ConstraintArrayAttr>(ArrayRef<ConstraintAttr>{}),
-          regionDecl.getAlwaysInlineLevelAttr());
+          b.getAttr<AlwaysInlineLevelAttr>(
+              regionDecl.getAlwaysInlineLevel() == AlwaysInlineLevel::Disabled
+                  ? AlwaysInlineLevel::Enabled
+                  : regionDecl.getAlwaysInlineLevel()));
       symtab.insert(lifted);
       auto liftedSymbol = SymbolConstantAttr::get(
           SymbolRefAttr::get(lifted.getSymNameAttr()), liftedSignature);

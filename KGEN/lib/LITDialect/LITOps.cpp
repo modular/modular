@@ -18,6 +18,7 @@
 #include "Support/Compiler/VerifyUtils.h"
 #include "Support/HLCFDialect/HLCFOps.h"
 #include "mlir/IR/FunctionImplementation.h"
+#include "mlir/IR/PatternMatch.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
@@ -724,6 +725,13 @@ LogicalResult AsyncCallOp::verify() {
   if (cast<SignatureType>(getCallee().getType()).isAsync())
     return success();
   return emitOpError("callable must be 'async'");
+}
+
+void AsyncCallOp::concretizeCallee(mlir::IRRewriter &b,
+                                   SymbolConstantAttr callee,
+                                   TypeRange resultTypes) {
+  b.replaceOpWithNewOp<AsyncCallOp>(*this, callee, ArrayRef<ParamDeclAttr>(),
+                                    getOperands());
 }
 
 //===----------------------------------------------------------------------===//

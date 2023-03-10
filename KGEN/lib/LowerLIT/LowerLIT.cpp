@@ -245,10 +245,11 @@ static void lowerAttributesAndTypes(Operation *op) {
     return ListAttr::get(attr.getContext(), {}, emptyList);
   });
 
-  // Remove all input conventions and function effects.
+  // Remove all input conventions.
   replacer.addReplacement([](MetadataAttr metadata) {
     return MetadataAttr::get(metadata.getContext(),
-                             metadata.getInputConventions().size());
+                             metadata.getInputConventions().size(),
+                             metadata.getFnEffects());
   });
 
   replacer.recursivelyReplaceElementsIn(
