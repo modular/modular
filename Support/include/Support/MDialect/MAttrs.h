@@ -285,6 +285,15 @@ public:
 /// and bitpacked-ness of the attribute are handled.
 Attribute convertDenseElements(Attribute attr);
 
+/// Returns an "inline" attribute to store the given tensor data.
+///
+/// The result may be:
+///  - 'ArrayElementAttr' (no alignment constraint, or mustBeAligned is false)
+///  - 'AlignedBytes' (alignment constraint, or mustBeAligned is true)
+ElementsAttr getInlineAttrForTensorData(ShapedType type, ArrayRef<char> data,
+                                        Optional<size_t> optAlignment = {},
+                                        bool mustBeAligned = false);
+
 /// Returns an attribute to store the given tensor data.
 ///
 /// If forceOutOfLine is true the data will always be stored as a dialect
