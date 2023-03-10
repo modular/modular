@@ -28,7 +28,7 @@ struct LValuesRvalues:
     return LValuesRvalues{}
 
   fn __clone__(self&) -> Self:
-    return LValuesRvalues{}
+    return Self{a: 1} # expected-error {{'$expressions-errors::LValuesRvalues' has no field named 'a'}}
 
   def normalMethod(self): pass
   # expected-note @+1 {{function declared here}}

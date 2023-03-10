@@ -1467,10 +1467,17 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
     }
     StringAttr fieldNameAttr =
         StringAttr::get(emitter.getContext(), fieldName->spelling);
+    auto *fieldNameDecls = decl->lookupInCurrentScope(fieldNameAttr);
+    if (!fieldNameDecls) {
+      emitter.emitError(keyValue.first->getLoc())
+          << initType << " has no field named " << fieldNameAttr
+          << keyValue.first->getRange() << base->getRange();
+      return {};
+    }
 
     // The field must be fully parsed to understand its type etc.  Do a lookup
     // to find its decl and resolve it.
-    for (ASTDecl *fieldDecl : *decl->lookupInCurrentScope(fieldNameAttr)) {
+    for (ASTDecl *fieldDecl : *fieldNameDecls) {
       if (failed(emitter.getDeclResolver().resolveFully(*fieldDecl,
                                                         valueExpr->getLoc())))
         return {};
