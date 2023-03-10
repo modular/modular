@@ -7,10 +7,6 @@ kgen.generator @call_region<fn: <A -> E>() -> index -> E>() -> index always_inli
   kgen.return %0 : index
 }
 
-lit.struct.decl @raiseClosure_context {
-  lit.struct.field field_0 : index
-}
-
 kgen.generator @raiseClosure_0<C, A, B -> E>(%arg0: index) -> index always_inline {
   %0 = kgen.param.constant = <add(mul(B, -1), A, C)>
   %1 = pop.cast_from_builtin %0 : index to !pop.scalar<index>
@@ -22,8 +18,8 @@ kgen.generator @raiseClosure_0<C, A, B -> E>(%arg0: index) -> index always_inlin
 }
 
 kgen.generator @raiseClosure_wrapper<C, A, B -> E>() -> index always_inline {
-  %0 = pop.compiler.global_load "raiseClosure_context_var" : !kgen.declref<@raiseClosure_context>
-  %1 = lit.struct.extract %0[field_0] : index from !kgen.declref<@raiseClosure_context>
+  %0 = pop.compiler.global_load "raiseClosure_context_var" : !pop.struct<index>
+  %1 = pop.struct.extract %0[0] : !pop.struct<index>
   %2 = kgen.call @raiseClosure_0<C = C, A = A, B = B -> __resultParam_0 = E>(%1) : (index) -> index
   kgen.param.result_bind<__resultParam_0>
   kgen.return %2 : index
@@ -32,8 +28,8 @@ kgen.generator @raiseClosure_wrapper<C, A, B -> E>() -> index always_inline {
 // COM: All this should be inlined and all that we care about is the raiseClosure func.
 // CHECK-LABEL: @raiseClosure() -> (index, index)
 // CHECK-NEXT: %idx0 = index.constant 0
-// CHECK-NEXT: lit.struct.create(field_0=%idx0)
-// CHECK: lit.struct.extract {{%[0-9]}}[field_0]
+// CHECK-NEXT: pop.struct.construct(%idx0)
+// CHECK: pop.struct.extract {{%[0-9]}}[0]
 // CHECK: kgen.param.constant{{.*}}<16>
 // CHECK-NEXT: pop.cast_from_builtin
 // CHECK-NEXT: pop.cast_from_builtin
@@ -45,8 +41,8 @@ kgen.generator @raiseClosure_wrapper<C, A, B -> E>() -> index always_inline {
 kgen.generator @raiseClosure<() -> E>() -> (index, index) {
   %idx0 = index.constant 0
   kgen.param.declare C = <15>
-  %0 = lit.struct.create(field_0=%idx0) : (index) -> !kgen.declref<@raiseClosure_context>
-  pop.compiler.global_store "raiseClosure_context_var", %0 : !kgen.declref<@raiseClosure_context>
+  %0 = pop.struct.construct(%idx0) : !pop.struct<index>
+  pop.compiler.global_store "raiseClosure_context_var", %0 : !pop.struct<index>
   kgen.param.declare Fn: <A, B -> E>() -> index = <@raiseClosure_wrapper<C = C, A = #kgen.unbound, B = #kgen.unbound>>
   kgen.param.declare BoundFn: <A -> E>() -> index = <bind_signature(:<A, B -> E>() -> index Fn, #kgen.unbound, 1)>
   %1 = kgen.call @call_region<fn: <A -> E>() -> index = BoundFn -> Result = E>() : () -> index

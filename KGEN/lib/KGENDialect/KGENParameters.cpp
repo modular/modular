@@ -55,6 +55,7 @@ void ParameterCollector::collectUsesFromAttr(
   // Save the number of nested parameters before recursing and check whether the
   // attribute has a nested constant expression.
   size_t oldSize = uses.size();
+  // Parameterized type constants are by definition unresolved expressions.
   bool hasNestedConstExpr = isa<ParameterizedTypeConstantAttr>(attr);
 
   // Otherwise we haven't processed this, check the attribute's type if it has
@@ -117,7 +118,10 @@ void ParameterCollector::collectUsesFromTypesImpl(
   // Save the number of nested parameters before recursing and check whether the
   // attribute has a nested constant expression.
   size_t oldSize = uses.size();
-  bool hasNestedConstExpr = false;
+  // Types that reference external symbols must be treated as implicitly
+  // parametric because the external type definition could contain parametric
+  // types. We don't want to assume that the type is concrete.
+  bool hasNestedConstExpr = isa<DeclRefType>(type);
 
   // Recursively check for any nested types, e.g. the input/outputs of a
   // function type, types like !pop.scalar<ty> etc.

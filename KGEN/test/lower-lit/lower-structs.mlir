@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -lower-structs -split-input-file | FileCheck %s
+// RUN: kgen-opt %s -lower-structs -allow-unregistered-dialect -split-input-file | FileCheck %s
 
 // CHECK-NOT: lit.struct.decl
 lit.struct.decl @SmallVector<N, T: type> {
@@ -167,4 +167,25 @@ lit.struct.decl @Int {}
 
 lit.struct.decl @StaticTuple<size, type: type> {
   lit.struct.field array : !pop.array<size, type>
+}
+
+// -----
+
+// CHECK-LABEL: kgen.generator @nested_declref_type
+// CHECK-SAME: !pop.closure<(!pop.struct<simd<apply(:(index) -> index @pass, 1), si32>
+kgen.generator @nested_declref_type(
+    %arg1: !kgen.declref<@UnaryClosure<input_type: type = !kgen.declref<@SIMD<size = 1>>>>) {
+  kgen.return
+}
+
+kgen.generator @pass(%arg0: index) -> index {
+  kgen.return %arg0 : index
+}
+
+lit.struct.decl @SIMD<size> {
+  lit.struct.field value : !pop.simd<apply(:(index) -> index @pass, size), si32>
+}
+
+lit.struct.decl @UnaryClosure<input_type: type> {
+  lit.struct.field value : !pop.closure<(!kgen.paramref<input_type>) -> ()>
 }
