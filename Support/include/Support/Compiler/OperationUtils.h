@@ -9,13 +9,14 @@
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Operation.h"
+#include "llvm/ADT/SetVector.h"
 
 namespace M {
 /// Given an operation, determine whether any nested operations use values
 /// captured from above. Store those captures in the `captures` pointer if it's
 /// provided.
 bool operationIsIsolatedFromAbove(Operation *op,
-                                  SmallVectorImpl<Value> *captures = nullptr,
+                                  llvm::SetVector<Value> *captures = nullptr,
                                   bool allowIsolated = false);
 
 /// Generate a unique flat symbol name with respect to the provided symbol table
