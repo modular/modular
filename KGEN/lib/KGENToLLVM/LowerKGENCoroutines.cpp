@@ -508,8 +508,9 @@ lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
   b.setLoc(op.getLoc());
 
   // Outline the body of the await into a function.
-  SmallVector<Value> captures;
-  (void)operationIsIsolatedFromAbove(op, &captures);
+  llvm::SetVector<Value> uniqueCaptures;
+  (void)operationIsIsolatedFromAbove(op, &uniqueCaptures);
+  std::vector<Value> captures = uniqueCaptures.takeVector();
 
   Block *awaitBody = &op.getBody().front();
   SmallVector<Type> captureTypes;

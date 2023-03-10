@@ -72,7 +72,7 @@ void OutlineClosuresPass::runOnOperation() {
       StringRef regionName = regionDecl.getParamDecl().getName();
 
       // Value captures are easy (ish)
-      SmallVector<Value> captures;
+      llvm::SetVector<Value> captures;
       bool isolated = M::operationIsIsolatedFromAbove(regionDecl, &captures);
 
       // If the body is not isolated from above *and* it's not marked
@@ -143,7 +143,7 @@ void OutlineClosuresPass::runOnOperation() {
 
       // The value signature is pretty simple here, just captures and then any
       // original arguments.
-      SmallVector<Value> liftedInputs = captures;
+      SmallVector<Value> liftedInputs = llvm::to_vector(captures);
       llvm::append_range(liftedInputs,
                          regionDecl.getBodyRegion().getArguments());
       LLVM_DEBUG(llvm::dbgs() << "Lifted region will take inputs: [\n\t";
@@ -359,8 +359,8 @@ void OutlineClosuresPass::runOnOperation() {
         assert(globalVar && structType &&
                "global variable name/type/struct was undefined?");
 
-        auto container = b.create<POP::StructConstructOp>(regionDecl.getLoc(),
-                                                          structType, captures);
+        auto container = b.create<POP::StructConstructOp>(
+            regionDecl.getLoc(), structType, llvm::to_vector(captures));
 
         // Get a pointer to the global and store the container in it.
         b.create<POP::CompilerGlobalStoreOp>(regionDecl.getLoc(), globalVar,

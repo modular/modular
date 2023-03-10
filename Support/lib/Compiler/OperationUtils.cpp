@@ -7,10 +7,11 @@
 #include "Support/Compiler/OperationUtils.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/SymbolTable.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringExtras.h"
 
 bool M::operationIsIsolatedFromAbove(Operation *op,
-                                     SmallVectorImpl<Value> *captures,
+                                     llvm::SetVector<Value> *captures,
                                      bool allowIsolated) {
   bool result = true;
   op->walk<mlir::WalkOrder::PreOrder>([&](Operation *nested) {
@@ -26,7 +27,7 @@ bool M::operationIsIsolatedFromAbove(Operation *op,
         if (!op->isAncestor(defOp)) {
           result = false;
           if (captures)
-            captures->push_back(operand);
+            captures->insert(operand);
         }
       } else {
         Block *parent = cast<BlockArgument>(operand).getParentBlock();
@@ -35,7 +36,7 @@ bool M::operationIsIsolatedFromAbove(Operation *op,
         if (parent->findAncestorOpInBlock(*op)) {
           result = false;
           if (captures)
-            captures->push_back(operand);
+            captures->insert(operand);
         }
       }
     }
