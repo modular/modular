@@ -362,13 +362,13 @@ async fn coroutine() -> __mlir_type.index:
 struct StructWithAsync:
   # CHECK-LABEL: lit.func @"do_something{{.*}}"({{.*}}) async -> !lit.none
   async fn do_something(self: StructWithAsync):
-    # CHECK-NEXT: %[[CORO:.*]] = lit.async_call[<>() async -> index: @"$decls"::@"coroutine()"]()
+    # CHECK-NEXT: %[[CORO:.*]] = lit.async.call[<>() async -> index: @"$decls"::@"coroutine()"]()
     # CHECK-NEXT: lit.letreg.decl "a" = %[[CORO]] : !pop.coroutine<() -> index>
     let a = coroutine()
 
 # CHECK-LABEL: lit.func @"call_struct_async{{.*}}"({{.*}}) async -> !lit.none
 async fn call_struct_async(f: StructWithAsync):
-    # CHECK-NEXT: lit.async_call[<>({{.*}}) async -> !lit.none: @{{.*}}](%f)
+    # CHECK-NEXT: lit.async.call[<>({{.*}}) async -> !lit.none: @{{.*}}](%f)
     _ = f.do_something()
 
 struct Awaitable:

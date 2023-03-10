@@ -27,6 +27,6 @@ kgen.func @coroutine(%arg0: i1) async -> index {
 kgen.func @call_coroutine() {
   %true = index.bool.constant true
   // CHECK: kgen.call @coroutine(%true) : (i1) -> !pop.coroutine<() -> index>
-  %result = lit.async_call[<>(i1) async -> index: @coroutine](%true)
+  %result = lit.async.call[<>(i1) async -> index: @coroutine](%true)
   kgen.return
 }
