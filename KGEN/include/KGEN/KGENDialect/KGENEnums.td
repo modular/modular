@@ -112,7 +112,7 @@ def KGEN_ValueInputConvention : I32EnumAttr<"ValueInputConvention",
   /// The MLIR type is always a POP::PointerType, and the underlying type is a
   /// memory-only type.  The value is initialized on entry to the function
   /// and uninitialized when the function if it returns (the caller destroys).
-  I32EnumAttrCase<"ByValInMem", 1, "byval-in-mem">,
+  I32EnumAttrCase<"ByValInMem", 1, "byval_in_mem">,
 
   /// This is used for by-ref arguments like `fn x(a&: Int)`.
   ///
@@ -127,7 +127,7 @@ def KGEN_ValueInputConvention : I32EnumAttr<"ValueInputConvention",
   /// The MLIR type is always a POP::PointerType, and the underlying type can be
   /// anything.  The value is uninitialized on entry to the function and defined
   /// on exit from the function if it returns.
-  I32EnumAttrCase<"ByRefResult", 3, "byref-result">,
+  I32EnumAttrCase<"ByRefResult", 3, "byref_result">,
 ]> {
   let cppNamespace = "M::KGEN";
 }
