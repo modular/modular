@@ -148,7 +148,7 @@ ExecutionEngine::create(const CompilationOptions &options) {
   // Decode the base64 CAS ID to do the lookup with the raw bytes.
   std::vector<char> bytes;
   bytes.reserve(32);
-  llvm::cantFail(llvm::decodeBase64(MODULAR_ORC_RT_CAS_ID, bytes));
+  llvm::cantFail(llvm::decodeBase64(M::CASID::kOrcRT, bytes));
   AsyncValueRef<std::optional<BufferRef>> orcRTBuf =
       orcCache.find(StringRef(bytes.data(), bytes.size()));
   // Await the orc runtime buffer.

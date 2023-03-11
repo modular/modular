@@ -18,11 +18,14 @@ list(LENGTH HASHES hashes_len)
 math(EXPR hashes_len "${hashes_len} - 1")
 # Setup the #define statements that we're going to jam into the header file.
 set(STMTS)
+set(STMTS "#include \"llvm/ADT/StringRef.h\"\n")
+set(STMTS "${STMTS}\nnamespace M::CASID {\n")
 foreach (idx RANGE ${hashes_len})
   list(GET NAMES_LIST ${idx} name)
   list(GET HASHES ${idx} hash)
-  set(STMTS "${STMTS}#define ${name} \"${hash}\"\n")
+  set(STMTS "${STMTS}inline constexpr llvm::StringLiteral ${name} = \"${hash}\";\n")
 endforeach()
+set(STMTS "${STMTS}}\n")
 
 # Configure the header file with the #define statements we just created.
 get_filename_component(OUTFILE @OUTFILE@ NAME_WE)
