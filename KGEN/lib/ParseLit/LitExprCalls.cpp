@@ -215,7 +215,10 @@ ParameterInferenceState::infer(SignatureType signature,
           return failure();
 
         // By-ref argument types must exactly match, no conversions are allowed.
-        return matchTypes(argVal.getType(), expectedType);
+        if (auto sl = operand.ir.getIfSLValue())
+          return matchTypes(sl.getType(), expectedType);
+        // TODO(clValues): infer parameters against computed lvalue when known
+        return success();
       }
       case ValueInputConvention::ByVal:
         // Otherwise, we pass as an r-value.
@@ -671,10 +674,12 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
       case ValueInputConvention::ByRef:
       case ValueInputConvention::ByRefResult: {
         // The actual value must be an lvalue if callee takes things by-ref.
-        auto argVal = operand.ir.getIfLValue();
-        if (!argVal)
+        auto argVal = operand.ir.getIfSLValue();
+        if (!argVal) {
+          // TODO(clValue): pass to byref arguments and result slots.
           return {kArgNotLValue, providedValueIdx, operand.ir.getRValueType(),
                   newBindings};
+        }
 
         // By-ref argument types must exactly match, no conversions are allowed.
         if (!argVal.getType().isEqualCanon(expectedType))

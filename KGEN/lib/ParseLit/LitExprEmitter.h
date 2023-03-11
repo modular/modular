@@ -219,6 +219,7 @@ public:
   RValue emitRValue(ASTExprAnd<AnyValue> value, ExprContext context,
                     ASTType resultType);
   CRValue emitCRValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
+  CValue emitCValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
 
   /// This helper emits the specified value as a SRValue which has an SSA
   /// value representation, materializing PRValues and loading LValues as
