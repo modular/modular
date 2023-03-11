@@ -102,26 +102,18 @@ BlobCacheBackend::find(BufferRef keyHash, std::optional<WriteableBufferRef> buf,
   addTask(runtime, [thisRef = copyRCRef(this), keyHash = keyHash.copy(),
                     result = result.copy(), buf = std::move(buf),
                     getError = GetError{std::move(loc)}]() mutable {
-    // Check if the key is contained at this cache level (return an error if
-    // containsOr returns an error).
-    ErrorOr<bool> containsOr = thisRef->containsImpl(keyHash->getBuffer());
-    if (containsOr.isError())
-      return std::move(result).setToError(getError(containsOr.takeError()));
+    // Find it at this level.
+    ErrorOr<std::optional<BufferRef>> bufOr = thisRef->findImpl(
+        keyHash->getBuffer(),
+        (buf ? std::optional<WriteableBufferRef>(buf->copy()) : std::nullopt));
+    if (bufOr.isError())
+      return std::move(result).setToError(getError(bufOr.takeError()));
 
-    // If we have it, return it and don't bother delegating.
-    if (*containsOr) {
-      // If this was an error, return that error in the AsyncValue.
-      ErrorOr<std::optional<BufferRef>> bufOr = thisRef->findImpl(
-          keyHash->getBuffer(),
-          (buf ? std::optional<WriteableBufferRef>(buf->copy())
-               : std::nullopt));
-      if (bufOr.isError())
-        return std::move(result).setToError(getError(bufOr.takeError()));
-
-      // Otherwise, simply return the contents.
+    // If we had it, return, and we're done.
+    if (bufOr->has_value())
       return std::move(result).emplace(std::move(*bufOr));
-    }
 
+    // No delegate and we don't have it, return nullopt.
     if (!thisRef->delegate)
       return std::move(result).emplace(std::nullopt);
 
@@ -322,6 +314,10 @@ struct FilesystemBackend : public BlobCacheBackend {
            std::optional<WriteableBufferRef> buf) const override {
     // Get the file path and open it.
     std::filesystem::path filePath = getAbsolutePathForKey(keyHash);
+    // No such file, return nullopt (not error).
+    if (!std::filesystem::exists(filePath))
+      return std::nullopt;
+
     auto bufOr = Buffer::getFile(filePath);
     // If the file doesn't exist, or it's empty, return an error.
     if (failed(bufOr))
