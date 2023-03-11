@@ -21,7 +21,7 @@ fn test_parallelize():
     let num_work_items = 4
     let rt = Runtime(num_work_items)
 
-    let vector = Buffer[20, DType.index.value].stack_allocation()
+    let vector = Buffer[20, DType.index].stack_allocation()
 
     for i in range(vector.__len__()):
         vector.__setitem__(i, i.__as_mlir_index())

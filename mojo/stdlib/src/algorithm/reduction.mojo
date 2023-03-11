@@ -6,9 +6,11 @@
 
 from Assert import assert_param_bool_msg, debug_assert
 from Buffer import Buffer, NDBuffer
-from SIMD import SIMD
-from Numerics import inf, neginf
+from DType import DType
+from Functional import vectorize, unroll
+from Index import StaticIntTuple
 from Int import Int
+from Numerics import inf, neginf
 from List import (
     _get_kgen_list_item,
     create_kgen_list,
@@ -18,11 +20,9 @@ from List import (
     is_all_known_range,
 )
 from Range import range
-from Index import StaticIntTuple
+from SIMD import SIMD
 from TargetInfo import dtype_simd_width, sizeof, dtype_sizeof
 from TypeUtilities import rebind
-from Functional import vectorize, unroll
-from Numerics import inf, neginf
 
 # ===----------------------------------------------------------------------===#
 # reduce
@@ -37,12 +37,16 @@ from Numerics import inf, neginf
 fn reduce[
     simd_width: Int,
     size: __mlir_type.index,
-    type: __mlir_type.`!kgen.dtype`,
-    acc_type: __mlir_type.`!kgen.dtype`,
+    type: DType,
+    acc_type: DType,
     map_fn: __mlir_type[
         `!kgen.signature<<simd_width:`,
         Int,
-        `, acc_type: dtype, type: dtype>(`,
+        `, acc_type: `,
+        DType,
+        `, type: `,
+        DType,
+        `>(`,
         SIMD[simd_width, `acc_type`],
         `,`,
         SIMD[simd_width, `type`],
@@ -53,14 +57,16 @@ fn reduce[
     reduce_fn: __mlir_type[
         `!kgen.signature<<simd_width:`,
         Int,
-        `, type: dtype>(`,
+        `, type: `,
+        DType,
+        `>(`,
         SIMD[simd_width, `type`],
         `) -> `,
         SIMD[1, `type`],
         `>`,
     ],
 ](src: Buffer[size, type], init: SIMD[1, acc_type]) -> __mlir_type[
-    `!pop.scalar<`, acc_type, `>`
+    `!pop.scalar<`, acc_type.value, `>`
 ]:
     alias unroll_factor = 8  # TODO: search
     # TODO: explicitly unroll like vectorize_unroll does.
@@ -84,12 +90,16 @@ fn _reduce_3D[
     simd_width: Int,
     input_shape: __mlir_type[`!kgen.list<index[3]>`],
     output_shape: __mlir_type[`!kgen.list<index[2]>`],
-    type: __mlir_type.`!kgen.dtype`,
-    acc_type: __mlir_type.`!kgen.dtype`,
+    type: DType,
+    acc_type: DType,
     map_fn: __mlir_type[
         `!kgen.signature<<simd_width: `,
         Int,
-        `, acc_type: dtype, type: dtype>(`,
+        `, acc_type: `,
+        DType,
+        `, type: `,
+        DType,
+        `>(`,
         SIMD[simd_width, `acc_type`],
         `,`,
         SIMD[simd_width, `type`],
@@ -100,7 +110,9 @@ fn _reduce_3D[
     reduce_fn: __mlir_type[
         `!kgen.signature<<simd_width:`,
         Int,
-        `, type: dtype>(`,
+        `, type: `,
+        DType,
+        `>(`,
         SIMD[simd_width, `type`],
         `) -> `,
         SIMD[1, `type`],
@@ -177,7 +189,7 @@ fn _prod_dims[
     end_dim: __mlir_type.index,
     rank: __mlir_type.index,
     shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
 ](x: NDBuffer[rank, shape, type]) -> Int:
     var product: Int = 1
 
@@ -195,12 +207,16 @@ fn reduce[
     rank: __mlir_type.index,
     input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
     output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
-    acc_type: __mlir_type.`!kgen.dtype`,
+    type: DType,
+    acc_type: DType,
     map_fn: __mlir_type[
         `!kgen.signature<<simd_width:`,
         Int,
-        `, acc_type: dtype, type: dtype>(`,
+        `, acc_type: `,
+        DType,
+        `, type: `,
+        DType,
+        `>(`,
         SIMD[simd_width, `acc_type`],
         `,`,
         SIMD[simd_width, `type`],
@@ -211,7 +227,9 @@ fn reduce[
     reduce_fn: __mlir_type[
         `!kgen.signature<<simd_width:`,
         Int,
-        `, type: dtype>(`,
+        `, type: `,
+        DType,
+        `>(`,
         SIMD[simd_width, `type`],
         `) -> `,
         SIMD[1, `type`],
@@ -279,7 +297,7 @@ fn reduce[
 @always_inline
 fn _simd_max[
     simd_width: Int,
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
 ](x: SIMD[simd_width, type]) -> SIMD[1, type]:
     """Helper function that computes the max element in a simd vector and is
     compatible with the function signature expected by reduce_fn in reduce."""
@@ -289,8 +307,8 @@ fn _simd_max[
 @always_inline
 fn _simd_max_elementwise[
     simd_width: Int,
-    acc_type: __mlir_type.`!kgen.dtype`,
-    type: __mlir_type.`!kgen.dtype`,
+    acc_type: DType,
+    type: DType,
 ](x: SIMD[simd_width, acc_type], y: SIMD[simd_width, type]) -> SIMD[
     simd_width, acc_type
 ]:
@@ -303,8 +321,8 @@ fn _simd_max_elementwise[
 fn max[
     simd_width: Int,
     size: __mlir_type.index,
-    type: __mlir_type.`!kgen.dtype`,
-](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type, `>`]:
+    type: DType,
+](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type.value, `>`]:
     """Computes the max element in a buffer."""
     return reduce[
         simd_width, size, type, type, _simd_max_elementwise, _simd_max
@@ -316,7 +334,7 @@ fn max[
     rank: __mlir_type.index,
     input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
     output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
     reduce_axis: __mlir_type.index,
 ](
     src: NDBuffer[rank, input_shape, type],
@@ -344,7 +362,7 @@ fn max[
 @always_inline
 fn _simd_min[
     simd_width: Int,
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
 ](x: SIMD[simd_width, type]) -> SIMD[1, type]:
     """Helper function that computes the min element in a simd vector and is
     compatible with the function signature expected by reduce_fn in reduce."""
@@ -354,8 +372,8 @@ fn _simd_min[
 @always_inline
 fn _simd_min_elementwise[
     simd_width: Int,
-    acc_type: __mlir_type.`!kgen.dtype`,
-    type: __mlir_type.`!kgen.dtype`,
+    acc_type: DType,
+    type: DType,
 ](x: SIMD[simd_width, acc_type], y: SIMD[simd_width, type]) -> SIMD[
     simd_width, acc_type
 ]:
@@ -368,8 +386,8 @@ fn _simd_min_elementwise[
 fn min[
     simd_width: Int,
     size: __mlir_type.index,
-    type: __mlir_type.`!kgen.dtype`,
-](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type, `>`]:
+    type: DType,
+](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type.value, `>`]:
     """Computes the min element in a buffer."""
     return reduce[
         simd_width, size, type, type, _simd_min_elementwise, _simd_min
@@ -381,7 +399,7 @@ fn min[
     rank: __mlir_type.index,
     input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
     output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
     reduce_axis: __mlir_type.index,
 ](
     src: NDBuffer[rank, input_shape, type],
@@ -409,7 +427,7 @@ fn min[
 @always_inline
 fn _simd_sum[
     simd_width: Int,
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
 ](x: SIMD[simd_width, type]) -> SIMD[1, type]:
     """Helper function that computes the sum of elements in a simd vector and is
     compatible with the function signature expected by reduce_fn in reduce."""
@@ -419,8 +437,8 @@ fn _simd_sum[
 @always_inline
 fn _simd_sum_elementwise[
     simd_width: Int,
-    acc_type: __mlir_type.`!kgen.dtype`,
-    type: __mlir_type.`!kgen.dtype`,
+    acc_type: DType,
+    type: DType,
 ](x: SIMD[simd_width, acc_type], y: SIMD[simd_width, type]) -> SIMD[
     simd_width, acc_type
 ]:
@@ -433,8 +451,8 @@ fn _simd_sum_elementwise[
 fn sum[
     simd_width: Int,
     size: __mlir_type.index,
-    type: __mlir_type.`!kgen.dtype`,
-](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type, `>`]:
+    type: DType,
+](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type.value, `>`]:
     """Computes the sum element in a buffer."""
     return reduce[
         simd_width, size, type, type, _simd_sum_elementwise, _simd_sum
@@ -446,7 +464,7 @@ fn sum[
     rank: __mlir_type.index,
     input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
     output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
     reduce_axis: __mlir_type.index,
 ](
     src: NDBuffer[rank, input_shape, type],
@@ -474,7 +492,7 @@ fn sum[
 @always_inline
 fn _simd_product[
     simd_width: Int,
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
 ](x: SIMD[simd_width, type]) -> SIMD[1, type]:
     """Helper function that computes the product of elements in a simd vector and is
     compatible with the function signature expected by reduce_fn in reduce."""
@@ -484,8 +502,8 @@ fn _simd_product[
 @always_inline
 fn _simd_product_elementwise[
     simd_width: Int,
-    acc_type: __mlir_type.`!kgen.dtype`,
-    type: __mlir_type.`!kgen.dtype`,
+    acc_type: DType,
+    type: DType,
 ](x: SIMD[simd_width, acc_type], y: SIMD[simd_width, type]) -> SIMD[
     simd_width, acc_type
 ]:
@@ -498,8 +516,8 @@ fn _simd_product_elementwise[
 fn product[
     simd_width: Int,
     size: __mlir_type.index,
-    type: __mlir_type.`!kgen.dtype`,
-](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type, `>`]:
+    type: DType,
+](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type.value, `>`]:
     """Computes the product element in a buffer."""
     return reduce[
         simd_width, size, type, type, _simd_product_elementwise, _simd_product
@@ -511,7 +529,7 @@ fn product[
     rank: __mlir_type.index,
     input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
     output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
     reduce_axis: __mlir_type.index,
 ](
     src: NDBuffer[rank, input_shape, type],
@@ -539,8 +557,8 @@ fn product[
 fn mean[
     simd_width: Int,
     size: __mlir_type.index,
-    type: __mlir_type.`!kgen.dtype`,
-](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type, `>`]:
+    type: DType,
+](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type.value, `>`]:
     """Computes the mean value of the elements in a buffer."""
 
     debug_assert(src.__len__() != 0, "input must not be empty")
@@ -555,7 +573,7 @@ fn mean[
     rank: __mlir_type.index,
     input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
     output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
     reduce_axis: __mlir_type.index,
 ](
     src: NDBuffer[rank, input_shape, type],
@@ -593,8 +611,8 @@ fn mean[
 fn variance[
     simd_width: Int,
     size: __mlir_type.index,
-    type: __mlir_type.`!kgen.dtype`,
-](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type, `>`]:
+    type: DType,
+](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type.value, `>`]:
     """Computes the variance value of the elements in a buffer."""
 
     debug_assert(src.__len__() > 1, "input length must be greater than 1")
@@ -604,8 +622,8 @@ fn variance[
     @always_inline
     fn _simd_variance_elementwise[
         simd_width: Int,
-        acc_type: __mlir_type.`!kgen.dtype`,
-        type: __mlir_type.`!kgen.dtype`,
+        acc_type: DType,
+        type: DType,
     ](x: SIMD[simd_width, acc_type], y: SIMD[simd_width, type]) -> SIMD[
         simd_width, acc_type
     ]:

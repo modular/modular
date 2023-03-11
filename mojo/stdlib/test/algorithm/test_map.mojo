@@ -15,7 +15,7 @@ from IO import print
 fn test_map():
     print("== test_map\n")
 
-    let vector = Buffer[5, DType.f32.value].stack_allocation()
+    let vector = Buffer[5, DType.f32].stack_allocation()
 
     vector.__setitem__(0, 1.0)
     vector.__setitem__(1, 2.0)

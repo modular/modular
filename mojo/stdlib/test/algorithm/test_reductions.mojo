@@ -23,7 +23,7 @@ fn test_reductions():
     alias size = 100
 
     # Create a mem of size size
-    let vector = Buffer[size, DType.f32.value].stack_allocation()
+    let vector = Buffer[size, DType.f32].stack_allocation()
 
     for i in range(size):
         vector.__setitem__(i, (i + 1).__as_mlir_index())
@@ -47,7 +47,7 @@ fn test_product():
     alias size = 10
 
     # Create a mem of size size
-    let vector = Buffer[size, DType.f32.value].stack_allocation()
+    let vector = Buffer[size, DType.f32].stack_allocation()
 
     for i in range(size):
         vector.__setitem__(i, (i + 1).__as_mlir_index())
@@ -64,7 +64,7 @@ fn test_mean_variance():
     alias size = 100
 
     # Create a mem of size size
-    let vector = Buffer[size, DType.f32.value].stack_allocation()
+    let vector = Buffer[size, DType.f32].stack_allocation()
 
     for i in range(size):
         vector.__setitem__(i, (i + 1).__as_mlir_index())
@@ -86,11 +86,9 @@ fn test_3d_reductions():
         output_shape: __mlir_type[`!kgen.list<index[3]>`],
         reduce_axis: __mlir_type.index,
     ]():
-        let input = NDBuffer[3, input_shape, DType.f32.value].stack_allocation()
+        let input = NDBuffer[3, input_shape, DType.f32].stack_allocation()
         let output = (
-            NDBuffer[3, output_shape, DType.f32.value]
-            .stack_allocation()
-            .fill(0)
+            NDBuffer[3, output_shape, DType.f32].stack_allocation().fill(0)
         )
         for i in range(input.size()):
             input.flatten().__setitem__(i, i)
@@ -100,7 +98,7 @@ fn test_3d_reductions():
             3,
             input_shape,
             output_shape,
-            DType.f32.value,
+            DType.f32,
             reduce_axis,
         ](input, output)
 
