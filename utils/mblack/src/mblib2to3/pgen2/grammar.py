@@ -111,8 +111,8 @@ class Grammar(object):
         self.start = 256
         # Python 3.7+ parses async as a keyword, not an identifier
         self.async_keywords = False
-        # Lit parses several identifiers, such as fn/var/etc., as keywords, not an identifier.
-        self.lit_keywords = False
+        # Mojo parses several identifiers, such as fn/var/etc., as keywords, not an identifier.
+        self.mojo_keywords = False
 
     def dump(self, filename: Path) -> None:
         """Dump the grammar tables to a pickle file."""
@@ -165,7 +165,7 @@ class Grammar(object):
         new.start = self.start
         new.version = self.version
         new.async_keywords = self.async_keywords
-        new.lit_keywords = self.lit_keywords
+        new.mojo_keywords = self.mojo_keywords
         return new
 
     def report(self) -> None:

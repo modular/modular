@@ -469,9 +469,9 @@ def generate_tokens(
     async_def_nl = False
     # If we know we're parsing lit, we can unconditionally parse various
     # identifiers, like `fn`, as keywords.
-    has_lit_keywords = False if grammar is None else grammar.lit_keywords
-    def_keywords = ("def", "fn", "__mlir_region") if has_lit_keywords else ("def")
-    lit_keyword_tokens = {
+    has_mojo_keywords = False if grammar is None else grammar.mojo_keywords
+    def_keywords = ("def", "fn", "__mlir_region") if has_mojo_keywords else ("def")
+    mojo_keyword_tokens = {
         "fn": FN,
         "struct": STRUCT,
         "alias": ALIAS,
@@ -664,9 +664,9 @@ def generate_tokens(
                     endmatch = endprog.match(line, pos)
                     yield (NAME, token, spos, epos, line)
                 elif initial.isidentifier():  # ordinary name
-                    if has_lit_keywords and token in lit_keyword_tokens:
+                    if has_mojo_keywords and token in mojo_keyword_tokens:
                         yield (
-                            lit_keyword_tokens[token],
+                            mojo_keyword_tokens[token],
                             token,
                             spos,
                             epos,

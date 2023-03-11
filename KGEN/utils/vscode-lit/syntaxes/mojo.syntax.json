@@ -6,7 +6,7 @@
   ],
   "version": "https://github.com/MagicStack/MagicPython/commit/7d0f2b22a5ad8fccbd7341bc7b7a715169283044",
   "name": "MagicPython",
-  "scopeName": "source.lit",
+  "scopeName": "source.mojo",
   "patterns": [
     {
       "include": "#statement"

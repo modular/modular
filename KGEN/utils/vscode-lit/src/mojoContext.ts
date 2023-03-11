@@ -7,16 +7,16 @@ import * as config from './config';
 import * as configWatcher from './configWatcher';
 
 /**
- *  This class manages the LIT extension state, including the language
+ *  This class manages the Mojo extension state, including the language
  *  client.
  */
-export class LITContext implements vscode.Disposable {
+export class MOJOContext implements vscode.Disposable {
   subscriptions: vscode.Disposable[] = [];
   workspaceClients: Map<string, vscodelc.LanguageClient> = new Map();
   outputChannel: vscode.OutputChannel;
 
   /**
-   *  Activate the LIT context, and start the language clients.
+   *  Activate the Mojo context, and start the language clients.
    */
   async activate(outputChannel: vscode.OutputChannel) {
     this.outputChannel = outputChannel;
@@ -99,7 +99,7 @@ export class LITContext implements vscode.Disposable {
   async startLanguageClient(workspaceFolder: vscode.WorkspaceFolder,
                             outputChannel: vscode.OutputChannel):
       Promise<[ vscodelc.LanguageClient, string ]> {
-    const clientTitle = 'LIT Language Client';
+    const clientTitle = 'Mojo Language Client';
 
     // Get the path of the lsp-server that is used to provide language
     // functionality.
@@ -122,7 +122,7 @@ export class LITContext implements vscode.Disposable {
             if (value === "Open Setting") {
               vscode.commands.executeCommand(
                   'workbench.action.openWorkspaceSettings',
-                  {openToSide : false, query : `lit.server_path`});
+                  {openToSide : false, query : `mojo.server_path`});
             }
           });
       return [ null, serverPath ];
@@ -135,7 +135,7 @@ export class LITContext implements vscode.Disposable {
     };
 
     // Configure file patterns relative to the workspace folder.
-    let filePattern: vscode.GlobPattern = '**/*.lit';
+    let filePattern: vscode.GlobPattern = '**/*.{lit,mojo}';
     let selectorPattern: string = null;
     if (workspaceFolder) {
       filePattern = new vscode.RelativePattern(workspaceFolder, filePattern);
@@ -165,6 +165,7 @@ export class LITContext implements vscode.Disposable {
     const clientOptions: vscodelc.LanguageClientOptions = {
       documentSelector : [
         {language : 'lit', pattern : selectorPattern},
+        {language : 'mojo', pattern : selectorPattern},
       ],
       synchronize : {
         // Notify the server about file changes to language files contained in
@@ -181,7 +182,7 @@ export class LITContext implements vscode.Disposable {
 
     // Create the language client and start the client.
     let languageClient = new vscodelc.LanguageClient(
-        'lit-lsp', clientTitle, serverOptions, clientOptions);
+        'mojo-lsp', clientTitle, serverOptions, clientOptions);
     languageClient.start();
     return [ languageClient, serverPath ];
   }

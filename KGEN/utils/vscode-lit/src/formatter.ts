@@ -7,8 +7,9 @@
 import {exec} from 'child_process';
 import * as vscode from 'vscode';
 
-export function registerFormatter(outputChannel: vscode.OutputChannel) {
-  return vscode.languages.registerDocumentFormattingEditProvider('lit', {
+export function registerFormatter(outputChannel: vscode.OutputChannel,
+                                  extension: string) {
+  return vscode.languages.registerDocumentFormattingEditProvider(extension, {
     provideDocumentFormattingEdits(document, _options) {
       const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
       const backupFolder = vscode.workspace.workspaceFolders?.[0];
@@ -24,7 +25,7 @@ export function registerFormatter(outputChannel: vscode.OutputChannel) {
       return new Promise<vscode.TextEdit[]>((resolve, reject) => {
         const originalDocumentText = document.getText();
         const command =
-            "mblack --fast --quiet " + blackArgs.join(' ') + ' -t lit -';
+            "mblack --fast --quiet " + blackArgs.join(' ') + ' -t mojo -';
         const process = exec(command, {cwd}, (error, stdout, stderr) => {
           // Process any errors/warnings during formatting. These aren't all
           // necessarily fatal, so this doesn't prevent edits from being
