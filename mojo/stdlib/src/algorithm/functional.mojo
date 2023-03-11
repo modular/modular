@@ -202,6 +202,7 @@ alias none = __mlir_type.`!lit.none`
 alias InlinedFixedVectorLength = 64
 
 
+@always_inline
 fn parallelForEachNChain[
     args_type: __mlir_type.`!kgen.mlirtype`,
     func: __mlir_type[
@@ -219,6 +220,7 @@ fn parallelForEachNChain[
         tasks.append(task)
 
 
+@always_inline
 fn parallelForEachN[
     args_type: __mlir_type.`!kgen.mlirtype`,
     func: __mlir_type[
@@ -234,6 +236,7 @@ fn parallelForEachN[
         func(0, args)
         return
 
+    @always_inline
     async fn task_fn(i: Int, args: args_type):
         func(i, args)
 
@@ -257,14 +260,26 @@ fn div_ceil(numerator: Int, denominator: Int) -> Int:
     return (numerator + denominator - 1) // denominator
 
 
+@register_passable
+struct _empty:
+    @always_inline("nodebug")
+    fn __new__() -> _empty:
+        return Self {}
+
+    @always_inline("nodebug")
+    fn __clone__(self&) -> _empty:
+        return Self {}
+
+
 @always_inline
 fn parallelize[
-    func: __mlir_type[`!kgen.signature<(`, Int, `,`, Int, `) -> !lit.none>`],
-](num_work_items: Int, size: Int):
-    let chunk_size = div_ceil(size, num_work_items)
-    for start in range(0, size, chunk_size):
-        let end = Int.min(start + chunk_size, size)
-        func(start, end)
+    func: __mlir_type[`!kgen.signature<(`, Int, `) -> !lit.none>`],
+](rt: Runtime, num_work_items: Int):
+    @always_inline
+    fn task_fn(i: Int, args: _empty):
+        func(i)
+
+    parallelForEachN[_empty, task_fn](rt, num_work_items, _empty())
 
 
 # ===----------------------------------------------------------------------===#

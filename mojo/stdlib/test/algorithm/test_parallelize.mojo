@@ -7,10 +7,10 @@
 
 from Buffer import Buffer
 from DType import DType
-from Functional import parallelize, map
+from Functional import parallelize, map, div_ceil
 from Int import Int
 from IO import print
-from LLCL import num_cores
+from LLCL import num_cores, Runtime
 from SIMD import SIMD
 from Range import range
 
@@ -18,13 +18,21 @@ from Range import range
 fn test_parallelize():
     print("== test_parallelize\n")
 
+    let num_work_items = 4
+    let rt = Runtime(num_work_items)
+
     let vector = Buffer[20, DType.index.value].stack_allocation()
 
     for i in range(vector.__len__()):
         vector.__setitem__(i, i.__as_mlir_index())
 
+    let chunk_size = div_ceil(vector.__len__(), num_work_items)
+
     @always_inline
-    fn parallel_fn(start: Int, end: Int):
+    fn parallel_fn(thread_id: Int):
+        let start = thread_id * chunk_size
+        let end = Int.min(start + chunk_size, vector.__len__())
+
         @always_inline
         fn add_two(idx: Int):
             vector.__setitem__(start + idx, vector.__getitem__(start + idx) + 2)
