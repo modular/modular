@@ -15,7 +15,7 @@ from Math import tanh, iota
 fn test_tanh():
     print("== test_tanh\n")
 
-    let simd_val = 0.5 * iota[4, DType.f32.value]()
+    let simd_val = 0.5 * iota[4, DType.f32]()
 
     # CHECK: [0.000000, 0.462117, 0.761594, 0.905148]
     print(tanh(simd_val))
