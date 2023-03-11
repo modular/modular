@@ -285,7 +285,7 @@ struct TaskGroupContext:
 # until we have traits for proper parametric types.
 @register_passable
 struct TaskGroup:
-    var counter: Atomic[DType.index.value]
+    var counter: Atomic[DType.index]
     var chain: Chain
     var rt: Runtime
 
