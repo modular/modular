@@ -15,14 +15,7 @@ from Assert import assert_param
 from Range import range
 from IO import print
 
-# CHECK: lit.func @"printF32
-fn printF32(x: F32):
-    let f64 = __mlir_op.`pop.cast`[_type : __mlir_type.`!pop.scalar<f64>`](
-        x.value
-    )
-    print(f64)
-
-
+# CHECK: lit.func @"printInt
 fn printInt(x: Int):
     print(x.value)
 

@@ -1,6 +1,7 @@
 # RUN: lit %s | FileCheck %s
 
-from prolog import F32, printF32
+from prolog import F32
+from IO import print
 
 # Evaluates the exp function using 6th order taylor series expansion. This is
 # the same expansion used by MLAS internally. The expansion is:
@@ -22,4 +23,4 @@ fn exp_scalar_taylor_f32(x: F32) -> F32:
 fn main():
     let res = exp_scalar_taylor_f32(2.3)
     # CHECK: 9.88
-    printF32(res)
+    print(res)

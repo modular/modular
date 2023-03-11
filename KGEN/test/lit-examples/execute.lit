@@ -1,8 +1,9 @@
 # RUN: lit %s | FileCheck %s
 
-from prolog import F32, printF32
+from prolog import F32
+from IO import print
 
 
 fn main():
     # CHECK: 2.0
-    printF32(F32(1.0) + 1.0)
+    print(F32(1.0) + 1.0)
