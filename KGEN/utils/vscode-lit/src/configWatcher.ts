@@ -2,7 +2,7 @@ import * as chokidar from 'chokidar';
 import * as vscode from 'vscode';
 
 import * as config from './config';
-import {LITContext} from './litContext';
+import {MOJOContext} from './mojoContext';
 
 /**
  *  Prompt the user to see if we should restart the server.
@@ -10,7 +10,7 @@ import {LITContext} from './litContext';
 async function promptRestart(settingName: string, promptMessage: string) {
   switch (config.get<string>(settingName)) {
   case 'restart':
-    vscode.commands.executeCommand('lit.restart');
+    vscode.commands.executeCommand('mojo.restart');
     break;
   case 'ignore':
     break;
@@ -19,10 +19,10 @@ async function promptRestart(settingName: string, promptMessage: string) {
     switch (await vscode.window.showInformationMessage(
         promptMessage, 'Yes', 'Yes, always', 'No, never')) {
     case 'Yes':
-      vscode.commands.executeCommand('lit.restart');
+      vscode.commands.executeCommand('mojo.restart');
       break;
     case 'Yes, always':
-      vscode.commands.executeCommand('lit.restart');
+      vscode.commands.executeCommand('mojo.restart');
       config.update<string>(settingName, 'restart',
                             vscode.ConfigurationTarget.Global);
       break;
@@ -41,13 +41,13 @@ async function promptRestart(settingName: string, promptMessage: string) {
  *  Activate watchers that track configuration changes for the given workspace
  *  folder, or null if the workspace is top-level.
  */
-export async function activate(litContext: LITContext,
+export async function activate(mojoContext: MOJOContext,
                                workspaceFolder: vscode.WorkspaceFolder,
                                settings: string[], paths: string[]) {
   // When a configuration change happens, check to see if we should restart.
-  litContext.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
+  mojoContext.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
     for (const setting of settings) {
-      const expandedSetting = `lit.${setting}`;
+      const expandedSetting = `mojo.${setting}`;
       if (event.affectsConfiguration(expandedSetting, workspaceFolder)) {
         promptRestart(
             'onSettingsChanged',
@@ -75,10 +75,10 @@ export async function activate(litContext: LITContext,
       if (event != 'unlink') {
         promptRestart(
             'onSettingsChanged',
-            'lit language server file has changed. Do you want to reload the server?');
+            'mojo language server file has changed. Do you want to reload the server?');
       }
     });
-    litContext.subscriptions.push(
+    mojoContext.subscriptions.push(
         new vscode.Disposable(() => { fileWatcher.close(); }));
   }
 }

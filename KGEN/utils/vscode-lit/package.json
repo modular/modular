@@ -1,7 +1,7 @@
 {
-  "name": "vscode-lit",
-  "displayName": "Lit",
-  "description": "Lit Language Extension",
+  "name": "vscode-mojo",
+  "displayName": "Mojo",
+  "description": "Mojo Language Extension",
   "version": "0.0.1",
   "engines": {
     "vscode": "^1.74.0"
@@ -11,17 +11,17 @@
     "Formatters"
   ],
   "keywords": [
-    "LIT"
+    "MOJO"
   ],
   "activationEvents": [
-    "onLanguage:lit"
+    "onLanguage:mojo"
   ],
   "main": "./out/extension",
   "scripts": {
     "vscode:prepublish": "tsc -p ./",
     "compile": "tsc -watch -p ./",
     "format": "clang-format -i --glob=\"{src,test}/*.ts\"",
-    "package": "vsce package --out ./out/vscode-lit.vsix"
+    "package": "vsce package --out ./out/vscode-mojo.vsix"
   },
   "devDependencies": {
     "@types/mocha": "^7.0.2",
@@ -41,47 +41,49 @@
   "contributes": {
     "languages": [
       {
-        "id": "lit",
+        "id": "mojo",
         "aliases": [
-          "lit"
+          "lit",
+          "mojo"
         ],
         "extensions": [
-          ".lit"
+          ".lit",
+          ".mojo"
         ],
         "configuration": "./language-configuration.json"
       },
       {
-        "id": "lit-injection"
+        "id": "mojo-injection"
       }
     ],
     "grammars": [
       {
-        "language": "lit",
-        "scopeName": "source.lit",
-        "path": "./syntaxes/lit.syntax.json"
+        "language": "mojo",
+        "scopeName": "source.mojo",
+        "path": "./syntaxes/mojo.syntax.json"
       },
       {
-        "language": "lit-injection",
-        "scopeName": "markdown.lit.codeblock",
+        "language": "mojo-injection",
+        "scopeName": "markdown.mojo.codeblock",
         "path": "./syntaxes/markdown.syntax.json",
         "injectTo": [
           "text.html.markdown"
         ],
         "embeddedLanguages": {
-          "meta.embedded.block.lit": "lit"
+          "meta.embedded.block.mojo": "mojo"
         }
       }
     ],
     "configuration": {
       "type": "object",
-      "title": "Lit",
+      "title": "Mojo",
       "properties": {
-        "lit.server_path": {
+        "mojo.server_path": {
           "scope": "resource",
           "type": "string",
-          "description": "The file path of the lit-lsp-server executable."
+          "description": "The file path of the mojo-lsp-server executable."
         },
-        "lit.onSettingsChanged": {
+        "mojo.onSettingsChanged": {
           "type": "string",
           "default": "prompt",
           "description": "Action taken when a setting change requires a server restart to take effect.",
@@ -100,8 +102,8 @@
     },
     "commands": [
       {
-        "command": "lit.restart",
-        "title": "lit: Restart the extension"
+        "command": "mojo.restart",
+        "title": "mojo: Restart the extension"
       }
     ]
   }

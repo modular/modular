@@ -3,12 +3,12 @@
   "injectionSelector": "L:text.html.markdown",
   "patterns": [
     {
-      "include": "#lit-code-block"
+      "include": "#mojo-code-block"
     }
   ],
   "repository": {
-    "lit-code-block": {
-      "begin": "(^|\\G)(\\s*)(\\`{3,}|~{3,})\\s*(?i:(lit)(\\s+[^`~]*)?$)",
+    "mojo-code-block": {
+      "begin": "(^|\\G)(\\s*)(\\`{3,}|~{3,})\\s*(?i:(lit|mojo)(\\s+[^`~]*)?$)",
       "name": "markup.fenced_code.block.markdown",
       "end": "(^|\\G)(\\2|\\s{0,3})(\\3)\\s*$",
       "beginCaptures": {
@@ -31,15 +31,15 @@
         {
           "begin": "(^|\\G)(\\s*)(.*)",
           "while": "(^|\\G)(?!\\s*([`~]{3,})\\s*$)",
-          "contentName": "meta.embedded.block.lit",
+          "contentName": "meta.embedded.block.mojo",
           "patterns": [
             {
-              "include": "source.lit"
+              "include": "source.mojo"
             }
           ]
         }
       ]
     }
   },
-  "scopeName": "markdown.lit.codeblock"
+  "scopeName": "markdown.mojo.codeblock"
 }

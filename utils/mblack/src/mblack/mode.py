@@ -45,7 +45,7 @@ class TargetVersion(Enum):
     PY39 = 9
     PY310 = 10
     PY311 = 11
-    LIT = 99
+    MOJO = 99
 
 
 class Feature(Enum):
@@ -158,7 +158,7 @@ VERSION_TO_FEATURES: Dict[TargetVersion, Set[Feature]] = {
         Feature.EXCEPT_STAR,
         Feature.VARIADIC_GENERICS,
     },
-    TargetVersion.LIT: {
+    TargetVersion.MOJO: {
         Feature.F_STRINGS,
         Feature.DEBUG_F_STRINGS,
         Feature.NUMERIC_UNDERSCORES,

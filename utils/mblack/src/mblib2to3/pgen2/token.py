@@ -89,7 +89,7 @@ ERRORTOKEN: Final = 58
 COLONEQUAL: Final = 59
 N_TOKENS: Final = 60
 
-# Lit constants
+# Mojo constants
 FN: Final = 61
 STRUCT: Final = 62
 ALIAS: Final = 63

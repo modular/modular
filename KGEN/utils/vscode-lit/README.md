@@ -1,7 +1,7 @@
-# Lit
+# Mojo
 
-This extension provides languages features for the "lit" language.
+This extension provides languages features for the "mojo" language.
 
 ## Features
 
-Syntax highlighting for .lit files and lit markdown blocks.
+Syntax highlighting for .mojo files and mojo markdown blocks.
