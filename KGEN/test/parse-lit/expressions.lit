@@ -506,7 +506,7 @@ fn patterns():
   (someF32) += someF32
 
   # CHECK: %someSIMD = lit.varlet.decl "someSIMD", var = true
-  # CHECK: [[SIMD:%.*]] = kgen.call @"$SIMD"::@SIMD::@"__clone__($SIMD::SIMD[size, type]&)"<size{{.*}} = 4{{.*}}, type: dtype = f64>(%someSIMD)
+  # CHECK: [[SIMD:%.*]] = kgen.call @"$SIMD"::@SIMD::@"__clone__($SIMD::SIMD[size, type]&)"<size{{.*}} = 4{{.*}}, type:{{.*}} dtype = f64{{.*}}>(%someSIMD)
   # CHECK: {{%.*}} = kgen.call @"$SIMD"::@SIMD::@"__iadd__{{.*}}(%someSIMD, [[SIMD]])
   var someSIMD : SIMD[4, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`]
   (someSIMD) += someSIMD
