@@ -204,6 +204,20 @@ public:
     expansions.push_back(child);
   }
 
+  /// Take the provided error and set this node to an `error` state. If this is
+  /// a node for a concrete operation, erase the operation immediately.
+  void setToError(ErrorTree &&err) {
+    // Take the error as the error in this node.
+    this->error = std::move(err);
+
+    // Erase the op if it's a FuncOp - can't erase generators cause different
+    // input params can mean different things.
+    if (llvm::isa_and_present<FuncOp>(op)) {
+      op->erase();
+      op = nullptr;
+    }
+  }
+
   /// Update the debug info on the concretization of the current node. This
   /// means, if there are child nodes, update their debug info. This should be
   /// called after the operations are renamed at the end of the pass.
@@ -373,7 +387,8 @@ void ExpansionTreeNode::trimFailedExpansions(DenseSet<Operation *> &toErase) {
     if (!error)
       return;
     LLVM_DEBUG(print(logger.scope("Erasing Failed Node")));
-    toErase.insert(op);
+    if (op)
+      toErase.insert(op);
     return;
   }
   auto _ = logger.scope("Trimming Failed Children");
@@ -431,6 +446,14 @@ void ExpansionTreeNode::updateDebugInfo() {
 
 void ExpansionTreeNode::print(mlir::raw_indented_ostream &os,
                               bool printBindings) {
+  // If we don't have an op, don't bother printing anything.
+  if (!op) {
+    // Only print the top level error.
+    if (error)
+      os << "Error: " << error->getError() << "\n";
+    return;
+  }
+
   bool isRoot = (parent == nullptr);
   os << "ExpansionTreeNode <" << (isRoot ? "Root" : getNameAttr().getValue())
      << ">";
@@ -680,7 +703,7 @@ static void completeCallProcessing(KGENCallOpInterface user,
     ErrorTreeOr<Type> typeOr =
         parentNode->evaluator.concretizeParameterExpr(user.getLoc(), result);
     if (typeOr.isError()) {
-      thisNode->error = typeOr.takeError();
+      thisNode->setToError(typeOr.takeError());
       return;
     }
 
@@ -712,9 +735,9 @@ static void completeCallProcessing(KGENCallOpInterface user,
   // result parameters yet.
   ArrayAttr resultParams = (*concreteNodeOr)->resultParams;
   if (!resultParams && !decls.empty()) {
-    thisNode->error =
+    thisNode->setToError(
         ErrorTree(userLoc, "could not resolve callee's necessary result "
-                           "parameters, infinite recursive loop?");
+                           "parameters, infinite recursive loop?"));
     return;
   }
   // No decls, so we don't have to do anything.
@@ -925,9 +948,9 @@ public:
   std::optional<ErrorTree> processParamIfOp(ParamIfOp op,
                                             ExpansionTreeNode *parent);
 
-  /// Process a worklist of ops.
-  void processScope(ExpansionTreeNode *parentNode,
-                    ArrayRef<Operation *> worklist);
+  /// Process a worklist of ops. Returns failure if the scope produced an error.
+  LogicalResult processScope(ExpansionTreeNode *parentNode,
+                             ArrayRef<Operation *> worklist);
 
   /// Specializes the function at `funcNode` with parameter declarations
   /// `paramDecls`. Generates a DAG of ops that use parameters and calls
@@ -975,6 +998,7 @@ private:
 //===----------------------------------------------------------------------===//
 void ElaboratorImpl::finalizeAndVerifyFunction(
     mlir::SymbolTableAnalysis &analysis, ExpansionTreeNode *node, FuncOp func) {
+  TimeTraceScope<> traceScope("finalizeAndVerifyFunction");
   // Erase any unreachable blocks that might have arisen.
   mlir::IRRewriter b(func.getContext());
   (void)mlir::eraseUnreachableBlocks(b, func.getBodyRegion());
@@ -1000,14 +1024,10 @@ void ElaboratorImpl::finalizeAndVerifyFunction(
         return success();
       });
 
-  // Verify the function and invoke the symbol user verifier on all its
-  // contained ops to verify parameter references.
-  auto verifySymbolUses = [&](mlir::SymbolUserOpInterface user) -> WalkResult {
-    return user.verifySymbolUses(analysis.getSymbolTables());
-  };
-  if (failed(verify(func)) || func.walk(verifySymbolUses).wasInterrupted()) {
-    node->error = ErrorTree(*verificationLoc, Twine("verification error: ") +
-                                                  verificationError.str());
+  // Verify the function.
+  if (failed(verify(func))) {
+    node->setToError(ErrorTree(*verificationLoc, Twine("verification error: ") +
+                                                     verificationError.str()));
     LLVM_DEBUG(logger.scope("Result: Failure")
                << verificationError.str() << "\n");
   }
@@ -1161,7 +1181,7 @@ ElaboratorImpl::processParamForkOp(ExpansionTreeNode *parent, ParamForkOp op,
     return ErrorTree(op.getLoc(), "some expansions failed", errors);
 
   // The parent has to be deleted.
-  parent->error = ErrorTree(op.getLoc(), "param fork base node");
+  parent->setToError(ErrorTree(op.getLoc(), "param fork base node"));
   return std::nullopt;
 }
 
@@ -1205,16 +1225,13 @@ ElaboratorImpl::spawnParamForkClone(ParamForkOp forkOp, Attribute value,
   auto remaining = map_to_vector(remainingWorklist,
                                  [&](Operation *op) { return map.lookup(op); });
 
-  // And finally, process the rest of the worklist in this new scope.
-  processScope(newFuncNode, remaining);
-
-  // If we've hit an error case, don't try and finish processing. Return to the
-  // upper function that this hit an error.
-  if (newFuncNode->error)
+  // And finally, process the rest of the worklist in this new scope. If we've
+  // hit an error case, don't try and finish processing. Return to the upper
+  // function that this hit an error.
+  if (failed(processScope(newFuncNode, remaining)))
     return newFuncNode->error->copy();
 
   finalizeAndVerifyFunction(analysis, newFuncNode, newFunc);
-
   return std::nullopt;
 }
 
@@ -1358,10 +1375,10 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
     auto remaining = map_to_vector(
         remainingWorklist, [&](Operation *op) { return map.lookup(op); });
 
-    // Process the rest of the worklist in this new scope.
-    processScope(newNode, remaining);
-
-    finalizeAndVerifyFunction(analysis, newNode, cast<FuncOp>(newOp));
+    // Process the rest of the worklist in this new scope. If the scope
+    // processing failed, do nothing.
+    if (succeeded(processScope(newNode, remaining)))
+      finalizeAndVerifyFunction(analysis, newNode, cast<FuncOp>(newOp));
   }
 
   // Bind this concrete impl to this callee for this node.
@@ -1452,7 +1469,8 @@ ElaboratorImpl::processCallOp(KGENCallOpInterface call,
   llvm::append_range(opsToRewrite, found->second.paramOps);
 
   // Process the ops we just collected.
-  processScope(parent, opsToRewrite);
+  if (failed(processScope(parent, opsToRewrite)))
+    return parent->error->copy();
 
   // Grab the terminator before we clone the ops over.
   Operation *regionTerminator = region->front().getTerminator();
@@ -1535,7 +1553,8 @@ ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent) {
 
     opsToRewrite.push_back(paramOp);
   }
-  processScope(parent, opsToRewrite);
+  if (failed(processScope(parent, opsToRewrite)))
+    return parent->error->copy();
 
   // Splice the ops into the parent. Grab the terminator before the iterators
   // invalidate.
@@ -1590,13 +1609,15 @@ ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent) {
 // ElaboratorImpl::processScope
 //===----------------------------------------------------------------------===//
 
-void ElaboratorImpl::processScope(ExpansionTreeNode *parentNode,
-                                  ArrayRef<Operation *> worklist) {
+LogicalResult ElaboratorImpl::processScope(ExpansionTreeNode *parentNode,
+                                           ArrayRef<Operation *> worklist) {
   LLVM_DEBUG({
     auto _ = logger.scope("Operations to Rewrite");
     for (Operation *op : worklist)
       logger << *op << "\n";
   });
+  TimeTraceScope<> traceScope("processScope",
+                              std::to_string(worklist.size()) + " ops");
 
   // Processing an op may generate more stuff, or even delete the op being
   // processed.
@@ -1612,37 +1633,46 @@ void ElaboratorImpl::processScope(ExpansionTreeNode *parentNode,
 
     std::optional<ErrorTree> result = std::nullopt;
     if (auto declare = dyn_cast<ParamDeclareOp>(op)) {
+      TimeTraceScope<> traceScope("processParamDeclareOp");
       result = processParamDeclareOp(parentNode->evaluator, declare);
     } else if (auto declare = dyn_cast<ParamDeclareRegionOp>(op)) {
+      TimeTraceScope<> traceScope("processParamDeclareRegionOp");
       result = processParamDeclareRegionOp(declare, parentNode);
     } else if (auto bind = dyn_cast<ParamResultBindOp>(op)) {
+      TimeTraceScope<> traceScope("processParamResultBindOp");
       result = processParamResultBindOp(bind, parentNode);
     } else if (auto fork = dyn_cast<ParamForkOp>(op)) {
+      TimeTraceScope<> traceScope("processParamForkOp");
       result = processParamForkOp(parentNode, fork, remainingWorklist);
     } else if (auto assertOp = dyn_cast<ParamAssertOp>(op)) {
+      TimeTraceScope<> traceScope("processParamAssertOp");
       result = processParamAssertOp(parentNode->evaluator, assertOp);
     } else if (auto ifOp = dyn_cast<ParamIfOp>(op)) {
+      TimeTraceScope<> traceScope("processParamIfOp");
       result = processParamIfOp(ifOp, parentNode);
     } else if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
+      TimeTraceScope<> traceScope("processCallOp");
       result = processCallOp(call, parentNode, remainingWorklist);
     } else {
+      TimeTraceScope<> traceScope("processGenericOp");
       result = processGenericOp(parentNode->evaluator, op);
     }
 
-    // st set the node to an error - we don't want to fail the whole
-    // process.
+    // If we have an error, log it and set the parent node to an error. This
+    // will perform any required cleanup.
     if (result) {
       LLVM_DEBUG(logger.scope("Result: Failure") << result->getError());
-      parentNode->error = std::move(result);
-      return;
+      parentNode->setToError(std::move(*result));
+      return failure();
     }
 
     // If the parent node was set to error, then just bail.
     if (parentNode->error)
-      return;
+      return failure();
   }
 
   LLVM_DEBUG(parentNode->print(logger << "Completed processing "));
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1652,6 +1682,7 @@ void ElaboratorImpl::processScope(ExpansionTreeNode *parentNode,
 std::optional<ErrorTree>
 ElaboratorImpl::specializeFunction(ExpansionTreeNode *funcNode,
                                    ArrayRef<ParamDeclAttr> paramDecls) {
+  TimeTraceScope<> traceScope("specializeFunc");
   FuncOp func = cast<FuncOp>(funcNode->op);
 
   auto _ = logger.scope("Specializing Function: @", func.getName());
@@ -1675,14 +1706,10 @@ ElaboratorImpl::specializeFunction(ExpansionTreeNode *funcNode,
   // Take the use-def graph and put it into the func node itself.
   funcNode->paramGraph = std::move(uses);
 
-  // Process the worklist.
-  processScope(funcNode, opsToRewrite);
+  // Process the worklist. Only finalize the function if this succeeded.
+  if (succeeded(processScope(funcNode, opsToRewrite)))
+    finalizeAndVerifyFunction(analysis, funcNode, func);
 
-  // Bail if we hit an error.
-  if (funcNode->error)
-    return std::nullopt;
-
-  finalizeAndVerifyFunction(analysis, funcNode, func);
   return std::nullopt;
 }
 
@@ -1703,8 +1730,10 @@ ElaboratorImpl::specializeGenerator(ExpansionTreeNode *genNode) {
   GeneratorOp generator = cast<GeneratorOp>(genNode->op);
 
   TimeTraceScope<> traceScope(
-      "specialize-generator:" + tryGettingShortName(generator.getName()).str(),
-      generator.getName());
+      "specializeGenerator:" + tryGettingShortName(generator.getName()).str(),
+      generator.getName().str() + " Input params: " +
+          mlir::debugString(generator.getInputParamsAttr()) + " = " +
+          mlir::debugString(genNode->inputParams));
   auto _ = logger.scope("Specializing Generator: @", generator.getName());
   logger.logOp("Generator", generator);
 
@@ -1720,7 +1749,7 @@ ElaboratorImpl::specializeGenerator(ExpansionTreeNode *genNode) {
   // If the generator's constraints don't satisfy, set an error and move on.
   if (auto err =
           KGEN::evaluateConstraints(generator.getConstraints(), evaluator)) {
-    genNode->error = std::move(err.value());
+    genNode->setToError(std::move(err.value()));
     return std::nullopt;
   }
 
