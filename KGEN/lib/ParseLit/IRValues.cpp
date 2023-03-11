@@ -113,9 +113,7 @@ static ASTType getTypeFrom(AnyValue::Storage storage) {
 }
 
 ASTType CRValue::getType() const { return getTypeFrom(storage); }
-ASTType RValue::getType() const { return getTypeFrom(storage); }
 ASTType CValue::getType() const { return getTypeFrom(storage); }
-ASTType AnyValue::getType() const { return getTypeFrom(storage); }
 
 PRValue::PRValue(Type value)
     : storage(value ? ParameterizedTypeConstantAttr::get(value) : Attribute()) {
@@ -143,14 +141,6 @@ ASTType CRValue::getRValueType() const {
 }
 
 ASTType CValue::getRValueType() const {
-  if (isa<SLValue, MRValue, MBValue>(storage))
-    return getType().getPointerElementType();
-  return getType();
-}
-
-/// This method returns the type of this value when projected as an RValue.
-/// If this is an LValue, MBValue, or MRValue, it strips off the pointer type.
-ASTType AnyValue::getRValueType() const {
   if (isa<SLValue, MRValue, MBValue>(storage))
     return getType().getPointerElementType();
   return getType();

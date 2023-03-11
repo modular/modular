@@ -74,7 +74,7 @@ MLIRContext *ASTDecl::getContext() const {
 }
 
 /// If this is an RValue, return it otherwise return null.
-RValue ASTDecl::getIfRValue() const {
+CRValue ASTDecl::getIfRValue() const {
   if (auto attr = dyn_cast_or_null<PRValue>(irValue))
     return attr;
   if (auto value = dyn_cast_or_null<SRValue>(irValue))

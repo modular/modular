@@ -220,6 +220,7 @@ public:
                     ASTType resultType);
   CRValue emitCRValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
   CValue emitCValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
+  LValue emitLValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
 
   /// This helper emits the specified value as a SRValue which has an SSA
   /// value representation, materializing PRValues and loading LValues as
@@ -244,37 +245,36 @@ public:
   /// etc) that results in the call, or potentially a random value that is being
   /// fed into an implicit conversion.  This should only be used for location
   /// information.
-  AnyValue emitNamedMethodCall(StringRef methodName,
-                               ArrayRef<ASTExprAnd<AnyValue>> argValues,
-                               ValueDest &dest, CallSyntax syntax,
-                               const ExprNode *callNode);
+  CValue emitNamedMethodCall(StringRef methodName,
+                             ArrayRef<ASTExprAnd<AnyValue>> argValues,
+                             ValueDest &dest, CallSyntax syntax,
+                             const ExprNode *callNode);
 
   /// Emit an indirect call to a resolved value, checking for compatibility and
   /// then generating the call logic.  This emits an error and returns null on
   /// failure.
-  AnyValue emitIndirectCall(CRValue callee,
-                            ArrayRef<ASTExprAnd<AnyValue>> operands,
-                            ValueDest &dest, const ExprNode *callExpr);
+  CValue emitIndirectCall(CRValue callee,
+                          ArrayRef<ASTExprAnd<AnyValue>> operands,
+                          ValueDest &dest, const ExprNode *callExpr);
 
   /// Emit call to a resolved and /already type checked/ callee. This does not,
   /// check for compatibility and isn't prepared to emit errors.
-  AnyValue emitCallUnchecked(CRValue callee,
-                             ArrayRef<ASTExprAnd<AnyValue>> operands,
-                             ArrayRef<ParamDeclAttr> resultParams,
-                             ValueDest &dest, const ExprNode *callExpr);
+  CValue emitCallUnchecked(CRValue callee,
+                           ArrayRef<ASTExprAnd<AnyValue>> operands,
+                           ArrayRef<ParamDeclAttr> resultParams,
+                           ValueDest &dest, const ExprNode *callExpr);
 
   /// Return true if 'value' may be implicitly converted to 'requiredType'
   /// by invoking (one level of) conversion operations.  This does not generate
   /// any IR.
-  bool canImplicitlyConvertToType(ASTExprAnd<AnyValue> value,
+  bool canImplicitlyConvertToType(ASTExprAnd<CValue> value,
                                   ASTType requiredType);
 
   /// Emit the specified expression as a condition, converting it to an MLIR I1
   /// value that we can test directly, and also returning the intermediate
   /// result of calling `__bool__` (which is typically a Bool or object type,
   /// but not guaranteed).  This reports and error and returns null on error.
-  RValue emitConditionValueAsI1(ASTExprAnd<AnyValue> expr,
-                                AnyValue &boolResult);
+  RValue emitConditionValueAsI1(ASTExprAnd<CValue> expr, CValue &boolResult);
 
   //===--------------------------------------------------------------------===//
   // Emission helpers for various value classifications.
@@ -283,6 +283,7 @@ public:
   /// accepts (and silently propagates) null values, and is a convenience helper
   /// for working with getLValueForResult.
   AnyValue emitResult(AnyValue value, const ExprNode *node, ValueDest &dest);
+  CValue emitCResult(CValue value, const ExprNode *node, ValueDest &dest);
 
   /// This emits the specified value to an RValue in the specified ValueDest and
   /// returns it (potentially as a borrowed referenced to that storage).

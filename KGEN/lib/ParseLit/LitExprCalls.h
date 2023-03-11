@@ -196,8 +196,8 @@ public:
   /// etc) that results in the call, or potentially a random value that is being
   /// fed into an implicit conversion.  This should only be used for location
   /// information.
-  AnyValue emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands, ValueDest &dest,
-                    ExprEmitter &emitter);
+  CValue emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands, ValueDest &dest,
+                  ExprEmitter &emitter);
 
 private:
   /// Resolve the callee into either a single PRValue callee (if there's only

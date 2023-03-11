@@ -709,16 +709,13 @@ ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
   if (!loadedSeq.ir)
     return {};
 
-  AnyValue rangeValue = getEmitter().emitNamedMethodCall(
-      "__iter__", {loadedSeq}, ValueDest::none(), CallSyntax::kImplicitConvert,
-      seqExp);
-  if (!rangeValue)
-    return {};
-  LIT::VarLetDeclOp rangeRef = builder.create<LIT::VarLetDeclOp>(
-      forLoc, POP::PointerType::get(rangeValue.getRValueType()), "$RANGE",
-      /*isVar*/ true);
-  ValueDest rangeDest = {SLValue(rangeRef), EC_ForIterator};
-  if (!getEmitter().emitRValue({rangeValue, seqExp}, rangeDest)) {
+  // Emit a call to __iter__ into a var with an inferred type.
+  VarLetDeclOp rangeRef = builder.create<VarLetDeclOp>(
+      forLoc, POP::PointerType::get(UnresolvedType::get(getContext())),
+      "$RANGE", /*isVar*/ true);
+  ValueDest rangeDest(rangeRef, EC_ForIterator);
+  if (!getEmitter().emitNamedMethodCall("__iter__", {loadedSeq}, rangeDest,
+                                        CallSyntax::kImplicitConvert, seqExp)) {
     rangeDest.resetForError();
     return {};
   }
