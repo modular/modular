@@ -37,7 +37,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
   // CHECK:   %[[CALLEE:.*]] = llvm.load %[[CALLEEPTR]] : !llvm.ptr<ptr<func<f32 (i64, f32)>>>
   // CHECK:   %[[BOUNDARGPTR:.*]] = llvm.getelementptr %[[ENV_STRUCT]][0, 1, 0] : (!llvm.ptr<struct<(ptr, struct<(f32)>)>>) -> !llvm.ptr<f32>
   // CHECK:   %[[BOUNDARG0:.*]] = llvm.load %[[BOUNDARGPTR]] : !llvm.ptr<f32>
-  // CHECK:   %[[RESULT:.*]] = llvm.call %[[CALLEE]](%arg1, %[[BOUNDARG0]]) : !llvm.ptr<func<f32 (i64, f32)>>, (i64, f32) -> f32
+  // CHECK:   %[[RESULT:.*]] = llvm.call %[[CALLEE]](%arg1, %[[BOUNDARG0]]) {fastmathFlags = #llvm.fastmath<contract>} : !llvm.ptr<func<f32 (i64, f32)>>, (i64, f32) -> f32
   // CHECK:   llvm.return %[[RESULT]] : f32
   // CHECK:  }
 }
@@ -87,7 +87,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
   // CHECK:   %[[BOUNDARG0:.*]] = llvm.load %[[BOUNDARG0PTR]] : !llvm.ptr<i64>
   // CHECK:   %[[BOUNDARG1PTR:.*]] = llvm.getelementptr %[[ENV_STRUCT]][0, 1, 1] : (!llvm.ptr<struct<(ptr, struct<(i64, f32)>)>>) -> !llvm.ptr<f32>
   // CHECK:   %[[BOUNDARG1:.*]] = llvm.load %[[BOUNDARG1PTR]] : !llvm.ptr<f32>
-  // CHECK:   llvm.call %[[CALLEE]](%[[BOUNDARG0]], %[[BOUNDARG1]]) : !llvm.ptr<func<void (i64, f32)>>, (i64, f32) -> ()
+  // CHECK:   llvm.call %[[CALLEE]](%[[BOUNDARG0]], %[[BOUNDARG1]]) {fastmathFlags = #llvm.fastmath<contract>} : !llvm.ptr<func<void (i64, f32)>>, (i64, f32) -> ()
   // CHECK:   llvm.return
   // CHECK: }
 }
@@ -98,7 +98,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
   // CHECK-LABEL: @call_indirect
   kgen.func @call_indirect(%fn: (i32, i64) -> (f32, f64), %a: i32, %b: i64) -> (f32, f64) {
     // CHECK: %[[FN:.*]] = builtin.unrealized_conversion_cast %arg0 : (i32, i64) -> (f32, f64) to !llvm.ptr<func<struct<(f32, f64)> (i32, i64)>>
-    // CHECK: %[[RESULT:.*]] = llvm.call %[[FN]](%arg1, %arg2) : !llvm.ptr<func<struct<(f32, f64)> (i32, i64)>>, (i32, i64) -> !llvm.struct<(f32, f64)>
+    // CHECK: %[[RESULT:.*]] = llvm.call %[[FN]](%arg1, %arg2) {fastmathFlags = #llvm.fastmath<contract>} : !llvm.ptr<func<struct<(f32, f64)> (i32, i64)>>, (i32, i64) -> !llvm.struct<(f32, f64)>
     // CHECK: %[[R0:.*]] = llvm.extractvalue %[[RESULT]][0]
     // CHECK: %[[R1:.*]] = llvm.extractvalue %[[RESULT]][1]
     %0:2 = pop.call_indirect %fn(%a, %b) : (i32, i64) -> (f32, f64)
@@ -145,7 +145,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
     // CHECK: %[[WRAPPERFNPTR:.*]] = llvm.extractvalue %[[INSERT1]][0]
     // CHECK: %[[ENVPTR:.*]] = llvm.extractvalue %[[INSERT1]][1]
     // CHECK: %[[CASTWRAPPERFNPTR:.*]] = llvm.bitcast %[[WRAPPERFNPTR]] : !llvm.ptr to !llvm.ptr<func<i64 (ptr, i64)>>
-    // CHECK: %[[RESULT:.*]] = llvm.call %[[CASTWRAPPERFNPTR]](%[[ENVPTR]], %[[INDEX]]) : !llvm.ptr<func<i64 (ptr, i64)>>, (!llvm.ptr, i64) -> i64
+    // CHECK: %[[RESULT:.*]] = llvm.call %[[CASTWRAPPERFNPTR]](%[[ENVPTR]], %[[INDEX]]) {fastmathFlags = #llvm.fastmath<contract>} : !llvm.ptr<func<i64 (ptr, i64)>>, (!llvm.ptr, i64) -> i64
     // CHECK: %[[CASTRESULT:.*]] = builtin.unrealized_conversion_cast %[[RESULT]]
     // CHECK: kgen.return %[[CASTRESULT]] : index
     %0 = pop.partial_apply %arg0(?, %arg1) : (index, f32) -> index
@@ -159,7 +159,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
   // CHECK:  %[[CALLEE:.*]] = llvm.load %[[CALLEEPTR]] : !llvm.ptr<ptr<func<i64 (i64, f32)>>>
   // CHECK:  %[[BOUNDARG0PTR:.*]] = llvm.getelementptr %[[ENV]][0, 1, 0]
   // CHECK:  %[[BOUNDARG0:.*]] = llvm.load %[[BOUNDARG0PTR]] : !llvm.ptr<f32>
-  // CHECK:  %[[RESULT:.*]] = llvm.call %[[CALLEE]](%arg1, %[[BOUNDARG0]]) : !llvm.ptr<func<i64 (i64, f32)>>, (i64, f32) -> i64
+  // CHECK:  %[[RESULT:.*]] = llvm.call %[[CALLEE]](%arg1, %[[BOUNDARG0]]) {fastmathFlags = #llvm.fastmath<contract>} : !llvm.ptr<func<i64 (i64, f32)>>, (i64, f32) -> i64
   // CHECK:  llvm.return %[[RESULT]] : i64
   // CHECK: }
 }
@@ -247,6 +247,6 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
   //   CHECK: %[[I_ENVSTRUCT_PTR:.*]] = llvm.load %[[I_ENVSTRUCT_PTRPTR]] : !llvm.ptr<ptr<struct<(ptr, ptr)>>>
   //   CHECK: %[[BOUNDARG0_PTR:.*]] = llvm.getelementptr %[[CLOSURE_STRUCTPTR]][0, 1, 0] : (!llvm.ptr<struct<(ptr, struct<(f32, ptr<struct<(ptr, ptr)>>)>)>>) -> !llvm.ptr<f32>
   //   CHECK: %[[BOUNDARG0:.*]] = llvm.load %[[BOUNDARG0_PTR]] : !llvm.ptr<f32>
-  //   CHECK: %[[RES:.*]] = llvm.call %[[I_WRAPPERFNPTR]](%[[I_ENVSTRUCT_PTR]], %[[BOUNDARG0]]) : !llvm.ptr<func<f32 (ptr<struct<(ptr, ptr)>>, f32)>>, (!llvm.ptr<struct<(ptr, ptr)>>, f32) -> f32
+  //   CHECK: %[[RES:.*]] = llvm.call %[[I_WRAPPERFNPTR]](%[[I_ENVSTRUCT_PTR]], %[[BOUNDARG0]]) {fastmathFlags = #llvm.fastmath<contract>} : !llvm.ptr<func<f32 (ptr<struct<(ptr, ptr)>>, f32)>>, (!llvm.ptr<struct<(ptr, ptr)>>, f32) -> f32
   //   CHECK: llvm.return %[[RES]] : f32
 }

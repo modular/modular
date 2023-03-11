@@ -4,7 +4,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
 
 // CHECK-LABEL: @neg_f32
 kgen.func @neg_f32(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
-  // CHECK: llvm.fneg
+  // CHECK: llvm.fneg %0 {fastmathFlags = #llvm.fastmath<contract>}
   %0 = pop.neg %arg0 : !pop.scalar<f32>
   kgen.return %0 : !pop.scalar<f32>
 }
@@ -55,7 +55,7 @@ kgen.func @add_si32(%arg0: !pop.scalar<si32>) -> !pop.scalar<si32> {
 
 // CHECK-LABEL: @add_f32
 kgen.func @add_f32(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
-  // CHECK: llvm.fadd
+  // CHECK: llvm.fadd %0, %0 {fastmathFlags = #llvm.fastmath<contract>}
   %0 = pop.add %arg0, %arg0 : !pop.scalar<f32>
   kgen.return %0 : !pop.scalar<f32>
 }
@@ -76,7 +76,7 @@ kgen.func @sub_si32(%arg0: !pop.scalar<si32>, %arg1: !pop.scalar<si32>) -> !pop.
 
 // CHECK-LABEL: @sub_f32
 kgen.func @sub_f32(%arg0: !pop.scalar<f32>, %arg1: !pop.scalar<f32>) -> !pop.scalar<f32> {
-  // CHECK: llvm.fsub
+  // CHECK: llvm.fsub %0, %1 {fastmathFlags = #llvm.fastmath<contract>}
   %0 = pop.sub %arg0, %arg1 : !pop.scalar<f32>
   kgen.return %0 : !pop.scalar<f32>
 }
@@ -98,7 +98,7 @@ kgen.func @mul_si32(%arg0: !pop.scalar<si32>) -> !pop.scalar<si32> {
 
 // CHECK-LABEL: @mul_f32
 kgen.func @mul_f32(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
-  // CHECK: llvm.fmul
+  // CHECK: llvm.fmul %0, %0 {fastmathFlags = #llvm.fastmath<contract>}
   %0 = pop.mul %arg0, %arg0 : !pop.scalar<f32>
   kgen.return %0 : !pop.scalar<f32>
 }
@@ -126,7 +126,7 @@ kgen.func @max_ui32(%arg0: !pop.scalar<ui32>, %arg1: !pop.scalar<ui32>) -> !pop.
 
 // CHECK-LABEL: @max_f32
 kgen.func @max_f32(%arg0: !pop.scalar<f32>, %arg1: !pop.scalar<f32>) -> !pop.scalar<f32> {
-  // CHECK: llvm.intr.maxnum
+  // CHECK: llvm.intr.maxnum(%0, %1) {fastmathFlags = #llvm.fastmath<contract>}
   %0 = pop.max %arg0, %arg1 : !pop.scalar<f32>
   kgen.return %0 : !pop.scalar<f32>
 }
@@ -148,7 +148,7 @@ kgen.func @min_ui32(%arg0: !pop.scalar<ui32>, %arg1: !pop.scalar<ui32>) -> !pop.
 
 // CHECK-LABEL: @min_f32
 kgen.func @min_f32(%arg0: !pop.scalar<f32>, %arg1: !pop.scalar<f32>) -> !pop.scalar<f32> {
-  // CHECK: llvm.intr.minnum
+  // CHECK: llvm.intr.minnum(%0, %1) {fastmathFlags = #llvm.fastmath<contract>}
   %0 = pop.min %arg0, %arg1 : !pop.scalar<f32>
   kgen.return %0 : !pop.scalar<f32>
 }
@@ -163,7 +163,7 @@ kgen.func @div(%arg0: !pop.scalar<si32>,
   %0 = pop.div %arg0, %arg0 : !pop.scalar<si32>
   // CHECK: llvm.udiv
   %1 = pop.div %arg1, %arg1 : !pop.scalar<ui32>
-  // CHECK: llvm.fdiv
+  // CHECK: llvm.fdiv %{{.*}}, %{{.*}} {fastmathFlags = #llvm.fastmath<contract>}
   %2 = pop.div %arg2, %arg2 : !pop.scalar<f32>
   kgen.return %0, %1, %2 : !pop.scalar<si32>,!pop.scalar<ui32>,!pop.scalar<f32>
 }
@@ -182,7 +182,7 @@ kgen.func @rem(%arg0: !pop.scalar<si32>,
   %1 = pop.rem %arg1, %arg1 : !pop.scalar<ui32>
   // CHECK: llvm.srem
   %2 = pop.rem %arg2, %arg2 : !pop.scalar<index>
-  // CHECK: llvm.frem
+  // CHECK: llvm.frem %{{.*}}, %{{.*}} {fastmathFlags = #llvm.fastmath<contract>}
   %3 = pop.rem %arg3, %arg3 : !pop.scalar<f32>
   kgen.return %0, %1, %2, %3 : !pop.scalar<si32>,
                                !pop.scalar<ui32>,
@@ -212,7 +212,7 @@ kgen.func @fma_si32(%arg0: !pop.scalar<si32>, %arg1: !pop.scalar<si32>) -> !pop.
 
 // CHECK-LABEL: @select
 kgen.func @select(%arg0: !pop.scalar<bool>, %arg1: !pop.scalar<f32>, %arg2: !pop.scalar<f32>) -> !pop.scalar<f32> {
-  // CHECK: llvm.select
+  // CHECK: llvm.select %0, %1, %2 {fastmathFlags = #llvm.fastmath<contract>}
   %0 = pop.select %arg0, %arg1, %arg2 : !pop.scalar<f32>
   kgen.return %0 : !pop.scalar<f32>
 }
@@ -351,7 +351,7 @@ kgen.func @cmp_sint(%lhs: !pop.scalar<si32>, %rhs: !pop.scalar<si32>) {
 
 // CHECK-LABEL: @cmp_fp
 kgen.func @cmp_fp(%lhs: !pop.scalar<f32>, %rhs: !pop.scalar<f32>) {
-  // CHECK: llvm.fcmp "oeq"
+  // CHECK: llvm.fcmp "oeq" %0, %1 {fastmathFlags = #llvm.fastmath<contract>}
   %0 = pop.cmp eq(%lhs, %rhs) : !pop.scalar<f32>
   // CHECK: llvm.fcmp "one"
   %1 = pop.cmp ne(%lhs, %rhs) : !pop.scalar<f32>

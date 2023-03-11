@@ -129,7 +129,9 @@ struct ConvertKGENCall : public ConvertPOPToLLVMPattern<CallOp> {
 
     // Create the LLVM call operation.
     auto llvmCall = rewriter.create<LLVM::CallOp>(
-        op.getLoc(), types, flatSymbol, adaptor.getOperands());
+        op.getLoc(), types, flatSymbol, adaptor.getOperands(),
+        LLVM_FASTMATH_FLAGS,
+        /*branch_weights=*/nullptr);
 
     // Unpack the struct if necessary.
     SmallVector<Value> results;
@@ -339,6 +341,7 @@ static void emitCWrapper(LLVM::LLVMFuncOp func, StringAttr wrapperName,
   ImplicitLocOpBuilder b(loc, loc.getContext());
   b.setInsertionPointToEnd(body);
   auto call = b.create<LLVM::CallOp>(func, newArgs);
+  call.setFastmathFlags(LLVM_FASTMATH_FLAGS);
 
   // If the result type is a struct, flatten it into the arguments.
   if (auto structTy = dyn_cast<LLVM::LLVMStructType>(resultType)) {
