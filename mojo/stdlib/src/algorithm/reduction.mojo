@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Assert import debug_assert
+from Assert import assert_param_bool_msg, debug_assert
 from Buffer import Buffer, NDBuffer
 from SIMD import SIMD
 from Numerics import inf, neginf
@@ -145,12 +145,13 @@ fn _reduce_3D[
 
     # The width of this should be a multiple of the cache line size in order to
     # reuse the full cache line when an element of C is loaded.
-    alias cache_line_size = 64
-
     fn get_unroll_factor[
         simd_width: Int, dtype_size: __mlir_type.index
     ]() -> Int:
-        return cache_line_size // (simd_width * dtype_size)
+        alias cache_line_size = 64
+        alias unroll_factor = cache_line_size // (simd_width * dtype_size)
+        assert_param_bool_msg[unroll_factor > 0, "unroll_factor must be > 0"]()
+        return unroll_factor
 
     alias unroll_factor = get_unroll_factor[
         simd_width, dtype_sizeof[type]().__as_mlir_index()

@@ -91,6 +91,7 @@ fn vectorize[
     """Map a function which is parametrized over a simd_width over a range
     from 0 to size in simd fashion.
     """
+    assert_param_bool_msg[simd_width > 0, "simd width must be > 0"]()
     let vector_end = (size // simd_width) * simd_width
     for simd_idx in range(0, vector_end, simd_width):
         func[simd_width](simd_idx)
@@ -126,6 +127,9 @@ fn vectorize_unroll[
     """Map a function which is parametrized over a simd_width over a range
     from 0 to size in simd fashion and unroll the loop by unroll_factor.
     """
+    assert_param_bool_msg[simd_width > 0, "simd width must be > 0"]()
+    assert_param_bool_msg[unroll_factor > 0, "unroll factor must be > 0"]()
+
     alias unrolled_simd_width = simd_width * unroll_factor
     let vector_end_unrolled_simd = (
         size // unrolled_simd_width
