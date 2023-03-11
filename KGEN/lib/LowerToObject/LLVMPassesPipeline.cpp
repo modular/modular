@@ -322,18 +322,6 @@ static void addVectorPasses(FunctionPassManager &FPM) {
   FPM.addPass(VectorCombinePass());
 
   FPM.addPass(InstCombinePass());
-  // Unroll small loops to hide loop backedge latency and saturate any
-  // parallel execution resources of an out-of-order processor. We also then
-  // need to clean up redundancies and loop invariant code.
-  // FIXME: It would be really good to use a loop-integrated instruction
-  // combiner for cleanup here so that the unrolling and LICM can be pipelined
-  // across the loop nests.
-  // We do UnrollAndJam in a separate LPM to ensure it happens before unroll
-  FPM.addPass(
-      LoopUnrollPass(LoopUnrollOptions(/*SpeedupLevel*/ 3,
-                                       /*OnlyWhenForced=*/false,
-                                       /*ForgetAllSCEVInLoopUnroll*/ false)));
-  FPM.addPass(WarnMissedTransformationsPass());
   // Now that we are done with loop unrolling, be it either by LoopVectorizer,
   // or LoopUnroll passes, some variable-offset GEP's into alloca's could have
   // become constant-offset, thus enabling SROA and alloca promotion. Do so.
