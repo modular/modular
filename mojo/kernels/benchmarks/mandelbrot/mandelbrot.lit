@@ -31,21 +31,21 @@ from Assert import assert_param_msg
 from Pointer import Pointer, DTypePointer
 
 alias kunknown = __mlir_attr.`#kgen.unknown : index`
-alias float_type = DType.f64.value
-alias int_type = DType.si64.value
+alias float_type = DType.f64
+alias int_type = DType.si64
 
 
 fn draw_mandelbrot[
     h: __mlir_type.index, w: __mlir_type.index
 ](out: Matrix[create_kgen_list(h, w), int_type, False]):
     let sr = StringRef(".,c8M@jawrpogOQEPGJ")
-    let charset = Buffer[kunknown, DType.si8.value](sr.data.address, sr.length)
+    let charset = Buffer[kunknown, DType.si8](sr.data.address, sr.length)
     for row in range(h):
         for col in range(w):
             let v: Int = out.__getitem__(row, col).value
             if v > 0:
                 let p = charset.__getitem__(v % sr.length)
-                _printf[DType.si8.value]("%c", p.value)
+                _printf[DType.si8]("%c", p.value)
             else:
                 print("0")
         print("\n")
@@ -56,7 +56,7 @@ fn mandelbrot_kernel[
 ](c: Complex[simd_width, float_type], iter: Int) -> SIMD[simd_width, int_type]:
     var z = Complex[simd_width, float_type](0, 0)
     var nv: SIMD[simd_width, int_type] = 0
-    var mask: SIMD[simd_width, DType.bool.value] = -1
+    var mask: SIMD[simd_width, DType.bool] = -1
     var i: Int = iter
 
     while (i != 0) and mask.reduce_or():
