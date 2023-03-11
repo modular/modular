@@ -22,13 +22,13 @@ from SIMD import SIMD
 
 # TODO Refactor -- we should decide on and put them into a more common file
 from Transpose import _fill_strides
-from TargetInfo import dtype_simd_width, sizeof
+from TargetInfo import dtype_simd_width, dtype_sizeof
 from Range import range
 from IO import print
 
 
 fn _fill[
-    type: __mlir_type.`!kgen.dtype`
+    type: DType
 ](dst: DTypePointer[type], value: SIMD[1, type], count: Int):
     _ = Buffer[__mlir_attr.`#kgen.unknown : index`, type](
         dst.address, count
@@ -39,11 +39,11 @@ fn pad[
     rank: __mlir_type.index,
     output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
     input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
 ](
     output: NDBuffer[rank, output_shape, type],
     input: NDBuffer[rank, input_shape, type],
-    paddings: DTypePointer[DType.index.value],
+    paddings: DTypePointer[DType.index],
     constant: SIMD[1, type],
 ):
     """
@@ -68,8 +68,8 @@ fn pad[
           else constant
     """
 
-    let input_strides_buf = Buffer[rank, DType.index.value].stack_allocation()
-    let output_strides_buf = Buffer[rank, DType.index.value].stack_allocation()
+    let input_strides_buf = Buffer[rank, DType.index].stack_allocation()
+    let output_strides_buf = Buffer[rank, DType.index].stack_allocation()
     _fill_strides(input, input_strides_buf)
     _fill_strides(output, output_strides_buf)
 
@@ -91,15 +91,15 @@ fn pad[
 fn _pad_impl[
     rank: __mlir_type.index,
     output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
 ](
     axis: Int,
     output: NDBuffer[rank, output_shape, type],
     input: DTypePointer[type],
-    paddings: DTypePointer[DType.index.value],
+    paddings: DTypePointer[DType.index],
     constant: SIMD[1, type],
-    output_strides: DTypePointer[DType.index.value],
-    input_strides: DTypePointer[DType.index.value],
+    output_strides: DTypePointer[DType.index],
+    input_strides: DTypePointer[DType.index],
     output_offset: Int,
     input_offset: Int,
     pad_with_constant: Bool,
@@ -139,7 +139,7 @@ fn _pad_impl[
             return
 
         _fill(pre_pad_start_ptr, constant.value, pre_pad)
-        let elem_bytes = sizeof[__mlir_type[`!pop.scalar<`, type, `>`]]()
+        let elem_bytes = dtype_sizeof[type]()
         let non_pad_bytes = non_pad * elem_bytes
         memcpy(non_pad_start_ptr, input_start_ptr, non_pad_bytes)
         _fill(post_pad_start_ptr, constant.value, post_pad)

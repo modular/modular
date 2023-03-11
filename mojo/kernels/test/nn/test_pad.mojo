@@ -23,22 +23,20 @@ fn test_pad_1d():
 
     # Create an input matrix of the form
     # [1, 2, 3]
-    var input = NDBuffer[1, in_shape, DType.index.value].stack_allocation()
+    var input = NDBuffer[1, in_shape, DType.index].stack_allocation()
     input.__setitem__(StaticIntTuple[1](0), 1)
     input.__setitem__(StaticIntTuple[1](1), 2)
     input.__setitem__(StaticIntTuple[1](2), 3)
 
     # Create a padding array of the form
     # [1, 2]
-    var paddings = Buffer[2, DType.index.value].stack_allocation()
+    var paddings = Buffer[2, DType.index].stack_allocation()
     paddings.__setitem__(0, 1)
     paddings.__setitem__(1, 2)
 
     # Create an output matrix of the form
     # [0, 0, 0, 0, 0, 0]
-    var output = (
-        NDBuffer[1, out_shape, DType.index.value].stack_allocation().fill(0)
-    )
+    var output = NDBuffer[1, out_shape, DType.index].stack_allocation().fill(0)
 
     # pad
     pad(output, input, paddings.data, 5)
@@ -70,7 +68,7 @@ fn test_pad_2d():
     # Create an input matrix of the form
     # [[1, 2],
     #  [3, 4]]
-    var input = NDBuffer[2, in_shape, DType.index.value].stack_allocation()
+    var input = NDBuffer[2, in_shape, DType.index].stack_allocation()
     input.__setitem__(StaticIntTuple[2](0, 0), 1)
     input.__setitem__(StaticIntTuple[2](0, 1), 2)
     input.__setitem__(StaticIntTuple[2](1, 0), 3)
@@ -78,7 +76,7 @@ fn test_pad_2d():
 
     # Create a padding array of the form
     # [1, 0, 1, 1]
-    var paddings = Buffer[4, DType.index.value].stack_allocation()
+    var paddings = Buffer[4, DType.index].stack_allocation()
     paddings.__setitem__(0, 1)
     paddings.__setitem__(1, 0)
     paddings.__setitem__(2, 1)
@@ -88,9 +86,7 @@ fn test_pad_2d():
     # [[0, 0, 0, 0]
     #  [0, 0, 0, 0]
     #  [0, 0, 0, 0]]
-    var output = (
-        NDBuffer[2, out_shape, DType.index.value].stack_allocation().fill(0)
-    )
+    var output = NDBuffer[2, out_shape, DType.index].stack_allocation().fill(0)
 
     # pad
     pad(output, input, paddings.data, 6)
@@ -136,7 +132,7 @@ fn test_pad_3d():
     # Create an input matrix of the form
     # [[[1, 2],
     #   [3, 4]]]
-    var input = NDBuffer[3, in_shape, DType.index.value].stack_allocation()
+    var input = NDBuffer[3, in_shape, DType.index].stack_allocation()
     input.__setitem__(StaticIntTuple[3](0, 0, 0), 1)
     input.__setitem__(StaticIntTuple[3](0, 0, 1), 2)
     input.__setitem__(StaticIntTuple[3](0, 1, 0), 3)
@@ -144,7 +140,7 @@ fn test_pad_3d():
 
     # Create a padding array of the form
     # [1, 0, 0, 1, 1, 1, 0]
-    var paddings = Buffer[6, DType.index.value].stack_allocation()
+    var paddings = Buffer[6, DType.index].stack_allocation()
     paddings.__setitem__(0, 1)
     paddings.__setitem__(1, 0)
     paddings.__setitem__(2, 0)
@@ -159,9 +155,7 @@ fn test_pad_3d():
     #  [[0, 0, 0]
     #   [0, 0, 0]
     #   [0, 0, 0]]]
-    var output = (
-        NDBuffer[3, out_shape, DType.index.value].stack_allocation().fill(0)
-    )
+    var output = NDBuffer[3, out_shape, DType.index].stack_allocation().fill(0)
 
     # pad
     pad(output, input, paddings.data, 7)

@@ -43,7 +43,7 @@ struct Conv2DLayout:
 @register_passable
 struct ImageData[
     shape: __mlir_type[`!kgen.list<index[4]>`],
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
     static_layout: __mlir_type.index,
 ]:
     """Utility class that generalizes conv2d data and filter tensor with a given
@@ -195,7 +195,7 @@ fn get_conv2d_shape[
     output_shape: __mlir_type[`!kgen.list<index[4]>`],
     input_shape: __mlir_type[`!kgen.list<index[4]>`],
     filter_shape: __mlir_type[`!kgen.list<index[4]>`],
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
     data_layout: __mlir_type.index,
     filter_layout: __mlir_type.index,
 ](
@@ -232,7 +232,7 @@ fn get_conv2d_shape[
     output_shape: __mlir_type[`!kgen.list<index[4]>`],
     input_shape: __mlir_type[`!kgen.list<index[4]>`],
     filter_shape: __mlir_type[`!kgen.list<index[4]>`],
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
     data_layout: __mlir_type.index,
     filter_layout: __mlir_type.index,
 ](
@@ -269,7 +269,7 @@ fn get_conv2d_shape[
     output_shape: __mlir_type[`!kgen.list<index[4]>`],
     input_shape: __mlir_type[`!kgen.list<index[4]>`],
     filter_shape: __mlir_type[`!kgen.list<index[4]>`],
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
     data_layout: __mlir_type.index,
     filter_layout: __mlir_type.index,
 ](
@@ -314,7 +314,7 @@ struct ImageShape:
 
     fn __new__[
         shape: __mlir_type[`!kgen.list<index[4]>`],
-        type: __mlir_type.`!kgen.dtype`,
+        type: DType,
         layout: __mlir_type.index,
     ](image_data: ImageData[shape, type, layout]) -> ImageShape:
         """Constructor of an ImageShape instance from an ImageData.
@@ -353,7 +353,7 @@ struct Naive2dConvolution[
     static_output_shape: __mlir_type[`!kgen.list<index[4]>`],
     static_filter_shape: __mlir_type[`!kgen.list<index[4]>`],
     static_input_shape: __mlir_type[`!kgen.list<index[4]>`],
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
     static_data_layout: __mlir_type.index,
     static_filter_layout: __mlir_type.index,
 ]:
@@ -614,7 +614,7 @@ struct PackIm2ColNCHW[
     static_original_shape: __mlir_type[`!kgen.list<index[4]>`],
     # packed matrix shape list
     static_packed_shape: __mlir_type[`!kgen.list<index[3]>`],
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
     simd_size: __mlir_type.index,
     col_inner_size: __mlir_type.index,
 ]:
@@ -1119,7 +1119,7 @@ struct ConvIm2ColNCHW[
     shape_filter: __mlir_type[`!kgen.list<index[4]>`],
     shape_output: __mlir_type[`!kgen.list<index[4]>`],
     packed_shape: __mlir_type[`!kgen.list<index[3]>`],
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
     simd_size: __mlir_type.index,
     a_row_size: __mlir_type.index,
     pack_inner_size: __mlir_type.index,
@@ -1640,8 +1640,8 @@ struct ConvNHWCInnerLoopFilterPacked[
     shape_input: __mlir_type[`!kgen.list<index[4]>`],
     shape_c: __mlir_type[`!kgen.list<index[2]>`],
     packed_shape: __mlir_type[`!kgen.list<index[3]>`],
-    accum_type: __mlir_type.`!kgen.dtype`,
-    value_type: __mlir_type.`!kgen.dtype`,
+    accum_type: DType,
+    value_type: DType,
     simd_size: __mlir_type.index,
     a_row_size: __mlir_type.index,
     pack_inner_size: __mlir_type.index,
@@ -1670,7 +1670,7 @@ struct ConvNHWCInnerLoopFilterPacked[
     var conv_shape: ConvShape
 
     # Table of pointers for all the rows.
-    var offset_table: Buffer[a_row_size, DType.index.value]
+    var offset_table: Buffer[a_row_size, DType.index]
 
     var input_base_pointer: DTypePointer[value_type]
 
@@ -1708,9 +1708,7 @@ struct ConvNHWCInnerLoopFilterPacked[
             tile_n_k(StaticIntTuple): 2D dimension tuple describing the
                 size of the packed tile of B.
         """
-        let offset_table = Buffer[
-            a_row_size, DType.index.value
-        ].stack_allocation()
+        let offset_table = Buffer[a_row_size, DType.index].stack_allocation()
         var instance = ConvNHWCInnerLoopFilterPacked[
             shape_input,
             shape_c,
@@ -2145,7 +2143,7 @@ struct ConvIm2ColNHWC[
     shape_filter: __mlir_type[`!kgen.list<index[4]>`],
     shape_output: __mlir_type[`!kgen.list<index[4]>`],
     packed_shape: __mlir_type[`!kgen.list<index[3]>`],
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
     simd_size: __mlir_type.index,
     a_row_size: __mlir_type.index,
     pack_inner_size: __mlir_type.index,

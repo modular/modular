@@ -6,6 +6,7 @@
 
 from Assert import assert_param
 from Buffer import NDBuffer
+from DType import DType
 from Int import Int
 from Memory import memcpy
 from Pointer import DTypePointer
@@ -22,7 +23,7 @@ fn _get_rightmost_broadcast_axis[
     rank: __mlir_type.index,
     output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
     input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
 ](
     output: NDBuffer[rank, output_shape, type],
     input: NDBuffer[rank, input_shape, type],
@@ -53,7 +54,7 @@ fn broadcast[
     rank: __mlir_type.index,
     output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
     input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
 ](
     output: NDBuffer[rank, output_shape, type],
     input: NDBuffer[rank, input_shape, type],
@@ -99,7 +100,7 @@ fn broadcast_impl[
     rank: __mlir_type.index,
     output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
     input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
 ](
     axis: Int,
     output: NDBuffer[rank, output_shape, type],
@@ -175,7 +176,7 @@ fn broadcast_impl[
 
 
 fn _tile_1d[
-    type: __mlir_type.`!kgen.dtype`
+    type: DType
 ](
     init_dst_ptr: DTypePointer[type],
     src_ptr: DTypePointer[type],

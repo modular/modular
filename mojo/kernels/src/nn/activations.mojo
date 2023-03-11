@@ -17,7 +17,7 @@ from SIMD import SIMD
 
 
 fn relu[
-    simd_width: Int, type: __mlir_type.`!kgen.dtype`
+    simd_width: Int, type: DType
 ](x: SIMD[simd_width, type]) -> SIMD[simd_width, type]:
     """Compute the Relu Op using the equation $max(0, x)$.
 
@@ -40,7 +40,7 @@ fn relu[
 
 
 fn relu6[
-    simd_width: Int, type: __mlir_type.`!kgen.dtype`
+    simd_width: Int, type: DType
 ](x: SIMD[simd_width, type]) -> SIMD[simd_width, type]:
     """Compute the Relu6 Op using the equation $min(max(0,x),6)$.
 
@@ -63,7 +63,7 @@ fn relu6[
 
 
 fn prelu[
-    simd_width: Int, type: __mlir_type.`!kgen.dtype`
+    simd_width: Int, type: DType
 ](x: SIMD[simd_width, type], alpha: SIMD[1, type]) -> SIMD[simd_width, type]:
     """Compute the Prelu Op using the equation $max(x,0) + alpha * min(x,0)$.
 
@@ -86,7 +86,7 @@ fn prelu[
 
 
 fn relu_n1[
-    simd_width: Int, type: __mlir_type.`!kgen.dtype`
+    simd_width: Int, type: DType
 ](x: SIMD[simd_width, type]) -> SIMD[simd_width, type]:
     """Compute the Relu N1 Op using the equation $max(min(x,1),-1)$.
 
@@ -109,7 +109,7 @@ fn relu_n1[
 
 
 fn gelu[
-    simd_width: Int, type: __mlir_type.`!kgen.dtype`
+    simd_width: Int, type: DType
 ](x: SIMD[simd_width, type]) -> SIMD[simd_width, type]:
     """Compute the GELU Op using the equation
     $0.5 * x * (1 + erf(x / sqrt(2)))$.
@@ -129,7 +129,7 @@ fn gelu[
     """
     alias SQRT_2 = 1.4142135623730950488
     assert_param_bool_msg[
-        DType(type).is_floating_point(),
+        type.is_floating_point(),
         "dtype must be a floating point type",
     ]()
     return 0.5 * x * (1 + erf(x / SQRT_2))
@@ -141,7 +141,7 @@ fn gelu[
 
 
 fn gelu_approximate[
-    simd_width: Int, type: __mlir_type.`!kgen.dtype`
+    simd_width: Int, type: DType
 ](x: SIMD[simd_width, type]) -> SIMD[simd_width, type]:
     """Compute the approximate GELU Op using the equation
     $0.5 * x * (1 + tanh(sqrt(2 / pi) * (x + 0.044715 * x^3)))$.
@@ -161,7 +161,7 @@ fn gelu_approximate[
     """
     alias SQRT_TWO_OVER_PI = 0.797884560802865
     assert_param_bool_msg[
-        DType(type).is_floating_point(),
+        type.is_floating_point(),
         "dtype must be a floating point type",
     ]()
     let x3 = x * x * x
@@ -178,7 +178,7 @@ fn gelu_approximate[
 
 
 fn sigmoid[
-    simd_width: Int, type: __mlir_type.`!kgen.dtype`
+    simd_width: Int, type: DType
 ](x: SIMD[simd_width, type]) -> SIMD[simd_width, type]:
     """Compute the Sigmoid Op using the equation $e^x / (e^x + 1)$.
 

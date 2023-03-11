@@ -24,8 +24,8 @@ from SIMD import SIMD
 # Argument for gather task
 @register_passable
 struct GatherArgs[
-    type: __mlir_type.`!kgen.dtype`,
-    indices_type: __mlir_type.`!kgen.dtype`,
+    type: DType,
+    indices_type: DType,
     indices_rank: __mlir_type.index,
     indices_shape: __mlir_type[`!kgen.list<index[`, indices_rank, `]>`],
 ]:
@@ -65,14 +65,16 @@ fn gather_reduce[
     input_shape: __mlir_type[`!kgen.list<index[`, input_rank, `]>`],
     indices_rank: __mlir_type.index,
     indices_shape: __mlir_type[`!kgen.list<index[`, indices_rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
     gather_axis: __mlir_type.index,
     reduce_axis: __mlir_type.index,
     simd_width: Int,
     reduce_fn: __mlir_type[
         `!kgen.signature<<simd_width:`,
         Int,
-        `, type: dtype>(`,
+        `, type: `,
+        DType,
+        `>(`,
         SIMD[simd_width, `type`],
         `,`,
         SIMD[simd_width, `type`],
@@ -86,7 +88,7 @@ fn gather_reduce[
     indices: NDBuffer[
         indices_rank,
         indices_shape,
-        DType.si32.value,
+        DType.si32,
     ],
     reduce_init: SIMD[1, type],
     runtime: Runtime.ptr_type,
@@ -109,9 +111,7 @@ fn gather_reduce[
 
     fn task_func(
         task_id: Int,
-        ptr: Pointer[
-            GatherArgs[type, DType.si32.value, indices_rank, indices_shape]
-        ],
+        ptr: Pointer[GatherArgs[type, DType.si32, indices_rank, indices_shape]],
     ):
         alias unroll_factor = 2
         alias prefetch_offset = 6
@@ -181,19 +181,17 @@ fn gather_reduce[
         input
     )
     let indices_bind = rebind[
-        NDBuffer[indices_rank, indices_shape, DType.si32.value]
+        NDBuffer[indices_rank, indices_shape, DType.si32]
     ](indices)
-    var args = GatherArgs[type, DType.si32.value, indices_rank, indices_shape](
+    var args = GatherArgs[type, DType.si32, indices_rank, indices_shape](
         output_bind, input_bind, indices_bind, num_chunks_per_task
     )
     let args_address = Pointer[
-        GatherArgs[type, DType.si32.value, indices_rank, indices_shape]
+        GatherArgs[type, DType.si32, indices_rank, indices_shape]
     ].address_of(args)
 
     parallelForEachN[
-        Pointer[
-            GatherArgs[type, DType.si32.value, indices_rank, indices_shape]
-        ],
+        Pointer[GatherArgs[type, DType.si32, indices_rank, indices_shape]],
         task_func,
     ](runtime, num_tasks, args_address)
 
@@ -207,8 +205,8 @@ fn gather[
     input_shape: __mlir_type[`!kgen.list<index[`, input_rank, `]>`],
     indices_rank: __mlir_type.index,
     indices_shape: __mlir_type[`!kgen.list<index[`, indices_rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
-    indices_type: __mlir_type.`!kgen.dtype`,
+    type: DType,
+    indices_type: DType,
     axis: __mlir_type.index,
     simd_width: __mlir_type.index,
 ](
@@ -249,11 +247,20 @@ fn gather[
         for i in range(start_offset, end_offset):
             input.prefetch[
                 PrefetchOptions().for_read().high_locality().to_data_cache()
-            ]((Int.from_integral(indices[i + prefetch_offset].value)).value, 0)
+            ](
+                (
+                    Int.from_integral[indices_type](
+                        indices[i + prefetch_offset].value
+                    )
+                ).value,
+                0,
+            )
 
             let output_row_ptr = output.data.offset(i * row_size)
             let input_row_ptr = input.data.offset(
-                (Int.from_integral(indices[i].value) * row_size).value
+                (
+                    Int.from_integral[indices_type](indices[i].value) * row_size
+                ).value
             )
 
             @always_inline
@@ -309,8 +316,8 @@ fn gather[
     input_shape: __mlir_type[`!kgen.list<index[`, input_rank, `]>`],
     indices_rank: __mlir_type.index,
     indices_shape: __mlir_type[`!kgen.list<index[`, indices_rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
-    indices_type: __mlir_type.`!kgen.dtype`,
+    type: DType,
+    indices_type: DType,
     axis: __mlir_type.index,
     simd_width: __mlir_type.index,
 ](
@@ -331,7 +338,7 @@ fn gather[
 
     for i in range(output.dim[0]()):
         for j in range(output.dim[1]()):
-            let idx: Int = Int.from_integral(indices[j].value)
+            let idx: Int = Int.from_integral[indices_type](indices[j].value)
             output.__setitem__(
                 StaticIntTuple[output_rank](i, j),
                 input[i, idx],

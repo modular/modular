@@ -28,7 +28,7 @@ fn test_broadcast_same_shape():
     var input = NDBuffer[
         3,
         input_shape,
-        DType.index.value,
+        DType.index,
     ].stack_allocation()
     input.__setitem__(StaticIntTuple[3](0, 0, 0), 1)
     input.__setitem__(StaticIntTuple[3](0, 1, 0), 2)
@@ -38,7 +38,7 @@ fn test_broadcast_same_shape():
         NDBuffer[
             3,
             output_shape,
-            DType.index.value,
+            DType.index,
         ]
         .stack_allocation()
         .fill(0)
@@ -72,7 +72,7 @@ fn test_broadcast_single_axis():
     var input = NDBuffer[
         2,
         input_shape,
-        DType.index.value,
+        DType.index,
     ].stack_allocation()
 
     input.__setitem__(StaticIntTuple[2](0, 0), 1)
@@ -83,7 +83,7 @@ fn test_broadcast_single_axis():
         NDBuffer[
             2,
             output_shape,
-            DType.index.value,
+            DType.index,
         ]
         .stack_allocation()
         .fill(0)
@@ -125,7 +125,7 @@ fn test_broadcast_multi_axes():
     var input = NDBuffer[
         3,
         input_shape,
-        DType.index.value,
+        DType.index,
     ].stack_allocation()
 
     input.__setitem__(StaticIntTuple[3](0, 0, 0), 1)
@@ -136,7 +136,7 @@ fn test_broadcast_multi_axes():
         NDBuffer[
             3,
             output_shape,
-            DType.index.value,
+            DType.index,
         ]
         .stack_allocation()
         .fill(0)
@@ -189,7 +189,7 @@ fn test_broadcast_multi_axes_nested():
     var input = NDBuffer[
         5,
         input_shape,
-        DType.index.value,
+        DType.index,
     ].stack_allocation()
 
     input.__setitem__(StaticIntTuple[5](0, 0, 0, 0, 0), 1)
@@ -206,7 +206,7 @@ fn test_broadcast_multi_axes_nested():
         NDBuffer[
             5,
             output_shape,
-            DType.index.value,
+            DType.index,
         ]
         .stack_allocation()
         .fill(0)

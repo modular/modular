@@ -5,10 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from Buffer import Buffer, DynamicRankBuffer
+from DType import DType
+from Int import Int
 from List import VariadicList
 from Memory import memcpy
 from Range import range
-from Int import Int
 
 # ===----------------------------------------------------------------------===#
 # concat
@@ -16,7 +17,7 @@ from Int import Int
 
 
 fn concat[
-    type: __mlir_type.`!kgen.dtype`
+    type: DType
 ](
     output: Buffer[__mlir_attr.`#kgen.unknown : index`, type],
     axis: Int,

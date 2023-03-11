@@ -15,7 +15,7 @@ from Math import iota
 fn test_relu():
     print("== test_relu\n")
 
-    let simd_val = iota[4, DType.f32.value]()
+    let simd_val = iota[4, DType.f32]()
 
     # CHECK: [0.000000, 1.000000, 2.000000, 3.000000]
     print(relu(simd_val))
@@ -31,7 +31,7 @@ fn test_relu():
 fn test_relu_n1():
     print("== test_relu_n1\n")
 
-    let simd_val = iota[4, DType.f32.value]()
+    let simd_val = iota[4, DType.f32]()
 
     # CHECK: [0.000000, 1.000000, 1.000000, 1.000000]
     print(relu_n1(simd_val))
@@ -47,7 +47,7 @@ fn test_relu_n1():
 fn test_prelu():
     print("== test_prelu\n")
 
-    let simd_val = iota[4, DType.f32.value]()
+    let simd_val = iota[4, DType.f32]()
 
     # CHECK: [0.000000, 1.000000, 2.000000, 3.000000]
     print(prelu(simd_val, 2))
@@ -63,7 +63,7 @@ fn test_prelu():
 fn test_gelu():
     print("== test_gelu\n")
 
-    let simd_val = 2 - 0.5 * iota[4, DType.f32.value]()
+    let simd_val = 2 - 0.5 * iota[4, DType.f32]()
 
     # CHECK: [1.954500, 1.399789, 0.841345, 0.345731]
     print(gelu(simd_val))
