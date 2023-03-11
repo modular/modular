@@ -38,9 +38,7 @@ alias int8_pop = __mlir_type.`!pop.scalar<si8>`
 alias kunknown = __mlir_attr.`#kgen.unknown : index`
 
 
-fn print_buffer[
-    n: Int, type: __mlir_type.`!kgen.dtype`
-](a_ptr: DTypePointer[void]):
+fn print_buffer[n: Int, type: DType](a_ptr: DTypePointer[void]):
     let a = Buffer[kunknown, type](a_ptr.bitcast[type]().address, n)
     for i in range(n):
         let v = __mlir_op.`pop.cast`[
@@ -49,9 +47,7 @@ fn print_buffer[
         print(v)
 
 
-fn print_matrix[
-    m: Int, n: Int, type: __mlir_type.`!kgen.dtype`
-](a_ptr: DTypePointer[void]):
+fn print_matrix[m: Int, n: Int, type: DType](a_ptr: DTypePointer[void]):
     let a = Buffer[kunknown, type](a_ptr.bitcast[type]().address, m * n)
     for i in range(m):
         print("row\n")
@@ -64,64 +60,64 @@ fn print_matrix[
 
 @always_inline
 fn identity_epilogue_rowise_func[
-    accum_type: __mlir_type.`!kgen.dtype`
+    accum_type: DType
 ](row_idx: Int, row: Buffer[__mlir_attr.`#kgen.unknown : index`, accum_type],):
     pass
 
 
 @always_inline
 fn identity_epilogue_elemwise_func[
-    accum_type: __mlir_type.`!kgen.dtype`
+    accum_type: DType
 ](row: Int, col: Int, val: SIMD[1, accum_type]) -> SIMD[1, accum_type]:
     return val
 
 
 fn init_matrices(
-    a_ptr: DTypePointer[DType.si8.value],
-    b_ptr: DTypePointer[DType.si8.value],
-    c_ptr: DTypePointer[DType.si32.value],
-    c2_ptr: DTypePointer[DType.si32.value],
+    a_ptr: DTypePointer[DType.si8],
+    b_ptr: DTypePointer[DType.si8],
+    c_ptr: DTypePointer[DType.si32],
+    c2_ptr: DTypePointer[DType.si32],
 ):
 
-    let a = Buffer[kunknown, DType.si8.value](a_ptr.address, 1024)
-    let b = Buffer[kunknown, DType.si8.value](b_ptr.address, 1024)
-    let c = Buffer[kunknown, DType.si32.value](c_ptr.address, 256)
-    let c2 = Buffer[kunknown, DType.si32.value](c2_ptr.address, 256)
-    let b2 = Buffer[1024, DType.si8.value].stack_allocation()
+    let a = Buffer[kunknown, DType.si8](a_ptr.address, 1024)
+    let b = Buffer[kunknown, DType.si8](b_ptr.address, 1024)
+    let c = Buffer[kunknown, DType.si32](c_ptr.address, 256)
+    let c2 = Buffer[kunknown, DType.si32](c2_ptr.address, 256)
+    let b2 = Buffer[1024, DType.si8].stack_allocation()
 
     for i in range(1024):
-        a.__setitem__(i, SIMD[1, DType.si8.value](i & 127))
-        b2.__setitem__(i, SIMD[1, DType.si8.value](i & 127))
+        a.__setitem__(i, SIMD[1, DType.si8](i & 127))
+        b2.__setitem__(i, SIMD[1, DType.si8](i & 127))
 
-    memset_zero[DType.si32.value](c.data, 1024)
-    memset_zero[DType.si32.value](c2.data, 1024)
+    memset_zero[DType.si32](c.data, 1024)
+    memset_zero[DType.si32](c2.data, 1024)
 
     let b2m = NDBuffer[
-        2, create_kgen_list[__mlir_type.index](64, 16), DType.si8.value
+        2, create_kgen_list[__mlir_type.index](64, 16), DType.si8
     ](b2.data.address)
     let bm = NDBuffer[
-        2, create_kgen_list[__mlir_type.index](16, 64), DType.si8.value
+        2, create_kgen_list[__mlir_type.index](16, 64), DType.si8
     ](b_ptr.address)
     # transpose from 64x16 to 16x64
-    transpose[2, 16, 64, DType.si8.value](bm, b2m)
+    transpose[2, 16, 64, DType.si8](bm, b2m)
 
-    let b32_ptr = b.data.bitcast[DType.si32.value]()
+    let b32_ptr = b.data.bitcast[DType.si32]()
     let b32m = NDBuffer[
-        2, create_kgen_list[__mlir_type.index](16, 16), DType.si32.value
+        2, create_kgen_list[__mlir_type.index](16, 16), DType.si32
     ](b32_ptr.address)
-    transpose_inplace[16, 16, DType.si32.value](b32m)
+    transpose_inplace[16, 16, DType.si32](b32m)
     let am = NDBuffer[
-        2, create_kgen_list[__mlir_type.index](16, 64), DType.si8.value
+        2, create_kgen_list[__mlir_type.index](16, 64), DType.si8
     ](a.data.address)
     let c2m = NDBuffer[
-        2, create_kgen_list[__mlir_type.index](16, 16), DType.si32.value
+        2, create_kgen_list[__mlir_type.index](16, 16), DType.si32
     ](c2.data.address)
     naive_matmul[
         create_kgen_list[__mlir_type.index](16, 64),
         create_kgen_list[__mlir_type.index](64, 16),
         create_kgen_list[__mlir_type.index](16, 16),
-        DType.si32.value,
-        DType.si8.value,
+        DType.si32,
+        DType.si8,
         False,
         False,
         identity_epilogue_elemwise_func,
@@ -132,11 +128,11 @@ fn init_matrices(
 fn setup_tile_config() -> tileconfig:
     var tc: tileconfig
     let ptr = Pointer.address_of(tc)
-    let tc_ptr = DTypePointer[DType.si8.value](ptr.bitcast[int8_pop]().address)
+    let tc_ptr = DTypePointer[DType.si8](ptr.bitcast[int8_pop]().address)
     memset_zero(tc_ptr, 64)
 
-    let nrows: SIMD[1, DType.ui8.value] = 16
-    let colb: SIMD[1, DType.ui16.value] = 64
+    let nrows: SIMD[1, DType.ui8] = 16
+    let colb: SIMD[1, DType.ui16] = 64
 
     tc.palette_id = 1
 
@@ -150,16 +146,16 @@ fn setup_tile_config() -> tileconfig:
 
 
 fn main():
-    let a = Buffer[1024, DType.si8.value].stack_allocation()
-    let b = Buffer[1024, DType.si8.value].stack_allocation()
-    let c = Buffer[256, DType.si32.value].stack_allocation()
-    let c2 = Buffer[256, DType.si32.value].stack_allocation()
+    let a = Buffer[1024, DType.si8].stack_allocation()
+    let b = Buffer[1024, DType.si8].stack_allocation()
+    let c = Buffer[256, DType.si32].stack_allocation()
+    let c2 = Buffer[256, DType.si32].stack_allocation()
 
     init_matrices(a.data, b.data, c.data, c2.data)
-    # print_matrix[16, 64, DType.si8.value](b.data.bitcast[void]())
+    # print_matrix[16, 64, DType.si8](b.data.bitcast[void]())
 
     _tile_dpbssd_emulated(c.data, a.data, b.data)
-    # print_matrix[16, 16, DType.si32.value](c.data.bitcast[void]())
+    # print_matrix[16, 16, DType.si32](c.data.bitcast[void]())
     var errors: Int = 0
     errors = memcmp(c.data.bitcast[void](), c2.data.bitcast[void](), 1024)
     print("Emulated AMX-int8 matmul test.\n")
@@ -167,7 +163,7 @@ fn main():
     print(errors)
     if errors != 0:
         print("Matrices don't agree!\n\n")
-    memset_zero[DType.si32.value](c.data, 1024)
+    memset_zero[DType.si32](c.data, 1024)
     if os_is_linux() and has_intel_amx() and init_intel_amx():
         print("Hardware AMX-int8 matmul test.\n")
         var tc = setup_tile_config()

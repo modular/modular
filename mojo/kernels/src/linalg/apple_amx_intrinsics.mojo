@@ -213,7 +213,7 @@ struct amx_detail:
 
     @staticmethod
     fn _encode_load_store[
-        row_count: __mlir_type.index, type: __mlir_type.`!kgen.dtype`
+        row_count: __mlir_type.index, type: DType
     ](src: DTypePointer[type], start_index: Int) -> __mlir_type.index:
         """
         Utility to do the bit encoding for load and store ops.
@@ -225,43 +225,43 @@ struct amx_detail:
 
     @staticmethod
     fn store_x[
-        row_count: __mlir_type.index, type: __mlir_type.`!kgen.dtype`
+        row_count: __mlir_type.index, type: DType
     ](src: DTypePointer[type], start_index: Int):
         ldx(_encode_load_store[row_count, type](src, start_index))
 
     @staticmethod
     fn store_y[
-        row_count: __mlir_type.index, type: __mlir_type.`!kgen.dtype`
+        row_count: __mlir_type.index, type: DType
     ](src: DTypePointer[type], start_index: Int):
         ldy(_encode_load_store[row_count, type](src, start_index))
 
     @staticmethod
     fn store_z[
-        row_count: __mlir_type.index, type: __mlir_type.`!kgen.dtype`
+        row_count: __mlir_type.index, type: DType
     ](src: DTypePointer[type], start_index: Int):
         ldz(_encode_load_store[row_count, type](src, start_index))
 
     @staticmethod
     fn read_x[
-        row_count: __mlir_type.index, type: __mlir_type.`!kgen.dtype`
+        row_count: __mlir_type.index, type: DType
     ](src: DTypePointer[type], start_index: Int):
         stx(_encode_load_store[row_count, type](src, start_index))
 
     @staticmethod
     fn read_y[
-        row_count: __mlir_type.index, type: __mlir_type.`!kgen.dtype`
+        row_count: __mlir_type.index, type: DType
     ](src: DTypePointer[type], start_index: Int):
         sty(_encode_load_store[row_count, type](src, start_index))
 
     @staticmethod
     fn load_z[
-        row_count: __mlir_type.index, type: __mlir_type.`!kgen.dtype`
+        row_count: __mlir_type.index, type: DType
     ](src: DTypePointer[type], start_index: Int):
         stz(_encode_load_store[row_count, type](src, start_index))
 
     @staticmethod
     fn transpose_z_to_x_or_y[
-        destination: __mlir_type.`!kgen.string`, type: __mlir_type.`!kgen.dtype`
+        destination: __mlir_type.`!kgen.string`, type: DType
     ](z_col_index: Int, xy_row_index: Int, z_row_suboffset: Int):
         # transpose_z_to_x_or_y is a thin wrapper around the fp32 transpose mode of
         # the amx instruction `extry`. This instruction takes a (sub) column of
@@ -303,7 +303,7 @@ struct amx_detail:
             ]
         ]()
         # The type must be f32.
-        assert_param_bool[DType(type) == DType.f32]()
+        assert_param_bool[type == DType.f32]()
 
         # make the y offset field
         #  shift left by 6 to make this an offset in rows,
@@ -329,7 +329,7 @@ struct amx_detail:
 
     @staticmethod
     fn fma[
-        mode: __mlir_type.`!kgen.string`, type: __mlir_type.`!kgen.dtype`
+        mode: __mlir_type.`!kgen.string`, type: DType
     ](z_row_index: Int, x_row_index: Int, y_row_index: Int, clear_z: Bool):
         # Apple.amx.fma abstracts the fma operation on the amx hardware. Two modes of
         #  fma operations are supported in this instruction, referred to here as
@@ -360,7 +360,7 @@ struct amx_detail:
             ]
         ]()
         # The type must be f32.
-        assert_param_bool[DType(type) == DType.f32]()
+        assert_param_bool[type == DType.f32]()
 
         let is_row_mode = __mlir_attr[
             `#kgen.param.expr<eq,`,
@@ -385,17 +385,17 @@ struct amx_detail:
         c: NDBuffer[
             2,
             create_kgen_list[__mlir_type.index](16, 16),
-            DType.f32.value,
+            DType.f32,
         ],
         a: NDBuffer[
             2,
             create_kgen_list[__mlir_type.index](16, 16),
-            DType.f32.value,
+            DType.f32,
         ],
         b: NDBuffer[
             2,
             create_kgen_list[__mlir_type.index](16, 16),
-            DType.f32.value,
+            DType.f32,
         ],
     ):
         # Performs a 16x16x16 matrix multiply on the given matrices storing the
@@ -416,30 +416,30 @@ struct amx_detail:
         let buffer_bytecount = c.size() * sizeof[__mlir_type.f32]()
 
         let a_buffer: DTypePointer[
-            DType.f32.value
+            DType.f32
         ] = __mlir_op.`pop.stack_allocation`[
             count:256,
             alignment:128,
             _type : __mlir_type.`!pop.pointer<scalar<f32>>`,
         ]()
         let b_buffer: DTypePointer[
-            DType.f32.value
+            DType.f32
         ] = __mlir_op.`pop.stack_allocation`[
             count:256,
             alignment:128,
             _type : __mlir_type.`!pop.pointer<scalar<f32>>`,
         ]()
         let c_buffer: DTypePointer[
-            DType.f32.value
+            DType.f32
         ] = __mlir_op.`pop.stack_allocation`[
             count:256,
             alignment:128,
             _type : __mlir_type.`!pop.pointer<scalar<f32>>`,
         ]()
 
-        memcpy[DType.f32.value](a_buffer, a_pointer, buffer_bytecount)
-        memcpy[DType.f32.value](b_buffer, b_pointer, buffer_bytecount)
-        memset_zero[DType.f32.value](c_buffer, buffer_bytecount)
+        memcpy[DType.f32](a_buffer, a_pointer, buffer_bytecount)
+        memcpy[DType.f32](b_buffer, b_pointer, buffer_bytecount)
+        memset_zero[DType.f32](c_buffer, buffer_bytecount)
 
         _set()
 
@@ -472,4 +472,4 @@ struct amx_detail:
 
         _clr()
 
-        memcpy[DType.f32.value](c_pointer, c_buffer, buffer_bytecount)
+        memcpy[DType.f32](c_pointer, c_buffer, buffer_bytecount)

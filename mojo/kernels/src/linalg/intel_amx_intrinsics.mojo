@@ -26,13 +26,13 @@ struct __tile:
     """An AMX tile representation"""
 
     var buf: __mlir_type[`!pop.array<1024, si32>`]
-    var rows: SIMD[1, DType.si32.value]
-    var cols: SIMD[1, DType.si32.value]
+    var rows: SIMD[1, DType.si32]
+    var cols: SIMD[1, DType.si32]
 
 
 fn to_si8(
     val: Int,
-) -> SIMD[1, DType.si8.value]:
+) -> SIMD[1, DType.si8]:
     """Converts an input integer to an si8 value"""
     return __mlir_op.`pop.cast`[_type : __mlir_type.`!pop.scalar<si8>`](
         val.value
@@ -155,39 +155,39 @@ fn init_intel_amx() -> Bool:
 #  uint8_t rows[16];
 # } tileconfig_t;
 struct tileconfig:
-    var palette_id: SIMD[1, DType.ui8.value]
-    var start_row: SIMD[1, DType.ui8.value]
+    var palette_id: SIMD[1, DType.ui8]
+    var start_row: SIMD[1, DType.ui8]
     var reserved: StaticTuple[14, __mlir_type.`!pop.scalar<ui8>`]
     var colb: StaticTuple[16, __mlir_type.`!pop.scalar<ui16>`]
     var rows: StaticTuple[16, __mlir_type.`!pop.scalar<ui8>`]
 
 
 fn _tile_dpbssd_emulated(
-    cptr: DTypePointer[DType.si32.value],
-    aptr: DTypePointer[DType.si8.value],
-    bptr: DTypePointer[DType.si8.value],
+    cptr: DTypePointer[DType.si32],
+    aptr: DTypePointer[DType.si8],
+    bptr: DTypePointer[DType.si8],
 ):
     let a = Matrix[
-        create_kgen_list[__mlir_type.index](16, 64), DType.si8.value, False
+        create_kgen_list[__mlir_type.index](16, 64), DType.si8, False
     ](aptr)
     let b = Matrix[
-        create_kgen_list[__mlir_type.index](16, 64), DType.si8.value, False
+        create_kgen_list[__mlir_type.index](16, 64), DType.si8, False
     ](bptr)
     let c = Matrix[
-        create_kgen_list[__mlir_type.index](16, 16), DType.si32.value, False
+        create_kgen_list[__mlir_type.index](16, 16), DType.si32, False
     ](cptr)
 
     for i in range(16):
         for j in range(16):
             for l in range(16):
-                let ai0 = a.__getitem__(i, 4 * l + 0).cast[DType.si32.value]()
-                let ai1 = a.__getitem__(i, 4 * l + 1).cast[DType.si32.value]()
-                let ai2 = a.__getitem__(i, 4 * l + 2).cast[DType.si32.value]()
-                let ai3 = a.__getitem__(i, 4 * l + 3).cast[DType.si32.value]()
-                let bi0 = b.__getitem__(l, 4 * j + 0).cast[DType.si32.value]()
-                let bi1 = b.__getitem__(l, 4 * j + 1).cast[DType.si32.value]()
-                let bi2 = b.__getitem__(l, 4 * j + 2).cast[DType.si32.value]()
-                let bi3 = b.__getitem__(l, 4 * j + 3).cast[DType.si32.value]()
+                let ai0 = a.__getitem__(i, 4 * l + 0).cast[DType.si32]()
+                let ai1 = a.__getitem__(i, 4 * l + 1).cast[DType.si32]()
+                let ai2 = a.__getitem__(i, 4 * l + 2).cast[DType.si32]()
+                let ai3 = a.__getitem__(i, 4 * l + 3).cast[DType.si32]()
+                let bi0 = b.__getitem__(l, 4 * j + 0).cast[DType.si32]()
+                let bi1 = b.__getitem__(l, 4 * j + 1).cast[DType.si32]()
+                let bi2 = b.__getitem__(l, 4 * j + 2).cast[DType.si32]()
+                let bi3 = b.__getitem__(l, 4 * j + 3).cast[DType.si32]()
                 var cv = c.__getitem__(i, j)
                 cv += ai0 * bi0
                 cv += ai1 * bi1

@@ -28,7 +28,7 @@ fn test_transpose_4x4():
     var matrix = NDBuffer[
         2,
         create_kgen_list[__mlir_type.index](4, 4),
-        DType.index.value,
+        DType.index,
     ].stack_allocation()
 
     matrix.__setitem__(StaticIntTuple[2](0, 0), 0)
@@ -48,7 +48,7 @@ fn test_transpose_4x4():
     matrix.__setitem__(StaticIntTuple[2](3, 2), 14)
     matrix.__setitem__(StaticIntTuple[2](3, 3), 15)
 
-    transpose_inplace[4, 4, DType.index.value](matrix)
+    transpose_inplace[4, 4, DType.index](matrix)
 
     # CHECK: 0
     print(matrix[0, 0])
@@ -109,7 +109,7 @@ fn test_transpose_8x8():
     var matrix = NDBuffer[
         2,
         create_kgen_list[__mlir_type.index](num_rows, num_cols),
-        DType.index.value,
+        DType.index,
     ].stack_allocation()
 
     for i in range(num_rows):
@@ -117,7 +117,7 @@ fn test_transpose_8x8():
             let val = i * num_cols + j
             matrix.__setitem__(StaticIntTuple[2](i, j), val.__as_mlir_index())
 
-    transpose_inplace[num_rows, num_cols, DType.index.value](matrix)
+    transpose_inplace[num_rows, num_cols, DType.index](matrix)
 
     # TODO(#8365) use `i` and `j`
     for ii in range(num_rows):
@@ -139,7 +139,7 @@ fn test_transpose_16x16():
     var matrix = NDBuffer[
         2,
         create_kgen_list[__mlir_type.index](num_rows, num_cols),
-        DType.index.value,
+        DType.index,
     ].stack_allocation()
 
     for i in range(num_rows):
@@ -147,7 +147,7 @@ fn test_transpose_16x16():
             let val = i * num_cols + j
             matrix.__setitem__(StaticIntTuple[2](i, j), val.__as_mlir_index())
 
-    transpose_inplace[num_rows, num_cols, DType.index.value](matrix)
+    transpose_inplace[num_rows, num_cols, DType.index](matrix)
 
     # TODO(#8365) use `i` and `j`
     for ii in range(num_rows):
@@ -168,7 +168,7 @@ fn test_transpose_2d_identity():
     # [[1, 2, 3],
     #  [4, 5, 6],
     #  [7, 8, 9]]
-    var input = NDBuffer[2, in_shape, DType.index.value].stack_allocation()
+    var input = NDBuffer[2, in_shape, DType.index].stack_allocation()
     input.__setitem__(StaticIntTuple[2](0, 0), 1)
     input.__setitem__(StaticIntTuple[2](0, 1), 2)
     input.__setitem__(StaticIntTuple[2](0, 2), 3)
@@ -181,7 +181,7 @@ fn test_transpose_2d_identity():
 
     # Create an identity permutation array of the form
     # [0, 1]
-    var perm = Buffer[2, DType.index.value].stack_allocation()
+    var perm = Buffer[2, DType.index].stack_allocation()
     perm.__setitem__(0, 0)
     perm.__setitem__(1, 1)
 
@@ -190,9 +190,7 @@ fn test_transpose_2d_identity():
     #  [-1, -1, -1],
     #  [-1, -1, -1]]
     alias out_shape = create_kgen_list[__mlir_type.index](3, 3)
-    var output = (
-        NDBuffer[2, out_shape, DType.index.value].stack_allocation().fill(0)
-    )
+    var output = NDBuffer[2, out_shape, DType.index].stack_allocation().fill(0)
 
     # transpose
     transpose(output, input, perm.data)
@@ -231,7 +229,7 @@ fn test_transpose_2d():
     # [[1, 2, 3],
     #  [4, 5, 6],
     #  [7, 8, 9]]
-    var input = NDBuffer[2, in_shape, DType.index.value].stack_allocation()
+    var input = NDBuffer[2, in_shape, DType.index].stack_allocation()
     input.__setitem__(StaticIntTuple[2](0, 0), 1)
     input.__setitem__(StaticIntTuple[2](0, 1), 2)
     input.__setitem__(StaticIntTuple[2](0, 2), 3)
@@ -244,7 +242,7 @@ fn test_transpose_2d():
 
     # Create a permutation array of the form
     # [1, 0]
-    var perm = Buffer[2, DType.index.value].stack_allocation()
+    var perm = Buffer[2, DType.index].stack_allocation()
     perm.__setitem__(0, 1)
     perm.__setitem__(1, 0)
 
@@ -253,9 +251,7 @@ fn test_transpose_2d():
     #  [-1, -1, -1],
     #  [-1, -1, -1]]
     alias out_shape = create_kgen_list[__mlir_type.index](3, 3)
-    var output = (
-        NDBuffer[2, out_shape, DType.index.value].stack_allocation().fill(0)
-    )
+    var output = NDBuffer[2, out_shape, DType.index].stack_allocation().fill(0)
 
     # transpose
     transpose(output, input, perm.data)
@@ -295,7 +291,7 @@ fn test_transpose_3d_identity():
     #   [4, 5, 6]],
     #  [[7, 8, 9],
     #   [10, 11, 12]]]
-    var input = NDBuffer[3, in_shape, DType.index.value].stack_allocation()
+    var input = NDBuffer[3, in_shape, DType.index].stack_allocation()
     input.__setitem__(StaticIntTuple[3](0, 0, 0), 1)
     input.__setitem__(StaticIntTuple[3](0, 0, 1), 2)
     input.__setitem__(StaticIntTuple[3](0, 0, 2), 3)
@@ -311,7 +307,7 @@ fn test_transpose_3d_identity():
 
     # Create an identity permutation array of the form
     # [0, 1, 2]
-    var perm = Buffer[3, DType.index.value].stack_allocation()
+    var perm = Buffer[3, DType.index].stack_allocation()
     perm.__setitem__(0, 0)
     perm.__setitem__(1, 1)
     perm.__setitem__(2, 2)
@@ -322,9 +318,7 @@ fn test_transpose_3d_identity():
     #  [[-1, -1, -1],
     #   [-1, -1, -1]]]
     alias out_shape = create_kgen_list[__mlir_type.index](2, 2, 3)
-    var output = (
-        NDBuffer[3, out_shape, DType.index.value].stack_allocation().fill(0)
-    )
+    var output = NDBuffer[3, out_shape, DType.index].stack_allocation().fill(0)
 
     # transpose
     transpose(output, input, perm.data)
@@ -371,7 +365,7 @@ fn test_transpose_3d():
     #   [4, 5, 6]],
     #  [[7, 8, 9],
     #   [10, 11, 12]]]
-    var input = NDBuffer[3, in_shape, DType.index.value].stack_allocation()
+    var input = NDBuffer[3, in_shape, DType.index].stack_allocation()
     input.__setitem__(StaticIntTuple[3](0, 0, 0), 1)
     input.__setitem__(StaticIntTuple[3](0, 0, 1), 2)
     input.__setitem__(StaticIntTuple[3](0, 0, 2), 3)
@@ -387,7 +381,7 @@ fn test_transpose_3d():
 
     # Create a identity permutation array of the form
     # [2, 0, 1]
-    var perm = Buffer[3, DType.index.value].stack_allocation()
+    var perm = Buffer[3, DType.index].stack_allocation()
     perm.__setitem__(0, 2)
     perm.__setitem__(1, 0)
     perm.__setitem__(2, 1)
@@ -398,9 +392,7 @@ fn test_transpose_3d():
     #  [[-1, -1, -1],
     #   [-1, -1, -1]]]
     alias out_shape = create_kgen_list[__mlir_type.index](3, 2, 2)
-    var output = (
-        NDBuffer[3, out_shape, DType.index.value].stack_allocation().fill(0)
-    )
+    var output = NDBuffer[3, out_shape, DType.index].stack_allocation().fill(0)
 
     # transpose
     transpose(output, input, perm.data)
@@ -449,7 +441,7 @@ fn test_transpose_si64():
     #   [4, 5, 6]],
     #  [[7, 8, 9],
     #   [10, 11, 12]]]
-    var input = NDBuffer[3, in_shape, DType.si64.value].stack_allocation()
+    var input = NDBuffer[3, in_shape, DType.si64].stack_allocation()
     input.__setitem__(StaticIntTuple[3](0, 0, 0), 1)
     input.__setitem__(StaticIntTuple[3](0, 0, 1), 2)
     input.__setitem__(StaticIntTuple[3](0, 0, 2), 3)
@@ -465,7 +457,7 @@ fn test_transpose_si64():
 
     # Create a identity permutation array of the form
     # [2, 1, 0]
-    var perm = Buffer[3, DType.index.value].stack_allocation()
+    var perm = Buffer[3, DType.index].stack_allocation()
     perm.__setitem__(0, 2)
     perm.__setitem__(1, 1)
     perm.__setitem__(2, 0)
@@ -476,9 +468,7 @@ fn test_transpose_si64():
     #  [[-1, -1, -1],
     #   [-1, -1, -1]]]
     alias out_shape = create_kgen_list[__mlir_type.index](3, 2, 2)
-    var output = (
-        NDBuffer[3, out_shape, DType.si64.value].stack_allocation().fill(0)
-    )
+    var output = NDBuffer[3, out_shape, DType.si64].stack_allocation().fill(0)
 
     # transpose
     transpose(output, input, perm.data)

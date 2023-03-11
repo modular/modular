@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from Assert import assert_param, assert_param_bool, debug_assert
-
+from DType import DType
 from Buffer import (
     NDBuffer,
     Buffer,
@@ -14,6 +14,7 @@ from Buffer import (
     _raw_stack_allocation,
 )
 from BuildInfo import is_relwithdebinfo_build, is_debug_build
+from Functional import tile, unswitch
 from Index import Index, StaticIntTuple
 from Int import Int
 from List import create_kgen_list, VariadicList
@@ -25,7 +26,6 @@ from SIMD import SIMD
 from TargetInfo import simd_byte_width, os_is_macos
 from Transpose import transpose_inplace
 from Tuple import StaticTuple
-from Functional import tile, unswitch
 
 
 fn get_pack_data_size() -> Int:
@@ -90,8 +90,8 @@ struct GemmShape:
         shape_c: __mlir_type[`!kgen.list<index[2]>`],
         shape_a: __mlir_type[`!kgen.list<index[2]>`],
         shape_b: __mlir_type[`!kgen.list<index[2]>`],
-        accum_type: __mlir_type.`!kgen.dtype`,
-        value_type: __mlir_type.`!kgen.dtype`,
+        accum_type: DType,
+        value_type: DType,
         transpose_a: Bool,
         transpose_b: Bool,
     ](
@@ -169,12 +169,14 @@ fn naive_matmul[
     shape_a: __mlir_type[`!kgen.list<index[2]>`],
     shape_b: __mlir_type[`!kgen.list<index[2]>`],
     shape_c: __mlir_type[`!kgen.list<index[2]>`],
-    accum_type: __mlir_type.`!kgen.dtype`,
-    value_type: __mlir_type.`!kgen.dtype`,
+    accum_type: DType,
+    value_type: DType,
     transpose_a: Bool,
     transpose_b: Bool,
     epilogue_elemwise_func: __mlir_type[
-        `!kgen.signature<<accum_type: dtype>(`,
+        `!kgen.signature<<accum_type: `,
+        DType,
+        `>(`,
         Int,  # Row
         `,`,
         Int,  # Col
@@ -185,7 +187,9 @@ fn naive_matmul[
         `>`,
     ],
     epilogue_rowise_func: __mlir_type[
-        `!kgen.signature<<accum_type: dtype>(`,
+        `!kgen.signature<<accum_type: `,
+        DType,
+        `>(`,
         Int,  # Row
         `,`,
         Buffer[
@@ -272,7 +276,7 @@ struct PackMatrixRows[
     original_shape: __mlir_type[`!kgen.list<index[2]>`],
     # packed matrix shape list
     packed_shape: __mlir_type[`!kgen.list<index[3]>`],
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
     simd_size: __mlir_type.index,
     row_inner_size: __mlir_type.index,
 ]:
@@ -515,7 +519,7 @@ struct PackMatrixCols[
     original_shape: __mlir_type[`!kgen.list<index[2]>`],
     # packed matrix shape list
     packed_shape: __mlir_type[`!kgen.list<index[3]>`],
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
     simd_size: __mlir_type.index,
     column_inner_size: __mlir_type.index,
 ]:
@@ -688,8 +692,8 @@ struct MatmulInnerLoopBPacked[
     shape_a: __mlir_type[`!kgen.list<index[2]>`],
     shape_c: __mlir_type[`!kgen.list<index[2]>`],
     packed_shape: __mlir_type[`!kgen.list<index[3]>`],
-    accum_type: __mlir_type.`!kgen.dtype`,
-    value_type: __mlir_type.`!kgen.dtype`,
+    accum_type: DType,
+    value_type: DType,
     simd_size: __mlir_type.index,
     a_row_size: __mlir_type.index,
     pack_inner_size: __mlir_type.index,
@@ -1010,8 +1014,8 @@ fn calculate_tile_n_k[
 # TODO: not yet supporting transpose_a
 struct TiledMatmul[
     config: MatmulConfig,
-    accum_type: __mlir_type.`!kgen.dtype`,
-    value_type: __mlir_type.`!kgen.dtype`,
+    accum_type: DType,
+    value_type: DType,
     transpose_a: Bool,
     transpose_b: Bool,
 ]:

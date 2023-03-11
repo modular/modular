@@ -15,7 +15,7 @@ fn gemv[
     out_size: __mlir_type.index,
     lhs_shape: __mlir_type[`!kgen.list<index[2]>`],
     rhs_size: __mlir_type.index,
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
 ](
     out: Buffer[out_size, type],
     lhs: NDBuffer[2, lhs_shape, type],

@@ -19,9 +19,7 @@ from Vector import DynamicVector
 
 
 fn test(
-    m: Matrix[
-        create_kgen_list[__mlir_type.index](4, 4), DType.si32.value, False
-    ]
+    m: Matrix[create_kgen_list[__mlir_type.index](4, 4), DType.si32, False]
 ):
     # CHECK: [0, 1, 2, 3]
     print(m.simd_load[4](0, 0))
@@ -32,7 +30,7 @@ fn test(
     # CHECK: [12, 13, 14, 15]
     print(m.simd_load[4](3, 0))
 
-    let v = iota[4, DType.si32.value]()
+    let v = iota[4, DType.si32]()
     m.simd_store[4](3, 0, v)
     # CHECK: [0, 1, 2, 3]
     print(m.simd_load[4](3, 0))
@@ -40,9 +38,9 @@ fn test(
 
 fn test_matrix_static():
     print("== test_matrix_static\n")
-    let a = Buffer[16, DType.si32.value].stack_allocation()
+    let a = Buffer[16, DType.si32].stack_allocation()
     let m = Matrix[
-        create_kgen_list[__mlir_type.index](4, 4), DType.si32.value, False
+        create_kgen_list[__mlir_type.index](4, 4), DType.si32, False
     ](a.data)
     for i in range(16):
         a.__setitem__(i, i)
@@ -54,10 +52,10 @@ fn test_matrix_dynamic():
     let vec = DynamicVector[__mlir_type[`!pop.scalar<`, DType.si32.value, `>`]](
         16
     )
-    let dptr = DTypePointer[DType.si32.value](vec.data.address)
-    let a = Buffer[16, DType.si32.value](dptr.address)
+    let dptr = DTypePointer[DType.si32](vec.data.address)
+    let a = Buffer[16, DType.si32](dptr.address)
     let m = Matrix[
-        create_kgen_list[__mlir_type.index](4, 4), DType.si32.value, False
+        create_kgen_list[__mlir_type.index](4, 4), DType.si32, False
     ](vec.data)
     for i in range(16):
         a.__setitem__(i, i)

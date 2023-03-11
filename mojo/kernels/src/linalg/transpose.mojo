@@ -22,7 +22,7 @@ from Functional import unroll
 fn transpose_inplace[
     rows: __mlir_type.index,
     cols: __mlir_type.index,
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
 ](buf0: NDBuffer[2, create_kgen_list[__mlir_type.index](rows, cols), type]):
     assert_param[rows == 4]()
     assert_param[cols == 4]()
@@ -75,7 +75,7 @@ fn transpose_inplace[
 fn transpose_inplace[
     rows: __mlir_type.index,
     cols: __mlir_type.index,
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
 ](buf0: NDBuffer[2, create_kgen_list[__mlir_type.index](rows, cols), type]):
     assert_param[rows == 8]()
     assert_param[cols == 8]()
@@ -158,7 +158,7 @@ fn transpose_inplace[
 fn transpose_inplace[
     rows: __mlir_type.index,
     cols: __mlir_type.index,
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
 ](buf0: NDBuffer[2, create_kgen_list[__mlir_type.index](rows, cols), type]):
     assert_param[rows == 16]()
     assert_param[cols == 16]()
@@ -302,7 +302,7 @@ fn transpose_inplace[
 fn transpose_inplace[
     rows: __mlir_type.index,
     cols: __mlir_type.index,
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
 ](buf: NDBuffer[2, create_kgen_list[__mlir_type.index](rows, cols), type]):
     for i in range(rows):
         for j in range(i + 1, cols):
@@ -313,11 +313,11 @@ fn transpose_inplace[
 
 fn _permute_data[
     size: __mlir_type.index,
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
 ](
     input: DTypePointer[type],
     output: DTypePointer[type],
-    perms: DTypePointer[DType.index.value],
+    perms: DTypePointer[DType.index],
 ):
     """
     Ensures that output[i] = input[perms[i]] for i ∈ [0, size)
@@ -331,11 +331,8 @@ fn _permute_data[
 fn _fill_strides[
     rank: __mlir_type.index,
     input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
-](
-    buf: NDBuffer[rank, input_shape, type],
-    strides: Buffer[rank, DType.index.value],
-):
+    type: DType,
+](buf: NDBuffer[rank, input_shape, type], strides: Buffer[rank, DType.index],):
     """
     Fill `strides`, which will be an array of strides indexed by axis, assuming
     `buf` contains contiguous buf.
@@ -360,11 +357,11 @@ fn transpose[
     rank: __mlir_type.index,
     output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
     input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
 ](
     output: NDBuffer[rank, output_shape, type],
     input: NDBuffer[rank, input_shape, type],
-    perms: DTypePointer[DType.index.value],
+    perms: DTypePointer[DType.index],
 ):
     """
     Permute the axis of `input` based on `perms`, and place the result in
@@ -380,16 +377,16 @@ fn transpose[
         # guarantees output[x, y, z] = input[z, x, y]
     """
     # Compute `permuted_input_strides_buf`
-    let input_strides_buf = Buffer[rank, DType.index.value].stack_allocation()
+    let input_strides_buf = Buffer[rank, DType.index].stack_allocation()
     let permuted_input_strides_buf = Buffer[
-        rank, DType.index.value
+        rank, DType.index
     ].stack_allocation()
     _fill_strides(input, input_strides_buf)
-    _permute_data[rank, DType.index.value](
+    _permute_data[rank, DType.index](
         input_strides_buf.data, permuted_input_strides_buf.data, perms
     )
     # Compute `output_strides_buf `
-    let output_strides_buf = Buffer[rank, DType.index.value].stack_allocation()
+    let output_strides_buf = Buffer[rank, DType.index].stack_allocation()
     _fill_strides(output, output_strides_buf)
     # Kickoff; for intuition on permuted input strides, note that
     #   transpose(output, input, [2, 0, 1])
@@ -415,13 +412,13 @@ fn transpose[
 fn _copy_with_strides[
     rank: __mlir_type.index,
     output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
 ](
     axis: Int,
     output: NDBuffer[rank, output_shape, type],
     input: DTypePointer[type],
-    input_strides: DTypePointer[DType.index.value],
-    output_strides: DTypePointer[DType.index.value],
+    input_strides: DTypePointer[DType.index],
+    output_strides: DTypePointer[DType.index],
     input_offset: Int,
     output_offset: Int,
 ):

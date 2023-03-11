@@ -28,7 +28,7 @@ fn fill_a(
     buf: NDBuffer[
         2,
         create_kgen_list[__mlir_type.index](16, 16),
-        DType.f32.value,
+        DType.f32,
     ]
 ):
     # Fills the A matrix with the following values row + 2*col
@@ -44,7 +44,7 @@ fn fill_b(
     buf: NDBuffer[
         2,
         create_kgen_list[__mlir_type.index](16, 16),
-        DType.f32.value,
+        DType.f32,
     ]
 ):
     # Fills the A matrix with the following values row/(col + 1) + col
@@ -60,7 +60,7 @@ fn clear_c(
     buf: NDBuffer[
         2,
         create_kgen_list[__mlir_type.index](16, 16),
-        DType.f32.value,
+        DType.f32,
     ]
 ):
     buf.zero()
@@ -70,7 +70,7 @@ fn print_matrix(
     buf: NDBuffer[
         2,
         create_kgen_list[__mlir_type.index](16, 16),
-        DType.f32.value,
+        DType.f32,
     ]
 ):
     # Fills the A matrix with the following values row/(col + 1) + col + 3
@@ -89,17 +89,17 @@ fn test_amx_matmul():
     var a_matrix = NDBuffer[
         2,
         create_kgen_list[__mlir_type.index](16, 16),
-        DType.f32.value,
+        DType.f32,
     ].stack_allocation()
     var b_matrix = NDBuffer[
         2,
         create_kgen_list[__mlir_type.index](16, 16),
-        DType.f32.value,
+        DType.f32,
     ].stack_allocation()
     var c_matrix = NDBuffer[
         2,
         create_kgen_list[__mlir_type.index](16, 16),
-        DType.f32.value,
+        DType.f32,
     ].stack_allocation()
 
     fill_a(a_matrix)
