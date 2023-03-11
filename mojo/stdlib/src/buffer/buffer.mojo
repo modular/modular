@@ -35,7 +35,7 @@ from Range import range
 @always_inline
 fn _raw_stack_allocation[
     count: __mlir_type.index,
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
     alignment: __mlir_type.index,
 ]() -> DTypePointer[type]:
     """Allocates data buffer space on the stack given a data type and number of elements.
@@ -49,7 +49,7 @@ fn _raw_stack_allocation[
         A data pointer of the given dtype pointing to the allocated space.
     """
     let ptr = stack_allocation[
-        count, __mlir_type[`!pop.scalar<`, type, `>`], alignment
+        count, __mlir_type[`!pop.scalar<`, type.value, `>`], alignment
     ]()
     return ptr.address
 
@@ -60,14 +60,14 @@ fn _raw_stack_allocation[
 
 
 @register_passable
-struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
+struct Buffer[size: __mlir_type.index, type: DType]:
     """Defines a Buffer which can be parametrized on a static size and Dtype.
     The Buffer does not own its underlying pointer.
     """
 
     var data: DTypePointer[type]
     var dynamic_size: Int
-    var dtype: __mlir_type.`!kgen.dtype`
+    var dtype: DType
 
     # TODO: This should not be implicitly copyable when we have ownership all
     # set up!
@@ -77,7 +77,7 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
         }
 
     fn __new__(
-        ptr: __mlir_type[`!pop.pointer<scalar<`, type, `>>`]
+        ptr: __mlir_type[`!pop.pointer<scalar<`, type.value, `>>`]
     ) -> Buffer[size, type]:
         """Constructor for a Buffer with statically known size and type.
 
@@ -97,7 +97,7 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
         }
 
     fn __new__(
-        ptr: __mlir_type[`!pop.pointer<scalar<`, type, `>>`],
+        ptr: __mlir_type[`!pop.pointer<scalar<`, type.value, `>>`],
         in_size: Int,
     ) -> Buffer[size, type]:
         """Constructor for a Buffer with statically known type.
@@ -196,7 +196,7 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
     fn __setitem__(
         self,
         idx: Int,
-        val: __mlir_type[`!pop.scalar<`, type, `>`],
+        val: __mlir_type[`!pop.scalar<`, type.value, `>`],
     ):
         """Stores a single value into the buffer at the specified index.
 
@@ -325,7 +325,7 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
 fn _compute_ndbuffer_offset[
     rank: __mlir_type.index,
     shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
 ](buf: NDBuffer[rank, shape, type], idx: VariadicList[Int]) -> Int:
     """Computes the NDBuffer's offset using the index positions provided.
 
@@ -357,7 +357,7 @@ fn _compute_ndbuffer_offset[
 fn _compute_ndbuffer_offset[
     rank: __mlir_type.index,
     shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
 ](buf: NDBuffer[rank, shape, type], idx: StaticIntTuple[rank]) -> Int:
     """Computes the NDBuffer's offset using the index positions provided.
 
@@ -377,7 +377,7 @@ fn _compute_ndbuffer_offset[
 fn _compute_ndbuffer_offset[
     rank: __mlir_type.index,
     shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
 ](
     buf: NDBuffer[rank, shape, type], idx: StaticTuple[rank, __mlir_type.index]
 ) -> Int:
@@ -417,7 +417,7 @@ fn _compute_ndbuffer_offset[
 struct NDBuffer[
     rank: __mlir_type.index,
     shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
 ]:
 
     var data: DTypePointer[type]
@@ -432,11 +432,11 @@ struct NDBuffer[
             data: self.data,
             _rank: self._rank,
             dynamic_shape: self.dynamic_shape,
-            dynamic_dtype: self.dynamic_dtype,
+            dynamic_dtype: self.dynamic_dtype.value,
         }
 
     fn __new__(
-        ptr: __mlir_type[`!pop.pointer<scalar<`, type, `>>`],
+        ptr: __mlir_type[`!pop.pointer<scalar<`, type.value, `>>`],
     ) -> NDBuffer[rank, shape, type]:
         assert_param_bool_msg[
             is_all_known[rank, shape](),
@@ -447,11 +447,11 @@ struct NDBuffer[
             data: ptr,
             _rank: rank,
             dynamic_shape: shape,
-            dynamic_dtype: type,
+            dynamic_dtype: type.value,
         }
 
     fn __new__(
-        ptr: __mlir_type[`!pop.pointer<scalar<`, type, `>>`],
+        ptr: __mlir_type[`!pop.pointer<scalar<`, type.value, `>>`],
         dynamic_shape: StaticIntTuple[rank],
         dynamic_dtype: DType,
     ) -> NDBuffer[rank, shape, type]:
@@ -459,7 +459,7 @@ struct NDBuffer[
             data: ptr,
             _rank: rank,
             dynamic_shape: dynamic_shape,
-            dynamic_dtype: dynamic_dtype,
+            dynamic_dtype: dynamic_dtype.value,
         }
 
     fn __new__(
@@ -471,7 +471,7 @@ struct NDBuffer[
             data: ptr,
             _rank: rank,
             dynamic_shape: dynamic_shape,
-            dynamic_dtype: dynamic_dtype,
+            dynamic_dtype: dynamic_dtype.value,
         }
 
     fn get_rank(self) -> Int:
@@ -683,7 +683,7 @@ fn _neg[val: __mlir_type.i1]() -> __mlir_type.i1:
 
 
 fn partial_simd_load[
-    width: Int, type: __mlir_type.`!kgen.dtype`
+    width: Int, type: DType
 ](
     storage: DTypePointer[type],
     lbound: Int,
@@ -731,7 +731,7 @@ fn partial_simd_load[
 
 
 fn partial_simd_store[
-    width: Int, type: __mlir_type.`!kgen.dtype`
+    width: Int, type: DType
 ](
     storage: DTypePointer[type],
     lbound: Int,
@@ -783,7 +783,7 @@ struct DynamicRankBuffer:
 
     var data: DTypePointer[DType.invalid.value]
     var rank: Int
-    var shape: DTypePointer[DType.index.value]
+    var shape: DTypePointer[DType.index]
     var type: DType
 
     fn __clone__(self&) -> Self:
@@ -794,25 +794,25 @@ struct DynamicRankBuffer:
     fn __new__(
         data: DTypePointer[DType.invalid.value],
         rank: Int,
-        shape: DTypePointer[DType.index.value],
+        shape: DTypePointer[DType.index],
         type: DType,
     ) -> DynamicRankBuffer:
         return DynamicRankBuffer {
             data: data,
             rank: rank,
             shape: shape,
-            type: type,
+            type: type.value,
         }
 
     fn to_buffer[
-        type: __mlir_type.`!kgen.dtype`
+        type: DType
     ](self) -> Buffer[__mlir_attr.`#kgen.unknown : index`, type]:
         return Buffer[__mlir_attr.`#kgen.unknown : index`, type](
             self.data.bitcast[type](), pointer_product(self.shape, self.rank)
         )
 
     fn to_ndbuffer[
-        rank: __mlir_type.index, type: __mlir_type.`!kgen.dtype`
+        rank: __mlir_type.index, type: DType
     ](self) -> NDBuffer[rank, create_kgen_list_unknown[rank](), type]:
         debug_assert(
             self.rank == rank,
@@ -821,7 +821,7 @@ struct DynamicRankBuffer:
         return NDBuffer[rank, create_kgen_list_unknown[rank](), type](
             self.data.bitcast[type](),
             self._shape_to_static_tuple[rank](),
-            self.type,
+            self.type.value,
         )
 
     @always_inline
