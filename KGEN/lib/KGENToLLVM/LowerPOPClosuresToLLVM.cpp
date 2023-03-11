@@ -204,7 +204,8 @@ public:
     }
 
     LLVM::CallOp callWithUnpackedArgs = rewriter.create<LLVM::CallOp>(
-        op.getLoc(), resultTypes, FlatSymbolRefAttr(), llvmCallArgs);
+        op.getLoc(), resultTypes, FlatSymbolRefAttr(), llvmCallArgs,
+        LLVM_FASTMATH_FLAGS, nullptr);
     rewriter.create<LLVM::ReturnOp>(op.getLoc(),
                                     callWithUnpackedArgs.getResults());
 
@@ -363,12 +364,14 @@ struct ConvertPOPCallIndirect : ConvertPOPToLLVMPattern<CallIndirectOp> {
         llvmCallArgs.push_back(inp);
 
       llvmCall = rewriter.create<LLVM::CallOp>(
-          op.getLoc(), resultTypes, FlatSymbolRefAttr(), llvmCallArgs);
+          op.getLoc(), resultTypes, FlatSymbolRefAttr(), llvmCallArgs,
+          LLVM_FASTMATH_FLAGS, nullptr);
     } else {
       // Create the LLVM call operation.
       // Note: adaptor.getOperands() is a list of callee followed by inputs.
       llvmCall = rewriter.create<LLVM::CallOp>(
-          op.getLoc(), resultTypes, FlatSymbolRefAttr(), adaptor.getOperands());
+          op.getLoc(), resultTypes, FlatSymbolRefAttr(), adaptor.getOperands(),
+          LLVM_FASTMATH_FLAGS, nullptr);
     }
 
     if (op.getNumResults() <= 1) {

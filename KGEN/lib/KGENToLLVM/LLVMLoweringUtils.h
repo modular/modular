@@ -12,6 +12,7 @@
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
+#include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Value.h"
 
@@ -150,6 +151,10 @@ struct POPToLLVMDebugInfoTypeConverter
 //===----------------------------------------------------------------------===//
 // ConvertPOPToLLVMPattern
 //===----------------------------------------------------------------------===//
+
+/// These are the default LLVM fastmath flags that are always set.
+static constexpr mlir::LLVM::FastmathFlags LLVM_FASTMATH_FLAGS =
+    mlir::LLVM::FastmathFlags::contract;
 
 /// This is a templated instance of the wrapper class to rewrite a specific op.
 template <typename OpT>

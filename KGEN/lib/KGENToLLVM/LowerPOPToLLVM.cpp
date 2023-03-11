@@ -56,14 +56,14 @@ struct OneToOneFloatOrIntConversion : public ConvertPOPToLLVMPattern<Op> {
 
     if (dtype.isInt() || dtype.isIndex()) {
       if (std::is_same_v<SIntOp, UIntOp> || dtype.isSInt() || dtype.isIndex())
-        rewriter.replaceOpWithNewOp<SIntOp>(op, type, adaptor.getOperands(),
-                                            op->getAttrs());
+        rewriter.replaceOpWithNewOp<SIntOp>(op, type, adaptor.getLhs(),
+                                            adaptor.getRhs());
       else
-        rewriter.replaceOpWithNewOp<UIntOp>(op, type, adaptor.getOperands(),
-                                            op->getAttrs());
+        rewriter.replaceOpWithNewOp<UIntOp>(op, type, adaptor.getLhs(),
+                                            adaptor.getRhs());
     } else {
-      rewriter.replaceOpWithNewOp<FloatOp>(op, type, adaptor.getOperands(),
-                                           op->getAttrs());
+      rewriter.replaceOpWithNewOp<FloatOp>(
+          op, type, adaptor.getLhs(), adaptor.getRhs(), LLVM_FASTMATH_FLAGS);
     }
     return success();
   }
@@ -83,7 +83,8 @@ struct ConvertPOPNeg : public ConvertPOPToLLVMPattern<NegOp> {
                   ConversionPatternRewriter &rewriter) const override {
     KGENDType dtype = *op.getType().getResolvedDType();
     if (!dtype.isInt() && !dtype.isIndex()) {
-      rewriter.replaceOpWithNewOp<LLVM::FNegOp>(op, adaptor.getOperand());
+      rewriter.replaceOpWithNewOp<LLVM::FNegOp>(op, adaptor.getOperand(),
+                                                LLVM_FASTMATH_FLAGS);
       return success();
     }
 
@@ -146,8 +147,31 @@ struct ConvertPOPFMA : public ConvertPOPToLLVMPattern<FMAOp> {
                                               adaptor.getB());
       rewriter.replaceOpWithNewOp<LLVM::AddOp>(op, lhs, adaptor.getC());
     } else {
-      rewriter.replaceOpWithNewOp<LLVM::FMAOp>(op, adaptor.getOperands());
+      rewriter.replaceOpWithNewOp<LLVM::FMAOp>(op, adaptor.getA(),
+                                               adaptor.getB(), adaptor.getC(),
+                                               LLVM_FASTMATH_FLAGS);
     }
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPSelect
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPSelect : public ConvertPOPToLLVMPattern<SelectOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(SelectOp op, SelectOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    auto select = rewriter.replaceOpWithNewOp<LLVM::SelectOp>(
+        op, adaptor.getCondition(), adaptor.getTrueValue(),
+        adaptor.getFalseValue());
+    // FIXME: Pass this attribute through the builder once
+    // https://reviews.llvm.org/D145829 lands.
+    select->setAttr("fastmathFlags", LLVM::FastmathFlagsAttr::get(
+                                         op.getContext(), LLVM_FASTMATH_FLAGS));
     return success();
   }
 };
@@ -178,7 +202,7 @@ public:
       }
       rewriter.replaceOpWithNewOp<LLVM::FCmpOp>(
           op, i1Type, getFCmpPredicate(op.getPred()), adaptor.getLhs(),
-          adaptor.getRhs());
+          adaptor.getRhs(), LLVM_FASTMATH_FLAGS);
     }
     return success();
   }
@@ -1323,8 +1347,6 @@ using ConvertPOPBitcast =
 using ConvertPOPPointerBitcast =
     mlir::OneToOneConvertToLLVMPattern<PointerBitcastOp, LLVM::BitcastOp>;
 using ConvertPOPShl = mlir::OneToOneConvertToLLVMPattern<ShlOp, LLVM::ShlOp>;
-using ConvertPOPSelect =
-    mlir::OneToOneConvertToLLVMPattern<SelectOp, LLVM::SelectOp>;
 using ConvertPOPIndexToPointer =
     mlir::OneToOneConvertToLLVMPattern<IndexToPointerOp, LLVM::IntToPtrOp>;
 using ConvertPOPPointerToIndex =
@@ -1538,7 +1560,9 @@ public:
       symtab.insert(func);
     }
 
-    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, func, adaptor.getOperands());
+    auto call = rewriter.replaceOpWithNewOp<LLVM::CallOp>(
+        op, func, adaptor.getOperands());
+    call.setFastmathFlags(LLVM_FASTMATH_FLAGS);
     return success();
   }
 
