@@ -25,6 +25,15 @@
 //       MRValue        <- with a memory-only value in memory
 //       PRValue        <- with a parameter value
 //
+// This is another parallel hierarchy:
+//
+//   CValue        <- Concrete value: LValue or RValue with a known type.
+//     SLValue       <- LValue in memory
+//     BValue        <- Borrowed value
+//       ... per above ...
+//     CRValue       <- Concrete RValue
+//       ... per above ...
+//
 // Note that SRValue is not compatible with memory-only types, but MRValue
 // can hold any type, including a register compatible type.
 //
@@ -236,24 +245,24 @@ protected:
 };
 
 template <typename DerivedType>
-struct VariantRValue {
-  VariantRValue() {}
-  // These are common constructors all RValues have.
-  VariantRValue(PRValue value) {
+struct VariantCRValue {
+  VariantCRValue() {}
+  // These are common constructors all CRValues have.
+  VariantCRValue(PRValue value) {
     if (value)
       getStorageR() = value;
   }
-  VariantRValue(TypedAttr value) : VariantRValue(PRValue(value)) {}
-  VariantRValue(Attribute value) : VariantRValue(TypedAttr(value)) {
+  VariantCRValue(TypedAttr value) : VariantCRValue(PRValue(value)) {}
+  VariantCRValue(Attribute value) : VariantCRValue(TypedAttr(value)) {
     assert(isa<TypedAttr>(value) && "invalid value attribute");
   }
-  VariantRValue(Type value) : VariantRValue(PRValue(value)) {}
-  VariantRValue(ASTType value) : VariantRValue(PRValue(value)) {}
-  VariantRValue(SRValue value) {
+  VariantCRValue(Type value) : VariantCRValue(PRValue(value)) {}
+  VariantCRValue(ASTType value) : VariantCRValue(PRValue(value)) {}
+  VariantCRValue(SRValue value) {
     if (value)
       getStorageR() = value;
   }
-  VariantRValue(MRValue value) {
+  VariantCRValue(MRValue value) {
     if (value)
       getStorageR() = value;
   }
@@ -283,9 +292,9 @@ private:
 
 /// Concrete RValue: CRValue = PRValue|SRValue|MRValue.
 class CRValue : public VariantValueStorage<CRValue>,
-                public VariantRValue<CRValue> {
+                public VariantCRValue<CRValue> {
 public:
-  using VariantRValue::VariantRValue;
+  using VariantCRValue::VariantCRValue;
   using VariantValueStorage::VariantValueStorage;
 
   static CRValue getFrom(Storage storage) {
@@ -308,9 +317,9 @@ raw_ostream &operator<<(raw_ostream &os, CRValue value);
 
 /// RValue = CRValue|ORValue.
 class RValue : public VariantValueStorage<RValue>,
-               public VariantRValue<RValue> {
+               public VariantCRValue<RValue> {
 public:
-  using VariantRValue::VariantRValue;
+  using VariantCRValue::VariantCRValue;
   using VariantValueStorage::VariantValueStorage;
 
   RValue() {}
@@ -377,6 +386,46 @@ public:
   }
 
   /// Return the type for the contained representation, or null if null.
+  // ASTType getType() const;
+
+  /// This method looks through the pointer in a MRValue to return
+  /// the underlying type.
+  // ASTType getRValueType() const;
+  void dump() const;
+};
+raw_ostream &operator<<(raw_ostream &os, LValue value);
+
+/// Concrete Value: CValue = CRValue|SLValue|BValue.
+class CValue : public VariantValueStorage<CValue>,
+               public VariantCRValue<CValue> {
+public:
+  using VariantCRValue::VariantCRValue;
+  using VariantValueStorage::VariantValueStorage;
+
+  CValue(SLValue value) {
+    if (value)
+      getStorage() = value;
+  }
+  CValue(MBValue value) {
+    if (value)
+      getStorage() = value;
+  }
+  CValue(CRValue value) {
+    if (value)
+      getStorage() = value.getStorage();
+  }
+  static CValue getFrom(Storage storage) {
+    CValue result;
+    // Initialize conditionally based on what is in Storage.
+    if (isa<PRValue, SRValue, MRValue, MBValue, SLValue>(storage))
+      result.storage = std::move(storage);
+    return result;
+  }
+
+  SLValue getIfSLValue() const { return dyn_cast<SLValue>(getStorage()); }
+  MBValue getIfMBValue() const { return dyn_cast<MBValue>(getStorage()); }
+
+  /// Return the type for the contained representation, or null if null.
   ASTType getType() const;
 
   /// This method looks through the pointer in a MRValue to return
@@ -384,15 +433,15 @@ public:
   ASTType getRValueType() const;
   void dump() const;
 };
-raw_ostream &operator<<(raw_ostream &os, LValue value);
+raw_ostream &operator<<(raw_ostream &os, CRValue value);
 
 /// AnyValue = LValue|MBValue|RValue.
 class AnyValue : public VariantValueStorage<AnyValue>,
-                 public VariantRValue<AnyValue>,
+                 public VariantCRValue<AnyValue>,
                  public VariantLValue<AnyValue> {
 public:
+  using VariantCRValue::VariantCRValue;
   using VariantLValue::VariantLValue;
-  using VariantRValue::VariantRValue;
   using VariantValueStorage::VariantValueStorage;
 
   AnyValue() {}
@@ -408,10 +457,12 @@ public:
   }
   AnyValue(RValue value) { storage = value.getStorage(); }
   AnyValue(LValue value) { storage = value.getStorage(); }
+  AnyValue(CValue value) { storage = value.getStorage(); }
 
   LValue getIfLValue() const { return LValue::getFrom(storage); }
   ORValue getIfORValue() const { return dyn_cast<ORValue>(storage); }
   CRValue getIfCRValue() const { return CRValue::getFrom(storage); }
+  CValue getIfCValue() const { return CValue::getFrom(storage); }
   RValue getIfRValue() const { return RValue::getFrom(storage); }
 
   MBValue getIfMBValue() const { return dyn_cast<MBValue>(storage); }

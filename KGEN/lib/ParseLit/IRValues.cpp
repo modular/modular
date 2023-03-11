@@ -105,11 +105,8 @@ static ASTType getTypeFrom(AnyValue::Storage storage) {
     return value.getType();
   if (auto value = dyn_cast<SLValue>(storage))
     return value.getType();
-  if (isa<CLValue>(storage)) {
-    // TODO(clvalue)
-    assert(0 && "CLValue unimp");
-  }
-  assert(!isa<ORValue>(storage) && "overloaded rvalue has no type");
+  assert(!isa<ORValue>(storage) && !isa<CLValue>(storage) &&
+         "overloaded rvalue has no type");
 
   // Otherwise null.
   return Type();
@@ -117,7 +114,7 @@ static ASTType getTypeFrom(AnyValue::Storage storage) {
 
 ASTType CRValue::getType() const { return getTypeFrom(storage); }
 ASTType RValue::getType() const { return getTypeFrom(storage); }
-ASTType LValue::getType() const { return getTypeFrom(storage); }
+ASTType CValue::getType() const { return getTypeFrom(storage); }
 ASTType AnyValue::getType() const { return getTypeFrom(storage); }
 
 PRValue::PRValue(Type value)
@@ -145,8 +142,8 @@ ASTType CRValue::getRValueType() const {
   return getType();
 }
 
-ASTType LValue::getRValueType() const {
-  if (isa<SLValue>(storage))
+ASTType CValue::getRValueType() const {
+  if (isa<SLValue, MRValue, MBValue>(storage))
     return getType().getPointerElementType();
   return getType();
 }

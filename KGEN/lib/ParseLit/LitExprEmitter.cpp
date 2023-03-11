@@ -99,10 +99,6 @@ ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
   if (isa<NullRepresentation>(representation))
     return {};
 
-  // If we have an lvalue already specified, return it.
-  if (LValue lvalue = dyn_cast<LValue>(representation))
-    return lvalue.getRValueType();
-
   // If we just have a contextual type, return it.
   if (ASTType type = dyn_cast<ASTType>(representation))
     return type;
@@ -114,25 +110,30 @@ ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
   assert(!isa<LValueInitializerType>(representation) &&
          "LValueInitializerType should be resolved before this");
 
-  auto *expr = cast<const ExprNode *>(representation);
-  assert(expr);
+  if (auto *expr = dyn_cast<const ExprNode *>(representation)) {
+    // If we have a contextual type available, pass that down to the emitter so
+    // implicitly declared variables and discard patterns can know their type.
+    ValueDest dest;
+    if (existingValueType)
+      dest = ValueDest(LValueInitializerType{existingValueType}, context);
 
-  // If we have a contextual type available, pass that down to the emitter so
-  // implicitly declared variables and discard patterns can know their type.
-  ValueDest dest;
-  if (existingValueType)
-    dest = ValueDest(LValueInitializerType{existingValueType}, context);
-
-  /// Emit the target as an LValue to understand what we're assigning into.  If
-  /// this fails, it will produce an error.
-  LValue exprLValue = emitter.emitExprLValue(expr, dest);
-  if (!exprLValue) {
-    dest.resetForError();
-    representation = NullRepresentation();
-    return {};
+    /// Emit the target as an LValue to understand what we're assigning into. If
+    /// this fails, it will produce an error.
+    LValue exprLValue = emitter.emitExprLValue(expr, dest);
+    if (!exprLValue) {
+      dest.resetForError();
+      representation = NullRepresentation();
+      return {};
+    }
+    representation = exprLValue;
   }
-  representation = exprLValue;
-  return exprLValue.getRValueType();
+
+  // If we have an lvalue already specified, return it.
+  LValue lvalue = cast<LValue>(representation);
+  if (SLValue sl = lvalue.getIfSLValue())
+    return sl.getRValueType();
+  // TODO(clvalue): Handle unambiguous clvalues element types.
+  return {};
 }
 
 /// Project a ValueDest into an lvalue with the specified underlying (RValue)
@@ -167,39 +168,31 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
   // it may have the wrong type.  The client may be cool with this (when
   // allowIncompatibleTypes is true), but if not we generate a new temporary
   // buffer.
-
-  // If we have an lvalue already specified, return it.
-  if (LValue lValue = dyn_cast_or_null<LValue>(representation)) {
-    // If asking for a buffer of this type, then we can directly return it.
-    if (allowIncompatibleTypes ||
-        lValue.getRValueType().isEqualCanon(resultType)) {
-      representation = NullRepresentation(); // Consumed!
-      return lValue;
-    }
-
-    // Otherwise, create a temporary buffer.
-  } else if (const ExprNode *target =
-                 dyn_cast_or_null<const ExprNode *>(representation)) {
+  if (const ExprNode *target =
+          dyn_cast_or_null<const ExprNode *>(representation)) {
 
     // If we have an expression node destination, then we need to bind this
     // value to a pattern (aka "target" in Python internals nomenclature).
     ValueDest dest(LValueInitializerType{resultType}, getContext());
-    LValue lValue = emitter.emitExprLValue(target, dest);
-    if (!lValue)
+    if (LValue lValue = emitter.emitExprLValue(target, dest)) {
+      representation = lValue;
+    } else {
       dest.resetForError();
-
-    // If asking for a buffer of this type, then we can directly return it.
-    if (lValue && (lValue.getRValueType().isEqualCanon(resultType) ||
-                   allowIncompatibleTypes)) {
       representation = NullRepresentation(); // Consumed!
-      return lValue;
+    }
+  }
+
+  // If we have an lvalue already specified, return it.
+  if (LValue lValue = dyn_cast_or_null<LValue>(representation)) {
+    // If asking for a buffer of this type, then we can directly return it.
+    SLValue slValue = lValue.getIfSLValue();
+    if (allowIncompatibleTypes ||
+        (slValue && slValue.getRValueType().isEqualCanon(resultType))) {
+      representation = NullRepresentation(); // Consumed!
+      return slValue;
     }
 
-    // Otherwise, the destination was opinionated or failed with an error;
-    // refine our representation to match it - so we don't re-emit the
-    // expression when the conversion is ultimately emitted.  Then return a
-    // temporary buffer.
-    representation = lValue;
+    // Otherwise, create a temporary buffer.
   }
 
   // Finally, if no destination specifies otherwise, we synthesize a new
@@ -271,6 +264,25 @@ RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   }
 
   return emitLoadOfMBValue({mbValue, value.expr}, dest);
+}
+
+CValue ExprEmitter::emitCValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
+  if (!value) // Already diagnosed error.
+    return {};
+  // If this is already an CValue, then we are done.
+  if (auto cRep = value.ir.getIfCValue()) {
+    if (!dest.isSpecified())
+      return cRep;
+    auto result = emitResult(value.ir, value.expr, dest);
+    assert(!result || result.getIfCValue());
+    return result.getIfCValue();
+  }
+
+  // If the value being materialized is an unresolved overload set, try to
+  // materialize it.
+  ORValue overloads = value.ir.getIfORValue();
+  assert(overloads && "TODO(clvalues): unimp");
+  return overloads->emitAsCRValue(*this, dest);
 }
 
 /// Given an MBValue, produce a standalone rvalue in the specified destination
@@ -609,10 +621,10 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *node,
   if (!destLV)
     return {};
 
-  Value destPtr = destLV.getIfSLValue();
+  SLValue destPtr = destLV.getIfSLValue();
   assert(destPtr && "TODO(clvalue): computed writeback");
   SRValue rv =
-      emitSRValue({value, node}, dest.getContext(), destLV.getRValueType());
+      emitSRValue({value, node}, dest.getContext(), destPtr.getRValueType());
   if (!rv)
     return {};
 
@@ -637,9 +649,23 @@ AnyValue ExprEmitter::emitNamedMethodCall(
     StringRef methodName, ArrayRef<ASTExprAnd<AnyValue>> argValues,
     ValueDest &dest, CallSyntax syntax, const ExprNode *callNode) {
   assert(!argValues.empty() && "Cannot emit a method call without a receiver!");
-  ASTType type = argValues.front().ir.getRValueType();
-  if (!type)
-    return {};
+
+  // Emit the first/self operand to a CValue so we can figure out which type to
+  // lookup on.
+  CValue selfVal = argValues[0].ir.getIfCValue();
+  SmallVector<ASTExprAnd<AnyValue>> updatedArgValues;
+  if (!selfVal) {
+    selfVal = emitCValue(argValues[0], ValueDest::none());
+    if (!selfVal)
+      return {};
+    // We can't mutate argValues because it's an ArrayRef.  If something
+    // changed, recurse with a temporary buffer.
+    updatedArgValues.append(argValues.begin(), argValues.end());
+    updatedArgValues[0].ir = selfVal;
+    argValues = updatedArgValues;
+  }
+
+  ASTType type = selfVal.getRValueType();
 
   auto emitNoMethodError = [&]() {
     auto diag = emitError(callNode->getLoc(), "")
