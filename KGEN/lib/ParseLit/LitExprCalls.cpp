@@ -210,7 +210,7 @@ ParameterInferenceState::infer(SignatureType signature,
       case ValueInputConvention::ByRef:
       case ValueInputConvention::ByRefResult: {
         // The actual value must be an lvalue if callee takes things by-ref.
-        auto argVal = operand.ir.getIfLValue();
+        LValue argVal = operand.ir.getIfLValue();
         if (!argVal)
           return failure();
 
@@ -220,17 +220,19 @@ ParameterInferenceState::infer(SignatureType signature,
         // TODO(clValues): infer parameters against computed lvalue when known
         return success();
       }
-      case ValueInputConvention::ByVal:
-        // Otherwise, we pass as an r-value.
-        // TODO: Consider implicit conversions?
-        return matchTypes(operand.ir.getRValueType(), expectedType);
 
       case ValueInputConvention::ByValInMem:
         // Otherwise,we expect an r-value to match up, ignoring the pointer type
         // from the convention.
         expectedType = expectedType.getPointerElementType();
+        [[fallthrough]];
+      case ValueInputConvention::ByVal:
+        // Otherwise, we pass as an r-value if we know the type.
         // TODO: Consider implicit conversions?
-        return matchTypes(operand.ir.getRValueType(), expectedType);
+        if (auto c = operand.ir.getIfCValue())
+          return matchTypes(c.getRValueType(), expectedType);
+        // TODO(clvalue): if there is a concrete type from a getter, use it.
+        return success();
       }
     };
 
@@ -675,11 +677,9 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
       case ValueInputConvention::ByRefResult: {
         // The actual value must be an lvalue if callee takes things by-ref.
         auto argVal = operand.ir.getIfSLValue();
-        if (!argVal) {
+        if (!argVal)
           // TODO(clValue): pass to byref arguments and result slots.
-          return {kArgNotLValue, providedValueIdx, operand.ir.getRValueType(),
-                  newBindings};
-        }
+          return {kArgNotLValue, providedValueIdx, Type(), newBindings};
 
         // By-ref argument types must exactly match, no conversions are allowed.
         if (!argVal.getType().isEqualCanon(expectedType))
@@ -692,7 +692,11 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
         if (expectedConvention == ValueInputConvention::ByValInMem)
           expectedType = expectedType.getPointerElementType();
 
-        auto argType = operand.ir.getRValueType();
+        auto argVal = operand.ir.getIfCValue();
+        assert(argVal &&
+               "TODO(clvalue/orvalue): need to verify operand type matches");
+
+        auto argType = argVal.getRValueType();
         // Otherwise, we pass as an r-value.  If the argument types match, then
         // they are good.
         if (argType.isEqualCanon(expectedType))
@@ -701,7 +705,8 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
         // If we lack an exact match and conversions are disabled, this
         // candidate fails.
         if (!allowImplicitConversions ||
-            !emitter.canImplicitlyConvertToType(operand, expectedType))
+            !emitter.canImplicitlyConvertToType({argVal, operand.expr},
+                                                expectedType))
           return {kArgWrongType, providedValueIdx, expectedType, newBindings};
 
         // If we had one, this bumps our # implicit conversions.
@@ -811,8 +816,12 @@ void OverloadFitness::diagnose(SignatureType signature,
     return;
   case kArgNotLValue:
     if (callable.syntax == CallSyntax::kMethodCall && payload == 0) {
-      diag << "invalid use of mutating method on rvalue of type "
-           << ASTType(type) << operands[0].expr->getRange();
+      if (auto crVal = operands[0].ir.getIfCValue())
+        diag << "invalid use of mutating method on rvalue of type "
+             << ASTType(crVal.getRValueType());
+      else
+        diag << "invalid use of mutating method on value of unknown type";
+      diag << operands[0].expr->getRange();
       return;
     }
     diag << "argument #" << payload
@@ -823,7 +832,8 @@ void OverloadFitness::diagnose(SignatureType signature,
     PRValue eltTypeAttr = cast<POP::PointerType>(Type(type)).getElementType();
     assert(eltTypeAttr.getIfTypeValue() &&
            "unwrapped value should be a direct type, not a parameter");
-    diag << "l-value of type " << operands[payload].ir.getRValueType()
+    diag << "l-value of type "
+         << operands[payload].ir.getIfSLValue().getRValueType()
          << " cannot be converted to reference of type "
          << eltTypeAttr.getIfTypeValue() << operands[payload].expr->getRange();
     return;
@@ -831,8 +841,9 @@ void OverloadFitness::diagnose(SignatureType signature,
 
   case kArgWrongType:
     describePayloadArgumentNo();
-    diag << " cannot be converted from " << operands[payload].ir.getRValueType()
-         << " to " << type << operands[payload].expr->getRange();
+    diag << " cannot be converted from "
+         << operands[payload].ir.getIfCValue().getRValueType() << " to " << type
+         << operands[payload].expr->getRange();
     break;
 
   case kArgGenericMem:
@@ -1280,20 +1291,20 @@ CRValue OverloadSet::emitAsCRValue(ExprEmitter &emitter, ValueDest &dest) {
 
   switch (selfConvention) {
   case ValueInputConvention::ByRefResult:
-  case ValueInputConvention::ByValInMem:
-    emitter.emitError(loc,
-                      "TODO: partial application requires closure generation")
-        << baseValue.ir.getType() << baseValue.expr->getRange();
+  case ValueInputConvention::ByValInMem: {
+    auto diag =
+        emitter.emitError(
+            loc, "TODO: partial application requires closure generation ")
+        << baseValue.expr->getRange();
+    if (auto cValue = baseValue.ir.getIfCValue())
+      diag << cValue.getRValueType();
     return {};
+  }
 
   case ValueInputConvention::ByRef: {
-    LValue baseLV = baseValue.ir.getIfLValue();
-    if (!baseLV) {
-      emitter.emitError(loc,
-                        "invalid use of mutating method on rvalue of type ")
-          << baseValue.ir.getType() << baseValue.expr->getRange();
+    LValue baseLV = emitter.emitLValue(baseValue, ValueDest::none());
+    if (!baseLV)
       return {};
-    }
 
     // TODO(clvalue)
     assert(baseLV.getIfSLValue() && "CLValues not supported yet");
@@ -1354,8 +1365,8 @@ static bool isValidErrorContext(Block *block) {
 
 /// Emit a function call to the specified callee with the specified operand
 /// values.  This emits an error and returns null on failure.
-AnyValue OverloadSet::emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
-                               ValueDest &dest, ExprEmitter &emitter) {
+CValue OverloadSet::emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
+                             ValueDest &dest, ExprEmitter &emitter) {
   if (isNull()) // Base was already diagnosed as an error.
     return {};
 
@@ -1434,10 +1445,10 @@ AnyValue OverloadSet::emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
 }
 
 /// Emit an indirect call to a resolved value.
-AnyValue ExprEmitter::emitIndirectCall(CRValue callee,
-                                       ArrayRef<ASTExprAnd<AnyValue>> operands,
-                                       ValueDest &dest,
-                                       const ExprNode *callExpr) {
+CValue ExprEmitter::emitIndirectCall(CRValue callee,
+                                     ArrayRef<ASTExprAnd<AnyValue>> operands,
+                                     ValueDest &dest,
+                                     const ExprNode *callExpr) {
   auto calleeSig = dyn_cast<SignatureType>(callee.getType().mlirType);
   if (!calleeSig) {
     emitError(callExpr->getLoc(), "invalid function type to call ")
@@ -1483,11 +1494,11 @@ inlineFunctionCallIntoPRValue(AnyValue callee,
   return evaluator.evaluateFunctionCall(calleeSymbolCst.getSymbol(), arguments);
 }
 
-AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
-                                        ArrayRef<ASTExprAnd<AnyValue>> operands,
-                                        ArrayRef<ParamDeclAttr> resultParams,
-                                        ValueDest &dest,
-                                        const ExprNode *callExpr) {
+CValue ExprEmitter::emitCallUnchecked(CRValue callee,
+                                      ArrayRef<ASTExprAnd<AnyValue>> operands,
+                                      ArrayRef<ParamDeclAttr> resultParams,
+                                      ValueDest &dest,
+                                      const ExprNode *callExpr) {
   SignatureType calleeSig = cast<SignatureType>(callee.getType().mlirType);
 
   assert(calleeSig.getResultParams().size() == resultParams.size() &&
@@ -1638,7 +1649,7 @@ AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
   if (FailureOr<TypedAttr> resultPR =
           inlineFunctionCallIntoPRValue(callee, argumentValues, evaluator);
       succeeded(resultPR))
-    return emitResult(*resultPR, callExpr, dest);
+    return emitCResult(*resultPR, callExpr, dest);
 
   if (!builder) {
     // Emitting a call in a parameter context. Generate an apply operator.
@@ -1659,7 +1670,7 @@ AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
     }
 
     TypedAttr result = ParamOperatorAttr::get(POC::Apply, operands);
-    return emitResult(result, callExpr, dest);
+    return emitCResult(result, callExpr, dest);
   }
 
   // Otherwise, materialize PRValue arguments as SSA values for emission.
@@ -1733,10 +1744,10 @@ AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
     assert(resultVal && "memory-only result always emitted into an LValue");
     // Re-emit the value in case a conversion was required and we emitted into
     // a temporary slot.
-    return emitResult(MRValue(resultVal), callExpr, dest);
+    return emitCResult(MRValue(resultVal), callExpr, dest);
   }
 
   // Otherwise, register-passable results are the call result which may need to
   // be emitted into a ValueDest.
-  return emitResult(SRValue(callOp->getResult(0)), callExpr, dest);
+  return emitCResult(SRValue(callOp->getResult(0)), callExpr, dest);
 }

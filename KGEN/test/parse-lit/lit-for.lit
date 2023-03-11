@@ -73,8 +73,8 @@ fn main():
     my_list.__setitem__(1, 23)
     my_list.__setitem__(2, 19)
 
-    # CHECK: %14 = kgen.call @"$lit-for"::@MyList::@"__iter__($lit-for::MyList)"(%my_list) : (!kgen.declref<@"$lit-for"::@MyList>) -> !kgen.declref<@"$lit-for"::@my_iter>
     # CHECK: %$RANGE = lit.varlet.decl "$RANGE", var = true : <@"$lit-for"::@my_iter>
+    # CHECK: %14 = kgen.call @"$lit-for"::@MyList::@"__iter__($lit-for::MyList)"(%my_list) : (!kgen.declref<@"$lit-for"::@MyList>) -> !kgen.declref<@"$lit-for"::@my_iter>
     # CHECK: pop.store %14, %$RANGE : !pop.pointer<@"$lit-for"::@my_iter>
     for item in my_list:
         printInt(item)

@@ -611,14 +611,19 @@ AnyValue AttributeRefNode::emitAdaptiveSet(ORValue overloads, ValueDest &dest,
 /// Emit a qualified attribute reference to MLIR.  On error, emit an error and
 /// return a null value.
 AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
-  auto baseVal = base->emitIR(ValueDest::none(), emitter);
-  if (!baseVal)
+  AnyValue baseAnyVal = base->emitIR(ValueDest::none(), emitter);
+  if (!baseAnyVal)
     return {};
 
   // Handle __adaptive_set.
-  if (auto overloads = baseVal.getIfORValue())
+  if (auto overloads = baseAnyVal.getIfORValue())
     if (attrSpelling == "__adaptive_set")
       return emitAdaptiveSet(overloads, dest, emitter);
+
+  // Otherwise must have a concrete type.
+  CValue baseVal = emitter.emitCValue({baseAnyVal, this}, ValueDest::none());
+  if (!baseVal)
+    return {};
 
   // Figure out what type is being accessed.  'hasTypeBase' is when the base
   // expression is itself a type, e.g. `Int.__add__`.
@@ -731,7 +736,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       return emitter.emitResult(SLValue(fieldPtr), this, dest);
     }
 
-    assert(!baseVal.getIfLValue() && "TODO(clvalue): project attr reference");
+    // TODO(clvalue): project attr reference
 
     // If the base is an MRValue or MBValue, reference the field as an
     // MBValue so we lazy copy only the piece that is needed in the case of
@@ -1155,18 +1160,24 @@ static ORValue bindParamValuesToDirectCall(ORValue value,
 
 AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Subscripting a generic function binds the parameter expressions.
-  auto subValue = base->emitIR(ValueDest::none(), emitter);
-  if (!subValue)
+  auto baseAnyValue = base->emitIR(ValueDest::none(), emitter);
+  if (!baseAnyValue)
     return {};
 
-  // If the subValue has a bound callable symbol, then this is applying (more?)
-  // parameter expressions to bind its parameters.
-  if (auto overloads = subValue.getIfORValue()) {
+  // If the baseAnyValue has a bound callable symbol, then this is applying
+  // (more?) parameter expressions to bind its parameters.
+  if (auto overloads = baseAnyValue.getIfORValue()) {
     auto result = bindParamValuesToDirectCall(overloads, indices, emitter);
     return emitter.emitResult(result, this, dest);
   }
 
-  if (auto callableMVal = subValue.getIfPRValue()) {
+  // Otherwise, this must be a concrete node to be able to further subscript it.
+  CValue baseValue =
+      emitter.emitCValue({baseAnyValue, base}, ValueDest::none());
+  if (!baseValue)
+    return {};
+
+  if (auto callableMVal = baseValue.getIfPRValue()) {
     if (auto sig = dyn_cast<SignatureType>(callableMVal.getType().mlirType)) {
       // If this is a signature-type PRValue callable, this is binding parameter
       // values to a call.
@@ -1190,7 +1201,7 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   // If the sub-value is an unbound Type, try binding things to it!
-  if (Type typeValue = subValue.getIfTypeValue()) {
+  if (Type typeValue = baseValue.getIfTypeValue()) {
     // Handle user-defined types.
     if (auto declRef = dyn_cast<DeclRefType>(typeValue)) {
       PRValue result =
@@ -1218,7 +1229,7 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Otherwise, if there is no symbol, it is just an LValue or RValue being
   // subscript.
-  if (auto value = subValue.getIfPRValue()) {
+  if (auto value = baseValue.getIfPRValue()) {
     if (auto unboundOperator =
             dyn_cast<UnboundMLIROperationAttr>(value.get())) {
       PRValue result =
@@ -1230,7 +1241,7 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Emit each of the index values, which will be passed to the __getitem__ and
   // __setitem__ calls.
   SmallVector<ASTExprAnd<AnyValue>> indexValues;
-  indexValues.push_back({subValue, base});
+  indexValues.push_back({baseValue, base});
   for (ExprNode *index : indices) {
     indexValues.push_back({index->emitIR(ValueDest::none(), emitter), index});
     if (!indexValues.back())
@@ -1239,7 +1250,7 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Okay, we're doing a normal value subscript.  We expect at least a
   // __getitem__ method.
-  auto baseType = subValue.getRValueType();
+  auto baseType = baseValue.getRValueType();
 
   // TODO: If we have multiple indexes, package up the values in a tuple value
   // and try to see if this works.
@@ -1275,16 +1286,17 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 AnyValue SubscriptArrowNode::emitIR(ValueDest &dest,
                                     ExprEmitter &emitter) const {
   // Subscripting a generic function binds the parameter expressions.
-  auto subValue = base->emitIR(ValueDest::none(), emitter);
-  if (!subValue)
+  RValue baseValue = emitter.emitExprRValue(base, ValueDest::none());
+  if (!baseValue)
     return {};
 
-  // If the subValue has a bound callable symbol, then this is applying (more?)
+  // If the baseValue has a bound callable symbol, then this is applying (more?)
   // meta values to bind its parameters.
-  auto overloads = subValue.getIfORValue();
+  auto overloads = baseValue.getIfORValue();
   if (!overloads) {
+    assert(baseValue.getIfCRValue() && "Must be CRValue if not ORValue");
     emitter.emitError(arrowLoc, "invalid '->' when subscripting type ")
-        << subValue.getType() << getRange();
+        << baseValue.getIfCRValue().getRValueType() << getRange();
     return {};
   }
 
@@ -1626,11 +1638,9 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
 
   // FIXME: We currently hack in index type support as transition to proper
   // expression support.
-  if ((lhs.ir.getType().mlirType.isIndex() &&
-       rhs.ir.getType().mlirType.isIndex()) &&
-      lhs.ir.getIfPRValue() && rhs.ir.getIfPRValue()) {
-    auto lhsParam = lhs.ir.getIfPRValue();
-    auto rhsParam = rhs.ir.getIfPRValue();
+  if (auto lhsParam = lhs.ir.getIfPRValue(), rhsParam = rhs.ir.getIfPRValue();
+      lhsParam && lhsParam.getType().mlirType.isIndex() && rhsParam &&
+      rhsParam.getType().mlirType.isIndex()) {
     POC opcode;
     bool needsInvert = false;
     switch (kind) {
@@ -1706,22 +1716,26 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
 
   // Check to see if we have a forward version of this function on the primary
   // receiver.
-  OverloadSet callee(lhs.ir.getRValueType(), specialFnInfo.name, argValues,
-                     callNode, CallSyntax::kOperator, emitter,
-                     /*no error*/ {});
-  if (callee)
-    return callee.emitCall(argValues, dest, emitter);
+  if (auto lhscv = lhs.ir.getIfCValue()) {
+    OverloadSet callee(lhscv.getRValueType(), specialFnInfo.name, argValues,
+                       callNode, CallSyntax::kOperator, emitter,
+                       /*no error*/ {});
+    if (callee)
+      return callee.emitCall(argValues, dest, emitter);
+  }
 
   // Check to see if we have the reverse version of this operator.
   auto reversedFnInfo = getOpSpecialFunctions(kind, /*isReversed=*/true);
   if (reversedFnInfo.kind != SpecialFunctionKind::kNormal) {
     // Swap the operand order.
     std::swap(argValues[0], argValues[1]);
-    callee = OverloadSet(rhs.ir.getType(), reversedFnInfo.name, argValues,
+    if (auto rhscv = rhs.ir.getIfCValue()) {
+      OverloadSet callee(rhscv.getType(), reversedFnInfo.name, argValues,
                          callNode, CallSyntax::kReversedOperator, emitter,
                          /*no error*/ {});
-    if (callee)
-      return callee.emitCall(argValues, dest, emitter);
+      if (callee)
+        return callee.emitCall(argValues, dest, emitter);
+    }
 
     // Swap these back so we emit the right error.
     std::swap(argValues[0], argValues[1]);
@@ -1825,7 +1839,7 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Emit the LHS value and capture the result of calling __bool__ in case we
   // need it.
-  AnyValue lhsBool;
+  CValue lhsBool;
   SRValue lhsRV = emitter.emitExprSRValue(lhs, EC_OperatorOperandValue);
   RValue lhsI1Value = emitter.emitConditionValueAsI1({lhsRV, lhs}, lhsBool);
   Value lhsI1SRValue =
@@ -1893,10 +1907,9 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Special case some things for literals.
   // TODO: Fix literal representation.
-  if ((exprRep.getType().mlirType.isIndex() ||
-       exprRep.getType().mlirType.isF64()) &&
-      exprRep.getIfPRValue()) {
-    auto exprParam = exprRep.getIfPRValue();
+  if (auto exprParam = exprRep.getIfPRValue();
+      exprParam && (exprParam.getType().mlirType.isIndex() ||
+                    exprParam.getType().mlirType.isF64())) {
     switch (kind) {
     default:
       break;
@@ -1908,7 +1921,7 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       }
 
       // Support general integer parameter exprs.
-      if (exprRep.getType().mlirType.isIndex())
+      if (exprParam.getType().mlirType.isIndex())
         return emitter.emitResult(ParamOperatorAttr::getNeg(exprParam), this,
                                   dest);
 
@@ -2008,7 +2021,7 @@ AnyValue ChainedCmpOpNode::emitNextCmp(ExprEmitter &emitter, size_t opIdx,
                                        SRValue lastCmpExpr,
                                        SRValue lastExpr) const {
   Location ifLoc = lastCmpExpr.getLoc();
-  AnyValue boolResult;
+  CValue boolResult;
   OpBuilder lastBuilder = emitter.builder.value();
   RValue lastCmpI1Value =
       emitter.emitConditionValueAsI1({lastCmpExpr, this}, boolResult);

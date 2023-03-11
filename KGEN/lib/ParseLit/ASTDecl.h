@@ -48,7 +48,7 @@ public:
 
   /// If this declaration is defined by its value (e.g. a parameter value or an
   /// SSA value) then return it.
-  RValue getIfRValue() const;
+  CRValue getIfRValue() const;
 
   /// If this declaration is defined by its value (e.g. a parameter value or an
   /// SSA value) then return it.

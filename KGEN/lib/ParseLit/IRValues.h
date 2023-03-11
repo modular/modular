@@ -341,7 +341,7 @@ public:
   ORValue getIfORValue() const { return dyn_cast<ORValue>(storage); }
 
   /// Return the type for the contained representation, or null if null.
-  ASTType getType() const;
+  // ASTType getType() const;
   void dump() const;
 };
 raw_ostream &operator<<(raw_ostream &os, RValue value);
@@ -424,6 +424,7 @@ public:
 
   SLValue getIfSLValue() const { return dyn_cast<SLValue>(getStorage()); }
   MBValue getIfMBValue() const { return dyn_cast<MBValue>(getStorage()); }
+  RValue getIfRValue() const { return RValue::getFrom(getStorage()); }
 
   /// Return the type for the contained representation, or null if null.
   ASTType getType() const;
@@ -466,15 +467,6 @@ public:
   RValue getIfRValue() const { return RValue::getFrom(storage); }
 
   MBValue getIfMBValue() const { return dyn_cast<MBValue>(storage); }
-
-  /// This method returns the type of this value when projected as an RValue.
-  /// If this is already an RValue, it is the type of the value.  If this is
-  /// an LValue, it strips off the pointer type.
-  ASTType getRValueType() const;
-
-  /// Return the type for the contained representation, or null if they are
-  /// both null.
-  ASTType getType() const;
   void dump() const;
 };
 raw_ostream &operator<<(raw_ostream &os, AnyValue value);
