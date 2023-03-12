@@ -28,7 +28,7 @@
 // This is another parallel hierarchy:
 //
 //   CValue        <- Concrete value: LValue or RValue with a known type.
-//     SLValue       <- LValue in memory
+//     SLValue       <- LValue stored in memory
 //     DLValue       <- Dynamic LValue
 //     BValue        <- Borrowed value
 //       ... per above ...

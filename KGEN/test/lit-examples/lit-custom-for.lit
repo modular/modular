@@ -14,18 +14,14 @@ struct my_iter:
         return Self {start: self.start, end: self.end, list: self.list}
 
     fn __new__(list: MyList) -> my_iter:
-        var result: my_iter
-        result.start = 0
-        result.end = list.size
-        result.list = list
-        return result
+        return my_iter {start: 0, end: list.size, list: list}
 
     fn __next__(self&: my_iter) -> Int:
         let result: Int = self.start
         self.start += 1
-        return self.list.__getitem__(result)
+        return self.list[result]
 
-    fn __len__(self: my_iter) -> Int:
+    fn __len__(self&: my_iter) -> Int:
         if self.start < self.end:
             return self.end - self.start
         return 0
@@ -39,20 +35,17 @@ struct MyList:
         return Self {start: self.start, size: self.size}
 
     fn __new__(ptr: Pointer[Int], size: Int) -> MyList:
-        var result: MyList
-        result.start = ptr
-        result.size = size
-        return result
+        return MyList {start: ptr, size: size}
 
-    fn __setitem__(self, idx: Int, val: Int):
+    fn __setitem__(self&, idx: Int, val: Int):
         let ptr = self.start + idx
         ptr.store(val)
 
-    fn __getitem__(self, idx: Int) -> Int:
+    fn __getitem__(self&, idx: Int) -> Int:
         let ptr = self.start + idx
         return ptr.load()
 
-    fn __iter__(self) -> my_iter:
+    fn __iter__(self&) -> my_iter:
         return my_iter(self)
 
 
@@ -64,13 +57,12 @@ fn main():
     let buffer = __mlir_op.`pop.stack_allocation`[
         count:3, _type : __mlir_type[`!pop.pointer<`, Int, `>`]
     ]()
-    var my_pointer: Pointer[Int]
-    my_pointer.address = buffer
+    let my_pointer = Pointer[Int](buffer)
 
-    let my_list = MyList(my_pointer, Int(3))
-    my_list.__setitem__(0, 25)
-    my_list.__setitem__(1, 23)
-    my_list.__setitem__(2, 19)
+    var my_list = MyList(my_pointer, Int(3))
+    my_list[0] = 25
+    my_list[1] = 23
+    my_list[2] = 19
 
     # CHECK: 25
     # CHECK: 23

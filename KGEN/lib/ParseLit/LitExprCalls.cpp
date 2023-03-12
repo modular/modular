@@ -215,10 +215,8 @@ ParameterInferenceState::infer(SignatureType signature,
           return failure();
 
         // By-ref argument types must exactly match, no conversions are allowed.
-        if (auto sl = operand.ir.getIfSLValue())
-          return matchTypes(sl.getType(), expectedType);
-        // TODO(clValues): infer parameters against computed lvalue when known
-        return success();
+        return matchTypes(argVal.getRValueType(),
+                          expectedType.getPointerElementType());
       }
 
       case ValueInputConvention::ByValInMem:
@@ -231,7 +229,6 @@ ParameterInferenceState::infer(SignatureType signature,
         // TODO: Consider implicit conversions?
         if (auto c = operand.ir.getIfCValue())
           return matchTypes(c.getRValueType(), expectedType);
-        // TODO(dlvalue): if there is a concrete type from a getter, use it.
         return success();
       }
     };
@@ -676,13 +673,14 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
       case ValueInputConvention::ByRef:
       case ValueInputConvention::ByRefResult: {
         // The actual value must be an lvalue if callee takes things by-ref.
-        auto argVal = operand.ir.getIfSLValue();
+        auto argVal = operand.ir.getIfLValue();
         if (!argVal)
           // TODO(clValue): pass to byref arguments and result slots.
           return {kArgNotLValue, providedValueIdx, Type(), newBindings};
 
         // By-ref argument types must exactly match, no conversions are allowed.
-        if (!argVal.getType().isEqualCanon(expectedType))
+        if (!argVal.getRValueType().isEqualCanon(
+                expectedType.getPointerElementType()))
           return {kArgWrongLVType, providedValueIdx, expectedType, newBindings};
         break;
       }
@@ -693,8 +691,7 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
           expectedType = expectedType.getPointerElementType();
 
         auto argVal = operand.ir.getIfCValue();
-        assert(argVal &&
-               "TODO(dlvalue/orvalue): need to verify operand type matches");
+        assert(argVal && "TODO(ORValue): need to verify operand can match");
 
         auto argType = argVal.getRValueType();
         // Otherwise, we pass as an r-value.  If the argument types match, then
@@ -1306,10 +1303,6 @@ CRValue OverloadSet::emitAsCRValue(ExprEmitter &emitter, ValueDest &dest) {
     if (!baseLV)
       return {};
 
-    // TODO(dlvalue)
-    assert(baseLV.getIfSLValue() && "CLValues not supported yet");
-    firstArgValue = baseLV.getIfSLValue();
-
     // Using partial application over an lvalue isn't safe until we support an
     // ownership models with mutable borrows.
     emitter.emitError(loc, "TODO: partial application to mutable base isn't "
@@ -1526,9 +1519,8 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     if (convention == ValueInputConvention::ByRefResult) {
       assert(idx == 0 && calleeSig.hasMemoryOnlyResult());
       auto rvalueType = ASTType(expectedType).getPointerElementType();
-      LValue result =
-          dest.getLValueForResult(callExpr->getLoc(), rvalueType,
-                                  /*allowIncompatibleTypes=*/false, *this);
+      SLValue result =
+          dest.getSLValueForResult(callExpr->getLoc(), rvalueType, *this);
       if (!result)
         return {};
       argumentValues.push_back({result, callExpr});
@@ -1740,10 +1732,10 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
   // result and we've already handled the ValueDest by emitting into it.
   if (calleeSig.hasMemoryOnlyResult()) {
     auto resultVal = argumentValues[0].ir.getIfSLValue();
-    assert(resultVal && "TODO(dlvalue) - need writeback");
-    assert(resultVal && "memory-only result always emitted into an LValue");
-    // Re-emit the value in case a conversion was required and we emitted into
-    // a temporary slot.
+    assert(resultVal && "result destination slots are always SLValues");
+    // Re-emit the value in case a conversion was required or if the result was
+    // a dynamic-lvalue.  In both case we will have emitted into a temporary
+    // slot and 'dest' will have the ultimate location to write to.
     return emitCResult(MRValue(resultVal), callExpr, dest);
   }
 

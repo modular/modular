@@ -704,8 +704,9 @@ ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
   llvm::SaveAndRestore builderSaver(builder);
 
   // retrieve the iterator object from the sequence expression
+  auto tmpEmitter = getEmitter();
   ASTExprAnd<AnyValue> loadedSeq = {
-      getEmitter().emitExprRValue(seqExp, ValueDest::none()), seqExp};
+      seqExp->emitIR(ValueDest::none(), tmpEmitter), seqExp};
   if (!loadedSeq.ir)
     return {};
 

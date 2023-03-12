@@ -97,7 +97,6 @@ void AnyValue::dump() const {
 static ASTType getTypeFrom(AnyValue::Storage storage) {
   if (isa<NullRepresentation>(storage))
     return {};
-
   if (auto attr = dyn_cast<PRValue>(storage))
     return attr.get().getType();
   if (auto value = dyn_cast<SRValue>(storage))
@@ -111,9 +110,7 @@ static ASTType getTypeFrom(AnyValue::Storage storage) {
   if (auto value = dyn_cast<DLValue>(storage))
     return value.elementType;
   assert(!isa<ORValue>(storage) && "overloaded rvalue has no type");
-
-  // isa<DLValue>(storage))
-  llvm_unreachable("DLValue unimp");
+  llvm_unreachable("unknown IRValue");
 }
 
 ASTType CRValue::getType() const { return getTypeFrom(storage); }
