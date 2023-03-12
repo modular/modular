@@ -52,10 +52,10 @@ static raw_ostream &printStorage(raw_ostream &os,
     if (isDump)
       os << "SLV: ";
     os << val;
-  } else if (isa<CLValue>(storage)) {
+  } else if (auto dlv = dyn_cast<DLValue>(storage)) {
     if (isDump)
-      os << "CLV: ";
-    assert(0 && "TODO(clvalue): computed Lvalue not implemented yet");
+      os << "DLV" << (dlv.isSubscript ? "(subscript): " : "(property): ")
+         << dlv.elementType << " ";
   } else {
     os << "<UNKNOWN IRVALUE>";
   }
@@ -95,6 +95,9 @@ void AnyValue::dump() const {
 }
 
 static ASTType getTypeFrom(AnyValue::Storage storage) {
+  if (isa<NullRepresentation>(storage))
+    return {};
+
   if (auto attr = dyn_cast<PRValue>(storage))
     return attr.get().getType();
   if (auto value = dyn_cast<SRValue>(storage))
@@ -105,15 +108,17 @@ static ASTType getTypeFrom(AnyValue::Storage storage) {
     return value.getType();
   if (auto value = dyn_cast<SLValue>(storage))
     return value.getType();
-  assert(!isa<ORValue>(storage) && !isa<CLValue>(storage) &&
-         "overloaded rvalue has no type");
+  if (auto value = dyn_cast<DLValue>(storage))
+    return value.elementType;
+  assert(!isa<ORValue>(storage) && "overloaded rvalue has no type");
 
-  // Otherwise null.
-  return Type();
+  // isa<DLValue>(storage))
+  llvm_unreachable("DLValue unimp");
 }
 
 ASTType CRValue::getType() const { return getTypeFrom(storage); }
 ASTType CValue::getType() const { return getTypeFrom(storage); }
+ASTType LValue::getType() const { return getTypeFrom(storage); }
 
 PRValue::PRValue(Type value)
     : storage(value ? ParameterizedTypeConstantAttr::get(value) : Attribute()) {
@@ -146,6 +151,12 @@ ASTType CValue::getRValueType() const {
   return getType();
 }
 
+ASTType LValue::getRValueType() const {
+  if (isa<SLValue>(storage))
+    return getType().getPointerElementType();
+  return getType();
+}
+
 //===----------------------------------------------------------------------===//
 // ORValue
 //===----------------------------------------------------------------------===//
@@ -164,3 +175,15 @@ ORValue &ORValue::operator=(const ORValue &existing) {
 ORValue ORValue::create(OverloadSet &&set) {
   return ORValue(LLCL::takeRCRef(new OverloadSetWrapper{std::move(set)}));
 }
+
+//===----------------------------------------------------------------------===//
+// DLValue
+//===----------------------------------------------------------------------===//
+
+DLValue::DLValue() : isSubscript(false) {}
+DLValue::DLValue(ArrayRef<ASTExprAnd<AnyValue>> selfAndIndicesValue,
+                 ASTType elementType, const ExprNode *expr, bool isSubscript)
+    : selfAndIndicesValue(selfAndIndicesValue.begin(),
+                          selfAndIndicesValue.end()),
+      elementType(elementType), expr(expr), isSubscript(isSubscript) {}
+DLValue::~DLValue() {}

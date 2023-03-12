@@ -231,7 +231,7 @@ ParameterInferenceState::infer(SignatureType signature,
         // TODO: Consider implicit conversions?
         if (auto c = operand.ir.getIfCValue())
           return matchTypes(c.getRValueType(), expectedType);
-        // TODO(clvalue): if there is a concrete type from a getter, use it.
+        // TODO(dlvalue): if there is a concrete type from a getter, use it.
         return success();
       }
     };
@@ -694,7 +694,7 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
 
         auto argVal = operand.ir.getIfCValue();
         assert(argVal &&
-               "TODO(clvalue/orvalue): need to verify operand type matches");
+               "TODO(dlvalue/orvalue): need to verify operand type matches");
 
         auto argType = argVal.getRValueType();
         // Otherwise, we pass as an r-value.  If the argument types match, then
@@ -1306,7 +1306,7 @@ CRValue OverloadSet::emitAsCRValue(ExprEmitter &emitter, ValueDest &dest) {
     if (!baseLV)
       return {};
 
-    // TODO(clvalue)
+    // TODO(dlvalue)
     assert(baseLV.getIfSLValue() && "CLValues not supported yet");
     firstArgValue = baseLV.getIfSLValue();
 
@@ -1690,7 +1690,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
         return {};
     } else if (convention == ValueInputConvention::ByRef ||
                convention == ValueInputConvention::ByRefResult) {
-      assert(argValAndExpr.ir.getIfSLValue() && "TODO(clvalue)");
+      assert(argValAndExpr.ir.getIfSLValue() && "TODO(dlvalue)");
       arg = argValAndExpr.ir.getIfSLValue();
     } else if (convention == ValueInputConvention::ByValInMem) {
       arg = argValAndExpr.ir.getIfMRValue();
@@ -1740,7 +1740,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
   // result and we've already handled the ValueDest by emitting into it.
   if (calleeSig.hasMemoryOnlyResult()) {
     auto resultVal = argumentValues[0].ir.getIfSLValue();
-    assert(resultVal && "TODO(clvalue) - need writeback");
+    assert(resultVal && "TODO(dlvalue) - need writeback");
     assert(resultVal && "memory-only result always emitted into an LValue");
     // Re-emit the value in case a conversion was required and we emitted into
     // a temporary slot.

@@ -704,6 +704,7 @@ struct WeirdArray:
   fn __getitem__(self, x: F32, *ints: Int) -> F32:
     return x
 
+ fn __setitem__(self, x: Int, y: Int, value: Int): pass
 
 # CHECK-LABEL: lit.func @"testWeirdArray
 fn testWeirdArray(a: WeirdArray, idx: Int, f: F32):
@@ -716,6 +717,10 @@ fn testWeirdArray(a: WeirdArray, idx: Int, f: F32):
   # CHECK: [[VARIADIC:%.*]] = pop.variadic.create [%idx, %idx, %idx, %idx]
   # CHECK: kgen.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %f, [[VARIADIC]])
   _ = a[f, idx, idx, idx, idx]
+
+  # CHECK: [[SEVENTEEN:%.*]] = kgen.param.constant: {{.*}} = 17
+  # CHECK: kgen.call {{.*}}__setitem__{{.*}}(%a, %idx, %idx, [[SEVENTEEN]])
+  a[idx, idx] = 17
 
 # CHECK-LABEL: lit.func @"chained_cmp
 fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
