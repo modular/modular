@@ -1990,10 +1990,6 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   // Now that we have the basic struct set up, process any known decorators.
   for (ExprNode *decorator : decoratorExprs) {
     if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
-      if (declRef->spelling == "__memory_only") {
-        structOp.setIsRegisterPassable(false);
-        continue;
-      }
       if (declRef->spelling == "register_passable") {
         structOp.setIsRegisterPassable(true);
         continue;
