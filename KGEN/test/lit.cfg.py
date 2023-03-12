@@ -48,7 +48,7 @@ tools = [
     "kgen-execute",
     "kgen-translate",
     "lit",
-    "lit-lsp-server",
+    "mojo-lsp-server",
 ]
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)

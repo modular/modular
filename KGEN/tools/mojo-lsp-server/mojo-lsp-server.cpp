@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "LITServer.h"
 #include "LSPServer.h"
+#include "MojoServer.h"
 #include "mlir/Tools/lsp-server-support/Logging.h"
 #include "mlir/Tools/lsp-server-support/Transport.h"
 #include "llvm/Support/CommandLine.h"
@@ -26,11 +26,11 @@ int main(int argc, char **argv) {
       llvm::cl::init(JSONStreamStyle::Standard),
       llvm::cl::Hidden,
   };
-  llvm::cl::opt<bool> litTest{
-      "lit-test",
+  llvm::cl::opt<bool> mojoTest{
+      "mojo-test",
       llvm::cl::desc(
           "Abbreviation for -input-style=delimited -pretty -log=verbose. "
-          "Intended to simplify lit tests"),
+          "Intended to simplify mojo tests"),
       llvm::cl::init(false),
   };
   llvm::cl::opt<Logger::Level> logLevel{
@@ -49,11 +49,11 @@ int main(int argc, char **argv) {
       llvm::cl::init(false),
   };
 
-  llvm::cl::ParseCommandLineOptions(argc, argv, "LIT LSP Language Server");
+  llvm::cl::ParseCommandLineOptions(argc, argv, "Mojo LSP Language Server");
 
   // When testing, updating flags that make the server a bit easier to interact
   // with.
-  if (litTest) {
+  if (mojoTest) {
     inputStyle = JSONStreamStyle::Delimited;
     logLevel = Logger::Level::Debug;
     prettyPrint = true;
@@ -67,6 +67,6 @@ int main(int argc, char **argv) {
   JSONTransport transport(stdin, llvm::outs(), inputStyle, prettyPrint);
 
   // Start the server.
-  LITServer server;
-  return failed(runLitLSPServer(server, transport));
+  MojoServer server;
+  return failed(runMojoLSPServer(server, transport));
 }

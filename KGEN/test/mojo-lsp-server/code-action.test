@@ -1,16 +1,16 @@
-// RUN: lit-lsp-server -lit-test < %s | FileCheck -strict-whitespace %s
+// RUN: mojo-lsp-server -mojo-test < %s | FileCheck -strict-whitespace %s
 {"jsonrpc":"2.0","id":0,"method":"initialize","params":{"processId":123,"rootPath":"lit","capabilities":{},"trace":"off"}}
 // -----
 {"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{
-  "uri":"test:///foo.lit",
-  "languageId":"lit",
+  "uri":"test:///foo.mojo",
+  "languageId":"mojo",
   "version":1,
   "text":"from Int import Int\nfn foo():\n Int  {value: Int(42).value}\n"
 }}}
 // -----
 {"jsonrpc":"2.0","id":1,"method":"textDocument/codeAction","params":{
   "textDocument":{
-    "uri":"file:///foo.lit"
+    "uri":"file:///foo.mojo"
   },
   "range":{
     "start":{"line":0,"character":8}, "end":{"line":0,"character":10}
@@ -20,7 +20,7 @@
       "range":{"start":{"line":2,"character":1}, "end":{"line":2,"character":28}},
       "message":"'$Int::Int' value is unused",
       "severity":2,
-      "source":"lit"
+      "source":"mojo"
     }],
     "only":["quickfix"],
     "triggerKind":1
@@ -44,12 +44,12 @@
 // CHECK-NEXT:            }
 // CHECK-NEXT:          },
 // CHECK-NEXT:          "severity": 2,
-// CHECK-NEXT:          "source": "lit"
+// CHECK-NEXT:          "source": "mojo"
 // CHECK-NEXT:        }
 // CHECK-NEXT:      ],
 // CHECK-NEXT:      "edit": {
 // CHECK-NEXT:        "changes": {
-// CHECK-NEXT:          "test:///foo.lit": [
+// CHECK-NEXT:          "test:///foo.mojo": [
 // CHECK-NEXT:            {
 // CHECK-NEXT:              "newText": "_ = ",
 // CHECK-NEXT:              "range": {

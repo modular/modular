@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "LSPServer.h"
-#include "LITServer.h"
+#include "MojoServer.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/Tools/lsp-server-support/Logging.h"
 #include "mlir/Tools/lsp-server-support/Protocol.h"
@@ -14,7 +14,7 @@
 #include "llvm/ADT/StringMap.h"
 #include <optional>
 
-#define DEBUG_TYPE "lit-lsp-server"
+#define DEBUG_TYPE "mojo-lsp-server"
 
 using namespace mlir::lsp;
 using namespace M;
@@ -26,7 +26,7 @@ using namespace M::KGEN::LIT;
 
 namespace {
 struct LSPServer {
-  LSPServer(LITServer &server, JSONTransport &transport)
+  LSPServer(MojoServer &server, JSONTransport &transport)
       : server(server), transport(transport) {}
 
   //===--------------------------------------------------------------------===//
@@ -54,7 +54,7 @@ struct LSPServer {
   // Fields
   //===--------------------------------------------------------------------===//
 
-  LITServer &server;
+  MojoServer &server;
   JSONTransport &transport;
 
   /// An outgoing notification used to send diagnostics to the client when they
@@ -94,7 +94,7 @@ void LSPServer::onInitialize(const InitializeParams &params,
 
   llvm::json::Object result{
       {{"serverInfo",
-        llvm::json::Object{{"name", "lit-lsp-server"}, {"version", "0.0.1"}}},
+        llvm::json::Object{{"name", "mojo-lsp-server"}, {"version", "0.0.1"}}},
        {"capabilities", std::move(serverCaps)}}};
   reply(std::move(result));
 }
@@ -165,8 +165,8 @@ void LSPServer::onCodeAction(const CodeActionParams &params,
 // Entry Point
 //===----------------------------------------------------------------------===//
 
-mlir::LogicalResult M::KGEN::LIT::runLitLSPServer(LITServer &server,
-                                                  JSONTransport &transport) {
+mlir::LogicalResult M::KGEN::LIT::runMojoLSPServer(MojoServer &server,
+                                                   JSONTransport &transport) {
   LSPServer lspServer(server, transport);
   MessageHandler messageHandler(transport);
 
