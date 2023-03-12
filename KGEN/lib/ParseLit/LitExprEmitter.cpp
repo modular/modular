@@ -110,6 +110,8 @@ ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
   assert(!isa<LValueInitializerType>(representation) &&
          "LValueInitializerType should be resolved before this");
 
+  // If we have an un-emitted expression, emit it using our existintValueType to
+  // get an LValue.
   if (auto *expr = dyn_cast<const ExprNode *>(representation)) {
     // If we have a contextual type available, pass that down to the emitter so
     // implicitly declared variables and discard patterns can know their type.
@@ -129,11 +131,7 @@ ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
   }
 
   // If we have an lvalue already specified, return it.
-  LValue lvalue = cast<LValue>(representation);
-  if (SLValue sl = lvalue.getIfSLValue())
-    return sl.getRValueType();
-  // TODO(clvalue): Handle unambiguous clvalues element types.
-  return {};
+  return cast<LValue>(representation).getRValueType();
 }
 
 /// Project a ValueDest into an lvalue with the specified underlying (RValue)
@@ -154,7 +152,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
                                      ExprEmitter &emitter) {
   // If we are inferring the type for a var or let declaration, then we can
   // always succeed and consume this ValueDest.
-  if (auto *opDest = dyn_cast_or_null<Operation *>(representation)) {
+  if (auto *opDest = dyn_cast<Operation *>(representation)) {
     representation = NullRepresentation(); // Consumed!
 
     auto varOp = cast<VarLetDeclOp>(opDest);
@@ -168,11 +166,10 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
   // it may have the wrong type.  The client may be cool with this (when
   // allowIncompatibleTypes is true), but if not we generate a new temporary
   // buffer.
-  if (const ExprNode *target =
-          dyn_cast_or_null<const ExprNode *>(representation)) {
 
-    // If we have an expression node destination, then we need to bind this
-    // value to a pattern (aka "target" in Python internals nomenclature).
+  // If we have an expression node destination, then we need to bind this
+  // value to a pattern (aka "target" in Python internals nomenclature).
+  if (const ExprNode *target = dyn_cast<const ExprNode *>(representation)) {
     ValueDest dest(LValueInitializerType{resultType}, getContext());
     if (LValue lValue = emitter.emitExprLValue(target, dest)) {
       representation = lValue;
@@ -183,13 +180,13 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
   }
 
   // If we have an lvalue already specified, return it.
-  if (LValue lValue = dyn_cast_or_null<LValue>(representation)) {
+  if (LValue lValue = dyn_cast<LValue>(representation)) {
     // If asking for a buffer of this type, then we can directly return it.
     SLValue slValue = lValue.getIfSLValue();
     if (allowIncompatibleTypes ||
         (slValue && slValue.getRValueType().isEqualCanon(resultType))) {
       representation = NullRepresentation(); // Consumed!
-      return slValue;
+      return lValue;
     }
 
     // Otherwise, create a temporary buffer.
@@ -253,16 +250,25 @@ RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
     return result.getIfRValue();
   }
 
-  // Finally, if this is a BValue or LValue, emit a __clone__, a load for a
-  // primitive MLIR type, or an error if neither approach works.
-  auto mbValue = value.ir.getIfMBValue();
-  if (!mbValue) {
-    // Decay an LValue to an MBValue.
-    assert(value.ir.getIfLValue());
-    assert(value.ir.getIfSLValue() && "TODO(clvalue)");
-    mbValue = MBValue(value.ir.getIfSLValue());
+  // If this is a computed LValue emit call to the "getter".
+  if (auto dlValue = value.ir.getIfDLValue()) {
+    auto methodName = dlValue.isSubscript ? StringRef("__getitem__")
+                                          : StringRef("__getattr__");
+    auto result =
+        emitNamedMethodCall(methodName, dlValue.selfAndIndicesValue, dest,
+                            CallSyntax::kSubscript, dlValue.expr);
+    // The result could be another LValue.  If so, load it.
+    return emitRValue({result, value.expr}, dest);
   }
 
+  // Decay a stored LValue to an MBValue.
+  if (auto slValue = value.ir.getIfSLValue())
+    value.ir = MBValue(slValue);
+
+  // Finally, if this is a BValue emit a __clone__, a load for a
+  // primitive MLIR type, or an error if neither approach works.
+  auto mbValue = value.ir.getIfMBValue();
+  assert(mbValue && "No other value types");
   return emitLoadOfMBValue({mbValue, value.expr}, dest);
 }
 
@@ -281,7 +287,7 @@ CValue ExprEmitter::emitCValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   // If the value being materialized is an unresolved overload set, try to
   // materialize it.
   ORValue overloads = value.ir.getIfORValue();
-  assert(overloads && "TODO(clvalues): unimp");
+  assert(overloads && "TODO(dlvalues): unimp");
   return overloads->emitAsCRValue(*this, dest);
 }
 
@@ -374,6 +380,7 @@ CRValue ExprEmitter::emitCRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
 SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
                                  ExprContext context, ASTType resultType) {
   const ExprNode *expr = anyValue.expr;
+
   // Emit using resultType if present, and eliminate LValue/ORValue's.
   ValueDest dest(resultType, context);
   CRValue value = emitCRValue(anyValue, dest);
@@ -632,7 +639,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
 
   // If we have an MRValue in the wrong spot, emit a __clone__ call into the
   // destination using MBValue -> RValue conversion.
-  if (auto mrValue = value.getIfMRValue())
+  if (auto mrValue = crValue.getIfMRValue())
     return emitLoadOfMBValue({MBValue(mrValue), expr}, dest);
 
   // We know we have a SRValue or PRValue, and the destination is some kind of
@@ -642,8 +649,20 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
   if (!destLV)
     return {};
 
+  // If this is a computed LValue, then perform a writeback.
+  if (auto dlValue = destLV.getIfDLValue()) {
+    auto methodName = dlValue.isSubscript ? StringRef("__setitem__")
+                                          : StringRef("__setattr__");
+    SmallVector<ASTExprAnd<AnyValue>> operands(
+        dlValue.selfAndIndicesValue.begin(), dlValue.selfAndIndicesValue.end());
+    operands.push_back({crValue, expr});
+    emitNamedMethodCall(methodName, operands, ValueDest::none(),
+                        CallSyntax::kSubscript, dlValue.expr);
+    return crValue;
+  }
+
   SLValue destPtr = destLV.getIfSLValue();
-  assert(destPtr && "TODO(clvalue): computed writeback");
+  assert(destPtr && "No other known LValue");
   SRValue rv =
       emitSRValue({crValue, expr}, dest.getContext(), destPtr.getRValueType());
   if (!rv)

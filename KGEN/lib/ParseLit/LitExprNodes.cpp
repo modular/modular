@@ -325,7 +325,7 @@ AnyValue BoolLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   auto boolLiteralDeclType = DeclRefType::get(decl.getSymbolRef());
   OverloadSet newVal(boolLiteralDeclType, "__new__", this,
                      CallSyntax::kTypeCall, emitter.shared,
-                     [&]() { assert(0 && "unreachable"); });
+                     /*No Error*/ {});
   assert(!newVal.isNull() && "__new__ should be always there by construction");
   auto boolDType = DTypeConstantAttr::get(ctx, DType::kBool);
   auto boolAttr = POP::SIMDAttr::get({value, KGENDType::kBool},
@@ -492,7 +492,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       // TODO: Unify this with the logic in emitRValue when __clone__ moves to
       // taking a borrow instead of a mutable byref argument.
       if (!OverloadSet(letType, "__clone__", this, CallSyntax::kMethodCall,
-                       emitter.shared, [&]() { /*no error*/ })) {
+                       emitter.shared, /*no error*/ {})) {
         auto diag = emitter.emitError(getLoc(), "cannot clone this value: ")
                     << letType << " doesn't implement '__clone__'"
                     << getRange();
@@ -736,7 +736,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       return emitter.emitResult(SLValue(fieldPtr), this, dest);
     }
 
-    // TODO(clvalue): project attr reference
+    // TODO(dlvalue): project attr reference
 
     // If the base is an MRValue or MBValue, reference the field as an
     // MBValue so we lazy copy only the piece that is needed in the case of
@@ -1238,6 +1238,9 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     }
   }
 
+  // Otherwise, if there is no symbol, it is just an LValue or RValue being
+  // subscript, invoking a dynamic subscript.
+
   // Emit each of the index values, which will be passed to the __getitem__ and
   // __setitem__ calls.
   SmallVector<ASTExprAnd<AnyValue>> indexValues;
@@ -1248,39 +1251,108 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       return {};
   }
 
-  // Okay, we're doing a normal value subscript.  We expect at least a
-  // __getitem__ method.
-  auto baseType = baseValue.getRValueType();
-
   // TODO: If we have multiple indexes, package up the values in a tuple value
   // and try to see if this works.
   if (indexValues.size() > 2) {
     // TODO(Tuples). need tuples :-)
   }
 
-  // If there is no __getitem__ at all, then this is not a subscriptable type.
-  auto emitGetItemError = [&]() {
-    emitter.emitError(getLoc(), "")
-        << baseType << " does not implement the `__getitem__` method"
-        << base->getRange();
-  };
-  OverloadSet getItem(baseType, "__getitem__", indexValues, this,
-                      CallSyntax::kSubscript, emitter, emitGetItemError);
-  if (getItem.isNull()) {
-    // TODO: check the multiple argument path.
+  // Okay, we're doing a normal value subscript.  Check for compatible
+  // __getitem__ and __setitem__ implementations.
+  auto baseType = baseValue.getRValueType();
 
+  // If there is no __getitem__ at all, then this is not a subscriptable type.
+  OverloadSet getItem(baseType, "__getitem__", this, CallSyntax::kSubscript,
+                      emitter.shared, /*no error on failure*/ {});
+
+  // Check for the presence of a setitem but don't provide index values because
+  // we don't know what the ultimate element type is.  It may be overloaded and
+  // we don't know which candidate to pick until it is actually invoked.
+  OverloadSet setItem(baseType, "__setitem__", this, CallSyntax::kSubscript,
+                      emitter.shared, /*no error on failure*/ {});
+
+  if (getItem.isNull() && setItem.isNull()) {
+    emitter.emitError(getLoc(), "")
+        << baseType
+        << " is not subscriptable, it does not implement the "
+           "`__getitem__`/`__setitem__` methods"
+        << base->getRange();
     return {};
   }
 
-  // Okay, we have one, that's a positive sign. In the case of multiple index
-  // values, we could either pass this as a Python style tuple, or could pass as
-  // multiple arguments.
+  // If we just have a getter, emit this as a call to __getitem__ immediately.
+  // __getitem__ is allowed to return a reference if it has a physical lvalue.
+  if (setItem.isNull())
+    return getItem.emitCall(indexValues, dest, emitter);
 
-  // TODO(Computed LValues): We need to look up __setitem__ and have a better
-  // model for computed LValues.
+  // Ok, we have a setter and may have a getter.  Check to see if there is one
+  // specific known element type.
+  ASTType elementType;
+  if (!getItem.isNull()) {
+    // If we have at least one __getitem__ implement then filter it based on the
+    // indices we have.  This will ensure we treat its presence of indication
+    // that the type was intended to be subscriptable, but whine about index
+    // values and base type if they aren't actually compatible at this usage
+    // site.
+    if (failed(getItem.filterOverloadSet(
+            indexValues, /*allowImplicitConversions=*/true,
+            /*emitDiagnosticOnFailure=*/true, emitter)))
+      return {};
 
-  // Finally, just emit the call to __getitem__.
-  return getItem.emitCall(indexValues, dest, emitter);
+    assert(getItem.fnDecls.size() == 1 && "Should be resolved");
+    auto directSymbolAttr = getItem.getBoundConstantAttr(emitter);
+    if (!directSymbolAttr)
+      return {}; // Getter invalid.
+    auto sigType = cast<SignatureType>(directSymbolAttr.getType());
+    if (sigType.hasMemoryOnlyResult())
+      elementType =
+          ASTType(sigType.getValueInputs()[0]).getPointerElementType();
+    else {
+      assert(sigType.getValueResults().size() == 1);
+      elementType = ASTType(sigType.getValueResults()[0]);
+    }
+  } else {
+    // If we don't have a getter then check to see if we have a setter.  This is
+    // a bit tricky in that the setter candidate set is completely unfiltered.
+
+    // Cannot support overloaded setter.  We could make this more flexible in
+    // the future if needed, eg if they have common set values but different
+    // indices.
+    if (setItem.fnDecls.size() != 1) {
+      auto diag = emitter.emitError(getLoc())
+                  << baseType
+                  << " has overloaded __setitem__ implementations, which isn't "
+                     "supported"
+                  << getRange();
+      for (auto candidate : setItem.fnDecls)
+        diag.attachNote(candidate->getLoc()) << "candidate declared here";
+      return {};
+    }
+
+    // TODO: This won't handle parameterized setters right, inferring the
+    // parameter types.  We should use something like
+    // `filterOverloadSetForValueType` or use a dummy value to filter the
+    // overload set.
+    auto directSymbolAttr = setItem.getBoundConstantAttr(emitter);
+    if (!directSymbolAttr)
+      return {}; // Getter invalid.
+    auto sigType = cast<SignatureType>(directSymbolAttr.getType());
+    // Check basic sanity.
+    size_t setValueIdx = indexValues.size() + sigType.hasMemoryOnlyResult();
+    if (sigType.getValueInputs().size() <= setValueIdx) {
+      auto diag = emitter.emitError(getLoc())
+                  << "__setitem__ has too few arguments";
+      diag.attachNote(setItem.fnDecls[0]->getLoc())
+          << "__setitem__ declared here";
+      return {};
+    }
+    elementType = sigType.getValueInputs()[setValueIdx];
+    if (sigType.getInputConvention(setValueIdx) != ValueInputConvention::ByVal)
+      elementType = elementType.getPointerElementType();
+  }
+
+  DLValue result(indexValues, elementType, this, /*isSubscript*/ true);
+  return emitter.emitResult(result, this, dest);
 }
 
 AnyValue SubscriptArrowNode::emitIR(ValueDest &dest,
@@ -1455,7 +1527,7 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
         dest.getLValueForResult(getLoc(), initType,
                                 /*allowIncompatibleTypes=*/false, emitter);
     memoryOnlyBase = lv.getIfSLValue();
-    assert(memoryOnlyBase && "TODO(clvalue): computed writeback");
+    assert(memoryOnlyBase && "TODO(dlvalue): computed writeback");
   }
 
   DenseMap<StringAttr, ASTExprAnd<AnyValue>> fieldMapping;

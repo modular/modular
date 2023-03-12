@@ -13,8 +13,8 @@
 //
 // AnyValue       <- Expr emitted to MLIR...
 //   LValue           <- mutable reference to storage
-//     SLValue          <- with a runtime address that may be stored to
-//     CLValue          <- with get/set accessors
+//     SLValue        <- with a runtime address that may be stored to
+//     DLValue        <- with dynamic get/set accessors
 //   BValue (TODO)    <- with a borrowed value
 //     MBValue          <- value is in memory
 //     SBValue (TODO)   <- value is in SSA register
@@ -29,6 +29,7 @@
 //
 //   CValue        <- Concrete value: LValue or RValue with a known type.
 //     SLValue       <- LValue in memory
+//     DLValue       <- Dynamic LValue
 //     BValue        <- Borrowed value
 //       ... per above ...
 //     CRValue       <- Concrete RValue
@@ -142,9 +143,32 @@ public:
   ASTType getType() const { return ASTType(Value::getType()); }
 };
 
-/// Instances of CLValue model a computed LValue which has a getter and setter.
-class CLValue {
-  // TODO: Implement.
+class AnyValue;
+
+/// Subclasses of DLValue model a dynamic LValue which has a getter and
+/// setter. Lit supports two ways to spell this - with property access `a.x =`
+/// and with subscript syntax `a[i,j] = `, invoking __getattr__/__setattr__ and
+/// __getitem__ and __setitem__ respectively.
+///
+/// We allow DLValues to have getter+setter or just setter.
+class DLValue {
+public:
+  // This is the self+name values for property access and the self+key values
+  // for a subscript.
+  std::vector<ASTExprAnd<AnyValue>> selfAndIndicesValue;
+  ASTType elementType;
+
+  /// This is true if this is a subscript, false if this is an attribute access.
+  const ExprNode *expr;
+  bool isSubscript;
+
+  DLValue(ArrayRef<ASTExprAnd<AnyValue>> selfAndIndicesValue,
+          ASTType elementType, const ExprNode *expr, bool isSubscript);
+  DLValue();
+  ~DLValue();
+
+  /// This is present / not-default constructed if it has operands.
+  explicit operator bool() const { return !selfAndIndicesValue.empty(); }
 };
 
 /// Instances of PRValue model compile time values that are represented as MLIR
@@ -222,7 +246,7 @@ template <typename DerivedType>
 struct VariantValueStorage {
   /// These are all the forms of storage we can have.
   using Storage = SmartVariant<NullRepresentation, PRValue, SRValue, MRValue,
-                               ORValue, MBValue, CLValue, SLValue>;
+                               ORValue, MBValue, DLValue, SLValue>;
 
   VariantValueStorage()
       : storage(NullRepresentation()) {} // All are default constructible.
@@ -328,6 +352,10 @@ public:
     if (value)
       storage = std::move(value);
   }
+  RValue(CRValue value) {
+    if (value)
+      storage = std::move(value.getStorage());
+  }
 
   static RValue getFrom(Storage storage) {
     RValue result;
@@ -353,10 +381,10 @@ struct VariantLValue {
     if (value)
       getStorageL() = value;
   }
-  VariantLValue(CLValue value) { getStorageL() = value; }
+  VariantLValue(DLValue value) { getStorageL() = value; }
 
   SLValue getIfSLValue() const { return dyn_cast<SLValue>(getStorageL()); }
-  CLValue getIfCLValue() const { return dyn_cast<CLValue>(getStorageL()); }
+  DLValue getIfDLValue() const { return dyn_cast<DLValue>(getStorageL()); }
 
 private:
   // These are named getStorageR instead of getStorage to easy
@@ -370,7 +398,7 @@ private:
   }
 };
 
-/// LValue = SLValue|CLValue.
+/// LValue = SLValue|DLValue.
 class LValue : public VariantValueStorage<LValue>,
                public VariantLValue<LValue> {
 public:
@@ -380,32 +408,31 @@ public:
   static LValue getFrom(Storage storage) {
     LValue result;
     // Initialize conditionally based on what is in Storage.
-    if (isa<SLValue, CLValue>(storage))
+    if (isa<SLValue, DLValue>(storage))
       result.storage = std::move(storage);
     return result;
   }
 
   /// Return the type for the contained representation, or null if null.
-  // ASTType getType() const;
+  ASTType getType() const;
 
   /// This method looks through the pointer in a MRValue to return
   /// the underlying type.
-  // ASTType getRValueType() const;
+  ASTType getRValueType() const;
   void dump() const;
 };
 raw_ostream &operator<<(raw_ostream &os, LValue value);
 
-/// Concrete Value: CValue = CRValue|SLValue|BValue.
+/// Concrete Value: CValue = CRValue|LValue|BValue.
 class CValue : public VariantValueStorage<CValue>,
-               public VariantCRValue<CValue> {
+               public VariantCRValue<CValue>,
+               public VariantLValue<LValue> {
 public:
   using VariantCRValue::VariantCRValue;
+  using VariantLValue::VariantLValue;
   using VariantValueStorage::VariantValueStorage;
 
-  CValue(SLValue value) {
-    if (value)
-      getStorage() = value;
-  }
+  CValue() {}
   CValue(MBValue value) {
     if (value)
       getStorage() = value;
@@ -417,14 +444,14 @@ public:
   static CValue getFrom(Storage storage) {
     CValue result;
     // Initialize conditionally based on what is in Storage.
-    if (isa<PRValue, SRValue, MRValue, MBValue, SLValue>(storage))
+    if (isa<PRValue, SRValue, MRValue, MBValue, SLValue, DLValue>(storage))
       result.storage = std::move(storage);
     return result;
   }
 
-  SLValue getIfSLValue() const { return dyn_cast<SLValue>(getStorage()); }
   MBValue getIfMBValue() const { return dyn_cast<MBValue>(getStorage()); }
   RValue getIfRValue() const { return RValue::getFrom(getStorage()); }
+  LValue getIfLValue() const { return LValue::getFrom(getStorage()); }
 
   /// Return the type for the contained representation, or null if null.
   ASTType getType() const;
@@ -465,8 +492,8 @@ public:
   CRValue getIfCRValue() const { return CRValue::getFrom(storage); }
   CValue getIfCValue() const { return CValue::getFrom(storage); }
   RValue getIfRValue() const { return RValue::getFrom(storage); }
-
   MBValue getIfMBValue() const { return dyn_cast<MBValue>(storage); }
+
   void dump() const;
 };
 raw_ostream &operator<<(raw_ostream &os, AnyValue value);

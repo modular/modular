@@ -143,8 +143,8 @@ public:
   /// If successful, this provides a non-null OverloadSet.
   ///
   /// On failure, this returns a null OverloadSet and invokes errorHandler if
-  /// the problem hasn't already been diagnosed. This does not emit an error on
-  /// failure.
+  /// the problem hasn't already been diagnosed and it is non-null. This does
+  /// not emit an error on failure.
   OverloadSet(ASTType type, StringRef methodName, const ExprNode *callExpr,
               CallSyntax syntax, LitSharedState &shared,
               std::function<void()> errorHandler);

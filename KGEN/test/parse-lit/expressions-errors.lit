@@ -237,12 +237,34 @@ struct WeirdArray:
   fn __getitem__(self, x: Int) -> Int:
     return 1
 
-fn testWeirdArray(a: WeirdArray, idx: Int):
+struct MultiSetItem:
+  # expected-note @+1 {{candidate declared here}}
+  fn __setitem__(self, x: Int, y: Int): pass
+  # expected-note @+1 {{candidate declared here}}
+  fn __setitem__(self, x: Int, y: F32): pass
+
+struct IncompatElementTypes:
+  fn __getitem__(self, x: Int) -> Int: pass
+  fn __setitem__(self, x: Int, y: F32): pass
+
+fn testSubscripts(a: WeirdArray, b: MultiSetItem, c: IncompatElementTypes):
   # expected-error @+1 {{invalid call to '__getitem__': index cannot be converted from '__mlir_type.f64' to '$Int::Int'}}
   _ = a[1.0]
 
   # expected-error @+1 {{invalid call to '__getitem__': callee expects 2 arguments, but 3 specified}}
   _ = a[1, 2]
+
+  # expected-error @+1 {{expression must mutable in assignment}}
+  a[1] = 4
+
+  # expected-error @+1 {{'$expressions-errors::MultiSetItem' has overloaded __setitem__ implementations, which isn't supported}}
+  b[1] = 4
+
+  let tmp : Int = c[1]
+  # expected-error @+1 {{'$F32::F32' value cannot be converted to '$Int::Int' in assignment}}
+  c[1] = F32(4.0)
+  c[1] = tmp
+
 
 ##===----------------------------------------------------------------------===##
 # __adaptive_set errors
