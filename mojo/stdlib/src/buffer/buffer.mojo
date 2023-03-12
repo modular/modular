@@ -474,9 +474,11 @@ struct NDBuffer[
             dynamic_dtype: dynamic_dtype.value,
         }
 
+    @always_inline
     fn get_rank(self) -> Int:
         return rank
 
+    @always_inline
     fn size(self) -> Int:
         """Computes the NDBuffer's number of elements.
 
@@ -492,6 +494,7 @@ struct NDBuffer[
         unroll[rank, _compute_product]()
         return product
 
+    @always_inline
     fn _offset(self, idx: VariadicList[Int]) -> DTypePointer[type]:
         """Computes the NDBuffer's offset using the index positions provided.
 
@@ -506,9 +509,11 @@ struct NDBuffer[
             _compute_ndbuffer_offset[rank, shape, type](self, idx)
         )
 
+    @always_inline
     fn _offset(self, idx: StaticIntTuple[rank]) -> DTypePointer[type]:
         return self._offset(idx.as_tuple())
 
+    @always_inline
     fn _offset(
         self, idx: StaticTuple[rank, __mlir_type.index]
     ) -> DTypePointer[type]:
@@ -525,12 +530,15 @@ struct NDBuffer[
             _compute_ndbuffer_offset[rank, shape, type](self, idx)
         )
 
+    @always_inline
     fn __getitem__(self, *idx: Int) -> SIMD[1, type]:
         return self.simd_load[1](VariadicList[Int](idx))
 
+    @always_inline
     fn __getitem__(self, idx: StaticIntTuple[rank]) -> SIMD[1, type]:
         return self.simd_load[1](idx)
 
+    @always_inline
     fn simd_load[
         width: Int,
     ](self, idx: VariadicList[Int]) -> SIMD[width, type]:
@@ -541,33 +549,39 @@ struct NDBuffer[
     ](self, idx: StaticIntTuple[rank]) -> SIMD[width, type]:
         return self.simd_load[width](idx.as_tuple())
 
+    @always_inline
     fn simd_load[
         width: Int,
     ](self, idx: StaticTuple[rank, __mlir_type.index]) -> SIMD[width, type]:
         return self._offset(idx).simd_load[width]()
 
+    @always_inline
     fn __setitem__(self, idx: StaticIntTuple[rank], val: SIMD[1, type]):
         # Stores a single value into the ndbuffer at the specified index
         self.simd_store[1](idx, val)
 
+    @always_inline
     fn __setitem__(
         self, idx: StaticTuple[rank, __mlir_type.index], val: SIMD[1, type]
     ):
         # Stores a single value into the ndbuffer at the specified index
         self.simd_store[1](idx, val)
 
+    @always_inline
     fn simd_store[
         width: Int
     ](self, idx: StaticIntTuple[rank], val: SIMD[width, type]):
         # Stores a simd value into the ndbuffer at the specified index
         self.simd_store[width](idx.as_tuple(), val)
 
+    @always_inline
     fn simd_store[
         width: Int
     ](self, idx: StaticTuple[rank, __mlir_type.index], val: SIMD[width, type]):
         # Stores a simd value into the ndbuffer at the specified index
         self._offset(idx).simd_store[width](val)
 
+    @always_inline
     fn simd_nt_store[
         width: Int
     ](self, idx: StaticIntTuple[rank], val: SIMD[width, type]):
@@ -575,6 +589,7 @@ struct NDBuffer[
         # The address must properly aligned, see Buffer::simd_nt_store.
         self.simd_nt_store[width](idx.as_tuple(), val)
 
+    @always_inline
     fn simd_nt_store[
         width: Int
     ](self, idx: StaticTuple[rank, __mlir_type.index], val: SIMD[width, type]):
@@ -582,6 +597,7 @@ struct NDBuffer[
         # The address must properly aligned, see Buffer::simd_nt_store.
         self._offset(idx).simd_nt_store[width](val)
 
+    @always_inline
     fn dim[index: __mlir_type.index](self) -> Int:
         # First try to extract the static info on this dimension, could be either a
         # meta constant or an unknown.
@@ -594,9 +610,11 @@ struct NDBuffer[
             return static_dim_value
         return self.dynamic_shape[index]
 
+    @always_inline
     fn dim(self, index: Int) -> Int:
         return self.dynamic_shape[index]
 
+    @always_inline
     fn flatten(self) -> Buffer[__mlir_attr.`#kgen.unknown : index`, type]:
         return Buffer[__mlir_attr.`#kgen.unknown : index`, type](
             self.data.address, self.size()
@@ -785,11 +803,13 @@ struct DynamicRankBuffer:
     var shape: DTypePointer[DType.index]
     var type: DType
 
+    @always_inline
     fn __clone__(self&) -> Self:
         return Self {
             data: self.data, rank: self.rank, shape: self.shape, type: self.type
         }
 
+    @always_inline
     fn __new__(
         data: DTypePointer[DType.invalid.value],
         rank: Int,
@@ -803,6 +823,7 @@ struct DynamicRankBuffer:
             type: type.value,
         }
 
+    @always_inline
     fn to_buffer[
         type: DType
     ](self) -> Buffer[__mlir_attr.`#kgen.unknown : index`, type]:
@@ -810,6 +831,7 @@ struct DynamicRankBuffer:
             self.data.bitcast[type](), pointer_product(self.shape, self.rank)
         )
 
+    @always_inline
     fn to_ndbuffer[
         rank: __mlir_type.index, type: DType
     ](self) -> NDBuffer[rank, create_kgen_list_unknown[rank](), type]:
@@ -852,13 +874,16 @@ struct DynamicRankBuffer:
             func[5]()
             return
 
+    @always_inline
     fn num_elements(self) -> Int:
         return pointer_product(self.shape, self.rank)
 
+    @always_inline
     fn dim(self, idx: Int) -> Int:
         debug_assert(idx < self.rank, "dimension index is out of bounds")
         return self.shape.load(idx)[0].value
 
+    @always_inline
     fn _shape_to_static_tuple[
         rank: __mlir_type.index
     ](self) -> StaticIntTuple[rank]:
