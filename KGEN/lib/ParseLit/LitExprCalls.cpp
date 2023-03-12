@@ -830,7 +830,7 @@ void OverloadFitness::diagnose(SignatureType signature,
     assert(eltTypeAttr.getIfTypeValue() &&
            "unwrapped value should be a direct type, not a parameter");
     diag << "l-value of type "
-         << operands[payload].ir.getIfSLValue().getRValueType()
+         << operands[payload].ir.getIfLValue().getRValueType()
          << " cannot be converted to reference of type "
          << eltTypeAttr.getIfTypeValue() << operands[payload].expr->getRange();
     return;
@@ -1668,6 +1668,27 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
   // Otherwise, materialize PRValue arguments as SSA values for emission.
   SmallVector<Value> callArgs;
   Location loc = translateLocation(callExpr->getLoc());
+
+  struct WritebackClearer {
+    const ExprNode *expr;
+    SmallVector<std::pair<ValueDest, SLValue>> elements;
+
+    void emit(ExprEmitter &emitter) {
+      while (!elements.empty()) {
+        auto elt = elements.pop_back_val();
+        if (!emitter.emitResult(MRValue(elt.second), expr, elt.first))
+          elt.first.resetForError();
+      }
+    }
+
+    // If an error happens before we emit the write backs, make sure to nuke
+    // them so they don't crash the compiler.
+    ~WritebackClearer() {
+      while (!elements.empty())
+        elements.pop_back_val().first.resetForError();
+    }
+  } writebackHandler{callExpr, {}};
+
   for (auto [argValAndExpr, convention, calleeArgTypeAndIdx] :
        llvm::zip(argumentValues, calleeSig.getValueInputConventions(),
                  llvm::enumerate(calleeSig.getValueInputs()))) {
@@ -1682,8 +1703,28 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
         return {};
     } else if (convention == ValueInputConvention::ByRef ||
                convention == ValueInputConvention::ByRefResult) {
-      assert(argValAndExpr.ir.getIfSLValue() && "TODO(dlvalue)");
-      arg = argValAndExpr.ir.getIfSLValue();
+      // We know that the operand is an LValue, but it might be
+      // dynamic/computed.
+      LValue lv = argValAndExpr.ir.getIfLValue();
+      assert(lv && "type checking ensures we will have an lvalue");
+      if (auto sl = lv.getIfSLValue()) {
+        arg = sl;
+      } else {
+        // If dynamic, we need to generate a temporary slot, emit a 'get' into
+        // that slot, pass the address, then write it back when we're done.
+        ValueDest tmpBuffer(lv, EC_CallArgValue);
+        SLValue buffer = tmpBuffer.getSLValueForResult(
+            argValAndExpr.expr->getLoc(), lv.getRValueType(), *this);
+        // Emit the 'get' into the buffer.
+        ValueDest bufferDest(buffer, EC_CallArgValue);
+        if (!emitRValue({lv, argValAndExpr.expr}, bufferDest)) {
+          bufferDest.resetForError();
+          tmpBuffer.resetForError();
+          return {};
+        }
+        writebackHandler.elements.push_back({std::move(tmpBuffer), buffer});
+        arg = buffer;
+      }
     } else if (convention == ValueInputConvention::ByValInMem) {
       arg = argValAndExpr.ir.getIfMRValue();
     }
@@ -1727,6 +1768,9 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
               "cannot raise");
     return {};
   }
+
+  // If there were any writebacks to handle, emit them now.
+  writebackHandler.emit(*this);
 
   // If there is a memory result slot, the value we filled in is our MRValue
   // result and we've already handled the ValueDest by emitting into it.

@@ -754,6 +754,49 @@ struct MyInlineIntInit:
         # CHECK: kgen.call {{.*}}__clone__{{.*}}(%0, %intVal)
         return Self{intVal: intVal}
 
+struct IndexArray:
+  fn __getitem__(self&, x: __mlir_type.index) -> __mlir_type.index: pass
+  fn __setitem__(self&, x: __mlir_type.index, value: __mlir_type.index): pass
+
+struct IndexArrayArray:
+  fn __getitem__(self&, x: __mlir_type.index) -> IndexArray: pass
+  fn __setitem__(self&, x: __mlir_type.index, value: IndexArray): pass
+
+fn takeInOutInt(a&: __mlir_type.index): pass
+
+ # CHECK-LABEL: lit.func @"testWritebacks
+fn testWritebacks(a&: IndexArray, b&: IndexArrayArray):
+  # CHECK: %3Canonymous3E = lit.varlet.decl "<anonymous>", var = false : <index>
+  # CHECK: %idx0 = index.constant 0
+  # CHECK: %0 = kgen.call {{.*}}__getitem__{{.*}}(%a, %idx0)
+  # CHECK: pop.store %0, %3Canonymous3E
+  # CHECK: %1 = kgen.call {{.*}}takeInOutInt{{.*}}(%3Canonymous3E)
+  # CHECK: %idx0_0 = index.constant 0
+  # CHECK: %2 = pop.load %3Canonymous3E
+  # CHECK: %3 = kgen.call {{.*}}__setitem__{{.*}}(%a, %idx0_0, %2)
+  takeInOutInt(a[0]);
+
+  # CHECK: %3Canonymous3E_1 = lit.varlet.decl "<anonymous>", var = false : <index>
+  # CHECK: %3Canonymous3E_2 = lit.varlet.decl "<anonymous>", var = false : <@"$expressions"::@IndexArray>
+  # CHECK: %idx1 = index.constant 1
+  # CHECK: %4 = {{.*}}__getitem__{{.*}}(%3Canonymous3E_2, %b, %idx1)
+  # CHECK: %idx2 = index.constant 2
+  # CHECK: %5 = kgen.call {{.*}}__getitem__{{.*}}(%3Canonymous3E_2, %idx2)
+  # CHECK: %idx1_3 = index.constant 1
+  # CHECK: %6 = kgen.call {{.*}}__setitem__{{.*}}(%b, %idx1_3, %3Canonymous3E_2)
+  # CHECK: pop.store %5, %3Canonymous3E_1
+  # CHECK: %7 = kgen.call {{.*}}takeInOutInt{{.*}}(%3Canonymous3E_1)
+  # CHECK: %3Canonymous3E_4 = lit.varlet.decl "<anonymous>", var = false
+  # CHECK: %idx1_5 = index.constant 1
+  # CHECK: %8 = kgen.call {{.*}}__getitem__{{.*}}(%3Canonymous3E_4, %b, %idx1_5)
+  # CHECK: %idx2_6 = index.constant 2
+  # CHECK: %9 = pop.load %3Canonymous3E_1
+  # CHECK: %10 = kgen.call {{.*}}__setitem__{{.*}}(%3Canonymous3E_4, %idx2_6, %9)
+  # CHECK: %idx1_7 = index.constant 1
+  # CHECK: %11 = kgen.call {{.*}}__setitem__{{.*}}(%b, %idx1_7, %3Canonymous3E_4)
+  takeInOutInt(b[1][2])
+
+
 # CHECK-LABEL: lit.func @"chained_cmp
 fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
     # CHECK:      %[[CMP_A_B:.*]] = kgen.call @{{.*}}__lt__{{.*}}(%a, %b)
