@@ -406,17 +406,22 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
     return {};
   }
 
+  // If we have a value in memory, load it.
+  if (auto mrValue = value.getIfMRValue()) {
+    // TODO: we should move from the value instead of clone+destroy it.
+    auto rv = emitLoadOfMBValue({MBValue(mrValue), expr}, dest);
+    if (auto sr = rv.getIfSRValue())
+      return sr;
+    return emitSRValue({rv, expr}, context);
+  }
+
   // If this is already an SRValue, return it.
   if (auto rvalue = value.getIfSRValue())
     return rvalue;
 
   // Make sure this method isn't getting called inappropriately.
-  if (!value.getRValueType().isRegisterPassable(expr->getLoc(), shared)) {
-    emitError(expr->getLoc(), "TODO: cannot use value of type ")
-        << value.getRValueType() << getContextMessage(context)
-        << ", it cannot be loaded into an SSA register";
-    return {};
-  }
+  assert(value.getRValueType().isRegisterPassable(expr->getLoc(), shared) &&
+         "emitSRValue called on non-register-passable value");
 
   // If this is a parameter, we need to materialize it, either as an
   // index.constant or as a parameter expression.

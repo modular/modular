@@ -22,7 +22,7 @@
 //     ORValue        <- with an unresolved overload set
 //     CRValue        <- with a concrete resolved type
 //       SRValue        <- with a register-passable value in an SSA register
-//       MRValue        <- with a memory-only value in memory
+//       MRValue        <- with an owned value in memory
 //       PRValue        <- with a parameter value
 //
 // This is another parallel hierarchy:
