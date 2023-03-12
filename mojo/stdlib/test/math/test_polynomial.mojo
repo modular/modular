@@ -8,7 +8,12 @@
 from DType import DType
 from IO import print
 from List import VariadicList
-from Polynomial import polynomial_evaluate, _estrin_evaluate, _horner_evaluate
+from Polynomial import (
+    polynomial_evaluate,
+    _estrin_evaluate_2,
+    _estrin_evaluate_4,
+    _horner_evaluate,
+)
 from SIMD import SIMD
 
 
@@ -32,7 +37,7 @@ fn test_polynomial_evaluate_degree3():
     # CHECK: 1002.000000
     print(y)
 
-    y = _estrin_evaluate[
+    y = _estrin_evaluate_2[
         simd_width,
         DType.f64,
         coeefs,
@@ -59,7 +64,7 @@ fn test_polynomial_evaluate_degree3():
     # CHECK: 1000.110000
     print(y)
 
-    y = _estrin_evaluate[
+    y = _estrin_evaluate_2[
         simd_width,
         DType.f64,
         coeefs,
@@ -100,7 +105,7 @@ fn test_polynomial_evaluate_degree4():
     # CHECK: 1054.000000
     print(y)
 
-    y = _estrin_evaluate[
+    y = _estrin_evaluate_4[
         simd_width,
         DType.f64,
         coeefs,
@@ -127,7 +132,7 @@ fn test_polynomial_evaluate_degree4():
     # CHECK: 1009.480600
     print(y)
 
-    y = _estrin_evaluate[
+    y = _estrin_evaluate_4[
         simd_width,
         DType.f64,
         coeefs,
