@@ -4,10 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Assert import assert_param
+from Assert import assert_param, assert_param_bool, debug_assert
 from Buffer import NDBuffer
 from DType import DType
-from Functional import vectorize, vectorize_unroll, div_ceil, parallelForEachN
+from Functional import vectorize, vectorize_unroll, div_ceil, parallelize
 from Index import Index, StaticIntTuple
 from Intrinsics import PrefetchOptions
 from Int import Int
@@ -19,41 +19,6 @@ from Range import range
 from TargetInfo import dtype_sizeof
 from TypeUtilities import rebind
 from SIMD import SIMD
-
-
-# Argument for gather task
-@register_passable
-struct GatherArgs[
-    type: DType,
-    indices_type: DType,
-    indices_rank: __mlir_type.index,
-    indices_shape: __mlir_type[`!kgen.list<index[`, indices_rank, `]>`],
-]:
-    var output: NDBuffer[2, create_kgen_list_unknown[2](), type]
-    var input: NDBuffer[2, create_kgen_list_unknown[2](), type]
-    var indices: NDBuffer[indices_rank, indices_shape, indices_type]
-    var num_chunks_per_task: Int
-
-    fn __clone__(self&) -> Self:
-        return Self {
-            output: self.output,
-            input: self.input,
-            indices: self.indices,
-            num_chunks_per_task: self.num_chunks_per_task,
-        }
-
-    fn __new__(
-        output: NDBuffer[2, create_kgen_list_unknown[2](), type],
-        input: NDBuffer[2, create_kgen_list_unknown[2](), type],
-        indices: NDBuffer[indices_rank, indices_shape, indices_type],
-        num_chunks_per_task: Int,
-    ) -> GatherArgs[type, indices_type, indices_rank, indices_shape]:
-        return Self {
-            output: output,
-            input: input,
-            indices: indices,
-            num_chunks_per_task: num_chunks_per_task,
-        }
 
 
 ## gather_reduce_2D_axis_1
@@ -109,19 +74,35 @@ fn gather_reduce[
 
     _ = output.fill(reduce_init)
 
-    fn task_func(
-        task_id: Int,
-        ptr: Pointer[GatherArgs[type, DType.si32, indices_rank, indices_shape]],
-    ):
+    # This parallelization scheme doesn't work well if the multi-hot dim or
+    # embedding dim is very large. But that should not be common.
+    # TODO: find a heuristic to replace the magic number.
+    alias MIN_TASK_NUM_SLICES = 64
+    let num_threads = Runtime(runtime).parallelism_level()
+    let num_tasks = Int.min(
+        div_ceil(indices.dim[0](), MIN_TASK_NUM_SLICES), num_threads
+    )
+
+    let num_chunks_per_task = div_ceil(indices.dim[0](), num_tasks)
+    let output_bind = rebind[NDBuffer[2, create_kgen_list_unknown[2](), type]](
+        output
+    )
+    let input_bind = rebind[NDBuffer[2, create_kgen_list_unknown[2](), type]](
+        input
+    )
+    let indices_bind = rebind[
+        NDBuffer[indices_rank, indices_shape, DType.si32]
+    ](indices)
+
+    @always_inline
+    fn task_func(task_id: Int):
         alias unroll_factor = 2
         alias prefetch_offset = 6
         alias usimd_width = unroll_factor * simd_width
 
-        let args = ptr.load()
-        let output = args.output
-        let input = args.input
-        let indices = args.indices
-        let num_chunks_per_task = args.num_chunks_per_task
+        let output = output_bind
+        let input = input_bind
+        let indices = indices_bind
         let row_size = output.dim[1]()
 
         # need to reduce on an entire 2D slice at a time, otherwise multiple
@@ -141,9 +122,12 @@ fn gather_reduce[
             let next_idx = indices._offset(
                 StaticIntTuple[indices_rank](i, j)
             ).load()
-            input.prefetch[
-                PrefetchOptions().for_read().high_locality().to_data_cache()
-            ]((next_idx + prefetch_offset).value, 0)
+            # TODO: Restore. Currently this gets a
+            # "immarg operand has non-immediate parameter" Error message from
+            # LLVM.
+            # input.prefetch[
+            #     PrefetchOptions().for_read().high_locality().to_data_cache()
+            # ]((next_idx + prefetch_offset).value, 0)
 
             @always_inline
             fn _simd_gather[simd_width: Int](k: Int):
@@ -164,36 +148,7 @@ fn gather_reduce[
             for j in range(indices.dim[1]()):
                 _gather_contiguous[usimd_width](i, j)
 
-    # This parallelization scheme doesn't work well if the multi-hot dim or
-    # embedding dim is very large. But that should not be common.
-    # TODO: find a heuristic to replace the magic number.
-    alias MIN_TASK_NUM_SLICES = 64
-    let num_threads = Runtime(runtime).parallelism_level()
-    let num_tasks = Int.min(
-        div_ceil(indices.dim[0](), MIN_TASK_NUM_SLICES), num_threads
-    )
-
-    let num_chunks_per_task = div_ceil(indices.dim[0](), num_tasks)
-    let output_bind = rebind[NDBuffer[2, create_kgen_list_unknown[2](), type]](
-        output
-    )
-    let input_bind = rebind[NDBuffer[2, create_kgen_list_unknown[2](), type]](
-        input
-    )
-    let indices_bind = rebind[
-        NDBuffer[indices_rank, indices_shape, DType.si32]
-    ](indices)
-    var args = GatherArgs[type, DType.si32, indices_rank, indices_shape](
-        output_bind, input_bind, indices_bind, num_chunks_per_task
-    )
-    let args_address = Pointer[
-        GatherArgs[type, DType.si32, indices_rank, indices_shape]
-    ].address_of(args)
-
-    parallelForEachN[
-        Pointer[GatherArgs[type, DType.si32, indices_rank, indices_shape]],
-        task_func,
-    ](runtime, num_tasks, args_address)
+    parallelize[task_func](runtime, num_tasks)
 
 
 # gather_2D_input_1D_indices_axis_0
@@ -223,54 +178,6 @@ fn gather[
 
     let indices_len = indices.size()
 
-    fn task_func(
-        task_id: Int,
-        ptr: Pointer[
-            GatherArgs[type, indices_type, indices_rank, indices_shape]
-        ],
-    ):
-        let args = ptr.load()
-        let output = args.output
-        let input = args.input
-        let indices = args.indices
-        let num_chunks_per_task = args.num_chunks_per_task
-
-        let start_offset = task_id * num_chunks_per_task
-        let end_offset = Int.min(
-            (task_id + 1) * num_chunks_per_task, indices.size()
-        )
-
-        # TODO: Find a heuristic to remove magic number.
-        let prefetch_offset = 6
-        let row_size = input.dim[1]()
-
-        for i in range(start_offset, end_offset):
-            input.prefetch[
-                PrefetchOptions().for_read().high_locality().to_data_cache()
-            ](
-                (
-                    Int.from_integral[indices_type](
-                        indices[i + prefetch_offset].value
-                    )
-                ).value,
-                0,
-            )
-
-            let output_row_ptr = output.data.offset(i * row_size)
-            let input_row_ptr = input.data.offset(
-                (
-                    Int.from_integral[indices_type](indices[i].value) * row_size
-                ).value
-            )
-
-            @always_inline
-            fn func_wrapper[simd_width: Int](idx: Int):
-                output_row_ptr.simd_store[simd_width](
-                    idx, input_row_ptr.simd_load[simd_width](idx)
-                )
-
-            vectorize_unroll[simd_width, 2, func_wrapper](row_size)
-
     # This sets the min copy size per task because it's inefficient to copy
     # small volume in parallel.
     # TODO: find a heuristic to replace the magic number.
@@ -294,17 +201,52 @@ fn gather[
     let input_bind = rebind[NDBuffer[2, create_kgen_list_unknown[2](), type]](
         input
     )
-    var args = GatherArgs[type, indices_type, indices_rank, indices_shape](
-        output_bind, input_bind, indices, num_chunks_per_task
-    )
-    let args_address = Pointer[
-        GatherArgs[type, indices_type, indices_rank, indices_shape]
-    ].address_of(args)
 
-    parallelForEachN[
-        Pointer[GatherArgs[type, indices_type, indices_rank, indices_shape]],
-        task_func,
-    ](runtime, num_tasks, args_address)
+    @always_inline
+    fn task_func(task_id: Int):
+        let output = output_bind
+        let input = input_bind
+
+        let start_offset = task_id * num_chunks_per_task
+        let end_offset = Int.min(
+            (task_id + 1) * num_chunks_per_task, indices.size()
+        )
+
+        # TODO: Find a heuristic to remove magic number.
+        let prefetch_offset = 6
+        let row_size = input.dim[1]()
+
+        for i in range(start_offset, end_offset):
+            # TODO: Restore. Currently this gets a
+            # "immarg operand has non-immediate parameter" Error message from
+            # LLVM.
+            # input.prefetch[
+            #     PrefetchOptions().for_read().high_locality().to_data_cache()
+            # ](
+            #     (
+            #         Int.from_integral[indices_type](
+            #             indices[i + prefetch_offset].value
+            #         )
+            #     ).value,
+            #     0,
+            # )
+
+            let output_row_ptr = output.data.offset(i * row_size)
+            let input_row_ptr = input.data.offset(
+                (
+                    Int.from_integral[indices_type](indices[i].value) * row_size
+                ).value
+            )
+
+            @always_inline
+            fn func_wrapper[simd_width: Int](idx: Int):
+                output_row_ptr.simd_store[simd_width](
+                    idx, input_row_ptr.simd_load[simd_width](idx)
+                )
+
+            vectorize_unroll[simd_width, 2, func_wrapper](row_size)
+
+    parallelize[task_func](runtime, num_tasks)
 
 
 # gather_2D_input_1D_indices_axis_1
