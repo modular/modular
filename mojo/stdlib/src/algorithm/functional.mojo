@@ -251,7 +251,7 @@ fn parallelForEachN[
     tg.wait()
     tg.__del__()
     for j in range(tasks.__len__()):
-        tasks.__getitem__(j).__del__()
+        tasks[j].__del__()
     tasks.__del__()
 
 

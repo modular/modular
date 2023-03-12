@@ -24,7 +24,7 @@ fn test_parallelize():
     let vector = Buffer[20, DType.index].stack_allocation()
 
     for i in range(vector.__len__()):
-        vector.__setitem__(i, i.__as_mlir_index())
+        vector[i] = i.__as_mlir_index()
 
     let chunk_size = div_ceil(vector.__len__(), num_work_items)
 
@@ -35,7 +35,7 @@ fn test_parallelize():
 
         @always_inline
         fn add_two(idx: Int):
-            vector.__setitem__(start + idx, vector.__getitem__(start + idx) + 2)
+            vector[start + idx] = vector[start + idx] + 2
 
         map[add_two](end - start)
 
@@ -44,7 +44,7 @@ fn test_parallelize():
     # CHECK-NOT: ERROR
     for ii in range(vector.__len__()):  # TODO(#8365) use `i`
         let expected_val = ii + 2
-        if Int(vector.__getitem__(ii).value) != expected_val:
+        if Int(vector[ii].value) != expected_val:
             print("ERROR: Expecting the result to be i + 2")
 
 

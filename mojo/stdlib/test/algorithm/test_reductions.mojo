@@ -26,7 +26,7 @@ fn test_reductions():
     let vector = Buffer[size, DType.f32].stack_allocation()
 
     for i in range(size):
-        vector.__setitem__(i, (i + 1).__as_mlir_index())
+        vector[i] = (i + 1).__as_mlir_index()
 
     # CHECK: 1.000000
     print(min[simd_width](vector))
@@ -50,7 +50,7 @@ fn test_product():
     let vector = Buffer[size, DType.f32].stack_allocation()
 
     for i in range(size):
-        vector.__setitem__(i, (i + 1).__as_mlir_index())
+        vector[i] = (i + 1).__as_mlir_index()
 
     # CHECK: 3628800.000000
     print(product[simd_width](vector))
@@ -67,7 +67,7 @@ fn test_mean_variance():
     let vector = Buffer[size, DType.f32].stack_allocation()
 
     for i in range(size):
-        vector.__setitem__(i, (i + 1).__as_mlir_index())
+        vector[i] = (i + 1).__as_mlir_index()
 
     # CHECK: 50.500000
     print(mean[simd_width](vector))
@@ -91,7 +91,7 @@ fn test_3d_reductions():
             NDBuffer[3, output_shape, DType.f32].stack_allocation().fill(0)
         )
         for i in range(input.size()):
-            input.flatten().__setitem__(i, i)
+            input.flatten()[i] = i
 
         sum[
             simd_width,
@@ -103,7 +103,7 @@ fn test_3d_reductions():
         ](input, output)
 
         for ii in range(output.size()):
-            print(output.flatten().__getitem__(ii))
+            print(output.flatten()[ii])
 
     # CHECK: [6.000000]
     # CHECK-NEXT: [22.000000]

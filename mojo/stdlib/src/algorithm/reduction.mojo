@@ -81,8 +81,8 @@ fn reduce[
 
     var acc = reduce_fn[unrolled_simd_width, acc_type](acc_simd)
     for ii in range(vector_end, len):  # TODO(#8365) use `i`
-        acc = map_fn[1, acc_type, type](acc, src.__getitem__(ii))
-    return acc.__getitem__(0)
+        acc = map_fn[1, acc_type, type](acc, src[ii])
+    return acc[0].value
 
 
 @always_inline
@@ -147,7 +147,7 @@ fn _reduce_3D[
                 let val = reduce[
                     simd_width, sz, type, acc_type, map_fn, reduce_fn
                 ](input, init)
-                dst.__setitem__(StaticIntTuple[2](i, 0), val)
+                dst[StaticIntTuple[2](i, 0)] = val
 
         reduce_inner_axis()
         return
@@ -326,7 +326,7 @@ fn max[
     """Computes the max element in a buffer."""
     return reduce[
         simd_width, size, type, type, _simd_max_elementwise, _simd_max
-    ](src, src.__getitem__(0))
+    ](src, src[0])
 
 
 fn max[
@@ -391,7 +391,7 @@ fn min[
     """Computes the min element in a buffer."""
     return reduce[
         simd_width, size, type, type, _simd_min_elementwise, _simd_min
-    ](src, src.__getitem__(0))
+    ](src, src[0])
 
 
 fn min[
@@ -563,9 +563,9 @@ fn mean[
 
     debug_assert(src.__len__() != 0, "input must not be empty")
 
-    return (
-        SIMD[1, type](sum[simd_width, size, type](src)) / src.__len__()
-    ).__getitem__(0)
+    return (SIMD[1, type](sum[simd_width, size, type](src)) / src.__len__())[
+        0
+    ].value
 
 
 fn mean[
@@ -635,4 +635,4 @@ fn variance[
     let numerator: SIMD[1, type] = reduce[
         simd_width, size, type, type, _simd_variance_elementwise, _simd_sum
     ](src, 0)
-    return (numerator / (src.__len__() - 1)).__getitem__(0)
+    return (numerator / (src.__len__() - 1))[0].value
