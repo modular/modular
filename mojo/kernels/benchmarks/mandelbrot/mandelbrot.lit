@@ -23,7 +23,7 @@ from Matrix import Matrix
 from List import create_kgen_list
 from StringRef import StringRef
 from LLCL import num_cores, Runtime, TaskGroup
-from Functional import parallelForEachN
+from Functional import parallelize
 from Math import iota
 from Complex import Complex
 from Benchmark import Benchmark
@@ -52,7 +52,7 @@ fn draw_mandelbrot[
 
 
 fn mandelbrot_kernel[
-    simd_width: __mlir_type.index
+    simd_width: Int
 ](c: Complex[simd_width, float_type], iter: Int) -> SIMD[simd_width, int_type]:
     var z = Complex[simd_width, float_type](0, 0)
     var nv: SIMD[simd_width, int_type] = 0
@@ -67,80 +67,44 @@ fn mandelbrot_kernel[
     return nv
 
 
-# Mandelbrot arguments
-struct mandelbrot_args[
-    simd_width: __mlir_type.index, h: __mlir_type.index, w: __mlir_type.index
-]:
-    var out: Matrix[create_kgen_list(h, w), int_type, False]
-    var rows_per_worker: Int
-    var min_x: SIMD[simd_width, float_type]
-    var max_x: SIMD[simd_width, float_type]
-    var min_y: SIMD[simd_width, float_type]
-    var max_y: SIMD[simd_width, float_type]
-
-    fn __new__(
-        out: Matrix[create_kgen_list(h, w), int_type, False],
-        rows_per_worker: Int,
-        min_x: SIMD[simd_width, float_type],
-        max_x: SIMD[simd_width, float_type],
-        min_y: SIMD[simd_width, float_type],
-        max_y: SIMD[simd_width, float_type],
-    ) -> mandelbrot_args[simd_width, h, w]:
-        return mandelbrot_args[simd_width, h, w] {
-            out: out,
-            rows_per_worker: rows_per_worker,
-            min_x: min_x,
-            max_x: max_x,
-            min_y: min_y,
-            max_y: max_y,
-        }
-
-    fn __clone__(self&) -> Self:
-        return Self {
-            out: self.out,
-            rows_per_worker: self.rows_per_worker,
-            min_x: self.min_x,
-            max_x: self.max_x,
-            min_y: self.min_y,
-            max_y: self.max_y,
-        }
-
-
 fn mandelbrot[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     h: __mlir_type.index,
     w: __mlir_type.index,
     iter: Int,
+    parallel: Bool,
 ](
     out: Matrix[create_kgen_list(h, w), int_type, False],
+    rows_per_worker: Int,
+    min_x: SIMD[simd_width, float_type],
+    max_x: SIMD[simd_width, float_type],
+    min_y: SIMD[simd_width, float_type],
+    max_y: SIMD[simd_width, float_type],
     rt: Runtime,
-    args_address: Pointer[mandelbrot_args[simd_width, h, w]],
-    parallel: Bool = True,
 ):
     # Each task gets a row
-    fn worker(row: Int, ptr: Pointer[mandelbrot_args[simd_width, h, w]]):
-        let args = ptr.load()
+    @always_inline
+    fn worker(row: Int):
         let rowv: SIMD[simd_width, float_type] = row
         let simd_val = iota[simd_width, float_type]()
-        let scalex = (args.max_x - args.min_x) / w
-        let scaley = (args.max_y - args.min_y) / h
+        let scalex = (max_x - min_x) / w
+        let scaley = (max_y - min_y) / h
         for col in range(w // simd_width):
             var colv: SIMD[simd_width, float_type] = col * simd_width
             colv = colv + simd_val
-            let cx = args.min_x + colv * scalex
-            let cy = args.min_y + rowv * scaley
+            let cx = min_x + colv * scalex
+            let cy = min_y + rowv * scaley
             let c = Complex[simd_width, float_type](cx, cy)
-            args.out.simd_store[simd_width](
-                row, col * simd_width, mandelbrot_kernel(c, iter)
+            out.simd_store[simd_width](
+                row, col * simd_width, mandelbrot_kernel[simd_width](c, iter)
             )
 
+    @parameter
     if parallel:
-        parallelForEachN[Pointer[mandelbrot_args[simd_width, h, w]], worker](
-            rt, h, args_address
-        )
+        parallelize[worker](rt, h)
     else:
         for row in range(h):
-            worker(row, args_address)
+            worker(row)
 
 
 @export
@@ -153,7 +117,7 @@ fn main():
     alias height = 4096
     alias iter = 1000
 
-    let vec = DynamicVector[__mlir_type[`!pop.scalar<`, int_type, `>`]](
+    let vec = DynamicVector[__mlir_type[`!pop.scalar<`, int_type.value, `>`]](
         width * height
     )
     let dptr = DTypePointer[int_type](vec.data.address)
@@ -161,23 +125,14 @@ fn main():
 
     @always_inline
     fn bench_parallel[simd_width: __mlir_type.index]():
-        let min_x: SIMD[simd_width, float_type] = -2.0
-        let max_x: SIMD[simd_width, float_type] = 0.47
-        let min_y: SIMD[simd_width, float_type] = -1.12
-        let max_y: SIMD[simd_width, float_type] = 1.12
+        let min_x = -2.0
+        let max_x = 0.47
+        let min_y = -1.12
+        let max_y = 1.12
 
-        var args = mandelbrot_args[simd_width, height, width](
-            m,
-            1,
-            min_x,
-            max_x,
-            min_y,
-            max_y,
+        mandelbrot[simd_width, height, width, iter, True](
+            m, 1, min_x, max_x, min_y, max_y, rt
         )
-        let args_address = Pointer[
-            mandelbrot_args[simd_width, height, width]
-        ].address_of(args)
-        mandelbrot[simd_width, height, width, iter](m, rt, args_address)
 
     var time: F32
     let ns_per_second: Int = 1_000_000_000
