@@ -102,7 +102,7 @@ fn _softmax_2_pass_step1[
         running_max = new_max
 
     return StaticTuple[2, __mlir_type[`!pop.scalar<`, type.value, `>`]](
-        running_max[0], running_sum[0]
+        running_max[0].value, running_sum[0].value
     )
 
 

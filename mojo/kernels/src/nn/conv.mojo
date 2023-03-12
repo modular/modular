@@ -134,7 +134,7 @@ struct ImageData[
             Returns:
                 The value stored at the given index position.
         """
-        return self.data.__getitem__(self._get_index(n, c, h, w))
+        return self.data[self._get_index(n, c, h, w)]
 
     fn __setitem__(self, n: Int, c: Int, h: Int, w: Int, value: SIMD[1, type]):
         """Writes the underlying data buffer based on the tensor index and under-
@@ -147,7 +147,7 @@ struct ImageData[
                 w(Int): Index on the width dimension.
                 value(SIMD[1]): The value to store at the given index position.
         """
-        self.data.__setitem__(self._get_index(n, c, h, w), value)
+        self.data[self._get_index(n, c, h, w)] = value
 
 
 @register_passable
@@ -559,26 +559,25 @@ struct Naive2dConvolution[
                     # Iterate on channels dimension.
                     for c_idx in range(self.input_shape.C):
                         # Accumulate product of input data filter data.
-                        value += self.input.__getitem__(
-                            output_idx[0],  # N
-                            c_idx,  # C
-                            input_image_index[0],  # H
-                            input_image_index[1],  # W
-                        ) * self.filter.__getitem__(
-                            output_idx[1],
-                            c_idx,
-                            r_idx,
-                            s_idx,  # F  # C  # R  # S
+                        value += (
+                            self.input[
+                                output_idx[0],  # N
+                                c_idx,  # C
+                                input_image_index[0],  # H
+                                input_image_index[1],  # W
+                            ]
+                            * self.filter[
+                                output_idx[1],
+                                c_idx,
+                                r_idx,
+                                s_idx,  # F  # C  # R  # S
+                            ]
                         )
 
         # Store the computed output at the given output position..
-        self.output.__setitem__(
-            output_idx[0],
-            output_idx[1],
-            output_idx[2],
-            output_idx[3],
-            value,
-        )
+        self.output[
+            output_idx[0], output_idx[1], output_idx[2], output_idx[3]
+        ] = value
 
 
 # ===----------------------------------------------------------------------=== #
@@ -903,7 +902,7 @@ struct PackIm2ColNCHW[
             var element = SIMD[1, type](0)
             if self._is_valid_input_imageIdx(i_image_idx):
                 # within valid bound, load data.
-                element = self.origin_image.__getitem__(
+                element = self.origin_image[
                     # [N,C,H,W]
                     Index(
                         self.batch_idx,
@@ -911,9 +910,9 @@ struct PackIm2ColNCHW[
                         i_image_idx[0],
                         i_image_idx[1],
                     )
-                )
+                ]
 
-            vector.__setitem__(vec_idx, element)
+            vector[vec_idx] = element
 
             # Increment row index
             w_o_idx += 1
@@ -1761,11 +1760,9 @@ struct ConvNHWCInnerLoopFilterPacked[
             if hi_wi >= Index(0, 0) and hi_wi < Index(
                 self.conv_shape.h, self.conv_shape.w
             ):
-                self.offset_table.__setitem__(
-                    row_idx, linear_offset.__as_mlir_index()
-                )
+                self.offset_table[row_idx] = linear_offset.__as_mlir_index()
             else:
-                self.offset_table.__setitem__(row_idx, -1)
+                self.offset_table[row_idx] = -1
 
     fn _initialize_c_tile(
         self,
@@ -1917,15 +1914,13 @@ struct ConvNHWCInnerLoopFilterPacked[
                 Value loaded from the translated address of image input.
         """
         if same_channel_index:
-            let linear_offset: Int = Int(
-                self.offset_table.__getitem__(row_idx).value
-            )
+            let linear_offset: Int = Int(self.offset_table[row_idx].value)
             if linear_offset == -1:
                 return SIMD[1, value_type](0)
             else:
-                self.offset_table.__setitem__(
-                    row_idx, (linear_offset + 1).__as_mlir_index()
-                )
+                self.offset_table[row_idx] = (
+                    linear_offset + 1
+                ).__as_mlir_index()
                 return self.input_base_pointer.load(linear_offset)
         else:
             let n_ho_wo = _m_to_n_ho_wo_nhwc(index_m_k[0], self.conv_shape)

@@ -339,7 +339,4 @@ fn gather[
     for i in range(output.dim[0]()):
         for j in range(output.dim[1]()):
             let idx: Int = Int.from_integral[indices_type](indices[j].value)
-            output.__setitem__(
-                StaticIntTuple[output_rank](i, j),
-                input[i, idx],
-            )
+            output[StaticIntTuple[output_rank](i, j)] = input[i, idx]

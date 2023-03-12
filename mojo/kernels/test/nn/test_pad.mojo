@@ -24,15 +24,15 @@ fn test_pad_1d():
     # Create an input matrix of the form
     # [1, 2, 3]
     var input = NDBuffer[1, in_shape, DType.index].stack_allocation()
-    input.__setitem__(StaticIntTuple[1](0), 1)
-    input.__setitem__(StaticIntTuple[1](1), 2)
-    input.__setitem__(StaticIntTuple[1](2), 3)
+    input[StaticIntTuple[1](0)] = 1
+    input[StaticIntTuple[1](1)] = 2
+    input[StaticIntTuple[1](2)] = 3
 
     # Create a padding array of the form
     # [1, 2]
     var paddings = Buffer[2, DType.index].stack_allocation()
-    paddings.__setitem__(0, 1)
-    paddings.__setitem__(1, 2)
+    paddings[0] = 1
+    paddings[1] = 2
 
     # Create an output matrix of the form
     # [0, 0, 0, 0, 0, 0]
@@ -69,18 +69,18 @@ fn test_pad_2d():
     # [[1, 2],
     #  [3, 4]]
     var input = NDBuffer[2, in_shape, DType.index].stack_allocation()
-    input.__setitem__(StaticIntTuple[2](0, 0), 1)
-    input.__setitem__(StaticIntTuple[2](0, 1), 2)
-    input.__setitem__(StaticIntTuple[2](1, 0), 3)
-    input.__setitem__(StaticIntTuple[2](1, 1), 4)
+    input[StaticIntTuple[2](0, 0)] = 1
+    input[StaticIntTuple[2](0, 1)] = 2
+    input[StaticIntTuple[2](1, 0)] = 3
+    input[StaticIntTuple[2](1, 1)] = 4
 
     # Create a padding array of the form
     # [1, 0, 1, 1]
     var paddings = Buffer[4, DType.index].stack_allocation()
-    paddings.__setitem__(0, 1)
-    paddings.__setitem__(1, 0)
-    paddings.__setitem__(2, 1)
-    paddings.__setitem__(3, 1)
+    paddings[0] = 1
+    paddings[1] = 0
+    paddings[2] = 1
+    paddings[3] = 1
 
     # Create an output matrix of the form
     # [[0, 0, 0, 0]
@@ -133,20 +133,20 @@ fn test_pad_3d():
     # [[[1, 2],
     #   [3, 4]]]
     var input = NDBuffer[3, in_shape, DType.index].stack_allocation()
-    input.__setitem__(StaticIntTuple[3](0, 0, 0), 1)
-    input.__setitem__(StaticIntTuple[3](0, 0, 1), 2)
-    input.__setitem__(StaticIntTuple[3](0, 1, 0), 3)
-    input.__setitem__(StaticIntTuple[3](0, 1, 1), 4)
+    input[StaticIntTuple[3](0, 0, 0)] = 1
+    input[StaticIntTuple[3](0, 0, 1)] = 2
+    input[StaticIntTuple[3](0, 1, 0)] = 3
+    input[StaticIntTuple[3](0, 1, 1)] = 4
 
     # Create a padding array of the form
     # [1, 0, 0, 1, 1, 1, 0]
     var paddings = Buffer[6, DType.index].stack_allocation()
-    paddings.__setitem__(0, 1)
-    paddings.__setitem__(1, 0)
-    paddings.__setitem__(2, 0)
-    paddings.__setitem__(3, 1)
-    paddings.__setitem__(4, 1)
-    paddings.__setitem__(5, 0)
+    paddings[0] = 1
+    paddings[1] = 0
+    paddings[2] = 0
+    paddings[3] = 1
+    paddings[4] = 1
+    paddings[5] = 0
 
     # Create an output matrix of the form
     # [[[0, 0, 0]

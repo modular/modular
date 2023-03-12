@@ -30,8 +30,8 @@ fn test_broadcast_same_shape():
         input_shape,
         DType.index,
     ].stack_allocation()
-    input.__setitem__(StaticIntTuple[3](0, 0, 0), 1)
-    input.__setitem__(StaticIntTuple[3](0, 1, 0), 2)
+    input[StaticIntTuple[3](0, 0, 0)] = 1
+    input[StaticIntTuple[3](0, 1, 0)] = 2
 
     # Create a 3D tensor of shape (1, 2, 1)
     var output = (
@@ -75,8 +75,8 @@ fn test_broadcast_single_axis():
         DType.index,
     ].stack_allocation()
 
-    input.__setitem__(StaticIntTuple[2](0, 0), 1)
-    input.__setitem__(StaticIntTuple[2](0, 1), 2)
+    input[StaticIntTuple[2](0, 0)] = 1
+    input[StaticIntTuple[2](0, 1)] = 2
 
     # Create a 2D tensor of shape (3, 2)
     var output = (
@@ -128,8 +128,8 @@ fn test_broadcast_multi_axes():
         DType.index,
     ].stack_allocation()
 
-    input.__setitem__(StaticIntTuple[3](0, 0, 0), 1)
-    input.__setitem__(StaticIntTuple[3](0, 1, 0), 2)
+    input[StaticIntTuple[3](0, 0, 0)] = 1
+    input[StaticIntTuple[3](0, 1, 0)] = 2
 
     # Create a 3D tensor of shape (2, 2, 3)
     var output = (
@@ -192,14 +192,14 @@ fn test_broadcast_multi_axes_nested():
         DType.index,
     ].stack_allocation()
 
-    input.__setitem__(StaticIntTuple[5](0, 0, 0, 0, 0), 1)
-    input.__setitem__(StaticIntTuple[5](0, 0, 0, 0, 1), 2)
-    input.__setitem__(StaticIntTuple[5](0, 0, 1, 0, 0), 3)
-    input.__setitem__(StaticIntTuple[5](0, 0, 1, 0, 1), 4)
-    input.__setitem__(StaticIntTuple[5](1, 0, 0, 0, 0), 5)
-    input.__setitem__(StaticIntTuple[5](1, 0, 0, 0, 1), 6)
-    input.__setitem__(StaticIntTuple[5](1, 0, 1, 0, 0), 7)
-    input.__setitem__(StaticIntTuple[5](1, 0, 1, 0, 1), 8)
+    input[StaticIntTuple[5](0, 0, 0, 0, 0)] = 1
+    input[StaticIntTuple[5](0, 0, 0, 0, 1)] = 2
+    input[StaticIntTuple[5](0, 0, 1, 0, 0)] = 3
+    input[StaticIntTuple[5](0, 0, 1, 0, 1)] = 4
+    input[StaticIntTuple[5](1, 0, 0, 0, 0)] = 5
+    input[StaticIntTuple[5](1, 0, 0, 0, 1)] = 6
+    input[StaticIntTuple[5](1, 0, 1, 0, 0)] = 7
+    input[StaticIntTuple[5](1, 0, 1, 0, 1)] = 8
 
     # Create a 5D tensor of shape (2, 2, 2, 2, 2)
     var output = (

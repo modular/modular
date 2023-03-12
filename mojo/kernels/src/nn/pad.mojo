@@ -147,11 +147,11 @@ fn _pad_impl[
 
     debug_assert(axis + 1 < rank, "axis is not within range")
 
-    let input_axis_stride = input_strides.load(axis)[0]
-    let output_axis_stride = output_strides.load(axis)[0]
+    let input_axis_stride = input_strides.load(axis)[0].value
+    let output_axis_stride = output_strides.load(axis)[0].value
 
-    var next_input_offset = input_offset
-    var next_output_offset = output_offset
+    var next_input_offset: Int = input_offset.value
+    var next_output_offset: Int = output_offset.value
     for i in range(axis_dim):
         let is_within_padding = (i < pre_pad) or (pre_pad + non_pad <= i)
         let next_pad_with_constant = pad_with_constant or is_within_padding
