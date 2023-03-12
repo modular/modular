@@ -729,7 +729,8 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       return {};
     }
 
-    // If the base is an lvalue, then we can return an lvalue to the field.
+    // If the base is an stored lvalue, then we can return an lvalue to the
+    // field.
     if (SLValue baseLV = baseVal.getIfSLValue()) {
       auto fieldPtr =
           emitter.builder->create<StructGEPOp>(mlirLoc, baseLV, fieldOp);
@@ -1522,13 +1523,8 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
   // If this is a memory-only struct, initialize the fields into the result
   // buffer.
   SLValue memoryOnlyBase;
-  if (!structOp.getIsRegisterPassable()) {
-    LValue lv =
-        dest.getLValueForResult(getLoc(), initType,
-                                /*allowIncompatibleTypes=*/false, emitter);
-    memoryOnlyBase = lv.getIfSLValue();
-    assert(memoryOnlyBase && "TODO(dlvalue): computed writeback");
-  }
+  if (!structOp.getIsRegisterPassable())
+    memoryOnlyBase = dest.getSLValueForResult(getLoc(), initType, emitter);
 
   DenseMap<StringAttr, ASTExprAnd<AnyValue>> fieldMapping;
   bool allInitializersPRValues = true;

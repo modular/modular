@@ -722,6 +722,38 @@ fn testWeirdArray(a: WeirdArray, idx: Int, f: F32):
   # CHECK: kgen.call {{.*}}__setitem__{{.*}}(%a, %idx, %idx, [[SEVENTEEN]])
   a[idx, idx] = 17
 
+# This is an array that has elements of MemoryOnlyInt.
+struct MemoryOnlyIntArray:
+  fn __getitem__(self&, x: Int) -> MemoryOnlyInt: pass
+  fn __setitem__(self&, x: Int, value: MemoryOnlyInt): pass
+
+# CHECK-LABEL: lit.func @"testMemoryOnlyIntArray
+fn testMemoryOnlyIntArray(arr&: MemoryOnlyIntArray, x: Int, moi: MemoryOnlyInt):
+  # CHECK: kgen.call {{.*}}__setitem__{{.*}}(%arr, %x, %moi)
+  arr[x] = moi
+  # CHECK: [[ANON:%.*]] = lit.varlet.decl "<anonymous>"
+  # CHECK: kgen.call {{.*}}__getitem__{{.*}}([[ANON]], %arr, %x)
+  # CHECK: kgen.call {{.*}}"__setitem__{{.*}}(%arr, %x, [[ANON]])
+  arr[x] = arr[x]
+
+  # Initialize in memory through a temp + setitem.
+  # CHECK: [[ANON:%.*]] = lit.varlet.decl "<anonymous>"
+  # CHECK: [[TMP:%.*]] = lit.struct.gep %3Canonymous3E_0[x]
+  # CHECK: %idx42 = index.constant 42
+  # CHECK: pop.store %idx42, [[TMP]]
+  # CHECK: kgen.call {{.*}}"__setitem__{{.*}}(%arr, %x, [[ANON]])
+  arr[x] = MemoryOnlyInt{x: 42}
+
+
+struct MyInlineIntInit:
+    var intVal: MemoryOnlyInt
+    # CHECK-LABEL: lit.func @"__new__($expressions::MyInlineIntInit=&,$expressions::MemoryOnlyInt)"
+    # CHECK-SAME: (%__result__: !pop.pointer<{{.*}}> byref_result, %intVal: {{.*}}byval_in_mem)
+    fn __new__(intVal: MemoryOnlyInt) -> Self:
+        # CHECK: %0 = lit.struct.gep %__result__[intVal]
+        # CHECK: kgen.call {{.*}}__clone__{{.*}}(%0, %intVal)
+        return Self{intVal: intVal}
+
 # CHECK-LABEL: lit.func @"chained_cmp
 fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
     # CHECK:      %[[CMP_A_B:.*]] = kgen.call @{{.*}}__lt__{{.*}}(%a, %b)

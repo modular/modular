@@ -149,6 +149,7 @@ ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
 /// value through it with emitResult.
 LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
                                      bool allowIncompatibleTypes,
+                                     bool requireSLValue,
                                      ExprEmitter &emitter) {
   // If we are inferring the type for a var or let declaration, then we can
   // always succeed and consume this ValueDest.
@@ -181,12 +182,16 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
 
   // If we have an lvalue already specified, return it.
   if (LValue lValue = dyn_cast<LValue>(representation)) {
-    // If asking for a buffer of this type, then we can directly return it.
-    SLValue slValue = lValue.getIfSLValue();
+    // If asking for a buffer of the type we happen to have, or if the client
+    // doesn't care if it matches, then we can directly return it.
     if (allowIncompatibleTypes ||
-        (slValue && slValue.getRValueType().isEqualCanon(resultType))) {
-      representation = NullRepresentation(); // Consumed!
-      return lValue;
+        lValue.getRValueType().isEqualCanon(resultType)) {
+      // If the client requires a stored LValue and we don't have one, don't
+      // consume it.
+      if (!requireSLValue || lValue.getIfSLValue()) {
+        representation = NullRepresentation(); // Consumed!
+        return lValue;
+      }
     }
 
     // Otherwise, create a temporary buffer.
@@ -219,6 +224,18 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
   // the initialization.
   return SLValue(emitter.builder->create<VarLetDeclOp>(
       emitter.translateLocation(loc), declIRType, nameAttr, /*isVar*/ 0));
+}
+
+/// Return an SLValue for this destination of the specified type that we can
+/// initialize.  This uses and consumes the destination if it matches the type
+/// of the value dest.
+SLValue ValueDest::getSLValueForResult(SMLoc loc, ASTType resultType,
+                                       ExprEmitter &emitter) {
+  LValue lv =
+      getLValueForResult(loc, resultType, /*allowIncompatibleTypes=*/false,
+                         /*requireSLValue=*/true, emitter);
+  assert(!lv || lv.getIfSLValue());
+  return lv.getIfSLValue();
 }
 
 //===----------------------------------------------------------------------===//
@@ -508,7 +525,7 @@ PRValue ExprEmitter::emitPRValue(ASTExprAnd<AnyValue> value,
 static AnyValue refineResultValue(AnyValue value, SMLoc loc,
                                   ExprEmitter &emitter) {
   Type valueType;
-  // Only CValues can be specialized. ORValues and CLValues don't have a type.
+  // Only CValues can be specialized. ORValues don't have a type.
   if (auto cValue = value.getIfCValue())
     valueType = cValue.getType();
   else
@@ -637,15 +654,11 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
     return crValue;
   }
 
-  // If we have an MRValue in the wrong spot, emit a __clone__ call into the
-  // destination using MBValue -> RValue conversion.
-  if (auto mrValue = crValue.getIfMRValue())
-    return emitLoadOfMBValue({MBValue(mrValue), expr}, dest);
-
-  // We know we have a SRValue or PRValue, and the destination is some kind of
-  // LValue.  Emit the value and figure out where to store it.
+  // We know we have an RValue and the destination is some kind of LValue.  Emit
+  // the dest to figure out where to store it.
   auto destLV = dest.getLValueForResult(expr->getLoc(), rvalueType,
-                                        /*allowIncompatibleTypes=*/true, *this);
+                                        /*allowIncompatibleTypes=*/true,
+                                        /*requireSLValue=*/false, *this);
   if (!destLV)
     return {};
 
@@ -659,6 +672,13 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
     emitNamedMethodCall(methodName, operands, ValueDest::none(),
                         CallSyntax::kSubscript, dlValue.expr);
     return crValue;
+  }
+
+  // If we have an MRValue in the wrong spot, emit a __clone__ call into the
+  // destination using MBValue -> RValue conversion.
+  if (auto mrValue = crValue.getIfMRValue()) {
+    dest = ValueDest(destLV, dest.getContext());
+    return emitLoadOfMBValue({MBValue(mrValue), expr}, dest);
   }
 
   SLValue destPtr = destLV.getIfSLValue();

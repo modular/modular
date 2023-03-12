@@ -93,7 +93,7 @@ public:
       : representation(target), context(context) {
     assert(target);
   }
-  ValueDest(SLValue dest, ExprContext context)
+  ValueDest(LValue dest, ExprContext context)
       : representation(dest), context(context) {}
   ValueDest(VarLetDeclOp dest, ExprContext context);
   ValueDest(ASTType requiredType, ExprContext context)
@@ -173,7 +173,14 @@ public:
   /// will not consume the ValueDest, so any user should reemit the ultimate
   /// value through it with emitResult.
   LValue getLValueForResult(SMLoc loc, ASTType resultType,
-                            bool allowIncompatibleTypes, ExprEmitter &emitter);
+                            bool allowIncompatibleTypes, bool requireSLValue,
+                            ExprEmitter &emitter);
+
+  /// Return an SLValue for this destination of the specified type that we can
+  /// initialize.  This uses and consumes the destination if it matches the type
+  /// of the value dest.
+  SLValue getSLValueForResult(SMLoc loc, ASTType resultType,
+                              ExprEmitter &emitter);
 
   /// When an error is emitted instead of generating IR, this method resets the
   /// ValueDest so it doesn't complain when emission is done.
@@ -280,8 +287,7 @@ public:
   // Emission helpers for various value classifications.
 
   /// Emit the specified value into the current destination if present.  This
-  /// accepts (and silently propagates) null values, and is a convenience helper
-  /// for working with getLValueForResult.
+  /// accepts (and silently propagates) null values.
   AnyValue emitResult(AnyValue value, const ExprNode *node, ValueDest &dest);
   CValue emitCResult(CValue value, const ExprNode *node, ValueDest &dest);
 
