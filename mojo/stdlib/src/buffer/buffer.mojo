@@ -723,8 +723,7 @@ fn partial_simd_load[
 
     # Fill values in valid range.
     for idx in range(effective_lbound, effective_rbound):
-        let storageVal = storage.load(idx)
-        vector.__setitem__(idx, storageVal)
+        vector[idx] = storage.load(idx)
 
     # Return the resulting vector.
     return vector.simd_load[width](0)
@@ -766,7 +765,7 @@ fn partial_simd_store[
 
     # Store the valid on the valid range.
     for idx in range(effective_lbound, effective_rbound):
-        let storageVal = vector.__getitem__(idx)
+        let storageVal = vector[idx]
         storage.store(idx, storageVal)
 
 
@@ -858,7 +857,7 @@ struct DynamicRankBuffer:
 
     fn dim(self, idx: Int) -> Int:
         debug_assert(idx < self.rank, "dimension index is out of bounds")
-        return self.shape.load(idx).__getitem__(0)
+        return self.shape.load(idx)[0].value
 
     fn _shape_to_static_tuple[
         rank: __mlir_type.index
