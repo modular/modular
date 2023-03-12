@@ -1194,6 +1194,12 @@ OverloadSet::OverloadSet(ASTType type, StringRef methodName,
                          LitSharedState &shared,
                          std::function<void()> errorHandler)
     : expr(expr), syntax(syntax) {
+
+  // If this is a previously-reported error, ignore and don't report an
+  // additional error.
+  if (isa<TypeCheckErrorType>(type.mlirType))
+    return;
+
   SMLoc callLoc = expr->getLoc();
 
   // First perform a lookup to see if there are any candidates.
@@ -1717,7 +1723,8 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
             argValAndExpr.expr->getLoc(), lv.getRValueType(), *this);
         // Emit the 'get' into the buffer.
         ValueDest bufferDest(buffer, EC_CallArgValue);
-        if (!emitRValue({lv, argValAndExpr.expr}, bufferDest)) {
+        auto rvResult = emitRValue({lv, argValAndExpr.expr}, bufferDest);
+        if (!rvResult) {
           bufferDest.resetForError();
           tmpBuffer.resetForError();
           return {};

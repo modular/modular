@@ -328,6 +328,15 @@ public:
   /// failure.
   ASTType emitExprType(const ExprNode *expr);
 
+  /// Emit a call to __new__ or __init__, returning an instance of the specified
+  /// type.  If `allowImplicitConversion` is true, the provided args are allowed
+  /// to implicitly convert to the expectations of the constructor signatures.
+  CValue emitConstructorCall(ASTType type, ArrayRef<ASTExprAnd<AnyValue>> args,
+                             const ExprNode *expr, CallSyntax syntax,
+                             ValueDest &dest,
+                             std::function<void()> errorHandler = {},
+                             bool allowImplicitConversion = true);
+
   /// Emit the specified expression as a condition, converting it to an MLIR I1
   /// value that we can test directly.  This reports and error and returns null
   /// on error.

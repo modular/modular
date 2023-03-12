@@ -312,26 +312,27 @@ AnyValue FloatLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 }
 
 AnyValue BoolLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
+  // Create the SIMDAttr to represent the constant.
+  auto boolDType = DTypeConstantAttr::get(emitter.getContext(), DType::kBool);
+  auto boolAttr = POP::SIMDAttr::get({value, KGENDType::kBool},
+                                     POP::SIMDType::get(1, boolDType));
+
+  // Convert this to an instance of BoolLiteral.
   ASTDecl &compilerBuiltinDecl = emitter.shared.getCompilerBuiltInDecl();
   LookupResult lookup = emitter.shared.lookupAndResolveDecl(
       "BoolLiteral", getLoc(), compilerBuiltinDecl,
       /*searchParentScopes=*/true);
 
-  //  BoolLiteral must be in scope since it is auto-imported.
-  assert(!lookup.isFailure() && !lookup.getIfSuccess().empty());
-  ASTDecl &decl = *lookup.getIfSuccess()[0];
-  assert(isa<StructDeclOp>(decl));
-  mlir::MLIRContext *ctx = emitter.getContext();
-  auto boolLiteralDeclType = DeclRefType::get(decl.getSymbolRef());
-  OverloadSet newVal(boolLiteralDeclType, "__new__", this,
-                     CallSyntax::kTypeCall, emitter.shared,
-                     /*No Error*/ {});
-  assert(!newVal.isNull() && "__new__ should be always there by construction");
-  auto boolDType = DTypeConstantAttr::get(ctx, DType::kBool);
-  auto boolAttr = POP::SIMDAttr::get({value, KGENDType::kBool},
-                                     POP::SIMDType::get(1, boolDType));
-  return newVal.emitCall(ASTExprAnd<AnyValue>{AnyValue(boolAttr), this}, dest,
-                         emitter);
+  // BoolLiteral must be in scope since it is auto-imported.
+  if (lookup.isFailure()) {
+    emitter.emitError(
+        getLoc(), "internal error: could not find builtin 'BoolLiteral' type");
+    return {};
+  }
+
+  return emitter.emitConstructorCall(lookup.getIfSuccess()[0]->getSelfType(),
+                                     {{AnyValue(boolAttr), this}}, this,
+                                     CallSyntax::kImplicitConvert, dest);
 }
 
 AnyValue SelfLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
@@ -1021,24 +1022,14 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // If the callee is a type value (as in `T()` or `T[123]()`), then this is an
   // invocation of the initializer for the type.
   if (ASTType calledType = calleeVal.getIfTypeValue()) {
-    auto emitNoNewError = [&]() {
-      if (calledType.getDecl(emitter.shared)) {
-        emitter.emitError(getLoc(), "")
-            << calledType << " does not have any `__new__` methods"
-            << callee->getRange();
-      } else {
-        emitter.emitError(getLoc(),
-                          "cannot use initializer syntax on MLIR type ")
-            << calledType << callee->getRange();
-      }
-    };
-
-    OverloadSet overloads(calledType, "__new__", this, CallSyntax::kTypeCall,
-                          emitter.shared, emitNoNewError);
-    if (overloads.isNull())
+    if (!calledType.getDecl(emitter.shared)) {
+      emitter.emitError(getLoc(), "cannot use initializer syntax on MLIR type ")
+          << calledType << callee->getRange();
       return {};
+    }
 
-    return overloads.emitCall(operands, dest, emitter);
+    return emitter.emitConstructorCall(calledType, operands, this,
+                                       CallSyntax::kTypeCall, dest);
   }
 
   // If this is an overloaded operand, resolve it and call the result.

@@ -313,7 +313,6 @@ struct EmptyStruct:
 # CHECK-NEXT: }
 
 # CHECK-LABEL: lit.struct.decl @OneLineStruct<size: @"$Int"::@Int> {
-@__memory_only
 struct OneLineStruct[size: Int]: pass; pass
 # CHECK-NEXT: }
 

@@ -7,7 +7,6 @@ from prolog import Error, F32, Int, SIMD, DType, object
 fn noop(): pass
 
 # CHECK-LABEL: lit.struct.decl @MemoryOnlyInt
-@__memory_only
 struct MemoryOnlyInt:
   var x: __mlir_type.index
 
@@ -26,14 +25,12 @@ struct MemoryOnlyInt:
     pass
 
 # This type is used to test implicit conversion from MemoryOnlyInt
-@__memory_only
 struct MemoryOnlyF64:
   var x: __mlir_type.f64
   fn __new__(value: MemoryOnlyInt) -> Self:
     return Self {x: 1.0}
 
 # CHECK-LABEL: lit.struct.decl @MemoryOnlyPair
-@__memory_only
 struct MemoryOnlyPair:
   var x: MemoryOnlyInt
   var y: Int

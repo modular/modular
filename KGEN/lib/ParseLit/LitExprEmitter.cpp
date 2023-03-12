@@ -571,36 +571,20 @@ static AnyValue emitConversionTo(CRValue value, const ExprNode *expr,
 
   auto errorHandler = [&]() {
     if (dest.getContext() == EC_Silent ||
-        isa<TypeCheckErrorType>(value.getType().mlirType) ||
-        isa<TypeCheckErrorType>(expectedType.mlirType))
+        isa<TypeCheckErrorType>(value.getType().mlirType))
       return;
 
-    auto diag = emitter.emitError(expr->getLoc())
-                << value.getRValueType() << " value cannot be converted to "
-                << expectedType << getContextMessage(dest.getContext())
-                << expr->getRange();
+    emitter.emitError(expr->getLoc())
+        << value.getRValueType() << " value cannot be converted to "
+        << expectedType << getContextMessage(dest.getContext())
+        << expr->getRange();
   };
 
-  // Check to see if we can invoke an __new__ method to convert it.
-  OverloadSet callee(expectedType, "__new__", expr,
-                     CallSyntax::kImplicitConvert, emitter.shared,
-                     errorHandler);
-  if (callee.isNull())
-    return {};
-
-  // If we have at least one candidate, we check to see if any of them can
-  // work. We disable implicit conversions though, to prevent converting
-  // T -> S -> U in one step.
-  if (failed(callee.filterOverloadSet({{value, expr}},
-                                      /*allowImplicitConversions=*/false,
-                                      /*emitDiagnosticOnFailure=*/false,
-                                      emitter))) {
-    errorHandler();
-    return {};
-  }
-
-  // Ok, cool we know it will succeed; do it.
-  return callee.emitCall({{value, expr}}, dest, emitter);
+  // We disable implicit conversions though, to prevent converting T -> S -> U
+  // in one step, and to avoid infinite conversion cycles.
+  return emitter.emitConstructorCall(
+      expectedType, {{value, expr}}, expr, CallSyntax::kImplicitConvert, dest,
+      errorHandler, /*allowImplicitConversion=*/false);
 }
 
 /// Emit the specified value into the current destination if present.  This
@@ -956,6 +940,45 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr) {
 
   emitError(expr->getLoc(), "expected a type, not a value") << expr->getRange();
   return {};
+}
+
+/// Emit a call to __new__ or __init__, returning an instance of the specified
+/// type.  If `allowImplicitConversion` is true, the provided args are allowed
+/// to implicitly convert to the expectations of the constructor signatures.
+CValue ExprEmitter::emitConstructorCall(ASTType type,
+                                        ArrayRef<ASTExprAnd<AnyValue>> args,
+                                        const ExprNode *expr, CallSyntax syntax,
+                                        ValueDest &dest,
+                                        std::function<void()> errorHandler,
+                                        bool allowImplicitConversion) {
+  // TODO: Add support for __init__.
+
+  bool hasCustomErrorReporting = true;
+  if (!errorHandler) {
+    errorHandler = [&]() {
+      auto diag = emitError(expr->getLoc(), "")
+                  << type << " does not implement a '__new__' method"
+                  << expr->getRange();
+    };
+    hasCustomErrorReporting = false;
+  }
+
+  // Check to see if we can invoke an __new__ method to convert it.
+  OverloadSet callee(type, "__new__", expr, CallSyntax::kImplicitConvert,
+                     shared, errorHandler);
+  if (callee.isNull())
+    return {};
+
+  if (failed(callee.filterOverloadSet(
+          args, allowImplicitConversion,
+          /*emitDiagnosticOnFailure=*/!hasCustomErrorReporting, *this))) {
+    if (hasCustomErrorReporting)
+      errorHandler();
+    return {};
+  }
+
+  // Ok, cool we know it will succeed; do it.
+  return callee.emitCall(args, dest, *this);
 }
 
 /// Emit the specified expression as a condition, converting it to an MLIR I1
