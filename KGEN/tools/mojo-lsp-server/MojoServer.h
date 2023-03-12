@@ -4,21 +4,21 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_TOOLS_LITLSPSERVER_LITSERVER_H
-#define KGEN_TOOLS_LITLSPSERVER_LITSERVER_H
+#ifndef KGEN_TOOLS_MOJO_LSP_SERVER_MOJO_SERVER_H
+#define KGEN_TOOLS_MOJO_LSP_SERVER_MOJO_SERVER_H
 
 #include "Support/LLVMForwardDecls.h"
 #include "mlir/Tools/lsp-server-support/Protocol.h"
 
 namespace M::KGEN::LIT {
 
-/// This class implements all of the LIT related functionality necessary for a
-/// language server. This class allows for keeping the LIT specific logic
+/// This class implements all of the Mojo related functionality necessary for a
+/// language server. This class allows for keeping the Mojo specific logic
 /// separate from the logic that involves LSP server/client communication.
-class LITServer {
+class MojoServer {
 public:
-  LITServer();
-  ~LITServer();
+  MojoServer();
+  ~MojoServer();
 
   /// Add the document, with the provided `version`, at the given URI. Any
   /// diagnostics emitted for this document will be added to `diagnostics`.
@@ -52,4 +52,4 @@ private:
 
 } // namespace M::KGEN::LIT
 
-#endif // KGEN_TOOLS_LITLSPSERVER_LITSERVER_H
+#endif // KGEN_TOOLS_MOJO_LSP_SERVER_MOJO_SERVER_H

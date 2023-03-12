@@ -234,7 +234,7 @@ export class MOJOContext implements vscode.Disposable {
                           workspaceFolder: vscode.WorkspaceFolder):
       Promise<string> {
     const serverPath = config.get<string>(serverSettingName, workspaceFolder);
-    return this.resolvePath(serverPath, 'lit-lsp-server', workspaceFolder);
+    return this.resolvePath(serverPath, 'mojo-lsp-server', workspaceFolder);
   }
 
   /**

@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "LITServer.h"
+#include "MojoServer.h"
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/ParseLit.h"
@@ -74,18 +74,18 @@ getLocationFromDiag(llvm::SourceMgr &mgr, const llvm::SMDiagnostic &diag,
 }
 
 //===----------------------------------------------------------------------===//
-// LITDocument
+// MojoDocument
 //===----------------------------------------------------------------------===//
 
 namespace {
-/// This class represents all of the information pertaining to a specific LIT
+/// This class represents all of the information pertaining to a specific Mojo
 /// document.
-struct LITDocument {
-  LITDocument(const lsp::URIForFile &uri, StringRef contents, int64_t version,
-              std::vector<lsp::Diagnostic> &diagnostics,
-              LLCL::Runtime &runtime);
-  LITDocument(const LITDocument &) = delete;
-  LITDocument &operator=(const LITDocument &) = delete;
+struct MojoDocument {
+  MojoDocument(const lsp::URIForFile &uri, StringRef contents, int64_t version,
+               std::vector<lsp::Diagnostic> &diagnostics,
+               LLCL::Runtime &runtime);
+  MojoDocument(const MojoDocument &) = delete;
+  MojoDocument &operator=(const MojoDocument &) = delete;
 
   /// Return the current version of this document.
   int64_t getVersion() const { return version; }
@@ -139,16 +139,16 @@ struct LITDocument {
 };
 } // namespace
 
-LITDocument::LITDocument(const lsp::URIForFile &uri, StringRef contents,
-                         int64_t version,
-                         std::vector<lsp::Diagnostic> &diagnostics,
-                         LLCL::Runtime &runtime)
+MojoDocument::MojoDocument(const lsp::URIForFile &uri, StringRef contents,
+                           int64_t version,
+                           std::vector<lsp::Diagnostic> &diagnostics,
+                           LLCL::Runtime &runtime)
     : contents(contents.str()), version(version), runtime(runtime) {
   initialize(uri, diagnostics);
 }
 
-void LITDocument::initialize(const lsp::URIForFile &uri,
-                             std::vector<lsp::Diagnostic> &diagnostics) {
+void MojoDocument::initialize(const lsp::URIForFile &uri,
+                              std::vector<lsp::Diagnostic> &diagnostics) {
   auto memBuffer = llvm::MemoryBuffer::getMemBufferCopy(contents, uri.file());
   if (!memBuffer) {
     lsp::Logger::error("Failed to create memory buffer for {0}", uri.file());
@@ -160,7 +160,7 @@ void LITDocument::initialize(const lsp::URIForFile &uri,
   sourceMgr.AddNewSourceBuffer(std::move(memBuffer), SMLoc());
 
   // Build a wrapper diagnostic handler for the source manager to capture
-  // diagnostics emitted when parsing the lit file.
+  // diagnostics emitted when parsing the mojo file.
   struct DiagHandlerContext {
     /// A set of diagnostic groups, where the first diagnostic is the main
     /// diagnostic and the rest are notes.
@@ -180,7 +180,7 @@ void LITDocument::initialize(const lsp::URIForFile &uri,
   DiagHandlerContext handlerCtx;
   sourceMgr.setDiagHandler(handlerFn, &handlerCtx);
 
-  // Parse the lit file. Ignore the result for now as we aren't doing anything
+  // Parse the mojo file. Ignore the result for now as we aren't doing anything
   // other than collecting diagnostics at this point.
   MLIRContext context(MLIRContext::Threading::DISABLED);
   mlir::TimingScope ts;
@@ -195,9 +195,9 @@ void LITDocument::initialize(const lsp::URIForFile &uri,
 }
 
 LogicalResult
-LITDocument::update(const lsp::URIForFile &uri, int64_t newVersion,
-                    ArrayRef<lsp::TextDocumentContentChangeEvent> changes,
-                    std::vector<lsp::Diagnostic> &diagnostics) {
+MojoDocument::update(const lsp::URIForFile &uri, int64_t newVersion,
+                     ArrayRef<lsp::TextDocumentContentChangeEvent> changes,
+                     std::vector<lsp::Diagnostic> &diagnostics) {
   if (failed(lsp::TextDocumentContentChangeEvent::applyTo(changes, contents))) {
     lsp::Logger::error("Failed to update contents of {0}", uri.file());
     return failure();
@@ -213,7 +213,7 @@ LITDocument::update(const lsp::URIForFile &uri, int64_t newVersion,
 }
 
 //===----------------------------------------------------------------------===//
-// LITDocument: Diagnostics
+// MojoDocument: Diagnostics
 //===----------------------------------------------------------------------===//
 
 /// Sanitizes a piece for presenting it in a synthesized fix message. Ensures
@@ -287,7 +287,7 @@ buildCodeActionFromSMFixit(const llvm::SMFixIt &fixit, llvm::SourceMgr &mgr,
 }
 
 /// Convert the given MLIR diagnostic to the LSP form.
-std::optional<lsp::Diagnostic> LITDocument::buildLspDiagnoticFromSMDiagnostic(
+std::optional<lsp::Diagnostic> MojoDocument::buildLspDiagnoticFromSMDiagnostic(
     llvm::SourceMgr &sourceMgr, ArrayRef<llvm::SMDiagnostic> diags,
     const lsp::URIForFile &uri) {
   const llvm::SMDiagnostic &mainDiag = diags[0];
@@ -297,7 +297,7 @@ std::optional<lsp::Diagnostic> LITDocument::buildLspDiagnoticFromSMDiagnostic(
     return std::nullopt;
 
   lsp::Diagnostic lspDiag;
-  lspDiag.source = "lit";
+  lspDiag.source = "mojo";
   lspDiag.category = "Parse Error";
   lspDiag.range = getRangeFromDiag(sourceMgr, mainDiag);
 
@@ -344,16 +344,16 @@ std::optional<lsp::Diagnostic> LITDocument::buildLspDiagnoticFromSMDiagnostic(
 }
 
 //===----------------------------------------------------------------------===//
-// LITDocument: Code Action
+// MojoDocument: Code Action
 //===----------------------------------------------------------------------===//
 
-void LITDocument::getCodeActions(const lsp::URIForFile &uri,
-                                 const lsp::Range &pos,
-                                 const lsp::CodeActionContext &context,
-                                 std::vector<lsp::CodeAction> &actions) {
+void MojoDocument::getCodeActions(const lsp::URIForFile &uri,
+                                  const lsp::Range &pos,
+                                  const lsp::CodeActionContext &context,
+                                  std::vector<lsp::CodeAction> &actions) {
   // Create actions for any diagnostics in this file.
   for (auto &diag : context.diagnostics) {
-    if (diag.source != "lit")
+    if (diag.source != "mojo")
       continue;
 
     // Find the fixits for this diagnostic.
@@ -368,33 +368,33 @@ void LITDocument::getCodeActions(const lsp::URIForFile &uri,
 }
 
 //===----------------------------------------------------------------------===//
-// LITServer::Impl
+// MojoServer::Impl
 //===----------------------------------------------------------------------===//
 
-struct LITServer::Impl {
+struct MojoServer::Impl {
   /// The runtime used when processing files.
   LLCL::Runtime runtime{LLCL::createMallocAllocator(),
                         LLCL::createThreadPoolWorkQueue()};
 
   /// The files held by the server, mapped by their URI file name.
-  llvm::StringMap<std::unique_ptr<LITDocument>> files;
+  llvm::StringMap<std::unique_ptr<MojoDocument>> files;
 };
 
 //===----------------------------------------------------------------------===//
-// LITServer
+// MojoServer
 //===----------------------------------------------------------------------===//
 
-LITServer::LITServer() : impl(std::make_unique<Impl>()) {}
-LITServer::~LITServer() = default;
+MojoServer::MojoServer() : impl(std::make_unique<Impl>()) {}
+MojoServer::~MojoServer() = default;
 
-void LITServer::addDocument(const lsp::URIForFile &uri, StringRef contents,
-                            int64_t version,
-                            std::vector<lsp::Diagnostic> &diagnostics) {
-  impl->files[uri.file()] = std::make_unique<LITDocument>(
+void MojoServer::addDocument(const lsp::URIForFile &uri, StringRef contents,
+                             int64_t version,
+                             std::vector<lsp::Diagnostic> &diagnostics) {
+  impl->files[uri.file()] = std::make_unique<MojoDocument>(
       uri, contents, version, diagnostics, impl->runtime);
 }
 
-void LITServer::updateDocument(
+void MojoServer::updateDocument(
     const lsp::URIForFile &uri,
     ArrayRef<lsp::TextDocumentContentChangeEvent> changes, int64_t version,
     std::vector<lsp::Diagnostic> &diagnostics) {
@@ -408,7 +408,7 @@ void LITServer::updateDocument(
     impl->files.erase(it);
 }
 
-std::optional<int64_t> LITServer::removeDocument(const lsp::URIForFile &uri) {
+std::optional<int64_t> MojoServer::removeDocument(const lsp::URIForFile &uri) {
   auto it = impl->files.find(uri.file());
   if (it == impl->files.end())
     return std::nullopt;
@@ -418,10 +418,10 @@ std::optional<int64_t> LITServer::removeDocument(const lsp::URIForFile &uri) {
   return version;
 }
 
-void LITServer::getCodeActions(const lsp::URIForFile &uri,
-                               const lsp::Range &pos,
-                               const lsp::CodeActionContext &context,
-                               std::vector<lsp::CodeAction> &actions) {
+void MojoServer::getCodeActions(const lsp::URIForFile &uri,
+                                const lsp::Range &pos,
+                                const lsp::CodeActionContext &context,
+                                std::vector<lsp::CodeAction> &actions) {
   auto fileIt = impl->files.find(uri.file());
   if (fileIt != impl->files.end())
     fileIt->second->getCodeActions(uri, pos, context, actions);

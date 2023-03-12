@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_LIB_LITLSP_LSPSERVER_H
-#define KGEN_LIB_LITLSP_LSPSERVER_H
+#ifndef KGEN_LIB_MOJO_LSP_LSPSERVER_H
+#define KGEN_LIB_MOJO_LSP_LSPSERVER_H
 
 namespace mlir {
 struct LogicalResult;
@@ -16,11 +16,11 @@ class JSONTransport;
 } // namespace mlir
 
 namespace M::KGEN::LIT {
-class LITServer;
+class MojoServer;
 
-/// Run the main loop using the given LIT server and transport.
-mlir::LogicalResult runLitLSPServer(LITServer &server,
-                                    mlir::lsp::JSONTransport &transport);
+/// Run the main loop using the given Mojo server and transport.
+mlir::LogicalResult runMojoLSPServer(MojoServer &server,
+                                     mlir::lsp::JSONTransport &transport);
 } // namespace M::KGEN::LIT
 
-#endif // KGEN_LIB_LITLSP_LSPSERVER_H
+#endif // KGEN_LIB_MOJO_LSP_LSPSERVER_H

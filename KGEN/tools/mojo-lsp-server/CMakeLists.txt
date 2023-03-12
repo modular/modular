@@ -4,10 +4,10 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_tool(lit-lsp-server
+add_modular_tool(mojo-lsp-server
   LSPServer.cpp
-  LITServer.cpp
-  lit-lsp-server.cpp
+  MojoServer.cpp
+  mojo-lsp-server.cpp
 
   LINK_LIBS PRIVATE
   KGENCLOptions
