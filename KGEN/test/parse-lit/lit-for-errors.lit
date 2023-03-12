@@ -11,7 +11,7 @@ struct my_iter_no_len:
     var list: MyList_range_no_len
 
     fn __clone__(self&) -> Self:
-      return Self{start: self.start, end: self.end, list: self.list}
+        return Self {start: self.start, end: self.end, list: self.list}
 
     fn __new__(list: MyList_range_no_len) -> my_iter_no_len:
         var result: my_iter_no_len
@@ -23,7 +23,7 @@ struct my_iter_no_len:
     fn __next__(self&: my_iter_no_len) -> Int:
         let result: Int = self.start
         self.start += 1
-        return self.list.__getitem__(result)
+        return self.list[result]
 
 
 struct MyList_range_no_len:
@@ -31,7 +31,7 @@ struct MyList_range_no_len:
     var size: Int
 
     fn __clone__(self&) -> Self:
-      return Self{start: self.start, size: self.size}
+        return Self {start: self.start, size: self.size}
 
     fn __new__(ptr: Pointer[Int], size: Int) -> MyList_range_no_len:
         var result: MyList_range_no_len
@@ -57,7 +57,7 @@ struct my_iter_no_next:
     var list: MyList_range_no_next
 
     fn __clone__(self&) -> Self:
-      return Self{start: self.start, end: self.end, list: self.list}
+        return Self {start: self.start, end: self.end, list: self.list}
 
     fn __new__(list: MyList_range_no_next) -> my_iter_no_next:
         var result: my_iter_no_next
@@ -77,7 +77,7 @@ struct MyList_range_no_next:
     var size: Int
 
     fn __clone__(self&) -> Self:
-      return Self{start: self.start, size: self.size}
+        return Self {start: self.start, size: self.size}
 
     fn __new__(ptr: Pointer[Int], size: Int) -> MyList_range_no_next:
         var result: MyList_range_no_next
@@ -102,7 +102,7 @@ struct MyList_no_iter:
     var size: Int
 
     fn __clone__(self&) -> Self:
-      return Self{start: self.start, size: self.size}
+        return Self {start: self.start, size: self.size}
 
     fn __new__(ptr: Pointer[Int], size: Int) -> MyList_no_iter:
         var result: MyList_no_iter
@@ -117,6 +117,7 @@ struct MyList_no_iter:
     fn __getitem__(self, idx: Int) -> Int:
         let ptr = self.start + idx
         return ptr.load()
+
 
 @register_passable
 struct MyInteger:
@@ -138,7 +139,7 @@ struct my_iter_wrong_int:
     var list: MyList_invalid_boxed_type
 
     fn __clone__(self&) -> Self:
-      return Self{start: self.start, end: self.end, list: self.list}
+        return Self {start: self.start, end: self.end, list: self.list}
 
     fn __new__(list: MyList_invalid_boxed_type) -> my_iter_wrong_int:
         var result: my_iter_wrong_int
@@ -150,7 +151,7 @@ struct my_iter_wrong_int:
     fn __next__(self&: my_iter_wrong_int) -> Int:
         let result: Int = self.start
         self.start += 1
-        return self.list.__getitem__(result)
+        return self.list[result]
 
     fn __len__(self: my_iter_wrong_int) -> MyInteger:
         if self.start < self.end:
@@ -163,7 +164,7 @@ struct MyList_invalid_boxed_type:
     var size: Int
 
     fn __clone__(self&) -> Self:
-      return Self{start: self.start, size: self.size}
+        return Self {start: self.start, size: self.size}
 
     fn __new__(ptr: Pointer[Int], size: Int) -> MyList_invalid_boxed_type:
         var result: MyList_invalid_boxed_type
@@ -195,24 +196,24 @@ fn main():
     my_pointer.address = buffer
 
     let my_list_no_len = MyList_range_no_len(my_pointer, Int(3))
-    my_list_no_len.__setitem__(0, 25)
-    my_list_no_len.__setitem__(1, 23)
-    my_list_no_len.__setitem__(2, 19)
+    my_list_no_len[0] = 25
+    my_list_no_len[1] = 23
+    my_list_no_len[2] = 19
 
     let my_list_no_next = MyList_range_no_next(my_pointer, Int(3))
-    my_list_no_next.__setitem__(0, 25)
-    my_list_no_next.__setitem__(1, 23)
-    my_list_no_next.__setitem__(2, 19)
+    my_list_no_next[0] = 25
+    my_list_no_next[1] = 23
+    my_list_no_next[2] = 19
 
     let my_list_no_iter = MyList_no_iter(my_pointer, Int(3))
-    my_list_no_iter.__setitem__(0, 25)
-    my_list_no_iter.__setitem__(1, 23)
-    my_list_no_iter.__setitem__(2, 19)
+    my_list_no_iter[0] = 25
+    my_list_no_iter[1] = 23
+    my_list_no_iter[2] = 19
 
     let my_list_invalid_int = MyList_invalid_boxed_type(my_pointer, Int(3))
-    my_list_invalid_int.__setitem__(0, 25)
-    my_list_invalid_int.__setitem__(1, 23)
-    my_list_invalid_int.__setitem__(2, 19)
+    my_list_invalid_int[0] = 25
+    my_list_invalid_int[1] = 23
+    my_list_invalid_int[2] = 19
 
     # expected-error @+1 {{'$lit-for-errors::my_iter_no_len' does not implement the '__len__' method}}
     for item in my_list_no_len:

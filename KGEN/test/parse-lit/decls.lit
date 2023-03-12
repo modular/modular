@@ -236,8 +236,8 @@ struct VaList[EltType: __mlir_type.`!kgen.mlirtype`]:
 fn variadics(*a: Int):
   let vaArgs = VaList[Int](a)
   let size = vaArgs.size()
-  let elt0 = vaArgs.__getitem__(0)
-  let elt1 = vaArgs.__getitem__(1)
+  let elt0 = vaArgs[0]
+  let elt1 = vaArgs[1]
 
 # CHECK: lit.func @"callVariadic
 fn callVariadic[p: Int](x: Int):
