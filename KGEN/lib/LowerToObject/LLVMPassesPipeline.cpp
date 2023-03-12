@@ -7,6 +7,7 @@
 #include "llvm/Analysis/OptimizationRemarkEmitter.h"
 #include "llvm/Analysis/ProfileSummaryInfo.h"
 #include "llvm/IR/PassManager.h"
+#include "llvm/Support/Process.h"
 #include "llvm/Transforms/AggressiveInstCombine/AggressiveInstCombine.h"
 #include "llvm/Transforms/Coroutines/CoroCleanup.h"
 #include "llvm/Transforms/Coroutines/CoroConditionalWrapper.h"
@@ -160,14 +161,17 @@ static FunctionPassManager buildFunctionSimplificationPipeline() {
   // inaccurate. The normal unroller doesn't pay attention to forced full unroll
   // attributes so we need to make sure and allow the full unroll pass to pay
   // attention to it.
-  LPM2.addPass(LoopFullUnrollPass(/*speedup optlevel*/ 3,
-                                  /* OnlyWhenForced= */ false,
-                                  /*ForgetAllSCEVInLoopUnroll*/ false));
+  if (llvm::sys::Process::GetEnv("MODULAR_ENABLE_LLVM_UNROLLING")
+          .value_or("ON") == "ON") {
+    LPM2.addPass(LoopFullUnrollPass(/*speedup optlevel*/ 3,
+                                    /* OnlyWhenForced= */ false,
+                                    /*ForgetAllSCEVInLoopUnroll*/ false));
 
-  // We provide the opt remark emitter pass for LICM to use. We only need to do
-  // this once as it is immutable.
-  FPM.addPass(
-      RequireAnalysisPass<OptimizationRemarkEmitterAnalysis, Function>());
+    // We provide the opt remark emitter pass for LICM to use. We only need to
+    // do this once as it is immutable.
+    FPM.addPass(
+        RequireAnalysisPass<OptimizationRemarkEmitterAnalysis, Function>());
+  }
   FPM.addPass(createFunctionToLoopPassAdaptor(std::move(LPM1),
                                               /*UseMemorySSA=*/true,
                                               /*UseBlockFrequencyInfo=*/true));
