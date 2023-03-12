@@ -42,9 +42,9 @@ fn draw_mandelbrot[
     let charset = Buffer[kunknown, DType.si8](sr.data.address, sr.length)
     for row in range(h):
         for col in range(w):
-            let v: Int = out.__getitem__(row, col).value
+            let v: Int = out[row, col].value
             if v > 0:
-                let p = charset.__getitem__(v % sr.length)
+                let p = charset[v % sr.length]
                 _printf[DType.si8]("%c", p.value)
             else:
                 print("0")
@@ -186,7 +186,7 @@ fn main():
     var pixel_sum: Int = 0
     for i in range(height):
         for j in range(width):
-            pixel_sum += m.__getitem__(i, j).value
+            pixel_sum += m[i, j].value
     print("pixel sum: ")
     print(pixel_sum)
 
@@ -207,6 +207,6 @@ fn main():
     time = time / ns_per_second
     print(time)
 
-    print(m.__getitem__(0, 0))
+    print(m[0, 0])
     # draw_mandelbrot[height, width](m)
     vec.__del__()
