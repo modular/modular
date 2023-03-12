@@ -58,6 +58,33 @@ fn _unroll_impl[
 
 
 # ===----------------------------------------------------------------------===#
+# unroll2
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn unroll2[
+    rows: Int,
+    cols: Int,
+    func: __mlir_type[
+        `!kgen.signature<<idx0: `, Int, `,idx1: `, Int, `>() -> !lit.none>`
+    ],
+]():
+    """
+    Reateadly evaluate a 2D nested loop where the outer iteration is rows and
+    the inner iteration is `cols`.
+    """
+
+    @always_inline
+    fn func_wrapper[idx: Int]():
+        alias idx0 = idx // cols
+        alias idx1 = idx % cols
+        func[idx0, idx1]()
+
+    unroll[rows * cols, func_wrapper]()
+
+
+# ===----------------------------------------------------------------------===#
 # Vectorize
 # ===----------------------------------------------------------------------===#
 
