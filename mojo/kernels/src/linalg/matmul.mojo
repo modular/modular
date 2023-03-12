@@ -230,11 +230,11 @@ fn naive_matmul[
         while n < gemm_shape.N:
             var c_val: SIMD[1, accum_type] = 0
             for k in range(gemm_shape.K):
-                let a_val = matrix_a.__getitem__(m, k).cast[accum_type]()
-                let b_val = matrix_b.__getitem__(k, n).cast[accum_type]()
+                let a_val = matrix_a[m, k].cast[accum_type]()
+                let b_val = matrix_b[k, n].cast[accum_type]()
                 c_val += a_val * b_val
             c_val = epilogue_elemwise_func[accum_type](m, n, c_val)
-            matrix_c.__setitem__(m, n, c_val)
+            matrix_c[m, n] = c_val
             n += 1
         let row = Buffer[__mlir_attr.`#kgen.unknown : index`, accum_type](
             c.data.offset(m * gemm_shape.N).address, n

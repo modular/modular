@@ -31,22 +31,22 @@ fn test_transpose_4x4():
         DType.index,
     ].stack_allocation()
 
-    matrix.__setitem__(StaticIntTuple[2](0, 0), 0)
-    matrix.__setitem__(StaticIntTuple[2](0, 1), 1)
-    matrix.__setitem__(StaticIntTuple[2](0, 2), 2)
-    matrix.__setitem__(StaticIntTuple[2](0, 3), 3)
-    matrix.__setitem__(StaticIntTuple[2](1, 0), 4)
-    matrix.__setitem__(StaticIntTuple[2](1, 1), 5)
-    matrix.__setitem__(StaticIntTuple[2](1, 2), 6)
-    matrix.__setitem__(StaticIntTuple[2](1, 3), 7)
-    matrix.__setitem__(StaticIntTuple[2](2, 0), 8)
-    matrix.__setitem__(StaticIntTuple[2](2, 1), 9)
-    matrix.__setitem__(StaticIntTuple[2](2, 2), 10)
-    matrix.__setitem__(StaticIntTuple[2](2, 3), 11)
-    matrix.__setitem__(StaticIntTuple[2](3, 0), 12)
-    matrix.__setitem__(StaticIntTuple[2](3, 1), 13)
-    matrix.__setitem__(StaticIntTuple[2](3, 2), 14)
-    matrix.__setitem__(StaticIntTuple[2](3, 3), 15)
+    matrix[StaticIntTuple[2](0, 0)] = 0
+    matrix[StaticIntTuple[2](0, 1)] = 1
+    matrix[StaticIntTuple[2](0, 2)] = 2
+    matrix[StaticIntTuple[2](0, 3)] = 3
+    matrix[StaticIntTuple[2](1, 0)] = 4
+    matrix[StaticIntTuple[2](1, 1)] = 5
+    matrix[StaticIntTuple[2](1, 2)] = 6
+    matrix[StaticIntTuple[2](1, 3)] = 7
+    matrix[StaticIntTuple[2](2, 0)] = 8
+    matrix[StaticIntTuple[2](2, 1)] = 9
+    matrix[StaticIntTuple[2](2, 2)] = 10
+    matrix[StaticIntTuple[2](2, 3)] = 11
+    matrix[StaticIntTuple[2](3, 0)] = 12
+    matrix[StaticIntTuple[2](3, 1)] = 13
+    matrix[StaticIntTuple[2](3, 2)] = 14
+    matrix[StaticIntTuple[2](3, 3)] = 15
 
     transpose_inplace[4, 4, DType.index](matrix)
 
@@ -115,7 +115,7 @@ fn test_transpose_8x8():
     for i in range(num_rows):
         for j in range(num_cols):
             let val = i * num_cols + j
-            matrix.__setitem__(StaticIntTuple[2](i, j), val.__as_mlir_index())
+            matrix[StaticIntTuple[2](i, j)] = val.__as_mlir_index()
 
     transpose_inplace[num_rows, num_cols, DType.index](matrix)
 
@@ -123,7 +123,7 @@ fn test_transpose_8x8():
     for ii in range(num_rows):
         for jj in range(num_cols):
             let expected: Int = jj * num_rows + ii
-            let actual = matrix[ii, jj][0]
+            let actual: Int = matrix[ii, jj][0].value
             # CHECK-NOT: Transpose 8x8 failed
             if expected != actual:
                 print("Transpose 8x8 failed\n")
@@ -145,7 +145,7 @@ fn test_transpose_16x16():
     for i in range(num_rows):
         for j in range(num_cols):
             let val = i * num_cols + j
-            matrix.__setitem__(StaticIntTuple[2](i, j), val.__as_mlir_index())
+            matrix[StaticIntTuple[2](i, j)] = val.__as_mlir_index()
 
     transpose_inplace[num_rows, num_cols, DType.index](matrix)
 
@@ -153,7 +153,7 @@ fn test_transpose_16x16():
     for ii in range(num_rows):
         for jj in range(num_cols):
             let expected: Int = jj * num_rows + ii
-            let actual = matrix[ii, jj][0]
+            let actual: Int = matrix[ii, jj][0].value
             # CHECK-NOT: Transpose 16x16 failed
             if expected != actual:
                 print("Transpose 16x16 failed\n")
@@ -169,21 +169,21 @@ fn test_transpose_2d_identity():
     #  [4, 5, 6],
     #  [7, 8, 9]]
     var input = NDBuffer[2, in_shape, DType.index].stack_allocation()
-    input.__setitem__(StaticIntTuple[2](0, 0), 1)
-    input.__setitem__(StaticIntTuple[2](0, 1), 2)
-    input.__setitem__(StaticIntTuple[2](0, 2), 3)
-    input.__setitem__(StaticIntTuple[2](1, 0), 4)
-    input.__setitem__(StaticIntTuple[2](1, 1), 5)
-    input.__setitem__(StaticIntTuple[2](1, 2), 6)
-    input.__setitem__(StaticIntTuple[2](2, 0), 7)
-    input.__setitem__(StaticIntTuple[2](2, 1), 8)
-    input.__setitem__(StaticIntTuple[2](2, 2), 9)
+    input[StaticIntTuple[2](0, 0)] = 1
+    input[StaticIntTuple[2](0, 1)] = 2
+    input[StaticIntTuple[2](0, 2)] = 3
+    input[StaticIntTuple[2](1, 0)] = 4
+    input[StaticIntTuple[2](1, 1)] = 5
+    input[StaticIntTuple[2](1, 2)] = 6
+    input[StaticIntTuple[2](2, 0)] = 7
+    input[StaticIntTuple[2](2, 1)] = 8
+    input[StaticIntTuple[2](2, 2)] = 9
 
     # Create an identity permutation array of the form
     # [0, 1]
     var perm = Buffer[2, DType.index].stack_allocation()
-    perm.__setitem__(0, 0)
-    perm.__setitem__(1, 1)
+    perm[0] = 0
+    perm[1] = 1
 
     # Create an output matrix of the form
     # [[-1, -1, -1],
@@ -230,21 +230,21 @@ fn test_transpose_2d():
     #  [4, 5, 6],
     #  [7, 8, 9]]
     var input = NDBuffer[2, in_shape, DType.index].stack_allocation()
-    input.__setitem__(StaticIntTuple[2](0, 0), 1)
-    input.__setitem__(StaticIntTuple[2](0, 1), 2)
-    input.__setitem__(StaticIntTuple[2](0, 2), 3)
-    input.__setitem__(StaticIntTuple[2](1, 0), 4)
-    input.__setitem__(StaticIntTuple[2](1, 1), 5)
-    input.__setitem__(StaticIntTuple[2](1, 2), 6)
-    input.__setitem__(StaticIntTuple[2](2, 0), 7)
-    input.__setitem__(StaticIntTuple[2](2, 1), 8)
-    input.__setitem__(StaticIntTuple[2](2, 2), 9)
+    input[StaticIntTuple[2](0, 0)] = 1
+    input[StaticIntTuple[2](0, 1)] = 2
+    input[StaticIntTuple[2](0, 2)] = 3
+    input[StaticIntTuple[2](1, 0)] = 4
+    input[StaticIntTuple[2](1, 1)] = 5
+    input[StaticIntTuple[2](1, 2)] = 6
+    input[StaticIntTuple[2](2, 0)] = 7
+    input[StaticIntTuple[2](2, 1)] = 8
+    input[StaticIntTuple[2](2, 2)] = 9
 
     # Create a permutation array of the form
     # [1, 0]
     var perm = Buffer[2, DType.index].stack_allocation()
-    perm.__setitem__(0, 1)
-    perm.__setitem__(1, 0)
+    perm[0] = 1
+    perm[1] = 0
 
     # Create an output matrix of the form
     # [[-1, -1, -1],
@@ -292,25 +292,25 @@ fn test_transpose_3d_identity():
     #  [[7, 8, 9],
     #   [10, 11, 12]]]
     var input = NDBuffer[3, in_shape, DType.index].stack_allocation()
-    input.__setitem__(StaticIntTuple[3](0, 0, 0), 1)
-    input.__setitem__(StaticIntTuple[3](0, 0, 1), 2)
-    input.__setitem__(StaticIntTuple[3](0, 0, 2), 3)
-    input.__setitem__(StaticIntTuple[3](0, 1, 0), 4)
-    input.__setitem__(StaticIntTuple[3](0, 1, 1), 5)
-    input.__setitem__(StaticIntTuple[3](0, 1, 2), 6)
-    input.__setitem__(StaticIntTuple[3](1, 0, 0), 7)
-    input.__setitem__(StaticIntTuple[3](1, 0, 1), 8)
-    input.__setitem__(StaticIntTuple[3](1, 0, 2), 9)
-    input.__setitem__(StaticIntTuple[3](1, 1, 0), 10)
-    input.__setitem__(StaticIntTuple[3](1, 1, 1), 11)
-    input.__setitem__(StaticIntTuple[3](1, 1, 2), 12)
+    input[StaticIntTuple[3](0, 0, 0)] = 1
+    input[StaticIntTuple[3](0, 0, 1)] = 2
+    input[StaticIntTuple[3](0, 0, 2)] = 3
+    input[StaticIntTuple[3](0, 1, 0)] = 4
+    input[StaticIntTuple[3](0, 1, 1)] = 5
+    input[StaticIntTuple[3](0, 1, 2)] = 6
+    input[StaticIntTuple[3](1, 0, 0)] = 7
+    input[StaticIntTuple[3](1, 0, 1)] = 8
+    input[StaticIntTuple[3](1, 0, 2)] = 9
+    input[StaticIntTuple[3](1, 1, 0)] = 10
+    input[StaticIntTuple[3](1, 1, 1)] = 11
+    input[StaticIntTuple[3](1, 1, 2)] = 12
 
     # Create an identity permutation array of the form
     # [0, 1, 2]
     var perm = Buffer[3, DType.index].stack_allocation()
-    perm.__setitem__(0, 0)
-    perm.__setitem__(1, 1)
-    perm.__setitem__(2, 2)
+    perm[0] = 0
+    perm[1] = 1
+    perm[2] = 2
 
     # Create an output matrix of the form
     # [[[-1, -1, -1],
@@ -366,25 +366,25 @@ fn test_transpose_3d():
     #  [[7, 8, 9],
     #   [10, 11, 12]]]
     var input = NDBuffer[3, in_shape, DType.index].stack_allocation()
-    input.__setitem__(StaticIntTuple[3](0, 0, 0), 1)
-    input.__setitem__(StaticIntTuple[3](0, 0, 1), 2)
-    input.__setitem__(StaticIntTuple[3](0, 0, 2), 3)
-    input.__setitem__(StaticIntTuple[3](0, 1, 0), 4)
-    input.__setitem__(StaticIntTuple[3](0, 1, 1), 5)
-    input.__setitem__(StaticIntTuple[3](0, 1, 2), 6)
-    input.__setitem__(StaticIntTuple[3](1, 0, 0), 7)
-    input.__setitem__(StaticIntTuple[3](1, 0, 1), 8)
-    input.__setitem__(StaticIntTuple[3](1, 0, 2), 9)
-    input.__setitem__(StaticIntTuple[3](1, 1, 0), 10)
-    input.__setitem__(StaticIntTuple[3](1, 1, 1), 11)
-    input.__setitem__(StaticIntTuple[3](1, 1, 2), 12)
+    input[StaticIntTuple[3](0, 0, 0)] = 1
+    input[StaticIntTuple[3](0, 0, 1)] = 2
+    input[StaticIntTuple[3](0, 0, 2)] = 3
+    input[StaticIntTuple[3](0, 1, 0)] = 4
+    input[StaticIntTuple[3](0, 1, 1)] = 5
+    input[StaticIntTuple[3](0, 1, 2)] = 6
+    input[StaticIntTuple[3](1, 0, 0)] = 7
+    input[StaticIntTuple[3](1, 0, 1)] = 8
+    input[StaticIntTuple[3](1, 0, 2)] = 9
+    input[StaticIntTuple[3](1, 1, 0)] = 10
+    input[StaticIntTuple[3](1, 1, 1)] = 11
+    input[StaticIntTuple[3](1, 1, 2)] = 12
 
     # Create a identity permutation array of the form
     # [2, 0, 1]
     var perm = Buffer[3, DType.index].stack_allocation()
-    perm.__setitem__(0, 2)
-    perm.__setitem__(1, 0)
-    perm.__setitem__(2, 1)
+    perm[0] = 2
+    perm[1] = 0
+    perm[2] = 1
 
     # Create an output matrix of the form
     # [[[-1, -1, -1],
@@ -442,25 +442,25 @@ fn test_transpose_si64():
     #  [[7, 8, 9],
     #   [10, 11, 12]]]
     var input = NDBuffer[3, in_shape, DType.si64].stack_allocation()
-    input.__setitem__(StaticIntTuple[3](0, 0, 0), 1)
-    input.__setitem__(StaticIntTuple[3](0, 0, 1), 2)
-    input.__setitem__(StaticIntTuple[3](0, 0, 2), 3)
-    input.__setitem__(StaticIntTuple[3](0, 1, 0), 4)
-    input.__setitem__(StaticIntTuple[3](0, 1, 1), 5)
-    input.__setitem__(StaticIntTuple[3](0, 1, 2), 6)
-    input.__setitem__(StaticIntTuple[3](1, 0, 0), 7)
-    input.__setitem__(StaticIntTuple[3](1, 0, 1), 8)
-    input.__setitem__(StaticIntTuple[3](1, 0, 2), 9)
-    input.__setitem__(StaticIntTuple[3](1, 1, 0), 10)
-    input.__setitem__(StaticIntTuple[3](1, 1, 1), 11)
-    input.__setitem__(StaticIntTuple[3](1, 1, 2), 12)
+    input[StaticIntTuple[3](0, 0, 0)] = 1
+    input[StaticIntTuple[3](0, 0, 1)] = 2
+    input[StaticIntTuple[3](0, 0, 2)] = 3
+    input[StaticIntTuple[3](0, 1, 0)] = 4
+    input[StaticIntTuple[3](0, 1, 1)] = 5
+    input[StaticIntTuple[3](0, 1, 2)] = 6
+    input[StaticIntTuple[3](1, 0, 0)] = 7
+    input[StaticIntTuple[3](1, 0, 1)] = 8
+    input[StaticIntTuple[3](1, 0, 2)] = 9
+    input[StaticIntTuple[3](1, 1, 0)] = 10
+    input[StaticIntTuple[3](1, 1, 1)] = 11
+    input[StaticIntTuple[3](1, 1, 2)] = 12
 
     # Create a identity permutation array of the form
     # [2, 1, 0]
     var perm = Buffer[3, DType.index].stack_allocation()
-    perm.__setitem__(0, 2)
-    perm.__setitem__(1, 1)
-    perm.__setitem__(2, 0)
+    perm[0] = 2
+    perm[1] = 1
+    perm[2] = 0
 
     # Create an output matrix of the form
     # [[[-1, -1, -1],

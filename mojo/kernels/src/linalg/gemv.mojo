@@ -76,7 +76,7 @@ fn gemv[
         for ii in range(row_block_size):
             let accum_idx = Index(ii, 0)
             let curr_accum = accums.simd_load[col_block_size](accum_idx)
-            scalar_accums.__setitem__(ii, curr_accum.reduce_add())
+            scalar_accums[ii] = curr_accum.reduce_add()
 
         # Store the results
         out.simd_store[row_block_size](
@@ -98,5 +98,5 @@ fn gemv[
             simd_accum = row_chunk.fma(col_chunk, simd_accum)
 
             col_idx += col_block_size
-        out.__setitem__(row_idx, simd_accum.reduce_add())
+        out[row_idx] = simd_accum.reduce_add()
         row_idx += 1

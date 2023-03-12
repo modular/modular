@@ -307,8 +307,8 @@ fn transpose_inplace[
     for i in range(rows):
         for j in range(i + 1, cols):
             let tmp = buf[i, j]
-            buf.__setitem__(StaticIntTuple[2](i, j), buf[j, i])
-            buf.__setitem__(StaticIntTuple[2](j, i), tmp)
+            buf[StaticIntTuple[2](i, j)] = buf[j, i]
+            buf[StaticIntTuple[2](j, i)] = tmp
 
 
 fn _permute_data[
@@ -323,7 +323,7 @@ fn _permute_data[
     Ensures that output[i] = input[perms[i]] for i ∈ [0, size)
     """
     for axis in range(size):
-        let perm_axis = perms.load(axis)[0]
+        let perm_axis = perms.load(axis)[0].value
         let perm_data = input.load(perm_axis)
         output.store(axis, perm_data)
 
@@ -340,7 +340,7 @@ fn _fill_strides[
     Note that `buf` is only used for querying its dimensions.
     """
     assert_param[rank > 0]()
-    strides.__setitem__(rank - 1, 1)
+    strides[rank - 1] = 1
 
     @always_inline
     fn _fill_stride_at_idx[idx: Int]():
@@ -348,7 +348,7 @@ fn _fill_strides[
         let next_axis_stride = strides[axis + 1]
         let next_axis_dim = buf.dim[axis + 1]()
         let curr_axis_stride = next_axis_stride * next_axis_dim
-        strides.__setitem__(axis, curr_axis_stride)
+        strides[axis] = curr_axis_stride
 
     unroll[rank - 1, _fill_stride_at_idx]()
 
@@ -437,8 +437,8 @@ fn _copy_with_strides[
     debug_assert(axis + 1 <= rank, "out of range")
 
     let axis_dim = output.dim(axis)
-    let input_axis_stride = input_strides.load(axis)[0]
-    let output_axis_stride = output_strides.load(axis)[0]
+    let input_axis_stride: Int = input_strides.load(axis)[0].value
+    let output_axis_stride: Int = output_strides.load(axis)[0].value
 
     if axis + 1 == rank:
         # TODO speed this up if output_axis_stride is 1, i.e., contiguous?

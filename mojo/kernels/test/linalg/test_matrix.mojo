@@ -43,7 +43,7 @@ fn test_matrix_static():
         create_kgen_list[__mlir_type.index](4, 4), DType.si32, False
     ](a.data)
     for i in range(16):
-        a.__setitem__(i, i)
+        a[i] = i
     test(m)
 
 
@@ -58,7 +58,7 @@ fn test_matrix_dynamic():
         create_kgen_list[__mlir_type.index](4, 4), DType.si32, False
     ](vec.data)
     for i in range(16):
-        a.__setitem__(i, i)
+        a[i] = i
     test(m)
     vec.__del__()
 

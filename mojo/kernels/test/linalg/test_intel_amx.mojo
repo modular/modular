@@ -43,7 +43,7 @@ fn print_buffer[n: Int, type: DType](a_ptr: DTypePointer[void]):
     for i in range(n):
         let v = __mlir_op.`pop.cast`[
             _type:int32_pop,
-        ](a.__getitem__(i).value)
+        ](a[i].value)
         print(v)
 
 
@@ -54,7 +54,7 @@ fn print_matrix[m: Int, n: Int, type: DType](a_ptr: DTypePointer[void]):
         for j in range(n):
             let ai = __mlir_op.`pop.cast`[
                 _type:int32_pop,
-            ](a.__getitem__(n * i + j).value)
+            ](a[n * i + j].value)
             print(ai)
 
 
@@ -86,8 +86,8 @@ fn init_matrices(
     let b2 = Buffer[1024, DType.si8].stack_allocation()
 
     for i in range(1024):
-        a.__setitem__(i, SIMD[1, DType.si8](i & 127))
-        b2.__setitem__(i, SIMD[1, DType.si8](i & 127))
+        a[i] = SIMD[1, DType.si8](i & 127)
+        b2[i] = SIMD[1, DType.si8](i & 127)
 
     memset_zero[DType.si32](c.data, 1024)
     memset_zero[DType.si32](c2.data, 1024)

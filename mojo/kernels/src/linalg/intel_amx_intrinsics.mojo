@@ -180,17 +180,17 @@ fn _tile_dpbssd_emulated(
     for i in range(16):
         for j in range(16):
             for l in range(16):
-                let ai0 = a.__getitem__(i, 4 * l + 0).cast[DType.si32]()
-                let ai1 = a.__getitem__(i, 4 * l + 1).cast[DType.si32]()
-                let ai2 = a.__getitem__(i, 4 * l + 2).cast[DType.si32]()
-                let ai3 = a.__getitem__(i, 4 * l + 3).cast[DType.si32]()
-                let bi0 = b.__getitem__(l, 4 * j + 0).cast[DType.si32]()
-                let bi1 = b.__getitem__(l, 4 * j + 1).cast[DType.si32]()
-                let bi2 = b.__getitem__(l, 4 * j + 2).cast[DType.si32]()
-                let bi3 = b.__getitem__(l, 4 * j + 3).cast[DType.si32]()
-                var cv = c.__getitem__(i, j)
+                let ai0 = a[i, 4 * l + 0].cast[DType.si32]()
+                let ai1 = a[i, 4 * l + 1].cast[DType.si32]()
+                let ai2 = a[i, 4 * l + 2].cast[DType.si32]()
+                let ai3 = a[i, 4 * l + 3].cast[DType.si32]()
+                let bi0 = b[l, 4 * j + 0].cast[DType.si32]()
+                let bi1 = b[l, 4 * j + 1].cast[DType.si32]()
+                let bi2 = b[l, 4 * j + 2].cast[DType.si32]()
+                let bi3 = b[l, 4 * j + 3].cast[DType.si32]()
+                var cv = c[i, j]
                 cv += ai0 * bi0
                 cv += ai1 * bi1
                 cv += ai2 * bi2
                 cv += ai3 * bi3
-                c.__setitem__(i, j, cv)
+                c[i, j] = cv
