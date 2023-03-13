@@ -8,7 +8,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: linux, intel_amx
-# RUN: lit %s | FileCheck %s
+# RUN: mojo %s | FileCheck %s
 
 from DType import DType
 
