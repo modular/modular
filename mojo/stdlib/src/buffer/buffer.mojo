@@ -326,7 +326,7 @@ fn _compute_ndbuffer_offset[
     rank: __mlir_type.index,
     shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
     type: DType,
-](buf: NDBuffer[rank, shape, type], idx: VariadicList[Int]) -> Int:
+](buf: NDBuffer[rank, shape, type], index: VariadicList[Int]) -> Int:
     """Computes the NDBuffer's offset using the index positions provided.
 
     Args:
@@ -334,7 +334,7 @@ fn _compute_ndbuffer_offset[
         shape (kgen.list<index[rank]>): The shape of the NDBuffer.
         type (dtype): The element-type of the NDBuffer.
         buf (NDBuffer[rank, shape, type]): The NDBuffer.
-        idx (VariadicList[index]): The index positions.
+        index (VariadicList[index]): The index positions.
 
     Returns:
         Int: The offset into the NDBuffer given the indices.
@@ -346,11 +346,15 @@ fn _compute_ndbuffer_offset[
 
     @parameter
     if rank == 1:
-        return idx[0]
+        return index[0]
 
-    var result: Int = idx[0]
-    for i in range(1, rank):
-        result = fma(buf.dim(i), result, idx[i])
+    var result: Int = index[0]
+
+    @always_inline
+    fn body[idx: Int]():
+        result = fma(buf.dim(idx + 1), result, index[idx + 1])
+
+    unroll[rank - 1, body]()
     return result
 
 
@@ -379,7 +383,8 @@ fn _compute_ndbuffer_offset[
     shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
     type: DType,
 ](
-    buf: NDBuffer[rank, shape, type], idx: StaticTuple[rank, __mlir_type.index]
+    buf: NDBuffer[rank, shape, type],
+    index: StaticTuple[rank, __mlir_type.index],
 ) -> Int:
     """Computes the NDBuffer's offset using the index positions provided.
 
@@ -388,7 +393,7 @@ fn _compute_ndbuffer_offset[
         shape (kgen.list<index[rank]>): The shape of the NDBuffer.
         type (dtype): The element-type of the NDBuffer.
         buf (NDBuffer[rank, shape, type]): The NDBuffer.
-        idx (StaticTuple[rank, index]): The index positions.
+        index (StaticTuple[rank, index]): The index positions.
 
     Returns:
         Int: The offset into the NDBuffer given the indices.
@@ -400,11 +405,15 @@ fn _compute_ndbuffer_offset[
 
     @parameter
     if rank == 1:
-        return idx[0]
+        return index[0]
 
-    var result: Int = idx[0]
-    for i in range(1, rank):
-        result = fma(buf.dim(i), result, idx[i])
+    var result: Int = index[0]
+
+    @always_inline
+    fn body[idx: Int]():
+        result = fma(buf.dim(idx + 1), result, index[idx + 1])
+
+    unroll[rank - 1, body]()
     return result
 
 
