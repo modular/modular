@@ -1,3 +1,9 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
 # RUN: kgen-translate -import-lit -verify-diagnostics -split-input-file %s
 
 struct Crash1[XXX: __mlir_type.index]:

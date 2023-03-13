@@ -1,3 +1,9 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
 # RUN: kgen-translate -import-lit %s -I %S/../lit-examples/ -verify-diagnostics | FileCheck %s
 
 from prolog import assert_param, Int, SIMD

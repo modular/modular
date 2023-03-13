@@ -1,3 +1,9 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
 # RUN: kgen-translate -import-lit -I %S -split-input-file -debug-level=full -mlir-print-debuginfo %s -I %S/../lit-examples/ | FileCheck %s
 
 from prolog import Int
@@ -19,9 +25,9 @@ fn callerFn[rows: __mlir_type.index](arg0: CalledStruct[rows]):
 
 # CHECK-DAG: ![[INT_TYPE:.*]] = !debuginfo.unresolved<!kgen.declref<@"$Int"::@Int>>
 # CHECK-DAG: ![[SP_TYPE:.*]] = !debuginfo.subroutine<(![[INT_TYPE]], ![[INT_TYPE]]) -> (![[INT_TYPE]]): DW_CC_normal>
-# CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = "power", linkageName = "power($Int::Int,$Int::Int)", file = #{{.*}}, line = 27, scopeLine = 27, subprogramFlags = "Definition|Optimized"> : ![[SP_TYPE]]
-# CHECK-DAG: #[[LHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "lhs", file = #{{.*}}, line = 27, arg = 1> : ![[INT_TYPE]]
-# CHECK-DAG: #[[RHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "rhs", file = #{{.*}}, line = 27, arg = 2> : ![[INT_TYPE]]
+# CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = "power", linkageName = "power($Int::Int,$Int::Int)", file = #{{.*}}, line = 33, scopeLine = 33, subprogramFlags = "Definition|Optimized"> : ![[SP_TYPE]]
+# CHECK-DAG: #[[LHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "lhs", file = #{{.*}}, line = 33, arg = 1> : ![[INT_TYPE]]
+# CHECK-DAG: #[[RHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "rhs", file = #{{.*}}, line = 33, arg = 2> : ![[INT_TYPE]]
 
 # CHECK-LABEL: lit.func @"power($Int::Int,$Int::Int)"(
 fn power(lhs: Int, rhs: Int) -> Int:

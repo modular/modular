@@ -1,3 +1,9 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
 # RUN: kgen-translate -import-lit -verify-diagnostics %s -I %S/../lit-examples/
 
 from prolog import DType, Error, F32, Int, object
