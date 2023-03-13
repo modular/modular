@@ -123,12 +123,9 @@ fn gather_reduce[
             let next_idx = indices._offset(
                 StaticIntTuple[indices_rank](i, j)
             ).load()
-            # TODO: Restore. Currently this gets a
-            # "immarg operand has non-immediate parameter" Error message from
-            # LLVM.
-            # input.prefetch[
-            #     PrefetchOptions().for_read().high_locality().to_data_cache()
-            # ]((next_idx + prefetch_offset).value, 0)
+            input.prefetch[
+                PrefetchOptions().for_read().high_locality().to_data_cache()
+            ]((next_idx + prefetch_offset).value, 0)
 
             @always_inline
             fn _simd_gather[simd_width: Int](k: Int):
@@ -218,19 +215,16 @@ fn gather[
         let row_size = input.dim[1]()
 
         for i in range(start_offset, end_offset):
-            # TODO: Restore. Currently this gets a
-            # "immarg operand has non-immediate parameter" Error message from
-            # LLVM.
-            # input.prefetch[
-            #     PrefetchOptions().for_read().high_locality().to_data_cache()
-            # ](
-            #     (
-            #         Int.from_integral[indices_type](
-            #             indices[i + prefetch_offset].value
-            #         )
-            #     ).value,
-            #     0,
-            # )
+            input.prefetch[
+                PrefetchOptions().for_read().high_locality().to_data_cache()
+            ](
+                (
+                    Int.from_integral[indices_type](
+                        indices[i + prefetch_offset].value
+                    )
+                ).value,
+                0,
+            )
 
             let output_row_ptr = output.data.offset(i * row_size)
             let input_row_ptr = input.data.offset(
