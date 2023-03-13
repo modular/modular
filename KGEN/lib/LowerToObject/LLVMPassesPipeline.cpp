@@ -58,7 +58,6 @@
 #include "llvm/Transforms/Scalar/LoopRotation.h"
 #include "llvm/Transforms/Scalar/LoopSimplifyCFG.h"
 #include "llvm/Transforms/Scalar/LoopSink.h"
-#include "llvm/Transforms/Scalar/LoopUnrollPass.h"
 #include "llvm/Transforms/Scalar/LowerConstantIntrinsics.h"
 #include "llvm/Transforms/Scalar/LowerExpectIntrinsic.h"
 #include "llvm/Transforms/Scalar/MemCpyOptimizer.h"
@@ -156,22 +155,6 @@ static FunctionPassManager buildFunctionSimplificationPipeline() {
 
   LPM2.addPass(LoopDeletionPass());
 
-  // Do not enable unrolling in PreLinkThinLTO phase during sample PGO
-  // because it changes IR to makes profile annotation in back compile
-  // inaccurate. The normal unroller doesn't pay attention to forced full unroll
-  // attributes so we need to make sure and allow the full unroll pass to pay
-  // attention to it.
-  if (llvm::sys::Process::GetEnv("MODULAR_ENABLE_LLVM_UNROLLING")
-          .value_or("ON") == "ON") {
-    LPM2.addPass(LoopFullUnrollPass(/*speedup optlevel*/ 3,
-                                    /* OnlyWhenForced= */ false,
-                                    /*ForgetAllSCEVInLoopUnroll*/ false));
-
-    // We provide the opt remark emitter pass for LICM to use. We only need to
-    // do this once as it is immutable.
-    FPM.addPass(
-        RequireAnalysisPass<OptimizationRemarkEmitterAnalysis, Function>());
-  }
   FPM.addPass(createFunctionToLoopPassAdaptor(std::move(LPM1),
                                               /*UseMemorySSA=*/true,
                                               /*UseBlockFrequencyInfo=*/true));
