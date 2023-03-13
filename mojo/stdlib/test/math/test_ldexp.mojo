@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: lit %s | FileCheck %s
+# RUN: mojo %s | FileCheck %s
 
 from Assert import assert_param
 from DType import DType
