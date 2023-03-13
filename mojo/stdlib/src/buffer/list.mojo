@@ -6,7 +6,7 @@
 
 from Int import Int
 
-from Assert import assert_param, debug_assert
+from Assert import assert_param, assert_param_bool, debug_assert
 from Functional import unroll
 from TypeUtilities import rebind
 
@@ -562,7 +562,7 @@ fn create_kgen_list[
 
 @always_inline("nodebug")
 fn _get_kgen_list_item[
-    index: __mlir_type.index,
+    index: Int,
     size: __mlir_type.index,
     type: __mlir_type.`!kgen.mlirtype`,
 ](lst: __mlir_type[`!kgen.list<`, type, `[`, size, `]>`]) -> type:
@@ -577,8 +577,10 @@ fn _get_kgen_list_item[
     Returns:
         type: The value at position `index` in the list.
     """
-    assert_param[index <= size]()
-    return __mlir_op.`pop.list.get`[index:index, _type:type](lst)
+    assert_param_bool[index <= size]()
+    return __mlir_op.`pop.list.get`[
+        index : index.__as_mlir_index(), _type:type
+    ](lst)
 
 
 # ===----------------------------------------------------------------------===#
@@ -614,20 +616,20 @@ fn _contains_impl[
 
 
 fn product_range[
-    start_idx: __mlir_type.index,
-    end_idx: __mlir_type.index,
+    start_idx: Int,
+    end_idx: Int,
     size: __mlir_type.index,
 ](lst: __mlir_type[`!kgen.list<index[`, size, `]>`]) -> Int:
     return _product_range_impl[start_idx, start_idx, end_idx, size](lst)
 
 
 fn _product_range_impl[
-    idx: __mlir_type.index,
-    start_idx: __mlir_type.index,
-    end_idx: __mlir_type.index,
+    idx: Int,
+    start_idx: Int,
+    end_idx: Int,
     size: __mlir_type.index,
 ](lst: __mlir_type[`!kgen.list<index[`, size, `]>`]) -> Int:
-    assert_param[idx <= end_idx]()
+    assert_param_bool[idx <= end_idx]()
 
     @parameter
     if idx == end_idx:
@@ -647,8 +649,8 @@ fn product[
 fn product_or_unknown[
     rank: __mlir_type.index,
     shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    start_idx: __mlir_type.index,
-    end_idx: __mlir_type.index,
+    start_idx: Int,
+    end_idx: Int,
 ]() -> __mlir_type.index:
     @parameter
     if is_all_known_range[start_idx, end_idx, rank, shape]():
@@ -662,14 +664,15 @@ fn product_or_unknown[
 
 
 fn is_all_known[
-    rank: __mlir_type.index, shape: __mlir_type[`!kgen.list<index[`, rank, `]>`]
+    rank: __mlir_type.index,
+    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
 ]() -> Bool:
     return is_all_known_range[0, rank, rank, shape]()
 
 
 fn is_all_known_range[
-    start_idx: __mlir_type.index,
-    end_idx: __mlir_type.index,
+    start_idx: Int,
+    end_idx: Int,
     rank: __mlir_type.index,
     shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
 ]() -> Bool:
@@ -677,20 +680,20 @@ fn is_all_known_range[
 
 
 fn is_all_known_range_impl[
-    index: __mlir_type.index,
-    start_idx: __mlir_type.index,
-    end_idx: __mlir_type.index,
+    index: Int,
+    start_idx: Int,
+    end_idx: Int,
     rank: __mlir_type.index,
     shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
 ]() -> Bool:
-    assert_param[index <= end_idx]()
+    assert_param_bool[index <= end_idx]()
 
     @parameter
     if index == end_idx:
         return True
     else:
         alias static_dim_value = _get_kgen_list_item[
-            index, rank, __mlir_type.index
+            index.__as_mlir_index(), rank, __mlir_type.index
         ](shape)
         return (
             Bool(static_dim_value != __mlir_attr.`#kgen.unknown : index`)

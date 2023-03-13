@@ -289,7 +289,7 @@ struct Buffer[size: __mlir_type.index, type: DType]:
             Args:
                 val (SIMD[1, type]):  value to store
         """
-        return self.simd_fill[dtype_simd_width[type]().__as_mlir_index()](val)
+        return self.simd_fill[dtype_simd_width[type]()](val)
 
     @staticmethod
     @always_inline
@@ -598,7 +598,7 @@ struct NDBuffer[
         self._offset(idx).simd_nt_store[width](val)
 
     @always_inline
-    fn dim[index: __mlir_type.index](self) -> Int:
+    fn dim[index: Int](self) -> Int:
         # First try to extract the static info on this dimension, could be either a
         # meta constant or an unknown.
         alias static_dim_value = _get_kgen_list_item[
@@ -653,7 +653,7 @@ struct NDBuffer[
             Args:
                 val (SIMD[1, type]):  value to store
         """
-        return self.simd_fill[dtype_simd_width[type]().__as_mlir_index()](val)
+        return self.simd_fill[dtype_simd_width[type]()](val)
 
     @staticmethod
     @always_inline
