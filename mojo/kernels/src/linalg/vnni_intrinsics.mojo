@@ -1,8 +1,8 @@
-# ===----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 #
 # This file is Modular Inc proprietary.
 #
-# ===----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 #
 # This file contains wrappers around Intel VNNI intrinsics. See
 # https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#expand=2206&avx512techs=AVX512_VNNI

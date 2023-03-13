@@ -1,3 +1,9 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
 from Buffer import NDBuffer, Buffer
 from DType import DType
 from Functional import unroll
