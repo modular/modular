@@ -31,6 +31,8 @@ def CacheDialect : Dialect {
     void injectAttrInterfaces();
   }];
 
+  let dependentDialects = ["::M::MDialect"];
+
   let cppNamespace = "::M::Cache";
   let useDefaultAttributePrinterParser = 1;
 }

@@ -5,3 +5,6 @@
 
 // CHECK: !M.array<256xf64>
 "M"() {m = !M.array<256xf64>} : () -> ()
+
+// CHECK: !M.aligned_bytes<4, align 64>
+"M"() {m = !M.aligned_bytes<4, align 64>} : () -> ()

@@ -47,4 +47,31 @@ def M_ArrayType : MType<"Array", "array",
   ];
 }
 
+//===----------------------------------------------------------------------===//
+// AlignedBytesType
+//===----------------------------------------------------------------------===//
+
+def M_AlignedBytesType : MType<"AlignedBytes", "aligned_bytes",
+    [DeclareTypeInterfaceMethods<ShapedTypeInterface>]> {
+  let summary = "Type of uint8_t arrays of known size and alignment.";
+  let description = [{
+    This type has no values and no runtime representation. It is intended only
+    to be used as a type annotation on `dense_resource` attribute operands
+    so as to convey a desired alignment. This is needed in two situations:
+     - As a way to 'forward declare' the alignment for an attribute who's
+       blob has not yet been parsed.
+     - As a way to override the required alignment for an attribute without
+       reallocating the underlying data.
+
+    Example:
+    ```mlir
+    // An array of 4 uint8_ts with 16 byte alignment
+    !M.aligned_bytes<4, align 16>
+    ```
+  }];
+
+  let parameters = (ins "uint64_t":$size, "uint64_t":$align);
+  let assemblyFormat = "`<` $size `,` `align` $align `>`";
+}
+
 #endif // MTYPES_TD

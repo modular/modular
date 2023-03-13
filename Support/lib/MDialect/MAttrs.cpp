@@ -9,6 +9,7 @@
 #include "Support/Compiler/MLIRDenseAttrStorage.h"
 #include "Support/Host.h"
 #include "Support/MDialect/MDialect.h"
+#include "Support/MDialect/MTypes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectImplementation.h"
@@ -537,16 +538,18 @@ ElementsAttr M::getInlineAttrForTensorData(ShapedType type, ArrayRef<char> data,
       {reinterpret_cast<const uint8_t *>(data.data()), data.size()}, type);
 }
 
-ElementsAttr M::getAttrForTensorData(
-    ShapedType type, StringRef bufferName, ArrayRef<char> data,
-    DenseResourceElementsHandleManager &resourceManager,
-    Optional<size_t> optAlignment, bool forceOutOfLine, bool mustBeAligned) {
+ElementsAttr
+M::getAttrForTensorData(ShapedType type, StringRef bufferName,
+                        ArrayRef<char> data,
+                        DenseResourceElementsHandleManager &resourceManager,
+                        Optional<size_t> optAlignment, bool forceOutOfLine) {
   // When loading in a tensor, we make a distinction between the case where
   // the data is "small" and when it is "large". "large" data is stored as a
   // resource blob, while "small" data is stored inline in the context.
   if (!(forceOutOfLine ||
         shouldUseOutOfLineAttrStorage(type.getNumElements()))) {
-    return getInlineAttrForTensorData(type, data, optAlignment, mustBeAligned);
+    return ArrayElementsAttr::get(
+        {reinterpret_cast<const uint8_t *>(data.data()), data.size()}, type);
   }
 
   // TODO: In many cases we should be able to use `UnmanagedAsmResourceBlob`
@@ -987,6 +990,34 @@ static raw_ostream &operator<<(raw_ostream &os, const llvm::Triple &triple) {
 BuildInfoAttr BuildInfoAttr::getForCurrentBuild(MLIRContext *ctx) {
   return BuildInfoAttr::get(ctx, MODULAR_BUILD_TYPE,
                             MODULAR_LLCL_MAX_PROFILING_LEVEL);
+}
+
+//===----------------------------------------------------------------------===//
+// AlignedBytesType helpers
+//===----------------------------------------------------------------------===//
+
+AlignedBytesType M::getAlignedBytesType(DenseResourceElementsAttr dense) {
+  if (auto alignedBytesType = llvm::dyn_cast<AlignedBytesType>(dense.getType()))
+    return alignedBytesType;
+  uint64_t byteSize = static_cast<uint64_t>(llvm::divideCeil(
+      cast<ArithmeticType>(dense.getElementType()).getWidth(), CHAR_BIT));
+  uint64_t size = byteSize * static_cast<uint64_t>(dense.size());
+  mlir::AsmResourceBlob *blob = dense.getRawHandle().getBlob();
+  assert(blob && "dense_resource has not been initialized");
+  uint64_t align = static_cast<uint64_t>(blob->getDataAlignment());
+  return AlignedBytesType::get(dense.getContext(), size, align);
+}
+
+AlignedBytesType M::getAlignedBytesType(ArrayElementsAttr arrayElementsAttr) {
+  if (auto alignedBytesType =
+          llvm::dyn_cast<AlignedBytesType>(arrayElementsAttr.getType()))
+    return alignedBytesType;
+  uint64_t byteSize = static_cast<uint64_t>(llvm::divideCeil(
+      cast<ArithmeticType>(arrayElementsAttr.getElementType()).getWidth(),
+      CHAR_BIT));
+  uint64_t size = byteSize * static_cast<uint64_t>(arrayElementsAttr.size());
+  uint64_t align = llvm::NextPowerOf2(byteSize);
+  return AlignedBytesType::get(arrayElementsAttr.getContext(), size, align);
 }
 
 //===----------------------------------------------------------------------===//
