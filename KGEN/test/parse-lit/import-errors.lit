@@ -1,3 +1,9 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
 # RUN: kgen-translate -import-lit -split-input-file -verify-diagnostics -I=%S %s
 
 # expected-error @+1 {{expected module name}}
