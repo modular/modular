@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: lit %s | FileCheck %s
+# RUN: mojo %s | FileCheck %s
 
 from Activations import relu, relu_n1, prelu, gelu, gelu_approximate
 from DType import DType
