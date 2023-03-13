@@ -39,19 +39,23 @@ kgen.func @call_coroutine() {
 // CHECK-LABEL: kgen.func @async_execute_async_closure_0
 // CHECK-SAME: (%arg0: index, %arg1: index) -> !pop.coroutine<() -> index>
 // CHECK-NEXT: %0 = pop.coroutine.handle : <() -> index>
-// CHECK: index.add
+// CHECK-NEXT: %idx1 = index.constant 1
+// CHECK-NEXT: %1 = index.add %idx1, %arg0
+// CHECK-NEXT: %2 = index.add %1, %arg1
 // CHECK: kgen.return %0
 
 // CHECK-LABEL: kgen.func @async_execute_async_closure_1
-// CHECK-SAME: (%arg0: index) -> !pop.coroutine<() -> ()>
+// CHECK-SAME: (%arg0: index, %arg1: index) -> !pop.coroutine<() -> ()>
 // CHECK-NEXT: %0 = pop.coroutine.handle : <() -> ()>
-// CHECK: kgen.call @async_execute_async_closure_0(%idx1, %arg0)
+// CHECK: kgen.call @async_execute_async_closure_0(%arg0, %arg1)
 // CHECK: kgen.return %0
 
 // CHECK-LABEL: kgen.func @async_execute
 kgen.func @async_execute(%arg0: index) {
+  // CHECK: index.add
   // CHECK-NEXT: kgen.call @async_execute_async_closure(%arg0)
-  // CHECK-NEXT: kgen.call @async_execute_async_closure_1(%arg0)
+  // CHECK-NEXT: kgen.call @async_execute_async_closure_1(%arg0, %0)
+  %arg1 = index.add %arg0, %arg0
   %0 = lit.async.execute <() -> index> {
     lit.async.return %arg0 : index
   }
@@ -59,7 +63,8 @@ kgen.func @async_execute(%arg0: index) {
     %idx1 = index.constant 1
     %2 = lit.async.execute <() -> index> {
       %3 = index.add %idx1, %arg0
-      lit.async.return %3 : index
+      %4 = index.add %3, %arg1
+      lit.async.return %4 : index
     }
     lit.async.return
   }

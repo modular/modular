@@ -14,6 +14,7 @@
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Threading.h"
 #include "mlir/Pass/Pass.h"
+#include "mlir/Transforms/RegionUtils.h"
 #include "llvm/Support/RWMutex.h"
 
 using namespace M;
@@ -50,13 +51,28 @@ static void createCoroutineFinalize(ImplicitLocOpBuilder &b, Value hdl,
 static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
                               LockedSymbolTable &sharedTable) {
   // Isolate the region from above.
-  llvm::SetVector<Value> captures;
-  (void)operationIsIsolatedFromAbove(op, &captures);
+  llvm::SetVector<Value> allCaptures;
+  SmallVector<Value> captures;
+  (void)operationIsIsolatedFromAbove(op, &allCaptures);
   Region &body = op.getBodyRegion();
-  for (Value capture : captures) {
-    BlockArgument arg = body.addArgument(capture.getType(), capture.getLoc());
-    capture.replaceUsesWithIf(
-        arg, [&](OpOperand &use) { return op->isAncestor(use.getOwner()); });
+  for (Value capture : allCaptures) {
+    Operation *capturingOp = capture.getDefiningOp();
+    // Clone ConstantLike operations into the region.
+    if (capturingOp && capturingOp->hasTrait<OpTrait::ConstantLike>()) {
+      ImplicitLocOpBuilder b(capturingOp->getLoc(),
+                             OpBuilder::atBlockBegin(&body.front()));
+      Operation *cloned = b.clone(*capturingOp);
+      for (auto [orig, replacement] :
+           llvm::zip(capturingOp->getResults(), cloned->getResults()))
+        replaceAllUsesInRegionWith(orig, replacement, body);
+    } else {
+      // Otherwise these are captured variables and we need to pass them as
+      // arguments to the block body.
+      BlockArgument arg = body.addArgument(capture.getType(), capture.getLoc());
+      capture.replaceUsesWithIf(
+          arg, [&](OpOperand &use) { return op->isAncestor(use.getOwner()); });
+      captures.push_back(capture);
+    }
   }
 
   // Insert the coroutine handle.
@@ -90,7 +106,7 @@ static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
   b.setInsertionPoint(op);
   auto call = b.create<CallOp>(
       op.getType(), SymbolConstantAttr::get(FlatSymbolRefAttr::get(name), sig),
-      ArrayRef<ParamDeclAttr>(), captures.getArrayRef());
+      ArrayRef<ParamDeclAttr>(), captures);
   op.replaceAllUsesWith(call);
   op.erase();
 }
@@ -105,8 +121,8 @@ static LogicalResult lowerAsyncFunction(FuncOp func,
                          OpBuilder::atBlockBegin(func.getBody()));
   bool isAsyncFn = func.isAsync();
   if (isAsyncFn) {
-    // Create the coroutine handle. The coroutine result types are the function
-    // result types.
+    // Create the coroutine handle. The coroutine result types are the
+    // function result types.
     auto coroType = CoroutineType::get(
         SignatureType::get(b.getFunctionType({}, func.getResultTypes())));
     coroHdl = b.create<CoroutineHandleOp>(coroType);
