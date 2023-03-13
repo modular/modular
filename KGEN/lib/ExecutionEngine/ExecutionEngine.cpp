@@ -167,7 +167,8 @@ ExecutionEngine::create(const CompilationOptions &options) {
 
   std::optional<BufferRef> rtBuf = std::move(*orcRTBuf);
   std::string orcRTPath;
-  if (!rtBuf.has_value())
+  // TODO: (#10184) Turn this back on for ELF/NIX and MachO
+  if (!rtBuf.has_value() && tm->getTargetTriple().isOSBinFormatCOFF())
     return Error("could not find orc_rt in the cache");
 
   if (auto err = writeORCRTToFile(*rtBuf, orcRTPath))
