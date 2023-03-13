@@ -248,7 +248,7 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CRValue value,
   if (auto sig = dyn_cast<SignatureType>(valueType.mlirType)) {
     // TODO: This is incorrect for default arguments and varargs.
     assert(sig.getValueResults().size() == 1);
-    if (sig.getValueInputs().size() == 0 &&
+    if (sig.getValueInputs().empty() &&
         isImplicitlyIgnorableType(sig.getValueResults()[0])) {
       // Find end of token.  TODO: Gross.
       auto endLoc = expr->getRange().getEnd();
