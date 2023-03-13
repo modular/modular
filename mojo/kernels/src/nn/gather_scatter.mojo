@@ -163,8 +163,8 @@ fn gather[
     indices_shape: __mlir_type[`!kgen.list<index[`, indices_rank, `]>`],
     type: DType,
     indices_type: DType,
-    axis: __mlir_type.index,
-    simd_width: __mlir_type.index,
+    axis: Int,
+    simd_width: Int,
 ](
     output: NDBuffer[output_rank, output_shape, type],
     input: NDBuffer[input_rank, input_shape, type],
@@ -175,7 +175,7 @@ fn gather[
     assert_param[output_rank == 2]()
     assert_param[input_rank == 2]()
     assert_param[indices_rank == 1]()
-    assert_param[axis == 0]()
+    assert_param_bool[axis == 0]()
 
     let indices_len = indices.size()
 
@@ -261,8 +261,8 @@ fn gather[
     indices_shape: __mlir_type[`!kgen.list<index[`, indices_rank, `]>`],
     type: DType,
     indices_type: DType,
-    axis: __mlir_type.index,
-    simd_width: __mlir_type.index,
+    axis: Int,
+    simd_width: Int,
 ](
     output: NDBuffer[output_rank, output_shape, type],
     input: NDBuffer[input_rank, input_shape, type],
@@ -277,7 +277,7 @@ fn gather[
     assert_param[output_rank == 2]()
     assert_param[input_rank == 2]()
     assert_param[indices_rank == 1]()
-    assert_param[axis == 1]()
+    assert_param_bool[axis == 1]()
 
     for i in range(output.dim[0]()):
         for j in range(output.dim[1]()):
