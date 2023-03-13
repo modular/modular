@@ -39,8 +39,8 @@ using namespace KGEN;
 using namespace mlir;
 
 namespace {
-/// What to do with a given KGEN file.
-enum class LitCommand {
+/// What to do with a given Mojo file.
+enum class MojoCommand {
   kDocGen,
   kEmit,
   kExecute,
@@ -50,15 +50,15 @@ class CLOptions : public KGENCommonOptions, public CommonCLOptions {
 public:
   using CommonCLOptions::CommonCLOptions;
 
-  cl::opt<LitCommand> cmd{
+  cl::opt<MojoCommand> cmd{
       cl::desc("The command to execute"),
       cl::values(
-          clEnumValN(LitCommand::kDocGen, "doc-gen",
+          clEnumValN(MojoCommand::kDocGen, "doc-gen",
                      "Generate markdown documentation."),
-          clEnumValN(LitCommand::kEmit, "emit", "Emit funcs as object files."),
-          clEnumValN(LitCommand::kExecute, "execute",
+          clEnumValN(MojoCommand::kEmit, "emit", "Emit funcs as object files."),
+          clEnumValN(MojoCommand::kExecute, "execute",
                      "Execute the main function.")),
-      cl::init(LitCommand::kExecute)};
+      cl::init(MojoCommand::kExecute)};
 };
 } // namespace
 
@@ -132,21 +132,21 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
                                        /*genLocalReproducer=*/true);
   }
 
-  if (!inputFileName.ends_with(".lit"))
-    return clOptions.reportError("expected a .lit file");
-  TimingScope litScope = timing.nest("Import Lit");
+  if (!inputFileName.ends_with(".lit") && !inputFileName.ends_with(".mojo"))
+    return clOptions.reportError("expected a .mojo file");
+  TimingScope mojoScope = timing.nest("Import Mojo");
 
-  if (clOptions.cmd == LitCommand::kDocGen) {
+  if (clOptions.cmd == MojoCommand::kDocGen) {
     std::unique_ptr<llvm::ToolOutputFile> os =
         clOptions.getOutputFile(/*hasBinaryOutput=*/false, ".md");
-    if (failed(generateLitDoc(mgr, ctx, os->os(), litScope, compilationOptions,
+    if (failed(generateLitDoc(mgr, ctx, os->os(), mojoScope, compilationOptions,
                               *runtime)))
       return clOptions.reportError("could not generate documentation");
     os->keep();
     return EXIT_SUCCESS;
   }
 
-  theModule = importLitFile(mgr, ctx, litScope, compilationOptions,
+  theModule = importLitFile(mgr, ctx, mojoScope, compilationOptions,
                             /*useMLIRDiagnostics=*/false, *runtime);
 
   if (!theModule)
@@ -194,13 +194,13 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // This produces a standalone object for all the objects we requested.
   auto standaloneOr = compiler->produceStandaloneObject(
-      /*isJIT=*/clOptions.cmd == LitCommand::kExecute);
+      /*isJIT=*/clOptions.cmd == MojoCommand::kExecute);
   if (failed(standaloneOr))
     return clOptions.reportError("compiler error");
   Cache::BufferRef standaloneObject = std::move(*standaloneOr);
 
   // If we're emitting the object, do it.
-  if (clOptions.cmd == LitCommand::kEmit) {
+  if (clOptions.cmd == MojoCommand::kEmit) {
     if (failed(clOptions.emitObject(standaloneObject->getBuffer())))
       return clOptions.reportError("unable to emit object file");
 
@@ -215,7 +215,7 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return EXIT_SUCCESS;
   }
 
-  assert(clOptions.cmd == LitCommand::kExecute);
+  assert(clOptions.cmd == MojoCommand::kExecute);
   // We can only execute on the host machine.
   if (llvm::sys::getDefaultTargetTriple() != target.getTripleStr())
     return clOptions.reportError("can only execute on host target");
