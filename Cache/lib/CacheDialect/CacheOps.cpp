@@ -9,6 +9,7 @@
 #include "Cache/CacheDialect/CacheDialect.h"
 #include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
 #include "LLCL/Runtime/Algorithms.h"
+#include "Support/MDialect/MAttrs.h"
 #include "mlir/Bytecode/BytecodeReader.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/Builders.h"
@@ -72,62 +73,64 @@ AsyncValueRef<Chain> Cache::deflateConstant(Operation *constant,
     mlir::AttrTypeReplacer replacer;
     // For now, we only care about DenseResourceElementsAttr because that's
     // how we handle large attributes.
-    replacer.addReplacement(
-        [&](DenseResourceElementsAttr resourceAttr) -> Attribute {
-          mlir::AsmResourceBlob *blob = resourceAttr.getRawHandle().getBlob();
-          // If the blob isn't there, we shouldn't try caching nothing.
-          if (!blob)
-            return nullptr;
+    replacer.addReplacement([&](DenseResourceElementsAttr resourceAttr)
+                                -> Attribute {
+      mlir::AsmResourceBlob *blob = resourceAttr.getRawHandle().getBlob();
+      // If the blob isn't there, we shouldn't try caching nothing.
+      if (!blob)
+        return nullptr;
 
-          BufferRef resourceData = Buffer::get(
-              StringRef(blob->getData().data(), blob->getData().size()));
+      BufferRef resourceData = Buffer::get(
+          StringRef(blob->getData().data(), blob->getData().size()));
 
-          // We have to make this synchronous for now :(
-          auto contains = cache->contains(resourceAttr);
-          await(contains);
-          // Only do the insert if we don't already have it in the cache.
-          std::string keyHash = cache->getHash(resourceAttr);
-          if (!*contains) {
-            // Insert the data into the cache. We don't really care about the
-            // ordering of insert if we have 2 threads inserting the same data -
-            // the result will be that the last one wins but since it's the same
-            // data we still end up with the correct result. The `contains`
-            // check is just for the obvious case.
-            auto hashOr = cache->insert(resourceAttr, std::move(resourceData));
-            // This is not great - we have to make this sync because MLIR
-            // doesn't really have a good way to handle async here.
-            await(hashOr);
-            if (hashOr.isError()) {
-              std::move(out).setToError(hashOr.takeDiagnostic());
-              return nullptr;
-            }
+      // We have to make this synchronous for now :(
+      auto contains = cache->contains(resourceAttr);
+      await(contains);
+      // Only do the insert if we don't already have it in the cache.
+      std::string keyHash = cache->getHash(resourceAttr);
+      if (!*contains) {
+        // Insert the data into the cache. We don't really care about the
+        // ordering of insert if we have 2 threads inserting the same data -
+        // the result will be that the last one wins but since it's the same
+        // data we still end up with the correct result. The `contains`
+        // check is just for the obvious case.
+        auto hashOr = cache->insert(resourceAttr, std::move(resourceData));
+        // This is not great - we have to make this sync because MLIR
+        // doesn't really have a good way to handle async here.
+        await(hashOr);
+        if (hashOr.isError()) {
+          std::move(out).setToError(hashOr.takeDiagnostic());
+          return nullptr;
+        }
 
-            if (hashOr->isError()) {
-              std::move(out).setToError(
-                  getMLIRDiagnostic(hashOr->takeError(), constant->getLoc()));
-              return nullptr;
-            }
+        if (hashOr->isError()) {
+          std::move(out).setToError(
+              getMLIRDiagnostic(hashOr->takeError(), constant->getLoc()));
+          return nullptr;
+        }
 
-            keyHash = **hashOr;
-          }
+        keyHash = **hashOr;
+      }
 
-          // Create a builder so we can create attrs easier.
-          OpBuilder builder(constant);
+      // Create a builder so we can create attrs easier.
+      OpBuilder builder(constant);
 
-          NamedAttrList additionalAttrs;
-          additionalAttrs.set(
-              "align", builder.getIntegerAttr(builder.getType<IntegerType>(
-                                                  64, IntegerType::Unsigned),
-                                              blob->getDataAlignment()));
-          additionalAttrs.set(
-              "name",
-              builder.getStringAttr(resourceAttr.getRawHandle().getKey()));
+      NamedAttrList additionalAttrs;
+      // The resource attribute may include a type annotation which conveys
+      // its alignment. Otherwise use the blob's alignment.
+      uint64_t align = getAlignedBytesType(resourceAttr).getAlign();
+      additionalAttrs.set(
+          "align",
+          builder.getIntegerAttr(
+              builder.getType<IntegerType>(64, IntegerType::Unsigned), align));
+      additionalAttrs.set(
+          "name", builder.getStringAttr(resourceAttr.getRawHandle().getKey()));
 
-          auto newAttr = ConstantHashAttr::get(
-              resourceAttr.getContext(), resourceAttr.getType(), keyHash,
-              additionalAttrs.getDictionary(resourceAttr.getContext()));
-          return newAttr;
-        });
+      auto newAttr = ConstantHashAttr::get(
+          resourceAttr.getContext(), resourceAttr.getType(), keyHash,
+          additionalAttrs.getDictionary(resourceAttr.getContext()));
+      return newAttr;
+    });
 
     // Do the replacement now.
     replacer.replaceElementsIn(constant);

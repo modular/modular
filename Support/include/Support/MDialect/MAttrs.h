@@ -301,17 +301,15 @@ ElementsAttr getInlineAttrForTensorData(ShapedType type, ArrayRef<char> data,
 ///
 /// Otherwise, depending on the amount of data and optional alignment, the
 /// result may be:
-///  - 'ArrayElementAttr' (small data, no alignment constraint, or
-///    mustBeAligned is false)
-///  - 'AlignedBytes' (small data, alignment constraint, mustBeAligned is true)
+///  - 'ArrayElementAttr' (small data, no alignment constraint)
 ///  - 'DenseResourceElementsAttr' (large data, and if no alignment
 ///    constraint then use the element type's bit width rounded up to whole
-///    bytes.
+///    bytes is used).
 ElementsAttr
 getAttrForTensorData(ShapedType type, StringRef bufferName, ArrayRef<char> data,
                      DenseResourceElementsHandleManager &resourceManager,
                      Optional<size_t> optAlignment = {},
-                     bool forceOutOfLine = false, bool mustBeAligned = false);
+                     bool forceOutOfLine = false);
 
 //===----------------------------------------------------------------------===//
 // TargetInfoAttr
@@ -326,6 +324,18 @@ void setTargetInfo(ModuleOp module, TargetInfoAttr target);
 /// Look for a target info specification in the nearest surrounding module from
 /// the provided operation. Returns null if one cannot be found.
 TargetInfoAttr lookupTargetInfo(Operation *from);
+
+//===----------------------------------------------------------------------===//
+// AlignedBytesType helpers
+//===----------------------------------------------------------------------===//
+
+/// Returns the !M.aligned_bytes type describing the byte size and alignment
+/// for the given dense_resource attribute.
+AlignedBytesType getAlignedBytesType(DenseResourceElementsAttr dense);
+
+/// Returns the !M.aligned_bytes type describing the byte size and alignment
+/// for the given #M.array attribute.
+AlignedBytesType getAlignedBytesType(ArrayElementsAttr arrayElementsAttr);
 
 } // namespace M
 

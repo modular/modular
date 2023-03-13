@@ -7,6 +7,7 @@
 #ifndef CACHE_CACHEDIALECT_CACHEDIALECT_H
 #define CACHE_CACHEDIALECT_CACHEDIALECT_H
 
+#include "Support/MDialect/MDialect.h"
 #include "mlir/IR/Dialect.h"
 
 //===----------------------------------------------------------------------===//

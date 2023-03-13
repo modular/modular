@@ -31,13 +31,6 @@ static ParseResult parseSizeX(AsmParser &p, int64_t &size) {
 static void printSizeX(AsmPrinter &p, int64_t size) { p << size << 'x'; }
 
 //===----------------------------------------------------------------------===//
-// ODS-Generated Definitions
-//===----------------------------------------------------------------------===//
-
-#define GET_TYPEDEF_CLASSES
-#include "Support/MDialect/MTypes.cpp.inc"
-
-//===----------------------------------------------------------------------===//
 // MDialect
 //===----------------------------------------------------------------------===//
 
@@ -63,12 +56,6 @@ LogicalResult ArrayType::verify(function_ref<InFlightDiagnostic()> emitError,
 /// An array type always has rank 1.
 bool ArrayType::hasRank() const { return true; }
 
-/// The shape of an array is always [size].
-ArrayRef<int64_t> ArrayType::getShape() const {
-  // We need to return a const reference.
-  return static_cast<detail::ArrayTypeStorage *>(getImpl())->size;
-}
-
 /// Clone the type. Expect the shape to always be rank 1.
 ShapedType ArrayType::cloneWith(std::optional<ArrayRef<int64_t>> shape,
                                 Type elementType) const {
@@ -80,4 +67,61 @@ ShapedType ArrayType::cloneWith(std::optional<ArrayRef<int64_t>> shape,
 
 ArrayType ArrayType::get(int64_t size, Type elementType) {
   return get(elementType.getContext(), size, elementType);
+}
+
+// We defer ArrayType::getShape till after ODS import since depends on
+// impl.
+
+//===----------------------------------------------------------------------===//
+// AlignedBytesType
+//===----------------------------------------------------------------------===//
+
+/// Implements ShapedType::cloneWith
+ShapedType AlignedBytesType::cloneWith(std::optional<ArrayRef<int64_t>> shape,
+                                       Type elementType) const {
+  assert(!shape && "cannot change shape");
+  assert(elementType.isUnsignedInteger(8) && "elementType must be ui8");
+  return AlignedBytesType::get(getContext(), getSize(), getAlign());
+}
+
+/// Implements ShapedType::getElementType
+Type AlignedBytesType::getElementType() const {
+  return IntegerType::get(getContext(), /*width=*/8, IntegerType::Unsigned);
+}
+
+/// Implements ShapedType::hasRank
+bool AlignedBytesType::hasRank() const { return true; }
+
+// We defer AlignedBytesType::getShape till after ODS import since depends on
+// impl.
+
+//===----------------------------------------------------------------------===//
+// ODS-Generated Definitions
+//===----------------------------------------------------------------------===//
+
+#define GET_TYPEDEF_CLASSES
+#include "Support/MDialect/MTypes.cpp.inc"
+#include "Support/ML/SizeUtils.h"
+
+//===----------------------------------------------------------------------===//
+// ArrayType (cont.)
+//===----------------------------------------------------------------------===//
+
+/// The shape of an array is always [size].
+ArrayRef<int64_t> ArrayType::getShape() const {
+  // We need to return a const reference.
+  return static_cast<detail::ArrayTypeStorage *>(getImpl())->size;
+}
+
+//===----------------------------------------------------------------------===//
+// AlignedBytesType (cont.)
+//===----------------------------------------------------------------------===//
+
+/// Implements ShapedType::getShape
+ArrayRef<int64_t> AlignedBytesType::getShape() const {
+  uint64_t &size = getImpl()->size;
+  // Convert to raw signed size for assertion side effect.
+  (void)optSizeToRawSignedSize(size);
+  // We'll just reinterpret the uint64_t size as an int64_t since it's in range.
+  return ArrayRef<int64_t>(reinterpret_cast<const int64_t *>(&size), 1);
 }
