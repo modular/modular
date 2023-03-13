@@ -132,7 +132,7 @@ fn _variadic_get(
 @always_inline
 fn vectorize_unroll[
     simd_width: Int,
-    unroll_factor: __mlir_type.index,
+    unroll_factor: Int,
     func: fn_simd_sig_type,
 ](size: Int):
     """Map a function which is parametrized over a simd_width over a range

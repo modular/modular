@@ -185,8 +185,8 @@ fn _reduce_3D[
 
 
 fn _prod_dims[
-    start_dim: __mlir_type.index,
-    end_dim: __mlir_type.index,
+    start_dim: Int,
+    end_dim: Int,
     rank: __mlir_type.index,
     shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
     type: DType,
@@ -195,7 +195,7 @@ fn _prod_dims[
 
     @always_inline
     fn _compute_product[idx: Int]():
-        product *= x.dim[idx.__as_mlir_index() + start_dim]()
+        product *= x.dim[idx + start_dim]()
 
     unroll[end_dim - start_dim, _compute_product]()
     return product
