@@ -248,9 +248,7 @@ fn naive_matmul[
 
 # Utility to compute inner block size that's divisible
 #  by the block size, e.g. simd_size or TileSize.
-fn round_down_to_block[
-    block_size: __mlir_type.index
-](original_size: Int) -> Int:
+fn round_down_to_block[block_size: Int](original_size: Int) -> Int:
     """Tile computation utility. Computes the largest multiple of block size
     below original_size.
         e.g. round_down_to_block[128](512+1) = 512
@@ -277,8 +275,8 @@ struct PackMatrixRows[
     # packed matrix shape list
     packed_shape: __mlir_type[`!kgen.list<index[3]>`],
     type: DType,
-    simd_size: __mlir_type.index,
-    row_inner_size: __mlir_type.index,
+    simd_size: Int,
+    row_inner_size: Int,
 ]:
     """Pack rows from a matrix into the mlas packed layout and
     extract inner vectors of rows into the packed inner dimension.
@@ -333,7 +331,7 @@ struct PackMatrixRows[
                 amount of valid data on the global buffer starting from the
                 offset.
         """
-        assert_param[row_inner_size % simd_size == 0]()
+        assert_param_bool[row_inner_size % simd_size == 0]()
 
         let instance = Self {
             packed_matrix: packed_matrix,
@@ -367,7 +365,9 @@ struct PackMatrixRows[
         transpose_buffer: NDBuffer[
             2,
             __mlir_attr[
-                create_kgen_list[__mlir_type.index](simd_size, simd_size),
+                create_kgen_list[__mlir_type.index](
+                    simd_size.__as_mlir_index(), simd_size.__as_mlir_index()
+                ),
                 __mlir_type.index,
                 `[2]>`,
             ],
@@ -438,7 +438,9 @@ struct PackMatrixRows[
         unroll[simd_size, body]()
 
         # Transpose the buffered data
-        transpose_inplace[simd_size, simd_size, type](transpose_buffer)
+        transpose_inplace[
+            simd_size.__as_mlir_index(), simd_size.__as_mlir_index(), type
+        ](transpose_buffer)
 
         # Write to packed space:
         #  transposed_inner_row_idx now corresponds to the original column idx.
@@ -473,12 +475,14 @@ struct PackMatrixRows[
         var transpose_buffer = NDBuffer[
             2,
             __mlir_attr[
-                create_kgen_list[__mlir_type.index](simd_size, simd_size),
+                create_kgen_list[__mlir_type.index](
+                    simd_size.__as_mlir_index(), simd_size.__as_mlir_index()
+                ),
                 __mlir_type.index,
                 `[2]>`,
             ],
             type,
-        ].aligned_stack_allocation[simd_byte_width().__as_mlir_index()]()
+        ].aligned_stack_allocation[simd_byte_width()]()
 
         let valid_tile_simd_dim = Index(
             Int.min(
@@ -527,8 +531,8 @@ struct PackMatrixCols[
     # packed matrix shape list
     packed_shape: __mlir_type[`!kgen.list<index[3]>`],
     type: DType,
-    simd_size: __mlir_type.index,
-    column_inner_size: __mlir_type.index,
+    simd_size: Int,
+    column_inner_size: Int,
 ]:
     """Pack columns from a matrix into the mlas packed layout and
     extract inner vectors of columns into the packed inner dimension.
@@ -570,7 +574,7 @@ struct PackMatrixCols[
                 amount of valid data on the global buffer starting from the
                 offset.
         """
-        assert_param[column_inner_size % simd_size == 0]()
+        assert_param_bool[column_inner_size % simd_size == 0]()
         debug_assert(
             pack_tile_dim[1] % column_inner_size == 0,
             "Unimplemented tile pattern.",
@@ -701,9 +705,9 @@ struct MatmulInnerLoopBPacked[
     packed_shape: __mlir_type[`!kgen.list<index[3]>`],
     accum_type: DType,
     value_type: DType,
-    simd_size: __mlir_type.index,
-    a_row_size: __mlir_type.index,
-    pack_inner_size: __mlir_type.index,
+    simd_size: Int,
+    a_row_size: Int,
+    pack_inner_size: Int,
     # Skip the output c space boundary check if True.
     skip_boundary_check: Bool,
 ]:
@@ -770,7 +774,9 @@ struct MatmulInnerLoopBPacked[
         self,
         c_local: NDBuffer[
             2,
-            create_kgen_list[__mlir_type.index](a_row_size, pack_inner_size),
+            create_kgen_list[__mlir_type.index](
+                a_row_size.__as_mlir_index(), pack_inner_size.__as_mlir_index()
+            ),
             accum_type,
         ],
     ):
@@ -795,7 +801,9 @@ struct MatmulInnerLoopBPacked[
         self,
         c_local: NDBuffer[
             2,
-            create_kgen_list[__mlir_type.index](a_row_size, pack_inner_size),
+            create_kgen_list[__mlir_type.index](
+                a_row_size.__as_mlir_index(), pack_inner_size.__as_mlir_index()
+            ),
             accum_type,
         ],
         # indexing within tile, in (m,n)
@@ -855,7 +863,9 @@ struct MatmulInnerLoopBPacked[
         self,
         c_local: NDBuffer[
             2,
-            create_kgen_list[__mlir_type.index](a_row_size, pack_inner_size),
+            create_kgen_list[__mlir_type.index](
+                a_row_size.__as_mlir_index(), pack_inner_size.__as_mlir_index()
+            ),
             accum_type,
         ],
         tile_idx: StaticIntTuple[2],
@@ -908,7 +918,9 @@ struct MatmulInnerLoopBPacked[
         self,
         c_local: NDBuffer[
             2,
-            create_kgen_list[__mlir_type.index](a_row_size, pack_inner_size),
+            create_kgen_list[__mlir_type.index](
+                a_row_size.__as_mlir_index(), pack_inner_size.__as_mlir_index()
+            ),
             accum_type,
         ],
         tile_n_k_idx: StaticIntTuple[2],
@@ -957,7 +969,9 @@ struct MatmulInnerLoopBPacked[
         # Allocate accumulation buffer.
         var c_local = NDBuffer[
             2,
-            create_kgen_list[__mlir_type.index](a_row_size, pack_inner_size),
+            create_kgen_list[__mlir_type.index](
+                a_row_size.__as_mlir_index(), pack_inner_size.__as_mlir_index()
+            ),
             accum_type,
         ].stack_allocation()
 
@@ -982,9 +996,9 @@ struct MatmulInnerLoopBPacked[
 #  Returns (TileN, TileK)
 fn calculate_tile_n_k[
     # Max number of element to cache.
-    pack_cache_size: __mlir_type.index,
+    pack_cache_size: Int,
     # Inner size of data layout.
-    pack_inner_size: __mlir_type.index,
+    pack_inner_size: Int,
 ](gemm_shape: GemmShape) -> StaticIntTuple[2]:
     """Helper heuristic function to decide on tile size to partition the matmul
     given the cache size and desired data layout.
@@ -1003,7 +1017,7 @@ fn calculate_tile_n_k[
     let least_tile_n: Int = pack_inner_size * 2
 
     # Max tile K size based on smallest Tile N.
-    let largest_tile_k = Int(pack_cache_size) // least_tile_n
+    let largest_tile_k = pack_cache_size // least_tile_n
 
     # Prioritize shape on K dimension, so try to fit in the whole
     #  input on the tile.
@@ -1011,9 +1025,7 @@ fn calculate_tile_n_k[
 
     # Calculate number of InnerSize to fit in tile_n dimension,
     #  guranteed to be at least 2.
-    let max_tile_n_in_inner_size = (
-        Int(pack_cache_size) // tile_k // pack_inner_size
-    )
+    let max_tile_n_in_inner_size = pack_cache_size // tile_k // pack_inner_size
     let full_data_tile_n_in_inner_size = (
         gemm_shape.N + pack_inner_size - 1
     ) // pack_inner_size
@@ -1139,7 +1151,7 @@ struct TiledMatmul[
         matmul._run()
 
     fn _outer_m_loop_helper[
-        skip_col_bound: Bool, m_loop_pack_inner_size: __mlir_type.index
+        skip_col_bound: Bool, m_loop_pack_inner_size: Int
     ](
         self,
         b_packed: NDBuffer[3, config.packed_shape, value_type],
@@ -1238,7 +1250,7 @@ struct TiledMatmul[
 
     #  Pack a subtile of B and iterate through all the rows of C.
     fn _outer_m_loop[
-        m_loop_pack_inner_size: __mlir_type.index
+        m_loop_pack_inner_size: Int
     ](
         self,
         b_packed: NDBuffer[3, config.packed_shape, value_type],
@@ -1281,7 +1293,7 @@ struct TiledMatmul[
     #  Iterate on the N dimension by steps of
     # size sub_tile_n with no crossing valid boundary.
     fn _outer_n_loop_helper[
-        m_loop_pack_inner_size: __mlir_type.index
+        m_loop_pack_inner_size: Int
     ](
         self,
         b_packed: NDBuffer[3, config.packed_shape, value_type],
@@ -1443,7 +1455,7 @@ struct TiledMatmul[
         let _bpacked_data = _raw_stack_allocation[
             config.pack_data_size,  # Count.
             value_type,  # Data type.
-            simd_byte_width().__as_mlir_index(),  # Alignment.
+            simd_byte_width(),  # Alignment.
         ]()
 
         # Manually set the shape of packed B buffer:
