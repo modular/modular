@@ -25,12 +25,6 @@ config.test_exec_root = os.path.join(config.modular_obj_root, "KGEN", "test")
 
 config.substitutions.append(
     (
-        "%stdlibdir",
-        os.path.join(config.modular_src_root, "Kernels", "lit-stdlib"),
-    ),
-)
-config.substitutions.append(
-    (
         "%lldb",
         which("lldb"),
     ),
