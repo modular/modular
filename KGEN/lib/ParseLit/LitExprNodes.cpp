@@ -541,8 +541,11 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Reject unqualified struct field references.
   if (auto fieldOp = dyn_cast<StructFieldOp>(decl)) {
+    auto loc = getRangeStart();
+    auto insertRange = LitSourceRange::getByteLevel(loc, loc);
     emitter.emitError(getLoc(), "cannot access instance field '")
-        << spelling << "' directly; did you mean `self.`?" << getRange();
+        << spelling << "' directly; did you mean `self.`?" << getRange()
+        << LitFixIt(insertRange, "self.");
     return {};
   }
 
