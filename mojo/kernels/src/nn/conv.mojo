@@ -615,8 +615,8 @@ struct PackIm2ColNCHW[
     # packed matrix shape list
     static_packed_shape: __mlir_type[`!kgen.list<index[3]>`],
     type: DType,
-    simd_size: __mlir_type.index,
-    col_inner_size: __mlir_type.index,
+    simd_size: Int,
+    col_inner_size: Int,
 ]:
     """
     Im2Col transform outputing mlas's packed data layout, with indexing
@@ -781,7 +781,7 @@ struct PackIm2ColNCHW[
 
     # Pack straight block_size of data from original image without checking.
     fn _process_contiguous_blocks[
-        block_size: __mlir_type.index,
+        block_size: Int,
         fill_zero: Bool,
     ](
         self,
@@ -889,7 +889,7 @@ struct PackIm2ColNCHW[
             The next output index position in (ho, wo).
         """
         let vector = Buffer[
-            simd_size,
+            simd_size.__as_mlir_index(),
             type,
         ].stack_allocation()
 
@@ -1001,7 +1001,7 @@ struct PackIm2ColNCHW[
         )
 
     fn _process_output_row_helper[
-        block_size: __mlir_type.index
+        block_size: Int
     ](
         self,
         n_idx: Int,
@@ -1130,10 +1130,10 @@ struct ConvIm2ColNCHW[
     shape_output: __mlir_type[`!kgen.list<index[4]>`],
     packed_shape: __mlir_type[`!kgen.list<index[3]>`],
     type: DType,
-    simd_size: __mlir_type.index,
-    a_row_size: __mlir_type.index,
-    pack_inner_size: __mlir_type.index,
-    pack_cache_size: __mlir_type.index,
+    simd_size: Int,
+    a_row_size: Int,
+    pack_inner_size: Int,
+    pack_cache_size: Int,
 ]:
     var out: NDBuffer[4, shape_output, type]
     var input: NDBuffer[4, shape_input, type]
@@ -1277,7 +1277,7 @@ struct ConvIm2ColNCHW[
         var _bpacked_data = _raw_stack_allocation[
             pack_cache_size,  # Count.
             type,  # Data type.
-            simd_byte_width().__as_mlir_index(),  # Alignment.
+            simd_byte_width(),  # Alignment.
         ]()
 
         # Manually set the shape of packed B buffer:
@@ -1344,7 +1344,7 @@ struct ConvIm2ColNCHW[
 
         # Remap buffer indices for current tile.
         var remapped_bpacked = self._view_buffer_as(
-            b_packed.data, tile_n, sub_tile_k, Int(pack_inner_size)
+            b_packed.data, tile_n, sub_tile_k, pack_inner_size
         )
 
         var col_idx: Int = 0
@@ -1383,7 +1383,7 @@ struct ConvIm2ColNCHW[
             )
 
     fn _outer_n_loop_helper[
-        m_loop_pack_inner_size: __mlir_type.index
+        m_loop_pack_inner_size: Int
     ](
         self,
         b_packed: NDBuffer[3, packed_shape, type],
@@ -1420,7 +1420,7 @@ struct ConvIm2ColNCHW[
         return col_idx
 
     fn _outer_m_loop[
-        m_loop_pack_inner_size: __mlir_type.index
+        m_loop_pack_inner_size: Int,
     ](
         self,
         b_packed: NDBuffer[3, packed_shape, type],
@@ -1460,7 +1460,7 @@ struct ConvIm2ColNCHW[
             ](b_packed, global_offset, sub_tile_n, sub_tile_k)
 
     fn _outer_m_loop_helper[
-        skip_col_bound: Bool, m_loop_pack_inner_size: __mlir_type.index
+        skip_col_bound: Bool, m_loop_pack_inner_size: Int
     ](
         self,
         b_packed: NDBuffer[3, packed_shape, type],
@@ -1511,7 +1511,7 @@ struct ConvIm2ColNCHW[
         #  then reduce row size to maximizing unrolled tiles.
         var row_idx: Int = 0
         row_idx = self._outer_m_loop_row_helper[
-            skip_col_bound, m_loop_pack_inner_size, a_row_size
+            skip_col_bound, m_loop_pack_inner_size, a_row_size.__as_mlir_index()
         ](b_packed, global_offset, sub_tile_n_k, row_idx, valid_row_count)
 
         row_idx = self._outer_m_loop_row_helper[
@@ -1532,8 +1532,8 @@ struct ConvIm2ColNCHW[
 
     fn _outer_m_loop_row_helper[
         skip_col_bound: Bool,
-        m_loop_pack_inner_size: __mlir_type.index,
-        RowSize: __mlir_type.index,
+        m_loop_pack_inner_size: Int,
+        RowSize: Int,
     ](
         self,
         b_packed: NDBuffer[3, packed_shape, type],
@@ -1652,9 +1652,9 @@ struct ConvNHWCInnerLoopFilterPacked[
     packed_shape: __mlir_type[`!kgen.list<index[3]>`],
     accum_type: DType,
     value_type: DType,
-    simd_size: __mlir_type.index,
-    a_row_size: __mlir_type.index,
-    pack_inner_size: __mlir_type.index,
+    simd_size: Int,
+    a_row_size: Int,
+    pack_inner_size: Int,
     skip_boundary_check: Bool,
     same_channel_index: Bool,
 ]:
@@ -1680,7 +1680,7 @@ struct ConvNHWCInnerLoopFilterPacked[
     var conv_shape: ConvShape
 
     # Table of pointers for all the rows.
-    var offset_table: Buffer[a_row_size, DType.index]
+    var offset_table: Buffer[a_row_size.__as_mlir_index(), DType.index]
 
     var input_base_pointer: DTypePointer[value_type]
 
@@ -1718,7 +1718,9 @@ struct ConvNHWCInnerLoopFilterPacked[
             tile_n_k(StaticIntTuple): 2D dimension tuple describing the
                 size of the packed tile of B.
         """
-        let offset_table = Buffer[a_row_size, DType.index].stack_allocation()
+        let offset_table = Buffer[
+            a_row_size.__as_mlir_index(), DType.index
+        ].stack_allocation()
         var instance = ConvNHWCInnerLoopFilterPacked[
             shape_input,
             shape_c,
@@ -1784,7 +1786,8 @@ struct ConvNHWCInnerLoopFilterPacked[
         c_local: NDBuffer[
             2,
             create_kgen_list[__mlir_type.index](
-                a_row_size, pack_inner_size * simd_size
+                a_row_size.__as_mlir_index(),
+                (pack_inner_size * simd_size).__as_mlir_index(),
             ),
             accum_type,
         ],
@@ -1811,7 +1814,8 @@ struct ConvNHWCInnerLoopFilterPacked[
         c_local: NDBuffer[
             2,
             create_kgen_list[__mlir_type.index](
-                a_row_size, pack_inner_size * simd_size
+                a_row_size.__as_mlir_index(),
+                (pack_inner_size * simd_size).__as_mlir_index(),
             ),
             accum_type,
         ],
@@ -1874,7 +1878,8 @@ struct ConvNHWCInnerLoopFilterPacked[
         c_local: NDBuffer[
             2,
             create_kgen_list[__mlir_type.index](
-                a_row_size, pack_inner_size * simd_size
+                a_row_size.__as_mlir_index(),
+                (pack_inner_size * simd_size).__as_mlir_index(),
             ),
             accum_type,
         ],
@@ -1979,7 +1984,8 @@ struct ConvNHWCInnerLoopFilterPacked[
         c_local: NDBuffer[
             2,
             create_kgen_list[__mlir_type.index](
-                a_row_size, pack_inner_size * simd_size
+                a_row_size.__as_mlir_index(),
+                (pack_inner_size * simd_size).__as_mlir_index(),
             ),
             accum_type,
         ],
@@ -2002,7 +2008,7 @@ struct ConvNHWCInnerLoopFilterPacked[
         var global_k = self.global_offset.K + tile_n_k_idx[1]
 
         let local_a = Buffer[
-            simd_size * a_row_size,
+            (simd_size * a_row_size).__as_mlir_index(),
             value_type,
         ].stack_allocation()
 
@@ -2046,7 +2052,8 @@ struct ConvNHWCInnerLoopFilterPacked[
         var c_local = NDBuffer[
             2,
             create_kgen_list[__mlir_type.index](
-                a_row_size, pack_inner_size * simd_size
+                a_row_size.__as_mlir_index(),
+                (pack_inner_size * simd_size).__as_mlir_index(),
             ),
             accum_type,
         ].stack_allocation()
@@ -2173,11 +2180,11 @@ struct ConvIm2ColNHWC[
     shape_output: __mlir_type[`!kgen.list<index[4]>`],
     packed_shape: __mlir_type[`!kgen.list<index[3]>`],
     type: DType,
-    simd_size: __mlir_type.index,
-    a_row_size: __mlir_type.index,
-    pack_inner_size: __mlir_type.index,
-    pack_cache_size: __mlir_type.index,
-    filter_layout: __mlir_type.index,
+    simd_size: Int,
+    a_row_size: Int,
+    pack_inner_size: Int,
+    pack_cache_size: Int,
+    filter_layout: Int,
 ]:
     var out: NDBuffer[4, shape_output, type]
     var input: NDBuffer[4, shape_input, type]
@@ -2414,7 +2421,7 @@ struct ConvIm2ColNHWC[
         var _bpacked_data = _raw_stack_allocation[
             pack_cache_size,  # Count.
             type,  # Data type.
-            simd_byte_width().__as_mlir_index(),  # Alignment.
+            simd_byte_width(),  # Alignment.
         ]()
 
         # Manually set the shape of packed B buffer:
@@ -2483,7 +2490,7 @@ struct ConvIm2ColNHWC[
 
         # Remap buffer indices for current tile.
         var remapped_bpacked = self._view_buffer_as(
-            b_packed.data, tile_n, sub_tile_k, Int(pack_inner_size)
+            b_packed.data, tile_n, sub_tile_k, pack_inner_size
         )
 
         var col_idx: Int = self.col_start_idx
@@ -2522,7 +2529,7 @@ struct ConvIm2ColNHWC[
             )
 
     fn _outer_n_loop_helper[
-        m_loop_pack_inner_size: __mlir_type.index
+        m_loop_pack_inner_size: Int
     ](
         self,
         b_packed: NDBuffer[3, packed_shape, type],
@@ -2559,7 +2566,7 @@ struct ConvIm2ColNHWC[
         return col_idx
 
     fn _outer_m_loop[
-        m_loop_pack_inner_size: __mlir_type.index
+        m_loop_pack_inner_size: Int
     ](
         self,
         b_packed: NDBuffer[3, packed_shape, type],
@@ -2601,7 +2608,7 @@ struct ConvIm2ColNHWC[
             ](b_packed, global_offset, sub_tile_n, sub_tile_k)
 
     fn _outer_m_loop_helper[
-        skip_col_bound: Bool, m_loop_pack_inner_size: __mlir_type.index
+        skip_col_bound: Bool, m_loop_pack_inner_size: Int
     ](
         self,
         b_packed: NDBuffer[3, packed_shape, type],
@@ -2727,8 +2734,8 @@ struct ConvIm2ColNHWC[
 
     fn _outer_m_loop_row_helper[
         skip_col_bound: Bool,
-        m_loop_pack_inner_size: __mlir_type.index,
-        RowSize: __mlir_type.index,
+        m_loop_pack_inner_size: Int,
+        RowSize: Int,
     ](
         self,
         b_packed: NDBuffer[3, packed_shape, type],
