@@ -442,25 +442,28 @@ struct PackMatrixRows[
 
         # Write to packed space:
         #  transposed_inner_row_idx now corresponds to the original column idx.
-        for transposed_inner_row_idx in range(simd_size):
+        @always_inline
+        fn transposed_inner_row_body[idx: Int]():
             let transposed_data = transpose_buffer.simd_load[simd_size](
-                Index(transposed_inner_row_idx, 0)
+                Index(idx, 0)
             )
             # compute the packed index
             let _row_outer = local_off_set[0] // row_inner_size
             let _row_inner = Int.remu(local_off_set[0], row_inner_size)
 
-            if skip_col_bound or (transposed_inner_row_idx < write_bound[1]):
+            if skip_col_bound or (idx < write_bound[1]):
                 self.packed_matrix.simd_store[simd_size](
                     Index(
                         _row_outer,
-                        local_off_set[1] + transposed_inner_row_idx,
+                        local_off_set[1] + idx,
                         _row_inner,
                     ),
                     transposed_data,
                 )
             # Out of bound columns are discarded as there's no allocation for them
             #  in the packed buffer.
+
+        unroll[simd_size, transposed_inner_row_body]()
 
     fn _pack(self):
         """Helper function: Allocates transpose workspace and launch the

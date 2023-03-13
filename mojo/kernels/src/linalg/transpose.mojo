@@ -322,10 +322,14 @@ fn _permute_data[
     """
     Ensures that output[i] = input[perms[i]] for i ∈ [0, size)
     """
-    for axis in range(size):
-        let perm_axis = perms.load(axis)[0].value
+
+    @always_inline
+    fn body[idx: Int]():
+        let perm_axis = perms.load(idx)[0].value
         let perm_data = input.load(perm_axis)
-        output.store(axis, perm_data)
+        output.store(idx, perm_data)
+
+    unroll[size, body]()
 
 
 fn _fill_strides[

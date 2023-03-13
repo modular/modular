@@ -79,10 +79,14 @@ fn gemv[
             row_block_size,
             type,
         ].aligned_stack_allocation[64]()
-        for ii in range(row_block_size):
-            let accum_idx = Index(ii, 0)
+
+        @always_inline
+        fn body[idx: Int]():
+            let accum_idx = Index(idx, 0)
             let curr_accum = accums.simd_load[col_block_size](accum_idx)
-            scalar_accums[ii] = curr_accum.reduce_add()
+            scalar_accums[idx] = curr_accum.reduce_add()
+
+        unroll[row_block_size, body]()
 
         # Store the results
         out.simd_store[row_block_size](
