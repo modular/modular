@@ -264,6 +264,7 @@ int main(int argc, char **argv) {
   registerAsmPrinterCLOptions();
   registerDefaultTimingManagerCLOptions();
   registerPassManagerCLOptions();
+  registerMLIRContextCLOptions();
   llvm::cl::ParseCommandLineOptions(argc, argv);
 
   // Set up the input file.
