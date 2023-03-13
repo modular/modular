@@ -206,7 +206,7 @@ fn vectorize_unroll[
 
 
 # ===----------------------------------------------------------------------===#
-# Parallelize
+# parallelForEachN
 # ===----------------------------------------------------------------------===#
 
 alias none = __mlir_type.`!lit.none`
@@ -266,31 +266,44 @@ fn parallelForEachN[
     tasks.__del__()
 
 
-@always_inline
-fn div_ceil(numerator: Int, denominator: Int) -> Int:
-    return (numerator + denominator - 1) // denominator
-
-
-@register_passable
-struct _empty:
-    @always_inline("nodebug")
-    fn __new__() -> _empty:
-        return Self {}
-
-    @always_inline("nodebug")
-    fn __clone__(self&) -> _empty:
-        return Self {}
+# ===----------------------------------------------------------------------===#
+# Parallelize
+# ===----------------------------------------------------------------------===#
 
 
 @always_inline
 fn parallelize[
     func: __mlir_type[`!kgen.signature<(`, Int, `) -> !lit.none>`],
 ](rt: Runtime, num_work_items: Int):
+    # We have no tasks, so do nothing.
+    if num_work_items == 0:
+        return
+
+    # Only have a single task, just run it on the main thread.
+    if num_work_items == 1:
+        func(0)
+        return
+
     @always_inline
-    fn task_fn(i: Int, args: _empty):
+    async fn task_fn(i: Int):
         func(i)
 
-    parallelForEachN[_empty, task_fn](rt, num_work_items, _empty())
+    var tasks = InlinedFixedVector[InlinedFixedVectorLength, Coroutine[none]](
+        num_work_items - 1
+    )
+    var tg = TaskGroup(rt)
+    for i in range(num_work_items - 1):
+        let task: Coroutine[__mlir_type.`!lit.none`] = task_fn(i)
+        tg.create_task[none](task)
+        tasks.append(task)
+
+    func(num_work_items - 1)
+
+    tg.wait()
+    tg.__del__()
+    for j in range(tasks.__len__()):
+        tasks[j].__del__()
+    tasks.__del__()
 
 
 # ===----------------------------------------------------------------------===#

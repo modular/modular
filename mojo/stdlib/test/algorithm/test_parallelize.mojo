@@ -7,7 +7,8 @@
 
 from Buffer import Buffer
 from DType import DType
-from Functional import parallelize, map, div_ceil
+from Functional import parallelize, map
+from Math import div_ceil
 from Int import Int
 from IO import print
 from LLCL import num_cores, Runtime
