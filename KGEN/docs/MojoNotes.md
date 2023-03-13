@@ -1,6 +1,6 @@
-# Lightning ⚡️ Notes
+# Mojo ⚡️ Notes
 
-Lightning is intended to evolve into a superset of Python, which adds
+Mojo is intended to evolve into a superset of Python, which adds
 first-class support for static types, "structs" with zero-cost abstraction
 features, and support for kgen-parameters and search.
 
@@ -9,7 +9,7 @@ document is intended to track notes about its ongoing development.
 
 ## Intentional differences from Python
 
-Lightning is generally a superset of Python, but here are some intentional
+Mojo is generally a superset of Python, but here are some intentional
 incompatibilities as well as extensions.  These are subject to discussion and
 re-evaluation over time.
 
@@ -17,10 +17,10 @@ re-evaluation over time.
 
 1) We do not support all the deprecated features of the Python lexer.
 
-2) We treat "soft" keywords like `case` as "hard" keywords in Lightning.
+2) We treat "soft" keywords like `case` as "hard" keywords in Mojo.
    Rationale is that we don't want things like "case = 42" to be supported.
    Python supports this for backwards compatibility reasons, but we can handle
-   this in the future Python -> Lightning translator tool by (e.g.) adding an
+   this in the future Python -> Mojo translator tool by (e.g.) adding an
    backticks around the keywords.
 
 ### New Features / Extensions that Python doesn't have
@@ -38,7 +38,7 @@ In addition to specific differences, we support the following extensions:
 
 3) In addition to the builtin dynamic Python object types like "int" and "dict",
    we will have library-defined static versions named "Int" and "Dict" etc that
-   are defined as Lightning structs in the library.  These implementations will
+   are defined as Mojo structs in the library.  These implementations will
    be very similar to the Python types in surface syntax, but will have type
    parameters and may have different behavior in some cases (TBD).
 
@@ -74,14 +74,14 @@ In addition to specific differences, we support the following extensions:
 
 ### New `fn` introducer
 
-Lightning supports a new `fn` introducer that can be used in place of `def`.
+Mojo supports a new `fn` introducer that can be used in place of `def`.
 Both form of declaration have the same capabilities - a `fn` can include dynamic
 operations and interact with Python objects directly.
 
 `fn` is effectively a more strict `def` that has different defaults.  Notably
 a `fn` disables the following behavior that `def` maintains for Python
 compatibility / familiarity, and to make it easier to migrate large swaths of
-Python code to Lightning someday.
+Python code to Mojo someday.
 
 More specific differences:
 
@@ -98,14 +98,14 @@ cool kids on the block these days.
 
 ### Main
 
-In Lightning the main function has signature `fn main()`.
+In Mojo the main function has signature `fn main()`.
 That function is exported automatically with the unique symbol "main" in the
 final object file. This is subject to change as we close the gap with Python's
 functionality.
 
 ### The full power of MLIR at your fingertips
 
-A design goal of the Lightning is to provide "syntactic sugar" that makes it
+A design goal of the Mojo is to provide "syntactic sugar" that makes it
 much easier to write KGEN kernels than writing MLIR directly.  Our approach to
 solve this is to provide library developers full access to low-level MLIR
 constructs, and allow them to build domain specific zero-cost abstractions on
@@ -117,7 +117,7 @@ There are a few different components of this, which we explain here:
 
 **Types**
 
-User defined types in Lightning are defined as structs (and eventually classes,
+User defined types in Mojo are defined as structs (and eventually classes,
 variants, etc).  These all turn into an MLIR `lit.struct.decl` operation, and
 references to them use the `!kgen.declref<@Symbol>` type, e.g. this:
 
@@ -153,7 +153,7 @@ struct F32:
 
 The "takeMLIRTypes" function doesn't take values of user defined struct type, it
 takes SSA values of the named MLIR types directly.  This means that general
-values in Lightning can have MLIR type, which is the basis for defining "nice"
+values in Mojo can have MLIR type, which is the basis for defining "nice"
 user defined types like `Bool`, `Int` and `F32` respectively.  Note that values
 of MLIR type don't have any methods or properties on them, they are useful as
 storage types and as input and outputs of MLIR operations.
@@ -167,9 +167,9 @@ sugar for working with these, but they have a very simple core model.  KGEN uses
 MLIR attributes as the core representation for meta values that are determined
 at compile time with elaboration and search.
 
-Lightning exposes this whole system directly with the `__mlir_attr` magic
+Mojo exposes this whole system directly with the `__mlir_attr` magic
 identifier, and you may use any `TypedAttr` as a general purpose meta or dynamic
-value in Lightning.  You can see this most easily when materializing a constant
+value in Mojo.  You can see this most easily when materializing a constant
 value into a dynamic one, e.g. when storing into a variable:
 
 ```mlir
@@ -193,7 +193,7 @@ arbitrary attributes, you aren't limited to TypedAttr.
 **Operations**
 
 Of course, a big part of MLIR is the definition of dialect operations, which
-define the core compute plane.  Lightning gives you direct access to this with
+define the core compute plane.  Mojo gives you direct access to this with
 the `__mlir_op` magic identifier, which yields an MLIR operation identifier that
 may optionally have attributes added to it (with subscript syntax) or be applied
 to zero-or-more SSA values with call syntax, e.g. using the [`index.sub`
@@ -230,7 +230,7 @@ $ kgen-opt  --mlir-print-op-generic KGEN/test/pop-ir/pop-ops.mlir | grep pop.cmp
 ...
 ```
 
-which told me how to spell a comparison.  This is accessible in Lightning like
+which told me how to spell a comparison.  This is accessible in Mojo like
 this:
 
 ```Python
@@ -244,13 +244,13 @@ cost!) you can define your own libraries on top of these things and only have
 to understand this the first time you define the wrappers.
 
 One final topic that we glossed over is that MLIR needs to know the result types
-for an operation when you create it, and Lightning similarly needs to know the
-type of an expression.  Lightning handles this by using the
+for an operation when you create it, and Mojo similarly needs to know the
+type of an expression.  Mojo handles this by using the
 `InferTypeOpInterface` to figure out the result type whenever possible, which
 handles many common cases very nicely.  However, some operations don't have
 an implementation of this interface because they can return multiple types.
 
-To support this, Lightning allows you to define a `_type` attribute with the
+To support this, Mojo allows you to define a `_type` attribute with the
 result type to use, e.g. to cast an index value to `i1` you can use:
 
 ```
@@ -262,7 +262,7 @@ result type to use, e.g. to cast an index value to `i1` you can use:
 ### Expression parsing happens in two phases
 
 Python uses its expression grammar for value expressions and for types.  This is
-quite convenient for Lightning ⚡️ given we want types to be parameter values!
+quite convenient for Mojo ⚡️ given we want types to be parameter values!
 That said, there are some annoyances to deal with in terms of how to handle
 this, for example, Python allows:
 
@@ -291,7 +291,7 @@ Python supports forward references to declarations in a file and/or module.
 It handles this by making everything be dynamically executable (including `def`s
 which are "executed" to install them in the dictionary for a class) and does not
 actually type expressions statically.  This works for Python, but won't work for
-Lightning ⚡️, and we can't give up support for forward references.
+Mojo ⚡️, and we can't give up support for forward references.
 
 As such, we currently handle this by parsing the source file in three phases:
 

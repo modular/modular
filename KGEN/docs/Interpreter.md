@@ -4,9 +4,9 @@
 
 ## Introduction
 
-Lightning (here on called "Lit") provides a rich metaprogramming model. Part of
+The Mojo programming language provides a rich metaprogramming model. Part of
 that model is the ability to evaluate code at compile-time. KGEN provides
-parameters, the fundamental element of Lit's metaprogramming system, and
+parameters, the fundamental element of Mojo's metaprogramming system, and
 parameter expressions, the fundamental blocks of building compile-time
 expressions. Originally, KGEN parameter expressions were limited to
 `ParamOperatorAttr`, a fixed and non-extensible "operator" set that are
@@ -18,7 +18,7 @@ This was great for bootstrapping KGEN and the metaprogramming system but quickly
 falls short with an extensible type system due to its non-modular design: other
 dialects can't add operators. Operators also duplicate code: the arithmetic
 operators on `index` are copies of the MLIR operations from the `index` dialect.
-Furthermore, Lit only has one IR: MLIR operations. It follows that KGEN needs
+Furthermore, Mojo only has one IR: MLIR operations. It follows that KGEN needs
 the ability to execute user-written code at compile-time.
 
 KGEN already uses a JIT compiler as part of elaboration. One option to execute
@@ -44,11 +44,11 @@ MLIR context. We have decided to stick to this representation for the
 foreseeable future despite this downside, and we can upgrade to a more
 aggressive solution if necessary.
 
-The low-level IR for Lit is the POP dialect. In order to interpret Lit code, we
-need to fold all the POP operations. This requires constant data types for all
-POP dialect types: SIMD vectors, arrays, structs, and variants. These attributes
-are defined in `POPAttrs.td`. Folders for most POP operations are written using
-these attributes. They are found in `POPOpsFolders.cpp`.
+The low-level IR for Mojo is the POP dialect. In order to interpret Mojo code,
+we need to fold all the POP operations. This requires constant data types for
+all POP dialect types: SIMD vectors, arrays, structs, and variants. These
+attributes are defined in `POPAttrs.td`. Folders for most POP operations are
+written using these attributes. They are found in `POPOpsFolders.cpp`.
 
 Operations which define folders that return constant values given constant
 inputs are handled trivially by the interpreter.
@@ -204,9 +204,9 @@ all candidates of its callee, which concretizes the callee if it was not
 concrete. It picks the first valid candidate if there are multiple. The `apply`
 operator can then be collapsed into the result value.
 
-## Compile-Time Function Calls in Lit
+## Compile-Time Function Calls in Mojo
 
-In Lit, executing code at compile-time is similar to C++ `constexpr` functions.
+In Mojo, executing code at compile-time is similar to C++ `constexpr` functions.
 Right now, the semantics of evaluating a function call at compile-time are
 simple: when calling a function inside a "parameter context", i.e. a parameter
 value or alias value, the parser emits an `apply` operator. Elsewhere, the
