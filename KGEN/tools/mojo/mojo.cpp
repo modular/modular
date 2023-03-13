@@ -166,8 +166,8 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       mlir::emitWarning(theModule->getLoc(),
                         "module target does not match command line "
                         "specification and will be overwritten");
+      target = nullptr;
     }
-    target = nullptr;
   }
   if (!target) {
     ErrorOr<TargetInfoAttr> targetOr =
