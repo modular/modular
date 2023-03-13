@@ -438,7 +438,7 @@ fn tile[
             workgroup_function[tile_size_list[idx]](current_offset)
             current_offset += tile_size
 
-    unroll[tile_size_list.__len__().__as_mlir_index(), static_tile_impl]()
+    unroll[tile_size_list.__len__(), static_tile_impl]()
 
 
 @always_inline
@@ -760,7 +760,7 @@ fn tile_and_unswitch[
             )
             current_offset += tile_size
 
-    unroll[tile_size_list.__len__().__as_mlir_index(), static_tile_impl]()
+    unroll[tile_size_list.__len__(), static_tile_impl]()
 
     # Use the last tile size to process the residue.
     if current_offset < upperbound:
