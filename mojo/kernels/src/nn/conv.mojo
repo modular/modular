@@ -30,7 +30,7 @@ from TargetInfo import simd_byte_width
 from Pointer import DTypePointer, Pointer
 from DType import DType
 from LLCL import Runtime
-from Functional import unroll, parallelForEachN
+from Functional import unroll, unroll2, parallelForEachN
 from Range import range
 
 # Data layout encoding.
@@ -813,7 +813,11 @@ struct PackIm2ColNCHW[
             global_out_image_offset, rs_idx
         )
 
-        for col_idx in range(0, block_size, simd_size):
+        alias loop_iters = block_size // simd_size
+
+        @always_inline
+        fn body[idx: Int]():
+            alias col_idx = idx * simd_size
             # calculate input index
             let global_in_image_idx = global_in_image_offset + Index(0, col_idx)
 
@@ -837,6 +841,8 @@ struct PackIm2ColNCHW[
             self._pack_vector(
                 local_tile_nk_offset + Index(col_idx, 0), image_data
             )
+
+        unroll[loop_iters, body]()
 
     # Write a simd vector into packed layout buffer.
     @always_inline
@@ -895,7 +901,9 @@ struct PackIm2ColNCHW[
         var w_o_idx = global_out_image_offset[1]
 
         # Vector index for filling the simd elements.
-        for vec_idx in range(simd_size):
+        @always_inline
+        fn body[idx: Int]():
+            alias vec_idx = idx
             # Calculate the current output and input indices.
             let o_image_idx = Index(h_o_idx, w_o_idx)
             let i_image_idx = self._output_to_input(o_image_idx, rs_idx)
@@ -922,6 +930,8 @@ struct PackIm2ColNCHW[
             if w_o_idx == self.image_output_shape[1]:
                 w_o_idx = 0
                 h_o_idx += 1
+
+        unroll[simd_size, body]()
 
         # Load the prepared data into simd vector.
         let vec_data = vector.simd_load[simd_size](0)
@@ -1742,7 +1752,9 @@ struct ConvNHWCInnerLoopFilterPacked[
         let r_s_c = _k_to_r_s_c_nhwc(k_offset, self.conv_shape)
         let r_s = Index(r_s_c[0], r_s_c[1])
 
-        for row_idx in range(a_row_size):
+        @always_inline
+        fn body[idx: Int]():
+            alias row_idx = idx
             let m_offset = self.global_offset.M + row_idx
             let n_ho_wo = _m_to_n_ho_wo_nhwc(m_offset, self.conv_shape)
             let ho_wo = Index(n_ho_wo[1], n_ho_wo[2])
@@ -1765,6 +1777,8 @@ struct ConvNHWCInnerLoopFilterPacked[
             else:
                 self.offset_table[row_idx] = -1
 
+        unroll[a_row_size, body]()
+
     fn _initialize_c_tile(
         self,
         c_local: NDBuffer[
@@ -1782,12 +1796,15 @@ struct ConvNHWCInnerLoopFilterPacked[
                 c_local(NDBuffer): pre-allocated local buffer for c partial
                     sums.
         """
-        for row_idx in range(a_row_size):
-            for col_idx in range(0, pack_inner_size, simd_size):
-                c_local.simd_store[simd_size](
-                    Index(row_idx, col_idx),
-                    SIMD[simd_size, accum_type](0),
-                )
+
+        @always_inline
+        fn outer_body[idx0: Int, idx1: Int]():
+            c_local.simd_store[simd_size](
+                Index(idx0, idx1 * simd_size),
+                SIMD[simd_size, accum_type](0),
+            )
+
+        unroll2[a_row_size, pack_inner_size // simd_size, outer_body]()
 
     fn _load_c_tile(
         self,
@@ -1811,42 +1828,46 @@ struct ConvNHWCInnerLoopFilterPacked[
                 tile_idx(StaticIntTuple): index tuple with (m,n) coordinates
                     within the current processing tile.
         """
-        for row_idx in range(a_row_size):
-            for col_idx in range(0, pack_inner_size, simd_size):
-                let global_idx_pair = (
-                    Index(self.global_offset.M, self.global_offset.N)
-                    + tile_idx
-                    + Index(row_idx, col_idx)
-                )
-                let global_idx = Index(
-                    global_idx_pair[0],
-                    global_idx_pair[1],
-                )
-                let local_idx = Index(row_idx, col_idx)
 
-                # Load data from original matrix C.
-                var c_data: SIMD[simd_size, accum_type] = 0
-                if skip_boundary_check or (
-                    Index(row_idx, col_idx + simd_size)
-                    <= (self.c_bound - tile_idx)
-                ):
-                    # Use simd load if all within bound
-                    c_data = self.c.simd_load[simd_size](global_idx)
-                elif (row_idx + tile_idx[0]) < self.c_bound[0]:
-                    # Use partial load if row inbound but col not
-                    #  in simd bound.
-                    c_data = partial_simd_load[simd_size, accum_type](
-                        self.c._offset(global_idx),
-                        0,
-                        self.c_bound[1] - tile_idx[1] - col_idx,
-                        0,
-                    )
-                else:
-                    # Fill zero if row out of bound
-                    c_data = SIMD[simd_size, accum_type](0)
+        @always_inline
+        fn outer_body[idx0: Int, idx1: Int]():
+            alias col_idx = idx1 * simd_size
 
-                # Store data to local buffer.
-                c_local.simd_store[simd_size](local_idx, c_data)
+            let global_idx_pair = (
+                Index(self.global_offset.M, self.global_offset.N)
+                + tile_idx
+                + Index(idx0, col_idx)
+            )
+            let global_idx = Index(
+                global_idx_pair[0],
+                global_idx_pair[1],
+            )
+            let local_idx = Index(idx0, col_idx)
+
+            # Load data from original matrix C.
+            var c_data: SIMD[simd_size, accum_type] = 0
+            if skip_boundary_check or (
+                Index(idx0, col_idx + simd_size) <= (self.c_bound - tile_idx)
+            ):
+                # Use simd load if all within bound
+                c_data = self.c.simd_load[simd_size](global_idx)
+            elif (idx0 + tile_idx[0]) < self.c_bound[0]:
+                # Use partial load if row inbound but col not
+                #  in simd bound.
+                c_data = partial_simd_load[simd_size, accum_type](
+                    self.c._offset(global_idx),
+                    0,
+                    self.c_bound[1] - tile_idx[1] - col_idx,
+                    0,
+                )
+            else:
+                # Fill zero if row out of bound
+                c_data = SIMD[simd_size, accum_type](0)
+
+            # Store data to local buffer.
+            c_local.simd_store[simd_size](local_idx, c_data)
+
+        unroll2[a_row_size, pack_inner_size // simd_size, outer_body]()
 
     fn _store_c_tile(
         self,
@@ -1868,37 +1889,40 @@ struct ConvNHWCInnerLoopFilterPacked[
                 tile_idx(StaticIntTuple): index tuple with (m,n) coordinates
                     within the current processing tile.
         """
-        for row_idx in range(a_row_size):
-            for col_idx in range(0, pack_inner_size, simd_size):
-                let global_idx_pair = (
-                    Index(self.global_offset.M, self.global_offset.N)
-                    + tile_idx
-                    + Index(row_idx, col_idx)
-                )
-                let global_idx = Index(
-                    global_idx_pair[0],
-                    global_idx_pair[1],
-                )
-                let local_idx = Index(row_idx, col_idx)
 
-                # Load data from original matrix C.
-                var c_data = c_local.simd_load[simd_size](local_idx)
+        @always_inline
+        fn outer_body[idx0: Int, idx1: Int]():
+            alias col_idx = idx1 * simd_size
+            let global_idx_pair = (
+                Index(self.global_offset.M, self.global_offset.N)
+                + tile_idx
+                + Index(idx0, col_idx)
+            )
+            let global_idx = Index(
+                global_idx_pair[0],
+                global_idx_pair[1],
+            )
+            let local_idx = Index(idx0, col_idx)
 
-                if skip_boundary_check or (
-                    Index(row_idx, col_idx + simd_size)
-                    <= (self.c_bound - tile_idx)
-                ):
-                    # Use simd store if all within bound
-                    self.c.simd_store[simd_size](global_idx, c_data)
-                elif row_idx < (self.c_bound[0] - tile_idx[0]):
-                    # Use partial store if row in bound but col not
-                    #  in simd bound.
-                    partial_simd_store[simd_size, accum_type](
-                        self.c._offset(global_idx),
-                        0,
-                        self.c_bound[1] - tile_idx[1] - col_idx,
-                        c_data,
-                    )
+            # Load data from original matrix C.
+            var c_data = c_local.simd_load[simd_size](local_idx)
+
+            if skip_boundary_check or (
+                Index(idx0, col_idx + simd_size) <= (self.c_bound - tile_idx)
+            ):
+                # Use simd store if all within bound
+                self.c.simd_store[simd_size](global_idx, c_data)
+            elif idx0 < (self.c_bound[0] - tile_idx[0]):
+                # Use partial store if row in bound but col not
+                #  in simd bound.
+                partial_simd_store[simd_size, accum_type](
+                    self.c._offset(global_idx),
+                    0,
+                    self.c_bound[1] - tile_idx[1] - col_idx,
+                    c_data,
+                )
+
+        unroll2[a_row_size, pack_inner_size // simd_size, outer_body]()
 
     # TODO: This can be lifted to common utility.
 
@@ -1982,7 +2006,9 @@ struct ConvNHWCInnerLoopFilterPacked[
             value_type,
         ].stack_allocation()
 
-        for fill_a_idx in range(a_row_size):
+        @always_inline
+        fn body[idx: Int]():
+            alias fill_a_idx = idx
             var global_m = self.global_offset.M + fill_a_idx
             let a_val_scalar = self._load_a(
                 Index(global_m, global_k), fill_a_idx
@@ -1990,20 +2016,27 @@ struct ConvNHWCInnerLoopFilterPacked[
             let a_fill_val = SIMD[simd_size, value_type](a_val_scalar)
             local_a.simd_store[simd_size](fill_a_idx * simd_size, a_fill_val)
 
-        # Loop over local accumulator tiles.
-        for col_idx in range(0, pack_inner_size, simd_size):
+        unroll[a_row_size, body]()
+
+        @always_inline
+        fn outer_body[idx0: Int, idx1: Int]():
+            alias col_idx = idx0 * simd_size
+
+            # Loop over local accumulator tiles.
             let b_val = self.b_packed.simd_load[simd_size](
                 Index(n_outer_idx, tile_n_k_idx[1], col_idx)
             ).cast[accum_type]()
-            for row_idx in range(a_row_size):
-                let a_val = local_a.simd_load[simd_size](
-                    row_idx * simd_size
-                ).cast[accum_type]()
-                var c_idx = Index(row_idx, col_idx)
-                var c_val = c_local.simd_load[simd_size](c_idx)
 
-                c_val = a_val.fma(b_val, c_val)
-                c_local.simd_store[simd_size](c_idx, c_val)
+            let a_val = local_a.simd_load[simd_size](idx1 * simd_size).cast[
+                accum_type
+            ]()
+            var c_idx = Index(idx1, col_idx)
+            var c_val = c_local.simd_load[simd_size](c_idx)
+
+            c_val = a_val.fma(b_val, c_val)
+            c_local.simd_store[simd_size](c_idx, c_val)
+
+        unroll2[pack_inner_size // simd_size, a_row_size, outer_body]()
 
     fn _run_inner_loop(self):
         """Utility funcion on the inner loop. Run the inner kernel on the whole
