@@ -119,26 +119,10 @@ fn vectorize[
     from 0 to size in simd fashion.
     """
     assert_param_bool_msg[simd_width > 0, "simd width must be > 0"]()
-    let vector_end = (size // simd_width) * simd_width
-    for simd_idx in range(0, vector_end, simd_width):
-        func[simd_width](simd_idx)
-
-    # For scalar remainder we will just get the first available `func`
-    # implementation. If we do `kgen.param.fork` here, we will blow up the
-    # search space quadratically.
-    alias scalar_func_impls = __mlir_attr[
-        `#kgen.param.expr<get_all_impls,`,
-        func[1],
-        `> :`,
-        __mlir_type[`!kgen.variadic<`, fn_sig_type, `>`],
-    ]
-    alias scalar_func_impl = variadic_get(scalar_func_impls, 0)
-    for i in range(vector_end, size):
-        scalar_func_impl(i)
+    vectorize_unroll[simd_width, 1, func](size)
 
 
-# TODO: Move to a more appropriate place.
-fn variadic_get(
+fn _variadic_get(
     a: __mlir_type[`!kgen.variadic<`, fn_sig_type, `>`],
     idx: __mlir_type.`index`,
 ) -> fn_sig_type:
@@ -197,7 +181,7 @@ fn vectorize_unroll[
         `> :`,
         __mlir_type[`!kgen.variadic<`, fn_sig_type, `>`],
     ]
-    alias scalar_func_impl = variadic_get(scalar_func_impls, 0)
+    alias scalar_func_impl = _variadic_get(scalar_func_impls, 0)
 
     @always_inline
     fn unrolled_func(unrolled_simd_idx: Int):
