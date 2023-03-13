@@ -34,9 +34,9 @@ from Range import range
 
 @always_inline
 fn _raw_stack_allocation[
-    count: __mlir_type.index,
+    count: Int,
     type: DType,
-    alignment: __mlir_type.index,
+    alignment: Int,
 ]() -> DTypePointer[type]:
     """Allocates data buffer space on the stack given a data type and number of elements.
 
@@ -293,9 +293,7 @@ struct Buffer[size: __mlir_type.index, type: DType]:
 
     @staticmethod
     @always_inline
-    fn aligned_stack_allocation[
-        alignment: __mlir_type.index
-    ]() -> Buffer[size, type]:
+    fn aligned_stack_allocation[alignment: Int]() -> Buffer[size, type]:
         """Constructs a buffer instance backed by stack allocated memory space.
 
         Args:
@@ -667,7 +665,7 @@ struct NDBuffer[
     @staticmethod
     @always_inline
     fn aligned_stack_allocation[
-        alignment: __mlir_type.index
+        alignment: Int
     ]() -> NDBuffer[rank, shape, type]:
         """Constructs an ndbuffer instance backed by stack allocated memory space.
 
@@ -677,7 +675,7 @@ struct NDBuffer[
             Constructed ndbuffer with the allocated space.
         """
         var data_pointer = _raw_stack_allocation[
-            product[rank](shape).__as_mlir_index(), type, alignment
+            product[rank](shape), type, alignment
         ]()
         return NDBuffer[rank, shape, type](data_pointer.address)
 
