@@ -138,11 +138,11 @@ StringRef Buffer::getBuffer() const {
 //===----------------------------------------------------------------------===//
 
 Buffer::AllocatedBuffer::AllocatedBuffer(StringRef str) {
-  data = malloc(str.size());
+  align = alignof(std::max_align_t);
+  data = alignedAlloc(align, str.size());
   assert(data && "malloc failed!");
   size = str.size();
   memcpy(data, str.begin(), size);
-  align = sizeof(void *);
 }
 
 //===----------------------------------------------------------------------===//
