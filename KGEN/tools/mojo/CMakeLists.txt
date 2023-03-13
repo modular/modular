@@ -4,8 +4,8 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_tool(lit
-  lit.cpp
+add_modular_tool(mojo
+  mojo.cpp
 
   LINK_COMPONENTS
   native
@@ -23,3 +23,9 @@ add_modular_tool(lit
   MLIRIndexDialect
   MLIRParser
   )
+
+# TODO: This is a temporary target that is meant to keep both lit and mojo as
+# valid executables.
+add_custom_command(TARGET mojo
+  POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:mojo> ${MODULAR_TOOLS_DIR}/lit)

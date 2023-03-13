@@ -21,5 +21,5 @@ add_modular_testsuite(check-kgen
   kgen-execute
   kgen-translate
   mojo-lsp-server
-  lit
+  mojo
 )

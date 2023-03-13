@@ -33,7 +33,7 @@ add_subdirectory(tools/kgen-opt)
 add_subdirectory(tools/kgen-execute)
 add_subdirectory(tools/kgen-translate)
 add_subdirectory(tools/mojo-lsp-server)
-add_subdirectory(tools/lit)
+add_subdirectory(tools/mojo)
 
 # This function reads ${KGEN_LINK_LIBS} and puts the include flags into
 # ${KGEN_INCLUDE_FLAGS}.
@@ -178,11 +178,11 @@ function(add_lit_doc doc_filename output_file output_directory)
   add_custom_command(
     OUTPUT "${GEN_DOC_FILE}"
 
-    COMMAND $<TARGET_FILE:lit> -doc-gen
+    COMMAND $<TARGET_FILE:mojo> -doc-gen
     -o ${GEN_DOC_FILE} ${KGEN_INCLUDE_FLAGS} ${doc_filename}
 
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    DEPENDS lit ${doc_filename} ${KGEN_LIB_DEPENDS}
+    DEPENDS mojo ${doc_filename} ${KGEN_LIB_DEPENDS}
   )
 
   add_custom_target(${output_file}DocGen DEPENDS ${GEN_DOC_FILE})
