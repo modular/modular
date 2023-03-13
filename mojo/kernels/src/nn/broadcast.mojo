@@ -37,6 +37,7 @@ fn _get_rightmost_broadcast_axis[
         output (NDBuffer): the output buffer
         input (NDBuffer): the input buffer
     """
+    # TODO: consider manually unrolling this loop
     for axis in range(rank - 1, -1, -1):
         let in_dim = input.dim(axis)
         let out_dim = output.dim(axis)
