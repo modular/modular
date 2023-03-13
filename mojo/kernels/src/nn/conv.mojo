@@ -23,13 +23,14 @@ from Matmul import (
     PackMatrixCols,
     PackMatrixRows,
 )
+from Math import div_ceil
 from List import create_kgen_list_unknown, create_kgen_list
 from Range import range
 from TargetInfo import simd_byte_width
 from Pointer import DTypePointer, Pointer
 from DType import DType
 from LLCL import Runtime
-from Functional import unroll, parallelForEachN, div_ceil
+from Functional import unroll, parallelForEachN
 from Range import range
 
 # Data layout encoding.

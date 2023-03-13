@@ -7,7 +7,8 @@
 from Assert import assert_param, assert_param_bool, debug_assert
 from Buffer import NDBuffer
 from DType import DType
-from Functional import vectorize, vectorize_unroll, div_ceil, parallelize
+from Functional import vectorize, vectorize_unroll, parallelize
+from Math import div_ceil
 from Index import Index, StaticIntTuple
 from Intrinsics import PrefetchOptions
 from Int import Int
