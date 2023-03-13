@@ -1,4 +1,4 @@
-# RUN: not lit %s 2>&1 | FileCheck %s
+# RUN: not mojo %s 2>&1 | FileCheck %s
 
 from F32 import F32
 

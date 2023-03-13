@@ -1,4 +1,4 @@
-# RUN: lit %s | FileCheck %s
+# RUN: mojo %s | FileCheck %s
 
 from F32 import F32
 from Int import Int

@@ -1,4 +1,4 @@
-# RUN: lit %s | FileCheck %s
+# RUN: mojo %s | FileCheck %s
 
 from Int import Int
 from IO import print

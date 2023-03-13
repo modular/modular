@@ -1,4 +1,4 @@
-# RUN: lit %s -doc-gen | FileCheck %s
+# RUN: mojo %s -doc-gen | FileCheck %s
 
 from Int import Int
 

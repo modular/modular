@@ -1,4 +1,4 @@
-# RUN: lit %s -emit -o %t.o
+# RUN: mojo %s -emit -o %t.o
 # RUN: cat %t.h | FileCheck %s
 
 from F32 import F32
