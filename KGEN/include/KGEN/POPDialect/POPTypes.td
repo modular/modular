@@ -385,7 +385,7 @@ def POP_PackType : POPType<"Pack", "pack", [
     !pop.pack<[i32, i64]>
 
     kgen.generator @pack<Ts: variadic<!kgen.mlirtype>, T0: type, T1: type>(
-      // A pack type parameterized on a variadic serquence of elements.
+      // A pack type parameterized on a variadic sequence of elements.
       %0: !pop,pack<Ts>,
       // A pack type parameterized on two element types.
       %1: !pop.pack<[T0, T1]>,
