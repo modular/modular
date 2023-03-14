@@ -160,6 +160,9 @@ bool Semaphore::Impl::wait() {
 
   // If there is no timeout specified, use cv.wait to wait forever.
   cv.wait(lock, [&] { return counter > 0; });
+  // We now own the lock and we know the counter is greater than 0, so
+  // decrement it.
+  --counter;
   return false;
 }
 
