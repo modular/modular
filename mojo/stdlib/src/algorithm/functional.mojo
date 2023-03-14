@@ -6,12 +6,15 @@
 
 from Assert import assert_param, assert_param_bool_msg
 from Coroutine import Coroutine
-
+from DType import DType
+from Index import StaticIntTuple
 from Int import Int
-from LLCL import Runtime, TaskGroup
-from Range import range
-from Vector import InlinedFixedVector
 from List import VariadicList
+from LLCL import Runtime, TaskGroup
+from Math import div_ceil
+from Range import range
+from SIMD import SIMD
+from Vector import InlinedFixedVector
 
 # ===----------------------------------------------------------------------===#
 # Map
@@ -767,3 +770,69 @@ fn tile_and_unswitch[
         workgroup_function[tile_size_list[tile_size_list.__len__() - 1], False](
             current_offset, upperbound
         )
+
+
+# ===----------------------------------------------------------------------===#
+# Utilities
+# ===----------------------------------------------------------------------===#
+
+
+fn get_num_workers(problem_size: Int, runtime: Runtime) -> Int:
+    # Minimum number of elements to warrant an additional thread.
+    # copied from https://github.com/pytorch/pytorch/blob/20dfce591ce88bc957ffcd0c8dc7d5f7611a4a3b/aten/src/ATen/TensorIterator.h#L86
+    # TODO: refine this heuristic. It may not be appropriate for more compute-heavy
+    # ops like gelu.
+    alias GRAIN_SIZE = 32768
+    return Int.min(
+        runtime.parallelism_level(), div_ceil(problem_size, GRAIN_SIZE)
+    )
+
+
+# ===----------------------------------------------------------------------===#
+# Elementwise
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn elementwise[
+    rank: __mlir_type.index,
+    simd_width: Int,
+    unroll_factor: Int,
+    func: __mlir_type[
+        `!kgen.signature<<`,
+        `simd_width: `,
+        Int,
+        `,`,
+        `rank: `,
+        __mlir_type.index,
+        `>(`,
+        StaticIntTuple[__mlir_attr[`#kgen.param.decl.ref<"rank">: index`]],
+        `) -> !lit.none>`,
+    ],
+](shape: StaticIntTuple[rank], runtime: Runtime,):
+    let problem_size = shape.flattened_length()
+    let num_workers = get_num_workers(problem_size, runtime)
+    let chunk_size = div_ceil(problem_size, num_workers)
+
+    @always_inline
+    fn task_func(i: Int):
+        let start_offset = i * chunk_size
+        let end_offset = Int.min((i + 1) * chunk_size, problem_size)
+
+        let len = end_offset - start_offset
+
+        if len <= 0:
+            return
+
+        @always_inline
+        fn func_wrapper[simd_width: Int](idx: Int):
+            let offset = start_offset + idx
+            func[simd_width, rank](offset)
+
+        vectorize_unroll[
+            simd_width,
+            unroll_factor,
+            func_wrapper,
+        ](len)
+
+    parallelize[task_func](runtime, num_workers)
