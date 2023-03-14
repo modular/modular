@@ -15,7 +15,7 @@ from Buffer import (
     _compute_ndbuffer_offset,
 )
 from SIMD import SIMD
-from Assert import assert_param, debug_assert
+from Assert import assert_param, assert_param_bool, debug_assert
 from Matmul import (
     GemmShape,
     MatmulInnerLoopBPacked,
@@ -32,123 +32,11 @@ from DType import DType
 from LLCL import Runtime
 from Functional import unroll, unroll2, parallelForEachN
 from Range import range
-
-# Data layout encoding.
-struct Conv2DLayout:
-    alias unknown = -1  # statically unknown layout.
-    alias NHWC = 0  # channels last layout.
-    alias NCHW = 1  # channels first layout.
-    alias RSCF = 2  # TF filter layout for channels last input.
-
-
-@register_passable
-struct ImageData[
-    shape: __mlir_type[`!kgen.list<index[4]>`],
-    type: DType,
-    static_layout: __mlir_type.index,
-]:
-    """Utility class that generalizes conv2d data and filter tensor with a given
-    data layout."""
-
-    var data: NDBuffer[4, shape, type]
-    var dynamic_layout: Int
-
-    fn __clone__(self&) -> Self:
-        return Self {data: self.data, dynamic_layout: self.dynamic_layout}
-
-    fn __new__(
-        data: NDBuffer[4, shape, type], layout: Int
-    ) -> ImageData[shape, type, static_layout]:
-        """Constructor of an image data instance with dynamic layout param.
-
-        Args:
-            data(NDBuffer): An 4d buffer containing the actual data.
-            layout(Int): Data layout tag.
-        Returns:
-            An ImageData instance constructed.
-        """
-        assert_param[static_layout == Conv2DLayout.unknown]()
-        var image: ImageData[shape, type, static_layout]
-        image.data = data
-        image.dynamic_layout = layout
-        return image
-
-    fn __new__(
-        data: NDBuffer[4, shape, type]
-    ) -> ImageData[shape, type, static_layout]:
-        assert_param[static_layout != Conv2DLayout.unknown]()
-        var image: ImageData[shape, type, static_layout]
-        image.data = data
-        return image
-
-    fn to_static_layout[
-        new_static_layout: __mlir_type.index
-    ](self) -> ImageData[shape, type, new_static_layout]:
-        """Conversion utility from a fully dynamic data structure, e.g. from c
-        shim to one with compile-time known data layout.
-            Returns:
-                The image data with static data layout.
-        """
-        assert_param[static_layout == Conv2DLayout.unknown]()
-        return ImageData[shape, type, new_static_layout](self.data)
-
-    fn get_layout(self) -> Int:
-        """The getter function of the underlying data layout, resolving from
-        either staticall or dynamicall information.
-            Returns:
-                The resolved data layout tag for this image instance.
-        """
-        if static_layout == Conv2DLayout.unknown:
-            return self.dynamic_layout
-        return static_layout
-
-    fn _get_index(self, n: Int, c: Int, h: Int, w: Int) -> StaticIntTuple[4]:
-        """Converts the general index to the actual index into the underlying
-        data based on the tensor layout.
-
-            Args:
-                n(Int): Index on the batch dimension.
-                c(Int): Index on the channel dimension.
-                h(Int): Index on the height dimension.
-                w(Int): Index on the width dimension.
-
-            Returns:
-                An StaticIntTuple containing the index based on the underlying
-            data layout.
-        """
-        if self.get_layout() == Conv2DLayout.NCHW:
-            return StaticIntTuple[4](n, c, h, w)
-        elif self.get_layout() == Conv2DLayout.RSCF:
-            return StaticIntTuple[4](h, w, c, n)
-        return StaticIntTuple[4](n, h, w, c)
-
-    fn __getitem__(self, n: Int, c: Int, h: Int, w: Int) -> SIMD[1, type]:
-        """Reads the underlying data buffer based on the tensor index and under-
-        lying data layout.
-
-            Args:
-                n(Int): Index on the batch dimension.
-                c(Int): Index on the channel dimension.
-                h(Int): Index on the height dimension.
-                w(Int): Index on the width dimension.
-
-            Returns:
-                The value stored at the given index position.
-        """
-        return self.data[self._get_index(n, c, h, w)]
-
-    fn __setitem__(self, n: Int, c: Int, h: Int, w: Int, value: SIMD[1, type]):
-        """Writes the underlying data buffer based on the tensor index and under-
-        lying data layout.
-
-            Args:
-                n(Int): Index on the batch dimension.
-                c(Int): Index on the channel dimension.
-                h(Int): Index on the height dimension.
-                w(Int): Index on the width dimension.
-                value(SIMD[1]): The value to store at the given index position.
-        """
-        self.data[self._get_index(n, c, h, w)] = value
+from Image import (
+    ImageData,
+    Image2DLayout,
+    ImageShape,
+)
 
 
 @register_passable
@@ -197,8 +85,8 @@ fn get_conv2d_shape[
     input_shape: __mlir_type[`!kgen.list<index[4]>`],
     filter_shape: __mlir_type[`!kgen.list<index[4]>`],
     type: DType,
-    data_layout: __mlir_type.index,
-    filter_layout: __mlir_type.index,
+    data_layout: Image2DLayout,
+    filter_layout: Image2DLayout,
 ](
     output: NDBuffer[4, output_shape, type],
     input: NDBuffer[4, input_shape, type],
@@ -208,8 +96,8 @@ fn get_conv2d_shape[
     stride: StaticIntTuple[2],
     dilation: StaticIntTuple[2],
 ) -> ConvShape:
-    assert_param[data_layout == Conv2DLayout.NCHW]()
-    assert_param[filter_layout == Conv2DLayout.NCHW]()
+    assert_param_bool[data_layout == Image2DLayout.NCHW]()
+    assert_param_bool[filter_layout == Image2DLayout.NCHW]()
 
     return ConvShape {
         n: input.dim[0](),
@@ -234,8 +122,8 @@ fn get_conv2d_shape[
     input_shape: __mlir_type[`!kgen.list<index[4]>`],
     filter_shape: __mlir_type[`!kgen.list<index[4]>`],
     type: DType,
-    data_layout: __mlir_type.index,
-    filter_layout: __mlir_type.index,
+    data_layout: Image2DLayout,
+    filter_layout: Image2DLayout,
 ](
     output: NDBuffer[4, output_shape, type],
     input: NDBuffer[4, input_shape, type],
@@ -245,8 +133,8 @@ fn get_conv2d_shape[
     stride: StaticIntTuple[2],
     dilation: StaticIntTuple[2],
 ) -> ConvShape:
-    assert_param[data_layout == Conv2DLayout.NHWC]()
-    assert_param[filter_layout == Conv2DLayout.NHWC]()
+    assert_param_bool[data_layout == Image2DLayout.NHWC]()
+    assert_param_bool[filter_layout == Image2DLayout.NHWC]()
 
     return ConvShape {
         n: input.dim[0](),
@@ -271,8 +159,8 @@ fn get_conv2d_shape[
     input_shape: __mlir_type[`!kgen.list<index[4]>`],
     filter_shape: __mlir_type[`!kgen.list<index[4]>`],
     type: DType,
-    data_layout: __mlir_type.index,
-    filter_layout: __mlir_type.index,
+    data_layout: Image2DLayout,
+    filter_layout: Image2DLayout,
 ](
     output: NDBuffer[4, output_shape, type],
     input: NDBuffer[4, input_shape, type],
@@ -282,8 +170,8 @@ fn get_conv2d_shape[
     stride: StaticIntTuple[2],
     dilation: StaticIntTuple[2],
 ) -> ConvShape:
-    assert_param[data_layout == Conv2DLayout.NHWC]()
-    assert_param[filter_layout == Conv2DLayout.RSCF]()
+    assert_param_bool[data_layout == Image2DLayout.NHWC]()
+    assert_param_bool[filter_layout == Image2DLayout.RSCF]()
 
     return ConvShape {
         n: input.dim[0](),
@@ -302,61 +190,13 @@ fn get_conv2d_shape[
     }
 
 
-struct ImageShape:
-    """A data-layout agnostic representation of tensor shapes used in conv2d"""
-
-    var N: Int
-    var C: Int
-    var H: Int
-    var W: Int
-
-    fn __clone__(self&) -> Self:
-        return Self {N: self.N, C: self.C, H: self.H, W: self.W}
-
-    fn __new__[
-        shape: __mlir_type[`!kgen.list<index[4]>`],
-        type: DType,
-        layout: __mlir_type.index,
-    ](image_data: ImageData[shape, type, layout]) -> ImageShape:
-        """Constructor of an ImageShape instance from an ImageData.
-
-        Args:
-            image_data (ImageData): The image_data instance to extract shape
-        info from.
-
-        Returns:
-            An ImageShape instance containing the shape info.
-        """
-        var image_shape: ImageShape
-
-        if image_data.get_layout() == Conv2DLayout.NCHW:
-            image_shape.N = image_data.data.dim[0]()
-            image_shape.C = image_data.data.dim[1]()
-            image_shape.H = image_data.data.dim[2]()
-            image_shape.W = image_data.data.dim[3]()
-
-        elif image_data.get_layout() == Conv2DLayout.NHWC:
-            image_shape.N = image_data.data.dim[0]()
-            image_shape.C = image_data.data.dim[3]()
-            image_shape.H = image_data.data.dim[1]()
-            image_shape.W = image_data.data.dim[2]()
-
-        elif image_data.get_layout() == Conv2DLayout.RSCF:
-            image_shape.N = image_data.data.dim[3]()
-            image_shape.C = image_data.data.dim[2]()
-            image_shape.H = image_data.data.dim[0]()
-            image_shape.W = image_data.data.dim[1]()
-
-        return image_shape
-
-
 struct Naive2dConvolution[
     static_output_shape: __mlir_type[`!kgen.list<index[4]>`],
     static_filter_shape: __mlir_type[`!kgen.list<index[4]>`],
     static_input_shape: __mlir_type[`!kgen.list<index[4]>`],
     type: DType,
-    static_data_layout: __mlir_type.index,
-    static_filter_layout: __mlir_type.index,
+    static_data_layout: Image2DLayout,
+    static_filter_layout: Image2DLayout,
 ]:
     """Struct wrapper for naive 2d convolution implementation."""
 
@@ -2182,7 +2022,7 @@ struct ConvIm2ColNHWC[
     a_row_size: Int,
     pack_inner_size: Int,
     pack_cache_size: Int,
-    filter_layout: Int,
+    filter_layout: Image2DLayout,
 ]:
     var out: NDBuffer[4, shape_output, type]
     var input: NDBuffer[4, shape_input, type]
@@ -2628,7 +2468,7 @@ struct ConvIm2ColNHWC[
                 sub_tile_k(Int): Dynamic tile size to use on K dimension.
         """
         # pack B:
-        if filter_layout == Conv2DLayout.NHWC:
+        if filter_layout == Image2DLayout.NHWC:
             PackMatrixRows[
                 create_kgen_list_unknown[2](),
                 packed_shape,
@@ -2813,7 +2653,7 @@ struct ConvIm2ColNHWC[
         )
 
         # Create 2D view for filter.
-        if filter_layout == Conv2DLayout.NHWC:  # FRSC layout
+        if filter_layout == Image2DLayout.NHWC:  # FRSC layout
             self.b = NDBuffer[2, create_kgen_list_unknown[2](), type](
                 self.filter.data.address,
                 create_kgen_list[__mlir_type.index](
@@ -2822,7 +2662,7 @@ struct ConvIm2ColNHWC[
                 ),
                 type,
             )
-        elif filter_layout == Conv2DLayout.RSCF:  # RSCF layout
+        elif filter_layout == Image2DLayout.RSCF:  # RSCF layout
             self.b = NDBuffer[2, create_kgen_list_unknown[2](), type](
                 self.filter.data.address,
                 create_kgen_list[__mlir_type.index](

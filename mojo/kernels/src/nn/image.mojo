@@ -1,0 +1,302 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+from Buffer import (
+    NDBuffer,
+)
+from Int import Int
+from SIMD import SIMD
+from Index import Index, StaticIntTuple
+from Assert import assert_param, assert_param_bool, debug_assert
+from DType import DType
+
+# Data layout encoding.
+@register_passable
+struct Image2DLayout:
+    var value: Int
+    alias UNKNOWN = Image2DLayout(-1)  # statically unknown layout.
+    alias NHWC = Image2DLayout(0)  # channels last layout.
+    alias NCHW = Image2DLayout(1)  # channels first layout.
+    alias RSCF = Image2DLayout(2)  # TF filter layout for channels last input.
+
+    @always_inline("nodebug")
+    fn __clone__(self&) -> Self:
+        return Self {value: self.value}
+
+    @always_inline("nodebug")
+    fn __new__(value: Int) -> Image2DLayout:
+        return Image2DLayout {value: value}
+
+    @always_inline("nodebug")
+    fn __eq__(self, rhs: Image2DLayout) -> Bool:
+        return self.value == rhs.value
+
+    @always_inline("nodebug")
+    fn __ne__(self, rhs: Image2DLayout) -> Bool:
+        return self.value != rhs.value
+
+
+@register_passable
+struct ImageData[
+    shape: __mlir_type[`!kgen.list<index[4]>`],
+    type: DType,
+    static_layout: Image2DLayout,
+]:
+    """Utility class that generalizes conv2d data and filter tensor with a given
+    data layout."""
+
+    var data: NDBuffer[4, shape, type]
+    var dynamic_layout: Image2DLayout
+
+    fn __clone__(self&) -> Self:
+        return Self {data: self.data, dynamic_layout: self.dynamic_layout}
+
+    fn __new__(
+        data: NDBuffer[4, shape, type], layout: Image2DLayout
+    ) -> ImageData[shape, type, static_layout]:
+        """Construct of an image data instance with dynamic layout param.
+
+        Args:
+            data: A 4d buffer containing the actual data.
+            layout: Data layout tag.
+
+        Returns:
+            An ImageData instance.
+        """
+        assert_param_bool[static_layout == Image2DLayout.UNKNOWN]()
+        return ImageData[shape, type, static_layout] {
+            data: data, dynamic_layout: layout
+        }
+
+    fn __new__(
+        data: NDBuffer[4, shape, type]
+    ) -> ImageData[shape, type, static_layout]:
+        assert_param_bool[static_layout != Image2DLayout.UNKNOWN]()
+        return ImageData[shape, type, static_layout] {
+            data: data, dynamic_layout: static_layout
+        }
+
+    fn to_static_layout[
+        new_static_layout: Image2DLayout
+    ](self) -> ImageData[shape, type, new_static_layout]:
+        """Conversion utility from a fully dynamic data structure, e.g. from c
+        shim to one with compile-time known data layout.
+
+        Returns:
+            The image data with static data layout.
+        """
+        assert_param_bool[static_layout == Image2DLayout.UNKNOWN]()
+        return ImageData[shape, type, new_static_layout](self.data)
+
+    fn get_layout(self) -> Image2DLayout:
+        """The getter function of the underlying data layout, resolving from
+        either staticall or dynamicall information.
+
+        Returns:
+            The resolved data layout tag for this image instance.
+        """
+        if static_layout == Image2DLayout.UNKNOWN:
+            return self.dynamic_layout
+        return static_layout
+
+    fn _get_index(self, n: Int, c: Int, h: Int, w: Int) -> StaticIntTuple[4]:
+        """Converts the general index to the actual index into the underlying
+        data based on the tensor layout.
+
+        Args:
+            n: Index on the batch dimension.
+            c: Index on the channel dimension.
+            h: Index on the height dimension.
+            w: Index on the width dimension.
+
+        Returns:
+            A StaticIntTuple containing the index based on the underlying
+            data layout.
+        """
+        if self.get_layout() == Image2DLayout.NCHW:
+            return StaticIntTuple[4](n, c, h, w)
+        if self.get_layout() == Image2DLayout.RSCF:
+            return StaticIntTuple[4](h, w, c, n)
+        return StaticIntTuple[4](n, h, w, c)
+
+    fn get_flat_index(self, n: Int, c: Int, h: Int, w: Int) -> Int:
+        """Converts the dimension index to the flat index of the underlying
+        data based on the tensor layout.
+
+        Args:
+            n: Index on the batch dimension.
+            c: Index on the channel dimension.
+            h: Index on the height dimension.
+            w: Index on the width dimension.
+
+        Returns:
+            An integer containing the index based on the underlying
+            data layout.
+        """
+
+        let image_shape = ImageShape.__new__[shape, type, static_layout](self)
+
+        @always_inline
+        fn _compute_index_nchw() -> Int:
+            # Index [N,C,H,W]
+            var idx = n
+            idx = idx * image_shape.C + c
+            idx = idx * image_shape.H + h
+            idx = idx * image_shape.W + w
+            return idx
+
+        @always_inline
+        fn _compute_index_nhwc() -> Int:
+            # Index [N,H,W,C]
+            var idx = n
+            idx = idx * image_shape.H + h
+            idx = idx * image_shape.W + w
+            idx = idx * image_shape.C + c
+            return idx
+
+        @parameter
+        if static_layout == Image2DLayout.NCHW:
+            return _compute_index_nchw()
+        elif static_layout == Image2DLayout.NHWC:
+            return _compute_index_nhwc()
+
+        debug_assert(False, "Invalid layout")
+        return Int(0)
+
+    fn get_tuple_index(self, idx: Int) -> StaticIntTuple[4]:
+        """Converts the flat index to the flat index of the underlying
+        data based on the tensor layout.
+
+        Args:
+            idx: Flat index.
+
+        Returns:
+            A StaticIntTuple containing the index in NCHW order.
+        """
+
+        let image_shape = ImageShape.__new__[shape, type, static_layout](self)
+
+        @always_inline
+        fn _compute_index_nchw() -> StaticIntTuple[4]:
+            # Index [N,C,H,W]
+            var lidx = idx
+            let w_idx = lidx % image_shape.W
+            lidx = lidx // image_shape.W
+            let h_idx = lidx % image_shape.H
+            lidx = lidx // image_shape.H
+            let c_idx = lidx % image_shape.C
+            lidx = lidx // image_shape.C
+            let n_idx = lidx
+            return StaticIntTuple[4](n_idx, c_idx, h_idx, w_idx)
+
+        @always_inline
+        fn _compute_index_nhwc() -> StaticIntTuple[4]:
+            # Index [N,H,W,C]
+            var lidx = idx
+            let c_idx = lidx % image_shape.C
+            lidx = lidx // image_shape.C
+            let w_idx = lidx % image_shape.W
+            lidx = lidx // image_shape.W
+            let h_idx = lidx % image_shape.H
+            lidx = lidx // image_shape.H
+            let n_idx = lidx
+            return StaticIntTuple[4](n_idx, c_idx, h_idx, w_idx)
+
+        @parameter
+        if static_layout == Image2DLayout.NCHW:
+            return _compute_index_nchw()
+        elif static_layout == Image2DLayout.NHWC:
+            return _compute_index_nhwc()
+
+        debug_assert(False, "Invalid layout")
+        return Int(0)
+
+    fn __getitem__(self, n: Int, c: Int, h: Int, w: Int) -> SIMD[1, type]:
+        """Reads the underlying data buffer based on the tensor index and under-
+        lying data layout.
+
+        Args:
+            n: Index on the batch dimension.
+            c: Index on the channel dimension.
+            h: Index on the height dimension.
+            w: Index on the width dimension.
+
+        Returns:
+            The value stored at the given index position.
+        """
+        return self.data[self._get_index(n, c, h, w)]
+
+    fn __setitem__(self, n: Int, c: Int, h: Int, w: Int, value: SIMD[1, type]):
+        """Writes the underlying data buffer based on the tensor index and under-
+        lying data layout.
+
+        Args:
+            n: Index on the batch dimension.
+            c: Index on the channel dimension.
+            h: Index on the height dimension.
+            w: Index on the width dimension.
+            value: The value to store at the given index position.
+        """
+        self.data[self._get_index(n, c, h, w)] = value
+
+    fn num_elements(self) -> Int:
+        return self.data.size()
+
+
+@register_passable
+struct ImageShape:
+    """A data-layout agnostic representation of tensor shapes used in conv2d."""
+
+    var N: Int
+    var C: Int
+    var H: Int
+    var W: Int
+
+    fn __clone__(self&) -> Self:
+        return Self {N: self.N, C: self.C, H: self.H, W: self.W}
+
+    fn __new__[
+        shape: __mlir_type[`!kgen.list<index[4]>`],
+        type: DType,
+        layout: Image2DLayout,
+    ](image_data: ImageData[shape, type, layout]) -> ImageShape:
+        """Constructor of an ImageShape instance from an ImageData.
+
+        Args:
+            image_data: The image data instance to extract shape
+              info from.
+
+        Returns:
+            An ImageShape instance containing the shape info.
+        """
+
+        if image_data.get_layout() == Image2DLayout.NCHW:
+            return ImageShape {
+                N: image_data.data.dim[0](),
+                C: image_data.data.dim[1](),
+                H: image_data.data.dim[2](),
+                W: image_data.data.dim[3](),
+            }
+
+        elif image_data.get_layout() == Image2DLayout.NHWC:
+            return ImageShape {
+                N: image_data.data.dim[0](),
+                C: image_data.data.dim[3](),
+                H: image_data.data.dim[1](),
+                W: image_data.data.dim[2](),
+            }
+
+        elif image_data.get_layout() == Image2DLayout.RSCF:
+            return ImageShape {
+                N: image_data.data.dim[3](),
+                C: image_data.data.dim[2](),
+                H: image_data.data.dim[0](),
+                W: image_data.data.dim[1](),
+            }
+
+        debug_assert(False, "Invalid layout")
+        var image_shape: ImageShape
+        return image_shape
