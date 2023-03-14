@@ -1660,7 +1660,7 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
 AnyValue DictSubscriptNode::emitIR(ValueDest &dest,
                                    ExprEmitter &emitter) const {
   // Subscripting a type constructs it with lit.struct.create.
-  ASTType typeValue = emitter.emitExprType(base);
+  ASTType typeValue = emitter.emitExprType(base, /*isPack=*/false);
   if (!typeValue)
     return {};
 

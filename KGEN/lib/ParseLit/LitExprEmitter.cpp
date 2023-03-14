@@ -910,13 +910,26 @@ LValue ExprEmitter::emitExprLValue(const ExprNode *expr, ValueDest &dest) {
 /// This helper emits the specified expression tree as a type, e.g. turning
 /// "Int" into the type for it.  This emits an error and returns null on
 /// failure.
-ASTType ExprEmitter::emitExprType(const ExprNode *expr) {
+ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool isPack) {
   auto value = emitExprPRValue(expr, EC_Type);
   if (!value)
     return {};
 
-  // If this emitted a type, we can lower it.
-  if (auto type = value.getIfTypeValue()) {
+  ASTType type;
+  if (isPack) {
+    // Pack types expect a backing variadic type.
+    if (!isa<VariadicType>(value.get().getType())) {
+      emitError(expr->getLoc(), "expected a value of variadic type")
+          << expr->getRange();
+      return {};
+    }
+    type = POP::PackType::get(value.get().getContext(), value.get());
+  } else {
+    // If this emitted a type, we can lower it.
+    type = value.getIfTypeValue();
+  }
+
+  if (type) {
     // Verify that all of the parameters for this type are bound.  We allow
     // PRValues to refer to parameteric type, but anything calling `emitType`
     // can only handle fully bound types.

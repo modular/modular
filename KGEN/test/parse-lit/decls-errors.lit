@@ -155,6 +155,9 @@ fn invalidPackByRef[Ts*: __mlir_type.`!kgen.mlirtype`](x*&: Ts): pass
 # expected-error @+1 {{variadic parameter packs may not have defaults}}
 fn invalidPackWithDefault[Ts*: __mlir_type.`!kgen.mlirtype`](x*: Ts = (1, 2.0)): pass
 
+# expected-error @+1 {{expected a value of variadic type}}
+fn invalidPackType(x*: Int): pass
+
 ##===----------------------------------------------------------------------===##
 # Keyword Arguments
 ##===----------------------------------------------------------------------===##
