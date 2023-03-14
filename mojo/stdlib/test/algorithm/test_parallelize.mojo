@@ -8,7 +8,7 @@
 from Buffer import Buffer
 from DType import DType
 from Functional import parallelize, map
-from Math import div_ceil
+from Math import div_ceil, min
 from Int import Int
 from IO import print
 from LLCL import num_cores, Runtime
@@ -32,7 +32,7 @@ fn test_parallelize():
     @always_inline
     fn parallel_fn(thread_id: Int):
         let start = thread_id * chunk_size
-        let end = Int.min(start + chunk_size, vector.__len__())
+        let end = min(start + chunk_size, vector.__len__())
 
         @always_inline
         fn add_two(idx: Int):
