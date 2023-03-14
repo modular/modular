@@ -7,6 +7,10 @@
 # Check for sem_timedwait. The semaphore implementation will use unnamed POSIX
 # semaphores and sem_timedwait if they're available.
 include(CheckSymbolExists)
+if (UNIX AND NOT APPLE)
+  # Linking with -pthread is required for semaphore symbol check to succeed.
+  list(APPEND CMAKE_REQUIRED_LIBRARIES pthread)
+endif ()
 check_symbol_exists(sem_timedwait "semaphore.h" HAVE_SEM_TIMEDWAIT)
 if (HAVE_SEM_TIMEDWAIT)
   add_definitions(-DMODULAR_HAVE_SEM_TIMEDWAIT)
