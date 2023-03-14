@@ -257,17 +257,26 @@ public:
                              ValueDest &dest, CallSyntax syntax,
                              const ExprNode *callNode);
 
+  /// This is the same as emitNamedMethodCall, but gets the emitted argument
+  /// values back when successfully emitted.
+  CValue emitNamedMethodCallM(StringRef methodName,
+                              MutableArrayRef<ASTExprAnd<AnyValue>> argValues,
+                              ValueDest &dest, CallSyntax syntax,
+                              const ExprNode *callNode);
+
   /// Emit an indirect call to a resolved value, checking for compatibility and
   /// then generating the call logic.  This emits an error and returns null on
   /// failure.
   CValue emitIndirectCall(CRValue callee,
-                          ArrayRef<ASTExprAnd<AnyValue>> operands,
+                          MutableArrayRef<ASTExprAnd<AnyValue>> operands,
                           ValueDest &dest, const ExprNode *callExpr);
 
   /// Emit call to a resolved and /already type checked/ callee. This does not,
-  /// check for compatibility and isn't prepared to emit errors.
+  /// check for compatibility and isn't prepared to emit errors.  This call
+  /// mutates the "operands" list to reflect the ultimate operand IRValues used
+  /// during emission, but does not expand default arguments or variadics.
   CValue emitCallUnchecked(CRValue callee,
-                           ArrayRef<ASTExprAnd<AnyValue>> operands,
+                           MutableArrayRef<ASTExprAnd<AnyValue>> operands,
                            ArrayRef<ParamDeclAttr> resultParams,
                            ValueDest &dest, const ExprNode *callExpr);
 
@@ -349,6 +358,10 @@ public:
   /// Given an MBValue, produce a standalone rvalue in the specified destination
   /// by emitting a load / clone.
   RValue emitLoadOfMBValue(ASTExprAnd<MBValue> value, ValueDest &dest);
+
+  /// Given a DLValue, emit a call to its getter.
+  RValue emitLoadOfDLValue(DLValue &dlValue, const ExprNode *expr,
+                           ValueDest &dest);
 };
 
 } // namespace M::KGEN::LIT
