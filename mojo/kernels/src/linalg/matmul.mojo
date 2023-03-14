@@ -18,6 +18,7 @@ from Functional import tile, unswitch, unroll, unroll2
 from Index import Index, StaticIntTuple
 from Int import Int
 from List import create_kgen_list, VariadicList
+from Math import min
 from Matrix import Matrix
 from Memory import stack_allocation
 from Pointer import DTypePointer
@@ -341,13 +342,13 @@ struct PackMatrixRows[
             valid_data_dim: valid_data_dim,
             valid_simd_dim: Index(
                 round_down_to_block[simd_size](
-                    Int.min(
+                    min(
                         valid_data_dim[0],
                         pack_tile_dim[0],
                     )
                 ),
                 round_down_to_block[simd_size](
-                    Int.min(
+                    min(
                         valid_data_dim[1],
                         pack_tile_dim[1],
                     )
@@ -451,7 +452,7 @@ struct PackMatrixRows[
             )
             # compute the packed index
             let _row_outer = local_off_set[0] // row_inner_size
-            let _row_inner = Int.remu(local_off_set[0], row_inner_size)
+            let _row_inner = local_off_set[0] % row_inner_size
 
             if skip_col_bound or (idx < write_bound[1]):
                 self.packed_matrix.simd_store[simd_size](
@@ -485,11 +486,11 @@ struct PackMatrixRows[
         ].aligned_stack_allocation[simd_byte_width()]()
 
         let valid_tile_simd_dim = Index(
-            Int.min(
+            min(
                 self.valid_simd_dim[0],
                 self.pack_tile_dim[0],
             ),
-            Int.min(
+            min(
                 self.valid_simd_dim[1],
                 self.pack_tile_dim[1],
             ),
@@ -651,7 +652,7 @@ struct PackMatrixCols[
 
             # map to packed index
             let col_idx_outer = col_idx // column_inner_size
-            let col_idx_inner = Int.remu(col_idx, column_inner_size)
+            let col_idx_inner = col_idx % column_inner_size
             self.packed_matrix.simd_store[simd_size](
                 Index(col_idx_outer, tile_row_idx, col_idx_inner),
                 data,
@@ -665,7 +666,7 @@ struct PackMatrixCols[
                     if true.
         """
         var row_idx: Int = 0
-        let valid_row_count = Int.min(
+        let valid_row_count = min(
             self.valid_data_dim[0],
             self.pack_tile_dim[0],
         )
@@ -1021,7 +1022,7 @@ fn calculate_tile_n_k[
 
     # Prioritize shape on K dimension, so try to fit in the whole
     #  input on the tile.
-    let tile_k = Int.min(largest_tile_k, gemm_shape.K)
+    let tile_k = min(largest_tile_k, gemm_shape.K)
 
     # Calculate number of InnerSize to fit in tile_n dimension,
     #  guranteed to be at least 2.
@@ -1029,7 +1030,7 @@ fn calculate_tile_n_k[
     let full_data_tile_n_in_inner_size = (
         gemm_shape.N + pack_inner_size - 1
     ) // pack_inner_size
-    let tile_n_in_inner_size = Int.min(
+    let tile_n_in_inner_size = min(
         max_tile_n_in_inner_size, full_data_tile_n_in_inner_size
     )
 
