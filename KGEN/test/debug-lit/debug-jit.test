@@ -1,6 +1,6 @@
 # COM: I can't figure out how to get this to work on linux, I keep getting "ModuleNotFoundError: No module named 'lldb'"
-# RUN: %lldb -b -o 'settings set plugin.jit-loader.gdb.enable on' -o 'b %S/Inputs/test.lit:5' \
-# RUN:       -o 'run %S/Inputs/test.lit --debug-level=full -O0' lit | FileCheck %s
+# RUN: %lldb -b -o 'settings set plugin.jit-loader.gdb.enable on' -o 'b %S/Inputs/test.lit:11' \
+# RUN:       -o 'run %S/Inputs/test.lit --debug-level=full -O0' mojo | FileCheck %s
 
 # XFAIL: system-linux, system-windows
 
@@ -9,7 +9,7 @@
 # CHECK-NOT: hello
 # CHECK: Process {{.*}} stopped
 # CHECK: stop reason = breakpoint 1.1
-# CHECK: JIT(0x{{.*}})`$test::jitbp() at test.lit:5:11
-# CHECK:    4 fn jitbp():
-# CHECK: -> 5 print("hello\n")
+# CHECK: JIT(0x{{.*}})`$test::jitbp() at test.lit:11:11
+# CHECK:    10 fn jitbp():
+# CHECK: -> 11 print("hello\n")
 # CHECK: Process {{.*}} launched: {{.*}}
