@@ -171,8 +171,9 @@ ExecutionEngine::create(const CompilationOptions &options) {
   if (!rtBuf.has_value() && tm->getTargetTriple().isOSBinFormatCOFF())
     return Error("could not find orc_rt in the cache");
 
-  if (auto err = writeORCRTToFile(*rtBuf, orcRTPath))
-    return err.takeError();
+  if (rtBuf.has_value())
+    if (auto err = writeORCRTToFile(*rtBuf, orcRTPath))
+      return err.takeError();
 
   // Define an optional error we can set to something if we hit an error in a
   // nested closure.
@@ -186,7 +187,7 @@ ExecutionEngine::create(const CompilationOptions &options) {
     auto objectLayer = std::make_unique<llvm::orc::ObjectLinkingLayer>(session);
 
     // Set up the platform support now that we have an object layer.
-    if (rtBuf) {
+    if (rtBuf.has_value()) {
       if (auto err = setupPlatform(orcRTPath, *tm, session, *objectLayer)) {
         outError = err.takeError();
         return nullptr;
