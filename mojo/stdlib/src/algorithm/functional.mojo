@@ -11,7 +11,7 @@ from Index import StaticIntTuple
 from Int import Int
 from List import VariadicList
 from LLCL import Runtime, TaskGroup
-from Math import div_ceil
+from Math import div_ceil, min, max
 from Range import range
 from SIMD import SIMD
 from Vector import InlinedFixedVector
@@ -783,9 +783,7 @@ fn get_num_workers(problem_size: Int, runtime: Runtime) -> Int:
     # TODO: refine this heuristic. It may not be appropriate for more compute-heavy
     # ops like gelu.
     alias GRAIN_SIZE = 32768
-    return Int.min(
-        runtime.parallelism_level(), div_ceil(problem_size, GRAIN_SIZE)
-    )
+    return min(runtime.parallelism_level(), div_ceil(problem_size, GRAIN_SIZE))
 
 
 # ===----------------------------------------------------------------------===#
@@ -817,7 +815,7 @@ fn elementwise[
     @always_inline
     fn task_func(i: Int):
         let start_offset = i * chunk_size
-        let end_offset = Int.min((i + 1) * chunk_size, problem_size)
+        let end_offset = min((i + 1) * chunk_size, problem_size)
 
         let len = end_offset - start_offset
 
