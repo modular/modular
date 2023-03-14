@@ -23,7 +23,7 @@ from Matmul import (
     PackMatrixCols,
     PackMatrixRows,
 )
-from Math import div_ceil
+from Math import div_ceil, min, max
 from List import create_kgen_list_unknown, create_kgen_list
 from Range import range
 from TargetInfo import simd_byte_width
@@ -858,7 +858,7 @@ struct PackIm2ColNCHW[
         # Calculate index in packed layout.
         let out_n_idx = nk_idx[0]
         let out_n_outerIdx = out_n_idx // col_inner_size
-        let out_n_innerIdx = Int.remu(out_n_idx, col_inner_size)
+        let out_n_innerIdx = out_n_idx % col_inner_size
         let out_k_idx = nk_idx[1]
 
         # Store the simd vector.
@@ -971,7 +971,7 @@ struct PackIm2ColNCHW[
         """
         return Index(
             n_idx // self.image_output_shape[1],
-            Int.remu(n_idx, self.image_output_shape[1]),
+            n_idx % self.image_output_shape[1],
         )
 
     fn _k_to_c_r_s(self, k_idx: Int) -> StaticIntTuple[3]:
@@ -983,9 +983,9 @@ struct PackIm2ColNCHW[
         """
         let shape_rs = self.conv_shape.r * self.conv_shape.s
         let c = k_idx // shape_rs
-        let rs = Int.remu(k_idx, shape_rs)
+        let rs = k_idx % shape_rs
         let r = rs // self.conv_shape.s
-        let s = Int.remu(rs, self.conv_shape.s)
+        let s = rs % self.conv_shape.s
         return Index(c, r, s)
 
     @always_inline
@@ -2093,10 +2093,8 @@ fn _m_to_n_ho_wo_nhwc(m: Int, conv_shape: ConvShape) -> StaticIntTuple[3]:
     class with some additional layout agnostic logic.
     """
     let n = m // (conv_shape.out_h * conv_shape.out_w)
-    let ho = (
-        Int.remu(m, conv_shape.out_h * conv_shape.out_w) // conv_shape.out_w
-    )
-    let wo = Int.remu(m, conv_shape.out_w)
+    let ho = (m % (conv_shape.out_h * conv_shape.out_w)) // conv_shape.out_w
+    let wo = m % conv_shape.out_w
     return Index(n, ho, wo)
 
 
@@ -2113,8 +2111,8 @@ fn _k_to_r_s_c_nhwc(k: Int, conv_shape: ConvShape) -> StaticIntTuple[3]:
     class with some additional layout agnostic logic.
     """
     let r = k // (conv_shape.s * conv_shape.c)
-    let s = Int.remu(k // conv_shape.c, conv_shape.s)
-    let c = Int.remu(k, conv_shape.c)
+    let s = (k // conv_shape.c) % conv_shape.s
+    let c = k % conv_shape.c
     return Index(r, s, c)
 
 
@@ -2156,7 +2154,7 @@ fn get_partitioned_workload(
         is in [start_idx, start_idx+load_amount)
     """
     var divided_load = total_load // number_of_tasks
-    let residue_load = Int.remu(total_load, number_of_tasks)
+    let residue_load = total_load % number_of_tasks
     var start_idx: Int
     if task_idx < residue_load:
         start_idx = task_idx * (divided_load + 1)
@@ -2269,11 +2267,9 @@ struct ConvIm2ColNHWC[
         let col_block_unit: Int = pack_inner_size
 
         # TODO: add a proper partition heuristic.
-        var num_tasks_m = Int.max(
-            Int.min(complexity // row_block_unit, num_threads), 1
-        )
-        var num_tasks_n = Int.max(
-            Int.min(
+        var num_tasks_m = max(min(complexity // row_block_unit, num_threads), 1)
+        var num_tasks_n = max(
+            min(
                 num_threads // num_tasks_m, conv.gemm_shape.N // col_block_unit
             ),
             1,
@@ -2302,7 +2298,7 @@ struct ConvIm2ColNHWC[
             let _conv = ptr.load()
             var local_conv = _conv
             let task_id_m = task_id // local_conv.num_tasks_n
-            let task_id_n = Int.remu(task_id, local_conv.num_tasks_n)
+            let task_id_n = task_id % local_conv.num_tasks_n
 
             let partition_m = get_partitioned_workload(
                 task_id_m, local_conv.num_tasks_m, local_conv.gemm_shape.M

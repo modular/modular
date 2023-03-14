@@ -14,7 +14,7 @@ from Intrinsics import PrefetchOptions
 from Int import Int
 from List import create_kgen_list_unknown
 from LLCL import Runtime
-from Math import add
+from Math import add, min
 from Pointer import Pointer
 from Range import range
 from TargetInfo import dtype_sizeof
@@ -80,7 +80,7 @@ fn gather_reduce[
     # TODO: find a heuristic to replace the magic number.
     alias MIN_TASK_NUM_SLICES = 64
     let num_threads = Runtime(runtime).parallelism_level()
-    let num_tasks = Int.min(
+    let num_tasks = min(
         div_ceil(indices.dim[0](), MIN_TASK_NUM_SLICES), num_threads
     )
 
@@ -109,7 +109,7 @@ fn gather_reduce[
         # need to reduce on an entire 2D slice at a time, otherwise multiple
         # threads will try to accumulate in the same buffer simaltaneously
         let start_slice = task_id * num_chunks_per_task
-        let end_slice = Int.min(
+        let end_slice = min(
             (task_id + 1) * num_chunks_per_task, indices.dim[0]()
         )
 
@@ -188,9 +188,7 @@ fn gather[
         MIN_TASK_COPY_SIZE, input.dim[1]() * dtype_sizeof[type]()
     )
     let num_threads = Runtime(runtime).parallelism_level()
-    let num_tasks = Int.min(
-        div_ceil(indices_len, min_task_num_rows), num_threads
-    )
+    let num_tasks = min(div_ceil(indices_len, min_task_num_rows), num_threads)
 
     let num_chunks_per_task = div_ceil(indices_len, num_tasks)
     let output_bind = rebind[NDBuffer[2, create_kgen_list_unknown[2](), type]](
@@ -206,7 +204,7 @@ fn gather[
         let input = input_bind
 
         let start_offset = task_id * num_chunks_per_task
-        let end_offset = Int.min(
+        let end_offset = min(
             (task_id + 1) * num_chunks_per_task, indices.size()
         )
 
