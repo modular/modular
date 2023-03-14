@@ -12,15 +12,55 @@ from Int import Int
 
 # CHECK: [TOC]
 
+# CHECK: ## InMemoryStruct
+
+# CHECK: ### `` fn_with_by_conventions(self: Self&, arg: Self&, *args: Self&) -> Self& ``
+
+# CHECK: This is a function summary.
+
+# CHECK: | Args | |
+# CHECK: | :---- | --- |
+# CHECK: | `` arg: Self& `` | This is a by-ref argument. |
+# CHECK: | `` *args: Self& `` | This is a variadic argument. |
+
+# CHECK: | Returns `` -> Self& `` |
+# CHECK: | :---- |
+# CHECK: | This is a by-ref return value.  |
+
+
+struct InMemoryStruct:
+    fn __clone__(self&) -> Self:
+        return Self {}
+
+    fn fn_with_by_conventions(
+        self&, arg&: InMemoryStruct, *args&: InMemoryStruct
+    ) -> InMemoryStruct:
+        """This is a function summary.
+
+        Args:
+            arg: This is a by-ref argument.
+            args: This is a variadic argument.
+
+        Returns:
+            This is a by-ref return value.
+        """
+        return arg
+
+
 # CHECK: ## ParameterClass
 # CHECK: This is a class summary.
 # CHECK: The is some kind of description.
 
 # CHECK: | Parameters | |
 # CHECK: | :---- | --- |
-# CHECK: | _type (__mlir_type.!kgen.dtype) | This is a parameter. |
+# CHECK: | `` _type: __mlir_type.!kgen.dtype `` | This is a parameter. |
+
+# CHECK: ### `` fn_with_self_param(self: Self) ``
+# CHECK: | Parameters | |
+# CHECK: | `` param: Self `` | This is a Self parameter. |
 
 
+@register_passable
 struct ParameterClass[_type: __mlir_type.`!kgen.dtype`]:
     """This is a class summary.
 
@@ -30,10 +70,16 @@ struct ParameterClass[_type: __mlir_type.`!kgen.dtype`]:
         _type: This is a parameter.
     """
 
-    pass
+    fn fn_with_self_param[param: ParameterClass[_type]](self):
+        """A summary.
+
+        Parameters:
+            param: This is a Self parameter.
+        """
+        return
 
 
-# CHECK: ## `` empty_fn() ``:
+# CHECK: ## `` empty_fn() ``
 # CHECK: This is a function summary.
 # CHECK: The is some kind of description.
 
@@ -46,12 +92,12 @@ fn empty_fn():
     return
 
 
-# CHECK: ## `` fn_with_args($Int::Int) ``:
+# CHECK: ## `` fn_with_args(arg: $Int::Int) ``
 # CHECK: This is a function summary.
 # CHECK: The is some kind of description.
 # CHECK: | Args | |
 # CHECK: | :---- | --- |
-# CHECK: | arg ($Int::Int) | This is an argument. |
+# CHECK: | `` arg: $Int::Int `` | This is an argument. |
 
 
 fn fn_with_args(arg: Int):
@@ -65,13 +111,13 @@ fn fn_with_args(arg: Int):
     return
 
 
-# CHECK: ## `` fn_with_params() ``:
+# CHECK: ## `` fn_with_params() ``
 # CHECK: This is a function summary.
 # CHECK: The is some kind of description.
 
 # CHECK: | Parameters | |
 # CHECK: | :---- | --- |
-# CHECK: | param (__mlir_type.!kgen.dtype) | This is a parameter. |
+# CHECK: | `` param: __mlir_type.!kgen.dtype `` | This is a parameter. |
 
 
 fn fn_with_params[param: __mlir_type.`!kgen.dtype`]():
@@ -85,15 +131,15 @@ fn fn_with_params[param: __mlir_type.`!kgen.dtype`]():
     return
 
 
-# CHECK: ## `` fn_with_params_and_return($Int::Int) -> $Int::Int ``:
+# CHECK: ## `` fn_with_params_and_return(arg: $Int::Int) -> $Int::Int ``
 # CHECK: This is a function summary.
 # CHECK: The is some kind of description.
 
 # CHECK: | Args | |
 # CHECK: | :---- | --- |
-# CHECK: | arg ($Int::Int) | This is an argument. |
+# CHECK: | `` arg: $Int::Int `` | This is an argument. |
 
-# CHECK: | Returns ($Int::Int) |
+# CHECK: | Returns `` -> $Int::Int `` |
 # CHECK: | :---- |
 # CHECK: | This is a return value.  |
 

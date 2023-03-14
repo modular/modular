@@ -245,17 +245,16 @@ private:
 
   /// Generate a markdown table for a parameter section of a doc-string, using
   /// the provided mapping for types and verification of parameters.
-  void
-  generateParameterTable(const llvm::StringMap<std::string> &paramNameToType,
-                         ArrayRef<StringRef> lines, size_t &line,
-                         size_t lineE) {
+  void generateParameterTable(const llvm::StringMap<std::string> &paramToDetail,
+                              ArrayRef<StringRef> lines, size_t &line,
+                              size_t lineE) {
     auto processParam = [&](StringRef paramName) {
-      os << paramName;
-
       // TODO: Emit errors when we encounter unknown parameters.
-      auto it = paramNameToType.find(paramName);
-      if (it != paramNameToType.end())
-        os << " (" << it->second << ")";
+      auto it = paramToDetail.find(paramName);
+      if (it != paramToDetail.end())
+        os << "`` " << it->second << " ``";
+      else
+        os << paramName;
     };
     generateTwoColumnMarkdownTable("Parameters", lines, line, lineE,
                                    processParam);
@@ -264,8 +263,52 @@ private:
   //===----------------------------------------------------------------------===//
   // Types
 
-  std::string generateTypeString(Type type) {
-    return ASTType(type).getAsString();
+  /// Generate a documentation string for the given type, with an optional
+  /// value convention, parent struct "Self" type, and variable name.
+  std::string generateTypeString(
+      Type type, std::optional<ASTType> selfType = std::nullopt,
+      std::optional<ValueInputConvention> convention = std::nullopt,
+      StringRef variableName = "") {
+    std::string typeName;
+    llvm::raw_string_ostream os(typeName);
+    ASTType astType(type);
+
+    // Handle variadic types.
+    if (isa<VariadicType>(type)) {
+      astType = astType.getVariadicElementType();
+      os << "*";
+    }
+
+    // Process the variable name if present.
+    if (!variableName.empty())
+      os << variableName << ": ";
+
+    // Process the convention if present.
+    StringRef typeSuffix;
+    if (convention) {
+      switch (*convention) {
+      case ValueInputConvention::ByRef:
+      case ValueInputConvention::ByRefResult:
+        astType = astType.getPointerElementType();
+        typeSuffix = "&";
+        break;
+      case ValueInputConvention::ByValInMem:
+        astType = astType.getPointerElementType();
+        break;
+      case ValueInputConvention::ByVal:
+        break;
+      }
+    }
+
+    // If this type is the same as the self type, use the "Self" keyword.
+    if (selfType && astType.isEqualCanon(*selfType))
+      os << "Self";
+    else
+      os << astType.getAsString();
+
+    // Append the type suffix.
+    os << typeSuffix;
+    return os.str();
   }
 
   //===----------------------------------------------------------------------===//
@@ -278,38 +321,56 @@ private:
         funcOp.getName().take_until([](char c) { return c == '('; });
     if (shouldHideName(name))
       return;
+    SignatureType signature = funcOp.getSignature();
 
-    bool isNonStaticMethod =
-        isa<StructDeclOp>(funcOp->getParentOp()) && !funcOp.getIsStatic();
     auto argTypes = funcOp.getArgumentTypes();
     auto argNames = funcOp.getValueParamNames();
+    auto argConventions = signature.getValueInputConventions();
+    Type resultType = funcOp.getResultType();
+    std::optional<ValueInputConvention> resultConvention;
 
-    // If this is a non-static method, drop the self argument.
-    if (isNonStaticMethod) {
+    // Check for a by-ref result type, which gets modeled as the first argument
+    // (as it needs to be passed through memory).
+    if (!argConventions.empty() &&
+        argConventions.front() == ValueInputConvention::ByRefResult) {
+      resultType = argTypes.front();
       argTypes = argTypes.drop_front();
       argNames = argNames.drop_front();
+      argConventions = argConventions.drop_front();
+      resultConvention = ValueInputConvention::ByRefResult;
     }
+
+    // If this is a method, grab the expected "Self" type.
+    std::optional<ASTType> selfType;
+    if (isa<StructDeclOp>(funcOp->getParentOp()))
+      selfType = decl.getParentDecl()->getSelfType();
 
     // Grab the types of the arguments to the function.
     SmallVector<std::string> argTypeNames;
-    for (Type argType : argTypes)
-      argTypeNames.push_back(generateTypeString(argType));
-    llvm::StringMap<StringRef> argNameToType;
+    for (auto [index, argType] : llvm::enumerate(argTypes)) {
+      argTypeNames.push_back(generateTypeString(
+          argType, selfType, argConventions[index], argNames[index]));
+    }
+    llvm::StringMap<StringRef> argNameToDetail;
     for (auto [index, value] : llvm::enumerate(argNames)) {
       if (index < argTypeNames.size())
-        argNameToType[value] = argTypeNames[index];
+        argNameToDetail[value] = argTypeNames[index];
     }
 
     // Grab the types of the parameters to the function.
-    llvm::StringMap<std::string> paramNameToType;
-    for (auto [index, value] : llvm::enumerate(funcOp.getInputParams()))
-      paramNameToType[value.getName()] = generateTypeString(value.getType());
+    llvm::StringMap<std::string> paramToDetail;
+    for (auto [index, value] : llvm::enumerate(funcOp.getInputParams())) {
+      paramToDetail[value.getName()] =
+          generateTypeString(value.getType(), selfType,
+                             /*convention=*/std::nullopt, value.getName());
+    }
 
     // Grab the result type, if it's non-none.
     std::optional<std::string> resultTypeName;
-    Type resultType = funcOp.getResultType();
-    if (!resultType.isa<LIT::NoneType>())
-      resultTypeName = generateTypeString(resultType);
+    if (!resultType.isa<LIT::NoneType>()) {
+      resultTypeName =
+          generateTypeString(resultType, selfType, resultConvention);
+    }
 
     generateMarkdownHeader([&] {
       // Strip off the mangled suffix from the base function name.
@@ -322,13 +383,13 @@ private:
       if (resultTypeName)
         os << " -> " << *resultTypeName;
 
-      os << " ``:";
+      os << " ``";
     });
 
     if (std::optional<LitDocString> docStr = getLitDocString(decl)) {
       os << docStr->getSummary() << "\n\n";
-      processFunctionDocDescription(docStr->getDescription(), paramNameToType,
-                                    argNameToType, resultTypeName);
+      processFunctionDocDescription(docStr->getDescription(), paramToDetail,
+                                    argNameToDetail, resultTypeName);
     }
 
     // Recursively generate documentation for the module's children.
@@ -336,9 +397,8 @@ private:
   }
 
   void processFunctionDocDescription(
-      StringRef description,
-      const llvm::StringMap<std::string> &paramNameToType,
-      const llvm::StringMap<StringRef> &argNameToType,
+      StringRef description, const llvm::StringMap<std::string> &paramToDetail,
+      const llvm::StringMap<StringRef> &argNameToDetail,
       const std::optional<std::string> &returnType) {
     // Split the description into lines, so we can process the different
     // sections.
@@ -350,25 +410,30 @@ private:
     for (; line < lineE; ++line) {
       if (lines[line] == "Args:") {
         auto processArg = [&](StringRef argName) {
-          os << argName;
-
           // TODO: Emit errors when we encounter unknown arguments.
-          auto it = argNameToType.find(argName);
-          if (it != argNameToType.end())
-            os << " (" << it->second << ")";
+          auto it = argNameToDetail.find(argName);
+          if (it != argNameToDetail.end())
+            os << "`` " << it->second << " ``";
+          else
+            os << argName;
         };
         generateTwoColumnMarkdownTable("Args", lines, line, lineE, processArg);
         continue;
       }
       if (lines[line] == "Parameters:") {
-        generateParameterTable(paramNameToType, lines, line, lineE);
+        generateParameterTable(paramToDetail, lines, line, lineE);
         continue;
       }
       if (lines[line] == "Returns:") {
         // TODO: Validate the return type. Check that the function has one when
         // the section is specified, and vice versa.
+        if (!returnType) {
+          generateSingleEntrySingleColumnMarkdownTable("Returns", lines, line,
+                                                       lineE);
+          continue;
+        }
         generateSingleEntrySingleColumnMarkdownTable(
-            "Returns (" + returnType.value_or("") + ")", lines, line, lineE);
+            "Returns `` -> " + *returnType + " ``", lines, line, lineE);
         continue;
       }
       if (lines[line] == "Constraints:") {
@@ -393,11 +458,14 @@ private:
       os << docStr->getSummary() << "\n\n";
 
       // Grab the types of the parameters to the struct.
-      llvm::StringMap<std::string> paramNameToType;
-      for (auto [index, value] : llvm::enumerate(structOp.getInputParams()))
-        paramNameToType[value.getName()] = generateTypeString(value.getType());
+      llvm::StringMap<std::string> paramToDetail;
+      for (auto [index, value] : llvm::enumerate(structOp.getInputParams())) {
+        paramToDetail[value.getName()] =
+            generateTypeString(value.getType(), /*selfType=*/std::nullopt,
+                               /*convention=*/std::nullopt, value.getName());
+      }
 
-      processStructDocDescription(docStr->getDescription(), paramNameToType);
+      processStructDocDescription(docStr->getDescription(), paramToDetail);
     }
 
     // Recursively generate documentation for the module's children.
@@ -406,7 +474,7 @@ private:
 
   void processStructDocDescription(
       StringRef description,
-      const llvm::StringMap<std::string> &paramNameToType) {
+      const llvm::StringMap<std::string> &paramToDetail) {
     // Split the description into lines, so we can process the different
     // sections.
     SmallVector<StringRef, 4> lines;
@@ -416,7 +484,7 @@ private:
     size_t line = 0, lineE = lines.size();
     for (; line < lineE; ++line) {
       if (lines[line] == "Parameters:") {
-        generateParameterTable(paramNameToType, lines, line, lineE);
+        generateParameterTable(paramToDetail, lines, line, lineE);
         continue;
       }
 
