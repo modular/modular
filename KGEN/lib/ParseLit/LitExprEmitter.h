@@ -334,8 +334,9 @@ public:
 
   /// This helper emits the specified expression tree as a type, e.g. turning
   /// "Int" into the type for it.  This emits an error and returns null on
-  /// failure.
-  ASTType emitExprType(const ExprNode *expr);
+  /// failure.  If `isPack` is true, then values of variadic type are lowered
+  /// into a pack type.
+  ASTType emitExprType(const ExprNode *expr, bool isPack);
 
   /// Emit a call to __new__ or __init__, returning an instance of the specified
   /// type.  If `allowImplicitConversion` is true, the provided args are allowed

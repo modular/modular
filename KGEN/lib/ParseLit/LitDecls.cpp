@@ -50,7 +50,7 @@ static ParseResult parseType(LitParserBase &p, ASTType &result,
     return failure();
 
   ExprEmitter emitter(p.shared, declScope, std::nullopt, nullptr);
-  result = emitter.emitExprType(expr);
+  result = emitter.emitExprType(expr, /*isPack=*/false);
   if (!result)
     return failure();
 
@@ -888,8 +888,9 @@ parseOptionalParameterSignature(LitParserBase &p, ASTDecl &declScope,
       if (!arg.typeExpr)
         p.emitError(arg.loc, "parameters must always have a type");
 
-      ASTType type =
-          arg.typeExpr ? emitter.emitExprType(arg.typeExpr) : ASTType();
+      ASTType type = arg.typeExpr
+                         ? emitter.emitExprType(arg.typeExpr, /*isPack=*/false)
+                         : ASTType();
       if (!type)
         type = TypeCheckErrorType::get(p.getContext());
 
@@ -918,6 +919,9 @@ parseOptionalParameterSignature(LitParserBase &p, ASTDecl &declScope,
 
       // Bind the parsed type expression so references from other parameters
       // can be resolved.
+      if (arg.isPack)
+        // The type of pack parameters such as `Ts*: type` is `variadic<type>`.
+        type = KGEN::VariadicType::get(type);
       auto tmpDecl = ParamDeclRefAttr::get(arg.name, type);
       declResolver.addFullyResolvedDecl(PRValue(tmpDecl), arg.name, arg.loc,
                                         &declScope);
@@ -1440,7 +1444,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
     // to object type.  Our return checker is currently a lame duck.
     resultType = shared.getNoneType();
   } else {
-    resultType = typeEmitter.emitExprType(resultTypeExpr);
+    resultType = typeEmitter.emitExprType(resultTypeExpr, /*isPack=*/false);
     // On error, a diagnostic will be emitted, but we don't want to kill the
     // entire function definition.  We won't be able to correctly type check any
     // calls to this function though.
@@ -1467,7 +1471,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   for (auto [idx, arg] : llvm::enumerate(args)) {
     ASTType type;
     if (arg.typeExpr) {
-      type = typeEmitter.emitExprType(arg.typeExpr);
+      type = typeEmitter.emitExprType(arg.typeExpr, arg.isPack);
 
       // If the type couldn't be emitted, mark this function erroneous and put
       // in a placeholder type so we can continue type checking.
