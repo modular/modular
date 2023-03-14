@@ -433,12 +433,12 @@ fn tile[
     @always_inline
     fn static_tile_impl[idx: Int]():
         # Get the tile size to proceed with.
-        let tile_size = tile_size_list[idx]
+        alias tile_size = tile_size_list[idx]
 
         # Process work with the tile size until there's not enough remaining work
         #  to fit in a tile.
         while current_offset <= upperbound - tile_size:
-            workgroup_function[tile_size_list[idx]](current_offset)
+            workgroup_function[tile_size](current_offset)
             current_offset += tile_size
 
     unroll[tile_size_list.__len__(), static_tile_impl]()
