@@ -26,9 +26,9 @@
 // -----
 
 // expected-error@+1 {{invalid hex string for aligned_bytes}}
-"M"() {a = #M.aligned_bytes<16: "0xg0010204">} : () -> ()
+"M"() {a = #M.aligned_bytes<"0xg0010204", align 16>} : () -> ()
 
 // -----
 
 // expected-error@+1 {{alignment must be a power of two.}}
-"M"() {a = #M.aligned_bytes<15: "0x01020304">} : () -> ()
+"M"() {a = #M.aligned_bytes<"0x01020304", align 15>} : () -> ()

@@ -227,13 +227,15 @@ ObjectCompiler::produceStandaloneObjectAttr(TargetInfoAttr target, bool isJIT) {
   // TODO (#6986) It would be much nicer if we didn't have to clone this data
   //   and we could just reference the data already in the CAS. That would also
   //   prevent us from having to hash the module above.
-  return getAttrForTensorData(
-      RankedTensorType::get(
-          {(int64_t)buffer->getBufferSize()},
-          IntegerType::get(target.getContext(), 8, IntegerType::Unsigned)),
-      "object_" + llvm::toHex(hash, /*LowerCase=*/true),
-      ArrayRef<char>(buffer->getBufferStart(), buffer->getBufferSize()),
-      resourceManager, /*optAlignment=*/8, /*forceOutOfLine=*/true);
+  auto attrType = RankedTensorType::get(
+      {(int64_t)buffer->getBufferSize()},
+      IntegerType::get(target.getContext(), 8, IntegerType::Unsigned));
+  auto attrName = "object_" + llvm::toHex(hash, /*LowerCase=*/true);
+  ArrayRef<char> blobData(buffer->getBufferStart(), buffer->getBufferSize());
+  auto blob = mlir::HeapAsmResourceBlob::allocateAndCopyWithAlign(blobData,
+                                                                  /*align=*/8);
+  return DenseResourceElementsAttr::get(
+      attrType, resourceManager.insert(attrName, std::move(blob)));
 }
 
 //===----------------------------------------------------------------------===//

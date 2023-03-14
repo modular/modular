@@ -93,7 +93,7 @@ copyIntoAlignedBuffer(mlir::StorageUniquer::StorageAllocator &allocator,
   unsigned byteSize =
       llvm::divideCeil(cast<ArithmeticType>(elementType).getWidth(), CHAR_BIT);
   auto *ptr = static_cast<uint8_t *>(
-      allocator.allocate(data.size(), llvm::NextPowerOf2(byteSize)));
+      allocator.allocate(data.size(), llvm::PowerOf2Ceil(byteSize)));
   std::uninitialized_copy(data.begin(), data.end(), ptr);
   return {ptr, data.size()};
 }
@@ -327,6 +327,17 @@ Attribute detail::AttrIterator::operator*() const {
   return FloatAttr::get(type.cast<FloatType>(), fpVal);
 }
 
+/// HasAlignedBytesInterface::getAlignedBytesTypes
+AlignedBytesType ArrayElementsAttr::getAlignedBytesType() const {
+  if (auto alignedBytesType = llvm::dyn_cast<AlignedBytesType>(getType()))
+    return alignedBytesType;
+  uint64_t elementByteSize = static_cast<uint64_t>(llvm::divideCeil(
+      getElementType().cast<ArithmeticType>().getWidth(), CHAR_BIT));
+  uint64_t byteSize = elementByteSize * static_cast<uint64_t>(size());
+  uint64_t align = llvm::PowerOf2Ceil(elementByteSize);
+  return AlignedBytesType::get(getContext(), byteSize, align);
+}
+
 //===----------------------------------------------------------------------===//
 // Shared Logic
 //===----------------------------------------------------------------------===//
@@ -525,41 +536,23 @@ Attribute M::convertDenseElements(Attribute attr) {
   return IntArrayElementsAttr::get(denseElements.getType(), values);
 }
 
-ElementsAttr M::getInlineAttrForTensorData(ShapedType type, ArrayRef<char> data,
-                                           Optional<size_t> optAlignment,
-                                           bool mustBeAligned) {
-  if (optAlignment && mustBeAligned) {
-    return AlignedBytesAttr::get(
-        type.getContext(), static_cast<uint64_t>(*optAlignment),
-        ArrayRef<uint8_t>(reinterpret_cast<const uint8_t *>(data.data()),
-                          data.size()));
-  }
+ElementsAttr M::getInlineAttrForTensorDataCopy(ShapedType type,
+                                               ArrayRef<char> data) {
   return ArrayElementsAttr::get(
       {reinterpret_cast<const uint8_t *>(data.data()), data.size()}, type);
 }
 
-ElementsAttr
-M::getAttrForTensorData(ShapedType type, StringRef bufferName,
-                        ArrayRef<char> data,
-                        DenseResourceElementsHandleManager &resourceManager,
-                        Optional<size_t> optAlignment, bool forceOutOfLine) {
-  // When loading in a tensor, we make a distinction between the case where
-  // the data is "small" and when it is "large". "large" data is stored as a
-  // resource blob, while "small" data is stored inline in the context.
-  if (!(forceOutOfLine ||
-        shouldUseOutOfLineAttrStorage(type.getNumElements()))) {
-    return ArrayElementsAttr::get(
-        {reinterpret_cast<const uint8_t *>(data.data()), data.size()}, type);
-  }
+ElementsAttr M::getAttrForTensorDataCopy(
+    ShapedType type, StringRef bufferName, ArrayRef<char> data,
+    DenseResourceElementsHandleManager &resourceManager) {
+  if (!shouldUseOutOfLineAttrStorage(type.getNumElements()))
+    return getInlineAttrForTensorDataCopy(type, data);
 
-  // TODO: In many cases we should be able to use `UnmanagedAsmResourceBlob`
-  // here and avoid all allocations. In these cases we need to ensure the
-  // incoming buffer doesn't die before the generated MLIR.
-  // TODO: This can yield an illegal non power-of-two alignment.
-  size_t elementByteAlign =
-      llvm::divideCeil(type.getElementTypeBitWidth(), CHAR_BIT);
+  // Use a default alignment based on the element type.
+  size_t elementByteAlign = llvm::PowerOf2Ceil(
+      llvm::divideCeil(type.getElementTypeBitWidth(), CHAR_BIT));
   auto blob = mlir::HeapAsmResourceBlob::allocateAndCopyWithAlign(
-      data, optAlignment.value_or(elementByteAlign));
+      data, elementByteAlign);
   return DenseResourceElementsAttr::get(
       type, resourceManager.insert(bufferName, std::move(blob)));
 }
@@ -621,8 +614,8 @@ static void printAlignedBytesData(AsmPrinter &p, ArrayRef<uint8_t> data) {
 /// Verifies the attribute's align constraint is sensible.
 LogicalResult
 AlignedBytesAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                         Optional<uint64_t> align, ::ArrayRef<uint8_t> data) {
-  if (align && !llvm::isPowerOf2_64(*align))
+                         ArrayRef<uint8_t> data, uint64_t align) {
+  if (!llvm::isPowerOf2_64(align))
     return emitError() << "alignment must be a power of two.";
   return success();
 }
@@ -638,6 +631,12 @@ ShapedType AlignedBytesAttr::getType() const {
   return ArrayType::get(
       static_cast<int64_t>(getData().size()),
       IntegerType::get(getContext(), 8, IntegerType::Unsigned));
+}
+
+/// HasAlignedBytesInterface::getAlignedBytesType
+AlignedBytesType AlignedBytesAttr::getAlignedBytesType() const {
+  return AlignedBytesType::get(
+      getContext(), static_cast<uint64_t>(getData().size()), getAlign());
 }
 
 //===----------------------------------------------------------------------===//
@@ -990,34 +989,6 @@ static raw_ostream &operator<<(raw_ostream &os, const llvm::Triple &triple) {
 BuildInfoAttr BuildInfoAttr::getForCurrentBuild(MLIRContext *ctx) {
   return BuildInfoAttr::get(ctx, MODULAR_BUILD_TYPE,
                             MODULAR_LLCL_MAX_PROFILING_LEVEL);
-}
-
-//===----------------------------------------------------------------------===//
-// AlignedBytesType helpers
-//===----------------------------------------------------------------------===//
-
-AlignedBytesType M::getAlignedBytesType(DenseResourceElementsAttr dense) {
-  if (auto alignedBytesType = llvm::dyn_cast<AlignedBytesType>(dense.getType()))
-    return alignedBytesType;
-  uint64_t byteSize = static_cast<uint64_t>(llvm::divideCeil(
-      cast<ArithmeticType>(dense.getElementType()).getWidth(), CHAR_BIT));
-  uint64_t size = byteSize * static_cast<uint64_t>(dense.size());
-  mlir::AsmResourceBlob *blob = dense.getRawHandle().getBlob();
-  assert(blob && "dense_resource has not been initialized");
-  uint64_t align = static_cast<uint64_t>(blob->getDataAlignment());
-  return AlignedBytesType::get(dense.getContext(), size, align);
-}
-
-AlignedBytesType M::getAlignedBytesType(ArrayElementsAttr arrayElementsAttr) {
-  if (auto alignedBytesType =
-          llvm::dyn_cast<AlignedBytesType>(arrayElementsAttr.getType()))
-    return alignedBytesType;
-  uint64_t byteSize = static_cast<uint64_t>(llvm::divideCeil(
-      cast<ArithmeticType>(arrayElementsAttr.getElementType()).getWidth(),
-      CHAR_BIT));
-  uint64_t size = byteSize * static_cast<uint64_t>(arrayElementsAttr.size());
-  uint64_t align = llvm::NextPowerOf2(byteSize);
-  return AlignedBytesType::get(arrayElementsAttr.getContext(), size, align);
 }
 
 //===----------------------------------------------------------------------===//
