@@ -24,6 +24,7 @@ from Intrinsics import PrefetchOptions
 from SIMD import SIMD
 from Tuple import StaticTuple
 from TargetInfo import dtype_sizeof, dtype_simd_width
+from TypeUtilities import rebind
 from Range import range
 
 
@@ -342,17 +343,13 @@ fn _compute_ndbuffer_offset[
     if rank == 0:
         return 0
 
-    @parameter
-    if rank == 1:
-        return index[0]
-
-    var result: Int = index[0]
+    var result: Int = 0
 
     @always_inline
     fn body[idx: Int]():
-        result = fma(buf.dim(idx + 1), result, index[idx + 1])
+        result = fma(buf.stride(idx), index[idx], result)
 
-    unroll[rank - 1, body]()
+    unroll[rank, body]()
     return result
 
 
@@ -401,18 +398,45 @@ fn _compute_ndbuffer_offset[
     if rank == 0:
         return 0
 
-    @parameter
-    if rank == 1:
-        return index[0]
-
-    var result: Int = index[0]
+    var result: Int = 0
 
     @always_inline
     fn body[idx: Int]():
-        result = fma(buf.dim(idx + 1), result, index[idx + 1])
+        result = fma(buf.stride(idx), index[idx], result)
+
+    unroll[rank, body]()
+    return result
+
+
+fn _compute_ndbuffer_stride[
+    rank: __mlir_type.index
+](shape: StaticIntTuple[rank]) -> StaticIntTuple[rank]:
+    """Computes the NDBuffer's default dynamic strides using the input shape.
+    The default strides correspond to contiguous memory layout.
+
+    Args:
+        rank (index): The rank of the NDBuffer.
+        shape (StaticTuple[rank, index]): The shape of the NDBuffer.
+
+    Returns:
+        StaticIntTuple[rank]: The default strides of the NDBuffer.
+    """
+    assert_param[rank > 0]()
+
+    @parameter
+    if rank == 1:
+        return StaticIntTuple[rank](1)
+
+    var stride: StaticIntTuple[rank] = shape
+    stride.__setitem__[rank - 1](1)
+
+    @always_inline
+    fn body[idx: Int]():
+        alias i = rank - idx - 1
+        stride.__setitem__[(i - 1).__as_mlir_index()](shape[i] * stride[i])
 
     unroll[rank - 1, body]()
-    return result
+    return stride
 
 
 # ===----------------------------------------------------------------------===#
@@ -432,6 +456,8 @@ struct NDBuffer[
     var _rank: Int
     var dynamic_shape: StaticIntTuple[rank]
     var dynamic_dtype: DType
+    var dynamic_stride: StaticIntTuple[rank]
+    var is_contiguous: Bool
 
     @always_inline("nodebug")
     fn __clone__(self&) -> Self:
@@ -440,6 +466,8 @@ struct NDBuffer[
             _rank: self._rank,
             dynamic_shape: self.dynamic_shape,
             dynamic_dtype: self.dynamic_dtype.value,
+            dynamic_stride: self.dynamic_stride,
+            is_contiguous: self.is_contiguous,
         }
 
     fn __new__(
@@ -455,6 +483,8 @@ struct NDBuffer[
             _rank: rank,
             dynamic_shape: shape,
             dynamic_dtype: type.value,
+            dynamic_stride: _compute_ndbuffer_stride[rank](shape),
+            is_contiguous: True,
         }
 
     fn __new__(
@@ -467,6 +497,8 @@ struct NDBuffer[
             _rank: rank,
             dynamic_shape: dynamic_shape,
             dynamic_dtype: dynamic_dtype.value,
+            dynamic_stride: _compute_ndbuffer_stride[rank](dynamic_shape),
+            is_contiguous: True,
         }
 
     fn __new__(
@@ -479,6 +511,24 @@ struct NDBuffer[
             _rank: rank,
             dynamic_shape: dynamic_shape,
             dynamic_dtype: dynamic_dtype.value,
+            dynamic_stride: _compute_ndbuffer_stride[rank](dynamic_shape),
+            is_contiguous: True,
+        }
+
+    fn __new__(
+        ptr: DTypePointer[type],
+        dynamic_shape: StaticIntTuple[rank],
+        dynamic_dtype: DType,
+        dynamic_stride: StaticIntTuple[rank],
+    ) -> NDBuffer[rank, shape, type]:
+        return NDBuffer[rank, shape, type] {
+            data: ptr,
+            _rank: rank,
+            dynamic_shape: dynamic_shape,
+            dynamic_dtype: dynamic_dtype.value,
+            dynamic_stride: dynamic_stride,
+            is_contiguous: _compute_ndbuffer_stride[rank](dynamic_shape)
+            == dynamic_stride,
         }
 
     @always_inline
@@ -549,6 +599,7 @@ struct NDBuffer[
     fn simd_load[
         width: Int,
     ](self, idx: VariadicList[Int]) -> SIMD[width, type]:
+        debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
         return self._offset(idx).simd_load[width]()
 
     fn simd_load[
@@ -560,6 +611,7 @@ struct NDBuffer[
     fn simd_load[
         width: Int,
     ](self, idx: StaticTuple[rank, __mlir_type.index]) -> SIMD[width, type]:
+        debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
         return self._offset(idx).simd_load[width]()
 
     @always_inline
@@ -585,6 +637,7 @@ struct NDBuffer[
     fn simd_store[
         width: Int
     ](self, idx: StaticTuple[rank, __mlir_type.index], val: SIMD[width, type]):
+        debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
         # Stores a simd value into the ndbuffer at the specified index
         self._offset(idx).simd_store[width](val)
 
@@ -600,6 +653,7 @@ struct NDBuffer[
     fn simd_nt_store[
         width: Int
     ](self, idx: StaticTuple[rank, __mlir_type.index], val: SIMD[width, type]):
+        debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
         # Stores a simd value into the ndbuffer at the specified index
         # The address must properly aligned, see Buffer::simd_nt_store.
         self._offset(idx).simd_nt_store[width](val)
@@ -622,7 +676,12 @@ struct NDBuffer[
         return self.dynamic_shape[index]
 
     @always_inline
+    fn stride(self, index: Int) -> Int:
+        return self.dynamic_stride[index]
+
+    @always_inline
     fn flatten(self) -> Buffer[__mlir_attr.`#kgen.unknown : index`, type]:
+        debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
         return Buffer[__mlir_attr.`#kgen.unknown : index`, type](
             self.data.address, self.size()
         )
@@ -635,6 +694,7 @@ struct NDBuffer[
     @always_inline
     fn zero(self):
         """Set all bytes of the NDBuffer to 0"""
+        debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
         memset_zero(self.data, self.bytecount())
 
     fn simd_fill[
@@ -660,6 +720,7 @@ struct NDBuffer[
             Args:
                 val (SIMD[1, type]):  value to store
         """
+        debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
         return self.simd_fill[dtype_simd_width[type]()](val)
 
     @staticmethod
@@ -850,6 +911,23 @@ struct DynamicRankBuffer:
             self.data.bitcast[type](),
             self._shape_to_static_tuple[rank](),
             self.type.value,
+        )
+
+    @always_inline
+    fn to_ndbuffer[
+        rank: __mlir_type.index, type: DType
+    ](self, stride: StaticIntTuple[rank]) -> NDBuffer[
+        rank, create_kgen_list_unknown[rank](), type
+    ]:
+        debug_assert(
+            self.rank == rank,
+            "rank of DynamicRankBuffer must equal rank of NDBuffer",
+        )
+        return NDBuffer[rank, create_kgen_list_unknown[rank](), type](
+            self.data.bitcast[type](),
+            self._shape_to_static_tuple[rank](),
+            self.type.value,
+            stride,
         )
 
     @always_inline
