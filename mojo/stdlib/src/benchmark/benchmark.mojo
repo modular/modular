@@ -5,9 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 """The module implements 'Benchmark' class for runtime benchmarking."""
 
-from Time import now
 from Int import Int
+from Math import min, max
 from Range import range
+from Time import now
 
 
 struct Benchmark:
@@ -89,7 +90,7 @@ struct Benchmark:
         while time_elapsed < self.max_time_ns:
             if total_iters > self.max_iters and time_elapsed > self.min_time_ns:
                 break
-            prev_dur = Int.max(1, prev_dur)  # avoid dividing by 0
+            prev_dur = max(1, prev_dur)  # avoid dividing by 0
             # Order of operations matters.
             # For very fast benchmarks, prev_iterations ~= prev_duration.
             # If you divide first, you get 0 or 1,
@@ -99,12 +100,12 @@ struct Benchmark:
             # Run 1.2x more iterations than we think we need.
             n += n // 5
             # Don't grow too fast in case we had timing errors previously.
-            n = Int.min(n, 10 * prev_iters)
+            n = min(n, 10 * prev_iters)
             # Be sure to run at least one more than last time.
-            n = Int.max(n, prev_iters + 1)
+            n = max(n, prev_iters + 1)
             # Don't run more than 1e9 times.
             # (This also keeps n in int range on 32 bit platforms.)
-            n = Int.min(n, 1000_000_000)
+            n = min(n, 1000_000_000)
 
             tic = now()
             for __ in range(n):  # TODO(#8365)
