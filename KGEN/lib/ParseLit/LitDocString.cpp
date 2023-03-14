@@ -432,8 +432,15 @@ private:
     name.consume_front("$");
     generateMarkdownHeader("Module: " + name);
 
+    // The special marker used to denote the table of contents.
+    const char *tableOfContents = "[TOC]\n\n";
+
+    // If the module has a doc string, emit it.
     if (std::optional<LitDocString> docStr = getLitDocString(decl))
-      os << docStr->getSummary() << "\n\n" << docStr->getDescription() << "\n";
+      os << docStr->getSummary() << "\n\n"
+         << tableOfContents << docStr->getDescription() << "\n";
+    else
+      os << tableOfContents;
 
     // Recursively generate documentation for the module's children.
     generateLitMarkdownForChildren(decl);

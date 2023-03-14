@@ -10,6 +10,8 @@ from Int import Int
 
 # CHECK: # Module: lit-doc
 
+# CHECK: [TOC]
+
 # CHECK: ## ParameterClass
 # CHECK: This is a class summary.
 # CHECK: The is some kind of description.
