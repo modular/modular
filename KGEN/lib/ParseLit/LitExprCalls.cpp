@@ -1364,7 +1364,7 @@ static bool isValidErrorContext(Block *block) {
 
 /// Emit a function call to the specified callee with the specified operand
 /// values.  This emits an error and returns null on failure.
-CValue OverloadSet::emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
+CValue OverloadSet::emitCall(MutableArrayRef<ASTExprAnd<AnyValue>> operands,
                              ValueDest &dest, ExprEmitter &emitter) {
   if (isNull()) // Base was already diagnosed as an error.
     return {};
@@ -1444,10 +1444,10 @@ CValue OverloadSet::emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
 }
 
 /// Emit an indirect call to a resolved value.
-CValue ExprEmitter::emitIndirectCall(CRValue callee,
-                                     ArrayRef<ASTExprAnd<AnyValue>> operands,
-                                     ValueDest &dest,
-                                     const ExprNode *callExpr) {
+CValue
+ExprEmitter::emitIndirectCall(CRValue callee,
+                              MutableArrayRef<ASTExprAnd<AnyValue>> operands,
+                              ValueDest &dest, const ExprNode *callExpr) {
   auto calleeSig = dyn_cast<SignatureType>(callee.getType().mlirType);
   if (!calleeSig) {
     emitError(callExpr->getLoc(), "invalid function type to call ")
@@ -1493,11 +1493,15 @@ inlineFunctionCallIntoPRValue(AnyValue callee,
   return evaluator.evaluateFunctionCall(calleeSymbolCst.getSymbol(), arguments);
 }
 
-CValue ExprEmitter::emitCallUnchecked(CRValue callee,
-                                      ArrayRef<ASTExprAnd<AnyValue>> operands,
-                                      ArrayRef<ParamDeclAttr> resultParams,
-                                      ValueDest &dest,
-                                      const ExprNode *callExpr) {
+/// Emit call to a resolved and /already type checked/ callee. This does not,
+/// check for compatibility and isn't prepared to emit errors.  This call
+/// mutates the "operands" list to reflect the ultimate operand IRValues used
+/// during emission, but does not expand default arguments or variadics.
+CValue
+ExprEmitter::emitCallUnchecked(CRValue callee,
+                               MutableArrayRef<ASTExprAnd<AnyValue>> operands,
+                               ArrayRef<ParamDeclAttr> resultParams,
+                               ValueDest &dest, const ExprNode *callExpr) {
   SignatureType calleeSig = cast<SignatureType>(callee.getType().mlirType);
 
   assert(calleeSig.getResultParams().size() == resultParams.size() &&
@@ -1552,14 +1556,14 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     }
 
     // Otherwise, we're applying one or more arguments to this.
-    auto emitOneArgVal = [&](ASTExprAnd<AnyValue> operand) -> AnyValue {
+    auto emitOneArgVal = [&](ASTExprAnd<AnyValue> &operand) -> LogicalResult {
       switch (convention) {
       case ValueInputConvention::ByRef:
       case ValueInputConvention::ByRefResult:
         // By-ref arguments, must be lvalues.
         assert(operand.ir.getIfLValue() &&
                "Call should already be type checked");
-        return operand.ir;
+        return success();
       case ValueInputConvention::ByVal:
       case ValueInputConvention::ByValInMem:
         // by-val arguments are converted to the expected r-value type.
@@ -1571,7 +1575,8 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
         if (convention == ValueInputConvention::ByValInMem)
           expectedArgType = expectedArgType.getPointerElementType();
 
-        return emitRValue(operand, EC_CallArgValue, expectedArgType);
+        operand.ir = emitRValue(operand, EC_CallArgValue, expectedArgType);
+        return success(!operand.ir.isNull());
       }
       llvm_unreachable("unknown value input convention");
     };
@@ -1579,24 +1584,21 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     // For a normal non-vararg argument, we just emit it and add it to our
     // list.
     if (!calleeSig.isVararg(argIdx)) {
-      auto operand = operands[nextOperandIdx++];
-      AnyValue argVal = emitOneArgVal(operand);
-      if (!argVal)
+      auto &operand = operands[nextOperandIdx++];
+      if (failed(emitOneArgVal(operand)))
         return {};
-      argumentValues.push_back({argVal, operand.expr});
+      argumentValues.push_back(operand);
       continue;
     }
 
     // For variadic list, we need to emit all of the remaining operands.
     // Emit all of the remaining values to make sure they're converted to
     // the right type.
-    SmallVector<ASTExprAnd<AnyValue>> variadicOperands(
-        operands.begin() + nextOperandIdx, operands.end());
+    MutableArrayRef<ASTExprAnd<AnyValue>> variadicOperands =
+        operands.drop_front(nextOperandIdx);
     for (auto &operand : variadicOperands) {
-      auto emittedArg = emitOneArgVal(operand);
-      if (!emittedArg)
+      if (failed(emitOneArgVal(operand)))
         return {};
-      operand.ir = emittedArg;
     }
     nextOperandIdx = operands.size();
 
@@ -1621,6 +1623,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       // Convert any PRValues to an SRValue for variadic create.
       if (convention == ValueInputConvention::ByVal) {
         argVal = emitSRValue({operand.ir, operand.expr}, EC_CallArgValue);
+        operand.ir = SRValue(argVal);
       } else {
         assert(convention == ValueInputConvention::ByValInMem);
         argVal = operand.ir.getIfMRValue();
@@ -1729,6 +1732,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
           tmpBuffer.resetForError();
           return {};
         }
+
         writebackHandler.elements.push_back({std::move(tmpBuffer), buffer});
         arg = buffer;
       }
