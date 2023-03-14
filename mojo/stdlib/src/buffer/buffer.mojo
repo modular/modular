@@ -17,7 +17,7 @@ from List import (
     create_kgen_list_unknown,
     VariadicList,
 )
-from Math import fma
+from Math import fma, min, max
 from Memory import stack_allocation, memset_zero
 from Pointer import DTypePointer, product as pointer_product
 from Intrinsics import PrefetchOptions
@@ -743,8 +743,8 @@ fn partial_simd_load[
     vector.simd_store[width](0, SIMD[width, type].splat(pad_value))
 
     # Compute intersection of given bound and the vector range.
-    let effective_lbound = Int.max(0, lbound)
-    let effective_rbound = Int.min(width, rbound)
+    let effective_lbound = max(0, lbound)
+    let effective_rbound = min(width, rbound)
 
     # Fill values in valid range.
     for idx in range(effective_lbound, effective_rbound):
@@ -785,8 +785,8 @@ fn partial_simd_store[
     vector.simd_store[width](0, data)
 
     # Compute intersection of valid bound and the simd vector range.
-    let effective_lbound = Int.max(0, lbound)
-    let effective_rbound = Int.min(width, rbound)
+    let effective_lbound = max(0, lbound)
+    let effective_rbound = min(width, rbound)
 
     # Store the valid on the valid range.
     for idx in range(effective_lbound, effective_rbound):
