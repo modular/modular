@@ -8,6 +8,7 @@
 #define MATTRS_TD
 
 include "Support/MDialect/MDialect.td"
+include "Support/MDialect/MAttrInterfaces.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
 
@@ -73,7 +74,8 @@ def M_PrimitivesArrayAttr : MAttr<"PrimitiveArray", "primitives_array"> {
 //===----------------------------------------------------------------------===//
 
 def M_ArrayElementsAttr : MAttr<"ArrayElements", "dense_array",
-    [ElementsAttrInterface, TypedAttrInterface]> {
+    [ElementsAttrInterface, TypedAttrInterface,
+     DeclareAttrInterfaceMethods<HasAlignedBytesInterface, ["getAlignedBytesType"]>]> {
   let summary = "an elements attribute backed by an array";
   let description = [{
     The `#M.dense_array` attribute is an elements attribute backed by a
@@ -84,6 +86,11 @@ def M_ArrayElementsAttr : MAttr<"ArrayElements", "dense_array",
     Importantly, this attribute can only contain scalar integer and floating
     point types, does not bit-pack elements, and does not have special handling
     for splat elements.
+
+    This attribute implements the HasAlignedBytesInterface by returning a
+    !M.aligned_bytes type capturing the byte size of the underlying element data
+    array and an alignment of the next power-of-two of the byte size of the
+    element type.
 
     Example:
 
@@ -121,7 +128,6 @@ def M_ArrayElementsAttr : MAttr<"ArrayElements", "dense_array",
   }];
 }
 
-
 //===----------------------------------------------------------------------===//
 // AlignedBytesAttr
 //===----------------------------------------------------------------------===//
@@ -136,32 +142,37 @@ def M_AlignedBytesData : ArrayRefParameter<"uint8_t",
 }
 
 def M_AlignedBytesAttr : MAttr<"AlignedBytes", "aligned_bytes", [
-    DeclareAttrInterfaceMethods<ElementsAttrInterface>] > {
-  let summary = "A literal byte array with (optional) alignment.";
+    DeclareAttrInterfaceMethods<ElementsAttrInterface>,
+    DeclareAttrInterfaceMethods<HasAlignedBytesInterface, ["getAlignedBytesType"]>]> {
+  let summary = "A literal byte array with alignment.";
   let description = [{
     This attribute is the 'inline' equivalent of `dense_resource`, and describes
-    a byte array with (optional) byte alignment. Nothing is implied about the
-    internal structure of the bytes (rank, dimensions, underlying element type,
-    padding, or element endianness).
+    a byte array with byte alignment. Nothing is implied about the internal
+    structure of the bytes (rank, dimensions, underlying element type, padding,
+    or element endianness).
 
-    This attribute implements the ElementsAttrInterface as a rank-1 ShapedType over
-    uint8_t elements.
+    This attribute implements the ElementsAttrInterface as a rank-1 ShapedType
+    over uint8_t elements.
 
-    Generally this attribute should only be used for 'small' literals. Larger literals
-    should be placed into the resources table and be referenced by the `dense_resources`
-    attribute. Note that dense resources encode their alignment in their first four bytes
-    using the little-endian convention, where as this attribute describes the alignment
-    explicitly.
+    This attribute implements the HasAlignedBytesInterface by returning the
+    obvious !M.aligned_bytes type.
+
+    Generally this attribute should only be used for 'small' literals. Larger
+    literals should be placed into the resources table and be referenced by the
+    `dense_resources` attribute. Note that dense resources encode their
+    alignment in their first four bytes using the little-endian convention,
+    where as this attribute describes the alignment explicitly.
 
     Examples:
     ```mlir
-    #M.aligned_bytes<"0x01020304">      // 4 bytes, no alignment constraint
-    #M.aligned_bytes<64: "0x01020304">  // 4 bytes, aligned on 64 byte boundary
+    #M.aligned_bytes<"0x01020304", align 64> // 4 bytes, aligned on 64 bytes
     ```
   }];
 
-  let parameters = (ins OptionalParameter<"Optional<uint64_t>">:$align, M_AlignedBytesData:$data);
-  let assemblyFormat = [{ `<` ($align^ `:`)? custom<AlignedBytesData>($data) `>` }];
+  let parameters = (ins M_AlignedBytesData:$data, "uint64_t":$align);
+  let assemblyFormat = [{
+    `<` custom<AlignedBytesData>($data) `,` `align` $align `>`
+  }];
   let genVerifyDecl = 1;
 
   let extraClassDeclaration = [{

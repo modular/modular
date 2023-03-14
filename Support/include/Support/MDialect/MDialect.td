@@ -30,7 +30,8 @@ def MDialect : Dialect {
     void registerAttributes();
     /// Register all dialect types.
     void registerTypes();
-    /// Inject any external attribute models.
+    /// Inject any external type / attribute models.
+    void injectTypeInterfaces();
     void injectAttrInterfaces();
   }];
 

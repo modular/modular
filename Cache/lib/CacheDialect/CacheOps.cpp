@@ -118,7 +118,9 @@ AsyncValueRef<Chain> Cache::deflateConstant(Operation *constant,
       NamedAttrList additionalAttrs;
       // The resource attribute may include a type annotation which conveys
       // its alignment. Otherwise use the blob's alignment.
-      uint64_t align = getAlignedBytesType(resourceAttr).getAlign();
+      uint64_t align = dyn_cast<HasAlignedBytesInterface>(resourceAttr)
+                           .getAlignedBytesType()
+                           .getAlign();
       additionalAttrs.set(
           "align",
           builder.getIntegerAttr(

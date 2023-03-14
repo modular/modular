@@ -9,6 +9,7 @@
 
 #include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/MDialect/MAttrInterfaces.h"
 #include "Support/MDialect/MTypes.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinAttributeInterfaces.h"
@@ -285,31 +286,19 @@ public:
 /// and bitpacked-ness of the attribute are handled.
 Attribute convertDenseElements(Attribute attr);
 
-/// Returns an "inline" attribute to store the given tensor data.
-///
-/// The result may be:
-///  - 'ArrayElementAttr' (no alignment constraint, or mustBeAligned is false)
-///  - 'AlignedBytes' (alignment constraint, or mustBeAligned is true)
-ElementsAttr getInlineAttrForTensorData(ShapedType type, ArrayRef<char> data,
-                                        Optional<size_t> optAlignment = {},
-                                        bool mustBeAligned = false);
+/// Returns an ArrayElementsAttr representing data. The given data is always
+/// copied into the MLIR context.
+ElementsAttr getInlineAttrForTensorDataCopy(ShapedType type,
+                                            ArrayRef<char> data);
 
-/// Returns an attribute to store the given tensor data.
-///
-/// If forceOutOfLine is true the data will always be stored as a dialect
-/// resource, irrespective of size.
-///
-/// Otherwise, depending on the amount of data and optional alignment, the
-/// result may be:
-///  - 'ArrayElementAttr' (small data, no alignment constraint)
-///  - 'DenseResourceElementsAttr' (large data, and if no alignment
-///    constraint then use the element type's bit width rounded up to whole
-///    bytes is used).
+/// Returns an attribute to store the given tensor data. If the type's number
+/// of elements is small, returns an ArrayElementsAttr. Otherwise creates
+/// a blob and returns a DenseResourceElementsAttr. The given data is always
+/// copied into the MLIR context.
 ElementsAttr
-getAttrForTensorData(ShapedType type, StringRef bufferName, ArrayRef<char> data,
-                     DenseResourceElementsHandleManager &resourceManager,
-                     Optional<size_t> optAlignment = {},
-                     bool forceOutOfLine = false);
+getAttrForTensorDataCopy(ShapedType type, StringRef bufferName,
+                         ArrayRef<char> data,
+                         DenseResourceElementsHandleManager &resourceManager);
 
 //===----------------------------------------------------------------------===//
 // TargetInfoAttr
@@ -324,18 +313,6 @@ void setTargetInfo(ModuleOp module, TargetInfoAttr target);
 /// Look for a target info specification in the nearest surrounding module from
 /// the provided operation. Returns null if one cannot be found.
 TargetInfoAttr lookupTargetInfo(Operation *from);
-
-//===----------------------------------------------------------------------===//
-// AlignedBytesType helpers
-//===----------------------------------------------------------------------===//
-
-/// Returns the !M.aligned_bytes type describing the byte size and alignment
-/// for the given dense_resource attribute.
-AlignedBytesType getAlignedBytesType(DenseResourceElementsAttr dense);
-
-/// Returns the !M.aligned_bytes type describing the byte size and alignment
-/// for the given #M.array attribute.
-AlignedBytesType getAlignedBytesType(ArrayElementsAttr arrayElementsAttr);
 
 } // namespace M
 

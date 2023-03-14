@@ -76,7 +76,7 @@ struct IndexLayout
 };
 } // namespace
 
-void MDialect::injectAttrInterfaces() {
+void MDialect::injectTypeInterfaces() {
   IntegerType::attachInterface<IntegerLayout>(*getContext());
   BFloat16Type::attachInterface<FloatLayout>(*getContext());
   Float16Type::attachInterface<FloatLayout>(*getContext());
