@@ -60,7 +60,7 @@ fn gather_reduce[
     runtime: Runtime.ptr_type,
 ):
     """Computes output[i, j, k] = input[indices[i, j], k] and simultaneously
-    reduces the output accross axis 1.
+    reduces the output accross axis 1 to produce output[i, k].
 
     The motivating use-case for this is multi-hot embeddings in recommender models.
     This provides similar functionality to Torch's EmbeddingBag layer. In that
@@ -75,13 +75,20 @@ fn gather_reduce[
 
     _ = output.fill(reduce_init)
 
-    # This parallelization scheme doesn't work well if the multi-hot dim or
-    # embedding dim is very large. But that should not be common.
     # TODO: find a heuristic to replace the magic number.
-    alias MIN_TASK_NUM_SLICES = 64
+    # This is about 4x larger than the default in gather, which makes sense
+    # since this kernel performs far fewer writes
+    alias MIN_TASK_COPY_SIZE = 64 * 100 * 32 * 4  # bytes
     let num_threads = Runtime(runtime).parallelism_level()
     let num_tasks = min(
-        div_ceil(indices.dim[0](), MIN_TASK_NUM_SLICES), num_threads
+        div_ceil(
+            indices.dim[0]()
+            * indices.dim[1]()
+            * input.dim[1]()
+            * dtype_sizeof[type](),
+            MIN_TASK_COPY_SIZE,
+        ),
+        num_threads,
     )
 
     let num_chunks_per_task = div_ceil(indices.dim[0](), num_tasks)
