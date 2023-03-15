@@ -291,6 +291,10 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return mlir::success();
   }
 
+  // Handle header emission, we don't need to generate an archive for this.
+  if (clOptions.cmd == Command::kEmitHeader)
+    return emitHeader(*compiler, clOptions.outputFilename);
+
   // This produces a standalone archive for all the objects we requested.
   auto standaloneOr = compiler->produceStandaloneArchive(
       /*isJIT=*/clOptions.cmd == Command::kExecute);
@@ -299,18 +303,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   Cache::BufferRef standaloneArchive = std::move(*standaloneOr);
 
   // If we're emitting the archive, do it.
-  if (clOptions.cmd == Command::kEmit) {
-    if (failed(clOptions.emitArchive(standaloneArchive->getBuffer())))
-      return failure();
-
-    auto headerPath = clOptions.getHeaderOutputPath();
-    // If we have no output path, we can't emit headers so return.
-    if (!headerPath)
-      return mlir::success();
-
-    // Finish off by producing a header file with the decls.
-    return emitHeader(*compiler, *headerPath);
-  }
+  if (clOptions.cmd == Command::kEmit)
+    return clOptions.emitArchive(standaloneArchive->getBuffer());
 
   // Now we can load it into the JIT - we're definitely executing the thing.
 
@@ -376,6 +370,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       case Command::kEmitLLVM:
       case Command::kEmitAssembly:
       case Command::kEmit:
+      case Command::kEmitHeader:
         break;
       case Command::kExecute: {
         if (failed(execFunc(fn, name, *clFunc)))

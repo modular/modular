@@ -27,6 +27,7 @@ enum class Command {
   kElaborate,
   kEmitLLVM,
   kEmitAssembly,
+  kEmitHeader,
   kEmit,
   kExecute,
 };
@@ -178,6 +179,9 @@ public:
           clEnumValN(Command::kEmitAssembly, "S",
                      "Emit the funcs as assembly (alias for emit-asm)."),
           clEnumValN(Command::kEmit, "emit", "Emit funcs as object files."),
+          clEnumValN(
+              Command::kEmitHeader, "emit-header",
+              "Emit a C header file with declarations of exported functions."),
           clEnumValN(Command::kExecute, "execute", "Execute funcs.")),
       llvm::cl::Required};
 

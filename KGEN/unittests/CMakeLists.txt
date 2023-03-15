@@ -8,7 +8,8 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
 add_kgen_kernel(test_kernels
   SOURCE
-  ${CMAKE_CURRENT_SOURCE_DIR}/test_kernels.mlir)
+  ${CMAKE_CURRENT_SOURCE_DIR}/test_kernels.mlir
+)
 
 add_modular_unittest(
   TOP_LEVEL_CHECK
@@ -22,6 +23,9 @@ add_modular_unittest(
 
   KGENInvokeTest.cpp
   KGENKernelTest.cpp
+
+  DEPENDS
+  test_kernels-headers
 
   LINK_LIBS PRIVATE
   GenericMLSupport

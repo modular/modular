@@ -206,10 +206,6 @@ public:
   std::unique_ptr<llvm::ToolOutputFile>
   getIntermediateFile(StringRef inputName, StringRef ext) const;
 
-  /// Return a path to which headers can be emitted, or none if headers need not
-  /// be emitted at all.
-  std::optional<std::string> getHeaderOutputPath() const;
-
   LogicalResult emitArchive(StringRef object) const;
 
 private:

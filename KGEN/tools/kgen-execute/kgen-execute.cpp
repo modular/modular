@@ -152,6 +152,7 @@ struct ProcessBuffer {
       case Command::kEmitLLVM:
       case Command::kEmitAssembly:
       case Command::kEmit:
+      case Command::kEmitHeader:
         break;
       case Command::kExecute: {
         if (auto err = k.verifyFuncSignature(func.getFunctionType()))

@@ -121,6 +121,11 @@ endfunction()
 #    KERNELS run_exp
 #    LINK_LIBS lib)
 #
+# This will generate two targets, `exp` and `exp-headers`. The former is
+# the actual kernel, and the latter is a library that contains the headers
+# for the kernel. Targets that depend on the headers should add `exp-headers`
+# to their `DEPENDS` list.
+#
 # This function will pull its include flags from the linked libs to avoid
 # having too many search paths.
 function(add_kgen_kernel target)
@@ -144,9 +149,9 @@ function(add_kgen_kernel target)
   set(archive_file_name "${KGEN_OUTPUT_NAME}${CMAKE_STATIC_LIBRARY_SUFFIX}")
   file(RELATIVE_PATH archive_file_name_rel ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR}/${archive_file_name})
 
+  # Add the command used to generate the archive for the kernel.
   add_custom_command(
     OUTPUT ${archive_file_name}
-    OUTPUT "${KGEN_OUTPUT_NAME}.h"
 
     COMMAND $<TARGET_FILE:kgen> -emit
     $<$<BOOL:${KGEN_SFF_DEBUG}>:-debug-only="select-fastest-function">
@@ -170,6 +175,31 @@ function(add_kgen_kernel target)
     IMPORTED_LOCATION ${CMAKE_CURRENT_BINARY_DIR}/${archive_file_name}
     LINKER_LANGUAGE C
     INTERFACE_INCLUDE_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR}
+    INCLUDE_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR}
+  )
+
+  # Add the command used to generate the header for the kernel.
+  set(header_file_name "${KGEN_OUTPUT_NAME}.h")
+  file(RELATIVE_PATH header_file_name_rel ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR}/${header_file_name})
+  add_custom_command(
+    OUTPUT ${header_file_name}
+
+    COMMAND $<TARGET_FILE:kgen> -emit-header
+    $<$<BOOL:${KGEN_SFF_DEBUG}>:-debug-only="select-fastest-function">
+    $<$<BOOL:${KGEN_ENABLE_SEARCH}>:-enable-search>
+    -o ${header_file_name_rel} ${KGEN_INCLUDE_FLAGS} ${KGEN_SOURCE}
+    -d ${header_file_name_rel}.d
+    -O${KGEN_OPTIMIZATION_LEVEL}
+    -debug-level=${KGEN_DEBUG_LEVEL}
+    $<$<BOOL:${MODULAR_ENABLE_XRAY}>:-xray-instrument>
+
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    DEPFILE ${CMAKE_CURRENT_BINARY_DIR}/${header_file_name}.d
+    DEPENDS kgen ${KGEN_SOURCE} ${KGEN_LIB_DEPENDS}
+  )
+  add_custom_target(${target}-headers DEPENDS ${header_file_name})
+  add_dependencies(${target}-headers ${KGEN_LIB_DEPENDS} kgen)
+  set_target_properties(${target}-headers PROPERTIES
     INCLUDE_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR}
   )
 endfunction()
