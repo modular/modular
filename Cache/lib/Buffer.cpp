@@ -85,6 +85,9 @@ const char *Buffer::getBufferStart() const {
   if (isa<mapped_file_region>(storage))
     return cast<mapped_file_region>(storage).const_data();
 
+  if (isa<MemoryBufferStorage>(storage))
+    return cast<MemoryBufferStorage>(storage).memBuffer->getBufferStart();
+
   llvm_unreachable("unknown storage type");
 }
 
@@ -99,6 +102,9 @@ const char *Buffer::getBufferEnd() const {
     return mappedStorage.const_data() + mappedStorage.size();
   }
 
+  if (isa<MemoryBufferStorage>(storage))
+    return cast<MemoryBufferStorage>(storage).memBuffer->getBufferEnd();
+
   llvm_unreachable("unknown storage type");
 }
 
@@ -108,6 +114,9 @@ size_t Buffer::getBufferSize() const {
 
   if (isa<mapped_file_region>(storage))
     return cast<mapped_file_region>(storage).size();
+
+  if (isa<MemoryBufferStorage>(storage))
+    return cast<MemoryBufferStorage>(storage).memBuffer->getBufferSize();
 
   llvm_unreachable("unknown storage type");
 }

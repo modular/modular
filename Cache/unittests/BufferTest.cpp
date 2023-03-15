@@ -94,3 +94,26 @@ TEST(BufferTest, AlignmentWorks) {
   originalContents += "hello";
   EXPECT_TRUE(((Cache::Buffer &)*buffer).getBuffer() == originalContents);
 }
+
+TEST(BufferTest, MemoryBufferConversion) {
+  // Test that we can convert from a MemoryBuffer to a Buffer, and that after
+  // the `llvm::MemoryBuffer` goes out of scope, the data is still there.
+  auto buffer = Buffer::get("hello");
+  {
+    std::unique_ptr<llvm::MemoryBuffer> memoryBuffer =
+        llvm::MemoryBuffer::getMemBuffer("goodbye");
+    EXPECT_EQ(memoryBuffer->getBufferKind(),
+              llvm::MemoryBuffer::MemoryBuffer_Malloc);
+
+    buffer = Buffer::take(std::move(memoryBuffer));
+    EXPECT_TRUE(memoryBuffer == nullptr);
+  }
+  EXPECT_TRUE(buffer->getBuffer() == "goodbye")
+      << "Actually had: " << buffer->getBuffer();
+
+#ifdef MODULAR_DEBUG
+  std::unique_ptr<llvm::MemoryBuffer> memoryBuffer;
+  ASSERT_DEATH_IF_SUPPORTED(Buffer::take(std::move(memoryBuffer)),
+                            "expected a non-null memory buffer");
+#endif // MODULAR_DEBUG
+}
