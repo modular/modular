@@ -800,16 +800,18 @@ def KGEN_RegionAttr
   }];
   let parameters = (ins "StringAttr":$regionName,
                         "ParamBindArrayAttr":$paramValues,
+                        "BoolAttr":$isolated,
                         AttributeSelfTypeParameter<"", "SignatureType">:$type);
 
   let builders = [
-    AttrBuilderWithInferredContext<(ins "ParamDeclAttr":$decl)>,
+    AttrBuilderWithInferredContext<(ins "ParamDeclAttr":$decl, "bool":$isolated)>,
     AttrBuilderWithInferredContext<(ins "StringAttr":$name,
                                         "ArrayRef<ParamBindAttr>":$paramValues,
+                                        "BoolAttr":$isolated,
                                         "SignatureType":$type)>,
   ];
 
-  let assemblyFormat = "`<` $regionName `,` $paramValues `>`";
+  let assemblyFormat = "`<` $regionName `,` $paramValues `,` `isolated` `=` $isolated `>`";
 }
 
 #endif // KGEN_KGENDIALECT_KGENATTRS_TD

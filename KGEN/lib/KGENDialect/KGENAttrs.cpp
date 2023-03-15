@@ -1418,7 +1418,7 @@ static Attribute simplifyBindSignature(ArrayRef<TypedAttr> operands,
     resultType = *resultSigOr;
   }
 
-  auto processSignatureLike = [&](auto attr, auto getFirstOperand) {
+  auto processSignatureLike = [&](auto attr, auto cloneWith) {
     bool hasUnboundParameters = attr.getParamValues().empty();
     hasUnboundParameters |=
         llvm::any_of(attr.getParamValues(), [](ParamBindAttr bind) {
@@ -1451,8 +1451,7 @@ static Attribute simplifyBindSignature(ArrayRef<TypedAttr> operands,
       assert(operandIter == operands.end() && "Didn't use all the operands?");
     }
 
-    return decltype(attr)::get(
-        getFirstOperand(),
+    return cloneWith(
         ParamBindArrayAttr::get(resultType.getContext(), paramBinds),
         cast<SignatureType>(resultType));
   };
@@ -1460,8 +1459,10 @@ static Attribute simplifyBindSignature(ArrayRef<TypedAttr> operands,
   // If the actual operand is a SymbolConstantAttr operand, then we can simplify
   // the bind_signature by folding the parameter values into it directly.
   if (auto symbolConstant = dyn_cast<SymbolConstantAttr>(operands.front())) {
-    return processSignatureLike(symbolConstant,
-                                [&]() { return symbolConstant.getSymbol(); });
+    return processSignatureLike(symbolConstant, [&](ParamBindArrayAttr binds,
+                                                    SignatureType type) {
+      return SymbolConstantAttr::get(symbolConstant.getSymbol(), binds, type);
+    });
   }
 
   // If the operand is an MLIR operation, substitute its parameters in its
@@ -1487,8 +1488,11 @@ static Attribute simplifyBindSignature(ArrayRef<TypedAttr> operands,
   // If the operand is a RegionAttr, we can substitute the parameters into the
   // type and return a new one.
   if (auto region = dyn_cast<RegionAttr>(operands.front())) {
-    return processSignatureLike(region,
-                                [&]() { return region.getRegionName(); });
+    return processSignatureLike(
+        region, [&](ParamBindArrayAttr binds, SignatureType type) {
+          return RegionAttr::get(region.getRegionName(), binds,
+                                 region.getIsolated(), type);
+        });
   }
 
   return {};
@@ -1805,19 +1809,20 @@ TypedAttr KGEN::emitMLIROperationCall(
 
 bool RegionAttr::isConstant() const { return true; }
 
-RegionAttr RegionAttr::get(ParamDeclAttr decl) {
+RegionAttr RegionAttr::get(ParamDeclAttr decl, bool isolated) {
   assert(decl.getType().isa<SignatureType>() &&
          "RegionAttr requires a SignatureType");
   return RegionAttr::get(decl.getContext(), decl.getName(),
                          ParamBindArrayAttr::get(decl.getContext(), {}),
+                         BoolAttr::get(decl.getContext(), isolated),
                          decl.getType().cast<SignatureType>());
 }
 
 RegionAttr RegionAttr::get(StringAttr name, ArrayRef<ParamBindAttr> values,
-                           SignatureType type) {
+                           BoolAttr isolated, SignatureType type) {
   return RegionAttr::get(name.getContext(), name,
                          ParamBindArrayAttr::get(name.getContext(), values),
-                         type);
+                         isolated, type);
 }
 
 //===----------------------------------------------------------------------===//
