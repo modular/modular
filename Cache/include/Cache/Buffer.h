@@ -15,12 +15,9 @@
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 #include <filesystem>
-
-namespace llvm {
-class MemoryBuffer;
-} // namespace llvm
 
 namespace M::Cache {
 class Buffer;
@@ -47,6 +44,12 @@ public:
   /// file is mapped read-only.
   static ErrorOr<BufferRef> getFile(const std::filesystem::path &filepath,
                                     size_t size = 0, size_t offset = 0);
+
+  /// Take ownership of an `llvm::MemoryBuffer` and use that as the backing
+  /// storage for the BufferRef.
+  static BufferRef take(std::unique_ptr<llvm::MemoryBuffer> buffer) {
+    return BufferRef::create(std::move(buffer));
+  }
 
   //===-------------------------------------------------------------------===//
   // llvm::MemoryBuffer API
@@ -77,6 +80,11 @@ protected:
   /// of the mapped file region.
   Buffer(llvm::sys::fs::mapped_file_region &&mapped)
       : storage{std::move(mapped)} {}
+
+  /// Construct a `Cache::Buffer` from an `llvm::MemoryBuffer`. The buffer takes
+  /// ownership of any storage owned by the `llvm::MemoryBuffer`.
+  Buffer(std::unique_ptr<llvm::MemoryBuffer> buffer)
+      : storage{std::move(buffer)} {}
 
   /// Buffers are not copy-constructible.
   Buffer(const Buffer &other) = delete;
@@ -119,10 +127,22 @@ protected:
     AllocatedBuffer(StringRef str);
   };
 
+  /// Struct to hold the data we need if this is an llvm::MemoryBuffer.
+  struct MemoryBufferStorage {
+    MemoryBufferStorage(std::unique_ptr<llvm::MemoryBuffer> buffer)
+        : memBuffer{std::move(buffer)} {
+      assert(memBuffer && "expected a non-null memory buffer");
+    }
+
+    std::unique_ptr<llvm::MemoryBuffer> memBuffer;
+  };
+
   /// The data owned by this buffer.
   /// AllocatedBuffer is the first type so that the default constructor is an
   /// empty AllocatedBuffer.
-  SmartVariant<AllocatedBuffer, llvm::sys::fs::mapped_file_region> storage;
+  SmartVariant<AllocatedBuffer, llvm::sys::fs::mapped_file_region,
+               MemoryBufferStorage>
+      storage;
 };
 
 class WriteableBuffer;
