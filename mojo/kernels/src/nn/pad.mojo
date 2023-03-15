@@ -15,7 +15,7 @@ from DType import DType
 from Functional import vectorize
 from Index import Index
 from Int import Int
-from List import create_kgen_list_unknown
+from List import Dim, create_kgen_list_unknown
 from Memory import memcpy
 from Pointer import DTypePointer
 from SIMD import SIMD
@@ -30,9 +30,7 @@ from IO import print
 fn _fill[
     type: DType
 ](dst: DTypePointer[type], value: SIMD[1, type], count: Int):
-    _ = Buffer[__mlir_attr.`#kgen.unknown : index`, type](
-        dst.address, count
-    ).fill(value)
+    _ = Buffer[Dim(), type](dst.address, count).fill(value)
 
 
 fn pad[

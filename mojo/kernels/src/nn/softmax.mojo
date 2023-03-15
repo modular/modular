@@ -10,6 +10,7 @@ from DType import DType
 from Functional import vectorize_unroll
 from Int import Int
 from Math import exp, identity, log, mul, reciprocal, sub
+from List import Dim
 from Numerics import neginf
 from Range import range
 from Reductions import max
@@ -54,7 +55,7 @@ fn reduce_add_simd[
 
 fn _softmax_2_pass_step1[
     simd_width: Int,
-    buffer_size: __mlir_type.index,
+    buffer_size: Dim,
     type: DType,
 ](input: Buffer[buffer_size, type]) -> StaticTuple[
     2, __mlir_type[`!pop.scalar<`, type.value, `>`]
@@ -109,7 +110,7 @@ fn _softmax_2_pass_step1[
 fn _softmax_2_pass_step2[
     simd_width: Int,
     unroll_factor: __mlir_type.index,
-    buffer_size: __mlir_type.index,
+    buffer_size: Dim,
     type: DType,
 ](
     output: Buffer[buffer_size, type],
@@ -138,7 +139,7 @@ fn _softmax_2_pass_step2[
 
 fn softmax_2_pass[
     simd_width: Int,
-    buffer_size: __mlir_type.index,
+    buffer_size: Dim,
     type: DType,
 ](output: Buffer[buffer_size, type], input: Buffer[buffer_size, type]):
     """Performs an unbatched softmax on an input tensor using the two-pass online
@@ -163,7 +164,7 @@ fn softmax_2_pass[
 
     Args:
         simd_width (__mlir_type.index): The simd_width to use in vectorization.
-        buffer_size (__mlir_type.index): The size of the input and output buffers.
+        buffer_size (Dim): The size of the input and output buffers.
         type (DType): The type of the input and output buffers.
         output (Buffer[buffer_size, type]): The output buffer in which to store the softmax values.
         input (Buffer[buffer_size, type]): The input buffer used to compute the softmax.
@@ -193,7 +194,7 @@ fn softmax_2_pass[
 fn _softmax_3_pass_step_2[
     simd_width: Int,
     unroll_factor: __mlir_type.index,
-    buffer_size: __mlir_type.index,
+    buffer_size: Dim,
     type: DType,
     pre_update_func: __mlir_type[
         `!kgen.signature<<simd_width:`,
@@ -253,7 +254,7 @@ fn _softmax_3_pass_step_2[
 fn _softmax_3_pass_step_3[
     simd_width: Int,
     unroll_factor: __mlir_type.index,
-    buffer_size: __mlir_type.index,
+    buffer_size: Dim,
     type: DType,
     accum_proc_func: __mlir_type[
         `!kgen.signature<<simd_width: `,
@@ -299,7 +300,7 @@ fn _softmax_3_pass_step_3[
 
 fn _softmax_3_pass_base[
     simd_width: Int,
-    buffer_size: __mlir_type.index,
+    buffer_size: Dim,
     type: DType,
     step2_pre_update_func: __mlir_type[
         `!kgen.signature<<simd_width:`,
@@ -353,7 +354,7 @@ fn _softmax_3_pass_base[
 
     Args:
         simd_width (__mlir_type.index): The simd_width to use in vectorization.
-        buffer_size (__mlir_type.index): The size of the input and output buffers.
+        buffer_size (Dim): The size of the input and output buffers.
         type (DType): The type of the input and output buffers.
         logsoftmax (Bool): Perform logsoftmax if True, regular softmax otherwise.
         output (Buffer[buffer_size, type]): The output buffer in which to store the softmax values.
@@ -389,7 +390,7 @@ fn _softmax_3_pass_base[
 
 fn softmax_3_pass[
     simd_width: Int,
-    buffer_size: __mlir_type.index,
+    buffer_size: Dim,
     type: DType,
 ](output: Buffer[buffer_size, type], input: Buffer[buffer_size, type]):
     """Performs an unbatched softmax on an input tensor using the three-pass
@@ -413,7 +414,7 @@ fn softmax_3_pass[
 
     Args:
         simd_width (__mlir_type.index): The simd_width to use in vectorization.
-        buffer_size (__mlir_type.index): The size of the input and output buffers.
+        buffer_size (Dim): The size of the input and output buffers.
         type (DType): The type of the input and output buffers.
         output (Buffer[buffer_size, type]): The output buffer in which to store the softmax values.
         input (Buffer[buffer_size, type]): The input buffer used to compute the softmax.
@@ -433,7 +434,7 @@ fn softmax_3_pass[
 
 fn logsoftmax[
     simd_width: Int,
-    buffer_size: __mlir_type.index,
+    buffer_size: Dim,
     type: DType,
 ](output: Buffer[buffer_size, type], input: Buffer[buffer_size, type]):
     """Performs an unbatched logsoftmax on an input tensor using the three-pass
@@ -457,7 +458,7 @@ fn logsoftmax[
 
     Args:
         simd_width (__mlir_type.index): The simd_width to use in vectorization.
-        buffer_size (__mlir_type.index): The size of the input and output buffers.
+        buffer_size (Dim): The size of the input and output buffers.
         type (DType): The type of the input and output buffers.
         output (Buffer[buffer_size, type]): The output buffer in which to store the softmax values.
         input (Buffer[buffer_size, type]): The input buffer used to compute the softmax.

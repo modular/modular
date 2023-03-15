@@ -12,7 +12,7 @@ from DType import DType
 from Pointer import DTypePointer
 from Int import Int
 from Range import range
-from List import VariadicList
+from List import Dim, VariadicList
 
 
 fn test_concat():
@@ -51,9 +51,7 @@ fn test_concat():
 
     alias out_sz = x1_sz + x2_sz + x3_sz
     let _output = Buffer[out_sz, type].stack_allocation().fill(-1)
-    let output = Buffer[__mlir_attr.`#kgen.unknown : index`, type](
-        _output.data, _output.__len__()
-    )
+    let output = Buffer[Dim(), type](_output.data, _output.__len__())
 
     let input_list = VariadicList[DynamicRankBuffer](x1_dyn, x2_dyn, x3_dyn)
 

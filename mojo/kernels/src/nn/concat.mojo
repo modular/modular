@@ -8,7 +8,7 @@ from Assert import assert_param_bool_msg, debug_assert
 from Buffer import Buffer, DynamicRankBuffer
 from DType import DType
 from Int import Int
-from List import VariadicList
+from List import Dim, VariadicList
 from Pointer import DTypePointer, product
 from Memory import memcpy
 from Range import range
@@ -18,13 +18,12 @@ from Range import range
 # ===----------------------------------------------------------------------===#
 
 alias MAX_RANK = 5
-alias unknown = __mlir_attr.`#kgen.unknown : index`
 
 
 fn _concat[
     type: DType
 ](
-    output: Buffer[__mlir_attr.`#kgen.unknown : index`, type],
+    output: Buffer[Dim(), type],
     axis: Int,
     inputs: VariadicList[DynamicRankBuffer],
 ):
@@ -59,10 +58,10 @@ fn _concat[
         for j in range(h):
             let input_offset = j * w * c
             let output_offset = j * stride_h_out + w_offset * stride_w_out
-            let in_slice = Buffer[unknown, type](
+            let in_slice = Buffer[Dim(), type](
                 in_buf.data + input_offset, w * c
             )
-            let out_slice = Buffer[unknown, type](
+            let out_slice = Buffer[Dim(), type](
                 output.data + output_offset, w * c
             )
             # these slices are contiguous
@@ -72,13 +71,13 @@ fn _concat[
 
 fn _concat_inner[
     type: DType, axis: Int
-](output: Buffer[unknown, type], inputs: VariadicList[DynamicRankBuffer],):
+](output: Buffer[Dim(), type], inputs: VariadicList[DynamicRankBuffer],):
     assert_param_bool_msg[axis == 0, "_concat_inner only supports axis 0"]()
     var num_elems_copied: Int = 0
     for i in range(inputs.__len__()):
         let input_buf = inputs[i].to_buffer[type]()
         let buffer_len = input_buf.__len__()
-        let output_buffer_offset = Buffer[unknown, type](
+        let output_buffer_offset = Buffer[Dim(), type](
             output.data.offset(num_elems_copied), buffer_len
         )
         memcpy[type](output_buffer_offset, input_buf)
@@ -88,7 +87,7 @@ fn _concat_inner[
 fn concat[
     type: DType
 ](
-    output: Buffer[unknown, type],
+    output: Buffer[Dim(), type],
     axis: Int,
     inputs: VariadicList[DynamicRankBuffer],
 ):
