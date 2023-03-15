@@ -1502,7 +1502,7 @@ ElaboratorImpl::processParamDeclareRegionOp(ParamDeclareRegionOp regionDecl,
   // finds for that decl.
   parent->evaluator.setOrOverwriteParameterValue(
       regionDecl.getParamDecl().getName(),
-      RegionAttr::get(regionDecl.getParamDecl()));
+      RegionAttr::get(regionDecl.getParamDecl(), false));
   return std::nullopt;
 }
 
