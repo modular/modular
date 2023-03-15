@@ -10,6 +10,7 @@ from Functional import unroll, vectorize
 from Int import Int
 from Index import StaticIntTuple
 from List import (
+    Dim,
     product,
     contains,
     _get_kgen_list_item,
@@ -61,7 +62,7 @@ fn _raw_stack_allocation[
 
 
 @register_passable
-struct Buffer[size: __mlir_type.index, type: DType]:
+struct Buffer[size: Dim, type: DType]:
     """Defines a Buffer which can be parametrized on a static size and Dtype.
     The Buffer does not own its underlying pointer.
     """
@@ -92,9 +93,9 @@ struct Buffer[size: __mlir_type.index, type: DType]:
             Buffer[size, type]: The buffer object.
         """
         # Construct a Buffer type with statically known size
-        assert_param[size != __mlir_attr.`#kgen.unknown : index`]()
+        assert_param_bool_msg[size.has_value(), "must have known size"]()
         return Buffer[size, type] {
-            data: DTypePointer[type](ptr), dynamic_size: size, dtype: type
+            data: DTypePointer[type](ptr), dynamic_size: size.get(), dtype: type
         }
 
     fn __new__(
@@ -115,9 +116,9 @@ struct Buffer[size: __mlir_type.index, type: DType]:
         """
 
         @parameter
-        if size != __mlir_attr.`#kgen.unknown : index`:
+        if size:
             debug_assert(
-                in_size == size,
+                in_size == size.get(),
                 "if static size is known, static size must equal dynamic size",
             )
         return Buffer[size, type] {
@@ -142,9 +143,9 @@ struct Buffer[size: __mlir_type.index, type: DType]:
         """
 
         @parameter
-        if size != __mlir_attr.`#kgen.unknown : index`:
+        if size:
             debug_assert(
-                in_size == size,
+                in_size == size.get(),
                 "if static size is known, static size must equal dynamic size",
             )
         return Buffer[size, type] {
@@ -164,10 +165,10 @@ struct Buffer[size: __mlir_type.index, type: DType]:
         """
 
         @parameter
-        if size == __mlir_attr.`#kgen.unknown : index`:
+        if not size:
             return self.dynamic_size
 
-        return size
+        return size.get()
 
     fn __getitem__(self, idx: Int) -> SIMD[1, type]:
         """Loads a single element (SIMD of size 1) from the buffer at the
@@ -302,7 +303,10 @@ struct Buffer[size: __mlir_type.index, type: DType]:
         Returns:
             Constructed buffer with the allocated space.
         """
-        var data_pointer = _raw_stack_allocation[size, type, alignment]()
+        assert_param_bool_msg[size.has_value(), "must have known size"]()
+        var data_pointer = _raw_stack_allocation[
+            size.get().__as_mlir_index(), type, alignment.__as_mlir_index()
+        ]()
         return Buffer[size, type](data_pointer.address)
 
     @staticmethod
@@ -689,11 +693,9 @@ struct NDBuffer[
         return self.dynamic_stride[index]
 
     @always_inline
-    fn flatten(self) -> Buffer[__mlir_attr.`#kgen.unknown : index`, type]:
+    fn flatten(self) -> Buffer[Dim(), type]:
         debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
-        return Buffer[__mlir_attr.`#kgen.unknown : index`, type](
-            self.data.address, self.size()
-        )
+        return Buffer[Dim(), type](self.data.address, self.size())
 
     @always_inline
     fn bytecount(self) -> Int:
@@ -901,10 +903,8 @@ struct DynamicRankBuffer:
         }
 
     @always_inline
-    fn to_buffer[
-        type: DType
-    ](self) -> Buffer[__mlir_attr.`#kgen.unknown : index`, type]:
-        return Buffer[__mlir_attr.`#kgen.unknown : index`, type](
+    fn to_buffer[type: DType](self) -> Buffer[Dim(), type]:
+        return Buffer[Dim(), type](
             self.data.bitcast[type](), pointer_product(self.shape, self.rank)
         )
 

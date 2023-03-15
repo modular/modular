@@ -9,6 +9,168 @@ from Int import Int
 from Assert import assert_param, assert_param_bool, debug_assert
 from Functional import unroll
 from TypeUtilities import rebind
+from Assert import assert_param_bool_msg
+
+
+# ===----------------------------------------------------------------------===#
+# Dim
+# ===----------------------------------------------------------------------===#
+
+
+@register_passable
+struct Dim:
+    """A static or dynamic dimension modeled with an optional integer. This
+    class is meant to represent an optional static dimension. When a value is
+    present, the dimension has that static value. When a value is not present,
+    the dimension is dynamic."""
+
+    alias type = __mlir_type[`!pop.variant<i1, `, Int, `>`]
+    var value: type
+
+    @always_inline
+    fn __new__(value: type) -> Dim:
+        """Create a dimension from its underlying value type.
+
+        Args:
+            value (type): The underlying value.
+        Returns:
+            Dim: A dimension value.
+        """
+        return Dim {value: value}
+
+    @always_inline
+    fn __new__(value: Int) -> Dim:
+        """Create a statically-known dimension.
+
+        Args:
+            value (Int): The static dimension value.
+        Returns:
+            Dim: A dimension with a static value.
+        """
+        return __mlir_op.`pop.variant.create`[_type:type](value)
+
+    @always_inline
+    fn __new__(value: __mlir_type.index) -> Dim:
+        """Create a statically-known dimension.
+
+        Args:
+            value (__mlir_type.index): The static dimension value.
+        Returns:
+            Dim: A dimension with a static value.
+        """
+        return Int(value)
+
+    @always_inline
+    fn __new__() -> Dim:
+        """Create a dynamic dimension.
+
+        Returns:
+            Dim: A dimension value with no static value.
+        """
+        return __mlir_op.`pop.variant.create`[_type:type](__mlir_attr.`0 : i1`)
+
+    @always_inline
+    fn __clone__(self&) -> Dim:
+        """Clone the dimension.
+
+        Args:
+            self (Self): The value to clone.
+        Returns:
+            Dim: A copy of the dimension.
+        """
+        return self.value
+
+    @always_inline
+    fn __bool__(self) -> Bool:
+        """Return true if the dimension has a static value.
+
+        Args:
+            self (Self): The dimension.
+        Returns:
+            Bool: Whether the dimension has a value.
+        """
+        return __mlir_op.`pop.variant.is`[testType : __mlir_attr[Int]](
+            self.value
+        )
+
+    @always_inline
+    fn has_value(self) -> Bool:
+        """Return true if the dimension has a static value.
+
+        Args:
+            self (Self): The dimension.
+        Returns:
+            Bool: Whether the dimension has a value.
+        """
+        return self.__bool__()
+
+    @always_inline
+    fn is_dynamic(self) -> Bool:
+        """Return true if the dimension has a dynamic value.
+
+        Args:
+            self (Self): The dimension.
+        Returns:
+            Bool: Whether the dimension is dynamic.
+        """
+        return not self.has_value()
+
+    @always_inline
+    fn get(self) -> Int:
+        """Get the static dimension value.
+
+        Args:
+            self (Self): The dimension.
+        Returns:
+            Bool: Whether the dimension is dynamic.
+        """
+        return __mlir_op.`pop.variant.get`[_type:Int](self.value)
+
+    @always_inline
+    fn __mul__(self, rhs: Dim) -> Dim:
+        """Multiply two dimensions. If either are unknown, the result is unknown
+        as well.
+
+        Args:
+            self (Self): The dimension.
+            rhs (Dim): The other dimension.
+        Returns:
+            Dim: The product of the two dimensions.
+        """
+        if not self or not rhs:
+            return Dim()
+        return Dim(self.get() * rhs.get())
+
+    @always_inline
+    fn __eq__(self, rhs: Dim) -> Bool:
+        """Compare two dimensions for equality.
+
+        Args:
+            self (Self): The dimension.
+            rhs (Dim): The other dimension.
+        Returns:
+            Bool: True if the dimensions are the same.
+        """
+        if self and rhs:
+            return self.get() == rhs.get()
+        return (not self) == (not rhs)
+
+    @staticmethod
+    @always_inline
+    fn from_index[value: __mlir_type.index]() -> Dim:
+        """Create a dimension from an index value.
+
+        ParamArgs:
+            value (__mlir_type.index): The index dimension value.
+        Returns:
+            Dim: A dimension value.
+        """
+
+        @parameter
+        if value == __mlir_attr.`#kgen.unknown : index`:
+            return Dim()
+        else:
+            return Dim(Int(value))
 
 
 # ===----------------------------------------------------------------------===#
