@@ -102,7 +102,8 @@ fn concat[
         )
         for j in range(inputs[i].rank):
             debug_assert(
-                Int(input0_dims.load(j)[0].value)
+                j == axis
+                or Int(input0_dims.load(j)[0].value)
                 == Int(inputs[i].shape.load(j)[0].value),
                 (
                     "all concat inputs must have the same dimensions in the"
