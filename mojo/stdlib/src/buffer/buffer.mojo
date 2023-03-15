@@ -599,7 +599,10 @@ struct NDBuffer[
     fn simd_load[
         width: Int,
     ](self, idx: VariadicList[Int]) -> SIMD[width, type]:
-        debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
+        debug_assert(
+            self.is_contiguous or width == 1,
+            "Function requires contiguous buffer.",
+        )
         return self._offset(idx).simd_load[width]()
 
     fn simd_load[
@@ -611,7 +614,10 @@ struct NDBuffer[
     fn simd_load[
         width: Int,
     ](self, idx: StaticTuple[rank, __mlir_type.index]) -> SIMD[width, type]:
-        debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
+        debug_assert(
+            self.is_contiguous or width == 1,
+            "Function requires contiguous buffer.",
+        )
         return self._offset(idx).simd_load[width]()
 
     @always_inline
@@ -637,7 +643,10 @@ struct NDBuffer[
     fn simd_store[
         width: Int
     ](self, idx: StaticTuple[rank, __mlir_type.index], val: SIMD[width, type]):
-        debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
+        debug_assert(
+            self.is_contiguous or width == 1,
+            "Function requires contiguous buffer.",
+        )
         # Stores a simd value into the ndbuffer at the specified index
         self._offset(idx).simd_store[width](val)
 
