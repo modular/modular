@@ -24,7 +24,7 @@ from Pointer import DTypePointer, product as pointer_product
 from Intrinsics import PrefetchOptions
 from SIMD import SIMD
 from Tuple import StaticTuple
-from TargetInfo import dtype_sizeof, dtype_simd_width
+from TargetInfo import dtype_sizeof, dtype_simd_width, dtype_alignof
 from TypeUtilities import rebind
 from Range import range
 
@@ -317,7 +317,9 @@ struct Buffer[size: Dim, type: DType]:
         Returns:
             Constructed buffer with the allocated space.
         """
-        return Buffer[size, type].aligned_stack_allocation[1]()
+        return Buffer[size, type].aligned_stack_allocation[
+            dtype_alignof[type]()
+        ]()
 
 
 # ===----------------------------------------------------------------------===#
@@ -759,7 +761,9 @@ struct NDBuffer[
         Returns:
             Constructed ndbuffer with the allocated space.
         """
-        return NDBuffer[rank, shape, type].aligned_stack_allocation[1]()
+        return NDBuffer[rank, shape, type].aligned_stack_allocation[
+            dtype_alignof[type]()
+        ]()
 
     @always_inline
     fn prefetch[params: PrefetchOptions](self, *idx: Int):
