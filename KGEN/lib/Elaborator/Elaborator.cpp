@@ -1156,8 +1156,7 @@ ElaboratorImpl::processParamForkOp(ExpansionTreeNode *parent, ParamForkOp op,
       parent->evaluator.concretizeParameterExpr(op.getLoc(),
                                                 op.getValuesAttr());
   if (errorOrValue.isError())
-    return ErrorTree(op.getLoc(), "param-expr concretization failed: " +
-                                      errorOrValue.takeError().getMessage());
+    return errorOrValue.takeError();
 
   auto forkValuesAttr = cast<VariadicAttr>(errorOrValue.takeValue());
 
