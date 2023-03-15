@@ -1269,10 +1269,10 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
       resolveCallInputParams(user, parent, calleeSymbol.getParamValues());
   if (resolvedCallParamsOr.isError())
     return resolvedCallParamsOr.takeError();
-  auto inputParamKey = *resolvedCallParamsOr;
+  ArrayAttr inputParamKey = *resolvedCallParamsOr;
 
   // Lookup the callee.
-  auto calleeOp = lookup(calleeSymbol.getSymbol());
+  FuncInterface calleeOp = lookup(calleeSymbol.getSymbol());
   if (!calleeOp) {
     return ErrorTree(user.getLoc(), "could not find callee '" +
                                         mlir::debugString(calleeSymbol) + "'");
@@ -1294,12 +1294,13 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
   }
 
   // Find the tree node that corresponds to the thing we're calling.
-  auto callee = topLevelTrees.lookup({calleeOp, inputParamKey});
+  ExpansionTreeNode *calleeNode =
+      topLevelTrees.lookup({calleeOp, inputParamKey});
   // If we haven't found this callee yet, we have to add it to the tree!
-  if (!callee) {
+  if (!calleeNode) {
     // Use the parent of the call to show the expansion depth, and inherit the
     // evaluator from the root.
-    auto calleeNode =
+    calleeNode =
         ExpansionTreeNode::create(calleeOp, inputParamKey, &root,
                                   IREvaluator(*this), parent->expansionDepth);
     if (calleeNode->error)
@@ -1314,13 +1315,12 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
       if (auto err = specializeFunction(calleeNode, decls))
         return err;
     }
-    callee = calleeNode;
   }
-  LLVM_DEBUG(callee->print(logger));
+  LLVM_DEBUG(calleeNode->print(logger));
 
   // Complete processing for all the leaves of this subtree.
   std::vector<ExpansionTreeNode *> concrete;
-  callee->getAllConcreteNodes(concrete);
+  calleeNode->getAllConcreteNodes(concrete);
 
   // If the concrete thing has bindings, they must be consistent with the
   // parent's bindings for us to consider it. Remove nodes from the vector that
@@ -1350,7 +1350,7 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
   if (concrete.empty()) {
     ErrorTree out(user.getLoc(),
                   "call expansion failed - no concrete specializations");
-    callee->collectSubtreeErrors(out);
+    calleeNode->collectSubtreeErrors(out);
     return std::move(out);
   }
 
@@ -1862,7 +1862,8 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
   // We have to walk all the generators in the module because we have to rename
   // each one to its first implementation.
   for (auto gen : theModule.getOps<GeneratorOp>()) {
-    auto genNode = topLevelTrees.lookup({gen, emptyInputParamKey});
+    ExpansionTreeNode *genNode =
+        topLevelTrees.lookup({gen, emptyInputParamKey});
     if (!genNode)
       continue;
 
@@ -1892,7 +1893,8 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
   // If we have failed, emit your errors and return failure.
   if (failed) {
     for (auto gen : primaryGenerators) {
-      auto genNode = topLevelTrees.lookup({gen, emptyInputParamKey});
+      ExpansionTreeNode *genNode =
+          topLevelTrees.lookup({gen, emptyInputParamKey});
       assert(genNode && "We must have a node for a primary generator");
       genNode->trimFailedExpansions(toErase);
       if (genNode->error)
