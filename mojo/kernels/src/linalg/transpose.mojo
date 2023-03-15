@@ -304,6 +304,13 @@ fn transpose_inplace[
     cols: __mlir_type.index,
     type: DType,
 ](buf: NDBuffer[2, create_kgen_list[__mlir_type.index](rows, cols), type]):
+    # Reject sizes covered by specialized implementations
+    assert_param[rows != 4]()
+    assert_param[cols != 4]()
+    assert_param[rows != 8]()
+    assert_param[cols != 8]()
+    assert_param[rows != 16]()
+    assert_param[cols != 16]()
     for i in range(rows):
         for j in range(i + 1, cols):
             let tmp = buf[i, j]
