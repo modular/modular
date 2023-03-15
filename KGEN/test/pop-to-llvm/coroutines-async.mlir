@@ -80,7 +80,7 @@ llvm.func @async_fn(%arg0: i32) -> !llvm.ptr<i8> {
   llvm.return %0 : !llvm.ptr<i8>
 }
 
-// CHECK-LABEL: llvm.mlir.global external constant @async_fn_afp
+// CHECK-LABEL: llvm.mlir.global internal constant @async_fn_afp
 // CHECK-SAME: !llvm.struct<(i32, i32)> {
 // CHECK-NEXT: %[[UNDEF:.*]] = llvm.mlir.undef : !llvm.struct<(i32, i32)>
 // CHECK-NEXT: %[[AFP:.*]] = llvm.mlir.addressof @async_fn_afp : !llvm.ptr<struct<(i32, i32)>>

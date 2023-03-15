@@ -90,15 +90,15 @@ struct ProcessBuffer {
       return failure(clOptions.reportError("could not create compiler: " +
                                            Twine(compiler.getError())));
 
-    // Produce a single standalone .o
-    auto standaloneOr = compiler->produceStandaloneObject(
+    // Produce a single standalone .a
+    auto standaloneOr = compiler->produceStandaloneArchive(
         /*isJIT=*/clOptions.cmd == Command::kExecute);
     if (failed(standaloneOr))
       return failure();
-    Cache::BufferRef standaloneObject = std::move(*standaloneOr);
+    Cache::BufferRef standaloneArchive = std::move(*standaloneOr);
 
     if (clOptions.cmd == Command::kEmit)
-      return clOptions.emitObject(standaloneObject->getBuffer());
+      return clOptions.emitArchive(standaloneArchive->getBuffer());
 
     llvm::MapVector<StringAttr, ExportedSymbol> exportedSymbols =
         KGEN::getExportedSymbols(*module);
@@ -132,7 +132,7 @@ struct ProcessBuffer {
     auto execEngine = std::move(*engineOr);
 
     // Add the module to the execution engine.
-    if (auto err = execEngine.add("exec", std::move(standaloneObject)))
+    if (auto err = execEngine.add("exec", std::move(standaloneArchive)))
       return failure(clOptions.reportError(err.getError()));
 
     for (const auto &k : clOptions.funcs) {

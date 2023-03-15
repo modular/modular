@@ -141,33 +141,37 @@ function(add_kgen_kernel target)
 
   # CMake emits build targets as relative paths but Ninja doesn't identify
   # absolute paths (in *.d) as relative paths (in build.ninja).
-  set(object_file_name "${KGEN_OUTPUT_NAME}${CMAKE_CXX_OUTPUT_EXTENSION}")
-  file(RELATIVE_PATH object_file_name_rel ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR}/${object_file_name})
+  set(archive_file_name "${KGEN_OUTPUT_NAME}${CMAKE_STATIC_LIBRARY_SUFFIX}")
+  file(RELATIVE_PATH archive_file_name_rel ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR}/${archive_file_name})
 
   add_custom_command(
-    OUTPUT ${object_file_name}
+    OUTPUT ${archive_file_name}
     OUTPUT "${KGEN_OUTPUT_NAME}.h"
 
     COMMAND $<TARGET_FILE:kgen> -emit
     $<$<BOOL:${KGEN_SFF_DEBUG}>:-debug-only="select-fastest-function">
     $<$<BOOL:${KGEN_ENABLE_SEARCH}>:-enable-search>
-    -o ${object_file_name_rel} ${KGEN_INCLUDE_FLAGS} ${KGEN_SOURCE}
-    -d ${object_file_name_rel}.d
+    -o ${archive_file_name_rel} ${KGEN_INCLUDE_FLAGS} ${KGEN_SOURCE}
+    -d ${archive_file_name_rel}.d
     -O${KGEN_OPTIMIZATION_LEVEL}
     -debug-level=${KGEN_DEBUG_LEVEL}
     $<$<BOOL:${MODULAR_ENABLE_XRAY}>:-xray-instrument>
 
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    DEPFILE ${CMAKE_CURRENT_BINARY_DIR}/${object_file_name}.d
+    DEPFILE ${CMAKE_CURRENT_BINARY_DIR}/${archive_file_name}.d
     DEPENDS kgen ${KGEN_SOURCE} ${KGEN_LIB_DEPENDS}
   )
+  add_custom_target(${target}-archive DEPENDS ${archive_file_name})
 
-  add_library(${target} ${object_file_name})
-  target_link_libraries(${target} PRIVATE KGENCompilerRT)
-  add_dependencies(${target} ${KGEN_LIB_DEPENDS} kgen)
-  set_target_properties(${target}
-    PROPERTIES LINKER_LANGUAGE C
-    INCLUDE_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR})
+  add_library(${target} IMPORTED STATIC)
+  add_dependencies(${target} ${KGEN_LIB_DEPENDS} kgen ${target}-archive)
+  target_link_libraries(${target} INTERFACE KGENCompilerRT)
+  set_target_properties(${target} PROPERTIES
+    IMPORTED_LOCATION ${CMAKE_CURRENT_BINARY_DIR}/${archive_file_name}
+    LINKER_LANGUAGE C
+    INTERFACE_INCLUDE_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR}
+    INCLUDE_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR}
+  )
 endfunction()
 
 function(add_mojo_doc doc_filename output_file output_directory)

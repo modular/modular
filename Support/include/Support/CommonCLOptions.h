@@ -210,7 +210,7 @@ public:
   /// be emitted at all.
   std::optional<std::string> getHeaderOutputPath() const;
 
-  LogicalResult emitObject(StringRef object) const;
+  LogicalResult emitArchive(StringRef object) const;
 
 private:
   /// Default alignment for input files.

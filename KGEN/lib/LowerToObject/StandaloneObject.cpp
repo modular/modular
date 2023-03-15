@@ -15,11 +15,14 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/Support/IndentedOstream.h"
+#include "llvm/ADT/SetOperations.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Bitcode/BitcodeReader.h"
+#include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Linker/Linker.h"
+#include "llvm/Object/ArchiveWriter.h"
 #include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/FormatVariadic.h"
@@ -27,6 +30,9 @@
 #include "llvm/Support/Program.h"
 #include "llvm/Support/SmallVectorMemoryBuffer.h"
 #include "llvm/Target/TargetMachine.h"
+#include "llvm/Transforms/Utils/Cloning.h"
+#include "llvm/Transforms/Utils/SplitModule.h"
+#include "llvm/Transforms/Utils/ValueMapper.h"
 #include <utility>
 
 #define DEBUG_TYPE "standalone-object"
@@ -139,62 +145,244 @@ OwningOpRef<ModuleOp> ObjectCompiler::produceStandaloneModule() {
 }
 
 //===----------------------------------------------------------------------===//
-// produceStandaloneObject
+// Module Splitter
 //===----------------------------------------------------------------------===//
 
-ErrorOr<BufferRef> ObjectCompiler::produceStandaloneObject(bool isJIT) {
-  TimeTraceScope<> traceScope("produce-standalone-object");
+namespace {
+/// This class provides support for splitting an LLVM module into multiple
+/// parts.
+class LLVMModuleSplitter {
+public:
+  LLVMModuleSplitter(llvm::Module &module) : mainModule(module) {}
 
-  // Perform a cache aware transformation to translate the module to an object
+  /// Split the LLVM module into multiple modules using the provided process
+  /// function.
+  void split(function_ref<void(llvm::Module &)> processFn) {
+    // Compute the value info for each global in the module.
+    auto computeUsers = [&](auto &value) { collectValueUsers(&value); };
+    llvm::for_each(mainModule.functions(), computeUsers);
+    llvm::for_each(mainModule.globals(), computeUsers);
+    llvm::for_each(mainModule.aliases(), computeUsers);
+
+    // With use information collected, propagate it to the dependencies.
+    propagateUseInfo();
+
+    // Now we can split the module. We do this using this by anchoring on the
+    // exports of the module, and cloning any necessary dependencies.
+    // Realistically we shouldn't be cloning, but we currently depend on LLVM to
+    // do various LTO style optimizations for us, which means that each export
+    // needs its full callstack present. When this isn't necessary, we should be
+    // to define much more fine grained splitting, which would enable
+    // significantly higher levels of parallelism (and smaller generated
+    // artifacts).
+    DenseSet<const llvm::Value *> splitValues;
+    SmallVector<std::unique_ptr<llvm::Module>> splitModules;
+    for (auto &fn : mainModule.functions()) {
+      if (fn.isDeclaration() || !fn.hasExternalLinkage())
+        continue;
+      // If the function is already split, e.g. if it was a dependency of
+      // another function, skip it.
+      if (splitValues.count(&fn))
+        continue;
+
+      auto &valueInfo = valueInfos[&fn];
+      llvm::ValueToValueMapTy valueMap;
+      std::unique_ptr<llvm::Module> splitModule(llvm::CloneModule(
+          mainModule, valueMap, [&](const llvm::GlobalValue *globalVal) {
+            return globalVal == &fn || valueInfo.dependencies.count(globalVal);
+          }));
+      if (splitModule->empty())
+        splitModule->setModuleInlineAsm("");
+
+      // Module cloning creates stubs for every function and global in the
+      // original module, even if they aren't used in this slice. Kill all of
+      // these off to make the module more self-contained.
+      for (auto &func : llvm::make_early_inc_range(*splitModule))
+        if (func.isDeclaration() && func.use_empty())
+          func.eraseFromParent();
+      for (auto &globalVar : llvm::make_early_inc_range(splitModule->globals()))
+        if (globalVar.isDeclaration() && globalVar.use_empty())
+          globalVar.eraseFromParent();
+
+      splitModules.emplace_back(std::move(splitModule));
+
+      // Record the split values.
+      splitValues.insert(&fn);
+      splitValues.insert(valueInfo.dependencies.begin(),
+                         valueInfo.dependencies.end());
+    }
+
+    // If we had no functions to split, just process the main module.
+    if (splitModules.empty())
+      return processFn(mainModule);
+
+    // Order the split modules by size. This allows for other threads to start
+    // processing the longer compilations first.
+    llvm::sort(splitModules, [](const std::unique_ptr<llvm::Module> &lhs,
+                                const std::unique_ptr<llvm::Module> &rhs) {
+      return lhs->size() > rhs->size();
+    });
+    for (auto &splitModule : splitModules)
+      processFn(*splitModule);
+  }
+
+private:
+  struct ValueInfo {
+    bool canBeSplit = true;
+    llvm::SmallPtrSet<const llvm::Value *, 4> dependencies;
+    llvm::SmallPtrSet<const llvm::Value *, 4> users;
+  };
+
+  /// Collect all of the immediate global value users of `value`.
+  void collectValueUsers(const llvm::Value *value) {
+    SmallVector<const llvm::User *> worklist(value->users());
+    while (!worklist.empty()) {
+      const llvm::User *userIt = worklist.pop_back_val();
+
+      // Recurse into pure constant users.
+      if (isa<llvm::Constant>(userIt) && !isa<llvm::GlobalValue>(userIt)) {
+        worklist.append(userIt->user_begin(), userIt->user_end());
+        continue;
+      }
+
+      if (const auto *inst = dyn_cast<llvm::Instruction>(userIt)) {
+        valueInfos[value].users.insert(inst->getParent()->getParent());
+        valueInfos[inst->getParent()->getParent()].dependencies.insert(value);
+      } else if (const auto *globalVal = dyn_cast<llvm::GlobalValue>(userIt)) {
+        valueInfos[value].users.insert(globalVal);
+        valueInfos[globalVal].dependencies.insert(value);
+      } else {
+        llvm_unreachable("unexpected user of global value");
+      }
+    }
+
+    // If the current value is a mutable global variable, then it can't be
+    // split.
+    if (auto *global = dyn_cast<llvm::GlobalVariable>(value))
+      if (!global->isConstant())
+        valueInfos[value].canBeSplit = false;
+  }
+
+  /// Propagate use information through the module.
+  void propagateUseInfo() {
+    // Propagate use information through the module.
+    for (bool changed = true; changed;) {
+      changed = false;
+
+      // Propagate uses through the module.
+      for (auto [value, info] : valueInfos) {
+        for (const auto *user : info.users) {
+          auto &userInfo = valueInfos[user];
+          changed |= llvm::set_union(userInfo.dependencies, info.dependencies);
+
+          // Handle unsplittable values.
+          if (!info.canBeSplit) {
+            // If this value can't be cloned, users of it can't be cloned
+            // either.
+            if (userInfo.canBeSplit) {
+              changed = true;
+              userInfo.canBeSplit = false;
+            }
+
+            // Add all users of this value as dependencies.
+            changed |= llvm::set_union(userInfo.dependencies, info.users);
+          }
+        }
+      }
+    }
+  }
+
+  /// The main LLVM module being split.
+  llvm::Module &mainModule;
+
+  /// The value info for each global value in the module.
+  DenseMap<const llvm::Value *, ValueInfo> valueInfos;
+};
+} // namespace
+
+//===----------------------------------------------------------------------===//
+// produceStandaloneArchive
+//===----------------------------------------------------------------------===//
+
+ErrorOr<BufferRef> ObjectCompiler::produceStandaloneArchive(bool isJIT) {
+  TimeTraceScope<> traceScope("produce-standalone-archive");
+
+  // Perform a cache aware transformation to translate the module to an archive
   // file.
-  llvm::LLVMContext ctx;
   auto runTransformation = [&](Operation *op, WriteableBufferRef buf,
                                LLCL::AnyAsyncValueRef chain) {
     auto output = LLCL::AsyncValueRef<BufferRef>::allocate(runtime);
-    chain.andThenSync([this, op, isJIT, &ctx, output = output.copy(),
+    chain.andThenSync([this, op, isJIT, output = output.copy(),
                        buf = buf.copy()]() mutable {
+      // Lower the module to LLVM.
+      llvm::LLVMContext ctx;
       auto llvmModule = lowerAllFuncsToLLVM(ctx, cast<ModuleOp>(op), isJIT);
       if (!llvmModule) {
         return std::move(output).setToError(LLCL::getMLIRDiagnostic(
-            "failed to lower module to LLVM IR for object compilation",
+            "failed to lower module to LLVM IR for archive compilation",
             op->getLoc()));
       }
+      TimeTraceScope<> traceScope("split-input-module");
 
-      // Create the target machine.
-      auto machineOr = createTargetMachine(options, isJIT);
-      if (failed(machineOr)) {
-        return std::move(output).setToError(
-            LLCL::getMLIRDiagnostic(machineOr.takeError(), op->getLoc()));
+      // Split the module into multiple slices and compile each in parallel.
+      SmallVector<LLCL::AnyAsyncValueRef> cacheResults;
+      if (runtime.getWorkQueue()->getParallelismLevel() < 2) {
+        cacheResults.push_back(
+            lowerLLVMModuleToObject(*llvmModule, op->getLoc(), isJIT));
+      } else {
+        LLVMModuleSplitter splitter(*llvmModule);
+        splitter.split([&](llvm::Module &inputModule) {
+          cacheResults.push_back(
+              lowerLLVMModuleToObject(inputModule, op->getLoc(), isJIT));
+        });
       }
+      andThenSyncMoving(
+          cacheResults, [op, buf = buf.copy(), output = output.copy()](
+                            MutableArrayRef<AnyAsyncValueRef> values) mutable {
+            // If any of the cache results failed, propagate the error.
+            for (auto &result : values)
+              if (result.isError())
+                return std::move(output).setToError(result.takeDiagnostic());
+            TimeTraceScope<> traceScope("concatenate-object-files");
 
-      // Set the data layout on the module.
-      llvmModule->setDataLayout((*machineOr)->createDataLayout());
+            // Now that all of the object files have been compiled, merge them
+            // all into a single archive.
+            SmallVector<llvm::NewArchiveMember> archiveMembers;
+            SmallVector<std::string> archiveMemberNames(values.size());
+            for (auto &[index, result] : llvm::enumerate(values)) {
+              BufferRef &buf = result.get<BufferRef>();
+              archiveMemberNames[index] = (Twine(index) + ".o").str();
+              archiveMembers.emplace_back(llvm::MemoryBufferRef(
+                  buf->getBuffer(), archiveMemberNames[index]));
+            }
+            auto result = llvm::writeArchiveToBuffer(
+                archiveMembers, /*WriteSymtab=*/true,
+                archiveMembers.front().detectKindFromObject(),
+                /*Deterministic=*/false, /*Thin=*/false);
+            if (!result) {
+              return std::move(output).setToError(LLCL::getMLIRDiagnostic(
+                  "failed to concatenate object files into archive",
+                  op->getLoc()));
+            }
 
-      // Set all external and defined functions to hidden visibility.
-      for (llvm::Function &func : llvmModule->getFunctionList())
-        if (func.hasExternalLinkage() && !func.empty())
-          func.setVisibility(llvm::GlobalValue::HiddenVisibility);
-
-      // Lower the LLVM to an object file.
-      if (failed(compileLLVMToObject(*llvmModule, **machineOr, *buf))) {
-        return std::move(output).setToError(LLCL::getMLIRDiagnostic(
-            "failed to lower LLVM IR to object file", op->getLoc()));
-      }
-      std::move(output).emplace(buf.copy());
+            // Copy the result into the output buffer.
+            *buf << (*result)->getBuffer();
+            std::move(output).emplace(buf.copy());
+          });
     });
     return output;
   };
   auto onCacheHit = [](Operation *op, BufferRef buf) { return buf.copy(); };
 
-  WriteableBufferRef produceStandaloneObjectKey = WriteableBuffer::get();
-  options.print(*produceStandaloneObjectKey << "produceStandaloneObject(");
-  *produceStandaloneObjectKey << ")";
+  WriteableBufferRef produceStandaloneArchiveKey = WriteableBuffer::get();
+  options.print(*produceStandaloneArchiveKey << "produceStandaloneArchive(");
+  *produceStandaloneArchiveKey << ")";
 
   OwningOpRef<ModuleOp> slicedModule = produceStandaloneModule();
   auto output = cachedTransform(
       *slicedModule, transformCache.copy(),
       LLCL::AsyncValueRef<Chain>::createReady(runtime),
-      std::move(produceStandaloneObjectKey), runTransformation, onCacheHit);
+      std::move(produceStandaloneArchiveKey), runTransformation, onCacheHit);
   await(output);
 
   if (output.isError())
@@ -202,24 +390,100 @@ ErrorOr<BufferRef> ObjectCompiler::produceStandaloneObject(bool isJIT) {
   return {std::move(output.get<BufferRef>())};
 }
 
+LLCL::AnyAsyncValueRef
+ObjectCompiler::lowerLLVMModuleToObject(llvm::Module &module, Location loc,
+                                        bool isJIT) {
+  WriteableBufferRef keyBuf = WriteableBuffer::get();
+  options.print(*keyBuf << "lowerLLVMModuleToObject(");
+  *keyBuf << ")";
+  size_t nonBitcodeKeySize = keyBuf->getBufferSize();
+
+  // Serialize the module to bitcode to both allow for transferring to a new
+  // context (LLVM isn't threadsafe), and to use in the cachedTransform key.
+  {
+    TimeTraceScope<> traceScope("serialize-input-module");
+    llvm::WriteBitcodeToFile(module, *keyBuf);
+  }
+
+  // Perform a cached transform to compile this module slice to an object file.
+  // This will enable some bare bones incremental compilation, as we will be
+  // able to reuse object files for previously compiled slices.
+  auto runTransformation =
+      [this, nonBitcodeKeySize, loc, isJIT, keyBuf = keyBuf.copy()](
+          WriteableBufferRef buf, LLCL::AnyAsyncValueRef chain) mutable {
+        auto output = LLCL::AsyncValueRef<BufferRef>::allocate(runtime);
+        chain.andThenAsync([this, nonBitcodeKeySize, loc, isJIT,
+                            output = output.copy(), keyBuf = std::move(keyBuf),
+                            buf = buf.copy()]() mutable {
+          // Extract out the bitcode from the key, as LLVM bitcode dies if the
+          // buffer contains other data.
+          StringRef bitcodeBuffer = ((Cache::BufferRef &)(keyBuf))->getBuffer();
+          bitcodeBuffer = bitcodeBuffer.drop_front(nonBitcodeKeySize);
+
+          // Load the cached bytecode into a new context. This is necessary to
+          // avoid data races during multi-threading.
+          llvm::LLVMContext ctx;
+          llvm::Expected<std::unique_ptr<llvm::Module>> moduleOr =
+              llvm::parseBitcodeFile(
+                  llvm::MemoryBufferRef(bitcodeBuffer, "<split-module>"), ctx);
+          if (!moduleOr) {
+            return std::move(output).setToError(
+                LLCL::getMLIRDiagnostic("failed to load LLVM IR bitcode", loc));
+          }
+          std::unique_ptr<llvm::Module> module = std::move(*moduleOr);
+
+          // Create the target machine.
+          auto machineOr = createTargetMachine(options, isJIT);
+          if (failed(machineOr)) {
+            return std::move(output).setToError(
+                LLCL::getMLIRDiagnostic(machineOr.takeError(), loc));
+          }
+
+          // Set the data layout on the module.
+          module->setDataLayout((*machineOr)->createDataLayout());
+
+          // Set all external and defined functions to hidden visibility.
+          for (llvm::Function &func : module->getFunctionList())
+            if (!func.hasInternalLinkage() && !func.empty())
+              func.setVisibility(llvm::GlobalValue::HiddenVisibility);
+
+          // Lower the LLVM to an object file.
+          if (failed(compileLLVMToObject(*module, **machineOr, *buf))) {
+            return std::move(output).setToError(LLCL::getMLIRDiagnostic(
+                "failed to lower LLVM IR to object file", loc));
+          }
+          std::move(output).emplace(buf.copy());
+        });
+        return output;
+      };
+  auto onCacheHit = [](BufferRef buf) { return buf.copy(); };
+
+  return cachedTransform(
+      LLCL::MLIRLocationDecoder::getEncodedLocation(loc), transformCache.copy(),
+      LLCL::AsyncValueRef<Chain>::createReady(runtime), keyBuf.copy(),
+      std::move(runTransformation), onCacheHit);
+}
+
 ErrorOr<ElementsAttr>
-ObjectCompiler::produceStandaloneObjectAttr(TargetInfoAttr target, bool isJIT) {
-  auto bufferOr = produceStandaloneObject(isJIT);
+ObjectCompiler::produceStandaloneArchiveAttr(TargetInfoAttr target,
+                                             bool isJIT) {
+  auto bufferOr = produceStandaloneArchive(isJIT);
   if (bufferOr.isError())
     return bufferOr.takeError();
   BufferRef buffer = bufferOr.takeValue();
 
-  // Get the standalone object key to use as the object name.
-  WriteableBufferRef produceStandaloneObjectKey = WriteableBuffer::get();
-  options.print(*produceStandaloneObjectKey << "produceStandaloneObject(");
-  *produceStandaloneObjectKey << ")";
-  mlir::writeBytecodeToFile(module.getOperation(), *produceStandaloneObjectKey);
-  // Hash it so the object name isn't enormous.
+  // Get the standalone archive key to use as the archive name.
+  WriteableBufferRef produceStandaloneArchiveKey = WriteableBuffer::get();
+  options.print(*produceStandaloneArchiveKey << "produceStandaloneArchive(");
+  *produceStandaloneArchiveKey << ")";
+  mlir::writeBytecodeToFile(module.getOperation(),
+                            *produceStandaloneArchiveKey);
+  // Hash it so the name isn't enormous.
   auto hash = llvm::BLAKE3::hash(
-      ArrayRef((const uint8_t *)produceStandaloneObjectKey->getBufferStart(),
-               produceStandaloneObjectKey->getBufferSize()));
+      ArrayRef((const uint8_t *)produceStandaloneArchiveKey->getBufferStart(),
+               produceStandaloneArchiveKey->getBufferSize()));
 
-  // Produce a DenseResourceElementsAttr from the object file.
+  // Produce a DenseResourceElementsAttr from the file.
   auto resourceManager =
       DenseResourceElementsHandle::getManagerInterface(target.getContext());
 
@@ -230,7 +494,7 @@ ObjectCompiler::produceStandaloneObjectAttr(TargetInfoAttr target, bool isJIT) {
   auto attrType = RankedTensorType::get(
       {(int64_t)buffer->getBufferSize()},
       IntegerType::get(target.getContext(), 8, IntegerType::Unsigned));
-  auto attrName = "object_" + llvm::toHex(hash, /*LowerCase=*/true);
+  auto attrName = "archive_" + llvm::toHex(hash, /*LowerCase=*/true);
   ArrayRef<char> blobData(buffer->getBufferStart(), buffer->getBufferSize());
   auto blob = mlir::HeapAsmResourceBlob::allocateAndCopyWithAlign(blobData,
                                                                   /*align=*/8);

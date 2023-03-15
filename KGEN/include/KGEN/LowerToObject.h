@@ -45,15 +45,15 @@ public:
   std::unique_ptr<llvm::Module> lowerAllFuncsToLLVM(llvm::LLVMContext &ctx);
 
   /// Slices the call graph for all exported symbols to produce a standalone
-  /// object.
-  ErrorOr<Cache::BufferRef> produceStandaloneObject(bool isJIT);
+  /// archive.
+  ErrorOr<Cache::BufferRef> produceStandaloneArchive(bool isJIT);
 
-  /// Produces a standalone object as an ElementsAttr that can be used as an
+  /// Produces a standalone archive as an ElementsAttr that can be used as an
   /// attribute on another operation. Using this function generally implies
   /// `isJIT`, which is why it defaults to `true`. Clients should prefer this
   /// method if they intend to store the compiled object in another graph.
-  ErrorOr<ElementsAttr> produceStandaloneObjectAttr(TargetInfoAttr target,
-                                                    bool isJIT = true);
+  ErrorOr<ElementsAttr> produceStandaloneArchiveAttr(TargetInfoAttr target,
+                                                     bool isJIT = true);
 
   /// Slices the call graph for all exported symbols to produce a standalone
   /// assembly file. The assembly output is written to the provided stream.
@@ -82,6 +82,10 @@ private:
   /// nullptr on failure.
   std::unique_ptr<llvm::Module>
   lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module, bool isJIT);
+
+  /// Lower the given LLVM module to an object file.
+  LLCL::AnyAsyncValueRef lowerLLVMModuleToObject(llvm::Module &module,
+                                                 Location loc, bool isJIT);
 
   /// The caches needed for compilation.
   LLCL::RCRef<Cache::BlobCache<Cache::TransformCacheKey>> transformCache;

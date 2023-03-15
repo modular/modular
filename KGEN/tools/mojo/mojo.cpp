@@ -192,17 +192,17 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return clOptions.reportError(Twine("could not create object compiler: ") +
                                  compiler.getError());
 
-  // This produces a standalone object for all the objects we requested.
-  auto standaloneOr = compiler->produceStandaloneObject(
+  // This produces a standalone archive for all the objects we requested.
+  auto standaloneOr = compiler->produceStandaloneArchive(
       /*isJIT=*/clOptions.cmd == MojoCommand::kExecute);
   if (failed(standaloneOr))
     return clOptions.reportError("compiler error");
   Cache::BufferRef standaloneObject = std::move(*standaloneOr);
 
-  // If we're emitting the object, do it.
+  // If we're emitting the archive, do it.
   if (clOptions.cmd == MojoCommand::kEmit) {
-    if (failed(clOptions.emitObject(standaloneObject->getBuffer())))
-      return clOptions.reportError("unable to emit object file");
+    if (failed(clOptions.emitArchive(standaloneObject->getBuffer())))
+      return clOptions.reportError("unable to emit archive file");
 
     auto headerPath = clOptions.getHeaderOutputPath();
     // If we have no output path, we can't emit headers so return.

@@ -358,10 +358,9 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
   auto afpType = LLVMStructType::getLiteral(b.getContext(),
                                             {cache.i32Type, cache.i32Type});
   // constant struct <{ i32, i32 }>
-  auto afp =
-      b.create<GlobalOp>(afpType, /*isConstant=*/true,
-                         /*linkage=*/func.getLinkage(),
-                         (func.getSymName() + "_afp").str(), Attribute());
+  auto afp = b.create<GlobalOp>(
+      afpType, /*isConstant=*/true, /*linkage=*/Linkage::Internal,
+      (func.getSymName() + "_afp").str(), Attribute());
   symtab.insert(afp, func->getIterator());
   // = <{ i32 trunc (
   //      i64 sub (

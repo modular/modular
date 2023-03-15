@@ -271,24 +271,28 @@ ExecutionEngine::ExecutionEngine(std::unique_ptr<llvm::orc::LLJIT> jit,
 ExecutionEngine::~ExecutionEngine() = default;
 ExecutionEngine::ExecutionEngine(ExecutionEngine &&other) = default;
 
-ErrorOrSuccess ExecutionEngine::add(StringRef name, BufferRef obj) {
+ErrorOrSuccess ExecutionEngine::add(StringRef name, BufferRef archive) {
   auto dylibOr = getOrCreateDylib(name);
   if (dylibOr.isError())
     return dylibOr.takeError();
 
   llvm::orc::JITDylib *dylib = *dylibOr;
 
-  // If the addObjectFile succeeds we store a ref to this buffer so the data
+  // If the archive creation succeeds we store a ref to this buffer so the data
   // won't be deallocated until the JIT is destroyed. This version of
   // MemoryBuffer::getMemBuffer produces a non-owning buffer.
-  std::unique_ptr<llvm::MemoryBuffer> objMemBuf =
-      llvm::MemoryBuffer::getMemBuffer(obj->getBuffer(), /*BufferName=*/"",
+  std::unique_ptr<llvm::MemoryBuffer> archiveMemBuf =
+      llvm::MemoryBuffer::getMemBuffer(archive->getBuffer(), /*BufferName=*/"",
                                        /*RequiresNullTerminator=*/false);
-  if (auto err = jit->addObjectFile(*dylib, std::move(objMemBuf)))
+
+  auto archiveOr = llvm::orc::StaticLibraryDefinitionGenerator::Create(
+      jit->getObjLinkingLayer(), std::move(archiveMemBuf));
+  if (auto err = archiveOr.takeError())
     return M::Error(toString(std::move(err)));
+  dylib->addGenerator(std::move(*archiveOr));
 
   // Store a ref to the buffer data.
-  objBuffers.push_back(obj.copy());
+  archiveBuffers.push_back(archive.copy());
 
   return success();
 }

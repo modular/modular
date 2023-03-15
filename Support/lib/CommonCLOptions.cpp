@@ -91,7 +91,7 @@ std::optional<std::string> CommonCLOptions::getHeaderOutputPath() const {
       .string();
 }
 
-LogicalResult CommonCLOptions::emitObject(StringRef object) const {
+LogicalResult CommonCLOptions::emitArchive(StringRef object) const {
   std::unique_ptr<llvm::ToolOutputFile> outFile =
       getOutputFile(/*hasBinaryOutput=*/true);
   if (!outFile)

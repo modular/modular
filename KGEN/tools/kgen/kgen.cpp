@@ -291,16 +291,16 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return mlir::success();
   }
 
-  // This produces a standalone object for all the objects we requested.
-  auto standaloneOr = compiler->produceStandaloneObject(
+  // This produces a standalone archive for all the objects we requested.
+  auto standaloneOr = compiler->produceStandaloneArchive(
       /*isJIT=*/clOptions.cmd == Command::kExecute);
   if (failed(standaloneOr) && !clOptions.ignoreFailures)
     return failure();
-  Cache::BufferRef standaloneObject = std::move(*standaloneOr);
+  Cache::BufferRef standaloneArchive = std::move(*standaloneOr);
 
-  // If we're emitting the object, do it.
+  // If we're emitting the archive, do it.
   if (clOptions.cmd == Command::kEmit) {
-    if (failed(clOptions.emitObject(standaloneObject->getBuffer())))
+    if (failed(clOptions.emitArchive(standaloneArchive->getBuffer())))
       return failure();
 
     auto headerPath = clOptions.getHeaderOutputPath();
@@ -332,7 +332,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     if (auto err = engine.add("exec", name, ptr))
       return failure(clOptions.reportError(err.getError()));
 
-  if (auto err = engine.add("exec", std::move(standaloneObject)))
+  if (auto err = engine.add("exec", std::move(standaloneArchive)))
     return failure(clOptions.reportError(err.getError()));
 
   // Helper to execute a func.

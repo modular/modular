@@ -74,6 +74,7 @@ ObjectCompiler::ObjectCompiler(
 /// level.
 static LogicalResult runOptPasses(llvm::Module &module,
                                   llvm::TargetMachine &targetMachine) {
+  TimeTraceScope<> traceScope("llvm-optimize", module.getName());
   using namespace llvm;
 
   LoopAnalysisManager loopAnalysisMgr;
@@ -120,6 +121,7 @@ static LogicalResult runLlcPasses(llvm::Module &module,
                                   llvm::TargetMachine &targetMachine,
                                   llvm::raw_pwrite_stream &os,
                                   llvm::CodeGenFileType fileType) {
+  TimeTraceScope<> traceScope("llvm-codegen", module.getName());
   using namespace llvm;
 
   // Build up all of the passes that we want to do to the module.
