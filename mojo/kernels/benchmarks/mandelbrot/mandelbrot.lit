@@ -20,7 +20,7 @@ from Range import range
 from Vector import DynamicVector
 from Buffer import Buffer, NDBuffer
 from Matrix import Matrix
-from List import create_kgen_list
+from List import Dim, create_kgen_list
 from StringRef import StringRef
 from LLCL import num_cores, Runtime, TaskGroup
 from Functional import parallelize
@@ -30,7 +30,6 @@ from Benchmark import Benchmark
 from Assert import assert_param_msg
 from Pointer import Pointer, DTypePointer
 
-alias kunknown = __mlir_attr.`#kgen.unknown : index`
 alias float_type = DType.f64
 alias int_type = DType.si64
 
@@ -39,7 +38,7 @@ fn draw_mandelbrot[
     h: __mlir_type.index, w: __mlir_type.index
 ](out: Matrix[create_kgen_list(h, w), int_type, False]):
     let sr = StringRef(".,c8M@jawrpogOQEPGJ")
-    let charset = Buffer[kunknown, DType.si8](sr.data.address, sr.length)
+    let charset = Buffer[Dim(), DType.si8](sr.data.address, sr.length)
     for row in range(h):
         for col in range(w):
             let v: Int = out[row, col].value
