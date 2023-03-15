@@ -8,7 +8,7 @@ from Buffer import NDBuffer, Buffer
 from DType import DType
 from Functional import unroll
 from Int import Int
-from List import create_kgen_list_unknown, create_kgen_list
+from List import Dim, create_kgen_list_unknown, create_kgen_list
 from Range import range
 from SIMD import SIMD
 from TargetInfo import simd_width, sizeof
@@ -18,9 +18,9 @@ from Index import Index
 
 fn gemv[
     simd_width: __mlir_type.index,
-    out_size: __mlir_type.index,
+    out_size: Dim,
     lhs_shape: __mlir_type[`!kgen.list<index[2]>`],
-    rhs_size: __mlir_type.index,
+    rhs_size: Dim,
     type: DType,
 ](
     out: Buffer[out_size, type],

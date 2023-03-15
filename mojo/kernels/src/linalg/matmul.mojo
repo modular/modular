@@ -17,7 +17,7 @@ from BuildInfo import is_relwithdebinfo_build, is_debug_build
 from Functional import tile, unswitch, unroll, unroll2
 from Index import Index, StaticIntTuple
 from Int import Int
-from List import create_kgen_list, VariadicList
+from List import Dim, create_kgen_list, VariadicList
 from Math import min
 from Matrix import Matrix
 from Memory import stack_allocation
@@ -193,10 +193,7 @@ fn naive_matmul[
         `>(`,
         Int,  # Row
         `,`,
-        Buffer[
-            __mlir_attr.`#kgen.unknown : index`,
-            `accum_type`,
-        ],
+        Buffer[Dim(), `accum_type`],
         `) -> !lit.none>`,
     ],
 ](
@@ -237,7 +234,7 @@ fn naive_matmul[
             c_val = epilogue_elemwise_func[accum_type](m, n, c_val)
             matrix_c[m, n] = c_val
             n += 1
-        let row = Buffer[__mlir_attr.`#kgen.unknown : index`, accum_type](
+        let row = Buffer[Dim(), accum_type](
             c.data.offset(m * gemm_shape.N).address, n
         )
         epilogue_rowise_func[accum_type](m, row)

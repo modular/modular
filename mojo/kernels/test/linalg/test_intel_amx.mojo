@@ -61,7 +61,7 @@ fn print_matrix[m: Int, n: Int, type: DType](a_ptr: DTypePointer[void]):
 @always_inline
 fn identity_epilogue_rowise_func[
     accum_type: DType
-](row_idx: Int, row: Buffer[__mlir_attr.`#kgen.unknown : index`, accum_type],):
+](row_idx: Int, row: Buffer[Dim(), accum_type]):
     pass
 
 
