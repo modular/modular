@@ -885,12 +885,12 @@ parseOptionalParameterSignature(LitParserBase &p, ASTDecl &declScope,
         p.emitError(arg.loc,
                     "TODO: default values in parameters not supported");
 
-      if (!arg.typeExpr)
+      ASTType type;
+      if (arg.typeExpr)
+        type = emitter.emitExprType(arg.typeExpr, /*isPack=*/false);
+      else
         p.emitError(arg.loc, "parameters must always have a type");
 
-      ASTType type = arg.typeExpr
-                         ? emitter.emitExprType(arg.typeExpr, /*isPack=*/false)
-                         : ASTType();
       if (!type)
         type = TypeCheckErrorType::get(p.getContext());
 
