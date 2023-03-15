@@ -695,6 +695,8 @@ OpFoldResult StructConstructOp::fold(FoldAdaptor adaptor) {
 OpFoldResult StructExtractOp::fold(FoldAdaptor adaptor) {
   if (auto container = adaptor.getContainer())
     return StructExtractAttr::get(container, getIndexAttr());
+  if (auto structCreate = getOperand().getDefiningOp<StructConstructOp>())
+    return structCreate.getOperand(adaptor.getIndex().getSExtValue());
   return {};
 }
 
