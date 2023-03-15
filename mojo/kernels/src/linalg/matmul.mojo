@@ -1368,6 +1368,27 @@ struct TiledMatmul[
             valid_col_count,
         )
 
+        # The residual N dim is less than pack_inner_size = 4 * simd_width
+        # It's more efficient to handle residue has a whole than looping
+        # over it by simd_size so here we check 2*simd_width first.
+        # TODO: clean up this part with `tile` once #10418 is fixed.
+        alias two_simd_size = 2 * config.simd_size
+        if col_idx < valid_col_count:
+            remapped_bpacked = self._view_buffer_as(
+                b_packed.data,
+                two_simd_size,
+                sub_tile_k,
+                two_simd_size,
+            )
+            col_idx = self._outer_n_loop_helper[two_simd_size](
+                remapped_bpacked,
+                global_offset,
+                two_simd_size,
+                sub_tile_k,
+                col_idx,
+                valid_col_count,
+            )
+
         # Cover residual tiles.
         if col_idx < valid_col_count:
             remapped_bpacked = self._view_buffer_as(
