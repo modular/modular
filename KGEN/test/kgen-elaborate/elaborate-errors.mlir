@@ -178,8 +178,10 @@ kgen.generator @unused_param_declare() {
 
 // -----
 
+// expected-note @below {{failed to interpret function @fails_to_interpret_if_true}}
 kgen.generator @fails_to_interpret_if_true<cond: i1>() -> index {
   kgen.param.if <cond> {
+    // expected-note @below {{failed to fold operation}}
     "unknown.op"() : () -> ()
     kgen.param.yield
   } else {
@@ -191,7 +193,7 @@ kgen.generator @fails_to_interpret_if_true<cond: i1>() -> index {
 
 // expected-error @below {{no viable expansions found}}
 kgen.generator @interpreter_state_owner() {
-  // expected-note @below {{param-expr concretization failed: failed to evaluate 'apply'}}
+  // expected-note @below {{failed to evaluate 'apply'}}
   kgen.param.fork first_fails = <[
     apply(:() -> index @fails_to_interpret_if_true<cond: i1 = 1>),
     apply(:() -> index @fails_to_interpret_if_true<cond: i1 = 0>)
