@@ -12,6 +12,7 @@ from Index import StaticIntTuple
 from Int import Int
 from Numerics import inf, neginf
 from List import (
+    Dim,
     _get_kgen_list_item,
     create_kgen_list,
     create_kgen_list_unknown,
@@ -36,7 +37,7 @@ from TypeUtilities import rebind
 @always_inline
 fn reduce[
     simd_width: Int,
-    size: __mlir_type.index,
+    size: Dim,
     type: DType,
     acc_type: DType,
     map_fn: __mlir_type[
@@ -140,12 +141,13 @@ fn _reduce_3D[
         @always_inline
         fn reduce_inner_axis():
             alias sz = _get_kgen_list_item[1, 3, __mlir_type.index](input_shape)
+            alias bufferDim = Dim.from_index[sz]()
             # TODO: parallelize
             for i in range(h):
                 let offset = src._offset(StaticIntTuple[3](i, 0, 0))
-                let input = Buffer[sz, type](offset.address, w)
+                let input = Buffer[bufferDim, type](offset.address, w)
                 let val = reduce[
-                    simd_width, sz, type, acc_type, map_fn, reduce_fn
+                    simd_width, bufferDim, type, acc_type, map_fn, reduce_fn
                 ](input, init)
                 dst[StaticIntTuple[2](i, 0)] = val
 
@@ -320,7 +322,7 @@ fn _simd_max_elementwise[
 
 fn max[
     simd_width: Int,
-    size: __mlir_type.index,
+    size: Dim,
     type: DType,
 ](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type.value, `>`]:
     """Computes the max element in a buffer."""
@@ -385,7 +387,7 @@ fn _simd_min_elementwise[
 
 fn min[
     simd_width: Int,
-    size: __mlir_type.index,
+    size: Dim,
     type: DType,
 ](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type.value, `>`]:
     """Computes the min element in a buffer."""
@@ -450,7 +452,7 @@ fn _simd_sum_elementwise[
 
 fn sum[
     simd_width: Int,
-    size: __mlir_type.index,
+    size: Dim,
     type: DType,
 ](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type.value, `>`]:
     """Computes the sum element in a buffer."""
@@ -515,7 +517,7 @@ fn _simd_product_elementwise[
 
 fn product[
     simd_width: Int,
-    size: __mlir_type.index,
+    size: Dim,
     type: DType,
 ](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type.value, `>`]:
     """Computes the product element in a buffer."""
@@ -556,7 +558,7 @@ fn product[
 
 fn mean[
     simd_width: Int,
-    size: __mlir_type.index,
+    size: Dim,
     type: DType,
 ](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type.value, `>`]:
     """Computes the mean value of the elements in a buffer."""
@@ -610,7 +612,7 @@ fn mean[
 
 fn variance[
     simd_width: Int,
-    size: __mlir_type.index,
+    size: Dim,
     type: DType,
 ](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type.value, `>`]:
     """Computes the variance value of the elements in a buffer."""
