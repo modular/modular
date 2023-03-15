@@ -1,5 +1,4 @@
-// RUN: kgen %s -emit -o %t.o
-// RUN: FileCheck %s --input-file=%t.h
+// RUN: kgen %s -emit-header | FileCheck %s
 
 kgen.func @identity(%arg0: !pop.simd<4, f32>) -> !pop.simd<4, f32> {
   kgen.return %arg0 : !pop.simd<4, f32>

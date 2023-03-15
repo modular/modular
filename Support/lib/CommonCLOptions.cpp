@@ -81,16 +81,6 @@ CommonCLOptions::getIntermediateFile(StringRef inputName, StringRef ext) const {
   return result;
 }
 
-std::optional<std::string> CommonCLOptions::getHeaderOutputPath() const {
-  if (outputFilename.empty() || outputFilename == "-" ||
-      outputFilename == "/dev/null")
-    return {};
-
-  return std::filesystem::absolute(outputFilename.getValue())
-      .replace_extension(".h")
-      .string();
-}
-
 LogicalResult CommonCLOptions::emitArchive(StringRef object) const {
   std::unique_ptr<llvm::ToolOutputFile> outFile =
       getOutputFile(/*hasBinaryOutput=*/true);

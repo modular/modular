@@ -3,7 +3,7 @@
 // COM: Check the object file.
 // RUN: llvm-objdump %t_my_kernel.o -t | FileCheck %s -check-prefix=OBJ
 // COM: Check the header file.
-// RUN: cat %t_my_kernel.h | FileCheck %s -check-prefix=HDR
+// RUN: kgen %s -emit-header -I %S/../kernels | FileCheck %s -check-prefix=HDR
 
 kgen.generator @my_kernel(%arg0: f32) -> f32 {
   kgen.return %arg0 : f32

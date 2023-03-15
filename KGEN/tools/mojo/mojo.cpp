@@ -43,6 +43,7 @@ namespace {
 enum class MojoCommand {
   kDocGen,
   kEmit,
+  kEmitHeader,
   kExecute,
 };
 
@@ -56,6 +57,9 @@ public:
           clEnumValN(MojoCommand::kDocGen, "doc-gen",
                      "Generate markdown documentation."),
           clEnumValN(MojoCommand::kEmit, "emit", "Emit funcs as object files."),
+          clEnumValN(
+              MojoCommand::kEmitHeader, "emit-header",
+              "Emit a C header file with declarations of exported functions."),
           clEnumValN(MojoCommand::kExecute, "execute",
                      "Execute the main function.")),
       cl::init(MojoCommand::kExecute)};
@@ -192,6 +196,13 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return clOptions.reportError(Twine("could not create object compiler: ") +
                                  compiler.getError());
 
+  // Handle header emission, we don't need to generate an archive for this.
+  if (clOptions.cmd == MojoCommand::kEmitHeader) {
+    if (failed(emitHeader(*compiler, clOptions.outputFilename)))
+      return clOptions.reportError("failed to emit header file");
+    return EXIT_SUCCESS;
+  }
+
   // This produces a standalone archive for all the objects we requested.
   auto standaloneOr = compiler->produceStandaloneArchive(
       /*isJIT=*/clOptions.cmd == MojoCommand::kExecute);
@@ -203,15 +214,6 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   if (clOptions.cmd == MojoCommand::kEmit) {
     if (failed(clOptions.emitArchive(standaloneObject->getBuffer())))
       return clOptions.reportError("unable to emit archive file");
-
-    auto headerPath = clOptions.getHeaderOutputPath();
-    // If we have no output path, we can't emit headers so return.
-    if (!headerPath)
-      return clOptions.reportError("please provide an output filename");
-
-    // Finish off by producing a header file with the decls.
-    if (failed(emitHeader(*compiler, *headerPath)))
-      return clOptions.reportError("failed to emit the header file");
     return EXIT_SUCCESS;
   }
 
