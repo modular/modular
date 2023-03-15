@@ -9,6 +9,7 @@
 
 #include "LLCL/Support/RCRef.h"
 #include "LLCL/Support/ReferenceCounted.h"
+#include "Support/ADT/SmartVariant.h"
 #include "Support/AlignedAlloc.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
@@ -35,7 +36,7 @@ using BufferRef = LLCL::RCRef<Buffer>;
 class Buffer : public LLCL::ReferenceCounted<Buffer> {
 public:
   /// Destroy a buffer. Releases any resources associated with that buffer.
-  virtual ~Buffer();
+  virtual ~Buffer() = default;
 
   /// Create a buffer from a StringRef of data. This will copy the data into the
   /// resulting BufferRef.
@@ -63,27 +64,23 @@ protected:
 
   /// Initialize an empty Buffer. This is protected because we don't want to
   /// initialize empty read-only buffers.
-  Buffer() : mallocd(), kind(kMalloc) {}
+  Buffer() = default;
 
   /// Create a Buffer of given size and alignment.
   Buffer(size_t size, std::optional<size_t> alignment)
-      : mallocd(size, alignment), kind(kMalloc) {}
+      : storage{AllocatedBuffer(size, alignment)} {}
 
   /// Construct the Buffer where it has to copy its data.
-  Buffer(StringRef data);
+  Buffer(StringRef data) : storage{AllocatedBuffer(data)} {}
 
   /// Construct a buffer with a mapped file region. The buffer takes ownership
   /// of the mapped file region.
-  Buffer(llvm::sys::fs::mapped_file_region &&mapped);
+  Buffer(llvm::sys::fs::mapped_file_region &&mapped)
+      : storage{std::move(mapped)} {}
 
   /// Buffers are not copy-constructible.
   Buffer(const Buffer &other) = delete;
   Buffer &operator=(const Buffer &other) = delete;
-
-  enum BufferKind : uint8_t {
-    kMalloc = 0,
-    kMMap = 1,
-  };
 
   /// Struct to hold the data we need if this is a malloc'd buffer.
   struct AllocatedBuffer {
@@ -123,12 +120,9 @@ protected:
   };
 
   /// The data owned by this buffer.
-  union {
-    AllocatedBuffer mallocd;
-    llvm::sys::fs::mapped_file_region mapped;
-  };
-  /// The kind of this buffer.
-  BufferKind kind = kMalloc;
+  /// AllocatedBuffer is the first type so that the default constructor is an
+  /// empty AllocatedBuffer.
+  SmartVariant<AllocatedBuffer, llvm::sys::fs::mapped_file_region> storage;
 };
 
 class WriteableBuffer;

@@ -9,32 +9,11 @@
 
 using namespace M;
 using namespace Cache;
+using mapped_file_region = llvm::sys::fs::mapped_file_region;
 
 //===----------------------------------------------------------------------===//
 // Buffer
 //===----------------------------------------------------------------------===//
-
-/// Create a Buffer from an array of data.
-Buffer::Buffer(StringRef data) {
-  kind = kMalloc;
-  new (&this->mallocd) AllocatedBuffer(data);
-}
-
-Buffer::Buffer(llvm::sys::fs::mapped_file_region &&mapped) {
-  kind = kMMap;
-  new (&this->mapped) llvm::sys::fs::mapped_file_region(std::move(mapped));
-}
-
-Buffer::~Buffer() {
-  switch (kind) {
-  case kMalloc:
-    this->mallocd.~AllocatedBuffer();
-    break;
-  case kMMap:
-    this->mapped.~mapped_file_region();
-    break;
-  }
-}
 
 /// Open a file in read-only or read-write mode and return its file descriptor
 /// and the status object for the file so we can get things like its size.
@@ -100,33 +79,37 @@ ErrorOr<BufferRef> Buffer::getFile(const std::filesystem::path &filepath,
 }
 
 const char *Buffer::getBufferStart() const {
-  switch (kind) {
-  case kMalloc:
-    return (char *)this->mallocd.data;
-  case kMMap:
-    return this->mapped.const_data();
-  }
-  llvm_unreachable("unknown buffer kind");
+  if (isa<AllocatedBuffer>(storage))
+    return static_cast<const char *>(cast<AllocatedBuffer>(storage).data);
+
+  if (isa<mapped_file_region>(storage))
+    return cast<mapped_file_region>(storage).const_data();
+
+  llvm_unreachable("unknown storage type");
 }
 
 const char *Buffer::getBufferEnd() const {
-  switch (kind) {
-  case kMalloc:
-    return (char *)this->mallocd.data + this->mallocd.size;
-  case kMMap:
-    return this->mapped.const_data() + this->mapped.size();
+  if (isa<AllocatedBuffer>(storage)) {
+    auto &allocStorage = cast<AllocatedBuffer>(storage);
+    return static_cast<const char *>(allocStorage.data) + allocStorage.size;
   }
-  llvm_unreachable("unknown buffer kind");
+
+  if (isa<mapped_file_region>(storage)) {
+    auto &mappedStorage = cast<mapped_file_region>(storage);
+    return mappedStorage.const_data() + mappedStorage.size();
+  }
+
+  llvm_unreachable("unknown storage type");
 }
 
 size_t Buffer::getBufferSize() const {
-  switch (kind) {
-  case kMalloc:
-    return this->mallocd.size;
-  case kMMap:
-    return this->mapped.size();
-  }
-  llvm_unreachable("unknown buffer kind");
+  if (isa<AllocatedBuffer>(storage))
+    return cast<AllocatedBuffer>(storage).size;
+
+  if (isa<mapped_file_region>(storage))
+    return cast<mapped_file_region>(storage).size();
+
+  llvm_unreachable("unknown storage type");
 }
 
 StringRef Buffer::getBuffer() const {
@@ -191,19 +174,22 @@ WriteableBuffer::getFile(const std::filesystem::path &filepath, size_t size,
 //===----------------------------------------------------------------------===//
 
 void WriteableBuffer::write_impl(const char *ptr, size_t size) {
-  assert(kind == kMalloc && "cannot write to an mmap'd file");
+  assert(isa<AllocatedBuffer>(storage) && "cannot write to an mmap'd file");
+
+  auto &allocStorage = cast<AllocatedBuffer>(storage);
+
   // We don't have an aligned realloc, so allocate an aligned buffer.
-  void *tmp = alignedAlloc(this->mallocd.align, this->mallocd.size + size);
+  void *tmp = alignedAlloc(allocStorage.align, allocStorage.size + size);
   assert(tmp && "alignedAlloc failed");
   // Copy the data in mallocd into tmp.
-  memcpy(tmp, this->mallocd.data, this->mallocd.size);
+  memcpy(tmp, allocStorage.data, allocStorage.size);
   // Free the old thing now we've copied the data over.
-  alignedFree(this->mallocd.data);
+  alignedFree(allocStorage.data);
   // Set mallocd to tmp to complete the 'realloc'
-  this->mallocd.data = tmp;
+  allocStorage.data = tmp;
   // Finally, copy the new data in.
-  memcpy((char *)this->mallocd.data + this->mallocd.size, ptr, size);
-  this->mallocd.size += size;
+  memcpy((char *)allocStorage.data + allocStorage.size, ptr, size);
+  allocStorage.size += size;
 }
 
 // This implementation is essentially translated from the implementation of
@@ -211,11 +197,16 @@ void WriteableBuffer::write_impl(const char *ptr, size_t size) {
 void WriteableBuffer::pwrite_impl(const char *ptr, size_t size,
                                   uint64_t offset) {
   // TODO: currently we don't resize the mmap'd buffer.
-  assert(getBufferStart() + offset + size <= getBufferEnd() || kind == kMalloc);
-  if (kind == kMMap) {
-    memcpy(this->mapped.data() + offset, ptr, size);
+  assert(getBufferStart() + offset + size <= getBufferEnd() ||
+         isa<AllocatedBuffer>(storage));
+
+  if (isa<mapped_file_region>(storage)) {
+    memcpy(cast<mapped_file_region>(storage).data() + offset, ptr, size);
     return;
   }
+
+  // We currently don't support writing to a llvm::MemoryBuffer-backed buffer.
+  auto &allocStorage = cast<AllocatedBuffer>(storage);
 
   // Check how many bytes would be left over if we copied `size` bytes from
   // `ptr` into `offset`. The number of bytes written to the range is logically
@@ -224,7 +215,7 @@ void WriteableBuffer::pwrite_impl(const char *ptr, size_t size,
   // than the buffer has.
   int64_t overflowBytes = (int64_t)getBufferSize() - (int64_t)(offset + size);
   if (overflowBytes >= 0) {
-    memcpy((char *)this->mallocd.data + offset, ptr, size);
+    memcpy((char *)allocStorage.data + offset, ptr, size);
     return;
   }
   // Set it to positive and assert that it is in fact positive, and less than
@@ -235,7 +226,7 @@ void WriteableBuffer::pwrite_impl(const char *ptr, size_t size,
 
   // pwrite whatever won't overflow - the number of bytes until we get to the
   // end of the buffer.
-  memcpy((char *)this->mallocd.data + offset, ptr, size - leftoverBytes);
+  memcpy((char *)allocStorage.data + offset, ptr, size - leftoverBytes);
   // And write the leftovers to the end.
   write_impl(ptr + (size - leftoverBytes), leftoverBytes);
 }
