@@ -1,18 +1,18 @@
 // RUN: kgen-opt %s -lower-kgen-to-pop -allow-unregistered-dialect -cse | FileCheck %s
 
 // CHECK-LABEL: @list_in_struct
-// CHECK-SAME: %arg0: i32, %arg1: index, %arg2: index
+// CHECK-SAME: %arg0: !pop.struct<i32, index, index, i32>
 // CHECK-SAME: -> (index, index)
-kgen.func @list_in_struct(%a: i32, %list: !kgen.list<index[2]>) -> !kgen.list<index[2]> {
-  // CHECK-NEXT: construct(%arg0, %arg1, %arg2, %arg0)
-  %0 = pop.struct.construct(%a, %list, %a) : !pop.struct<i32, !kgen.list<index[2]>, i32>
-
-  %1 = pop.struct.extract %0[0] : !pop.struct<i32, !kgen.list<index[2]>, i32>
-  %2 = pop.struct.extract %0[1] : !pop.struct<i32, !kgen.list<index[2]>, i32>
-  %3 = pop.struct.extract %0[2] : !pop.struct<i32, !kgen.list<index[2]>, i32>
-
+kgen.func @list_in_struct(%s: !pop.struct<i32, !kgen.list<index[2]>, i32>) -> !kgen.list<index[2]> {
+  // CHECK-NEXT: extract %arg0
+  // CHECK-NEXT: extract %arg0
+  // CHECK-NEXT: extract %arg0
+  // CHECK-NEXT: extract %arg0
+  %1 = pop.struct.extract %s[0] : !pop.struct<i32, !kgen.list<index[2]>, i32>
+  %2 = pop.struct.extract %s[1] : !pop.struct<i32, !kgen.list<index[2]>, i32>
+  %3 = pop.struct.extract %s[2] : !pop.struct<i32, !kgen.list<index[2]>, i32>
   // CHECK-NEXT: replace %{{.*}}, %{{.*}}[0] : !pop.struct<i32, index, index, i32>
-  %4 = pop.struct.replace %1, %0[0] : !pop.struct<i32, !kgen.list<index[2]>, i32>
+  %4 = pop.struct.replace %1, %s[0] : !pop.struct<i32, !kgen.list<index[2]>, i32>
   // CHECK-NEXT: replace %{{.*}}, %{{.*}}[1] : !pop.struct<i32, index, index, i32>
   // CHECK-NEXT: replace %{{.*}}, %{{.*}}[2] : !pop.struct<i32, index, index, i32>
   %5 = pop.struct.replace %2, %4[1] : !pop.struct<i32, !kgen.list<index[2]>, i32>
@@ -22,20 +22,20 @@ kgen.func @list_in_struct(%a: i32, %list: !kgen.list<index[2]>) -> !kgen.list<in
   // CHECK-NEXT: "hold"(%{{.*}}) : (!pop.struct<i32, index, index, i32>)
   "hold"(%6) : (!pop.struct<i32, !kgen.list<index[2]>, i32>) -> ()
 
-  // CHECK-NEXT: return %arg1, %arg2 : index, index
-  kgen.return %list : !kgen.list<index[2]>
+  // CHECK-NEXT: return %1, %2 : index, index
+  kgen.return %2 : !kgen.list<index[2]>
 }
 
 // CHECK-LABEL: @empty_list
-// CHECK-SAME: %arg0: i32
+// CHECK-SAME: %arg0: !pop.struct<i32>
 // CHECK-NOT: %arg1
 // CHECK-NOT: ->
-kgen.func @empty_list(%a: i32, %list: !kgen.list<index[0]>) -> !kgen.list<index[0]> {
-  %0 = pop.struct.construct(%list, %a) : !pop.struct<!kgen.list<index[0]>, i32>
-  %1 = pop.struct.extract %0[0] : !pop.struct<!kgen.list<index[0]>, i32>
-  %2 = pop.struct.extract %0[1] : !pop.struct<!kgen.list<index[0]>, i32>
+kgen.func @empty_list(%s: !pop.struct<!kgen.list<index[0]>, i32>) -> !kgen.list<index[0]> {
+  // CHECK-NEXT: pop.struct.extract %{{.*}}[0] : !pop.struct<i32>
+  %1 = pop.struct.extract %s[0] : !pop.struct<!kgen.list<index[0]>, i32>
+  %2 = pop.struct.extract %s[1] : !pop.struct<!kgen.list<index[0]>, i32>
   // CHECK-NEXT: "hold"
-  "hold"(%a) : (i32) -> ()
+  "hold"(%2) : (i32) -> ()
   // CHECK: return
   // CHECK-NOT: %
   kgen.return %1 : !kgen.list<index[0]>
