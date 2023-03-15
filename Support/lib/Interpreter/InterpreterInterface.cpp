@@ -189,6 +189,8 @@ InterpreterState::startInterpreterAt(Region &region,
       error = ErrorTree(frame.origin->getLoc(),
                         Error("failed to evaluate call"), std::move(error));
   }
+  // Reset the interpret to a clean state.
+  stack.clear();
   return std::move(error);
 }
 
