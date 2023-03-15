@@ -42,6 +42,8 @@
 
 #define DEBUG_TYPE "kgen-elaborator"
 
+static constexpr bool EnableTracing = false;
+
 using namespace M;
 using namespace KGEN;
 using namespace LLCL;
@@ -1631,8 +1633,8 @@ LogicalResult ElaboratorImpl::processScope(ExpansionTreeNode *parentNode,
     for (Operation *op : worklist)
       logger << *op << "\n";
   });
-  TimeTraceScope<> traceScope("processScope",
-                              std::to_string(worklist.size()) + " ops");
+  TimeTraceScope<EnableTracing> traceScope(
+      "processScope", std::to_string(worklist.size()) + " ops");
 
   // Processing an op may generate more stuff, or even delete the op being
   // processed.
@@ -1648,28 +1650,28 @@ LogicalResult ElaboratorImpl::processScope(ExpansionTreeNode *parentNode,
 
     std::optional<ErrorTree> result = std::nullopt;
     if (auto declare = dyn_cast<ParamDeclareOp>(op)) {
-      TimeTraceScope<> traceScope("processParamDeclareOp");
+      TimeTraceScope<EnableTracing> traceScope("processParamDeclareOp");
       result = processParamDeclareOp(parentNode->evaluator, declare);
     } else if (auto declare = dyn_cast<ParamDeclareRegionOp>(op)) {
-      TimeTraceScope<> traceScope("processParamDeclareRegionOp");
+      TimeTraceScope<EnableTracing> traceScope("processParamDeclareRegionOp");
       result = processParamDeclareRegionOp(declare, parentNode);
     } else if (auto bind = dyn_cast<ParamResultBindOp>(op)) {
-      TimeTraceScope<> traceScope("processParamResultBindOp");
+      TimeTraceScope<EnableTracing> traceScope("processParamResultBindOp");
       result = processParamResultBindOp(bind, parentNode);
     } else if (auto fork = dyn_cast<ParamForkOp>(op)) {
-      TimeTraceScope<> traceScope("processParamForkOp");
+      TimeTraceScope<EnableTracing> traceScope("processParamForkOp");
       result = processParamForkOp(parentNode, fork, remainingWorklist);
     } else if (auto assertOp = dyn_cast<ParamAssertOp>(op)) {
-      TimeTraceScope<> traceScope("processParamAssertOp");
+      TimeTraceScope<EnableTracing> traceScope("processParamAssertOp");
       result = processParamAssertOp(parentNode->evaluator, assertOp);
     } else if (auto ifOp = dyn_cast<ParamIfOp>(op)) {
-      TimeTraceScope<> traceScope("processParamIfOp");
+      TimeTraceScope<EnableTracing> traceScope("processParamIfOp");
       result = processParamIfOp(ifOp, parentNode);
     } else if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
-      TimeTraceScope<> traceScope("processCallOp");
+      TimeTraceScope<EnableTracing> traceScope("processCallOp");
       result = processCallOp(call, parentNode, remainingWorklist);
     } else {
-      TimeTraceScope<> traceScope("processGenericOp");
+      TimeTraceScope<EnableTracing> traceScope("processGenericOp");
       result = processGenericOp(parentNode->evaluator, op);
     }
 
