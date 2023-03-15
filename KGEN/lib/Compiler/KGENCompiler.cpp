@@ -44,6 +44,10 @@ void KGEN::elaborateModule(mlir::PassManager &pm, LLCL::Runtime &runtime,
                            TargetInfoAttr target,
                            const ElaborateGeneratorsOptions &elaborateOptions) {
   populatePreElaborationPipeline(pm);
+  // Eliminate dead symbols. If we don't use the symbol *somewhere* it doesn't
+  // need to be in the IR.
+  pm.addPass(createEliminateDeadSymbols());
+
   // Only outline closures just before elaboration - they aren't really
   // necessary until elaboration happens.
   pm.addPass(createOutlineClosures());
