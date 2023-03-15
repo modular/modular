@@ -204,19 +204,9 @@ public:
     expansions.push_back(child);
   }
 
-  /// Take the provided error and set this node to an `error` state. If this is
-  /// a node for a concrete operation, erase the operation immediately.
-  void setToError(ErrorTree &&err) {
-    // Take the error as the error in this node.
-    this->error = std::move(err);
-
-    // Erase the op if it's a FuncOp - can't erase generators cause different
-    // input params can mean different things.
-    if (llvm::isa_and_present<FuncOp>(op)) {
-      op->erase();
-      op = nullptr;
-    }
-  }
+  /// Take the provided error and set this node to an `error` state. Erase all
+  /// state dominated by this node.
+  void setToError(ErrorTree &&err);
 
   /// Update the debug info on the concretization of the current node. This
   /// means, if there are child nodes, update their debug info. This should be
@@ -227,6 +217,12 @@ public:
   /// indentation provided by the caller to make it possible to nest things
   /// nicely.
   void print(mlir::raw_indented_ostream &os, bool printBindings = true);
+
+  /// Dump this node to llvm::errs().
+  LLVM_DUMP_METHOD void dump() {
+    mlir::raw_indented_ostream os(llvm::errs());
+    print(os);
+  }
 
   /// Each node is rooted on an op that defines a symbol.
   mlir::SymbolOpInterface op;
@@ -392,7 +388,11 @@ void ExpansionTreeNode::trimFailedExpansions(DenseSet<Operation *> &toErase) {
     return;
   }
   auto _ = logger.scope("Trimming Failed Children");
-  LLVM_DEBUG(logger.logOp("Op", op));
+  // Only log the op if we have it - it may have already been deleted.
+  LLVM_DEBUG({
+    if (op)
+      logger.logOp("Op", op);
+  });
 
   // Post-order trimming here - visit children first.
   for (auto &ch : expansions)
@@ -422,11 +422,26 @@ void ExpansionTreeNode::collectSubtreeErrors(ErrorTree &tree) {
     ch->collectSubtreeErrors(tree);
 }
 
+void ExpansionTreeNode::setToError(ErrorTree &&err) {
+  // Take the error as the error in this node.
+  this->error = std::move(err);
+  // Trim the children if this has any by setting them to error.
+  for (ExpansionTreeNode *child : expansions)
+    child->setToError(this->error->copy());
+
+  // Erase the op if it's a FuncOp - can't erase generators cause different
+  // input params can mean different things.
+  if (llvm::isa_and_present<FuncOp>(op)) {
+    op->erase();
+    op = nullptr;
+  }
+}
+
 void ExpansionTreeNode::updateDebugInfo() {
   for (auto &child : expansions)
     child->updateDebugInfo();
 
-  if (!expansions.empty())
+  if (!expansions.empty() || !op || error.has_value())
     return;
 
   auto oldFuncSp = DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(op);
@@ -1420,7 +1435,7 @@ ElaboratorImpl::resolveCallInputParams(KGENCallOpInterface call,
 }
 
 //===----------------------------------------------------------------------===//
-// ElaboratorImpl::processCallParamOp
+// ElaboratorImpl::processCallOp
 //===----------------------------------------------------------------------===//
 
 /// Process a call_param op.
@@ -1781,17 +1796,10 @@ ElaboratorImpl::specializeGenerator(ExpansionTreeNode *genNode) {
   // but it will also auto-rename the symbol for us in the case of conflicts.
   analysis.getTopLevelSymbolTable().insert(newFunc, generator->getIterator());
 
-  // Set the body on the new func with the hash rather than cloning if at all
-  // possible.
-  if (auto hashAttr = generator->getAttrOfType<Cache::RegionHashArrayAttr>(
-          Cache::getRegionHashAttrName())) {
-    newFunc->setAttr(Cache::getRegionHashAttrName(), hashAttr);
-  } else {
-    // Otherwise, just clone the body.
-    // TODO: is there a nice way to not have to clone this?
-    IRMapping map;
-    generator.getBodyRegion().cloneInto(&newFunc.getBodyRegion(), map);
-  }
+  // Clone the body of the generator into the function.
+  // TODO: is there a nice way for us to avoid cloning this?
+  IRMapping map;
+  generator.getBodyRegion().cloneInto(&newFunc.getBodyRegion(), map);
 
   // The node for this new func is simply the child of the node for the
   // generator.
