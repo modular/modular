@@ -78,6 +78,52 @@ struct MatmulConfig:
 
 
 @register_passable
+struct MatmulDataType:
+    """Record describing the data types of the matrices in a matmul"""
+
+    # The data type of the result (matrix C), and the accumulator.
+    var accum_type: DType
+
+    # The data type of the operands (matrix A and B).
+    var value_type: DType
+
+
+@register_passable
+struct MatmulOperandLayout:
+    """Record describing the data layouts of the matmul operands as well as
+    intermediate matrices.
+    """
+
+    # Indicates if the input matrix A is transposed.
+    var transpose_a: Bool
+
+    # Indicates if the input matrix B is transposed.
+    var transpose_b: Bool
+
+    # Indicates if the input matrix A is pre-packed.
+    var a_packed: Bool
+
+    # Indicates if the input matrix B is pre-packed.
+    var b_packed: Bool
+
+    # The inner dimension size for packed A matrix if B is pre-packed.
+    var pack_a_inner_size: Int
+
+    # The inner dimension size for packed B matrix if B is pre-packed.
+    var pack_b_inner_size: Int
+
+    fn __clone__(self&) -> Self:
+        return Self {
+            transpose_a: self.transpose_a,
+            transpose_b: self.transpose_b,
+            pack_a_inner_size: self.pack_a_inner_size,
+            pack_b_inner_size: self.pack_b_inner_size,
+            a_packed: self.a_packed,
+            b_packed: self.b_packed,
+        }
+
+
+@register_passable
 struct GemmShape:
     """Helper class to unpack gemm dimension and layout."""
 
@@ -111,6 +157,34 @@ struct GemmShape:
         gemm_shape.M = c.dim[0]()
         gemm_shape.N = c.dim[1]()
         if transpose_a:
+            gemm_shape.K = a.dim[0]()
+        else:
+            gemm_shape.K = a.dim[1]()
+        return gemm_shape
+
+    @staticmethod
+    fn get[
+        config: MatmulConfig,
+        layout: MatmulOperandLayout,
+        data_type: MatmulDataType,
+    ](
+        c: NDBuffer[2, config.shape_c, data_type.accum_type],
+        a: NDBuffer[2, config.shape_a, data_type.value_type],
+        b: NDBuffer[2, config.shape_b, data_type.value_type],
+    ) -> GemmShape:
+        """Constructor of a gemm shape record from input buffers.
+
+        Args:
+            c: Buffer with allocated output space.
+            a: Buffer containing matrix operand A.
+            b: Buffer containing matrix operand B.
+        """
+        var gemm_shape: GemmShape
+        gemm_shape.M = c.dim[0]()
+        gemm_shape.N = c.dim[1]()
+
+        @parameter
+        if layout.transpose_a:
             gemm_shape.K = a.dim[0]()
         else:
             gemm_shape.K = a.dim[1]()
