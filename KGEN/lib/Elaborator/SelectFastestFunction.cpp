@@ -23,8 +23,8 @@ using namespace M;
 using namespace KGEN;
 
 static ErrorOr<Cache::BufferRef>
-produceObjectFromExports(LLCL::Runtime &runtime, SymbolTable &symtab,
-                         TargetInfoAttr target, ArrayRef<FuncOp> exports) {
+produceArchiveFromExports(LLCL::Runtime &runtime, SymbolTable &symtab,
+                          TargetInfoAttr target, ArrayRef<FuncOp> exports) {
   // Create the set of symbols to export.
   llvm::MapVector<StringAttr, ExportedSymbol> exportedSymbols;
   for (auto e : exports) {
@@ -40,12 +40,12 @@ produceObjectFromExports(LLCL::Runtime &runtime, SymbolTable &symtab,
     return compilerOr.takeError();
   auto compiler = std::make_unique<ObjectCompiler>(std::move(*compilerOr));
 
-  // Produce a standalone object for all the exports.
-  auto objOr = compiler->produceStandaloneObject(/*isJIT=*/true);
-  if (failed(objOr))
-    return Error("failed to produce standalone object");
+  // Produce a standalone archive for all the exports.
+  auto archiveOr = compiler->produceStandaloneArchive(/*isJIT=*/true);
+  if (failed(archiveOr))
+    return Error("failed to produce standalone archive");
 
-  return objOr.takeValue();
+  return archiveOr.takeValue();
 }
 
 ErrorOr<size_t>
@@ -73,12 +73,12 @@ M::KGEN::evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
   SmallVector<void *> candidatePtrs;
   {
     TimeTraceScope<> traceScope("compile-specializations");
-    auto objOr =
-        produceObjectFromExports(runtime, symtab, target, funcsToCompile);
-    if (objOr.isError())
-      return objOr.takeError();
+    auto archiveOr =
+        produceArchiveFromExports(runtime, symtab, target, funcsToCompile);
+    if (archiveOr.isError())
+      return archiveOr.takeError();
 
-    if (auto err = engine.add("evaluateSpecializations", objOr.takeValue()))
+    if (auto err = engine.add("evaluateSpecializations", archiveOr.takeValue()))
       return err.takeError();
 
     // Get pointers to all the candidates.

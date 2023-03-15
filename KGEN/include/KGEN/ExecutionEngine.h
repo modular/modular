@@ -63,8 +63,8 @@ public:
 
   static ErrorOr<ExecutionEngine> create(const CompilationOptions &options);
 
-  /// Add an object to the JIT.
-  ErrorOrSuccess add(StringRef libName, Cache::BufferRef obj);
+  /// Add an archive to the JIT.
+  ErrorOrSuccess add(StringRef libName, Cache::BufferRef archive);
 
   /// Add a function pointer to the JIT to participate in symbol resolution.
   // TODO (8082): This should not be necessary - the JIT should resolve things
@@ -89,9 +89,9 @@ private:
   /// Objects required for the ORCJIT.
   std::unique_ptr<llvm::orc::LLJIT> jit;
 
-  /// List of buffers that contain object files added to the JIT. This holds
+  /// List of buffers that contain archive files added to the JIT. This holds
   /// references to them so they aren't deallocated underneath our feet.
-  SmallVector<Cache::BufferRef> objBuffers;
+  SmallVector<Cache::BufferRef> archiveBuffers;
 };
 
 /// This function is used to ensure the components of the orc are properly
