@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -verify-diagnostics -import-lit %s -I %S/../lit-examples/ | FileCheck %s
+# RUN: kgen-translate -verify-diagnostics -import-lit %s -I %S/../mojo-examples/ | FileCheck %s
 
 # CHECK: module {
 

@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-lit -verify-diagnostics %s -I %S/../lit-examples/
+# RUN: kgen-translate -import-lit -verify-diagnostics %s -I %S/../mojo-examples/
 
 from prolog import DType, Error, F32, Int, object
 
