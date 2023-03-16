@@ -293,6 +293,10 @@ struct StructMemberRedefinition:
   var x : __mlir_type.index  # expected-error {{invalid redefinition of 'x'}}
 
 struct SpecialFunctions:
+  # expected-error @+1 {{'__new__' is not supported on structs}}
+  fn __new__() -> Self:
+    pass
+
   # expected-error @+1 {{special function must have 2 operands}}
   fn __add__(self):
     pass

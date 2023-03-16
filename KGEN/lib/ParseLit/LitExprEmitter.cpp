@@ -763,31 +763,26 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   if (value.ir.getRValueType().isEqualCanon(requiredType))
     return true;
 
-  // Check to see if we can convert this by using an __init__ or __new__ call.
-  auto canConvert = [&](StringRef fnName) -> bool {
-    // Otherwise, check to see if we can do an implicit conversion by invoking a
-    // `__new__` method on the expected type.
-    OverloadSet callee(requiredType, fnName, value.expr,
-                       CallSyntax::kImplicitConvert, shared,
-                       /*no error emission on failure */ {});
+  // Check to see if we can do an implicit conversion by invoking a `__init__`
+  // method on the expected type.
+  OverloadSet callee(requiredType, "__init__", value.expr,
+                     CallSyntax::kImplicitConvert, shared,
+                     /*no error emission on failure */ {});
 
-    // If there are no viable candidates for the implicit conversion, we fail.
-    if (!callee)
-      return false;
+  // If there are no viable candidates for the implicit conversion, we fail.
+  if (!callee)
+    return false;
 
-    // If we have at least one candidate, we check to see if any of them can
-    // work. We disable implicit conversions though, to prevent converting
-    // T -> S -> U in one step.
+  // If we have at least one candidate, we check to see if any of them can
+  // work. We disable implicit conversions though, to prevent converting
+  // T -> S -> U in one step.
 
-    // This needs to call filterOverloadSet manually because we cannot allow
-    // implicit conversions here.
-    return succeeded(
-        callee.filterOverloadSet({value},
-                                 /*allowImplicitConversions=*/false,
-                                 /*emitDiagnosticOnFailure=*/false, *this));
-  };
-
-  return canConvert("__new__") || canConvert("__init__");
+  // This needs to call filterOverloadSet manually because we cannot allow
+  // implicit conversions here.
+  return succeeded(callee.filterOverloadSet({value},
+                                            /*allowImplicitConversions=*/false,
+                                            /*emitDiagnosticOnFailure=*/false,
+                                            *this));
 }
 
 /// Emit the specified expression as a condition, converting it to an MLIR I1
@@ -960,7 +955,7 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool isPack) {
   return {};
 }
 
-/// Emit a call to __new__ or __init__, returning an instance of the specified
+/// Emit a call __init__, returning an instance of the specified
 /// type.  If `allowImplicitConversion` is true, the provided args are allowed
 /// to implicitly convert to the expectations of the constructor signatures.
 CValue ExprEmitter::emitConstructorCall(ASTType type,
@@ -980,24 +975,9 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
   }
 
   // Check to see if we can invoke an __init__ method to convert it.
-  OverloadSet initCallee(type, "__init__", expr, CallSyntax::kImplicitConvert,
-                         shared, /*errorHandler*/ {});
-  if (!initCallee.isNull()) {
-    if (failed(initCallee.filterOverloadSet(
-            args, allowImplicitConversion,
-            /*emitDiagnosticOnFailure=*/!hasCustomErrorReporting, *this))) {
-      if (hasCustomErrorReporting)
-        errorHandler();
-      return {};
-    }
-
-    // Ok, cool we know it will succeed; do it.
-    return initCallee.emitCall(args, dest, *this);
-  }
-
-  // Check to see if we can invoke an __new__ method to convert it.
-  OverloadSet callee(type, "__new__", expr, CallSyntax::kImplicitConvert,
+  OverloadSet callee(type, "__init__", expr, CallSyntax::kImplicitConvert,
                      shared, errorHandler);
+
   if (callee.isNull())
     return {};
 
