@@ -73,6 +73,10 @@ fn gather_reduce[
     assert_param[gather_axis == 0]()
     assert_param[reduce_axis == 1]()
 
+    # Short-circuit for trivial cases, and to avoid divide-by-zero
+    if input.size() == 0 or indices.size() == 0:
+        return
+
     # TODO: find a heuristic to replace the magic number.
     # This is about 4x larger than the default in gather, which makes sense
     # since this kernel performs far fewer writes
@@ -178,6 +182,9 @@ fn gather[
     assert_param_bool[axis == 0]()
 
     let indices_len = indices.size()
+    # Short-circuit for trivial cases, and to avoid divide-by-zero
+    if input.size() == 0 or indices_len == 0:
+        return
 
     # This sets the min copy size per task because it's inefficient to copy
     # small volume in parallel.
