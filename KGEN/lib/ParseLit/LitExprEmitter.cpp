@@ -267,9 +267,16 @@ RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
     return result.getIfRValue();
   }
 
-  // If this is a dynamic LValue emit call to the "getter".
-  if (auto dlValue = value.ir.getIfDLValue())
-    return emitLoadOfDLValue(dlValue, value.expr, dest);
+  // If this is a computed LValue emit call to the "getter".
+  if (auto dlValue = value.ir.getIfDLValue()) {
+    auto methodName = dlValue.isSubscript ? StringRef("__getitem__")
+                                          : StringRef("__getattr__");
+    auto result =
+        emitNamedMethodCall(methodName, dlValue.selfAndIndicesValue, dest,
+                            CallSyntax::kSubscript, dlValue.expr);
+    // The result could be another LValue.  If so, load it.
+    return emitRValue({result, value.expr}, dest);
+  }
 
   // Decay a stored LValue to an MBValue.
   if (auto slValue = value.ir.getIfSLValue())
@@ -366,24 +373,6 @@ RValue ExprEmitter::emitLoadOfMBValue(ASTExprAnd<MBValue> value,
   assert(result.getIfRValue() &&
          "__clone__ is required to always return an RValue");
   return result.getIfRValue();
-}
-
-/// Given a DLValue, emit a call to its getter.  This returns the potentially
-/// mutated DLValue, returning the indices back in case they are needed for
-/// writeback.
-RValue ExprEmitter::emitLoadOfDLValue(DLValue &dlValue, const ExprNode *expr,
-                                      ValueDest &dest) {
-  auto methodName =
-      dlValue.isSubscript ? StringRef("__getitem__") : StringRef("__getattr__");
-  // Emit the call to the accessor but make sure to capture the mutated
-  // argument and index values back into the DLValue.  This is important
-  // because we want to reuse the same values in the setter, including LValue
-  // to RValue conversions that may emit clone calls etc.
-  auto result =
-      emitNamedMethodCallM(methodName, dlValue.selfAndIndicesValue, dest,
-                           CallSyntax::kSubscript, dlValue.expr);
-  // The result could be another LValue.  If so, load it.
-  return emitRValue({result, expr}, dest);
 }
 
 CRValue ExprEmitter::emitCRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
@@ -666,11 +655,11 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
   if (auto dlValue = destLV.getIfDLValue()) {
     auto methodName = dlValue.isSubscript ? StringRef("__setitem__")
                                           : StringRef("__setattr__");
-    dlValue.selfAndIndicesValue.push_back({crValue, expr});
-    emitNamedMethodCall(methodName, dlValue.selfAndIndicesValue,
-                        ValueDest::none(), CallSyntax::kSubscript,
-                        dlValue.expr);
-    dlValue.selfAndIndicesValue.pop_back();
+    SmallVector<ASTExprAnd<AnyValue>> operands(
+        dlValue.selfAndIndicesValue.begin(), dlValue.selfAndIndicesValue.end());
+    operands.push_back({crValue, expr});
+    emitNamedMethodCall(methodName, operands, ValueDest::none(),
+                        CallSyntax::kSubscript, dlValue.expr);
     return crValue;
   }
 
@@ -706,14 +695,6 @@ CValue ExprEmitter::emitCResult(CValue value, const ExprNode *expr,
 // Function Calls
 //===----------------------------------------------------------------------===//
 
-CValue ExprEmitter::emitNamedMethodCall(
-    StringRef methodName, ArrayRef<ASTExprAnd<AnyValue>> argValues,
-    ValueDest &dest, CallSyntax syntax, const ExprNode *callNode) {
-  SmallVector<ASTExprAnd<AnyValue>> mutableArgValues(argValues);
-  return emitNamedMethodCallM(methodName, mutableArgValues, dest, syntax,
-                              callNode);
-}
-
 /// This helper emits a named method call with the provided `argValues`, where
 /// the first arg is the receiver of the call. This emits an error if the
 /// call is invalid and returns null.  The argValues list may not be empty.
@@ -722,8 +703,8 @@ CValue ExprEmitter::emitNamedMethodCall(
 /// etc) that results in the call, or potentially a random value that is being
 /// fed into an implicit conversion.  This should only be used for location
 /// information.
-CValue ExprEmitter::emitNamedMethodCallM(
-    StringRef methodName, MutableArrayRef<ASTExprAnd<AnyValue>> argValues,
+CValue ExprEmitter::emitNamedMethodCall(
+    StringRef methodName, ArrayRef<ASTExprAnd<AnyValue>> argValues,
     ValueDest &dest, CallSyntax syntax, const ExprNode *callNode) {
   assert(!argValues.empty() && "Cannot emit a method call without a receiver!");
 
@@ -1010,8 +991,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
   }
 
   // Ok, cool we know it will succeed; do it.
-  SmallVector<ASTExprAnd<AnyValue>> mutableArgs(args);
-  return callee.emitCall(mutableArgs, dest, *this);
+  return callee.emitCall(args, dest, *this);
 }
 
 /// Emit the specified expression as a condition, converting it to an MLIR I1
