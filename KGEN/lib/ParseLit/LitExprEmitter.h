@@ -17,7 +17,6 @@ namespace M::KGEN::LIT {
 template <typename ValueType>
 struct ASTExprAnd;
 enum class SpecialFunctionKind : uint8_t;
-class SpecialFunctionInfo;
 enum class CallSyntax : uint8_t;
 class ExprEmitter;
 class VarLetDeclOp;

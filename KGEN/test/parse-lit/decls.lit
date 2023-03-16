@@ -332,6 +332,40 @@ struct EmptyStruct:
 struct OneLineStruct[size: Int]: pass; pass
 # CHECK-NEXT: }
 
+# CHECK-LABEL: lit.struct.decl @StructWithInit
+struct StructWithInit:
+  var x: Int
+  var y: Int
+
+  # CHECK: lit.func @"__init__($decls::StructWithInit=&,$Int::Int)"
+  # CHECK-SAME: (%self: !pop.pointer<@"$decls"::@StructWithInit> byref_result,
+  fn __init__(self, a: Int):
+    # CHECK: %0 = lit.struct.gep %self[x]
+    # CHECK: pop.store %a, %0
+    self.x = a
+    # CHECK: %1 = lit.struct.gep %self[x]
+    # CHECK: %2 = kgen.call {{.*}}__clone__{{.*}}(%1)
+    # CHECK: %3 = lit.struct.gep %self[y]
+    # CHECK: pop.store %2, %3
+    self.y = self.x
+    # CHECK-NEXT: lit.end_func
+    return
+
+  # Not very useful, but this form also works, so test it.
+  # CHECK: lit.func @"__init__
+  # CHECK-SAME: (%__result__: !pop.pointer<@"$decls"::@StructWithInit> byref_result
+  fn __init__(a: Int, b: Int) -> Self:
+    # TODO(support invoking __init__):
+    # if a == b:
+    #  return StructWithInit(a)
+    #else
+
+    # CHECK: %0 = lit.struct.gep %__result__[x]
+    # CHECK: pop.store %a, %0 : !pop.pointer<@"$Int"::@Int>
+    # CHECK: %1 = lit.struct.gep %__result__[y] : <@"$Int"::@Int> from <@"$decls"::@StructWithInit>
+    # CHECK: pop.store %b, %1 : !pop.pointer<@"$Int"::@Int>
+    return StructWithInit{x: a, y: b}
+
 # CHECK-LABEL: lit.struct.decl @StructExample
 @register_passable
 struct StructExample:
