@@ -141,20 +141,20 @@ struct Runtime:
     fn __clone__(self&) -> Self:
         return Self {ptr: self.ptr}
 
-    fn __new__() -> Runtime:
+    fn __init__() -> Runtime:
         """Construct an LLCL Runtime with the same number of threads as
         processor cores.
         """
         return Runtime(num_cores())
 
-    fn __new__(numThreads: Int) -> Runtime:
+    fn __init__(numThreads: Int) -> Runtime:
         """Construct an LLCL Runtime with the specified number of threads."""
         return __mlir_op.`pop.external_call`[
             _type:[ptr_type],
             func : __mlir_attr.`@KGEN_CompilerRT_LLCL_CreateRuntime`,
         ](numThreads)
 
-    fn __new__(numThreads: Int, profileFilename: StringRef) -> Runtime:
+    fn __init__(numThreads: Int, profileFilename: StringRef) -> Runtime:
         """Construct an LLCL Runtime with the specified number of threads
         that writes tracing events to profileFilename.
         """
@@ -167,7 +167,7 @@ struct Runtime:
             profileFilename.length.value,
         )
 
-    fn __new__(ptr: ptr_type) -> Runtime:
+    fn __init__(ptr: ptr_type) -> Runtime:
         return Runtime {ptr: ptr}
 
     fn __del__(self):
@@ -289,7 +289,7 @@ struct TaskGroup:
     var chain: Chain
     var rt: Runtime
 
-    fn __new__(rt: Runtime) -> TaskGroup:
+    fn __init__(rt: Runtime) -> TaskGroup:
         var chain: Chain
         _init_llcl_chain(rt, Pointer[Chain].address_of(chain))
         return TaskGroup {counter: 1, chain: chain, rt: rt}

@@ -93,10 +93,10 @@ struct Trace[level: Int]:
     fn __clone__(self&) -> Self:
         return Self {}
 
-    fn __new__(name: StringRef) -> Trace[level]:
+    fn __init__(name: StringRef) -> Trace[level]:
         return Trace[level](name, "")
 
-    fn __new__(name: StringRef, detail: StringRef) -> Trace[level]:
+    fn __init__(name: StringRef, detail: StringRef) -> Trace[level]:
         trace_range_push[level](name, detail)
         return Trace[level] {}
 
