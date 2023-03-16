@@ -27,6 +27,7 @@ from SIMD import SIMD
 from TargetInfo import simd_byte_width, os_is_macos
 from Transpose import transpose_inplace
 from Tuple import StaticTuple
+from Intrinsics import PrefetchOptions
 
 
 fn get_pack_data_size() -> Int:
@@ -75,6 +76,9 @@ struct MatmulConfig:
 
     # Static info on number of elements to pack in the packing routine.
     var pack_data_size: __mlir_type.index
+
+    # Prefetch distance for packed b vectors in micro kernels.
+    var prefetch_b_distance_k: Int
 
 
 @register_passable
@@ -782,6 +786,7 @@ struct MatmulInnerLoopBPacked[
     pack_inner_size: Int,
     # Skip the output c space boundary check if True.
     skip_boundary_check: Bool,
+    prefetch_b_distance: Int,
 ]:
     """Inner loop implementation for mlas-style tiled matmul. Accumulates a
     tile of input defined by (a_row_size, TileN, TileK).
@@ -1012,6 +1017,18 @@ struct MatmulInnerLoopBPacked[
 
         # Global K index.
         var global_k = self.global_offset.K + tile_n_k_idx[1]
+
+        @always_inline
+        fn prefetch_body[idx: Int]():
+            self.b_packed.prefetch[
+                PrefetchOptions().for_read().high_locality().to_data_cache()
+            ](
+                n_outer_idx,
+                tile_n_k_idx[1] + prefetch_b_distance,
+                idx * simd_size,
+            )
+
+        unroll[pack_inner_size // simd_size, prefetch_body]()
 
         # Loop over local accumulator tiles.
         @always_inline
@@ -1306,6 +1323,7 @@ struct TiledMatmul[
                 tile_size.__as_mlir_index(),
                 m_loop_pack_inner_size,
                 skip_col_bound,
+                config.prefetch_b_distance_k,
             ].run(
                 self.c,
                 self.a,
