@@ -78,7 +78,7 @@ struct Buffer[size: Dim, type: DType]:
             data: self.data, dynamic_size: self.dynamic_size, dtype: self.dtype
         }
 
-    fn __new__(
+    fn __init__(
         ptr: __mlir_type[`!pop.pointer<scalar<`, type.value, `>>`]
     ) -> Buffer[size, type]:
         """Constructor for a Buffer with statically known size and type.
@@ -98,7 +98,7 @@ struct Buffer[size: Dim, type: DType]:
             data: DTypePointer[type](ptr), dynamic_size: size.get(), dtype: type
         }
 
-    fn __new__(
+    fn __init__(
         ptr: __mlir_type[`!pop.pointer<scalar<`, type.value, `>>`],
         in_size: Int,
     ) -> Buffer[size, type]:
@@ -125,7 +125,7 @@ struct Buffer[size: Dim, type: DType]:
             data: DTypePointer[type](ptr), dynamic_size: in_size, dtype: type
         }
 
-    fn __new__(
+    fn __init__(
         ptr: DTypePointer[type],
         in_size: Int,
     ) -> Buffer[size, type]:
@@ -476,7 +476,7 @@ struct NDBuffer[
             is_contiguous: self.is_contiguous,
         }
 
-    fn __new__(
+    fn __init__(
         ptr: __mlir_type[`!pop.pointer<scalar<`, type.value, `>>`],
     ) -> NDBuffer[rank, shape, type]:
         assert_param_bool_msg[
@@ -493,7 +493,7 @@ struct NDBuffer[
             is_contiguous: True,
         }
 
-    fn __new__(
+    fn __init__(
         ptr: __mlir_type[`!pop.pointer<scalar<`, type.value, `>>`],
         dynamic_shape: StaticIntTuple[rank],
         dynamic_dtype: DType,
@@ -507,7 +507,7 @@ struct NDBuffer[
             is_contiguous: True,
         }
 
-    fn __new__(
+    fn __init__(
         ptr: DTypePointer[type],
         dynamic_shape: StaticIntTuple[rank],
         dynamic_dtype: DType,
@@ -521,7 +521,7 @@ struct NDBuffer[
             is_contiguous: True,
         }
 
-    fn __new__(
+    fn __init__(
         ptr: DTypePointer[type],
         dynamic_shape: StaticIntTuple[rank],
         dynamic_dtype: DType,
@@ -893,7 +893,7 @@ struct DynamicRankBuffer:
         }
 
     @always_inline
-    fn __new__(
+    fn __init__(
         data: DTypePointer[DType.invalid.value],
         rank: Int,
         shape: DTypePointer[DType.index],

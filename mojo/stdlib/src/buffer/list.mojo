@@ -28,7 +28,7 @@ struct Dim:
     var value: type
 
     @always_inline
-    fn __new__(value: type) -> Dim:
+    fn __init__(value: type) -> Dim:
         """Create a dimension from its underlying value type.
 
         Args:
@@ -39,7 +39,7 @@ struct Dim:
         return Dim {value: value}
 
     @always_inline
-    fn __new__(value: Int) -> Dim:
+    fn __init__(value: Int) -> Dim:
         """Create a statically-known dimension.
 
         Args:
@@ -50,7 +50,7 @@ struct Dim:
         return __mlir_op.`pop.variant.create`[_type:type](value)
 
     @always_inline
-    fn __new__(value: __mlir_type.index) -> Dim:
+    fn __init__(value: __mlir_type.index) -> Dim:
         """Create a statically-known dimension.
 
         Args:
@@ -61,7 +61,7 @@ struct Dim:
         return Int(value)
 
     @always_inline
-    fn __new__() -> Dim:
+    fn __init__() -> Dim:
         """Create a dynamic dimension.
 
         Returns:
@@ -931,7 +931,7 @@ struct VariadicList[type: __mlir_type.`!kgen.mlirtype`]:
     fn __clone__(self&) -> Self:
         return Self {value: self.value}
 
-    fn __new__(*value: type) -> Self:
+    fn __init__(*value: type) -> Self:
         """Constructs a VariadicList from a variadic list of arguments.
 
         Args:
@@ -943,7 +943,7 @@ struct VariadicList[type: __mlir_type.`!kgen.mlirtype`]:
         """
         return Self(value)
 
-    fn __new__(value: StorageType) -> VariadicList[type]:
+    fn __init__(value: StorageType) -> VariadicList[type]:
         """Constructs a VariadicList from a variadic argument type.
 
         Args:
