@@ -24,7 +24,7 @@ from Memory import stack_allocation
 from Pointer import DTypePointer
 from Range import range
 from SIMD import SIMD
-from TargetInfo import simd_byte_width, os_is_macos
+from TargetInfo import os_is_macos, alignof, dtype_simd_width
 from Transpose import transpose_inplace
 from Tuple import StaticTuple
 from Intrinsics import PrefetchOptions
@@ -578,7 +578,7 @@ struct PackMatrixRows[
                 `[2]>`,
             ],
             type,
-        ].aligned_stack_allocation[simd_byte_width()]()
+        ].aligned_stack_allocation[alignof[SIMD[simd_size, type]]()]()
 
         let valid_tile_simd_dim = Index(
             min(
@@ -846,7 +846,7 @@ struct MatmulInnerLoopBPacked[
             tile_n_k(StaticIntTuple): 2D dimension tuple describing the
                 size of the packed tile of B.
         """
-        var instance = Self {
+        let instance = Self {
             c: c,
             a: a,
             b_packed: b_packed,
@@ -1082,7 +1082,7 @@ struct MatmulInnerLoopBPacked[
                 a_row_size.__as_mlir_index(), pack_inner_size.__as_mlir_index()
             ),
             accum_type,
-        ].stack_allocation()
+        ].aligned_stack_allocation[alignof[SIMD[simd_size, accum_type]]()]()
 
         for idx_n in range(0, self.tile_n_k[0], pack_inner_size):
             # Initialize accumulation buffer
@@ -1586,7 +1586,9 @@ struct TiledMatmul[
         let _bpacked_data = _raw_stack_allocation[
             config.pack_data_size,  # Count.
             value_type,  # Data type.
-            simd_byte_width(),  # Alignment.
+            alignof[
+                SIMD[dtype_simd_width[value_type](), value_type]
+            ](),  # Alignment.
         ]()
 
         # Manually set the shape of packed B buffer:
