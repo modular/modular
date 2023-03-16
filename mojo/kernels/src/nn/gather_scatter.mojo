@@ -73,8 +73,6 @@ fn gather_reduce[
     assert_param[gather_axis == 0]()
     assert_param[reduce_axis == 1]()
 
-    _ = output.fill(reduce_init)
-
     # TODO: find a heuristic to replace the magic number.
     # This is about 4x larger than the default in gather, which makes sense
     # since this kernel performs far fewer writes
@@ -120,38 +118,36 @@ fn gather_reduce[
             (task_id + 1) * num_chunks_per_task, indices.dim[0]()
         )
 
-        @always_inline
-        fn _gather_contiguous[simd_width: Int](i: Int, j: Int):
-            """Computes output[i,k] = input[indices[i,j],k] + output[i,k]
-            for k in range [0,input.dim[1])"""
-            let idx = indices[i, j].value
-
-            # prefetch next k
-            let next_idx = indices._offset(
-                StaticIntTuple[indices_rank](i, j)
-            ).load()
-            input.prefetch[
-                PrefetchOptions().for_read().high_locality().to_data_cache()
-            ]((next_idx + prefetch_offset).value, 0)
+        for i in range(start_slice, end_slice):
 
             @always_inline
-            fn _simd_gather[simd_width: Int](k: Int):
-                let in_idx = StaticIntTuple[2](idx, k)
+            fn _accum_in_place[simd_width: Int](k: Int):
+                var accum = SIMD[simd_width, type](reduce_init)
+                for j in range(indices.dim[1]()):
+                    """Computes output[i,k] = reduction over j of (input[indices[i,j],k])
+                    for j in range [0,indices.dim[1])"""
+                    let idx = indices[i, j].value
+
+                    # prefetch next k
+                    let next_idx = indices._offset(
+                        StaticIntTuple[indices_rank](i, j)
+                    ).load()
+                    input.prefetch[
+                        PrefetchOptions()
+                        .for_read()
+                        .high_locality()
+                        .to_data_cache()
+                    ]((next_idx + prefetch_offset).value, 0)
+
+                    let in_idx = StaticIntTuple[2](idx, k)
+
+                    let gather_chunk = input.simd_load[simd_width](in_idx)
+                    accum = reduce_fn[simd_width, type](accum, gather_chunk)
+
                 let out_idx = StaticIntTuple[2](i, k)
+                output.simd_store[simd_width](out_idx, accum)
 
-                let gather_chunk = input.simd_load[simd_width](in_idx)
-                let accum = output.simd_load[simd_width](out_idx)
-
-                output.simd_store[simd_width](
-                    out_idx,
-                    reduce_fn[simd_width, type](accum, gather_chunk),
-                )
-
-            vectorize[simd_width, _simd_gather](row_size)
-
-        for i in range(start_slice, end_slice):
-            for j in range(indices.dim[1]()):
-                _gather_contiguous[usimd_width](i, j)
+            vectorize[usimd_width, _accum_in_place](row_size)
 
     parallelize[task_func](runtime, num_tasks)
 
