@@ -37,7 +37,8 @@ cache_files(orc-rt-cas
   BASE_DIR ${MODULAR_DERIVED_DIR}/.kgen_cache/orc
   HEADER_NAME ${MODULAR_BINARY_DIR}/KGEN/include/KGEN/ExecutionEngine/ORCCASID.h
   INPUTS ${ORC_LIB}
-  INPUT_NAMES "kOrcRT")
+  INPUT_NAMES "kOrcRT"
+  RELATIVE_INSTALL_DIR ".kgen_cache/orc")
 
 add_modular_mlir_library(KGENExecutionEngine
   ExecutionEngine.cpp
