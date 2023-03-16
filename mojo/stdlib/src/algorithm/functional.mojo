@@ -486,7 +486,7 @@ struct NullaryClosure[result_type: __mlir_type.`!kgen.mlirtype`]:
     var value: closure_type
 
     @always_inline("nodebug")
-    fn __new__(value: closure_type) -> Self:
+    fn __init__(value: closure_type) -> Self:
         """Create a nullary closure.
 
         Arguments:
@@ -529,7 +529,7 @@ struct UnaryClosure[
     var value: closure_type
 
     @always_inline("nodebug")
-    fn __new__(value: closure_type) -> Self:
+    fn __init__(value: closure_type) -> Self:
         """Create a unary closure.
 
         Arguments:
@@ -578,7 +578,7 @@ struct BinaryClosure[
     var value: closure_type
 
     @always_inline("nodebug")
-    fn __new__(value: closure_type) -> Self:
+    fn __init__(value: closure_type) -> Self:
         """Create a binary closure.
 
         Arguments:
