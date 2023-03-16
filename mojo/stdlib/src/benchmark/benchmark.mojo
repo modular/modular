@@ -32,7 +32,7 @@ struct Benchmark:
             max_time_ns: self.max_time_ns,
         }
 
-    fn __new__(
+    fn __init__(
         num_warmup: Int = 10,
         max_iters: Int = 100_000,
         min_time_ns: Int = 500_000_000,  # 500ms
