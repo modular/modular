@@ -49,6 +49,10 @@ public:
   bool operator==(const DTypeValue &rhs) const {
     if (dtype != rhs.dtype)
       return false;
+    // TODO (10503): The bitwidth should not be necessary, but is currently
+    // an issue with KGEN that somehow generates invalid dtype code. This
+    // is purely in place to avoid the assert in APInt::operator==. Once,
+    // the KGEN issue is fixed, this should be removed.
     if (data.getBitWidth() != rhs.data.getBitWidth())
       return false;
     return data == rhs.data;
