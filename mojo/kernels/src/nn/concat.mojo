@@ -17,8 +17,6 @@ from Range import range
 # concat
 # ===----------------------------------------------------------------------===#
 
-alias MAX_RANK = 5
-
 
 fn _concat[
     type: DType
