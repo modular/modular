@@ -1189,7 +1189,8 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
   switch (fnInfo.kind) {
   default:
     break;
-  case SpecialFunctionKind::kInit:
+  case SpecialFunctionKind::kNew:
+    emitError("'__new__' is not supported on structs; use '__init__' instead");
     break;
   case SpecialFunctionKind::kLitBool:
     if (!resultType.mlirType.isSignlessInteger(1))
