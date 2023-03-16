@@ -12,7 +12,6 @@ from Index import StaticIntTuple
 from Int import Int
 from IO import print
 from List import create_kgen_list
-from Tuple import StaticTuple
 
 
 # CHECK-LABEL: test_broadcast_same_shape
