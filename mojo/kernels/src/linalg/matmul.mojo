@@ -194,6 +194,26 @@ struct GemmShape:
             gemm_shape.K = a.dim[1]()
         return gemm_shape
 
+    # TODO: re-enable using StaticIntTuple.
+    @always_inline
+    fn __getitem__(self, idx: Int) -> Int:
+        if idx == 0:
+            return self.M
+        if idx == 1:
+            return self.N
+        return self.K
+
+    fn __setitem__(self&, idx: Int, value: Int):
+        if idx == 0:
+            self.M = value
+            return
+        if idx == 1:
+            self.N = value
+            return
+        if idx == 2:
+            self.K = value
+            return
+
     fn __clone__(self&) -> Self:
         return Self {M: self.M, N: self.N, K: self.K}
 
@@ -241,26 +261,6 @@ struct GemmShape:
             rhs: Another gemm shape record to add with.
         """
         return self.as_index() + rhs.as_index()
-
-    fn __getitem__(self, idx: Int) -> Int:
-        if idx == 0:
-            return self.M
-        if idx == 1:
-            return self.N
-        if idx == 2:
-            return self.K
-        return 0
-
-    fn __setitem__(self&, idx: Int, value: Int):
-        if idx == 0:
-            self.M = value
-            return
-        if idx == 1:
-            self.N = value
-            return
-        if idx == 2:
-            self.K = value
-            return
 
 
 @always_inline
