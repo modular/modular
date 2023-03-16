@@ -187,8 +187,10 @@ static ParseResult parseParamForkOpValue(OpAsmParser &p,
 static void printParamForkOpValue(OpAsmPrinter &p, Operation *,
                                   ParamDeclAttr paramDecl, TypedAttr value) {
   printParamName(p, paramDecl.getName().getValue());
-  printColonTypeOrIndex(
-      p, cast<VariadicType>(value.getType()).getResolvedElementType());
+  // We might not always be able to resolve the element type.
+  Type resolvedType =
+      cast<VariadicType>(value.getType()).getResolvedElementType();
+  printColonTypeOrIndex(p, resolvedType ? resolvedType : value.getType());
   p << " = <";
   printParamValue(p, value);
   p << ">";
