@@ -623,6 +623,8 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
   // count how many implicit conversions are required for a match.
   size_t providedValueIdx = 0;
   size_t numImplicitConversions = 0;
+  bool passesVarargArgument = false;
+
   // Use a LitParameterEvaluator to substitute 'apply' expressions in the
   // argument types.
   LitParameterEvaluator evaluator(emitter.getDeclResolver());
@@ -731,6 +733,7 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
         auto result = checkOneOperand(varArgsEltType);
         if (result.kind != kValid)
           return result;
+        passesVarargArgument = true;
       }
     }
   }
@@ -738,8 +741,11 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
   assert(providedValueIdx == operands.size() &&
          "should handle argument mismatch above");
 
-  // Otherwise we succeeded!
-  return {kValid, numImplicitConversions, ASTType(), newBindings};
+  // Otherwise we succeeded!  For our payload, indicate the number of implicit
+  // conversions and whether anything was passed through varargs.  We consider
+  // exact matches of concrete types to be more specific than varargs matches.
+  return {kValid, numImplicitConversions * 2 + (passesVarargArgument ? 1 : 0),
+          ASTType(), newBindings};
 }
 
 /// Add explaination for why this candidate doesn't work to the specified
@@ -900,7 +906,7 @@ LogicalResult OverloadSet::filterOverloadSet(
 
   // Ok, we have at least one valid candidate, filter the list to the ones with
   // the lowest number of implicit conversions required.
-  size_t minConversions = ~0U;
+  size_t minConversions = ~size_t(0);
   SmallVector<ASTDecl *, 1> newFnDecls;
   OverloadFitness oneFitness = evaluations[0];
   for (auto [candidate, eval] : llvm::zip(fnDecls, evaluations)) {
@@ -955,9 +961,18 @@ LogicalResult OverloadSet::filterOverloadSet(
           diag.attachNote(candidate.getLoc()) << "non-adaptive candidate here";
       }
     } else {
+      // The numConversions field computed for kValue includes the number of
+      // implicit conversions required but also uses the low bit to track the
+      // whether a varargs conversion was used.  This allows us to treat varargs
+      // as a less-specific match than an exact signature match (for example,
+      // when overloading a `foo(Int)` and `foo(Int*)` we should pick the former
+      // if both work.  That said, when we get here we don't want to complain
+      // about the wrong number.
+      size_t numConversions = minConversions >> 1;
+
       auto diag = emitter.emitError(expr->getLoc(), "ambiguous call to '")
-                  << baseName << "', each candidate requires " << minConversions
-                  << " implicit conversion" << plural(minConversions)
+                  << baseName << "', each candidate requires " << numConversions
+                  << " implicit conversion" << plural(numConversions)
                   << ", disambiguate with an explicit cast" << expr->getRange();
       for (ASTDecl *candidate : newFnDecls)
         diag.attachNote(cast<LIT::FuncOp>(*candidate)->getLoc())
