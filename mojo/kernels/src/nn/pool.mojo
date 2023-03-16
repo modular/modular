@@ -155,7 +155,7 @@ struct Pool2d[
 
         parallelize[task_func](runtime, num_tasks)
 
-    fn __new__(
+    fn __init__(
         output: ImageData[static_output_shape, type, static_data_layout],
         input: ImageData[static_input_shape, type, static_data_layout],
         pad_h: StaticIntTuple[2],
@@ -215,10 +215,10 @@ struct Pool2d[
         pool2d.num_tasks = num_tasks
 
         # Derive layout agnostic shape information.
-        pool2d.output_shape = ImageShape.__new__[
+        pool2d.output_shape = ImageShape.__init__[
             static_output_shape, type, static_data_layout
         ](output)
-        pool2d.input_shape = ImageShape.__new__[
+        pool2d.input_shape = ImageShape.__init__[
             static_input_shape, type, static_data_layout
         ](input)
 

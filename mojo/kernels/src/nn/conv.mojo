@@ -267,7 +267,7 @@ struct Naive2dConvolution[
         # Run the actual loops and computations.
         naive2d_convolution._outer_loop()
 
-    fn __new__(
+    fn __init__(
         output: ImageData[static_output_shape, type, static_data_layout],
         input: ImageData[static_input_shape, type, static_data_layout],
         filter: ImageData[static_filter_shape, type, static_filter_layout],
@@ -320,13 +320,13 @@ struct Naive2dConvolution[
         naive2d_convolution.dilation = dilation
 
         # Derive layout agnostic shape information.
-        naive2d_convolution.output_shape = ImageShape.__new__[
+        naive2d_convolution.output_shape = ImageShape.__init__[
             static_output_shape, type, static_data_layout
         ](output)
-        naive2d_convolution.input_shape = ImageShape.__new__[
+        naive2d_convolution.input_shape = ImageShape.__init__[
             static_input_shape, type, static_data_layout
         ](input)
-        naive2d_convolution.filter_shape = ImageShape.__new__[
+        naive2d_convolution.filter_shape = ImageShape.__init__[
             static_filter_shape, type, static_filter_layout
         ](filter)
         return naive2d_convolution
@@ -537,7 +537,7 @@ struct PackIm2ColNCHW[
                 # Fill all zeros for out of bound rows.
                 self._pack_zeros_for_k(k_idx)
 
-    fn __new__(
+    fn __init__(
         origin_image: NDBuffer[4, static_original_shape, type],
         packed_matrix: NDBuffer[3, static_packed_shape, type],
         conv_shape: ConvShape,
@@ -1054,7 +1054,7 @@ struct ConvIm2ColNCHW[
 
         conv._run_implicit_matmul()
 
-    fn __new__(
+    fn __init__(
         out: NDBuffer[4, shape_output, type],
         input: NDBuffer[4, shape_input, type],
         filter: NDBuffer[4, shape_filter, type],
@@ -2191,7 +2191,7 @@ struct ConvIm2ColNHWC[
             task_func,
         ](runtime, num_tasks_m * num_tasks_n, args_address)
 
-    fn __new__(
+    fn __init__(
         out: NDBuffer[4, shape_output, type],
         input: NDBuffer[4, shape_input, type],
         filter: NDBuffer[4, shape_filter, type],

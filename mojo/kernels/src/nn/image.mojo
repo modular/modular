@@ -27,7 +27,7 @@ struct Image2DLayout:
         return Self {value: self.value}
 
     @always_inline("nodebug")
-    fn __new__(value: Int) -> Image2DLayout:
+    fn __init__(value: Int) -> Image2DLayout:
         return Image2DLayout {value: value}
 
     @always_inline("nodebug")
@@ -54,7 +54,7 @@ struct ImageData[
     fn __clone__(self&) -> Self:
         return Self {data: self.data, dynamic_layout: self.dynamic_layout}
 
-    fn __new__(
+    fn __init__(
         data: NDBuffer[4, shape, type], layout: Image2DLayout
     ) -> ImageData[shape, type, static_layout]:
         """Construct of an image data instance with dynamic layout param.
@@ -71,7 +71,7 @@ struct ImageData[
             data: data, dynamic_layout: layout
         }
 
-    fn __new__(
+    fn __init__(
         data: NDBuffer[4, shape, type]
     ) -> ImageData[shape, type, static_layout]:
         assert_param_bool[static_layout != Image2DLayout.UNKNOWN]()
@@ -137,7 +137,7 @@ struct ImageData[
             data layout.
         """
 
-        let image_shape = ImageShape.__new__[shape, type, static_layout](self)
+        let image_shape = ImageShape.__init__[shape, type, static_layout](self)
 
         @always_inline
         fn _compute_index_nchw() -> Int:
@@ -177,7 +177,7 @@ struct ImageData[
             A StaticIntTuple containing the index in NCHW order.
         """
 
-        let image_shape = ImageShape.__new__[shape, type, static_layout](self)
+        let image_shape = ImageShape.__init__[shape, type, static_layout](self)
 
         @always_inline
         fn _compute_index_nchw() -> StaticIntTuple[4]:
@@ -258,7 +258,7 @@ struct ImageShape:
     fn __clone__(self&) -> Self:
         return Self {N: self.N, C: self.C, H: self.H, W: self.W}
 
-    fn __new__[
+    fn __init__[
         shape: __mlir_type[`!kgen.list<index[4]>`],
         type: DType,
         layout: Image2DLayout,
