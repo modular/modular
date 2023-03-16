@@ -17,7 +17,7 @@ struct Complex[size: Int, type: DType]:
     fn __clone__(self&) -> Self:
         return Self {re: self.re, im: self.im}
 
-    fn __new__(
+    fn __init__(
         re: SIMD[size, type.value],
         im: SIMD[size, type.value],
     ) -> Complex[size, type]:
