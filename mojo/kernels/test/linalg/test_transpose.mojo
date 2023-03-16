@@ -12,7 +12,6 @@ from Int import Int
 from IO import print
 from List import create_kgen_list
 from Transpose import transpose, transpose_inplace
-from Tuple import StaticTuple
 from Range import range
 
 

@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from Buffer import Buffer, NDBuffer
-from Tuple import StaticTuple
 from Assert import assert_param, debug_assert
 from Int import Int
 from Index import StaticIntTuple

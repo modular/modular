@@ -15,9 +15,7 @@ from DType import DType
 from Int import Int
 from SIMD import SIMD
 from Pointer import Pointer, DTypePointer
-from Buffer import Buffer
-from Tuple import StaticTuple
-from Buffer import NDBuffer
+from Buffer import Buffer, NDBuffer
 from Transpose import transpose, transpose_inplace
 from IO import put, print
 from TargetInfo import os_is_linux, has_intel_amx
