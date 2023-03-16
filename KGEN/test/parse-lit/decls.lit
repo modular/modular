@@ -282,7 +282,8 @@ struct Tuple[Ts*: __mlir_type.`!kgen.mlirtype`]:
 
 # CHECK: lit.func @"varArgs(__mlir_type.!pop.pack<Ts>)"<Ts: variadic<!kgen.mlirtype>>(%args: !pop.pack<Ts>)
 fn varArgs[Ts*: __mlir_type.`!kgen.mlirtype`](args*: Ts):
-  pass
+  # CHECK: %copy = lit.letreg.decl "copy" = %args : !pop.pack<Ts>
+  let copy = args
 
 ##===----------------------------------------------------------------------===##
 # @raises decorator.
