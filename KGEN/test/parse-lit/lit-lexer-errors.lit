@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-lit -verify-diagnostics -split-input-file %s
+# RUN: kgen-translate -import-mojo -verify-diagnostics -split-input-file %s
 
 # expected-error @+1 {{unterminated backtick identifier}}
 `

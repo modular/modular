@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate %s -verify-diagnostics -import-lit -I %S/../mojo-examples/ | FileCheck %s
+# RUN: kgen-translate %s -verify-diagnostics -import-mojo -I %S/../mojo-examples/ | FileCheck %s
 
 from prolog import Error, F32, Int
 from Range import range

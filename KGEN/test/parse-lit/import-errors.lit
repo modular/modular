@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-lit -split-input-file -verify-diagnostics -I=%S %s
+# RUN: kgen-translate -import-mojo -split-input-file -verify-diagnostics -I=%S %s
 
 # expected-error @+1 {{expected module name}}
 import --

@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-lit -I %S -split-input-file -debug-level=full -mlir-print-debuginfo %s -I %S/../mojo-examples/ | FileCheck %s
+# RUN: kgen-translate -import-mojo -I %S -split-input-file -debug-level=full -mlir-print-debuginfo %s -I %S/../mojo-examples/ | FileCheck %s
 
 from prolog import Int
 import imported_module
@@ -14,26 +14,30 @@ import imported_module
 
 # CHECK-DAG: #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #file, name = "test", linkageName = "test($lit-debuginfo::CalledStruct[param])"
 
+
 struct CalledStruct[param: __mlir_type.index]:
     fn test(self):
-      return
+        return
+
 
 fn callerFn[rows: __mlir_type.index](arg0: CalledStruct[rows]):
     return arg0.test()
+
 
 # Check single file debug info generation.
 
 # CHECK-DAG: ![[INT_TYPE:.*]] = !debuginfo.unresolved<!kgen.declref<@"$Int"::@Int>>
 # CHECK-DAG: ![[SP_TYPE:.*]] = !debuginfo.subroutine<(![[INT_TYPE]], ![[INT_TYPE]]) -> (![[INT_TYPE]]): DW_CC_normal>
-# CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = "power", linkageName = "power($Int::Int,$Int::Int)", file = #{{.*}}, line = 33, scopeLine = 33, subprogramFlags = "Definition|Optimized"> : ![[SP_TYPE]]
-# CHECK-DAG: #[[LHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "lhs", file = #{{.*}}, line = 33, arg = 1> : ![[INT_TYPE]]
-# CHECK-DAG: #[[RHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "rhs", file = #{{.*}}, line = 33, arg = 2> : ![[INT_TYPE]]
+# CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = "power", linkageName = "power($Int::Int,$Int::Int)", file = #{{.*}}, line = 36, scopeLine = 36, subprogramFlags = "Definition|Optimized"> : ![[SP_TYPE]]
+# CHECK-DAG: #[[LHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "lhs", file = #{{.*}}, line = 36, arg = 1> : ![[INT_TYPE]]
+# CHECK-DAG: #[[RHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "rhs", file = #{{.*}}, line = 36, arg = 2> : ![[INT_TYPE]]
 
 # CHECK-LABEL: lit.func @"power($Int::Int,$Int::Int)"(
 fn power(lhs: Int, rhs: Int) -> Int:
-  # CHECK: debuginfo.value #[[LHS_VAR]] = %lhs
-  # CHECK: debuginfo.value #[[RHS_VAR]] = %rhs
-  return lhs
+    # CHECK: debuginfo.value #[[LHS_VAR]] = %lhs
+    # CHECK: debuginfo.value #[[RHS_VAR]] = %rhs
+    return lhs
+
 
 # CHECK-DAG: #[[IMPORT_FILE:.*]] = #debuginfo.file<{{.*}}imported_module.lit
 # CHECK-DAG: #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = "imported_fn", linkageName = "imported_fn()", file = #[[IMPORT_FILE]], line = {{.*}}, scopeLine = {{.*}}, subprogramFlags = "Definition|Optimized">
