@@ -622,7 +622,7 @@ enum VarArgKind { None, VarArg, KWVarArg };
 struct ParsedArgument {
   SMLoc loc;
   // Specify argument passing convention, e.g. byval/byref etc.
-  ValueInputConvention convention = ValueInputConvention::ByVal;
+  std::optional<ValueInputConvention> convention;
 
   bool isPack = false;
   VarArgKind vararg = VarArgKind::None;
@@ -903,7 +903,6 @@ parseOptionalParameterSignature(LitParserBase &p, ASTDecl &declScope,
         type = TypeCheckErrorType::get(p.getContext());
       }
 
-      ValueInputConvention convention = arg.convention;
       VarArgKind vararg = arg.vararg;
       if (vararg != VarArgKind::None) {
         if (isResultParams) {
@@ -914,7 +913,8 @@ parseOptionalParameterSignature(LitParserBase &p, ASTDecl &declScope,
         }
       }
 
-      if (convention != ValueInputConvention::ByVal)
+      // TODO: Parameter decls should support conventions at some point.
+      if (arg.convention.has_value())
         p.emitError(arg.loc, "parameters must always be passed by-value");
 
       // Bind the parsed type expression so references from other parameters
@@ -1035,14 +1035,6 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
                                       LitSharedState &shared) {
   SpecialFunctionInfo fnInfo = SpecialFunctionInfo::get(name);
 
-  // This is true if the declared result type is modeled as the first argument
-  // because it is returned in memory.
-  bool hasMemoryResult =
-      args.size() >= 1 &&
-      args[0].convention == ValueInputConvention::ByRefResult;
-  ASTType declaredResultType =
-      hasMemoryResult ? ASTType(argTypes[0]) : resultType;
-
   // On any semantic error we mark the declaration erroneous - so references to
   // it don't type check, and we clear our special function information.  This
   // reduces cascade errors.
@@ -1080,12 +1072,36 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
           << arg.typeExpr->getRange();
     }
 
-    // memory-only byval argument are passed with a layer of indirection and
-    // use a specific convention to model this.
-    if (arg.convention == ValueInputConvention::ByVal &&
-        !ASTType(type).isRegisterPassable(arg.loc, shared))
-      arg.convention = ValueInputConvention::ByValInMem;
+    // If no convention was explicitly specified, provide a default.
+    if (!arg.convention.has_value()) {
+      // memory-only byval argument are passed with a layer of indirection and
+      // use a specific convention to model this.
+      if (ASTType(type).isRegisterPassable(arg.loc, shared))
+        arg.convention = ValueInputConvention::ByVal;
+      else
+        arg.convention = ValueInputConvention::ByValInMem;
+
+      // The first/self argument to __init__ is weird because it gets
+      // ByRefResult argument convention, even though it is a declared argument.
+      if (fnInfo.kind == SpecialFunctionKind::kInit && &arg == &args[0] &&
+          resultType.isEqualCanon(shared.getNoneType())) {
+        if (!ASTType(type).isRegisterPassable(arg.loc, shared)) {
+          arg.convention = ValueInputConvention::ByRefResult;
+          decl.isInitFnWithByRefResultSelf = true;
+        } else
+          emitErrorLoc(
+              arg.loc,
+              "'__init__' is not supported on register_passable types yet");
+      }
+    }
   }
+
+  // This is true if the declared result type is modeled as the first argument
+  // because it is returned in memory.
+  bool hasMemoryResult =
+      !args.empty() && args[0].convention == ValueInputConvention::ByRefResult;
+  ASTType declaredResultType =
+      hasMemoryResult ? ASTType(argTypes[0]) : resultType;
 
   // If this definition is a struct/class member, compute the self type.
   ASTType selfType;
@@ -1096,8 +1112,10 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
       //  of it.
       assert(parentDecl->resolvedness == DeclResolvedness::fully);
       selfType = parentDecl->getSelfType();
-      // If there is an in-memory result, self is passed as arg #1.
-      selfArgNumber = hasMemoryResult ? 1 : 0;
+      // If there is an in-memory result, self is passed as arg #1 unless this
+      // is init, where the return slot is self.
+      if (hasMemoryResult && fnInfo.kind != SpecialFunctionKind::kInit)
+        selfArgNumber = 1;
     }
 
   // Check any special function information.
@@ -1150,7 +1168,8 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
 
   // Some functions like __new__ require a Self result type.
   if (fnInfo.flags & SpecialFunctionInfo::kSelfResult) {
-    // TODO: We could allow omitting result type and default it.
+    // Note: We could allow omitting result type and default it, at the cost of
+    // extra language magic.
     if (!declaredResultType.isEqualCanon(selfType))
       emitError("") << name << " result type must be " << selfType;
   }
@@ -1167,8 +1186,6 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
   default:
     break;
   case SpecialFunctionKind::kInit:
-    if (isa<StructDeclOp>(*decl.getParentDecl()))
-      emitError("__init__ is not allowed on structs, use __new__ instead");
     break;
   case SpecialFunctionKind::kLitBool:
     if (!resultType.mlirType.isSignlessInteger(1))
@@ -1190,7 +1207,8 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
       [&](auto argAndArgType) {
         auto [arg, argType] = argAndArgType;
         mangledName += ASTType(argType).getAsString();
-        switch (arg.convention) {
+        assert(arg.convention.has_value() && "resolved above");
+        switch (arg.convention.value()) {
         case ValueInputConvention::ByVal:
         case ValueInputConvention::ByValInMem:
           break;
@@ -1587,7 +1605,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   for (const ParsedArgument &arg : args) {
     argLocs.push_back(p.translateLocation(arg.loc));
     argNames.push_back(arg.name);
-    inputConventions.push_back(arg.convention);
+    assert(arg.convention.has_value() && "Type checking should resolve this");
+    inputConventions.push_back(arg.convention.value());
     if (arg.vararg == VarArgKind::VarArg)
       effects = effects | FnEffects::Vararg;
     else if (arg.vararg == VarArgKind::KWVarArg)
@@ -1634,7 +1653,10 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   for (auto [bbArg, parsedArg] :
        llvm::zip(funcOp.getBody()->getArguments(), args)) {
     // Don't bind byref-result, it is handled specially by 'return'.
-    if (parsedArg.convention == ValueInputConvention::ByRefResult)
+    if (parsedArg.convention == ValueInputConvention::ByRefResult &&
+        // The self argument to __init__ is special, it is explicitly visible
+        // in the function but is byref-result.
+        !decl.isInitFnWithByRefResultSelf)
       continue;
 
     buildArgDIInfo(bbArg, parsedArg.name, bbArg.getArgNumber());
@@ -1648,7 +1670,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
     }
 
     // Arguments passed by-reference can be directly used.
-    if (parsedArg.convention == ValueInputConvention::ByRef) {
+    if (parsedArg.convention == ValueInputConvention::ByRef ||
+        parsedArg.convention == ValueInputConvention::ByRefResult) {
       addFullyResolvedDecl(SLValue(bbArg), parsedArg.name, parsedArg.loc,
                            &decl);
       continue;
@@ -2111,7 +2134,7 @@ bool DeclResolver::isMainFunction(
     StringAttr &name, SmallVectorImpl<ParamDeclAttr> &inputParamDecls,
     SmallVectorImpl<ParamDeclAttr> &resultParamDecls,
     MutableArrayRef<Type> argTypes, ASTType &resultType) {
-  return (name == kMainSymbolName && inputParamDecls.empty() &&
-          resultParamDecls.empty() && argTypes.empty() &&
-          resultType.mlirType == LIT::NoneType::get(name.getContext()));
+  return name == kMainSymbolName && inputParamDecls.empty() &&
+         resultParamDecls.empty() && argTypes.empty() &&
+         resultType.isEqualCanon(shared.getNoneType());
 }

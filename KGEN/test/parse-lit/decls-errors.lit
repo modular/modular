@@ -305,8 +305,9 @@ struct SpecialFunctions:
     self+self # Supports this, even though it isn't valid.  Shouldn't crash.
     self*self # expected-error {{'$decls-errors::SpecialFunctions' does not implement the '__mul__' method}}
 
+@register_passable
 struct WrongType:
-  # expected-error @+1 {{__init__ is not allowed on structs, use __new__ instead}}
+  # expected-error @+1 {{'__init__' is not supported on register_passable types yet}}
   def __init__(self): pass
 
   # expected-error @+1 {{result type must be '$decls-errors::WrongType'}}

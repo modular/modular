@@ -168,6 +168,10 @@ public:
   /// every reference to 'x' because the type will be bogus.
   bool hasReferenceError = false;
 
+  /// True if this decl is an __init__ function where 'self' is implicitly being
+  /// treated as a destination.
+  bool isInitFnWithByRefResultSelf = false;
+
 private:
   friend class DeclResolver;
   friend class LitSharedState;
