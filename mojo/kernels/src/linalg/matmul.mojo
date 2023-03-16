@@ -217,7 +217,7 @@ struct GemmShape:
     fn __clone__(self&) -> Self:
         return Self {M: self.M, N: self.N, K: self.K}
 
-    fn __new__(m: Int, n: Int, k: Int) -> GemmShape:
+    fn __init__(m: Int, n: Int, k: Int) -> GemmShape:
         """Constructor of a gemm shape record by directly supplying the values.
 
         Args:
@@ -230,7 +230,7 @@ struct GemmShape:
         """
         return GemmShape {M: m, N: n, K: k}
 
-    fn __new__(index: StaticIntTuple[3]) -> GemmShape:
+    fn __init__(index: StaticIntTuple[3]) -> GemmShape:
         """Constructor of a gemm shape record from a index tuple.
 
         Args:
