@@ -684,9 +684,8 @@ struct ParsedArgument {
     if (p.consumeIf(LitToken::star, &packStarLoc)) { // '*' => pack
       isPack = true;
       if (vararg != VarArgKind::None)
-        p.emitError(
-            packStarLoc,
-            "variadic arguments may not also be variadic parameter packs");
+        p.emitError(packStarLoc,
+                    "variadic arguments may not also be variadic packs");
     }
 
     // Process any convention markers.
@@ -694,8 +693,7 @@ struct ParsedArgument {
     if (p.consumeIf(LitToken::amp, &ampLoc)) { // '&' => by-ref
       convention = ValueInputConvention::ByRef;
       if (isPack)
-        p.emitError(ampLoc,
-                    "variadic parameter packs may not have input conventions");
+        p.emitError(ampLoc, "variadic packs may not have input conventions");
     }
 
     if (p.consumeIf(LitToken::colon)) {
@@ -710,8 +708,7 @@ struct ParsedArgument {
 
       // Default args and varargs/packs don't mix.
       if (isPack || vararg != VarArgKind::None) {
-        p.emitError(equalLoc,
-                    isPack ? "variadic parameter packs" : "variadic arguments")
+        p.emitError(equalLoc, isPack ? "variadic packs" : "variadic arguments")
             << " may not have defaults" << initExpr->getRange();
         initExpr = nullptr;
       }
@@ -889,6 +886,8 @@ parseOptionalParameterSignature(LitParserBase &p, ASTDecl &declScope,
       if (arg.initExpr)
         p.emitError(arg.loc,
                     "TODO: default values in parameters not supported");
+      if (arg.isPack)
+        p.emitError(arg.loc, "parameters may not be variadic packs");
 
       ASTType type;
       if (arg.typeExpr)

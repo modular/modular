@@ -277,13 +277,20 @@ fn callVariadic[p: Int](x: Int):
   alias NonEmptyVariadic = variadics(p, 1)
 
 # CHECK: lit.struct.decl @Tuple<Ts: variadic<!kgen.mlirtype>>
-struct Tuple[Ts*: __mlir_type.`!kgen.mlirtype`]:
+struct Tuple[*Ts: __mlir_type.`!kgen.mlirtype`]:
   pass
 
 # CHECK: lit.func @"varArgs(__mlir_type.!pop.pack<Ts>)"<Ts: variadic<!kgen.mlirtype>>(%args: !pop.pack<Ts>)
-fn varArgs[Ts*: __mlir_type.`!kgen.mlirtype`](args*: Ts):
+fn varArgs[*Ts: __mlir_type.`!kgen.mlirtype`](args*: Ts):
   # CHECK: %copy = lit.letreg.decl "copy" = %args : !pop.pack<Ts>
   let copy = args
+
+# CHECK-LABEL: lit.func @"usePacks
+fn usePacks():
+  # CHECK: lit.varlet.decl "a", var = true : <@"$decls"::@Tuple<Ts: variadic<!kgen.mlirtype> = [!kgen.declref<@"$Int"::@Int>]>>
+  var a: Tuple[Int]
+  # CHECK: lit.varlet.decl "b", var = true : <@"$decls"::@Tuple<Ts: variadic<!kgen.mlirtype> = [!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$F32"::@F32>, !kgen.declref<@"$Int"::@Int>]>>
+  var b: Tuple[Int, F32, Int]
 
 ##===----------------------------------------------------------------------===##
 # @raises decorator.
