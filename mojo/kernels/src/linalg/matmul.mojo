@@ -242,6 +242,26 @@ struct GemmShape:
         """
         return self.as_index() + rhs.as_index()
 
+    fn __getitem__(self, idx: Int) -> Int:
+        if idx == 0:
+            return self.M
+        if idx == 1:
+            return self.N
+        if idx == 2:
+            return self.K
+        return 0
+
+    fn __setitem__(self&, idx: Int, value: Int):
+        if idx == 0:
+            self.M = value
+            return
+        if idx == 1:
+            self.N = value
+            return
+        if idx == 2:
+            self.K = value
+            return
+
 
 @always_inline
 fn naive_matmul[
