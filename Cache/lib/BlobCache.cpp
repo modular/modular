@@ -12,6 +12,7 @@
 #include "Support/HMAC.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/Base64.h"
+#include "llvm/Support/DynamicLibrary.h"
 #include "llvm/Support/FileUtilities.h"
 #include "llvm/Support/LockFileManager.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -391,6 +392,97 @@ LLCL::RCRef<BlobCacheBackend>
 M::Cache::getFilesystemBackend(LLCL::Runtime &runtime,
                                const std::filesystem::path &basePath) {
   return RCRef<FilesystemBackend>::create(runtime, basePath);
+}
+
+//===----------------------------------------------------------------------===//
+// DylibBlobCacheBackend
+//===----------------------------------------------------------------------===//
+
+namespace {
+/// This stub loads a shared library that implements a BlobCacheBackend using
+/// the DylibBlobCacheBackend interface, and delegates backend calls to this
+/// implementation.
+struct DylibBackendStub : public BlobCacheBackend {
+
+  static ErrorOr<LLCL::RCRef<BlobCacheBackend>>
+  create(LLCL::Runtime &runtime, StringRef libPath,
+         const DylibBackendConfig *config) {
+    auto backendStub = RCRef<DylibBackendStub>::create(runtime);
+    if (auto err = backendStub->load(libPath, config)) {
+      return err.takeError();
+    }
+    return backendStub;
+  }
+
+  ~DylibBackendStub() {
+    backend.reset();
+    llvm::sys::DynamicLibrary::closeLibrary(dylib);
+  }
+
+  ErrorOrSuccess insertImpl(StringRef keyHash, Cache::BufferRef obj) override {
+    return backend->insertImpl(keyHash, obj.copy());
+  }
+
+  ErrorOr<bool> containsImpl(StringRef keyHash) const override {
+    return backend->containsImpl(keyHash);
+  }
+
+  ErrorOr<std::optional<Cache::BufferRef>>
+  findImpl(StringRef keyHash,
+           std::optional<WriteableBufferRef> buf) const override {
+    return backend->findImpl(keyHash /*, buf TODO: pass buffer*/);
+  }
+
+  ErrorOrSuccess clearImpl() override { return backend->clearImpl(); }
+
+private:
+  /// So RCRef can access private constructor.
+  friend class LLCL::RCRef<DylibBackendStub>;
+
+  explicit DylibBackendStub(LLCL::Runtime &runtime)
+      : BlobCacheBackend(runtime) {}
+
+  ErrorOrSuccess load(StringRef libPath, const DylibBackendConfig *config) {
+    std::string errorMsg;
+    dylib =
+        llvm::sys::DynamicLibrary::getLibrary(libPath.str().c_str(), &errorMsg);
+    if (!dylib.isValid()) {
+      return Error("Failed to load library " + libPath + ": " + errorMsg);
+    }
+
+    using allocType = DylibBlobCacheBackend *(*)();
+    using deallocType = void (*)(DylibBlobCacheBackend *);
+    auto allocFunc = reinterpret_cast<allocType>(
+        dylib.getAddressOfSymbol("M_CAS_allocateBackend"));
+    auto deleteFunc = reinterpret_cast<deallocType>(
+        dylib.getAddressOfSymbol("M_CAS_deallocateBackend"));
+    if (!allocFunc || !deleteFunc) {
+      llvm::sys::DynamicLibrary::closeLibrary(dylib);
+      return Error("M_CAS_allocateBackend or M_CAS_deallocateBackend symbol "
+                   "not found\n");
+    }
+    backend = std::shared_ptr<DylibBlobCacheBackend>(
+        allocFunc(), [deleteFunc](DylibBlobCacheBackend *p) { deleteFunc(p); });
+    return backend->setConfig(config);
+  }
+
+  /// The dynamic library handle.
+  llvm::sys::DynamicLibrary dylib;
+  /// The stub delegates all cache-related operations to this object.
+  std::shared_ptr<DylibBlobCacheBackend> backend;
+};
+} // namespace
+
+ErrorOr<LLCL::RCRef<BlobCacheBackend>>
+M::Cache::getS3Backend(LLCL::Runtime &runtime, const S3BackendConfig &config) {
+#if defined(__linux__)
+  constexpr llvm::StringLiteral libPath = "libblobcache_s3.so";
+#elif defined(__APPLE__)
+  constexpr llvm::StringLiteral libPath = "libblobcache_s3.dylib";
+#elif defined(WIN32)
+  constexpr llvm::StringLiteral libPath = "blobcache_s3.dll";
+#endif
+  return DylibBackendStub::create(runtime, libPath, &config);
 }
 
 ErrorOr<LLCL::RCRef<BlobCacheBackend>>
