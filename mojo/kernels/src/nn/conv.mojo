@@ -1351,7 +1351,9 @@ struct ConvIm2ColNCHW[
         #  then reduce row size to maximizing unrolled tiles.
         var row_idx: Int = 0
         row_idx = self._outer_m_loop_row_helper[
-            skip_col_bound, m_loop_pack_inner_size, a_row_size.__as_mlir_index()
+            skip_col_bound,
+            m_loop_pack_inner_size,
+            a_row_size.__as_mlir_index(),
         ](b_packed, global_offset, sub_tile_n_k, row_idx, valid_row_count)
 
         row_idx = self._outer_m_loop_row_helper[
@@ -1402,6 +1404,7 @@ struct ConvIm2ColNCHW[
                 valid_row_count(Int): number of valid rows to process from the
                     start_idx.
         """
+        alias prefetch_b_distance_k = 4
         var row_idx = start_idx
         while row_idx <= (valid_row_count - RowSize):
             MatmulInnerLoopBPacked[
@@ -1414,6 +1417,7 @@ struct ConvIm2ColNCHW[
                 RowSize,
                 m_loop_pack_inner_size,
                 skip_col_bound,
+                prefetch_b_distance_k,  # prefetch distance
             ].run(
                 self.c,
                 self.a,
