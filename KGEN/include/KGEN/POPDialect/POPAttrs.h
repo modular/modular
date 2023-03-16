@@ -47,7 +47,11 @@ public:
 
   /// Compare two dtype values.
   bool operator==(const DTypeValue &rhs) const {
-    return std::tie(dtype, data) == std::tie(rhs.dtype, rhs.data);
+    if (dtype != rhs.dtype)
+      return false;
+    if (data.getBitWidth() != rhs.data.getBitWidth())
+      return false;
+    return data == rhs.data;
   };
 
   /// Get the underlying data.
