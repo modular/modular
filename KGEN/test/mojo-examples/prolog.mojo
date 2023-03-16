@@ -35,7 +35,7 @@ fn printInt(x: Int):
 struct DType:
     var value: __mlir_type.`!kgen.dtype`
 
-    fn __new__(value: __mlir_type.`!kgen.dtype`) -> DType:
+    fn __init__(value: __mlir_type.`!kgen.dtype`) -> DType:
         return DType {value: value}
 
     alias f32 = DType(__mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`)
@@ -62,7 +62,7 @@ struct StringRef:
     fn __clone__(self&) -> Self:
         return Self {data: self.data, size: self.size}
 
-    fn __new__(
+    fn __init__(
         data: __mlir_type.`!pop.pointer<!pop.scalar<si8>>`, size: Int
     ) -> StringRef:
         return StringRef {data: data, size: size}
@@ -88,26 +88,26 @@ struct Error:
     fn __clone__(self&) -> Self:
         return Self {msg: self.msg}
 
-    fn __new__(msg: StringRef) -> Error:
+    fn __init__(msg: StringRef) -> Error:
         return Error {msg: msg}
 
 
 struct ErrorOr[type: __mlir_type.`!kgen.mlirtype`]:
     var value: __mlir_type[`!pop.variant<`, Error, `, `, type, `>>`]
 
-    fn __new__(
+    fn __init__(
         value: __mlir_type[`!pop.variant<`, Error, `, `, type, `>>`]
     ) -> ErrorOr[type]:
         return ErrorOr[type] {value: value}
 
-    fn __new__(err: Error) -> ErrorOr[type]:
+    fn __init__(err: Error) -> ErrorOr[type]:
         return ErrorOr[type] {
             value: __mlir_op.`pop.variant.create`[
                 _type : __mlir_type[`!pop.variant<`, Error, `, `, type, `>`]
             ](err)
         }
 
-    fn __new__(value: type) -> ErrorOr[type]:
+    fn __init__(value: type) -> ErrorOr[type]:
         return ErrorOr[type] {
             value: __mlir_op.`pop.variant.create`[
                 _type : __mlir_type[`!pop.variant<`, Error, `, `, type, `>`]

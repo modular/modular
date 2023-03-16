@@ -229,7 +229,7 @@ struct TestOverloading:
 
 
 struct ConvertibleFromInt:
-  fn __new__(value: Int) -> ConvertibleFromInt:
+  fn __init__(value: Int) -> ConvertibleFromInt:
     return ConvertibleFromInt{}
 
 # expected-note @below {{candidate declared here}}
@@ -311,7 +311,7 @@ struct WrongType:
   def __init__(self): pass
 
   # expected-error @+1 {{result type must be '$decls-errors::WrongType'}}
-  def __new__() -> Int: pass
+  def __init__() -> Int: pass
 
   # expected-error @+1 {{result type must be '$decls-errors::WrongType'}}
   fn __clone__(self&) -> Int: pass
@@ -333,7 +333,7 @@ struct WrongSelfType[a: Int]:
 
 # Issue #6587: [Lit] Recursive constructors crash kgen
 struct BadInit[size: __mlir_type.index]:
-  fn __new__(elem: BadInit[1]) -> BadInit[size]:
+  fn __init__(elem: BadInit[1]) -> BadInit[size]:
     var x : __mlir_type[`!pop.simd<`, size, `, f32>`]
     # expected-error @+1 {{'__mlir_type.!pop.simd<size, f32>' value cannot be converted to '$decls-errors::BadInit[size]'}}
     return x

@@ -973,7 +973,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
   if (!errorHandler) {
     errorHandler = [&]() {
       auto diag = emitError(expr->getLoc(), "")
-                  << type << " does not implement a '__new__' method"
+                  << type << " does not implement an '__init__' method"
                   << expr->getRange();
     };
     hasCustomErrorReporting = false;

@@ -30,7 +30,7 @@ fn negBuiltinType(x: __mlir_type.f64) :
 42 = 17 # expected-error {{expression must mutable in assignment}}
 
 struct LValuesRvalues:
-  fn __new__() -> LValuesRvalues:
+  fn __init__() -> LValuesRvalues:
     return LValuesRvalues{}
 
   fn __clone__(self&) -> Self:
@@ -47,11 +47,11 @@ struct LValuesRvalues:
 struct MemoryPrimaryPair:
   var x: Int
   var y: Int
-  fn __new__() -> Self: return Self {x: 0, y: 0}
+  fn __init__() -> Self: return Self {x: 0, y: 0}
   fn __clone__(self&) -> Self: return Self {x: 0, y: 0}
 
 struct NonCopyable: # expected-note {{type declared here}}
-  fn __new__() -> Self: return Self {}
+  fn __init__() -> Self: return Self {}
 
 # expected-note @+1 {{function declared here}}
 fn generic_on_type_bad[T: __mlir_type.`!kgen.mlirtype`](a: T): pass

@@ -19,7 +19,7 @@ struct my_iter_no_len:
     fn __clone__(self&) -> Self:
         return Self {start: self.start, end: self.end, list: self.list}
 
-    fn __new__(list: MyList_range_no_len) -> my_iter_no_len:
+    fn __init__(list: MyList_range_no_len) -> my_iter_no_len:
         var result: my_iter_no_len
         result.start = 0
         result.end = list.size
@@ -39,7 +39,7 @@ struct MyList_range_no_len:
     fn __clone__(self&) -> Self:
         return Self {start: self.start, size: self.size}
 
-    fn __new__(ptr: Pointer[Int], size: Int) -> MyList_range_no_len:
+    fn __init__(ptr: Pointer[Int], size: Int) -> MyList_range_no_len:
         var result: MyList_range_no_len
         result.start = ptr
         result.size = size
@@ -65,7 +65,7 @@ struct my_iter_no_next:
     fn __clone__(self&) -> Self:
         return Self {start: self.start, end: self.end, list: self.list}
 
-    fn __new__(list: MyList_range_no_next) -> my_iter_no_next:
+    fn __init__(list: MyList_range_no_next) -> my_iter_no_next:
         var result: my_iter_no_next
         result.start = 0
         result.end = list.size
@@ -85,7 +85,7 @@ struct MyList_range_no_next:
     fn __clone__(self&) -> Self:
         return Self {start: self.start, size: self.size}
 
-    fn __new__(ptr: Pointer[Int], size: Int) -> MyList_range_no_next:
+    fn __init__(ptr: Pointer[Int], size: Int) -> MyList_range_no_next:
         var result: MyList_range_no_next
         result.start = ptr
         result.size = size
@@ -110,7 +110,7 @@ struct MyList_no_iter:
     fn __clone__(self&) -> Self:
         return Self {start: self.start, size: self.size}
 
-    fn __new__(ptr: Pointer[Int], size: Int) -> MyList_no_iter:
+    fn __init__(ptr: Pointer[Int], size: Int) -> MyList_no_iter:
         var result: MyList_no_iter
         result.start = ptr
         result.size = size
@@ -129,13 +129,13 @@ struct MyList_no_iter:
 struct MyInteger:
     var value: __mlir_type.`!pop.scalar<index>`
 
-    fn __new__(value: __mlir_type.index) -> MyInteger:
+    fn __init__(value: __mlir_type.index) -> MyInteger:
         let t0 = __mlir_op.`pop.cast_from_builtin`[
             _type : __mlir_type.`!pop.scalar<index>`
         ](value)
         return MyInteger {value: t0}
 
-    fn __new__(value: __mlir_type.`!pop.scalar<index>`) -> MyInteger:
+    fn __init__(value: __mlir_type.`!pop.scalar<index>`) -> MyInteger:
         return MyInteger {value: value}
 
 
@@ -147,7 +147,7 @@ struct my_iter_wrong_int:
     fn __clone__(self&) -> Self:
         return Self {start: self.start, end: self.end, list: self.list}
 
-    fn __new__(list: MyList_invalid_boxed_type) -> my_iter_wrong_int:
+    fn __init__(list: MyList_invalid_boxed_type) -> my_iter_wrong_int:
         var result: my_iter_wrong_int
         result.start = 0
         result.end = list.size
@@ -172,7 +172,7 @@ struct MyList_invalid_boxed_type:
     fn __clone__(self&) -> Self:
         return Self {start: self.start, size: self.size}
 
-    fn __new__(ptr: Pointer[Int], size: Int) -> MyList_invalid_boxed_type:
+    fn __init__(ptr: Pointer[Int], size: Int) -> MyList_invalid_boxed_type:
         var result: MyList_invalid_boxed_type
         result.start = ptr
         result.size = size

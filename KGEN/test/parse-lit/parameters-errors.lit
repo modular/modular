@@ -52,7 +52,7 @@ struct Parameterized[p1: __mlir_type.index]:
   fn b[p2: Int, p2: Int, p3: Int](self): # Cannot shadow parameter names.
     pass
 
-  fn __new__() -> Parameterized[p1]:
+  fn __init__() -> Parameterized[p1]:
     return Self{}
 
   # expected-note @+2 {{'method' declared here}}

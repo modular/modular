@@ -22,7 +22,7 @@ def let_decls():
   # CHECK: %y = lit.letreg.decl "y" = %0 : f64
   let y = 1.0
 
-  # CHECK: [[TMP:%.*]] = kgen.call @"$Int"::@Int::@"__new__{{.*}}(%x)
+  # CHECK: [[TMP:%.*]] = kgen.call @"$Int"::@Int::@"__init__{{.*}}(%x)
   # CHECK: %z = lit.letreg.decl "z" = [[TMP]]
   let z = Int(x)
 
@@ -237,7 +237,7 @@ struct VaList[EltType: __mlir_type.`!kgen.mlirtype`]:
   fn __clone__(self&) -> Self:
     return Self{value: self.value}
 
-  fn __new__(value: StorageType) -> VaList[EltType]:
+  fn __init__(value: StorageType) -> VaList[EltType]:
     return Self{value: value}
 
   fn size(self) -> __mlir_type.index:
@@ -369,14 +369,17 @@ struct StructWithInit:
     # CHECK: pop.store %b, [[YP]]
       return StructWithInit{x: a, y: b}
 
+  fn __init__() -> Self:
+    return Self(0)
+
 # CHECK-LABEL: lit.struct.decl @StructExample
 @register_passable
 struct StructExample:
   fn __clone__(self&) -> Self:
     return Self{}
 
-  fn __new__() -> StructExample:
-    return Self{}
+  fn __init__() -> StructExample:
+    return Self {}
 
   # CHECK: lit.func @"static($Int::Int)"(%x: !kgen.declref<@"$Int"::@Int>) -> !lit.none attributes {isStatic} {
   @staticmethod
@@ -397,7 +400,7 @@ fn callStatic(a: Int):
   # CHECK: kgen.call @"$decls"::@StructExample::@"static{{.*}}(%a)
   StructExample.static(a)
 
-  # CHECK: kgen.call @"$decls"::@StructExample::@"__new__{{.*}}()
+  # CHECK: kgen.call @"$decls"::@StructExample::@"__init__{{.*}}()
   # CHECK: kgen.call @"$decls"::@StructExample::@"static{{.*}}(%a) : (!kgen.declref<@"$Int"::@Int>) -> !lit.none
   StructExample().static(a)
 
@@ -424,7 +427,7 @@ async fn call_struct_async(f: StructWithAsync):
     _ = f.do_something()
 
 struct Awaitable:
-  fn __new__() -> Awaitable:
+  fn __init__() -> Awaitable:
     return Awaitable{}
 
   fn __await__(self&) -> __mlir_type.index:
