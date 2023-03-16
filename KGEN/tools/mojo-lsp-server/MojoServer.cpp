@@ -185,7 +185,8 @@ void MojoDocument::initialize(const lsp::URIForFile &uri,
   MLIRContext context(MLIRContext::Threading::DISABLED);
   mlir::TimingScope ts;
   M::importLitFile(sourceMgr, &context, ts, KGEN::CompilationOptions(),
-                   /*useMLIRDiagnostics=*/false, runtime);
+                   /*useMLIRDiagnostics=*/false, runtime,
+                   /*validateDocStrings=*/true);
 
   // Process the collected diagnostics.
   for (ArrayRef<llvm::SMDiagnostic> diags : handlerCtx.smDiagnostics) {

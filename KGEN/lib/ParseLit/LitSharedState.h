@@ -51,7 +51,8 @@ class LitSharedState {
 public:
   LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context,
                  const CompilationOptions &options, bool useMLIRDiagnostics,
-                 LLCL::Runtime &runtime, bool enableCaching = false);
+                 LLCL::Runtime &runtime, bool validateDocStrings = false,
+                 bool enableCaching = false);
   ~LitSharedState();
 
   LitDiags diags; // Contains SourceMgr and MLIRContext pointers.
@@ -65,6 +66,9 @@ public:
 
   llvm::SourceMgr &getSourceMgr() const { return diags.sourceMgr; }
   MLIRContext *getContext() const { return diags.context; }
+
+  /// Returns if we should validate doc strings.
+  bool shouldValidateDocStrings() const;
 
   /// Initialize the shared state for the given top-level decl.
   void initialize(ASTDecl &topLevelDecl);

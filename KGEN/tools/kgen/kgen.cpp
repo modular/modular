@@ -202,7 +202,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     TimingScope litScope = timing.nest("Import Lit");
     theModule = importLitFile(mgr, ctx, litScope, compilationOptions,
                               clOptions.enableMLIRDiagnostics, *runtime,
-                              &includedFiles);
+                              /*validateDocStrings=*/false, &includedFiles);
   } else if (compilationOptions.getDebugInfoLevelForInput()) {
     theModule = DebugInfo::parseSourceFileWithDebugInfo(
         mgr, ctx, compilationOptions.getDIEmissionKind());
