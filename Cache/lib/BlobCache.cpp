@@ -430,7 +430,7 @@ struct DylibBackendStub : public BlobCacheBackend {
   ErrorOr<std::optional<Cache::BufferRef>>
   findImpl(StringRef keyHash,
            std::optional<WriteableBufferRef> buf) const override {
-    return backend->findImpl(keyHash /*, buf TODO: pass buffer*/);
+    return backend->findImpl(keyHash, std::move(buf));
   }
 
   ErrorOrSuccess clearImpl() override { return backend->clearImpl(); }

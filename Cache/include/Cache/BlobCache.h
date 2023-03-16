@@ -127,7 +127,7 @@ public:
   virtual ErrorOr<bool> containsImpl(StringRef keyHash) const = 0;
 
   virtual ErrorOr<std::optional<BufferRef>>
-  findImpl(StringRef keyHash) const = 0;
+  findImpl(StringRef keyHash, std::optional<WriteableBufferRef> buf) const = 0;
 
   virtual ErrorOrSuccess clearImpl() = 0;
 };
