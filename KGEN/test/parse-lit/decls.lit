@@ -355,16 +355,18 @@ struct StructWithInit:
   # CHECK: lit.func @"__init__
   # CHECK-SAME: (%__result__: !pop.pointer<@"$decls"::@StructWithInit> byref_result
   fn __init__(a: Int, b: Int) -> Self:
-    # TODO(support invoking __init__):
-    # if a == b:
-    #  return StructWithInit(a)
-    #else
+    # CHECK: hlcf.if
+    if a == b:
+      # CHECK:  kgen.call {{.*}}__init__{{.*}}(%__result__, %a)
+      # CHECK: lit.return %3
+      return StructWithInit(a)
+    else:
 
-    # CHECK: %0 = lit.struct.gep %__result__[x]
-    # CHECK: pop.store %a, %0 : !pop.pointer<@"$Int"::@Int>
-    # CHECK: %1 = lit.struct.gep %__result__[y] : <@"$Int"::@Int> from <@"$decls"::@StructWithInit>
-    # CHECK: pop.store %b, %1 : !pop.pointer<@"$Int"::@Int>
-    return StructWithInit{x: a, y: b}
+    # CHECK: [[XP:%.*]] = lit.struct.gep %__result__[x]
+    # CHECK: pop.store %a, [[XP]]
+    # CHECK: [[YP:%.*]] = lit.struct.gep %__result__[y]
+    # CHECK: pop.store %b, [[YP]]
+      return StructWithInit{x: a, y: b}
 
 # CHECK-LABEL: lit.struct.decl @StructExample
 @register_passable
