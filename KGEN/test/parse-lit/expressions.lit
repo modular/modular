@@ -16,8 +16,8 @@ fn noop(): pass
 struct MemoryOnlyInt:
   var x: __mlir_type.index
 
-  # CHECK: lit.func @"__new__
-  fn __new__(a: __mlir_type.index = 42) -> Self:
+  # CHECK: lit.func @"__init__
+  fn __init__(a: __mlir_type.index = 42) -> Self:
     # CHECK: %0 = lit.struct.gep %__result__[x]
     # CHECK: %idx1 = index.constant 1
     # CHECK: pop.store %idx1, %0
@@ -33,7 +33,7 @@ struct MemoryOnlyInt:
 # This type is used to test implicit conversion from MemoryOnlyInt
 struct MemoryOnlyF64:
   var x: __mlir_type.f64
-  fn __new__(value: MemoryOnlyInt) -> Self:
+  fn __init__(value: MemoryOnlyInt) -> Self:
     return Self {x: 1.0}
 
 # CHECK-LABEL: lit.struct.decl @MemoryOnlyPair
@@ -62,7 +62,7 @@ struct MemoryOnlyPair:
     # CHECK: %1 = kgen.call @"{{.*}}__clone__{{.*}}"(%0)
     # CHECK: %2 = lit.struct.gep %arg[x]
     # CHECK: %3 = pop.load %2 : !pop.pointer<index>
-    # CHECK: %4 = kgen.call @"{{.*}}__new__{{.*}}"(%3)
+    # CHECK: %4 = kgen.call @"{{.*}}__init__{{.*}}"(%3)
     # CHECK: %5 = kgen.call @"{{.*}}__add__{{.*}}"(%1, %4)
     _ = self.y+arg.x
 
@@ -117,11 +117,11 @@ fn memoryOnlyOps(a&: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: %14 = lit.struct.gep %v2[x]
   # CHECK-NEXT: [[TMPINT:%.*]] = lit.varlet.decl "<anonymous>", var = false : <@"$expressions"::@MemoryOnlyInt>
   # CHECK-NEXT: kgen.call @{{.*}}__clone__{{.*}}([[TMPINT]], %14)
-  # CHECK-NEXT: kgen.call {{.*}}__new__{{.*}}(%mpFloat, [[TMPINT]])
+  # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%mpFloat, [[TMPINT]])
   let mpFloat : MemoryOnlyF64 = v2.x
 
   # CHECK-NEXT: kgen.param.constant: variadic<@"$SIMD"::@SIMD
-  # CHECK-NEXT: [[SIMD:%.*]] = kgen.call @"$SIMD"::@SIMD::@"__new__
+  # CHECK-NEXT: [[SIMD:%.*]] = kgen.call @"$SIMD"::@SIMD::@"__init__
   # CHECK-NEXT: [[TMP:%.*]] = lit.varlet.decl "_", var = false
   # CHECK-NEXT: kgen.call @{{.*}}inferred_function_with_memory_result{{.*}}([[TMP]], [[SIMD]])
   _ = inferred_function_with_memory_result(SIMD[4, DType.f32.value]())
@@ -129,7 +129,7 @@ fn memoryOnlyOps(a&: MemoryOnlyPair) -> MemoryOnlyPair:
   # Memory-only default argument with memory-only result.
   # CHECK-NEXT: [[TMP:%.*]] = lit.varlet.decl "_", var = false
   # CHECK-NEXT: %idx42 = index.constant 42
-  # CHECK-NEXT: kgen.call @{{.*}}__new__{{.*}}([[TMP]], %idx42)
+  # CHECK-NEXT: kgen.call @{{.*}}__init__{{.*}}([[TMP]], %idx42)
   _ = MemoryOnlyInt()
 
   # CHECK-NEXT: [[TMP1:%.*]] = lit.varlet.decl "<anonymous>", var = false
@@ -149,8 +149,8 @@ fn memoryOnlyOps(a&: MemoryOnlyPair) -> MemoryOnlyPair:
 @register_passable
 struct M:
   var value : __mlir_type.index
-  # CHECK-LABEL: lit.func @"__new__
-  fn __new__(value: __mlir_type.index) -> M:
+  # CHECK-LABEL: lit.func @"__init__
+  fn __init__(value: __mlir_type.index) -> M:
   # CHECK-NEXT: %0 = lit.struct.create(value=%value) : (index) -> !kgen.declref<@"$expressions"::@M>
     return M{value: value}
   fn __neg__(self) -> M:
@@ -267,9 +267,9 @@ fn reverse_operators(a: Int):
 # CHECK-LABEL: lit.func @"precedence_matmul
 fn precedence_matmul(z: M) -> M:
   # CHECK-NEXT:  %[[THREE:.*]] = {{.*}} 3
-  # CHECK-NEXT:  %[[INT_THREE:.*]] = kgen.call @"$expressions"::@M::@"__new__{{.*}}(%[[THREE]])
+  # CHECK-NEXT:  %[[INT_THREE:.*]] = kgen.call @"$expressions"::@M::@"__init__{{.*}}(%[[THREE]])
   # CHECK-NEXT:  %[[TWO:.*]] = {{.*}} 2
-  # CHECK-NEXT:  %[[INT_TWO:.*]] = kgen.call @"$expressions"::@M::@"__new__{{.*}}(%[[TWO]])
+  # CHECK-NEXT:  %[[INT_TWO:.*]] = kgen.call @"$expressions"::@M::@"__init__{{.*}}(%[[TWO]])
   # CHECK-NEXT:  %[[NEG:.*]] = kgen.call @"$expressions"::@M::@"__neg__{{.*}}(%[[INT_TWO]])
   # CHECK-NEXT:  %[[MATMUL:.*]] = kgen.call @"$expressions"::@M::@"__matmul__{{.*}}(%[[INT_THREE]], %[[NEG]])
   # CHECK-NEXT:  %[[ADD:.*]] = kgen.call @"$expressions"::@M::@"__add__{{.*}}(%z, %[[MATMUL]])
@@ -750,9 +750,9 @@ fn testMemoryOnlyIntArray(arr&: MemoryOnlyIntArray, x: Int, moi: MemoryOnlyInt):
 
 struct MyInlineIntInit:
     var intVal: MemoryOnlyInt
-    # CHECK-LABEL: lit.func @"__new__($expressions::MyInlineIntInit=&,$expressions::MemoryOnlyInt)"
+    # CHECK-LABEL: lit.func @"__init__($expressions::MyInlineIntInit=&,$expressions::MemoryOnlyInt)"
     # CHECK-SAME: (%__result__: !pop.pointer<{{.*}}> byref_result, %intVal: {{.*}}byval_in_mem)
-    fn __new__(intVal: MemoryOnlyInt) -> Self:
+    fn __init__(intVal: MemoryOnlyInt) -> Self:
         # CHECK: %0 = lit.struct.gep %__result__[intVal]
         # CHECK: kgen.call {{.*}}__clone__{{.*}}(%0, %intVal)
         return Self{intVal: intVal}

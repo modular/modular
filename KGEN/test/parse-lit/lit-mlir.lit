@@ -108,7 +108,7 @@ struct MyPointer[eltType: __mlir_type.`!kgen.mlirtype`]:
     # CHECK: lit.struct.field value : !pop.pointer<eltType>
     var value: StorageTy
 
-    fn __new__(value: StorageTy) -> MyPointer[eltType]:
+    fn __init__(value: StorageTy) -> MyPointer[eltType]:
         return MyPointer[eltType] {value: value}
 
 
@@ -118,7 +118,7 @@ fn getAddressOf[T: __mlir_type.`!kgen.mlirtype`](arg&: T) -> MyPointer[T]:
         (((arg)))
     )
 
-    # CHECK-NEXT: %0 = kgen.call @"{{.*}}@MyPointer::@"__new__(__mlir_type.!pop.pointer<eltType>)"<eltType: type = T>(%arg)
+    # CHECK-NEXT: %0 = kgen.call @"{{.*}}@MyPointer::@"__init__(__mlir_type.!pop.pointer<eltType>)"<eltType: type = T>(%arg)
     # CHECK-NEXT: lit.return %0
 
 

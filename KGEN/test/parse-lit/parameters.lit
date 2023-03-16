@@ -75,7 +75,7 @@ struct TestParamStruct[A: __mlir_type.index]:
   fn __clone__(self&) -> Self:
     return Self{}
 
-  fn __new__() -> TestParamStruct[A]:
+  fn __init__() -> TestParamStruct[A]:
     return TestParamStruct[A]{}
 
   # CHECK: lit.func @"method{{.*}}<B>(%self: !kgen.declref<@"$parameters"::@TestParamStruct<A = A>>, %other: !kgen.declref<@"$parameters"::@TestParamStruct<A = add(A, B)>>) -> !lit.none {
@@ -88,7 +88,7 @@ struct TestParamStruct[A: __mlir_type.index]:
     alias B = A*A+1
     # CHECK: kgen.param.declare C = <mul(A, B)>
     alias C = B*A
-    # CHECK: kgen.param.declare D: @"$parameters"::@TestParamStruct<A = 1> = <apply(:() -> !kgen.declref<@"$parameters"::@TestParamStruct<A = 1>> @"$parameters"::@TestParamStruct::@"__new__()"<A = 1>)>
+    # CHECK: kgen.param.declare D: @"$parameters"::@TestParamStruct<A = 1> = <apply(:() -> !kgen.declref<@"$parameters"::@TestParamStruct<A = 1>> @"$parameters"::@TestParamStruct::@"__init__()"<A = 1>)>
     alias D = TestParamStruct[1]()
     # CHECK: %temp = lit.varlet.decl "temp", var = true : <@"$parameters"::@TestParamStruct<A = C>>
     var temp: TestParamStruct[C]
@@ -105,7 +105,7 @@ struct TestParamStruct[A: __mlir_type.index]:
 # Test that we support partially bound parameters.
 fn testTestParamStruct(a: TestParamStruct[4]):
   # CHECK: %arg11 = lit.varlet.decl "arg11", var = true : <@"$parameters"::@TestParamStruct<A = 11>>
-  # CHECK: %0 = kgen.call @"$parameters"::@TestParamStruct::@"__new__{{.*}}<A = 11>() : () -> !kgen.declref<@"$parameters"::@TestParamStruct<A = 11>>
+  # CHECK: %0 = kgen.call @"$parameters"::@TestParamStruct::@"__init__{{.*}}<A = 11>() : () -> !kgen.declref<@"$parameters"::@TestParamStruct<A = 11>>
   # CHECK: pop.store %0, %arg11 : !pop.pointer<@"$parameters"::@TestParamStruct<A = 11>>
   var arg11 = TestParamStruct[11]()
 
@@ -155,8 +155,8 @@ struct Pair[dt: DType]:
   var a : OurSIMD[42, dt]
   var b : Int
 
-  # CHECK: lit.func @"__new__{{.*}} -> !kgen.declref<@"$parameters"::@Pair<dt: @"$DType"::@DType = dt>> attributes {isStatic}
-  fn __new__(a: OurSIMD[42, dt]) -> Pair[dt]:
+  # CHECK: lit.func @"__init__{{.*}} -> !kgen.declref<@"$parameters"::@Pair<dt: @"$DType"::@DType = dt>> attributes {isStatic}
+  fn __init__(a: OurSIMD[42, dt]) -> Pair[dt]:
     # CHECK: %0 = kgen.param.constant: @"$Int"::@Int {{.*}} 4
     # CHECK: %1 = lit.struct.create(a=%a, b=%0) : (!kgen.declref<@"$parameters"::@OurSIMD<size = 42, dt: @"$DType"::@DType = dt>>, !kgen.declref<@"$Int"::@Int>) -> !kgen.declref<@"$parameters"::@Pair<dt: @"$DType"::@DType = dt>>
     return Pair[dt]{a: a, b: 4}
@@ -226,7 +226,7 @@ fn idx_result_params[a: __mlir_type.index -> b: __mlir_type.index, c: __mlir_typ
   # CHECK-NEXT: lit.param_return<a, add(a, 1)>
   param_return[a,a+1]
   # CHECK: %0 = kgen.param.constant = <add(a, 2)>
-  # CHECK: %1 = kgen.call{{.*}}__new__{{.*}}(%0)
+  # CHECK: %1 = kgen.call{{.*}}__init__{{.*}}(%0)
   # CHECK-NEXT: lit.return %1
   return a+2
 
@@ -402,7 +402,7 @@ struct MyDType:
   fn __clone__(self&) -> Self:
     return Self{state: self.state}
 
-  fn __new__(value: __mlir_type.index) -> MyDType:
+  fn __init__(value: __mlir_type.index) -> MyDType:
      return MyDType{state: value}
 
   fn __eq__(self, rhs: MyDType) -> Bool:
@@ -489,7 +489,7 @@ fn pass_variadic[elems: __mlir_type.`!kgen.variadic<index>`]():
 
 @register_passable
 struct StaticVec[size: index]:
-  fn __new__[type: __mlir_type.`!kgen.dtype`](v: __mlir_type[`!pop.simd<`, size, `, `, type, `>`]) -> StaticVec[size]:
+  fn __init__[type: __mlir_type.`!kgen.dtype`](v: __mlir_type[`!pop.simd<`, size, `, `, type, `>`]) -> StaticVec[size]:
       return Self{}
 
   @staticmethod
@@ -521,7 +521,7 @@ fn testParamInference[size: index](a: StaticVec[4], b: StaticVec[size],
   # CHECK-NEXT: kgen.call @{{.*}}callee4{{.*}}<T: type = f32>(%d)
   callee4(d)
 
-  # CHECK-NEXT: kgen.call @{{.*}}@"__new__{{.*}}<size = 17, type: dtype = f32>(%c)
+  # CHECK-NEXT: kgen.call @{{.*}}@"__init__{{.*}}<size = 17, type: dtype = f32>(%c)
   _ = StaticVec(c)
   # CHECK: kgen.call @{{.*}}@"thing{{.*}}<size = 17, type: dtype = f32>(%c)
   StaticVec.thing(c)
@@ -530,7 +530,7 @@ fn testParamInference[size: index](a: StaticVec[4], b: StaticVec[size],
 struct Abstraction[a: Int]:
   alias val = a.__as_mlir_index()
 
-  fn __new__() -> Self:
+  fn __init__() -> Self:
       return Self{}
 
   fn __clone__(self&) -> Self:
@@ -574,7 +574,7 @@ fn takeAbstraction2(value: Abstraction[2]):
 struct AnotherAbstraction[a: Int]:
     var value : Abstraction[a + 1]
 
-    fn __new__() -> Self:
+    fn __init__() -> Self:
         return Self{value: Abstraction[a + 1]()}
 
     fn __clone__(self&) -> Self:

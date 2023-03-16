@@ -19,7 +19,7 @@ struct my_iter:
     fn __clone__(self&) -> Self:
         return Self {start: self.start, end: self.end, list: self.list}
 
-    fn __new__(list: MyList) -> my_iter:
+    fn __init__(list: MyList) -> my_iter:
         return my_iter {start: 0, end: list.size, list: list}
 
     fn __next__(self&: my_iter) -> Int:
@@ -40,7 +40,7 @@ struct MyList:
     fn __clone__(self&) -> Self:
         return Self {start: self.start, size: self.size}
 
-    fn __new__(ptr: Pointer[Int], size: Int) -> MyList:
+    fn __init__(ptr: Pointer[Int], size: Int) -> MyList:
         return MyList {start: ptr, size: size}
 
     fn __setitem__(self&, idx: Int, val: Int):
