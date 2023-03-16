@@ -99,6 +99,39 @@ private:
   LLCL::RCRef<BlobCacheBackend> delegate;
 };
 
+class DylibBackendConfig {
+public:
+  enum ConfigKind {
+    kS3,
+  };
+
+  DylibBackendConfig(ConfigKind kind) : kind(kind) {}
+
+  ConfigKind getKind() const { return kind; }
+
+private:
+  const ConfigKind kind;
+};
+
+/// This is the interface for backends that are implemented in a shared library
+/// and opened with dlopen (or other OS equivalent). This is meant to be
+/// generic.
+class DylibBlobCacheBackend {
+public:
+  virtual ~DylibBlobCacheBackend() = default;
+
+  virtual ErrorOrSuccess setConfig(const DylibBackendConfig *config) = 0;
+
+  virtual ErrorOrSuccess insertImpl(StringRef keyHash, BufferRef obj) = 0;
+
+  virtual ErrorOr<bool> containsImpl(StringRef keyHash) const = 0;
+
+  virtual ErrorOr<std::optional<BufferRef>>
+  findImpl(StringRef keyHash) const = 0;
+
+  virtual ErrorOrSuccess clearImpl() = 0;
+};
+
 /// This is the thing that users will interact with. It holds onto the list of
 /// backends and calls into them, but its primary responsibility is to hash the
 /// keys passed in to normalize the way we try to access the storage backends.
@@ -194,6 +227,28 @@ LLCL::RCRef<BlobCacheBackend> getInMemoryBackend(LLCL::Runtime &runtime);
 LLCL::RCRef<BlobCacheBackend>
 getFilesystemBackend(LLCL::Runtime &runtime,
                      const std::filesystem::path &basePath = "");
+
+class S3BackendConfig : public DylibBackendConfig {
+public:
+  S3BackendConfig(std::string bucket, std::string prefix)
+      : DylibBackendConfig(ConfigKind::kS3), bucket(std::move(bucket)),
+        prefix(std::move(prefix)) {}
+  static bool classof(const DylibBackendConfig *config) {
+    return config->getKind() == ConfigKind::kS3;
+  }
+  /// Bucket name.
+  std::string bucket;
+  /// Bucket region.
+  std::string region;
+  /// Prefix in S3 bucket for cache.
+  std::string prefix;
+};
+
+/// Returns a BlobCacheBackend that uses S3 for storage. This accepts the S3
+/// config (which includes the bucket, region and prefix to use inside the
+/// bucket for cached objects).
+ErrorOr<LLCL::RCRef<BlobCacheBackend>>
+getS3Backend(LLCL::Runtime &runtime, const S3BackendConfig &config);
 
 /// Returns a chain of pre-setup backends that represent the default chain,
 /// inMemory->filesystem. The `cacheDir` is used to derive a path for use
