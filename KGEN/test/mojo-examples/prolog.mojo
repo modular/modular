@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-lit -verify-diagnostics %s | FileCheck %s
+# RUN: kgen-translate -import-mojo -verify-diagnostics %s | FileCheck %s
 # ===----------------------------------------------------------------------=== #
 #
 # Standard Prolog(ue) for Lit.

@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-lit -verify-diagnostics -split-input-file %s
+# RUN: kgen-translate -import-mojo -verify-diagnostics -split-input-file %s
 
 struct Crash1[XXX: __mlir_type.index]:
   fn __new__(a: __mlir_type.f32)

@@ -26,8 +26,8 @@ using namespace M;
 int main(int argc, char *argv[]) {
   KGEN::KGENCommonOptions clOptions;
 
-  mlir::TranslateToMLIRRegistration fromLit(
-      "import-lit", "Import 'lit' from source",
+  mlir::TranslateToMLIRRegistration fromMojo(
+      "import-mojo", "Import 'mojo' from source",
       [&](llvm::SourceMgr &sourceMgr, MLIRContext *context) {
         sourceMgr.setIncludeDirs(clOptions.searchPaths);
 
