@@ -26,6 +26,11 @@ using namespace M;
 int main(int argc, char *argv[]) {
   KGEN::KGENCommonOptions clOptions;
 
+  cl::opt<bool> validateDocStrings{
+      "mojo-validate-doc-strings",
+      cl::desc("Validate doc strings in the input .mojo file."),
+      cl::init(false)};
+
   mlir::TranslateToMLIRRegistration fromMojo(
       "import-mojo", "Import 'mojo' from source",
       [&](llvm::SourceMgr &sourceMgr, MLIRContext *context) {
@@ -36,7 +41,8 @@ int main(int argc, char *argv[]) {
         mlir::TimingScope ts;
         KGEN::CompilationOptions options = clOptions.getCompilationOptions();
         return importLitFile(sourceMgr, context, ts, options,
-                             /*useMLIRDiagnostics=*/true, *runtime);
+                             /*useMLIRDiagnostics=*/true, *runtime,
+                             validateDocStrings);
       });
 
   // Register LLVM IR generation.

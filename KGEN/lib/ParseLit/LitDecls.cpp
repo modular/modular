@@ -11,6 +11,7 @@
 #include "LitDecls.h"
 #include "ASTDecl.h"
 #include "IRValues.h"
+#include "LitDocString.h"
 #include "LitExprEmitter.h"
 #include "LitExprNodes.h"
 #include "LitLexer.h"
@@ -503,6 +504,10 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
                     "do not know how to resolve the body of this decl!");
         });
     decl.resolvedness = DeclResolvedness::fully;
+
+    // With the decl fully processed, validate the doc string.
+    if (shared.shouldValidateDocStrings())
+      validateLitDocString(shared, decl);
   }
 
   declsCurrentlyProcessing.erase(&decl);

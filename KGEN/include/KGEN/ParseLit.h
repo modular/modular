@@ -31,12 +31,16 @@ class Runtime;
 /// MLIR features like -verify-diagnostics may be used).  When false, this
 /// prints them through SourceMgr to get ranges and fixit hints.
 ///
+/// If `validateDocStrings` is true, this will process and validate the doc
+/// strings in the file.
+///
 /// If `includedFiles` is provided, it is set to the list of included files when
 /// parsing imports.
 OwningOpRef<ModuleOp>
 importLitFile(llvm::SourceMgr &sourceMgr, MLIRContext *context,
               mlir::TimingScope &ts, const KGEN::CompilationOptions &options,
               bool useMLIRDiagnostics, LLCL::Runtime &runtime,
+              bool validateDocStrings = false,
               SmallVectorImpl<std::string> *includedFiles = nullptr);
 
 /// Parse a single .lit file and produce an appropriate document detailing the

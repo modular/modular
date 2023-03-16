@@ -31,14 +31,14 @@ public:
   StringRef getSummary() const { return summary; }
 
   /// Return the fully body description of the doc string.
-  StringRef getDescription() const { return description; }
+  ArrayRef<StringRef> getDescription() const { return descriptionLines; }
 
 private:
   /// The short summary of the doc string.
   std::string summary;
-  /// The description of the doc string if it's a multi-line doc, empty for
-  /// single-line doc.
-  std::string description;
+
+  /// The lines comprising the description.
+  SmallVector<StringRef> descriptionLines;
 };
 
 //===----------------------------------------------------------------------===//
@@ -47,6 +47,10 @@ private:
 
 /// Generate markdown documentation for the given decl.
 void generateLitMarkdownDoc(ASTDecl &decl, raw_ostream &os);
+
+/// Validate the doc string for the given decl, emitting warnings for any
+/// invalid format issues.
+void validateLitDocString(LitSharedState &sharedState, ASTDecl &decl);
 
 } // namespace M::KGEN::LIT
 

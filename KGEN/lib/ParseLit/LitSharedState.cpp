@@ -99,16 +99,20 @@ struct LitSharedState::Impl {
 
   /// Flag indicating if the deps of a module are currently being resolved.
   bool activelyResolvingModuleDeps = false;
+
+  /// Flag indicating if we should validate doc strings while parsing.
+  bool validateDocStrings = false;
 };
 
 LitSharedState::LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context,
                                const CompilationOptions &options,
                                bool useMLIRDiagnostics, LLCL::Runtime &runtime,
-                               bool enableCaching)
+                               bool validateDocStrings, bool enableCaching)
     : diags(sourceMgr, context, useMLIRDiagnostics), options(options),
       declResolver(std::make_unique<DeclResolver>(*this)), runtime(runtime),
       impl(std::make_unique<Impl>()) {
   impl->stdlibPath = getStandardLibraryPath();
+  impl->validateDocStrings = validateDocStrings;
 
   context->loadDialect<DebugInfo::DebugInfoDialect, HLCF::HLCFDialect,
                        POP::POPDialect, LITDialect, mlir::index::IndexDialect,
@@ -145,6 +149,10 @@ LitSharedState::LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context,
 }
 
 LitSharedState::~LitSharedState() { declResolver.reset(); }
+
+bool LitSharedState::shouldValidateDocStrings() const {
+  return impl->validateDocStrings;
+}
 
 void LitSharedState::initialize(ASTDecl &topLevelDecl) {
   assert(!impl->topLevelDecl && "already initialized");

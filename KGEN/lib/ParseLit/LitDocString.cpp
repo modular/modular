@@ -21,6 +21,14 @@ static size_t getIndentationLevel(StringRef str) {
   return str.size() - str.ltrim().size();
 }
 
+/// Extract a LitDocString from a given decl, or None if there is no doc string.
+static std::optional<LitDocString> getLitDocString(ASTDecl &decl) {
+  StringRef docStr = decl.getDocString();
+  if (docStr.empty())
+    return std::nullopt;
+  return LitDocString(docStr);
+}
+
 //===----------------------------------------------------------------------===//
 // LitDocString
 //===----------------------------------------------------------------------===//
@@ -45,11 +53,11 @@ LitDocString::LitDocString(StringRef rawDocString) {
 
   // Remove the necessary indentation from all but the first line, which has all
   // leading whitespace removed.
-  lines[0] = lines[0].trim();
+  lines[0] = lines[0].ltrim();
   if (indent) {
     for (size_t i = 1; i < lines.size(); ++i)
       if (!lines[i].empty())
-        lines[i] = lines[i].drop_front(indent).rtrim();
+        lines[i] = lines[i].drop_front(indent);
   }
 
   // Strip off trailing and leading blank lines.
@@ -76,10 +84,8 @@ LitDocString::LitDocString(StringRef rawDocString) {
   while (line < lineE && lines[line].empty())
     ++line;
 
-  // The remaining lines are the description.
-  llvm::raw_string_ostream descOS(description);
-  while (line < lineE)
-    descOS << lines[line++] << "\n";
+  // The remaining lines are the description, or sections there within.
+  descriptionLines.append(lines.begin() + line, lines.end());
 }
 
 //===----------------------------------------------------------------------===//
@@ -249,12 +255,9 @@ private:
                               ArrayRef<StringRef> lines, size_t &line,
                               size_t lineE) {
     auto processParam = [&](StringRef paramName) {
-      // TODO: Emit errors when we encounter unknown parameters.
       auto it = paramToDetail.find(paramName);
       if (it != paramToDetail.end())
         os << "`` " << it->second << " ``";
-      else
-        os << paramName;
     };
     generateTwoColumnMarkdownTable("Parameters", lines, line, lineE,
                                    processParam);
@@ -397,51 +400,40 @@ private:
   }
 
   void processFunctionDocDescription(
-      StringRef description, const llvm::StringMap<std::string> &paramToDetail,
+      ArrayRef<StringRef> description,
+      const llvm::StringMap<std::string> &paramToDetail,
       const llvm::StringMap<StringRef> &argNameToDetail,
       const std::optional<std::string> &returnType) {
-    // Split the description into lines, so we can process the different
-    // sections.
-    SmallVector<StringRef, 4> lines;
-    description.split(lines, '\n');
-
     // Process the lines of the description, looking for markers.
-    size_t line = 0, lineE = lines.size();
-    for (; line < lineE; ++line) {
-      if (lines[line] == "Args:") {
+    for (size_t line = 0, lineE = description.size(); line < lineE; ++line) {
+      if (description[line] == "Args:") {
         auto processArg = [&](StringRef argName) {
-          // TODO: Emit errors when we encounter unknown arguments.
           auto it = argNameToDetail.find(argName);
           if (it != argNameToDetail.end())
             os << "`` " << it->second << " ``";
-          else
-            os << argName;
         };
-        generateTwoColumnMarkdownTable("Args", lines, line, lineE, processArg);
+        generateTwoColumnMarkdownTable("Args", description, line, lineE,
+                                       processArg);
         continue;
       }
-      if (lines[line] == "Parameters:") {
-        generateParameterTable(paramToDetail, lines, line, lineE);
+      if (description[line] == "Parameters:") {
+        generateParameterTable(paramToDetail, description, line, lineE);
         continue;
       }
-      if (lines[line] == "Returns:") {
-        // TODO: Validate the return type. Check that the function has one when
-        // the section is specified, and vice versa.
-        if (!returnType) {
-          generateSingleEntrySingleColumnMarkdownTable("Returns", lines, line,
-                                                       lineE);
-          continue;
+      if (description[line] == "Returns:") {
+        if (returnType) {
+          generateSingleEntrySingleColumnMarkdownTable(
+              "Returns `` -> " + *returnType + " ``", description, line, lineE);
         }
-        generateSingleEntrySingleColumnMarkdownTable(
-            "Returns `` -> " + *returnType + " ``", lines, line, lineE);
         continue;
       }
-      if (lines[line] == "Constraints:") {
-        generateSingleColumnMarkdownTable("Constraints", lines, line, lineE);
+      if (description[line] == "Constraints:") {
+        generateSingleColumnMarkdownTable("Constraints", description, line,
+                                          lineE);
         continue;
       }
 
-      os << lines[line] << "\n";
+      os << description[line] << "\n";
     }
   }
 
@@ -473,22 +465,16 @@ private:
   }
 
   void processStructDocDescription(
-      StringRef description,
+      ArrayRef<StringRef> description,
       const llvm::StringMap<std::string> &paramToDetail) {
-    // Split the description into lines, so we can process the different
-    // sections.
-    SmallVector<StringRef, 4> lines;
-    description.split(lines, '\n');
-
     // Process the lines of the description, looking for markers.
-    size_t line = 0, lineE = lines.size();
-    for (; line < lineE; ++line) {
-      if (lines[line] == "Parameters:") {
-        generateParameterTable(paramToDetail, lines, line, lineE);
+    for (size_t line = 0, lineE = description.size(); line < lineE; ++line) {
+      if (description[line] == "Parameters:") {
+        generateParameterTable(paramToDetail, description, line, lineE);
         continue;
       }
 
-      os << lines[line] << "\n";
+      os << description[line] << "\n";
     }
   }
 
@@ -504,11 +490,13 @@ private:
     const char *tableOfContents = "[TOC]\n\n";
 
     // If the module has a doc string, emit it.
-    if (std::optional<LitDocString> docStr = getLitDocString(decl))
-      os << docStr->getSummary() << "\n\n"
-         << tableOfContents << docStr->getDescription() << "\n";
-    else
+    if (std::optional<LitDocString> docStr = getLitDocString(decl)) {
+      os << docStr->getSummary() << "\n\n" << tableOfContents;
+      for (StringRef descLine : docStr->getDescription())
+        os << descLine << "\n";
+    } else {
       os << tableOfContents;
+    }
 
     // Recursively generate documentation for the module's children.
     generateLitMarkdownForChildren(decl);
@@ -532,4 +520,231 @@ private:
 void M::KGEN::LIT::generateLitMarkdownDoc(ASTDecl &decl, raw_ostream &os) {
   MarkdownGenerator generator(os);
   generator.generate(decl);
+}
+
+//===----------------------------------------------------------------------===//
+// Verification
+//===----------------------------------------------------------------------===//
+
+namespace {
+class DocStringValidator {
+public:
+  DocStringValidator(LitSharedState &sharedState) : sharedState(sharedState) {}
+
+  void validate(ASTDecl &decl) {
+    std::optional<LitDocString> docStr = getLitDocString(decl);
+    if (docStr && !decl.hasReferenceError) {
+      TypeSwitch<ASTDecl &>(decl).Case<FuncOp, StructDeclOp>(
+          [&](auto op) { validateDecl(decl, op, *docStr); });
+    }
+  }
+
+private:
+  //===----------------------------------------------------------------------===//
+  // Utils
+
+  /// Process a document section of the given form:
+  ///
+  /// Header:
+  ///   Element1: ...
+  ///   Element2: ...
+  ///     ...
+  ///   ElementN: ...
+  ///
+  void
+  process2ColumnDocSection(ArrayRef<StringRef> &lines,
+                           function_ref<void(StringRef)> processEntryName) {
+    size_t sectionIndent = getIndentationLevel(lines[0]);
+    lines = lines.drop_front();
+    while (!lines.empty()) {
+      size_t lineIndent = getIndentationLevel(lines[0]);
+      if (lineIndent <= sectionIndent)
+        break;
+      processEntryName(lines[0].split(':').first.trim());
+
+      // Skip additional description lines that have a larger indentation.
+      do {
+        lines = lines.drop_front();
+      } while (!lines.empty() && getIndentationLevel(lines[0]) > lineIndent);
+    }
+  }
+
+  //===----------------------------------------------------------------------===//
+  // Arguments and Parameters
+
+  /// Process a parameter or argument section.
+  void processParamOrArgs(SMLoc loc, StringRef tag,
+                          llvm::MapVector<StringRef, bool> &elements,
+                          ArrayRef<StringRef> &lines) {
+    bool emittedUnexpectedOrderWarning = false;
+    ptrdiff_t nextEltIndex = 0;
+    process2ColumnDocSection(lines, [&](StringRef paramName) {
+      SMLoc paramLoc = SMLoc::getFromPointer(paramName.data());
+      size_t currentEltIndex = nextEltIndex++;
+
+      auto it = elements.find(paramName);
+      if (it == elements.end()) {
+        sharedState.emitWarning(paramLoc)
+            << "unknown " << tag << " '" << paramName << "' in doc string";
+        return;
+      }
+
+      // If we have already seen this element, emit a warning.
+      if (std::exchange(it->second, true)) {
+        sharedState.emitWarning(paramLoc)
+            << "duplicate " << tag << " '" << paramName << "' in doc string";
+        return;
+      }
+
+      // Ensure the elements are in the same order as the decl.
+      if (!emittedUnexpectedOrderWarning) {
+        size_t expectedEltIndex = it - elements.begin();
+        if (currentEltIndex != expectedEltIndex) {
+          sharedState.emitWarning(paramLoc)
+              << "'" << paramName << "' is defined at index "
+              << expectedEltIndex << ", but specified in doc string at index "
+              << currentEltIndex;
+          emittedUnexpectedOrderWarning = true;
+        }
+      }
+    });
+
+    // Emit warnings for any elements that were not documented.
+    for (auto &[element, seen] : elements) {
+      if (!seen) {
+        sharedState.emitWarning(loc)
+            << tag << " '" << element << "' is not documented";
+      }
+    }
+  }
+  void processArguments(SMLoc loc, llvm::MapVector<StringRef, bool> &elements,
+                        ArrayRef<StringRef> &lines) {
+    processParamOrArgs(loc, "argument", elements, lines);
+  }
+  void processParameters(SMLoc loc, llvm::MapVector<StringRef, bool> &elements,
+                         ArrayRef<StringRef> &lines) {
+    processParamOrArgs(loc, "parameter", elements, lines);
+  }
+
+  /// Process the sections within the given doc string description.
+  void processDocSections(ArrayRef<StringRef> &lines,
+                          DenseMap<StringRef, SMLoc> &sections,
+                          function_ref<void(StringRef, SMLoc)> processSection) {
+    for (; !lines.empty(); lines = lines.drop_front()) {
+      // Sections end with `:`.
+      StringRef section = lines[0];
+      if (!section.consume_back(":"))
+        continue;
+
+      // Check if this is a known section.
+      auto sectionIt = sections.find(section);
+      if (sectionIt == sections.end()) {
+        // Check to see if this is a known section that is just overindented.
+        section = section.ltrim();
+        sectionIt = sections.find(section);
+        if (sectionIt == sections.end())
+          continue;
+        sharedState.emitWarning(SMLoc::getFromPointer(section.data()))
+            << "section tag '" << section << "' is overindented";
+      }
+      SMLoc lineLoc = SMLoc::getFromPointer(section.data());
+      SMLoc &sectionLoc = sectionIt->second;
+
+      // If we have already seen this section, emit a warning.
+      if (sectionLoc.isValid()) {
+        auto diag = sharedState.emitWarning(
+            lineLoc, "duplicate '" + section + "' section found in doc string");
+        diag.attachNote(sectionLoc) << "see previous definition here";
+        continue;
+      }
+      sectionLoc = lineLoc;
+
+      // Process the section.
+      processSection(section, lineLoc);
+      if (lines.empty())
+        break;
+    }
+  }
+
+  //===----------------------------------------------------------------------===//
+  // Functions
+
+  /// Generate markdown documentation for the given function.
+  void validateDecl(ASTDecl &decl, FuncOp funcOp, LitDocString &docStr) {
+    SignatureType signature = funcOp.getSignature();
+    auto argNames = funcOp.getValueParamNames();
+    bool hasResultType = !funcOp.getResultType().isa<LIT::NoneType>();
+    if (!hasResultType && signature.hasMemoryOnlyResult()) {
+      argNames = argNames.drop_front();
+      hasResultType = true;
+    }
+
+    // If this is a method, drop the self argument. We don't expect this to be
+    // explicitly documented.
+    if (isa<StructDeclOp>(funcOp->getParentOp()) && !funcOp.getIsStatic())
+      argNames = argNames.drop_front();
+
+    // Grab the types of the arguments to the function.
+    llvm::MapVector<StringRef, bool> seenArguments;
+    for (StringAttr argName : argNames)
+      seenArguments.insert({argName, false});
+
+    // Grab the parameters to the function.
+    llvm::MapVector<StringRef, bool> seenParameters;
+    for (auto [index, value] : llvm::enumerate(funcOp.getInputParams()))
+      seenParameters.insert({value.getName(), false});
+
+    // Process the sections of the doc string.
+    DenseMap<StringRef, SMLoc> sections = {
+        {"Args", SMLoc()},
+        {"Parameters", SMLoc()},
+        {"Returns", SMLoc()},
+    };
+    ArrayRef<StringRef> description = docStr.getDescription();
+    auto processFn = [&](StringRef section, SMLoc loc) mutable {
+      if (section == "Args") {
+        processArguments(loc, seenArguments, description);
+      } else if (section == "Parameters") {
+        processParameters(loc, seenParameters, description);
+      } else if (section == "Returns") {
+        if (!hasResultType) {
+          sharedState.emitWarning(loc, "unexpected 'Returns' in doc string for "
+                                       "function with no results");
+        }
+      }
+    };
+    processDocSections(description, sections, processFn);
+  }
+
+  //===----------------------------------------------------------------------===//
+  // Structs
+
+  void validateDecl(ASTDecl &decl, StructDeclOp structOp,
+                    LitDocString &docStr) {
+    // Grab the parameters to the struct.
+    llvm::MapVector<StringRef, bool> seenParameters;
+    for (auto [index, value] : llvm::enumerate(structOp.getInputParams()))
+      seenParameters.insert({value.getName(), false});
+
+    // Process the sections of the doc string.
+    DenseMap<StringRef, SMLoc> sections = {
+        {"Parameters", SMLoc()},
+    };
+    ArrayRef<StringRef> description = docStr.getDescription();
+    auto processFn = [&](StringRef section, SMLoc loc) mutable {
+      if (section == "Parameters")
+        processParameters(loc, seenParameters, description);
+    };
+    processDocSections(description, sections, processFn);
+  }
+
+  /// Reference to the main shared state.
+  LitSharedState &sharedState;
+};
+} // namespace
+
+void M::KGEN::LIT::validateLitDocString(LitSharedState &sharedState,
+                                        ASTDecl &decl) {
+  DocStringValidator validator(sharedState);
+  validator.validate(decl);
 }

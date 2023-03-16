@@ -120,9 +120,10 @@ OwningOpRef<mlir::ModuleOp>
 M::importLitFile(SourceMgr &sourceMgr, MLIRContext *context,
                  mlir::TimingScope &ts, const KGEN::CompilationOptions &options,
                  bool useMLIRDiagnostics, LLCL::Runtime &runtime,
+                 bool validateDocStrings,
                  SmallVectorImpl<std::string> *includedFiles) {
   LitSharedState sharedState(sourceMgr, context, options, useMLIRDiagnostics,
-                             runtime);
+                             runtime, validateDocStrings);
   auto [module, topLevelDecl] =
       importLitFileImpl(sourceMgr, sharedState, ts, includedFiles);
   return std::move(module);
@@ -138,6 +139,7 @@ LogicalResult M::generateLitDoc(llvm::SourceMgr &sourceMgr,
   // string caring path.
   LitSharedState sharedState(sourceMgr, context, options,
                              /*useMLIRDiagnostics=*/false, runtime,
+                             /*validateDocStrings=*/false,
                              /*enableCaching=*/false);
   auto [module, moduleDecl] = importLitFileImpl(sourceMgr, sharedState, ts);
   if (!module)
