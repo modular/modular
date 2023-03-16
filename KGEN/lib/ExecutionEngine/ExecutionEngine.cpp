@@ -167,13 +167,12 @@ ExecutionEngine::create(const CompilationOptions &options) {
 
   std::optional<BufferRef> rtBuf = std::move(*orcRTBuf);
   std::string orcRTPath;
-  // TODO: (#10184) Turn this back on for ELF/NIX and MachO
-  if (!rtBuf.has_value() && tm->getTargetTriple().isOSBinFormatCOFF())
+
+  if (!rtBuf.has_value())
     return Error("could not find orc_rt in the cache");
 
-  if (rtBuf.has_value())
-    if (auto err = writeORCRTToFile(*rtBuf, orcRTPath))
-      return err.takeError();
+  if (auto err = writeORCRTToFile(*rtBuf, orcRTPath))
+    return err.takeError();
 
   // Define an optional error we can set to something if we hit an error in a
   // nested closure.

@@ -19,10 +19,10 @@ add_subdirectory(unittests)
 # cache_files(cache_a_file
 #             BASE_DIR ${MODULAR_DERIVED_PATH}/.kgen_cache/orc
 #             HEADER_NAME ${MODULAR_BINARY_DIR}/KGEN/include/KGEN/ExecutionEngine/ORCCASID.h
-#             INPUTS ${PATH_TO_ORC_RT}
-#             INPUT_NAMES "MODULAR_ORC_RT_CAS_ID")
+#             INPUT_NAMES "kOrcRT"
+#             RELATIVE_INSTALL_DIR ".kgen_cache/orc")
 function(cache_files target)
-  cmake_parse_arguments(CACHE_MGR "" "BASE_DIR;HEADER_NAME" "INPUTS;INPUT_NAMES" ${ARGN})
+  cmake_parse_arguments(CACHE_MGR "" "BASE_DIR;HEADER_NAME" "INPUTS;INPUT_NAMES;RELATIVE_INSTALL_DIR" ${ARGN})
   # Set the variables the script is gonna need.
   set(FILENAME ${CMAKE_CURRENT_BINARY_DIR}/hashes.out)
   set(OUTFILE ${CACHE_MGR_HEADER_NAME})
@@ -32,4 +32,7 @@ function(cache_files target)
   add_custom_target(${target} ALL
     COMMAND $<TARGET_FILE:cache-mgr> -base-dir=${CACHE_MGR_BASE_DIR} -input=${CACHE_MGR_INPUTS} -o=${CMAKE_CURRENT_BINARY_DIR}/hashes.out
     COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/ReadHashes.cmake)
+
+  install(DIRECTORY "${CACHE_MGR_BASE_DIR}/"
+    DESTINATION ${CACHE_MGR_RELATIVE_INSTALL_DIR})
 endfunction()

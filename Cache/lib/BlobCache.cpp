@@ -493,15 +493,21 @@ M::Cache::getDefaultBackendChain(LLCL::Runtime &runtime,
   std::error_code ec;
   std::filesystem::path base = cacheDir;
   if (!base.is_absolute()) {
-    // Default to be in the `.derived` folder if we can.
-    std::filesystem::path derived = std::filesystem::absolute(
-        llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH")
-            .value_or(MODULAR_DERIVED_DIR),
-        ec);
+
+    // Default to the .derived directory.
+    auto derivedOr = llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH");
+    if (derivedOr.has_value()) {
+      base = std::filesystem::absolute(*derivedOr, ec) / cacheDir;
+    } else {
+      // Check if MODULAR_INSTALL_DIR environment variable is set.
+      auto installOr = llvm::sys::Process::GetEnv("MODULAR_INSTALL_DIR");
+      if (installOr.has_value())
+        base = std::filesystem::absolute(*installOr, ec) / cacheDir;
+      else
+        base = std::filesystem::absolute(MODULAR_DERIVED_DIR, ec) / cacheDir;
+    }
     if (ec)
       return Error("getting absolute path to derived dir: " + ec.message());
-
-    base = derived / cacheDir;
   }
 
   // Erase everything that lives in basePath other than `base/version` if
