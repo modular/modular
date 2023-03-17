@@ -17,8 +17,7 @@ from TypeUtilities import rebind
 from Functional import unroll
 
 
-@adaptive
-fn transpose_inplace[
+fn _transpose_inplace_4x4[
     rows: __mlir_type.index,
     cols: __mlir_type.index,
     type: DType,
@@ -70,8 +69,7 @@ fn transpose_inplace[
     buf.simd_store[4](StaticIntTuple[2](3, 0), r3)
 
 
-@adaptive
-fn transpose_inplace[
+fn _transpose_inplace_8x8[
     rows: __mlir_type.index,
     cols: __mlir_type.index,
     type: DType,
@@ -153,8 +151,7 @@ fn transpose_inplace[
     buf.simd_store[8](StaticIntTuple[2](7, 0), r7)
 
 
-@adaptive
-fn transpose_inplace[
+fn _transpose_inplace_16x16[
     rows: __mlir_type.index,
     cols: __mlir_type.index,
     type: DType,
@@ -297,24 +294,35 @@ fn transpose_inplace[
     buf.simd_store[16](StaticIntTuple[2](15, 0), r15)
 
 
-@adaptive
+fn _transpose_inplace_naive[
+    rows: __mlir_type.index,
+    cols: __mlir_type.index,
+    type: DType,
+](buf: NDBuffer[2, create_kgen_list[__mlir_type.index](rows, cols), type]):
+    for i in range(rows):
+        for j in range(i + 1, cols):
+            let tmp = buf[i, j]
+            buf[StaticIntTuple[2](i, j)] = buf[j, i]
+            buf[StaticIntTuple[2](j, i)] = tmp
+
+
 fn transpose_inplace[
     rows: __mlir_type.index,
     cols: __mlir_type.index,
     type: DType,
 ](buf: NDBuffer[2, create_kgen_list[__mlir_type.index](rows, cols), type]):
     # Reject sizes covered by specialized implementations
-    assert_param[rows != 4]()
-    assert_param[cols != 4]()
-    assert_param[rows != 8]()
-    assert_param[cols != 8]()
-    assert_param[rows != 16]()
-    assert_param[cols != 16]()
-    for i in range(rows):
-        for j in range(i + 1, cols):
-            let tmp = buf[i, j]
-            buf[StaticIntTuple[2](i, j)] = buf[j, i]
-            buf[StaticIntTuple[2](j, i)] = tmp
+    assert_param[rows == cols]()
+
+    @parameter
+    if rows == 4:
+        _transpose_inplace_4x4[rows, cols, type](buf)
+    elif rows == 8:
+        _transpose_inplace_8x8[rows, cols, type](buf)
+    elif rows == 16:
+        _transpose_inplace_16x16[rows, cols, type](buf)
+    else:
+        _transpose_inplace_naive[rows, cols, type](buf)
 
 
 fn _permute_data[
