@@ -53,7 +53,7 @@ static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
   // Isolate the region from above.
   llvm::SetVector<Value> allCaptures;
   SmallVector<Value> captures;
-  (void)operationIsIsolatedFromAbove(op, &allCaptures);
+  mlir::getUsedValuesDefinedAbove(op->getRegions(), allCaptures);
   Region &body = op.getBodyRegion();
   for (Value capture : allCaptures) {
     Operation *capturingOp = capture.getDefiningOp();
@@ -69,8 +69,7 @@ static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
       // Otherwise these are captured variables and we need to pass them as
       // arguments to the block body.
       BlockArgument arg = body.addArgument(capture.getType(), capture.getLoc());
-      capture.replaceUsesWithIf(
-          arg, [&](OpOperand &use) { return op->isAncestor(use.getOwner()); });
+      mlir::replaceAllUsesInRegionWith(capture, arg, op.getBodyRegion());
       captures.push_back(capture);
     }
   }
