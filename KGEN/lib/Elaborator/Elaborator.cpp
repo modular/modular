@@ -18,6 +18,7 @@
 #include "KGEN/KGENDialect/KGENDType.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENPasses.h"
+#include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LowerToObject.h"
 #include "LLCL/CompilerSupport/AsyncSideEffectMap.h"
 #include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
@@ -25,6 +26,7 @@
 #include "LLCL/Support/Semaphore.h"
 #include "SelectFastestFunction.h"
 #include "Support/Compiler/OperationUtils.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "Support/HLCFDialect/HLCFOps.h"
 #include "Support/STLExtras.h"
@@ -241,6 +243,12 @@ public:
   /// Keep track of the nested parameter scopes within this op. This is optional
   /// because for example, the root module does not have one of these.
   std::optional<ParameterUseDefGraph> paramGraph;
+
+  /// Set of known parameter regions. Maps a string attr (name) to a
+  /// ParameterUseDefGraph for the original region in its original context. This
+  /// is needed because we inline the region directly and collect the ops we
+  /// need to process from the original region.
+  DenseMap<StringAttr, ParameterUseDefGraph *> knownRegions;
 
   /// Parent node. This is useful for setting parameters on the parent's scope,
   /// for example. Each node must have one parent.
@@ -488,6 +496,11 @@ void ExpansionTreeNode::print(mlir::raw_indented_ostream &os,
       os << "InputParams: " << inputParams << "\n";
     if (resultParams && !resultParams.empty())
       os << "ResultParams: " << resultParams << "\n";
+    {
+      auto regionScope = os.scope("Known Regions: {\n", "}\n");
+      for (auto &[name, _] : knownRegions)
+        os << name << "\n";
+    }
   }
 
   // Print the bindings only if requested - this is so we don't recurse
@@ -688,6 +701,90 @@ static std::optional<ErrorTree> processGenericOp(IREvaluator &evaluator,
 }
 
 //===----------------------------------------------------------------------===//
+// inlineCallToConcreteRegion
+//===----------------------------------------------------------------------===//
+
+/// Inline a call to a concretized region. This will clone the ops from the
+/// callee into the caller, it replaces the call's uses with the inlined values,
+/// and it erases the call. This also handles async calls correctly by creating
+/// an AsyncExecuteOp and inlining the body into that.
+static void inlineCallToConcreteRegion(KGENCallOpInterface call, Region *callee,
+                                       IRMapping &map,
+                                       AlwaysInlineLevel alwaysInlineLevel) {
+  assert(callee->hasOneBlock() &&
+         "callee region must resolve to a single block");
+
+  OpBuilder b(call);
+  if (auto asyncCall = dyn_cast<LIT::AsyncCallOp>(call.getOperation())) {
+    auto asyncExec =
+        b.create<LIT::AsyncExecuteOp>(call.getLoc(), asyncCall.getType());
+    b.createBlock(&asyncExec->getRegions().front());
+  }
+
+  for (auto [callArg, genArg] :
+       llvm::zip(call->getOperands(), callee->getArguments()))
+    map.map(map.lookupOrDefault(genArg), callArg);
+
+  Operation *terminator = callee->front().getTerminator();
+  // Handle debug info as we clone.
+  for (Operation &op : callee->front()) {
+    // Don't copy DebugInfo::ValueOp ops when we have no debug info.
+    if (auto value = dyn_cast<DebugInfo::ValueOp>(&op);
+        value && alwaysInlineLevel == AlwaysInlineLevel::EnabledNoDebug)
+      continue;
+
+    Operation *cloned = b.clone(op, map);
+    // Walk the cloned op because there might be many ops within it.
+    cloned->walk([&](Operation *clonedOp) {
+      // Erase nested DebugInfo::ValueOp.
+      if (isa<DebugInfo::ValueOp>(clonedOp))
+        return clonedOp->erase();
+
+      // Update locations to be CallSiteLoc.
+      if (alwaysInlineLevel == AlwaysInlineLevel::EnabledNoDebug)
+        clonedOp->setLoc(call.getLoc());
+      else
+        clonedOp->setLoc(
+            mlir::CallSiteLoc::get(clonedOp->getLoc(), call.getLoc()));
+    });
+  }
+
+  Operation *returnOp = map.lookup(terminator);
+  // If the remapped return isn't parented under the call's region, then we know
+  // it's inside another scope - so use the results of that scope.
+  if (returnOp->getParentRegion() != call->getParentRegion()) {
+    // Replace the returnOp with a LIT::AsyncReturnOp.
+    returnOp->replaceAllUsesWith(b.create<LIT::AsyncReturnOp>(
+        returnOp->getLoc(), returnOp->getOperands()));
+    // And replace the call uses with the results of the AsyncExecuteOp itself.
+    call->replaceAllUsesWith(
+        returnOp->getParentOfType<LIT::AsyncExecuteOp>()->getResults());
+  } else {
+    call->replaceAllUsesWith(returnOp->getOperands());
+  }
+
+  returnOp->erase();
+  call->erase();
+}
+
+//===----------------------------------------------------------------------===//
+// getMangledRegionParamName
+//===----------------------------------------------------------------------===//
+
+/// Mangles a region parameter's name with its func parent in order to get a
+/// unique name. This is necessary because we need to ensure we inline the
+/// region from the correct parent when we're doing inlining.
+static StringAttr getMangledRegionParamName(ParamDeclareRegionOp decl) {
+  auto parentFunc = decl->getParentOfType<FuncOp>();
+  assert(parentFunc && "The parent must be a FuncOp");
+  // Construct a name from the region's parameter decl and the parent func. This
+  // is required to ensure we get the right region when we resolve it.
+  std::string paramName = decl.getParamDecl().getName().getValue().str() + "_" +
+                          parentFunc.getNameAttr().getValue().str();
+  return StringAttr::get(decl.getContext(), paramName);
+}
+
+//===----------------------------------------------------------------------===//
 // completeCallProcessing
 //===----------------------------------------------------------------------===//
 
@@ -842,7 +939,8 @@ static void collectOpsToProcess(Region *scope, const ParameterUseDefGraph &uses,
   // graph. Process the parameters in reverse: the same operation can define
   // multiple parameters, so punt those according to their most dominated
   // definition.
-  opsToRewrite.reserve(uses.params.size() + uses.paramOps.size());
+  opsToRewrite.reserve(opsToRewrite.size() + uses.params.size() +
+                       uses.paramOps.size());
   llvm::SetVector<Operation *, SmallVector<Operation *, 8>,
                   SmallPtrSet<Operation *, 8>>
       defOps;
@@ -1308,6 +1406,41 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
 
     topLevelTrees[{calleeOp, inputParamKey}] = calleeNode;
 
+    // Set the region parameters on the callee by performing the name rebind and
+    // handling any parameter captures. This can't be pushed into
+    // specializeGenerator below because it requires passing specific values
+    // from the caller's node to the callee's node.
+    for (ParamBindAttr bind : calleeSymbol.getParamValues()) {
+      ErrorTreeOr<Attribute> attrValue =
+          parent->evaluator.concretizeParameterExpr(user.getLoc(),
+                                                    bind.getValue());
+      if (attrValue.isError())
+        return attrValue.takeError();
+
+      Attribute value = attrValue.takeValue();
+      if (auto region = dyn_cast<RegionAttr>(value)) {
+        // Set the known regions correctly by updating the name.
+        ParameterUseDefGraph *graph =
+            parent->knownRegions.lookup(region.getRegionName());
+        calleeNode->knownRegions[region.getRegionName()] = graph;
+
+        // And make sure the evaluator has the rebound value.
+        calleeNode->evaluator.setOrOverwriteParameterValue(bind.getName(),
+                                                           region);
+
+        // Do the same for any potential parameter captures.
+        for (ParamDeclRefAttr param : graph->usesFromAbove) {
+          ErrorTreeOr<Attribute> attr =
+              parent->evaluator.concretizeParameterExpr(user.getLoc(), param);
+          if (attr.isError())
+            return attr.takeError();
+
+          calleeNode->evaluator.setOrOverwriteParameterValue(param.getName(),
+                                                             *attr);
+        }
+      }
+    }
+
     if (isa<GeneratorOp>(calleeOp)) {
       if (auto err = specializeGenerator(calleeNode))
         return err;
@@ -1458,49 +1591,34 @@ ElaboratorImpl::processCallOp(KGENCallOpInterface call,
         call.getLoc(),
         "concrete parameter must be a SymbolConstantAttr or a RegionAttr");
 
-  // If we have a region, then we gotta inline it.
-  auto paramDef = parent->paramGraph->defs.find(decl.getRegionName());
-  if (paramDef == parent->paramGraph->defs.end())
-    return ErrorTree(
-        call.getLoc(),
-        "could not find the parameter definition for the provided decl.");
-
   // OK we found a region, put it into the machinery.
-  Region *region =
-      &cast<ParamDeclareRegionOp>(paramDef->getSecond().defOp).getBodyRegion();
+  ParameterUseDefGraph *regionGraph =
+      parent->knownRegions.lookup(decl.getRegionName());
+  Region *region = regionGraph->scope;
+  LLVM_DEBUG(logger.logOp("Inlining call to parameter region:",
+                          region->getParentOp()));
 
-  auto found = parent->paramGraph->nestedScopes.find(region);
-  if (found == parent->paramGraph->nestedScopes.end())
-    return ErrorTree(
-        call.getLoc(),
-        "could not find the parameter graph for the nested region");
+  // Inline the call now. We clone them now so that we don't modify the original
+  // region in case it's re-used.
+  IRMapping map;
+  inlineCallToConcreteRegion(call, region, map, AlwaysInlineLevel::Enabled);
 
   // Set any bindings on the region in the evaluator context.
   for (ParamBindAttr bind : decl.getParamValues())
-    parent->evaluator.setParameterValue(bind.getName(), bind.getValue());
+    parent->evaluator.setOrOverwriteParameterValue(bind.getName(),
+                                                   bind.getValue());
 
-  // Collect all the ops to process.
-  std::vector<Operation *> opsToRewrite;
-  collectOpsToProcess(region, found->second, opsToRewrite);
-  llvm::append_range(opsToRewrite, found->second.paramOps);
+  // Collect all the ops to process *in the region*.
+  std::vector<Operation *> opsToRewriteInRegion;
+  collectOpsToProcess(region, *regionGraph, opsToRewriteInRegion);
+  llvm::append_range(opsToRewriteInRegion, regionGraph->paramOps);
+  auto opsToRewrite = map_to_vector(
+      opsToRewriteInRegion, [&](Operation *op) { return map.lookup(op); });
 
   // Process the ops we just collected.
   if (failed(processScope(parent, opsToRewrite)))
     return parent->error->copy();
 
-  // Grab the terminator before we clone the ops over.
-  Operation *regionTerminator = region->front().getTerminator();
-  // Clone the operations to just before the call.
-  IRMapping map;
-  OpBuilder builder(call);
-  for (Operation &op : region->front())
-    builder.clone(op, map);
-
-  // And we're done; RAUW the call's results, erase the call_param op, and
-  // erase the region terminator that was cloned over.
-  call->replaceAllUsesWith(map.lookup(regionTerminator)->getOperands());
-  call.erase();
-  map.lookup(regionTerminator)->erase();
   return std::nullopt;
 }
 
@@ -1513,12 +1631,24 @@ ElaboratorImpl::processCallOp(KGENCallOpInterface call,
 std::optional<ErrorTree>
 ElaboratorImpl::processParamDeclareRegionOp(ParamDeclareRegionOp regionDecl,
                                             ExpansionTreeNode *parent) {
+  StringAttr regionName = getMangledRegionParamName(regionDecl);
   // Set the region's parameter decl as the value for this name. That will
   // signal to the call_param handler that it needs to inline the region it
-  // finds for that decl.
+  // finds for that decl. The region attr itself holds onto a bit that knows if
+  // the region is isolated from above (in SSA-land) or not.
   parent->evaluator.setOrOverwriteParameterValue(
       regionDecl.getParamDecl().getName(),
-      RegionAttr::get(regionDecl.getParamDecl(), false));
+      RegionAttr::get(
+          regionName, {},
+          BoolAttr::get(regionDecl.getContext(),
+                        operationIsIsolatedFromAbove(regionDecl)),
+          cast<SignatureType>(regionDecl.getParamDecl().getType())));
+  auto found =
+      parent->paramGraph->nestedScopes.find(&regionDecl.getBodyRegion());
+  assert(found != parent->paramGraph->nestedScopes.end() &&
+         "must have a nested region");
+  LLVM_DEBUG(logger << "Storing known region: " << regionName << "\n");
+  parent->knownRegions[regionName] = &found->getSecond();
   return std::nullopt;
 }
 
@@ -1807,6 +1937,7 @@ ElaboratorImpl::specializeGenerator(ExpansionTreeNode *genNode) {
   auto newFuncNode =
       ExpansionTreeNode::create(newFunc, genNode->inputParams, genNode,
                                 evaluator, genNode->expansionDepth);
+  newFuncNode->knownRegions = genNode->knownRegions;
 
   // Inflate the function and then specialize it.
   asyncMap.mapChained(
@@ -1930,11 +2061,13 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
   // Perform any renaming at the end.  We cannot use the
   // SymbolTable::replaceAllSymbolUses method, because it doesn't tolerate
   // unregistered operations.  It also doesn't support batch renaming.
-  theModule->walk([&](Operation *op) {
+  theModule->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) -> WalkResult {
     // If this op is a ParamDeclareRegionOp, delete it. It must be fully handled
     // at this phase.
-    if (auto regionParam = dyn_cast<ParamDeclareRegionOp>(op))
-      return regionParam.erase();
+    if (auto regionParam = dyn_cast<ParamDeclareRegionOp>(op)) {
+      regionParam.erase();
+      return WalkResult::skip();
+    }
 
     // If this is a func being renamed, rename it.
     if (auto func = dyn_cast<FuncOp>(op)) {
@@ -1945,7 +2078,7 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
         func.setSymNameAttr(newName);
         symtab.insert(func, op->getIterator());
       }
-      return;
+      return WalkResult::advance();
     }
 
     // If this is a reference to a function that got renamed, update its
@@ -1958,6 +2091,7 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
         op.setCalleeAttr(SymbolConstantAttr::get(
             FlatSymbolRefAttr::get(newName), callee.getType()));
     });
+    return WalkResult::advance();
   });
 
   // Update the debug info for everything now that we've done renaming etc.
