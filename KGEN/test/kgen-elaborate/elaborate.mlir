@@ -1897,6 +1897,49 @@ kgen.generator @pointer_attr_elaborate() {
   kgen.return
 }
 
+// -----
+
+// COM: This test checks that we can inline a non-capturing region into a callee
+// COM: that takes it as a parameter without needing to inline the callee.
+
+// CHECK-LABEL: func @"dont_inline_me
+kgen.generator @dont_inline_me<T: type, input: (!kgen.paramref<T>) -> ()>(%arg0: !kgen.paramref<T>) {
+  // CHECK-NEXT: index.add %arg0, %arg0
+  kgen.call_param[(!kgen.paramref<T>) -> (): input](%arg0)
+  kgen.return
+}
+
+// CHECK-LABEL: func @"dont_inline_me_2
+kgen.generator @dont_inline_me_2<T: type, input: (!kgen.paramref<T>) -> ()>(%arg0: !kgen.paramref<T>) {
+  // CHECK-NEXT: index.add %arg0, %arg0
+  kgen.call_param[(!kgen.paramref<T>) -> (): input](%arg0)
+  kgen.return
+}
+
+// CHECK-LABEL: func @caller
+kgen.generator @caller(%arg0 : index) {
+  // CHECK-NEXT: kgen.param.constant = <1>
+  %0 = kgen.param.constant = <1>
+  kgen.param.declare.region foo = (%arg: index) -> () {
+    %2 = index.add %arg, %arg
+    kgen.return
+  }
+  kgen.param.declare callee : () -> () = <
+    bind_signature(:<T: type, input: (!kgen.paramref<T>) -> ()>(!kgen.paramref<T>) -> () @dont_inline_me, index, foo)
+  >
+  // CHECK-NEXT: kgen.call @"dont_inline_me
+  kgen.call_param[(index) -> (): callee](%0)
+  kgen.param.declare callee2 : () -> () = <
+      bind_signature(:<T: type, input: (!kgen.paramref<T>) -> ()>(!kgen.paramref<T>) -> () @dont_inline_me_2, index, foo)
+    >
+  // CHECK-NEXT: kgen.call @"dont_inline_me_2
+  kgen.call_param[(index) -> (): callee2](%0)
+  // CHECK-NEXT: kgen.return
+  kgen.return
+}
+
+// -----
+
 // COM: https://github.com/modularml/modular/issues/9745
 
 // CHECK-LABEL: kgen.func @true_inside_false_param_if
