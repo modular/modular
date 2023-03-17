@@ -17,6 +17,7 @@ add_modular_unittest(
   BlobCacheTest.cpp
   BufferTest.cpp
   CachedTransformTest.cpp
+  KeyTest.cpp
 
   LINK_LIBS PRIVATE
   CacheDialect
