@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/ExecutionEngine.h"
+#include "Cache/Support/Keys.h"
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/ExecutionEngine/ORCCASID.h"
 #include "KGEN/LowerToObject.h"
@@ -37,14 +38,7 @@ static constexpr StringLiteral platformStdlibName = "$platform-stdlib";
 // ExecutionEngine implementation
 //===----------------------------------------------------------------------===//
 
-namespace {
-/// Provide a key that doesn't do any hashing - we only want to read things from
-/// keys provided to this.
-struct ReadOnlyKey {
-  using KeyTy = StringRef;
-  static std::string hashKey(KeyTy key) { return key.str(); }
-};
-} // namespace
+using Keys::ReadOnlyKey;
 
 /// Write the orc_rt buffer to a temporary path so we can pass that path. This
 /// is a temporary work-around until COFF can be called with a memory buffer.
