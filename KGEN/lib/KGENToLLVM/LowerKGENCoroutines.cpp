@@ -13,6 +13,7 @@
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
+#include "mlir/Transforms/RegionUtils.h"
 
 using namespace M;
 using namespace KGEN;
@@ -508,7 +509,7 @@ lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
 
   // Outline the body of the await into a function.
   llvm::SetVector<Value> uniqueCaptures;
-  (void)operationIsIsolatedFromAbove(op, &uniqueCaptures);
+  mlir::getUsedValuesDefinedAbove(op->getRegions(), uniqueCaptures);
   std::vector<Value> captures = uniqueCaptures.takeVector();
 
   Block *awaitBody = &op.getBody().front();
@@ -532,9 +533,7 @@ lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
       capture = b.create<mlir::UnrealizedConversionCastOp>(captureType, capture)
                     .getResult(0);
     }
-    valueInBody.replaceUsesWithIf(arg, [&](OpOperand &use) {
-      return op->isProperAncestor(use.getOwner());
-    });
+    mlir::replaceAllUsesInRegionWith(valueInBody, arg, op.getRegion());
   }
 
   b.clearInsertionPoint();

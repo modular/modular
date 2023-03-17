@@ -17,6 +17,7 @@
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Verifier.h"
+#include "mlir/Transforms/RegionUtils.h"
 #include "llvm/Support/Debug.h"
 
 using namespace M;
@@ -73,7 +74,8 @@ void OutlineClosuresPass::runOnOperation() {
 
       // Value captures are easy (ish)
       llvm::SetVector<Value> captures;
-      bool isolated = M::operationIsIsolatedFromAbove(regionDecl, &captures);
+      mlir::getUsedValuesDefinedAbove(regionDecl->getRegions(), captures);
+      bool isolated = captures.empty();
 
       // If the body is not isolated from above *and* it's not marked
       // always_inline, emit an error.
@@ -108,7 +110,8 @@ void OutlineClosuresPass::runOnOperation() {
       // lifted generator.
       llvm::SetVector<ParamDeclAttr> necessaryDecls;
       SmallVector<ParamDeclRefAttr> capturedParamValues;
-      auto regionDeclUses = uses.nestedScopes.find(&regionDecl.getBodyRegion());
+      Region &region = regionDecl.getBodyRegion();
+      auto regionDeclUses = uses.nestedScopes.find(&region);
       assert(regionDeclUses != uses.nestedScopes.end());
 
       // Scan the captured values for captured parameters.
@@ -143,9 +146,9 @@ void OutlineClosuresPass::runOnOperation() {
 
       // The value signature is pretty simple here, just captures and then any
       // original arguments.
-      SmallVector<Value> liftedInputs = llvm::to_vector(captures);
-      llvm::append_range(liftedInputs,
-                         regionDecl.getBodyRegion().getArguments());
+      SmallVector<Value> liftedInputs =
+          llvm::to_vector(ValueRange(region.getArguments()));
+      llvm::append_range(liftedInputs, captures);
       LLVM_DEBUG(llvm::dbgs() << "Lifted region will take inputs: [\n\t";
                  llvm::interleave(liftedInputs, llvm::dbgs(), ",\n\t");
                  llvm::dbgs() << "\n]\n");
@@ -181,31 +184,15 @@ void OutlineClosuresPass::runOnOperation() {
       auto liftedSymbol = SymbolConstantAttr::get(
           SymbolRefAttr::get(lifted.getSymNameAttr()), liftedSignature);
 
-      // Create the generator's body.
-      if (!isolated) {
-        // Not isolated, so we have to clone the ops in so we can remap
-        // arguments.
-        auto *newBody = new Block;
-        IRMapping map;
-        // Handle the captures first.
-        for (Value capture : captures)
-          map.map(capture,
-                  newBody->addArgument(capture.getType(), capture.getLoc()));
-
-        // Then handle the original SSA arguments.
-        for (Value prevArg : regionDecl.getArguments())
-          map.map(prevArg,
-                  newBody->addArgument(prevArg.getType(), prevArg.getLoc()));
-
-        b.setInsertionPointToStart(newBody);
-        for (Operation &op : regionDecl.getOps())
-          b.clone(op, map);
-
-        lifted.getBodyRegion().push_back(newBody);
-      } else {
-        // Take the body from the param region.
-        lifted.getBodyRegion().takeBody(regionDecl.getBodyRegion());
+      // Create the generator's body. Start by handling any captures inside the
+      // region.
+      for (Value capture : captures) {
+        mlir::replaceAllUsesInRegionWith(
+            capture, region.addArgument(capture.getType(), capture.getLoc()),
+            region);
       }
+      // Take the body from the param region.
+      lifted.getBodyRegion().takeBody(region);
       LLVM_DEBUG(llvm::dbgs() << "Created lifted region: " << lifted << "\n");
 
       LLVM_DEBUG({
@@ -231,10 +218,18 @@ void OutlineClosuresPass::runOnOperation() {
       auto wrapperSymbol = SymbolConstantAttr::get(
           SymbolRefAttr::get(liftedWrapper.getNameAttr()), wrapperSignature);
 
-      // Fill the body of the wrapper.
+      // Add the original arguments to the call after the captures. Since the
+      // captures are the last N arguments, we can simply drop them.
       liftedWrapper.getBodyRegion().push_back(new Block);
       b.setInsertionPointToStart(liftedWrapper.getBody());
       SmallVector<Value> callArgs;
+      for (BlockArgument liftedArg :
+           llvm::drop_end(lifted.getArguments(), captures.size())) {
+        callArgs.push_back(liftedWrapper.getBodyRegion().addArgument(
+            liftedArg.getType(), liftedArg.getLoc()));
+      }
+
+      // Fill the body of the wrapper.
       if (!isolated) {
         assert(globalVar && structType &&
                "global variable name/type was undefined?");
@@ -245,14 +240,6 @@ void OutlineClosuresPass::runOnOperation() {
           callArgs.push_back(
               b.create<POP::StructExtractOp>(load.getLoc(), load, i));
         }
-      }
-
-      // Add the original arguments to the call after the captures. Since the
-      // captures are the first N arguments, we can simply drop them.
-      for (BlockArgument liftedArg :
-           llvm::drop_begin(lifted.getArguments(), captures.size())) {
-        callArgs.push_back(liftedWrapper.getBodyRegion().addArgument(
-            liftedArg.getType(), liftedArg.getLoc()));
       }
 
       // Create result parameter decls from the lifted region, and get decl refs
