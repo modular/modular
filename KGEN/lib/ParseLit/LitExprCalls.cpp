@@ -806,16 +806,19 @@ void OverloadFitness::diagnose(SignatureType signature,
          << " provided";
     return;
   case kArgCount:
-    diag << "callee expects " << payload << " arguments, but "
-         << operands.size() << " specified";
+    diag << "callee expects " << payload << " argument" << plural(payload)
+         << ", but " << operands.size() << " "
+         << plural(operands.size(), "was", "were") << " specified";
     return;
   case kArgTooFewAtLeast:
-    diag << "callee expects at least " << payload << " arguments, but only "
-         << operands.size() << " specified";
+    diag << "callee expects at least " << payload << " argument"
+         << plural(payload) << ", but " << operands.size() << " "
+         << plural(operands.size(), "was", "were") << " specified";
     return;
   case kArgTooManyAtMost:
-    diag << "callee expects at most " << payload << " arguments, but "
-         << operands.size() << " were specified";
+    diag << "callee expects at most " << payload << " argument"
+         << plural(payload) << ", but " << operands.size() << " "
+         << plural(operands.size(), "was", "were") << " specified";
     return;
   case kArgNotLValue:
     if (callable.syntax == CallSyntax::kMethodCall && payload == 0) {
