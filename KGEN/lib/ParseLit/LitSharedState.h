@@ -52,7 +52,7 @@ public:
   LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context,
                  const CompilationOptions &options, bool useMLIRDiagnostics,
                  LLCL::Runtime &runtime, bool validateDocStrings = false,
-                 bool enableCaching = true);
+                 bool enableCaching = false);
   ~LitSharedState();
 
   LitDiags diags; // Contains SourceMgr and MLIRContext pointers.
