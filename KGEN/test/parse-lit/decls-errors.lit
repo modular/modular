@@ -211,8 +211,8 @@ fn overloadIntF32(a: Int, b: Int): pass
 # expected-note @below {{argument #1 must be mutable in order to pass as a by-ref argument}}
 fn overloadIntF32(a: Int, b&: F32): pass
 
-# expected-note @below {{callee expects at least 3 arguments, but only 1 specified}}
-# expected-note @below {{callee expects at least 3 arguments, but only 2 specified}}
+# expected-note @below {{callee expects at least 3 arguments, but 1 was specified}}
+# expected-note @below {{callee expects at least 3 arguments, but 2 were specified}}
 # expected-note @below {{candidate declared here}}
 fn overloadIntF32(a: Int, b&: F32, c: Int, *args: Int): pass
 
@@ -229,6 +229,13 @@ struct TestOverloading:
     overloadIntF32(self)
     # expected-error @+1 {{no matching function in call}}
     overloadIntF32(a, b)
+
+
+# expected-note @+1 {{function declared here}}
+fn takesAtLeastOneInt(x: Int, *y: Int): pass
+fn badTakesAtLeastOneInt():
+  # expected-error @+1 {{callee expects at least 1 argument, but 0 were specified}}
+  takesAtLeastOneInt()
 
 
 struct ConvertibleFromInt:
