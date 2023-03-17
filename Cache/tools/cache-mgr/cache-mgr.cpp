@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Cache/BlobCache.h"
+#include "Cache/Support/Keys.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Support/UnknownLocationDecoder.h"
@@ -25,20 +26,7 @@ namespace {
 /// This provides a zero-copy binary blob cache key struct. The idea is that it
 /// should operate directly on Cache::BufferRef because that's what we use in
 /// this tool, and it should be simple to read/write.
-struct BinaryBlobCacheKey {
-  using KeyTy = std::variant<Cache::BufferRef, StringRef>;
-  static std::string hashKey(KeyTy key) {
-    if (std::holds_alternative<StringRef>(key))
-      return std::get<StringRef>(key).str();
-
-    auto &bytes = std::get<Cache::BufferRef>(key);
-
-    llvm::BLAKE3 hashState;
-    hashState.update(bytes->getBuffer());
-    auto hash = hashState.final();
-    return {hash.begin(), hash.end()};
-  }
-};
+using BinaryBlobCacheKey = Keys::VariantTypeKey<Cache::BufferRef, StringRef>;
 
 /// Describes an input file, or a cached object request. An input file is simply
 /// a path, while a cached object request is `<hash>:<output-path>`. This format
