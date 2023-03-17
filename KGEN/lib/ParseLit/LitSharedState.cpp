@@ -822,9 +822,8 @@ void LitSharedState::resolveModuleDependencies(ModuleState &moduleState,
                          moduleBuffer, output = output.copy(),
                          buf = buf.copy()]() mutable {
         if (failed(resolveDeclAndComputeDeps())) {
-          std::move(output).setToError(
-              LLCL::getMLIRDiagnostic("failed to resolved body",
-                                      moduleDecl.getIfOperation()->getLoc()));
+          std::move(output).setToError(LLCL::getMLIRDiagnostic(
+              "failed to resolve body", moduleDecl.getIfOperation()->getLoc()));
           return;
         }
 
