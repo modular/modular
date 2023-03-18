@@ -100,8 +100,8 @@ struct HostInfoWrapper {
 /// string back. Wrapping works like this.
 ///        1. Generate key with key generator
 ///        2. Call Wrappers::wrapKey(...) on generated key.
-///        4. Repeat for all wrappers with previous result.
-///        5. Once again hash the final accumulated string.
+///        3. Repeat for all wrappers with previous result.
+///        4. Once again hash the final accumulated string.
 /// Wrapping takes place in the order in which it is defined
 template <typename KeyGen, typename... Wrappers>
 class WrappedKey {
