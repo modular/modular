@@ -40,6 +40,10 @@ static raw_ostream &printStorage(raw_ostream &os,
     if (isDump)
       os << "MR: ";
     os << val;
+  } else if (auto val = dyn_cast<SBValue>(storage)) {
+    if (isDump)
+      os << "SB: ";
+    os << val;
   } else if (auto val = dyn_cast<MBValue>(storage)) {
     if (isDump)
       os << "MB: ";
@@ -77,6 +81,9 @@ raw_ostream &LIT::operator<<(raw_ostream &os, RValue value) {
 raw_ostream &operator<<(raw_ostream &os, LValue value) {
   return printStorage(os, value.getStorage());
 }
+raw_ostream &operator<<(raw_ostream &os, BValue value) {
+  return printStorage(os, value.getStorage());
+}
 raw_ostream &LIT::operator<<(raw_ostream &os, AnyValue value) {
   return printStorage(os, value.getStorage());
 }
@@ -88,6 +95,9 @@ void RValue::dump() const {
   printStorage(llvm::errs(), getStorage(), true) << '\n';
 }
 void LValue::dump() const {
+  printStorage(llvm::errs(), getStorage(), true) << '\n';
+}
+void BValue::dump() const {
   printStorage(llvm::errs(), getStorage(), true) << '\n';
 }
 void AnyValue::dump() const {
@@ -103,6 +113,8 @@ static ASTType getTypeFrom(AnyValue::Storage storage) {
     return value.getType();
   if (auto value = dyn_cast<MRValue>(storage))
     return value.getType();
+  if (auto value = dyn_cast<SBValue>(storage))
+    return value.getType();
   if (auto value = dyn_cast<MBValue>(storage))
     return value.getType();
   if (auto value = dyn_cast<SLValue>(storage))
@@ -115,6 +127,7 @@ static ASTType getTypeFrom(AnyValue::Storage storage) {
 
 ASTType CRValue::getType() const { return getTypeFrom(storage); }
 ASTType CValue::getType() const { return getTypeFrom(storage); }
+ASTType BValue::getType() const { return getTypeFrom(storage); }
 ASTType LValue::getType() const { return getTypeFrom(storage); }
 
 PRValue::PRValue(Type value)
@@ -150,6 +163,12 @@ ASTType CValue::getRValueType() const {
 
 ASTType LValue::getRValueType() const {
   if (isa<SLValue>(storage))
+    return getType().getPointerElementType();
+  return getType();
+}
+
+ASTType BValue::getRValueType() const {
+  if (isa<MBValue>(storage))
     return getType().getPointerElementType();
   return getType();
 }

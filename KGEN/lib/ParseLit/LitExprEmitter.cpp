@@ -284,9 +284,9 @@ RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
 
   // Finally, if this is a BValue emit a __clone__, a load for a
   // primitive MLIR type, or an error if neither approach works.
-  auto mbValue = value.ir.getIfMBValue();
-  assert(mbValue && "No other value types");
-  return emitLoadOfMBValue({mbValue, value.expr}, dest);
+  auto bValue = value.ir.getIfBValue();
+  assert(bValue && "No other value types");
+  return emitBValueToRValue({bValue, value.expr}, dest);
 }
 
 CValue ExprEmitter::emitCValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
@@ -326,29 +326,43 @@ LValue ExprEmitter::emitLValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   return {};
 }
 
-/// Given an MBValue, produce a standalone rvalue in the specified destination
-/// by emitting a load / clone.
-RValue ExprEmitter::emitLoadOfMBValue(ASTExprAnd<MBValue> value,
-                                      ValueDest &dest) {
-  auto loc = value.expr->getLocation(*this);
+/// Given an BValue, produce a standalone rvalue in the specified destination
+/// by emitting a clone call.
+RValue ExprEmitter::emitBValueToRValue(ASTExprAnd<BValue> value,
+                                       ValueDest &dest) {
+  if (!value.ir)
+    return {};
 
-  // If this is a primitive MLIR type, we can emit a direct load for it.
+  // If this is a trivial type, then we can emit a direct use/load for it.
+  // TODO: Generalize this beyond MLIR types to being a flag on register
+  // passable.
   ASTType rvalueType = value.ir.getRValueType();
   auto typeDecl = rvalueType.getDecl(shared);
   if (!typeDecl) {
-    if (!builder) {
-      emitError(loc, "cannot use a dynamic value in a parameter context")
-          << value.expr->getRange();
-      return {};
+    SRValue result;
+
+    if (auto sbVal = value.ir.getIfSBValue()) {
+      result = SRValue(sbVal);
+    } else {
+      if (!builder) {
+        emitError(value.expr->getLoc(),
+                  "cannot use a dynamic value in a parameter context")
+            << value.expr->getRange();
+        return {};
+      }
+      auto mbVal = value.ir.getIfMBValue();
+      assert(mbVal && "Unknown BValue");
+      result =
+          builder->create<POP::LoadOp>(value.expr->getLocation(*this), mbVal,
+                                       /*alignment=*/std::nullopt);
     }
-    auto result =
-        SRValue(builder->create<POP::LoadOp>(loc, value.ir,
-                                             /*alignment=*/std::nullopt));
-    return emitResult(result, value.expr, dest).getIfRValue();
+    auto res = emitResult(result, value.expr, dest);
+    assert(!res || res.getIfRValue());
+    return res.getIfRValue();
   }
 
   auto emitNoCloneError = [&]() {
-    auto diag = emitError(loc, "cannot clone this value: ")
+    auto diag = emitError(value.expr->getLoc(), "cannot clone this value: ")
                 << rvalueType << " doesn't implement '__clone__'"
                 << value.expr->getRange();
     diag.attachNote(typeDecl->getLoc()) << "type declared here";
@@ -360,18 +374,27 @@ RValue ExprEmitter::emitLoadOfMBValue(ASTExprAnd<MBValue> value,
   if (clone.isNull())
     return {};
 
+  // TODO(ownership): We cannot call clone with SBValue's due to the clone
+  // signature taking something byref.
+  if (auto sbVal = value.ir.getIfSBValue()) {
+    // WRONG: Dropping clone call.
+    auto res = emitResult(SRValue(sbVal), value.expr, dest);
+    assert(!res || res.getIfRValue());
+    return res.getIfRValue();
+  }
+
   // TODO(ownership): The signature for clone currently takes a byref self
   // so pass the pointer as an LValue even though it should be MBValue.  We
   // should eventually support decaying an LValue to MRValue, but we're not
   // ready for that.
-  ASTExprAnd<AnyValue> cloneArgValue{LValue(value.ir), value.expr};
+  auto mbVal = value.ir.getIfMBValue();
+  assert(mbVal && "Unknown BValue");
+  ASTExprAnd<AnyValue> cloneArgValue{LValue(mbVal), value.expr};
 
   // Ok, cool we know it will succeed; do it.
   auto result = clone.emitCall(cloneArgValue, dest, *this);
-  if (!result)
-    return {};
-  assert(result.getIfRValue() &&
-         "__clone__ is required to always return an RValue");
+  assert(!result || result.getIfRValue() &&
+                        "__clone__ is required to always return an RValue");
   return result.getIfRValue();
 }
 
@@ -409,7 +432,10 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
   // If we have a value in memory, load it.
   if (auto mrValue = value.getIfMRValue()) {
     // TODO: we should move from the value instead of clone+destroy it.
-    auto rv = emitLoadOfMBValue({MBValue(mrValue), expr}, dest);
+    // FIXME: can't this just emit a load from the memory directly if the RValue
+    // type is register primary because we own it?  Will need to check to see
+    // how the borrow checker handles this.
+    auto rv = emitBValueToRValue({MBValue(mrValue), expr}, dest);
     if (auto sr = rv.getIfSRValue())
       return sr;
     return emitSRValue({rv, expr}, context);
@@ -557,6 +583,8 @@ static AnyValue refineResultValue(AnyValue value, SMLoc loc,
     return MRValue(rebind(mrValue));
   if (auto mbValue = value.getIfMBValue())
     return MBValue(rebind(mbValue));
+  if (auto sbValue = value.getIfSBValue())
+    return SBValue(rebind(sbValue));
   auto srValue = value.getIfSRValue();
   assert(srValue && "Unknown value kind");
   return SRValue(rebind(srValue));
@@ -616,7 +644,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
   if (auto overloads = value.getIfORValue())
     return overloads->emitAsCRValue(*this, dest);
 
-  // If the value is an LValue or MBValue, concretize the result type
+  // If the value is an LValue or BValue, concretize the result type
   // or emit a load into the destination before further processing.
   if (!value.getIfRValue())
     return emitCRValue({value, expr}, dest);
@@ -667,7 +695,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
   // destination using MBValue -> RValue conversion.
   if (auto mrValue = crValue.getIfMRValue()) {
     dest = ValueDest(destLV, dest.getContext());
-    return emitLoadOfMBValue({MBValue(mrValue), expr}, dest);
+    return emitBValueToRValue({MBValue(mrValue), expr}, dest);
   }
 
   SLValue destPtr = destLV.getIfSLValue();
