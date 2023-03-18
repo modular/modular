@@ -338,12 +338,12 @@ struct DebugInfoToLLVMTypeConverter : public DebugInfo::DebugInfoTypeConverter {
       MLIRContext *ctx = structType.getContext();
 
       SmallVector<DebugInfo::DIMemberType> elementTypes;
-      for (auto &it : llvm::enumerate(structType.getBody())) {
+      for (auto [index, type] : llvm::enumerate(structType.getBody())) {
         // Build the member using a somewhat reasonable name given we don't have
         // a better one here.
         elementTypes.push_back(DebugInfo::DIMemberType::get(
-            StringAttr::get(ctx, "field_" + Twine(it.index())),
-            convertDebugType(it.value())));
+            StringAttr::get(ctx, "field_" + Twine(index)),
+            convertDebugType(type)));
       }
 
       StringRef name = structType.isIdentified() ? structType.getName() : "";

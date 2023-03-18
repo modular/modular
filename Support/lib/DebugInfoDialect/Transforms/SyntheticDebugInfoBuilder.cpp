@@ -224,7 +224,7 @@ void DebugInfoBuilder::buildDebugInfo(Operation *op) {
   // If we have a definition for this operation, use it to extract the names.
   if (const auto *opDef = asmState.getOpDef(op)) {
     unsigned numResultGroups = opDef->resultGroups.size();
-    for (auto &[index, resultGroup] : llvm::enumerate(opDef->resultGroups)) {
+    for (auto [index, resultGroup] : llvm::enumerate(opDef->resultGroups)) {
       // TODO: Support unnamed results?
       Optional<StringRef> name = getNameFromLoc(resultGroup.definition.loc);
       if (!name)

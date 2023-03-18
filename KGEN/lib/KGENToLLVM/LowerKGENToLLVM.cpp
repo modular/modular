@@ -226,9 +226,9 @@ static Value convertArgCallingConvention(ImplicitLocOpBuilder &b, Type type,
   // the struct from the flat arguments and return it.
   auto flattenArgumentStruct = [&](LLVM::LLVMStructType structTy) {
     Value result = b.create<LLVM::UndefOp>(structTy);
-    for (auto &type : llvm::enumerate(structTy.getBody())) {
-      Value value = convertArgCallingConvention(b, type.value(), body);
-      result = b.create<LLVM::InsertValueOp>(result, value, type.index());
+    for (auto [index, type] : llvm::enumerate(structTy.getBody())) {
+      Value value = convertArgCallingConvention(b, type, body);
+      result = b.create<LLVM::InsertValueOp>(result, value, index);
     }
     return result;
   };
@@ -265,9 +265,9 @@ static void flattenResultStruct(ImplicitLocOpBuilder &b,
                                 LLVM::LLVMStructType structTy, Value result,
                                 ArrayRef<BlockArgument> results,
                                 unsigned &idx) {
-  for (auto &type : llvm::enumerate(structTy.getBody())) {
-    Value value = b.create<LLVM::ExtractValueOp>(result, type.index());
-    if (auto nestedStruct = dyn_cast<LLVM::LLVMStructType>(type.value()))
+  for (auto [index, type] : llvm::enumerate(structTy.getBody())) {
+    Value value = b.create<LLVM::ExtractValueOp>(result, index);
+    if (auto nestedStruct = dyn_cast<LLVM::LLVMStructType>(type))
       flattenResultStruct(b, nestedStruct, value, results, idx);
     else
       b.create<LLVM::StoreOp>(value, results[idx++]);

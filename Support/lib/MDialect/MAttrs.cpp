@@ -351,9 +351,8 @@ static std::vector<uint8_t> packIntegerValues(unsigned width,
                 "unexpected integer type");
   unsigned byteSize = llvm::divideCeil(width, CHAR_BIT);
   std::vector<uint8_t> data(values.size() * byteSize, 0);
-  for (auto &it : llvm::enumerate(values))
-    llvm::StoreIntToMemory(it.value(), data.data() + (it.index() * byteSize),
-                           byteSize);
+  for (auto [index, value] : llvm::enumerate(values))
+    llvm::StoreIntToMemory(value, data.data() + (index * byteSize), byteSize);
   return data;
 }
 
