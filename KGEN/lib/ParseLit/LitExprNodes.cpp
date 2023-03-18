@@ -836,7 +836,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
         // TODO: We don't currently have array attrs for lists, but we use
         // NoneAttr to mark an empty list for operations with no result.
       } else if (auto typedAttr = dyn_cast<TypedAttr>(attr.getValue())) {
-        state.types.push_back(PRValue(typedAttr).getIfTypeValue());
+        state.types.push_back(ASTType(typedAttr).mlirType);
       } else {
         emitter.emitError(call.getLoc(), "unknown _type value");
         return {};

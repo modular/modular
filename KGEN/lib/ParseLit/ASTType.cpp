@@ -24,6 +24,24 @@ using namespace M::KGEN::LIT;
 // ASTType
 //===----------------------------------------------------------------------===//
 
+// Initialize an ASTType from a parameter expression of metatype type.
+ASTType::ASTType(TypedAttr typeParamExpr) {
+  if (!typeParamExpr) // Null attribute.
+    return;
+
+  // Avoid MLIRContext round trip in common case.
+  if (auto type = dyn_cast<TypeConstantAttr>(typeParamExpr)) {
+    mlirType = type.getValue();
+    return;
+  }
+
+  // If this is a parameter expression of type value, use ParamRefType to turn
+  // it into a type.
+  assert(isa<MLIRTypeType>(typeParamExpr.getType()) &&
+         "parameter expr must have metatype type");
+  mlirType = ParamRefType::get(typeParamExpr);
+}
+
 ASTDecl *ASTType::getDecl(LitSharedState &shared) const {
   if (auto declRef = dyn_cast<DeclRefType>(mlirType))
     return &shared.declResolver->getDeclForTypeSymbol(declRef.getSymbol());
@@ -66,19 +84,13 @@ bool ASTType::isRegisterPassable(SMLoc loc, LitSharedState &shared) const {
 /// Given a POP::PointerType, return the element as an ASTType.  This aborts
 /// if the current type isn't a pointer.
 ASTType ASTType::getPointerElementType() const {
-  TypedAttr attrType = llvm::cast<POP::PointerType>(mlirType).getElementType();
-  Type type = PRValue(attrType).getIfTypeValue();
-  assert(type && "should always resolve element type");
-  return type;
+  return ASTType(llvm::cast<POP::PointerType>(mlirType).getElementType());
 }
 
 /// Given a VariadicType, return the element as an ASTType.  This aborts if
 /// the current type isn't a VariadicType.
 ASTType ASTType::getVariadicElementType() const {
-  auto mValue = PRValue(cast<VariadicType>(mlirType).getElementType());
-  auto type = mValue.getIfTypeValue();
-  assert(type && "should always resolve element type");
-  return type;
+  return ASTType(cast<VariadicType>(mlirType).getElementType());
 }
 
 /// Convert this type to a human readable string representation so it can be
