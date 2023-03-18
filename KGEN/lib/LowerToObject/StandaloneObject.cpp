@@ -349,7 +349,7 @@ ErrorOr<BufferRef> ObjectCompiler::produceStandaloneArchive(bool isJIT) {
             // all into a single archive.
             SmallVector<llvm::NewArchiveMember> archiveMembers;
             SmallVector<std::string> archiveMemberNames(values.size());
-            for (auto &[index, result] : llvm::enumerate(values)) {
+            for (auto [index, result] : llvm::enumerate(values)) {
               BufferRef &buf = result.get<BufferRef>();
               archiveMemberNames[index] = (Twine(index) + ".o").str();
               archiveMembers.emplace_back(llvm::MemoryBufferRef(

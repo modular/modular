@@ -228,9 +228,9 @@ HLCF::lowerReturnOperationToLLVM(Operation *op, ValueRange operands,
   if (!type)
     return emitError(op->getLoc(), "failed to convert return types");
   Value result = rewriter.create<LLVM::UndefOp>(op->getLoc(), type);
-  for (auto &it : llvm::enumerate(operands)) {
-    result = rewriter.create<LLVM::InsertValueOp>(op->getLoc(), result,
-                                                  it.value(), it.index());
+  for (auto [index, operand] : llvm::enumerate(operands)) {
+    result = rewriter.create<LLVM::InsertValueOp>(op->getLoc(), result, operand,
+                                                  index);
   }
 
   // Create the LLVM return.

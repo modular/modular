@@ -320,10 +320,10 @@ ErrorOr<TypedAttr> SIMDType::readFrom(intptr_t addr,
 
 LogicalResult StructType::verify(function_ref<InFlightDiagnostic()> emitError,
                                  ArrayRef<TypedAttr> elementTypes) {
-  for (auto &elementType : llvm::enumerate(elementTypes)) {
-    if (!elementType.value().getType().isa<MLIRTypeType>())
-      return emitError() << "struct element type at index "
-                         << elementType.index() << " is not a !kgen.mlirtype";
+  for (auto [index, elementType] : llvm::enumerate(elementTypes)) {
+    if (!elementType.getType().isa<MLIRTypeType>())
+      return emitError() << "struct element type at index " << index
+                         << " is not a !kgen.mlirtype";
   }
   return success();
 }
