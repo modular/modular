@@ -37,6 +37,10 @@ public:
 
   // Implicitly convert to and from MLIR Type.
   ASTType(Type mlirType) : mlirType(mlirType) {}
+
+  // Initialize an ASTType from a parameter expression of metatype type.
+  ASTType(TypedAttr typeParamExpr);
+
   operator Type() const { return mlirType; }
 
   /// ASTType is nullable.
