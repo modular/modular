@@ -598,6 +598,17 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
       continue;
     }
 
+    // Arguments with a pack type must have a known number of element types,
+    // and so they require exactly that many arguments.
+    if (auto pack = dyn_cast<POP::PackType>(signature.getValueInputs()[idx])) {
+      auto attr = cast<VariadicAttr>(pack.getVariadic());
+      size_t numValues = attr.getValues().size();
+      minRequiredArgs += numValues;
+      maxAllowedargs += numValues;
+      continue;
+    }
+
+    // Otherwise, we have an ordinary argument that requires a value.
     ++minRequiredArgs;
     ++maxAllowedargs;
   }
@@ -666,7 +677,9 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
     }
 
     // Otherwise we'll check the expected type against one (or more in the case
-    // of varargs) provided values.
+    // of varargs or packs) of the provided values. This reports any problems
+    // with the operand type, or otherwise continues on to the next expected
+    // argument to check.
     auto checkOneOperand = [&](ASTType expectedType) -> OverloadFitness {
       // We'll bind the next provided value.
       auto operand = operands[providedValueIdx];
@@ -719,16 +732,9 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
       return {kValid, 0, ASTType(), newBindings};
     };
 
-    // In the typical case, this argument isn't varargs, just check it.
-    if (!signature.isVararg(expectedArgIdx)) {
-      // If there was a problem, report it, otherwise continue on to the next
-      // expected argument to check.
-      auto result = checkOneOperand(expectedType);
-      if (result.kind != kValid)
-        return result;
-    } else {
-      // If we have a varargs argument, then it will eat the rest of the
-      // arguments, but we have to check each of them.
+    // If we have a varargs argument, then it will eat the rest of the
+    // arguments, but we have to check each of them.
+    if (signature.isVararg(expectedArgIdx)) {
       auto varArgsEltType = ASTType(expectedType).getVariadicElementType();
       while (providedValueIdx != operands.size()) {
         auto result = checkOneOperand(varArgsEltType);
@@ -736,7 +742,26 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
           return result;
         passesVarargArgument = true;
       }
+      continue;
     }
+
+    // If we have a pack type, it must have a known number of elements, and so
+    // consumes exactly that number of arguments.
+    if (auto packType = dyn_cast<POP::PackType>(expectedType)) {
+      auto attr = cast<VariadicAttr>(packType.getVariadic());
+      for (TypedAttr element : attr.getValues()) {
+        OverloadFitness result = checkOneOperand(ASTType(element));
+        if (result.kind != kValid)
+          return result;
+      }
+      continue;
+    }
+
+    // Otherwise, we have an ordinary argument that is not varargs or a pack.
+    // Check it and move on to the next one.
+    auto result = checkOneOperand(expectedType);
+    if (result.kind != kValid)
+      return result;
   }
 
   assert(providedValueIdx == operands.size() &&
@@ -1548,8 +1573,8 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       continue;
     }
 
-    // If we ran out of operands, fulfill this with a default value or empty
-    // variadic list.
+    // If we ran out of operands, fulfill this with a default value, empty
+    // variadic list, or empty pack.
     if (nextOperandIdx == operands.size()) {
       // Varargs arguments are fulfilled with an empty !kgen.variadic list.
       if (calleeSig.isVararg(argIdx)) {
@@ -1558,6 +1583,16 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
         argumentValues.push_back({PRValue(variadic), callExpr});
         continue;
       }
+
+      // Pack arguments are fulfilled with an empty !pop.pack sequence.
+      if (auto packType = dyn_cast<POP::PackType>(expectedType)) {
+        assert(packType.isEmpty() &&
+               "pack type already checked against operand count");
+        auto pack = POP::PackAttr::get(ArrayRef<TypedAttr>(), packType);
+        argumentValues.push_back({PRValue(pack), callExpr});
+        continue;
+      }
+
       // Otherwise, apply the default argument. We've ensured above that we
       // have a default argument for each missing operand.
       argumentValues.push_back(
@@ -1567,7 +1602,8 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     }
 
     // Otherwise, we're applying one or more arguments to this.
-    auto emitOneArgVal = [&](ASTExprAnd<AnyValue> operand) -> AnyValue {
+    auto emitOneArgVal = [&](ASTExprAnd<AnyValue> operand,
+                             size_t sequenceIndex = 0) -> AnyValue {
       switch (convention) {
       case ValueInputConvention::ByRef:
       case ValueInputConvention::ByRefResult:
@@ -1578,11 +1614,18 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       case ValueInputConvention::OwnedInReg:
       case ValueInputConvention::OwnedInMem:
         // by-val arguments are converted to the expected r-value type.
-        // In the case of a variadic argument, we need to remove the
-        // !pop.varadic<> wrapper to get the type to convert to.
         ASTType expectedArgType = expectedType;
         if (calleeSig.isVararg(argIdx))
+          // In the case of a variadic argument, we need to remove the
+          // !pop.varadic<> wrapper to get the type to convert to.
           expectedArgType = expectedArgType.getVariadicElementType();
+        else if (auto packType =
+                     dyn_cast<POP::PackType>(expectedArgType.mlirType))
+          // Operands being applied to a concrete pack type argument must be
+          // converted to the pack element type at that index.
+          expectedArgType = cast<VariadicAttr>(packType.getVariadic())
+                                .getValues()[sequenceIndex];
+
         if (convention == ValueInputConvention::OwnedInMem)
           expectedArgType = expectedArgType.getPointerElementType();
 
@@ -1591,9 +1634,9 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       llvm_unreachable("unknown value input convention");
     };
 
-    // For a normal non-vararg argument, we just emit it and add it to our
-    // list.
-    if (!calleeSig.isVararg(argIdx)) {
+    // For a normal (not a vararg or a pack) argument, we just emit it and add
+    // it to our list.
+    if (!calleeSig.isVararg(argIdx) && !isa<POP::PackType>(expectedType)) {
       auto operand = operands[nextOperandIdx++];
       AnyValue argVal = emitOneArgVal(operand);
       if (!argVal)
@@ -1602,13 +1645,13 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       continue;
     }
 
-    // For variadic list, we need to emit all of the remaining operands.
-    // Emit all of the remaining values to make sure they're converted to
-    // the right type.
-    SmallVector<ASTExprAnd<AnyValue>> variadicOperands(
+    // For a variadic or pack sequence, we need to emit all of the remaining
+    // operands. Emit all of the remaining values to make sure they're converted
+    // to the right type.
+    SmallVector<ASTExprAnd<AnyValue>> remainingOperands(
         operands.begin() + nextOperandIdx, operands.end());
-    for (auto &operand : variadicOperands) {
-      auto emittedArg = emitOneArgVal(operand);
+    for (auto [idx, operand] : llvm::enumerate(remainingOperands)) {
+      auto emittedArg = emitOneArgVal(operand, idx);
       if (!emittedArg)
         return {};
       operand.ir = emittedArg;
@@ -1616,22 +1659,25 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     nextOperandIdx = operands.size();
 
     // If all of the operands are compile-time values, then we can represent
-    // the variadic sequence as an attribute.
-    if (std::all_of(variadicOperands.begin(), variadicOperands.end(),
+    // the sequence as an attribute.
+    if (std::all_of(remainingOperands.begin(), remainingOperands.end(),
                     [](auto operand) { return operand.ir.getIfPRValue(); })) {
-      SmallVector<TypedAttr> variadicArgs;
-      for (auto operand : variadicOperands)
-        variadicArgs.push_back(operand.ir.getIfPRValue().get());
-      auto argAttr =
-          VariadicAttr::get(variadicArgs, expectedType.cast<VariadicType>());
-      argumentValues.push_back({PRValue(argAttr), variadicOperands[0].expr});
+      SmallVector<TypedAttr> args;
+      for (auto operand : remainingOperands)
+        args.push_back(operand.ir.getIfPRValue().get());
+      Attribute attr;
+      if (calleeSig.isVararg(argIdx))
+        attr = VariadicAttr::get(args, expectedType.cast<VariadicType>());
+      else
+        attr = POP::PackAttr::get(args, expectedType.cast<POP::PackType>());
+      argumentValues.push_back({PRValue(attr), remainingOperands[0].expr});
       continue;
     }
 
     // If not all operands are compile-time values, use an operation to
-    // create a variadic sequence.
-    SmallVector<Value> variadicArgs;
-    for (auto &operand : variadicOperands) {
+    // create a variadic or pack sequence.
+    SmallVector<Value> args;
+    for (auto &operand : remainingOperands) {
       Value argVal;
       // Convert any PRValues to an SRValue for variadic create.
       if (convention == ValueInputConvention::OwnedInReg) {
@@ -1643,13 +1689,16 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       }
       if (!argVal)
         return {};
-      variadicArgs.push_back(argVal);
+      args.push_back(argVal);
     }
 
     Location loc = translateLocation(callExpr->getLoc());
-    Value argVal =
-        builder->create<POP::VariadicCreateOp>(loc, expectedType, variadicArgs);
-    argumentValues.push_back({SRValue(argVal), variadicOperands[0].expr});
+    Value argVal;
+    if (calleeSig.isVararg(argIdx))
+      argVal = builder->create<POP::VariadicCreateOp>(loc, expectedType, args);
+    else
+      argVal = builder->create<POP::PackCreateOp>(loc, expectedType, args);
+    argumentValues.push_back({SRValue(argVal), remainingOperands[0].expr});
   }
 
   assert(nextOperandIdx == operands.size() &&

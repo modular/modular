@@ -399,6 +399,11 @@ def POP_PackType : POPType<"Pack", "pack", [
       $variadic, "VariadicType::get(MLIRTypeType::get($_ctxt))") `>`
   }];
   let genVerifyDecl = 1;
+
+  let extraClassDeclaration = [{
+    /// Returns whether this is a concrete pack type with no elements.
+    bool isEmpty() const;
+  }];
 }
 
 //===----------------------------------------------------------------------===//
