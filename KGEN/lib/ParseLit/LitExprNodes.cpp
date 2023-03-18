@@ -1342,7 +1342,8 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       return {};
     }
     elementType = sigType.getValueInputs()[setValueIdx];
-    if (sigType.getInputConvention(setValueIdx) != ValueInputConvention::ByVal)
+    if (sigType.getInputConvention(setValueIdx) !=
+        ValueInputConvention::OwnedInReg)
       elementType = elementType.getPointerElementType();
   }
 

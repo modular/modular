@@ -985,7 +985,7 @@ static OptionalParseResult parseOptionalSignatureValues(
     StringRef effectStr;
     llvm::SMLoc loc = p.getCurrentLocation();
     // Parse an optional input convention specifier.
-    auto convention = ValueInputConvention::ByVal;
+    auto convention = ValueInputConvention::OwnedInReg;
     if (succeeded(p.parseOptionalKeyword(&effectStr))) {
       if (std::optional<ValueInputConvention> conv =
               symbolizeValueInputConvention(effectStr)) {
@@ -1073,7 +1073,7 @@ static void printSignatureValuesElt(AsmPrinter &p,
       [&](unsigned i) {
         printElt(i);
         ValueInputConvention conv = metadata.getInputConventions()[i];
-        if (conv != ValueInputConvention::ByVal)
+        if (conv != ValueInputConvention::OwnedInReg)
           p << ' ' << stringifyValueInputConvention(conv);
 
         // If a default argument value has been provided for the argument at

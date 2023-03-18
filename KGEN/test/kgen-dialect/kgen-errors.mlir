@@ -635,7 +635,7 @@ kgen.generator @apply_error<fn: () -> ()>() {
 // -----
 
 // expected-note @+1 {{callee declared here}}
-kgen.generator @callee(%byval: !pop.pointer<i32> byref) {
+kgen.generator @callee(%owned: !pop.pointer<i32> byref) {
   kgen.return
 }
 
@@ -643,7 +643,7 @@ kgen.generator @caller(%arg: !pop.pointer<i32>) {
   // Ok
   kgen.call @callee(%arg) : (!pop.pointer<i32> byref) -> ()
 
-  // expected-error @+1 {{symbol use metadata is #kgen.metadata<[byval], [], none> but @callee expected #kgen.metadata<[byref], [], none>}}
+  // expected-error @+1 {{symbol use metadata is #kgen.metadata<[owned], [], none> but @callee expected #kgen.metadata<[byref], [], none>}}
   kgen.call @callee(%arg) : (!pop.pointer<i32>) -> ()
   kgen.return
 }

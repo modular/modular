@@ -55,8 +55,8 @@ struct MemoryOnlyPair:
     return MemoryOnlyPair {x: self.x, y: self.y}
 
   # CHECK: lit.func @"method{{.*}}"(
-  # CHECK-SAME: %self: !pop.pointer<@"$expressions"::@MemoryOnlyPair> byval_in_mem,
-  # CHECK-SAME: %arg: !pop.pointer<@"$expressions"::@MemoryOnlyInt> byval_in_mem)
+  # CHECK-SAME: %self: !pop.pointer<@"$expressions"::@MemoryOnlyPair> owned_in_mem,
+  # CHECK-SAME: %arg: !pop.pointer<@"$expressions"::@MemoryOnlyInt> owned_in_mem)
   fn method(self, arg: MemoryOnlyInt):
     # CHECK: %0 = lit.struct.gep %self[y]
     # CHECK: %1 = kgen.call @"{{.*}}__clone__{{.*}}"(%0)
@@ -751,7 +751,7 @@ fn testMemoryOnlyIntArray(arr&: MemoryOnlyIntArray, x: Int, moi: MemoryOnlyInt):
 struct MyInlineIntInit:
     var intVal: MemoryOnlyInt
     # CHECK-LABEL: lit.func @"__init__($expressions::MyInlineIntInit=&,$expressions::MemoryOnlyInt)"
-    # CHECK-SAME: (%__result__: !pop.pointer<{{.*}}> byref_result, %intVal: {{.*}}byval_in_mem)
+    # CHECK-SAME: (%__result__: !pop.pointer<{{.*}}> byref_result, %intVal: {{.*}}owned_in_mem)
     fn __init__(intVal: MemoryOnlyInt) -> Self:
         # CHECK: %0 = lit.struct.gep %__result__[intVal]
         # CHECK: kgen.call {{.*}}__clone__{{.*}}(%0, %intVal)

@@ -43,8 +43,8 @@ public:
     /// This must be an instance method of a type.
     kInstMethod = 1 << 1,
 
-    /// On a method of struct, the self may be passed ByVal or ByRef.  This is
-    /// true for in-place operators like += / __iadd__.  This implies an
+    /// On a method of struct, the self may be passed OwnedInReg or ByRef.  This
+    /// is true for in-place operators like += / __iadd__.  This implies an
     /// instance method.
     kAllowByRefSelfInstMethod = (1 << 2) | kInstMethod,
 

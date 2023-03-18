@@ -295,10 +295,10 @@ private:
         astType = astType.getPointerElementType();
         typeSuffix = "&";
         break;
-      case ValueInputConvention::ByValInMem:
+      case ValueInputConvention::OwnedInMem:
         astType = astType.getPointerElementType();
         break;
-      case ValueInputConvention::ByVal:
+      case ValueInputConvention::OwnedInReg:
         break;
       }
     }
