@@ -477,33 +477,9 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   assert(decls.size() == 1 && "Only functions may be overloaded");
   ASTDecl &decl = *decls[0];
 
-  // Let declarations resolve to an rvalue.
-  if (auto letDecl = dyn_cast<LetRegDeclOp>(decl)) {
-    // TODO: Loading a 'let' value into an RValue is a semantic copy of the
-    // underlying value.  Unfortunately, we don't have a proper notion of
-    // rvalue references / borrows yet (they will come with a more baked out
-    // ownership model).  Thus the __clone__ operation takes a mutable
-    // reference as input, which cannot bind to a let value.
-    //
-    // As a stop-gap-for-now, just check to see if the value is copyable.  We
-    // cannot actually invoke the __clone__ operation if it exists, but at
-    // least we can ban copying of non-copyable values.
-    ASTType letType(letDecl.getType());
-    if (ASTDecl *letTypeDecl = letType.getDecl(emitter.shared)) {
-      // TODO: Unify this with the logic in emitRValue when __clone__ moves to
-      // taking a borrow instead of a mutable byref argument.
-      if (!OverloadSet(letType, "__clone__", this, CallSyntax::kMethodCall,
-                       emitter.shared, /*no error*/ {})) {
-        auto diag = emitter.emitError(getLoc(), "cannot clone this value: ")
-                    << letType << " doesn't implement '__clone__'"
-                    << getRange();
-        diag.attachNote(letTypeDecl->getLoc()) << "type declared here";
-        return {};
-      }
-    }
-
-    return emitter.emitResult(SRValue(letDecl.getResult()), this, dest);
-  }
+  // 'let' declarations resolve to an sbvalue if they are register_passable.
+  if (auto letDecl = dyn_cast<LetRegDeclOp>(decl))
+    return emitter.emitResult(SBValue(letDecl.getResult()), this, dest);
 
   // Variable references resolve to an MBValue or LValue addressing the
   // memory.
@@ -733,6 +709,8 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       return {};
     }
 
+    // We know that baseVal is a CValue, so handle all the cases.
+
     // If the base is an stored lvalue, then we can return an lvalue to the
     // field.
     if (SLValue baseLV = baseVal.getIfSLValue()) {
@@ -741,39 +719,50 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       return emitter.emitResult(SLValue(fieldPtr), this, dest);
     }
 
-    // TODO(dlvalue): project attr reference
-
-    // If the base is an MRValue or MBValue, reference the field as an
-    // MBValue so we lazy copy only the piece that is needed in the case of
-    // `x.y.z.w`
-    if (MRValue baseMRV = baseVal.getIfMRValue()) {
-      auto fieldPtr =
-          emitter.builder->create<StructGEPOp>(mlirLoc, baseMRV, fieldOp);
-      return emitter.emitResult(MBValue(fieldPtr), this, dest);
-    }
-    if (MBValue baseMRV = baseVal.getIfMBValue()) {
-      auto fieldPtr =
-          emitter.builder->create<StructGEPOp>(mlirLoc, baseMRV, fieldOp);
-      return emitter.emitResult(MBValue(fieldPtr), this, dest);
+    // TODO(dlvalue): project attr reference.
+    if (DLValue baseLV = baseVal.getIfDLValue()) {
+      // HACK: Doesn't propagate mutability.
+      baseVal = emitter.emitSRValue({baseVal, base}, EC_AttributeRefBase);
+      if (!baseVal)
+        return {};
     }
 
-    // If the base is an PRValue, emit a field extract as an PRValue.
+    // We know the baseVal is a BValue or CRValue.  Handle PRValue then decay to
+    // BValue.
+    assert(baseVal.getIfBValue() || baseVal.getIfCRValue());
     if (PRValue baseMV = baseVal.getIfPRValue()) {
       auto extractVal = LIT::StructExtractAttr::get(baseMV.get(), fieldOp);
       return emitter.emitResult(PRValue(extractVal), this, dest);
     }
+    if (auto baseSR = baseVal.getIfSRValue()) // Decay SRValue -> SBValue
+      baseVal = SBValue(baseSR);
+    if (auto baseMR = baseVal.getIfMRValue()) // Decay MRValue -> MBValue
+      baseVal = MBValue(baseMR);
 
-    // Otherwise, it must be an CRValue or SRValue.
-    SRValue baseRV = emitter.emitSRValue({baseVal, base}, EC_AttributeRefBase);
-    if (!baseRV)
-      return {};
+    // Okay, handle borrowed bases.
+    assert(baseVal.getIfBValue());
 
+    // If the base is an MRValue or MBValue, reference the field as an
+    // MBValue so we lazy copy only the piece that is needed in the case of
+    // `x.y.z.w`
+    if (MBValue baseMBV = baseVal.getIfMBValue()) {
+      auto fieldPtr =
+          emitter.builder->create<StructGEPOp>(mlirLoc, baseMBV, fieldOp);
+      return emitter.emitResult(MBValue(fieldPtr), this, dest);
+    }
+
+    // Otherwise, we have an SSA register for the base.
+
+    // Otherwise, it must be an SRValue or SBValue.
+    SBValue baseSB = baseVal.getIfSBValue();
+    assert(baseSB && "All cases handled above");
     auto extractVal =
-        emitter.builder->create<StructExtractOp>(mlirLoc, baseRV, fieldOp);
-    return emitter.emitResult(SRValue(extractVal), this, dest);
+        emitter.builder->create<StructExtractOp>(mlirLoc, baseSB, fieldOp);
+    return emitter.emitResult(SBValue(extractVal), this, dest);
   }
 
   // Reference to some non-function/struct member of the type.
+  // TODO: Handle __getattr__/__setattr__ methods if present.
   emitter.emitError(getLoc(), "reference to unknown member '")
       << attrSpelling << "'" << getRange();
   return {};

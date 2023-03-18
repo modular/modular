@@ -12,12 +12,12 @@
 // from a hierarchy of value kinds:
 //
 // AnyValue       <- Expr emitted to MLIR...
-//   LValue           <- mutable reference to storage
+//   LValue         <- mutable reference to storage
 //     SLValue        <- with a runtime address that may be stored to
 //     DLValue        <- with dynamic get/set accessors
-//   BValue (TODO)    <- with a borrowed value
+//   BValue         <- with a borrowed value
+//     SBValue          <- value is register-passable and in an SSA register
 //     MBValue          <- value is in memory
-//     SBValue (TODO)   <- value is in SSA register
 //   RValue         <- with an owned immutable value
 //     ORValue        <- with an unresolved overload set
 //     CRValue        <- with a concrete resolved type
@@ -28,12 +28,9 @@
 // This is another parallel hierarchy:
 //
 //   CValue        <- Concrete value: LValue or RValue with a known type.
-//     SLValue       <- LValue stored in memory
-//     DLValue       <- Dynamic LValue
+//     LValue       <- LValue stored in memory
 //     BValue        <- Borrowed value
-//       ... per above ...
 //     CRValue       <- Concrete RValue
-//       ... per above ...
 //
 // Note that SRValue is not compatible with memory-only types, but MRValue
 // can hold any type, including a register compatible type.
@@ -128,6 +125,19 @@ public:
 
   /// This returns the declared type of the value without the wrapping pointer.
   ASTType getRValueType() const { return getType().getPointerElementType(); }
+  ASTType getType() const { return ASTType(Value::getType()); }
+};
+
+/// Instances of SBValue model a borrowed reference to a dynamic value stored
+/// in an SSA register.  This representation is used for borrowed arguments, and
+/// for some expressions like `a.b` where `a` is an MRValue or MBValue (like a
+/// let) and `b` is a stored property.
+class SBValue : public Value {
+public:
+  using Value::Value;
+  using Value::operator=;
+  SBValue(Value v) : Value(v) {}
+
   ASTType getType() const { return ASTType(Value::getType()); }
 };
 
@@ -246,7 +256,7 @@ template <typename DerivedType>
 struct VariantValueStorage {
   /// These are all the forms of storage we can have.
   using Storage = SmartVariant<NullRepresentation, PRValue, SRValue, MRValue,
-                               ORValue, MBValue, DLValue, SLValue>;
+                               ORValue, SBValue, MBValue, DLValue, SLValue>;
 
   VariantValueStorage()
       : storage(NullRepresentation()) {} // All are default constructible.
@@ -387,7 +397,7 @@ struct VariantLValue {
   DLValue getIfDLValue() const { return dyn_cast<DLValue>(getStorageL()); }
 
 private:
-  // These are named getStorageR instead of getStorage to easy
+  // These are named getStorageL instead of getStorage to easy
   // multiple-inheritence name lookup issues.
   typename VariantValueStorage<DerivedType>::Storage &getStorageL() {
     return static_cast<DerivedType *>(this)->getStorage();
@@ -423,51 +433,104 @@ public:
 };
 raw_ostream &operator<<(raw_ostream &os, LValue value);
 
+template <typename DerivedType>
+struct VariantBValue {
+  VariantBValue() {}
+  VariantBValue(SBValue value) {
+    if (value)
+      getStorageB() = value;
+  }
+  VariantBValue(MBValue value) {
+    if (value)
+      getStorageB() = value;
+  }
+
+  SBValue getIfSBValue() const { return dyn_cast<SBValue>(getStorageB()); }
+  MBValue getIfMBValue() const { return dyn_cast<MBValue>(getStorageB()); }
+
+private:
+  // These are named getStorageB instead of getStorage to easy
+  // multiple-inheritence name lookup issues.
+  typename VariantValueStorage<DerivedType>::Storage &getStorageB() {
+    return static_cast<DerivedType *>(this)->getStorage();
+  }
+  const typename VariantValueStorage<DerivedType>::Storage &
+  getStorageB() const {
+    return static_cast<const DerivedType *>(this)->getStorage();
+  }
+};
+
+/// BValue = SBValue|MBValue.
+class BValue : public VariantValueStorage<BValue>,
+               public VariantBValue<BValue> {
+public:
+  using VariantBValue::VariantBValue;
+  using VariantValueStorage::VariantValueStorage;
+
+  static BValue getFrom(Storage storage) {
+    BValue result;
+    // Initialize conditionally based on what is in Storage.
+    if (isa<SBValue, MBValue>(storage))
+      result.storage = std::move(storage);
+    return result;
+  }
+
+  /// Return the type for the contained representation, or null if null.
+  ASTType getType() const;
+
+  /// This method looks through the pointer in a MBValue to return
+  /// the underlying type.
+  ASTType getRValueType() const;
+  void dump() const;
+};
+raw_ostream &operator<<(raw_ostream &os, LValue value);
+
 /// Concrete Value: CValue = CRValue|LValue|BValue.
 class CValue : public VariantValueStorage<CValue>,
                public VariantCRValue<CValue>,
-               public VariantLValue<LValue> {
+               public VariantLValue<CValue>,
+               public VariantBValue<CValue> {
 public:
+  using VariantBValue::VariantBValue;
   using VariantCRValue::VariantCRValue;
   using VariantLValue::VariantLValue;
   using VariantValueStorage::VariantValueStorage;
 
   CValue() {}
-  CValue(MBValue value) {
-    if (value)
-      getStorage() = value;
-  }
-  CValue(CRValue value) {
-    if (value)
-      getStorage() = value.getStorage();
-  }
+  CValue(CRValue value) { getStorage() = value.getStorage(); }
+  CValue(BValue value) { getStorage() = value.getStorage(); }
+  CValue(LValue value) { getStorage() = value.getStorage(); }
   static CValue getFrom(Storage storage) {
     CValue result;
     // Initialize conditionally based on what is in Storage.
-    if (isa<PRValue, SRValue, MRValue, MBValue, SLValue, DLValue>(storage))
+    if (isa<PRValue, SRValue, MRValue, SBValue, MBValue, SLValue, DLValue>(
+            storage))
       result.storage = std::move(storage);
     return result;
   }
 
-  MBValue getIfMBValue() const { return dyn_cast<MBValue>(getStorage()); }
+  BValue getIfBValue() const { return BValue::getFrom(getStorage()); }
   RValue getIfRValue() const { return RValue::getFrom(getStorage()); }
   LValue getIfLValue() const { return LValue::getFrom(getStorage()); }
+  CRValue getIfCRValue() const { return CRValue::getFrom(storage); }
 
   /// Return the type for the contained representation, or null if null.
   ASTType getType() const;
 
-  /// This method looks through the pointer in a MRValue to return
+  /// This method looks through the pointer in memory references to return
   /// the underlying type.
   ASTType getRValueType() const;
   void dump() const;
 };
 raw_ostream &operator<<(raw_ostream &os, CRValue value);
 
-/// AnyValue = LValue|MBValue|RValue.
+/// AnyValue = LValue|BValue|RValue.
 class AnyValue : public VariantValueStorage<AnyValue>,
                  public VariantCRValue<AnyValue>,
-                 public VariantLValue<AnyValue> {
+                 public VariantLValue<AnyValue>,
+                 public VariantBValue<AnyValue> {
 public:
+  using VariantBValue::VariantBValue;
   using VariantCRValue::VariantCRValue;
   using VariantLValue::VariantLValue;
   using VariantValueStorage::VariantValueStorage;
@@ -479,10 +542,7 @@ public:
       storage = std::move(value);
   }
   AnyValue(CRValue value) { storage = value.getStorage(); }
-  AnyValue(MBValue value) {
-    if (value)
-      storage = value;
-  }
+  AnyValue(BValue value) { storage = value.getStorage(); }
   AnyValue(RValue value) { storage = value.getStorage(); }
   AnyValue(LValue value) { storage = value.getStorage(); }
   AnyValue(CValue value) { storage = value.getStorage(); }
@@ -492,7 +552,7 @@ public:
   CRValue getIfCRValue() const { return CRValue::getFrom(storage); }
   CValue getIfCValue() const { return CValue::getFrom(storage); }
   RValue getIfRValue() const { return RValue::getFrom(storage); }
-  MBValue getIfMBValue() const { return dyn_cast<MBValue>(storage); }
+  BValue getIfBValue() const { return BValue::getFrom(storage); }
 
   void dump() const;
 };
@@ -527,6 +587,10 @@ struct PointerLikeTypeTraits<M::KGEN::LIT::SRValue>
 template <>
 struct PointerLikeTypeTraits<M::KGEN::LIT::MRValue>
     : public MLIRValueWrapper<M::KGEN::LIT::MRValue> {};
+
+template <>
+struct PointerLikeTypeTraits<M::KGEN::LIT::SBValue>
+    : public MLIRValueWrapper<M::KGEN::LIT::SBValue> {};
 
 template <>
 struct PointerLikeTypeTraits<M::KGEN::LIT::MBValue>

@@ -346,9 +346,9 @@ public:
   /// the casting code and return the pop scalar index value
   SRValue emitBoxedIntAsPopScalar(Value numberValue, const ExprNode *source);
 
-  /// Given an MBValue, produce a standalone rvalue in the specified destination
-  /// by emitting a load / clone.
-  RValue emitLoadOfMBValue(ASTExprAnd<MBValue> value, ValueDest &dest);
+  /// Given an BValue, produce a standalone rvalue in the specified destination
+  /// by emitting a clone call.
+  RValue emitBValueToRValue(ASTExprAnd<BValue> value, ValueDest &dest);
 };
 
 } // namespace M::KGEN::LIT
