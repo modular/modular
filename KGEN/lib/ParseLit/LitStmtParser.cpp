@@ -32,6 +32,7 @@
 #include "mlir/Transforms/RegionUtils.h"
 #include "llvm/Support/SaveAndRestore.h"
 #include <filesystem>
+#include <limits>
 
 using namespace M::KGEN::LIT;
 using namespace M::KGEN;
@@ -190,8 +191,9 @@ ParseResult LitStmtParser::parseSuite(ssize_t curIndent) {
   // single stmt_list.
   auto indent = getToken().getIndentation();
   if (!indent.has_value())
-    return parseStmtListOrCompound(/*stmtListOnly*/ true,
-                                   /*NoWrapping=*/~size_t(0));
+    return parseStmtListOrCompound(
+        /*stmtListOnly=*/true,
+        /*stmtIndent=*/std::numeric_limits<size_t>::max());
 
   // If there is a newline, then parse a list of statements which can be either
   // a statement list or a compount_stmt.  Parse all the statements that are

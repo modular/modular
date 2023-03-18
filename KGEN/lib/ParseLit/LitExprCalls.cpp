@@ -22,6 +22,7 @@
 #include "Support/STLExtras.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/SaveAndRestore.h"
+#include <limits>
 
 #define DEBUG_TYPE "LITEXPRCALLS"
 
@@ -593,7 +594,7 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
 
     // Varargs arguments don't require a value, but allow any number of them.
     if (signature.isVararg(idx)) {
-      maxAllowedargs = ~size_t(0);
+      maxAllowedargs = std::numeric_limits<size_t>::max();
       continue;
     }
 
@@ -909,7 +910,7 @@ LogicalResult OverloadSet::filterOverloadSet(
 
   // Ok, we have at least one valid candidate, filter the list to the ones with
   // the lowest number of implicit conversions required.
-  size_t minConversions = ~size_t(0);
+  size_t minConversions = std::numeric_limits<size_t>::max();
   SmallVector<ASTDecl *, 1> newFnDecls;
   OverloadFitness oneFitness = evaluations[0];
   for (auto [candidate, eval] : llvm::zip(fnDecls, evaluations)) {
