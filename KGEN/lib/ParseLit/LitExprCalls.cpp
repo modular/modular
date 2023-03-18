@@ -219,12 +219,12 @@ ParameterInferenceState::infer(SignatureType signature,
                           expectedType.getPointerElementType());
       }
 
-      case ValueInputConvention::ByValInMem:
+      case ValueInputConvention::OwnedInMem:
         // Otherwise,we expect an r-value to match up, ignoring the pointer type
         // from the convention.
         expectedType = expectedType.getPointerElementType();
         [[fallthrough]];
-      case ValueInputConvention::ByVal:
+      case ValueInputConvention::OwnedInReg:
         // Otherwise, we pass as an r-value if we know the type.
         // TODO: Consider implicit conversions?
         if (auto c = operand.ir.getIfCValue())
@@ -686,10 +686,10 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
           return {kArgWrongLVType, providedValueIdx, expectedType, newBindings};
         break;
       }
-      case ValueInputConvention::ByVal:
-      case ValueInputConvention::ByValInMem:
-        // Ignore the pointer type on ByValInMem convention when matching types.
-        if (expectedConvention == ValueInputConvention::ByValInMem)
+      case ValueInputConvention::OwnedInReg:
+      case ValueInputConvention::OwnedInMem:
+        // Ignore the pointer type on OwnedInMem convention when matching types.
+        if (expectedConvention == ValueInputConvention::OwnedInMem)
           expectedType = expectedType.getPointerElementType();
 
         auto argVal = operand.ir.getIfCValue();
@@ -1312,7 +1312,7 @@ CRValue OverloadSet::emitAsCRValue(ExprEmitter &emitter, ValueDest &dest) {
 
   switch (selfConvention) {
   case ValueInputConvention::ByRefResult:
-  case ValueInputConvention::ByValInMem: {
+  case ValueInputConvention::OwnedInMem: {
     auto diag =
         emitter.emitError(
             loc, "TODO: partial application requires closure generation ")
@@ -1334,7 +1334,7 @@ CRValue OverloadSet::emitAsCRValue(ExprEmitter &emitter, ValueDest &dest) {
         << baseValue.expr->getRange();
     return {};
   }
-  case ValueInputConvention::ByVal:
+  case ValueInputConvention::OwnedInReg:
     // Otherwise we can have either an lvalue or rvalue, but we need to convert
     // to an rvalue if we have an lvalue.
     firstArgValue = emitter.emitSRValue(baseValue, EC_CallArgValue);
@@ -1578,15 +1578,15 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
         assert(operand.ir.getIfLValue() &&
                "Call should already be type checked");
         return operand.ir;
-      case ValueInputConvention::ByVal:
-      case ValueInputConvention::ByValInMem:
+      case ValueInputConvention::OwnedInReg:
+      case ValueInputConvention::OwnedInMem:
         // by-val arguments are converted to the expected r-value type.
         // In the case of a variadic argument, we need to remove the
         // !pop.varadic<> wrapper to get the type to convert to.
         ASTType expectedArgType = expectedType;
         if (calleeSig.isVararg(argIdx))
           expectedArgType = expectedArgType.getVariadicElementType();
-        if (convention == ValueInputConvention::ByValInMem)
+        if (convention == ValueInputConvention::OwnedInMem)
           expectedArgType = expectedArgType.getPointerElementType();
 
         return emitRValue(operand, EC_CallArgValue, expectedArgType);
@@ -1637,10 +1637,10 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     for (auto &operand : variadicOperands) {
       Value argVal;
       // Convert any PRValues to an SRValue for variadic create.
-      if (convention == ValueInputConvention::ByVal) {
+      if (convention == ValueInputConvention::OwnedInReg) {
         argVal = emitSRValue({operand.ir, operand.expr}, EC_CallArgValue);
       } else {
-        assert(convention == ValueInputConvention::ByValInMem);
+        assert(convention == ValueInputConvention::OwnedInMem);
         argVal = operand.ir.getIfMRValue();
         assert(argVal && "Passing variadic argument in a strange way");
       }
@@ -1720,7 +1720,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     auto argIdx = calleeArgTypeAndIdx.index();
 
     Value arg;
-    if (convention == ValueInputConvention::ByVal ||
+    if (convention == ValueInputConvention::OwnedInReg ||
         calleeSig.isVararg(argIdx)) {
       arg = emitSRValue(argValAndExpr, EC_CallArgValue);
       if (!arg)
@@ -1750,7 +1750,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
         writebackHandler.elements.push_back({std::move(tmpBuffer), buffer});
         arg = buffer;
       }
-    } else if (convention == ValueInputConvention::ByValInMem) {
+    } else if (convention == ValueInputConvention::OwnedInMem) {
       arg = argValAndExpr.ir.getIfMRValue();
     }
     if (!arg) {

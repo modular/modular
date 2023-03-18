@@ -99,7 +99,7 @@ bool MetadataAttr::isDefault() {
   return getFnEffects() == FnEffects::None &&
          llvm::all_of(getInputConventions(),
                       [](ValueInputConvention inputConv) {
-                        return inputConv == ValueInputConvention::ByVal;
+                        return inputConv == ValueInputConvention::OwnedInReg;
                       });
 }
 

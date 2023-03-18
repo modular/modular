@@ -626,8 +626,16 @@ enum VarArgKind { None, VarArg, KWVarArg };
 /// argument_ownership ::= "&"
 struct ParsedArgument {
   SMLoc loc;
-  // Specify argument passing convention, e.g. byval/byref etc.
-  std::optional<ValueInputConvention> convention;
+  // Specify argument passing convention, e.g. owned/byref etc.
+  enum {
+    kConventionUnspec = 0,      // Nothing specified
+    kConventionByRef = 1,       // x&
+    kConventionOwned = 2,       // owned x
+    kConventionByRefResult = 3, // Type checked not parsed.
+  } convention = kConventionUnspec;
+
+  // After type checking, this will hold the KGEN convention to use.
+  ValueInputConvention kgenConvention = ValueInputConvention(128);
 
   bool isPack = false;
   VarArgKind vararg = VarArgKind::None;
@@ -672,9 +680,15 @@ struct ParsedArgument {
       kwArgHandling = KWArgHandling::kKeywordOnly;
     }
 
-    if (p.consumeIf(LitToken::star)) { // '*' => variadic
+    if (p.consumeIf(LitToken::star)) // '*' => variadic
       vararg = VarArgKind::VarArg;
-    }
+
+    // The owned keyword sets convention.
+    // NOTE: We might consider a postfix ^ syntax after the language bakes out
+    // more, that is probably going to be tightly coupled to ownership transfer,
+    // but this is more explicit for now.
+    if (p.consumeIf(LitToken::kw_owned))
+      convention = kConventionOwned;
 
     if (p.parseIdentifier(name, "expected parameter name"))
       // TODO: Scan ahead for better recovery.
@@ -691,9 +705,12 @@ struct ParsedArgument {
     // Process any convention markers.
     SMLoc ampLoc;
     if (p.consumeIf(LitToken::amp, &ampLoc)) { // '&' => by-ref
-      convention = ValueInputConvention::ByRef;
       if (isPack)
         p.emitError(ampLoc, "variadic packs may not have input conventions");
+      else if (convention != kConventionUnspec)
+        p.emitError(ampLoc, "argument already has a convention specified");
+      else
+        convention = kConventionByRef;
     }
 
     if (p.consumeIf(LitToken::colon)) {
@@ -918,7 +935,7 @@ parseOptionalParameterSignature(LitParserBase &p, ASTDecl &declScope,
       }
 
       // TODO: Parameter decls should support conventions at some point.
-      if (arg.convention.has_value())
+      if (arg.convention != ParsedArgument::kConventionUnspec)
         p.emitError(arg.loc, "parameters must always be passed by-value");
 
       // Bind the parsed type expression so references from other parameters
@@ -1077,20 +1094,16 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
     }
 
     // If no convention was explicitly specified, provide a default.
-    if (!arg.convention.has_value()) {
-      // memory-only byval argument are passed with a layer of indirection and
-      // use a specific convention to model this.
-      if (ASTType(type).isRegisterPassable(arg.loc, shared))
-        arg.convention = ValueInputConvention::ByVal;
-      else
-        arg.convention = ValueInputConvention::ByValInMem;
+    if (arg.convention == ParsedArgument::kConventionUnspec) {
+      // TODO: Default to borrowed.
+      arg.convention = ParsedArgument::kConventionOwned;
 
       // The first/self argument to __init__ is weird because it gets
       // ByRefResult argument convention, even though it is a declared argument.
       if (fnInfo.kind == SpecialFunctionKind::kInit && &arg == &args[0] &&
           resultType.isEqualCanon(shared.getNoneType())) {
         if (!ASTType(type).isRegisterPassable(arg.loc, shared)) {
-          arg.convention = ValueInputConvention::ByRefResult;
+          arg.convention = ParsedArgument::kConventionByRefResult;
           decl.isInitFnWithByRefResultSelf = true;
         } else
           emitErrorLoc(
@@ -1103,7 +1116,8 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
   // This is true if the declared result type is modeled as the first argument
   // because it is returned in memory.
   bool hasMemoryResult =
-      !args.empty() && args[0].convention == ValueInputConvention::ByRefResult;
+      !args.empty() &&
+      args[0].convention == ParsedArgument::kConventionByRefResult;
   ASTType declaredResultType =
       hasMemoryResult ? ASTType(argTypes[0]) : resultType;
 
@@ -1164,8 +1178,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
     else if (funcOp.getIsStatic())
       emitError("special method may not be a static method");
     else if (!fnInfo.allowsByRefSelfInstMethod() &&
-             args[selfArgNumber].convention != ValueInputConvention::ByVal &&
-             args[selfArgNumber].convention != ValueInputConvention::ByValInMem)
+             args[selfArgNumber].convention != ParsedArgument::kConventionOwned)
       emitErrorLoc(args[selfArgNumber].loc,
                    "self argument cannot be passed by reference");
   }
@@ -1198,7 +1211,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
     break;
   case SpecialFunctionKind::kClone:
     if (fnInfo.isInstMethod() && selfType &&
-        args[selfArgNumber].convention != ValueInputConvention::ByRef)
+        args[selfArgNumber].convention != ParsedArgument::kConventionByRef)
       emitErrorLoc(args[selfArgNumber].loc,
                    "self argument must be passed by reference");
     break;
@@ -1207,42 +1220,51 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
   // Mangle 'name', ensuring that overloaded methods get unique symbol names.
   SmallString<64> mangledName(name.getValue().begin(), name.getValue().end());
   mangledName += '(';
-  llvm::interleave(
-      llvm::zip(args, argTypes),
-      [&](auto argAndArgType) {
-        auto [arg, argType] = argAndArgType;
-        mangledName += ASTType(argType).getAsString();
-        assert(arg.convention.has_value() && "resolved above");
-        switch (arg.convention.value()) {
-        case ValueInputConvention::ByVal:
-        case ValueInputConvention::ByValInMem:
-          break;
-        case ValueInputConvention::ByRef:
-          mangledName += '&';
-          break;
-        case ValueInputConvention::ByRefResult:
-          mangledName += "=&";
-          break;
-        }
-        if (arg.vararg == VarArgKind::VarArg)
-          mangledName += '*';
-      },
-      [&]() { mangledName += ","; });
-  mangledName += ')';
-
-  name = StringAttr::get(funcOp.getContext(), mangledName);
 
   // Finally, after all semantic checks are done, update the types to reflect
   // ABI information form the calling convention.
 
   // Now that all the types and signature information have been resolved,
-  // compute the final MLIR types, mixing in argument conventions.
+  // compute the final MLIR types, KGEN conventions and mangled name.
   for (auto [arg, argType] : llvm::zip(args, argTypes)) {
-    if (arg.convention != ValueInputConvention::ByVal)
+    // Update the mangled name for this argument.
+    if (&arg != &args[0])
+      mangledName += ",";
+
+    mangledName += ASTType(argType).getAsString();
+    switch (arg.convention) {
+    case ParsedArgument::kConventionUnspec:
+      llvm_unreachable("should be resolved above");
+    case ParsedArgument::kConventionOwned:
+      // Memory-only owned argument are passed with a layer of indirection and
+      // use a specific convention to model this.
+      if (ASTType(argType).isRegisterPassable(arg.loc, shared))
+        arg.kgenConvention = ValueInputConvention::OwnedInReg;
+      else
+        arg.kgenConvention = ValueInputConvention::OwnedInMem;
+      break;
+    case ParsedArgument::kConventionByRef:
+      arg.kgenConvention = ValueInputConvention::ByRef;
+      mangledName += '&';
+      break;
+    case ParsedArgument::kConventionByRefResult:
+      arg.kgenConvention = ValueInputConvention::ByRefResult;
+      mangledName += "=&";
+      break;
+    }
+
+    // Adjust the MLIR type if needed.
+    if (arg.kgenConvention != ValueInputConvention::OwnedInReg)
       argType = POP::PointerType::get(argType);
     if (arg.vararg == VarArgKind::VarArg)
       argType = KGEN::VariadicType::get(argType);
+
+    if (arg.vararg == VarArgKind::VarArg)
+      mangledName += '*';
   }
+  mangledName += ')';
+
+  name = StringAttr::get(funcOp.getContext(), mangledName);
 }
 
 namespace {
@@ -1484,7 +1506,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
       ParsedArgument resultArg;
       resultArg.loc = resultTypeExpr->getLoc();
       resultArg.name = StringAttr::get(shared.getContext(), "__result__");
-      resultArg.convention = ValueInputConvention::ByRefResult;
+      resultArg.convention = ParsedArgument::kConventionByRefResult;
       resultArg.typeExpr = resultTypeExpr;
       args.insert(args.begin(), resultArg);
       resultType = shared.getNoneType();
@@ -1610,8 +1632,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   for (const ParsedArgument &arg : args) {
     argLocs.push_back(p.translateLocation(arg.loc));
     argNames.push_back(arg.name);
-    assert(arg.convention.has_value() && "Type checking should resolve this");
-    inputConventions.push_back(arg.convention.value());
+    inputConventions.push_back(arg.kgenConvention);
     if (arg.vararg == VarArgKind::VarArg)
       effects = effects | FnEffects::Vararg;
     else if (arg.vararg == VarArgKind::KWVarArg)
@@ -1657,17 +1678,18 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   // parameters and adding them to the symbol table.
   for (auto [bbArg, parsedArg] :
        llvm::zip(funcOp.getBody()->getArguments(), args)) {
+    auto convention = parsedArg.kgenConvention;
     // Don't bind byref-result, it is handled specially by 'return'.
-    if (parsedArg.convention == ValueInputConvention::ByRefResult &&
-        // The self argument to __init__ is special, it is explicitly visible
-        // in the function but is byref-result.
+    if (convention == ValueInputConvention::ByRefResult &&
+        // The self argument to __init__ is special, it is explicitly
+        // visible in the function but is byref-result.
         !decl.isInitFnWithByRefResultSelf)
       continue;
 
     buildArgDIInfo(bbArg, parsedArg.name, bbArg.getArgNumber());
 
-    // VarArg arguments are always treated as their pop.variadic type by-value
-    // right now.  TODO(literals): Project to a list like thing.
+    // VarArg arguments are always treated as their pop.variadic type
+    // by-value right now.  TODO(literals): Project to a list like thing.
     if (parsedArg.vararg == VarArgKind::VarArg) {
       addFullyResolvedDecl(SRValue(bbArg), parsedArg.name, parsedArg.loc,
                            &decl);
@@ -1675,24 +1697,24 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
     }
 
     // Arguments passed by-reference can be directly used.
-    if (parsedArg.convention == ValueInputConvention::ByRef ||
-        parsedArg.convention == ValueInputConvention::ByRefResult) {
+    if (convention == ValueInputConvention::ByRef ||
+        convention == ValueInputConvention::ByRefResult) {
       addFullyResolvedDecl(SLValue(bbArg), parsedArg.name, parsedArg.loc,
                            &decl);
       continue;
     }
 
     // by-value arguments are mutable in a def, immutable in an fn.
-    // ByValInMem passes ownership of the argument into the callee so we can
+    // OwnedInMem passes ownership of the argument into the callee so we can
     // directly mutate it if we want to.
-    if (parsedArg.convention == ValueInputConvention::ByValInMem) {
+    if (convention == ValueInputConvention::OwnedInMem) {
       auto declStorage = funcOp.getIsDef() ? DeclIRValue(SLValue(bbArg))
                                            : DeclIRValue(MRValue(bbArg));
       addFullyResolvedDecl(declStorage, parsedArg.name, parsedArg.loc, &decl);
       continue;
     }
 
-    assert(parsedArg.convention == ValueInputConvention::ByVal &&
+    assert(convention == ValueInputConvention::OwnedInReg &&
            "unknown convention");
 
     // If this was passed by-value, then it becomes an rvalue in a `fn`.

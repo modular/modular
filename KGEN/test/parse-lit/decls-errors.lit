@@ -161,6 +161,10 @@ fn invalidPackWithDefault[*Ts: __mlir_type.`!kgen.mlirtype`](x*: Ts = (1, 2.0)):
 # expected-error @+1 {{expected a value of variadic type}}
 fn invalidPackType(x*: Int): pass
 
+# expected-error @+1 {{argument already has a convention specified}}
+fn invalidOwned(owned x&: Int): pass
+
+
 ##===----------------------------------------------------------------------===##
 # Keyword Arguments
 ##===----------------------------------------------------------------------===##

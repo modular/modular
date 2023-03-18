@@ -202,15 +202,25 @@ fn nestedFnInLoop():
       let result = foo()
 
 ##===----------------------------------------------------------------------===##
+# Conventions
+##===----------------------------------------------------------------------===##
+
+# CHECK-LABEL: lit.func @"ownedConvention
+# CHECK-SAME: (%a: !pop.pointer<@"$decls"::@StructWithInit> owned_in_mem,
+# CHECK-SAME:  %b: !pop.pointer<@"$decls"::@StructWithInit> owned_in_mem)
+fn ownedConvention(owned a: StructWithInit, b: StructWithInit): pass
+
+
+##===----------------------------------------------------------------------===##
 # Default arguments and variadics.
 ##===----------------------------------------------------------------------===##
 
-# CHECK: lit.func @"defaultArgument
+# CHECK-LABEL: lit.func @"defaultArgument
 # CHECK-SAME: %c: !kgen.declref<@"$Int"::@Int> = #lit.struct<{value: scalar<index> = 5}>)
 fn defaultArgument(a: Int, b: Int = 3, c: Int = 5) -> Int:
   return a + b
 
-# CHECK: lit.func @"callDefaultArgument
+# CHECK-LABEL: lit.func @"callDefaultArgument
 fn callDefaultArgument(x: Int) -> Int:
   # CHECK-NEXT: %[[ARG1:.*]] = kgen.param.constant{{.*}} = 3
   # CHECK-NEXT: %[[ARG2:.*]] = kgen.param.constant{{.*}} = 5

@@ -218,7 +218,7 @@ def KGEN_MetadataAttr : KGENAttr<"Metadata", "metadata"> {
     // Metadata specifying input argument #0 is taken by reference,
     // argument #1 is taken by value and has a default value of `4.2`,
     // and the function has a "throws" function effect.
-    #kgen.metadata<[byref, byval], [<1 : i64 = 4.2 : f32>], throws>
+    #kgen.metadata<[byref, owned], [<1 : i64 = 4.2 : f32>], throws>
 
     // Metadata specifying the default input value conventions, no default
     // arguments, and a "throws" function effect.

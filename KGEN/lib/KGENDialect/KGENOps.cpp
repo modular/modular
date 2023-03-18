@@ -459,7 +459,7 @@ LogicalResult FuncOp::verify() {
     return emitOpError("cannot have input or result parameters");
   if (!llvm::all_of(getMetadata().getInputConventions(),
                     [](ValueInputConvention inputConv) {
-                      return inputConv == ValueInputConvention::ByVal;
+                      return inputConv == ValueInputConvention::OwnedInReg;
                     }))
     return emitOpError("can only have default value input conventions");
   return success();
