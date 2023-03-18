@@ -500,6 +500,11 @@ POP::PackType::getTypeAlign(TargetInfoAttr target) const {
   return DataLayoutInterface::getTypeABIAlign(target, type);
 }
 
+bool POP::PackType::isEmpty() const {
+  auto attr = ::dyn_cast<VariadicAttr>(getVariadic());
+  return attr && attr.getValues().empty();
+}
+
 //===----------------------------------------------------------------------===//
 // VariantType
 //===----------------------------------------------------------------------===//
