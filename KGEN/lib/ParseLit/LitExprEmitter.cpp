@@ -315,13 +315,21 @@ BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   if (!value)
     return {};
 
+  auto handleResult = [&](BValue resultBV) -> BValue {
+    if (!dest.isSpecified())
+      return resultBV;
+    auto result = emitResult(resultBV, value.expr, dest);
+    assert(!result || result.getIfBValue());
+    return result.getIfBValue();
+  };
+
   // If this is already a BValue, we're done.
   if (auto bv = value.ir.getIfBValue())
-    return bv;
+    return handleResult(bv);
 
   // Handle LValue's by decaying to MBValue or emitting a load from DLValue.
   if (auto lv = value.ir.getIfSLValue())
-    return MBValue(lv);
+    return handleResult(MBValue(lv));
   if (auto lv = value.ir.getIfDLValue()) {
     value.ir = emitRValue(value, dest);
     if (!value.ir)
@@ -334,10 +342,10 @@ BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
 
   // Decay RValue to BValue.
   if (auto baseSR = crVal.getIfSRValue()) // Decay SRValue -> SBValue
-    return SBValue(baseSR);
+    return handleResult(SBValue(baseSR));
   auto baseMR = crVal.getIfMRValue(); // Decay MRValue -> MBValue
   assert(baseMR && "Unknown value classification");
-  return MBValue(baseMR);
+  return handleResult(MBValue(baseMR));
 }
 
 BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ExprContext context,
@@ -374,6 +382,10 @@ RValue ExprEmitter::emitBValueToRValue(ASTExprAnd<BValue> value,
   if (!value.ir)
     return {};
 
+  // PValues are both BValues and RValues until materialized.
+  if (auto pValue = value.ir.getIfPValue())
+    return pValue;
+
   // If this is a trivial type, then we can emit a direct use/load for it.
   // TODO: Generalize this beyond MLIR types to being a flag on register
   // passable.
@@ -381,7 +393,6 @@ RValue ExprEmitter::emitBValueToRValue(ASTExprAnd<BValue> value,
   auto typeDecl = rvalueType.getDecl(shared);
   if (!typeDecl) {
     SRValue result;
-
     if (auto sbVal = value.ir.getIfSBValue()) {
       result = SRValue(sbVal);
     } else {
@@ -454,41 +465,15 @@ CRValue ExprEmitter::emitCRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   return value.ir.getIfCRValue();
 }
 
-/// This helper emits the specified value as a SRValue which has an SSA
-/// value representation, materializing PValues and loading LValues as
-/// needed.  This returns null if emission fails, and should never be used with
-/// values that are memory-only.
-SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
-                                 ExprContext context, ASTType resultType) {
-  const ExprNode *expr = anyValue.expr;
-
-  // Emit using resultType if present, and eliminate LValue/ORValue's.
-  ValueDest dest(resultType, context);
-  CRValue value = emitCRValue(anyValue, dest);
-  if (!value) {
-    dest.resetForError();
-    return {};
-  }
-
-  // If we have a value in memory, load it.
-  if (auto mrValue = value.getIfMRValue()) {
-    // TODO: we should move from the value instead of clone+destroy it.
-    // FIXME: can't this just emit a load from the memory directly if the RValue
-    // type is register primary because we own it?  Will need to check to see
-    // how the borrow checker handles this.
-    auto rv = emitBValueToRValue({MBValue(mrValue), expr}, dest);
-    if (auto sr = rv.getIfSRValue())
-      return sr;
-    return emitSRValue({rv, expr}, context);
-  }
-
-  // If this is already an SRValue, return it.
-  if (auto rvalue = value.getIfSRValue())
-    return rvalue;
+/// Emit a register primary PValue to an SRValue.
+SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
+                                         ExprContext context) {
+  TypedAttr attr = value.ir.get();
+  const ExprNode *expr = value.expr;
 
   // Make sure this method isn't getting called inappropriately.
-  assert(value.getRValueType().isRegisterPassable(expr->getLoc(), shared) &&
-         "emitSRValue called on non-register-passable value");
+  assert(value.ir.getType().isRegisterPassable(expr->getLoc(), shared) &&
+         "emitPValueToSRValue called on non-register-passable value");
 
   // If this is a parameter, we need to materialize it, either as an
   // index.constant or as a parameter expression.
@@ -497,9 +482,6 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
         << getContextMessage(context) << expr->getRange();
     return {};
   }
-
-  auto attr = value.getIfPValue().get();
-  assert(attr && "must be PValue if register-passable and not SRValue");
 
   // If the value being materialized is itself parameterized, then we cannot
   // materialize it as an SSA value - there will be no way to bind parameters to
@@ -556,6 +538,49 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
 
   // Otherwise, emit a generalized parameter constant.
   return SRValue(builder->create<ParamConstantOp>(location, attr));
+}
+
+/// Emit any kind of PValue to an SLValue.
+MBValue ExprEmitter::emitPValueToSLValue(ASTExprAnd<PValue> value, SLValue dest,
+                                         ExprContext context) {
+  llvm_unreachable("TODO: memory-only parameter expressions not supported yet");
+}
+
+/// This helper emits the specified value as a SRValue which has an SSA
+/// value representation, materializing PValues and loading LValues as
+/// needed.  This returns null if emission fails, and should never be used with
+/// values that are memory-only.
+SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
+                                 ExprContext context, ASTType resultType) {
+  const ExprNode *expr = anyValue.expr;
+
+  // Emit using resultType if present, and eliminate LValue/ORValue's.
+  ValueDest dest(resultType, context);
+  CRValue value = emitCRValue(anyValue, dest);
+  if (!value) {
+    dest.resetForError();
+    return {};
+  }
+
+  // If we have a value in memory, load it.
+  if (auto mrValue = value.getIfMRValue()) {
+    // TODO: we should move from the value instead of clone+destroy it.
+    // FIXME: can't this just emit a load from the memory directly if the RValue
+    // type is register primary because we own it?  Will need to check to see
+    // how the borrow checker handles this.
+    auto rv = emitBValueToRValue({MBValue(mrValue), expr}, dest);
+    if (auto sr = rv.getIfSRValue())
+      return sr;
+    return emitSRValue({rv, expr}, context);
+  }
+
+  // If this is already an SRValue, return it.
+  if (auto rvalue = value.getIfSRValue())
+    return rvalue;
+
+  auto pValue = value.getIfPValue();
+  assert(pValue && "must be PValue if register-passable and not SRValue");
+  return emitPValueToSRValue({pValue, expr}, context);
 }
 
 /// This helper emits the specified expression as a parameter value, diagnosing
@@ -634,7 +659,7 @@ static AnyValue refineResultValue(AnyValue value, SMLoc loc,
 /// Emit a conversion from the specified value to the specified destination
 /// type, plopping the value into the designated value destination.  We know the
 /// types mismatch so the conversion must be emitted.
-static AnyValue emitConversionTo(CRValue value, const ExprNode *expr,
+static AnyValue emitConversionTo(CValue value, const ExprNode *expr,
                                  ASTType expectedType, ValueDest &dest,
                                  ExprEmitter &emitter) {
 
@@ -685,15 +710,9 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
   if (auto overloads = value.getIfORValue())
     return overloads->emitAsCRValue(*this, dest);
 
-  // If the value is an LValue or BValue, concretize the result type
-  // or emit a load into the destination before further processing.
-  if (!value.getIfRValue())
-    return emitCRValue({value, expr}, dest);
-
-  // We know we have a CRValue now.
-  auto crValue = value.getIfCRValue();
-  assert(crValue);
-  auto rvalueType = crValue.getRValueType();
+  auto cValue = value.getIfCValue();
+  assert(cValue && "Must be a CValue if not an ORValue");
+  auto rvalueType = cValue.getRValueType();
 
   // If there is a known type for the destination but the value disagrees, emit
   // an implicit conversion directly into the destination.  This keeps values in
@@ -702,53 +721,111 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
   if (ASTType requiredType =
           dest.resolveImpliedType(expr->getLoc(), rvalueType, *this)) {
     if (!requiredType.isEqualCanon(rvalueType))
-      return emitConversionTo(crValue, expr, requiredType, dest, *this);
+      return emitConversionTo(cValue, expr, requiredType, dest, *this);
   }
 
   // If the destination is just a required type, then we now know it must agree
   // and therefore don't need to do anything more.
   if (isa<ASTType>(dest.representation)) {
     dest = ValueDest(); // Resolved the ValueDest;
-    return crValue;
+    return cValue;
   }
 
-  // We know we have an RValue and the destination is some kind of LValue.  Emit
-  // the dest to figure out where to store it.
-  auto destLV = dest.getLValueForResult(expr->getLoc(), rvalueType,
-                                        /*allowIncompatibleTypes=*/true,
-                                        /*requireSLValue=*/false, *this);
+  // We know we have an CRValue/BValue and the destination is some kind of
+  // LValue.  Emit the dest to figure out where to store it.
+  LValue destLV = dest.getLValueForResult(expr->getLoc(), rvalueType,
+                                          /*allowIncompatibleTypes=*/true,
+                                          /*requireSLValue=*/false, *this);
   if (!destLV)
     return {};
 
+  // Finally, store the value into the lvalue.
+  return emitStoreToLValue({cValue, expr}, destLV, dest.getContext());
+}
+
+/// Given a value with a known type, emit a store to the specified LValue.  This
+/// returns an borrowed reference to the value after it is done.  The types must
+/// match for this call.
+AnyValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
+                                        ExprContext context) {
+  assert(value.ir.getRValueType().isEqualCanon(destLV.getRValueType()) &&
+         "Types should match");
+
   // If this is a computed LValue, then perform a writeback.
   if (auto dlValue = destLV.getIfDLValue()) {
+    // FIXME: Shouldn't be needed, but prevents returning lvalue up.
+    auto crV = emitCRValue(value, ValueDest::none());
+    if (!crV)
+      return {};
+    value.ir = crV;
+
     auto methodName = dlValue.isSubscript ? StringRef("__setitem__")
                                           : StringRef("__setattr__");
     SmallVector<ASTExprAnd<AnyValue>> operands(
         dlValue.selfAndIndicesValue.begin(), dlValue.selfAndIndicesValue.end());
-    operands.push_back({crValue, expr});
+    operands.push_back(value);
     emitNamedMethodCall(methodName, operands, ValueDest::none(),
                         CallSyntax::kSubscript, dlValue.expr);
-    return crValue;
+    // TODO: Decay the input value to a BValue since ownership was taken by the
+    // store.
+    // return emitBValue(value, ValueDest::none());
+    return value.ir;
+  }
+
+  // Otherwise we have an SLValue destination.
+  SLValue destPtr = destLV.getIfSLValue();
+  assert(destPtr && "No other known LValue");
+
+  // If the input is an LValue, load it into the destination.
+  if (auto lvalue = value.ir.getIfLValue()) {
+    ValueDest dest(destPtr, context);
+    if (auto result = emitRValue(value, dest))
+      return result;
+    dest.resetForError();
+    return {};
+  }
+
+  // We will be doing a store, so if we have a PValue emit it to something with
+  // a dynamic representation.
+  if (auto pValue = value.ir.getIfPValue()) {
+    // If the parameter expression is memory only, emit it directly into the
+    // destination slot.
+    if (!destPtr.getRValueType().isRegisterPassable(value.expr->getLoc(),
+                                                    shared))
+      return emitPValueToSLValue({pValue, value.expr}, destPtr, context);
+
+    // Otherwise, materialize into an SSA register.
+    value.ir = emitPValueToSRValue({pValue, value.expr}, context);
+    if (!value.ir)
+      return {};
+  }
+
+  // If this is an SRValue then store the value to memory.
+  if (auto rv = value.ir.getIfSRValue()) {
+    // Does this kill las use of emitSRValue?
+    auto loc = translateLocation(value.expr->getLoc());
+    builder->create<POP::StoreOp>(loc, rv, destPtr, /*alignment=*/std::nullopt);
+    // TODO: Return BValue:  return SBValue(rv);
+    return rv;
   }
 
   // If we have an MRValue in the wrong spot, emit a __clone__ call into the
   // destination using MBValue -> RValue conversion.
-  if (auto mrValue = crValue.getIfMRValue()) {
-    dest = ValueDest(destLV, dest.getContext());
-    return emitBValueToRValue({MBValue(mrValue), expr}, dest);
-  }
+  // TODO(move): This won't take ownership of the value.  When we have move
+  // operations we should use them.
+  if (auto mrValue = value.ir.getIfMRValue())
+    value.ir = MBValue(mrValue);
 
-  SLValue destPtr = destLV.getIfSLValue();
-  assert(destPtr && "No other known LValue");
-  SRValue rv =
-      emitSRValue({crValue, expr}, dest.getContext(), destPtr.getRValueType());
-  if (!rv)
-    return {};
+  // Finally this must be a BValue, emit a clone into the specified destination.
+  auto bValue = value.ir.getIfBValue();
+  assert(bValue && "Should only have bvalues here");
+  ValueDest dest(destPtr, context);
+  auto result = emitBValueToRValue({bValue, value.expr}, dest);
+  if (result)
+    return result;
 
-  auto loc = translateLocation(expr->getLoc());
-  builder->create<POP::StoreOp>(loc, rv, destPtr, /*alignment=*/std::nullopt);
-  return rv;
+  dest.resetForError();
+  return {};
 }
 
 // Emitting a CValue always produces a CValue.

@@ -209,13 +209,13 @@ fn nestedFnInLoop():
 # CHECK-SAME:  %b: !pop.pointer<@"$decls"::@StructWithInit> borrow_in_mem)
 fn ownedConventionMem(owned a: StructWithInit, borrowed b: StructWithInit):
   # CHECK: %0 = lit.struct.gep %a[x]
-  # CHECK: %1 = kgen.call {{.*}}__clone__{{.*}}(%0)
   # CHECK: %_ = lit.varlet.decl
+  # CHECK: %1 = kgen.call {{.*}}__clone__{{.*}}(%0)
   # CHECK: pop.store %1, %_
   _ = a.x
   # CHECK: %2 = lit.struct.gep %b[y]
-  # CHECK: %3 = kgen.call {{.*}}__clone__{{.*}}(%2)
   # CHECK: %__0 = lit.varlet.decl
+  # CHECK: %3 = kgen.call {{.*}}__clone__{{.*}}(%2)
   # CHECK: pop.store %3, %__0
   _ = b.y
 
@@ -238,6 +238,20 @@ fn ownedConventionReg(owned a: RPStructWithInit,
   # CHECK: %__0 = lit.varlet.decl
   # CHECK: pop.store %1, %__0
   _ = b.y
+
+
+struct BorrowStruct:
+    fn testMethod(borrowed self):
+        return
+
+# CHECK-LABEL: callerFn
+# CHECK-SAME: (%arg0: !pop.pointer<{{.*}}> borrow_in_mem)
+fn callerFn(borrowed arg0: BorrowStruct):
+    # CHECK-NEXT: %0 = kgen.call {{.*}}testMethod{{.*}}(%arg0)
+    # CHECK-NEXT: lit.return %0
+    return arg0.testMethod()
+
+
 
 ##===----------------------------------------------------------------------===##
 # Default arguments and variadics.
@@ -405,9 +419,9 @@ struct StructWithInit:
     # CHECK: pop.store %a, %0
     self.x = a
     # CHECK: %1 = lit.struct.gep %self[x]
-    # CHECK: %2 = kgen.call {{.*}}__clone__{{.*}}(%1)
-    # CHECK: %3 = lit.struct.gep %self[y]
-    # CHECK: pop.store %2, %3
+    # CHECK: %2 = lit.struct.gep %self[y]
+    # CHECK: %3 = kgen.call {{.*}}__clone__{{.*}}(%1)
+    # CHECK: pop.store %3, %2
     self.y = self.x
     # CHECK-NEXT: lit.end_func
     return
