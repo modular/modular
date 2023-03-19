@@ -206,7 +206,7 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
 
   // Packs are essentially identical to structs.
   addConversion([=](POP::PackType type) -> std::optional<Type> {
-    auto variadic = dyn_cast<VariadicAttr>(type.getVariadic());
+    auto variadic = type.getVariadicAttr();
     if (!variadic)
       return {};
     return convertElementTypesToStruct(variadic.getValues());

@@ -963,8 +963,7 @@ struct ConvertPOPPackGet : public ConvertPOPToLLVMPattern<PackGetOp> {
                   ConversionPatternRewriter &rewriter) const override {
     // If the pack is backed by a variadic attribute with only one element, just
     // return that element.
-    if (auto variadic =
-            dyn_cast<VariadicAttr>(op.getPack().getType().getVariadic())) {
+    if (auto variadic = op.getPack().getType().getVariadicAttr()) {
       if (variadic.getValues().size() == 1) {
         rewriter.replaceOp(op, adaptor.getPack());
         return success();
