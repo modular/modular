@@ -95,10 +95,6 @@ public:
                                               llvm::SMLoc loc);
 
   /// Add a declaration that is already fully resolved.
-  ASTDecl &addFullyResolvedDecl(Operation *decl, llvm::SMLoc loc,
-                                StringAttr baseName, ASTDecl *parentDecl);
-
-  /// Add a declaration that is already fully resolved.
   ASTDecl &addFullyResolvedDecl(DeclIRValue declVal, StringAttr baseName,
                                 llvm::SMLoc loc, ASTDecl *parentDecl);
   ASTDecl &addFullyResolvedDecl(DeclIRValue declVal, StringRef baseName,

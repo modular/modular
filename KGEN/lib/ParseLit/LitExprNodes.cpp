@@ -426,7 +426,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // In a normal implicit declaration, we add it to the name table so
     // subsequent uses find this one.
     emitter.getDeclResolver().addFullyResolvedDecl(
-        varDecl, getLoc(), varDecl.getNameAttr(), &container);
+        DeclIRValue(varDecl), varDecl.getNameAttr(), getLoc(), &container);
     return emitter.emitResult(SLValue(varDecl), this, dest);
   }
 
