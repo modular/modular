@@ -61,6 +61,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in field initializer";
   case EC_DefaultArgument:
     return " in default argument";
+  case EC_DefArgumentShadow:
+    return " in def argument shadow";
   case EC_BoolCondition:
     return " in boolean condition";
   case EC_ForIterator:

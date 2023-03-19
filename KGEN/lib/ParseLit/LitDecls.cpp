@@ -1685,42 +1685,60 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
       continue;
     }
 
+    auto addDecl = [&, name = parsedArg.name,
+                    loc = parsedArg.loc](DeclIRValue declVal) {
+      addFullyResolvedDecl(declVal, name, loc, &decl);
+    };
+
+    switch (convention) {
     // Arguments passed by-reference can be directly used.
-    if (convention == ValueInputConvention::ByRef ||
-        convention == ValueInputConvention::ByRefResult) {
-      addFullyResolvedDecl(SLValue(bbArg), parsedArg.name, parsedArg.loc,
-                           &decl);
-      continue;
+    case ValueInputConvention::ByRef:
+    case ValueInputConvention::ByRefResult:
+      addDecl(SLValue(bbArg));
+      break;
+
+    case ValueInputConvention::OwnedInMem:
+      // by-value arguments are mutable in a def, immutable in an fn.
+      // OwnedInMem passes ownership of the argument into the callee so we
+      // can directly mutate it if we want to.
+      if (funcOp.getIsDef())
+        addDecl(SLValue(bbArg));
+      else
+        // FIXME: This should be an SLValue also even in an 'fn', we want to be
+        // able to consume the argument since we own it, and might as well allow
+        // it to be mutated.  Handle this in future patch.
+        addDecl(MRValue(bbArg));
+      break;
+
+    case ValueInputConvention::OwnedInReg:
+      // If this was passed by-value, then it becomes an rvalue in a `fn`.
+      if (!funcOp.getIsDef()) {
+        // FIXME: This is incorrect, this makes every use think it owns the
+        // argument.  This should be an SBValue.
+        addDecl(SRValue(bbArg));
+        break;
+      }
+
+      // In a `def`, we create a mutable var.decl lvalue to allow
+      // reassignment.
+      auto type = POP::PointerType::get(bbArg.getType());
+      auto varDecl = builder.create<VarLetDeclOp>(bbArg.getLoc(), type,
+                                                  parsedArg.name, /*isVar*/ 1);
+
+      // Emit the initializer expression into the slot.
+      AnyValue srcVal = SRValue(bbArg);
+
+      ExprEmitter emitter(shared, decl, builder, /*varDeclCursor*/ nullptr);
+
+      // Expr to provide location information.
+      DeclRefNode srcExpr(
+          StringRef(parsedArg.loc.getPointer(), parsedArg.name.size()));
+      ValueDest dest(SLValue(varDecl), EC_DefArgumentShadow);
+      if (!emitter.emitRValue({srcVal, &srcExpr}, dest))
+        dest.resetForError();
+      addDecl(SLValue(varDecl));
+      break;
     }
-
-    // by-value arguments are mutable in a def, immutable in an fn.
-    // OwnedInMem passes ownership of the argument into the callee so we can
-    // directly mutate it if we want to.
-    if (convention == ValueInputConvention::OwnedInMem) {
-      auto declStorage = funcOp.getIsDef() ? DeclIRValue(SLValue(bbArg))
-                                           : DeclIRValue(MRValue(bbArg));
-      addFullyResolvedDecl(declStorage, parsedArg.name, parsedArg.loc, &decl);
-      continue;
-    }
-
-    assert(convention == ValueInputConvention::OwnedInReg &&
-           "unknown convention");
-
-    // If this was passed by-value, then it becomes an rvalue in a `fn`.
-    if (!funcOp.getIsDef()) {
-      addFullyResolvedDecl(SRValue(bbArg), parsedArg.name, parsedArg.loc,
-                           &decl);
-      continue;
-    }
-
-    // In a `def`, we create a mutable var.decl lvalue to allow reassignment.
-    auto type = POP::PointerType::get(bbArg.getType());
-    auto varDecl = builder.create<VarLetDeclOp>(bbArg.getLoc(), type,
-                                                parsedArg.name, /*isVar*/ 1);
-    addFullyResolvedDecl(DeclIRValue(varDecl), parsedArg.name, parsedArg.loc,
-                         &decl);
-    builder.create<POP::StoreOp>(bbArg.getLoc(), bbArg, varDecl,
-                                 /*alignment=*/std::nullopt);
   }
   return success();
 }
