@@ -272,7 +272,7 @@ static PValue resolveParamDeclareValue(ParamDeclareOp param,
 // ExprNode Implementation
 //===----------------------------------------------------------------------===//
 
-ExprNode::~ExprNode() { llvm_unreachable("never called"); }
+ExprNode::~ExprNode() {}
 
 /// Return the start or end of the source range.
 llvm::SMLoc ExprNode::getRangeStart() const { return getRange().getStart(); }
