@@ -98,16 +98,13 @@ ValueDest::ValueDest(VarLetDeclOp dest, ExprContext context)
 /// into an LValue to store to.
 ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
                                       ExprEmitter &emitter) {
-  if (isa<NullRepresentation>(representation))
+  // These have no implied type.
+  if (isa<NullRepresentation, LValueBufferTaken, Operation *>(representation))
     return {};
 
   // If we just have a contextual type, return it.
   if (ASTType type = dyn_cast<ASTType>(representation))
     return type;
-
-  // Inferred VarDecls have no implied type.
-  if (isa<Operation *>(representation))
-    return {};
 
   assert(!isa<LValueInitializerType>(representation) &&
          "LValueInitializerType should be resolved before this");
@@ -156,7 +153,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
   // If we are inferring the type for a var or let declaration, then we can
   // always succeed and consume this ValueDest.
   if (auto *opDest = dyn_cast<Operation *>(representation)) {
-    representation = NullRepresentation(); // Consumed!
+    representation = LValueBufferTaken(); // Buffer used!
 
     auto varOp = cast<VarLetDeclOp>(opDest);
     assert(isa<UnresolvedType>(varOp.getType().getResolvedElementType()) &&
@@ -191,7 +188,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
       // If the client requires a stored LValue and we don't have one, don't
       // consume it.
       if (!requireSLValue || lValue.getIfSLValue()) {
-        representation = NullRepresentation(); // Consumed!
+        representation = LValueBufferTaken(); // Buffer taken!
         return lValue;
       }
     }
@@ -202,7 +199,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
   // Finally, if no destination specifies otherwise, we synthesize a new
   // LValue on demand.
   if (!emitter.builder) {
-    representation = NullRepresentation(); // Consumed!
+    representation = NullRepresentation();
     emitter.emitError(
         loc, "cannot synthesize lvalue in parameter expression context");
     return {};
@@ -213,10 +210,8 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
   // TODO(autopromotion).
   ASTType slotType = resultType;
   if (auto requiredType = dyn_cast_or_null<ASTType>(representation)) {
-    if (allowIncompatibleTypes || requiredType.isEqualCanon(slotType)) {
+    if (allowIncompatibleTypes || requiredType.isEqualCanon(slotType))
       slotType = requiredType;
-      representation = NullRepresentation(); // Consumed!
-    }
   }
 
   Type declIRType = POP::PointerType::get(slotType);
@@ -731,6 +726,19 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
     return cValue;
   }
 
+  // If this destination was an LValue whose buffer was already taken to be
+  // filled in by a client, then this is just completing the transaction.
+  if (isa<LValueBufferTaken>(dest.representation)) {
+    dest = ValueDest(); // Resolved the ValueDest;
+    // The client directly filled in an LValue we provided which is great, but
+    // that LValue we provided took ownership of the value, return the result as
+    // an MBValue.
+    auto memValue = value.getIfMRValue();
+    assert(memValue && "Must be an MRValue providing result");
+    // TODO: This would be correct but we're not ready:return MBValue(memValue);
+    return memValue;
+  }
+
   // We know we have an CRValue/BValue and the destination is some kind of
   // LValue.  Emit the dest to figure out where to store it.
   LValue destLV = dest.getLValueForResult(expr->getLoc(), rvalueType,
@@ -738,6 +746,10 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
                                           /*requireSLValue=*/false, *this);
   if (!destLV)
     return {};
+
+  // This will have completely resolved all the ValueDest possibilities.
+  assert(!dest.isSpecified() || isa<LValueBufferTaken>(dest.representation));
+  dest = ValueDest();
 
   // Finally, store the value into the lvalue.
   return emitStoreToLValue({cValue, expr}, destLV, dest.getContext());

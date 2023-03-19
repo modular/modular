@@ -59,6 +59,11 @@ struct LValueInitializerType {
   ASTType type;
 };
 
+/// This is a marker type to indicate when a ValueDest has had its internal
+/// LValue taken by getLValueForResult, but which hasn't had an emitResult to
+/// write it back yet.
+struct LValueBufferTaken {};
+
 /// This class represents the destination context than an expression is being
 /// emitted, when it may produce an RValue.  Example destinations include:
 ///   - an LValue:
@@ -189,8 +194,8 @@ public:
 private:
   //  This should only be accessed by ExprEmitter::emitResult.
   friend class ExprEmitter;
-  SmartVariant<NullRepresentation, LValue, const ExprNode *, Operation *,
-               ASTType, LValueInitializerType>
+  SmartVariant<NullRepresentation, LValue, LValueBufferTaken, const ExprNode *,
+               Operation *, ASTType, LValueInitializerType>
       representation;
   ExprContext context;
 };
