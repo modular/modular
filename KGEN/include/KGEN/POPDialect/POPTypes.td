@@ -403,6 +403,11 @@ def POP_PackType : POPType<"Pack", "pack", [
   let extraClassDeclaration = [{
     /// Returns whether this is a concrete pack type with no elements.
     bool isEmpty() const;
+
+    /// If the pack type is concrete, returns the attribute representing the
+    /// variadic sequence that the pack type is based upon. Otherwise, returns
+    /// a null attribute.
+    VariadicAttr getVariadicAttr() const;
   }];
 }
 

@@ -421,7 +421,7 @@ ParseResult PackCreateOp::parse(OpAsmParser &p, OperationState &result) {
   // We've parsed the components of the op. Now we resolve operands based on the
   // elements of the result type.
   PackType type = cast<PackType>(result.types.front());
-  auto variadic = dyn_cast<VariadicAttr>(type.getVariadic());
+  auto variadic = type.getVariadicAttr();
   if (!variadic)
     // We can only infer if we know the elements of the pack type (i.e.: it is
     // backed by a variadic attribute).
@@ -450,7 +450,7 @@ ParseResult PackCreateOp::parse(OpAsmParser &p, OperationState &result) {
 void PackCreateOp::print(OpAsmPrinter &p) {
   // Print operands, which may or may not be suffixed with their types.
   p << '(';
-  if (auto variadic = dyn_cast<VariadicAttr>(getType().getVariadic()))
+  if (auto variadic = getType().getVariadicAttr())
     // If we have a pack backed by an attribute, we do not need to print operand
     // types, as they can be inferred from the result type.
     p.printOperands(getElements());
@@ -488,7 +488,7 @@ PackGetOp::inferReturnTypes(MLIRContext *context, std::optional<Location> loc,
 
   // If we have a pack backed by an attribute, then we can determine the return
   // type based on the provided index attribute.
-  auto variadic = dyn_cast<VariadicAttr>(type.getVariadic());
+  auto variadic = type.getVariadicAttr();
   if (!variadic) {
     // Otherwise, all we know is that the return type is a `!kgen.mlirtype`.
     types.push_back(MLIRTypeType::get(type.getContext()));
@@ -512,7 +512,7 @@ PackGetOp::inferReturnTypes(MLIRContext *context, std::optional<Location> loc,
 LogicalResult PackGetOp::verify() {
   // If we have a pack backed by an attribute, check that the provided index
   // attribute is within bounds.
-  auto variadic = dyn_cast<VariadicAttr>(getPack().getType().getVariadic());
+  auto variadic = getPack().getType().getVariadicAttr();
   if (!variadic)
     return success();
 

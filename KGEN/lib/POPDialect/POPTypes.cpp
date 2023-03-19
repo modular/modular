@@ -474,7 +474,7 @@ POP::PackType::verify(function_ref<InFlightDiagnostic()> emitError,
 std::optional<int64_t> POP::PackType::getTypeSize(TargetInfoAttr target) const {
   // A pack backed by an attribute has a size equivalent to a struct composed of
   // the elements in the sequence.
-  if (auto attr = ::dyn_cast<VariadicAttr>(getVariadic()))
+  if (auto attr = getVariadicAttr())
     return getPackedElementsTypeSize(attr.getValues(), target);
 
   // We can't know the size of a variadic expression, since we don't know how
@@ -501,8 +501,12 @@ POP::PackType::getTypeAlign(TargetInfoAttr target) const {
 }
 
 bool POP::PackType::isEmpty() const {
-  auto attr = ::dyn_cast<VariadicAttr>(getVariadic());
+  VariadicAttr attr = getVariadicAttr();
   return attr && attr.getValues().empty();
+}
+
+VariadicAttr POP::PackType::getVariadicAttr() const {
+  return ::dyn_cast<VariadicAttr>(getVariadic());
 }
 
 //===----------------------------------------------------------------------===//

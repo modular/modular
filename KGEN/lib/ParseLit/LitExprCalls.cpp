@@ -602,8 +602,7 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
     // Arguments with a pack type must have a known number of element types,
     // and so they require exactly that many arguments.
     if (auto pack = dyn_cast<POP::PackType>(signature.getValueInputs()[idx])) {
-      auto attr = cast<VariadicAttr>(pack.getVariadic());
-      size_t numValues = attr.getValues().size();
+      size_t numValues = pack.getVariadicAttr().getValues().size();
       minRequiredArgs += numValues;
       maxAllowedargs += numValues;
       continue;
@@ -754,8 +753,7 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
     // If we have a pack type, it must have a known number of elements, and so
     // consumes exactly that number of arguments.
     if (auto packType = dyn_cast<POP::PackType>(expectedType)) {
-      auto attr = cast<VariadicAttr>(packType.getVariadic());
-      for (TypedAttr element : attr.getValues()) {
+      for (TypedAttr element : packType.getVariadicAttr().getValues()) {
         OverloadFitness result = checkOneOperand(ASTType(element));
         if (result.kind != kValid)
           return result;
@@ -1636,8 +1634,8 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
                      dyn_cast<POP::PackType>(expectedArgType.mlirType))
           // Operands being applied to a concrete pack type argument must be
           // converted to the pack element type at that index.
-          expectedArgType = cast<VariadicAttr>(packType.getVariadic())
-                                .getValues()[sequenceIndex];
+          expectedArgType =
+              packType.getVariadicAttr().getValues()[sequenceIndex];
 
         if (convention == ValueInputConvention::OwnedInMem ||
             convention == ValueInputConvention::BorrowedInMem)
