@@ -28,9 +28,9 @@ static raw_ostream &printStorage(raw_ostream &os,
                                  bool isDump = false) {
   if (isa<NullRepresentation>(storage)) {
     os << "<NULL IR Value>\n";
-  } else if (auto val = dyn_cast<PRValue>(storage)) {
+  } else if (auto val = dyn_cast<PValue>(storage)) {
     if (isDump)
-      os << "PR: ";
+      os << "P: ";
     os << val.get();
   } else if (auto val = dyn_cast<SRValue>(storage)) {
     if (isDump)
@@ -66,7 +66,7 @@ static raw_ostream &printStorage(raw_ostream &os,
   return os;
 }
 
-raw_ostream &LIT::operator<<(raw_ostream &os, PRValue value) {
+raw_ostream &LIT::operator<<(raw_ostream &os, PValue value) {
   return printStorage(os, value);
 }
 raw_ostream &LIT::operator<<(raw_ostream &os, ORValue value) {
@@ -107,7 +107,7 @@ void AnyValue::dump() const {
 static ASTType getTypeFrom(AnyValue::Storage storage) {
   if (isa<NullRepresentation>(storage))
     return {};
-  if (auto attr = dyn_cast<PRValue>(storage))
+  if (auto attr = dyn_cast<PValue>(storage))
     return attr.get().getType();
   if (auto value = dyn_cast<SRValue>(storage))
     return value.getType();
@@ -130,12 +130,12 @@ ASTType CValue::getType() const { return getTypeFrom(storage); }
 ASTType BValue::getType() const { return getTypeFrom(storage); }
 ASTType LValue::getType() const { return getTypeFrom(storage); }
 
-PRValue::PRValue(Type value)
+PValue::PValue(Type value)
     : storage(value ? ParameterizedTypeConstantAttr::get(value) : Attribute()) {
 }
 
 /// If this value /is/ a type return it.
-ASTType PRValue::getIfTypeValue() const {
+ASTType PValue::getIfTypeValue() const {
   auto attr = get();
   if (auto type = dyn_cast<TypeConstantAttr>(attr))
     return type.getValue();

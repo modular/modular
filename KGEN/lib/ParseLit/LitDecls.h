@@ -47,7 +47,7 @@ class StructFieldOp;
 /// as operations.  It stores RValues for parameters and SSA values as an
 /// RValue.
 using DeclIRValue =
-    PointerUnion<Operation *, PRValue, SRValue, MRValue, SLValue>;
+    PointerUnion<Operation *, PValue, SRValue, MRValue, SLValue>;
 
 class DeclResolver : public LitSharedStateUser {
 public:

@@ -70,10 +70,10 @@ static Attribute parseMLIRAttrFromString(StringRef name, SMLoc loc,
   return result;
 }
 
-/// This implements __mlir_attr.x lookup, synthesizing a PRValue for the
+/// This implements __mlir_attr.x lookup, synthesizing a PValue for the
 /// attribute on demand.
-static PRValue synthesizeMLIRAttrFromString(StringRef name, SMLoc loc,
-                                            LitSharedState &shared) {
+static PValue synthesizeMLIRAttrFromString(StringRef name, SMLoc loc,
+                                           LitSharedState &shared) {
   auto attr = parseMLIRAttrFromString(name, loc, shared);
   if (!attr)
     return {};
@@ -86,7 +86,7 @@ static PRValue synthesizeMLIRAttrFromString(StringRef name, SMLoc loc,
     shared.emitError(loc, "MLIR attribute is not a TypedAttr: ") << os.str();
     return {};
   }
-  return PRValue(typedAttr);
+  return PValue(typedAttr);
 }
 
 /// Given an __mlir_type[a,b,c] or __mlir_attr[a,b,c] usage, stringize the
@@ -117,7 +117,7 @@ static std::string substituteMLIRMagic(const SubscriptNode &node,
       indexExpr = cast<UnaryOpNode>(indexExpr)->subExpr;
     }
 
-    auto indexVal = emitter.emitExprPRValue(indexExpr, EC_MLIRMagic);
+    auto indexVal = emitter.emitExprPValue(indexExpr, EC_MLIRMagic);
     if (!indexVal)
       return "";
 
@@ -136,19 +136,18 @@ static std::string substituteMLIRMagic(const SubscriptNode &node,
 /// When a lookup in __mlir_op fails for a named field, this method tries to
 /// resolve it.  On success, it lazily creates a resolved declaration.  On
 /// failure, it bails out.
-static PRValue synthesizeMLIROpFromString(StringRef name,
-                                          ExprEmitter &emitter) {
+static PValue synthesizeMLIROpFromString(StringRef name, ExprEmitter &emitter) {
   auto *context = emitter.getContext();
   auto nameStr = StringAttr::get(context, name);
 
   auto result = UnboundMLIROperationAttr::get(
       context, nameStr.getType(), nameStr, DictionaryAttr::get(context));
-  return PRValue(result);
+  return PValue(result);
 }
 
 /// Calculate the result of an __mlir_op.`thing`[attributes], applying the
 /// attributes list to the operation specification.
-static PRValue
+static PValue
 bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
                                  UnboundMLIROperationAttr unboundOp,
                                  ExprEmitter &emitter) {
@@ -167,7 +166,7 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
   auto getAttrFromExpr = [&](StringRef name, ExprNode *node) -> Attribute {
     // Special case handling of __mlir_attr.`xxx` directly in this parser,
     // because we want to be able to install arbitrary attributes into an
-    // operation's attribute list, and emitPRValue only supports TypedAttrs.
+    // operation's attribute list, and emitPValue only supports TypedAttrs.
     if (auto attrRef = dyn_cast<AttributeRefNode>(node)) {
       auto mlirAttr = dyn_cast<DeclRefNode>(attrRef->base);
       if (mlirAttr && mlirAttr->spelling == "__mlir_attr")
@@ -188,14 +187,14 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
       }
     }
 
-    // Otherwise emit the value as an PRValue.
-    return emitter.emitExprPRValue(node, EC_MLIRMagic);
+    // Otherwise emit the value as an PValue.
+    return emitter.emitExprPValue(node, EC_MLIRMagic);
   };
 
   SmallVector<NamedAttribute> attrValues;
 
   // Each element of the subscript must have a name identifier and a value as an
-  // PRValue.
+  // PValue.
   for (auto *subscriptIdx : subscript.indices) {
     auto *slice = dyn_cast<SliceNode>(subscriptIdx);
     if (!slice || slice->colon2Loc.isValid() || !slice->lower ||
@@ -230,9 +229,9 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
 /// Given a ParamDeclareOp, return the value that should be used in a reference
 /// to it.  This currently fully substitutes members unless they are in a
 /// function definition.
-static PRValue resolveParamDeclareValue(ParamDeclareOp param,
-                                        ParamBindArrayAttr bindings,
-                                        LitSharedState &shared) {
+static PValue resolveParamDeclareValue(ParamDeclareOp param,
+                                       ParamBindArrayAttr bindings,
+                                       LitSharedState &shared) {
   // If the param is declared in a function, then just directly use it.
   Operation *parent = param->getParentOp();
   while (1) {
@@ -259,8 +258,7 @@ static PRValue resolveParamDeclareValue(ParamDeclareOp param,
              "mismatch in # struct parameters and # bindings");
 
       LitParameterEvaluator evaluator(*shared.declResolver, bindings);
-      auto result = evaluator.getReboundAttribute(param.getValue());
-      return PRValue(cast<TypedAttr>(result));
+      return PValue(evaluator.getReboundAttribute(param.getValue()));
     }
 
     // Ignore if and other control flow things.
@@ -353,7 +351,7 @@ AnyValue SelfLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return {};
 
   // Once we have the type in question we can just return its Self type as an
-  // PRValue.  This already includes bound parameters etc.
+  // PValue.  This already includes bound parameters etc.
   return emitter.emitResult(structDecl->getSelfType(), this, dest);
 }
 
@@ -490,16 +488,16 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return emitter.emitResult(MBValue(var.getResult()), this, dest);
   }
 
-  // Aliases form a PRValue.
+  // Aliases form a PValue.
   if (auto param = dyn_cast<ParamDeclareOp>(decl)) {
-    PRValue result =
+    PValue result =
         resolveParamDeclareValue(param, /*bindings=*/{}, emitter.shared);
     return emitter.emitResult(result, this, dest);
   }
 
   // Use of forward references.
   if (auto param = dyn_cast<AliasForwardDeclOp>(decl)) {
-    PRValue result(ParamDeclRefAttr::get(param.getName(), param.getType()));
+    PValue result(ParamDeclRefAttr::get(param.getName(), param.getType()));
     return emitter.emitResult(result, this, dest);
   }
 
@@ -511,7 +509,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // If this is a type declaration, return it as a type.
   if (isa<StructDeclOp>(decl)) {
-    PRValue result(DeclRefType::get(decl.getSymbolRef()));
+    PValue result(DeclRefType::get(decl.getSymbolRef()));
     return emitter.emitResult(result, this, dest);
   }
 
@@ -629,12 +627,12 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // Handle __mlir_op.`xxx` references, lazily synthesizing values when
     // they are referenced.
     if (isa<MagicMLIRAttrType>(baseMLIRType)) {
-      PRValue result =
+      PValue result =
           synthesizeMLIRAttrFromString(attrSpelling, getLoc(), emitter.shared);
       return emitter.emitResult(result, this, dest);
     }
     if (isa<MagicMLIROpType>(baseMLIRType)) {
-      PRValue result = synthesizeMLIROpFromString(attrSpelling, emitter);
+      PValue result = synthesizeMLIROpFromString(attrSpelling, emitter);
       return emitter.emitResult(result, this, dest);
     }
     if (isa<MagicMLIRTypeType>(baseMLIRType)) {
@@ -693,7 +691,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Parameters form a meta-value.
   if (auto param = dyn_cast<ParamDeclareOp>(memberDecl)) {
-    PRValue result = resolveParamDeclareValue(
+    PValue result = resolveParamDeclareValue(
         param, baseRVType.getParamBindings(), emitter.shared);
     return emitter.emitResult(result, this, dest);
   }
@@ -727,25 +725,23 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
         return {};
     }
 
-    // We know the baseVal is a BValue or CRValue.  Handle PRValue then decay to
-    // BValue.
-    assert(baseVal.getIfBValue() || baseVal.getIfCRValue());
-    if (PRValue baseMV = baseVal.getIfPRValue()) {
+    // We know the baseVal is a BValue or CRValue, decay to BValue.  Handle
+    // PValue then decay to BValue.
+    BValue baseBVal = emitter.emitBValue({baseVal, base}, ValueDest::none());
+    if (!baseBVal)
+      return {};
+
+    if (PValue baseMV = baseBVal.getIfPValue()) {
       auto extractVal = LIT::StructExtractAttr::get(baseMV.get(), fieldOp);
-      return emitter.emitResult(PRValue(extractVal), this, dest);
+      return emitter.emitResult(PValue(extractVal), this, dest);
     }
-    if (auto baseSR = baseVal.getIfSRValue()) // Decay SRValue -> SBValue
-      baseVal = SBValue(baseSR);
-    if (auto baseMR = baseVal.getIfMRValue()) // Decay MRValue -> MBValue
-      baseVal = MBValue(baseMR);
 
     // Okay, handle borrowed bases.
-    assert(baseVal.getIfBValue());
 
     // If the base is an MRValue or MBValue, reference the field as an
     // MBValue so we lazy copy only the piece that is needed in the case of
     // `x.y.z.w`
-    if (MBValue baseMBV = baseVal.getIfMBValue()) {
+    if (MBValue baseMBV = baseBVal.getIfMBValue()) {
       auto fieldPtr =
           emitter.builder->create<StructGEPOp>(mlirLoc, baseMBV, fieldOp);
       return emitter.emitResult(MBValue(fieldPtr), this, dest);
@@ -754,7 +750,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // Otherwise, we have an SSA register for the base.
 
     // Otherwise, it must be an SRValue or SBValue.
-    SBValue baseSB = baseVal.getIfSBValue();
+    SBValue baseSB = baseBVal.getIfSBValue();
     assert(baseSB && "All cases handled above");
     auto extractVal =
         emitter.builder->create<StructExtractOp>(mlirLoc, baseSB, fieldOp);
@@ -857,7 +853,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
       auto region = std::make_unique<Region>();
       region->takeBody(unboundRegion.getRegion());
       unboundRegion.erase();
-      results.front()->setIRValue(PRValue(BoolAttr::get(context, false)));
+      results.front()->setIRValue(PValue(BoolAttr::get(context, false)));
       state.addRegion(std::move(region));
       continue;
     }
@@ -946,7 +942,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
 
   // If we succeeded and have no types, then install a None type.
   if (resultOp->getNumResults() == 0)
-    return PRValue(emitter.shared.getNoneAttr());
+    return PValue(emitter.shared.getNoneAttr());
 
   assert(resultOp->getNumResults() == 1 &&
          "Only support single result ops so far");
@@ -970,11 +966,11 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
       }
       foldedType = val.getType();
     } else {
-      // If it is a constant, make an PRValue result.
+      // If it is a constant, make an PValue result.
       auto attr = cast<TypedAttr>(cast<Attribute>(folded));
       if (attr.getType() == resultOp->getResult(0).getType()) {
         resultOp->erase();
-        return PRValue(attr);
+        return PValue(attr);
       }
       foldedType = val.getType();
     }
@@ -996,7 +992,7 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // If this is the invocation of an unbound MLIR operator, bind it into an
   // actual operator!
-  if (auto mValue = calleeVal.getIfPRValue()) {
+  if (auto mValue = calleeVal.getIfPValue()) {
     if (auto unboundOp = dyn_cast<UnboundMLIROperationAttr>(mValue.get())) {
       AnyValue result = emitMLIROperatorCall(*this, unboundOp, emitter);
       return emitter.emitResult(result, this, dest);
@@ -1046,7 +1042,7 @@ AnyValue SliceNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
 /// Given a value of type type, substitute parameters into the type, producing
 /// a more concrete type.  This syntax is `SomeType[1, 4, Int]`.
-static PRValue substituteParametersIntoUserDefinedType(
+static PValue substituteParametersIntoUserDefinedType(
     DeclRefType declRef, const SubscriptNode &subscript, ExprEmitter &emitter) {
   // If already parameterized, give up.
   // TODO: Why not allow multiple partial type applications?
@@ -1072,7 +1068,7 @@ static PRValue substituteParametersIntoUserDefinedType(
   for (ExprNode *indexExpr : subscript.indices) {
     // TODO: Slice syntax is the obvious way to support named parameter
     // arguments.
-    auto indexVal = emitter.emitExprPRValue(indexExpr, EC_TypeParamValue);
+    auto indexVal = emitter.emitExprPValue(indexExpr, EC_TypeParamValue);
     if (!indexVal)
       return {};
     paramBindings.add(indexExpr, indexVal.get());
@@ -1089,7 +1085,7 @@ static PRValue substituteParametersIntoUserDefinedType(
     return {};
 
   // Ok, we succeeded at reparameterizing the type.
-  return PRValue(DeclRefType::get(typeDecl.getSymbolRef(), bindingAttr));
+  return PValue(DeclRefType::get(typeDecl.getSymbolRef(), bindingAttr));
 }
 
 /// When subscripting a callable with a bound symbol (i.e. a direct method call
@@ -1125,7 +1121,7 @@ static ORValue bindParamValuesToDirectCall(ORValue value,
         paramType = ASTType();
     }
 
-    auto val = emitter.emitExprPRValue(idx, EC_CallParamValue, paramType);
+    auto val = emitter.emitExprPValue(idx, EC_CallParamValue, paramType);
     if (!val)
       return {};
 
@@ -1161,9 +1157,9 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (!baseValue)
     return {};
 
-  if (auto callableMVal = baseValue.getIfPRValue()) {
+  if (auto callableMVal = baseValue.getIfPValue()) {
     if (auto sig = dyn_cast<SignatureType>(callableMVal.getType().mlirType)) {
-      // If this is a signature-type PRValue callable, this is binding parameter
+      // If this is a signature-type PValue callable, this is binding parameter
       // values to a call.
       SmallVector<TypedAttr> bindOperands({callableMVal.get()});
       if (indices.size() != sig.getInputParams().size()) {
@@ -1174,12 +1170,12 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       }
       for (auto [idx, type] : llvm::zip(indices, sig.getInputParams())) {
         bindOperands.push_back(
-            emitter.emitExprPRValue(idx, EC_CallParamValue, type.getType()));
+            emitter.emitExprPValue(idx, EC_CallParamValue, type.getType()));
         if (!bindOperands.back())
           return {};
       }
 
-      PRValue result(ParamOperatorAttr::get(POC::BindSignature, bindOperands));
+      PValue result(ParamOperatorAttr::get(POC::BindSignature, bindOperands));
       return emitter.emitResult(result, this, dest);
     }
   }
@@ -1188,7 +1184,7 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (Type typeValue = baseValue.getIfTypeValue()) {
     // Handle user-defined types.
     if (auto declRef = dyn_cast<DeclRefType>(typeValue)) {
-      PRValue result =
+      PValue result =
           substituteParametersIntoUserDefinedType(declRef, *this, emitter);
       return emitter.emitResult(result, this, dest);
     }
@@ -1205,7 +1201,7 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       std::string result = substituteMLIRMagic(*this, emitter);
       if (result.empty())
         return {};
-      PRValue attr =
+      PValue attr =
           synthesizeMLIRAttrFromString(result, getLoc(), emitter.shared);
       return emitter.emitResult(attr, this, dest);
     }
@@ -1213,10 +1209,10 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Otherwise, if there is no symbol, it is just an LValue or RValue being
   // subscript.
-  if (auto value = baseValue.getIfPRValue()) {
+  if (auto value = baseValue.getIfPValue()) {
     if (auto unboundOperator =
             dyn_cast<UnboundMLIROperationAttr>(value.get())) {
-      PRValue result =
+      PValue result =
           bindAttributesToMLIROperatorCall(*this, unboundOperator, emitter);
       return emitter.emitResult(result, this, dest);
     }
@@ -1458,7 +1454,7 @@ AnyValue ListNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // TODO: None is the wrong thing, but is useful for now for referring to type
   // arrays used by __mlir_op.
   auto noneAttr = emitter.shared.getNoneAttr();
-  return emitter.emitResult(PRValue(noneAttr), this, dest);
+  return emitter.emitResult(PValue(noneAttr), this, dest);
 }
 
 AnyValue DictionaryNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
@@ -1511,7 +1507,7 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
     memoryOnlyBase = dest.getSLValueForResult(getLoc(), initType, emitter);
 
   DenseMap<StringAttr, ASTExprAnd<AnyValue>> fieldMapping;
-  bool allInitializersPRValues = true;
+  bool allInitializersPValues = true;
   for (auto &keyValue : indices->values) {
     const ExprNode *valueExpr = keyValue.second;
     // We don't support `**dict` syntax.
@@ -1575,9 +1571,9 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
       return {};
     }
 
-    // Keep track of whether everything is a PRValue.
-    if (allInitializersPRValues && !value.getIfPRValue())
-      allInitializersPRValues = false;
+    // Keep track of whether everything is a PValue.
+    if (allInitializersPValues && !value.getIfPValue())
+      allInitializersPValues = false;
 
     auto mapResult = fieldMapping.insert({fieldNameAttr, {value, valueExpr}});
     if (!mapResult.second) {
@@ -1606,10 +1602,10 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
     if (!structOp.getIsRegisterPassable())
       continue;
 
-    // If all the initializers are PRValues, we can emit this as a StructAttr.
-    if (allInitializersPRValues) {
+    // If all the initializers are PValues, we can emit this as a StructAttr.
+    if (allInitializersPValues) {
       fieldParamValues.push_back(
-          {field.getNameAttr(), fieldVal.ir.getIfPRValue()});
+          {field.getNameAttr(), fieldVal.ir.getIfPValue()});
       continue;
     }
 
@@ -1626,8 +1622,8 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
   if (!structOp.getIsRegisterPassable())
     return emitter.emitResult(MRValue(memoryOnlyBase), this, dest);
 
-  // If all the fields are PRValues, form a new PRValue.
-  if (allInitializersPRValues) {
+  // If all the fields are PValues, form a new PValue.
+  if (allInitializersPValues) {
     auto result = StructAttr::get(emitter.getContext(), fieldParamValues,
                                   cast<DeclRefType>(initType.mlirType));
     return emitter.emitResult(result, this, dest);
@@ -1690,7 +1686,7 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
 
   // FIXME: We currently hack in index type support as transition to proper
   // expression support.
-  if (auto lhsParam = lhs.ir.getIfPRValue(), rhsParam = rhs.ir.getIfPRValue();
+  if (auto lhsParam = lhs.ir.getIfPValue(), rhsParam = rhs.ir.getIfPValue();
       lhsParam && lhsParam.getType().mlirType.isIndex() && rhsParam &&
       rhsParam.getType().mlirType.isIndex()) {
     POC opcode;
@@ -1959,7 +1955,7 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Special case some things for literals.
   // TODO: Fix literal representation.
-  if (auto exprParam = exprRep.getIfPRValue();
+  if (auto exprParam = exprRep.getIfPValue();
       exprParam && (exprParam.getType().mlirType.isIndex() ||
                     exprParam.getType().mlirType.isF64())) {
     switch (kind) {
@@ -1967,8 +1963,8 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       break;
     case ExprNode::kNeg:
       if (auto constantFP = dyn_cast<FloatAttr>(exprParam.get())) {
-        PRValue result(
-            FloatAttr::get(constantFP.getType(), -constantFP.getValue()));
+        auto result =
+            FloatAttr::get(constantFP.getType(), -constantFP.getValue());
         return emitter.emitResult(result, this, dest);
       }
 

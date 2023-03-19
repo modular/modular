@@ -510,7 +510,7 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
       resultDest.resetForError();
       return success();
     }
-    resultValue = PRValue(shared.getNoneAttr());
+    resultValue = PValue(shared.getNoneAttr());
   } else {
     resultValue = emitter.emitExprRValue(operandExprs[0], ValueDest::none());
   }
@@ -561,10 +561,10 @@ ParseResult LitStmtParser::parseParamReturnStmt(size_t returnIndent) {
     return success();
   }
 
-  // Emit the result parameters into PRValues.
+  // Emit the result parameters into PValues.
   SmallVector<TypedAttr> paramValues;
   for (auto [paramExpr, param] : llvm::zip(exprs, decl.getResultParams())) {
-    auto result = getEmitter().emitExprPRValue(
+    auto result = getEmitter().emitExprPValue(
         paramExpr, EC_ReturnResultParamList, param.getType());
     if (!result)
       return success();
@@ -932,17 +932,18 @@ ParseResult LitStmtParser::parseIfStmt(LitLexerCursor startCursor,
       return success();
     }
 
-    // Otherwise, for a @parameter if, we emit the condition as an PRValue
+    // Otherwise, for a @parameter if, we emit the condition as an PValue
     // without a builder.
     RValue condRVal = getParamEmitter().emitExprConditionValueAsI1(condExp);
     if (!condRVal)
       return failure();
-    if (!condRVal.getIfPRValue())
+    PValue condPVal = condRVal.getIfPValue();
+    if (!condPVal)
       return emitError(condExp->getLoc(), "@parameter 'if' requires a "
                                           "parameter expression as a condition")
              << condExp->getRange();
 
-    ifOp = builder.create<ParamIfOp>(loc, condRVal.getIfPRValue().get());
+    ifOp = builder.create<ParamIfOp>(loc, condPVal.get());
     return success();
   };
 

@@ -134,7 +134,7 @@ public:
   ExprContext getContext() const { return context; }
 
   /// Return true if there is a specification for this destination.  If not,
-  /// an expression will be emitted to generate a PRValue, SRValue, LValue, etc.
+  /// an expression will be emitted to generate a PValue, SRValue, LValue, etc.
   bool isSpecified() const { return !isa<NullRepresentation>(representation); }
 
   /// Return the LValueInitializerType this contains if it is one.
@@ -227,18 +227,19 @@ public:
   CRValue emitCRValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
   CValue emitCValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
   LValue emitLValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
+  BValue emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
 
   /// This helper emits the specified value as a SRValue which has an SSA
-  /// value representation, materializing PRValues and loading LValues as
+  /// value representation, materializing PValues and loading LValues as
   /// needed.  This returns null if emission fails, and should never be used
   /// with values that are memory-only.
   SRValue emitSRValue(ASTExprAnd<AnyValue> value, ExprContext context,
                       ASTType resultType = {});
 
-  /// This helper emits the specified value as a PRValue. This returns null if
+  /// This helper emits the specified value as a PValue. This returns null if
   /// emission fails.
-  PRValue emitPRValue(ASTExprAnd<AnyValue> value, ExprContext context,
-                      ASTType resultType = {});
+  PValue emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
+                    ASTType resultType = {});
 
   //===--------------------------------------------------------------------===//
   // Function Calls
@@ -308,8 +309,8 @@ public:
   /// the expression cannot be emitted, if it cannot be converted to the
   /// expected type, or if it isn't a valid runtime value.  This returns null if
   /// emission fails.
-  PRValue emitExprPRValue(const ExprNode *node, ExprContext context,
-                          ASTType resultType = {});
+  PValue emitExprPValue(const ExprNode *node, ExprContext context,
+                        ASTType resultType = {});
 
   /// Emit the specified expression as an LValue which can be loaded and stored.
   /// The ValueDest may specify an inferred type for the LValue.
