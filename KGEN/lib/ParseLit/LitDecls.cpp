@@ -344,15 +344,6 @@ ASTDecl &DeclResolver::addDecl(Operation *op, SMLoc loc, StringAttr name,
                  indentation);
 }
 
-ASTDecl &DeclResolver::addFullyResolvedDecl(Operation *op, SMLoc loc,
-                                            StringAttr name,
-                                            ASTDecl *parentDecl) {
-  auto &decl =
-      addDecl(op, loc, name, parentDecl, LitLexerCursor(), LitLexerCursor(), 0);
-  decl.resolvedness = DeclResolvedness::fully;
-  return decl;
-}
-
 /// Add a declaration that is already fully resolved.
 ASTDecl &DeclResolver::addFullyResolvedDecl(DeclIRValue declVal,
                                             StringAttr name, SMLoc loc,
@@ -1726,7 +1717,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
     auto type = POP::PointerType::get(bbArg.getType());
     auto varDecl = builder.create<VarLetDeclOp>(bbArg.getLoc(), type,
                                                 parsedArg.name, /*isVar*/ 1);
-    addFullyResolvedDecl(varDecl, parsedArg.loc, parsedArg.name, &decl);
+    addFullyResolvedDecl(DeclIRValue(varDecl), parsedArg.name, parsedArg.loc,
+                         &decl);
     builder.create<POP::StoreOp>(bbArg.getLoc(), bbArg, varDecl,
                                  /*alignment=*/std::nullopt);
   }

@@ -850,8 +850,8 @@ ParseResult LitStmtParser::parseTryStmt(size_t curIndent) {
       auto varDecl = builder.create<VarLetDeclOp>(
           errVal.getLoc(), POP::PointerType::get(errVal.getType()), errName,
           /*isVar*/ true);
-      getDeclResolver().addFullyResolvedDecl(varDecl, errValLoc, errName,
-                                             &containingDecl);
+      getDeclResolver().addFullyResolvedDecl(DeclIRValue(varDecl), errName,
+                                             errValLoc, &containingDecl);
       builder.create<POP::StoreOp>(errVal.getLoc(), errVal, varDecl,
                                    /*alignment=*/std::nullopt);
     } else {

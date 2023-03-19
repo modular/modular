@@ -657,11 +657,19 @@ void LitSharedState::loadModulesFromCache(
 
     for (Region &region : containerOp->getRegions()) {
       for (Operation &op : region.getOps()) {
+
+        auto addDeclForOp = [&](Operation *op, StringAttr name) -> ASTDecl & {
+          ASTDecl &decl = declResolver->addFullyResolvedDecl(
+              DeclIRValue(op), name, container->getLoc(), container);
+          declsToFill.push_back(&decl);
+          return decl;
+        };
+
         if (auto funcOp = dyn_cast<LIT::FuncOp>(&op)) {
           StringRef baseFuncName = funcOp.getName().split('(').first;
           auto &decl = declResolver->addFullyResolvedDecl(
-              funcOp, container->getLoc(),
-              StringAttr::get(getContext(), baseFuncName), container);
+              DeclIRValue(funcOp), StringAttr::get(getContext(), baseFuncName),
+              container->getLoc(), container);
           declResolver->declForFuncSymbol[decl.getSymbolRef()] = &decl;
 
           // Resolve the function types.
@@ -676,33 +684,23 @@ void LitSharedState::loadModulesFromCache(
                                 container->getCursor(), container->getCursor(),
                                 /*indentation=*/0);
         } else if (auto structOp = dyn_cast<StructDeclOp>(&op)) {
-          ASTDecl &structDecl = declResolver->addFullyResolvedDecl(
-              structOp, container->getLoc(), structOp.getSymNameAttr(),
-              container);
+          ASTDecl &structDecl =
+              addDeclForOp(structOp, structOp.getSymNameAttr());
           structDecl.setSelfType(structDecl.computeSelfTypeForStruct(*this));
-          declsToFill.push_back(&structDecl);
 
           // Resolve the types of any parameters.
           resolveParams(&structDecl, structOp.getInputParams());
         } else if (auto structFieldOp = dyn_cast<StructFieldOp>(&op)) {
-          declsToFill.push_back(&declResolver->addFullyResolvedDecl(
-              structFieldOp, container->getLoc(), structFieldOp.getNameAttr(),
-              container));
+          addDeclForOp(structFieldOp, structFieldOp.getNameAttr());
         } else if (auto letOp = dyn_cast<LetRegDeclOp>(&op)) {
-          declsToFill.push_back(&declResolver->addFullyResolvedDecl(
-              letOp, container->getLoc(), letOp.getNameAttr(), container));
+          addDeclForOp(letOp, letOp.getNameAttr());
         } else if (auto varOp = dyn_cast<VarLetDeclOp>(&op)) {
-          declsToFill.push_back(&declResolver->addFullyResolvedDecl(
-              varOp, container->getLoc(), varOp.getNameAttr(), container));
+          addDeclForOp(varOp, varOp.getNameAttr());
         } else if (auto paramDeclareOp = dyn_cast<ParamDeclareOp>(&op)) {
-          declsToFill.push_back(&declResolver->addFullyResolvedDecl(
-              paramDeclareOp, container->getLoc(), paramDeclareOp.getName(),
-              container));
+          addDeclForOp(paramDeclareOp, paramDeclareOp.getName());
         } else if (auto aliasForwardDeclOp =
                        dyn_cast<AliasForwardDeclOp>(&op)) {
-          declsToFill.push_back(&declResolver->addFullyResolvedDecl(
-              aliasForwardDeclOp, container->getLoc(),
-              aliasForwardDeclOp.getNameAttr(), container));
+          addDeclForOp(aliasForwardDeclOp, aliasForwardDeclOp.getNameAttr());
         }
       }
     }
