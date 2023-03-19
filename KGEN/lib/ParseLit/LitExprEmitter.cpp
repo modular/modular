@@ -340,6 +340,15 @@ BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   return MBValue(baseMR);
 }
 
+BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ExprContext context,
+                               ASTType resultType) {
+  ValueDest dest(resultType, context);
+  if (auto result = emitBValue(value, dest))
+    return result;
+  dest.resetForError();
+  return {};
+}
+
 LValue ExprEmitter::emitLValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   if (!value)
     return {};

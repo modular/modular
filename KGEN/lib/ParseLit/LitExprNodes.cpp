@@ -504,6 +504,8 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // RValue's and LValues always resolve to their known value.
   if (auto rvalue = decl.getIfRValue())
     return emitter.emitResult(rvalue, this, dest);
+  if (auto bvalue = decl.getIfBValue())
+    return emitter.emitResult(bvalue, this, dest);
   if (auto lvalue = decl.getIfLValue())
     return emitter.emitResult(lvalue, this, dest);
 
