@@ -33,7 +33,6 @@ namespace M::KGEN::LIT {
 class DeclResolver;
 class ASTDecl;
 class ASTType;
-class PRValue;
 class LookupResult;
 class NoneAttr;
 

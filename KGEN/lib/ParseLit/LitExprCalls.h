@@ -67,8 +67,8 @@ public:
   }
 
   using ParameterInferenceHookTy =
-      std::function<PRValue(ParamDeclAttr decl, ASTType expectedType,
-                            ArrayRef<ParamBindAttr> bindings)>;
+      std::function<PValue(ParamDeclAttr decl, ASTType expectedType,
+                           ArrayRef<ParamBindAttr> bindings)>;
 
   /// Check that our set of parameter bindings work with the specified input
   /// parameters, returning a checked ParamBindArrayAttr if so.  If the
@@ -200,10 +200,10 @@ public:
                   ExprEmitter &emitter);
 
 private:
-  /// Resolve the callee into either a single PRValue callee (if there's only
+  /// Resolve the callee into either a single PValue callee (if there's only
   /// one decl provided) or a variadic that contains all the possible adaptive
   /// overloads.
-  PRValue getCallee(ExprEmitter &emitter) const;
+  PValue getCallee(ExprEmitter &emitter) const;
 
   /// Filter down and complete this overload set based on knowledge that we need
   /// to produce a function pointer with the specified type.

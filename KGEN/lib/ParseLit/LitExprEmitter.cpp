@@ -308,6 +308,36 @@ CValue ExprEmitter::emitCValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   return overloads->emitAsCRValue(*this, dest);
 }
 
+/// Emit an expression providing a immutable borrowed reference to a value.
+BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
+  if (!value)
+    return {};
+
+  // If this is already a BValue, we're done.
+  if (auto bv = value.ir.getIfBValue())
+    return bv;
+
+  // Handle LValue's by decaying to MBValue or emitting a load from DLValue.
+  if (auto lv = value.ir.getIfSLValue())
+    return MBValue(lv);
+  if (auto lv = value.ir.getIfDLValue()) {
+    value.ir = emitRValue(value, dest);
+    if (!value.ir)
+      return {};
+  }
+
+  auto crVal = value.ir.getIfCRValue();
+  if (!crVal) // Handle ORValue.
+    return emitBValue({emitCRValue(value, dest), value.expr}, dest);
+
+  // Decay RValue to BValue.
+  if (auto baseSR = crVal.getIfSRValue()) // Decay SRValue -> SBValue
+    return SBValue(baseSR);
+  auto baseMR = crVal.getIfMRValue(); // Decay MRValue -> MBValue
+  assert(baseMR && "Unknown value classification");
+  return MBValue(baseMR);
+}
+
 LValue ExprEmitter::emitLValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   if (!value)
     return {};
@@ -414,7 +444,7 @@ CRValue ExprEmitter::emitCRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
 }
 
 /// This helper emits the specified value as a SRValue which has an SSA
-/// value representation, materializing PRValues and loading LValues as
+/// value representation, materializing PValues and loading LValues as
 /// needed.  This returns null if emission fails, and should never be used with
 /// values that are memory-only.
 SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
@@ -457,8 +487,8 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
     return {};
   }
 
-  auto attr = value.getIfPRValue().get();
-  assert(attr && "must be PRValue if register-passable and not SRValue");
+  auto attr = value.getIfPValue().get();
+  assert(attr && "must be PValue if register-passable and not SRValue");
 
   // If the value being materialized is itself parameterized, then we cannot
   // materialize it as an SSA value - there will be no way to bind parameters to
@@ -520,16 +550,16 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
 /// This helper emits the specified expression as a parameter value, diagnosing
 /// the problem if the expression is only valid as a runtime value.  This
 /// returns null if emission fails.
-PRValue ExprEmitter::emitPRValue(ASTExprAnd<AnyValue> value,
-                                 ExprContext context, ASTType resultType) {
+PValue ExprEmitter::emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
+                               ASTType resultType) {
   if (!value)
     return {};
 
-  // Clear the builder to indicate that an PRValue must be emitted.
+  // Clear the builder to indicate that an PValue must be emitted.
   llvm::SaveAndRestore savedBuilder(builder);
   builder.reset();
 
-  // If there is a result type, coerce before checking for PRValue.
+  // If there is a result type, coerce before checking for PValue.
   if (resultType) {
     value.ir = emitRValue(value, context, resultType);
     if (!value)
@@ -537,7 +567,7 @@ PRValue ExprEmitter::emitPRValue(ASTExprAnd<AnyValue> value,
   }
 
   // If this is a parameter, return it.
-  if (auto result = value.ir.getIfPRValue())
+  if (auto result = value.ir.getIfPValue())
     return result;
 
   // Otherwise diagnose this as "not a parameter".
@@ -568,9 +598,9 @@ static AnyValue refineResultValue(AnyValue value, SMLoc loc,
     return value;
 
   // Materialize a parameter rebind.
-  if (auto prvalue = value.getIfPRValue())
-    return PRValue(
-        ParamOperatorAttr::get(POC::Rebind, prvalue.get(), refinedType));
+  if (auto pvalue = value.getIfPValue())
+    return PValue(
+        ParamOperatorAttr::get(POC::Rebind, pvalue.get(), refinedType));
 
   // Materialize a rebind operation.
   auto rebind = [&](Value value) -> Value {
@@ -886,9 +916,9 @@ SRValue ExprEmitter::emitExprSRValue(const ExprNode *node, ExprContext context,
 /// This helper emits the specified expression as a parameter value, diagnosing
 /// the problem if the expression is only valid as a runtime value.  This
 /// returns null if emission fails.
-PRValue ExprEmitter::emitExprPRValue(const ExprNode *node, ExprContext context,
-                                     ASTType resultType) {
-  // Clear the builder to indicate that an PRValue must be emitted.
+PValue ExprEmitter::emitExprPValue(const ExprNode *node, ExprContext context,
+                                   ASTType resultType) {
+  // Clear the builder to indicate that an PValue must be emitted.
   llvm::SaveAndRestore savedBuilder(builder);
   builder.reset();
 
@@ -900,7 +930,7 @@ PRValue ExprEmitter::emitExprPRValue(const ExprNode *node, ExprContext context,
     return {};
   }
 
-  return emitPRValue({rep, node}, context);
+  return emitPValue({rep, node}, context);
 }
 
 /// Emit the specified expression as an LValue which can be loaded and stored.
@@ -920,7 +950,7 @@ LValue ExprEmitter::emitExprLValue(const ExprNode *expr, ValueDest &dest) {
 /// "Int" into the type for it.  This emits an error and returns null on
 /// failure.
 ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool isPack) {
-  auto value = emitExprPRValue(expr, EC_Type);
+  auto value = emitExprPValue(expr, EC_Type);
   if (!value)
     return {};
 
@@ -940,7 +970,7 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool isPack) {
 
   if (type) {
     // Verify that all of the parameters for this type are bound.  We allow
-    // PRValues to refer to parameteric type, but anything calling `emitType`
+    // PValues to refer to parameteric type, but anything calling `emitType`
     // can only handle fully bound types.
     auto *decl = type.getDecl(shared);
     if (!decl) // MLIR types are never parameterized.

@@ -65,7 +65,7 @@ static ParseResult parseType(LitParserBase &p, ASTType &result,
 MLIRContext *ASTDecl::getContext() const {
   if (auto *op = getIfOperation())
     return op->getContext();
-  if (auto mv = dyn_cast<PRValue>(getIRValue()))
+  if (auto mv = dyn_cast<PValue>(getIRValue()))
     return mv.get().getContext();
   if (auto dr = dyn_cast<SRValue>(getIRValue()))
     return dr.getContext();
@@ -76,7 +76,7 @@ MLIRContext *ASTDecl::getContext() const {
 
 /// If this is an RValue, return it otherwise return null.
 CRValue ASTDecl::getIfRValue() const {
-  if (auto attr = dyn_cast_or_null<PRValue>(irValue))
+  if (auto attr = dyn_cast_or_null<PValue>(irValue))
     return attr;
   if (auto value = dyn_cast_or_null<SRValue>(irValue))
     return value;
@@ -375,7 +375,7 @@ ASTDecl &DeclResolver::addErroneousDecl(StringRef baseName, llvm::SMLoc loc,
   // Use a dummy attribute representation for the error.
   BoolAttr dummyAttr = BoolAttr::get(parentDecl->getContext(), true);
   ASTDecl &errDecl =
-      addFullyResolvedDecl(PRValue(dummyAttr), baseName, loc, parentDecl);
+      addFullyResolvedDecl(PValue(dummyAttr), baseName, loc, parentDecl);
   errDecl.hasReferenceError = true;
   return errDecl;
 }
@@ -944,7 +944,7 @@ parseOptionalParameterSignature(LitParserBase &p, ASTDecl &declScope,
         // The type of pack parameters such as `Ts*: type` is `variadic<type>`.
         type = KGEN::VariadicType::get(type);
       auto tmpDecl = ParamDeclRefAttr::get(arg.name, type);
-      declResolver.addFullyResolvedDecl(PRValue(tmpDecl), arg.name, arg.loc,
+      declResolver.addFullyResolvedDecl(PValue(tmpDecl), arg.name, arg.loc,
                                         &declScope);
       params.push_back(ParamDeclAttr::get(arg.name, type));
     }
@@ -1438,8 +1438,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
     auto parentLoc = decl.getParentDecl()->getLoc();
     for (auto param : structDecl.getInputParams()) {
       auto paramRef = ParamDeclRefAttr::get(param);
-      addFullyResolvedDecl(PRValue(paramRef), param.getName(), parentLoc,
-                           &decl);
+      addFullyResolvedDecl(PValue(paramRef), param.getName(), parentLoc, &decl);
     }
   }
 
@@ -1537,8 +1536,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
     if (const ExprNode *initExpr = arg.initExpr) {
       ExprEmitter emitter(shared, decl, /*builder*/ {},
                           /*varDeclCursor*/ nullptr);
-      PRValue value =
-          emitter.emitExprPRValue(initExpr, EC_DefaultArgument, type);
+      PValue value = emitter.emitExprPValue(initExpr, EC_DefaultArgument, type);
       if (!value)
         return failure();
       defaults.push_back(value);
@@ -1973,7 +1971,7 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
                       /*varDeclCursor*/ nullptr);
 
   // Emit the value and convert to the expected type if we know it.
-  auto rhsValue = emitter.emitExprPRValue(initExpr, EC_AliasValue, type);
+  auto rhsValue = emitter.emitExprPValue(initExpr, EC_AliasValue, type);
   if (!rhsValue)
     return failure();
 
