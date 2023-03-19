@@ -1822,8 +1822,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
             argValAndExpr.expr->getLoc(), lv.getRValueType(), *this);
         // Emit the 'get' into the buffer.
         ValueDest bufferDest(buffer, EC_CallArgValue);
-        auto rvResult = emitRValue({lv, argValAndExpr.expr}, bufferDest);
-        if (!rvResult) {
+        if (!emitBValue({lv, argValAndExpr.expr}, bufferDest)) {
           bufferDest.resetForError();
           tmpBuffer.resetForError();
           return {};

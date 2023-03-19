@@ -42,7 +42,7 @@ enum ExprContext {
   EC_InplaceBinOpDest,      // x += 42
   EC_FieldInitValue,        // SomeType{value: x}
   EC_DefaultArgument,       // def f(arg = x):
-  EC_DefArgumentShadow,     // def f(x: Int):    -> var shadow slow.
+  EC_DefArgumentShadow,     // def f(x: Int):    -> var shadow slot.
   EC_BoolCondition,         // if x  /  while x  /  x and y  /  a if x else b
   EC_ForIterator,           // for x internal details
   EC_RaiseValue,            // raise x
@@ -221,8 +221,11 @@ public:
   //===--------------------------------------------------------------------===//
   // Emission helpers for various value classifications.
 
-  /// This helper emits the specified value as an RValue.
+  // This emits the value to the specified value dest, transfering ownership to
+  // the destination and returning a reference.
   RValue emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
+
+  /// This helper emits the specified value as an RValue.
   RValue emitRValue(ASTExprAnd<AnyValue> value, ExprContext context,
                     ASTType resultType);
   CRValue emitCRValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
@@ -231,6 +234,12 @@ public:
   BValue emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
   BValue emitBValue(ASTExprAnd<AnyValue> value, ExprContext context,
                     ASTType resultType);
+
+  /// Emit a register primary PValue to an SRValue.
+  SRValue emitPValueToSRValue(ASTExprAnd<PValue> value, ExprContext context);
+  /// Emit any kind of PValue to an SLValue.
+  MBValue emitPValueToSLValue(ASTExprAnd<PValue> value, SLValue dest,
+                              ExprContext context);
 
   /// This helper emits the specified value as a SRValue which has an SSA
   /// value representation, materializing PValues and loading LValues as
@@ -353,6 +362,12 @@ public:
   /// Given an BValue, produce a standalone rvalue in the specified destination
   /// by emitting a clone call.
   RValue emitBValueToRValue(ASTExprAnd<BValue> value, ValueDest &dest);
+
+  /// Given a value with a known type, emit a store to the specified LValue.
+  /// This returns an borrowed reference to the value after it is done.  The
+  /// types must match for this call.
+  AnyValue emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
+                             ExprContext context);
 };
 
 } // namespace M::KGEN::LIT
