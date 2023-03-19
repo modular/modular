@@ -9,7 +9,6 @@
 from prolog import Error, F32, Int
 from Range import range
 
-
 ##===----------------------------------------------------------------------===##
 # let
 ##===----------------------------------------------------------------------===##
@@ -205,11 +204,40 @@ fn nestedFnInLoop():
 # Conventions
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.func @"ownedConvention
+# CHECK-LABEL: lit.func @"ownedConventionMem
 # CHECK-SAME: (%a: !pop.pointer<@"$decls"::@StructWithInit> owned_in_mem,
-# CHECK-SAME:  %b: !pop.pointer<@"$decls"::@StructWithInit> owned_in_mem)
-fn ownedConvention(owned a: StructWithInit, b: StructWithInit): pass
+# CHECK-SAME:  %b: !pop.pointer<@"$decls"::@StructWithInit> borrow_in_mem)
+fn ownedConventionMem(owned a: StructWithInit, borrowed b: StructWithInit):
+  # CHECK: %0 = lit.struct.gep %a[x]
+  # CHECK: %1 = kgen.call {{.*}}__clone__{{.*}}(%0)
+  # CHECK: %_ = lit.varlet.decl
+  # CHECK: pop.store %1, %_
+  _ = a.x
+  # CHECK: %2 = lit.struct.gep %b[y]
+  # CHECK: %3 = kgen.call {{.*}}__clone__{{.*}}(%2)
+  # CHECK: %__0 = lit.varlet.decl
+  # CHECK: pop.store %3, %__0
+  _ = b.y
 
+
+@register_passable
+struct RPStructWithInit:
+  var x: Int
+  var y: Int
+
+# CHECK-LABEL: lit.func @"ownedConventionReg
+# CHECK-SAME: (%a: !kgen.declref<@"$decls"::@RPStructWithInit>,
+# CHECK-SAME:  %b: !kgen.declref<@"$decls"::@RPStructWithInit> borrow)
+fn ownedConventionReg(owned a: RPStructWithInit,
+                      borrowed b: RPStructWithInit):
+  # CHECK: %0 = lit.struct.extract %a[x]
+  # CHECK: %_ = lit.varlet.decl
+  # CHECK: pop.store %0, %_
+  _ = a.x
+  # CHECK: %1 = lit.struct.extract %b[y]
+  # CHECK: %__0 = lit.varlet.decl
+  # CHECK: pop.store %1, %__0
+  _ = b.y
 
 ##===----------------------------------------------------------------------===##
 # Default arguments and variadics.

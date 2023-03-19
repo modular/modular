@@ -229,6 +229,8 @@ public:
   CValue emitCValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
   LValue emitLValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
   BValue emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
+  BValue emitBValue(ASTExprAnd<AnyValue> value, ExprContext context,
+                    ASTType resultType);
 
   /// This helper emits the specified value as a SRValue which has an SSA
   /// value representation, materializing PValues and loading LValues as

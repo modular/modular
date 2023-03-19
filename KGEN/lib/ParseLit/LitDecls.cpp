@@ -85,6 +85,17 @@ CRValue ASTDecl::getIfRValue() const {
   return {};
 }
 
+/// If this is an BValue, return it otherwise return null.
+BValue ASTDecl::getIfBValue() const {
+  if (auto attr = dyn_cast_or_null<PValue>(irValue))
+    return attr;
+  if (auto value = dyn_cast_or_null<SBValue>(irValue))
+    return value;
+  if (auto value = dyn_cast_or_null<MBValue>(irValue))
+    return value;
+  return {};
+}
+
 /// Return the SymbolRefAttr for a declaration, including all scoping that may
 /// be needed, making it unique for every declaration.  This returns null for
 /// named values that do not have a declaration.
@@ -622,7 +633,8 @@ struct ParsedArgument {
     kConventionUnspec = 0,      // Nothing specified
     kConventionByRef = 1,       // x&
     kConventionOwned = 2,       // owned x
-    kConventionByRefResult = 3, // Type checked not parsed.
+    kConventionBorrowed = 3,    // borrowed x
+    kConventionByRefResult = 4, // No syntax: created by type checker.
   } convention = kConventionUnspec;
 
   // After type checking, this will hold the KGEN convention to use.
@@ -674,12 +686,19 @@ struct ParsedArgument {
     if (p.consumeIf(LitToken::star)) // '*' => variadic
       vararg = VarArgKind::VarArg;
 
-    // The owned keyword sets convention.
+    // The owned/borrowed keyword sets convention.
     // NOTE: We might consider a postfix ^ syntax after the language bakes out
     // more, that is probably going to be tightly coupled to ownership transfer,
     // but this is more explicit for now.
     if (p.consumeIf(LitToken::kw_owned))
       convention = kConventionOwned;
+
+    SMLoc borrowLoc;
+    if (p.consumeIf(LitToken::kw_borrowed, &borrowLoc)) {
+      if (convention != kConventionUnspec)
+        p.emitError(borrowLoc, "argument already has a convention specified");
+      convention = kConventionBorrowed;
+    }
 
     if (p.parseIdentifier(name, "expected parameter name"))
       // TODO: Scan ahead for better recovery.
@@ -1234,6 +1253,14 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
       else
         arg.kgenConvention = ValueInputConvention::OwnedInMem;
       break;
+    case ParsedArgument::kConventionBorrowed:
+      // Memory-only owned argument are passed with a layer of indirection and
+      // use a specific convention to model this.
+      if (ASTType(argType).isRegisterPassable(arg.loc, shared))
+        arg.kgenConvention = ValueInputConvention::BorrowedInReg;
+      else
+        arg.kgenConvention = ValueInputConvention::BorrowedInMem;
+      break;
     case ParsedArgument::kConventionByRef:
       arg.kgenConvention = ValueInputConvention::ByRef;
       mangledName += '&';
@@ -1245,7 +1272,8 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
     }
 
     // Adjust the MLIR type if needed.
-    if (arg.kgenConvention != ValueInputConvention::OwnedInReg)
+    if (arg.kgenConvention != ValueInputConvention::OwnedInReg &&
+        arg.kgenConvention != ValueInputConvention::BorrowedInReg)
       argType = POP::PointerType::get(argType);
     if (arg.vararg == VarArgKind::VarArg)
       argType = KGEN::VariadicType::get(argType);
@@ -1711,23 +1739,38 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
       break;
 
     case ValueInputConvention::OwnedInReg:
+    case ValueInputConvention::BorrowedInReg:
+    case ValueInputConvention::BorrowedInMem:
       // If this was passed by-value, then it becomes an rvalue in a `fn`.
       if (!funcOp.getIsDef()) {
-        // FIXME: This is incorrect, this makes every use think it owns the
-        // argument.  This should be an SBValue.
-        addDecl(SRValue(bbArg));
+        if (convention == ValueInputConvention::BorrowedInMem)
+          addDecl(MBValue(bbArg));
+        else if (convention == ValueInputConvention::OwnedInReg)
+          // FIXME: This is incorrect, this makes every use think it owns the
+          // argument as an RValue.  This should be dropped into a memory slot
+          // so it is an LValue that can be consumed, or do we need a new
+          // "SSA lvalue" sort of thing.
+          addDecl(SRValue(bbArg));
+        else
+          addDecl(SBValue(bbArg));
         break;
       }
 
       // In a `def`, we create a mutable var.decl lvalue to allow
-      // reassignment.
-      auto type = POP::PointerType::get(bbArg.getType());
-      auto varDecl = builder.create<VarLetDeclOp>(bbArg.getLoc(), type,
+      // reassignment.  Figure out how to model the input value.
+      CValue srcVal;
+      if (convention == ValueInputConvention::BorrowedInMem)
+        srcVal = MBValue(bbArg);
+      else if (convention == ValueInputConvention::OwnedInReg)
+        srcVal = SRValue(bbArg);
+      else
+        srcVal = SBValue(bbArg);
+
+      Type varType = POP::PointerType::get(srcVal.getRValueType());
+      auto varDecl = builder.create<VarLetDeclOp>(bbArg.getLoc(), varType,
                                                   parsedArg.name, /*isVar*/ 1);
 
       // Emit the initializer expression into the slot.
-      AnyValue srcVal = SRValue(bbArg);
-
       ExprEmitter emitter(shared, decl, builder, /*varDeclCursor*/ nullptr);
 
       // Expr to provide location information.
@@ -1736,6 +1779,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
       ValueDest dest(SLValue(varDecl), EC_DefArgumentShadow);
       if (!emitter.emitRValue({srcVal, &srcExpr}, dest))
         dest.resetForError();
+
       addDecl(SLValue(varDecl));
       break;
     }

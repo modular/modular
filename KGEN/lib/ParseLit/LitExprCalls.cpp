@@ -220,11 +220,13 @@ PValue ParameterInferenceState::infer(SignatureType signature,
       }
 
       case ValueInputConvention::OwnedInMem:
+      case ValueInputConvention::BorrowedInMem:
         // Otherwise,we expect an r-value to match up, ignoring the pointer type
         // from the convention.
         expectedType = expectedType.getPointerElementType();
         [[fallthrough]];
       case ValueInputConvention::OwnedInReg:
+      case ValueInputConvention::BorrowedInReg:
         // Otherwise, we pass as an r-value if we know the type.
         // TODO: Consider implicit conversions?
         if (auto c = operand.ir.getIfCValue())
@@ -699,10 +701,15 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
           return {kArgWrongLVType, providedValueIdx, expectedType, newBindings};
         break;
       }
+      case ValueInputConvention::BorrowedInReg:
+      case ValueInputConvention::BorrowedInMem:
       case ValueInputConvention::OwnedInReg:
       case ValueInputConvention::OwnedInMem:
-        // Ignore the pointer type on OwnedInMem convention when matching types.
-        if (expectedConvention == ValueInputConvention::OwnedInMem)
+        // Ignore the pointer type on memory conventions when matching types.
+        // Note: Should do not support overloading on borrow/owned currently,
+        // but we could add this if there is a reason to.
+        if (expectedConvention == ValueInputConvention::OwnedInMem ||
+            expectedConvention == ValueInputConvention::BorrowedInMem)
           expectedType = expectedType.getPointerElementType();
 
         auto argVal = operand.ir.getIfCValue();
@@ -1333,7 +1340,8 @@ CRValue OverloadSet::emitAsCRValue(ExprEmitter &emitter, ValueDest &dest) {
 
   switch (selfConvention) {
   case ValueInputConvention::ByRefResult:
-  case ValueInputConvention::OwnedInMem: {
+  case ValueInputConvention::OwnedInMem:
+  case ValueInputConvention::BorrowedInMem: {
     auto diag =
         emitter.emitError(
             loc, "TODO: partial application requires closure generation ")
@@ -1355,12 +1363,16 @@ CRValue OverloadSet::emitAsCRValue(ExprEmitter &emitter, ValueDest &dest) {
         << baseValue.expr->getRange();
     return {};
   }
+  case ValueInputConvention::BorrowedInReg:
   case ValueInputConvention::OwnedInReg:
     // Otherwise we can have either an lvalue or rvalue, but we need to convert
     // to an rvalue if we have an lvalue.
     firstArgValue = emitter.emitSRValue(baseValue, EC_CallArgValue);
     if (!firstArgValue)
       return {};
+
+    // TODO: Partial application isn't handling ownership right at all, we
+    // should probably disable it.
     break;
   }
 
@@ -1612,6 +1624,8 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
         return operand.ir;
       case ValueInputConvention::OwnedInReg:
       case ValueInputConvention::OwnedInMem:
+      case ValueInputConvention::BorrowedInReg:
+      case ValueInputConvention::BorrowedInMem:
         // by-val arguments are converted to the expected r-value type.
         ASTType expectedArgType = expectedType;
         if (calleeSig.isVararg(argIdx))
@@ -1625,10 +1639,14 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
           expectedArgType = cast<VariadicAttr>(packType.getVariadic())
                                 .getValues()[sequenceIndex];
 
-        if (convention == ValueInputConvention::OwnedInMem)
+        if (convention == ValueInputConvention::OwnedInMem ||
+            convention == ValueInputConvention::BorrowedInMem)
           expectedArgType = expectedArgType.getPointerElementType();
 
-        return emitRValue(operand, EC_CallArgValue, expectedArgType);
+        if (convention == ValueInputConvention::OwnedInReg ||
+            convention == ValueInputConvention::OwnedInMem)
+          return emitRValue(operand, EC_CallArgValue, expectedArgType);
+        return emitBValue(operand, EC_CallArgValue, expectedArgType);
       }
       llvm_unreachable("unknown value input convention");
     };
@@ -1758,20 +1776,38 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     }
   } writebackHandler{callExpr, {}};
 
-  for (auto [argValAndExpr, convention, calleeArgTypeAndIdx] :
+  for (auto [argValAndExpr, conventionX, calleeArgTypeAndIdx] :
        llvm::zip(argumentValues, calleeSig.getValueInputConventions(),
                  llvm::enumerate(calleeSig.getValueInputs()))) {
     auto calleeArgType = calleeArgTypeAndIdx.value();
     auto argIdx = calleeArgTypeAndIdx.index();
+    ValueInputConvention convention = conventionX;
+
+    // If this is a variadic operation, the N operands have already been emitted
+    // together and consolidated into a pop.variadic.create/pop.variadic.attr,
+    // which is emitted as an SRValue instead of whatever the underlying type
+    // is.
+    if (calleeSig.isVararg(argIdx))
+      convention = ValueInputConvention::OwnedInReg;
 
     Value arg;
-    if (convention == ValueInputConvention::OwnedInReg ||
-        calleeSig.isVararg(argIdx)) {
+    switch (convention) {
+    case ValueInputConvention::OwnedInReg:
       arg = emitSRValue(argValAndExpr, EC_CallArgValue);
       if (!arg)
         return {};
-    } else if (convention == ValueInputConvention::ByRef ||
-               convention == ValueInputConvention::ByRefResult) {
+      break;
+    case ValueInputConvention::OwnedInMem:
+      arg = argValAndExpr.ir.getIfMRValue();
+      break;
+    case ValueInputConvention::BorrowedInReg:
+      arg = argValAndExpr.ir.getIfSBValue();
+      break;
+    case ValueInputConvention::BorrowedInMem:
+      arg = argValAndExpr.ir.getIfMBValue();
+      break;
+    case ValueInputConvention::ByRef:
+    case ValueInputConvention::ByRefResult:
       // We know that the operand is an LValue, but it might be
       // dynamic/computed.
       LValue lv = argValAndExpr.ir.getIfLValue();
@@ -1795,8 +1831,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
         writebackHandler.elements.push_back({std::move(tmpBuffer), buffer});
         arg = buffer;
       }
-    } else if (convention == ValueInputConvention::OwnedInMem) {
-      arg = argValAndExpr.ir.getIfMRValue();
+      break;
     }
     if (!arg) {
       llvm::errs() << "CALL ARG MISMATCH: " << int(convention) << " ";

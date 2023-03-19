@@ -32,9 +32,9 @@ namespace M::KGEN::LIT {
 /// and correct IR for a program.  Declarations often have other declarations
 /// nested inside of them, forming "scopes" and supporting name lookup.
 ///
-/// Declarations in Lightning work the same way as in Python: scopes are nested
+/// Declarations in Mojo work the same way as in Python: scopes are nested
 /// and are defined when a builtin, module, class/struct, or function definition
-/// is introduced.  Lightning (like Python) allows forward references to values
+/// is introduced.  Mojo (like Python) allows forward references to values
 /// before they are defined, so the parser works in multiple phases where it
 /// notices a declaration but does not parse its body until it is demanded.
 class ASTDecl {
@@ -49,6 +49,7 @@ public:
   /// If this declaration is defined by its value (e.g. a parameter value or an
   /// SSA value) then return it.
   CRValue getIfRValue() const;
+  BValue getIfBValue() const;
 
   /// If this declaration is defined by its value (e.g. a parameter value or an
   /// SSA value) then return it.

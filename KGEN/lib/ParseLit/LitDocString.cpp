@@ -292,13 +292,17 @@ private:
       switch (*convention) {
       case ValueInputConvention::ByRef:
       case ValueInputConvention::ByRefResult:
+        // TODO: This is probably wrong for ByRefResult?
         astType = astType.getPointerElementType();
         typeSuffix = "&";
         break;
       case ValueInputConvention::OwnedInMem:
+      case ValueInputConvention::BorrowedInMem:
+        // TODO: Produce "owned" marker in docs.
         astType = astType.getPointerElementType();
         break;
       case ValueInputConvention::OwnedInReg:
+      case ValueInputConvention::BorrowedInReg:
         break;
       }
     }
