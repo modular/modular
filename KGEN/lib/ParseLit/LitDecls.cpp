@@ -1777,7 +1777,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
       DeclRefNode srcExpr(
           StringRef(parsedArg.loc.getPointer(), parsedArg.name.size()));
       ValueDest dest(SLValue(varDecl), EC_DefArgumentShadow);
-      if (!emitter.emitRValue({srcVal, &srcExpr}, dest))
+      if (!emitter.emitBValue({srcVal, &srcExpr}, dest))
         dest.resetForError();
 
       addDecl(SLValue(varDecl));
@@ -1896,7 +1896,7 @@ LogicalResult DeclResolver::resolveSignature(VarLetDeclOp varOp,
       dest = ValueDest(varOp, exprContext);
     }
 
-    if (!emitter.emitExprRValue(initExpr, dest)) {
+    if (!initExpr->emitIR(dest, emitter)) {
       dest.resetForError();
       return failure();
     }

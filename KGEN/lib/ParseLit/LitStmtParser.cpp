@@ -439,8 +439,8 @@ ParseResult LitStmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
   // statement, it will return None.  Other expressions can return whatever they
   // will naturally return.
   auto emitter = getEmitter(/*allowImplicitVarDecl=*/true);
-  ValueDest dest; // Result is ignored, so we don't care where it goes.
-  auto result = emitter.emitExprCRValue(expr, dest);
+  // Result is ignored, so we don't care where it goes.
+  auto result = emitter.emitExprCRValue(expr, EC_TopLevelStmt);
   if (!result)
     return success();
 
@@ -506,13 +506,13 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   if (decl.getSignature().hasMemoryOnlyResult()) {
     // If the result is memory-only, return into the result slot.
     ValueDest resultDest(SLValue(decl.getArgument(0)), EC_ReturnValue);
-    if (!emitter.emitExprRValue(operandExprs[0], resultDest)) {
+    if (!operandExprs[0]->emitIR(resultDest, emitter)) {
       resultDest.resetForError();
       return success();
     }
     resultValue = PValue(shared.getNoneAttr());
   } else {
-    resultValue = emitter.emitExprRValue(operandExprs[0], ValueDest::none());
+    resultValue = emitter.emitExprRValue(operandExprs[0], EC_ReturnValue);
   }
 
   // Convert the returned value to the returned type of the function.  If the

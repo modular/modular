@@ -49,6 +49,10 @@ enum ExprContext {
   EC_ReturnResultParamList, // return[x] y
   EC_ReturnValue,           // return x;
   EC_MLIRMagic,             // __mlir_type[x] / __mlir_attr[x]
+  EC_TopLevelStmt,          // x
+  EC_ListField,             // [x, y]
+  EC_TupleElement,          // (x, y)
+  EC_SubscriptBase,         // x[y]
 };
 const char *getContextMessage(ExprContext context);
 
@@ -227,18 +231,20 @@ public:
   // Emission helpers for various value classifications.
 
   // This emits the value to the specified value dest, transfering ownership to
-  // the destination and returning a reference.
-  RValue emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
+  // the destination and returning a reference if dest consumes it, or the
+  // RValue directly if not.
+  AnyValue emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
 
   /// This helper emits the specified value as an RValue.
   RValue emitRValue(ASTExprAnd<AnyValue> value, ExprContext context,
-                    ASTType resultType);
-  CRValue emitCRValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
+                    ASTType resultType = {});
+  CRValue emitCRValue(ASTExprAnd<AnyValue> value, ExprContext context,
+                      ASTType resultType = {});
   CValue emitCValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
   LValue emitLValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
   BValue emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
   BValue emitBValue(ASTExprAnd<AnyValue> value, ExprContext context,
-                    ASTType resultType);
+                    ASTType resultType = {});
 
   /// Emit a register primary PValue to an SRValue.
   SRValue emitPValueToSRValue(ASTExprAnd<PValue> value, ExprContext context);
@@ -308,12 +314,12 @@ public:
   AnyValue emitResult(AnyValue value, const ExprNode *node, ValueDest &dest);
   CValue emitCResult(CValue value, const ExprNode *node, ValueDest &dest);
 
-  /// This emits the specified value to an RValue in the specified ValueDest and
-  /// returns it (potentially as a borrowed referenced to that storage).
-  RValue emitExprRValue(const ExprNode *node, ValueDest &dest);
+  /// This emits the specified value to an RValue with the specified context.
+  RValue emitExprRValue(const ExprNode *node, ExprContext context,
+                        ASTType resultType = {});
 
-  /// This emits the specified value rep as an RValue.
-  CRValue emitExprCRValue(const ExprNode *node, ValueDest &dest);
+  /// This emits the specified value rep as a CRValue.
+  CRValue emitExprCRValue(const ExprNode *node, ExprContext context);
 
   /// This helper emits the specified value rep as an SRValue, materializing
   /// it as an operation if it is a parameter.  This returns null if emission
@@ -365,14 +371,20 @@ public:
   SRValue emitBoxedIntAsPopScalar(Value numberValue, const ExprNode *source);
 
   /// Given an BValue, produce a standalone rvalue in the specified destination
-  /// by emitting a clone call.
-  RValue emitBValueToRValue(ASTExprAnd<BValue> value, ValueDest &dest);
+  /// by emitting a clone call.  This returns a BValue if dest takes ownership,
+  /// otherwise it returns an RValue.
+  CValue emitBValueToRValue(ASTExprAnd<BValue> value, ValueDest &dest);
 
   /// Given a value with a known type, emit a store to the specified LValue.
   /// This returns an borrowed reference to the value after it is done.  The
   /// types must match for this call.
-  AnyValue emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
-                             ExprContext context);
+  BValue emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
+                           ExprContext context);
+
+  /// Emit a call to the getter of the specified LValue, loading the value into
+  /// dest (if specified) or returning it if not.  This returns an RValue if
+  /// there is no consuming dest, otherwise a BValue.
+  CValue emitLoadOfLValue(ASTExprAnd<LValue> value, ValueDest &dest);
 };
 
 } // namespace M::KGEN::LIT

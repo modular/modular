@@ -26,7 +26,7 @@ def var_decl():
 
 var globalvar : __mlir_type.index
 def err():
-  var y : globalvar  # expected-error {{cannot use a dynamic value in a parameter context}}
+  var y : globalvar  # expected-error {{cannot use a dynamic value in type specification}}
 
 def missing_type_on_var_decl():
   var abc :

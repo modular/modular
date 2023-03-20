@@ -138,4 +138,5 @@ struct ErrorOr[type: __mlir_type.`!kgen.mlirtype`]:
 # is just a placeholder to be used by untyped 'def' operands.
 @register_passable
 struct object:
-    pass
+    fn __clone__(self&) -> Self:
+        return Self {}

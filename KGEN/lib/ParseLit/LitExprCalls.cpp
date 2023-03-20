@@ -1293,7 +1293,7 @@ OverloadSet::OverloadSet(ASTType type, StringRef methodName,
 
 /// Emit this as a CRValue if it can be resolved, otherwise emit an ambiguity
 /// error and return null.
-CRValue OverloadSet::emitAsCRValue(ExprEmitter &emitter, ValueDest &dest) {
+CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
   // If we have an overload set with multiple possibilities, we'll fail to emit
   // this as a CRValue.  Try to resolve it based on the destination's type.
   if (fnDecls.size() > 1) {
@@ -1323,7 +1323,7 @@ CRValue OverloadSet::emitAsCRValue(ExprEmitter &emitter, ValueDest &dest) {
 
   // If we have no base value, then we are just a symbol, return it.
   if (!baseValue)
-    return emitter.emitResult(directSymbolAttr, expr, dest).getIfCRValue();
+    return emitter.emitCResult(directSymbolAttr, expr, dest);
 
   auto loc = baseValue.expr->getLoc();
 
@@ -1389,9 +1389,7 @@ CRValue OverloadSet::emitAsCRValue(ExprEmitter &emitter, ValueDest &dest) {
   auto result = SRValue(emitter.builder->create<POP::PartialApplyOp>(
       expr->getLocation(emitter), calleeDRVal, mlir::ValueRange(firstArgValue),
       zeroAttr));
-  auto eResult = emitter.emitResult(result, expr, dest);
-  assert(eResult.getIfSRValue() && "Emitting an SRValue shouldn't change it");
-  return eResult.getIfSRValue();
+  return emitter.emitCResult(result, expr, dest);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1756,6 +1754,8 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
 
   struct WritebackClearer {
     const ExprNode *expr;
+    // The first entry of this is a ValueDest for a DLValue that we can invoke
+    // for the setter.
     SmallVector<std::pair<ValueDest, SLValue>> elements;
 
     void emit(ExprEmitter &emitter) {
@@ -1791,6 +1791,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     Value arg;
     switch (convention) {
     case ValueInputConvention::OwnedInReg:
+      // Promote PValue's.
       arg = emitSRValue(argValAndExpr, EC_CallArgValue);
       if (!arg)
         return {};
@@ -1815,18 +1816,18 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       } else {
         // If dynamic, we need to generate a temporary slot, emit a 'get' into
         // that slot, pass the address, then write it back when we're done.
-        ValueDest tmpBuffer(lv, EC_CallArgValue);
-        SLValue buffer = tmpBuffer.getSLValueForResult(
+        ValueDest dlvBuffer(lv, EC_CallArgValue);
+        SLValue slvBuffer = dlvBuffer.getSLValueForResult(
             argValAndExpr.expr->getLoc(), lv.getRValueType(), *this);
         // Emit the 'get' into the buffer.
-        ValueDest bufferDest(buffer, EC_CallArgValue);
-        if (!emitBValue({lv, argValAndExpr.expr}, bufferDest)) {
+        ValueDest bufferDest(slvBuffer, EC_CallArgValue);
+        if (!emitLoadOfLValue({lv, argValAndExpr.expr}, bufferDest)) {
           bufferDest.resetForError();
-          tmpBuffer.resetForError();
+          dlvBuffer.resetForError();
           return {};
         }
-        writebackHandler.elements.push_back({std::move(tmpBuffer), buffer});
-        arg = buffer;
+        writebackHandler.elements.push_back({std::move(dlvBuffer), slvBuffer});
+        arg = slvBuffer;
       }
       break;
     }
