@@ -72,7 +72,7 @@ fn badPropertyError(a: InvalidType):
 
 struct NotBoolConvertible: pass
 # expected-note @+1 {{function declared here}}
-def test_bool_context(a: NotBoolConvertible): pass
+fn test_bool_context(a: NotBoolConvertible): pass
 
 fn voidReturningFn(): pass
 fn badCall():
@@ -306,7 +306,7 @@ struct Rec[param: Rec]: # expected-error {{only @register_passable types are sup
   pass
 
 # expected-error @+1 {{'def' statement must be on its own line}}
-struct Struct: def foo(self): pass
+struct Struct: def foo(self&): pass
 
 struct ReturnFromStruct:
   # expected-error @+1 {{cannot return from this context}}
@@ -356,11 +356,11 @@ struct WrongType:
 
 struct WrongSelfType[a: Int]:
   # expected-error @+1 {{'self' argument must have type '$decls-errors::WrongSelfType[a]'}}
-  def badMethod(self: Int): pass
-  def goodMethod(self&: WrongSelfType[a]): pass
+  fn badMethod(self: Int): pass
+  fn goodMethod(self&: WrongSelfType[a]): pass
 
   # expected-error @+1 {{special function must have 2 operands}}
-  def __add__(self): pass
+  fn __add__(self): pass
 
 # Issue #6587: [Lit] Recursive constructors crash kgen
 struct BadInit[size: __mlir_type.index]:
@@ -389,7 +389,7 @@ struct DirectInstanceReference:
     # expected-error @+1 {{cannot access instance field 'value' directly; did you mean `self.`?}}
     var xx = value
 
-def field_indexes(a: DirectInstanceReference):
+fn field_indexes(a: DirectInstanceReference):
   a.badField = 42 # expected-error {{'$decls-errors::DirectInstanceReference' value has no attribute 'badField'}}
 
 # https://github.com/modularml/modular/issues/6701

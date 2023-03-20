@@ -646,6 +646,10 @@ struct ParsedArgument {
   ExprNode *typeExpr = nullptr;
   ExprNode *initExpr = nullptr;
 
+  /// This gets set to true when there is a /diagnosed/ error that should
+  /// prevent subsequent references to this argument.
+  bool isErroneous = false;
+
   /// This specifies the handling of keyword arguments in a list.
   enum class KWArgHandling {
     kPositionalOnly,      //< before a standalone '/'
@@ -1105,8 +1109,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
 
     // If no convention was explicitly specified, provide a default.
     if (arg.convention == ParsedArgument::kConventionUnspec) {
-      // TODO: Default to borrowed.
-      arg.convention = ParsedArgument::kConventionOwned;
+      arg.convention = ParsedArgument::kConventionBorrowed;
 
       // The first/self argument to __init__ is weird because it gets
       // ByRefResult argument convention, even though it is a declared argument.
@@ -1188,7 +1191,8 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
     else if (funcOp.getIsStatic())
       emitError("special method may not be a static method");
     else if (!fnInfo.allowsByRefSelfInstMethod() &&
-             args[selfArgNumber].convention != ParsedArgument::kConventionOwned)
+             args[selfArgNumber].convention !=
+                 ParsedArgument::kConventionBorrowed)
       emitErrorLoc(args[selfArgNumber].loc,
                    "self argument cannot be passed by reference");
   }
@@ -1536,10 +1540,13 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
     if (arg.typeExpr) {
       type = typeEmitter.emitExprType(arg.typeExpr, arg.isPack);
 
-      // If the type couldn't be emitted, mark this function erroneous and put
-      // in a placeholder type so we can continue type checking.
+      // If the type couldn't be emitted, mark this argument erroneous (so uses
+      // within the body of the function don't trigger secondary errors) and
+      // mark the function erroneous so calls won't resolve.  Put in a
+      // placeholder type so we can continue type checking.
       if (!type) {
         decl.hasReferenceError = true;
+        arg.isErroneous = true;
         type = shared.getTypeCheckErrorType();
       }
 
@@ -1705,18 +1712,21 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
 
     buildArgDIInfo(bbArg, parsedArg.name, bbArg.getArgNumber());
 
+    auto addDecl = [&, name = parsedArg.name, loc = parsedArg.loc,
+                    isErroneous = parsedArg.isErroneous](DeclIRValue declVal) {
+      auto &argDecl = addFullyResolvedDecl(declVal, name, loc, &decl);
+      // If there was an error handling the argument, mark it erroneous to
+      // disable downstream errors.
+      if (isErroneous)
+        argDecl.hasReferenceError = true;
+    };
+
     // VarArg arguments are always treated as their pop.variadic type
     // by-value right now.  TODO(literals): Project to a list like thing.
     if (parsedArg.vararg == VarArgKind::VarArg) {
-      addFullyResolvedDecl(SRValue(bbArg), parsedArg.name, parsedArg.loc,
-                           &decl);
+      addDecl(SRValue(bbArg));
       continue;
     }
-
-    auto addDecl = [&, name = parsedArg.name,
-                    loc = parsedArg.loc](DeclIRValue declVal) {
-      addFullyResolvedDecl(declVal, name, loc, &decl);
-    };
 
     switch (convention) {
     // Arguments passed by-reference can be directly used.

@@ -6,7 +6,7 @@
 
 # RUN: kgen-translate -import-mojo %s -verify-diagnostics | FileCheck %s
 
-# CHECK: lit.func @"mlirMagicTest{{.*}}(%x: bf16, %y: f8E5M2)
+# CHECK: lit.func @"mlirMagicTest{{.*}}(%x: bf16 borrow, %y: f8E5M2 borrow)
 fn mlirMagicTest(
     x: __mlir_type.bf16, y: __mlir_type.f8E5M2
 ) -> __mlir_type.index:

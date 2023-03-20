@@ -193,7 +193,7 @@ def test_else_outside_while(a: Bool, b: Bool) -> Bool:
     # CHECK: hlcf.if {{.+}} {
     if b:
         # CHECK: hlcf.loop
-        # CHECK: {{.+}} = kgen.call @"$_CompilerBuiltin"::@Bool::@"__clone__{{.*}}(%a_0
+        # CHECK: {{.+}} = pop.load %a_0
         while a:
             # CHECK: pop.store {{.+}}, %inside_a
             inside_a = Int(0)
@@ -306,7 +306,7 @@ def tryExceptArgDef():
     # CHECK: except (%arg0: !kgen.declref<@"$prolog"::@Error>)
     except err:
         # CHECK-NEXT: lit.varlet.decl "err", var = true
-        # CHECK: %[[ERRVAL:.*]] = kgen.call @"$prolog"::@Error::@"__clone__($prolog::Error&)"(%err)
+        # CHECK: %[[ERRVAL:.*]] = pop.load %err
         # CHECK: eatError{{.*}}(%[[ERRVAL]])
         eatError(err)
 
