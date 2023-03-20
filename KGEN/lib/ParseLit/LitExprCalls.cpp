@@ -1832,7 +1832,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     // together and consolidated into a pop.variadic.create/pop.variadic.attr,
     // which is emitted as an SRValue instead of whatever the underlying type
     // is.
-    if (calleeSig.isVararg(argIdx))
+    if (calleeSig.isVararg(argIdx) || isa<POP::PackType>(calleeArgType))
       convention = ValueInputConvention::OwnedInReg;
 
     Value arg = emitPreemittedArgumentAsDynamicValue(argValAndExpr, convention);
