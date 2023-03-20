@@ -4,6 +4,9 @@
 #
 ##===----------------------------------------------------------------------===##
 
+add_compile_definitions(
+  MODULAR_KERNELS_BUILD_TYPE="${MODULAR_KERNELS_BUILD_TYPE}")
+
 add_modular_dialect_library(MDialect
   MAttrInterfaces.cpp
   MAttrs.cpp

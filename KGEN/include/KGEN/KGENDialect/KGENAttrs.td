@@ -636,7 +636,7 @@ def KGEN_BuildInfoParamAttr : KGEN_ExprAttr<"BuildInfoParam", "build_info"> {
   }];
 
   let parameters = (ins "BuildInfoAttr":$buildInfo,
-                         AttributeSelfTypeParameter<"", "BuildInfoType">:$type);
+                        AttributeSelfTypeParameter<"", "BuildInfoType">:$type);
 
   let builders =[
     AttrBuilderWithInferredContext<(ins "BuildInfoAttr":$buildInfo,

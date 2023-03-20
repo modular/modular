@@ -337,7 +337,7 @@ def KGEN_TargetType : KGENType<"Target", "target"> {
 def KGEN_BuildInfoType : KGENType<"BuildInfo", "build_info"> {
   let summary = "The type of a build info.";
   let description = [{
-    A `!kgen.build_inof` is the type of a build info. It is used for
+    A `!kgen.build_info` is the type of a build info. It is used for
     parameterizing kernels by how they are built.
 
     Example:

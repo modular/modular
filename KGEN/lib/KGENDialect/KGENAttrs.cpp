@@ -1309,6 +1309,12 @@ static Attribute simplifyBuildInfoGetField(SmallVectorImpl<TypedAttr> &operands,
     return StringAttr::get(buildInfo.getBuildInfo().getBuildType(), resultType);
   }
 
+  if (field == "kernels_type") {
+    resultType = StringType::get(field.getContext());
+    return StringAttr::get(buildInfo.getBuildInfo().getKernelsBuildType(),
+                           resultType);
+  }
+
   Builder builder(buildInfo.getContext());
   if (field == "llcl_max_profiling_level") {
     resultType = builder.getIndexType();
