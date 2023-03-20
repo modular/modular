@@ -730,14 +730,14 @@ struct MemoryOnlyIntArray:
 fn testMemoryOnlyIntArray(arr&: MemoryOnlyIntArray, x: Int, moi: MemoryOnlyInt):
   # CHECK: kgen.call {{.*}}__setitem__{{.*}}(%arr, %x, %moi)
   arr[x] = moi
-  # CHECK: [[ANON:%.*]] = lit.varlet.decl "<anonymous>"
+  # CHECK: [[ANON:%.*]] = lit.varlet.decl "anonymous*"
   # CHECK: kgen.call {{.*}}__getitem__{{.*}}([[ANON]], %arr, %x)
   # CHECK: kgen.call {{.*}}"__setitem__{{.*}}(%arr, %x, [[ANON]])
   arr[x] = arr[x]
 
   # Initialize in memory through a temp + setitem.
-  # CHECK: [[ANON:%.*]] = lit.varlet.decl "<anonymous>"
-  # CHECK: [[TMP:%.*]] = lit.struct.gep %3Canonymous3E_0[x]
+  # CHECK: [[ANON:%.*]] = lit.varlet.decl "anonymous*"
+  # CHECK: [[TMP:%.*]] = lit.struct.gep %anonymous2A_0[x]
   # CHECK: %idx42 = index.constant 42
   # CHECK: pop.store %idx42, [[TMP]]
   # CHECK: kgen.call {{.*}}"__setitem__{{.*}}(%arr, %x, [[ANON]])
@@ -765,34 +765,34 @@ fn takeInOutInt(a&: __mlir_type.index): pass
 
  # CHECK-LABEL: lit.func @"testWritebacks
 fn testWritebacks(a&: IndexArray, b&: IndexArrayArray):
-  # CHECK: %3Canonymous3E = lit.varlet.decl "<anonymous>", var = false : <index>
+  # CHECK: %anonymous2A = lit.varlet.decl "anonymous*", var = false : <index>
   # CHECK: %idx0 = index.constant 0
   # CHECK: %0 = kgen.call {{.*}}__getitem__{{.*}}(%a, %idx0)
-  # CHECK: pop.store %0, %3Canonymous3E
-  # CHECK: %1 = kgen.call {{.*}}takeInOutInt{{.*}}(%3Canonymous3E)
-  # CHECK: %2 = pop.load %3Canonymous3E
+  # CHECK: pop.store %0, %anonymous2A
+  # CHECK: %1 = kgen.call {{.*}}takeInOutInt{{.*}}(%anonymous2A)
+  # CHECK: %2 = pop.load %anonymous2A
   # CHECK: %idx0_0 = index.constant 0
   # CHECK: %3 = kgen.call {{.*}}__setitem__{{.*}}(%a, %idx0_0, %2)
   takeInOutInt(a[0]);
 
-  # CHECK: %3Canonymous3E_1 = lit.varlet.decl "<anonymous>", var = false : <index>
-  # CHECK: %3Canonymous3E_2 = lit.varlet.decl "<anonymous>", var = false : <@"$expressions"::@IndexArray>
+  # CHECK: %anonymous2A_1 = lit.varlet.decl "anonymous*", var = false : <index>
+  # CHECK: %anonymous2A_2 = lit.varlet.decl "anonymous*", var = false : <@"$expressions"::@IndexArray>
   # CHECK: %idx1 = index.constant 1
-  # CHECK: %4 = {{.*}}__getitem__{{.*}}(%3Canonymous3E_2, %b, %idx1)
+  # CHECK: %4 = {{.*}}__getitem__{{.*}}(%anonymous2A_2, %b, %idx1)
   # CHECK: %idx2 = index.constant 2
-  # CHECK: %5 = kgen.call {{.*}}__getitem__{{.*}}(%3Canonymous3E_2, %idx2)
+  # CHECK: %5 = kgen.call {{.*}}__getitem__{{.*}}(%anonymous2A_2, %idx2)
   # CHECK: %idx1_3 = index.constant 1
-  # CHECK: %6 = kgen.call {{.*}}__setitem__{{.*}}(%b, %idx1_3, %3Canonymous3E_2)
-  # CHECK: pop.store %5, %3Canonymous3E_1
-  # CHECK: %7 = kgen.call {{.*}}takeInOutInt{{.*}}(%3Canonymous3E_1)
-  # CHECK: %8 = pop.load %3Canonymous3E_1
-  # CHECK: %3Canonymous3E_4 = lit.varlet.decl "<anonymous>", var = false
+  # CHECK: %6 = kgen.call {{.*}}__setitem__{{.*}}(%b, %idx1_3, %anonymous2A_2)
+  # CHECK: pop.store %5, %anonymous2A_1
+  # CHECK: %7 = kgen.call {{.*}}takeInOutInt{{.*}}(%anonymous2A_1)
+  # CHECK: %8 = pop.load %anonymous2A_1
+  # CHECK: %anonymous2A_4 = lit.varlet.decl "anonymous*", var = false
   # CHECK: %idx1_5 = index.constant 1
-  # CHECK: %9 = kgen.call {{.*}}__getitem__{{.*}}(%3Canonymous3E_4, %b, %idx1_5)
+  # CHECK: %9 = kgen.call {{.*}}__getitem__{{.*}}(%anonymous2A_4, %b, %idx1_5)
   # CHECK: %idx2_6 = index.constant 2
-  # CHECK: %10 = kgen.call {{.*}}__setitem__{{.*}}(%3Canonymous3E_4, %idx2_6, %8)
+  # CHECK: %10 = kgen.call {{.*}}__setitem__{{.*}}(%anonymous2A_4, %idx2_6, %8)
   # CHECK: %idx1_7 = index.constant 1
-  # CHECK: %11 = kgen.call {{.*}}__setitem__{{.*}}(%b, %idx1_7, %3Canonymous3E_4)
+  # CHECK: %11 = kgen.call {{.*}}__setitem__{{.*}}(%b, %idx1_7, %anonymous2A_4)
   takeInOutInt(b[1][2])
 
 
