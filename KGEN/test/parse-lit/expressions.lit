@@ -153,6 +153,9 @@ struct M:
   fn __init__(value: __mlir_type.index) -> M:
   # CHECK-NEXT: %0 = lit.struct.create(value=%value) : (index) -> !kgen.declref<@"$expressions"::@M>
     return M{value: value}
+
+  fn __clone__(self&) -> M: pass
+
   fn __neg__(self) -> M:
     return M(0)
   fn __add__(self, rhs: M) -> M:

@@ -75,6 +75,14 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in return value";
   case EC_MLIRMagic:
     return " in MLIR magic";
+  case EC_TopLevelStmt:
+    return " in expression statement";
+  case EC_ListField: // [x, y]
+    return " in list field initializer";
+  case EC_TupleElement: // (x, y)
+    return " in tuple element";
+  case EC_SubscriptBase: // x[y]
+    return " in subscript base";
   }
 }
 
@@ -242,8 +250,10 @@ SLValue ValueDest::getSLValueForResult(SMLoc loc, ASTType resultType,
 RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ExprContext context,
                                ASTType resultType) {
   ValueDest dest(resultType, context);
-  if (auto result = emitRValue(value, dest))
-    return result;
+  if (auto result = emitRValue(value, dest)) {
+    assert(result.getIfRValue() && "dest won't consume so can't be BValue");
+    return result.getIfRValue();
+  }
   dest.resetForError();
   return {};
 }
@@ -251,7 +261,7 @@ RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ExprContext context,
 /// This helper emits the specified value rep as an SSA value, materializing
 /// it as a parameter constant if it is a parameter.  This returns null if
 /// emission fails.
-RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
+AnyValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   if (!value) // Already diagnosed error.
     return {};
 
@@ -259,25 +269,11 @@ RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   if (auto rvRep = value.ir.getIfRValue()) {
     if (!dest.isSpecified())
       return rvRep;
-    auto result = emitResult(value.ir, value.expr, dest);
-    assert(!result || result.getIfRValue());
-    return result.getIfRValue();
+    return emitResult(value.ir, value.expr, dest);
   }
 
-  // If this is a computed LValue emit call to the "getter".
-  if (auto dlValue = value.ir.getIfDLValue()) {
-    auto methodName = dlValue.isSubscript ? StringRef("__getitem__")
-                                          : StringRef("__getattr__");
-    auto result =
-        emitNamedMethodCall(methodName, dlValue.selfAndIndicesValue, dest,
-                            CallSyntax::kSubscript, dlValue.expr);
-    // The result could be another LValue.  If so, load it.
-    return emitRValue({result, value.expr}, dest);
-  }
-
-  // Decay a stored LValue to an MBValue.
-  if (auto slValue = value.ir.getIfSLValue())
-    value.ir = MBValue(slValue);
+  if (auto lValue = value.ir.getIfLValue())
+    return emitLoadOfLValue({lValue, value.expr}, dest);
 
   // Finally, if this is a BValue emit a __clone__, a load for a
   // primitive MLIR type, or an error if neither approach works.
@@ -302,7 +298,7 @@ CValue ExprEmitter::emitCValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   // materialize it.
   ORValue overloads = value.ir.getIfORValue();
   assert(overloads && "TODO(dlvalues): unimp");
-  return overloads->emitAsCRValue(*this, dest);
+  return overloads->emitAsCValue(*this, dest);
 }
 
 /// Emit an expression providing a immutable borrowed reference to a value.
@@ -310,37 +306,39 @@ BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   if (!value)
     return {};
 
-  auto handleResult = [&](BValue resultBV) -> BValue {
-    if (!dest.isSpecified())
-      return resultBV;
-    auto result = emitResult(resultBV, value.expr, dest);
-    assert(!result || result.getIfBValue());
-    return result.getIfBValue();
-  };
-
-  // If this is already a BValue, we're done.
-  if (auto bv = value.ir.getIfBValue())
-    return handleResult(bv);
-
-  // Handle LValue's by decaying to MBValue or emitting a load from DLValue.
-  if (auto lv = value.ir.getIfSLValue())
-    return handleResult(MBValue(lv));
+  // Handle dynamic LValues by loading from them.
   if (auto lv = value.ir.getIfDLValue()) {
-    value.ir = emitRValue(value, dest);
+    value.ir = emitLoadOfLValue({lv, value.expr}, dest);
+    if (!value.ir)
+      return {};
+  }
+  // Handle SLValue's by decaying to MBValue.
+  if (auto lv = value.ir.getIfSLValue())
+    value.ir = MBValue(lv);
+
+  // If the value being materialized is an unresolved overload set, try to
+  // materialize it.
+  if (auto overloads = value.ir.getIfORValue()) {
+    value.ir = overloads->emitAsCValue(*this, dest);
     if (!value.ir)
       return {};
   }
 
-  auto crVal = value.ir.getIfCRValue();
-  if (!crVal) // Handle ORValue.
-    return emitBValue({emitCRValue(value, dest), value.expr}, dest);
+  // Decay RValue's into BValue's.
+  if (auto srVal = value.ir.getIfSRValue()) // Decay SRValue -> SBValue
+    value.ir = SBValue(srVal);
+  else if (auto mrVal = value.ir.getIfMRValue()) // Decay MRValue -> MBValue
+    value.ir = MBValue(mrVal);
 
-  // Decay RValue to BValue.
-  if (auto baseSR = crVal.getIfSRValue()) // Decay SRValue -> SBValue
-    return handleResult(SBValue(baseSR));
-  auto baseMR = crVal.getIfMRValue(); // Decay MRValue -> MBValue
-  assert(baseMR && "Unknown value classification");
-  return handleResult(MBValue(baseMR));
+  // Finally, we know we have a BValue.
+  auto resultBV = value.ir.getIfBValue();
+  assert(resultBV && "unknown value kind");
+
+  if (!dest.isSpecified())
+    return resultBV;
+  auto result = emitResult(resultBV, value.expr, dest);
+  assert(!result || result.getIfBValue());
+  return result.getIfBValue();
 }
 
 BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ExprContext context,
@@ -371,15 +369,16 @@ LValue ExprEmitter::emitLValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
 }
 
 /// Given an BValue, produce a standalone rvalue in the specified destination
-/// by emitting a clone call.
-RValue ExprEmitter::emitBValueToRValue(ASTExprAnd<BValue> value,
+/// by emitting a clone call.  This returns a BValue if dest takes ownership,
+/// otherwise it returns an RValue.
+CValue ExprEmitter::emitBValueToRValue(ASTExprAnd<BValue> value,
                                        ValueDest &dest) {
   if (!value.ir)
     return {};
 
   // PValues are both BValues and RValues until materialized.
   if (auto pValue = value.ir.getIfPValue())
-    return pValue;
+    return emitCResult(pValue, value.expr, dest);
 
   // If this is a trivial type, then we can emit a direct use/load for it.
   // TODO: Generalize this beyond MLIR types to being a flag on register
@@ -403,9 +402,7 @@ RValue ExprEmitter::emitBValueToRValue(ASTExprAnd<BValue> value,
           builder->create<POP::LoadOp>(value.expr->getLocation(*this), mbVal,
                                        /*alignment=*/std::nullopt);
     }
-    auto res = emitResult(result, value.expr, dest);
-    assert(!res || res.getIfRValue());
-    return res.getIfRValue();
+    return emitCResult(result, value.expr, dest);
   }
 
   auto emitNoCloneError = [&]() {
@@ -425,9 +422,9 @@ RValue ExprEmitter::emitBValueToRValue(ASTExprAnd<BValue> value,
   // signature taking something byref.
   if (auto sbVal = value.ir.getIfSBValue()) {
     // WRONG: Dropping clone call.
-    auto res = emitResult(SRValue(sbVal), value.expr, dest);
-    assert(!res || res.getIfRValue());
-    return res.getIfRValue();
+    auto res = emitCResult(SRValue(sbVal), value.expr, dest);
+    assert(!res || res.getIfRValue() || res.getIfBValue());
+    return res;
   }
 
   // TODO(ownership): The signature for clone currently takes a byref self
@@ -439,24 +436,29 @@ RValue ExprEmitter::emitBValueToRValue(ASTExprAnd<BValue> value,
   ASTExprAnd<AnyValue> cloneArgValue{LValue(mbVal), value.expr};
 
   // Ok, cool we know it will succeed; do it.
-  auto result = clone.emitCall(cloneArgValue, dest, *this);
-  assert(!result || result.getIfRValue() &&
-                        "__clone__ is required to always return an RValue");
-  return result.getIfRValue();
+  return clone.emitCall(cloneArgValue, dest, *this);
 }
 
-CRValue ExprEmitter::emitCRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
-  // If the value is an lvalue, convert it to an rvalue.
+CRValue ExprEmitter::emitCRValue(ASTExprAnd<AnyValue> value,
+                                 ExprContext context, ASTType resultType) {
+  // If the value is an lvalue, convert it to an rvalue.  This will return a
+  // BValue if ValueDest consumes the value.
+  ValueDest dest(resultType, context);
   value.ir = emitRValue(value, dest);
-  if (!value)
+  if (!value) {
+    dest.resetForError();
     return {};
+  }
 
   // If the value being materialized is an unresolved overload set, try to
   // materialize it.
-  if (auto overloads = value.ir.getIfORValue())
-    return overloads->emitAsCRValue(*this, dest);
+  if (auto overloads = value.ir.getIfORValue()) {
+    value.ir = overloads->emitAsCValue(*this, ValueDest::none());
+    if (!value.ir)
+      return {};
+  }
 
-  assert(value.ir.getIfCRValue() && "Must be ORValue or CRValue");
+  assert(value.ir.getIfCRValue() && "Must be concrete");
   return value.ir.getIfCRValue();
 }
 
@@ -550,20 +552,17 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
   const ExprNode *expr = anyValue.expr;
 
   // Emit using resultType if present, and eliminate LValue/ORValue's.
-  ValueDest dest(resultType, context);
-  CRValue value = emitCRValue(anyValue, dest);
-  if (!value) {
-    dest.resetForError();
+  CRValue value = emitCRValue(anyValue, context, resultType);
+  if (!value)
     return {};
-  }
 
   // If we have a value in memory, load it.
   if (auto mrValue = value.getIfMRValue()) {
-    // TODO: we should move from the value instead of clone+destroy it.
+    // TODO(moves): we should move from the value instead of clone+destroy it.
     // FIXME: can't this just emit a load from the memory directly if the RValue
     // type is register primary because we own it?  Will need to check to see
     // how the borrow checker handles this.
-    auto rv = emitBValueToRValue({MBValue(mrValue), expr}, dest);
+    auto rv = emitBValueToRValue({MBValue(mrValue), expr}, ValueDest::none());
     if (auto sr = rv.getIfSRValue())
       return sr;
     return emitSRValue({rv, expr}, context);
@@ -594,6 +593,14 @@ PValue ExprEmitter::emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
   if (resultType) {
     value.ir = emitRValue(value, context, resultType);
     if (!value)
+      return {};
+  }
+
+  // If this is an ORValue, it must resolve to a single entry.
+  if (auto overloads = value.ir.getIfORValue()) {
+    ValueDest dest(context);
+    value.ir = overloads->emitAsCValue(*this, dest);
+    if (!value.ir)
       return {};
   }
 
@@ -703,7 +710,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
   // If the value being materialized is an unresolved overload set, try to
   // materialize it.
   if (auto overloads = value.getIfORValue())
-    return overloads->emitAsCRValue(*this, dest);
+    return overloads->emitAsCValue(*this, dest);
 
   auto cValue = value.getIfCValue();
   assert(cValue && "Must be a CValue if not an ORValue");
@@ -735,8 +742,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
     // an MBValue.
     auto memValue = value.getIfMRValue();
     assert(memValue && "Must be an MRValue providing result");
-    // TODO: This would be correct but we're not ready:return MBValue(memValue);
-    return memValue;
+    return MBValue(memValue);
   }
 
   // We know we have an CRValue/BValue and the destination is some kind of
@@ -758,18 +764,16 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
 /// Given a value with a known type, emit a store to the specified LValue.  This
 /// returns an borrowed reference to the value after it is done.  The types must
 /// match for this call.
-AnyValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
-                                        ExprContext context) {
+BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
+                                      ExprContext context) {
   assert(value.ir.getRValueType().isEqualCanon(destLV.getRValueType()) &&
          "Types should match");
 
   // If this is a computed LValue, then perform a writeback.
   if (auto dlValue = destLV.getIfDLValue()) {
-    // FIXME: Shouldn't be needed, but prevents returning lvalue up.
-    auto crV = emitCRValue(value, ValueDest::none());
-    if (!crV)
-      return {};
-    value.ir = crV;
+    // If the value itself is an LValue, emit a load so we can call the setter.
+    if (auto valueLV = value.ir.getIfLValue())
+      value.ir = emitLoadOfLValue({valueLV, value.expr}, ValueDest::none());
 
     auto methodName = dlValue.isSubscript ? StringRef("__setitem__")
                                           : StringRef("__setattr__");
@@ -778,10 +782,8 @@ AnyValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     operands.push_back(value);
     emitNamedMethodCall(methodName, operands, ValueDest::none(),
                         CallSyntax::kSubscript, dlValue.expr);
-    // TODO: Decay the input value to a BValue since ownership was taken by the
-    // store.
-    // return emitBValue(value, ValueDest::none());
-    return value.ir;
+    // Decay the input value to a BValue since ownership was taken by the store.
+    return emitBValue(value, context, {});
   }
 
   // Otherwise we have an SLValue destination.
@@ -791,10 +793,11 @@ AnyValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   // If the input is an LValue, load it into the destination.
   if (auto lvalue = value.ir.getIfLValue()) {
     ValueDest dest(destPtr, context);
-    if (auto result = emitRValue(value, dest))
-      return result;
+    auto result = emitLoadOfLValue({lvalue, value.expr}, dest);
+    assert((!result || result.getIfBValue()) &&
+           "dest specified, so this should return BValue");
     dest.resetForError();
-    return {};
+    return result.getIfBValue();
   }
 
   // We will be doing a store, so if we have a PValue emit it to something with
@@ -817,8 +820,7 @@ AnyValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     // Does this kill las use of emitSRValue?
     auto loc = translateLocation(value.expr->getLoc());
     builder->create<POP::StoreOp>(loc, rv, destPtr, /*alignment=*/std::nullopt);
-    // TODO: Return BValue:  return SBValue(rv);
-    return rv;
+    return SBValue(rv);
   }
 
   // If we have an MRValue in the wrong spot, emit a __clone__ call into the
@@ -833,11 +835,36 @@ AnyValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   assert(bValue && "Should only have bvalues here");
   ValueDest dest(destPtr, context);
   auto result = emitBValueToRValue({bValue, value.expr}, dest);
-  if (result)
-    return result;
+  if (!result)
+    dest.resetForError();
+  assert((!result || result.getIfBValue()) &&
+         "Dest specified should return a BValue");
+  return result.getIfBValue();
+}
 
-  dest.resetForError();
-  return {};
+/// Emit a call to the getter of the specified LValue, loading the value into
+/// dest (if specified) or returning it if not.  This returns an RValue if
+/// there is no consuming dest, otherwise a BValue.
+CValue ExprEmitter::emitLoadOfLValue(ASTExprAnd<LValue> value,
+                                     ValueDest &dest) {
+  // If this is a computed LValue emit call to the "getter".
+  if (auto dlValue = value.ir.getIfDLValue()) {
+    auto methodName = dlValue.isSubscript ? StringRef("__getitem__")
+                                          : StringRef("__getattr__");
+    auto result =
+        emitNamedMethodCall(methodName, dlValue.selfAndIndicesValue, dest,
+                            CallSyntax::kSubscript, dlValue.expr);
+    // TODO: The result could be another LValue in the future.
+    assert(!result || result.getIfRValue() || result.getIfBValue());
+    return result;
+  }
+
+  // Decay a stored LValue to an MBValue.
+  auto slValue = value.ir.getIfSLValue();
+  assert(slValue && "unknown lvalue kind");
+
+  // Emit a __clone__ or load of the value.
+  return emitBValueToRValue({MBValue(slValue), value.expr}, dest);
 }
 
 // Emitting a CValue always produces a CValue.
@@ -957,7 +984,7 @@ RValue ExprEmitter::emitConditionValueAsI1(ASTExprAnd<CValue> value,
 
   // If this is already an 'i1', then we're done.
   if (valueRValueType.mlirType.isInteger(1))
-    return emitRValue(value, ValueDest::none());
+    return emitRValue(value, EC_BoolCondition);
 
   // TODO: Python manual includes this off-hand comment:
   // Also, an object that doesn’t define a __bool__() method and whose __len__()
@@ -982,7 +1009,7 @@ RValue ExprEmitter::emitConditionValueAsI1(ASTExprAnd<CValue> value,
       "__lit_bool", {{boolResult, value.expr}}, ValueDest::none(),
       CallSyntax::kImplicitConvert, value.expr);
 
-  return emitRValue({litBoolCall, value.expr}, ValueDest::none());
+  return emitRValue({litBoolCall, value.expr}, EC_BoolCondition);
 }
 
 //===----------------------------------------------------------------------===//
@@ -990,14 +1017,18 @@ RValue ExprEmitter::emitConditionValueAsI1(ASTExprAnd<CValue> value,
 //===----------------------------------------------------------------------===//
 
 /// This helper emits the specified value rep as an RValue.
-RValue ExprEmitter::emitExprRValue(const ExprNode *node, ValueDest &dest) {
-  return emitRValue({node->emitIR(dest, *this), node}, ValueDest::none());
+RValue ExprEmitter::emitExprRValue(const ExprNode *node, ExprContext context,
+                                   ASTType resultType) {
+  ValueDest dest(resultType, context);
+  return emitRValue({node->emitIR(dest, *this), node}, context);
 }
 
 /// This helper emits the specified value rep as an CRValue.
-CRValue ExprEmitter::emitExprCRValue(const ExprNode *node, ValueDest &dest) {
+CRValue ExprEmitter::emitExprCRValue(const ExprNode *node,
+                                     ExprContext context) {
   assert(node && "cannot emit a null node");
-  return emitCRValue({node->emitIR(dest, *this), node}, ValueDest::none());
+  ValueDest dest(context);
+  return emitCRValue({node->emitIR(dest, *this), node}, context);
 }
 
 /// This helper emits the specified value rep as an SRValue, materializing
@@ -1024,13 +1055,13 @@ PValue ExprEmitter::emitExprPValue(const ExprNode *node, ExprContext context,
 
   // Emit the expression using the contextual type if present.
   ValueDest dest(resultType, context);
-  auto rep = emitExprCRValue(node, dest);
+  AnyValue rep = node->emitIR(dest, *this);
   if (!rep) {
     dest.resetForError();
     return {};
   }
 
-  return emitPValue({rep, node}, context);
+  return emitPValue({rep, node}, context, resultType);
 }
 
 /// Emit the specified expression as an LValue which can be loaded and stored.
@@ -1157,7 +1188,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
 RValue ExprEmitter::emitExprConditionValueAsI1(const ExprNode *condExpr) {
   CValue boolTmp; // we don't care about the intermediate Bool value.
   return emitConditionValueAsI1(
-      {emitExprCRValue(condExpr, ValueDest::none()), condExpr}, boolTmp);
+      {emitExprCRValue(condExpr, EC_BoolCondition), condExpr}, boolTmp);
 }
 
 SRValue ExprEmitter::emitBoxedIntAsPopScalar(Value numberValue,

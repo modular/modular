@@ -185,9 +185,9 @@ public:
                                   bool emitDiagnosticOnFailure,
                                   ExprEmitter &emitter);
 
-  /// Emit this as a CRValue if it can be resolved, otherwise emit an ambiguity
+  /// Emit this as a CValue if it can be resolved, otherwise emit an ambiguity
   /// error and return null.
-  CRValue emitAsCRValue(ExprEmitter &emitter, ValueDest &dest);
+  CValue emitAsCValue(ExprEmitter &emitter, ValueDest &dest);
 
   /// Emit a function call to the specified callee with the specified operand
   /// values.  This emits an error and returns null on failure.

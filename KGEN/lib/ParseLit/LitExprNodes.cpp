@@ -988,7 +988,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
 }
 
 AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
-  RValue calleeVal = emitter.emitExprRValue(callee, ValueDest::none());
+  RValue calleeVal = emitter.emitExprRValue(callee, EC_CallCalleeValue);
   if (!calleeVal)
     return {};
 
@@ -1341,7 +1341,7 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 AnyValue SubscriptArrowNode::emitIR(ValueDest &dest,
                                     ExprEmitter &emitter) const {
   // Subscripting a generic function binds the parameter expressions.
-  RValue baseValue = emitter.emitExprRValue(base, ValueDest::none());
+  RValue baseValue = emitter.emitExprRValue(base, EC_SubscriptBase);
   if (!baseValue)
     return {};
 
@@ -1428,7 +1428,7 @@ AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Emit each of the index values to generate error messages.
   SmallVector<RValue> exprValues;
   for (ExprNode *expr : exprs) {
-    exprValues.push_back(emitter.emitExprRValue(expr, ValueDest::none()));
+    exprValues.push_back(emitter.emitExprRValue(expr, EC_TupleElement));
     if (!exprValues.back())
       return {};
   }
@@ -1441,7 +1441,7 @@ AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 AnyValue ListNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   SmallVector<RValue> elements;
   for (ExprNode *expr : exprs) {
-    elements.push_back(emitter.emitExprRValue(expr, ValueDest::none()));
+    elements.push_back(emitter.emitExprRValue(expr, EC_ListField));
     if (!elements.back())
       return {};
   }
@@ -1554,23 +1554,24 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
     }
 
     // If we are memory-only, emit the initializers directly into the fields.
-    ValueDest fieldDest;
+    AnyValue value;
     if (memoryOnlyBase) {
       // For a memory-only aggregate, emit the field into the memory for the
       // field in the aggregate.
       auto fieldPtr = emitter.builder->create<StructGEPOp>(
           getLocation(emitter), memoryOnlyBase, field);
-      fieldDest = ValueDest(SLValue(fieldPtr), EC_FieldInitValue);
+      ValueDest fieldDest(SLValue(fieldPtr), EC_FieldInitValue);
+      value = valueExpr->emitIR(fieldDest, emitter);
+      if (!value) {
+        fieldDest.resetForError();
+        return {};
+      }
     } else {
       // For register values, make sure we convert to the right dest field type.
-      fieldDest = ValueDest(paramEvaluator.getReboundType(field.getType()),
-                            EC_FieldInitValue);
-    }
-
-    auto value = emitter.emitExprRValue(valueExpr, fieldDest);
-    if (!value) {
-      fieldDest.resetForError();
-      return {};
+      auto fieldType = paramEvaluator.getReboundType(field.getType());
+      value = emitter.emitExprRValue(valueExpr, EC_FieldInitValue, fieldType);
+      if (!value)
+        return {};
     }
 
     // Keep track of whether everything is a PValue.
@@ -1807,7 +1808,7 @@ AnyValue BinOpNode::emitAssign(ValueDest &dest, ExprEmitter &emitter) const {
   // required to enable the 'implicit declaration' behavior in a def and to
   // support patterns.
   ValueDest assignDest(lhs, EC_Assignment);
-  if (!emitter.emitExprRValue(rhs, assignDest)) {
+  if (!rhs->emitIR(assignDest, emitter)) {
     assignDest.resetForError();
     return {};
   }
@@ -1835,7 +1836,7 @@ AnyValue BinOpNode::emitInplace(ValueDest &dest, ExprEmitter &emitter) const {
     return {};
 
   // Then emit the right side.
-  RValue rhsRV = emitter.emitExprRValue(rhs, ValueDest::none());
+  RValue rhsRV = emitter.emitExprRValue(rhs, EC_OperatorOperandValue);
   if (!rhsRV)
     return {};
 
@@ -1853,8 +1854,8 @@ AnyValue BinOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return emitInplace(dest, emitter);
 
   // Othewise we emit the LHS followed by the RHS.
-  RValue lhsRV = emitter.emitExprRValue(lhs, ValueDest::none());
-  RValue rhsRV = emitter.emitExprRValue(rhs, ValueDest::none());
+  RValue lhsRV = emitter.emitExprRValue(lhs, EC_OperatorOperandValue);
+  RValue rhsRV = emitter.emitExprRValue(rhs, EC_OperatorOperandValue);
   if (!lhsRV || !rhsRV)
     return {};
 
@@ -2109,8 +2110,8 @@ AnyValue ChainedCmpOpNode::emitNextCmp(ExprEmitter &emitter, size_t opIdx,
 }
 
 AnyValue ChainedCmpOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
-  RValue e0Rep = emitter.emitExprRValue(exprs[0], ValueDest::none());
-  RValue e1Rep = emitter.emitExprRValue(exprs[1], ValueDest::none());
+  RValue e0Rep = emitter.emitExprRValue(exprs[0], EC_OperatorOperandValue);
+  RValue e1Rep = emitter.emitExprRValue(exprs[1], EC_OperatorOperandValue);
   if (!e0Rep || !e1Rep)
     return {};
 
