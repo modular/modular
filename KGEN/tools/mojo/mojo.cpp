@@ -253,7 +253,7 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
         "arguments / return values.");
 
   TimeTraceScope<> traceScope("execute-main");
-  auto compiledFuncOr = engine.lookup("exec", "main");
+  auto compiledFuncOr = engine.lookup("main");
   if (failed(compiledFuncOr))
     return clOptions.reportError(compiledFuncOr.getError());
   compiledFuncOr->invoke<void>();

@@ -7,6 +7,7 @@
 #include "KGEN/CLOptions.h"
 #include "KGEN/ExecutionEngine.h"
 #include "mlir/Support/DebugStringHelper.h"
+#include "llvm/Support/Process.h"
 #include "llvm/Support/Regex.h"
 #include "llvm/Support/ToolOutputFile.h"
 

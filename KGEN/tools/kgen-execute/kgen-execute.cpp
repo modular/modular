@@ -142,7 +142,7 @@ struct ProcessBuffer {
         return failure(clOptions.reportError(funcOr.getError()));
 
       KGEN::FuncOp func = *funcOr;
-      auto compiledFuncOr = execEngine.lookup("exec", k.name);
+      auto compiledFuncOr = execEngine.lookup(k.name);
       if (failed(compiledFuncOr))
         return failure(clOptions.reportError(compiledFuncOr.getError()));
 
