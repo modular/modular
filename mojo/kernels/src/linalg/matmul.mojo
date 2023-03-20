@@ -277,11 +277,11 @@ fn naive_matmul[
         DType,
         `>(`,
         Int,  # Row
-        `,`,
+        ` borrow,`,
         Int,  # Col
-        `,`,
+        ` borrow,`,
         SIMD[1, `accum_type`],
-        `) -> `,
+        ` borrow) -> `,
         SIMD[1, `accum_type`],
         `>`,
     ],
@@ -290,9 +290,9 @@ fn naive_matmul[
         DType,
         `>(`,
         Int,  # Row
-        `,`,
+        ` borrow,`,
         Buffer[Dim(), `accum_type`],
-        `) -> !lit.none>`,
+        ` borrow) -> !lit.none>`,
     ],
 ](
     c: NDBuffer[2, shape_c, accum_type],
