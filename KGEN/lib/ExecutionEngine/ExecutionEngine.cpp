@@ -83,8 +83,8 @@ setupPlatform(StringRef orcRTPath, llvm::TargetMachine &tm,
     return Error(toString(generator.takeError()));
 
   const llvm::Triple &tt = session.getTargetTriple();
-  // TODO: (#10184) Ensure we have no memory leaks on non-COFF platforms.
-  if (!tt.isOSBinFormatCOFF())
+  // TODO: (#10184) Ensure we have no memory leaks on linux platforms.
+  if (tt.isOSBinFormatELF())
     return success();
 
   if (tt.isOSBinFormatMachO()) {
