@@ -1550,6 +1550,83 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
   assert(calleeSig.getResultParams().size() == resultParams.size() &&
          "Type checking should be done");
 
+  struct WritebackClearer {
+    const ExprNode *expr;
+    // The first entry of this is a ValueDest for a DLValue that we can invoke
+    // for the setter.
+    SmallVector<std::pair<ValueDest, SLValue>> elements;
+
+    void emit(ExprEmitter &emitter) {
+      while (!elements.empty()) {
+        auto elt = elements.pop_back_val();
+        if (!emitter.emitResult(MRValue(elt.second), expr, elt.first))
+          elt.first.resetForError();
+      }
+    }
+
+    // If an error happens before we emit the write backs, make sure to nuke
+    // them so they don't crash the compiler.
+    ~WritebackClearer() {
+      while (!elements.empty())
+        elements.pop_back_val().first.resetForError();
+    }
+  } writebackHandler{callExpr, {}};
+
+  /// This function emits the specified pre-emitted argument into a single MLIR
+  /// Value suitable for passing to the callee with the specified convention.
+  /// This handles promotion of PValues to dynamic values as needed.
+  auto emitPreemittedArgumentAsDynamicValue =
+      [&](ASTExprAnd<AnyValue> argValAndExpr,
+          ValueInputConvention convention) -> Value {
+    Value arg;
+    switch (convention) {
+    case ValueInputConvention::OwnedInReg:
+      // Promote PValue's if needed.
+      return emitSRValue(argValAndExpr, EC_CallArgValue);
+    case ValueInputConvention::OwnedInMem:
+      arg = argValAndExpr.ir.getIfMRValue();
+      break;
+    case ValueInputConvention::BorrowedInReg:
+      if (auto pVal = argValAndExpr.ir.getIfPValue())
+        return arg = emitSRValue(argValAndExpr, EC_CallArgValue);
+      arg = argValAndExpr.ir.getIfSBValue();
+      break;
+    case ValueInputConvention::BorrowedInMem:
+      arg = argValAndExpr.ir.getIfMBValue();
+      break;
+    case ValueInputConvention::ByRef:
+    case ValueInputConvention::ByRefResult: {
+      // We know that the operand is an LValue, but it might be
+      // dynamic/computed.
+      LValue lv = argValAndExpr.ir.getIfLValue();
+      assert(lv && "type checking ensures we will have an lvalue");
+      if (auto sl = lv.getIfSLValue())
+        return sl;
+
+      // If dynamic, we need to generate a temporary slot, emit a 'get' into
+      // that slot, pass the address, then write it back when we're done.
+      ValueDest dlvBuffer(lv, EC_CallArgValue);
+      SLValue slvBuffer = dlvBuffer.getSLValueForResult(
+          argValAndExpr.expr->getLoc(), lv.getRValueType(), *this);
+      // Emit the 'get' into the buffer.
+      ValueDest bufferDest(slvBuffer, EC_CallArgValue);
+      if (!emitLoadOfLValue({lv, argValAndExpr.expr}, bufferDest)) {
+        bufferDest.resetForError();
+        dlvBuffer.resetForError();
+        return {};
+      }
+      writebackHandler.elements.push_back({std::move(dlvBuffer), slvBuffer});
+      return slvBuffer;
+    }
+    }
+    if (!arg) {
+      llvm::errs() << "CALL ARG MISMATCH: " << int(convention) << " ";
+      argValAndExpr.ir.dump();
+      llvm_unreachable("didn't get a value as expected");
+    }
+    return arg;
+  };
+
   // Emit all the arguments.  We iterate by expected arguments since we're
   // building the argument list of the call.  Default arguments and
   // variadics get filled in here.
@@ -1691,15 +1768,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     // create a variadic or pack sequence.
     SmallVector<Value> args;
     for (auto &operand : remainingOperands) {
-      Value argVal;
-      // Convert any PValues to an SRValue for variadic create.
-      if (convention == ValueInputConvention::OwnedInReg) {
-        argVal = emitSRValue({operand.ir, operand.expr}, EC_CallArgValue);
-      } else {
-        assert(convention == ValueInputConvention::OwnedInMem);
-        argVal = operand.ir.getIfMRValue();
-        assert(argVal && "Passing variadic argument in a strange way");
-      }
+      Value argVal = emitPreemittedArgumentAsDynamicValue(operand, convention);
       if (!argVal)
         return {};
       args.push_back(argVal);
@@ -1750,30 +1819,8 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
 
   // Otherwise, materialize PValue and DLValue's as SSA values for emission.
   SmallVector<Value> callArgs;
+
   Location loc = translateLocation(callExpr->getLoc());
-
-  struct WritebackClearer {
-    const ExprNode *expr;
-    // The first entry of this is a ValueDest for a DLValue that we can invoke
-    // for the setter.
-    SmallVector<std::pair<ValueDest, SLValue>> elements;
-
-    void emit(ExprEmitter &emitter) {
-      while (!elements.empty()) {
-        auto elt = elements.pop_back_val();
-        if (!emitter.emitResult(MRValue(elt.second), expr, elt.first))
-          elt.first.resetForError();
-      }
-    }
-
-    // If an error happens before we emit the write backs, make sure to nuke
-    // them so they don't crash the compiler.
-    ~WritebackClearer() {
-      while (!elements.empty())
-        elements.pop_back_val().first.resetForError();
-    }
-  } writebackHandler{callExpr, {}};
-
   for (auto [argValAndExpr, conventionX, calleeArgTypeAndIdx] :
        llvm::zip(argumentValues, calleeSig.getValueInputConventions(),
                  llvm::enumerate(calleeSig.getValueInputs()))) {
@@ -1788,54 +1835,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     if (calleeSig.isVararg(argIdx))
       convention = ValueInputConvention::OwnedInReg;
 
-    Value arg;
-    switch (convention) {
-    case ValueInputConvention::OwnedInReg:
-      // Promote PValue's.
-      arg = emitSRValue(argValAndExpr, EC_CallArgValue);
-      if (!arg)
-        return {};
-      break;
-    case ValueInputConvention::OwnedInMem:
-      arg = argValAndExpr.ir.getIfMRValue();
-      break;
-    case ValueInputConvention::BorrowedInReg:
-      arg = argValAndExpr.ir.getIfSBValue();
-      break;
-    case ValueInputConvention::BorrowedInMem:
-      arg = argValAndExpr.ir.getIfMBValue();
-      break;
-    case ValueInputConvention::ByRef:
-    case ValueInputConvention::ByRefResult:
-      // We know that the operand is an LValue, but it might be
-      // dynamic/computed.
-      LValue lv = argValAndExpr.ir.getIfLValue();
-      assert(lv && "type checking ensures we will have an lvalue");
-      if (auto sl = lv.getIfSLValue()) {
-        arg = sl;
-      } else {
-        // If dynamic, we need to generate a temporary slot, emit a 'get' into
-        // that slot, pass the address, then write it back when we're done.
-        ValueDest dlvBuffer(lv, EC_CallArgValue);
-        SLValue slvBuffer = dlvBuffer.getSLValueForResult(
-            argValAndExpr.expr->getLoc(), lv.getRValueType(), *this);
-        // Emit the 'get' into the buffer.
-        ValueDest bufferDest(slvBuffer, EC_CallArgValue);
-        if (!emitLoadOfLValue({lv, argValAndExpr.expr}, bufferDest)) {
-          bufferDest.resetForError();
-          dlvBuffer.resetForError();
-          return {};
-        }
-        writebackHandler.elements.push_back({std::move(dlvBuffer), slvBuffer});
-        arg = slvBuffer;
-      }
-      break;
-    }
-    if (!arg) {
-      llvm::errs() << "CALL ARG MISMATCH: " << int(convention) << " ";
-      argValAndExpr.ir.dump();
-      llvm_unreachable("didn't get a value as expected");
-    }
+    Value arg = emitPreemittedArgumentAsDynamicValue(argValAndExpr, convention);
     if (arg.getType() != calleeArgType)
       arg = builder->create<RebindOp>(loc, calleeArgType, arg);
     callArgs.push_back(arg);

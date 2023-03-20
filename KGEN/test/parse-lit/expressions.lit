@@ -59,7 +59,7 @@ struct MemoryOnlyPair:
   # CHECK-SAME: %arg: !pop.pointer<@"$expressions"::@MemoryOnlyInt> owned_in_mem)
   fn method(self, arg: MemoryOnlyInt):
     # CHECK: %0 = lit.struct.gep %self[y]
-    # CHECK: %1 = kgen.call @"{{.*}}__clone__{{.*}}"(%0)
+    # CHECK: %1 = pop.load %0
     # CHECK: %2 = lit.struct.gep %arg[x]
     # CHECK: %3 = pop.load %2 : !pop.pointer<index>
     # CHECK: %4 = kgen.call @"{{.*}}__init__{{.*}}"(%3)

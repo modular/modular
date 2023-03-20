@@ -324,6 +324,13 @@ BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
       return {};
   }
 
+  // If there is a value destination, resolve it into an RValue or BValue.
+  if (dest.isSpecified()) {
+    value.ir = emitResult(value.ir, value.expr, dest);
+    if (!value.ir)
+      return {};
+  }
+
   // Decay RValue's into BValue's.
   if (auto srVal = value.ir.getIfSRValue()) // Decay SRValue -> SBValue
     value.ir = SBValue(srVal);
@@ -333,12 +340,7 @@ BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   // Finally, we know we have a BValue.
   auto resultBV = value.ir.getIfBValue();
   assert(resultBV && "unknown value kind");
-
-  if (!dest.isSpecified())
-    return resultBV;
-  auto result = emitResult(resultBV, value.expr, dest);
-  assert(!result || result.getIfBValue());
-  return result.getIfBValue();
+  return resultBV;
 }
 
 BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ExprContext context,
@@ -696,6 +698,24 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
 
   // Attempt to further specialize the result value.
   value = refineResultValue(value, expr->getLoc(), *this);
+
+  // If we have an MBValue of a register_passable value, load it into an SBValue
+  // to keep things canonical and consistent.  It is always ok to copy the bits
+  // of a borrowed register_passable value around without cloning.
+  if (auto mbVal = value.getIfMBValue()) {
+    if (mbVal.getRValueType().isRegisterPassable(expr->getLoc(), shared)) {
+      if (!builder) {
+        emitError(expr->getLoc(),
+                  "cannot use a dynamic value in a parameter context")
+            << expr->getRange();
+        return {};
+      }
+
+      auto load = builder->create<POP::LoadOp>(expr->getLocation(*this), mbVal,
+                                               /*alignment=*/std::nullopt);
+      value = SBValue(load);
+    }
+  }
 
   // If no destination is specified or it is just a contextual type hint, then
   // we can propagate the value directly.

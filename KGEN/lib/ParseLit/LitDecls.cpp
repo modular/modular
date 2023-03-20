@@ -662,6 +662,20 @@ struct ParsedArgument {
   ParseResult parse(LitParserBase &p, KWArgMarkerInfo &markerInfo) {
     loc = p.getToken().getLoc();
 
+    // The owned/borrowed keyword sets convention.
+    // NOTE: We might consider a postfix ^ syntax after the language bakes out
+    // more, that is probably going to be tightly coupled to ownership transfer,
+    // but this is more explicit for now.
+    if (p.consumeIf(LitToken::kw_owned))
+      convention = kConventionOwned;
+
+    SMLoc borrowLoc;
+    if (p.consumeIf(LitToken::kw_borrowed, &borrowLoc)) {
+      if (convention != kConventionUnspec)
+        p.emitError(borrowLoc, "argument already has a convention specified");
+      convention = kConventionBorrowed;
+    }
+
     markerInfo = KWArgMarkerInfo::kNotMarker;
 
     // The first token of an argument may be a standalone '*' or '/' marker, and
@@ -685,20 +699,6 @@ struct ParsedArgument {
 
     if (p.consumeIf(LitToken::star)) // '*' => variadic
       vararg = VarArgKind::VarArg;
-
-    // The owned/borrowed keyword sets convention.
-    // NOTE: We might consider a postfix ^ syntax after the language bakes out
-    // more, that is probably going to be tightly coupled to ownership transfer,
-    // but this is more explicit for now.
-    if (p.consumeIf(LitToken::kw_owned))
-      convention = kConventionOwned;
-
-    SMLoc borrowLoc;
-    if (p.consumeIf(LitToken::kw_borrowed, &borrowLoc)) {
-      if (convention != kConventionUnspec)
-        p.emitError(borrowLoc, "argument already has a convention specified");
-      convention = kConventionBorrowed;
-    }
 
     if (p.parseIdentifier(name, "expected parameter name"))
       // TODO: Scan ahead for better recovery.
