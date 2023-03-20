@@ -575,9 +575,8 @@ void LitSharedState::loadModulesFromCache(
 
     auto out = AsyncValueRef<Chain>::allocate(runtime);
     auto f = impl->transformCache->find(
-        Cache::BufferRef(std::move(keyBuf))->getBuffer(),
-        LLCL::MLIRLocationDecoder::getEncodedLocation(
-            moduleState->decl->getIfOperation()->getLoc()));
+        std::move(keyBuf), LLCL::MLIRLocationDecoder::getEncodedLocation(
+                               moduleState->decl->getIfOperation()->getLoc()));
     std::move(f).andThenSync(
         [moduleState, out = out.copy()](
             AsyncValueRef<std::optional<Cache::BufferRef>> &&f) mutable {
@@ -940,7 +939,7 @@ void LitSharedState::cacheParsedModules() {
     Cache::BufferRef keyBuffer = moduleState.buildCacheKey(options);
     auto out = AsyncValueRef<Chain>::allocate(runtime);
     auto f = impl->transformCache->contains(
-        keyBuffer->getBuffer(),
+        keyBuffer.copy(),
         LLCL::MLIRLocationDecoder::getEncodedLocation(moduleOp->getLoc()));
     std::move(f).andThenSync(
         [moduleOp, transformCache = impl->transformCache.copy(),
@@ -954,7 +953,7 @@ void LitSharedState::cacheParsedModules() {
           auto writeableTransformResult = Cache::WriteableBuffer::get();
           mlir::writeBytecodeToFile(moduleOp, *writeableTransformResult);
           auto insertResult = transformCache->insert(
-              keyBuffer->getBuffer(), std::move(writeableTransformResult));
+              std::move(keyBuffer), std::move(writeableTransformResult));
           insertResult.andThenSync(
               [out = std::move(out)]() mutable { std::move(out).emplace(); });
         });
