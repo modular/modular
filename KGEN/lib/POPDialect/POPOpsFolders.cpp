@@ -666,7 +666,7 @@ StackAllocationOp::interpret(ArrayRef<Attribute> operands,
       DataLayoutInterface::getTypeAllocSize(state.getTarget(), type);
   if (!size)
     return ErrorTree(getLoc(), "could not query type size");
-  size_t addr = state.allocateMemory(count.getInt() * *size);
+  int64_t addr = state.allocateMemory(count.getInt() * *size);
   state.mapResults(PointerAttr::get(addr, getType()));
   return success();
 }
@@ -726,7 +726,7 @@ POP::StructGEPOp::interpret(ArrayRef<Attribute> operands,
   if (!ptr)
     return ErrorTree(getLoc(), "non-constant inputs");
 
-  size_t offset = 0;
+  int64_t offset = 0;
   auto structType = getContainer().getType().getElementTypeAs<StructType>();
 
   // Move the address over the elements before the one we are reading.
@@ -830,7 +830,7 @@ ErrorTreeOr<SuccessType> ArrayGEPOp::interpret(ArrayRef<Attribute> operands,
 
   auto arrayType = getArray().getType().getElementTypeAs<POP::ArrayType>();
   auto dl = cast<DataLayoutInterface>(arrayType.getResolvedElementType());
-  size_t addr =
+  int64_t addr =
       ptr.getAddr() +
       index.getInt() * (llvm::alignTo(*dl.getTypeSize(state.getTarget()),
                                       *dl.getTypeAlign(state.getTarget())));

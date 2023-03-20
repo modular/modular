@@ -17,15 +17,15 @@ using namespace M;
 
 /// Provide a virtual "invalid space" for the interpreter's memory. This is so
 /// that an address of 0 can actually be considered a null pointer.
-static constexpr intptr_t invalidMemOffset = 0x10000000;
+static constexpr int64_t invalidMemOffset = 0x10000000;
 
-intptr_t InterpreterState::allocateMemory(size_t size) {
-  intptr_t addr = memory.size() + invalidMemOffset;
+int64_t InterpreterState::allocateMemory(size_t size) {
+  int64_t addr = memory.size() + invalidMemOffset;
   memory.resize(memory.size() + size);
   return addr;
 }
 
-ErrorOr<void *> InterpreterState::getMemory(intptr_t addr, size_t size) {
+ErrorOr<void *> InterpreterState::getMemory(int64_t addr, size_t size) {
   // Check for a null pointer access.
   if (!addr)
     return Error("null address");
@@ -46,7 +46,7 @@ ErrorOr<void *> InterpreterState::getMemory(intptr_t addr, size_t size) {
   return reinterpret_cast<void *>(memory.data() + addr);
 }
 
-ErrorOrSuccess InterpreterState::writeAttributeToMemory(intptr_t addr,
+ErrorOrSuccess InterpreterState::writeAttributeToMemory(int64_t addr,
                                                         TypedAttr value) {
   if (isa<IntegerAttr, FloatAttr>(value)) {
     int64_t size =
@@ -73,7 +73,7 @@ ErrorOrSuccess InterpreterState::writeAttributeToMemory(intptr_t addr,
                " does not implement MemoryableTypeInterface");
 }
 
-ErrorOr<TypedAttr> InterpreterState::readAttributeFromMemory(intptr_t addr,
+ErrorOr<TypedAttr> InterpreterState::readAttributeFromMemory(int64_t addr,
                                                              Type type) {
   if (isa<IndexType, IntegerType, FloatType>(type)) {
     int64_t size = *DataLayoutInterface::getTypeStoreSize(target, type);

@@ -229,11 +229,11 @@ def M_PointerAttr : MAttr<"Pointer", "pointer", [TypedAttrInterface]> {
     operation folders or interpreters.
   }];
 
-  let parameters = (ins "size_t":$addr, AttributeSelfTypeParameter<"">:$type);
+  let parameters = (ins "int64_t":$addr, AttributeSelfTypeParameter<"">:$type);
   let assemblyFormat = "`<` $addr `>`";
 
   let builders = [
-    AttrBuilderWithInferredContext<(ins "size_t":$addr, "Type":$type), [{
+    AttrBuilderWithInferredContext<(ins "int64_t":$addr, "Type":$type), [{
       return get(type.getContext(), addr, type);
     }]>
   ];
