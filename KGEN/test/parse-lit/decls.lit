@@ -209,16 +209,15 @@ fn nestedFnInLoop():
 # CHECK-SAME:  %b: !pop.pointer<@"$decls"::@StructWithInit> borrow_in_mem)
 fn ownedConventionMem(owned a: StructWithInit, borrowed b: StructWithInit):
   # CHECK: %0 = lit.struct.gep %a[x]
+  # CHECK: %1 = pop.load %0
   # CHECK: %_ = lit.varlet.decl
-  # CHECK: %1 = kgen.call {{.*}}__clone__{{.*}}(%0)
   # CHECK: pop.store %1, %_
   _ = a.x
   # CHECK: %2 = lit.struct.gep %b[y]
+  # CHECK: %3 = pop.load %2
   # CHECK: %__0 = lit.varlet.decl
-  # CHECK: %3 = kgen.call {{.*}}__clone__{{.*}}(%2)
   # CHECK: pop.store %3, %__0
   _ = b.y
-
 
 @register_passable
 struct RPStructWithInit:
@@ -241,16 +240,18 @@ fn ownedConventionReg(owned a: RPStructWithInit,
 
 
 struct BorrowStruct:
-    fn testMethod(borrowed self):
-        return
+    fn testMethod(borrowed self): pass
+    fn borrowedVarargs(borrowed self, borrowed *x: BorrowStruct): pass
 
 # CHECK-LABEL: callerFn
 # CHECK-SAME: (%arg0: !pop.pointer<{{.*}}> borrow_in_mem)
 fn callerFn(borrowed arg0: BorrowStruct):
     # CHECK-NEXT: %0 = kgen.call {{.*}}testMethod{{.*}}(%arg0)
-    # CHECK-NEXT: lit.return %0
-    return arg0.testMethod()
+    arg0.testMethod()
 
+    # CHECK: %1 = pop.variadic.create [%arg0, %arg0]
+    # CHECK: kgen.call {{.*}}borrowedVarargs{{.*}}(%arg0, %1)
+    arg0.borrowedVarargs(arg0, arg0)
 
 
 ##===----------------------------------------------------------------------===##
