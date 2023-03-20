@@ -282,6 +282,15 @@ AnyValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   return emitBValueToRValue({bValue, value.expr}, dest);
 }
 
+CValue ExprEmitter::emitCValue(ASTExprAnd<AnyValue> value, ExprContext context,
+                               ASTType resultType) {
+  ValueDest dest(resultType, context);
+  if (auto cr = emitCValue(value, dest))
+    return cr;
+  dest.resetForError();
+  return {};
+}
+
 CValue ExprEmitter::emitCValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   if (!value) // Already diagnosed error.
     return {};
@@ -442,29 +451,6 @@ CValue ExprEmitter::emitBValueToRValue(ASTExprAnd<BValue> value,
   return clone.emitCall(cloneArgValue, dest, *this);
 }
 
-CRValue ExprEmitter::emitCRValue(ASTExprAnd<AnyValue> value,
-                                 ExprContext context, ASTType resultType) {
-  // If the value is an lvalue, convert it to an rvalue.  This will return a
-  // BValue if ValueDest consumes the value.
-  ValueDest dest(resultType, context);
-  value.ir = emitRValue(value, dest);
-  if (!value) {
-    dest.resetForError();
-    return {};
-  }
-
-  // If the value being materialized is an unresolved overload set, try to
-  // materialize it.
-  if (auto overloads = value.ir.getIfORValue()) {
-    value.ir = overloads->emitAsCValue(*this, ValueDest::none());
-    if (!value.ir)
-      return {};
-  }
-
-  assert(value.ir.getIfCRValue() && "Must be concrete");
-  return value.ir.getIfCRValue();
-}
-
 /// Emit a register primary PValue to an SRValue.
 SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
                                          ExprContext context) {
@@ -555,7 +541,8 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
   const ExprNode *expr = anyValue.expr;
 
   // Emit using resultType if present, and eliminate LValue/ORValue's.
-  CRValue value = emitCRValue(anyValue, context, resultType);
+  anyValue.ir = emitRValue(anyValue, context, resultType);
+  CValue value = emitCValue(anyValue, context);
   if (!value)
     return {};
 
@@ -1041,55 +1028,50 @@ RValue ExprEmitter::emitConditionValueAsI1(ASTExprAnd<CValue> value,
 // ExprEmitter implementation
 //===----------------------------------------------------------------------===//
 
-/// This helper emits the specified value rep as an RValue.
-RValue ExprEmitter::emitExprRValue(const ExprNode *node, ExprContext context,
-                                   ASTType resultType) {
+/// Emit the specified node with the indicated expression context and an
+/// optional contextual type.
+AnyValue ExprEmitter::emitExpr(const ExprNode *expr, ExprContext context,
+                               ASTType resultType) {
   ValueDest dest(resultType, context);
-  if (auto rv = emitRValue({node->emitIR(dest, *this), node}, context))
-    return rv;
-  dest.resetForError();
-  return {};
-}
-
-/// This helper emits the specified value rep as an CRValue.
-CRValue ExprEmitter::emitExprCRValue(const ExprNode *node,
-                                     ExprContext context) {
-  assert(node && "cannot emit a null node");
-  ValueDest dest(context);
-  return emitCRValue({node->emitIR(dest, *this), node}, context);
-}
-
-/// This helper emits the specified value rep as an SRValue, materializing
-/// it as a parameter constant if it is a parameter.  This returns null if
-/// emission fails.
-SRValue ExprEmitter::emitExprSRValue(const ExprNode *node, ExprContext context,
-                                     ASTType resultType) {
-  assert(node && "cannot emit a null node");
-  ValueDest dest(resultType, context);
-  if (SRValue result = emitSRValue({node->emitIR(dest, *this), node}, context))
+  if (auto result = expr->emitIR(dest, *this))
     return result;
   dest.resetForError();
   return {};
 }
 
+/// This helper emits the specified value rep as an RValue.
+RValue ExprEmitter::emitExprRValue(const ExprNode *expr, ExprContext context,
+                                   ASTType resultType) {
+  return emitRValue({emitExpr(expr, context, resultType), expr}, context);
+}
+
+/// This helper emits the specified value rep as an CRValue.
+CValue ExprEmitter::emitExprCValue(const ExprNode *expr, ExprContext context) {
+  assert(expr && "cannot emit a null node");
+  return emitCValue({emitExpr(expr, context), expr}, context);
+}
+
+/// This helper emits the specified value rep as an SRValue, materializing
+/// it as a parameter constant if it is a parameter.  This returns null if
+/// emission fails.
+SRValue ExprEmitter::emitExprSRValue(const ExprNode *expr, ExprContext context,
+                                     ASTType resultType) {
+  assert(expr && "cannot emit a null node");
+  return emitSRValue({emitExpr(expr, context), expr}, context);
+}
+
 /// This helper emits the specified expression as a parameter value, diagnosing
 /// the problem if the expression is only valid as a runtime value.  This
 /// returns null if emission fails.
-PValue ExprEmitter::emitExprPValue(const ExprNode *node, ExprContext context,
+PValue ExprEmitter::emitExprPValue(const ExprNode *expr, ExprContext context,
                                    ASTType resultType) {
   // Clear the builder to indicate that an PValue must be emitted.
   llvm::SaveAndRestore savedBuilder(builder);
   builder.reset();
 
   // Emit the expression using the contextual type if present.
-  ValueDest dest(resultType, context);
-  AnyValue rep = node->emitIR(dest, *this);
-  if (!rep) {
-    dest.resetForError();
-    return {};
-  }
-
-  return emitPValue({rep, node}, context, resultType);
+  AnyValue rep = emitExpr(expr, context, resultType);
+  return emitPValue({rep, expr}, context);
 }
 
 /// Emit the specified expression as an LValue which can be loaded and stored.
@@ -1216,7 +1198,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
 RValue ExprEmitter::emitExprConditionValueAsI1(const ExprNode *condExpr) {
   CValue boolTmp; // we don't care about the intermediate Bool value.
   return emitConditionValueAsI1(
-      {emitExprCRValue(condExpr, EC_BoolCondition), condExpr}, boolTmp);
+      {emitExprCValue(condExpr, EC_BoolCondition), condExpr}, boolTmp);
 }
 
 SRValue ExprEmitter::emitBoxedIntAsPopScalar(Value numberValue,

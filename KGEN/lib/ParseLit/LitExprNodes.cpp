@@ -1426,9 +1426,9 @@ AnyValue ParenNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
 AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Emit each of the index values to generate error messages.
-  SmallVector<RValue> exprValues;
+  SmallVector<AnyValue> exprValues;
   for (ExprNode *expr : exprs) {
-    exprValues.push_back(emitter.emitExprRValue(expr, EC_TupleElement));
+    exprValues.push_back(emitter.emitExpr(expr, EC_TupleElement));
     if (!exprValues.back())
       return {};
   }
@@ -1439,9 +1439,9 @@ AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 }
 
 AnyValue ListNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
-  SmallVector<RValue> elements;
+  SmallVector<AnyValue> elements;
   for (ExprNode *expr : exprs) {
-    elements.push_back(emitter.emitExprRValue(expr, EC_ListField));
+    elements.push_back(emitter.emitExpr(expr, EC_ListField));
     if (!elements.back())
       return {};
   }
@@ -1569,7 +1569,7 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
     } else {
       // For register values, make sure we convert to the right dest field type.
       auto fieldType = paramEvaluator.getReboundType(field.getType());
-      value = emitter.emitExprRValue(valueExpr, EC_FieldInitValue, fieldType);
+      value = emitter.emitExpr(valueExpr, EC_FieldInitValue, fieldType);
       if (!value)
         return {};
     }
@@ -1781,7 +1781,7 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
     // Swap the operand order.
     std::swap(argValues[0], argValues[1]);
     if (auto rhscv = rhs.ir.getIfCValue()) {
-      OverloadSet callee(rhscv.getType(), reversedFnInfo.name, argValues,
+      OverloadSet callee(rhscv.getRValueType(), reversedFnInfo.name, argValues,
                          callNode, CallSyntax::kReversedOperator, emitter,
                          /*no error*/ {});
       if (callee)
@@ -1836,12 +1836,12 @@ AnyValue BinOpNode::emitInplace(ValueDest &dest, ExprEmitter &emitter) const {
     return {};
 
   // Then emit the right side.
-  RValue rhsRV = emitter.emitExprRValue(rhs, EC_OperatorOperandValue);
-  if (!rhsRV)
+  AnyValue rhsV = emitter.emitExpr(rhs, EC_OperatorOperandValue);
+  if (!rhsV)
     return {};
 
   // Emit the call to the operator function like `__iadd__`.
-  return emitBinOpCall({lhsLV, lhs}, {rhsRV, rhs}, kind, dest, this, emitter);
+  return emitBinOpCall({lhsLV, lhs}, {rhsV, rhs}, kind, dest, this, emitter);
 }
 
 AnyValue BinOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
@@ -1854,8 +1854,8 @@ AnyValue BinOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return emitInplace(dest, emitter);
 
   // Othewise we emit the LHS followed by the RHS.
-  RValue lhsRV = emitter.emitExprRValue(lhs, EC_OperatorOperandValue);
-  RValue rhsRV = emitter.emitExprRValue(rhs, EC_OperatorOperandValue);
+  AnyValue lhsRV = emitter.emitExpr(lhs, EC_OperatorOperandValue);
+  AnyValue rhsRV = emitter.emitExpr(rhs, EC_OperatorOperandValue);
   if (!lhsRV || !rhsRV)
     return {};
 
@@ -2110,8 +2110,8 @@ AnyValue ChainedCmpOpNode::emitNextCmp(ExprEmitter &emitter, size_t opIdx,
 }
 
 AnyValue ChainedCmpOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
-  RValue e0Rep = emitter.emitExprRValue(exprs[0], EC_OperatorOperandValue);
-  RValue e1Rep = emitter.emitExprRValue(exprs[1], EC_OperatorOperandValue);
+  AnyValue e0Rep = emitter.emitExpr(exprs[0], EC_OperatorOperandValue);
+  AnyValue e1Rep = emitter.emitExpr(exprs[1], EC_OperatorOperandValue);
   if (!e0Rep || !e1Rep)
     return {};
 

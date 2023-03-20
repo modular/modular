@@ -83,17 +83,15 @@ fn memoryOnlyOps(a&: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: kgen.call {{.*}}__clone__{{.*}}(%_, %a)
   _ = a
 
-  # CHECK-NEXT: %3Canonymous3E = lit.varlet.decl "<anonymous>", var = false
-  # CHECK-NEXT: kgen.call {{.*}}__clone__{{.*}}(%3Canonymous3E, %a)
   a  # expected-warning {{'$expressions::MemoryOnlyPair' value is unused}}
 
   # CHECK-NEXT: %regX = lit.varlet.decl "regX", var = false :
-  # CHECK-NEXT: %4 = lit.struct.gep %a[x]
-  # CHECK-NEXT: kgen.call {{.*}}__clone__{{.*}}(%regX, %4)
+  # CHECK-NEXT: [[AX:%.*]] = lit.struct.gep %a[x]
+  # CHECK-NEXT: kgen.call {{.*}}__clone__{{.*}}(%regX, [[AX]])
   let regX = a.x
 
-  # CHECK-NEXT: %6 = lit.struct.gep %a[x]
-  # CHECK-NEXT: kgen.call {{.*}}__clone__{{.*}}(%6, %regX)
+  # CHECK-NEXT: [[AX:%.*]] = lit.struct.gep %a[x]
+  # CHECK-NEXT: kgen.call {{.*}}__clone__{{.*}}([[AX]], %regX)
   a.x = regX
 
   # Pass memory primary things by value as arguments.
@@ -106,17 +104,17 @@ fn memoryOnlyOps(a&: MemoryOnlyPair) -> MemoryOnlyPair:
   a.method(regX)
 
   # Drill into rvalue without cloning intermediate values.
-  # CHECK-NEXT: %11 = lit.struct.gep %v2[x]
-  # CHECK-NEXT: %12 = lit.struct.gep %11[x]
-  # CHECK-NEXT: %13 = pop.load %12 : !pop.pointer<index>
-  # CHECK-NEXT: lit.letreg.decl "v2xx" = %13
+  # CHECK-NEXT: [[V2X:%.*]] = lit.struct.gep %v2[x]
+  # CHECK-NEXT: [[V2XX:%.*]] = lit.struct.gep [[V2X]][x]
+  # CHECK-NEXT: [[VAL:%.*]] = pop.load [[V2XX]] : !pop.pointer<index>
+  # CHECK-NEXT: lit.letreg.decl "v2xx" = [[VAL]]
   let v2xx = v2.x.x
 
   # Implicit conversion between memory-only types.
   # CHECK-NEXT: %mpFloat = lit.varlet.decl "mpFloat", var = false
-  # CHECK-NEXT: %14 = lit.struct.gep %v2[x]
+  # CHECK-NEXT: [[V2X:%.*]] = lit.struct.gep %v2[x]
   # CHECK-NEXT: [[TMPINT:%.*]] = lit.varlet.decl "<anonymous>", var = false : <@"$expressions"::@MemoryOnlyInt>
-  # CHECK-NEXT: kgen.call @{{.*}}__clone__{{.*}}([[TMPINT]], %14)
+  # CHECK-NEXT: kgen.call @{{.*}}__clone__{{.*}}([[TMPINT]], [[V2X]])
   # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%mpFloat, [[TMPINT]])
   let mpFloat : MemoryOnlyF64 = v2.x
 
