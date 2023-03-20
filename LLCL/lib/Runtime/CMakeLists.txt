@@ -23,3 +23,5 @@ add_modular_library(LLCLRuntime
   MSupport
   Threads::Threads
   )
+
+add_subdirectory(Globals)

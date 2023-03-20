@@ -11,4 +11,5 @@ add_modular_tool(cache-mgr
   MCache
   MSupport
   MLIRSupport
+  LLCLRuntimeGlobals
   )

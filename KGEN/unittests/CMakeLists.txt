@@ -31,6 +31,7 @@ add_modular_unittest(
   GenericMLSupport
   GenericMLSupportGlobals
   LLCLRuntime
+  LLCLRuntimeGlobals
   MSupportML
   test_kernels
 )

@@ -11,6 +11,7 @@
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Runtime/AsyncValueRef.h"
+#include "LLCL/Runtime/Globals/CompactRuntimeTable.h"
 #include "LLCL/Runtime/WorkQueue.h"
 #include "LLCL/Support/Chain.h"
 #include "LLCL/Support/Profiling.h"
@@ -34,24 +35,9 @@ static AsyncValueRef<Chain> createReadyChain(Runtime &runtime) {
 // CompactRuntimePtr
 //===----------------------------------------------------------------------===//
 
-/// The `CompactRuntimePtr` type provides a pointer compressed version of
-/// `Runtime*` that fits in 8 bits.  This allows every AsyncValue to carry a
-/// backpointer to the Runtime that allocated them, and allows deallocating the
-/// memory for the AsyncValue through the Runtime's allocator.
-///
-/// This is implemented with a static array of Runtime pointers that are given
-/// unique IDs.
-static std::atomic<uint8_t> nextRuntimeIndex{0};
-static Runtime *allRuntimes[CompactRuntimePtr::kInvalidIndex];
-
 CompactRuntimePtr::CompactRuntimePtr(Runtime *runtime)
     : CompactRuntimePtr(runtime ? runtime->getCompactPtr()
                                 : CompactRuntimePtr()) {}
-
-Runtime *CompactRuntimePtr::get() const {
-  assert(index != kInvalidIndex);
-  return allRuntimes[index];
-}
 
 //===----------------------------------------------------------------------===//
 // Runtime
@@ -60,15 +46,11 @@ Runtime *CompactRuntimePtr::get() const {
 Runtime::Runtime(std::unique_ptr<Allocator> allocator,
                  std::unique_ptr<WorkQueue> workQueue,
                  StringRef profileFilename)
-    : signature(TypeID::getSignature()), allocator(std::move(allocator)),
-      workQueue(std::move(workQueue)), profileFilename(profileFilename),
-      runtimeIndex(nextRuntimeIndex.fetch_add(1)),
+    : signature(TypeID::getSignature() ^ CompactRuntimePtr::getSignature()),
+      allocator(std::move(allocator)), workQueue(std::move(workQueue)),
+      profileFilename(profileFilename),
+      runtimeIndex(M::LLCL::Globals::addRuntime(this)),
       readyChain(createReadyChain(*this)) {
-  // We provide a dense numbering of runtime instances right now, but we could
-  // make this fancier to allow deallocating and reusing indexes if needbe.
-  assert(runtimeIndex < CompactRuntimePtr::kInvalidIndex &&
-         "Created too many Runtimes");
-  allRuntimes[runtimeIndex] = this;
 
   // NOTE: Users can't pass in profileFilename AND activate the time profiler in
   // the caller.
@@ -85,12 +67,7 @@ Runtime::~Runtime() {
 
   // Clear cancellation value if present.
   restartFromCancellation();
-  allRuntimes[runtimeIndex] = nullptr;
-
-  // If we are the latest runtime index to be allocated, we can deallocate our
-  // ID (allowing it to be reused).  This is best-effort but not guaranteed.
-  uint8_t expected = runtimeIndex + 1;
-  (void)nextRuntimeIndex.compare_exchange_strong(expected, runtimeIndex);
+  M::LLCL::Globals::clearRuntime(runtimeIndex);
 
   // We're done with profiling.
   if (profiler) {

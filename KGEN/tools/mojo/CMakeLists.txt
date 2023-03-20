@@ -17,6 +17,7 @@ add_modular_tool(mojo
   KGENCompilerRT
   KGENDialect
   LITDialect
+  LLCLRuntimeGlobals
   POPDialect
 
   MLIRBytecodeWriter

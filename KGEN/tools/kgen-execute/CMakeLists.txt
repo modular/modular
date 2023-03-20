@@ -14,6 +14,7 @@ add_modular_tool(kgen-execute
   LINK_LIBS PRIVATE
   DebugInfoTransforms
   KGENCLOptions
+  LLCLRuntimeGlobals
   MLIRParser
   KGENEmitObject
   KGENExecutionEngine

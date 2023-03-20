@@ -14,6 +14,8 @@
 #include <cassert>
 #include <cstdint>
 
+#include "LLCL/Runtime/Globals/CompactRuntimeTable.h"
+
 namespace M::LLCL {
 
 class Runtime;
@@ -35,7 +37,11 @@ public:
 
   Runtime *operator->() const { return get(); }
   Runtime &operator*() const { return *get(); }
-  Runtime *get() const;
+  Runtime *get() const { return M::LLCL::Globals::getRuntime(index); }
+
+  static intptr_t getSignature() {
+    return M::LLCL::Globals::getRuntimeSignature();
+  }
 
   /// Explicitly testing for truth value determines whether this pointer is
   /// "null".
