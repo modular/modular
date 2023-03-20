@@ -34,14 +34,14 @@ produceArchiveFromExports(LLCL::Runtime &runtime, SymbolTable &symtab,
 
   mlir::PassManager mgr(target.getContext());
   auto compilerOr =
-      ObjectCompiler::create(runtime, mgr, ".kgen_cache", symtab,
-                             std::move(exportedSymbols), CompilationOptions());
+      ObjectCompiler::create(runtime, mgr, ".kgen_cache", CompilationOptions());
   if (failed(compilerOr))
     return compilerOr.takeError();
   auto compiler = std::make_unique<ObjectCompiler>(std::move(*compilerOr));
 
   // Produce a standalone archive for all the exports.
-  auto archiveOr = compiler->produceStandaloneArchive(/*isJIT=*/true);
+  auto archiveOr = compiler->produceStandaloneArchive(
+      symtab, std::move(exportedSymbols), /*isJIT=*/true);
   if (failed(archiveOr))
     return Error("failed to produce standalone archive");
 

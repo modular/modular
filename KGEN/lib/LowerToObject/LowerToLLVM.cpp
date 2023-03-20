@@ -51,8 +51,11 @@ static void attachXRayAttributes(llvm::Module &module,
 }
 
 std::unique_ptr<llvm::Module>
-ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx) {
-  OwningOpRef<ModuleOp> module = produceStandaloneModule();
+ObjectCompiler::lowerAllFuncsToLLVM(SymbolTable &symtab,
+                                    const ExportMap &exportedSymbols,
+                                    llvm::LLVMContext &ctx) {
+  OwningOpRef<ModuleOp> module =
+      produceStandaloneModule(symtab, exportedSymbols);
   return lowerAllFuncsToLLVM(ctx, *module, /*isJIT=*/false);
 }
 
@@ -139,19 +142,21 @@ void EmitLLVMPass::runOnOperation() {
 
   // TODO: Populate compilation options from pass options.
   mlir::PassManager passManager(&getContext());
-  auto compiler = ObjectCompiler::create(
-      *rt, passManager, ".kgen_cache",
-      getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable(),
-      CompilationOptions());
+  auto compiler = ObjectCompiler::create(*rt, passManager, ".kgen_cache",
+                                         CompilationOptions());
   if (failed(compiler)) {
     getOperation()->emitError()
         << "failed to create object compiler: " << compiler.getError();
     return signalPassFailure();
   }
+  SymbolTable &symtab =
+      getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
+  ExportMap exportedSymbols =
+      getExportedSymbols(cast<ModuleOp>(symtab.getOp()));
 
   // Lower all functions to LLVM.
   llvm::LLVMContext ctx;
-  auto llvmModule = compiler->lowerAllFuncsToLLVM(ctx);
+  auto llvmModule = compiler->lowerAllFuncsToLLVM(symtab, exportedSymbols, ctx);
   if (!llvmModule)
     return signalPassFailure();
 

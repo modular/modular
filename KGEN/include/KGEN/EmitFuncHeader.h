@@ -11,9 +11,13 @@
 
 namespace M::KGEN {
 class ObjectCompiler;
+struct ExportedSymbol;
 
 /// Emit the header for a set of exported functions.
-LogicalResult emitHeader(ObjectCompiler &compiler, StringRef filename);
+LogicalResult
+emitHeader(SymbolTable &symtab,
+           const llvm::MapVector<StringAttr, ExportedSymbol> &exportedSymbols,
+           ObjectCompiler &compiler, StringRef filename);
 } // namespace M::KGEN
 
 #endif // EMIT_FUNC_HEADER_H

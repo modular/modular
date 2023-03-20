@@ -85,13 +85,16 @@ struct ProcessBuffer {
     SymbolTable symtab(*module);
     mlir::PassManager mgr(ctx);
     auto compiler = KGEN::ObjectCompiler::create(runtime, mgr, ".kgen_cache",
-                                                 symtab, compilationOptions);
+                                                 compilationOptions);
     if (failed(compiler))
       return failure(clOptions.reportError("could not create compiler: " +
                                            Twine(compiler.getError())));
+    llvm::MapVector<StringAttr, ExportedSymbol> exportedSymbols =
+        getExportedSymbols(*module);
 
     // Produce a single standalone .a
     auto standaloneOr = compiler->produceStandaloneArchive(
+        symtab, exportedSymbols,
         /*isJIT=*/clOptions.cmd == Command::kExecute);
     if (failed(standaloneOr))
       return failure();
@@ -100,8 +103,6 @@ struct ProcessBuffer {
     if (clOptions.cmd == Command::kEmit)
       return clOptions.emitArchive(standaloneArchive->getBuffer());
 
-    llvm::MapVector<StringAttr, ExportedSymbol> exportedSymbols =
-        KGEN::getExportedSymbols(*module);
     DenseMap<StringAttr, KGEN::FuncOp> exportedFuncs;
     for (auto &p : exportedSymbols)
       if (auto func = symtab.lookup<KGEN::FuncOp>(p.first))

@@ -177,7 +177,11 @@ static LogicalResult emitSignature(raw_ostream &os, SymbolTable &symtab,
   return success();
 }
 
-LogicalResult ObjectCompiler::produceFunctionDecls(llvm::raw_ostream &os) {
+LogicalResult
+ObjectCompiler::produceFunctionDecls(SymbolTable &symtab,
+                                     const ExportMap &exportedSymbols,
+                                     llvm::raw_ostream &os) {
+  auto module = cast<ModuleOp>(symtab.getOp());
   for (auto f : module.getOps<FuncOp>()) {
     auto itExported = exportedSymbols.find(f.getNameAttr());
     if (itExported == exportedSymbols.end() || !itExported->second.isCExport)
