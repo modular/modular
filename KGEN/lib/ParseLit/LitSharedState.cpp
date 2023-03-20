@@ -634,14 +634,29 @@ void LitSharedState::loadModulesFromCache(
   SmallVector<ASTDecl *> declsToFill;
 
   // Populate the decls that we successfully loaded from the cache.
-  for (ModuleState *moduleState : moduleStates)
+  for (ModuleState *moduleState : moduleStates) {
+    // Throw it away if not all the dependencies are also in the cache.
+    // TODO: See #10657 - we need to figure out a better way to deal with this,
+    //   because this simply throws away work.
+    if (moduleState->importedFromCache &&
+        llvm::any_of(moduleState->dependencies,
+                     [&](auto *state) { return !state->importedFromCache; })) {
+      auto moduleOp = cast<FileModuleOp>(*moduleState->decl);
+      // Clear out the blocks in this file module and replace with an empty
+      // block. This avoids later symbol table issues.
+      moduleOp.getBodyRegion().getBlocks().clear();
+      moduleOp.getBodyRegion().push_back(new Block);
+      moduleState->importedFromCache = false;
+      moduleState->decl->resolvedness = DeclResolvedness::unparsed;
+      continue;
+    }
+
     if (moduleState->importedFromCache)
       declsToFill.push_back(moduleState->decl);
+  }
 
   // Collect the referenced types that need to be resolved.
-  llvm::SetVector<DeclRefType> typesToResolve;
   mlir::AttrTypeWalker typeWalker;
-  typeWalker.addWalk([&](DeclRefType type) { typesToResolve.insert(type); });
   auto resolveTypes = [&](ASTDecl *context, TypeRange types) {
     for (Type type : types)
       typeWalker.walk(type);
@@ -703,25 +718,6 @@ void LitSharedState::loadModulesFromCache(
           addDeclForOp(aliasForwardDeclOp, aliasForwardDeclOp.getNameAttr());
         }
       }
-    }
-  }
-
-  for (DeclRefType type : typesToResolve) {
-    // If the root of the module was imported, then we don't need to resolve
-    // it here.
-    StringAttr moduleScope = type.getSymbol().getRootReference();
-    auto moduleIt = impl->importedModules.find(moduleScope);
-    if (moduleIt == impl->importedModules.end() ||
-        moduleIt->second->importedFromCache)
-      continue;
-    ASTDecl *context = moduleIt->second->decl;
-    for (FlatSymbolRefAttr scope : type.getSymbol().getNestedReferences()) {
-      auto lookupResult =
-          lookupAndResolveDecl(scope.getAttr(), context->getLoc(), *context,
-                               /*searchParentScopes=*/true);
-      if (lookupResult.isFailure())
-        return;
-      context = lookupResult.getIfSuccess().front();
     }
   }
 }
