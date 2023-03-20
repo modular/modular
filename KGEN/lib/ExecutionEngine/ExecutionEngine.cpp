@@ -12,6 +12,7 @@
 #include "LLCL/Runtime/Algorithms.h"
 #include "Support/ErrorOr.h"
 #include "Support/MDialect/MAttrs.h"
+#include "Support/TempFile.h"
 #include "llvm/ExecutionEngine/Orc/COFFPlatform.h"
 #include "llvm/ExecutionEngine/Orc/Core.h"
 #include "llvm/ExecutionEngine/Orc/DebugObjectManagerPlugin.h"
@@ -50,15 +51,25 @@ static ErrorOrSuccess writeORCRTToFile(BufferRef &buf, std::string &outPath) {
   if (ec)
     return Error(ec.message());
 
-  path = path / "liborc_rt.a";
+  // Write to a temporary file, but make it unique so that parallel running
+  // processes don't overwrite and corrupt the file.
+  path = path / "liborc_rt-%%%%%%%.a";
   outPath = path.string();
 
+  auto tmpfileOr = TempFile::create(path.string());
+  if (tmpfileOr.isError())
+    return tmpfileOr.takeError();
+
+  TempFile tmpFile = tmpfileOr.takeValue();
+
   // Write the runtime to the temp file.
-  llvm::raw_fd_ostream tmp(outPath.c_str(), ec);
+  llvm::raw_fd_ostream tmp(tmpFile.getPath().string(), ec);
   if (ec)
     return Error(ec.message());
 
   tmp << buf->getBuffer();
+  outPath = tmpFile.getPath().string();
+  tmpFile.keep();
   return success();
 }
 
