@@ -171,7 +171,8 @@ private:
 /// This can be used to catch, at runtime, accidental multiple definitions for
 /// Modular runtime statics across dynamic libraries / executables.
 inline void checkUniqueRuntime(const Runtime &runtime) {
-  assert(runtime.signature == TypeID::getSignature() &&
+  assert(runtime.signature ==
+             (TypeID::getSignature() ^ CompactRuntimePtr::getSignature()) &&
          "It appears your process has statically linked the Modular Runtime "
          "multiple times across dynamic library / executable boundaries. "
          "Please don't do that.");

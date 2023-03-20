@@ -13,8 +13,6 @@
 
 using namespace M::LLCL;
 
-std::atomic<ssize_t> AsyncValue::totalAllocatedAsyncValues{0};
-
 //===----------------------------------------------------------------------===//
 // Destruction logic
 //===----------------------------------------------------------------------===//

@@ -19,6 +19,7 @@ add_modular_tool(kgen
   KGENCompilerRT
   KGENDialect
   LITDialect
+  LLCLRuntimeGlobals
   POPDialect
 
   MLIRBytecodeWriter

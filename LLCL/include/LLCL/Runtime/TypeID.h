@@ -16,8 +16,10 @@
 #ifndef LLCL_RUNTIME_TYPEID_H
 #define LLCL_RUNTIME_TYPEID_H
 
+#include "LLCL/Runtime/Globals/TypeInfoTable.h"
+#include "LLCL/Support/ConcurrentAppendingVector.h"
 #include "Support/LLVMForwardDecls.h"
-#include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Compiler.h"
 
@@ -246,11 +248,43 @@ private:
 
 #if MODULAR_DEBUG
   /// Slow path for assertEqual.
-  LLVM_ATTRIBUTE_NOINLINE
-  void printErrorIfNotEqual(TypeID expected, StringRef context) const;
+  LLVM_ATTRIBUTE_NOINLINE void printErrorIfNotEqual(TypeID expected,
+                                                    StringRef context) const;
 #endif
 
   Detail::RawTypeID id = Detail::kInvalidRawTypeID;
+};
+
+/// Pair the destructor and type name used at registration time. The latter
+/// is very handy for debugging, eg see AsyncValue::printDebug.
+struct TypeInfo {
+  std::string_view typeName;
+  ValueDestructorFn destructorFn;
+
+  TypeInfo(std::string_view typeName, ValueDestructorFn destructorFn)
+      : typeName(typeName), destructorFn(destructorFn) {}
+};
+
+/// The globally unique type info table. The string -> id mapping uses
+/// heavyweight mutex synchronization, but see TypeIDCache for how that cost is
+/// amortized. The id -> property mapping only needs atomic synchronization and
+/// is very cheap.
+struct TypeInfoTable {
+  mutable std::mutex m; // protects ids
+  llvm::StringMap<Detail::RawTypeID> ids;
+  ConcurrentAppendingVector<TypeInfo> entries;
+
+  TypeInfoTable(size_t initialCapacity) : entries(initialCapacity) {}
+
+  Detail::RawTypeID getSlow(std::string_view typeName,
+                            ValueDestructorFn destructor);
+  std::string_view getTypeName(Detail::RawTypeID id) const {
+    return id == Detail::kInvalidRawTypeID ? std::string_view{"unk"}
+                                           : entries[id].typeName;
+  }
+  ValueDestructorFn getValueDestructor(Detail::RawTypeID id) const {
+    return id == Detail::kInvalidRawTypeID ? nullptr : entries[id].destructorFn;
+  }
 };
 
 } // namespace M::LLCL

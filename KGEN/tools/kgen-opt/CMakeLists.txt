@@ -23,6 +23,8 @@ add_modular_tool(kgen-opt
   KGENTransforms
   LowerLIT
 
+  LLCLRuntimeGlobals
+
   MLIRIR
   MLIRIndexDialect
   MLIRIndexToLLVM
