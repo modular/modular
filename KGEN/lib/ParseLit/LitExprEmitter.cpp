@@ -223,7 +223,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
   }
 
   Type declIRType = POP::PointerType::get(slotType);
-  auto nameAttr = StringAttr::get(emitter.getContext(), "<anonymous>");
+  auto nameAttr = StringAttr::get(emitter.getContext(), "anonymous*");
   // We model this as an immutable let value with a separately stored
   // initializer.  We return an LValue for it because this method is used for
   // the initialization.
