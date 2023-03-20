@@ -220,59 +220,83 @@ static FunctionPassManager buildFunctionSimplificationPipeline() {
   return FPM;
 }
 
-static ModuleInlinerWrapperPass buildInlinerPipeline() {
-  ModuleInlinerWrapperPass MIWP(
-      getInlineParams(/*speed*/ 3, /*size*/ 0),
-      /*PerformMandatoryInliningsFirst*/ true,
-      InlineContext{ThinOrFullLTOPhase::None, InlinePass::CGSCCInliner},
-      InliningAdvisorMode::Default,
-      /*MaxDevirtIterations*/ 4);
+static void addInlinerPasses(ModulePassManager &MPM) {
+
+  if (llvm::sys::Process::GetEnv("MODULAR_ENABLE_LLVM_INLINER")
+          .value_or("ON") == "ON") {
+    ModuleInlinerWrapperPass MIWP(
+        getInlineParams(/*speed*/ 3, /*size*/ 0),
+        /*PerformMandatoryInliningsFirst*/ true,
+        InlineContext{ThinOrFullLTOPhase::None, InlinePass::CGSCCInliner},
+        InliningAdvisorMode::Default,
+        /*MaxDevirtIterations*/ 4);
+
+    // Require the GlobalsAA analysis for the module so we can query it within
+    // the CGSCC pipeline.
+    MIWP.addModulePass(RequireAnalysisPass<GlobalsAA, Module>());
+    // Invalidate AAManager so it can be recreated and pick up the newly
+    // available GlobalsAA.
+    MIWP.addModulePass(
+        createModuleToFunctionPassAdaptor(InvalidateAnalysisPass<AAManager>()));
+
+    // Require the ProfileSummaryAnalysis for the module so we can query it
+    // within the inliner pass.
+    MIWP.addModulePass(RequireAnalysisPass<ProfileSummaryAnalysis, Module>());
+    // Now begin the main postorder CGSCC pipeline.
+    // FIXME: The current CGSCC pipeline has its origins in the legacy pass
+    // manager and trying to emulate its precise behavior. Much of this doesn't
+    // make a lot of sense and we should revisit the core CGSCC structure.
+    CGSCCPassManager &MainCGPipeline = MIWP.getPM();
+
+    // Note: historically, the PruneEH pass was run first to deduce nounwind and
+    // generally clean up exception handling overhead. It isn't clear this is
+    // valuable as the inliner doesn't currently care whether it is inlining an
+    // invoke or a call.
+
+    // Now deduce any function attributes based in the current code.
+    MainCGPipeline.addPass(PostOrderFunctionAttrsPass());
+
+    MainCGPipeline.addPass(ArgumentPromotionPass());
+
+    // Try to perform OpenMP specific optimizations. This is a (quick!) no-op if
+    // there are no OpenMP runtime calls present in the module.
+    MainCGPipeline.addPass(OpenMPOptCGSCCPass());
+
+    // Lastly, add the core function simplification pipeline nested inside the
+    // CGSCC walk.
+    MainCGPipeline.addPass(createCGSCCToFunctionPassAdaptor(
+        buildFunctionSimplificationPipeline(),
+        /*EagerlyInvalidateAnalyses*/ true,
+        /*EnableNoRerunSimplificationPipeline*/ true));
+
+    MainCGPipeline.addPass(CoroSplitPass(true));
+    MPM.addPass(std::move(MIWP));
+    return;
+  }
+
+  // Run a pruned inliner pipeline when LLVM inliner is disabled: namely we need
+  // to run "always-inline" pass and CoroSplit pass
+  MPM.addPass(AlwaysInlinerPass(
+      /*InsertLifetimeIntrinsics=*/false));
 
   // Require the GlobalsAA analysis for the module so we can query it within
   // the CGSCC pipeline.
-  MIWP.addModulePass(RequireAnalysisPass<GlobalsAA, Module>());
-  // Invalidate AAManager so it can be recreated and pick up the newly available
-  // GlobalsAA.
-  MIWP.addModulePass(
+  MPM.addPass(RequireAnalysisPass<GlobalsAA, Module>());
+  // Invalidate AAManager so it can be recreated and pick up the newly
+  // available GlobalsAA.
+  MPM.addPass(
       createModuleToFunctionPassAdaptor(InvalidateAnalysisPass<AAManager>()));
 
-  // Require the ProfileSummaryAnalysis for the module so we can query it within
-  // the inliner pass.
-  MIWP.addModulePass(RequireAnalysisPass<ProfileSummaryAnalysis, Module>());
+  // Require the ProfileSummaryAnalysis for the module so we can query it
+  // within the inliner pass.
+  MPM.addPass(RequireAnalysisPass<ProfileSummaryAnalysis, Module>());
 
-  // Now begin the main postorder CGSCC pipeline.
-  // FIXME: The current CGSCC pipeline has its origins in the legacy pass
-  // manager and trying to emulate its precise behavior. Much of this doesn't
-  // make a lot of sense and we should revisit the core CGSCC structure.
-  CGSCCPassManager &MainCGPipeline = MIWP.getPM();
+  CGSCCPassManager CGPM;
+  CGPM.addPass(CoroSplitPass(true));
+  MPM.addPass(createModuleToPostOrderCGSCCPassAdaptor(std::move(CGPM)));
 
-  // Note: historically, the PruneEH pass was run first to deduce nounwind and
-  // generally clean up exception handling overhead. It isn't clear this is
-  // valuable as the inliner doesn't currently care whether it is inlining an
-  // invoke or a call.
-
-  // Now deduce any function attributes based in the current code.
-  MainCGPipeline.addPass(PostOrderFunctionAttrsPass());
-
-  MainCGPipeline.addPass(ArgumentPromotionPass());
-
-  // Try to perform OpenMP specific optimizations. This is a (quick!) no-op if
-  // there are no OpenMP runtime calls present in the module.
-  MainCGPipeline.addPass(OpenMPOptCGSCCPass());
-
-  // Lastly, add the core function simplification pipeline nested inside the
-  // CGSCC walk.
-  MainCGPipeline.addPass(createCGSCCToFunctionPassAdaptor(
-      buildFunctionSimplificationPipeline(),
-      /*EagerlyInvalidateAnalyses*/ true,
-      /*EnableNoRerunSimplificationPipeline*/ true));
-
-  MainCGPipeline.addPass(CoroSplitPass(true));
-
-  MIWP.addLateModulePass(createModuleToFunctionPassAdaptor(
+  MPM.addPass(createModuleToFunctionPassAdaptor(
       InvalidateAnalysisPass<ShouldNotRunFunctionPassesAnalysis>()));
-
-  return MIWP;
 }
 
 static void addVectorPasses(FunctionPassManager &FPM) {
@@ -389,7 +413,7 @@ static ModulePassManager buildO3Pipeline() {
       createModuleToFunctionPassAdaptor(std::move(GlobalCleanupPM),
                                         /*EagerlyInvalidateAnalyses*/ true));
 
-  MPM.addPass(buildInlinerPipeline());
+  addInlinerPasses(MPM);
 
   // Remove any dead arguments exposed by cleanups, constant folding globals,
   // and argument promotion.
