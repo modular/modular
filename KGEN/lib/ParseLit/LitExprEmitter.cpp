@@ -324,18 +324,19 @@ BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
       return {};
   }
 
-  // If there is a value destination, resolve it into an RValue or BValue.
-  if (dest.isSpecified()) {
-    value.ir = emitResult(value.ir, value.expr, dest);
-    if (!value.ir)
-      return {};
-  }
-
   // Decay RValue's into BValue's.
   if (auto srVal = value.ir.getIfSRValue()) // Decay SRValue -> SBValue
     value.ir = SBValue(srVal);
   else if (auto mrVal = value.ir.getIfMRValue()) // Decay MRValue -> MBValue
     value.ir = MBValue(mrVal);
+
+  // If there is a value destination, resolve it into an RValue or BValue.
+  if (dest.isSpecified()) {
+    value.ir = emitResult(value.ir, value.expr, dest);
+    // Emitting the result to the dest could promote back to RValue, so re-emit
+    // it with a now-empty (assigned from context) destination.
+    return emitBValue(value, dest);
+  }
 
   // Finally, we know we have a BValue.
   auto resultBV = value.ir.getIfBValue();
@@ -699,23 +700,27 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
   // Attempt to further specialize the result value.
   value = refineResultValue(value, expr->getLoc(), *this);
 
-  // If we have an MBValue of a register_passable value, load it into an SBValue
-  // to keep things canonical and consistent.  It is always ok to copy the bits
-  // of a borrowed register_passable value around without cloning.
-  if (auto mbVal = value.getIfMBValue()) {
-    if (mbVal.getRValueType().isRegisterPassable(expr->getLoc(), shared)) {
-      if (!builder) {
-        emitError(expr->getLoc(),
-                  "cannot use a dynamic value in a parameter context")
-            << expr->getRange();
-        return {};
-      }
-
-      auto load = builder->create<POP::LoadOp>(expr->getLocation(*this), mbVal,
-                                               /*alignment=*/std::nullopt);
-      value = SBValue(load);
+  // Given a novel value, check to see if it is register passable MBValue.  If
+  // so, load it to an SBValue.  It is always ok to copy the bits of a borrowed
+  // register_passable value around without cloning.
+  auto processMBValue = [&](MBValue value) -> AnyValue {
+    if (!value.getRValueType().isRegisterPassable(expr->getLoc(), shared))
+      return value;
+    if (!builder) {
+      emitError(expr->getLoc(),
+                "cannot use a dynamic value in a parameter context")
+          << expr->getRange();
+      return {};
     }
-  }
+    auto load = builder->create<POP::LoadOp>(expr->getLocation(*this), value,
+                                             /*alignment=*/std::nullopt);
+    return SBValue(load);
+  };
+
+  // If we have an MBValue of a register_passable value, load it into an SBValue
+  // to keep things canonical and consistent.
+  if (auto mbVal = value.getIfMBValue())
+    value = processMBValue(mbVal);
 
   // If no destination is specified or it is just a contextual type hint, then
   // we can propagate the value directly.
@@ -758,11 +763,11 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
   if (isa<LValueBufferTaken>(dest.representation)) {
     dest = ValueDest(); // Resolved the ValueDest;
     // The client directly filled in an LValue we provided which is great, but
-    // that LValue we provided took ownership of the value, return the result as
-    // an MBValue.
+    // that LValue we provided took ownership of the value, so we need to return
+    // the result as a borrow, not an owned reference.
     auto memValue = value.getIfMRValue();
     assert(memValue && "Must be an MRValue providing result");
-    return MBValue(memValue);
+    return processMBValue(MBValue(memValue));
   }
 
   // We know we have an CRValue/BValue and the destination is some kind of
@@ -1040,7 +1045,10 @@ RValue ExprEmitter::emitConditionValueAsI1(ASTExprAnd<CValue> value,
 RValue ExprEmitter::emitExprRValue(const ExprNode *node, ExprContext context,
                                    ASTType resultType) {
   ValueDest dest(resultType, context);
-  return emitRValue({node->emitIR(dest, *this), node}, context);
+  if (auto rv = emitRValue({node->emitIR(dest, *this), node}, context))
+    return rv;
+  dest.resetForError();
+  return {};
 }
 
 /// This helper emits the specified value rep as an CRValue.

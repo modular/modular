@@ -334,9 +334,14 @@ struct Tuple[*Ts: __mlir_type.`!kgen.mlirtype`]:
   pass
 
 # CHECK: lit.func @"varArgs(__mlir_type.!pop.pack<Ts>)"<Ts: variadic<!kgen.mlirtype>>(%args: !pop.pack<Ts>)
-fn varArgs[*Ts: __mlir_type.`!kgen.mlirtype`](args*: Ts):
+fn varArgs[*Ts: __mlir_type.`!kgen.mlirtype`](owned args*: Ts):
   # CHECK: %copy = lit.letreg.decl "copy" = %args : !pop.pack<Ts>
   let copy = args
+
+fn varArgsBorrowed[*Ts: __mlir_type.`!kgen.mlirtype`](borrowed args*: Ts):
+  # CHECK: %copy = lit.letreg.decl "copy" = %args : !pop.pack<Ts>
+  let copy = args
+
 
 # CHECK-LABEL: lit.func @"usePacks
 # CHECK-SAME: %[[ARGX:.*]]: !kgen.declref<@"$F32"::@F32>
@@ -356,9 +361,14 @@ fn usePacks(x: F32, y: Int):
   # CHECK: %[[PACK3:.*]] = kgen.param.constant: !pop.pack<[]> = <<>>
   # CHECK: kgen.call @"$decls"::@"varArgs(__mlir_type.!pop.pack<Ts>)"<Ts: variadic<!kgen.mlirtype> = []>(%[[PACK3]])
   varArgs()
-  # CHECK: %[[PACK4:.*]] = pop.pack.create(%{{.*}}, %[[ARGX]], %[[ARGY]]) : !pop.pack<[!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$F32"::@F32>, !kgen.declref<@"$Int"::@Int>]>
+  # CHECK: %[[PACK4:.*]] = pop.pack.create(%{{.*}}, %[[ARGX]], %[[ARGY]])
   # CHECK: kgen.call @"$decls"::@"varArgs(__mlir_type.!pop.pack<Ts>)"<Ts: variadic<!kgen.mlirtype> = [!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$F32"::@F32>, !kgen.declref<@"$Int"::@Int>]>(%[[PACK4]])
   varArgs[Int, F32, Int](1, x, y)
+
+  # CHECK: kgen.param.constant: @"$Int"::@Int = <#lit.struct<{value: scalar<index> = 1}>>
+  # CHECK-NEXT: [[PACK5:%.*]] = pop.pack.create(%{{.*}}, %[[ARGX]], %[[ARGY]])
+  # CHECK-NEXT: kgen.call {{.*}}varArgsBorrowed{{.*}}(%10)
+  varArgsBorrowed[Int, F32, Int](1, x, y)
 
 ##===----------------------------------------------------------------------===##
 # @raises decorator.
