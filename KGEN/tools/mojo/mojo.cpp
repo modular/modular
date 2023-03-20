@@ -184,7 +184,7 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     target = targetOr.takeValue();
   }
 
-  elaborateModule(pm, *runtime, target, {clOptions.enableSearch});
+  populateElaborateModulePasses(pm, *runtime, target, {clOptions.enableSearch});
 
   if (failed(pm.run(*theModule)))
     return clOptions.reportError("compilation failed");
