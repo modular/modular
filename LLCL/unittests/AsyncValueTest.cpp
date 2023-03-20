@@ -464,3 +464,38 @@ TEST_P(AsyncValueTest, StressParallelForEachN) {
   for (size_t i = 0; i < nShards; ++i)
     EXPECT_TRUE(*doneFlags[i]) << "(index " << i << ")";
 }
+
+//===----------------------------------------------------------------------===//
+// Awaiting from multiple 'foreign' threads.
+//===----------------------------------------------------------------------===//
+
+TEST_P(AsyncValueTest, AwaitFromForeign) {
+  if (GetParam() != kThreadPool)
+    // Can only observe this behaviour with the thread pool workqueue.
+    return;
+
+  auto runtime = createRuntime();
+
+  constexpr size_t nTasks = 20;
+  Semaphore canRun[nTasks];
+  llvm::SmallVector<AnyAsyncValueRef> finished;
+  finished.reserve(nTasks);
+  for (size_t i = 0; i < nTasks; ++i) {
+    finished.emplace_back(AsyncValueRef<Chain>::allocate(*runtime));
+    addTask(*runtime, [i, &canRun, finished = finished[i].copy()]() mutable {
+      canRun[i].wait();
+      std::move(finished).emplace<Chain>();
+    });
+  }
+
+  std::thread foreign[nTasks];
+  for (size_t i = 0; i < nTasks; ++i)
+    foreign[i] = std::thread([i, &finished]() { await(finished[i]); });
+
+  for (size_t i = 0; i < nTasks; ++i)
+    canRun[i].post();
+  for (size_t i = 0; i < nTasks; ++i)
+    foreign[i].join();
+
+  await(finished);
+}

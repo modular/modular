@@ -89,9 +89,14 @@ public:
   /// if it cannot be enqueued (eg because the queue is full).
   virtual void addLocalTask(TaskFunction work) = 0;
 
-  /// Blocks until the given values are ready, either as emplaced values or
-  /// as errors. The caller's thread may fill in time while waiting by
-  /// processing pending tasks.
+  /// Returns when the given values are ready, either as emplaced values or
+  /// as errors. The caller's thread may contribute to processing tasks until
+  /// all values are ready, or may sleep.
+  ///
+  /// It is valid for await to be called recursively, ie a task being processed
+  /// may itself call await. It is valid for the caller to be running on
+  /// any thread, including a worker thread managed by this WorkQueue or any
+  /// 'foreign' thread.
   virtual void await(ArrayRef<AnyAsyncValueRef> values) = 0;
 
   /// Return the pool size maintained by this work queue. Kernels can use
@@ -100,6 +105,9 @@ public:
   virtual size_t getParallelismLevel() const = 0;
 
   /// Shutdown the thread pool and quiesce in preparation for destruction.
+  /// Must be called before the WorkQueue is destroyed. Must be called from
+  /// outside of any task. No other 'foreign' thread may be running an await
+  /// loop.
   virtual void shutdown() = 0;
 
 protected:
@@ -133,12 +141,15 @@ struct ProfiledTaskFunction {
 std::unique_ptr<WorkQueue> createSingleThreadWorkQueue();
 
 /// Creates a thread pool. The thread pool will use numThreads - 1 worker
-/// threads, on the assumption the caller or some other 'main' thread will
-/// eventually donate themselves to processing tasks by calling await.
+/// threads, on the assumption the calling thread or some other 'foreign'
+/// thread will eventually donate themselves to processing tasks by calling
+/// await.
 ///
 /// If numThreads is zero it will default to the number of 'physical' cores in
 /// the first socket in the system. Generally this will ignore hyperthreading
 /// to minimize cache contention, and will avoid cross-NUMA memory traffic.
+///
+/// The work queue must be shutdown before being destroyed.
 std::unique_ptr<WorkQueue> createThreadPoolWorkQueue(size_t numThreads = 0);
 
 } // namespace M::LLCL

@@ -32,13 +32,20 @@ using namespace M::LLCL;
 // Terminology:
 //  - Worker thread: a thread we create which is running a dedicated runItems
 //    loop. These threads have a 'workerID' > 0.
-//  - Foreign thread: any thread which constructs the ThreadPoolWorkQueue, or
-//    calls any methods upon it. The same ThreadPoolWorkQueue may see calls
-//    from multiple foreign threads. All foreign threads have the 'workerID' 0.
-//  - Awaiting foreign thread: a distinguished foreign thread currently running
-//    a runItems loop within an await. At most one awaiting foreign thread can
-//    be active at a time, however different threads can call await
-//    sequentially.
+//  - Foreign thread: any non-worker thread which interacts with the
+//    ThreadPoolWorkQueue. For the most part it's ok to have multiple foreign
+//    threads, for example a server which creates a thread per request may
+//    trigger calls to the ThreadPoolWorkQueue to addTask and await.
+//  - Working foreign thread: a distinguished foreign thread currently running
+//    a runItems loop within an await or shutdown. At most one working
+//    foreign thread can be active at a time, however it's ok for different
+//    threads to call await sequentially. In effect, a working foreign thread
+//    has temporarily donated itself to be the N'th worker when numThreads = N.
+//  - Blocked foreign thread: a foreign thread which has called await when
+//    there already exists a working foreign thread. The thread sleeps on a
+//    semaphore until its dependent async values are ready, thus relying on
+//    existing worker threads and the working foreign thread to run work
+//    items on its behalf.
 //
 
 //===----------------------------------------------------------------------===//
@@ -61,7 +68,7 @@ constexpr size_t kTaskListSlotsPerThread = 16;
 constexpr bool kUseThreadAffinity = true;
 
 /// Amount of time to spend spinning while waiting for work before going to
-/// sleep.
+/// sleep on a semaphore.
 constexpr std::chrono::nanoseconds kBusyWait = std::chrono::milliseconds(1);
 
 //===----------------------------------------------------------------------===//
@@ -182,8 +189,8 @@ struct WorkQueueThread {
   ///
   /// Thread index #0 is reserved for all 'foreign' threads. Though we create
   /// an entry for this index in the ThreadPoolWorkQueue workers it is not
-  /// running a runOnThread work loop. However, the thread may call runItems
-  /// while awaiting.
+  /// running a runOnThread work loop. However, a foreign thread may call
+  /// runItems while awaiting or for shutdown.
   size_t workerID;
   /// The CPU we'd prefer this worker to have affinity for.
   size_t cpuID;
@@ -191,19 +198,26 @@ struct WorkQueueThread {
   /// out of things to do.
   Semaphore sema;
   /// The system id for the thread which is currently executing runItems using
-  /// this object. May be zero if this object represents 'foreign threads, ie
-  /// has workerID 0. At most one 'foreign' thread can be running a runItems
-  /// loop at a time.
+  /// this object. May be zero if this object represents all 'foreign threads
+  /// (ie has workerID 0) and no foreign thread is currently in a runItems loop.
+  /// At most one 'foreign' thread can be running a runItems loop at a time.
   std::atomic<uint64_t> threadID = 0;
+  /// The number of recursive calls to runItems made by the current foreign
+  /// thread. This supports tasks which themselves (unfortunately) need to
+  /// await.
+  size_t numRecursiveCalls = 0;
   /// The profiling entry for the currently running work item, or null if none.
+  /// This entry is manipulated to accurately record when a task is actually
+  /// do 'its own' work rather than other tasks as a side effect of calling
+  /// await.
   WorkProfilerEntry *running = nullptr;
-  // The underlying worker thread, or none for the 'foreign' threads
-  // WorkQueueThread.
+  // The underlying worker thread, or none if this object reperesents all
+  // 'foreign' threads.
   std::optional<std::thread> thread;
 
-  /// Create a `WorkQueueThread` from a sync state reference and a reference to
-  /// a task list. This also starts the std::thread, so the sync state and task
-  /// list must be initialized by the time this is called.
+  /// Create a `WorkQueueThread` representing the worker with workerID.
+  /// If workedID is > 0 then a worker thread is created and enters the
+  /// runItems loop. Otherwise the result represents all 'foreign' threads.
   WorkQueueThread(SharedThreadState &sharedState,
                   LockFreeRingBuffer<ProfiledTaskFunction> &taskList,
                   size_t workerID, size_t cpuID)
@@ -217,7 +231,8 @@ struct WorkQueueThread {
   /// runItems loop.
   ///
   /// For the 'foreign' thread this item won't be executed until await is
-  /// called. All other threads will pick the item up on their next work loop.
+  /// called to start processing work items. All worker threads will pick
+  /// the item up on their next time around the work loop.
   void addLocalTask(TaskFunction &&work) {
     localTaskList.emplace_back(std::move(work));
   }
@@ -233,7 +248,7 @@ struct WorkQueueThread {
   }
 
   // Execute a single profiled work item. If OnOwningThread is true then
-  // the caller is either a worker thread or the awaiting foreign thread,
+  // the caller is either a worker thread or a 'working foreign' thread,
   // in which case we can capture the running profile entry before any
   // recursive awaits begin executing additional work items.
   template <bool OnOwningThread>
@@ -258,6 +273,22 @@ struct WorkQueueThread {
     std::move(profiledTask.running).record();
   }
 
+  /// Returns true if the calling thread can be considered to own this
+  /// object. If the caller is a worker thread just returns true. If the
+  /// caller is a foreign thread, ensures the foreign thread is the only
+  /// 'working foreign' thread and returns true. Otherwise returns false.
+  ///
+  /// Must be paired with a call to releaseOwningThread iff returns true.
+  bool ensureOwningThread();
+
+  /// If necessary, indicates the calling thread has relinquished ownership
+  /// of this object. This is a no-op if the caller is a worker thread.
+  /// Otherwise may allow another foreign thread to become a 'working
+  /// foreign' thread.
+  ///
+  /// Must be paired with ensureOwningThread iff the former return true.
+  void releaseOwningThread();
+
   /// This implements the main worker loop, used by runOnThread, await and
   /// shutdown. The loop runs until earlyStopPredicate or lateStopPredicate
   /// return true. The "early" predicate is called for every work item that
@@ -269,13 +300,11 @@ struct WorkQueueThread {
   /// and local task list is empty.
   ///
   /// The given labels are used only for profiling entries when spinning or
-  /// sleeping.
-  template <typename EarlyStopPredicateFn, typename LateStopPredicateFn>
-  void runItems(EarlyStopPredicateFn earlyStopPredicate,
-                LateStopPredicateFn lateStopPredicate, bool waitForTasks,
-                StringRef spinningLabel, StringRef sleepingLabel);
-
-  /// As above, but the caller is known to own the WorkQueueThread.
+  /// sleeping. The current running profiling entry will be paused then
+  /// resumed while other tasks are executed.
+  ///
+  /// If the caller is a 'foreign' thread then only safe to call if
+  /// ensureOwningThread has returned true.
   template <typename EarlyStopPredicateFn, typename LateStopPredicateFn>
   void runItemsOnOwningThread(EarlyStopPredicateFn earlyStopPredicate,
                               LateStopPredicateFn lateStopPredicate,
@@ -315,7 +344,7 @@ void WorkQueueThread::runOnThread() {
     setThreadAffinity(cpuID);
 
   // Run work items until the system is asked to shut down.
-  runItems(
+  runItemsOnOwningThread(
       /*earlyStopPredicate=*/[]() { return false; }, // Always loop.
       /*lateStopPredicate=*/
       [this]() {
@@ -328,49 +357,36 @@ void WorkQueueThread::runOnThread() {
       /*sleepingLabel=*/"llcl.runOnThread.sleeping");
 }
 
-template <typename EarlyStopPredicateFn, typename LateStopPredicateFn>
-void WorkQueueThread::runItems(EarlyStopPredicateFn earlyStopPredicate,
-                               LateStopPredicateFn lateStopPredicate,
-                               bool waitForTasks, StringRef spinningLabel,
-                               StringRef sleepingLabel) {
+bool WorkQueueThread::ensureOwningThread() {
   if (workerID == 0) {
+    // Caller is a 'foreign' thread.
     uint64_t callerThreadID = llvm::get_threadid();
     uint64_t expectedThreadID = 0;
     if (threadID.compare_exchange_strong(expectedThreadID, callerThreadID)) {
-      // We're the only foreign thread running a runItems loop.
-      if constexpr (kUseThreadAffinity) {
-        runWithThreadAffinity(cpuID, [this, earlyStopPredicate,
-                                      lateStopPredicate, waitForTasks,
-                                      spinningLabel, sleepingLabel]() {
-          runItemsOnOwningThread<EarlyStopPredicateFn, LateStopPredicateFn>(
-              earlyStopPredicate, lateStopPredicate, waitForTasks,
-              spinningLabel, sleepingLabel);
-        });
-      } else {
-        runItemsOnOwningThread<EarlyStopPredicateFn, LateStopPredicateFn>(
-            earlyStopPredicate, lateStopPredicate, waitForTasks, spinningLabel,
-            sleepingLabel);
-      }
-      // Release.
-      threadID = 0;
+      // Caller now has ownership and is a 'working foreign' thread.
+      return true;
     } else if (expectedThreadID == callerThreadID) {
-      // This is a recursive call to await from the same foreign thread.
-      runItemsOnOwningThread<EarlyStopPredicateFn, LateStopPredicateFn>(
-          earlyStopPredicate, lateStopPredicate, waitForTasks, spinningLabel,
-          sleepingLabel);
-
+      // Caller already had ownership, keep track of the number of recursive
+      // calls.
+      ++numRecursiveCalls;
+      return true;
     } else {
-      llvm::report_fatal_error(Twine("Attempting to await from foreign thread ")
-                                   .concat(Twine(callerThreadID))
-                                   .concat(", however thread ")
-                                   .concat(Twine(expectedThreadID))
-                                   .concat(" is already running an await"));
+      // Some other foreign thread is already doing work, so caller is
+      // about to become a 'blocked foreign' thread.
+      return false;
     }
   } else {
-    // We're on a worker thread.
-    runItemsOnOwningThread<EarlyStopPredicateFn, LateStopPredicateFn>(
-        earlyStopPredicate, lateStopPredicate, waitForTasks, spinningLabel,
-        sleepingLabel);
+    // This is a worker thread, no shenanigans required.
+    return true;
+  }
+}
+
+void WorkQueueThread::releaseOwningThread() {
+  if (workerID == 0) {
+    if (numRecursiveCalls == 0)
+      threadID = 0;
+    else
+      --numRecursiveCalls;
   }
 }
 
@@ -580,8 +596,18 @@ ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
 void ThreadPoolWorkQueue::shutdown() {
   TimeTraceScope scope(InternalProfilerEntry::create("llcl.shutdown"));
 
+  WorkQueueThread *callingWorker = getCurrentWorkQueueThread();
+  bool isOwning = callingWorker->ensureOwningThread();
+  // If isOwning is false then some other foreign thread is still in a runItems
+  // loop. We could sleep here, but that would require a new shutdown
+  // synchronization point. Instead we'll just assert, on the assumption
+  // if the work queue is being used by multiple foreign threads then there's
+  // already going to be shutdown & draining synchronization on their side.
+  assert(isOwning && "attempting to shutdown while another foreign thread is "
+                     "running work items");
+
   // Donate this thread to help drain the work queue if there's anything left.
-  getCurrentWorkQueueThread()->runItems(
+  callingWorker->runItemsOnOwningThread(
       /*earlyStopPredicate=*/[]() { return false; }, // Always loop
       /*lateStopPredicate=*/[]() { return false; },  // Always loop
       /*waitForTasks=*/false,
@@ -668,66 +694,99 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
   if (llvm::all_of(values, [](auto &av) { return av.isReady(); }))
     return;
 
-  // Figure out which WorkerThread this is being invoked from.  This could be
+  // Figure out which WorkerThread this is being invoked from. This could be
   // one of our workers or a foreign thread.
   WorkQueueThread *awaitingWorker = getCurrentWorkQueueThread();
 
   // We are done when numRemaining drops to zero.
   std::atomic<ssize_t> numRemaining = values.size();
 
-  // As each value becomes available, we can decrement our counts.  When done,
-  // we signal the semaphore for this worker to make sure to wake it up if it
-  // fell asleep.
-  for (auto &value : values)
-    value.andThenSync([&numRemaining, awaitingWorker, this]() {
-      // Decrement the count of async values that we're waiting on.
-      // TODO: This can probably use more relaxed memory consistency!
-      if (numRemaining.fetch_sub(1, std::memory_order_seq_cst) != 1)
-        return;
+  // Figure out if the calling thread can be considered to own the
+  // WorkQueueThread, and thus can start processing work items while
+  // waiting.
+  if (awaitingWorker->ensureOwningThread()) {
+    // As each value becomes available, we can decrement our counts.  When done,
+    // we signal the semaphore for this worker to make sure to wake it up if it
+    // fell asleep.
+    for (auto &value : values) {
+      value.andThenSync([&numRemaining, awaitingWorker, this]() {
+        // Decrement the count of async values that we're waiting on.
+        // TODO: This can probably use more relaxed memory consistency!
+        if (numRemaining.fetch_sub(1, std::memory_order_seq_cst) != 1)
+          return;
 
-      // Get the thread ID of the thread running the andThenSync, for tracing.
-      size_t workerID = workerIDInTLS;
-      (void)workerID;
+        // Get the thread ID of the thread running the andThenSync, for tracing.
+        size_t workerID = workerIDInTLS;
+        (void)workerID;
 
-      // When it drops to zero, we're good to go and whatever thread is
-      // waiting for this will exit out of its 'runItems' loop.  That said,
-      // the thread may be suspended on a semaphore.  Check for this, and if
-      // so, signal its semaphore so it wakes up and notes that it is done.
-      auto awaitingWorkerID = awaitingWorker->workerID;
+        // When it drops to zero, we're good to go and whatever thread is
+        // waiting for this will exit out of its 'runItems' loop.  That said,
+        // the thread may be suspended on a semaphore.  Check for this, and if
+        // so, signal its semaphore so it wakes up and notes that it is done.
+        auto awaitingWorkerID = awaitingWorker->workerID;
 
-      // If the worker doing the await() has suspended, make sure to wake it
-      // up so it notices that it is done.
-      if (sharedState.takeSuspendedThread(awaitingWorkerID)) {
-        // NOTE: We may post without a corresponding wait in
-        // WorkQueueThread::runItems if the earlyStopPredicate &
-        // takeSuspendedThread path executes just after our
-        // takeSuspendedThread above. In that case a future wait will just go
-        // around the work loop again.
-        //
-        // NOTE: This wakes up exactly one sleeping thread. Since we only
-        // allow one foreign thread to be running a runItems loop at a time
-        // the semaphore should have at most one waiter.
-        awaitingWorker->sema.post();
-      }
-    });
+        // If the worker doing the await() has suspended, make sure to wake it
+        // up so it notices that it is done.
+        if (sharedState.takeSuspendedThread(awaitingWorkerID)) {
+          // NOTE: We may post without a corresponding wait in
+          // WorkQueueThread::runItems if the earlyStopPredicate &
+          // takeSuspendedThread path executes just after our
+          // takeSuspendedThread above. In that case a future wait will just go
+          // around the work loop again.
+          //
+          // NOTE: This wakes up exactly one sleeping thread. Since we only
+          // allow one foreign thread to be running a runItems loop at a time
+          // the semaphore should have at most one waiter.
+          awaitingWorker->sema.post();
+        }
+      });
+    }
 
-  // Run work items until the system is asked to shut down.
-  awaitingWorker->runItems(
-      /*earlyStopPredicate=*/
-      [&numRemaining]() {
-        // Exit early as soon as numRemaining drops to zero.
-        // TODO: Relaxed memory consistency!
-        return numRemaining.load(std::memory_order_seq_cst) == 0;
-      },
-      /*lateStopPredicate=*/
-      []() {
-        // No additional shutdown check after waking, the early
-        // check will suffice.
-        return false;
-      },
-      /*waitForTasks=*/true,
-      /*spinningLabel=*/"llcl.await.spinning",
-      /*sleepingLabel=*/"llcl.await.sleeping");
+    // Run work items until all values are available.
+    awaitingWorker->runItemsOnOwningThread(
+        /*earlyStopPredicate=*/
+        [&numRemaining]() {
+          // Exit early as soon as numRemaining drops to zero.
+          // TODO: Relaxed memory consistency!
+          return numRemaining.load(std::memory_order_seq_cst) == 0;
+        },
+        /*lateStopPredicate=*/
+        []() {
+          // No additional shutdown check after waking, the early
+          // check will suffice.
+          return false;
+        },
+        /*waitForTasks=*/true,
+        /*spinningLabel=*/"llcl.await.spinning",
+        /*sleepingLabel=*/"llcl.await.sleeping");
+
+    awaitingWorker->releaseOwningThread();
+
+  } else {
+    // The caller is a 'foreign' thread, and some other foreign thread is
+    // already in an await loop, processing work items. Simply sleep until
+    // all values are available, letting the other workers and foreign thread
+    // do work on the caller's behalf.
+    //
+    // Ideally we'd sleep only until all our values are ready or the other
+    // foreign thread is done with its runItems loop, whichever is sooner.
+    // However, this feels like a mismatch with the work queue's notion of
+    // N-1 worker threads with the 'main' thread acting as the N'th.
+    Semaphore sema;
+    // As each value becomes available, we can decrement our counts.  When done,
+    // we signal the semaphore for this worker to make sure to wake it up if it
+    // fell asleep.
+    for (auto &value : values) {
+      value.andThenSync([&numRemaining, &sema]() {
+        // Decrement the count of async values that we're waiting on.
+        // TODO: This can probably use more relaxed memory consistency!
+        if (numRemaining.fetch_sub(1, std::memory_order_seq_cst) != 1)
+          return;
+        sema.post();
+      });
+    }
+    sema.wait();
+  }
 
   assert(numRemaining.load() == 0);
 }
