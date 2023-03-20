@@ -339,7 +339,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   auto execFunc = [&](FuncOp theFunc, StringAttr name,
                       const CommandLineFunc &clFunc) -> LogicalResult {
     TimeTraceScope<> traceScope("execute-function", name);
-    auto compiledFuncOr = engine.lookup("exec", name);
+    auto compiledFuncOr = engine.lookup(name);
     if (failed(compiledFuncOr))
       return failure(clOptions.reportError(compiledFuncOr.getError()));
 

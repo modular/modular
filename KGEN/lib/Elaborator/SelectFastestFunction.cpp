@@ -83,15 +83,13 @@ M::KGEN::evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
 
     // Get pointers to all the candidates.
     for (FuncOp candidate : specializations) {
-      UNWRAP_ERROR(func, engine.lookup("evaluateSpecializations",
-                                       candidate.getNameAttr()));
+      UNWRAP_ERROR(func, engine.lookup(candidate.getNameAttr()));
       candidatePtrs.push_back(func.getFunctionPointer());
     }
   }
 
   // Lookup the evaluator function
-  UNWRAP_ERROR(evaluatorFunc, engine.lookup("evaluateSpecializations",
-                                            evaluator.getNameAttr()));
+  UNWRAP_ERROR(evaluatorFunc, engine.lookup(evaluator.getNameAttr()));
 
   // Invoke the evaluator.
   ssize_t bestIdx;

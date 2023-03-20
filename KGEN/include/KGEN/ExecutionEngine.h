@@ -11,8 +11,11 @@
 #include "KGEN/CompilationOptions.h"
 #include "Support/ErrorOr.h"
 #include "Support/FunctionExtras.h"
-#include "llvm/ExecutionEngine/Orc/LLJIT.h"
+#include "llvm/ADT/StringSet.h"
+#include "llvm/ExecutionEngine/Orc/Core.h"
+#include "llvm/ExecutionEngine/Orc/ObjectLinkingLayer.h"
 #include "llvm/ExecutionEngine/Orc/TargetProcess/JITLoaderGDB.h"
+#include "llvm/IR/DataLayout.h"
 
 namespace M::KGEN {
 class CompilationOptions;
@@ -72,22 +75,41 @@ public:
   ErrorOrSuccess add(StringRef libName, StringRef functionName, void *fn);
 
   /// Look up a func and return it as a CompiledFunc object if we can find it.
-  ErrorOr<CompiledFunc> lookup(StringRef libName, StringRef symbol);
+  ErrorOr<CompiledFunc> lookup(StringRef symbol);
 
 private:
-  explicit ExecutionEngine(std::unique_ptr<llvm::orc::LLJIT> jit,
-                           CompilationOptions options);
+  explicit ExecutionEngine(CompilationOptions options,
+                           std::unique_ptr<llvm::orc::ExecutionSession> session,
+                           const llvm::DataLayout &dl);
 
   /// This class is not copy-constructible.
   ExecutionEngine(const ExecutionEngine &other) = delete;
 
+  /// Get or create a JITDylib of name `libName`.
   ErrorOr<llvm::orc::JITDylib *> getOrCreateDylib(StringRef libName);
+
+  /// Mangle and intern a string name.
+  llvm::orc::SymbolStringPtr mangleAndIntern(StringRef name);
+
+  void addToSearchOrder(StringRef name, llvm::orc::JITDylib *dylib);
 
   /// The compilation options to use.
   CompilationOptions options;
 
-  /// Objects required for the ORCJIT.
-  std::unique_ptr<llvm::orc::LLJIT> jit;
+  /// The ORC requires an ExecutionSession - this is how it coordinates
+  /// execution across processes/machines.
+  std::unique_ptr<llvm::orc::ExecutionSession> executionSession = nullptr;
+
+  /// JITLink linker. This is what drives all the linking underneath our JIT.
+  std::unique_ptr<llvm::orc::ObjectLinkingLayer> objectLayer = nullptr;
+
+  /// Keep a set of known dylibs and a dylib search order - this will make it
+  /// easy to (a) make sure we only have unique dylibs and (b) cache the search
+  /// order so we don't recreate it on every lookup.
+  llvm::StringSet<> knownDylibs;
+  llvm::orc::JITDylibSearchOrder searchOrder;
+
+  llvm::DataLayout dataLayout;
 
   /// List of buffers that contain archive files added to the JIT. This holds
   /// references to them so they aren't deallocated underneath our feet.
