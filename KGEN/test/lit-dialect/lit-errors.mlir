@@ -258,3 +258,11 @@ lit.func @bad_param_results<() -> r0: dtype>() {
   lit.param_return<2>
   lit.end_func
 }
+
+// -----
+
+lit.func @no_struct_decl(%a: index) {
+  // expected-error @below {{expected to find a struct decl for '!kgen.declref<@Bar<a: type = index>>'}}
+  %0 = lit.struct.create(x=%a) : (index) -> !kgen.declref<@Bar<a: type = index>>
+  lit.end_func
+}

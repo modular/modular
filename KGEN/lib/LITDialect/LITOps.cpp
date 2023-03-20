@@ -378,11 +378,7 @@ static void printKeywordAsString(OpAsmPrinter &p, Operation *op,
 static StructDeclOp lookupStructDecl(SymbolTableCollection &symbolTable,
                                      Operation *user, DeclRefType ref) {
   auto module = KGENModule::from(user, symbolTable);
-  auto structDecl = module.lookup<StructDeclOp>(ref.getSymbol());
-  // Currently, this is impossible to fail because the symbol use was verified
-  // by the parameter verifier.
-  assert(structDecl && "expected a struct declaration");
-  return structDecl;
+  return module.lookup<StructDeclOp>(ref.getSymbol());
 }
 
 /// Verify the reference struct type.
@@ -392,6 +388,8 @@ StructCreateOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // struct declaration.
   ParameterEvaluator evaluator(getType().getParamValues());
   StructDeclOp structDecl = lookupStructDecl(symbolTable, *this, getType());
+  if (!structDecl)
+    return emitOpError("expected to find a struct decl for ") << getType();
   auto fields = structDecl.getFieldDecls();
   unsigned numFields = std::distance(fields.begin(), fields.end());
   if (numFields != getNumOperands())
