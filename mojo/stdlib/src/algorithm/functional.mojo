@@ -23,7 +23,7 @@ from Vector import InlinedFixedVector
 
 @always_inline
 fn map[
-    func: __mlir_type[`!kgen.signature<(`, Int, `) -> !lit.none>`],
+    func: __mlir_type[`!kgen.signature<(`, Int, ` borrow) -> !lit.none>`],
 ](size: Int):
     """
     Map a function over a range from 0 to size.
@@ -103,7 +103,7 @@ alias fn_simd_sig_type = __mlir_type[
     Int,
     `>(`,
     Int,
-    `) -> !lit.none>`,
+    ` borrow) -> !lit.none>`,
 ]
 
 
@@ -115,7 +115,7 @@ fn vectorize[
         Int,
         `>(`,
         Int,
-        `) -> !lit.none>`,
+        ` borrow) -> !lit.none>`,
     ],
 ](size: Int):
     """Map a function which is parametrized over a simd_width over a range
@@ -220,7 +220,11 @@ alias InlinedFixedVectorLength = 64
 fn parallelForEachNChain[
     args_type: __mlir_type.`!kgen.mlirtype`,
     func: __mlir_type[
-        `!kgen.signature<(`, Int, `,`, args_type, `) async -> !lit.none>`
+        `!kgen.signature<(`,
+        Int,
+        ` borrow,`,
+        args_type,
+        ` borrow) async -> !lit.none>`,
     ],
 ](
     total_count: Int,
@@ -238,7 +242,11 @@ fn parallelForEachNChain[
 fn parallelForEachN[
     args_type: __mlir_type.`!kgen.mlirtype`,
     func: __mlir_type[
-        `!kgen.signature<(`, Int, `,`, args_type, `) -> !lit.none>`
+        `!kgen.signature<(`,
+        Int,
+        ` borrow,`,
+        args_type,
+        ` borrow) -> !lit.none>`,
     ],
 ](rt: Runtime, total_count: Int, args: args_type):
     # We have no tasks, so do nothing.
@@ -276,7 +284,7 @@ fn parallelForEachN[
 
 @always_inline
 fn parallelize[
-    func: __mlir_type[`!kgen.signature<(`, Int, `) -> !lit.none>`],
+    func: __mlir_type[`!kgen.signature<(`, Int, ` borrow) -> !lit.none>`],
 ](rt: Runtime, num_work_items: Int):
     # We have no tasks, so do nothing.
     if num_work_items == 0:
@@ -390,7 +398,7 @@ Signature of a tiled function that performs some work with a static tile size
   and an offset. i.e. func<tile_size: Int> (offset: Int)
 """
 alias Static1DTileUnitFunc = __mlir_type[
-    `!kgen.signature<<tile_size:`, Int, `>(`, Int, `) -> !lit.none>`
+    `!kgen.signature<<tile_size:`, Int, `>(`, Int, ` borrow) -> !lit.none>`
 ]
 
 """
@@ -398,7 +406,7 @@ Signature of a tiled function that performs some work with a dynamic tile size
   and an offset. i.e. func(offset: Inttile_size: Int)
 """
 alias Dynamic1DTileUnitFunc = __mlir_type[
-    `!kgen.signature<(`, Int, `,`, Int, `) -> !lit.none>`
+    `!kgen.signature<(`, Int, ` borrow,`, Int, ` borrow) -> !lit.none>`
 ]
 
 
@@ -723,9 +731,9 @@ alias Static1DTileUnswitchUnitFunc = __mlir_type[
     Bool,
     `>(`,
     Int,
-    `,`,
+    ` borrow,`,
     Int,
-    `) -> !lit.none>`,
+    ` borrow) -> !lit.none>`,
 ]
 
 
@@ -805,7 +813,7 @@ fn elementwise[
         __mlir_type.index,
         `>(`,
         StaticIntTuple[__mlir_attr[`#kgen.param.decl.ref<"rank">: index`]],
-        `) -> !lit.none>`,
+        ` borrow) -> !lit.none>`,
     ],
 ](shape: StaticIntTuple[rank], runtime: Runtime,):
     let problem_size = shape.flattened_length()
