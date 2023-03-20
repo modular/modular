@@ -95,7 +95,7 @@ POP::ArrayType::getTypeAlign(TargetInfoAttr target) const {
   return DataLayoutInterface::getTypeABIAlign(target, elementType);
 }
 
-ErrorOrSuccess POP::ArrayType::writeTo(TypedAttr value, intptr_t addr,
+ErrorOrSuccess POP::ArrayType::writeTo(TypedAttr value, int64_t addr,
                                        InterpreterState &state) const {
   auto dl = getResolvedElementType().cast<DataLayoutInterface>();
   // Store each element spaced apart by padding according to its alignment.
@@ -110,7 +110,7 @@ ErrorOrSuccess POP::ArrayType::writeTo(TypedAttr value, intptr_t addr,
   return success();
 }
 
-ErrorOr<TypedAttr> POP::ArrayType::readFrom(intptr_t addr,
+ErrorOr<TypedAttr> POP::ArrayType::readFrom(int64_t addr,
                                             InterpreterState &state) const {
   Type elemType = getResolvedElementType();
   auto dl = getResolvedElementType().cast<DataLayoutInterface>();
@@ -160,7 +160,7 @@ std::optional<int64_t> PointerType::getTypeAlign(TargetInfoAttr target) const {
   return target.getDataLayout().getPointerABIAlign();
 }
 
-ErrorOrSuccess PointerType::writeTo(TypedAttr value, intptr_t addr,
+ErrorOrSuccess PointerType::writeTo(TypedAttr value, int64_t addr,
                                     InterpreterState &state) const {
   int64_t size = *getTypeSize(state.getTarget());
   ErrorOr<void *> mem = state.getMemory(addr, size);
@@ -172,7 +172,7 @@ ErrorOrSuccess PointerType::writeTo(TypedAttr value, intptr_t addr,
   return success();
 }
 
-ErrorOr<TypedAttr> PointerType::readFrom(intptr_t addr,
+ErrorOr<TypedAttr> PointerType::readFrom(int64_t addr,
                                          InterpreterState &state) const {
   int64_t size = *getTypeSize(state.getTarget());
   ErrorOr<void *> mem = state.getMemory(addr, size);
@@ -243,7 +243,7 @@ std::optional<int64_t> SIMDType::getTypeAlign(TargetInfoAttr target) const {
   return {};
 }
 
-ErrorOrSuccess SIMDType::writeTo(TypedAttr value, intptr_t addr,
+ErrorOrSuccess SIMDType::writeTo(TypedAttr value, int64_t addr,
                                  InterpreterState &state) const {
   KGENDType dtype = *getResolvedDType();
   int64_t vecSize = *getTypeSize(state.getTarget());
@@ -277,7 +277,7 @@ ErrorOrSuccess SIMDType::writeTo(TypedAttr value, intptr_t addr,
   return success();
 }
 
-ErrorOr<TypedAttr> SIMDType::readFrom(intptr_t addr,
+ErrorOr<TypedAttr> SIMDType::readFrom(int64_t addr,
                                       InterpreterState &state) const {
   DType dtype = *getResolvedDType();
   int64_t vecSize = *getTypeSize(state.getTarget());
@@ -414,9 +414,9 @@ std::optional<int64_t> StructType::getTypeAlign(TargetInfoAttr target) const {
   return getPackedElementsTypeAlign(getElementTypes(), target);
 }
 
-ErrorOrSuccess StructType::writeTo(TypedAttr value, intptr_t addr,
+ErrorOrSuccess StructType::writeTo(TypedAttr value, int64_t addr,
                                    InterpreterState &state) const {
-  intptr_t offset = 0;
+  int64_t offset = 0;
   for (TypedAttr value : value.cast<StructAttr>().getValues()) {
     auto dl = value.getType().cast<DataLayoutInterface>();
     // Store each element spaced apart by padding according to its alignment.
@@ -429,12 +429,12 @@ ErrorOrSuccess StructType::writeTo(TypedAttr value, intptr_t addr,
   return success();
 }
 
-ErrorOr<TypedAttr> StructType::readFrom(intptr_t addr,
+ErrorOr<TypedAttr> StructType::readFrom(int64_t addr,
                                         InterpreterState &state) const {
   SmallVector<Type> elTypes;
   (void)resolveElementTypes(elTypes);
   SmallVector<TypedAttr> values;
-  intptr_t offset = 0;
+  int64_t offset = 0;
   for (Type elType : elTypes) {
     auto dl = elType.cast<DataLayoutInterface>();
     offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
@@ -612,7 +612,7 @@ std::optional<int64_t> VariantType::getTypeAlign(TargetInfoAttr target) const {
       target.getDataLayout().getPointerBitWidth());
 }
 
-ErrorOrSuccess VariantType::writeTo(TypedAttr value, intptr_t addr,
+ErrorOrSuccess VariantType::writeTo(TypedAttr value, int64_t addr,
                                     InterpreterState &state) const {
   // Just write the value to the address and then the discriminator.
   TypedAttr typeValue = value.cast<VariantAttr>().getValue();
@@ -631,7 +631,7 @@ ErrorOrSuccess VariantType::writeTo(TypedAttr value, intptr_t addr,
   return success();
 }
 
-ErrorOr<TypedAttr> VariantType::readFrom(intptr_t addr,
+ErrorOr<TypedAttr> VariantType::readFrom(int64_t addr,
                                          InterpreterState &state) const {
   // Read the discriminator first so we know what type to read.
   unsigned discrSize = getVariantDiscrSize(*this);

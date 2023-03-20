@@ -41,17 +41,17 @@ public:
 
   /// Allocate internal interpreter memory of a requested size.
   /// TODO: Allow alignment as well.
-  intptr_t allocateMemory(size_t size);
+  int64_t allocateMemory(size_t size);
 
   /// Write an attribute value of a given type to the provided chunk of memory.
-  ErrorOrSuccess writeAttributeToMemory(intptr_t addr, TypedAttr value);
+  ErrorOrSuccess writeAttributeToMemory(int64_t addr, TypedAttr value);
 
   /// Read an attribute value of the given type from the provided chunk of
   /// memory.
-  ErrorOr<TypedAttr> readAttributeFromMemory(intptr_t addr, Type type);
+  ErrorOr<TypedAttr> readAttributeFromMemory(int64_t addr, Type type);
 
   /// Try to get a memory reference at the given address.
-  ErrorOr<void *> getMemory(intptr_t addr, size_t size);
+  ErrorOr<void *> getMemory(int64_t addr, size_t size);
 
   //===--------------------------------------------------------------------===//
   // Interpreter Control Flow
