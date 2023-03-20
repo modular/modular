@@ -75,7 +75,6 @@
 #include "llvm/Transforms/Utils/Mem2Reg.h"
 #include "llvm/Transforms/Utils/RelLookupTableConverter.h"
 #include "llvm/Transforms/Utils/SimplifyCFGOptions.h"
-#include "llvm/Transforms/Vectorize/LoopVectorize.h"
 #include "llvm/Transforms/Vectorize/SLPVectorizer.h"
 #include "llvm/Transforms/Vectorize/VectorCombine.h"
 
@@ -277,13 +276,6 @@ static ModuleInlinerWrapperPass buildInlinerPipeline() {
 }
 
 static void addVectorPasses(FunctionPassManager &FPM) {
-  if (llvm::sys::Process::GetEnv("MODULAR_ENABLE_LLVM_LOOPVEC")
-          .value_or("ON") == "ON") {
-    FPM.addPass(LoopVectorizePass(LoopVectorizeOptions(
-        /*InterleaveOnlyWhenForced*/ false,
-        /*VectorizeOnlyWhenForced*/ false)));
-  }
-
   // Eliminate loads by forwarding stores from the previous iteration to loads
   // of the current iteration.
   FPM.addPass(LoopLoadEliminationPass());
