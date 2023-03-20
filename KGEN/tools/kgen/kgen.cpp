@@ -235,9 +235,10 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // Generate a library file or go all the way through elaboration.
   if (clOptions.cmd == Command::kGenLibraryFile)
-    generateLibraryFile(pm);
+    populateGenerateLibraryFilePasses(pm);
   else
-    elaborateModule(pm, *runtime, target, {clOptions.enableSearch});
+    populateElaborateModulePasses(pm, *runtime, target,
+                                  {clOptions.enableSearch});
 
   if (failed(pm.run(*theModule)))
     return failure(clOptions.reportError("compilation failed"));

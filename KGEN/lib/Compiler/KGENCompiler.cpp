@@ -35,14 +35,14 @@ static void populatePreElaborationPipeline(mlir::PassManager &pm) {
   pm.addNestedPass<GeneratorOp>(createMem2Reg());
 }
 
-void KGEN::generateLibraryFile(mlir::PassManager &pm) {
+void KGEN::populateGenerateLibraryFilePasses(mlir::PassManager &pm) {
   // Set up the pass pipeline.
   populatePreElaborationPipeline(pm);
 }
 
-void KGEN::elaborateModule(mlir::PassManager &pm, LLCL::Runtime &runtime,
-                           TargetInfoAttr target,
-                           const ElaborateGeneratorsOptions &elaborateOptions) {
+void KGEN::populateElaborateModulePasses(
+    mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
+    const ElaborateGeneratorsOptions &elaborateOptions) {
   populatePreElaborationPipeline(pm);
   // Eliminate dead symbols. If we don't use the symbol *somewhere* it doesn't
   // need to be in the IR.
