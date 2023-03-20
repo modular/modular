@@ -24,21 +24,21 @@ fn Rec2[
 struct Thing[a: __mlir_type.index, b: __mlir_type.index]:
   pass
 
-def GoodUseOfThing(a: Thing[4, 5]):
+fn GoodUseOfThing(a: Thing[4, 5]):
   pass
 
-def MissingThingMetaParams(a: Thing):  # expected-error {{'Thing' expects 2 input parameters but 0 were provided}}
+fn MissingThingMetaParams(a: Thing):  # expected-error {{'Thing' expects 2 input parameters but 0 were provided}}
   pass
 
 # expected-error @+1 {{cannot apply more parameters to an already parameterized type '$parameters-errors::Thing[1, 2]'}}
-def MultipleThingMetaparams(a: Thing[1,2][1]):
+fn MultipleThingMetaparams(a: Thing[1,2][1]):
   pass
 
-def OneMissingThingMetaParam(a: Thing[1]):  # expected-error {{'Thing' expects 2 input parameters but 1 was provided}}
+fn OneMissingThingMetaParam(a: Thing[1]):  # expected-error {{'Thing' expects 2 input parameters but 1 was provided}}
   pass
 
 # expected-error @+1 {{'Thing' parameter 'b' has '__mlir_type.index' type, but value has type '__mlir_type.f64'}}
-def WeirdMetaParams(a: Thing[1, 1.5]):
+fn WeirdMetaParams(a: Thing[1, 1.5]):
   pass
 
 # expected-note @+1 {{previous definition here}}

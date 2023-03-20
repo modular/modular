@@ -152,6 +152,7 @@ def tuple_return():
 @register_passable
 struct WeirdBoolish:
   fn __bool__(self) -> Int: return Int(0)
+  fn __clone__(self&) -> Self: pass;
 
 fn badAnd(a: Bool, b: WeirdBoolish):
   _ = a and b # expected-error {{cannot find common type between '$_CompilerBuiltin::Bool' and '$expressions-errors::WeirdBoolish'}}

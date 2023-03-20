@@ -46,7 +46,8 @@ struct DType:
 
 @register_passable
 struct Scalar[type: DType]:
-    pass
+    fn __clone__(self&) -> Self:
+        return Self {}
 
 
 # ===----------------------------------------------------------------------=== #
