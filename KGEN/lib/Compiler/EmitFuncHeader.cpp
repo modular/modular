@@ -16,12 +16,14 @@ using namespace KGEN;
 
 /// This allows us to emit a header file for the given func so that we can
 /// `#include` it and get nice autocompletion/etc. in users' IDEs.
-LogicalResult M::KGEN::emitHeader(ObjectCompiler &compiler,
+LogicalResult M::KGEN::emitHeader(SymbolTable &symtab,
+                                  const ExportMap &exportedSymbols,
+                                  ObjectCompiler &compiler,
                                   StringRef filename) {
   std::string err;
   auto outFile = mlir::openOutputFile(filename, &err);
   if (!outFile)
-    return mlir::emitError(compiler.getModule()->getLoc(), err);
+    return mlir::emitError(symtab.getOp()->getLoc(), err);
 
   std::filesystem::path filenameOnly(filename.str());
   filenameOnly = filenameOnly.stem();
@@ -62,7 +64,8 @@ extern "C" {{
       headerGuard);
 
   // Emit the function decls into the header.
-  if (failed(compiler.produceFunctionDecls(outFile->os())))
+  if (failed(compiler.produceFunctionDecls(symtab, exportedSymbols,
+                                           outFile->os())))
     return failure();
 
   outFile->os() << llvm::formatv(headerFmtEnd.data(), headerGuard);

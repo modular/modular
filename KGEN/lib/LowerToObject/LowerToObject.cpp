@@ -25,6 +25,8 @@
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/TargetParser/Host.h"
 
+#include <utility>
+
 using namespace M;
 using namespace KGEN;
 
@@ -34,37 +36,25 @@ using namespace KGEN;
 // ObjectCompiler
 //===----------------------------------------------------------------------===//
 
-ErrorOr<ObjectCompiler>
-ObjectCompiler::create(LLCL::Runtime &runtime, mlir::PassManager &mgr,
-                       StringRef basePath, SymbolTable &symtab,
-                       const CompilationOptions &options) {
-  llvm::MapVector<StringAttr, ExportedSymbol> exports =
-      getExportedSymbols(cast<ModuleOp>(symtab.getOp()));
-  return create(runtime, mgr, basePath, symtab, std::move(exports), options);
-}
-
-ErrorOr<ObjectCompiler>
-ObjectCompiler::create(LLCL::Runtime &runtime, mlir::PassManager &mgr,
-                       StringRef basePath, SymbolTable &symtab,
-                       llvm::MapVector<StringAttr, ExportedSymbol> &&exports,
-                       const CompilationOptions &options) {
+ErrorOr<ObjectCompiler> ObjectCompiler::create(LLCL::Runtime &runtime,
+                                               mlir::PassManager &mgr,
+                                               StringRef basePath,
+                                               CompilationOptions options) {
   auto transformCache = Cache::getDefaultBackendChain(
       runtime, (std::filesystem::path(basePath.str()) / "transform").string());
   if (failed(transformCache))
     return transformCache.takeError();
-  return ObjectCompiler(runtime, mgr, symtab, std::move(exports),
-                        std::move(*transformCache), options);
+  return ObjectCompiler(runtime, mgr, std::move(*transformCache),
+                        std::move(options));
 }
 
 ObjectCompiler::ObjectCompiler(
-    LLCL::Runtime &runtime, mlir::PassManager &mgr, SymbolTable &symtab,
-    llvm::MapVector<StringAttr, ExportedSymbol> &&exports,
+    LLCL::Runtime &runtime, mlir::PassManager &mgr,
     LLCL::RCRef<Cache::BlobCacheBackend> transformCache,
-    const CompilationOptions &options)
+    CompilationOptions options)
     : transformCache(
           decltype(this->transformCache)::create(std::move(transformCache))),
-      runtime(runtime), mgr(mgr), module(cast<ModuleOp>(symtab.getOp())),
-      symtab(symtab), exportedSymbols(std::move(exports)), options(options) {}
+      runtime(runtime), mgr(mgr), options(std::move(options)) {}
 
 //===----------------------------------------------------------------------===//
 // compileLLVMToObject

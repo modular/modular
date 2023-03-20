@@ -34,8 +34,11 @@ struct ExportedSymbol {
   bool isCExport = false;
 };
 
+/// This type is a bit of a mouthful, add a useful alias for it.
+using ExportMap = llvm::MapVector<StringAttr, ExportedSymbol>;
+
 /// Given a module operation, return its exported symbols and aliases.
-llvm::MapVector<StringAttr, ExportedSymbol> getExportedSymbols(ModuleOp module);
+ExportMap getExportedSymbols(ModuleOp module);
 
 /// Return the string form for an attribute value that is printed in a <>
 /// context in the .mlir file.

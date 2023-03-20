@@ -256,17 +256,20 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return emitModuleIR(*theModule, clOptions);
 
   SymbolTable symtab(*theModule);
-  auto compiler = ObjectCompiler::create(*runtime, pm, ".kgen_cache", symtab,
-                                         compilationOptions);
+  auto compiler =
+      ObjectCompiler::create(*runtime, pm, ".kgen_cache", compilationOptions);
   if (failed(compiler)) {
     return failure(clOptions.reportError(
         Twine("could not create object compiler: ") + compiler.getError()));
   }
+  llvm::MapVector<StringAttr, ExportedSymbol> exportedSymbols =
+      getExportedSymbols(*theModule);
 
   // Handle LLVM output.
   if (clOptions.cmd == Command::kEmitLLVM) {
     llvm::LLVMContext ctx;
-    auto llvmModule = compiler->lowerAllFuncsToLLVM(ctx);
+    auto llvmModule =
+        compiler->lowerAllFuncsToLLVM(symtab, exportedSymbols, ctx);
     if (!llvmModule)
       return failure();
     auto outFile = clOptions.getOutputFile(/*hasBinaryOutput=*/false, ".ll");
@@ -284,8 +287,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     if (!outFile)
       return failure();
 
-    auto standaloneOr =
-        compiler->produceStandaloneAssembly(target, outFile->os());
+    auto standaloneOr = compiler->produceStandaloneAssembly(
+        symtab, exportedSymbols, target, outFile->os());
     if (failed(standaloneOr))
       return failure();
     outFile->keep();
@@ -294,10 +297,12 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // Handle header emission, we don't need to generate an archive for this.
   if (clOptions.cmd == Command::kEmitHeader)
-    return emitHeader(*compiler, clOptions.outputFilename);
+    return emitHeader(symtab, exportedSymbols, *compiler,
+                      clOptions.outputFilename);
 
   // This produces a standalone archive for all the objects we requested.
   auto standaloneOr = compiler->produceStandaloneArchive(
+      symtab, exportedSymbols,
       /*isJIT=*/clOptions.cmd == Command::kExecute);
   if (failed(standaloneOr) && !clOptions.ignoreFailures)
     return failure();
@@ -352,8 +357,6 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // Loop over the functions, executing as necessary.
   llvm::DenseSet<StringRef> foundFuncs;
-  llvm::MapVector<StringAttr, ExportedSymbol> exportedSymbols =
-      KGEN::getExportedSymbols(*theModule);
   for (auto fn : theModule->getOps<FuncOp>()) {
     StringAttr name = fn.getNameAttr();
 

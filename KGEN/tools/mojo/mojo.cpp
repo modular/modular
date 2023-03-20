@@ -190,21 +190,25 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return clOptions.reportError("compilation failed");
 
   SymbolTable symtab(*theModule);
-  auto compiler = ObjectCompiler::create(*runtime, pm, ".kgen_cache", symtab,
-                                         compilationOptions);
+  auto compiler =
+      ObjectCompiler::create(*runtime, pm, ".kgen_cache", compilationOptions);
   if (failed(compiler))
     return clOptions.reportError(Twine("could not create object compiler: ") +
                                  compiler.getError());
+  llvm::MapVector<StringAttr, ExportedSymbol> exportedSymbols =
+      getExportedSymbols(*theModule);
 
   // Handle header emission, we don't need to generate an archive for this.
   if (clOptions.cmd == MojoCommand::kEmitHeader) {
-    if (failed(emitHeader(*compiler, clOptions.outputFilename)))
+    if (failed(emitHeader(symtab, exportedSymbols, *compiler,
+                          clOptions.outputFilename)))
       return clOptions.reportError("failed to emit header file");
     return EXIT_SUCCESS;
   }
 
   // This produces a standalone archive for all the objects we requested.
   auto standaloneOr = compiler->produceStandaloneArchive(
+      symtab, exportedSymbols,
       /*isJIT=*/clOptions.cmd == MojoCommand::kExecute);
   if (failed(standaloneOr))
     return clOptions.reportError("compiler error");

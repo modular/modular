@@ -109,7 +109,10 @@ static void sliceDependencies(Operation *op, SymbolTable &sliceSymtab,
   op->walk(extractDependencies);
 }
 
-OwningOpRef<ModuleOp> ObjectCompiler::produceStandaloneModule() {
+OwningOpRef<ModuleOp>
+ObjectCompiler::produceStandaloneModule(SymbolTable &symtab,
+                                        const ExportMap &exportedSymbols) {
+  auto module = cast<ModuleOp>(symtab.getOp());
   // Create a new module for these funcs. This will go away at the end
   // of this function.
   OwningOpRef<ModuleOp> singleModule = ModuleOp::create(module->getLoc());
@@ -125,7 +128,6 @@ OwningOpRef<ModuleOp> ObjectCompiler::produceStandaloneModule() {
   // Re-export exported functions.
   auto builder = OpBuilder::atBlockBegin(singleModule->getBody());
 
-  SmallVector<FlatSymbolRefAttr> exportedSymbolVec;
   for (auto [sym, exportVal] : exportedSymbols) {
     builder.create<ExportOp>(module->getLoc(), FlatSymbolRefAttr::get(sym),
                              exportVal.alias, exportVal.isCExport);
@@ -304,7 +306,8 @@ private:
 // produceStandaloneArchive
 //===----------------------------------------------------------------------===//
 
-ErrorOr<BufferRef> ObjectCompiler::produceStandaloneArchive(bool isJIT) {
+ErrorOr<BufferRef> ObjectCompiler::produceStandaloneArchive(
+    SymbolTable &symtab, const ExportMap &exportedSymbols, bool isJIT) {
   TimeTraceScope<> traceScope("produce-standalone-archive");
 
   // Perform a cache aware transformation to translate the module to an archive
@@ -350,10 +353,10 @@ ErrorOr<BufferRef> ObjectCompiler::produceStandaloneArchive(bool isJIT) {
             SmallVector<llvm::NewArchiveMember> archiveMembers;
             SmallVector<std::string> archiveMemberNames(values.size());
             for (auto [index, result] : llvm::enumerate(values)) {
-              BufferRef &buf = result.get<BufferRef>();
+              auto &resultBuf = result.get<BufferRef>();
               archiveMemberNames[index] = (Twine(index) + ".o").str();
               archiveMembers.emplace_back(llvm::MemoryBufferRef(
-                  buf->getBuffer(), archiveMemberNames[index]));
+                  resultBuf->getBuffer(), archiveMemberNames[index]));
             }
             auto result = llvm::writeArchiveToBuffer(
                 archiveMembers, /*WriteSymtab=*/true,
@@ -378,7 +381,8 @@ ErrorOr<BufferRef> ObjectCompiler::produceStandaloneArchive(bool isJIT) {
   options.print(*produceStandaloneArchiveKey << "produceStandaloneArchive(");
   *produceStandaloneArchiveKey << ")";
 
-  OwningOpRef<ModuleOp> slicedModule = produceStandaloneModule();
+  OwningOpRef<ModuleOp> slicedModule =
+      produceStandaloneModule(symtab, exportedSymbols);
   auto output = cachedTransform(
       *slicedModule, transformCache.copy(),
       LLCL::AsyncValueRef<Chain>::createReady(runtime),
@@ -464,13 +468,15 @@ ObjectCompiler::lowerLLVMModuleToObject(llvm::Module &module, Location loc,
       std::move(runTransformation), onCacheHit);
 }
 
-ErrorOr<ElementsAttr>
-ObjectCompiler::produceStandaloneArchiveAttr(TargetInfoAttr target,
-                                             bool isJIT) {
-  auto bufferOr = produceStandaloneArchive(isJIT);
+ErrorOr<ElementsAttr> ObjectCompiler::produceStandaloneArchiveAttr(
+    SymbolTable &symtab, const ExportMap &exportedSymbols,
+    TargetInfoAttr target, bool isJIT) {
+  auto bufferOr = produceStandaloneArchive(symtab, exportedSymbols, isJIT);
   if (bufferOr.isError())
     return bufferOr.takeError();
   BufferRef buffer = bufferOr.takeValue();
+
+  auto module = cast<ModuleOp>(symtab.getOp());
 
   // Get the standalone archive key to use as the archive name.
   WriteableBufferRef produceStandaloneArchiveKey = WriteableBuffer::get();
@@ -506,12 +512,13 @@ ObjectCompiler::produceStandaloneArchiveAttr(TargetInfoAttr target,
 // produceStandaloneAssembly
 //===----------------------------------------------------------------------===//
 
-ErrorOrSuccess
-ObjectCompiler::produceStandaloneAssembly(TargetInfoAttr target,
-                                          llvm::raw_pwrite_stream &os) {
+ErrorOrSuccess ObjectCompiler::produceStandaloneAssembly(
+    SymbolTable &symtab, const ExportMap &exportedSymbols,
+    TargetInfoAttr target, llvm::raw_pwrite_stream &os) {
   TimeTraceScope<> traceScope("produce-standalone-assembly");
 
-  OwningOpRef<ModuleOp> slicedModule = produceStandaloneModule();
+  OwningOpRef<ModuleOp> slicedModule =
+      produceStandaloneModule(symtab, exportedSymbols);
   llvm::LLVMContext ctx;
   auto llvmModule = lowerAllFuncsToLLVM(ctx, *slicedModule, /*isJIT=*/false);
   if (!llvmModule)

@@ -30,53 +30,53 @@ public:
   /// Construct an ObjectCompiler that infers the exports from the module.
   static ErrorOr<ObjectCompiler> create(LLCL::Runtime &runtime,
                                         mlir::PassManager &mgr,
-                                        StringRef basePath, SymbolTable &symtab,
-                                        const CompilationOptions &options);
-
-  /// Construct an ObjectCompiler with a specific set of exports.
-  static ErrorOr<ObjectCompiler>
-  create(LLCL::Runtime &runtime, mlir::PassManager &mgr, StringRef basePath,
-         SymbolTable &symtab,
-         llvm::MapVector<StringAttr, ExportedSymbol> &&exports,
-         const CompilationOptions &options);
+                                        StringRef basePath,
+                                        CompilationOptions options);
 
   /// Lower all exported `kgen.func` to llvm. Returns the LLVM module on
   /// success, and nullptr on failure.
-  std::unique_ptr<llvm::Module> lowerAllFuncsToLLVM(llvm::LLVMContext &ctx);
+  std::unique_ptr<llvm::Module>
+  lowerAllFuncsToLLVM(SymbolTable &symtab, const ExportMap &exportedSymbols,
+                      llvm::LLVMContext &ctx);
 
   /// Slices the call graph for all exported symbols to produce a standalone
   /// archive.
-  ErrorOr<Cache::BufferRef> produceStandaloneArchive(bool isJIT);
+  ErrorOr<Cache::BufferRef>
+  produceStandaloneArchive(SymbolTable &symtab,
+                           const ExportMap &exportedSymbols, bool isJIT);
 
   /// Produces a standalone archive as an ElementsAttr that can be used as an
   /// attribute on another operation. Using this function generally implies
   /// `isJIT`, which is why it defaults to `true`. Clients should prefer this
   /// method if they intend to store the compiled object in another graph.
-  ErrorOr<ElementsAttr> produceStandaloneArchiveAttr(TargetInfoAttr target,
-                                                     bool isJIT = true);
+  ErrorOr<ElementsAttr>
+  produceStandaloneArchiveAttr(SymbolTable &symtab,
+                               const ExportMap &exportedSymbols,
+                               TargetInfoAttr target, bool isJIT = true);
 
   /// Slices the call graph for all exported symbols to produce a standalone
   /// assembly file. The assembly output is written to the provided stream.
-  ErrorOrSuccess produceStandaloneAssembly(TargetInfoAttr target,
+  ErrorOrSuccess produceStandaloneAssembly(SymbolTable &symtab,
+                                           const ExportMap &exportedSymbols,
+                                           TargetInfoAttr target,
                                            llvm::raw_pwrite_stream &os);
 
   /// Writes function declarations for all exported symbols.
-  LogicalResult produceFunctionDecls(raw_ostream &os);
-
-  /// Get access to the module held by the compiler.
-  ModuleOp getModule() { return module; }
+  LogicalResult produceFunctionDecls(SymbolTable &symtab,
+                                     const ExportMap &exportedSymbols,
+                                     raw_ostream &os);
 
 private:
   /// Construct an ObjectCompiler with a specific set of exports.
   ObjectCompiler(LLCL::Runtime &runtime, mlir::PassManager &mgr,
-                 SymbolTable &symtab,
-                 llvm::MapVector<StringAttr, ExportedSymbol> &&exports,
                  LLCL::RCRef<Cache::BlobCacheBackend> transformCache,
-                 const CompilationOptions &options);
+                 CompilationOptions options);
 
   /// Produce a standalone MLIR module by slicing out the dependencies of the
-  /// provided kgen.export op.
-  OwningOpRef<ModuleOp> produceStandaloneModule();
+  /// provided kgen.export ops.
+  OwningOpRef<ModuleOp>
+  produceStandaloneModule(SymbolTable &symtab,
+                          const ExportMap &exportedSymbols);
 
   /// Lower the given module to LLVM. Returns the LLVM module on success, and
   /// nullptr on failure.
@@ -95,15 +95,6 @@ private:
 
   /// The configured MLIR pass manager to use.
   mlir::PassManager &mgr;
-
-  /// This is the module the compiler was created with.
-  ModuleOp module;
-
-  /// This is a symbol table we maintain for easy lookups.
-  SymbolTable &symtab;
-
-  /// A mapping from a symbol to its export information.
-  llvm::MapVector<StringAttr, ExportedSymbol> exportedSymbols;
 
   /// The compilation options to use.
   CompilationOptions options;
