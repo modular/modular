@@ -73,3 +73,12 @@ void KGEN::populateElaborateModulePasses(
   // Lower async functions as late as possible.
   pm.addPass(createLowerAsyncFunctions());
 }
+
+LogicalResult
+KGEN::concretizeModule(mlir::PassManager &pm, ModuleOp theModule,
+                       LLCL::Runtime &runtime, TargetInfoAttr target,
+                       const ElaborateGeneratorsOptions &elaborateOptions) {
+  pm.clear();
+  populateElaborateModulePasses(pm, runtime, target, elaborateOptions);
+  return pm.run(theModule);
+}
