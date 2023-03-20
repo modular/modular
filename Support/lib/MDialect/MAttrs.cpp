@@ -986,7 +986,7 @@ static raw_ostream &operator<<(raw_ostream &os, const llvm::Triple &triple) {
 //===----------------------------------------------------------------------===//
 
 BuildInfoAttr BuildInfoAttr::getForCurrentBuild(MLIRContext *ctx) {
-  return BuildInfoAttr::get(ctx, MODULAR_BUILD_TYPE,
+  return BuildInfoAttr::get(ctx, MODULAR_BUILD_TYPE, MODULAR_KERNELS_BUILD_TYPE,
                             MODULAR_LLCL_MAX_PROFILING_LEVEL);
 }
 

@@ -454,6 +454,14 @@ kgen.generator @build_info_is_debug() {
   kgen.return
 }
 
+// CHECK-LABEL: kgen.generator @build_info_is_kgen_debug()
+kgen.generator @build_info_is_kgen_debug() {
+  kgen.param.assert<
+    eq(:string build_info_get_field(#kgen<build_info host>, "kernels_type"), "debug")>,
+    "kgen build is debug"
+  kgen.return
+}
+
 // CHECK-LABEL: kgen.generator @build_info_profile_level_2()
 kgen.generator @build_info_profile_level_2() {
   kgen.param.assert<
