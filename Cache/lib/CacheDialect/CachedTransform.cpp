@@ -10,104 +10,10 @@
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/Pass/PassManager.h"
-#include "llvm/Support/BLAKE3.h"
 
 using namespace M;
 using namespace Cache;
 using namespace LLCL;
-
-//===----------------------------------------------------------------------===//
-// Generic Transformations
-//===----------------------------------------------------------------------===//
-
-std::string TransformCacheKey::hashKey(TransformCacheKey::KeyTy key) {
-  // This is just a (usually relatively small) string - the hash is just the
-  // SHA256 hash of the input.
-  std::array<uint8_t, 32> hash =
-      llvm::BLAKE3::hash(ArrayRef((const uint8_t *)key.begin(), key.size()));
-  return {hash.begin(), hash.end()};
-}
-
-/// Do a transform that can be cached. The transform must be named, see the
-/// PassManager overload for an example.
-AnyAsyncValueRef Cache::cachedTransform(EncodedLocation loc,
-                                        RCRef<TransformCache> transformCache,
-                                        AnyAsyncValueRef chain,
-                                        WriteableBufferRef transformKey,
-                                        TransformFn transformFn,
-                                        CacheHitFn cacheHitFn) {
-  BufferRef keyBuffer = std::move(transformKey);
-
-  // Try to find the key in the cache. The cache hit function should chain off
-  // that and do the right for the cache state.
-  auto foundOr = AsyncValueRef<std::optional<BufferRef>>::allocate(
-      transformCache->getRuntime());
-  chain.andThenSync([foundOr = foundOr.copy(), keyBuffer = keyBuffer.copy(),
-                     transformCache = transformCache.copy(), loc = loc.copy()] {
-    // Find the thing in the cache with the target op's location.
-    auto f = transformCache->find(keyBuffer->getBuffer(), loc.copy());
-    std::move(f).andThenSync(
-        [foundOr = foundOr.copy()](
-            AsyncValueRef<std::optional<BufferRef>> &&f) mutable {
-          if (f.isError())
-            return std::move(foundOr).setToError(f.takeDiagnostic());
-
-          std::move(foundOr).emplace(std::move(*f));
-        });
-  });
-
-  // Allocate space for the output.
-  AnyAsyncValueRef out =
-      AnyAsyncValueRef::createIndirect(transformCache->getRuntime());
-  std::move(foundOr).andThenSync(
-      [out = out.copy(), loc = loc.copy(),
-       transformCache = transformCache.copy(),
-       transformFn = std::move(transformFn), keyBuffer = std::move(keyBuffer),
-       cacheHitFn = std::move(cacheHitFn)](
-          AsyncValueRef<std::optional<BufferRef>> &&foundOr) mutable {
-        if (foundOr.isError())
-          return std::move(out).setToError(
-              foundOr.getPointer()->takeDiagnostic());
-
-        if (foundOr->has_value())
-          return std::move(out).resolveIndirect(
-              cacheHitFn(std::move(**foundOr)));
-
-        // No error but no cache hit.
-
-        // Run the transform.
-        WriteableBufferRef writeableTransformResult = WriteableBuffer::get();
-        auto xform =
-            transformFn(writeableTransformResult.copy(), std::move(foundOr));
-
-        // Insert the transform result into the cache.
-        std::move(xform).andThenSync(
-            [loc = std::move(loc), transformCache = transformCache.copy(),
-             out = out.copy(), keyBuffer = std::move(keyBuffer),
-             transformResult = std::move(writeableTransformResult)](
-                AnyAsyncValueRef &&xform) mutable {
-              if (xform.isError())
-                return std::move(out).setToError(xform.takeDiagnostic());
-
-              // Only at this point (so the transform has finished successfully)
-              // should we change the transform result ref to be read-only.
-              auto hashOr = transformCache->insert(keyBuffer->getBuffer(),
-                                                   std::move(transformResult));
-              std::move(hashOr).andThenSync(
-                  [loc = std::move(loc), out = out.copy(),
-                   xform = xform.copy()](
-                      AsyncValueRef<ErrorOr<std::string>> &&hashOr) mutable {
-                    if (failed(*hashOr))
-                      return std::move(out).setToError(EncodedDiagnostic(
-                          hashOr->takeError(), std::move(loc)));
-
-                    return std::move(out).resolveIndirect(xform.copy());
-                  });
-            });
-      });
-
-  return out;
-}
 
 //===----------------------------------------------------------------------===//
 // Operation Transformations
