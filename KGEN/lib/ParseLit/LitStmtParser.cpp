@@ -229,7 +229,7 @@ ParseResult LitStmtParser::parseLocalScopeSuite(ssize_t curIndent) {
 
 /// Emit a warning when an expression is emitted at statement context, and it
 /// returns a result.
-static void diagnoseIgnoredResult(const ExprNode *expr, CRValue value,
+static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
                                   LitSharedState &shared) {
   ASTType valueType = value.getRValueType();
 
@@ -440,7 +440,7 @@ ParseResult LitStmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
   // will naturally return.
   auto emitter = getEmitter(/*allowImplicitVarDecl=*/true);
   // Result is ignored, so we don't care where it goes.
-  auto result = emitter.emitExprCRValue(expr, EC_TopLevelStmt);
+  CValue result = emitter.emitExprCValue(expr, EC_TopLevelStmt);
   if (!result)
     return success();
 

@@ -238,8 +238,9 @@ public:
   /// This helper emits the specified value as an RValue.
   RValue emitRValue(ASTExprAnd<AnyValue> value, ExprContext context,
                     ASTType resultType = {});
-  CRValue emitCRValue(ASTExprAnd<AnyValue> value, ExprContext context,
-                      ASTType resultType = {});
+
+  CValue emitCValue(ASTExprAnd<AnyValue> value, ExprContext context,
+                    ASTType resultType = {});
   CValue emitCValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
   LValue emitLValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
   BValue emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
@@ -314,17 +315,22 @@ public:
   AnyValue emitResult(AnyValue value, const ExprNode *node, ValueDest &dest);
   CValue emitCResult(CValue value, const ExprNode *node, ValueDest &dest);
 
+  /// Emit the specified node with the indicated expression context and an
+  /// optional contextual type.
+  AnyValue emitExpr(const ExprNode *expr, ExprContext context,
+                    ASTType resultType = {});
+
   /// This emits the specified value to an RValue with the specified context.
-  RValue emitExprRValue(const ExprNode *node, ExprContext context,
+  RValue emitExprRValue(const ExprNode *expr, ExprContext context,
                         ASTType resultType = {});
 
   /// This emits the specified value rep as a CRValue.
-  CRValue emitExprCRValue(const ExprNode *node, ExprContext context);
+  CValue emitExprCValue(const ExprNode *expr, ExprContext context);
 
   /// This helper emits the specified value rep as an SRValue, materializing
   /// it as an operation if it is a parameter.  This returns null if emission
   /// fails.
-  SRValue emitExprSRValue(const ExprNode *node, ExprContext context,
+  SRValue emitExprSRValue(const ExprNode *expr, ExprContext context,
                           ASTType resultType = {});
 
   /// This helper emits the specified expression as a meta value, and optionally
@@ -332,7 +338,7 @@ public:
   /// the expression cannot be emitted, if it cannot be converted to the
   /// expected type, or if it isn't a valid runtime value.  This returns null if
   /// emission fails.
-  PValue emitExprPValue(const ExprNode *node, ExprContext context,
+  PValue emitExprPValue(const ExprNode *expr, ExprContext context,
                         ASTType resultType = {});
 
   /// Emit the specified expression as an LValue which can be loaded and stored.
