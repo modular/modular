@@ -39,7 +39,7 @@ from Image import (
 )
 
 
-@register_passable
+@register_passable("trivial")
 struct ConvShape:
     """A shape struct describing the convolution dimensions"""
 
@@ -60,23 +60,6 @@ struct ConvShape:
     var dilation: StaticIntTuple[2]  # Dilation on [H, W]
     var pad_h: StaticIntTuple[2]  # Padding on H dimension in (Low, High)
     var pad_w: StaticIntTuple[2]  # Padding on W dimension in (Low, High)
-
-    fn __copy__(self) -> Self:
-        return Self {
-            n: self.n,
-            h: self.h,
-            w: self.w,
-            c: self.c,
-            out_h: self.out_h,
-            out_w: self.out_w,
-            f: self.f,
-            r: self.r,
-            s: self.s,
-            stride: self.stride,
-            dilation: self.dilation,
-            pad_h: self.pad_h,
-            pad_w: self.pad_w,
-        }
 
 
 @adaptive
@@ -963,7 +946,7 @@ struct PackIm2ColNCHW[
 #  Could drastically clean up when non-inlined closure is supported or without
 #   language support the conv op and matmul op should share a "gemm skeleton"
 #   library to de-duplicate.
-@register_passable
+@register_passable("trivial")
 struct ConvIm2ColNCHW[
     shape_input: DimList[4],
     shape_filter: DimList[4],
@@ -992,19 +975,6 @@ struct ConvIm2ColNCHW[
 
     # 2D view of the filter as implicit matmul input.
     var a: NDBuffer[2, DimList[2].create_unknown(), type]
-
-    fn __copy__(self) -> Self:
-        return Self {
-            out: self.out,
-            input: self.input,
-            filter: self.filter,
-            tile_n_k: self.tile_n_k,
-            gemm_shape: self.gemm_shape,
-            conv_shape: self.conv_shape,
-            batch_idx: self.batch_idx,
-            c: self.c,
-            a: self.a,
-        }
 
     # Interface method
     @staticmethod
@@ -2015,7 +1985,7 @@ fn get_partitioned_workload(
 #  Could drastically clean up when non-inlined closure is supported or without
 #   language support the conv op and matmul op should share a "gemm skeleton"
 #   library to de-duplicate.
-@register_passable
+@register_passable("trivial")
 struct ConvIm2ColNHWC[
     shape_input: DimList[4],
     shape_filter: DimList[4],
@@ -2052,25 +2022,6 @@ struct ConvIm2ColNHWC[
 
     var num_tasks_m: Int
     var num_tasks_n: Int
-
-    fn __copy__(self) -> Self:
-        return Self {
-            out: self.out,
-            input: self.input,
-            filter: self.filter,
-            tile_n_k: self.tile_n_k,
-            gemm_shape: self.gemm_shape,
-            conv_shape: self.conv_shape,
-            c: self.c,
-            a: self.a,
-            b: self.b,
-            row_start_idx: self.row_start_idx,
-            total_row_count: self.total_row_count,
-            col_start_idx: self.col_start_idx,
-            total_col_count: self.total_col_count,
-            num_tasks_m: self.num_tasks_m,
-            num_tasks_n: self.num_tasks_n,
-        }
 
     # Interface method
     @staticmethod

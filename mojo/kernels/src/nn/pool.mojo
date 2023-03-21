@@ -24,7 +24,7 @@ from DType import DType
 from Numerics import neginf
 
 # Pooling method.
-@register_passable
+@register_passable("trivial")
 struct PoolMethod:
     var value: Int
     alias MAX = PoolMethod(0)  # Max pooling.
@@ -47,7 +47,7 @@ struct PoolMethod:
         return self.value != rhs.value
 
 
-@register_passable
+@register_passable("trivial")
 struct Pool2d[
     static_output_shape: DimList[4],
     static_input_shape: DimList[4],
@@ -88,20 +88,6 @@ struct Pool2d[
     # Derived params.
     var output_shape: ImageShape
     var input_shape: ImageShape
-
-    fn __copy__(self) -> Self:
-        return Self {
-            output: self.output,
-            input: self.input,
-            pad_h: self.pad_h,
-            pad_w: self.pad_w,
-            stride: self.stride,
-            filter_shape: self.filter_shape,
-            dilation: self.dilation,
-            output_shape: self.output_shape,
-            input_shape: self.input_shape,
-            num_tasks: self.num_tasks,
-        }
 
     @staticmethod
     fn run(

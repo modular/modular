@@ -37,17 +37,13 @@ struct PadHandling:
 
 
 # Data layout encoding.
-@register_passable
+@register_passable("trivial")
 struct Image2DLayout:
     var value: Int
     alias UNKNOWN = Image2DLayout(-1)  # statically unknown layout.
     alias NHWC = Image2DLayout(0)  # channels last layout.
     alias NCHW = Image2DLayout(1)  # channels first layout.
     alias RSCF = Image2DLayout(2)  # TF filter layout for channels last input.
-
-    @always_inline("nodebug")
-    fn __copy__(self) -> Self:
-        return Self {value: self.value}
 
     @always_inline("nodebug")
     fn __init__(value: Int) -> Image2DLayout:
@@ -62,7 +58,7 @@ struct Image2DLayout:
         return self.value != rhs.value
 
 
-@register_passable
+@register_passable("trivial")
 struct ImageData[
     shape: DimList[4],
     type: DType,
@@ -73,9 +69,6 @@ struct ImageData[
 
     var data: NDBuffer[4, shape, type]
     var dynamic_layout: Image2DLayout
-
-    fn __copy__(self) -> Self:
-        return Self {data: self.data, dynamic_layout: self.dynamic_layout}
 
     fn __init__(
         data: NDBuffer[4, shape, type], layout: Image2DLayout
@@ -269,7 +262,7 @@ struct ImageData[
         return self.data.size()
 
 
-@register_passable
+@register_passable("trivial")
 struct ImageShape:
     """A data-layout agnostic representation of tensor shapes used in conv2d."""
 
@@ -277,9 +270,6 @@ struct ImageShape:
     var C: Int
     var H: Int
     var W: Int
-
-    fn __copy__(self) -> Self:
-        return Self {N: self.N, C: self.C, H: self.H, W: self.W}
 
     fn __init__[
         shape: DimList[4],
