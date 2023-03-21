@@ -46,7 +46,7 @@ struct Chain:
     var storage: __mlir_type.index
 
     @always_inline("nodebug")
-    fn __clone__(self) -> Self:
+    fn __copy__(self) -> Self:
         return Self {storage: self.storage}
 
 
@@ -138,7 +138,7 @@ struct Runtime:
 
     # TODO: Probably don't want the runtime to be implicitly copyable.
     @always_inline("nodebug")
-    fn __clone__(self) -> Self:
+    fn __copy__(self) -> Self:
         return Self {ptr: self.ptr}
 
     fn __init__() -> Runtime:
@@ -224,7 +224,7 @@ struct Task[type: typename]:
 
     # TODO: This should not be implicitly copyable when we have ownership all
     # set up!
-    fn __clone__(self) -> Self:
+    fn __copy__(self) -> Self:
         return Self {handle: self.handle}
 
     fn get(self) -> type:
