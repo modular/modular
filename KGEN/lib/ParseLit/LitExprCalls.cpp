@@ -664,8 +664,12 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
     if (providedValueIdx == operands.size()) {
       // If the argument is a varargs argument list, then it can be initialized
       // with zero values no problem.
-      if (signature.isVararg(expectedArgIdx))
+      if (signature.isVararg(expectedArgIdx)) {
+        // We consider an empty varargs list to be an implicit conversion,
+        // so an exact signature match takes precedence.
+        ++numImplicitConversions;
         break;
+      }
       // We don't need to provide value for this argument if it has a default
       // value.
       if (expectedArgIdx >= signature.getValueInputs().size() -
