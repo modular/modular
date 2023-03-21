@@ -46,7 +46,7 @@ public:
     addTask(std::move(work), WorkProfilerEntry::create("llcl.waiter"));
   }
 
-  void await(llvm::ArrayRef<AnyAsyncValueRef> values) override;
+  void await(llvm::ArrayRef<AnyAsyncValueRef> values, bool mayDonate) override;
   size_t getParallelismLevel() const override { return 1; }
 
 private:
@@ -76,7 +76,10 @@ private:
 };
 } // namespace
 
-void SingleThreadWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values) {
+void SingleThreadWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values,
+                                  bool mayDonate) {
+  // Note we must ignore mayDonate.
+
   // We are done when values_remaining drops to zero.
   size_t numRemaining = values.size();
 
