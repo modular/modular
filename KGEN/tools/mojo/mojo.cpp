@@ -233,13 +233,13 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   if (tmOr.isError())
     return clOptions.reportError(tmOr.getError());
 
-  auto engineOr = ExecutionEngine::create(
+  auto engineOr = ExecutionEngine::createWithStandardLayers(
       {/*registerDebugPlugins=*/compilationOptions.debugLevel !=
        CompilationOptions::DebugInfoLevel::kNoDebug},
       **tmOr);
   if (failed(engineOr))
     return clOptions.reportError(engineOr.getError());
-  ExecutionEngine engine = std::move(*engineOr);
+  std::unique_ptr<ExecutionEngine> engine = std::move(*engineOr);
 
   // TODO (8082): This should not be necessary.
   std::vector<std::pair<StringLiteral, void *>> compilerRTFunctions;
@@ -250,10 +250,11 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   KGEN::registerSystem(compilerRTFunctions);
   KGEN::registerTracing(compilerRTFunctions);
   for (auto [name, ptr] : compilerRTFunctions)
-    if (auto err = engine.add("exec", name, ptr))
+    if (auto err = engine->add<StaticSymbolLayer>("exec", name, ptr))
       return clOptions.reportError(err.getError());
 
-  if (auto err = engine.add("exec", std::move(standaloneObject)))
+  if (auto err =
+          engine->add<StaticArchiveLayer>("exec", std::move(standaloneObject)))
     return clOptions.reportError(err.getError());
 
   if (!moduleExportsMain(*theModule, symtab))
@@ -262,7 +263,7 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
         "arguments / return values.");
 
   TimeTraceScope<> traceScope("execute-main");
-  auto compiledFuncOr = engine.lookup("main");
+  auto compiledFuncOr = engine->lookup("main");
   if (failed(compiledFuncOr))
     return clOptions.reportError(compiledFuncOr.getError());
   compiledFuncOr->invoke<void>();

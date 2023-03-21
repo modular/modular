@@ -60,7 +60,7 @@ M::KGEN::evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
   // Create the execution engine.
   UNWRAP_ERROR(
       engine,
-      ExecutionEngine::create(
+      ExecutionEngine::createWithStandardLayers(
           ExecutionEngineOptions{/*registerDebugPlugins=*/false}, **tmOr));
 
   // TODO (8082): This should not be necessary.
@@ -72,7 +72,8 @@ M::KGEN::evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
   KGEN::registerSystem(compilerRTFunctions);
   KGEN::registerTracing(compilerRTFunctions);
   for (auto [name, ptr] : compilerRTFunctions)
-    if (auto err = engine.add("evaluateSpecializations", name, ptr))
+    if (auto err = engine->add<StaticSymbolLayer>("evaluateSpecializations",
+                                                  name, ptr))
       return err.takeError();
 
   // We only want the funcs passed-in and the evaluator to be code-generated.
@@ -86,18 +87,19 @@ M::KGEN::evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
     if (archiveOr.isError())
       return archiveOr.takeError();
 
-    if (auto err = engine.add("evaluateSpecializations", archiveOr.takeValue()))
+    if (auto err = engine->add<StaticArchiveLayer>("evaluateSpecializations",
+                                                   archiveOr.takeValue()))
       return err.takeError();
 
     // Get pointers to all the candidates.
     for (FuncOp candidate : specializations) {
-      UNWRAP_ERROR(func, engine.lookup(candidate.getNameAttr()));
+      UNWRAP_ERROR(func, engine->lookup(candidate.getNameAttr()));
       candidatePtrs.push_back(func.getFunctionPointer());
     }
   }
 
   // Lookup the evaluator function
-  UNWRAP_ERROR(evaluatorFunc, engine.lookup(evaluator.getNameAttr()));
+  UNWRAP_ERROR(evaluatorFunc, engine->lookup(evaluator.getNameAttr()));
 
   // Invoke the evaluator.
   ssize_t bestIdx;
