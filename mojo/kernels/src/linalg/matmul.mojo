@@ -116,7 +116,7 @@ struct MatmulOperandLayout:
     # The inner dimension size for packed B matrix if B is pre-packed.
     var pack_b_inner_size: Int
 
-    fn __clone__(self) -> Self:
+    fn __copy__(self) -> Self:
         return Self {
             transpose_a: self.transpose_a,
             transpose_b: self.transpose_b,
@@ -214,7 +214,7 @@ struct GemmShape:
             self.K = value
             return
 
-    fn __clone__(self) -> Self:
+    fn __copy__(self) -> Self:
         return Self {M: self.M, N: self.N, K: self.K}
 
     fn __init__(m: Int, n: Int, k: Int) -> GemmShape:
@@ -393,7 +393,7 @@ struct PackMatrixRows[
     # valid multiple-of-simd data bound within the tile.
     var valid_simd_dim: StaticIntTuple[2]
 
-    fn __clone__(self) -> Self:
+    fn __copy__(self) -> Self:
         return Self {
             packed_matrix: self.packed_matrix,
             original_matrix: self.original_matrix,
@@ -686,7 +686,7 @@ struct PackMatrixCols[
 
         instance._pack()
 
-    fn __clone__(self) -> Self:
+    fn __copy__(self) -> Self:
         return Self {
             packed_matrix: self.packed_matrix,
             original_matrix: self.original_matrix,
@@ -857,7 +857,7 @@ struct MatmulInnerLoopBPacked[
         }
         instance._run_inner_loop()
 
-    fn __clone__(self) -> Self:
+    fn __copy__(self) -> Self:
         return Self {
             c: self.c,
             a: self.a,
@@ -1177,7 +1177,7 @@ struct TiledMatmul[
     # Tile sizes this routine will process on the (M,N,K) coordinates.
     var global_tile_shape: GemmShape
 
-    fn __clone__(self) -> Self:
+    fn __copy__(self) -> Self:
         return Self {
             c: self.c,
             a: self.a,
