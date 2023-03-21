@@ -506,7 +506,7 @@ struct NullaryClosure[result_type: __mlir_type.`!kgen.mlirtype`]:
         return Self {value: value}
 
     @always_inline("nodebug")
-    fn __clone__(self&) -> Self:
+    fn __clone__(self) -> Self:
         """Clone a nullary closure.
 
         Arguments:
@@ -549,7 +549,7 @@ struct UnaryClosure[
         return Self {value: value}
 
     @always_inline("nodebug")
-    fn __clone__(self&) -> Self:
+    fn __clone__(self) -> Self:
         """Clone a unary closure.
 
         Arguments:
@@ -598,7 +598,7 @@ struct BinaryClosure[
         return Self {value: value}
 
     @always_inline("nodebug")
-    fn __clone__(self&) -> Self:
+    fn __clone__(self) -> Self:
         """Clone a binary closure.
 
         Arguments:
