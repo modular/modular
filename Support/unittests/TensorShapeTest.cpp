@@ -57,6 +57,35 @@ struct llvm::yaml::MappingTraits<ShapeHolder> {
   }
 };
 
+TEST(TensorShape, constructor) {
+  {
+    SmallVector<int64_t> shape{1, 2, 3, 4};
+    EXPECT_EQ(TensorShape(shape).getAsString(), "1x2x3x4");
+  }
+
+  {
+    SmallVector<size_t> shape{1, 2, 3, 4};
+    EXPECT_EQ(TensorShape(shape).getAsString(), "1x2x3x4");
+  }
+
+  {
+    SmallVector<ssize_t> shape{1, 2, 3, 4};
+    EXPECT_EQ(TensorShape(shape).getAsString(), "1x2x3x4");
+  }
+
+  EXPECT_EQ(TensorShape({1, 2, 3, 4}).getAsString(), "1x2x3x4");
+
+  {
+    TensorShape shape = {1, 2, 3, 4};
+    EXPECT_EQ(shape.getAsString(), "1x2x3x4");
+  }
+
+  {
+    TensorShape shape = {1, 2, 3, 4};
+    EXPECT_EQ(TensorShape(shape.getDims()), shape);
+  }
+}
+
 TEST(TensorShape, representations) {
   EXPECT_TRUE(tensorShapeRoundTrips({}));
   EXPECT_TRUE(tensorShapeRoundTrips({1}));

@@ -235,8 +235,13 @@ public:
   /*implicit*/ TensorShape(ArrayRef<uint32_t> elts) { this->operator=(elts); }
   /*implicit*/ TensorShape(ArrayRef<int64_t> elts) { this->operator=(elts); }
   /*implicit*/ TensorShape(ArrayRef<uint64_t> elts) { this->operator=(elts); }
+#ifdef __APPLE__
+  /*implicit*/ TensorShape(ArrayRef<size_t> elts) { this->operator=(elts); }
+  /*implicit*/ TensorShape(ArrayRef<ssize_t> elts) { this->operator=(elts); }
+#endif // __APPLE__
 
-  template <typename ElementType>
+  template <typename ElementType,
+            typename = std::enable_if_t<std::is_integral_v<ElementType>>>
   TensorShape(const std::initializer_list<ElementType> &elts) {
     assign(elts.begin(), elts.end());
   }
@@ -267,7 +272,8 @@ public:
     return *this;
   }
 
-  template <typename ElementType>
+  template <typename ElementType,
+            typename = std::enable_if_t<std::is_integral_v<ElementType>>>
   TensorShape &operator=(const std::initializer_list<ElementType> &elements) {
     assign(elements.begin(), elements.end());
     return *this;
