@@ -5,11 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from Buffer import Buffer, NDBuffer
-from Assert import assert_param, debug_assert
+from Assert import assert_param, debug_assert, assert_param_bool
 from Int import Int
 from Index import StaticIntTuple
 from SIMD import SIMD
-from List import create_kgen_list
+from List import create_kgen_list, DimList, Dim, create_dim_list
 from Pointer import DTypePointer
 from DType import DType
 from Range import range
@@ -18,16 +18,16 @@ from Functional import unroll
 
 
 fn _transpose_inplace_4x4[
-    rows: __mlir_type.index,
-    cols: __mlir_type.index,
+    rows: Int,
+    cols: Int,
     type: DType,
-](buf0: NDBuffer[2, create_kgen_list[__mlir_type.index](rows, cols), type]):
-    assert_param[rows == 4]()
-    assert_param[cols == 4]()
+](buf0: NDBuffer[2, create_dim_list(rows, cols), type]):
+    assert_param_bool[rows == 4]()
+    assert_param_bool[cols == 4]()
     var buf = rebind[
         NDBuffer[
             2,
-            create_kgen_list[__mlir_type.index](4, 4),
+            create_dim_list(4, 4),
             type,
         ],
     ](buf0)
@@ -70,16 +70,16 @@ fn _transpose_inplace_4x4[
 
 
 fn _transpose_inplace_8x8[
-    rows: __mlir_type.index,
-    cols: __mlir_type.index,
+    rows: Int,
+    cols: Int,
     type: DType,
-](buf0: NDBuffer[2, create_kgen_list[__mlir_type.index](rows, cols), type]):
-    assert_param[rows == 8]()
-    assert_param[cols == 8]()
+](buf0: NDBuffer[2, create_dim_list(rows, cols), type]):
+    assert_param_bool[rows == 8]()
+    assert_param_bool[cols == 8]()
     var buf = rebind[
         NDBuffer[
             2,
-            create_kgen_list[__mlir_type.index](8, 8),
+            create_dim_list(8, 8),
             type,
         ],
     ](buf0)
@@ -152,16 +152,16 @@ fn _transpose_inplace_8x8[
 
 
 fn _transpose_inplace_16x16[
-    rows: __mlir_type.index,
-    cols: __mlir_type.index,
+    rows: Int,
+    cols: Int,
     type: DType,
-](buf0: NDBuffer[2, create_kgen_list[__mlir_type.index](rows, cols), type]):
-    assert_param[rows == 16]()
-    assert_param[cols == 16]()
+](buf0: NDBuffer[2, create_dim_list(rows, cols), type]):
+    assert_param_bool[rows == 16]()
+    assert_param_bool[cols == 16]()
     var buf = rebind[
         NDBuffer[
             2,
-            create_kgen_list[__mlir_type.index](16, 16),
+            create_dim_list(16, 16),
             type,
         ],
     ](buf0)
@@ -295,10 +295,10 @@ fn _transpose_inplace_16x16[
 
 
 fn _transpose_inplace_naive[
-    rows: __mlir_type.index,
-    cols: __mlir_type.index,
+    rows: Int,
+    cols: Int,
     type: DType,
-](buf: NDBuffer[2, create_kgen_list[__mlir_type.index](rows, cols), type]):
+](buf: NDBuffer[2, create_dim_list(rows, cols), type]):
     for i in range(rows):
         for j in range(i + 1, cols):
             let tmp = buf[i, j]
@@ -307,12 +307,12 @@ fn _transpose_inplace_naive[
 
 
 fn transpose_inplace[
-    rows: __mlir_type.index,
-    cols: __mlir_type.index,
+    rows: Int,
+    cols: Int,
     type: DType,
-](buf: NDBuffer[2, create_kgen_list[__mlir_type.index](rows, cols), type]):
+](buf: NDBuffer[2, create_dim_list(rows, cols), type]):
     # Reject sizes covered by specialized implementations
-    assert_param[rows == cols]()
+    assert_param_bool[rows == cols]()
 
     @parameter
     if rows == 4:
@@ -326,7 +326,7 @@ fn transpose_inplace[
 
 
 fn _permute_data[
-    size: __mlir_type.index,
+    size: Int,
     type: DType,
 ](
     input: DTypePointer[type],
@@ -347,8 +347,8 @@ fn _permute_data[
 
 
 fn _fill_strides[
-    rank: __mlir_type.index,
-    input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    rank: Int,
+    input_shape: DimList[rank],
     type: DType,
 ](buf: NDBuffer[rank, input_shape, type], strides: Buffer[rank, DType.index],):
     """
@@ -357,7 +357,7 @@ fn _fill_strides[
 
     Note that `buf` is only used for querying its dimensions.
     """
-    assert_param[rank > 0]()
+    assert_param_bool[rank > 0]()
     strides[rank - 1] = 1
 
     @always_inline
@@ -372,9 +372,9 @@ fn _fill_strides[
 
 
 fn transpose[
-    rank: __mlir_type.index,
-    output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    rank: Int,
+    output_shape: DimList[rank],
+    input_shape: DimList[rank],
     type: DType,
 ](
     output: NDBuffer[rank, output_shape, type],
@@ -428,8 +428,8 @@ fn transpose[
 
 
 fn _copy_with_strides[
-    rank: __mlir_type.index,
-    output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    rank: Int,
+    output_shape: DimList[rank],
     type: DType,
 ](
     axis: Int,

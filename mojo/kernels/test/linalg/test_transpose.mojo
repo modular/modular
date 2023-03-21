@@ -10,7 +10,7 @@ from DType import DType
 from Index import Index, StaticIntTuple
 from Int import Int
 from IO import print
-from List import create_kgen_list
+from List import create_dim_list
 from Transpose import transpose, transpose_inplace
 from Range import range
 
@@ -26,7 +26,7 @@ fn test_transpose_4x4():
     #  [12, 13, 14, 15]]
     var matrix = NDBuffer[
         2,
-        create_kgen_list[__mlir_type.index](4, 4),
+        create_dim_list(4, 4),
         DType.index,
     ].stack_allocation()
 
@@ -102,12 +102,12 @@ fn test_transpose_4x4():
 fn test_transpose_8x8():
     print("== test_transpose_8x8\n")
 
-    alias num_rows = 8
-    alias num_cols = 8
+    alias num_rows: Int = 8
+    alias num_cols: Int = 8
 
     var matrix = NDBuffer[
         2,
-        create_kgen_list[__mlir_type.index](num_rows, num_cols),
+        create_dim_list(num_rows, num_cols),
         DType.index,
     ].stack_allocation()
 
@@ -132,12 +132,12 @@ fn test_transpose_8x8():
 fn test_transpose_16x16():
     print("== test_transpose_16x16\n")
 
-    alias num_rows = 16
-    alias num_cols = 16
+    alias num_rows: Int = 16
+    alias num_cols: Int = 16
 
     var matrix = NDBuffer[
         2,
-        create_kgen_list[__mlir_type.index](num_rows, num_cols),
+        create_dim_list(num_rows, num_cols),
         DType.index,
     ].stack_allocation()
 
@@ -162,7 +162,7 @@ fn test_transpose_16x16():
 fn test_transpose_2d_identity():
     print("== test_transpose_2d_identity\n")
 
-    alias in_shape = create_kgen_list[__mlir_type.index](3, 3)
+    alias in_shape = create_dim_list(3, 3)
     # Create an input matrix of the form
     # [[1, 2, 3],
     #  [4, 5, 6],
@@ -188,7 +188,7 @@ fn test_transpose_2d_identity():
     # [[-1, -1, -1],
     #  [-1, -1, -1],
     #  [-1, -1, -1]]
-    alias out_shape = create_kgen_list[__mlir_type.index](3, 3)
+    alias out_shape = create_dim_list(3, 3)
     var output = NDBuffer[2, out_shape, DType.index].stack_allocation().fill(0)
 
     # transpose
@@ -223,7 +223,7 @@ fn test_transpose_2d_identity():
 fn test_transpose_2d():
     print("== test_transpose_2d\n")
 
-    alias in_shape = create_kgen_list[__mlir_type.index](3, 3)
+    alias in_shape = create_dim_list(3, 3)
     # Create an input matrix of the form
     # [[1, 2, 3],
     #  [4, 5, 6],
@@ -249,7 +249,7 @@ fn test_transpose_2d():
     # [[-1, -1, -1],
     #  [-1, -1, -1],
     #  [-1, -1, -1]]
-    alias out_shape = create_kgen_list[__mlir_type.index](3, 3)
+    alias out_shape = create_dim_list(3, 3)
     var output = NDBuffer[2, out_shape, DType.index].stack_allocation().fill(0)
 
     # transpose
@@ -284,7 +284,7 @@ fn test_transpose_2d():
 fn test_transpose_3d_identity():
     print("== test_transpose_3d_identity\n")
 
-    alias in_shape = create_kgen_list[__mlir_type.index](2, 2, 3)
+    alias in_shape = create_dim_list(2, 2, 3)
     # Create an input matrix of the form
     # [[[1, 2, 3],
     #   [4, 5, 6]],
@@ -316,7 +316,7 @@ fn test_transpose_3d_identity():
     #   [-1, -1, -1]],
     #  [[-1, -1, -1],
     #   [-1, -1, -1]]]
-    alias out_shape = create_kgen_list[__mlir_type.index](2, 2, 3)
+    alias out_shape = create_dim_list(2, 2, 3)
     var output = NDBuffer[3, out_shape, DType.index].stack_allocation().fill(0)
 
     # transpose
@@ -358,7 +358,7 @@ fn test_transpose_3d_identity():
 fn test_transpose_3d():
     print("== test_transpose_3d\n")
 
-    alias in_shape = create_kgen_list[__mlir_type.index](2, 2, 3)
+    alias in_shape = create_dim_list(2, 2, 3)
     # Create an input matrix of the form
     # [[[1, 2, 3],
     #   [4, 5, 6]],
@@ -390,7 +390,7 @@ fn test_transpose_3d():
     #   [-1, -1, -1]],
     #  [[-1, -1, -1],
     #   [-1, -1, -1]]]
-    alias out_shape = create_kgen_list[__mlir_type.index](3, 2, 2)
+    alias out_shape = create_dim_list(3, 2, 2)
     var output = NDBuffer[3, out_shape, DType.index].stack_allocation().fill(0)
 
     # transpose
@@ -434,7 +434,7 @@ fn test_transpose_3d():
 fn test_transpose_si64():
     print("== test_transpose_si64\n")
 
-    alias in_shape = create_kgen_list[__mlir_type.index](2, 2, 3)
+    alias in_shape = create_dim_list(2, 2, 3)
     # Create an input matrix of the form
     # [[[1, 2, 3],
     #   [4, 5, 6]],
@@ -466,7 +466,7 @@ fn test_transpose_si64():
     #   [-1, -1, -1]],
     #  [[-1, -1, -1],
     #   [-1, -1, -1]]]
-    alias out_shape = create_kgen_list[__mlir_type.index](3, 2, 2)
+    alias out_shape = create_dim_list(3, 2, 2)
     var output = NDBuffer[3, out_shape, DType.si64].stack_allocation().fill(0)
 
     # transpose

@@ -20,7 +20,7 @@ from Transpose import transpose, transpose_inplace
 from IO import put, print
 from TargetInfo import os_is_linux, has_intel_amx
 from Matmul import Matrix
-from List import create_kgen_list
+from List import create_dim_list
 from Memory import memcmp, memset_zero
 from Matmul import naive_matmul
 from Functional import unroll
@@ -90,30 +90,20 @@ fn init_matrices(
     memset_zero[DType.si32](c.data, 1024)
     memset_zero[DType.si32](c2.data, 1024)
 
-    let b2m = NDBuffer[
-        2, create_kgen_list[__mlir_type.index](64, 16), DType.si8
-    ](b2.data.address)
-    let bm = NDBuffer[
-        2, create_kgen_list[__mlir_type.index](16, 64), DType.si8
-    ](b_ptr.address)
+    let b2m = NDBuffer[2, create_dim_list(64, 16), DType.si8](b2.data.address)
+    let bm = NDBuffer[2, create_dim_list(16, 64), DType.si8](b_ptr.address)
     # transpose from 64x16 to 16x64
     transpose[2, 16, 64, DType.si8](bm, b2m)
 
     let b32_ptr = b.data.bitcast[DType.si32]()
-    let b32m = NDBuffer[
-        2, create_kgen_list[__mlir_type.index](16, 16), DType.si32
-    ](b32_ptr.address)
+    let b32m = NDBuffer[2, create_dim_list(16, 16), DType.si32](b32_ptr.address)
     transpose_inplace[16, 16, DType.si32](b32m)
-    let am = NDBuffer[
-        2, create_kgen_list[__mlir_type.index](16, 64), DType.si8
-    ](a.data.address)
-    let c2m = NDBuffer[
-        2, create_kgen_list[__mlir_type.index](16, 16), DType.si32
-    ](c2.data.address)
+    let am = NDBuffer[2, create_dim_list(16, 64), DType.si8](a.data.address)
+    let c2m = NDBuffer[2, create_dim_list(16, 16), DType.si32](c2.data.address)
     naive_matmul[
-        create_kgen_list[__mlir_type.index](16, 64),
-        create_kgen_list[__mlir_type.index](64, 16),
-        create_kgen_list[__mlir_type.index](16, 16),
+        create_dim_list(16, 64),
+        create_dim_list(64, 16),
+        create_dim_list(16, 16),
         DType.si32,
         DType.si8,
         False,

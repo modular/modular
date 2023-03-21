@@ -16,7 +16,7 @@ from Buffer import NDBuffer
 from DType import DType
 from Int import Int
 from IO import print
-from List import create_kgen_list
+from List import DimList, create_dim_list
 from Memory import memset_zero, memcpy
 from Pointer import DTypePointer
 from Range import range
@@ -384,17 +384,17 @@ struct amx_detail:
     fn dot_at_b(
         c: NDBuffer[
             2,
-            create_kgen_list[__mlir_type.index](16, 16),
+            create_dim_list(16, 16),
             DType.f32,
         ],
         a: NDBuffer[
             2,
-            create_kgen_list[__mlir_type.index](16, 16),
+            create_dim_list(16, 16),
             DType.f32,
         ],
         b: NDBuffer[
             2,
-            create_kgen_list[__mlir_type.index](16, 16),
+            create_dim_list(16, 16),
             DType.f32,
         ],
     ):

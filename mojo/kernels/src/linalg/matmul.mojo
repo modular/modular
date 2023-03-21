@@ -17,7 +17,7 @@ from BuildInfo import is_relwithdebinfo_build, is_debug_build
 from Functional import tile, unswitch, unroll, unroll2
 from Index import Index, StaticIntTuple
 from Int import Int
-from List import Dim, create_kgen_list, VariadicList
+from List import Dim, DimList, VariadicList, create_dim_list
 from Math import min
 from Matrix import Matrix
 from Memory import stack_allocation
@@ -54,16 +54,16 @@ struct MatmulConfig:
     """Static configuration of tiled matmul algorithms."""
 
     # Static shape info of Operand A.
-    var shape_a: __mlir_type[`!kgen.list<index[2]>`]
+    var shape_a: DimList[2]
 
     # Static shape info of Operand B.
-    var shape_b: __mlir_type[`!kgen.list<index[2]>`]
+    var shape_b: DimList[2]
 
     # Static shape info of Operand C.
-    var shape_c: __mlir_type[`!kgen.list<index[2]>`]
+    var shape_c: DimList[2]
 
     # Static packed shape info of the packed buffer.
-    var packed_shape: __mlir_type[`!kgen.list<index[3]>`]
+    var packed_shape: DimList[3]
 
     # Static info on simd vector size.
     var simd_size: __mlir_type.index
@@ -138,9 +138,9 @@ struct GemmShape:
     # Construct from dynamic shaped input.
     @staticmethod
     fn get[
-        shape_c: __mlir_type[`!kgen.list<index[2]>`],
-        shape_a: __mlir_type[`!kgen.list<index[2]>`],
-        shape_b: __mlir_type[`!kgen.list<index[2]>`],
+        shape_c: DimList[2],
+        shape_a: DimList[2],
+        shape_b: DimList[2],
         accum_type: DType,
         value_type: DType,
         transpose_a: Bool,
@@ -265,9 +265,9 @@ struct GemmShape:
 
 @always_inline
 fn naive_matmul[
-    shape_a: __mlir_type[`!kgen.list<index[2]>`],
-    shape_b: __mlir_type[`!kgen.list<index[2]>`],
-    shape_c: __mlir_type[`!kgen.list<index[2]>`],
+    shape_a: DimList[2],
+    shape_b: DimList[2],
+    shape_c: DimList[2],
     accum_type: DType,
     value_type: DType,
     transpose_a: Bool,
@@ -367,9 +367,9 @@ fn round_down_to_block[block_size: Int](original_size: Int) -> Int:
 
 struct PackMatrixRows[
     # original matrix shape list
-    original_shape: __mlir_type[`!kgen.list<index[2]>`],
+    original_shape: DimList[2],
     # packed matrix shape list
-    packed_shape: __mlir_type[`!kgen.list<index[3]>`],
+    packed_shape: DimList[3],
     type: DType,
     simd_size: Int,
     row_inner_size: Int,
@@ -460,13 +460,7 @@ struct PackMatrixRows[
         self,
         transpose_buffer: NDBuffer[
             2,
-            __mlir_attr[
-                create_kgen_list[__mlir_type.index](
-                    simd_size.__as_mlir_index(), simd_size.__as_mlir_index()
-                ),
-                __mlir_type.index,
-                `[2]>`,
-            ],
+            create_dim_list(simd_size, simd_size),
             type,
         ],
         local_off_set: StaticIntTuple[2],
@@ -534,9 +528,7 @@ struct PackMatrixRows[
         unroll[simd_size, body]()
 
         # Transpose the buffered data
-        transpose_inplace[
-            simd_size.__as_mlir_index(), simd_size.__as_mlir_index(), type
-        ](transpose_buffer)
+        transpose_inplace[simd_size, simd_size, type](transpose_buffer)
 
         # Write to packed space:
         #  transposed_inner_row_idx now corresponds to the original column idx.
@@ -570,13 +562,7 @@ struct PackMatrixRows[
 
         var transpose_buffer = NDBuffer[
             2,
-            __mlir_attr[
-                create_kgen_list[__mlir_type.index](
-                    simd_size.__as_mlir_index(), simd_size.__as_mlir_index()
-                ),
-                __mlir_type.index,
-                `[2]>`,
-            ],
+            create_dim_list(simd_size, simd_size),
             type,
         ].aligned_stack_allocation[alignof[SIMD[simd_size, type]]()]()
 
@@ -623,9 +609,9 @@ struct PackMatrixRows[
 
 struct PackMatrixCols[
     # original matrix shape list
-    original_shape: __mlir_type[`!kgen.list<index[2]>`],
+    original_shape: DimList[2],
     # packed matrix shape list
-    packed_shape: __mlir_type[`!kgen.list<index[3]>`],
+    packed_shape: DimList[3],
     type: DType,
     simd_size: Int,
     column_inner_size: Int,
@@ -796,9 +782,9 @@ struct PackMatrixCols[
 
 
 struct MatmulInnerLoopBPacked[
-    shape_a: __mlir_type[`!kgen.list<index[2]>`],
-    shape_c: __mlir_type[`!kgen.list<index[2]>`],
-    packed_shape: __mlir_type[`!kgen.list<index[3]>`],
+    shape_a: DimList[2],
+    shape_c: DimList[2],
+    packed_shape: DimList[3],
     accum_type: DType,
     value_type: DType,
     simd_size: Int,
@@ -871,7 +857,7 @@ struct MatmulInnerLoopBPacked[
         self,
         c_local: NDBuffer[
             2,
-            create_kgen_list[__mlir_type.index](
+            create_dim_list(
                 a_row_size.__as_mlir_index(), pack_inner_size.__as_mlir_index()
             ),
             accum_type,
@@ -898,7 +884,7 @@ struct MatmulInnerLoopBPacked[
         self,
         c_local: NDBuffer[
             2,
-            create_kgen_list[__mlir_type.index](
+            create_dim_list(
                 a_row_size.__as_mlir_index(), pack_inner_size.__as_mlir_index()
             ),
             accum_type,
@@ -960,7 +946,7 @@ struct MatmulInnerLoopBPacked[
         self,
         c_local: NDBuffer[
             2,
-            create_kgen_list[__mlir_type.index](
+            create_dim_list(
                 a_row_size.__as_mlir_index(), pack_inner_size.__as_mlir_index()
             ),
             accum_type,
@@ -1015,7 +1001,7 @@ struct MatmulInnerLoopBPacked[
         self,
         c_local: NDBuffer[
             2,
-            create_kgen_list[__mlir_type.index](
+            create_dim_list(
                 a_row_size.__as_mlir_index(), pack_inner_size.__as_mlir_index()
             ),
             accum_type,
@@ -1078,7 +1064,7 @@ struct MatmulInnerLoopBPacked[
         # Allocate accumulation buffer.
         var c_local = NDBuffer[
             2,
-            create_kgen_list[__mlir_type.index](
+            create_dim_list(
                 a_row_size.__as_mlir_index(), pack_inner_size.__as_mlir_index()
             ),
             accum_type,
@@ -1570,7 +1556,7 @@ struct TiledMatmul[
         """
         return NDBuffer[3, config.packed_shape, value_type](
             b_packed.address,
-            create_kgen_list[__mlir_type.index](
+            create_dim_list(
                 (tile_n // n_inner_size).__as_mlir_index(),
                 tile_k.__as_mlir_index(),
                 n_inner_size.__as_mlir_index(),

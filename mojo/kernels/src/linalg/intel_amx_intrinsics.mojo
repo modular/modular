@@ -14,7 +14,7 @@ from Int import Int
 from Pointer import Pointer, DTypePointer
 from Tuple import StaticTuple
 from Matmul import Matrix
-from List import create_kgen_list
+from List import create_dim_list
 
 from Range import range
 from SIMD import SIMD
@@ -167,15 +167,9 @@ fn _tile_dpbssd_emulated(
     aptr: DTypePointer[DType.si8],
     bptr: DTypePointer[DType.si8],
 ):
-    let a = Matrix[
-        create_kgen_list[__mlir_type.index](16, 64), DType.si8, False
-    ](aptr)
-    let b = Matrix[
-        create_kgen_list[__mlir_type.index](16, 64), DType.si8, False
-    ](bptr)
-    let c = Matrix[
-        create_kgen_list[__mlir_type.index](16, 16), DType.si32, False
-    ](cptr)
+    let a = Matrix[create_dim_list(16, 64), DType.si8, False](aptr)
+    let b = Matrix[create_dim_list(16, 64), DType.si8, False](bptr)
+    let c = Matrix[create_dim_list(16, 16), DType.si32, False](cptr)
 
     for i in range(16):
         for j in range(16):
