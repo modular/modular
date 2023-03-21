@@ -61,7 +61,7 @@ struct ConvShape:
     var pad_h: StaticIntTuple[2]  # Padding on H dimension in (Low, High)
     var pad_w: StaticIntTuple[2]  # Padding on W dimension in (Low, High)
 
-    fn __clone__(self) -> Self:
+    fn __copy__(self) -> Self:
         return Self {
             n: self.n,
             h: self.h,
@@ -214,7 +214,7 @@ struct Naive2dConvolution[
     var input_shape: ImageShape
     var filter_shape: ImageShape
 
-    fn __clone__(self) -> Self:
+    fn __copy__(self) -> Self:
         return Self {
             output: self.output,
             input: self.input,
@@ -485,7 +485,7 @@ struct PackIm2ColNCHW[
     var pad_low: StaticIntTuple[2]
     var pad_high: StaticIntTuple[2]
 
-    fn __clone__(self) -> Self:
+    fn __copy__(self) -> Self:
         return Self {
             packed_matrix: self.packed_matrix,
             origin_image: self.origin_image,
@@ -993,7 +993,7 @@ struct ConvIm2ColNCHW[
     # 2D view of the filter as implicit matmul input.
     var a: NDBuffer[2, create_kgen_list_unknown[2](), type]
 
-    fn __clone__(self) -> Self:
+    fn __copy__(self) -> Self:
         return Self {
             out: self.out,
             input: self.input,
@@ -1528,7 +1528,7 @@ struct ConvNHWCInnerLoopFilterPacked[
 
     var input_base_pointer: DTypePointer[value_type]
 
-    fn __clone__(self) -> Self:
+    fn __copy__(self) -> Self:
         return Self {
             c: self.c,
             input: self.input,
@@ -2053,7 +2053,7 @@ struct ConvIm2ColNHWC[
     var num_tasks_m: Int
     var num_tasks_n: Int
 
-    fn __clone__(self) -> Self:
+    fn __copy__(self) -> Self:
         return Self {
             out: self.out,
             input: self.input,
