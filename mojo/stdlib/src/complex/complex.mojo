@@ -9,13 +9,10 @@ from SIMD import SIMD
 from Int import Int
 
 
-@register_passable
+@register_passable("trivial")
 struct Complex[size: Int, type: DType]:
     var re: SIMD[size, type.value]
     var im: SIMD[size, type.value]
-
-    fn __copy__(self) -> Self:
-        return Self {re: self.re, im: self.im}
 
     fn __init__(
         re: SIMD[size, type.value],
