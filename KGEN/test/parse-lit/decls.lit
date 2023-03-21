@@ -88,6 +88,7 @@ fn takeIntToF32Param[f: IntToF32Type](): pass
 
 fn varargOverload(a: __mlir_type.index): pass
 fn varargOverload(*a: __mlir_type.index): pass
+fn varargOverload(): pass
 
 # CHECK-LABEL: lit.func @"callOverload
 fn callOverload(a: Int):
@@ -113,6 +114,9 @@ fn callOverload(a: Int):
   # less specific.
   # CHECK: kgen.call @"$decls"::@"varargOverload(__mlir_type.index)"(%idx2)
   varargOverload(2)
+
+  # CHECK:  kgen.call @"$decls"::@"varargOverload()"()
+  varargOverload()
 
 
 # Test that pointers don't get confused with by-ref arguments.
