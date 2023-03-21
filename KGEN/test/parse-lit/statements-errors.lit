@@ -77,7 +77,7 @@ def elif_parse_error(a: Bool):
     pass
 
 struct NotBoolConvertible:
-  fn __clone__(self&) -> Self: return Self{}
+  fn __clone__(self) -> Self: return Self{}
 
 def test_bool_context(a: NotBoolConvertible):
   if a: # expected-error {{::NotBoolConvertible' does not implement the '__bool__' method}}

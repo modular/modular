@@ -23,7 +23,7 @@ struct MemoryOnlyInt:
     # CHECK: pop.store %idx1, %0
     return Self {x: 1}
 
-  fn __clone__(self&: Self) -> Self:
+  fn __clone__(self: Self) -> Self:
     return Self{x: self.x}
 
   @staticmethod
@@ -43,15 +43,16 @@ struct MemoryOnlyPair:
 
   # CHECK: lit.func @"__clone__{{.*}}"(
   # CHECK-SAME: %__result__: !pop.pointer<@"$expressions"::@MemoryOnlyPair> byref_result,
-  # CHECK-SAME: %self: !pop.pointer<@"$expressions"::@MemoryOnlyPair> byref) -> !lit.none {
-  fn __clone__(self&: MemoryOnlyPair) -> MemoryOnlyPair:
+  # CHECK-SAME: %self: !pop.pointer<@"$expressions"::@MemoryOnlyPair> borrow_in_mem) -> !lit.none {
+  fn __clone__(self: MemoryOnlyPair) -> MemoryOnlyPair:
     # CHECK-NEXT: %0 = lit.struct.gep %__result__[x]
     # CHECK-NEXT: %1 = lit.struct.gep %self[x]
     # CHECK-NEXT: kgen.call {{.*}}__clone__{{.*}}(%0, %1)
     # CHECK-NEXT: %3 = lit.struct.gep %__result__[y]
     # CHECK-NEXT: %4 = lit.struct.gep %self[y]
-    # CHECK-NEXT: %5 = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%4)
-    # CHECK-NEXT: pop.store %5, %3
+    # CHECK-NEXT: %5 = pop.load %4
+    # CHECK-NEXT: %6 = kgen.call {{.*}}__clone__{{.*}}(%5)
+    # CHECK-NEXT: pop.store %6, %3
     return MemoryOnlyPair {x: self.x, y: self.y}
 
   # CHECK: lit.func @"method{{.*}}"(
@@ -72,7 +73,7 @@ fn inferred_function_with_memory_result[
 # CHECK-LABEL: lit.func @"memoryOnlyOps
 fn memoryOnlyOps(a&: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: %v1 = lit.varlet.decl "v1", var = true : <@"$expressions"::@MemoryOnlyPair>
-  # CHECK-NEXT: kgen.call @"$expressions"::@MemoryOnlyPair::@"__clone__($expressions::MemoryOnlyPair=&,$expressions::MemoryOnlyPair&)"(%v1, %a) : (!pop.pointer<@"$expressions"::@MemoryOnlyPair> byref_result, !pop.pointer<@"$expressions"::@MemoryOnlyPair> byref)
+  # CHECK-NEXT: kgen.call {{.*}}__clone__{{.*}}(%v1, %a)
   var v1 = a
 
   # CHECK-NEXT: %v2 = lit.varlet.decl "v2", var = false
@@ -146,7 +147,7 @@ struct M:
   # CHECK-NEXT: %0 = lit.struct.create(value=%value) : (index) -> !kgen.declref<@"$expressions"::@M>
     return M{value: value}
 
-  fn __clone__(self&) -> M: pass
+  fn __clone__(self) -> M: pass
 
   fn __neg__(self) -> M:
     return M(0)
@@ -300,7 +301,7 @@ fn comparisons(a: Int, b: Int):
 
 @register_passable
 struct Boolish:
-  fn __clone__(self&) -> Self: pass
+  fn __clone__(self) -> Self: pass
   fn __bool__(self) -> Bool: return Bool.true()
 
 # CHECK-LABEL: @"unary
@@ -325,36 +326,36 @@ fn andOr(a: Boolish, b: Boolish, x: Bool):
   # Short circuiting AND returns second operand when the first is false-y, first
   # otherwise.
 
-  # CHECK: %0 = kgen.call @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)"(%a)
-  # CHECK: %1 = kgen.call @"$_CompilerBuiltin"::@Bool::@"__lit_bool($_CompilerBuiltin::Bool)"(%0)
-  # CHECK: %2 = hlcf.if %1 -> !kgen.declref<@"$expressions"::@Boolish> {
-  # CHECK:   hlcf.yield %b
+  # CHECK: [[BOOL:%.*]] = kgen.call {{.*}}__bool__{{.*}}(%0)
+  # CHECK: [[I1:%.*]] = kgen.call {{.*}}__lit_bool{{.*}}([[BOOL]])
+  # CHECK: hlcf.if [[I1]] -> !kgen.declref<@"$expressions"::@Boolish> {
+  # CHECK:   [[TMP:%.*]] = kgen.call {{.*}}__clone__{{.*}}(%b)
+  # CHECK:   hlcf.yield [[TMP]]
   # CHECK: } else {
-  # CHECK:   hlcf.yield %a
+  # CHECK:   hlcf.yield %0
   # CHECK: }
   _ = a and b
 
   # Short circuiting OR returns first operand when it is true-y, second
   # otherwise.
 
-  # CHECK: %3 = kgen.call @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)"(%a)
-  # CHECK: %4 = kgen.call @"$_CompilerBuiltin"::@Bool::@"__lit_bool($_CompilerBuiltin::Bool)"(%3)
-  # CHECK: %5 = hlcf.if %4 -> !kgen.declref<@"$expressions"::@Boolish> {
-  # CHECK:   hlcf.yield %a
+  # CHECK: [[ABOOL:%.*]] = kgen.call @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)"(
+  # CHECK: [[I1:%.*]] = kgen.call {{.*}}@Bool::@"__lit_bool{{.*}}([[ABOOL]])
+  # CHECK:  = hlcf.if [[I1]] -> !kgen.declref<@"$expressions"::@Boolish> {
+  # CHECK:   hlcf.yield
   # CHECK: } else {
-  # CHECK:   hlcf.yield %b
+  # CHECK:   hlcf.yield
   # CHECK: }
   _ = a or b
 
   # Testing two different logic'y types returns the common bool type if present.
 
-  # CHECK: %6 = kgen.call @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)"(%a)
-  # CHECK: %7 = kgen.call @"$_CompilerBuiltin"::@Bool::@"__lit_bool($_CompilerBuiltin::Bool)"(%6)
-  # CHECK: %8 = hlcf.if %7 -> !kgen.declref<@"$_CompilerBuiltin"::@Bool> {
-  # CHECK:   hlcf.yield %6
+  # CHECK: [[ABOOL:%.*]] = kgen.call {{.*}}__bool__
+  # CHECK: [[I1:%.*]] = kgen.call {{.*}}__lit_bool{{.*}}([[ABOOL]])
+  # CHECK:  = hlcf.if [[I1]] -> !kgen.declref<@"$_CompilerBuiltin"::@Bool> {
+  # CHECK:   hlcf.yield
   # CHECK: } else {
-  # CHECK:   %9 = kgen.call @"$_CompilerBuiltin"::@Bool::@"__bool__($_CompilerBuiltin::Bool)"(%x)
-  # CHECK:   hlcf.yield %9
+  # CHECK:   hlcf.yield
   # CHECK: }
    _ = a or x
 
@@ -371,8 +372,9 @@ fn do_math(a: Int, b: Int, c: Int) -> Int:
   z = Int(42) + Int(5)*a
 
   # CHECK-NEXT: %x = lit.varlet.decl "x", var = true
-  # CHECK-NEXT: %[[TMP:.*]] = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%z)
-  # CHECK-NEXT: pop.store %[[TMP]], %x
+  # CHECK-NEXT: [[TMP:%.*]] = pop.load %z
+  # CHECK-NEXT: [[TMP2:%.*]] = kgen.call {{.*}}__clone__{{.*}}([[TMP]])
+  # CHECK-NEXT: pop.store [[TMP2]], %x
   # This is checking the lexer handles \ at end of line correctly.
   var x : Int
   x = \
@@ -381,8 +383,9 @@ z
   # CHECK-NEXT: kgen.call @"$expressions"::@"noop()"()
   noop()
 
-  # CHECK-NEXT: %[[TMP:.*]] = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%x)
-  # CHECK-NEXT: lit.return %[[TMP]]
+  # CHECK-NEXT: [[TMP:%.*]] = pop.load %x
+  # CHECK-NEXT: [[TMP2:%.*]] = kgen.call {{.*}}__clone__{{.*}}([[TMP]])
+  # CHECK-NEXT: lit.return [[TMP2]]
   return x
 
 # CHECK-LABEL: lit.func @"listValues()"() -> index
@@ -493,10 +496,11 @@ fn patterns():
 
   # Discard pattern with different types.
   (_) = someInt
-  # CHECK:  %2 = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%someInt)
+  # CHECK: [[TMP:%.*]] = pop.load %someInt
+  # CHECK-NEXT:  = kgen.call {{.*}}__clone__{{.*}}([[TMP]])
 
   (_) = 1.0
-  # CHECK: %3 = kgen.param.constant: f64 = <1.0
+  # CHECK: = kgen.param.constant: f64 = <1.0
 
   # CHECK: %someF32 = lit.varlet.decl "someF32", var = true
   # CHECK: [[F32:%.*]] = pop.load %someF32
@@ -512,15 +516,16 @@ fn patterns():
 
 # CHECK-LABEL: lit.func @"byval_byref_function($Int::Int,$Int::Int&)"(%a: !kgen.declref<@"$Int"::@Int> borrow, %b: !pop.pointer<@"$Int"::@Int> byref) -> !lit.none
 fn byval_byref_function(a: Int, b&: Int):
-  # CHECK-NEXT: pop.store %a, %b
+  # CHECK-NEXT: [[TMP:%.*]] = kgen.call {{.*}}__clone__{{.*}}(%a)
+  # CHECK-NEXT: pop.store [[TMP]], %b
   b = a
 
   # CHECK-NEXT: %x = lit.varlet.decl "x", var = true
   var x : Int
   # This needs to load 'b' to pass it by value for the first arg, but pass its
   # address in directly for the second.
-  # CHECK: %0 = pop.load %b
-  # CHECK: %1 = kgen.call @{{.*}}::@"byval_byref_function{{.*}}(%0, %b)
+  # CHECK: %1 = pop.load %b
+  # CHECK: = kgen.call @{{.*}}::@"byval_byref_function{{.*}}(%1, %b)
   byval_byref_function(b, b)
 
 # CHECK-LABEL: lit.func @"lvaluesAndRValues()
@@ -539,7 +544,8 @@ fn mvalueStructField():
 
 # CHECK-LABEL: lit.func @"defTests({{.*}}, %untyped: !kgen.declref<@"$prolog"::@object> borrow)
 def defTests(a: Int, b: Int, untyped):
-  # CHECK: [[TMP:%.*]] = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%b_1)
+  # CHECK: [[B:%.*]] = pop.load %b_1
+  # CHECK: [[TMP:%.*]] = kgen.call {{.*}}__clone__{{.*}}([[B]])
   # CHECK-NEXT: pop.store [[TMP]], %a_0
   a = b # Parameters are mutable!
 
@@ -798,28 +804,31 @@ fn testWritebacks(a&: IndexArray, b&: IndexArrayArray):
 
 # CHECK-LABEL: lit.func @"chained_cmp
 fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
-    # CHECK:      %[[CMP_A_B:.*]] = kgen.call @{{.*}}__lt__{{.*}}(%a, %b)
-    # CHECK-NEXT: %[[CMP_A_B_I1:.*]] = kgen.call @{{.*}}__lit_bool{{.*}}(%[[CMP_A_B]])
+    # CHECK:      [[CMP_A_B:%.*]] = kgen.call @{{.*}}__lt__{{.*}}(%a, %b)
+    # CHECK-NEXT: [[B2:%.*]] = kgen.call {{.*}}__clone__{{.*}}(%b)
+    # CHECK-NEXT: %[[CMP_A_B_I1:.*]] = kgen.call @{{.*}}__lit_bool{{.*}}([[CMP_A_B]])
     # CHECK-NEXT: %[[IF_A_B:.*]] = hlcf.if %[[CMP_A_B_I1]]
-    # CHECK-NEXT:   %[[CMP_B_C:.*]] = kgen.call @{{.*}}__lt__{{.*}}(%b, %c)
+    # CHECK-NEXT:   [[C2:%.*]] = kgen.call {{.*}}__clone__{{.*}}(%c)
+    # CHECK-NEXT:   %[[CMP_B_C:.*]] = kgen.call @{{.*}}__lt__{{.*}}([[B2]], [[C2]])
     # CHECK:        %[[IF_B_C:.*]] = hlcf.if
-    # CHECK-NEXT:     %[[CMP_C_D:.*]] = kgen.call @{{.*}}__lt__{{.*}}(%c, %d)
+    # CHECK-NEXT:     [[D2:%.*]] = kgen.call {{.*}}__clone__{{.*}}(%d)
+    # CHECK-NEXT:     %[[CMP_C_D:.*]] = kgen.call @{{.*}}__lt__{{.*}}([[C2]], [[D2]])
     # CHECK-NEXT:     hlcf.yield %[[CMP_C_D]]
     # CHECK-NEXT:   } else {
     # CHECK-NEXT:     hlcf.yield %[[CMP_B_C]]
     # CHECK-NEXT:   }
     # CHECK-NEXT:   hlcf.yield %[[IF_B_C]]
     # CHECK-NEXT: } else {
-    # CHECK-NEXT:   hlcf.yield %[[CMP_A_B]]
+    # CHECK-NEXT:   hlcf.yield [[CMP_A_B]]
     # CHECK-NEXT: }
     # CHECK-NEXT: pop.store %[[IF_A_B]], %res : !pop.pointer<@"$_CompilerBuiltin"::@Bool>
     var res = a < b < c < d
 
     # COM: This checks the parsing precedence between `<` and `and`.
     # CHECK:      %[[CMP_A_B:.*]] = kgen.call @{{.*}}__lt__{{.*}}(%a, %b)
-    # CHECK-NEXT: %[[CMP_A_B_I1:.*]] = kgen.call @{{.*}}__lit_bool{{.*}}(%[[CMP_A_B]])
+    # CHECK:       %[[CMP_A_B_I1:.*]] = kgen.call @{{.*}}__lit_bool{{.*}}(%[[CMP_A_B]])
     # CHECK-NEXT: %[[IF_A_B:.*]] = hlcf.if %[[CMP_A_B_I1]]
-    # CHECK-NEXT:   %[[CMP_B_C:.*]] = kgen.call @{{.*}}__lt__{{.*}}(%b, %c)
+    # CHECK:   %[[CMP_B_C:.*]] = kgen.call @{{.*}}__lt__{{.*}}(
     # CHECK-NEXT:   hlcf.yield %[[CMP_B_C]]
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   hlcf.yield %[[CMP_A_B]]

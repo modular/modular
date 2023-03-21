@@ -1225,9 +1225,9 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
     break;
   case SpecialFunctionKind::kClone:
     if (fnInfo.isInstMethod() && selfType &&
-        args[selfArgNumber].convention != ParsedArgument::kConventionByRef)
+        args[selfArgNumber].convention != ParsedArgument::kConventionBorrowed)
       emitErrorLoc(args[selfArgNumber].loc,
-                   "self argument must be passed by reference");
+                   "self argument must be passed as borrowed");
     break;
   }
 
@@ -1930,13 +1930,12 @@ LogicalResult DeclResolver::resolveSignature(VarLetDeclOp varOp,
   // this was a non-parameteric register-passable `let` declaration with an
   // initializer.  We don't care about the address being available and this
   // produces smaller IR.
-  ASTType inferredRValueType = varOp.getType().getResolvedElementType();
+  ASTType inferredRValueType = ASTType(varOp.getType()).getPointerElementType();
   if (initExpr && !varOp.getIsVar() &&
       // NOTE: This is assuming type parameters are valid register types.  We
       // will need to build out better support when we have traits, but this is
       // important for kernels in practice today.
-      (!inferredRValueType ||
-       inferredRValueType.isRegisterPassable(initExpr->getLoc(), shared))) {
+      inferredRValueType.isRegisterPassable(initExpr->getLoc(), shared)) {
     // There should be exactly one store to the original op, sanity check this.
     assert(varOp->hasOneUse() && "Should have one store use");
     auto theStore = cast<POP::StoreOp>(*varOp->user_begin());

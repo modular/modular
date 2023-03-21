@@ -16,7 +16,7 @@ struct my_iter:
     var end: Int
     var list: MyList
 
-    fn __clone__(self&) -> Self:
+    fn __clone__(self) -> Self:
         return Self {start: self.start, end: self.end, list: self.list}
 
     fn __init__(list: MyList) -> my_iter:
@@ -37,7 +37,7 @@ struct MyList:
     var start: Pointer[Int]
     var size: Int
 
-    fn __clone__(self&) -> Self:
+    fn __clone__(self) -> Self:
         return Self {start: self.start, size: self.size}
 
     fn __init__(ptr: Pointer[Int], size: Int) -> MyList:

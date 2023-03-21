@@ -345,13 +345,13 @@ struct WrongType:
   def __init__() -> Int: pass
 
   # expected-error @+1 {{result type must be '$decls-errors::WrongType'}}
-  fn __clone__(self&) -> Int: pass
+  fn __clone__(self) -> Int: pass
 
   # expected-error @+1 {{'self' argument must have type '$decls-errors::WrongType' but actually has type '$Int::Int'}}
   fn __clone__(existing&: Int) -> Self: pass
 
-  # expected-error @+1 {{self argument must be passed by reference}}
-  fn __clone__(existing: WrongType) -> WrongType: pass
+  # expected-error @+1 {{self argument must be passed as borrowed}}
+  fn __clone__(existing&: WrongType) -> WrongType: pass
 
 
 struct WrongSelfType[a: Int]:
