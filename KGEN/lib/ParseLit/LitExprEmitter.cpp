@@ -275,7 +275,7 @@ AnyValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   if (auto lValue = value.ir.getIfLValue())
     return emitLoadOfLValue({lValue, value.expr}, dest);
 
-  // Finally, if this is a BValue emit a __clone__, a load for a
+  // Finally, if this is a BValue emit a __copy__, a load for a
   // primitive MLIR type, or an error if neither approach works.
   auto bValue = value.ir.getIfBValue();
   assert(bValue && "No other value types");
@@ -394,7 +394,7 @@ CValue ExprEmitter::emitBValueToRValue(ASTExprAnd<BValue> value,
 
   // If this is a user defined type, invoke the clone method.
   if (value.ir.getRValueType().getDecl(shared))
-    return emitNamedMethodCall("__clone__", {value}, dest,
+    return emitNamedMethodCall("__copy__", {value}, dest,
                                CallSyntax::kImplicitConvert, value.expr);
 
   // Otherwise this is a trivial type, then we can emit a direct use/load for
@@ -803,7 +803,7 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     return SBValue(rv);
   }
 
-  // If we have an MRValue in the wrong spot, emit a __clone__ call into the
+  // If we have an MRValue in the wrong spot, emit a __copy__ call into the
   // destination using MBValue -> RValue conversion.
   // TODO(move): This won't take ownership of the value.  When we have move
   // operations we should use them.
@@ -843,7 +843,7 @@ CValue ExprEmitter::emitLoadOfLValue(ASTExprAnd<LValue> value,
   auto slValue = value.ir.getIfSLValue();
   assert(slValue && "unknown lvalue kind");
 
-  // Emit a __clone__ or load of the value.
+  // Emit a __copy__ or load of the value.
   return emitBValueToRValue({MBValue(slValue), value.expr}, dest);
 }
 

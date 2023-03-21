@@ -24,7 +24,7 @@
 //   FLAGS are various flags used to customize type checking behavior.
 
 SF(kNew,     "__new__"   ,  -1, kInvalid, kImplicitlyStaticMethod|kSelfResult)
-SF(kClone,   "__clone__" ,  -1, kInvalid, kAllowByRefSelfInstMethod|kSelfResult)
+SF(kCopy,    "__copy__" ,   -1, kInvalid, kAllowByRefSelfInstMethod|kSelfResult)
 SF(kInit,    "__init__"  ,  -1, kInvalid, kImplicitlyStaticMethod|kSelfResult)
 
 SF(kBool,    "__bool__"  ,   1, kInvalid, kInstMethod)

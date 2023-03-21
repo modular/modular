@@ -1223,7 +1223,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
     if (!resultType.mlirType.isSignlessInteger(1))
       emitError("") << name << " result type must be __mlir_type.i1";
     break;
-  case SpecialFunctionKind::kClone:
+  case SpecialFunctionKind::kCopy:
     if (fnInfo.isInstMethod() && selfType &&
         args[selfArgNumber].convention != ParsedArgument::kConventionBorrowed)
       emitErrorLoc(args[selfArgNumber].loc,
