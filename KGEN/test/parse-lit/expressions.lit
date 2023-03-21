@@ -325,7 +325,7 @@ fn andOr(a: Boolish, b: Boolish, x: Bool):
   # otherwise.
 
   # CHECK: [[BOOL:%.*]] = kgen.call {{.*}}__bool__{{.*}}(%0)
-  # CHECK: [[I1:%.*]] = kgen.call {{.*}}__lit_bool{{.*}}([[BOOL]])
+  # CHECK: [[I1:%.*]] = kgen.call {{.*}}__mlir_i1__{{.*}}([[BOOL]])
   # CHECK: hlcf.if [[I1]] -> !kgen.declref<@"$expressions"::@Boolish> {
   # CHECK:   [[TMP:%.*]] = kgen.call {{.*}}__copy__{{.*}}(%b)
   # CHECK:   hlcf.yield [[TMP]]
@@ -338,7 +338,7 @@ fn andOr(a: Boolish, b: Boolish, x: Bool):
   # otherwise.
 
   # CHECK: [[ABOOL:%.*]] = kgen.call @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)"(
-  # CHECK: [[I1:%.*]] = kgen.call {{.*}}@Bool::@"__lit_bool{{.*}}([[ABOOL]])
+  # CHECK: [[I1:%.*]] = kgen.call {{.*}}@Bool::@"__mlir_i1__{{.*}}([[ABOOL]])
   # CHECK:  = hlcf.if [[I1]] -> !kgen.declref<@"$expressions"::@Boolish> {
   # CHECK:   hlcf.yield
   # CHECK: } else {
@@ -349,7 +349,7 @@ fn andOr(a: Boolish, b: Boolish, x: Bool):
   # Testing two different logic'y types returns the common bool type if present.
 
   # CHECK: [[ABOOL:%.*]] = kgen.call {{.*}}__bool__
-  # CHECK: [[I1:%.*]] = kgen.call {{.*}}__lit_bool{{.*}}([[ABOOL]])
+  # CHECK: [[I1:%.*]] = kgen.call {{.*}}__mlir_i1__{{.*}}([[ABOOL]])
   # CHECK:  = hlcf.if [[I1]] -> !kgen.declref<@"$_CompilerBuiltin"::@Bool> {
   # CHECK:   hlcf.yield
   # CHECK: } else {
@@ -416,7 +416,7 @@ fn initializers():
 def test_if_cond(cond: Bool):
     # CHECK:      %[[I:.*]] = lit.varlet.decl "i", var = true : <@"$Int"::@Int>
     # CHECK-NEXT: %[[COND:.*]] = pop.load %cond_0
-    # CHECK: %[[LIT_BOOLI1:.*]] = kgen.call {{.*}}__lit_bool{{.*}}(%[[COND]])
+    # CHECK: %[[LIT_BOOLI1:.*]] = kgen.call {{.*}}__mlir_i1__{{.*}}(%[[COND]])
     # CHECK-NEXT: %[[IF_RES:.*]] = hlcf.if %[[LIT_BOOLI1]]
     # CHECK-NEXT:   %[[INT_TWO:.*]] = kgen{{.*}}= 2}
     # CHECK-NEXT:   hlcf.yield %[[INT_TWO]]
@@ -804,7 +804,7 @@ fn testWritebacks(a&: IndexArray, b&: IndexArrayArray):
 fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
     # CHECK:      [[CMP_A_B:%.*]] = kgen.call @{{.*}}__lt__{{.*}}(%a, %b)
     # CHECK-NEXT: [[B2:%.*]] = kgen.call {{.*}}__copy__{{.*}}(%b)
-    # CHECK-NEXT: %[[CMP_A_B_I1:.*]] = kgen.call @{{.*}}__lit_bool{{.*}}([[CMP_A_B]])
+    # CHECK-NEXT: %[[CMP_A_B_I1:.*]] = kgen.call @{{.*}}__mlir_i1__{{.*}}([[CMP_A_B]])
     # CHECK-NEXT: %[[IF_A_B:.*]] = hlcf.if %[[CMP_A_B_I1]]
     # CHECK-NEXT:   [[C2:%.*]] = kgen.call {{.*}}__copy__{{.*}}(%c)
     # CHECK-NEXT:   %[[CMP_B_C:.*]] = kgen.call @{{.*}}__lt__{{.*}}([[B2]], [[C2]])
@@ -824,14 +824,14 @@ fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
 
     # COM: This checks the parsing precedence between `<` and `and`.
     # CHECK:      %[[CMP_A_B:.*]] = kgen.call @{{.*}}__lt__{{.*}}(%a, %b)
-    # CHECK:       %[[CMP_A_B_I1:.*]] = kgen.call @{{.*}}__lit_bool{{.*}}(%[[CMP_A_B]])
+    # CHECK:       %[[CMP_A_B_I1:.*]] = kgen.call @{{.*}}__mlir_i1__{{.*}}(%[[CMP_A_B]])
     # CHECK-NEXT: %[[IF_A_B:.*]] = hlcf.if %[[CMP_A_B_I1]]
     # CHECK:   %[[CMP_B_C:.*]] = kgen.call @{{.*}}__lt__{{.*}}(
     # CHECK-NEXT:   hlcf.yield %[[CMP_B_C]]
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   hlcf.yield %[[CMP_A_B]]
     # CHECK-NEXT: }
-    # CHECK-NEXT: %[[CMP_I1:.*]] = kgen.call @{{.*}}__lit_bool{{.*}}(%[[IF_A_B]])
+    # CHECK-NEXT: %[[CMP_I1:.*]] = kgen.call @{{.*}}__mlir_i1__{{.*}}(%[[IF_A_B]])
     # CHECK-NEXT: %[[IF:.*]] = hlcf.if %[[CMP_I1]]
     # CHECK-NEXT:   %[[CMP_D_E:.*]] = kgen.call @{{.*}}__lt__{{.*}}(%d, %e)
     # CHECK-NEXT:   hlcf.yield %[[CMP_D_E]]
