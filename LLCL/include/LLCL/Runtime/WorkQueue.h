@@ -90,14 +90,19 @@ public:
   virtual void addLocalTask(TaskFunction work) = 0;
 
   /// Returns when the given values are ready, either as emplaced values or
-  /// as errors. The caller's thread may contribute to processing tasks until
-  /// all values are ready, or may sleep.
+  /// as errors.
+  ///
+  /// In single-threaded environments mayDonate is ignored. In multi-threaded
+  /// environments mayDonate indicates if the caller's thread may be 'donated'
+  /// towards running pending work items while waiting. However even with
+  /// mayDonate the caller's thread may sleep.
   ///
   /// It is valid for await to be called recursively, ie a task being processed
   /// may itself call await. It is valid for the caller to be running on
   /// any thread, including a worker thread managed by this WorkQueue or any
   /// 'foreign' thread.
-  virtual void await(ArrayRef<AnyAsyncValueRef> values) = 0;
+  virtual void await(ArrayRef<AnyAsyncValueRef> values,
+                     bool mayDonate = true) = 0;
 
   /// Return the pool size maintained by this work queue. Kernels can use
   /// this as a hint indicating the maximum useful number of work items
@@ -140,17 +145,28 @@ struct ProfiledTaskFunction {
 /// synchronization.
 std::unique_ptr<WorkQueue> createSingleThreadWorkQueue();
 
-/// Creates a thread pool. The thread pool will use numThreads - 1 worker
-/// threads, on the assumption the calling thread or some other 'foreign'
-/// thread will eventually donate themselves to processing tasks by calling
-/// await.
+/// Creates a thread pool able to distribute the execution of work items
+/// across numThreads.
 ///
 /// If numThreads is zero it will default to the number of 'physical' cores in
 /// the first socket in the system. Generally this will ignore hyperthreading
 /// to minimize cache contention, and will avoid cross-NUMA memory traffic.
 ///
+/// If mainWillDonate is true then only numThreads - 1 worker threads will be
+/// created, on the assumption the calling thread or some other distinguished
+/// 'main' thread will eventually donate themselves to processing work items
+/// by calling await with mayDonate true. This is most appropriate for systems
+/// driven my a single main thread, such as an REPL or execution tool.
+///
+/// If mainWillDonete is false then numThreads worker threads will be created,
+/// on the assumption await will only be called with mayDonate false. This is
+/// most appropriate for multi-threaded servers which wish to share the same
+/// threading work queue across multiple requesting threads. The requesting
+/// threads are expected to add a task for their request and sleep.
+///
 /// The work queue must be shutdown before being destroyed.
-std::unique_ptr<WorkQueue> createThreadPoolWorkQueue(size_t numThreads = 0);
+std::unique_ptr<WorkQueue> createThreadPoolWorkQueue(size_t numThreads = 0,
+                                                     bool mainWillDonate = true);
 
 } // namespace M::LLCL
 

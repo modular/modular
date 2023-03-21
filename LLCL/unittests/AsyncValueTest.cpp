@@ -23,12 +23,14 @@ enum WorkQueueType { kSingleThread = 0, kThreadPool = 1 };
 
 class AsyncValueTest : public testing::TestWithParam<WorkQueueType> {
 protected:
-  std::unique_ptr<Runtime> createRuntime(int numThreads = 4) {
+  std::unique_ptr<Runtime> createRuntime(int numThreads = 4,
+                                         bool mainWillDonate = true) {
     std::unique_ptr<Allocator> allocator =
         createLeakCheckAllocator(createMallocAllocator());
     std::unique_ptr<WorkQueue> workQueue =
-        GetParam() == kThreadPool ? createThreadPoolWorkQueue(numThreads)
-                                  : createSingleThreadWorkQueue();
+        GetParam() == kThreadPool
+            ? createThreadPoolWorkQueue(numThreads, mainWillDonate)
+            : createSingleThreadWorkQueue();
     return std::make_unique<Runtime>(std::move(allocator),
                                      std::move(workQueue));
   }
@@ -466,7 +468,7 @@ TEST_P(AsyncValueTest, StressParallelForEachN) {
 }
 
 //===----------------------------------------------------------------------===//
-// Awaiting from multiple 'foreign' threads.
+// Awaiting
 //===----------------------------------------------------------------------===//
 
 TEST_P(AsyncValueTest, AwaitFromForeign) {
@@ -491,6 +493,38 @@ TEST_P(AsyncValueTest, AwaitFromForeign) {
   std::thread foreign[nTasks];
   for (size_t i = 0; i < nTasks; ++i)
     foreign[i] = std::thread([i, &finished]() { await(finished[i]); });
+
+  for (size_t i = 0; i < nTasks; ++i)
+    canRun[i].post();
+  for (size_t i = 0; i < nTasks; ++i)
+    foreign[i].join();
+
+  await(finished);
+}
+
+TEST_P(AsyncValueTest, AwaitWithoutDonating) {
+  if (GetParam() != kThreadPool)
+    // Can only observe this behaviour with the thread pool workqueue.
+    return;
+
+  auto runtime = createRuntime(/*numThreads=*/4, /*mainWillDonate=*/false);
+
+  constexpr size_t nTasks = 20;
+  Semaphore canRun[nTasks];
+  llvm::SmallVector<AnyAsyncValueRef> finished;
+  finished.reserve(nTasks);
+  for (size_t i = 0; i < nTasks; ++i) {
+    finished.emplace_back(AsyncValueRef<Chain>::allocate(*runtime));
+    addTask(*runtime, [i, &canRun, finished = finished[i].copy()]() mutable {
+      canRun[i].wait();
+      std::move(finished).emplace<Chain>();
+    });
+  }
+
+  std::thread foreign[nTasks];
+  for (size_t i = 0; i < nTasks; ++i)
+    foreign[i] = std::thread(
+        [i, &finished]() { await(finished[i], /*mayDonate=*/false); });
 
   for (size_t i = 0; i < nTasks; ++i)
     canRun[i].post();

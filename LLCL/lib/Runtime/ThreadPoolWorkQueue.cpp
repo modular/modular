@@ -33,19 +33,20 @@ using namespace M::LLCL;
 //  - Worker thread: a thread we create which is running a dedicated runItems
 //    loop. These threads have a 'workerID' > 0.
 //  - Foreign thread: any non-worker thread which interacts with the
-//    ThreadPoolWorkQueue. For the most part it's ok to have multiple foreign
-//    threads, for example a server which creates a thread per request may
-//    trigger calls to the ThreadPoolWorkQueue to addTask and await.
+//    ThreadPoolWorkQueue. It's ok to have any number of foreign threads,
+//    for example a server which creates a thread per request may
+//    trigger calls to the ThreadPoolWorkQueue to addTasks or await.
 //  - Working foreign thread: a distinguished foreign thread currently running
-//    a runItems loop within an await or shutdown. At most one working
-//    foreign thread can be active at a time, however it's ok for different
-//    threads to call await sequentially. In effect, a working foreign thread
-//    has temporarily donated itself to be the N'th worker when numThreads = N.
+//    a runItems loop within an await or shutdown. At most one working foreign
+//    thread can be active at a time, however it's ok for different threads to
+//    become working foreign threads over time. In effect, a working foreign
+//    thread has temporarily donated itself to be a worker.
 //  - Blocked foreign thread: a foreign thread which has called await when
-//    there already exists a working foreign thread. The thread sleeps on a
-//    semaphore until its dependent async values are ready, thus relying on
-//    existing worker threads and the working foreign thread to run work
-//    items on its behalf.
+//     a) there already exists a working foreign thread, or
+//     b) when mayDonate is false
+//    The thread sleeps on a semaphore until its dependent async values are
+//    ready, thus relying on existing worker threads (and maybe the working
+//    foreign thread) to run work items on its behalf.
 //
 
 //===----------------------------------------------------------------------===//
@@ -54,7 +55,7 @@ using namespace M::LLCL;
 
 /// Set to true to force waiters triggered by an emplace from a 'foreign'
 /// thread not running an await loop to run immediately. Otherwise they will
-/// be enqued as an LLCL task (unless the task queue is full).
+/// be enqueued as an LLCL task (unless the task queue is full).
 constexpr bool kRunImmediatelyOnForeignThreads = false;
 
 /// Minimum task list capacity.
@@ -94,6 +95,7 @@ static constexpr auto printWorkerId(size_t workerID) {
 struct SharedThreadState {
   static_assert(std::atomic<SuspendedThreadsBitvec>::is_always_lock_free,
                 "suspendedThreads should always be lock free");
+
   /// This flag indicates when a thread should quit working and get ready to be
   /// joined.
   std::atomic<bool> doneFlag = false;
@@ -166,12 +168,10 @@ struct SharedThreadState {
 namespace {
 
 /// The index of the current thread within the WorkQueueThread workers
-/// vector. However all 'foreign' threads have index 0, and only
-/// worker threads will have a non-zero index.
+/// vector.
 static thread_local size_t workerIDInTLS = 0;
 
-/// Wrapper around an std::thread created for each worker thread, along
-/// with one to represent all 'foreign' threads.
+/// Wrapper around an std::thread created for each worker thread.
 struct WorkQueueThread {
   /// Overall state shared by all threads.
   SharedThreadState &sharedState;
@@ -185,14 +185,11 @@ struct WorkQueueThread {
   SmallVector<TaskFunction, 6> localTaskList;
   /// The overall ThreadPoolWorkQueue's task list we can take tasks from.
   LockFreeRingBuffer<ProfiledTaskFunction> &taskList;
-  /// Unique index for this thread.
-  ///
-  /// Thread index #0 is reserved for all 'foreign' threads. Though we create
-  /// an entry for this index in the ThreadPoolWorkQueue workers it is not
-  /// running a runOnThread work loop. However, a foreign thread may call
-  /// runItems while awaiting or for shutdown.
+  /// Unique index for this thread. Index #0 is reserved to represent all
+  /// 'foreign' threads, and will not have a dedicated thread.
   size_t workerID;
-  /// The CPU we'd prefer this worker to have affinity for.
+  /// The CPU we'd prefer this worker to have affinity for, or ~0 if no
+  /// affinity is intended for this worker.
   size_t cpuID;
   /// This is a per-worker semaphore that this blocks on when they run
   /// out of things to do.
@@ -208,16 +205,16 @@ struct WorkQueueThread {
   size_t numRecursiveCalls = 0;
   /// The profiling entry for the currently running work item, or null if none.
   /// This entry is manipulated to accurately record when a task is actually
-  /// do 'its own' work rather than other tasks as a side effect of calling
-  /// await.
+  /// executing 'its own' work rather than executing other work items as a
+  /// side effect of calling await.
   WorkProfilerEntry *running = nullptr;
-  // The underlying worker thread, or none if this object reperesents all
+  // The underlying worker thread, or none if this object represents all
   // 'foreign' threads.
   std::optional<std::thread> thread;
 
   /// Create a `WorkQueueThread` representing the worker with workerID.
-  /// If workedID is > 0 then a worker thread is created and enters the
-  /// runItems loop. Otherwise the result represents all 'foreign' threads.
+  /// Unless representing all 'foreign' threads, a new thread is created
+  /// and enters a runItems loop.
   WorkQueueThread(SharedThreadState &sharedState,
                   LockFreeRingBuffer<ProfiledTaskFunction> &taskList,
                   size_t workerID, size_t cpuID)
@@ -407,9 +404,19 @@ void WorkQueueThread::runItemsOnOwningThread(
     running = nullptr;
   }
 
-  runItemsImpl<EarlyStopPredicateFn, LateStopPredicateFn>(
-      earlyStopPredicate, lateStopPredicate, waitForTasks, spinningLabel,
-      sleepingLabel);
+  if (workerID == 0) {
+    // Since caller is a 'foreign' thread, temporarily set its thread
+    // affinity.
+    runWithThreadAffinity(cpuID, [&]() {
+      runItemsImpl<EarlyStopPredicateFn, LateStopPredicateFn>(
+          earlyStopPredicate, lateStopPredicate, waitForTasks, spinningLabel,
+          sleepingLabel);
+    });
+  } else {
+    runItemsImpl<EarlyStopPredicateFn, LateStopPredicateFn>(
+        earlyStopPredicate, lateStopPredicate, waitForTasks, spinningLabel,
+        sleepingLabel);
+  }
 
   if (origRunning) {
     // Resume tracing the original work item.
@@ -533,7 +540,7 @@ public:
 
   void addLocalTask(TaskFunction work) override;
 
-  void await(ArrayRef<AnyAsyncValueRef> values) override;
+  void await(ArrayRef<AnyAsyncValueRef> values, bool mayDonate) override;
 
   size_t getParallelismLevel() const final {
     // `numWorkers` is set to the number of worker threads that are created
@@ -557,9 +564,8 @@ private:
     return workers + workerID;
   }
 
-  /// This is the set of worker threads in the WorkQueue.  Note that we
-  /// reserve entry #0 for foreign threads that may get donated to this
-  /// queue.  That means that we never start worker #0.
+  /// This is the set of worker threads in the WorkQueue. Entry #0 is reserved
+  /// for at most one foreign thread which may donate to this work queue.
   const size_t numWorkers;
   WorkQueueThread *workers;
 
@@ -578,7 +584,8 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(const std::vector<size_t> &cpuIDs,
   assert(numWorkers <= kMaxWorkers && "Too many workers for bitvec width");
   // Initialize each thread with its required state. Note that workerID #0
   // does not start itself since it represents all 'foreign' threads.
-  // workers.reserve(numWorkers);
+  // We're doing this the hard way since WorkQueueThreads have non-moveable
+  // atomics.
   workers = static_cast<WorkQueueThread *>(
       malloc(sizeof(WorkQueueThread) * numWorkers));
   assert(workers);
@@ -689,7 +696,8 @@ void ThreadPoolWorkQueue::addLocalTask(M::LLCL::TaskFunction work) {
   callerWorker->addLocalTask(std::move(work));
 }
 
-void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
+void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values,
+                                bool mayDonate) {
   // If all the values are ready, then we don't have to do anything.
   if (llvm::all_of(values, [](auto &av) { return av.isReady(); }))
     return;
@@ -704,7 +712,7 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
   // Figure out if the calling thread can be considered to own the
   // WorkQueueThread, and thus can start processing work items while
   // waiting.
-  if (awaitingWorker->ensureOwningThread()) {
+  if (mayDonate && awaitingWorker->ensureOwningThread()) {
     // As each value becomes available, we can decrement our counts.  When done,
     // we signal the semaphore for this worker to make sure to wake it up if it
     // fell asleep.
@@ -763,15 +771,13 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
     awaitingWorker->releaseOwningThread();
 
   } else {
-    // The caller is a 'foreign' thread, and some other foreign thread is
-    // already in an await loop, processing work items. Simply sleep until
-    // all values are available, letting the other workers and foreign thread
-    // do work on the caller's behalf.
+    // The caller is a 'foreign' thread, and either some other foreign thread is
+    // already in an await loop, or the caller does not wish to run work items
+    // while waiting. Simply sleep until all values are available, letting the
+    // other workers do work on the caller's behalf.
     //
     // Ideally we'd sleep only until all our values are ready or the other
     // foreign thread is done with its runItems loop, whichever is sooner.
-    // However, this feels like a mismatch with the work queue's notion of
-    // N-1 worker threads with the 'main' thread acting as the N'th.
     Semaphore sema;
     // As each value becomes available, we can decrement our counts.  When done,
     // we signal the semaphore for this worker to make sure to wake it up if it
@@ -796,7 +802,7 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
 //===----------------------------------------------------------------------===//
 
 std::unique_ptr<WorkQueue>
-M::LLCL::createThreadPoolWorkQueue(size_t numThreads) {
+M::LLCL::createThreadPoolWorkQueue(size_t numThreads, bool mainWillDonate) {
   CPUSystemInfo systemInfo = CPUSystemInfo::get();
   LLVM_DEBUG(llvm::dbgs() << "createThreadPoolWorkQueue: " << systemInfo
                           << "\n");
@@ -835,6 +841,16 @@ M::LLCL::createThreadPoolWorkQueue(size_t numThreads) {
   LLVM_DEBUG(llvm::dbgs()
              << "createThreadPoolWorkQueue: Task list has capacity of at least "
              << taskListCapacity << " slots.\n");
+
+  if (!mainWillDonate) {
+    // Since we don't expect any foreign thread to call await with mayDonate
+    // true, allocate an additional worker, and mark the cpu for worker #0
+    // as 'no affinity'.
+    // However, no great harm comes if such a foreign thread does end up
+    // calling await with mayDonate true -- it will process work items, just
+    // without any specific cpu affinity.
+    cpuIDs.insert(cpuIDs.begin(), size_t(~0));
+  }
 
   return std::make_unique<ThreadPoolWorkQueue>(cpuIDs, taskListCapacity);
 }
