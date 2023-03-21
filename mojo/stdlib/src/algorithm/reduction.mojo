@@ -12,13 +12,9 @@ from Index import StaticIntTuple
 from Int import Int
 from Numerics import inf, neginf
 from List import (
+    DimList,
     Dim,
-    _get_kgen_list_item,
-    create_kgen_list,
-    create_kgen_list_unknown,
-    product_range,
-    product_or_unknown,
-    is_all_known_range,
+    create_dim_list,
 )
 from Range import range
 from SIMD import SIMD
@@ -89,8 +85,8 @@ fn reduce[
 @always_inline
 fn _reduce_3D[
     simd_width: Int,
-    input_shape: __mlir_type[`!kgen.list<index[3]>`],
-    output_shape: __mlir_type[`!kgen.list<index[2]>`],
+    input_shape: DimList[3],
+    output_shape: DimList[2],
     type: DType,
     acc_type: DType,
     map_fn: __mlir_type[
@@ -140,14 +136,13 @@ fn _reduce_3D[
 
         @always_inline
         fn reduce_inner_axis():
-            alias sz = _get_kgen_list_item[1, 3, __mlir_type.index](input_shape)
-            alias bufferDim = Dim.from_index[sz]()
+            alias sz = input_shape.at[1]()
             # TODO: parallelize
             for i in range(h):
                 let offset = src._offset(StaticIntTuple[3](i, 0, 0))
-                let input = Buffer[bufferDim, type](offset.address, w)
+                let input = Buffer[sz, type](offset.address, w)
                 let val = reduce[
-                    simd_width, bufferDim, type, acc_type, map_fn, reduce_fn
+                    simd_width, sz, type, acc_type, map_fn, reduce_fn
                 ](input, init)
                 dst[StaticIntTuple[2](i, 0)] = val
 
@@ -189,8 +184,8 @@ fn _reduce_3D[
 fn _prod_dims[
     start_dim: Int,
     end_dim: Int,
-    rank: __mlir_type.index,
-    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    rank: Int,
+    shape: DimList[rank],
     type: DType,
 ](x: NDBuffer[rank, shape, type]) -> Int:
     var product: Int = 1
@@ -206,9 +201,9 @@ fn _prod_dims[
 @always_inline
 fn reduce[
     simd_width: Int,
-    rank: __mlir_type.index,
-    input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    rank: Int,
+    input_shape: DimList[rank],
+    output_shape: DimList[rank],
     type: DType,
     acc_type: DType,
     map_fn: __mlir_type[
@@ -258,20 +253,12 @@ fn reduce[
     let w_dynamic = src.dim[reduce_axis]()
     let c_dynamic = _prod_dims[reduce_axis + 1, rank](src)
 
-    alias h_static = product_or_unknown[rank, input_shape, 0, reduce_axis]()
-    alias w_static = _get_kgen_list_item[reduce_axis, rank, __mlir_type.index](
-        input_shape
-    )
-    alias c_static = product_or_unknown[
-        rank, input_shape, reduce_axis + 1, rank
-    ]()
+    alias h_static = input_shape.product_range[0, reduce_axis]()
+    alias w_static = input_shape.at[reduce_axis]()
+    alias c_static = input_shape.product_range[reduce_axis + 1, rank]()
 
-    alias input_3d_shape = create_kgen_list[__mlir_type.index](
-        h_static, w_static, c_static
-    )
-    alias output_3d_shape = create_kgen_list[__mlir_type.index](
-        h_static, c_static
-    )
+    alias input_3d_shape = create_dim_list(h_static, w_static, c_static)
+    alias output_3d_shape = create_dim_list(h_static, c_static)
 
     let input_3d = NDBuffer[3, input_3d_shape, type](
         src.data, StaticIntTuple[3](h_dynamic, w_dynamic, c_dynamic), type
@@ -333,9 +320,9 @@ fn max[
 
 fn max[
     simd_width: Int,
-    rank: __mlir_type.index,
-    input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    rank: Int,
+    input_shape: DimList[rank],
+    output_shape: DimList[rank],
     type: DType,
     reduce_axis: __mlir_type.index,
 ](
@@ -398,9 +385,9 @@ fn min[
 
 fn min[
     simd_width: Int,
-    rank: __mlir_type.index,
-    input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    rank: Int,
+    input_shape: DimList[rank],
+    output_shape: DimList[rank],
     type: DType,
     reduce_axis: __mlir_type.index,
 ](
@@ -463,9 +450,9 @@ fn sum[
 
 fn sum[
     simd_width: Int,
-    rank: __mlir_type.index,
-    input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    rank: Int,
+    input_shape: DimList[rank],
+    output_shape: DimList[rank],
     type: DType,
     reduce_axis: __mlir_type.index,
 ](
@@ -528,9 +515,9 @@ fn product[
 
 fn product[
     simd_width: Int,
-    rank: __mlir_type.index,
-    input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    rank: Int,
+    input_shape: DimList[rank],
+    output_shape: DimList[rank],
     type: DType,
     reduce_axis: __mlir_type.index,
 ](
@@ -572,9 +559,9 @@ fn mean[
 
 fn mean[
     simd_width: Int,
-    rank: __mlir_type.index,
-    input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    rank: Int,
+    input_shape: DimList[rank],
+    output_shape: DimList[rank],
     type: DType,
     reduce_axis: __mlir_type.index,
 ](

@@ -12,7 +12,7 @@ from Int import Int
 from Index import StaticIntTuple
 from IO import print
 from Range import range
-from List import create_kgen_list, _get_kgen_list_item
+from List import DimList, create_dim_list
 
 
 # CHECK-LABEL: test_reductions
@@ -82,8 +82,8 @@ fn test_3d_reductions():
 
     @always_inline
     fn _test_3d_reductions[
-        input_shape: __mlir_type[`!kgen.list<index[3]>`],
-        output_shape: __mlir_type[`!kgen.list<index[3]>`],
+        input_shape: DimList[3],
+        output_shape: DimList[3],
         reduce_axis: __mlir_type.index,
     ]():
         let input = NDBuffer[3, input_shape, DType.f32].stack_allocation()
@@ -110,8 +110,8 @@ fn test_3d_reductions():
     # CHECK-NEXT: [38.000000]
     # CHECK-NEXT: [54.000000]
     _test_3d_reductions[
-        create_kgen_list[__mlir_type.index](2, 2, 4),
-        create_kgen_list[__mlir_type.index](2, 2, 1),
+        create_dim_list(2, 2, 4),
+        create_dim_list(2, 2, 1),
         2,
     ]()
     # CHECK: [4.000000]
@@ -123,8 +123,8 @@ fn test_3d_reductions():
     # CHECK-NEXT: [24.000000]
     # CHECK-NEXT: [26.000000]
     _test_3d_reductions[
-        create_kgen_list[__mlir_type.index](2, 2, 4),
-        create_kgen_list[__mlir_type.index](2, 1, 4),
+        create_dim_list(2, 2, 4),
+        create_dim_list(2, 1, 4),
         1,
     ]()
     # CHECK: [8.000000]
@@ -136,8 +136,8 @@ fn test_3d_reductions():
     # CHECK-NEXT: [20.000000]
     # CHECK-NEXT: [22.000000]
     _test_3d_reductions[
-        create_kgen_list[__mlir_type.index](2, 2, 4),
-        create_kgen_list[__mlir_type.index](1, 2, 4),
+        create_dim_list(2, 2, 4),
+        create_dim_list(1, 2, 4),
         0,
     ]()
 
