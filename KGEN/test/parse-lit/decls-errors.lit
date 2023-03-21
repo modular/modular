@@ -401,15 +401,24 @@ struct MLIRAttrWithinStruct: # expected-note {{previously used here}}
 # In register structs may only have stored properties of other in-reg values.
 struct InMemStruct: pass
 
-# expected-error @+2 {{all members of `@register_passable` struct must themselves be register passable}}
+# expected-error @+2 {{all members of '@register_passable' struct must themselves be '@register_passable'}}
 @register_passable
 struct InRegStruct:
   var x: Int # ok
-  var y: InMemStruct # expected-note {{'y' declared with memory-only type '$decls-errors::InMemStruct'}}
+  var y: InMemStruct # expected-note {{'y' declared with type '$decls-errors::InMemStruct'}}
 
 struct OtherInMemStruct:
   var x: Int # ok
   var y: InMemStruct # ok
+
+
+@register_passable("trivial")
+struct InvalidMember:
+  var x: __mlir_type.index
+  # expected-error @+1 {{'@register_passable("trivial")' types may not have a '__copy__' method}}
+  fn __copy__(self) -> Self: pass
+  # expected-error @+1 {{'@register_passable("trivial")' types may not have a '__del__' method}}
+  fn __del__(self): pass
 
 def noop():  # expected-error {{expected body statements; use 'pass' if none is required}}
 

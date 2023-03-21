@@ -392,15 +392,14 @@ CValue ExprEmitter::emitBValueToRValue(ASTExprAnd<BValue> value,
   if (auto pValue = value.ir.getIfPValue())
     return emitCResult(pValue, value.expr, dest);
 
-  // If this is a user defined type, invoke the clone method.
-  if (value.ir.getRValueType().getDecl(shared))
+  // If this is a non-trivial type,
+  if (value.ir.getRValueType().getRegisterPassability(value.expr->getLoc(),
+                                                      shared) !=
+      StructDeclOp::RP_RegisterPassableTrivial)
     return emitNamedMethodCall("__copy__", {value}, dest,
                                CallSyntax::kImplicitConvert, value.expr);
 
-  // Otherwise this is a trivial type, then we can emit a direct use/load for
-  // it.
-  // TODO: Generalize this beyond MLIR types to being a flag on register
-  // passable.
+  // Otherwise we can emit a direct use/load for trivial types.
   SRValue result;
   if (auto sbVal = value.ir.getIfSBValue()) {
     result = SRValue(sbVal);

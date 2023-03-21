@@ -17,7 +17,7 @@ alias index = __mlir_type.index
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.struct.decl @OurSIMD<size, dt: @"$DType"::@DType>
-# CHECK-SAME: attributes {isRegisterPassable} {
+# CHECK-SAME: attributes {registerPassable = 1 : i8} {
 @register_passable
 struct OurSIMD[size: index, dt: DType]:
   fn __copy__(self) -> Self: pass

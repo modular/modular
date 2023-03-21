@@ -160,7 +160,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [Symbol, SymbolTable,
   let arguments = (ins SymbolNameAttr:$sym_name,
                        KGEN_ParamDeclArrayAttr:$inputParams,
                        UnitAttr:$paramVarargs,
-                       UnitAttr:$isRegisterPassable);
+                       DefaultValuedOptionalAttr<I8Attr, "0">:$registerPassable);
   let regions = (region SizedRegion<1>:$fields);
   let assemblyFormat = [{
     $sym_name `` custom<OptionalParameterSpec>($inputParams)
@@ -169,6 +169,13 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [Symbol, SymbolTable,
   }];
 
   let extraClassDeclaration = [{
+    // This is the value of the 'reisterPassable' field.
+    enum RegisterPassable : uint8_t {
+      RP_MemoryOnly = 0,
+      RP_RegisterPassable,
+      RP_RegisterPassableTrivial,
+    };
+
     /// Get the field declarations.
     auto getFieldDecls() { return getFields().getOps<StructFieldOp>(); }
     auto field_begin() { return getFieldDecls().begin(); }

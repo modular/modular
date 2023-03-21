@@ -1505,8 +1505,10 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
 
   // If this is a memory-only struct, initialize the fields into the result
   // buffer.
+  bool isResultMemoryOnly =
+      structOp.getRegisterPassable() == StructDeclOp::RP_MemoryOnly;
   SLValue memoryOnlyBase;
-  if (!structOp.getIsRegisterPassable())
+  if (isResultMemoryOnly)
     memoryOnlyBase = dest.getSLValueForResult(getLoc(), initType, emitter);
 
   DenseMap<StringAttr, ASTExprAnd<AnyValue>> fieldMapping;
@@ -1603,7 +1605,7 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
     }
 
     // Memory-only values have already been handled.
-    if (!structOp.getIsRegisterPassable())
+    if (isResultMemoryOnly)
       continue;
 
     // If all the initializers are PValues, we can emit this as a StructAttr.
@@ -1623,7 +1625,7 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
 
   // If this is memory-only, we've initialized all the fields.  Just return
   // the result.
-  if (!structOp.getIsRegisterPassable())
+  if (isResultMemoryOnly)
     return emitter.emitResult(MRValue(memoryOnlyBase), this, dest);
 
   // If all the fields are PValues, form a new PValue.

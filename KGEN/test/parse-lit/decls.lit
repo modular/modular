@@ -230,11 +230,17 @@ struct RPStructWithInit:
   var x: Int
   var y: Int
 
+@register_passable("trivial")
+struct RPStructWithInitTrivial:
+  var x: __mlir_type.index
+
 # CHECK-LABEL: lit.func @"ownedConventionReg
 # CHECK-SAME: (%a: !kgen.declref<@"$decls"::@RPStructWithInit>,
-# CHECK-SAME:  %b: !kgen.declref<@"$decls"::@RPStructWithInit> borrow)
+# CHECK-SAME:  %b: !kgen.declref<@"$decls"::@RPStructWithInit> borrow,
+# CHECK-SAME:  %triv: !kgen.declref<@"$decls"::@RPStructWithInitTrivial> borrow)
 fn ownedConventionReg(owned a: RPStructWithInit,
-                      borrowed b: RPStructWithInit):
+                      borrowed b: RPStructWithInit,
+                      borrowed triv: RPStructWithInitTrivial):
   # CHECK: %0 = lit.struct.extract %a[x]
   # CHECK: %_ = lit.varlet.decl
   # CHECK: %1 = kgen.call {{.*}}"__copy__{{.*}}(%0)
@@ -245,6 +251,10 @@ fn ownedConventionReg(owned a: RPStructWithInit,
   # CHECK: %3 = kgen.call {{.*}}"__copy__{{.*}}(%2)
   # CHECK: pop.store %3, %__0
   _ = b.y
+
+  # CHECK: %t = lit.letreg.decl "t" = %triv
+  # No copy call.
+  let t = triv
 
 
 struct BorrowStruct:
@@ -421,7 +431,7 @@ fn return_impl_convert_raises(a: Error) -> Error:
 # Structs
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.struct.decl @EmptyStruct attributes {isRegisterPassable} {
+# CHECK-LABEL: lit.struct.decl @EmptyStruct attributes {registerPassable = 1 : i8} {
 @register_passable
 struct EmptyStruct:
   pass

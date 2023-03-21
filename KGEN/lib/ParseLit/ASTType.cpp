@@ -62,23 +62,30 @@ bool ASTType::isEqualCanon(ASTType other) const {
   return mlirType == other.mlirType;
 }
 
+/// Return the StructDeclOp::RegisterPassable enum for this type.
+uint8_t ASTType::getRegisterPassability(llvm::SMLoc loc,
+                                        LitSharedState &shared) const {
+  ASTDecl *decl = getDecl(shared);
+  if (!decl) // MLIR types are assumed to be register-passable + Trivial.
+    return StructDeclOp::RP_RegisterPassableTrivial;
+
+  // Make sure we know about the signature of the type.
+  if (failed(shared.declResolver->resolveSignature(*decl, loc)))
+    return StructDeclOp::RP_MemoryOnly;
+
+  auto structOp = dyn_cast<StructDeclOp>(*decl);
+  assert(structOp && "only one user-defined type so far");
+  return structOp.getRegisterPassable();
+}
+
 /// Return true if this type is a register-passable type that can be passed
 /// around and copied in SSA values instead of having to live in memory.
 ///
 /// The location specifies the location of the reference in case the use is
 /// invalid in this location.
-bool ASTType::isRegisterPassable(SMLoc loc, LitSharedState &shared) const {
-  ASTDecl *decl = getDecl(shared);
-  if (!decl)
-    return true; // MLIR types are assumed to be register-passable.
-
-  // Make sure we know about the signature of the type.
-  if (failed(shared.declResolver->resolveSignature(*decl, loc)))
-    return false;
-
-  auto structOp = dyn_cast<StructDeclOp>(*decl);
-  assert(structOp && "only one user-defined type so far");
-  return structOp.getIsRegisterPassable();
+bool ASTType::isRegisterPassable(llvm::SMLoc loc,
+                                 LitSharedState &shared) const {
+  return getRegisterPassability(loc, shared) != StructDeclOp::RP_MemoryOnly;
 }
 
 /// Given a POP::PointerType, return the element as an ASTType.  This aborts
