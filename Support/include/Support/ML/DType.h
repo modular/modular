@@ -140,6 +140,9 @@ public:
   constexpr bool isValid() const { return !isInvalid(); }
   constexpr bool isInvalid() const { return value == invalid; }
   constexpr bool isBool() const { return value == DType::kBool; }
+  constexpr bool isBoolLike() const {
+    return value == DType::kBool || value == DType::ui8;
+  }
   constexpr bool isInt() const { return (value & mIsInteger) != 0; }
   constexpr bool isSInt() const { return isInt() & ((value & mIsSigned) != 0); }
   constexpr bool isUInt() const { return isInt() & ((value & mIsSigned) == 0); }
