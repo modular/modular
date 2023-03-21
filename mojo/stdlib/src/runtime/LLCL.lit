@@ -37,7 +37,7 @@ fn num_cores() -> Int:
 # ===----------------------------------------------------------------------===#
 
 
-@register_passable
+@register_passable("trivial")
 struct Chain:
     """This is an opaque instance of the C++ class `AsyncValueRef<Chain>`, whose
     size is the same as the pointer width.
@@ -45,14 +45,10 @@ struct Chain:
 
     var storage: __mlir_type.index
 
-    @always_inline("nodebug")
-    fn __copy__(self) -> Self:
-        return Self {storage: self.storage}
-
 
 # FIXME(traits): This shouldn't be a register_passable type but we need this
 # until we have traits for proper parametric types.
-@register_passable
+@register_passable("trivial")
 struct AsyncContext:
     """This struct models the coroutine context contained in every coroutine
     instance. The struct consists of a unary callback function that accepts a
@@ -218,14 +214,9 @@ struct Runtime:
 # Task
 # ===----------------------------------------------------------------------===#
 
-
+# TODO: This should not be implicitly copyable when we have ownership set up!
 struct Task[type: typename]:
     var handle: Coroutine[type]
-
-    # TODO: This should not be implicitly copyable when we have ownership all
-    # set up!
-    fn __copy__(self) -> Self:
-        return Self {handle: self.handle}
 
     fn get(self) -> type:
         """Get the task's result value."""
@@ -271,7 +262,7 @@ struct Task[type: typename]:
 
 # FIXME(traits): This shouldn't be a register_passable type but we need this
 # until we have traits for proper parametric types.
-@register_passable
+@register_passable("trivial")
 struct TaskGroupContext:
     alias tg_callback_fn_type = __mlir_type[
         `(!pop.pointer<`, TaskGroup, `>) -> !lit.none`
