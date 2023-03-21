@@ -20,7 +20,7 @@ alias index = __mlir_type.index
 # CHECK-SAME: attributes {isRegisterPassable} {
 @register_passable
 struct OurSIMD[size: index, dt: DType]:
-  fn __clone__(self) -> Self: pass
+  fn __copy__(self) -> Self: pass
 
 
 @register_passable
@@ -73,7 +73,7 @@ fn call_generic[dt: DType]():
 @register_passable
 struct TestParamStruct[A: __mlir_type.index]:
 
-  fn __clone__(self) -> Self:
+  fn __copy__(self) -> Self:
     return Self{}
 
   fn __init__() -> TestParamStruct[A]:
@@ -159,13 +159,13 @@ struct Pair[dt: DType]:
 
   # CHECK: lit.func @"__init__{{.*}} -> !kgen.declref<@"$parameters"::@Pair<dt: @"$DType"::@DType = dt>> attributes {isStatic}
   fn __init__(a: OurSIMD[42, dt]) -> Pair[dt]:
-    # CHECK: [[TMP:%.*]] = kgen.call {{.*}}__clone__{{.*}}(%a)
+    # CHECK: [[TMP:%.*]] = kgen.call {{.*}}__copy__{{.*}}(%a)
     # CHECK: %1 = kgen.param.constant: @"$Int"::@Int {{.*}} 4
     # CHECK:  = lit.struct.create(a=[[TMP]], b=%1) : (!kgen.declref<@"$parameters"::@OurSIMD<size = 42, dt: @"$DType"::@DType = dt>>, !kgen.declref<@"$Int"::@Int>) -> !kgen.declref<@"$parameters"::@Pair<dt: @"$DType"::@DType = dt>>
     return Pair[dt]{a: a, b: 4}
   # CHECK: }
 
-  fn __clone__(self) -> Self: pass
+  fn __copy__(self) -> Self: pass
 
 # CHECK: }
 
@@ -177,8 +177,8 @@ fn useParameterizedField[x: Pair[DType.f32]]():
 
 # CHECK-LABEL: lit.func @"makePair
 fn makePair(a: OurSIMD[42, DType.f32], b: Int) -> Pair[DType.f32]:
-  # CHECK: [[TMP1:%.*]] = kgen.call {{.*}}__clone__{{.*}}(%a)
-  # CHECK: [[TMP2:%.*]] = kgen.call {{.*}}__clone__{{.*}}(%b)
+  # CHECK: [[TMP1:%.*]] = kgen.call {{.*}}__copy__{{.*}}(%a)
+  # CHECK: [[TMP2:%.*]] = kgen.call {{.*}}__copy__{{.*}}(%b)
   # CHECK:  = lit.struct.create(a=[[TMP1]], b=[[TMP2]])
   return Pair[DType.f32]{a: a, b: b}
 
@@ -406,7 +406,7 @@ fn testUseOfAliases(a: Bool):
 struct MyDType:
   var state : __mlir_type.index
 
-  fn __clone__(self) -> Self:
+  fn __copy__(self) -> Self:
     return Self{state: self.state}
 
   fn __init__(value: __mlir_type.index) -> MyDType:
@@ -540,7 +540,7 @@ struct Abstraction[a: Int]:
   fn __init__() -> Self:
       return Self{}
 
-  fn __clone__(self) -> Self:
+  fn __copy__(self) -> Self:
       return self
 
   @staticmethod
@@ -584,7 +584,7 @@ struct AnotherAbstraction[a: Int]:
     fn __init__() -> Self:
         return Self{value: Abstraction[a + 1]()}
 
-    fn __clone__(self) -> Self:
+    fn __copy__(self) -> Self:
         return Self{value: self.value}
 
 # CHECK-LABEL: lit.func @"testDependentField()"

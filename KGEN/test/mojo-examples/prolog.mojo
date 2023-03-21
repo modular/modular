@@ -46,7 +46,7 @@ struct DType:
 
 @register_passable
 struct Scalar[type: DType]:
-    fn __clone__(self) -> Self:
+    fn __copy__(self) -> Self:
         return Self {}
 
 
@@ -60,7 +60,7 @@ struct StringRef:
     var data: __mlir_type.`!pop.pointer<!pop.scalar<si8>>`
     var size: Int
 
-    fn __clone__(self) -> Self:
+    fn __copy__(self) -> Self:
         return Self {data: self.data, size: self.size}
 
     fn __init__(
@@ -86,7 +86,7 @@ struct StringRef:
 struct Error:
     var msg: StringRef
 
-    fn __clone__(self) -> Self:
+    fn __copy__(self) -> Self:
         return Self {msg: self.msg}
 
     fn __init__(msg: StringRef) -> Error:
@@ -139,5 +139,5 @@ struct ErrorOr[type: __mlir_type.`!kgen.mlirtype`]:
 # is just a placeholder to be used by untyped 'def' operands.
 @register_passable
 struct object:
-    fn __clone__(self) -> Self:
+    fn __copy__(self) -> Self:
         return Self {}

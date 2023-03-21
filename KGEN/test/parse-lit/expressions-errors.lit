@@ -33,7 +33,7 @@ struct LValuesRvalues:
   fn __init__() -> LValuesRvalues:
     return LValuesRvalues{}
 
-  fn __clone__(self) -> Self:
+  fn __copy__(self) -> Self:
     return Self{a: 1} # expected-error {{'$expressions-errors::LValuesRvalues' has no field named 'a'}}
 
   def normalMethod(self): pass
@@ -48,7 +48,7 @@ struct MemoryPrimaryPair:
   var x: Int
   var y: Int
   fn __init__() -> Self: return Self {x: 0, y: 0}
-  fn __clone__(self) -> Self: return Self {x: 0, y: 0}
+  fn __copy__(self) -> Self: return Self {x: 0, y: 0}
 
 struct NonCopyable:
   fn __init__() -> Self: return Self {}
@@ -83,8 +83,8 @@ def testLValuesRvalues():
   var nc1 = NonCopyable()
   let nc2 = NonCopyable()
 
-  let nc3 = nc1 # expected-error {{'$expressions-errors::NonCopyable' does not implement the '__clone__' method}}
-  let nc4 = nc2 # expected-error {{'$expressions-errors::NonCopyable' does not implement the '__clone__' method}}
+  let nc3 = nc1 # expected-error {{'$expressions-errors::NonCopyable' does not implement the '__copy__' method}}
+  let nc4 = nc2 # expected-error {{'$expressions-errors::NonCopyable' does not implement the '__copy__' method}}
 
   let mpPair = MemoryPrimaryPair()
   mpPair.x = 1 # expected-error {{expression must mutable in assignment}}
@@ -152,7 +152,7 @@ def tuple_return():
 @register_passable
 struct WeirdBoolish:
   fn __bool__(self) -> Int: return Int(0)
-  fn __clone__(self) -> Self: pass;
+  fn __copy__(self) -> Self: pass;
 
 fn badAnd(a: Bool, b: WeirdBoolish):
   _ = a and b # expected-error {{cannot find common type between '$_CompilerBuiltin::Bool' and '$expressions-errors::WeirdBoolish'}}
