@@ -36,6 +36,7 @@
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/ToolOutputFile.h"
+#include "llvm/Target/TargetMachine.h"
 
 using namespace M;
 using namespace KGEN;
@@ -315,7 +316,15 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // Now we can load it into the JIT - we're definitely executing the thing.
 
   // Now create the execution engine so we can JIT.
-  auto engineOr = ExecutionEngine::create(compilationOptions);
+  auto tmOr = createTargetMachine(compilationOptions,
+                                  /*isJIT=*/true);
+  if (tmOr.isError())
+    return failure(clOptions.reportError(tmOr.getError()));
+
+  auto engineOr = ExecutionEngine::create(
+      {/*registerDebugPlugins=*/compilationOptions.debugLevel !=
+       CompilationOptions::DebugInfoLevel::kNoDebug},
+      **tmOr);
   if (failed(engineOr))
     return failure(clOptions.reportError(engineOr.getError()));
   ExecutionEngine engine = std::move(*engineOr);

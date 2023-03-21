@@ -40,7 +40,7 @@ cache_files(orc-rt-cas
   INPUT_NAMES "kOrcRT"
   RELATIVE_INSTALL_DIR ".kgen_cache/orc")
 
-add_modular_mlir_library(KGENExecutionEngine
+add_modular_library(KGENExecutionEngine
   ExecutionEngine.cpp
 
   LINK_COMPONENTS
@@ -54,13 +54,7 @@ add_modular_mlir_library(KGENExecutionEngine
   orc-rt-cas
 
   LINK_LIBS PUBLIC
-  KGENDialect
-  KGENToLLVM
-  KGENEmitObject
-
+  LLCLRuntime
   MCache
-
-  MLIRLLVMToLLVMIRTranslation
-  MLIRIndexToLLVM
-  MLIRTargetLLVMIRExport
+  MSupport
   )

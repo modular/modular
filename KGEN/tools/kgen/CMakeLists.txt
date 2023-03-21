@@ -18,6 +18,8 @@ add_modular_tool(kgen
   KGENCompiler
   KGENCompilerRT
   KGENDialect
+  KGENEmitObject
+  KGENExecutionEngine
   LITDialect
   LLCLRuntimeGlobals
   POPDialect

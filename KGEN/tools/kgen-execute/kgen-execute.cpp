@@ -22,6 +22,7 @@
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/ToolOutputFile.h"
+#include "llvm/Target/TargetMachine.h"
 
 using namespace M;
 using namespace KGEN;
@@ -123,8 +124,16 @@ struct ProcessBuffer {
       return func;
     };
 
-    auto engineOr =
-        KGEN::ExecutionEngine::create(clOptions.getCompilationOptions());
+    // Now create the execution engine so we can JIT.
+    auto tmOr = createTargetMachine(clOptions.getCompilationOptions(),
+                                    /*isJIT=*/true);
+    if (tmOr.isError())
+      return failure(clOptions.reportError(tmOr.getError()));
+
+    auto engineOr = ExecutionEngine::create(
+        {/*registerDebugPlugins=*/compilationOptions.debugLevel !=
+         CompilationOptions::DebugInfoLevel::kNoDebug},
+        **tmOr);
     if (engineOr.isError()) {
       clOptions.reportError(engineOr.getError());
       return failure();

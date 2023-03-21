@@ -11,11 +11,13 @@ add_modular_library(MSupport
   HMAC.cpp
   Host.cpp
   MicroBenchmark.cpp
+  Target.cpp
   TempFile.cpp
   TimeProfiler.cpp
 
   LINK_LIBS PUBLIC
   LLVMSupport
+  LLVMTarget
   LLVMTargetParser
   MLIRSupport
 
