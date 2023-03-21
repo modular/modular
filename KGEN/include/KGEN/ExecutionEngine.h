@@ -18,7 +18,7 @@
 
 namespace llvm {
 class TargetMachine;
-}
+} // namespace llvm
 
 namespace M::KGEN {
 /// This is a struct of options that the ExecutionEngine wants to have on
