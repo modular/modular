@@ -49,7 +49,7 @@ fn get_pack_data_size() -> Int:
     return 128 * 1024
 
 
-@register_passable
+@register_passable("trivial")
 struct MatmulConfig:
     """Static configuration of tiled matmul algorithms."""
 
@@ -81,7 +81,7 @@ struct MatmulConfig:
     var prefetch_b_distance_k: Int
 
 
-@register_passable
+@register_passable("trivial")
 struct MatmulDataType:
     """Record describing the data types of the matrices in a matmul"""
 
@@ -92,7 +92,7 @@ struct MatmulDataType:
     var value_type: DType
 
 
-@register_passable
+@register_passable("trivial")
 struct MatmulOperandLayout:
     """Record describing the data layouts of the matmul operands as well as
     intermediate matrices.
@@ -116,18 +116,8 @@ struct MatmulOperandLayout:
     # The inner dimension size for packed B matrix if B is pre-packed.
     var pack_b_inner_size: Int
 
-    fn __copy__(self) -> Self:
-        return Self {
-            transpose_a: self.transpose_a,
-            transpose_b: self.transpose_b,
-            pack_a_inner_size: self.pack_a_inner_size,
-            pack_b_inner_size: self.pack_b_inner_size,
-            a_packed: self.a_packed,
-            b_packed: self.b_packed,
-        }
 
-
-@register_passable
+@register_passable("trivial")
 struct GemmShape:
     """Helper class to unpack gemm dimension and layout."""
 
@@ -213,9 +203,6 @@ struct GemmShape:
         if idx == 2:
             self.K = value
             return
-
-    fn __copy__(self) -> Self:
-        return Self {M: self.M, N: self.N, K: self.K}
 
     fn __init__(m: Int, n: Int, k: Int) -> GemmShape:
         """Constructor of a gemm shape record by directly supplying the values.
