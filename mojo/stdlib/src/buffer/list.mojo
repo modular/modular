@@ -70,7 +70,7 @@ struct Dim:
         return __mlir_op.`pop.variant.create`[_type:type](__mlir_attr.`0 : i1`)
 
     @always_inline
-    fn __clone__(self&) -> Dim:
+    fn __clone__(self) -> Dim:
         """Clone the dimension.
 
         Args:
@@ -928,7 +928,7 @@ struct VariadicList[type: __mlir_type.`!kgen.mlirtype`]:
     alias StorageType = __mlir_type[`!kgen.variadic<`, type, `>`]
     var value: StorageType
 
-    fn __clone__(self&) -> Self:
+    fn __clone__(self) -> Self:
         return Self {value: self.value}
 
     fn __init__(*value: type) -> Self:

@@ -73,7 +73,7 @@ struct Buffer[size: Dim, type: DType]:
 
     # TODO: This should not be implicitly copyable when we have ownership all
     # set up!
-    fn __clone__(self&) -> Self:
+    fn __clone__(self) -> Self:
         return Self {
             data: self.data, dynamic_size: self.dynamic_size, dtype: self.dtype
         }
@@ -466,7 +466,7 @@ struct NDBuffer[
     var is_contiguous: Bool
 
     @always_inline("nodebug")
-    fn __clone__(self&) -> Self:
+    fn __clone__(self) -> Self:
         return Self {
             data: self.data,
             _rank: self._rank,
@@ -887,7 +887,7 @@ struct DynamicRankBuffer:
     var type: DType
 
     @always_inline
-    fn __clone__(self&) -> Self:
+    fn __clone__(self) -> Self:
         return Self {
             data: self.data, rank: self.rank, shape: self.shape, type: self.type
         }
