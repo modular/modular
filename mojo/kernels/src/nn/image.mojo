@@ -4,14 +4,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Buffer import (
-    NDBuffer,
-)
+from Buffer import NDBuffer
 from Int import Int
 from SIMD import SIMD
 from Index import Index, StaticIntTuple
 from Assert import assert_param, assert_param_bool, debug_assert
 from DType import DType
+from List import DimList
 
 # Data layout encoding.
 @register_passable
@@ -41,7 +40,7 @@ struct Image2DLayout:
 
 @register_passable
 struct ImageData[
-    shape: __mlir_type[`!kgen.list<index[4]>`],
+    shape: DimList[4],
     type: DType,
     static_layout: Image2DLayout,
 ]:
@@ -259,7 +258,7 @@ struct ImageShape:
         return Self {N: self.N, C: self.C, H: self.H, W: self.W}
 
     fn __init__[
-        shape: __mlir_type[`!kgen.list<index[4]>`],
+        shape: DimList[4],
         type: DType,
         layout: Image2DLayout,
     ](image_data: ImageData[shape, type, layout]) -> ImageShape:

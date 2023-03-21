@@ -15,7 +15,7 @@ from DType import DType
 from Functional import vectorize
 from Index import Index
 from Int import Int
-from List import Dim, create_kgen_list_unknown
+from List import Dim, DimList
 from Memory import memcpy
 from Pointer import DTypePointer
 from SIMD import SIMD
@@ -34,9 +34,9 @@ fn _fill[
 
 
 fn pad[
-    rank: __mlir_type.index,
-    output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    rank: Int,
+    output_shape: DimList[rank],
+    input_shape: DimList[rank],
     type: DType,
 ](
     output: NDBuffer[rank, output_shape, type],
@@ -87,8 +87,8 @@ fn pad[
 
 
 fn _pad_impl[
-    rank: __mlir_type.index,
-    output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    rank: Int,
+    output_shape: DimList[rank],
     type: DType,
 ](
     axis: Int,

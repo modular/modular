@@ -7,14 +7,13 @@ from Index import Index, StaticIntTuple
 from Int import Int
 from Buffer import NDBuffer, Buffer
 from SIMD import SIMD
-from List import create_kgen_list_unknown, create_kgen_list
 from Image import (
     ImageData,
     Image2DLayout,
     ImageShape,
 )
 from Range import range
-from List import _get_kgen_list_item
+from List import DimList
 from Math import min, max, add, div_ceil
 from Functional import parallelize, vectorize_unroll
 from LLCL import Runtime
@@ -27,9 +26,9 @@ from Numerics import neginf
 
 @register_passable
 struct Pool2d[
-    static_output_shape: __mlir_type[`!kgen.list<index[4]>`],
-    static_kernel_shape: __mlir_type[`!kgen.list<index[2]>`],
-    static_input_shape: __mlir_type[`!kgen.list<index[4]>`],
+    static_output_shape: DimList[4],
+    static_kernel_shape: DimList[2],
+    static_input_shape: DimList[4],
     type: __mlir_type.`!kgen.dtype`,
     static_data_layout: Image2DLayout,
     init_fn: __mlir_type[`!kgen.signature<<>() -> `, SIMD[1, type], `>`],
@@ -242,12 +241,8 @@ struct Pool2d[
             self.input_shape.H, self.input_shape.W
         )
 
-        let r_size = Int(
-            _get_kgen_list_item[0, 2, __mlir_type.index](static_kernel_shape)
-        )
-        let s_size = Int(
-            _get_kgen_list_item[1, 2, __mlir_type.index](static_kernel_shape)
-        )
+        let r_size = static_kernel_shape.at[0]().get()
+        let s_size = static_kernel_shape.at[1]().get()
 
         # Iterate on filter height dimension.
         for r_idx in range(r_size):

@@ -11,7 +11,7 @@ from DType import DType
 from Index import StaticIntTuple
 from Int import Int
 from IO import print
-from List import create_kgen_list
+from List import DimList, create_dim_list
 
 
 # CHECK-LABEL: test_broadcast_same_shape
@@ -19,8 +19,8 @@ fn test_broadcast_same_shape():
     print("== test_broadcast_same_shape\n")
 
     # parameters
-    alias input_shape = create_kgen_list[__mlir_type.index](1, 2, 1)
-    alias output_shape = create_kgen_list[__mlir_type.index](1, 2, 1)
+    alias input_shape = create_dim_list(1, 2, 1)
+    alias output_shape = create_dim_list(1, 2, 1)
 
     # Create a 3D tensor of shape (1, 2, 1), of the form
     # [[[1], [2]]]
@@ -63,8 +63,8 @@ fn test_broadcast_single_axis():
     print("== test_broadcast_single_axis\n")
 
     # parameters
-    alias input_shape = create_kgen_list[__mlir_type.index](1, 2)
-    alias output_shape = create_kgen_list[__mlir_type.index](3, 2)
+    alias input_shape = create_dim_list(1, 2)
+    alias output_shape = create_dim_list(3, 2)
 
     # Create a 2D tensor of shape (1, 2), of the form
     # [[1, 2]]
@@ -116,8 +116,8 @@ fn test_broadcast_multi_axes():
     print("== test_broadcast_multi_axes\n")
 
     # parameters
-    alias input_shape = create_kgen_list[__mlir_type.index](1, 2, 1)
-    alias output_shape = create_kgen_list[__mlir_type.index](2, 2, 3)
+    alias input_shape = create_dim_list(1, 2, 1)
+    alias output_shape = create_dim_list(2, 2, 3)
 
     # Create a 3D tensor of shape (1, 2, 1), of the form
     # [[[1], [2]]]
@@ -180,8 +180,8 @@ fn test_broadcast_multi_axes():
 fn test_broadcast_multi_axes_nested():
 
     # parameters
-    alias input_shape = create_kgen_list[__mlir_type.index](2, 1, 2, 1, 2)
-    alias output_shape = create_kgen_list[__mlir_type.index](2, 2, 2, 2, 2)
+    alias input_shape = create_dim_list(2, 1, 2, 1, 2)
+    alias output_shape = create_dim_list(2, 2, 2, 2, 2)
 
     # Create a 5D tensor of shape (2, 1, 2, 1, 2), of the form
     # [[[[[1, 2]], [[3, 4]]]], [[[[5, 6]], [[7, 8]]]]]

@@ -11,6 +11,7 @@ from Int import Int
 from Memory import memcpy
 from Pointer import DTypePointer
 from Range import range
+from List import DimList
 from TargetInfo import dtype_sizeof
 
 
@@ -20,9 +21,9 @@ from TargetInfo import dtype_sizeof
 
 
 fn _get_rightmost_broadcast_axis[
-    rank: __mlir_type.index,
-    output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    rank: Int,
+    output_shape: DimList[rank],
+    input_shape: DimList[rank],
     type: DType,
 ](
     output: NDBuffer[rank, output_shape, type],
@@ -52,9 +53,9 @@ fn _get_rightmost_broadcast_axis[
 
 
 fn broadcast[
-    rank: __mlir_type.index,
-    output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    rank: Int,
+    output_shape: DimList[rank],
+    input_shape: DimList[rank],
     type: DType,
 ](
     output: NDBuffer[rank, output_shape, type],
@@ -98,9 +99,9 @@ fn broadcast[
 
 
 fn broadcast_impl[
-    rank: __mlir_type.index,
-    output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    rank: Int,
+    output_shape: DimList[rank],
+    input_shape: DimList[rank],
     type: DType,
 ](
     axis: Int,

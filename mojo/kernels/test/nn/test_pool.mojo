@@ -10,7 +10,7 @@ from DType import DType
 from Index import StaticIntTuple
 from Int import Int
 from IO import print
-from List import create_kgen_list
+from List import create_dim_list, DimList
 from Image import (
     ImageData,
     Image2DLayout,
@@ -33,7 +33,7 @@ from LLCL import Runtime
 
 
 fn fill_buffer[
-    shape: __mlir_type[`!kgen.list<index[4]>`]
+    shape: DimList[4]
 ](buf: NDBuffer[4, shape, DType.f32.value,]):
     var s: Int = 1
     for i in range(buf.get_rank()):
@@ -44,7 +44,7 @@ fn fill_buffer[
 
 
 fn print_buffer[
-    shape: __mlir_type[`!kgen.list<index[4]>`]
+    shape: DimList[4]
 ](buf: NDBuffer[4, shape, DType.f32,]):
     var s: Int = 1
     for i in range(buf.get_rank()):
@@ -62,9 +62,9 @@ struct PoolMethod:
 fn pool(pool_method: Int):
     let runtime = Runtime()
 
-    alias in_shape = create_kgen_list[__mlir_type.index](2, 2, 5, 7)
-    alias out_shape = create_kgen_list[__mlir_type.index](2, 2, 2, 2)
-    alias kernel_shape = create_kgen_list[__mlir_type.index](3, 2)
+    alias in_shape = create_dim_list(2, 2, 5, 7)
+    alias out_shape = create_dim_list(2, 2, 2, 2)
+    alias kernel_shape = create_dim_list(3, 2)
 
     # Create an input buffer.
     var input_buffer = NDBuffer[4, in_shape, DType.f32.value].stack_allocation()

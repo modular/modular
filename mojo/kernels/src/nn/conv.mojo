@@ -24,7 +24,7 @@ from Matmul import (
     PackMatrixRows,
 )
 from Math import div_ceil, min, max
-from List import create_kgen_list_unknown, create_kgen_list
+from List import DimList, create_dim_list
 from Range import range
 from TargetInfo import simd_byte_width
 from Pointer import DTypePointer, Pointer
@@ -81,9 +81,9 @@ struct ConvShape:
 
 @adaptive
 fn get_conv2d_shape[
-    output_shape: __mlir_type[`!kgen.list<index[4]>`],
-    input_shape: __mlir_type[`!kgen.list<index[4]>`],
-    filter_shape: __mlir_type[`!kgen.list<index[4]>`],
+    output_shape: DimList[4],
+    input_shape: DimList[4],
+    filter_shape: DimList[4],
     type: DType,
     data_layout: Image2DLayout,
     filter_layout: Image2DLayout,
@@ -118,9 +118,9 @@ fn get_conv2d_shape[
 
 @adaptive
 fn get_conv2d_shape[
-    output_shape: __mlir_type[`!kgen.list<index[4]>`],
-    input_shape: __mlir_type[`!kgen.list<index[4]>`],
-    filter_shape: __mlir_type[`!kgen.list<index[4]>`],
+    output_shape: DimList[4],
+    input_shape: DimList[4],
+    filter_shape: DimList[4],
     type: DType,
     data_layout: Image2DLayout,
     filter_layout: Image2DLayout,
@@ -155,9 +155,9 @@ fn get_conv2d_shape[
 
 @adaptive
 fn get_conv2d_shape[
-    output_shape: __mlir_type[`!kgen.list<index[4]>`],
-    input_shape: __mlir_type[`!kgen.list<index[4]>`],
-    filter_shape: __mlir_type[`!kgen.list<index[4]>`],
+    output_shape: DimList[4],
+    input_shape: DimList[4],
+    filter_shape: DimList[4],
     type: DType,
     data_layout: Image2DLayout,
     filter_layout: Image2DLayout,
@@ -191,9 +191,9 @@ fn get_conv2d_shape[
 
 
 struct Naive2dConvolution[
-    static_output_shape: __mlir_type[`!kgen.list<index[4]>`],
-    static_filter_shape: __mlir_type[`!kgen.list<index[4]>`],
-    static_input_shape: __mlir_type[`!kgen.list<index[4]>`],
+    static_output_shape: DimList[4],
+    static_filter_shape: DimList[4],
+    static_input_shape: DimList[4],
     type: DType,
     static_data_layout: Image2DLayout,
     static_filter_layout: Image2DLayout,
@@ -451,9 +451,9 @@ fn conv_one_dimensional_padding(
 
 struct PackIm2ColNCHW[
     # original matrix shape list
-    static_original_shape: __mlir_type[`!kgen.list<index[4]>`],
+    static_original_shape: DimList[4],
     # packed matrix shape list
-    static_packed_shape: __mlir_type[`!kgen.list<index[3]>`],
+    static_packed_shape: DimList[3],
     type: DType,
     simd_size: Int,
     col_inner_size: Int,
@@ -965,10 +965,10 @@ struct PackIm2ColNCHW[
 #   library to de-duplicate.
 @register_passable
 struct ConvIm2ColNCHW[
-    shape_input: __mlir_type[`!kgen.list<index[4]>`],
-    shape_filter: __mlir_type[`!kgen.list<index[4]>`],
-    shape_output: __mlir_type[`!kgen.list<index[4]>`],
-    packed_shape: __mlir_type[`!kgen.list<index[3]>`],
+    shape_input: DimList[4],
+    shape_filter: DimList[4],
+    shape_output: DimList[4],
+    packed_shape: DimList[3],
     type: DType,
     simd_size: Int,
     a_row_size: Int,
@@ -988,10 +988,10 @@ struct ConvIm2ColNCHW[
     var batch_idx: Int
 
     # Temporary buffer for the implicit matmul calls.
-    var c: NDBuffer[2, create_kgen_list_unknown[2](), type]
+    var c: NDBuffer[2, DimList[2].create_unknown(), type]
 
     # 2D view of the filter as implicit matmul input.
-    var a: NDBuffer[2, create_kgen_list_unknown[2](), type]
+    var a: NDBuffer[2, DimList[2].create_unknown(), type]
 
     fn __copy__(self) -> Self:
         return Self {
@@ -1408,8 +1408,8 @@ struct ConvIm2ColNCHW[
         var row_idx = start_idx
         while row_idx <= (valid_row_count - RowSize):
             MatmulInnerLoopBPacked[
-                create_kgen_list_unknown[2](),  # shape_a
-                create_kgen_list_unknown[2](),  # shape c
+                DimList[2].create_unknown(),  # shape_a
+                DimList[2].create_unknown(),  # shape c
                 packed_shape,  # packed_shape
                 type,  # accum_type
                 type,  # value_type
@@ -1435,9 +1435,9 @@ struct ConvIm2ColNCHW[
         """
         # Ouput shape [N, F, Ho, Wo]
         let c_pointer = self.out._offset(Index(self.batch_idx, 0, 0, 0))
-        self.c = NDBuffer[2, create_kgen_list_unknown[2](), type](
+        self.c = NDBuffer[2, DimList[2].create_unknown(), type](
             c_pointer.address,
-            create_kgen_list[__mlir_type.index](
+            create_dim_list(
                 self.conv_shape.f.__as_mlir_index(),
                 (
                     self.conv_shape.out_h * self.conv_shape.out_w
@@ -1447,9 +1447,9 @@ struct ConvIm2ColNCHW[
         )
 
         # Create 2D view for filter.
-        self.a = NDBuffer[2, create_kgen_list_unknown[2](), type](
+        self.a = NDBuffer[2, DimList[2].create_unknown(), type](
             self.filter.data.address,
-            create_kgen_list[__mlir_type.index](
+            create_dim_list(
                 self.gemm_shape.M.__as_mlir_index(),
                 self.gemm_shape.K.__as_mlir_index(),
             ),
@@ -1477,7 +1477,7 @@ struct ConvIm2ColNCHW[
         """
         return NDBuffer[3, packed_shape, type](
             b_packed.address,
-            create_kgen_list[__mlir_type.index](
+            create_dim_list(
                 (tile_n // n_inner_size).__as_mlir_index(),
                 tile_k.__as_mlir_index(),
                 n_inner_size.__as_mlir_index(),
@@ -1491,9 +1491,9 @@ struct ConvIm2ColNCHW[
 #   language support the conv op and matmul op should share a "gemm skeleton"
 #   library to de-duplicate.
 struct ConvNHWCInnerLoopFilterPacked[
-    shape_input: __mlir_type[`!kgen.list<index[4]>`],
-    shape_c: __mlir_type[`!kgen.list<index[2]>`],
-    packed_shape: __mlir_type[`!kgen.list<index[3]>`],
+    shape_input: DimList[4],
+    shape_c: DimList[2],
+    packed_shape: DimList[3],
     accum_type: DType,
     value_type: DType,
     simd_size: Int,
@@ -1629,7 +1629,7 @@ struct ConvNHWCInnerLoopFilterPacked[
         self,
         c_local: NDBuffer[
             2,
-            create_kgen_list[__mlir_type.index](
+            create_dim_list(
                 a_row_size.__as_mlir_index(),
                 (pack_inner_size * simd_size).__as_mlir_index(),
             ),
@@ -1657,7 +1657,7 @@ struct ConvNHWCInnerLoopFilterPacked[
         self,
         c_local: NDBuffer[
             2,
-            create_kgen_list[__mlir_type.index](
+            create_dim_list(
                 a_row_size.__as_mlir_index(),
                 (pack_inner_size * simd_size).__as_mlir_index(),
             ),
@@ -1721,7 +1721,7 @@ struct ConvNHWCInnerLoopFilterPacked[
         self,
         c_local: NDBuffer[
             2,
-            create_kgen_list[__mlir_type.index](
+            create_dim_list(
                 a_row_size.__as_mlir_index(),
                 (pack_inner_size * simd_size).__as_mlir_index(),
             ),
@@ -1827,7 +1827,7 @@ struct ConvNHWCInnerLoopFilterPacked[
         self,
         c_local: NDBuffer[
             2,
-            create_kgen_list[__mlir_type.index](
+            create_dim_list(
                 a_row_size.__as_mlir_index(),
                 (pack_inner_size * simd_size).__as_mlir_index(),
             ),
@@ -1895,7 +1895,7 @@ struct ConvNHWCInnerLoopFilterPacked[
         # Allocate accumulation buffer.
         var c_local = NDBuffer[
             2,
-            create_kgen_list[__mlir_type.index](
+            create_dim_list(
                 a_row_size.__as_mlir_index(),
                 (pack_inner_size * simd_size).__as_mlir_index(),
             ),
@@ -2017,10 +2017,10 @@ fn get_partitioned_workload(
 #   library to de-duplicate.
 @register_passable
 struct ConvIm2ColNHWC[
-    shape_input: __mlir_type[`!kgen.list<index[4]>`],
-    shape_filter: __mlir_type[`!kgen.list<index[4]>`],
-    shape_output: __mlir_type[`!kgen.list<index[4]>`],
-    packed_shape: __mlir_type[`!kgen.list<index[3]>`],
+    shape_input: DimList[4],
+    shape_filter: DimList[4],
+    shape_output: DimList[4],
+    packed_shape: DimList[3],
     type: DType,
     simd_size: Int,
     a_row_size: Int,
@@ -2038,9 +2038,9 @@ struct ConvIm2ColNHWC[
     var conv_shape: ConvShape
 
     # 2D view of the tensors as implicit matmul input.
-    var c: NDBuffer[2, create_kgen_list_unknown[2](), type]
-    var a: NDBuffer[2, create_kgen_list_unknown[2](), type]
-    var b: NDBuffer[2, create_kgen_list_unknown[2](), type]
+    var c: NDBuffer[2, DimList[2].create_unknown(), type]
+    var a: NDBuffer[2, DimList[2].create_unknown(), type]
+    var b: NDBuffer[2, DimList[2].create_unknown(), type]
 
     # Partitioned row index for the current thread.
     var row_start_idx: Int
@@ -2474,7 +2474,7 @@ struct ConvIm2ColNHWC[
         # pack B:
         if filter_layout == Image2DLayout.NHWC:
             PackMatrixRows[
-                create_kgen_list_unknown[2](),
+                DimList[2].create_unknown(),
                 packed_shape,
                 type,
                 simd_size,
@@ -2492,7 +2492,7 @@ struct ConvIm2ColNHWC[
             )
         else:  # TODO: add assert, filter layout should be RSCF.
             PackMatrixCols[
-                create_kgen_list_unknown[2](),
+                DimList[2].create_unknown(),
                 packed_shape,
                 type,
                 simd_size,
@@ -2609,7 +2609,7 @@ struct ConvIm2ColNHWC[
             let current_offset = global_offset + GemmShape(row_idx, 0, 0)
             ConvNHWCInnerLoopFilterPacked[
                 shape_input,
-                create_kgen_list_unknown[2](),
+                DimList[2].create_unknown(),
                 packed_shape,
                 type,
                 type,
@@ -2637,9 +2637,9 @@ struct ConvIm2ColNHWC[
         """
         # Ouput shape [N, F, Ho, Wo]
         let c_pointer = self.out._offset(Index(0, 0, 0, 0))
-        self.c = NDBuffer[2, create_kgen_list_unknown[2](), type](
+        self.c = NDBuffer[2, DimList[2].create_unknown(), type](
             c_pointer.address,
-            create_kgen_list[__mlir_type.index](
+            create_dim_list(
                 self.gemm_shape.M.__as_mlir_index(),
                 self.gemm_shape.N.__as_mlir_index(),
             ),
@@ -2647,9 +2647,9 @@ struct ConvIm2ColNHWC[
         )
 
         # Create 2D view for input.
-        self.a = NDBuffer[2, create_kgen_list_unknown[2](), type](
+        self.a = NDBuffer[2, DimList[2].create_unknown(), type](
             self.input.data.address,
-            create_kgen_list[__mlir_type.index](
+            create_dim_list(
                 self.gemm_shape.M.__as_mlir_index(),
                 self.gemm_shape.K.__as_mlir_index(),
             ),
@@ -2658,18 +2658,18 @@ struct ConvIm2ColNHWC[
 
         # Create 2D view for filter.
         if filter_layout == Image2DLayout.NHWC:  # FRSC layout
-            self.b = NDBuffer[2, create_kgen_list_unknown[2](), type](
+            self.b = NDBuffer[2, DimList[2].create_unknown(), type](
                 self.filter.data.address,
-                create_kgen_list[__mlir_type.index](
+                create_dim_list(
                     self.gemm_shape.N.__as_mlir_index(),
                     self.gemm_shape.K.__as_mlir_index(),
                 ),
                 type,
             )
         elif filter_layout == Image2DLayout.RSCF:  # RSCF layout
-            self.b = NDBuffer[2, create_kgen_list_unknown[2](), type](
+            self.b = NDBuffer[2, DimList[2].create_unknown(), type](
                 self.filter.data.address,
-                create_kgen_list[__mlir_type.index](
+                create_dim_list(
                     self.gemm_shape.K.__as_mlir_index(),
                     self.gemm_shape.N.__as_mlir_index(),
                 ),
@@ -2697,7 +2697,7 @@ struct ConvIm2ColNHWC[
         """
         return NDBuffer[3, packed_shape, type](
             b_packed.address,
-            create_kgen_list[__mlir_type.index](
+            create_dim_list(
                 (tile_n // n_inner_size).__as_mlir_index(),
                 tile_k.__as_mlir_index(),
                 n_inner_size.__as_mlir_index(),

@@ -10,7 +10,7 @@ from DType import DType
 from Index import StaticIntTuple
 from Int import Int
 from IO import print
-from List import create_kgen_list
+from List import create_dim_list
 from Pad import pad
 
 
@@ -18,8 +18,8 @@ from Pad import pad
 fn test_pad_1d():
     print("== test_pad_1d\n")
 
-    alias in_shape = create_kgen_list[__mlir_type.index](3)
-    alias out_shape = create_kgen_list[__mlir_type.index](6)
+    alias in_shape = create_dim_list(3)
+    alias out_shape = create_dim_list(6)
 
     # Create an input matrix of the form
     # [1, 2, 3]
@@ -62,8 +62,8 @@ fn test_pad_1d():
 fn test_pad_2d():
     print("== test_pad_2d\n")
 
-    alias in_shape = create_kgen_list[__mlir_type.index](2, 2)
-    alias out_shape = create_kgen_list[__mlir_type.index](3, 4)
+    alias in_shape = create_dim_list(2, 2)
+    alias out_shape = create_dim_list(3, 4)
 
     # Create an input matrix of the form
     # [[1, 2],
@@ -126,8 +126,8 @@ fn test_pad_2d():
 fn test_pad_3d():
     print("== test_pad_3d\n")
 
-    alias in_shape = create_kgen_list[__mlir_type.index](1, 2, 2)
-    alias out_shape = create_kgen_list[__mlir_type.index](2, 3, 3)
+    alias in_shape = create_dim_list(1, 2, 2)
+    alias out_shape = create_dim_list(2, 3, 3)
 
     # Create an input matrix of the form
     # [[[1, 2],

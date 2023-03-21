@@ -12,7 +12,7 @@ from Math import div_ceil
 from Index import Index, StaticIntTuple
 from Intrinsics import PrefetchOptions
 from Int import Int
-from List import create_kgen_list_unknown
+from List import Dim, DimList
 from LLCL import Runtime
 from Math import add, min
 from Pointer import Pointer
@@ -25,12 +25,12 @@ from SIMD import SIMD
 ## gather_reduce_2D_axis_1
 @adaptive
 fn gather_reduce[
-    output_rank: __mlir_type.index,
-    output_shape: __mlir_type[`!kgen.list<index[`, output_rank, `]>`],
-    input_rank: __mlir_type.index,
-    input_shape: __mlir_type[`!kgen.list<index[`, input_rank, `]>`],
-    indices_rank: __mlir_type.index,
-    indices_shape: __mlir_type[`!kgen.list<index[`, indices_rank, `]>`],
+    output_rank: Int,
+    output_shape: DimList[output_rank],
+    input_rank: Int,
+    input_shape: DimList[input_rank],
+    indices_rank: Int,
+    indices_shape: DimList[indices_rank],
     type: DType,
     gather_axis: __mlir_type.index,
     reduce_axis: __mlir_type.index,
@@ -67,11 +67,11 @@ fn gather_reduce[
     context, i is the batch dimension, j is the multi-hot dimension, and k is
     the embedding dimension.
     """
-    assert_param[output_rank == 2]()
-    assert_param[input_rank == 2]()
-    assert_param[indices_rank == 2]()
-    assert_param[gather_axis == 0]()
-    assert_param[reduce_axis == 1]()
+    assert_param_bool[output_rank == 2]()
+    assert_param_bool[input_rank == 2]()
+    assert_param_bool[indices_rank == 2]()
+    assert_param_bool[gather_axis == 0]()
+    assert_param_bool[reduce_axis == 1]()
 
     # Short-circuit for trivial cases, and to avoid divide-by-zero
     if input.size() == 0 or indices.size() == 0:
@@ -94,10 +94,10 @@ fn gather_reduce[
     )
 
     let num_chunks_per_task = div_ceil(indices.dim[0](), num_tasks)
-    let output_bind = rebind[NDBuffer[2, create_kgen_list_unknown[2](), type]](
+    let output_bind = rebind[NDBuffer[2, DimList[2].create_unknown(), type]](
         output
     )
-    let input_bind = rebind[NDBuffer[2, create_kgen_list_unknown[2](), type]](
+    let input_bind = rebind[NDBuffer[2, DimList[2].create_unknown(), type]](
         input
     )
     let indices_bind = rebind[
@@ -134,7 +134,7 @@ fn gather_reduce[
 
                     # prefetch next k
                     let next_idx = indices._offset(
-                        StaticIntTuple[indices_rank](i, j)
+                        StaticIntTuple[indices_rank.__as_mlir_index()](i, j)
                     ).load()
                     input.prefetch[
                         PrefetchOptions()
@@ -159,12 +159,12 @@ fn gather_reduce[
 # gather_2D_input_1D_indices_axis_0
 @adaptive
 fn gather[
-    output_rank: __mlir_type.index,
-    output_shape: __mlir_type[`!kgen.list<index[`, output_rank, `]>`],
-    input_rank: __mlir_type.index,
-    input_shape: __mlir_type[`!kgen.list<index[`, input_rank, `]>`],
-    indices_rank: __mlir_type.index,
-    indices_shape: __mlir_type[`!kgen.list<index[`, indices_rank, `]>`],
+    output_rank: Int,
+    output_shape: DimList[output_rank],
+    input_rank: Int,
+    input_shape: DimList[input_rank],
+    indices_rank: Int,
+    indices_shape: DimList[indices_rank],
     type: DType,
     indices_type: DType,
     axis: Int,
@@ -176,9 +176,9 @@ fn gather[
     runtime: Runtime.ptr_type,
 ):
     """Computes output[i, j] = input[indices[i], j]"""
-    assert_param[output_rank == 2]()
-    assert_param[input_rank == 2]()
-    assert_param[indices_rank == 1]()
+    assert_param_bool[output_rank == 2]()
+    assert_param_bool[input_rank == 2]()
+    assert_param_bool[indices_rank == 1]()
     assert_param_bool[axis == 0]()
 
     let indices_len = indices.size()
@@ -201,10 +201,10 @@ fn gather[
     let num_tasks = min(div_ceil(indices_len, min_task_num_rows), num_threads)
 
     let num_chunks_per_task = div_ceil(indices_len, num_tasks)
-    let output_bind = rebind[NDBuffer[2, create_kgen_list_unknown[2](), type]](
+    let output_bind = rebind[NDBuffer[2, DimList[2].create_unknown(), type]](
         output
     )
-    let input_bind = rebind[NDBuffer[2, create_kgen_list_unknown[2](), type]](
+    let input_bind = rebind[NDBuffer[2, DimList[2].create_unknown(), type]](
         input
     )
 
@@ -255,12 +255,12 @@ fn gather[
 # gather_2D_input_1D_indices_axis_1
 @adaptive
 fn gather[
-    output_rank: __mlir_type.index,
-    output_shape: __mlir_type[`!kgen.list<index[`, output_rank, `]>`],
-    input_rank: __mlir_type.index,
-    input_shape: __mlir_type[`!kgen.list<index[`, input_rank, `]>`],
-    indices_rank: __mlir_type.index,
-    indices_shape: __mlir_type[`!kgen.list<index[`, indices_rank, `]>`],
+    output_rank: Int,
+    output_shape: DimList[output_rank],
+    input_rank: Int,
+    input_shape: DimList[input_rank],
+    indices_rank: Int,
+    indices_shape: DimList[indices_rank],
     type: DType,
     indices_type: DType,
     axis: Int,
@@ -276,12 +276,14 @@ fn gather[
     runtime: Runtime.ptr_type,
 ):
     """Computes output[i, j] = input[i, indices[j]]"""
-    assert_param[output_rank == 2]()
-    assert_param[input_rank == 2]()
-    assert_param[indices_rank == 1]()
+    assert_param_bool[output_rank == 2]()
+    assert_param_bool[input_rank == 2]()
+    assert_param_bool[indices_rank == 1]()
     assert_param_bool[axis == 1]()
 
     for i in range(output.dim[0]()):
         for j in range(output.dim[1]()):
             let idx: Int = Int.from_integral[indices_type](indices[j].value)
-            output[StaticIntTuple[output_rank](i, j)] = input[i, idx]
+            output[StaticIntTuple[output_rank.__as_mlir_index()](i, j)] = input[
+                i, idx
+            ]
