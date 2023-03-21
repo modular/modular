@@ -428,7 +428,7 @@ struct MyVector[size: Int, dtype: MyDType]:
 fn testMyDType[dt: MyDType](a: MyVector[4, MyDType.f32],
                             b: MyVector[4, dt]):
 
-   assert_param[(dt == MyDType.f64).__lit_bool()]()
+   assert_param[(dt == MyDType.f64).__mlir_i1__()]()
 
 # Issue #6828: Unqualified name lookup into structs doesn't work
 # CHECK-LABEL:  lit.struct.decl @UnqualAliasLookup<param>

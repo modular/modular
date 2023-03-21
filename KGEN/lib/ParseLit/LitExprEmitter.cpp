@@ -970,13 +970,13 @@ RValue ExprEmitter::emitConditionValueAsI1(ASTExprAnd<CValue> value,
   // Also, an object that doesn’t define a __bool__() method and whose __len__()
   // method returns zero is considered to be false in a Boolean context.
 
-  // Check for the presence of a __lit_bool method.  If it exists, we can avoid
+  // Check for the presence of a __mlir_i1__ method.  If it exists, we can avoid
   // a redundant call to __bool__ for Bool types.
-  if (!OverloadSet(valueRValueType, "__lit_bool", value.expr,
+  if (!OverloadSet(valueRValueType, "__mlir_i1__", value.expr,
                    CallSyntax::kImplicitConvert, shared,
                    [&]() { /*no error*/ })) {
     // Use the __bool__ method to convert the user defined type to
-    // something that is a Bool or other type that implements __lit_bool.
+    // something that is a Bool or other type that implements __mlir_i1__.
     boolResult = emitNamedMethodCall("__bool__", {{value.ir, value.expr}},
                                      ValueDest::none(),
                                      CallSyntax::kImplicitConvert, value.expr);
@@ -984,9 +984,9 @@ RValue ExprEmitter::emitConditionValueAsI1(ASTExprAnd<CValue> value,
       return {};
   }
 
-  // Then we use __lit_bool to convert to an i1 value.
+  // Then we use __mlir_i1__ to convert to an i1 value.
   CValue litBoolCall = emitNamedMethodCall(
-      "__lit_bool", {{boolResult, value.expr}}, ValueDest::none(),
+      "__mlir_i1__", {{boolResult, value.expr}}, ValueDest::none(),
       CallSyntax::kImplicitConvert, value.expr);
 
   return emitRValue({litBoolCall, value.expr}, EC_BoolCondition);

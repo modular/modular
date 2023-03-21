@@ -28,7 +28,7 @@ SF(kCopy,    "__copy__" ,   -1, kInvalid, kAllowByRefSelfInstMethod|kSelfResult)
 SF(kInit,    "__init__"  ,  -1, kInvalid, kImplicitlyStaticMethod|kSelfResult)
 
 SF(kBool,    "__bool__"  ,   1, kInvalid, kInstMethod)
-SF(kLitBool, "__lit_bool",   1, kInvalid, kInstMethod)
+SF(kLitBool, "__mlir_i1__",   1, kInvalid, kInstMethod)
 SF(kAwait,   "__await__" ,   1, kAwait,   kAllowByRefSelfInstMethod)
 
 SF(kGetItem, "__getitem__", -1, kInvalid,kAllowByRefSelfInstMethod)
