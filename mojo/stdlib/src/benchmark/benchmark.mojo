@@ -24,7 +24,7 @@ struct Benchmark:
     var min_time_ns: Int
     var max_time_ns: Int
 
-    fn __clone__(self) -> Self:
+    fn __copy__(self) -> Self:
         return Self {
             num_warmup: self.num_warmup,
             max_iters: self.max_iters,
