@@ -15,6 +15,7 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/SourceMgr.h"
 
 namespace llvm {
@@ -34,6 +35,13 @@ public:
     // On windows, InitLLVM may mutate argv, so make sure to get the fresh
     // value.
     programName = argv[0];
+
+    static constexpr StringLiteral bugReportMsg =
+        "PLEASE submit a bug report to "
+        "https://github.com/modularml/modular/issues and include the crash "
+        "backtrace.\n";
+
+    llvm::setBugReportMsg(bugReportMsg.data());
   }
 
   StringRef getProgramName() const { return programName; }
