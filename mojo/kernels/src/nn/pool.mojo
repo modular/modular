@@ -67,7 +67,7 @@ struct Pool2d[
     var output_shape: ImageShape
     var input_shape: ImageShape
 
-    fn __clone__(self&) -> Self:
+    fn __clone__(self) -> Self:
         return Self {
             output: self.output,
             input: self.input,

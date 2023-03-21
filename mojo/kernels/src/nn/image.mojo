@@ -23,7 +23,7 @@ struct Image2DLayout:
     alias RSCF = Image2DLayout(2)  # TF filter layout for channels last input.
 
     @always_inline("nodebug")
-    fn __clone__(self&) -> Self:
+    fn __clone__(self) -> Self:
         return Self {value: self.value}
 
     @always_inline("nodebug")
@@ -51,7 +51,7 @@ struct ImageData[
     var data: NDBuffer[4, shape, type]
     var dynamic_layout: Image2DLayout
 
-    fn __clone__(self&) -> Self:
+    fn __clone__(self) -> Self:
         return Self {data: self.data, dynamic_layout: self.dynamic_layout}
 
     fn __init__(
@@ -255,7 +255,7 @@ struct ImageShape:
     var H: Int
     var W: Int
 
-    fn __clone__(self&) -> Self:
+    fn __clone__(self) -> Self:
         return Self {N: self.N, C: self.C, H: self.H, W: self.W}
 
     fn __init__[
@@ -289,14 +289,13 @@ struct ImageShape:
                 W: image_data.data.dim[2](),
             }
 
-        elif image_data.get_layout() == Image2DLayout.RSCF:
+        else:
+            debug_assert(
+                image_data.get_layout() == Image2DLayout.RSCF, "Invalid layout"
+            )
             return ImageShape {
                 N: image_data.data.dim[3](),
                 C: image_data.data.dim[2](),
                 H: image_data.data.dim[0](),
                 W: image_data.data.dim[1](),
             }
-
-        debug_assert(False, "Invalid layout")
-        var image_shape: ImageShape
-        return image_shape
