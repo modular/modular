@@ -64,7 +64,6 @@ fn pool(pool_method: Int):
 
     alias in_shape = create_dim_list(2, 2, 5, 7)
     alias out_shape = create_dim_list(2, 2, 2, 2)
-    alias kernel_shape = create_dim_list(3, 2)
 
     # Create an input buffer.
     var input_buffer = NDBuffer[4, in_shape, DType.f32.value].stack_allocation()
@@ -86,24 +85,25 @@ fn pool(pool_method: Int):
 
     var pad_h = StaticIntTuple[2](0, 0)
     var pad_w = StaticIntTuple[2](0, 0)
+    var filter = StaticIntTuple[2](3, 2)
     var stride = StaticIntTuple[2](2, 3)
     var dilation = StaticIntTuple[2](1, 1)
 
     if pool_method == PoolMethod.MAX:
         Pool2d[
             out_shape,
-            kernel_shape,
             in_shape,
-            DType.f32.value,
+            DType.f32,
             Image2DLayout.NCHW,
-            max_pool_init_fn[DType.f32.value],
-            max_pool_update_fn[DType.f32.value],
-            max_pool_reduce_fn[DType.f32.value],
+            max_pool_init_fn[DType.f32],
+            max_pool_update_fn[DType.f32],
+            max_pool_reduce_fn[DType.f32],
         ].run(
             output,
             input,
             pad_h,
             pad_w,
+            filter,
             stride,
             dilation,
             runtime.ptr,
@@ -111,18 +111,18 @@ fn pool(pool_method: Int):
     else:
         Pool2d[
             out_shape,
-            kernel_shape,
             in_shape,
             DType.f32.value,
             Image2DLayout.NCHW,
-            avg_pool_init_fn[DType.f32.value],
-            avg_pool_update_fn[DType.f32.value],
-            avg_pool_reduce_fn[DType.f32.value],
+            avg_pool_init_fn[DType.f32],
+            avg_pool_update_fn[DType.f32],
+            avg_pool_reduce_fn[DType.f32],
         ].run(
             output,
             input,
             pad_h,
             pad_w,
+            filter,
             stride,
             dilation,
             runtime.ptr,

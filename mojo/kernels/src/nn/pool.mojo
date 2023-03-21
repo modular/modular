@@ -23,13 +23,35 @@ from TargetInfo import dtype_simd_width
 from DType import DType
 from Numerics import neginf
 
+# Pooling method.
+@register_passable
+struct PoolMethod:
+    var value: Int
+    alias MAX = PoolMethod(0)  # Max pooling.
+    alias AVG = PoolMethod(1)  # Average pooling not counting padded regions.
+
+    @always_inline("nodebug")
+    fn __clone__(self&) -> Self:
+        return Self {value: self.value}
+
+    @always_inline("nodebug")
+    fn __init__(value: Int) -> PoolMethod:
+        return PoolMethod {value: value}
+
+    @always_inline("nodebug")
+    fn __eq__(self, rhs: PoolMethod) -> Bool:
+        return self.value == rhs.value
+
+    @always_inline("nodebug")
+    fn __ne__(self, rhs: PoolMethod) -> Bool:
+        return self.value != rhs.value
+
 
 @register_passable
 struct Pool2d[
     static_output_shape: DimList[4],
-    static_kernel_shape: DimList[2],
     static_input_shape: DimList[4],
-    type: __mlir_type.`!kgen.dtype`,
+    type: DType,
     static_data_layout: Image2DLayout,
     init_fn: __mlir_type[`!kgen.signature<<>() -> `, SIMD[1, type], `>`],
     update_fn: __mlir_type[
@@ -58,6 +80,7 @@ struct Pool2d[
     var input: ImageData[static_input_shape, type, static_data_layout]
     var pad_h: StaticIntTuple[2]
     var pad_w: StaticIntTuple[2]
+    var filter_shape: StaticIntTuple[2]
     var stride: StaticIntTuple[2]
     var dilation: StaticIntTuple[2]
     var num_tasks: Int
@@ -73,6 +96,7 @@ struct Pool2d[
             pad_h: self.pad_h,
             pad_w: self.pad_w,
             stride: self.stride,
+            filter_shape: self.filter_shape,
             dilation: self.dilation,
             output_shape: self.output_shape,
             input_shape: self.input_shape,
@@ -85,6 +109,7 @@ struct Pool2d[
         input: ImageData[static_input_shape, type, static_data_layout],
         pad_h: StaticIntTuple[2],
         pad_w: StaticIntTuple[2],
+        filter_shape: StaticIntTuple[2],
         stride: StaticIntTuple[2],
         dilation: StaticIntTuple[2],
         runtime: Runtime.ptr_type,
@@ -118,20 +143,29 @@ struct Pool2d[
         # Create an instance of the pooling op.
         var pool2d = Pool2d[
             static_output_shape,
-            static_kernel_shape,
             static_input_shape,
             type,
             static_data_layout,
             init_fn,
             update_fn,
             reduce_fn,
-        ](output, input, pad_h, pad_w, stride, dilation, num_tasks)
+        ](
+            output,
+            input,
+            pad_h,
+            pad_w,
+            filter_shape,
+            stride,
+            dilation,
+            num_tasks,
+        )
+
+        let work = pool2d.output.num_elements()
+        let work_block_size = div_ceil(work, pool2d.num_tasks)
 
         @always_inline
         fn task_func(task_id: Int):
 
-            let work = pool2d.output.num_elements()
-            let work_block_size = div_ceil(work, pool2d.num_tasks)
             let offset = task_id * work_block_size
 
             @always_inline
@@ -159,12 +193,12 @@ struct Pool2d[
         input: ImageData[static_input_shape, type, static_data_layout],
         pad_h: StaticIntTuple[2],
         pad_w: StaticIntTuple[2],
+        filter_shape: StaticIntTuple[2],
         stride: StaticIntTuple[2],
         dilation: StaticIntTuple[2],
         num_tasks: Int,
     ) -> Pool2d[
         static_output_shape,
-        static_kernel_shape,
         static_input_shape,
         type,
         static_data_layout,
@@ -178,12 +212,12 @@ struct Pool2d[
         Args:
             output: Pre-allocated output tensor space.
             input: Batched image input to the pool2d operator.
-            kernel: Kernel size on height and width
-              dimensions with assumed tuple def (kernel_h, kernel_w).
             pad_h: Padding on the height dimension with assu-
               med tuple def (pad_lower, pad_lower).
             pad_w: Padding on the width dimension with assum-
               ed tuple def (pad_lower, pad_lower).
+            filter_shape: Filter size on height and width
+              dimensions with assumed tuple def (filter_h, filter_w).
             stride: Strides on height and width dimensions
               with assumed tuple def (stride_h, stride_w).
             dilation: Dilations on height and width dimensi-
@@ -196,7 +230,6 @@ struct Pool2d[
         """
         var pool2d: Pool2d[
             static_output_shape,
-            static_kernel_shape,
             static_input_shape,
             type,
             static_data_layout,
@@ -209,6 +242,7 @@ struct Pool2d[
         pool2d.input = input
         pool2d.pad_h = pad_h
         pool2d.pad_w = pad_w
+        pool2d.filter_shape = filter_shape
         pool2d.stride = stride
         pool2d.dilation = dilation
         pool2d.num_tasks = num_tasks
@@ -241,25 +275,22 @@ struct Pool2d[
             self.input_shape.H, self.input_shape.W
         )
 
-        let r_size = static_kernel_shape.at[0]().get()
-        let s_size = static_kernel_shape.at[1]().get()
-
         # Iterate on filter height dimension.
-        for r_idx in range(r_size):
+        for r_idx in range(self.filter_shape[0]):
             # Iterate on filter width dimension.
-            for s_idx in range(s_size):
+            for s_idx in range(self.filter_shape[1]):
                 # Compute input access index, on the H and W dimension.
                 let input_image_index = (
                     # Output HxW with striding.
                     (
-                        StaticIntTuple[2](
+                        Index(
                             output_idx[2],
                             output_idx[3],
                         )
                         * self.stride
                     )
                     +
-                    # Kernel RxS with dilation.
+                    # filter RxS with dilation.
                     (Index(r_idx, s_idx) * self.dilation)
                     -
                     # Padding offset, using the left padding only here.
@@ -283,8 +314,7 @@ struct Pool2d[
                             input_image_index[1],  # W
                         ],
                     )
-
-        return reduce_fn(value, r_size * s_size)
+        return reduce_fn(value, self.filter_shape[0] * self.filter_shape[1])
 
 
 @always_inline
