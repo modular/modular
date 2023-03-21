@@ -178,8 +178,7 @@ fn useParameterizedField[x: Pair[DType.f32]]():
 # CHECK-LABEL: lit.func @"makePair
 fn makePair(a: OurSIMD[42, DType.f32], b: Int) -> Pair[DType.f32]:
   # CHECK: [[TMP1:%.*]] = kgen.call {{.*}}__copy__{{.*}}(%a)
-  # CHECK: [[TMP2:%.*]] = kgen.call {{.*}}__copy__{{.*}}(%b)
-  # CHECK:  = lit.struct.create(a=[[TMP1]], b=[[TMP2]])
+  # CHECK:  = lit.struct.create(a=[[TMP1]], b=%b)
   return Pair[DType.f32]{a: a, b: b}
 
 # CHECK-LABEL: lit.struct.decl @TypeParameter
@@ -494,7 +493,7 @@ fn pass_variadic[elems: __mlir_type.`!kgen.variadic<index>`]():
 # Parameter Inference
 ##===----------------------------------------------------------------------===##
 
-@register_passable
+@register_passable("trivial")
 struct StaticVec[size: index]:
   fn __init__[type: __mlir_type.`!kgen.dtype`](v: __mlir_type[`!pop.simd<`, size, `, `, type, `>`]) -> StaticVec[size]:
       return Self{}

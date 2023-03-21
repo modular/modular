@@ -215,14 +215,12 @@ fn ownedConventionMem(owned a: StructWithInit, borrowed b: StructWithInit):
   # CHECK: %0 = lit.struct.gep %a[x]
   # CHECK: %1 = pop.load %0
   # CHECK: %_ = lit.varlet.decl
-  # CHECK: %2 = kgen.call {{.*}}__copy__{{.*}}(%1)
-  # CHECK: pop.store %2, %_
+  # CHECK: pop.store %1, %_
   _ = a.x
-  # CHECK: %3 = lit.struct.gep %b[y]
-  # CHECK: %4 = pop.load %3
+  # CHECK: %2 = lit.struct.gep %b[y]
+  # CHECK: %3 = pop.load %2
   # CHECK: %__0 = lit.varlet.decl
-  # CHECK: %5 = kgen.call {{.*}}__copy__{{.*}}(%4)
-  # CHECK: pop.store %5, %__0
+  # CHECK: pop.store %3, %__0
   _ = b.y
 
 @register_passable
@@ -243,13 +241,11 @@ fn ownedConventionReg(owned a: RPStructWithInit,
                       borrowed triv: RPStructWithInitTrivial):
   # CHECK: %0 = lit.struct.extract %a[x]
   # CHECK: %_ = lit.varlet.decl
-  # CHECK: %1 = kgen.call {{.*}}"__copy__{{.*}}(%0)
-  # CHECK: pop.store %1, %_
+  # CHECK: pop.store %0, %_
   _ = a.x
-  # CHECK: %2 = lit.struct.extract %b[y]
+  # CHECK: %1 = lit.struct.extract %b[y]
   # CHECK: %__0 = lit.varlet.decl
-  # CHECK: %3 = kgen.call {{.*}}"__copy__{{.*}}(%2)
-  # CHECK: pop.store %3, %__0
+  # CHECK: pop.store %1, %__0
   _ = b.y
 
   # CHECK: %t = lit.letreg.decl "t" = %triv
@@ -381,9 +377,7 @@ fn usePacks(x: F32, y: Int):
   # CHECK: kgen.call @"$decls"::@"varArgs(__mlir_type.!pop.pack<Ts>)"<Ts: variadic<!kgen.mlirtype> = []>(%[[PACK3]])
   varArgs()
 
-  # CHECK: [[ARGX2:%.*]] = kgen.call {{.*}}__copy__{{.*}}([[ARGX]])
-  # CHECK: [[ARGY2:%.*]] = kgen.call {{.*}}__copy__{{.*}}([[ARGY]])
-  # CHECK: %[[PACK4:.*]] = pop.pack.create(%{{.*}}, [[ARGX2]], [[ARGY2]])
+  # CHECK: %[[PACK4:.*]] = pop.pack.create(%{{.*}}, [[ARGX]], [[ARGY]])
   # CHECK: kgen.call @"$decls"::@"varArgs(__mlir_type.!pop.pack<Ts>)"<Ts: variadic<!kgen.mlirtype> = [!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$F32"::@F32>, !kgen.declref<@"$Int"::@Int>]>(%[[PACK4]])
   varArgs[Int, F32, Int](1, x, y)
 
@@ -450,14 +444,12 @@ struct StructWithInit:
   # CHECK-SAME: (%self: !pop.pointer<@"$decls"::@StructWithInit> byref_result,
   fn __init__(self, a: Int):
     # CHECK: %0 = lit.struct.gep %self[x]
-    # CHECK: [[TMP:%.*]] = kgen.call {{.*}}__copy__{{.*}}(%a)
-    # CHECK: pop.store [[TMP]], %0
+    # CHECK: pop.store %a, %0
     self.x = a
     # CHECK: [[XP:%.*]] = lit.struct.gep %self[x]
     # CHECK: [[YP:%.*]] = lit.struct.gep %self[y]
     # CHECK: [[XT:%.*]] = pop.load [[XP]]
-    # CHECK: [[XT2:%.*]] = kgen.call {{.*}}__copy__{{.*}}([[XT]])
-    # CHECK: pop.store [[XT2]], [[YP]]
+    # CHECK: pop.store [[XT]], [[YP]]
     self.y = self.x
     # CHECK-NEXT: lit.end_func
     return
@@ -473,12 +465,10 @@ struct StructWithInit:
       return StructWithInit(a)
     else:
 
-    # CHECK: [[XP:%.*]] = lit.struct.gep %__result__[x]
-    # CHECK: [[AT:%.*]] = kgen.call {{.*}}__copy__{{.*}}(%a)
-    # CHECK: pop.store [[AT]], [[XP]]
-    # CHECK: [[YP:%.*]] = lit.struct.gep %__result__[y]
-    # CHECK: [[BT:%.*]] = kgen.call {{.*}}__copy__{{.*}}(%b)
-    # CHECK: pop.store [[BT]], [[YP]]
+      # CHECK: [[XP:%.*]] = lit.struct.gep %__result__[x]
+      # CHECK: pop.store %a, [[XP]]
+      # CHECK: [[YP:%.*]] = lit.struct.gep %__result__[y]
+      # CHECK: pop.store %b, [[YP]]
       return StructWithInit{x: a, y: b}
 
   fn __init__() -> Self:

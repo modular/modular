@@ -51,8 +51,7 @@ struct MemoryOnlyPair:
     # CHECK-NEXT: %3 = lit.struct.gep %__result__[y]
     # CHECK-NEXT: %4 = lit.struct.gep %self[y]
     # CHECK-NEXT: %5 = pop.load %4
-    # CHECK-NEXT: %6 = kgen.call {{.*}}__copy__{{.*}}(%5)
-    # CHECK-NEXT: pop.store %6, %3
+    # CHECK-NEXT: pop.store %5, %3
     return MemoryOnlyPair {x: self.x, y: self.y}
 
   # CHECK: lit.func @"method{{.*}}"(
@@ -371,8 +370,7 @@ fn do_math(a: Int, b: Int, c: Int) -> Int:
 
   # CHECK-NEXT: %x = lit.varlet.decl "x", var = true
   # CHECK-NEXT: [[TMP:%.*]] = pop.load %z
-  # CHECK-NEXT: [[TMP2:%.*]] = kgen.call {{.*}}__copy__{{.*}}([[TMP]])
-  # CHECK-NEXT: pop.store [[TMP2]], %x
+  # CHECK-NEXT: pop.store [[TMP]], %x
   # This is checking the lexer handles \ at end of line correctly.
   var x : Int
   x = \
@@ -382,8 +380,7 @@ z
   noop()
 
   # CHECK-NEXT: [[TMP:%.*]] = pop.load %x
-  # CHECK-NEXT: [[TMP2:%.*]] = kgen.call {{.*}}__copy__{{.*}}([[TMP]])
-  # CHECK-NEXT: lit.return [[TMP2]]
+  # CHECK-NEXT: lit.return [[TMP]]
   return x
 
 # CHECK-LABEL: lit.func @"listValues()"() -> index
@@ -495,7 +492,6 @@ fn patterns():
   # Discard pattern with different types.
   (_) = someInt
   # CHECK: [[TMP:%.*]] = pop.load %someInt
-  # CHECK-NEXT:  = kgen.call {{.*}}__copy__{{.*}}([[TMP]])
 
   (_) = 1.0
   # CHECK: = kgen.param.constant: f64 = <1.0
@@ -514,16 +510,15 @@ fn patterns():
 
 # CHECK-LABEL: lit.func @"byval_byref_function($Int::Int,$Int::Int&)"(%a: !kgen.declref<@"$Int"::@Int> borrow, %b: !pop.pointer<@"$Int"::@Int> byref) -> !lit.none
 fn byval_byref_function(a: Int, b&: Int):
-  # CHECK-NEXT: [[TMP:%.*]] = kgen.call {{.*}}__copy__{{.*}}(%a)
-  # CHECK-NEXT: pop.store [[TMP]], %b
+  # CHECK-NEXT: pop.store %a, %b
   b = a
 
   # CHECK-NEXT: %x = lit.varlet.decl "x", var = true
   var x : Int
   # This needs to load 'b' to pass it by value for the first arg, but pass its
   # address in directly for the second.
-  # CHECK: %1 = pop.load %b
-  # CHECK: = kgen.call @{{.*}}::@"byval_byref_function{{.*}}(%1, %b)
+  # CHECK: %0 = pop.load %b
+  # CHECK: = kgen.call @{{.*}}::@"byval_byref_function{{.*}}(%0, %b)
   byval_byref_function(b, b)
 
 # CHECK-LABEL: lit.func @"lvaluesAndRValues()
@@ -543,8 +538,7 @@ fn mvalueStructField():
 # CHECK-LABEL: lit.func @"defTests({{.*}}, %untyped: !kgen.declref<@"$prolog"::@object> borrow)
 def defTests(a: Int, b: Int, untyped):
   # CHECK: [[B:%.*]] = pop.load %b_1
-  # CHECK: [[TMP:%.*]] = kgen.call {{.*}}__copy__{{.*}}([[B]])
-  # CHECK-NEXT: pop.store [[TMP]], %a_0
+  # CHECK-NEXT: pop.store [[B]], %a_0
   a = b # Parameters are mutable!
 
 ##===----------------------------------------------------------------------===##
@@ -803,14 +797,11 @@ fn testWritebacks(a&: IndexArray, b&: IndexArrayArray):
 # CHECK-LABEL: lit.func @"chained_cmp
 fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
     # CHECK:      [[CMP_A_B:%.*]] = kgen.call @{{.*}}__lt__{{.*}}(%a, %b)
-    # CHECK-NEXT: [[B2:%.*]] = kgen.call {{.*}}__copy__{{.*}}(%b)
     # CHECK-NEXT: %[[CMP_A_B_I1:.*]] = kgen.call @{{.*}}__mlir_i1__{{.*}}([[CMP_A_B]])
     # CHECK-NEXT: %[[IF_A_B:.*]] = hlcf.if %[[CMP_A_B_I1]]
-    # CHECK-NEXT:   [[C2:%.*]] = kgen.call {{.*}}__copy__{{.*}}(%c)
-    # CHECK-NEXT:   %[[CMP_B_C:.*]] = kgen.call @{{.*}}__lt__{{.*}}([[B2]], [[C2]])
+    # CHECK-NEXT:   %[[CMP_B_C:.*]] = kgen.call @{{.*}}__lt__{{.*}}(%b, %c)
     # CHECK:        %[[IF_B_C:.*]] = hlcf.if
-    # CHECK-NEXT:     [[D2:%.*]] = kgen.call {{.*}}__copy__{{.*}}(%d)
-    # CHECK-NEXT:     %[[CMP_C_D:.*]] = kgen.call @{{.*}}__lt__{{.*}}([[C2]], [[D2]])
+    # CHECK-NEXT:     %[[CMP_C_D:.*]] = kgen.call @{{.*}}__lt__{{.*}}(%c, %d)
     # CHECK-NEXT:     hlcf.yield %[[CMP_C_D]]
     # CHECK-NEXT:   } else {
     # CHECK-NEXT:     hlcf.yield %[[CMP_B_C]]

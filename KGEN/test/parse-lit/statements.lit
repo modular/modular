@@ -156,7 +156,6 @@ fn param_if[a: __mlir_type.i1, b: Bool]():
 # CHECK-NEXT:    }
 # CHECK-NEXT:    hlcf.continue
 # CHECK-NEXT:  }
-# CHECK-NEXT:  __copy__
 # CHECK-NEXT:  lit.return
 # CHECK-NEXT:  lit.end_func
 # CHECK-NEXT:  }
