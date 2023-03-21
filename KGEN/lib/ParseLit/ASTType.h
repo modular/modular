@@ -68,6 +68,9 @@ public:
   /// invalid in this location.
   bool isRegisterPassable(llvm::SMLoc loc, LitSharedState &shared) const;
 
+  /// Return the StructDeclOp::RegisterPassable enum for this type.
+  uint8_t getRegisterPassability(llvm::SMLoc loc, LitSharedState &shared) const;
+
   /// Given a POP::PointerType, return the element as an ASTType.  This aborts
   /// if the current type isn't a pointer.
   ASTType getPointerElementType() const;

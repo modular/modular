@@ -2100,19 +2100,34 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   decl.setSelfType(decl.computeSelfTypeForStruct(shared));
 
   // Structs are memory-only unless they opt-in to being passed in registers.
-  structOp.setIsRegisterPassable(false);
+  structOp.setRegisterPassable(StructDeclOp::RP_MemoryOnly);
 
   // Now that we have the basic struct set up, process any known decorators.
   for (ExprNode *decorator : decoratorExprs) {
     if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
       if (declRef->spelling == "register_passable") {
-        structOp.setIsRegisterPassable(true);
+        structOp.setRegisterPassable(StructDeclOp::RP_RegisterPassable);
         continue;
       }
-
       emitError(decorator->getLoc(), "unsupported decorator: @")
           << declRef->spelling << declRef->getRange();
       continue;
+    }
+
+    // `x()` forms.
+    if (auto callNode = dyn_cast<CallNode>(decorator)) {
+      if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee)) {
+        // @register_passable("trivial")
+        if (declRef->spelling == "register_passable" &&
+            callNode->args.size() == 1) {
+          auto *string = dyn_cast<StringLiteralNode>(callNode->args[0]);
+          if (string && string->getValue() == "trivial") {
+            structOp.setRegisterPassable(
+                StructDeclOp::RP_RegisterPassableTrivial);
+            continue;
+          }
+        }
+      }
     }
 
     emitError(decorator->getLoc(), "unsupported decorator")
@@ -2135,7 +2150,8 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, LitLexer &lexer,
   // register-only types to support things like this correctly:
   //  struct P[T: mlirtype]:
   //    var storage : T
-  if (structOp.getIsRegisterPassable()) {
+  uint8_t registerPassability = structOp.getRegisterPassable();
+  if (registerPassability != StructDeclOp::RP_MemoryOnly) {
     for (StructFieldOp field : structOp.getFieldDecls()) {
       // Make sure the field is fully resolved.
       auto elt = decl.lookupInCurrentScope(field.getNameAttr());
@@ -2144,16 +2160,23 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, LitLexer &lexer,
       if (failed(resolveSignature(fieldASTDecl, fieldASTDecl.getLoc())))
         continue;
 
-      // If the field is register-passable, then we're happy.
+      // If the field is at least as register-passable as the container then
+      // we're happy.
       if (ASTType(field.getType())
-              .isRegisterPassable(fieldASTDecl.getLoc(), shared))
+              .getRegisterPassability(fieldASTDecl.getLoc(), shared) >=
+          registerPassability)
         continue;
 
-      auto diag = emitError(structOp.getLoc(),
-                            "all members of `@register_passable` struct must "
-                            "themselves be register passable");
+      StringRef trivialSuffix;
+      if (registerPassability == StructDeclOp::RP_RegisterPassableTrivial)
+        trivialSuffix = "(\"trivial\")";
+
+      auto diag = emitError(structOp.getLoc())
+                  << "all members of '@register_passable" << trivialSuffix
+                  << "' struct must themselves be '@register_passable"
+                  << trivialSuffix << "'";
       diag.attachNote(fieldASTDecl.getLoc())
-          << field.getNameAttr() << " declared with memory-only type "
+          << field.getNameAttr() << " declared with type "
           << ASTType(field.getType());
 
       // We cannot support IRGen'ing references to this type, since it will
@@ -2161,6 +2184,21 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, LitLexer &lexer,
       // such types.
       decl.hasReferenceError = true;
       return failure();
+    }
+
+    // Trivial types may not have __clone__ or __del__ members.
+    if (registerPassability == StructDeclOp::RP_RegisterPassableTrivial) {
+      auto rejectMemberIfPresent = [&](StringRef name) {
+        auto nameAttr = StringAttr::get(getContext(), name);
+        auto member = decl.lookupInCurrentScope(nameAttr);
+        if (member)
+          emitError((*member)[0]->getLoc())
+              << "'@register_passable(\"trivial\")' types may not have a "
+              << nameAttr << " method";
+      };
+
+      rejectMemberIfPresent("__copy__");
+      rejectMemberIfPresent("__del__");
     }
   }
 
