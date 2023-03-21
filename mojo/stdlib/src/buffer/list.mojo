@@ -174,6 +174,675 @@ struct Dim:
 
 
 # ===----------------------------------------------------------------------===#
+# DimList
+# ===----------------------------------------------------------------------===#
+
+
+@register_passable
+struct DimList[length: Int]:
+    """This type represents a list of dimensions. Each dimension may have a
+    static value or not have a value, which represents a dynamic dimension."""
+
+    alias list_type = __mlir_type[
+        `!kgen.list<`, Dim, `[`, length.__as_mlir_index(), `]>`
+    ]
+    var value: list_type
+
+    @always_inline("nodebug")
+    fn __init__(value: list_type) -> Self:
+        """Create a dimension list from the underlying value type.
+
+        Args:
+            value (list_type): The underlying value.
+        Returns:
+            Self: A dimension list.
+        """
+        return Self {value: value}
+
+    @always_inline("nodebug")
+    fn __clone__(self&) -> Self:
+        """Copy a dimension list.
+
+        Args:
+            self (Self): The list to copy.
+        Returns:
+            Self: A dimension list.
+        """
+        return Self {value: self.value}
+
+    @always_inline("nodebug")
+    fn at[i: Int](self) -> Dim:
+        """Get the dimension at a specified index.
+
+        ParamArgs:
+            i (Int): The dimension index.
+        Args:
+            self (Self): The list to index.
+        Returns:
+            Dim: The dimension at the specified index.
+        """
+        assert_param_bool_msg[i >= 0, "negative index"]()
+        assert_param_bool_msg[i < length, "index exceeds length"]()
+        return __mlir_op.`pop.list.get`[index : i.__as_mlir_index()](self.value)
+
+    @always_inline
+    fn _product_impl[i: Int, end: Int](self) -> Dim:
+        @parameter
+        if i >= end:
+            return Int(1)
+        else:
+            return self.at[i]() * self._product_impl[i + 1, end]()
+
+    @always_inline
+    fn product(self) -> Dim:
+        """Compute the product of all the dimensions in the list. If any are
+        dynamic, the result is a dynamic dimension value.
+
+        Args:
+            self (Self): The list whose product to find.
+        Returns:
+            Dim: The product of all the dimensions.
+        """
+        return self._product_impl[0, length]()
+
+    @always_inline
+    fn product_range[start: Int, end: Int](self) -> Dim:
+        """Compute the product of a range of the dimensions in the list. If any
+        in the range are dynamic, the result is a dynamic dimension value.
+
+        ParamArgs:
+            start (Int): The starting index.
+            end (Int): The end index.
+        Args:
+            self (Self): The list whose product to find.
+        Returns:
+            Dim: The product of all the dimensions.
+        """
+        return self._product_impl[start, end]()
+
+    @always_inline
+    fn _contains_impl[i: Int](self, value: Dim) -> Bool:
+        @parameter
+        if i >= length:
+            return False
+        else:
+            return self.at[i]() == value or self._contains_impl[i + 1](value)
+
+    @always_inline
+    fn contains(self, value: Dim) -> Bool:
+        """Determine whether the dimension list contains a specified dimension
+        value.
+
+        Args:
+            self (Self): The list to search.
+            value (Dim): The value to find.
+        Returns:
+            Bool: True if the list contains a dimension of the specified value.
+        """
+        return self._contains_impl[0](value)
+
+    @always_inline
+    fn all_known(self) -> Bool:
+        """Determine whether all dimensions are statically known.
+
+        Args:
+            self (Self): The list to check.
+        Returns:
+            Bool: True if all dimensions have a static value.
+        """
+        return not self.contains(Dim())
+
+    @always_inline
+    @staticmethod
+    fn create_unknown() -> Self:
+        """Create a dimension list of all dynamic dimension values.
+
+        Returns:
+            Self: A list of all dynamic dimension values.
+        """
+        assert_param_bool_msg[length > 0, "length must be positive"]()
+        alias u = Dim()
+
+        @parameter
+        if length == 1:
+            return rebind[Self](create_dim_list(u))
+        elif length == 2:
+            return rebind[Self](create_dim_list(u, u))
+        elif length == 3:
+            return rebind[Self](create_dim_list(u, u, u))
+        elif length == 4:
+            return rebind[Self](create_dim_list(u, u, u, u))
+        elif length == 5:
+            return rebind[Self](create_dim_list(u, u, u, u, u))
+        elif length == 6:
+            return rebind[Self](create_dim_list(u, u, u, u, u, u))
+        elif length == 7:
+            return rebind[Self](create_dim_list(u, u, u, u, u, u, u))
+        elif length == 8:
+            return rebind[Self](create_dim_list(u, u, u, u, u, u, u, u))
+        elif length == 9:
+            return rebind[Self](create_dim_list(u, u, u, u, u, u, u, u, u))
+        elif length == 10:
+            return rebind[Self](create_dim_list(u, u, u, u, u, u, u, u, u, u))
+        elif length == 11:
+            return rebind[Self](
+                create_dim_list(u, u, u, u, u, u, u, u, u, u, u)
+            )
+        elif length == 12:
+            return rebind[Self](
+                create_dim_list(u, u, u, u, u, u, u, u, u, u, u, u)
+            )
+        elif length == 13:
+            return rebind[Self](
+                create_dim_list(u, u, u, u, u, u, u, u, u, u, u, u, u)
+            )
+        elif length == 14:
+            return rebind[Self](
+                create_dim_list(u, u, u, u, u, u, u, u, u, u, u, u, u, u)
+            )
+        elif length == 15:
+            return rebind[Self](
+                create_dim_list(u, u, u, u, u, u, u, u, u, u, u, u, u, u, u)
+            )
+        else:
+            return rebind[Self](
+                create_dim_list(u, u, u, u, u, u, u, u, u, u, u, u, u, u, u, u)
+            )
+
+
+# ===----------------------------------------------------------------------===#
+# create_dim_list
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline("nodebug")
+fn create_dim_list(e0: Dim) -> DimList[1]:
+    """Creates a list given a type and elements.
+
+    Args:
+        e0 (Dim): The 1st element of the returned list.
+
+    Returns:
+        DimList[1]: The list containing the elements.
+    """
+    return __mlir_op.`pop.list.create`[
+        _type : __mlir_type[`!kgen.list<`, Dim, `[1]>`]
+    ](e0)
+
+
+@always_inline("nodebug")
+fn create_dim_list(e0: Dim, e1: Dim) -> DimList[2]:
+    """Creates a list given a type and elements.
+
+    Args:
+        e0 (Dim): The 1st element of the returned list.
+        e1 (Dim): The 2nd element of the returned list.
+
+    Returns:
+        DimList[2]: The list containing the elements.
+    """
+    return __mlir_op.`pop.list.create`[
+        _type : __mlir_type[`!kgen.list<`, Dim, `[2]>`]
+    ](e0, e1)
+
+
+@always_inline("nodebug")
+fn create_dim_list(e0: Dim, e1: Dim, e2: Dim) -> DimList[3]:
+    """Creates a list given a type and elements.
+
+    Args:
+        e0 (Dim): The 1st element of the returned list.
+        e1 (Dim): The 2nd element of the returned list.
+        e2 (Dim): The 3rd element of the returned list.
+
+    Returns:
+        DimList[3]: The list containing the elements.
+    """
+    return __mlir_op.`pop.list.create`[
+        _type : __mlir_type[`!kgen.list<`, Dim, `[3]>`]
+    ](e0, e1, e2)
+
+
+@always_inline("nodebug")
+fn create_dim_list(e0: Dim, e1: Dim, e2: Dim, e3: Dim) -> DimList[4]:
+    """Creates a list given a type and elements.
+
+    Args:
+        e0 (Dim): The 1st element of the returned list.
+        e1 (Dim): The 2nd element of the returned list.
+        e2 (Dim): The 3rd element of the returned list.
+        e3 (Dim): The 4th element of the returned list.
+
+    Returns:
+        DimList[4]: The list containing the elements.
+    """
+    return __mlir_op.`pop.list.create`[
+        _type : __mlir_type[`!kgen.list<`, Dim, `[4]>`]
+    ](e0, e1, e2, e3)
+
+
+@always_inline("nodebug")
+fn create_dim_list(e0: Dim, e1: Dim, e2: Dim, e3: Dim, e4: Dim) -> DimList[5]:
+    """Creates a list given a type and elements.
+
+    Args:
+        e0 (Dim): The 1st element of the returned list.
+        e1 (Dim): The 2nd element of the returned list.
+        e2 (Dim): The 3rd element of the returned list.
+        e3 (Dim): The 4th element of the returned list.
+        e4 (Dim): The 5th element of the returned list.
+
+    Returns:
+        DimList[5]: The list containing the elements.
+    """
+    return __mlir_op.`pop.list.create`[
+        _type : __mlir_type[`!kgen.list<`, Dim, `[5]>`]
+    ](e0, e1, e2, e3, e4)
+
+
+@always_inline("nodebug")
+fn create_dim_list(
+    e0: Dim, e1: Dim, e2: Dim, e3: Dim, e4: Dim, e5: Dim
+) -> DimList[6]:
+    """Creates a list given a type and elements.
+
+    Args:
+        e0 (Dim): The 1st element of the returned list.
+        e1 (Dim): The 2nd element of the returned list.
+        e2 (Dim): The 3rd element of the returned list.
+        e3 (Dim): The 4th element of the returned list.
+        e4 (Dim): The 5th element of the returned list.
+        e5 (Dim): The 6th element of the returned list.
+
+    Returns:
+        DimList[6]: The list containing the elements.
+    """
+    return __mlir_op.`pop.list.create`[
+        _type : __mlir_type[`!kgen.list<`, Dim, `[6]>`]
+    ](e0, e1, e2, e3, e4, e5)
+
+
+@always_inline("nodebug")
+fn create_dim_list(
+    e0: Dim,
+    e1: Dim,
+    e2: Dim,
+    e3: Dim,
+    e4: Dim,
+    e5: Dim,
+    e6: Dim,
+) -> DimList[7]:
+    """Creates a list given a type and elements.
+
+    Args:
+        e0 (Dim): The 1st element of the returned list.
+        e1 (Dim): The 2nd element of the returned list.
+        e2 (Dim): The 3rd element of the returned list.
+        e3 (Dim): The 4th element of the returned list.
+        e4 (Dim): The 5th element of the returned list.
+        e5 (Dim): The 6th element of the returned list.
+        e6 (Dim): The 7th element of the returned list.
+
+    Returns:
+        DimList[7]: The list containing the elements.
+    """
+    return __mlir_op.`pop.list.create`[
+        _type : __mlir_type[`!kgen.list<`, Dim, `[7]>`]
+    ](e0, e1, e2, e3, e4, e5, e6)
+
+
+@always_inline("nodebug")
+fn create_dim_list(
+    e0: Dim,
+    e1: Dim,
+    e2: Dim,
+    e3: Dim,
+    e4: Dim,
+    e5: Dim,
+    e6: Dim,
+    e7: Dim,
+) -> DimList[8]:
+    """Creates a list given a type and elements.
+
+    Args:
+        e0 (Dim): The 1st element of the returned list.
+        e1 (Dim): The 2nd element of the returned list.
+        e2 (Dim): The 3rd element of the returned list.
+        e3 (Dim): The 4th element of the returned list.
+        e4 (Dim): The 5th element of the returned list.
+        e5 (Dim): The 6th element of the returned list.
+        e6 (Dim): The 7th element of the returned list.
+        e7 (Dim): The 8th element of the returned list.
+
+    Returns:
+        DimList[8]: The list containing the elements.
+    """
+    return __mlir_op.`pop.list.create`[
+        _type : __mlir_type[`!kgen.list<`, Dim, `[8]>`]
+    ](e0, e1, e2, e3, e4, e5, e6, e7)
+
+
+@always_inline("nodebug")
+fn create_dim_list(
+    e0: Dim,
+    e1: Dim,
+    e2: Dim,
+    e3: Dim,
+    e4: Dim,
+    e5: Dim,
+    e6: Dim,
+    e7: Dim,
+    e8: Dim,
+) -> DimList[9]:
+    """Creates a list given a type and elements.
+
+    Args:
+        e0 (Dim): The 1st element of the returned list.
+        e1 (Dim): The 2nd element of the returned list.
+        e2 (Dim): The 3rd element of the returned list.
+        e3 (Dim): The 4th element of the returned list.
+        e4 (Dim): The 5th element of the returned list.
+        e5 (Dim): The 6th element of the returned list.
+        e6 (Dim): The 7th element of the returned list.
+        e7 (Dim): The 8th element of the returned list.
+        e8 (Dim): The 9th element of the returned list.
+
+    Returns:
+        DimList[9]: The list containing the elements.
+    """
+    return __mlir_op.`pop.list.create`[
+        _type : __mlir_type[`!kgen.list<`, Dim, `[9]>`]
+    ](e0, e1, e2, e3, e4, e5, e6, e7, e8)
+
+
+@always_inline("nodebug")
+fn create_dim_list(
+    e0: Dim,
+    e1: Dim,
+    e2: Dim,
+    e3: Dim,
+    e4: Dim,
+    e5: Dim,
+    e6: Dim,
+    e7: Dim,
+    e8: Dim,
+    e9: Dim,
+) -> DimList[10]:
+    """Creates a list given a type and elements.
+
+    Args:
+        e0 (Dim): The 1st element of the returned list.
+        e1 (Dim): The 2nd element of the returned list.
+        e2 (Dim): The 3rd element of the returned list.
+        e3 (Dim): The 4th element of the returned list.
+        e4 (Dim): The 5th element of the returned list.
+        e5 (Dim): The 6th element of the returned list.
+        e6 (Dim): The 7th element of the returned list.
+        e7 (Dim): The 8th element of the returned list.
+        e8 (Dim): The 9th element of the returned list.
+        e9 (Dim): The 10th element of the returned list.
+
+    Returns:
+        DimList[10]: The list containing the elements.
+    """
+    return __mlir_op.`pop.list.create`[
+        _type : __mlir_type[`!kgen.list<`, Dim, `[10]>`]
+    ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9)
+
+
+@always_inline("nodebug")
+fn create_dim_list(
+    e0: Dim,
+    e1: Dim,
+    e2: Dim,
+    e3: Dim,
+    e4: Dim,
+    e5: Dim,
+    e6: Dim,
+    e7: Dim,
+    e8: Dim,
+    e9: Dim,
+    e10: Dim,
+) -> DimList[11]:
+    """Creates a list given a type and elements.
+
+    Args:
+        e0 (Dim): The 1st element of the returned list.
+        e1 (Dim): The 2nd element of the returned list.
+        e2 (Dim): The 3rd element of the returned list.
+        e3 (Dim): The 4th element of the returned list.
+        e4 (Dim): The 5th element of the returned list.
+        e5 (Dim): The 6th element of the returned list.
+        e6 (Dim): The 7th element of the returned list.
+        e7 (Dim): The 8th element of the returned list.
+        e8 (Dim): The 9th element of the returned list.
+        e9 (Dim): The 10th element of the returned list.
+        e10 (Dim): The 11th element of the returned list.
+
+    Returns:
+        DimList[11]: The list containing the elements.
+    """
+    return __mlir_op.`pop.list.create`[
+        _type : __mlir_type[`!kgen.list<`, Dim, `[11]>`]
+    ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10)
+
+
+@always_inline("nodebug")
+fn create_dim_list(
+    e0: Dim,
+    e1: Dim,
+    e2: Dim,
+    e3: Dim,
+    e4: Dim,
+    e5: Dim,
+    e6: Dim,
+    e7: Dim,
+    e8: Dim,
+    e9: Dim,
+    e10: Dim,
+    e11: Dim,
+) -> DimList[12]:
+    """Creates a list given a type and elements.
+
+    Args:
+        e0 (Dim): The 1st element of the returned list.
+        e1 (Dim): The 2nd element of the returned list.
+        e2 (Dim): The 3rd element of the returned list.
+        e3 (Dim): The 4th element of the returned list.
+        e4 (Dim): The 5th element of the returned list.
+        e5 (Dim): The 6th element of the returned list.
+        e6 (Dim): The 7th element of the returned list.
+        e7 (Dim): The 8th element of the returned list.
+        e8 (Dim): The 9th element of the returned list.
+        e9 (Dim): The 10th element of the returned list.
+        e10 (Dim): The 11th element of the returned list.
+        e11 (Dim): The 12th element of the returned list.
+
+    Returns:
+        DimList[12]: The list containing the elements.
+    """
+    return __mlir_op.`pop.list.create`[
+        _type : __mlir_type[`!kgen.list<`, Dim, `[12]>`]
+    ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11)
+
+
+@always_inline("nodebug")
+fn create_dim_list(
+    e0: Dim,
+    e1: Dim,
+    e2: Dim,
+    e3: Dim,
+    e4: Dim,
+    e5: Dim,
+    e6: Dim,
+    e7: Dim,
+    e8: Dim,
+    e9: Dim,
+    e10: Dim,
+    e11: Dim,
+    e12: Dim,
+) -> DimList[13]:
+    """Creates a list given a type and elements.
+
+    Args:
+        e0 (Dim): The 1st element of the returned list.
+        e1 (Dim): The 2nd element of the returned list.
+        e2 (Dim): The 3rd element of the returned list.
+        e3 (Dim): The 4th element of the returned list.
+        e4 (Dim): The 5th element of the returned list.
+        e5 (Dim): The 6th element of the returned list.
+        e6 (Dim): The 7th element of the returned list.
+        e7 (Dim): The 8th element of the returned list.
+        e8 (Dim): The 9th element of the returned list.
+        e9 (Dim): The 10th element of the returned list.
+        e10 (Dim): The 11th element of the returned list.
+        e11 (Dim): The 12th element of the returned list.
+        e12 (Dim): The 13th element of the returned list.
+
+    Returns:
+        DimList[13]: The list containing the elements.
+    """
+    return __mlir_op.`pop.list.create`[
+        _type : __mlir_type[`!kgen.list<`, Dim, `[13]>`]
+    ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12)
+
+
+@always_inline("nodebug")
+fn create_dim_list(
+    e0: Dim,
+    e1: Dim,
+    e2: Dim,
+    e3: Dim,
+    e4: Dim,
+    e5: Dim,
+    e6: Dim,
+    e7: Dim,
+    e8: Dim,
+    e9: Dim,
+    e10: Dim,
+    e11: Dim,
+    e12: Dim,
+    e13: Dim,
+) -> DimList[14]:
+    """Creates a list given a type and elements.
+
+    Args:
+        e0 (Dim): The 1st element of the returned list.
+        e1 (Dim): The 2nd element of the returned list.
+        e2 (Dim): The 3rd element of the returned list.
+        e3 (Dim): The 4th element of the returned list.
+        e4 (Dim): The 5th element of the returned list.
+        e5 (Dim): The 6th element of the returned list.
+        e6 (Dim): The 7th element of the returned list.
+        e7 (Dim): The 8th element of the returned list.
+        e8 (Dim): The 9th element of the returned list.
+        e9 (Dim): The 10th element of the returned list.
+        e10 (Dim): The 11th element of the returned list.
+        e11 (Dim): The 12th element of the returned list.
+        e12 (Dim): The 13th element of the returned list.
+        e13 (Dim): The 14th element of the returned list.
+
+    Returns:
+        DimList[14]: The list containing the elements.
+    """
+    return __mlir_op.`pop.list.create`[
+        _type : __mlir_type[`!kgen.list<`, Dim, `[14]>`]
+    ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13)
+
+
+@always_inline("nodebug")
+fn create_dim_list(
+    e0: Dim,
+    e1: Dim,
+    e2: Dim,
+    e3: Dim,
+    e4: Dim,
+    e5: Dim,
+    e6: Dim,
+    e7: Dim,
+    e8: Dim,
+    e9: Dim,
+    e10: Dim,
+    e11: Dim,
+    e12: Dim,
+    e13: Dim,
+    e14: Dim,
+) -> DimList[15]:
+    """Creates a list given a type and elements.
+
+    Args:
+        e0 (Dim): The 1st element of the returned list.
+        e1 (Dim): The 2nd element of the returned list.
+        e2 (Dim): The 3rd element of the returned list.
+        e3 (Dim): The 4th element of the returned list.
+        e4 (Dim): The 5th element of the returned list.
+        e5 (Dim): The 6th element of the returned list.
+        e6 (Dim): The 7th element of the returned list.
+        e7 (Dim): The 8th element of the returned list.
+        e8 (Dim): The 9th element of the returned list.
+        e9 (Dim): The 10th element of the returned list.
+        e10 (Dim): The 11th element of the returned list.
+        e11 (Dim): The 12th element of the returned list.
+        e12 (Dim): The 13th element of the returned list.
+        e13 (Dim): The 14th element of the returned list.
+        e14 (Dim): The 15th element of the returned list.
+
+    Returns:
+        DimList[15]: The list containing the elements.
+    """
+    return __mlir_op.`pop.list.create`[
+        _type : __mlir_type[`!kgen.list<`, Dim, `[15]>`]
+    ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14)
+
+
+@always_inline("nodebug")
+fn create_dim_list(
+    e0: Dim,
+    e1: Dim,
+    e2: Dim,
+    e3: Dim,
+    e4: Dim,
+    e5: Dim,
+    e6: Dim,
+    e7: Dim,
+    e8: Dim,
+    e9: Dim,
+    e10: Dim,
+    e11: Dim,
+    e12: Dim,
+    e13: Dim,
+    e14: Dim,
+    e15: Dim,
+) -> DimList[16]:
+    """Creates a list given a type and elements.
+
+    Args:
+        e0 (Dim): The 1st element of the returned list.
+        e1 (Dim): The 2nd element of the returned list.
+        e2 (Dim): The 3rd element of the returned list.
+        e3 (Dim): The 4th element of the returned list.
+        e4 (Dim): The 5th element of the returned list.
+        e5 (Dim): The 6th element of the returned list.
+        e6 (Dim): The 7th element of the returned list.
+        e7 (Dim): The 8th element of the returned list.
+        e8 (Dim): The 9th element of the returned list.
+        e9 (Dim): The 10th element of the returned list.
+        e10 (Dim): The 11th element of the returned list.
+        e11 (Dim): The 12th element of the returned list.
+        e12 (Dim): The 13th element of the returned list.
+        e13 (Dim): The 14th element of the returned list.
+        e14 (Dim): The 15th element of the returned list.
+        e15 (Dim): The 16th element of the returned list.
+
+    Returns:
+        DimList[16]: The list containing the elements.
+    """
+    return __mlir_op.`pop.list.create`[
+        _type : __mlir_type[`!kgen.list<`, Dim, `[16]>`]
+    ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15)
+
+
+# ===----------------------------------------------------------------------===#
 # create_kgen_list
 # ===----------------------------------------------------------------------===#
 
@@ -863,54 +1532,6 @@ fn is_all_known_range_impl[
                 index + 1, start_idx, end_idx, rank, shape
             ]()
         )
-
-
-# ===----------------------------------------------------------------------===#
-# create_kgen_list_unknown
-# ===----------------------------------------------------------------------===#
-
-
-@always_inline("nodebug")
-fn create_kgen_list_unknown[
-    len: __mlir_type.index
-]() -> __mlir_type[`!kgen.list<`, __mlir_type.index, `[`, len, `]>`]:
-    """Creates a list of LEN kgen.unknown elements."""
-    alias unknown = __mlir_attr.`#kgen.unknown : index`
-
-    @parameter
-    if len == 1:
-        return rebind[
-            __mlir_type[`!kgen.list<`, __mlir_type.index, `[`, len, `]>`]
-        ](create_kgen_list(unknown))
-
-    @parameter
-    if len == 2:
-        return rebind[
-            __mlir_type[`!kgen.list<`, __mlir_type.index, `[`, len, `]>`]
-        ](create_kgen_list(unknown, unknown))
-
-    @parameter
-    if len == 3:
-        return rebind[
-            __mlir_type[`!kgen.list<`, __mlir_type.index, `[`, len, `]>`]
-        ](create_kgen_list(unknown, unknown, unknown))
-
-    @parameter
-    if len == 4:
-        return rebind[
-            __mlir_type[`!kgen.list<`, __mlir_type.index, `[`, len, `]>`]
-        ](create_kgen_list(unknown, unknown, unknown, unknown))
-
-    @parameter
-    if len == 5:
-        return rebind[
-            __mlir_type[`!kgen.list<`, __mlir_type.index, `[`, len, `]>`]
-        ](create_kgen_list(unknown, unknown, unknown, unknown, unknown))
-
-    debug_assert(False, "unreachable")
-    return rebind[
-        __mlir_type[`!kgen.list<`, __mlir_type.index, `[`, len, `]>`]
-    ](create_kgen_list(unknown))
 
 
 # ===----------------------------------------------------------------------===#
