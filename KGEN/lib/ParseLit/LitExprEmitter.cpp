@@ -392,63 +392,31 @@ CValue ExprEmitter::emitBValueToRValue(ASTExprAnd<BValue> value,
   if (auto pValue = value.ir.getIfPValue())
     return emitCResult(pValue, value.expr, dest);
 
-  // If this is a trivial type, then we can emit a direct use/load for it.
+  // If this is a user defined type, invoke the clone method.
+  if (value.ir.getRValueType().getDecl(shared))
+    return emitNamedMethodCall("__clone__", {value}, dest,
+                               CallSyntax::kImplicitConvert, value.expr);
+
+  // Otherwise this is a trivial type, then we can emit a direct use/load for
+  // it.
   // TODO: Generalize this beyond MLIR types to being a flag on register
   // passable.
-  ASTType rvalueType = value.ir.getRValueType();
-  auto typeDecl = rvalueType.getDecl(shared);
-  if (!typeDecl) {
-    SRValue result;
-    if (auto sbVal = value.ir.getIfSBValue()) {
-      result = SRValue(sbVal);
-    } else {
-      if (!builder) {
-        emitError(value.expr->getLoc(),
-                  "cannot use a dynamic value in a parameter context")
-            << value.expr->getRange();
-        return {};
-      }
-      auto mbVal = value.ir.getIfMBValue();
-      assert(mbVal && "Unknown BValue");
-      result =
-          builder->create<POP::LoadOp>(value.expr->getLocation(*this), mbVal,
-                                       /*alignment=*/std::nullopt);
-    }
-    return emitCResult(result, value.expr, dest);
-  }
-
-  auto emitNoCloneError = [&]() {
-    auto diag = emitError(value.expr->getLoc(), "cannot clone this value: ")
-                << rvalueType << " doesn't implement '__clone__'"
-                << value.expr->getRange();
-    diag.attachNote(typeDecl->getLoc()) << "type declared here";
-  };
-
-  // Check for the presence of a valid __clone__ method.
-  OverloadSet clone(rvalueType, "__clone__", value.expr,
-                    CallSyntax::kImplicitConvert, shared, emitNoCloneError);
-  if (clone.isNull())
-    return {};
-
-  // TODO(ownership): We cannot call clone with SBValue's due to the clone
-  // signature taking something byref.
+  SRValue result;
   if (auto sbVal = value.ir.getIfSBValue()) {
-    // WRONG: Dropping clone call.
-    auto res = emitCResult(SRValue(sbVal), value.expr, dest);
-    assert(!res || res.getIfRValue() || res.getIfBValue());
-    return res;
+    result = SRValue(sbVal);
+  } else {
+    if (!builder) {
+      emitError(value.expr->getLoc(),
+                "cannot use a dynamic value in a parameter context")
+          << value.expr->getRange();
+      return {};
+    }
+    auto mbVal = value.ir.getIfMBValue();
+    assert(mbVal && "Unknown BValue");
+    result = builder->create<POP::LoadOp>(value.expr->getLocation(*this), mbVal,
+                                          /*alignment=*/std::nullopt);
   }
-
-  // TODO(ownership): The signature for clone currently takes a byref self
-  // so pass the pointer as an LValue even though it should be MBValue.  We
-  // should eventually support decaying an LValue to MRValue, but we're not
-  // ready for that.
-  auto mbVal = value.ir.getIfMBValue();
-  assert(mbVal && "Unknown BValue");
-  ASTExprAnd<AnyValue> cloneArgValue{LValue(mbVal), value.expr};
-
-  // Ok, cool we know it will succeed; do it.
-  return clone.emitCall(cloneArgValue, dest, *this);
+  return emitCResult(result, value.expr, dest);
 }
 
 /// Emit a register primary PValue to an SRValue.

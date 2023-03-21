@@ -156,6 +156,7 @@ fn param_if[a: __mlir_type.i1, b: Bool]():
 # CHECK-NEXT:    }
 # CHECK-NEXT:    hlcf.continue
 # CHECK-NEXT:  }
+# CHECK-NEXT:  __clone__
 # CHECK-NEXT:  lit.return
 # CHECK-NEXT:  lit.end_func
 # CHECK-NEXT:  }
@@ -346,7 +347,9 @@ fn propagateErrorInTry():
 
 # CHECK-LABEL: lit.func @"raiseError
 def raiseErrorInDef(err: Error):
-    # CHECK: lit.raise %0
+    # CHECK: %1 = pop.load %err_0
+    # CHECK: %2 = kgen.call {{.*}}"__clone__{{.*}}(%1)
+    # CHECK: lit.raise %2
     raise err
 
 
@@ -360,9 +363,10 @@ def raiseErrorInIf(cond: Bool, err: Error):
 
 # CHECK-LABEL: lit.func @"raiseErrorInTry
 fn raiseErrorInTry(err: Error):
-    # CHECK: lit.try
+    # CHECK: lit.try {
     try:
-        # CHECK-NEXT: lit.raise %err
+        # CHECK: %0 = kgen.call {{.*}}"__clone__{{.*}}(%err)
+        # CHECK-NEXT: lit.raise %0
         raise err
     except:
         pass

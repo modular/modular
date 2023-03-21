@@ -211,12 +211,14 @@ fn ownedConventionMem(owned a: StructWithInit, borrowed b: StructWithInit):
   # CHECK: %0 = lit.struct.gep %a[x]
   # CHECK: %1 = pop.load %0
   # CHECK: %_ = lit.varlet.decl
-  # CHECK: pop.store %1, %_
+  # CHECK: %2 = kgen.call {{.*}}__clone__{{.*}}(%1)
+  # CHECK: pop.store %2, %_
   _ = a.x
-  # CHECK: %2 = lit.struct.gep %b[y]
-  # CHECK: %3 = pop.load %2
+  # CHECK: %3 = lit.struct.gep %b[y]
+  # CHECK: %4 = pop.load %3
   # CHECK: %__0 = lit.varlet.decl
-  # CHECK: pop.store %3, %__0
+  # CHECK: %5 = kgen.call {{.*}}__clone__{{.*}}(%4)
+  # CHECK: pop.store %5, %__0
   _ = b.y
 
 @register_passable
@@ -231,11 +233,13 @@ fn ownedConventionReg(owned a: RPStructWithInit,
                       borrowed b: RPStructWithInit):
   # CHECK: %0 = lit.struct.extract %a[x]
   # CHECK: %_ = lit.varlet.decl
-  # CHECK: pop.store %0, %_
+  # CHECK: %1 = kgen.call {{.*}}"__clone__{{.*}}(%0)
+  # CHECK: pop.store %1, %_
   _ = a.x
-  # CHECK: %1 = lit.struct.extract %b[y]
+  # CHECK: %2 = lit.struct.extract %b[y]
   # CHECK: %__0 = lit.varlet.decl
-  # CHECK: pop.store %1, %__0
+  # CHECK: %3 = kgen.call {{.*}}"__clone__{{.*}}(%2)
+  # CHECK: pop.store %3, %__0
   _ = b.y
 
 
@@ -288,7 +292,7 @@ struct VaList[EltType: __mlir_type.`!kgen.mlirtype`]:
   alias StorageType =  __mlir_type[`!kgen.variadic<`, EltType, `>`]
   var value: StorageType
 
-  fn __clone__(self&) -> Self:
+  fn __clone__(self) -> Self:
     return Self{value: self.value}
 
   fn __init__(value: StorageType) -> VaList[EltType]:
@@ -345,8 +349,8 @@ fn varArgsBorrowed[*Ts: __mlir_type.`!kgen.mlirtype`](borrowed args*: Ts):
 
 
 # CHECK-LABEL: lit.func @"usePacks
-# CHECK-SAME: %[[ARGX:.*]]: !kgen.declref<@"$F32"::@F32>
-# CHECK-SAME: %[[ARGY:.*]]: !kgen.declref<@"$Int"::@Int>
+# CHECK-SAME: [[ARGX:%.*]]: !kgen.declref<@"$F32"::@F32>
+# CHECK-SAME: [[ARGY:%.*]]: !kgen.declref<@"$Int"::@Int>
 fn usePacks(x: F32, y: Int):
   # CHECK: lit.varlet.decl "a", var = true : <@"$decls"::@Tuple<Ts: variadic<!kgen.mlirtype> = [!kgen.declref<@"$Int"::@Int>]>>
   var a: Tuple[Int]
@@ -362,13 +366,16 @@ fn usePacks(x: F32, y: Int):
   # CHECK: %[[PACK3:.*]] = kgen.param.constant: !pop.pack<[]> = <<>>
   # CHECK: kgen.call @"$decls"::@"varArgs(__mlir_type.!pop.pack<Ts>)"<Ts: variadic<!kgen.mlirtype> = []>(%[[PACK3]])
   varArgs()
-  # CHECK: %[[PACK4:.*]] = pop.pack.create(%{{.*}}, %[[ARGX]], %[[ARGY]])
+
+  # CHECK: [[ARGX2:%.*]] = kgen.call {{.*}}__clone__{{.*}}([[ARGX]])
+  # CHECK: [[ARGY2:%.*]] = kgen.call {{.*}}__clone__{{.*}}([[ARGY]])
+  # CHECK: %[[PACK4:.*]] = pop.pack.create(%{{.*}}, [[ARGX2]], [[ARGY2]])
   # CHECK: kgen.call @"$decls"::@"varArgs(__mlir_type.!pop.pack<Ts>)"<Ts: variadic<!kgen.mlirtype> = [!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$F32"::@F32>, !kgen.declref<@"$Int"::@Int>]>(%[[PACK4]])
   varArgs[Int, F32, Int](1, x, y)
 
   # CHECK: kgen.param.constant: @"$Int"::@Int = <#lit.struct<{value: scalar<index> = 1}>>
-  # CHECK-NEXT: [[PACK5:%.*]] = pop.pack.create(%{{.*}}, %[[ARGX]], %[[ARGY]])
-  # CHECK-NEXT: kgen.call {{.*}}varArgsBorrowed{{.*}}(%10)
+  # CHECK-NEXT: [[PACK5:%.*]] = pop.pack.create(%{{.*}}, [[ARGX]], [[ARGY]])
+  # CHECK-NEXT: kgen.call {{.*}}varArgsBorrowed{{.*}}([[PACK5]])
   varArgsBorrowed[Int, F32, Int](1, x, y)
 
 ##===----------------------------------------------------------------------===##
@@ -402,7 +409,8 @@ fn raisesReturnsVariant() -> __mlir_type.`!pop.variant<@"$prolog"::@Error, index
 # CHECK-LABEL: lit.func @"return_impl_convert_raises
 @raises
 fn return_impl_convert_raises(a: Error) -> Error:
-  # CHECK-NEXT: lit.return %a
+  # CHECK: [[TMP:%.*]] = kgen.call {{.*}}__clone__{{.*}}(%a)
+  # CHECK-NEXT: lit.return [[TMP]]
   return a
 
 ##===----------------------------------------------------------------------===##
@@ -428,12 +436,14 @@ struct StructWithInit:
   # CHECK-SAME: (%self: !pop.pointer<@"$decls"::@StructWithInit> byref_result,
   fn __init__(self, a: Int):
     # CHECK: %0 = lit.struct.gep %self[x]
-    # CHECK: pop.store %a, %0
+    # CHECK: [[TMP:%.*]] = kgen.call {{.*}}__clone__{{.*}}(%a)
+    # CHECK: pop.store [[TMP]], %0
     self.x = a
-    # CHECK: %1 = lit.struct.gep %self[x]
-    # CHECK: %2 = lit.struct.gep %self[y]
-    # CHECK: %3 = kgen.call {{.*}}__clone__{{.*}}(%1)
-    # CHECK: pop.store %3, %2
+    # CHECK: [[XP:%.*]] = lit.struct.gep %self[x]
+    # CHECK: [[YP:%.*]] = lit.struct.gep %self[y]
+    # CHECK: [[XT:%.*]] = pop.load [[XP]]
+    # CHECK: [[XT2:%.*]] = kgen.call {{.*}}__clone__{{.*}}([[XT]])
+    # CHECK: pop.store [[XT2]], [[YP]]
     self.y = self.x
     # CHECK-NEXT: lit.end_func
     return
@@ -450,9 +460,11 @@ struct StructWithInit:
     else:
 
     # CHECK: [[XP:%.*]] = lit.struct.gep %__result__[x]
-    # CHECK: pop.store %a, [[XP]]
+    # CHECK: [[AT:%.*]] = kgen.call {{.*}}__clone__{{.*}}(%a)
+    # CHECK: pop.store [[AT]], [[XP]]
     # CHECK: [[YP:%.*]] = lit.struct.gep %__result__[y]
-    # CHECK: pop.store %b, [[YP]]
+    # CHECK: [[BT:%.*]] = kgen.call {{.*}}__clone__{{.*}}(%b)
+    # CHECK: pop.store [[BT]], [[YP]]
       return StructWithInit{x: a, y: b}
 
   fn __init__() -> Self:
@@ -461,7 +473,7 @@ struct StructWithInit:
 # CHECK-LABEL: lit.struct.decl @StructExample
 @register_passable
 struct StructExample:
-  fn __clone__(self&) -> Self:
+  fn __clone__(self) -> Self:
     return Self{}
 
   fn __init__() -> StructExample:
