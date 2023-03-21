@@ -12,6 +12,30 @@ from Assert import assert_param, assert_param_bool, debug_assert
 from DType import DType
 from List import DimList
 
+# Padding handling method.
+@register_passable
+struct PadHandling:
+    var value: Int
+    alias EXCLUDE_PAD = PadHandling(0)  # Do not count padding.
+    alias INCLUDE_PAD = PadHandling(2)  # Count padding.
+
+    @always_inline("nodebug")
+    fn __clone__(self&) -> Self:
+        return Self {value: self.value}
+
+    @always_inline("nodebug")
+    fn __init__(value: Int) -> PadHandling:
+        return PadHandling {value: value}
+
+    @always_inline("nodebug")
+    fn __eq__(self, rhs: PadHandling) -> Bool:
+        return self.value == rhs.value
+
+    @always_inline("nodebug")
+    fn __ne__(self, rhs: PadHandling) -> Bool:
+        return self.value != rhs.value
+
+
 # Data layout encoding.
 @register_passable
 struct Image2DLayout:
@@ -166,7 +190,7 @@ struct ImageData[
         return Int(0)
 
     fn get_tuple_index(self, idx: Int) -> StaticIntTuple[4]:
-        """Converts the flat index to the flat index of the underlying
+        """Converts the flat index to the dimension index of the underlying
         data based on the tensor layout.
 
         Args:
