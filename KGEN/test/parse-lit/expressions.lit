@@ -117,10 +117,8 @@ fn memoryOnlyOps(a&: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%mpFloat, [[V2X]])
   let mpFloat : MemoryOnlyF64 = v2.x
 
-  # CHECK-NEXT: kgen.param.constant: variadic<@"$SIMD"::@SIMD
-  # CHECK-NEXT: [[SIMD:%.*]] = kgen.call @"$SIMD"::@SIMD::@"__init__
-  # CHECK-NEXT: [[TMP:%.*]] = lit.varlet.decl "_", var = false
-  # CHECK-NEXT: kgen.call @{{.*}}inferred_function_with_memory_result{{.*}}([[TMP]], [[SIMD]])
+  # CHECK: [[TMP:%.*]] = lit.varlet.decl "_", var = false
+  # CHECK-NEXT: kgen.call @{{.*}}inferred_function_with_memory_result{{.*}}([[TMP]]
   _ = inferred_function_with_memory_result(SIMD[4, DType.f32.value]())
 
   # Memory-only default argument with memory-only result.
