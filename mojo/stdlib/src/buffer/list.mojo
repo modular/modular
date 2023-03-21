@@ -17,7 +17,7 @@ from Assert import assert_param_bool_msg
 # ===----------------------------------------------------------------------===#
 
 
-@register_passable
+@register_passable("trivial")
 struct Dim:
     """A static or dynamic dimension modeled with an optional integer. This
     class is meant to represent an optional static dimension. When a value is
@@ -68,17 +68,6 @@ struct Dim:
             Dim: A dimension value with no static value.
         """
         return __mlir_op.`pop.variant.create`[_type:type](__mlir_attr.`0 : i1`)
-
-    @always_inline
-    fn __copy__(self) -> Dim:
-        """Clone the dimension.
-
-        Args:
-            self (Self): The value to clone.
-        Returns:
-            Dim: A copy of the dimension.
-        """
-        return self.value
 
     @always_inline
     fn __bool__(self) -> Bool:
@@ -178,7 +167,7 @@ struct Dim:
 # ===----------------------------------------------------------------------===#
 
 
-@register_passable
+@register_passable("trivial")
 struct DimList[length: Int]:
     """This type represents a list of dimensions. Each dimension may have a
     static value or not have a value, which represents a dynamic dimension."""
@@ -1539,7 +1528,7 @@ fn is_all_known_range_impl[
 # ===----------------------------------------------------------------------===#
 
 
-@register_passable
+@register_passable("trivial")
 struct VariadicList[type: __mlir_type.`!kgen.mlirtype`]:
     """A utility class to access variadic function arguments. Provides a "list"
     view of the function argument so that the size of the argument list and each
@@ -1548,9 +1537,6 @@ struct VariadicList[type: __mlir_type.`!kgen.mlirtype`]:
 
     alias StorageType = __mlir_type[`!kgen.variadic<`, type, `>`]
     var value: StorageType
-
-    fn __copy__(self) -> Self:
-        return Self {value: self.value}
 
     fn __init__(*value: type) -> Self:
         """Constructs a VariadicList from a variadic list of arguments.

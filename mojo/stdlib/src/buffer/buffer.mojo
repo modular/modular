@@ -57,8 +57,8 @@ fn _raw_stack_allocation[
 # Buffer
 # ===----------------------------------------------------------------------===#
 
-
-@register_passable
+# TODO: This should not be implicitly copyable when we have ownership set up!
+@register_passable("trivial")
 struct Buffer[size: Dim, type: DType]:
     """Defines a Buffer which can be parametrized on a static size and Dtype.
     The Buffer does not own its underlying pointer.
@@ -67,13 +67,6 @@ struct Buffer[size: Dim, type: DType]:
     var data: DTypePointer[type]
     var dynamic_size: Int
     var dtype: DType
-
-    # TODO: This should not be implicitly copyable when we have ownership all
-    # set up!
-    fn __copy__(self) -> Self:
-        return Self {
-            data: self.data, dynamic_size: self.dynamic_size, dtype: self.dtype
-        }
 
     fn __init__(
         ptr: __mlir_type[`!pop.pointer<scalar<`, type.value, `>>`]
@@ -452,7 +445,7 @@ fn _compute_ndbuffer_stride[
 # ===----------------------------------------------------------------------===#
 
 
-@register_passable
+@register_passable("trivial")
 struct NDBuffer[
     rank: Int,
     shape: DimList[rank],
@@ -466,17 +459,6 @@ struct NDBuffer[
     var dynamic_dtype: DType
     var dynamic_stride: StaticIntTuple[rank.__as_mlir_index()]
     var is_contiguous: Bool
-
-    @always_inline("nodebug")
-    fn __copy__(self) -> Self:
-        return Self {
-            data: self.data,
-            _rank: self._rank,
-            dynamic_shape: self.dynamic_shape,
-            dynamic_dtype: self.dynamic_dtype.value,
-            dynamic_stride: self.dynamic_stride,
-            is_contiguous: self.is_contiguous,
-        }
 
     fn __init__(
         ptr: __mlir_type[`!pop.pointer<scalar<`, type.value, `>>`],
@@ -901,7 +883,7 @@ fn partial_simd_store[
 # ===----------------------------------------------------------------------===#
 
 
-@register_passable
+@register_passable("trivial")
 struct DynamicRankBuffer:
     """This buffer struct does not assume the rank to be static. It is not as
     efficient as the statically ranked buffer, but is useful when interacting
@@ -911,12 +893,6 @@ struct DynamicRankBuffer:
     var rank: Int
     var shape: DTypePointer[DType.index]
     var type: DType
-
-    @always_inline
-    fn __copy__(self) -> Self:
-        return Self {
-            data: self.data, rank: self.rank, shape: self.shape, type: self.type
-        }
 
     @always_inline
     fn __init__(
