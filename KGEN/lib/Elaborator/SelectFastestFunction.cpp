@@ -16,6 +16,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/PassManager.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Target/TargetMachine.h"
 
 #define DEBUG_TYPE "select-fastest-function"
 
@@ -52,8 +53,15 @@ ErrorOr<size_t>
 M::KGEN::evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
                                  LLCL::Runtime &runtime, TargetInfoAttr target,
                                  ArrayRef<FuncOp> specializations) {
+  auto tmOr = createTargetMachine(CompilationOptions(), true);
+  if (tmOr.isError())
+    return tmOr.takeError();
+
   // Create the execution engine.
-  UNWRAP_ERROR(engine, ExecutionEngine::create(CompilationOptions()));
+  UNWRAP_ERROR(
+      engine,
+      ExecutionEngine::create(
+          ExecutionEngineOptions{/*registerDebugPlugins=*/false}, **tmOr));
 
   // TODO (8082): This should not be necessary.
   std::vector<std::pair<StringLiteral, void *>> compilerRTFunctions;

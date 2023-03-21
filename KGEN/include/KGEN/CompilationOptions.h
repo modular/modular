@@ -9,14 +9,12 @@
 
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/Target.h"
 #include "llvm/Support/CodeGen.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/TargetParser/Host.h"
 
 namespace M::KGEN {
-/// Get the host CPU features string with only a list of supported features.
-std::string getHostCPUFeatures();
-
 /// This class provides a set of options used to control the compilation of
 /// KGEN modules.
 class CompilationOptions {

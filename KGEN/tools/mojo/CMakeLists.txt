@@ -10,12 +10,15 @@ add_modular_tool(mojo
   LINK_COMPONENTS
   native
   nativecodegen
+  OrcTargetProcess
 
   LINK_LIBS PRIVATE
   KGENCLOptions
   KGENCompiler
   KGENCompilerRT
   KGENDialect
+  KGENEmitObject
+  KGENExecutionEngine
   LITDialect
   LLCLRuntimeGlobals
   POPDialect

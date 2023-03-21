@@ -33,6 +33,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/ToolOutputFile.h"
+#include "llvm/Target/TargetMachine.h"
 
 using namespace M;
 using namespace KGEN;
@@ -227,7 +228,15 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return clOptions.reportError("can only execute on host target");
 
   // Now create the execution engine so we can JIT.
-  auto engineOr = ExecutionEngine::create(compilationOptions);
+  auto tmOr = createTargetMachine(compilationOptions,
+                                  /*isJIT=*/true);
+  if (tmOr.isError())
+    return clOptions.reportError(tmOr.getError());
+
+  auto engineOr = ExecutionEngine::create(
+      {/*registerDebugPlugins=*/compilationOptions.debugLevel !=
+       CompilationOptions::DebugInfoLevel::kNoDebug},
+      **tmOr);
   if (failed(engineOr))
     return clOptions.reportError(engineOr.getError());
   ExecutionEngine engine = std::move(*engineOr);

@@ -8,7 +8,6 @@
 #define KGEN_EXECUTION_ENGINE_H
 
 #include "Cache/Buffer.h"
-#include "KGEN/CompilationOptions.h"
 #include "Support/ErrorOr.h"
 #include "Support/FunctionExtras.h"
 #include "llvm/ADT/StringSet.h"
@@ -17,8 +16,18 @@
 #include "llvm/ExecutionEngine/Orc/TargetProcess/JITLoaderGDB.h"
 #include "llvm/IR/DataLayout.h"
 
+namespace llvm {
+class TargetMachine;
+}
+
 namespace M::KGEN {
-class CompilationOptions;
+/// This is a struct of options that the ExecutionEngine wants to have on
+/// construction. These are like the KGEN compilation options, but we want to
+/// avoid depending on them directly.
+struct ExecutionEngineOptions {
+  /// Whether or not to register the GDB plugins.
+  bool registerDebugPlugins = false;
+};
 
 /// This class provides an interface to interact with a compiled func. You
 /// can either invoke the func, or get it as an object. The lifetime of one of
@@ -64,7 +73,8 @@ public:
   /// This class is move-constructible.
   ExecutionEngine(ExecutionEngine &&other);
 
-  static ErrorOr<ExecutionEngine> create(const CompilationOptions &options);
+  static ErrorOr<ExecutionEngine> create(ExecutionEngineOptions options,
+                                         const llvm::TargetMachine &tm);
 
   /// Add an archive to the JIT.
   ErrorOrSuccess add(StringRef libName, Cache::BufferRef archive);
@@ -78,7 +88,7 @@ public:
   ErrorOr<CompiledFunc> lookup(StringRef symbol);
 
 private:
-  explicit ExecutionEngine(CompilationOptions options,
+  explicit ExecutionEngine(ExecutionEngineOptions options,
                            std::unique_ptr<llvm::orc::ExecutionSession> session,
                            const llvm::DataLayout &dl);
 
@@ -94,7 +104,7 @@ private:
   void addToSearchOrder(StringRef name, llvm::orc::JITDylib *dylib);
 
   /// The compilation options to use.
-  CompilationOptions options;
+  ExecutionEngineOptions options;
 
   /// The ORC requires an ExecutionSession - this is how it coordinates
   /// execution across processes/machines.

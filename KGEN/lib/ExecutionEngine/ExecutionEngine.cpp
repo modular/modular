@@ -5,13 +5,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/ExecutionEngine.h"
+#include "Cache/BlobCache.h"
 #include "Cache/Support/Keys.h"
-#include "KGEN/CompilationOptions.h"
 #include "KGEN/ExecutionEngine/ORCCASID.h"
-#include "KGEN/LowerToObject.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "Support/ErrorOr.h"
-#include "Support/MDialect/MAttrs.h"
 #include "Support/TempFile.h"
 #include "llvm/ExecutionEngine/Orc/COFFPlatform.h"
 #include "llvm/ExecutionEngine/Orc/Core.h"
@@ -80,7 +78,7 @@ static ErrorOrSuccess writeORCRTToFile(BufferRef &buf, std::string &outPath) {
 /// The main reason to use the platform like this is that it automatically sets
 /// up the various symbols that complex code will need to execute on a target.
 static ErrorOrSuccess
-setupPlatform(StringRef orcRTPath, llvm::TargetMachine &tm,
+setupPlatform(StringRef orcRTPath, const llvm::DataLayout &dataLayout,
               llvm::orc::ExecutionSession &session,
               llvm::orc::ObjectLinkingLayer &objLinkingLayer) {
   llvm::orc::JITDylib &platformStdlib =
@@ -89,7 +87,7 @@ setupPlatform(StringRef orcRTPath, llvm::TargetMachine &tm,
   // Add the current process symbols in.
   if (auto generator =
           llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
-              tm.createDataLayout().getGlobalPrefix()))
+              dataLayout.getGlobalPrefix()))
     platformStdlib.addGenerator(std::move(*generator));
   else
     return Error(toString(generator.takeError()));
@@ -115,15 +113,16 @@ setupPlatform(StringRef orcRTPath, llvm::TargetMachine &tm,
       return Error(toString(platform.takeError()));
   } else if (tt.isOSBinFormatCOFF()) {
     // Windows needs some help to load dylibs, apparently.
-    auto loadDynamicLibrary = [tt, &tm](llvm::orc::JITDylib &jd,
-                                        StringRef dllName) -> llvm::Error {
+    auto loadDynamicLibrary = [tt,
+                               &dataLayout](llvm::orc::JITDylib &jd,
+                                            StringRef dllName) -> llvm::Error {
       if (!dllName.endswith_insensitive(".dll"))
         return llvm::make_error<llvm::StringError>(
             "DLLName not ending with .dll", llvm::inconvertibleErrorCode());
 
       if (auto dylibGeneratorOr =
               llvm::orc::DynamicLibrarySearchGenerator::Load(
-                  dllName.data(), tm.createDataLayout().getGlobalPrefix()))
+                  dllName.data(), dataLayout.getGlobalPrefix()))
         jd.addGenerator(std::move(*dylibGeneratorOr));
       else
         return dylibGeneratorOr.takeError();
@@ -167,13 +166,10 @@ static ErrorOr<std::optional<BufferRef>> getORCRT() {
 }
 
 M::ErrorOr<ExecutionEngine>
-ExecutionEngine::create(const CompilationOptions &options) {
+ExecutionEngine::create(ExecutionEngineOptions options,
+                        const llvm::TargetMachine &tm) {
   // Create the target machine.
-  auto tmOr = KGEN::createTargetMachine(options, /*isJIT=*/true);
-  if (tmOr.isError())
-    return tmOr.takeError();
-  std::unique_ptr<llvm::TargetMachine> tm = std::move(*tmOr);
-  const llvm::DataLayout &layout = tm->createDataLayout();
+  const llvm::DataLayout &layout = tm.createDataLayout();
 
   // Construct the ExecutionSession.
   auto epcOr = llvm::orc::SelfExecutorProcessControl::Create();
@@ -184,9 +180,9 @@ ExecutionEngine::create(const CompilationOptions &options) {
       std::make_unique<llvm::orc::ExecutionSession>(std::move(*epcOr));
 
   // Now we can actually create the ExecutionEngine.
-  ExecutionEngine ee(options, std::move(sessionPtr), layout);
+  ExecutionEngine ee(std::move(options), std::move(sessionPtr), layout);
 
-  const llvm::Triple &tt = tm->getTargetTriple();
+  const llvm::Triple &tt = tm.getTargetTriple();
 
   // Get the ORC runtime binary.
   auto orcRTBuf = getORCRT();
@@ -207,8 +203,8 @@ ExecutionEngine::create(const CompilationOptions &options) {
       std::make_unique<llvm::orc::ObjectLinkingLayer>(*ee.executionSession);
 
   // If we have the platform support library, use it.
-  if (auto err =
-          setupPlatform(orcRTPath, *tm, *ee.executionSession, *ee.objectLayer))
+  if (auto err = setupPlatform(orcRTPath, ee.dataLayout, *ee.executionSession,
+                               *ee.objectLayer))
     return err.takeError();
 
   // COFF format binaries (Windows) need special handling to deal with
@@ -218,7 +214,7 @@ ExecutionEngine::create(const CompilationOptions &options) {
     ee.objectLayer->setAutoClaimResponsibilityForObjectSymbols(true);
   }
 
-  if (options.debugLevel != CompilationOptions::kNoDebug) {
+  if (ee.options.registerDebugPlugins) {
     llvm::orc::ExecutionSession &session = *ee.executionSession;
 
     // Get the registrar for the GDB JIT loader interface.
@@ -268,7 +264,7 @@ ExecutionEngine::create(const CompilationOptions &options) {
 }
 
 ExecutionEngine::ExecutionEngine(
-    CompilationOptions options,
+    ExecutionEngineOptions options,
     std::unique_ptr<llvm::orc::ExecutionSession> session,
     const llvm::DataLayout &dl)
     : options(std::move(options)), executionSession(std::move(session)),
