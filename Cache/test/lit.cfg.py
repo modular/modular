@@ -5,8 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 
 import os
+import platform
 
 from lit.llvm import llvm_config
+
+
+def is_apple_silicon() -> bool:
+    return platform.system() == "Darwin" and platform.processor() == "arm"
+
 
 # Configuration file for the 'lit' test runner.
 
@@ -30,3 +36,8 @@ tool_dirs = [
 tools = ["cache-opt", "cache-mgr"]
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)
+
+# We need to add this so that the tests can be predicated on whether we're
+# running on an Apple M1 machine.
+if is_apple_silicon():
+    config.available_features.add("apple-m1")

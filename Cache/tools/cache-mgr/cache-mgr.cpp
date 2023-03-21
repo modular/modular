@@ -28,12 +28,20 @@ namespace {
 /// this tool, and it should be simple to read/write.
 using BinaryBlobCacheKey = Keys::VariantTypeKey<Cache::BufferRef, StringRef>;
 
+/// This provides the list of available targets for which we can generate target
+/// specific keys. A value of None(Default) means the binary is target agnostic
+/// and add it to cache with key. Host means this binary is specific to current
+/// machine, and hence when generating key wrap it with host info.
+enum class BinaryTarget { None = 0, Host };
+
 /// Describes an input file, or a cached object request. An input file is simply
-/// a path, while a cached object request is `<hash>:<output-path>`. This format
-/// could easily be extended to include things like extra data to be included in
-/// the hash. The output path can be `-`, in which case the output is written to
-/// `-o` (which itself could be stdout or a file) with a newline after each
-/// object retrieved.
+/// a path, while a cached object request is `<hash> > <output-path>` or
+/// `key:<key value> > <output-path>`. First format is useful if we are directly
+/// specifying the hash, whereas the later is for cases where we need to derive
+/// key after some transformation. This format could easily be extended to
+/// include things like extra data to be included in the hash. The output path
+/// can be `-`, in which case the output is written to `-o` (which itself could
+/// be stdout or a file) with a newline after each object retrieved.
 struct FileOrCachedObjectRequest {
   std::string hashOrFilename;
   std::string outFileName;
@@ -67,6 +75,23 @@ public:
       inputs{"input", cl::desc("<input file or CAS reference>"),
              llvm::cl::OneOrMore};
 
+  cl::list<std::string> keys{
+      "key",
+      cl::desc(
+          "Explicitly Specify key. In this case instead of binary hash, "
+          "this key will be used for adding object to cache. Only valid for "
+          "PUT operation. For get specify the key with --input option with a "
+          "prefix 'key:'. For eg: key:my-key.")};
+
+  cl::opt<BinaryTarget> target{
+      "target",
+      cl::values(
+          clEnumValN(BinaryTarget::None, "none", "Key is target agnostic"),
+          clEnumValN(BinaryTarget::Host, "host",
+                     "Wrap the key with current host information.")),
+      cl::desc("Augment key with information specific to a target hardware."),
+      cl::init(BinaryTarget::None)};
+
   /// Specify the target path for the CAS backend.
   cl::opt<std::string> fsPath{
       "base-dir",
@@ -83,6 +108,13 @@ public:
 };
 } // namespace
 
+/// Wrap the given key with appropriate target info.
+static std::string wrapKey(BinaryBlobCacheKey::KeyTy key, BinaryTarget target) {
+  if (target == BinaryTarget::Host)
+    return Keys::KeyWithHostInfo<BinaryBlobCacheKey>::hashKey(std::move(key));
+  return BinaryBlobCacheKey::hashKey(std::move(key));
+}
+
 //===----------------------------------------------------------------------===//
 // FileOrCachedObjectRequestParser::parse
 //===----------------------------------------------------------------------===//
@@ -97,20 +129,29 @@ bool FileOrCachedObjectRequestParser::parse(llvm::cl::Option &o,
   // Trim whitespace from the ends of the string.
   llvm::for_each(split, [](StringRef &s) { s = s.ltrim().rtrim(); });
   if (split.size() == 2) {
-    // First try to get it as a hex string. If that fails, try base64.
-    if (!llvm::tryGetFromHex(split[0], val.hashOrFilename)) {
-      std::vector<char> ref;
-      ref.reserve(split[0].size());
-      if (auto err = llvm::decodeBase64(split[0], ref)) {
-        o.error(toString(std::move(err)));
+
+    SmallVector<StringRef> tagSplit;
+
+    split.front().split(tagSplit, ':');
+    if (tagSplit.size() == 2) {
+      // This is of the form tag:value
+      val.hashOrFilename = tagSplit.back();
+      val.hashOrFilename.shrink_to_fit();
+    } else { // First try to get it as a hex string. If that fails, try base64.
+      if (!llvm::tryGetFromHex(split[0], val.hashOrFilename)) {
+        std::vector<char> ref;
+        ref.reserve(split[0].size());
+        if (auto err = llvm::decodeBase64(split[0], ref)) {
+          o.error(toString(std::move(err)));
+          return true;
+        }
+        val.hashOrFilename = std::string(ref.begin(), ref.end());
+        val.hashOrFilename.shrink_to_fit();
+      }
+      if (val.hashOrFilename.empty() || val.hashOrFilename.size() != 32) {
+        o.error("parsed hash could not be decoded into 32 bytes");
         return true;
       }
-      val.hashOrFilename = std::string(ref.begin(), ref.end());
-      val.hashOrFilename.shrink_to_fit();
-    }
-    if (val.hashOrFilename.empty() || val.hashOrFilename.size() != 32) {
-      o.error("parsed hash could not be decoded into 32 bytes");
-      return true;
     }
     val.outFileName = split.back();
     return false;
@@ -161,6 +202,32 @@ std::filesystem::path CLOptions::getFsPath() const {
   return out;
 }
 
+static AsyncValueRef<std::string>
+putObjectsIntoCache(BinaryBlobCacheKey::KeyTy key, Cache::BufferRef value,
+                    const FileOrCachedObjectRequest &input,
+                    RCRef<BlobCache<BinaryBlobCacheKey>> &cache,
+                    LLCL::Runtime &runtime) {
+
+  auto insert = cache->insert(std::move(key), std::move(value));
+  auto outCh = AsyncValueRef<std::string>::allocate(runtime);
+  std::move(insert).andThenSync(
+      [outCh = outCh.copy(),
+       input = Buffer::get(input.getInputFilename().string())](
+          AsyncValueRef<ErrorOr<std::string>> &&hash) mutable {
+        // If we have an error, report it.
+        if (hash.isError())
+          return std::move(outCh).setToError(hash.takeDiagnostic());
+        if (hash->isError())
+          return std::move(outCh).setToError(
+              UnknownLocationDecoder::getDiagnostic(hash->takeError()));
+
+        // Otherwise, emplace the string so that we can report it to the
+        // user.
+        std::move(outCh).emplace(llvm::encodeBase64(**hash));
+      });
+  return outCh;
+}
+
 int main(int argc, char **argv) {
   CLOptions clOptions(argc, argv);
   llvm::cl::ParseCommandLineOptions(argc, argv);
@@ -176,11 +243,28 @@ int main(int argc, char **argv) {
       RCRef<BlobCache<BinaryBlobCacheKey>>::create(std::move(*backendChainOr));
 
   SmallVector<AnyAsyncValueRef> results;
+  if (!clOptions.keys.empty()) {
+    if (clOptions.inputs.size() != clOptions.keys.size())
+      return clOptions.reportError(
+          "Number of inputs should match number of keys.");
+
+    for (const auto &[key, input] :
+         llvm::zip(clOptions.keys, clOptions.inputs)) {
+      auto bufOr = Cache::Buffer::getFile(input.getInputFilename());
+      if (bufOr.isError())
+        return clOptions.reportError(bufOr.getError());
+      AsyncValueRef<std::string> outCh =
+          putObjectsIntoCache(wrapKey(key, clOptions.target), (*bufOr).copy(),
+                              input, cache, runtime);
+      results.push_back(std::move(outCh));
+    }
+  }
+
   for (const FileOrCachedObjectRequest &input : clOptions.inputs) {
     // If it's a PUT, then hash the input and write it to the CAS.
     if (input.isaGet()) {
       // Attempt to find the value in the cache, if it exists, write it out.
-      auto result = cache->find(input.getHash());
+      auto result = cache->find(wrapKey(input.getHash(), clOptions.target));
       auto outCh = AsyncValueRef<BufferRef>::allocate(runtime);
       std::move(result).andThenSync(
           [outCh = outCh.copy(), input = Buffer::get(input.getHash())](
@@ -202,31 +286,17 @@ int main(int argc, char **argv) {
             std::move(outCh).emplace(std::move(buf));
           });
       results.push_back(std::move(outCh));
-    } else {
+    } else if (clOptions.keys.empty()) {
       auto bufOr = Cache::Buffer::getFile(input.getInputFilename());
       if (bufOr.isError())
         return clOptions.reportError(bufOr.getError());
-
-      auto insert = cache->insert((*bufOr).copy(), (*bufOr).copy());
-      auto outCh = AsyncValueRef<std::string>::allocate(runtime);
-      std::move(insert).andThenSync(
-          [outCh = outCh.copy(),
-           input = Buffer::get(input.getInputFilename().string())](
-              AsyncValueRef<ErrorOr<std::string>> &&hash) mutable {
-            // If we have an error, report it.
-            if (hash.isError())
-              return std::move(outCh).setToError(hash.takeDiagnostic());
-            if (hash->isError())
-              return std::move(outCh).setToError(
-                  UnknownLocationDecoder::getDiagnostic(hash->takeError()));
-
-            // Otherwise, emplace the string so that we can report it to the
-            // user.
-            std::move(outCh).emplace(llvm::encodeBase64(**hash));
-          });
+      std::string key = wrapKey((*bufOr).copy(), clOptions.target);
+      AsyncValueRef<std::string> outCh =
+          putObjectsIntoCache(key, (*bufOr).copy(), input, cache, runtime);
       results.push_back(std::move(outCh));
     }
   }
+
   // Await for all the results to quiesce.
   await(results);
 
