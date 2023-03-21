@@ -29,6 +29,117 @@ using namespace M;
 using namespace KGEN;
 using namespace Cache;
 
+//===----------------------------------------------------------------------===//
+// MaterializationLayer
+//===----------------------------------------------------------------------===//
+
+char MaterializationLayer::ID;
+
+MaterializationLayer::MaterializationLayer(llvm::orc::ExecutionSession &sess,
+                                           const llvm::DataLayout &dl,
+                                           AddToSearchOrderFn add)
+    : session(sess), dataLayout(dl), addToSearchOrder(std::move(add)) {}
+
+ErrorOr<llvm::orc::JITDylib *>
+MaterializationLayer::getOrCreateDylib(StringRef libName) {
+  if (llvm::orc::JITDylib *dylib = session.getJITDylibByName(libName))
+    return dylib;
+
+  auto dylibOr = session.createJITDylib(libName.str());
+  if (!dylibOr)
+    return M::Error(toString(dylibOr.takeError()));
+  llvm::orc::JITDylib &dylib = *dylibOr;
+
+  // Resolve symbols that are statically linked in the current process.
+  dylib.addGenerator(
+      cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
+          dataLayout.getGlobalPrefix(), getCurrentProcessSymbolFilter())));
+
+  // Add the dylib to the search order.
+  addToSearchOrder(libName, &dylib);
+
+  return &dylib;
+}
+
+llvm::orc::SymbolStringPtr
+MaterializationLayer::mangleAndIntern(StringRef name) {
+  std::string mangledName;
+  llvm::raw_string_ostream mangledNameStream(mangledName);
+  llvm::Mangler::getNameWithPrefix(mangledNameStream, name, dataLayout);
+  return session.intern(mangledName);
+}
+
+//===----------------------------------------------------------------------===//
+// StaticSymbolLayer
+//===----------------------------------------------------------------------===//
+
+char StaticSymbolLayer::ID;
+
+StaticSymbolLayer::StaticSymbolLayer(llvm::orc::ExecutionSession &sess,
+                                     const llvm::DataLayout &dl,
+                                     AddToSearchOrderFn add)
+    : llvm::RTTIExtends<StaticSymbolLayer, MaterializationLayer>(
+          sess, dl, std::move(add)) {}
+
+ErrorOrSuccess StaticSymbolLayer::add(StringRef libName, StringRef funcName,
+                                      void *fn) {
+  auto dylibOr = getOrCreateDylib(libName);
+  if (dylibOr.isError())
+    return dylibOr.takeError();
+
+  llvm::orc::JITDylib *dylib = *dylibOr;
+  if (auto err = dylib->define(llvm::orc::absoluteSymbols(
+          {{mangleAndIntern(funcName),
+            {llvm::pointerToJITTargetAddress(fn),
+             llvm::JITSymbolFlags::Exported |
+                 llvm::JITSymbolFlags::Absolute}}}))) {
+    return Error(toString(std::move(err)));
+  }
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// StaticArchiveMaterializationLayer
+//===----------------------------------------------------------------------===//
+
+char StaticArchiveLayer::ID;
+
+StaticArchiveLayer::StaticArchiveLayer(llvm::orc::ObjectLayer &objLayer,
+                                       llvm::orc::ExecutionSession &sess,
+                                       const llvm::DataLayout &dl,
+                                       AddToSearchOrderFn add)
+    : llvm::RTTIExtends<StaticArchiveLayer, MaterializationLayer>(
+          sess, dl, std::move(add)),
+      objectLayer(objLayer) {}
+
+ErrorOrSuccess StaticArchiveLayer::add(StringRef libName,
+                                       Cache::BufferRef archive) {
+  auto dylibOr = getOrCreateDylib(libName);
+  if (dylibOr.isError())
+    return dylibOr.takeError();
+  llvm::orc::JITDylib *dylib = *dylibOr;
+
+  // If the archive creation succeeds we store a ref to this buffer so the
+  // data won't be deallocated until the JIT is destroyed. This version of
+  // MemoryBuffer::getMemBuffer produces a non-owning buffer.
+  std::unique_ptr<llvm::MemoryBuffer> archiveMemBuf =
+      llvm::MemoryBuffer::getMemBuffer(archive->getBuffer(),
+                                       /*BufferName=*/"",
+                                       /*RequiresNullTerminator=*/false);
+
+  auto archiveOr = llvm::orc::StaticLibraryDefinitionGenerator::Create(
+      objectLayer, std::move(archiveMemBuf));
+  if (auto err = archiveOr.takeError())
+    return M::Error(toString(std::move(err)));
+  dylib->addGenerator(std::move(*archiveOr));
+
+  // Store a ref to the buffer data.
+  archiveBuffers.push_back(archive.copy());
+
+  return success();
+}
+
 /// A standard name (that a user is unlikely to create) that we can use for a
 /// JITDylib to define platform-specific symbols we want to be in the JIT'ed
 /// address space.
@@ -165,10 +276,10 @@ static ErrorOr<std::optional<BufferRef>> getORCRT() {
   return std::move(*orcRTBuf);
 }
 
-M::ErrorOr<ExecutionEngine>
+M::ErrorOr<std::unique_ptr<ExecutionEngine>>
 ExecutionEngine::create(ExecutionEngineOptions options,
                         const llvm::TargetMachine &tm) {
-  // Create the target machine.
+  // Create the data layout from the target machine.
   const llvm::DataLayout &layout = tm.createDataLayout();
 
   // Construct the ExecutionSession.
@@ -180,7 +291,8 @@ ExecutionEngine::create(ExecutionEngineOptions options,
       std::make_unique<llvm::orc::ExecutionSession>(std::move(*epcOr));
 
   // Now we can actually create the ExecutionEngine.
-  ExecutionEngine ee(std::move(options), std::move(sessionPtr), layout);
+  auto ee = std::unique_ptr<ExecutionEngine>(
+      new ExecutionEngine(std::move(options), std::move(sessionPtr), layout));
 
   const llvm::Triple &tt = tm.getTargetTriple();
 
@@ -199,23 +311,23 @@ ExecutionEngine::create(ExecutionEngineOptions options,
     return err.takeError();
 
   // Construct the object linking layer.
-  ee.objectLayer =
-      std::make_unique<llvm::orc::ObjectLinkingLayer>(*ee.executionSession);
+  ee->objectLayer =
+      std::make_unique<llvm::orc::ObjectLinkingLayer>(*ee->executionSession);
 
   // If we have the platform support library, use it.
-  if (auto err = setupPlatform(orcRTPath, ee.dataLayout, *ee.executionSession,
-                               *ee.objectLayer))
+  if (auto err = setupPlatform(orcRTPath, ee->dataLayout, *ee->executionSession,
+                               *ee->objectLayer))
     return err.takeError();
 
   // COFF format binaries (Windows) need special handling to deal with
   // exported symbol visibility.
   if (tt.isOSBinFormatCOFF()) {
-    ee.objectLayer->setOverrideObjectFlagsWithResponsibilityFlags(true);
-    ee.objectLayer->setAutoClaimResponsibilityForObjectSymbols(true);
+    ee->objectLayer->setOverrideObjectFlagsWithResponsibilityFlags(true);
+    ee->objectLayer->setAutoClaimResponsibilityForObjectSymbols(true);
   }
 
-  if (ee.options.registerDebugPlugins) {
-    llvm::orc::ExecutionSession &session = *ee.executionSession;
+  if (ee->options.registerDebugPlugins) {
+    llvm::orc::ExecutionSession &session = *ee->executionSession;
 
     // Get the registrar for the GDB JIT loader interface.
     if (tt.isOSBinFormatMachO()) {
@@ -242,25 +354,39 @@ ExecutionEngine::create(ExecutionEngineOptions options,
       if (!plugin)
         return Error(llvm::toString(plugin.takeError()));
 
-      ee.objectLayer->addPlugin(std::move(*plugin));
+      ee->objectLayer->addPlugin(std::move(*plugin));
     } else if (tt.isOSBinFormatELF()) {
       // Register the DebugObjectManagerPlugin.
       auto registrar = llvm::orc::createJITLoaderGDBRegistrar(session);
       if (!registrar)
         return Error(llvm::toString(registrar.takeError()));
 
-      ee.objectLayer->addPlugin(
+      ee->objectLayer->addPlugin(
           std::make_unique<llvm::orc::DebugObjectManagerPlugin>(
               session, std::move(*registrar)));
     }
   }
 
   // Add the platform dylib to the search order.
-  ee.addToSearchOrder(
+  ee->addToSearchOrder(
       platformStdlibName,
-      ee.executionSession->getJITDylibByName(platformStdlibName));
+      ee->executionSession->getJITDylibByName(platformStdlibName));
 
   return std::move(ee);
+}
+
+ErrorOr<std::unique_ptr<ExecutionEngine>>
+ExecutionEngine::createWithStandardLayers(ExecutionEngineOptions options,
+                                          const llvm::TargetMachine &tm) {
+  auto engineOr = ExecutionEngine::create(std::move(options), tm);
+  if (engineOr.isError())
+    return engineOr.takeError();
+
+  // Add the standard layers.
+  (*engineOr)->addLayer<StaticSymbolLayer>();
+  (*engineOr)->addLayer<StaticArchiveLayer>((*engineOr)->getLinkingLayer());
+
+  return std::move(*engineOr);
 }
 
 ExecutionEngine::ExecutionEngine(
@@ -268,7 +394,10 @@ ExecutionEngine::ExecutionEngine(
     std::unique_ptr<llvm::orc::ExecutionSession> session,
     const llvm::DataLayout &dl)
     : options(std::move(options)), executionSession(std::move(session)),
-      dataLayout(dl) {}
+      // Parse the layout so that we own the underlying memory. DataLayout is a
+      // bit weird, it seems like it has some internal data structures that
+      // every instance shares.
+      dataLayout(dl.getStringRepresentation()) {}
 
 ExecutionEngine::~ExecutionEngine() {
   if (executionSession)
@@ -278,59 +407,6 @@ ExecutionEngine::~ExecutionEngine() {
 
 ExecutionEngine::ExecutionEngine(ExecutionEngine &&other) = default;
 
-ErrorOrSuccess ExecutionEngine::add(StringRef name, BufferRef archive) {
-  auto dylibOr = getOrCreateDylib(name);
-  if (dylibOr.isError())
-    return dylibOr.takeError();
-
-  llvm::orc::JITDylib *dylib = *dylibOr;
-
-  // If the archive creation succeeds we store a ref to this buffer so the
-  // data won't be deallocated until the JIT is destroyed. This version of
-  // MemoryBuffer::getMemBuffer produces a non-owning buffer.
-  std::unique_ptr<llvm::MemoryBuffer> archiveMemBuf =
-      llvm::MemoryBuffer::getMemBuffer(archive->getBuffer(),
-                                       /*BufferName=*/"",
-                                       /*RequiresNullTerminator=*/false);
-
-  auto archiveOr = llvm::orc::StaticLibraryDefinitionGenerator::Create(
-      *objectLayer, std::move(archiveMemBuf));
-  if (auto err = archiveOr.takeError())
-    return M::Error(toString(std::move(err)));
-  dylib->addGenerator(std::move(*archiveOr));
-
-  // Add this dylib to the search order.
-  addToSearchOrder(name, dylib);
-
-  // Store a ref to the buffer data.
-  archiveBuffers.push_back(archive.copy());
-
-  return success();
-}
-
-// TODO (8082): This should not be necessary.
-ErrorOrSuccess ExecutionEngine::add(StringRef libName, StringRef functionName,
-                                    void *fn) {
-  auto dylibOr = getOrCreateDylib(libName);
-  if (dylibOr.isError())
-    return dylibOr.takeError();
-
-  llvm::orc::JITDylib *dylib = *dylibOr;
-
-  if (auto err = dylib->define(llvm::orc::absoluteSymbols(
-          {{mangleAndIntern(functionName),
-            {llvm::pointerToJITTargetAddress(fn),
-             llvm::JITSymbolFlags::Exported |
-                 llvm::JITSymbolFlags::Absolute}}}))) {
-    return Error(toString(std::move(err)));
-  }
-
-  // Add this dylib to the search order.
-  addToSearchOrder(libName, dylib);
-
-  return success();
-}
-
 ErrorOr<CompiledFunc> ExecutionEngine::lookup(StringRef symbol) {
   llvm::Expected<llvm::JITEvaluatedSymbol> sym =
       executionSession->lookup(searchOrder, mangleAndIntern(symbol));
@@ -339,23 +415,6 @@ ErrorOr<CompiledFunc> ExecutionEngine::lookup(StringRef symbol) {
 
   return CompiledFunc(
       llvm::jitTargetAddressToPointer<void *>(sym->getAddress()));
-}
-
-ErrorOr<llvm::orc::JITDylib *>
-ExecutionEngine::getOrCreateDylib(StringRef libName) {
-  llvm::orc::JITDylib *dylib = executionSession->getJITDylibByName(libName);
-  if (!dylib) {
-    auto dylibOr = executionSession->createJITDylib(libName.str());
-    if (!dylibOr)
-      return M::Error(toString(dylibOr.takeError()));
-    dylib = &*dylibOr;
-
-    // Resolve symbols that are statically linked in the current process.
-    dylib->addGenerator(
-        cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
-            dataLayout.getGlobalPrefix())));
-  }
-  return dylib;
 }
 
 llvm::orc::SymbolStringPtr
@@ -368,7 +427,8 @@ KGEN::ExecutionEngine::mangleAndIntern(StringRef name) {
 
 void ExecutionEngine::addToSearchOrder(StringRef name,
                                        llvm::orc::JITDylib *dylib) {
-  if (knownDylibs.insert(name).second)
-    searchOrder.emplace_back(dylib,
-                             llvm::orc::JITDylibLookupFlags::MatchAllSymbols);
+  auto [_, didInsert] = knownDylibs.insert(name);
+  assert(didInsert && "must have uniquely-named dylibs");
+  searchOrder.emplace_back(dylib,
+                           llvm::orc::JITDylibLookupFlags::MatchAllSymbols);
 }

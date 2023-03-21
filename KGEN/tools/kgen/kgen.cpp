@@ -321,13 +321,13 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   if (tmOr.isError())
     return failure(clOptions.reportError(tmOr.getError()));
 
-  auto engineOr = ExecutionEngine::create(
+  auto engineOr = ExecutionEngine::createWithStandardLayers(
       {/*registerDebugPlugins=*/compilationOptions.debugLevel !=
        CompilationOptions::DebugInfoLevel::kNoDebug},
       **tmOr);
   if (failed(engineOr))
     return failure(clOptions.reportError(engineOr.getError()));
-  ExecutionEngine engine = std::move(*engineOr);
+  std::unique_ptr<ExecutionEngine> engine = std::move(*engineOr);
 
   // TODO (8082): This should not be necessary.
   std::vector<std::pair<StringLiteral, void *>> compilerRTFunctions;
@@ -338,17 +338,18 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   KGEN::registerSystem(compilerRTFunctions);
   KGEN::registerTracing(compilerRTFunctions);
   for (auto [name, ptr] : compilerRTFunctions)
-    if (auto err = engine.add("exec", name, ptr))
+    if (auto err = engine->add<StaticSymbolLayer>("exec", name, ptr))
       return failure(clOptions.reportError(err.getError()));
 
-  if (auto err = engine.add("exec", std::move(standaloneArchive)))
+  if (auto err =
+          engine->add<StaticArchiveLayer>("exec", std::move(standaloneArchive)))
     return failure(clOptions.reportError(err.getError()));
 
   // Helper to execute a func.
   auto execFunc = [&](FuncOp theFunc, StringAttr name,
                       const CommandLineFunc &clFunc) -> LogicalResult {
     TimeTraceScope<> traceScope("execute-function", name);
-    auto compiledFuncOr = engine.lookup(name);
+    auto compiledFuncOr = engine->lookup(name);
     if (failed(compiledFuncOr))
       return failure(clOptions.reportError(compiledFuncOr.getError()));
 

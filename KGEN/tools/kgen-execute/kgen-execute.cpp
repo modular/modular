@@ -130,7 +130,7 @@ struct ProcessBuffer {
     if (tmOr.isError())
       return failure(clOptions.reportError(tmOr.getError()));
 
-    auto engineOr = ExecutionEngine::create(
+    auto engineOr = ExecutionEngine::createWithStandardLayers(
         {/*registerDebugPlugins=*/compilationOptions.debugLevel !=
          CompilationOptions::DebugInfoLevel::kNoDebug},
         **tmOr);
@@ -142,7 +142,8 @@ struct ProcessBuffer {
     auto execEngine = std::move(*engineOr);
 
     // Add the module to the execution engine.
-    if (auto err = execEngine.add("exec", std::move(standaloneArchive)))
+    if (auto err = execEngine->add<StaticArchiveLayer>(
+            "exec", std::move(standaloneArchive)))
       return failure(clOptions.reportError(err.getError()));
 
     for (const auto &k : clOptions.funcs) {
@@ -151,7 +152,7 @@ struct ProcessBuffer {
         return failure(clOptions.reportError(funcOr.getError()));
 
       KGEN::FuncOp func = *funcOr;
-      auto compiledFuncOr = execEngine.lookup(k.name);
+      auto compiledFuncOr = execEngine->lookup(k.name);
       if (failed(compiledFuncOr))
         return failure(clOptions.reportError(compiledFuncOr.getError()));
 

@@ -10,6 +10,7 @@ add_modular_mlir_library(KGENCLOptions
   LINK_LIBS PUBLIC
   KGENExecutionEngine
   MLIRLLVMDialect
+  MSupport
 
   DISALLOWED_DEPENDS
   )
