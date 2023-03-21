@@ -90,7 +90,7 @@ struct TraceLevel:
 
 
 struct Trace[level: Int]:
-    fn __clone__(self&) -> Self:
+    fn __clone__(self) -> Self:
         return Self {}
 
     fn __init__(name: StringRef) -> Trace[level]:
