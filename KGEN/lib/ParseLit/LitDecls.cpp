@@ -1723,62 +1723,18 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
 
     // VarArg arguments are always treated as their pop.variadic type
     // by-value right now.  TODO(literals): Project to a list like thing.
-    if (parsedArg.vararg == VarArgKind::VarArg) {
+    if (parsedArg.vararg == VarArgKind::VarArg ||
+        isa<POP::PackType>(bbArg.getType())) {
       addDecl(SRValue(bbArg));
       continue;
     }
 
-    switch (convention) {
-    // Arguments passed by-reference can be directly used.
-    case ValueInputConvention::ByRef:
-    case ValueInputConvention::ByRefResult:
-      addDecl(SLValue(bbArg));
-      break;
-
-    case ValueInputConvention::OwnedInMem:
-      // by-value arguments are mutable in a def, immutable in an fn.
-      // OwnedInMem passes ownership of the argument into the callee so we
-      // can directly mutate it if we want to.
-      if (funcOp.getIsDef())
-        addDecl(SLValue(bbArg));
-      else
-        // FIXME: This should be an SLValue also even in an 'fn', we want to be
-        // able to consume the argument since we own it, and might as well allow
-        // it to be mutated.  Handle this in future patch.
-        addDecl(MRValue(bbArg));
-      break;
-
-    case ValueInputConvention::OwnedInReg:
-    case ValueInputConvention::BorrowedInReg:
-    case ValueInputConvention::BorrowedInMem:
-      // If this was passed by-value, then it becomes an rvalue in a `fn`.
-      if (!funcOp.getIsDef()) {
-        if (convention == ValueInputConvention::BorrowedInMem)
-          addDecl(MBValue(bbArg));
-        else if (convention == ValueInputConvention::OwnedInReg)
-          // FIXME: This is incorrect, this makes every use think it owns the
-          // argument as an RValue.  This should be dropped into a memory slot
-          // so it is an LValue that can be consumed, or do we need a new
-          // "SSA lvalue" sort of thing.
-          addDecl(SRValue(bbArg));
-        else
-          addDecl(SBValue(bbArg));
-        break;
-      }
-
-      // In a `def`, we create a mutable var.decl lvalue to allow
-      // reassignment.  Figure out how to model the input value.
-      CValue srcVal;
-      if (convention == ValueInputConvention::BorrowedInMem)
-        srcVal = MBValue(bbArg);
-      else if (convention == ValueInputConvention::OwnedInReg)
-        srcVal = SRValue(bbArg);
-      else
-        srcVal = SBValue(bbArg);
-
+    auto makeArgLValueVarSlot = [&, bbArgLoc = bbArg.getLoc(),
+                                 parsedArg = parsedArg](CValue srcVal) {
       Type varType = POP::PointerType::get(srcVal.getRValueType());
-      auto varDecl = builder.create<VarLetDeclOp>(bbArg.getLoc(), varType,
-                                                  parsedArg.name, /*isVar*/ 1);
+      auto varDecl =
+          builder.create<VarLetDeclOp>(bbArgLoc, varType, parsedArg.name,
+                                       /*isVar*/ 1);
 
       // Emit the initializer expression into the slot.
       ExprEmitter emitter(shared, decl, builder, /*varDeclCursor*/ nullptr);
@@ -1791,6 +1747,45 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
         dest.resetForError();
 
       addDecl(SLValue(varDecl));
+    };
+
+    switch (convention) {
+    // Arguments passed by-reference can be directly used.
+    case ValueInputConvention::ByRef:
+    case ValueInputConvention::ByRefResult:
+      addDecl(SLValue(bbArg));
+      break;
+
+    case ValueInputConvention::OwnedInMem:
+      // by-value arguments are mutable in a def, immutable in an fn.
+      // OwnedInMem passes ownership of the argument into the callee so we
+      // can directly mutate it if we want to.
+      addDecl(SLValue(bbArg));
+      break;
+
+    case ValueInputConvention::OwnedInReg:
+      makeArgLValueVarSlot(SRValue(bbArg));
+      break;
+
+    case ValueInputConvention::BorrowedInReg:
+    case ValueInputConvention::BorrowedInMem:
+      // If this was passed by-value, then it becomes an rvalue in a `fn`.
+      if (!funcOp.getIsDef()) {
+        if (convention == ValueInputConvention::BorrowedInMem)
+          addDecl(MBValue(bbArg));
+        else
+          addDecl(SBValue(bbArg));
+        break;
+      }
+
+      // In a `def`, we create a mutable var.decl lvalue to allow
+      // reassignment.  Figure out how to model the input value.
+      CValue srcVal;
+      if (convention == ValueInputConvention::BorrowedInMem)
+        srcVal = MBValue(bbArg);
+      else
+        srcVal = SBValue(bbArg);
+      makeArgLValueVarSlot(srcVal);
       break;
     }
   }
@@ -1894,7 +1889,7 @@ LogicalResult DeclResolver::resolveSignature(VarLetDeclOp varOp,
                         /*varDeclCursor*/ nullptr);
 
     // If we have a type, then emit directly into the LValue.  Otherwise emit
-    // into
+    // into the varOp to infer its type.
     ValueDest dest;
     ExprContext exprContext = varOp.getIsVar() ? EC_VarInit : EC_LetInit;
     if (parsedType) {

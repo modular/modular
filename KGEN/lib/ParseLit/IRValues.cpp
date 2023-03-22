@@ -88,6 +88,8 @@ raw_ostream &LIT::operator<<(raw_ostream &os, AnyValue value) {
   return printStorage(os, value.getStorage());
 }
 
+void PValue::dump() const { printStorage(llvm::errs(), *this, true) << '\n'; }
+
 void CRValue::dump() const {
   printStorage(llvm::errs(), getStorage(), true) << '\n';
 }

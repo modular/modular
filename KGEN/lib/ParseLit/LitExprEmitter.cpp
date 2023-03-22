@@ -331,12 +331,6 @@ BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
       return {};
   }
 
-  // Decay RValue's into BValue's.
-  if (auto srVal = value.ir.getIfSRValue()) // Decay SRValue -> SBValue
-    value.ir = SBValue(srVal);
-  else if (auto mrVal = value.ir.getIfMRValue()) // Decay MRValue -> MBValue
-    value.ir = MBValue(mrVal);
-
   // If there is a value destination, resolve it into an RValue or BValue.
   if (dest.isSpecified()) {
     value.ir = emitResult(value.ir, value.expr, dest);
@@ -344,6 +338,12 @@ BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
     // it with a now-empty (assigned from context) destination.
     return emitBValue(value, dest);
   }
+
+  // Decay RValue's into BValue's.
+  if (auto srVal = value.ir.getIfSRValue()) // Decay SRValue -> SBValue
+    value.ir = SBValue(srVal);
+  else if (auto mrVal = value.ir.getIfMRValue()) // Decay MRValue -> MBValue
+    value.ir = MBValue(mrVal);
 
   // Finally, we know we have a BValue.
   auto resultBV = value.ir.getIfBValue();
@@ -648,28 +648,6 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
   // Attempt to further specialize the result value.
   value = refineResultValue(value, expr->getLoc(), *this);
 
-  // Given a novel value, check to see if it is register passable MBValue.  If
-  // so, load it to an SBValue.  It is always ok to copy the bits of a borrowed
-  // register_passable value around without cloning.
-  auto processMBValue = [&](MBValue value) -> AnyValue {
-    if (!value.getRValueType().isRegisterPassable(expr->getLoc(), shared))
-      return value;
-    if (!builder) {
-      emitError(expr->getLoc(),
-                "cannot use a dynamic value in a parameter context")
-          << expr->getRange();
-      return {};
-    }
-    auto load = builder->create<POP::LoadOp>(expr->getLocation(*this), value,
-                                             /*alignment=*/std::nullopt);
-    return SBValue(load);
-  };
-
-  // If we have an MBValue of a register_passable value, load it into an SBValue
-  // to keep things canonical and consistent.
-  if (auto mbVal = value.getIfMBValue())
-    value = processMBValue(mbVal);
-
   // If no destination is specified or it is just a contextual type hint, then
   // we can propagate the value directly.
   if (!dest.isSpecified() || isa<LValueInitializerType>(dest.representation)) {
@@ -715,7 +693,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
     // the result as a borrow, not an owned reference.
     auto memValue = value.getIfMRValue();
     assert(memValue && "Must be an MRValue providing result");
-    return processMBValue(MBValue(memValue));
+    return MBValue(memValue);
   }
 
   // We know we have an CRValue/BValue and the destination is some kind of

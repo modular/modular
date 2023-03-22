@@ -195,11 +195,11 @@ fn adaptiveNestedFns(a: Int, b: Int):
 fn nestedFnInLoop():
     # CHECK: hlcf.loop
     for i in range(10):
-      # CHECK: %[[I:.*]] = kgen.call @{{.*}}__next__
+      # CHECK: [[I:%.*]] = kgen.call @{{.*}}__next__
       # CHECK: lit.func *"foo()"
       @always_inline
       fn foo() -> Int:
-          # CHECK-NEXT: return %[[I]]
+          # CHECK-NEXT: return [[I]]
           return i
       # CHECK: kgen.call_param[() -> {{.*}}@Int{{.*}}: *"foo()"]()
       let result = foo()
@@ -212,16 +212,23 @@ fn nestedFnInLoop():
 # CHECK-SAME: (%a: !pop.pointer<@"$decls"::@StructWithInit> owned_in_mem,
 # CHECK-SAME:  %b: !pop.pointer<@"$decls"::@StructWithInit> borrow_in_mem)
 fn ownedConventionMem(owned a: StructWithInit, borrowed b: StructWithInit):
-  # CHECK: %0 = lit.struct.gep %a[x]
-  # CHECK: %1 = pop.load %0
+  # CHECK: [[AX:%.*]] = lit.struct.gep %a[x]
   # CHECK: %_ = lit.varlet.decl
+  # CHECK: %1 = pop.load [[AX]]
   # CHECK: pop.store %1, %_
   _ = a.x
-  # CHECK: %2 = lit.struct.gep %b[y]
-  # CHECK: %3 = pop.load %2
+  # CHECK: [[BY:%.*]] = lit.struct.gep %b[y]
   # CHECK: %__0 = lit.varlet.decl
+  # CHECK: %3 = pop.load [[BY]]
   # CHECK: pop.store %3, %__0
   _ = b.y
+
+  # It is ok to mutate owned values.
+  # CHECK: [[AX:%.*]] = lit.struct.gep %a[x]
+  # CHECK-NEXT: [[FOUR:%.*]] = kgen.param.constant: {{.*}}scalar<index> = 4
+  # CHECK-NEXT: pop.store [[FOUR]], [[AX]]
+  a.x = 4
+
 
 @register_passable
 struct RPStructWithInit:
@@ -239,18 +246,27 @@ struct RPStructWithInitTrivial:
 fn ownedConventionReg(owned a: RPStructWithInit,
                       borrowed b: RPStructWithInit,
                       borrowed triv: RPStructWithInitTrivial):
-  # CHECK: %0 = lit.struct.extract %a[x]
+  # CHECK: %a_0 = lit.varlet.decl "a", var = true
+  # CHECK: pop.store %a, %a_0 : !pop.pointer<@"$decls"::@RPStructWithInit>
+
+  # CHECK: [[AX:%.*]] = lit.struct.gep %a_0[x]
   # CHECK: %_ = lit.varlet.decl
-  # CHECK: pop.store %0, %_
+  # CHECK: %1 = pop.load [[AX]]
+  # CHECK: pop.store %1, %_
   _ = a.x
-  # CHECK: %1 = lit.struct.extract %b[y]
-  # CHECK: %__0 = lit.varlet.decl
-  # CHECK: pop.store %1, %__0
+  # CHECK: [[BY:%.*]] = lit.struct.extract %b[y]
+  # CHECK: %__1 = lit.varlet.decl
+  # CHECK: pop.store [[BY]], %__1
   _ = b.y
 
   # CHECK: %t = lit.letreg.decl "t" = %triv
   # No copy call.
   let t = triv
+
+  # CHECK: [[AX:%.*]] = lit.struct.gep %a_0[x]
+  # CHECK: [[ONE:%.*]]  = kgen.param.constant: @"$Int"::@Int = <#lit.struct<{value: scalar<index> = 1}>>
+  # CHECK: pop.store [[ONE]], [[AX]]
+  a.x = 1
 
 
 struct BorrowStruct:
@@ -348,11 +364,12 @@ fn callVariadic[p: Int](x: Int):
 struct Tuple[*Ts: __mlir_type.`!kgen.mlirtype`]:
   pass
 
-# CHECK-LABEL: lit.func @"varArgs(__mlir_type.!pop.pack<Ts>)"<Ts: variadic<!kgen.mlirtype>>(%args: !pop.pack<Ts>)
-fn varArgs[*Ts: __mlir_type.`!kgen.mlirtype`](owned args*: Ts):
-  # CHECK: %copy = lit.letreg.decl "copy" = %args : !pop.pack<Ts>
-  let copy = args
+# CHECK-LABEL: lit.func @"varArgs(__mlir_type.!pop.pack<Ts>)"<Ts: variadic<!kgen.mlirtype>>(%argsX: !pop.pack<Ts>)
+fn varArgs[*Ts: __mlir_type.`!kgen.mlirtype`](owned argsX*: Ts):
+  # CHECK: %copy = lit.letreg.decl "copy" = %argsX : !pop.pack<Ts>
+  let copy = argsX
 
+# CHECK-LABEL: lit.func @"varArgsBorrowed
 fn varArgsBorrowed[*Ts: __mlir_type.`!kgen.mlirtype`](borrowed args*: Ts):
   # CHECK: %copy = lit.letreg.decl "copy" = %args : !pop.pack<Ts>
   let copy = args
