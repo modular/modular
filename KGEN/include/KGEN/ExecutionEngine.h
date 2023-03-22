@@ -96,6 +96,15 @@ public:
   /// Nothing in this class hierarchy is copyable.
   MaterializationLayer(const MaterializationLayer &other) = delete;
 
+  /// Check if this layer has an error.
+  bool hasError() const { return error.has_value(); }
+
+  /// Take the error from this layer.
+  Error takeError() {
+    assert(hasError());
+    return std::move(*error);
+  }
+
 protected:
   using AddToSearchOrderFn =
       llvm::unique_function<void(StringRef, llvm::orc::JITDylib *)>;
@@ -123,6 +132,11 @@ protected:
   llvm::orc::ExecutionSession &session;
   const llvm::DataLayout &dataLayout;
   AddToSearchOrderFn addToSearchOrder;
+
+  /// Stores an optional Error that an individual layer can set to be checked
+  /// later. This is necessary because the MaterializationUnit may call into a
+  /// function in the layer that has no other way to report that error.
+  std::optional<Error> error = std::nullopt;
 };
 
 //===----------------------------------------------------------------------===//
