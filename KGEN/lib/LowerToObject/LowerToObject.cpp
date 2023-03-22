@@ -6,6 +6,7 @@
 
 #include "KGEN/LowerToObject.h"
 #include "KGEN/CompilationOptions.h"
+#include "KGEN/KGENConfig/KGENConfig.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/LLVMPassesPipeline.h"
 #include "LowerToObjectImpl.h"
@@ -41,7 +42,8 @@ ErrorOr<ObjectCompiler> ObjectCompiler::create(LLCL::Runtime &runtime,
                                                StringRef basePath,
                                                CompilationOptions options) {
   auto transformCache = Cache::getDefaultBackendChain(
-      runtime, (std::filesystem::path(basePath.str()) / "transform").string());
+      runtime, (std::filesystem::path(basePath.str()) / "transform").string(),
+      KGEN_VERSION_STRING);
   if (failed(transformCache))
     return transformCache.takeError();
   return ObjectCompiler(runtime, mgr, std::move(*transformCache),

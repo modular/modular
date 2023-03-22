@@ -4,6 +4,7 @@
 #
 ##===----------------------------------------------------------------------===##
 
+add_subdirectory(KGENConfig)
 add_subdirectory(KGENDialect)
 add_subdirectory(LITDialect)
 add_subdirectory(POPDialect)

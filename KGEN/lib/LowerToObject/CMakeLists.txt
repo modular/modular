@@ -11,6 +11,9 @@ add_modular_mlir_library(KGENEmitObject
   StandaloneObject.cpp
   ProduceFunctionDecls.cpp
 
+  DEPENDS
+  KGENConfig
+
   LINK_COMPONENTS
   OrcJIT
   JITLink
