@@ -59,11 +59,11 @@ struct MemoryOnlyPair:
   # CHECK-SAME: %arg: !pop.pointer<@"$expressions"::@MemoryOnlyInt> owned_in_mem)
   fn method(owned self, owned arg: MemoryOnlyInt):
     # CHECK: %0 = lit.struct.gep %self[y]
-    # CHECK: %1 = pop.load %0
-    # CHECK: %2 = lit.struct.gep %arg[x]
-    # CHECK: %3 = pop.load %2 : !pop.pointer<index>
-    # CHECK: %4 = kgen.call @"{{.*}}__init__{{.*}}"(%3)
-    # CHECK: %5 = kgen.call @"{{.*}}__add__{{.*}}"(%1, %4)
+    # CHECK: %1 = lit.struct.gep %arg[x]
+    # CHECK: %2 = pop.load %1
+    # CHECK: %3 = kgen.call @"{{.*}}__init__{{.*}}"(%2)
+    # CHECK: %4 = pop.load %0
+    # CHECK: %5 = kgen.call @"{{.*}}__add__{{.*}}"(%4, %3)
     _ = self.y+arg.x
 
 fn inferred_function_with_memory_result[
@@ -200,8 +200,8 @@ fn precedence_associativity(a: Int):
   # CHECK-NEXT:  %[[MUL:.*]] =  kgen.call @"$Int"::@Int::@"__mul__{{.*}}(%[[ADD]], %[[NEG]])
   # CHECK-NEXT:  pop.store %[[MUL]], %z
   z = (z + 3) * -+Int(2)
-  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z
   # CHECK-NEXT:  %[[INT_TWO:.*]] = kgen{{.*}}#lit.struct<{value: scalar<index> = 2}>
+  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z
   # CHECK-NEXT:  %[[POW:.*]] = kgen.call @"$Int"::@Int::@"__pow__{{.*}}(%[[INT_TWO]], %[[Z]])
   # CHECK-NEXT:  %[[NEG:.*]] = kgen.call @"$Int"::@Int::@"__neg__{{.*}}(%[[POW]])
   # CHECK-NEXT:  pop.store %[[NEG]], %z
@@ -768,8 +768,8 @@ fn testWritebacks(a&: IndexArray, b&: IndexArrayArray):
   # CHECK: %0 = kgen.call {{.*}}__getitem__{{.*}}(%a, %idx0)
   # CHECK: pop.store %0, %anonymous2A
   # CHECK: %1 = kgen.call {{.*}}takeInOutInt{{.*}}(%anonymous2A)
-  # CHECK: %2 = pop.load %anonymous2A
   # CHECK: %idx0_0 = index.constant 0
+  # CHECK: %2 = pop.load %anonymous2A
   # CHECK: %3 = kgen.call {{.*}}__setitem__{{.*}}(%a, %idx0_0, %2)
   takeInOutInt(a[0]);
 
@@ -783,12 +783,12 @@ fn testWritebacks(a&: IndexArray, b&: IndexArrayArray):
   # CHECK: %6 = kgen.call {{.*}}__setitem__{{.*}}(%b, %idx1_3, %anonymous2A_2)
   # CHECK: pop.store %5, %anonymous2A_1
   # CHECK: %7 = kgen.call {{.*}}takeInOutInt{{.*}}(%anonymous2A_1)
-  # CHECK: %8 = pop.load %anonymous2A_1
   # CHECK: %anonymous2A_4 = lit.varlet.decl "anonymous*", var = false
   # CHECK: %idx1_5 = index.constant 1
-  # CHECK: %9 = kgen.call {{.*}}__getitem__{{.*}}(%anonymous2A_4, %b, %idx1_5)
+  # CHECK: %8 = kgen.call {{.*}}__getitem__{{.*}}(%anonymous2A_4, %b, %idx1_5)
   # CHECK: %idx2_6 = index.constant 2
-  # CHECK: %10 = kgen.call {{.*}}__setitem__{{.*}}(%anonymous2A_4, %idx2_6, %8)
+  # CHECK: %9 = pop.load %anonymous2A_1
+  # CHECK: %10 = kgen.call {{.*}}__setitem__{{.*}}(%anonymous2A_4, %idx2_6, %9)
   # CHECK: %idx1_7 = index.constant 1
   # CHECK: %11 = kgen.call {{.*}}__setitem__{{.*}}(%b, %idx1_7, %anonymous2A_4)
   takeInOutInt(b[1][2])

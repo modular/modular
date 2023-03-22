@@ -222,6 +222,8 @@ public:
     return {Attribute::getFromOpaquePointer(ptr)};
   }
 
+  void dump() const;
+
 private:
   Attribute storage;
 };

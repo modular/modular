@@ -1591,6 +1591,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
   auto emitPreemittedArgumentAsDynamicValue =
       [&](ASTExprAnd<AnyValue> argValAndExpr,
           ValueInputConvention convention) -> Value {
+
     Value arg;
     switch (convention) {
     case ValueInputConvention::OwnedInReg:
@@ -1602,6 +1603,24 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     case ValueInputConvention::BorrowedInReg:
       if (auto pVal = argValAndExpr.ir.getIfPValue())
         return arg = emitSRValue(argValAndExpr, EC_CallArgValue);
+
+      // If this is an MBValue, the element must be register passable but not
+      // loaded.
+      if (auto mbVal = argValAndExpr.ir.getIfMBValue()) {
+        const ExprNode *expr = argValAndExpr.expr;
+        // TODO: Factor this into a helper.
+        if (!builder) {
+          emitError(expr->getLoc(),
+                    "cannot use a dynamic value in a parameter context")
+              << expr->getRange();
+          return {};
+        }
+        auto load =
+            builder->create<POP::LoadOp>(expr->getLocation(*this), mbVal,
+                                         /*alignment=*/std::nullopt);
+        argValAndExpr.ir = SBValue(load);
+      }
+
       arg = argValAndExpr.ir.getIfSBValue();
       break;
     case ValueInputConvention::BorrowedInMem:

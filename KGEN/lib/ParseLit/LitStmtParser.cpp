@@ -502,7 +502,7 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   auto emitter = getEmitter();
 
   // Materialize the expression values into IR.
-  RValue resultValue;
+  AnyValue resultValue;
   if (decl.getSignature().hasMemoryOnlyResult()) {
     // If the result is memory-only, return into the result slot.
     ValueDest resultDest(SLValue(decl.getArgument(0)), EC_ReturnValue);
@@ -512,12 +512,10 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
     }
     resultValue = PValue(shared.getNoneAttr());
   } else {
-    resultValue = emitter.emitExprRValue(operandExprs[0], EC_ReturnValue);
+    resultValue = emitter.emitExpr(operandExprs[0], EC_ReturnValue);
   }
 
-  // Convert the returned value to the returned type of the function.  If the
-  // function is a 'raising' function we need to remove the extra variant type
-  // to get the normal result type.
+  // Convert the returned value to the returned type of the function.
   Value resultSRValue = emitter.emitSRValue(
       {resultValue, operandExprs[0]}, EC_ReturnValue, decl.getResultType());
   if (!resultSRValue)
@@ -855,8 +853,9 @@ ParseResult LitStmtParser::parseTryStmt(size_t curIndent) {
       builder.create<POP::StoreOp>(errVal.getLoc(), errVal, varDecl,
                                    /*alignment=*/std::nullopt);
     } else {
-      // If we are parsing inside an 'fn', the error declaration is an RValue.
-      getDeclResolver().addFullyResolvedDecl(SRValue(errVal), errName,
+      // If we are parsing inside an 'fn', the error declaration is an BValue,
+      // because any reference to it needs to copy/move out.
+      getDeclResolver().addFullyResolvedDecl(SBValue(errVal), errName,
                                              errValLoc, &containingDecl);
     }
   }
@@ -1315,7 +1314,7 @@ ParseResult LitStmtParser::parseMLIRRegionStmt(LitLexerCursor startCursor,
       builder.create<DebugInfo::ValueOp>(regionArg.getLoc(), regionArg, var);
     }
     // Add the declaration for the argument within the region declaration.
-    getDeclResolver().addFullyResolvedDecl(SRValue(regionArg), parsedArg.name,
+    getDeclResolver().addFullyResolvedDecl(SBValue(regionArg), parsedArg.name,
                                            parsedArg.loc, &decl);
   }
 
