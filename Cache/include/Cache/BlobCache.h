@@ -252,10 +252,12 @@ getS3Backend(LLCL::Runtime &runtime, const S3BackendConfig &config);
 
 /// Returns a chain of pre-setup backends that represent the default chain,
 /// inMemory->filesystem. The `cacheDir` is used to derive a path for use
-/// by the filesystem backend.
+/// by the filesystem backend. The `version` specifies the version string of the
+/// cache, defaults to MODULAR_VERSION_STRING if the provided version is empty.
 ErrorOr<LLCL::RCRef<BlobCacheBackend>>
 getDefaultBackendChain(LLCL::Runtime &runtime,
-                       const std::filesystem::path &cacheDir = "");
+                       const std::filesystem::path &cacheDir = "",
+                       std::string version = "");
 
 /// Helper class to hold a BlobStore over KeyT and associated runtime.
 /// If no existing runtime is available a default runtime is created.
