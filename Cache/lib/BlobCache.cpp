@@ -487,8 +487,13 @@ M::Cache::getS3Backend(LLCL::Runtime &runtime, const S3BackendConfig &config) {
 
 ErrorOr<LLCL::RCRef<BlobCacheBackend>>
 M::Cache::getDefaultBackendChain(LLCL::Runtime &runtime,
-                                 const std::filesystem::path &cacheDir) {
+                                 const std::filesystem::path &cacheDir,
+                                 std::string version) {
   auto backend = getInMemoryBackend(runtime);
+
+  // If no version is specified, use the default version.
+  if (version.empty())
+    version = MODULAR_VERSION_STRING;
 
   std::error_code ec;
   std::filesystem::path base = cacheDir;
@@ -524,13 +529,13 @@ M::Cache::getDefaultBackendChain(LLCL::Runtime &runtime,
       if (std::filesystem::is_directory(dirEntry.path(), ec) &&
           (std::filesystem::canonical(dirEntry.path().parent_path()) ==
            std::filesystem::canonical(base)) &&
-          (dirEntry.path().filename() != MODULAR_VERSION_STRING)) {
+          (dirEntry.path().filename() != version)) {
         std::filesystem::remove_all(dirEntry, ec);
       }
     }
   }
 
-  base = base / MODULAR_VERSION_STRING;
+  base = base / version;
 
   backend->setDelegate(getFilesystemBackend(runtime, base));
   return backend;
