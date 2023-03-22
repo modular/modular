@@ -63,43 +63,6 @@ public:
   /// Get direct access to the low level allocator.
   Allocator *getAllocator() { return allocator.get(); }
 
-  /// Allocate the specified number of bytes with the specified alignment.
-  void *allocateBytes(size_t size, size_t alignment) {
-    return allocator->allocateBytes(size, alignment);
-  }
-
-  /// Deallocate the specified pointer that had the specified size.
-  void deallocateBytes(void *ptr, size_t size) {
-    return allocator->deallocateBytes(ptr, size);
-  }
-
-  /// Allocate memory for one or more entries of type T.
-  template <typename T>
-  T *allocate(size_t numElements = 1) {
-    return static_cast<T *>(allocateBytes(sizeof(T) * numElements, alignof(T)));
-  }
-
-  /// Deallocate the memory for one or more entries of type T.
-  template <typename T>
-  void deallocate(T *ptr, size_t numElements) {
-    deallocateBytes(ptr, sizeof(T) * numElements);
-  }
-
-  /// Allocate and initialize an object of type T.
-  template <typename T, typename... Args>
-  T *construct(Args &&...args) {
-    T *buf = allocate<T>();
-    return new (buf) T(std::forward<Args>(args)...);
-  }
-
-  /// Destruct and deallocate space for one or more object of type T.
-  template <typename T>
-  void destroyAndDeallocate(T *ptr, size_t numElements = 1) {
-    for (size_t i = 0; i != numElements; ++i)
-      ptr[i].~T();
-    deallocate(ptr, numElements);
-  }
-
   //===--------------------------------------------------------------------===//
   // Concurrency
   //===--------------------------------------------------------------------===//
