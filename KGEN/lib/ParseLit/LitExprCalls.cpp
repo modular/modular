@@ -376,11 +376,20 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
       // conversion if needed.
       expectedType = ASTType(evaluator.getReboundType(expectedType.mlirType));
 
-      // Coerce to the right type; use EC_Silent so we can do custom processing.
-      auto argValue = emitter.emitPValue(
-          {PValue(binding.getValue()), binding.expr}, EC_Silent, expectedType);
-      if (argValue)
+      PValue bindingPVal = PValue(binding.getValue());
+
+      // If the parameter already has the right type, then we're good.
+      if (expectedType.isEqualCanon(binding.getValue().getType()))
+        return bindingPVal;
+
+      // If the parameter can be implicitly converted, do so.
+      if (emitter.canImplicitlyConvertToType({bindingPVal, binding.expr},
+                                             expectedType)) {
+        auto argValue = emitter.emitPValue({bindingPVal, binding.expr},
+                                           EC_CallParamValue, expectedType);
+        assert(argValue && "Already checked this would succeed");
         return argValue;
+      }
 
       // Handle conversion failure with a custom error.
       incorrectBindingNo = newBindings.size();

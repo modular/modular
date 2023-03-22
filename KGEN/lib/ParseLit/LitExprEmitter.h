@@ -25,9 +25,7 @@ class VarLetDeclOp;
 /// diagnostics more specific.  Each comment gives an example where the
 /// expression is named "x".
 enum ExprContext {
-  EC_Unknown, // No context known.
-  EC_Silent,  // Do not emit a diagnostic at all.
-
+  EC_Unknown,               // No context known.
   EC_VarInit,               // var thing = x
   EC_LetInit,               // let thing = x
   EC_Assignment,            // y = x
