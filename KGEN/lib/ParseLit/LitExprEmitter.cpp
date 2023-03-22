@@ -28,8 +28,6 @@ using namespace M::KGEN::LIT;
 
 const char *LIT::getContextMessage(ExprContext context) {
   switch (context) {
-  case EC_Silent:
-    llvm_unreachable("Should never be emitted");
   case EC_Unknown:
     return "";
 
@@ -623,10 +621,6 @@ static AnyValue emitConversionTo(CValue value, const ExprNode *expr,
                                  ExprEmitter &emitter) {
 
   auto errorHandler = [&]() {
-    if (dest.getContext() == EC_Silent ||
-        isa<TypeCheckErrorType>(value.getType().mlirType))
-      return;
-
     emitter.emitError(expr->getLoc())
         << value.getRValueType() << " value cannot be converted to "
         << expectedType << getContextMessage(dest.getContext())
