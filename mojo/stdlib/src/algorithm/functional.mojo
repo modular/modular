@@ -800,6 +800,7 @@ fn get_num_workers(problem_size: Int, runtime: Runtime) -> Int:
 
 
 @always_inline
+@adaptive
 fn elementwise[
     rank: __mlir_type.index,
     simd_width: Int,
@@ -816,6 +817,8 @@ fn elementwise[
         ` borrow) -> !lit.none>`,
     ],
 ](shape: StaticIntTuple[rank], runtime: Runtime,):
+    assert_param_bool_msg[rank == 1, "Specialization for 1D"]()
+
     let problem_size = shape.flattened_length()
     let num_workers = get_num_workers(problem_size, runtime)
     let chunk_size = div_ceil(problem_size, num_workers)
@@ -840,5 +843,109 @@ fn elementwise[
             unroll_factor,
             func_wrapper,
         ](len)
+
+    parallelize[task_func](runtime, num_workers)
+
+
+@always_inline
+fn _get_nd_indices_from_flat_index[
+    rank: __mlir_type.index
+](flat_index: Int, shape: StaticIntTuple[rank]) -> StaticIntTuple[rank]:
+    """
+    Converts a flat index into ND indices. The ND indices will iterate from right to left. I.E
+
+    shape = (20, 5, 2, N)
+    _get_nd_indices_from_flat_index(1, shape) = (0, 0, 1, 0)
+    _get_nd_indices_from_flat_index(5, shape) = (0, 2, 1, 0)
+    _get_nd_indices_from_flat_index(50, shape) = (5, 0, 0, 0)
+    _get_nd_indices_from_flat_index(56, shape) = (5, 1, 1, 0)
+
+    We ignore the Nth dimension to allow that to be traversed in the elementwise function.
+
+    Args:
+        flat_index(Int): The flat index to convert
+        shape(StaticIntTuple[Int]): The shape of the ND space we are converting into
+    """
+
+    var out: StaticIntTuple[rank]
+
+    # The inner dimensions ([outer, outer, inner]) are not traversed here.
+    alias rank_m_1: Int = rank - 1
+    out[rank_m_1] = 0
+
+    if rank_m_1 == 1:
+        out[0] = flat_index
+    else:
+        var curr_index = flat_index
+
+        @always_inline
+        fn compute_shape[idx: Int]():
+            let i = rank_m_1 - idx - 1
+            out[i] = curr_index % shape[i]
+            curr_index //= shape[i]
+
+        unroll[rank_m_1, compute_shape]()
+
+    return out
+
+
+@always_inline
+@adaptive
+fn elementwise[
+    rank: __mlir_type.index,
+    simd_width: Int,
+    unroll_factor: Int,
+    func: __mlir_type[
+        `!kgen.signature<<`,
+        `simd_width: `,
+        Int,
+        `,`,
+        `rank: `,
+        __mlir_type.index,
+        `>(`,
+        StaticIntTuple[__mlir_attr[`#kgen.param.decl.ref<"rank">: index`]],
+        ` borrow) -> !lit.none>`,
+    ],
+](shape: StaticIntTuple[rank], runtime: Runtime):
+    assert_param_bool_msg[rank > 1, "Specialization for ND where N > 1"]()
+
+    # Stategy: we parallelize over all dimensions except the innermost and
+    # vectorize over the innermost dimension. We unroll the innermost dimension
+    # by a factor of unroll_factor.
+
+    var parallelism_size: Int = shape.flattened_length() // shape[rank - 1]
+
+    let num_workers = get_num_workers(parallelism_size, runtime)
+    let chunk_size = div_ceil(parallelism_size, num_workers)
+
+    @always_inline
+    fn task_func(i: Int):
+        let start_parallel_offset = i * chunk_size
+        let end_parallel_offset = min((i + 1) * chunk_size, parallelism_size)
+
+        let len = end_parallel_offset - start_parallel_offset
+        if len <= 0:
+            return
+
+        for parallel_offset in range(
+            start_parallel_offset, end_parallel_offset
+        ):
+            var indices = _get_nd_indices_from_flat_index[rank](
+                parallel_offset, shape
+            )
+
+            @always_inline
+            fn func_wrapper[simd_width: Int](idx: Int):
+                # The inner most dimension is vectorized, so we set it
+                # to the index offset.
+                indices[rank - 1] = idx
+                func[simd_width, rank](indices)
+
+            # We vectorize over the innermost dimension.
+            vectorize_unroll[
+                simd_width,
+                unroll_factor,
+                func_wrapper,
+            ](shape[rank - 1])
 
     parallelize[task_func](runtime, num_workers)
