@@ -67,24 +67,58 @@ fn _unroll_impl[
 
 @always_inline
 fn unroll2[
-    rows: Int,
-    cols: Int,
+    dim0: Int,
+    dim1: Int,
     func: __mlir_type[
-        `!kgen.signature<<idx0: `, Int, `,idx1: `, Int, `>() -> !lit.none>`
+        `!kgen.signature<<idx0: `, Int, `, idx1: `, Int, `>() -> !lit.none>`
     ],
 ]():
     """
-    Reateadly evaluate a 2D nested loop where the outer iteration is rows and
-    the inner iteration is `cols`.
+    Reateadly evaluate a 2D nested loop where the outer iteration is `dim0` and
+    the inner iteration is `dim1`.
     """
 
     @always_inline
     fn func_wrapper[idx: Int]():
-        alias idx0 = idx // cols
-        alias idx1 = idx % cols
+        alias idx0 = idx // dim1
+        alias idx1 = idx % dim1
         func[idx0, idx1]()
 
-    unroll[rows * cols, func_wrapper]()
+    unroll[dim0 * dim1, func_wrapper]()
+
+
+# ===----------------------------------------------------------------------===#
+# unroll3
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn unroll3[
+    dim0: Int,
+    dim1: Int,
+    dim2: Int,
+    func: __mlir_type[
+        `!kgen.signature<<idx0: `,
+        Int,
+        `, idx1: `,
+        Int,
+        `, idx2: `,
+        Int,
+        `>() -> !lit.none>`,
+    ],
+]():
+    """
+    Reateadly evaluate a 3D nested loop where the outer iteration is `dim0`,
+    the middle iteration is `dim1`, and the inner most iteration is `dim2`.
+    """
+
+    @always_inline
+    fn func_wrapper[idx0: Int, idx1: Int]():
+        alias _idx1 = idx1 // dim2
+        alias _idx2 = idx1 % dim2
+        func[idx0, _idx1, _idx2]()
+
+    unroll2[dim0, dim1 * dim2, func_wrapper]()
 
 
 # ===----------------------------------------------------------------------===#
