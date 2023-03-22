@@ -1,0 +1,13 @@
+//===----------------------------------------------------------------------===//
+//                                                                            //
+// This file is Modular Inc proprietary.                                      //
+//                                                                            //
+//===----------------------------------------------------------------------===//
+
+#ifndef KGEN_KGENCONFIG_KGENCONFIG_H
+#define KGEN_KGENCONFIG_KGENCONFIG_H
+
+/* Include the generated kgen version information. */
+#include "Version.h.inc"
+
+#endif /* KGEN_KGENCONFIG_KGENCONFIG_H */

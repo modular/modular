@@ -14,6 +14,7 @@
 #include "Elaborator.h"
 #include "IREvaluator.h"
 #include "KGEN/CLOptions.h"
+#include "KGEN/KGENConfig/KGENConfig.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENDType.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
@@ -2119,12 +2120,12 @@ LogicalResult M::elaborateGenerators(mlir::SymbolTableAnalysis &analysis,
 
   AsyncSideEffectMap asyncMap(runtime);
 
-  auto transformCacheBackendOr =
-      Cache::getDefaultBackendChain(runtime, ".kgen_cache/transform");
+  auto transformCacheBackendOr = Cache::getDefaultBackendChain(
+      runtime, ".kgen_cache/transform", KGEN_VERSION_STRING);
   if (failed(transformCacheBackendOr))
     return theModule->emitError() << transformCacheBackendOr.getError();
-  auto regionCacheBackendOr =
-      Cache::getDefaultBackendChain(runtime, ".kgen_cache/region");
+  auto regionCacheBackendOr = Cache::getDefaultBackendChain(
+      runtime, ".kgen_cache/region", KGEN_VERSION_STRING);
   if (failed(regionCacheBackendOr))
     return theModule->emitError() << regionCacheBackendOr.getError();
 

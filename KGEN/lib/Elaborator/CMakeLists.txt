@@ -9,6 +9,9 @@ add_modular_mlir_library(KGENElaborator
   IREvaluator.cpp
   SelectFastestFunction.cpp
 
+  DEPENDS
+  KGENConfig
+
   LINK_LIBS PUBLIC
   DebugInfoDialect
   CacheDialect

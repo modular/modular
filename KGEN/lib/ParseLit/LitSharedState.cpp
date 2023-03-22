@@ -17,6 +17,7 @@
 #include "Cache/Buffer.h"
 #include "Cache/CacheDialect/CachedTransform.h"
 #include "KGEN/CompilationOptions.h"
+#include "KGEN/KGENConfig/KGENConfig.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -138,8 +139,8 @@ LitSharedState::LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context,
 
   // Create a cache for use by the parser.
   if (enableCaching) {
-    auto transformCacheBackendOr =
-        Cache::getDefaultBackendChain(runtime, ".kgen_cache/lit");
+    auto transformCacheBackendOr = Cache::getDefaultBackendChain(
+        runtime, ".kgen_cache/lit", KGEN_VERSION_STRING);
     if (failed(transformCacheBackendOr))
       return;
     impl->transformCache =
