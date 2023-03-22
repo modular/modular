@@ -410,8 +410,18 @@ ExecutionEngine::ExecutionEngine(ExecutionEngine &&other) = default;
 ErrorOr<CompiledFunc> ExecutionEngine::lookup(StringRef symbol) {
   llvm::Expected<llvm::JITEvaluatedSymbol> sym =
       executionSession->lookup(searchOrder, mangleAndIntern(symbol));
-  if (!sym)
-    return Error(llvm::toString(sym.takeError()));
+  if (!sym) {
+    // Check to see if any of the layers have errors.
+    auto found = llvm::find_if(
+        layers, [](const auto &layer) { return layer->hasError(); });
+    // If not, return the error returned by the ORC.
+    if (found == layers.end())
+      return Error(llvm::toString(sym.takeError()));
+
+    // Add the additional context from the layer's error.
+    return Error(llvm::toString(sym.takeError()) +
+                 " (from the layer: " + (*found)->takeError().get() + ")");
+  }
 
   return CompiledFunc(
       llvm::jitTargetAddressToPointer<void *>(sym->getAddress()));
