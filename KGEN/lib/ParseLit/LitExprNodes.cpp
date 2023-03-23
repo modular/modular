@@ -719,10 +719,13 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       return emitter.emitResult(SLValue(fieldPtr), this, dest);
     }
 
+    // if we have a DLValue, convert to RValue because we cannot project the
+    // base yet.  At least we can read from it.
     // TODO(dlvalue): project attr reference.
     if (DLValue baseLV = baseVal.getIfDLValue()) {
-      // HACK: Doesn't propagate mutability.
-      baseVal = emitter.emitSRValue({baseVal, base}, EC_AttributeRefBase);
+      RValue baseRV = emitter.emitRValue({baseVal, base}, EC_AttributeRefBase);
+      baseVal = AnyValue(baseRV).getIfCValue();
+      assert(!baseRV || baseVal);
       if (!baseVal)
         return {};
     }
@@ -1335,7 +1338,7 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       elementType = elementType.getPointerElementType();
   }
 
-  DLValue result(indexValues, elementType, this, /*isSubscript*/ true);
+  DLValue result(indexValues, elementType, this);
   return emitter.emitResult(result, this, dest);
 }
 
@@ -1894,6 +1897,7 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
   // Emit the LHS value and capture the result of calling __bool__ in case we
   // need it.
   CValue lhsBool;
+  // FIXME: Support memory-only bool convertible types as well.
   SRValue lhsRV = emitter.emitExprSRValue(lhs, EC_OperatorOperandValue);
   RValue lhsI1Value = emitter.emitConditionValueAsI1({lhsRV, lhs}, lhsBool);
   Value lhsI1SRValue =

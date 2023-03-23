@@ -364,10 +364,10 @@ fn callVariadic[p: Int](x: Int):
 struct Tuple[*Ts: __mlir_type.`!kgen.mlirtype`]:
   pass
 
-# CHECK-LABEL: lit.func @"varArgs(__mlir_type.!pop.pack<Ts>)"<Ts: variadic<!kgen.mlirtype>>(%argsX: !pop.pack<Ts>)
-fn varArgs[*Ts: __mlir_type.`!kgen.mlirtype`](owned argsX*: Ts):
-  # CHECK: %copy = lit.letreg.decl "copy" = %argsX : !pop.pack<Ts>
-  let copy = argsX
+# CHECK-LABEL: lit.func @"varArgs(__mlir_type.!pop.pack<Ts>)"<Ts: variadic<!kgen.mlirtype>>(%args: !pop.pack<Ts>)
+fn varArgs[*Ts: __mlir_type.`!kgen.mlirtype`](owned args*: Ts):
+  # CHECK: %copy = lit.letreg.decl "copy" = %args : !pop.pack<Ts>
+  let copy = args
 
 # CHECK-LABEL: lit.func @"varArgsBorrowed
 fn varArgsBorrowed[*Ts: __mlir_type.`!kgen.mlirtype`](borrowed args*: Ts):

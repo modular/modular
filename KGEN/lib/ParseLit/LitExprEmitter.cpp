@@ -304,7 +304,7 @@ CValue ExprEmitter::emitCValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   // If the value being materialized is an unresolved overload set, try to
   // materialize it.
   ORValue overloads = value.ir.getIfORValue();
-  assert(overloads && "TODO(dlvalues): unimp");
+  assert(overloads && "unknown overloaded value");
   return overloads->emitAsCValue(*this, dest);
 }
 
@@ -510,6 +510,9 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
   CValue value = emitCValue(anyValue, context);
   if (!value)
     return {};
+
+  assert(value.getRValueType().isRegisterPassable(expr->getLoc(), shared) &&
+         "cannot load non-register passable type into SSA register");
 
   // If we have a value in memory, load it.
   if (auto mrValue = value.getIfMRValue()) {
@@ -726,8 +729,8 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     if (auto valueLV = value.ir.getIfLValue())
       value.ir = emitLoadOfLValue({valueLV, value.expr}, ValueDest::none());
 
-    auto methodName = dlValue.isSubscript ? StringRef("__setitem__")
-                                          : StringRef("__setattr__");
+    auto methodName = dlValue.isSubscript() ? StringRef("__setitem__")
+                                            : StringRef("__setattr__");
     SmallVector<ASTExprAnd<AnyValue>> operands(
         dlValue.selfAndIndicesValue.begin(), dlValue.selfAndIndicesValue.end());
     operands.push_back(value);
@@ -800,8 +803,8 @@ CValue ExprEmitter::emitLoadOfLValue(ASTExprAnd<LValue> value,
                                      ValueDest &dest) {
   // If this is a computed LValue emit call to the "getter".
   if (auto dlValue = value.ir.getIfDLValue()) {
-    auto methodName = dlValue.isSubscript ? StringRef("__getitem__")
-                                          : StringRef("__getattr__");
+    auto methodName = dlValue.isSubscript() ? StringRef("__getitem__")
+                                            : StringRef("__getattr__");
     auto result =
         emitNamedMethodCall(methodName, dlValue.selfAndIndicesValue, dest,
                             CallSyntax::kSubscript, dlValue.expr);

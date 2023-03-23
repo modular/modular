@@ -168,14 +168,19 @@ public:
   // This is the self+name values for property access and the self+key values
   // for a subscript.
   std::vector<ASTExprAnd<AnyValue>> selfAndIndicesValue;
+
+  /// This is the RValue type of the value being accessed, inferred from the
+  /// get/set.
   ASTType elementType;
 
-  /// This is true if this is a subscript, false if this is an attribute access.
+  /// This is the expression node we came from.
   const ExprNode *expr;
-  bool isSubscript;
+
+  /// Return true if this is a subscript, false if this is an attribute access.
+  bool isSubscript() const;
 
   DLValue(ArrayRef<ASTExprAnd<AnyValue>> selfAndIndicesValue,
-          ASTType elementType, const ExprNode *expr, bool isSubscript);
+          ASTType elementType, const ExprNode *expr);
   DLValue();
   ~DLValue();
 
