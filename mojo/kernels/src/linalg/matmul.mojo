@@ -1011,17 +1011,22 @@ struct MatmulInnerLoopBPacked[
         # Global K index.
         var global_k = self.global_offset.K + tile_n_k_idx[1]
 
-        @always_inline
-        fn prefetch_body[idx: Int]():
-            self.b_packed.prefetch[
-                PrefetchOptions().for_read().high_locality().to_data_cache()
-            ](
-                n_outer_idx,
-                tile_n_k_idx[1] + prefetch_b_distance,
-                idx * simd_size,
-            )
+        # Prefetch B matrix.
+        # TODO(#10919): Use `@parameter` if here, there is a bug where invalid
+        # code is generated and accuracy is not maintained.
+        if prefetch_b_distance > 0:
 
-        unroll[pack_inner_size // simd_size, prefetch_body]()
+            @always_inline
+            fn prefetch_body[idx: Int]():
+                self.b_packed.prefetch[
+                    PrefetchOptions().for_read().high_locality().to_data_cache()
+                ](
+                    n_outer_idx,
+                    tile_n_k_idx[1] + prefetch_b_distance,
+                    idx * simd_size,
+                )
+
+            unroll[pack_inner_size // simd_size, prefetch_body]()
 
         # Loop over local accumulator tiles.
         @always_inline
