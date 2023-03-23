@@ -10,7 +10,7 @@ from DType import DType
 from Error import Error
 from Int import Int
 from Pointer import Pointer, DTypePointer
-from StringRef import StringRef
+from String import StringRef
 
 alias typename = __mlir_type.`!kgen.mlirtype`
 
