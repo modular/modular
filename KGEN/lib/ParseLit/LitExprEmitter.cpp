@@ -746,13 +746,9 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     if (auto valueLV = value.ir.getIfLValue())
       value.ir = emitLoadOfLValue({valueLV, value.expr}, ValueDest::none());
 
-    auto methodName = dlValue.isSubscript() ? StringRef("__setitem__")
-                                            : StringRef("__setattr__");
-    SmallVector<ASTExprAnd<AnyValue>> operands(
-        dlValue.selfAndIndicesValue.begin(), dlValue.selfAndIndicesValue.end());
-    operands.push_back(value);
-    emitNamedMethodCall(methodName, operands, ValueDest::none(),
-                        CallSyntax::kSubscript, dlValue.expr);
+    // Then store into the dest DLValue.
+    dlValue->emitStore(value, *this);
+
     // Decay the input value to a BValue since ownership was taken by the store.
     return emitBValue(value, context, {});
   }
@@ -819,16 +815,8 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
 CValue ExprEmitter::emitLoadOfLValue(ASTExprAnd<LValue> value,
                                      ValueDest &dest) {
   // If this is a computed LValue emit call to the "getter".
-  if (auto dlValue = value.ir.getIfDLValue()) {
-    auto methodName = dlValue.isSubscript() ? StringRef("__getitem__")
-                                            : StringRef("__getattr__");
-    auto result =
-        emitNamedMethodCall(methodName, dlValue.selfAndIndicesValue, dest,
-                            CallSyntax::kSubscript, dlValue.expr);
-    // TODO: The result could be another LValue in the future.
-    assert(!result || result.getIfRValue() || result.getIfBValue());
-    return result;
-  }
+  if (auto dlValue = value.ir.getIfDLValue())
+    return dlValue->emitLoad(value, dest, *this);
 
   // Decay a stored LValue to an MBValue.
   auto slValue = value.ir.getIfSLValue();
@@ -1180,4 +1168,30 @@ SRValue ExprEmitter::emitBoxedIntAsPopScalar(Value numberValue,
       POP::SIMDType::get(builder->getContext(), 1, KGENDType(KGENDType::index)),
       index.getIfSRValue());
   return SRValue(popscalar);
+}
+
+//===----------------------------------------------------------------------===//
+// DLValue implementations
+//===----------------------------------------------------------------------===//
+
+CValue SubscriptDLValue::emitLoad(ASTExprAnd<LValue> value, ValueDest &dest,
+                                  ExprEmitter &emitter) const {
+  auto methodName =
+      isSubscript() ? StringRef("__getitem__") : StringRef("__getattr__");
+  auto result = emitter.emitNamedMethodCall(methodName, selfAndIndicesValue,
+                                            dest, CallSyntax::kSubscript, expr);
+  // TODO: The result could be another LValue in the future.
+  assert(!result || result.getIfRValue() || result.getIfBValue());
+  return result;
+}
+
+void SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
+                                 ExprEmitter &emitter) const {
+  auto methodName =
+      isSubscript() ? StringRef("__setitem__") : StringRef("__setattr__");
+  SmallVector<ASTExprAnd<AnyValue>> operands(selfAndIndicesValue.begin(),
+                                             selfAndIndicesValue.end());
+  operands.push_back(value);
+  emitter.emitNamedMethodCall(methodName, operands, ValueDest::none(),
+                              CallSyntax::kSubscript, expr);
 }

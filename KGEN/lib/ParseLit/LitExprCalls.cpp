@@ -327,7 +327,6 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
   // have a builder from the caller, this indicates that an PValue is required.
   llvm::SaveAndRestore savedBuilder(emitter.builder, {});
   llvm::SaveAndRestore savedContext(emitter.paramContext, EC_ParameterList);
-  //  emitter.builder.reset();
 
   // Parameters defined at the beginning of the parameter list may be used by
   // the types of other parameters defined later in the list, e.g. in:

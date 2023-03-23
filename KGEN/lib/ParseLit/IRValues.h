@@ -51,6 +51,7 @@
 #include "mlir/IR/Value.h"
 
 namespace M::KGEN::LIT {
+class BaseDLValue;
 class ExprNode;
 class ExprEmitter;
 class OverloadSet;
@@ -157,35 +158,28 @@ public:
 
 class AnyValue;
 
-/// Subclasses of DLValue model a dynamic LValue which has a getter and
-/// setter. Lit supports two ways to spell this - with property access `a.x =`
+/// DLValue's model a dynamic LValue which has a getter and setter.  Lit
+/// supports two ways to spell this - with property access `a.x =`
 /// and with subscript syntax `a[i,j] = `, invoking __getattr__/__setattr__ and
 /// __getitem__ and __setitem__ respectively.
 ///
-/// We allow DLValues to have getter+setter or just setter.
+/// DLValues are allowed to be get-only, set-only, or get-set.
 class DLValue {
 public:
-  // This is the self+name values for property access and the self+key values
-  // for a subscript.
-  std::vector<ASTExprAnd<AnyValue>> selfAndIndicesValue;
-
-  /// This is the RValue type of the value being accessed, inferred from the
-  /// get/set.
-  ASTType elementType;
-
-  /// This is the expression node we came from.
-  const ExprNode *expr;
-
-  /// Return true if this is a subscript, false if this is an attribute access.
-  bool isSubscript() const;
-
-  DLValue(ArrayRef<ASTExprAnd<AnyValue>> selfAndIndicesValue,
-          ASTType elementType, const ExprNode *expr);
-  DLValue();
+  DLValue() {}
+  DLValue(LLCL::RCRef<BaseDLValue> storage) : storage(std::move(storage)) {}
+  DLValue(const DLValue &existing) : storage(existing.storage.copy()) {}
+  DLValue &operator=(const DLValue &existing);
   ~DLValue();
 
-  /// This is present / not-default constructed if it has operands.
-  explicit operator bool() const { return !selfAndIndicesValue.empty(); }
+  bool isNull() const { return !storage; }
+  bool operator!() const { return isNull(); }
+  explicit operator bool() const { return !isNull(); }
+
+  BaseDLValue *operator->() const { return &*storage; }
+
+private:
+  LLCL::RCRef<BaseDLValue> storage;
 };
 
 /// Instances of PValue model compile time values that are represented as MLIR
@@ -583,6 +577,55 @@ public:
   void dump() const;
 };
 raw_ostream &operator<<(raw_ostream &os, AnyValue value);
+
+//===----------------------------------------------------------------------===//
+// BaseDLValue classes.
+//===----------------------------------------------------------------------===//
+
+class BaseDLValue : public LLCL::NonAtomicallyReferenceCounted<BaseDLValue> {
+public:
+  BaseDLValue(ASTType elementType, const ExprNode *expr)
+      : elementType(elementType), expr(expr) {}
+  virtual ~BaseDLValue();
+
+  /// This is the RValue type of the value being accessed, inferred from the
+  /// get/set.
+  ASTType elementType;
+
+  /// This is the expression node we came from.
+  const ExprNode *expr;
+
+  virtual void print(raw_ostream &os) const = 0;
+  virtual CValue emitLoad(ASTExprAnd<LValue> value, ValueDest &dest,
+                          ExprEmitter &emitter) const = 0;
+  virtual void emitStore(ASTExprAnd<CValue> value,
+                         ExprEmitter &emitter) const = 0;
+};
+
+/// Subclasses of DLValue model a dynamic LValue which has a getter and
+/// setter. Lit supports two ways to spell this - with property access `a.x =`
+/// and with subscript syntax `a[i,j] = `, invoking __getattr__/__setattr__ and
+/// __getitem__ and __setitem__ respectively.
+///
+/// We allow DLValues to have getter+setter or just setter.
+class SubscriptDLValue : public BaseDLValue {
+public:
+  // This is the self+name values for property access and the self+key values
+  // for a subscript.
+  std::vector<ASTExprAnd<AnyValue>> selfAndIndicesValue;
+
+  /// Return true if this is a subscript, false if this is an attribute access.
+  bool isSubscript() const;
+
+  SubscriptDLValue(ArrayRef<ASTExprAnd<AnyValue>> selfAndIndicesValue,
+                   ASTType elementType, const ExprNode *expr);
+
+  virtual void print(raw_ostream &os) const override;
+  virtual CValue emitLoad(ASTExprAnd<LValue> value, ValueDest &dest,
+                          ExprEmitter &emitter) const override;
+  virtual void emitStore(ASTExprAnd<CValue> value,
+                         ExprEmitter &emitter) const override;
+};
 
 } // namespace M::KGEN::LIT
 
