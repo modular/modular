@@ -327,16 +327,21 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
   if (!isa<LIT::EndFuncOp>(terminator))
     return success();
 
-  // We can omit the `return` if the function has no result parameters and
-  // returns none or if the end of the function is definitely not reachable.
+  // If the endfunc isn't live, then it doesn't matter, there must have been a
+  // return/raise before this.
+  if (liveCfOps.contains(terminator)) {
+    // A return is required if the function has result parameters, or it has
+    // a non-none result.
+    if (!func.getResultParams().empty() ||
+        !isa<LIT::NoneType>(func.getResultType()) ||
+        func.getSignature().hasMemoryOnlyResult())
+      return terminator->emitError(
+          "return expected at end of function with results");
+  }
+
   ImplicitLocOpBuilder b(func.getLoc(), OpBuilder(terminator));
   Value retVal;
-  if (!func.getResultParams().empty() ||
-      (!isa<LIT::NoneType>(func.getResultType()) &&
-       liveCfOps.contains(terminator))) {
-    return terminator->emitError(
-        "return expected at end of function with results");
-  } else if (!isa<LIT::NoneType>(func.getResultType())) {
+  if (!isa<LIT::NoneType>(func.getResultType())) {
     retVal = b.create<StaticUndefOp>(func.getResultType());
   } else {
     // The function returns none.
