@@ -16,7 +16,6 @@
 #include <memory>
 
 namespace M::LLCL {
-class LLCLAllocator;
 
 /// This class defines an abstract interface for custom allocators to implement.
 /// This is intended for use by large object allocations (e.g. tensor data), not
