@@ -50,6 +50,7 @@ public:
   /// SSA value) then return it.
   CRValue getIfRValue() const;
   BValue getIfBValue() const;
+  PValue getIfPValue() const { return dyn_cast<PValue>(irValue); }
 
   /// If this declaration is defined by its value (e.g. a parameter value or an
   /// SSA value) then return it.
