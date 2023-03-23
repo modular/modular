@@ -117,6 +117,7 @@ struct LitStmtParser : public LitParserBase {
   ParseResult parseImportStmt();
   ParseResult parseDefFnStmt(LitLexerCursor startCursor, size_t curIndent);
   ParseResult parseStructStmt(LitLexerCursor startCursor, size_t curIndent);
+  ParseResult parseClassStmt(LitLexerCursor startCursor, size_t curIndent);
   ParseResult parseLetVarStmt(LitLexerCursor startCursor, size_t stmtIndent);
   ParseResult parseAliasDeclStmt(LitLexerCursor startCursor, size_t stmtIndent);
   ParseResult parseMLIRRegionStmt(LitLexerCursor startCursor, size_t curIndent);
@@ -379,6 +380,9 @@ ParseResult LitStmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
   case LitToken::kw_struct:
     rejectSimpleStmt(); // Not a simple_stmt.
     return parseStructStmt(startCursor, stmtIndent);
+  case LitToken::kw_class:
+    rejectSimpleStmt(); // Not a simple_stmt.
+    return parseClassStmt(startCursor, stmtIndent);
 
     //===------------------------------------------------------------------===//
     // Simple statements.
@@ -1242,6 +1246,17 @@ ParseResult LitStmtParser::parseStructStmt(LitLexerCursor startCursor,
   // when it gets referenced.
   getDeclResolver().addDecl(newStruct, smLoc, nameAttr, &containingDecl,
                             startCursor, getLexer().getCursor(), curIndent);
+  return success();
+}
+
+ParseResult LitStmtParser::parseClassStmt(LitLexerCursor startCursor,
+                                          size_t curIndent) {
+  emitTokenError("classes are not supported yet");
+  consumeToken(LitToken::kw_class).getLoc();
+
+  // Skip the body of this definition: go to a token the starts a line at the
+  // same indent level (or less) as the current definition.
+  skipUntilIndentation(curIndent);
   return success();
 }
 
