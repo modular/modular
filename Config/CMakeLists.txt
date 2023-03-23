@@ -45,8 +45,8 @@ configure_file(
   ${config_inc}
 )
 
-add_custom_target(MConfig ALL DEPENDS
+add_custom_target(MVersion ALL DEPENDS
   "${version_inc}"
   "${config_inc}"
 )
-set_target_properties(MConfig PROPERTIES FOLDER "Misc")
+set_target_properties(MVersion PROPERTIES FOLDER "Misc")

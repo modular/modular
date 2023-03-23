@@ -12,7 +12,7 @@ add_modular_mlir_library(KGENEmitObject
   ProduceFunctionDecls.cpp
 
   DEPENDS
-  KGENConfig
+  KGENVersion
 
   LINK_COMPONENTS
   OrcJIT

@@ -6,8 +6,8 @@
 
 #include "KGEN/LowerToObject.h"
 #include "KGEN/CompilationOptions.h"
-#include "KGEN/KGENConfig/KGENConfig.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
+#include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/LLVMPassesPipeline.h"
 #include "LowerToObjectImpl.h"
 #include "Support/SIMD.h"

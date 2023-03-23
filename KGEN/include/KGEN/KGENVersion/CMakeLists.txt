@@ -13,8 +13,8 @@
 ##===----------------------------------------------------------------------===##
 
 find_first_existing_vc_file("${MODULAR_MAIN_SRC_DIR}" modular_vc)
-set(version_inc "${MODULAR_BINARY_DIR}/KGEN/include/KGEN/KGENConfig/Version.h.inc")
-set(generate_version_script "${MODULAR_SOURCE_DIR}/KGEN/include/KGEN/KGENConfig/GenerateVersion.cmake")
+set(version_inc "${MODULAR_BINARY_DIR}/KGEN/include/KGEN/KGENVersion/Version.h.inc")
+set(generate_version_script "${MODULAR_SOURCE_DIR}/KGEN/include/KGEN/KGENVersion/GenerateVersion.cmake")
 
 # Create custom target to generate the version include, so that it regenerates
 # properly.
@@ -37,15 +37,15 @@ set_source_files_properties("${version_inc}"
 # Config
 ##===----------------------------------------------------------------------===##
 
-set(config_inc "${MODULAR_BINARY_DIR}/KGEN/include/KGEN/KGENConfig/KGENConfig.h")
+set(config_inc "${MODULAR_BINARY_DIR}/KGEN/include/KGEN/KGENVersion/KGENVersion.h")
 
 configure_file(
-  ${MODULAR_SOURCE_DIR}/KGEN/include/KGEN/KGENConfig/KGENConfig.h.in
+  ${MODULAR_SOURCE_DIR}/KGEN/include/KGEN/KGENVersion/KGENVersion.h.in
   ${config_inc}
 )
 
-add_custom_target(KGENConfig ALL DEPENDS
+add_custom_target(KGENVersion ALL DEPENDS
   "${version_inc}"
   "${config_inc}"
 )
-set_target_properties(KGENConfig PROPERTIES FOLDER "Misc")
+set_target_properties(KGENVersion PROPERTIES FOLDER "Misc")

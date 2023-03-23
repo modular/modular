@@ -16,7 +16,7 @@ add_modular_library(MCache
   MSupport
 
   DEPENDS
-  MConfig
+  MVersion
   )
 
 add_subdirectory(CacheDialect)

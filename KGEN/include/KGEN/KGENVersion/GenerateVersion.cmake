@@ -43,9 +43,9 @@ execute_process (
     OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 
-set(version_inc "${MODULAR_BINARY_DIR}/KGEN/include/KGEN/KGENConfig/Version.h.inc")
+set(version_inc "${MODULAR_BINARY_DIR}/KGEN/include/KGEN/KGENVersion/Version.h.inc")
 
 configure_file(
-  ${MODULAR_SOURCE_DIR}/KGEN/include/KGEN/KGENConfig/Version.h.in
+  ${MODULAR_SOURCE_DIR}/KGEN/include/KGEN/KGENVersion/Version.h.in
   ${version_inc}
 )
