@@ -230,13 +230,13 @@ public:
   /// private to the ExecutionEngine into the layer constructor and constructs
   /// the layer in-place.
   template <typename T, typename... Args>
-  void addLayer(Args &&...args) {
+  T &addLayer(Args &&...args) {
     assert(findLayer<T>() == nullptr && "duplicate layer found");
-    layers.emplace_back(std::make_unique<T>(
-        std::forward<Args &&>(args)..., *executionSession, dataLayout,
+    return cast<T>(*layers.emplace_back(std::make_unique<T>(
+        std::forward<Args>(args)..., *executionSession, dataLayout,
         [&](StringRef name, llvm::orc::JITDylib *dylib) {
           return addToSearchOrder(name, dylib);
-        }));
+        })));
   }
 
   /// Find a layer of type T. Because we can only have one layer of each kind,
