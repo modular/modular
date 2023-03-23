@@ -82,7 +82,8 @@ public:
                  SMLoc loc, ssize_t &incorrectBindingNo,
                  ASTType &incorrectBindingExpectedType, ExprEmitter &emitter,
                  Operation *declOp, bool paramVarargs,
-                 ParameterInferenceHookTy parameterInferenceHook = {}) const;
+                 ParameterInferenceHookTy parameterInferenceHook = {},
+                 bool inferPack = false) const;
 
   /// Given a candidate that may or may not be compatible with the given
   /// parameter set so far, indicate what the next parameter's expected type

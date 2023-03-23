@@ -173,8 +173,6 @@ fn badPackCalls():
   examplePack[Int](1, 2)
   # expected-error @+1 {{invalid call to 'examplePack': callee expects 2 arguments, but 1 was specified}}
   examplePack[Int, F32](1)
-  # expected-error @+1 {{invalid call to 'examplePack': callee expects 0 arguments, but 1 was specified}}
-  examplePack(1)
   # expected-error @+1 {{invalid call to 'examplePack': argument #1 cannot be converted from '__mlir_type.index' to '$F32::F32'}}
   examplePack[Int, F32](1, 2)
 
