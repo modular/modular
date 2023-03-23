@@ -948,9 +948,12 @@ fn elementwise[
     # vectorize over the innermost dimension. We unroll the innermost dimension
     # by a factor of unroll_factor.
 
-    var parallelism_size: Int = shape.flattened_length() // shape[rank - 1]
+    # Compute the number of workers to allocate based on ALL work, not just
+    # the dimensions we split across.
+    let total_size: Int = shape.flattened_length()
+    let num_workers = get_num_workers(total_size, runtime)
 
-    let num_workers = get_num_workers(parallelism_size, runtime)
+    var parallelism_size: Int = total_size // shape[rank - 1]
     let chunk_size = div_ceil(parallelism_size, num_workers)
 
     @always_inline
