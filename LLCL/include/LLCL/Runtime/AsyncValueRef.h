@@ -179,12 +179,23 @@ public:
     std::move(*this).AVRefType::setToError({std::move(message), loc.copy()});
   }
 
+  // Make an explicit copy of this AsyncValueRefWithEncodedLocation.
+  AsyncValueRefWithEncodedLocation copy() const {
+    return {AVRefType::copy(), loc.copy()};
+  }
+
   /// Provide access to the location.
   const EncodedLocation &getLocation() const { return loc; }
 
 private:
   EncodedLocation loc;
 };
+
+/// (Possibly) asynchronous computations may signal completion by emplacing
+/// or setting an error on an output AsyncValueRef<Chain> 'chain'. To avoid
+/// plumbing both the output chain and an EncodedLocation use this alias.
+using OutputChain = AsyncValueRefWithEncodedLocation<AsyncValueRef<Chain>>;
+
 } // namespace M::LLCL
 
 #endif // LLCL_RUNTIME_ASYNCVALUEREF_H
