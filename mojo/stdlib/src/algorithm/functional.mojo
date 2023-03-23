@@ -886,7 +886,8 @@ fn _get_nd_indices_from_flat_index[
     rank: __mlir_type.index
 ](flat_index: Int, shape: StaticIntTuple[rank]) -> StaticIntTuple[rank]:
     """
-    Converts a flat index into ND indices. The ND indices will iterate from right to left. I.E
+    Converts a flat index into ND indices. The ND indices will iterate from
+    right to left. I.E
 
     shape = (20, 5, 2, N)
     _get_nd_indices_from_flat_index(1, shape) = (0, 0, 1, 0)
@@ -894,31 +895,31 @@ fn _get_nd_indices_from_flat_index[
     _get_nd_indices_from_flat_index(50, shape) = (5, 0, 0, 0)
     _get_nd_indices_from_flat_index(56, shape) = (5, 1, 1, 0)
 
-    We ignore the Nth dimension to allow that to be traversed in the elementwise function.
+    We ignore the Nth dimension to allow that to be traversed in the elementwise
+    function.
 
     Args:
-        flat_index(Int): The flat index to convert
-        shape(StaticIntTuple[Int]): The shape of the ND space we are converting into
+        flat_index: The flat index to convert
+        shape: The shape of the ND space we are converting into
     """
 
-    var out: StaticIntTuple[rank]
-
     # The inner dimensions ([outer, outer, inner]) are not traversed here.
-    alias rank_m_1: Int = rank - 1
-    out[rank_m_1] = 0
 
-    if rank_m_1 == 1:
-        out[0] = flat_index
-    else:
-        var curr_index = flat_index
+    @parameter
+    if rank == 2:
+        return StaticIntTuple[rank](flat_index, 0)
 
-        @always_inline
-        fn compute_shape[idx: Int]():
-            let i = rank_m_1 - idx - 1
-            out[i] = curr_index % shape[i]
-            curr_index //= shape[i]
+    var out: StaticIntTuple[rank]
+    var curr_index = flat_index
 
-        unroll[rank_m_1, compute_shape]()
+    @always_inline
+    fn compute_shape[idx: Int]():
+        alias i = rank - idx - 2
+        out[i] = curr_index % shape[i]
+        curr_index //= shape[i]
+
+    unroll[rank - 1, compute_shape]()
+    out[rank - 1] = 0
 
     return out
 
