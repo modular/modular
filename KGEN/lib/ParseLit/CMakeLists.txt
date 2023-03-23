@@ -21,7 +21,7 @@ add_modular_conversion_library(ParseLit
   ParseLit.cpp
 
   DEPENDS
-  KGENConfig
+  KGENVersion
   MLIRKGENPasses
 
   LINK_LIBS PUBLIC

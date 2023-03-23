@@ -10,7 +10,7 @@ add_modular_mlir_library(KGENElaborator
   SelectFastestFunction.cpp
 
   DEPENDS
-  KGENConfig
+  KGENVersion
 
   LINK_LIBS PUBLIC
   DebugInfoDialect
