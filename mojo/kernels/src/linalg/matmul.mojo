@@ -24,7 +24,7 @@ from Memory import stack_allocation
 from Pointer import DTypePointer
 from Range import range
 from SIMD import SIMD
-from TargetInfo import os_is_macos, alignof, dtype_simd_width
+from TargetInfo import os_is_macos, has_neon, alignof, dtype_simd_width
 from Transpose import transpose_inplace
 from Tuple import StaticTuple
 from Intrinsics import PrefetchOptions
@@ -978,7 +978,10 @@ struct MatmulInnerLoopBPacked[
 
         unroll2[a_row_size, pack_inner_size // simd_size, outer_body]()
 
-    fn _accumulate(
+    @adaptive
+    fn _accumulate[
+        a_col_size: Int
+    ](
         self,
         c_local: NDBuffer[
             2,
@@ -988,7 +991,7 @@ struct MatmulInnerLoopBPacked[
         tile_n_k_idx: StaticIntTuple[2],
     ):
         """Utility funcion on the inner loop. Launch one tile of fma on the
-        local accumulation buffer.
+        local accumulation buffer while processing `a_col_size` columns of A.
 
         Args:
             c_local(NDBuffer): pre-allocated local buffer for c partial
@@ -997,6 +1000,81 @@ struct MatmulInnerLoopBPacked[
                 coordinates within the current processing tile to index the
                 packed B matrix.
         """
+        assert_param_bool[a_col_size > 1]()
+
+        # Seek outer indices in packed layout.
+        let n_outer_idx = tile_n_k_idx[0] // pack_inner_size
+
+        # Global K index.
+        let global_k = self.global_offset.K + tile_n_k_idx[1]
+
+        # Prefetch B matrix.
+        # TODO(#10919): Use `@parameter` if here, there is a bug where invalid
+        # code is generated and accuracy is not maintained.
+        if prefetch_b_distance > 0:
+
+            @always_inline
+            fn prefetch_body[idx: Int]():
+                self.b_packed.prefetch[
+                    PrefetchOptions().for_read().high_locality().to_data_cache()
+                ](
+                    n_outer_idx,
+                    tile_n_k_idx[1] + prefetch_b_distance,
+                    idx * simd_size,
+                )
+
+            unroll[pack_inner_size // simd_size, prefetch_body]()
+
+        # Loop over local accumulator tiles.
+        @always_inline
+        fn _do[idx: Int]():
+            alias idx_outer = idx
+            let global_m = self.global_offset.M + idx_outer
+            let a_val = self.a.simd_load[a_col_size](global_m, global_k).cast[
+                accum_type
+            ]()
+
+            @always_inline
+            fn outer_body[idx0: Int, idx1: Int]():
+                let b_val = self.b_packed.simd_load[simd_size](
+                    n_outer_idx,
+                    tile_n_k_idx[1] + idx0,
+                    idx1 * simd_size,
+                ).cast[accum_type]()
+
+                let c_idx = Index(idx_outer, idx1 * simd_size)
+                var c_val = c_local.simd_load[simd_size](c_idx)
+
+                c_val = fma[simd_size, accum_type](a_val[idx0], b_val, c_val)
+                c_local.simd_store[simd_size](c_idx, c_val)
+
+            unroll2[a_col_size, pack_inner_size // simd_size, outer_body]()
+
+        unroll[a_row_size, _do]()
+
+    @adaptive
+    fn _accumulate[
+        a_col_size: Int
+    ](
+        self,
+        c_local: NDBuffer[
+            2,
+            create_dim_list(a_row_size, pack_inner_size),
+            accum_type,
+        ],
+        tile_n_k_idx: StaticIntTuple[2],
+    ):
+        """Utility funcion on the inner loop. Launch one tile of fma on the
+        local accumulation buffer while processing a single column of A.
+
+        Args:
+            c_local(NDBuffer): pre-allocated local buffer for c partial
+                sums.
+            tile_n_k_idx(StaticIntTuple): index tuple with (n, k)
+                coordinates within the current processing tile to index the
+                packed B matrix.
+        """
+        assert_param_bool[a_col_size == 1]()
         # Seek outer indices in packed layout.
         let n_outer_idx = tile_n_k_idx[0] // pack_inner_size
 
@@ -1041,10 +1119,12 @@ struct MatmulInnerLoopBPacked[
 
         unroll2[a_row_size, pack_inner_size // simd_size, outer_body]()
 
+    @adaptive
     fn _run_inner_loop(self):
         """Utility funcion on the inner loop. Run the inner kernel on the whole
         (a_row_size, TileN, TileK) tile.
         """
+        assert_param_bool[not has_neon()]()
         # Allocate accumulation buffer.
         var c_local = NDBuffer[
             2,
@@ -1064,7 +1144,38 @@ struct MatmulInnerLoopBPacked[
             # Not unrolled on K path.
             for idx_k in range(self.tile_n_k[1]):
                 # accumulate data for this (n, k) index
-                self._accumulate(c_local, Index(idx_n, idx_k))
+                self._accumulate[1](c_local, Index(idx_n, idx_k))
+
+            self._store_c_tile(c_local, Index(0, idx_n))
+
+    @adaptive
+    fn _run_inner_loop(self):
+        """Utility funcion on the inner loop. Run the inner kernel on the whole
+        (a_row_size, TileN, TileK) tile.
+        """
+        assert_param_bool[has_neon()]()
+        # Allocate accumulation buffer.
+        var c_local = NDBuffer[
+            2,
+            create_dim_list(a_row_size, pack_inner_size),
+            accum_type,
+        ].aligned_stack_allocation[alignof[SIMD[simd_size, accum_type]]()]()
+
+        for idx_n in range(0, self.tile_n_k[0], pack_inner_size):
+            # Initialize accumulation buffer
+            #  either zero filling or load existing value.
+            if self.global_offset.K == 0:
+                self._initialize_c_tile(c_local)
+            else:
+                self._load_c_tile(c_local, Index(0, idx_n))
+
+            let partition_end = simd_size * (self.tile_n_k[1] // simd_size)
+            for idx_k0 in range(0, partition_end, simd_size):
+                self._accumulate[simd_size](c_local, Index(idx_n, idx_k0))
+
+            for idx_k1 in range(partition_end, self.tile_n_k[1]):
+                # accumulate data for this (n, k) index
+                self._accumulate[1](c_local, Index(idx_n, idx_k1))
 
             self._store_c_tile(c_local, Index(0, idx_n))
 
