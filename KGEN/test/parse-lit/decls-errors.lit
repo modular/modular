@@ -426,6 +426,13 @@ struct InvalidMember:
 def noop():  # expected-error {{expected body statements; use 'pass' if none is required}}
 
 ##===----------------------------------------------------------------------===##
+# Class
+##===----------------------------------------------------------------------===##
+
+class SomeClass:  # expected-error {{classes are not supported yet}}
+  pass
+
+##===----------------------------------------------------------------------===##
 # Exported Functions
 ##===----------------------------------------------------------------------===##
 
