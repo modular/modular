@@ -20,6 +20,8 @@
 #include "llvm/IR/PassManager.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/MC/TargetRegistry.h"
+#include "llvm/Object/Archive.h"
+#include "llvm/Object/ObjectFile.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Support/SmallVectorMemoryBuffer.h"
 #include "llvm/Target/TargetLoweringObjectFile.h"
@@ -215,4 +217,242 @@ ErrorOr<TargetInfoAttr> KGEN::getTargetInfoFor(MLIRContext *ctx,
   // Return a TargetInfoAttr built for the host.
   return TargetInfoAttr::get(ctx, llvm::Triple(targetTriple), cpu, features,
                              std::move(*dl), kPreferredSIMDBitWidth);
+}
+
+//===----------------------------------------------------------------------===//
+// ObjectCompilerMaterializationUnit
+//===----------------------------------------------------------------------===//
+
+class ObjectCompilerLayer::ObjectCompilerMaterializationUnit
+    : public llvm::orc::MaterializationUnit {
+public:
+  ObjectCompilerMaterializationUnit(ObjectCompilerLayer &layer,
+                                    SymbolTable &symtab, ExportMap &exports)
+      : MaterializationUnit(layer.getInterface(symtab, exports)),
+        genLayer(layer), symtab(symtab), exports(exports) {}
+
+  /// Provide a name for this MU that will show up in ORC debug logs.
+  StringRef getName() const override {
+    return "KGEN::ObjectCompilerMaterializationUnit";
+  }
+
+  /// Given a MaterializationResponsibility, materialize the code for those
+  /// symbols and forward them to the next layer.
+  void materialize(
+      std::unique_ptr<llvm::orc::MaterializationResponsibility> mr) override {
+    genLayer.emit(std::move(mr), symtab, exports);
+  }
+
+  /// Notify that the symbol `name` has been overridden and this MU should
+  /// remove it from the source. This removes the symbol from `symtab`.
+  void discard(const llvm::orc::JITDylib &jd,
+               const llvm::orc::SymbolStringPtr &name) override {
+    // If the operation exists, erase it. Otherwise, do nothing.
+    auto sym = symtab.lookup<mlir::SymbolOpInterface>(*name);
+    if (!sym)
+      return;
+
+    // If it's in the export map, erase it.
+    auto found = exports.find(sym.getNameAttr());
+    if (found != exports.end())
+      exports.erase(found);
+
+    // Always erase the op.
+    symtab.erase(sym);
+  }
+
+  ObjectCompilerLayer &genLayer;
+  SymbolTable &symtab;
+  ExportMap &exports;
+};
+
+//===----------------------------------------------------------------------===//
+// ObjectCompilerLayer
+//===----------------------------------------------------------------------===//
+
+char ObjectCompilerLayer::ID;
+
+ObjectCompilerLayer::ObjectCompilerLayer(ObjectCompiler &&objCompiler,
+                                         llvm::orc::ObjectLayer &base,
+                                         llvm::orc::ExecutionSession &sess,
+                                         const llvm::DataLayout &dl,
+                                         AddToSearchOrderFn add)
+    : llvm::RTTIExtends<ObjectCompilerLayer, MaterializationLayer>(
+          sess, dl, std::move(add)),
+      objectCompiler(std::move(objCompiler)), baseLayer(base) {}
+
+ErrorOrSuccess ObjectCompilerLayer::add(StringRef libName, SymbolTable &symtab,
+                                        ExportMap &exports) {
+  auto dylibOr = getOrCreateDylib(libName);
+  if (dylibOr.isError())
+    return dylibOr.takeError();
+
+  llvm::orc::JITDylib *dylib = *dylibOr;
+  llvm::orc::ResourceTrackerSP resourceTracker =
+      dylib->getDefaultResourceTracker();
+
+  // Add the materialization unit.
+  auto err = dylib->define(std::make_unique<ObjectCompilerMaterializationUnit>(
+                               *this, symtab, exports),
+                           resourceTracker);
+  if (err)
+    return Error(llvm::toString(std::move(err)));
+  return success();
+}
+
+/// Produce an ExportMap with every symbol in the module.
+static ExportMap getAllSymbols(ModuleOp theModule) {
+  ExportMap exports;
+  for (auto sym : theModule.getOps<mlir::SymbolOpInterface>())
+    exports.insert({sym.getNameAttr(), {sym.getNameAttr(), false}});
+  return exports;
+}
+
+/// Given a buffer ref to an object file, extract the symbols and delegate the
+/// symbols from `mr` to a new MaterializationResponsibility we can forward to
+/// JITLink. For symbols that are in the object, but not in `mr`, notify the
+/// delegate that these symbols are also being code-generated so that we don't
+/// re-emit anything.
+static ErrorOr<std::unique_ptr<llvm::orc::MaterializationResponsibility>>
+processObjectFile(llvm::orc::MaterializationResponsibility &mr,
+                  llvm::orc::ExecutionSession &session,
+                  llvm::MemoryBufferRef objectBuf) {
+  // Now create the object file so we can iterate its symbols.
+  auto objOr = llvm::object::ObjectFile::createObjectFile(objectBuf);
+  if (!objOr)
+    return Error(llvm::toString(objOr.takeError()));
+  std::unique_ptr<llvm::object::ObjectFile> obj = std::move(*objOr);
+
+  // Pull out any symbols in the object that we want to delegate.
+  llvm::orc::SymbolNameSet symbolNames;
+  llvm::orc::SymbolFlagsMap symbolFlags;
+  for (auto symbol : obj->symbols()) {
+    auto name = symbol.getName();
+    if (!name)
+      return Error(llvm::toString(name.takeError()));
+
+    auto flagsOr = symbol.getFlags();
+    if (!flagsOr)
+      return Error(llvm::toString(flagsOr.takeError()));
+    uint32_t flags = *flagsOr;
+
+    // Check that it's both defined and a global symbol.
+    if (!(flags & llvm::object::BasicSymbolRef::SF_Global))
+      continue;
+    if ((flags & llvm::object::BasicSymbolRef::SF_Undefined))
+      continue;
+
+    llvm::orc::SymbolStringPtr namePtr = session.intern(*name);
+    // If the MR doesn't already have this symbol in it, add it as a
+    // callable. We're resolving it, so we may as well provide the
+    // definition we have.
+    if (!mr.getSymbols().contains(namePtr))
+      symbolFlags[namePtr] = llvm::JITSymbolFlags::Callable;
+
+    LLVM_DEBUG(llvm::dbgs()
+               << "Delegating \"" << *namePtr << "\" to JITLink\n");
+    symbolNames.insert(namePtr);
+  }
+
+  // Define all these symbols as 'materializing'.
+  if (auto e = mr.defineMaterializing(symbolFlags))
+    return Error(llvm::toString(std::move(e)));
+
+  // Delegate the symbols for this object to a new
+  // MaterializationResponsibility object.
+  auto delegated = mr.delegate(symbolNames);
+  if (!delegated)
+    return Error(llvm::toString(delegated.takeError()));
+
+  // Return the new MR that we're gonna delegate, along with the buffer for this
+  // object.
+  return std::move(*delegated);
+}
+
+void ObjectCompilerLayer::emit(
+    std::unique_ptr<llvm::orc::MaterializationResponsibility> mr,
+    SymbolTable &symtab, const ExportMap &exports) {
+  auto theModule = cast<ModuleOp>(symtab.getOp());
+
+  auto onError = [&](llvm::Error &&err) {
+    error = Error(llvm::toString(std::move(err)));
+    return mr->failMaterialization();
+  };
+
+  ErrorOr<Cache::BufferRef> bufOr = Error(" ");
+  if (exports.empty()) {
+    bufOr = objectCompiler.produceStandaloneArchive(symtab,
+                                                    getAllSymbols(theModule),
+                                                    /*isJIT=*/true);
+  } else {
+    bufOr = objectCompiler.produceStandaloneArchive(symtab, exports,
+                                                    /*isJIT=*/true);
+  }
+
+  // No buffer - materialization fails.
+  if (bufOr.isError()) {
+    error = bufOr.takeError();
+    return mr->failMaterialization();
+  }
+  Cache::BufferRef archiveBuf = std::move(*bufOr);
+  // Store a copy to the ref of the archive.
+  generatedArchives[theModule] = archiveBuf.copy();
+
+  // Create an Archive object.
+  auto archiveOr = llvm::object::Archive::create(
+      llvm::MemoryBufferRef(archiveBuf->getBuffer(),
+                            /*BufferName=*/""));
+  if (!archiveOr)
+    return onError(archiveOr.takeError());
+  std::unique_ptr<llvm::object::Archive> archive = std::move(*archiveOr);
+
+  // Iterate the objects in the archive and delegate those symbols. We want to
+  // ensure that every global symbol that is in the archive is materialized
+  // because future lookups will succeed immediately without having to run
+  // again.
+  llvm::Error err = llvm::Error::success();
+  for (auto &object : archive->children(err)) {
+    if (err)
+      return onError(std::move(err));
+
+    // Grab the memory buffer for that object.
+    auto bufferRef = object.getBuffer();
+    if (!bufferRef)
+      return onError(bufferRef.takeError());
+    auto objectBuf = llvm::MemoryBuffer::getMemBuffer(
+        *bufferRef, /*BufferName=*/"", /*RequiresNullTerminator=*/false);
+
+    auto delegatedOr = processObjectFile(*mr, session, *objectBuf);
+    if (delegatedOr.isError()) {
+      error = delegatedOr.takeError();
+      return mr->failMaterialization();
+    }
+
+    // And delegate these symbols to JITLink.
+    baseLayer.emit(std::move(*delegatedOr), std::move(objectBuf));
+  }
+  // At this point the error must be `success`, so consume it.
+  consumeError(std::move(err));
+}
+
+llvm::orc::MaterializationUnit::Interface
+ObjectCompilerLayer::getInterface(SymbolTable &symtab,
+                                  const ExportMap &exports) {
+  llvm::orc::MangleAndInterner mangler(session, dataLayout);
+  llvm::orc::SymbolFlagsMap symbols;
+
+  auto addSymbols = [&](const ExportMap &exportedSymbols) {
+    for (auto &[name, symbol] : exports) {
+      symbols[mangler(symbol.alias.getValue())] =
+          llvm::JITSymbolFlags::Callable;
+    }
+  };
+
+  // If we don't have any exports, infer them from the module.
+  if (!exports.empty())
+    addSymbols(exports);
+  else
+    addSymbols(getAllSymbols(cast<ModuleOp>(symtab.getOp())));
+
+  return {std::move(symbols), /*InitSymbol=*/nullptr};
 }

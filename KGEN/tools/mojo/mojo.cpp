@@ -231,26 +231,6 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return EXIT_SUCCESS;
   }
 
-  // This produces a standalone archive for all the objects we requested.
-  auto standaloneOr = compiler->produceStandaloneArchive(
-      symtab, exportedSymbols,
-      /*isJIT=*/clOptions.cmd == MojoCommand::kExecute);
-  if (failed(standaloneOr))
-    return clOptions.reportError("compiler error");
-  Cache::BufferRef standaloneObject = std::move(*standaloneOr);
-
-  // If we're emitting the archive, do it.
-  if (clOptions.cmd == MojoCommand::kEmit) {
-    if (failed(clOptions.emitArchive(standaloneObject->getBuffer())))
-      return clOptions.reportError("unable to emit archive file");
-    return EXIT_SUCCESS;
-  }
-
-  assert(clOptions.cmd == MojoCommand::kExecute);
-  // We can only execute on the host machine.
-  if (llvm::sys::getDefaultTargetTriple() != target.getTripleStr())
-    return clOptions.reportError("can only execute on host target");
-
   // Now create the execution engine so we can JIT.
   auto tmOr = createTargetMachine(compilationOptions,
                                   /*isJIT=*/true);
@@ -277,9 +257,41 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     if (auto err = engine->add<StaticSymbolLayer>("exec", name, ptr))
       return clOptions.reportError(err.getError());
 
+  // Add the object compiler layer.
+  engine->addLayer<ObjectCompilerLayer>(std::move(*compiler),
+                                        engine->getLinkingLayer());
+
+  // If there are no exported symbols, then we won't codegen anything. That
+  // means we need to add an exported symbol if there aren't any. Use the first
+  // symbol op in the module just so we have something.
+  // TODO(#10893): This behavior is sketchy. We should be exporting the roots of
+  //   callstacks we want codegen'd. This requires updating tests.
+  if (exportedSymbols.empty() && !theModule->getOps().empty()) {
+    auto firstFunc = *theModule->getOps<mlir::SymbolOpInterface>().begin();
+    exportedSymbols.insert(
+        {firstFunc.getNameAttr(), {firstFunc.getNameAttr(), false}});
+  }
+
+  // And add the module into the layer.
   if (auto err =
-          engine->add<StaticArchiveLayer>("exec", std::move(standaloneObject)))
+          engine->add<ObjectCompilerLayer>("exec", symtab, exportedSymbols))
     return clOptions.reportError(err.getError());
+
+  // If we're emitting the archive, do it.
+  if (clOptions.cmd == MojoCommand::kEmit) {
+    // Look up the first item in the exported symbols to trigger archive
+    // generation.
+    ErrorOr<CompiledFunc> funcOr =
+        engine->lookup(exportedSymbols.front().second.alias);
+    if (funcOr.isError())
+      return clOptions.reportError(funcOr.getError());
+    // And lookup the archive.
+    std::optional<Cache::BufferRef> archive =
+        engine->getLayer<ObjectCompilerLayer>().lookupArchive(*theModule);
+    if (!archive.has_value())
+      return clOptions.reportError("compiled archive was missing");
+    return failed(clOptions.emitArchive((*archive)->getBuffer()));
+  }
 
   bool isDef = false;
   if (!moduleExportsMain(*theModule, symtab, isDef))
