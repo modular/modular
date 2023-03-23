@@ -232,8 +232,9 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   }
 
   // Now create the execution engine so we can JIT.
-  auto tmOr = createTargetMachine(compilationOptions,
-                                  /*isJIT=*/true);
+  auto tmOr =
+      createTargetMachine(compilationOptions,
+                          /*isJIT=*/clOptions.cmd == MojoCommand::kExecute);
   if (tmOr.isError())
     return clOptions.reportError(tmOr.getError());
 
@@ -258,7 +259,7 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       return clOptions.reportError(err.getError());
 
   // Add the object compiler layer.
-  engine->addLayer<ObjectCompilerLayer>(std::move(*compiler),
+  auto &objLayer = engine->addLayer<ObjectCompilerLayer>(std::move(*compiler),
                                         engine->getLinkingLayer());
 
   // If there are no exported symbols, then we won't codegen anything. That
@@ -279,6 +280,8 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // If we're emitting the archive, do it.
   if (clOptions.cmd == MojoCommand::kEmit) {
+    // Notify the object layer that we don't need immediate execution.
+    objLayer.notForImmediateExecution();
     // Look up the first item in the exported symbols to trigger archive
     // generation.
     ErrorOr<CompiledFunc> funcOr =

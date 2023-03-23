@@ -125,8 +125,9 @@ struct ProcessBuffer {
     };
 
     // Now create the execution engine so we can JIT.
-    auto tmOr = createTargetMachine(clOptions.getCompilationOptions(),
-                                    /*isJIT=*/true);
+    auto tmOr =
+        createTargetMachine(clOptions.getCompilationOptions(),
+                            /*isJIT=*/clOptions.cmd == Command::kExecute);
     if (tmOr.isError())
       return failure(clOptions.reportError(tmOr.getError()));
 
