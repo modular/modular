@@ -23,32 +23,6 @@
 using namespace M;
 using namespace KGEN;
 
-static ErrorOr<Cache::BufferRef>
-produceArchiveFromExports(LLCL::Runtime &runtime, SymbolTable &symtab,
-                          TargetInfoAttr target, ArrayRef<FuncOp> exports) {
-  // Create the set of symbols to export.
-  llvm::MapVector<StringAttr, ExportedSymbol> exportedSymbols;
-  for (auto e : exports) {
-    StringAttr symName = e.getSymNameAttr();
-    exportedSymbols.insert({symName, ExportedSymbol(symName)});
-  }
-
-  mlir::PassManager mgr(target.getContext());
-  auto compilerOr =
-      ObjectCompiler::create(runtime, mgr, ".kgen_cache", CompilationOptions());
-  if (failed(compilerOr))
-    return compilerOr.takeError();
-  auto compiler = std::make_unique<ObjectCompiler>(std::move(*compilerOr));
-
-  // Produce a standalone archive for all the exports.
-  auto archiveOr = compiler->produceStandaloneArchive(
-      symtab, std::move(exportedSymbols), /*isJIT=*/true);
-  if (failed(archiveOr))
-    return Error("failed to produce standalone archive");
-
-  return archiveOr.takeValue();
-}
-
 ErrorOr<size_t>
 M::KGEN::evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
                                  LLCL::Runtime &runtime, TargetInfoAttr target,
@@ -62,6 +36,15 @@ M::KGEN::evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
       engine,
       ExecutionEngine::createWithStandardLayers(
           ExecutionEngineOptions{/*registerDebugPlugins=*/false}, **tmOr));
+
+  // Create the object compiler so we can add its layer to the execution engine.
+  mlir::PassManager mgr(target.getContext());
+  auto compilerOr =
+      ObjectCompiler::create(runtime, mgr, ".kgen_cache", CompilationOptions());
+  if (failed(compilerOr))
+    return compilerOr.takeError();
+  engine->addLayer<ObjectCompilerLayer>(std::move(*compilerOr),
+                                        engine->getLinkingLayer());
 
   // TODO (8082): This should not be necessary.
   std::vector<std::pair<StringLiteral, void *>> compilerRTFunctions;
@@ -79,18 +62,23 @@ M::KGEN::evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
   // We only want the funcs passed-in and the evaluator to be code-generated.
   SmallVector<FuncOp> funcsToCompile(specializations);
   funcsToCompile.push_back(evaluator);
+
+  // Create the set of symbols to export.
+  llvm::MapVector<StringAttr, ExportedSymbol> exportedSymbols;
+  for (auto e : funcsToCompile) {
+    StringAttr symName = e.getSymNameAttr();
+    exportedSymbols.insert({symName, ExportedSymbol(symName)});
+  }
+
+  // Add the exported symbols to the ObjectCompilerLayer. This will not actually
+  // compile anything - that happens at lookup time.
+  if (auto err = engine->add<ObjectCompilerLayer>("evaluateSpecializations",
+                                                  symtab, exportedSymbols))
+    return err.takeError();
+
   SmallVector<void *> candidatePtrs;
   {
     TimeTraceScope<> traceScope("compile-specializations");
-    auto archiveOr =
-        produceArchiveFromExports(runtime, symtab, target, funcsToCompile);
-    if (archiveOr.isError())
-      return archiveOr.takeError();
-
-    if (auto err = engine->add<StaticArchiveLayer>("evaluateSpecializations",
-                                                   archiveOr.takeValue()))
-      return err.takeError();
-
     // Get pointers to all the candidates.
     for (FuncOp candidate : specializations) {
       UNWRAP_ERROR(func, engine->lookup(candidate.getNameAttr()));

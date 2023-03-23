@@ -250,6 +250,11 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       return failure();
   }
 
+  // If the module is empty, just return - don't bother trying codegen or
+  // emitting anything.
+  if (theModule->getOps().empty())
+    return mlir::success();
+
   // If all we're doing is generating a library file or elaborating, we're done
   // now.
   if (clOptions.cmd == Command::kGenLibraryFile ||
@@ -301,20 +306,6 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return emitHeader(symtab, exportedSymbols, *compiler,
                       clOptions.outputFilename);
 
-  // This produces a standalone archive for all the objects we requested.
-  auto standaloneOr = compiler->produceStandaloneArchive(
-      symtab, exportedSymbols,
-      /*isJIT=*/clOptions.cmd == Command::kExecute);
-  if (failed(standaloneOr) && !clOptions.ignoreFailures)
-    return failure();
-  Cache::BufferRef standaloneArchive = std::move(*standaloneOr);
-
-  // If we're emitting the archive, do it.
-  if (clOptions.cmd == Command::kEmit)
-    return clOptions.emitArchive(standaloneArchive->getBuffer());
-
-  // Now we can load it into the JIT - we're definitely executing the thing.
-
   // Now create the execution engine so we can JIT.
   auto tmOr = createTargetMachine(compilationOptions,
                                   /*isJIT=*/true);
@@ -341,9 +332,41 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     if (auto err = engine->add<StaticSymbolLayer>("exec", name, ptr))
       return failure(clOptions.reportError(err.getError()));
 
+  // Add the object compiler layer.
+  engine->addLayer<ObjectCompilerLayer>(std::move(*compiler),
+                                        engine->getLinkingLayer());
+
+  // If there are no exported symbols, then we won't codegen anything. That
+  // means we need to add an exported symbol if there aren't any. Use the first
+  // symbol op in the module just so we have something.
+  // TODO(#10893): This behavior is sketchy. We should be exporting the roots of
+  //   callstacks we want codegen'd. This requires updating tests.
+  if (exportedSymbols.empty()) {
+    auto firstFunc = *theModule->getOps<mlir::SymbolOpInterface>().begin();
+    exportedSymbols.insert(
+        {firstFunc.getNameAttr(), {firstFunc.getNameAttr(), false}});
+  }
+
+  // And add the module into the layer.
   if (auto err =
-          engine->add<StaticArchiveLayer>("exec", std::move(standaloneArchive)))
+          engine->add<ObjectCompilerLayer>("exec", symtab, exportedSymbols))
     return failure(clOptions.reportError(err.getError()));
+
+  // If we're emitting the archive, do it.
+  if (clOptions.cmd == Command::kEmit) {
+    // Look up the first item in the exported symbols to trigger archive
+    // generation.
+    ErrorOr<CompiledFunc> funcOr =
+        engine->lookup(exportedSymbols.front().second.alias);
+    if (funcOr.isError())
+      return failure(clOptions.reportError(funcOr.getError()));
+    // And lookup the archive.
+    std::optional<Cache::BufferRef> archive =
+        engine->getLayer<ObjectCompilerLayer>().lookupArchive(*theModule);
+    if (!archive.has_value())
+      return failure(clOptions.reportError("compiled archive was missing"));
+    return clOptions.emitArchive((*archive)->getBuffer());
+  }
 
   // Helper to execute a func.
   auto execFunc = [&](FuncOp theFunc, StringAttr name,

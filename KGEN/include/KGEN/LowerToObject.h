@@ -10,6 +10,7 @@
 #include "Cache/BlobCache.h"
 #include "Cache/CacheDialect/CachedTransform.h"
 #include "KGEN/CompilationOptions.h"
+#include "KGEN/ExecutionEngine.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -20,9 +21,17 @@ namespace llvm {
 class LLVMContext;
 class Module;
 class TargetMachine;
+class DataLayout;
+namespace orc {
+class ExecutionSession;
+} // namespace orc
 } // namespace llvm
 
 namespace M::KGEN {
+//===----------------------------------------------------------------------===//
+// ObjectCompiler
+//===----------------------------------------------------------------------===//
+
 /// The purpose of this class is to provide methods to lower concrete KGEN
 /// functions to LLVM, and then to objects.
 class ObjectCompiler {
@@ -107,6 +116,65 @@ ErrorOr<TargetInfoAttr> getTargetInfoFor(MLIRContext *ctx,
 /// Setup the machine properties from the provided target.
 ErrorOr<std::unique_ptr<llvm::TargetMachine>>
 createTargetMachine(const CompilationOptions &options, bool isJIT);
+
+//===----------------------------------------------------------------------===//
+// ObjectCompilerLayer
+//===----------------------------------------------------------------------===//
+
+/// Provide an ExecutionEngine layer for the ObjectCompiler. This simply wraps
+/// up the ObjectCompiler in the correct APIs - under the hood it also defines a
+/// MaterializationUnit and uses that to emit symbols on-demand.
+class ObjectCompilerLayer
+    : public llvm::RTTIExtends<ObjectCompilerLayer, MaterializationLayer> {
+public:
+  static char ID;
+
+  ObjectCompilerLayer(ObjectCompiler &&objCompiler,
+                      llvm::orc::ObjectLayer &base,
+                      llvm::orc::ExecutionSession &sess,
+                      const llvm::DataLayout &dl, AddToSearchOrderFn add);
+
+  /// Add a module to the JIT. The module must stay alive long enough for
+  /// codegen to happen (so long enough for a `lookup` call), but after that the
+  /// object code generated is fully stable, save for the `lookupArchive`
+  /// operation below.
+  ///
+  /// If the export map is empty, then exports are regenerated
+  /// by inspecting the module. Otherwise, the exports provided are used.
+  ErrorOrSuccess add(StringRef libName, SymbolTable &symtab,
+                     ExportMap &exports);
+
+  /// Look up a generated archive buffer. Returns `nullopt` if nothing was found
+  /// for that module. Note that `nullopt` could be returned if codegen failed
+  /// *or* if codegen simply didn't happen (which would be the case if the JIT's
+  /// `lookup` method has not been called).
+  std::optional<Cache::BufferRef> lookupArchive(ModuleOp theModule) {
+    auto found = generatedArchives.find(theModule);
+    if (found != generatedArchives.end())
+      return found->second.copy();
+    return std::nullopt;
+  }
+
+  /// Emit a given module. This will immediately run the materialization.
+  void emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr,
+            SymbolTable &symtab, const ExportMap &exports);
+
+private:
+  /// Conform to the ORC's interface and return a map of the exported symbols.
+  /// If the export map is empty, uses `getExportedSymbols` to infer them from
+  /// the module.
+  llvm::orc::MaterializationUnit::Interface
+  getInterface(SymbolTable &symtab, const ExportMap &exports);
+
+  /// Provide an ObjectCompilerMaterializationUnit so that we can do codegen
+  /// on-demand.
+  class ObjectCompilerMaterializationUnit;
+
+private:
+  ObjectCompiler objectCompiler;
+  llvm::orc::ObjectLayer &baseLayer;
+  DenseMap<ModuleOp, Cache::BufferRef> generatedArchives;
+};
 } // namespace M::KGEN
 
 #endif // KGEN_LOWERTOOBJECT_H
