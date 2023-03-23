@@ -9,7 +9,7 @@
 from Assert import assert_param_bool_msg
 from DType import DType
 from Int import Int
-from Math import erf, exp, tanh, clamp
+from Math import erf, exp, tanh, clamp, max, min
 from SIMD import SIMD
 
 # ===----------------------------------------------------------------------===#
@@ -32,7 +32,7 @@ fn relu[
     Returns:
         SIMD[simd_width, type]: The result of the RELU operation.
     """
-    return x.max(0)
+    return max(x, 0)
 
 
 # ===----------------------------------------------------------------------===#
@@ -78,7 +78,7 @@ fn prelu[
     Returns:
         SIMD[simd_width, type]: The result of the PRELU operation.
     """
-    return x.max(0) + SIMD[simd_width, type].splat(alpha) * x.min(0)
+    return max(x, 0) + alpha * min(x, 0)
 
 
 # ===----------------------------------------------------------------------===#
@@ -101,7 +101,7 @@ fn relu_n1[
     Returns:
         SIMD[simd_width, type]: The result of the RELU N1 operation.
     """
-    return x.min(1).max(-1)
+    return clamp(x, -1, 1)
 
 
 # ===----------------------------------------------------------------------===#
@@ -166,11 +166,7 @@ fn gelu_approximate[
         "dtype must be a floating point type",
     ]()
     let x3 = x * x * x
-    return (
-        0.5
-        * x
-        * (1 + tanh[simd_width, type](SQRT_TWO_OVER_PI * (x + 0.044715 * x3)))
-    )
+    return 0.5 * x * (1 + tanh(SQRT_TWO_OVER_PI * (x + 0.044715 * x3)))
 
 
 # ===----------------------------------------------------------------------===#
@@ -194,5 +190,5 @@ fn sigmoid[
         SIMD[size, type]: The result of the approximate sigmoid operation.
     """
 
-    let ex = exp[simd_width, type](x)
+    let ex = exp(x)
     return ex / (ex + 1)
