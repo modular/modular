@@ -159,6 +159,11 @@ public:
   void emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr,
             SymbolTable &symtab, const ExportMap &exports);
 
+  /// Notify the layer that this is not for immediate execution. Note that this
+  /// *will* cause strange issues if you then go on to try and execute the code
+  /// generated!
+  void notForImmediateExecution() { isJIT = false; }
+
 private:
   /// Conform to the ORC's interface and return a map of the exported symbols.
   /// If the export map is empty, uses `getExportedSymbols` to infer them from
@@ -174,6 +179,10 @@ private:
   ObjectCompiler objectCompiler;
   llvm::orc::ObjectLayer &baseLayer;
   DenseMap<ModuleOp, Cache::BufferRef> generatedArchives;
+  /// This is a bit odd, but since we use this layer to generate code for cases
+  /// where we aren't going to immediately execute it, we need to be able to
+  /// change the codegen mode.
+  bool isJIT = true;
 };
 } // namespace M::KGEN
 

@@ -381,12 +381,10 @@ void ObjectCompilerLayer::emit(
 
   ErrorOr<Cache::BufferRef> bufOr = Error(" ");
   if (exports.empty()) {
-    bufOr = objectCompiler.produceStandaloneArchive(symtab,
-                                                    getAllSymbols(theModule),
-                                                    /*isJIT=*/true);
+    bufOr = objectCompiler.produceStandaloneArchive(
+        symtab, getAllSymbols(theModule), isJIT);
   } else {
-    bufOr = objectCompiler.produceStandaloneArchive(symtab, exports,
-                                                    /*isJIT=*/true);
+    bufOr = objectCompiler.produceStandaloneArchive(symtab, exports, isJIT);
   }
 
   // No buffer - materialization fails.
