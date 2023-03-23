@@ -59,8 +59,11 @@ static raw_ostream &printStorage(raw_ostream &os,
     os << val;
   } else if (auto dlv = dyn_cast<DLValue>(storage)) {
     if (isDump)
-      os << "DLV" << (dlv.isSubscript() ? "(subscript): " : "(property): ")
-         << dlv.elementType << " ";
+      os << "DLV ";
+    if (!dlv)
+      os << "<<NULL>>";
+    else
+      dlv->print(os);
   } else {
     os << "<UNKNOWN IRVALUE>";
   }
@@ -123,7 +126,7 @@ static ASTType getTypeFrom(AnyValue::Storage storage) {
   if (auto value = dyn_cast<SLValue>(storage))
     return value.getType();
   if (auto value = dyn_cast<DLValue>(storage))
-    return value.elementType;
+    return value->elementType;
   assert(!isa<ORValue>(storage) && "overloaded rvalue has no type");
   llvm_unreachable("unknown IRValue");
 }
@@ -196,16 +199,37 @@ ORValue ORValue::create(OverloadSet &&set) {
 }
 
 //===----------------------------------------------------------------------===//
-// DLValue
+// DLValue / BaseDLValue
 //===----------------------------------------------------------------------===//
 
-DLValue::DLValue() : expr(nullptr) {}
-DLValue::DLValue(ArrayRef<ASTExprAnd<AnyValue>> selfAndIndicesValue,
-                 ASTType elementType, const ExprNode *expr)
-    : selfAndIndicesValue(selfAndIndicesValue.begin(),
-                          selfAndIndicesValue.end()),
-      elementType(elementType), expr(expr) {}
 DLValue::~DLValue() {}
 
+DLValue &DLValue::operator=(const DLValue &existing) {
+  storage = existing.storage.copy();
+  return *this;
+}
+
+BaseDLValue::~BaseDLValue() {
+  // vtable anchor.
+}
+
+//===----------------------------------------------------------------------===//
+// SubscriptDLValue
+//===----------------------------------------------------------------------===//
+
+SubscriptDLValue::SubscriptDLValue(
+    ArrayRef<ASTExprAnd<AnyValue>> selfAndIndicesValue, ASTType elementType,
+    const ExprNode *expr)
+    : BaseDLValue(elementType, expr),
+      selfAndIndicesValue(selfAndIndicesValue.begin(),
+                          selfAndIndicesValue.end()) {}
+
 /// Return true if this is a subscript, false if this is an attribute access.
-bool DLValue::isSubscript() const { return expr->kind == ExprNode::kSubscript; }
+bool SubscriptDLValue::isSubscript() const {
+  return expr->kind == ExprNode::kSubscript;
+}
+
+void SubscriptDLValue::print(raw_ostream &os) const {
+  os << (isSubscript() ? "(subscript): " : "(property): ") << elementType
+     << " ";
+}

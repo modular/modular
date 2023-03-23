@@ -1342,8 +1342,9 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       elementType = elementType.getPointerElementType();
   }
 
-  DLValue result(indexValues, elementType, this);
-  return emitter.emitResult(result, this, dest);
+  DLValue result(
+      LLCL::RCRef<SubscriptDLValue>::create(indexValues, elementType, this));
+  return emitter.emitResult(std::move(result), this, dest);
 }
 
 AnyValue SubscriptArrowNode::emitIR(ValueDest &dest,
