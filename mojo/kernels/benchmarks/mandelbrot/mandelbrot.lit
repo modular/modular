@@ -21,7 +21,7 @@ from Vector import DynamicVector
 from Buffer import Buffer, NDBuffer
 from Matrix import Matrix
 from List import Dim, DimList, create_dim_list
-from StringRef import StringRef
+from String import StringRef
 from LLCL import num_cores, Runtime, TaskGroup
 from Functional import parallelize
 from Math import iota
