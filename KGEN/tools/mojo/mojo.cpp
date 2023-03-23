@@ -70,9 +70,10 @@ public:
 } // namespace
 
 /// Returns true if the given module exports a main() function, false otherwise.
-static bool moduleExportsMain(ModuleOp theModule, SymbolTable &symtab) {
-  auto emptyListType =
-      KGEN::ListType::get(IntegerType::get(theModule.getContext(), 1), 0);
+static bool moduleExportsMain(ModuleOp theModule, SymbolTable &symtab,
+                              bool &isDef) {
+  MLIRContext *ctx = theModule.getContext();
+  auto emptyListType = KGEN::ListType::get(IntegerType::get(ctx, 1), 0);
   for (auto exportOp : theModule.getOps<ExportOp>()) {
     // Is there an exported "main"?
     if (exportOp.getAlias() != "main")
@@ -84,7 +85,28 @@ static bool moduleExportsMain(ModuleOp theModule, SymbolTable &symtab) {
     FunctionType funcType = func.getFunctionType();
     if (funcType.getNumInputs() != 0 || funcType.getNumResults() != 1)
       continue;
-    return dyn_cast<KGEN::ListType>(funcType.getResult(0)) == emptyListType;
+    if (dyn_cast<KGEN::ListType>(funcType.getResult(0)) == emptyListType) {
+      isDef = false;
+      return true;
+    }
+
+    // Else, it it could be a `def main()` which returns an optional void.
+    auto variantTy = dyn_cast<POP::VariantType>(funcType.getResult(0));
+    if (!variantTy)
+      return false;
+    auto variantElementTys = variantTy.getTypes();
+    if (variantElementTys.size() != 2)
+      return false;
+    if (variantElementTys[0] !=
+        KGEN::ConcreteTypeConstantAttr::get(
+            POP::StructType::get(ctx, SmallVector<Type>{})))
+      return false;
+    if (variantElementTys[1] ==
+        KGEN::ConcreteTypeConstantAttr::get(emptyListType)) {
+      isDef = true;
+      return true;
+    }
+    return false;
   }
   return false;
 }
@@ -259,16 +281,25 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
           engine->add<StaticArchiveLayer>("exec", std::move(standaloneObject)))
     return clOptions.reportError(err.getError());
 
-  if (!moduleExportsMain(*theModule, symtab))
-    return clOptions.reportError(
-        "could not find 'fn main():', please provide a main function with no "
-        "arguments / return values.");
+  bool isDef = false;
+  if (!moduleExportsMain(*theModule, symtab, isDef))
+    return clOptions.reportError("could not find 'fn main()' or 'def main()', "
+                                 "please provide a main function with no "
+                                 "arguments / return values.");
 
   TimeTraceScope<> traceScope("execute-main");
   auto compiledFuncOr = engine->lookup("main");
   if (failed(compiledFuncOr))
     return clOptions.reportError(compiledFuncOr.getError());
-  compiledFuncOr->invoke<void>();
+  if (isDef) {
+    size_t dummy;
+    bool ok;
+    compiledFuncOr->invoke<void>(&dummy, &ok);
+    if (!ok)
+      return clOptions.reportError("main function threw an error");
+  } else {
+    compiledFuncOr->invoke<void>();
+  }
   return EXIT_SUCCESS;
 }
 

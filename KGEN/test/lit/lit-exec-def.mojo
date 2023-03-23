@@ -4,10 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: not mojo %s 2>&1 | FileCheck %s
+# RUN: mojo %s | FileCheck %s
 
-from F32 import F32
+from IO import print
 
-# CHECK: could not find 'fn main()'
-fn main() -> F32:
-    return 0.0
+
+def main():
+    # CHECK: Hello, world!
+    print("Hello, world!\n")
