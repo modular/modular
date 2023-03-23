@@ -472,7 +472,8 @@ struct StructWithInit:
     # CHECK: [[XT:%.*]] = pop.load [[XP]]
     # CHECK: pop.store [[XT]], [[YP]]
     self.y = self.x
-    # CHECK-NEXT: lit.end_func
+    # CHECK-NEXT: kgen.param.constant: !lit.none
+    # CHECK-NEXT: lit.return
     return
 
   # Not very useful, but this form also works, so test it.

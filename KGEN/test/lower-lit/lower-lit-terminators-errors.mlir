@@ -16,6 +16,13 @@ lit.func @no_return_result() -> i32 {
 
 // -----
 
+lit.func @no_return_result(%x: !pop.pointer<i32> byref_result) -> !lit.none {
+  // expected-error @below {{return expected at end of function with results}}
+  lit.end_func
+}
+
+// -----
+
 lit.func @no_return_result<() -> index>() -> !lit.none {
   // expected-error @below {{missing parameter return for function with result parameters}}
   lit.end_func

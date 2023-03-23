@@ -1808,8 +1808,19 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, LitLexer &lexer,
   // complain or add one implicitly if we have no results.
   Block *bodyBlock = funcOp.getBody();
 
+  auto builder = OpBuilder::atBlockEnd(bodyBlock);
+
+  // If this is an init with an explicit self, emit a "return None" to cap off
+  // the end of the function.
+  auto loc = funcOp.getLoc();
+  if (decl.isInitFnWithByRefResultSelf) {
+    Value result =
+        builder.create<ParamConstantOp>(loc, builder.getAttr<LIT::NoneAttr>());
+    builder.create<LIT::ReturnOp>(loc, result);
+  }
+
   // Insert the default end terminator.
-  OpBuilder::atBlockEnd(bodyBlock).create<LIT::EndFuncOp>(funcOp.getLoc());
+  builder.create<LIT::EndFuncOp>(loc);
 
   // Check that any alias forward declarations have been completed.
   if (!shared.diags.isErrorEmitted()) {
