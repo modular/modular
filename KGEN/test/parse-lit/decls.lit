@@ -384,24 +384,28 @@ fn usePacks(x: F32, y: Int):
   # CHECK: lit.varlet.decl "b", var = true : <@"$decls"::@Tuple<Ts: variadic<!kgen.mlirtype> = [!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$F32"::@F32>, !kgen.declref<@"$Int"::@Int>]>>
   var b: Tuple[Int, F32, Int]
 
-  # CHECK: %[[PACK1:.*]] = kgen.param.constant: !pop.pack<[!kgen.declref<@"$Int"::@Int>]> = <<#lit.struct<{value: scalar<index> = 1}>>>
-  # CHECK: kgen.call @"$decls"::@"varArgs(__mlir_type.!pop.pack<Ts>)"<Ts: variadic<!kgen.mlirtype> = [!kgen.declref<@"$Int"::@Int>]>(%[[PACK1]])
-  varArgs[Int](1)
-  # CHECK: %[[PACK2:.*]] = kgen.param.constant: !pop.pack<[!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$F32"::@F32>, !kgen.declref<@"$Int"::@Int>]> = <<#lit.struct<{value: scalar<index> = 1}>, #lit.struct<{value: scalar<f32> = "3.1400001"}>, #lit.struct<{value: scalar<index> = 2}>>>
-  # CHECK: kgen.call @"$decls"::@"varArgs(__mlir_type.!pop.pack<Ts>)"<Ts: variadic<!kgen.mlirtype> = [!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$F32"::@F32>, !kgen.declref<@"$Int"::@Int>]>(%[[PACK2]])
-  varArgs[Int, F32, Int](1, 3.14, 2)
+  # CHECK: %[[PACK1:.*]] = kgen.param.constant: !pop.pack<[index]> = <<1>>
+  # CHECK: kgen.call @"$decls"::@"varArgs(__mlir_type.!pop.pack<Ts>)"<Ts: variadic<!kgen.mlirtype> = [index]>(%[[PACK1]])
+  varArgs(1)
+  # CHECK: %[[PACK2:.*]] = kgen.param.constant: !pop.pack<[index, f64, index]> = <<1, 3.14{{.*}}, 2>>
+  # CHECK: kgen.call @"$decls"::@"varArgs(__mlir_type.!pop.pack<Ts>)"<Ts: variadic<!kgen.mlirtype> = [index, f64, index]>(%[[PACK2]])
+  varArgs(1, 3.14, 2)
   # CHECK: %[[PACK3:.*]] = kgen.param.constant: !pop.pack<[]> = <<>>
   # CHECK: kgen.call @"$decls"::@"varArgs(__mlir_type.!pop.pack<Ts>)"<Ts: variadic<!kgen.mlirtype> = []>(%[[PACK3]])
   varArgs()
 
   # CHECK: %[[PACK4:.*]] = pop.pack.create(%{{.*}}, [[ARGX]], [[ARGY]])
-  # CHECK: kgen.call @"$decls"::@"varArgs(__mlir_type.!pop.pack<Ts>)"<Ts: variadic<!kgen.mlirtype> = [!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$F32"::@F32>, !kgen.declref<@"$Int"::@Int>]>(%[[PACK4]])
+  # CHECK: kgen.call @"$decls"::@"varArgs(__mlir_type.!pop.pack<Ts>)"<Ts: variadic<!kgen.mlirtype> = [index, !kgen.declref<@"$F32"::@F32>, !kgen.declref<@"$Int"::@Int>]>(%[[PACK4]])
+  varArgs(1, x, y)
+  # CHECK: %[[INTCTOR:.*]] = kgen.param.constant: @"$Int"::@Int = <#lit.struct<{value: scalar<index> = 1}>>
+  # CHECK: %[[PACK5:.*]] = pop.pack.create(%[[INTCTOR]], %x, %y)
+  # CHECK: kgen.call @"$decls"::@"varArgs(__mlir_type.!pop.pack<Ts>)"<Ts: variadic<!kgen.mlirtype> = [!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$F32"::@F32>, !kgen.declref<@"$Int"::@Int>]>(%[[PACK5]])
   varArgs[Int, F32, Int](1, x, y)
 
-  # CHECK: kgen.param.constant: @"$Int"::@Int = <#lit.struct<{value: scalar<index> = 1}>>
-  # CHECK-NEXT: [[PACK5:%.*]] = pop.pack.create(%{{.*}}, [[ARGX]], [[ARGY]])
-  # CHECK-NEXT: kgen.call {{.*}}varArgsBorrowed{{.*}}([[PACK5]])
-  varArgsBorrowed[Int, F32, Int](1, x, y)
+  # CHECK: index.constant 1
+  # CHECK-NEXT: [[PACK6:%.*]] = pop.pack.create(%{{.*}}, [[ARGX]], [[ARGY]])
+  # CHECK-NEXT: kgen.call {{.*}}varArgsBorrowed{{.*}}([[PACK6]])
+  varArgsBorrowed(1, x, y)
 
 ##===----------------------------------------------------------------------===##
 # @raises decorator.

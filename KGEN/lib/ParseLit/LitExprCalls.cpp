@@ -235,21 +235,41 @@ PValue ParameterInferenceState::infer(SignatureType signature,
       }
     };
 
-    // In the typical case, this argument isn't varargs, just check it.
-    if (!signature.isVararg(expectedArgIdx)) {
-      // If there was a problem, report it, otherwise continue on to the next
-      // expected argument to check.
-      if (failed(checkOneOperand(expectedType)))
-        return {};
-    } else {
-      // If we have a varargs argument, then it will eat the rest of the
-      // arguments, but we have to check each of them.
+    // If we have a varargs argument, then it will eat the rest of the
+    // arguments, but we have to check each of them.
+    if (signature.isVararg(expectedArgIdx)) {
       auto varArgsEltType = ASTType(expectedType).getVariadicElementType();
       while (providedValueIdx != operands.size()) {
         if (failed(checkOneOperand(varArgsEltType)))
           return {};
       }
+      continue;
     }
+
+    // If we have a pack type argument, then we're binding a variadic parameter
+    // with multiple type values.  We need to consume all remaining arguments
+    // and use their types as bindings.
+    if (auto packType = dyn_cast<POP::PackType>(expectedType)) {
+      SmallVector<TypedAttr> types;
+      while (providedValueIdx != operands.size()) {
+        ASTExprAnd<AnyValue> operand = operands[providedValueIdx++];
+        CValue value = operand.ir.getIfCValue();
+        if (!value)
+          return {};
+        types.push_back(
+            ParameterizedTypeConstantAttr::get(value.getRValueType()));
+      }
+
+      inferredValues.push_back(KGEN::VariadicAttr::get(
+          types, cast<VariadicType>(packType.getVariadic().getType())));
+      continue;
+    }
+
+    // In the typical case, this argument isn't varargs or a pack, so just check
+    // it.  If there was a problem, report it, otherwise continue on to the next
+    // expected argument to check.
+    if (failed(checkOneOperand(expectedType)))
+      return {};
   }
 
   // If we have left over operands, then this signature cannot match.
@@ -279,7 +299,7 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
     ParamDeclArrayAttr actualParamDecls, StringRef baseName, SMLoc loc,
     ssize_t &incorrectBindingNo, ASTType &incorrectBindingExpectedType,
     ExprEmitter &emitter, Operation *declOp, bool paramVarargs,
-    ParameterInferenceHookTy parameterInferenceHook) const {
+    ParameterInferenceHookTy parameterInferenceHook, bool inferPack) const {
 
   // If we have an incorrect number of bindings specified, this lambda reports
   // the problem.
@@ -330,26 +350,42 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
 
     // Check to see if we ran out of bindings to provide to this param decl.
     if (nextBinding == bindings.size()) {
-      // If the parameter decl is a variadic parameter list, we can fulfill it
+      // If the parameter decl is a variadic parameter list, and we could not
+      // infer a sequence of parameters that fulfills it, then we can fulfill it
       // with an empty list.  We know it must be the last parameter decl.
-      if (isVararg) {
-        auto emptyVariadic = KGEN::VariadicAttr::get(
-            ArrayRef<TypedAttr>(), cast<KGEN::VariadicType>(decl.getType()));
-        setParamValue(emptyVariadic);
-        continue;
-      }
-
+      auto handleVararg = [&]() -> bool {
+        if (isVararg) {
+          auto emptyVariadic = KGEN::VariadicAttr::get(
+              ArrayRef<TypedAttr>(), cast<KGEN::VariadicType>(decl.getType()));
+          setParamValue(emptyVariadic);
+          return true;
+        }
+        return false;
+      };
       // If we have a method to infer parameter values, invoke it to see if we
       // can get an inferred value for the parameter.
-      if (parameterInferenceHook) {
-        auto expectedType = evaluator.getReboundType(decl.getType());
-        if (auto value =
-                parameterInferenceHook(decl, expectedType, newBindings)) {
-          assert(value.getType().mlirType == expectedType &&
-                 "inferred a default parameter value of wrong type");
-          setParamValue(value);
-          continue;
+      auto handleInference = [&]() -> bool {
+        if (parameterInferenceHook) {
+          auto expectedType = evaluator.getReboundType(decl.getType());
+          if (auto value =
+                  parameterInferenceHook(decl, expectedType, newBindings)) {
+            assert(value.getType().mlirType == expectedType &&
+                   "inferred a default parameter value of wrong type");
+            setParamValue(value);
+            return true;
+          }
         }
+        return false;
+      };
+
+      // When inferring based on pack arguments, preferentially infer, and
+      // otherwise fall back to using an empty variadic sequence.
+      if (inferPack) {
+        if (handleInference() || handleVararg())
+          continue;
+      } else {
+        if (handleVararg() || handleInference())
+          continue;
       }
 
       // TODO: Apply default values for parameters.
@@ -556,7 +592,7 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
   // Check that the signature can be rebound with this set of bindings.
   ssize_t incorrectBindingNo = 0;
   ASTType incorrectBindingExpectedType;
-  auto newBindings = callable.inputParamBindings.verifyBindings(
+  ParamBindArrayAttr newBindings = callable.inputParamBindings.verifyBindings(
       signature.getInputParams(), callable.baseName, callExpr->getLoc(),
       incorrectBindingNo, incorrectBindingExpectedType, emitter,
       /*don't emit diagnostics*/ nullptr, signature.hasParamVarargs(),
@@ -564,7 +600,8 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
           ArrayRef<ParamBindAttr> bindingsSoFar) -> PValue {
         return ParameterInferenceState(decl).infer(signature, bindingsSoFar,
                                                    operands);
-      });
+      },
+      /*inferPack=*/true);
 
   // If there is an error, return the problem.
   if (!newBindings) {
