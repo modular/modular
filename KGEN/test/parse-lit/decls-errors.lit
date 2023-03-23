@@ -7,6 +7,7 @@
 # RUN: kgen-translate -import-mojo -verify-diagnostics %s -I %S/../mojo-examples/
 
 from prolog import DType, Error, F32, Int, object
+from Pointer import Pointer
 
 ##===----------------------------------------------------------------------===##
 # Var / Let
@@ -41,6 +42,10 @@ def cantFwdDeclarePlusEqual():
   # expected-error @+1 {{use of unknown declaration 'x'}}
   x += Int(4)
 
+fn badTypeErrorMessage():
+  var x: Int
+  # expected-error @+1 {{cannot use a dynamic value in type specification}}
+  let ptr: Pointer[Int].address_of(x)
 
 ##===----------------------------------------------------------------------===##
 # Functions

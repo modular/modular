@@ -475,7 +475,33 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   assert(decls.size() == 1 && "Only functions may be overloaded");
   ASTDecl &decl = *decls[0];
 
-  // 'let' declarations resolve to an sbvalue if they are register_passable.
+  // Aliases form a PValue.
+  if (auto param = dyn_cast<ParamDeclareOp>(decl)) {
+    PValue result =
+        resolveParamDeclareValue(param, /*bindings=*/{}, emitter.shared);
+    return emitter.emitResult(result, this, dest);
+  }
+
+  // Use of forward alias references.
+  if (auto param = dyn_cast<AliasForwardDeclOp>(decl)) {
+    PValue result(ParamDeclRefAttr::get(param.getName(), param.getType()));
+    return emitter.emitResult(result, this, dest);
+  }
+
+  // If this is a type declaration, return it as a type.
+  if (isa<StructDeclOp>(decl)) {
+    PValue result(DeclRefType::get(decl.getSymbolRef()));
+    return emitter.emitResult(result, this, dest);
+  }
+
+  if (auto pvalue = decl.getIfPValue())
+    return emitter.emitResult(pvalue, this, dest);
+
+  // All the declarations below require resolving a dynamic value.
+  if (!emitter.builder)
+    return emitter.emitErrorForDynamicValueInParameter(this);
+
+  // 'let' declarations resolve to an SBvalue when they are register_passable.
   if (auto letDecl = dyn_cast<LetRegDeclOp>(decl))
     return emitter.emitResult(SBValue(letDecl.getResult()), this, dest);
 
@@ -488,19 +514,6 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return emitter.emitResult(MBValue(var.getResult()), this, dest);
   }
 
-  // Aliases form a PValue.
-  if (auto param = dyn_cast<ParamDeclareOp>(decl)) {
-    PValue result =
-        resolveParamDeclareValue(param, /*bindings=*/{}, emitter.shared);
-    return emitter.emitResult(result, this, dest);
-  }
-
-  // Use of forward references.
-  if (auto param = dyn_cast<AliasForwardDeclOp>(decl)) {
-    PValue result(ParamDeclRefAttr::get(param.getName(), param.getType()));
-    return emitter.emitResult(result, this, dest);
-  }
-
   // RValue's and LValues always resolve to their known value.
   if (auto rvalue = decl.getIfRValue())
     return emitter.emitResult(rvalue, this, dest);
@@ -508,12 +521,6 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return emitter.emitResult(bvalue, this, dest);
   if (auto lvalue = decl.getIfLValue())
     return emitter.emitResult(lvalue, this, dest);
-
-  // If this is a type declaration, return it as a type.
-  if (isa<StructDeclOp>(decl)) {
-    PValue result(DeclRefType::get(decl.getSymbolRef()));
-    return emitter.emitResult(result, this, dest);
-  }
 
   // Reject unqualified struct field references.
   if (auto fieldOp = dyn_cast<StructFieldOp>(decl)) {
@@ -714,6 +721,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // If the base is an stored lvalue, then we can return an lvalue to the
     // field.
     if (SLValue baseLV = baseVal.getIfSLValue()) {
+      assert(emitter.builder && "Must have a builder given dynamic base value");
       auto fieldPtr =
           emitter.builder->create<StructGEPOp>(mlirLoc, baseLV, fieldOp);
       return emitter.emitResult(SLValue(fieldPtr), this, dest);
@@ -741,7 +749,8 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       return emitter.emitResult(PValue(extractVal), this, dest);
     }
 
-    // Okay, handle borrowed bases.
+    // Okay, handle dynamic field references.
+    assert(emitter.builder && "Must have a builder given dynamic base value");
 
     // If the base is an MRValue or MBValue, reference the field as an
     // MBValue so we lazy copy only the piece that is needed in the case of
@@ -776,13 +785,8 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
                                      ExprEmitter &emitter) {
   auto *context = emitter.getContext();
 
-  if (!emitter.builder) {
-    emitter.emitError(
-        call.getLoc(),
-        "MLIR operation cannot be used directly in parameter expressions")
-        << call.getRange();
-    return {};
-  }
+  if (!emitter.builder)
+    return emitter.emitErrorForDynamicValueInParameter(&call);
 
   // Emit all the arguments so we can encode them as SSA values.
   SmallVector<Value> opOperands;
@@ -1640,10 +1644,8 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
 
   // Now that we have all the values, generate the initializers for
   // StructCreate.
-  if (!emitter.builder) {
-    emitter.emitError(getLoc(), "use of dynamic value in parameter context");
-    return {};
-  }
+  if (!emitter.builder)
+    return emitter.emitErrorForDynamicValueInParameter(this);
 
   // For register-passable types, bundle all the values up and return them.
   auto result = SRValue(emitter.builder->create<StructCreateOp>(
@@ -1888,9 +1890,8 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
   Location ifLoc = getLocation(emitter);
 
   if (!emitter.builder) {
-    emitter.emitError(getLoc(), "TODO(#6626): cannot emit short-circuit and/or "
-                                "in a parameter context")
-        << lhs->getRange() << rhs->getRange();
+    return emitter.emitErrorForDynamicValueInParameter(
+        this, "TODO(#6626): cannot emit short-circuit and/or");
     return {};
   }
 
@@ -1899,7 +1900,7 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
   CValue lhsBool;
   // FIXME: Support memory-only bool convertible types as well.
   SRValue lhsRV = emitter.emitExprSRValue(lhs, EC_OperatorOperandValue);
-  RValue lhsI1Value = emitter.emitConditionValueAsI1({lhsRV, lhs}, lhsBool);
+  RValue lhsI1Value = emitter.emitI1({lhsRV, lhs}, lhsBool);
   Value lhsI1SRValue =
       emitter.emitSRValue({AnyValue(lhsI1Value), lhs}, EC_BoolCondition);
   if (!lhsI1SRValue)
@@ -2014,20 +2015,16 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 }
 
 AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
-  RValue condRVal = emitter.emitExprConditionValueAsI1(condExpr);
+  RValue condRVal = emitter.emitExprI1(condExpr, EC_BoolCondition);
   Value condValue =
       emitter.emitSRValue({AnyValue(condRVal), condExpr}, EC_BoolCondition);
 
   if (!condValue)
     return {};
 
-  if (!emitter.builder) {
-    emitter.emitError(
-        getLoc(),
-        "TODO(#6626): cannot emit if/else in parameter expression yet")
-        << trueExpr->getRange();
-    return {};
-  }
+  if (!emitter.builder)
+    return emitter.emitErrorForDynamicValueInParameter(
+        this, "TODO(#6626): cannot emit if/else");
 
   Location ifLoc = getLocation(emitter);
   // At this point we don't know the type of trueExpr / falseExpr, use
@@ -2081,8 +2078,7 @@ AnyValue ChainedCmpOpNode::emitNextCmp(ExprEmitter &emitter, size_t opIdx,
   Location ifLoc = lastCmpExpr.getLoc();
   CValue boolResult;
   OpBuilder lastBuilder = emitter.builder.value();
-  RValue lastCmpI1Value =
-      emitter.emitConditionValueAsI1({lastCmpExpr, this}, boolResult);
+  RValue lastCmpI1Value = emitter.emitI1({lastCmpExpr, this}, boolResult);
   SRValue lastCmpI1RValue =
       emitter.emitSRValue({AnyValue(lastCmpI1Value), this}, EC_BoolCondition);
   if (!lastCmpI1RValue)

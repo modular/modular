@@ -90,8 +90,8 @@ struct LitStmtParser : public LitParserBase {
   }
 
   /// Get an expression emitter for a parameter expression.
-  ExprEmitter getParamEmitter() {
-    return ExprEmitter(shared, containingDecl, {}, nullptr);
+  ExprEmitter getParamEmitter(ExprContext context) {
+    return ExprEmitter(shared, containingDecl, context, nullptr);
   }
 
   ParseResult parseSuite(ssize_t curIndent);
@@ -654,7 +654,7 @@ ParseResult LitStmtParser::parseWhileStmt(size_t curIndent) {
   Block *body = builder.createBlock(&loopOp.getBody());
   builder = OpBuilder::atBlockEnd(body);
 
-  RValue condRVal = getEmitter().emitExprConditionValueAsI1(condExp);
+  RValue condRVal = getEmitter().emitExprI1(condExp, EC_BoolCondition);
   Value condVal =
       getEmitter().emitSRValue({AnyValue(condRVal), condExp}, EC_BoolCondition);
   if (!condVal)
@@ -923,7 +923,7 @@ ParseResult LitStmtParser::parseIfStmt(LitLexerCursor startCursor,
     if (!isParamIf) {
       // Create the 'if' and parse the body into its "then" region.
       SRValue condRVal = emitter.emitSRValue(
-          {emitter.emitExprConditionValueAsI1(condExp), condExp},
+          {emitter.emitExprI1(condExp, EC_BoolCondition), condExp},
           EC_BoolCondition);
       if (!condRVal)
         return failure();
@@ -933,7 +933,8 @@ ParseResult LitStmtParser::parseIfStmt(LitLexerCursor startCursor,
 
     // Otherwise, for a @parameter if, we emit the condition as an PValue
     // without a builder.
-    RValue condRVal = getParamEmitter().emitExprConditionValueAsI1(condExp);
+    RValue condRVal = getParamEmitter(EC_BoolParamCondition)
+                          .emitExprI1(condExp, EC_BoolParamCondition);
     if (!condRVal)
       return failure();
     PValue condPVal = condRVal.getIfPValue();

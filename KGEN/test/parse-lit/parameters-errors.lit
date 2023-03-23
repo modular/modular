@@ -214,7 +214,7 @@ fn testAliases(variable: Int):
   # expected-error @+1 {{declaration must have either a type or an initializer}}
   alias MissingInit
 
-  # expected-error @+1 {{cannot use a dynamic value in parameter context}}
+  # expected-error @+1 {{cannot use a dynamic value in alias initializer}}
   alias NotConstant = variable*2
 
   # TODO(Issue #5975): This isn't getting resolved before the end of body.
@@ -238,4 +238,4 @@ fn crash1_callee(a: __mlir_type.index, rhs: __mlir_type.index) -> __mlir_type.in
   return __mlir_op.`index.add`(a, rhs)
 
 fn crash1_caller[p: __mlir_type.index](a: __mlir_type.index):
-  alias y = crash1_callee(a, p) # expected-error {{cannot use a dynamic value in parameter context}}
+  alias y = crash1_callee(a, p) # expected-error {{cannot use a dynamic value in alias initializer}}

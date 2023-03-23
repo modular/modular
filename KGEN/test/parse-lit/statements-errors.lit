@@ -91,7 +91,7 @@ fn test_if_decorator(a: Bool):
   @parameter
   if 1 != 0:
     pass
-  elif a:  # expected-error {{cannot use a dynamic value in parameter context}}
+  elif a:  # expected-error {{cannot use a dynamic value in '@parameter if' condition}}
     pass
 
 ##===----------------------------------------------------------------------===##

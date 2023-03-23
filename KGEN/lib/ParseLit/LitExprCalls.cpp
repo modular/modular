@@ -325,8 +325,9 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
   // We use the contextual emitter to perform implicit conversions, but these
   // conversions must be done within a parameter context.  Make sure we don't
   // have a builder from the caller, this indicates that an PValue is required.
-  llvm::SaveAndRestore savedBuilder(emitter.builder);
-  emitter.builder.reset();
+  llvm::SaveAndRestore savedBuilder(emitter.builder, {});
+  llvm::SaveAndRestore savedContext(emitter.paramContext, EC_ParameterList);
+  //  emitter.builder.reset();
 
   // Parameters defined at the beginning of the parameter list may be used by
   // the types of other parameters defined later in the list, e.g. in:
@@ -1188,13 +1189,9 @@ PValue OverloadSet::getCallee(ExprEmitter &emitter) const {
     return PValue(callee);
   }
 
-  if (!emitter.builder) {
-    emitter.emitError(
-        expr->getLoc(),
-        "cannot emit call to adaptive function in parameter expression")
-        << expr->getRange();
-    return {};
-  }
+  if (!emitter.builder)
+    return emitter.emitErrorForDynamicValueInParameter(
+        expr, "cannot emit call to adaptive function");
 
   // Otherwise, we have to construct a list to be called.
   SmallVector<TypedAttr> symbols = map_to_vector(fnDecls, [&](ASTDecl *decl) {

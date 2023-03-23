@@ -50,7 +50,7 @@ static ParseResult parseType(LitParserBase &p, ASTType &result,
   if (p.parseExpression(expr, stmtIndent))
     return failure();
 
-  ExprEmitter emitter(p.shared, declScope, std::nullopt, nullptr);
+  ExprEmitter emitter(p.shared, declScope, EC_Type, nullptr);
   result = emitter.emitExprType(expr, /*isPack=*/false);
   if (!result)
     return failure();
@@ -906,7 +906,7 @@ parseOptionalParameterSignature(LitParserBase &p, ASTDecl &declScope,
   // no way to express this currently.
   assert(declScope.resolvedness == DeclResolvedness::unparsed);
   llvm::SaveAndRestore X(declScope.resolvedness, DeclResolvedness::fully);
-  ExprEmitter emitter(p.shared, declScope, std::nullopt, nullptr);
+  ExprEmitter emitter(p.shared, declScope, EC_Type, nullptr);
 
   auto processParameterArgs = [&](ArrayRef<ParsedArgument> args,
                                   SmallVectorImpl<ParamDeclAttr> &params,
@@ -1498,7 +1498,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
     return failure();
 
   // Resolve the result parameter types now that the arguments are in scope.
-  ExprEmitter typeEmitter(shared, decl, std::nullopt, nullptr);
+  ExprEmitter typeEmitter(shared, decl, EC_Type, nullptr);
 
   // Resolve the result type and any argument types that are present, leaving
   // any unspecified types null.
@@ -2025,7 +2025,7 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
     return failure();
 
   ASTDecl &parentDecl = *decl.getParentDecl();
-  ExprEmitter emitter(shared, parentDecl, /*builder*/ {},
+  ExprEmitter emitter(shared, parentDecl, EC_AliasValue,
                       /*varDeclCursor*/ nullptr);
 
   // Emit the value and convert to the expected type if we know it.

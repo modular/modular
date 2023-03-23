@@ -42,6 +42,7 @@ enum ExprContext {
   EC_DefaultArgument,       // def f(arg = x):
   EC_DefArgumentShadow,     // def f(x: Int):    -> var shadow slot.
   EC_BoolCondition,         // if x  /  while x  /  x and y  /  a if x else b
+  EC_BoolParamCondition,    // @parameter if x
   EC_ForIterator,           // for x internal details
   EC_RaiseValue,            // raise x
   EC_ReturnResultParamList, // return[x] y
@@ -51,6 +52,7 @@ enum ExprContext {
   EC_ListField,             // [x, y]
   EC_TupleElement,          // (x, y)
   EC_SubscriptBase,         // x[y]
+  EC_ParameterList,         // something[x]
 };
 const char *getContextMessage(ExprContext context);
 
@@ -206,10 +208,18 @@ private:
 /// functions used by the individual node emission hooks.
 class ExprEmitter : public LitSharedStateUser {
 public:
-  ExprEmitter(LitSharedState &shared, ASTDecl &declScope,
-              std::optional<OpBuilder> builder, Operation *varDeclCursor)
-      : LitSharedStateUser(shared), builder(builder), declScope(declScope),
+  // Create an ExprEmitter for a dynamic context with a builder.
+  ExprEmitter(LitSharedState &shared, ASTDecl &declScope, OpBuilder builder,
+              Operation *varDeclCursor)
+      : LitSharedStateUser(shared), builder(std::move(builder)),
+        paramContext(EC_Unknown), declScope(declScope),
         varDeclCursor(varDeclCursor) {}
+
+  /// Create an ExprEmitter for a parameter context.
+  ExprEmitter(LitSharedState &shared, ASTDecl &declScope,
+              ExprContext paramContext, Operation *varDeclCursor)
+      : LitSharedStateUser(shared), builder({}), paramContext(paramContext),
+        declScope(declScope), varDeclCursor(varDeclCursor) {}
 
   //===--------------------------------------------------------------------===//
   // Emitter State.
@@ -219,11 +229,22 @@ public:
   /// It is mutable to support expressions that require internal control flow.
   std::optional<OpBuilder> builder;
 
+  /// When builder is null, this specifies the original reason we're emitting
+  /// into a parameter context, e.g. we're in an alias body or type
+  /// specification.
+  ExprContext paramContext;
+
   /// This is scope to resolve declaration references against.
   ASTDecl &declScope;
 
   /// When non-null, implicitly declared variables are added above this op.
   Operation *varDeclCursor;
+
+  /// Emit an error about use of a dynamic value (the expression) in a context
+  /// that only allows parameter expressions.  This always returns a null
+  /// PValue.
+  PValue emitErrorForDynamicValueInParameter(const ExprNode *expr,
+                                             const char *customMessage = {});
 
   //===--------------------------------------------------------------------===//
   // Emission helpers for various value classifications.
@@ -303,7 +324,7 @@ public:
   /// value that we can test directly, and also returning the intermediate
   /// result of calling `__bool__` (which is typically a Bool or object type,
   /// but not guaranteed).  This reports and error and returns null on error.
-  RValue emitConditionValueAsI1(ASTExprAnd<CValue> expr, CValue &boolResult);
+  RValue emitI1(ASTExprAnd<CValue> expr, CValue &boolResult);
 
   //===--------------------------------------------------------------------===//
   // Emission helpers for various value classifications.
@@ -368,7 +389,7 @@ public:
   /// Emit the specified expression as a condition, converting it to an MLIR I1
   /// value that we can test directly.  This reports and error and returns null
   /// on error.
-  RValue emitExprConditionValueAsI1(const ExprNode *condExpr);
+  RValue emitExprI1(const ExprNode *condExpr, ExprContext context);
 
   /// Given a value convertable to a pop int via index conversion, emit
   /// the casting code and return the pop scalar index value

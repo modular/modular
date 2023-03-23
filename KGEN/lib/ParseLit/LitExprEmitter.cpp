@@ -42,7 +42,7 @@ const char *LIT::getContextMessage(ExprContext context) {
   case EC_AttributeRefBase:
     return " in attribute base value";
   case EC_AliasValue:
-    return " in alias value";
+    return " in alias initializer";
   case EC_CallArgValue:
     return " in call argument";
   case EC_CallCalleeValue:
@@ -63,6 +63,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in def argument shadow";
   case EC_BoolCondition:
     return " in boolean condition";
+  case EC_BoolParamCondition:
+    return " in '@parameter if' condition";
   case EC_ForIterator:
     return " in for iterator expression";
   case EC_RaiseValue:
@@ -81,6 +83,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in tuple element";
   case EC_SubscriptBase: // x[y]
     return " in subscript base";
+  case EC_ParameterList: // something[paramValue]
+    return " in parameter list";
   }
 }
 
@@ -206,8 +210,8 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
   // LValue on demand.
   if (!emitter.builder) {
     representation = NullRepresentation();
-    emitter.emitError(
-        loc, "cannot synthesize lvalue in parameter expression context");
+    emitter.emitError(loc, "cannot synthesize lvalue")
+        << getContextMessage(emitter.paramContext);
     return {};
   }
 
@@ -244,6 +248,19 @@ SLValue ValueDest::getSLValueForResult(SMLoc loc, ASTType resultType,
 //===----------------------------------------------------------------------===//
 // ExprEmitter implementation
 //===----------------------------------------------------------------------===//
+
+/// Emit an error about use of a dynamic value (the expression) in a context
+/// that only allows parameter expressions.  This always returns a null
+/// PValue.
+PValue ExprEmitter::emitErrorForDynamicValueInParameter(const ExprNode *expr,
+                                                        const char *message) {
+  assert(paramContext != EC_Unknown && "parameter context not set correctly");
+  if (!message)
+    message = "cannot use a dynamic value";
+  emitError(expr->getLoc(), message)
+      << getContextMessage(paramContext) << expr->getRange();
+  return {};
+}
 
 RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ExprContext context,
                                ASTType resultType) {
@@ -544,8 +561,8 @@ PValue ExprEmitter::emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
     return {};
 
   // Clear the builder to indicate that an PValue must be emitted.
-  llvm::SaveAndRestore savedBuilder(builder);
-  builder.reset();
+  llvm::SaveAndRestore savedBuilder(builder, {});
+  llvm::SaveAndRestore savedContext(paramContext, context);
 
   // If there is a result type, coerce before checking for PValue.
   if (resultType) {
@@ -928,8 +945,7 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
 /// value that we can test directly, and also returning the intermediate
 /// result of calling `__bool__` (which is typically a Bool or object type, but
 /// not guaranteed).  This reports and error and returns null on error.
-RValue ExprEmitter::emitConditionValueAsI1(ASTExprAnd<CValue> value,
-                                           CValue &boolResult) {
+RValue ExprEmitter::emitI1(ASTExprAnd<CValue> value, CValue &boolResult) {
   if (!value.ir)
     return {};
 
@@ -1008,8 +1024,8 @@ SRValue ExprEmitter::emitExprSRValue(const ExprNode *expr, ExprContext context,
 PValue ExprEmitter::emitExprPValue(const ExprNode *expr, ExprContext context,
                                    ASTType resultType) {
   // Clear the builder to indicate that an PValue must be emitted.
-  llvm::SaveAndRestore savedBuilder(builder);
-  builder.reset();
+  llvm::SaveAndRestore savedBuilder(builder, {});
+  llvm::SaveAndRestore savedContext(paramContext, context);
 
   // Emit the expression using the contextual type if present.
   AnyValue rep = emitExpr(expr, context, resultType);
@@ -1037,6 +1053,12 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool isPack) {
   if (!value)
     return {};
 
+  // If we emitted a NoneAttr then convert it to a NoneType.  This is a
+  // special case because "None" is both a value and a type, and defaults to a
+  // value.
+  if (isa<NoneAttr>(value.get()))
+    return shared.getNoneType();
+
   ASTType type;
   if (isPack) {
     // Pack types expect a backing variadic type.
@@ -1051,49 +1073,43 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool isPack) {
     type = value.getIfTypeValue();
   }
 
-  if (type) {
-    // Verify that all of the parameters for this type are bound.  We allow
-    // PValues to refer to parameteric type, but anything calling `emitType`
-    // can only handle fully bound types.
-    auto *decl = type.getDecl(shared);
-    if (!decl) // MLIR types are never parameterized.
-      return type;
-
-    auto structDecl = cast<StructDeclOp>(*decl);
-
-    // Build up a InputParamBindings set to validate and check the bindings.
-    InputParamBindings paramBindings;
-    for (auto binding : type.getParamBindings())
-      paramBindings.add(binding);
-
-    // Check the bindings.
-    ssize_t incorrectBindingNo = 0;
-    ASTType incorrectBindingExpectedType;
-    auto bindingAttr = paramBindings.verifyBindings(
-        structDecl.getInputParamsAttr(), structDecl.getName(), expr->getLoc(),
-        incorrectBindingNo, incorrectBindingExpectedType, *this, structDecl,
-        structDecl.getParamVarargs());
-    if (!bindingAttr)
-      return {};
-
-    // If verifyBindings changed the bindings set, then we may have had an
-    // empty varargs list or something.  Rebind the DeclRefType.
-    if (bindingAttr != type.getParamBindings()) {
-      auto symbol = cast<DeclRefType>(type.mlirType).getSymbol();
-      type = DeclRefType::get(symbol, bindingAttr);
-    }
-
-    return type;
+  if (!type) {
+    emitError(expr->getLoc(), "expected a type, not a value")
+        << expr->getRange();
+    return {};
   }
 
-  // If we emitted a NoneAttr then convert it to a NoneType.  This is a
-  // special case because "None" is both a value and a type, and defaults to a
-  // value.
-  if (isa<NoneAttr>(value.get()))
-    return shared.getNoneType();
+  // Verify that all of the parameters for this type are bound.  We allow
+  // PValues to refer to parameteric type, but anything calling `emitType`
+  // can only handle fully bound types.
+  auto *decl = type.getDecl(shared);
+  if (!decl) // MLIR types are never parameterized.
+    return type;
 
-  emitError(expr->getLoc(), "expected a type, not a value") << expr->getRange();
-  return {};
+  auto structDecl = cast<StructDeclOp>(*decl);
+
+  // Build up a InputParamBindings set to validate and check the bindings.
+  InputParamBindings paramBindings;
+  for (auto binding : type.getParamBindings())
+    paramBindings.add(binding);
+
+  // Check the bindings.
+  ssize_t incorrectBindingNo = 0;
+  ASTType incorrectBindingExpectedType;
+  auto bindingAttr = paramBindings.verifyBindings(
+      structDecl.getInputParamsAttr(), structDecl.getName(), expr->getLoc(),
+      incorrectBindingNo, incorrectBindingExpectedType, *this, structDecl,
+      structDecl.getParamVarargs());
+  if (!bindingAttr)
+    return {};
+
+  // If verifyBindings changed the bindings set, then we may have had an
+  // empty varargs list or something.  Rebind the DeclRefType.
+  if (bindingAttr != type.getParamBindings()) {
+    auto symbol = cast<DeclRefType>(type.mlirType).getSymbol();
+    type = DeclRefType::get(symbol, bindingAttr);
+  }
+  return type;
 }
 
 /// Emit a call __init__, returning an instance of the specified
@@ -1137,10 +1153,9 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
 /// Emit the specified expression as a condition, converting it to an MLIR I1
 /// value that we can test directly.  This reports and error and returns null on
 /// error.
-RValue ExprEmitter::emitExprConditionValueAsI1(const ExprNode *condExpr) {
+RValue ExprEmitter::emitExprI1(const ExprNode *condExpr, ExprContext context) {
   CValue boolTmp; // we don't care about the intermediate Bool value.
-  return emitConditionValueAsI1(
-      {emitExprCValue(condExpr, EC_BoolCondition), condExpr}, boolTmp);
+  return emitI1({emitExprCValue(condExpr, context), condExpr}, boolTmp);
 }
 
 SRValue ExprEmitter::emitBoxedIntAsPopScalar(Value numberValue,
