@@ -592,6 +592,12 @@ struct NDBuffer[
     @always_inline
     fn simd_load[
         width: Int,
+    ](self, *idx: Int) -> SIMD[width, type]:
+        return self.simd_load[width](VariadicList[Int](idx))
+
+    @always_inline
+    fn simd_load[
+        width: Int,
     ](self, idx: VariadicList[Int]) -> SIMD[width, type]:
         debug_assert(
             self.is_contiguous or width == 1,
