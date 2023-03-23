@@ -18,7 +18,7 @@ from Functional import tile, unswitch, unroll, unroll2
 from Index import Index, StaticIntTuple
 from Int import Int
 from List import Dim, DimList, VariadicList, create_dim_list
-from Math import min
+from Math import min, fma
 from Matrix import Matrix
 from Memory import stack_allocation
 from Pointer import DTypePointer
@@ -844,9 +844,7 @@ struct MatmulInnerLoopBPacked[
         self,
         c_local: NDBuffer[
             2,
-            create_dim_list(
-                a_row_size.__as_mlir_index(), pack_inner_size.__as_mlir_index()
-            ),
+            create_dim_list(a_row_size, pack_inner_size),
             accum_type,
         ],
     ):
@@ -871,9 +869,7 @@ struct MatmulInnerLoopBPacked[
         self,
         c_local: NDBuffer[
             2,
-            create_dim_list(
-                a_row_size.__as_mlir_index(), pack_inner_size.__as_mlir_index()
-            ),
+            create_dim_list(a_row_size, pack_inner_size),
             accum_type,
         ],
         # indexing within tile, in (m,n)
@@ -933,9 +929,7 @@ struct MatmulInnerLoopBPacked[
         self,
         c_local: NDBuffer[
             2,
-            create_dim_list(
-                a_row_size.__as_mlir_index(), pack_inner_size.__as_mlir_index()
-            ),
+            create_dim_list(a_row_size, pack_inner_size),
             accum_type,
         ],
         tile_idx: StaticIntTuple[2],
@@ -988,9 +982,7 @@ struct MatmulInnerLoopBPacked[
         self,
         c_local: NDBuffer[
             2,
-            create_dim_list(
-                a_row_size.__as_mlir_index(), pack_inner_size.__as_mlir_index()
-            ),
+            create_dim_list(a_row_size, pack_inner_size),
             accum_type,
         ],
         tile_n_k_idx: StaticIntTuple[2],
@@ -1009,7 +1001,7 @@ struct MatmulInnerLoopBPacked[
         let n_outer_idx = tile_n_k_idx[0] // pack_inner_size
 
         # Global K index.
-        var global_k = self.global_offset.K + tile_n_k_idx[1]
+        let global_k = self.global_offset.K + tile_n_k_idx[1]
 
         # Prefetch B matrix.
         # TODO(#10919): Use `@parameter` if here, there is a bug where invalid
@@ -1031,20 +1023,20 @@ struct MatmulInnerLoopBPacked[
         # Loop over local accumulator tiles.
         @always_inline
         fn outer_body[idx0: Int, idx1: Int]():
+            let global_m = self.global_offset.M + idx0
+            let c_idx = Index(idx0, idx1 * simd_size)
+
             let b_val = self.b_packed.simd_load[simd_size](
-                Index(n_outer_idx, tile_n_k_idx[1], idx1 * simd_size)
+                n_outer_idx, tile_n_k_idx[1], idx1 * simd_size
             ).cast[accum_type]()
 
-            var global_m = self.global_offset.M + idx0
-            let a_val_scalar = self.a.simd_load[1](Index(global_m, global_k))
-            let a_val = SIMD[simd_size, value_type](a_val_scalar).cast[
+            let a_val = self.a.simd_load[1](global_m, global_k).cast[
                 accum_type
             ]()
 
-            var c_idx = Index(idx0, idx1 * simd_size)
             var c_val = c_local.simd_load[simd_size](c_idx)
 
-            c_val = a_val.fma(b_val, c_val)
+            c_val = fma[simd_size, accum_type](a_val, b_val, c_val)
             c_local.simd_store[simd_size](c_idx, c_val)
 
         unroll2[a_row_size, pack_inner_size // simd_size, outer_body]()
@@ -1056,9 +1048,7 @@ struct MatmulInnerLoopBPacked[
         # Allocate accumulation buffer.
         var c_local = NDBuffer[
             2,
-            create_dim_list(
-                a_row_size.__as_mlir_index(), pack_inner_size.__as_mlir_index()
-            ),
+            create_dim_list(a_row_size, pack_inner_size),
             accum_type,
         ].aligned_stack_allocation[alignof[SIMD[simd_size, accum_type]]()]()
 
@@ -1318,7 +1308,7 @@ struct TiledMatmul[
                 accum_type,
                 value_type,
                 config.simd_size,
-                tile_size.__as_mlir_index(),
+                tile_size,
                 m_loop_pack_inner_size,
                 skip_col_bound,
                 config.prefetch_b_distance_k,
@@ -1441,7 +1431,7 @@ struct TiledMatmul[
 
         # Remap buffer indices for current tile.
         var remapped_bpacked = self._view_buffer_as(
-            b_packed.data, tile_n, sub_tile_k, Int(config.pack_inner_size)
+            b_packed.data, tile_n, sub_tile_k, config.pack_inner_size
         )
 
         var col_idx: Int = 0
@@ -1548,11 +1538,7 @@ struct TiledMatmul[
         """
         return NDBuffer[3, config.packed_shape, value_type](
             b_packed.address,
-            create_dim_list(
-                (tile_n // n_inner_size).__as_mlir_index(),
-                tile_k.__as_mlir_index(),
-                n_inner_size.__as_mlir_index(),
-            ),
+            create_dim_list(tile_n // n_inner_size, tile_k, n_inner_size),
             value_type,
         )
 
