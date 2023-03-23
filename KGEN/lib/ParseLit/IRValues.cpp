@@ -10,6 +10,7 @@
 
 #include "IRValues.h"
 #include "LitExprCalls.h"
+#include "LitExprNode.h"
 
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/POPDialect/POPTypes.h"
@@ -58,7 +59,7 @@ static raw_ostream &printStorage(raw_ostream &os,
     os << val;
   } else if (auto dlv = dyn_cast<DLValue>(storage)) {
     if (isDump)
-      os << "DLV" << (dlv.isSubscript ? "(subscript): " : "(property): ")
+      os << "DLV" << (dlv.isSubscript() ? "(subscript): " : "(property): ")
          << dlv.elementType << " ";
   } else {
     os << "<UNKNOWN IRVALUE>";
@@ -198,10 +199,13 @@ ORValue ORValue::create(OverloadSet &&set) {
 // DLValue
 //===----------------------------------------------------------------------===//
 
-DLValue::DLValue() : isSubscript(false) {}
+DLValue::DLValue() : expr(nullptr) {}
 DLValue::DLValue(ArrayRef<ASTExprAnd<AnyValue>> selfAndIndicesValue,
-                 ASTType elementType, const ExprNode *expr, bool isSubscript)
+                 ASTType elementType, const ExprNode *expr)
     : selfAndIndicesValue(selfAndIndicesValue.begin(),
                           selfAndIndicesValue.end()),
-      elementType(elementType), expr(expr), isSubscript(isSubscript) {}
+      elementType(elementType), expr(expr) {}
 DLValue::~DLValue() {}
+
+/// Return true if this is a subscript, false if this is an attribute access.
+bool DLValue::isSubscript() const { return expr->kind == ExprNode::kSubscript; }

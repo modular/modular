@@ -733,6 +733,9 @@ fn testMemoryOnlyIntArray(arr&: MemoryOnlyIntArray, x: Int, moi: MemoryOnlyInt):
   # CHECK: kgen.call {{.*}}"__setitem__{{.*}}(%arr, %x, [[ANON]])
   arr[x] = arr[x]
 
+  # TODO
+  #arr[x].x = 1
+
   # Initialize in memory through a temp + setitem.
   # CHECK: [[ANON:%.*]] = lit.varlet.decl "anonymous*"
   # CHECK: [[TMP:%.*]] = lit.struct.gep %anonymous2A_0[x]
