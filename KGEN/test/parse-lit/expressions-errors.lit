@@ -27,7 +27,7 @@ fn negBuiltinType(x: __mlir_type.f64) :
 # LValue and RValues
 ##===----------------------------------------------------------------------===##
 
-42 = 17 # expected-error {{expression must mutable in assignment}}
+42 = 17 # expected-error {{expression must be mutable in assignment}}
 
 struct LValuesRvalues:
   fn __init__() -> LValuesRvalues:
@@ -87,7 +87,7 @@ def testLValuesRvalues():
   let nc4 = nc2 # expected-error {{'$expressions-errors::NonCopyable' does not implement the '__copy__' method}}
 
   let mpPair = MemoryPrimaryPair()
-  mpPair.x = 1 # expected-error {{expression must mutable in assignment}}
+  mpPair.x = 1 # expected-error {{expression must be mutable in assignment}}
 
   # expected-error @+1 {{invalid call to 'generic_on_type_bad': argument #0 cannot bind generic !mlirtype to memory-only type '$expressions-errors::MemoryPrimaryPair'}}
   generic_on_type_bad[MemoryPrimaryPair](mpPair)
@@ -227,7 +227,7 @@ def bad_exprs(aaaa: Bool, bbbb: F32, cccc: Int):
   _ = idx/idx
 
 def bad_assignment0(a: Int, b: Int):
-   # expected-error @+1 {{expression must mutable for in-place operator destination}}
+   # expected-error @+1 {{expression must be mutable for in-place operator destination}}
    a = b += b
 
 def bad_assignment1(a: Int, b: Int):
@@ -260,7 +260,7 @@ fn testSubscripts(a: WeirdArray, b: MultiSetItem, c: IncompatElementTypes):
   # expected-error @+1 {{invalid call to '__getitem__': callee expects 2 arguments, but 3 were specified}}
   _ = a[1, 2]
 
-  # expected-error @+1 {{expression must mutable in assignment}}
+  # expected-error @+1 {{expression must be mutable in assignment}}
   a[1] = 4
 
   # expected-error @+1 {{'$expressions-errors::MultiSetItem' has overloaded __setitem__ implementations, which isn't supported}}

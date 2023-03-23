@@ -373,7 +373,7 @@ LValue ExprEmitter::emitLValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   }
 
   emitError(value.expr->getLoc())
-      << "expression must mutable" << getContextMessage(dest.context)
+      << "expression must be mutable" << getContextMessage(dest.context)
       << value.expr->getRange();
   return {};
 }
