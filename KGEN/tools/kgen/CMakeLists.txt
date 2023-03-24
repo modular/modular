@@ -24,6 +24,7 @@ add_modular_tool(kgen
   LLCLRuntimeGlobals
   POPDialect
 
+  MLIRBuiltinToLLVMIRTranslation
   MLIRBytecodeWriter
   MLIRIndexDialect
   MLIRParser

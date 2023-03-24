@@ -389,6 +389,14 @@ ArrayRef<Type> GeneratorOp::getCallableResults() {
   return getFunctionType().getResults();
 }
 
+ArrayAttr GeneratorOp::getCallableArgAttrs() {
+  return nullptr;
+}
+
+ArrayAttr GeneratorOp::getCallableResAttrs() {
+  return nullptr;
+}
+
 //===----------------------------------------------------------------------===//
 // FuncOp
 //===----------------------------------------------------------------------===//
@@ -475,6 +483,14 @@ Region *FuncOp::getCallableRegion() { return &getBodyRegion(); }
 
 ArrayRef<Type> FuncOp::getCallableResults() {
   return getFunctionType().getResults();
+}
+
+ArrayAttr FuncOp::getCallableArgAttrs() {
+  return nullptr;
+}
+
+ArrayAttr FuncOp::getCallableResAttrs() {
+  return nullptr;
 }
 
 //===----------------------------------------------------------------------===//

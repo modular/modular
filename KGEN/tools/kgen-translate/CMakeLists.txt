@@ -11,6 +11,7 @@ add_modular_tool(kgen-translate
   KGENCLOptions
   LLCLRuntimeGlobals
   ParseLit
+  MLIRBuiltinToLLVMIRTranslation
   MLIRTranslateLib
   MLIRTargetLLVMIRExport
   MLIRLLVMToLLVMIRTranslation

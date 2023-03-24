@@ -15,6 +15,7 @@ add_modular_tool(kgen-execute
   DebugInfoTransforms
   KGENCLOptions
   LLCLRuntimeGlobals
+  MLIRBuiltinToLLVMIRTranslation
   MLIRParser
   KGENEmitObject
   KGENExecutionEngine
