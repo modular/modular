@@ -173,6 +173,12 @@ fn invalidOwned(owned x&: Int): pass
 fn examplePack[*Ts: __mlir_type.`!kgen.mlirtype`](args*: Ts):
   pass
 
+fn packArgOverload():
+  pass
+
+fn packArgOverload(x: Int):
+  pass
+
 fn badPackCalls():
   # expected-error @+1 {{invalid call to 'examplePack': callee expects 1 argument, but 2 were specified}}
   examplePack[Int](1, 2)
@@ -180,6 +186,9 @@ fn badPackCalls():
   examplePack[Int, F32](1)
   # expected-error @+1 {{invalid call to 'examplePack': argument #1 cannot be converted from '__mlir_type.index' to '$F32::F32'}}
   examplePack[Int, F32](1, 2)
+  # expected-warning @below {{could not infer parameter type for this value, because it is not concrete}}
+  # expected-error @below {{invalid call to 'examplePack': callee expects 0 arguments, but 1 was specified}}
+  examplePack(packArgOverload)
 
 ##===----------------------------------------------------------------------===##
 # Keyword Arguments
