@@ -54,11 +54,3 @@ def tf_bert() -> Generator:
 
     key = "bert-base-uncased-seqlen-128"
     yield fixture_generator(key, ModelFormat.tf)
-
-
-@pytest.fixture(scope="session")
-def tf_convnext() -> Generator:
-    """This is a path to a model about 1.3 GB in size."""
-
-    key = "facebook-convnext-xlarge-224-22k-1k"
-    yield fixture_generator(key, ModelFormat.tf)
