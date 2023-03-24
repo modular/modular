@@ -65,6 +65,9 @@ struct MatmulConfig:
     # Static packed shape info of the packed buffer.
     var packed_shape: DimList[3]
 
+    # Static packed shape info of the bias vector.
+    var shape_bias: DimList[1]
+
     # Static info on simd vector size.
     var simd_size: __mlir_type.index
 
