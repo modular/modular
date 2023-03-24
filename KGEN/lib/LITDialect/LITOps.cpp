@@ -19,6 +19,7 @@
 #include "Support/HLCFDialect/HLCFOps.h"
 #include "mlir/IR/FunctionImplementation.h"
 #include "mlir/IR/PatternMatch.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
@@ -67,6 +68,92 @@ LIT::getUnboundSpecializedSignature(SignatureType type,
       });
   assert(type && "bad bindings specified");
   return {type, ParamBindArrayAttr::get(type.getContext(), unboundBindings)};
+}
+
+//===----------------------------------------------------------------------===//
+// LIT::MangledSymbol
+//===----------------------------------------------------------------------===//
+
+LIT::MangledSymbol LIT::MangledSymbol::mangle(mlir::SymbolOpInterface op) {
+  MangledSymbol out;
+  // The parser mangles the argument types into the symbol name.
+  size_t firstParen = op.getName().find('(');
+  if (firstParen == std::string::npos)
+    firstParen = op.getName().size();
+  // Get the name of the func.
+  out.symName =
+      StringAttr::get(op.getContext(), op.getName().take_front(firstParen));
+  out.signature =
+      StringAttr::get(op.getContext(), op.getName().drop_front(firstParen));
+
+  // Nested structs, add them in order from in -> out (they'll be added to the
+  // name from out->in).
+  if (auto s = op->getParentOfType<StructDeclOp>()) {
+    out.structNames.push_back(s.getNameAttr());
+    while ((s = s->getParentOfType<StructDeclOp>())) {
+      out.structNames.push_back(s.getNameAttr());
+    }
+  }
+
+  // If the module is named, grab that too.
+  if (auto file = op->getParentOfType<FileModuleOp>())
+    out.moduleName = file.getNameAttr();
+
+  std::string mangledName;
+  // First up is the module name. It will be prefixed with `$` - that's how
+  // we'll know it's a module and not a struct.
+  if (out.moduleName)
+    mangledName += out.moduleName.str() + "::";
+  // Next up, structs.
+  for (auto s : out.structNames)
+    mangledName += s.str() + "::";
+  // Finally, function name and argument types.
+  mangledName += out.symName.str() + out.signature.str();
+  out.mangled = StringAttr::get(op.getContext(), mangledName);
+  return out;
+}
+
+LIT::MangledSymbol LIT::MangledSymbol::demangle(StringAttr mangled) {
+  MangledSymbol out;
+  out.mangled = mangled;
+  StringRef m = mangled.getValue();
+  // Get the first separator.
+  size_t separator = m.find("::");
+  for (; separator != std::string::npos; separator = m.find("::")) {
+    StringRef current = m.take_front(separator);
+    // Drop until the separator.
+    m = m.drop_front(separator);
+    // Skip past the separator as well (if it exists).
+    m.consume_front("::");
+    // First one is a the module name if it starts with a leading `$`.
+    if (current.starts_with("$"))
+      out.moduleName =
+          StringAttr::get(mangled.getContext(), current.drop_front());
+    else
+      out.structNames.push_back(StringAttr::get(mangled.getContext(), current));
+  }
+  // Get the name of the func and the types of its arguments.
+  size_t firstParen = m.find('(');
+  if (firstParen == std::string::npos)
+    firstParen = m.size();
+  out.symName = StringAttr::get(mangled.getContext(), m.take_front(firstParen));
+  out.signature =
+      StringAttr::get(mangled.getContext(), m.drop_front(firstParen));
+  return out;
+}
+
+llvm::raw_ostream &LIT::operator<<(raw_ostream &os,
+                                   const LIT::MangledSymbol &ms) {
+  os << "Mangled: \"";
+  // Need to escape the mangled string, it might have some characters that
+  // terminals don't like.
+  llvm::printEscapedString(ms.mangled.getValue(), os);
+  os << "\" - ";
+  os << "Module: " << (ms.moduleName ? ms.moduleName.getValue() : "(none)")
+     << ", Structs: [";
+  llvm::interleaveComma(ms.structNames, os);
+  os << "], Symbol: " << ms.symName << ", Signature: " << ms.signature;
+  return os;
 }
 
 //===----------------------------------------------------------------------===//

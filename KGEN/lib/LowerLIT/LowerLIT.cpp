@@ -103,11 +103,12 @@ static void lowerLITOps(LIT::FuncOp func,
 /// Flatten the name of the given symbol operation and insert it in the given
 /// symbol table with that flattened name. Returns the flattened symbol name.
 template <typename T>
-static StringAttr flattenAndRenameSymbol(T op, const Twine &parentPrefix,
-                                         SymbolTable &symbolTable,
+static StringAttr flattenAndRenameSymbol(T op, SymbolTable &symbolTable,
                                          Block::iterator symbolTableIt) {
-  StringAttr name = op.getSymNameAttr();
-  if (parentPrefix.isTriviallyEmpty())
+  auto mangled = MangledSymbol::mangle(op);
+  StringAttr name = mangled.mangled;
+  // No mangling occurred.
+  if (name == op.getNameAttr())
     return name;
 
   // Remove the operation in preparation for re-insertion. This gets handled
@@ -118,11 +119,9 @@ static StringAttr flattenAndRenameSymbol(T op, const Twine &parentPrefix,
   else
     op->remove();
 
-  StringAttr newName =
-      StringAttr::get(name.getContext(), parentPrefix + name.getValue());
-  op.setSymNameAttr(newName);
+  op.setSymNameAttr(mangled.mangled);
   symbolTable.insert(op, symbolTableIt);
-  return newName;
+  return mangled.mangled;
 }
 
 /// Lower an lit.func to kgen.generator.
@@ -134,8 +133,7 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
 
   // Update the function name, incorporating the parent prefix.
   if (!parentPrefix.isTriviallyEmpty()) {
-    StringAttr newName =
-        flattenAndRenameSymbol(gen, parentPrefix, symbolTable, symTableIt);
+    StringAttr newName = flattenAndRenameSymbol(gen, symbolTable, symTableIt);
 
     // If this function has a subprogram attached, update its information to
     // account for the new name.
@@ -193,11 +191,10 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
 /// Lower nested structures in lit.struct.decl away.
 static LogicalResult lowerStructDecl(StructDeclOp structDecl,
                                      SymbolTable &symbolTable,
-                                     Block::iterator symTableIt,
-                                     const Twine &parentPrefix) {
-  // Update the name of this struct, incorporating any parent prefix.
+                                     Block::iterator symTableIt) {
+  // Update the name of this struct, incorporating any parents.
   StringAttr structName =
-      flattenAndRenameSymbol(structDecl, parentPrefix, symbolTable, symTableIt);
+      flattenAndRenameSymbol(structDecl, symbolTable, symTableIt);
 
   ArrayRef<ParamDeclAttr> structInputParams = structDecl.getInputParams();
   SmallVector<LIT::VarLetDeclOp> opsToErase;
@@ -270,8 +267,7 @@ static LogicalResult lowerModuleDecl(Block *moduleBody,
       if (failed(lowerLITFunc(func, symbolTable, opSymTableIt, parentPrefix)))
         return failure();
     } else if (auto structDecl = dyn_cast<StructDeclOp>(op)) {
-      if (failed(lowerStructDecl(structDecl, symbolTable, opSymTableIt,
-                                 parentPrefix)))
+      if (failed(lowerStructDecl(structDecl, symbolTable, opSymTableIt)))
         return failure();
     } else if (auto fileDecl = dyn_cast<LIT::FileModuleOp>(op)) {
       // Lower the constructs within the body.

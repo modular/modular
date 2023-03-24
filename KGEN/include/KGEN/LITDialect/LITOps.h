@@ -54,4 +54,31 @@ getUnboundSpecializedSignature(SignatureType type, ParamBindArrayAttr bindings);
 #define GET_OP_CLASSES
 #include "KGEN/LITDialect/LIT.h.inc"
 
+namespace M::KGEN::LIT {
+/// This class provides a wrapper around a mojo FuncOp that mangles its name (in
+/// `mangled`) but also provides all the components of the mangled name. If the
+/// func is already mangled, this will pull everything apart.
+struct MangledSymbol {
+  /// Mangle the symbol for this op by walking upwards and adding struct/module
+  /// names.
+  static MangledSymbol mangle(mlir::SymbolOpInterface op);
+  /// Demangle this mangled name by parsing it into its component parts.
+  static MangledSymbol demangle(StringAttr mangled);
+
+  /// The fully mangled name.
+  StringAttr mangled;
+  /// The various strings that make up the mangled name.
+  StringAttr moduleName;
+  /// We support nested structs, so there may be more than one struct name.
+  SmallVector<StringAttr, 1> structNames;
+  /// The bare name of the symbol.
+  StringAttr symName;
+  /// If the symbol has a signature mangled into the name, then it will be here.
+  StringAttr signature;
+};
+
+/// Print a mangled symbol.
+llvm::raw_ostream &operator<<(llvm::raw_ostream &os, const MangledSymbol &ms);
+} // namespace M::KGEN::LIT
+
 #endif // KGEN_KGENDIALECT_NLKGENOPS_H
