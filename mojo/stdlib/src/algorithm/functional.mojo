@@ -814,6 +814,60 @@ fn tile_and_unswitch[
         )
 
 
+alias Dynamic1DTileUnswitchUnitFunc = __mlir_type[
+    `!kgen.signature<<static_switch:`,
+    Bool,
+    `>(`,
+    Int,
+    ` borrow,`,
+    Int,
+    ` borrow,`,
+    Int,
+    ` borrow) -> !lit.none>`,
+]
+
+
+@always_inline
+fn tile_and_unswitch[
+    workgroup_function: Dynamic1DTileUnswitchUnitFunc,
+](offset: Int, upperbound: Int, tile_size_list: VariadicList[Int]):
+    """A variant of dynamic tile given a workgroup function that can be
+    unswitched. This generator is a fused version of tile and unswitch, where
+    the static unswitch is true throughout the "inner" portion of the workload
+    and is false only on the residue tile.
+
+    Args:
+        workgroup_function(Dynamic1DTileUnitFunc): workgroup function that processes one
+            tile of workload.
+        tile_size_list(VariadicList[Int]): List of tile sizes to launch work.
+        offset(Int): The initial index to start the work from.
+        upperbound(Int): The runtime upperbound that the work function should not exceed.
+    """
+
+    # Initialize where to start on the overall work load.
+    var current_offset: Int = offset
+
+    for idx in range(tile_size_list.__len__()):
+        # Get the tile size to proceed with.
+        let tile_size = tile_size_list[idx]
+
+        # Process work with the tile size until there's not enough remaining work
+        #  to fit in a tile.
+        while current_offset <= upperbound - tile_size:
+            workgroup_function[True](
+                current_offset, upperbound, tile_size_list[idx]
+            )
+            current_offset += tile_size
+
+    # Use the last tile size to process the residue.
+    if current_offset < upperbound:
+        workgroup_function[False](
+            current_offset,
+            upperbound,
+            tile_size_list[tile_size_list.__len__() - 1],
+        )
+
+
 # ===----------------------------------------------------------------------===#
 # Utilities
 # ===----------------------------------------------------------------------===#
