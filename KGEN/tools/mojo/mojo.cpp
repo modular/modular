@@ -209,28 +209,6 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     target = targetOr.takeValue();
   }
 
-  populateElaborateModulePasses(pm, *runtime, target, {clOptions.enableSearch});
-
-  if (failed(pm.run(*theModule)))
-    return clOptions.reportError("compilation failed");
-
-  SymbolTable symtab(*theModule);
-  auto compiler =
-      ObjectCompiler::create(*runtime, pm, ".kgen_cache", compilationOptions);
-  if (failed(compiler))
-    return clOptions.reportError(Twine("could not create object compiler: ") +
-                                 compiler.getError());
-  llvm::MapVector<StringAttr, ExportedSymbol> exportedSymbols =
-      getExportedSymbols(*theModule);
-
-  // Handle header emission, we don't need to generate an archive for this.
-  if (clOptions.cmd == MojoCommand::kEmitHeader) {
-    if (failed(emitHeader(symtab, exportedSymbols, *compiler,
-                          clOptions.outputFilename)))
-      return clOptions.reportError("failed to emit header file");
-    return EXIT_SUCCESS;
-  }
-
   // Now create the execution engine so we can JIT.
   auto tmOr =
       createTargetMachine(compilationOptions,
@@ -259,40 +237,67 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       return clOptions.reportError(err.getError());
 
   // Add the object compiler layer.
-  auto &objLayer = engine->addLayer<ObjectCompilerLayer>(std::move(*compiler),
-                                        engine->getLinkingLayer());
+  auto compiler =
+      ObjectCompiler::create(*runtime, pm, ".kgen_cache", compilationOptions);
+  if (failed(compiler))
+    return clOptions.reportError(Twine("could not create object compiler: ") +
+                                 compiler.getError());
+  auto &objLayer = engine->addLayer<ObjectCompilerLayer>(
+      std::move(*compiler), engine->getLinkingLayer());
 
-  // If there are no exported symbols, then we won't codegen anything. That
-  // means we need to add an exported symbol if there aren't any. Use the first
-  // symbol op in the module just so we have something.
-  // TODO(#10893): This behavior is sketchy. We should be exporting the roots of
-  //   callstacks we want codegen'd. This requires updating tests.
-  if (exportedSymbols.empty() && !theModule->getOps().empty()) {
-    auto firstFunc = *theModule->getOps<mlir::SymbolOpInterface>().begin();
-    exportedSymbols.insert(
-        {firstFunc.getNameAttr(), {firstFunc.getNameAttr(), false}});
+  // Add the KGEN compiler layer.
+  auto &compileLayer = engine->addLayer<KGENCompilerLayer>(
+      pm, *runtime, target, ElaborateGeneratorsOptions{clOptions.enableSearch},
+      objLayer);
+
+  // And add the module into the layer. This will actually compile it down to
+  // the post-elaboration phase because before that phase we don't have flat
+  // symbols.
+  if (auto err = compileLayer.add("exec", *theModule))
+    return clOptions.reportError(err.getError());
+
+  // Generate a symbol table and an export map for the module post-compile.
+  SymbolTable symtab(*theModule);
+  ExportMap exports = getExportedSymbols(*theModule);
+
+  // Handle header emission, we don't need to generate an archive for this.
+  if (clOptions.cmd == MojoCommand::kEmitHeader) {
+    if (failed(
+            emitHeader(symtab, exports, *compiler, clOptions.outputFilename)))
+      return clOptions.reportError("failed to emit header file");
+    return EXIT_SUCCESS;
   }
 
-  // And add the module into the layer.
-  if (auto err =
-          engine->add<ObjectCompilerLayer>("exec", symtab, exportedSymbols))
-    return clOptions.reportError(err.getError());
+  // No ops, we can't actually do anything.
+  if (theModule->getOps().empty())
+    return clOptions.reportError(
+        "no functions were left in the module after compiling, this usually "
+        "means that there was no `@export`ed function to use as a root - did "
+        "you forget an `@export`?");
+
+  // Look up the first item in the exported symbols to trigger compilation.
+  // TODO(#10893): This behavior is sketchy. We should be exporting the roots of
+  //   callstacks we want codegen'd. This requires updating tests.
+  if (exports.empty()) {
+    StringAttr name =
+        (*theModule->getOps<mlir::SymbolOpInterface>().begin()).getNameAttr();
+    exports.insert({name, {name, false}});
+  }
+
+  // Trigger compilation so we can pull out the archive.
+  ErrorOr<CompiledFunc> funcOr = engine->lookup(exports.front().second.alias);
+  if (funcOr.isError())
+    return clOptions.reportError(funcOr.getError());
 
   // If we're emitting the archive, do it.
   if (clOptions.cmd == MojoCommand::kEmit) {
-    // Notify the object layer that we don't need immediate execution.
+    // otify the object layer that we don't need immediate execution.
     objLayer.notForImmediateExecution();
-    // Look up the first item in the exported symbols to trigger archive
-    // generation.
-    ErrorOr<CompiledFunc> funcOr =
-        engine->lookup(exportedSymbols.front().second.alias);
-    if (funcOr.isError())
-      return clOptions.reportError(funcOr.getError());
     // And lookup the archive.
     std::optional<Cache::BufferRef> archive =
-        engine->getLayer<ObjectCompilerLayer>().lookupArchive(*theModule);
+        objLayer.lookupArchive(*theModule);
     if (!archive.has_value())
-      return clOptions.reportError("compiled archive was missing");
+      return clOptions.reportError("no compiled archive for the module");
     return failed(clOptions.emitArchive((*archive)->getBuffer()));
   }
 

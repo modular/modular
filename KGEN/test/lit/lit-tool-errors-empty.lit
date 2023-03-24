@@ -8,7 +8,6 @@
 
 from F32 import F32
 
-# CHECK: could not find 'fn main()'
-@export
+# CHECK: no functions were left in the module after compiling, this usually means that there was no `@export`ed function to use as a root - did you forget an `@export`?
 fn main() -> F32:
     return 0.0

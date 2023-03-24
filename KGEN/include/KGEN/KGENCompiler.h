@@ -7,8 +7,12 @@
 #ifndef KGEN_COMPILER_H
 #define KGEN_COMPILER_H
 
+#include "KGEN/ExecutionEngine.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENPasses.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/MDialect/MAttrs.h"
+#include "mlir/IR/BuiltinOps.h"
 
 namespace M::LLCL {
 class Runtime;
@@ -28,19 +32,57 @@ void populateElaborateModulePasses(
     mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
     const ElaborateGeneratorsOptions &elaborateOptions);
 
-/// This elaborates all the generators in `theModule` and takes the module from
-/// a just-parsed state to a state we can use to produce an object file. This
-/// modifies the module in place. The granularity of this operation is tentative
-/// and should be re-evaluated, we may end up in a place where we want to split
-/// pre-elaboration, elaboration, and post-elaboration into explicit phases.
-///
-/// The purpose of this function is largely for cases where we don't want to add
-/// additional options to the pass manager, such as when we're evaluating a
-/// module in a JIT context.
-LogicalResult
-concretizeModule(mlir::PassManager &pm, ModuleOp theModule,
-                 LLCL::Runtime &runtime, TargetInfoAttr target,
-                 const ElaborateGeneratorsOptions &elaborateOptions);
+//===----------------------------------------------------------------------===//
+// KGENCompilerLayer
+//===----------------------------------------------------------------------===//
+
+/// Forward declarations for the KGENCompilerLayer.
+class ObjectCompilerLayer;
+
+/// Provide an ExecutionEngine layer for the KGEN compiler. This wraps a call to
+/// the pass manager, and on materialization, it will run compilation and then
+/// delegate the rest to the base layer. Under the hood it also defines a
+/// MaterializationUnit and uses that to emit symbols on-demand.
+class KGENCompilerLayer
+    : public llvm::RTTIExtends<KGENCompilerLayer, MaterializationLayer> {
+public:
+  static char ID;
+
+  KGENCompilerLayer(mlir::PassManager &pm, LLCL::Runtime &runtime,
+                    TargetInfoAttr target,
+                    ElaborateGeneratorsOptions elaborateOptions,
+                    ObjectCompilerLayer &base,
+                    llvm::orc::ExecutionSession &sess,
+                    const llvm::DataLayout &dl, AddToSearchOrderFn add);
+
+  /// Add a module to the JIT. This module will be modified in-place as
+  /// compilation occurs, and will be forwarded to the ObjectCompilerLayer.
+  ErrorOrSuccess add(StringRef libName, ModuleOp theModule);
+
+  /// Given a library name and a module, emit the code for it. This runs
+  /// the passes in `populateElaborateModulePasses` and calls `emit` on the
+  /// ObjectCompilerLayer with the result.
+  void emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr,
+            SymbolTable &symtab, const ExportMap &exportMap);
+
+private:
+  /// Conform to the ORC's interface and return a map of the exported symbols.
+  /// Uses the export map that is built during `add` to provide the set of
+  /// symbols that can be materialized.
+  llvm::orc::MaterializationUnit::Interface
+  getInterface(const ExportMap &exports);
+
+  /// Provide KGENCompilerMaterializationUnit so that we can do codegen
+  /// on-demand.
+  class KGENCompilerMaterializationUnit;
+
+private:
+  mlir::PassManager &pm;
+  LLCL::Runtime &runtime;
+  TargetInfoAttr target;
+  ElaborateGeneratorsOptions elaborateOptions;
+  ObjectCompilerLayer &baseLayer;
+};
 } // namespace M::KGEN
 
 #endif // KGEN_COMPILER_H
