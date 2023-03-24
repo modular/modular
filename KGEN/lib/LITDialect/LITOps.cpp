@@ -368,6 +368,13 @@ static void printKeywordAsString(OpAsmPrinter &p, Operation *op,
   p << name.getValue();
 }
 
+Type StructFieldOp::getReboundType(DeclRefType structSelfType) {
+  if (structSelfType.getParamValues().empty())
+    return getType();
+  ParameterEvaluator evaluator(structSelfType.getParamValues());
+  return evaluator.getReboundType(getType());
+}
+
 //===----------------------------------------------------------------------===//
 // StructCreateOp
 //===----------------------------------------------------------------------===//
@@ -540,8 +547,7 @@ StructExtractOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 void StructExtractOp::build(OpBuilder &builder, OperationState &result,
                             Value structBase, StructFieldOp field) {
   auto structType = cast<DeclRefType>(structBase.getType());
-  ParameterEvaluator evaluator(structType.getParamValues());
-  build(builder, result, evaluator.getReboundType(field.getType()), structBase,
+  build(builder, result, field.getReboundType(structType), structBase,
         field.getNameAttr());
 }
 
@@ -594,10 +600,8 @@ void StructGEPOp::build(OpBuilder &builder, OperationState &result,
       cast<POP::PointerType>(structBasePtr.getType()).getElementType();
   auto structType =
       cast<DeclRefType>(cast<TypeConstantAttr>(refExpr).getValue());
-
-  ParameterEvaluator evaluator(structType.getParamValues());
   build(builder, result,
-        POP::PointerType::get(evaluator.getReboundType(field.getType())),
+        POP::PointerType::get(field.getReboundType(structType)),
         field.getNameAttr(), structBasePtr);
 }
 

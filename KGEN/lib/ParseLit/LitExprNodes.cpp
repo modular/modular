@@ -595,6 +595,58 @@ AnyValue AttributeRefNode::emitAdaptiveSet(ORValue overloads, ValueDest &dest,
   return emitter.emitResult(attr, this, dest);
 }
 
+/// Emit a reference to a stored field with a base that is known not to be a
+/// dynamic lvalue.
+CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
+                                            StructFieldOp fieldOp,
+                                            const ExprNode *expr,
+                                            ValueDest &dest,
+                                            ExprEmitter &emitter) {
+  assert(!base.ir.getIfDLValue() &&
+         "Dynamic lvalues should already be handled");
+  auto mlirLoc = expr->getLocation(emitter);
+
+  // If the base is an stored lvalue, then we can return an lvalue to the
+  // field.
+  if (SLValue baseLV = base.ir.getIfSLValue()) {
+    assert(emitter.builder && "Must have a builder given dynamic base value");
+    auto fieldPtr =
+        emitter.builder->create<StructGEPOp>(mlirLoc, baseLV, fieldOp);
+    return emitter.emitCResult(SLValue(fieldPtr), expr, dest);
+  }
+
+  // We know the base.ir is a BValue or CRValue, decay to BValue.
+  BValue baseBVal = emitter.emitBValue(base, ValueDest::none());
+  if (!baseBVal)
+    return {};
+
+  // Keep things in the parameter expression domain if we can.
+  if (PValue baseMV = baseBVal.getIfPValue()) {
+    auto extractVal = LIT::StructExtractAttr::get(baseMV.get(), fieldOp);
+    return emitter.emitCResult(PValue(extractVal), expr, dest);
+  }
+
+  // Okay, handle dynamic field references.
+  assert(emitter.builder && "Must have a builder given dynamic base value");
+
+  // If the base is an MRValue or MBValue, reference the field as an
+  // MBValue so we lazy copy only the piece that is needed in the case of
+  // `x.y.z.w`
+  if (MBValue baseMBV = baseBVal.getIfMBValue()) {
+    auto fieldPtr =
+        emitter.builder->create<StructGEPOp>(mlirLoc, baseMBV, fieldOp);
+    return emitter.emitCResult(MBValue(fieldPtr), expr, dest);
+  }
+
+  // Otherwise, we have an SSA register for the base, which must be an SRValue
+  // or SBValue.
+  SBValue baseSB = baseBVal.getIfSBValue();
+  assert(baseSB && "All cases handled above");
+  auto extractVal =
+      emitter.builder->create<StructExtractOp>(mlirLoc, baseSB, fieldOp);
+  return emitter.emitCResult(SBValue(extractVal), expr, dest);
+}
+
 /// Emit a qualified attribute reference to MLIR.  On error, emit an error and
 /// return a null value.
 AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
@@ -705,8 +757,6 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return emitter.emitResult(result, this, dest);
   }
 
-  auto mlirLoc = getLocation(emitter);
-
   // If the field is a variable, emit a reference to it.
   if (auto fieldOp = dyn_cast<StructFieldOp>(memberDecl)) {
     if (hasTypeBase) {
@@ -718,57 +768,19 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
     // We know that baseVal is a CValue, so handle all the cases.
 
-    // If the base is an stored lvalue, then we can return an lvalue to the
-    // field.
-    if (SLValue baseLV = baseVal.getIfSLValue()) {
-      assert(emitter.builder && "Must have a builder given dynamic base value");
-      auto fieldPtr =
-          emitter.builder->create<StructGEPOp>(mlirLoc, baseLV, fieldOp);
-      return emitter.emitResult(SLValue(fieldPtr), this, dest);
-    }
-
-    // if we have a DLValue, convert to RValue because we cannot project the
-    // base yet.  At least we can read from it.
-    // TODO(dlvalue): project attr reference.
+    // If the base is a DLValue, we need to emit this as a projected DLValue.
+    // This allows to emit a get and/or set as needed.
     if (DLValue baseLV = baseVal.getIfDLValue()) {
-      RValue baseRV = emitter.emitRValue({baseVal, base}, EC_AttributeRefBase);
-      baseVal = AnyValue(baseRV).getIfCValue();
-      assert(!baseRV || baseVal);
-      if (!baseVal)
-        return {};
+      // The base is a known DeclRefType because we got the ASTDecl from it.
+      ASTType elementType =
+          fieldOp.getReboundType(cast<DeclRefType>(baseRVType.mlirType));
+      DLValue result(LLCL::RCRef<StoredAttributeRefDLValue>::create(
+          ASTExprAnd<DLValue>{baseLV, base}, fieldOp, elementType, this));
+      return emitter.emitResult(std::move(result), this, dest);
     }
 
-    // We know the baseVal is a BValue or CRValue, decay to BValue.  Handle
-    // PValue then decay to BValue.
-    BValue baseBVal = emitter.emitBValue({baseVal, base}, ValueDest::none());
-    if (!baseBVal)
-      return {};
-
-    if (PValue baseMV = baseBVal.getIfPValue()) {
-      auto extractVal = LIT::StructExtractAttr::get(baseMV.get(), fieldOp);
-      return emitter.emitResult(PValue(extractVal), this, dest);
-    }
-
-    // Okay, handle dynamic field references.
-    assert(emitter.builder && "Must have a builder given dynamic base value");
-
-    // If the base is an MRValue or MBValue, reference the field as an
-    // MBValue so we lazy copy only the piece that is needed in the case of
-    // `x.y.z.w`
-    if (MBValue baseMBV = baseBVal.getIfMBValue()) {
-      auto fieldPtr =
-          emitter.builder->create<StructGEPOp>(mlirLoc, baseMBV, fieldOp);
-      return emitter.emitResult(MBValue(fieldPtr), this, dest);
-    }
-
-    // Otherwise, we have an SSA register for the base.
-
-    // Otherwise, it must be an SRValue or SBValue.
-    SBValue baseSB = baseBVal.getIfSBValue();
-    assert(baseSB && "All cases handled above");
-    auto extractVal =
-        emitter.builder->create<StructExtractOp>(mlirLoc, baseSB, fieldOp);
-    return emitter.emitResult(SBValue(extractVal), this, dest);
+    // Otherwise, emit the stored field reference.
+    return emitStoredFieldRef({baseVal, base}, fieldOp, this, dest, emitter);
   }
 
   // Reference to some non-function/struct member of the type.
@@ -784,7 +796,6 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
                                      UnboundMLIROperationAttr unboundOp,
                                      ExprEmitter &emitter) {
   auto *context = emitter.getContext();
-
   if (!emitter.builder)
     return emitter.emitErrorForDynamicValueInParameter(&call);
 

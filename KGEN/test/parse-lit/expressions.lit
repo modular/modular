@@ -730,11 +730,15 @@ fn testMemoryOnlyIntArray(arr&: MemoryOnlyIntArray, x: Int, moi: MemoryOnlyInt):
   arr[x] = moi
   # CHECK: [[ANON:%.*]] = lit.varlet.decl "anonymous*"
   # CHECK: kgen.call {{.*}}__getitem__{{.*}}([[ANON]], %arr, %x)
-  # CHECK: kgen.call {{.*}}"__setitem__{{.*}}(%arr, %x, [[ANON]])
+  # CHECK: kgen.call {{.*}}__setitem__{{.*}}(%arr, %x, [[ANON]])
   arr[x] = arr[x]
 
-  # TODO
-  #arr[x].x = 1
+  # CHECK: [[ANON:%.*]] = lit.varlet.decl "__store_tmp__", var = true
+  # CHECK: kgen.call {{.*}}__getitem__{{.*}}([[ANON]], %arr, %x)
+  # CHECK: [[XP:%.*]] = lit.struct.gep %__store_tmp__[x]
+  # CHECK: pop.store %idx1, [[XP]]
+  # CHECK: kgen.call {{.*}}__setitem__{{.*}}(%arr, %x, [[ANON]])
+  arr[x].x = 1
 
   # Initialize in memory through a temp + setitem.
   # CHECK: [[ANON:%.*]] = lit.varlet.decl "anonymous*"
@@ -743,6 +747,21 @@ fn testMemoryOnlyIntArray(arr&: MemoryOnlyIntArray, x: Int, moi: MemoryOnlyInt):
   # CHECK: pop.store %idx42, [[TMP]]
   # CHECK: kgen.call {{.*}}"__setitem__{{.*}}(%arr, %x, [[ANON]])
   arr[x] = MemoryOnlyInt{x: 42}
+
+# Check a load from a SIMD field works.
+# CHECK-LABEL: lit.func @"testSIMDGetter
+fn testSIMDGetter[type: DType](owned a: SIMD[2, type]) -> __mlir_type[
+    `!pop.scalar<`, type.value, `>`]:
+  # CHECK: %a_0 = lit.varlet.decl "a"
+  # CHECK: pop.store %a, %a_0
+  # CHECK: %0 = pop.load %a_0
+  # CHECK: %1 = kgen.param.constant: {{.*}} = 0
+  # CHECK: %2 = kgen.call {{.*}}__getitem__{{.*}}(%0, %1)
+  # CHECK: %3 = lit.struct.extract %2[value]
+  # CHECK: %4 = kgen.rebind %3
+  # CHECK: lit.return %4
+  return a[0].value
+
 
 
 struct MyInlineIntInit:

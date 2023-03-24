@@ -57,6 +57,7 @@ class ExprEmitter;
 class OverloadSet;
 class FuncOp;
 class ValueDest;
+class StructFieldOp;
 
 //===----------------------------------------------------------------------===//
 // Helpers
@@ -582,6 +583,8 @@ raw_ostream &operator<<(raw_ostream &os, AnyValue value);
 // BaseDLValue classes.
 //===----------------------------------------------------------------------===//
 
+/// Subclasses of BaseDLValue model a dynamic LValue which has a computed getter
+/// and setter.
 class BaseDLValue : public LLCL::NonAtomicallyReferenceCounted<BaseDLValue> {
 public:
   BaseDLValue(ASTType elementType, const ExprNode *expr)
@@ -596,14 +599,32 @@ public:
   const ExprNode *expr;
 
   virtual void print(raw_ostream &os) const = 0;
-  virtual CValue emitLoad(ASTExprAnd<LValue> value, ValueDest &dest,
+  virtual CValue emitLoad(ValueDest &dest, const ExprNode *dlValueExpr,
                           ExprEmitter &emitter) const = 0;
   virtual void emitStore(ASTExprAnd<CValue> value,
                          ExprEmitter &emitter) const = 0;
 };
 
-/// Subclasses of DLValue model a dynamic LValue which has a getter and
-/// setter. Lit supports two ways to spell this - with property access `a.x =`
+/// This DLValue implementation represents a stored attribute projected from
+/// another DLValue, e.g. `swap(&a[i].x, ...)`.
+class StoredAttributeRefDLValue : public BaseDLValue {
+public:
+  ASTExprAnd<DLValue> baseVal;
+  Operation *fieldOp; // StructFieldOp
+
+  StoredAttributeRefDLValue(ASTExprAnd<DLValue> baseVal, StructFieldOp fieldOp,
+                            ASTType elementType, const ExprNode *expr);
+
+  StructFieldOp getField() const;
+
+  virtual void print(raw_ostream &os) const override;
+  virtual CValue emitLoad(ValueDest &dest, const ExprNode *dlValueExpr,
+                          ExprEmitter &emitter) const override;
+  virtual void emitStore(ASTExprAnd<CValue> value,
+                         ExprEmitter &emitter) const override;
+};
+
+/// This DLValue implementation represents property access `a.x =`
 /// and with subscript syntax `a[i,j] = `, invoking __getattr__/__setattr__ and
 /// __getitem__ and __setitem__ respectively.
 ///
@@ -621,7 +642,7 @@ public:
                    ASTType elementType, const ExprNode *expr);
 
   virtual void print(raw_ostream &os) const override;
-  virtual CValue emitLoad(ASTExprAnd<LValue> value, ValueDest &dest,
+  virtual CValue emitLoad(ValueDest &dest, const ExprNode *dlValueExpr,
                           ExprEmitter &emitter) const override;
   virtual void emitStore(ASTExprAnd<CValue> value,
                          ExprEmitter &emitter) const override;
