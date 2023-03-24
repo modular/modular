@@ -18,7 +18,7 @@ from Functional import tile, unswitch, unroll, unroll2
 from Index import Index, StaticIntTuple
 from Int import Int
 from List import Dim, DimList, VariadicList, create_dim_list
-from Math import min, fma
+from Math import min, fma, max
 from Matrix import Matrix
 from Memory import stack_allocation
 from Pointer import DTypePointer
@@ -910,7 +910,9 @@ struct MatmulInnerLoopBPacked[
             ):
                 # Use simd load if all within bound
                 c_data = self.c.simd_load[simd_size](global_idx)
-            elif (idx0 + tile_idx[0]) < self.c_bound[0]:
+            elif (idx0 + tile_idx[0]) < self.c_bound[
+                0
+            ] and idx1 * simd_size <= self.c_bound[1]:
                 # Use partial load if row inbound but col not
                 #  in simd bound.
                 c_data = partial_simd_load[simd_size, accum_type](
@@ -969,7 +971,10 @@ struct MatmulInnerLoopBPacked[
             ):
                 # Use simd store if all within bound
                 self.c.simd_store[simd_size](global_idx, c_data)
-            elif idx0 < (self.c_bound[0] - tile_idx[0]):
+            elif (
+                idx0 < (self.c_bound[0] - tile_idx[0])
+                and idx1 * simd_size <= self.c_bound[1]
+            ):
                 # Use partial store if row in bound but col not
                 #  in simd bound.
                 partial_simd_store[simd_size, accum_type](
