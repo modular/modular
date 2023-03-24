@@ -23,6 +23,7 @@ add_modular_tool(mojo
   LLCLRuntimeGlobals
   POPDialect
 
+  MLIRBuiltinToLLVMIRTranslation
   MLIRBytecodeWriter
   MLIRIndexDialect
   MLIRParser

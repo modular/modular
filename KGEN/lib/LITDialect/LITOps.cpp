@@ -330,6 +330,14 @@ Region *LIT::FuncOp::getCallableRegion() {
 
 ArrayRef<Type> LIT::FuncOp::getCallableResults() { return getResultTypes(); }
 
+ArrayAttr LIT::FuncOp::getCallableArgAttrs() {
+  return nullptr;
+}
+
+ArrayAttr LIT::FuncOp::getCallableResAttrs() {
+  return nullptr;
+}
+
 LogicalResult LIT::FuncOp::verifyRegions() {
   // Check that the number of argument labels matches the number of argument
   // types.

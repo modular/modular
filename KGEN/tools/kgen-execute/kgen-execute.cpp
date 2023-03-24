@@ -19,6 +19,7 @@
 #include "mlir/Parser/Parser.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/ToolUtilities.h"
+#include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/ToolOutputFile.h"
@@ -48,6 +49,7 @@ struct ProcessBuffer {
     // Don't need LIT here.
     registry.insert<KGEN::KGENDialect, KGEN::POP::POPDialect, HLCF::HLCFDialect,
                     mlir::index::IndexDialect>();
+    mlir::registerBuiltinDialectTranslation(registry);
     mlir::registerLLVMDialectTranslation(registry);
 
     ctx->appendDialectRegistry(registry);

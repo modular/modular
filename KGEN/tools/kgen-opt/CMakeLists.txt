@@ -25,6 +25,7 @@ add_modular_tool(kgen-opt
 
   LLCLRuntimeGlobals
 
+  MLIRBuiltinToLLVMIRTranslation
   MLIRIR
   MLIRIndexDialect
   MLIRIndexToLLVM

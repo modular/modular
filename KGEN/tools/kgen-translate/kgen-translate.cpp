@@ -13,6 +13,7 @@
 #include "Support/MDialect/MDialect.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Support/Timing.h"
+#include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Tools/mlir-translate/MlirTranslateMain.h"
@@ -59,6 +60,7 @@ int main(int argc, char *argv[]) {
       },
       [](mlir::DialectRegistry &registry) {
         registry.insert<MDialect>();
+        mlir::registerBuiltinDialectTranslation(registry);
         mlir::registerLLVMDialectTranslation(registry);
       });
 

@@ -20,6 +20,7 @@
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Pass/PassRegistry.h"
+#include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
 #include "mlir/Transforms/Passes.h"
@@ -36,6 +37,7 @@ int main(int argc, char **argv) {
                   HLCF::HLCFDialect, mlir::index::IndexDialect,
                   mlir::LLVM::LLVMDialect>();
   // The elaborator requires LLVM lowering to run the generated functions.
+  mlir::registerBuiltinDialectTranslation(registry);
   mlir::registerLLVMDialectTranslation(registry);
 
   // Register the standard passes we want.
