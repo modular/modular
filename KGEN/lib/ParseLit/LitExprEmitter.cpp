@@ -12,6 +12,7 @@
 #include "LitExprEmitter.h"
 #include "ASTDecl.h"
 #include "LitExprCalls.h"
+#include "LitExprNodes.h"
 #include "LitParameterEvaluator.h"
 #include "SpecialFunctions.h"
 
@@ -287,8 +288,11 @@ AnyValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
     return emitResult(value.ir, value.expr, dest);
   }
 
-  if (auto lValue = value.ir.getIfLValue())
-    return emitLoadOfLValue({lValue, value.expr}, dest);
+  // If this is an LValue, invoke the getter or load it.
+  if (auto lValue = value.ir.getIfLValue()) {
+    auto rbValue = emitLoadOfLValue({lValue, value.expr}, dest);
+    return emitRValue({rbValue, value.expr}, dest);
+  }
 
   // Finally, if this is a BValue emit a __copy__, a load for a
   // primitive MLIR type, or an error if neither approach works.
@@ -628,6 +632,11 @@ static AnyValue refineResultValue(AnyValue value, SMLoc loc,
     return MBValue(rebind(mbValue));
   if (auto sbValue = value.getIfSBValue())
     return SBValue(rebind(sbValue));
+  if (auto dlValue = value.getIfDLValue()) {
+    dlValue->elementType = refinedType;
+    return dlValue;
+  }
+
   auto srValue = value.getIfSRValue();
   assert(srValue && "Unknown value kind");
   return SRValue(rebind(srValue));
@@ -816,7 +825,7 @@ CValue ExprEmitter::emitLoadOfLValue(ASTExprAnd<LValue> value,
                                      ValueDest &dest) {
   // If this is a computed LValue emit call to the "getter".
   if (auto dlValue = value.ir.getIfDLValue())
-    return dlValue->emitLoad(value, dest, *this);
+    return dlValue->emitLoad(dest, value.expr, *this);
 
   // Decay a stored LValue to an MBValue.
   auto slValue = value.ir.getIfSLValue();
@@ -1160,9 +1169,8 @@ SRValue ExprEmitter::emitBoxedIntAsPopScalar(Value numberValue,
   AnyValue index = emitNamedMethodCall(
       "__as_mlir_index", {{SRValue(numberValue), source}}, ValueDest::none(),
       CallSyntax::kImplicitConvert, source);
-  if (!index) {
+  if (!index)
     return {};
-  }
   auto popscalar = builder->create<POP::CastFromBuiltinOp>(
       translateLocation(source->getLoc()),
       POP::SIMDType::get(builder->getContext(), 1, KGENDType(KGENDType::index)),
@@ -1174,7 +1182,53 @@ SRValue ExprEmitter::emitBoxedIntAsPopScalar(Value numberValue,
 // DLValue implementations
 //===----------------------------------------------------------------------===//
 
-CValue SubscriptDLValue::emitLoad(ASTExprAnd<LValue> value, ValueDest &dest,
+CValue StoredAttributeRefDLValue::emitLoad(ValueDest &dest,
+                                           const ExprNode *dlValueExpr,
+                                           ExprEmitter &emitter) const {
+  // To load x.y, we load x, then then load y out of it.
+  auto base = baseVal.ir->emitLoad(ValueDest::none(), baseVal.expr, emitter);
+  if (!base)
+    return {};
+  return AttributeRefNode::emitStoredFieldRef({base, baseVal.expr}, getField(),
+                                              expr, dest, emitter);
+}
+
+void StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
+                                          ExprEmitter &emitter) const {
+  if (!emitter.builder) {
+    emitter.emitErrorForDynamicValueInParameter(expr);
+    return;
+  }
+
+  // tmp = load(base)
+  // tmp.field = value
+  // store(tmp -> base)
+  auto loc = expr->getLocation(emitter);
+  Type declIRType = POP::PointerType::get(baseVal.ir->elementType);
+  auto nameAttr = StringAttr::get(loc.getContext(), "__store_tmp__");
+  auto tmpDecl =
+      emitter.builder->create<VarLetDeclOp>(loc, declIRType, nameAttr,
+                                            /*isVar=*/true);
+
+  // Load the entire base LValue into tmpDecl.
+  ValueDest tmpValueDest(SLValue(tmpDecl), EC_AttributeRefBase);
+  auto base = baseVal.ir->emitLoad(tmpValueDest, baseVal.expr, emitter);
+  if (!base) {
+    tmpValueDest.resetForError();
+    return;
+  }
+
+  // Store into the field.
+  auto fieldPtr =
+      emitter.builder->create<StructGEPOp>(loc, tmpDecl, getField());
+  emitter.emitStoreToLValue(value, SLValue(fieldPtr), EC_AttributeRefBase);
+
+  // Store the whole result back.
+  // TODO(moves): This could move the value.
+  baseVal.ir->emitStore({SLValue(tmpDecl), expr}, emitter);
+}
+
+CValue SubscriptDLValue::emitLoad(ValueDest &dest, const ExprNode *dlValueExpr,
                                   ExprEmitter &emitter) const {
   auto methodName =
       isSubscript() ? StringRef("__getitem__") : StringRef("__getattr__");

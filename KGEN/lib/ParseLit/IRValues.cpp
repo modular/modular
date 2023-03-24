@@ -13,6 +13,7 @@
 #include "LitExprNode.h"
 
 #include "KGEN/KGENDialect/KGENTypes.h"
+#include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "llvm/Support/SMLoc.h"
 
@@ -94,6 +95,9 @@ raw_ostream &LIT::operator<<(raw_ostream &os, AnyValue value) {
 
 void PValue::dump() const { printStorage(llvm::errs(), *this, true) << '\n'; }
 
+void CValue::dump() const {
+  printStorage(llvm::errs(), getStorage(), true) << '\n';
+}
 void CRValue::dump() const {
   printStorage(llvm::errs(), getStorage(), true) << '\n';
 }
@@ -211,6 +215,24 @@ DLValue &DLValue::operator=(const DLValue &existing) {
 
 BaseDLValue::~BaseDLValue() {
   // vtable anchor.
+}
+
+//===----------------------------------------------------------------------===//
+// StoredAttributeRefDLValue
+//===----------------------------------------------------------------------===//
+
+StoredAttributeRefDLValue::StoredAttributeRefDLValue(
+    ASTExprAnd<DLValue> baseVal, StructFieldOp fieldOp, ASTType elementType,
+    const ExprNode *expr)
+    : BaseDLValue(elementType, expr), baseVal(baseVal), fieldOp(fieldOp) {}
+
+StructFieldOp StoredAttributeRefDLValue::getField() const {
+  return cast<StructFieldOp>(fieldOp);
+}
+
+void StoredAttributeRefDLValue::print(raw_ostream &os) const {
+  os << "stored attr '" << getField().getName() << " : ";
+  baseVal.ir->print(os);
 }
 
 //===----------------------------------------------------------------------===//

@@ -214,6 +214,13 @@ def LIT_StructFieldOp : LITOp<"struct.field", [HasParent<"StructDeclOp">]> {
 
   let arguments = (ins StrAttr:$name, TypeAttr:$type);
   let assemblyFormat = "custom<KeywordAsString>($name) attr-dict `:` $type";
+
+  let extraClassDeclaration = [{
+    /// Given a struct base value type that may have bound parameters,
+    /// substitute those bound parameters into our type and return the result.
+    Type getReboundType(DeclRefType structSelfType);
+  }];
+
 }
 
 //===----------------------------------------------------------------------===//

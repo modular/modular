@@ -20,6 +20,7 @@ from F32 import F32
 from Assert import assert_param
 from Range import range
 from IO import print
+from DType import DType
 
 # CHECK: lit.func @"printInt
 fn printInt(x: Int):
@@ -29,19 +30,6 @@ fn printInt(x: Int):
 # ===----------------------------------------------------------------------=== #
 # WIP Types
 # ===----------------------------------------------------------------------=== #
-
-# NOTE: This would be more naturally modeled as an enum, but this works for now.
-@register_passable
-struct DType:
-    var value: __mlir_type.`!kgen.dtype`
-
-    fn __init__(value: __mlir_type.`!kgen.dtype`) -> DType:
-        return DType {value: value}
-
-    alias f32 = DType(__mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`)
-    alias f64 = DType(__mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`)
-    alias si32 = DType(__mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`)
-    alias si64 = DType(__mlir_attr.`#kgen.dtype.constant<si64> : !kgen.dtype`)
 
 
 @register_passable
