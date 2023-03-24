@@ -13,6 +13,7 @@
 #include "KGEN/InitAllDialects.h"
 #include "KGEN/KGENCompiler.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LowerToObject.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/ParseLit.h"
@@ -48,6 +49,7 @@ enum class MojoCommand {
   kEmit,
   kEmitHeader,
   kExecute,
+  kDemangle,
 };
 
 class CLOptions : public KGENCommonOptions, public CommonCLOptions {
@@ -64,7 +66,9 @@ public:
               MojoCommand::kEmitHeader, "emit-header",
               "Emit a C header file with declarations of exported functions."),
           clEnumValN(MojoCommand::kExecute, "execute",
-                     "Execute the main function.")),
+                     "Execute the main function."),
+          clEnumValN(MojoCommand::kDemangle, "demangle",
+                     "Demangle the name provided on the command line.")),
       cl::init(MojoCommand::kExecute)};
 };
 } // namespace
@@ -349,13 +353,21 @@ int main(int argc, char **argv) {
   registerMLIRContextCLOptions();
   llvm::cl::ParseCommandLineOptions(argc, argv);
 
+  mlir::MLIRContext context;
+  // If all we're doing is demangling a name, then don't do anything else.
+  if (clOptions.cmd == MojoCommand::kDemangle) {
+    auto mangled = LIT::MangledSymbol::demangle(
+        StringAttr::get(&context, clOptions.inputFilename));
+    llvm::outs() << mangled << "\n";
+    return EXIT_SUCCESS;
+  }
+
   // Set up the input file.
   llvm::SourceMgr sourceManager;
   sourceManager.setIncludeDirs(clOptions.searchPaths);
   sourceManager.AddNewSourceBuffer(clOptions.openInputFileOrExit(),
                                    llvm::SMLoc());
 
-  mlir::MLIRContext context;
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceManager, &context);
   return runToolPipeline(&context, sourceManager, clOptions);
 }
