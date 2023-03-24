@@ -49,7 +49,8 @@ namespace {
 /// information about the specified parameter.
 class ParameterInferenceState {
 public:
-  ParameterInferenceState(ParamDeclAttr decl) : parameterName(decl.getName()) {}
+  ParameterInferenceState(LitSharedState &state, ParamDeclAttr decl)
+      : state(state), parameterName(decl.getName()) {}
 
   /// Given an incomplete parameter binding set for a call to the specified
   /// signature, try to infer the value of the next 'decl' parameter.  This
@@ -62,6 +63,7 @@ private:
   LogicalResult matchTypes(Type actualType, Type expectedType);
   LogicalResult matchParams(TypedAttr actualAttr, TypedAttr expectedAttr);
 
+  LitSharedState &state;
   StringAttr parameterName;
   SmallVector<PValue> inferredValues;
 };
@@ -254,8 +256,12 @@ PValue ParameterInferenceState::infer(SignatureType signature,
       while (providedValueIdx != operands.size()) {
         ASTExprAnd<AnyValue> operand = operands[providedValueIdx++];
         CValue value = operand.ir.getIfCValue();
-        if (!value)
+        if (!value) {
+          state.emitWarning(operand.expr->getLoc(),
+                            "could not infer parameter type for this value, "
+                            "because it is not concrete");
           return {};
+        }
         types.push_back(
             ParameterizedTypeConstantAttr::get(value.getRValueType()));
       }
@@ -598,8 +604,8 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
       /*don't emit diagnostics*/ nullptr, signature.hasParamVarargs(),
       [&](ParamDeclAttr decl, ASTType expectedParamType,
           ArrayRef<ParamBindAttr> bindingsSoFar) -> PValue {
-        return ParameterInferenceState(decl).infer(signature, bindingsSoFar,
-                                                   operands);
+        return ParameterInferenceState(emitter.shared, decl)
+            .infer(signature, bindingsSoFar, operands);
       },
       /*inferPack=*/true);
 
