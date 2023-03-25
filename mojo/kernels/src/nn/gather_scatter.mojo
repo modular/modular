@@ -13,7 +13,7 @@ from Index import Index, StaticIntTuple
 from Intrinsics import PrefetchOptions
 from Int import Int
 from List import Dim, DimList
-from LLCL import Runtime
+from LLCL import Runtime, OutputChainPtr
 from Math import add, min
 from Pointer import Pointer
 from Range import range
@@ -57,7 +57,7 @@ fn gather_reduce[
         DType.si32,
     ],
     reduce_init: SIMD[1, type],
-    runtime: Runtime.ptr_type,
+    out_chain: OutputChainPtr,
 ):
     """Computes output[i, j, k] = input[indices[i, j], k] and simultaneously
     reduces the output accross axis 1 to produce output[i, k].
@@ -81,7 +81,7 @@ fn gather_reduce[
     # This is about 4x larger than the default in gather, which makes sense
     # since this kernel performs far fewer writes
     alias MIN_TASK_COPY_SIZE = 64 * 100 * 32 * 4  # bytes
-    let num_threads = Runtime(runtime).parallelism_level()
+    let num_threads = out_chain.get_runtime().parallelism_level()
     let num_tasks = min(
         div_ceil(
             indices.dim[0]()
@@ -153,7 +153,7 @@ fn gather_reduce[
 
             vectorize[usimd_width, _accum_in_place](row_size)
 
-    parallelize[task_func](runtime, num_tasks)
+    parallelize[task_func](out_chain, num_tasks)
 
 
 # gather_2D_input_1D_indices_axis_0
@@ -173,7 +173,7 @@ fn gather[
     output: NDBuffer[output_rank, output_shape, type],
     input: NDBuffer[input_rank, input_shape, type],
     indices: NDBuffer[indices_rank, indices_shape, indices_type],
-    runtime: Runtime.ptr_type,
+    out_chain: OutputChainPtr,
 ):
     """Computes output[i, j] = input[indices[i], j]"""
     assert_param_bool[output_rank == 2]()
@@ -184,6 +184,7 @@ fn gather[
     let indices_len = indices.size()
     # Short-circuit for trivial cases, and to avoid divide-by-zero
     if input.size() == 0 or indices_len == 0:
+        out_chain.mark_ready()
         return
 
     # This sets the min copy size per task because it's inefficient to copy
@@ -197,7 +198,7 @@ fn gather[
     let min_task_num_rows = div_ceil(
         MIN_TASK_COPY_SIZE, input.dim[1]() * dtype_sizeof[type]()
     )
-    let num_threads = Runtime(runtime).parallelism_level()
+    let num_threads = out_chain.get_runtime().parallelism_level()
     let num_tasks = min(div_ceil(indices_len, min_task_num_rows), num_threads)
 
     let num_chunks_per_task = div_ceil(indices_len, num_tasks)
@@ -249,7 +250,7 @@ fn gather[
 
             vectorize_unroll[simd_width, 2, func_wrapper](row_size)
 
-    parallelize[task_func](runtime, num_tasks)
+    parallelize[task_func](out_chain, num_tasks)
 
 
 # gather_2D_input_1D_indices_axis_1
@@ -273,7 +274,7 @@ fn gather[
         indices_shape,
         indices_type,
     ],
-    runtime: Runtime.ptr_type,
+    out_chain: OutputChainPtr,
 ):
     """Computes output[i, j] = input[i, indices[j]]"""
     assert_param_bool[output_rank == 2]()
@@ -287,3 +288,5 @@ fn gather[
             output[StaticIntTuple[output_rank.__as_mlir_index()](i, j)] = input[
                 i, idx
             ]
+
+    out_chain.mark_ready()

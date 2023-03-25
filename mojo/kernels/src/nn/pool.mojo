@@ -16,7 +16,7 @@ from Range import range
 from List import DimList
 from Math import min, max, add, div_ceil
 from Functional import parallelize, vectorize_unroll
-from LLCL import Runtime
+from LLCL import Runtime, OutputChainPtr
 from Pointer import Pointer
 from Pointer import DTypePointer, product as pointer_product
 from TargetInfo import dtype_simd_width
@@ -98,7 +98,7 @@ struct Pool2d[
         filter_shape: StaticIntTuple[2],
         stride: StaticIntTuple[2],
         dilation: StaticIntTuple[2],
-        runtime: Runtime.ptr_type,
+        out_chain: OutputChainPtr,
     ):
         """Interface function to run a pooling op on the given input and
         filter tensor and stores the result in the give output tensor.
@@ -114,14 +114,14 @@ struct Pool2d[
               tuple def (stride_h, stride_w).
             dilation: Dilations on height and width dimensions with assumed
               tuple def (dilation_h, dilation_w).
-            runtime: Runtime.
+            out_chain: OutputChain.
         """
         # TODO: Find a heuristic to replace the magic numbers.
         alias min_task_num_slices = 64
         alias vector_width = dtype_simd_width[type]()
         alias unroll_factor = 8
 
-        let num_threads = Runtime(runtime).parallelism_level()
+        let num_threads = out_chain.get_runtime().parallelism_level()
         let num_tasks = min(
             div_ceil(output.num_elements(), min_task_num_slices), num_threads
         )
@@ -172,7 +172,7 @@ struct Pool2d[
                 min(work_block_size, work - offset)
             )
 
-        parallelize[task_func](runtime, num_tasks)
+        parallelize[task_func](out_chain, num_tasks)
 
     fn __init__(
         output: ImageData[static_output_shape, type, static_data_layout],

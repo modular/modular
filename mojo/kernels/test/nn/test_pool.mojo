@@ -29,7 +29,7 @@ from Pool import (
 from Range import range
 from F32 import F32
 from SIMD import SIMD
-from LLCL import Runtime
+from LLCL import Runtime, OwningOutputChainPtr
 
 
 fn fill_buffer[
@@ -60,8 +60,6 @@ struct PoolMethod:
 
 
 fn pool(pool_method: Int):
-    let runtime = Runtime()
-
     alias in_shape = create_dim_list(2, 2, 5, 7)
     alias out_shape = create_dim_list(2, 2, 2, 2)
 
@@ -89,6 +87,8 @@ fn pool(pool_method: Int):
     var stride = StaticIntTuple[2](2, 3)
     var dilation = StaticIntTuple[2](1, 1)
 
+    let runtime = Runtime()
+    let out_chain = OwningOutputChainPtr(runtime)
     if pool_method == PoolMethod.MAX:
         Pool2d[
             out_shape,
@@ -106,7 +106,7 @@ fn pool(pool_method: Int):
             filter,
             stride,
             dilation,
-            runtime.ptr,
+            out_chain.borrow(),
         )
     else:
         Pool2d[
@@ -125,8 +125,12 @@ fn pool(pool_method: Int):
             filter,
             stride,
             dilation,
-            runtime.ptr,
+            out_chain.borrow(),
         )
+    out_chain.wait()
+    out_chain.__del__()
+    runtime.__del__()
+
     print_buffer(output_buffer)
 
 

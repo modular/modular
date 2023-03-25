@@ -29,7 +29,7 @@ from Range import range
 from TargetInfo import simd_byte_width
 from Pointer import DTypePointer, Pointer
 from DType import DType
-from LLCL import Runtime
+from LLCL import Runtime, OutputChainPtr
 from Functional import unroll, unroll2, parallelForEachN
 from Range import range
 from Image import (
@@ -2030,7 +2030,7 @@ struct ConvIm2ColNHWC[
         input: NDBuffer[4, shape_input, type],
         filter: NDBuffer[4, shape_filter, type],
         conv_shape: ConvShape,
-        runtime: Runtime.ptr_type,
+        out_chain: OutputChainPtr,
     ):
         """Interface function to run im2col convolution on the given images and
         filters.
@@ -2055,7 +2055,7 @@ struct ConvIm2ColNHWC[
         ](out, input, filter, conv_shape)
 
         let complexity = conv.gemm_shape.M
-        let num_threads = Runtime(runtime).parallelism_level()
+        let num_threads = out_chain.get_runtime().parallelism_level()
 
         # minimum number of rows each thread should take.
         let row_block_unit: Int = 32
@@ -2140,7 +2140,7 @@ struct ConvIm2ColNHWC[
                 ]
             ],
             task_func,
-        ](runtime, num_tasks_m * num_tasks_n, args_address)
+        ](out_chain, num_tasks_m * num_tasks_n, args_address)
 
     fn __init__(
         out: NDBuffer[4, shape_output, type],
