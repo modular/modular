@@ -429,12 +429,12 @@ fn _compute_ndbuffer_stride[
         return StaticIntTuple[rank.__as_mlir_index()](1)
 
     var stride: StaticIntTuple[rank.__as_mlir_index()] = shape
-    stride.__setitem__[(rank - 1).__as_mlir_index()](1)
+    stride[rank - 1] = 1
 
     @always_inline
     fn body[idx: Int]():
         alias i = rank - idx - 1
-        stride.__setitem__[(i - 1).__as_mlir_index()](shape[i] * stride[i])
+        stride[i - 1] = shape[i] * stride[i]
 
     unroll[rank - 1, body]()
     return stride
@@ -536,7 +536,7 @@ struct NDBuffer[
 
         @always_inline
         fn _compute_product[idx: Int]():
-            product *= self.dim[idx.__as_mlir_index()]()
+            product *= self.dim[idx]()
 
         unroll[rank, _compute_product]()
         return product
@@ -736,7 +736,7 @@ struct NDBuffer[
         if val == 0:
             self.zero()
             return self
-        let _ = self.flatten().simd_fill[simd_width](val)
+        _ = self.flatten().simd_fill[simd_width](val)
         return self
 
     @always_inline
@@ -762,7 +762,7 @@ struct NDBuffer[
         Returns:
             Constructed ndbuffer with the allocated space.
         """
-        var data_pointer = _raw_stack_allocation[
+        let data_pointer = _raw_stack_allocation[
             shape.product().get(), type, alignment
         ]()
         return NDBuffer[rank, shape, type](data_pointer.address)
@@ -880,8 +880,7 @@ fn partial_simd_store[
 
     # Store the valid on the valid range.
     for idx in range(effective_lbound, effective_rbound):
-        let storageVal = vector[idx]
-        storage.store(idx, storageVal)
+        storage.store(idx, vector[idx])
 
 
 # ===----------------------------------------------------------------------===#
