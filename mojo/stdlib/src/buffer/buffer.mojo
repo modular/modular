@@ -172,6 +172,7 @@ struct Buffer[size: Dim, type: DType]:
         """
         return self.simd_load[1](idx)
 
+    @always_inline
     fn simd_load[width: Int](self, idx: Int) -> SIMD[width, type]:
         """Loads a simd value from the buffer at the specified index.
 
@@ -184,6 +185,23 @@ struct Buffer[size: Dim, type: DType]:
             and ending at `idx+width`.
         """
         return self.data.simd_load[width](idx)
+
+    @always_inline
+    fn aligned_simd_load[
+        width: Int, alignment: Int
+    ](self, idx: Int) -> SIMD[width, type]:
+        """Loads a simd value from the buffer at the specified index.
+
+        Args:
+            width (__mlir_type.index): The simd_width of the load.
+            alignemnt (__mlir_type.index): The alignemnt value.
+            idx (Idx): The index into the Buffer.
+
+        Returns:
+            SIMD[width, type]: The simd value starting at the `idx` position
+            and ending at `idx+width`.
+        """
+        return self.data.aligned_simd_load[width, alignment](idx)
 
     fn __setitem__(
         self,
@@ -209,6 +227,7 @@ struct Buffer[size: Dim, type: DType]:
         """
         self.simd_store[1](idx, val)
 
+    @always_inline
     fn simd_store[
         width: Int,
     ](self, idx: Int, val: SIMD[width, type]):
@@ -221,6 +240,21 @@ struct Buffer[size: Dim, type: DType]:
         """
         self.data.simd_store[width](idx, val)
 
+    @always_inline
+    fn aligned_simd_store[
+        width: Int, alignment: Int
+    ](self, idx: Int, val: SIMD[width, type]):
+        """Stores a simd value into the buffer at the specified index.
+
+        Args:
+            width (__mlir_type.index): The width of the simd vector.
+            alignment (Idx): The alignment value.
+            idx (Idx): The index into the Buffer.
+            val (SIMD[width, type]): The value to store.
+        """
+        self.data.aligned_simd_store[width, alignment](idx, val)
+
+    @always_inline
     fn simd_nt_store[width: Int](self, idx: Int, val: SIMD[width, type]):
         """Stores a simd value into the buffer at the specified index
            using non-temporal store. The address must be properly
@@ -623,6 +657,39 @@ struct NDBuffer[
         return self._offset(idx).simd_load[width]()
 
     @always_inline
+    fn aligned_simd_load[
+        width: Int, alignment: Int
+    ](self, *idx: Int) -> SIMD[width, type]:
+        return self.aligned_simd_load[width, alignment](VariadicList[Int](idx))
+
+    @always_inline
+    fn aligned_simd_load[
+        width: Int, alignment: Int
+    ](self, idx: VariadicList[Int]) -> SIMD[width, type]:
+        debug_assert(
+            self.is_contiguous or width == 1,
+            "Function requires contiguous buffer.",
+        )
+        return self._offset(idx).aligned_simd_load[width, alignment]()
+
+    fn aligned_simd_load[
+        width: Int, alignment: Int
+    ](self, idx: StaticIntTuple[rank.__as_mlir_index()]) -> SIMD[width, type]:
+        return self.aligned_simd_load[width, alignment](idx.as_tuple())
+
+    @always_inline
+    fn aligned_simd_load[
+        width: Int, alignment: Int
+    ](
+        self, idx: StaticTuple[rank.__as_mlir_index(), __mlir_type.index]
+    ) -> SIMD[width, type]:
+        debug_assert(
+            self.is_contiguous or width == 1,
+            "Function requires contiguous buffer.",
+        )
+        return self._offset(idx).aligned_simd_load[width, alignment]()
+
+    @always_inline
     fn __setitem__(
         self, idx: StaticIntTuple[rank.__as_mlir_index()], val: SIMD[1, type]
     ):
@@ -663,6 +730,32 @@ struct NDBuffer[
         )
         # Stores a simd value into the ndbuffer at the specified index
         self._offset(idx).simd_store[width](val)
+
+    @always_inline
+    fn aligned_simd_store[
+        width: Int, alignment: Int
+    ](
+        self,
+        idx: StaticIntTuple[rank.__as_mlir_index()],
+        val: SIMD[width, type],
+    ):
+        # Stores a simd value into the ndbuffer at the specified index
+        self.aligned_simd_store[width, alignment](idx.as_tuple(), val)
+
+    @always_inline
+    fn aligned_simd_store[
+        width: Int, alignment: Int
+    ](
+        self,
+        idx: StaticTuple[rank.__as_mlir_index(), __mlir_type.index],
+        val: SIMD[width, type],
+    ):
+        debug_assert(
+            self.is_contiguous or width == 1,
+            "Function requires contiguous buffer.",
+        )
+        # Stores a simd value into the ndbuffer at the specified index
+        self._offset(idx).aligned_simd_store[width, alignment](val)
 
     @always_inline
     fn simd_nt_store[
