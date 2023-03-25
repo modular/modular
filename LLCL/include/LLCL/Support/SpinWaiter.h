@@ -72,7 +72,11 @@ public:
 #elif defined __i386__ || defined __x86_64__
       __builtin_ia32_pause();
 #elif __ARM_ARCH_7A__ || __aarch64__
-      __asm__ __volatile__("yield" ::: "memory");
+      // The isb instruction is the closest to the original x86 pause
+      // instruction. Unlike the x86 pause instruction which delays execution by
+      // O(100) cycles, the isb will typically delay execution by about 50
+      // cycles.
+      __asm__ volatile("isb" ::: "memory");
 #else
       // Hail mary to slow this thread down so other threads can make progress
       // without us fully occupying the load/store unit.
