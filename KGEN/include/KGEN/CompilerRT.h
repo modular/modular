@@ -44,8 +44,7 @@ namespace M::KGEN {
 void registerLLCL(std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);
 } // namespace M::KGEN
 
-MODULAR_EXPORT MODULAR_ATTRIBUTE_USED void
-KGEN_CompilerRT_LLCL_DestroyRuntime(void *runtimeRef);
+MODULAR_EXPORT MODULAR_ATTRIBUTE_USED void KGEN_CompilerRT_LLCL_Dummy();
 
 //===----------------------------------------------------------------------===//
 // Memory.cpp
@@ -105,7 +104,7 @@ KGEN_CompilerRT_dummylinkageinit() {
 #if defined(__x86_64__) && defined(__linux__)
   KGEN_CompilerRT_Init_Intel_AMX();
 #endif
-  KGEN_CompilerRT_LLCL_DestroyRuntime(nullptr);
+  KGEN_CompilerRT_LLCL_Dummy();
   KGEN_CompilerRT_PrintToStdErr(nullptr, 0);
   KGEN_CompilerRT_CoreCount();
   KGEN_CompilerRT_TimeTraceProfilerEnd();
