@@ -8,7 +8,7 @@
 from Coroutine import Coroutine
 from IO import print
 from Int import Int
-from LLCL import TaskGroup, Runtime
+from LLCL import TaskGroup, Runtime, OwningOutputChainPtr
 from Functional import parallelForEachN
 from Pointer import Pointer
 from Memory import stack_allocation
@@ -110,7 +110,11 @@ fn test_runtime_parallel_for():
         (chunk_size * num_tasks).__as_mlir_index(), Int, 0
     ]()
     let rt = Runtime(4)
-    parallelForEachN[Pointer[Int], task_fn](rt, num_tasks, ptr)
+    let out_chain = OwningOutputChainPtr(rt)
+    parallelForEachN[Pointer[Int], task_fn](out_chain.borrow(), num_tasks, ptr)
+    out_chain.wait()
+    out_chain.__del__()
+    rt.__del__()
 
     var sum: Int = 0
     for i in range(chunk_size * num_tasks):
@@ -118,7 +122,6 @@ fn test_runtime_parallel_for():
     # COM: sum(0, 31) * 32
     # CHECK: 15872
     print(sum)
-    rt.__del__()
 
 
 fn main():

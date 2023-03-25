@@ -339,3 +339,127 @@ struct TaskGroup:
     fn wait(self&):
         self._task_complete()
         _async_wait(Pointer[Chain].address_of(self.chain))
+
+
+# ===----------------------------------------------------------------------===#
+# OutputChainPtr
+# ===----------------------------------------------------------------------===#
+
+
+struct OutputChainStorage:
+    """An opaque representation for the C++ LLCL::OutputChain which shares its
+    size."""
+
+    var storage0: __mlir_type.index  # AsyncValue* value.pointer
+    var storage1: __mlir_type.index  # intptr_t loc.data
+    var storage2: __mlir_type.index  # LocationDecoder* loc.decoder.pointer
+
+
+@register_passable
+struct OutputChainPtr:
+    """A pointer to a C++ heap/stack/closure allocated OutputChain, ie a pair
+    of an AsyncValueRef<Chain> and an EncodedLocation. Kernels which accept
+    an OutputChainPtr argument are expected to call mark_ready(), mark_error(),
+    or move.
+    """
+
+    # Actually Pointer[OutputChainStorage]
+    alias ptr_type = DTypePointer[DType.invalid.value]
+    var ptr: ptr_type
+
+    fn __init__(ptr: ptr_type) -> OutputChainPtr:
+        """Casts a raw pointer to our OutputChainPtr."""
+        return OutputChainPtr {ptr: ptr}
+
+    @always_inline("nodebug")
+    fn __copy__(self) -> Self:
+        return Self {ptr: self.ptr}
+
+    fn move(self) -> OwningOutputChainPtr:
+        """Returns a pointer to a heap-allocated LLCL::OutputChain containing
+        the moved contents of this. The result must be explicitly destroyed.
+        """
+        return __mlir_op.`pop.external_call`[
+            func : __mlir_attr.`@KGEN_CompilerRT_LLCL_OutputChainPtr_CreateMoved`,
+            _type:[OwningOutputChainPtr],
+        ](self.ptr)
+
+    fn get_runtime(self) -> Runtime:
+        """Returns the runtime managing the output chain."""
+        return __mlir_op.`pop.external_call`[
+            func : __mlir_attr.`@KGEN_CompilerRT_LLCL_OutputChainPtr_GetRuntime`,
+            _type : [Runtime.ptr_type],
+        ](self.ptr)
+
+    fn mark_ready(self):
+        """Marks the output chain as being ready.
+        The underlying LLCL::OutputChain is not moved.
+        """
+        __mlir_op.`pop.external_call`[
+            func : __mlir_attr.`@KGEN_CompilerRT_LLCL_OutputChainPtr_MarkReady`,
+            _type:[],
+        ](self.ptr)
+
+    fn mark_error(self, message: StringRef):
+        """Marks the output chain as having an error with message.
+        The underlying LLCL::OutputChain is not moved.
+        """
+        __mlir_op.`pop.external_call`[
+            func : __mlir_attr.`@KGEN_CompilerRT_LLCL_OutputChainPtr_MarkError`,
+            _type:[],
+        ](
+            self.ptr,
+            message.data.address,
+            message.length.value,
+        )
+
+
+@register_passable
+struct OwningOutputChainPtr:
+    """As for OutputChainPtr, but will destroy the underlying LLCL::OutputChain
+    when goes out of scope.
+    """
+
+    # Actually Pointer[OutputChainStorage]
+    alias ptr_type = DTypePointer[DType.invalid.value]
+    var ptr: ptr_type
+
+    fn __init__(ptr: ptr_type) -> OwningOutputChainPtr:
+        """Casts a raw pointer to our OwningOutputChainPtr."""
+        return OwningOutputChainPtr {ptr: ptr}
+
+    fn __init__(rt: Runtime) -> OwningOutputChainPtr:
+        """Returns a pointer to a heap-allocated empty LLCL::OutputChain.
+        The LLCL::OutputChain will have an empty location and an unemplaced
+        AsyncValueRef<Chain>.
+        """
+        return __mlir_op.`pop.external_call`[
+            func : __mlir_attr.`@KGEN_CompilerRT_LLCL_OutputChainPtr_CreateEmpty`,
+            _type:[OwningOutputChainPtr],
+        ](rt.ptr)
+
+    @always_inline("nodebug")
+    fn __copy__(self) -> Self:
+        return Self {ptr: self.ptr}
+
+    fn __del__(self):
+        """Destroys the LLCL::OutputChain."""
+        __mlir_op.`pop.external_call`[
+            func : __mlir_attr.`@KGEN_CompilerRT_LLCL_OutputChainPtr_Destroy`,
+            _type:[],
+        ](self.ptr)
+
+    fn borrow(self) -> OutputChainPtr:
+        """Returns non-owning pointer to same LLCL::OutputChain."""
+        return OutputChainPtr {ptr: self.ptr}
+
+    fn wait(self):
+        """Returns only when the underlying LLCL::OutputChain is emplaced
+        or set to an error. May execute arbitrary tasks while waiting.
+
+        FOR USE IN TEST CODE ONLY. Kernels should never await.
+        """
+        __mlir_op.`pop.external_call`[
+            func : __mlir_attr.`@KGEN_CompilerRT_LLCL_OutputChainPtr_Await`,
+            _type:[],
+        ](self.ptr)
