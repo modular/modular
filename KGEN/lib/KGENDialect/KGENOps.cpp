@@ -256,30 +256,31 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
   // list.
   SmallVector<ParamDeclRefAttr> parameterRefs;
   auto parent = op->getParentOfType<DeclInterface>();
-  if (parent) {
-    bool unused;
-    collectParameterReferences(cond, parameterRefs, unused);
-    ArrayRef<ParamDeclAttr> generatorInputParams = parent.getInputParams();
+  if (!parent)
+    return failure();
 
-    // Check to see if the parameters referenced by the condition are all
-    // defined by the generator.  If so, we can fold this into the constraint
-    // list.
-    if (llvm::all_of(parameterRefs, [&](ParamDeclRefAttr declRef) -> bool {
-          return llvm::any_of(generatorInputParams, [&](ParamDeclAttr decl) {
-            return decl.getName() == declRef.getName();
-          });
-        })) {
-      // Ok, great, add this to the trait list of the enclosing operation.
-      SmallVector<ConstraintAttr> constraints(parent.getConstraints());
-      auto typedStringAttr = dyn_cast<StringAttr>(op.getMessageAttr());
-      if (!typedStringAttr)
-        return failure();
-      auto msg = StringAttr::get(op->getContext(), typedStringAttr.getValue());
-      constraints.push_back(ConstraintAttr::get(cond, msg, op.getLoc()));
-      parent.setConstraints(constraints);
-      op.erase();
-      return success();
-    }
+  bool unused;
+  collectParameterReferences(cond, parameterRefs, unused);
+  ArrayRef<ParamDeclAttr> generatorInputParams = parent.getInputParams();
+
+  // Check to see if the parameters referenced by the condition are all
+  // defined by the generator.  If so, we can fold this into the constraint
+  // list.
+  if (llvm::all_of(parameterRefs, [&](ParamDeclRefAttr declRef) -> bool {
+        return llvm::any_of(generatorInputParams, [&](ParamDeclAttr decl) {
+          return decl.getName() == declRef.getName();
+        });
+      })) {
+    // Ok, great, add this to the trait list of the enclosing operation.
+    SmallVector<ConstraintAttr> constraints(parent.getConstraints());
+    auto typedStringAttr = dyn_cast<StringAttr>(op.getMessageAttr());
+    if (!typedStringAttr)
+      return failure();
+    auto msg = StringAttr::get(op->getContext(), typedStringAttr.getValue());
+    constraints.push_back(ConstraintAttr::get(cond, msg, op.getLoc()));
+    parent.setConstraints(constraints);
+    op.erase();
+    return success();
   }
 
   return failure();
@@ -727,19 +728,12 @@ void ParamYieldOp::getBranchTargets(
 // RebindOp
 //===----------------------------------------------------------------------===//
 
-/// If either the input or output type are parameterized, return success.
-/// Otherwise, require that the concrete input and output types are the same.
 LogicalResult RebindOp::verify() {
-  SmallVector<ParamDeclRefAttr> inputRefs, outputRefs;
-  bool inputConstExpr = false, outputConstExpr = false;
-  collectParameterReferences(getInput().getType(), inputRefs, inputConstExpr);
-  if (!inputRefs.empty() || inputConstExpr)
-    return success();
-  collectParameterReferences(getType(), outputRefs, outputConstExpr);
-  if (!outputRefs.empty() || outputConstExpr)
-    return success();
-
-  if (getInput().getType() == getType())
+  /// If either the input or output type are parameterized, return success.
+  /// Otherwise, require that the concrete input and output types are the same.
+  if (getInput().getType() == getType() ||
+      isParameterizedType(getInput().getType()) ||
+      isParameterizedType(getType()))
     return success();
 
   return emitError("cannot rebind concrete input type ")
@@ -749,8 +743,6 @@ LogicalResult RebindOp::verify() {
 
 /// Fold away the rebind if the input and output types are the same.
 OpFoldResult RebindOp::fold(FoldAdaptor adaptor) {
-  auto operands = adaptor.getOperands();
-  assert(operands.size() == 1);
   if (getInput().getType() == getType())
     return getInput();
   return {};

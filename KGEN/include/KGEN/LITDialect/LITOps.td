@@ -374,8 +374,7 @@ def LIT_StructGEPOp : LITOp<"struct.gep", [Pure,
 // TryOp
 //===----------------------------------------------------------------------===//
 
-def LIT_TryOp : LITOp<"try", [RecursivelySpeculatable, RecursiveMemoryEffects,
-    DeclareOpInterfaceMethods<ControlFlowNode>]> {
+def LIT_TryOp : LITOp<"try", [DeclareOpInterfaceMethods<ControlFlowNode>]> {
   let summary = "A try-except-else block.";
   let description = [{
     The `lit.try` operation represents a try-except-else statement. When inside

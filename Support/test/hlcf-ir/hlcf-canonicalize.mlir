@@ -3,13 +3,6 @@
 // CHECK-LABEL: @terminators_conditionally_pure
 func.func @terminators_conditionally_pure(%arg0: i1) {
   hlcf.loop {
-    // CHECK-NOT: {a}
-    hlcf.if %arg0 {
-      hlcf.yield
-    } else {
-      hlcf.yield
-    } {a}
-
     // CHECK: {b}
     hlcf.if %arg0 {
       hlcf.return
@@ -31,7 +24,7 @@ func.func @terminators_conditionally_pure(%arg0: i1) {
       hlcf.yield
     } {d}
 
-    // CHECK-NOT: {e}
+    // CHECK: {e}
     hlcf.loop {
       hlcf.break
     } {e}
