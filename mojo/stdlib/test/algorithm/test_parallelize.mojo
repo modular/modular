@@ -24,7 +24,7 @@ fn test_parallelize():
     let vector = Buffer[20, DType.index].stack_allocation()
 
     for i in range(vector.__len__()):
-        vector[i] = i.__as_mlir_index()
+        vector[i] = i
 
     let chunk_size = div_ceil(vector.__len__(), num_work_items)
 
@@ -41,7 +41,7 @@ fn test_parallelize():
 
     let rt = Runtime(num_work_items)
     let out_chain = OwningOutputChainPtr(rt)
-    parallelize[parallel_fn](out_chain.borrow(), 20)
+    parallelize[parallel_fn](out_chain.borrow(), num_work_items)
     out_chain.wait()
     out_chain.__del__()
     rt.__del__()
