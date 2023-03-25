@@ -14,7 +14,7 @@ from Math import mul
 from List import Dim, DimList, create_dim_list
 from IO import print
 from Index import StaticIntTuple
-from LLCL import Runtime
+from LLCL import Runtime, OwningOutputChainPtr
 from TypeUtilities import rebind
 from F32 import F32
 from SIMD import SIMD
@@ -63,8 +63,6 @@ fn test_elementwise[
         out_buffer.data.offset(i).store(0.0)
         x += 1.0
 
-    let runtime = Runtime(1)
-
     @always_inline
     fn func[
         simd_width: Int, rank: __mlir_type.index
@@ -76,12 +74,16 @@ fn test_elementwise[
         var in2 = buffer2.simd_load[simd_width](index)
         out_buffer.simd_store[simd_width](index, mul(in1, in2))
 
+    let runtime = Runtime(1)
+    let out_chain = OwningOutputChainPtr(runtime)
     elementwise[outer_rank.__as_mlir_index(), 1, 1, func](
         rebind[StaticIntTuple[outer_rank.__as_mlir_index()]](
             out_buffer.dynamic_shape
         ),
-        runtime,
+        out_chain.borrow(),
     )
+    out_chain.wait()
+    out_chain.__del__()
 
     for i2 in range(numelems):
         print(out_buffer.data.offset(i2).load())

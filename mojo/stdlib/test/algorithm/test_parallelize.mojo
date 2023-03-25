@@ -11,7 +11,7 @@ from Functional import parallelize, map
 from Math import div_ceil, min
 from Int import Int
 from IO import print
-from LLCL import num_cores, Runtime
+from LLCL import Runtime, OwningOutputChainPtr
 from SIMD import SIMD
 from Range import range
 
@@ -20,7 +20,6 @@ fn test_parallelize():
     print("== test_parallelize\n")
 
     let num_work_items = 4
-    let rt = Runtime(num_work_items)
 
     let vector = Buffer[20, DType.index].stack_allocation()
 
@@ -40,7 +39,12 @@ fn test_parallelize():
 
         map[add_two](end - start)
 
-    parallelize[parallel_fn](num_cores(), 20)
+    let rt = Runtime(num_work_items)
+    let out_chain = OwningOutputChainPtr(rt)
+    parallelize[parallel_fn](out_chain.borrow(), 20)
+    out_chain.wait()
+    out_chain.__del__()
+    rt.__del__()
 
     # CHECK-NOT: ERROR
     for ii in range(vector.__len__()):  # TODO(#8365) use `i`

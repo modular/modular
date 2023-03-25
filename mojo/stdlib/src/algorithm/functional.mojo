@@ -10,7 +10,7 @@ from DType import DType
 from Index import StaticIntTuple
 from Int import Int
 from List import VariadicList
-from LLCL import Runtime, TaskGroup
+from LLCL import Runtime, TaskGroup, OutputChainPtr
 from Math import div_ceil, min, max
 from Range import range
 from SIMD import SIMD
@@ -282,14 +282,16 @@ fn parallelForEachN[
         args_type,
         ` borrow) -> !lit.none>`,
     ],
-](rt: Runtime, total_count: Int, args: args_type):
+](out_chain: OutputChainPtr, total_count: Int, args: args_type):
     # We have no tasks, so do nothing.
     if total_count == 0:
+        out_chain.mark_ready()
         return
 
     # Only have a single task, just run it on the main thread.
     if total_count == 1:
         func(0, args)
+        out_chain.mark_ready()
         return
 
     @always_inline
@@ -299,12 +301,14 @@ fn parallelForEachN[
     var tasks = InlinedFixedVector[InlinedFixedVectorLength, Coroutine[none]](
         total_count - 1
     )
-    var tg = TaskGroup(rt)
+    var tg = TaskGroup(out_chain.get_runtime())
     parallelForEachNChain[args_type, task_fn](total_count - 1, args, tasks, tg)
 
     func(total_count - 1, args)
 
     tg.wait()
+    out_chain.mark_ready()
+
     tg.__del__()
     for j in range(tasks.__len__()):
         tasks[j].__del__()
@@ -319,14 +323,16 @@ fn parallelForEachN[
 @always_inline
 fn parallelize[
     func: __mlir_type[`!kgen.signature<(`, Int, ` borrow) -> !lit.none>`],
-](rt: Runtime, num_work_items: Int):
+](out_chain: OutputChainPtr, num_work_items: Int):
     # We have no tasks, so do nothing.
     if num_work_items == 0:
+        out_chain.mark_ready()
         return
 
-    # Only have a single task, just run it on the main thread.
+    # Only have a single task, just run it on the caller's thread.
     if num_work_items == 1:
         func(0)
+        out_chain.mark_ready()
         return
 
     @always_inline
@@ -336,7 +342,7 @@ fn parallelize[
     var tasks = InlinedFixedVector[InlinedFixedVectorLength, Coroutine[none]](
         num_work_items - 1
     )
-    var tg = TaskGroup(rt)
+    var tg = TaskGroup(out_chain.get_runtime())
     for i in range(num_work_items - 1):
         let task: Coroutine[__mlir_type.`!lit.none`] = task_fn(i)
         tg.create_task[none](task)
@@ -345,6 +351,8 @@ fn parallelize[
     func(num_work_items - 1)
 
     tg.wait()
+    out_chain.mark_ready()
+
     tg.__del__()
     for j in range(tasks.__len__()):
         tasks[j].__del__()
@@ -904,11 +912,11 @@ fn elementwise[
         StaticIntTuple[__mlir_attr[`#kgen.param.decl.ref<"rank">: index`]],
         ` borrow) -> !lit.none>`,
     ],
-](shape: StaticIntTuple[rank], runtime: Runtime,):
+](shape: StaticIntTuple[rank], out_chain: OutputChainPtr,):
     assert_param_bool_msg[rank == 1, "Specialization for 1D"]()
 
     let problem_size = shape.flattened_length()
-    let num_workers = get_num_workers(problem_size, runtime)
+    let num_workers = get_num_workers(problem_size, out_chain.get_runtime())
     let chunk_size = div_ceil(problem_size, num_workers)
 
     @always_inline
@@ -932,7 +940,7 @@ fn elementwise[
             func_wrapper,
         ](len)
 
-    parallelize[task_func](runtime, num_workers)
+    parallelize[task_func](out_chain, num_workers)
 
 
 @always_inline
@@ -995,7 +1003,7 @@ fn elementwise[
         StaticIntTuple[__mlir_attr[`#kgen.param.decl.ref<"rank">: index`]],
         ` borrow) -> !lit.none>`,
     ],
-](shape: StaticIntTuple[rank], runtime: Runtime):
+](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
     assert_param_bool_msg[rank > 1, "Specialization for ND where N > 1"]()
 
     # Stategy: we parallelize over all dimensions except the innermost and
@@ -1005,7 +1013,7 @@ fn elementwise[
     # Compute the number of workers to allocate based on ALL work, not just
     # the dimensions we split across.
     let total_size: Int = shape.flattened_length()
-    let num_workers = get_num_workers(total_size, runtime)
+    let num_workers = get_num_workers(total_size, out_chain.get_runtime())
 
     var parallelism_size: Int = total_size // shape[rank - 1]
     let chunk_size = div_ceil(parallelism_size, num_workers)
@@ -1040,4 +1048,4 @@ fn elementwise[
                 func_wrapper,
             ](shape[rank - 1])
 
-    parallelize[task_func](runtime, num_workers)
+    parallelize[task_func](out_chain, num_workers)
