@@ -25,7 +25,6 @@ class HLCFOp<string mnemonic, list<Trait> traits = []> :
 /// Base class for HLCF control-flow operations.
 class HLCFParentOp<string mnemonic, list<Trait> traits = []> :
     HLCFOp<mnemonic, traits # [
-      RecursiveMemoryEffects, RecursivelySpeculatable,
       DeclareOpInterfaceMethods<ControlFlowNode>,
       DeclareOpInterfaceMethods<InterpreterOpInterface>]>;
 

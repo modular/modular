@@ -23,15 +23,12 @@ class ControlFlowVerifier {
 public:
   explicit ControlFlowVerifier(Operation *root) : root(root) {}
 
-  /// Verify the control-flow tree from this operation if it is a root node.
-  static LogicalResult verifyIfRoot(Operation *op);
+  /// Verify a node.
+  LogicalResult verifyNode(ControlFlowNode op);
 
 private:
   /// Verify a terminator.
   LogicalResult verifyTerminator(ControlFlowTerminator op);
-
-  /// Verify a node.
-  LogicalResult verifyNode(ControlFlowNode op);
 
   /// Return the nearest operation that is a valid parent for the terminator.
   ControlFlowNode findNearestParentFor(ControlFlowTerminator op);
@@ -134,7 +131,7 @@ LogicalResult ControlFlowVerifier::verifyNode(ControlFlowNode op) {
   return success();
 }
 
-LogicalResult ControlFlowVerifier::verifyIfRoot(Operation *op) {
+static LogicalResult verifyIfRoot(Operation *op) {
   // Verify the operation if is a root operation or if it is the root of a
   // subtree rooted at a function.
   Operation *root;
@@ -163,7 +160,7 @@ LogicalResult HLCF::verifyControlFlowNode(ControlFlowNode op) {
   }
 
   // If this operation is a root, verify the tree starting from here.
-  return ControlFlowVerifier::verifyIfRoot(op);
+  return verifyIfRoot(op);
 }
 
 LogicalResult HLCF::verifyControlFlowTerminator(ControlFlowTerminator op) {
