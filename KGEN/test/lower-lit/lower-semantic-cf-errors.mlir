@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -allow-unregistered-dialect -split-input-file -lower-lit-terminators -verify-diagnostics
+// RUN: kgen-opt %s -allow-unregistered-dialect -split-input-file -lower-semantic-cf -verify-diagnostics
 
 lit.func @dead_code() {
   lit.return

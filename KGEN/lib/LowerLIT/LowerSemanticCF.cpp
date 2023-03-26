@@ -3,6 +3,13 @@
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
+//
+// This pass lowers 'semantic' control flow statements like hlcf.return in the
+// middle of a block and break/continue/raise into proper terminators.
+//
+// This pass also lowers the 'throws' FnEffect.
+//
+//===----------------------------------------------------------------------===//
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -19,7 +26,7 @@ using namespace KGEN;
 using namespace POP;
 
 //===----------------------------------------------------------------------===//
-// lowerLexicalTerminators
+// LowerSemanticCF
 //===----------------------------------------------------------------------===//
 
 namespace {
@@ -127,8 +134,7 @@ static Value createUnwrapOrPropagate(ImplicitLocOpBuilder &b, LIT::FuncOp func,
 }
 
 /// Lower all lexical terminators in the function and remove dead code.
-static LogicalResult lowerLexicalTerminators(DeclRefType errType,
-                                             LIT::FuncOp func) {
+static LogicalResult LowerSemanticCF(DeclRefType errType, LIT::FuncOp func) {
   if (func.isThrows() && !errType)
     return func.emitError("function throws but no 'Error' type was found");
 
@@ -161,8 +167,7 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
       liveCfOps.insert(&op);
       return;
     }
-    llvm_unreachable(
-        "`lower-lit-terminators` encountered unexpected terminator");
+    llvm_unreachable("`lower-semantic-cf` encountered unexpected terminator");
   };
   auto markNextOperationAsLive = [&](Operation *op) {
     markNextInBlockAsLive(op->getBlock(), std::next(op->getIterator()));
@@ -418,14 +423,13 @@ static LogicalResult lowerNestedFunctions(LIT::FuncOp topLevelFunc,
 //===----------------------------------------------------------------------===//
 
 namespace M::KGEN {
-#define GEN_PASS_DEF_LOWERLITTERMINATORS
+#define GEN_PASS_DEF_LOWERSEMANTICCF
 #include "KGEN/KGENPasses.h.inc"
 } // namespace M::KGEN
 
 namespace {
-struct LowerTerminatorsPass
-    : impl::LowerLITTerminatorsBase<LowerTerminatorsPass> {
-  using LowerLITTerminatorsBase::LowerLITTerminatorsBase;
+struct LowerSemanticCFPass : impl::LowerSemanticCFBase<LowerSemanticCFPass> {
+  using LowerSemanticCFBase::LowerSemanticCFBase;
 
   void runOnOperation() override {
     // Look for an error type declaration.
@@ -439,7 +443,7 @@ struct LowerTerminatorsPass
     });
     // Walk all functions.
     WalkResult result = getOperation().walk([&](LIT::FuncOp func) {
-      if (failed(lowerLexicalTerminators(errType, func)))
+      if (failed(LowerSemanticCF(errType, func)))
         return WalkResult::interrupt();
       return WalkResult::advance();
     });

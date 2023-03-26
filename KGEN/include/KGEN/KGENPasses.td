@@ -21,13 +21,14 @@ def VerifyParameters : Pass<"verify-parameters", "mlir::ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
-// LowerLITTerminators
+// LowerSemanticCF
 //===----------------------------------------------------------------------===//
 
-def LowerLITTerminators : Pass<"lower-lit-terminators", "mlir::ModuleOp"> {
+def LowerSemanticCF
+  : Pass<"lower-semantic-cf", "mlir::ModuleOp"> {
   let summary = "Lower lexical terminators and prune unreachable code.";
   let description = [{
-    The `lower-lit-terminators` pass will replace lexical Lit terminators with
+    The `lower-semantic-cf` pass will replace lexical Lit terminators with
     real terminators. It will prune any unreachable code (and warn about it),
     and verify that return parameters are the same at all return sites.
 

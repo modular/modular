@@ -10,7 +10,7 @@ add_modular_conversion_library(LowerLIT
   LowerAsyncFunctions.cpp
   LowerLIT.cpp
   LowerStructs.cpp
-  LowerTerminators.cpp
+  LowerSemanticCF.cpp
 
   DEPENDS
   MLIRKGENPasses

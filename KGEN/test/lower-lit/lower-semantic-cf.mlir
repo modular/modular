@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -lower-lit-terminators -verify-parameters -split-input-file | FileCheck %s
+// RUN: kgen-opt %s -lower-semantic-cf -verify-parameters -split-input-file | FileCheck %s
 
 lit.struct.decl @Error {}
 
