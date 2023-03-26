@@ -795,26 +795,26 @@ def POP_OffsetOp : POPOp<"offset", [Pure, AllTypesMatch<["result", "ptr"]>,
 }
 
 //===----------------------------------------------------------------------===//
-// StructConstructOp
+// StructCreateOp
 //===----------------------------------------------------------------------===//
 
-def POP_StructConstructOp : POPOp<"struct.construct", [Pure,
+def POP_StructCreateOp : POPOp<"struct.create", [Pure,
     TypesMatchWith<"operand types match struct element types",
                    "result", "elements",
                    "$_self.cast<StructType>().getParameterizedElementTypes()">
 ]> {
-  let summary = "construct a struct";
+  let summary = "create an instance of a struct";
   let description = [{
-    The `pop.struct.construct` operation creates a struct of the given type
+    The `pop.struct.create` operation creates a struct of the given type
     from values corresponding to its element types.
 
     Example:
 
     ```mlir
-    %0 = pop.struct.construct(%f32, %f64)
+    %0 = pop.struct.create(%f32, %f64)
       : !pop.struct<scalar<f32>, scalar<f64>>
 
-    %1 = pop.struct.construct(%arr, %ptr, %v)
+    %1 = pop.struct.create(%arr, %ptr, %v)
       : !pop.struct<array<size, type>, pointer<type>, type>
     ```
   }];
@@ -1217,7 +1217,7 @@ def VariantCreateOp : POPOp<"variant.create", [Pure]> {
 
     ```mlir
     // Create an `std::optional<T>` variant.
-    %none = pop.struct.construct() : !pop.struct<>
+    %none = pop.struct.create() : !pop.struct<>
     %0 = pop.variant.create %none : !pop.struct<>
         -> !pop.variant<struct<>, T>
 

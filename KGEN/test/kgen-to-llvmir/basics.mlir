@@ -18,7 +18,7 @@ kgen.func @two_results(%arg0: !pop.simd<1, f32>) -> (!pop.simd<1, f32>, !pop.sim
 }
 
 kgen.func @empty_struct_result() -> !pop.struct<> {
-  %0 = pop.struct.construct() : !pop.struct<>
+  %0 = pop.struct.create() : !pop.struct<>
   kgen.return %0 : !pop.struct<>
 }
 

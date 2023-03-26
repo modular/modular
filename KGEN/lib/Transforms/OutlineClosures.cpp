@@ -346,7 +346,7 @@ void OutlineClosuresPass::runOnOperation() {
         assert(globalVar && structType &&
                "global variable name/type/struct was undefined?");
 
-        auto container = b.create<POP::StructConstructOp>(
+        auto container = b.create<POP::StructCreateOp>(
             regionDecl.getLoc(), structType, llvm::to_vector(captures));
 
         // Get a pointer to the global and store the container in it.

@@ -35,7 +35,7 @@ static void expandListOp(POP::ListCreateOp createOp) {
   OpBuilder b(createOp);
   // We know the result will now have array type, which isn't what the
   // accessors expect, so we use the untyped accessors.
-  auto arrayCreateOp = b.create<POP::StructConstructOp>(
+  auto arrayCreateOp = b.create<POP::StructCreateOp>(
       createOp.getLoc(), createOp->getResult(0).getType(),
       createOp.getOperands());
   createOp.replaceAllUsesWith(arrayCreateOp.getResult());

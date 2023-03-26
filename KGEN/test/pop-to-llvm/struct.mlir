@@ -9,14 +9,14 @@ kgen.func @struct_construct(%a: !pop.struct<f32>, %b: !pop.array<4, f32>) -> !st
   // CHECK: %[[S0:.*]] = llvm.mlir.undef : !llvm.struct<(f32, array<4 x f32>)>
   // CHECK: %[[S1:.*]] = llvm.insertvalue %{{.*}}, %[[S0]][0]
   // CHECK: %[[S2:.*]] = llvm.insertvalue %{{.*}}, %[[S1]][1]
-  %0 = pop.struct.construct(%a, %b) : !struct1
+  %0 = pop.struct.create(%a, %b) : !struct1
   kgen.return %0 : !struct1
 }
 
 // CHECK-LABEL: @struct_construct_one
 kgen.func @struct_construct_one(%a: f32) -> !pop.struct<f32> {
   // CHECK: unrealized_conversion_cast %arg0 : f32 to !pop.struct<f32>
-  %0 = pop.struct.construct(%a) : !pop.struct<f32>
+  %0 = pop.struct.create(%a) : !pop.struct<f32>
   kgen.return %0 : !pop.struct<f32>
 }
 

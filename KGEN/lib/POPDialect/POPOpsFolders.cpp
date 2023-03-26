@@ -672,10 +672,10 @@ StackAllocationOp::interpret(ArrayRef<Attribute> operands,
 }
 
 //===----------------------------------------------------------------------===//
-// StructConstructOp
+// StructCreateOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult StructConstructOp::fold(FoldAdaptor adaptor) {
+OpFoldResult StructCreateOp::fold(FoldAdaptor adaptor) {
   auto operands = adaptor.getOperands();
   SmallVector<TypedAttr> values;
   values.reserve(operands.size());
@@ -695,7 +695,7 @@ OpFoldResult StructConstructOp::fold(FoldAdaptor adaptor) {
 OpFoldResult StructExtractOp::fold(FoldAdaptor adaptor) {
   if (auto container = adaptor.getContainer())
     return StructExtractAttr::get(container, getIndexAttr());
-  if (auto structCreate = getOperand().getDefiningOp<StructConstructOp>())
+  if (auto structCreate = getOperand().getDefiningOp<StructCreateOp>())
     return structCreate.getOperand(adaptor.getIndex().getSExtValue());
   return {};
 }

@@ -13,9 +13,9 @@ kgen.func @two_vectors(
   %arg0: !pop.array<2, simd<4, f32>>,
   %arg1: !pop.array<4, simd<1, f64>>
 ) -> (!size2, !size4) {
-  // CHECK: pop.struct.construct(%arg0) : !pop.struct<array<2, simd<4, f32>>>
+  // CHECK: pop.struct.create(%arg0) : !pop.struct<array<2, simd<4, f32>>>
   %0 = lit.struct.create(data=%arg0) : (!pop.array<2, simd<4, f32>>) -> !size2
-  // CHECK: pop.struct.construct(%arg1) : !pop.struct<array<4, scalar<f64>>>
+  // CHECK: pop.struct.create(%arg1) : !pop.struct<array<4, scalar<f64>>>
   %1 = lit.struct.create(data=%arg1) : (!pop.array<4, simd<1, f64>>) -> !size4
   kgen.return %0, %1 : !size2, !size4
 }
@@ -33,7 +33,7 @@ lit.struct.decl @Pair<T1: type, T2: type> {
 
 // CHECK-LABEL: @make_box
 kgen.func @make_box(%v: f32) -> !kgen.declref<@Box<T:type = f32>> {
-  // CHECK: pop.struct.construct(%arg0) : !pop.struct<f32>
+  // CHECK: pop.struct.create(%arg0) : !pop.struct<f32>
   %0 = lit.struct.create(value=%v) : (f32) -> !kgen.declref<@Box<T:type = f32>>
   kgen.return %0 : !kgen.declref<@Box<T:type = f32>>
 }
@@ -43,7 +43,7 @@ kgen.func @make_box(%v: f32) -> !kgen.declref<@Box<T:type = f32>> {
 // CHECK-LABEL: @make_pair
 // CHECK: %[[A:.*]]: i8, %[[B:.*]]: i8
 kgen.func @make_pair(%a: i8, %b: i8) -> !i8Pair {
-  // CHECK: pop.struct.construct(%arg1, %arg0) : !pop.struct<i8, i8>
+  // CHECK: pop.struct.create(%arg1, %arg0) : !pop.struct<i8, i8>
   %0 = lit.struct.create(first=%b, second=%a) : (i8, i8) -> !i8Pair
   kgen.return %0 : !i8Pair
 }

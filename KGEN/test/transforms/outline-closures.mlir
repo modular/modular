@@ -48,7 +48,7 @@ kgen.generator @raiseClosure<Jefffffffffff -> index>(%arg0: !pop.scalar<index>) 
     kgen.param.result_bind<sub(C, A)>
     kgen.return %5 : index
   }
-  // CHECK: [[STRUCT:%[0-9]+]] = pop.struct.construct(%idx0, %arg0) : !pop.struct<index, scalar<index>>
+  // CHECK: [[STRUCT:%[0-9]+]] = pop.struct.create(%idx0, %arg0) : !pop.struct<index, scalar<index>>
   // CHECK-NEXT: pop.compiler.global_store "raiseClosure_context_var_0", [[STRUCT]] : !pop.struct<index, scalar<index>>
   // CHECK: kgen.param.declare Fn: <A, B -> E>() -> index = <@raiseClosure_Fn_wrapper<Jefffffffffff = Jefffffffffff, C = C, A = #kgen.unbound, B = #kgen.unbound>>
   // CHECK: kgen.param.declare BoundFn: <A -> E>() -> index = <bind_signature(:<A, B -> E>() -> index Fn, #kgen.unbound, 1)>
@@ -89,7 +89,7 @@ kgen.generator @raiseClosure<Jefffffffffff -> index>(%arg0: !pop.scalar<index>) 
 kgen.generator @raise2Closures() {
   %cst = index.constant 0
   // CHECK: index.constant 0
-  // CHECK-NEXT: [[STRUCT2:%[0-9]+]] = pop.struct.construct(%idx0) : !pop.struct<index>
+  // CHECK-NEXT: [[STRUCT2:%[0-9]+]] = pop.struct.create(%idx0) : !pop.struct<index>
   // CHECK-NEXT: pop.compiler.global_store "raise2Closures_context_var_1", [[STRUCT2]] : !pop.struct<index>
   kgen.param.declare C = <15>
 
@@ -127,7 +127,7 @@ kgen.generator @raise2Closures() {
 // CHECK-NEXT:    kgen.return %2 : !kgen.paramref<T>
 
 // CHECK-LABEL: kgen.generator @parametrizedClosure<T: type>(%arg0: !kgen.paramref<T>) -> !kgen.paramref<T>
-// CHECK-NEXT:    %0 = pop.struct.construct(%arg0) : !pop.struct<T>
+// CHECK-NEXT:    %0 = pop.struct.create(%arg0) : !pop.struct<T>
 // CHECK-NEXT:    pop.compiler.global_store "parametrizedClosure_context_var_2", %0 : !pop.struct<T>
 // CHECK-NEXT:    kgen.param.declare Fn: () -> !kgen.paramref<T> = <@parametrizedClosure_Fn_wrapper<T: type = T>>
 // CHECK-NEXT:    %1 = kgen.call_param[() -> !kgen.paramref<T>: Fn]()
@@ -159,7 +159,7 @@ kgen.generator @raiseParamClosure() -> f32 {
 kgen.generator @useAfterDef() -> index {
   %cst = index.constant 0
   // CHECK: index.constant 0
-  // CHECK-NEXT: [[STRUCT2:%[0-9]+]] = pop.struct.construct(%idx0) : !pop.struct<index>
+  // CHECK-NEXT: [[STRUCT2:%[0-9]+]] = pop.struct.create(%idx0) : !pop.struct<index>
   // CHECK-NEXT: pop.compiler.global_store "useAfterDef_context_var_3", [[STRUCT2]] : !pop.struct<index>
   kgen.param.declare C = <15>
 
@@ -191,7 +191,7 @@ kgen.generator @nested(%pred: i1) -> index {
   %if = hlcf.if %pred -> index {
     %cst = index.constant 0
     // CHECK-NEXT: index.constant 0
-    // CHECK-NEXT: [[STRUCT2:%[0-9]+]] = pop.struct.construct(%idx0) : !pop.struct<index>
+    // CHECK-NEXT: [[STRUCT2:%[0-9]+]] = pop.struct.create(%idx0) : !pop.struct<index>
     // CHECK-NEXT: pop.compiler.global_store "nested_context_var_4", [[STRUCT2]] : !pop.struct<index>
 
     // CHECK-NEXT: kgen.call @call_region<fn: <A -> E>() -> index = Fn -> Result = E>() : () -> index
@@ -232,7 +232,7 @@ kgen.generator @nested2() -> index {
 
   // CHECK: hlcf.loop
   %res = hlcf.loop (%input = %cst: index) -> index {
-    // CHECK-NEXT: [[STRUCT2:%[0-9]+]] = pop.struct.construct(%arg0, %idx0) : !pop.struct<index, index>
+    // CHECK-NEXT: [[STRUCT2:%[0-9]+]] = pop.struct.create(%arg0, %idx0) : !pop.struct<index, index>
     // CHECK-NEXT: pop.compiler.global_store "nested2_context_var_5", [[STRUCT2]] : !pop.struct<index, index>
     // CHECK-NEXT: kgen.param.declare
     kgen.param.declare.region Fn = <A -> E>() -> index always_inline {

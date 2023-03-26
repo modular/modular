@@ -550,11 +550,11 @@ LogicalResult ConvertPOPStackAllocation::matchAndRewrite(
 // ConvertPOPStructConstruct
 //===----------------------------------------------------------------------===//
 
-struct ConvertPOPStructConstruct : ConvertPOPToLLVMPattern<StructConstructOp> {
+struct ConvertPOPStructConstruct : ConvertPOPToLLVMPattern<StructCreateOp> {
   using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
-  matchAndRewrite(StructConstructOp op, StructConstructOpAdaptor adaptor,
+  matchAndRewrite(StructCreateOp op, StructCreateOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     Type structType = convertType(op.getType());
     if (!structType)
