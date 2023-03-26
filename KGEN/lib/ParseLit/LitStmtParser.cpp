@@ -16,6 +16,7 @@
 #include "LitParserBase.h"
 
 #include "KGEN/CompilationOptions.h"
+#include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -25,7 +26,6 @@
 #include "LitExprCalls.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
-#include "Support/HLCFDialect/HLCFOps.h"
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/IR/PatternMatch.h"

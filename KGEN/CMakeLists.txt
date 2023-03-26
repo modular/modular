@@ -15,6 +15,7 @@ function(add_kgen_translation_library name)
 endfunction()
 
 add_subdirectory(include/KGEN)
+add_subdirectory(lib/HLCFDialect)
 add_subdirectory(lib/KGENDialect)
 add_subdirectory(lib/POPDialect)
 add_subdirectory(lib/LITDialect)

@@ -1,4 +1,4 @@
-// RUN: support-dialect-opt -test-dataflow %s 2>%t
+// RUN: kgen-opt -test-dataflow %s 2>%t
 // RUN: cat %t | FileCheck %s
 
 func.func @simple_if(%cond: i1) -> (index, index) {

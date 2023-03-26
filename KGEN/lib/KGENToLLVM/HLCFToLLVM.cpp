@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/HLCFToLLVM/HLCFToLLVM.h"
-#include "Support/HLCFDialect/HLCFOps.h"
+#include "KGEN/HLCFToLLVM.h"
+#include "KGEN/HLCFDialect/HLCFOps.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/FunctionInterfaces.h"
@@ -237,32 +237,3 @@ HLCF::lowerReturnOperationToLLVM(Operation *op, ValueRange operands,
   rewriter.replaceOpWithNewOp<LLVM::ReturnOp>(op, result);
   return success();
 }
-
-//===----------------------------------------------------------------------===//
-// ODS-Generated Definitions
-//===----------------------------------------------------------------------===//
-
-namespace M::HLCF {
-#define GEN_PASS_DEF_LOWERHLCFTOLLVMPASS
-#include "Support/HLCFToLLVM/HLCFToLLVM.h.inc"
-} // namespace M::HLCF
-
-//===----------------------------------------------------------------------===//
-// Pass Definition
-//===----------------------------------------------------------------------===//
-
-namespace {
-struct LowerHLCFToLLVMPass
-    : public impl::LowerHLCFToLLVMPassBase<LowerHLCFToLLVMPass> {
-  using Base::Base;
-
-  void runOnOperation() override {
-    // This is a test pass. Use the default index width.
-    mlir::LLVMTypeConverter typeConverter(&getContext());
-    if (failed(HLCF::lowerControlFlowToLLVM(
-            getOperation(), getAnalysis<ControlFlowTreeAnalysis>(),
-            typeConverter)))
-      return signalPassFailure();
-  }
-};
-} // namespace

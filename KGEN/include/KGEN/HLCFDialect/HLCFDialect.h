@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SUPPORT_HLCFDIALECT_HLCFDIALECT_H
-#define SUPPORT_HLCFDIALECT_HLCFDIALECT_H
+#ifndef KGEN_HLCFDIALECT_HLCFDIALECT_H
+#define KGEN_HLCFDIALECT_HLCFDIALECT_H
 
 #include "mlir/IR/Dialect.h"
 
@@ -13,6 +13,6 @@
 // ODS-Generated Declarations
 //===----------------------------------------------------------------------===//
 
-#include "Support/HLCFDialect/HLCFDialect.h.inc"
+#include "KGEN/HLCFDialect/HLCFDialect.h.inc"
 
-#endif // SUPPORT_HLCFDIALECT_HLCFDIALECT_H
+#endif // KGEN_HLCFDIALECT_HLCFDIALECT_H

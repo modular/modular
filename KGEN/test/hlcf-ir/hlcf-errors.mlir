@@ -1,4 +1,4 @@
-// RUN: support-dialect-opt %s -allow-unregistered-dialect -verify-diagnostics -split-input-file
+// RUN: kgen-opt %s -allow-unregistered-dialect -verify-diagnostics -split-input-file
 
 func.func @loop_args() {
   // expected-error @below {{'hlcf.loop' op operand types do not match body region argument types}}

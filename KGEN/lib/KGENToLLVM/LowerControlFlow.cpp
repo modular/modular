@@ -4,10 +4,10 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/HLCFToLLVM.h"
 #include "KGEN/KGENPasses.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "LLVMLoweringUtils.h"
-#include "Support/HLCFToLLVM/HLCFToLLVM.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Transforms/RegionUtils.h"
 

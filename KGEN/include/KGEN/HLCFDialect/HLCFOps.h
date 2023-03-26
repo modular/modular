@@ -4,10 +4,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SUPPORT_HLCFDIALECT_HLCFOPS_H
-#define SUPPORT_HLCFDIALECT_HLCFOPS_H
+#ifndef KGEN_HLCFDIALECT_HLCFOPS_H
+#define KGEN_HLCFDIALECT_HLCFOPS_H
 
-#include "Support/HLCFDialect/HLCFInterfaces.h"
+#include "KGEN/HLCFDialect/HLCFInterfaces.h"
 #include "Support/Interpreter/InterpreterInterface.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LogicalResult.h"
@@ -20,6 +20,6 @@
 //===----------------------------------------------------------------------===//
 
 #define GET_OP_CLASSES
-#include "Support/HLCFDialect/HLCF.h.inc"
+#include "KGEN/HLCFDialect/HLCF.h.inc"
 
-#endif // SUPPORT_HLCFDIALECT_HLCFOPS_H
+#endif // KGEN_HLCFDIALECT_HLCFOPS_H

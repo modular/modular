@@ -7,7 +7,7 @@
 #ifndef HLCF_TD
 #define HLCF_TD
 
-include "Support/HLCFDialect/HLCFDialect.td"
-include "Support/HLCFDialect/HLCFOps.td"
+include "KGEN/HLCFDialect/HLCFDialect.td"
+include "KGEN/HLCFDialect/HLCFOps.td"
 
 #endif // HLCF_TD

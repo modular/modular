@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/HLCFDialect/Analysis/ControlFlowTree.h"
-#include "Support/HLCFDialect/HLCFOps.h"
+#include "KGEN/HLCFDialect/Analysis/ControlFlowTree.h"
+#include "KGEN/HLCFDialect/HLCFOps.h"
 
 using namespace M;
 using namespace HLCF;

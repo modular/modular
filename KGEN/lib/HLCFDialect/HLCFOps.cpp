@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/HLCFDialect/HLCFOps.h"
+#include "KGEN/HLCFDialect/HLCFOps.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/FunctionInterfaces.h"
@@ -276,4 +276,4 @@ LogicalResult ReturnOp::verify() {
 //===----------------------------------------------------------------------===//
 
 #define GET_OP_CLASSES
-#include "Support/HLCFDialect/HLCF.cpp.inc"
+#include "KGEN/HLCFDialect/HLCF.cpp.inc"

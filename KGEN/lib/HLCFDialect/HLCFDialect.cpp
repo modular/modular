@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/HLCFDialect/HLCFDialect.h"
-#include "Support/HLCFDialect/HLCFOps.h"
+#include "KGEN/HLCFDialect/HLCFDialect.h"
+#include "KGEN/HLCFDialect/HLCFOps.h"
 
 //===----------------------------------------------------------------------===//
 // HLCFDialect
@@ -14,7 +14,7 @@
 void M::HLCF::HLCFDialect::initialize() {
   addOperations<
 #define GET_OP_LIST
-#include "Support/HLCFDialect/HLCF.cpp.inc"
+#include "KGEN/HLCFDialect/HLCF.cpp.inc"
       >();
 }
 
@@ -22,4 +22,4 @@ void M::HLCF::HLCFDialect::initialize() {
 // Generated Definitions
 //===----------------------------------------------------------------------===//
 
-#include "Support/HLCFDialect/HLCFDialect.cpp.inc"
+#include "KGEN/HLCFDialect/HLCFDialect.cpp.inc"

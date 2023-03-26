@@ -6,6 +6,8 @@
 
 #include "KGEN/KGENPasses.h"
 
+#include "KGEN/HLCFDialect/HLCFOps.h"
+#include "KGEN/HLCFToLLVM.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
@@ -16,8 +18,6 @@
 #include "LLVMLoweringUtils.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
-#include "Support/HLCFDialect/HLCFOps.h"
-#include "Support/HLCFToLLVM/HLCFToLLVM.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"

@@ -31,25 +31,25 @@
 module attributes {
   // CHECK-SAME: test.type1 = ![[BASIC]]
   test.type1 = !f32Type,
-  
+
   // CHECK-SAME: test.type2 = ![[ARRAY]]
   test.type2 = !arrayType,
 
   // CHECK-SAME: test.type3 = ![[PTR]]
   test.type3 = !pointerType,
-  
+
   // CHECK-SAME: test.type4 = ![[STRUCT]]
   test.type4 = !structType,
-  
+
   // CHECK-SAME: test.type5 = ![[SUBROUTINE]]
   test.type5 = !subroutineType,
-  
+
   // CHECK-SAME: test.type6 = ![[UNRESOLVED]]
   test.type6 = !unresolvedType,
-  
+
   // CHECK-SAME: test.type7 = ![[UNSPECIFIED]]
   test.type7 = !unspecifiedType,
-  
+
   // CHECK-SAME: test.type8 = ![[VECTOR]]
   test.type8 = !vectorType
 } {}

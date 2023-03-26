@@ -1,4 +1,4 @@
-// RUN: support-dialect-opt %s -canonicalize | FileCheck %s
+// RUN: kgen-opt %s -canonicalize | FileCheck %s
 
 // CHECK-LABEL: @terminators_conditionally_pure
 func.func @terminators_conditionally_pure(%arg0: i1) {

@@ -7,8 +7,8 @@
 #ifndef HLCFOPS_TD
 #define HLCFOPS_TD
 
-include "Support/HLCFDialect/HLCFDialect.td"
-include "Support/HLCFDialect/HLCFInterfaces.td"
+include "KGEN/HLCFDialect/HLCFDialect.td"
+include "KGEN/HLCFDialect/HLCFInterfaces.td"
 include "Support/Interpreter/InterpreterInterface.td"
 include "mlir/IR/OpBase.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
