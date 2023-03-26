@@ -6,9 +6,6 @@
 
 # RUN: kgen -execute -func='run_me:index()' %s | FileCheck %s
 
-# CHECK: first success
-# CHECK-NEXT: second had an error
-# CHECK-NEXT: --- 'run_me' returned 0
 
 from IO import print
 from Int import Int
@@ -28,14 +25,29 @@ def implicitlyPropagate(cond: BoolLiteral) -> Int:
 
 @export
 fn run_me() -> __mlir_type.index:
+    # CHECK: first success
     try:
         let a = implicitlyPropagate(False)
         print("first success\n")
     except e0:
         print("first had an error\n")
+
+    # CHECK-NEXT: second had an error
     try:
         let b = implicitlyPropagate(True)
         print("second success\n")
     except e1:
         print("second had an error\n")
+
+    # CHECK-NEXT: third: 0
+    print("third: ")
+    try:
+        print(raiseErrorIf(False))
+    except e2:
+        print("bad!\n")
+
+    # CHECK-NEXT: done
+    print("done\n")
+
+    # CHECK-NEXT: --- 'run_me' returned 0
     return 0
