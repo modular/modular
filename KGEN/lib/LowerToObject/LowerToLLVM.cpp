@@ -16,6 +16,7 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/FileUtilities.h"
 #include "mlir/Target/LLVMIR/Export.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Bitcode/BitcodeReader.h"
@@ -73,7 +74,13 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module,
     mgr.addPass(createForceInline());
     mgr.addPass(createEliminateDeadSymbols());
     mgr.addNestedPass<KGEN::FuncOp>(createCleanupCompilerGlobals());
-    mgr.addNestedPass<KGEN::FuncOp>(mlir::createCanonicalizerPass());
+
+    // We use the canonicalizer, but disable region simplifications, since it is
+    // very CFG centric and we have region trees with a single block per region.
+    mlir::GreedyRewriteConfig cannConfig;
+    cannConfig.enableRegionSimplification = false;
+    mgr.addNestedPass<KGEN::FuncOp>(mlir::createCanonicalizerPass(cannConfig));
+
 #if 0
     // TODO(Issue #7158): This pass is causing a compile time explosion and
     // needs to be investigated.  It is "just" a performance optimization for
