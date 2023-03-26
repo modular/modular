@@ -73,8 +73,8 @@ int main(int argc, char **argv) {
   // Register MLIR stuff
   registerAllKGENDialects(registry);
   registry.insert<DebugInfo::DebugInfoDialect, Cache::CacheDialect,
-                  HLCF::HLCFDialect, mlir::index::IndexDialect,
-                  mlir::LLVM::LLVMDialect, mlir::func::FuncDialect>();
+                  mlir::index::IndexDialect, mlir::LLVM::LLVMDialect,
+                  mlir::func::FuncDialect>();
   // The elaborator requires LLVM lowering to run the generated functions.
   mlir::registerBuiltinDialectTranslation(registry);
   mlir::registerLLVMDialectTranslation(registry);

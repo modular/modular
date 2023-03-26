@@ -6,8 +6,6 @@
 
 #include "KGEN/KGENPasses.h"
 
-#include "KGEN/HLCFDialect/HLCFOps.h"
-#include "KGEN/HLCFToLLVM.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
@@ -162,8 +160,27 @@ struct ConvertKGENReturn : public ConvertPOPToLLVMPattern<ReturnOp> {
   LogicalResult
   matchAndRewrite(ReturnOp op, ReturnOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    return HLCF::lowerReturnOperationToLLVM(op, adaptor.getOperands(), rewriter,
-                                            *getTypeConverter());
+    auto operands = adaptor.getOperands();
+
+    // If the results don't need to be packed, create the LLVM return.
+    if (op->getNumOperands() <= 1) {
+      rewriter.replaceOpWithNewOp<LLVM::ReturnOp>(op, TypeRange(), operands);
+      return success();
+    }
+
+    // Pack the function results in a struct.
+    Type type = getTypeConverter()->packFunctionResults(op->getOperandTypes());
+    if (!type)
+      return emitError(op->getLoc(), "failed to convert return types");
+    Value result = rewriter.create<LLVM::UndefOp>(op->getLoc(), type);
+    for (auto [index, operand] : llvm::enumerate(operands)) {
+      result = rewriter.create<LLVM::InsertValueOp>(op->getLoc(), result,
+                                                    operand, index);
+    }
+
+    // Create the LLVM return.
+    rewriter.replaceOpWithNewOp<LLVM::ReturnOp>(op, result);
+    return success();
   }
 };
 
