@@ -122,7 +122,7 @@ def LowerKGENToPOP : Pass<"lower-kgen-to-pop", "FuncOp"> {
     operations to worry about than all of LLVM IR.
   }];
 
-  let dependentDialects = ["POP::POPDialect", "mlir::index::IndexDialect"];
+  let dependentDialects = ["POP::POPDialect"];
 }
 
 //===----------------------------------------------------------------------===//
