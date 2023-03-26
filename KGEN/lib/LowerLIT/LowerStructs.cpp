@@ -140,7 +140,7 @@ void StructOperationLowerer::replaceOp(Operation *op, ValueRange values) {
 static Operation *lowerStructOp(StructCreateOp op,
                                 StructCreateOpAdaptor adaptor,
                                 StructOperationLowerer &lowerer) {
-  return lowerer.create<POP::StructConstructOp>(
+  return lowerer.create<POP::StructCreateOp>(
       op.getLoc(), lowerer.substituteStructRef(op.getType()), op.getOperands());
 }
 

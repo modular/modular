@@ -1760,7 +1760,7 @@ kgen.generator @returnInputParam(%arg0: !pop.struct<scalar<bool>>) -> i1 {
 
 kgen.generator @returnTrueStruct() -> !pop.struct<scalar<bool>> {
   %0 = kgen.param.constant: scalar<bool> = <<true>>
-  %1 = pop.struct.construct(%0) : !pop.struct<scalar<bool>>
+  %1 = pop.struct.create(%0) : !pop.struct<scalar<bool>>
   kgen.return %1 : !pop.struct<scalar<bool>>
 }
 
@@ -1981,7 +1981,7 @@ kgen.generator @fork_unreachable_blocks() {
 // -----
 
 kgen.generator @box(%a: index) -> !pop.struct<index> {
-  %0 = pop.struct.construct(%a) : !pop.struct<index>
+  %0 = pop.struct.create(%a) : !pop.struct<index>
   kgen.return %0 : !pop.struct<index>
 }
 

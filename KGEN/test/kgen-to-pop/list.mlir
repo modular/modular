@@ -55,8 +55,8 @@ kgen.func @nested_list_in_struct(%s: !pop.struct<!kgen.list<!kgen.list<index[2]>
   // CHECK-NEXT: hold
   "hold"(%0) : (!pop.struct<!kgen.list<!kgen.list<index[2]>[2]>>) -> ()
 
-  // CHECK-NEXT: pop.struct.construct(%arg1)
-  %3 = pop.struct.construct(%list) : !pop.struct<!kgen.list<!kgen.list<index[2]>[2]>>
+  // CHECK-NEXT: pop.struct.create(%arg1)
+  %3 = pop.struct.create(%list) : !pop.struct<!kgen.list<!kgen.list<index[2]>[2]>>
 
   // CHECK-NEXT: hold
   "hold"(%3) : (!pop.struct<!kgen.list<!kgen.list<index[2]>[2]>>) -> ()

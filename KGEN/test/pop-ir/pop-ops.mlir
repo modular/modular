@@ -768,8 +768,8 @@ kgen.generator @struct<type: type, dtype: dtype>(
   // CHECK-SAME: %[[B:.*]]: !pop.scalar<
   %b: !pop.scalar<dtype>
 ) -> (!kgen.paramref<type>, !pop.scalar<dtype>, !pop.pointer<type>) {
-  // CHECK: %[[S0:.*]] = pop.struct.construct(%[[A]], %[[B]]) : !pop.struct<type, scalar<dtype>>
-  %0 = pop.struct.construct(%a, %b) : !pop.struct<type, scalar<dtype>>
+  // CHECK: %[[S0:.*]] = pop.struct.create(%[[A]], %[[B]]) : !pop.struct<type, scalar<dtype>>
+  %0 = pop.struct.create(%a, %b) : !pop.struct<type, scalar<dtype>>
   // CHECK: %[[V0:.*]] = pop.struct.extract %[[S0]][0] : !pop.struct<type, scalar<dtype>>
   %1 = pop.struct.extract %0[0] : !pop.struct<type, scalar<dtype>>
   // CHECK: %[[V1:.*]] = pop.struct.extract %[[S0]][1] : !pop.struct<type, scalar<dtype>>
@@ -790,8 +790,8 @@ kgen.generator @struct<type: type, dtype: dtype>(
 
 // CHECK-LABEL: @empty_struct_syntax
 kgen.generator @empty_struct_syntax() -> !pop.struct<> {
-  // CHECK-NEXT: pop.struct.construct() : !pop.struct<>
-  %0 = pop.struct.construct() : !pop.struct<>
+  // CHECK-NEXT: pop.struct.create() : !pop.struct<>
+  %0 = pop.struct.create() : !pop.struct<>
   kgen.return %0 : !pop.struct<>
 }
 
