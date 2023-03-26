@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_conversion_library(KGENToLLVM
+  HLCFToLLVM.cpp
   KGENToLLVMPipeline.cpp
   LLVMLoweringUtils.cpp
   LowerControlFlow.cpp
@@ -20,7 +21,6 @@ add_modular_conversion_library(KGENToLLVM
   LINK_LIBS PUBLIC
   DebugInfoToLLVM
   DebugInfoTransforms
-  HLCFToLLVM
   KGENDialect
   POPDialect
   MCompilerSupport

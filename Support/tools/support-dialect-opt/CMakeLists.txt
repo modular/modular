@@ -10,8 +10,6 @@ add_modular_tool(support-dialect-opt
   LINK_LIBS PRIVATE
   DebugInfoDialect
   DebugInfoToLLVM
-  HLCFDialect
-  HLCFToLLVM
   MDialect
   MSupport
   MLIRFuncDialect

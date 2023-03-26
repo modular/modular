@@ -21,7 +21,7 @@ set(KGEN_DEPEDENCIES
 
   ${MODULAR_SOURCE_DIR}/Support/include/Support/Compiler
   ${MODULAR_SOURCE_DIR}/Support/include/Support/DebugInfoDialect
-  ${MODULAR_SOURCE_DIR}/Support/include/Support/HLCFDialect
+  ${MODULAR_SOURCE_DIR}/Support/include/KGEN/HLCFDialect
   ${MODULAR_SOURCE_DIR}/Support/include/Support/HLCFToLLVM
   ${MODULAR_SOURCE_DIR}/Support/include/Support/Interpreter
   ${MODULAR_SOURCE_DIR}/Support/include/Support/MDialect

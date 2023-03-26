@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SUPPORT_HLCFDIALECT_HLCFINTERFACES_H
-#define SUPPORT_HLCFDIALECT_HLCFINTERFACES_H
+#ifndef KGEN_HLCFDIALECT_HLCFINTERFACES_H
+#define KGEN_HLCFDIALECT_HLCFINTERFACES_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/OpDefinition.h"
@@ -36,6 +36,6 @@ struct ControlFlowTarget {
 };
 } // namespace M::HLCF
 
-#include "Support/HLCFDialect/HLCFInterfaces.h.inc"
+#include "KGEN/HLCFDialect/HLCFInterfaces.h.inc"
 
-#endif // SUPPORT_HLCFDIALECT_HLCFINTERFACES_H
+#endif // KGEN_HLCFDIALECT_HLCFINTERFACES_H

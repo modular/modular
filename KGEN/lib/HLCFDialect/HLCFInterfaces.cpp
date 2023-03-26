@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/HLCFDialect/HLCFOps.h"
+#include "KGEN/HLCFDialect/HLCFOps.h"
 #include "mlir/IR/FunctionInterfaces.h"
 
 using namespace M;
@@ -180,4 +180,4 @@ LogicalResult HLCF::verifyControlFlowTerminator(ControlFlowTerminator op) {
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 
-#include "Support/HLCFDialect/HLCFInterfaces.cpp.inc"
+#include "KGEN/HLCFDialect/HLCFInterfaces.cpp.inc"

@@ -4,11 +4,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SUPPORT_HLCFDIALECT_ANALYSIS_DATAFLOW_H
-#define SUPPORT_HLCFDIALECT_ANALYSIS_DATAFLOW_H
+#ifndef KGEN_HLCFDIALECT_ANALYSIS_DATAFLOW_H
+#define KGEN_HLCFDIALECT_ANALYSIS_DATAFLOW_H
 
-#include "Support/HLCFDialect/Analysis/ControlFlowTree.h"
-#include "Support/HLCFDialect/HLCFOps.h"
+#include "KGEN/HLCFDialect/Analysis/ControlFlowTree.h"
+#include "KGEN/HLCFDialect/HLCFOps.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
 #include "mlir/Analysis/DataFlow/ConstantPropagationAnalysis.h"
@@ -88,4 +88,4 @@ public:
 
 } // namespace M::HLCF
 
-#endif // SUPPORT_HLCFDIALECT_ANALYSIS_DATAFLOW_H
+#endif // KGEN_HLCFDIALECT_ANALYSIS_DATAFLOW_H

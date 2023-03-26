@@ -4,10 +4,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SUPPORT_HLCFDIALECT_ANALYSIS_CONTROLFLOWTREE_H
-#define SUPPORT_HLCFDIALECT_ANALYSIS_CONTROLFLOWTREE_H
+#ifndef KGEN_HLCFDIALECT_ANALYSIS_CONTROLFLOWTREE_H
+#define KGEN_HLCFDIALECT_ANALYSIS_CONTROLFLOWTREE_H
 
-#include "Support/HLCFDialect/HLCFInterfaces.h"
+#include "KGEN/HLCFDialect/HLCFInterfaces.h"
 #include "mlir/Pass/AnalysisManager.h"
 #include "llvm/ADT/SmallVector.h"
 
@@ -63,4 +63,4 @@ private:
 };
 } // namespace M::HLCF
 
-#endif // SUPPORT_HLCFDIALECT_ANALYSIS_CONTROLFLOWTREE_H
+#endif // KGEN_HLCFDIALECT_ANALYSIS_CONTROLFLOWTREE_H

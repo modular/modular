@@ -4,10 +4,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SUPPORT_HLCFTOLLVM_HLCFTOLLVM_H
-#define SUPPORT_HLCFTOLLVM_HLCFTOLLVM_H
+#ifndef KGEN_HLCFTOLLVM_H
+#define KGEN_HLCFTOLLVM_H
 
-#include "Support/HLCFDialect/Analysis/ControlFlowTree.h"
+#include "KGEN/HLCFDialect/Analysis/ControlFlowTree.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/Pass/PassRegistry.h"
 #include <memory>
@@ -34,14 +34,6 @@ LogicalResult
 lowerReturnOperationToLLVM(Operation *op, ValueRange operands,
                            mlir::RewriterBase &rewriter,
                            mlir::LLVMTypeConverter &typeConverter);
-
-//===----------------------------------------------------------------------===//
-// ODS-Generated Declarations
-//===----------------------------------------------------------------------===//
-
-#define GEN_PASS_REGISTRATION
-#define GEN_PASS_DECL_LOWERHLCFTOLLVMPASS
-#include "Support/HLCFToLLVM/HLCFToLLVM.h.inc"
 } // namespace M::HLCF
 
-#endif // SUPPORT_HLCFTOLLVM_HLCFTOLLVM_H
+#endif // KGEN_HLCFTOLLVM_H

@@ -5,14 +5,14 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/Inlining.h"
+#include "KGEN/HLCFDialect/HLCFDialect.h"
+#include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENPasses.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
-#include "Support/HLCFDialect/HLCFDialect.h"
-#include "Support/HLCFDialect/HLCFOps.h"
 #include "Support/STLExtras.h"
 #include "Support/TimeProfiler.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
