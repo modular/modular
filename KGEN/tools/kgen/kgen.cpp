@@ -460,6 +460,7 @@ int main(int argc, char **argv) {
   });
 
   // Enable command line options for various MLIR internals.
+  registerMLIRContextCLOptions();
   registerAsmPrinterCLOptions();
   registerDefaultTimingManagerCLOptions();
   registerPassManagerCLOptions();

@@ -10,6 +10,7 @@
 #include "KGEN/LowerToObject.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/PassManager.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
 
 using namespace M;
@@ -31,7 +32,12 @@ static void populatePreElaborationPipeline(mlir::PassManager &pm) {
   pm.addPass(createVerifyParameters());
 
   // These passes don't influence parameters, so we don't need to verify them.
-  pm.addNestedPass<GeneratorOp>(mlir::createCanonicalizerPass());
+
+  // We use the canonicalizer, but disable region simplifications, since it is
+  // very CFG centric and we have region trees with a single block per region.
+  mlir::GreedyRewriteConfig cannConfig;
+  cannConfig.enableRegionSimplification = false;
+  pm.addNestedPass<GeneratorOp>(mlir::createCanonicalizerPass(cannConfig));
   pm.addNestedPass<GeneratorOp>(createConstraintReduction());
   pm.addNestedPass<GeneratorOp>(createMem2Reg());
 }
@@ -61,7 +67,12 @@ void KGEN::populateElaborateModulePasses(
   pm.addPass(createForceInline());
   pm.addPass(createEliminateDeadSymbols());
   pm.addNestedPass<KGEN::FuncOp>(createCleanupCompilerGlobals());
-  pm.addNestedPass<KGEN::FuncOp>(mlir::createCanonicalizerPass());
+
+  // We use the canonicalizer, but disable region simplifications, since it is
+  // very CFG centric and we have region trees with a single block per region.
+  mlir::GreedyRewriteConfig cannConfig;
+  cannConfig.enableRegionSimplification = false;
+  pm.addNestedPass<KGEN::FuncOp>(mlir::createCanonicalizerPass(cannConfig));
 
 #if 0
   // TODO(Issue #7158): This pass is causing a compile time explosion and needs
