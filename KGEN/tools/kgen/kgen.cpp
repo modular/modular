@@ -157,7 +157,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // Register MLIR stuff
   registerAllKGENDialects(registry);
   registry.insert<DebugInfo::DebugInfoDialect, Cache::CacheDialect,
-                  HLCF::HLCFDialect, index::IndexDialect, LLVM::LLVMDialect>();
+                  index::IndexDialect, LLVM::LLVMDialect>();
 
   mlir::registerBuiltinDialectTranslation(registry);
   mlir::registerLLVMDialectTranslation(registry);

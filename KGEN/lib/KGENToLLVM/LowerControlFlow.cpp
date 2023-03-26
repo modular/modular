@@ -3,17 +3,243 @@
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
+//
+// Lower HLCF control flow to LLVM.
+//
+//===----------------------------------------------------------------------===//
 
-#include "KGEN/HLCFToLLVM.h"
+#include "KGEN/HLCFDialect/Analysis/ControlFlowTree.h"
+#include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENPasses.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "LLVMLoweringUtils.h"
+#include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/IR/FunctionInterfaces.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/Pass/Pass.h"
+#include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/RegionUtils.h"
 
 using namespace M;
-using namespace KGEN;
+using namespace HLCF;
 namespace LLVM = mlir::LLVM;
+
+namespace {
+/// This object contains information needed to lower operations. Lowering will
+/// happen top-down, so we need to traverse the tree once to build references
+/// between terminators and their branch targets and then start lowering the
+/// operations.
+struct ControlFlowConverter {
+  explicit ControlFlowConverter(MLIRContext *ctx, const ControlFlowTree &tree,
+                                mlir::LLVMTypeConverter &typeConverter)
+      : b(ctx), tree(tree), typeConverter(typeConverter) {}
+
+  /// Lower the control-flow node.
+  LogicalResult lowerNode(ControlFlowNode node, unsigned &termId);
+
+  /// Lower the terminator.
+  LogicalResult lowerTerminator(ControlFlowTerminator term, unsigned &termId);
+  LogicalResult lowerReturn(ReturnOp op, ValueRange operands);
+
+  /// The rewriter to use.
+  mlir::IRRewriter b;
+
+  /// The control flow tree analysis.
+  const ControlFlowTree &tree;
+
+  /// The type converter to use to convert result and argument types.
+  mlir::LLVMTypeConverter &typeConverter;
+
+  /// A map of operations to their lowered entry and exit blocks. The ID is the
+  /// depth-first visit order of the operation.
+  SmallVector<std::pair<SmallVector<Block *, 2>, Block *>> blocks;
+};
+} // namespace
+
+static Block *getTargetBlock(ArrayRef<Block *> entries, Block *after,
+                             Optional<unsigned> index) {
+  if (!index)
+    return after;
+  return entries[*index];
+}
+
+LogicalResult ControlFlowConverter::lowerNode(ControlFlowNode node,
+                                              unsigned &termId) {
+  Block *before = node->getBlock();
+  Block *after = b.splitBlock(before, Block::iterator(node));
+  SmallVector<Block *, 2> entries;
+  for (Region &region : node->getRegions())
+    entries.push_back(&region.front());
+  blocks.emplace_back(entries, after);
+  SmallVector<Operation *> nestedNodes;
+
+  // Process each region in the operation.
+  for (Region &region : node->getRegions()) {
+    // Rewrite the block argument types and inline the body.
+    for (Block &block : region) {
+      b.setInsertionPointToStart(&block);
+      for (BlockArgument arg : block.getArguments()) {
+        Type argType = typeConverter.convertType(arg.getType());
+        if (!argType)
+          return mlir::emitError(arg.getLoc(),
+                                 "failed to convert argument type");
+        // Materialize the source conversion.
+        auto source = b.create<mlir::UnrealizedConversionCastOp>(
+            arg.getLoc(), arg.getType(), arg);
+        arg.replaceAllUsesExcept(source.getResult(0), source);
+        arg.setType(argType);
+      }
+      // Lower the terminator.
+      if (isa<ControlFlowTerminator>(block.getTerminator()))
+        if (failed(lowerTerminator(block.getTerminator(), termId)))
+          return failure();
+      // Defer nested nodes.
+      for (Operation &op : block.without_terminator())
+        if (isa<ControlFlowNode>(op))
+          nestedNodes.push_back(&op);
+    }
+
+    // Inline the region.
+    b.inlineRegionBefore(region, after);
+  }
+
+  // Replace the results of the operation with the arguments of the exit block.
+  b.setInsertionPointToStart(after);
+  for (OpResult result : node->getOpResults()) {
+    Type argType = typeConverter.convertType(result.getType());
+    if (!argType)
+      return mlir::emitError(result.getLoc(), "failed to convert result #")
+             << result.getResultNumber() << " type: " << result.getType();
+    BlockArgument arg = after->addArgument(argType, result.getLoc());
+    auto source = b.create<mlir::UnrealizedConversionCastOp>(
+        arg.getLoc(), result.getType(), arg);
+    result.replaceAllUsesWith(source.getResult(0));
+  }
+
+  b.setInsertionPointToEnd(before);
+  // Replace the operation.
+  if (auto cond = dyn_cast<IfOp>(node.getOperation())) {
+    b.create<LLVM::CondBrOp>(node->getLoc(), cond.getCond(), entries.front(),
+                             ValueRange(), entries.back(), ValueRange());
+    b.eraseOp(node);
+  } else {
+    SmallVector<ControlFlowTarget, 1> targets;
+    node.getEntryTargets(
+        SmallVector<Attribute>(node->getNumOperands(), Attribute()), targets);
+    if (targets.size() != 1)
+      return node.emitOpError("cannot lower node without 1 entry target");
+
+    // Materialize conversions for the entry inputs.
+    SmallVector<Value> inputs;
+    inputs.reserve(targets.front().inputs.size());
+    for (Value input : targets.front().inputs) {
+      Type type = typeConverter.convertType(input.getType());
+      if (!type)
+        return mlir::emitError(input.getLoc(), "failed to convert input type");
+      auto dest = b.create<mlir::UnrealizedConversionCastOp>(node->getLoc(),
+                                                             type, input);
+      inputs.push_back(dest.getResult(0));
+    }
+    b.create<LLVM::BrOp>(node->getLoc(), inputs,
+                         getTargetBlock(entries, after, targets.front().index));
+    b.eraseOp(node);
+  }
+
+  // Process nested nodes.
+  for (Operation *node : nestedNodes)
+    if (failed(lowerNode(node, termId)))
+      return failure();
+  return success();
+}
+
+LogicalResult ControlFlowConverter::lowerReturn(ReturnOp op,
+                                                ValueRange operands) {
+  // If the results don't need to be packed, create the LLVM return.
+  if (op->getNumOperands() <= 1) {
+    b.replaceOpWithNewOp<LLVM::ReturnOp>(op, TypeRange(), operands);
+    return success();
+  }
+
+  // Pack the function results in a struct.
+  Type type = typeConverter.packFunctionResults(op->getOperandTypes());
+  if (!type)
+    return emitError(op->getLoc(), "failed to convert return types");
+  Value result = b.create<LLVM::UndefOp>(op->getLoc(), type);
+  for (auto [index, operand] : llvm::enumerate(operands)) {
+    result =
+        b.create<LLVM::InsertValueOp>(op->getLoc(), result, operand, index);
+  }
+
+  // Create the LLVM return.
+  b.replaceOpWithNewOp<LLVM::ReturnOp>(op, result);
+  return success();
+}
+
+LogicalResult ControlFlowConverter::lowerTerminator(ControlFlowTerminator term,
+                                                    unsigned &termId) {
+  // Convert the operand types.
+  b.setInsertionPoint(term);
+  SmallVector<Value> results;
+  results.reserve(term->getNumOperands());
+  for (OpOperand &operand : term->getOpOperands()) {
+    Type type = typeConverter.convertType(operand.get().getType());
+    if (!type)
+      return mlir::emitError(operand.get().getLoc(),
+                             "failed to convert operand type");
+    auto dest = b.create<mlir::UnrealizedConversionCastOp>(term->getLoc(), type,
+                                                           operand.get());
+    results.push_back(dest.getResult(0));
+  }
+
+  // Rewrite the terminator.
+  if (auto returnOp = dyn_cast<ReturnOp>(term.getOperation()))
+    return lowerReturn(returnOp, results);
+
+  assert(termId < tree.targets.size() && "malformed tree");
+  auto &[nodeId, target] = tree.targets[termId];
+  assert(nodeId < blocks.size() && "malformed tree");
+  if (target.size() != 1)
+    return term.emitOpError("cannot lower terminator without 1 target");
+  b.replaceOpWithNewOp<LLVM::BrOp>(term, results,
+                                   getTargetBlock(blocks[nodeId].first,
+                                                  blocks[nodeId].second,
+                                                  target.front().index));
+  ++termId;
+  return success();
+}
+
+/// Lower a single control-flow tree.
+static LogicalResult
+lowerControlFlowTree(Operation *root, const ControlFlowTree &tree,
+                     mlir::LLVMTypeConverter &typeConverter) {
+  assert(!isa<ControlFlowNode>(root->getParentOp()));
+  ControlFlowConverter converter(root->getContext(), tree, typeConverter);
+
+  // Build the control-flow tree.
+  converter.blocks.reserve(tree.ops.size());
+
+  unsigned termId = 0;
+  return converter.lowerNode(root, termId);
+}
+
+static LogicalResult
+lowerControlFlowToLLVM(Operation *op, ControlFlowTreeAnalysis &analysis,
+                       mlir::LLVMTypeConverter &typeConverter) {
+  // Collect all the roots first since the lowering will break the walk order.
+  SmallVector<Operation *> roots;
+  op->walk([&](Operation *op) {
+    if (isa<ControlFlowNode>(op) && !isa<ControlFlowNode>(op->getParentOp()))
+      roots.push_back(op);
+  });
+
+  for (Operation *root : roots) {
+    const ControlFlowTree &tree = analysis.getOrCreate(root);
+    if (failed(lowerControlFlowTree(root, tree, typeConverter)))
+      return failure();
+  }
+  return success();
+}
 
 //===----------------------------------------------------------------------===//
 // Pass Definition
@@ -41,10 +267,10 @@ void LowerControlFlowPass::runOnOperation() {
                     "could not find an enclosing target specification");
     return signalPassFailure();
   }
-  POPToLLVMTypeConverter typeConverter(targetInfo);
+  KGEN::POPToLLVMTypeConverter typeConverter(targetInfo);
 
   // Run HLCF lowerings.
-  if (failed(HLCF::lowerControlFlowToLLVM(
+  if (failed(lowerControlFlowToLLVM(
           getOperation(), getAnalysis<HLCF::ControlFlowTreeAnalysis>(),
           typeConverter)))
     return signalPassFailure();
