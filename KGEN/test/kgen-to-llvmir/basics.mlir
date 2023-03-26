@@ -17,6 +17,17 @@ kgen.func @two_results(%arg0: !pop.simd<1, f32>) -> (!pop.simd<1, f32>, !pop.sim
   kgen.return %arg0, %arg0 : !pop.simd<1, f32>, !pop.simd<1, f32>
 }
 
+kgen.func @empty_struct_result() -> !pop.struct<> {
+  %0 = pop.struct.construct() : !pop.struct<>
+  kgen.return %0 : !pop.struct<>
+}
+
+kgen.func @call_struct_result() -> !pop.struct<> {
+  %0 = kgen.call @empty_struct_result() : () -> !pop.struct<>
+  kgen.return %0 : !pop.struct<>
+}
+
+
 // CHECK-LABEL: define void @convert_call
 kgen.func @convert_call(%arg0: !pop.simd<1, f32>) {
   %0 = kgen.call @trivial(%arg0) : (!pop.simd<1, f32>) -> !pop.simd<1, f32>
@@ -26,5 +37,6 @@ kgen.func @convert_call(%arg0: !pop.simd<1, f32>) {
 }
 
 kgen.export @convert_call
+kgen.export @call_struct_result
 
 }
