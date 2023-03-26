@@ -19,7 +19,7 @@ using namespace KGEN;
 static void populatePreElaborationPipeline(mlir::PassManager &pm) {
   pm.addPass(createVerifyParameters());
 
-  pm.addPass(createLowerLITTerminators());
+  pm.addPass(createLowerSemanticCF());
   pm.addPass(createVerifyParameters());
 
   pm.addPass(createLowerLIT());

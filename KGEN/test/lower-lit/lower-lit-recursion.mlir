@@ -1,4 +1,4 @@
-// RUN: kgen-opt -lower-lit-terminators %s | FileCheck %s
+// RUN: kgen-opt -lower-semantic-cf %s | FileCheck %s
 
 // CHECK-LABEL: lit.func @recurse
 // CHECK-SAME (%x: !pop.scalar<index>) -> !pop.scalar<index> {
