@@ -7,7 +7,13 @@
 // This pass lowers 'semantic' control flow statements like hlcf.return in the
 // middle of a block and break/continue/raise into proper terminators.
 //
-// This pass also lowers the 'throws' FnEffect.
+// It also:
+//   Lowers the 'throws' FnEffect to a variant.
+//   Lowers 'lit.param.return' into 'kgen.param.result_bind'.
+//
+// When this pass succeeds, 'lit.param.return' is eliminated, along with
+// lit.break/lit.continue/lit.return in favor of HLCF and kgen.return operations
+// which are terminators.
 //
 //===----------------------------------------------------------------------===//
 
@@ -26,7 +32,7 @@ using namespace KGEN;
 using namespace POP;
 
 //===----------------------------------------------------------------------===//
-// LowerSemanticCF
+// 'lit.param.return' to 'kgen.param.result_bind' lowering.
 //===----------------------------------------------------------------------===//
 
 namespace {
@@ -34,61 +40,85 @@ namespace {
 struct ResultParams {
   /// The result parameter values.
   SmallVector<TypedAttr> values;
-  /// A location value.
+  /// A location value for the lit.param.return.
   Location loc;
 };
 } // namespace
 
 static FailureOr<std::optional<ResultParams>>
-threadParamIfResultBindings(ParamIfOp ifOp, unsigned &nameCounter);
+checkParamIfResultBindings(ParamIfOp ifOp, unsigned &nameCounter);
 
-/// Bubble `param_return` operations up to the top-level return. Start from a
-/// post-order traversal to visit the innermost `param.if` operations first.
-LogicalResult findParamReturn(Region &region,
-                              std::optional<ResultParams> &result,
-                              unsigned &nameCounter) {
-  WalkResult walk = region.walk<mlir::WalkOrder::PreOrder>([&](Operation *op)
-                                                               -> WalkResult {
-    if (auto ifOp = dyn_cast<ParamIfOp>(op)) {
-      FailureOr<std::optional<ResultParams>> nestedValues =
-          threadParamIfResultBindings(ifOp, nameCounter);
-      if (failed(nestedValues))
-        return WalkResult::interrupt();
-      if (*nestedValues) {
-        if (result) {
-          return emitError(op->getLoc(),
-                           "result parameters already defined in this branch");
-        }
-        result = *nestedValues;
-      }
+/// Bubble `param_return` operations up to the top-level of the function. Start
+/// from a post-order traversal to visit the innermost `param.if` operations
+/// first.  `kgen.param.if` defines a specific scope we need to watch out for.
+static LogicalResult findParamReturn(Region &region,
+                                     std::optional<ResultParams> &result,
+                                     unsigned &nameCounter) {
+  // This handles when we find new definition of results in this scope.
+  // If we already have a lit.param.return in this scope, then this is a
+  // redefinition error.
+  auto handleDefinition = [&](ResultParams newResults) {
+    if (result)
+      emitError(newResults.loc,
+                "result parameters already defined in this scope")
+              .attachNote(result->loc)
+          << "previous parameter return is here";
+
+    result = newResults;
+  };
+
+  auto opProcessor = [&](Operation *op) -> WalkResult {
+    // lit.param.return declares the result parameters.
+    if (auto bind = dyn_cast<LIT::ParamReturnOp>(op)) {
+      handleDefinition({llvm::to_vector(bind.getParameters()), bind.getLoc()});
+
+      // Don't need the lit.param.return anymore.
+      op->erase();
       return WalkResult::skip();
     }
-    if (auto bind = dyn_cast<LIT::ParamReturnOp>(op)) {
-      if (result) {
-        return emitError(op->getLoc(),
-                         "result parameters already defined in this branch");
-      }
-      result =
-          ResultParams{llvm::to_vector(bind.getParameters()), bind.getLoc()};
-    }
-    return WalkResult::advance();
-  });
+
+    // kgen.param.if is handled specially.
+    auto ifOp = dyn_cast<ParamIfOp>(op);
+    if (!ifOp)
+      return WalkResult::advance();
+
+    // Try to find a lit.param.return in each branch.  This could fail, succeed
+    // with a set of parameters to return, or succeed with no returns.
+    FailureOr<std::optional<ResultParams>> nestedValues =
+        checkParamIfResultBindings(ifOp, nameCounter);
+    if (failed(nestedValues))
+      return WalkResult::interrupt();
+    if (*nestedValues)
+      handleDefinition(**nestedValues);
+
+    // Don't recurse into the kgen.param.if, we've already processed it.
+    return WalkResult::skip();
+  };
+
+  WalkResult walk = region.walk<mlir::WalkOrder::PreOrder>(opProcessor);
   return success(!walk.wasInterrupted());
 }
 
+// We hoist the param.return out of kgen.param.if by transforming the 'if' to
+// return the parameter values for each branch and using the result of that
+// outside the 'if'.
 static FailureOr<std::optional<ResultParams>>
-threadParamIfResultBindings(ParamIfOp ifOp, unsigned &nameCounter) {
+checkParamIfResultBindings(ParamIfOp ifOp, unsigned &nameCounter) {
   // Try to find a param return in each branch.
   std::optional<ResultParams> thenParams, elseParams;
   if (failed(findParamReturn(ifOp.getThenRegion(), thenParams, nameCounter)) ||
       failed(findParamReturn(ifOp.getElseRegion(), elseParams, nameCounter)))
     return failure();
-  if (thenParams.has_value() != elseParams.has_value()) {
+
+  // They must either both have a return, or neither.
+  if (thenParams.has_value() != elseParams.has_value())
     return emitError(ifOp.getLoc(),
                      "result parameters are not defined along all branches");
-  }
+
+  // If there was no definition, it must be elsewhere.
   if (!thenParams)
     return thenParams;
+
   // Pass the return parameters through using result parameters on the if.
   SmallVector<ParamDeclAttr> resultParams;
   SmallVector<TypedAttr> resultValues;
@@ -108,6 +138,35 @@ threadParamIfResultBindings(ParamIfOp ifOp, unsigned &nameCounter) {
                        b.getFusedLoc({thenParams->loc, elseParams->loc})}};
 }
 
+/// Lower lit.param.result into kgen.result_bind.  This happens after semantic
+/// returns are processed.
+static LogicalResult lowerParamResults(LIT::FuncOp func) {
+  // If the function has result parameters, process them here.
+  if (func.getResultParams().empty())
+    return success();
+
+  // Scan the body to find a lit.param.return that specifies the return params.
+  std::optional<ResultParams> resultParams;
+  unsigned nameCounter = 0;
+  if (failed(findParamReturn(func.getBodyRegion(), resultParams, nameCounter)))
+    return failure();
+
+  // If there is none, diagnose it.
+  if (!resultParams)
+    return emitError(
+        func.getLoc(),
+        "missing parameter return for function with result parameters");
+
+  // Bind the result parameter values if there are any.
+  OpBuilder b(func.getBody()->getTerminator());
+  b.create<ParamResultBindOp>(resultParams->loc, resultParams->values);
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// Semantic control flow lowering.
+//===----------------------------------------------------------------------===//
+
 /// Given the result of a throwable call, generate the code to check if the
 /// result type is an error, and if so, propagate the error.
 static Value createUnwrapOrPropagate(ImplicitLocOpBuilder &b, LIT::FuncOp func,
@@ -116,10 +175,12 @@ static Value createUnwrapOrPropagate(ImplicitLocOpBuilder &b, LIT::FuncOp func,
   auto ifOp =
       b.create<HLCF::IfOp>(type, b.create<POP::VariantIsOp>(errOr, errType));
 
+  // If this a normal value, yield it.
   b.createBlock(&ifOp.getElseRegion());
   Value value = b.create<POP::VariantGetOp>(type, errOr);
   b.create<HLCF::YieldOp>(b.getLoc(), value);
 
+  // Otherwise, this is an error, extract the error and throw it.
   b.createBlock(&ifOp.getThenRegion());
   Value err = b.create<POP::VariantGetOp>(errType, errOr);
   if (auto tryOp = ifOp->getParentOfType<LIT::TryOp>();
@@ -134,23 +195,9 @@ static Value createUnwrapOrPropagate(ImplicitLocOpBuilder &b, LIT::FuncOp func,
 }
 
 /// Lower all lexical terminators in the function and remove dead code.
-static LogicalResult LowerSemanticCF(DeclRefType errType, LIT::FuncOp func) {
+static LogicalResult lowerSemanticCF(DeclRefType errType, LIT::FuncOp func) {
   if (func.isThrows() && !errType)
     return func.emitError("function throws but no 'Error' type was found");
-
-  // If the function has result parameters, process them here.
-  std::optional<ResultParams> resultParams;
-  if (!func.getResultParams().empty()) {
-    unsigned nameCounter = 0;
-    if (failed(
-            findParamReturn(func.getBodyRegion(), resultParams, nameCounter)))
-      return failure();
-    if (!resultParams) {
-      return emitError(
-          func.getBody()->getTerminator()->getLoc(),
-          "missing parameter return for function with result parameters");
-    }
-  }
 
   // While we walk the IR, we are going to determine if the top-level
   // `lit.end_func` is reachable with trivial dead-code analysis. Do this by
@@ -180,17 +227,15 @@ static LogicalResult LowerSemanticCF(DeclRefType errType, LIT::FuncOp func) {
 
   // Collect all the terminators first to avoid iterator invalidation.
   SmallVector<Operation *> terminators;
-  // In a pre-order walk, we cannot erase as we walk.
-  SmallVector<Operation *> toErase;
+
   WalkResult result = func.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
-    if (op != func && isa<LIT::FuncOp>(op)) {
+    // Don't walk into nested functions, the walker that called lowerSemanticCF
+    // will handle them separately.
+    if (op != func && isa<LIT::FuncOp>(op))
       return WalkResult::skip();
 
-    } else if (isa<LIT::ParamReturnOp>(op)) {
-      toErase.push_back(op);
-
-    } else if (isa<HLCF::ControlFlowNode, HLCF::ControlFlowTerminator>(op) &&
-               !isa<ReturnOp>(op) && liveCfOps.contains(op)) {
+    if (isa<HLCF::ControlFlowNode, HLCF::ControlFlowTerminator>(op) &&
+        !isa<ReturnOp>(op) && liveCfOps.contains(op)) {
       SmallVector<Attribute> operands;
       for (Value operand : op->getOperands())
         mlir::matchPattern(operand, mlir::m_Constant(&operands.emplace_back()));
@@ -230,6 +275,8 @@ static LogicalResult LowerSemanticCF(DeclRefType errType, LIT::FuncOp func) {
       }
 
     } else if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
+      // FIXME(Issue #11154): we shouldn't need to do this.
+
       // Subsequent operations are always live if the call is.
       bool isLive = liveCfOps.contains(op);
       if (isLive)
@@ -263,14 +310,14 @@ static LogicalResult LowerSemanticCF(DeclRefType errType, LIT::FuncOp func) {
       newCall->getResult(0).setType(VariantType::get({errType, resultType}));
       call->replaceAllUsesWith(ArrayRef(createUnwrapOrPropagate(
           b, func, newCall->getResult(0), errType, resultType)));
-      toErase.push_back(call);
+
+      call->erase();
+      return WalkResult::skip();
     }
     return WalkResult::advance();
   });
   if (result.wasInterrupted())
     return failure();
-  for (Operation *op : toErase)
-    op->erase();
 
   // Lower all the terminators as they are encountered.
   auto errorOr = [&] {
@@ -322,23 +369,17 @@ static LogicalResult LowerSemanticCF(DeclRefType errType, LIT::FuncOp func) {
     block->erase();
 
   Operation *terminator = func.getBody()->getTerminator();
-  // Bind the result parameter values if there are any.
-  if (resultParams) {
-    OpBuilder b(terminator);
-    b.create<ParamResultBindOp>(resultParams->loc, resultParams->values);
-  }
 
-  // If the function is explicitly terminated with a `return`, we're good.
+  // If the function is explicitly terminated with a `return` or raise, we're
+  // good.
   if (!isa<LIT::EndFuncOp>(terminator))
     return success();
 
   // If the endfunc isn't live, then it doesn't matter, there must have been a
   // return/raise before this.
   if (liveCfOps.contains(terminator)) {
-    // A return is required if the function has result parameters, or it has
-    // a non-none result.
-    if (!func.getResultParams().empty() ||
-        !isa<LIT::NoneType>(func.getResultType()) ||
+    // A return is required if the function has a non-none result.
+    if (!isa<LIT::NoneType>(func.getResultType()) ||
         func.getSignature().hasMemoryOnlyResult())
       return terminator->emitError(
           "return expected at end of function with results");
@@ -433,24 +474,29 @@ struct LowerSemanticCFPass : impl::LowerSemanticCFBase<LowerSemanticCFPass> {
 
   void runOnOperation() override {
     // Look for an error type declaration.
+    // FIXME(Issue #11153): Should not scan the whole world for Error.
     DeclRefType errType;
     getOperation().walk([&](LIT::StructDeclOp decl) {
       if (decl.getName() != "Error" || !decl.getInputParams().empty())
-        return;
+        return WalkResult::advance();
       // Reconstruct the full symbol reference.
       errType = DeclRefType::get(
           LIT::getFullyResolvedSymbolRef(cast<mlir::SymbolOpInterface>(*decl)));
+      // We don't need to scan anymore.
+      return WalkResult::interrupt();
     });
-    // Walk all functions.
-    WalkResult result = getOperation().walk([&](LIT::FuncOp func) {
-      if (failed(LowerSemanticCF(errType, func)))
-        return WalkResult::interrupt();
-      return WalkResult::advance();
+
+    // Walk all functions and update them.
+    bool hadError = false;
+    getOperation().walk([&](LIT::FuncOp func) {
+      hadError |= failed(lowerSemanticCF(errType, func));
+      hadError |= failed(lowerParamResults(func));
     });
-    if (result.wasInterrupted())
+    if (hadError)
       return signalPassFailure();
 
     // Lower all functions that throw.
+    // FIXME(Issue #11154): we shouldn't need to do this.
     if (errType)
       lowerThrows(errType, getOperation());
 

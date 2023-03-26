@@ -435,3 +435,12 @@ lit.func @bubble_result_params<() -> r0, r1: dtype>() {
   lit.return
   lit.end_func
 }
+
+// CHECK-LABEL: lit.func @result_params_fallthrough
+lit.func @result_params_fallthrough<() -> r0>() -> !lit.none {
+  // CHECK: %0 = kgen.param.constant: !lit.none
+  // CHECK: kgen.param.result_bind<1>
+  // CHECK: kgen.return %0
+  lit.param_return<1>
+  lit.end_func
+}
