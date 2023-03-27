@@ -30,7 +30,6 @@
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/TargetParser/Host.h"
 
-#include <cstdlib>
 #include <utility>
 
 using namespace M;
@@ -159,9 +158,11 @@ LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
   TimeTraceScope<> traceScope("compile-llvm-to-object", module.getName());
   module.setDataLayout(targetMachine.createDataLayout());
 
-  if (options.saveTemps) {
+  if (!options.saveTempsPrefix.empty()) {
     std::string outPath = options.saveTempsPrefix + ".pre-opt.llvm.ir";
     auto outFile = mlir::openOutputFile(outPath);
+    if (!outFile)
+      return failure();
     outFile->os() << module;
     outFile->keep();
   }
@@ -169,9 +170,11 @@ LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
   if (failed(runOptPasses(module, targetMachine)))
     return failure();
 
-  if (options.saveTemps) {
+  if (!options.saveTempsPrefix.empty()) {
     std::string outPath = options.saveTempsPrefix + ".post-opt.llvm.ir";
     auto outFile = mlir::openOutputFile(outPath);
+    if (!outFile)
+      return failure();
     outFile->os() << module;
     outFile->keep();
   }
@@ -181,9 +184,12 @@ LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
                                        : llvm::CGFT_ObjectFile)))
     return failure();
 
-  if (options.saveTemps) {
+  if (!options.saveTempsPrefix.empty()) {
     std::string outPath = options.saveTempsPrefix + ".asm";
     auto outFile = mlir::openOutputFile(outPath);
+    if (!outFile)
+      return failure();
+
     if (failed(runLlcPasses(module, targetMachine, outFile->os(),
                             llvm::CGFT_AssemblyFile)))
       return failure();
