@@ -142,6 +142,12 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
   // CHECK: = kgen.param.constant = <apply(:(index) -> index fn, p1)>
   %38 = kgen.param.constant = <apply(:(index) -> index fn, p1)>
 
+  // CHECK: = kgen.param.constant = <add(mul_nuw(p2, p2), p1, 42)>
+  %39 = kgen.param.constant = <add(p1, 42, mul_nuw(p2, p2))>
+
+  // CHECK: = kgen.param.constant = <mul_nuw(mul(p2, 2), p1, 42)>
+  %40 = kgen.param.constant = <mul_nuw(p1, 42, add(p2, p2))>
+
   // CHECK: list_size = <2>
   kgen.param.declare list_size = <2>
   // CHECK: list_input: list<index[2]>
@@ -299,6 +305,8 @@ kgen.generator @param_canonicalize<p1, p2>() {
 
   kgen.param.constant = <mul(p1, 1)>  // CHECK: kgen.param.constant = <p1>
   kgen.param.constant = <mul(p1, 0, p2)>  // CHECK: kgen.param.constant = <0>
+  kgen.param.constant = <mul_nuw(p1, 1)>  // CHECK: kgen.param.constant = <p1>
+  kgen.param.constant = <mul_nuw(p1, 0, p2)>  // CHECK: kgen.param.constant = <0>
   kgen.param.constant = <and(12, 6)>  // CHECK: kgen.param.constant = <4>
   kgen.param.constant = <or(12, 6)>  // CHECK: kgen.param.constant = <14>
   kgen.param.constant = <xor(4, 6)>  // CHECK: kgen.param.constant = <2>
