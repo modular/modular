@@ -14,6 +14,7 @@
 #include "Support/TempFile.h"
 #include "Support/TimeProfiler.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
+#include "mlir/Support/FileUtilities.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/IR/LegacyPassManager.h"
@@ -24,10 +25,12 @@
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Support/SmallVectorMemoryBuffer.h"
+#include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Target/TargetLoweringObjectFile.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/TargetParser/Host.h"
 
+#include <cstdlib>
 #include <utility>
 
 using namespace M;
@@ -151,17 +154,41 @@ static LogicalResult runLlcPasses(llvm::Module &module,
 LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
                                         llvm::TargetMachine &targetMachine,
                                         llvm::raw_pwrite_stream &objStream,
+                                        CompilationOptions &options,
                                         bool emitAssembly) {
   TimeTraceScope<> traceScope("compile-llvm-to-object", module.getName());
   module.setDataLayout(targetMachine.createDataLayout());
 
+  if (options.saveTemps) {
+    std::string outPath = options.saveTempsPrefix + ".pre-opt.llvm.ir";
+    auto outFile = mlir::openOutputFile(outPath);
+    outFile->os() << module;
+    outFile->keep();
+  }
+
   if (failed(runOptPasses(module, targetMachine)))
     return failure();
+
+  if (options.saveTemps) {
+    std::string outPath = options.saveTempsPrefix + ".post-opt.llvm.ir";
+    auto outFile = mlir::openOutputFile(outPath);
+    outFile->os() << module;
+    outFile->keep();
+  }
 
   if (failed(runLlcPasses(module, targetMachine, objStream,
                           emitAssembly ? llvm::CGFT_AssemblyFile
                                        : llvm::CGFT_ObjectFile)))
     return failure();
+
+  if (options.saveTemps) {
+    std::string outPath = options.saveTempsPrefix + ".asm";
+    auto outFile = mlir::openOutputFile(outPath);
+    if (failed(runLlcPasses(module, targetMachine, outFile->os(),
+                            llvm::CGFT_AssemblyFile)))
+      return failure();
+    outFile->keep();
+  }
 
   return success();
 }

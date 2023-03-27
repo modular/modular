@@ -24,6 +24,7 @@ class CompilationOptions;
 LogicalResult compileLLVMToObject(llvm::Module &module,
                                   llvm::TargetMachine &targetMachine,
                                   llvm::raw_pwrite_stream &objStream,
+                                  CompilationOptions &options,
                                   bool emitAssembly = false);
 } // namespace M::KGEN
 
