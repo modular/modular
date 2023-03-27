@@ -13,6 +13,7 @@
 #include "LitExprEmitter.h"
 #include "LitParameterEvaluator.h"
 
+#include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -1448,19 +1449,6 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
 // Call Emission Implementation
 //===----------------------------------------------------------------------===//
 
-/// Returns true if the insertion context is valid for implicit error
-/// propagation.
-static bool isValidErrorContext(Block *block) {
-  for (Operation *op = block->getParentOp(); op; op = op->getParentOp()) {
-    if (auto tryOp = dyn_cast<TryOp>(op);
-        tryOp && tryOp.getTryRegion().isAncestor(block->getParent()))
-      return true;
-    if (auto func = dyn_cast<LIT::FuncOp>(op))
-      return func.isThrows();
-  }
-  llvm_unreachable("block outside of function?");
-}
-
 /// Emit a function call to the specified callee with the specified operand
 /// values.  This emits an error and returns null on failure.
 CValue OverloadSet::emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
@@ -1861,12 +1849,25 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
   // possible callee), see if we can fold its entire body into an PValue.
   // This can fail for a number of reasons, in which case we fall back to
   // emitting normally.
-  if (FailureOr<TypedAttr> resultPR =
-          inlineFunctionCallIntoPValue(callee, argumentValues, evaluator);
-      succeeded(resultPR))
-    return emitCResult(*resultPR, callExpr, dest);
+  if (!calleeSig.isThrows()) {
+    // We don't handle peeling off the variant and rethrowing for throws
+    // functions yet.
+    if (FailureOr<TypedAttr> resultPR =
+            inlineFunctionCallIntoPValue(callee, argumentValues, evaluator);
+        succeeded(resultPR))
+      return emitCResult(*resultPR, callExpr, dest);
+  }
 
   if (!builder) {
+    // TODO: We can support throwing parameter calls by inserting a 'force to
+    // normal value' check which aborts (at compile time) if interpretation
+    // throws an error.
+    if (calleeSig.isThrows()) {
+      emitError(callExpr->getLoc(), "TODO: cannot call potentially raising "
+                                    "function in parameter expression");
+      return {};
+    }
+
     // Emitting a call in a parameter context. Generate an apply operator.
     SmallVector<TypedAttr> operands({callee.getIfPValue().get()});
     for (auto [argValAndExpr, calleeArgType] :
@@ -1933,18 +1934,48 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     callOp = builder->create<POP::CallIndirectOp>(
         loc, resultTypes, callee.getIfSRValue(), callArgs);
   }
+  Value callResult = callOp->getResult(0);
 
-  // If the callee can raise an error, try to unwrap it.
-  if (calleeSig.isThrows() && !calleeSig.isAsync() &&
-      !isValidErrorContext(builder->getInsertionBlock())) {
-    emitError(callExpr->getLoc(),
-              "cannot call function that may raise in a context that "
-              "cannot raise");
-    return {};
-  }
-
-  // If there were any writebacks to handle, emit them now.
+  // If there were any writebacks to handle, emit them before handling errors.
   writebackHandler.emit(*this);
+
+  // If the callee can raise an error, it will be represented as a variant: try
+  // to unwrap it.
+  if (calleeSig.isThrows()) {
+    // Put the insertion point back after we're done building the 'if'.
+    OpBuilder::InsertionGuard builderGuard(*builder);
+
+    auto callResultTy = cast<POP::VariantType>(callResult.getType());
+    auto normalType = callResultTy.getType(1);
+    auto ifOp = builder->create<HLCF::IfOp>(
+        loc, normalType,
+        builder->create<POP::VariantIsOp>(loc, callResult, normalType));
+
+    // If this a normal value, yield it.
+    builder->createBlock(&ifOp.getThenRegion());
+    Value value =
+        builder->create<POP::VariantGetOp>(loc, normalType, callResult);
+    builder->create<HLCF::YieldOp>(loc, value);
+
+    // Otherwise, this is an error, extract the error and throw it.
+    builder->createBlock(&ifOp.getElseRegion());
+    Value err = builder->create<POP::VariantGetOp>(loc, callResultTy.getType(0),
+                                                   callResult);
+
+    // :-( :-( must put a terminator so must yield a bogus value.
+    Value yieldVal = builder->create<StaticUndefOp>(loc, normalType);
+
+    if (failed(emitRaise(err, loc))) {
+      emitError(callExpr->getLoc(),
+                "cannot call function that may raise in a context that "
+                "cannot raise");
+      return {};
+    }
+    builder->create<HLCF::YieldOp>(loc, yieldVal);
+
+    // Ok, the call result is the result of the HLCF::If.
+    callResult = ifOp.getResult(0);
+  }
 
   // If there is a memory result slot, the value we filled in is our MRValue
   // result and we've already handled the ValueDest by emitting into it.
@@ -1959,5 +1990,5 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
 
   // Otherwise, register-passable results are the call result which may need to
   // be emitted into a ValueDest.
-  return emitCResult(SRValue(callOp->getResult(0)), callExpr, dest);
+  return emitCResult(SRValue(callResult), callExpr, dest);
 }

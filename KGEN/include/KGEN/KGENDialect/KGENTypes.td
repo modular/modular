@@ -235,7 +235,7 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     }
 
     /// Set a function convention.
-    SignatureType setFnEffect(FnEffects effect);
+    SignatureType getWithFnEffects(FnEffects effect);
 
     /// Return a signature with the specified parameter bindings substituted
     /// into it as happens in a call.  The types specified in the parameter

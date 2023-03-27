@@ -251,8 +251,13 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
   if (auto sig = dyn_cast<SignatureType>(valueType.mlirType)) {
     // TODO: This is incorrect for default arguments and varargs.
     assert(sig.getValueResults().size() == 1);
-    if (sig.getValueInputs().empty() &&
-        isImplicitlyIgnorableType(sig.getValueResults()[0])) {
+
+    // Get the result type without any error handling in the way.
+    Type resultType = sig.getValueResults()[0];
+    if (sig.isThrows())
+      resultType = cast<POP::VariantType>(resultType).getType(1);
+
+    if (sig.getValueInputs().empty() && isImplicitlyIgnorableType(resultType)) {
       // Find end of token.  TODO: Gross.
       auto endLoc = expr->getRange().getEnd();
       size_t tokenSize = LitLexer::getTokenLength(shared, endLoc);
@@ -520,12 +525,21 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   }
 
   // Convert the returned value to the returned type of the function.
-  Value resultSRValue = emitter.emitSRValue(
-      {resultValue, operandExprs[0]}, EC_ReturnValue, decl.getResultType());
+  Value resultSRValue =
+      emitter.emitSRValue({resultValue, operandExprs[0]}, EC_ReturnValue,
+                          decl.getResultTypeWithoutErrorVariant());
   if (!resultSRValue)
     return {};
 
-  builder.create<LIT::ReturnOp>(translateLocation(loc), resultSRValue);
+  auto mlirLoc = translateLocation(loc);
+
+  // If this function throws, we silently wrap the result value in the returned
+  // variant type.
+  if (decl.isThrows())
+    resultSRValue = builder.create<POP::VariantCreateOp>(
+        mlirLoc, decl.getResultType(), resultSRValue);
+
+  builder.create<LIT::ReturnOp>(mlirLoc, resultSRValue);
   return success();
 }
 
@@ -577,41 +591,123 @@ ParseResult LitStmtParser::parseParamReturnStmt(size_t returnIndent) {
   return success();
 }
 
+/// Given an insertion point in a block, scan up the parent hierarchy to see if
+/// this block is nested under a try.  If so, return that operation and whether
+/// this block is nested within the 'except' part of the operation.  If
+/// we are currently in the 'else' part of a try, we keep scanning since the try
+/// isn't relevant.
+static std::pair<TryOp, bool> findParentTry(Block *currentBlock) {
+  while (Operation *parentOp = currentBlock->getParentOp()) {
+    // If we hit the top of the function we aren't nested.
+    if (isa<LIT::FuncOp>(parentOp))
+      break;
+
+    // If this is a try, determine which region we're in.
+
+    TryOp tryOp = dyn_cast<TryOp>(parentOp);
+    if (tryOp) {
+      if (&tryOp.getTryRegion().front() == currentBlock)
+        return {tryOp, false};
+      if (&tryOp.getExceptRegion().front() == currentBlock)
+        return {tryOp, true};
+
+      // Must be in the else, which doesn't stop propagation.
+      assert(&tryOp.getElseRegion().front() == currentBlock);
+    }
+
+    // If this is not a try op, keep scanning.
+    currentBlock = parentOp->getBlock();
+  }
+
+  // Didn't find a try.
+  return {TryOp(), false};
+}
+
+/// Emit the logic to raise from the current scope, returning failure (but NOT
+/// emitting an error) if it is invalid to return from the current context,
+/// or emitting a TryRaise/return if it is valid.
+/// TODO: Generalize to support memory-only errors.
+LogicalResult ExprEmitter::emitRaise(SRValue errorValue, Location raiseLoc) {
+  // Cannot raise in a parameter expression.
+  if (!builder)
+    return failure();
+
+  auto [tryOp, inExceptRegion] = findParentTry(builder->getInsertionBlock());
+
+  // If this raise is happening in the 'except' portion of a try block, then
+  // check to see what actually encloses if anything.
+  while (tryOp && inExceptRegion)
+    std::tie(tryOp, inExceptRegion) = findParentTry(tryOp->getBlock());
+
+  // If this error is getting handled an enclosing try, generate a TryRaise.
+  if (tryOp) {
+    builder->create<LIT::RaiseOp>(raiseLoc, errorValue);
+    return success();
+  }
+
+  auto funcOp = getBlockParentOfType<LIT::FuncOp>(builder->getInsertionBlock());
+  if (!funcOp || !funcOp.isThrows())
+    return failure();
+
+  // Otherwise, we are returning the error value from the function.
+  Value retVal = builder->create<POP::VariantCreateOp>(
+      raiseLoc, funcOp.getResultType(), errorValue);
+  builder->create<LIT::ReturnOp>(raiseLoc, retVal);
+  return success();
+}
+
 ParseResult LitStmtParser::parseRaiseStmt(size_t raiseIndent) {
   auto loc = consumeToken(LitToken::kw_raise).getLoc();
-  Block *block = builder.getInsertionBlock();
-  auto tryOp = getBlockParentOfType<TryOp>(block);
 
-  Value errorVal;
-  bool inTry;
-  if (!getToken().getIndentation().has_value()) {
-    // If there is an error expression, parse and emit it.
-    ExprNode *errorExpr;
+  ExprNode *errorExpr = nullptr;
+  if (!getToken().getIndentation().has_value() ||
+      *getToken().getIndentation() > raiseIndent) {
+    // If there is an error expression, parse it.
     if (parseExpression(errorExpr, raiseIndent))
       return failure();
+  }
+
+  // TODO: Support "from" exception chaining.
+
+  // Ok, we are syntactically sound.  Check to see if we're in a try block, and
+  // (if so) whether we are in.  Python's notion of a current exception is fully
+  // dynamic, which we don't support yet.  For now, we only support 'raise' with
+  // no expression in the 'except' block of a 'try'.
+  //
+  //    def foo(): raise   # Rethrow any currently-being-handled exception
+  //    try:
+  //      print(1/0)
+  //    except Exception as exc:
+  //      print("hello")
+  //      foo()   # rethrows the caught exception
+  //
+
+  // If we had an error, emit it.
+  Value errorVal;
+  if (errorExpr) {
+    // TODO: Support memory-only error values.
     errorVal = getEmitter().emitExprSRValue(errorExpr, EC_RaiseValue);
     if (!errorVal)
       return success();
-
-    // Determine whether we are raising an error inside a 'try'.
-    inTry = tryOp && tryOp.getTryRegion().findAncestorBlockInRegion(*block);
   } else {
-    // Otherwise, a plain 'raise' refers to the exception currently being
-    // handled, only if nested inside an 'except'.
-    if (!tryOp || tryOp.getExceptRegion().findAncestorBlockInRegion(*block)) {
+    // Figure it if we're in a try, and if so, which subregion.
+    auto [tryOp, inExceptRegion] = findParentTry(builder.getInsertionBlock());
+
+    // Otherwise, we must be in the 'except' part of the try block and are
+    // rethrowing the current error.  This isn't correct Python semantics, see
+    // the caveat above.
+    if (!inExceptRegion) {
       emitError(loc, "no contextual exception to reraise");
       return success();
     }
     errorVal = tryOp.getExceptRegion().getArgument(0);
-    inTry = false;
   }
 
-  if (!inTry && !getBlockParentOfType<LIT::FuncOp>(block).isThrows()) {
-    emitError(loc, "cannot raise error in a context that cannot raise");
-    return success();
-  }
+  // Emit the logic to raise the error.
   Location raiseLoc = translateLocation(loc);
-  builder.create<LIT::RaiseOp>(raiseLoc, errorVal);
+  if (failed(getEmitter().emitRaise(errorVal, raiseLoc)))
+    emitError(loc, "cannot raise error in a context that cannot raise");
+
   return success();
 }
 
@@ -1136,16 +1232,22 @@ ParseResult LitStmtParser::parseDefFnStmt(LitLexerCursor startCursor,
     return failure();
 
   auto funcDecl = builder.create<LIT::FuncOp>(translateLocation(loc));
-  // Compute the correct function effects.
-  auto effects = FnEffects::None;
+  auto fnEffects = FnEffects::None;
+
+  // If marked as 'def', remember this on the function decl.
   if (isDef) {
     funcDecl.setIsDef(true);
-    effects = bitEnumSet(effects, FnEffects::Throws);
+    fnEffects = fnEffects | FnEffects::Throws;
   }
+
+  // If declared async, remember this as a function effect.
   if (isAsync)
-    effects = bitEnumSet(effects, FnEffects::Async);
-  if (effects != FnEffects::None)
-    funcDecl.setSignature(funcDecl.getSignature().setFnEffect(effects));
+    fnEffects = fnEffects | FnEffects::Async;
+
+  if (fnEffects != FnEffects::None) {
+    auto newSig = funcDecl.getSignature().getWithFnEffects(fnEffects);
+    funcDecl.setSignature(newSig);
+  }
 
   // Skip the body of this definition: go to a token at the start of the next
   // line at the same indent level (or less) as the current definition.

@@ -410,6 +410,12 @@ public:
   /// dest (if specified) or returning it if not.  This returns an RValue if
   /// there is no consuming dest, otherwise a BValue.
   CValue emitLoadOfLValue(ASTExprAnd<LValue> value, ValueDest &dest);
+
+  /// Emit the logic to raise from the current scope, returning failure (but NOT
+  /// emitting an error) if it is invalid to return from the current context,
+  /// or emitting a TryRaise/return if it is valid.
+  /// TODO: Generalize to support memory-only errors.
+  LogicalResult emitRaise(SRValue errorValue, Location raiseLoc);
 };
 
 } // namespace M::KGEN::LIT

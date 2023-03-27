@@ -95,6 +95,12 @@ MetadataAttr MetadataAttr::get(MLIRContext *ctx, unsigned numInputs,
   return get(ctx, SmallVector<ValueInputConvention>(numInputs), {}, effects);
 }
 
+/// Get this metadata attr with the effects swapped out.
+MetadataAttr MetadataAttr::getWithFnEffects(FnEffects effects) {
+  return MetadataAttr::get(getContext(), getInputConventions(),
+                           getDefaultArguments(), effects);
+}
+
 bool MetadataAttr::isDefault() {
   return getFnEffects() == FnEffects::None &&
          llvm::all_of(getInputConventions(),
@@ -134,7 +140,7 @@ MetadataAttr::verifySignature(function_ref<InFlightDiagnostic()> emitError,
                          << value.getType();
     }
   }
-  // If the function throws an error, make sure it has one result.
+  // If the function throws an error, make sure it has one variant result.
   if (bitEnumContainsAny(getFnEffects(), FnEffects::Throws) &&
       values.getNumResults() != 1)
     return emitError() << "a function that throws should have 1 result";

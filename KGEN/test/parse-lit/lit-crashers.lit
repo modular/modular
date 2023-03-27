@@ -24,6 +24,7 @@ struct F32:
 
 // -----
 
+# expected-error @+1 {{could not find an 'Error' type}}
 def foo(a): pass # expected-error {{could not find an 'object' type}}
 
 // -----

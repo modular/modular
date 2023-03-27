@@ -176,6 +176,15 @@ ArrayRef<ParamDeclAttr> FileModuleOp::getResultParams() { return {}; }
 // FuncOp
 //===----------------------------------------------------------------------===//
 
+/// Returns the result type with the outer variant<> type stripped off if it
+/// is a throwing function.
+Type LIT::FuncOp::getResultTypeWithoutErrorVariant() {
+  auto resultType = getResultType();
+  if (isThrows())
+    return cast<POP::VariantType>(resultType).getType(1);
+  return resultType;
+}
+
 /// Return a SymbolConstantAttr for this function, optionally bound to a set
 /// of parameter bindings.
 TypedAttr LIT::FuncOp::getBoundReference(ParamBindArrayAttr bindings) {
@@ -885,16 +894,22 @@ ErrorTreeOr<SuccessType> LIT::ReturnOp::interpret(ArrayRef<Attribute> operands,
 
 LogicalResult RaiseOp::verify() {
   Operation *op = *this;
-  auto func = op->getParentOfType<LIT::FuncOp>();
-  if (func && func.isThrows())
-    return success();
 
-  auto tryOp = op->getParentOfType<TryOp>();
-  if (tryOp && tryOp.getTryRegion().isAncestor(op->getBlock()->getParent()))
-    return success();
+  // Scan for an enclosing try block (where we're in the try part, not the
+  // except) or a throwing function.
+  while (Operation *parentOp = op->getParentOp()) {
+    if (auto tryOp = dyn_cast<TryOp>(parentOp)) {
+      if (&tryOp.getTryRegion().front() == op->getBlock())
+        return success();
+    }
+
+    if (isa<LIT::FuncOp>(parentOp))
+      break;
+    op = parentOp;
+  }
 
   return emitOpError("must be nested inside the 'try' region of a `lit.try` "
-                     "operation or within a `lit.func` that throws");
+                     "operation");
 }
 
 //===----------------------------------------------------------------------===//
