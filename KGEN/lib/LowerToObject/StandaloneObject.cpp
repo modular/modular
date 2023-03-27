@@ -412,54 +412,55 @@ ObjectCompiler::lowerLLVMModuleToObject(llvm::Module &module, Location loc,
   // Perform a cached transform to compile this module slice to an object file.
   // This will enable some bare bones incremental compilation, as we will be
   // able to reuse object files for previously compiled slices.
-  auto runTransformation =
-      [this, nonBitcodeKeySize, loc, isJIT, keyBuf = keyBuf.copy()](
-          WriteableBufferRef buf, LLCL::AnyAsyncValueRef chain) mutable {
-        auto output = LLCL::AsyncValueRef<BufferRef>::allocate(runtime);
-        chain.andThenAsync([this, nonBitcodeKeySize, loc, isJIT,
-                            output = output.copy(), keyBuf = std::move(keyBuf),
-                            buf = buf.copy()]() mutable {
-          // Extract out the bitcode from the key, as LLVM bitcode dies if the
-          // buffer contains other data.
-          StringRef bitcodeBuffer = ((Cache::BufferRef &)(keyBuf))->getBuffer();
-          bitcodeBuffer = bitcodeBuffer.drop_front(nonBitcodeKeySize);
+  auto runTransformation = [this, nonBitcodeKeySize, loc, isJIT,
+                            keyBuf = keyBuf.copy()](
+                               WriteableBufferRef buf,
+                               LLCL::AnyAsyncValueRef chain) mutable {
+    auto output = LLCL::AsyncValueRef<BufferRef>::allocate(runtime);
+    chain.andThenAsync([this, nonBitcodeKeySize, loc, isJIT,
+                        output = output.copy(), keyBuf = std::move(keyBuf),
+                        buf = buf.copy()]() mutable {
+      // Extract out the bitcode from the key, as LLVM bitcode dies if the
+      // buffer contains other data.
+      StringRef bitcodeBuffer = ((Cache::BufferRef &)(keyBuf))->getBuffer();
+      bitcodeBuffer = bitcodeBuffer.drop_front(nonBitcodeKeySize);
 
-          // Load the cached bytecode into a new context. This is necessary to
-          // avoid data races during multi-threading.
-          llvm::LLVMContext ctx;
-          llvm::Expected<std::unique_ptr<llvm::Module>> moduleOr =
-              llvm::parseBitcodeFile(
-                  llvm::MemoryBufferRef(bitcodeBuffer, "<split-module>"), ctx);
-          if (!moduleOr) {
-            return std::move(output).setToError(
-                LLCL::getMLIRDiagnostic("failed to load LLVM IR bitcode", loc));
-          }
-          std::unique_ptr<llvm::Module> module = std::move(*moduleOr);
+      // Load the cached bytecode into a new context. This is necessary to
+      // avoid data races during multi-threading.
+      llvm::LLVMContext ctx;
+      llvm::Expected<std::unique_ptr<llvm::Module>> moduleOr =
+          llvm::parseBitcodeFile(
+              llvm::MemoryBufferRef(bitcodeBuffer, "<split-module>"), ctx);
+      if (!moduleOr) {
+        return std::move(output).setToError(
+            LLCL::getMLIRDiagnostic("failed to load LLVM IR bitcode", loc));
+      }
+      std::unique_ptr<llvm::Module> module = std::move(*moduleOr);
 
-          // Create the target machine.
-          auto machineOr = createTargetMachine(options, isJIT);
-          if (failed(machineOr)) {
-            return std::move(output).setToError(
-                LLCL::getMLIRDiagnostic(machineOr.takeError(), loc));
-          }
+      // Create the target machine.
+      auto machineOr = createTargetMachine(options, isJIT);
+      if (failed(machineOr)) {
+        return std::move(output).setToError(
+            LLCL::getMLIRDiagnostic(machineOr.takeError(), loc));
+      }
 
-          // Set the data layout on the module.
-          module->setDataLayout((*machineOr)->createDataLayout());
+      // Set the data layout on the module.
+      module->setDataLayout((*machineOr)->createDataLayout());
 
-          // Set all external and defined functions to hidden visibility.
-          for (llvm::Function &func : module->getFunctionList())
-            if (!func.hasInternalLinkage() && !func.empty())
-              func.setVisibility(llvm::GlobalValue::HiddenVisibility);
+      // Set all external and defined functions to hidden visibility.
+      for (llvm::Function &func : module->getFunctionList())
+        if (!func.hasInternalLinkage() && !func.empty())
+          func.setVisibility(llvm::GlobalValue::HiddenVisibility);
 
-          // Lower the LLVM to an object file.
-          if (failed(compileLLVMToObject(*module, **machineOr, *buf))) {
-            return std::move(output).setToError(LLCL::getMLIRDiagnostic(
-                "failed to lower LLVM IR to object file", loc));
-          }
-          std::move(output).emplace(buf.copy());
-        });
-        return output;
-      };
+      // Lower the LLVM to an object file.
+      if (failed(compileLLVMToObject(*module, **machineOr, *buf, options))) {
+        return std::move(output).setToError(LLCL::getMLIRDiagnostic(
+            "failed to lower LLVM IR to object file", loc));
+      }
+      std::move(output).emplace(buf.copy());
+    });
+    return output;
+  };
   auto onCacheHit = [](BufferRef buf) { return buf.copy(); };
 
   return cachedTransform(
@@ -532,7 +533,7 @@ ErrorOrSuccess ObjectCompiler::produceStandaloneAssembly(
   llvmModule->setDataLayout((*machineOr)->createDataLayout());
 
   // Emit the assembly.
-  if (failed(compileLLVMToObject(*llvmModule, **machineOr, os,
+  if (failed(compileLLVMToObject(*llvmModule, **machineOr, os, options,
                                  /*emitAssembly=*/true))) {
     return Error("failed to lower LLVM IR to assembly");
   }

@@ -105,6 +105,12 @@ public:
     os << " }";
   }
 
+  /// Save temporary files to a file with the given prefix.
+  void setSaveTemps(std::string prefix) {
+    saveTempsPrefix = prefix;
+    saveTemps = true;
+  }
+
   unsigned optimizationLevel : 2;
   DebugInfoLevel debugLevel = kNoDebug;
   std::optional<DebugAtLevel> debugAtLevel;
@@ -112,6 +118,9 @@ public:
   std::string targetTriple = llvm::sys::getDefaultTargetTriple();
   std::string targetCpu = llvm::sys::getHostCPUName().str();
   std::string targetFeatures = getHostCPUFeatures();
+
+  std::string saveTempsPrefix = "";
+  bool saveTemps = false;
 };
 } // namespace M::KGEN
 
