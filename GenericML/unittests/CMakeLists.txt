@@ -6,6 +6,7 @@
 
 add_subdirectory(GraphCompiler/Conversion)
 add_subdirectory(GraphCompiler/MOGG)
+add_subdirectory(API)
 
 add_modular_unittest(
   TOP_LEVEL_CHECK
