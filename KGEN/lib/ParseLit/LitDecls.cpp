@@ -1329,7 +1329,10 @@ void FnDecorators::applyRaises(const DeclRefNode &node) {
     return;
   }
 
-  funcOp.setSignature(funcOp.getSignature().setFnEffect(FnEffects::Throws));
+  // Set the 'throws' bit.
+  auto origSig = funcOp.getSignature();
+  funcOp.setSignature(
+      origSig.getWithFnEffects(origSig.getFnEffects() | FnEffects::Throws));
 }
 
 // Apply all signature decorators.
@@ -1653,6 +1656,27 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   FnEffects effects = funcOp.getMetadata().getFnEffects();
   if (paramVararg)
     effects = effects | FnEffects::ParamVararg;
+
+  // If the function raises, it implicitly gets a variant result type.
+  if (bitEnumContainsAny(effects, FnEffects::Throws)) {
+    if (auto errorType = shared.lookupErrorType(decl.getLoc(), decl)) {
+      resultType = POP::VariantType::get({errorType, resultType});
+
+      // FIXME: We cannot return an Error type from a function that also throws.
+      // This is because Variant collapses the variant to one case and we can't
+      // tell which is which.  We could fix this in a number of ways in the
+      // future if/when it matters.
+      if (cast<POP::VariantType>(resultType.mlirType).getNumTypes() == 1) {
+        p.emitError(funcOp.getLoc(),
+                    "cannot return and raise the same type from a function");
+        resultType =
+            POP::VariantType::get({errorType, shared.getTypeCheckErrorType()});
+        decl.hasReferenceError = true;
+      }
+    }
+  }
+
+  // Handle argument effects.
   for (const ParsedArgument &arg : args) {
     argLocs.push_back(p.translateLocation(arg.loc));
     argNames.push_back(arg.name);

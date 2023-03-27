@@ -303,7 +303,7 @@ struct Error:
 fn testResultParamThrowing[() -> b: Int]():
   # CHECK: lit.param_return<:@"$Int"::@Int #lit.struct<{{.*}} 1}
   param_return[1]
-  # CHECK: lit.raise
+  # CHECK: lit.return %1 : !pop.variant<@"$parameters"::@Error, !lit.none>
   raise Error{}
 
 # lit.func @"testMultipleParamReturn()"<a: {{.*}} -> b:

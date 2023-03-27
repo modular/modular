@@ -411,20 +411,22 @@ fn usePacks(x: F32, y: Int):
 # @raises decorator.
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.func @"defAlwaysRaises()"() throws -> !kgen.declref<@"$Int"::@Int> attributes {isDef}
+# CHECK-LABEL: lit.func @"defAlwaysRaises()"() throws -> !pop.variant<@"$prolog"::@Error, @"$Int"::@Int> attributes {isDef}
 def defAlwaysRaises() -> Int:
-    # CHECK: %[[RESULT:.*]] = kgen{{.*}}#lit.struct<{value: scalar<index> = 0}>
-    # CHECK-NEXT: lit.return %[[RESULT]] : !kgen.declref<@"$Int"::@Int>
+    # CHECK: [[RESULT:%.*]] = kgen{{.*}}#lit.struct<{value: scalar<index> = 0}>
+    # CHECK-NEXT: %1 = pop.variant.create [[RESULT]]
+    # CHECK-NEXT: lit.return %1
     return Int(0)
 
-# CHECK-LABEL: lit.func @"fnThatRaises()"() throws -> !kgen.declref<@"$Int"::@Int>
+# CHECK-LABEL: lit.func @"fnThatRaises()"() throws -> !pop.variant<@"$prolog"::@Error, @"$Int"::@Int>
 @raises
 fn fnThatRaises() -> Int:
-    # CHECK: %[[RESULT:.*]] = kgen{{.*}}#lit.struct<{value: scalar<index> = 0}>
-    # CHECK-NEXT: lit.return %[[RESULT]] : !kgen.declref<@"$Int"::@Int>
+    # CHECK: [[RESULT:%.*]] = kgen{{.*}}#lit.struct<{value: scalar<index> = 0}>
+    # CHECK-NEXT: %1 = pop.variant.create [[RESULT]]
+    # CHECK-NEXT: lit.return %1
     return Int(0)
 
-# CHECK-LABEL: lit.func @"raisesReturnsNone()"() throws -> !lit.none
+# CHECK-LABEL: lit.func @"raisesReturnsNone()"() throws -> !pop.variant<@"$prolog"::@Error, !lit.none>
 @raises
 fn raisesReturnsNone():
     # CHECK-NEXT: lit.end_func
@@ -434,13 +436,6 @@ fn raisesReturnsNone():
 # CHECK-LABEL: lit.func @"raisesReturnsVariant()"() -> !pop.variant<@"$prolog"::@Error, index>
 fn raisesReturnsVariant() -> __mlir_type.`!pop.variant<@"$prolog"::@Error, index>`:
   return __mlir_op.`pop.variant.create`[_type: __mlir_type.`!pop.variant<@"$prolog"::@Error, index>`](1)
-
-# CHECK-LABEL: lit.func @"return_impl_convert_raises
-@raises
-fn return_impl_convert_raises(a: Error) -> Error:
-  # CHECK: [[TMP:%.*]] = kgen.call {{.*}}__copy__{{.*}}(%a)
-  # CHECK-NEXT: lit.return [[TMP]]
-  return a
 
 ##===----------------------------------------------------------------------===##
 # Structs

@@ -9,6 +9,11 @@
 from IO import print
 
 
+@register_passable
+struct Error:
+    pass
+
+
 def main():
     # CHECK: Hello, world!
     print("Hello, world!\n")

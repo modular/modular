@@ -254,6 +254,9 @@ def KGEN_MetadataAttr : KGENAttr<"Metadata", "metadata"> {
                                   ParamDeclArrayAttr inputParams,
                                   ParamDeclArrayAttr resultParams,
                                   FunctionType values);
+
+    /// Get this metadata attr with the effects swapped out.
+    MetadataAttr getWithFnEffects(FnEffects effects);
   }];
 
   let genVerifyDecl = 1;

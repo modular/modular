@@ -50,8 +50,3 @@ lit.func @if_result_params<() -> r0>(%a: !lit.none) -> !lit.none {
   lit.return %a : !lit.none
   lit.end_func
 }
-
-// expected-error @below {{function throws but no 'Error' type was found}}
-lit.func @throws() throws -> !lit.none {
-  lit.end_func
-}

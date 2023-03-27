@@ -213,12 +213,9 @@ SignatureType SignatureType::get(MLIRContext *ctx, TypeRange inputs,
   return get(FunctionType::get(ctx, inputs, results));
 }
 
-SignatureType SignatureType::setFnEffect(FnEffects effect) {
-  return SignatureType::get(
-      getInputParams(), getResultParams(), getValues(),
-      MetadataAttr::get(getContext(), getValueInputConventions(),
-                        getDefaultArguments(),
-                        bitEnumSet(getFnEffects(), effect)));
+SignatureType SignatureType::getWithFnEffects(FnEffects effects) {
+  return SignatureType::get(getInputParams(), getResultParams(), getValues(),
+                            getMetadata().getWithFnEffects(effects));
 }
 
 bool SignatureType::isVararg(size_t index) {

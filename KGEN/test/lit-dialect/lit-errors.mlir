@@ -139,7 +139,7 @@ lit.func @mismatched_return_types(%arg0: i64) -> i32 {
 // -----
 
 lit.func @does_not_throw(%err: !kgen.declref<@Error>) {
-  // expected-error @below {{'lit.raise' op must be nested inside the 'try' region of a `lit.try` operation or within a `lit.func` that throws}}
+  // expected-error @below {{'lit.raise' op must be nested inside the 'try' region of a `lit.try` operation}}
   lit.raise %err : <@Error>
   lit.end_func
 }

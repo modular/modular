@@ -8,7 +8,6 @@
 // middle of a block and break/continue/raise into proper terminators.
 //
 // It also:
-//   Lowers the 'throws' FnEffect to a variant.
 //   Lowers 'lit.param.return' into 'kgen.param.result_bind'.
 //
 // When this pass succeeds, 'lit.param.return' is eliminated, along with
@@ -167,38 +166,8 @@ static LogicalResult lowerParamResults(LIT::FuncOp func) {
 // Semantic control flow lowering.
 //===----------------------------------------------------------------------===//
 
-/// Given the result of a throwable call, generate the code to check if the
-/// result type is an error, and if so, propagate the error.
-static Value createUnwrapOrPropagate(ImplicitLocOpBuilder &b, LIT::FuncOp func,
-                                     Value errOr, DeclRefType errType,
-                                     Type type) {
-  auto ifOp =
-      b.create<HLCF::IfOp>(type, b.create<POP::VariantIsOp>(errOr, errType));
-
-  // If this a normal value, yield it.
-  b.createBlock(&ifOp.getElseRegion());
-  Value value = b.create<POP::VariantGetOp>(type, errOr);
-  b.create<HLCF::YieldOp>(b.getLoc(), value);
-
-  // Otherwise, this is an error, extract the error and throw it.
-  b.createBlock(&ifOp.getThenRegion());
-  Value err = b.create<POP::VariantGetOp>(errType, errOr);
-  if (auto tryOp = ifOp->getParentOfType<LIT::TryOp>();
-      tryOp && tryOp.getTryRegion().findAncestorOpInRegion(*ifOp)) {
-    b.create<LIT::TryRaiseOp>(err);
-  } else {
-    Value result = b.create<POP::VariantCreateOp>(
-        POP::VariantType::get({errType, func.getResultType()}), err);
-    b.create<ReturnOp>(result);
-  }
-  return ifOp.getResult(0);
-}
-
 /// Lower all lexical terminators in the function and remove dead code.
-static LogicalResult lowerSemanticCF(DeclRefType errType, LIT::FuncOp func) {
-  if (func.isThrows() && !errType)
-    return func.emitError("function throws but no 'Error' type was found");
-
+static LogicalResult lowerSemanticCF(LIT::FuncOp func) {
   // While we walk the IR, we are going to determine if the top-level
   // `lit.end_func` is reachable with trivial dead-code analysis. Do this by
   // marking each `ControlFlowNode` and `ControlFlowTerminator` as live or dead,
@@ -209,7 +178,7 @@ static LogicalResult lowerSemanticCF(DeclRefType errType, LIT::FuncOp func) {
     for (Operation &op : llvm::make_range(it, block->end())) {
       if (!isa<HLCF::ControlFlowNode, HLCF::ControlFlowTerminator,
                LIT::ReturnOp, LIT::RaiseOp, LIT::BreakOp, LIT::ContinueOp,
-               LIT::EndFuncOp, KGENCallOpInterface>(op))
+               LIT::EndFuncOp>(op))
         continue;
       liveCfOps.insert(&op);
       return;
@@ -273,46 +242,6 @@ static LogicalResult lowerSemanticCF(DeclRefType errType, LIT::FuncOp func) {
         if (tryOp && liveCfOps.contains(op))
           markNextInRegionAsLive(tryOp.getExceptRegion());
       }
-
-    } else if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
-      // FIXME(Issue #11154): we shouldn't need to do this.
-
-      // Subsequent operations are always live if the call is.
-      bool isLive = liveCfOps.contains(op);
-      if (isLive)
-        markNextOperationAsLive(op);
-
-      SignatureType signature = call.getCalleeType();
-      if (!signature.isThrows())
-        return WalkResult::advance();
-      // FIXME: `kgen.addressof` returns a `FunctionType` (function pointer),
-      // which is an important feature to have, but that means we can't globally
-      // see calls to a throwing function pointer.
-      if (isa<AddressOfOp>(call)) {
-        call.emitError("FIXME: cannot take address of throwing function");
-        return WalkResult::interrupt();
-      }
-
-      // Pre-order traversal will not visit any of the created operations. The
-      // throwing call means the except region is potentially live.
-      if (isLive)
-        if (auto tryOp = op->getParentOfType<LIT::TryOp>())
-          markNextInRegionAsLive(tryOp.getExceptRegion());
-
-      // Nothing to do if this is an async call.
-      if (signature.isAsync())
-        return WalkResult::advance();
-
-      // We need to update the result types of the function.
-      ImplicitLocOpBuilder b(call.getLoc(), OpBuilder(call->getNextNode()));
-      Operation *newCall = b.clone(*call);
-      Type resultType = call->getResultTypes().front();
-      newCall->getResult(0).setType(VariantType::get({errType, resultType}));
-      call->replaceAllUsesWith(ArrayRef(createUnwrapOrPropagate(
-          b, func, newCall->getResult(0), errType, resultType)));
-
-      call->erase();
-      return WalkResult::skip();
     }
     return WalkResult::advance();
   });
@@ -320,9 +249,6 @@ static LogicalResult lowerSemanticCF(DeclRefType errType, LIT::FuncOp func) {
     return failure();
 
   // Lower all the terminators as they are encountered.
-  auto errorOr = [&] {
-    return VariantType::get({errType, func.getResultType()});
-  };
   SmallVector<Block *> deadBlocks;
   for (Operation *op : terminators) {
     // Ignore dead operations.
@@ -331,23 +257,9 @@ static LogicalResult lowerSemanticCF(DeclRefType errType, LIT::FuncOp func) {
 
     ImplicitLocOpBuilder b(op->getLoc(), OpBuilder(op));
     if (auto returnOp = dyn_cast<LIT::ReturnOp>(op)) {
-      ValueRange operands = returnOp.getOperands();
-      Value result;
-      if (func.isThrows()) {
-        result = b.create<VariantCreateOp>(errorOr(), operands.front());
-        operands = result;
-      }
-      b.create<KGEN::ReturnOp>(operands);
-
+      b.create<KGEN::ReturnOp>(returnOp.getOperands());
     } else if (auto raiseOp = dyn_cast<LIT::RaiseOp>(op)) {
-      auto tryOp = raiseOp->getParentOfType<LIT::TryOp>();
-      if (tryOp &&
-          tryOp.getTryRegion().isAncestor(raiseOp->getBlock()->getParent()))
-        b.create<LIT::TryRaiseOp>(raiseOp.getError());
-      else
-        b.create<KGEN::ReturnOp>(
-            Value(b.create<VariantCreateOp>(errorOr(), raiseOp.getError())));
-
+      b.create<LIT::TryRaiseOp>(raiseOp.getError());
     } else if (auto breakOp = dyn_cast<LIT::BreakOp>(op)) {
       b.create<HLCF::BreakOp>();
     } else {
@@ -375,11 +287,13 @@ static LogicalResult lowerSemanticCF(DeclRefType errType, LIT::FuncOp func) {
   if (!isa<LIT::EndFuncOp>(terminator))
     return success();
 
+  Type declaredResultType = func.getResultTypeWithoutErrorVariant();
+
   // If the endfunc isn't live, then it doesn't matter, there must have been a
   // return/raise before this.
   if (liveCfOps.contains(terminator)) {
     // A return is required if the function has a non-none result.
-    if (!isa<LIT::NoneType>(func.getResultType()) ||
+    if (!isa<LIT::NoneType>(declaredResultType) ||
         func.getSignature().hasMemoryOnlyResult())
       return terminator->emitError(
           "return expected at end of function with results");
@@ -387,8 +301,8 @@ static LogicalResult lowerSemanticCF(DeclRefType errType, LIT::FuncOp func) {
 
   ImplicitLocOpBuilder b(func.getLoc(), OpBuilder(terminator));
   Value retVal;
-  if (!isa<LIT::NoneType>(func.getResultType())) {
-    retVal = b.create<StaticUndefOp>(func.getResultType());
+  if (!isa<LIT::NoneType>(declaredResultType)) {
+    retVal = b.create<StaticUndefOp>(declaredResultType);
   } else {
     // The function returns none.
     retVal = b.create<ParamConstantOp>(b.getAttr<LIT::NoneAttr>());
@@ -396,38 +310,10 @@ static LogicalResult lowerSemanticCF(DeclRefType errType, LIT::FuncOp func) {
 
   // Wrap the result value if necessary.
   if (func.isThrows())
-    retVal = b.create<VariantCreateOp>(errorOr(), retVal);
+    retVal = b.create<VariantCreateOp>(func.getResultType(), retVal);
   b.create<KGEN::ReturnOp>(retVal);
   terminator->erase();
   return success();
-}
-
-//===----------------------------------------------------------------------===//
-// lowerThrows
-//===----------------------------------------------------------------------===//
-
-/// Lower `<...>(...) throws -> T` to `<...>(...) -> ErrorOr<T>`. Update all
-/// callsites to signature types to reflect this change.
-static void lowerThrows(DeclRefType errType, Operation *op) {
-  // Replace every throwing signature type with a variant result type and
-  // every async signature type with a coroutine handle result type.
-  Builder b(op->getContext());
-  mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement([&](SignatureType sigType) {
-    if (!sigType.isThrows())
-      return sigType;
-    // Wrap the result type with the appropriate type.
-    Type type = VariantType::get({errType, sigType.getValueResults().front()});
-    // Clear the `throws` bit.
-    return SignatureType::get(
-        sigType.getInputParams(), sigType.getResultParams(),
-        b.getFunctionType(sigType.getValueInputs(), type),
-        b.getAttr<MetadataAttr>(
-            sigType.getValueInputConventions(), sigType.getDefaultArguments(),
-            bitEnumClear(sigType.getFnEffects(), FnEffects::Throws)));
-  });
-  replacer.recursivelyReplaceElementsIn(
-      op, /*replaceAttrs=*/true, /*replaceLocs=*/false, /*replaceTypes=*/true);
 }
 
 //===----------------------------------------------------------------------===//
@@ -473,32 +359,14 @@ struct LowerSemanticCFPass : impl::LowerSemanticCFBase<LowerSemanticCFPass> {
   using LowerSemanticCFBase::LowerSemanticCFBase;
 
   void runOnOperation() override {
-    // Look for an error type declaration.
-    // FIXME(Issue #11153): Should not scan the whole world for Error.
-    DeclRefType errType;
-    getOperation().walk([&](LIT::StructDeclOp decl) {
-      if (decl.getName() != "Error" || !decl.getInputParams().empty())
-        return WalkResult::advance();
-      // Reconstruct the full symbol reference.
-      errType = DeclRefType::get(
-          LIT::getFullyResolvedSymbolRef(cast<mlir::SymbolOpInterface>(*decl)));
-      // We don't need to scan anymore.
-      return WalkResult::interrupt();
-    });
-
     // Walk all functions and update them.
     bool hadError = false;
     getOperation().walk([&](LIT::FuncOp func) {
-      hadError |= failed(lowerSemanticCF(errType, func));
+      hadError |= failed(lowerSemanticCF(func));
       hadError |= failed(lowerParamResults(func));
     });
     if (hadError)
       return signalPassFailure();
-
-    // Lower all functions that throw.
-    // FIXME(Issue #11154): we shouldn't need to do this.
-    if (errType)
-      lowerThrows(errType, getOperation());
 
     // Lower nested functions by converting them to region declarations. Walk
     // all top-level functions and gather nested functions.

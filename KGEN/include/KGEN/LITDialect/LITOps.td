@@ -70,6 +70,10 @@ def LIT_FuncOp : LITOp<"func", [
     /// Returns the result type, which is guaranteed to be present.
     Type getResultType() { return getFunctionType().getResults()[0]; }
 
+    /// Returns the result type with the outer variant<> type stripped off if it
+    /// is a throwing function.
+    Type getResultTypeWithoutErrorVariant();
+
     /// Return a reference for this function, optionally bound to a set of
     /// parameter bindings.
     TypedAttr getBoundReference(ParamBindArrayAttr bindings = {});

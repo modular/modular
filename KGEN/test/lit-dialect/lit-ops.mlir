@@ -230,7 +230,14 @@ lit.func @lexical_terminators(%cond: i1, %err: !kgen.declref<@Error>) throws -> 
     lit.try.yield
   }
   // CHECK: lit.raise %err : <@Error>
-  lit.raise %err : <@Error>
+  lit.try {
+    lit.raise %err : <@Error>
+    lit.try.yield
+  } except (%e: !kgen.declref<@Error>) {
+    lit.try.yield
+  } else {
+    lit.try.yield
+  }
   // CHECK: lit.end_func
   lit.end_func
 }
