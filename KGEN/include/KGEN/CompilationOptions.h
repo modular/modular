@@ -106,10 +106,7 @@ public:
   }
 
   /// Save temporary files to a file with the given prefix.
-  void setSaveTemps(std::string prefix) {
-    saveTempsPrefix = prefix;
-    saveTemps = true;
-  }
+  void setSaveTemps(std::string prefix) { saveTempsPrefix = prefix; }
 
   unsigned optimizationLevel : 2;
   DebugInfoLevel debugLevel = kNoDebug;
@@ -120,7 +117,6 @@ public:
   std::string targetFeatures = getHostCPUFeatures();
 
   std::string saveTempsPrefix = "";
-  bool saveTemps = false;
 };
 } // namespace M::KGEN
 
