@@ -954,9 +954,6 @@ parseOptionalParameterSignature(LitParserBase &p, ASTDecl &declScope,
 
       // Bind the parsed type expression so references from other parameters
       // can be resolved.
-      if (arg.isPack)
-        // The type of pack parameters such as `Ts*: type` is `variadic<type>`.
-        type = KGEN::VariadicType::get(type);
       auto tmpDecl = ParamDeclRefAttr::get(arg.name, type);
       declResolver.addFullyResolvedDecl(PValue(tmpDecl), arg.name, arg.loc,
                                         &declScope);
