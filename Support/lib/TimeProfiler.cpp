@@ -5,6 +5,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/TimeProfiler.h"
+
+#include "Config/Config.h"
+#include "Support/Host.h"
+
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
@@ -132,6 +136,11 @@ struct GlobalProfilerContext {
   DenseSet<ThreadProfilerContext *> threadProfilerContexts;
 };
 } // anonymous namespace
+
+static int reportError(Twine errorMessage) {
+  llvm::errs() << errorMessage << "\n";
+  return EXIT_FAILURE;
+}
 
 GlobalProfilerContext *GlobalProfilerContext::instance = nullptr;
 
@@ -272,6 +281,25 @@ void M::Detail::timeTraceProfilerWriteTrace(llvm::raw_pwrite_stream &os) {
                    time_point_cast<microseconds>(ctx.beginningOfTime)
                        .time_since_epoch()
                        .count());
+
+  // Emit software version info
+  jsonOS.attributeBegin("versionInfo");
+  jsonOS.objectBegin();
+  jsonOS.attribute("modular-git-sha", MODULAR_VERSION_REVISION);
+  jsonOS.attribute("modular-build-type", MODULAR_BUILD_TYPE);
+  jsonOS.objectEnd();
+  jsonOS.attributeEnd();
+
+  // Emit the host machine info, if we can retrieve it.
+  auto hostMachineInfoOr = getHostMachineInfo();
+  if (hostMachineInfoOr.isError())
+    reportError("warning: time-profiler failed to "
+                "retrieve system-info for tracefile");
+  else {
+    jsonOS.attributeBegin("hostMachineInfo");
+    hostMachineInfoOr.takeValue().print(jsonOS);
+    jsonOS.attributeEnd();
+  }
 
   jsonOS.objectEnd();
 }
