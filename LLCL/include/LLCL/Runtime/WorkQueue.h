@@ -23,7 +23,6 @@
 #include <memory>
 
 namespace M::LLCL {
-class LLCLAllocator;
 
 /// Work functions to execute for a 'task'.
 using TaskFunction = llvm::unique_function<void()>;
