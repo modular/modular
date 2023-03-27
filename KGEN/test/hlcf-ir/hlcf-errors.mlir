@@ -4,7 +4,7 @@ func.func @loop_args() {
   // expected-error @below {{'hlcf.loop' op operand types do not match body region argument types}}
   "hlcf.loop"() ({
   ^bb0(%arg0: i32):
-    hlcf.return
+    kgen.return
   }) : () -> ()
   return
 }
@@ -15,8 +15,8 @@ func.func @return_not_in_func(%arg0: i1) {
   "foo.region"() ({
     // expected-note @below {{see control-flow root here}}
     hlcf.if %arg0 {
-      // expected-error @below {{'hlcf.return' op is not nested within a function}}
-      hlcf.return
+      // expected-error @below {{'kgen.return' op is not nested within a function}}
+      kgen.return
     } else {
       hlcf.yield
     }
@@ -29,8 +29,8 @@ func.func @return_not_in_func(%arg0: i1) {
 // expected-note @below {{see function here}}
 func.func @return_mismatch_result_count(%arg0: i32) {
   hlcf.loop {
-    // expected-error @below {{'hlcf.return' op specifies 1 results but surrounding function expects 0}}
-    hlcf.return %arg0 : i32
+    // expected-error @below {{'kgen.return' op specifies 1 results but surrounding function expects 0}}
+    kgen.return %arg0 : i32
   }
 }
 
@@ -39,8 +39,8 @@ func.func @return_mismatch_result_count(%arg0: i32) {
 // expected-note @below {{see function here}}
 func.func @return_mismatch_result_count(%arg0: i32) -> i64 {
   hlcf.loop {
-    // expected-error @below {{'hlcf.return' op operand #0 type 'i32' does not match expected result type 'i64'}}
-    hlcf.return %arg0 : i32
+    // expected-error @below {{'kgen.return' op operand #0 type 'i32' does not match expected result type 'i64'}}
+    kgen.return %arg0 : i32
   }
 }
 
@@ -52,7 +52,7 @@ func.func @yield_mismatch(%arg0: i1, %arg1 : i32) {
     // expected-error @below {{'hlcf.yield' op branch input #0 has type 'i32' but target expected 'i64' along control-flow edge from here}}
     hlcf.yield %arg1 : i32
   } else {
-    hlcf.return
+    kgen.return
   }
 }
 
@@ -61,7 +61,7 @@ func.func @yield_mismatch(%arg0: i1, %arg1 : i32) {
 // expected-note @below {{see control-flow root here}}
 func.func @break_no_loop(%arg0: i1) {
   hlcf.if %arg0 {
-    hlcf.return
+    kgen.return
   } else {
     // expected-error @below {{'hlcf.break' op is not nested within a suitable parent operation}}
     hlcf.break

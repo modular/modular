@@ -70,8 +70,8 @@ func.func @func_loop_if(%arg0: i1, %arg1: i32, %arg2: i64) -> i32 {
   %2 = hlcf.loop (%0 = %arg2 : i64) -> i32 {
     // CHECK: %[[V1:.*]] = hlcf.if %arg0 -> i64
     %1 = hlcf.if %arg0 -> i64 {
-      // CHECK: hlcf.return %arg1 : i32
-      hlcf.return %arg1 : i32
+      // CHECK: kgen.return %arg1 : i32
+      kgen.return %arg1 : i32
     } else {
       // CHECK: hlcf.yield %[[A]] : i64
       hlcf.yield %0 : i64

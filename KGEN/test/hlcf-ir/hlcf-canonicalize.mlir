@@ -5,7 +5,7 @@ func.func @terminators_conditionally_pure(%arg0: i1) {
   hlcf.loop {
     // CHECK: {b}
     hlcf.if %arg0 {
-      hlcf.return
+      kgen.return
     } else {
       hlcf.yield
     } {b}

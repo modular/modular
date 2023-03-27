@@ -522,6 +522,8 @@ def KGEN_ReturnOp : KGENOp<"return", [Terminator, ReturnLike,
 
   let arguments = (ins Variadic<AnyType>:$operands);
   let assemblyFormat = "attr-dict ($operands^ `:` type($operands))?";
+
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
