@@ -21,48 +21,49 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   /// Fully associative variadic expressions.
   I32EnumAttrCase<"Add", 0, "add">,
   I32EnumAttrCase<"Mul", 1, "mul">,
-  I32EnumAttrCase<"And", 2, "and">,
-  I32EnumAttrCase<"Or",  3, "or">,
-  I32EnumAttrCase<"Xor", 4, "xor">,
-  I32EnumAttrCase<"Max", 5, "max">,
-  I32EnumAttrCase<"Min", 6, "min">,
+  I32EnumAttrCase<"MulNuw", 2, "mul_nuw">,
+  I32EnumAttrCase<"And", 3, "and">,
+  I32EnumAttrCase<"Or",  4, "or">,
+  I32EnumAttrCase<"Xor", 5, "xor">,
+  I32EnumAttrCase<"Max", 6, "max">,
+  I32EnumAttrCase<"Min", 7, "min">,
 
   // Binary expressions.
-  I32EnumAttrCase<"Shl", 7, "shl">,
-  I32EnumAttrCase<"Shr", 8, "shr">,
-  I32EnumAttrCase<"Div", 9, "div">,
-  I32EnumAttrCase<"Mod", 10, "mod">,
+  I32EnumAttrCase<"Shl", 8, "shl">,
+  I32EnumAttrCase<"Shr", 9, "shr">,
+  I32EnumAttrCase<"Div", 10, "div">,
+  I32EnumAttrCase<"Mod", 11, "mod">,
 
   // Compares.
-  I32EnumAttrCase<"EQ", 11, "eq">,
-  I32EnumAttrCase<"LT", 12, "lt">,
-  I32EnumAttrCase<"LE", 13, "le">,
+  I32EnumAttrCase<"EQ", 12, "eq">,
+  I32EnumAttrCase<"LT", 13, "lt">,
+  I32EnumAttrCase<"LE", 14, "le">,
 
   // Target comparisons & utilities.
-  I32EnumAttrCase<"CurrentTarget", 14, "current_target">,
-  I32EnumAttrCase<"TargetHasFeature", 15, "target_has_feature">,
-  I32EnumAttrCase<"TargetGetField", 16, "target_get_field">,
+  I32EnumAttrCase<"CurrentTarget", 15, "current_target">,
+  I32EnumAttrCase<"TargetHasFeature", 16, "target_has_feature">,
+  I32EnumAttrCase<"TargetGetField", 17, "target_get_field">,
 
   // BuildInfo comparisons & utilities.
-  I32EnumAttrCase<"BuildInfoGetField", 17, "build_info_get_field">,
+  I32EnumAttrCase<"BuildInfoGetField", 18, "build_info_get_field">,
 
   // Complex variadic operations.
-  I32EnumAttrCase<"In", 18, "in">,
+  I32EnumAttrCase<"In", 19, "in">,
 
   // Unary type expressions.
-  I32EnumAttrCase<"GetSizeOf", 19, "get_sizeof">,
-  I32EnumAttrCase<"GetAlignOf", 20, "get_alignof">,
+  I32EnumAttrCase<"GetSizeOf", 20, "get_sizeof">,
+  I32EnumAttrCase<"GetAlignOf", 21, "get_alignof">,
 
   // Signature processing.
-  I32EnumAttrCase<"BindSignature", 21, "bind_signature">,
-  I32EnumAttrCase<"Apply", 22, "apply">,
-  I32EnumAttrCase<"Rebind", 23, "rebind">,
+  I32EnumAttrCase<"BindSignature", 22, "bind_signature">,
+  I32EnumAttrCase<"Apply", 23, "apply">,
+  I32EnumAttrCase<"Rebind", 24, "rebind">,
 
   // Evaluating a set of candidates.
-  I32EnumAttrCase<"Evaluate", 24, "evaluate">,
+  I32EnumAttrCase<"Evaluate", 25, "evaluate">,
 
   // Enumerating all concrete implementations for a given signature.
-  I32EnumAttrCase<"GetAllImpls", 25, "get_all_impls">
+  I32EnumAttrCase<"GetAllImpls", 26, "get_all_impls">
 ]>;
 
 //===----------------------------------------------------------------------===//

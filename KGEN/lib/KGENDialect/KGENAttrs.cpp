@@ -710,6 +710,7 @@ LogicalResult ParamOperatorAttr::verify(
   switch (opcode) {
   case POC::Add:
   case POC::Mul:
+  case POC::MulNuw:
   case POC::And:
   case POC::Or:
   case POC::Xor:
@@ -1028,9 +1029,10 @@ static Attribute simplifyAdd(SmallVectorImpl<TypedAttr> &operands) {
   return {};
 }
 
-static Attribute simplifyMul(SmallVectorImpl<TypedAttr> &operands) {
+static Attribute simplifyGenericMul(SmallVectorImpl<TypedAttr> &operands,
+                                    POC opcode) {
   if (auto result = simplifyAssocOp(
-          POC::Mul, operands, [](auto a, auto b) { return a * b; }, {},
+          opcode, operands, [](auto a, auto b) { return a * b; }, {},
           /*identityCst*/ [](auto cst) { return cst.isOne(); },
           /*destructiveCst*/ [](auto cst) { return cst.isZero(); }))
     return result;
@@ -1047,7 +1049,7 @@ static Attribute simplifyMul(SmallVectorImpl<TypedAttr> &operands) {
       SmallVector<TypedAttr> addOperands;
       for (auto addOperand : addSubExpr.getOperands()) {
         operands.push_back(addOperand);
-        addOperands.push_back(ParamOperatorAttr::get(POC::Mul, operands));
+        addOperands.push_back(ParamOperatorAttr::get(opcode, operands));
         operands.pop_back();
       }
       // Canonicalize and form the add expression.
@@ -1571,7 +1573,8 @@ static TypedAttr getParamOperator(MLIRContext *context, POC opcode,
     result = simplifyAdd(operands);
     break;
   case POC::Mul:
-    result = simplifyMul(operands);
+  case POC::MulNuw:
+    result = simplifyGenericMul(operands, opcode);
     break;
   case POC::And:
     result = simplifyAnd(operands);
