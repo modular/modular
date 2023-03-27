@@ -1202,7 +1202,71 @@ static Attribute simplifyShr(SmallVectorImpl<TypedAttr> &operands) {
       [](auto a, auto b) { return a.ashr(b); });
 }
 
+/// Simplify division operands by cancelling out shared elements within
+/// numerator and denominator products, e.g., `(a*b)/(b*b) --> a/b`
+static void simplifyDivOperands(SmallVectorImpl<TypedAttr> &operands) {
+  TypedAttr &numeratorAttr = operands[0];
+  TypedAttr &denominatorAttr = operands[1];
+
+  // We can only simplify if both operands are products
+  ParamOperatorAttr numeratorMulAttr = dyn_castPE(POC::MulNuw, numeratorAttr);
+  ParamOperatorAttr denominatorMulAttr =
+      dyn_castPE(POC::MulNuw, denominatorAttr);
+  if (!numeratorMulAttr || !denominatorMulAttr)
+    return;
+
+  // Build mapping from each Mul op operand to the number of its occurrences,
+  // e.g., for `mul(D0, 42, D0)`, we build the mapping `{ D0 : 2, 42 : 1 }`.
+  SmallDenseMap<TypedAttr, size_t> numeratorOperandToOccurrences;
+  SmallDenseMap<TypedAttr, size_t> denominatorOperandToOccurrences;
+  for (TypedAttr numOpAttr : numeratorMulAttr.getOperands())
+    ++numeratorOperandToOccurrences[numOpAttr];
+  for (TypedAttr denomOpAttr : denominatorMulAttr.getOperands())
+    ++denominatorOperandToOccurrences[denomOpAttr];
+
+  // Emulate cancelling out shared operand(s) by decrementing their occurrences.
+  // e.g.,
+  // for
+  //   `mul(D0, 42, D0)` with occurrence mapping `{ D0 : 2, 42 : 1 }`.
+  //   `mul(42, D0, 42)` with occurrence mapping `{ D0 : 1, 42 : 2 }`.
+  // the new occurrence mappings are
+  //   `{ D0 : 1, 42 : 0 }`.
+  //   `{ D0 : 0, 42 : 1 }`.
+  for (auto [numOpAttr, occurrences] : numeratorOperandToOccurrences) {
+    if (size_t denomOccurrences =
+            denominatorOperandToOccurrences.lookup(numOpAttr)) {
+      size_t sharedOccurrences = std::min(occurrences, denomOccurrences);
+      numeratorOperandToOccurrences[numOpAttr] -= sharedOccurrences;
+      denominatorOperandToOccurrences[numOpAttr] -= sharedOccurrences;
+    }
+  }
+
+  // Build up new operand list, e.g.,
+  // for occurrence mapping `{ D0 : 1, 42 : 2 }`, we get { D0, 42, 42 }
+  SmallVector<TypedAttr> newNumeratorOperands;
+  SmallVector<TypedAttr> newDenomenatorOperands;
+  for (auto [numAttr, occurrences] : numeratorOperandToOccurrences)
+    if (occurrences)
+      newNumeratorOperands.push_back(numAttr);
+  for (auto [denomAttr, occurrences] : denominatorOperandToOccurrences)
+    if (occurrences)
+      newDenomenatorOperands.push_back(denomAttr);
+
+  // Update each product operands. Note that if all operands were cancelled out
+  // for a product, we use 1, the multiplicative identity.
+  auto updateMulOp = [](TypedAttr &mulOp, ArrayRef<TypedAttr> operands) {
+    if (operands.empty())
+      mulOp = IntegerAttr::get(mulOp.getType(), 1);
+    else
+      mulOp = ParamOperatorAttr::get(POC::MulNuw, operands);
+  };
+  updateMulOp(numeratorAttr, newNumeratorOperands);
+  updateMulOp(denominatorAttr, newDenomenatorOperands);
+}
+
 static Attribute simplifyDiv(SmallVectorImpl<TypedAttr> &operands) {
+  simplifyDivOperands(operands);
+
   // Implement support for identities like `x/1 = x`.
   if (auto rhs = dyn_cast<IntegerAttr>(operands[1]))
     if (rhs.getValue().isOne())
@@ -1573,6 +1637,7 @@ static TypedAttr getParamOperator(MLIRContext *context, POC opcode,
     result = simplifyAdd(operands);
     break;
   case POC::Mul:
+    [[fallthrough]];
   case POC::MulNuw:
     result = simplifyGenericMul(operands, opcode);
     break;

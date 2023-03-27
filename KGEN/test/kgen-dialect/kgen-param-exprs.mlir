@@ -303,6 +303,15 @@ kgen.generator @param_canonicalize<p1, p2>() {
   // CHECK: = kgen.param.constant = <add(mul(p1, 3), 42)>
   kgen.param.constant = <add(p1, 42, mul(p1, 2))>
 
+  // CHECK: = kgen.param.constant = <div(mul(p1, p1, p2, 3), mul(p1, p1, 3))>
+  kgen.param.constant = <div(mul(p1, p1, p2, 3), mul(p1, p1, 3))>
+
+  // CHECK: = kgen.param.constant = <mul_nuw(p2, 3)>
+  kgen.param.constant = <div(mul_nuw(p1, p1, p2, 3), mul_nuw(p1, p1))>
+
+  // CHECK: = kgen.param.constant = <div(mul_nuw(p1, 3), p2)>
+  kgen.param.constant = <div(mul_nuw(p1, p1, p2, 3), mul_nuw(p1, p2, p2))>
+
   kgen.param.constant = <mul(p1, 1)>  // CHECK: kgen.param.constant = <p1>
   kgen.param.constant = <mul(p1, 0, p2)>  // CHECK: kgen.param.constant = <0>
   kgen.param.constant = <mul_nuw(p1, 1)>  // CHECK: kgen.param.constant = <p1>
