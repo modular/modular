@@ -12,6 +12,10 @@
 
 #include <string>
 
+namespace llvm::json {
+class OStream;
+}
+
 #if defined(__APPLE__) && (defined(__arm64__) || defined(__aarch64__))
 #define HOST_IS_APPLE_SILICON_PROCESSOR
 #endif
@@ -47,6 +51,7 @@ struct HostMachineInfo {
   size_t l4CacheSize;
 
   void print(llvm::raw_ostream &os) const;
+  void print(llvm::json::OStream &json) const;
   void print(HostProperty property, llvm::raw_ostream &os) const;
 };
 

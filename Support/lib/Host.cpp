@@ -10,6 +10,7 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/JSON.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Threading.h"
@@ -171,6 +172,21 @@ void M::HostMachineInfo::print(llvm::raw_ostream &os) const {
   os << "\nl4-cache-size: ";
   os << l4CacheSize;
   os << "\n";
+}
+
+void M::HostMachineInfo::print(llvm::json::OStream &json) const {
+  json.objectBegin();
+  json.attribute("target-triple", triple);
+  json.attribute("os", osName);
+  json.attribute("arch", cpuArch);
+  json.attribute("features", cpuFeatures);
+  json.attribute("core-count", numPhysicalCores);
+  json.attribute("simd-bitwidth", simdBitWidth);
+  json.attribute("l1-cache-size", l1CacheSize);
+  json.attribute("l2-cache-size", l2CacheSize);
+  json.attribute("l3-cache-size", l3CacheSize);
+  json.attribute("l4-cache-size", l4CacheSize);
+  json.objectEnd();
 }
 
 void HostMachineInfo::print(HostProperty property,
