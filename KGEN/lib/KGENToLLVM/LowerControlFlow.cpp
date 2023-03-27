@@ -10,6 +10,7 @@
 
 #include "KGEN/HLCFDialect/Analysis/ControlFlowTree.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENPasses.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "LLVMLoweringUtils.h"
@@ -40,7 +41,7 @@ struct ControlFlowConverter {
 
   /// Lower the terminator.
   LogicalResult lowerTerminator(ControlFlowTerminator term, unsigned &termId);
-  LogicalResult lowerReturn(ReturnOp op, ValueRange operands);
+  LogicalResult lowerReturn(KGEN::ReturnOp op, ValueRange operands);
 
   /// The rewriter to use.
   mlir::IRRewriter b;
@@ -153,7 +154,7 @@ LogicalResult ControlFlowConverter::lowerNode(ControlFlowNode node,
   return success();
 }
 
-LogicalResult ControlFlowConverter::lowerReturn(ReturnOp op,
+LogicalResult ControlFlowConverter::lowerReturn(KGEN::ReturnOp op,
                                                 ValueRange operands) {
   // If the results don't need to be packed, create the LLVM return.
   if (op->getNumOperands() <= 1) {
@@ -193,7 +194,7 @@ LogicalResult ControlFlowConverter::lowerTerminator(ControlFlowTerminator term,
   }
 
   // Rewrite the terminator.
-  if (auto returnOp = dyn_cast<ReturnOp>(term.getOperation()))
+  if (auto returnOp = dyn_cast<KGEN::ReturnOp>(term.getOperation()))
     return lowerReturn(returnOp, results);
 
   assert(termId < tree.targets.size() && "malformed tree");

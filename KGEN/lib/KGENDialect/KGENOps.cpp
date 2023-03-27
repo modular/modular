@@ -235,6 +235,35 @@ void ReturnOp::getBranchTargets(
   targets.emplace_back(std::nullopt, getOperands());
 }
 
+/// Verify two type ranges match between a return operation and a function.
+static LogicalResult verifyReturnTypes(TypeRange lhs, TypeRange rhs,
+                                       Operation *op, Operation *parent) {
+  if (lhs.size() != rhs.size()) {
+    return (op->emitOpError("specifies ")
+            << lhs.size() << " results but surrounding function expects "
+            << rhs.size())
+               .attachNote(parent->getLoc())
+           << "see function here";
+  }
+  for (auto [idx, lhsType, rhsType] :
+       llvm::zip(llvm::seq<unsigned>(0, lhs.size()), lhs, rhs)) {
+    if (lhsType == rhsType)
+      continue;
+    return (op->emitOpError("operand #")
+            << idx << " type " << lhsType
+            << " does not match expected result type " << rhsType)
+               .attachNote(parent->getLoc())
+           << "see function here";
+  }
+  return success();
+}
+
+LogicalResult ReturnOp::verify() {
+  auto function = (*this)->getParentOfType<mlir::FunctionOpInterface>();
+  return verifyReturnTypes(getOperandTypes(), function.getResultTypes(), *this,
+                           function);
+}
+
 //===----------------------------------------------------------------------===//
 // ParamAssertOp
 //===----------------------------------------------------------------------===//
@@ -390,13 +419,9 @@ ArrayRef<Type> GeneratorOp::getCallableResults() {
   return getFunctionType().getResults();
 }
 
-ArrayAttr GeneratorOp::getCallableArgAttrs() {
-  return nullptr;
-}
+ArrayAttr GeneratorOp::getCallableArgAttrs() { return nullptr; }
 
-ArrayAttr GeneratorOp::getCallableResAttrs() {
-  return nullptr;
-}
+ArrayAttr GeneratorOp::getCallableResAttrs() { return nullptr; }
 
 //===----------------------------------------------------------------------===//
 // FuncOp
@@ -486,13 +511,9 @@ ArrayRef<Type> FuncOp::getCallableResults() {
   return getFunctionType().getResults();
 }
 
-ArrayAttr FuncOp::getCallableArgAttrs() {
-  return nullptr;
-}
+ArrayAttr FuncOp::getCallableArgAttrs() { return nullptr; }
 
-ArrayAttr FuncOp::getCallableResAttrs() {
-  return nullptr;
-}
+ArrayAttr FuncOp::getCallableResAttrs() { return nullptr; }
 
 //===----------------------------------------------------------------------===//
 // AddressOfOp

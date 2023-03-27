@@ -300,43 +300,4 @@ def HLCF_YieldOp : HLCFTerminatorOp<"yield", [Pure, HasParent<"IfOp">,
   let builders = [OpBuilder<(ins), [{ build($_builder, $_state, {}); }]>];
 }
 
-//===----------------------------------------------------------------------===//
-// ReturnOp
-//===----------------------------------------------------------------------===//
-
-def HLCF_ReturnOp : HLCFTerminatorOp<"return", [ReturnLike]> {
-  let summary = "function return operation";
-  let description = [{
-    The `hlcf.return` operation is a control-flow operation that transfers
-    control-flow to the end of the surrounding function operation. The function
-    control-flow tree is a special tree rooted at an operation that implements
-    `FunctionOpInterface`. The operand types of the operation must match the
-    return types of the enclosing function.
-
-    Example:
-
-    ```mlir
-    func.func @pass_argument(%arg0: index, %arg1: i1) -> index {
-      hlcf.if %arg1 {
-        hlcf.return %arg0 : index
-      } else {
-        hlcf.yield
-      }
-      call @do_something() : () -> ()
-      return %arg0 : index
-    }
-    ```
-
-    This operation is modelled to always have unknown side effects because the
-    control-flow edge from this operation will always escape the parent
-    operation; it can never be nested directly below functions.
-  }];
-
-  let arguments = (ins Variadic<AnyType>:$operands);
-
-  let builders = [OpBuilder<(ins), [{ build($_builder, $_state, {}); }]>];
-
-  let hasVerifier = 1;
-}
-
 #endif // HLCFOPS_TD

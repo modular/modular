@@ -44,10 +44,10 @@ func.func @simple_loop() -> (index, index) {
 func.func private @multiple_returns(%cond: i1) -> index {
   hlcf.if %cond {
     %0 = index.constant 0
-    hlcf.return %0 : index
+    kgen.return %0 : index
   } else {
     %0 = index.constant 1
-    hlcf.return %0 : index
+    kgen.return %0 : index
   }
   %0 = hlcf.loop () -> index {
     hlcf.continue
@@ -80,7 +80,7 @@ func.func @unreachable_return() -> index {
 func.func @return_and_terminator(%cond: i1) -> index {
   %0 = hlcf.if %cond -> index {
     %c0 = index.constant 0
-    hlcf.return %c0 : index
+    kgen.return %c0 : index
   } else {
     %c1 = index.constant 1
     hlcf.yield %c1 : index
