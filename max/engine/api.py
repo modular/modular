@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-
+import os
 from enum import Enum
 from pathlib import Path
 from sys import version_info
@@ -23,6 +23,13 @@ else:
 version_string = _mecore.__version__
 
 
+class ModelKind(str, Enum):
+    PYTORCH_MODEL = "PyTorch Model"
+    TENSORFLOW_MODEL = "TensorFlow Model"
+    TFLITE_MODEL = "TFLite Model"
+    UNKNOWN_MODEL = "Unknown Model"
+
+
 class Model:
     """A Model object represents a compiled model.
 
@@ -32,11 +39,13 @@ class Model:
     """
 
     _impl: _Model
+    _kind: ModelKind
 
     @classmethod
-    def _init(cls, _core_model):
+    def _init(cls, _core_model, _kind: ModelKind):
         model = cls()
         model._impl = _core_model
+        model._kind = _kind
         return model
 
     def execute(self, *args) -> None:
@@ -70,6 +79,10 @@ class Model:
     def input_metadata(self) -> List["TensorSpec"]:
         """Metadata about input tensors the model expects."""
         return [TensorSpec._init(spec) for spec in self._impl.input_metadata]
+
+    @property
+    def kind(self) -> str:
+        return self._kind.value
 
 
 class DType(Enum):
@@ -127,7 +140,18 @@ class InferenceSession:
             We raise an exception if the path provided is invalid.
         """
         _model = self._impl.compile(model_path, config)
-        return Model._init(_model)
+
+        # TODO: Fix when real PyTorch support lands
+        if model_path.suffix == ".onnx":
+            model_kind = ModelKind.PYTORCH_MODEL
+        elif model_path.suffix == ".tflite":
+            model_kind = ModelKind.TFLITE_MODEL
+        elif os.path.isdir(model_path):
+            model_kind = ModelKind.TENSORFLOW_MODEL
+        else:
+            model_kind = ModelKind.UNKNOWN_MODEL
+
+        return Model._init(_model, model_kind)
 
 
 class TensorSpec:
