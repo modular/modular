@@ -263,6 +263,7 @@ public:
     /// The payload's constructor has not been invoked so the value is not
     /// ready for consumption. This state can transition to
     /// `kUnconstructedInlineWaiterConstructing`, `kAvailable` and `kError`.
+    /// TODO: kUnconstructedInlineWaiterConstructing does not exist any more
     kUnconstructed = 0,
 
     /// This is a transient state when the first waiter is added to an
@@ -270,6 +271,8 @@ public:
     /// waiter is being initialized.  Any state-aware internal implementation
     /// details of AsyncValue that encounters this should just spin until the
     /// state changes to kUnconstructed0AvailableOOLWaiters.
+    /// TODO: kUnconstructed0AvailableOOLWaiters is not a real enum member,
+    /// what was this comment trying to refer to?
     kUnconstructedInitializingInlineWaiter = 1,
 
     /// These states are used to keep track of how many entries are used in the
@@ -277,7 +280,7 @@ public:
     /// `waitersAndState`.  Encoding this information in the state integer in
     /// `waitersAndState` allows us to use compare/xchg to atomically allocate
     /// entries in the out of line waiter.  The enum values here are encoded
-    /// this was to make certain operations against the state enum value more
+    /// this way to make certain operations against the state enum value more
     /// efficient.
     kUnconstructed1ValidOOLWaiterSlots = 2, //< 1 valid, 3 free slots.
     kUnconstructed2ValidOOLWaiterSlots = 3, //< 2 valid, 2 free slots.
@@ -322,7 +325,7 @@ public:
 #else  // MODULAR_DEBUG
     // Only track the number of alive AsyncValue instances in debug builds.
     return false;
-#endif // MODULAR_DEBU
+#endif // MODULAR_DEBUG
   }
 
   /// Return the total number of async values that are currently live in the
@@ -454,7 +457,7 @@ protected:
   /// each waiter's closure is arbitrary and remote from the emplace call,
   /// it seems prudent to avoid executing the waiter on the callers stack.
   ///
-  /// However the waiter may been to be run immediately and on the callers
+  /// However the waiter may need to be run immediately and on the callers
   /// stack if there's no place to enqueue the waiter onto. For example,
   /// a 'foreign' thread which is not currently within an await run loop may
   /// emplace an async value.
@@ -610,7 +613,7 @@ class IndirectAsyncValue : public AsyncValue {
       // destroyed.
       // NOTE: It isn't currently valid to destroy an IndirectAsyncValue with
       // waiters - we'd have to propagate error into them, and would have to
-      // check for ressurection.  Don't do this until we have a known use-case.
+      // check for resurrection.  Don't do this until we have a known use-case.
       assert(getState() == State::kUnconstructed &&
              "destroying an IndirectAsyncValue with waiters that never got "
              "resolved?");
@@ -619,6 +622,7 @@ class IndirectAsyncValue : public AsyncValue {
 
   union {
     // This field is present when in kUnconstructedInlineWaiter* state.
+    // TODO: kUnconstructedInlineWaiter* does not exist any more
     Waiter waiter;
     // This field is present when resolved to another AsyncValue.
     RCRef<AsyncValue> value;
@@ -715,7 +719,7 @@ inline void AsyncValue::emplaceAndDecRef(Args &&...args) {
          "'emplaceIndirectAndDecRef' instead");
   typeID.assertEqual(TypeID::get<T>(), "AsyncValue::emplaceAndDecRef");
 
-  // NOTE: At this point we could stap tracking the ref and instead just inc/dec
+  // NOTE: At this point we could stop tracking the ref and instead just inc/dec
   // our own ref count. However the explicit ref passing makes the chain of
   // ownership more explicit.
 

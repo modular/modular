@@ -137,7 +137,7 @@ public:
   }
 
   /// Return true if this AsyncValue is "ready" and filled with a concrete
-  /// value.   get() will return a value in this state.
+  /// value. get() will return a value in this state.
   bool isValueAvailable() const { return value->isValueAvailable(); }
 
   /// Return true if the AsyncValue is "ready" and either filled with a concrete

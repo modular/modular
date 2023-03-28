@@ -95,7 +95,7 @@ public:
   bool isDoneWithNopSpins() const { return iterations >= nopSpins; }
 };
 
-/// This is like SpinWaiter<>but allows configurable busy waiting based on wall
+/// This is like SpinWaiter<> but allows configurable busy waiting based on wall
 /// time.
 class BusyWaitSpinWaiter {
 public:

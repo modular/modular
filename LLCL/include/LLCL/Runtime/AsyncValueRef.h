@@ -59,7 +59,7 @@ public:
   }
 
   /// This constructor forms a reference to the specified pointer, taking
-  /// ownership it, and thus not increasing the reference count.
+  /// ownership of it, and thus not increasing the reference count.
   static AsyncValueRef<T> take(AsyncValue *pointer) {
     auto res = AsyncValueRef<T>(takeRCRef(pointer));
     assert(res.template isCompatible<T>() &&
