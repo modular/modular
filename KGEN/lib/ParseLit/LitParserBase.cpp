@@ -48,9 +48,12 @@ ParseResult LitParserBase::parseToken(LitToken::Kind expectedToken,
 }
 
 /// Consume an identifier token, binding its name into the specified result
-/// string attribute.
+/// string attribute. If `loc` is set, it is populated with the source location
+/// of the token.
 ParseResult LitParserBase::parseIdentifier(StringAttr &result,
-                                           const Twine &message) {
+                                           const Twine &message, SMLoc *loc) {
+  if (loc)
+    *loc = getToken().getLoc();
   result = StringAttr::get(getContext(), getToken().getSpelling());
   return parseToken(LitToken::identifier, message);
 }
