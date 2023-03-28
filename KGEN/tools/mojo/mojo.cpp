@@ -334,9 +334,9 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return clOptions.reportError(compiledFuncOr.getError());
   if (isDef) {
     size_t dummy = 0;
-    uint8_t failed = false;
-    compiledFuncOr->invoke<void>(&dummy, &failed);
-    if (failed)
+    uint8_t isNormalResult = false;
+    compiledFuncOr->invoke<void>(&dummy, &isNormalResult);
+    if (!isNormalResult)
       return clOptions.reportError("main function threw an error");
   } else {
     compiledFuncOr->invoke<void>();

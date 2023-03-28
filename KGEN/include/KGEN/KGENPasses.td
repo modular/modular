@@ -111,16 +111,14 @@ def OutlineClosures : Pass<"outline-closures", "mlir::ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
-// LowerKGENToPOP
+// LowerKGENList
 //===----------------------------------------------------------------------===//
 
-def LowerKGENToPOP : Pass<"lower-kgen-to-pop", "FuncOp"> {
-  let summary = "Perform staged lowering of KGEN structs and lists.";
+def LowerKGENList : Pass<"lower-kgen-list", "FuncOp"> {
+  let summary = "Lower !kgen.list to !pop.array.";
   let description = [{
-    The `lower-kgen-to-pop` pass is a staged lowering of "special" KGEN types:
-    structs and lists. Due to restrictions on how these compose with LLVM, we
-    handle these lowerings as a separate pass to POP, a smaller set of
-    operations to worry about than all of LLVM IR.
+    The `lower-kgen-list` pass eliminates the !kgen.list type and operations
+    that work on it.
   }];
 
   let dependentDialects = ["POP::POPDialect"];
