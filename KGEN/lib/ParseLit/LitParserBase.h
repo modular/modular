@@ -124,8 +124,10 @@ public:
                          SMLoc *loc = nullptr);
 
   /// Consume an identifier token, binding its name into the specified result
-  /// string attribute.
-  ParseResult parseIdentifier(StringAttr &result, const Twine &message);
+  /// string attribute. If `loc` is set, it is populated with the source
+  /// location of the token.
+  ParseResult parseIdentifier(StringAttr &result, const Twine &message,
+                              SMLoc *loc = nullptr);
 
   /// Parse a list of elements, terminated with an arbitrary token.  This does
   /// not consume the stop token.
