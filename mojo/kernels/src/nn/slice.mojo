@@ -75,7 +75,7 @@ fn slice_as_copy[
     start: NDBuffer[1, DimList[1].create_unknown(), DType.index],
     stop: NDBuffer[1, DimList[1].create_unknown(), DType.index],
     step: NDBuffer[1, DimList[1].create_unknown(), DType.index],
-    chain: OutputChainPtr,
+    out_chain: OutputChainPtr,
 ):
 
     # Apply slice to the tensor
@@ -93,5 +93,5 @@ fn slice_as_copy[
 
     # Invoke copy.
     elementwise[in_rank.__as_mlir_index(), 1, 1, copy](
-        output.dynamic_shape, chain
+        output.dynamic_shape, out_chain
     )
