@@ -4,15 +4,16 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This pass lowers 'semantic' control flow statements like hlcf.return in the
-// middle of a block and break/continue/raise into proper terminators.
+// This pass lowers 'semantic' control flow into more structured control flow.
 //
-// It also:
-//   Lowers 'lit.param.return' into 'kgen.param.result_bind'.
-//
-// When this pass succeeds, 'lit.param.return' is eliminated, along with
-// lit.break/lit.continue/lit.return in favor of HLCF and kgen.return operations
-// which are terminators.
+// This performs these lowerings:
+//  1) It lowers statements like `lit.break` (which is not a terminator) into
+//     `hlcf.break` (which is), and deletes unreachable code after it, and
+//     diagnoses it if it is anything interesting.
+//  2) It lowers 'lit.param.return' instances into a single
+//     'kgen.param.result_bind' instance.
+//  3) It hoists nested functions from being lit.func to being
+//     ParamDeclareRegionOp's.
 //
 //===----------------------------------------------------------------------===//
 
@@ -320,29 +321,29 @@ static LogicalResult lowerSemanticCF(LIT::FuncOp func) {
 // lowerNestedFunctions
 //===----------------------------------------------------------------------===//
 
-/// Get a top-level function, lower all functions nested inside that function.
-static LogicalResult lowerNestedFunctions(LIT::FuncOp topLevelFunc,
-                                          mlir::SymbolTableAnalysis &analysis) {
-  WalkResult result = topLevelFunc.walk([&](LIT::FuncOp func) {
-    if (func == topLevelFunc)
-      return WalkResult::advance();
-    // Process a nested function by lowering it straight to a
-    // `kgen.param.declare.region`. Nested functions are denoted with an
-    // parameter declaration on the function declaration.
-    ParamDeclAttr decl = func.getParamDeclAttr();
-    if (!decl) {
-      func.emitError("nested function must have a parameter declaration");
-      return WalkResult::interrupt();
-    }
-    ImplicitLocOpBuilder b(func.getLoc(), OpBuilder(func));
-    auto region = b.create<ParamDeclareRegionOp>(
-        decl, func.getSignature(), ArrayRef<ConstraintAttr>(),
-        /*isolated=*/false, func.getAlwaysInlineLevel());
-    region.getBodyRegion().takeBody(func.getBodyRegion());
-    func.erase();
-    return WalkResult::advance();
-  });
-  return success(!result.wasInterrupted());
+/// Given a function, check to see if it is a top-level function.  If not, lower
+/// it to a ParamDeclareRegionOp.
+static LogicalResult lowerNestedFunctions(LIT::FuncOp func) {
+  // If this is a top-level function, leave it alone.
+  if (!func->getParentOfType<LIT::FuncOp>())
+    return success();
+
+  // Process a nested function by lowering it straight to a
+  // `kgen.param.declare.region`. Nested functions are denoted with an
+  // parameter declaration on the function declaration.
+  ParamDeclAttr decl = func.getParamDeclAttr();
+  if (!decl) {
+    func.emitError("nested function must have a parameter declaration");
+    return failure();
+  }
+
+  ImplicitLocOpBuilder b(func.getLoc(), OpBuilder(func));
+  auto region = b.create<ParamDeclareRegionOp>(
+      decl, func.getSignature(), ArrayRef<ConstraintAttr>(),
+      /*isolated=*/false, func.getAlwaysInlineLevel());
+  region.getBodyRegion().takeBody(func.getBodyRegion());
+  func.erase();
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -361,24 +362,17 @@ struct LowerSemanticCFPass : impl::LowerSemanticCFBase<LowerSemanticCFPass> {
   void runOnOperation() override {
     // Walk all functions and update them.
     bool hadError = false;
-    getOperation().walk([&](LIT::FuncOp func) {
+    getOperation().walk<mlir::WalkOrder::PostOrder>([&](LIT::FuncOp func) {
+      // Lower things like lit.break into hlcf.break which are terminators,
+      // and diagnose unreachable code.
       hadError |= failed(lowerSemanticCF(func));
+      // Lower 'lit.param.return' into 'kgen.param.result_bind'.
       hadError |= failed(lowerParamResults(func));
+      // Lower nested functions by converting them to region declarations.
+      // This could erase func!
+      hadError |= failed(lowerNestedFunctions(func));
     });
     if (hadError)
-      return signalPassFailure();
-
-    // Lower nested functions by converting them to region declarations. Walk
-    // all top-level functions and gather nested functions.
-    auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
-    auto walkFn = [&](LIT::FuncOp func) {
-      if (failed(lowerNestedFunctions(func, analysis)))
-        return WalkResult::interrupt();
-      return WalkResult::skip();
-    };
-    if (getOperation()
-            ->walk<mlir::WalkOrder::PreOrder>(walkFn)
-            .wasInterrupted())
       return signalPassFailure();
   }
 };

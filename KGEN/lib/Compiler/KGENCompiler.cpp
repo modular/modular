@@ -23,8 +23,8 @@ using namespace KGEN;
 static void populatePreElaborationPipeline(mlir::PassManager &pm) {
   pm.addPass(createVerifyParameters());
 
+  // This pass doesn't touch parameters, so re-verify after it.
   pm.addPass(createLowerSemanticCF());
-  pm.addPass(createVerifyParameters());
 
   pm.addPass(createLowerLIT());
   pm.addPass(createVerifyParameters());
