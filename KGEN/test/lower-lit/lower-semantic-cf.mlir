@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -lower-semantic-cf -verify-parameters -split-input-file | FileCheck %s
+// RUN: kgen-opt %s -lower-semantic-cf -verify-parameters -split-input-file -verify-diagnostics | FileCheck %s
 
 lit.struct.decl @Error {}
 
@@ -10,7 +10,7 @@ lit.struct.decl @SomeStruct {
     hlcf.if %c {
       // CHECK-NEXT: kgen.return %b : i32
       lit.return %b: i32
-      lit.return %a: i32
+      lit.return %a: i32 // expected-warning {{unreachable code after return statement}}
       hlcf.yield
     // CHECK-NEXT: else
     } else {
@@ -18,7 +18,7 @@ lit.struct.decl @SomeStruct {
     }
     // CHECK: kgen.return %a : i32
     lit.return %a : i32
-    lit.return %b : i32
+    lit.return %b : i32 // expected-warning {{unreachable code after return statement}}
     lit.end_func
   // CHECK-NEXT: }
   }
@@ -47,6 +47,8 @@ lit.file_module @FileModule {
       } else {
         // CHECK-NEXT: %[[R:.*]] = pop.variant.create
         // CHECK-NEXT: kgen.return %[[R]]
+
+        // TODO: xpected-warning @+1 {{'else' logic in 'try' is unreachable}}
         %tmp3 = pop.variant.create %a : i32 -> !pop.variant<@Error, i32>
         lit.return %tmp3 : !pop.variant<@Error, i32>
         lit.try.yield
@@ -68,13 +70,13 @@ lit.file_module @FileModule {
       hlcf.if %c {
         // CHECK-NEXT: hlcf.break
         lit.break
-        lit.continue
+        lit.continue // expected-warning {{unreachable code after break statement}}
         hlcf.yield
       // CHECK-NEXT: else
       } else {
         // CHECK-NEXT: hlcf.continue
         lit.continue
-        lit.break
+        lit.break  // expected-warning {{unreachable code after continue statement}}
         hlcf.yield
       // CHECK-NEXT: }
       }
@@ -136,7 +138,7 @@ lit.func @throws(%e: !kgen.declref<@Error>) throws -> !pop.variant<@Error, index
 // CHECK-SAME: !kgen.signature<() throws -> !pop.variant<@Error, !lit.none>>
 lit.func @ref(%e: !kgen.declref<@Error>,
               %f: !kgen.signature<() throws -> !pop.variant<@Error, !lit.none>>) throws -> !pop.variant<@Error, !lit.none> {
-  lit.try {
+  lit.try { // xpected-warning {{try isn't needed, nothing in its body can throw}}
     // CHECK: = kgen.call @throws
     kgen.call @throws(%e) : (!kgen.declref<@Error>) throws -> !pop.variant<@Error, index>
     lit.try.yield
@@ -236,6 +238,7 @@ lit.func @call_throwing_coro(%err: !kgen.declref<@Error>) async|throws -> !pop.v
   lit.end_func
 }
 
+
 //===----------------------------------------------------------------------===//
 // Nested Functions
 //===----------------------------------------------------------------------===//
@@ -298,7 +301,7 @@ lit.func @return_after_return() -> !lit.none {
   %0 = kgen.param.constant: !lit.none = <#lit.none>
   // CHECK: kgen.return %0 : !lit.none
   lit.return %0 : !lit.none
-  %1 = kgen.param.constant: i1 = <1>
+  %1 = kgen.param.constant: i1 = <1>  // expected-warning {{unreachable code after return statement}}
   hlcf.if %1 {
     %2 = kgen.param.constant: !lit.none = <#lit.none>
     lit.return %2 : !lit.none
@@ -336,7 +339,7 @@ lit.func @if_true_return() -> index {
     hlcf.yield
   }
   // CHECK: kgen.unreachable
-  lit.end_func
+  lit.end_func  // xpected-error {{return expected at end of function with results}}
 }
 
 // CHECK-LABEL: lit.func @while_true
@@ -344,11 +347,13 @@ lit.func @while_true() -> index {
   hlcf.loop {
     %true = index.bool.constant true
     hlcf.if %true {
-      hlcf.continue
+      lit.continue
+      hlcf.yield
     } else {
       hlcf.yield
     }
-    hlcf.break
+    lit.break
+    hlcf.continue
   }
   // CHECK: kgen.unreachable
   lit.end_func
@@ -369,7 +374,7 @@ lit.func @if_false_raise() throws -> !pop.variant<@Error, index> {
     hlcf.yield
   }
   // CHECK: kgen.unreachable
-  lit.end_func
+  lit.end_func  // xpected-error {{return expected at end of function with results}}
 }
 
 // CHECK-LABEL: lit.func @raise_raise
@@ -394,7 +399,8 @@ lit.func @coroutine() async -> index {
   %0 = index.constant 0
   hlcf.loop {
     lit.return %0 : index
-    hlcf.break
+    lit.break  // expected-warning {{unreachable code after return statement}}
+    hlcf.continue
   }
   // CHECK: kgen.unreachable
   lit.end_func
