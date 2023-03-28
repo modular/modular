@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// KGEN List Lowering
+// KGEN List -> Array Lowering.
 //
 //===----------------------------------------------------------------------===//
 
@@ -23,7 +23,7 @@ static void expandListOp(POP::ListGetOp getOp) {
   // We know the operand will now have array type, which isn't what the
   // accessors expect, so we use the untyped accessors.
   OpBuilder b(getOp);
-  auto arrayGetOp = b.create<POP::StructExtractOp>(
+  auto arrayGetOp = b.create<POP::ArrayGetOp>(
       getOp.getLoc(), getOp.getType(), getOp->getOperand(0),
       cast<IntegerAttr>(getOp.getIndex()));
   getOp.replaceAllUsesWith(arrayGetOp.getResult());
@@ -35,7 +35,7 @@ static void expandListOp(POP::ListCreateOp createOp) {
   OpBuilder b(createOp);
   // We know the result will now have array type, which isn't what the
   // accessors expect, so we use the untyped accessors.
-  auto arrayCreateOp = b.create<POP::StructCreateOp>(
+  auto arrayCreateOp = b.create<POP::ArrayCreateOp>(
       createOp.getLoc(), createOp->getResult(0).getType(),
       createOp.getOperands());
   createOp.replaceAllUsesWith(arrayCreateOp.getResult());
@@ -45,7 +45,7 @@ static void expandListOp(POP::ListCreateOp createOp) {
 static void expandListOp(POP::SIMDShuffleOp shuffleOp) {
   // Shuffles don't actually want their mask lowered.  They are the only
   // operation like this.
-  auto maskAttr = shuffleOp->getAttrOfType<POP::StructAttr>("mask");
+  auto maskAttr = shuffleOp->getAttrOfType<POP::ArrayAttr>("mask");
   assert(maskAttr && "mask should have been lowered");
 
   // Get the ListType/ListAttr back.
@@ -60,25 +60,24 @@ static void expandListOp(POP::SIMDShuffleOp shuffleOp) {
 //===----------------------------------------------------------------------===//
 
 namespace M::KGEN {
-#define GEN_PASS_DEF_LOWERKGENTOPOP
+#define GEN_PASS_DEF_LOWERKGENLIST
 #include "KGEN/KGENPasses.h.inc"
 } // namespace M::KGEN
 
 namespace {
-struct LowerKGENToPOPPass
-    : public M::KGEN::impl::LowerKGENToPOPBase<LowerKGENToPOPPass> {
-  using LowerKGENToPOPBase::LowerKGENToPOPBase;
+struct LowerKGENListPass
+    : public M::KGEN::impl::LowerKGENListBase<LowerKGENListPass> {
+  using LowerKGENListBase::LowerKGENListBase;
 
   void runOnOperation() override;
 };
 } // namespace
 
-void LowerKGENToPOPPass::runOnOperation() {
+void LowerKGENListPass::runOnOperation() {
   mlir::AttrTypeReplacer replacer;
+  // Lower list types into array types of the same length.
   replacer.addReplacement([](KGEN::ListType list) -> Type {
-    SmallVector<TypedAttr> elts(*list.getResolvedLength(),
-                                list.getElementType());
-    return POP::StructType::get(list.getContext(), elts);
+    return POP::ArrayType::get(list.getLength(), list.getElementType());
   });
   replacer.addReplacement([&](KGEN::ListAttr list) -> Attribute {
     SmallVector<TypedAttr> newElts;
@@ -86,8 +85,8 @@ void LowerKGENToPOPPass::runOnOperation() {
     for (auto elt : list.getValues())
       newElts.push_back(replacer.replace(elt));
 
-    auto newType = cast<POP::StructType>(replacer.replace(list.getType()));
-    return POP::StructAttr::get(newElts, newType);
+    auto newType = cast<POP::ArrayType>(replacer.replace(list.getType()));
+    return POP::ArrayAttr::get(newElts, newType);
   });
 
   // Replace all list types + attrs with corresponding array types/attrs.
