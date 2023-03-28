@@ -44,9 +44,6 @@ fn slice_as_view[
         if stop < 0:
             stop = stop + tensor.dim(i)
 
-        let diff = stop - start
-        new_shape[i] = div_ceil(diff, step)
-
         # Offset the pointer to refect the new starting point.
         let new_offset = start * tensor.stride(i)
         new_data = new_data.offset(new_offset)
@@ -54,6 +51,12 @@ fn slice_as_view[
         # Stride == number of elements to the next index in this dimension.
         # So to step we can just increase the stride.
         new_stride[i] = tensor.stride(i) * step
+
+        # If the steps are positive we traverse from start, if negative from stop.
+        if step > 0:
+            new_shape[i] = div_ceil(stop - start, step)
+        else:
+            new_shape[i] = div_ceil(start - stop, -step)
 
     # Create the new view
     return NDBuffer[rank, DimList[rank].create_unknown(), type](

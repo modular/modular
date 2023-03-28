@@ -367,6 +367,122 @@ fn test_slice_negative():
     )
 
 
+# CHECK-LABEL: == test_slice_negative_step_1D
+fn test_slice_negative_step_1D():
+    print("== test_slice_negative_step_1D\n")
+
+    # CHECK: In shape:(15, )
+    # CHECK-NEXT: In strides:(1, )
+    # CHECK-NEXT: New shape:(6, )
+    # CHECK-NEXT: New strides:(-1, )
+
+    # CHECK-NEXT: [14.000000]
+    # CHECK-NEXT: [13.000000]
+    # CHECK-NEXT: [12.000000]
+    # CHECK-NEXT: [11.000000]
+    # CHECK-NEXT: [10.000000]
+    # CHECK-NEXT: [9.000000]
+
+    # print(np.arange(0, 15)[14:8:-1])
+    test_slice[15, 1, DimList[1].create_unknown()](
+        create_dim_list(
+            15,
+        ),
+        Index(
+            14,
+        ),
+        Index(
+            8,
+        ),
+        Index(
+            -1,
+        ),
+        False,
+    )
+
+
+# CHECK-LABEL: == test_slice_negative_step_2D
+fn test_slice_negative_step_2D():
+    print("== test_slice_negative_step_2D\n")
+
+    # CHECK: In shape:(16, 4)
+    # CHECK-NEXT: In strides:(4, 1)
+    # CHECK-NEXT: New shape:(4, 2)
+    # CHECK-NEXT: New strides:(-8, -1)
+
+    # CHECK-NEXT: [59.000000]
+    # CHECK-NEXT: [58.000000]
+    # CHECK-NEXT: [51.000000]
+    # CHECK-NEXT: [50.000000]
+    # CHECK-NEXT: [43.000000]
+    # CHECK-NEXT: [42.000000]
+    # CHECK-NEXT: [35.000000]
+    # CHECK-NEXT: [34.000000]
+
+    # print(np.arange(0, 64).reshape(16, 4)[14:6:-2, -1:1:-1])
+    test_slice[64, 2, DimList[2].create_unknown()](
+        create_dim_list(16, 4),
+        Index(14, -1),
+        Index(6, 1),
+        Index(-2, -1),
+        False,
+    )
+
+
+# CHECK-LABEL: == test_slice_negative_step_3D
+fn test_slice_negative_step_3D():
+    print("== test_slice_negative_step_3D\n")
+
+    # CHECK: In shape:(8, 2, 4)
+    # CHECK-NEXT: In strides:(8, 4, 1)
+    # CHECK-NEXT: New shape:(2, 2, 2)
+    # CHECK-NEXT: New strides:(-16, 4, -2)
+
+    # CHECK-NEXT: [59.000000]
+    # CHECK-NEXT: [57.000000]
+    # CHECK-NEXT: [63.000000]
+    # CHECK-NEXT: [61.000000]
+    # CHECK-NEXT: [43.000000]
+    # CHECK-NEXT: [41.000000]
+    # CHECK-NEXT: [47.000000]
+    # CHECK-NEXT: [45.000000]
+
+    # print(np.arange(0, 64).reshape(8, 2, 4)[-1:4:-2, :, 4:0:-2])
+    test_slice[64, 3, DimList[3].create_unknown()](
+        create_dim_list(8, 2, 4),
+        Index(-1, 0, -1),
+        Index(4, 2, 0),
+        Index(-2, 1, -2),
+        False,
+    )
+
+
+# CHECK-LABEL: == test_slice_negative_step_4D
+fn test_slice_negative_step_4D():
+    print("== test_slice_negative_step_4D\n")
+
+    # CHECK: In shape:(2, 4, 2, 4)
+    # CHECK-NEXT: In strides:(32, 8, 4, 1)
+    # CHECK-NEXT: New shape:(1, 2, 1, 3)
+    # CHECK-NEXT: New strides:(-32, -16, -4, -1)
+
+    # CHECK-NEXT: [63.000000]
+    # CHECK-NEXT: [62.000000]
+    # CHECK-NEXT: [61.000000]
+    # CHECK-NEXT: [47.000000]
+    # CHECK-NEXT: [46.000000]
+    # CHECK-NEXT: [45.000000]
+
+    # print(np.arange(0, 64).reshape(2, 4, 2, 4)[-1:0:-1, -1:0:-2, -1:0:-1, -1:0:-1].stride)
+    test_slice[64, 4, DimList[4].create_unknown()](
+        create_dim_list(2, 4, 2, 4),
+        Index(-1, -1, -1, -1),
+        Index(0, 0, 0, 0),
+        Index(-1, -2, -1, -1),
+        False,
+    )
+
+
 fn main():
     test_slice_basic()
     test_slice_identity()
@@ -375,3 +491,8 @@ fn main():
     test_slice_4D()
     test_slice_copy()
     test_slice_negative()
+
+    test_slice_negative_step_1D()
+    test_slice_negative_step_2D()
+    test_slice_negative_step_3D()
+    test_slice_negative_step_4D()
