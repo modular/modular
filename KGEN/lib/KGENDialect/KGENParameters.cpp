@@ -692,8 +692,11 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
     }
 
     // Bubble up the nested scopes and all nested uses from above.
-    for (auto &[scope, g] : nested.nestedScopes)
-      nestedScopes.try_emplace(scope, std::move(g));
+    for (auto &[nestedParameterScope, nestedParameterGraph] :
+         nested.nestedScopes) {
+      nestedScopes.try_emplace(nestedParameterScope,
+                               std::move(nestedParameterGraph));
+    }
     for (ParamDeclRefAttr use : nested.usesFromAbove) {
       auto it = decls.find(use.getName());
       assert(it != decls.end() && "nested use has no declaration?");
