@@ -141,6 +141,10 @@ fn defaultArgumentBadType(a: Int = 1.0): pass
 # expected-error @+1 {{'**' marker must be at end of argument list}}
 fn starStarLast(**a: Int, b: Int): pass
 
+# expected-error @+2 {{expected parameter name}}
+# expected-error @+1 {{unexpected token in expression}}
+fn starSpaceStar(* *a: Int): pass
+
 # expected-error @+1 {{variadic arguments may not have defaults}}
 fn noDefaultVariadics(*a: Int = 42): pass
 

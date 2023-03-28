@@ -703,9 +703,6 @@ struct ParsedArgument {
       kwArgHandling = KWArgHandling::kKeywordOnly;
     }
 
-    if (p.consumeIf(LitToken::star)) // '*' => variadic
-      vararg = VarArgKind::VarArg;
-
     if (p.parseIdentifier(name, "expected parameter name"))
       // TODO: Scan ahead for better recovery.
       return failure();
