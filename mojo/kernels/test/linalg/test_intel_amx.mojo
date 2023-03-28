@@ -20,7 +20,7 @@ from Transpose import transpose, transpose_inplace
 from IO import put, print
 from TargetInfo import os_is_linux, has_intel_amx
 from Matmul import Matrix
-from List import create_dim_list
+from List import create_dim_list, Dim
 from Memory import memcmp, memset_zero
 from Matmul import naive_matmul
 from Functional import unroll
@@ -33,11 +33,10 @@ from Range import range
 alias void = DType.invalid.value
 alias int32_pop = __mlir_type.`!pop.scalar<si32>`
 alias int8_pop = __mlir_type.`!pop.scalar<si8>`
-alias kunknown = __mlir_attr.`#kgen.unknown : index`
 
 
 fn print_buffer[n: Int, type: DType](a_ptr: DTypePointer[void]):
-    let a = Buffer[kunknown, type](a_ptr.bitcast[type]().address, n)
+    let a = Buffer[Dim(), type](a_ptr.bitcast[type]().address, n)
     for i in range(n):
         let v = __mlir_op.`pop.cast`[
             _type:int32_pop,
@@ -46,7 +45,7 @@ fn print_buffer[n: Int, type: DType](a_ptr: DTypePointer[void]):
 
 
 fn print_matrix[m: Int, n: Int, type: DType](a_ptr: DTypePointer[void]):
-    let a = Buffer[kunknown, type](a_ptr.bitcast[type]().address, m * n)
+    let a = Buffer[Dim(), type](a_ptr.bitcast[type]().address, m * n)
     for i in range(m):
         print("row\n")
         for j in range(n):
@@ -77,10 +76,10 @@ fn init_matrices(
     c2_ptr: DTypePointer[DType.si32],
 ):
 
-    let a = Buffer[kunknown, DType.si8](a_ptr.address, 1024)
-    let b = Buffer[kunknown, DType.si8](b_ptr.address, 1024)
-    let c = Buffer[kunknown, DType.si32](c_ptr.address, 256)
-    let c2 = Buffer[kunknown, DType.si32](c2_ptr.address, 256)
+    let a = Buffer[Dim(), DType.si8](a_ptr.address, 1024)
+    let b = Buffer[Dim(), DType.si8](b_ptr.address, 1024)
+    let c = Buffer[Dim(), DType.si32](c_ptr.address, 256)
+    let c2 = Buffer[Dim(), DType.si32](c2_ptr.address, 256)
     let b2 = Buffer[1024, DType.si8].stack_allocation()
 
     for i in range(1024):
@@ -93,7 +92,9 @@ fn init_matrices(
     let b2m = NDBuffer[2, create_dim_list(64, 16), DType.si8](b2.data.address)
     let bm = NDBuffer[2, create_dim_list(16, 64), DType.si8](b_ptr.address)
     # transpose from 64x16 to 16x64
-    transpose[2, 16, 64, DType.si8](bm, b2m)
+    transpose[2, create_dim_list(16, 64), create_dim_list(64, 16), DType.si8](
+        bm, b2m
+    )
 
     let b32_ptr = b.data.bitcast[DType.si32]()
     let b32m = NDBuffer[2, create_dim_list(16, 16), DType.si32](b32_ptr.address)
