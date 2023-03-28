@@ -32,9 +32,14 @@ using namespace KGEN;
 /// the result types iff the body of the op has not been cached.
 template <typename T>
 static LogicalResult checkReturnArguments(T op) {
+  Region &body = op.getBodyRegion();
+  // Don't crash on malformed IR.
+  if (body.empty())
+    return success();
+
   // If we have a return op, then we can check the argument types. Otherwise, we
   // just don't have the return op.
-  if (ReturnOp returnOp = op.getReturnOp())
+  if (ReturnOp returnOp = dyn_cast<ReturnOp>(body.front().getTerminator()))
     return checkResultTypes(returnOp, op.getResultTypes());
   return success();
 }
@@ -265,6 +270,17 @@ LogicalResult ReturnOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// UnreachableOp
+//===----------------------------------------------------------------------===//
+
+// Unreachable can terminate any control flow operation.
+bool UnreachableOp::isParentNode(Operation *op) { return true; }
+
+void UnreachableOp::getBranchTargets(
+    ArrayRef<Attribute> operands,
+    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {}
+
+//===----------------------------------------------------------------------===//
 // ParamAssertOp
 //===----------------------------------------------------------------------===//
 
@@ -394,11 +410,6 @@ static void printCallOpParams(OpAsmPrinter &p, Operation *op,
 // GeneratorOp
 //===----------------------------------------------------------------------===//
 
-ReturnOp GeneratorOp::getReturnOp() {
-  return getBodyRegion().empty() ? nullptr
-                                 : cast<ReturnOp>(getBody()->getTerminator());
-}
-
 /// Parses a KGEN Generator.
 ParseResult GeneratorOp::parse(OpAsmParser &parser, OperationState &result) {
   return parseGeneratorOrFunc(parser, result, GeneratorOrFuncKind::generator);
@@ -426,11 +437,6 @@ ArrayAttr GeneratorOp::getCallableResAttrs() { return nullptr; }
 //===----------------------------------------------------------------------===//
 // FuncOp
 //===----------------------------------------------------------------------===//
-
-ReturnOp FuncOp::getReturnOp() {
-  return getBodyRegion().empty() ? nullptr
-                                 : cast<ReturnOp>(getBody()->getTerminator());
-}
 
 /// Parses a concrete KGEN func.
 ///

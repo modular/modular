@@ -325,10 +325,9 @@ def propagateErrorInDef():
     # CHECK:    hlcf.yield %3 : !kgen.declref<@"$Int"::@Int>
     # CHECK:  } else {
     # CHECK:    %3 = pop.variant.get %0 : !pop.variant<@"$prolog"::@Error, @"$Int"::@Int> as !kgen.declref<@"$prolog"::@Error>
-    # CHECK:    %4 = kgen.static.undef : !kgen.declref<@"$Int"::@Int>
-    # CHECK:    %5 = pop.variant.create %3 : !kgen.declref<@"$prolog"::@Error> -> !pop.variant<@"$prolog"::@Error, !lit.none>
-    # CHECK:    lit.return %5 : !pop.variant<@"$prolog"::@Error, !lit.none>
-    # CHECK:    hlcf.yield %4 : !kgen.declref<@"$Int"::@Int>
+    # CHECK:    %4 = pop.variant.create %3 : !kgen.declref<@"$prolog"::@Error> -> !pop.variant<@"$prolog"::@Error, !lit.none>
+    # CHECK:    lit.return %4 : !pop.variant<@"$prolog"::@Error, !lit.none>
+    # CHECK:    kgen.unreachable
     # CHECK:  }
     # CHECK-NEXT: pop.store %2, %a
     a = maybeRaises()
@@ -346,10 +345,9 @@ fn propagateErrorInRaisingFn():
     # CHECK:    hlcf.yield %3 : !kgen.declref<@"$Int"::@Int>
     # CHECK:  } else {
     # CHECK:    %3 = pop.variant.get %0
-    # CHECK:    %4 = kgen.static.undef : !kgen.declref<@"$Int"::@Int>
-    # CHECK:    %5 = pop.variant.create %3
-    # CHECK:    lit.return %5
-    # CHECK:    hlcf.yield %4
+    # CHECK:    %4 = pop.variant.create %3
+    # CHECK:    lit.return %4
+    # CHECK:    kgen.unreachable
     # CHECK:  }
     # CHECK:  pop.store %2, %a
     a = maybeRaises()

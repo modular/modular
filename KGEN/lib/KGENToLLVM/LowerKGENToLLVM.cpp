@@ -185,6 +185,23 @@ struct ConvertKGENReturn : public ConvertPOPToLLVMPattern<ReturnOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertKGENUnreachable
+//===----------------------------------------------------------------------===//
+
+/// Convert `kgen.unreachable` to `llvm.unreachable`.
+struct ConvertKGENUnreachable : public ConvertPOPToLLVMPattern<UnreachableOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(UnreachableOp op, UnreachableOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    // Create the LLVM unreachable.
+    rewriter.replaceOpWithNewOp<LLVM::UnreachableOp>(op);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertKGENParamValue
 //===----------------------------------------------------------------------===//
 
@@ -224,7 +241,8 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertKGENAddressOf,
       ConvertKGENCall,
       ConvertKGENParamConstant,
-      ConvertKGENReturn
+      ConvertKGENReturn,
+      ConvertKGENUnreachable
       // clang-format on
       >(typeConverter);
   patterns.insert<ConvertKGENFunc>(typeConverter, symtab);

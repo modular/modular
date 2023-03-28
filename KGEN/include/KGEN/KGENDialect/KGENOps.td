@@ -31,8 +31,7 @@ class KGENOp<string mnemonic, list<Trait> traits = []> :
 
 def KGEN_FuncOp : KGENOp<"func", [
     HasParent<"mlir::ModuleOp">, FunctionOpInterface, Symbol, IsolatedFromAbove,
-    SingleBlockImplicitTerminator<"ReturnOp">,
-    DeclareOpInterfaceMethods<CallableOpInterface>,
+    SingleBlock, DeclareOpInterfaceMethods<CallableOpInterface>,
     DeclareOpInterfaceMethods<SymbolUserOpInterface>, DeclInterface,
     FuncInterface]> {
   let summary = "Concrete function definition.";
@@ -61,10 +60,7 @@ def KGEN_FuncOp : KGENOp<"func", [
   let regions = (region AnyRegion:$bodyRegion);
 
   let extraClassDeclaration = [{
-    using OpTrait::SingleBlockImplicitTerminator<ReturnOp>::Impl<
-        FuncOp>::getBody;
-
-    ReturnOp getReturnOp();
+    using OpTrait::SingleBlock<FuncOp>::getBody;
   }];
 
   let hasCustomAssemblyFormat = 1;
@@ -78,8 +74,7 @@ def KGEN_FuncOp : KGENOp<"func", [
 
 def KGEN_GeneratorOp : KGENOp<"generator", [
     HasParent<"mlir::ModuleOp">, FunctionOpInterface, Symbol, IsolatedFromAbove,
-    SingleBlockImplicitTerminator<"ReturnOp">,
-    DeclareOpInterfaceMethods<CallableOpInterface>, DeclInterface,
+    SingleBlock, DeclareOpInterfaceMethods<CallableOpInterface>, DeclInterface,
     FuncInterface]> {
   let summary = "Function generator definition.";
   let description = [{
@@ -111,10 +106,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
   let regions = (region AnyRegion:$bodyRegion);
 
   let extraClassDeclaration = [{
-    using OpTrait::SingleBlockImplicitTerminator<ReturnOp>::Impl<
-        GeneratorOp>::getBody;
-
-    ReturnOp getReturnOp();
+    using OpTrait::SingleBlock<GeneratorOp>::getBody;
   }];
 
   let builders = [
@@ -524,6 +516,34 @@ def KGEN_ReturnOp : KGENOp<"return", [Terminator, ReturnLike,
   let assemblyFormat = "attr-dict ($operands^ `:` type($operands))?";
 
   let hasVerifier = 1;
+}
+
+
+//===----------------------------------------------------------------------===//
+// UnreachableOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_UnreachableOp : KGENOp<"unreachable", [Terminator,
+    DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
+  let summary = "Unreachable operation";
+  let description = [{
+    The `kgen.unreachable` operation is a block terminator that indicates that
+    the previous operations cannot continue control flow.  This is used after
+    infinite loops and no-return functions to simplify dataflow analysis.
+
+    Example:
+
+    ```mlir
+    hlcf.loop () {
+      kgen.call @printHello()
+      hlcf.continue
+    }
+    kgen.unreachable
+    ```
+  }];
+
+  let arguments = (ins);
+  let assemblyFormat = "attr-dict";
 }
 
 //===----------------------------------------------------------------------===//

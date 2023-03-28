@@ -301,18 +301,17 @@ static LogicalResult lowerSemanticCF(LIT::FuncOp func) {
   }
 
   ImplicitLocOpBuilder b(func.getLoc(), OpBuilder(terminator));
-  Value retVal;
   if (!isa<LIT::NoneType>(declaredResultType)) {
-    retVal = b.create<StaticUndefOp>(declaredResultType);
+    b.create<KGEN::UnreachableOp>();
   } else {
     // The function returns none.
-    retVal = b.create<ParamConstantOp>(b.getAttr<LIT::NoneAttr>());
-  }
+    Value retVal = b.create<ParamConstantOp>(b.getAttr<LIT::NoneAttr>());
 
-  // Wrap the result value if necessary.
-  if (func.isThrows())
-    retVal = b.create<VariantCreateOp>(func.getResultType(), retVal);
-  b.create<KGEN::ReturnOp>(retVal);
+    // Wrap the result value if necessary.
+    if (func.isThrows())
+      retVal = b.create<VariantCreateOp>(func.getResultType(), retVal);
+    b.create<KGEN::ReturnOp>(retVal);
+  }
   terminator->erase();
   return success();
 }
