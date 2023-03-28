@@ -15,8 +15,8 @@ using namespace M;
 using namespace KGEN;
 
 /// Get the C type string for the dtype.
-LogicalResult getCTypeForDType(FuncOp func, KGENDType dt,
-                               SmallVectorImpl<std::string> &types) {
+static LogicalResult getCTypeForDType(FuncOp func, KGENDType dt,
+                                      SmallVectorImpl<std::string> &types) {
   if (dt.isFloat()) {
     switch (dt.getValue()) {
     case DType::f32:
@@ -51,9 +51,31 @@ LogicalResult getCTypeForDType(FuncOp func, KGENDType dt,
          << dt.getAsString();
 };
 
+/// Get the C type for an elementary scalar type.
+static ErrorOr<std::string> getCTypeForElementary(Type t) {
+  if (t.isa<IntegerType>()) {
+    if (auto bitWidth = t.getIntOrFloatBitWidth(); bitWidth > 1)
+      return ("int" + Twine(bitWidth) + "_t").str();
+    return "bool";
+  }
+  if (t.isa<IndexType>())
+    return "ssize_t";
+  if (t.isF16())
+    llvm::report_fatal_error("no support for fp16 yet");
+  if (t.isF32())
+    return "float";
+  if (t.isF64())
+    return "double";
+
+  SmallString<128> str;
+  llvm::raw_svector_ostream os(str);
+  t.print(os);
+  return Error("unhandled elementary type: '" + str + "'");
+}
+
 /// Get the C types for the given type.
-LogicalResult getCTypeForType(FuncOp func, Type t,
-                              SmallVectorImpl<std::string> &types) {
+static LogicalResult getCTypeForType(FuncOp func, Type t,
+                                     SmallVectorImpl<std::string> &types) {
   if (auto simd = dyn_cast<POP::SIMDType>(t)) {
     // Since the vector_size attribute only works on GNU and CLANG compilers,
     // we pass in an array.
@@ -68,12 +90,15 @@ LogicalResult getCTypeForType(FuncOp func, Type t,
 
   if (auto ptr = dyn_cast<POP::PointerType>(t)) {
     if (Type type = ptr.getResolvedElementType()) {
-      if (failed(getCTypeForType(func, type, types)))
-        return failure();
+      ErrorOr<std::string> elementaryType = getCTypeForElementary(type);
+      // If the type is not elementary, then pass it as an opaque pointer.
+      if (elementaryType.isError())
+        types.push_back("void *");
+      else
+        types.push_back(elementaryType.takeValue() + "*");
     } else {
-      types.push_back("void");
+      types.push_back("void *");
     }
-    types.back() += " *";
     return success();
   }
 
@@ -122,24 +147,12 @@ LogicalResult getCTypeForType(FuncOp func, Type t,
   if (!t.isIndex() && !llvm::isPowerOf2_64(t.getIntOrFloatBitWidth()))
     return func.emitError("integer or float bitwidth must be a power of 2");
 
-  // Elementary type, just print it.
-  if (t.isa<IntegerType>())
-    if (auto bitWidth = t.getIntOrFloatBitWidth(); bitWidth > 1)
-      types.push_back(("int" + Twine(bitWidth) + "_t").str());
-    else
-      types.push_back("bool");
-  else if (t.isa<IndexType>())
-    types.push_back("ssize_t");
-  else if (t.isF16())
-    llvm::report_fatal_error("no support for fp16 yet");
-  else if (t.isF32())
-    types.push_back("float");
-  else if (t.isF64())
-    types.push_back("double");
-  else
-    return func.emitError("unhandled float type: ") << t;
+  ErrorOr<std::string> elementaryTypeName = getCTypeForElementary(t);
+  if (elementaryTypeName.isError())
+    return func->emitError(elementaryTypeName.takeError().get());
+  types.push_back(elementaryTypeName.takeValue());
   return success();
-};
+}
 
 /// Emit the C signature of a KGEN func.
 static LogicalResult emitSignature(raw_ostream &os, SymbolTable &symtab,
@@ -163,8 +176,8 @@ static LogicalResult emitSignature(raw_ostream &os, SymbolTable &symtab,
     os << "void";
 
   // FIXME: This assumes the C wrapper that eventually gets generated is not
-  // renamed due to a symbol name conflict. Header emission happens too early in
-  // the pipeline.
+  // renamed due to a symbol name conflict. Header emission happens too early
+  // in the pipeline.
   os << ' ' << symName.getValue() << '(';
   llvm::interleaveComma(argTys, os);
   if (resTys.size() > 1) {
