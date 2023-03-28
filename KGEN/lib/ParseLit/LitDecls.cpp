@@ -1973,7 +1973,7 @@ LogicalResult DeclResolver::resolveSignature(VarLetDeclOp varOp,
         varOp.getLoc(), varOp.getNameAttr(), theStore.getArg());
     decl.setIRValue(newLetOp.getOperation());
 
-    // Remove the store and the original LetVarDeclOp.
+    // Remove the store and the original VarLetDeclOp.
     theStore->erase();
     varOp->erase();
   }
