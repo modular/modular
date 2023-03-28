@@ -9,8 +9,13 @@ from Coroutine import Coroutine, _get_coro_resume_fn
 from DType import DType
 from Error import Error
 from Int import Int
+from Memory import _aligned_alloc, _aligned_free
 from Pointer import Pointer, DTypePointer
 from String import StringRef
+from Vector import UnsafeFixedVector
+from TargetInfo import sizeof
+from Range import range
+from String import String
 
 alias typename = __mlir_type.`!kgen.mlirtype`
 
@@ -342,17 +347,8 @@ struct TaskGroup:
 
 
 # ===----------------------------------------------------------------------===#
-# OutputChainPtr
+# OutputChainPtr and OwningOutputChainPtr
 # ===----------------------------------------------------------------------===#
-
-
-struct OutputChainStorage:
-    """An opaque representation for the C++ LLCL::OutputChain which shares its
-    size."""
-
-    var storage0: __mlir_type.index  # AsyncValue* value.pointer
-    var storage1: __mlir_type.index  # intptr_t loc.data
-    var storage2: __mlir_type.index  # LocationDecoder* loc.decoder.pointer
 
 
 @register_passable
@@ -363,7 +359,7 @@ struct OutputChainPtr:
     or move.
     """
 
-    # Actually Pointer[OutputChainStorage]
+    # Actually LLCL::OutputChain*
     alias ptr_type = DTypePointer[DType.invalid.value]
     var ptr: ptr_type
 
@@ -375,12 +371,12 @@ struct OutputChainPtr:
     fn __copy__(self) -> Self:
         return Self {ptr: self.ptr}
 
-    fn move(self) -> OwningOutputChainPtr:
-        """Returns a pointer to a heap-allocated LLCL::OutputChain containing
-        the moved contents of this. The result must be explicitly destroyed.
+    fn deepCopy(self) -> OwningOutputChainPtr:
+        """Returns a pointer to a fresh heap-allocated LLCL::OutputChain
+        containing a copy of this. The result must be explicitly destroyed.
         """
         return __mlir_op.`pop.external_call`[
-            func : __mlir_attr.`@KGEN_CompilerRT_LLCL_OutputChainPtr_CreateMoved`,
+            func : __mlir_attr.`@KGEN_CompilerRT_LLCL_OutputChainPtr_CreateCopy`,
             _type:[OwningOutputChainPtr],
         ](self.ptr)
 
@@ -413,6 +409,19 @@ struct OutputChainPtr:
             message.length.value,
         )
 
+    fn trace(self, label: StringRef):
+        """If enabled, begin a time profile entry with label which will end
+        when this chain is completed, either by mark_ready() or mark_error().
+        """
+        __mlir_op.`pop.external_call`[
+            func : __mlir_attr.`@KGEN_CompilerRT_LLCL_OutputChainPtr_Trace`,
+            _type:[],
+        ](
+            self.ptr,
+            label.data.address,
+            label.length.value,
+        )
+
 
 @register_passable
 struct OwningOutputChainPtr:
@@ -420,7 +429,7 @@ struct OwningOutputChainPtr:
     when goes out of scope.
     """
 
-    # Actually Pointer[OutputChainStorage]
+    # Actually LLCL::OutputChain*
     alias ptr_type = DTypePointer[DType.invalid.value]
     var ptr: ptr_type
 
@@ -433,10 +442,11 @@ struct OwningOutputChainPtr:
         The LLCL::OutputChain will have an empty location and an unemplaced
         AsyncValueRef<Chain>.
         """
-        return __mlir_op.`pop.external_call`[
+        let ptr = __mlir_op.`pop.external_call`[
             func : __mlir_attr.`@KGEN_CompilerRT_LLCL_OutputChainPtr_CreateEmpty`,
-            _type:[OwningOutputChainPtr],
+            _type:[ptr_type],
         ](rt.ptr)
+        return OwningOutputChainPtr {ptr: ptr}
 
     @always_inline("nodebug")
     fn __copy__(self) -> Self:
@@ -451,7 +461,7 @@ struct OwningOutputChainPtr:
 
     fn borrow(self) -> OutputChainPtr:
         """Returns non-owning pointer to same LLCL::OutputChain."""
-        return OutputChainPtr {ptr: self.ptr}
+        return OutputChainPtr(self.ptr)
 
     fn wait(self):
         """Returns only when the underlying LLCL::OutputChain is emplaced
@@ -463,3 +473,106 @@ struct OwningOutputChainPtr:
             func : __mlir_attr.`@KGEN_CompilerRT_LLCL_OutputChainPtr_Await`,
             _type:[],
         ](self.ptr)
+
+
+# ===----------------------------------------------------------------------===#
+# AsyncTaskGroup and AsyncTaskGroupPtr
+# ===----------------------------------------------------------------------===#
+
+alias none = __mlir_type.`!lit.none`
+
+
+struct AsyncTaskGroupContext:
+    alias tg_callback_fn_type = __mlir_type[
+        `(!pop.pointer<`, AsyncTaskGroup, `>) -> !lit.none`
+    ]
+
+    var callback: tg_callback_fn_type
+    var async_task_group_ptr: Pointer[AsyncTaskGroup]
+
+
+struct AsyncTaskGroup:
+    """The target of an AsyncTaskGroupPtr. Holds exactly num_work_items
+    Coroutines representing tasks. When all tasks are complete out_chain
+    is marked as ready and this object is deleted.
+    """
+
+    # Number of tasks still in flight.
+    var counter: Atomic[DType.index]
+    # Output chain to mark_ready when last task completed.
+    # This will be copied on construction to guarantee the correct lifetime.
+    var out_chain: OwningOutputChainPtr
+    # Vector holding co-routines.
+    var coroutines: UnsafeFixedVector[Coroutine[none]]
+
+    fn __init__(self, num_work_items: Int, out_chain: OutputChainPtr):
+        self.counter = num_work_items.__as_mlir_index()
+        self.out_chain = out_chain.deepCopy()
+        self.coroutines = UnsafeFixedVector[Coroutine[none]](num_work_items)
+
+    fn __del__(self&):
+        for j in range(self.coroutines.__len__()):
+            self.coroutines[j].__del__()
+        self.coroutines.__del__()
+        self.out_chain.__del__()
+        let self_ptr = Pointer[AsyncTaskGroup].address_of(self)
+        _aligned_free[AsyncTaskGroup](self_ptr)
+
+    @always_inline
+    fn _counter_decr(self&) -> Int:
+        let prev: Int = self.counter.isub(1).value
+        return prev - 1
+
+    fn _task_complete(self&):
+        if self._counter_decr() == 0:
+            self.out_chain.borrow().mark_ready()
+            self.__del__()
+
+    @staticmethod
+    fn _get_complete_callback() -> __mlir_type[
+        `(!pop.pointer<`, AsyncTaskGroup, `>) -> !lit.none`
+    ]:
+        return __mlir_op.`kgen.addressof`[
+            _type : [
+                __mlir_type[`(!pop.pointer<`, AsyncTaskGroup, `>) -> !lit.none`]
+            ],
+            callee:_task_complete,
+            paramDecls : __mlir_attr.`#kgen<param.decls[]>`,
+        ]()
+
+    fn add_task(self&, coroutine: Coroutine[none]):
+        let ctx_ptr = coroutine.get_ctx[AsyncTaskGroupContext]()
+        let self_ptr = Pointer[AsyncTaskGroup].address_of(self)
+        __get_address_as_lvalue(ctx_ptr.address) = AsyncTaskGroupContext {
+            callback: _get_complete_callback(),
+            async_task_group_ptr: self_ptr,
+        }
+        self.coroutines.append(coroutine)
+        __mlir_op.`pop.external_call`[
+            _type:[],
+            func : __mlir_attr.`@KGEN_CompilerRT_LLCL_Execute`,
+        ](
+            _get_coro_resume_fn(),
+            coroutine._handle,
+            self.out_chain.borrow().get_runtime().ptr,
+        )
+
+
+struct AsyncTaskGroupPtr:
+    """Holds a pointer to a dynamically allocated AsyncTaskGroup. Exactly
+    num_work_items Coroutines representing tasks may be added. When all such
+    tasks are complete the given out_chain is marked as ready, and the
+    AsyncTaskGroup deletes itself. This type is only intended to be used
+    locally in order to add tasks, and should never be stored.
+    """
+
+    var ptr: Pointer[AsyncTaskGroup]
+
+    fn __init__(self, num_work_items: Int, out_chain: OutputChainPtr):
+        self.ptr = _aligned_alloc[AsyncTaskGroup](sizeof[AsyncTaskGroup]())
+        __get_address_as_lvalue(self.ptr.address) = AsyncTaskGroup(
+            num_work_items, out_chain
+        )
+
+    fn add_task(self&, coroutine: Coroutine[none]):
+        __get_address_as_lvalue(self.ptr.address).add_task(coroutine)
