@@ -390,6 +390,7 @@ static AsyncValueRef<Chain> cacheSingleRegion(Region &r, Operation *op,
 AsyncValueRef<Chain> M::Cache::deflateOp(Operation *op,
                                          RCRef<RegionCache> cache,
                                          AnyAsyncValueRef chain) {
+  TimeTraceScope<> traceScope("Cache::deflateOp");
   auto out = AsyncValueRef<Chain>::allocate(chain.getRuntime());
   // Hang the actual deflation off the input chain. This will allow users to
   // not worry about sequencing w.r.t. this operation, they can just pass in
@@ -486,6 +487,7 @@ static AsyncValueRef<Chain> inflateRegion(Region *r, RegionHashAttr regionHash,
 AsyncValueRef<Chain> M::Cache::inflateOp(Operation *cached,
                                          RCRef<RegionCache> cache,
                                          AnyAsyncValueRef chain) {
+  TimeTraceScope<> traceScope("Cache::inflateOp");
   auto out = AsyncValueRef<Chain>::allocate(cache->getRuntime());
 
   // Hang the inflation off the input chain.
