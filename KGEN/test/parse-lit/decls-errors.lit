@@ -70,6 +70,14 @@ fn missingColon()  # expected-error {{expected ':' in function definition}}
 
   var x = 1
 
+# expected-error @below {{expected parameter name}}
+# expected-error @below {{unexpected token in expression}}
+fn missingArgumentName(*: Int): pass
+
+# expected-error @below {{expected parameter name}}
+# expected-error @below {{unexpected token in expression}}
+fn missingParameterName[: Int](): pass
+
 # expected-error @+1 {{use of unknown declaration 'InvalidType'}}
 fn badPropertyError(a: InvalidType):
   _ = a.value
