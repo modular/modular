@@ -72,6 +72,9 @@ void KGEN::populateElaborateModulePasses(
   pm.addPass(createEliminateDeadSymbols());
   pm.addNestedPass<KGEN::FuncOp>(createCleanupCompilerGlobals());
 
+  pm.addNestedPass<FuncOp>(createMem2Reg());
+  pm.addNestedPass<FuncOp>(mlir::createCSEPass());
+
   // We use the canonicalizer, but disable region simplifications, since it is
   // very CFG centric and we have region trees with a single block per region.
   mlir::GreedyRewriteConfig cannConfig;
@@ -85,6 +88,8 @@ void KGEN::populateElaborateModulePasses(
   // See: https://github.com/modularml/modular/issues/7158
   pm.addPass(createPruneImpossibleVariants());
 #endif
+
+  pm.addNestedPass<FuncOp>(createMem2Reg());
 
   // Lower async functions as late as possible.
   pm.addPass(createLowerAsyncFunctions());
