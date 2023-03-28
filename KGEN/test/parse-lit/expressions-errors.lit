@@ -285,3 +285,22 @@ fn test_adaptive_set():
     alias bad = bar.__adaptive_set
     # expected-error @+1 {{'$Int::Int' value has no attribute '__adaptive_set'}}
     alias bad_int= Int(5).__adaptive_set
+
+struct GetSettable:
+  fn __getitem__(self, x: Int) -> Int: pass
+  fn __setitem__(self, x: Int, y: Int): pass
+
+
+fn lvalue_utilities(a: __mlir_type.index, b&: GetSettable):
+  # expected-error @+1 {{expression must be mutable}}
+  let addr : __mlir_type.`!pop.pointer<index>` = __get_lvalue_as_address(a)
+
+  # expected-error @+1 {{cannot use a dynamic lvalue in this operator}}
+  _ = __get_lvalue_as_address(b[1])
+
+  # Get and use an lvalue from an address.
+  __get_address_as_lvalue(addr) = 42
+
+  let addr2 : __mlir_type.index
+  # expected-error @+1 {{operand must have '!pop.pointer<T>' type, not '__mlir_type.index'}}
+  __get_address_as_lvalue(addr2) = 42

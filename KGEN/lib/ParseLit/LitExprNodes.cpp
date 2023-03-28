@@ -802,27 +802,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   // Emit all the arguments so we can encode them as SSA values.
   SmallVector<Value> opOperands;
   for (ExprNode *operand : call.args) {
-    // We allow clients to use three nested paren expressions to get access to
-    // the address of an lvalue.  This is a gross hack, we might want to use
-    // keyword arguments for this when we have them, e.g.
-    // __mlir_op.`thing`(addr_of = expression)
-    size_t numParens = 0;
-    while (auto *paren = dyn_cast<ParenNode>(operand)) {
-      operand = paren->subExpr;
-      ++numParens;
-    }
-
-    Value value;
-    if (numParens < 3) {
-      value = emitter.emitExprSRValue(operand, EC_MLIRMagic);
-    } else {
-      // Pass physical address.
-      auto lvalue = emitter.emitExprLValue(operand, EC_MLIRMagic);
-      value = lvalue.getIfSLValue();
-      if (lvalue && !value)
-        emitter.emitError(call.getLoc(),
-                          "cannot pass computed lvalue with ((()))");
-    }
+    Value value = emitter.emitExprSRValue(operand, EC_MLIRMagic);
     if (!value)
       return {};
     opOperands.push_back(value);
@@ -2144,4 +2124,32 @@ AnyValue ChainedCmpOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return {};
   return emitter.emitResult(emitNextCmp(emitter, 1, lastCmpExpr, e1RV), this,
                             dest);
+}
+
+AnyValue LValueConvertNode::emitIR(ValueDest &dest,
+                                   ExprEmitter &emitter) const {
+  // The two cases have different codegen patterns.
+  if (isLValueToAddress) {
+    // __get_lvalue_as_address(someSLValue) returns a pop.pointer.
+    LValue result = emitter.emitExprLValue(subExpr, EC_Unknown);
+    if (result && !result.getIfSLValue())
+      emitter.emitError(getLoc(),
+                        "cannot use a dynamic lvalue in this operator")
+          << getRange();
+
+    // Return the SLValue as an SRValue since the pointer itself is the result.
+    return emitter.emitResult(SRValue(result.getIfSLValue()), this, dest);
+  }
+
+  // __get_address_as_lvalue(pop_pointer)  # returns an SLValue
+  auto exprVal = emitter.emitExprSRValue(subExpr, EC_Unknown);
+  if (!exprVal)
+    return {};
+  if (!isa<POP::PointerType>(exprVal.getType().mlirType)) {
+    emitter.emitError(getLoc(),
+                      "operand must have '!pop.pointer<T>' type, not ")
+        << exprVal.getType() << getRange();
+    return {};
+  }
+  return emitter.emitResult(SLValue(exprVal), this, dest);
 }
