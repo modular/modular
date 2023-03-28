@@ -187,6 +187,7 @@ def HLCF_IfOp : HLCFParentOp<"if"> {
     OpBuilder getThenBodyBuilder();
     OpBuilder getElseBodyBuilder();
   }];
+  let hasCanonicalizer = 1;
 }
 
 //===----------------------------------------------------------------------===//
