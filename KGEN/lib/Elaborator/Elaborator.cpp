@@ -1068,16 +1068,9 @@ public:
   LogicalResult processScope(ExpansionTreeNode *parentNode,
                              ArrayRef<Operation *> worklist);
 
-  /// Specializes the function at `funcNode` with parameter declarations
-  /// `paramDecls`. Generates a DAG of ops that use parameters and calls
-  /// processScope on the list.
-  std::optional<ErrorTree>
-  specializeFunction(ExpansionTreeNode *funcNode,
-                     ArrayRef<ParamDeclAttr> paramDecls);
-
   /// Specializes the generator at `genNode`. Essentially instantiates a new
-  /// function with the same body, and calls `specializeFunction` on it. The new
-  /// function is by definition the expansion tree child of this generator.
+  /// function with the same body, and specializes it. The new function is by
+  /// definition the expansion tree child of this generator.
   std::optional<ErrorTree> specializeGenerator(ExpansionTreeNode *genNode);
 
   /// Given a list of primary generators (i.e. generators with no input
@@ -1446,8 +1439,7 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
       if (auto err = specializeGenerator(calleeNode))
         return err;
     } else if (isa<FuncOp>(calleeOp)) {
-      if (auto err = specializeFunction(calleeNode, decls))
-        return err;
+      // Nothing to be done - it's specialized already.
     }
   }
   LLVM_DEBUG(calleeNode->print(logger));
@@ -1823,44 +1815,6 @@ LogicalResult ElaboratorImpl::processScope(ExpansionTreeNode *parentNode,
 }
 
 //===----------------------------------------------------------------------===//
-// ElaboratorImpl::specializeFunction
-//===----------------------------------------------------------------------===//
-
-std::optional<ErrorTree>
-ElaboratorImpl::specializeFunction(ExpansionTreeNode *funcNode,
-                                   ArrayRef<ParamDeclAttr> paramDecls) {
-  TimeTraceScope<> traceScope("specializeFunc");
-  FuncOp func = cast<FuncOp>(funcNode->op);
-
-  auto _ = logger.scope("Specializing Function: @", func.getName());
-  logger.logOp("Function", func);
-
-  // Get a partial ordering of parameter definitions and uses that are listed
-  // "top down" in our evaluation order. Plug in the input parameter values.
-  ParameterUseDefGraph uses(func.getBodyRegion());
-  for (auto [decl, val] : llvm::zip(paramDecls, funcNode->inputParams)) {
-    uses.decls.try_emplace(
-        decl.getName(),
-        ParamDeclaration{decl.getType(), func, &func.getBodyRegion()});
-    uses.defs.try_emplace(decl.getName(), ParamDefinition{val, {}, func, {}});
-  }
-  uses.calculate(paramCache);
-
-  std::vector<Operation *> opsToRewrite;
-  collectOpsToProcess(&func.getBodyRegion(), uses, opsToRewrite);
-  llvm::append_range(opsToRewrite, uses.paramOps);
-
-  // Take the use-def graph and put it into the func node itself.
-  funcNode->paramGraph = std::move(uses);
-
-  // Process the worklist. Only finalize the function if this succeeded.
-  if (succeeded(processScope(funcNode, opsToRewrite)))
-    finalizeAndVerifyFunction(analysis, funcNode, func);
-
-  return std::nullopt;
-}
-
-//===----------------------------------------------------------------------===//
 // ElaboratorImpl::specializeGenerator
 //===----------------------------------------------------------------------===//
 
@@ -1878,10 +1832,11 @@ ElaboratorImpl::specializeGenerator(ExpansionTreeNode *genNode) {
 
   TimeTraceScope<> traceScope(
       "specializeGenerator:" + tryGettingShortName(generator.getName()).str(),
-      generator.getName().str() + " Input params: " +
+      generator.getName().str() /* + " Input params: " +
           mlir::debugString(generator.getInputParamsAttr()) + " = " +
-          mlir::debugString(genNode->inputParams));
-  auto _ = logger.scope("Specializing Generator: @", generator.getName());
+          mlir::debugString(genNode->inputParams) */);
+  auto genScope =
+      logger.scope("Specializing Generator: @", generator.getName());
   logger.logOp("Generator", generator);
 
   // Bind all parameter values in this scope.
@@ -1949,7 +1904,35 @@ ElaboratorImpl::specializeGenerator(ExpansionTreeNode *genNode) {
     return ErrorTree(newFunc.getLoc(), err.takeError());
 
   // Kick off the expansion for the new function.
-  return specializeFunction(newFuncNode, generator.getInputParamsAttr());
+  FuncOp func = cast<FuncOp>(newFuncNode->op);
+
+  auto funcScope = logger.scope("Specializing Function: @", func.getName());
+  logger.logOp("Function", func);
+
+  // Get a partial ordering of parameter definitions and uses that are listed
+  // "top down" in our evaluation order. Plug in the input parameter values.
+  ParameterUseDefGraph uses(func.getBodyRegion());
+  for (auto [decl, val] :
+       llvm::zip(generator.getInputParams(), newFuncNode->inputParams)) {
+    uses.decls.try_emplace(
+        decl.getName(),
+        ParamDeclaration{decl.getType(), func, &func.getBodyRegion()});
+    uses.defs.try_emplace(decl.getName(), ParamDefinition{val, {}, func, {}});
+  }
+  uses.calculate(paramCache);
+
+  std::vector<Operation *> opsToRewrite;
+  collectOpsToProcess(&func.getBodyRegion(), uses, opsToRewrite);
+  llvm::append_range(opsToRewrite, uses.paramOps);
+
+  // Take the use-def graph and put it into the func node itself.
+  newFuncNode->paramGraph = std::move(uses);
+
+  // Process the worklist. Only finalize the function if this succeeded.
+  if (succeeded(processScope(newFuncNode, opsToRewrite)))
+    finalizeAndVerifyFunction(analysis, newFuncNode, func);
+
+  return std::nullopt;
 }
 
 //===----------------------------------------------------------------------===//
@@ -2207,8 +2190,16 @@ public:
     // target-non-specific to target-specific: in order to fully concretize the
     // IR, we must evaluate compile-time expressions, which is a target-specific
     // operation. Make the IR target-specific by attaching the required target
-    // specification. For now, assume compilation for the host target.
-    setTargetInfo(theModule, target);
+    // specification.
+    if (TargetInfoAttr tgt = getTargetInfo(theModule)) {
+      if (tgt != target) {
+        theModule->emitError("target did not match, expected ")
+            << target << " but got " << tgt;
+        return signalPassFailure();
+      }
+    } else {
+      setTargetInfo(theModule, target);
+    }
 
     if (failed(elaborateGenerators(analysis, paramCache, *rt, target,
                                    primaryGenerators, shouldDoSearch)))

@@ -8,6 +8,10 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENPasses.h"
 #include "KGEN/LowerToObject.h"
+#include "LLCL/Runtime/Algorithms.h"
+#include "LLCL/Runtime/Runtime.h"
+#include "mlir/Bytecode/BytecodeReader.h"
+#include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
@@ -142,32 +146,23 @@ char KGENCompilerLayer::ID;
 KGENCompilerLayer::KGENCompilerLayer(
     mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
     ElaborateGeneratorsOptions elaborateOptions, ObjectCompilerLayer &base,
+    LLCL::RCRef<Cache::BlobCacheBackend> transformCacheBackend,
+    LLCL::RCRef<Cache::BlobCacheBackend> regionCacheBackend,
     llvm::orc::ExecutionSession &sess, const llvm::DataLayout &dl,
     MaterializationLayer::AddToSearchOrderFn add)
     : llvm::RTTIExtends<KGENCompilerLayer, MaterializationLayer>(
           sess, dl, std::move(add)),
       pm(pm), runtime(runtime), target(target),
-      elaborateOptions(std::move(elaborateOptions)), baseLayer(base) {}
-
-/// This elaborates all the generators in `theModule` and takes the module from
-/// a just-parsed state to a state we can use to produce an object file. This
-/// modifies the module in place. The granularity of this operation is tentative
-/// and should be re-evaluated, we may end up in a place where we want to split
-/// pre-elaboration, elaboration, and post-elaboration into explicit phases.
-///
-/// The purpose of this function is largely for cases where we don't want to add
-/// additional options to the pass manager, such as when we're evaluating a
-/// module in a JIT context.
-static LogicalResult
-concretizeModule(mlir::PassManager &pm, ModuleOp theModule,
-                 LLCL::Runtime &runtime, TargetInfoAttr target,
-                 const ElaborateGeneratorsOptions &elaborateOptions) {
-  pm.clear();
-  populateElaborateModulePasses(pm, runtime, target, elaborateOptions);
-  return pm.run(theModule);
+      elaborateOptions(std::move(elaborateOptions)), baseLayer(base) {
+  // Construct the caches.
+  transformCache = LLCL::RCRef<Cache::TransformCache>::create(
+      std::move(transformCacheBackend));
+  regionCache =
+      LLCL::RCRef<Cache::RegionCache>::create(std::move(regionCacheBackend));
 }
 
 ErrorOrSuccess KGENCompilerLayer::add(StringRef libName, ModuleOp theModule) {
+  TimeTraceScope<> traceScope("KGENCompilerLayer::add(" + libName.str() + ")");
   auto dylibOr = getOrCreateDylib(libName);
   if (dylibOr.isError())
     return dylibOr.takeError();
@@ -176,13 +171,75 @@ ErrorOrSuccess KGENCompilerLayer::add(StringRef libName, ModuleOp theModule) {
   llvm::orc::ResourceTrackerSP resourceTracker =
       dylib->getDefaultResourceTracker();
 
-  // TODO(#10920): We need to do this here to get the mangled names.
-  if (failed(
-          concretizeModule(pm, theModule, runtime, target, elaborateOptions)))
-    return Error("compilation failed");
+  // Set the target now, so it's included in the cache key.
+  setTargetInfo(theModule, target);
+  // Populate the passes.
+  populateElaborateModulePasses(pm, runtime, target, elaborateOptions);
 
-  // Add the materialization unit by computing the exports and the symbol table,
-  // and passing those off.
+  // TODO(11051): This is how it *should* be done, but because of the stack
+  //   overflow issues, we have to do this manually for now.
+
+  // Run the passes as a cached transform. Don't deflate the op as part of this
+  // - we don't want that cost right now.
+  //  LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
+  //      theModule, regionCache.copy(), transformCache.copy(),
+  //      runtime.getReadyChain().copy(), pm, /*deflateTarget=*/false);
+  //  LLCL::await(ready);
+  //  if (ready.isError())
+  //    return ready.takeDiagnostic().getMessage().copy();
+
+  { // This should *all* be handled by the snippet above, but because it ends up
+    // being done on a separate thread, we have a smaller stack, and so we hit
+    // the stack overflow bug much more often.
+
+    // Construct the input key to the transform.
+    auto transformKey = Cache::WriteableBuffer::get();
+    pm.printAsTextualPipeline(*transformKey);
+    mlir::writeBytecodeToFile(theModule, *transformKey);
+
+    // Attempt to find the buffer in the cache, and if it's not found then run
+    // the transform and insert it.
+    auto found = transformCache->find(
+        transformKey.copy(),
+        LLCL::MLIRLocationDecoder::getEncodedLocation(theModule->getLoc()));
+    LLCL::await(found);
+
+    if (found.isError())
+      return found.takeDiagnostic().getMessage().copy();
+
+    // Didn't find anything, run the transform and put it into the cache.
+    if (!found->has_value()) {
+      if (failed(pm.run(theModule))) {
+        return Error("compilation failed");
+      }
+      // Put the thing into the cache.
+      auto transformed = Cache::WriteableBuffer::get();
+      mlir::writeBytecodeToFile(theModule, *transformed);
+      transformCache->insert(std::move(transformKey), std::move(transformed));
+      // And we're done. Can't return yet though, have to pass through the rest
+      // of the function.
+    } else {
+      // We have something stored, pull it out of the cache now.
+      std::unique_ptr<llvm::MemoryBuffer> bytecode =
+          llvm::MemoryBuffer::getMemBuffer((**found)->getBuffer(),
+                                           /*BufferName=*/"",
+                                           /*RequiresNullTerminator=*/false);
+
+      // Create a dummy block that we can use to inflate the cached module into.
+      Block b;
+      if (failed(mlir::readBytecodeFile(
+              *bytecode, &b,
+              mlir::ParserConfig(theModule->getContext(),
+                                 /*verifyAfterParse=*/false)))) {
+        return Error("reading bytecode file failed");
+      }
+      // Take the body from the module we just parsed.
+      theModule.getBodyRegion().takeBody(b.front().getRegion(0));
+    }
+  }
+
+  // Add the materialization unit by computing the exports and the symbol
+  // table, and passing those off.
   SymbolTable st(theModule);
   ExportMap ex = getExportedSymbols(theModule);
   if (ex.empty())

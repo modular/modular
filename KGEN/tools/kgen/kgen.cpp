@@ -14,6 +14,7 @@
 #include "KGEN/InitAllDialects.h"
 #include "KGEN/KGENCompiler.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/LowerToObject.h"
 #include "KGEN/ParseLit.h"
 #include "LLCL/Runtime/Runtime.h"
@@ -215,6 +216,12 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   if (!theModule)
     return failure(clOptions.reportError("could not parse the module"));
 
+  // If we are generating a dependency file, do so now.
+  if (!clOptions.dependencyFilename.empty()) {
+    if (failed(createDependencyFile(clOptions, includedFiles)))
+      return failure();
+  }
+
   // Find a target specification or construct one using the commandline options.
   TargetInfoAttr target = getTargetInfo(*theModule);
   if (target) {
@@ -236,40 +243,83 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     target = targetOr.takeValue();
   }
 
-  // Generate a library file or go all the way through elaboration.
-  if (clOptions.cmd == Command::kGenLibraryFile)
-    populateGenerateLibraryFilePasses(pm);
-  else
-    populateElaborateModulePasses(pm, *runtime, target,
-                                  {clOptions.enableSearch});
+  // Now create the execution engine so we can JIT.
+  auto tmOr = createTargetMachine(compilationOptions,
+                                  /*isJIT=*/clOptions.cmd == Command::kExecute);
+  if (tmOr.isError())
+    return failure(clOptions.reportError(tmOr.getError()));
 
-  if (failed(pm.run(*theModule)))
-    return failure(clOptions.reportError("compilation failed"));
+  auto engineOr = ExecutionEngine::createWithStandardLayers(
+      {/*registerDebugPlugins=*/compilationOptions.debugLevel !=
+       CompilationOptions::DebugInfoLevel::kNoDebug},
+      **tmOr);
+  if (failed(engineOr))
+    return failure(clOptions.reportError(engineOr.getError()));
+  std::unique_ptr<ExecutionEngine> engine = std::move(*engineOr);
 
-  // If we are generating a dependency file, do so now.
-  if (!clOptions.dependencyFilename.empty()) {
-    if (failed(createDependencyFile(clOptions, includedFiles)))
-      return failure();
-  }
+  // TODO (8082): This should not be necessary.
+  std::vector<std::pair<StringLiteral, void *>> compilerRTFunctions;
+  KGEN::registerIntelAMX(compilerRTFunctions);
+  KGEN::registerLLCL(compilerRTFunctions);
+  KGEN::registerMemory(compilerRTFunctions);
+  KGEN::registerPrint(compilerRTFunctions);
+  KGEN::registerSystem(compilerRTFunctions);
+  KGEN::registerTracing(compilerRTFunctions);
+  for (auto [name, ptr] : compilerRTFunctions)
+    if (auto err = engine->add<StaticSymbolLayer>("exec", name, ptr))
+      return failure(clOptions.reportError(err.getError()));
 
-  // If the module is empty, just return - don't bother trying codegen or
-  // emitting anything.
-  if (theModule->getOps().empty())
-    return mlir::success();
-
-  // If all we're doing is generating a library file or elaborating, we're done
-  // now.
-  if (clOptions.cmd == Command::kGenLibraryFile ||
-      clOptions.cmd == Command::kElaborate)
-    return emitModuleIR(*theModule, clOptions);
-
-  SymbolTable symtab(*theModule);
+  // Add the object compiler layer.
   auto compiler =
       ObjectCompiler::create(*runtime, pm, ".kgen_cache", compilationOptions);
   if (failed(compiler)) {
     return failure(clOptions.reportError(
         Twine("could not create object compiler: ") + compiler.getError()));
   }
+  auto &objLayer = engine->addLayer<ObjectCompilerLayer>(
+      std::move(*compiler), engine->getLinkingLayer());
+
+  // Add the KGEN compiler layer.
+  // First though, get the backend chains to pass into the compile layer.
+  auto transformCacheBackend = Cache::getDefaultBackendChain(
+      *runtime, (std::filesystem::path(".kgen_cache") / "transform").string(),
+      KGEN_VERSION_STRING);
+  if (transformCacheBackend.isError())
+    return failure(clOptions.reportError(transformCacheBackend.getError()));
+
+  auto regionCacheBackend = Cache::getDefaultBackendChain(
+      *runtime, (std::filesystem::path(".kgen_cache") / "region").string(),
+      KGEN_VERSION_STRING);
+  if (regionCacheBackend.isError())
+    return failure(clOptions.reportError(transformCacheBackend.getError()));
+
+  auto &compileLayer = engine->addLayer<KGENCompilerLayer>(
+      pm, *runtime, target, ElaborateGeneratorsOptions{clOptions.enableSearch},
+      objLayer, std::move(*transformCacheBackend),
+      std::move(*regionCacheBackend));
+
+  // Generate a library file or go all the way through elaboration.
+  if (clOptions.cmd == Command::kGenLibraryFile) {
+    populateGenerateLibraryFilePasses(pm);
+    if (failed(pm.run(*theModule)))
+      return failure(clOptions.reportError("compilation failed"));
+    return emitModuleIR(*theModule, clOptions);
+  }
+
+  // This currently compiles the module, so we don't need to try to look
+  // anything up.
+  // TODO(#10893): We will have to look up the symbols we want to emit at some
+  //   point.
+  if (auto err = compileLayer.add("exec", *theModule))
+    return failure(clOptions.reportError("compilation failed"));
+
+  // If all we're doing is generating a library file or elaborating, we're done
+  // now.
+  if (clOptions.cmd == Command::kElaborate)
+    return emitModuleIR(*theModule, clOptions);
+
+  // Construct the symbol table and the export map.
+  SymbolTable symtab(*theModule);
   llvm::MapVector<StringAttr, ExportedSymbol> exportedSymbols =
       getExportedSymbols(*theModule);
 
@@ -308,35 +358,10 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return emitHeader(symtab, exportedSymbols, *compiler,
                       clOptions.outputFilename);
 
-  // Now create the execution engine so we can JIT.
-  auto tmOr = createTargetMachine(compilationOptions,
-                                  /*isJIT=*/clOptions.cmd == Command::kExecute);
-  if (tmOr.isError())
-    return failure(clOptions.reportError(tmOr.getError()));
-
-  auto engineOr = ExecutionEngine::createWithStandardLayers(
-      {/*registerDebugPlugins=*/compilationOptions.debugLevel !=
-       CompilationOptions::DebugInfoLevel::kNoDebug},
-      **tmOr);
-  if (failed(engineOr))
-    return failure(clOptions.reportError(engineOr.getError()));
-  std::unique_ptr<ExecutionEngine> engine = std::move(*engineOr);
-
-  // TODO (8082): This should not be necessary.
-  std::vector<std::pair<StringLiteral, void *>> compilerRTFunctions;
-  KGEN::registerIntelAMX(compilerRTFunctions);
-  KGEN::registerLLCL(compilerRTFunctions);
-  KGEN::registerMemory(compilerRTFunctions);
-  KGEN::registerPrint(compilerRTFunctions);
-  KGEN::registerSystem(compilerRTFunctions);
-  KGEN::registerTracing(compilerRTFunctions);
-  for (auto [name, ptr] : compilerRTFunctions)
-    if (auto err = engine->add<StaticSymbolLayer>("exec", name, ptr))
-      return failure(clOptions.reportError(err.getError()));
-
-  // Add the object compiler layer.
-  auto &objLayer = engine->addLayer<ObjectCompilerLayer>(
-      std::move(*compiler), engine->getLinkingLayer());
+  // If the module is empty, just return - don't bother trying codegen or
+  // emitting anything.
+  if (theModule->getOps().empty())
+    return mlir::success();
 
   // If there are no exported symbols, then we won't codegen anything. That
   // means we need to add an exported symbol if there aren't any. Use the first
@@ -348,11 +373,6 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     exportedSymbols.insert(
         {firstFunc.getNameAttr(), {firstFunc.getNameAttr(), false}});
   }
-
-  // And add the module into the layer.
-  if (auto err =
-          engine->add<ObjectCompilerLayer>("exec", symtab, exportedSymbols))
-    return failure(clOptions.reportError(err.getError()));
 
   // If we're emitting the archive, do it.
   if (clOptions.cmd == Command::kEmit) {
