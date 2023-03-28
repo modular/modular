@@ -484,7 +484,7 @@ struct PackMatrixRows[
             alias inner_row_idx = idx
             # Check that the current row has valid data.
             if skip_row_bound or (inner_row_idx < read_bound[0]):
-                let row_gloal_index = Index(
+                let row_global_index = Index(
                     start_idx_global[0] + inner_row_idx,
                     start_idx_global[1],
                 )
@@ -494,13 +494,13 @@ struct PackMatrixRows[
                     #  are skipped so the code path is simd-in and simd-out
                     #  without any predicate.
                     row_data = self.original_matrix.simd_load[simd_size](
-                        row_gloal_index
+                        row_global_index
                     )
                 else:
                     # Not skipping col bound, need to to a partial fill of
                     #  the transpose buffer row.
                     row_data = partial_simd_load[simd_size, type](
-                        self.original_matrix._offset(row_gloal_index),
+                        self.original_matrix._offset(row_global_index),
                         0,  # no left bound.
                         read_bound[1],
                         0,
@@ -674,15 +674,13 @@ struct PackMatrixCols[
     fn _pack_row_helper[
         # Skip column boundary checking in this row.
         skip_col_bound: Bool,
-        # Fill all zero for this row.
-        fill_zero: Bool,
     ](self, tile_row_idx: Int):
         """Helper function:  Packs a tiled row of original matrix into the
         packed buffer, with boundary checking. Boundary checking can be
         statically skipped., based on the parameters.
         Args:
             skip_col_bound(Bool): boundary check on y dimension will be
-                skpped if true.
+                skipped if true.
             fill_zero(Bool): the given row will be filled all zero if true.
             tile_row_idx(Int): row index of the row to pack within the tile of
                 data to pack.
@@ -700,10 +698,7 @@ struct PackMatrixCols[
                 global_idx_pair[1],
             )
 
-            if fill_zero:
-                # Statical fill zero case.
-                data = SIMD[simd_size, type](0)
-            elif skip_col_bound or (
+            if skip_col_bound or (
                 col_idx + simd_size <= self.valid_data_dim[1]
             ):
                 # Whole SIMD vector within bound.
@@ -736,24 +731,13 @@ struct PackMatrixCols[
                 skip_col_bound: Boundary check on column dimension will be skipped
                     if true.
         """
-        var row_idx: Int = 0
         let valid_row_count = min(
             self.valid_data_dim[0],
             self.pack_tile_dim[0],
         )
 
-        @always_inline
-        fn pack_unit[static_switch: Bool]():
-            @parameter
-            if static_switch:
-                self._pack_row_helper[skip_col_bound, False](row_idx)
-            else:
-                self._pack_row_helper[True, False](row_idx)
-
-        # Fill zero on the remaining rows on the tile.
-        while row_idx < self.pack_tile_dim[0]:
-            unswitch[pack_unit](row_idx < valid_row_count)
-            row_idx += 1
+        for row_idx in range(valid_row_count):
+            self._pack_row_helper[skip_col_bound](row_idx)
 
     fn _pack(self):
         """Helper function: packs all the rows within the tile of data to pack"""
@@ -1370,6 +1354,20 @@ struct TiledMatmul[
                 sub_tile_n(Int): Dynamic tile size to use on N dimension.
                 sub_tile_k(Int): Dynamic tile size to use on K dimension.
         """
+        # valid distance in each dimension from the current offset to the end of the matrix
+        let knm_bounds = (
+            Index(
+                self.global_tile_shape.K,
+                self.global_tile_shape.N,
+                self.global_tile_shape.M,
+            )
+            + Index(
+                self.global_tile_offset.K,
+                self.global_tile_offset.N,
+                self.global_tile_offset.M,
+            )
+            - Index(global_offset.K, global_offset.N, global_offset.M)
+        )
         # pack B:
         if transpose_b:
             PackMatrixRows[
@@ -1386,9 +1384,7 @@ struct TiledMatmul[
                 Index(global_offset.N, global_offset.K),
                 Index(sub_tile_n, sub_tile_k),
                 # Valid amount of input from the starting offset.
-                Index(self.global_tile_shape.N, self.global_tile_shape.K)
-                + Index(self.global_tile_offset.N, self.global_tile_offset.K)
-                - Index(global_offset.N, global_offset.K),
+                Index(knm_bounds[1], knm_bounds[0]),
             )
         else:
             PackMatrixCols[
@@ -1405,17 +1401,12 @@ struct TiledMatmul[
                 Index(global_offset.K, global_offset.N),
                 Index(sub_tile_k, sub_tile_n),
                 # Valid amount of input from the starting offset.
-                Index(self.global_tile_shape.K, self.global_tile_shape.N)
-                + Index(self.global_tile_offset.K, self.global_tile_offset.N)
-                - Index(global_offset.K, global_offset.N),
+                Index(knm_bounds[0], knm_bounds[1]),
             )
 
         # Launch the MLoop
-        let sub_tile_n_k = Index(sub_tile_n, sub_tile_k)
-        let valid_row_count = (
-            self.global_tile_shape.M
-            + self.global_tile_offset.M
-            - global_offset.M
+        let sub_tile_n_k = Index(
+            min(sub_tile_n, knm_bounds[1]), min(sub_tile_k, knm_bounds[0])
         )
 
         @always_inline
@@ -1442,7 +1433,7 @@ struct TiledMatmul[
 
         tile[row_iteration, VariadicList[Int](config.a_row_size, 4, 3, 2, 1)](
             0,  # starting row offset
-            valid_row_count,  # row bound
+            knm_bounds[2],  # row bound
         )
 
     #  Pack a subtile of B and iterate through all the rows of C.
