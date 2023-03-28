@@ -114,16 +114,8 @@ protected:
   WorkQueueType defaultWorkQueue;
 
 public:
-  /// Return the number of threads to use. If the command line num-threads
-  /// option is zero, returns the std::thread hardware_concurrency value,
-  /// which may include virtual cores due to hyperthreading.
-  ///
-  /// Note that ThreadPoolWorkQueue has its own mechanism for choosing
-  /// the number of threads when num-threads is zero. This function is
-  /// only used by external frameworks.
-  size_t getNumThreads() const {
-    return numThreads == 0 ? std::thread::hardware_concurrency() : numThreads;
-  }
+  /// Return the number of threads specified at the command-line.
+  size_t getNumThreads() const { return numThreads; }
 
   /// Explicitly tell runtime to use single threaded workqueue. This is useful
   /// in situations where computation is performed by some other runtime (for
