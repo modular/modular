@@ -164,6 +164,10 @@ public:
   /// generated!
   void notForImmediateExecution() { isJIT = false; }
 
+  /// Provide access to the underlying ObjectCompiler so that users can call its
+  /// methods directly if desired (for example, to emit asm or LLVM).
+  ObjectCompiler &getRawCompiler() { return objectCompiler; }
+
 private:
   /// Conform to the ORC's interface and return a map of the exported symbols.
   /// If the export map is empty, uses `getExportedSymbols` to infer them from

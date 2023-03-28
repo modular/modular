@@ -326,9 +326,9 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // Handle LLVM output.
   if (clOptions.cmd == Command::kEmitLLVM) {
-    llvm::LLVMContext ctx;
-    auto llvmModule =
-        compiler->lowerAllFuncsToLLVM(symtab, exportedSymbols, ctx);
+    llvm::LLVMContext llvmCtx;
+    auto llvmModule = objLayer.getRawCompiler().lowerAllFuncsToLLVM(
+        symtab, exportedSymbols, llvmCtx);
     if (!llvmModule)
       return failure(clOptions.reportError("could not lower funcs to LLVM"));
     auto outFile = clOptions.getOutputFile(/*hasBinaryOutput=*/false, ".ll");
@@ -346,10 +346,12 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     if (!outFile)
       return failure(clOptions.reportError("could not open .s output file"));
 
-    auto standaloneOr = compiler->produceStandaloneAssembly(
+    auto standaloneOr = objLayer.getRawCompiler().produceStandaloneAssembly(
         symtab, exportedSymbols, target, outFile->os());
     if (failed(standaloneOr))
-      return failure(clOptions.reportError("could not produce standalone asm"));
+      return failure(
+          clOptions.reportError("could not produce standalone asm: " +
+                                Twine(standaloneOr.getError())));
     outFile->keep();
     return mlir::success();
   }

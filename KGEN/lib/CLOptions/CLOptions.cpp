@@ -18,6 +18,32 @@ using namespace KGEN;
 // CommandLineFunc implementation
 //===--------------------------------------------------------------------===//
 
+/// Check that `t` returns exactly one type, and it's of type
+/// `!kgen.list<i1[0]>`, which is what mojo uses as it's 'None' type.
+static bool returnTypeIsMojoNone(FunctionType t) {
+  if (t.getNumResults() != 1)
+    return false;
+
+  Type res = t.getResult(0);
+  auto list = dyn_cast<KGEN::ListType>(res);
+  // Not a list, can't be !kgen.list<i1[0]>.
+  if (!list)
+    return false;
+  auto intTy = dyn_cast_if_present<IntegerType>(list.getResolvedElementType());
+  // Not a list of integers, can't be !kgen.list<i1[0]>.
+  if (!intTy)
+    return false;
+  // Not a list of i1, can't be !kgen.list<i1[0]>.
+  if (intTy.getIntOrFloatBitWidth() != 1)
+    return false;
+  // List is not length 0, or length is unresolved, can't be !kgen.list<i1[0]>.
+  if (auto len = list.getResolvedLength(); !len || *len != 0)
+    return false;
+
+  // OK, it is the thing we want.
+  return true;
+}
+
 ErrorOrSuccess
 CommandLineFunc::verifyFuncSignature(mlir::FunctionType funcType) const {
   if (signature == "f32()") {
@@ -29,7 +55,8 @@ CommandLineFunc::verifyFuncSignature(mlir::FunctionType funcType) const {
     }
     return M::success();
   } else if (signature == "()") {
-    if (funcType.getNumResults() != 0 || funcType.getNumInputs() != 0) {
+    if (!(returnTypeIsMojoNone(funcType) || funcType.getNumResults() == 0) ||
+        funcType.getNumInputs() != 0) {
       return Error("command-line specified signature does not match the IR "
                    "signature, expected " +
                    mlir::debugString(funcType) + ", but got " + signature);
