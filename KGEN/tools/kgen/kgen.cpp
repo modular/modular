@@ -219,7 +219,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // If we are generating a dependency file, do so now.
   if (!clOptions.dependencyFilename.empty()) {
     if (failed(createDependencyFile(clOptions, includedFiles)))
-      return failure();
+      return failure(
+          clOptions.reportError("failed to create a dependency file"));
   }
 
   // Find a target specification or construct one using the commandline options.
@@ -329,10 +330,10 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     auto llvmModule =
         compiler->lowerAllFuncsToLLVM(symtab, exportedSymbols, ctx);
     if (!llvmModule)
-      return failure();
+      return failure(clOptions.reportError("could not lower funcs to LLVM"));
     auto outFile = clOptions.getOutputFile(/*hasBinaryOutput=*/false, ".ll");
     if (!outFile)
-      return failure();
+      return failure(clOptions.reportError("could not open .ll output file"));
 
     llvmModule->print(outFile->os(), nullptr);
     outFile->keep();
@@ -343,12 +344,12 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   if (clOptions.cmd == Command::kEmitAssembly) {
     auto outFile = clOptions.getOutputFile(/*hasBinaryOutput=*/false, ".s");
     if (!outFile)
-      return failure();
+      return failure(clOptions.reportError("could not open .s output file"));
 
     auto standaloneOr = compiler->produceStandaloneAssembly(
         symtab, exportedSymbols, target, outFile->os());
     if (failed(standaloneOr))
-      return failure();
+      return failure(clOptions.reportError("could not produce standalone asm"));
     outFile->keep();
     return mlir::success();
   }
@@ -435,7 +436,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
         break;
       case Command::kExecute: {
         if (failed(execFunc(fn, name, *clFunc)))
-          return failure();
+          return failure(
+              clOptions.reportError("failed to execute " + name.getValue()));
       }
       }
     }
