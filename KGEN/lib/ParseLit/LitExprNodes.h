@@ -463,6 +463,27 @@ struct ChainedCmpOpNode final : public ExprNode {
                        SRValue lastExpr) const;
 };
 
+/// __get_lvalue_as_address(someSLValue)  # returns pop.pointer.
+/// __get_address_as_lvalue(pop_pointer)  # returns an SLValue
+struct LValueConvertNode final : public ExprNode {
+  LValueConvertNode(bool isLValueToAddress, SMLoc baseLoc, ExprNode *subExpr,
+                    SMLoc rparenLoc)
+      : ExprNode(kLValueConvert), isLValueToAddress(isLValueToAddress),
+        baseLoc(baseLoc), subExpr(subExpr), rparenLoc(rparenLoc) {}
+
+  bool isLValueToAddress;
+  const SMLoc baseLoc;
+  ExprNode *const subExpr;
+  const SMLoc rparenLoc;
+
+  static bool classof(const ExprNode *node) {
+    return node->kind == kLValueConvert;
+  }
+  SMLoc getLoc() const override { return baseLoc; }
+  LitSourceRange getRange() const override { return {baseLoc, rparenLoc}; }
+  AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
+};
+
 } // namespace M::KGEN::LIT
 
 #endif // LIT_EXPR_NODES_H

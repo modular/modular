@@ -104,6 +104,7 @@ private:
   ParseResult parseSubscriptSuffix(ExprNode *&result, SMLoc lsquareLoc);
   ParseResult parseComparisonExpr(ExprNode *&result, ExprNode *rhs,
                                   ExprNode::Kind kind, SMLoc loc);
+  ParseResult parseLValueConvert(ExprNode *&result);
 
   /// This specifies the indentation level of the start of the statement that
   /// contains this expression if the expression can exist at the end of the
@@ -434,6 +435,12 @@ ParseResult ExprParser::parsePrefixExpr(ExprNode *&result) {
     result = dict;
     break;
   }
+  case LitToken::kw___get_address_as_lvalue:
+  case LitToken::kw___get_lvalue_as_address:
+    if (failed(parseLValueConvert(result)))
+      return failure();
+    break;
+
   default:
     emitTokenError("unexpected token in expression");
     result = nullptr;
@@ -727,6 +734,23 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
   result = alloc<SubscriptArrowNode>(
       result, lsquareLoc, copyArrayRef<ExprNode *>(indices), arrowLoc,
       copyArrayRef<ExprNode *>(arrowExprs), rsquareLoc);
+  return success();
+}
+
+ParseResult ExprParser::parseLValueConvert(ExprNode *&result) {
+  bool isLValueToAddress = getToken().is(LitToken::kw___get_lvalue_as_address);
+  assert(getToken().isAny(LitToken::kw___get_address_as_lvalue,
+                          LitToken::kw___get_lvalue_as_address));
+  SMLoc baseLoc = consumeToken().getLoc();
+
+  ExprNode *subExpr = nullptr;
+  SMLoc rpLoc;
+  if (parseToken(LitToken::l_paren, "expected '('") ||
+      parseExpression(subExpr) ||
+      parseToken(LitToken::r_paren, "expected '('", &rpLoc))
+    return failure();
+
+  result = alloc<LValueConvertNode>(isLValueToAddress, baseLoc, subExpr, rpLoc);
   return success();
 }
 
