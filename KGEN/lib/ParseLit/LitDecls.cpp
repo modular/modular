@@ -621,11 +621,13 @@ enum VarArgKind { None, VarArg, KWVarArg };
 ///
 /// argument_list      ::= argument ("," argument)*
 /// argument           ::= "/" | "*"
-/// argument           ::= argument_variadic identifier_opt_type
-///                           argument_ownership ["=" expression]
+/// argument           ::= [argument_ownership] [argument_variadic] identifier
+///                        [argument_reference] [":" expression]
+///                        ["=" expression]
 /// argument           ::= identifier "*" ":" type
+/// argument_ownership ::= "owned" | "borrowed"
 /// argument_variadic  ::= "*" | "**"
-/// argument_ownership ::= "&"
+/// argument_reference ::= "&"
 struct ParsedArgument {
   SMLoc loc;
   // Specify argument passing convention, e.g. owned/byref etc.
