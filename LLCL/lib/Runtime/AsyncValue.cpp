@@ -78,6 +78,9 @@ void AsyncValue::removeAnyInlineWaiter(std::optional<Waiter> &inlineWaiter) {
       if (!compareExchangeWaiterAndState(oldValue, newValue)) {
         // If we failed the compare/xchg, retry.  The only state transition is
         // to having an inline waiter and potentially indirect waiters.
+        // compareExchangeWaiterAndState updated oldValue for us, but if we end
+        // up yielding to the OS, then we'll want to reload oldValue ourselves
+        // upon coming back from the yield.
         if (spinWaiter.wait())
           oldValue = loadWaitersAndState();
         continue;
@@ -91,7 +94,6 @@ void AsyncValue::removeAnyInlineWaiter(std::optional<Waiter> &inlineWaiter) {
       // If someone is actively constructing a waiter, spin for a few cycles
       // until it resolves.
       spinWaiter.wait();
-      // TODO: Should test result of wait here?
       oldValue = loadWaitersAndState();
       continue;
 
@@ -271,7 +273,7 @@ void AsyncValue::andThenOutOfLine(Waiter waiter, WaitersAndState oldValue) {
   if (oldValue.getInt() == State::kUnconstructed) {
     assert(oldValue.getPointer() == nullptr &&
            "how'd we get out of line waiters without an inline waiter?");
-    // Allocate the payload aread by moving to the ...Constructing state.  If
+    // Allocate the payload area by moving to the ...Constructing state.  If
     // the AsyncValue moved to another state in the meantime then it either
     // got constructed or became available.  In any case, we can't do inline
     // waiter initialization so we have to fall back.
