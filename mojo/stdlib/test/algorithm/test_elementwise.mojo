@@ -10,7 +10,7 @@ from Range import range
 from DType import DType
 from Functional import elementwise
 from Int import Int
-from Math import mul
+from Math import mul, min
 from List import Dim, DimList, create_dim_list
 from IO import print
 from Index import StaticIntTuple
@@ -74,7 +74,7 @@ fn test_elementwise[
         var in2 = buffer2.simd_load[simd_width](index)
         out_buffer.simd_store[simd_width](index, mul(in1, in2))
 
-    let runtime = Runtime(1)
+    let runtime = Runtime(4)
     let out_chain = OwningOutputChainPtr(runtime)
     elementwise[outer_rank.__as_mlir_index(), 1, 1, func](
         rebind[StaticIntTuple[outer_rank.__as_mlir_index()]](
@@ -84,8 +84,9 @@ fn test_elementwise[
     )
     out_chain.wait()
     out_chain.__del__()
+    runtime.__del__()
 
-    for i2 in range(numelems):
+    for i2 in range(min(numelems, 64)):
         print(out_buffer.data.offset(i2).load())
 
 
@@ -109,6 +110,11 @@ fn main():
     print("Testing 5D:\n")
     test_elementwise[32, 5, DimList[5].create_unknown()](
         create_dim_list(4, 2, 1, 2, 2)
+    )
+
+    print("Testing large:\n")
+    test_elementwise[131072, 2, DimList[2].create_unknown()](
+        create_dim_list(1024, 128)
     )
 
 
@@ -237,3 +243,69 @@ fn main():
 # CHECK-NEXT: [60.000000]
 # CHECK-NEXT: [62.000000]
 # CHECK-NEXT: [64.000000]
+
+# CHECK: Testing large:
+# CHECK-NEXT: [2.000000]
+# CHECK-NEXT: [4.000000]
+# CHECK-NEXT: [6.000000]
+# CHECK-NEXT: [8.000000]
+# CHECK-NEXT: [10.000000]
+# CHECK-NEXT: [12.000000]
+# CHECK-NEXT: [14.000000]
+# CHECK-NEXT: [16.000000]
+# CHECK-NEXT: [18.000000]
+# CHECK-NEXT: [20.000000]
+# CHECK-NEXT: [22.000000]
+# CHECK-NEXT: [24.000000]
+# CHECK-NEXT: [26.000000]
+# CHECK-NEXT: [28.000000]
+# CHECK-NEXT: [30.000000]
+# CHECK-NEXT: [32.000000]
+# CHECK-NEXT: [34.000000]
+# CHECK-NEXT: [36.000000]
+# CHECK-NEXT: [38.000000]
+# CHECK-NEXT: [40.000000]
+# CHECK-NEXT: [42.000000]
+# CHECK-NEXT: [44.000000]
+# CHECK-NEXT: [46.000000]
+# CHECK-NEXT: [48.000000]
+# CHECK-NEXT: [50.000000]
+# CHECK-NEXT: [52.000000]
+# CHECK-NEXT: [54.000000]
+# CHECK-NEXT: [56.000000]
+# CHECK-NEXT: [58.000000]
+# CHECK-NEXT: [60.000000]
+# CHECK-NEXT: [62.000000]
+# CHECK-NEXT: [64.000000]
+# CHECK-NEXT: [66.000000]
+# CHECK-NEXT: [68.000000]
+# CHECK-NEXT: [70.000000]
+# CHECK-NEXT: [72.000000]
+# CHECK-NEXT: [74.000000]
+# CHECK-NEXT: [76.000000]
+# CHECK-NEXT: [78.000000]
+# CHECK-NEXT: [80.000000]
+# CHECK-NEXT: [82.000000]
+# CHECK-NEXT: [84.000000]
+# CHECK-NEXT: [86.000000]
+# CHECK-NEXT: [88.000000]
+# CHECK-NEXT: [90.000000]
+# CHECK-NEXT: [92.000000]
+# CHECK-NEXT: [94.000000]
+# CHECK-NEXT: [96.000000]
+# CHECK-NEXT: [98.000000]
+# CHECK-NEXT: [100.000000]
+# CHECK-NEXT: [102.000000]
+# CHECK-NEXT: [104.000000]
+# CHECK-NEXT: [106.000000]
+# CHECK-NEXT: [108.000000]
+# CHECK-NEXT: [110.000000]
+# CHECK-NEXT: [112.000000]
+# CHECK-NEXT: [114.000000]
+# CHECK-NEXT: [116.000000]
+# CHECK-NEXT: [118.000000]
+# CHECK-NEXT: [120.000000]
+# CHECK-NEXT: [122.000000]
+# CHECK-NEXT: [124.000000]
+# CHECK-NEXT: [126.000000]
+# CHECK-NEXT: [128.000000]

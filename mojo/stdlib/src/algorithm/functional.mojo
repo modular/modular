@@ -10,11 +10,12 @@ from DType import DType
 from Index import StaticIntTuple
 from Int import Int
 from List import VariadicList
-from LLCL import Runtime, TaskGroup, OutputChainPtr
+from LLCL import Runtime, TaskGroup, OutputChainPtr, AsyncTaskGroupPtr
 from Math import div_ceil, min, max
 from Range import range
 from SIMD import SIMD
 from Vector import InlinedFixedVector
+from String import StringRef
 
 # ===----------------------------------------------------------------------===#
 # Map
@@ -357,6 +358,31 @@ fn parallelize[
     for j in range(tasks.__len__()):
         tasks[j].__del__()
     tasks.__del__()
+
+
+@always_inline
+fn async_parallelize[
+    func: __mlir_type[`!kgen.signature<(`, Int, ` borrow) -> !lit.none>`],
+](out_chain: OutputChainPtr, num_work_items: Int):
+    # We have no tasks, so do nothing.
+    if num_work_items == 0:
+        out_chain.mark_ready()
+        return
+
+    # Only have a single task, just run it on the caller's thread.
+    if num_work_items == 1:
+        func(0)
+        out_chain.mark_ready()
+        return
+
+    @always_inline
+    async fn task_fn(i: Int):
+        func(i)
+
+    var atg = AsyncTaskGroupPtr(num_work_items, out_chain)
+    for i in range(num_work_items):
+        let coroutine: Coroutine[__mlir_type.`!lit.none`] = task_fn(i)
+        atg.add_task(coroutine)
 
 
 # ===----------------------------------------------------------------------===#
@@ -912,7 +938,7 @@ fn elementwise[
         StaticIntTuple[__mlir_attr[`#kgen.param.decl.ref<"rank">: index`]],
         ` borrow) -> !lit.none>`,
     ],
-](shape: StaticIntTuple[rank], out_chain: OutputChainPtr,):
+](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
     assert_param_bool_msg[rank == 1, "Specialization for 1D"]()
 
     let problem_size = shape.flattened_length()
@@ -940,7 +966,7 @@ fn elementwise[
             func_wrapper,
         ](len)
 
-    parallelize[task_func](out_chain, num_workers)
+    async_parallelize[task_func](out_chain, num_workers)
 
 
 @always_inline
@@ -1048,4 +1074,4 @@ fn elementwise[
                 func_wrapper,
             ](shape[rank - 1])
 
-    parallelize[task_func](out_chain, num_workers)
+    async_parallelize[task_func](out_chain, num_workers)
