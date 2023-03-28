@@ -149,40 +149,6 @@ function(add_kgen_kernel target)
     get_filename_component(KGEN_OUTPUT_NAME ${KGEN_SOURCE} NAME_WE)
   endif ()
 
-  # CMake emits build targets as relative paths but Ninja doesn't identify
-  # absolute paths (in *.d) as relative paths (in build.ninja).
-  set(archive_file_name "${KGEN_OUTPUT_NAME}${CMAKE_STATIC_LIBRARY_SUFFIX}")
-  file(RELATIVE_PATH archive_file_name_rel ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR}/${archive_file_name})
-
-  # Add the command used to generate the archive for the kernel.
-  add_custom_command(
-    OUTPUT ${archive_file_name}
-
-    COMMAND $<TARGET_FILE:kgen> -emit
-    $<$<BOOL:${KGEN_SFF_DEBUG}>:-debug-only="select-fastest-function">
-    $<$<BOOL:${KGEN_ENABLE_SEARCH}>:-enable-search>
-    -o ${archive_file_name_rel} ${KGEN_INCLUDE_FLAGS} ${KGEN_SOURCE}
-    -d ${archive_file_name_rel}.d
-    -O${KGEN_OPTIMIZATION_LEVEL}
-    -debug-level=${KGEN_DEBUG_LEVEL}
-    $<$<BOOL:${MODULAR_ENABLE_XRAY}>:-xray-instrument>
-
-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    DEPFILE ${CMAKE_CURRENT_BINARY_DIR}/${archive_file_name}.d
-    DEPENDS kgen ${KGEN_SOURCE} ${KGEN_LIB_DEPENDS}
-  )
-  add_custom_target(${target}-archive DEPENDS ${archive_file_name})
-
-  add_library(${target} IMPORTED STATIC)
-  add_dependencies(${target} ${KGEN_LIB_DEPENDS} kgen ${target}-archive)
-  target_link_libraries(${target} INTERFACE KGENCompilerRT)
-  set_target_properties(${target} PROPERTIES
-    IMPORTED_LOCATION ${CMAKE_CURRENT_BINARY_DIR}/${archive_file_name}
-    LINKER_LANGUAGE C
-    INTERFACE_INCLUDE_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR}
-    INCLUDE_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR}
-  )
-
   # Add the command used to generate the header for the kernel.
   set(header_file_name "${KGEN_OUTPUT_NAME}.h")
   file(RELATIVE_PATH header_file_name_rel ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR}/${header_file_name})
@@ -205,6 +171,42 @@ function(add_kgen_kernel target)
   add_custom_target(${target}-headers DEPENDS ${header_file_name})
   add_dependencies(${target}-headers ${KGEN_LIB_DEPENDS} kgen)
   set_target_properties(${target}-headers PROPERTIES
+    INCLUDE_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR}
+  )
+
+  # CMake emits build targets as relative paths but Ninja doesn't identify
+  # absolute paths (in *.d) as relative paths (in build.ninja).
+  set(archive_file_name "${KGEN_OUTPUT_NAME}${CMAKE_STATIC_LIBRARY_SUFFIX}")
+  file(RELATIVE_PATH archive_file_name_rel ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR}/${archive_file_name})
+
+  # Add the command used to generate the archive for the kernel.
+  add_custom_command(
+    OUTPUT ${archive_file_name}
+
+    COMMAND $<TARGET_FILE:kgen> -emit
+    $<$<BOOL:${KGEN_SFF_DEBUG}>:-debug-only="select-fastest-function">
+    $<$<BOOL:${KGEN_ENABLE_SEARCH}>:-enable-search>
+    -o ${archive_file_name_rel} ${KGEN_INCLUDE_FLAGS} ${KGEN_SOURCE}
+    -d ${archive_file_name_rel}.d
+    -O${KGEN_OPTIMIZATION_LEVEL}
+    -debug-level=${KGEN_DEBUG_LEVEL}
+    $<$<BOOL:${MODULAR_ENABLE_XRAY}>:-xray-instrument>
+
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    DEPFILE ${CMAKE_CURRENT_BINARY_DIR}/${archive_file_name}.d
+    # This depends on the header target because that will run (and therefore cache)
+    # elaboration, thus saving much of the work for this target.
+    DEPENDS kgen ${KGEN_SOURCE} ${KGEN_LIB_DEPENDS} ${target}-headers
+  )
+  add_custom_target(${target}-archive DEPENDS ${archive_file_name})
+
+  add_library(${target} IMPORTED STATIC)
+  add_dependencies(${target} ${KGEN_LIB_DEPENDS} kgen ${target}-archive)
+  target_link_libraries(${target} INTERFACE KGENCompilerRT)
+  set_target_properties(${target} PROPERTIES
+    IMPORTED_LOCATION ${CMAKE_CURRENT_BINARY_DIR}/${archive_file_name}
+    LINKER_LANGUAGE C
+    INTERFACE_INCLUDE_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR}
     INCLUDE_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR}
   )
 endfunction()

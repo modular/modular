@@ -69,10 +69,15 @@ cachedTransform(Operation *target, LLCL::RCRef<TransformCache> transformCache,
 /// update to the RegionHashArrayAttr on `target` - it will update the region
 /// hashes from the old versions (pre-transform) to the new versions (transform
 /// applied).
+///
+/// If `deflate` is set to false, the raw bytecode for `target` is stored in the
+/// cache and read out again. This is typically useful when a lot of code is
+/// being stored, and we are just about to deflate it anyway.
 LLCL::AnyAsyncValueRef
 cachedTransform(Operation *target, LLCL::RCRef<RegionCache> regionCache,
                 LLCL::RCRef<TransformCache> transformCache,
-                LLCL::AnyAsyncValueRef chain, mlir::PassManager &pm);
+                LLCL::AnyAsyncValueRef chain, mlir::PassManager &pm,
+                bool deflateTarget = true);
 } // namespace M::Cache
 
 #endif // CACHE_CACHEDTRANSFORM_H

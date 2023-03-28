@@ -14,6 +14,7 @@
 #include "KGEN/InitAllDialects.h"
 #include "KGEN/KGENCompiler.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LowerToObject.h"
 #include "KGEN/POPDialect/POPTypes.h"
@@ -252,9 +253,23 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       std::move(*compiler), engine->getLinkingLayer());
 
   // Add the KGEN compiler layer.
+  // First though, get the backend chains to pass into the compile layer.
+  auto transformCacheBackend = Cache::getDefaultBackendChain(
+      *runtime, (std::filesystem::path(".kgen_cache") / "transform").string(),
+      KGEN_VERSION_STRING);
+  if (transformCacheBackend.isError())
+    return clOptions.reportError(transformCacheBackend.getError());
+
+  auto regionCacheBackend = Cache::getDefaultBackendChain(
+      *runtime, (std::filesystem::path(".kgen_cache") / "region").string(),
+      KGEN_VERSION_STRING);
+  if (regionCacheBackend.isError())
+    return clOptions.reportError(transformCacheBackend.getError());
+
   auto &compileLayer = engine->addLayer<KGENCompilerLayer>(
       pm, *runtime, target, ElaborateGeneratorsOptions{clOptions.enableSearch},
-      objLayer);
+      objLayer, std::move(*transformCacheBackend),
+      std::move(*regionCacheBackend));
 
   // And add the module into the layer. This will actually compile it down to
   // the post-elaboration phase because before that phase we don't have flat

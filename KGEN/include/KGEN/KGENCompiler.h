@@ -7,6 +7,7 @@
 #ifndef KGEN_COMPILER_H
 #define KGEN_COMPILER_H
 
+#include "Cache/CacheDialect/CachedTransform.h"
 #include "KGEN/ExecutionEngine.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENPasses.h"
@@ -52,6 +53,8 @@ public:
                     TargetInfoAttr target,
                     ElaborateGeneratorsOptions elaborateOptions,
                     ObjectCompilerLayer &base,
+                    LLCL::RCRef<Cache::BlobCacheBackend> transformCacheBackend,
+                    LLCL::RCRef<Cache::BlobCacheBackend> regionCacheBackend,
                     llvm::orc::ExecutionSession &sess,
                     const llvm::DataLayout &dl, AddToSearchOrderFn add);
 
@@ -82,6 +85,9 @@ private:
   TargetInfoAttr target;
   ElaborateGeneratorsOptions elaborateOptions;
   ObjectCompilerLayer &baseLayer;
+
+  LLCL::RCRef<Cache::RegionCache> regionCache;
+  LLCL::RCRef<Cache::TransformCache> transformCache;
 };
 } // namespace M::KGEN
 
