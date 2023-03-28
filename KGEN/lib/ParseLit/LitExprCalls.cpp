@@ -1962,16 +1962,13 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     Value err = builder->create<POP::VariantGetOp>(loc, callResultTy.getType(0),
                                                    callResult);
 
-    // :-( :-( must put a terminator so must yield a bogus value.
-    Value yieldVal = builder->create<StaticUndefOp>(loc, normalType);
-
     if (failed(emitRaise(err, loc))) {
       emitError(callExpr->getLoc(),
                 "cannot call function that may raise in a context that "
                 "cannot raise");
       return {};
     }
-    builder->create<HLCF::YieldOp>(loc, yieldVal);
+    builder->create<UnreachableOp>(loc);
 
     // Ok, the call result is the result of the HLCF::If.
     callResult = ifOp.getResult(0);

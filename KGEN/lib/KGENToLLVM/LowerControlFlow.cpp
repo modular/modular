@@ -179,6 +179,12 @@ LogicalResult ControlFlowConverter::lowerReturn(KGEN::ReturnOp op,
 
 LogicalResult ControlFlowConverter::lowerTerminator(ControlFlowTerminator term,
                                                     unsigned &termId) {
+  // kgen.unreachable -> llvm.unreachable.
+  if (auto unreachableOp = dyn_cast<KGEN::UnreachableOp>(term.getOperation())) {
+    b.replaceOpWithNewOp<LLVM::UnreachableOp>(unreachableOp);
+    return success();
+  }
+
   // Convert the operand types.
   b.setInsertionPoint(term);
   SmallVector<Value> results;

@@ -321,8 +321,7 @@ lit.func @if_else_return(%cond: i1) -> index {
     lit.return %0 : index
     hlcf.yield
   }
-  // CHECK: %0 = kgen.static.undef : index
-  // CHECK-NEXT: return %0
+  // CHECK: kgen.unreachable
   lit.end_func
 }
 
@@ -336,7 +335,7 @@ lit.func @if_true_return() -> index {
   } else {
     hlcf.yield
   }
-  // CHECK: kgen.static.undef
+  // CHECK: kgen.unreachable
   lit.end_func
 }
 
@@ -351,7 +350,7 @@ lit.func @while_true() -> index {
     }
     hlcf.break
   }
-  // CHECK: kgen.static.undef
+  // CHECK: kgen.unreachable
   lit.end_func
 }
 
@@ -369,9 +368,7 @@ lit.func @if_false_raise() throws -> !pop.variant<@Error, index> {
     lit.return %tmp : !pop.variant<@Error, index>
     hlcf.yield
   }
-  // CHECK: %0 = kgen.static.undef
-  // CHECK-NEXT: %1 = pop.variant.create %0 : index -> !pop.variant<@Error, index>
-  // CHECK-NEXT: return %1
+  // CHECK: kgen.unreachable
   lit.end_func
 }
 
@@ -388,7 +385,7 @@ lit.func @raise_raise() throws -> !pop.variant<@Error, index> {
   } else {
     lit.try.yield
   }
-  // CHECK: kgen.static.undef
+  // CHECK: kgen.unreachable
   lit.end_func
 }
 
@@ -399,7 +396,7 @@ lit.func @coroutine() async -> index {
     lit.return %0 : index
     hlcf.break
   }
-  // CHECK: kgen.static.undef
+  // CHECK: kgen.unreachable
   lit.end_func
 }
 
