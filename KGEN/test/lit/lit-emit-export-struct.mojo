@@ -1,0 +1,45 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# RUN: mojo %s -emit-header | FileCheck %s
+
+from Int import Int
+
+
+@register_passable("trivial")
+struct RegIntPair:
+    var first: Int
+    var second: Int
+
+
+# CHECK: extern ssize_t first_reg(ssize_t, ssize_t);
+@export
+fn first_reg(pair: RegIntPair) -> Int:
+    return pair.first
+
+
+# CHECK: extern void make_reg_pair(ssize_t, ssize_t, ssize_t *, ssize_t *);
+@export
+fn make_reg_pair(first: Int, second: Int) -> RegIntPair:
+    return RegIntPair {first: first, second: second}
+
+
+# This is a memory primary type.
+struct MemIntPair:
+    var first: Int
+    var second: Int
+
+
+# CHECK: extern ssize_t first_mem(void *);
+@export
+fn first_mem(pair: MemIntPair) -> Int:
+    return pair.first
+
+
+# CHECK: extern void make_mem_pair(void *, ssize_t, ssize_t);
+@export
+fn make_mem_pair(first: Int, second: Int) -> MemIntPair:
+    return MemIntPair {first: first, second: second}
