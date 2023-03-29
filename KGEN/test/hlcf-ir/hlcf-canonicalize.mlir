@@ -69,3 +69,20 @@ kgen.func @fold_if_yield(%arg0 : index, %arg1: index) -> index {
   %r = index.add %z, %ten
   kgen.return %r: index
 }
+
+// CHECK-LABEL: @hoist_unconditional_return
+kgen.func @hoist_unconditional_return(%arg0: i1, %arg1: index, %arg2: index, %arg3: index) -> index {
+  // CHECK:      %[[IF_RES:.*]] = hlcf.if
+  // CHECK-NEXT:   hlcf.yield %arg1
+  // CHECK-NEXT: else
+  // CHECK-NEXT:   hlcf.yield %arg2
+  // CHECK-NOT:  index.add
+  // CHECK:      kgen.return %[[IF_RES]]
+  %a, %b = hlcf.if %arg0 -> index, index {
+    kgen.return %arg1: index
+  } else {
+    kgen.return %arg2: index
+  }
+  %r = index.add %a, %arg3
+  kgen.return %r: index
+}
