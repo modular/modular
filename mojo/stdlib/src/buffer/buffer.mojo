@@ -15,10 +15,10 @@ from Functional import unroll, vectorize
 from Int import Int
 from Index import StaticIntTuple
 from List import Dim, DimList, VariadicList
-from Math import fma, min, max
+from Math import fma, min, max, iota
 from Memory import stack_allocation, memset_zero
 from Pointer import DTypePointer, product as pointer_product
-from Intrinsics import PrefetchOptions
+from Intrinsics import PrefetchOptions, masked_load, masked_store
 from SIMD import SIMD
 from Tuple import StaticTuple
 from TargetInfo import dtype_sizeof, dtype_simd_width, dtype_alignof
@@ -919,22 +919,13 @@ fn partial_simd_load[
         Returns:
             The SIMD vector loaded and zero-filled.
     """
-    # Create a buffer view of the allocated space.
-    let vector = Buffer[width.__as_mlir_index(), type].stack_allocation()
-
-    # Initialize vector with pad values.
-    vector.simd_store[width](0, SIMD[width, type].splat(pad_value))
-
-    # Compute intersection of given bound and the vector range.
+    # Create a mask based on input bounds.
     let effective_lbound = max(0, lbound)
     let effective_rbound = min(width, rbound)
+    let incr = iota[width, DType.si32.value]()
+    let mask = (incr >= effective_lbound) & (incr < effective_rbound)
 
-    # Fill values in valid range.
-    for idx in range(effective_lbound, effective_rbound):
-        vector[idx] = storage.load(idx)
-
-    # Return the resulting vector.
-    return vector.simd_load[width](0)
+    return masked_load[width, type](storage, mask, pad_value)
 
 
 fn partial_simd_store[
@@ -961,19 +952,13 @@ fn partial_simd_store[
             rbound: upper bound of valid index within simd (non-inclusive).
             data: The vector value to store.
     """
-    # Create a buffer view of the storage space.
-    let vector = Buffer[width.__as_mlir_index(), type].stack_allocation()
-
-    # Put the given vector data in the allocated buffer.
-    vector.simd_store[width](0, data)
-
-    # Compute intersection of valid bound and the simd vector range.
+    # Create a mask based on input bounds.
     let effective_lbound = max(0, lbound)
     let effective_rbound = min(width, rbound)
+    let incr = iota[width, DType.si32.value]()
+    let mask = (incr >= effective_lbound) & (incr < effective_rbound)
 
-    # Store the valid on the valid range.
-    for idx in range(effective_lbound, effective_rbound):
-        storage.store(idx, vector[idx])
+    return masked_store[width, type](data, storage, mask)
 
 
 # ===----------------------------------------------------------------------===#
