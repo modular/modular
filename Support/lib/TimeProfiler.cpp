@@ -287,6 +287,9 @@ void M::Detail::timeTraceProfilerWriteTrace(llvm::raw_pwrite_stream &os) {
   jsonOS.objectBegin();
   jsonOS.attribute("modular-git-sha", MODULAR_VERSION_REVISION);
   jsonOS.attribute("modular-build-type", MODULAR_BUILD_TYPE);
+  std::ostringstream profilingLevelOctal;
+  profilingLevelOctal << std::oct << "0" << MODULAR_LLCL_MAX_PROFILING_LEVEL;
+  jsonOS.attribute("modular-profiling-level", profilingLevelOctal.str());
   jsonOS.objectEnd();
   jsonOS.attributeEnd();
 
