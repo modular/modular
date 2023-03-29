@@ -116,6 +116,20 @@ struct Dim:
         return __mlir_op.`pop.variant.get`[_type:Int](self.value)
 
     @always_inline
+    fn is_multiple[alignement: Int](self) -> Bool:
+        """Check if the dimension is aligned.
+
+        Args:
+            alignement (Int): The alignment requirement.
+            self (Self): The dimension.
+        Returns:
+            Bool: Whether the dimension is aligned.
+        """
+        if self.is_dynamic():
+            return False
+        return self.get() % alignement == 0
+
+    @always_inline
     fn __mul__(self, rhs: Dim) -> Dim:
         """Multiply two dimensions. If either are unknown, the result is unknown
         as well.
