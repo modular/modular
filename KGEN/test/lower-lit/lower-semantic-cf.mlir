@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -lower-semantic-cf -verify-parameters -split-input-file -verify-diagnostics | FileCheck %s
+// RUN: kgen-opt %s -lower-semantic-cf -verify-parameters -verify-diagnostics | FileCheck %s
 
 lit.struct.decl @Error {}
 
@@ -45,17 +45,17 @@ lit.file_module @FileModule {
         lit.try.yield
       // CHECK-NEXT: else
       } else {
-        // CHECK-NEXT: %[[R:.*]] = pop.variant.create
-        // CHECK-NEXT: kgen.return %[[R]]
+        // CHECK-NEXT: kgen.unreachable
 
-        // TODO: xpected-warning @+1 {{'else' logic in 'try' is unreachable}}
+        // expected-warning @+1 {{'else' logic in 'try' is unreachable}}
         %tmp3 = pop.variant.create %a : i32 -> !pop.variant<@Error, i32>
         lit.return %tmp3 : !pop.variant<@Error, i32>
         lit.try.yield
       // CHECK-NEXT: }
       }
-      // CHECK-NEXT: %[[R:.*]] = pop.variant.create
-      // CHECK-NEXT: kgen.return %[[R]]
+
+      // CHECK-NEXT: kgen.unreachable
+      // expected-warning @+1 {{unreachable code after try statement that doesn't fall through}}
       %tmp1 = pop.variant.create %a : i32 -> !pop.variant<@Error, i32>
       lit.return %tmp1 : !pop.variant<@Error, i32>
       lit.end_func
@@ -80,8 +80,8 @@ lit.file_module @FileModule {
         hlcf.yield
       // CHECK-NEXT: }
       }
-      // CHECK-NEXT: kgen.return
-      lit.return
+      // CHECK-NEXT: kgen.unreachable
+      lit.return  // expected-warning {{unreachable code after if statement with then/else that do not fall through}}
       hlcf.continue
     // CHECK-NEXT: }
     }
@@ -138,13 +138,14 @@ lit.func @throws(%e: !kgen.declref<@Error>) throws -> !pop.variant<@Error, index
 // CHECK-SAME: !kgen.signature<() throws -> !pop.variant<@Error, !lit.none>>
 lit.func @ref(%e: !kgen.declref<@Error>,
               %f: !kgen.signature<() throws -> !pop.variant<@Error, !lit.none>>) throws -> !pop.variant<@Error, !lit.none> {
-  lit.try { // xpected-warning {{try isn't needed, nothing in its body can throw}}
+  lit.try {
     // CHECK: = kgen.call @throws
     kgen.call @throws(%e) : (!kgen.declref<@Error>) throws -> !pop.variant<@Error, index>
     lit.try.yield
   } except (%err: !kgen.declref<@Error>) {
-    // CHECK: %[[R:.*]] = pop.variant.create %arg0
-    // CHECK-NEXT: kgen.return %[[R]]
+    // CHECK: except (
+    // CHECK-NEXT: kgen.unreachable
+    // expected-warning @+1 {{'except' logic is unreachable, try doesn't raise an exception}}
     %tmp = pop.variant.create %err : !kgen.declref<@Error> -> !pop.variant<@Error, !lit.none>
     lit.return %tmp : !pop.variant<@Error, !lit.none>
     lit.try.yield
@@ -157,7 +158,8 @@ lit.func @ref(%e: !kgen.declref<@Error>,
     lit.return %tmp2 : !pop.variant<@Error, !lit.none>
     lit.try.yield
   }
-  // CHECK: constant: <>(!kgen.declref<@Error>) throws -> !pop.variant<@Error, index> = <@throws>
+  // CHECK: kgen.unreachable
+  // expected-warning @+1 {{unreachable code after try statement that doesn't fall through}}
   kgen.param.constant: <>(!kgen.declref<@Error>) throws -> !pop.variant<@Error, index> = <@throws>
   lit.end_func
 }
@@ -243,8 +245,6 @@ lit.func @call_throwing_coro(%err: !kgen.declref<@Error>) async|throws -> !pop.v
 // Nested Functions
 //===----------------------------------------------------------------------===//
 
-// -----
-
 // CHECK-LABEL: lit.struct.decl @StructWithNestedFn<a_param>
 lit.struct.decl @StructWithNestedFn<a_param> {
   // CHECK-NEXT: lit.func @topLevelFunction<b_param>() -> index
@@ -312,8 +312,6 @@ lit.func @return_after_return() -> !lit.none {
   lit.end_func
 }
 
-// -----
-
 // CHECK-LABEL: lit.func @if_else_return
 lit.func @if_else_return(%cond: i1) -> index {
   %0 = index.constant 0
@@ -328,74 +326,8 @@ lit.func @if_else_return(%cond: i1) -> index {
   lit.end_func
 }
 
-// CHECK-LABEL: lit.func @if_true_return
-lit.func @if_true_return() -> index {
-  %0 = index.constant 0
-  %true = index.bool.constant true
-  hlcf.if %true {
-    lit.return %0 : index
-    hlcf.yield
-  } else {
-    hlcf.yield
-  }
-  // CHECK: kgen.unreachable
-  lit.end_func  // xpected-error {{return expected at end of function with results}}
-}
-
-// CHECK-LABEL: lit.func @while_true
-lit.func @while_true() -> index {
-  hlcf.loop {
-    %true = index.bool.constant true
-    hlcf.if %true {
-      lit.continue
-      hlcf.yield
-    } else {
-      hlcf.yield
-    }
-    lit.break
-    hlcf.continue
-  }
-  // CHECK: kgen.unreachable
-  lit.end_func
-}
-
-lit.struct.decl @Error {}
-
-// CHECK-LABEL: lit.func @if_false_raise
-lit.func @if_false_raise() throws -> !pop.variant<@Error, index> {
-  %false = index.bool.constant false
-  hlcf.if %false {
-    hlcf.yield
-  } else {
-    %err = lit.struct.create () : () -> !kgen.declref<@Error>
-    %tmp = pop.variant.create %err : !kgen.declref<@Error>
-        -> !pop.variant<@Error, index>
-    lit.return %tmp : !pop.variant<@Error, index>
-    hlcf.yield
-  }
-  // CHECK: kgen.unreachable
-  lit.end_func  // xpected-error {{return expected at end of function with results}}
-}
-
-// CHECK-LABEL: lit.func @raise_raise
-lit.func @raise_raise() throws -> !pop.variant<@Error, index> {
-  lit.try {
-    %err = lit.struct.create () : () -> !kgen.declref<@Error>
-    lit.raise %err : <@Error>
-    lit.try.yield
-  } except (%err: !kgen.declref<@Error>) {
-    %tmp = pop.variant.create %err : !kgen.declref<@Error> -> !pop.variant<@Error, index>
-    lit.return %tmp : !pop.variant<@Error, index>
-    lit.try.yield
-  } else {
-    lit.try.yield
-  }
-  // CHECK: kgen.unreachable
-  lit.end_func
-}
-
 // CHECK-LABEL: lit.func @coroutine
-lit.func @coroutine() async -> index {
+lit.func @coroutine2() async -> index {
   %0 = index.constant 0
   hlcf.loop {
     lit.return %0 : index
@@ -448,5 +380,18 @@ lit.func @result_params_fallthrough<() -> r0>() -> !lit.none {
   // CHECK: kgen.param.result_bind<1>
   // CHECK: kgen.return %0
   lit.param_return<1>
+  lit.end_func
+}
+
+
+// CHECK-LABEL: lit.func @pointlessTry
+lit.func @pointlessTry() -> !lit.none {
+  lit.try { // expected-warning {{try body doesn't raise an exception}}
+    lit.try.yield
+  } except (%err: !kgen.declref<@Error>) {
+    lit.try.yield
+  } else {
+    lit.try.yield
+  }
   lit.end_func
 }

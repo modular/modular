@@ -167,140 +167,217 @@ static LogicalResult lowerParamResults(LIT::FuncOp func) {
 // Semantic control flow lowering.
 //===----------------------------------------------------------------------===//
 
-/// Lower all lexical terminators in the function and remove dead code.
-static LogicalResult lowerSemanticCF(LIT::FuncOp func) {
-  // While we walk the IR, we are going to determine if the top-level
-  // `lit.end_func` is reachable with trivial dead-code analysis. Do this by
-  // marking each `ControlFlowNode` and `ControlFlowTerminator` as live or dead,
-  // and see if we can reach the end of the function body.
-  DenseSet<Operation *> liveCfOps;
-  auto markNextInBlockAsLive = [&](Block *block, Block::iterator it) {
-    assert(it != block->end());
-    for (Operation &op : llvm::make_range(it, block->end())) {
-      if (!isa<HLCF::ControlFlowNode, HLCF::ControlFlowTerminator,
-               LIT::ReturnOp, LIT::RaiseOp, LIT::BreakOp, LIT::ContinueOp,
-               LIT::EndFuncOp>(op))
-        continue;
-      liveCfOps.insert(&op);
+/// This recursive function transforms the specified block:
+///   1) It transforms any semantic CF ops like lit.break into terminators like
+///      hlcf.break.
+///   2) It removes dead code after that and reports errors.
+///   3) It computes properties about the block and enclosing context.
+static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
+                                    bool &doesBreak, bool &doesFallThrough) {
+  doesRaise = doesBreak = doesFallThrough = false;
+
+  auto eraseOpToEndOfBlock = [&](Operation *op) {
+    Block *block = op->getBlock();
+    // Erase bottom up to avoid deleting an op while something uses its results.
+    while (&block->back() != op)
+      block->back().erase();
+    op->erase();
+  };
+
+  /// Given a semantic terminator, diagnose and remove unreachable code, and
+  /// return a builder at the right spot to insert a replacement.
+  auto handleSemanticTerminatorOp =
+      [&](Operation &op, StringRef stmtKind) -> ImplicitLocOpBuilder {
+    // Warn about dead code after the semantic terminator.
+    Operation *nextOp = op.getNextNode();
+    if (!nextOp->hasTrait<OpTrait::IsTerminator>())
+      nextOp->emitWarning("unreachable code after ") << stmtKind;
+
+    // Remove the unreachable code.
+    eraseOpToEndOfBlock(nextOp);
+    // Return a builder pointing to after "op".
+    return ImplicitLocOpBuilder(op.getLoc(), op.getBlock(),
+                                std::next(Block::iterator(&op)));
+  };
+
+  for (Operation &op : block) {
+    // Look for semantic terminators and turn them into real terminators.
+    if (auto returnOp = dyn_cast<LIT::ReturnOp>(op)) {
+      auto b = handleSemanticTerminatorOp(op, "return statement");
+      b.create<KGEN::ReturnOp>(returnOp.getOperands());
+      op.erase();
       return;
     }
-    llvm_unreachable("`lower-semantic-cf` encountered unexpected terminator");
-  };
-  auto markNextOperationAsLive = [&](Operation *op) {
-    markNextInBlockAsLive(op->getBlock(), std::next(op->getIterator()));
-  };
-  auto markNextInRegionAsLive = [&](Region &region) {
-    markNextInBlockAsLive(&region.front(), region.front().begin());
-  };
-  // Start the analysis at the function entry block.
-  markNextInRegionAsLive(func.getBodyRegion());
 
-  // Collect all the terminators first to avoid iterator invalidation.
-  SmallVector<Operation *> terminators;
-
-  WalkResult result = func.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
-    // Don't walk into nested functions, the walker that called lowerSemanticCF
-    // will handle them separately.
-    if (op != func && isa<LIT::FuncOp>(op))
-      return WalkResult::skip();
-
-    if (isa<HLCF::ControlFlowNode, HLCF::ControlFlowTerminator>(op) &&
-        !isa<ReturnOp>(op) && liveCfOps.contains(op)) {
-      SmallVector<Attribute> operands;
-      for (Value operand : op->getOperands())
-        mlir::matchPattern(operand, mlir::m_Constant(&operands.emplace_back()));
-      SmallVector<HLCF::ControlFlowTarget> targets;
-      // Process each control-flow target from the base operation. For nodes,
-      // the base operation is itself. For terminators, it is the nearest
-      // matching parent operation.
-      Operation *base = op;
-      if (auto node = dyn_cast<HLCF::ControlFlowNode>(op)) {
-        node.getEntryTargets(operands, targets);
-      } else {
-        auto term = cast<HLCF::ControlFlowTerminator>(op);
-        term.getBranchTargets(operands, targets);
-        do {
-          base = base->getParentOp();
-        } while (!term.isParentNode(base));
-      }
-      for (const HLCF::ControlFlowTarget &target : targets) {
-        if (!target.index)
-          markNextOperationAsLive(base);
-        else
-          markNextInRegionAsLive(base->getRegion(*target.index));
-      }
-
-    } else if (isa<LIT::ReturnOp, LIT::RaiseOp, LIT::BreakOp, LIT::ContinueOp>(
-                   op)) {
-      terminators.push_back(op);
-      // Do nothing for `return` and `continue`. The former exits the function
-      // and nothing further is live. The latter must be live if the surrounding
-      // loop is live, so we ignore it as a micro-optimization.
-      if (isa<LIT::BreakOp>(op) && liveCfOps.contains(op)) {
-        markNextOperationAsLive(op->getParentOfType<HLCF::LoopOp>());
-      } else if (isa<LIT::RaiseOp>(op)) {
-        auto tryOp = op->getParentOfType<LIT::TryOp>();
-        if (tryOp && liveCfOps.contains(op))
-          markNextInRegionAsLive(tryOp.getExceptRegion());
-      }
+    if (auto raiseOp = dyn_cast<LIT::RaiseOp>(op)) {
+      doesRaise = true;
+      auto b = handleSemanticTerminatorOp(op, "raise statement");
+      b.create<LIT::TryRaiseOp>(raiseOp.getError());
+      op.erase();
+      return;
     }
-    return WalkResult::advance();
-  });
-  if (result.wasInterrupted())
-    return failure();
 
-  // Lower all the terminators as they are encountered.
-  SmallVector<Block *> deadBlocks;
-  for (Operation *op : terminators) {
-    // Ignore dead operations.
-    if (op->getBlock() != &op->getParentRegion()->front())
+    if (isa<LIT::BreakOp>(op)) {
+      doesBreak = true;
+      auto b = handleSemanticTerminatorOp(op, "break statement");
+      b.create<HLCF::BreakOp>();
+      op.erase();
+      return;
+    }
+
+    if (isa<LIT::ContinueOp>(op)) {
+      auto b = handleSemanticTerminatorOp(op, "continue statement");
+      b.create<HLCF::ContinueOp>();
+      op.erase();
+      return;
+    }
+
+    // Most ops don't have regions and are just fallthrough.
+    // TODO: Add support for noreturn calls.
+    if (!op.getNumRegions() ||
+        // FIXME: pop.coroutine.await doesn't have a terminator and we don't
+        // know how to check it.  We should regularize this.
+        isa<POP::CoroutineAwaitOp>(op))
       continue;
 
-    ImplicitLocOpBuilder b(op->getLoc(), OpBuilder(op));
-    if (auto returnOp = dyn_cast<LIT::ReturnOp>(op)) {
-      b.create<KGEN::ReturnOp>(returnOp.getOperands());
-    } else if (auto raiseOp = dyn_cast<LIT::RaiseOp>(op)) {
-      b.create<LIT::TryRaiseOp>(raiseOp.getError());
-    } else if (auto breakOp = dyn_cast<LIT::BreakOp>(op)) {
-      b.create<HLCF::BreakOp>();
-    } else {
-      assert(isa<LIT::ContinueOp>(op) && "unknown terminator");
-      b.create<HLCF::ContinueOp>();
+    // Ignore nested functions, they are handled (and lowered) separately by the
+    // outer walker, which we are recursing within post-order.
+    if (isa<LIT::FuncOp, ParamDeclareRegionOp>(op))
+      continue;
+
+    // Process a try op specially to identify dead code and warn.
+    if (auto tryOp = dyn_cast<LIT::TryOp>(op)) {
+      bool tryBodyRaises = false, tryBodyFallsThrough = false;
+      lowerSemanticCFForBlock(tryOp.getTryRegion().front(), tryBodyRaises,
+                              doesBreak, tryBodyFallsThrough);
+      // The try falls through if the except block is reachable and falls
+      // through, or if the body falls through and so does the else.
+      bool tryFallsThrough = false;
+
+      // Diagose unneeded code.
+      if (!tryBodyRaises) {
+        Operation &firstOpInExcept = tryOp.getExceptRegion().front().front();
+        if (!firstOpInExcept.hasTrait<OpTrait::IsTerminator>())
+          firstOpInExcept.emitWarning(
+              "'except' logic is unreachable, try doesn't raise an exception");
+        else
+          tryOp->emitWarning("try body doesn't raise an exception");
+
+        Operation *firstExceptOp = &tryOp.getExceptRegion().front().front();
+        OpBuilder(firstExceptOp).create<UnreachableOp>(firstExceptOp->getLoc());
+        eraseOpToEndOfBlock(firstExceptOp);
+      } else {
+        // The except and else blocks execute without protection from the try.
+        lowerSemanticCFForBlock(tryOp.getExceptRegion().front(), doesRaise,
+                                doesBreak, tryFallsThrough);
+      }
+
+      // If there is an 'else' block that is unreachable, complain and remove
+      // it, otherwise process it.
+      if (!tryBodyFallsThrough) {
+        Operation *firstElseOp = &tryOp.getElseRegion().front().front();
+        OpBuilder(firstElseOp).create<UnreachableOp>(firstElseOp->getLoc());
+        if (!isa<LIT::TryYieldOp>(firstElseOp))
+          firstElseOp->emitWarning("'else' logic in 'try' is unreachable");
+        eraseOpToEndOfBlock(firstElseOp);
+      } else {
+        lowerSemanticCFForBlock(tryOp.getElseRegion().front(), doesRaise,
+                                doesBreak, tryFallsThrough);
+      }
+
+      // If the try doesn't fall through, diagnose unreachable code after it.
+      if (!tryFallsThrough) {
+        auto b = handleSemanticTerminatorOp(
+            *tryOp, "try statement that doesn't fall through");
+        b.create<UnreachableOp>(tryOp.getLoc());
+        return;
+      }
+      continue;
     }
 
-    // Check and warn about dead code.
-    if (!op->getNextNode()->hasTrait<OpTrait::IsTerminator>())
-      op->getNextNode()->emitWarning("unreachable code after ")
-          << op->getName().stripDialect() << " statement";
+    // Process a loop op specially to propagate up the break flag.
+    if (auto loopOp = dyn_cast<HLCF::LoopOp>(op)) {
+      bool loopBodyBreaks = false, loopBodyFallThroughs = false;
+      lowerSemanticCFForBlock(loopOp.getBody().front(), doesRaise,
+                              loopBodyBreaks, loopBodyFallThroughs);
+      // TODO(Issue#11251): We have incorrect modeling of else blocks.
 
-    // Mark all subsequent operations as dead.
-    deadBlocks.push_back(op->getBlock()->splitBlock(op));
+      // If the loop body never breaks, then the code after it is unreachable.
+      if (!loopBodyBreaks) {
+        auto b = handleSemanticTerminatorOp(*loopOp, "infinite loop");
+        b.create<UnreachableOp>(loopOp.getLoc());
+        return;
+      }
+      continue;
+    }
+
+    // Otherwise we must have an if operation.
+    assert((isa<HLCF::IfOp, ParamIfOp>(op)) &&
+           "Unknown operation with regions");
+    bool ifOpFallsThrough = false;
+    for (auto &region : op.getRegions()) {
+      bool regionRaises = false, regionBreaks = false,
+           regionFallsThrough = false;
+      lowerSemanticCFForBlock(region.front(), regionRaises, regionBreaks,
+                              regionFallsThrough);
+      doesRaise |= regionRaises;
+      doesBreak |= regionBreaks;
+      ifOpFallsThrough |= regionFallsThrough;
+    }
+
+    // If the operation doesn't fall through, cut off the code after it.
+    if (!ifOpFallsThrough) {
+      auto b = handleSemanticTerminatorOp(
+          op, "if statement with then/else that do not fall through");
+      b.create<UnreachableOp>(op.getLoc());
+      return;
+    }
   }
 
-  // Remove all dead code.
-  for (Block *block : llvm::reverse(deadBlocks))
-    block->erase();
+  // FIXME: CoroutineAwaitOp doesn't have a terminator??
+  if (isa<POP::CoroutineAwaitOp>(block.getParentOp()))
+    return;
 
-  Operation *terminator = func.getBody()->getTerminator();
+  auto *terminator = &block.back();
+  if (isa<HLCF::BreakOp>(terminator)) {
+    doesBreak = true;
+    return;
+  }
 
-  // If the function is explicitly terminated with a `return` or raise, we're
-  // good.
-  if (!isa<LIT::EndFuncOp>(terminator))
+  // These are not fallthroughs.
+  if (isa<KGEN::ReturnOp, HLCF::ContinueOp>(terminator))
+    return;
+
+  // If we fell off the bottom, then we have a fall-through terminator.
+  assert((isa<HLCF::YieldOp, LIT::TryYieldOp, ParamYieldOp, LIT::EndFuncOp>(
+      block.back())));
+  doesFallThrough = true;
+}
+
+/// Lower all lexical terminators in the function and remove dead code.
+static LogicalResult lowerSemanticCF(LIT::FuncOp func) {
+  bool doesRaise = false, doesBreak = false, doesFallThrough = false;
+  lowerSemanticCFForBlock(*func.getBody(), doesRaise, doesBreak,
+                          doesFallThrough);
+
+  LIT::EndFuncOp endFunc =
+      dyn_cast<LIT::EndFuncOp>(func.getBody()->getTerminator());
+
+  // we're done if explicitly terminated with a `return` or raise.
+  if (!endFunc)
     return success();
 
   Type declaredResultType = func.getResultTypeWithoutErrorVariant();
 
-  // If the endfunc isn't live, then it doesn't matter, there must have been a
-  // return/raise before this.
-  if (liveCfOps.contains(terminator)) {
-    // A return is required if the function has a non-none result.
-    if (!isa<LIT::NoneType>(declaredResultType) ||
-        func.getSignature().hasMemoryOnlyResult())
-      return terminator->emitError(
-          "return expected at end of function with results");
+  // A return is required if the function has a non-none result, diagnose if
+  // missing.
+  if (!isa<LIT::NoneType>(declaredResultType) ||
+      func.getSignature().hasMemoryOnlyResult()) {
+    return endFunc->emitError(
+        "return expected at end of function with results");
   }
 
-  ImplicitLocOpBuilder b(func.getLoc(), OpBuilder(terminator));
+  ImplicitLocOpBuilder b(func.getLoc(), endFunc);
   if (!isa<LIT::NoneType>(declaredResultType)) {
     b.create<KGEN::UnreachableOp>();
   } else {
@@ -312,7 +389,7 @@ static LogicalResult lowerSemanticCF(LIT::FuncOp func) {
       retVal = b.create<VariantCreateOp>(func.getResultType(), retVal);
     b.create<KGEN::ReturnOp>(retVal);
   }
-  terminator->erase();
+  endFunc->erase();
   return success();
 }
 
