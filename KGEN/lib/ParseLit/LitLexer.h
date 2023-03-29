@@ -134,7 +134,7 @@ public:
 
   /// Given a valid pointer into a source buffer for some token, return the
   /// length of the token by re-lex'ing it.  This is efficient.
-  static size_t getTokenLength(LitSharedState &sharedState, SMLoc loc);
+  static size_t getTokenLength(LitSharedState &shared, SMLoc loc);
 
 private:
   LitToken lexTokenImpl();

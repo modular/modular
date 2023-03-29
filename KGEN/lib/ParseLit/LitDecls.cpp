@@ -1079,22 +1079,74 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
   // On any semantic error we mark the declaration erroneous - so references to
   // it don't type check, and we clear our special function information.  This
   // reduces cascade errors.
-  auto emitErrorLoc = [&](SMLoc loc, const Twine &message) {
+  auto emitErrorLoc = [&](SMLoc loc, const Twine &message) -> LitDiagnostic {
     fnInfo = SpecialFunctionInfo();
     decl.hasReferenceError = true;
     return shared.emitError(loc, message);
   };
-  auto emitError = [&](const Twine &message) {
+  auto emitError = [&](const Twine &message) -> LitDiagnostic {
     fnInfo = SpecialFunctionInfo();
     decl.hasReferenceError = true;
     return shared.emitError(funcOp.getLoc(), message);
   };
 
+  // This is true if the declared result type is modeled as the first argument
+  // because it is returned in memory.
+  bool hasMemoryResult =
+      !args.empty() &&
+      args[0].convention == ParsedArgument::kConventionByRefResult;
+
+  // If this definition is a struct/class member, compute the self type.
+  ASTType selfType;
+  size_t selfArgNumber = 0;
+  if (auto *parentDecl = decl.getParentDecl())
+    if (isa<StructDeclOp>(*parentDecl)) {
+      //  The parent decl must be fully resolved in order to resolve any members
+      //  of it.
+      assert(parentDecl->resolvedness == DeclResolvedness::fully);
+      selfType = parentDecl->getSelfType();
+      // If there is an in-memory result, self is passed as arg #1.
+      if (hasMemoryResult)
+        selfArgNumber = 1;
+    }
+
+  // __init__ has two modes: one that takes self mutably to fill in its members,
+  // and one that returns self by value.  In the former case, the first/self
+  // argument must be declared as a by-ref argument, but we need to promote it
+  // to ByRefResult since it is not initialized coming in.
+  if (fnInfo.kind == SpecialFunctionKind::kInit &&
+      resultType.isEqualCanon(shared.getNoneType()) && !hasMemoryResult &&
+      !args.empty() && selfType) {
+    SMLoc selfArgLoc = args[0].loc;
+    if (ASTType(selfType).isRegisterPassable(selfArgLoc, shared)) {
+      emitErrorLoc(selfArgLoc, "'__init__' with mutable self is not supported "
+                               "on register_passable types yet");
+    } else {
+      // Check that it was declared with & correctly, if not emit a fixit hint.
+      if (args[0].convention != ParsedArgument::kConventionByRef) {
+        auto diag = emitErrorLoc(
+            selfArgLoc,
+            "'self' in struct '__init__' must be passed as mutable reference");
+        if (args[0].convention == ParsedArgument::kConventionUnspec)
+          diag << LitFixIt::insertAfterToken(selfArgLoc, "&", shared);
+      }
+
+      // Regardless force it to byref-result so recovery follows the fix-it.
+      args[0].convention = ParsedArgument::kConventionByRefResult;
+      decl.isInitFnWithByRefResultSelf = true;
+      hasMemoryResult = true;
+    }
+  }
+
   // Fill in any missing arguments or diagnose missing ones in fn's.
   bool seenInitExpr = false;
   for (auto [arg, type] : llvm::zip(args, argTypes)) {
     if (!type) {
-      if (funcOp.getIsDef()) {
+      // If this is the 'self' argument in a struct, default the type to Self.
+      if (size_t(&arg - &args[0]) == selfArgNumber && selfType &&
+          !funcOp.getIsStatic()) {
+        type = selfType;
+      } else if (funcOp.getIsDef()) {
         // If we are in a 'def', we infer object type for Python compatibility.
         type = shared.lookupObjectType(arg.loc, *decl.getParentDecl());
         if (!type)
@@ -1114,46 +1166,12 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
     }
 
     // If no convention was explicitly specified, provide a default.
-    if (arg.convention == ParsedArgument::kConventionUnspec) {
+    if (arg.convention == ParsedArgument::kConventionUnspec)
       arg.convention = ParsedArgument::kConventionBorrowed;
-
-      // The first/self argument to __init__ is weird because it gets
-      // ByRefResult argument convention, even though it is a declared argument.
-      if (fnInfo.kind == SpecialFunctionKind::kInit && &arg == &args[0] &&
-          resultType.isEqualCanon(shared.getNoneType())) {
-        if (!ASTType(type).isRegisterPassable(arg.loc, shared)) {
-          arg.convention = ParsedArgument::kConventionByRefResult;
-          decl.isInitFnWithByRefResultSelf = true;
-        } else
-          emitErrorLoc(
-              arg.loc,
-              "'__init__' is not supported on register_passable types yet");
-      }
-    }
   }
 
-  // This is true if the declared result type is modeled as the first argument
-  // because it is returned in memory.
-  bool hasMemoryResult =
-      !args.empty() &&
-      args[0].convention == ParsedArgument::kConventionByRefResult;
   ASTType declaredResultType =
       hasMemoryResult ? ASTType(argTypes[0]) : resultType;
-
-  // If this definition is a struct/class member, compute the self type.
-  ASTType selfType;
-  size_t selfArgNumber = 0;
-  if (auto *parentDecl = decl.getParentDecl())
-    if (isa<StructDeclOp>(*parentDecl)) {
-      //  The parent decl must be fully resolved in order to resolve any members
-      //  of it.
-      assert(parentDecl->resolvedness == DeclResolvedness::fully);
-      selfType = parentDecl->getSelfType();
-      // If there is an in-memory result, self is passed as arg #1 unless this
-      // is init, where the return slot is self.
-      if (hasMemoryResult && fnInfo.kind != SpecialFunctionKind::kInit)
-        selfArgNumber = 1;
-    }
 
   // Check any special function information.
 
@@ -1559,12 +1577,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
         arg.isErroneous = true;
         type = shared.getTypeCheckErrorType();
       }
-
-    } else if (arg.name == "self" && inAStruct) {
-      // If this is a 'self' argument in a fn that is a method, default to a
-      // self type.  TODO: Should we do this, or default to object in a 'def'?
-      assert(decl.getParentDecl()->resolvedness == DeclResolvedness::fully);
-      type = decl.getParentDecl()->getSelfType();
     }
     argTypes.push_back(type);
 

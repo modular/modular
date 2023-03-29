@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "LitDiags.h"
+#include "LitLexer.h"
 
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Diagnostics.h"
@@ -306,6 +307,29 @@ void LitDiagnostic::addFixIt(LitFixIt fixIt) {
 
 LitFixIt::LitFixIt(LitSourceRange range, const Twine &replacement)
     : range(range), replacement(replacement.str()) {}
+
+/// This constructor creates a fixit that replaces the one token at the
+/// specified location with some text.
+LitFixIt LitFixIt::replaceToken(SMLoc loc, const Twine &text) {
+  return LitFixIt({loc, loc}, text);
+}
+
+/// This constructor creates a fixit that inserts some text before the token
+/// at the specified location, without replacing the token.
+LitFixIt LitFixIt::insertBeforeToken(SMLoc loc, const Twine &text) {
+  // Set the replacement range to an empty byte-level range before the token.
+  return LitFixIt(LitSourceRange::getByteLevel(loc, loc), text);
+}
+
+/// This constructor creates a fixit that inserts some text after the token
+/// at the specified location.
+LitFixIt LitFixIt::insertAfterToken(SMLoc loc, const Twine &text,
+                                    LitSharedState &shared) {
+  // Find end of token.
+  size_t tokenSize = LitLexer::getTokenLength(shared, loc);
+  loc = SMLoc::getFromPointer(loc.getPointer() + tokenSize);
+  return LitFixIt(LitSourceRange::getByteLevel(loc, loc), text);
+}
 
 //===----------------------------------------------------------------------===//
 // addToDiagnostic helpers
