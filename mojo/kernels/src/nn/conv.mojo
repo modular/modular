@@ -30,13 +30,14 @@ from TargetInfo import simd_byte_width
 from Pointer import DTypePointer, Pointer
 from DType import DType
 from LLCL import Runtime, OutputChainPtr
-from Functional import unroll, unroll2, parallelForEachN
+from Functional import unroll, unroll2, parallelize
 from Range import range
 from Image import (
     ImageData,
     Image2DLayout,
     ImageShape,
 )
+from IO import _printf
 
 
 @register_passable("trivial")
@@ -1408,10 +1409,8 @@ struct ConvIm2ColNCHW[
         self.c = NDBuffer[2, DimList[2].create_unknown(), type](
             c_pointer.address,
             create_dim_list(
-                self.conv_shape.f.__as_mlir_index(),
-                (
-                    self.conv_shape.out_h * self.conv_shape.out_w
-                ).__as_mlir_index(),
+                self.conv_shape.f,
+                self.conv_shape.out_h * self.conv_shape.out_w,
             ),
             type,
         )
@@ -1420,8 +1419,8 @@ struct ConvIm2ColNCHW[
         self.a = NDBuffer[2, DimList[2].create_unknown(), type](
             self.filter.data.address,
             create_dim_list(
-                self.gemm_shape.M.__as_mlir_index(),
-                self.gemm_shape.K.__as_mlir_index(),
+                self.gemm_shape.M,
+                self.gemm_shape.K,
             ),
             type,
         )
@@ -1448,9 +1447,9 @@ struct ConvIm2ColNCHW[
         return NDBuffer[3, packed_shape, type](
             b_packed.address,
             create_dim_list(
-                (tile_n // n_inner_size).__as_mlir_index(),
-                tile_k.__as_mlir_index(),
-                n_inner_size.__as_mlir_index(),
+                tile_n // n_inner_size,
+                tile_k,
+                n_inner_size,
             ),
             type,
         )
@@ -1600,8 +1599,8 @@ struct ConvNHWCInnerLoopFilterPacked[
         c_local: NDBuffer[
             2,
             create_dim_list(
-                a_row_size.__as_mlir_index(),
-                (pack_inner_size * simd_size).__as_mlir_index(),
+                a_row_size,
+                pack_inner_size * simd_size,
             ),
             accum_type,
         ],
@@ -1628,8 +1627,8 @@ struct ConvNHWCInnerLoopFilterPacked[
         c_local: NDBuffer[
             2,
             create_dim_list(
-                a_row_size.__as_mlir_index(),
-                (pack_inner_size * simd_size).__as_mlir_index(),
+                a_row_size,
+                pack_inner_size * simd_size,
             ),
             accum_type,
         ],
@@ -1692,8 +1691,8 @@ struct ConvNHWCInnerLoopFilterPacked[
         c_local: NDBuffer[
             2,
             create_dim_list(
-                a_row_size.__as_mlir_index(),
-                (pack_inner_size * simd_size).__as_mlir_index(),
+                a_row_size,
+                pack_inner_size * simd_size,
             ),
             accum_type,
         ],
@@ -1798,8 +1797,8 @@ struct ConvNHWCInnerLoopFilterPacked[
         c_local: NDBuffer[
             2,
             create_dim_list(
-                a_row_size.__as_mlir_index(),
-                (pack_inner_size * simd_size).__as_mlir_index(),
+                a_row_size,
+                pack_inner_size * simd_size,
             ),
             accum_type,
         ],
@@ -1866,8 +1865,8 @@ struct ConvNHWCInnerLoopFilterPacked[
         var c_local = NDBuffer[
             2,
             create_dim_list(
-                a_row_size.__as_mlir_index(),
-                (pack_inner_size * simd_size).__as_mlir_index(),
+                a_row_size,
+                pack_inner_size * simd_size,
             ),
             accum_type,
         ].stack_allocation()
@@ -2012,6 +2011,9 @@ struct ConvIm2ColNHWC[
     var a: NDBuffer[2, DimList[2].create_unknown(), type]
     var b: NDBuffer[2, DimList[2].create_unknown(), type]
 
+    var num_tasks_m: Int
+    var num_tasks_n: Int
+
     # Partitioned row index for the current thread.
     var row_start_idx: Int
     var total_row_count: Int
@@ -2019,9 +2021,6 @@ struct ConvIm2ColNHWC[
     # Partitioned col index for the current thread.
     var col_start_idx: Int
     var total_col_count: Int
-
-    var num_tasks_m: Int
-    var num_tasks_n: Int
 
     # Interface method
     @staticmethod
@@ -2041,76 +2040,31 @@ struct ConvIm2ColNHWC[
             conv_shape: Struct describing the convolution dimensions.
         """
 
-        var conv = ConvIm2ColNHWC[
-            shape_input,
-            shape_filter,
-            shape_output,
-            packed_shape,
-            type,
-            simd_size,
-            a_row_size,
-            pack_inner_size,
-            pack_cache_size,
-            filter_layout,
-        ](out, input, filter, conv_shape)
+        # Translate conv shape to gemm shape for computation mapping.
+        # For NHWC data layout.
+        let gemm_shape = GemmShape {
+            M: (conv_shape.n * conv_shape.out_h * conv_shape.out_w),
+            N: (conv_shape.f),
+            K: (conv_shape.r * conv_shape.s * conv_shape.c),
+        }
 
-        let complexity = conv.gemm_shape.M
         let num_threads = out_chain.get_runtime().parallelism_level()
+        let complexity = gemm_shape.M
 
         # minimum number of rows each thread should take.
         let row_block_unit: Int = 32
         let col_block_unit: Int = pack_inner_size
 
         # TODO: add a proper partition heuristic.
-        var num_tasks_m = max(min(complexity // row_block_unit, num_threads), 1)
-        var num_tasks_n = max(
-            min(
-                num_threads // num_tasks_m, conv.gemm_shape.N // col_block_unit
-            ),
+        let num_tasks_m = max(min(complexity // row_block_unit, num_threads), 1)
+        let num_tasks_n = max(
+            min(num_threads // num_tasks_m, gemm_shape.N // col_block_unit),
             1,
         )
 
-        conv.num_tasks_m = num_tasks_m
-        conv.num_tasks_n = num_tasks_n
-
-        fn task_func(
-            task_id: Int,
-            ptr: Pointer[
-                ConvIm2ColNHWC[
-                    shape_input,
-                    shape_filter,
-                    shape_output,
-                    packed_shape,
-                    type,
-                    simd_size,
-                    a_row_size,
-                    pack_inner_size,
-                    pack_cache_size,
-                    filter_layout,
-                ]
-            ],
-        ):
-            let _conv = ptr.load()
-            var local_conv = _conv
-            let task_id_m = task_id // local_conv.num_tasks_n
-            let task_id_n = task_id % local_conv.num_tasks_n
-
-            let partition_m = get_partitioned_workload(
-                task_id_m, local_conv.num_tasks_m, local_conv.gemm_shape.M
-            )
-            let partition_n = get_partitioned_workload(
-                task_id_n, local_conv.num_tasks_n, local_conv.gemm_shape.N
-            )
-
-            local_conv.row_start_idx = partition_m[0]
-            local_conv.total_row_count = partition_m[1]
-            local_conv.col_start_idx = partition_n[0]
-            local_conv.total_col_count = partition_n[1]
-
-            local_conv._run_implicit_matmul()
-
-        let args_address = Pointer[
-            ConvIm2ColNHWC[
+        @always_inline
+        fn task_func(task_id: Int):
+            var conv = ConvIm2ColNHWC[
                 shape_input,
                 shape_filter,
                 shape_output,
@@ -2121,32 +2075,29 @@ struct ConvIm2ColNHWC[
                 pack_inner_size,
                 pack_cache_size,
                 filter_layout,
-            ]
-        ].address_of(conv)
+            ](
+                out,
+                input,
+                filter,
+                conv_shape,
+                gemm_shape,
+                num_tasks_m,
+                num_tasks_n,
+                task_id,
+            )
+            conv._run_implicit_matmul()
 
-        parallelForEachN[
-            Pointer[
-                ConvIm2ColNHWC[
-                    shape_input,
-                    shape_filter,
-                    shape_output,
-                    packed_shape,
-                    type,
-                    simd_size,
-                    a_row_size,
-                    pack_inner_size,
-                    pack_cache_size,
-                    filter_layout,
-                ]
-            ],
-            task_func,
-        ](out_chain, num_tasks_m * num_tasks_n, args_address)
+        parallelize[task_func](out_chain, num_tasks_m * num_tasks_n)
 
     fn __init__(
         out: NDBuffer[4, shape_output, type],
         input: NDBuffer[4, shape_input, type],
         filter: NDBuffer[4, shape_filter, type],
         conv_shape: ConvShape,
+        gemm_shape: GemmShape,
+        num_tasks_m: Int,
+        num_tasks_n: Int,
+        task_id: Int,
     ) -> ConvIm2ColNHWC[
         shape_input,
         shape_filter,
@@ -2179,21 +2130,9 @@ struct ConvIm2ColNHWC[
             pack_cache_size,
             filter_layout,
         ]
-
         conv.out = out
         conv.input = input
         conv.filter = filter
-        conv.conv_shape = conv_shape
-
-        # Translate conv shape to gemm shape for computation mapping.
-        #  For NHWC data layout.
-        let gemm_shape = GemmShape {
-            M: (conv_shape.n * conv_shape.out_h * conv_shape.out_w),
-            N: (conv_shape.f),
-            K: (conv_shape.r * conv_shape.s * conv_shape.c),
-        }
-
-        conv.gemm_shape = gemm_shape
         conv.tile_n_k = calculate_tile_n_k[pack_cache_size, pack_inner_size](
             GemmShape(
                 gemm_shape.M,
@@ -2201,10 +2140,69 @@ struct ConvIm2ColNHWC[
                 conv_shape.c,  # Do not yet pack more than C.
             )
         )
+        conv.gemm_shape = gemm_shape
+        conv.conv_shape = conv_shape
+
+        # Output shape [N, F, Ho, Wo]
+        let c_pointer = out._offset(Index(0, 0, 0, 0))
+        conv.c = NDBuffer[2, DimList[2].create_unknown(), type](
+            c_pointer.address,
+            create_dim_list(
+                gemm_shape.M,
+                gemm_shape.N,
+            ),
+            type,
+        )
+
+        # Create 2D view for input.
+        conv.a = NDBuffer[2, DimList[2].create_unknown(), type](
+            input.data.address,
+            create_dim_list(
+                gemm_shape.M,
+                gemm_shape.K,
+            ),
+            type,
+        )
+
+        # Create 2D view for filter.
+        if filter_layout == Image2DLayout.NHWC:  # FRSC layout
+            conv.b = NDBuffer[2, DimList[2].create_unknown(), type](
+                filter.data.address,
+                create_dim_list(
+                    gemm_shape.N,
+                    gemm_shape.K,
+                ),
+                type,
+            )
+        elif filter_layout == Image2DLayout.RSCF:  # RSCF layout
+            conv.b = NDBuffer[2, DimList[2].create_unknown(), type](
+                filter.data.address,
+                create_dim_list(
+                    gemm_shape.K,
+                    gemm_shape.N,
+                ),
+                type,
+            )
+
+        conv.num_tasks_m = num_tasks_m
+        conv.num_tasks_n = num_tasks_n
+
+        let task_id_m = task_id // num_tasks_n
+        let task_id_n = task_id % num_tasks_n
+        let partition_m = get_partitioned_workload(
+            task_id_m, num_tasks_m, gemm_shape.M
+        )
+        let partition_n = get_partitioned_workload(
+            task_id_n, num_tasks_n, gemm_shape.N
+        )
+        conv.row_start_idx = partition_m[0]
+        conv.total_row_count = partition_m[1]
+        conv.col_start_idx = partition_n[0]
+        conv.total_col_count = partition_n[1]
 
         return conv
 
-    fn _run_implicit_matmul(self&):
+    fn _run_implicit_matmul(self):
         """Wrapper utility funciton: Allocates packing space on the stack and
         run the matmul routine on the whole problem space.
         """
@@ -2223,11 +2221,10 @@ struct ConvIm2ColNHWC[
             pack_inner_size,
         )
 
-        self._initialize_buffer_view()
         self._outer_k_loop(mapped_bpacked)
 
     # Iterate over the K dimension of the gemm space.
-    fn _outer_k_loop(self&, b_packed: NDBuffer[3, packed_shape, type]):
+    fn _outer_k_loop(self, b_packed: NDBuffer[3, packed_shape, type]):
         """Iterate on the K dimension of the whole problem space.
 
         Args:
@@ -2582,51 +2579,6 @@ struct ConvIm2ColNHWC[
             row_idx += RowSize
         return row_idx
 
-    fn _initialize_buffer_view(self&):
-        """Initializes the internal gemm operand tensors with the translated
-        dynamic gemm shapes from convolution shapes.
-        """
-        # Ouput shape [N, F, Ho, Wo]
-        let c_pointer = self.out._offset(Index(0, 0, 0, 0))
-        self.c = NDBuffer[2, DimList[2].create_unknown(), type](
-            c_pointer.address,
-            create_dim_list(
-                self.gemm_shape.M.__as_mlir_index(),
-                self.gemm_shape.N.__as_mlir_index(),
-            ),
-            type,
-        )
-
-        # Create 2D view for input.
-        self.a = NDBuffer[2, DimList[2].create_unknown(), type](
-            self.input.data.address,
-            create_dim_list(
-                self.gemm_shape.M.__as_mlir_index(),
-                self.gemm_shape.K.__as_mlir_index(),
-            ),
-            type,
-        )
-
-        # Create 2D view for filter.
-        if filter_layout == Image2DLayout.NHWC:  # FRSC layout
-            self.b = NDBuffer[2, DimList[2].create_unknown(), type](
-                self.filter.data.address,
-                create_dim_list(
-                    self.gemm_shape.N.__as_mlir_index(),
-                    self.gemm_shape.K.__as_mlir_index(),
-                ),
-                type,
-            )
-        elif filter_layout == Image2DLayout.RSCF:  # RSCF layout
-            self.b = NDBuffer[2, DimList[2].create_unknown(), type](
-                self.filter.data.address,
-                create_dim_list(
-                    self.gemm_shape.K.__as_mlir_index(),
-                    self.gemm_shape.N.__as_mlir_index(),
-                ),
-                type,
-            )
-
     # Utility to reshape the dynamic buffer:
     #  need to remap every time K and pack_inner_size changes.
     fn _view_buffer_as(
@@ -2649,9 +2601,9 @@ struct ConvIm2ColNHWC[
         return NDBuffer[3, packed_shape, type](
             b_packed.address,
             create_dim_list(
-                (tile_n // n_inner_size).__as_mlir_index(),
-                tile_k.__as_mlir_index(),
-                n_inner_size.__as_mlir_index(),
+                tile_n // n_inner_size,
+                tile_k,
+                n_inner_size,
             ),
             type,
         )
