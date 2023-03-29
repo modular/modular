@@ -115,6 +115,69 @@ lit.func @no_return() -> !lit.none {
   lit.end_func
 }
 
+lit.func @if_true_return() -> index {
+  %0 = index.constant 0
+  %true = index.bool.constant true
+  hlcf.if %true {
+    lit.return %0 : index
+    hlcf.yield
+  } else {
+    // expected-warning @+1 {{unreachable code after 'if True'}}
+    lit.return %0 : index
+    hlcf.yield
+  }
+  lit.end_func
+}
+
+lit.func @while_true() -> index {
+  hlcf.loop {
+    %true = index.bool.constant true
+    hlcf.if %true {
+      lit.continue
+      hlcf.yield
+    } else {
+      hlcf.yield
+    }
+    lit.break // expected-warning {{unreachable code after if statement with then/else that do not fall through}}
+    hlcf.continue
+  }
+  lit.end_func
+}
+
+
+// CHECK-LABEL: lit.func @if_false_raise
+lit.func @if_false_raise() throws -> !pop.variant<@Error, index> {
+  %false = index.bool.constant false
+  hlcf.if %false {
+    hlcf.yield
+  } else {
+    %err = lit.struct.create () : () -> !kgen.declref<@Error>
+    %tmp = pop.variant.create %err : !kgen.declref<@Error>
+        -> !pop.variant<@Error, index>
+    lit.return %tmp : !pop.variant<@Error, index>
+    hlcf.yield
+  }
+  lit.end_func
+}
+
+// CHECK-LABEL: lit.func @raise_raise
+lit.func @raise_raise() throws -> !pop.variant<@Error, index> {
+  lit.try {
+    %err = lit.struct.create () : () -> !kgen.declref<@Error>
+    lit.raise %err : <@Error>
+    lit.try.yield
+  } except (%err: !kgen.declref<@Error>) {
+    %tmp = pop.variant.create %err : !kgen.declref<@Error> -> !pop.variant<@Error, index>
+    lit.return %tmp : !pop.variant<@Error, index>
+    lit.try.yield
+  } else {
+    lit.try.yield
+  }
+  lit.end_func
+}
+
+
+
 
 // CHECK-LABEL: @no_return_throws
 // CHECK-SAME ) -> !pop.variant<@Error, !lit.none>
@@ -339,24 +402,27 @@ lit.func @coroutine2() async -> index {
 }
 
 // CHECK-LABEL: lit.func @bubble_result_params
-lit.func @bubble_result_params<() -> r0, r1: dtype>() {
-  // CHECK: kgen.param.if
-  kgen.param.if <1> {
+lit.func @bubble_result_params<cond: i1, cond2: i1 -> r0, r1: dtype>() {
+  // CHECK: kgen.param.if <0>
+  // CHECK-NEXT: kgen.unreachable
+  // CHECK-NEXT: } else {
+  // CHECK-NEXT: kgen.param.yield
+  kgen.param.if <0> {
     kgen.param.yield
   } else {
     kgen.param.yield
   }
 
-  // CHECK: kgen.param.if <1 ->
-  kgen.param.if <1> {
+  // CHECK: kgen.param.if <cond ->
+  kgen.param.if <cond> {
     // CHECK-NEXT: result_bind<1, :dtype si8>
     lit.param_return<1, :dtype si8>
     // CHECK-NEXT: kgen.return
     kgen.return
   // CHECK: else
   } else {
-    // CHECK: kgen.param.if <1 -> *"(branch_result_0)", *"(branch_result_1)": dtype>
-    kgen.param.if <1> {
+    // CHECK: kgen.param.if <cond2 -> *"(branch_result_0)", *"(branch_result_1)": dtype>
+    kgen.param.if <cond2> {
       // CHECK-NEXT: result_bind<2, :dtype si16>
       lit.param_return<2, :dtype si16>
       kgen.param.yield
