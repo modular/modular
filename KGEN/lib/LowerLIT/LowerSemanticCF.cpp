@@ -314,6 +314,39 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
     // Otherwise we must have an if operation.
     assert((isa<HLCF::IfOp, ParamIfOp>(op)) &&
            "Unknown operation with regions");
+
+    // If this is a dynamic `if False:` or @parameter if on known condition,
+    // mark the unreachable block as unreachable so we don't consider it live.
+    Region *deadRegion = nullptr;
+    bool constantCondValue = false;
+    if (auto ifOp = dyn_cast<HLCF::IfOp>(op)) {
+      BoolAttr cond;
+      if (mlir::matchPattern(ifOp.getCond(), m_Constant(&cond))) {
+        constantCondValue = cond.getValue();
+        deadRegion =
+            &(constantCondValue ? ifOp.getElseRegion() : ifOp.getThenRegion());
+      }
+    } else if (auto ifOp = dyn_cast<ParamIfOp>(op)) {
+      if (auto cond = dyn_cast<BoolAttr>(ifOp.getCond())) {
+        constantCondValue = cond.getValue();
+        deadRegion =
+            &(constantCondValue ? ifOp.getElseRegion() : ifOp.getThenRegion());
+      }
+    }
+
+    // If either branch of the if is unreachable, diagnose any live code there
+    // as unreachable and replace it with a kgen.unreachable so we don't think
+    // about it for liveness' sake.
+    if (deadRegion) {
+      Block &deadBlock = deadRegion->front();
+      Operation *firstDeadOp = &deadBlock.front();
+      if (!firstDeadOp->hasTrait<OpTrait::IsTerminator>())
+        firstDeadOp->emitWarning("unreachable code after 'if ")
+            << (constantCondValue ? "True'" : "False'");
+      eraseOpToEndOfBlock(&deadBlock.front());
+      OpBuilder::atBlockBegin(&deadBlock).create<UnreachableOp>(op.getLoc());
+    }
+
     bool ifOpFallsThrough = false;
     for (auto &region : op.getRegions()) {
       bool regionRaises = false, regionBreaks = false,
@@ -345,7 +378,7 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
   }
 
   // These are not fallthroughs.
-  if (isa<KGEN::ReturnOp, HLCF::ContinueOp>(terminator))
+  if (isa<KGEN::ReturnOp, HLCF::ContinueOp, KGEN::UnreachableOp>(terminator))
     return;
 
   // If we fell off the bottom, then we have a fall-through terminator.
