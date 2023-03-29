@@ -7,7 +7,7 @@
 
 from Buffer import Buffer
 from DType import DType
-from Functional import async_parallelize, map
+from Functional import parallelize, map
 from Math import div_ceil, min
 from Int import Int
 from IO import print
@@ -15,9 +15,9 @@ from LLCL import Runtime, OwningOutputChainPtr
 from SIMD import SIMD
 from Range import range
 
-# CHECK-LABEL: test_async_parallelize
-fn test_async_parallelize():
-    print("== test_async_parallelize\n")
+# CHECK-LABEL: test_parallelize
+fn test_parallelize():
+    print("== test_parallelize\n")
 
     let num_work_items = 4
 
@@ -41,7 +41,7 @@ fn test_async_parallelize():
 
     let rt = Runtime(num_work_items)
     let out_chain = OwningOutputChainPtr(rt)
-    async_parallelize[parallel_fn](out_chain.borrow(), num_work_items)
+    parallelize[parallel_fn](out_chain.borrow(), num_work_items)
     out_chain.wait()
     out_chain.__del__()
     rt.__del__()
@@ -54,4 +54,4 @@ fn test_async_parallelize():
 
 
 fn main():
-    test_async_parallelize()
+    test_parallelize()
