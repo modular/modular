@@ -249,10 +249,10 @@ PValue ParameterInferenceState::infer(SignatureType signature,
       continue;
     }
 
-    // If we have a pack type argument, then we're binding a variadic parameter
-    // with multiple type values.  We need to consume all remaining arguments
-    // and use their types as bindings.
-    if (auto packType = dyn_cast<POP::PackType>(expectedType)) {
+    // If we have a pack argument, then we're binding a variadic parameter with
+    // multiple type values.  We need to consume all remaining arguments and use
+    // their types as bindings.
+    if (auto packType = signature.getIfPackType(expectedArgIdx)) {
       SmallVector<TypedAttr> types;
       while (providedValueIdx != operands.size()) {
         ASTExprAnd<AnyValue> operand = operands[providedValueIdx++];
@@ -654,8 +654,8 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
 
     // Arguments with a pack type must have a known number of element types,
     // and so they require exactly that many arguments.
-    if (auto pack = dyn_cast<POP::PackType>(signature.getValueInputs()[idx])) {
-      size_t numValues = pack.getVariadicAttr().getValues().size();
+    if (auto packType = signature.getIfPackType(idx)) {
+      size_t numValues = packType.getVariadicAttr().getValues().size();
       minRequiredArgs += numValues;
       maxAllowedargs += numValues;
       continue;
@@ -809,7 +809,7 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
 
     // If we have a pack type, it must have a known number of elements, and so
     // consumes exactly that number of arguments.
-    if (auto packType = dyn_cast<POP::PackType>(expectedType)) {
+    if (auto packType = signature.getIfPackType(expectedArgIdx)) {
       for (TypedAttr element : packType.getVariadicAttr().getValues()) {
         OverloadFitness result = checkOneOperand(ASTType(element));
         if (result.kind != kValid)
@@ -1728,7 +1728,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       }
 
       // Pack arguments are fulfilled with an empty !pop.pack sequence.
-      if (auto packType = dyn_cast<POP::PackType>(expectedType)) {
+      if (auto packType = calleeSig.getIfPackType(argIdx)) {
         assert(packType.isEmpty() &&
                "pack type already checked against operand count");
         auto pack = POP::PackAttr::get(ArrayRef<TypedAttr>(), packType);
@@ -1764,8 +1764,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
           // In the case of a variadic argument, we need to remove the
           // !pop.varadic<> wrapper to get the type to convert to.
           expectedArgType = expectedArgType.getVariadicElementType();
-        else if (auto packType =
-                     dyn_cast<POP::PackType>(expectedArgType.mlirType))
+        else if (auto packType = calleeSig.getIfPackType(argIdx))
           // Operands being applied to a concrete pack type argument must be
           // converted to the pack element type at that index.
           expectedArgType =

@@ -168,26 +168,21 @@ fn badCalls(arg: Int):
   # expected-error @+1 {{argument #2 must be mutable in order to pass as a by-ref argument}}
   exampleByRefVariadic(1.0, x, 1)
 
+# expected-error @+1 {{only variadic types may be unpacked}}
+fn invalidPackType(*x: *Int): pass
+
 # expected-error @+1 {{parameters may not be variadic packs}}
-fn invalidParameterPack[Ts*: __mlir_type.`!kgen.mlirtype`](): pass
+fn invalidParameterPack[*Ts: *__mlir_type.`!kgen.variadic<!kgen.mlirtype>`](): pass
 
-# expected-error @+1 {{variadic arguments may not also be variadic packs}}
-fn invalidVariadicPack[*Ts: __mlir_type.`!kgen.mlirtype`](*x*: Ts): pass
-
-# expected-error @+1 {{variadic packs may not have input conventions}}
-fn invalidPackByRef[*Ts: __mlir_type.`!kgen.mlirtype`](x*&: Ts): pass
-
-# expected-error @+1 {{variadic packs may not have defaults}}
-fn invalidPackWithDefault[*Ts: __mlir_type.`!kgen.mlirtype`](x*: Ts = (1, 2.0)): pass
-
-# expected-error @+1 {{expected a value of variadic type}}
-fn invalidPackType(x*: Int): pass
+# expected-error @+2 {{only variadic arguments' types can be unpacked}}
+# expected-note @+1 {{'x' is not a variadic argument}}
+fn invalidArgumentUnpack[*Ts: __mlir_type.`!kgen.mlirtype`](x: *Ts): pass
 
 # expected-error @+1 {{argument already has a convention specified}}
 fn invalidOwned(owned x&: Int): pass
 
 # expected-note @+1 {{function declared here}}
-fn examplePack[*Ts: __mlir_type.`!kgen.mlirtype`](args*: Ts):
+fn examplePack[*Ts: __mlir_type.`!kgen.mlirtype`](*args: *Ts):
   pass
 
 fn packArgOverload():
@@ -223,7 +218,7 @@ def kw6(a, *):       pass # expected-error {{'*' marker is not allowed at end of
 # expected-error @+1 {{TODO: keyword arguments not supported yet}}
 def kw7(*a, *b): pass # expected-error {{cannot have two '*' markers in the same argument list}}
 # expected-error @+1 {{TODO: keyword arguments not supported yet}}
-def kw8[*Ts: __mlir_type.`!kgen.mlirtype`](a*: Ts, b*: Ts): pass # expected-error {{cannot have two '*' markers in the same argument list}}
+def kw8[*Ts: __mlir_type.`!kgen.mlirtype`](*a: *Ts, *b: *Ts): pass # expected-error {{cannot have two '*' markers in the same argument list}}
 
 ##===----------------------------------------------------------------------===##
 # Function Overloading

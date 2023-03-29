@@ -145,8 +145,10 @@ MetadataAttr::verifySignature(function_ref<InFlightDiagnostic()> emitError,
       values.getNumResults() != 1)
     return emitError() << "a function that throws should have 1 result";
 
-  unsigned minNumArgs = bitEnumContainsAny(getFnEffects(), FnEffects::Vararg) +
-                        bitEnumContainsAny(getFnEffects(), FnEffects::KWVararg);
+  unsigned minNumArgs =
+      (bitEnumContainsAny(getFnEffects(), FnEffects::Vararg) ||
+       bitEnumContainsAny(getFnEffects(), FnEffects::PackVararg)) +
+      bitEnumContainsAny(getFnEffects(), FnEffects::KWVararg);
   if (values.getNumInputs() < minNumArgs) {
     return emitError()
            << "function has varargs and/or kwvarargs but signature only has "

@@ -1060,7 +1060,7 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool isPack) {
   if (isPack) {
     // Pack types expect a backing variadic type.
     if (!isa<VariadicType>(value.get().getType())) {
-      emitError(expr->getLoc(), "expected a value of variadic type")
+      emitError(expr->getLoc(), "only variadic types may be unpacked")
           << expr->getRange();
       return {};
     }

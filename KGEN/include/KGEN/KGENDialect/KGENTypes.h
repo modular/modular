@@ -26,6 +26,10 @@ class TypeArrayAttr;
 class VariadicType;
 class VariadicAttr;
 
+namespace POP {
+class PackType;
+}
+
 /// Return the full signature of this declaration, including parameters from
 /// enclosing struct declarations.
 SignatureType getFullSignature(FuncInterface decl);

@@ -615,19 +615,28 @@ Type LitParameterEvaluator::refineType(Type type) {
 //===----------------------------------------------------------------------===//
 
 namespace {
-enum VarArgKind { None, VarArg, KWVarArg };
+/// Specify variadic argument kind, e.g. `*x` or `**x`.
+enum VarArgKind {
+  /// Not a variadic argument, e.g. `x` or `x: Int`.
+  None,
+  /// A homogeneously typed variadic argument, e.g. `*x` or `*x: Int`.
+  VarArg,
+  /// A heterogeneously typed variadic argument, e.g. `*x: *Ts`.
+  PackVarArg,
+  /// A variadic keywords argument, e.g. `**x`.
+  KWVarArg
+};
 
 /// Parsing support for a function argument and input parameter:
 ///
 /// argument_list      ::= argument ("," argument)*
 /// argument           ::= "/" | "*"
 /// argument           ::= [argument_ownership] [argument_variadic] identifier
-///                        [argument_reference] [":" expression]
-///                        ["=" expression]
-/// argument           ::= identifier "*" ":" type
+///                        [argument_reference] [argument_type] ["=" expression]
 /// argument_ownership ::= "owned" | "borrowed"
 /// argument_variadic  ::= "*" | "**"
 /// argument_reference ::= "&"
+/// argument_type      ::= ":" ["*"] expression
 struct ParsedArgument {
   SMLoc loc;
   // Specify argument passing convention, e.g. owned/byref etc.
@@ -642,7 +651,6 @@ struct ParsedArgument {
   // After type checking, this will hold the KGEN convention to use.
   ValueInputConvention kgenConvention = ValueInputConvention(128);
 
-  bool isPack = false;
   VarArgKind vararg = VarArgKind::None;
   StringAttr name;
   ExprNode *typeExpr = nullptr;
@@ -703,43 +711,44 @@ struct ParsedArgument {
       kwArgHandling = KWArgHandling::kKeywordOnly;
     }
 
-    if (p.parseIdentifier(name, "expected parameter name"))
+    SMLoc identifierLoc;
+    if (p.parseIdentifier(name, "expected parameter name", &identifierLoc))
       // TODO: Scan ahead for better recovery.
       return failure();
-
-    SMLoc packStarLoc;
-    if (p.consumeIf(LitToken::star, &packStarLoc)) { // '*' => pack
-      isPack = true;
-      if (vararg != VarArgKind::None)
-        p.emitError(packStarLoc,
-                    "variadic arguments may not also be variadic packs");
-    }
 
     // Process any convention markers.
     SMLoc ampLoc;
     if (p.consumeIf(LitToken::amp, &ampLoc)) { // '&' => by-ref
-      if (isPack)
-        p.emitError(ampLoc, "variadic packs may not have input conventions");
-      else if (convention != kConventionUnspec)
+      if (convention != kConventionUnspec)
         p.emitError(ampLoc, "argument already has a convention specified");
       else
         convention = kConventionByRef;
     }
 
+    // Parse an optional type annotation: `":" ["*"] expression`.
     if (p.consumeIf(LitToken::colon)) {
+      SMLoc starLoc;
+      if (p.consumeIf(LitToken::star, &starLoc)) {
+        if (vararg != VarArgKind::VarArg)
+          p.emitError(starLoc, "only variadic arguments' types can be unpacked")
+                  .attachNote(identifierLoc)
+              << "'" << name.getValue() << "' is not a variadic argument";
+        vararg = VarArgKind::PackVarArg;
+      }
       if (p.parseExpression(typeExpr, std::nullopt))
         return failure();
     }
 
+    // Parse an optional default argument value: `"=" expression`.
     SMLoc equalLoc;
     if (p.consumeIf(LitToken::equal, &equalLoc)) {
       if (p.parseExpression(initExpr, std::nullopt))
         return failure();
 
-      // Default args and varargs/packs don't mix.
-      if (isPack || vararg != VarArgKind::None) {
-        p.emitError(equalLoc, isPack ? "variadic packs" : "variadic arguments")
-            << " may not have defaults" << initExpr->getRange();
+      // Default args and varargs don't mix.
+      if (vararg != VarArgKind::None) {
+        p.emitError(equalLoc, "variadic arguments may not have defaults")
+            << initExpr->getRange();
         initExpr = nullptr;
       }
     }
@@ -833,9 +842,10 @@ struct ParsedArgument {
       if (marker == KWArgMarkerInfo::kStar)
         return handleStarMarker(arg.loc, /*isMarker=*/true), success();
 
-      // Otherwise, if this is a varargs marker (*arg) or variadic pack (arg*),
-      // handle it as a marker and an argument.
-      if (arg.isPack || arg.vararg == VarArgKind::VarArg)
+      // Otherwise, if this is a varargs marker, handle it as a marker and an
+      // argument.
+      if (arg.vararg == VarArgKind::VarArg ||
+          arg.vararg == VarArgKind::PackVarArg)
         handleStarMarker(arg.loc, /*isMarker=*/false);
 
       // If we have a **arg then it must be the last argument.
@@ -916,8 +926,6 @@ parseOptionalParameterSignature(LitParserBase &p, ASTDecl &declScope,
       if (arg.initExpr)
         p.emitError(arg.loc,
                     "TODO: default values in parameters not supported");
-      if (arg.isPack)
-        p.emitError(arg.loc, "parameters may not be variadic packs");
 
       ASTType type;
       if (arg.typeExpr)
@@ -938,13 +946,15 @@ parseOptionalParameterSignature(LitParserBase &p, ASTDecl &declScope,
       }
 
       VarArgKind vararg = arg.vararg;
-      if (vararg != VarArgKind::None) {
-        if (isResultParams) {
-          p.emitError(arg.loc, "result parameters may not be variadic");
-        } else if (!isa<TypeCheckErrorType>(type.mlirType)) {
-          type = KGEN::VariadicType::get(type);
-          paramVararg = true;
-        }
+      if (vararg != VarArgKind::None && isResultParams)
+        p.emitError(arg.loc, "result parameters may not be variadic");
+      if (vararg == VarArgKind::PackVarArg)
+        p.emitError(arg.loc, "parameters may not be variadic packs");
+
+      if (vararg == VarArgKind::VarArg &&
+          !isa<TypeCheckErrorType>(type.mlirType)) {
+        type = KGEN::VariadicType::get(type);
+        paramVararg = true;
       }
 
       // TODO: Parameter decls should support conventions at some point.
@@ -1537,7 +1547,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   for (auto [idx, arg] : llvm::enumerate(args)) {
     ASTType type;
     if (arg.typeExpr) {
-      type = typeEmitter.emitExprType(arg.typeExpr, arg.isPack);
+      type = typeEmitter.emitExprType(arg.typeExpr,
+                                      arg.vararg == VarArgKind::PackVarArg);
 
       // If the type couldn't be emitted, mark this argument erroneous (so uses
       // within the body of the function don't trigger secondary errors) and
@@ -1679,6 +1690,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
     inputConventions.push_back(arg.kgenConvention);
     if (arg.vararg == VarArgKind::VarArg)
       effects = effects | FnEffects::Vararg;
+    else if (arg.vararg == VarArgKind::PackVarArg)
+      effects = effects | FnEffects::PackVararg;
     else if (arg.vararg == VarArgKind::KWVarArg)
       effects = effects | FnEffects::KWVararg;
   }
