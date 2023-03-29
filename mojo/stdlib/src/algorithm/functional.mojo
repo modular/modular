@@ -17,6 +17,9 @@ from SIMD import SIMD
 from Vector import InlinedFixedVector
 from String import StringRef
 
+alias none = __mlir_type.`!lit.none`
+alias InlinedFixedVectorLength = 64
+
 # ===----------------------------------------------------------------------===#
 # Map
 # ===----------------------------------------------------------------------===#
@@ -241,79 +244,6 @@ fn vectorize_unroll[
 
     for i in range(vector_end_simd, size):
         scalar_func_impl(i)
-
-
-# ===----------------------------------------------------------------------===#
-# parallelForEachN
-# ===----------------------------------------------------------------------===#
-
-alias none = __mlir_type.`!lit.none`
-alias InlinedFixedVectorLength = 64
-
-
-@always_inline
-fn parallelForEachNChain[
-    args_type: __mlir_type.`!kgen.mlirtype`,
-    func: __mlir_type[
-        `!kgen.signature<(`,
-        Int,
-        ` borrow,`,
-        args_type,
-        ` borrow) async -> !lit.none>`,
-    ],
-](
-    total_count: Int,
-    args: args_type,
-    tasks&: InlinedFixedVector[InlinedFixedVectorLength, Coroutine[none]],
-    tg&: TaskGroup,
-):
-    for i in range(total_count):
-        let task: Coroutine[__mlir_type.`!lit.none`] = func(i, args)
-        tg.create_task[none](task)
-        tasks.append(task)
-
-
-@always_inline
-fn parallelForEachN[
-    args_type: __mlir_type.`!kgen.mlirtype`,
-    func: __mlir_type[
-        `!kgen.signature<(`,
-        Int,
-        ` borrow,`,
-        args_type,
-        ` borrow) -> !lit.none>`,
-    ],
-](out_chain: OutputChainPtr, total_count: Int, args: args_type):
-    # We have no tasks, so do nothing.
-    if total_count == 0:
-        out_chain.mark_ready()
-        return
-
-    # Only have a single task, just run it on the main thread.
-    if total_count == 1:
-        func(0, args)
-        out_chain.mark_ready()
-        return
-
-    @always_inline
-    async fn task_fn(i: Int, args: args_type):
-        func(i, args)
-
-    var tasks = InlinedFixedVector[InlinedFixedVectorLength, Coroutine[none]](
-        total_count - 1
-    )
-    var tg = TaskGroup(out_chain.get_runtime())
-    parallelForEachNChain[args_type, task_fn](total_count - 1, args, tasks, tg)
-
-    func(total_count - 1, args)
-
-    tg.wait()
-    out_chain.mark_ready()
-
-    tg.__del__()
-    for j in range(tasks.__len__()):
-        tasks[j].__del__()
-    tasks.__del__()
 
 
 # ===----------------------------------------------------------------------===#
@@ -969,7 +899,7 @@ fn elementwise[
             func_wrapper,
         ](len)
 
-    async_parallelize[task_func](out_chain, num_workers)
+    parallelize[task_func](out_chain, num_workers)
 
 
 @always_inline
@@ -1077,4 +1007,4 @@ fn elementwise[
                 func_wrapper,
             ](shape[rank - 1])
 
-    async_parallelize[task_func](out_chain, num_workers)
+    parallelize[task_func](out_chain, num_workers)
