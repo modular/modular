@@ -362,7 +362,7 @@ struct SpecialFunctions:
 
 @register_passable
 struct WrongType:
-  # expected-error @+1 {{'__init__' is not supported on register_passable types yet}}
+  # expected-error @+1 {{'__init__' with mutable self is not supported on register_passable types yet}}
   def __init__(self): pass
 
   # expected-error @+1 {{result type must be '$decls-errors::WrongType'}}

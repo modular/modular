@@ -549,7 +549,7 @@ ParseResult ExprParser::parsePrefixLBrace(DictionaryNode *&result,
     auto loc = getToken().getLoc();
     if (consumeIf(LitToken::equal)) {
       emitTokenError("expected ':' after dictionary key, not '='")
-          << LitFixIt({loc, loc}, ":");
+          << LitFixIt::replaceToken(loc, ":");
       return success();
     }
     return parseToken(LitToken::colon, "expected ':' in dictionary");
@@ -661,7 +661,7 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
     auto loc = getToken().getLoc();
     if (getToken().is(LitToken::equal))
       emitTokenError("expected ':' in subscript slice, not '='")
-          << LitFixIt({loc, loc}, ":");
+          << LitFixIt::replaceToken(loc, ":");
     consumeToken();
     return loc;
   };

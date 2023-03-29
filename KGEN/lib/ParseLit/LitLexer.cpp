@@ -811,7 +811,7 @@ LitLexer::LitLexer(LitSharedState &shared, StringRef curBuffer,
 
 /// Given a valid pointer into a source buffer for some token, return the
 /// length of the token by re-lex'ing it.  This is efficient.
-size_t LitLexer::getTokenLength(LitSharedState &sharedState, SMLoc loc) {
+size_t LitLexer::getTokenLength(LitSharedState &shared, SMLoc loc) {
   // Because we know the pointer is to a valid place in a source buffer, and
   // because we know that all source buffers are NUL terminated, we know that
   // the end of buffer check isn't needed.  This allows us to form a lexer
@@ -823,6 +823,6 @@ size_t LitLexer::getTokenLength(LitSharedState &sharedState, SMLoc loc) {
   if (*curPtr == '\0')
     return 0;
 
-  LitLexer lexer(sharedState, StringRef(curPtr, ~0ULL), curPtr);
+  LitLexer lexer(shared, StringRef(curPtr, ~0ULL), curPtr);
   return lexer.getToken().getSpelling().size();
 }

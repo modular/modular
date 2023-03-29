@@ -30,6 +30,7 @@ using llvm::SourceMgr;
 class LitDiagnostic;
 class LitSourceRange;
 class LitFixIt;
+class LitSharedState;
 
 class LitDiags {
 public:
@@ -204,6 +205,19 @@ private:
 class LitFixIt {
 public:
   LitFixIt(LitSourceRange range, const Twine &replacement);
+
+  /// This constructor creates a fixit that replaces the one token at the
+  /// specified location with some text.
+  static LitFixIt replaceToken(SMLoc loc, const Twine &text);
+
+  /// This constructor creates a fixit that inserts some text before the token
+  /// at the specified location, without replacing the token.
+  static LitFixIt insertBeforeToken(SMLoc loc, const Twine &text);
+
+  /// This constructor creates a fixit that inserts some text after the token
+  /// at the specified location.
+  static LitFixIt insertAfterToken(SMLoc loc, const Twine &text,
+                                   LitSharedState &shared);
 
   /// This is the source range to remove.
   LitSourceRange range;

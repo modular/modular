@@ -458,7 +458,7 @@ struct StructWithInit:
 
   # CHECK: lit.func @"__init__($decls::StructWithInit=&,$Int::Int)"
   # CHECK-SAME: (%self: !pop.pointer<@"$decls"::@StructWithInit> byref_result,
-  fn __init__(self, a: Int):
+  fn __init__(self&, a: Int):
     # CHECK: %0 = lit.struct.gep %self[x]
     # CHECK: pop.store %a, %0
     self.x = a

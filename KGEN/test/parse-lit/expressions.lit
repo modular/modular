@@ -152,7 +152,7 @@ struct M:
     return M(0)
   fn __matmul__(self, rhs: M) -> M:
     return M(0)
-  fn __rmatmul__(lhs: M, self) -> M:
+  fn __rmatmul__(lhs, self: M) -> M:
     return M(0)
 
 # CHECK-LABEL: lit.func @"simpleMath

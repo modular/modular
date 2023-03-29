@@ -258,15 +258,11 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
       resultType = cast<POP::VariantType>(resultType).getType(1);
 
     if (sig.getValueInputs().empty() && isImplicitlyIgnorableType(resultType)) {
-      // Find end of token.  TODO: Gross.
-      auto endLoc = expr->getRange().getEnd();
-      size_t tokenSize = LitLexer::getTokenLength(shared, endLoc);
-      endLoc = SMLoc::getFromPointer(endLoc.getPointer() + tokenSize);
-      auto insertRange = LitSourceRange::getByteLevel(endLoc, endLoc);
-
       shared.emitWarning(expr->getLoc())
           << "function pointer was formed but not called, did you forget '()'s?"
-          << expr->getRange() << LitFixIt(insertRange, "()");
+          << expr->getRange()
+          << LitFixIt::insertAfterToken(expr->getRange().getEnd(), "()",
+                                        shared);
       return;
     }
   }
@@ -275,10 +271,9 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
   // should be awaited.
   if (isa<POP::CoroutineType>(valueType.mlirType)) {
     auto loc = expr->getRange().getStart();
-    auto insertRange = LitSourceRange::getByteLevel(loc, loc);
     shared.emitWarning(expr->getLoc())
         << "coroutine was never awaited" << expr->getRange()
-        << LitFixIt(insertRange, "await ");
+        << LitFixIt::insertBeforeToken(loc, "await ");
     return;
   }
 
@@ -286,7 +281,7 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
   auto startLoc = expr->getRange().getStart();
   shared.emitWarning(expr->getLoc())
       << valueType << " value is unused" << expr->getRange()
-      << LitFixIt(LitSourceRange::getByteLevel(startLoc, startLoc), "_ = ");
+      << LitFixIt::insertBeforeToken(startLoc, "_ = ");
 }
 
 /// When `onlySimpleStmt` is true, this parses the simple_stmt production,
