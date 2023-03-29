@@ -912,8 +912,11 @@ fn get_num_workers(problem_size: Int, runtime: Runtime) -> Int:
     # copied from https://github.com/pytorch/pytorch/blob/20dfce591ce88bc957ffcd0c8dc7d5f7611a4a3b/aten/src/ATen/TensorIterator.h#L86
     # TODO: refine this heuristic. It may not be appropriate for more compute-heavy
     # ops like gelu.
+    # Ensure at least one worker is always returned to avoid division by zero.
     alias GRAIN_SIZE = 32768
-    return min(runtime.parallelism_level(), div_ceil(problem_size, GRAIN_SIZE))
+    return max(
+        1, min(runtime.parallelism_level(), div_ceil(problem_size, GRAIN_SIZE))
+    )
 
 
 # ===----------------------------------------------------------------------===#
