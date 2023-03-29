@@ -36,7 +36,16 @@ kgen.func @convert_call(%arg0: !pop.simd<1, f32>) {
   kgen.return
 }
 
+
+// CHECK-LABEL: define float @test_unreachable()
+// CHECK-NEXT: call void @llvm.trap()
+// CHECK-NEXT: unreachable
+kgen.func @test_unreachable() -> !pop.simd<1, f32> {
+  kgen.unreachable
+}
+
 kgen.export @convert_call
 kgen.export @call_struct_result
+kgen.export @test_unreachable
 
 }
