@@ -195,7 +195,10 @@ struct ConvertKGENUnreachable : public ConvertPOPToLLVMPattern<UnreachableOp> {
   LogicalResult
   matchAndRewrite(UnreachableOp op, UnreachableOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    // Create the LLVM unreachable.
+    // Create the llvm.trap + llvm.unreachable ops.
+    auto voidTy = LLVM::LLVMVoidType::get(rewriter.getContext());
+    rewriter.create<LLVM::CallIntrinsicOp>(op.getLoc(), voidTy, "llvm.trap",
+                                           ValueRange());
     rewriter.replaceOpWithNewOp<LLVM::UnreachableOp>(op);
     return success();
   }
