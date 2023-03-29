@@ -22,6 +22,7 @@ add_modular_library(MSupport
   MLIRSupport
 
   DEPENDS
+  MVersion
   )
 
 add_subdirectory(ADT)
