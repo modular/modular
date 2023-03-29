@@ -218,18 +218,6 @@ COMPILERRT_EXPORT void KGEN_CompilerRT_LLCL_OutputChainPtr_Trace(
       });
 }
 
-COMPILERRT_EXPORT void KGEN_CompilerRT_LLCL_OutputChainPtr_TraceDetailed(
-    LLCLOutputChainRef outChain, const char *labelPtr, ssize_t labelLen,
-    const char *detailPtr, ssize_t detailLen) {
-  StringRef label(labelPtr, labelLen);
-  StringRef detail(detailPtr, detailLen);
-  auto profilerEntry = MojoProfilerEntry::create(label, detail);
-  unwrap(outChain).copy().andThenSync(
-      [profilerEntry = std::move(profilerEntry)]() mutable {
-        std::move(profilerEntry).record();
-      });
-}
-
 void M::KGEN::registerLLCL(
     std::vector<std::pair<llvm::StringLiteral, void *>> &funcs) {
   funcs.push_back({"KGEN_CompilerRT_LLCL_InitializeChain",
@@ -272,6 +260,4 @@ void M::KGEN::registerLLCL(
                    (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_Await});
   funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_Trace",
                    (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_Trace});
-  funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_TraceDetailed",
-                   (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_TraceDetailed});
 }
