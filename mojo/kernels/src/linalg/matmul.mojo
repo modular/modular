@@ -29,7 +29,13 @@ from Memory import stack_allocation
 from Pointer import DTypePointer
 from Range import range
 from SIMD import SIMD
-from TargetInfo import os_is_macos, has_neon, alignof, dtype_simd_width
+from TargetInfo import (
+    os_is_macos,
+    has_neon,
+    alignof,
+    dtype_simd_width,
+    dtype_sizeof,
+)
 from Transpose import transpose_inplace
 from Tuple import StaticTuple
 from Intrinsics import PrefetchOptions
@@ -690,6 +696,9 @@ struct PackMatrixCols[
             tile_row_idx(Int): row index of the row to pack within the tile of
                 data to pack.
         """
+        alias alignment = alignof[SIMD[simd_size, type]]()
+        alias is_row_aligned = original_shape.at[1]().is_multiple[alignment]()
+
         for col_idx in range(0, self.pack_tile_dim[1], simd_size):
             # Decl the data to fill in packed buffer.
             var data: SIMD[simd_size, type]
@@ -707,7 +716,13 @@ struct PackMatrixCols[
                 col_idx + simd_size <= self.valid_data_dim[1]
             ):
                 # Whole SIMD vector within bound.
-                data = self.original_matrix.simd_load[simd_size](global_idx)
+                @parameter
+                if is_row_aligned:
+                    data = self.original_matrix.aligned_simd_load[
+                        simd_size, alignment
+                    ](global_idx)
+                else:
+                    data = self.original_matrix.simd_load[simd_size](global_idx)
             elif col_idx >= self.valid_data_dim[1]:
                 # Starting point out of bound. Fill a zero vector.
                 data = SIMD[simd_size, type](0)
@@ -724,7 +739,7 @@ struct PackMatrixCols[
             # map to packed index
             let col_idx_outer = col_idx // column_inner_size
             let col_idx_inner = col_idx % column_inner_size
-            self.packed_matrix.simd_store[simd_size](
+            self.packed_matrix.aligned_simd_store[simd_size, alignment](
                 Index(col_idx_outer, tile_row_idx, col_idx_inner),
                 data,
             )
@@ -850,7 +865,9 @@ struct MatmulInnerLoopBPacked[
 
         @always_inline
         fn outer_body[idx0: Int, idx1: Int]():
-            c_local.simd_store[simd_size](
+            c_local.aligned_simd_store[
+                simd_size, alignof[SIMD[simd_size, accum_type]]()
+            ](
                 Index(idx0, idx1 * simd_size),
                 SIMD[simd_size, accum_type](0),
             )
@@ -877,6 +894,8 @@ struct MatmulInnerLoopBPacked[
                 tile_idx(StaticIntTuple): index tuple with (m,n) coordinates
                     within the current processing tile.
         """
+        alias alignment = alignof[SIMD[simd_size, accum_type]]()
+        alias is_row_aligned = shape_c.at[1]().is_multiple[alignment]()
 
         @always_inline
         fn outer_body[idx0: Int, idx1: Int]():
@@ -898,7 +917,13 @@ struct MatmulInnerLoopBPacked[
                 <= (self.c_bound - tile_idx)
             ):
                 # Use simd load if all within bound
-                c_data = self.c.simd_load[simd_size](global_idx)
+                @parameter
+                if is_row_aligned:
+                    c_data = self.c.aligned_simd_load[simd_size, alignment](
+                        global_idx
+                    )
+                else:
+                    c_data = self.c.simd_load[simd_size](global_idx)
             elif (idx0 + tile_idx[0]) < self.c_bound[
                 0
             ] and idx1 * simd_size <= self.c_bound[1]:
@@ -915,7 +940,7 @@ struct MatmulInnerLoopBPacked[
                 c_data = SIMD[simd_size, accum_type](0)
 
             # Store data to local buffer.
-            c_local.simd_store[simd_size](local_idx, c_data)
+            c_local.aligned_simd_store[simd_size, alignment](local_idx, c_data)
 
         unroll2[a_row_size, pack_inner_size // simd_size, outer_body]()
 
@@ -937,6 +962,8 @@ struct MatmulInnerLoopBPacked[
                 tile_idx(StaticIntTuple): index tuple with (m,n) coordinates
                     within the current processing tile.
         """
+        alias alignment = alignof[SIMD[simd_size, accum_type]]()
+        alias is_row_aligned = shape_c.at[1]().is_multiple[alignment]()
 
         @always_inline
         fn outer_body[idx0: Int, idx1: Int]():
@@ -952,14 +979,24 @@ struct MatmulInnerLoopBPacked[
             let local_idx = Index(idx0, idx1 * simd_size)
 
             # Load data from original matrix C.
-            var c_data = c_local.simd_load[simd_size](local_idx)
+            var c_data = c_local.aligned_simd_load[simd_size, alignment](
+                local_idx
+            )
 
             if skip_boundary_check or (
                 Index(idx0, idx1 * simd_size + simd_size)
                 <= (self.c_bound - tile_idx)
             ):
                 # Use simd store if all within bound
-                self.c.simd_store[simd_size](global_idx, c_data)
+                # TODO: use parameter if here. Currently, there is a bug causing
+                # compile failure when the following line is uncommented. #11402
+                # @parameter
+                if is_row_aligned:
+                    self.c.aligned_simd_store[simd_size, alignment](
+                        global_idx, c_data
+                    )
+                else:
+                    self.c.simd_store[simd_size](global_idx, c_data)
             elif (
                 idx0 < (self.c_bound[0] - tile_idx[0])
                 and idx1 * simd_size <= self.c_bound[1]
@@ -1098,10 +1135,11 @@ struct MatmulInnerLoopBPacked[
         # Loop over local accumulator tiles.
         @always_inline
         fn outer_body[idx0: Int, idx1: Int]():
+            alias alignment = alignof[SIMD[simd_size, accum_type]]()
             let global_m = self.global_offset.M + idx0
             let c_idx = Index(idx0, idx1 * simd_size)
 
-            let b_val = self.b_packed.simd_load[simd_size](
+            let b_val = self.b_packed.aligned_simd_load[simd_size, alignment](
                 n_outer_idx, tile_n_k_idx[1], idx1 * simd_size
             ).cast[accum_type]()
 
@@ -1109,10 +1147,10 @@ struct MatmulInnerLoopBPacked[
                 accum_type
             ]()
 
-            var c_val = c_local.simd_load[simd_size](c_idx)
+            var c_val = c_local.aligned_simd_load[simd_size, alignment](c_idx)
 
             c_val = fma[simd_size, accum_type](a_val, b_val, c_val)
-            c_local.simd_store[simd_size](c_idx, c_val)
+            c_local.aligned_simd_store[simd_size, alignment](c_idx, c_val)
 
         unroll2[a_row_size, pack_inner_size // simd_size, outer_body]()
 
