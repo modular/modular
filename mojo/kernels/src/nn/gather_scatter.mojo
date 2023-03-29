@@ -7,7 +7,7 @@
 from Assert import assert_param, assert_param_bool, debug_assert
 from Buffer import NDBuffer
 from DType import DType
-from Functional import vectorize, vectorize_unroll, parallelize
+from Functional import vectorize, vectorize_unroll, async_parallelize
 from Math import div_ceil
 from Index import Index, StaticIntTuple
 from Intrinsics import PrefetchOptions
@@ -153,7 +153,7 @@ fn gather_reduce[
 
             vectorize[usimd_width, _accum_in_place](row_size)
 
-    parallelize[task_func](out_chain, num_tasks)
+    async_parallelize[task_func](out_chain, num_tasks)
 
 
 # gather_2D_input_1D_indices_axis_0
@@ -250,7 +250,7 @@ fn gather[
 
             vectorize_unroll[simd_width, 2, func_wrapper](row_size)
 
-    parallelize[task_func](out_chain, num_tasks)
+    async_parallelize[task_func](out_chain, num_tasks)
 
 
 # gather_2D_input_1D_indices_axis_1
