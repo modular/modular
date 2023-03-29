@@ -505,7 +505,7 @@ struct AsyncTaskGroup:
     # Vector holding co-routines.
     var coroutines: UnsafeFixedVector[Coroutine[none]]
 
-    fn __init__(self, num_work_items: Int, out_chain: OutputChainPtr):
+    fn __init__(self&, num_work_items: Int, out_chain: OutputChainPtr):
         self.counter = num_work_items.__as_mlir_index()
         self.out_chain = out_chain.deepCopy()
         self.coroutines = UnsafeFixedVector[Coroutine[none]](num_work_items)
@@ -568,7 +568,7 @@ struct AsyncTaskGroupPtr:
 
     var ptr: Pointer[AsyncTaskGroup]
 
-    fn __init__(self, num_work_items: Int, out_chain: OutputChainPtr):
+    fn __init__(self&, num_work_items: Int, out_chain: OutputChainPtr):
         self.ptr = _aligned_alloc[AsyncTaskGroup](sizeof[AsyncTaskGroup]())
         __get_address_as_lvalue(self.ptr.address) = AsyncTaskGroup(
             num_work_items, out_chain
