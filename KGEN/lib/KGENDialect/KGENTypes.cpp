@@ -8,6 +8,7 @@
 #include "KGEN/KGENDialect/KGENDialect.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "KGEN/POPDialect/POPTypes.h"
 #include "Support/MDialect/MTypeInterfaces.h"
 #include "Support/TimeProfiler.h"
 #include "mlir/IR/Builders.h"
@@ -218,20 +219,33 @@ SignatureType SignatureType::getWithFnEffects(FnEffects effects) {
                             getMetadata().getWithFnEffects(effects));
 }
 
-bool SignatureType::isVararg(size_t index) {
-  if (!bitEnumContainsAny(getFnEffects(), FnEffects::Vararg))
+static bool isVarargKind(SignatureType type, size_t index, FnEffects kind) {
+  if (!bitEnumContainsAny(type.getFnEffects(), kind))
     return false;
   // If the function has keyword varargs, the vararg index is the second last.
   // Otherwise, it's the last.
   return (index + 1 +
-          bitEnumContainsAny(getFnEffects(), FnEffects::KWVararg)) ==
-         getValueInputs().size();
+          bitEnumContainsAny(type.getFnEffects(), FnEffects::KWVararg)) ==
+         type.getValueInputs().size();
+}
+
+bool SignatureType::isVararg(size_t index) {
+  return isVarargKind(*this, index, FnEffects::Vararg);
+}
+
+bool SignatureType::isPackVararg(size_t index) {
+  return isVarargKind(*this, index, FnEffects::PackVararg);
 }
 
 bool SignatureType::isKWVararg(size_t index) {
   if (!bitEnumContainsAny(getFnEffects(), FnEffects::KWVararg))
     return false;
   return index + 1 == getValueInputs().size();
+}
+
+POP::PackType SignatureType::getIfPackType(size_t index) {
+  return isPackVararg(index) ? ::cast<POP::PackType>(getValueInputs()[index])
+                             : nullptr;
 }
 
 /// Return true if this signature has a first argument is a result from the

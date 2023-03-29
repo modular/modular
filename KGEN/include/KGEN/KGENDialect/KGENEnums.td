@@ -164,10 +164,12 @@ def KGEN_FnEffects : I8BitEnumAttr<"FnEffects", "Function effects", [
   I8BitEnumAttrCaseBit<"Async", 1, "async">,
   /// This function has vararg arguments.
   I8BitEnumAttrCaseBit<"Vararg", 2, "vararg">,
+  /// This function has pack arguments.
+  I8BitEnumAttrCaseBit<"PackVararg", 3, "packvararg">,
   /// This function has keyword vararg arguments.
-  I8BitEnumAttrCaseBit<"KWVararg", 3, "kwvararg">,
+  I8BitEnumAttrCaseBit<"KWVararg", 4, "kwvararg">,
   /// This function has vararg input parameters.
-  I8BitEnumAttrCaseBit<"ParamVararg", 4, "param_vararg">
+  I8BitEnumAttrCaseBit<"ParamVararg", 5, "param_vararg">
 ]> {
   let cppNamespace = "M::KGEN";
 }

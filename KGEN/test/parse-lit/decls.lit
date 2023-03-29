@@ -365,12 +365,12 @@ struct Tuple[*Ts: __mlir_type.`!kgen.mlirtype`]:
   pass
 
 # CHECK-LABEL: lit.func @"varArgs(__mlir_type.!pop.pack<Ts>)"<Ts: variadic<!kgen.mlirtype>>(%args: !pop.pack<Ts>)
-fn varArgs[*Ts: __mlir_type.`!kgen.mlirtype`](owned args*: Ts):
+fn varArgs[*Ts: __mlir_type.`!kgen.mlirtype`](owned *args: *Ts):
   # CHECK: %copy = lit.letreg.decl "copy" = %args : !pop.pack<Ts>
   let copy = args
 
 # CHECK-LABEL: lit.func @"varArgsBorrowed
-fn varArgsBorrowed[*Ts: __mlir_type.`!kgen.mlirtype`](borrowed args*: Ts):
+fn varArgsBorrowed[*Ts: __mlir_type.`!kgen.mlirtype`](borrowed *args: *Ts):
   # CHECK: %copy = lit.letreg.decl "copy" = %args : !pop.pack<Ts>
   let copy = args
 
