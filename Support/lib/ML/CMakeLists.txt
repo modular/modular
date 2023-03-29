@@ -9,6 +9,7 @@ add_modular_library(MSupportML
   CompiledFrameworkLabel.cpp
   DType.cpp
   MatMulBroadcast.cpp
+  RangeUtils.cpp
   TensorShape.cpp
   TensorSpec.cpp
 
