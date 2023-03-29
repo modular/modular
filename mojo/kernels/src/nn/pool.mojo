@@ -15,7 +15,7 @@ from Image import (
 from Range import range
 from List import DimList
 from Math import min, max, add, div_ceil
-from Functional import async_parallelize, vectorize_unroll
+from Functional import parallelize, vectorize_unroll
 from LLCL import Runtime, OutputChainPtr
 from Pointer import Pointer
 from Pointer import DTypePointer, product as pointer_product
@@ -126,31 +126,31 @@ struct Pool2d[
             div_ceil(output.num_elements(), min_task_num_slices), num_threads
         )
 
-        let work = output.num_elements()
-        let work_block_size = div_ceil(work, num_tasks)
+        # Create an instance of the pooling op.
+        var pool2d = Pool2d[
+            static_output_shape,
+            static_input_shape,
+            type,
+            static_data_layout,
+            init_fn,
+            update_fn,
+            reduce_fn,
+        ](
+            output,
+            input,
+            pad_h,
+            pad_w,
+            filter_shape,
+            stride,
+            dilation,
+            num_tasks,
+        )
+
+        let work = pool2d.output.num_elements()
+        let work_block_size = div_ceil(work, pool2d.num_tasks)
 
         @always_inline
         fn task_func(task_id: Int):
-
-            # Create an instance of the pooling op.
-            var pool2d = Pool2d[
-                static_output_shape,
-                static_input_shape,
-                type,
-                static_data_layout,
-                init_fn,
-                update_fn,
-                reduce_fn,
-            ](
-                output,
-                input,
-                pad_h,
-                pad_w,
-                filter_shape,
-                stride,
-                dilation,
-                num_tasks,
-            )
 
             let offset = task_id * work_block_size
 
@@ -172,7 +172,7 @@ struct Pool2d[
                 min(work_block_size, work - offset)
             )
 
-        async_parallelize[task_func](out_chain, num_tasks)
+        parallelize[task_func](out_chain, num_tasks)
 
     fn __init__(
         output: ImageData[static_output_shape, type, static_data_layout],
