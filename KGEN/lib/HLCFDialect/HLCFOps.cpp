@@ -140,17 +140,9 @@ OpBuilder IfOp::getElseBodyBuilder() {
 /// Erase all operations following the given OP in its parent region. The OP
 /// itself does not get deleted.
 static void eraseOpsAfter(PatternRewriter &rewriter, Operation *op) {
-  auto range =
-      llvm::make_range(op->getNextNode()->getIterator(),
-                       op->getParentRegion()->front().getOperations().end());
-
-  // We have to delete ops in reverse order to avoid dealing with value uses.
-  SmallVector<Operation *> worklist;
-  for (Operation &op : range)
-    worklist.push_back(&op);
-
-  while (!worklist.empty())
-    rewriter.eraseOp(worklist.pop_back_val());
+  Block *toErase =
+      rewriter.splitBlock(op->getBlock(), op->getNextNode()->getIterator());
+  rewriter.eraseBlock(toErase);
 }
 
 Block &IfOp::getThenBlock() { return getThenRegion().front(); }
@@ -205,11 +197,70 @@ struct RemoveStaticCondition : public OpRewritePattern<IfOp> {
     return success();
   }
 };
+
+/// If both IfOp branches end with return ops, replace the return ops with yield
+/// ops and insert a new return op right after the if. All subsequent ops in the
+/// basic block are erased.
+///
+/// Before:                    After:
+/// {                          {
+///   ...                        ...
+///   if %cond {                 %x = if %cond {
+///      A                          A
+///      return %a                  yield %a
+///   } else {                   } else {
+///      B                          B
+///      return %b                  yield %b
+///   }                          }
+///   C                          return %x
+/// }                          }
+struct HoistUnconditionalReturn : public OpRewritePattern<IfOp> {
+  using OpRewritePattern<IfOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(IfOp op,
+                                PatternRewriter &rewriter) const override {
+    // TODO: This should also work for BreakOp and ContinueOp (provided
+    // thenTerm and elseTerm are of the same type)
+    if (!isa<KGEN::ReturnOp>(op.getThenTerminator()) ||
+        !isa<KGEN::ReturnOp>(op.getElseTerminator()))
+      return failure();
+
+    // Create a new IfOp and put a return right after it. We have to create new
+    // op because the number of results might be different compared to the
+    // original IfOp.
+    auto newIfOp = rewriter.create<IfOp>(
+        op.getLoc(), op.getThenTerminator()->getOperandTypes(), op.getCond());
+    rewriter.create<KGEN::ReturnOp>(op.getLoc(), newIfOp->getResults());
+
+    // Move the 'then' block from the original IfOp to the new one and replace
+    // the return terminator with yield.
+    rewriter.inlineRegionBefore(op.getThenRegion(), newIfOp.getThenRegion(),
+                                newIfOp.getThenRegion().begin());
+    rewriter.setInsertionPoint(newIfOp.getThenTerminator());
+    rewriter.replaceOpWithNewOp<HLCF::YieldOp>(
+        newIfOp.getThenTerminator(),
+        newIfOp.getThenTerminator()->getOperands());
+
+    // Same for the 'else' block.
+    rewriter.inlineRegionBefore(op.getElseRegion(), newIfOp.getElseRegion(),
+                                newIfOp.getElseRegion().begin());
+    rewriter.setInsertionPoint(newIfOp.getElseTerminator());
+    rewriter.replaceOpWithNewOp<HLCF::YieldOp>(
+        newIfOp.getElseTerminator(),
+        newIfOp.getElseTerminator()->getOperands());
+
+    // Erase the original if and all the ops below it.
+    eraseOpsAfter(rewriter, op);
+    rewriter.eraseOp(op);
+
+    return success();
+  }
+};
 } // namespace
 
 void IfOp::getCanonicalizationPatterns(RewritePatternSet &results,
                                        MLIRContext *context) {
-  results.add<RemoveStaticCondition>(context);
+  results.add<RemoveStaticCondition, HoistUnconditionalReturn>(context);
 }
 
 //===----------------------------------------------------------------------===//
