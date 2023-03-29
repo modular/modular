@@ -90,9 +90,8 @@ LIT::MangledSymbol LIT::MangledSymbol::mangle(mlir::SymbolOpInterface op) {
   // name from out->in).
   if (auto s = op->getParentOfType<StructDeclOp>()) {
     out.structNames.push_back(s.getNameAttr());
-    while ((s = s->getParentOfType<StructDeclOp>())) {
+    while ((s = s->getParentOfType<StructDeclOp>()))
       out.structNames.push_back(s.getNameAttr());
-    }
   }
 
   // If the module is named, grab that too.
@@ -339,13 +338,9 @@ Region *LIT::FuncOp::getCallableRegion() {
 
 ArrayRef<Type> LIT::FuncOp::getCallableResults() { return getResultTypes(); }
 
-ArrayAttr LIT::FuncOp::getCallableArgAttrs() {
-  return nullptr;
-}
+ArrayAttr LIT::FuncOp::getCallableArgAttrs() { return nullptr; }
 
-ArrayAttr LIT::FuncOp::getCallableResAttrs() {
-  return nullptr;
-}
+ArrayAttr LIT::FuncOp::getCallableResAttrs() { return nullptr; }
 
 LogicalResult LIT::FuncOp::verifyRegions() {
   // Check that the number of argument labels matches the number of argument
