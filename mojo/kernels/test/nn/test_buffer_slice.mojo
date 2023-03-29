@@ -289,6 +289,21 @@ fn test_slice_1D():
     )
 
 
+fn test_slice_empty():
+    print("== test_slice_empty\n")
+
+    # CHECK: == test_slice_empty
+    # CHECK-NEXT: In shape:(64, )
+    # CHECK-NEXT: In strides:(1, )
+    # CHECK-NEXT: New shape:(0, )
+    # CHECK-NEXT: New strides:(1, )
+
+    # print(torch.arange(0, 64)[8:8:1].flatten())
+    test_slice[64, 1, DimList[1].create_unknown()](
+        create_dim_list(64), Index(8), Index(8), Index(1), False
+    )
+
+
 fn test_slice_4D():
     print("== test_slice_4D\n")
 
@@ -488,6 +503,7 @@ fn main():
     test_slice_identity()
     test_slice_steps()
     test_slice_1D()
+    test_slice_empty()
     test_slice_4D()
     test_slice_copy()
     test_slice_negative()
