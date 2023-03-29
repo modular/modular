@@ -5,11 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: mojo %s | FileCheck %s
 
+from Atomic import Atomic
 from Coroutine import Coroutine
+from DType import DType
 from IO import print
 from Int import Int
-from LLCL import TaskGroup, Runtime, OwningOutputChainPtr
-from Functional import parallelForEachN, async_parallelize
+from LLCL import TaskGroup, Runtime, OwningOutputChainPtr, AsyncTaskGroupPtr
 from Pointer import Pointer
 from Memory import stack_allocation
 from Range import range
@@ -95,69 +96,39 @@ fn test_runtime_taskgroup():
     rt.__del__()
 
 
-# CHECK-LABEL: test_runtime_parallel_for
-fn test_runtime_parallel_for():
-    print("== test_runtime_parallel_for\n")
+alias none = __mlir_type.`!lit.none`
 
-    alias chunk_size: Int = 32
-    alias num_tasks: Int = 32
+# TODO(#11329): Re-enable.
+# DISABLED-CHECK-LABEL: test_runtime_asynctaskgroup
+fn test_runtime_asynctaskgroup():
+    print("== test_runtime_asynctaskgroup\n")
 
-    fn task_fn(i: Int, ptr: Pointer[Int]):
-        for j in range(chunk_size):
-            (ptr + i * chunk_size + j).store(i.__as_mlir_index())
-
-    let ptr: Pointer[Int] = stack_allocation[
-        (chunk_size * num_tasks).__as_mlir_index(), Int, 0
-    ]()
-    let rt = Runtime(4)
-    let out_chain = OwningOutputChainPtr(rt)
-    parallelForEachN[Pointer[Int], task_fn](out_chain.borrow(), num_tasks, ptr)
-    out_chain.wait()
-    out_chain.__del__()
-    rt.__del__()
-
-    var sum: Int = 0
-    for i in range(chunk_size * num_tasks):
-        sum += (ptr + i).load()
-    # COM: sum(0, 31) * 32
-    # CHECK: 15872
-    print(sum)
-
-
-# CHECK-LABEL: test_runtime_async_parallelize
-fn test_runtime_async_parallelize():
-    print("== test_runtime_async_parallelize\n")
-
-    alias chunk_size: Int = 32
-    alias num_tasks: Int = 32
-
-    let ptr: Pointer[Int] = stack_allocation[
-        (chunk_size * num_tasks).__as_mlir_index(), Int, 0
-    ]()
+    var completed = Atomic[DType.index](0)
+    let ptr = Pointer[Atomic[DType.index]].address_of(completed)
 
     @always_inline
-    fn task_fn(i: Int):
-        for j in range(chunk_size):
-            (ptr + i * chunk_size + j).store(i.__as_mlir_index())
+    async fn run(ptr: Pointer[Atomic[DType.index]]):
+        __get_address_as_lvalue(ptr.address) += 1
 
     let rt = Runtime(4)
-    let out_chain = OwningOutputChainPtr(rt)
-    async_parallelize[task_fn](out_chain.borrow(), num_tasks)
+    var out_chain = OwningOutputChainPtr(rt)
+    var atg = AsyncTaskGroupPtr(2, out_chain.borrow())
+    let t0: Coroutine[none] = run(ptr)
+    let t1: Coroutine[none] = run(ptr)
+    atg.add_task(t0)
+    atg.add_task(t1)
     out_chain.wait()
+    # DISABLED-CHECK: 2
+    print(Int(completed.value))
+    t0.__del__()
+    t1.__del__()
     out_chain.__del__()
     rt.__del__()
-
-    var sum: Int = 0
-    for i in range(chunk_size * num_tasks):
-        sum += (ptr + i).load()
-    # COM: sum(0, 31) * 32
-    # CHECK: 15872
-    print(sum)
 
 
 fn main():
     test_sync_coro()
     test_runtime_task()
     test_runtime_taskgroup()
-    test_runtime_parallel_for()
-    test_runtime_async_parallelize()
+    # TODO(#11329): Re-enable
+    # test_runtime_asynctaskgroup()
