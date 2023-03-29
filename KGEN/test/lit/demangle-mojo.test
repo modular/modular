@@ -7,11 +7,17 @@
 # RUN: mojo -demangle "\$aModule::AStruct::BStruct::main()" | FileCheck -check-prefix="NESTED" %s
 # NESTED: Mangled: "$aModule::AStruct::BStruct::main()" - Module: aModule, Structs: ["AStruct", "BStruct"], Symbol: "main", Signature: "()"
 
+# RUN: mojo -demangle "\$aModule::AStruct::BStruct::main(index,struct<dtype>)" | FileCheck -check-prefix="NESTED2" %s
+# NESTED2: Mangled: "$aModule::AStruct::BStruct::main(index,struct<dtype>)" - Module: aModule, Structs: ["AStruct", "BStruct"], Symbol: "main", Signature: "(index,struct<dtype>)"
+
 # RUN: mojo -demangle "AStruct::main()" | FileCheck -check-prefix="NOMODULE" %s
 # NOMODULE: Mangled: "AStruct::main()" - Module: (none), Structs: ["AStruct"], Symbol: "main", Signature: "()"
 
 # RUN: mojo -demangle "main()" | FileCheck -check-prefix="NOMODULE2" %s
 # NOMODULE2: Mangled: "main()" - Module: (none), Structs: [], Symbol: "main", Signature: "()"
+
+# RUN: mojo -demangle "main(index,index)struct<index,index>" | FileCheck -check-prefix="NOMODULE3" %s
+# NOMODULE3: Mangled: "main(index,index)struct<index,index>" - Module: (none), Structs: [], Symbol: "main", Signature: "(index,index)struct<index,index>"
 
 # RUN: mojo -demangle "\$aModule::AStruct" | FileCheck -check-prefix="NOFUNC" %s
 # NOFUNC: Mangled: "$aModule::AStruct" - Module: aModule, Structs: [], Symbol: "AStruct", Signature: ""
