@@ -64,22 +64,19 @@ if (LLVM_USE_SANITIZER)
 endif()
 
 
-# Add E2E tests for the Modular Python API.
-add_test(NAME EndToEndTest
+# Add API Scenario tests for the Modular Python API.
+add_test(NAME ApiScenarioTest
   COMMAND ${CMAKE_COMMAND} -E env
     ${PYTHON_API_TESTS_ASAN_ENV}
-    LLVM_PROFILE_FILE=${CMAKE_BINARY_DIR}/profiles/EndToEndTest%4m.profraw
+    LLVM_PROFILE_FILE=${CMAKE_BINARY_DIR}/profiles/ApiScenarioTest%4m.profraw
     ${Python3_EXECUTABLE} -m pytest ${CMAKE_CURRENT_SOURCE_DIR}/pytests
 )
 
-add_custom_target(check-EndToEndTest
-  COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -R EndToEndTest
+add_custom_target(check-ApiScenarioTest
+  COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -R ApiScenarioTest
   DEPENDS "${GENERATED_TESTS_BASE}"
 )
 
-# TODO(#9138) modular-pybind-ext only exists if STOCK_TENSORFLOW_FOUND.
-# Fix all relevant cmake files #8927 is resolved i.e. multi-tenancy lands.
-if(STOCK_TENSORFLOW_FOUND AND ENABLE_END_TO_END_TEST)
-  add_dependencies(check-EndToEndTest modular-pybind-ext)
-  add_dependencies(check-genericml check-EndToEndTest)
+if(TARGET modular-pybind-ext AND ENABLE_API_SCENARIO_TESTING)
+  add_dependencies(check-ApiScenarioTest modular-pybind-ext)
 endif()
