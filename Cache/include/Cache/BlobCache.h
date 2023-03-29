@@ -203,7 +203,8 @@ public:
   }
 
   /// Get the item from any of the provided backends, reading it directly into
-  /// `buf`. Returns `true` if the value was found, `false` otherwise.
+  /// `buf`. Returns a read-only ref to the buffer that was passed in if the
+  /// item is found, std::nullopt otherwise.
   LLCL::AsyncValueRef<std::optional<BufferRef>>
   find(KeyTy key, WriteableBufferRef buf,
        std::optional<EncodedLocation> loc = std::nullopt) {
