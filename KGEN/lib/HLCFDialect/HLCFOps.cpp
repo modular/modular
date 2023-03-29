@@ -153,6 +153,14 @@ static void eraseOpsAfter(PatternRewriter &rewriter, Operation *op) {
     rewriter.eraseOp(worklist.pop_back_val());
 }
 
+Block &IfOp::getThenBlock() { return getThenRegion().front(); }
+
+Block &IfOp::getElseBlock() { return getElseRegion().front(); }
+
+Operation *IfOp::getThenTerminator() { return getThenBlock().getTerminator(); }
+
+Operation *IfOp::getElseTerminator() { return getElseBlock().getTerminator(); }
+
 /// Replace the given op with a region. If the region ends with YieldOp then
 /// uses of the results of the original op will be replaced with the
 /// corresponding yielded values. Otherwise, the region must be ending with a

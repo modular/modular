@@ -186,6 +186,14 @@ def HLCF_IfOp : HLCFParentOp<"if"> {
     // Return OpBuilder's pointing the end of the then/else block.
     OpBuilder getThenBodyBuilder();
     OpBuilder getElseBodyBuilder();
+    /// Get 'then' block.
+    Block& getThenBlock();
+    /// Get 'else' block.
+    Block& getElseBlock();
+    /// Get the terminator op from 'then' block.
+    Operation* getThenTerminator();
+    /// Get the terminator op from 'else' block.
+    Operation* getElseTerminator();
   }];
   let hasCanonicalizer = 1;
 }
