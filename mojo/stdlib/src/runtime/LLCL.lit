@@ -18,7 +18,7 @@ from Range import range
 from String import String
 
 alias typename = __mlir_type.`!kgen.mlirtype`
-
+alias none = __mlir_type.`!lit.none`
 
 # ===----------------------------------------------------------------------===#
 # num_cores
@@ -422,6 +422,22 @@ struct OutputChainPtr:
             label.length.value,
         )
 
+    fn trace(self, label: StringRef, detail: StringRef):
+        """If enabled, begin a time profile entry with label and detail which
+        will end when this chain is completed, either by mark_ready() or
+        mark_error().
+        """
+        __mlir_op.`pop.external_call`[
+            func : __mlir_attr.`@KGEN_CompilerRT_LLCL_OutputChainPtr_TraceDetailed`,
+            _type:[],
+        ](
+            self.ptr,
+            label.data.address,
+            label.length.value,
+            detail.data.address,
+            detail.length.value,
+        )
+
 
 @register_passable
 struct OwningOutputChainPtr:
@@ -478,8 +494,6 @@ struct OwningOutputChainPtr:
 # ===----------------------------------------------------------------------===#
 # AsyncTaskGroup and AsyncTaskGroupPtr
 # ===----------------------------------------------------------------------===#
-
-alias none = __mlir_type.`!lit.none`
 
 
 struct AsyncTaskGroupContext:
