@@ -4,7 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Assert import assert_param, assert_param_bool, debug_assert
+from Assert import (
+    assert_param,
+    assert_param_bool,
+    debug_assert,
+    assert_param_bool_msg,
+)
 from DType import DType
 from Buffer import (
     NDBuffer,
@@ -1248,6 +1253,8 @@ struct TiledMatmul[
     # Tile sizes this routine will process on the (M,N,K) coordinates.
     var global_tile_shape: GemmShape
 
+    var b_tile_generator: BTileGenerator[config, value_type, transpose_b, False]
+
     fn __copy__(self) -> Self:
         return Self {
             c: self.c,
@@ -1256,6 +1263,7 @@ struct TiledMatmul[
             tile_n_k: self.tile_n_k,
             global_tile_shape: self.global_tile_shape,
             global_tile_offset: self.global_tile_offset,
+            b_tile_generator: self.b_tile_generator,
         }
 
     # Interface method
@@ -1271,7 +1279,7 @@ struct TiledMatmul[
         Args:
             c(NDBuffer): Pre-allocated buffer space for result.
             a(NDBuffer): Operand A of the matmul.
-            b(NDBuffer): Operand B of the mamtul.
+            b(NDBuffer): Operand B of the matmul.
             transpose_a: True if a is in transposed layout.
             transpose_b: True if b is in transposed layout.
         """
@@ -1326,19 +1334,16 @@ struct TiledMatmul[
             tile_n_k: tile_n_k,
             global_tile_offset: global_tile_offset,
             global_tile_shape: global_tile_shape,
+            b_tile_generator: BTileGenerator[
+                config, value_type, transpose_b, False
+            ].get(b),
         }
 
         matmul._run()
 
     fn _outer_m_loop_helper[
         skip_col_bound: Bool, m_loop_pack_inner_size: Int
-    ](
-        self,
-        b_packed: NDBuffer[3, config.packed_shape, value_type],
-        global_offset: GemmShape,
-        sub_tile_n: Int,
-        sub_tile_k: Int,
-    ):
+    ](self, global_offset: GemmShape, sub_tile_n: Int, sub_tile_k: Int,):
         """
         Helper function: Pack a subtile of B and iterate through all the rows
             of C.
@@ -1368,41 +1373,12 @@ struct TiledMatmul[
             )
             - Index(global_offset.K, global_offset.N, global_offset.M)
         )
-        # pack B:
-        if transpose_b:
-            PackMatrixRows[
-                config.shape_b,
-                config.packed_shape,
-                value_type,
-                config.simd_size,
-                m_loop_pack_inner_size,
-            ].run(
-                b_packed,
-                self.b,
-                # Input is [N, K]:
-                # Starting global offset for packing.
-                Index(global_offset.N, global_offset.K),
-                Index(sub_tile_n, sub_tile_k),
-                # Valid amount of input from the starting offset.
-                Index(knm_bounds[1], knm_bounds[0]),
-            )
-        else:
-            PackMatrixCols[
-                config.shape_b,
-                config.packed_shape,
-                value_type,
-                config.simd_size,
-                m_loop_pack_inner_size,
-            ].run(
-                b_packed,
-                self.b,
-                # Input is [K, N]:
-                # Starting global offset for packing.
-                Index(global_offset.K, global_offset.N),
-                Index(sub_tile_k, sub_tile_n),
-                # Valid amount of input from the starting offset.
-                Index(knm_bounds[0], knm_bounds[1]),
-            )
+
+        let b_packed = self.b_tile_generator.get_tile[m_loop_pack_inner_size](
+            global_offset,
+            Index(sub_tile_n, sub_tile_k),
+            Index(knm_bounds[1], knm_bounds[0]),
+        )
 
         # Launch the MLoop
         let sub_tile_n_k = Index(
@@ -1439,13 +1415,7 @@ struct TiledMatmul[
     #  Pack a subtile of B and iterate through all the rows of C.
     fn _outer_m_loop[
         m_loop_pack_inner_size: Int
-    ](
-        self,
-        b_packed: NDBuffer[3, config.packed_shape, value_type],
-        global_offset: GemmShape,
-        sub_tile_n: Int,
-        sub_tile_k: Int,
-    ):
+    ](self, global_offset: GemmShape, sub_tile_n: Int, sub_tile_k: Int,):
         """Pack a subtile of B and iterate through all the rows
         of C.
 
@@ -1473,7 +1443,7 @@ struct TiledMatmul[
             self._outer_m_loop_helper[
                 static_switch,  # skip_col_bound
                 m_loop_pack_inner_size,
-            ](b_packed, global_offset, sub_tile_n, sub_tile_k)
+            ](global_offset, sub_tile_n, sub_tile_k)
 
         unswitch[unswitched_mloop](valid_col_count >= sub_tile_n)
 
@@ -1484,7 +1454,6 @@ struct TiledMatmul[
         m_loop_pack_inner_size: Int
     ](
         self,
-        b_packed: NDBuffer[3, config.packed_shape, value_type],
         global_offset: GemmShape,
         sub_tile_n: Int,
         sub_tile_k: Int,
@@ -1509,7 +1478,6 @@ struct TiledMatmul[
         var col_idx = start_idx
         while col_idx <= (valid_col_count - sub_tile_n):
             self._outer_m_loop[m_loop_pack_inner_size](
-                b_packed,
                 global_offset + GemmShape(0, col_idx, 0),
                 sub_tile_n,
                 sub_tile_k,
@@ -1520,7 +1488,6 @@ struct TiledMatmul[
     # Iterate on the N dimension of the gemm space.
     fn _outer_n_loop(
         self,
-        b_packed: NDBuffer[3, config.packed_shape, value_type],
         global_offset: GemmShape,
         sub_tile_k: Int,
     ):
@@ -1539,15 +1506,9 @@ struct TiledMatmul[
         )
         let tile_n: Int = self.tile_n_k[0]
 
-        # Remap buffer indices for current tile.
-        var remapped_bpacked = self._view_buffer_as(
-            b_packed.data, tile_n, sub_tile_k, config.pack_inner_size
-        )
-
         var col_idx: Int = 0
         # Proceed with the large tile:
         col_idx = self._outer_n_loop_helper[config.pack_inner_size](
-            remapped_bpacked,
             global_offset,
             tile_n,
             sub_tile_k,
@@ -1561,14 +1522,7 @@ struct TiledMatmul[
         # TODO: clean up this part with `tile` once #10418 is fixed.
         alias two_simd_size = 2 * config.simd_size
         if col_idx < valid_col_count:
-            remapped_bpacked = self._view_buffer_as(
-                b_packed.data,
-                two_simd_size,
-                sub_tile_k,
-                two_simd_size,
-            )
             col_idx = self._outer_n_loop_helper[two_simd_size](
-                remapped_bpacked,
                 global_offset,
                 two_simd_size,
                 sub_tile_k,
@@ -1578,14 +1532,7 @@ struct TiledMatmul[
 
         # Cover residual tiles.
         if col_idx < valid_col_count:
-            remapped_bpacked = self._view_buffer_as(
-                b_packed.data,
-                config.simd_size,
-                sub_tile_k,
-                config.simd_size,
-            )
             col_idx = self._outer_n_loop_helper[config.simd_size](
-                remapped_bpacked,
                 global_offset,
                 config.simd_size,
                 sub_tile_k,
@@ -1597,7 +1544,6 @@ struct TiledMatmul[
         # This call will handle the sub-simd size boundary.
         if col_idx < valid_col_count:
             self._outer_m_loop[config.simd_size](
-                remapped_bpacked,
                 global_offset + GemmShape(0, col_idx, 0),
                 config.simd_size,
                 sub_tile_k,
@@ -1605,7 +1551,7 @@ struct TiledMatmul[
 
     # Iterate over the K dimension of the gemm space.
     fn _outer_k_loop(
-        self, b_packed: NDBuffer[3, config.packed_shape, value_type]
+        self,
     ):
         """Iterate on the K dimension of the whole problem space.
 
@@ -1616,7 +1562,6 @@ struct TiledMatmul[
         @always_inline
         fn k_iteration(k_offset: Int, k_tile_size: Int):
             self._outer_n_loop(
-                b_packed,
                 GemmShape(0, 0, k_offset) + self.global_tile_offset,
                 k_tile_size,
             )
@@ -1653,23 +1598,105 @@ struct TiledMatmul[
         )
 
     fn _run(self):
-        """Wrapper utility funciton: Allocates packing space on the stack and
+        """Wrapper utility function: Allocates packing space on the stack and
         run the matmul routine on the whole problem space.
         """
-        # Allocate pack_b buffer.
-        let _bpacked_data = _raw_stack_allocation[
-            config.pack_data_size,  # Count.
-            value_type,  # Data type.
-            alignof[
-                SIMD[dtype_simd_width[value_type](), value_type]
-            ](),  # Alignment.
-        ]()
+        self._outer_k_loop()
 
-        # Manually set the shape of packed B buffer:
-        let mapped_bpacked = self._view_buffer_as(
-            _bpacked_data,
-            self.tile_n_k[0],
-            self.tile_n_k[1],
-            config.pack_inner_size,
+
+struct BTileGenerator[
+    config: MatmulConfig,
+    type: DType,
+    transpose_b: Bool,
+    prepack_b: Bool,
+]:
+    """Struct to encapsulate a tile of B that supports prepacking.
+
+    If prepack_b is true, calls to get_tile will return a buffer view from B.
+    Otherwise, calls to get_tile will copy a tile from B into a stack allocated
+    scratch buffer and return a view of that."""
+
+    var b: NDBuffer[2, config.shape_b, type]
+    var b_tile_stack_ptr: DTypePointer[type]
+
+    # needs to be always_inline so b_tile_stack_ptr gets allocated on caller's stack
+    @always_inline
+    @staticmethod
+    fn get(
+        b: NDBuffer[2, config.shape_b, type]
+    ) -> BTileGenerator[config, type, transpose_b, prepack_b]:
+        var b_tile_stack_ptr = DTypePointer[type].get_null()
+        assert_param_bool_msg[not prepack_b, "prepack_b not supported yet"]()
+
+        @parameter
+        if not prepack_b:
+            b_tile_stack_ptr = _raw_stack_allocation[
+                config.pack_data_size,
+                type,
+                alignof[SIMD[dtype_simd_width[type](), type]](),
+            ]()
+
+        return BTileGenerator[config, type, transpose_b, prepack_b] {
+            b: b, b_tile_stack_ptr: b_tile_stack_ptr
+        }
+
+    fn __copy__(self) -> Self:
+        return Self {b: self.b, b_tile_stack_ptr: self.b_tile_stack_ptr}
+
+    fn get_tile[
+        inner_size: Int
+    ](
+        self,
+        global_offset: GemmShape,
+        tile_dim_nk: StaticIntTuple[2],
+        valid_data_dim_nk: StaticIntTuple[2],
+    ) -> NDBuffer[3, config.packed_shape, type]:
+        let packed_b = NDBuffer[3, config.packed_shape, type](
+            self.b_tile_stack_ptr,
+            create_dim_list(
+                tile_dim_nk[0] // inner_size, tile_dim_nk[1], inner_size
+            ),
+            type,
         )
-        self._outer_k_loop(mapped_bpacked)
+
+        @parameter
+        if transpose_b & (not prepack_b):
+            PackMatrixRows[
+                config.shape_b,
+                config.packed_shape,
+                type,
+                config.simd_size,
+                inner_size,
+            ].run(
+                packed_b,
+                self.b,
+                # Input is [N, K]:
+                # Starting global offset for packing.
+                Index(global_offset.N, global_offset.K),
+                Index(tile_dim_nk[0], tile_dim_nk[1]),
+                # Valid amount of input from the starting offset.
+                Index(valid_data_dim_nk[0], valid_data_dim_nk[1]),
+            )
+            return packed_b
+        elif (not transpose_b) & (not prepack_b):
+            PackMatrixCols[
+                config.shape_b,
+                config.packed_shape,
+                type,
+                config.simd_size,
+                inner_size,
+            ].run(
+                packed_b,
+                self.b,
+                # Input is [K, N]:
+                # Starting global offset for packing.
+                Index(global_offset.K, global_offset.N),
+                Index(tile_dim_nk[1], tile_dim_nk[0]),
+                # Valid amount of input from the starting offset.
+                Index(valid_data_dim_nk[1], valid_data_dim_nk[0]),
+            )
+        else:
+            # TODO: support prepack_b
+            debug_assert(False, "unreachable, prepack_b should always be False")
+
+        return packed_b
