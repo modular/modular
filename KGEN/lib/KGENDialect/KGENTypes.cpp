@@ -8,7 +8,6 @@
 #include "KGEN/KGENDialect/KGENDialect.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
-#include "KGEN/POPDialect/POPTypes.h"
 #include "Support/MDialect/MTypeInterfaces.h"
 #include "Support/TimeProfiler.h"
 #include "mlir/IR/Builders.h"
@@ -241,11 +240,6 @@ bool SignatureType::isKWVararg(size_t index) {
   if (!bitEnumContainsAny(getFnEffects(), FnEffects::KWVararg))
     return false;
   return index + 1 == getValueInputs().size();
-}
-
-POP::PackType SignatureType::getIfPackType(size_t index) {
-  return isPackVararg(index) ? ::cast<POP::PackType>(getValueInputs()[index])
-                             : nullptr;
 }
 
 /// Return true if this signature has a first argument is a result from the

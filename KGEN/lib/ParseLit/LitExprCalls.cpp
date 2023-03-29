@@ -163,6 +163,14 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
   return success();
 }
 
+/// If the argument at the given index is of pack type, returns that type.
+/// therwise, returns null.
+static POP::PackType getIfPackType(SignatureType sig, size_t index) {
+  return sig.isPackVararg(index)
+             ? ::cast<POP::PackType>(sig.getValueInputs()[index])
+             : nullptr;
+}
+
 /// Given an incomplete parameter binding set for a call to the specified
 /// signature, try to infer the value of the next 'decl' parameter.  This should
 /// always return null /without/ an error if it cannot be inferred, and return
@@ -252,7 +260,7 @@ PValue ParameterInferenceState::infer(SignatureType signature,
     // If we have a pack argument, then we're binding a variadic parameter with
     // multiple type values.  We need to consume all remaining arguments and use
     // their types as bindings.
-    if (auto packType = signature.getIfPackType(expectedArgIdx)) {
+    if (auto packType = getIfPackType(signature, expectedArgIdx)) {
       SmallVector<TypedAttr> types;
       while (providedValueIdx != operands.size()) {
         ASTExprAnd<AnyValue> operand = operands[providedValueIdx++];
@@ -654,7 +662,7 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
 
     // Arguments with a pack type must have a known number of element types,
     // and so they require exactly that many arguments.
-    if (auto packType = signature.getIfPackType(idx)) {
+    if (auto packType = getIfPackType(signature, idx)) {
       size_t numValues = packType.getVariadicAttr().getValues().size();
       minRequiredArgs += numValues;
       maxAllowedargs += numValues;
@@ -809,7 +817,7 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
 
     // If we have a pack type, it must have a known number of elements, and so
     // consumes exactly that number of arguments.
-    if (auto packType = signature.getIfPackType(expectedArgIdx)) {
+    if (auto packType = getIfPackType(signature, expectedArgIdx)) {
       for (TypedAttr element : packType.getVariadicAttr().getValues()) {
         OverloadFitness result = checkOneOperand(ASTType(element));
         if (result.kind != kValid)
@@ -1618,7 +1626,6 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
   auto emitPreemittedArgumentAsDynamicValue =
       [&](ASTExprAnd<AnyValue> argValAndExpr,
           ValueInputConvention convention) -> Value {
-
     Value arg;
     switch (convention) {
     case ValueInputConvention::OwnedInReg:
@@ -1728,7 +1735,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       }
 
       // Pack arguments are fulfilled with an empty !pop.pack sequence.
-      if (auto packType = calleeSig.getIfPackType(argIdx)) {
+      if (auto packType = getIfPackType(calleeSig, argIdx)) {
         assert(packType.isEmpty() &&
                "pack type already checked against operand count");
         auto pack = POP::PackAttr::get(ArrayRef<TypedAttr>(), packType);
@@ -1764,7 +1771,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
           // In the case of a variadic argument, we need to remove the
           // !pop.varadic<> wrapper to get the type to convert to.
           expectedArgType = expectedArgType.getVariadicElementType();
-        else if (auto packType = calleeSig.getIfPackType(argIdx))
+        else if (auto packType = getIfPackType(calleeSig, argIdx))
           // Operands being applied to a concrete pack type argument must be
           // converted to the pack element type at that index.
           expectedArgType =

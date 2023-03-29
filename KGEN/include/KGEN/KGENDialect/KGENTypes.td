@@ -209,10 +209,6 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     /// Returns true if the argument at this index is a keyword vararg.
     bool isKWVararg(size_t index);
 
-    /// If the argument at the given index is of pack type, returns that type.
-    /// Otherwise, returns null.
-    POP::PackType getIfPackType(size_t index);
-
     /// Return true if this signature has a first argument is a result from the
     /// function returned through memory.
     bool hasMemoryOnlyResult();
