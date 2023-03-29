@@ -96,7 +96,7 @@ def HLCF_LoopOp : HLCFParentOp<"loop"> {
   let arguments = (ins Variadic<AnyType>:$operands,
                        OptionalAttr<StrAttr>:$label);
   let results = (outs Variadic<AnyType>:$results);
-  let regions = (region MinSizedRegion<1>:$body);
+  let regions = (region SizedRegion<1>:$body);
 
   let assemblyFormat = [{
     ($label^)? ``
@@ -170,8 +170,8 @@ def HLCF_IfOp : HLCFParentOp<"if"> {
 
   let arguments = (ins I1:$cond);
   let results = (outs Variadic<AnyType>:$results);
-  let regions = (region MinSizedRegion<1>:$thenRegion,
-                        MinSizedRegion<1>:$elseRegion);
+  let regions = (region SizedRegion<1>:$thenRegion,
+                        SizedRegion<1>:$elseRegion);
 
   let assemblyFormat = [{
     $cond (`->` type($results)^)? $thenRegion `else` $elseRegion

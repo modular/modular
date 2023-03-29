@@ -78,9 +78,6 @@ func.func @func_loop_if(%arg0: i1, %arg1: i32, %arg2: i64) -> i32 {
     }
     // CHECK: hlcf.if %arg0
     hlcf.if %arg0 {
-      "foo.terminator"() [^bb0] : () -> ()
-
-    ^bb0:
       // CHECK: hlcf.continue %[[A]] : i64
       hlcf.continue %0 : i64
     } else {
