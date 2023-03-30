@@ -475,7 +475,7 @@ struct PackMatrixRows[
                    skipped if true.
                skip_col_bound(Bool): boundary check on y dimension will be
                    skpped if true.
-               transepose_buffer(NDBuffer): pre-allocated work space to hold
+               transpose_buffer(NDBuffer): pre-allocated work space to hold
                    transposed temporary data.
                local_offset(StaticIntTuple): offset of the subtile to work on
                    within the whole tile of data to pack.
@@ -1268,6 +1268,7 @@ struct TiledMatmul[
     value_type: DType,
     transpose_a: Bool,
     transpose_b: Bool,
+    b_packed: Bool,
 ]:
     """Tiled matmul implementation integrating packing, inner loop and tile
     partitions.
@@ -1358,11 +1359,7 @@ struct TiledMatmul[
         ](global_tile_shape)
 
         let matmul = TiledMatmul[
-            config,
-            accum_type,
-            value_type,
-            transpose_a,
-            transpose_b,
+            config, accum_type, value_type, transpose_a, transpose_b, b_packed
         ] {
             c: c,
             a: a,
@@ -1410,7 +1407,9 @@ struct TiledMatmul[
             - Index(global_offset.K, global_offset.N, global_offset.M)
         )
 
-        let b_packed = self.b_tile_generator.get_tile[m_loop_pack_inner_size](
+        let b_packed_tile = self.b_tile_generator.get_tile[
+            m_loop_pack_inner_size
+        ](
             global_offset,
             Index(sub_tile_n, sub_tile_k),
             Index(knm_bounds[1], knm_bounds[0]),
@@ -1437,7 +1436,7 @@ struct TiledMatmul[
             ].run(
                 self.c,
                 self.a,
-                b_packed,
+                b_packed_tile,
                 global_offset + GemmShape(row_offset, 0, 0),
                 self.global_tile_offset + self.global_tile_shape,
                 sub_tile_n_k,
@@ -1612,7 +1611,7 @@ struct TiledMatmul[
     #  need to remap every time K and pack_inner_size changes.
     fn _view_buffer_as(
         self,
-        b_packed: DTypePointer[value_type],
+        b_packed_ptr: DTypePointer[value_type],
         tile_n: Int,
         tile_k: Int,
         n_inner_size: Int,
@@ -1628,7 +1627,7 @@ struct TiledMatmul[
                     data layout.
         """
         return NDBuffer[3, config.packed_shape, value_type](
-            b_packed.address,
+            b_packed_ptr.address,
             create_dim_list(tile_n // n_inner_size, tile_k, n_inner_size),
             value_type,
         )
@@ -1706,17 +1705,17 @@ struct BTileGenerator[
     config: MatmulConfig,
     type: DType,
     transpose_b: Bool,
-    prepack_b: Bool,
+    b_packed: Bool,
 ]:
     """Struct to encapsulate a tile of B that supports prepacking.
 
-    If prepack_b is true, calls to get_tile will return a buffer view from B.
+    If b_packed is true, calls to get_tile will return a buffer view from B.
     Otherwise, calls to get_tile will copy a tile from B into a stack allocated
     scratch buffer and return a view of that."""
 
     var b: NDBuffer[
         2, config.shape_b, type
-    ]  # packed layout if prepack_b is True
+    ]  # packed layout if b_packed is True
     var b_tile_stack_ptr: DTypePointer[type]
 
     # needs to be always_inline so b_tile_stack_ptr gets allocated on caller's stack
@@ -1724,21 +1723,21 @@ struct BTileGenerator[
     @staticmethod
     fn get(
         b: NDBuffer[2, config.shape_b, type]
-    ) -> BTileGenerator[config, type, transpose_b, prepack_b]:
+    ) -> BTileGenerator[config, type, transpose_b, b_packed]:
         assert_param_bool_msg[
-            prepack_b == False, "prepack_b not fully supported yet, coming soon"
+            b_packed == False, "b_packed not fully supported yet, coming soon"
         ]()
         var b_tile_stack_ptr = DTypePointer[type].get_null()
 
         @parameter
-        if not prepack_b:
+        if not b_packed:
             b_tile_stack_ptr = _raw_stack_allocation[
                 config.pack_data_size,
                 type,
                 alignof[SIMD[dtype_simd_width[type](), type]](),
             ]()
 
-        return BTileGenerator[config, type, transpose_b, prepack_b] {
+        return BTileGenerator[config, type, transpose_b, b_packed] {
             b: b, b_tile_stack_ptr: b_tile_stack_ptr
         }
 
@@ -1765,7 +1764,7 @@ struct BTileGenerator[
         let tile_k = tile_dim_nk[1]
 
         @parameter
-        if transpose_b & (not prepack_b):
+        if transpose_b & (not b_packed):
             PackMatrixRows[
                 config.shape_b,
                 config.packed_shape,
@@ -1783,7 +1782,7 @@ struct BTileGenerator[
                 Index(valid_data_dim_nk[0], valid_data_dim_nk[1]),
             )
             return packed_b
-        elif (not transpose_b) & (not prepack_b):
+        elif (not transpose_b) & (not b_packed):
             PackMatrixCols[
                 config.shape_b,
                 config.packed_shape,
@@ -1800,8 +1799,8 @@ struct BTileGenerator[
                 # Valid amount of input from the starting offset.
                 Index(valid_data_dim_nk[1], valid_data_dim_nk[0]),
             )
-        elif prepack_b & (not transpose_b):
-            # TODO: currently untested so asserting in get() that prepack_b is False
+        elif b_packed & (not transpose_b):
+            # TODO: currently untested so asserting in get() that b_packed is False
             let tile_k_idx = global_offset.K // tile_k
             let tile_n_idx = global_offset.N // tile_n
             let tile_size = tile_k * tile_n
@@ -1818,7 +1817,7 @@ struct BTileGenerator[
 
         else:
             debug_assert(
-                False, "unreachable, prepack_b not supported with transpose_b"
+                False, "unreachable, b_packed not supported with transpose_b"
             )
 
         return packed_b
