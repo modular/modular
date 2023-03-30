@@ -512,42 +512,66 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
   return metadata.verifySignature(emitError, inputParams, resultParams, values);
 }
 
-static SignatureType normalizeSignatureWalk(
-    SignatureType root, SignatureType sig, size_t depth,
-    const DenseMap<StringAttr, std::pair<size_t, bool>> &indices) {
+template <typename T>
+auto IndexRefRemapper::normalizeSignatureWalk(T value, size_t depth)
+    -> std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute> {
   mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement([&](ParamDeclRefAttr ref) -> TypedAttr {
-    auto it = indices.find(ref.getName());
-    if (it == indices.end())
+  replacer.addReplacement([&](ParamDeclRefAttr ref) -> Attribute {
+    auto it = mapping.find(ref.getName());
+    if (it == mapping.end())
       return ref;
     auto [idx, isResult] = it->second;
     return ParamIndexRefAttr::get(depth, isResult, idx, ref.getType());
   });
+  if (offset != 0) {
+    replacer.addReplacement([&](ParamIndexRefAttr ref) {
+      if (ref.getDepth() != depth)
+        return ref;
+      return ParamIndexRefAttr::get(depth, ref.getIsResult(),
+                                    ref.getIndex() + offset, ref.getType());
+    });
+  }
 
   // Skip over parametric nested signatures.
   // FIXME: This isn't correct but mirrors the behaviour of ParameterEvaluator,
   // which works for the moment.
   replacer.addReplacement(
       [&](SignatureType nested) -> std::pair<Type, WalkResult> {
-        if (nested == sig)
-          return {sig, WalkResult::advance()};
-        if (nested != root && !nested.getInputParams().empty())
+        if constexpr (std::is_base_of_v<Type, T>)
+          if (dyn_cast_or_null<SignatureType>(value) == nested)
+            return {nested, WalkResult::advance()};
+        if (!nested.getInputParams().empty())
           return {nested, WalkResult::skip()};
-        return {normalizeSignatureWalk(root, nested, depth + 1, indices),
-                WalkResult::skip()};
+        return {normalizeSignatureWalk(nested, depth + 1), WalkResult::skip()};
       });
-  return cast<SignatureType>(replacer.replace(sig));
+  return replacer.replace(value);
+}
+
+IndexRefRemapper::IndexRefRemapper(ArrayRef<ParamDeclAttr> inputParams,
+                                   ArrayRef<ParamDeclAttr> resultParams,
+                                   size_t offset)
+    : offset(offset) {
+  auto mapIndices = [&](ArrayRef<ParamDeclAttr> params, bool isResult) {
+    for (auto [idx, param] : llvm::enumerate(params))
+      mapping.try_emplace(param.getName(), std::make_pair(idx, isResult));
+  };
+  mapIndices(inputParams, /*isResult=*/false);
+  mapIndices(resultParams, /*isResult=*/true);
+}
+
+Attribute IndexRefRemapper::remapAttrImpl(Attribute attr) {
+  return normalizeSignatureWalk(attr);
+}
+
+Type IndexRefRemapper::remapTypeImpl(Type type) {
+  return normalizeSignatureWalk(type);
 }
 
 SignatureType SignatureType::normalizeToIndexRefs() {
-  // The actual signature of a generator references its input parameters via
-  // index references.
-  DenseMap<StringAttr, std::pair<size_t, bool>> paramIndices;
-  for (auto [idx, param] : llvm::enumerate(getInputParams()))
-    paramIndices.try_emplace(param.getName(), std::make_pair(idx, false));
-  for (auto [idx, param] : llvm::enumerate(getResultParams()))
-    paramIndices.try_emplace(param.getName(), std::make_pair(idx, true));
-  return normalizeSignatureWalk(*this, *this, /*depth=*/0, paramIndices);
+  IndexRefRemapper remapper(getInputParams(), getResultParams());
+  return SignatureType::get(
+      remapper.remap(getInputParams()), remapper.remap(getResultParams()),
+      remapper.remap(getValues()), remapper.remap(getMetadata()));
 }
 
 static SignatureType incrementIndexRefsWalk(SignatureType root,
