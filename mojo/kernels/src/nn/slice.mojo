@@ -18,12 +18,12 @@ from IO import print
 
 
 fn slice_as_view[
-    type: DType, rank: Int
+    type: DType, index_type: DType, rank: Int
 ](
     tensor: NDBuffer[rank, DimList[rank].create_unknown(), type],
-    starts: NDBuffer[1, DimList[1].create_unknown(), DType.index],
-    stops: NDBuffer[1, DimList[1].create_unknown(), DType.index],
-    steps: NDBuffer[1, DimList[1].create_unknown(), DType.index],
+    starts: Buffer[Dim(), index_type],
+    ends: Buffer[Dim(), index_type],
+    steps: Buffer[Dim(), index_type],
 ) -> NDBuffer[rank, DimList[rank].create_unknown(), type]:
 
     var new_shape: StaticIntTuple[rank.__as_mlir_index()]
@@ -34,9 +34,9 @@ fn slice_as_view[
     var new_data = tensor.data
 
     for i in range(rank):
-        var start = Int(starts.data.offset(i).load().value)
-        var stop = Int(stops.data.offset(i).load().value)
-        let step = Int(steps.data.offset(i).load().value)
+        var start = Int.from_integral[index_type](starts[i].value)
+        var stop = Int.from_integral[index_type](ends[i].value)
+        let step = Int.from_integral[index_type](steps[i].value)
 
         if start < 0:
             start = start + tensor.dim(i)
@@ -60,36 +60,35 @@ fn slice_as_view[
 
     # Create the new view
     return NDBuffer[rank, DimList[rank].create_unknown(), type](
-        new_data,
-        rebind[StaticIntTuple[rank.__as_mlir_index()]](new_shape),
-        tensor.dynamic_dtype,
-        rebind[StaticIntTuple[rank.__as_mlir_index()]]((new_stride)),
+        new_data, new_shape, tensor.dynamic_dtype, new_stride
     )
 
 
 fn slice_as_copy[
-    type: DType, in_rank: Int
+    type: DType, index_type: DType, in_rank: Int
 ](
     output: NDBuffer[in_rank, DimList[in_rank].create_unknown(), type],
     tensor: NDBuffer[in_rank, DimList[in_rank].create_unknown(), type],
-    start: NDBuffer[1, DimList[1].create_unknown(), DType.index],
-    stop: NDBuffer[1, DimList[1].create_unknown(), DType.index],
-    step: NDBuffer[1, DimList[1].create_unknown(), DType.index],
+    start: Buffer[Dim(), index_type],
+    end: Buffer[Dim(), index_type],
+    step: Buffer[Dim(), index_type],
     out_chain: OutputChainPtr,
 ):
 
     # Apply slice to the tensor
-    var sliced = slice_as_view[type, in_rank](tensor, start, stop, step)
+    var sliced = slice_as_view[type, index_type, in_rank](
+        tensor, start, end, step
+    )
 
     # Copy lambda sliced view into output buffer.
     @always_inline
     fn copy[
         simd_width: Int, rank: __mlir_type.index
     ](idx: StaticIntTuple[rank]):
-        var index = rebind[StaticIntTuple[in_rank.__as_mlir_index()]](idx)
-
-        var in1 = sliced.simd_load[simd_width](index)
-        output.simd_store[simd_width](index, in1)
+        let index = rebind[StaticIntTuple[in_rank.__as_mlir_index()]](idx)
+        output.simd_store[simd_width](
+            index, sliced.simd_load[simd_width](index)
+        )
 
     # Invoke copy.
     elementwise[in_rank.__as_mlir_index(), 1, 1, copy](

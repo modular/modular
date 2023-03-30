@@ -81,24 +81,18 @@ fn test_slice[
     print(in_tensor.dynamic_stride)
 
     var start_tensor_mem = _raw_stack_allocation[outer_rank, DType.index, 1]()
-    var start_tensor = NDBuffer[1, DimList[1].create_unknown(), DType.index,](
-        start_tensor_mem.address,
-        create_dim_list(outer_rank),
-        DType.index,
+    var start_tensor = Buffer[Dim(), DType.index](
+        start_tensor_mem.address, outer_rank
     )
 
-    var stop_tensor_mem = _raw_stack_allocation[outer_rank, DType.index, 1]()
-    var stop_tensor = NDBuffer[1, DimList[1].create_unknown(), DType.index,](
-        stop_tensor_mem.address,
-        create_dim_list(outer_rank),
-        DType.index,
+    var end_tensor_mem = _raw_stack_allocation[outer_rank, DType.index, 1]()
+    var end_tensor = Buffer[Dim(), DType.index](
+        end_tensor_mem.address, outer_rank
     )
 
     var step_tensor_mem = _raw_stack_allocation[outer_rank, DType.index, 1]()
-    var step_tensor = NDBuffer[1, DimList[1].create_unknown(), DType.index,](
-        step_tensor_mem.address,
-        create_dim_list(outer_rank),
-        DType.index,
+    var step_tensor = Buffer[Dim(), DType.index](
+        step_tensor_mem.address, outer_rank
     )
 
     for dim in range(outer_rank):
@@ -106,7 +100,7 @@ fn test_slice[
         start_tensor.data.offset(dim).store(start_val)
 
         let stop_val = SIMD[1, DType.index](stops[dim])
-        stop_tensor.data.offset(dim).store(stop_val)
+        end_tensor.data.offset(dim).store(stop_val)
 
         let step_val = SIMD[1, DType.index](steps[dim])
         step_tensor.data.offset(dim).store(step_val)
@@ -117,14 +111,14 @@ fn test_slice[
         x += 1.0
 
     # Perform the slice even if we are testing the copy so we get the target size.
-    let sliced = slice_as_view[DType.f32, outer_rank](
+    let sliced = slice_as_view[DType.f32, DType.index, outer_rank](
         rebind[
             NDBuffer[
                 outer_rank, DimList[outer_rank].create_unknown(), DType.f32
             ]
         ](in_tensor),
         start_tensor,
-        stop_tensor,
+        end_tensor,
         step_tensor,
     )
 
@@ -149,7 +143,7 @@ fn test_slice[
 
         let runtime = Runtime(1)
         let out_chain = OwningOutputChainPtr(runtime)
-        slice_as_copy[DType.f32, outer_rank](
+        slice_as_copy[DType.f32, DType.index, outer_rank](
             rebind[
                 NDBuffer[
                     outer_rank, DimList[outer_rank].create_unknown(), DType.f32
@@ -161,7 +155,7 @@ fn test_slice[
                 ]
             ](in_tensor),
             start_tensor,
-            stop_tensor,
+            end_tensor,
             step_tensor,
             out_chain.borrow(),
         )
@@ -179,10 +173,10 @@ fn test_slice[
         runtime.__del__()
 
 
+# CHECK-LABEL: == test_slice_basic
 fn test_slice_basic():
     print("== test_slice_basic\n")
 
-    # CHECK: == test_slice_basic
     # CHECK-NEXT: In shape:(4, 4, 4)
     # CHECK-NEXT: In strides:(16, 4, 1)
     # CHECK-NEXT: New shape:(2, 2, 2)
@@ -206,10 +200,10 @@ fn test_slice_basic():
     )
 
 
+# CHECK-LABEL: == test_slice_identity
 fn test_slice_identity():
     print("== test_slice_identity\n")
 
-    # CHECK: == test_slice_identity
     # CHECK-NEXT: In shape:(2, 2, 4)
     # CHECK-NEXT: In strides:(8, 4, 1)
     # CHECK-NEXT: New shape:(2, 2, 4)
@@ -243,10 +237,10 @@ fn test_slice_identity():
     )
 
 
+# CHECK-LABEL: == test_slice_steps
 fn test_slice_steps():
     print("== test_slice_steps\n")
 
-    # CHECK: == test_slice_steps
     # CHECK-NEXT: In shape:(2, 4, 8)
     # CHECK-NEXT: In strides:(32, 8, 1)
     # CHECK-NEXT: New shape:(1, 2, 4)
@@ -270,10 +264,10 @@ fn test_slice_steps():
     )
 
 
+# CHECK-LABEL: == test_slice_1D
 fn test_slice_1D():
     print("== test_slice_1D\n")
 
-    # CHECK: == test_slice_1D
     # CHECK-NEXT: In shape:(64, )
     # CHECK-NEXT: In strides:(1, )
     # CHECK-NEXT: New shape:(4, )
@@ -289,10 +283,10 @@ fn test_slice_1D():
     )
 
 
+# CHECK-LABEL: == test_slice_empty
 fn test_slice_empty():
     print("== test_slice_empty\n")
 
-    # CHECK: == test_slice_empty
     # CHECK-NEXT: In shape:(64, )
     # CHECK-NEXT: In strides:(1, )
     # CHECK-NEXT: New shape:(0, )
@@ -304,10 +298,10 @@ fn test_slice_empty():
     )
 
 
+# CHECK-LABEL: == test_slice_4D
 fn test_slice_4D():
     print("== test_slice_4D\n")
 
-    # CHECK: == test_slice_4D
     # CHECK-NEXT: In shape:(2, 4, 4, 2)
     # CHECK-NEXT: In strides:(32, 8, 2, 1)
     # CHECK-NEXT: New shape:(1, 1, 4, 1)
@@ -327,10 +321,10 @@ fn test_slice_4D():
     )
 
 
+# CHECK-LABEL: == test_slice_copy
 fn test_slice_copy():
     print("== test_slice_copy\n")
 
-    # CHECK: == test_slice_copy
     # CHECK-NEXT: In shape:(2, 4, 4, 2)
     # CHECK-NEXT: In strides:(32, 8, 2, 1)
     # CHECK-NEXT: As copy
@@ -353,10 +347,10 @@ fn test_slice_copy():
     )
 
 
+# CHECK-LABEL: == test_slice_negative
 fn test_slice_negative():
     print("== test_slice_negative\n")
 
-    # CHECK: == test_slice_negative
     # CHECK-NEXT: In shape:(2, 4, 4, 2)
     # CHECK-NEXT: In strides:(32, 8, 2, 1)
     # CHECK-NEXT: New shape:(1, 2, 4, 1)
