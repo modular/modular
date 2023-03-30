@@ -20,7 +20,7 @@ from Memory import stack_allocation, memset_zero
 from Pointer import DTypePointer, product as pointer_product
 from Intrinsics import PrefetchOptions, masked_load, masked_store
 from SIMD import SIMD
-from Tuple import StaticTuple
+from StaticTuple import StaticTuple
 from TargetInfo import dtype_sizeof, dtype_simd_width, dtype_alignof
 from TypeUtilities import rebind
 from Range import range
