@@ -32,7 +32,8 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
     // Give each thread a copy of the parameter cache, rather than each work
     // item.
     DenseMap<uint64_t, ParameterCollector::Analysis> threadCaches;
-    threadCaches.reserve(getContext().getThreadPool().getThreadCount());
+    if (getContext().isMultithreadingEnabled())
+      threadCaches.reserve(getContext().getThreadPool().getThreadCount());
     llvm::sys::SmartRWMutex<true> mutex;
 
     std::vector<Region *> declRegions;
