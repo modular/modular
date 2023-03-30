@@ -53,24 +53,9 @@ std::string M::getUniqueSymbolName(std::string baseName, SymbolTable &symtab,
   return uniqueName;
 }
 
-std::string M::makeCWrapperName(StringRef ident) {
-  std::string res(ident.str());
-  if (!ident.empty() && !llvm::isAlnum(res[0]))
-    res[0] = 'x';
-  for (char &c : res)
-    // Only allow [0-9a-zA-Z_].
-    if (!llvm::isAlnum(c) && c != '_')
-      c = '_';
-  res.append("_c");
-  return res;
-}
-
 bool M::isCIdentifier(StringRef ident) {
-  if (ident.empty() || !llvm::isAlnum(ident[0]))
+  if (ident.empty() || !(llvm::isAlpha(ident[0]) || ident[0] == '_'))
     return false;
-  for (char c : ident)
-    // Only allow [0-9a-zA-Z_].
-    if (!llvm::isAlnum(c) && c != '_')
-      return false;
-  return true;
+  return llvm::all_of(ident.drop_front(),
+                      [](char c) { return llvm::isAlnum(c) || c == '_'; });
 }
