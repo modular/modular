@@ -987,9 +987,7 @@ struct MatmulInnerLoopBPacked[
                 <= (self.c_bound - tile_idx)
             ):
                 # Use simd store if all within bound
-                # TODO: use parameter if here. Currently, there is a bug causing
-                # compile failure when the following line is uncommented. #11402
-                # @parameter
+                @parameter
                 if is_row_aligned:
                     self.c.aligned_simd_store[simd_size, alignment](
                         global_idx, c_data
@@ -1042,8 +1040,7 @@ struct MatmulInnerLoopBPacked[
         let global_k = self.global_offset.K + tile_n_k_idx[1]
 
         # Prefetch B matrix.
-        # TODO(#10919): Use `@parameter` if here, there is a bug where invalid
-        # code is generated and accuracy is not maintained.
+        @parameter
         if prefetch_b_distance > 0:
 
             @always_inline
