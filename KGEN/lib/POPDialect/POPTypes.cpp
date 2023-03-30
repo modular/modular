@@ -30,7 +30,7 @@ POP::ArrayType::verify(function_ref<InFlightDiagnostic()> emitError,
   if (!size.getType().isa<IndexType>())
     return emitError() << "expected size expression to be index type";
   if (!elementType.getType().isa<MLIRTypeType>())
-    return emitError() << "expected size expression to be !kgen.mlirtype";
+    return emitError() << "expected type expression to be !kgen.mlirtype";
   return success();
 }
 
