@@ -30,7 +30,7 @@ from TargetInfo import simd_byte_width
 from Pointer import DTypePointer, Pointer
 from DType import DType
 from LLCL import Runtime, OutputChainPtr
-from Functional import unroll, unroll2, parallelize
+from Functional import unroll, unroll2, async_parallelize
 from Range import range
 from Image import (
     ImageData,
@@ -2088,7 +2088,7 @@ struct ConvIm2ColNHWC[
             )
             conv._run_implicit_matmul()
 
-        parallelize[task_func](out_chain, num_tasks_m * num_tasks_n)
+        async_parallelize[task_func](out_chain, num_tasks_m * num_tasks_n)
 
     fn __init__(
         out: NDBuffer[4, shape_output, type],
