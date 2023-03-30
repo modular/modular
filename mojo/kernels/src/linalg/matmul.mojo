@@ -1482,44 +1482,6 @@ struct TiledMatmul[
 
         unswitch[unswitched_mloop](valid_col_count >= sub_tile_n)
 
-    # Helper function:
-    #  Iterate on the N dimension by steps of
-    # size sub_tile_n with no crossing valid boundary.
-    fn _outer_n_loop_helper[
-        m_loop_pack_inner_size: Int
-    ](
-        self,
-        global_offset: GemmShape,
-        sub_tile_n: Int,
-        sub_tile_k: Int,
-        start_idx: Int,
-        valid_col_count: Int,
-    ) -> Int:
-        """Helper function: Iterate on the N dimension by steps of size
-            sub_tile_n without crossing valid boundary.
-
-        Args:
-            m_loop_pack_inner_size(index): Inner dimension of the packed data
-                layout.
-            b_packed(NDBuffer): B matrix in packed layout.
-            global_offset(GemmShape): 3D global offset within the whole
-                matmul problem space.
-            sub_tile_n(Int): Dynamic tile size to use on N dimension.
-            sub_tile_k(Int): Dynamic tile size to use on K dimension.
-            start_idx(Int): Starting index on N dimension.
-            valid_col_count(Int): Number of valid columns remaining on the
-                current processing tile.
-        """
-        var col_idx = start_idx
-        while col_idx <= (valid_col_count - sub_tile_n):
-            self._outer_m_loop[m_loop_pack_inner_size](
-                global_offset + GemmShape(0, col_idx, 0),
-                sub_tile_n,
-                sub_tile_k,
-            )
-            col_idx += sub_tile_n
-        return col_idx
-
     # Iterate on the N dimension of the gemm space.
     fn _outer_n_loop(
         self,
@@ -1541,48 +1503,23 @@ struct TiledMatmul[
         )
         let tile_n: Int = self.tile_n_k[0]
 
-        var col_idx: Int = 0
-        # Proceed with the large tile:
-        col_idx = self._outer_n_loop_helper[config.pack_inner_size](
-            global_offset,
-            tile_n,
-            sub_tile_k,
-            col_idx,
-            valid_col_count,
-        )
-
-        # The residual N dim is less than pack_inner_size = 4 * simd_width
-        # It's more efficient to handle residue has a whole than looping
-        # over it by simd_size so here we check 2*simd_width first.
-        # TODO: clean up this part with `tile` once #10418 is fixed.
-        alias two_simd_size = 2 * config.simd_size
-        if col_idx < valid_col_count:
-            col_idx = self._outer_n_loop_helper[two_simd_size](
-                global_offset,
-                two_simd_size,
-                sub_tile_k,
-                col_idx,
-                valid_col_count,
-            )
-
-        # Cover residual tiles.
-        if col_idx < valid_col_count:
-            col_idx = self._outer_n_loop_helper[config.simd_size](
-                global_offset,
-                config.simd_size,
-                sub_tile_k,
-                col_idx,
-                valid_col_count,
-            )
-
-        # Cover the last sub simdsize tile:
-        # This call will handle the sub-simd size boundary.
-        if col_idx < valid_col_count:
-            self._outer_m_loop[config.simd_size](
+        @always_inline
+        fn m_loop[secondary_tile_size: Int](col_idx: Int, tile_size_n: Int):
+            self._outer_m_loop[secondary_tile_size](
                 global_offset + GemmShape(0, col_idx, 0),
-                config.simd_size,
+                tile_size_n,
                 sub_tile_k,
             )
+
+        alias secondary_tiles = VariadicList[Int](
+            config.pack_inner_size, 2 * config.simd_size, config.simd_size
+        )
+        let primary_tiles = VariadicList[Int](
+            tile_n, 2 * config.simd_size, config.simd_size
+        )
+        tile[secondary_tiles, config.simd_size, m_loop](
+            0, valid_col_count, primary_tiles, config.simd_size
+        )
 
     # Iterate over the K dimension of the gemm space.
     fn _outer_k_loop(
