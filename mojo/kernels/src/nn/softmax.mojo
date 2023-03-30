@@ -15,7 +15,7 @@ from Numerics import neginf
 from Range import range
 from Reductions import max
 from SIMD import SIMD
-from Tuple import StaticTuple
+from StaticTuple import StaticTuple
 from TypeUtilities import rebind
 
 
