@@ -37,7 +37,6 @@ from TargetInfo import (
     dtype_sizeof,
 )
 from Transpose import transpose_inplace
-from Tuple import StaticTuple
 from Intrinsics import PrefetchOptions
 
 
