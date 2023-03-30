@@ -427,6 +427,20 @@ alias Dynamic1DTileUnitFunc = __mlir_type[
     `!kgen.signature<(`, Int, ` borrow,`, Int, ` borrow) -> !lit.none>`
 ]
 
+"""
+Signature of a tiled function that performs some work with a dynamic tile size
+    and a secondary static tile size.
+"""
+alias BinaryTile1DTileUnitFunc = __mlir_type[
+    `!kgen.signature<<secondary_tile_size:`,
+    Int,
+    `>(`,
+    Int,
+    ` borrow,`,
+    Int,
+    ` borrow) -> !lit.none>`,
+]
+
 
 @always_inline
 fn tile[
@@ -500,6 +514,51 @@ fn tile[
     #  generator.
     if work_idx < upperbound:
         workgroup_function(work_idx, upperbound - work_idx)
+
+
+@always_inline
+fn tile[
+    secondary_tile_size_list: VariadicList[Int],
+    secondary_cleanup_tile: Int,
+    workgroup_function: BinaryTile1DTileUnitFunc,
+](
+    offset: Int,
+    upperbound: Int,
+    primary_tile_size_list: VariadicList[Int],
+    primary_cleanup_tile: Int,
+):
+    """A generator that launches work groups in specified list of tile sizes until the
+    sum of primary_tile_sizes has exceeded the upperbound.
+
+    Args:
+        workgroup_function(BinaryTile1DTileUnitFunc): workgroup function that processes one
+            tile of workload.
+        secondary_tile_size_list(VariadicList[Int]): List of static tile sizes to launch work.
+        secondary_cleanup_tile(Int): Last static tile to use when primary tile sizes don't fit exactly within the upperbound.
+        offset(Int): The initial index to start the work from.
+        upperbound(Int): The runtime upperbound that the work function should not exceed.
+        primary_tile_size_list(VariadicList[Int]): List of dynamic tile sizes to launch work.
+        primary_cleanup_tile(Int): Last dynamic tile to use when primary tile sizes don't fit exactly within the upperbound.
+    """
+    var work_idx = offset
+    alias num_tiles = secondary_tile_size_list.__len__()
+
+    @always_inline
+    fn static_tile_impl[idx: Int]():
+        alias secondary_tile_size = secondary_tile_size_list[idx]
+        let primary_tile_size = primary_tile_size_list[idx]
+
+        while work_idx <= upperbound - primary_tile_size:
+            workgroup_function[secondary_tile_size](work_idx, primary_tile_size)
+            work_idx += primary_tile_size
+
+    unroll[num_tiles, static_tile_impl]()
+
+    # launch the last cleanup tile
+    if work_idx < upperbound:
+        workgroup_function[secondary_cleanup_tile](
+            work_idx, primary_cleanup_tile
+        )
 
 
 # ===----------------------------------------------------------------------===#
