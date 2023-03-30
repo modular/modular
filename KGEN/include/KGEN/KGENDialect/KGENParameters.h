@@ -73,12 +73,10 @@ private:
   /// the parameter declarations on the type declaration.
   virtual void verifyRefType(DeclRefType refType) {}
 
-  /// Verify a use of a parameter declared in a nested scope.
-  virtual void verifyNestedParameterUse(ParamDeclAttr decl,
-                                        ParamDeclRefAttr use) {}
-
-  /// Report that a nested parameter declaration is a duplicate.
-  virtual void reportDuplicateNestedDecl(ParamDeclAttr decl) {}
+  /// Optionally perform verification and emit an error.
+  virtual void
+  maybeVerify(function_ref<LogicalResult(function_ref<InFlightDiagnostic()>)>
+                  verifyFn) {}
 
   /// Attributes and types are memoized and exist in tree structures with reuse:
   /// naively scanning them can lead to exponential compile time behavior.  As

@@ -89,8 +89,12 @@ void ParameterCollector::collectUsesFromType(
     SmallPtrSet<StringAttr, 4> nestedParams;
     for (ParamDeclAttr param : llvm::concat<const ParamDeclAttr>(
              sig.getInputParams(), sig.getResultParams()))
-      if (!nestedParams.insert(param.getName()).second)
-        return reportDuplicateNestedDecl(param);
+      if (!nestedParams.insert(param.getName()).second) {
+        maybeVerify([&](function_ref<InFlightDiagnostic()> emitError) {
+          return emitError()
+                 << "nested parameter " << param.getName() << " redefined";
+        });
+      }
     SmallVector<ParamDeclRefAttr> nestedUses;
     collectUsesFromTypesImpl(type, nestedUses, hasConstExpr);
     // Filter the nested uses and determine which belong to the higher scope.
@@ -162,12 +166,13 @@ public:
   /// dedclaration.
   void verifyRefType(DeclRefType refType) override;
 
-  /// Verify use of a nested parameter declaration. Emit an error if it fails.
-  void verifyNestedParameterUse(ParamDeclAttr decl,
-                                ParamDeclRefAttr use) override;
-
-  /// Report a duplicate nested parameter declaration.
-  void reportDuplicateNestedDecl(ParamDeclAttr decl) override;
+  /// Invoke the verification function using the current operation's location.
+  void maybeVerify(
+      function_ref<LogicalResult(function_ref<InFlightDiagnostic()>)> verifyFn)
+      override {
+    if (failed(verifyFn([&] { return mlir::emitError(op->getLoc()); })))
+      hadError = true;
+  }
 
   /// Whether a verification error occurred.
   bool hadError = false;
@@ -240,24 +245,6 @@ void VerifyingParameterCollector::verifyRefType(DeclRefType refType) {
                                    refType.getSymbol().getLeafReference(),
                                    specializedDecls, decl.getLoc())))
     hadError = true;
-}
-
-void VerifyingParameterCollector::verifyNestedParameterUse(
-    ParamDeclAttr decl, ParamDeclRefAttr use) {
-  if (decl.getType() == use.getType())
-    return;
-  (mlir::emitError(op->getLoc(), "use of nested parameter ")
-   << decl.getName() << " with incorrect type " << use.getType())
-          .attachNote()
-      << "parameter defined with type " << decl.getType();
-  hadError = true;
-}
-
-void VerifyingParameterCollector::reportDuplicateNestedDecl(
-    ParamDeclAttr decl) {
-  mlir::emitError(op->getLoc(), "nested parameter ")
-      << decl.getName() << " redefined";
-  hadError = true;
 }
 
 //===----------------------------------------------------------------------===//
