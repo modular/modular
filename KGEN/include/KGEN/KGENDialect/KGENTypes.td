@@ -263,15 +263,6 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
 
     /// Returns true if the signature is a concrete callable.
     bool isConcrete();
-
-    /// Normalize named parameter references within this signature to index
-    /// references.
-    /// FIXME: This is a helper method that should be removed when named
-    /// parameters are removed from `SignatureType` entirely.
-    SignatureType normalizeToIndexRefs();
-
-    /// Increment index references to the root signature by an amount
-    SignatureType incrementIndexRefs(size_t offset);
   }];
 
   let genVerifyDecl = 1;

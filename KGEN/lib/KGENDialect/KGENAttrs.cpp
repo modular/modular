@@ -568,17 +568,22 @@ SymbolConstantAttr::verifySymbolUses(Operation *module,
         decl.getResultParams(), func.getSignature().getValues(),
         func.getMetadata());
   } else {
+    // Collect the contextual parameter values.
     SmallVector<ParamDeclAttr> inputParams;
     for (Operation *op : llvm::drop_end(symbolOps))
       llvm::append_range(inputParams,
                          ::cast<DeclInterface>(op).getInputParams());
-    SignatureType baseSig =
-        func.getSignature().incrementIndexRefs(inputParams.size());
-    llvm::append_range(inputParams, baseSig.getInputParams());
+
+    IndexRefRemapper remapper(inputParams, {}, inputParams.size());
+    SignatureType baseSig = func.getSignature();
+    for (ParamDeclAttr param : baseSig.getInputParams())
+      inputParams.push_back(remapper.remap(param));
 
     declSignature = SignatureType::getSpecializedSignature(
         getParamValues(), [&] { return emitError(loc); }, inputParams,
-        baseSig.getResultParams(), baseSig.getValues(), baseSig.getMetadata());
+        remapper.remap(baseSig.getResultParams()),
+        remapper.remap(baseSig.getValues()),
+        remapper.remap(baseSig.getMetadata()));
   }
   if (!declSignature)
     return failure();

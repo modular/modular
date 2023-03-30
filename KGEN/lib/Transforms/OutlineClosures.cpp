@@ -108,7 +108,7 @@ void OutlineClosuresPass::runOnOperation() {
 
       // Collect any parameters used from above that we need to capture for the
       // lifted generator.
-      llvm::SetVector<ParamDeclAttr> necessaryDecls;
+      llvm::SetVector<ParamDeclAttr> capturedParamDecls;
       SmallVector<ParamDeclRefAttr> capturedParamValues;
       Region &region = regionDecl.getBodyRegion();
       auto regionDeclUses = uses.nestedScopes.find(&region);
@@ -134,42 +134,43 @@ void OutlineClosuresPass::runOnOperation() {
            regionDeclUses->second.usesFromAbove) {
         auto decl =
             ParamDeclAttr::get(useFromAbove.getName(), useFromAbove.getType());
-        if (necessaryDecls.insert(decl))
+        if (capturedParamDecls.insert(decl))
           capturedParamValues.push_back(useFromAbove);
       }
 
       LLVM_DEBUG(llvm::dbgs() << "Found parameter captures: [";
-                 llvm::interleaveComma(necessaryDecls, llvm::dbgs());
+                 llvm::interleaveComma(capturedParamDecls, llvm::dbgs());
                  llvm::dbgs() << "]\n");
-
-      // The parameter signature is just the necessary decls + original
-      // arguments, and then any of the original results.
-      for (ParamDeclAttr inputParam : regionDecl.getInputParams()) {
-        bool inserted = necessaryDecls.insert(inputParam);
-        assert(inserted && "nested parameter declaration was duplicated?");
-      }
 
       // Create a wrapper that knows how to handle the global variable. It has
       // the same parameter signature as the lifted region, but it has the same
       // value signature as the original parameter region (no captures - those
       // come from global variables).
-      SignatureType bodySignature =
-          regionDecl.getSignature().incrementIndexRefs(
-              capturedParamValues.size());
-      auto inputParamDecls =
-          ParamDeclArrayAttr::get(&getContext(), necessaryDecls.getArrayRef());
-      auto wrapperSignature =
-          SignatureType::get(inputParamDecls, bodySignature.getResultParams(),
-                             bodySignature.getValues(),
-                             bodySignature.getMetadata())
-              .normalizeToIndexRefs();
+      SmallVector<ParamDeclAttr> inputParamDecls(
+          capturedParamDecls.getArrayRef());
+      llvm::append_range(inputParamDecls, regionDecl.getInputParams());
+
+      IndexRefRemapper remapper(capturedParamDecls.getArrayRef(), {},
+                                capturedParamDecls.size());
+      SmallVector<ParamDeclAttr> sigInputParams;
+      SignatureType bodySig = regionDecl.getSignature();
+      for (ParamDeclAttr param : capturedParamDecls)
+        sigInputParams.push_back(remapper.remap(param));
+      for (ParamDeclAttr param : bodySig.getInputParams())
+        sigInputParams.push_back(remapper.remap(param));
+      auto wrapperSignature = SignatureType::get(
+          ParamDeclArrayAttr::get(&getContext(), sigInputParams),
+          remapper.remap(bodySig.getResultParams()),
+          remapper.remap(bodySig.getValues()),
+          remapper.remap(bodySig.getMetadata()));
 
       b.setInsertionPoint(generator);
       auto liftedWrapper = b.create<GeneratorOp>(
           regionDecl.getLoc(), getUniqueName("_" + regionName),
           TypeAttr::get(wrapperSignature), regionDecl.getFunctionTypeAttr(),
-          inputParamDecls, regionDecl.getResultParamsAttr(),
-          b.getAttr<ConstraintArrayAttr>(ArrayRef<ConstraintAttr>{}),
+          ParamDeclArrayAttr::get(&getContext(), inputParamDecls),
+          regionDecl.getResultParamsAttr(),
+          ConstraintArrayAttr::get(&getContext(), {}),
           regionDecl.getAlwaysInlineLevelAttr());
       symtab.insert(liftedWrapper);
       auto wrapperSymbol = SymbolConstantAttr::get(
@@ -218,7 +219,7 @@ void OutlineClosuresPass::runOnOperation() {
 
       Attribute bindSignature = wrapperSymbol;
       // If we have parameter captures, create a bind_signature operator.
-      if (necessaryDecls.size() != regionDecl.getInputParams().size()) {
+      if (!capturedParamValues.empty()) {
         // OK cool, now we need a partial binding. First we insert the lifted
         // symbol at the beginning of the vector.
         SmallVector<TypedAttr> partialBindings = {wrapperSymbol};
