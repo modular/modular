@@ -704,21 +704,13 @@ lit.struct.decl @IndexParams0<a, b: f32> {}
 lit.struct.decl @IndexParams1<a: i32, b: i64, c: f32, d: i8> {}
 
 // CHECK-LABEL: kgen.generator @indexParamRef
-// CHECK-SAME: @IndexParams1<a: i32 = #kgen.param.index.ref<0, false, 0>,
-// CHECK-SAME:               b: i64 = #kgen.param.index.ref<0, false, 1>,
-// CHECK-SAME:               c: f32 = #kgen.param.index.ref<1, false, 1>,
-// CHECK-SAME:               d: i8 = #kgen.param.index.ref<1, true, 0>>
-// CHECK-SAME: @IndexParams0<a = #kgen.param.index.ref<0, false, 0>,
-// CHECK-SAME:               b: f32 = #kgen.param.index.ref<0, false, 1>>
+// CHECK-SAME: @IndexParams1<a: i32 = *0|0, b: i64 = *0|1, c: f32 = *1|1, d: i8 = *1|0*>
+// CHECK-SAME: @IndexParams0<a = *0|0, b: f32 = *0|1>
 kgen.generator @indexParamRef<
   fn: <t0_0, t0_1: f32, t0_2: <t1_0: i32, t1_1: i64>()
-      -> !kgen.declref<@IndexParams1<a: i32 = #kgen.param.index.ref<0, false, 0>,
-                                     b: i64 = #kgen.param.index.ref<0, false, 1>,
-                                     c: f32 = #kgen.param.index.ref<1, false, 1>,
-                                     d: i8 = #kgen.param.index.ref<1, true, 0>>>
+      -> !kgen.declref<@IndexParams1<a: i32 = *0|0, b: i64 = *0|1, c: f32 = *1|1, d: i8 = *1|0*>>
       -> r0_0: i8>()
-    -> !kgen.declref<@IndexParams0<a = #kgen.param.index.ref<0, false, 0>,
-                                   b: f32 = #kgen.param.index.ref<0, false, 1>>>
+    -> !kgen.declref<@IndexParams0<a = *0|0, b: f32 = *0|1>>
 >() {
   kgen.return
 }
