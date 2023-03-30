@@ -561,11 +561,7 @@ SymbolConstantAttr::verifySymbolUses(Operation *module,
   }
 
   SmallVector<ParamDeclAttr> inputParams;
-  auto startIt = std::prev(symbolOps.end());
-  while (startIt != symbolOps.begin() &&
-         !::isa<FuncInterface>(*std::prev(startIt)))
-    --startIt;
-  for (Operation *op : llvm::make_range(startIt, symbolOps.end()))
+  for (Operation *op : symbolOps)
     llvm::append_range(inputParams, ::cast<DeclInterface>(op).getInputParams());
 
   auto declSignature = SignatureType::getSpecializedSignature(
