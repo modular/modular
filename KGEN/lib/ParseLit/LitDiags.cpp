@@ -220,15 +220,12 @@ LitDiagnostic::~LitDiagnostic() {
 
 /// Build the MLIR diagnostic and hand it off to its diagnostic machinery.
 void LitDiagnostic::emitMLIRDiagnostic() {
-  auto kind = isWarning ? mlir::DiagnosticSeverity::Warning
-                        : mlir::DiagnosticSeverity::Error;
-  Diagnostic mlirDiag(messages.front().loc, kind);
+  Location loc = messages.front().loc;
+  InFlightDiagnostic mlirDiag =
+      isWarning ? mlir::emitWarning(loc) : mlir::emitError(loc);
   mlirDiag << messages.front().text;
   for (auto &note : llvm::drop_begin(messages))
     mlirDiag.attachNote(note.loc) << note.text;
-
-  // Emit the diagnostic through the MLIR machinery.
-  diags->context->getDiagEngine().emit(std::move(mlirDiag));
 }
 
 /// Print the diagnostic + each note through SourceMgr.
