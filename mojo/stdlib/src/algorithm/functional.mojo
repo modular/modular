@@ -294,6 +294,26 @@ fn parallelize[
 fn async_parallelize[
     func: __mlir_type[`!kgen.signature<(`, Int, ` borrow) -> !lit.none>`],
 ](out_chain: OutputChainPtr, num_work_items: Int):
+    """Execute func(0) ... func(num_work_items-1) as sub-tasks in parallel,
+    and mark out_chain as ready when all functions have returned. This function
+    will return when the sub-tasks have been scheduled but not necessarily
+    completed. The runtime may execute the sub-tasks in any order and with any
+    degree of concurrency.
+
+    All free variables in func must be "async safe". Currently this means:
+     - The variable must be bound by a by-val function argument (ie no &),
+       or let binding.
+     - The variable's type must be "async safe", ie is marked as
+       @register_passable and any internal pointers are to memory with
+       lifetime at least until out_chain is ready. In practice, this means
+       only pointers to buffers held alive by the runtime.
+
+    If num_work_items is 0 then the out_chain is marked as ready
+    before async_parallelize returns. If num_work_items is 1 then func(0)
+    is executed and the out_chain is marked as ready before async_parallelize
+    returns.
+    """
+
     # We have no tasks, so do nothing.
     if num_work_items == 0:
         out_chain.mark_ready()
@@ -967,6 +987,11 @@ fn elementwise[
         ` borrow) -> !lit.none>`,
     ],
 ](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
+    """Execute func[width, rank](indices) as sub-tasks for a suitable
+    combination of width and indices so as to cover shape. All free vars
+    in func must be "async safe", see async_parallelize.
+    """
+
     assert_param_bool_msg[rank > 1, "Specialization for ND where N > 1"]()
 
     # Stategy: we parallelize over all dimensions except the innermost and
