@@ -280,3 +280,13 @@ lit.func @param_return_no_results<() -> ()>() {
   lit.param_return
   lit.end_func
 }
+
+lit.struct.decl @GiveMeDefault {
+  lit.varlet.decl "size", var = true : !pop.pointer<scalar<index>>
+}
+
+// CHECK-LABEL: lit.func @default_struct
+// CHECK-SAME: !kgen.declref<@GiveMeDefault> = #lit.struct<{value = 1}>
+lit.func @default_struct(%arg0: !kgen.declref<@GiveMeDefault> = #lit.struct<{value = 1}>) {
+  kgen.return
+}
