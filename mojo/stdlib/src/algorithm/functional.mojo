@@ -868,7 +868,9 @@ fn elementwise[
         `rank: `,
         __mlir_type.index,
         `>(`,
-        StaticIntTuple[__mlir_attr[`#kgen.param.decl.ref<"rank">: index`]],
+        StaticIntTuple[
+            __mlir_attr[`#kgen.param.index.ref<0, false, 1>: index`]
+        ],
         ` borrow) -> !lit.none>`,
     ],
 ](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
@@ -959,7 +961,9 @@ fn elementwise[
         `rank: `,
         __mlir_type.index,
         `>(`,
-        StaticIntTuple[__mlir_attr[`#kgen.param.decl.ref<"rank">: index`]],
+        StaticIntTuple[
+            __mlir_attr[`#kgen.param.index.ref<0, false, 1>: index`]
+        ],
         ` borrow) -> !lit.none>`,
     ],
 ](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
