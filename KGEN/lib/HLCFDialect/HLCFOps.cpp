@@ -9,6 +9,7 @@
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/FunctionInterfaces.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/PatternMatch.h"
@@ -256,11 +257,126 @@ struct HoistUnconditionalReturn : public OpRewritePattern<IfOp> {
     return success();
   }
 };
+
+/// If one of the IfOp branches is Return, then we can try pulling the code
+/// after the IfOp into the other branch and replace the return op with yield.
+/// This allows us to hoist return to outer scopes, potentially enabling other
+/// optimizations.
+///
+/// We can only perform this transformation if the IfOp's basic block ends with
+/// a return op - in that case it is legal to insert a return after the IfOp,
+/// which we want to do in this transformation.
+///
+///
+/// Before:                    After:
+/// {                          {
+///   ...                        ...
+///   %x = if %cond {            %x = if %cond {
+///      %a = A                     %a = A
+///      return %a                  yield %a
+///   } else {                   } else {
+///      %b = B                     %b = B
+///      yield %b                   %t = C(%b)
+///                                 yield %t
+///   }                          }
+///   %t = C(%x)                 return %x
+///   return %t
+/// }                          }
+struct HoistConditionalReturn : public OpRewritePattern<IfOp> {
+  using OpRewritePattern<IfOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(IfOp op,
+                                PatternRewriter &rewriter) const override {
+    Block &parentBlock = op->getParentRegion()->front();
+    Operation *parentBlockTerm = parentBlock.getTerminator();
+
+    Operation *thenTerm = op.getThenTerminator();
+    Operation *elseTerm = op.getElseTerminator();
+
+    // On the other hand, if neither of them is return, then we also have
+    // nothing to do.
+    // TODO: This should also work for BreakOp and ContinueOp (provided thenTerm
+    // and elseTerm are of the same type)
+    if (!isa<KGEN::ReturnOp>(thenTerm) && !isa<KGEN::ReturnOp>(elseTerm))
+      return rewriter.notifyMatchFailure(
+          op, "None of the branches ends with Return");
+
+    // One of the terminators is Return, now make sure that the other one is
+    // Yield.
+    if (!isa<YieldOp>(thenTerm) && !isa<YieldOp>(elseTerm))
+      return rewriter.notifyMatchFailure(
+          op, "None of the branches ends with Yield");
+
+    // If the parent block doesn't end with return, then we cannot return after
+    // the IfOp, which is how we want to hoist return op from its branch. Hence,
+    // bail out.
+    if (!isa<KGEN::ReturnOp>(parentBlockTerm))
+      return rewriter.notifyMatchFailure(
+          op, "Parent block doesn't end with Return");
+
+    // Now we know that we can transform this. Create a new IfOp (we can't use
+    // the original IfOp because we might need a different number of result
+    // values).
+    auto newIfOp = rewriter.create<HLCF::IfOp>(
+        op.getLoc(), parentBlockTerm->getOperandTypes(), op.getCond());
+
+    // Move the original 'then' and 'else' basic blocks into the new IfOp.
+    rewriter.inlineRegionBefore(op.getThenRegion(), newIfOp.getThenRegion(),
+                                newIfOp.getThenRegion().begin());
+    rewriter.inlineRegionBefore(op.getElseRegion(), newIfOp.getElseRegion(),
+                                newIfOp.getElseRegion().begin());
+
+    // Figure out which block contains Return and which one contains Yield.
+    Operation *yieldTerm = nullptr, *returnTerm = nullptr;
+    if (isa<KGEN::ReturnOp>(thenTerm)) {
+      yieldTerm = elseTerm;
+      returnTerm = thenTerm;
+    } else {
+      assert(isa<KGEN::ReturnOp>(elseTerm));
+      yieldTerm = thenTerm;
+      returnTerm = elseTerm;
+    }
+
+    // Move the ops from the parent block following the original IfOp to a
+    // separate block and then move that block into the 'yield' block in the new
+    // if.
+    Block *remainderBlock =
+        rewriter.splitBlock(op->getBlock(), op->getNextNode()->getIterator());
+    rewriter.inlineBlockBefore(remainderBlock, yieldTerm->getBlock(),
+                               yieldTerm->getBlock()->end());
+
+    // The remainder block used to use return values of the original if op. We
+    // now need to rewire that to values from the yield op.
+    for (auto [idx, val] : llvm::enumerate(op->getResults()))
+      rewriter.replaceAllUsesWith(val, yieldTerm->getOperand(idx));
+
+    // And after that we can erase the yield op.
+    rewriter.eraseOp(yieldTerm);
+
+    // At this point our new IfOp has its then and else block constructed, but
+    // ending with returns. We need to replace them with yields and insert a
+    // return after the new if op.
+    rewriter.create<KGEN::ReturnOp>(op.getLoc(), newIfOp->getResults());
+
+    rewriter.setInsertionPoint(parentBlockTerm);
+    rewriter.replaceOpWithNewOp<HLCF::YieldOp>(parentBlockTerm,
+                                               parentBlockTerm->getOperands());
+    rewriter.setInsertionPoint(returnTerm);
+    rewriter.replaceOpWithNewOp<HLCF::YieldOp>(returnTerm,
+                                               returnTerm->getOperands());
+
+    // Finally, erase the original op.
+    rewriter.eraseOp(op);
+
+    return success();
+  }
+};
 } // namespace
 
 void IfOp::getCanonicalizationPatterns(RewritePatternSet &results,
                                        MLIRContext *context) {
-  results.add<RemoveStaticCondition, HoistUnconditionalReturn>(context);
+  results.add<RemoveStaticCondition, HoistUnconditionalReturn,
+              HoistConditionalReturn>(context);
 }
 
 //===----------------------------------------------------------------------===//
