@@ -24,11 +24,11 @@ using namespace KGEN;
 //===----------------------------------------------------------------------===//
 
 ErrorOr<Region *> IREvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
-  auto func = elaborator.getAnalysis().getTopLevelSymbolTable().lookup<FuncOp>(
+  auto func = elaborator->getAnalysis().getTopLevelSymbolTable().lookup<FuncOp>(
       cast<FlatSymbolRefAttr>(symbol).getAttr());
 
   // Make sure the function is inflated.
-  if (auto err = elaborator.inflateFunc(func))
+  if (auto err = elaborator->inflateFunc(func))
     return err.takeError();
 
   // Now we can return the function body.
@@ -38,7 +38,7 @@ ErrorOr<Region *> IREvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
 ErrorTreeOr<TypedAttr>
 IREvaluator::evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
   // Make sure the function is inflated.
-  if (auto err = elaborator.inflateFunc(func))
+  if (auto err = elaborator->inflateFunc(func))
     return ErrorTree(func.getLoc(), err.takeError());
 
   // Evaluate the function body.
@@ -66,22 +66,22 @@ IREvaluator::IREvaluator(Elaborator &elaborator,
                          DenseMap<StringAttr, Attribute> paramValues)
     : ParameterEvaluator(std::move(paramValues)),
       InterpreterState(elaborator.getTarget()),
-      symtab(elaborator.getAnalysis().getTopLevelSymbolTable()),
-      elaborator(elaborator) {}
+      symtab(&elaborator.getAnalysis().getTopLevelSymbolTable()),
+      elaborator(&elaborator) {}
 
 FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
   // Try to narrow this operator to an expression we can evaluate. We only need
   // to emit an error during the evaluation attempt.
   if (op.getOpcode() == POC::CurrentTarget) {
     // Retrieve the contextual compilation target info.
-    return {TargetParamAttr::get(elaborator.getTarget(),
+    return {TargetParamAttr::get(elaborator->getTarget(),
                                  TargetType::get(op.getContext()))};
   }
 
   if (op.getOpcode() == POC::GetAllImpls) {
     auto symbol = cast<SymbolConstantAttr>(op.getOperand(0));
     std::vector<FuncOp> funcs;
-    if (auto err = elaborator.getAllConcreteFunctions(
+    if (auto err = elaborator->getAllConcreteFunctions(
             *errorLoc, symbol.getSymbol(), symbol.getParamValues().getValue(),
             funcs)) {
       emitError(std::move(*err));
@@ -107,7 +107,7 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
       return failure();
 
     // Lookup the symbol reference and resolve it.
-    ErrorTreeOr<FuncOp> func = elaborator.getConcreteFunction(
+    ErrorTreeOr<FuncOp> func = elaborator->getConcreteFunction(
         *errorLoc, ref, symbol.getParamValues().getValue());
     if (func.isError()) {
       emitError(func.takeError());
@@ -125,7 +125,7 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
     // Pull out the evaluator and ensure it's concretized.
     auto symbol =
         cast<SymbolConstantAttr>(op.getOperand(op.getNumOperands() - 1));
-    ErrorTreeOr<FuncOp> evaluator = elaborator.getConcreteFunction(
+    ErrorTreeOr<FuncOp> evaluator = elaborator->getConcreteFunction(
         *errorLoc, symbol.getSymbol(), symbol.getParamValues().getValue());
     if (evaluator.isError()) {
       emitError(evaluator.takeError());
@@ -137,7 +137,7 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
     auto optionsVariadic = cast<VariadicAttr>(op.getOperands().front());
     for (TypedAttr option : optionsVariadic.getValues()) {
       auto optionSym = cast<SymbolConstantAttr>(option);
-      if (auto err = elaborator.getAllConcreteFunctions(
+      if (auto err = elaborator->getAllConcreteFunctions(
               *errorLoc, optionSym.getSymbol(),
               optionSym.getParamValues().getValue(), options)) {
         emitError(err->copy());
@@ -146,8 +146,8 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
     }
 
     auto bestOr =
-        evaluateSpecializations(*evaluator, symtab, elaborator.getRuntime(),
-                                elaborator.getTarget(), options);
+        evaluateSpecializations(*evaluator, *symtab, elaborator->getRuntime(),
+                                elaborator->getTarget(), options);
     if (bestOr.isError()) {
       emitError(
           ErrorTree(UnknownLoc::get(op.getContext()), bestOr.takeError()));
