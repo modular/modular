@@ -1647,7 +1647,7 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
 AnyValue DictSubscriptNode::emitIR(ValueDest &dest,
                                    ExprEmitter &emitter) const {
   // Subscripting a type constructs it with lit.struct.create.
-  ASTType typeValue = emitter.emitExprType(base, /*isPack=*/false);
+  ASTType typeValue = emitter.emitExprType(base);
   if (!typeValue)
     return {};
 
@@ -1983,7 +1983,9 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   ASTExprAnd<AnyValue> argValue = {exprRep, subExpr};
   Kind kindToEmit = kind;
 
-  // Handle special cases that don't correspond to special function, "not x".
+  // Handle special cases that don't correspond to special functions, such as
+  // `not x` or `*args: *Ts`.
+  auto pValue = exprRep.getIfPValue();
   if (kindToEmit == kBoolNot) {
     // Turn this into a call to __bool__.
     argValue.ir =
@@ -1993,6 +1995,22 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       return {};
     // Now that we know we bool-ized the expression, invert it with ~.
     kindToEmit = kInvert;
+  } else if (kindToEmit == kUnpack && pValue) {
+    // There are two distinct cases of unpacking:
+    // 1. Unpacking within an expression list, e.g. `a = [1, 2]; b = (0, *a)`,
+    //    with the result being a tuple `b` with 3 elements `0, 1, 2`. This is
+    //    handled with the special function `__iter__`.
+    // 2. Unpacking within a type annotation, e.g. `*args: *Ts`, with the result
+    //    being akin to the types of `Ts` being mapped to the type annotations
+    //    for the arguments `args`: `args[0]: Ts[0], args[1]: Ts[1], ...`. This
+    //    is not handled with a special function of any kind, and so is handled
+    //    here.
+    if (!isa<VariadicType>(pValue.get().getType())) {
+      emitter.emitError(getLoc(), "only variadic types may be unpacked");
+      return {};
+    }
+    return emitter.emitResult(
+        TypeConstantAttr::get(POP::PackType::get(pValue.get())), this, dest);
   }
 
   // If this operator maps onto a special function, attempt to lower it.

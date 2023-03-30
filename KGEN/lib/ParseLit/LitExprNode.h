@@ -57,6 +57,7 @@ public:
     kNeg,     // -x
     kPos,     // +x
     kInvert,  // ~x
+    kUnpack,  // *x
     kBoolNot, // not x
     kAwait,   // await x
     kFirstUnaryOp = kNeg,

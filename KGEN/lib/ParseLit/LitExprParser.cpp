@@ -76,6 +76,8 @@ public:
                                   bool *hadTrailingComma = nullptr);
   ParseResult parseExpression(ExprNode *&result,
                               Precedence minPrec = Precedence::kLowestExpr);
+  ParseResult parseStarExpression(ExprNode *&result,
+                                  Precedence minPrec = Precedence::kLowestExpr);
 
   ExprNode *getNoneExpr(SMLoc loc) { return alloc<NoneLiteralNode>(loc); };
 
@@ -304,6 +306,20 @@ ParseResult ExprParser::parseExpression(ExprNode *&expr, Precedence minPrec) {
     infixInfo = InfixInfo::get(getToken().getKind());
   }
   return success();
+}
+
+/// star_expression ::= '*' bitwise_or | expression
+ParseResult ExprParser::parseStarExpression(ExprNode *&expr, Precedence minPrec) {
+  SMLoc starLoc;
+  if (consumeIf(LitToken::star, &starLoc)) {
+    ExprNode *subExpr = nullptr;
+    if (parseExpression(subExpr, minPrec))
+      return failure();
+    expr = alloc<UnaryOpNode>(ExprNode::kUnpack, starLoc, subExpr);
+    return success();
+  }
+
+  return parseExpression(expr, minPrec);
 }
 
 static ExprNode::Kind getUnaryOpKind(LitToken::Kind tokKind) {
@@ -777,6 +793,11 @@ ParseResult LitParserBase::parseExpression(ExprNode *&result,
                                            std::optional<size_t> stmtIndent) {
   return ExprParser(getLexer(), stmtIndent)
       .parseExpression(result, Precedence::kLowestExpr);
+}
+
+ParseResult LitParserBase::parseStarExpression(ExprNode *&result) {
+  return ExprParser(getLexer(), std::nullopt)
+      .parseStarExpression(result, Precedence::kLowestExpr);
 }
 
 /// assignment_stmt ::=

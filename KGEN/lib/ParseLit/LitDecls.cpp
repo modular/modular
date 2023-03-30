@@ -51,7 +51,7 @@ static ParseResult parseType(LitParserBase &p, ASTType &result,
     return failure();
 
   ExprEmitter emitter(p.shared, declScope, EC_Type, nullptr);
-  result = emitter.emitExprType(expr, /*isPack=*/false);
+  result = emitter.emitExprType(expr);
   if (!result)
     return failure();
 
@@ -636,7 +636,7 @@ enum VarArgKind {
 /// argument_ownership ::= "owned" | "borrowed"
 /// argument_variadic  ::= "*" | "**"
 /// argument_reference ::= "&"
-/// argument_type      ::= ":" ["*"] expression
+/// argument_type      ::= ":" star_expression
 struct ParsedArgument {
   SMLoc loc;
   // Specify argument passing convention, e.g. owned/byref etc.
@@ -727,15 +727,15 @@ struct ParsedArgument {
 
     // Parse an optional type annotation: `":" ["*"] expression`.
     if (p.consumeIf(LitToken::colon)) {
-      SMLoc starLoc;
-      if (p.consumeIf(LitToken::star, &starLoc)) {
+      SMLoc starLoc = p.getToken().getLoc();
+      if (p.getToken().getKind() == LitToken::star) {
         if (vararg != VarArgKind::VarArg)
           p.emitError(starLoc, "only variadic arguments' types can be unpacked")
                   .attachNote(identifierLoc)
               << "'" << name.getValue() << "' is not a variadic argument";
         vararg = VarArgKind::PackVarArg;
       }
-      if (p.parseExpression(typeExpr, std::nullopt))
+      if (p.parseStarExpression(typeExpr))
         return failure();
     }
 
@@ -929,7 +929,7 @@ parseOptionalParameterSignature(LitParserBase &p, ASTDecl &declScope,
 
       ASTType type;
       if (arg.typeExpr)
-        type = emitter.emitExprType(arg.typeExpr, /*isPack=*/false);
+        type = emitter.emitExprType(arg.typeExpr);
       else
         p.emitError(arg.loc, "parameters must always have a type");
 
@@ -1538,7 +1538,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
     // to object type.  Our return checker is currently a lame duck.
     resultType = shared.getNoneType();
   } else {
-    resultType = typeEmitter.emitExprType(resultTypeExpr, /*isPack=*/false);
+    resultType = typeEmitter.emitExprType(resultTypeExpr);
     // On error, a diagnostic will be emitted, but we don't want to kill the
     // entire function definition.  We won't be able to correctly type check any
     // calls to this function though.
@@ -1565,8 +1565,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   for (auto [idx, arg] : llvm::enumerate(args)) {
     ASTType type;
     if (arg.typeExpr) {
-      type = typeEmitter.emitExprType(arg.typeExpr,
-                                      arg.vararg == VarArgKind::PackVarArg);
+      type = typeEmitter.emitExprType(arg.typeExpr);
 
       // If the type couldn't be emitted, mark this argument erroneous (so uses
       // within the body of the function don't trigger secondary errors) and

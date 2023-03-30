@@ -400,6 +400,12 @@ def POP_PackType : POPType<"Pack", "pack", [
   }];
   let genVerifyDecl = 1;
 
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$variadic), [{
+      return get(variadic.getContext(), variadic);
+    }]>
+  ];
+
   let extraClassDeclaration = [{
     /// Returns whether this is a concrete pack type with no elements.
     bool isEmpty() const;

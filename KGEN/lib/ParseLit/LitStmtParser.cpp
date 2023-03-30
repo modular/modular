@@ -1400,7 +1400,7 @@ ParseResult LitStmtParser::parseMLIRRegionStmt(LitLexerCursor startCursor,
           parseToken(LitToken::colon, "expected ':' after region argument") ||
           parseExpression(typeExpr, std::nullopt))
         return failure();
-      ASTType type = getEmitter().emitExprType(typeExpr, /*isPack=*/false);
+      ASTType type = getEmitter().emitExprType(typeExpr);
       if (!type)
         return failure();
       argTypes.push_back(type);
