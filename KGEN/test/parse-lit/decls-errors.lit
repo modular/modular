@@ -168,11 +168,15 @@ fn badCalls(arg: Int):
   # expected-error @+1 {{argument #2 must be mutable in order to pass as a by-ref argument}}
   exampleByRefVariadic(1.0, x, 1)
 
+# expected-error @+1 {{unexpected token in expression}}
+fn invalidStarExpression(*x: *): pass
+
 # expected-error @+1 {{only variadic types may be unpacked}}
 fn invalidPackType(*x: *Int): pass
 
-# expected-error @+1 {{parameters may not be variadic packs}}
-fn invalidParameterPack[*Ts: *__mlir_type.`!kgen.variadic<!kgen.mlirtype>`](): pass
+fn invalidParameterPack[*Ts: __mlir_type.`!kgen.mlirtype`]():
+  # expected-error @+1 {{parameters may not be variadic packs}}
+  fn invalid[*Us: *Ts](): pass
 
 # expected-error @+2 {{only variadic arguments' types can be unpacked}}
 # expected-note @+1 {{'x' is not a variadic argument}}

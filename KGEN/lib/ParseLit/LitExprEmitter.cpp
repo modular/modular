@@ -1045,7 +1045,7 @@ LValue ExprEmitter::emitExprLValue(const ExprNode *expr, ValueDest &dest) {
 /// This helper emits the specified expression tree as a type, e.g. turning
 /// "Int" into the type for it.  This emits an error and returns null on
 /// failure.
-ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool isPack) {
+ASTType ExprEmitter::emitExprType(const ExprNode *expr) {
   auto value = emitExprPValue(expr, EC_Type);
   if (!value)
     return {};
@@ -1056,20 +1056,7 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool isPack) {
   if (isa<NoneAttr>(value.get()))
     return shared.getNoneType();
 
-  ASTType type;
-  if (isPack) {
-    // Pack types expect a backing variadic type.
-    if (!isa<VariadicType>(value.get().getType())) {
-      emitError(expr->getLoc(), "only variadic types may be unpacked")
-          << expr->getRange();
-      return {};
-    }
-    type = POP::PackType::get(value.get().getContext(), value.get());
-  } else {
-    // If this emitted a type, we can lower it.
-    type = value.getIfTypeValue();
-  }
-
+  ASTType type = value.getIfTypeValue();
   if (!type) {
     emitError(expr->getLoc(), "expected a type, not a value")
         << expr->getRange();

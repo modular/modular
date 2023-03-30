@@ -199,6 +199,7 @@ public:
                                   bool *hadTrailingComma);
   ParseResult parseExpression(ExprNode *&expr,
                               std::optional<size_t> stmtIndent);
+  ParseResult parseStarExpression(ExprNode *&expr);
   /// Parse an expression, allowing `=`, and `+=`.
   ParseResult parseExpressionOrAssignmentStmt(ExprNode *&expr,
                                               std::optional<size_t> stmtIndent);
