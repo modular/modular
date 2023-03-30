@@ -17,11 +17,22 @@
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
 using namespace KGEN;
 using namespace LIT;
+
+namespace llvm {
+template <>
+struct PointerLikeTypeTraits<POP::StructType>
+    : public PointerLikeTypeTraits<mlir::Type> {
+  static inline POP::StructType getFromVoidPointer(void *p) {
+    return POP::StructType::getFromOpaquePointer(p);
+  }
+};
+} // namespace llvm
 
 //===----------------------------------------------------------------------===//
 // Struct Lowering
@@ -49,8 +60,9 @@ struct StructOperationLowerer : public mlir::IRRewriter {
     return structDecls.fieldIndices.lookup({ref.getName(), name});
   }
 
-  /// Replace a KGEN struct with a POP struct.
-  POP::StructType substituteStructRef(DeclRefType ref);
+  /// Replace a KGEN struct with a POP struct or an arbitrary type if it is was
+  /// a single-element type that got flattened.
+  PointerUnion<POP::StructType, Type> substituteStructRef(DeclRefType ref);
 
   /// Try to build debug information for the given struct ref.
   DebugInfo::DIType
@@ -58,10 +70,7 @@ struct StructOperationLowerer : public mlir::IRRewriter {
                              DebugInfo::DebugInfoTypeConverter &converter);
 
   /// Recursively substitute types.
-  Type substituteTypes(Type type);
-
-  /// Materialize source conversions.
-  void replaceOp(Operation *op, ValueRange values) override;
+  Type substituteTypes(Type type) { return replacer.replace(type); }
 
   /// Materialize destination conversions.
   template <typename OpT>
@@ -78,24 +87,50 @@ struct StructOperationLowerer : public mlir::IRRewriter {
 StructOperationLowerer::StructOperationLowerer(MLIRContext *ctx,
                                                StructDeclarations &structDecls)
     : IRRewriter(ctx), structDecls(structDecls) {
-  replacer.addReplacement(
-      [&](DeclRefType type) -> Type { return substituteStructRef(type); });
-  replacer.addReplacement([&](LIT::StructAttr attr) {
+
+  replacer.addReplacement([&](DeclRefType type) -> Type {
+    auto result = substituteStructRef(type);
+    if (auto type = dyn_cast<Type>(result))
+      return type;
+    return cast<POP::StructType>(result);
+  });
+
+  replacer.addReplacement([&](LIT::StructAttr attr) -> Attribute {
+    auto newType = substituteStructRef(attr.getType());
+    // Flatten single-element structs.
+    if (auto type = dyn_cast<Type>(newType)) {
+      ParameterEvaluator evaluator(attr.getType().getParamValues());
+      auto value =
+          evaluator.getReboundAttribute(std::get<1>(attr.getValues()[0]));
+      return replacer.replace(value);
+    }
+
     SmallVector<TypedAttr> values;
     for (auto [name, value] : attr.getValues())
-      values.push_back(value);
-    return POP::StructAttr::get(values, substituteStructRef(attr.getType()));
+      values.push_back(replacer.replace(value));
+    return POP::StructAttr::get(values, cast<POP::StructType>(newType));
   });
-  replacer.addReplacement([&](LIT::StructExtractAttr attr) {
+
+  replacer.addReplacement([&](LIT::StructExtractAttr attr) -> Attribute {
     auto litStructType = cast<DeclRefType>(attr.getStructValue().getType());
     int64_t fieldNo = getField(attr.getField(), litStructType);
+    auto structValue = replacer.replace(attr.getStructValue());
+
+    // If this is an extract of element 0, check to see if it
+    // is a flattened struct.
+    if (fieldNo == 0) {
+      if (isa<Type>(substituteStructRef(litStructType)))
+        return structValue;
+    }
+
     return POP::StructExtractAttr::get(
-        replacer.replace(attr.getStructValue()),
+        structValue,
         IntegerAttr::get(IndexType::get(attr.getContext()), fieldNo));
   });
 }
 
-POP::StructType StructOperationLowerer::substituteStructRef(DeclRefType ref) {
+PointerUnion<POP::StructType, Type>
+StructOperationLowerer::substituteStructRef(DeclRefType ref) {
   auto it = structDecls.fields.find(ref.getName());
   assert(it != structDecls.fields.end());
 
@@ -103,7 +138,12 @@ POP::StructType StructOperationLowerer::substituteStructRef(DeclRefType ref) {
   ParameterEvaluator evaluator(ref.getParamValues());
   SmallVector<Type> elementTypes;
   for (Type type : llvm::make_second_range(it->second))
-    elementTypes.push_back(evaluator.getReboundType(type));
+    elementTypes.push_back(replacer.replace(evaluator.getReboundType(type)));
+
+  // Flatten single-element structs.
+  if (elementTypes.size() == 1)
+    return elementTypes[0];
+
   return POP::StructType::get(ref.getContext(), elementTypes);
 }
 
@@ -121,77 +161,110 @@ DebugInfo::DIType StructOperationLowerer::buildDebugInfoForStructRef(
     elementTypes.push_back(DebugInfo::DIMemberType::get(
         name, converter.convertDebugType(evaluator.getReboundType(type))));
   }
+
   return DebugInfo::DIStructType::get(ref.getName(), elementTypes);
 }
 
-Type StructOperationLowerer::substituteTypes(Type type) {
-  return replacer.replace(type);
-}
+static Value lowerStructOp(StructCreateOp op, StructCreateOpAdaptor adaptor,
+                           StructOperationLowerer &lowerer) {
+  auto newType = lowerer.substituteStructRef(op.getType());
+  if (isa<Type>(newType)) {
+    assert(adaptor.getOperands().size() == 1 &&
+           "Flattening non-one element struct");
+    return adaptor.getOperands()[0];
+  }
 
-void StructOperationLowerer::replaceOp(Operation *op, ValueRange values) {
-  auto type = op->getResultTypes().front();
-  if (!isa<DeclRefType>(type))
-    return IRRewriter::replaceOp(op, values);
-  auto source = create<mlir::UnrealizedConversionCastOp>(op->getLoc(), type,
-                                                         values.front());
-  IRRewriter::replaceOp(op, source.getResult(0));
-}
-
-static Operation *lowerStructOp(StructCreateOp op,
-                                StructCreateOpAdaptor adaptor,
-                                StructOperationLowerer &lowerer) {
   return lowerer.create<POP::StructCreateOp>(
-      op.getLoc(), lowerer.substituteStructRef(op.getType()), op.getOperands());
+      op.getLoc(), cast<POP::StructType>(newType), adaptor.getOperands());
 }
 
-static Operation *lowerStructOp(StructInsertOp op,
-                                StructInsertOpAdaptor adaptor,
-                                StructOperationLowerer &lowerer) {
+static Value lowerStructOp(StructInsertOp op, StructInsertOpAdaptor adaptor,
+                           StructOperationLowerer &lowerer) {
   int64_t index =
       lowerer.getField(op.getFieldAttr(), op.getContainer().getType());
+
+  // Check to see if we need to flatten this.  Flattening an insert just
+  // replaces the value.
+  if (index == 0) {
+    if (isa<Type>(lowerer.substituteStructRef(op.getType())))
+      return adaptor.getValue();
+  }
+
   return lowerer.create<POP::StructReplaceOp>(op.getLoc(), adaptor.getValue(),
                                               adaptor.getContainer(),
                                               lowerer.getIndexAttr(index));
 }
 
-static Operation *lowerStructOp(StructExtractOp op,
-                                StructExtractOpAdaptor adaptor,
-                                StructOperationLowerer &lowerer) {
+static Value lowerStructOp(StructExtractOp op, StructExtractOpAdaptor adaptor,
+                           StructOperationLowerer &lowerer) {
   int64_t index =
       lowerer.getField(op.getFieldAttr(), op.getContainer().getType());
+
+  // Check to see if we need to flatten this.  Flattening an extract just
+  // returns the value.
+  if (index == 0) {
+    if (isa<Type>(lowerer.substituteStructRef(op.getContainer().getType())))
+      return adaptor.getContainer();
+  }
+
   return lowerer.create<POP::StructExtractOp>(
       op.getLoc(), adaptor.getContainer(), lowerer.getIndexAttr(index));
 }
 
-static Operation *lowerStructOp(StructGEPOp op, StructGEPOpAdaptor adaptor,
-                                StructOperationLowerer &lowerer) {
-  Type structType = op.getContainer().getType().getResolvedElementType();
-  int64_t index =
-      lowerer.getField(op.getFieldAttr(), cast<DeclRefType>(structType));
+static Value lowerStructOp(StructGEPOp op, StructGEPOpAdaptor adaptor,
+                           StructOperationLowerer &lowerer) {
+  auto structType =
+      cast<DeclRefType>(op.getContainer().getType().getResolvedElementType());
+  int64_t index = lowerer.getField(op.getFieldAttr(), structType);
+
+  // Check to see if we need to flatten this.  A flattened gep is a noop.
+  if (index == 0) {
+    if (isa<Type>(lowerer.substituteStructRef(structType)))
+      return adaptor.getContainer();
+  }
+
   return lowerer.create<POP::StructGEPOp>(op.getLoc(), adaptor.getContainer(),
                                           lowerer.getIndexAttr(index));
+}
+
+static Value getCastedToType(Value value, Type destType, OpBuilder &b) {
+  // If already casted, done.
+  if (value.getType() == destType)
+    return value;
+
+  // If coming from a cast, use input.
+  if (auto castOp = value.getDefiningOp<mlir::UnrealizedConversionCastOp>())
+    if (castOp.getOperand(0).getType() == destType)
+      return castOp.getOperand(0);
+
+  // Otherwise create a new cast.
+  auto cast = b.create<mlir::UnrealizedConversionCastOp>(value.getLoc(),
+                                                         destType, value);
+  return cast.getResult(0);
 }
 
 template <typename OpT>
 void StructOperationLowerer::materializeLowering(OpT op) {
   setInsertionPoint(op);
-  SmallVector<Value> values;
-  values.reserve(op->getNumOperands());
+  SmallVector<Value> castedOperands;
+  castedOperands.reserve(op->getNumOperands());
+
+  // Get type adjusted values into the adaptor to simplify clients.
   for (Value value : op->getOperands()) {
-    auto dest = create<mlir::UnrealizedConversionCastOp>(
-        op->getLoc(), substituteTypes(value.getType()), value);
-    values.push_back(dest.getResult(0));
+    auto newType = substituteTypes(value.getType());
+    castedOperands.push_back(getCastedToType(value, newType, *this));
   }
-  typename OpT::Adaptor adaptor(values, op->getAttrDictionary());
-  Operation *newOp = lowerStructOp(op, adaptor, *this);
-  values.clear();
-  for (auto [result, type] :
-       llvm::zip(newOp->getResults(), op->getResultTypes())) {
-    auto src =
-        create<mlir::UnrealizedConversionCastOp>(op->getLoc(), type, result);
-    values.push_back(src.getResult(0));
-  }
-  replaceOp(op, values);
+
+  typename OpT::Adaptor adaptor(castedOperands, op->getAttrDictionary());
+  assert(op->getNumResults() == 1);
+  auto resultType = op->getResult(0).getType();
+
+  Value result = lowerStructOp(op, adaptor, *this);
+  if (result.getType() != resultType)
+    result = create<mlir::UnrealizedConversionCastOp>(op->getLoc(), resultType,
+                                                      result)
+                 .getResult(0);
+  replaceOp(op, {result});
 }
 
 //===----------------------------------------------------------------------===//
