@@ -153,7 +153,7 @@ def LowerKGENToLLVM : Pass<"lower-kgen-to-llvm", "mlir::ModuleOp"> {
 
     ```mlir
     llvm.func @slice_c(%a_0: i64, %a_1: !llvm.ptr<f32>, %i: !llvm.ptr<i64>,
-                     %res_0: !llvm.ptr<i64>, %res_1: !llvm.ptr<ptr<f32>>)
+                     %res_0: !llvm.ptr<i64>, %res_1: !llvm.ptr<ptr<f32>)
     ```
   }];
 
@@ -443,4 +443,58 @@ def Mem2Reg : Pass<"mem-2-reg"> {
     Statistic<"numStoresElided", "num-stores-elided",
               "the number of stores elided">,
   ];
+}
+
+//===----------------------------------------------------------------------===//
+// Basic Invariant code motion
+//===----------------------------------------------------------------------===//
+
+def HoistTrivialInvariants : Pass<"hoist-trivial-invariants", "KGEN::FuncOp"> {
+  let summary = "Hoist trivial invariant operations out of regions";
+  let description = [{
+    Hoists operations which are trivially invariant within if and for blocks
+    into earliest block we can.
+
+    ```mlir
+      %s = pop.load %arg0 : !pop.pointer<struct<index, index, index>>
+
+      hlcf.loop {
+        %0 = pop.struct.extract %s[0] : !pop.pointer<struct<index, index, index>>
+        hlcf.loop {
+          %1 = pop.struct.extract %s[1] : !pop.pointer<struct<index, index, index>>
+          hlcf.if %arg2 {
+            %2 = pop.struct.extract %s[2] :
+                        !pop.pointer<struct<index, index, index>>
+            // ... 
+          } else {
+            // .. 
+          }
+        }
+      }
+    ```
+
+    Becomes:
+
+    ```mlir
+      %s = pop.load %arg0 : !pop.pointer<struct<index, index, index>>
+      %0 = pop.struct.extract %s[0] : !pop.pointer<struct<index, index, index>>
+      %1 = pop.struct.extract %s[1] : !pop.pointer<struct<index, index, index>>
+      %2 = pop.struct.extract %s[2] : !pop.pointer<struct<index, index, index>>
+      
+      hlcf.loop {
+        hlcf.loop {
+          hlcf.if %arg2 {
+            // ... 
+          } else {
+            // .. 
+          }
+        }
+      }
+    ```
+
+    Even though `extract_2` was within a condition it is still safe to move
+    as it has no side effect. LLVM can move it back into the condition if it is
+    more performant, however if we do not move it LLVM is limited in many
+    situations from being able to move it back.
+  }];
 }

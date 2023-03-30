@@ -93,6 +93,9 @@ void KGEN::populateElaborateModulePasses(
 
   // Lower async functions as late as possible.
   pm.addPass(createLowerAsyncFunctions());
+
+  pm.addNestedPass<FuncOp>(createHoistTrivialInvariants());
+  pm.addNestedPass<FuncOp>(mlir::createCSEPass());
 }
 
 //===----------------------------------------------------------------------===//
