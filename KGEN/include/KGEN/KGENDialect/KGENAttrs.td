@@ -413,6 +413,36 @@ def KGEN_ParamDeclRefAttr : KGEN_ExprAttr<"ParamDeclRef", "param.decl.ref",
 }
 
 //===----------------------------------------------------------------------===//
+// ParamIndexRefAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_ParamIndexRefAttr : KGEN_ExprAttr<"ParamIndexRef", "param.index.ref",
+    [DeclareAttrInterfaceMethods<ParameterAttrInterface, ["isLessThan"]>]> {
+  let summary = "A reference to a signature input or result parameter.";
+  let description = [{
+    The `#kgen.param.index.ref` attribute is a reference to an input or result
+    parameter of an enclosing signature. This attribute can only be used inside
+    a `SignatureType`. This attribute contains three fields: the depth of the
+    referenced signature relative to the nearest signature (non-negative
+    integer), a flag indicating input or result parameter, and the index of the
+    parameter (non-negative integer).
+
+    Example:
+
+    ```mlir
+    // Second input parameter of the nearest signature.
+    #kgen.param.index.ref<0, false, 1> : index
+    // First result parameter of next enclosing signature.
+    #kgen.param.index.ref<1, true, 0> : !kgen.declref<@Int>
+    ```
+  }];
+
+  let parameters = (ins "size_t":$depth, "bool":$isResult, "size_t":$index,
+                        AttributeSelfTypeParameter<"">:$type);
+  let assemblyFormat = "`<` $depth `,` $isResult `,` $index `>`";
+}
+
+//===----------------------------------------------------------------------===//
 // ConcreteTypeConstantAttr
 //===----------------------------------------------------------------------===//
 

@@ -320,6 +320,22 @@ std::optional<bool> ParamDeclRefAttr::isLessThan(Attribute rhs) const {
 }
 
 //===----------------------------------------------------------------------===//
+// ParamIndexRefAttr
+//===----------------------------------------------------------------------===//
+
+/// A parameter reference is not a constant by definition.
+bool ParamIndexRefAttr::isConstant() const { return false; }
+
+/// Sort index references by index then kind.
+std::optional<bool> ParamIndexRefAttr::isLessThan(Attribute rhs) const {
+  auto ref = ::dyn_cast<ParamIndexRefAttr>(rhs);
+  if (!ref)
+    return false;
+  return std::make_tuple(getDepth(), getIndex(), getIsResult()) <
+         std::make_tuple(ref.getDepth(), ref.getIndex(), ref.getIsResult());
+}
+
+//===----------------------------------------------------------------------===//
 // TypeConstantAttr
 //===----------------------------------------------------------------------===//
 
