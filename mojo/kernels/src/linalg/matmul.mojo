@@ -1642,6 +1642,68 @@ struct TiledMatmul[
         self._outer_k_loop()
 
 
+fn prepackB[
+    type: DType,
+    src_shape: DimList[2],
+    dst_shape: DimList[2],
+    simd_size: Int,
+    inner_size: Int,
+](
+    dst: NDBuffer[2, dst_shape, type],
+    src: NDBuffer[2, src_shape, type],
+    tile_n: Int,
+    tile_k: Int,
+):
+    """Utility function to pack the entire B matrix, such that each
+    [tile_n // inner_size, tile_k, inner_size] tile of src is contiguous in dst.
+
+    Tiles (not tile contents) are stored in row major order, so tile[i, j] is
+    tile_n * tile_k bytes away from tile[i, j+1].
+    """
+    let k_in = src.dim[0]()
+    let n_in = src.dim[1]()
+    let k_out = dst.dim[0]()
+    let n_out = dst.dim[1]()
+
+    debug_assert(
+        k_out % tile_k == 0, "K dimension of output must be padded to tile_k"
+    )
+    debug_assert(
+        n_out % tile_n == 0, "N dimension of output must be padded to tile_n"
+    )
+
+    let dst_flat = dst.flatten()
+    var dst_offset: Int = 0
+    for idx_k in range(0, k_out, tile_k):
+        for idx_n in range(0, n_out, tile_n):
+            let packed_dst_view = NDBuffer[
+                3, DimList[3].create_unknown(), type
+            ](
+                dst_flat.data.offset(dst_offset),
+                create_dim_list(tile_n // inner_size, tile_k, inner_size),
+                type,
+            )
+            let valid_k = min(tile_k, k_in - idx_k)
+            let valid_n = min(tile_n, n_in - idx_n)
+            PackMatrixCols[
+                src_shape,
+                DimList[3].create_unknown(),
+                type,
+                simd_size,
+                inner_size,
+            ].run(
+                packed_dst_view,
+                src,
+                # Input is [K, N]:
+                # Starting global offset for packing.
+                Index(idx_k, idx_n),
+                Index(tile_k, tile_n),
+                # Valid amount of input from the starting offset.
+                Index(valid_k, valid_n),
+            )
+            dst_offset += tile_n * tile_k
+
+
 struct BTileGenerator[
     config: MatmulConfig,
     type: DType,
@@ -1654,7 +1716,9 @@ struct BTileGenerator[
     Otherwise, calls to get_tile will copy a tile from B into a stack allocated
     scratch buffer and return a view of that."""
 
-    var b: NDBuffer[2, config.shape_b, type]
+    var b: NDBuffer[
+        2, config.shape_b, type
+    ]  # packed layout if prepack_b is True
     var b_tile_stack_ptr: DTypePointer[type]
 
     # needs to be always_inline so b_tile_stack_ptr gets allocated on caller's stack
@@ -1663,8 +1727,10 @@ struct BTileGenerator[
     fn get(
         b: NDBuffer[2, config.shape_b, type]
     ) -> BTileGenerator[config, type, transpose_b, prepack_b]:
+        assert_param_bool_msg[
+            prepack_b == False, "prepack_b not fully supported yet, coming soon"
+        ]()
         var b_tile_stack_ptr = DTypePointer[type].get_null()
-        assert_param_bool_msg[not prepack_b, "prepack_b not supported yet"]()
 
         @parameter
         if not prepack_b:
@@ -1689,13 +1755,16 @@ struct BTileGenerator[
         tile_dim_nk: StaticIntTuple[2],
         valid_data_dim_nk: StaticIntTuple[2],
     ) -> NDBuffer[3, config.packed_shape, type]:
+        let tile_shape = create_dim_list(
+            tile_dim_nk[0] // inner_size, tile_dim_nk[1], inner_size
+        )
         let packed_b = NDBuffer[3, config.packed_shape, type](
             self.b_tile_stack_ptr,
-            create_dim_list(
-                tile_dim_nk[0] // inner_size, tile_dim_nk[1], inner_size
-            ),
+            tile_shape,
             type,
         )
+        let tile_n = tile_dim_nk[0]
+        let tile_k = tile_dim_nk[1]
 
         @parameter
         if transpose_b & (not prepack_b):
@@ -1711,7 +1780,7 @@ struct BTileGenerator[
                 # Input is [N, K]:
                 # Starting global offset for packing.
                 Index(global_offset.N, global_offset.K),
-                Index(tile_dim_nk[0], tile_dim_nk[1]),
+                Index(tile_n, tile_k),
                 # Valid amount of input from the starting offset.
                 Index(valid_data_dim_nk[0], valid_data_dim_nk[1]),
             )
@@ -1729,12 +1798,29 @@ struct BTileGenerator[
                 # Input is [K, N]:
                 # Starting global offset for packing.
                 Index(global_offset.K, global_offset.N),
-                Index(tile_dim_nk[1], tile_dim_nk[0]),
+                Index(tile_k, tile_n),
                 # Valid amount of input from the starting offset.
                 Index(valid_data_dim_nk[1], valid_data_dim_nk[0]),
             )
+        elif prepack_b & (not transpose_b):
+            # TODO: currently untested so asserting in get() that prepack_b is False
+            let tile_k_idx = global_offset.K // tile_k
+            let tile_n_idx = global_offset.N // tile_n
+            let tile_size = tile_k * tile_n
+            let b_flat = self.b.flatten()
+            let b_tile_view = NDBuffer[3, config.packed_shape, type](
+                # tiles are ordered in row-major order
+                b_flat.data.offset(
+                    tile_k_idx * tile_n * tile_size + tile_k_idx * tile_size
+                ),
+                tile_shape,
+                type,
+            )
+            return b_tile_view
+
         else:
-            # TODO: support prepack_b
-            debug_assert(False, "unreachable, prepack_b should always be False")
+            debug_assert(
+                False, "unreachable, prepack_b not supported with transpose_b"
+            )
 
         return packed_b
