@@ -461,6 +461,10 @@ class SomeClass:  # expected-error {{classes are not supported yet}}
 # Exported Functions
 ##===----------------------------------------------------------------------===##
 
+@export
+def valid_name():
+  ...
+
 # expected-error @+1 {{@export requires a string specifying the name of the exported symbol}}
 @export(1)
 def export_me():
@@ -479,6 +483,11 @@ def bar():
 # expected-error @+1 {{my+foo is not a valid C identifier}}
 @export("my+foo")
 def bad_name():
+  ...
+
+# expected-error @+1 {{10foo is not a valid C identifier}}
+@export("10foo")
+def number_name():
   ...
 
 # expected-note @+1 {{previous export here}}
