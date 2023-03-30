@@ -86,3 +86,106 @@ kgen.func @hoist_unconditional_return(%arg0: i1, %arg1: index, %arg2: index, %ar
   %r = index.add %a, %arg3
   kgen.return %r: index
 }
+
+// CHECK-LABEL: @hoist_cond_return_then
+kgen.func @hoist_cond_return_then(%cond: i1, %arg1: index, %arg2: index, %arg3: index) -> index {
+  // CHECK:      %[[IF_RES:.*]] = hlcf.if
+  // CHECK-NEXT:   hlcf.yield %arg1
+  // CHECK-NEXT: else
+  // CHECK-NEXT:   %[[ELSE_VAL:.*]] = index.add
+  // CHECK-NEXT:   hlcf.yield %[[ELSE_VAL]]
+  // CHECK-NOT:  index.add
+  // CHECK:      return %[[IF_RES]]
+  %a, %b = hlcf.if %cond -> index, index {
+    kgen.return %arg1: index
+  } else {
+    hlcf.yield %arg2, %arg3: index, index
+  }
+  %r = index.add %a, %b
+  kgen.return %r: index
+}
+
+// CHECK-LABEL: @hoist_cond_return_else
+kgen.func @hoist_cond_return_else(%cond: i1, %arg1: index, %arg2: index, %arg3: index) -> index {
+  // CHECK:      %[[IF_RES:.*]] = hlcf.if
+  // CHECK-NEXT:   %[[THEN_VAL:.*]] = index.add
+  // CHECK-NEXT:   hlcf.yield %[[THEN_VAL]]
+  // CHECK-NEXT: else
+  // CHECK-NEXT:   hlcf.yield %arg1
+  // CHECK-NOT:  index.add
+  // CHECK:      return %[[IF_RES]]
+  %a, %b = hlcf.if %cond -> index, index {
+    hlcf.yield %arg2, %arg3: index, index
+  } else {
+    kgen.return %arg1: index
+  }
+  %r = index.add %a, %b
+  kgen.return %r: index
+}
+
+// CHECK-LABEL: @dont_hoist_cond_return_nested
+kgen.func @dont_hoist_cond_return_nested(%cond1: i1, %cond2: i1, %arg1: index, %arg2: index, %arg3: index) -> index {
+  // CHECK-COUNT-2: return
+  hlcf.if %cond1 {
+    hlcf.if %cond2 {
+      kgen.return %arg1: index
+    } else {
+      hlcf.yield
+    }
+    hlcf.yield
+  } else {
+    hlcf.yield
+  }
+  kgen.return %arg2: index
+}
+
+// CHECK-LABEL: @several_ifs
+// Here we in theory whould hoist all returns out. This would happen if we
+// visit ifs from bottom to top, but doesn't happen if we go in the usual
+// order. We can't control the order in canonicalizer so we should add another
+// simplification to deal with that - the function below shows the test that we
+// need to simplify.
+kgen.func @several_ifs(%cond1: i1, %cond2: i1, %cond3: i1) -> () {
+  hlcf.if %cond1 {
+    %x = index.constant 1
+    kgen.return
+  } else {
+    hlcf.yield
+  }
+  hlcf.if %cond2 {
+    %x = index.constant 2
+    kgen.return
+  } else {
+    hlcf.yield
+  }
+  hlcf.if %cond3 {
+    %x = index.constant 3
+    kgen.return
+  } else {
+    hlcf.yield
+  }
+  %y = index.constant 4
+  kgen.return
+}
+
+// CHECK-LABEL: @cond_return_two_ifs2
+// Here we theoretically should be able to hoist return out, but we don't do that now.
+// TODO: Implement that.
+kgen.func @cond_return_two_ifs2(%cond: i1, %arg: index) -> index {
+  %tt = hlcf.if %cond -> index {
+    hlcf.yield %arg: index
+  } else {
+    %X = index.constant 1
+    %Y = index.constant 2
+    %c, %d = hlcf.if %cond -> index, index {
+      kgen.return %arg: index
+    } else {
+      %x = index.constant 3
+      %y = index.constant 4
+      hlcf.yield %x, %y: index, index
+    }
+    %r = index.add %X, %c
+    hlcf.yield %r: index
+  }
+  kgen.return %tt: index
+}
