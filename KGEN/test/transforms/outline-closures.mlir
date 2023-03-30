@@ -14,25 +14,19 @@ kgen.generator @call_region<fn: <A -> E>() ->index -> E>() -> index always_inlin
 }
 
 // COM: This is the region hoisted out into a generator.
-// CHECK-LABEL: kgen.generator @raiseClosure_Fn<Jefffffffffff, C, A, B -> E>(
-// CHECK-SAME:                   [[ARG:%arg[0-9]+]]: index, [[ARGARG:%arg[0-9]+]]: !pop.scalar<index>) -> index always_inline
-// CHECK-NEXT: [[CST:%[0-9]+]] = kgen.param.constant = <add(mul(B, Jefffffffffff, -1), mul(A, Jefffffffffff), mul(C, Jefffffffffff))>
-// CHECK-NEXT: [[CASTCST:%[0-9]+]] = pop.cast_from_builtin [[CST]] : index to !pop.scalar<index>
-// CHECK-NEXT: [[CASTARG:%[0-9]+]] = pop.cast_from_builtin [[ARG]] : index to !pop.scalar<index>
-// CHECK-NEXT: [[ADD:%[0-9]+]] = pop.add [[CASTCST]], [[CASTARG]] : !pop.scalar<index>
-// CHECK-NEXT: [[RES:%[0-9]+]] = pop.add [[ADD]], [[ARGARG]] : !pop.scalar<index>
-// CHECK-NEXT: [[CASTRES:%[0-9]+]] = pop.cast_to_builtin [[RES]] : !pop.scalar<index> to index
-// CHECK-NEXT: kgen.param.result_bind<add(mul(A, -1), C)>
-// CHECK-NEXT: kgen.return [[CASTRES]]
-
 // COM: This is the wrapper that loads values from the global variable.
-// CHECK-LABEL: kgen.generator @raiseClosure_Fn_wrapper<Jefffffffffff, C, A, B -> E>() -> index always_inline
+// CHECK-LABEL: kgen.generator @raiseClosure_Fn<Jefffffffffff, C, A, B -> E>() -> index always_inline
 // CHECK-NEXT:   [[PTR:%[0-9]+]] = pop.compiler.global_load "raiseClosure_context_var_0" : !pop.struct<index, scalar<index>>
-// CHECK-NEXT:   [[VAL:%[0-9]+]] = pop.struct.extract [[PTR]][0] : !pop.struct<index, scalar<index>>
-// CHECK-NEXT:   [[ARG:%[0-9]+]] = pop.struct.extract [[PTR]][1] : !pop.struct<index, scalar<index>>
-// CHECK-NEXT:   [[RES:%[0-9]+]] = kgen.call @raiseClosure_Fn<Jefffffffffff = Jefffffffffff, C = C, A = A, B = B -> *"(outlined)resultParam0" = E>([[VAL]], [[ARG]]) : (index, !pop.scalar<index>) -> index
-// CHECK-NEXT:   kgen.param.result_bind<*"(outlined)resultParam0">
-// CHECK-NEXT:   kgen.return [[RES]] : index
+// CHECK-NEXT:   [[ARG0:%[0-9]+]] = pop.struct.extract [[PTR]][0] : !pop.struct<index, scalar<index>>
+// CHECK-NEXT:   [[ARG1:%[0-9]+]] = pop.struct.extract [[PTR]][1] : !pop.struct<index, scalar<index>>
+// CHECK-NEXT:   [[CST:%[0-9]+]] = kgen.param.constant = <add(mul(B, Jefffffffffff, -1), mul(A, Jefffffffffff), mul(C, Jefffffffffff))>
+// CHECK-NEXT:   [[CASTCST:%[0-9]+]] = pop.cast_from_builtin [[CST]] : index to !pop.scalar<index>
+// CHECK-NEXT:   [[CASTARG:%[0-9]+]] = pop.cast_from_builtin [[ARG0]] : index to !pop.scalar<index>
+// CHECK-NEXT:   [[ADD:%[0-9]+]] = pop.add [[CASTCST]], [[CASTARG]] : !pop.scalar<index>
+// CHECK-NEXT:   [[RES:%[0-9]+]] = pop.add [[ADD]], [[ARG1]] : !pop.scalar<index>
+// CHECK-NEXT:   [[RESULT:%[0-9]+]] = pop.cast_to_builtin [[RES]] : !pop.scalar<index> to index
+// CHECK-NEXT:   kgen.param.result_bind<add(mul(A, -1), C)>
+// CHECK-NEXT:   kgen.return [[RESULT]]
 
 // CHECK-LABEL: kgen.generator @raiseClosure
 kgen.generator @raiseClosure<Jefffffffffff -> index>(%arg0: !pop.scalar<index>) -> (index, index) {
@@ -50,7 +44,7 @@ kgen.generator @raiseClosure<Jefffffffffff -> index>(%arg0: !pop.scalar<index>) 
   }
   // CHECK: [[STRUCT:%[0-9]+]] = pop.struct.create(%idx0, %arg0) : !pop.struct<index, scalar<index>>
   // CHECK-NEXT: pop.compiler.global_store "raiseClosure_context_var_0", [[STRUCT]] : !pop.struct<index, scalar<index>>
-  // CHECK: kgen.param.declare Fn: <A, B -> E>() -> index = <@raiseClosure_Fn_wrapper<Jefffffffffff = Jefffffffffff, C = C, A = #kgen.unbound, B = #kgen.unbound>>
+  // CHECK: kgen.param.declare Fn: <A, B -> E>() -> index = <@raiseClosure_Fn<Jefffffffffff = Jefffffffffff, C = C, A = #kgen.unbound, B = #kgen.unbound>>
   // CHECK: kgen.param.declare BoundFn: <A -> E>() -> index = <bind_signature(:<A, B -> E>() -> index Fn, #kgen.unbound, 1)>
   kgen.param.declare BoundFn: <A -> E>() -> index = <bind_signature(:<A, B -> E>() -> index Fn, #kgen.unbound, 1)>
   // CHECK: kgen.call @call_region<fn: <A -> E>() -> index = BoundFn -> Result = E>() : () -> index
@@ -64,25 +58,16 @@ kgen.generator @raiseClosure<Jefffffffffff -> index>(%arg0: !pop.scalar<index>) 
 // CHECK-LABEL: kgen.generator @raise2Closures_Empty() always_inline
 // CHECK-NEXT:    kgen.return
 
-// CHECK-LABEL: kgen.generator @raise2Closures_Empty_wrapper() always_inline
-// CHECK-NEXT:    kgen.call @raise2Closures_Empty() : () -> ()
-// CHECK-NEXT:    kgen.return
-
-// CHECK-LABEL: kgen.generator @raise2Closures_Fn<C, A -> E>(%arg0: index) -> index always_inline
-// CHECK-NEXT:    %0 = kgen.param.constant = <add(A, C)>
-// CHECK-NEXT:    %1 = pop.cast_from_builtin %0 : index to !pop.scalar<index>
-// CHECK-NEXT:    %2 = pop.cast_from_builtin %arg0 : index to !pop.scalar<index>
-// CHECK-NEXT:    %3 = pop.add %1, %2 : !pop.scalar<index>
-// CHECK-NEXT:    %4 = pop.cast_to_builtin %3 : !pop.scalar<index> to index
+// CHECK-LABEL: kgen.generator @raise2Closures_Fn<C, A -> E>() -> index always_inline
+// CHECK-NEXT:    %[[PTR:.*]] = pop.compiler.global_load "raise2Closures_context_var_1" : !pop.struct<index>
+// CHECK-NEXT:    %[[ARG0:.*]] = pop.struct.extract %[[PTR]][0] :
+// CHECK-NEXT:    %[[V0:.*]] = kgen.param.constant = <add(A, C)>
+// CHECK-NEXT:    %[[V1:.*]] = pop.cast_from_builtin %[[V0]] : index to !pop.scalar<index>
+// CHECK-NEXT:    %[[V2:.*]] = pop.cast_from_builtin %[[ARG0]] : index to !pop.scalar<index>
+// CHECK-NEXT:    %[[V3:.*]] = pop.add %[[V1]], %[[V2]] : !pop.scalar<index>
+// CHECK-NEXT:    %[[V4:.*]] = pop.cast_to_builtin %[[V3]] : !pop.scalar<index> to index
 // CHECK-NEXT:    kgen.param.result_bind<add(mul(A, -1), C)>
-// CHECK-NEXT:    kgen.return %4 : index
-
-// CHECK-LABEL: kgen.generator @raise2Closures_Fn_wrapper<C, A -> E>() -> index always_inline
-// CHECK-NEXT:    %0 = pop.compiler.global_load "raise2Closures_context_var_1" : !pop.struct<index>
-// CHECK-NEXT:    %1 = pop.struct.extract %0[0] :
-// CHECK-NEXT:    %2 = kgen.call @raise2Closures_Fn<C = C, A = A -> *"(outlined)resultParam0" = E>(%1) : (index) -> index
-// CHECK-NEXT:    kgen.param.result_bind<*"(outlined)resultParam0">
-// CHECK-NEXT:    kgen.return %2 : index
+// CHECK-NEXT:    kgen.return %[[V4]] : index
 
 
 // CHECK-LABEL: kgen.generator @raise2Closures
@@ -93,12 +78,12 @@ kgen.generator @raise2Closures() {
   // CHECK-NEXT: pop.compiler.global_store "raise2Closures_context_var_1", [[STRUCT2]] : !pop.struct<index>
   kgen.param.declare C = <15>
 
-  // CHECK: kgen.param.declare Empty: () -> () = <@raise2Closures_Empty_wrapper>
+  // CHECK: kgen.param.declare Empty: () -> () = <@raise2Closures_Empty>
   kgen.param.declare.region Empty = () -> () always_inline {
     kgen.return
   }
 
-  // CHECK-NEXT: kgen.param.declare Fn: <A -> E>() -> index = <@raise2Closures_Fn_wrapper<C = C, A = #kgen.unbound>>
+  // CHECK-NEXT: kgen.param.declare Fn: <A -> E>() -> index = <@raise2Closures_Fn<C = C, A = #kgen.unbound>>
   kgen.param.declare.region Fn = <A -> E>() -> index always_inline {
     %0 = kgen.param.constant = <add(A, C)>
     %1 = pop.cast_from_builtin %0 : index to !pop.scalar<index>
@@ -117,19 +102,15 @@ kgen.generator @raise2Closures() {
   kgen.return
 }
 
-// CHECK-LABEL: kgen.generator @parametrizedClosure_Fn<T: type>(%arg0: !kgen.paramref<T>) -> !kgen.paramref<T> always_inline
-// CHECK-NEXT:    kgen.return %arg0 : !kgen.paramref<T>
-
-// CHECK-LABEL: kgen.generator @parametrizedClosure_Fn_wrapper<T: type>() -> !kgen.paramref<T> always_inline
+// CHECK-LABEL: kgen.generator @parametrizedClosure_Fn<T: type>() -> !kgen.paramref<T> always_inline
 // CHECK-NEXT:    %0 = pop.compiler.global_load "parametrizedClosure_context_var_2" : !pop.struct<T>
 // CHECK-NEXT:    %1 = pop.struct.extract %0[0] : !pop.struct<T>
-// CHECK-NEXT:    %2 = kgen.call @parametrizedClosure_Fn<T: type = T>(%1) : (!kgen.paramref<T>) -> !kgen.paramref<T>
-// CHECK-NEXT:    kgen.return %2 : !kgen.paramref<T>
+// CHECK-NEXT:    kgen.return %1 : !kgen.paramref<T>
 
 // CHECK-LABEL: kgen.generator @parametrizedClosure<T: type>(%arg0: !kgen.paramref<T>) -> !kgen.paramref<T>
 // CHECK-NEXT:    %0 = pop.struct.create(%arg0) : !pop.struct<T>
 // CHECK-NEXT:    pop.compiler.global_store "parametrizedClosure_context_var_2", %0 : !pop.struct<T>
-// CHECK-NEXT:    kgen.param.declare Fn: () -> !kgen.paramref<T> = <@parametrizedClosure_Fn_wrapper<T: type = T>>
+// CHECK-NEXT:    kgen.param.declare Fn: () -> !kgen.paramref<T> = <@parametrizedClosure_Fn<T: type = T>>
 // CHECK-NEXT:    %1 = kgen.call_param[() -> !kgen.paramref<T>: Fn]()
 // CHECK-NEXT:    kgen.return %1 : !kgen.paramref<T>
 
@@ -168,7 +149,7 @@ kgen.generator @useAfterDef() -> index {
   // CHECK-NEXT: kgen.param.constant
   %constant = kgen.param.constant = <Result>
 
-  // CHECK-NEXT: kgen.param.declare Fn: <A -> E>() -> index = <@useAfterDef_Fn_wrapper<C = C, A = #kgen.unbound>>
+  // CHECK-NEXT: kgen.param.declare Fn: <A -> E>() -> index = <@useAfterDef_Fn<C = C, A = #kgen.unbound>>
   kgen.param.declare.region Fn = <A -> E>() -> index always_inline {
     %0 = kgen.param.constant = <add(A, C)>
     %1 = pop.cast_from_builtin %0 : index to !pop.scalar<index>
@@ -215,7 +196,7 @@ kgen.generator @nested(%pred: i1) -> index {
 
   %1 = kgen.param.constant = <Result>
 
-  // CHECK: kgen.param.declare Empty: () -> () = <@nested_Empty_wrapper>
+  // CHECK: kgen.param.declare Empty: () -> () = <@nested_Empty>
   kgen.param.declare.region Empty = () -> () always_inline {
     kgen.return
   }
@@ -262,11 +243,10 @@ kgen.generator @capture_crosses_parameter_domain<T: type>(%arg0: !kgen.paramref<
 }
 
 // COM: We have to parametrize the wrapper on captured SSA values as well, check that this actually happens.
-// CHECK-LABEL: @parametrizedSSACapture_fn_wrapper<T: type>
-// CHECK-LABEL: @parametrizedSSACapture
+// CHECK-LABEL: @parametrizedSSACapture_fn<T: type>
 kgen.generator @parametrizedSSACapture<T: type>(%arg0 : !kgen.paramref<T>) -> index {
   %0 = kgen.call_param[<>() -> index: fn]()
-  // CHECK: kgen.param.declare fn: () -> index = <@parametrizedSSACapture_fn_wrapper<T: type = T>>
+  // CHECK: kgen.param.declare fn: () -> index = <@parametrizedSSACapture_fn<T: type = T>>
   kgen.param.declare.region fn = () -> index always_inline {
     "op.use"(%arg0) : (!kgen.paramref<T>) -> ()
     %1 = kgen.param.constant = <0>
@@ -276,11 +256,10 @@ kgen.generator @parametrizedSSACapture<T: type>(%arg0 : !kgen.paramref<T>) -> in
 }
 
 // COM: We should not try and capture input parameters.
-// CHECK-LABEL: @dontBindInputParameters_fn_wrapper<T: type, I>
-// CHECK-LABEL: @dontBindInputParameters
+// CHECK-LABEL: @dontBindInputParameters_fn<T: type, I>
 kgen.generator @dontBindInputParameters<T: type, I>(%arg0 : !kgen.paramref<T>) -> index {
   %0 = kgen.call_param[<>() -> index: bind_signature(: <I>() -> index fn, I)]()
-  // CHECK: kgen.param.declare fn: <I>() -> index = <@dontBindInputParameters_fn_wrapper<T: type = T, I = #kgen.unbound>>
+  // CHECK: kgen.param.declare fn: <I>() -> index = <@dontBindInputParameters_fn<T: type = T, I = #kgen.unbound>>
   kgen.param.declare.region fn = <I>() -> index always_inline {
     %1 = kgen.param.constant = <I>
     "use.op"(%arg0) : (!kgen.paramref<T>) -> ()
@@ -290,11 +269,9 @@ kgen.generator @dontBindInputParameters<T: type, I>(%arg0 : !kgen.paramref<T>) -
 }
 
 // CHECK-LABEL: kgen.generator @innermostCapturesThroughMid_Bot<A>
-// CHECK: kgen.generator @innermostCapturesThroughMid_Bot_wrapper<A>
-// CHECK: kgen.generator @innermostCapturesThroughMid_Mid<A>
-// CHECK: kgen.generator @innermostCapturesThroughMid_Mid_wrapper<A>
-// CHECK: kgen.generator @innermostCapturesThroughMid<A>
-// CHECK-NEXT: @innermostCapturesThroughMid_Mid_wrapper<A = A>
+// CHECK-LABEL: kgen.generator @innermostCapturesThroughMid_Mid<A>
+// CHECK-LABEL: kgen.generator @innermostCapturesThroughMid<A>
+// CHECK-NEXT: @innermostCapturesThroughMid_Mid<A = A>
 
 kgen.generator @innermostCapturesThroughMid<A>() {
   kgen.param.declare.region Mid = () {
@@ -308,10 +285,8 @@ kgen.generator @innermostCapturesThroughMid<A>() {
 }
 
 // CHECK-LABEL: kgen.generator @paramCaptureNestedInParamRefType_Fn<N, Vs: list<i32[N]>>
-// CHECK-NEXT: constant: list<i32[N]> = <Vs>
-// CHECK: kgen.generator @paramCaptureNestedInParamRefType_Fn_wrapper<N, Vs: list<i32[N]>>
-// CHECK-NEXT: call @paramCaptureNestedInParamRefType_Fn<N = N, Vs: list<i32[N]> = Vs>
-// CHECK: declare Fn: () -> () = <@paramCaptureNestedInParamRefType_Fn_wrapper<N = N, Vs: list<i32[N]> = Vs>>
+// CHECK: constant: list<i32[N]> = <Vs>
+// CHECK: declare Fn: () -> () = <@paramCaptureNestedInParamRefType_Fn<N = N, Vs: list<i32[N]> = Vs>>
 
 kgen.generator @paramCaptureNestedInParamRefType<N, Vs: list<i32[N]>>() {
   kgen.param.declare.region Fn = () {
@@ -346,7 +321,7 @@ kgen.generator @left_to_right_dependency<
 // CHECK-LABEL: kgen.generator @dependent_outline<a>
 kgen.generator @dependent_outline<a>() {
   // CHECK-NEXT: kgen.param.declare fn: <b: type>(!pop.array<a, *0|0>) -> () =
-  // CHECK-SAME: <@dependent_outline_fn_wrapper<a = a, b: type = #kgen.unbound>>
+  // CHECK-SAME: <@dependent_outline_fn<a = a, b: type = #kgen.unbound>>
   kgen.param.declare.region fn = <b: type>(%arg0: !pop.array<a, b>) {
     kgen.return
   }

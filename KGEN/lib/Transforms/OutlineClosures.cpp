@@ -142,65 +142,12 @@ void OutlineClosuresPass::runOnOperation() {
                  llvm::interleaveComma(necessaryDecls, llvm::dbgs());
                  llvm::dbgs() << "]\n");
 
-      // The value signature is pretty simple here, just captures and then any
-      // original arguments.
-      SmallVector<Value> liftedInputs =
-          llvm::to_vector(ValueRange(region.getArguments()));
-      llvm::append_range(liftedInputs, captures);
-      LLVM_DEBUG(llvm::dbgs() << "Lifted region will take inputs: [\n\t";
-                 llvm::interleave(liftedInputs, llvm::dbgs(), ",\n\t");
-                 llvm::dbgs() << "\n]\n");
-      auto liftedFunctionType =
-          FunctionType::get(&getContext(), ValueRange(liftedInputs).getTypes(),
-                            regionDecl.getResultTypes());
-
       // The parameter signature is just the necessary decls + original
       // arguments, and then any of the original results.
       for (ParamDeclAttr inputParam : regionDecl.getInputParams()) {
         bool inserted = necessaryDecls.insert(inputParam);
         assert(inserted && "nested parameter declaration was duplicated?");
       }
-
-      auto inputParamDecls =
-          ParamDeclArrayAttr::get(&getContext(), necessaryDecls.getArrayRef());
-      auto liftedSignature =
-          SignatureType::get(
-              inputParamDecls, regionDecl.getResultParamsAttr(),
-              liftedFunctionType,
-              b.getAttr<MetadataAttr>(liftedFunctionType.getNumInputs()))
-              .normalizeToIndexRefs();
-
-      // Now lift the body out into its own generator. The lifted function must
-      // be marked as `always_inline`.
-      b.setInsertionPoint(generator);
-      auto lifted = b.create<GeneratorOp>(
-          regionDecl.getLoc(), getUniqueName("_" + regionName),
-          TypeAttr::get(liftedSignature), TypeAttr::get(liftedFunctionType),
-          inputParamDecls, regionDecl.getResultParamsAttr(),
-          b.getAttr<ConstraintArrayAttr>(ArrayRef<ConstraintAttr>{}),
-          b.getAttr<AlwaysInlineLevelAttr>(
-              regionDecl.getAlwaysInlineLevel() == AlwaysInlineLevel::Disabled
-                  ? AlwaysInlineLevel::Enabled
-                  : regionDecl.getAlwaysInlineLevel()));
-      symtab.insert(lifted);
-      auto liftedSymbol = SymbolConstantAttr::get(
-          SymbolRefAttr::get(lifted.getSymNameAttr()), liftedSignature);
-
-      // Create the generator's body. Start by handling any captures inside the
-      // region.
-      for (Value capture : captures) {
-        mlir::replaceAllUsesInRegionWith(
-            capture, region.addArgument(capture.getType(), capture.getLoc()),
-            region);
-      }
-      // Take the body from the param region.
-      lifted.getBodyRegion().takeBody(region);
-      LLVM_DEBUG(llvm::dbgs() << "Created lifted region: " << lifted << "\n");
-
-      LLVM_DEBUG({
-        if (failed(mlir::verify(lifted)))
-          return signalPassFailure();
-      });
 
       // Create a wrapper that knows how to handle the global variable. It has
       // the same parameter signature as the lifted region, but it has the same
@@ -209,15 +156,17 @@ void OutlineClosuresPass::runOnOperation() {
       SignatureType bodySignature =
           regionDecl.getSignature().incrementIndexRefs(
               capturedParamValues.size());
+      auto inputParamDecls =
+          ParamDeclArrayAttr::get(&getContext(), necessaryDecls.getArrayRef());
       auto wrapperSignature =
-          SignatureType::get(
-              liftedSignature.getInputParams(), bodySignature.getResultParams(),
-              bodySignature.getValues(), bodySignature.getMetadata())
+          SignatureType::get(inputParamDecls, bodySignature.getResultParams(),
+                             bodySignature.getValues(),
+                             bodySignature.getMetadata())
               .normalizeToIndexRefs();
 
       b.setInsertionPoint(generator);
       auto liftedWrapper = b.create<GeneratorOp>(
-          regionDecl.getLoc(), getUniqueName("_" + regionName + "_wrapper"),
+          regionDecl.getLoc(), getUniqueName("_" + regionName),
           TypeAttr::get(wrapperSignature), regionDecl.getFunctionTypeAttr(),
           inputParamDecls, regionDecl.getResultParamsAttr(),
           b.getAttr<ConstraintArrayAttr>(ArrayRef<ConstraintAttr>{}),
@@ -226,16 +175,12 @@ void OutlineClosuresPass::runOnOperation() {
       auto wrapperSymbol = SymbolConstantAttr::get(
           SymbolRefAttr::get(liftedWrapper.getNameAttr()), wrapperSignature);
 
+      // Take the body from the param region.
+      liftedWrapper.getBodyRegion().takeBody(region);
+
       // Add the original arguments to the call after the captures. Since the
       // captures are the last N arguments, we can simply drop them.
-      liftedWrapper.getBodyRegion().push_back(new Block);
       b.setInsertionPointToStart(liftedWrapper.getBody());
-      SmallVector<Value> callArgs;
-      for (BlockArgument liftedArg :
-           llvm::drop_end(lifted.getArguments(), captures.size())) {
-        callArgs.push_back(liftedWrapper.getBodyRegion().addArgument(
-            liftedArg.getType(), liftedArg.getLoc()));
-      }
 
       // Fill the body of the wrapper.
       if (!isolated) {
@@ -244,23 +189,11 @@ void OutlineClosuresPass::runOnOperation() {
         auto load = b.create<POP::CompilerGlobalLoadOp>(regionDecl.getLoc(),
                                                         structType, globalVar);
         // Create accesses for each capture.
-        for (size_t i = 0, e = structType.getNumElements(); i < e; ++i) {
-          callArgs.push_back(
-              b.create<POP::StructExtractOp>(load.getLoc(), load, i));
+        for (auto [idx, capture] : llvm::enumerate(captures)) {
+          mlir::replaceAllUsesInRegionWith(
+              capture, b.create<POP::StructExtractOp>(load.getLoc(), load, idx),
+              liftedWrapper.getBodyRegion());
         }
-      }
-
-      // Create result parameter decls from the lifted region, and get decl refs
-      // for the actual ReturnOp.
-      SmallVector<ParamDeclAttr> resultDecls;
-      SmallVector<TypedAttr> returnRefs;
-      for (auto [idx, resultParam] :
-           llvm::enumerate(lifted.getResultParams())) {
-        auto declName = b.getStringAttr("(outlined)resultParam" + Twine(idx));
-        resultDecls.push_back(
-            ParamDeclAttr::get(declName, resultParam.getType()));
-        returnRefs.push_back(
-            ParamDeclRefAttr::get(declName, resultParam.getType()));
       }
 
       // We need to set the parameter bindings for the call to the lifted
@@ -274,21 +207,6 @@ void OutlineClosuresPass::runOnOperation() {
       LLVM_DEBUG(llvm::dbgs() << "Bindings: [\n\t";
                  llvm::interleave(symbolBindings, llvm::dbgs(), ",\n\t");
                  llvm::dbgs() << "\n]");
-
-      // Create the specialized call to the lifted region.
-      auto liftedCallSymbol = SymbolConstantAttr::get(
-          liftedSymbol.getSymbol(),
-          ParamBindArrayAttr::get(&getContext(), symbolBindings),
-          liftedSymbol.getType().getSpecializedSignature(symbolBindings, [&]() {
-            return regionDecl->emitError(
-                "could not specialize the lifted generator's signature: ");
-          }));
-      auto callResults = b.create<CallOp>(
-          regionDecl.getLoc(), lifted.getResultTypes(), liftedCallSymbol,
-          ParamDeclArrayAttr::get(&getContext(), resultDecls), callArgs);
-      if (!returnRefs.empty())
-        b.create<ParamResultBindOp>(regionDecl.getLoc(), returnRefs);
-      b.create<ReturnOp>(regionDecl.getLoc(), callResults.getResults());
 
       LLVM_DEBUG(llvm::dbgs()
                  << "Created lifted region wrapper: " << liftedWrapper << "\n");
