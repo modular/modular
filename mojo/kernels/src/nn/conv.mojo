@@ -38,6 +38,7 @@ from Image import (
     ImageShape,
 )
 from IO import _printf
+from MachineConfiguration import get_matmul_prefetch_b_distance_k
 
 
 @register_passable("trivial")
@@ -1375,7 +1376,7 @@ struct ConvIm2ColNCHW[
                 valid_row_count(Int): number of valid rows to process from the
                     start_idx.
         """
-        alias prefetch_b_distance_k = 4
+        alias prefetch_b_distance_k = get_matmul_prefetch_b_distance_k()
         var row_idx = start_idx
         while row_idx <= (valid_row_count - RowSize):
             MatmulInnerLoopBPacked[
