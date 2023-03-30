@@ -84,6 +84,10 @@ private:
   /// know have no parameters in them and whether the paramless attributes are
   /// constant parameter expressions.
   Analysis &cache;
+
+  /// An internal stack of signature types representing the current nested
+  /// signatures.
+  SmallVector<SignatureType> signatures;
 };
 
 //===----------------------------------------------------------------------===//

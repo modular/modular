@@ -18,6 +18,7 @@
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/SymbolTable.h"
 #include "llvm/ADT/SCCIterator.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallString.h"
 
@@ -45,6 +46,42 @@ void ParameterCollector::collectUsesFromAttr(
   if (auto paramRef = dyn_cast<ParamDeclRefAttr>(attr)) {
     collectUsesFromType(paramRef.getType(), uses, hasConstExpr);
     uses.push_back(paramRef);
+    return;
+  }
+
+  // Verify index parameter references.
+  if (auto indexRef = dyn_cast<ParamIndexRefAttr>(attr)) {
+    collectUsesFromType(indexRef.getType(), uses, hasConstExpr);
+    maybeVerify(
+        [&](function_ref<InFlightDiagnostic()> emitError) -> LogicalResult {
+          if (signatures.empty())
+            return emitError() << "index reference has no contextual signature";
+          if (indexRef.getDepth() >= signatures.size()) {
+            return emitError()
+                   << "index reference depth " << indexRef.getDepth()
+                   << " exceeds depth of contextual signatures: "
+                   << signatures.size();
+          }
+          SignatureType sig =
+              signatures[signatures.size() - 1 - indexRef.getDepth()];
+          ParamDeclArrayAttr params = indexRef.getIsResult()
+                                          ? sig.getResultParams()
+                                          : sig.getInputParams();
+          if (indexRef.getIndex() >= params.size()) {
+            return emitError() << "index reference " << indexRef.getIndex()
+                               << " is out of bounds: referenced signature has "
+                               << params.size() << ' '
+                               << (indexRef.getIsResult() ? "result" : "input")
+                               << " parameters";
+          }
+          ParamDeclAttr param = params[indexRef.getIndex()];
+          if (param.getType() != indexRef.getType()) {
+            return emitError()
+                   << "index reference type " << indexRef.getType()
+                   << " does not match parameter type " << param.getType();
+          }
+          return success();
+        });
     return;
   }
 
@@ -86,6 +123,9 @@ void ParameterCollector::collectUsesFromType(
     Type type, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasConstExpr) {
   // Signature types define nested parameters.
   if (auto sig = dyn_cast<SignatureType>(type)) {
+    signatures.push_back(sig);
+    auto pop = llvm::make_scope_exit([&] { signatures.pop_back(); });
+
     SmallPtrSet<StringAttr, 4> nestedParams;
     for (ParamDeclAttr param : llvm::concat<const ParamDeclAttr>(
              sig.getInputParams(), sig.getResultParams()))
