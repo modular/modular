@@ -813,27 +813,27 @@ kgen.generator @missing_def<() -> out>() {
 
 kgen.generator @bad_index_ref() {
   // expected-error @below {{index reference has no contextual signature}}
-  kgen.param.declare a = <#kgen.param.index.ref<0, false, 0>>
+  kgen.param.declare a = <*0|0>
   kgen.return
 }
 
 // -----
 
 // expected-error @below {{index reference depth 1 exceeds depth of contextual signatures: 1}}
-kgen.generator @bad_index_ref<a: !pop.array<#kgen.param.index.ref<1, false, 0>, i32>>() {
+kgen.generator @bad_index_ref<a: !pop.array<*1|0, i32>>() {
   kgen.return
 }
 
 // -----
 
 // expected-error @below {{index reference 1 is out of bounds: referenced signature has 1 input parameters}}
-kgen.generator @bad_index_ref<a: !pop.array<#kgen.param.index.ref<0, false, 1>, i32>>() {
+kgen.generator @bad_index_ref<a: !pop.array<*0|1, i32>>() {
   kgen.return
 }
 
 // -----
 
 // expected-error @below {{index reference type 'index' does not match parameter type 'i32'}}
-kgen.generator @bad_index_ref<a: i32, b: !pop.array<#kgen.param.index.ref<0, false, 0>, i32>>() {
+kgen.generator @bad_index_ref<a: i32, b: !pop.array<*0|0, i32>>() {
   kgen.return
 }

@@ -440,6 +440,13 @@ def KGEN_ParamIndexRefAttr : KGEN_ExprAttr<"ParamIndexRef", "param.index.ref",
   let parameters = (ins "size_t":$depth, "bool":$isResult, "size_t":$index,
                         AttributeSelfTypeParameter<"">:$type);
   let assemblyFormat = "`<` $depth `,` $isResult `,` $index `>`";
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "size_t":$depth, "bool":$isResult,
+                                        "size_t":$index, "Type":$type), [{
+      return $_get(type.getContext(), depth, isResult, index, type);
+    }]>
+  ];
 }
 
 //===----------------------------------------------------------------------===//

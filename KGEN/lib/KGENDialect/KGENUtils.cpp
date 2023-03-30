@@ -685,6 +685,17 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
   // If this is a '*'-prefixed double quoted string, then this is a simple
   // parameter reference.
   if (succeeded(p.parseOptionalStar())) {
+    // Try to parse *0|0 as an index reference.
+    size_t depth, index;
+    mlir::OptionalParseResult intParse = p.parseOptionalInteger(depth);
+    if (intParse.has_value()) {
+      if (failed(*intParse) || p.parseVerticalBar() || p.parseInteger(index))
+        return failure();
+      bool isResult = succeeded(p.parseOptionalStar());
+      value = ParamIndexRefAttr::get(depth, isResult, index, type);
+      return success();
+    }
+
     std::string name;
     if (failed(p.parseString(&name)))
       return failure();
@@ -893,6 +904,12 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
 
   if (auto declRef = dyn_cast<ParamDeclRefAttr>(value)) {
     printParamName(p, declRef.getName());
+    return;
+  }
+  if (auto indexRef = dyn_cast<ParamIndexRefAttr>(value)) {
+    p << '*' << indexRef.getDepth() << '|' << indexRef.getIndex();
+    if (indexRef.getIsResult())
+      p << '*';
     return;
   }
 
