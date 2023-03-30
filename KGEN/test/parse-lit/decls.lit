@@ -90,6 +90,10 @@ fn varargOverload(a: __mlir_type.index): pass
 fn varargOverload(*a: __mlir_type.index): pass
 fn varargOverload(): pass
 
+fn packOverload(a: __mlir_type.index): pass
+fn packOverload[*Ts: __mlir_type.`!kgen.mlirtype`](*a: *Ts): pass
+fn packOverload(): pass
+
 # CHECK-LABEL: lit.func @"callOverload
 fn callOverload(a: Int):
   # CHECK: %0 = kgen.call @"$decls"::@"testThing($Int::Int)"(%a)
@@ -117,6 +121,13 @@ fn callOverload(a: Int):
 
   # CHECK:  kgen.call @"$decls"::@"varargOverload()"()
   varargOverload()
+
+  # Expect packs to behave similarly to varargs.
+  # CHECK: %[[IDX3:.*]] = index.constant 3
+  # CHECK: kgen.call @"$decls"::@"packOverload(__mlir_type.index)"(%[[IDX3]])
+  packOverload(3)
+  # CHECK:  kgen.call @"$decls"::@"packOverload()"()
+  packOverload()
 
 
 # Test that pointers don't get confused with by-ref arguments.

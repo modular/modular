@@ -723,9 +723,10 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
 
     // Handle case when there are no more provided arguments.
     if (providedValueIdx == operands.size()) {
-      // If the argument is a varargs argument list, then it can be initialized
-      // with zero values no problem.
-      if (signature.isVararg(expectedArgIdx)) {
+      // If the argument is a varargs argument list or pack, then it can be
+      // initialized with zero values no problem.
+      if (signature.isVararg(expectedArgIdx) ||
+          signature.isPackVararg(expectedArgIdx)) {
         // We consider an empty varargs list to be an implicit conversion,
         // so an exact signature match takes precedence.
         ++numImplicitConversions;
@@ -822,6 +823,7 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
         OverloadFitness result = checkOneOperand(ASTType(element));
         if (result.kind != kValid)
           return result;
+        passesVarargArgument = true;
       }
       continue;
     }
