@@ -122,20 +122,6 @@ static bool moduleExportsMain(ModuleOp theModule, SymbolTable &symtab,
 /// files that are designated by the funcs it operates on.
 static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
                            const CLOptions &clOptions) {
-  DialectRegistry registry;
-  TraceProfiler tracer(clOptions);
-
-  // Register MLIR stuff
-  registerAllKGENDialects(registry);
-  registry.insert<DebugInfo::DebugInfoDialect, Cache::CacheDialect,
-                  index::IndexDialect, LLVM::LLVMDialect>();
-
-  mlir::registerBuiltinDialectTranslation(registry);
-  mlir::registerLLVMDialectTranslation(registry);
-
-  // Set up the dialects in the context.
-  ctx->appendDialectRegistry(registry);
-  ctx->loadAllAvailableDialects();
   // Allow unregistered dialects, we will verify we know what to do with it
   // later.
   ctx->allowUnregisteredDialects();
@@ -371,11 +357,31 @@ int main(int argc, char **argv) {
   llvm::cl::ParseCommandLineOptions(argc, argv);
 
   mlir::MLIRContext context;
-  // If all we're doing is demangling a name, then don't do anything else.
+  // Set up the dialects so we can use it while demangling.
+  DialectRegistry registry;
+  TraceProfiler tracer(clOptions);
+
+  // Register MLIR stuff
+  registerAllKGENDialects(registry);
+  registry.insert<DebugInfo::DebugInfoDialect, Cache::CacheDialect,
+                  index::IndexDialect, LLVM::LLVMDialect>();
+
+  mlir::registerBuiltinDialectTranslation(registry);
+  mlir::registerLLVMDialectTranslation(registry);
+
+  // Set up the dialects in the context.
+  context.appendDialectRegistry(registry);
+  context.loadAllAvailableDialects();
+
+  // If all we're doing is demangling a name, then don't do anything else. This
+  // has to be done before the input is added to the source manager.
   if (clOptions.cmd == MojoCommand::kDemangle) {
-    auto mangled = LIT::MangledSymbol::demangle(
+    auto mangledOr = LIT::MangledSymbol::demangle(
         StringAttr::get(&context, clOptions.inputFilename));
-    llvm::outs() << mangled << "\n";
+    if (failed(mangledOr))
+      return clOptions.reportError("demangling failed");
+
+    llvm::outs() << *mangledOr << "\n";
     return EXIT_SUCCESS;
   }
 
