@@ -57,6 +57,7 @@ fn _raw_stack_allocation[
 # Buffer
 # ===----------------------------------------------------------------------===#
 
+# This type is "async safe" (see async_parallelize).
 # TODO: This should not be implicitly copyable when we have ownership set up!
 @register_passable("trivial")
 struct Buffer[size: Dim, type: DType]:
@@ -478,7 +479,7 @@ fn _compute_ndbuffer_stride[
 # NDBuffer
 # ===----------------------------------------------------------------------===#
 
-
+# This type is "async safe" (see async_parallelize).
 @register_passable("trivial")
 struct NDBuffer[
     rank: Int,
@@ -965,7 +966,7 @@ fn partial_simd_store[
 # DynamicRankBuffer
 # ===----------------------------------------------------------------------===#
 
-
+# CAUTION: This type is currently NOT "async safe" (see async_parallelize).
 @register_passable("trivial")
 struct DynamicRankBuffer:
     """This buffer struct does not assume the rank to be static. It is not as
