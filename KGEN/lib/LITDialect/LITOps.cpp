@@ -17,6 +17,7 @@
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "Support/Compiler/VerifyUtils.h"
+#include "mlir/AsmParser/AsmParser.h"
 #include "mlir/IR/FunctionImplementation.h"
 #include "mlir/IR/PatternMatch.h"
 #include "llvm/ADT/StringExtras.h"
@@ -84,8 +85,16 @@ LIT::MangledSymbol LIT::MangledSymbol::mangle(mlir::SymbolOpInterface op) {
   // Get the name of the func.
   out.symName =
       StringAttr::get(op.getContext(), op.getName().take_front(firstParen));
-  out.signature =
+  auto signatureStr =
       StringAttr::get(op.getContext(), op.getName().drop_front(firstParen));
+  // If the operation is function-like, we can get its signature. However, using
+  // it for name mangling breaks a lot of things right now.
+  // TODO(10920): We have to re-evaluate if we want to have the parser doing
+  //   some of this, or if we want to mangle it here.
+  if (auto funcLike = dyn_cast<FuncInterface>(op.getOperation()))
+    out.signature = funcLike.getFunctionType();
+  else
+    out.signature = nullptr;
 
   // Nested structs, add them in order from in -> out (they'll be added to the
   // name from out->in).
@@ -100,20 +109,67 @@ LIT::MangledSymbol LIT::MangledSymbol::mangle(mlir::SymbolOpInterface op) {
     out.moduleName = file.getNameAttr();
 
   std::string mangledName;
+  llvm::raw_string_ostream nameStream(mangledName);
   // First up is the module name. It will be prefixed with `$` - that's how
   // we'll know it's a module and not a struct.
   if (out.moduleName)
-    mangledName += out.moduleName.str() + "::";
+    nameStream << out.moduleName.getValue() << "::";
   // Next up, structs.
   for (auto s : out.structNames)
-    mangledName += s.str() + "::";
-  // Finally, function name and argument types.
-  mangledName += out.symName.str() + out.signature.str();
+    nameStream << s.getValue() << "::";
+  // Finally, function name and argument types. Use the string coming out of the
+  // parser rather than the actual function type.
+  nameStream << out.symName.getValue() << signatureStr.getValue();
+
   out.mangled = StringAttr::get(op.getContext(), mangledName);
   return out;
 }
 
-LIT::MangledSymbol LIT::MangledSymbol::demangle(StringAttr mangled) {
+/// Parse a mangled signature from `typeStr`. Expects a signature that looks
+/// like `(type1,type2)rtype1,rtype2`.
+static FailureOr<FunctionType> parseMangledSignature(MLIRContext *ctx,
+                                                     StringRef typeStr) {
+  SmallVector<Type> inputTypes, resultTypes;
+  SmallVector<Type> *typeVec = &inputTypes;
+  if (typeStr.empty())
+    return FunctionType{};
+
+  // Drop the first '(' if there is one.
+  if (typeStr.starts_with("("))
+    typeStr = typeStr.drop_front();
+
+  // If the first thing in the string is the closing paren, move straight to
+  // result types.
+  if (typeStr.starts_with(")")) {
+    typeStr = typeStr.drop_front();
+    typeVec = &resultTypes;
+  }
+
+  // Now, parse the type string.
+  while (!typeStr.empty()) {
+    size_t numBytes = 0;
+    Type t = mlir::parseType(typeStr, ctx, &numBytes);
+    if (!t)
+      return failure();
+
+    typeVec->push_back(t);
+    typeStr = typeStr.drop_front(numBytes);
+    // Drop the comma.
+    if (typeStr.starts_with(","))
+      typeStr = typeStr.drop_front();
+
+    // If we have reached the closing paren, then skip it and parse any
+    // leftovers into the result types.
+    if (typeStr.starts_with(")")) {
+      typeStr = typeStr.drop_front();
+      typeVec = &resultTypes;
+    }
+  }
+
+  return FunctionType::get(ctx, inputTypes, resultTypes);
+}
+
+FailureOr<LIT::MangledSymbol> LIT::MangledSymbol::demangle(StringAttr mangled) {
   MangledSymbol out;
   out.mangled = mangled;
   StringRef m = mangled.getValue();
@@ -137,8 +193,20 @@ LIT::MangledSymbol LIT::MangledSymbol::demangle(StringAttr mangled) {
   if (firstParen == std::string::npos)
     firstParen = m.size();
   out.symName = StringAttr::get(mangled.getContext(), m.take_front(firstParen));
-  out.signature =
-      StringAttr::get(mangled.getContext(), m.drop_front(firstParen));
+
+  // If there's no parenthesis here, don't even parse out the signature.
+  if (firstParen == m.size()) {
+    out.signature = nullptr;
+    return out;
+  }
+
+  // If we *have* a signature, parse it out.
+  FailureOr<FunctionType> sigOr =
+      parseMangledSignature(mangled.getContext(), m.drop_front(firstParen));
+  if (failed(sigOr))
+    return failure();
+
+  out.signature = *sigOr;
   return out;
 }
 
@@ -152,7 +220,11 @@ llvm::raw_ostream &LIT::operator<<(raw_ostream &os,
   os << "Module: " << (ms.moduleName ? ms.moduleName.getValue() : "(none)")
      << ", Structs: [";
   llvm::interleaveComma(ms.structNames, os);
-  os << "], Symbol: " << ms.symName << ", Signature: " << ms.signature;
+  os << "], Symbol: " << ms.symName << ", Signature: ";
+  if (ms.signature)
+    os << ms.signature;
+  else
+    os << "(none)";
   return os;
 }
 

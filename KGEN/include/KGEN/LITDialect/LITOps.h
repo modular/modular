@@ -63,7 +63,11 @@ struct MangledSymbol {
   /// names.
   static MangledSymbol mangle(mlir::SymbolOpInterface op);
   /// Demangle this mangled name by parsing it into its component parts.
-  static MangledSymbol demangle(StringAttr mangled);
+  static FailureOr<MangledSymbol> demangle(StringAttr mangled);
+
+  /// The format for a mangled name is roughly:
+  ///  $<module name>::<struct name>[::<struct name>]
+  ///    ::<function name>(<comma-separated args>)<comma-separated results>
 
   /// The fully mangled name.
   StringAttr mangled;
@@ -74,7 +78,7 @@ struct MangledSymbol {
   /// The bare name of the symbol.
   StringAttr symName;
   /// If the symbol has a signature mangled into the name, then it will be here.
-  StringAttr signature;
+  FunctionType signature;
 };
 
 /// Print a mangled symbol.
