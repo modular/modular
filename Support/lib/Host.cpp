@@ -53,7 +53,7 @@ M::ErrorOr<size_t> M::getHostCPUCacheSize(size_t cacheLevel) {
   }
 #elif defined(__linux__)
   std::string path = "/sys/devices/system/cpu/cpu0/cache/index" +
-                     std::to_string(cacheLevel - 1) + "/size";
+                     std::to_string(cacheLevel) + "/size";
 
   std::ifstream fs(path, std::ios::in);
 
