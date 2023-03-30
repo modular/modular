@@ -76,7 +76,7 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
     return attr;
 
   // If we've already processed this attribute, just reuse the memoized result.
-  auto iter = rewritten.find(attr.getAsOpaquePointer());
+  auto iter = rewritten.find({rootDepth, attr.getAsOpaquePointer()});
   if (iter != rewritten.end())
     return Attribute::getFromOpaquePointer(iter->second);
 
@@ -133,14 +133,15 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
     if (FailureOr<TypedAttr> expr = evaluateExpression(op); succeeded(expr))
       result = *expr;
 
-  rewritten.try_emplace(attr.getAsOpaquePointer(), result.getAsOpaquePointer());
+  rewritten.try_emplace({rootDepth, attr.getAsOpaquePointer()},
+                        result.getAsOpaquePointer());
   return result;
 }
 
 /// Get the specified type with any nested parameter expressions rewritten.
 Type ParameterEvaluator::getReboundType(Type type) {
   // If we've already processed this type, just reuse the memoized result.
-  auto iter = rewritten.find(type.getAsOpaquePointer());
+  auto iter = rewritten.find({rootDepth, type.getAsOpaquePointer()});
   if (iter != rewritten.end())
     return Type::getFromOpaquePointer(iter->second);
 
@@ -172,7 +173,8 @@ Type ParameterEvaluator::getReboundType(Type type) {
       result = type.replaceImmediateSubElements(newAttrs, newTypes);
   }
 
-  rewritten.try_emplace(type.getAsOpaquePointer(), result.getAsOpaquePointer());
+  rewritten.try_emplace({rootDepth, type.getAsOpaquePointer()},
+                        result.getAsOpaquePointer());
   return result;
 }
 

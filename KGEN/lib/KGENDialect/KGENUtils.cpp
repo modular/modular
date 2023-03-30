@@ -985,10 +985,10 @@ void KGEN::printParamValue(AsmPrinter &p, Operation *op, TypedAttr value,
 /// parse, which allows the KGEN type parser to check if it is parsing a
 /// signature.
 template <bool optionalResultList>
-static OptionalParseResult parseOptionalSignatureValues(
-    AsmParser &p, function_ref<FailureOr<Type>()> parseElt,
-    ParamDeclArrayAttr inputParams, ParamDeclArrayAttr resultParams,
-    SignatureType &signature) {
+static OptionalParseResult
+parseOptionalSignatureValues(AsmParser &p,
+                             function_ref<FailureOr<Type>()> parseElt,
+                             FunctionType &values, MetadataAttr &metadata) {
   SmallVector<ValueInputConvention> inputConventions;
   SmallVector<TypedAttr> defaults;
   SmallVector<Type> argTypes, resTypes;
@@ -1056,24 +1056,20 @@ static OptionalParseResult parseOptionalSignatureValues(
   using GetCheckedT = MetadataAttr (*)(
       function_ref<InFlightDiagnostic()>, MLIRContext *,
       ArrayRef<ValueInputConvention>, ArrayRef<TypedAttr>, FnEffects);
-  auto metadata = ((GetCheckedT)&MetadataAttr::getChecked)(
+  metadata = ((GetCheckedT)&MetadataAttr::getChecked)(
       emitError, p.getContext(), inputConventions, defaults, effect);
   if (!metadata)
     return failure();
-  signature = SignatureType::getChecked(
-      emitError, inputParams, resultParams,
-      p.getBuilder().getFunctionType(argTypes, resTypes), metadata);
-  return mlir::success(!!signature);
+  values = p.getBuilder().getFunctionType(argTypes, resTypes);
+  return mlir::success();
 }
 
 template <bool optionalResultList>
 static ParseResult
 parseSignatureValuesElt(AsmParser &p, function_ref<FailureOr<Type>()> parseElt,
-                        ParamDeclArrayAttr inputParams,
-                        ParamDeclArrayAttr resultParams,
-                        SignatureType &signature) {
+                        FunctionType &values, MetadataAttr &metadata) {
   OptionalParseResult result = parseOptionalSignatureValues<optionalResultList>(
-      p, parseElt, inputParams, resultParams, signature);
+      p, parseElt, values, metadata);
   if (result.has_value())
     return *result;
   return p.emitError(p.getCurrentLocation(), "expected '(' to begin signature");
@@ -1086,7 +1082,7 @@ printSignatureValuesElt(AsmPrinter &p, function_ref<void(unsigned)> printElt,
                         FunctionType functionType, SignatureType signature) {
   p << '(';
   MetadataAttr metadata = signature.getMetadata();
-  ArrayRef<TypedAttr> defaults = signature.getDefaultArguments();
+  ArrayRef<TypedAttr> defaults = metadata.getDefaultArguments();
   llvm::interleaveComma(
       llvm::seq<unsigned>(0, metadata.getInputConventions().size()), p,
       [&](unsigned i) {
@@ -1120,6 +1116,7 @@ ParseResult KGEN::parseFunctionSignature(
     OpAsmParser &p, SmallVectorImpl<OpAsmParser::Argument> &args,
     ParamDeclArrayAttr &inputParams, ParamDeclArrayAttr &resultParams,
     FunctionType &functionType, SignatureType &signature) {
+  llvm::SMLoc loc = p.getCurrentLocation();
   if (parseOptionalParameterSpec(p, inputParams, resultParams))
     return failure();
 
@@ -1136,12 +1133,16 @@ ParseResult KGEN::parseFunctionSignature(
     return args.back().type;
   };
 
+  MetadataAttr metadata;
   if (failed(parseSignatureValuesElt</*optionalResultList=*/true>(
-          p, parseArg, inputParams, resultParams, signature)))
+          p, parseArg, functionType, metadata)))
     return failure();
-  functionType = signature.getValues();
-  signature = signature.normalizeToIndexRefs();
-  return success();
+  IndexRefRemapper remapper(inputParams, resultParams);
+  signature = SignatureType::getChecked(
+      [&] { return p.emitError(loc); }, remapper.remap(inputParams),
+      remapper.remap(resultParams), remapper.remap(functionType),
+      remapper.remap(metadata));
+  return success(!!signature);
 }
 
 void KGEN::printFunctionSignature(OpAsmPrinter &p, Region &region,
@@ -1165,6 +1166,7 @@ void KGEN::printFunctionSignature(OpAsmPrinter &p, Region &region,
 
 OptionalParseResult KGEN::parseOptionalSignature(AsmParser &p,
                                                  SignatureType &signature) {
+  llvm::SMLoc loc = p.getCurrentLocation();
   ParamDeclArrayAttr inputParams, resultParams;
   if (parseOptionalParameterSpec(p, inputParams, resultParams))
     return failure();
@@ -1175,8 +1177,19 @@ OptionalParseResult KGEN::parseOptionalSignature(AsmParser &p,
       return failure();
     return type;
   };
-  return parseOptionalSignatureValues</*optionalResultList=*/false>(
-      p, parseElt, inputParams, resultParams, signature);
+  FunctionType functionType;
+  MetadataAttr metadata;
+  OptionalParseResult result =
+      parseOptionalSignatureValues</*optionalResultList=*/false>(
+          p, parseElt, functionType, metadata);
+  if (result.has_value() && succeeded(*result)) {
+    signature =
+        SignatureType::getChecked([&] { return p.emitError(loc); }, inputParams,
+                                  resultParams, functionType, metadata);
+    if (!signature)
+      return failure();
+  }
+  return result;
 }
 
 ParseResult KGEN::parseSignature(AsmParser &p, SignatureType &signature) {
@@ -1199,14 +1212,22 @@ ParseResult KGEN::parseSignatureValues(AsmParser &p,
                                        ParamDeclArrayAttr inputParams,
                                        ParamDeclArrayAttr resultParams,
                                        SignatureType &signature) {
+  llvm::SMLoc loc = p.getCurrentLocation();
   auto parseElt = [&]() -> FailureOr<Type> {
     Type type;
     if (failed(p.parseType(type)))
       return failure();
     return type;
   };
-  return parseSignatureValuesElt</*optionalResultList=*/false>(
-      p, parseElt, inputParams, resultParams, signature);
+  FunctionType functionType;
+  MetadataAttr metadata;
+  if (parseSignatureValuesElt</*optionalResultList=*/false>(
+          p, parseElt, functionType, metadata))
+    return failure();
+  signature =
+      SignatureType::getChecked([&] { return p.emitError(loc); }, inputParams,
+                                resultParams, functionType, metadata);
+  return success(!!signature);
 }
 
 void KGEN::printSignatureValues(AsmPrinter &p, SignatureType signature) {

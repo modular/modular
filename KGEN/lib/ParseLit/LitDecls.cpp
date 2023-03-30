@@ -1606,11 +1606,13 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   // Finally now that the full signature has been resolved, build our IR.
 
   // Set the symbol to the mangled name and check for redefinition.
-  funcOp.setSymNameAttr(name);
+  NamedAttrList attrs = funcOp->getAttrDictionary();
+  attrs.set(funcOp.getSymNameAttrName(), name);
 
   // Remove the temporary "sym_namex" attribute set up in FuncOp::build, see
   // that method for an explanation.
-  funcOp->removeAttr("sym_namex");
+  attrs.erase("sym_namex");
+  funcOp->setAttrs(attrs.getDictionary(funcOp.getContext()));
 
   if (Operation *existing = shared.setResolvedDeclSymbol(funcOp)) {
     // If the thing is adaptive, then we actually don't want to error.
@@ -1708,27 +1710,37 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   }
 
   OpBuilder builder = decl.getDeclEndBuilder();
+  attrs = funcOp->getAttrDictionary();
+  auto inputParamsAttr = builder.getAttr<ParamDeclArrayAttr>(inputParamDecls);
+  auto resultParamsAttr = builder.getAttr<ParamDeclArrayAttr>(resultParamDecls);
+  attrs.set(funcOp.getValueParamNamesAttrName(),
+            builder.getAttr<StringArrayAttr>(argNames));
+  attrs.set(funcOp.getInputParamsAttrName(), inputParamsAttr);
+  attrs.set(funcOp.getResultParamsAttrName(), resultParamsAttr);
+  FunctionType functionType =
+      builder.getFunctionType(argTypes, {resultType.mlirType});
+  attrs.set(funcOp.getFunctionTypeAttrName(), TypeAttr::get(functionType));
+
+  // Compute the signature of the function.
+  IndexRefRemapper remapper(inputParamDecls, resultParamDecls);
   auto signature = SignatureType::getChecked(
       [&] { return mlir::emitError(funcOp.getLoc()); },
-      builder.getAttr<ParamDeclArrayAttr>(inputParamDecls),
-      builder.getAttr<ParamDeclArrayAttr>(resultParamDecls),
-      builder.getFunctionType(argTypes, {resultType.mlirType}),
-      builder.getAttr<MetadataAttr>(inputConventions, defaults, effects));
+      remapper.remap(inputParamsAttr), remapper.remap(resultParamsAttr),
+      remapper.remap(functionType),
+      remapper.remap(
+          builder.getAttr<MetadataAttr>(inputConventions, defaults, effects)));
   if (!signature)
     return failure();
+  attrs.set(funcOp.getSignatureAttrName(), TypeAttr::get(signature));
 
-  funcOp.setValueParamNamesAttr(builder.getAttr<StringArrayAttr>(argNames));
-  funcOp.setFunctionType(signature.getValues());
-  funcOp.setInputParams(signature.getInputParams());
-  funcOp.setResultParams(signature.getResultParams());
-  signature = signature.normalizeToIndexRefs();
-  funcOp.setSignature(signature);
   // If this is a nested function, set its parameter declaration. It will be
   // referenced via parameter references instead of symbol references.
   if (funcOp->getParentOfType<LIT::FuncOp>()) {
-    funcOp.setParamDeclAttr(
-        ParamDeclAttr::get(funcOp.getSymNameAttr(), signature));
+    attrs.set(funcOp.getParamDeclAttrName(),
+              ParamDeclAttr::get(funcOp.getSymNameAttr(), signature));
   }
+  // Bulk update the attributes.
+  funcOp->setAttrs(attrs.getDictionary(funcOp.getContext()));
 
   funcOp.getBody()->addArguments(argTypes, argLocs);
 

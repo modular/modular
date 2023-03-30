@@ -155,31 +155,37 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
 
   lowerLITOps(gen, funcSpAttr);
 
-  // Prepend the parameters from the parent decl if present.
   ParamDeclArrayAttr inputParams = gen.getInputParamsAttr();
   SignatureType signature = gen.getSignature();
+  // Prepend the parameters from the parent decl if present.
   if (!parentInputParams.empty()) {
+    // Concat the parent and generator input parameter decls.
     SmallVector<ParamDeclAttr> paramDecls;
-    SignatureType sig =
-        gen.getSignature().incrementIndexRefs(parentInputParams.size());
-    paramDecls.reserve(parentInputParams.size() + sig.getInputParams().size());
+    paramDecls.reserve(parentInputParams.size() + inputParams.size());
     llvm::append_range(paramDecls, parentInputParams);
-    llvm::append_range(paramDecls, sig.getInputParams());
-
-    signature = SignatureType::get(
-        ParamDeclArrayAttr::get(gen.getContext(), paramDecls),
-        sig.getResultParams(), sig.getValues(), sig.getMetadata());
-    for (unsigned i = 0, e = gen.getInputParams().size(); i != e; ++i)
-      paramDecls[i + parentInputParams.size()] = gen.getInputParams()[i];
+    llvm::append_range(paramDecls, inputParams);
     inputParams = ParamDeclArrayAttr::get(gen.getContext(), paramDecls);
+
+    // Offset index references within the current signature to make room.
+    // Remap parent input parameter references to indices.
+    IndexRefRemapper remapper(parentInputParams, {}, parentInputParams.size());
+    SmallVector<ParamDeclAttr> inputParams;
+    for (ParamDeclAttr param : parentInputParams)
+      inputParams.push_back(remapper.remap(param));
+    for (ParamDeclAttr param : signature.getInputParams())
+      inputParams.push_back(remapper.remap(param));
+    signature = SignatureType::get(
+        ParamDeclArrayAttr::get(gen.getContext(), inputParams),
+        remapper.remap(signature.getResultParams()),
+        remapper.remap(signature.getValues()),
+        remapper.remap(signature.getMetadata()));
   }
 
   OpBuilder b(gen);
 
   // Directly lower since these operations are exactly identical right now.
   auto result = b.create<GeneratorOp>(
-      gen.getLoc(), gen.getSymNameAttr(),
-      TypeAttr::get(signature.normalizeToIndexRefs()),
+      gen.getLoc(), gen.getSymNameAttr(), TypeAttr::get(signature),
       gen.getFunctionTypeAttr(), inputParams, gen.getResultParamsAttr(),
       gen.getConstraintsAttr(), gen.getAlwaysInlineLevelAttr());
 
