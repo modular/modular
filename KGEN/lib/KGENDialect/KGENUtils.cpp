@@ -1015,7 +1015,7 @@ static OptionalParseResult parseOptionalSignatureValues(
 
     if (succeeded(p.parseOptionalEqual())) {
       TypedAttr value;
-      if (parseParamValueDefaultingToIndex(p, value))
+      if (parseParamValue(p, value, *argType))
         return failure();
       defaults.push_back(value);
     }
