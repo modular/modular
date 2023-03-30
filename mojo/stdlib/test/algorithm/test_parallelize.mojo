@@ -41,7 +41,7 @@ fn test_parallelize():
 
     let rt = Runtime(num_work_items)
     let out_chain = OwningOutputChainPtr(rt)
-    parallelize[parallel_fn](out_chain.borrow(), num_work_items)
+    async_parallelize[parallel_fn](out_chain.borrow(), num_work_items)
     out_chain.wait()
     out_chain.__del__()
     rt.__del__()

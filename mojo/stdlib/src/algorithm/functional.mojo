@@ -921,7 +921,7 @@ fn elementwise[
             func_wrapper,
         ](len)
 
-    parallelize[task_func](out_chain, num_workers)
+    async_parallelize[task_func](out_chain, num_workers)
 
 
 @always_inline
@@ -1036,4 +1036,4 @@ fn elementwise[
                 func_wrapper,
             ](shape[rank - 1])
 
-    parallelize[task_func](out_chain, num_workers)
+    async_parallelize[task_func](out_chain, num_workers)
