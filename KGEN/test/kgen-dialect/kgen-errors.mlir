@@ -114,7 +114,8 @@ kgen.generator @dtype_params() {
 
 // -----
 
-// expected-error @below {{reference to parameter "n" with incorrect type 'index'}}
+// expected-error @below {{index reference type 'index' does not match parameter type 'ui32'}}
+// expected-error @below {{'kgen.generator' op reference to parameter "n" with incorrect type 'index'}}
 // expected-note @below {{parameter defined with type 'ui32'}}
 kgen.generator @scalar_params_verbose<n : ui32>(%x : !pop.array<n, scalar<invalid>>) {
   kgen.return
@@ -154,7 +155,7 @@ kgen.generator @g2<>() {
 
 // -----
 
-// expected-error @below {{'kgen.func' op cannot have input or result parameters}}
+// expected-error @below {{concrete functions cannot have input or result parameters}}
 kgen.func @bad_param<x>() {
   kgen.return
 }
@@ -820,20 +821,20 @@ kgen.generator @bad_index_ref() {
 // -----
 
 // expected-error @below {{index reference depth 1 exceeds depth of contextual signatures: 1}}
-kgen.generator @bad_index_ref<a: !pop.array<*1|0, i32>>() {
+kgen.generator @bad_index_ref<fn: <a>(!pop.array<*1|0, i32>) -> ()>() {
   kgen.return
 }
 
 // -----
 
-// expected-error @below {{index reference 1 is out of bounds: referenced signature has 1 input parameters}}
-kgen.generator @bad_index_ref<a: !pop.array<*0|1, i32>>() {
+// expected-error-re @below {{index reference 1 is out of bounds: referenced signature {{.*}} has 1 input parameters}}
+kgen.generator @bad_index_ref<fn: <a>(!pop.array<*0|1, i32>) -> ()>() {
   kgen.return
 }
 
 // -----
 
 // expected-error @below {{index reference type 'index' does not match parameter type 'i32'}}
-kgen.generator @bad_index_ref<a: i32, b: !pop.array<*0|0, i32>>() {
+kgen.generator @bad_index_ref<fn: <a: i32, b: !pop.array<*0|0, i32>>() -> ()>() {
   kgen.return
 }

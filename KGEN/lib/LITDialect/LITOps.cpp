@@ -60,6 +60,7 @@ LIT::getUnboundSpecializedSignature(SignatureType type,
     if (unboundType != value.getType())
       value = ParamOperatorAttr::get(POC::Rebind, value, unboundType);
     evaluator.setParameterValue(binding.getName(), value);
+    evaluator.inputParamValues.push_back(value);
     unboundBindings.push_back(ParamBindAttr::get(binding.getName(), value));
   }
   type = type.getSpecializedSignature(
@@ -212,9 +213,9 @@ TypedAttr LIT::FuncOp::getBoundReference(ParamBindArrayAttr bindings) {
 // These FuncOp attributes are disallowed while parsing since they can
 // be inferred. Likewise while printing we ignore them.
 static StringRef disallowedAttrNames[] = {
-    "constraints", "implements",        "signature",
-    "sym_name",    "valueParamNames",   "evaluator",
-    "defaultImpl", "alwaysInlineLevel", "paramDecl"};
+    "constraints",       "implements",      "signature",   "functionType",
+    "sym_name",          "valueParamNames", "evaluator",   "defaultImpl",
+    "alwaysInlineLevel", "paramDecl",       "inputParams", "resultParams"};
 
 /// Parses a LIT Generator.
 ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
@@ -233,15 +234,22 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
   // Parse the function signature.
   llvm::SMLoc sigLoc = parser.getCurrentLocation();
   SmallVector<OpAsmParser::Argument> entryArgs;
+  ParamDeclArrayAttr inputParams, resultParams;
+  FunctionType functionType;
   SignatureType signature;
   ConstraintArrayAttr constraints;
   AlwaysInlineLevelAttr alwaysInline;
-  if (parseFunctionSignature(parser, entryArgs, signature) ||
+  if (parseFunctionSignature(parser, entryArgs, inputParams, resultParams,
+                             functionType, signature) ||
       parseOptionalAlwaysInline(parser, alwaysInline) ||
       parseOptionalConstraints(parser, constraints))
     return failure();
   result.addAttribute(getAlwaysInlineLevelAttrName(result.name), alwaysInline);
   result.addAttribute(getConstraintsAttrName(result.name), constraints);
+  result.addAttribute(getInputParamsAttrName(result.name), inputParams);
+  result.addAttribute(getResultParamsAttrName(result.name), resultParams);
+  result.addAttribute(getFunctionTypeAttrName(result.name),
+                      TypeAttr::get(functionType));
   result.addAttribute(getSignatureAttrName(result.name),
                       TypeAttr::get(signature));
   if (isParamDecl)
@@ -302,7 +310,8 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
     printParamName(p, decl.getName());
   else
     p.printSymbolName(func.getName());
-  printFunctionSignature(p, getBodyRegion(), getSignature());
+  printFunctionSignature(p, getBodyRegion(), getInputParams(),
+                         getResultParams(), getFunctionType(), getSignature());
   printOptionalAlwaysInline(p, getAlwaysInlineLevelAttr());
 
   // Don't print the following in lit.func.
@@ -387,6 +396,7 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
       SignatureType::get(context, ArrayRef<Type>(), {errorType});
 
   auto emptyParamNames = StringArrayAttr::get(context, {});
+  auto emptyParamDecls = ParamDeclArrayAttr::get(context, {});
 
   // NOTE: We set an attribute named 'sym_namex' here instead of setting
   // 'sym_name' because we don't /know/ the symbol name on construction and need
@@ -404,6 +414,10 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
   result.addAttribute(getValueParamNamesAttrName(result.name), emptyParamNames);
   result.addAttribute(getSignatureAttrName(result.name),
                       TypeAttr::get(signatureType));
+  result.addAttribute(getFunctionTypeAttrName(result.name),
+                      TypeAttr::get(signatureType.getValues()));
+  result.addAttribute(getInputParamsAttrName(result.name), emptyParamDecls);
+  result.addAttribute(getResultParamsAttrName(result.name), emptyParamDecls);
   result.addAttribute(getConstraintsAttrName(result.name),
                       ConstraintArrayAttr::get(context, {}));
   result.addAttribute(

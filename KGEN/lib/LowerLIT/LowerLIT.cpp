@@ -153,26 +153,34 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
     }
   }
 
+  lowerLITOps(gen, funcSpAttr);
+
   // Prepend the parameters from the parent decl if present.
+  ParamDeclArrayAttr inputParams = gen.getInputParamsAttr();
+  SignatureType signature = gen.getSignature();
   if (!parentInputParams.empty()) {
     SmallVector<ParamDeclAttr> paramDecls;
-    ArrayRef<ParamDeclAttr> genParamDecls = gen.getInputParams();
-    paramDecls.reserve(parentInputParams.size() + genParamDecls.size());
+    SignatureType sig =
+        gen.getSignature().incrementIndexRefs(parentInputParams.size());
+    paramDecls.reserve(parentInputParams.size() + sig.getInputParams().size());
     llvm::append_range(paramDecls, parentInputParams);
-    llvm::append_range(paramDecls, genParamDecls);
+    llvm::append_range(paramDecls, sig.getInputParams());
 
-    gen.setSignature(SignatureType::get(
+    signature = SignatureType::get(
         ParamDeclArrayAttr::get(gen.getContext(), paramDecls),
-        gen.getResultParamsAttr(), gen.getSignature().getValues(),
-        gen.getMetadata()));
+        sig.getResultParams(), sig.getValues(), sig.getMetadata());
+    for (unsigned i = 0, e = gen.getInputParams().size(); i != e; ++i)
+      paramDecls[i + parentInputParams.size()] = gen.getInputParams()[i];
+    inputParams = ParamDeclArrayAttr::get(gen.getContext(), paramDecls);
   }
 
-  lowerLITOps(gen, funcSpAttr);
   OpBuilder b(gen);
 
   // Directly lower since these operations are exactly identical right now.
   auto result = b.create<GeneratorOp>(
-      gen.getLoc(), gen.getSymNameAttr(), gen.getSignatureAttr(),
+      gen.getLoc(), gen.getSymNameAttr(),
+      TypeAttr::get(signature.normalizeToIndexRefs()),
+      gen.getFunctionTypeAttr(), inputParams, gen.getResultParamsAttr(),
       gen.getConstraintsAttr(), gen.getAlwaysInlineLevelAttr());
 
   // Move over the body.
@@ -196,7 +204,6 @@ static LogicalResult lowerStructDecl(StructDeclOp structDecl,
   StringAttr structName =
       flattenAndRenameSymbol(structDecl, symbolTable, symTableIt);
 
-  ArrayRef<ParamDeclAttr> structInputParams = structDecl.getInputParams();
   SmallVector<LIT::VarLetDeclOp> opsToErase;
   for (Operation &member : llvm::make_early_inc_range(
            structDecl.getFields().front().getOperations())) {
@@ -218,8 +225,9 @@ static LogicalResult lowerStructDecl(StructDeclOp structDecl,
       return member.emitError("unsupported op in lit lowering");
 
     // Lower renamed function as usual.
-    if (failed(lowerLITFunc(func, symbolTable, structDecl->getIterator(),
-                            structName.getValue() + "::", structInputParams)))
+    if (failed(lowerLITFunc(
+            func, symbolTable, structDecl->getIterator(),
+            structName.getValue() + "::", structDecl.getInputParams())))
       return failure();
   }
   return success();

@@ -105,14 +105,18 @@ LogicalResult ParamDeclareOp::verify() {
 
 static ParseResult
 parseRegionDeclaration(OpAsmParser &p, ParamDeclAttr &paramDecl,
+                       ParamDeclArrayAttr &inputParams,
+                       ParamDeclArrayAttr &resultParams, TypeAttr &functionType,
                        TypeAttr &signature, ConstraintArrayAttr &constraints,
                        AlwaysInlineLevelAttr &alwaysInlineLevel, Region &body) {
   StringAttr paramName;
   SmallVector<OpAsmParser::Argument> args;
+  FunctionType functionTypeValue;
   SignatureType signatureType;
   llvm::SMLoc bodyLoc;
   if (parseParamName(p, paramName) || p.parseEqual() ||
-      parseFunctionSignature(p, args, signatureType) ||
+      parseFunctionSignature(p, args, inputParams, resultParams,
+                             functionTypeValue, signatureType) ||
       parseOptionalAlwaysInline(p, alwaysInlineLevel) ||
       parseOptionalConstraints(p, constraints) ||
       p.getCurrentLocation(&bodyLoc) || p.parseRegion(body, args))
@@ -122,20 +126,23 @@ parseRegionDeclaration(OpAsmParser &p, ParamDeclAttr &paramDecl,
   SmallVector<Type> argTypes;
   for (const OpAsmParser::Argument &arg : args)
     argTypes.push_back(arg.type);
+  functionType = TypeAttr::get(functionTypeValue);
   signature = TypeAttr::get(signatureType);
   paramDecl = ParamDeclAttr::get(paramName, signatureType);
   return success();
 }
 
-static void printRegionDeclaration(OpAsmPrinter &p, Operation *op,
-                                   ParamDeclAttr paramDecl, TypeAttr signature,
-                                   ConstraintArrayAttr constraints,
-                                   AlwaysInlineLevelAttr alwaysInlineLevel,
-                                   Region &body) {
-  auto sig = cast<SignatureType>(signature.getValue());
+static void
+printRegionDeclaration(OpAsmPrinter &p, Operation *op, ParamDeclAttr paramDecl,
+                       ParamDeclArrayAttr inputParams,
+                       ParamDeclArrayAttr resultParams, TypeAttr functionType,
+                       TypeAttr signature, ConstraintArrayAttr constraints,
+                       AlwaysInlineLevelAttr alwaysInlineLevel, Region &body) {
   printParamName(p, paramDecl.getName());
   p << " = ";
-  printFunctionSignature(p, body, sig);
+  printFunctionSignature(p, body, inputParams, resultParams,
+                         cast<FunctionType>(functionType.getValue()),
+                         cast<SignatureType>(signature.getValue()));
   printOptionalAlwaysInline(p, alwaysInlineLevel);
   printOptionalConstraints(p, op, constraints);
   p << ' ';
@@ -146,8 +153,9 @@ LogicalResult ParamDeclareRegionOp::verifyRegions() {
   auto returnOp = cast<ReturnOp>(getBody()->getTerminator());
   if (failed(checkResultTypes(returnOp, getResultTypes())))
     return failure();
-  if (getBody()->getArgumentTypes() != getSignature().getValueInputs())
-    return emitOpError("signature mismatches body");
+  if (getBody()->getArgumentTypes() != getArgumentTypes())
+    return emitOpError(
+        "function type argument types mismatch body argument types");
   return success();
 }
 
@@ -494,9 +502,6 @@ LogicalResult FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 }
 
 LogicalResult FuncOp::verify() {
-  // kgen.func's are not allowed to have input parameter lists.
-  if (!getInputParams().empty() || !getResultParams().empty())
-    return emitOpError("cannot have input or result parameters");
   if (!llvm::all_of(getMetadata().getInputConventions(),
                     [](ValueInputConvention inputConv) {
                       return inputConv == ValueInputConvention::OwnedInReg;

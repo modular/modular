@@ -287,6 +287,7 @@ SignatureType SignatureType::getSpecializedSignature(
 
   // We do this with with ParameterEvaluator which can do the remapping for us.
   ParameterEvaluator evaluator;
+  evaluator.inputDepth = 1;
 
   auto remapType = [&](Type type) -> Type {
     return evaluator.getReboundType(type);
@@ -317,13 +318,18 @@ SignatureType SignatureType::getSpecializedSignature(
     // the decl, and keep it around so that we can continue to use it (as in a
     // partial bind).
     if (bind.getValue().isa<UnboundAttr>()) {
-      unboundDecls.push_back(
-          ParamDeclAttr::get(decl.getName(), remappedDeclType));
       // Set the binding to a declref of the thing itself - that will keep it
       // from becoming #kgen.unbound.
-      evaluator.setParameterValue(decl, ParamDeclRefAttr::get(decl));
+      auto value =
+          ParamIndexRefAttr::get(/*depth=*/-1, /*isResult=*/false,
+                                 unboundDecls.size(), remappedDeclType);
+      unboundDecls.push_back(
+          ParamDeclAttr::get(decl.getName(), remappedDeclType));
+      evaluator.setParameterValue(decl, value);
+      evaluator.inputParamValues.push_back(value);
     } else {
       evaluator.setParameterValue(bind.getName(), bind.getValue());
+      evaluator.inputParamValues.push_back(bind.getValue());
     }
 
     ++paramNo;
@@ -331,8 +337,11 @@ SignatureType SignatureType::getSpecializedSignature(
 
   // FIXME: Signature typed attributes need to contain result parameter
   // declarations. For now, just bind them to themselves.
-  for (ParamDeclAttr decl : getResultParams())
-    evaluator.setParameterValue(decl, ParamDeclRefAttr::get(decl));
+  for (ParamDeclAttr decl : getResultParams()) {
+    auto value = ParamDeclRefAttr::get(decl);
+    evaluator.setParameterValue(decl, value);
+    evaluator.resultParamValues.push_back(value);
+  }
 
   // Remap the parameter decls and result parameter types.
   SmallVector<ParamDeclAttr, 16> newParamResults;
@@ -382,6 +391,7 @@ SignatureType SignatureType::getSpecializedSignature(
 
   // We do this with with ParameterEvaluator which can do the remapping for us.
   ParameterEvaluator evaluator;
+  evaluator.inputDepth = 1;
 
   auto remapType = [&](Type type) -> Type {
     return evaluator.getReboundType(type);
@@ -412,13 +422,18 @@ SignatureType SignatureType::getSpecializedSignature(
     // the decl, and keep it around so that we can continue to use it (as in a
     // partial bind).
     if (bind.getValue().isa<UnboundAttr>()) {
-      unboundDecls.push_back(
-          ParamDeclAttr::get(decl.getName(), remappedDeclType));
       // Set the binding to a declref of the thing itself - that will keep it
       // from becoming #kgen.unbound.
-      evaluator.setParameterValue(decl, ParamDeclRefAttr::get(decl));
+      auto value =
+          ParamIndexRefAttr::get(/*depth=*/-1, /*isResult=*/false,
+                                 unboundDecls.size(), remappedDeclType);
+      unboundDecls.push_back(
+          ParamDeclAttr::get(decl.getName(), remappedDeclType));
+      evaluator.setParameterValue(decl, value);
+      evaluator.inputParamValues.push_back(value);
     } else {
       evaluator.setParameterValue(bind.getName(), bind.getValue());
+      evaluator.inputParamValues.push_back(bind.getValue());
     }
 
     ++paramNo;
@@ -426,8 +441,11 @@ SignatureType SignatureType::getSpecializedSignature(
 
   // FIXME: Signature typed attributes need to contain result parameter
   // declarations. For now, just bind them to themselves.
-  for (ParamDeclAttr decl : resultParams)
-    evaluator.setParameterValue(decl, ParamDeclRefAttr::get(decl));
+  for (ParamDeclAttr decl : resultParams) {
+    auto value = ParamDeclRefAttr::get(decl);
+    evaluator.setParameterValue(decl, value);
+    evaluator.resultParamValues.push_back(value);
+  }
 
   // Remap the parameter decls and result parameter types.
   SmallVector<ParamDeclAttr, 16> newParamResults;
@@ -492,6 +510,74 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
                       ParamDeclArrayAttr resultParams, FunctionType values,
                       MetadataAttr metadata) {
   return metadata.verifySignature(emitError, inputParams, resultParams, values);
+}
+
+static SignatureType normalizeSignatureWalk(
+    SignatureType root, SignatureType sig, size_t depth,
+    const DenseMap<StringAttr, std::pair<size_t, bool>> &indices) {
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement([&](ParamDeclRefAttr ref) -> TypedAttr {
+    auto it = indices.find(ref.getName());
+    if (it == indices.end())
+      return ref;
+    auto [idx, isResult] = it->second;
+    return ParamIndexRefAttr::get(depth, isResult, idx, ref.getType());
+  });
+
+  // Skip over parametric nested signatures.
+  // FIXME: This isn't correct but mirrors the behaviour of ParameterEvaluator,
+  // which works for the moment.
+  replacer.addReplacement(
+      [&](SignatureType nested) -> std::pair<Type, WalkResult> {
+        if (nested == sig)
+          return {sig, WalkResult::advance()};
+        if (nested != root && !nested.getInputParams().empty())
+          return {nested, WalkResult::skip()};
+        return {normalizeSignatureWalk(root, nested, depth + 1, indices),
+                WalkResult::skip()};
+      });
+  return cast<SignatureType>(replacer.replace(sig));
+}
+
+SignatureType SignatureType::normalizeToIndexRefs() {
+  // The actual signature of a generator references its input parameters via
+  // index references.
+  DenseMap<StringAttr, std::pair<size_t, bool>> paramIndices;
+  for (auto [idx, param] : llvm::enumerate(getInputParams()))
+    paramIndices.try_emplace(param.getName(), std::make_pair(idx, false));
+  for (auto [idx, param] : llvm::enumerate(getResultParams()))
+    paramIndices.try_emplace(param.getName(), std::make_pair(idx, true));
+  return normalizeSignatureWalk(*this, *this, /*depth=*/0, paramIndices);
+}
+
+static SignatureType incrementIndexRefsWalk(SignatureType root,
+                                            SignatureType sig, size_t depth,
+                                            size_t offset) {
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement([&](ParamIndexRefAttr ref) {
+    if (ref.getIsResult() || ref.getDepth() != depth)
+      return ref;
+    return ParamIndexRefAttr::get(depth, /*isResult=*/false,
+                                  offset + ref.getIndex(), ref.getType());
+  });
+
+  // Skip over parametric nested signatures.
+  // FIXME: This isn't correct but mirrors the behaviour of ParameterEvaluator,
+  // which works for the moment.
+  replacer.addReplacement(
+      [&](SignatureType nested) -> std::pair<Type, WalkResult> {
+        if (nested == sig)
+          return {sig, WalkResult::advance()};
+        if (nested != root && !nested.getInputParams().empty())
+          return {nested, WalkResult::skip()};
+        return {incrementIndexRefsWalk(root, nested, depth + 1, offset),
+                WalkResult::skip()};
+      });
+  return cast<SignatureType>(replacer.replace(sig));
+}
+
+SignatureType SignatureType::incrementIndexRefs(size_t offset) {
+  return incrementIndexRefsWalk(*this, *this, /*depth=*/0, offset);
 }
 
 //===----------------------------------------------------------------------===//

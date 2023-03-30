@@ -61,6 +61,10 @@ def KGEN_FuncOp : KGENOp<"func", [
 
   let extraClassDeclaration = [{
     using OpTrait::SingleBlock<FuncOp>::getBody;
+
+    ArrayRef<ParamDeclAttr> getInputParams() { return {}; }
+    ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
+    FunctionType getFunctionType() { return getSignature().getValues(); }
   }];
 
   let hasCustomAssemblyFormat = 1;
@@ -101,6 +105,9 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
   /// implementation of the specified generator.interface.
   let arguments = (ins SymbolNameAttr:$sym_name,
                        TypeAttrOf<KGEN_SignatureType>:$signature,
+                       TypeAttrOf<FunctionType>:$functionType,
+                       KGEN_ParamDeclArrayAttr:$inputParams,
+                       KGEN_ParamDeclArrayAttr:$resultParams,
                        ConstraintArrayAttr:$constraints,
                        KGEN_AlwaysInlineLevelAttr:$alwaysInlineLevel);
   let regions = (region AnyRegion:$bodyRegion);
@@ -110,8 +117,12 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
   }];
 
   let builders = [
-    OpBuilder<(ins "StringAttr":$name, "SignatureType":$signature), [{
-      build($_builder, $_state, name, signature, {}, {});
+    OpBuilder<(ins "StringAttr":$name, "SignatureType":$signature,
+                   "FunctionType":$functionType,
+                   "ArrayRef<ParamDeclAttr>":$inputParams,
+                   "ArrayRef<ParamDeclAttr>":$resultParams), [{
+      build($_builder, $_state, name, signature, functionType, inputParams,
+            resultParams, {}, {});
     }]>
   ];
 
@@ -402,6 +413,9 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
   let arguments = (ins
     KGEN_ParamDeclAttr:$paramDecl,
     TypeAttrOf<KGEN_SignatureType>:$signature,
+    TypeAttrOf<FunctionType>:$functionType,
+    KGEN_ParamDeclArrayAttr:$inputParams,
+    KGEN_ParamDeclArrayAttr:$resultParams,
     ConstraintArrayAttr:$constraints,
     UnitAttr:$isolated,
     KGEN_AlwaysInlineLevelAttr:$alwaysInlineLevel
@@ -409,8 +423,10 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
   let regions = (region SizedRegion<1>:$bodyRegion);
 
   let assemblyFormat = [{
-    custom<RegionDeclaration>($paramDecl, $signature, $constraints,
-                              $alwaysInlineLevel, $bodyRegion) attr-dict
+    custom<RegionDeclaration>($paramDecl, $inputParams, $resultParams,
+                              $functionType, $signature, $constraints,
+                              $alwaysInlineLevel, $bodyRegion)
+    attr-dict
   }];
 
   let extraClassDeclaration = [{

@@ -593,6 +593,7 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
                           evaluator.getReboundType(decl.getType())))
         return failure();
       evaluator.setParameterValue(decl, operands.back());
+      evaluator.inputParamValues.push_back(operands.back());
     }
     return success();
   }
@@ -1080,9 +1081,9 @@ parseSignatureValuesElt(AsmParser &p, function_ref<FailureOr<Type>()> parseElt,
 
 /// Print an argument or type list with optional metadata.
 template <bool optionalResultList>
-static void printSignatureValuesElt(AsmPrinter &p,
-                                    function_ref<void(unsigned)> printElt,
-                                    SignatureType signature) {
+static void
+printSignatureValuesElt(AsmPrinter &p, function_ref<void(unsigned)> printElt,
+                        FunctionType functionType, SignatureType signature) {
   p << '(';
   MetadataAttr metadata = signature.getMetadata();
   ArrayRef<TypedAttr> defaults = signature.getDefaultArguments();
@@ -1110,16 +1111,15 @@ static void printSignatureValuesElt(AsmPrinter &p,
     p << ' ' << stringifyFnEffects(metadata.getFnEffects());
 
   if constexpr (optionalResultList)
-    p.printOptionalArrowTypeList(signature.getValueResults());
+    p.printOptionalArrowTypeList(functionType.getResults());
   else
-    p.printArrowTypeList(signature.getValueResults());
+    p.printArrowTypeList(functionType.getResults());
 }
 
-ParseResult
-KGEN::parseFunctionSignature(OpAsmParser &p,
-                             SmallVectorImpl<OpAsmParser::Argument> &args,
-                             SignatureType &signature) {
-  ParamDeclArrayAttr inputParams, resultParams;
+ParseResult KGEN::parseFunctionSignature(
+    OpAsmParser &p, SmallVectorImpl<OpAsmParser::Argument> &args,
+    ParamDeclArrayAttr &inputParams, ParamDeclArrayAttr &resultParams,
+    FunctionType &functionType, SignatureType &signature) {
   if (parseOptionalParameterSpec(p, inputParams, resultParams))
     return failure();
 
@@ -1136,24 +1136,31 @@ KGEN::parseFunctionSignature(OpAsmParser &p,
     return args.back().type;
   };
 
-  return parseSignatureValuesElt</*optionalResultList=*/true>(
-      p, parseArg, inputParams, resultParams, signature);
+  if (failed(parseSignatureValuesElt</*optionalResultList=*/true>(
+          p, parseArg, inputParams, resultParams, signature)))
+    return failure();
+  functionType = signature.getValues();
+  signature = signature.normalizeToIndexRefs();
+  return success();
 }
 
 void KGEN::printFunctionSignature(OpAsmPrinter &p, Region &region,
+                                  ArrayRef<ParamDeclAttr> inputParams,
+                                  ArrayRef<ParamDeclAttr> resultParams,
+                                  FunctionType functionType,
                                   SignatureType signature,
                                   StringArrayAttr valueParamNames) {
-  printOptionalParameterSpec(p, signature.getInputParams(),
-                             signature.getResultParams());
+  printOptionalParameterSpec(p, inputParams, resultParams);
   // Print the function arguments.
   auto printElt = [&](unsigned i) {
     if (region.empty())
       p << (valueParamNames ? "%" + valueParamNames[i].getValue() + ": " : "")
-        << signature.getValueInputs()[i];
+        << functionType.getInput(i);
     else
       p.printRegionArgument(region.getArgument(i));
   };
-  printSignatureValuesElt</*optionalResultList=*/true>(p, printElt, signature);
+  printSignatureValuesElt</*optionalResultList=*/true>(p, printElt,
+                                                       functionType, signature);
 }
 
 OptionalParseResult KGEN::parseOptionalSignature(AsmParser &p,
@@ -1184,7 +1191,8 @@ void KGEN::printSignature(AsmPrinter &p, SignatureType signature) {
   printOptionalParameterSpec(p, signature.getInputParams(),
                              signature.getResultParams());
   auto printElt = [&](unsigned i) { p << signature.getValueInputs()[i]; };
-  printSignatureValuesElt</*optionalResultList=*/false>(p, printElt, signature);
+  printSignatureValuesElt</*optionalResultList=*/false>(
+      p, printElt, signature.getValues(), signature);
 }
 
 ParseResult KGEN::parseSignatureValues(AsmParser &p,
@@ -1203,7 +1211,8 @@ ParseResult KGEN::parseSignatureValues(AsmParser &p,
 
 void KGEN::printSignatureValues(AsmPrinter &p, SignatureType signature) {
   auto printElt = [&](unsigned i) { p << signature.getValueInputs()[i]; };
-  printSignatureValuesElt</*optionalResultList=*/false>(p, printElt, signature);
+  printSignatureValuesElt</*optionalResultList=*/false>(
+      p, printElt, signature.getValues(), signature);
 }
 
 /// Parse a constraint specification if
@@ -1293,7 +1302,11 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
 
   // Parse the function signature.
   SignatureType signature;
-  if (parseFunctionSignature(parser, entryArgs, signature))
+  FunctionType functionType;
+  ParamDeclArrayAttr inputParams, resultParams;
+  llvm::SMLoc sigLoc = parser.getCurrentLocation();
+  if (parseFunctionSignature(parser, entryArgs, inputParams, resultParams,
+                             functionType, signature))
     return failure();
 
   AlwaysInlineLevelAttr alwaysInline;
@@ -1309,6 +1322,16 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
     result.addAttribute("constraints", constraints);
   }
 
+  if (opKind == GeneratorOrFuncKind::generator) {
+    result.addAttribute("functionType", TypeAttr::get(functionType));
+    result.addAttribute("inputParams", inputParams);
+    result.addAttribute("resultParams", resultParams);
+  } else {
+    // Concrete functions are not allowed to have input parameter lists.
+    if (!inputParams.empty() || !resultParams.empty())
+      return parser.emitError(
+          sigLoc, "concrete functions cannot have input or result parameters");
+  }
   result.addAttribute("signature", TypeAttr::get(signature));
 
   // If function attributes are present, parse them.
@@ -1357,7 +1380,10 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, FuncInterface op) {
   p << ' ';
 
   p.printSymbolName(funcName);
-  printFunctionSignature(p, func.getFunctionBody(), op.getSignature());
+  auto decl = cast<DeclInterface>(*op);
+  printFunctionSignature(p, func.getFunctionBody(), decl.getInputParams(),
+                         decl.getResultParams(), op.getFunctionType(),
+                         op.getSignature());
 
   if (isa<GeneratorOp, FuncOp>(*op))
     printOptionalAlwaysInline(
@@ -1735,6 +1761,7 @@ SignatureType KGEN::getFullSignature(FuncInterface decl) {
   if (inputParams.empty())
     return signature;
 
+  signature = signature.incrementIndexRefs(inputParams.size());
   llvm::append_range(inputParams, signature.getInputParams());
 
   return SignatureType::get(

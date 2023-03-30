@@ -52,6 +52,8 @@ void ParameterCollector::collectUsesFromAttr(
   // Verify index parameter references.
   if (auto indexRef = dyn_cast<ParamIndexRefAttr>(attr)) {
     collectUsesFromType(indexRef.getType(), uses, hasConstExpr);
+    // Index references are not a named parameter use, but types and attributes
+    // that contain index references should be considered parametric.
     hasConstExpr = true;
     maybeVerify(
         [&](function_ref<InFlightDiagnostic()> emitError) -> LogicalResult {
@@ -70,8 +72,8 @@ void ParameterCollector::collectUsesFromAttr(
                                           : sig.getInputParams();
           if (indexRef.getIndex() >= params.size()) {
             return emitError() << "index reference " << indexRef.getIndex()
-                               << " is out of bounds: referenced signature has "
-                               << params.size() << ' '
+                               << " is out of bounds: referenced signature "
+                               << sig << " has " << params.size() << ' '
                                << (indexRef.getIsResult() ? "result" : "input")
                                << " parameters";
           }

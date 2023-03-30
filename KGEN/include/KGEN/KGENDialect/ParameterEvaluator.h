@@ -106,6 +106,19 @@ public:
   /// Dump the parameter evaluator state.
   void dump() const;
 
+  /// These are the top-level input parameters to use when rebinding a
+  /// signature.
+  /// FIXME: Make this private when the signature type named parameter
+  /// transition is complete.
+  SmallVector<Attribute> inputParamValues;
+  /// These are the top-level result parameters to use when rebinding a
+  /// signature.
+  SmallVector<Attribute> resultParamValues;
+  /// The current depth from the root signature, if there is one.
+  size_t rootDepth = 0;
+  /// The relative depth from the signature where the input parameters are from.
+  size_t inputDepth = 0;
+
 private:
   /// These are the bound parameter values, captured in simplified form.
   DenseMap<StringAttr, Attribute> paramValues;

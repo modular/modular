@@ -560,14 +560,26 @@ SymbolConstantAttr::verifySymbolUses(Operation *module,
     }
   }
 
-  SmallVector<ParamDeclAttr> inputParams;
-  for (Operation *op : symbolOps)
-    llvm::append_range(inputParams, ::cast<DeclInterface>(op).getInputParams());
+  SignatureType declSignature;
+  if (symbolOps.size() == 1) {
+    auto decl = ::cast<DeclInterface>(*func);
+    declSignature = SignatureType::getSpecializedSignature(
+        getParamValues(), [&] { return emitError(loc); }, decl.getInputParams(),
+        decl.getResultParams(), func.getSignature().getValues(),
+        func.getMetadata());
+  } else {
+    SmallVector<ParamDeclAttr> inputParams;
+    for (Operation *op : llvm::drop_end(symbolOps))
+      llvm::append_range(inputParams,
+                         ::cast<DeclInterface>(op).getInputParams());
+    SignatureType baseSig =
+        func.getSignature().incrementIndexRefs(inputParams.size());
+    llvm::append_range(inputParams, baseSig.getInputParams());
 
-  auto declSignature = SignatureType::getSpecializedSignature(
-      getParamValues(), [&] { return emitError(loc); }, inputParams,
-      func.getResultParams(), func.getSignature().getValues(),
-      func.getMetadata());
+    declSignature = SignatureType::getSpecializedSignature(
+        getParamValues(), [&] { return emitError(loc); }, inputParams,
+        baseSig.getResultParams(), baseSig.getValues(), baseSig.getMetadata());
+  }
   if (!declSignature)
     return failure();
 
@@ -668,6 +680,21 @@ verifyBindSignature(ArrayRef<TypedAttr> operands,
   return result;
 }
 
+/// The 'apply' operator is the only way to call a signature value inside a
+/// parameter expression. Therefore, it is the only place where an index
+/// parameter reference can cross upwards across a signature. We need to
+/// decrement any index references in the result type of the signature because
+/// we are pulling it out of the signature.
+static Type upbindApplyResult(Type resultType) {
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement([&](ParamIndexRefAttr ref) {
+    assert(ref.getDepth() != 0 && "unexpected enclosing signature reference");
+    return ParamIndexRefAttr::get(ref.getDepth() - 1, ref.getIsResult(),
+                                  ref.getIndex(), ref.getType());
+  });
+  return replacer.replace(resultType);
+}
+
 static LogicalResult verifyApply(ArrayRef<TypedAttr> operands, Type type,
                                  function_ref<InFlightDiagnostic()> emitError) {
   if (operands.empty())
@@ -681,9 +708,10 @@ static LogicalResult verifyApply(ArrayRef<TypedAttr> operands, Type type,
   FunctionType func = signature.getValues();
   if (func.getNumResults() != 1)
     return emitError() << "'apply' function must return one result";
-  if (func.getResult(0) != type)
+  Type expectedType = upbindApplyResult(func.getResult(0));
+  if (type != expectedType)
     return emitError() << "'apply' function result type must be " << type
-                       << " but got " << func.getResult(0);
+                       << " but got " << expectedType;
 
   return success();
 }
@@ -1593,7 +1621,9 @@ static Attribute simplifyBindSignature(ArrayRef<TypedAttr> operands,
 static Attribute simplifyApply(ArrayRef<TypedAttr> operands, Type &resultType) {
   TypedAttr func = operands.front();
   operands = operands.drop_front();
-  resultType = cast<SignatureType>(func.getType()).getValues().getResult(0);
+  // Take the result type.
+  resultType = upbindApplyResult(
+      cast<SignatureType>(func.getType()).getValues().getResult(0));
 
   if (auto opExpr = dyn_cast<MLIROpAttr>(func)) {
     // Make the operation real by materializing it into a fake block.

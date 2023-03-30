@@ -96,8 +96,11 @@ def FuncInterface : OpInterface<"FuncInterface"> {
 
   let methods = [
     InterfaceMethod<[{
-      Return the function's parameter and SSA value signature.
+      Return the function's signature.
     }], "SignatureType", "getSignature", (ins)>,
+    InterfaceMethod<[{
+      Return the function's body argument and result types.
+    }], "FunctionType", "getFunctionType", (ins)>,
     InterfaceMethod<[{
       Return whether the function should be always_inline'd, and whether it
       should maintain debug info when inlined.
@@ -117,36 +120,12 @@ def FuncInterface : OpInterface<"FuncInterface"> {
 
     /// Returns the argument types of this function.
     ArrayRef<Type> getArgumentTypes() {
-      return $_op.getSignature().getValueInputs();
+      return $_op.getFunctionType().getInputs();
     }
 
     /// Returns the result types of this function.
     ArrayRef<Type> getResultTypes() {
-      return $_op.getSignature().getValueResults();
-    }
-
-    /// Return the input parameter declarations that live in the function body.
-    ParamDeclArrayAttr getInputParamsAttr() {
-      return $_op.getSignature().getInputParams();
-    }
-    /// Return the list of input parameters.
-    ArrayRef<ParamDeclAttr> getInputParams() {
-      return getInputParamsAttr().getValue();
-    }
-
-    /// Return the result parameter declarations returned from the function
-    /// body.
-    ParamDeclArrayAttr getResultParamsAttr() {
-      return $_op.getSignature().getResultParams();
-    }
-    /// Return the list of output parameters.
-    ArrayRef<ParamDeclAttr> getResultParams() {
-      return getResultParamsAttr().getValue();
-    }
-
-    /// Return the `FunctionType` for input/result SSA values.
-    FunctionType getFunctionType() {
-      return $_op.getSignature().getValues();
+      return $_op.getFunctionType().getResults();
     }
 
     /// Return true if the function throws.
@@ -162,7 +141,9 @@ def FuncInterface : OpInterface<"FuncInterface"> {
     // FunctionOpInterface Implementation
     //===------------------------------------------------------------------===//
 
-    TypeAttr getFunctionTypeAttr() { return TypeAttr::get(getFunctionType()); }
+    TypeAttr getFunctionTypeAttr() {
+      return TypeAttr::get($_op.getFunctionType());
+    }
     void setFunctionTypeAttr(TypeAttr type) {
       llvm_unreachable("can't opaquely set the function type");
     }
