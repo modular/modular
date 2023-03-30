@@ -50,8 +50,9 @@ namespace {
 /// information about the specified parameter.
 class ParameterInferenceState {
 public:
-  ParameterInferenceState(LitSharedState &state, ParamDeclAttr decl)
-      : state(state), parameterName(decl.getName()) {}
+  ParameterInferenceState(LitSharedState &state, size_t index,
+                          ParamDeclAttr decl)
+      : state(state), parameterIndex(index), parameterName(decl.getName()) {}
 
   /// Given an incomplete parameter binding set for a call to the specified
   /// signature, try to infer the value of the next 'decl' parameter.  This
@@ -65,6 +66,7 @@ private:
   LogicalResult matchParams(TypedAttr actualAttr, TypedAttr expectedAttr);
 
   LitSharedState &state;
+  size_t parameterIndex;
   StringAttr parameterName;
   SmallVector<PValue> inferredValues;
 };
@@ -150,6 +152,12 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
     // If the name mismatches, then it is some other parameter, assume it is
     // fine.
     if (dre.getName() == parameterName)
+      inferredValues.push_back(actualAttr);
+    return success();
+  }
+  if (auto ire = dyn_cast<ParamIndexRefAttr>(expectedAttr)) {
+    if (ire.getDepth() == 0 && !ire.getIsResult() &&
+        ire.getIndex() == parameterIndex)
       inferredValues.push_back(actualAttr);
     return success();
   }
@@ -350,16 +358,17 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
   // value of 'rank'.  We use a ParameterEvaluator to keep track of the mapping
   // so far and remap types on demand.
   LitParameterEvaluator evaluator(emitter.getDeclResolver());
-  ParameterEvaluator kgenEvaluator;
   size_t nextBinding = 0;
   for (auto [idx, declX] : llvm::enumerate(actualParamDecls)) {
     ParamDeclAttr decl = declX;
+    size_t index = idx;
     bool isVararg = idx + 1 == actualParamDecls.size() && paramVarargs;
 
     // This lambda installs the decl's value in the parameter evaluator and new
     // binding array.
     auto setParamValue = [&](TypedAttr value) {
       evaluator.setParameterValue(decl, value);
+      evaluator.inputParamValues.push_back(value);
       newBindings.push_back(ParamBindAttr::get(decl.getName(), value));
     };
 
@@ -382,8 +391,8 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
       auto handleInference = [&]() -> bool {
         if (parameterInferenceHook) {
           auto expectedType = evaluator.getReboundType(decl.getType());
-          if (auto value =
-                  parameterInferenceHook(decl, expectedType, newBindings)) {
+          if (auto value = parameterInferenceHook(index, decl, expectedType,
+                                                  newBindings)) {
             assert(value.getType().mlirType == expectedType &&
                    "inferred a default parameter value of wrong type");
             setParamValue(value);
@@ -511,7 +520,7 @@ InputParamBindings::getNextExpectedBindingType(SignatureType candidateType,
       candidateType.getInputParams(), /*no diagnostics*/ "xx", SMLoc(),
       incorrectBindingNo, incorrectBindingExpectedType, emitter,
       /*don't emit diagnostics*/ nullptr, candidateType.hasParamVarargs(),
-      [&](ParamDeclAttr decl, ASTType expectedType,
+      [&](size_t index, ParamDeclAttr decl, ASTType expectedType,
           ArrayRef<ParamBindAttr> bindingsSoFar) -> PValue {
         nextExpectedType = expectedType;
         return {};
@@ -611,9 +620,9 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
       signature.getInputParams(), callable.baseName, callExpr->getLoc(),
       incorrectBindingNo, incorrectBindingExpectedType, emitter,
       /*don't emit diagnostics*/ nullptr, signature.hasParamVarargs(),
-      [&](ParamDeclAttr decl, ASTType expectedParamType,
+      [&](size_t index, ParamDeclAttr decl, ASTType expectedParamType,
           ArrayRef<ParamBindAttr> bindingsSoFar) -> PValue {
-        return ParameterInferenceState(emitter.shared, decl)
+        return ParameterInferenceState(emitter.shared, index, decl)
             .infer(signature, bindingsSoFar, operands);
       },
       /*inferPack=*/true);

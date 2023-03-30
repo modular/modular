@@ -66,9 +66,9 @@ public:
     bindings.push_back({expr, value});
   }
 
-  using ParameterInferenceHookTy =
-      std::function<PValue(ParamDeclAttr decl, ASTType expectedType,
-                           ArrayRef<ParamBindAttr> bindings)>;
+  using ParameterInferenceHookTy = std::function<PValue(
+      size_t index, ParamDeclAttr decl, ASTType expectedType,
+      ArrayRef<ParamBindAttr> bindings)>;
 
   /// Check that our set of parameter bindings work with the specified input
   /// parameters, returning a checked ParamBindArrayAttr if so.  If the

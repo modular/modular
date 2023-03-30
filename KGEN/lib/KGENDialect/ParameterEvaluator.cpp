@@ -80,11 +80,32 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
   if (iter != rewritten.end())
     return Attribute::getFromOpaquePointer(iter->second);
 
+  // If a parameter got rebound to an index reference, we need to increase its
+  // depth based on the current signature.
+  // FIXME: Is there a better way around this? This previously manifested as
+  // unintentional name shadowing problems, but walking here is inefficient.
+  auto upbindValue = [&](Attribute value) {
+    if (rootDepth + inputDepth == 0)
+      return value;
+    mlir::AttrTypeReplacer replacer;
+    replacer.addReplacement([&](ParamIndexRefAttr ref) {
+      return ParamIndexRefAttr::get(ref.getDepth() + rootDepth + inputDepth,
+                                    ref.getIsResult(), ref.getIndex(),
+                                    ref.getType());
+    });
+    return replacer.replace(value);
+  };
+
   // If this is a foldable parameter expression, do it.
   Attribute result = attr;
   if (auto declRef = dyn_cast<ParamDeclRefAttr>(attr)) {
-    result = paramValues[declRef.getName()];
+    result = upbindValue(paramValues[declRef.getName()]);
     assert(result && "Verifier should check that all parameters are defined");
+  } else if (auto indexRef = dyn_cast<ParamIndexRefAttr>(attr);
+             indexRef && indexRef.getDepth() == rootDepth) {
+    result = upbindValue((indexRef.getIsResult()
+                              ? resultParamValues
+                              : inputParamValues)[indexRef.getIndex()]);
   } else if (isa<MLIROpAttr>(attr)) {
     // Expression functions and MLIR operation expressions are isolated from
     // above, so don't collect from them.
@@ -134,6 +155,7 @@ Type ParameterEvaluator::getReboundType(Type type) {
     SmallVector<Attribute, 16> newAttrs;
     SmallVector<Type, 16> newTypes;
     bool changed = false;
+    rootDepth += !!signature;
     type.walkImmediateSubElements(
         [&](Attribute attr) {
           Attribute newAttr = getReboundAttribute(attr);
@@ -145,6 +167,7 @@ Type ParameterEvaluator::getReboundType(Type type) {
           changed |= newType != type;
           newTypes.push_back(newType);
         });
+    rootDepth -= !!signature;
     if (changed)
       result = type.replaceImmediateSubElements(newAttrs, newTypes);
   }
@@ -164,4 +187,8 @@ void ParameterEvaluator::dump() const {
   os << "ParameterEvaluator: \n";
   for (auto [name, value] : paramValues)
     os << "  " << name << " = " << value << "\n";
+  for (auto [idx, value] : llvm::enumerate(inputParamValues))
+    os << "  *0|" << idx << " = " << value << "\n";
+  for (auto [idx, value] : llvm::enumerate(resultParamValues))
+    os << "  *0|" << idx << "* = " << value << "\n";
 }

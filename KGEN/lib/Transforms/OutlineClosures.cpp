@@ -142,8 +142,6 @@ void OutlineClosuresPass::runOnOperation() {
                  llvm::interleaveComma(necessaryDecls, llvm::dbgs());
                  llvm::dbgs() << "]\n");
 
-      SignatureType bodySignature = regionDecl.getFullSignature();
-
       // The value signature is pretty simple here, just captures and then any
       // original arguments.
       SmallVector<Value> liftedInputs =
@@ -152,9 +150,9 @@ void OutlineClosuresPass::runOnOperation() {
       LLVM_DEBUG(llvm::dbgs() << "Lifted region will take inputs: [\n\t";
                  llvm::interleave(liftedInputs, llvm::dbgs(), ",\n\t");
                  llvm::dbgs() << "\n]\n");
-      auto liftedValueSignature =
+      auto liftedFunctionType =
           FunctionType::get(&getContext(), ValueRange(liftedInputs).getTypes(),
-                            bodySignature.getValueResults());
+                            regionDecl.getResultTypes());
 
       // The parameter signature is just the necessary decls + original
       // arguments, and then any of the original results.
@@ -163,18 +161,22 @@ void OutlineClosuresPass::runOnOperation() {
         assert(inserted && "nested parameter declaration was duplicated?");
       }
 
-      // The lifted generator needs to be always_inline, so we add that to the
-      // FnEffects.
-      auto liftedSignature = SignatureType::get(
-          b.getAttr<ParamDeclArrayAttr>(necessaryDecls.getArrayRef()),
-          bodySignature.getResultParams(), liftedValueSignature,
-          b.getAttr<MetadataAttr>(liftedValueSignature.getNumInputs()));
+      auto inputParamDecls =
+          ParamDeclArrayAttr::get(&getContext(), necessaryDecls.getArrayRef());
+      auto liftedSignature =
+          SignatureType::get(
+              inputParamDecls, regionDecl.getResultParamsAttr(),
+              liftedFunctionType,
+              b.getAttr<MetadataAttr>(liftedFunctionType.getNumInputs()))
+              .normalizeToIndexRefs();
 
-      // Now lift the body out into its own generator.
+      // Now lift the body out into its own generator. The lifted function must
+      // be marked as `always_inline`.
       b.setInsertionPoint(generator);
       auto lifted = b.create<GeneratorOp>(
           regionDecl.getLoc(), getUniqueName("_" + regionName),
-          TypeAttr::get(liftedSignature),
+          TypeAttr::get(liftedSignature), TypeAttr::get(liftedFunctionType),
+          inputParamDecls, regionDecl.getResultParamsAttr(),
           b.getAttr<ConstraintArrayAttr>(ArrayRef<ConstraintAttr>{}),
           b.getAttr<AlwaysInlineLevelAttr>(
               regionDecl.getAlwaysInlineLevel() == AlwaysInlineLevel::Disabled
@@ -204,14 +206,20 @@ void OutlineClosuresPass::runOnOperation() {
       // the same parameter signature as the lifted region, but it has the same
       // value signature as the original parameter region (no captures - those
       // come from global variables).
-      auto wrapperSignature = SignatureType::get(
-          liftedSignature.getInputParams(), liftedSignature.getResultParams(),
-          bodySignature.getValues(), bodySignature.getMetadata());
+      SignatureType bodySignature =
+          regionDecl.getSignature().incrementIndexRefs(
+              capturedParamValues.size());
+      auto wrapperSignature =
+          SignatureType::get(
+              liftedSignature.getInputParams(), bodySignature.getResultParams(),
+              bodySignature.getValues(), bodySignature.getMetadata())
+              .normalizeToIndexRefs();
 
       b.setInsertionPoint(generator);
       auto liftedWrapper = b.create<GeneratorOp>(
           regionDecl.getLoc(), getUniqueName("_" + regionName + "_wrapper"),
-          TypeAttr::get(wrapperSignature),
+          TypeAttr::get(wrapperSignature), regionDecl.getFunctionTypeAttr(),
+          inputParamDecls, regionDecl.getResultParamsAttr(),
           b.getAttr<ConstraintArrayAttr>(ArrayRef<ConstraintAttr>{}),
           regionDecl.getAlwaysInlineLevelAttr());
       symtab.insert(liftedWrapper);
@@ -276,9 +284,8 @@ void OutlineClosuresPass::runOnOperation() {
                 "could not specialize the lifted generator's signature: ");
           }));
       auto callResults = b.create<CallOp>(
-          regionDecl.getLoc(), lifted.getSignature().getValueResults(),
-          liftedCallSymbol, ParamDeclArrayAttr::get(&getContext(), resultDecls),
-          callArgs);
+          regionDecl.getLoc(), lifted.getResultTypes(), liftedCallSymbol,
+          ParamDeclArrayAttr::get(&getContext(), resultDecls), callArgs);
       if (!returnRefs.empty())
         b.create<ParamResultBindOp>(regionDecl.getLoc(), returnRefs);
       b.create<ReturnOp>(regionDecl.getLoc(), callResults.getResults());

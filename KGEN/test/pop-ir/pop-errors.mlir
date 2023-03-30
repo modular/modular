@@ -156,7 +156,7 @@ kgen.func @repeat_zero() {
 
 // -----
 
-kgen.func @pack_create<Ts: variadic<!kgen.mlirtype>>(%arg0: f32, %arg1: si8) {
+kgen.generator @pack_create<Ts: variadic<!kgen.mlirtype>>(%arg0: f32, %arg1: si8) {
   // expected-error @below {{operand types cannot be inferred for resulting pack type '!pop.pack<Ts>'}}
   %0 = pop.pack.create(%arg0, %arg1) : !pop.pack<Ts>
   kgen.return

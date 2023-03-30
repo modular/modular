@@ -1614,7 +1614,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
 
   if (Operation *existing = shared.setResolvedDeclSymbol(funcOp)) {
     // If the thing is adaptive, then we actually don't want to error.
-    if (!existing->hasAttr(funcOp.getIsAdaptiveAttrName())) {
+    if (!cast<LIT::FuncOp>(existing).getIsAdaptive()) {
       // On redefinition this is an overload of the same name and same
       // signature.
       auto diag = p.emitError(funcOp.getLoc(), "redefinition of function ")
@@ -1718,12 +1718,17 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
     return failure();
 
   funcOp.setValueParamNamesAttr(builder.getAttr<StringArrayAttr>(argNames));
+  funcOp.setFunctionType(signature.getValues());
+  funcOp.setInputParams(signature.getInputParams());
+  funcOp.setResultParams(signature.getResultParams());
+  signature = signature.normalizeToIndexRefs();
   funcOp.setSignature(signature);
   // If this is a nested function, set its parameter declaration. It will be
   // referenced via parameter references instead of symbol references.
-  if (funcOp->getParentOfType<LIT::FuncOp>())
+  if (funcOp->getParentOfType<LIT::FuncOp>()) {
     funcOp.setParamDeclAttr(
         ParamDeclAttr::get(funcOp.getSymNameAttr(), signature));
+  }
 
   funcOp.getBody()->addArguments(argTypes, argLocs);
 

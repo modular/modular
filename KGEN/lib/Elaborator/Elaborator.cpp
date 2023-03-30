@@ -1180,7 +1180,8 @@ ElaboratorImpl::getConcreteFunction(Location loc, SymbolRefAttr symbolRef,
     topLevelTrees[{funcItf, vals}] = node;
   }
 
-  for (auto [decl, value] : llvm::zip(funcItf.getInputParams(), vals))
+  for (auto [decl, value] :
+       llvm::zip(cast<DeclInterface>(*funcItf).getInputParams(), vals))
     node->evaluator.setOrOverwriteParameterValue(decl, value);
 
   if (auto gen = dyn_cast<GeneratorOp>(funcItf.getOperation())) {
@@ -1225,7 +1226,8 @@ ElaboratorImpl::getAllConcreteFunctions(Location loc, SymbolRefAttr symbolRef,
     topLevelTrees[{funcItf, vals}] = node;
   }
 
-  for (auto [decl, value] : llvm::zip(funcItf.getInputParams(), vals))
+  for (auto [decl, value] :
+       llvm::zip(cast<DeclInterface>(*funcItf).getInputParams(), vals))
     node->evaluator.setOrOverwriteParameterValue(decl, value);
 
   if (auto gen = dyn_cast<GeneratorOp>(funcItf.getOperation())) {

@@ -123,7 +123,7 @@ M::importLitFile(SourceMgr &sourceMgr, MLIRContext *context,
                  bool validateDocStrings,
                  SmallVectorImpl<std::string> *includedFiles) {
   LitSharedState sharedState(sourceMgr, context, options, useMLIRDiagnostics,
-                             runtime, validateDocStrings);
+                             runtime, validateDocStrings, false);
   auto [module, topLevelDecl] =
       importLitFileImpl(sourceMgr, sharedState, ts, includedFiles);
   return std::move(module);

@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -verify-parameters | FileCheck %s
+// RUN: kgen-opt %s -allow-unregistered-dialect -split-input-file -verify-parameters | FileCheck %s
 
 // CHECK-LABEL: kgen.generator @parameterIsolatedRegions
 kgen.generator @parameterIsolatedRegions<A>() {
@@ -19,6 +19,8 @@ kgen.generator @parameterIsolatedRegions<A>() {
   kgen.return
 }
 
+// -----
+
 // CHECK-LABEL: kgen.generator @struct_of_simd
 // CHECK-SAME: -> !pop.struct<simd<size, type>>
 kgen.generator @struct_of_simd<size, type: dtype>(%arg0: !pop.simd<size, type>) -> !pop.struct<simd<size, type>> {
@@ -34,4 +36,63 @@ kgen.generator @call_it<size, type: dtype, target: dtype>(%arg0: !pop.struct<sim
   // CHECK-SAME: (!pop.simd<size, target>) -> !pop.struct<simd<size, target>>
   %4 = kgen.call @struct_of_simd<size = size, type: dtype = target>(%3) : (!pop.simd<size, target>) -> !pop.struct<simd<size, target>>
   kgen.return %4 : !pop.struct<simd<size, target>>
+}
+
+// -----
+
+lit.struct.decl @TakeArrayStruct<t, a: !pop.array<t, i1>> {}
+
+kgen.generator @pass_index<t>(%arg0: index) -> !pop.array<t, i1> {
+  %0 = "foo.op"() : () -> !pop.array<t, i1>
+  kgen.return %0 : !pop.array<t, i1>
+}
+
+// CHECK-LABEL: kgen.generator @apply_result
+// CHECK-SAME: @TakeArrayStruct<t = t, a: array<t, i1> = apply(:(index) -> !pop.array<t, i1> @pass_index<t = t>, t)>
+kgen.generator @apply_result<t>(
+  %arg0: !kgen.declref<@TakeArrayStruct<
+    t = t,
+    a: array<t, i1> = apply(:(index) -> !pop.array<t, i1> @pass_index<t = t>, t)
+  >>
+) {
+  kgen.return
+}
+
+// -----
+
+lit.struct.decl @Int {}
+
+kgen.generator @make(%arg0: index) -> !kgen.declref<@Int> {
+  kgen.unreachable
+}
+
+lit.struct.decl @List<l: @Int> {}
+
+kgen.generator @create<l: @Int>() -> !kgen.declref<@List<l: @Int = l>> {
+  kgen.unreachable
+}
+
+lit.struct.decl @Buf<r: @Int, s: @List<l: @Int = r>> {}
+
+// CHECK-LABEL: kgen.generator @buffer
+kgen.generator @buffer<rank>() ->
+  !kgen.declref<@Buf<
+    r: @Int = apply(:(index) -> !kgen.declref<@Int> @make, rank),
+    s: @List<l: @Int = apply(:(index) -> !kgen.declref<@Int> @make, rank)> =
+      apply(:() -> !kgen.declref<@List<l: @Int = apply(:(index) -> !kgen.declref<@Int> @make, rank)>>
+              @create<l: @Int = apply(:(index) -> !kgen.declref<@Int> @make, rank)>)>> {
+  kgen.unreachable
+}
+
+// CHECK-LABEL: kgen.generator @ref_it
+kgen.generator @ref_it() {
+  // CHECK-NEXT: = apply(:() -> !kgen.declref<@List<l: @Int = apply(:(index) -> !kgen.declref<@Int> @make, *1|0)
+  kgen.param.declare fn: <rank>() ->
+     !kgen.declref<@Buf<
+       r: @Int = apply(:(index) -> !kgen.declref<@Int> @make, *0|0),
+       s: @List<l: @Int = apply(:(index) -> !kgen.declref<@Int> @make, *0|0)> =
+         apply(:() -> !kgen.declref<@List<l: @Int = apply(:(index) -> !kgen.declref<@Int> @make, *1|0)>>
+                 @create<l: @Int = apply(:(index) -> !kgen.declref<@Int> @make, *0|0)>)>>
+    = <@buffer>
+  kgen.return
 }

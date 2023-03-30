@@ -156,9 +156,14 @@ void printSignatureValues(AsmPrinter &p, SignatureType signature);
 /// Parse and print a function signature with optional metadata.
 ParseResult parseFunctionSignature(OpAsmParser &p,
                                    SmallVectorImpl<OpAsmParser::Argument> &args,
+                                   ParamDeclArrayAttr &inputParams,
+                                   ParamDeclArrayAttr &resultParams,
+                                   FunctionType &functionType,
                                    SignatureType &signature);
 void printFunctionSignature(OpAsmPrinter &p, Region &region,
-                            SignatureType signature,
+                            ArrayRef<ParamDeclAttr> inputParams,
+                            ArrayRef<ParamDeclAttr> resultParams,
+                            FunctionType functionType, SignatureType signature,
                             StringArrayAttr valueParamNames = {});
 
 /// Parse the always_inline related keywords if present.

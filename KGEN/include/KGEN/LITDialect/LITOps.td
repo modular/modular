@@ -56,6 +56,9 @@ def LIT_FuncOp : LITOp<"func", [
     OptionalAttr<KGEN_ParamDeclAttr>:$paramDecl,
     KGEN_StringArrayAttr:$valueParamNames,
     TypeAttrOf<KGEN_SignatureType>:$signature,
+    TypeAttrOf<FunctionType>:$functionType,
+    KGEN_ParamDeclArrayAttr:$inputParams,
+    KGEN_ParamDeclArrayAttr:$resultParams,
     ConstraintArrayAttr:$constraints,
     UnitAttr:$isStatic,
     UnitAttr:$isAdaptive,
@@ -68,7 +71,7 @@ def LIT_FuncOp : LITOp<"func", [
     Block *getBody() { return &getFunctionBody().back(); }
 
     /// Returns the result type, which is guaranteed to be present.
-    Type getResultType() { return getFunctionType().getResults()[0]; }
+    Type getResultType() { return getResultTypes().front(); }
 
     /// Returns the result type with the outer variant<> type stripped off if it
     /// is a throwing function.

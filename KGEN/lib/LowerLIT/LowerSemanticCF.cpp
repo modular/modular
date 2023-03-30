@@ -448,7 +448,8 @@ static LogicalResult lowerNestedFunctions(LIT::FuncOp func) {
 
   ImplicitLocOpBuilder b(func.getLoc(), OpBuilder(func));
   auto region = b.create<ParamDeclareRegionOp>(
-      decl, func.getSignature(), ArrayRef<ConstraintAttr>(),
+      decl, func.getSignature(), func.getFunctionType(), func.getInputParams(),
+      func.getResultParams(), ArrayRef<ConstraintAttr>(),
       /*isolated=*/false, func.getAlwaysInlineLevel());
   region.getBodyRegion().takeBody(func.getBodyRegion());
   func.erase();
