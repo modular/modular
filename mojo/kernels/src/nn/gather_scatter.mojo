@@ -41,11 +41,20 @@ fn gather_reduce[
         `, type: `,
         DType,
         `>(`,
-        SIMD[simd_width, `type`],
+        SIMD[
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+        ],
         ` borrow,`,
-        SIMD[simd_width, `type`],
+        SIMD[
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+        ],
         ` borrow) ->`,
-        SIMD[simd_width, `type`],
+        SIMD[
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+        ],
         `>`,
     ],
 ](

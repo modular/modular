@@ -202,9 +202,15 @@ fn _softmax_3_pass_step_2[
         `, type: `,
         DType,
         `>(`,
-        SIMD[simd_width, type],
+        SIMD[
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+        ],
         ` borrow) -> `,
-        SIMD[simd_width, type],
+        SIMD[
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+        ],
         `>`,
     ],
     post_update_func: __mlir_type[
@@ -213,9 +219,15 @@ fn _softmax_3_pass_step_2[
         `, type: `,
         DType,
         `>(`,
-        SIMD[simd_width, type],
+        SIMD[
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+        ],
         ` borrow) -> `,
-        SIMD[simd_width, type],
+        SIMD[
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+        ],
         `>`,
     ],
 ](
@@ -262,9 +274,15 @@ fn _softmax_3_pass_step_3[
         `, type: `,
         DType,
         `>(`,
-        SIMD[simd_width, type],
+        SIMD[
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+        ],
         ` borrow) -> `,
-        SIMD[simd_width, type],
+        SIMD[
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+        ],
         `>`,
     ],
     accum_apply_func: __mlir_type[
@@ -273,11 +291,20 @@ fn _softmax_3_pass_step_3[
         `, type: `,
         DType,
         `>(`,
-        SIMD[simd_width, type],
+        SIMD[
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+        ],
         ` borrow, `,
-        SIMD[simd_width, type],
+        SIMD[
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+        ],
         ` borrow) -> `,
-        SIMD[simd_width, type],
+        SIMD[
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+        ],
         `>`,
     ],
 ](output: Buffer[buffer_size, type], accum: SIMD[1, type],):
@@ -308,9 +335,15 @@ fn _softmax_3_pass_base[
         `, type: `,
         DType,
         `>(`,
-        SIMD[simd_width, type],
+        SIMD[
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+        ],
         ` borrow) -> `,
-        SIMD[simd_width, type],
+        SIMD[
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+        ],
         `>`,
     ],
     step2_post_update_func: __mlir_type[
@@ -319,9 +352,15 @@ fn _softmax_3_pass_base[
         `, type: `,
         DType,
         `>(`,
-        SIMD[simd_width, type],
+        SIMD[
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+        ],
         ` borrow) -> `,
-        SIMD[simd_width, type],
+        SIMD[
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+        ],
         `>`,
     ],
     step3_accum_proc_func: __mlir_type[
@@ -330,9 +369,15 @@ fn _softmax_3_pass_base[
         `, type: `,
         DType,
         `>(`,
-        SIMD[simd_width, type],
+        SIMD[
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+        ],
         ` borrow) -> `,
-        SIMD[simd_width, type],
+        SIMD[
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+        ],
         `>`,
     ],
     step3_accum_apply_func: __mlir_type[
@@ -341,11 +386,20 @@ fn _softmax_3_pass_base[
         `, type: `,
         DType,
         `>(`,
-        SIMD[simd_width, type],
+        SIMD[
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+        ],
         ` borrow, `,
-        SIMD[simd_width, type],
+        SIMD[
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+        ],
         ` borrow) -> `,
-        SIMD[simd_width, type],
+        SIMD[
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+        ],
         `>`,
     ],
 ](output: Buffer[buffer_size, type], input: Buffer[buffer_size, type]):
