@@ -115,51 +115,59 @@ enum AttributeCode {
   ///   }
   kParamDeclRefAttr = 14,
   ///
+  ///   ParamIndexRefAttr {
+  ///     depth: varint
+  ///     isResult: varint
+  ///     index: varint
+  ///     type: Type
+  ///   }
+  kParamIndexRefAttr = 15,
+  ///
   ///   ConcreteTypeConstantAttr {
   ///     value: Type
   ///   }
-  kConcreteTypeConstantAttr = 15,
+  kConcreteTypeConstantAttr = 16,
   ///
   ///   ParameterizedTypeConstantAttr {
   ///     value: Type
   ///   }
-  kParameterizedTypeConstantAttr = 16,
+  kParameterizedTypeConstantAttr = 17,
   ///
   ///   DTypeConstantAttr {
   ///     dtype: varint
   ///   }
-  kDTypeConstantAttr = 17,
+  kDTypeConstantAttr = 18,
   ///
   ///   SymbolConstantAttr {
   ///     symbol: SymbolRefAttr
   ///     paramValues: ParamBindArrayAttr
   ///     type: SignatureType
   ///   }
-  kSymbolConstantAttr = 18,
+  kSymbolConstantAttr = 19,
   ///
   ///   TargetParamAttr {
   ///     target: TargetInfoAttr
   ///   }
-  kTargetParamAttr = 19,
+  kTargetParamAttr = 20,
   ///
   ///   BuildInfoParamAttr {
   ///     info: BuildInfoAttr
   ///   }
-  kBuildInfoParamAttr = 20,
+  kBuildInfoParamAttr = 21,
   ///
   ///   ParamOperatorAttr {
   ///     opcode: varint
   ///     operands: TypedAttr[]
   ///     type: Type
   ///   }
-  kParamOperatorAttr = 21,
+  kParamOperatorAttr = 22,
   ///
   ///   MLIROpAttr {
   ///     name: StringAttr
   ///     attrs: DictionaryAttr
   ///     type: SignatureType
   ///   }
-  kMLIROpAttr = 22,
+  kMLIROpAttr = 23,
 };
 
 /// This enum contains marker codes used to indicate which type is currently
@@ -252,6 +260,7 @@ struct KGENBytecodeInterface : public mlir::BytecodeDialectInterface {
   Attribute readParamOperatorAttr(BytecodeReader &reader) const;
   Attribute readParameterizedTypeConstantAttr(BytecodeReader &reader) const;
   ParamDeclRefAttr readParamDeclRefAttr(BytecodeReader &reader) const;
+  ParamIndexRefAttr readParamIndexRefAttr(BytecodeReader &reader) const;
   SymbolConstantAttr readSymbolConstantAttr(BytecodeReader &reader) const;
   TargetParamAttr readTargetParamAttr(BytecodeReader &reader) const;
   UnboundAttr readUnboundAttr(BytecodeReader &reader) const;
@@ -276,6 +285,7 @@ struct KGENBytecodeInterface : public mlir::BytecodeDialectInterface {
   void write(ParamBindAttr attr, BytecodeWriter &writer) const;
   void write(ParamDeclAttr attr, BytecodeWriter &writer) const;
   void write(ParamDeclRefAttr attr, BytecodeWriter &writer) const;
+  void write(ParamIndexRefAttr attr, BytecodeWriter &writer) const;
   void write(ParamOperatorAttr attr, BytecodeWriter &writer) const;
   void write(ParameterizedTypeConstantAttr attr, BytecodeWriter &writer) const;
   void write(SymbolConstantAttr attr, BytecodeWriter &writer) const;
@@ -344,6 +354,8 @@ Attribute KGENBytecodeInterface::readAttribute(BytecodeReader &reader) const {
     return readUnboundAttr(reader);
   case Encoding::kParamDeclRefAttr:
     return readParamDeclRefAttr(reader);
+  case Encoding::kParamIndexRefAttr:
+    return readParamIndexRefAttr(reader);
   case Encoding::kConcreteTypeConstantAttr:
     return readConcreteTypeConstantAttr(reader);
   case Encoding::kParameterizedTypeConstantAttr:
@@ -390,9 +402,10 @@ KGENBytecodeInterface::writeAttribute(Attribute attr,
   return TypeSwitch<Attribute, LogicalResult>(attr)
       .Case<BuildInfoParamAttr, ConcreteTypeConstantAttr, ConstraintAttr,
             DTypeConstantAttr, ListAttr, MetadataAttr, MLIROpAttr,
-            ParamBindAttr, ParamDeclAttr, ParamDeclRefAttr, ParamOperatorAttr,
-            ParameterizedTypeConstantAttr, SymbolConstantAttr, TargetParamAttr,
-            UnboundAttr, UnknownAttr, VariadicAttr>([&](auto attr) {
+            ParamBindAttr, ParamDeclAttr, ParamDeclRefAttr, ParamIndexRefAttr,
+            ParamOperatorAttr, ParameterizedTypeConstantAttr,
+            SymbolConstantAttr, TargetParamAttr, UnboundAttr, UnknownAttr,
+            VariadicAttr>([&](auto attr) {
         write(attr, writer);
         return success();
       })
@@ -640,6 +653,29 @@ void KGENBytecodeInterface::write(ParamDeclRefAttr attr,
                                   BytecodeWriter &writer) const {
   writer.writeVarInt(Encoding::kParamDeclRefAttr);
   writer.writeAttribute(attr.getName());
+  writer.writeType(attr.getType());
+}
+
+//===----------------------------------------------------------------------===//
+// ParamIndexRefAttr
+
+ParamIndexRefAttr
+KGENBytecodeInterface::readParamIndexRefAttr(BytecodeReader &reader) const {
+  uint64_t depth, isResult, index;
+  Type type;
+  if (failed(reader.readVarInt(depth)) || failed(reader.readVarInt(isResult)) ||
+      failed(reader.readVarInt(index)) || failed(reader.readType(type)))
+    return ParamIndexRefAttr();
+  return ParamIndexRefAttr::get(depth, static_cast<bool>(isResult), index,
+                                type);
+}
+
+void KGENBytecodeInterface::write(ParamIndexRefAttr attr,
+                                  BytecodeWriter &writer) const {
+  writer.writeVarInt(Encoding::kParamIndexRefAttr);
+  writer.writeVarInt(attr.getDepth());
+  writer.writeVarInt(attr.getIsResult());
+  writer.writeVarInt(attr.getIndex());
   writer.writeType(attr.getType());
 }
 
