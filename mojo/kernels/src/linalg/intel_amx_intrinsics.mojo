@@ -12,7 +12,7 @@
 from DType import DType
 from Int import Int
 from Pointer import Pointer, DTypePointer
-from Tuple import StaticTuple
+from StaticTuple import StaticTuple
 from Matmul import Matrix
 from List import create_dim_list
 
