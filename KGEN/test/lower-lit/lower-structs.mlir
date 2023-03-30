@@ -13,10 +13,12 @@ kgen.func @two_vectors(
   %arg0: !pop.array<2, simd<4, f32>>,
   %arg1: !pop.array<4, simd<1, f64>>
 ) -> (!size2, !size4) {
-  // CHECK: pop.struct.create(%arg0) : !pop.struct<array<2, simd<4, f32>>>
   %0 = lit.struct.create(data=%arg0) : (!pop.array<2, simd<4, f32>>) -> !size2
-  // CHECK: pop.struct.create(%arg1) : !pop.struct<array<4, scalar<f64>>>
   %1 = lit.struct.create(data=%arg1) : (!pop.array<4, simd<1, f64>>) -> !size4
+
+  // CHECK: %0 = builtin.unrealized_conversion_cast %arg0
+  // CHECK: %1 = builtin.unrealized_conversion_cast %arg1
+  // CHECK: kgen.return %0, %1
   kgen.return %0, %1 : !size2, !size4
 }
 
@@ -33,7 +35,8 @@ lit.struct.decl @Pair<T1: type, T2: type> {
 
 // CHECK-LABEL: @make_box
 kgen.func @make_box(%v: f32) -> !kgen.declref<@Box<T:type = f32>> {
-  // CHECK: pop.struct.create(%arg0) : !pop.struct<f32>
+  // CHECK: %0 = builtin.unrealized_conversion_cast %arg0 : f32 to f32
+  // CHECK: kgen.return %0 : f32
   %0 = lit.struct.create(value=%v) : (f32) -> !kgen.declref<@Box<T:type = f32>>
   kgen.return %0 : !kgen.declref<@Box<T:type = f32>>
 }
@@ -80,14 +83,12 @@ lit.struct.decl @NestedC {
   lit.struct.field b: !kgen.declref<@NestedB<t:dtype = f32>>
 }
 
-// CHECK-LABEL: @use_nested
-// CHECK-SAME: !pop.struct<struct<struct<scalar<f32>>>>
+// CHECK-LABEL: @use_nested(%arg0: !pop.scalar<f32>)
 kgen.func @use_nested(%a: !kgen.declref<@NestedC>) {
   kgen.return
 }
 
-// CHECK-LABEL: @struct_element
-// CHECK-SAME: !pop.pointer<struct<simd<2, f32>>>
+// CHECK-LABEL: @struct_element(%arg0: !pop.pointer<simd<2, f32>>
 kgen.func @struct_element(%a: !pop.pointer<!kgen.declref<@NestedA<T:type = !pop.simd<2, f32>>>>) {
   kgen.return
 }
@@ -102,12 +103,14 @@ lit.struct.decl @StructInsideStruct {
 }
 
 // CHECK-LABEL: @passStructAsLValue
-kgen.func @passStructAsLValue(%s: !pop.pointer<@StructInsideStruct>) {
-  // CHECK: pop.struct.gep %{{.*}}[0] : <struct<struct<index>>>
+kgen.func @passStructAsLValue(%s: !pop.pointer<@StructInsideStruct>) ->
+!pop.pointer<index> {
+  // CHECK: %0 = builtin.unrealized_conversion_cast %arg0
   %0 = lit.struct.gep %s[x] : <@IndexStruct> from <@StructInsideStruct>
-  // CHECK: pop.struct.gep %{{.*}}[0] : <struct<index>>
+  // CHECK:  %1 = builtin.unrealized_conversion_cast %0
   %1 = lit.struct.gep %0[value] : <index> from <@IndexStruct>
-  kgen.return
+  // CHECK: kgen.return %0
+  kgen.return %1 : !pop.pointer<index>
 }
 
 lit.struct.decl @IndexField {
@@ -141,11 +144,12 @@ kgen.generator @return_one(%arg0: !kgen.declref<@Struct>) -> index {
 }
 
 // CHECK-LABEL: @use_struct_param
-// CHECK-SAME: !pop.struct<array<apply(:(!pop.struct<>) -> index @return_one, {  }), index>>
+// CHECK-SAME: !pop.array<apply(:(!pop.struct<>) -> index @return_one, { }), index>
 kgen.generator @use_struct_param(%arg0: !kgen.declref<@StructParam<param: @Struct = #lit.struct<{}>>>) {
-  // CHECK: pop.struct.extract %0[0] : !pop.struct<array<apply(:(!pop.struct<>) -> index @return_one, {  }), index>>
+  // CHECK:  %0 = builtin.unrealized_conversion_cast %arg0
   lit.struct.extract %arg0[value] : !pop.array<apply(:(!kgen.declref<@Struct>) -> index @return_one, #lit.struct<{}>), index>
     from !kgen.declref<@StructParam<param: @Struct = #lit.struct<{}>>>
+  // CHECK: %1 = builtin.unrealized_conversion_cast %0
   kgen.return
 }
 
@@ -153,7 +157,7 @@ kgen.generator @use_struct_param(%arg0: !kgen.declref<@StructParam<param: @Struc
 
 // CHECK-LABEL: kgen.generator @parameterized_declref_type
 kgen.generator @parameterized_declref_type() {
-  // CHECK-NEXT: !pop.struct<array<2, struct<simd<apply(:(!pop.struct<>) -> index @unbox, {  }), f32>>>>
+  // CHECK-NEXT: !pop.array<2, simd<apply(:(!pop.struct<>) -> index @unbox, { }), f32>>
   %3 = pop.stack_allocation 1 x !kgen.declref<@StaticTuple<size = 2,
     type: type = !kgen.declref<@SIMD<size: @Int = #lit.struct<{}>, type: dtype = f32>>>>
   kgen.return
@@ -172,7 +176,7 @@ lit.struct.decl @StaticTuple<size, type: type> {
 // -----
 
 // CHECK-LABEL: kgen.generator @nested_declref_type
-// CHECK-SAME: !pop.closure<(!pop.struct<simd<apply(:(index) -> index @pass, 1), si32>
+// CHECK-SAME: !pop.closure<(!pop.simd<apply(:(index) -> index @pass, 1), si32>
 kgen.generator @nested_declref_type(
     %arg1: !kgen.declref<@UnaryClosure<input_type: type = !kgen.declref<@SIMD<size = 1>>>>) {
   kgen.return
