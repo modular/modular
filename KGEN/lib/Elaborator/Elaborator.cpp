@@ -41,6 +41,7 @@
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/SaveAndRestore.h"
 #include "llvm/TargetParser/Host.h"
 
 #define DEBUG_TYPE "kgen-elaborator"
@@ -1664,9 +1665,6 @@ ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent) {
   if (errorOrValue.isError())
     return errorOrValue.takeError();
 
-  // Clear out the rewritten cache to force all types/etc. to be recomputed.
-  parent->evaluator.clearCache();
-
   // Take whichever branch the condition indicated, and simply inline those ops
   // then elaborate them. We can do this by splicing the op list into the parent
   // block. We splice it this way to avoid remapping the ops when we process
@@ -1699,8 +1697,20 @@ ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent) {
 
     opsToRewrite.push_back(paramOp);
   }
-  if (failed(processScope(parent, opsToRewrite)))
-    return parent->error->copy();
+
+  SmallVector<Attribute> resultParamValues;
+  {
+    llvm::SaveAndRestore<IREvaluator> save(parent->evaluator);
+    parent->evaluator.clearCache();
+    if (failed(processScope(parent, opsToRewrite)))
+      return parent->error->copy();
+    for (ParamDeclAttr resultParam : op.getResultParams())
+      resultParamValues.push_back(
+          parent->evaluator.getParameterValues().at(resultParam.getName()));
+  }
+  for (auto [resultParam, value] :
+       llvm::zip(op.getResultParams(), resultParamValues))
+    parent->evaluator.setOrOverwriteParameterValue(resultParam, value);
 
   // Splice the ops into the parent. Grab the terminator before the iterators
   // invalidate.

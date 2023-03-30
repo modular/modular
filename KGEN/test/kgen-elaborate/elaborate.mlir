@@ -1978,6 +1978,44 @@ kgen.generator @fork_unreachable_blocks() {
   kgen.return
 }
 
+// CHECK-LABEL: kgen.func @param_if_shadow
+kgen.generator @param_if_shadow() {
+  // CHECK-NEXT: constant = <1>
+  kgen.param.declare a = <1>
+  kgen.param.if <1> {
+    kgen.param.declare a: dtype = <si32>
+    kgen.param.yield
+  } else {
+    kgen.param.yield
+  }
+  kgen.param.constant = <a>
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @"param_if_different,cond=-1"
+// CHECK-NEXT: constant = <2>
+
+// CHECK-LABEL: kgen.func @"param_if_different,cond=0"
+// CHECK-NEXT: constant = <3>
+kgen.generator @param_if_different<cond: i1>() {
+  kgen.param.declare a = <3>
+  kgen.param.if <cond> {
+    kgen.param.declare a = <2>
+    kgen.param.constant = <a>
+    kgen.param.yield
+  } else {
+    kgen.param.constant = <a>
+    kgen.param.yield
+  }
+  kgen.return
+}
+
+kgen.generator @instantiate() {
+  kgen.call @param_if_different<cond: i1 = 1>() : () -> ()
+  kgen.call @param_if_different<cond: i1 = 0>() : () -> ()
+  kgen.return
+}
+
 // -----
 
 kgen.generator @box(%a: index) -> !pop.struct<index> {

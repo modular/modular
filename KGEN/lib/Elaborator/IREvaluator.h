@@ -58,11 +58,11 @@ private:
                                           ArrayRef<TypedAttr> inputs);
 
   /// The symbol table to lookup symbol references.
-  SymbolTable &symtab;
+  SymbolTable *symtab;
 
   /// A reference to the elaborator instance. The elaborator is invoked to
   /// concretize symbol constants prior to interpreting them.
-  Elaborator &elaborator;
+  Elaborator *elaborator;
 
   /// The contextual location of an error.
   std::optional<Location> errorLoc;
