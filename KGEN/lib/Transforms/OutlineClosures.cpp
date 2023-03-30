@@ -248,14 +248,7 @@ void OutlineClosuresPass::runOnOperation() {
       SmallVector<TypedAttr> returnRefs;
       for (auto [idx, resultParam] :
            llvm::enumerate(lifted.getResultParams())) {
-        auto declName = b.getStringAttr("__resultParam_" + Twine(idx));
-        // If something is somehow named __resultParam_0 then just increment the
-        // counter till it works.
-        while (llvm::find_if(lifted.getInputParams(), [&](ParamDeclAttr decl) {
-                 return decl.getName() == declName;
-               }) != lifted.getInputParams().end())
-          declName = b.getStringAttr("__resultParam_" + Twine(++idx));
-
+        auto declName = b.getStringAttr("(outlined)resultParam" + Twine(idx));
         resultDecls.push_back(
             ParamDeclAttr::get(declName, resultParam.getType()));
         returnRefs.push_back(

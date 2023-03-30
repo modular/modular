@@ -30,8 +30,8 @@ kgen.generator @call_region<fn: <A -> E>() ->index -> E>() -> index always_inlin
 // CHECK-NEXT:   [[PTR:%[0-9]+]] = pop.compiler.global_load "raiseClosure_context_var_0" : !pop.struct<index, scalar<index>>
 // CHECK-NEXT:   [[VAL:%[0-9]+]] = pop.struct.extract [[PTR]][0] : !pop.struct<index, scalar<index>>
 // CHECK-NEXT:   [[ARG:%[0-9]+]] = pop.struct.extract [[PTR]][1] : !pop.struct<index, scalar<index>>
-// CHECK-NEXT:   [[RES:%[0-9]+]] = kgen.call @raiseClosure_Fn<Jefffffffffff = Jefffffffffff, C = C, A = A, B = B -> __resultParam_0 = E>([[VAL]], [[ARG]]) : (index, !pop.scalar<index>) -> index
-// CHECK-NEXT:   kgen.param.result_bind<__resultParam_0>
+// CHECK-NEXT:   [[RES:%[0-9]+]] = kgen.call @raiseClosure_Fn<Jefffffffffff = Jefffffffffff, C = C, A = A, B = B -> *"(outlined)resultParam0" = E>([[VAL]], [[ARG]]) : (index, !pop.scalar<index>) -> index
+// CHECK-NEXT:   kgen.param.result_bind<*"(outlined)resultParam0">
 // CHECK-NEXT:   kgen.return [[RES]] : index
 
 // CHECK-LABEL: kgen.generator @raiseClosure
@@ -80,8 +80,8 @@ kgen.generator @raiseClosure<Jefffffffffff -> index>(%arg0: !pop.scalar<index>) 
 // CHECK-LABEL: kgen.generator @raise2Closures_Fn_wrapper<C, A -> E>() -> index always_inline
 // CHECK-NEXT:    %0 = pop.compiler.global_load "raise2Closures_context_var_1" : !pop.struct<index>
 // CHECK-NEXT:    %1 = pop.struct.extract %0[0] :
-// CHECK-NEXT:    %2 = kgen.call @raise2Closures_Fn<C = C, A = A -> __resultParam_0 = E>(%1) : (index) -> index
-// CHECK-NEXT:    kgen.param.result_bind<__resultParam_0>
+// CHECK-NEXT:    %2 = kgen.call @raise2Closures_Fn<C = C, A = A -> *"(outlined)resultParam0" = E>(%1) : (index) -> index
+// CHECK-NEXT:    kgen.param.result_bind<*"(outlined)resultParam0">
 // CHECK-NEXT:    kgen.return %2 : index
 
 
