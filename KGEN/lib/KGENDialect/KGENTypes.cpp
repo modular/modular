@@ -516,13 +516,15 @@ template <typename T>
 auto IndexRefRemapper::normalizeSignatureWalk(T value, size_t depth)
     -> std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute> {
   mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement([&](ParamDeclRefAttr ref) -> Attribute {
-    auto it = mapping.find(ref.getName());
-    if (it == mapping.end())
-      return ref;
-    auto [idx, isResult] = it->second;
-    return ParamIndexRefAttr::get(depth, isResult, idx, ref.getType());
-  });
+  if (!mapping.empty()) {
+    replacer.addReplacement([&](ParamDeclRefAttr ref) -> Attribute {
+      auto it = mapping.find(ref.getName());
+      if (it == mapping.end())
+        return ref;
+      auto [idx, isResult] = it->second;
+      return ParamIndexRefAttr::get(depth, isResult, idx, ref.getType());
+    });
+  }
   if (offset != 0) {
     replacer.addReplacement([&](ParamIndexRefAttr ref) {
       if (ref.getDepth() != depth)
@@ -565,43 +567,6 @@ Attribute IndexRefRemapper::remapAttrImpl(Attribute attr) {
 
 Type IndexRefRemapper::remapTypeImpl(Type type) {
   return normalizeSignatureWalk(type);
-}
-
-SignatureType SignatureType::normalizeToIndexRefs() {
-  IndexRefRemapper remapper(getInputParams(), getResultParams());
-  return SignatureType::get(
-      remapper.remap(getInputParams()), remapper.remap(getResultParams()),
-      remapper.remap(getValues()), remapper.remap(getMetadata()));
-}
-
-static SignatureType incrementIndexRefsWalk(SignatureType root,
-                                            SignatureType sig, size_t depth,
-                                            size_t offset) {
-  mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement([&](ParamIndexRefAttr ref) {
-    if (ref.getIsResult() || ref.getDepth() != depth)
-      return ref;
-    return ParamIndexRefAttr::get(depth, /*isResult=*/false,
-                                  offset + ref.getIndex(), ref.getType());
-  });
-
-  // Skip over parametric nested signatures.
-  // FIXME: This isn't correct but mirrors the behaviour of ParameterEvaluator,
-  // which works for the moment.
-  replacer.addReplacement(
-      [&](SignatureType nested) -> std::pair<Type, WalkResult> {
-        if (nested == sig)
-          return {sig, WalkResult::advance()};
-        if (nested != root && !nested.getInputParams().empty())
-          return {nested, WalkResult::skip()};
-        return {incrementIndexRefsWalk(root, nested, depth + 1, offset),
-                WalkResult::skip()};
-      });
-  return cast<SignatureType>(replacer.replace(sig));
-}
-
-SignatureType SignatureType::incrementIndexRefs(size_t offset) {
-  return incrementIndexRefsWalk(*this, *this, /*depth=*/0, offset);
 }
 
 //===----------------------------------------------------------------------===//

@@ -1782,13 +1782,15 @@ SignatureType KGEN::getFullSignature(FuncInterface decl) {
   if (inputParams.empty())
     return signature;
 
-  signature = signature.incrementIndexRefs(inputParams.size());
-  llvm::append_range(inputParams, signature.getInputParams());
+  IndexRefRemapper remapper(inputParams, {}, inputParams.size());
+  for (ParamDeclAttr param : signature.getInputParams())
+    inputParams.push_back(remapper.remap(param));
 
   return SignatureType::get(
       ParamDeclArrayAttr::get(signature.getContext(), inputParams),
-      signature.getResultParams(), signature.getValues(),
-      signature.getMetadata());
+      remapper.remap(signature.getResultParams()),
+      remapper.remap(signature.getValues()),
+      remapper.remap(signature.getMetadata()));
 }
 
 /// Verify that the provided operation has exactly one block in its body
