@@ -28,3 +28,6 @@ kgen.generator @return_one() -> index {
   // CHECK-SAME: b = #kgen.param.region<"bRegion", [ foo = 1 : i64], isolated = false> : !kgen.signature<(index) -> index>
   b = #kgen<param.region<"bRegion" , [foo = 1], isolated = false>> : !kgen.signature<(index) -> (index)>
 } : () -> ()
+
+// CHECK: #kgen.param.index.ref<0, false, 0> : index
+"some.op"() {ref = #kgen.param.index.ref<0, false, 0> : index} : () -> ()
