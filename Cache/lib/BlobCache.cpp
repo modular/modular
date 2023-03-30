@@ -209,6 +209,12 @@ struct InMemoryBackend : public BlobCacheBackend {
     if ((*buf)->getBufferStart() == foundBuf.getBufferStart())
       return found->second.copy();
 
+    if ((*buf)->getBufferSize() < foundBuf.getBufferSize())
+      return Error("Buffer passed to CAS (size " +
+                   Twine((*buf)->getBufferSize()) +
+                   ") cannot accommodate found object (size " +
+                   Twine(foundBuf.getBufferSize()) + ")");
+
     // Write the contents of the buffer we found to offset 0.
     (*buf)->pwrite(foundBuf.getBufferStart(), foundBuf.getBufferSize(), 0);
     // And return a ref to *that* buffer.
@@ -353,6 +359,12 @@ struct FilesystemBackend : public BlobCacheBackend {
     // No buffer provided, return the mapped thing.
     if (!buf)
       return std::move(*bufOr);
+
+    if ((*buf)->getBufferSize() < (*bufOr)->getBufferSize())
+      return Error("Buffer passed to CAS (size " +
+                   Twine((*buf)->getBufferSize()) +
+                   ") cannot accommodate found object (size " +
+                   Twine((*bufOr)->getBufferSize()) + ")");
 
     // Return a copy of the ref of the buffer we just wrote the data into.
     (*buf)->pwrite((*bufOr)->getBufferStart(), (*bufOr)->getBufferSize(), 0);
