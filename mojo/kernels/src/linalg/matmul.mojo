@@ -280,9 +280,9 @@ fn naive_matmul[
         ` borrow,`,
         Int,  # Col
         ` borrow,`,
-        SIMD[1, `accum_type`],
+        SIMD[1, __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, DType]],
         ` borrow) -> `,
-        SIMD[1, `accum_type`],
+        SIMD[1, __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, DType]],
         `>`,
     ],
     epilogue_rowise_func: __mlir_type[
@@ -291,7 +291,9 @@ fn naive_matmul[
         `>(`,
         Int,  # Row
         ` borrow,`,
-        Buffer[Dim(), `accum_type`],
+        Buffer[
+            Dim(), __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, DType]
+        ],
         ` borrow) -> !lit.none>`,
     ],
 ](
