@@ -52,6 +52,7 @@ void ParameterCollector::collectUsesFromAttr(
   // Verify index parameter references.
   if (auto indexRef = dyn_cast<ParamIndexRefAttr>(attr)) {
     collectUsesFromType(indexRef.getType(), uses, hasConstExpr);
+    hasConstExpr = true;
     maybeVerify(
         [&](function_ref<InFlightDiagnostic()> emitError) -> LogicalResult {
           if (signatures.empty())
