@@ -364,7 +364,7 @@ ParameterExprArrayAttr InputParamBindings::verifyBindings(
         evaluator.setParameterValue(actualParamDecls[newBindings.size()],
                                     value);
       else
-        evaluator.inputParamValues.push_back(value);
+        evaluator.addInputValue(value);
       newBindings.push_back(value);
     };
 

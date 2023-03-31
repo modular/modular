@@ -297,7 +297,7 @@ SignatureType SignatureType::getSpecializedSignature(
 
   // We do this with with ParameterEvaluator which can do the remapping for us.
   ParameterEvaluator evaluator;
-  evaluator.inputDepth = 1;
+  evaluator.setInputDepth(1);
 
   auto remapType = [&](Type type) -> Type {
     return evaluator.getReboundType(type);
@@ -327,9 +327,9 @@ SignatureType SignatureType::getSpecializedSignature(
           ParamIndexRefAttr::get(/*depth=*/-1, /*isResult=*/false,
                                  unboundParamTypes.size(), remappedDeclType);
       unboundParamTypes.push_back(remappedDeclType);
-      evaluator.inputParamValues.push_back(value);
+      evaluator.addInputValue(value);
     } else {
-      evaluator.inputParamValues.push_back(value);
+      evaluator.addInputValue(value);
     }
 
     ++paramNo;
@@ -338,7 +338,7 @@ SignatureType SignatureType::getSpecializedSignature(
   // FIXME: Signature typed attributes need to contain result parameter
   // declarations. For now, just bind them to themselves.
   for (auto [idx, type] : llvm::enumerate(resultParamTypes)) {
-    evaluator.resultParamValues.push_back(
+    evaluator.addResultValue(
         ParamIndexRefAttr::get(/*depth=*/-1, /*isResult=*/true, idx, type));
   }
 
@@ -403,6 +403,10 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
                       FunctionType values, MetadataAttr metadata) {
   return metadata.verifySignature(emitError, inputParams, resultParams, values);
 }
+
+//===----------------------------------------------------------------------===//
+// IndexRefRemapper
+//===----------------------------------------------------------------------===//
 
 template <typename T>
 auto IndexRefRemapper::normalizeSignatureWalk(T value, size_t depth)

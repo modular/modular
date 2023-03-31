@@ -18,7 +18,6 @@
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/SymbolTable.h"
 #include "llvm/ADT/SCCIterator.h"
-#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallString.h"
 
@@ -125,8 +124,8 @@ void ParameterCollector::collectUsesFromType(
     Type type, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasConstExpr) {
   if (auto sig = dyn_cast<SignatureType>(type)) {
     signatures.push_back(sig);
-    auto pop = llvm::make_scope_exit([&] { signatures.pop_back(); });
-    return collectUsesFromTypesImpl(type, uses, hasConstExpr);
+    collectUsesFromTypesImpl(type, uses, hasConstExpr);
+    return signatures.pop_back();
   }
   return collectUsesFromTypesImpl(type, uses, hasConstExpr);
 }

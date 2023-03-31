@@ -591,7 +591,7 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
       if (p.parseComma() || parseParamValue(p, operands.emplace_back(),
                                             evaluator.getReboundType(type)))
         return failure();
-      evaluator.inputParamValues.push_back(operands.back());
+      evaluator.addInputValue(operands.back());
     }
     return success();
   }
