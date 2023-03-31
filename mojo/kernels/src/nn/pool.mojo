@@ -133,7 +133,7 @@ struct Pool2d[
         fn task_func(task_id: Int):
 
             # Create an instance of the pooling op.
-            var pool2d = Pool2d[
+            let pool2d = Pool2d[
                 static_output_shape,
                 static_input_shape,
                 type,

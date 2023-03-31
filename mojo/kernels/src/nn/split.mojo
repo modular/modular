@@ -7,11 +7,13 @@
 from Assert import assert_param_bool_msg, debug_assert
 from Buffer import Buffer, DynamicRankBuffer
 from DType import DType
+from Index import product
 from Int import Int
 from List import Dim, VariadicList
-from Pointer import DTypePointer, product
+from Pointer import DTypePointer
 from Memory import memcpy
 from Range import range
+
 
 # ===----------------------------------------------------------------------===#
 # split
@@ -43,7 +45,7 @@ fn _split[
 
     var w_in: Int = 0
     for ii in range(outputs.__len__()):
-        w_in += outputs[ii].shape.load(axis).value
+        w_in += outputs[ii].dim(axis)
 
     let stride_h_in = w_in * c
     let stride_w_in = c
@@ -51,7 +53,7 @@ fn _split[
     var w_offset: Int = 0
     for i in range(outputs.__len__()):
         # copy one w x c slice along h at a time
-        let w = outputs[i].shape.load(axis).value
+        let w = outputs[i].dim(axis)
         let out_buf = outputs[i].to_buffer[type]()
         for j in range(h):
             let output_offset = j * w * c
@@ -87,19 +89,15 @@ fn split[
     axis: Int,
     outputs: VariadicList[DynamicRankBuffer],
 ):
-    let output0_dims = outputs[0].shape
-    let output0_rank = outputs[0].rank
     # check inputs have same rank and same dims except for axis dim
     for i in range(outputs.__len__()):
         debug_assert(
-            output0_rank == outputs[i].rank,
+            outputs[0].rank == outputs[i].rank,
             "all split inputs must have the same rank",
         )
         for j in range(outputs[i].rank):
             debug_assert(
-                j == axis
-                or Int(output0_dims.load(j)[0].value)
-                == Int(outputs[i].shape.load(j)[0].value),
+                j == axis or outputs[0].dim(j) == outputs[i].dim(j),
                 (
                     "all split outputs must have the same dimensions in the"
                     " non-split axes"

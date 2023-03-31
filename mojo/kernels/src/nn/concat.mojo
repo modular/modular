@@ -7,9 +7,10 @@
 from Assert import assert_param_bool_msg, debug_assert
 from Buffer import Buffer, DynamicRankBuffer
 from DType import DType
+from Index import product
 from Int import Int
 from List import Dim, VariadicList
-from Pointer import DTypePointer, product
+from Pointer import DTypePointer
 from Memory import memcpy
 from Range import range
 
@@ -43,7 +44,7 @@ fn _concat[
 
     var w_out: Int = 0
     for ii in range(inputs.__len__()):
-        w_out += inputs[ii].shape.load(axis).value
+        w_out += inputs[ii].dim(axis)
 
     let stride_h_out = w_out * c
     let stride_w_out = c
@@ -51,7 +52,7 @@ fn _concat[
     var w_offset: Int = 0
     for i in range(inputs.__len__()):
         # copy one w x c slice along h at a time
-        let w = inputs[i].shape.load(axis).value
+        let w = inputs[i].dim(axis)
         let in_buf = inputs[i].to_buffer[type]()
         for j in range(h):
             let input_offset = j * w * c
@@ -89,19 +90,15 @@ fn concat[
     axis: Int,
     inputs: VariadicList[DynamicRankBuffer],
 ):
-    let input0_dims = inputs[0].shape
-    let input0_rank = inputs[0].rank
     # check inputs have same rank and same dims except for axis dim
     for i in range(inputs.__len__()):
         debug_assert(
-            input0_rank == inputs[i].rank,
+            inputs[0].rank == inputs[i].rank,
             "all concat inputs must have the same rank",
         )
         for j in range(inputs[i].rank):
             debug_assert(
-                j == axis
-                or Int(input0_dims.load(j)[0].value)
-                == Int(inputs[i].shape.load(j)[0].value),
+                j == axis or inputs[0].dim(j) == inputs[i].dim(j),
                 (
                     "all concat inputs must have the same dimensions in the"
                     " non-concat axes"

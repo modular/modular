@@ -5,11 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: mojo %s | FileCheck %s
 
-from Buffer import Buffer, NDBuffer, DynamicRankBuffer
+from Buffer import Buffer, NDBuffer, DynamicRankBuffer, max_rank
 from IO import print
 from Concat import concat
 from DType import DType
 from Pointer import DTypePointer
+from Index import StaticIntTuple
 from Int import Int
 from Range import range
 from List import Dim, VariadicList
@@ -28,25 +29,18 @@ fn test_concat():
     let x1 = Buffer[x1_sz, type].stack_allocation().fill(0)
     let x2 = Buffer[x2_sz, type].stack_allocation().fill(1)
     let x3 = Buffer[x3_sz, type].stack_allocation().fill(2)
-    let s1 = Buffer[rank, DType.index.value].stack_allocation()
-    let s2 = Buffer[rank, DType.index.value].stack_allocation()
-    let s3 = Buffer[rank, DType.index.value].stack_allocation()
-    for i in range(rank):
-        s1[i] = 2
-        s2[i] = 2
-        s3[i] = 2
-    s1[concat_axis] = 1
-    s2[concat_axis] = 2
-    s3[concat_axis] = 3
+    let s1 = StaticIntTuple[max_rank](2, 2, 1, 2, 0)
+    let s2 = StaticIntTuple[max_rank](2, 2, 2, 2, 0)
+    let s3 = StaticIntTuple[max_rank](2, 2, 3, 2, 0)
 
     let x1_dyn = DynamicRankBuffer(
-        x1.data.bitcast[DType.invalid.value](), rank, s1.data, type
+        x1.data.bitcast[DType.invalid.value](), rank, s1, type
     )
     let x2_dyn = DynamicRankBuffer(
-        x2.data.bitcast[DType.invalid.value](), rank, s2.data, type
+        x2.data.bitcast[DType.invalid.value](), rank, s2, type
     )
     let x3_dyn = DynamicRankBuffer(
-        x3.data.bitcast[DType.invalid.value](), rank, s3.data, type
+        x3.data.bitcast[DType.invalid.value](), rank, s3, type
     )
 
     alias out_sz = x1_sz + x2_sz + x3_sz

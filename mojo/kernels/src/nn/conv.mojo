@@ -2065,7 +2065,7 @@ struct ConvIm2ColNHWC[
 
         @always_inline
         fn task_func(task_id: Int):
-            var conv = ConvIm2ColNHWC[
+            let conv = ConvIm2ColNHWC[
                 shape_input,
                 shape_filter,
                 shape_output,
