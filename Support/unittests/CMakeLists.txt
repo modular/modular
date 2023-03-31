@@ -27,6 +27,7 @@ add_modular_unittest(
   MicroBenchmarkTest.cpp
   TensorShapeTest.cpp
   TimeProfilerTest.cpp
+  URITest.cpp
 
   LINK_LIBS PRIVATE
   MSupport

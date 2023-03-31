@@ -14,6 +14,7 @@ add_modular_library(MSupport
   Target.cpp
   TempFile.cpp
   TimeProfiler.cpp
+  URI.cpp
 
   LINK_LIBS PUBLIC
   LLVMSupport

@@ -45,7 +45,7 @@ ErrorOr<ObjectCompiler> ObjectCompiler::create(LLCL::Runtime &runtime,
                                                mlir::PassManager &mgr,
                                                StringRef basePath,
                                                CompilationOptions options) {
-  auto transformCache = Cache::getDefaultBackendChain(
+  auto transformCache = Cache::getLocalDefaultBackendChain(
       runtime, (std::filesystem::path(basePath.str()) / "transform").string(),
       KGEN_VERSION_STRING);
   if (failed(transformCache))
