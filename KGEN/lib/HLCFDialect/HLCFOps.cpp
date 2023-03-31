@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
+#include "KGEN/HLCFDialect/HLCFUtils.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -382,22 +383,6 @@ void IfOp::getCanonicalizationPatterns(RewritePatternSet &results,
 //===----------------------------------------------------------------------===//
 // ContinueOp
 //===----------------------------------------------------------------------===//
-
-/// Return true if the operation is a loop and has a matching label.
-static bool isMatchingLoop(Operation *op, StringAttr label) {
-  if (auto loop = dyn_cast<LoopOp>(op))
-    return !label || loop.getLabelAttr() == label;
-  return false;
-}
-
-/// Return the nearest enclosing matching loop. This runs on valid IR, so it
-/// must find a matching loop.
-static LoopOp getParentLoop(Operation *op, StringAttr label) {
-  LoopOp loop = op->getParentOfType<LoopOp>();
-  while (!isMatchingLoop(loop, label))
-    loop = loop->getParentOfType<LoopOp>();
-  return loop;
-}
 
 bool ContinueOp::isParentNode(Operation *op) {
   return isMatchingLoop(op, getLabelAttr());

@@ -10,6 +10,7 @@ add_modular_dialect_library(HLCFDialect
   HLCFDialect.cpp
   HLCFInterfaces.cpp
   HLCFOps.cpp
+  HLCFUtils.cpp
 
   DEPENDS
   MLIRHLCFIncGen
