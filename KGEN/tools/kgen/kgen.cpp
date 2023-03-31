@@ -282,13 +282,13 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // Add the KGEN compiler layer.
   // First though, get the backend chains to pass into the compile layer.
-  auto transformCacheBackend = Cache::getDefaultBackendChain(
+  auto transformCacheBackend = Cache::getLocalDefaultBackendChain(
       *runtime, (std::filesystem::path(".kgen_cache") / "transform").string(),
       KGEN_VERSION_STRING);
   if (transformCacheBackend.isError())
     return failure(clOptions.reportError(transformCacheBackend.getError()));
 
-  auto regionCacheBackend = Cache::getDefaultBackendChain(
+  auto regionCacheBackend = Cache::getLocalDefaultBackendChain(
       *runtime, (std::filesystem::path(".kgen_cache") / "region").string(),
       KGEN_VERSION_STRING);
   if (regionCacheBackend.isError())

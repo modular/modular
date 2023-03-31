@@ -61,12 +61,12 @@ TEST(CachedTransformTest, CacheHits) {
                   createSingleThreadWorkQueue());
   std::filesystem::path cacheTestPath(STRINGIFY(CACHE_TEST_DIR));
   auto regionBackendChainOr =
-      getDefaultBackendChain(runtime, cacheTestPath / "region");
+      getLocalDefaultBackendChain(runtime, cacheTestPath / "region");
   EXPECT_FALSE(failed(regionBackendChainOr));
   auto regionCache = RCRef<BlobCache<RegionCacheKey>>::create(
       regionBackendChainOr.takeValue());
   auto transformBackendChainOr =
-      getDefaultBackendChain(runtime, cacheTestPath / "xform");
+      getLocalDefaultBackendChain(runtime, cacheTestPath / "xform");
   EXPECT_FALSE(failed(transformBackendChainOr));
   auto transformCache = RCRef<BlobCache<TransformCacheKey>>::create(
       transformBackendChainOr.takeValue());

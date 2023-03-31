@@ -139,7 +139,7 @@ LitSharedState::LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context,
 
   // Create a cache for use by the parser.
   if (enableCaching) {
-    auto transformCacheBackendOr = Cache::getDefaultBackendChain(
+    auto transformCacheBackendOr = Cache::getLocalDefaultBackendChain(
         runtime, ".kgen_cache/lit", KGEN_VERSION_STRING);
     if (failed(transformCacheBackendOr))
       return;

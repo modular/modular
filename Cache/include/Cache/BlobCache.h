@@ -14,6 +14,7 @@
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/STLExtras.h"
+#include "Support/URI.h"
 #include "llvm/Support/MemoryBuffer.h"
 
 #include <filesystem>
@@ -57,8 +58,8 @@ public:
   /// Clear out this backend and its delegates.
   LLCL::AsyncValueRef<ErrorOrSuccess> clear();
 
-  /// Overwrite the current delegate.
-  void setDelegate(LLCL::RCRef<BlobCacheBackend> d) { delegate = std::move(d); }
+  /// Add delegate to the end of the backend chain.
+  void appendDelegate(LLCL::RCRef<BlobCacheBackend> d);
 
 protected:
   /// NOTE: The asynchrony of the cache backend is handled by the
@@ -256,8 +257,12 @@ getS3Backend(LLCL::Runtime &runtime, const S3BackendConfig &config);
 /// by the filesystem backend. The `version` specifies the version string of the
 /// cache, defaults to MODULAR_VERSION_STRING if the provided version is empty.
 ErrorOr<LLCL::RCRef<BlobCacheBackend>>
-getDefaultBackendChain(LLCL::Runtime &runtime,
-                       const std::filesystem::path &cacheDir = "",
+getLocalDefaultBackendChain(LLCL::Runtime &runtime,
+                            const std::filesystem::path &cacheDir = "",
+                            std::string version = "");
+
+ErrorOr<LLCL::RCRef<BlobCacheBackend>>
+getDefaultBackendChain(LLCL::Runtime &runtime, const URI &cacheUri,
                        std::string version = "");
 
 /// Helper class to hold a BlobStore over KeyT and associated runtime.
@@ -277,11 +282,14 @@ public:
 
   ErrorOrSuccess setup() {
     assert(!cacheRef && "setup already called");
+    auto uriOr = URI::parse(cacheDir);
+    if (uriOr.isError())
+      return uriOr.takeError();
     ownedRuntime = ConditionallyOwnedPointer<Runtime>::allocateIfNeeded(
         optExistingRuntime,
         LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
         LLCL::createSingleThreadWorkQueue());
-    auto backendList = getDefaultBackendChain(*ownedRuntime, cacheDir);
+    auto backendList = getDefaultBackendChain(*ownedRuntime, *uriOr);
     if (backendList.isError())
       return backendList.takeError();
     cacheRef = CacheRef::create(std::move(*backendList));

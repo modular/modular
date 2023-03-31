@@ -2130,11 +2130,11 @@ LogicalResult M::elaborateGenerators(mlir::SymbolTableAnalysis &analysis,
 
   AsyncSideEffectMap asyncMap(runtime);
 
-  auto transformCacheBackendOr = Cache::getDefaultBackendChain(
+  auto transformCacheBackendOr = Cache::getLocalDefaultBackendChain(
       runtime, ".kgen_cache/transform", KGEN_VERSION_STRING);
   if (failed(transformCacheBackendOr))
     return theModule->emitError() << transformCacheBackendOr.getError();
-  auto regionCacheBackendOr = Cache::getDefaultBackendChain(
+  auto regionCacheBackendOr = Cache::getLocalDefaultBackendChain(
       runtime, ".kgen_cache/region", KGEN_VERSION_STRING);
   if (failed(regionCacheBackendOr))
     return theModule->emitError() << regionCacheBackendOr.getError();

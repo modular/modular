@@ -169,6 +169,13 @@ AsyncValueRef<ErrorOrSuccess> BlobCacheBackend::clear() {
   return result;
 }
 
+void BlobCacheBackend::appendDelegate(LLCL::RCRef<BlobCacheBackend> d) {
+  if (!delegate)
+    delegate = std::move(d);
+  else
+    delegate->appendDelegate(std::move(d));
+}
+
 //===----------------------------------------------------------------------===//
 // InMemoryBackend
 //===----------------------------------------------------------------------===//
@@ -498,9 +505,9 @@ M::Cache::getS3Backend(LLCL::Runtime &runtime, const S3BackendConfig &config) {
 }
 
 ErrorOr<LLCL::RCRef<BlobCacheBackend>>
-M::Cache::getDefaultBackendChain(LLCL::Runtime &runtime,
-                                 const std::filesystem::path &cacheDir,
-                                 std::string version) {
+M::Cache::getLocalDefaultBackendChain(LLCL::Runtime &runtime,
+                                      const std::filesystem::path &cacheDir,
+                                      std::string version) {
   auto backend = getInMemoryBackend(runtime);
 
   // If no version is specified, use the default version.
@@ -549,6 +556,39 @@ M::Cache::getDefaultBackendChain(LLCL::Runtime &runtime,
 
   base = base / version;
 
-  backend->setDelegate(getFilesystemBackend(runtime, base));
+  backend->appendDelegate(getFilesystemBackend(runtime, base));
   return backend;
+}
+
+ErrorOr<LLCL::RCRef<BlobCacheBackend>>
+M::Cache::getDefaultBackendChain(LLCL::Runtime &runtime, const URI &uri,
+                                 std::string version) {
+  StringRef scheme = uri.getScheme();
+  if (scheme == "file")
+    return getLocalDefaultBackendChain(runtime, uri.getPath().str(), version);
+
+  // If no version is specified, use the default version.
+  if (version.empty())
+    version = MODULAR_VERSION_STRING;
+
+  if (scheme == "s3") {
+    StringRef path = uri.getPath();
+    S3BackendConfig config(uri.getAuthority().str(),
+                           path.str() + "/" + version);
+    auto backendOr = getS3Backend(runtime, config);
+    if (backendOr.isError())
+      return backendOr.takeError();
+
+    // Get a default local backend chain and add the s3 backend to the end.
+    path.consume_front("/"); // Convert the path component to relative.
+    auto localChainOr =
+        getLocalDefaultBackendChain(runtime, path.str(), version);
+    if (localChainOr.isError())
+      return localChainOr.takeError();
+    (*localChainOr)->appendDelegate(std::move(*backendOr));
+    return localChainOr;
+  }
+
+  return Error("Can't build BlobCache backend chain with unknown URI scheme: " +
+               scheme);
 }

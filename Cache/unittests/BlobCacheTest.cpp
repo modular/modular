@@ -41,7 +41,7 @@ protected:
       : runtime(createLeakCheckAllocator(createMallocAllocator()),
                 createThreadPoolWorkQueue()),
         cache(LLCL::RCRef<BlobCache<StringKeyInfo>>::create(
-            getDefaultBackendChain(runtime, STRINGIFY(CACHE_TEST_DIR))
+            getLocalDefaultBackendChain(runtime, STRINGIFY(CACHE_TEST_DIR))
                 .takeValue())) {}
 };
 
@@ -208,7 +208,8 @@ TEST_F(BlobCacheTest, FileSystemFindItemThatExists) {
 
   // Reset the cache so that we are forced to look it up from the file system.
   auto fsCache = LLCL::RCRef<BlobCache<StringKeyInfo>>::create(
-      getDefaultBackendChain(runtime, STRINGIFY(CACHE_TEST_DIR)).takeValue());
+      getLocalDefaultBackendChain(runtime, STRINGIFY(CACHE_TEST_DIR))
+          .takeValue());
 
   // Check that the cache holds the new item, and it's the same data as before.
   auto zerosOr = fsCache->find("zeros");
@@ -236,7 +237,8 @@ TEST_F(BlobCacheTest, FileSystemFindItemThatExistsWithPreallocatedBuffer) {
 
   // Reset the cache so that we are forced to look it up from the file system.
   auto fsCache = LLCL::RCRef<BlobCache<StringKeyInfo>>::create(
-      getDefaultBackendChain(runtime, STRINGIFY(CACHE_TEST_DIR)).takeValue());
+      getLocalDefaultBackendChain(runtime, STRINGIFY(CACHE_TEST_DIR))
+          .takeValue());
 
   // Get a buffer to read into.
   auto readBuf = WriteableBuffer::get(32);
@@ -284,7 +286,7 @@ TEST_F(BlobCacheTest, FileSystemTestOldVersionDeletion) {
   LLCL::Runtime runtime(createLeakCheckAllocator(createMallocAllocator()),
                         createThreadPoolWorkQueue());
   auto fsCache = LLCL::RCRef<BlobCache<StringKeyInfo>>::create(
-      getDefaultBackendChain(runtime, cacheDir).takeValue());
+      getLocalDefaultBackendChain(runtime, cacheDir).takeValue());
   ASSERT_TRUE(!std::filesystem::exists(tempDirectory))
       << "expected the temp directory to be deleted by cacheDir creation\n";
 }

@@ -235,7 +235,8 @@ int main(int argc, char **argv) {
   Runtime runtime(createLeakCheckAllocator(createMallocAllocator()),
                   createThreadPoolWorkQueue());
 
-  auto backendChainOr = getDefaultBackendChain(runtime, clOptions.getFsPath());
+  auto backendChainOr =
+      getLocalDefaultBackendChain(runtime, clOptions.getFsPath());
   if (backendChainOr.isError())
     return clOptions.reportError(backendChainOr.getError());
 
