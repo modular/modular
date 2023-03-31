@@ -82,7 +82,7 @@ TEST(TensorShape, constructor) {
 
   {
     TensorShape shape = {1, 2, 3, 4};
-    EXPECT_EQ(TensorShape(shape.getDims()), shape);
+    EXPECT_EQ(TensorShape(shape.getDimsCopy()), shape);
   }
 }
 

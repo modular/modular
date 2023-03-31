@@ -25,7 +25,7 @@ public:
   /// Creates a URI with form "file://path" (note that it does not modify the
   /// path).
   URI(const std::filesystem::path path)
-      : scheme("file"), path(std::move(path.string())) {}
+      : scheme("file"), path(path.string()) {}
 
   /// Parse a URI string. If the string is not a valid URI, it will assume that
   /// it is a local filesystem path: it will set the scheme to "file", empty
