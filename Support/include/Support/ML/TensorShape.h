@@ -18,6 +18,10 @@
 
 namespace M {
 
+/// The maximum tensor rank for any tensor shape.
+/// This value must match max_rank in Kernels/lit-stdlib/Buffer.lit
+constexpr size_t kMaxRank = 5;
+
 namespace Detail {
 /// This class implements a storage class to hold tensor shapes in a compact
 /// 16-byte format that is suitable for long term storage on the heap.  It is
@@ -309,9 +313,9 @@ public:
 
   ssize_t operator[](size_t i) const { return storage[i]; }
 
-  /// Return the dimensions as an unpacked SmallVector.
-  SmallVector<ssize_t, 5> getDims() const {
-    return SmallVector<ssize_t, 5>(begin(), end());
+  /// Return the dimensions as a temporary, unpacked SmallVector.
+  SmallVector<ssize_t, kMaxRank> getDims() const {
+    return SmallVector<ssize_t, kMaxRank>(begin(), end());
   }
 
   bool operator==(const TensorShape &rhs) const {

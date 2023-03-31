@@ -23,8 +23,8 @@ bool Detail::TensorShapeStorage::equalsIncludingAuxOOL(
 
 bool Detail::TensorShapeStorage::equalsExcludingAuxOOL(
     const TensorShapeStorage &rhs) const {
-  return SmallVector<ssize_t, 5>(begin(), end()) ==
-         SmallVector<ssize_t, 5>(rhs.begin(), rhs.end());
+  return SmallVector<ssize_t, kMaxRank>(begin(), end()) ==
+         SmallVector<ssize_t, kMaxRank>(rhs.begin(), rhs.end());
 }
 
 /// Bulk reassignment of elements.
@@ -38,10 +38,9 @@ void Detail::TensorShapeStorage::assign(ArrayRef<int64_t> elements) {
   memset(&representation, 0, sizeof(representation) - 1);
 
   // Get and set the rank, regardless of the representation.
-  size_t rank = elements.size();
+  const size_t rank = elements.size();
+  assert(elements.size() <= kMaxRank && "requested shape is too high a rank");
   representation.repOutOfLine.rank = rank;
-  assert(representation.repOutOfLine.rank == rank &&
-         "can only handle rank up to 255");
 
   // Decide which representation we can use and initialize the elements.  The
   // most common case should fit into 4 dimensions.
@@ -137,10 +136,10 @@ ErrorOr<TensorShape> TensorShape::parseFromString(StringRef str) {
   if (str.empty())
     return TensorShape();
 
-  SmallVector<StringRef, 5> splitStr;
+  SmallVector<StringRef, kMaxRank> splitStr;
   str.split(splitStr, 'x');
 
-  SmallVector<int64_t, 5> shape;
+  SmallVector<int64_t, kMaxRank> shape;
   shape.reserve(splitStr.size());
   for (auto &it : splitStr) {
     int64_t value;
