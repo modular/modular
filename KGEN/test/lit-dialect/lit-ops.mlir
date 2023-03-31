@@ -290,3 +290,17 @@ lit.struct.decl @GiveMeDefault {
 lit.func @default_struct(%arg0: !kgen.declref<@GiveMeDefault> = #lit.struct<{value = 1}>) {
   kgen.return
 }
+
+
+lit.struct.decl @OuterParams<ty: type, fn: () -> !kgen.paramref<ty>> {
+  lit.func @some_func() {
+    kgen.return
+  }
+}
+
+// CHECK-LABEL: lit.func @ref_it
+lit.func @ref_it() {
+  // CHECK: F: <ty: type, fn: () -> !kgen.paramref<*1|0>>() -> () = <@OuterParams::@some_func>
+  kgen.param.declare F: <ty: type, fn: () -> !kgen.paramref<*1|0>>() -> () = <@OuterParams::@some_func>
+  kgen.return
+}
