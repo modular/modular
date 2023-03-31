@@ -45,8 +45,9 @@ SymbolRefAttr getFullyResolvedSymbolRef(mlir::SymbolOpInterface op);
 /// KGEN does not since it cannot always have access to a symbol table.
 /// Specialize a signature type while rebinding the input parameter values to
 /// the expected input parameter types.
-std::pair<SignatureType, ParamBindArrayAttr>
-getUnboundSpecializedSignature(SignatureType type, ParamBindArrayAttr bindings);
+std::pair<SignatureType, ParameterExprArrayAttr>
+getUnboundSpecializedSignature(SignatureType type,
+                               ParameterExprArrayAttr bindings);
 
 } // namespace LIT
 } // namespace M::KGEN

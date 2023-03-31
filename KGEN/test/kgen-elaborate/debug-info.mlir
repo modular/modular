@@ -34,7 +34,7 @@ kgen.generator @sillyFn() -> index {
 }
 
 kgen.generator @elaborateFnWithContextualType() -> index {
-  %0 = kgen.call @takeFnContextualType<ty: type = index, fn: () -> index = @sillyFn>() : () -> index
+  %0 = kgen.call @takeFnContextualType<:type index, :() -> index @sillyFn>() : () -> index
   kgen.return %0 : index
 }
 

@@ -162,17 +162,6 @@ kgen.func @bad_param<x>() {
 
 // -----
 
-kgen.generator @g1(%x : i32) {
-  // expected-error @+1 {{expected '('}}
-  kgen.call @g2<()> : (i32) -> ()
-  kgen.return
-}
-kgen.generator @g2<()>() {
-  kgen.return
-}
-
-// -----
-
 // expected-note @below {{@only_returns declared here}}
 kgen.generator @only_returns<p1 -> p2>() {
   kgen.param.result_bind<p1>
@@ -181,7 +170,7 @@ kgen.generator @only_returns<p1 -> p2>() {
 
 kgen.func @test_only_returns() {
   // expected-error @below {{symbol use has 0 input parameters but @only_returns expects 1}}
-  kgen.call @only_returns<() -> p2 = p2>() : () -> ()
+  kgen.call @only_returns<[] -> p2>() : () -> ()
   kgen.return
 }
 
@@ -195,19 +184,7 @@ kgen.generator @only_returns<() -> p1: i4>() {
 
 kgen.func @test_only_returns() {
   // expected-error @below {{symbol use result parameter #0 has type 'index' but @only_returns expected type 'i4'}}
-  kgen.call @only_returns<() -> p2 = p1>() : () -> ()
-  kgen.return
-}
-
-// -----
-
-kgen.generator @fn<p2>() {
-  kgen.return
-}
-
-kgen.generator @input_param_name() {
-  // expected-error @below {{caller input parameter #0 has name "p1" but callee expected name "p2"}}
-  kgen.call @fn<p1 = 42>() : () -> ()
+  kgen.call @only_returns<[] -> p2>() : () -> ()
   kgen.return
 }
 
@@ -240,7 +217,7 @@ kgen.generator @take_and_return<p1 -> p2>() {
 kgen.generator @self_cyclic() {
   // Uses r1 and defines r1
   // expected-note @below {{parameter "r1" is defined here, which references itself}}
-  kgen.call @take_and_return<p1 = r1 -> r1 = p2>() : () -> ()
+  kgen.call @take_and_return<r1 -> r1>() : () -> ()
   kgen.return
 }
 
@@ -255,11 +232,11 @@ kgen.generator @take_and_return<p1 -> r1>() {
 kgen.generator @mutually_recursive() {
   // Uses r2 and defines r1
   // expected-note @below {{parameter "r1" is defined here, which references the first expression}}
-  kgen.call @take_and_return<p1 = r2 -> r1 = r1>() : () -> ()
+  kgen.call @take_and_return<r2 -> r1>() : () -> ()
 
   // Uses r1 and defines r2
   // expected-note @below {{parameter "r2" is defined here, which references the expression:}}
-  kgen.call @take_and_return<p1 = r1 -> r2 = r1>() : () -> ()
+  kgen.call @take_and_return<r1 -> r2>() : () -> ()
 
   kgen.return
 }
@@ -322,7 +299,7 @@ kgen.generator @callee<type: dtype>(%x: !pop.scalar<type>) {
 
 kgen.generator @caller<type : dtype>(%arg0: !pop.scalar<type>) {
   // expected-error @below {{symbol use argument #0 has type '!pop.scalar<type>' but @callee expected type '!pop.scalar<f64>'}}
-  kgen.call @callee<type: dtype = f64>(%arg0) : (!pop.scalar<type>) -> ()
+  kgen.call @callee<:dtype f64>(%arg0) : (!pop.scalar<type>) -> ()
   kgen.return
 }
 
@@ -355,10 +332,10 @@ kgen.generator @nothing<() -> param>() {
 
 kgen.func @test() {  // expected-note {{within 'kgen.func' @test}}
   // ok
-  kgen.call @hasResultParam<() -> result = param>() : () -> ()
+  kgen.call @hasResultParam<[] -> result>() : () -> ()
 
   // expected-error@+1 {{cannot reference generator with input parameters from within a concrete 'kgen.func'}}
-  kgen.call @hasInputParam<param = 42>() : () -> ()
+  kgen.call @hasInputParam<42>() : () -> ()
 
   kgen.return
 }
@@ -383,7 +360,7 @@ kgen.generator @region_params<r3: () -> !pop.scalar<dt>>() {
 // -----
 
 kgen.generator @takeUnary
-  <unaryFn: <dt: dtype>(!pop.scalar<dt>) -> !pop.scalar<dt>>() {
+  <unaryFn: <dtype>(!pop.scalar<*0|0>) -> !pop.scalar<*0|0>>() {
   kgen.return
 }
 
@@ -394,8 +371,7 @@ kgen.func @doubleExample(%arg0: !pop.scalar<si32>) -> !pop.scalar<si32> {
 
 kgen.generator @test_region() {
   // expected-error @+1 {{caller input parameter #0 has type}}
-  kgen.call @takeUnary<
-     unaryFn : (!pop.scalar<si32>) -> !pop.scalar<si32> = @doubleExample>() : () -> ()
+  kgen.call @takeUnary<:(!pop.scalar<si32>) -> !pop.scalar<si32> @doubleExample>() : () -> ()
   kgen.return
 }
 
@@ -406,7 +382,7 @@ kgen.generator @takeFn<fn: () -> ()>() {
 }
 kgen.generator @test() {
   // expected-error @+1 {{@missing does not reference a KGEN declaration}}
-  kgen.call @takeFn<fn: ()->() = @missing>() : () -> ()
+  kgen.call @takeFn<:()->() @missing>() : () -> ()
   kgen.return
 }
 
@@ -424,8 +400,7 @@ kgen.func @unary(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
 
 kgen.generator @test1() {
   // expected-error @below {{symbol use argument #0 has type '!pop.scalar<si32>' but @unary expected type '!pop.scalar<f32>'}}
-  kgen.call @takeUnary<
-     unaryFn : (!pop.scalar<si32>) -> !pop.scalar<si32> = @unary>() : () -> ()
+  kgen.call @takeUnary<:(!pop.scalar<si32>) -> !pop.scalar<si32> @unary>() : () -> ()
   kgen.return
 }
 
@@ -443,8 +418,7 @@ kgen.generator @unary2<dt: dtype>(%arg0: !pop.scalar<si32>) -> !pop.scalar<si32>
 
 kgen.generator @test2() {
   // expected-error @below {{symbol use has 0 input parameters but @unary2 expects 1}}
-  kgen.call @takeUnary<
-     unaryFn : (!pop.scalar<si32>) -> !pop.scalar<si32> = @unary2>() : () -> ()
+  kgen.call @takeUnary<:(!pop.scalar<si32>) -> !pop.scalar<si32> @unary2>() : () -> ()
   kgen.return
 }
 
@@ -459,9 +433,9 @@ kgen.generator @call_param() {
 
 // -----
 
-kgen.generator @call_param<fn: <ty: type>()->()>() {
+kgen.generator @call_param<fn: <type>()->()>() {
   // expected-error @+1 {{cannot name an operation with no results}}
-  %0 = kgen.call_param[()->(): bind_signature(:<ty: type>()->() fn, f32)]()
+  %0 = kgen.call_param[()->(): bind_signature(:<type>()->() fn, f32)]()
   kgen.return
 }
 
@@ -475,31 +449,6 @@ kgen.func @call_param_in_func(%arg0: si32) -> si32 {
   // expected-error @below {{'kgen.call_param' op is only allowed in generators pre-elaboration}}
   %0 = kgen.call_param[(si32) -> si32: @trivial](%arg0)
   kgen.return %0: si32
-}
-
-// -----
-
-kgen.generator @takeFn<unaryFn: <abc>()->()>() {
-  kgen.return
-}
-
-// expected-note @below {{@thing declared here}}
-kgen.generator @thing<dt>() {
-  kgen.return
-}
-
-kgen.generator @test2() {
-  // expected-error @below {{symbol use input parameter #0 has name "abc" but @thing expected name "dt"}}
-  kgen.call @takeFn<unaryFn : <abc>()->() = @thing>() : () -> ()
-  kgen.return
-}
-
-// -----
-
-// expected-error @below {{nested parameter "x" redefined}}
-kgen.generator @test<ty: type, p : <x, x>() -> ()>
-() {
-  kgen.return
 }
 
 // -----
@@ -560,7 +509,7 @@ kgen.generator @generator<size>() {
 // expected-note @below {{within 'kgen.func' @addressof_parametric_in_func}}
 kgen.func @addressof_parametric_in_func() {
   // expected-error @below {{'kgen.addressof' op cannot reference generator with input parameters from within a concrete 'kgen.func'}}
-  %0 = kgen.addressof @generator<size = 1> : () -> ()
+  %0 = kgen.addressof @generator<1> : () -> ()
   kgen.return
 }
 
@@ -609,9 +558,9 @@ kgen.generator @apply_error() {
 
 // -----
 
-kgen.generator @apply_error<fn: <A>() -> ()>() {
+kgen.generator @apply_error<fn: <index>() -> ()>() {
   // expected-error @below {{custom op 'kgen.param.declare' 'apply' function cannot be parametric}}
-  kgen.param.declare fn = <apply(:<A>() -> () fn)>
+  kgen.param.declare fn = <apply(:<index>() -> () fn)>
 }
 
 // -----
@@ -699,7 +648,7 @@ kgen.generator @f1() {
 
 kgen.generator @parametricEvaluator() {
   // expected-error @below {{'evaluate' evaluator cannot be parametric}}
-  kgen.param.declare chosenImpl : () -> () = <evaluate(:variadic<!kgen.signature<() -> ()>> [@f1], :<N>() -> ()@evaluator)>
+  kgen.param.declare chosenImpl : () -> () = <evaluate(:variadic<!kgen.signature<() -> ()>> [@f1], :<index>() -> ()@evaluator)>
   kgen.return
 }
 
@@ -748,7 +697,7 @@ kgen.generator @cyclicIf() {
   // or N itself.
   // expected-note @below {{parameter "M2" is defined here}}
   kgen.param.if <cond_var -> M2> {
-    kgen.call @fwd<in = N -> outM = out>() : () -> ()
+    kgen.call @fwd<N -> outM>() : () -> ()
     kgen.param.result_bind<outM>
     kgen.param.yield
   } else {
@@ -758,7 +707,7 @@ kgen.generator @cyclicIf() {
   // This forwards the output parameter of the if statement back around to N,
   // creating a cycle.
   // expected-note @below {{parameter "N" is defined here}}
-  kgen.call @fwd<in = M2 -> N = out>() : () -> ()
+  kgen.call @fwd<M2 -> N>() : () -> ()
   kgen.return
 }
 
@@ -821,20 +770,20 @@ kgen.generator @bad_index_ref() {
 // -----
 
 // expected-error @below {{index reference depth 1 exceeds depth of contextual signatures: 1}}
-kgen.generator @bad_index_ref<fn: <a>(!pop.array<*1|0, i32>) -> ()>() {
+kgen.generator @bad_index_ref<fn: <index>(!pop.array<*1|0, i32>) -> ()>() {
   kgen.return
 }
 
 // -----
 
 // expected-error-re @below {{index reference 1 is out of bounds: referenced signature {{.*}} has 1 input parameters}}
-kgen.generator @bad_index_ref<fn: <a>(!pop.array<*0|1, i32>) -> ()>() {
+kgen.generator @bad_index_ref<fn: <index>(!pop.array<*0|1, i32>) -> ()>() {
   kgen.return
 }
 
 // -----
 
 // expected-error @below {{index reference type 'index' does not match parameter type 'i32'}}
-kgen.generator @bad_index_ref<fn: <a: i32, b: !pop.array<*0|0, i32>>() -> ()>() {
+kgen.generator @bad_index_ref<fn: <i32, !pop.array<*0|0, i32>>() -> ()>() {
   kgen.return
 }

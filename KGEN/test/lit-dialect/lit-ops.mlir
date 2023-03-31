@@ -96,8 +96,8 @@ lit.struct.decl @A<N> {
 
 // CHECK-LABEL: lit.func @main
 lit.func @main(%a: !kgen.declref<@A<N = 1>>) {
-  // CHECK-NEXT: call_param[(!kgen.declref<@A<N = 1>>) -> index: @A::@foo<N = 1, M = 2>]
-  %- = kgen.call_param[(!kgen.declref<@A<N = 1>>) -> index: @A::@foo<N = 1, M = 2>](%a)
+  // CHECK-NEXT: call_param[(!kgen.declref<@A<N = 1>>) -> index: @A::@foo<1, 2>]
+  %- = kgen.call_param[(!kgen.declref<@A<N = 1>>) -> index: @A::@foo<1, 2>](%a)
   kgen.return
 }
 
@@ -300,7 +300,7 @@ lit.struct.decl @OuterParams<ty: type, fn: () -> !kgen.paramref<ty>> {
 
 // CHECK-LABEL: lit.func @ref_it
 lit.func @ref_it() {
-  // CHECK: F: <ty: type, fn: () -> !kgen.paramref<*1|0>>() -> () = <@OuterParams::@some_func>
-  kgen.param.declare F: <ty: type, fn: () -> !kgen.paramref<*1|0>>() -> () = <@OuterParams::@some_func>
+  // CHECK: F: <type, () -> !kgen.paramref<*1|0>>() -> () = <@OuterParams::@some_func>
+  kgen.param.declare F: <type, () -> !kgen.paramref<*1|0>>() -> () = <@OuterParams::@some_func>
   kgen.return
 }

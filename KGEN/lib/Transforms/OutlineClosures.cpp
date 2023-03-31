@@ -150,19 +150,8 @@ void OutlineClosuresPass::runOnOperation() {
           capturedParamDecls.getArrayRef());
       llvm::append_range(inputParamDecls, regionDecl.getInputParams());
 
-      IndexRefRemapper remapper(capturedParamDecls.getArrayRef(), {},
-                                capturedParamDecls.size());
-      SmallVector<ParamDeclAttr> sigInputParams;
-      SignatureType bodySig = regionDecl.getSignature();
-      for (ParamDeclAttr param : capturedParamDecls)
-        sigInputParams.push_back(remapper.remap(param));
-      for (ParamDeclAttr param : bodySig.getInputParams())
-        sigInputParams.push_back(remapper.remap(param));
-      auto wrapperSignature = SignatureType::get(
-          ParamDeclArrayAttr::get(&getContext(), sigInputParams),
-          remapper.remap(bodySig.getResultParams()),
-          remapper.remap(bodySig.getValues()),
-          remapper.remap(bodySig.getMetadata()));
+      SignatureType wrapperSignature = IndexRefRemapper::prependParams(
+          regionDecl.getSignature(), capturedParamDecls.getArrayRef());
 
       b.setInsertionPoint(generator);
       auto liftedWrapper = b.create<GeneratorOp>(

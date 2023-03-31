@@ -152,7 +152,7 @@ Type ParameterEvaluator::getReboundType(Type type) {
   // Signature types with input parameters are special because they are
   // "isolated from above" with respect to their contexts, so we don't rebind
   // within them.
-  if (!signature || signature.getInputParams().empty()) {
+  if (!signature || signature.getInputParamTypes().empty()) {
     SmallVector<Attribute, 16> newAttrs;
     SmallVector<Type, 16> newTypes;
     bool changed = false;

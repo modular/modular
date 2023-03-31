@@ -82,8 +82,7 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
     auto symbol = cast<SymbolConstantAttr>(op.getOperand(0));
     std::vector<FuncOp> funcs;
     if (auto err = elaborator->getAllConcreteFunctions(
-            *errorLoc, symbol.getSymbol(), symbol.getParamValues().getValue(),
-            funcs)) {
+            *errorLoc, symbol.getSymbol(), symbol.getParamValues(), funcs)) {
       emitError(std::move(*err));
       return failure();
     }
@@ -99,7 +98,7 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
 
   if (op.getOpcode() == POC::Apply) {
     auto symbol = dyn_cast<SymbolConstantAttr>(op.getOperand(0));
-    if (!symbol || !symbol.getType().getResultParams().empty())
+    if (!symbol || !symbol.getType().getResultParamTypes().empty())
       return failure();
     ArrayRef<TypedAttr> operands = op.getOperands().drop_front();
     auto ref = dyn_cast<FlatSymbolRefAttr>(symbol.getSymbol());
@@ -108,7 +107,7 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
 
     // Lookup the symbol reference and resolve it.
     ErrorTreeOr<FuncOp> func = elaborator->getConcreteFunction(
-        *errorLoc, ref, symbol.getParamValues().getValue());
+        *errorLoc, ref, symbol.getParamValues());
     if (func.isError()) {
       emitError(func.takeError());
       return failure();
@@ -126,7 +125,7 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
     auto symbol =
         cast<SymbolConstantAttr>(op.getOperand(op.getNumOperands() - 1));
     ErrorTreeOr<FuncOp> evaluator = elaborator->getConcreteFunction(
-        *errorLoc, symbol.getSymbol(), symbol.getParamValues().getValue());
+        *errorLoc, symbol.getSymbol(), symbol.getParamValues());
     if (evaluator.isError()) {
       emitError(evaluator.takeError());
       return failure();
@@ -138,8 +137,8 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
     for (TypedAttr option : optionsVariadic.getValues()) {
       auto optionSym = cast<SymbolConstantAttr>(option);
       if (auto err = elaborator->getAllConcreteFunctions(
-              *errorLoc, optionSym.getSymbol(),
-              optionSym.getParamValues().getValue(), options)) {
+              *errorLoc, optionSym.getSymbol(), optionSym.getParamValues(),
+              options)) {
         emitError(err->copy());
         return failure();
       }

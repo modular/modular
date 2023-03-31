@@ -37,7 +37,7 @@ fn MultipleThingMetaparams(a: Thing[1,2][1]):
 fn OneMissingThingMetaParam(a: Thing[1]):  # expected-error {{'Thing' expects 2 input parameters but 1 was provided}}
   pass
 
-# expected-error @+1 {{'Thing' parameter 'b' has '__mlir_type.index' type, but value has type '__mlir_type.f64'}}
+# expected-error @+1 {{'Thing' parameter #1 has '__mlir_type.index' type, but value has type '__mlir_type.f64'}}
 fn WeirdMetaParams(a: Thing[1, 1.5]):
   pass
 
@@ -90,7 +90,7 @@ fn badCallReboundType[val: __mlir_type.`!pop.scalar<f32>`]():
   # expected-error @+1 {{'__mlir_type.!pop.scalar<f32>' value cannot be converted to '__mlir_type.!pop.scalar<f64>' in call parameter}}
   badReboundType[__mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`, val]()
 
-fn partialBindSignature[callable: __mlir_type.`!kgen.signature<<a, b>() -> ()>`, a: __mlir_type.index]():
+fn partialBindSignature[callable: __mlir_type.`!kgen.signature<<index, index>() -> ()>`, a: __mlir_type.index]():
   # expected-error @below {{parametric callable expected 2 parameters}}
   return callable[a]
 
@@ -134,7 +134,7 @@ fn callVariadic():
   variadicIntParams[1]() # OK
   variadicIntParams[1, 2]() # OK
 
-  variadicIntParams[1.0]() # expected-error {{invalid call to 'variadicIntParams': callee parameter 'a' has '$Int::Int' type, but value has type '__mlir_type.f64'}}
+  variadicIntParams[1.0]() # expected-error {{invalid call to 'variadicIntParams': callee parameter #0 has '$Int::Int' type, but value has type '__mlir_type.f64'}}
 
 
 
@@ -187,7 +187,7 @@ fn useResultParams():
   # expected-error @+1 {{calls with result parameters must be called directly}}
   _ = hasResultParam
 
-  # expected-error @+1 {{cannot use parameterized function of type '__mlir_type.!kgen.signature<<a>() -> !lit.none>' without binding all its parameters}}
+  # expected-error @+1 {{cannot use parameterized function of type '__mlir_type.!kgen.signature<<index>() -> !lit.none>' without binding all its parameters}}
   _ = hasInputParam
 
   # expected-error @+1 {{invalid call to 'hasInputParam': callee expects 1 input parameter but 0 were provided}}

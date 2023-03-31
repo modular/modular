@@ -463,12 +463,12 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
   if (auto signature = dyn_cast<SignatureType>(attr.getType())) {
     // If the value has any unbound parameters, they might be default arguments
     // or an variadic list that should be bound to an empty list.
-    if (!signature.getInputParams().empty()) {
+    if (!signature.getInputParamTypes().empty()) {
       InputParamBindings paramBindings;
       ssize_t incorrectBindingNo = 0;
       ASTType incorrectBindingExpectedType;
       auto bindingAttr = paramBindings.verifyBindings(
-          signature.getInputParams(),
+          signature.getInputParamTypes(), {},
           /*baseName=*/"<<UNUSED>>", expr->getLoc(), incorrectBindingNo,
           incorrectBindingExpectedType, *this,
           /*don't emit diagnostics*/ nullptr, signature.hasParamVarargs());
@@ -486,13 +486,13 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
       SmallVector<TypedAttr> bindOperands;
       bindOperands.push_back(attr);
       for (auto bind : bindingAttr)
-        bindOperands.push_back(bind.getValue());
+        bindOperands.push_back(bind);
       // bindOperands.push_back(bindingAttr);
       attr = ParamOperatorAttr::get(POC::BindSignature, bindOperands);
     }
 
     // Reject unbound result parameters.
-    if (!signature.getResultParams().empty()) {
+    if (!signature.getResultParamTypes().empty()) {
       emitError(expr->getLoc(),
                 "cannot use parameterized function with result parameters ")
           << ASTType(attr.getType()) << expr->getRange();
@@ -1075,18 +1075,27 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr) {
 
   // Build up a InputParamBindings set to validate and check the bindings.
   InputParamBindings paramBindings;
-  for (auto binding : type.getParamBindings())
-    paramBindings.add(binding);
+  for (ParamBindAttr binding : type.getParamBindings())
+    paramBindings.addPrechecked(binding.getValue());
 
   // Check the bindings.
   ssize_t incorrectBindingNo = 0;
   ASTType incorrectBindingExpectedType;
-  auto bindingAttr = paramBindings.verifyBindings(
-      structDecl.getInputParamsAttr(), structDecl.getName(), expr->getLoc(),
-      incorrectBindingNo, incorrectBindingExpectedType, *this, structDecl,
-      structDecl.getParamVarargs());
-  if (!bindingAttr)
+  SmallVector<Type> paramTypes;
+  for (ParamDeclAttr decl : structDecl.getInputParams())
+    paramTypes.push_back(decl.getType());
+  ParameterExprArrayAttr bindingValuesAttr = paramBindings.verifyBindings(
+      paramTypes, structDecl.getInputParamsAttr(), structDecl.getName(),
+      expr->getLoc(), incorrectBindingNo, incorrectBindingExpectedType, *this,
+      structDecl, structDecl.getParamVarargs());
+  if (!bindingValuesAttr)
     return {};
+  SmallVector<ParamBindAttr> bindingValues;
+  for (auto [decl, value] :
+       llvm::zip(structDecl.getInputParams(), bindingValuesAttr))
+    bindingValues.push_back(ParamBindAttr::get(decl.getName(), value));
+  auto bindingAttr =
+      ParamBindArrayAttr::get(structDecl.getContext(), bindingValues);
 
   // If verifyBindings changed the bindings set, then we may have had an
   // empty varargs list or something.  Rebind the DeclRefType.

@@ -65,7 +65,7 @@ kgen.generator @parent<A>() {
   // CHECK: %[[R1:.*]] = kgen.rebind %[[V]] : !kgen.paramref<T> to index
   // CHECK-NEXT: hlcf.break "[[LABEL]]" %[[R1]]
   // CHECK-NOT: kgen.call @callee
-  %0 = kgen.call @callee<T: type = index>() : () -> index
+  %0 = kgen.call @callee<:type index>() : () -> index
   kgen.return
 }
 
@@ -88,7 +88,7 @@ kgen.generator @parent<A>() {
   // CHECK-NEXT: declare A0 = <1>
   // CHECK-NEXT: constant = <A0>
   // CHECK-NOT: kgen.call @callee
-  %0 = kgen.call @callee<A = 1>() : () -> index
+  %0 = kgen.call @callee<1>() : () -> index
   kgen.return
 }
 
@@ -107,7 +107,7 @@ kgen.generator @parent<A: i64>() {
   // CHECK-NEXT: declare A0: i32 = <1>
   // CHECK-NEXT: constant: i32 = <A0>
   // CHECK-NOT: kgen.call @callee
-  %0 = kgen.call @callee<A: i32 = 1>() : () -> i32
+  %0 = kgen.call @callee<:i32 1>() : () -> i32
   // CHECK: declare C: i64 = <A>
   kgen.param.declare C: i64 = <A>
   kgen.return
@@ -126,7 +126,7 @@ kgen.generator @parent<A>() -> index {
   // CHECK-NEXT: declare A0 = <A>
   // CHECK-NEXT: constant = <A0>
   // CHECK-NOT: kgen.call @callee
-  %0 = kgen.call @callee<A = A>() : () -> index
+  %0 = kgen.call @callee<A>() : () -> index
   kgen.return %0 : index
 }
 
@@ -145,7 +145,7 @@ kgen.generator @parent<A>() {
     // CHECK-NEXT: declare A0 = <A>
     // CHECK-NEXT: constant = <A0>
     // CHECK-NOT: kgen.call @callee
-    kgen.call @callee<A = A>() : () -> ()
+    kgen.call @callee<A>() : () -> ()
     kgen.return
   }
   kgen.return
@@ -168,7 +168,7 @@ kgen.generator @parent<A>() {
     // CHECK-NEXT: constant = <A0>
     // CHECK-NEXT: constant = <C0>
     // CHECK-NOT: kgen.call @callee
-    kgen.call @callee<A = C, C = A>() : () -> ()
+    kgen.call @callee<C, A>() : () -> ()
     kgen.return
   }
   kgen.return
@@ -192,7 +192,7 @@ kgen.generator @parent<A>() {
     // CHECK-NEXT: constant = <A0>
     // CHECK-NEXT: constant = <C0>
     // CHECK-NOT: kgen.call @callee
-    kgen.call @callee<A = A, C = C>() : () -> ()
+    kgen.call @callee<A, C>() : () -> ()
     kgen.return
   }
   kgen.return
@@ -220,7 +220,7 @@ kgen.generator @parent<A, B, C>() {
       // CHECK-NEXT: constant = <B0>
       // CHECK-NEXT: constant = <C0>
       // CHECK-NOT: kgen.call @callee
-      kgen.call @callee<A = A, B = B, C = C>() : () -> ()
+      kgen.call @callee<A, B, C>() : () -> ()
       kgen.return
     }
     kgen.return
@@ -241,7 +241,7 @@ kgen.generator @callee<A, B, C>() always_inline {
 // CHECK-LABEL: kgen.generator @parent
 kgen.generator @parent<A>() {
 // CHECK-NOT: kgen.call @callee
-  kgen.call @callee<B = 1>() : () -> ()
+  kgen.call @callee<1>() : () -> ()
   kgen.return
 }
 
@@ -260,7 +260,7 @@ kgen.generator @parent<A>() {
   // CHECK-NEXT: declare.region A0 = ()
   // CHECK: call_param[() -> (): A0]()
   // CHECK-NOT: kgen.call @callee
-  kgen.call @callee<B = 1>() : () -> ()
+  kgen.call @callee<1>() : () -> ()
   kgen.return
 }
 
@@ -278,16 +278,16 @@ kgen.generator @callee<B>() always_inline {
 // CHECK-LABEL: kgen.generator @parent
 kgen.generator @parent<A>() {
   // CHECK-NEXT: declare B = <A>
-  // CHECK-NEXT: call @result_params<() -> A0 = A>()
+  // CHECK-NEXT: call @result_params<[] -> A0>()
   // CHECK-NEXT: constant = <A0>
   // CHECK-NOT: kgen.call @callee
-  kgen.call @callee<B = A>() : () -> ()
+  kgen.call @callee<A>() : () -> ()
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @callee
 kgen.generator @callee<B>() always_inline {
-  kgen.call @result_params<() -> A = A>() : () -> ()
+  kgen.call @result_params<[] -> A>() : () -> ()
   kgen.param.constant = <A>
   kgen.return
 }
@@ -304,7 +304,7 @@ kgen.generator @parent<B>() {
   // CHECK-NEXT: declare A0 = <B>
   // CHECK-NEXT: declare A = <A0>
   // CHECK-NOT: kgen.call @callee
-  kgen.call @callee<A = B -> A = B>() : () -> ()
+  kgen.call @callee<B -> A>() : () -> ()
   kgen.param.constant = <A>
   kgen.return
 }
@@ -325,7 +325,7 @@ kgen.generator @parent<B>() {
   // CHECK-NEXT: constant = <B>
   // CHECK: declare A = <A0>
   // CHECK-NOT: kgen.call @callee
-  kgen.call @callee<A = B -> A = B>() : () -> ()
+  kgen.call @callee<B -> A>() : () -> ()
   // CHECK: constant = <A>
   kgen.param.constant = <A>
   kgen.return
@@ -352,7 +352,7 @@ kgen.generator @parent<B>() {
   // CHECK-NEXT:   constant = <B>
   // CHECK: declare A = <A0>
   // CHECK-NOT: kgen.call @callee
-  kgen.call @callee<A = B -> A = B>() : () -> ()
+  kgen.call @callee<B -> A>() : () -> ()
   // CHECK: constant = <A>
   kgen.param.constant = <A>
   kgen.return
@@ -380,7 +380,7 @@ kgen.generator @parent<B>() {
   // CHECK-NEXT:   constant = <A0>
   // CHECK-NEXT:   constant = <B>
   // CHECK-NOT: kgen.call @callee
-  kgen.call @callee<A = B>() : () -> ()
+  kgen.call @callee<B>() : () -> ()
   // CHECK: constant = <A>
   kgen.param.constant = <A>
   kgen.return
@@ -462,7 +462,7 @@ kgen.generator @callee() always_inline {
 
 // CHECK-LABEL: kgen.generator @parent
 kgen.generator @parent<A: dtype>() {
-  %0 = kgen.call @callee<A = 1>() : () -> index
+  %0 = kgen.call @callee<1>() : () -> index
   kgen.return
 }
 
@@ -522,7 +522,7 @@ kgen.generator @rebind_call_operands(%arg0: !pop.scalar<f32>) {
   // CHECK: kgen.param.declare type: dtype = <f32>
   // CHECK-NEXT: %0 = kgen.rebind %arg0 : !pop.scalar<f32> to !pop.scalar<type>
   // CHECK: pop.simd.extractelement %0[%idx0] : !pop.scalar<type>
-  kgen.call @callee<type: dtype = f32>(%arg0) : (!pop.scalar<f32>) -> ()
+  kgen.call @callee<:dtype f32>(%arg0) : (!pop.scalar<f32>) -> ()
   kgen.return
 }
 
@@ -541,7 +541,7 @@ kgen.generator @rebind_mangled_types<type: dtype>(%arg0: !pop.scalar<type>) {
   // CHECK-NEXT: %0 = kgen.rebind %arg0 : !pop.scalar<type> to !pop.scalar<type0>
   // CHECK: %1 = pop.simd.extractelement %0[%idx0] : !pop.scalar<type0>
   // CHECK: %2 = kgen.rebind %1 : !pop.scalar<type0> to !pop.scalar<type>
-  %0 = kgen.call @callee<type: dtype = type>(%arg0) : (!pop.scalar<type>) -> !pop.scalar<type>
+  %0 = kgen.call @callee<:dtype type>(%arg0) : (!pop.scalar<type>) -> !pop.scalar<type>
   kgen.return
 }
 
@@ -557,10 +557,10 @@ kgen.generator @callee<type: dtype>(%arg0: !pop.scalar<type>) -> !pop.scalar<typ
 // CHECK-LABEL: kgen.generator @replace_in_signature_with_shadow
 kgen.generator @replace_in_signature_with_shadow<width>() {
   // CHECK: kgen.param.declare width0 = <width>
-  // CHECK-NEXT: kgen.param.declare fn: <width>(!pop.simd<*0|0, bool>) -> () = <@param_arg>
+  // CHECK-NEXT: kgen.param.declare fn: <index>(!pop.simd<*0|0, bool>) -> () = <@param_arg>
   // CHECK-NEXT: kgen.param.declare bound: (!pop.simd<width0, bool>) -> ()
-  // CHECK-SAME: = <bind_signature(:<width>(!pop.simd<*0|0, bool>) -> () fn, width0)>
-  kgen.call @callee<width = width>() : () -> ()
+  // CHECK-SAME: = <bind_signature(:<index>(!pop.simd<*0|0, bool>) -> () fn, width0)>
+  kgen.call @callee<width>() : () -> ()
   kgen.return
 }
 
@@ -571,9 +571,9 @@ kgen.generator @param_arg<width>(%arg0: !pop.simd<width, bool>) {
 
 // CHECK-LABEL: kgen.generator @callee
 kgen.generator @callee<width>() always_inline {
-  kgen.param.declare fn: <width>(!pop.simd<*0|0, bool>) -> () = <@param_arg>
+  kgen.param.declare fn: <index>(!pop.simd<*0|0, bool>) -> () = <@param_arg>
   kgen.param.declare bound: (!pop.simd<width, bool>) -> () =
-    <bind_signature(:<width>(!pop.simd<*0|0, bool>) -> () fn, width)>
+    <bind_signature(:<index>(!pop.simd<*0|0, bool>) -> () fn, width)>
   kgen.return
 }
 
@@ -585,9 +585,9 @@ kgen.generator @dependent_types() {
   kgen.param.declare rank = <4>
   // CHECK: declare rank0 = <1>
   // CHECK-NEXT: declare shape: list<index[rank0]> = <rebind(:list<index[1]> [2])>
-  // CHECK-NEXT: call @call_me<rank = rank0, shape: list<index[rank0]> = shape>
+  // CHECK-NEXT: call @call_me<rank0, :list<index[rank0]> shape>
   // CHECK-NEXT: declare output: list<index[1]> = <rebind(:list<index[rank0]> shape)>
-  kgen.call @callee<rank = 1, shape: list<index[1]> = [2] -> output = output: list<index[1]>>() : () -> ()
+  kgen.call @callee<1, :list<index[1]> [2] -> output: list<index[1]>>() : () -> ()
   kgen.return
 }
 
@@ -598,7 +598,7 @@ kgen.generator @call_me<rank, shape: list<index[rank]>>() {
 
 // CHECK-LABEL: kgen.generator @callee
 kgen.generator @callee<rank, shape: list<index[rank]> -> output: list<index[rank]>>() always_inline {
-  kgen.call @call_me<rank = rank, shape: list<index[rank]> = shape>() : () -> ()
+  kgen.call @call_me<rank, :list<index[rank]> shape>() : () -> ()
   kgen.param.result_bind<:list<index[rank]> shape>
   kgen.return
 }
@@ -610,7 +610,7 @@ kgen.generator @struct_extract(%arg0: !pop.struct<simd<2, f32>>) {
   kgen.param.declare size = <1>
   kgen.param.declare type: dtype = <si32>
   // CHECK: pop.struct.extract %0[0] : !pop.struct<simd<size0, type0>>
-  kgen.call @callee<size = 2, type: dtype = f32>(%arg0) : (!pop.struct<simd<2, f32>>) -> ()
+  kgen.call @callee<2, :dtype f32>(%arg0) : (!pop.struct<simd<2, f32>>) -> ()
   kgen.return
 }
 
@@ -633,7 +633,7 @@ kgen.generator @only_mangle_mangled_captures() {
   kgen.param.declare A = <0>
   // CHECK: constant = <A0>
   // CHECK-NEXT: constant = <B>
-  kgen.call @callee<A = 1, B = 1>() : () -> ()
+  kgen.call @callee<1, 1>() : () -> ()
   kgen.return
 }
 
@@ -652,7 +652,7 @@ kgen.generator @callee<A, B>() always_inline {
 // CHECK-LABEL: kgen.generator @parent
 kgen.generator @parent<rank, shape: list<index[rank]>>() {
   // CHECK: declare another: list<index[rank0]> = <shape0>
-  kgen.call @mid<rank = rank, shape: list<index[rank]> = shape>() : () -> ()
+  kgen.call @mid<rank, :list<index[rank]> shape>() : () -> ()
   kgen.return
 }
 
@@ -668,7 +668,7 @@ kgen.generator @mid<rank, shape: list<index[rank]>>() always_inline {
 kgen.generator @parent() {
   // CHECK: declare A = <2>
   // CHECK-NEXT: assert <eq(A, 1)>, "A == 1"
-  kgen.call @callee<A = 2>() : () -> ()
+  kgen.call @callee<2>() : () -> ()
   kgen.return
 }
 
@@ -711,7 +711,7 @@ kgen.generator @parent<T: type>(%arg0: index) {
   // CHECK: kgen.param.declare T0: type = <index> loc(#[[CALL_LOC:.*]])
   // CHECK-NEXT: kgen.rebind %arg0 : index to !kgen.paramref<T0> loc(#[[CALL_LOC]])
   // CHECK-NEXT: kgen.return
-  kgen.call @nodebug_inline_me<T: type = index>(%arg0) : (index) -> ()
+  kgen.call @nodebug_inline_me<:type index>(%arg0) : (index) -> ()
   kgen.return
 }
 
@@ -725,8 +725,8 @@ kgen.generator @nodebug_inline_me<T: type>(%arg0: !kgen.paramref<T>) always_inli
 
 // COM: https://github.com/modularml/modular/issues/8586
 
-kgen.generator @unroll<func: <idx>() -> ()>() always_inline {
-  kgen.param.constant: <idx>() -> () = <func>
+kgen.generator @unroll<func: <index>() -> ()>() always_inline {
+  kgen.param.constant: <index>() -> () = <func>
   kgen.return
 }
 
@@ -736,7 +736,7 @@ kgen.generator @nested_func_call<func: () -> ()>() always_inline {
       kgen.call_param[() -> (): func]()
       kgen.return
     }
-    kgen.call @unroll<func: <idx>() -> () = nested_func>() : () -> ()
+    kgen.call @unroll<:<index>() -> () nested_func>() : () -> ()
     kgen.return
   }
   kgen.call_param[() -> (): func_wrapper]()
@@ -747,7 +747,7 @@ kgen.generator @pass_it() always_inline {
   kgen.param.declare.region id = () {
     kgen.return
   }
-  kgen.call @nested_func_call<func: () -> () = id>() : () -> ()
+  kgen.call @nested_func_call<:() -> () id>() : () -> ()
   kgen.return
 }
 
@@ -758,8 +758,8 @@ kgen.generator @main() {
   // CHECK: kgen.param.declare.region func_wrapper = () {
     // CHECK: kgen.param.declare.region nested_func = <idx>() {
       // CHECK: kgen.call_param[() -> (): func]
-    // CHECK: kgen.param.declare func0: <idx>() -> () = <nested_func>
-    // CHECK: kgen.param.constant: <idx>() -> () = <func0>
+    // CHECK: kgen.param.declare func0: <index>() -> () = <nested_func>
+    // CHECK: kgen.param.constant: <index>() -> () = <func0>
   // CHECK: kgen.call_param[() -> (): func_wrapper]
   kgen.call @pass_it() : () -> ()
 
@@ -768,8 +768,8 @@ kgen.generator @main() {
   // CHECK: kgen.param.declare.region func_wrapper0 = () {
     // CHECK: kgen.param.declare.region nested_func = <idx>() {
       // CHECK: kgen.call_param[() -> (): func0]
-    // CHECK: kgen.param.declare func1: <idx>() -> () = <nested_func>
-    // CHECK: kgen.param.constant: <idx>() -> () = <func1>
+    // CHECK: kgen.param.declare func1: <index>() -> () = <nested_func>
+    // CHECK: kgen.param.constant: <index>() -> () = <func1>
   // CHECK: kgen.call_param[() -> (): func_wrapper0]
   kgen.call @pass_it() : () -> ()
   kgen.return
@@ -780,13 +780,13 @@ kgen.generator @main() {
 // COM: Give up on recursive elaboration instead of emitting an error.
 
 kgen.generator @passthrough<cond: i1>() always_inline {
-  kgen.call @recursive<cond: i1 = cond>() : () -> ()
+  kgen.call @recursive<:i1 cond>() : () -> ()
   kgen.return
 }
 
 kgen.generator @recursive<cond: i1>() always_inline {
   kgen.param.if <cond> {
-    kgen.call @passthrough<cond: i1 = 0>() : () -> ()
+    kgen.call @passthrough<:i1 0>() : () -> ()
     kgen.param.yield
   } else {
     kgen.param.yield
@@ -798,7 +798,7 @@ kgen.generator @recursive<cond: i1>() always_inline {
 kgen.generator @root() {
   // CHECK: kgen.param.if <cond>
     // CHECK: kgen.call @recursive
-  kgen.call @recursive<cond: i1 = 1>() : () -> ()
+  kgen.call @recursive<:i1 1>() : () -> ()
   kgen.return
 }
 
@@ -827,7 +827,7 @@ kgen.generator @deeply_nested_paramif<value>() always_inline {
               kgen.param.yield
             } else {
               kgen.param.if<eq(value, 6)> {
-                kgen.call @deeply_nested_paramif_0<value = 1>() : () -> ()
+                kgen.call @deeply_nested_paramif_0<1>() : () -> ()
                 kgen.param.yield
               } else {
                 kgen.param.if<eq(value, 7)> {
@@ -939,6 +939,6 @@ kgen.generator @deeply_nested_paramif_0<value>() always_inline {
 // CHECK-LABEL: kgen.generator @call_it
 kgen.generator @call_it() {
   // CHECK: kgen.param.if
-  kgen.call @deeply_nested_paramif<value = 10>() : () -> ()
+  kgen.call @deeply_nested_paramif<10>() : () -> ()
   kgen.return
 }

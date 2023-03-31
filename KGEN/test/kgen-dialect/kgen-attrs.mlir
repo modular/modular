@@ -24,9 +24,9 @@ kgen.generator @return_one() -> index {
 
 "some.op"() {
   // CHECK: a = #kgen.param.region<"aRegion", [], isolated = true> : !kgen.signature<() -> ()>,
-  a = #kgen<param.region<"aRegion" , [], isolated = true>> : !kgen.signature<() -> ()>,
-  // CHECK-SAME: b = #kgen.param.region<"bRegion", [ foo = 1 : i64], isolated = false> : !kgen.signature<(index) -> index>
-  b = #kgen<param.region<"bRegion" , [foo = 1], isolated = false>> : !kgen.signature<(index) -> (index)>
+  a = #kgen<param.region<"aRegion" , [<>], isolated = true>> : !kgen.signature<() -> ()>,
+  // CHECK-SAME: b = #kgen.param.region<"bRegion", [<1>], isolated = false> : !kgen.signature<(index) -> index>
+  b = #kgen<param.region<"bRegion" , [<1>], isolated = false>> : !kgen.signature<(index) -> (index)>
 } : () -> ()
 
 // CHECK: #kgen.param.index.ref<0, false, 0> : index

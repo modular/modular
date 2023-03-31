@@ -147,8 +147,8 @@ void printOptionalParameterSpec(AsmPrinter &p, Operation *op,
 OptionalParseResult parseOptionalSignature(AsmParser &p,
                                            SignatureType &signature);
 ParseResult parseSignature(AsmParser &p, SignatureType &signature);
-ParseResult parseSignatureValues(AsmParser &p, ParamDeclArrayAttr inputParams,
-                                 ParamDeclArrayAttr resultParams,
+ParseResult parseSignatureValues(AsmParser &p, TypeArrayAttr inputParamTypes,
+                                 TypeArrayAttr resultParamTypes,
                                  SignatureType &signature);
 void printSignature(AsmPrinter &p, SignatureType signature);
 void printSignatureValues(AsmPrinter &p, SignatureType signature);
@@ -194,9 +194,12 @@ ParseResult parseOptionalParamBindSpec(AsmParser &p,
 void printOptionalParamBindSpec(AsmPrinter &p, ParamBindArrayAttr paramValues);
 
 /// Parse and print a list of parameter values.
-ParseResult parseParameterValues(OpAsmParser &p, ParameterExprArrayAttr &value);
+ParseResult parseParameterValues(AsmParser &p, ParameterExprArrayAttr &values);
+ParseResult parseParameterValues(AsmParser &p,
+                                 SmallVectorImpl<TypedAttr> &values);
 void printParameterValues(OpAsmPrinter &p, Operation *op,
-                          ParameterExprArrayAttr value);
+                          ParameterExprArrayAttr values);
+void printParameterValues(AsmPrinter &p, ArrayRef<TypedAttr> values);
 
 /// Parse and print a parametric callee and result parameter declarations.
 ParseResult parseParametricCallee(OpAsmParser &p, TypedAttr &callee,

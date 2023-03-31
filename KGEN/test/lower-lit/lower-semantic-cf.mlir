@@ -295,9 +295,9 @@ lit.func @throwing_coro<cond: i1, a>(%err: !kgen.declref<@Error>) async|throws -
 // CHECK-LABEL: lit.func @call_throwing_coro({{.*}}) throws|async ->
 lit.func @call_throwing_coro(%err: !kgen.declref<@Error>) async|throws -> !pop.variant<@Error, !lit.none> {
   // CHECK-NEXT: callee: <>(!kgen.declref<@Error>) throws|async -> !pop.variant<@Error, index>
-  // CHECK-SAME: = <@throwing_coro<cond: i1 = 1, a = 0>>
+  // CHECK-SAME: = <@throwing_coro<:i1 1, 0>>
   kgen.param.declare callee: <>(!kgen.declref<@Error>) async|throws -> !pop.variant<@Error, index>
-    = <@throwing_coro<cond: i1 = 1, a = 0>>
+    = <@throwing_coro<:i1 1, 0>>
   // CHECK: lit.async.call[<>(!kgen.declref<@Error>) throws|async -> !pop.variant<@Error, index>: callee](%err)
   %hdl = lit.async.call[<>(!kgen.declref<@Error>) async|throws -> !pop.variant<@Error, index> : callee](%err)
   lit.end_func
@@ -333,8 +333,8 @@ lit.struct.decl @StructWithNestedFn<a_param> {
       lit.return
       lit.end_func
     }
-    // CHECK: kgen.param.declare c: <() -> c_param>() -> () = <bind_signature(:<b_param -> c_param>() -> () paramNestedFunc, 2)>
-    kgen.param.declare c: <() -> c_param>() -> () = <bind_signature(:<b_param -> c_param>() -> () paramNestedFunc, 2)>
+    // CHECK: kgen.param.declare c: <[] -> index>() -> () = <bind_signature(:<index -> index>() -> () paramNestedFunc, 2)>
+    kgen.param.declare c: <[] -> index>() -> () = <bind_signature(:<index -> index>() -> () paramNestedFunc, 2)>
 
     %idx0_0 = index.constant 0
     lit.return %idx0_0 : index

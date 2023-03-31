@@ -16,7 +16,7 @@ kgen.generator @even_only<param>() {
 kgen.generator @find_even() {
   kgen.param.fork seventy_two = <[72]>
   kgen.param.fork value = <[3, 16, 1, 72, seventy_two]>
-  kgen.call @even_only<param=value>() : () -> ()
+  kgen.call @even_only<value>() : () -> ()
   kgen.return
 }
 
@@ -34,7 +34,7 @@ kgen.generator @simpleEvaluator<N, FN:type>(%funcs: !pop.pointer<FN>, %num: inde
 // CHECK-LABEL: @pickFirst
 kgen.generator @pickFirst() {
   kgen.param.declare evaluator: (!pop.pointer<!kgen.signature<() -> ()>>, index) -> index
-    = <bind_signature(:<N, FN:type>(!pop.pointer<FN>, index) -> index @simpleEvaluator, 0, !kgen.signature<()->()>)>
+    = <bind_signature(:<index, type>(!pop.pointer<*0|1>, index) -> index @simpleEvaluator, 0, !kgen.signature<()->()>)>
   kgen.param.declare chosenImpl : () -> () = <evaluate(:variadic<!kgen.signature<() -> ()>> [@pickFirstA, @pickFirstB],
                                                        :(!pop.pointer<!kgen.signature<() -> ()>>, index) -> index evaluator)>
   // CHECK-NEXT: kgen.call @pickFirstA
@@ -46,7 +46,7 @@ kgen.generator @pickFirst() {
 // CHECK-LABEL: @pickSecond()
 kgen.generator @pickSecond() {
   kgen.param.declare evaluator: (!pop.pointer<!kgen.signature<() -> ()>>, index) -> index
-    = <bind_signature(:<N, FN:type>(!pop.pointer<FN>, index) -> index @simpleEvaluator, 1, !kgen.signature<()->()>)>
+    = <bind_signature(:<index, type>(!pop.pointer<*0|1>, index) -> index @simpleEvaluator, 1, !kgen.signature<()->()>)>
   kgen.param.declare chosenImpl : () -> () = <evaluate(:variadic<!kgen.signature<() -> ()>> [@pickSecondA, @pickSecondB],
                                                        :(!pop.pointer<!kgen.signature<() -> ()>>, index) -> index evaluator)>
   // CHECK-NEXT: kgen.call @pickSecondB
@@ -92,7 +92,7 @@ kgen.generator @simpleEvaluator<N, FN:type>(%funcs: !pop.pointer<FN>, %num: inde
 // CHECK-LABEL: @pickSecond()
 kgen.generator @pickSecond() -> index {
   kgen.param.declare evaluator: (!pop.pointer<!kgen.signature<() -> index>>, index) -> index
-    = <bind_signature(:<N, FN:type>(!pop.pointer<FN>, index) -> index @simpleEvaluator, 1, !kgen.signature<()->index>)>
+    = <bind_signature(:<index, type>(!pop.pointer<*0|1>, index) -> index @simpleEvaluator, 1, !kgen.signature<()->index>)>
   kgen.param.declare chosenImpl : () -> index = <evaluate(:variadic<!kgen.signature<() -> index>> [@pickSecondA, @pickSecondB],
                                                           :(!pop.pointer<!kgen.signature<() -> index>>, index) -> index evaluator)>
   // COM: This is actually not one of the direct options, it's an expansion of one of them.

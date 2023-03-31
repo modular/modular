@@ -684,7 +684,7 @@ CoroutineType CoroutineType::get(SignatureType sig) {
   // which inherits the `throws` bit.
   MLIRContext *ctx = sig.getContext();
   auto coroSig = SignatureType::get(
-      ParamDeclArrayAttr::get(ctx, {}), ParamDeclArrayAttr::get(ctx, {}),
+      TypeArrayAttr::get(ctx, {}), TypeArrayAttr::get(ctx, {}),
       FunctionType::get(ctx, {}, sig.getValueResults()),
       MetadataAttr::get(ctx, 0,
                         sig.isThrows() ? FnEffects::Throws : FnEffects::None));

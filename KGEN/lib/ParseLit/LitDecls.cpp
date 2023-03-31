@@ -584,7 +584,8 @@ LitParameterEvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
   if (func.getAlwaysInlineLevel() == AlwaysInlineLevel::Disabled)
     return Error("function is not always_inline");
   SignatureType fullSig = func.getFullSignature();
-  if (!fullSig.getInputParams().empty() || !fullSig.getResultParams().empty())
+  if (!fullSig.getInputParamTypes().empty() ||
+      !fullSig.getResultParamTypes().empty())
     return Error("function is parametric");
 
   // Make sure to fully resolve the body and everything within it.
@@ -1722,13 +1723,10 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   attrs.set(funcOp.getFunctionTypeAttrName(), TypeAttr::get(functionType));
 
   // Compute the signature of the function.
-  IndexRefRemapper remapper(inputParamDecls, resultParamDecls);
-  auto signature = SignatureType::getChecked(
-      [&] { return mlir::emitError(funcOp.getLoc()); },
-      remapper.remap(inputParamsAttr), remapper.remap(resultParamsAttr),
-      remapper.remap(functionType),
-      remapper.remap(
-          builder.getAttr<MetadataAttr>(inputConventions, defaults, effects)));
+  auto signature = IndexRefRemapper::remapToSignature(
+      inputParamsAttr, resultParamsAttr, functionType,
+      builder.getAttr<MetadataAttr>(inputConventions, defaults, effects),
+      [&] { return mlir::emitError(funcOp.getLoc()); });
   if (!signature)
     return failure();
   attrs.set(funcOp.getSignatureAttrName(), TypeAttr::get(signature));

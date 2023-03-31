@@ -69,31 +69,31 @@ kgen.generator @do_it() {
 
   // CHECK-NEXT: [123, 456]
   kgen.param.constant: array<2, i24> = <apply(
-    :(!pop.array<2, i24>) -> !pop.array<2, i24> @store_load<T: type = !pop.array<2, i24>>,
+    :(!pop.array<2, i24>) -> !pop.array<2, i24> @store_load<:type !pop.array<2, i24>>,
     [123, 456])>
   // CHECK-NEXT: <"1.25", "2.25">
   kgen.param.constant: simd<2, f32> = <apply(
-    :(!pop.simd<2, f32>) -> !pop.simd<2, f32> @store_load<T: type = !pop.simd<2, f32>>,
+    :(!pop.simd<2, f32>) -> !pop.simd<2, f32> @store_load<:type !pop.simd<2, f32>>,
     <"1.25", "2.25">)>
   // CHECK-NEXT: <-7, 7>
   kgen.param.constant: simd<2, si4> = <apply(
-    :(!pop.simd<2, si4>) -> !pop.simd<2, si4> @store_load<T: type = !pop.simd<2, si4>>,
+    :(!pop.simd<2, si4>) -> !pop.simd<2, si4> @store_load<:type !pop.simd<2, si4>>,
     <-7, 7>)>
   // CHECK-NEXT: <0, 1, 2, 3, 3, 2>
   kgen.param.constant: simd<6, ui2> = <apply(
-    :(!pop.simd<6, ui2>) -> !pop.simd<6, ui2> @store_load<T: type = !pop.simd<6, ui2>>,
+    :(!pop.simd<6, ui2>) -> !pop.simd<6, ui2> @store_load<:type !pop.simd<6, ui2>>,
     <0, 1, 2, 3, 3, 2>)>
   // CHECK-NEXT: <-5>
   kgen.param.constant: scalar<index> = <apply(
-    :(!pop.scalar<index>) -> !pop.scalar<index> @store_load<T: type = !pop.scalar<index>>,
+    :(!pop.scalar<index>) -> !pop.scalar<index> @store_load<:type !pop.scalar<index>>,
     <-5>)>
   // CHECK-NEXT: { 120, 32112, 1.125{{0+}}e+00 }
   kgen.param.constant: struct<i8, i16, f64> = <apply(
-    :(!pop.struct<i8, i16, f64>) -> !pop.struct<i8, i16, f64> @store_load<T: type = !pop.struct<i8, i16, f64>>,
+    :(!pop.struct<i8, i16, f64>) -> !pop.struct<i8, i16, f64> @store_load<:type !pop.struct<i8, i16, f64>>,
     { 120, 32112, 1.125 })>
   // CHECK-NEXT: #pop.variant<:i32 42>
   kgen.param.constant: variant<i32, f64> = <apply(
-    :(!pop.variant<i32, f64>) -> !pop.variant<i32, f64> @store_load<T: type = !pop.variant<i32, f64>>,
+    :(!pop.variant<i32, f64>) -> !pop.variant<i32, f64> @store_load<:type !pop.variant<i32, f64>>,
     #pop.variant<:i32 42>)>
 
   // CHECK-NEXT: <1099511627792>
@@ -102,15 +102,15 @@ kgen.generator @do_it() {
 
   // CHECK-NEXT: <8590983192>
   kgen.param.constant: i64 = <apply(
-    :(!pop.struct<i8, i16, i32>) -> i64 @bitcast<I: type = !pop.struct<i8, i16, i32>, O: type = i64>,
+    :(!pop.struct<i8, i16, i32>) -> i64 @bitcast<:type !pop.struct<i8, i16, i32>, :type i64>,
     { 24, 16, 2 })>
   // CHECK-NEXT: <1026>
   kgen.param.constant: i16 = <apply(
-    :(!pop.simd<2, si8>) -> i16 @bitcast<I: type = !pop.simd<2, si8>, O: type = i16>,
+    :(!pop.simd<2, si8>) -> i16 @bitcast<:type !pop.simd<2, si8>, :type i16>,
     <2, 4>)>
   // CHECK-NEXT: <229>
   kgen.param.constant: ui8 = <apply(
-    :(!pop.simd<4, ui2>) -> ui8 @bitcast<I: type = !pop.simd<4, ui2>, O: type = ui8>,
+    :(!pop.simd<4, ui2>) -> ui8 @bitcast<:type !pop.simd<4, ui2>, :type ui8>,
     <1, 1, 2, 3>)>
 
   // CHECK-NEXT: <0>
@@ -122,13 +122,13 @@ kgen.generator @do_it() {
 
   // CHECK-NEXT: <12>
   kgen.param.constant: i24 = <apply(
-    :(!pop.array<3, i24>) -> i24 @array_gep_load<I = 0>, [12, 34, 56])>
+    :(!pop.array<3, i24>) -> i24 @array_gep_load<0>, [12, 34, 56])>
   // CHECK-NEXT: <34>
   kgen.param.constant: i24 = <apply(
-    :(!pop.array<3, i24>) -> i24 @array_gep_load<I = 1>, [12, 34, 56])>
+    :(!pop.array<3, i24>) -> i24 @array_gep_load<1>, [12, 34, 56])>
   // CHECK-NEXT: <56>
   kgen.param.constant: i24 = <apply(
-    :(!pop.array<3, i24>) -> i24 @array_gep_load<I = 2>, [12, 34, 56])>
+    :(!pop.array<3, i24>) -> i24 @array_gep_load<2>, [12, 34, 56])>
 
   // CHECK-NEXT: <56>
   kgen.param.constant: i32 = <apply(

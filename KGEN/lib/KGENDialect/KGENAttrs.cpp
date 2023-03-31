@@ -123,8 +123,8 @@ MetadataAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 
 LogicalResult
 MetadataAttr::verifySignature(function_ref<InFlightDiagnostic()> emitError,
-                              ParamDeclArrayAttr inputParams,
-                              ParamDeclArrayAttr resultParams,
+                              ArrayRef<Type> inputParamTypes,
+                              ArrayRef<Type> resultParamTypes,
                               FunctionType values) {
   // Check we have the right number of conventions.
   if (getInputConventions().size() != values.getInputs().size())
@@ -573,15 +573,15 @@ SymbolConstantAttr::verifySymbolUses(Operation *module,
 
     IndexRefRemapper remapper(paramDecls, {}, paramDecls.size());
     SignatureType baseSig = func.getSignature();
-    SmallVector<ParamDeclAttr> inputParams;
+    SmallVector<Type> inputParamTypes;
     for (ParamDeclAttr param : paramDecls)
-      inputParams.push_back(remapper.remap(param));
-    for (ParamDeclAttr param : baseSig.getInputParams())
-      inputParams.push_back(remapper.remap(param));
+      inputParamTypes.push_back(remapper.remap(param.getType()));
+    for (Type type : baseSig.getInputParamTypes())
+      inputParamTypes.push_back(remapper.remap(type));
 
     declSignature = SignatureType::getSpecializedSignature(
-        getParamValues(), [&] { return emitError(loc); }, inputParams,
-        remapper.remap(baseSig.getResultParams()),
+        getParamValues(), [&] { return emitError(loc); }, inputParamTypes,
+        remapper.remap(baseSig.getResultParamTypes()),
         remapper.remap(baseSig.getValues()),
         remapper.remap(baseSig.getMetadata()));
   }
@@ -651,16 +651,6 @@ bool BuildInfoParamAttr::isConstant() const { return true; }
 // ParamOperatorAttr
 //===----------------------------------------------------------------------===//
 
-/// Given a list of decls and values, produce an array of ParamBindAttrs.
-static SmallVector<ParamBindAttr>
-getBindAttrsForDeclsAndValues(ParamDeclArrayAttr decls,
-                              ArrayRef<TypedAttr> values) {
-  SmallVector<ParamBindAttr> binds;
-  for (auto [decl, value] : llvm::zip(decls, values))
-    binds.push_back(ParamBindAttr::get(decl.getName(), value));
-  return binds;
-}
-
 static FailureOr<SignatureType>
 verifyBindSignature(ArrayRef<TypedAttr> operands,
                     function_ref<InFlightDiagnostic()> emitError) {
@@ -671,14 +661,10 @@ verifyBindSignature(ArrayRef<TypedAttr> operands,
     return emitError()
            << "first operand of 'bind_signature' must have signature type";
 
-  // Convert the input operands into a ParamBindAttr's for
-  // getSpecializedSignature.
-  SmallVector<ParamBindAttr> inputParams = getBindAttrsForDeclsAndValues(
-      signature.getInputParams(), operands.drop_front());
-
   // Get the specialized version of the signature with all the known parameters
   // substituted in.
-  auto result = signature.getSpecializedSignature(inputParams, emitError);
+  auto result =
+      signature.getSpecializedSignature(operands.drop_front(), emitError);
   if (!result)
     return failure();
 
@@ -706,8 +692,8 @@ static LogicalResult verifyApply(ArrayRef<TypedAttr> operands, Type type,
     return emitError() << "'apply' expected a function parameter";
 
   auto signature = cast<SignatureType>(operands.front().getType());
-  if (!signature.getResultParams().empty() ||
-      !signature.getInputParams().empty())
+  if (!signature.getResultParamTypes().empty() ||
+      !signature.getInputParamTypes().empty())
     return emitError() << "'apply' function cannot be parametric";
 
   FunctionType func = signature.getValues();
@@ -729,8 +715,8 @@ verifyEvaluate(ArrayRef<TypedAttr> operands, Type type,
                           "list of implementations to evaluate";
 
   auto evaluatorSignature = cast<SignatureType>(operands.back().getType());
-  if (!evaluatorSignature.getResultParams().empty() ||
-      !evaluatorSignature.getInputParams().empty())
+  if (!evaluatorSignature.getResultParamTypes().empty() ||
+      !evaluatorSignature.getInputParamTypes().empty())
     return emitError() << "'evaluate' evaluator cannot be parametric";
 
   FunctionType func = evaluatorSignature.getValues();
@@ -1546,56 +1532,50 @@ static Attribute simplifyBindSignature(ArrayRef<TypedAttr> operands,
   auto processSignatureLike = [&](auto attr, auto cloneWith) {
     bool hasUnboundParameters = attr.getParamValues().empty();
     hasUnboundParameters |=
-        llvm::any_of(attr.getParamValues(), [](ParamBindAttr bind) {
-          return bind.getValue().isa<UnboundAttr>();
-        });
+        llvm::any_of(attr.getParamValues(),
+                     [](TypedAttr value) { return isa<UnboundAttr>(value); });
     assert(hasUnboundParameters &&
            "cannot have already bound all the input parameters, because we'd "
            "end up with a nongeneric signature that would fail verification");
 
-    SignatureType signature = attr.getType();
-    SmallVector<ParamBindAttr> paramBinds;
-    if (attr.getParamValues().empty()) {
-      paramBinds = getBindAttrsForDeclsAndValues(signature.getInputParams(),
-                                                 operands.drop_front());
-    } else {
-      // We have to interleave the new values wherever there's an unbound thing
-      // so we preserve the order. Drop the first operand because it's the
-      // signature itself.
-      auto operandIter = operands.begin() + 1;
-      for (auto param : attr.getParamValues()) {
-        // If we have this parameter already, we're good.
-        if (!param.getValue().template isa<UnboundAttr>()) {
-          paramBinds.push_back(param);
-          continue;
-        }
-        // Otherwise, bind it to the operand provided.
-        paramBinds.push_back(
-            ParamBindAttr::get(param.getName(), *operandIter++));
-      }
-      assert(operandIter == operands.end() && "Didn't use all the operands?");
-    }
+    if (attr.getParamValues().empty())
+      return cloneWith(operands.drop_front(), cast<SignatureType>(resultType));
 
-    return cloneWith(
-        ParamBindArrayAttr::get(resultType.getContext(), paramBinds),
-        cast<SignatureType>(resultType));
+    // We have to interleave the new values wherever there's an unbound thing
+    // so we preserve the order. Drop the first operand because it's the
+    // signature itself.
+    SmallVector<TypedAttr> paramValues;
+    auto operandIt = operands.begin() + 1;
+    for (TypedAttr param : attr.getParamValues()) {
+      // If we have this parameter already, we're good. otherwise, bind it to
+      // the operand provided.
+      if (!isa<UnboundAttr>(param))
+        paramValues.push_back(param);
+      else
+        paramValues.push_back(*operandIt++);
+    }
+    assert(operandIt == operands.end() && "Didn't use all the operands?");
+
+    return cloneWith(paramValues, cast<SignatureType>(resultType));
   };
 
   // If the actual operand is a SymbolConstantAttr operand, then we can simplify
   // the bind_signature by folding the parameter values into it directly.
   if (auto symbolConstant = dyn_cast<SymbolConstantAttr>(operands.front())) {
-    return processSignatureLike(symbolConstant, [&](ParamBindArrayAttr binds,
-                                                    SignatureType type) {
-      return SymbolConstantAttr::get(symbolConstant.getSymbol(), binds, type);
-    });
+    return processSignatureLike(
+        symbolConstant,
+        [&](ArrayRef<TypedAttr> paramValues, SignatureType type) {
+          return SymbolConstantAttr::get(symbolConstant.getSymbol(),
+                                         paramValues, type);
+        });
   }
 
   // If the operand is a RegionAttr, we can substitute the parameters into the
   // type and return a new one.
   if (auto region = dyn_cast<RegionAttr>(operands.front())) {
     return processSignatureLike(
-        region, [&](ParamBindArrayAttr binds, SignatureType type) {
-          return RegionAttr::get(region.getRegionName(), binds,
+        region, [&](ArrayRef<TypedAttr> paramValues, SignatureType type) {
+          return RegionAttr::get(region.getRegionName(), paramValues,
                                  region.getIsolated(), type);
         });
   }
@@ -1892,17 +1872,14 @@ bool RegionAttr::isConstant() const { return true; }
 RegionAttr RegionAttr::get(ParamDeclAttr decl, bool isolated) {
   assert(decl.getType().isa<SignatureType>() &&
          "RegionAttr requires a SignatureType");
-  return RegionAttr::get(decl.getContext(), decl.getName(),
-                         ParamBindArrayAttr::get(decl.getContext(), {}),
+  return RegionAttr::get(decl.getContext(), decl.getName(), {},
                          BoolAttr::get(decl.getContext(), isolated),
                          decl.getType().cast<SignatureType>());
 }
 
-RegionAttr RegionAttr::get(StringAttr name, ArrayRef<ParamBindAttr> values,
+RegionAttr RegionAttr::get(StringAttr name, ArrayRef<TypedAttr> values,
                            BoolAttr isolated, SignatureType type) {
-  return RegionAttr::get(name.getContext(), name,
-                         ParamBindArrayAttr::get(name.getContext(), values),
-                         isolated, type);
+  return RegionAttr::get(name.getContext(), name, values, isolated, type);
 }
 
 //===----------------------------------------------------------------------===//

@@ -147,8 +147,8 @@ OptionalParseResult SignatureType::parseValue(AsmParser &p,
   // Parse a symbol reference as a signature type attribute.
   if (auto symbol = attr.dyn_cast<SymbolRefAttr>()) {
     // Parse any trailing parameter bindings.
-    ParamBindArrayAttr paramValues;
-    if (parseOptionalParamBindSpec(p, paramValues))
+    ParameterExprArrayAttr paramValues;
+    if (parseParameterValues(p, paramValues))
       return failure();
     value = SymbolConstantAttr::get(symbol, paramValues, *this);
   } else {
@@ -169,43 +169,44 @@ LogicalResult SignatureType::printValue(AsmPrinter &p, TypedAttr value) const {
   if (!symbolCst)
     return failure();
   p << symbolCst.getSymbol();
-  printOptionalParamBindSpec(p, symbolCst.getParamValues());
+  printParameterValues(p, symbolCst.getParamValues());
   return success();
 }
 
-static void getSignatureDefaults(ParamDeclArrayAttr &inputParams,
-                                 ParamDeclArrayAttr &resultParams,
+static void getSignatureDefaults(TypeArrayAttr &inputParamTypes,
+                                 TypeArrayAttr &resultParamTypes,
                                  FunctionType values, MetadataAttr &metadata) {
   MLIRContext *ctx = values.getContext();
-  if (!inputParams)
-    inputParams = ParamDeclArrayAttr::get(ctx, {});
-  if (!resultParams)
-    resultParams = ParamDeclArrayAttr::get(ctx, {});
+  if (!inputParamTypes)
+    inputParamTypes = TypeArrayAttr::get(ctx, {});
+  if (!resultParamTypes)
+    resultParamTypes = TypeArrayAttr::get(ctx, {});
   if (!metadata) {
     // Default value input conventions to take each argument by-value.
     metadata = MetadataAttr::get(ctx, values.getNumInputs());
   }
 }
 
-SignatureType SignatureType::get(ParamDeclArrayAttr inputParams,
-                                 ParamDeclArrayAttr resultParams,
+SignatureType SignatureType::get(TypeArrayAttr inputParamTypes,
+                                 TypeArrayAttr resultParamTypes,
                                  FunctionType values, MetadataAttr metadata) {
-  getSignatureDefaults(inputParams, resultParams, values, metadata);
-  return get(values.getContext(), inputParams, resultParams, values, metadata);
+  getSignatureDefaults(inputParamTypes, resultParamTypes, values, metadata);
+  return get(values.getContext(), inputParamTypes, resultParamTypes, values,
+             metadata);
 }
 
 SignatureType
 SignatureType::getChecked(function_ref<InFlightDiagnostic()> emitError,
-                          ParamDeclArrayAttr inputParams,
-                          ParamDeclArrayAttr resultParams, FunctionType values,
+                          TypeArrayAttr inputParamTypes,
+                          TypeArrayAttr resultParamTypes, FunctionType values,
                           MetadataAttr metadata) {
-  getSignatureDefaults(inputParams, resultParams, values, metadata);
-  return getChecked(emitError, values.getContext(), inputParams, resultParams,
-                    values, metadata);
+  getSignatureDefaults(inputParamTypes, resultParamTypes, values, metadata);
+  return getChecked(emitError, values.getContext(), inputParamTypes,
+                    resultParamTypes, values, metadata);
 }
 
 SignatureType SignatureType::get(FunctionType values) {
-  return get(ParamDeclArrayAttr(), {}, values, {});
+  return get(TypeArrayAttr(), {}, values, {});
 }
 
 SignatureType SignatureType::get(MLIRContext *ctx, TypeRange inputs,
@@ -214,7 +215,8 @@ SignatureType SignatureType::get(MLIRContext *ctx, TypeRange inputs,
 }
 
 SignatureType SignatureType::getWithFnEffects(FnEffects effects) {
-  return SignatureType::get(getInputParams(), getResultParams(), getValues(),
+  return SignatureType::get(getInputParamTypes(), getResultParamTypes(),
+                            getValues(),
                             getMetadata().getWithFnEffects(effects));
 }
 
@@ -258,19 +260,19 @@ bool SignatureType::hasMemoryOnlyResult() {
 /// If an error occurs making the substitution, report it with emitErrorFn
 /// and return null.
 SignatureType SignatureType::getSpecializedSignature(
-    ArrayRef<ParamBindAttr> inputParamValues,
+    ArrayRef<TypedAttr> inputParamValues,
     function_ref<InFlightDiagnostic()> emitErrorFn) {
   if (inputParamValues.empty())
     return *this;
   return getSpecializedSignature(inputParamValues, emitErrorFn,
-                                 getInputParams(), getResultParams(),
+                                 getInputParamTypes(), getResultParamTypes(),
                                  getValues(), getMetadata());
 }
 
 SignatureType SignatureType::getSpecializedSignature(
-    ArrayRef<ParamBindAttr> inputParamValues,
+    ArrayRef<TypedAttr> inputParamValues,
     function_ref<InFlightDiagnostic()> emitErrorFn,
-    ArrayRef<ParamDeclAttr> inputParams, ArrayRef<ParamDeclAttr> resultParams,
+    ArrayRef<Type> inputParamTypes, ArrayRef<Type> resultParamTypes,
     FunctionType values, MetadataAttr metadata) {
   TimeTraceScope<> traceScope("SignatureType::getSpecializedSignature");
 
@@ -278,9 +280,9 @@ SignatureType SignatureType::getSpecializedSignature(
   // perform.
   MLIRContext *ctx = values.getContext();
   if (inputParamValues.empty())
-    return SignatureType::get(ParamDeclArrayAttr::get(ctx, inputParams),
-                              ParamDeclArrayAttr::get(ctx, resultParams),
-                              values, metadata);
+    return SignatureType::get(TypeArrayAttr::get(ctx, inputParamTypes),
+                              TypeArrayAttr::get(ctx, resultParamTypes), values,
+                              metadata);
 
   // We need to substitute and simplify expressions that occur in the argument
   // list and parameter types, e.g.:
@@ -302,22 +304,15 @@ SignatureType SignatureType::getSpecializedSignature(
   };
 
   unsigned paramNo = 0;
-  SmallVector<ParamDeclAttr, 16> unboundDecls;
-  for (auto [bind, decl] : llvm::zip(inputParamValues, inputParams)) {
-    if (bind.getName() != decl.getName()) {
-      emitErrorFn() << "caller input parameter #" << paramNo << " has name "
-                    << bind.getName() << " but callee expected name "
-                    << decl.getName();
-      return SignatureType();
-    }
-
+  SmallVector<Type, 16> unboundParamTypes;
+  for (auto [value, type] : llvm::zip(inputParamValues, inputParamTypes)) {
     // Bound parameters are allowed to refine the type of subsequent parameters,
     // e.g. in `<ty: type, fn: () -> !kgen.paramref<ty>>`, the expected type of
     // the second parameter will be refined when the first parameter is bound.
-    auto remappedDeclType = remapType(decl.getType());
-    if (bind.getType() != remappedDeclType) {
+    auto remappedDeclType = remapType(type);
+    if (value.getType() != remappedDeclType) {
       emitErrorFn() << "caller input parameter #" << paramNo << " has type "
-                    << bind.getType() << " but callee expected type "
+                    << value.getType() << " but callee expected type "
                     << remappedDeclType;
       return SignatureType();
     }
@@ -325,19 +320,16 @@ SignatureType SignatureType::getSpecializedSignature(
     // If we're attempting to bind to an unknown attribute, we need to update
     // the decl, and keep it around so that we can continue to use it (as in a
     // partial bind).
-    if (bind.getValue().isa<UnboundAttr>()) {
+    if (value.isa<UnboundAttr>()) {
       // Set the binding to a declref of the thing itself - that will keep it
       // from becoming #kgen.unbound.
       auto value =
           ParamIndexRefAttr::get(/*depth=*/-1, /*isResult=*/false,
-                                 unboundDecls.size(), remappedDeclType);
-      unboundDecls.push_back(
-          ParamDeclAttr::get(decl.getName(), remappedDeclType));
-      evaluator.setParameterValue(decl, value);
+                                 unboundParamTypes.size(), remappedDeclType);
+      unboundParamTypes.push_back(remappedDeclType);
       evaluator.inputParamValues.push_back(value);
     } else {
-      evaluator.setParameterValue(bind.getName(), bind.getValue());
-      evaluator.inputParamValues.push_back(bind.getValue());
+      evaluator.inputParamValues.push_back(value);
     }
 
     ++paramNo;
@@ -345,18 +337,15 @@ SignatureType SignatureType::getSpecializedSignature(
 
   // FIXME: Signature typed attributes need to contain result parameter
   // declarations. For now, just bind them to themselves.
-  for (ParamDeclAttr decl : resultParams) {
-    auto value = ParamDeclRefAttr::get(decl);
-    evaluator.setParameterValue(decl, value);
-    evaluator.resultParamValues.push_back(value);
+  for (auto [idx, type] : llvm::enumerate(resultParamTypes)) {
+    evaluator.resultParamValues.push_back(
+        ParamIndexRefAttr::get(/*depth=*/-1, /*isResult=*/true, idx, type));
   }
 
   // Remap the parameter decls and result parameter types.
-  SmallVector<ParamDeclAttr, 16> newParamResults;
-  llvm::append_range(
-      newParamResults, llvm::map_range(resultParams, [&](ParamDeclAttr param) {
-        return ParamDeclAttr::get(param.getName(), remapType(param.getType()));
-      }));
+  SmallVector<Type, 16> newParamResultTypes;
+  llvm::append_range(newParamResultTypes,
+                     llvm::map_range(resultParamTypes, remapType));
 
   // Remap the value types.
   SmallVector<Type, 16> inputTypes, resultTypes;
@@ -366,8 +355,8 @@ SignatureType SignatureType::getSpecializedSignature(
                      llvm::map_range(values.getResults(), remapType));
 
   return SignatureType::get(
-      ParamDeclArrayAttr::get(values.getContext(), unboundDecls),
-      ParamDeclArrayAttr::get(values.getContext(), newParamResults),
+      TypeArrayAttr::get(values.getContext(), unboundParamTypes),
+      TypeArrayAttr::get(values.getContext(), newParamResultTypes),
       FunctionType::get(values.getContext(), inputTypes, resultTypes),
       metadata);
 }
@@ -381,18 +370,18 @@ ArrayRef<Type> SignatureType::getValueResults() const {
 
 /// Return this signature type with the value signature replaced.
 SignatureType SignatureType::getWithValuesReplaced(FunctionType fnType) {
-  return SignatureType::get(getInputParams(), getResultParams(), fnType,
+  return SignatureType::get(getInputParamTypes(), getResultParamTypes(), fnType,
                             getMetadata());
 }
 
 SignatureType SignatureType::dropParamValues() {
-  return get(ParamDeclArrayAttr::get(getContext(), {}), getResultParams(),
+  return get(TypeArrayAttr::get(getContext(), {}), getResultParamTypes(),
              getValues(), getMetadata());
 }
 
 bool SignatureType::isConcrete() {
-  return getMetadata().isDefault() && getInputParams().empty() &&
-         getResultParams().empty();
+  return getMetadata().isDefault() && getInputParamTypes().empty() &&
+         getResultParamTypes().empty();
 }
 
 Type SignatureType::parse(AsmParser &p) {
@@ -410,47 +399,56 @@ void SignatureType::print(AsmPrinter &p) const {
 
 LogicalResult
 SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
-                      ParamDeclArrayAttr inputParams,
-                      ParamDeclArrayAttr resultParams, FunctionType values,
-                      MetadataAttr metadata) {
+                      TypeArrayAttr inputParams, TypeArrayAttr resultParams,
+                      FunctionType values, MetadataAttr metadata) {
   return metadata.verifySignature(emitError, inputParams, resultParams, values);
 }
 
 template <typename T>
 auto IndexRefRemapper::normalizeSignatureWalk(T value, size_t depth)
     -> std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute> {
-  mlir::AttrTypeReplacer replacer;
-  if (!mapping.empty()) {
-    replacer.addReplacement([&](ParamDeclRefAttr ref) -> Attribute {
-      auto it = mapping.find(ref.getName());
-      if (it == mapping.end())
-        return ref;
-      auto [idx, isResult] = it->second;
-      return ParamIndexRefAttr::get(depth, isResult, idx, ref.getType());
-    });
+  if constexpr (std::is_base_of_v<Attribute, T>) {
+    if (!mapping.empty()) {
+      if (auto ref = dyn_cast<ParamDeclRefAttr>(value)) {
+        auto it = mapping.find(ref.getName());
+        if (it == mapping.end())
+          return ref;
+        auto [idx, isResult] = it->second;
+        return ParamIndexRefAttr::get(
+            depth, isResult, idx, normalizeSignatureWalk(ref.getType(), depth));
+      }
+    }
+    if (offset != 0) {
+      if (auto ref = dyn_cast<ParamIndexRefAttr>(value)) {
+        if (ref.getDepth() != depth)
+          return ref;
+        return ParamIndexRefAttr::get(
+            depth, ref.getIsResult(), ref.getIndex() + offset,
+            normalizeSignatureWalk(ref.getType(), depth));
+      }
+    }
   }
-  if (offset != 0) {
-    replacer.addReplacement([&](ParamIndexRefAttr ref) {
-      if (ref.getDepth() != depth)
-        return ref;
-      return ParamIndexRefAttr::get(depth, ref.getIsResult(),
-                                    ref.getIndex() + offset, ref.getType());
-    });
+  if constexpr (std::is_base_of_v<Type, T>) {
+    if (isa<SignatureType>(value))
+      ++depth;
   }
-
-  // Skip over parametric nested signatures.
-  // FIXME: This isn't correct but mirrors the behaviour of ParameterEvaluator,
-  // which works for the moment.
-  replacer.addReplacement(
-      [&](SignatureType nested) -> std::pair<Type, WalkResult> {
-        if constexpr (std::is_base_of_v<Type, T>)
-          if (dyn_cast_or_null<SignatureType>(value) == nested)
-            return {nested, WalkResult::advance()};
-        if (!nested.getInputParams().empty())
-          return {nested, WalkResult::skip()};
-        return {normalizeSignatureWalk(nested, depth + 1), WalkResult::skip()};
+  SmallVector<Attribute, 16> newAttrs;
+  SmallVector<Type, 16> newTypes;
+  bool changed = false;
+  value.walkImmediateSubElements(
+      [&](Attribute attr) {
+        Attribute newAttr = normalizeSignatureWalk(attr, depth);
+        changed |= newAttr != attr;
+        newAttrs.push_back(newAttr);
+      },
+      [&](Type type) {
+        Type newType = normalizeSignatureWalk(type, depth);
+        changed |= newType != type;
+        newTypes.push_back(newType);
       });
-  return replacer.replace(value);
+  if (!changed)
+    return value;
+  return value.replaceImmediateSubElements(newAttrs, newTypes);
 }
 
 IndexRefRemapper::IndexRefRemapper(ArrayRef<ParamDeclAttr> inputParams,
@@ -471,6 +469,45 @@ Attribute IndexRefRemapper::remapAttrImpl(Attribute attr) {
 
 Type IndexRefRemapper::remapTypeImpl(Type type) {
   return normalizeSignatureWalk(type);
+}
+
+SignatureType IndexRefRemapper::remapToSignature(
+    ArrayRef<ParamDeclAttr> inputParams, ArrayRef<ParamDeclAttr> resultParams,
+    FunctionType functionType, MetadataAttr metadata,
+    function_ref<InFlightDiagnostic()> emitError) {
+  IndexRefRemapper remapper(inputParams, resultParams);
+  SmallVector<Type> inputParamTypes, resultParamTypes;
+  for (ParamDeclAttr param : inputParams)
+    inputParamTypes.push_back(remapper.remap(param.getType()));
+  for (ParamDeclAttr param : resultParams)
+    resultParamTypes.push_back(remapper.remap(param.getType()));
+
+  if (!emitError) {
+    emitError = []() -> InFlightDiagnostic {
+      llvm_unreachable("invalid signature");
+    };
+  }
+
+  MLIRContext *ctx = functionType.getContext();
+  return SignatureType::getChecked(
+      emitError, TypeArrayAttr::get(ctx, inputParamTypes),
+      TypeArrayAttr::get(ctx, resultParamTypes), remapper.remap(functionType),
+      metadata ? remapper.remap(metadata) : nullptr);
+}
+
+SignatureType
+IndexRefRemapper::prependParams(SignatureType sig,
+                                ArrayRef<ParamDeclAttr> parentParams) {
+  IndexRefRemapper remapper(parentParams, {}, parentParams.size());
+  SmallVector<Type> inputParamTypes;
+  for (ParamDeclAttr param : parentParams)
+    inputParamTypes.push_back(remapper.remap(param.getType()));
+  for (Type type : sig.getInputParamTypes())
+    inputParamTypes.push_back(remapper.remap(type));
+  return SignatureType::get(
+      TypeArrayAttr::get(sig.getContext(), inputParamTypes),
+      remapper.remap(sig.getResultParamTypes()),
+      remapper.remap(sig.getValues()), remapper.remap(sig.getMetadata()));
 }
 
 //===----------------------------------------------------------------------===//
