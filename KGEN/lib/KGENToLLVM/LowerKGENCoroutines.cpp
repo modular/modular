@@ -219,7 +219,7 @@ static void lowerCoroutineDestroyAsync(LLVMBuilder &b, TypeAttrCache &cache,
 /// llvm.func @__kgen_coro_end_fn(%opaqueCtxt: !llvm.ptr<i8>) {
 ///   %ctxt = llvm.bitcast %opaqueCtxt : !llvm.ptr<i8> to !llvm.ptr<struct(...
 ///   %clsFnPtr = llvm.getelementptr %ctxt[0, 2, 0]
-///   %clsArgPtr = llvm.getlementptr %ctxt[0, 2, 1]
+///   %clsArgPtr = llvm.getelementptr %ctxt[0, 2, 1]
 ///   %ctxtFn = llvm.load %ctxtFnPtr
 ///   %ctxtArg = llvm.load %ctxtArgPtr
 ///   llvm.call %ctxtFn(%ctxtArg)

@@ -33,7 +33,7 @@ void Detail::TensorShapeStorage::assign(ArrayRef<ssize_t> elements) {
   if (getRepKind() == RepKind::kOutOfLine)
     delete[] representation.repOutOfLine.dims;
 
-  // Zero-initialize to ensure the representation value is determinsitic.
+  // Zero-initialize to ensure the representation value is deterministic.
   // We do not zero out the auxiliary field.
   memset(&representation, 0, sizeof(representation) - 1);
 

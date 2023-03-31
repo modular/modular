@@ -319,7 +319,7 @@ struct VariantCRValue {
 
 private:
   // These are named getStorageR instead of getStorage to easy
-  // multiple-inheritence name lookup issues.
+  // multiple-inheritance name lookup issues.
   typename VariantValueStorage<DerivedType>::Storage &getStorageR() {
     return static_cast<DerivedType *>(this)->getStorage();
   }
@@ -403,7 +403,7 @@ struct VariantLValue {
 
 private:
   // These are named getStorageL instead of getStorage to easy
-  // multiple-inheritence name lookup issues.
+  // multiple-inheritance name lookup issues.
   typename VariantValueStorage<DerivedType>::Storage &getStorageL() {
     return static_cast<DerivedType *>(this)->getStorage();
   }
@@ -460,7 +460,7 @@ struct VariantBValue {
 
 private:
   // These are named getStorageB instead of getStorage to easy
-  // multiple-inheritence name lookup issues.
+  // multiple-inheritance name lookup issues.
   typename VariantValueStorage<DerivedType>::Storage &getStorageB() {
     return static_cast<DerivedType *>(this)->getStorage();
   }

@@ -473,7 +473,7 @@ void FuncOp::print(OpAsmPrinter &p) { printGeneratorOrFunc(p, *this); }
 LogicalResult FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // In a kgen.func, parameters are allowed to be defined (e.g. by calls with
   // output parameters), but not used.  This is because the elaborator must
-  // already have been run, lowering these to concrete attibute values.
+  // already have been run, lowering these to concrete attribute values.
   mlir::AttrTypeWalker walker;
   ParamDeclRefAttr invalidRef;
   Operation *usingOp = nullptr;

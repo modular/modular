@@ -822,7 +822,7 @@ void LitSharedState::resolveModuleDependencies(ModuleState &moduleState,
           return;
         }
 
-        // Write the dependencies to the cache. Depedencies are written as a
+        // Write the dependencies to the cache. Dependencies are written as a
         // sequence of (name, location) pairs. The location is the offset into
         // the module buffer where the dependency is located.
         llvm::support::endian::Writer writer(*buf, llvm::support::little);
@@ -902,7 +902,7 @@ void LitSharedState::resolveModuleDependencies(ModuleState &moduleState,
   if (wasImportingAModule)
     return;
 
-  // At this point, all of the depedent modules are known. Update the modules
+  // At this point, all of the dependent modules are known. Update the modules
   // dependencies to include all dependent modules. We iterate over all of the
   // modules imported during this import, to handle cases of recursive module
   // import.

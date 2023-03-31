@@ -123,9 +123,9 @@ namespace M {
 //===----------------------------------------------------------------------===//
 
 namespace Detail {
-/// Intialize the time trace profiler. This should be called on the main thread,
-/// and must not be called again until after timeTraceProfilerDestroy has been
-/// called.
+/// Initialize the time trace profiler. This should be called on the main
+/// thread, and must not be called again until after timeTraceProfilerDestroy
+/// has been called.
 void timeTraceProfilerInitialize(unsigned timeTraceGranularity,
                                  StringRef procName);
 /// Destroy the time trace profiler. This should be called on the main thread.

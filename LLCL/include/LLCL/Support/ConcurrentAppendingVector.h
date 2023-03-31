@@ -44,7 +44,7 @@ namespace M::LLCL {
 template <typename T>
 class ConcurrentAppendingVector {
 public:
-  // Initialize the vector with the given initial_capapcity
+  // Initialize the vector with the given initial_capacity
   explicit ConcurrentAppendingVector(size_t initialCapacity) : state(0ull) {
     // We need to keep track of all the arrays we allocate over time so we can
     // destroy them in our destructor.  This does not support inserting more

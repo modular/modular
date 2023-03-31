@@ -255,7 +255,7 @@ static StringRef toString(MicroBenchmark::ReportMetric metric) {
   case MicroBenchmark::ReportMetric::kBatchCount:
     return "batch_count";
   }
-  return "<uknown report metric>";
+  return "<unknown report metric>";
 }
 
 /// Print the report header in CSV format.

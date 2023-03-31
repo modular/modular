@@ -26,7 +26,7 @@ static constexpr size_t sha256Bytes = 256 / 8;
 using SHA256Hash = std::array<uint8_t, sha256Bytes>;
 
 /// This implements a simple low-dependency HMAC-SHA-256. Note that this has not
-/// been cryptanalzyed and so should not be used for security applications!
+/// been cryptanalyzed and so should not be used for security applications!
 SHA256Hash hmacSHA256(StringRef data, StringRef key);
 
 /// Useful definitions for working with BLAKE3.

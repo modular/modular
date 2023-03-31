@@ -33,7 +33,7 @@ bool hasEquivalentFloatType(DType dtype);
 /// Returns the null type if dtype has no representation as an MLIR type.
 IntegerType getEquivalentIntegerType(MLIRContext *ctx, DType dtype);
 
-/// Returns true if dtype has an equivalant MLIR integer type representation.
+/// Returns true if dtype has an equivalent MLIR integer type representation.
 bool hasEquivalentIntegerType(DType dtype);
 
 /// Given an MLIR float type, return the equivalent dtype.

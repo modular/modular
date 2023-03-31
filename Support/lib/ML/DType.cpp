@@ -22,13 +22,13 @@ ssize_t DType::getSizeInBytes(size_t numElements) const {
     return size >= 0 ? size : -1;
   }
 
-  // This switch handles special cases inline, or determines the logrithmic size
-  // of each element and breaks for the overflow check.
+  // This switch handles special cases inline, or determines the logarithmic
+  // size of each element and breaks for the overflow check.
   size_t widthShift;
   switch (getValue()) {
   default: {
-    // For integers, we just return the bitwidth turned into bytes.  We treat
-    /// i1/i2/i4 types as being a single byte.
+    // For integers, we just return the bit-width turned into bytes.  We treat
+    // i1/i2/i4 types as being a single byte.
     if (!isInt())
       return -1;
 

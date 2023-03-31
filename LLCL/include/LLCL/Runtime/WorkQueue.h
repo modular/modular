@@ -157,7 +157,7 @@ std::unique_ptr<WorkQueue> createSingleThreadWorkQueue();
 /// by calling await with mayDonate true. This is most appropriate for systems
 /// driven my a single main thread, such as an REPL or execution tool.
 ///
-/// If mainWillDonete is false then numThreads worker threads will be created,
+/// If mainWillDonate is false then numThreads worker threads will be created,
 /// on the assumption await will only be called with mayDonate false. This is
 /// most appropriate for multi-threaded servers which wish to share the same
 /// threading work queue across multiple requesting threads. The requesting

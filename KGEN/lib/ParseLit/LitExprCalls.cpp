@@ -175,7 +175,7 @@ PValue ParameterInferenceState::infer(SignatureType signature,
                                       ArrayRef<ASTExprAnd<AnyValue>> operands) {
   // TODO: Apply the bindings so far (plus a distinct new attribute relating
   // back to the original decls for ones that are missing) to the signature with
-  // getSpecializedSignature so we benefit from the already-fixed subsitutions
+  // getSpecializedSignature so we benefit from the already-fixed substitutions
   // being applied to the input types.  This can make them more concrete and
   // help with inferring dependent types based on already-bound parameters.
   //
@@ -589,7 +589,7 @@ struct OverloadFitness {
                                   bool allowImplicitConversions,
                                   ExprEmitter &emitter);
 
-  /// Add explaination for why this candidate doesn't work to the specified
+  /// Add explanation for why this candidate doesn't work to the specified
   /// diagnostic.
   void diagnose(SignatureType signature, const OverloadSet &callable,
                 ArrayRef<ASTExprAnd<AnyValue>> operands, LitDiagnostic &diag);
@@ -849,7 +849,7 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
           ASTType(), newBindings};
 }
 
-/// Add explaination for why this candidate doesn't work to the specified
+/// Add explanation for why this candidate doesn't work to the specified
 /// diagnostic. isMethodCall indicates whether the call was written with
 /// `foo(x,y)` syntax or `x.foo(y)` syntax.
 void OverloadFitness::diagnose(SignatureType signature,
@@ -1241,7 +1241,7 @@ PValue OverloadSet::getCallee(ExprEmitter &emitter) const {
   return PValue(ParamDeclRefAttr::get(decl));
 }
 
-/// Utility function to perform subsitutions of the specified callable bindings
+/// Utility function to perform substitutions of the specified callable bindings
 /// into the symbol for the given function declaration. It returns the resultant
 /// SymbolConstantAttr or produces an error message and returns null.
 TypedAttr OverloadSet::getBoundConstAttrFor(LIT::FuncOp funcOp,
@@ -1267,10 +1267,10 @@ TypedAttr OverloadSet::getBoundConstAttrFor(LIT::FuncOp funcOp,
   return funcOp.getBoundReference(newBindings);
 }
 
-/// Perform subsitutions of the specified bindings into the symbol, returning
+/// Perform substitutions of the specified bindings into the symbol, returning
 /// the resultant LITSymbolConstant attr or producing an error message and
 /// returning null. This allows producing a reference to a parameterized
-/// function without the parmaeters specified.  They can be bound later.
+/// function without the parameters specified.  They can be bound later.
 TypedAttr OverloadSet::getBoundConstantAttr(ExprEmitter &emitter) const {
   if (fnDecls.size() != 1) {
     assert(!fnDecls.empty() && "DirectCallable malformed");
@@ -1778,7 +1778,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
         ASTType expectedArgType = expectedType;
         if (calleeSig.isVararg(argIdx))
           // In the case of a variadic argument, we need to remove the
-          // !pop.varadic<> wrapper to get the type to convert to.
+          // !pop.variadic<> wrapper to get the type to convert to.
           expectedArgType = expectedArgType.getVariadicElementType();
         else if (auto packType = getIfPackType(calleeSig, argIdx))
           // Operands being applied to a concrete pack type argument must be

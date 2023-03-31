@@ -474,7 +474,7 @@ static ModulePassManager buildO3Pipeline() {
   OptimizePM.addPass(createFunctionToLoopPassAdaptor(
       std::move(LPM), /*UseMemorySSA=*/false, /*UseBlockFrequencyInfo=*/false));
 
-  // Distribute loops to allow partial vectorization.  I.e. isolate dependences
+  // Distribute loops to allow partial vectorization.  I.e. isolate dependencies
   // into separate loop that would otherwise inhibit vectorization.  This is
   // currently only performed for loops marked with the metadata
   // llvm.loop.distribute=true or when -enable-loop-distribute is specified.

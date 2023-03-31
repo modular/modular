@@ -197,7 +197,7 @@ ParseResult LitStmtParser::parseSuite(ssize_t curIndent) {
         /*stmtIndent=*/std::numeric_limits<size_t>::max());
 
   // If there is a newline, then parse a list of statements which can be either
-  // a statement list or a compount_stmt.  Parse all the statements that are
+  // a statement list or a compound_stmt.  Parse all the statements that are
   // more nested than this suite, and reject it if there are none.
   if (ssize_t(*indent) <= curIndent) {
     emitError(getTokenLocOrEndOfPreviousLineIfOnNewLine())
@@ -235,8 +235,8 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
   ASTType valueType = value.getRValueType();
 
   // Return true if the specified type can be implicitly ignored.
-  // TODO: Should have a better way to say that it is safe to implicily ignore a
-  // value of a type (e.g. a type decorator)
+  // TODO: Should have a better way to say that it is safe to implicitly ignore
+  // a value of a type (e.g. a type decorator)
   auto isImplicitlyIgnorableType = [&](ASTType type) -> bool {
     // TODO: This is incorrect for throwing functions that return None.
     return type.isEqualCanon(shared.getNoneType()) ||
@@ -285,9 +285,9 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
 }
 
 /// When `onlySimpleStmt` is true, this parses the simple_stmt production,
-/// otherwise it parses the broader `statment` production that includes compound
-/// statements.  This sets `parsedCompound` to true if `onlySimpleStmt` was
-/// false and we parsed a compound stmt.
+/// otherwise it parses the broader `statement` production that includes
+/// compound statements.  This sets `parsedCompound` to true if
+/// `onlySimpleStmt` was false and we parsed a compound stmt.
 ///
 /// statement ::= compound_stmt | simple_stmt
 ///
@@ -992,7 +992,7 @@ ParseResult LitStmtParser::parseIfStmt(LitLexerCursor startCursor,
         }
       }
 
-      emitError(decorator->getLoc(), "unsuported decorator on 'if' statement")
+      emitError(decorator->getLoc(), "unsupported decorator on 'if' statement")
           << decorator->getRange();
     }
   }

@@ -115,7 +115,7 @@ public:
   }
 
 private:
-  // Not implicity copyable, use the copy() method for an explicit copy of
+  // Not implicitly copyable, use the copy() method for an explicit copy of
   // this reference.
   RCRef(const RCRef &) = delete;
   RCRef &operator=(const RCRef &) = delete;

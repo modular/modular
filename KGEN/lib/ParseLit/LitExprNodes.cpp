@@ -98,7 +98,7 @@ static std::string substituteMLIRMagic(const SubscriptNode &node,
   llvm::raw_string_ostream os(result);
 
   for (auto *indexExpr : node.indices) {
-    // If the index is an identifer, and if it is a backtick identifier, we
+    // If the index is an identifier, and if it is a backtick identifier, we
     // treat it as an interpolated literal string.  Otherwise we look it up as
     // an expression.  Rationale: this allows using strings attributes, which
     // could be useful someday, and keeps __mlir_attr.`thing` more consistent
@@ -564,7 +564,7 @@ static ASTType parseMLIRType(StringRef name, const ExprNode *node,
   return result;
 }
 
-/// Perform subsitutions of the specified bindings into the symbol, returning,
+/// Perform substitutions of the specified bindings into the symbol, returning,
 /// in symConstAttrs, the resultant SymbolConstant attr for each adaptive
 /// function overload.
 /// On failure it produces an error message and returns failure.
@@ -1775,8 +1775,8 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
 
   // Check to see if we have a forward version of this function on the primary
   // receiver.
-  if (auto lhscv = lhs.ir.getIfCValue()) {
-    OverloadSet callee(lhscv.getRValueType(), specialFnInfo.name, argValues,
+  if (auto lhsCV = lhs.ir.getIfCValue()) {
+    OverloadSet callee(lhsCV.getRValueType(), specialFnInfo.name, argValues,
                        callNode, CallSyntax::kOperator, emitter,
                        /*no error*/ {});
     if (callee)
@@ -1788,8 +1788,8 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
   if (reversedFnInfo.kind != SpecialFunctionKind::kNormal) {
     // Swap the operand order.
     std::swap(argValues[0], argValues[1]);
-    if (auto rhscv = rhs.ir.getIfCValue()) {
-      OverloadSet callee(rhscv.getRValueType(), reversedFnInfo.name, argValues,
+    if (auto rhsCV = rhs.ir.getIfCValue()) {
+      OverloadSet callee(rhsCV.getRValueType(), reversedFnInfo.name, argValues,
                          callNode, CallSyntax::kReversedOperator, emitter,
                          /*no error*/ {});
       if (callee)

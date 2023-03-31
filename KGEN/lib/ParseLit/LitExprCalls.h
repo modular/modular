@@ -175,7 +175,7 @@ public:
   bool operator!() const { return isNull(); }
   explicit operator bool() const { return !isNull(); }
 
-  /// Perform subsitutions of the specified bindings into the symbol, returning
+  /// Perform substitutions of the specified bindings into the symbol, returning
   /// the resultant LITSymbolConstant attr or producing an error message and
   /// returning null. This allows producing a reference to a parameterized
   /// function without the parameters specified.  They can be bound later.

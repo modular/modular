@@ -187,7 +187,7 @@ public:
 
   /// The first time we encounter a DeclRefType, check to see if its parameter
   /// bindings agrees with the parameter declarations of the referred type
-  /// dedclaration.
+  /// declaration.
   void verifyRefType(DeclRefType refType) override;
 
   /// Invoke the verification function using the current operation's location.

@@ -24,9 +24,9 @@ using namespace M::LLCL;
 void WorkQueue::vtableAnchor() {}
 void Allocator::vtableAnchor() {}
 
-/// Create "Chain" AsynchValue, making sure that "Chain" type is registered
-/// before the construction. "Chain" is core to LLCL implemention, so it
-/// needs to be registered unconditonally from LLCL.
+/// Create "Chain" AsyncValue, making sure that "Chain" type is registered
+/// before the construction. "Chain" is core to LLCL implementation, so it
+/// needs to be registered unconditionally from LLCL.
 static AsyncValueRef<Chain> createReadyChain(Runtime &runtime) {
   return AsyncValueRef<Chain>::createReady(runtime);
 }

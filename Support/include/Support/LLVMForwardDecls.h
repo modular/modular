@@ -41,7 +41,7 @@ class SmallDenseMap;
 // All of the following classes have been already forward declared and imported
 // from `llvm` in to the `mlir` namespace. For classes with default template
 // arguments, MLIR does not import the type directly, it creates a templated
-// using statement. This is due to the limitiation that only one declaration of
+// using statement. This is due to the limitation that only one declaration of
 // a type can have default arguments. For those types, it is important to import
 // the MLIR version, and not the LLVM version. To keep things simple, all
 // classes here should be imported from the `mlir` namespace, not the `llvm`

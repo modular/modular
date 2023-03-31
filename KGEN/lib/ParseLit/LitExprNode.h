@@ -61,7 +61,7 @@ public:
     kBoolNot, // not x
     kAwait,   // await x
     kFirstUnaryOp = kNeg,
-    klastUnaryOp = kAwait,
+    kLastUnaryOp = kAwait,
 
     // Binary expressions.
     kAdd,

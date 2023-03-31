@@ -251,8 +251,8 @@ inline constexpr ssize_t DType::getWidthInBits() const {
   if (isComplex())
     return stripComplex().getWidthInBits() * 2;
 
-  // This switch handles special cases inline, or determines the logrithmic size
-  // of each element and breaks for the overflow check.
+  // This switch handles special cases inline, or determines the logarithmic
+  // size of each element and breaks for the overflow check.
   switch (getValue()) {
   default:
     return isInt() ? getIntegerWidthInBits() : -1;
@@ -321,7 +321,7 @@ DECLARE_TYPE_MAPPING(f64, double);
 
 /// This class is used to implement switch-like dispatch for DType
 /// values. In addition to allowing checks of enumerator values, it provides
-/// convenients helpers for things like "C++ floating point types" and "integer
+/// convenient helpers for things like "C++ floating point types" and "integer
 /// types ignoring sign" etc.  This should be used like:
 ///
 ///   someDType.dispatch<>(paramPtrs...)  // pass in void* / const void*

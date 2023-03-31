@@ -1277,13 +1277,13 @@ static void simplifyDivOperands(SmallVectorImpl<TypedAttr> &operands) {
   // Build up new operand list, e.g.,
   // for occurrence mapping `{ D0 : 1, 42 : 2 }`, we get { D0, 42, 42 }
   SmallVector<TypedAttr> newNumeratorOperands;
-  SmallVector<TypedAttr> newDenomenatorOperands;
+  SmallVector<TypedAttr> newDenominatorOperands;
   for (auto [numAttr, occurrences] : numeratorOperandToOccurrences)
     if (occurrences)
       newNumeratorOperands.push_back(numAttr);
   for (auto [denomAttr, occurrences] : denominatorOperandToOccurrences)
     if (occurrences)
-      newDenomenatorOperands.push_back(denomAttr);
+      newDenominatorOperands.push_back(denomAttr);
 
   // Update each product operands. Note that if all operands were cancelled out
   // for a product, we use 1, the multiplicative identity.
@@ -1294,7 +1294,7 @@ static void simplifyDivOperands(SmallVectorImpl<TypedAttr> &operands) {
       mulOp = ParamOperatorAttr::get(POC::MulNuw, operands);
   };
   updateMulOp(numeratorAttr, newNumeratorOperands);
-  updateMulOp(denominatorAttr, newDenomenatorOperands);
+  updateMulOp(denominatorAttr, newDenominatorOperands);
 }
 
 static Attribute simplifyDiv(SmallVectorImpl<TypedAttr> &operands) {
