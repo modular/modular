@@ -77,7 +77,13 @@ protected:
           clEnumValN(AllocatorType::kUseAfterFree, "use-after-free",
                      "Allocator to detect use-after-free errors. Not available "
                      "on all targets.")),
-      llvm::cl::init(AllocatorType::kLeakChecker)};
+      llvm::cl::init(
+#ifdef MODULAR_DEBUG
+          AllocatorType::kLeakChecker
+#else
+          AllocatorType::kMalloc
+#endif
+          )};
 
   // Specify the number of threads. If `thread==1`, then we automatically set
   // our work queue to `WorkQueueType::kSingleThread`. Otherwise, we assume the
