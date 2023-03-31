@@ -16,6 +16,12 @@ from Buffer import (
 )
 from SIMD import SIMD
 from Assert import assert_param, assert_param_bool, debug_assert
+from MatmulUtils import (
+    PartitionHeuristic,
+    get_matmul_prefetch_b_distance_k,
+    get_partitioned_matmul,
+    get_min_task_size,
+)
 from Matmul import (
     GemmShape,
     MatmulInnerLoopBPacked,
@@ -38,7 +44,6 @@ from Image import (
     ImageShape,
 )
 from IO import _printf
-from MachineConfiguration import get_matmul_prefetch_b_distance_k
 
 
 @register_passable("trivial")
