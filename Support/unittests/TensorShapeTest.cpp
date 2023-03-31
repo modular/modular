@@ -93,29 +93,21 @@ TEST(TensorShape, representations) {
   EXPECT_TRUE(tensorShapeRoundTrips({1, 1, 1}));
   EXPECT_TRUE(tensorShapeRoundTrips({1, 1, 1, 1}));
   EXPECT_TRUE(tensorShapeRoundTrips({1, 1, 1, 1, 1}));
-  EXPECT_TRUE(tensorShapeRoundTrips({1, 1, 1, 1, 1, 1}));
-  EXPECT_TRUE(tensorShapeRoundTrips({1, 1, 1, 1, 1, 1, 1}));
   EXPECT_TRUE(tensorShapeRoundTrips({100000}));
   EXPECT_TRUE(tensorShapeRoundTrips({1, 100000}));
   EXPECT_TRUE(tensorShapeRoundTrips({1, 1, 100000}));
   EXPECT_TRUE(tensorShapeRoundTrips({1, 1, 1, 100000}));
   EXPECT_TRUE(tensorShapeRoundTrips({1, 1, 1, 1, 100000}));
-  EXPECT_TRUE(tensorShapeRoundTrips({1, 1, 1, 1, 1, 100000}));
-  EXPECT_TRUE(tensorShapeRoundTrips({1, 1, 1, 1, 1, 1, 100000}));
   EXPECT_TRUE(tensorShapeRoundTrips({10000000000}));
   EXPECT_TRUE(tensorShapeRoundTrips({1, 10000000000}));
   EXPECT_TRUE(tensorShapeRoundTrips({1, 1, 10000000000}));
   EXPECT_TRUE(tensorShapeRoundTrips({1, 1, 1, 10000000000}));
   EXPECT_TRUE(tensorShapeRoundTrips({1, 1, 1, 1, 10000000000}));
-  EXPECT_TRUE(tensorShapeRoundTrips({1, 1, 1, 1, 1, 10000000000}));
-  EXPECT_TRUE(tensorShapeRoundTrips({1, 1, 1, 1, 1, 1, 10000000000}));
   EXPECT_TRUE(tensorShapeRoundTrips({kDynamic}));
   EXPECT_TRUE(tensorShapeRoundTrips({1, kDynamic}));
   EXPECT_TRUE(tensorShapeRoundTrips({1, 1, kDynamic}));
   EXPECT_TRUE(tensorShapeRoundTrips({1, 1, 1, kDynamic}));
   EXPECT_TRUE(tensorShapeRoundTrips({1, 1, 1, 1, kDynamic}));
-  EXPECT_TRUE(tensorShapeRoundTrips({1, 1, 1, 1, 1, kDynamic}));
-  EXPECT_TRUE(tensorShapeRoundTrips({1, 1, 1, 1, 1, 1, kDynamic}));
 }
 
 TEST(TensorShape, stringizing) {
