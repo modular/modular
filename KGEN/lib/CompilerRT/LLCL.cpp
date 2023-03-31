@@ -41,7 +41,7 @@ using LLCLOutputChainRef = LLCLWrapper<OutputChain>;
 using LLCLAsyncChainRef = LLCLWrapper<AsyncValueRef<Chain>>;
 
 /// Type of profiling entries for the Mojo tracer.
-using MojoProfilerEntry = ProfilerEntry<Trace::EnableTrace(Trace::kOther, 1)>;
+using MojoProfilerEntry = ProfilerEntry<Trace::EnableTrace(Trace::kMojo, 1)>;
 
 /// Dummy entry point to force loading.
 /// (All the other entry points use LLCLWrapper which we don't want to
