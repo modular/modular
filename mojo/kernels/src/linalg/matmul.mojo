@@ -14,6 +14,7 @@ from DType import DType
 from Buffer import (
     NDBuffer,
     Buffer,
+    DynamicRankBuffer,
     partial_simd_load,
     partial_simd_store,
     _raw_stack_allocation,
@@ -155,6 +156,10 @@ struct GemmShape:
     ) -> GemmShape:
         """Constructor of a gemm shape record from input buffers.
 
+        M, N, and K are intentionally calculated using `a` and `c` ONLY. This
+        is because `b` may be padded to a multiple of the tile size if it has
+        been pre-packed.
+
         Args:
             c: Buffer with allocated output space.
             a: Buffer containing matrix operand A.
@@ -195,6 +200,24 @@ struct GemmShape:
             gemm_shape.K = a.dim[0]()
         else:
             gemm_shape.K = a.dim[1]()
+        return gemm_shape
+
+    @staticmethod
+    fn get(
+        c: DynamicRankBuffer,
+        a: DynamicRankBuffer,
+        b: DynamicRankBuffer,
+        transpose_a: Bool,
+        transpose_b: Bool,
+    ) -> GemmShape:
+        var gemm_shape: GemmShape
+        gemm_shape.M = c.dim(0)
+        gemm_shape.N = c.dim(1)
+
+        if transpose_a:
+            gemm_shape.K = a.dim(0)
+        else:
+            gemm_shape.K = a.dim(1)
         return gemm_shape
 
     # TODO: re-enable using StaticIntTuple.
@@ -1309,6 +1332,7 @@ struct TiledMatmul[
         c: NDBuffer[2, config.shape_c, accum_type],
         a: NDBuffer[2, config.shape_a, value_type],
         b: NDBuffer[2, config.shape_b, value_type],
+        shape: GemmShape,
     ):
         """Interface function to run tiled matmul on a given set of operands,
         pre-allocated output space and data layout tag.
@@ -1321,17 +1345,7 @@ struct TiledMatmul[
             transpose_b: True if b is in transposed layout.
         """
 
-        let global_tile_shape = GemmShape.get[
-            config.shape_c,
-            config.shape_a,
-            config.shape_b,
-            accum_type,
-            value_type,
-            transpose_a,
-            transpose_b,
-        ](c, a, b)
-
-        Self.run(c, a, b, GemmShape(0, 0, 0), global_tile_shape)
+        Self.run(c, a, b, GemmShape(0, 0, 0), shape)
 
     # Interface method
     @staticmethod
