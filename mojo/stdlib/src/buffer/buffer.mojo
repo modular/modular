@@ -13,11 +13,11 @@ from Assert import (
 from DType import DType
 from Functional import unroll, vectorize
 from Int import Int
-from Index import StaticIntTuple
+from Index import StaticIntTuple, product as tuple_product
 from List import Dim, DimList, VariadicList
 from Math import fma, min, max, iota
 from Memory import stack_allocation, memset_zero
-from Pointer import DTypePointer, product as pointer_product
+from Pointer import DTypePointer
 from Intrinsics import PrefetchOptions, masked_load, masked_store
 from SIMD import SIMD
 from StaticTuple import StaticTuple
@@ -25,6 +25,9 @@ from TargetInfo import dtype_sizeof, dtype_simd_width, dtype_alignof
 from TypeUtilities import rebind
 from Range import range
 
+# The maximum tensor rank for any tensor shape.
+# This value must match kMaxRank in Support/include/Support/ML/TensorShape.h
+alias max_rank = 5
 
 # ===----------------------------------------------------------------------===#
 # Utilities
@@ -966,23 +969,25 @@ fn partial_simd_store[
 # DynamicRankBuffer
 # ===----------------------------------------------------------------------===#
 
-# CAUTION: This type is currently NOT "async safe" (see async_parallelize).
+# This type is "async safe" (see async_parallelize).
+# This struct must match DynamicRankBuffer in Kernels/lib/LitKernels/Kernels.cpp
 @register_passable("trivial")
 struct DynamicRankBuffer:
     """This buffer struct does not assume the rank to be static. It is not as
     efficient as the statically ranked buffer, but is useful when interacting
-    with external functions"""
+    with external functions. In particular the shape is represented as a fixed
+    (ie max_rank) array of dimensions to simplify the ABI."""
 
     var data: DTypePointer[DType.invalid.value]
     var rank: Int
-    var shape: DTypePointer[DType.index]
+    var shape: StaticIntTuple[max_rank]
     var type: DType
 
     @always_inline
     fn __init__(
         data: DTypePointer[DType.invalid.value],
         rank: Int,
-        shape: DTypePointer[DType.index],
+        shape: StaticIntTuple[max_rank],
         type: DType,
     ) -> DynamicRankBuffer:
         return DynamicRankBuffer {
@@ -995,7 +1000,7 @@ struct DynamicRankBuffer:
     @always_inline
     fn to_buffer[type: DType](self) -> Buffer[Dim(), type]:
         return Buffer[Dim(), type](
-            self.data.bitcast[type](), pointer_product(self.shape, self.rank)
+            self.data.bitcast[type](), tuple_product(self.shape, self.rank)
         )
 
     @always_inline
@@ -1034,7 +1039,7 @@ struct DynamicRankBuffer:
         func: __mlir_type.`!kgen.signature<<rank:index>() -> !lit.none>`
     ](self):
         debug_assert(
-            self.rank > 0 and self.rank <= 5,
+            self.rank > 0 and self.rank <= max_rank,
             "rank be be positive and less or equal to 5",
         )
 
@@ -1060,12 +1065,12 @@ struct DynamicRankBuffer:
 
     @always_inline
     fn num_elements(self) -> Int:
-        return pointer_product(self.shape, self.rank)
+        return tuple_product(self.shape, self.rank)
 
     @always_inline
     fn dim(self, idx: Int) -> Int:
         debug_assert(idx < self.rank, "dimension index is out of bounds")
-        return self.shape.load(idx)[0].value
+        return self.shape[idx]
 
     @always_inline
     fn _shape_to_static_tuple[
