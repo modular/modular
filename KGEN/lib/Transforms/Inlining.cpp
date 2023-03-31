@@ -19,7 +19,6 @@
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Threading.h"
-#include "llvm/ADT/ScopedHashTable.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/RWMutex.h"
@@ -108,7 +107,7 @@ struct AttrTypeMangler {
       do {
         mangledDecl = b.getStringAttr((decl.getValue() + Twine(count++)).str());
       } while (curScope.decls.find(mangledDecl) != curScope.decls.end());
-      mangledDecls.insert(decl, mangledDecl);
+      mangledDecls.try_emplace(decl, mangledDecl);
       needsMangling = true;
     }
     return needsMangling;
@@ -144,12 +143,6 @@ struct AttrTypeMangler {
   }
 
   Type mangleRefsIn(Type type, bool &hasRefs) {
-    if (auto sig = dyn_cast<SignatureType>(type)) {
-      TimeTraceScope</*Enabled=*/false> traceScope("signature-remove");
-      // Filter out the shaowed parameters from the mangling map.
-      MapT::ScopeTy scope(mangledDecls);
-      return mangleRefsInImpl(sig, hasRefs);
-    }
     return mangleRefsInImpl(type, hasRefs);
   }
 
@@ -212,7 +205,7 @@ struct AttrTypeMangler {
     bool empty = true;
     for (ParamDeclRefAttr ref : uses.usesFromAbove) {
       if (StringAttr mangled = mangledDecls.lookup(ref.getName())) {
-        mangler.mangledDecls.insert(ref.getName(), mangled);
+        mangler.mangledDecls.try_emplace(ref.getName(), mangled);
         empty = false;
       }
     }
@@ -234,9 +227,7 @@ struct AttrTypeMangler {
       mangler.recursivelyMangle(nestedScope, graph);
   }
 
-  using MapT = llvm::ScopedHashTable<StringAttr, StringAttr>;
-  MapT mangledDecls;
-  MapT::ScopeTy scope{mangledDecls};
+  DenseMap<StringAttr, StringAttr> mangledDecls;
 
   ReflessCache &noNestedRefs;
 };

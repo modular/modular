@@ -106,10 +106,19 @@ public:
   /// Dump the parameter evaluator state.
   void dump() const;
 
+  /// Add an input parameter binding.
+  void addInputValue(Attribute value) { inputParamValues.push_back(value); }
+  /// Add a result parameter binding.
+  void addResultValue(Attribute value) { inputParamValues.push_back(value); }
+  /// Set the relative input depth.
+  void setInputDepth(size_t depth) { inputDepth = depth; }
+
+private:
+  /// These are the bound parameter values, captured in simplified form.
+  DenseMap<StringAttr, Attribute> paramValues;
+
   /// These are the top-level input parameters to use when rebinding a
   /// signature.
-  /// FIXME: Make this private when the signature type named parameter
-  /// transition is complete.
   SmallVector<Attribute> inputParamValues;
   /// These are the top-level result parameters to use when rebinding a
   /// signature.
@@ -117,11 +126,9 @@ public:
   /// The current depth from the root signature, if there is one.
   size_t rootDepth = 0;
   /// The relative depth from the signature where the input parameters are from.
+  /// This is zero for most applications, but should be set accordingly when
+  /// substituting attributes or types inside a signature.
   size_t inputDepth = 0;
-
-private:
-  /// These are the bound parameter values, captured in simplified form.
-  DenseMap<StringAttr, Attribute> paramValues;
 
   /// This caches attributes and Types with parameter references rebound, and
   /// remembers complex attributes that don't have parameter subexprs (noted as

@@ -60,7 +60,7 @@ LIT::getUnboundSpecializedSignature(SignatureType type,
     Type unboundType = evaluator.getReboundType(type);
     if (unboundType != value.getType())
       value = ParamOperatorAttr::get(POC::Rebind, value, unboundType);
-    evaluator.inputParamValues.push_back(value);
+    evaluator.addInputValue(value);
     unboundBindings.push_back(value);
   }
   type = type.getSpecializedSignature(
