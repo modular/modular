@@ -314,15 +314,19 @@ PValue ParameterInferenceState::infer(SignatureType signature,
 //===----------------------------------------------------------------------===//
 
 /// Check that our set of parameter bindings work with the specified input
-/// parameters, returning a checked ParamBindArrayAttr if so.  If the parameters
-/// do not work, this emits an diagnostic (if `declOp` is non-null) and set
+/// parameters and call operands (if any), returning a checked
+/// ParamBindArrayAttr if so.  If the parameters do not work, this emits an
+/// diagnostic (if `declOp` is non-null) and sets
 /// `incorrectBindingNo/Expectedtype` to the bad binding (or -1 if there is a
 /// count mismatch).
+///
+/// This rejects the signature list if all the parameters are not bound.
 ParamBindArrayAttr InputParamBindings::verifyBindings(
     ParamDeclArrayAttr actualParamDecls, StringRef baseName, SMLoc loc,
     ssize_t &incorrectBindingNo, ASTType &incorrectBindingExpectedType,
     ExprEmitter &emitter, Operation *declOp, bool paramVarargs,
-    ParameterInferenceHookTy parameterInferenceHook, bool inferPack) const {
+    bool packVarargs, ArrayRef<ASTExprAnd<AnyValue>> callOperands,
+    ParameterInferenceHookTy parameterInferenceHook) const {
 
   // If we have an incorrect number of bindings specified, this lambda reports
   // the problem.
@@ -359,6 +363,7 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
   // so far and remap types on demand.
   LitParameterEvaluator evaluator(emitter.getDeclResolver());
   size_t nextBinding = 0;
+  bool isPackVararg = packVarargs && !callOperands.empty();
   for (auto [idx, declX] : llvm::enumerate(actualParamDecls)) {
     ParamDeclAttr decl = declX;
     size_t index = idx;
@@ -374,42 +379,28 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
 
     // Check to see if we ran out of bindings to provide to this param decl.
     if (nextBinding == bindings.size()) {
-      // If the parameter decl is a variadic parameter list, and we could not
-      // infer a sequence of parameters that fulfills it, then we can fulfill it
-      // with an empty list.  We know it must be the last parameter decl.
-      auto handleVararg = [&]() -> bool {
-        if (isVararg) {
-          auto emptyVariadic = KGEN::VariadicAttr::get(
-              ArrayRef<TypedAttr>(), cast<KGEN::VariadicType>(decl.getType()));
-          setParamValue(emptyVariadic);
-          return true;
-        }
-        return false;
-      };
+      // If the parameter decl is a variadic parameter list, and do not have
+      // pack operands that could be used to infer those parameters, then we can
+      // fulfill it with an empty list.  We know it must be the last parameter
+      // decl.
+      if (isVararg && !isPackVararg) {
+        auto emptyVariadic = KGEN::VariadicAttr::get(
+            ArrayRef<TypedAttr>(), cast<KGEN::VariadicType>(decl.getType()));
+        setParamValue(emptyVariadic);
+        continue;
+      }
+
       // If we have a method to infer parameter values, invoke it to see if we
       // can get an inferred value for the parameter.
-      auto handleInference = [&]() -> bool {
-        if (parameterInferenceHook) {
-          auto expectedType = evaluator.getReboundType(decl.getType());
-          if (auto value = parameterInferenceHook(index, decl, expectedType,
-                                                  newBindings)) {
-            assert(value.getType().mlirType == expectedType &&
-                   "inferred a default parameter value of wrong type");
-            setParamValue(value);
-            return true;
-          }
+      if (parameterInferenceHook) {
+        auto expectedType = evaluator.getReboundType(decl.getType());
+        if (auto value = parameterInferenceHook(index, decl, expectedType,
+                                                newBindings)) {
+          assert(value.getType().mlirType == expectedType &&
+                 "inferred a default parameter value of wrong type");
+          setParamValue(value);
+          continue;
         }
-        return false;
-      };
-
-      // When inferring based on pack arguments, preferentially infer, and
-      // otherwise fall back to using an empty variadic sequence.
-      if (inferPack) {
-        if (handleInference() || handleVararg())
-          continue;
-      } else {
-        if (handleVararg() || handleInference())
-          continue;
       }
 
       // TODO: Apply default values for parameters.
@@ -517,9 +508,11 @@ InputParamBindings::getNextExpectedBindingType(SignatureType candidateType,
   ssize_t incorrectBindingNo;
   ASTType incorrectBindingExpectedType;
   (void)verifyBindings(
-      candidateType.getInputParams(), /*no diagnostics*/ "xx", SMLoc(),
-      incorrectBindingNo, incorrectBindingExpectedType, emitter,
+      candidateType.getInputParams(),
+      /*no diagnostics*/ "xx", SMLoc(), incorrectBindingNo,
+      incorrectBindingExpectedType, emitter,
       /*don't emit diagnostics*/ nullptr, candidateType.hasParamVarargs(),
+      candidateType.hasPackVarargs(), /*callOperands=*/{},
       [&](size_t index, ParamDeclAttr decl, ASTType expectedType,
           ArrayRef<ParamBindAttr> bindingsSoFar) -> PValue {
         nextExpectedType = expectedType;
@@ -620,12 +613,12 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
       signature.getInputParams(), callable.baseName, callExpr->getLoc(),
       incorrectBindingNo, incorrectBindingExpectedType, emitter,
       /*don't emit diagnostics*/ nullptr, signature.hasParamVarargs(),
+      signature.hasPackVarargs(), operands,
       [&](size_t index, ParamDeclAttr decl, ASTType expectedParamType,
           ArrayRef<ParamBindAttr> bindingsSoFar) -> PValue {
         return ParameterInferenceState(emitter.shared, index, decl)
             .infer(signature, bindingsSoFar, operands);
-      },
-      /*inferPack=*/true);
+      });
 
   // If there is an error, return the problem.
   if (!newBindings) {

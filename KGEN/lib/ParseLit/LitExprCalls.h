@@ -71,19 +71,20 @@ public:
       ArrayRef<ParamBindAttr> bindings)>;
 
   /// Check that our set of parameter bindings work with the specified input
-  /// parameters, returning a checked ParamBindArrayAttr if so.  If the
-  /// parameters do not work, this emits an diagnostic (if `declOp` is non-null)
-  /// and set `incorrectBindingNo/Expectedtype` to the bad binding (or -1 if
-  /// there is a count mismatch).
+  /// parameters and call operands (if any), returning a checked
+  /// ParamBindArrayAttr if so.  If the parameters do not work, this emits an
+  /// diagnostic (if `declOp` is non-null) and sets
+  /// `incorrectBindingNo/Expectedtype` to the bad binding (or -1 if there is a
+  /// count mismatch).
   ///
   /// This rejects the signature list if all the parameters are not bound.
   ParamBindArrayAttr
   verifyBindings(ParamDeclArrayAttr actualParamDecls, StringRef baseName,
                  SMLoc loc, ssize_t &incorrectBindingNo,
                  ASTType &incorrectBindingExpectedType, ExprEmitter &emitter,
-                 Operation *declOp, bool paramVarargs,
-                 ParameterInferenceHookTy parameterInferenceHook = {},
-                 bool inferPack = false) const;
+                 Operation *declOp, bool paramVarargs, bool packVarargs = false,
+                 ArrayRef<ASTExprAnd<AnyValue>> callOperands = {},
+                 ParameterInferenceHookTy parameterInferenceHook = {}) const;
 
   /// Given a candidate that may or may not be compatible with the given
   /// parameter set so far, indicate what the next parameter's expected type
