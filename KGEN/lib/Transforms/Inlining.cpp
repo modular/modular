@@ -21,7 +21,10 @@
 #include "mlir/IR/Threading.h"
 #include "llvm/ADT/ScopedHashTable.h"
 #include "llvm/ADT/StringSet.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/RWMutex.h"
+
+#define DEBUG_TYPE "kgen-inlining"
 
 using namespace M;
 using namespace KGEN;
@@ -601,14 +604,96 @@ static StringAttr getCalleeSymbol(KGENCallOpInterface call) {
       .getAttr();
 }
 
-static LogicalResult inlineFunctionCall(FuncOp func,
-                                        const SymbolTable &symtab) {
-  // Collect all calls that inline in this function.
+/// Replace the call operation with the given region using values from args for
+/// the region inputs.
+///
+/// The region is inserted into its own scope - either a loop or async execute
+/// op (depending on the type of the call). This scope is returned from the
+/// function.
+static std::pair<Operation *, int> inlineRegion(KGENCallOpInterface call,
+                                                Region &region,
+                                                ArrayRef<BlockArgument> args) {
+  StringAttr label = StringAttr::get(call.getContext(), "inlined_cf_scope");
+
+  mlir::IRRewriter b{OpBuilder(call)};
+  Operation *scope;
+  if (isa<CallOp>(call.getOperation())) {
+    scope = b.create<HLCF::LoopOp>(call.getLoc(), call->getResultTypes(),
+                                   ValueRange(), label);
+  } else {
+    auto asyncCall = cast<LIT::AsyncCallOp>(call.getOperation());
+    scope = b.create<LIT::AsyncExecuteOp>(call.getLoc(), asyncCall.getType());
+  }
+  b.createBlock(&scope->getRegions().front());
+
+  IRMapping map;
+  for (auto [value, arg] : llvm::zip(call->getOperands(), args))
+    map.map(arg, value);
+  for (Operation &op : region.getOps())
+    b.clone(op, map);
+  unsigned numReturns = 0;
+  scope->walk([&](Operation *op) {
+    // Replace all returns with breaks to the control flow scope.
+    if (!isa<ReturnOp>(op))
+      return;
+    b.setInsertionPoint(op);
+    if (isa<CallOp>(call.getOperation()))
+      b.replaceOpWithNewOp<HLCF::BreakOp>(op, op->getOperands(), label);
+    else
+      b.replaceOpWithNewOp<LIT::AsyncReturnOp>(op, op->getOperands());
+
+    ++numReturns;
+  });
+  b.replaceOp(call, scope->getResults());
+  assert(numReturns > 0);
+  return std::make_pair(scope, numReturns);
+}
+
+/// Replace the call operation with the body of the callee function.
+///
+/// The function body is inserted into its own scope - either a loop or async
+/// execute op (depending on the type of the call). This scope is returned from
+/// the function.
+static std::pair<Operation *, int> inlineFunctionBody(KGENCallOpInterface call,
+                                                      FuncOp callee) {
+  return inlineRegion(call, callee.getBodyRegion(), callee.getArguments());
+}
+
+/// Inlining might create trivial loops with a single break at the end. This
+/// function cleans it up.
+static void foldTrivialLoop(Operation *op) {
+  auto loop = dyn_cast<HLCF::LoopOp>(op);
+  if (!loop)
+    return;
+
+  mlir::IRRewriter b{OpBuilder(op)};
+
+  Block &body = loop.getBody().front();
+  Operation *term = body.getTerminator();
+  b.inlineBlockBefore(&body, loop);
+  b.replaceOp(loop, term->getOperands());
+  b.eraseOp(term);
+}
+
+/// Iteratively inline calls into the given function.
+///
+/// The decision whether to inline a specific call is performed by
+/// 'shouldInline' function, which takes two arguments: a function and a call
+/// considered to be inlined into it.
+/// The function body is inserted into a special scope which is passed to the
+/// 'postprocess' callback. The callback takes three arguments: the function
+/// being inlined, the scope containing its body, and location of the original
+/// call operation.
+static LogicalResult iterativelyInlineFunctionCalls(
+    FuncOp func, const SymbolTable &symtab,
+    function_ref<bool(FuncOp, KGENCallOpInterface)> shouldInline,
+    function_ref<void(FuncOp, Operation *, Location loc)> postprocess) {
   struct EndStack {};
+
+  // Collect all calls that inline in this function.
   SmallVector<SmartVariant<Operation *, EndStack>> calls;
   func.walk([&](KGENCallOpInterface call) {
-    auto callee = symtab.lookup<FuncOp>(getCalleeSymbol(call));
-    if (callee.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled)
+    if (shouldInline(func, call))
       calls.emplace_back(call);
   });
 
@@ -617,7 +702,6 @@ static LogicalResult inlineFunctionCall(FuncOp func,
   llvm::SetVector<Operation *, SmallVector<Operation *, 16>,
                   SmallPtrSet<Operation *, 16>>
       seenFuncs;
-  StringAttr label = StringAttr::get(func.getContext(), "inlined_cf_scope");
   while (!calls.empty()) {
     SmartVariant<Operation *, EndStack> next = calls.pop_back_val();
     if (isa<EndStack>(next)) {
@@ -626,6 +710,8 @@ static LogicalResult inlineFunctionCall(FuncOp func,
       continue;
     }
     auto call = cast<KGENCallOpInterface>(cast<Operation *>(next));
+    if (!isa<CallOp>(call) && !isa<LIT::AsyncCallOp>(call))
+      continue;
     auto callee = symtab.lookup<FuncOp>(getCalleeSymbol(call));
 
     // If we recursed onto the same function, give up and emit an error.
@@ -645,35 +731,62 @@ static LogicalResult inlineFunctionCall(FuncOp func,
     }
     callstack.push_back(call.getLoc());
     calls.emplace_back(EndStack{});
+    auto loc = call.getLoc();
 
-    mlir::IRRewriter b{OpBuilder(call)};
-    Operation *scope;
-    if (isa<CallOp>(call.getOperation())) {
-      scope = b.create<HLCF::LoopOp>(call.getLoc(), call->getResultTypes(),
-                                     ValueRange(), label);
-    } else {
-      auto asyncCall = cast<LIT::AsyncCallOp>(call.getOperation());
-      scope = b.create<LIT::AsyncExecuteOp>(call.getLoc(), asyncCall.getType());
-    }
-    b.createBlock(&scope->getRegions().front());
+    LLVM_DEBUG(llvm::dbgs() << "Inlining\n    " << callee.getSymName()
+                            << "  into\n    " << func.getSymName() << "\n");
+    auto [scope, numReturns] = inlineFunctionBody(call, callee);
 
-    IRMapping map;
-    for (auto [value, arg] :
-         llvm::zip(call->getOperands(), callee.getArguments()))
-      map.map(arg, value);
-    for (Operation &op : *callee.getBody())
-      b.clone(op, map);
-    unsigned numReturns = 0;
-    AlwaysInlineLevel level = callee.getAlwaysInlineLevel();
+    postprocess(callee, scope, loc);
+
+    // Scan the inlined body for calls that we might want to also inline
+    scope->walk([&](Operation *op) {
+      // Check for a call to recursively inline.
+      if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
+        if (shouldInline(func, call))
+          calls.emplace_back(call);
+      }
+    });
+    // If the loop scope was trivial (one return), fold it away.
+    if (numReturns == 1)
+      foldTrivialLoop(scope);
+  }
+  assert(callstack.empty() && seenFuncs.empty());
+  return success();
+}
+
+void ForceInlinePass::runOnOperation() {
+  LLVM_DEBUG(llvm::dbgs() << "==== ForceInline Pass ====\n");
+  SymbolTable &symtab =
+      getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
+
+  std::vector<FuncOp> rootFuncs;
+  for (auto func : getOperation().getOps<FuncOp>()) {
+    // Skip over functions that are force inlined. Start inlining from the
+    // tips.
+    if (func.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled)
+      continue;
+    rootFuncs.push_back(func);
+  }
+  auto shouldInline = [&](FuncOp func, KGENCallOpInterface call) {
+    auto callee = symtab.lookup<FuncOp>(getCalleeSymbol(call));
+    if (callee.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled)
+      return true;
+
+    return false;
+  };
+  auto updateDebugInfo = [&](FuncOp func, Operation *scope, Location callLoc) {
+    AlwaysInlineLevel level = func.getAlwaysInlineLevel();
+
     scope->walk([&](Operation *op) {
       if (op != scope) {
         // If this is an `always_inline(nodebug)`, erase the location of the
         // inlined operations by replacing them with the location of the call.
         // Otherwise, propagate the inlined location via a `CallSiteLoc`.
         if (level == AlwaysInlineLevel::EnabledNoDebug)
-          op->setLoc(call.getLoc());
+          op->setLoc(callLoc);
         else
-          op->setLoc(mlir::CallSiteLoc::get(op->getLoc(), call.getLoc()));
+          op->setLoc(mlir::CallSiteLoc::get(op->getLoc(), callLoc));
       }
       // Erase `debuginfo.value` operations when inlining without debug info.
       if (level == AlwaysInlineLevel::EnabledNoDebug) {
@@ -682,53 +795,12 @@ static LogicalResult inlineFunctionCall(FuncOp func,
           return;
         }
       }
-
-      // Check for a call to recursively inline.
-      if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
-        auto callee = symtab.lookup<FuncOp>(getCalleeSymbol(call));
-        if (callee.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled)
-          calls.emplace_back(call);
-      }
-
-      // Replace all returns with breaks to the control flow scope.
-      if (!isa<ReturnOp>(op))
-        return;
-      b.setInsertionPoint(op);
-      if (isa<CallOp>(call.getOperation()))
-        b.replaceOpWithNewOp<HLCF::BreakOp>(op, op->getOperands(), label);
-      else
-        b.replaceOpWithNewOp<LIT::AsyncReturnOp>(op, op->getOperands());
-
-      ++numReturns;
     });
-    b.replaceOp(call, scope->getResults());
-
-    // If the loop scope was trivial (one return), fold it away.
-    assert(numReturns > 0);
-    if (auto loop = dyn_cast<HLCF::LoopOp>(scope); loop && numReturns == 1) {
-      for (Operation &op : llvm::make_early_inc_range(
-               loop.getBody().front().without_terminator()))
-        op.moveBefore(loop);
-      b.replaceOp(loop, loop.getBody().front().getTerminator()->getOperands());
-    }
-  }
-  assert(callstack.empty() && seenFuncs.empty());
-  return success();
-}
-
-void ForceInlinePass::runOnOperation() {
-  SymbolTable &symtab =
-      getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
-
-  std::vector<FuncOp> rootFuncs;
-  for (auto func : getOperation().getOps<FuncOp>()) {
-    // Skip over functions that are force inlined. Start inlining from the tips.
-    if (func.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled)
-      continue;
-    rootFuncs.push_back(func);
-  }
+  };
   if (failed(mlir::failableParallelForEach(
-          &getContext(), rootFuncs,
-          [&](FuncOp func) { return inlineFunctionCall(func, symtab); })))
+          &getContext(), rootFuncs, [&](FuncOp func) {
+            return iterativelyInlineFunctionCalls(func, symtab, shouldInline,
+                                                  updateDebugInfo);
+          })))
     return signalPassFailure();
 }
