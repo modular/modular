@@ -29,7 +29,7 @@ bool Detail::TensorShapeStorage::equalsExcludingAuxOOL(
 
 /// Bulk reassignment of elements.
 /// TODO: Forcing dimensions to 64-bit is suboptimal on 32-bit hosts.
-void Detail::TensorShapeStorage::assign(ArrayRef<int64_t> elements) {
+void Detail::TensorShapeStorage::assign(ArrayRef<ssize_t> elements) {
   if (getRepKind() == RepKind::kOutOfLine)
     delete[] representation.repOutOfLine.dims;
 
@@ -110,7 +110,7 @@ void Detail::TensorShapeStorage::assign(ArrayRef<int64_t> elements) {
 
 void TensorShape::print(raw_ostream &os) const {
   llvm::interleave(
-      getDims(), os,
+      *this, os,
       [&](ssize_t dim) {
         if (mlir::ShapedType::isDynamic(dim)) {
           os << "?";
@@ -139,7 +139,7 @@ ErrorOr<TensorShape> TensorShape::parseFromString(StringRef str) {
   SmallVector<StringRef, kMaxRank> splitStr;
   str.split(splitStr, 'x');
 
-  SmallVector<int64_t, kMaxRank> shape;
+  SmallVector<ssize_t, kMaxRank> shape;
   shape.reserve(splitStr.size());
   for (auto &it : splitStr) {
     int64_t value;
@@ -149,6 +149,9 @@ ErrorOr<TensorShape> TensorShape::parseFromString(StringRef str) {
       return Error(Twine("could not parse dimension integer from string: ") +
                    str + " because " + it + " cannot be parsed as an integer");
     shape.emplace_back(value);
+    if (shape.back() != value)
+      return Error(Twine("could not parse dimension integer from string: ") +
+                   str + " because " + it + " cannot be represented");
   }
 
   return TensorShape(shape);
