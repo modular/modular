@@ -105,9 +105,9 @@ struct HostInfoWrapper {
 /// Wrapping takes place in the order in which it is defined
 template <typename KeyGen, typename... Wrappers>
 class WrappedKey {
-public:
   using KeyTy = typename KeyGen::KeyTy;
 
+public:
   static std::string hashKey(KeyTy key) {
     std::string hashedKey = KeyGen::hashKey(std::forward<KeyTy>(key));
     // Apply all the wrappers.
