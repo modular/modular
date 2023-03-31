@@ -1759,40 +1759,6 @@ KGEN::verifyParamDeclsMatch(StringRef paramKind, StringRef originatorName,
   return success();
 }
 
-/// If the specified operation is non-null and contains parameters, collect
-/// them into the specified array.
-static void collectContextParameters(Operation *op,
-                                     SmallVector<ParamDeclAttr> &params) {
-  auto decl = dyn_cast_or_null<DeclInterface>(op);
-  if (!decl || isa<FuncInterface>(*decl))
-    return;
-  collectContextParameters(op->getParentOp(), params);
-  llvm::append_range(params, decl.getInputParams());
-}
-
-/// Return the full signature of this declaration, including parameters from
-/// enclosing struct declarations.
-SignatureType KGEN::getFullSignature(FuncInterface decl) {
-  SignatureType signature = decl.getSignature();
-
-  // Collect contextual params, if there are none, the full signature is the
-  // same as the local signature.
-  SmallVector<ParamDeclAttr> inputParams;
-  collectContextParameters(decl.getOperation()->getParentOp(), inputParams);
-  if (inputParams.empty())
-    return signature;
-
-  IndexRefRemapper remapper(inputParams, {}, inputParams.size());
-  for (ParamDeclAttr param : signature.getInputParams())
-    inputParams.push_back(remapper.remap(param));
-
-  return SignatureType::get(
-      ParamDeclArrayAttr::get(signature.getContext(), inputParams),
-      remapper.remap(signature.getResultParams()),
-      remapper.remap(signature.getValues()),
-      remapper.remap(signature.getMetadata()));
-}
-
 /// Verify that the provided operation has exactly one block in its body
 /// region, or that region was cached.
 LogicalResult KGEN::verifyOneBlockOrCached(Operation *op) {

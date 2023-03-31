@@ -26,10 +26,6 @@ class TypeArrayAttr;
 class VariadicType;
 class VariadicAttr;
 
-/// Return the full signature of this declaration, including parameters from
-/// enclosing struct declarations.
-SignatureType getFullSignature(FuncInterface decl);
-
 /// Utility class for remapping named parameter references to index references.
 class IndexRefRemapper {
 public:
