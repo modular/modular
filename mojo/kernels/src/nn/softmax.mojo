@@ -197,9 +197,9 @@ fn _softmax_3_pass_step_2[
     buffer_size: Dim,
     type: DType,
     pre_update_func: __mlir_type[
-        `!kgen.signature<<simd_width:`,
+        `!kgen.signature<<`,
         Int,
-        `, type: `,
+        `,`,
         DType,
         `>(`,
         SIMD[
@@ -214,9 +214,9 @@ fn _softmax_3_pass_step_2[
         `>`,
     ],
     post_update_func: __mlir_type[
-        `!kgen.signature<<simd_width:`,
+        `!kgen.signature<<`,
         Int,
-        `, type: `,
+        `,`,
         DType,
         `>(`,
         SIMD[
@@ -269,9 +269,9 @@ fn _softmax_3_pass_step_3[
     buffer_size: Dim,
     type: DType,
     accum_proc_func: __mlir_type[
-        `!kgen.signature<<simd_width: `,
+        `!kgen.signature<<`,
         Int,
-        `, type: `,
+        `,`,
         DType,
         `>(`,
         SIMD[
@@ -286,9 +286,9 @@ fn _softmax_3_pass_step_3[
         `>`,
     ],
     accum_apply_func: __mlir_type[
-        `!kgen.signature<<simd_width: `,
+        `!kgen.signature<<`,
         Int,
-        `, type: `,
+        `,`,
         DType,
         `>(`,
         SIMD[
@@ -330,9 +330,9 @@ fn _softmax_3_pass_base[
     buffer_size: Dim,
     type: DType,
     step2_pre_update_func: __mlir_type[
-        `!kgen.signature<<simd_width:`,
+        `!kgen.signature<<`,
         Int,
-        `, type: `,
+        `,`,
         DType,
         `>(`,
         SIMD[
@@ -347,9 +347,9 @@ fn _softmax_3_pass_base[
         `>`,
     ],
     step2_post_update_func: __mlir_type[
-        `!kgen.signature<<simd_width:`,
+        `!kgen.signature<<`,
         Int,
-        `, type: `,
+        `,`,
         DType,
         `>(`,
         SIMD[
@@ -364,9 +364,9 @@ fn _softmax_3_pass_base[
         `>`,
     ],
     step3_accum_proc_func: __mlir_type[
-        `!kgen.signature<<simd_width:`,
+        `!kgen.signature<<`,
         Int,
-        `, type: `,
+        `,`,
         DType,
         `>(`,
         SIMD[
@@ -381,9 +381,9 @@ fn _softmax_3_pass_base[
         `>`,
     ],
     step3_accum_apply_func: __mlir_type[
-        `!kgen.signature<<simd_width:`,
+        `!kgen.signature<<`,
         Int,
-        `, type: `,
+        `,`,
         DType,
         `>(`,
         SIMD[

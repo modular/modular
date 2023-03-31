@@ -36,9 +36,9 @@ fn gather_reduce[
     reduce_axis: __mlir_type.index,
     simd_width: Int,
     reduce_fn: __mlir_type[
-        `!kgen.signature<<simd_width:`,
+        `!kgen.signature<<`,
         Int,
-        `, type: `,
+        `,`,
         DType,
         `>(`,
         SIMD[
