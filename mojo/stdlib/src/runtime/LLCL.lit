@@ -371,7 +371,8 @@ struct OutputChainPtr:
     fn __copy__(self) -> Self:
         return Self {ptr: self.ptr}
 
-    fn deepCopy(self) -> OwningOutputChainPtr:
+    @always_inline
+    fn deepcopy(self) -> OwningOutputChainPtr:
         """Returns a pointer to a fresh heap-allocated LLCL::OutputChain
         containing a copy of this. The result must be explicitly destroyed.
         """
@@ -380,6 +381,7 @@ struct OutputChainPtr:
             _type:[OwningOutputChainPtr],
         ](self.ptr)
 
+    @always_inline
     fn get_runtime(self) -> Runtime:
         """Returns the runtime managing the output chain."""
         return __mlir_op.`pop.external_call`[
@@ -387,6 +389,7 @@ struct OutputChainPtr:
             _type : [Runtime.ptr_type],
         ](self.ptr)
 
+    @always_inline
     fn mark_ready(self):
         """Marks the output chain as being ready.
         The underlying LLCL::OutputChain is not moved.
@@ -396,6 +399,7 @@ struct OutputChainPtr:
             _type:[],
         ](self.ptr)
 
+    @always_inline
     fn mark_error(self, message: StringRef):
         """Marks the output chain as having an error with message.
         The underlying LLCL::OutputChain is not moved.
@@ -409,6 +413,7 @@ struct OutputChainPtr:
             message.length.value,
         )
 
+    @always_inline
     fn trace(self, label: StringRef):
         """If enabled, begin a time profile entry with label which will end
         when this chain is completed, either by mark_ready() or mark_error().
@@ -422,6 +427,7 @@ struct OutputChainPtr:
             label.length.value,
         )
 
+    @always_inline
     fn trace(self, label: StringRef, detail: StringRef):
         """If enabled, begin a time profile entry with label and detail which
         will end when this chain is completed, either by mark_ready() or
@@ -437,6 +443,24 @@ struct OutputChainPtr:
             detail.data.address,
             detail.length.value,
         )
+
+    @always_inline
+    fn trace_detail[
+        detail_fn: __mlir_type[
+            `!kgen.signature<(!pop.pointer<`,
+            String,
+            `> byref_result) -> !lit.none>`,
+        ]
+    ](self, label: StringRef):
+        """If enabled, begin a time profile entry with label and detail which
+        will end when this chain is completed, either by mark_ready() or
+        mark_error().
+        """
+        let str = detail_fn()
+
+        self.trace(label, str.strref())
+
+        str.__del__()
 
 
 @register_passable
@@ -521,7 +545,7 @@ struct AsyncTaskGroup:
 
     fn __init__(self&, num_work_items: Int, out_chain: OutputChainPtr):
         self.counter = num_work_items.__as_mlir_index()
-        self.out_chain = out_chain.deepCopy()
+        self.out_chain = out_chain.deepcopy()
         self.coroutines = UnsafeFixedVector[Coroutine[none]](num_work_items)
 
     fn __del__(self&):
