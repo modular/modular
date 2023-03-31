@@ -296,7 +296,7 @@ fn naive_matmul[
     transpose_a: Bool,
     transpose_b: Bool,
     epilogue_elemwise_func: __mlir_type[
-        `!kgen.signature<<accum_type: `,
+        `!kgen.signature<<`,
         DType,
         `>(`,
         Int,  # Row
@@ -309,7 +309,7 @@ fn naive_matmul[
         `>`,
     ],
     epilogue_rowise_func: __mlir_type[
-        `!kgen.signature<<accum_type: `,
+        `!kgen.signature<<`,
         DType,
         `>(`,
         Int,  # Row
