@@ -32,7 +32,7 @@ public:
   };
 
   /// The compilation abstraction level to generate debug info for, used in
-  /// tadem with DebugInfoLevel.
+  /// tandem with DebugInfoLevel.
   enum DebugAtLevel {
     /// Generate debug info for the LLVM output.
     kDebugAtLLVM

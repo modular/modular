@@ -428,7 +428,7 @@ struct UnaryOpNode final : public ExprNode {
   ExprNode *const subExpr;
 
   static bool classof(const ExprNode *node) {
-    return node->kind >= kFirstUnaryOp && node->kind <= klastUnaryOp;
+    return node->kind >= kFirstUnaryOp && node->kind <= kLastUnaryOp;
   }
   SMLoc getLoc() const override { return opLoc; }
   LitSourceRange getRange() const override {

@@ -989,7 +989,7 @@ parseOptionalParameterSignature(LitParserBase &p, ASTDecl &declScope,
 //===----------------------------------------------------------------------===//
 
 void LitParserBase::parseDocString(ASTDecl &decl) {
-  // The doc string is simply a followon string literal.
+  // The doc string is simply a follow-on string literal.
   if (getToken().isNot(LitToken::string))
     return;
   decl.setDocString(consumeToken());

@@ -84,7 +84,7 @@ def test_bool_context(a: NotBoolConvertible):
      pass
 
 fn test_if_decorator(a: Bool):
-  @not_good() # expected-error {{unsuported decorator on 'if' statement}}
+  @not_good() # expected-error {{unsupported decorator on 'if' statement}}
   if a:
     pass
 

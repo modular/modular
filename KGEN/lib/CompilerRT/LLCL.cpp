@@ -21,7 +21,7 @@ using namespace M::LLCL;
 // Helpers
 //===----------------------------------------------------------------------===//
 
-/// An opoaque wrapper around a pointer to a T.
+/// An opaque wrapper around a pointer to a T.
 template <typename T>
 struct LLCLWrapper {
   void *ptr;
@@ -179,7 +179,7 @@ COMPILERRT_EXPORT void KGEN_CompilerRT_LLCL_OutputChainPtr_MarkError(
       .setToError(Twine(StringRef(messagePtr, messageLen)));
 }
 
-/// Returns an empty OutputChain, with empy chain and 'unknown' location.
+/// Returns an empty OutputChain, with empty chain and 'unknown' location.
 COMPILERRT_EXPORT LLCLOutputChainRef
 KGEN_CompilerRT_LLCL_OutputChainPtr_CreateEmpty(LLCLRuntimeRef rt) {
   auto chain = AsyncValueRef<Chain>::allocate(unwrap(rt));

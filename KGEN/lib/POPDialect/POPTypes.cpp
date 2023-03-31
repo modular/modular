@@ -865,7 +865,7 @@ void POPDialect::registerTypes() {
 
 /// Parse a type registered to this dialect.
 /// For most cases we rely on the default `generatedTypeParser`, but we have a
-/// special handling for "scalar<t>", which is a syntactix sugar for
+/// special handling for "scalar<t>", which is a syntactic sugar for
 /// "simd<1, t>".
 Type POPDialect::parseType(DialectAsmParser &p) const {
   StringRef mnemonic;

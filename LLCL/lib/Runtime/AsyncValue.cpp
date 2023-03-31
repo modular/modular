@@ -26,7 +26,7 @@ Detail::SomeConcreteAsyncValue::~SomeConcreteAsyncValue() {
     getTypeID().getValueDestructor()(getPayloadPointer());
   else {
     // TODO: If unconstructed this will leak the waiters list.  We should signal
-    // this as an error (checking for ressurection) etc.
+    // this as an error (checking for resurrection) etc.
     llvm::report_fatal_error(
         "destroying a non-available AsyncValue isn't implemented");
   }
@@ -517,7 +517,7 @@ void AsyncValue::resolveIndirectAndDecRef(RCRef<AsyncValue> &&newValue) {
 
   // Otherwise, the new value is still unresolved.  That's ok, we'll just wait
   // until it becomes ready and then try again. Since the caller is
-  // relinquishing one referencee to this AsyncValue we can capture this within
+  // relinquishing one reference to this AsyncValue we can capture this within
   // the andThen closure. The reference to this will be removed when newValue
   // is ready.
   AsyncValue *newValuePtr = newValue.getPointer();

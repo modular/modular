@@ -591,7 +591,7 @@ VariadicType VariadicType::get(Type elementType) {
 }
 
 /// A variadic type is like an `llvm::ArrayRef`: a pointer to the start of the
-/// contiguous sequence, and the size of that seqeunce. So, its size would be
+/// contiguous sequence, and the size of that sequence. So, its size would be
 /// the size of a pointer, plus the size of the size type (which has the same
 /// size and alignment as a pointer type).
 std::optional<int64_t> VariadicType::getTypeSize(TargetInfoAttr target) const {

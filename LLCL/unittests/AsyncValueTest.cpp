@@ -192,7 +192,7 @@ TEST_P(AsyncValueTest, EmplaceOnForeignThread_DeadlockOnFailure) {
 // It works for both single- and multi-threaded work queues. In the
 // multi-threaded case in particular it tests that the machinery to collect
 // and execute waiters treats the waiter list as a true queue which may
-// graw and shrink while executing a waiter.
+// grow and shrink while executing a waiter.
 TEST_P(AsyncValueTest, RecursiveAsync) {
   auto runtime = createRuntime(/*numThreads=*/2);
 

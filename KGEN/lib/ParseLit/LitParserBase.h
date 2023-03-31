@@ -61,7 +61,7 @@ public:
     return success();
   }
 
-  /// This returns the current lexor cursor and succeeds, so it can be used in a
+  /// This returns the current lexer cursor and succeeds, so it can be used in a
   /// parser pipeline.
   ParseResult getCursor(LitLexerCursor &cursor) const {
     cursor = lexer.getCursor();

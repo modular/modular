@@ -298,7 +298,7 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // If we're emitting the archive, do it.
   if (clOptions.cmd == MojoCommand::kEmit) {
-    // otify the object layer that we don't need immediate execution.
+    // Notify the object layer that we don't need immediate execution.
     objLayer.notForImmediateExecution();
     // And lookup the archive.
     std::optional<Cache::BufferRef> archive =

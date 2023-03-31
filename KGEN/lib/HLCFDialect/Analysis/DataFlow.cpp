@@ -70,7 +70,7 @@ LogicalResult HLCF::DeadCodeAnalysis::visit(mlir::ProgramPoint point) {
               if (!isa<mlir::CallOpInterface, mlir::RegionBranchOpInterface,
                        ControlFlowNode>(op))
                 continue;
-              // If the operation is known to have no predecsesors, the
+              // If the operation is known to have no predecessors, the
               // terminator is not reachable.
               auto *preds = getOrCreateFor<PredecessorState>(point, &op);
               reachable = !preds->allPredecessorsKnown() ||

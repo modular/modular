@@ -24,7 +24,7 @@ enum class XFeature : size_t {
   kMask_Xtile = (kMask_XTileCfg | kMask_XTileData)
 };
 
-// This funciton must be called before using Intel AMX
+// This function must be called before using Intel AMX
 COMPILERRT_EXPORT bool KGEN_CompilerRT_Init_Intel_AMX() {
   unsigned long bitmask = 0;
   if (syscall(SYS_arch_prctl, ARCH_GET_XCOMP_PERM, &bitmask))

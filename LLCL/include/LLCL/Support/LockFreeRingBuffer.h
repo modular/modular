@@ -93,7 +93,7 @@ public:
     if (curPublished <= curReadIndex)
       return ItemType();
 
-    // Claim the ownership of `consumed`. If `compare_exchange_weak` succeedes,
+    // Claim the ownership of `consumed`. If `compare_exchange_weak` succeeds,
     // we can make sure that 1) `buffer[curConsumed % size]` contains a valid
     // item, and 2) no other threads is taking the item from `buffer[curConsumed
     // % size]`.

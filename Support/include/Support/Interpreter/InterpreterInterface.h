@@ -140,7 +140,7 @@ private:
   /// operation.
   ErrorTreeOr<SmallVector<Attribute>> runInterpreter();
 
-  /// The interpreter targt configuration.
+  /// The interpreter target configuration.
   TargetInfoAttr target;
 
   /// An internal memory table.

@@ -9,7 +9,7 @@
 
 namespace M::LLCL {
 
-/// This type is used to model dependences between side-effecting operations,
+/// This type is used to model dependencies between side-effecting operations,
 /// by turning these side effects into explicitly modeled values.  Its runtime
 /// representation is a zero sized value.
 ///

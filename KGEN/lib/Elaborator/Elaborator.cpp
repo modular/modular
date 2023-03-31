@@ -1021,7 +1021,7 @@ public:
 
   /// Spawn a clone for kgen.param.fork. This creates a new FuncOp that is a
   /// sibling to the parent of the kgen.param.fork op. It replaces the
-  /// kgen.param.fork with a param.declare to allow specialization to succeeed.
+  /// kgen.param.fork with a param.declare to allow specialization to succeed.
   std::optional<ErrorTree>
   spawnParamForkClone(ParamForkOp forkOp, Attribute value,
                       ExpansionTreeNode *forkParentNode,

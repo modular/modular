@@ -254,7 +254,7 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
       // through, or if the body falls through and so does the else.
       bool tryFallsThrough = false;
 
-      // Diagose unneeded code.
+      // Diagnose unneeded code.
       if (!tryBodyRaises) {
         Operation &firstOpInExcept = tryOp.getExceptRegion().front().front();
         if (!firstOpInExcept.hasTrait<OpTrait::IsTerminator>())

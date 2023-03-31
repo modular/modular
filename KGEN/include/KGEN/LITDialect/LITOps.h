@@ -86,4 +86,4 @@ struct MangledSymbol {
 llvm::raw_ostream &operator<<(llvm::raw_ostream &os, const MangledSymbol &ms);
 } // namespace M::KGEN::LIT
 
-#endif // KGEN_KGENDIALECT_NLKGENOPS_H
+#endif // KGEN_KGENDIALECT_LITOPS_H

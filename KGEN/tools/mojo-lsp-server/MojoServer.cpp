@@ -108,9 +108,9 @@ struct MojoDocument {
   // Diagnostics
 
   std::optional<lsp::Diagnostic>
-  buildLspDiagnoticFromSMDiagnostic(llvm::SourceMgr &sourceMgr,
-                                    ArrayRef<llvm::SMDiagnostic> diags,
-                                    const lsp::URIForFile &uri);
+  buildLspDiagnosticFromSMDiagnostic(llvm::SourceMgr &sourceMgr,
+                                     ArrayRef<llvm::SMDiagnostic> diags,
+                                     const lsp::URIForFile &uri);
 
   //===--------------------------------------------------------------------===//
   // Code Actions
@@ -190,7 +190,8 @@ void MojoDocument::initialize(const lsp::URIForFile &uri,
 
   // Process the collected diagnostics.
   for (ArrayRef<llvm::SMDiagnostic> diags : handlerCtx.smDiagnostics) {
-    if (auto lspDiag = buildLspDiagnoticFromSMDiagnostic(sourceMgr, diags, uri))
+    if (auto lspDiag =
+            buildLspDiagnosticFromSMDiagnostic(sourceMgr, diags, uri))
       diagnostics.push_back(*lspDiag);
   }
 }
@@ -288,7 +289,7 @@ buildCodeActionFromSMFixit(const llvm::SMFixIt &fixit, llvm::SourceMgr &mgr,
 }
 
 /// Convert the given MLIR diagnostic to the LSP form.
-std::optional<lsp::Diagnostic> MojoDocument::buildLspDiagnoticFromSMDiagnostic(
+std::optional<lsp::Diagnostic> MojoDocument::buildLspDiagnosticFromSMDiagnostic(
     llvm::SourceMgr &sourceMgr, ArrayRef<llvm::SMDiagnostic> diags,
     const lsp::URIForFile &uri) {
   const llvm::SMDiagnostic &mainDiag = diags[0];

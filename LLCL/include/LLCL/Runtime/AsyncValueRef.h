@@ -12,7 +12,7 @@
 
 namespace M::LLCL {
 
-/// This class specialises AnyAsyncValueRef to assume the target AsyncValue
+/// This class specializes AnyAsyncValueRef to assume the target AsyncValue
 /// is (intended to hold) a T. Thus the get() and emplace() methods don't
 /// require additional template parameters.
 template <typename T>
@@ -133,7 +133,7 @@ public:
   using ConsumingWaiter = llvm::unique_function<void(AsyncValueRef<T> &&ref)>;
 
   /// Register that waiter should be run when the referenced AsyncValue is
-  /// ready (with an emplaced value or an error). See AnyAsyncValeuRef::andThen
+  /// ready (with an emplaced value or an error). See AnyAsyncValueRef::andThen
   /// for more details.
   template <bool IsAsync>
   void andThen(ConsumingWaiter &&waiter) && {

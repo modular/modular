@@ -160,7 +160,7 @@ private:
       "O1", cl::desc("Enable optimizations, but favor compilation speed")};
   cl::opt<bool> optLevel2{"O2", cl::desc("Enable most optimizations")};
   cl::opt<bool> optLevel3{"O3",
-                          cl::desc("Aggresively enable all optimizations")};
+                          cl::desc("Aggressively enable all optimizations")};
 };
 
 class KGENCLOptions : public KGENCommonOptions, public CommonCLOptions {
