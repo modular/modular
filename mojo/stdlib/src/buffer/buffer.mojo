@@ -1036,7 +1036,7 @@ struct DynamicRankBuffer:
 
     @always_inline
     fn rank_dispatch[
-        func: __mlir_type.`!kgen.signature<<rank:index>() -> !lit.none>`
+        func: __mlir_type.`!kgen.signature<<index>() -> !lit.none>`
     ](self):
         debug_assert(
             self.rank > 0 and self.rank <= max_rank,
