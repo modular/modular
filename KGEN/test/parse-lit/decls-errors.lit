@@ -203,7 +203,7 @@ fn badPackCalls():
   # expected-error @+1 {{invalid call to 'examplePack': argument #1 cannot be converted from '__mlir_type.index' to '$F32::F32'}}
   examplePack[Int, F32](1, 2)
   # expected-warning @below {{could not infer parameter type for this value, because it is not concrete}}
-  # expected-error @below {{invalid call to 'examplePack': callee expects 0 arguments, but 1 was specified}}
+  # expected-error @below {{invalid call to 'examplePack': callee expects 1 input parameter but 0 were provided}}
   examplePack(packArgOverload)
 
 ##===----------------------------------------------------------------------===##

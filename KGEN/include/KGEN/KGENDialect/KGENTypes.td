@@ -230,6 +230,10 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     bool hasParamVarargs() {
       return bitEnumContainsAny(getFnEffects(), FnEffects::ParamVararg);
     }
+    /// Return true if the function has pack varargs.
+    bool hasPackVarargs() {
+      return bitEnumContainsAny(getFnEffects(), FnEffects::PackVararg);
+    }
 
     /// Return the convention for the specified value input parameter.
     ValueInputConvention getInputConvention(size_t inputNo) {

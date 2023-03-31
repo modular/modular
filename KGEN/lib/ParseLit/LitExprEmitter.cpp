@@ -468,9 +468,10 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
       ssize_t incorrectBindingNo = 0;
       ASTType incorrectBindingExpectedType;
       auto bindingAttr = paramBindings.verifyBindings(
-          signature.getInputParams(), "<<UNUSED>>", expr->getLoc(),
-          incorrectBindingNo, incorrectBindingExpectedType, *this, nullptr,
-          signature.hasParamVarargs());
+          signature.getInputParams(),
+          /*baseName=*/"<<UNUSED>>", expr->getLoc(), incorrectBindingNo,
+          incorrectBindingExpectedType, *this,
+          /*don't emit diagnostics*/ nullptr, signature.hasParamVarargs());
       if (!bindingAttr) {
         // If it didn't work out, then it is an error because parameterized
         // values cannot be used in a dynamic context.
