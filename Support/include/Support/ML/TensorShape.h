@@ -221,6 +221,32 @@ private:
 
   bool isOutOfLine() const { return getRepKind() == RepKind::kOutOfLine; }
 };
+
+// NOTE: These assignment helpers could live in TensorShapeStorage or
+// TensorShape however older gcc versions complain.
+template <typename IteratorType>
+void assign(TensorShapeStorage &storage, IteratorType begin, IteratorType end) {
+  storage.assign(SmallVector<ssize_t, kMaxRank>(begin, end));
+}
+
+template <typename ElementType>
+void assign(TensorShapeStorage &storage, ArrayRef<ElementType> elts) {
+  assign(storage, elts.begin(), elts.end());
+}
+
+template <>
+inline void assign<ssize_t>(TensorShapeStorage &storage,
+                            ArrayRef<ssize_t> elts) {
+  storage.assign(elts);
+}
+
+template <>
+inline void assign<size_t>(TensorShapeStorage &storage, ArrayRef<size_t> elts) {
+  // Pointer cast to avoid copying the elements.
+  ArrayRef<ssize_t> castedElts((const ssize_t *)elts.data(), elts.size());
+  storage.assign(castedElts);
+}
+
 } // namespace Detail
 
 class TensorShape {
@@ -235,26 +261,26 @@ public:
   // Allow constructing from both 32/64-bit and signed/unsigned integer
   // elements.  These are defined explicitly (instead of as a template) so
   // implicit conversions from things like SmallVector will work.
-  /*implicit*/ TensorShape(ArrayRef<int32_t> elts) { assign(elts); }
-  /*implicit*/ TensorShape(ArrayRef<uint32_t> elts) { assign(elts); }
-  /*implicit*/ TensorShape(ArrayRef<int64_t> elts) { assign(elts); }
-  /*implicit*/ TensorShape(ArrayRef<uint64_t> elts) { assign(elts); }
+  /*implicit*/ TensorShape(ArrayRef<int32_t> elts) { assign(storage, elts); }
+  /*implicit*/ TensorShape(ArrayRef<uint32_t> elts) { assign(storage, elts); }
+  /*implicit*/ TensorShape(ArrayRef<int64_t> elts) { assign(storage, elts); }
+  /*implicit*/ TensorShape(ArrayRef<uint64_t> elts) { assign(storage, elts); }
 #ifdef __APPLE__
-  /*implicit*/ TensorShape(ArrayRef<size_t> elts) { assign(elts); }
-  /*implicit*/ TensorShape(ArrayRef<ssize_t> elts) { assign(elts); }
+  /*implicit*/ TensorShape(ArrayRef<size_t> elts) { assign(storage, elts); }
+  /*implicit*/ TensorShape(ArrayRef<ssize_t> elts) { assign(storage, elts); }
 #endif // __APPLE__
 
   template <typename ElementType,
             typename = std::enable_if_t<std::is_integral_v<ElementType>>>
   TensorShape(const std::initializer_list<ElementType> &elts) {
-    assign(elts.begin(), elts.end());
+    assign(storage, elts.begin(), elts.end());
   }
 
   // Allow converting from a range of integer type, with elements that can be
   // converted to ssize_t.
   template <typename IteratorType>
   TensorShape(IteratorType begin, IteratorType end) {
-    assign(begin, end);
+    assign(storage, begin, end);
   }
 
   uint8_t getAuxiliaryStorage() const { return storage.getAuxiliary(); }
@@ -301,29 +327,6 @@ public:
 
   /// Parses a string of the form dim0xdim1x...xdimN into a TensorShape.
   static ErrorOr<TensorShape> parseFromString(StringRef);
-
-private:
-  template <typename IteratorType>
-  void assign(IteratorType begin, IteratorType end) {
-    storage.assign(SmallVector<ssize_t, kMaxRank>(begin, end));
-  }
-
-  template <typename ElementType>
-  void assign(ArrayRef<ElementType> elts) {
-    assign(elts.begin(), elts.end());
-  }
-
-  template <>
-  void assign(ArrayRef<ssize_t> elts) {
-    storage.assign(elts);
-  }
-
-  template <>
-  void assign(ArrayRef<size_t> elts) {
-    // Pointer cast to avoid copying the elements.
-    ArrayRef<ssize_t> castedElts((const ssize_t *)elts.data(), elts.size());
-    storage.assign(castedElts);
-  }
 
 protected:
   Detail::TensorShapeStorage storage;
