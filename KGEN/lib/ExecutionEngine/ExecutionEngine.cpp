@@ -90,7 +90,7 @@ ErrorOrSuccess StaticSymbolLayer::add(StringRef libName, StringRef funcName,
   llvm::orc::JITDylib *dylib = *dylibOr;
   if (auto err = dylib->define(llvm::orc::absoluteSymbols(
           {{mangleAndIntern(funcName),
-            {llvm::pointerToJITTargetAddress(fn),
+            {llvm::orc::ExecutorAddr::fromPtr(fn),
              llvm::JITSymbolFlags::Exported |
                  llvm::JITSymbolFlags::Absolute}}}))) {
     return Error(toString(std::move(err)));
@@ -337,11 +337,11 @@ ExecutionEngine::create(ExecutionEngineOptions options,
       // they're hidden visibility.
       auto err = dylib.define(llvm::orc::absoluteSymbols(
           {{session.intern("_llvm_orc_registerJITLoaderGDBWrapper"),
-            {llvm::pointerToJITTargetAddress(
+            {llvm::orc::ExecutorAddr::fromPtr(
                  &llvm_orc_registerJITLoaderGDBWrapper),
              llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Absolute}},
            {session.intern("_llvm_orc_registerJITLoaderGDBAllocAction"),
-            {llvm::pointerToJITTargetAddress(
+            {llvm::orc::ExecutorAddr::fromPtr(
                  &llvm_orc_registerJITLoaderGDBAllocAction),
              llvm::JITSymbolFlags::Exported |
                  llvm::JITSymbolFlags::Absolute}}}));
@@ -408,7 +408,7 @@ ExecutionEngine::~ExecutionEngine() {
 ExecutionEngine::ExecutionEngine(ExecutionEngine &&other) = default;
 
 ErrorOr<CompiledFunc> ExecutionEngine::lookup(StringRef symbol) {
-  llvm::Expected<llvm::JITEvaluatedSymbol> sym =
+  llvm::Expected<llvm::orc::ExecutorSymbolDef> sym =
       executionSession->lookup(searchOrder, mangleAndIntern(symbol));
   if (!sym) {
     // Check to see if any of the layers have errors.
@@ -423,8 +423,7 @@ ErrorOr<CompiledFunc> ExecutionEngine::lookup(StringRef symbol) {
                  " (from the layer: " + (*found)->takeError().get() + ")");
   }
 
-  return CompiledFunc(
-      llvm::jitTargetAddressToPointer<void *>(sym->getAddress()));
+  return CompiledFunc(sym->getAddress().toPtr<void *>());
 }
 
 llvm::orc::SymbolStringPtr
