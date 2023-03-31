@@ -6,7 +6,9 @@
 
 add_subdirectory(GraphCompiler/Conversion)
 add_subdirectory(GraphCompiler/MOGG)
-add_subdirectory(API)
+if (TARGET modular-pybind-ext)
+  add_subdirectory(API)
+endif()
 
 add_modular_unittest(
   TOP_LEVEL_CHECK
