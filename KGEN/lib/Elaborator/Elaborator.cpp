@@ -983,11 +983,11 @@ public:
 
   ErrorTreeOr<FuncOp>
   getConcreteFunction(Location loc, SymbolRefAttr symbolRef,
-                      ArrayRef<ParamBindAttr> paramValues) override;
+                      ArrayRef<TypedAttr> paramValues) override;
 
   std::optional<ErrorTree>
   getAllConcreteFunctions(Location loc, SymbolRefAttr symbolRef,
-                          ArrayRef<ParamBindAttr> paramValues,
+                          ArrayRef<TypedAttr> paramValues,
                           std::vector<FuncOp> &funcs) override;
 
   /// Lookup a symbol of type T in the symbol table collection.
@@ -1047,9 +1047,10 @@ public:
   /// Elaborating region parameters is the most non-local part of the elaborator
   /// - we have to interact with the module symbol table to put these regions
   /// into top-level generators.
-  ErrorTreeOr<ArrayAttr> resolveCallInputParams(KGENCallOpInterface call,
-                                                ExpansionTreeNode *parentNode,
-                                                ParamBindArrayAttr inputValues);
+  ErrorTreeOr<ArrayAttr>
+  resolveCallInputParams(KGENCallOpInterface call,
+                         ExpansionTreeNode *parentNode,
+                         ArrayRef<TypedAttr> inputValues);
 
   /// Process a param.declare.region op by creating a generator with the correct
   /// captures. We don't specialize the generator until the call-site because we
@@ -1156,14 +1157,14 @@ void ElaboratorImpl::finalizeAndVerifyFunction(
 
 ErrorTreeOr<FuncOp>
 ElaboratorImpl::getConcreteFunction(Location loc, SymbolRefAttr symbolRef,
-                                    ArrayRef<ParamBindAttr> paramValues) {
+                                    ArrayRef<TypedAttr> paramValues) {
   auto funcItf = lookup<FuncInterface>(symbolRef);
   if (auto func = dyn_cast<FuncOp>(funcItf.getOperation()))
     return func;
 
   SmallVector<Attribute> inputParams;
-  for (ParamBindAttr bind : paramValues)
-    inputParams.push_back(cast<Attribute>(bind.getValue()));
+  for (TypedAttr value : paramValues)
+    inputParams.push_back(cast<Attribute>(value));
 
   auto vals = ArrayAttr::get(symbolRef.getContext(), inputParams);
 
@@ -1197,7 +1198,7 @@ ElaboratorImpl::getConcreteFunction(Location loc, SymbolRefAttr symbolRef,
 
 std::optional<ErrorTree>
 ElaboratorImpl::getAllConcreteFunctions(Location loc, SymbolRefAttr symbolRef,
-                                        ArrayRef<ParamBindAttr> paramValues,
+                                        ArrayRef<TypedAttr> paramValues,
                                         std::vector<FuncOp> &funcs) {
   auto funcItf = lookup<FuncInterface>(symbolRef);
   if (auto func = dyn_cast<FuncOp>(funcItf.getOperation())) {
@@ -1206,8 +1207,8 @@ ElaboratorImpl::getAllConcreteFunctions(Location loc, SymbolRefAttr symbolRef,
   }
 
   SmallVector<Attribute> inputParams;
-  for (ParamBindAttr bind : paramValues)
-    inputParams.push_back(cast<Attribute>(bind.getValue()));
+  for (TypedAttr value : paramValues)
+    inputParams.push_back(cast<Attribute>(value));
 
   auto vals = ArrayAttr::get(symbolRef.getContext(), inputParams);
 
@@ -1414,10 +1415,9 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
     // handling any parameter captures. This can't be pushed into
     // specializeGenerator below because it requires passing specific values
     // from the caller's node to the callee's node.
-    for (ParamBindAttr bind : calleeSymbol.getParamValues()) {
+    for (TypedAttr bind : calleeSymbol.getParamValues()) {
       ErrorTreeOr<Attribute> attrValue =
-          parent->evaluator.concretizeParameterExpr(user.getLoc(),
-                                                    bind.getValue());
+          parent->evaluator.concretizeParameterExpr(user.getLoc(), bind);
       if (attrValue.isError())
         return attrValue.takeError();
 
@@ -1427,10 +1427,6 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
         ParameterUseDefGraph *graph =
             parent->knownRegions.lookup(region.getRegionName());
         calleeNode->knownRegions[region.getRegionName()] = graph;
-
-        // And make sure the evaluator has the rebound value.
-        calleeNode->evaluator.setOrOverwriteParameterValue(bind.getName(),
-                                                           region);
 
         // Do the same for any potential parameter captures.
         for (ParamDeclRefAttr param : graph->usesFromAbove) {
@@ -1551,16 +1547,16 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
 ErrorTreeOr<ArrayAttr>
 ElaboratorImpl::resolveCallInputParams(KGENCallOpInterface call,
                                        ExpansionTreeNode *parentNode,
-                                       ParamBindArrayAttr inputValues) {
+                                       ArrayRef<TypedAttr> inputValues) {
   LLVM_DEBUG(logger.logOp("Resolving Call Input Params", call);
-             logger << " with input bindings: " << inputValues << "\n");
+             logger << " with input bindings: ";
+             llvm::interleaveComma(inputValues, logger); logger << "\n");
 
   SmallVector<Attribute> boundInputParams;
-  for (ParamBindAttr param : inputValues) {
+  for (TypedAttr param : inputValues) {
     // Fold the parameter expression in this context to a simple constant.
     ErrorTreeOr<Attribute> valueOr =
-        parentNode->evaluator.concretizeParameterExpr(call.getLoc(),
-                                                      param.getValue());
+        parentNode->evaluator.concretizeParameterExpr(call.getLoc(), param);
     if (valueOr.isError())
       return valueOr.takeError();
 
@@ -1607,9 +1603,10 @@ ElaboratorImpl::processCallOp(KGENCallOpInterface call,
   inlineCallToConcreteRegion(call, region, map, AlwaysInlineLevel::Enabled);
 
   // Set any bindings on the region in the evaluator context.
-  for (ParamBindAttr bind : decl.getParamValues())
-    parent->evaluator.setOrOverwriteParameterValue(bind.getName(),
-                                                   bind.getValue());
+  for (auto [decl, value] :
+       llvm::zip(region->getParentOfType<DeclInterface>().getInputParams(),
+                 decl.getParamValues()))
+    parent->evaluator.setOrOverwriteParameterValue(decl, value);
 
   // Collect all the ops to process *in the region*.
   std::vector<Operation *> opsToRewriteInRegion;
@@ -1910,8 +1907,8 @@ ElaboratorImpl::specializeGenerator(ExpansionTreeNode *genNode) {
   OpBuilder b(generator);
   auto newFunc = b.create<FuncOp>(
       generator.getLoc(), mangledName,
-      SignatureType::get(ParamDeclArrayAttr::get(generator.getContext(), {}),
-                         ParamDeclArrayAttr::get(generator.getContext(), {}),
+      SignatureType::get(TypeArrayAttr::get(generator.getContext(), {}),
+                         TypeArrayAttr::get(generator.getContext(), {}),
                          generator.getFunctionType(), generator.getMetadata()),
       generator.getAlwaysInlineLevel());
 

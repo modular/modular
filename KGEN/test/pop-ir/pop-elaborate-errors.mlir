@@ -9,7 +9,7 @@ kgen.generator @invalid_bitcast<size, type: dtype>(%a: !pop.simd<4, f32>) -> !po
 // expected-error @below {{no viable expansions}}
 kgen.generator @impl(%a: !pop.simd<4, f32>) {
   // expected-note @below {{call expansion failed}}
-  %0 = kgen.call @invalid_bitcast<size = 2, type: dtype = ui32>(%a) : (!pop.simd<4, f32>) -> (!pop.simd<2, ui32>)
+  %0 = kgen.call @invalid_bitcast<2, :dtype ui32>(%a) : (!pop.simd<4, f32>) -> (!pop.simd<2, ui32>)
   kgen.return
 }
 

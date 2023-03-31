@@ -1075,15 +1075,25 @@ static PValue substituteParametersIntoUserDefinedType(
   // Check the bindings.
   ssize_t incorrectBindingNo = 0;
   ASTType incorrectBindingExpectedType;
-  auto bindingAttr = paramBindings.verifyBindings(
-      structOp.getInputParamsAttr(), structOp.getName(), subscript.getLoc(),
-      incorrectBindingNo, incorrectBindingExpectedType, emitter, structOp,
-      structOp.getParamVarargs());
-  if (!bindingAttr)
+  SmallVector<Type> paramTypes;
+  for (ParamDeclAttr decl : structOp.getInputParams())
+    paramTypes.push_back(decl.getType());
+  ParameterExprArrayAttr bindingValuesAttr = paramBindings.verifyBindings(
+      paramTypes, structOp.getInputParamsAttr(), structOp.getName(),
+      subscript.getLoc(), incorrectBindingNo, incorrectBindingExpectedType,
+      emitter, structOp, structOp.getParamVarargs());
+  if (!bindingValuesAttr)
     return {};
 
+  SmallVector<ParamBindAttr> bindingValues;
+  for (auto [decl, value] :
+       llvm::zip(structOp.getInputParams(), bindingValuesAttr))
+    bindingValues.push_back(ParamBindAttr::get(decl.getName(), value));
+
   // Ok, we succeeded at reparameterizing the type.
-  return PValue(DeclRefType::get(typeDecl.getSymbolRef(), bindingAttr));
+  return PValue(DeclRefType::get(
+      typeDecl.getSymbolRef(),
+      ParamBindArrayAttr::get(structOp.getContext(), bindingValues)));
 }
 
 /// When subscripting a callable with a bound symbol (i.e. a direct method call
@@ -1160,15 +1170,15 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       // If this is a signature-type PValue callable, this is binding parameter
       // values to a call.
       SmallVector<TypedAttr> bindOperands({callableMVal.get()});
-      if (indices.size() != sig.getInputParams().size()) {
+      if (indices.size() != sig.getInputParamTypes().size()) {
         emitter.emitError(getLoc(), "parametric callable expected ")
-            << sig.getInputParams().size() << " parameter"
-            << plural(sig.getInputParams().size()) << getIndexRange();
+            << sig.getInputParamTypes().size() << " parameter"
+            << plural(sig.getInputParamTypes().size()) << getIndexRange();
         return {};
       }
-      for (auto [idx, type] : llvm::zip(indices, sig.getInputParams())) {
+      for (auto [idx, type] : llvm::zip(indices, sig.getInputParamTypes())) {
         bindOperands.push_back(
-            emitter.emitExprPValue(idx, EC_CallParamValue, type.getType()));
+            emitter.emitExprPValue(idx, EC_CallParamValue, type));
         if (!bindOperands.back())
           return {};
       }

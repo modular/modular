@@ -168,17 +168,7 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
 
     // Offset index references within the current signature to make room.
     // Remap parent input parameter references to indices.
-    IndexRefRemapper remapper(parentInputParams, {}, parentInputParams.size());
-    SmallVector<ParamDeclAttr> inputParams;
-    for (ParamDeclAttr param : parentInputParams)
-      inputParams.push_back(remapper.remap(param));
-    for (ParamDeclAttr param : signature.getInputParams())
-      inputParams.push_back(remapper.remap(param));
-    signature = SignatureType::get(
-        ParamDeclArrayAttr::get(gen.getContext(), inputParams),
-        remapper.remap(signature.getResultParams()),
-        remapper.remap(signature.getValues()),
-        remapper.remap(signature.getMetadata()));
+    signature = IndexRefRemapper::prependParams(signature, parentInputParams);
   }
 
   OpBuilder b(gen);

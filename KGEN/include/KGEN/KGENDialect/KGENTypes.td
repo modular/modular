@@ -176,8 +176,8 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     contains default values, it isn't printed in the textual MLIR format.
   }];
 
-  let parameters = (ins "ParamDeclArrayAttr":$inputParams,
-                        "ParamDeclArrayAttr":$resultParams,
+  let parameters = (ins "TypeArrayAttr":$inputParamTypes,
+                        "TypeArrayAttr":$resultParamTypes,
                         "FunctionType":$values,
                         "MetadataAttr":$metadata);
   let hasCustomAssemblyFormat = 1;
@@ -185,7 +185,7 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
   let builders = [
     /// This builder allows everything other than the function type to be null.
     TypeBuilderWithInferredContext<(ins
-      "ParamDeclArrayAttr":$inputParams, "ParamDeclArrayAttr":$resultParams,
+      "TypeArrayAttr":$inputParamTypes, "TypeArrayAttr":$resultParamTypes,
       "FunctionType":$values, "MetadataAttr":$metadata)>,
     TypeBuilder<(ins "TypeRange":$inputs, "TypeRange":$results)>,
     TypeBuilderWithInferredContext<(ins "FunctionType":$values)>
@@ -251,12 +251,12 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     /// If an error occurs making the substitution, report it with emitErrorFn
     /// and return null.
     SignatureType
-    getSpecializedSignature(ArrayRef<ParamBindAttr> inputParamValues,
+    getSpecializedSignature(ArrayRef<TypedAttr> inputParamValues,
       function_ref<InFlightDiagnostic()> emitErrorFn);
     static SignatureType
-    getSpecializedSignature(ArrayRef<ParamBindAttr> inputParamValues,
+    getSpecializedSignature(ArrayRef<TypedAttr> inputParamValues,
       function_ref<InFlightDiagnostic()> emitErrorFn,
-      ArrayRef<ParamDeclAttr> inputParams, ArrayRef<ParamDeclAttr> resultParams,
+      ArrayRef<Type> inputParamTypes, ArrayRef<Type> resultParamTypes,
       FunctionType values, MetadataAttr metadata);
 
     /// Return this signature type with the value signature replaced.

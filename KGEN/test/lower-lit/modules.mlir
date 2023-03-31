@@ -25,7 +25,7 @@ lit.file_module @module {
 // CHECK-LABEL: kgen.generator @caller(%arg0: !kgen.declref<@"module::Adder"<size = 10>>)
 lit.func @caller(%ref: !kgen.declref<@module::@Adder<size = 10>>)  {
   // CHECK: kgen.call @"module::Adder::__add__"
-  kgen.call @module::@Adder::@__add__<size = 10>(%ref) : (!kgen.declref<@module::@Adder<size = 10>>) -> ()
+  kgen.call @module::@Adder::@__add__<10>(%ref) : (!kgen.declref<@module::@Adder<size = 10>>) -> ()
   kgen.return
 }
 

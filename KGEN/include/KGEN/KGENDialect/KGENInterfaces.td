@@ -175,7 +175,7 @@ def KGEN_CallOpInterface : OpInterface<"KGENCallOpInterface"> {
     }], "TypedAttr", "getCallee", (ins), [{}], [{ return nullptr; }]>,
     InterfaceMethod<[{
       Get the values of the parameters passed to the callee's input parameters.
-    }], "ArrayRef<ParamBindAttr>", "getParamValues", (ins), [{}],
+    }], "ArrayRef<TypedAttr>", "getParamValues", (ins), [{}],
     [{ return {}; }]>,
     InterfaceMethod<[{
       Returns whether this call flavour is allowed to exist post-elaboration as

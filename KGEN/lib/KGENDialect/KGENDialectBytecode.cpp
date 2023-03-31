@@ -725,10 +725,10 @@ void KGENBytecodeInterface::write(ParameterizedTypeConstantAttr attr,
 SymbolConstantAttr
 KGENBytecodeInterface::readSymbolConstantAttr(BytecodeReader &reader) const {
   SymbolRefAttr symbol;
-  ParamBindArrayAttr paramValues;
+  SmallVector<TypedAttr> paramValues;
   SignatureType type;
   if (failed(reader.readAttribute(symbol)) ||
-      failed(reader.readAttribute(paramValues)) ||
+      failed(reader.readAttributes(paramValues)) ||
       failed(reader.readType(type)))
     return SymbolConstantAttr();
   return SymbolConstantAttr::get(symbol, paramValues, type);
@@ -738,7 +738,7 @@ void KGENBytecodeInterface::write(SymbolConstantAttr attr,
                                   BytecodeWriter &writer) const {
   writer.writeVarInt(Encoding::kSymbolConstantAttr);
   writer.writeAttribute(attr.getSymbol());
-  writer.writeAttribute(attr.getParamValues());
+  writer.writeAttributes(attr.getParamValues());
   writer.writeType(attr.getType());
 }
 
@@ -935,22 +935,22 @@ void KGENBytecodeInterface::write(ParamRefType type,
 // SignatureType
 
 Type KGENBytecodeInterface::readSignatureType(BytecodeReader &reader) const {
-  ParamDeclArrayAttr inputParams, resultParams;
+  TypeArrayAttr inputParamTypes, resultParamTypes;
   FunctionType values;
   MetadataAttr metadata;
-  if (failed(reader.readAttribute(inputParams)) ||
-      failed(reader.readAttribute(resultParams)) ||
+  if (failed(reader.readAttribute(inputParamTypes)) ||
+      failed(reader.readAttribute(resultParamTypes)) ||
       failed(reader.readType(values)) || failed(reader.readAttribute(metadata)))
     return Type();
-  return SignatureType::get(getContext(), inputParams, resultParams, values,
-                            metadata);
+  return SignatureType::get(getContext(), inputParamTypes, resultParamTypes,
+                            values, metadata);
 }
 
 void KGENBytecodeInterface::write(SignatureType type,
                                   BytecodeWriter &writer) const {
   writer.writeVarInt(Encoding::kSignatureType);
-  writer.writeAttribute(type.getInputParams());
-  writer.writeAttribute(type.getResultParams());
+  writer.writeAttribute(type.getInputParamTypes());
+  writer.writeAttribute(type.getResultParamTypes());
   writer.writeType(type.getValues());
   writer.writeAttribute(type.getMetadata());
 }

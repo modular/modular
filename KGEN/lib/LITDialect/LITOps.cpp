@@ -45,31 +45,31 @@ SymbolRefAttr LIT::getFullyResolvedSymbolRef(mlir::SymbolOpInterface op) {
                             ArrayRef(symbols).drop_front());
 }
 
-std::pair<SignatureType, ParamBindArrayAttr>
+std::pair<SignatureType, ParameterExprArrayAttr>
 LIT::getUnboundSpecializedSignature(SignatureType type,
-                                    ParamBindArrayAttr bindings) {
+                                    ParameterExprArrayAttr bindings) {
   if (bindings.empty())
     return {type, bindings};
 
   // KGEN expects different bindings types than Lit can provide. Rebind the
   // parameters to the expected types.
-  SmallVector<ParamBindAttr> unboundBindings;
+  SmallVector<TypedAttr> unboundBindings;
   ParameterEvaluator evaluator;
-  for (auto [binding, decl] : llvm::zip(bindings, type.getInputParams())) {
-    TypedAttr value = binding.getValue();
-    Type unboundType = evaluator.getReboundType(decl.getType());
+  for (auto [binding, type] : llvm::zip(bindings, type.getInputParamTypes())) {
+    TypedAttr value = binding;
+    Type unboundType = evaluator.getReboundType(type);
     if (unboundType != value.getType())
       value = ParamOperatorAttr::get(POC::Rebind, value, unboundType);
-    evaluator.setParameterValue(binding.getName(), value);
     evaluator.inputParamValues.push_back(value);
-    unboundBindings.push_back(ParamBindAttr::get(binding.getName(), value));
+    unboundBindings.push_back(value);
   }
   type = type.getSpecializedSignature(
       unboundBindings, [&]() -> InFlightDiagnostic {
         return mlir::emitError(UnknownLoc::get(type.getContext()));
       });
   assert(type && "bad bindings specified");
-  return {type, ParamBindArrayAttr::get(type.getContext(), unboundBindings)};
+  return {type,
+          ParameterExprArrayAttr::get(type.getContext(), unboundBindings)};
 }
 
 //===----------------------------------------------------------------------===//
@@ -259,9 +259,9 @@ Type LIT::FuncOp::getResultTypeWithoutErrorVariant() {
 
 /// Return a SymbolConstantAttr for this function, optionally bound to a set
 /// of parameter bindings.
-TypedAttr LIT::FuncOp::getBoundReference(ParamBindArrayAttr bindings) {
+TypedAttr LIT::FuncOp::getBoundReference(ParameterExprArrayAttr bindings) {
   if (!bindings) // We allow null for convenience.
-    bindings = ParamBindArrayAttr::get(getContext(), {});
+    bindings = ParameterExprArrayAttr::get(getContext(), {});
 
   // SymbolConstantAttr provides a type for the SymbolRefAttr with the
   // parameters substituted in.  The function reference binds any parameter
@@ -273,8 +273,8 @@ TypedAttr LIT::FuncOp::getBoundReference(ParamBindArrayAttr bindings) {
 
   if (ParamDeclAttr decl = getParamDeclAttr()) {
     SmallVector<TypedAttr> bindOperands{ParamDeclRefAttr::get(decl)};
-    for (ParamBindAttr binding : bindings)
-      bindOperands.push_back(binding.getValue());
+    for (TypedAttr binding : bindings)
+      bindOperands.push_back(binding);
     return ParamOperatorAttr::get(POC::BindSignature, bindOperands);
   }
 

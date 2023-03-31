@@ -251,8 +251,8 @@ def KGEN_MetadataAttr : KGENAttr<"Metadata", "metadata"> {
 
     /// Verify the metadata with respect to the enclosing signature type.
     LogicalResult verifySignature(function_ref<InFlightDiagnostic()> emitError,
-                                  ParamDeclArrayAttr inputParams,
-                                  ParamDeclArrayAttr resultParams,
+                                  ArrayRef<Type> inputParamTypes,
+                                  ArrayRef<Type> resultParamTypes,
                                   FunctionType values);
 
     /// Get this metadata attr with the effects swapped out.
@@ -567,24 +567,22 @@ def KGEN_SymbolConstantAttr : KGEN_ExprAttr<"SymbolConstant", "symbol.constant",
   }];
 
   let parameters = (ins "SymbolRefAttr":$symbol,
-                        "ParamBindArrayAttr":$paramValues,
+                        OptionalArrayRefParameter<"TypedAttr">:$paramValues,
                         AttributeSelfTypeParameter<"", "SignatureType">:$type);
 
   let builders = [
     AttrBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol,
-                                        "KGEN::SignatureType":$type), [{
-      auto *context = symbol.getContext();
-      return get(context, symbol, ParamBindArrayAttr::get(context, {}), type);
+                                        "SignatureType":$type), [{
+      return get(type.getContext(), symbol, {}, type);
     }]>,
     AttrBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol,
-                                        "ParamBindArrayAttr":$paramValues,
-                                        "KGEN::SignatureType":$type), [{
-      return get(symbol.getContext(), symbol, paramValues, type);
+                                        "ArrayRef<TypedAttr>":$paramValues,
+                                        "SignatureType":$type), [{
+      return get(type.getContext(), symbol, paramValues, type);
     }]>,
   ];
 
-  let assemblyFormat =
-     "`<` $symbol custom<OptionalParamBindSpec>($paramValues) `>`";
+  let assemblyFormat = "`<` $symbol custom<ParameterValues>($paramValues) `>`";
 }
 
 //===----------------------------------------------------------------------===//
@@ -839,19 +837,22 @@ def KGEN_RegionAttr
     responsible for ensuring those restrictions are fulfilled.
   }];
   let parameters = (ins "StringAttr":$regionName,
-                        "ParamBindArrayAttr":$paramValues,
+                        OptionalArrayRefParameter<"TypedAttr">:$paramValues,
                         "BoolAttr":$isolated,
                         AttributeSelfTypeParameter<"", "SignatureType">:$type);
 
   let builders = [
     AttrBuilderWithInferredContext<(ins "ParamDeclAttr":$decl, "bool":$isolated)>,
     AttrBuilderWithInferredContext<(ins "StringAttr":$name,
-                                        "ArrayRef<ParamBindAttr>":$paramValues,
+                                        "ArrayRef<TypedAttr>":$paramValues,
                                         "BoolAttr":$isolated,
                                         "SignatureType":$type)>,
   ];
 
-  let assemblyFormat = "`<` $regionName `,` $paramValues `,` `isolated` `=` $isolated `>`";
+  let assemblyFormat = [{
+    `<` $regionName `,` `[` custom<ParameterValues>($paramValues) `]` `,`
+    `isolated` `=` $isolated `>`
+  }];
 }
 
 #endif // KGEN_KGENDIALECT_KGENATTRS_TD

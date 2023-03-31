@@ -59,7 +59,7 @@ kgen.generator @param_assert_simplify<p1 : i1, p2>() {
   kgen.param.assert <eq(42, 41)>, "failing asserts must be kept"
 
   // CHECK-NEXT: kgen.call @producesResultParam
-  kgen.call @producesResultParam<() -> result = r1>() : () -> ()
+  kgen.call @producesResultParam<[] -> result>() : () -> ()
 
   // CHECK-NEXT: kgen.param.assert <eq(result, 12)>, "this stays"
   kgen.param.assert <eq(result, 12)>, "this stays"
@@ -78,8 +78,8 @@ kgen.generator @trivial_param<A>(%arg0: si32) -> si32 {
 kgen.generator @call_param_canonicalize(%arg0: si32) -> si32 {
   // CHECK: %0 = kgen.call @trivial(%arg0) : (si32) -> si32
   %0 = kgen.call_param[(si32) -> si32: @trivial](%arg0)
-  // CHECK: %1 = kgen.call @trivial_param<A = 1>(%arg0)
-  %1 = kgen.call_param[(si32) -> si32: @trivial_param<A = 1>](%arg0)
+  // CHECK: %1 = kgen.call @trivial_param<1>(%arg0)
+  %1 = kgen.call_param[(si32) -> si32: @trivial_param<1>](%arg0)
   kgen.return %0: si32
 }
 
@@ -97,7 +97,7 @@ kgen.generator @param_declare<simd_width, unroll_factor>() -> index {
 // Hoisting constants that reference parameters.
 // https://github.com/modularml/modular/issues/4518
 
-kgen.generator @callee<fn: <N>()->index>() {
+kgen.generator @callee<fn: <index>()->index>() {
   kgen.return
 }
 
@@ -122,8 +122,8 @@ kgen.generator @call_with_bound<A>() {
 
 // CHECK-LABEL: @call_param_bound_symbol
 kgen.generator @call_param_bound_symbol() {
-  // CHECK-NEXT: kgen.call @call_with_bound<A = 1>() : () -> ()
-  kgen.call_param[() -> (): @call_with_bound<A = 1>]()
+  // CHECK-NEXT: kgen.call @call_with_bound<1>() : () -> ()
+  kgen.call_param[() -> (): @call_with_bound<1>]()
   kgen.return
 }
 

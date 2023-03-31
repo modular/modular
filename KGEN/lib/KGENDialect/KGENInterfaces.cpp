@@ -33,19 +33,19 @@ LogicalResult impl::verifyCallOp(KGENCallOpInterface op) {
   if (!op.isAllowedInFunc() && func)
     return op.emitOpError("is only allowed in generators pre-elaboration");
 
-  ArrayRef<ParamDeclAttr> params = op.getCalleeType().getResultParams();
-  if (op.getParamDecls().size() != params.size()) {
+  ArrayRef<Type> types = op.getCalleeType().getResultParamTypes();
+  if (op.getParamDecls().size() != types.size()) {
     return op->emitOpError("declares ")
            << op.getParamDecls().size() << " result parameters, but callee has "
-           << params.size();
+           << types.size();
   }
-  for (auto [decl, result, idx] : llvm::zip(
-           op.getParamDecls(), params, llvm::seq<unsigned>(0, params.size()))) {
-    if (decl.getType() == result.getType())
+  for (auto [decl, type, idx] : llvm::zip(
+           op.getParamDecls(), types, llvm::seq<unsigned>(0, types.size()))) {
+    if (decl.getType() == type)
       continue;
     return op.emitOpError("result parameter #")
            << idx << " declared with type " << decl.getType()
-           << " but callee has " << result.getType();
+           << " but callee has " << type;
   }
 
   return success();
@@ -78,15 +78,7 @@ SignatureType KGEN::getFullSignature(FuncInterface decl) {
   if (inputParams.empty())
     return signature;
 
-  IndexRefRemapper remapper(inputParams, {}, inputParams.size());
-  for (ParamDeclAttr param : signature.getInputParams())
-    inputParams.push_back(remapper.remap(param));
-
-  return SignatureType::get(
-      ParamDeclArrayAttr::get(signature.getContext(), inputParams),
-      remapper.remap(signature.getResultParams()),
-      remapper.remap(signature.getValues()),
-      remapper.remap(signature.getMetadata()));
+  return IndexRefRemapper::prependParams(signature, inputParams);
 }
 
 //===----------------------------------------------------------------------===//

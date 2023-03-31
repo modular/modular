@@ -16,8 +16,10 @@
 namespace M::KGEN {
 class ParamDeclArrayAttr;
 class ParamBindAttr;
+class ParameterExprArrayAttr;
 class SignatureType;
 class SymbolConstantAttr;
+class TypeArrayAttr;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {
@@ -35,23 +37,29 @@ namespace M::KGEN::LIT {
 ///    SomeType[param1].method[param2](...args...)
 ///    OuterType[param1].InnerType[param2]
 ///
-/// The type parameters (param1) will be bound as a ParamBindAttr, and the
-/// param2 will be bound as the value of param2.  We cannot type check the
+/// The type parameters (param1) will be bound typed-checked, and the param2
+/// will be bound as the TypedAttr value of param2.  We cannot type check the
 /// bindings until overload resolution has resolved which 'method' we are
-/// talking about and when inference is complete, so we keep them as either a
-/// ParamBindAttr or (Typed)Attribute for the actual value.
+/// talking about and when inference is complete, so we keep a flag.
 class InputParamBindings {
 public:
   struct Binding {
     /// This is the expression tree that produced the binding in the case of an
     /// Attribute, or null in the case of ParamBindAttr.
     ExprNode *expr;
-    Attribute bindingOrValue; // ParamBindAttr|TypedAttr.
+    /// This is the value of the binding.
+    TypedAttr value;
+    /// This flag is set to true if the value has been type checked.
+    bool typeChecked;
 
-    TypedAttr getValue() const { return dyn_cast<TypedAttr>(bindingOrValue); }
+    TypedAttr getValue() const {
+      if (typeChecked)
+        return {};
+      return value;
+    }
 
     /// Return the type of the TypedAttr or the binding.
-    ASTType getType() const;
+    ASTType getType() const { return value.getType(); }
   };
 
   /// This contains a list of bound input parameters.
@@ -59,16 +67,16 @@ public:
 
   /// Add a bound value for a pre-checked parameter bindings.  The binding must
   /// be known to be valid.
-  void add(ParamBindAttr precheckedBinding);
+  void addPrechecked(TypedAttr precheckedBinding);
 
   /// Add a bound value for a parameter expression bound to a value.
   void add(ExprNode *expr, TypedAttr value) {
-    bindings.push_back({expr, value});
+    bindings.push_back({expr, value, /*typeChecked=*/false});
   }
 
-  using ParameterInferenceHookTy = std::function<PValue(
-      size_t index, ParamDeclAttr decl, ASTType expectedType,
-      ArrayRef<ParamBindAttr> bindings)>;
+  using ParameterInferenceHookTy =
+      std::function<PValue(size_t index, Type type, ASTType expectedType,
+                           ArrayRef<TypedAttr> bindings)>;
 
   /// Check that our set of parameter bindings work with the specified input
   /// parameters and call operands (if any), returning a checked
@@ -78,8 +86,9 @@ public:
   /// count mismatch).
   ///
   /// This rejects the signature list if all the parameters are not bound.
-  ParamBindArrayAttr
-  verifyBindings(ParamDeclArrayAttr actualParamDecls, StringRef baseName,
+  ParameterExprArrayAttr
+  verifyBindings(ArrayRef<Type> actualParamTypes,
+                 ParamDeclArrayAttr actualParamDecls, StringRef baseName,
                  SMLoc loc, ssize_t &incorrectBindingNo,
                  ASTType &incorrectBindingExpectedType, ExprEmitter &emitter,
                  Operation *declOp, bool paramVarargs, bool packVarargs = false,
@@ -137,6 +146,9 @@ public:
   CallSyntax syntax;
 
   /// Form an overload set with the specified function overloads.
+  OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
+              ParameterExprArrayAttr bindings, const ExprNode *expr,
+              CallSyntax syntax);
   OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
               ParamBindArrayAttr bindings, const ExprNode *expr,
               CallSyntax syntax);

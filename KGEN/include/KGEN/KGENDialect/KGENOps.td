@@ -190,8 +190,8 @@ def KGEN_AddressOfOp : KGEN_CallOpBase<"addressof"> {
     /// Return the symbol reference to the callee.
     SymbolRefAttr getCalleeSymbol() { return getCallee().getSymbol(); };
     /// Return the bound input parameter values.
-    ArrayRef<ParamBindAttr> getParamValues() {
-      return getCallee().getParamValues().getValue();
+    ArrayRef<TypedAttr> getParamValues() {
+      return getCallee().getParamValues();
     }
   }];
 }
@@ -252,8 +252,8 @@ def KGEN_CallOp : KGEN_CallOpBase<"call",
     /// Return the symbol reference to the callee.
     SymbolRefAttr getCalleeSymbol() { return getCallee().getSymbol(); };
     /// Return the bound input parameter values.
-    ArrayRef<ParamBindAttr> getParamValues() {
-      return getCallee().getParamValues().getValue();
+    ArrayRef<TypedAttr> getParamValues() {
+      return getCallee().getParamValues();
     }
   }];
 }

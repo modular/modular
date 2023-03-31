@@ -352,64 +352,75 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
 
 /// parameter-spec   ::= `<` param-bind-list (`->` param-decl-list)? `>`
 static ParseResult parseCallOpParams(OpAsmParser &p,
-                                     ParamBindArrayAttr &paramValues,
+                                     ParameterExprArrayAttr &paramValues,
                                      ParamDeclArrayAttr &resultDecls,
-                                     ParamDeclArrayAttr &resultParams) {
+                                     TypeArrayAttr &resultParamTypes) {
 
   if (p.parseOptionalLess()) {
     // If there is no <, then the params of the call op are empty, so set
     // paramValues and paramDecls to empty and return.
-    paramValues = ParamBindArrayAttr::get(p.getContext(), {});
-    resultDecls = resultParams = ParamDeclArrayAttr::get(p.getContext(), {});
+    paramValues = ParameterExprArrayAttr::get(p.getContext(), {});
+    resultDecls = ParamDeclArrayAttr::get(p.getContext(), {});
+    resultParamTypes = TypeArrayAttr::get(p.getContext(), {});
     return success();
   }
 
   // Parse the input list
-  if (parseParamBinds(p, paramValues))
+  SmallVector<TypedAttr> values;
+  if (p.parseOptionalLSquare()) {
+    if (p.parseCommaSeparatedList([&] {
+          return parseParamValueDefaultingToIndex(p, values.emplace_back());
+        }))
+      return failure();
+  } else if (p.parseRSquare()) {
     return failure();
+  }
+  paramValues = ParameterExprArrayAttr::get(p.getContext(), values);
 
   // Check to see if we have results and parse them if so.
   if (p.parseOptionalArrow()) {
-    resultDecls = resultParams = ParamDeclArrayAttr::get(p.getContext(), {});
+    resultDecls = ParamDeclArrayAttr::get(p.getContext(), {});
+    resultParamTypes = TypeArrayAttr::get(p.getContext(), {});
     return p.parseGreater();
   }
 
-  SmallVector<ParamDeclAttr> resultDeclValues, resultParamValues;
+  SmallVector<ParamDeclAttr> decls;
+  SmallVector<Type> paramTypes;
   auto parseElt = [&]() -> ParseResult {
-    StringAttr declName, sigName;
+    StringAttr declName;
     Type type;
-    if (parseParamName(p, declName) || p.parseEqual() ||
-        parseParamName(p, sigName) || parseColonTypeOrIndex(p, type))
+    if (parseParamName(p, declName) || parseColonTypeOrIndex(p, type))
       return failure();
-    resultDeclValues.push_back(ParamDeclAttr::get(declName, type));
-    resultParamValues.push_back(ParamDeclAttr::get(sigName, type));
+    decls.push_back(ParamDeclAttr::get(declName, type));
+    paramTypes.push_back(type);
     return success();
   };
   if (p.parseCommaSeparatedList(parseElt))
     return failure();
-  resultDecls = ParamDeclArrayAttr::get(p.getContext(), resultDeclValues);
-  resultParams = ParamDeclArrayAttr::get(p.getContext(), resultParamValues);
+  resultDecls = ParamDeclArrayAttr::get(p.getContext(), decls);
+  resultParamTypes = TypeArrayAttr::get(p.getContext(), paramTypes);
   return p.parseGreater();
 }
 
 static void printCallOpParams(OpAsmPrinter &p, Operation *op,
-                              ParamBindArrayAttr paramValues,
-                              ParamDeclArrayAttr paramDecls,
-                              ParamDeclArrayAttr resultParams) {
-  if (paramValues.empty() && paramDecls.empty())
+                              ArrayRef<TypedAttr> paramValues,
+                              ArrayRef<ParamDeclAttr> resultDecls,
+                              ArrayRef<Type> resultParamTypes) {
+  if (paramValues.empty() && resultDecls.empty())
     return;
   p << "<";
-  printParamBinds(p, paramValues);
-  if (!paramDecls.empty()) {
+  if (paramValues.empty())
+    p << "[]";
+  else
+    llvm::interleaveComma(paramValues, p, [&](TypedAttr value) {
+      printColonTypeParamValue(p, value);
+    });
+  if (!resultDecls.empty()) {
     p << " -> ";
-    llvm::interleaveComma(llvm::zip(paramDecls, resultParams), p,
-                          [&](auto pair) {
-                            auto [decl, param] = pair;
-                            printParamName(p, decl.getName());
-                            p << " = ";
-                            printParamName(p, param.getName());
-                            printColonTypeOrIndex(p, param.getType());
-                          });
+    llvm::interleaveComma(resultDecls, p, [&](ParamDeclAttr decl) {
+      printParamName(p, decl.getName());
+      printColonTypeOrIndex(p, decl.getType());
+    });
   }
   p << ">";
 }
@@ -535,16 +546,16 @@ static ParseResult parseAddressOfOp(OpAsmParser &p,
                                     ParamDeclArrayAttr &paramDecls,
                                     Type &resultType) {
   SymbolRefAttr callee;
-  ParamBindArrayAttr paramValues;
-  ParamDeclArrayAttr resultParams;
+  ParameterExprArrayAttr paramValues;
+  TypeArrayAttr resultParamTypes;
   SignatureType signature;
   if (p.parseAttribute(callee) ||
-      parseCallOpParams(p, paramValues, paramDecls, resultParams) ||
+      parseCallOpParams(p, paramValues, paramDecls, resultParamTypes) ||
       p.parseColon())
     return failure();
 
-  if (parseSignatureValues(p, ParamDeclArrayAttr::get(p.getContext(), {}),
-                           resultParams, signature))
+  if (parseSignatureValues(p, TypeArrayAttr::get(p.getContext(), {}),
+                           resultParamTypes, signature))
     return failure();
   calleeCst = SymbolConstantAttr::get(callee, paramValues, signature);
   resultType = signature.getValues();
@@ -556,7 +567,7 @@ static void printAddressOfOp(OpAsmPrinter &p, Operation *op,
                              ParamDeclArrayAttr paramDecls, Type resultType) {
   p << calleeCst.getSymbol();
   printCallOpParams(p, op, calleeCst.getParamValues(), paramDecls,
-                    calleeCst.getType().getResultParams());
+                    calleeCst.getType().getResultParamTypes());
   p << " : ";
   printSignatureValues(p, calleeCst.getType());
 }
@@ -579,17 +590,17 @@ parseCallOp(OpAsmParser &p, SymbolConstantAttr &calleeCst,
             SmallVectorImpl<Type> &operandTypes,
             SmallVectorImpl<Type> &resultTypes) {
   SymbolRefAttr callee;
-  ParamBindArrayAttr paramValues;
-  ParamDeclArrayAttr resultParams;
+  ParameterExprArrayAttr paramValues;
+  TypeArrayAttr resultParamTypes;
   if (p.parseAttribute(callee) ||
-      parseCallOpParams(p, paramValues, paramDecls, resultParams) ||
+      parseCallOpParams(p, paramValues, paramDecls, resultParamTypes) ||
       p.parseOperandList(operands, AsmParser::Delimiter::Paren) ||
       p.parseColon())
     return failure();
 
   SignatureType signature;
-  if (parseSignatureValues(p, ParamDeclArrayAttr::get(p.getContext(), {}),
-                           resultParams, signature))
+  if (parseSignatureValues(p, TypeArrayAttr::get(p.getContext(), {}),
+                           resultParamTypes, signature))
     return failure();
   calleeCst = SymbolConstantAttr::get(callee, paramValues, signature);
   llvm::append_range(operandTypes, signature.getValueInputs());
@@ -603,7 +614,7 @@ static void printCallOp(OpAsmPrinter &p, Operation *op,
                         TypeRange operandTypes, TypeRange resultTypes) {
   p << calleeCst.getSymbol();
   printCallOpParams(p, op, calleeCst.getParamValues(), paramDecls,
-                    calleeCst.getType().getResultParams());
+                    calleeCst.getType().getResultParamTypes());
   p << '(';
   p.printOperands(operands);
   p << ") : ";

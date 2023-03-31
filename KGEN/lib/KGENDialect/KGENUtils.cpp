@@ -216,8 +216,8 @@ void KGEN::printKGENType(AsmPrinter &p, Type type) {
   } else if (auto signature = dyn_cast<SignatureType>(type)) {
     // If there are no parameters and no effects, print a SignatureType as a
     // function type to keep things concise.
-    if (signature.getInputParams().empty() &&
-        signature.getResultParams().empty()) {
+    if (signature.getInputParamTypes().empty() &&
+        signature.getResultParamTypes().empty()) {
       if (signature.getMetadata().isDefault()) {
         p << signature.getValues();
         return;
@@ -587,12 +587,10 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
     // parameters are allowed to refine the types of subsequent parameters, so
     // specialize the types as we go.
     ParameterEvaluator evaluator;
-    for (ParamDeclAttr decl : sig.getInputParams()) {
-      if (p.parseComma() ||
-          parseParamValue(p, operands.emplace_back(),
-                          evaluator.getReboundType(decl.getType())))
+    for (Type type : sig.getInputParamTypes()) {
+      if (p.parseComma() || parseParamValue(p, operands.emplace_back(),
+                                            evaluator.getReboundType(type)))
         return failure();
-      evaluator.setParameterValue(decl, operands.back());
       evaluator.inputParamValues.push_back(operands.back());
     }
     return success();
@@ -1137,11 +1135,10 @@ ParseResult KGEN::parseFunctionSignature(
   if (failed(parseSignatureValuesElt</*optionalResultList=*/true>(
           p, parseArg, functionType, metadata)))
     return failure();
-  IndexRefRemapper remapper(inputParams, resultParams);
-  signature = SignatureType::getChecked(
-      [&] { return p.emitError(loc); }, remapper.remap(inputParams),
-      remapper.remap(resultParams), remapper.remap(functionType),
-      remapper.remap(metadata));
+
+  signature = IndexRefRemapper::remapToSignature(
+      inputParams, resultParams, functionType, metadata,
+      [&] { return p.emitError(loc); });
   return success(!!signature);
 }
 
@@ -1167,9 +1164,27 @@ void KGEN::printFunctionSignature(OpAsmPrinter &p, Region &region,
 OptionalParseResult KGEN::parseOptionalSignature(AsmParser &p,
                                                  SignatureType &signature) {
   llvm::SMLoc loc = p.getCurrentLocation();
-  ParamDeclArrayAttr inputParams, resultParams;
-  if (parseOptionalParameterSpec(p, inputParams, resultParams))
-    return failure();
+  SmallVector<Type> inputParamTypes, resultParamTypes;
+  if (succeeded(p.parseOptionalLess())) {
+    if (p.parseOptionalGreater()) {
+      if (succeeded(p.parseOptionalLSquare())) {
+        if (p.parseRSquare())
+          return failure();
+      } else if (p.parseCommaSeparatedList([&] {
+                   return parseKGENType(p, inputParamTypes.emplace_back());
+                 })) {
+        return failure();
+      }
+      if (succeeded(p.parseOptionalArrow())) {
+        if (p.parseCommaSeparatedList([&] {
+              return parseKGENType(p, resultParamTypes.emplace_back());
+            }))
+          return failure();
+      }
+      if (p.parseGreater())
+        return failure();
+    }
+  }
 
   auto parseElt = [&]() -> FailureOr<Type> {
     Type type;
@@ -1183,9 +1198,11 @@ OptionalParseResult KGEN::parseOptionalSignature(AsmParser &p,
       parseOptionalSignatureValues</*optionalResultList=*/false>(
           p, parseElt, functionType, metadata);
   if (result.has_value() && succeeded(*result)) {
-    signature =
-        SignatureType::getChecked([&] { return p.emitError(loc); }, inputParams,
-                                  resultParams, functionType, metadata);
+    signature = SignatureType::getChecked(
+        [&] { return p.emitError(loc); },
+        TypeArrayAttr::get(p.getContext(), inputParamTypes),
+        TypeArrayAttr::get(p.getContext(), resultParamTypes), functionType,
+        metadata);
     if (!signature)
       return failure();
   }
@@ -1201,16 +1218,28 @@ ParseResult KGEN::parseSignature(AsmParser &p, SignatureType &signature) {
 }
 
 void KGEN::printSignature(AsmPrinter &p, SignatureType signature) {
-  printOptionalParameterSpec(p, signature.getInputParams(),
-                             signature.getResultParams());
+  if (!signature.getInputParamTypes().empty() ||
+      !signature.getResultParamTypes().empty()) {
+    p << '<';
+    if (signature.getInputParamTypes().empty())
+      p << "[]";
+    llvm::interleaveComma(signature.getInputParamTypes(), p,
+                          [&](Type type) { printKGENType(p, type); });
+    if (!signature.getResultParamTypes().empty()) {
+      p << " -> ";
+      llvm::interleaveComma(signature.getResultParamTypes(), p,
+                            [&](Type type) { printKGENType(p, type); });
+    }
+    p << '>';
+  }
   auto printElt = [&](unsigned i) { p << signature.getValueInputs()[i]; };
   printSignatureValuesElt</*optionalResultList=*/false>(
       p, printElt, signature.getValues(), signature);
 }
 
 ParseResult KGEN::parseSignatureValues(AsmParser &p,
-                                       ParamDeclArrayAttr inputParams,
-                                       ParamDeclArrayAttr resultParams,
+                                       TypeArrayAttr inputParamTypes,
+                                       TypeArrayAttr resultParamTypes,
                                        SignatureType &signature) {
   llvm::SMLoc loc = p.getCurrentLocation();
   auto parseElt = [&]() -> FailureOr<Type> {
@@ -1224,9 +1253,9 @@ ParseResult KGEN::parseSignatureValues(AsmParser &p,
   if (parseSignatureValuesElt</*optionalResultList=*/false>(
           p, parseElt, functionType, metadata))
     return failure();
-  signature =
-      SignatureType::getChecked([&] { return p.emitError(loc); }, inputParams,
-                                resultParams, functionType, metadata);
+  signature = SignatureType::getChecked([&] { return p.emitError(loc); },
+                                        inputParamTypes, resultParamTypes,
+                                        functionType, metadata);
   return success(!!signature);
 }
 
@@ -1496,29 +1525,37 @@ void KGEN::printOptionalParamBindSpec(AsmPrinter &p,
   p << '>';
 }
 
-ParseResult KGEN::parseParameterValues(OpAsmParser &p,
-                                       ParameterExprArrayAttr &value) {
+ParseResult KGEN::parseParameterValues(AsmParser &p,
+                                       ParameterExprArrayAttr &values) {
   SmallVector<TypedAttr> elts;
-  if (p.parseCommaSeparatedList(
-          OpAsmParser::Delimiter::OptionalLessGreater, [&]() -> ParseResult {
-            TypedAttr value;
-            if (parseParamValueDefaultingToIndex(p, value))
-              return failure();
-            elts.push_back(value);
-            return success();
-          }))
+  if (parseParameterValues(p, elts))
     return failure();
-
-  value = ParameterExprArrayAttr::get(p.getContext(), elts);
+  values = ParameterExprArrayAttr::get(p.getContext(), elts);
   return success();
 }
 
+ParseResult KGEN::parseParameterValues(AsmParser &p,
+                                       SmallVectorImpl<TypedAttr> &values) {
+  return p.parseCommaSeparatedList(
+      OpAsmParser::Delimiter::OptionalLessGreater, [&]() -> ParseResult {
+        TypedAttr value;
+        if (parseParamValueDefaultingToIndex(p, value))
+          return failure();
+        values.push_back(value);
+        return success();
+      });
+}
+
 void KGEN::printParameterValues(OpAsmPrinter &p, Operation *op,
-                                ParameterExprArrayAttr value) {
-  if (value.empty())
+                                ParameterExprArrayAttr values) {
+  printParameterValues(p, values);
+}
+
+void KGEN::printParameterValues(AsmPrinter &p, ArrayRef<TypedAttr> values) {
+  if (values.empty())
     return;
   p << '<';
-  llvm::interleaveComma(value, p, [&](TypedAttr value) {
+  llvm::interleaveComma(values, p, [&](TypedAttr value) {
     auto valType = value.getType();
     if (!valType.isIndex()) {
       p << ":";
@@ -1687,14 +1724,14 @@ LogicalResult KGEN::verifyDeclSignaturesMatch(StringRef originatorName,
   /// matches those of an interface.  This produces an error diagnostic and
   /// returns failure when a problem is detected, or returns true if
   /// everything is ok.
-  if (failed(verifyParamDeclsMatch(
-          "input parameter", originatorName,
-          originatorSignature.getInputParams(), originatorLoc, targetName,
-          targetSignature.getInputParams(), targetLoc)) ||
-      failed(verifyParamDeclsMatch(
-          "result parameter", originatorName,
-          originatorSignature.getResultParams(), originatorLoc, targetName,
-          targetSignature.getResultParams(), targetLoc)) ||
+  if (failed(verifyMatchingLists(originatorSignature.getInputParamTypes(),
+                                 targetSignature.getInputParamTypes(),
+                                 originatorName, originatorLoc, targetName,
+                                 targetLoc, "input parameter", "type")) ||
+      failed(verifyMatchingLists(originatorSignature.getResultParamTypes(),
+                                 targetSignature.getResultParamTypes(),
+                                 originatorName, originatorLoc, targetName,
+                                 targetLoc, "result parameter", "type")) ||
       verifyMatchingLists(originatorType.getInputs(), targetType.getInputs(),
                           originatorName, originatorLoc, targetName, targetLoc,
                           "argument", "type") ||

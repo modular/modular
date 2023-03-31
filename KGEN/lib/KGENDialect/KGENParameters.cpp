@@ -67,21 +67,20 @@ void ParameterCollector::collectUsesFromAttr(
           }
           SignatureType sig =
               signatures[signatures.size() - 1 - indexRef.getDepth()];
-          ParamDeclArrayAttr params = indexRef.getIsResult()
-                                          ? sig.getResultParams()
-                                          : sig.getInputParams();
-          if (indexRef.getIndex() >= params.size()) {
+          TypeArrayAttr types = indexRef.getIsResult()
+                                    ? sig.getResultParamTypes()
+                                    : sig.getInputParamTypes();
+          if (indexRef.getIndex() >= types.size()) {
             return emitError() << "index reference " << indexRef.getIndex()
                                << " is out of bounds: referenced signature "
-                               << sig << " has " << params.size() << ' '
+                               << sig << " has " << types.size() << ' '
                                << (indexRef.getIsResult() ? "result" : "input")
                                << " parameters";
           }
-          ParamDeclAttr param = params[indexRef.getIndex()];
-          if (param.getType() != indexRef.getType()) {
-            return emitError()
-                   << "index reference type " << indexRef.getType()
-                   << " does not match parameter type " << param.getType();
+          Type type = types[indexRef.getIndex()];
+          if (type != indexRef.getType()) {
+            return emitError() << "index reference type " << indexRef.getType()
+                               << " does not match parameter type " << type;
           }
           return success();
         });
@@ -124,27 +123,10 @@ void ParameterCollector::collectUsesFromAttr(
 
 void ParameterCollector::collectUsesFromType(
     Type type, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasConstExpr) {
-  // Signature types define nested parameters.
   if (auto sig = dyn_cast<SignatureType>(type)) {
     signatures.push_back(sig);
     auto pop = llvm::make_scope_exit([&] { signatures.pop_back(); });
-
-    SmallPtrSet<StringAttr, 4> nestedParams;
-    for (ParamDeclAttr param : llvm::concat<const ParamDeclAttr>(
-             sig.getInputParams(), sig.getResultParams()))
-      if (!nestedParams.insert(param.getName()).second) {
-        maybeVerify([&](function_ref<InFlightDiagnostic()> emitError) {
-          return emitError()
-                 << "nested parameter " << param.getName() << " redefined";
-        });
-      }
-    SmallVector<ParamDeclRefAttr> nestedUses;
-    collectUsesFromTypesImpl(type, nestedUses, hasConstExpr);
-    // Filter the nested uses and determine which belong to the higher scope.
-    for (ParamDeclRefAttr nestedUse : nestedUses)
-      if (!nestedParams.contains(nestedUse.getName()))
-        uses.push_back(nestedUse);
-    return;
+    return collectUsesFromTypesImpl(type, uses, hasConstExpr);
   }
   return collectUsesFromTypesImpl(type, uses, hasConstExpr);
 }

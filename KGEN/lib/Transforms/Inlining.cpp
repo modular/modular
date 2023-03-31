@@ -145,13 +145,6 @@ struct AttrTypeMangler {
       TimeTraceScope</*Enabled=*/false> traceScope("signature-remove");
       // Filter out the shaowed parameters from the mangling map.
       MapT::ScopeTy scope(mangledDecls);
-      auto removeIfShadowing = [&](ArrayRef<ParamDeclAttr> decls) {
-        // Clear the entries by inserting `nullptr`.
-        for (ParamDeclAttr decl : decls)
-          mangledDecls.insert(decl.getName(), nullptr);
-      };
-      removeIfShadowing(sig.getInputParams());
-      removeIfShadowing(sig.getResultParams());
       return mangleRefsInImpl(sig, hasRefs);
     }
     return mangleRefsInImpl(type, hasRefs);
@@ -433,7 +426,7 @@ LogicalResult KGEN::inlineGeneratorCall(
       ParamDeclAttr decl = mangler.mangleDecl(origDecl, needsMangling);
       auto declOp = b.create<ParamDeclareOp>(
           callee.getLoc(), decl,
-          ParamOperatorAttr::get(b.getContext(), POC::Rebind, value.getValue(),
+          ParamOperatorAttr::get(b.getContext(), POC::Rebind, value,
                                  decl.getType()));
       // Register the new declaration.
       propagateNewDecls(decl, topLevelGraph, *callScope, declOp, scopeRegion);

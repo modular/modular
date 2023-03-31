@@ -111,7 +111,7 @@ fn callOverload(a: Int):
   # CHECK: = kgen.param.constant: {{.*}} = <@"$decls"::@"testThing($Int::Int)">
   let f2 : IntToF32Type = testThing
 
-  # CHECK: kgen.call @"$decls"::@"takeIntToF32Param()"<f: <>(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$F32"::@F32> = @"$decls"::@"testThing($Int::Int)">()
+  # CHECK: kgen.call @"$decls"::@"takeIntToF32Param()"<:<>(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$F32"::@F32> @"$decls"::@"testThing($Int::Int)">()
   takeIntToF32Param[testThing]()
 
   # Issue #10036.  This should call the exact match, consider the varargs match
@@ -168,7 +168,7 @@ fn returnParameter[a: __mlir_type.index]() -> __mlir_type.index:
 
 # CHECK-LABEL: lit.func @"callReturnParam
 fn callReturnParam() -> __mlir_type.index:
-  # CHECK-NEXT: %0 = kgen.call @"$decls"::@"returnParameter()"<a = 3>()
+  # CHECK-NEXT: %0 = kgen.call @"$decls"::@"returnParameter()"<3>()
   # CHECK-NEXT: return %0
   return returnParameter[3]()
 
@@ -398,21 +398,21 @@ fn usePacks(x: F32, y: Int):
   var b: Tuple[Int, F32, Int]
 
   # CHECK: %[[PACK1:.*]] = kgen.param.constant: !pop.pack<[index]> = <<1>>
-  # CHECK: kgen.call @"$decls"::@"pack(__mlir_type.!pop.pack<Ts>)"<Ts: variadic<!kgen.mlirtype> = [index]>(%[[PACK1]])
+  # CHECK: kgen.call @"$decls"::@"pack(__mlir_type.!pop.pack<Ts>)"<:variadic<!kgen.mlirtype> [index]>(%[[PACK1]])
   pack(1)
   # CHECK: %[[PACK2:.*]] = kgen.param.constant: !pop.pack<[index, f64, index]> = <<1, 3.14{{.*}}, 2>>
-  # CHECK: kgen.call @"$decls"::@"pack(__mlir_type.!pop.pack<Ts>)"<Ts: variadic<!kgen.mlirtype> = [index, f64, index]>(%[[PACK2]])
+  # CHECK: kgen.call @"$decls"::@"pack(__mlir_type.!pop.pack<Ts>)"<:variadic<!kgen.mlirtype> [index, f64, index]>(%[[PACK2]])
   pack(1, 3.14, 2)
   # CHECK: %[[PACK3:.*]] = kgen.param.constant: !pop.pack<[]> = <<>>
-  # CHECK: kgen.call @"$decls"::@"pack(__mlir_type.!pop.pack<Ts>)"<Ts: variadic<!kgen.mlirtype> = []>(%[[PACK3]])
+  # CHECK: kgen.call @"$decls"::@"pack(__mlir_type.!pop.pack<Ts>)"<:variadic<!kgen.mlirtype> []>(%[[PACK3]])
   pack()
 
   # CHECK: %[[PACK4:.*]] = pop.pack.create(%{{.*}}, [[ARGX]], [[ARGY]])
-  # CHECK: kgen.call @"$decls"::@"pack(__mlir_type.!pop.pack<Ts>)"<Ts: variadic<!kgen.mlirtype> = [index, !kgen.declref<@"$F32"::@F32>, !kgen.declref<@"$Int"::@Int>]>(%[[PACK4]])
+  # CHECK: kgen.call @"$decls"::@"pack(__mlir_type.!pop.pack<Ts>)"<:variadic<!kgen.mlirtype> [index, !kgen.declref<@"$F32"::@F32>, !kgen.declref<@"$Int"::@Int>]>(%[[PACK4]])
   pack(1, x, y)
   # CHECK: %[[INTCTOR:.*]] = kgen.param.constant: @"$Int"::@Int = <#lit.struct<{value: scalar<index> = 1}>>
   # CHECK: %[[PACK5:.*]] = pop.pack.create(%[[INTCTOR]], %x, %y)
-  # CHECK: kgen.call @"$decls"::@"pack(__mlir_type.!pop.pack<Ts>)"<Ts: variadic<!kgen.mlirtype> = [!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$F32"::@F32>, !kgen.declref<@"$Int"::@Int>]>(%[[PACK5]])
+  # CHECK: kgen.call @"$decls"::@"pack(__mlir_type.!pop.pack<Ts>)"<:variadic<!kgen.mlirtype> [!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$F32"::@F32>, !kgen.declref<@"$Int"::@Int>]>(%[[PACK5]])
   pack[Int, F32, Int](1, x, y)
 
   # CHECK: index.constant 1
@@ -420,9 +420,9 @@ fn usePacks(x: F32, y: Int):
   # CHECK-NEXT: kgen.call {{.*}}packBorrowed{{.*}}([[PACK6]])
   packBorrowed(1, x, y)
 
-  # CHECK: kgen.call {{.*}}variadicParameter{{.*}}<Ts: variadic<!kgen.mlirtype>  = [!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$F32"::@F32>]>
+  # CHECK: kgen.call {{.*}}variadicParameter{{.*}}<:variadic<!kgen.mlirtype>  [!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$F32"::@F32>]>
   variadicParameter[Int, F32](1)
-  # CHECK: kgen.call {{.*}}variadicParameter{{.*}}<Ts: variadic<!kgen.mlirtype> = []>
+  # CHECK: kgen.call {{.*}}variadicParameter{{.*}}<:variadic<!kgen.mlirtype> []>
   variadicParameter(2)
 
 ##===----------------------------------------------------------------------===##
@@ -611,9 +611,9 @@ fn topLevelParamFn[a_param: __mlir_type.index]():
   # CHECK: lit.func *"nestedFunction()"<b_param>
   fn nestedFunction[b_param: __mlir_type.index]():
     return
-  # CHECK: declare ref: <b_param>() -> !lit.none = <*"nestedFunction()">
+  # CHECK: declare ref: <index>() -> !lit.none = <*"nestedFunction()">
   alias ref = nestedFunction
-  # CHECK: call_param[{{.*}}: bind_signature(:<b_param>() -> !lit.none *"nestedFunction()", 2)]()
+  # CHECK: call_param[{{.*}}: bind_signature(:<index>() -> !lit.none *"nestedFunction()", 2)]()
   nestedFunction[2]()
 
 # CHECK-LABEL: lit.struct.decl @SomeParamStruct<c_param>
@@ -623,9 +623,9 @@ struct SomeParamStruct[c_param: __mlir_type.index]:
     # CHECK: lit.func *"nestedFunction()"<b_param>
     fn nestedFunction[b_param: __mlir_type.index]():
       return
-    # CHECK: declare ref: <b_param>() -> !lit.none = <*"nestedFunction()">
+    # CHECK: declare ref: <index>() -> !lit.none = <*"nestedFunction()">
     alias ref = nestedFunction
-    # CHECK: call_param[{{.*}}: bind_signature(:<b_param>() -> !lit.none *"nestedFunction()", 2)]()
+    # CHECK: call_param[{{.*}}: bind_signature(:<index>() -> !lit.none *"nestedFunction()", 2)]()
     nestedFunction[2]()
 
 

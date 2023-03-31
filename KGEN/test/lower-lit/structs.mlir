@@ -70,8 +70,8 @@ lit.struct.decl @A<N> {
 
 // CHECK-LABEL: kgen.generator @main
 lit.func @main(%a: !kgen.declref<@A<N = 1>>) {
-  // CHECK-NEXT: call_param[(!kgen.declref<@A<N = 1>>) -> index: @"A::foo"<N = 1, M = 2>]
-  %0 = kgen.call_param[(!kgen.declref<@A<N = 1>>) -> index: @A::@foo<N = 1, M = 2>](%a)
+  // CHECK-NEXT: call_param[(!kgen.declref<@A<N = 1>>) -> index: @"A::foo"<1, 2>]
+  %0 = kgen.call_param[(!kgen.declref<@A<N = 1>>) -> index: @A::@foo<1, 2>](%a)
   kgen.return
 }
 

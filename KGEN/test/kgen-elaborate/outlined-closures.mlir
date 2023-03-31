@@ -1,8 +1,8 @@
 // RUN: kgen-opt %s -verify-parameters -elaborate-generators -force-inline -eliminate-dead-symbols -cleanup-compiler-globals | FileCheck %s
 
-kgen.generator @call_region<fn: <A -> E>() -> index -> E>() -> index always_inline {
-  kgen.param.declare BoundFn: <() -> E>() -> index = <bind_signature(:<A -> E>() -> index fn, 2)>
-  %0 = kgen.call_param[<() -> E>() -> index: BoundFn]<() -> Result>()
+kgen.generator @call_region<fn: <index -> index>() -> index -> E>() -> index always_inline {
+  kgen.param.declare BoundFn: <[] -> index>() -> index = <bind_signature(:<index -> index>() -> index fn, 2)>
+  %0 = kgen.call_param[<[] -> index>() -> index: BoundFn]<() -> Result>()
   kgen.param.result_bind<Result>
   kgen.return %0 : index
 }
@@ -20,7 +20,7 @@ kgen.generator @raiseClosure_0<C, A, B -> E>(%arg0: index) -> index always_inlin
 kgen.generator @raiseClosure_wrapper<C, A, B -> E>() -> index always_inline {
   %0 = pop.compiler.global_load "raiseClosure_context_var" : !pop.struct<index>
   %1 = pop.struct.extract %0[0] : !pop.struct<index>
-  %2 = kgen.call @raiseClosure_0<C = C, A = A, B = B -> __resultParam_0 = E>(%1) : (index) -> index
+  %2 = kgen.call @raiseClosure_0<C, A, B -> __resultParam_0>(%1) : (index) -> index
   kgen.param.result_bind<__resultParam_0>
   kgen.return %2 : index
 }
@@ -43,9 +43,9 @@ kgen.generator @raiseClosure<() -> E>() -> (index, index) {
   kgen.param.declare C = <15>
   %0 = pop.struct.create(%idx0) : !pop.struct<index>
   pop.compiler.global_store "raiseClosure_context_var", %0 : !pop.struct<index>
-  kgen.param.declare Fn: <A, B -> E>() -> index = <@raiseClosure_wrapper<C = C, A = #kgen.unbound, B = #kgen.unbound>>
-  kgen.param.declare BoundFn: <A -> E>() -> index = <bind_signature(:<A, B -> E>() -> index Fn, #kgen.unbound, 1)>
-  %1 = kgen.call @call_region<fn: <A -> E>() -> index = BoundFn -> Result = E>() : () -> index
+  kgen.param.declare Fn: <index, index -> index>() -> index = <@raiseClosure_wrapper<C, #kgen.unbound, #kgen.unbound>>
+  kgen.param.declare BoundFn: <index -> index>() -> index = <bind_signature(:<index, index -> index>() -> index Fn, #kgen.unbound, 1)>
+  %1 = kgen.call @call_region<:<index -> index>() -> index BoundFn -> Result>() : () -> index
   %2 = kgen.param.constant = <Result>
   kgen.param.result_bind<Result>
   kgen.return %1, %2 : index, index

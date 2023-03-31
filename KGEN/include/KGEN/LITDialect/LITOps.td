@@ -79,7 +79,7 @@ def LIT_FuncOp : LITOp<"func", [
 
     /// Return a reference for this function, optionally bound to a set of
     /// parameter bindings.
-    TypedAttr getBoundReference(ParamBindArrayAttr bindings = {});
+    TypedAttr getBoundReference(ParameterExprArrayAttr bindings = {});
   }];
 
   let builders = [

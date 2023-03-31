@@ -45,6 +45,21 @@ public:
     return cast<T>(result);
   }
 
+  /// Construct a signature from named parameter declarations, a function type,
+  /// and metadata. This helper is used to convert between a named signature
+  /// structure to a nameness `SignatureType` representation.
+  static SignatureType
+  remapToSignature(ArrayRef<ParamDeclAttr> inputParams,
+                   ArrayRef<ParamDeclAttr> resultParams,
+                   FunctionType functionType, MetadataAttr metadata = {},
+                   function_ref<InFlightDiagnostic()> emitError = {});
+
+  /// Reconstruct the signature using a list of named input parameters. These
+  /// parameters are prepended to the current signature and references are
+  /// remapped to index references.
+  static SignatureType prependParams(SignatureType sig,
+                                     ArrayRef<ParamDeclAttr> parentParams);
+
 private:
   /// Remap an attribute.
   Attribute remapAttrImpl(Attribute attr);

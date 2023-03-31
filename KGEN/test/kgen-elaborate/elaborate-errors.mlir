@@ -20,14 +20,14 @@ kgen.generator @local_verif_error() {
 // expected-note @+1 {{elaborator expansion is 129 levels deep - infinite recursion?}}
 kgen.generator @genItf3<x>() {
   // expected-note @+1 {{call expansion failed}}
-  kgen.call @genItf3<x = add(x, 1)>() : () -> ()
+  kgen.call @genItf3<add(x, 1)>() : () -> ()
   kgen.return
 }
 
 // expected-error @+1 {{no viable expansions found}}
 kgen.generator @use_Itf3two() {
   // expected-note @+1 {{call expansion failed}}
-  kgen.call @genItf3<x = 2>() : () -> ()
+  kgen.call @genItf3<2>() : () -> ()
   kgen.return
 }
 
@@ -42,7 +42,7 @@ kgen.generator @getSIMDLength<dt: dtype -> length>() {
 
 // expected-error @+1 {{no viable expansions found}}
 kgen.generator @brokenVLenAssert() {
-  kgen.call @getSIMDLength<dt : dtype = f32 -> flen = length>() : () -> ()
+  kgen.call @getSIMDLength<:dtype f32 -> flen>() : () -> ()
 
   // expected-note @+1 {{vector length should be 3}}
   kgen.param.assert <eq(flen, 3)>, "vector length should be 3"
@@ -142,7 +142,7 @@ kgen.generator @paramRecurse<in -> out>() {
     kgen.param.yield
   } else {
     // expected-note @below {{could not resolve callee's necessary result parameters, infinite recursive loop?}}
-    kgen.call @paramRecurse<in = in -> val = out>() : () -> ()
+    kgen.call @paramRecurse<in -> val>() : () -> ()
     kgen.param.result_bind<sub(in, 1)>
     kgen.param.yield
   }
@@ -154,7 +154,7 @@ kgen.generator @paramRecurse<in -> out>() {
 kgen.generator @caller() {
   kgen.param.constant = <v>
   // expected-note @below {{call expansion failed}}
-  kgen.call @paramRecurse<in = 3 -> v = out>() : () -> ()
+  kgen.call @paramRecurse<3 -> v>() : () -> ()
   kgen.return
 }
 
@@ -172,7 +172,7 @@ kgen.generator @fail_if_zero<value>() -> index {
 
 // expected-error @below {{no viable expansions found}}
 kgen.generator @unused_param_declare() {
-  kgen.param.declare unused = <apply(:() -> index bind_signature(:<value>() -> index @fail_if_zero, 0))>
+  kgen.param.declare unused = <apply(:() -> index bind_signature(:<index>() -> index @fail_if_zero, 0))>
   kgen.return
 }
 
@@ -195,8 +195,8 @@ kgen.generator @fails_to_interpret_if_true<cond: i1>() -> index {
 kgen.generator @interpreter_state_owner() {
   // expected-note @below {{failed to evaluate 'apply'}}
   kgen.param.fork first_fails = <[
-    apply(:() -> index @fails_to_interpret_if_true<cond: i1 = 1>),
-    apply(:() -> index @fails_to_interpret_if_true<cond: i1 = 0>)
+    apply(:() -> index @fails_to_interpret_if_true<:i1 1>),
+    apply(:() -> index @fails_to_interpret_if_true<:i1 0>)
   ]>
   kgen.return
 }
