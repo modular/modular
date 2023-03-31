@@ -44,7 +44,7 @@ fn map[
 @always_inline
 fn unroll[
     count: Int,
-    func: __mlir_type[`!kgen.signature<<idx: `, Int, `>() -> !lit.none>`],
+    func: __mlir_type[`!kgen.signature<<`, Int, `>() -> !lit.none>`],
 ]():
     """
     Reateadly evaluate a function `count` times.
@@ -56,7 +56,7 @@ fn unroll[
 fn _unroll_impl[
     idx: Int,
     count: Int,
-    func: __mlir_type[`!kgen.signature<<idx: `, Int, `>() -> !lit.none>`],
+    func: __mlir_type[`!kgen.signature<<`, Int, `>() -> !lit.none>`],
 ]():
     @parameter
     if idx < count:
@@ -73,9 +73,7 @@ fn _unroll_impl[
 fn unroll2[
     dim0: Int,
     dim1: Int,
-    func: __mlir_type[
-        `!kgen.signature<<idx0: `, Int, `, idx1: `, Int, `>() -> !lit.none>`
-    ],
+    func: __mlir_type[`!kgen.signature<<`, Int, `, `, Int, `>() -> !lit.none>`],
 ]():
     """
     Reateadly evaluate a 2D nested loop where the outer iteration is `dim0` and
@@ -102,11 +100,11 @@ fn unroll3[
     dim1: Int,
     dim2: Int,
     func: __mlir_type[
-        `!kgen.signature<<idx0: `,
+        `!kgen.signature<<`,
         Int,
-        `, idx1: `,
+        `, `,
         Int,
-        `, idx2: `,
+        `, `,
         Int,
         `>() -> !lit.none>`,
     ],
@@ -137,7 +135,7 @@ alias fn_sig_type = __mlir_type[
 ]
 
 alias fn_simd_sig_type = __mlir_type[
-    `!kgen.signature<<simd_width:`,
+    `!kgen.signature<<`,
     Int,
     `>(`,
     Int,
@@ -149,7 +147,7 @@ alias fn_simd_sig_type = __mlir_type[
 fn vectorize[
     simd_width: Int,
     func: __mlir_type[
-        `!kgen.signature<<simd_width:`,
+        `!kgen.signature<<`,
         Int,
         `>(`,
         Int,
@@ -416,7 +414,7 @@ Signature of a tiled function that performs some work with a static tile size
   and an offset. i.e. func<tile_size: Int> (offset: Int)
 """
 alias Static1DTileUnitFunc = __mlir_type[
-    `!kgen.signature<<tile_size:`, Int, `>(`, Int, ` borrow) -> !lit.none>`
+    `!kgen.signature<<`, Int, `>(`, Int, ` borrow) -> !lit.none>`
 ]
 
 """
@@ -432,7 +430,7 @@ Signature of a tiled function that performs some work with a dynamic tile size
     and a secondary static tile size.
 """
 alias BinaryTile1DTileUnitFunc = __mlir_type[
-    `!kgen.signature<<secondary_tile_size:`,
+    `!kgen.signature<<`,
     Int,
     `>(`,
     Int,
@@ -708,14 +706,14 @@ struct BinaryClosure[
 
 # Signature of a function that unswitch can take.
 alias SwitchedFunction = __mlir_type[
-    `!kgen.signature<<static_switch:`, Bool, `>() -> !lit.none>`
+    `!kgen.signature<<`, Bool, `>() -> !lit.none>`
 ]
 
 # Version of unswitch supporting 2 predicates.
 alias SwitchedFunction2 = __mlir_type[
-    `!kgen.signature<<static_switch0:`,
+    `!kgen.signature<<`,
     Bool,
-    `, static_switch1:`,
+    `,`,
     Bool,
     `>() -> !lit.none>`,
 ]
@@ -802,9 +800,9 @@ Signature of a tiled function that performs some work with a static tile size
   and an offset. i.e. func<tile_size: Int> (offset: Int)
 """
 alias Static1DTileUnswitchUnitFunc = __mlir_type[
-    `!kgen.signature<<tile_size:`,
+    `!kgen.signature<<`,
     Int,
-    `, static_switch:`,
+    `, `,
     Bool,
     `>(`,
     Int,
@@ -858,7 +856,7 @@ fn tile_and_unswitch[
 
 
 alias Dynamic1DTileUnswitchUnitFunc = __mlir_type[
-    `!kgen.signature<<static_switch:`,
+    `!kgen.signature<<`,
     Bool,
     `>(`,
     Int,
@@ -941,10 +939,8 @@ fn elementwise[
     unroll_factor: Int,
     func: __mlir_type[
         `!kgen.signature<<`,
-        `simd_width: `,
         Int,
         `,`,
-        `rank: `,
         __mlir_type.index,
         `>(`,
         StaticIntTuple[
@@ -1034,10 +1030,8 @@ fn elementwise[
     unroll_factor: Int,
     func: __mlir_type[
         `!kgen.signature<<`,
-        `simd_width: `,
         Int,
         `,`,
-        `rank: `,
         __mlir_type.index,
         `>(`,
         StaticIntTuple[

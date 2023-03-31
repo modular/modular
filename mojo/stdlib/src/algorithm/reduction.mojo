@@ -37,11 +37,11 @@ fn reduce[
     type: DType,
     acc_type: DType,
     map_fn: __mlir_type[
-        `!kgen.signature<<simd_width:`,
+        `!kgen.signature<<`,
         Int,
-        `, acc_type: `,
+        `,`,
         DType,
-        `, type: `,
+        `,`,
         DType,
         `>(`,
         SIMD[
@@ -61,9 +61,9 @@ fn reduce[
         `>`,
     ],
     reduce_fn: __mlir_type[
-        `!kgen.signature<<simd_width:`,
+        `!kgen.signature<<`,
         Int,
-        `, type: `,
+        `,`,
         DType,
         `>(`,
         SIMD[
@@ -102,11 +102,11 @@ fn _reduce_3D[
     type: DType,
     acc_type: DType,
     map_fn: __mlir_type[
-        `!kgen.signature<<simd_width:`,
+        `!kgen.signature<<`,
         Int,
-        `, acc_type: `,
+        `,`,
         DType,
-        `, type: `,
+        `,`,
         DType,
         `>(`,
         SIMD[
@@ -126,9 +126,9 @@ fn _reduce_3D[
         `>`,
     ],
     reduce_fn: __mlir_type[
-        `!kgen.signature<<simd_width:`,
+        `!kgen.signature<<`,
         Int,
-        `, type: `,
+        `,`,
         DType,
         `>(`,
         SIMD[
@@ -231,11 +231,11 @@ fn reduce[
     type: DType,
     acc_type: DType,
     map_fn: __mlir_type[
-        `!kgen.signature<<simd_width:`,
+        `!kgen.signature<<`,
         Int,
-        `, acc_type: `,
+        `,`,
         DType,
-        `, type: `,
+        `,`,
         DType,
         `>(`,
         SIMD[
@@ -255,9 +255,9 @@ fn reduce[
         `>`,
     ],
     reduce_fn: __mlir_type[
-        `!kgen.signature<<simd_width:`,
+        `!kgen.signature<<`,
         Int,
-        `, type: `,
+        `,`,
         DType,
         `>(`,
         SIMD[
