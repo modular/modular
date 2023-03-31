@@ -1590,26 +1590,6 @@ static Attribute simplifyBindSignature(ArrayRef<TypedAttr> operands,
     });
   }
 
-  // If the operand is an MLIR operation, substitute its parameters in its
-  // operand and result types and bind parameters into its attribute dictionary.
-  if (auto opExpr = dyn_cast<MLIROpAttr>(operands.front())) {
-    NamedAttrList attrs = opExpr.getAttrs();
-    SmallVector<ParamBindAttr> binds;
-    for (auto [param, value] :
-         llvm::zip(opExpr.getType().getInputParams(), operands.drop_front())) {
-      if (!ParameterAttr::isSimpleConstant(value))
-        return {};
-      attrs.set(param.getName(), value);
-      binds.push_back(ParamBindAttr::get(param.getName(), value));
-    }
-    SignatureType newType = opExpr.getType().getSpecializedSignature(
-        binds, [&]() -> InFlightDiagnostic {
-          llvm_unreachable("op signature was invalid?");
-        });
-    return MLIROpAttr::get(opExpr.getName(),
-                           attrs.getDictionary(opExpr.getContext()), newType);
-  }
-
   // If the operand is a RegionAttr, we can substitute the parameters into the
   // type and return a new one.
   if (auto region = dyn_cast<RegionAttr>(operands.front())) {
@@ -1868,44 +1848,15 @@ std::optional<bool> ParamOperatorAttr::isLessThan(Attribute rhs) const {
 // MLIROpAttr
 //===----------------------------------------------------------------------===//
 
-static LogicalResult
-checkParameterUsesIn(ParameterCollector &c,
-                     function_ref<InFlightDiagnostic()> emitError, Type el,
-                     DenseMap<StringAttr, Type> &paramsMap) {
-  SmallVector<ParamDeclRefAttr> uses;
-  bool unused;
-  c.collectUsesFromType(el, uses, unused);
-  for (ParamDeclRefAttr use : uses) {
-    Type entry = paramsMap.lookup(use.getName());
-    if (!entry)
-      return emitError() << use.getName()
-                         << " parameter not defined in signature";
-    if (entry != use.getType()) {
-      return emitError() << "use of " << use.getName() << " has type "
-                         << use.getType() << " but it was declared with type "
-                         << entry;
-    }
-  }
-  return success();
-}
-
 LogicalResult MLIROpAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                  StringAttr name, DictionaryAttr attrs,
                                  SignatureType type) {
   if (type.getValueResults().size() != 1)
     return emitError()
            << "operation parameter expression must return one result";
-
-  DenseMap<StringAttr, Type> paramsMap;
-  for (ParamDeclAttr decl : type.getInputParams())
-    paramsMap.try_emplace(decl.getName(), decl.getType());
-
-  ParameterCollector::Analysis cache;
-  ParameterCollector c(cache);
-  for (Type type :
-       llvm::concat<const Type>(type.getValueInputs(), type.getValueResults()))
-    if (failed(checkParameterUsesIn(c, emitError, type, paramsMap)))
-      return failure();
+  if (!type.isConcrete())
+    return emitError()
+           << "operation parameter expression must be a concrete signature";
   return success();
 }
 

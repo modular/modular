@@ -640,18 +640,8 @@ kgen.generator @mlirOperationExpr() {
   kgen.param.declare indexAdd: (index, index) -> index = <"index.add">
   // CHECK: (index, index) -> i1 = <"index.cmp"{pred = #index<cmp_predicate slt>}>
   kgen.param.declare indexCmp: (index, index) -> i1 = <"index.cmp"{pred = #index<cmp_predicate slt>}>
-  // CHECK: <*"index">(!pop.array<2, i32>) -> i32 = <"pop.array.get">
-  kgen.param.declare arrayGet: <*"index">(!pop.array<2, i32>) -> i32 = <"pop.array.get">
-  // CHECK: <size, type: type>(!pop.array<*0|0, *0|1>) -> !kgen.paramref<*0|1> = <"pop.array.get"{index = 2 : index}>
-  kgen.param.declare arrayGetParam: <size, type: type>(!pop.array<*0|0, *0|1>) -> !kgen.paramref<*0|1> =
-    <"pop.array.get"{index = 2 : index}>
-
-  // CHECK: (!pop.array<4, i8>) -> i8 = <"pop.array.get"{{{.*}}index = 0 : index}>
-  kgen.param.declare boundOp: (!pop.array<4, i8>) -> i8 = <
-    bind_signature(
-      :<*"index", _size, _type: type>(!pop.array<_size, _type>) -> !kgen.paramref<_type> "pop.array.get",
-      0, 4, i8)
-  >
+  // CHECK: (!pop.array<2, i32>) -> i32 = <"pop.array.get"{index = 0 : index}>
+  kgen.param.declare arrayGet: (!pop.array<2, i32>) -> i32 = <"pop.array.get"{index = 0 : index}>
 
   // CHECK: cmpResult: i1 = <1>
   kgen.param.declare cmpResult: i1 = <apply(:(index, index) -> i1 "index.cmp"{pred = #index<cmp_predicate eq>}, 3, 3)>
