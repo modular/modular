@@ -16,7 +16,7 @@ using namespace M;
 
 void TensorSpec::print(raw_ostream &os) const {
   llvm::interleave(
-      getDims(), os,
+      *this, os,
       [&](ssize_t dim) {
         if (mlir::ShapedType::isDynamic(dim)) {
           os << "?";
