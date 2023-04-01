@@ -19,14 +19,18 @@ from TargetInfo import has_avx512f, has_neon
 # For the Graviton 2 a 5x3 kernel gives the best result.
 fn get_matmul_a_row_size() -> __mlir_type.index:
     @parameter
-    if has_avx512f() | has_neon():
+    if has_neon():
+        return 8
+    elif has_avx512f():
         return 5
     return 4
 
 
 fn get_matmul_pack_inner_size() -> __mlir_type.index:
     @parameter
-    if has_avx512f():
+    if has_neon():
+        return 2
+    elif has_avx512f():
         return 4
     return 3
 
