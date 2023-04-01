@@ -67,6 +67,10 @@ void KGEN::populateElaborateModulePasses(
   // After elaboration, we have no use for the parameter verifier anymore.
   pm.addPass(createElaborateGenerators(runtime, target, elaborateOptions));
 
+  populatePostElaborationPasses(pm);
+}
+
+void KGEN::populatePostElaborationPasses(mlir::PassManager &pm) {
   // Run the inliner, DCE, and cleanup the compiler globals.
   pm.addPass(createForceInline());
   pm.addPass(createEliminateDeadSymbols());

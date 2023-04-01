@@ -33,6 +33,10 @@ void populateElaborateModulePasses(
     mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
     const ElaborateGeneratorsOptions &elaborateOptions);
 
+/// This populates the post-elaboration optimization and simplification passes.
+/// These passes are intended to run immediately after the elaborator.
+void populatePostElaborationPasses(mlir::PassManager &pm);
+
 //===----------------------------------------------------------------------===//
 // KGENCompilerLayer
 //===----------------------------------------------------------------------===//
