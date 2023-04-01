@@ -29,90 +29,52 @@ using namespace M;
 using namespace KGEN;
 
 //===----------------------------------------------------------------------===//
-// AlwaysInlineParametricPass
+// AttrTypeMangler
 //===----------------------------------------------------------------------===//
-
-namespace M::KGEN {
-#define GEN_PASS_DEF_ALWAYSINLINEPARAMETRIC
-#include "KGEN/KGENPasses.h.inc"
-} // namespace M::KGEN
-
-namespace {
-struct AlwaysInlineParametricPass
-    : impl::AlwaysInlineParametricBase<AlwaysInlineParametricPass> {
-  using AlwaysInlineParametricBase::AlwaysInlineParametricBase;
-
-  void runOnOperation() override;
-};
-} // namespace
-
-/// Get the nearest declaration from the operation and the region of the
-/// declaration that contains the operation.
-static std::pair<DeclInterface, Region *>
-getNearestDeclAndRegion(Operation *op) {
-  Region *region = op->getParentRegion();
-  auto decl = dyn_cast<DeclInterface>(region->getParentOp());
-  while (!decl) {
-    region = region->getParentRegion();
-    decl = dyn_cast<DeclInterface>(region->getParentOp());
-  }
-  return {decl, region};
-}
-
-/// Generator inputs and results cross parameter domains. Make sure to rebind
-/// them if necessary.
-static SmallVector<Value> rebindValues(OpBuilder &b, Location loc,
-                                       ValueRange inputs, TypeRange outputs) {
-  SmallVector<Value> newValues;
-  for (auto [input, output] : llvm::zip(inputs, outputs))
-    if (input.getType() != output)
-      newValues.push_back(b.create<RebindOp>(loc, output, input));
-    else
-      newValues.push_back(input);
-  return newValues;
-}
-
-/// The operands of returns cross parameter domains. Make sure to rebind them if
-/// necessary.
-static SmallVector<Value>
-rebindReturnOperands(OpBuilder &b, Operation *newReturn, Operation *call) {
-  return rebindValues(b, newReturn->getLoc(), newReturn->getOperands(),
-                      call->getResultTypes());
-}
 
 namespace {
 /// Signature types define a nested parameter scope inside a parameter
 /// expression. Manually walk and mangle parameter references in attributes and
 /// types in an expression tree while accounting for name shadowing in a
 /// signature type.
-struct AttrTypeMangler {
+class AttrTypeMangler {
+public:
   using ReflessCache = DenseSet<const void *>;
 
-  explicit AttrTypeMangler(ReflessCache &cache) : noNestedRefs(cache) {}
+  explicit AttrTypeMangler(ReflessCache &noNestedRefs)
+      : noNestedRefs(noNestedRefs) {}
+
+  /// Mangle references within a type.
+  Type mangleRefsIn(Type type, bool &hasRefs) {
+    return mangleRefsInImpl(type, hasRefs);
+  }
+  Type mangleRefsIn(Type type) {
+    bool unused;
+    return mangleRefsIn(type, unused);
+  }
+
+  /// Mangle references within an attribute.
+  Attribute mangleRefsIn(Attribute attr, bool &hasRefs);
+  Attribute mangleRefsIn(Attribute type) {
+    bool unused;
+    return mangleRefsIn(type, unused);
+  }
 
   /// Populate the mangler using the decls in two potentially conflicting
   /// scopes. Returns false if there is nothing to mangle.
   bool populate(Builder &b, const ParameterUseDefGraph &curScope,
-                const ParameterUseDefGraph &inlinedScope) {
-    TimeTraceScope</*Enabled=*/false> traceScope("AttrTypeMangler::populate");
+                const ParameterUseDefGraph &inlinedScope);
 
-    bool needsMangling = false;
-    for (auto &[decl, _] : inlinedScope.decls) {
-      if (curScope.decls.find(decl) == curScope.decls.end()) {
-        // This declaration will not collide.
-        continue;
-      }
-      StringAttr mangledDecl;
-      unsigned count = 0;
-      do {
-        mangledDecl = b.getStringAttr((decl.getValue() + Twine(count++)).str());
-      } while (curScope.decls.find(mangledDecl) != curScope.decls.end());
-      mangledDecls.try_emplace(decl, mangledDecl);
-      needsMangling = true;
-    }
-    return needsMangling;
-  }
+  /// Optionally mangle a declaration.
+  ParamDeclAttr mangleDecl(ParamDeclAttr decl, bool needsMangling);
 
+  /// Mangle attributes, types, and locations in an operation.
+  void mangleElementsIn(Operation *op);
+
+  /// Recursively mangle declarations in the nested scope.
+  void recursivelyMangle(Region *scope, const ParameterUseDefGraph &graph);
+
+private:
   template <typename T, typename U = std::conditional_t<
                             std::is_base_of_v<Type, T>, Type, Attribute>>
   U mangleRefsInImpl(T value, bool &hasRefs) {
@@ -142,96 +104,113 @@ struct AttrTypeMangler {
                    : value;
   }
 
-  Type mangleRefsIn(Type type, bool &hasRefs) {
-    return mangleRefsInImpl(type, hasRefs);
-  }
-
-  Attribute mangleRefsIn(Attribute attr, bool &hasRefs) {
-    if (auto ref = dyn_cast<ParamDeclRefAttr>(attr)) {
-      hasRefs = true;
-      if (StringAttr mangled = mangledDecls.lookup(ref.getName()))
-        return ParamDeclRefAttr::get(mangled,
-                                     mangleRefsIn(ref.getType(), hasRefs));
-    }
-    return mangleRefsInImpl(attr, hasRefs);
-  }
-
-  ParamDeclAttr mangleDecl(ParamDeclAttr decl, bool needsMangling) {
-    if (!needsMangling)
-      return decl;
-    bool hasRefs = false;
-    Type type = mangleRefsIn(decl.getType(), hasRefs);
-    if (StringAttr mangled = mangledDecls.lookup(decl.getName()))
-      return ParamDeclAttr::get(mangled, type);
-    if (type == decl.getType())
-      return decl;
-    return ParamDeclAttr::get(decl.getName(), type);
-  }
-
-  void mangleElementsIn(Operation *op) {
-    TimeTraceScope<> traceScope("AttrTypeMangler::mangleElementsIn");
-
-    bool unused;
-    op->setAttrs(
-        cast<DictionaryAttr>(mangleRefsIn(op->getAttrDictionary(), unused)));
-    op->setLoc(cast<mlir::LocationAttr>(
-        mangleRefsIn(mlir::LocationAttr(op->getLoc()), unused)));
-
-    for (OpResult result : op->getResults())
-      result.setType(mangleRefsIn(result.getType(), unused));
-
-    for (Region &region : op->getRegions()) {
-      for (Block &block : region) {
-        for (BlockArgument arg : block.getArguments()) {
-          arg.setLoc(cast<mlir::LocationAttr>(
-              mangleRefsIn(mlir::LocationAttr(arg.getLoc()), unused)));
-          arg.setType(mangleRefsIn(arg.getType(), unused));
-        }
-      }
-    }
-  }
-
-  void recursivelyMangle(Region *scope, const ParameterUseDefGraph &graph) {
-    TimeTraceScope</*Enabled=*/false> traceScope(
-        "AttrTypeMangler::recursivelyMangle");
-
-    // Exit early if the scope is parametrically isolated.
-    if (cast<DeclInterface>(scope->getParentOp())
-            .isIsolatedFromAbove(scope->getRegionNumber()))
-      return;
-
-    const ParameterUseDefGraph &uses = graph.nestedScopes.find(scope)->second;
-    AttrTypeMangler mangler(noNestedRefs);
-    bool empty = true;
-    for (ParamDeclRefAttr ref : uses.usesFromAbove) {
-      if (StringAttr mangled = mangledDecls.lookup(ref.getName())) {
-        mangler.mangledDecls.try_emplace(ref.getName(), mangled);
-        empty = false;
-      }
-    }
-    // Exit early if there is nothing to mangle.
-    if (empty)
-      return;
-
-    for (Operation *op : uses.paramOps) {
-      if (op == scope->getParentOp())
-        continue;
-      mangler.mangleElementsIn(op);
-    }
-    for (auto &[_, decl] : uses.decls) {
-      if (!scope->getParentOp()->isProperAncestor(decl.declOp))
-        continue;
-      mangler.mangleElementsIn(decl.declOp);
-    }
-    for (Region *nestedScope : uses.nestedDecls)
-      mangler.recursivelyMangle(nestedScope, graph);
-  }
-
+  /// The map of mangled declarations.
   DenseMap<StringAttr, StringAttr> mangledDecls;
-
-  ReflessCache &noNestedRefs;
+  /// A cache of attributes and types known to have no parameter references.
+  ReflessCache noNestedRefs;
 };
 } // namespace
+
+Attribute AttrTypeMangler::mangleRefsIn(Attribute attr, bool &hasRefs) {
+  if (auto ref = dyn_cast<ParamDeclRefAttr>(attr)) {
+    hasRefs = true;
+    if (StringAttr mangled = mangledDecls.lookup(ref.getName()))
+      return ParamDeclRefAttr::get(mangled,
+                                   mangleRefsIn(ref.getType(), hasRefs));
+  }
+  return mangleRefsInImpl(attr, hasRefs);
+}
+
+bool AttrTypeMangler::populate(Builder &b, const ParameterUseDefGraph &curScope,
+                               const ParameterUseDefGraph &inlinedScope) {
+  TimeTraceScope</*Enabled=*/false> traceScope("AttrTypeMangler::populate");
+
+  bool needsMangling = false;
+  for (auto &[decl, _] : inlinedScope.decls) {
+    if (curScope.decls.find(decl) == curScope.decls.end()) {
+      // This declaration will not collide.
+      continue;
+    }
+    StringAttr mangledDecl;
+    unsigned count = 0;
+    do {
+      mangledDecl = b.getStringAttr((decl.getValue() + Twine(count++)).str());
+    } while (curScope.decls.find(mangledDecl) != curScope.decls.end());
+    mangledDecls.try_emplace(decl, mangledDecl);
+    needsMangling = true;
+  }
+  return needsMangling;
+}
+
+ParamDeclAttr AttrTypeMangler::mangleDecl(ParamDeclAttr decl,
+                                          bool needsMangling) {
+  if (!needsMangling)
+    return decl;
+  Type type = mangleRefsIn(decl.getType());
+  if (StringAttr mangled = mangledDecls.lookup(decl.getName()))
+    return ParamDeclAttr::get(mangled, type);
+  if (type == decl.getType())
+    return decl;
+  return ParamDeclAttr::get(decl.getName(), type);
+}
+
+void AttrTypeMangler::mangleElementsIn(Operation *op) {
+  TimeTraceScope<> traceScope("AttrTypeMangler::mangleElementsIn");
+
+  op->setAttrs(cast<DictionaryAttr>(mangleRefsIn(op->getAttrDictionary())));
+  op->setLoc(
+      cast<mlir::LocationAttr>(mangleRefsIn(mlir::LocationAttr(op->getLoc()))));
+
+  for (OpResult result : op->getResults())
+    result.setType(mangleRefsIn(result.getType()));
+
+  for (Region &region : op->getRegions()) {
+    for (Block &block : region) {
+      for (BlockArgument arg : block.getArguments()) {
+        arg.setLoc(cast<mlir::LocationAttr>(
+            mangleRefsIn(mlir::LocationAttr(arg.getLoc()))));
+        arg.setType(mangleRefsIn(arg.getType()));
+      }
+    }
+  }
+}
+
+void AttrTypeMangler::recursivelyMangle(Region *scope,
+                                        const ParameterUseDefGraph &graph) {
+  TimeTraceScope</*Enabled=*/false> traceScope(
+      "AttrTypeMangler::recursivelyMangle");
+
+  // Exit early if the scope is parametrically isolated.
+  if (cast<DeclInterface>(scope->getParentOp())
+          .isIsolatedFromAbove(scope->getRegionNumber()))
+    return;
+
+  const ParameterUseDefGraph &uses = graph.nestedScopes.find(scope)->second;
+  AttrTypeMangler mangler(noNestedRefs);
+  bool empty = true;
+  for (ParamDeclRefAttr ref : uses.usesFromAbove) {
+    if (StringAttr mangled = mangledDecls.lookup(ref.getName())) {
+      mangler.mangledDecls.try_emplace(ref.getName(), mangled);
+      empty = false;
+    }
+  }
+  // Exit early if there is nothing to mangle.
+  if (empty)
+    return;
+
+  for (Operation *op : uses.paramOps) {
+    if (op == scope->getParentOp())
+      continue;
+    mangler.mangleElementsIn(op);
+  }
+  for (auto &[_, decl] : uses.decls) {
+    if (!scope->getParentOp()->isProperAncestor(decl.declOp))
+      continue;
+    mangler.mangleElementsIn(decl.declOp);
+  }
+  for (Region *nestedScope : uses.nestedDecls)
+    mangler.recursivelyMangle(nestedScope, graph);
+}
 
 /// Insert a new parameter declaration into all nested declaration scopes.
 static void propagateNewDecls(ArrayRef<ParamDeclAttr> newDecls,
@@ -251,6 +230,43 @@ static void propagateNewDecls(ArrayRef<ParamDeclAttr> newDecls,
   }
 }
 
+//===----------------------------------------------------------------------===//
+// inlineGeneratorCall
+//===----------------------------------------------------------------------===//
+
+/// Get the nearest declaration from the operation and the region of the
+/// declaration that contains the operation.
+static Region *getNearestDeclRegion(Operation *op) {
+  Region *region = op->getParentRegion();
+  auto decl = dyn_cast<DeclInterface>(region->getParentOp());
+  while (!decl) {
+    region = region->getParentRegion();
+    decl = dyn_cast<DeclInterface>(region->getParentOp());
+  }
+  return region;
+}
+
+/// Generator inputs and results cross parameter domains. Make sure to rebind
+/// them if necessary.
+static SmallVector<Value> rebindValues(OpBuilder &b, Location loc,
+                                       ValueRange inputs, TypeRange outputs) {
+  SmallVector<Value> newValues;
+  for (auto [input, output] : llvm::zip(inputs, outputs))
+    if (input.getType() != output)
+      newValues.push_back(b.create<RebindOp>(loc, output, input));
+    else
+      newValues.push_back(input);
+  return newValues;
+}
+
+/// The operands of returns cross parameter domains. Make sure to rebind them if
+/// necessary.
+static SmallVector<Value>
+rebindReturnOperands(OpBuilder &b, Operation *newReturn, Operation *call) {
+  return rebindValues(b, newReturn->getLoc(), newReturn->getOperands(),
+                      call->getResultTypes());
+}
+
 LogicalResult KGEN::inlineGeneratorCall(
     KGENCallOpInterface topCall, ParameterUseDefGraph &topLevelGraph,
     ParameterCollector::Analysis &paramCache,
@@ -268,7 +284,6 @@ LogicalResult KGEN::inlineGeneratorCall(
   AttrTypeMangler::ReflessCache manglerCache;
 
   // Process them. Keep a callstack for a nice error when cycles are detected.
-  SmallVector<Location, 16> callstack;
   llvm::SetVector<Operation *, SmallVector<Operation *, 16>,
                   SmallPtrSet<Operation *, 16>>
       seenFuncs;
@@ -276,7 +291,6 @@ LogicalResult KGEN::inlineGeneratorCall(
   while (!calls.empty()) {
     SmartVariant<KGENCallOpInterface, EndStack> next = calls.pop_back_val();
     if (isa<EndStack>(next)) {
-      callstack.pop_back();
       seenFuncs.pop_back();
       continue;
     }
@@ -284,7 +298,6 @@ LogicalResult KGEN::inlineGeneratorCall(
     GeneratorOp callee = lookupCallee(call);
     // If the lookup returns nothing, then we end the inlining.
     if (!callee) {
-      callstack.push_back(call.getLoc());
       calls.emplace_back(EndStack{});
       continue;
     }
@@ -297,13 +310,12 @@ LogicalResult KGEN::inlineGeneratorCall(
     // because the recursion could be resolved by the elaborator.
     if (!seenFuncs.insert(callee))
       continue;
-    callstack.push_back(call.getLoc());
     calls.emplace_back(EndStack{});
 
     // Compute the parameter uses at the callee.
     const ParameterUseDefGraph &calleeParams = getGraph(paramCache, callee);
     // Get the parameters in-scope at the callsite.
-    auto [_, scopeRegion] = getNearestDeclAndRegion(call);
+    Region *scopeRegion = getNearestDeclRegion(call);
     ParameterUseDefGraph *callScope =
         scopeRegion == topLevelGraph.scope
             ? &topLevelGraph
@@ -324,8 +336,7 @@ LogicalResult KGEN::inlineGeneratorCall(
     SmallVector<Type> argTypes = llvm::to_vector(callee.getArgumentTypes());
     if (needsMangling) {
       for (Type &type : argTypes) {
-        bool unused;
-        type = mangler.mangleRefsIn(type, unused);
+        type = mangler.mangleRefsIn(type);
       }
     }
     SmallVector<Value> argVals =
@@ -492,9 +503,27 @@ LogicalResult KGEN::inlineGeneratorCall(
                   scope.getBody().front().getTerminator()->getOperands());
     }
   }
-  assert(callstack.empty() && seenFuncs.empty());
+  assert(seenFuncs.empty());
   return success();
 }
+
+//===----------------------------------------------------------------------===//
+// AlwaysInlineParametricPass
+//===----------------------------------------------------------------------===//
+
+namespace M::KGEN {
+#define GEN_PASS_DEF_ALWAYSINLINEPARAMETRIC
+#include "KGEN/KGENPasses.h.inc"
+} // namespace M::KGEN
+
+namespace {
+struct AlwaysInlineParametricPass
+    : impl::AlwaysInlineParametricBase<AlwaysInlineParametricPass> {
+  using AlwaysInlineParametricBase::AlwaysInlineParametricBase;
+
+  void runOnOperation() override;
+};
+} // namespace
 
 void AlwaysInlineParametricPass::runOnOperation() {
   SymbolTable &symtab =
@@ -522,7 +551,7 @@ void AlwaysInlineParametricPass::runOnOperation() {
     // Don't compute the graph inside the critical section. This means it's
     // possible for more than one thread to compute the graph for the same
     // generator, but it also means that computations can be parallelized if
-
+    // the pass attempts to compute different graphs at once.
     auto graph = std::make_unique<ParameterUseDefGraph>(gen.getBodyRegion());
     graph->calculate(paramCache);
 
@@ -573,21 +602,8 @@ void AlwaysInlineParametricPass::runOnOperation() {
 }
 
 //===----------------------------------------------------------------------===//
-// ForceInlinePass
+// inlineFunctionCall
 //===----------------------------------------------------------------------===//
-
-namespace M::KGEN {
-#define GEN_PASS_DEF_FORCEINLINE
-#include "KGEN/KGENPasses.h.inc"
-} // namespace M::KGEN
-
-namespace {
-struct ForceInlinePass : impl::ForceInlineBase<ForceInlinePass> {
-  using ForceInlineBase::ForceInlineBase;
-
-  void runOnOperation() override;
-};
-} // namespace
 
 static StringAttr getCalleeSymbol(KGENCallOpInterface call) {
   return cast<FlatSymbolRefAttr>(
@@ -745,6 +761,23 @@ static LogicalResult iterativelyInlineFunctionCalls(
   assert(callstack.empty() && seenFuncs.empty());
   return success();
 }
+
+//===----------------------------------------------------------------------===//
+// ForceInlinePass
+//===----------------------------------------------------------------------===//
+
+namespace M::KGEN {
+#define GEN_PASS_DEF_FORCEINLINE
+#include "KGEN/KGENPasses.h.inc"
+} // namespace M::KGEN
+
+namespace {
+struct ForceInlinePass : impl::ForceInlineBase<ForceInlinePass> {
+  using ForceInlineBase::ForceInlineBase;
+
+  void runOnOperation() override;
+};
+} // namespace
 
 void ForceInlinePass::runOnOperation() {
   LLVM_DEBUG(llvm::dbgs() << "==== ForceInline Pass ====\n");
