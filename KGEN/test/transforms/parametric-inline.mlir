@@ -942,3 +942,30 @@ kgen.generator @call_it() {
   kgen.call @deeply_nested_paramif<10>() : () -> ()
   kgen.return
 }
+
+// -----
+
+kgen.generator @pass_it() always_inline {
+  kgen.param.declare value: i32 = <1>
+  kgen.param.declare.region f = () {
+    kgen.param.declare.region g = () {
+      kgen.param.constant: i32 = <value>
+      kgen.return
+    }
+    kgen.param.declare value0 = <1>
+    kgen.return
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @main
+kgen.generator @main() {
+  // CHECK: declare value: f32
+  kgen.param.declare value: f32 = <1.0>
+  // CHECK: declare value1: i32 = <1>
+  // CHECK: kgen.param.constant: i32 = <value1>
+  // CHECK: declare value0 = <1>
+  kgen.call @pass_it() : () -> ()
+
+  kgen.return
+}

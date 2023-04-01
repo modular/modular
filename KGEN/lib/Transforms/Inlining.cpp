@@ -126,7 +126,19 @@ bool AttrTypeMangler::populate(Builder &b, const ParameterUseDefGraph &curScope,
   TimeTraceScope</*Enabled=*/false> traceScope("AttrTypeMangler::populate");
 
   bool needsMangling = false;
-  for (auto &[decl, _] : inlinedScope.decls) {
+  // `curScope` contains all declarations visible in the scope of the call,
+  // including those defined in higher scopes. When the function is inlined,
+  // these are the declarations that will project into the inlined body. We need
+  // to mangle parameters in the inlined body such that they do not collide with
+  // any declarations visible in the call scope.
+  llvm::SetVector<StringAttr> inlinedDecls;
+  for (auto &[decl, _] : inlinedScope.decls)
+    inlinedDecls.insert(decl);
+  for (auto &[_, scope] : inlinedScope.nestedScopes)
+    for (auto &[decl, _] : scope.decls)
+      inlinedDecls.insert(decl);
+
+  for (StringAttr decl : inlinedDecls) {
     if (curScope.decls.find(decl) == curScope.decls.end()) {
       // This declaration will not collide.
       continue;
@@ -135,7 +147,8 @@ bool AttrTypeMangler::populate(Builder &b, const ParameterUseDefGraph &curScope,
     unsigned count = 0;
     do {
       mangledDecl = b.getStringAttr((decl.getValue() + Twine(count++)).str());
-    } while (curScope.decls.find(mangledDecl) != curScope.decls.end());
+    } while (curScope.decls.find(mangledDecl) != curScope.decls.end() ||
+             inlinedDecls.contains(mangledDecl));
     mangledDecls.try_emplace(decl, mangledDecl);
     needsMangling = true;
   }
