@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/KGENCompiler.h"
 #include "KGEN/KGENPasses.h"
 #include "KGEN/LowerToObject.h"
 #include "LLCL/Runtime/Algorithms.h"
@@ -66,31 +67,10 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module,
   TimeTraceScope<> traceScope("lower-to-llvm");
   mgr.clear();
 
-  // We only need to run the elaborator cleanup passes if we are JITing. In
-  // non-JIT mode, we know these cleanup passes have already run.
-  // TODO (#7846): Remove this once the elaborator does inlining. Maybe keep
-  //               `force-inline`.
-  if (isJIT) {
-    mgr.addPass(createForceInline());
-    mgr.addPass(createEliminateDeadSymbols());
-    mgr.addNestedPass<KGEN::FuncOp>(createCleanupCompilerGlobals());
-
-    // We use the canonicalizer, but disable region simplifications, since it is
-    // very CFG centric and we have region trees with a single block per region.
-    mlir::GreedyRewriteConfig cannConfig;
-    cannConfig.enableRegionSimplification = false;
-    mgr.addNestedPass<KGEN::FuncOp>(mlir::createCanonicalizerPass(cannConfig));
-
-#if 0
-    // TODO(Issue #7158): This pass is causing a compile time explosion and
-    // needs to be investigated.  It is "just" a performance optimization for
-    // raised exceptions, so disable it until we can investigate it more.
-    // See: https://github.com/modularml/modular/issues/7158
-    mgr.addPass(createPruneImpossibleVariants());
-#endif
-    // Lower async functions as late as possible.
-    mgr.addPass(createLowerAsyncFunctions());
-  }
+  // We only need to run the post-elaboration passes if we are JITing. In
+  // non-JIT mode, we know the passes have already been run.
+  if (isJIT)
+    populatePostElaborationPasses(mgr);
 
   // If we aren't generating debug information, make sure it's been stripped.
   if (options.debugLevel == CompilationOptions::kNoDebug)
