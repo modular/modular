@@ -48,7 +48,8 @@
         ],
         "extensions": [
           ".lit",
-          ".mojo"
+          ".mojo",
+          ".🔥"
         ],
         "configuration": "./language-configuration.json"
       },
