@@ -86,6 +86,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in subscript base";
   case EC_ParameterList: // something[paramValue]
     return " in parameter list";
+  case EC_Destructor:
+    return " in '__del__' resolution";
   }
 }
 
@@ -227,11 +229,13 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
 
   Type declIRType = POP::PointerType::get(slotType);
   auto nameAttr = StringAttr::get(emitter.getContext(), "anonymous*");
+  TypedAttr dtor = ExprEmitter::lookupDestructor(slotType, loc, emitter.shared);
+
   // We model this as an immutable let value with a separately stored
-  // initializer.  We return an LValue for it because this method is used for
-  // the initialization.
+  // initializer.  We return an LValue for it because this method is used
+  // for the initialization.
   return SLValue(emitter.builder->create<VarLetDeclOp>(
-      emitter.translateLocation(loc), declIRType, nameAttr, /*isVar*/ 0));
+      emitter.translateLocation(loc), declIRType, nameAttr, /*isVar*/ 0, dtor));
 }
 
 /// Return an SLValue for this destination of the specified type that we can
@@ -980,6 +984,28 @@ RValue ExprEmitter::emitI1(ASTExprAnd<CValue> value, CValue &boolResult) {
   return emitRValue({litBoolCall, value.expr}, EC_BoolCondition);
 }
 
+/// Look up the __del__ destructor for the specified `type` which is needed
+/// for the specified declaration (typically a var or argument declaration).
+/// This returns the destructor if successful, diagnoses an error if not, and
+/// returns null if there is no defined destructor.
+TypedAttr ExprEmitter::lookupDestructor(ASTType type, SMLoc loc,
+                                        LitSharedState &shared) {
+  DeclRefNode declNode(StringRef(loc.getPointer(), 1));
+  OverloadSet dtorSet(type, "__del___", &declNode, CallSyntax::kDestructor,
+                      shared, /*errorHandler=*/{});
+  // If there are no __del__ methods, return null.  This is valid.
+  if (dtorSet.isNull())
+    return {};
+
+  assert(!dtorSet.fnDecls.empty());
+
+  // Ok, if there are candidates, we need to resolve down to a single one.  Emit
+  // an error if we can't.
+  ExprEmitter emitter(shared, *dtorSet.fnDecls[0], EC_Destructor,
+                      /*varDeclCursor*/ nullptr);
+  return dtorSet.getBoundConstantAttr(emitter);
+}
+
 //===----------------------------------------------------------------------===//
 // ExprEmitter implementation
 //===----------------------------------------------------------------------===//
@@ -1201,11 +1227,15 @@ void StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
   // tmp.field = value
   // store(tmp -> base)
   auto loc = expr->getLocation(emitter);
-  Type declIRType = POP::PointerType::get(baseVal.ir->elementType);
+  ASTType rvalueType = baseVal.ir->elementType;
+  Type declIRType = POP::PointerType::get(rvalueType);
   auto nameAttr = StringAttr::get(loc.getContext(), "__store_tmp__");
+  auto dtor =
+      ExprEmitter::lookupDestructor(rvalueType, expr->getLoc(), emitter.shared);
+
   auto tmpDecl =
       emitter.builder->create<VarLetDeclOp>(loc, declIRType, nameAttr,
-                                            /*isVar=*/true);
+                                            /*isVar=*/true, dtor);
 
   // Load the entire base LValue into tmpDecl.
   ValueDest tmpValueDest(SLValue(tmpDecl), EC_AttributeRefBase);

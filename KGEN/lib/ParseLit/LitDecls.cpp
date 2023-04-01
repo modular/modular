@@ -1790,10 +1790,13 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
 
     auto makeArgLValueVarSlot = [&, bbArgLoc = bbArg.getLoc(),
                                  parsedArg = parsedArg](CValue srcVal) {
-      Type varType = POP::PointerType::get(srcVal.getRValueType());
+      ASTType declType = srcVal.getRValueType();
+      Type varType = POP::PointerType::get(declType);
+      TypedAttr dtor =
+          ExprEmitter::lookupDestructor(declType, parsedArg.loc, shared);
       auto varDecl =
           builder.create<VarLetDeclOp>(bbArgLoc, varType, parsedArg.name,
-                                       /*isVar*/ 1);
+                                       /*isVar*/ 1, dtor);
 
       // Emit the initializer expression into the slot.
       ExprEmitter emitter(shared, decl, builder, /*varDeclCursor*/ nullptr);
@@ -1991,10 +1994,18 @@ LogicalResult DeclResolver::resolveSignature(VarLetDeclOp varOp,
 
   rejectDecorators(decorators, decl, shared);
 
-  // Now that this has been fully checked, we can promote to a LetRegDeclOp if
-  // this was a non-parameteric register-passable `let` declaration with an
-  // initializer.  We don't care about the address being available and this
-  // produces smaller IR.
+  // Now that we have resolved the type of the declaration - either from an
+  // explicit type or the initializer expression - look up the value destructor
+  // and install it if there is one.
+  ASTType declType = ASTType(varOp.getType()).getPointerElementType();
+  if (TypedAttr dtor =
+          ExprEmitter::lookupDestructor(declType, decl.getLoc(), shared))
+    varOp.setDtorAttr(dtor);
+
+  // Now that this has been fully checked, we can promote to a LetRegDeclOp
+  // if this was a non-parameteric register-passable `let` declaration with
+  // an initializer.  We don't care about the address being available and
+  // this produces smaller IR.
   ASTType inferredRValueType = ASTType(varOp.getType()).getPointerElementType();
   if (initExpr && !varOp.getIsVar() &&
       // NOTE: This is assuming type parameters are valid register types.  We
@@ -2007,8 +2018,9 @@ LogicalResult DeclResolver::resolveSignature(VarLetDeclOp varOp,
 
     // Create new LetRegDeclOp and put it into the ASTDecl.
     OpBuilder builder(theStore);
-    auto newLetOp = builder.create<LetRegDeclOp>(
-        varOp.getLoc(), varOp.getNameAttr(), theStore.getArg());
+    auto newLetOp =
+        builder.create<LetRegDeclOp>(varOp.getLoc(), varOp.getNameAttr(),
+                                     theStore.getArg(), varOp.getDtorAttr());
     decl.setIRValue(newLetOp.getOperation());
 
     // Remove the store and the original VarLetDeclOp.
@@ -2251,7 +2263,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, LitLexer &lexer,
       return failure();
     }
 
-    // Trivial types may not have __clone__ or __del__ members.
+    // Trivial types may not have __copy__ or __del__ members.
     if (registerPassability == StructDeclOp::RP_RegisterPassableTrivial) {
       auto rejectMemberIfPresent = [&](StringRef name) {
         auto nameAttr = StringAttr::get(getContext(), name);

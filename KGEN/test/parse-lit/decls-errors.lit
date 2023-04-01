@@ -450,6 +450,17 @@ struct InvalidMember:
 
 def noop():  # expected-error {{expected body statements; use 'pass' if none is required}}
 
+
+
+struct BadDtor:
+  fn __init__(self&): pass
+  fn __del___[x: Int](self):
+    pass
+
+fn bad_destructors():
+  var x = BadDtor()
+
+
 ##===----------------------------------------------------------------------===##
 # Class
 ##===----------------------------------------------------------------------===##

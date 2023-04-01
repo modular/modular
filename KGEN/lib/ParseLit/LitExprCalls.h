@@ -115,6 +115,7 @@ enum class CallSyntax : uint8_t {
   kReversedOperator, //< y + x          (where the method was looked up on x).
   kSubscript,        // v[1, 2]
   kImplicitConvert,  //< Conversion in an argument context
+  kDestructor,       //< Destructor due to a value definition.
 };
 
 /// This class represents an unresolved overload set with partially bound
