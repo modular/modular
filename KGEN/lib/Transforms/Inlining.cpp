@@ -39,10 +39,8 @@ namespace {
 /// signature type.
 class AttrTypeMangler {
 public:
-  using ReflessCache = DenseSet<const void *>;
-
-  explicit AttrTypeMangler(ReflessCache &noNestedRefs)
-      : noNestedRefs(noNestedRefs) {}
+  explicit AttrTypeMangler(DenseSet<const void *> &manglerCache)
+      : manglerCache(manglerCache) {}
 
   /// Mangle references within a type.
   Type mangleRefsIn(Type type, bool &hasRefs) {
@@ -63,7 +61,7 @@ public:
   /// Populate the mangler using the decls in two potentially conflicting
   /// scopes. Returns false if there is nothing to mangle.
   bool populate(Builder &b, const ParameterUseDefGraph &curScope,
-                const ParameterUseDefGraph &inlinedScope);
+                const llvm::SetVector<StringAttr> &calleeDecls);
 
   /// Optionally mangle a declaration.
   ParamDeclAttr mangleDecl(ParamDeclAttr decl, bool needsMangling);
@@ -78,7 +76,7 @@ private:
   template <typename T, typename U = std::conditional_t<
                             std::is_base_of_v<Type, T>, Type, Attribute>>
   U mangleRefsInImpl(T value, bool &hasRefs) {
-    if (noNestedRefs.contains(value.getAsOpaquePointer()))
+    if (manglerCache.contains(value.getAsOpaquePointer()))
       return value;
 
     SmallVector<Attribute, 16> replAttrs;
@@ -99,7 +97,7 @@ private:
 
     hasRefs |= hasNestedRefs;
     if (!hasNestedRefs)
-      noNestedRefs.insert(value.getAsOpaquePointer());
+      manglerCache.insert(value.getAsOpaquePointer());
     return changed ? value.replaceImmediateSubElements(replAttrs, replTypes)
                    : value;
   }
@@ -107,7 +105,7 @@ private:
   /// The map of mangled declarations.
   DenseMap<StringAttr, StringAttr> mangledDecls;
   /// A cache of attributes and types known to have no parameter references.
-  ReflessCache noNestedRefs;
+  DenseSet<const void *> manglerCache;
 };
 } // namespace
 
@@ -122,8 +120,22 @@ Attribute AttrTypeMangler::mangleRefsIn(Attribute attr, bool &hasRefs) {
 }
 
 bool AttrTypeMangler::populate(Builder &b, const ParameterUseDefGraph &curScope,
-                               const ParameterUseDefGraph &inlinedScope) {
-  TimeTraceScope</*Enabled=*/false> traceScope("AttrTypeMangler::populate");
+                               const llvm::SetVector<StringAttr> &calleeDecls) {
+  TimeTraceScope<> traceScope("AttrTypeMangler::populate");
+
+  // This uniquing scheme involves splitting each decl name into a key string
+  // and a substring of trailing digits. We track the max of such digits of the
+  // same key string and use that to generate the next unique ID.
+  llvm::StringMap<ssize_t> maxIds;
+  auto getId = [&](StringRef name) {
+    size_t splitIdx = llvm::count_if(llvm::reverse(name),
+                                     [](char c) { return std::isdigit(c); });
+    splitIdx = name.size() - splitIdx;
+    // -1 means no number suffix.
+    ssize_t id = -1;
+    name.substr(splitIdx).getAsInteger(/*Radix=*/10, id);
+    return std::make_pair(name.substr(0, splitIdx), id);
+  };
 
   bool needsMangling = false;
   // `curScope` contains all declarations visible in the scope of the call,
@@ -131,25 +143,27 @@ bool AttrTypeMangler::populate(Builder &b, const ParameterUseDefGraph &curScope,
   // these are the declarations that will project into the inlined body. We need
   // to mangle parameters in the inlined body such that they do not collide with
   // any declarations visible in the call scope.
-  llvm::SetVector<StringAttr> inlinedDecls;
-  for (auto &[decl, _] : inlinedScope.decls)
-    inlinedDecls.insert(decl);
-  for (auto &[_, scope] : inlinedScope.nestedScopes)
-    for (auto &[decl, _] : scope.decls)
-      inlinedDecls.insert(decl);
-
-  for (StringAttr decl : inlinedDecls) {
+  for (StringAttr decl : calleeDecls) {
     if (curScope.decls.find(decl) == curScope.decls.end()) {
       // This declaration will not collide.
       continue;
     }
-    StringAttr mangledDecl;
-    unsigned count = 0;
-    do {
-      mangledDecl = b.getStringAttr((decl.getValue() + Twine(count++)).str());
-    } while (curScope.decls.find(mangledDecl) != curScope.decls.end() ||
-             inlinedDecls.contains(mangledDecl));
-    mangledDecls.try_emplace(decl, mangledDecl);
+    if (!needsMangling) {
+      // Lazily populate the IDs;
+      auto updateMaxId = [&](StringRef name) {
+        auto [key, id] = getId(name);
+        ssize_t &max = maxIds.try_emplace(key, -1).first->second;
+        max = std::max(max, id);
+      };
+      for (StringAttr name : calleeDecls)
+        updateMaxId(name);
+      for (auto &[decl, _] : curScope.decls)
+        updateMaxId(decl);
+    }
+    // Generate a new ID by taking the max number.
+    auto [key, _] = getId(decl);
+    ssize_t newId = ++maxIds[key];
+    mangledDecls.try_emplace(decl, b.getStringAttr(key + Twine(newId)));
     needsMangling = true;
   }
   return needsMangling;
@@ -199,7 +213,7 @@ void AttrTypeMangler::recursivelyMangle(Region *scope,
     return;
 
   const ParameterUseDefGraph &uses = graph.nestedScopes.find(scope)->second;
-  AttrTypeMangler mangler(noNestedRefs);
+  AttrTypeMangler mangler(manglerCache);
   bool empty = true;
   for (ParamDeclRefAttr ref : uses.usesFromAbove) {
     if (StringAttr mangled = mangledDecls.lookup(ref.getName())) {
@@ -280,244 +294,348 @@ rebindReturnOperands(OpBuilder &b, Operation *newReturn, Operation *call) {
                       call->getResultTypes());
 }
 
-LogicalResult KGEN::inlineGeneratorCall(
-    KGENCallOpInterface topCall, ParameterUseDefGraph &topLevelGraph,
-    ParameterCollector::Analysis &paramCache,
-    function_ref<ParameterUseDefGraph &(ParameterCollector::Analysis &,
-                                        GeneratorOp)>
-        getGraph,
-    function_ref<GeneratorOp(KGENCallOpInterface)> lookupCallee) {
+void KGEN::inlineGeneratorCall(CallOp call, GeneratorOp callee,
+                               ParameterUseDefGraph &topLevelGraph,
+                               const ParameterUseDefGraph &calleeParams,
+                               const llvm::SetVector<StringAttr> &calleeDecls,
+                               DenseSet<const void *> &manglerCache) {
+  assert(callee.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled);
+  TimeTraceScope<> traceScope("callee",
+                              [&] { return callee.getSymName().str(); });
 
-  // Collect all calls that inline in this function.
-  struct EndStack {};
-  SmallVector<SmartVariant<KGENCallOpInterface, EndStack>> calls = {topCall};
+  StringAttr label = StringAttr::get(call.getContext(), "inlined_cf_scope");
 
-  // A cache of attributes that have no references inside them. This is used by
-  // the attribute mangler.
-  AttrTypeMangler::ReflessCache manglerCache;
+  // Get the parameters in-scope at the callsite.
+  Region *scopeRegion = getNearestDeclRegion(call);
+  ParameterUseDefGraph *callScope =
+      scopeRegion == topLevelGraph.scope
+          ? &topLevelGraph
+          : &topLevelGraph.nestedScopes.find(scopeRegion)->second;
 
-  // Process them. Keep a callstack for a nice error when cycles are detected.
-  llvm::SetVector<Operation *, SmallVector<Operation *, 16>,
-                  SmallPtrSet<Operation *, 16>>
-      seenFuncs;
-  StringAttr label = StringAttr::get(topCall.getContext(), "inlined_cf_scope");
-  while (!calls.empty()) {
-    SmartVariant<KGENCallOpInterface, EndStack> next = calls.pop_back_val();
-    if (isa<EndStack>(next)) {
-      seenFuncs.pop_back();
-      continue;
+  mlir::IRRewriter b{OpBuilder(call)};
+  // Use a LoopOp to be able to break to a label - any returns inlined from
+  // callee must only exit the inlined block.
+  auto scope = b.create<HLCF::LoopOp>(call.getLoc(), call->getResultTypes(),
+                                      ValueRange(), label);
+  b.createBlock(&scope.getBody());
+
+  AttrTypeMangler mangler(manglerCache);
+  bool needsMangling = mangler.populate(b, *callScope, calleeDecls);
+
+  // Make sure to rebind the call operands based on the mangled types of the
+  // callee's argument types.
+  SmallVector<Type> argTypes = llvm::to_vector(callee.getArgumentTypes());
+  if (needsMangling)
+    for (Type &type : argTypes)
+      type = mangler.mangleRefsIn(type);
+
+  SmallVector<Value> argVals =
+      rebindValues(b, call.getLoc(), call->getOperands(), argTypes);
+
+  // Materialize any constraints on the callee as asserts.
+  for (ConstraintAttr constraint : callee.getConstraints()) {
+    auto assertOp = b.create<ParamAssertOp>(
+        constraint.getLoc(), constraint.getExpr(),
+        StringAttr::get(constraint.getMessage().getValue(),
+                        StringType::get(b.getContext())));
+    if (needsMangling)
+      mangler.mangleElementsIn(assertOp);
+  }
+
+  // Map the callee inputs.
+  IRMapping map;
+  for (auto [value, arg] : llvm::zip(argVals, callee.getArguments()))
+    map.map(arg, value);
+  for (Operation &op : *callee.getBody())
+    b.clone(op, map);
+
+  // Clone the nested parameter use-def graphs into the current set of
+  // nested graphs.
+  callee.walk([&](DeclInterface containedScope) {
+    if (containedScope == callee)
+      return;
+    Operation *clonedScope = map.lookup(&*containedScope);
+    for (auto [region, clonedRegion] :
+         llvm::zip(containedScope->getRegions(), clonedScope->getRegions())) {
+      const ParameterUseDefGraph &nestedGraph =
+          calleeParams.nestedScopes.find(&region)->second;
+      bool inserted = topLevelGraph.nestedScopes
+                          .try_emplace(&clonedRegion, nestedGraph.copy(map))
+                          .second;
+      assert(inserted);
     }
-    auto call = cast<KGENCallOpInterface>(next);
-    GeneratorOp callee = lookupCallee(call);
-    // If the lookup returns nothing, then we end the inlining.
-    if (!callee) {
-      calls.emplace_back(EndStack{});
-      continue;
-    }
+  });
+  // Re-acquire `callScope` since the reference could have been invalidated
+  // by the insertions into `calleeParams.nestedScopes`.
+  callScope = scopeRegion == topLevelGraph.scope
+                  ? &topLevelGraph
+                  : &topLevelGraph.nestedScopes.find(scopeRegion)->second;
+  // Decl scopes that were nested under the callee are now nested under the
+  // current call scope.
+  for (Region *nestedDecl : calleeParams.nestedDecls) {
+    callScope->nestedDecls.push_back(
+        &map.lookup(nestedDecl->getParentOp())
+             ->getRegion(nestedDecl->getRegionNumber()));
+  }
 
-    assert(callee.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled);
-    TimeTraceScope<> traceScope("callee",
-                                [&] { return callee.getSymName().str(); });
-
-    // If we recursed onto the same function, give up. Don't emit an error
-    // because the recursion could be resolved by the elaborator.
-    if (!seenFuncs.insert(callee))
-      continue;
-    calls.emplace_back(EndStack{});
-
-    // Compute the parameter uses at the callee.
-    const ParameterUseDefGraph &calleeParams = getGraph(paramCache, callee);
-    // Get the parameters in-scope at the callsite.
-    Region *scopeRegion = getNearestDeclRegion(call);
-    ParameterUseDefGraph *callScope =
-        scopeRegion == topLevelGraph.scope
-            ? &topLevelGraph
-            : &topLevelGraph.nestedScopes.find(scopeRegion)->second;
-
-    mlir::IRRewriter b{OpBuilder(call)};
-    // Use a LoopOp to be able to break to a label - any returns inlined from
-    // callee must only exit the inlined block.
-    auto scope = b.create<HLCF::LoopOp>(call.getLoc(), call->getResultTypes(),
-                                        ValueRange(), label);
-    b.createBlock(&scope.getBody());
-
-    AttrTypeMangler mangler(manglerCache);
-    bool needsMangling = mangler.populate(b, *callScope, calleeParams);
-
-    // Make sure to rebind the call operands based on the mangled types of the
-    // callee's argument types.
-    SmallVector<Type> argTypes = llvm::to_vector(callee.getArgumentTypes());
-    if (needsMangling) {
-      for (Type &type : argTypes) {
-        type = mangler.mangleRefsIn(type);
-      }
-    }
-    SmallVector<Value> argVals =
-        rebindValues(b, call.getLoc(), call->getOperands(), argTypes);
-
-    // Materialize any constraints on the callee as asserts.
-    for (ConstraintAttr constraint : callee.getConstraints()) {
-      auto assertOp = b.create<ParamAssertOp>(
-          constraint.getLoc(), constraint.getExpr(),
-          StringAttr::get(constraint.getMessage().getValue(),
-                          StringType::get(b.getContext())));
-      if (needsMangling)
-        mangler.mangleElementsIn(assertOp);
-    }
-
-    // Map the callee inputs.
-    IRMapping map;
-    for (auto [value, arg] : llvm::zip(argVals, callee.getArguments()))
-      map.map(arg, value);
-    for (Operation &op : *callee.getBody())
-      b.clone(op, map);
-
-    // Clone the nested parameter use-def graphs into the current set of
-    // nested graphs.
-    callee.walk([&](DeclInterface containedScope) {
-      if (containedScope == callee)
-        return;
-      Operation *clonedScope = map.lookup(&*containedScope);
-      for (auto [region, clonedRegion] :
-           llvm::zip(containedScope->getRegions(), clonedScope->getRegions())) {
-        const ParameterUseDefGraph &nestedGraph =
-            calleeParams.nestedScopes.find(&region)->second;
-        bool inserted = topLevelGraph.nestedScopes
-                            .try_emplace(&clonedRegion, nestedGraph.copy(map))
-                            .second;
-        assert(inserted);
-      }
-    });
-    // Re-acquire `callScope` since the reference could have been invalidated
-    // by the insertions into `calleeParams.nestedScopes`.
-    callScope = scopeRegion == topLevelGraph.scope
-                    ? &topLevelGraph
-                    : &topLevelGraph.nestedScopes.find(scopeRegion)->second;
-    // Decl scopes that were nested under the callee are now nested under the
-    // current call scope.
-    for (Region *nestedDecl : calleeParams.nestedDecls) {
-      callScope->nestedDecls.push_back(
-          &map.lookup(nestedDecl->getParentOp())
-               ->getRegion(nestedDecl->getRegionNumber()));
-    }
-
-    // Do name mangling.
-    if (needsMangling) {
-      for (Operation *user : calleeParams.paramOps) {
-        // Skip the parent decl. It's handled after.
-        if (user == callee)
-          continue;
-        Operation *cloned = map.lookup(user);
-        mangler.mangleElementsIn(cloned);
-      }
-    }
-    for (auto &[name, def] : calleeParams.defs) {
+  // Do name mangling.
+  if (needsMangling) {
+    for (Operation *user : calleeParams.paramOps) {
       // Skip the parent decl. It's handled after.
-      if (def.defOp == callee)
+      if (user == callee)
         continue;
-      Operation *cloned = map.lookup(def.defOp);
+      Operation *cloned = map.lookup(user);
       mangler.mangleElementsIn(cloned);
-      // Rename declarations.
-      auto itf = cast<ParamOpInterface>(def.defOp);
-      SmallVector<ParamDeclAttr> newDecls;
-      itf.walkDeclarations([&](ParamDeclAttr decl) {
-        newDecls.push_back(mangler.mangleDecl(decl, needsMangling));
-      });
-      cast<ParamOpInterface>(cloned).renameDeclarations(newDecls);
-      // Populate the new declarations into the call scope graph.
-      propagateNewDecls(newDecls, topLevelGraph, *callScope, cloned,
-                        scopeRegion);
-    }
-    if (needsMangling) {
-      for (Region *nestedScope : calleeParams.nestedDecls) {
-        mangler.recursivelyMangle(
-            &map.lookup(nestedScope->getParentOp())
-                 ->getRegion(nestedScope->getRegionNumber()),
-            topLevelGraph);
-      }
-    }
-
-    // Mangle the DeclInterface declarations.
-    b.setInsertionPointToStart(&scope.getBody().front());
-    for (auto [origDecl, value] :
-         llvm::zip(callee.getInputParams(), call.getParamValues())) {
-      ParamDeclAttr decl = mangler.mangleDecl(origDecl, needsMangling);
-      auto declOp = b.create<ParamDeclareOp>(
-          callee.getLoc(), decl,
-          ParamOperatorAttr::get(b.getContext(), POC::Rebind, value,
-                                 decl.getType()));
-      // Register the new declaration.
-      propagateNewDecls(decl, topLevelGraph, *callScope, declOp, scopeRegion);
-    }
-
-    bool stripDebugInfo =
-        callee.getAlwaysInlineLevel() == AlwaysInlineLevel::EnabledNoDebug;
-    scope.getBody().walk([&](Operation *op) {
-      // If this is an `always_inline(nodebug)`, erase the location of the
-      // inlined operations by replacing them with the location of the call.
-      // Otherwise, propagate the inlined location via a `CallSiteLoc`.
-      if (stripDebugInfo)
-        op->setLoc(call.getLoc());
-      else
-        op->setLoc(mlir::CallSiteLoc::get(op->getLoc(), call.getLoc()));
-
-      // Erase `debuginfo.value` operations when inlining without debug info.
-      if (stripDebugInfo) {
-        if (auto value = dyn_cast<DebugInfo::ValueOp>(op)) {
-          value.erase();
-          return;
-        }
-      }
-
-      // Check for a call to recursively inline.
-      if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
-        auto callee = lookupCallee(call);
-        if (callee &&
-            callee.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled)
-          calls.emplace_back(call);
-      }
-    });
-
-    // Handle all terminators.
-    unsigned numReturns = 0;
-    callee.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
-      // Walk over nested functions. Control-flow does not cross them.
-      if (op != callee && isa<FuncInterface>(op))
-        return WalkResult::skip();
-      if (!isa<ReturnOp, ParamResultBindOp>(op))
-        return WalkResult::advance();
-
-      Operation *cloned = map.lookup(op);
-      b.setInsertionPoint(cloned);
-      if (auto bind = dyn_cast<ParamResultBindOp>(cloned)) {
-        for (auto [decl, value] :
-             llvm::zip(call.getParamDecls(), bind.getParameters())) {
-          auto rebound = ParamOperatorAttr::get(b.getContext(), POC::Rebind,
-                                                value, decl.getType());
-          b.create<ParamDeclareOp>(bind.getLoc(), decl, rebound);
-        }
-      } else {
-        ++numReturns;
-        b.create<HLCF::BreakOp>(cloned->getLoc(),
-                                rebindReturnOperands(b, cloned, call), label);
-      }
-      cloned->erase();
-      return WalkResult::advance();
-    });
-    b.replaceOp(call, scope.getResults());
-
-    // If the scope was trivial (one return), fold it away.
-    assert(numReturns > 0);
-    if (numReturns == 1) {
-      for (Operation &op : llvm::make_early_inc_range(
-               scope.getBody().front().without_terminator()))
-        op.moveBefore(scope);
-      b.replaceOp(scope,
-                  scope.getBody().front().getTerminator()->getOperands());
     }
   }
-  assert(seenFuncs.empty());
-  return success();
+  for (auto &[name, def] : calleeParams.defs) {
+    // Skip the parent decl. It's handled after.
+    if (def.defOp == callee)
+      continue;
+    Operation *cloned = map.lookup(def.defOp);
+    mangler.mangleElementsIn(cloned);
+    // Rename declarations.
+    auto itf = cast<ParamOpInterface>(def.defOp);
+    SmallVector<ParamDeclAttr> newDecls;
+    itf.walkDeclarations([&](ParamDeclAttr decl) {
+      newDecls.push_back(mangler.mangleDecl(decl, needsMangling));
+    });
+    cast<ParamOpInterface>(cloned).renameDeclarations(newDecls);
+    // Populate the new declarations into the call scope graph.
+    propagateNewDecls(newDecls, topLevelGraph, *callScope, cloned, scopeRegion);
+  }
+  if (needsMangling) {
+    for (Region *nestedScope : calleeParams.nestedDecls) {
+      mangler.recursivelyMangle(
+          &map.lookup(nestedScope->getParentOp())
+               ->getRegion(nestedScope->getRegionNumber()),
+          topLevelGraph);
+    }
+  }
+
+  // Mangle the DeclInterface declarations.
+  b.setInsertionPointToStart(&scope.getBody().front());
+  for (auto [origDecl, value] :
+       llvm::zip(callee.getInputParams(), call.getParamValues())) {
+    ParamDeclAttr decl = mangler.mangleDecl(origDecl, needsMangling);
+    auto declOp = b.create<ParamDeclareOp>(
+        callee.getLoc(), decl,
+        ParamOperatorAttr::get(b.getContext(), POC::Rebind, value,
+                               decl.getType()));
+    // Register the new declaration.
+    propagateNewDecls(decl, topLevelGraph, *callScope, declOp, scopeRegion);
+  }
+
+  bool stripDebugInfo =
+      callee.getAlwaysInlineLevel() == AlwaysInlineLevel::EnabledNoDebug;
+  scope.getBody().walk([&](Operation *op) {
+    // If this is an `always_inline(nodebug)`, erase the location of the
+    // inlined operations by replacing them with the location of the call.
+    // Otherwise, propagate the inlined location via a `CallSiteLoc`.
+    if (stripDebugInfo)
+      op->setLoc(call.getLoc());
+    else
+      op->setLoc(mlir::CallSiteLoc::get(op->getLoc(), call.getLoc()));
+
+    // Erase `debuginfo.value` operations when inlining without debug info.
+    if (stripDebugInfo) {
+      if (auto value = dyn_cast<DebugInfo::ValueOp>(op)) {
+        value.erase();
+        return;
+      }
+    }
+  });
+
+  // Handle all terminators.
+  unsigned numReturns = 0;
+  callee.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+    // Walk over nested functions. Control-flow does not cross them.
+    if (op != callee && isa<FuncInterface>(op))
+      return WalkResult::skip();
+    if (!isa<ReturnOp, ParamResultBindOp>(op))
+      return WalkResult::advance();
+
+    Operation *cloned = map.lookup(op);
+    b.setInsertionPoint(cloned);
+    if (auto bind = dyn_cast<ParamResultBindOp>(cloned)) {
+      for (auto [decl, value] :
+           llvm::zip(call.getParamDecls(), bind.getParameters())) {
+        auto rebound = ParamOperatorAttr::get(b.getContext(), POC::Rebind,
+                                              value, decl.getType());
+        b.create<ParamDeclareOp>(bind.getLoc(), decl, rebound);
+      }
+    } else {
+      ++numReturns;
+      b.create<HLCF::BreakOp>(cloned->getLoc(),
+                              rebindReturnOperands(b, cloned, call), label);
+    }
+    cloned->erase();
+    return WalkResult::advance();
+  });
+  b.replaceOp(call, scope.getResults());
+
+  // If the scope was trivial (one return), fold it away.
+  assert(numReturns > 0);
+  if (numReturns == 1) {
+    for (Operation &op : llvm::make_early_inc_range(
+             scope.getBody().front().without_terminator()))
+      op.moveBefore(scope);
+    b.replaceOp(scope, scope.getBody().front().getTerminator()->getOperands());
+  }
+}
+
+//===----------------------------------------------------------------------===//
+// InlineGraph
+//===----------------------------------------------------------------------===//
+
+namespace {
+/// A node in the inlining graph contains a function, edges to its callers, and
+/// edges to its callees. A node is ready to inline its callees when all of
+/// its callees have been processed.
+struct InliningGraphNode {
+  /// Create the node for the given function.
+  explicit InliningGraphNode(GeneratorOp func) : func(func) {}
+
+  /// The function represented by the node.
+  GeneratorOp func;
+
+  /// Nodes of functions that inline call this function. These are the child
+  /// edges.
+  std::vector<InliningGraphNode *> callers;
+  /// Calls and callees to inline inside this function. These are the parent
+  /// edges.
+  std::vector<std::pair<CallOp, InliningGraphNode *>> callsites;
+
+  /// The number of processed calls.
+  size_t numProcessedCalls = 0;
+
+  /// In parametric inlining, each function has its parameter use-def graph
+  /// computed twice: once as a caller, computed when the node is being
+  /// processed, and once as a callee, when the fully processed node is called
+  /// from somewhere else. Stash the callee graph on the node itself.
+  Optional<ParameterUseDefGraph> calleeParamGraph;
+  /// A set of all declarations, regardless of type, in the callee.
+  llvm::SetVector<StringAttr> allDecls;
+};
+
+/// An inlining graph is a call graph between functions of concrete calls to
+/// functions that must be inlined. The root nodes of the graph are
+/// `always_inline` functions with no calls to other such functions, and the
+/// leaf nodes are non-inlined functions.
+///
+/// This data structure is used to inline functions starting from the leaves of
+/// callgraphs. This is more efficient because inlining from the roots of the
+/// callgraph leads to duplicate work (splats callgraph into a tree). It also
+/// enables inlined functions to be optimized and pruned as they are processed.
+struct InliningGraph {
+  /// Create an inlining graph with the specified inlining level.
+  explicit InliningGraph(AlwaysInlineLevel level,
+                         ParameterCollector::Analysis &paramCache)
+      : level(level), paramCache(paramCache) {}
+
+  /// Build the inlining graph for a module.
+  void build(ModuleOp module, SymbolTable &symtab);
+
+  /// Process the graph by performing all requested inlining from the root
+  /// nodes.
+  void process();
+
+  /// Inline the requested call.
+  void inlineCall(ParameterUseDefGraph &callerParams, CallOp call,
+                  InliningGraphNode *callee);
+
+  /// The nodes in the graph. The map does not resize after it is constructed,
+  /// so references always remain valid.
+  DenseMap<GeneratorOp, InliningGraphNode> nodes;
+  /// Calls to functions with at least this inline level are considered edges in
+  /// the inlining graph.
+  AlwaysInlineLevel level;
+
+  /// A parameter collector cache to use.
+  ParameterCollector::Analysis &paramCache;
+  /// The parameter mangler cache.
+  DenseSet<const void *> manglerCache;
+};
+} // namespace
+
+void InliningGraph::build(ModuleOp module, SymbolTable &symtab) {
+  // Instantiate the nodes for each generator first.
+  for (auto func : module.getOps<GeneratorOp>())
+    nodes.try_emplace(func, InliningGraphNode(func));
+
+  // Build the graph by walking all the calls in each function and adding edges
+  // as appropriate.
+  for (auto &[func, node] : nodes) {
+    InliningGraphNode *callerNode = &node;
+    func.walk([&](CallOp call) {
+      auto callee = symtab.lookup<GeneratorOp>(
+          cast<FlatSymbolRefAttr>(call.getCallee().getSymbol()).getAttr());
+      // Filter calls that do not satisfy the inlining level.
+      if (callee.getAlwaysInlineLevel() < level)
+        return;
+      InliningGraphNode *calleeNode = &nodes.find(callee)->second;
+      callerNode->callsites.emplace_back(call, calleeNode);
+      calleeNode->callers.push_back(callerNode);
+    });
+  }
+}
+
+void InliningGraph::process() {
+  std::vector<InliningGraphNode *> worklist;
+
+  // Complete processing of a node by incrementing the number of processed calls
+  // of all its callers. Note that the same function can appear in the caller
+  // list N, indicating that it calls this function N times. This loop will
+  // increment the `numProcessedCalls` counters N times as appropriate.
+  auto complete = [&](InliningGraphNode *node) {
+    for (InliningGraphNode *caller : node->callers)
+      if (++caller->numProcessedCalls == caller->callsites.size())
+        worklist.push_back(caller);
+  };
+
+  // Populate the worklist with root nodes.
+  for (auto &[func, node] : nodes) {
+    // Root nodes are already complete.
+    if (node.callsites.empty())
+      complete(&node);
+  }
+
+  while (!worklist.empty()) {
+    InliningGraphNode *node = worklist.back();
+    worklist.pop_back();
+
+    // Compute the parameter use-def graph of the function as a caller.
+    ParameterUseDefGraph callerParams(node->func.getBodyRegion());
+    callerParams.calculate(paramCache);
+    for (auto [call, callee] : node->callsites)
+      inlineCall(callerParams, call, callee);
+    complete(node);
+  }
+}
+
+void InliningGraph::inlineCall(ParameterUseDefGraph &callerParams, CallOp call,
+                               InliningGraphNode *callee) {
+  // Compute parameters of the callee function if not done already.
+  Optional<ParameterUseDefGraph> &calleeParams = callee->calleeParamGraph;
+  if (!calleeParams) {
+    calleeParams.emplace(callee->func.getBodyRegion());
+    calleeParams->calculate(paramCache);
+    callee->func.walk([&](Operation *op) {
+      if (auto decl = dyn_cast<DeclInterface>(op)) {
+        for (ParamDeclAttr decl : llvm::concat<const ParamDeclAttr>(
+                 decl.getInputParams(), decl.getResultParams()))
+          callee->allDecls.insert(decl.getName());
+      }
+      if (auto paramOp = dyn_cast<ParamOpInterface>(op)) {
+        paramOp.walkDeclarations([&](ParamDeclAttr decl) {
+          callee->allDecls.insert(decl.getName());
+        });
+      }
+    });
+  }
+
+  inlineGeneratorCall(call, callee->func, callerParams, *calleeParams,
+                      callee->allDecls, manglerCache);
 }
 
 //===----------------------------------------------------------------------===//
@@ -543,75 +661,9 @@ void AlwaysInlineParametricPass::runOnOperation() {
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
   auto &paramCache = getAnalysis<ParameterCollector::Analysis>();
 
-  // Cache the computed parameter use-def graphs of all generators. We will need
-  // to keep the graphs somewhat up-to-date. Since we are inlining top-down, we
-  // can compute the graphs of the inlined callees once, and since the only
-  // graphs that will be modified are those of non-inlined functions, we can
-  // minimally update those graphs. We need to keep up-to-date parameter
-  // declarations in each scope, since those are used to mangle parameters, and
-  // merge any nested graphs in.
-  DenseMap<GeneratorOp, std::unique_ptr<ParameterUseDefGraph>> graphs;
-  llvm::sys::SmartRWMutex<true> graphsMtx;
-  auto getGraph = [&graphsMtx,
-                   &graphs](ParameterCollector::Analysis &paramCache,
-                            GeneratorOp gen) -> ParameterUseDefGraph & {
-    {
-      llvm::sys::SmartScopedReader<true> lock(graphsMtx);
-      if (auto it = graphs.find(gen); it != graphs.end())
-        return *it->second;
-    }
-
-    // Don't compute the graph inside the critical section. This means it's
-    // possible for more than one thread to compute the graph for the same
-    // generator, but it also means that computations can be parallelized if
-    // the pass attempts to compute different graphs at once.
-    auto graph = std::make_unique<ParameterUseDefGraph>(gen.getBodyRegion());
-    graph->calculate(paramCache);
-
-    llvm::sys::SmartScopedWriter<true> lock(graphsMtx);
-    return *graphs.try_emplace(gen, std::move(graph)).first->second;
-  };
-
-  std::vector<GeneratorOp> rootGens;
-  for (auto gen : getOperation().getOps<GeneratorOp>()) {
-    // Skip over functions that are force inlined. Start inlining from the tips.
-    if (gen.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled)
-      continue;
-    rootGens.push_back(gen);
-  }
-  auto workFunc = [&symtab, &getGraph, &paramCache](GeneratorOp gen) mutable {
-    ParameterCollector::Analysis cache = paramCache;
-    auto lookupCallee = [&](KGENCallOpInterface call) -> GeneratorOp {
-      if (auto concreteCall = dyn_cast<CallOp>(call.getOperation()))
-        return symtab.lookup<GeneratorOp>(
-            cast<FlatSymbolRefAttr>(concreteCall.getCallee().getSymbol())
-                .getAttr());
-      // Only handles concrete CallOps, not CallParam ops.
-      return nullptr;
-    };
-
-    // Compute the use-def graph for this generator.
-    ParameterUseDefGraph &useDefGraph = getGraph(cache, gen);
-
-    // Walk all the calls in this generator and do the inlining if needed.
-    WalkResult callWalk = gen.walk([&](CallOp call) {
-      auto callee = symtab.lookup<GeneratorOp>(
-          cast<FlatSymbolRefAttr>(call.getCallee().getSymbol()).getAttr());
-      // If the callee doesn't exist, or it's not marked always_inline, move on.
-      if (!(callee &&
-            callee.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled))
-        return WalkResult::advance();
-
-      return WalkResult(inlineGeneratorCall(call, useDefGraph, cache, getGraph,
-                                            lookupCallee));
-    });
-    if (callWalk.wasInterrupted())
-      return failure();
-
-    return mlir::success();
-  };
-  if (failed(mlir::failableParallelForEach(&getContext(), rootGens, workFunc)))
-    return signalPassFailure();
+  InliningGraph graph(AlwaysInlineLevel::Enabled, paramCache);
+  graph.build(getOperation(), symtab);
+  graph.process();
 }
 
 //===----------------------------------------------------------------------===//
