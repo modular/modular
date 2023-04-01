@@ -16,6 +16,7 @@ from Vector import UnsafeFixedVector
 from TargetInfo import sizeof
 from Range import range
 from String import String
+from Tracing import TraceLevel, is_mojo_profiling_disabled
 
 alias typename = __mlir_type.`!kgen.mlirtype`
 alias none = __mlir_type.`!lit.none`
@@ -414,10 +415,14 @@ struct OutputChainPtr:
         )
 
     @always_inline
-    fn trace(self, label: StringRef):
+    fn trace[level: TraceLevel](self, label: StringRef):
         """If enabled, begin a time profile entry with label which will end
         when this chain is completed, either by mark_ready() or mark_error().
         """
+
+        @parameter
+        if is_mojo_profiling_disabled[level]():
+            return
         __mlir_op.`pop.external_call`[
             func : __mlir_attr.`@KGEN_CompilerRT_LLCL_OutputChainPtr_Trace`,
             _type:[],
@@ -428,11 +433,15 @@ struct OutputChainPtr:
         )
 
     @always_inline
-    fn trace(self, label: StringRef, detail: StringRef):
+    fn trace[level: TraceLevel](self, label: StringRef, detail: StringRef):
         """If enabled, begin a time profile entry with label and detail which
         will end when this chain is completed, either by mark_ready() or
         mark_error().
         """
+
+        @parameter
+        if is_mojo_profiling_disabled[level]():
+            return
         __mlir_op.`pop.external_call`[
             func : __mlir_attr.`@KGEN_CompilerRT_LLCL_OutputChainPtr_TraceDetailed`,
             _type:[],
@@ -446,19 +455,24 @@ struct OutputChainPtr:
 
     @always_inline
     fn trace_detail[
+        level: TraceLevel,
         detail_fn: __mlir_type[
             `!kgen.signature<(!pop.pointer<`,
             String,
             `> byref_result) -> !lit.none>`,
-        ]
+        ],
     ](self, label: StringRef):
         """If enabled, begin a time profile entry with label and detail which
         will end when this chain is completed, either by mark_ready() or
         mark_error().
         """
+
+        @parameter
+        if is_mojo_profiling_disabled[level]():
+            return
         let str = detail_fn()
 
-        self.trace(label, str.strref())
+        self.trace[level](label, str.strref())
 
         str.__del__()
 

@@ -9,21 +9,15 @@ from IO import print
 from Int import Int
 from LLCL import Runtime
 from Tracing import Trace, TraceLevel
-from BuildInfo import _build_info_llcl_max_profiling_level
+from BuildInfo import build_info_llcl_max_profiling_level
 
 
 @always_inline
 fn _max_profiling_level_plus_one() -> Int:
-    return __mlir_attr[
-        `#kgen.param.expr<add,`,
-        _build_info_llcl_max_profiling_level(),
-        `,`,
-        1,
-        `> : index`,
-    ]
+    return build_info_llcl_max_profiling_level() + 1
 
 
-fn test_tracing[level: Int]():
+fn test_tracing[level: TraceLevel]():
     async fn test_tracing_add[lhs: Int](rhs: Int) -> Int:
         var trace = Trace[level]("trace event 2", "detail event 2")
         let res = lhs + rhs
