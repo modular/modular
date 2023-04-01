@@ -39,6 +39,7 @@ from TargetInfo import (
 )
 from Transpose import transpose_inplace
 from Intrinsics import PrefetchOptions
+from IO import print
 
 
 fn get_pack_data_size() -> Int:
@@ -142,13 +143,13 @@ struct GemmShape:
     # Construct from dynamic shaped input.
     @staticmethod
     fn get[
+        transpose_a: Bool,
+        transpose_b: Bool,
         shape_c: DimList[2],
         shape_a: DimList[2],
         shape_b: DimList[2],
         accum_type: DType,
         value_type: DType,
-        transpose_a: Bool,
-        transpose_b: Bool,
     ](
         c: NDBuffer[2, shape_c, accum_type],
         a: NDBuffer[2, shape_a, value_type],
@@ -334,11 +335,6 @@ fn naive_matmul[
         transpose_b: indicates if b is transposed.
     """
     let gemm_shape = GemmShape.get[
-        shape_c,
-        shape_a,
-        shape_b,
-        accum_type,
-        value_type,
         transpose_a,
         transpose_b,
     ](c, a, b)
@@ -1243,7 +1239,7 @@ fn calculate_tile_n_k[
     pack_cache_size: Int,
     # Inner size of data layout.
     pack_inner_size: Int,
-](gemm_shape: GemmShape) -> StaticIntTuple[2]:
+](n: Int, k: Int) -> StaticIntTuple[2]:
     """Helper heuristic function to decide on tile size to partition the matmul
     given the cache size and desired data layout.
         Args:
@@ -1265,13 +1261,13 @@ fn calculate_tile_n_k[
 
     # Prioritize shape on K dimension, so try to fit in the whole
     #  input on the tile.
-    let tile_k = min(largest_tile_k, gemm_shape.K)
+    let tile_k = min(largest_tile_k, k)
 
     # Calculate number of InnerSize to fit in tile_n dimension,
     #  guranteed to be at least 2.
     let max_tile_n_in_inner_size = pack_cache_size // tile_k // pack_inner_size
     let full_data_tile_n_in_inner_size = (
-        gemm_shape.N + pack_inner_size - 1
+        n + pack_inner_size - 1
     ) // pack_inner_size
     let tile_n_in_inner_size = min(
         max_tile_n_in_inner_size, full_data_tile_n_in_inner_size
@@ -1281,6 +1277,17 @@ fn calculate_tile_n_k[
     let tile_n = tile_n_in_inner_size * pack_inner_size
 
     return Index(tile_n, tile_k)
+
+
+fn calculate_tile_n_k[
+    # Max number of element to cache.
+    pack_cache_size: Int,
+    # Inner size of data layout.
+    pack_inner_size: Int,
+](global_tile_shape: GemmShape) -> StaticIntTuple[2]:
+    return calculate_tile_n_k[pack_cache_size, pack_inner_size](
+        global_tile_shape.N, global_tile_shape.K
+    )
 
 
 # Tiled Matmul Implementation.
@@ -1313,7 +1320,9 @@ struct TiledMatmul[
     # Tile sizes this routine will process on the (M,N,K) coordinates.
     var global_tile_shape: GemmShape
 
-    var b_tile_generator: BTileGenerator[config, value_type, transpose_b, False]
+    var b_tile_generator: BTileGenerator[
+        config, value_type, transpose_b, b_packed
+    ]
 
     fn __copy__(self) -> Self:
         return Self {
@@ -1332,29 +1341,8 @@ struct TiledMatmul[
         c: NDBuffer[2, config.shape_c, accum_type],
         a: NDBuffer[2, config.shape_a, value_type],
         b: NDBuffer[2, config.shape_b, value_type],
-        shape: GemmShape,
-    ):
-        """Interface function to run tiled matmul on a given set of operands,
-        pre-allocated output space and data layout tag.
-
-        Args:
-            c(NDBuffer): Pre-allocated buffer space for result.
-            a(NDBuffer): Operand A of the matmul.
-            b(NDBuffer): Operand B of the matmul.
-            transpose_a: True if a is in transposed layout.
-            transpose_b: True if b is in transposed layout.
-        """
-
-        Self.run(c, a, b, GemmShape(0, 0, 0), shape)
-
-    # Interface method
-    @staticmethod
-    fn run(
-        c: NDBuffer[2, config.shape_c, accum_type],
-        a: NDBuffer[2, config.shape_a, value_type],
-        b: NDBuffer[2, config.shape_b, value_type],
-        global_tile_offset: GemmShape,
         global_tile_shape: GemmShape,
+        global_tile_offset: GemmShape = GemmShape {M: 0, N: 0, K: 0},
     ):
         """Interface function to run tiled matmul on a given sub-tile.
 
@@ -1382,7 +1370,7 @@ struct TiledMatmul[
             global_tile_offset: global_tile_offset,
             global_tile_shape: global_tile_shape,
             b_tile_generator: BTileGenerator[
-                config, value_type, transpose_b, False
+                config, value_type, transpose_b, b_packed
             ].get(b),
         }
 
@@ -1525,15 +1513,27 @@ struct TiledMatmul[
                 sub_tile_k,
             )
 
-        alias secondary_tiles = VariadicList[Int](
-            config.pack_inner_size, 2 * config.simd_size, config.simd_size
-        )
-        let primary_tiles = VariadicList[Int](
-            tile_n, 2 * config.simd_size, config.simd_size
-        )
-        tile[secondary_tiles, config.simd_size, m_loop](
-            0, valid_col_count, primary_tiles, config.simd_size
-        )
+        # if b is packed, the packing was performed offline using a single inner
+        # size and tile_n.
+        @parameter
+        if not b_packed:
+            alias secondary_tiles = VariadicList[Int](
+                config.pack_inner_size, 2 * config.simd_size, config.simd_size
+            )
+            let primary_tiles = VariadicList[Int](
+                tile_n, 2 * config.simd_size, config.simd_size
+            )
+            tile[secondary_tiles, config.simd_size, m_loop](
+                0, valid_col_count, primary_tiles, config.simd_size
+            )
+        else:
+            alias secondary_tiles_packed_b = VariadicList[Int](
+                config.pack_inner_size
+            )
+            let primary_tiles_packed_b = VariadicList[Int](tile_n)
+            tile[secondary_tiles_packed_b, config.pack_inner_size, m_loop](
+                0, valid_col_count, primary_tiles_packed_b, tile_n
+            )
 
     # Iterate over the K dimension of the gemm space.
     fn _outer_k_loop(
@@ -1590,7 +1590,7 @@ struct TiledMatmul[
         self._outer_k_loop()
 
 
-fn prepackB[
+fn pack_b[
     type: DType,
     src_shape: DimList[2],
     dst_shape: DimList[2],
@@ -1612,6 +1612,8 @@ fn prepackB[
     let n_in = src.dim[1]()
     let k_out = dst.dim[0]()
     let n_out = dst.dim[1]()
+
+    dst.zero()  # zero the padding to be safe, shouldn't be necessary
 
     debug_assert(
         k_out % tile_k == 0, "K dimension of output must be padded to tile_k"
@@ -1675,9 +1677,6 @@ struct BTileGenerator[
     fn get(
         b: NDBuffer[2, config.shape_b, type]
     ) -> BTileGenerator[config, type, transpose_b, b_packed]:
-        assert_param_bool_msg[
-            b_packed == False, "b_packed not fully supported yet, coming soon"
-        ]()
         var b_tile_stack_ptr = DTypePointer[type].get_null()
 
         @parameter
@@ -1689,11 +1688,15 @@ struct BTileGenerator[
             ]()
 
         return BTileGenerator[config, type, transpose_b, b_packed] {
-            b: b, b_tile_stack_ptr: b_tile_stack_ptr
+            b: b,
+            b_tile_stack_ptr: b_tile_stack_ptr,
         }
 
     fn __copy__(self) -> Self:
-        return Self {b: self.b, b_tile_stack_ptr: self.b_tile_stack_ptr}
+        return Self {
+            b: self.b,
+            b_tile_stack_ptr: self.b_tile_stack_ptr,
+        }
 
     fn get_tile[
         inner_size: Int
@@ -1751,15 +1754,23 @@ struct BTileGenerator[
                 Index(valid_data_dim_nk[1], valid_data_dim_nk[0]),
             )
         elif b_packed & (not transpose_b):
-            # TODO: currently untested so asserting in get() that b_packed is False
             let tile_k_idx = global_offset.K // tile_k
-            let tile_n_idx = global_offset.N // tile_n
-            let tile_size = tile_k * tile_n
             let b_flat = self.b.flatten()
+            let n_padded = self.b.dim[1]()
             let b_tile_view = NDBuffer[3, config.packed_shape, type](
                 # tiles are ordered in row-major order
+                # a bit of trickieness going on here, this works because:
+                #   1. tile_k is the same for every thread (tile_n is not) since threads
+                #       don't currently partition on the K dimension
+                #   2. the n dimension of each thread's tile is gauranteed to be an
+                #       exact multiple of the inner size
+                #   3. each tile has dims [tile_n/inner, tile_k, inner]
                 b_flat.data.offset(
-                    tile_k_idx * tile_n * tile_size + tile_k_idx * tile_size
+                    # tile row
+                    tile_k_idx * tile_k * n_padded
+                    +
+                    # tile col
+                    global_offset.N * tile_k
                 ),
                 tile_shape,
                 type,

@@ -7,7 +7,7 @@
 
 from Int import Int
 from List import DimList, Dim, create_dim_list
-from Matmul import prepackB
+from Matmul import pack_b
 from Math import div_ceil
 from DType import DType
 from Range import range
@@ -55,7 +55,7 @@ fn test_prepack():
     for i in range(src_storage.__len__()):
         src_storage[i] = i
 
-    prepackB[type, src_shape_dyn, dst_shape_dyn, simd_size, inner_size](
+    pack_b[type, src_shape_dyn, dst_shape_dyn, simd_size, inner_size](
         dst_buf,
         src_buf,
         tile_n,
