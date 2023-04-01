@@ -764,12 +764,12 @@ kgen.generator @main() {
   kgen.call @pass_it() : () -> ()
 
   // CHECK: kgen.param.declare.region id0
-  // CHECK: kgen.param.declare func0: () -> () = <id0>
+  // CHECK: kgen.param.declare func1: () -> () = <id0>
   // CHECK: kgen.param.declare.region func_wrapper0 = () {
     // CHECK: kgen.param.declare.region nested_func = <idx>() {
-      // CHECK: kgen.call_param[() -> (): func0]
-    // CHECK: kgen.param.declare func1: <index>() -> () = <nested_func>
-    // CHECK: kgen.param.constant: <index>() -> () = <func1>
+      // CHECK: kgen.call_param[() -> (): func1]
+    // CHECK: kgen.param.declare func0: <index>() -> () = <nested_func>
+    // CHECK: kgen.param.constant: <index>() -> () = <func0>
   // CHECK: kgen.call_param[() -> (): func_wrapper0]
   kgen.call @pass_it() : () -> ()
   kgen.return
@@ -796,8 +796,7 @@ kgen.generator @recursive<cond: i1>() always_inline {
 
 // CHECK-LABEL: kgen.generator @root
 kgen.generator @root() {
-  // CHECK: kgen.param.if <cond>
-    // CHECK: kgen.call @recursive
+  // CHECK-NEXT: kgen.call @recursive
   kgen.call @recursive<:i1 1>() : () -> ()
   kgen.return
 }
@@ -967,5 +966,35 @@ kgen.generator @main() {
   // CHECK: declare value0 = <1>
   kgen.call @pass_it() : () -> ()
 
+  kgen.return
+}
+
+// -----
+
+// COM: This test case tricks a simple counter uniquer into mangling two
+// COM: parameter decls into the same name.
+
+kgen.generator @inline_me() always_inline {
+  kgen.param.declare value = <1>
+  kgen.param.declare value0 = <1>
+  kgen.param.declare value1 = <1>
+  kgen.param.declare value2 = <1>
+  kgen.param.declare value3 = <1>
+  kgen.param.declare value4 = <1>
+  kgen.param.declare value5 = <1>
+  kgen.param.declare value6 = <1>
+  kgen.param.declare value7 = <1>
+  kgen.param.declare value8 = <1>
+  kgen.param.declare value9 = <1>
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @entry
+kgen.generator @entry() {
+  // CHECK: declare value10 =
+  // CHECK: declare value11 =
+  kgen.param.declare value1 = <1>
+  kgen.param.declare value = <1>
+  kgen.call @inline_me() : () -> ()
   kgen.return
 }
