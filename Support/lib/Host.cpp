@@ -5,10 +5,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Host.h"
+#include "Support/ErrorOr.h"
 #include "Support/SIMD.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -32,8 +34,236 @@
 #include <windows.h>
 #endif // _MSC_VER
 
+#define DEBUG_TYPE "host"
+
 using namespace M;
-using namespace llvm;
+
+//===----------------------------------------------------------------------===//
+// CPUSystemInfo
+//===----------------------------------------------------------------------===//
+
+#if defined(HAVE_LINUX_X86_SYSTEM_INFO)
+/// Given contents of /proc/cpuinfo and the thread affinity mask describing
+/// which CPUs should be considered available, returns CPUSystemInfo.
+ErrorOr<CPUSystemInfo> M::Detail::getLinuxX86CPUSystemInfoImpl(
+    const cpu_set_t &availableCpus, std::unique_ptr<llvm::MemoryBuffer> buf) {
+  // Describes a virtual core.
+  struct Entry {
+    // Dense socket index.
+    int physicalId = -1;
+    // Non-dense index of physical core in socket.
+    int coreId = -1;
+    // Dense system-wide processor identifier, what we'll refer to as cpuID.
+    int processor = -1;
+
+    bool operator<(const Entry &that) const {
+      return std::tie(physicalId, coreId, processor) <
+             std::tie(that.physicalId, that.coreId, that.processor);
+    }
+  };
+
+  SmallVector<StringRef> strs;
+  buf->getBuffer().split(strs, "\n", /*MaxSplit=*/-1,
+                         /*KeepEmpty=*/false);
+
+  // Collect entries
+  SmallVector<Entry> entries;
+  Entry currEntry;
+  for (StringRef line : strs) {
+    std::pair<StringRef, StringRef> Data = line.split(':');
+    StringRef name = Data.first.trim();
+    StringRef val = Data.second.trim();
+    // These fields are available if the kernel is configured with CONFIG_SMP.
+    if (name == "processor") {
+      if (val.getAsInteger(10, currEntry.processor))
+        return Error("ill-formed /proc/cpuinfo output");
+    } else if (name == "physical id") {
+      if (val.getAsInteger(10, currEntry.physicalId))
+        return Error("ill-formed /proc/cpuinfo output");
+    } else if (name == "core id") {
+      if (val.getAsInteger(10, currEntry.coreId))
+        return Error("ill-formed /proc/cpuinfo output");
+      if (currEntry.physicalId < 0 || currEntry.coreId < 0 ||
+          currEntry.processor < 0)
+        return Error("ill-formed /proc/cpuinfo output");
+      if (CPU_ISSET(currEntry.processor, &availableCpus)) {
+        // Only include if processor already in affinity set.
+        entries.push_back(currEntry);
+        currEntry = Entry();
+      } else {
+        LLVM_DEBUG(llvm::dbgs()
+                   << "getLinuxX86CPUSystemInfo: Ignoring processor "
+                   << std::to_string(currEntry.processor)
+                   << " since excluded from main thread's affinity set\n");
+      }
+    }
+  }
+  llvm::sort(entries);
+
+  // Build system info.
+  CPUSystemInfo systemInfo;
+  Entry prevEntry;
+  for (auto entry : entries) {
+    if (entry.physicalId != prevEntry.physicalId)
+      systemInfo.sockets.emplace_back();
+    CPUSystemInfo::Socket &socket = systemInfo.sockets.back();
+    if (entry.physicalId != prevEntry.physicalId ||
+        entry.coreId != prevEntry.coreId)
+      socket.physicalCores.emplace_back();
+    CPUSystemInfo::PhysicalCore &physicalCore = socket.physicalCores.back();
+    physicalCore.virtualCores.emplace_back(entry.processor);
+    prevEntry = entry;
+  }
+  return systemInfo;
+}
+
+/// On X86 Linux systems /proc/cpuinfo allows us to distinguish
+/// virtual cores, physical cores and sockets.
+///
+/// Adapted from third-party/llvm-project/llvm/lib/Support/Unix/Threading.inc.
+ErrorOr<CPUSystemInfo> M::Detail::getLinuxX86CPUSystemInfo() {
+  // Only consider cpuIDs which are already in the affinity set of the
+  // calling thread. This way we'll respect any restrictions already set.
+  cpu_set_t callersAffinity;
+  if (int rc = sched_getaffinity(0, sizeof(callersAffinity), &callersAffinity))
+    return Error("can't retrieve schedule affinity for main thread: " +
+                 std::to_string(rc));
+
+  // Read /proc/cpuinfo as a stream (until EOF reached). It cannot be
+  // mmapped because it appears to have 0 size.
+  llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> errOrBuf =
+      llvm::MemoryBuffer::getFileAsStream("/proc/cpuinfo");
+  if (std::error_code ec = errOrBuf.getError())
+    return Error("can't open /proc/cpuinfo: " + ec.message());
+
+  return getLinuxX86CPUSystemInfoImpl(callersAffinity, std::move(*errOrBuf));
+}
+#endif
+
+ErrorOr<CPUSystemInfo> CPUSystemInfo::get() {
+#if defined(HAVE_LINUX_X86_SYSTEM_INFO)
+  return Detail::getLinuxX86CPUSystemInfo();
+#endif
+  return Error("CPUSystemInfo is not supported by this build");
+}
+
+void CPUSystemInfo::print(raw_ostream &os) const {
+  os << "CPUSystemInfo(";
+  llvm::interleave(
+      sockets, os,
+      [&](const Socket &s) {
+        os << "Socket(";
+        llvm::interleave(
+            s.physicalCores, os,
+            [&](const PhysicalCore &pc) {
+              os << "{";
+              llvm::interleave(
+                  pc.virtualCores, os,
+                  [&](const VirtualCore &vc) { os << vc.cpuID; }, ", ");
+              os << "}";
+            },
+            ", ");
+        os << ")";
+      },
+      ", ");
+  os << ")";
+}
+
+std::vector<size_t> CPUSystemInfo::getPreferredCpuIDs(size_t numThreads) const {
+  std::vector<size_t> cpuIDs;
+  size_t virtualCoreIndex = 0;
+  while (true) {
+    size_t origNumCpuIDs = cpuIDs.size();
+    for (const auto &socket : sockets) {
+      for (const auto &physicalCore : socket.physicalCores) {
+        if (virtualCoreIndex < physicalCore.virtualCores.size()) {
+          cpuIDs.emplace_back(
+              physicalCore.virtualCores[virtualCoreIndex].cpuID);
+          if (cpuIDs.size() >= numThreads)
+            // Found enough.
+            return cpuIDs;
+        }
+      }
+    }
+    if (cpuIDs.size() == origNumCpuIDs)
+      // No more virtual cores to add. We'll need to start re-using them.
+      virtualCoreIndex = 0;
+    else
+      // Need to use additional virtual cores on the same physical core (if
+      // any).
+      ++virtualCoreIndex;
+  }
+}
+
+//===----------------------------------------------------------------------===//
+// Thread affinity
+//===----------------------------------------------------------------------===//
+
+#if defined(HAVE_LINUX_SET_AFFINITY)
+ErrorOrSuccess M::Detail::setCallersThreadAffinityLinux(size_t cpuID) {
+  assert(cpuID < CPU_SETSIZE);
+  cpu_set_t cpuset;
+  CPU_ZERO(&cpuset);
+  CPU_SET(cpuID, &cpuset);
+  int rc = sched_setaffinity(0, sizeof(cpuset), &cpuset);
+  if (rc != 0)
+    return Error("unable to set thread CPU affinity: " + std::to_string(rc));
+  return success();
+}
+
+ErrorOrSuccess
+M::Detail::runWithThreadAffinityLinux(size_t cpuID,
+                                      llvm::unique_function<void()> &workFn) {
+  assert(cpuID < CPU_SETSIZE);
+  cpu_set_t origset;
+  int rc = sched_getaffinity(0, sizeof(origset), &origset);
+  if (rc != 0)
+    return Error("unable to get thread CPU affinity: " + std::to_string(rc));
+  cpu_set_t cpuset;
+  CPU_ZERO(&cpuset);
+  CPU_SET(cpuID, &cpuset);
+  rc = sched_setaffinity(0, sizeof(cpuset), &cpuset);
+  if (rc != 0)
+    return Error("unable to set thread CPU affinity: " + std::to_string(rc));
+  // We're -fno-exceptions so no need for exception handling here.
+  workFn();
+  rc = sched_setaffinity(0, sizeof(cpuset), &origset);
+  if (rc != 0) {
+    // We've run the workFn, so can't report failure.
+    LLVM_DEBUG(llvm::dbgs() << "runWithThreadAffinityLinux: unable to restore "
+                               "thread CPU affinity: " +
+                                   std::to_string(rc)
+                            << "\n");
+  }
+  return success();
+}
+#endif
+
+bool M::haveThreadAffinity() {
+#if defined(HAVE_LINUX_SET_AFFINITY)
+  return true;
+#endif
+  return false;
+}
+
+ErrorOrSuccess M::setThreadAffinity(size_t cpuID) {
+#if defined(HAVE_LINUX_SET_AFFINITY)
+  return Detail::setCallersThreadAffinityLinux(cpuID);
+#endif
+  return Error("setThreadAffinity is not supported by this build");
+}
+
+ErrorOrSuccess M::runWithThreadAffinity(size_t cpuID,
+                                        llvm::unique_function<void()> workFn) {
+#if defined(HAVE_LINUX_SET_AFFINITY)
+  return Detail::runWithThreadAffinityLinux(cpuID, workFn);
+#endif
+  return Error("runWithThreadAffinity is not supported by this build");
+}
+
+//===----------------------------------------------------------------------===//
+// Cache sizes
+//===----------------------------------------------------------------------===//
 
 M::ErrorOr<size_t> M::getHostCPUCacheSize(size_t cacheLevel) {
 #if defined(__APPLE__)
@@ -145,9 +375,25 @@ M::ErrorOr<size_t> M::getHostCPUCacheSize(size_t cacheLevel) {
 #endif
 }
 
+//===----------------------------------------------------------------------===//
+// HostMachineInfo
+//===----------------------------------------------------------------------===//
+
 static void dumpFeatures(raw_ostream &os,
                          const std::vector<std::string> &features) {
   llvm::interleaveComma(features, os);
+}
+
+static void
+dumpAffinities(raw_ostream &os,
+               const std::optional<std::vector<size_t>> &affinities) {
+  if (affinities) {
+    os << "[";
+    llvm::interleave(*affinities, os, ", ");
+    os << "]";
+  } else {
+    os << "none";
+  }
 }
 
 void M::HostMachineInfo::print(llvm::raw_ostream &os) const {
@@ -171,6 +417,8 @@ void M::HostMachineInfo::print(llvm::raw_ostream &os) const {
   os << l3CacheSize;
   os << "\nl4-cache-size: ";
   os << l4CacheSize;
+  os << "\naffinities: ";
+  dumpAffinities(os, affinities);
   os << "\n";
 }
 
@@ -186,6 +434,9 @@ void M::HostMachineInfo::print(llvm::json::OStream &json) const {
   json.attribute("l2-cache-size", l2CacheSize);
   json.attribute("l3-cache-size", l3CacheSize);
   json.attribute("l4-cache-size", l4CacheSize);
+  if (affinities) {
+    json.attribute("affinites", *affinities);
+  }
   json.objectEnd();
 }
 
@@ -221,6 +472,10 @@ void HostMachineInfo::print(HostProperty property,
     break;
   case HostProperty::L4CacheSize:
     os << l4CacheSize;
+    break;
+  case HostProperty::Affinities:
+    dumpAffinities(os, affinities);
+    break;
   }
   os << "\n";
 }
@@ -228,20 +483,20 @@ void HostMachineInfo::print(HostProperty property,
 M::ErrorOr<HostMachineInfo> M::getHostMachineInfo() {
   HostMachineInfo machineInfo;
 
-  machineInfo.triple = sys::getDefaultTargetTriple();
+  machineInfo.triple = llvm::sys::getDefaultTargetTriple();
   machineInfo.osName =
-      Triple::getOSTypeName(Triple(machineInfo.triple).getOS());
-  machineInfo.cpuArch = sys::getHostCPUName();
+      llvm::Triple::getOSTypeName(llvm::Triple(machineInfo.triple).getOS());
+  machineInfo.cpuArch = llvm::sys::getHostCPUName();
 
-  StringMap<bool> features;
-  sys::getHostCPUFeatures(features);
+  llvm::StringMap<bool> features;
+  llvm::sys::getHostCPUFeatures(features);
 
   for (const auto &feature : features)
     if (feature.getValue())
       machineInfo.cpuFeatures.push_back(feature.getKey().str());
   llvm::sort(machineInfo.cpuFeatures);
 
-  machineInfo.numPhysicalCores = get_physical_cores();
+  machineInfo.numPhysicalCores = llvm::get_physical_cores();
   machineInfo.simdBitWidth = kPreferredSIMDBitWidth;
 
   UNWRAP_ERROR(l1CacheSize, getHostCPUCacheSize(1));
@@ -255,8 +510,22 @@ M::ErrorOr<HostMachineInfo> M::getHostMachineInfo() {
 
   UNWRAP_ERROR(l4CacheSize, getHostCPUCacheSize(4));
   machineInfo.l4CacheSize = l4CacheSize;
+
+  if (haveThreadAffinity()) {
+    ErrorOr<CPUSystemInfo> errOrSysInfo = CPUSystemInfo::get();
+    if (!errOrSysInfo.isError()) {
+      machineInfo.affinities =
+          errOrSysInfo->getPreferredCpuIDs(machineInfo.numPhysicalCores);
+    }
+    // else: ignore error, leave field empty to denote affinities are not avail.
+  }
+
   return std::move(machineInfo);
 }
+
+//===----------------------------------------------------------------------===//
+// Memory usage
+//===----------------------------------------------------------------------===//
 
 size_t M::getProcessPhysicalMemUsage() {
 #if defined(__linux__)

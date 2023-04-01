@@ -43,7 +43,10 @@ struct SystemInfoCLIOptions {
           clEnumValN(HostProperty::L3CacheSize, "l3-cache-size",
                      "Host L3 DCache size"),
           clEnumValN(HostProperty::L4CacheSize, "l4-cache-size",
-                     "Host L4 DCache size")),
+                     "Host L4 DCache size"),
+          clEnumValN(HostProperty::Affinities, "affinities",
+                     "Preferred CPU ids for numPhysicalCores threads if both "
+                     "CPUSystemInfo and thread affinities are supported.")),
       llvm::cl::ZeroOrMore, llvm::cl::CommaSeparated};
 };
 } // namespace
