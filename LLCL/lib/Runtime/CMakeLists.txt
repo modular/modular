@@ -14,7 +14,6 @@ add_modular_library(LLCLRuntime
   RuntimeCLOptions.cpp
   SingleThreadWorkQueue.cpp
   ThreadPoolWorkQueue.cpp
-  Threading.cpp
   TypeID.cpp
 
   LINK_LIBS PUBLIC

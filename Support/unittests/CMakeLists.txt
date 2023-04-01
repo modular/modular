@@ -22,6 +22,7 @@ add_modular_unittest(
   ErrorTest.cpp
   ErrorOrTest.cpp
   FunctionExtrasTest.cpp
+  HostTest.cpp
   HMACTest.cpp
   MathExtras.cpp
   MicroBenchmarkTest.cpp

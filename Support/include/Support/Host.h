@@ -3,12 +3,18 @@
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
+//
+// Utilities for interrogating and interacting with the host machine.
+//
+//===----------------------------------------------------------------------===//
 
 #ifndef SUPPORT_HOST_H
 #define SUPPORT_HOST_H
 
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
+#include "llvm/ADT/FunctionExtras.h"
+#include "llvm/Support/MemoryBuffer.h"
 
 #include <string>
 
@@ -20,7 +26,94 @@ class OStream;
 #define HOST_IS_APPLE_SILICON_PROCESSOR
 #endif
 
+#if defined(__linux__) && (defined(__i386__) || defined(__x86_64__))
+#define HAVE_LINUX_X86_SYSTEM_INFO
+#endif
+
+#if defined(__linux__)
+#define HAVE_LINUX_SET_AFFINITY
+#endif
+
 namespace M {
+
+//===----------------------------------------------------------------------===//
+// CPUSystemInfo
+//===----------------------------------------------------------------------===//
+
+/// Describes the sockets, physical cores, and virtual cores in a CPU system
+/// when supported by the host os. However does not capture sharing of caches
+/// and plethora af other details. See https://www.open-mpi.org/projects/hwloc/
+struct CPUSystemInfo {
+  /// A 'virtual' core, generally without dedicated cache or ALU resources.
+  /// Systems with hyperthreading can have multiple virtual cores per
+  /// 'physical' core.
+  struct VirtualCore {
+    size_t cpuID;
+
+    VirtualCore(size_t cpuID) : cpuID(cpuID) {}
+  };
+
+  /// A 'physical' core, generally with its own dedicated cache levels.
+  struct PhysicalCore {
+    SmallVector<VirtualCore, 2> virtualCores;
+  };
+
+  /// A 'socket', generally with its own NUMA memory area and dedicated cache
+  /// levels.
+  struct Socket {
+    SmallVector<PhysicalCore, 16> physicalCores;
+  };
+
+  SmallVector<Socket, 1> sockets;
+
+  /// Returns system info if it can be determined. Fidelity with respect to
+  /// actual hardware may vary depending on host OS. Returns an error if system
+  /// info cannot be determined.
+  static ErrorOr<CPUSystemInfo> get();
+
+  /// Returns numThreads cpuIDs drawn from this system info, following these
+  /// heuristics (from strongest to weakest):
+  ///  - prefer threads on distinct virtual cores
+  ///  - prefer virtual cores on distinct physical cores
+  ///  - prefer physical cores on the same socket
+  /// If numThreads exceeds the number of virtual cores in the system then
+  /// cpu IDs will be repeated in the result.
+  std::vector<size_t> getPreferredCpuIDs(size_t numThreads) const;
+
+  void print(raw_ostream &os) const;
+};
+
+inline raw_ostream &operator<<(raw_ostream &os, const CPUSystemInfo &info) {
+  info.print(os);
+  return os;
+}
+
+//===----------------------------------------------------------------------===//
+// Thread affinity
+//===----------------------------------------------------------------------===//
+
+/// Returns true if thread affinity is available on this target.
+bool haveThreadAffinity();
+
+/// Attempts to sets the caller's thread affinity to the given CPU id. Returns
+/// error if affinity is not supported on this target or the operation fails.
+ErrorOrSuccess setThreadAffinity(size_t cpuID);
+
+/// Attempts to runs workFn with caller's thread affinity set to the given CPU
+/// id. Returns error if thread affinity is not supported on this target
+/// or the operation fails.
+ErrorOrSuccess runWithThreadAffinity(size_t cpuID,
+                                     llvm::unique_function<void()> workFn);
+
+//===----------------------------------------------------------------------===//
+// Cache sizes
+//===----------------------------------------------------------------------===//
+
+ErrorOr<size_t> getHostCPUCacheSize(size_t cacheLevel);
+
+//===----------------------------------------------------------------------===//
+// HostMachineInfo
+//===----------------------------------------------------------------------===//
 
 enum class HostProperty {
   TargetTriple,
@@ -32,10 +125,9 @@ enum class HostProperty {
   L1CacheSize,
   L2CacheSize,
   L3CacheSize,
-  L4CacheSize
+  L4CacheSize,
+  Affinities
 };
-
-ErrorOr<size_t> getHostCPUCacheSize(size_t cacheLevel);
 
 /// Information of host machine.
 struct HostMachineInfo {
@@ -49,6 +141,9 @@ struct HostMachineInfo {
   size_t l2CacheSize;
   size_t l3CacheSize;
   size_t l4CacheSize;
+  // Preferred CPU ids for numPhysicalCores threads if both CPUSystemInfo
+  // and thread affinities are supported. Otherwise empty.
+  std::optional<std::vector<size_t>> affinities;
 
   void print(llvm::raw_ostream &os) const;
   void print(llvm::json::OStream &json) const;
@@ -58,10 +153,33 @@ struct HostMachineInfo {
 /// Get information about the host machine.
 ErrorOr<HostMachineInfo> getHostMachineInfo();
 
+//===----------------------------------------------------------------------===//
+// Memory usage
+//===----------------------------------------------------------------------===//
+
 /// Returns the current process' physical memory usage, or 0 if value is
 /// not available. Generally determined from the OS's reported resident
 /// page value, and may not very reliable.
 size_t getProcessPhysicalMemUsage();
+
+//===----------------------------------------------------------------------===//
+// OS and architecture-specific utilities, visible for testing only
+//===----------------------------------------------------------------------===//
+
+namespace Detail {
+#if defined(HAVE_LINUX_X86_SYSTEM_INFO)
+ErrorOr<CPUSystemInfo>
+getLinuxX86CPUSystemInfoImpl(const cpu_set_t &availableCpus,
+                             std::unique_ptr<llvm::MemoryBuffer> buf);
+ErrorOr<CPUSystemInfo> getLinuxX86CPUSystemInfo();
+#endif
+
+#if defined(HAVE_LINUX_SET_AFFINITY)
+ErrorOrSuccess setCallersThreadAffinityLinux(size_t cpuID);
+ErrorOrSuccess
+runWithThreadAffinityLinux(size_t cpuID, llvm::unique_function<void()> &workFn);
+#endif
+} // namespace Detail
 
 } // namespace M
 

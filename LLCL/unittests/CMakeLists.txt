@@ -13,7 +13,6 @@ add_modular_unittest(
 
   AsyncValueTest.cpp
   DebuggingAllocatorsTest.cpp
-  ThreadingTest.cpp
   TypeIDTest.cpp
 
   LINK_LIBS PRIVATE

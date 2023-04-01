@@ -4,12 +4,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "../lib/Runtime/Threading.h"
+#include "Support/Host.h"
 
 #include "gtest/gtest.h"
 
 using namespace M;
-using namespace LLCL;
 
 #if defined(HAVE_LINUX_X86_SYSTEM_INFO)
 // A two socket system, first with 3 cores + SMT, the second with 2 plain cores.
@@ -79,7 +78,7 @@ cpu cores	: 2
 cpuid level	: 16
 )";
 
-TEST(Threading, GetLinuxX86CPUSystemInfoImpl) {
+TEST(Host, GetLinuxX86CPUSystemInfoImpl) {
   cpu_set_t availCpus;
   CPU_ZERO(&availCpus);
   const size_t numCpus = 8;
@@ -93,7 +92,7 @@ TEST(Threading, GetLinuxX86CPUSystemInfoImpl) {
   auto buf = llvm::MemoryBuffer::getMemBuffer(
       llvm::StringRef(kCpuInfo, strlen(kCpuInfo)));
   ErrorOr<CPUSystemInfo> errOr =
-      M::LLCL::Detail::getLinuxX86CPUSystemInfoImpl(availCpus, std::move(buf));
+      Detail::getLinuxX86CPUSystemInfoImpl(availCpus, std::move(buf));
   EXPECT_FALSE(errOr.isError());
   const CPUSystemInfo &info = errOr.get();
 
