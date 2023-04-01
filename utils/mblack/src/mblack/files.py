@@ -299,9 +299,10 @@ def gen_python_files(
                 continue
             include_match = include.search(normalized_path) if include else True
             include_match = (
-                include_match 
+                include_match
                 or normalized_path.endswith(".lit")
                 or normalized_path.endswith(".mojo")
+                or normalized_path.endswith(".🔥")
             )
             if include_match:
                 yield child

@@ -202,7 +202,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // dependency file.
   SmallVector<std::string> includedFiles;
 
-  if (inputFileName.ends_with(".lit") || inputFileName.ends_with(".mojo")) {
+  if (inputFileName.ends_with(".lit") || inputFileName.ends_with(".mojo") ||
+      inputFileName.ends_with(".🔥")) {
     TimingScope litScope = timing.nest("Import Lit");
     theModule = importLitFile(mgr, ctx, litScope, compilationOptions,
                               clOptions.enableMLIRDiagnostics, *runtime,

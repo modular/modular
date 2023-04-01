@@ -1,0 +1,12 @@
+# RUN: kgen-translate -import-mojo %s | FileCheck %s
+
+
+# CHECK-LABEL: lit.struct.decl @MemExample
+struct MemExample:
+  fn __init__(self&): pass
+  fn __del___(self):
+    pass
+
+# CHECK: lit.func @"destructors()"()
+fn destructors():
+  var x = MemExample()

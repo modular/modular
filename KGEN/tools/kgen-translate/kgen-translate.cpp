@@ -29,7 +29,7 @@ int main(int argc, char *argv[]) {
 
   cl::opt<bool> validateDocStrings{
       "mojo-validate-doc-strings",
-      cl::desc("Validate doc strings in the input .mojo file."),
+      cl::desc("Validate doc strings in the input Mojo file."),
       cl::init(false)};
 
   mlir::TranslateToMLIRRegistration fromMojo(
