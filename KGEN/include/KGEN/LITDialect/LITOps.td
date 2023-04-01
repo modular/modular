@@ -481,9 +481,12 @@ def LIT_LetRegDeclOp : LITOp<"letreg.decl",
           Pure, AllTypesMatch<["value", "result"]>,]> {
   let summary = "Register-primary local `let` declaration";
 
-  let arguments = (ins StrAttr:$name, AnyType:$value);
+  // The destructor for the element type is specified if it exists.
+  let arguments = (ins StrAttr:$name, AnyType:$value,
+                       OptionalAttr<AttrOfType<KGEN_SignatureType>>:$dtor);
   let results = (outs AnyType:$result);
-  let assemblyFormat = "$name `=` $value `:` type($result) attr-dict";
+  let assemblyFormat =
+    "$name `=` $value (`,` $dtor^)? `:` type($result) attr-dict";
 
   let hasFolder = 1;
 
@@ -494,16 +497,20 @@ def LIT_LetRegDeclOp : LITOp<"letreg.decl",
 }
 
 /// This declaration is used for var declarations, let declarations with an
-/// out-of-line initializer, and for memory-only let declarations.
-/// It enables these use-cases by exposing an address.
+/// out-of-line initializer, and for memory-only let declarations.  It enables
+/// these use-cases by exposing an address.
 def LIT_VarLetDeclOp : LITOp<"varlet.decl",
          [DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>]> {
   let summary = "Addressible local let or var declaration";
 
+  // The destructor for the element type is specified if it exists.
   let arguments = (ins StrAttr:$name,
-                       DefaultValuedAttr<BoolAttr, "false">:$isVar);
+                       DefaultValuedAttr<BoolAttr, "false">:$isVar,
+                       OptionalAttr<AttrOfType<KGEN_SignatureType>>:$dtor);
+
   let results = (outs POP_PointerType:$result);
-  let assemblyFormat = "$name `,` `var``=`$isVar `:` type($result) attr-dict";
+  let assemblyFormat =
+    "$name `,` `var``=`$isVar (`,` $dtor^)? `:` type($result) attr-dict";
 }
 
 //===----------------------------------------------------------------------===//

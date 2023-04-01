@@ -53,6 +53,7 @@ enum ExprContext {
   EC_TupleElement,          // (x, y)
   EC_SubscriptBase,         // x[y]
   EC_ParameterList,         // something[x]
+  EC_Destructor,            // Looking up T's destructor for `var x : T`
 };
 const char *getContextMessage(ExprContext context);
 
@@ -325,6 +326,13 @@ public:
   /// result of calling `__bool__` (which is typically a Bool or object type,
   /// but not guaranteed).  This reports and error and returns null on error.
   RValue emitI1(ASTExprAnd<CValue> expr, CValue &boolResult);
+
+  /// Look up the __del__ destructor for the specified `type` which is needed
+  /// for the specified declaration (typically a var or argument declaration).
+  /// This returns the destructor if successful, diagnoses an error if not, and
+  /// returns null if there is no defined destructor.
+  static TypedAttr lookupDestructor(ASTType type, SMLoc loc,
+                                    LitSharedState &shared);
 
   //===--------------------------------------------------------------------===//
   // Emission helpers for various value classifications.

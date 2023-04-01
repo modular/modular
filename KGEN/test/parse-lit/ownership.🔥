@@ -4,9 +4,21 @@
 # CHECK-LABEL: lit.struct.decl @MemExample
 struct MemExample:
   fn __init__(self&): pass
-  fn __del___(self):
-    pass
+  fn __del___(self): pass
+
+# CHECK-LABEL: lit.struct.decl @RegExample
+@register_passable
+struct RegExample:
+  fn __init__() -> Self: pass
+  fn __del___(self): pass
+
 
 # CHECK: lit.func @"destructors()"()
 fn destructors():
-  var x = MemExample()
+  # CHECK: %mem = lit.varlet.decl "mem", var = true,
+  # CHECK-SAME: #kgen.symbol.constant<@"$ownership"::@MemExample::@"__del___($ownership::MemExample)" >
+  var mem = MemExample()
+
+  # CHECK: %reg = lit.letreg.decl "reg" = %1,
+  # CHECK-SAME: #kgen.symbol.constant<@"$ownership"::@RegExample::@"__del___($ownership::RegExample)" > : !kgen.signature<(!kgen.declref<@"$ownership"::@RegExample> borrow) -> !lit.none>
+  let reg = RegExample()
