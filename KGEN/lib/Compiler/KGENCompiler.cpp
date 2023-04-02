@@ -20,7 +20,8 @@
 using namespace M;
 using namespace KGEN;
 
-static void populatePreElaborationPipeline(mlir::PassManager &pm) {
+void KGEN::populateGenerateLibraryFilePasses(mlir::PassManager &pm,
+                                             LLCL::Runtime &runtime) {
   pm.addPass(createVerifyParameters());
 
   // This pass doesn't touch parameters, so re-verify after it.
@@ -32,7 +33,7 @@ static void populatePreElaborationPipeline(mlir::PassManager &pm) {
   pm.addPass(createLowerStructs());
   pm.addPass(createVerifyParameters());
 
-  pm.addPass(createAlwaysInlineParametric());
+  pm.addPass(createAlwaysInlineParametric(runtime));
   pm.addPass(createVerifyParameters());
 
   // These passes don't influence parameters, so we don't need to verify them.
@@ -46,15 +47,10 @@ static void populatePreElaborationPipeline(mlir::PassManager &pm) {
   pm.addNestedPass<GeneratorOp>(createMem2Reg());
 }
 
-void KGEN::populateGenerateLibraryFilePasses(mlir::PassManager &pm) {
-  // Set up the pass pipeline.
-  populatePreElaborationPipeline(pm);
-}
-
 void KGEN::populateElaborateModulePasses(
     mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
     const ElaborateGeneratorsOptions &elaborateOptions) {
-  populatePreElaborationPipeline(pm);
+  populateGenerateLibraryFilePasses(pm, runtime);
   // Eliminate dead symbols. If we don't use the symbol *somewhere* it doesn't
   // need to be in the IR.
   pm.addPass(createEliminateDeadSymbols());

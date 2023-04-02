@@ -11,6 +11,9 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENPasses.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "LLCL/Runtime/Algorithms.h"
+#include "LLCL/Runtime/Allocator.h"
+#include "LLCL/Runtime/WorkQueue.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/STLExtras.h"
@@ -494,7 +497,18 @@ namespace {
 /// its callees have been processed.
 struct InliningGraphNode {
   /// Create the node for the given function.
-  explicit InliningGraphNode(GeneratorOp func) : func(func) {}
+  explicit InliningGraphNode(GeneratorOp func)
+      : func(func), calleeParamGraph(func.getBodyRegion()) {}
+
+  /// This class is only move-constructed when the node map in
+  /// `InliningGraphNode` is resized. That occurs before any references are
+  /// taken to instances of this object, so just default-construct all other
+  /// members of this class.
+  InliningGraphNode(InliningGraphNode &&other)
+      : func(other.func), calleeParamGraph(func.getBodyRegion()) {}
+
+  /// Compute the caller parameter graph and declarations.
+  void calculateParams(ParameterCollector::Analysis &paramCache);
 
   /// The function represented by the node.
   GeneratorOp func;
@@ -505,18 +519,38 @@ struct InliningGraphNode {
   /// Calls and callees to inline inside this function. These are the parent
   /// edges.
   std::vector<std::pair<CallOp, InliningGraphNode *>> callsites;
+  /// This mutex guards `callsites` and `callers` during parallel graph
+  /// construction.
+  llvm::sys::SmartRWMutex<true> mutex;
 
-  /// The number of processed calls.
-  size_t numProcessedCalls = 0;
+  /// The number of processed calls. When the value of this counter equals the
+  /// size of `callsites`, then all calls for this function have been processed.
+  std::atomic<size_t> numProcessedCalls = 0;
 
   /// In parametric inlining, each function has its parameter use-def graph
   /// computed twice: once as a caller, computed when the node is being
   /// processed, and once as a callee, when the fully processed node is called
   /// from somewhere else. Stash the callee graph on the node itself.
-  Optional<ParameterUseDefGraph> calleeParamGraph;
+  ParameterUseDefGraph calleeParamGraph;
   /// A set of all declarations, regardless of type, in the callee.
   llvm::SetVector<StringAttr> allDecls;
 };
+
+void InliningGraphNode::calculateParams(
+    ParameterCollector::Analysis &paramCache) {
+  calleeParamGraph.calculate(paramCache);
+  func.walk([&](Operation *op) {
+    if (auto decl = dyn_cast<DeclInterface>(op)) {
+      for (ParamDeclAttr decl : llvm::concat<const ParamDeclAttr>(
+               decl.getInputParams(), decl.getResultParams()))
+        allDecls.insert(decl.getName());
+    }
+    if (auto paramOp = dyn_cast<ParamOpInterface>(op)) {
+      paramOp.walkDeclarations(
+          [&](ParamDeclAttr decl) { allDecls.insert(decl.getName()); });
+    }
+  });
+}
 
 /// An inlining graph is a call graph between functions of concrete calls to
 /// functions that must be inlined. The root nodes of the graph are
@@ -529,20 +563,29 @@ struct InliningGraphNode {
 /// enables inlined functions to be optimized and pruned as they are processed.
 struct InliningGraph {
   /// Create an inlining graph with the specified inlining level.
-  explicit InliningGraph(AlwaysInlineLevel level,
+  explicit InliningGraph(AlwaysInlineLevel level, LLCL::Runtime &runtime,
                          ParameterCollector::Analysis &paramCache)
-      : level(level), paramCache(paramCache) {}
+      : level(level), runtime(runtime), paramCache(paramCache) {}
 
   /// Build the inlining graph for a module.
-  void build(ModuleOp module, SymbolTable &symtab);
+  void build(ModuleOp module, const SymbolTable &symtab);
 
   /// Process the graph by performing all requested inlining from the root
   /// nodes.
   void process();
 
+  // Complete processing of a node by incrementing the number of processed calls
+  // of all its callers. Note that the same function can appear in the caller
+  // list N, indicating that it calls this function N times. This loop will
+  // increment the `numProcessedCalls` counters N times as appropriate.
+  void complete(InliningGraphNode *node);
+
   /// Inline the requested call.
   void inlineCall(ParameterUseDefGraph &callerParams, CallOp call,
                   InliningGraphNode *callee);
+
+  /// Get the parameter cache copy belonging to the thread.
+  ParameterCollector::Analysis &getThreadLocalCache(uint64_t threadId);
 
   /// The nodes in the graph. The map does not resize after it is constructed,
   /// so references always remain valid.
@@ -550,22 +593,35 @@ struct InliningGraph {
   /// Calls to functions with at least this inline level are considered edges in
   /// the inlining graph.
   AlwaysInlineLevel level;
+  /// The runtime to use.
+  LLCL::Runtime &runtime;
 
   /// A parameter collector cache to use.
   ParameterCollector::Analysis &paramCache;
   /// The parameter mangler cache.
   DenseSet<const void *> manglerCache;
+  /// Thread-local copies of the parameter cache.
+  DenseMap<uint64_t, ParameterCollector::Analysis> threadCaches;
+  /// This mutex guards the map of thread-local caches.
+  llvm::sys::SmartRWMutex<true> cacheMutex;
+
+  /// This chain is set when all in-flight work items are processed.
+  LLCL::AsyncValueRef<LLCL::Chain> done;
+  /// This is the number of in-flight work items.
+  std::atomic<size_t> numWorkItems = 1;
 };
 } // namespace
 
-void InliningGraph::build(ModuleOp module, SymbolTable &symtab) {
+void InliningGraph::build(ModuleOp module, const SymbolTable &symtab) {
   // Instantiate the nodes for each generator first.
   for (auto func : module.getOps<GeneratorOp>())
     nodes.try_emplace(func, InliningGraphNode(func));
 
   // Build the graph by walking all the calls in each function and adding edges
   // as appropriate.
-  for (auto &[func, node] : nodes) {
+  auto workFn = [this,
+                 &symtab](std::pair<GeneratorOp, InliningGraphNode> &value) {
+    auto &[func, node] = value;
     InliningGraphNode *callerNode = &node;
     func.walk([&](CallOp call) {
       auto callee = symtab.lookup<GeneratorOp>(
@@ -574,68 +630,99 @@ void InliningGraph::build(ModuleOp module, SymbolTable &symtab) {
       if (callee.getAlwaysInlineLevel() < level)
         return;
       InliningGraphNode *calleeNode = &nodes.find(callee)->second;
-      callerNode->callsites.emplace_back(call, calleeNode);
-      calleeNode->callers.push_back(callerNode);
+      {
+        llvm::sys::SmartScopedWriter<true> lock(callerNode->mutex);
+        callerNode->callsites.emplace_back(call, calleeNode);
+      }
+      {
+        llvm::sys::SmartScopedWriter<true> lock(calleeNode->mutex);
+        calleeNode->callers.push_back(callerNode);
+      }
+    });
+  };
+  mlir::parallelForEach(module.getContext(), nodes, workFn);
+}
+
+ParameterCollector::Analysis &
+InliningGraph::getThreadLocalCache(uint64_t threadId) {
+  ParameterCollector::Analysis *cache = nullptr;
+  {
+    llvm::sys::SmartScopedReader<true> lock(cacheMutex);
+    auto it = threadCaches.find(threadId);
+    if (it != threadCaches.end())
+      cache = &it->second;
+  }
+  if (!cache) {
+    llvm::sys::SmartScopedWriter<true> lock(cacheMutex);
+    // Each thread gets a copy of the saved cache.
+    cache = &threadCaches.try_emplace(threadId, paramCache).first->second;
+  }
+  return *cache;
+}
+
+void InliningGraph::complete(InliningGraphNode *node) {
+  // Since the function is complete, compute its callee graph, if it has
+  // any callers.
+  if (node->callers.empty())
+    return;
+  node->calculateParams(getThreadLocalCache(llvm::get_threadid()));
+
+  // Indicate it as complete to its callers by incrementing the ready counter on
+  // the caller nodes. Schedule any ready callers.
+  for (InliningGraphNode *caller : node->callers) {
+    if (caller->numProcessedCalls.fetch_add(1) + 1 != caller->callsites.size())
+      continue;
+    // This caller is ready. Increment the number of active work items.
+    numWorkItems.fetch_add(1);
+    runtime.getWorkQueue()->addTask([caller, this] {
+      // Compute the parameter use-def graph of the function as a caller.
+      ParameterUseDefGraph callerParams(caller->func.getBodyRegion());
+      callerParams.calculate(getThreadLocalCache(llvm::get_threadid()));
+      // Inline all callees.
+      for (auto [call, callee] : caller->callsites)
+        inlineCall(callerParams, call, callee);
+      complete(caller);
+      // Complete this task. Check if all tasks are done.
+      if (numWorkItems.fetch_sub(1) == 1)
+        done.copy().emplace();
     });
   }
 }
 
 void InliningGraph::process() {
-  std::vector<InliningGraphNode *> worklist;
+  // Reserve the thread-local cache map so that it never resizes.
+  threadCaches.reserve(runtime.getWorkQueue()->getParallelismLevel());
 
-  // Complete processing of a node by incrementing the number of processed calls
-  // of all its callers. Note that the same function can appear in the caller
-  // list N, indicating that it calls this function N times. This loop will
-  // increment the `numProcessedCalls` counters N times as appropriate.
-  auto complete = [&](InliningGraphNode *node) {
-    for (InliningGraphNode *caller : node->callers)
-      if (++caller->numProcessedCalls == caller->callsites.size())
-        worklist.push_back(caller);
-  };
+  // Allocate the completion chain.
+  done = LLCL::AsyncValueRef<LLCL::Chain>::allocate(runtime);
 
   // Populate the worklist with root nodes.
   for (auto &[func, node] : nodes) {
     // Root nodes are already complete.
-    if (node.callsites.empty())
-      complete(&node);
+    if (!node.callsites.empty())
+      continue;
+    InliningGraphNode *caller = &node;
+    // Increment the number of in-flight tasks.
+    numWorkItems.fetch_add(1);
+    runtime.getWorkQueue()->addTask([caller, this] {
+      complete(caller);
+      // Check if all tasks are done.
+      if (numWorkItems.fetch_sub(1) == 1)
+        done.copy().emplace();
+    });
   }
+  // Check if all tasks are done.
+  if (numWorkItems.fetch_sub(1) == 1)
+    done.copy().emplace();
 
-  while (!worklist.empty()) {
-    InliningGraphNode *node = worklist.back();
-    worklist.pop_back();
-
-    // Compute the parameter use-def graph of the function as a caller.
-    ParameterUseDefGraph callerParams(node->func.getBodyRegion());
-    callerParams.calculate(paramCache);
-    for (auto [call, callee] : node->callsites)
-      inlineCall(callerParams, call, callee);
-    complete(node);
-  }
+  // Wait on all active work items.
+  LLCL::await(done);
 }
 
 void InliningGraph::inlineCall(ParameterUseDefGraph &callerParams, CallOp call,
                                InliningGraphNode *callee) {
-  // Compute parameters of the callee function if not done already.
-  Optional<ParameterUseDefGraph> &calleeParams = callee->calleeParamGraph;
-  if (!calleeParams) {
-    calleeParams.emplace(callee->func.getBodyRegion());
-    calleeParams->calculate(paramCache);
-    callee->func.walk([&](Operation *op) {
-      if (auto decl = dyn_cast<DeclInterface>(op)) {
-        for (ParamDeclAttr decl : llvm::concat<const ParamDeclAttr>(
-                 decl.getInputParams(), decl.getResultParams()))
-          callee->allDecls.insert(decl.getName());
-      }
-      if (auto paramOp = dyn_cast<ParamOpInterface>(op)) {
-        paramOp.walkDeclarations([&](ParamDeclAttr decl) {
-          callee->allDecls.insert(decl.getName());
-        });
-      }
-    });
-  }
-
-  inlineGeneratorCall(call, callee->func, callerParams, *calleeParams,
-                      callee->allDecls, manglerCache);
+  inlineGeneratorCall(call, callee->func, callerParams,
+                      callee->calleeParamGraph, callee->allDecls, manglerCache);
 }
 
 //===----------------------------------------------------------------------===//
@@ -650,20 +737,33 @@ namespace M::KGEN {
 namespace {
 struct AlwaysInlineParametricPass
     : impl::AlwaysInlineParametricBase<AlwaysInlineParametricPass> {
-  using AlwaysInlineParametricBase::AlwaysInlineParametricBase;
+  explicit AlwaysInlineParametricPass(LLCL::Runtime *runtime = nullptr)
+      : runtime(runtime) {}
 
   void runOnOperation() override;
+
+  LLCL::Runtime *runtime;
 };
 } // namespace
 
 void AlwaysInlineParametricPass::runOnOperation() {
+  // Create a runtime instance if needed.
+  auto rt = ConditionallyOwnedPointer<LLCL::Runtime>::allocateIfNeeded(
+      runtime, LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
+      LLCL::createSingleThreadWorkQueue());
+
   SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
   auto &paramCache = getAnalysis<ParameterCollector::Analysis>();
 
-  InliningGraph graph(AlwaysInlineLevel::Enabled, paramCache);
+  InliningGraph graph(AlwaysInlineLevel::Enabled, *rt, paramCache);
   graph.build(getOperation(), symtab);
   graph.process();
+}
+
+std::unique_ptr<mlir::Pass>
+KGEN::createAlwaysInlineParametric(LLCL::Runtime &runtime) {
+  return std::make_unique<AlwaysInlineParametricPass>(&runtime);
 }
 
 //===----------------------------------------------------------------------===//
