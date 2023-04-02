@@ -13,8 +13,11 @@ struct RegExample:
   fn __del___(owned self): pass
 
 
-# CHECK: lit.func @"destructors()"()
-fn destructors():
+# CHECK: lit.func @"destructors
+# CHECK-SAME: (%arg0: !pop.pointer<@"$ownership"::@MemExample> owned_in_mem)
+fn destructors(owned arg0: MemExample):
+  # CHECK: %arg0.arg = lit.owned.arg.decl "arg0", %arg0, #kgen.symbol.constant<@"$ownership"::@MemExample::@"__del___($ownership::MemExample)" >
+
   # CHECK: %mem = lit.varlet.decl "mem", var = true,
   # CHECK-SAME: #kgen.symbol.constant<@"$ownership"::@MemExample::@"__del___($ownership::MemExample)" >
   var mem = MemExample()

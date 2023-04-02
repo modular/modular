@@ -1845,7 +1845,8 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, LitLexer &lexer,
     }
 
     auto makeArgLValueVarSlot = [&, bbArgLoc = bbArg.getLoc(),
-                                 argName = argName](CValue srcVal) {
+                                 argName =
+                                     argName](CValue srcVal) -> DeclIRValue {
       ASTType declType = srcVal.getRValueType();
       Type varType = POP::PointerType::get(declType);
       TypedAttr dtor =
@@ -1863,28 +1864,31 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, LitLexer &lexer,
       if (!emitter.emitBValue({srcVal, &srcExpr}, dest))
         dest.resetForError();
 
-      setDecl(SLValue(varDecl));
+      return SLValue(varDecl);
     };
 
+    DeclIRValue argIRValue;
     switch (convention) {
     // Arguments passed by-reference can be directly used.
     case ValueInputConvention::ByRef:
     case ValueInputConvention::ByRefResult:
-      setDecl(SLValue(bbArg));
+      argIRValue = SLValue(bbArg);
       break;
 
-    case ValueInputConvention::OwnedInMem:
-      // by-value arguments are mutable in a def, immutable in an fn.
+    case ValueInputConvention::OwnedInMem: {
       // OwnedInMem passes ownership of the argument into the callee so we
-      // can directly mutate it if we want to.
-
-      // TODO(destructors): if there a destructor, we need an op to attach
-      // it to.
-      setDecl(SLValue(bbArg));
+      // can directly mutate it if we want to.  All references to it will go
+      // through this OwnedArgDeclOp which gives lifetime analysis information
+      // about the destructor to use.
+      TypedAttr dtor = ExprEmitter::lookupDestructor(
+          SLValue(bbArg).getRValueType(), argDecl.getLoc(), shared);
+      argIRValue = SLValue(builder.create<OwnedArgDeclOp>(
+          bbArg.getLoc(), bbArg.getType(), argName, bbArg, dtor));
       break;
+    }
 
     case ValueInputConvention::OwnedInReg:
-      makeArgLValueVarSlot(SRValue(bbArg));
+      argIRValue = makeArgLValueVarSlot(SRValue(bbArg));
       break;
 
     case ValueInputConvention::BorrowedInReg:
@@ -1892,9 +1896,9 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, LitLexer &lexer,
       // If this was passed by-value, then it becomes an rvalue in a `fn`.
       if (!funcOp.getIsDef()) {
         if (convention == ValueInputConvention::BorrowedInMem)
-          setDecl(MBValue(bbArg));
+          argIRValue = MBValue(bbArg);
         else
-          setDecl(SBValue(bbArg));
+          argIRValue = SBValue(bbArg);
         break;
       }
 
@@ -1905,12 +1909,17 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, LitLexer &lexer,
         srcVal = MBValue(bbArg);
       else
         srcVal = SBValue(bbArg);
-      makeArgLValueVarSlot(srcVal);
+      argIRValue = makeArgLValueVarSlot(srcVal);
       break;
     }
+
+    // Ok, now that we've figured out the IR representation of the ASTDecl,
+    // install it.
+    setDecl(argIRValue);
   }
 
-  // Resolve the body of the decl.
+  // With all the argument declarations set up, we can resolve the body of the
+  // function.
   if (LitParserBase::parseSuite(decl, lexer))
     return failure();
 
