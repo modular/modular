@@ -51,9 +51,9 @@ void KGEN::populateGenerateLibraryFilePasses(mlir::PassManager &pm,
   // very CFG centric and we have region trees with a single block per region.
   mlir::GreedyRewriteConfig cannConfig;
   cannConfig.enableRegionSimplification = false;
+  pm.addNestedPass<GeneratorOp>(createMem2Reg());
   pm.addNestedPass<GeneratorOp>(mlir::createCanonicalizerPass(cannConfig));
   pm.addNestedPass<GeneratorOp>(createConstraintReduction());
-  pm.addNestedPass<GeneratorOp>(createMem2Reg());
 }
 
 void KGEN::populateElaborateModulePasses(
