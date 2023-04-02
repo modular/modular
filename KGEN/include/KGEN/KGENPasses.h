@@ -125,6 +125,13 @@ std::unique_ptr<mlir::Pass>
 createElaborateGenerators(LLCL::Runtime &runtime, TargetInfoAttr target,
                           const ElaborateGeneratorsOptions &options = {});
 
+//===----------------------------------------------------------------------===//
+// Inlining
+//===----------------------------------------------------------------------===//
+
+std::unique_ptr<mlir::Pass>
+createAlwaysInlineParametric(LLCL::Runtime &runtime);
+
 } // namespace KGEN
 } // namespace M
 
