@@ -261,9 +261,7 @@ void StructOperationLowerer::materializeLowering(OpT op) {
 
   Value result = lowerStructOp(op, adaptor, *this);
   if (result.getType() != resultType)
-    result = create<mlir::UnrealizedConversionCastOp>(op->getLoc(), resultType,
-                                                      result)
-                 .getResult(0);
+    result = getCastedToType(result, resultType, *this);
   replaceOp(op, {result});
 }
 
@@ -331,12 +329,26 @@ void LowerStructsPass::runOnOperation() {
         *type.getResolvedLength());
   });
 
-  // Type references can be used in nested types. Walk through all the types and
-  // rewrite them in-place to use the lowered types.
   structLowerer.replacer.addReplacement([&](DebugInfo::DIType type) -> Type {
     return debugTypeConverter.convertDebugType(type);
   });
-  structLowerer.replacer.recursivelyReplaceElementsIn(
-      getOperation(), /*replaceAttrs=*/true, /*replaceLocs=*/true,
-      /*replaceTypes=*/true);
+  // Type references can be used in nested types. Walk through all the types and
+  // rewrite them in-place to use the lowered types. Walk pre-order, and while
+  // doing so, erase any trivial casts left over from the type conversion.
+  std::function<void(Operation *)> replaceTypes = [&](Operation *op) {
+    structLowerer.replacer.replaceElementsIn(
+        op, /*replaceAttrs=*/true, /*replaceLocs=*/true, /*replaceTypes=*/true);
+    if (auto cast = dyn_cast<mlir::UnrealizedConversionCastOp>(op)) {
+      // Fold trivial casts.
+      if (cast.getOperandTypes() == cast.getResultTypes()) {
+        cast.replaceAllUsesWith(cast.getOperands());
+        cast.erase();
+      }
+      return;
+    }
+    for (Region &region : op->getRegions())
+      for (Operation &op : llvm::make_early_inc_range(region.getOps()))
+        replaceTypes(&op);
+  };
+  replaceTypes(getOperation());
 }
