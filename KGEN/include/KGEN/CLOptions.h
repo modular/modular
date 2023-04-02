@@ -97,7 +97,7 @@ public:
       "enable-search", cl::init(false),
       cl::desc("Do search when an evaluator is provided.")};
 
-  cl::list<std::string> searchPaths{
+  cl::list<std::string> includePaths{
       "I", cl::desc("Path to use to search for included files.")};
 
   cl::opt<bool> enableMLIRCrashReproducer{
