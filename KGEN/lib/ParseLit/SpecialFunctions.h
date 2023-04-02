@@ -48,6 +48,10 @@ public:
     /// instance method.
     kAllowByRefSelfInstMethod = (1 << 2) | kInstMethod,
 
+    /// On a method of a struct, the self must be passed as Owned argument
+    /// convention.
+    kRequiresOwnedSelfInstMethod = (1 << 3) | kInstMethod,
+
     /// This is true when this represents a "reversed" operator like __radd__.
     kReversedOperator = 1 << 4,
 
@@ -63,6 +67,11 @@ public:
 
   bool allowsByRefSelfInstMethod() const {
     return (flags & kAllowByRefSelfInstMethod) == kAllowByRefSelfInstMethod;
+  }
+
+  bool requiresOwnedSelfInstMethod() const {
+    return (flags & kRequiresOwnedSelfInstMethod) ==
+           kRequiresOwnedSelfInstMethod;
   }
 
   /// Return true if this is a reversed operator.

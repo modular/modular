@@ -50,14 +50,16 @@ public:
   /// SSA value) then return it.
   CRValue getIfRValue() const;
   BValue getIfBValue() const;
-  PValue getIfPValue() const { return dyn_cast<PValue>(irValue); }
+  PValue getIfPValue() const { return dyn_cast_or_null<PValue>(irValue); }
 
   /// If this declaration is defined by its value (e.g. a parameter value or an
   /// SSA value) then return it.
-  SLValue getIfLValue() const { return dyn_cast<SLValue>(irValue); }
+  SLValue getIfLValue() const { return dyn_cast_or_null<SLValue>(irValue); }
 
   /// If the IRValue is an Operation*, return it, otherwise return null.
-  Operation *getIfOperation() const { return dyn_cast<Operation *>(irValue); }
+  Operation *getIfOperation() const {
+    return dyn_cast_or_null<Operation *>(irValue);
+  }
 
   llvm::SMLoc getLoc() const { return loc; }
   ASTDecl *getParentDecl() const { return parentDecl; }
@@ -238,7 +240,7 @@ struct CastInfo<T, M::KGEN::LIT::ASTDecl>
   // Provide isPossible here because here we have the const-stripping from
   // ConstStrippingCast.
   static bool isPossible(M::KGEN::LIT::ASTDecl &decl) {
-    auto *op = dyn_cast<mlir::Operation *>(decl.getIRValue());
+    auto *op = dyn_cast_or_null<mlir::Operation *>(decl.getIRValue());
     return op && T::classof(op);
   }
   static T doCast(M::KGEN::LIT::ASTDecl &decl) {
