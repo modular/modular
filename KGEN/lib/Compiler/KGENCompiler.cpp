@@ -32,6 +32,9 @@ void KGEN::populateGenerateLibraryFilePasses(mlir::PassManager &pm,
 
   pm.addPass(createLowerStructs());
   pm.addPass(createVerifyParameters());
+  // Eliminate dead symbols. If we don't use the symbol *somewhere* it doesn't
+  // need to be in the IR.
+  pm.addPass(createEliminateDeadSymbols());
 
   // Only inline `always_inline_no_debug` functions during parametric inlining.
   // Too much inlining pre-elaboration increases pressure on the elaborator and
@@ -57,9 +60,6 @@ void KGEN::populateElaborateModulePasses(
     mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
     const ElaborateGeneratorsOptions &elaborateOptions) {
   populateGenerateLibraryFilePasses(pm, runtime);
-  // Eliminate dead symbols. If we don't use the symbol *somewhere* it doesn't
-  // need to be in the IR.
-  pm.addPass(createEliminateDeadSymbols());
 
   // Only outline closures just before elaboration - they aren't really
   // necessary until elaboration happens.
@@ -76,7 +76,7 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm) {
   // Run the inliner, DCE, and cleanup the compiler globals.
   pm.addPass(createForceInline());
   pm.addPass(createEliminateDeadSymbols());
-  pm.addNestedPass<KGEN::FuncOp>(createCleanupCompilerGlobals());
+  pm.addNestedPass<FuncOp>(createCleanupCompilerGlobals());
 
   pm.addNestedPass<FuncOp>(createMem2Reg());
   pm.addNestedPass<FuncOp>(mlir::createCSEPass());
@@ -85,7 +85,7 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm) {
   // very CFG centric and we have region trees with a single block per region.
   mlir::GreedyRewriteConfig cannConfig;
   cannConfig.enableRegionSimplification = false;
-  pm.addNestedPass<KGEN::FuncOp>(mlir::createCanonicalizerPass(cannConfig));
+  pm.addNestedPass<FuncOp>(mlir::createCanonicalizerPass(cannConfig));
 
 #if 0
   // TODO(Issue #7158): This pass is causing a compile time explosion and needs
