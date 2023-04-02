@@ -737,8 +737,10 @@ namespace M::KGEN {
 namespace {
 struct AlwaysInlineParametricPass
     : impl::AlwaysInlineParametricBase<AlwaysInlineParametricPass> {
-  explicit AlwaysInlineParametricPass(LLCL::Runtime *runtime = nullptr)
-      : runtime(runtime) {}
+  explicit AlwaysInlineParametricPass(
+      const AlwaysInlineParametricOptions &options = {},
+      LLCL::Runtime *runtime = nullptr)
+      : AlwaysInlineParametricBase(options), runtime(runtime) {}
 
   void runOnOperation() override;
 
@@ -756,14 +758,16 @@ void AlwaysInlineParametricPass::runOnOperation() {
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
   auto &paramCache = getAnalysis<ParameterCollector::Analysis>();
 
-  InliningGraph graph(AlwaysInlineLevel::Enabled, *rt, paramCache);
+  InliningGraph graph(nodebugOnly ? AlwaysInlineLevel::EnabledNoDebug
+                                  : AlwaysInlineLevel::Enabled,
+                      *rt, paramCache);
   graph.build(getOperation(), symtab);
   graph.process();
 }
 
-std::unique_ptr<mlir::Pass>
-KGEN::createAlwaysInlineParametric(LLCL::Runtime &runtime) {
-  return std::make_unique<AlwaysInlineParametricPass>(&runtime);
+std::unique_ptr<mlir::Pass> KGEN::createAlwaysInlineParametric(
+    LLCL::Runtime &runtime, const AlwaysInlineParametricOptions &options) {
+  return std::make_unique<AlwaysInlineParametricPass>(options, &runtime);
 }
 
 //===----------------------------------------------------------------------===//

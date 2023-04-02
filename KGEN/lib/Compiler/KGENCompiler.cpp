@@ -33,7 +33,13 @@ void KGEN::populateGenerateLibraryFilePasses(mlir::PassManager &pm,
   pm.addPass(createLowerStructs());
   pm.addPass(createVerifyParameters());
 
-  pm.addPass(createAlwaysInlineParametric(runtime));
+  // Only inline `always_inline_no_debug` functions during parametric inlining.
+  // Too much inlining pre-elaboration increases pressure on the elaborator and
+  // reduces cache granularity. By restricting inlining to `nodebug` functions,
+  // we still maintain the zero-cost abstraction.
+  AlwaysInlineParametricOptions options;
+  options.nodebugOnly = true;
+  pm.addPass(createAlwaysInlineParametric(runtime, options));
   pm.addPass(createVerifyParameters());
 
   // These passes don't influence parameters, so we don't need to verify them.
