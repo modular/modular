@@ -324,6 +324,11 @@ def AlwaysInlineParametric : Pass<"always-inline-param", "mlir::ModuleOp"> {
     will strip debug info as appropriate for functions marked
     'always_inline(nodebug)'. This pass can only run on parametric KGEN IR.
   }];
+
+  let options = [
+    Option<"nodebugOnly", "nodebug-only", "bool", "false",
+           "If true, only `always_inline_no_debug` functions are inlined.">
+  ];
 }
 
 //===----------------------------------------------------------------------===//
