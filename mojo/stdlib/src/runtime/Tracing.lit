@@ -81,7 +81,10 @@ fn is_profiling_enabled[type: TraceType, level: TraceLevel]() -> Bool:
         build_info_llcl_max_profiling_level()
     )
     return level <= (
-        (MODULAR_LLCL_MAX_PROFILING_LEVEL >> kProfilingTypeWidthBits)
+        (
+            MODULAR_LLCL_MAX_PROFILING_LEVEL
+            >> (type.value * kProfilingTypeWidthBits)
+        )
         & ((1 << kProfilingTypeWidthBits) - 1)
     )
 
