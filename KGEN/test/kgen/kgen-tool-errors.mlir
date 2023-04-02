@@ -1,4 +1,4 @@
-// RUN: kgen %s -execute -func="some_func:f32()" -func="some_func:f32(f32)" -func="badkernel:f32()" -ignore-failure -I %S/../kernels -verify-diagnostics
+// RUN: kgen %s -execute -func="some_func:f32()" -func="some_func:f32(f32)" -func="badkernel:f32()" -ignore-failure -verify-diagnostics
 
 // expected-error@-3 {{could not find func '@badkernel'}}
 

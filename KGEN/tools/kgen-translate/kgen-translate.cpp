@@ -35,7 +35,7 @@ int main(int argc, char *argv[]) {
   mlir::TranslateToMLIRRegistration fromMojo(
       "import-mojo", "Import 'mojo' from source",
       [&](llvm::SourceMgr &sourceMgr, MLIRContext *context) {
-        sourceMgr.setIncludeDirs(clOptions.includePaths);
+        sourceMgr.setIncludeDirs(clOptions.getIncludePaths());
 
         // Set up the runtime.
         std::unique_ptr<LLCL::Runtime> runtime = clOptions.createRuntime();

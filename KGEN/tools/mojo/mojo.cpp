@@ -388,7 +388,7 @@ int main(int argc, char **argv) {
 
   // Set up the input file.
   llvm::SourceMgr sourceManager;
-  sourceManager.setIncludeDirs(clOptions.includePaths);
+  sourceManager.setIncludeDirs(clOptions.getIncludePaths());
   sourceManager.AddNewSourceBuffer(clOptions.openInputFileOrExit(),
                                    llvm::SMLoc());
 
