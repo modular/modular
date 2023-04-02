@@ -16,9 +16,7 @@ kgen.func @two_vectors(
   %0 = lit.struct.create(data=%arg0) : (!pop.array<2, simd<4, f32>>) -> !size2
   %1 = lit.struct.create(data=%arg1) : (!pop.array<4, simd<1, f64>>) -> !size4
 
-  // CHECK: %0 = builtin.unrealized_conversion_cast %arg0
-  // CHECK: %1 = builtin.unrealized_conversion_cast %arg1
-  // CHECK: kgen.return %0, %1
+  // CHECK: kgen.return %arg0, %arg1
   kgen.return %0, %1 : !size2, !size4
 }
 
@@ -35,8 +33,7 @@ lit.struct.decl @Pair<T1: type, T2: type> {
 
 // CHECK-LABEL: @make_box
 kgen.func @make_box(%v: f32) -> !kgen.declref<@Box<T:type = f32>> {
-  // CHECK: %0 = builtin.unrealized_conversion_cast %arg0 : f32 to f32
-  // CHECK: kgen.return %0 : f32
+  // CHECK: kgen.return %arg0 : f32
   %0 = lit.struct.create(value=%v) : (f32) -> !kgen.declref<@Box<T:type = f32>>
   kgen.return %0 : !kgen.declref<@Box<T:type = f32>>
 }
@@ -105,11 +102,9 @@ lit.struct.decl @StructInsideStruct {
 // CHECK-LABEL: @passStructAsLValue
 kgen.func @passStructAsLValue(%s: !pop.pointer<@StructInsideStruct>) ->
 !pop.pointer<index> {
-  // CHECK: %0 = builtin.unrealized_conversion_cast %arg0
   %0 = lit.struct.gep %s[x] : <@IndexStruct> from <@StructInsideStruct>
-  // CHECK:  %1 = builtin.unrealized_conversion_cast %0
   %1 = lit.struct.gep %0[value] : <index> from <@IndexStruct>
-  // CHECK: kgen.return %0
+  // CHECK: kgen.return %arg0
   kgen.return %1 : !pop.pointer<index>
 }
 
@@ -146,10 +141,8 @@ kgen.generator @return_one(%arg0: !kgen.declref<@Struct>) -> index {
 // CHECK-LABEL: @use_struct_param
 // CHECK-SAME: !pop.array<apply(:(!pop.struct<>) -> index @return_one, { }), index>
 kgen.generator @use_struct_param(%arg0: !kgen.declref<@StructParam<param: @Struct = #lit.struct<{}>>>) {
-  // CHECK:  %0 = builtin.unrealized_conversion_cast %arg0
   lit.struct.extract %arg0[value] : !pop.array<apply(:(!kgen.declref<@Struct>) -> index @return_one, #lit.struct<{}>), index>
     from !kgen.declref<@StructParam<param: @Struct = #lit.struct<{}>>>
-  // CHECK: %1 = builtin.unrealized_conversion_cast %0
   kgen.return
 }
 
