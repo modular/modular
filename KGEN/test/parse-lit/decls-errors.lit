@@ -80,7 +80,7 @@ fn missingParameterName[: Int](): pass
 
 # expected-error @+1 {{use of unknown declaration 'InvalidType'}}
 fn badPropertyError(a: InvalidType):
-  _ = a.value
+  _ = a.value   # Should not produce a follow-on error.
   return
 
 struct NotBoolConvertible: pass
@@ -450,11 +450,13 @@ struct InvalidMember:
 
 def noop():  # expected-error {{expected body statements; use 'pass' if none is required}}
 
-
+struct BadDtor1:
+  fn __del___(self): # expected-error {{self argument must be 'owned'}}
+    pass
 
 struct BadDtor:
   fn __init__(self&): pass
-  fn __del___[x: Int](self):
+  fn __del___[x: Int](owned self):
     pass
 
 fn bad_destructors():

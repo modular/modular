@@ -170,6 +170,9 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
   } else if (auto lv = decl->getIfLValue()) {
     if (isa<TypeCheckErrorType>(lv.getRValueType().mlirType))
       decl->hasReferenceError = true;
+  } else if (auto bv = decl->getIfBValue()) {
+    if (isa<TypeCheckErrorType>(bv.getRValueType().mlirType))
+      decl->hasReferenceError = true;
   }
 
   // If this has a parent and a name, insert it into the parents name table so
@@ -462,9 +465,13 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
         })
         .Case<LIT::FileModuleOp, ModuleOp>([&](auto op) { /*Nothing*/ })
         .Default([&](auto &attr) {
-          emitError(decl.getLoc(),
-                    "do not know how to resolve the signature of this decl!");
-          decl.hasReferenceError = true;
+          // Invalid function arguments will not be resolved to a value and will
+          // have a null IR representation.
+          if (!decl.hasReferenceError) {
+            emitError(decl.getLoc(),
+                      "do not know how to resolve the signature of this decl!");
+            decl.hasReferenceError = true;
+          }
         });
     decl.resolvedness = DeclResolvedness::signature;
   }
@@ -502,8 +509,9 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
             })
         .Case<ModuleOp, UnresolvedImportOp>([&](auto op) { /*Nothing*/ })
         .Default([&](auto &attr) {
-          emitError(decl.getLoc(),
-                    "do not know how to resolve the body of this decl!");
+          if (!decl.hasReferenceError)
+            emitError(decl.getLoc(),
+                      "do not know how to resolve the body of this decl!");
         });
     decl.resolvedness = DeclResolvedness::fully;
 
@@ -1211,13 +1219,19 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
 
   // Check other invariants based on method flags.
   if (fnInfo.isInstMethod()) {
-    if (!selfType)
+    if (!selfType) {
       emitError("special function must be a method");
-    else if (funcOp.getIsStatic())
+    } else if (funcOp.getIsStatic()) {
       emitError("special method may not be a static method");
-    else if (!fnInfo.allowsByRefSelfInstMethod() &&
-             args[selfArgNumber].convention !=
-                 ParsedArgument::kConventionBorrowed)
+    } else if (fnInfo.requiresOwnedSelfInstMethod()) {
+      if (args[selfArgNumber].convention != ParsedArgument::kConventionOwned) {
+        emitErrorLoc(args[selfArgNumber].loc, "self argument must be 'owned'")
+            << LitFixIt::insertBeforeToken(args[selfArgNumber].loc, "owned ");
+        args[selfArgNumber].convention = ParsedArgument::kConventionOwned;
+      }
+    } else if (!fnInfo.allowsByRefSelfInstMethod() &&
+               args[selfArgNumber].convention !=
+                   ParsedArgument::kConventionBorrowed)
       emitErrorLoc(args[selfArgNumber].loc,
                    "self argument cannot be passed by reference");
   }
@@ -1570,11 +1584,10 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
 
       // If the type couldn't be emitted, mark this argument erroneous (so uses
       // within the body of the function don't trigger secondary errors) and
-      // mark the function erroneous so calls won't resolve.  Put in a
+      // mark the function erroneous so calls to it won't resolve.  Put in a
       // placeholder type so we can continue type checking.
       if (!type) {
         decl.hasReferenceError = true;
-        arg.isErroneous = true;
         type = shared.getTypeCheckErrorType();
       }
     }
@@ -1697,7 +1710,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
     }
   }
 
-  // Handle argument effects.
+  // Handle argument effects and build the ASTDecls for the arguments.
   for (const ParsedArgument &arg : args) {
     argLocs.push_back(p.translateLocation(arg.loc));
     argNames.push_back(arg.name);
@@ -1708,6 +1721,16 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
       effects = effects | FnEffects::PackVararg;
     else if (arg.vararg == VarArgKind::KWVarArg)
       effects = effects | FnEffects::KWVararg;
+
+    // Add an ASTDecl for the argument.  This will actually be set up during
+    // body resolution (when the vardecls and other things are set up) because
+    // the argument types referenced are not necessarily fully resolved.  We
+    // create the decls here in order to pass location information for each
+    // argument over to body resolution.
+    if (arg.kgenConvention != ValueInputConvention::ByRefResult ||
+        decl.isInitFnWithByRefResultSelf)
+      addDecl(DeclIRValue(), arg.loc, arg.name, &decl, LitLexerCursor(),
+              LitLexerCursor(), /*indent*/ 0);
   }
 
   OpBuilder builder = decl.getDeclEndBuilder();
@@ -1739,8 +1762,22 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   }
   // Bulk update the attributes.
   funcOp->setAttrs(attrs.getDictionary(funcOp.getContext()));
-
   funcOp.getBody()->addArguments(argTypes, argLocs);
+
+  return success();
+}
+
+ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, LitLexer &lexer,
+                                      ASTDecl &decl) {
+  // Push the debug scope for this function if necessary so that nested
+  // operations have proper debug info.
+  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+  if (auto spAttr = DebugInfo::extractScope(funcOp))
+    diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+
+  // Set up information about for value arguments.
+  Block *bodyBlock = funcOp.getBody();
+  auto builder = OpBuilder::atBlockEnd(bodyBlock);
 
   // Functor used to build the debug info for an argument.
   auto buildArgDIInfo = [&](Value argVal, StringRef name, unsigned argIdx) {
@@ -1757,11 +1794,15 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
     builder.create<DebugInfo::ValueOp>(argVal.getLoc(), argVal, varAttr);
   };
 
+  SignatureType funcSignature = funcOp.getSignature();
+
   // Set up the body of the fn/def, creating declarations for the value
   // parameters and adding them to the symbol table.
-  for (auto [bbArg, parsedArg] :
-       llvm::zip(funcOp.getBody()->getArguments(), args)) {
-    auto convention = parsedArg.kgenConvention;
+  for (auto [argIndex, argName, bbArg, convention] :
+       llvm::zip(llvm::detail::index_stream(), funcOp.getValueParamNames(),
+                 funcOp.getBody()->getArguments(),
+                 funcSignature.getValueInputConventions())) {
+
     // Don't bind byref-result, it is handled specially by 'return'.
     if (convention == ValueInputConvention::ByRefResult &&
         // The self argument to __init__ is special, it is explicitly
@@ -1769,60 +1810,77 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
         !decl.isInitFnWithByRefResultSelf)
       continue;
 
-    buildArgDIInfo(bbArg, parsedArg.name, bbArg.getArgNumber());
+    // Figure out which decl corresponds to this argument so we can finish it.
+    const TinyPtrVector<ASTDecl *> *argDeclList =
+        decl.lookupInCurrentScope(argName);
+    assert(argDeclList && argDeclList->size() == 1 &&
+           "Argument should be added by signature resolution");
+    ASTDecl &argDecl = *argDeclList->front();
 
-    auto addDecl = [&, name = parsedArg.name, loc = parsedArg.loc,
-                    isErroneous = parsedArg.isErroneous](DeclIRValue declVal) {
-      auto &argDecl = addFullyResolvedDecl(declVal, name, loc, &decl);
-      // If there was an error handling the argument, mark it erroneous to
-      // disable downstream errors.
-      if (isErroneous)
-        argDecl.hasReferenceError = true;
+    // This function sets the argument decl to be fully resolved with the
+    // specified IR representation.
+    auto setDecl = [&](DeclIRValue value) {
+      argDecl.setIRValue(value);
+      argDecl.resolvedness = DeclResolvedness::fully;
+      if (auto rv = argDecl.getIfRValue()) {
+        if (isa<TypeCheckErrorType>(rv.getType().mlirType))
+          argDecl.hasReferenceError = true;
+      } else if (auto lv = argDecl.getIfLValue()) {
+        if (isa<TypeCheckErrorType>(lv.getRValueType().mlirType))
+          argDecl.hasReferenceError = true;
+      } else if (auto bv = argDecl.getIfBValue()) {
+        if (isa<TypeCheckErrorType>(bv.getRValueType().mlirType))
+          argDecl.hasReferenceError = true;
+      }
     };
+
+    buildArgDIInfo(bbArg, argName, argIndex);
 
     // VarArg arguments are always treated as their pop.variadic type
     // by-value right now.  TODO(literals): Project to a list like thing.
-    if (parsedArg.vararg == VarArgKind::VarArg ||
+    if (funcSignature.isVararg(argIndex) ||
         isa<POP::PackType>(bbArg.getType())) {
-      addDecl(SRValue(bbArg));
+      setDecl(SRValue(bbArg));
       continue;
     }
 
     auto makeArgLValueVarSlot = [&, bbArgLoc = bbArg.getLoc(),
-                                 parsedArg = parsedArg](CValue srcVal) {
+                                 argName = argName](CValue srcVal) {
       ASTType declType = srcVal.getRValueType();
       Type varType = POP::PointerType::get(declType);
       TypedAttr dtor =
-          ExprEmitter::lookupDestructor(declType, parsedArg.loc, shared);
-      auto varDecl =
-          builder.create<VarLetDeclOp>(bbArgLoc, varType, parsedArg.name,
-                                       /*isVar*/ 1, dtor);
+          ExprEmitter::lookupDestructor(declType, argDecl.getLoc(), shared);
+      auto varDecl = builder.create<VarLetDeclOp>(bbArgLoc, varType, argName,
+                                                  /*isVar*/ 1, dtor);
 
       // Emit the initializer expression into the slot.
       ExprEmitter emitter(shared, decl, builder, /*varDeclCursor*/ nullptr);
 
       // Expr to provide location information.
       DeclRefNode srcExpr(
-          StringRef(parsedArg.loc.getPointer(), parsedArg.name.size()));
+          StringRef(argDecl.getLoc().getPointer(), argName.size()));
       ValueDest dest(SLValue(varDecl), EC_DefArgumentShadow);
       if (!emitter.emitBValue({srcVal, &srcExpr}, dest))
         dest.resetForError();
 
-      addDecl(SLValue(varDecl));
+      setDecl(SLValue(varDecl));
     };
 
     switch (convention) {
     // Arguments passed by-reference can be directly used.
     case ValueInputConvention::ByRef:
     case ValueInputConvention::ByRefResult:
-      addDecl(SLValue(bbArg));
+      setDecl(SLValue(bbArg));
       break;
 
     case ValueInputConvention::OwnedInMem:
       // by-value arguments are mutable in a def, immutable in an fn.
       // OwnedInMem passes ownership of the argument into the callee so we
       // can directly mutate it if we want to.
-      addDecl(SLValue(bbArg));
+
+      // TODO(destructors): if there a destructor, we need an op to attach
+      // it to.
+      setDecl(SLValue(bbArg));
       break;
 
     case ValueInputConvention::OwnedInReg:
@@ -1834,9 +1892,9 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
       // If this was passed by-value, then it becomes an rvalue in a `fn`.
       if (!funcOp.getIsDef()) {
         if (convention == ValueInputConvention::BorrowedInMem)
-          addDecl(MBValue(bbArg));
+          setDecl(MBValue(bbArg));
         else
-          addDecl(SBValue(bbArg));
+          setDecl(SBValue(bbArg));
         break;
       }
 
@@ -1851,26 +1909,10 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
       break;
     }
   }
-  return success();
-}
-
-ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, LitLexer &lexer,
-                                      ASTDecl &decl) {
-  // Push the debug scope for this function if necessary so that nested
-  // operations have proper debug info.
-  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  if (auto spAttr = DebugInfo::extractScope(funcOp))
-    diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
 
   // Resolve the body of the decl.
   if (LitParserBase::parseSuite(decl, lexer))
     return failure();
-
-  // Check to see if we have a kgen.return at the end of function.  If not,
-  // complain or add one implicitly if we have no results.
-  Block *bodyBlock = funcOp.getBody();
-
-  auto builder = OpBuilder::atBlockEnd(bodyBlock);
 
   // If this is an init with an explicit self, emit a "return None" to cap off
   // the end of the function.

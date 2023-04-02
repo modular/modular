@@ -4,13 +4,13 @@
 # CHECK-LABEL: lit.struct.decl @MemExample
 struct MemExample:
   fn __init__(self&): pass
-  fn __del___(self): pass
+  fn __del___(owned self): pass
 
 # CHECK-LABEL: lit.struct.decl @RegExample
 @register_passable
 struct RegExample:
   fn __init__() -> Self: pass
-  fn __del___(self): pass
+  fn __del___(owned self): pass
 
 
 # CHECK: lit.func @"destructors()"()
@@ -20,5 +20,6 @@ fn destructors():
   var mem = MemExample()
 
   # CHECK: %reg = lit.letreg.decl "reg" = %1,
-  # CHECK-SAME: #kgen.symbol.constant<@"$ownership"::@RegExample::@"__del___($ownership::RegExample)" > : !kgen.signature<(!kgen.declref<@"$ownership"::@RegExample> borrow) -> !lit.none>
+  # CHECK-SAME: #kgen.symbol.constant<@"$ownership"::@RegExample::@"__del___($ownership::RegExample)" > : !kgen.signature<(!kgen.declref<@"$ownership"::@RegExample>) -> !lit.none>
+  # CHECK-SAME: : !kgen.declref<@"$ownership"::@RegExample>
   let reg = RegExample()
