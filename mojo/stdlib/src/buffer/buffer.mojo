@@ -564,6 +564,17 @@ struct NDBuffer[
         return rank
 
     @always_inline
+    fn get_shape(self) -> StaticIntTuple[rank.__as_mlir_index()]:
+        var res: StaticIntTuple[rank.__as_mlir_index()]
+
+        @always_inline
+        fn _fill[idx: Int]():
+            res[idx] = self.dim[idx]()
+
+        unroll[rank, _fill]()
+        return res
+
+    @always_inline
     fn size(self) -> Int:
         """Computes the NDBuffer's number of elements.
 
@@ -1066,6 +1077,10 @@ struct DynamicRankBuffer:
     @always_inline
     fn num_elements(self) -> Int:
         return tuple_product(self.shape, self.rank)
+
+    @always_inline
+    fn get_shape[rank: Int](self) -> StaticIntTuple[rank.__as_mlir_index()]:
+        return self._shape_to_static_tuple[rank]()
 
     @always_inline
     fn dim(self, idx: Int) -> Int:
