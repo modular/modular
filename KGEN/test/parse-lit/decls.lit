@@ -223,7 +223,8 @@ fn nestedFnInLoop():
 # CHECK-SAME: (%a: !pop.pointer<@"$decls"::@StructWithInit> owned_in_mem,
 # CHECK-SAME:  %b: !pop.pointer<@"$decls"::@StructWithInit> borrow_in_mem)
 fn ownedConventionMem(owned a: StructWithInit, borrowed b: StructWithInit):
-  # CHECK: [[AX:%.*]] = lit.struct.gep %a[x]
+  # CHECK: %a.arg = lit.owned.arg.decl "a", %a
+  # CHECK: [[AX:%.*]] = lit.struct.gep %a.arg[x]
   # CHECK: %_ = lit.varlet.decl
   # CHECK: %1 = pop.load [[AX]]
   # CHECK: pop.store %1, %_
@@ -235,7 +236,7 @@ fn ownedConventionMem(owned a: StructWithInit, borrowed b: StructWithInit):
   _ = b.y
 
   # It is ok to mutate owned values.
-  # CHECK: [[AX:%.*]] = lit.struct.gep %a[x]
+  # CHECK: [[AX:%.*]] = lit.struct.gep %a.arg[x]
   # CHECK-NEXT: [[FOUR:%.*]] = kgen.param.constant: {{.*}}scalar<index> = 4
   # CHECK-NEXT: pop.store [[FOUR]], [[AX]]
   a.x = 4
