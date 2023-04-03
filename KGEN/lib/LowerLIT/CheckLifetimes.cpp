@@ -16,6 +16,7 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "llvm/ADT/BitVector.h"
+#include <llvm/ADT/STLExtras.h>
 
 using namespace M;
 using namespace KGEN;
@@ -306,9 +307,10 @@ void CheckLifetimes::scanForUninitializedValueUses(Block &block,
 
     // If this operation has a direct use of a value we are tracking, consider
     // it a use that must be initialized.  This notably includes LoadOp.
-    bool hasUse = false;
-    for (Value operand : op.getOperands())
-      hasUse |= checkSSAValueLive(operand) != 0;
+    [[maybe_unused]] bool hasUse =
+        llvm::any_of(op.getOperands(), [&](auto operand) {
+          return checkSSAValueLive(operand) != 0;
+        });
 
     // If this is a kgen.return then we have an exit from the function
     // (including early returns and exception raises that leave the function).
