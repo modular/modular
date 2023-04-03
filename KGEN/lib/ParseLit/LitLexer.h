@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// Defines the a Lexer and Token interface for .lit files.
+// Defines the a Lexer and Token interface for .mojo files.
 //
 //===----------------------------------------------------------------------===//
 
@@ -20,7 +20,7 @@ namespace M::KGEN::LIT {
 class LitLexerCursor;
 using llvm::SMLoc;
 
-/// This represents a specific token for .lit files.
+/// This represents a specific token for .mojo files.
 class LitToken {
 public:
   enum Kind {
@@ -99,7 +99,7 @@ private:
   ssize_t indentation;
 };
 
-/// This implements a lexer for .lit files.
+/// This implements a lexer for .mojo files.
 class LitLexer : public LitSharedStateUser {
 public:
   LitLexer(LitSharedState &sharedState, const llvm::MemoryBuffer *buffer);

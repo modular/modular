@@ -162,15 +162,15 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   if (clOptions.cmd == MojoCommand::kDocGen) {
     std::unique_ptr<llvm::ToolOutputFile> os =
         clOptions.getOutputFile(/*hasBinaryOutput=*/false, ".md");
-    if (failed(generateLitDoc(mgr, ctx, os->os(), mojoScope, compilationOptions,
-                              *runtime)))
+    if (failed(generateMojoDoc(mgr, ctx, os->os(), mojoScope,
+                               compilationOptions, *runtime)))
       return clOptions.reportError("could not generate documentation");
     os->keep();
     return EXIT_SUCCESS;
   }
 
-  theModule = importLitFile(mgr, ctx, mojoScope, compilationOptions,
-                            /*useMLIRDiagnostics=*/false, *runtime);
+  theModule = importMojoFile(mgr, ctx, mojoScope, compilationOptions,
+                             /*useMLIRDiagnostics=*/false, *runtime);
 
   if (!theModule)
     return clOptions.reportError("could not parse the module");

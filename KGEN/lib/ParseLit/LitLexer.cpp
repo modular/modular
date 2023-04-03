@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// Defines the a Lexer and Token interface for .lit files.
+// Defines the a Lexer and Token interface for .mojo files.
 //
 //===----------------------------------------------------------------------===//
 
