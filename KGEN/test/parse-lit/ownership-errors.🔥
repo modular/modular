@@ -1,0 +1,25 @@
+# RUN: kgen-translate -import-mojo %s --mlir-print-debuginfo > %t.mlir
+# RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-diagnostics
+
+struct MemExample:
+  fn __init__(self&): pass
+  fn __copy__(self) -> Self:
+    return MemExample{}
+  fn __del___(owned self): pass
+
+@register_passable
+struct RegExample:
+  fn __init__() -> Self:
+    return RegExample{}
+  fn __copy__(self) -> Self:
+    return RegExample{}
+  fn __del___(owned self):
+    pass
+
+fn use_of_uninit() -> RegExample:
+  var a : RegExample
+  return a   # expected-error {{invalid use of uninitialized value}}
+
+fn use_of_uninit2() -> MemExample:
+  var a : MemExample
+  return a   # expected-error {{invalid use of uninitialized value}}

@@ -165,7 +165,7 @@ def FuncInterface : OpInterface<"FuncInterface"> {
 def KGEN_CallOpInterface : OpInterface<"KGENCallOpInterface"> {
   let description = [{
     This interface represents a call to a parametric KGEN declaration: either a
-    function, generator, or interface.
+    function or generator.
   }];
   let cppNamespace = "::M::KGEN";
 
