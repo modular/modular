@@ -516,3 +516,30 @@ def HoistTrivialInvariants : Pass<"hoist-trivial-invariants", "KGEN::FuncOp"> {
     situations from being able to move it back.
   }];
 }
+
+//===----------------------------------------------------------------------===//
+// Control Flow Simplification
+//===----------------------------------------------------------------------===//
+
+def SimplifyCF : Pass<"simplify-cf", "KGEN::FuncOp"> {
+  let summary = "Simplify control flow constructs";
+  let description = [{
+    Simplifies control flow in the given function, e.g. removes trivial loops,
+    which have just one iteration.
+    Hoists operations which are trivially invariant within if and for blocks
+    into earliest block we can.
+
+    ```mlir
+      hlcf.loop {
+        some_ops  // no other break or contrinue ops
+        hlcf.break
+      }
+    ```
+
+    Becomes:
+
+    ```mlir
+      some_ops
+    ```
+  }];
+}
