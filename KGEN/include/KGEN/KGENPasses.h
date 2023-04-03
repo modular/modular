@@ -27,6 +27,7 @@ class LLVMFuncOp;
 } // namespace mlir
 
 namespace M {
+class BuildInfoAttr;
 class TargetInfoAttr;
 
 namespace HLCF {
@@ -123,6 +124,7 @@ void registerEmitLLVMPass(LLCL::Runtime &rt);
 /// referenced include files.
 std::unique_ptr<mlir::Pass>
 createElaborateGenerators(LLCL::Runtime &runtime, TargetInfoAttr target,
+                          BuildInfoAttr build,
                           const ElaborateGeneratorsOptions &options = {});
 
 //===----------------------------------------------------------------------===//

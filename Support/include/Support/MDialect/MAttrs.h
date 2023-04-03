@@ -314,6 +314,20 @@ void setTargetInfo(ModuleOp module, TargetInfoAttr target);
 /// the provided operation. Returns null if one cannot be found.
 TargetInfoAttr lookupTargetInfo(Operation *from);
 
+//===----------------------------------------------------------------------===//
+// BuildInfoAttr
+//===----------------------------------------------------------------------===//
+
+/// Look for a build info specification inside the provided module. Returns
+/// null if there is not one.
+BuildInfoAttr getBuildInfo(ModuleOp module);
+/// Set the build info specification on the provided module. The module cannot
+/// already have a build info specification.
+void setBuildInfo(ModuleOp module, BuildInfoAttr info);
+/// Look for a build info specification in the nearest surrounding module from
+/// the provided operation. Returns null if one cannot be found.
+BuildInfoAttr lookupBuildInfo(Operation *from);
+
 } // namespace M
 
 #endif // SUPPORT_MDIALECT_MATTRS_H

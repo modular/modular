@@ -23,6 +23,7 @@
 #include "Support/CommonCLOptions.h"
 #include "Support/Compiler/TimeProfilerTimingManager.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
+#include "Support/MDialect/MAttrs.h"
 #include "Support/TimeProfiler.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
@@ -203,6 +204,9 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     target = targetOr.takeValue();
   }
 
+  // Get the build info from the current build.
+  BuildInfoAttr build = BuildInfoAttr::getForCurrentBuild(ctx);
+
   // Now create the execution engine so we can JIT.
   auto tmOr =
       createTargetMachine(compilationOptions,
@@ -254,9 +258,9 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return clOptions.reportError(transformCacheBackend.getError());
 
   auto &compileLayer = engine->addLayer<KGENCompilerLayer>(
-      pm, *runtime, target, ElaborateGeneratorsOptions{clOptions.enableSearch},
-      objLayer, std::move(*transformCacheBackend),
-      std::move(*regionCacheBackend));
+      pm, *runtime, target, build,
+      ElaborateGeneratorsOptions{clOptions.enableSearch}, objLayer,
+      std::move(*transformCacheBackend), std::move(*regionCacheBackend));
 
   // And add the module into the layer. This will actually compile it down to
   // the post-elaboration phase because before that phase we don't have flat

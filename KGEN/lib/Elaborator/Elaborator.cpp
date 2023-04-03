@@ -30,6 +30,7 @@
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
+#include "Support/MDialect/MAttrs.h"
 #include "Support/STLExtras.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/IRMapping.h"
@@ -2168,8 +2169,10 @@ class ElaborateGeneratorsPass
 public:
   ElaborateGeneratorsPass(const ElaborateGeneratorsOptions &options = {},
                           LLCL::Runtime *runtime = nullptr,
-                          TargetInfoAttr target = nullptr)
-      : ElaborateGeneratorsBase(options), runtime(runtime), target(target) {}
+                          TargetInfoAttr target = nullptr,
+                          BuildInfoAttr build = nullptr)
+      : ElaborateGeneratorsBase(options), runtime(runtime), target(target),
+        build(build) {}
 
   LogicalResult initialize(MLIRContext *ctx) override {
     // Default to the host target if one was not specified
@@ -2181,6 +2184,10 @@ public:
         return mlir::emitError(UnknownLoc::get(ctx), targetOr.getError());
       target = targetOr.takeValue();
     }
+    // Default to the host build if one was not specified
+    if (!build)
+      build = BuildInfoAttr::getForCurrentBuild(ctx);
+
     return success();
   }
 
@@ -2225,6 +2232,17 @@ public:
       setTargetInfo(theModule, target);
     }
 
+    // Same for the target info, the build info is concretized in the IR.
+    if (BuildInfoAttr bld = getBuildInfo(theModule)) {
+      if (bld != build) {
+        theModule->emitError("build did not match, expected ")
+            << build << " but got " << bld;
+        return signalPassFailure();
+      }
+    } else {
+      setBuildInfo(theModule, build);
+    }
+
     if (failed(elaborateGenerators(analysis, paramCache, *rt, target,
                                    primaryGenerators, shouldDoSearch)))
       return signalPassFailure();
@@ -2235,11 +2253,15 @@ private:
   LLCL::Runtime *runtime;
   /// The compilation target.
   TargetInfoAttr target;
+  /// The build target.
+  BuildInfoAttr build;
 };
 } // namespace
 
 std::unique_ptr<mlir::Pass>
 KGEN::createElaborateGenerators(LLCL::Runtime &runtime, TargetInfoAttr target,
+                                BuildInfoAttr build,
                                 const ElaborateGeneratorsOptions &options) {
-  return std::make_unique<ElaborateGeneratorsPass>(options, &runtime, target);
+  return std::make_unique<ElaborateGeneratorsPass>(options, &runtime, target,
+                                                   build);
 }

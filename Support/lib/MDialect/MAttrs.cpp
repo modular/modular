@@ -646,9 +646,9 @@ AlignedBytesType AlignedBytesAttr::getAlignedBytesType() const {
 /// parsing the data layout string.
 DataLayout::DataLayout(StringRef dlSpecStr)
     : intAbiAlign{{1, 1}, {8, 1}, {16, 2}, {32, 4}, {64, 4}},
-      fpAbiAlign{{16, 2}, {32, 4}, {64, 8}, {128, 16}}, vecAbiAlign{{64, 8},
-                                                                    {128, 16}},
-      ptrWidth(64), ptrAbiAlign(8), dlSpecStr(dlSpecStr) {}
+      fpAbiAlign{{16, 2}, {32, 4}, {64, 8}, {128, 16}},
+      vecAbiAlign{{64, 8}, {128, 16}}, ptrWidth(64), ptrAbiAlign(8),
+      dlSpecStr(dlSpecStr) {}
 
 /// Checked version of split to ensure mandatory subparts.
 static ErrorOr<std::pair<StringRef, StringRef>> checkedSplit(StringRef str,
@@ -984,6 +984,27 @@ static raw_ostream &operator<<(raw_ostream &os, const llvm::Triple &triple) {
 //===----------------------------------------------------------------------===//
 // BuildInfoAttr
 //===----------------------------------------------------------------------===//
+
+/// The dialect attribute name used to attached build info to a module.
+static constexpr llvm::StringLiteral buildInfoAttrName = "M.build_info";
+
+BuildInfoAttr M::getBuildInfo(ModuleOp module) {
+  return module->getAttrOfType<BuildInfoAttr>(buildInfoAttrName);
+}
+
+void M::setBuildInfo(ModuleOp module, BuildInfoAttr info) {
+  assert(!getBuildInfo(module) && "module already has a build specification");
+  module->setAttr(buildInfoAttrName, info);
+}
+
+BuildInfoAttr M::lookupBuildInfo(Operation *from) {
+  if (auto module = dyn_cast<ModuleOp>(from))
+    return getBuildInfo(module);
+  auto module = from->getParentOfType<ModuleOp>();
+  if (!module)
+    return {};
+  return getBuildInfo(module);
+}
 
 BuildInfoAttr BuildInfoAttr::getForCurrentBuild(MLIRContext *ctx) {
   return BuildInfoAttr::get(ctx, MODULAR_BUILD_TYPE, MODULAR_KERNELS_BUILD_TYPE,

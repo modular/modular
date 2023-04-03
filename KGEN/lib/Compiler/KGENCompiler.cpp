@@ -64,7 +64,7 @@ void KGEN::populateGenerateLibraryFilePasses(mlir::PassManager &pm,
 
 void KGEN::populateElaborateModulePasses(
     mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
-    const ElaborateGeneratorsOptions &elaborateOptions) {
+    BuildInfoAttr build, const ElaborateGeneratorsOptions &elaborateOptions) {
   populateGenerateLibraryFilePasses(pm, runtime);
 
   // Only outline closures just before elaboration - they aren't really
@@ -73,7 +73,8 @@ void KGEN::populateElaborateModulePasses(
   pm.addPass(createVerifyParameters());
 
   // After elaboration, we have no use for the parameter verifier anymore.
-  pm.addPass(createElaborateGenerators(runtime, target, elaborateOptions));
+  pm.addPass(
+      createElaborateGenerators(runtime, target, build, elaborateOptions));
 
   populatePostElaborationPasses(pm);
 }
@@ -166,14 +167,15 @@ char KGENCompilerLayer::ID;
 
 KGENCompilerLayer::KGENCompilerLayer(
     mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
-    ElaborateGeneratorsOptions elaborateOptions, ObjectCompilerLayer &base,
+    BuildInfoAttr build, ElaborateGeneratorsOptions elaborateOptions,
+    ObjectCompilerLayer &base,
     LLCL::RCRef<Cache::BlobCacheBackend> transformCacheBackend,
     LLCL::RCRef<Cache::BlobCacheBackend> regionCacheBackend,
     llvm::orc::ExecutionSession &sess, const llvm::DataLayout &dl,
     MaterializationLayer::AddToSearchOrderFn add)
     : llvm::RTTIExtends<KGENCompilerLayer, MaterializationLayer>(
           sess, dl, std::move(add)),
-      pm(pm), runtime(runtime), target(target),
+      pm(pm), runtime(runtime), target(target), build(build),
       elaborateOptions(std::move(elaborateOptions)), baseLayer(base) {
   // Construct the caches.
   transformCache = LLCL::RCRef<Cache::TransformCache>::create(
@@ -195,7 +197,7 @@ ErrorOrSuccess KGENCompilerLayer::add(StringRef libName, ModuleOp theModule) {
   // Set the target now, so it's included in the cache key.
   setTargetInfo(theModule, target);
   // Populate the passes.
-  populateElaborateModulePasses(pm, runtime, target, elaborateOptions);
+  populateElaborateModulePasses(pm, runtime, target, build, elaborateOptions);
 
   // TODO(11051): This is how it *should* be done, but because of the stack
   //   overflow issues, we have to do this manually for now.
