@@ -245,6 +245,9 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     target = targetOr.takeValue();
   }
 
+  // Get the build info from the current build.
+  BuildInfoAttr build = BuildInfoAttr::getForCurrentBuild(ctx);
+
   // Now create the execution engine so we can JIT.
   auto tmOr = createTargetMachine(compilationOptions,
                                   /*isJIT=*/clOptions.cmd == Command::kExecute);
@@ -296,9 +299,9 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return failure(clOptions.reportError(transformCacheBackend.getError()));
 
   auto &compileLayer = engine->addLayer<KGENCompilerLayer>(
-      pm, *runtime, target, ElaborateGeneratorsOptions{clOptions.enableSearch},
-      objLayer, std::move(*transformCacheBackend),
-      std::move(*regionCacheBackend));
+      pm, *runtime, target, build,
+      ElaborateGeneratorsOptions{clOptions.enableSearch}, objLayer,
+      std::move(*transformCacheBackend), std::move(*regionCacheBackend));
 
   // Generate a library file or go all the way through elaboration.
   if (clOptions.cmd == Command::kGenLibraryFile) {

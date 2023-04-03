@@ -32,7 +32,7 @@ void populateGenerateLibraryFilePasses(mlir::PassManager &pm,
 /// format that we will end up using to produce an object file.
 void populateElaborateModulePasses(
     mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
-    const ElaborateGeneratorsOptions &elaborateOptions);
+    BuildInfoAttr build, const ElaborateGeneratorsOptions &elaborateOptions);
 
 /// This populates the post-elaboration optimization and simplification passes.
 /// These passes are intended to run immediately after the elaborator.
@@ -55,7 +55,7 @@ public:
   static char ID;
 
   KGENCompilerLayer(mlir::PassManager &pm, LLCL::Runtime &runtime,
-                    TargetInfoAttr target,
+                    TargetInfoAttr target, BuildInfoAttr build,
                     ElaborateGeneratorsOptions elaborateOptions,
                     ObjectCompilerLayer &base,
                     LLCL::RCRef<Cache::BlobCacheBackend> transformCacheBackend,
@@ -88,6 +88,7 @@ private:
   mlir::PassManager &pm;
   LLCL::Runtime &runtime;
   TargetInfoAttr target;
+  BuildInfoAttr build;
   ElaborateGeneratorsOptions elaborateOptions;
   ObjectCompilerLayer &baseLayer;
 
