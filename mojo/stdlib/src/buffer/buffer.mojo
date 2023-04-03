@@ -42,7 +42,7 @@ fn _raw_stack_allocation[
 ]() -> DTypePointer[type]:
     """Allocates data buffer space on the stack given a data type and number of elements.
 
-    Args:
+    Parameters:
         count: number of elements to allocate memory for.
         type: the data type of each element.
         alignment: address alignment of the allocated data.
@@ -81,10 +81,10 @@ struct Buffer[size: Dim, type: DType]:
             The size is known.
 
         Args:
-            ptr (!pop.pointer<scalar<type>>): Pointer to the data.
+            ptr: Pointer to the data.
 
         Returns:
-            Buffer[size, type]: The buffer object.
+            The buffer object.
         """
         # Construct a Buffer type with statically known size
         assert_param_bool_msg[size.has_value(), "must have known size"]()
@@ -102,11 +102,11 @@ struct Buffer[size: Dim, type: DType]:
             The size is unknown.
 
         Args:
-            ptr (!pop.pointer<scalar<type>>): Pointer to the data.
-            size (Int): Dynamic size of the buffer.
+            ptr: Pointer to the data.
+            in_size: Dynamic size of the buffer.
 
         Returns:
-            Buffer[size, type]: The buffer object.
+            The buffer object.
         """
 
         @parameter
@@ -129,11 +129,11 @@ struct Buffer[size: Dim, type: DType]:
             The size is unknown.
 
         Args:
-            ptr (DTypePointer[type]): Pointer to the data.
-            size (Int): Dynamic size of the buffer.
+            ptr: Pointer to the data.
+            in_size: Dynamic size of the buffer.
 
         Returns:
-            Buffer[size, type]: The buffer object.
+            The buffer object.
         """
 
         @parameter
@@ -155,7 +155,7 @@ struct Buffer[size: Dim, type: DType]:
         Otherwise, the dynamic_size is returned.
 
         Returns:
-            Int: The size if static otherwise dynamic_size.
+            The size if static otherwise dynamic_size.
         """
 
         @parameter
@@ -169,10 +169,10 @@ struct Buffer[size: Dim, type: DType]:
         specified index.
 
         Args:
-            idx (Idx): The index into the Buffer.
+            idx: The index into the Buffer.
 
         Returns:
-            SIMD[1, type]: The value at the `idx` position.
+            The value at the `idx` position.
         """
         return self.simd_load[1](idx)
 
@@ -180,13 +180,15 @@ struct Buffer[size: Dim, type: DType]:
     fn simd_load[width: Int](self, idx: Int) -> SIMD[width, type]:
         """Loads a simd value from the buffer at the specified index.
 
+        Parameters:
+            width: The simd_width of the load.
+
         Args:
-            width (__mlir_type.index): The simd_width of the load.
-            idx (Idx): The index into the Buffer.
+            idx: The index into the Buffer.
 
         Returns:
-            SIMD[width, type]: The simd value starting at the `idx` position
-            and ending at `idx+width`.
+            The simd value starting at the `idx` position and ending at
+            `idx+width`.
         """
         return self.data.simd_load[width](idx)
 
@@ -196,14 +198,16 @@ struct Buffer[size: Dim, type: DType]:
     ](self, idx: Int) -> SIMD[width, type]:
         """Loads a simd value from the buffer at the specified index.
 
+        Parameters:
+            width: The simd_width of the load.
+            alignment: The alignemnt value.
+
         Args:
-            width (__mlir_type.index): The simd_width of the load.
-            alignemnt (__mlir_type.index): The alignemnt value.
-            idx (Idx): The index into the Buffer.
+            idx: The index into the Buffer.
 
         Returns:
-            SIMD[width, type]: The simd value starting at the `idx` position
-            and ending at `idx+width`.
+            The simd value starting at the `idx` position and ending at
+            `idx+width`.
         """
         return self.data.aligned_simd_load[width, alignment](idx)
 
@@ -215,8 +219,8 @@ struct Buffer[size: Dim, type: DType]:
         """Stores a single value into the buffer at the specified index.
 
         Args:
-            idx (Idx): The index into the Buffer.
-            val (!pop.scalar<type>): The value to store.
+            idx: The index into the Buffer.
+            val: The value to store.
         """
         var simd_val: SIMD[1, type]
         simd_val.value = val
@@ -226,8 +230,8 @@ struct Buffer[size: Dim, type: DType]:
         """Stores a single value into the buffer at the specified index.
 
         Args:
-            idx (Idx): The index into the Buffer.
-            val (SIMD[1, type]): The value to store.
+            idx: The index into the Buffer.
+            val: The value to store.
         """
         self.simd_store[1](idx, val)
 
@@ -237,10 +241,12 @@ struct Buffer[size: Dim, type: DType]:
     ](self, idx: Int, val: SIMD[width, type]):
         """Stores a simd value into the buffer at the specified index.
 
+        Parameters:
+            width: The width of the simd vector.
+
         Args:
-            width (__mlir_type.index): The width of the simd vector.
-            idx (Idx): The index into the Buffer.
-            val (SIMD[width, type]): The value to store.
+            idx: The index into the Buffer.
+            val: The value to store.
         """
         self.data.simd_store[width](idx, val)
 
@@ -250,24 +256,29 @@ struct Buffer[size: Dim, type: DType]:
     ](self, idx: Int, val: SIMD[width, type]):
         """Stores a simd value into the buffer at the specified index.
 
+        Parameters:
+            width: The width of the simd vector.
+            alignment: The alignment value.
+
         Args:
-            width (__mlir_type.index): The width of the simd vector.
-            alignment (Idx): The alignment value.
-            idx (Idx): The index into the Buffer.
-            val (SIMD[width, type]): The value to store.
+            idx: The index into the Buffer.
+            val: The value to store.
         """
         self.data.aligned_simd_store[width, alignment](idx, val)
 
     @always_inline
     fn simd_nt_store[width: Int](self, idx: Int, val: SIMD[width, type]):
-        """Stores a simd value into the buffer at the specified index
-           using non-temporal store. The address must be properly
-           aligned, 64B for avx512, 32B for avx2, and 16B for avx.
+        """Stores a simd value using non-temporal store.
+
+        The address must be properly aligned, 64B for avx512, 32B for avx2, and
+        16B for avx.
+
+        Parameters:
+            width: The width of the simd vector.
 
         Args:
-            width (__mlir_type.index): The width of the simd vector.
-            idx (Idx): The index into the Buffer.
-            val (SIMD[width, type]): The value to store.
+            idx: The index into the Buffer.
+            val: The value to store.
         """
         self.data.simd_nt_store[width](idx, val)
 
@@ -275,9 +286,11 @@ struct Buffer[size: Dim, type: DType]:
     fn prefetch[params: PrefetchOptions](self, idx: Int):
         """Prefetch the data at the given index.
 
+        Parameters:
+            params: The prefetch configuration.
+
         Args:
-            params (PrefetchOptions): The prefetch configuration.
-            idx (Int): The index of the prefetched location.
+            idx: The index of the prefetched location.
         """
         self.data.offset(idx).prefetch[params]()
 
@@ -294,11 +307,13 @@ struct Buffer[size: Dim, type: DType]:
     fn simd_fill[
         simd_width: Int
     ](self, val: SIMD[1, type]) -> Buffer[size, type]:
-        """Assigns val to all elements in the Buffer in chunks of size
-        simd_width.
+        """Assigns val to all elements in chunks of size simd_width.
 
-            Args:
-                val (SIMD[1, type]):  value to store
+        Parameters:
+            simd_width: The simd_width of the fill.
+
+        Args:
+            val: The value to store.
         """
         if val == 0:
             self.zero()
@@ -313,11 +328,13 @@ struct Buffer[size: Dim, type: DType]:
 
     @always_inline
     fn fill(self, val: SIMD[1, type]) -> Buffer[size, type]:
-        """Assigns val to all elements in the Buffer in chunks of size
-        N, where N is the native SIMD width of type on the system.
+        """Assigns val to all elements in the Buffer.
 
-            Args:
-                val (SIMD[1, type]):  value to store
+        The fill is performed in chunks of size N, where N is the native SIMD
+        width of type on the system.
+
+        Args:
+            val:  value to store
         """
         return self.simd_fill[dtype_simd_width[type]()](val)
 
@@ -326,8 +343,9 @@ struct Buffer[size: Dim, type: DType]:
     fn aligned_stack_allocation[alignment: Int]() -> Buffer[size, type]:
         """Constructs a buffer instance backed by stack allocated memory space.
 
-        Args:
+        Parameters:
             alignment: address alignment requirement for the allocation.
+
         Returns:
             Constructed buffer with the allocated space.
         """
@@ -362,15 +380,17 @@ fn _compute_ndbuffer_offset[
 ](buf: NDBuffer[rank, shape, type], index: VariadicList[Int]) -> Int:
     """Computes the NDBuffer's offset using the index positions provided.
 
+    Parameters:
+        rank: The rank of the NDBuffer.
+        shape: The shape of the NDBuffer.
+        type: The element-type of the NDBuffer.
+
     Args:
-        rank (Int): The rank of the NDBuffer.
-        shape (DimList[rank]): The shape of the NDBuffer.
-        type (dtype): The element-type of the NDBuffer.
-        buf (NDBuffer[rank, shape, type]): The NDBuffer.
-        index (VariadicList[index]): The index positions.
+        buf: The NDBuffer.
+        index: The index positions.
 
     Returns:
-        Int: The offset into the NDBuffer given the indices.
+        The offset into the NDBuffer given the indices.
     """
 
     @parameter
@@ -397,15 +417,17 @@ fn _compute_ndbuffer_offset[
 ) -> Int:
     """Computes the NDBuffer's offset using the index positions provided.
 
+    Parameters:
+        rank: The rank of the NDBuffer.
+        shape: The shape of the NDBuffer.
+        type: The element-type of the NDBuffer.
+
     Args:
-        rank (Int): The rank of the NDBuffer.
-        shape (DimList[rank]): The shape of the NDBuffer.
-        type (dtype): The element-type of the NDBuffer.
-        buf (NDBuffer[rank, shape, type]): The NDBuffer.
-        idx (StaticIntTuple[rank]): The index positions.
+        buf: The NDBuffer.
+        idx: The index positions.
 
     Returns:
-        Int: The offset into the NDBuffer given the indices.
+        The offset into the NDBuffer given the indices.
     """
     return _compute_ndbuffer_offset(buf, idx.as_tuple())
 
@@ -420,15 +442,17 @@ fn _compute_ndbuffer_offset[
 ) -> Int:
     """Computes the NDBuffer's offset using the index positions provided.
 
+    Parameters:
+        rank: The rank of the NDBuffer.
+        shape: The shape of the NDBuffer.
+        type: The element-type of the NDBuffer.
+
     Args:
-        rank (Int): The rank of the NDBuffer.
-        shape (DimList[rank]): The shape of the NDBuffer.
-        type (dtype): The element-type of the NDBuffer.
-        buf (NDBuffer[rank, shape, type]): The NDBuffer.
-        index (StaticTuple[rank, index]): The index positions.
+        buf: The NDBuffer.
+        index: The index positions.
 
     Returns:
-        Int: The offset into the NDBuffer given the indices.
+        The offset into the NDBuffer given the indices.
     """
 
     @parameter
@@ -453,12 +477,14 @@ fn _compute_ndbuffer_stride[
     """Computes the NDBuffer's default dynamic strides using the input shape.
     The default strides correspond to contiguous memory layout.
 
+    Parameters:
+        rank: The rank of the NDBuffer.
+
     Args:
-        rank (index): The rank of the NDBuffer.
-        shape (StaticTuple[rank, index]): The shape of the NDBuffer.
+        shape: The shape of the NDBuffer.
 
     Returns:
-        StaticIntTuple[rank]: The default strides of the NDBuffer.
+        The default strides of the NDBuffer.
     """
     assert_param_bool[rank > 0]()
 
@@ -579,7 +605,7 @@ struct NDBuffer[
         """Computes the NDBuffer's number of elements.
 
         Returns:
-            Int: The total number of elements in the NDBuffer.
+            The total number of elements in the NDBuffer.
         """
         var product: Int = 1
 
@@ -595,10 +621,10 @@ struct NDBuffer[
         """Computes the NDBuffer's offset using the index positions provided.
 
         Args:
-            idx (VariadicList[index]): The index positions.
+            idx: The index positions.
 
         Returns:
-            Int: The offset into the NDBuffer given the indices.
+            The offset into the NDBuffer given the indices.
         """
         assert_param_bool[rank <= 5]()
         return self.data.offset(
@@ -618,10 +644,10 @@ struct NDBuffer[
         """Computes the NDBuffer's offset using the index positions provided.
 
         Args:
-            idx (StaticTuple[rank, __mlir_type.index]): The index positions.
+            idx: The index positions.
 
         Returns:
-            Int: The offset into the NDBuffer given the indices.
+            The offset into the NDBuffer given the indices.
         """
         assert_param_bool[rank <= 5]()
         return self.data.offset(
@@ -835,11 +861,13 @@ struct NDBuffer[
     fn simd_fill[
         simd_width: Int
     ](self, val: SIMD[1, type]) -> NDBuffer[rank, shape, type]:
-        """Assigns val to all elements in the NDBuffer in chunks of size
-        simd_width.
+        """Assigns val to all elements in chunks of size simd_width.
 
-            Args:
-                val (SIMD[1, type]):  value to store
+        Parameters:
+            simd_width: The simd_width of the fill.
+
+        Args:
+            val:  value to store
         """
         if val == 0:
             self.zero()
@@ -849,11 +877,13 @@ struct NDBuffer[
 
     @always_inline
     fn fill(self, val: SIMD[1, type]) -> NDBuffer[rank, shape, type]:
-        """Assigns val to all elements in the NDBuffer in chunks of size
-        N, where N is the native SIMD width of type on the system.
+        """Assigns val to all elements in the Buffer.
 
-            Args:
-                val (SIMD[1, type]):  value to store
+        The fill is performed in chunks of size N, where N is the native SIMD
+        width of type on the system.
+
+        Args:
+            val: The value to store.
         """
         debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
         return self.simd_fill[dtype_simd_width[type]()](val)
@@ -865,8 +895,9 @@ struct NDBuffer[
     ]() -> NDBuffer[rank, shape, type]:
         """Constructs an ndbuffer instance backed by stack allocated memory space.
 
-        Args:
+        Parameters:
             alignment: address alignment requirement for the allocation.
+
         Returns:
             Constructed ndbuffer with the allocated space.
         """
@@ -891,9 +922,11 @@ struct NDBuffer[
     fn prefetch[params: PrefetchOptions](self, *idx: Int):
         """Prefetch the data at the given index.
 
+        Parameters:
+            params: The prefetch configuration.
+
         Args:
-            params (PrefetchOptions): The prefetch configuration.
-            idx (*Int): The N-D index of the prefetched location.
+            idx: The N-D index of the prefetched location.
         """
         self._offset(idx).prefetch[params]()
 
@@ -913,26 +946,29 @@ fn partial_simd_load[
     rbound: Int,
     pad_value: SIMD[1, type],
 ) -> SIMD[width, type]:
-    """Loads a vector with dynamic bound, out of bound data will be filled
-    with pad value. Data is valid if lbound <= idx < rbound for idx from 0
-    to (simd_width-1).
+    """Loads a vector with dynamic bound.
 
-        e.g.
-            addr 0 1   2  3
-            data x 42 43  x
+    Out of bound data will be filled with pad value. Data is valid if
+    lbound <= idx < rbound for idx from 0 to (simd_width-1).
 
-            partial_simd_load[4](addr0,1,3) #gives [0 42 43 0]
+    e.g.
+        addr 0  1  2  3
+        data x 42 43  x
 
-        Args:
-            width (mlir_index): The system simd vector size.
-            type (dtype): The underlying dtype of computation.
-            storage (DtypePointer): Pointer to the address to perform load.
-            lbound: lower bound of valid index within simd (inclusive).
-            rbound: upper bound of valid index within simd (non-inclusive).
-            pad_value: value to fill for out of bound indices.
+    partial_simd_load[4](addr0,1,3) #gives [0 42 43 0]
 
-        Returns:
-            The SIMD vector loaded and zero-filled.
+    Parameters:
+        width: The system simd vector size.
+        type: The underlying dtype of computation.
+
+    Args:
+        storage: Pointer to the address to perform load.
+        lbound: lower bound of valid index within simd (inclusive).
+        rbound: upper bound of valid index within simd (non-inclusive).
+        pad_value: value to fill for out of bound indices.
+
+    Returns:
+        The SIMD vector loaded and zero-filled.
     """
     # Create a mask based on input bounds.
     let effective_lbound = max(0, lbound)
@@ -951,21 +987,26 @@ fn partial_simd_store[
     rbound: Int,
     data: SIMD[width, type],
 ):
-    """Stores a vector with dynamic bound, out of bound data will ignored.
-    Data is valid if lbound <= idx < rbound for idx from 0 to (simd_width-1).
-        e.g.
-            addr 0 1 2  3
-            data 0 0 0  0
+    """Stores a vector with dynamic bound.
 
-            partial_simd_load[4](addr0,1,3, [-1, 42,43, -1]) #gives [0 42 43 0]
+    Out of bound data will ignored. Data is valid if lbound <= idx < rbound for
+    idx from 0 to (simd_width-1).
 
-        Args:
-            width (mlir_index): The system simd vector size.
-            type (dtype): The underlying dtype of computation.
-            storage (DtypePointer): Pointer to the address to perform load.
-            lbound: lower bound of valid index within simd (inclusive).
-            rbound: upper bound of valid index within simd (non-inclusive).
-            data: The vector value to store.
+    e.g.
+        addr 0 1 2  3
+        data 0 0 0  0
+
+        partial_simd_load[4](addr0,1,3, [-1, 42,43, -1]) #gives [0 42 43 0]
+
+    Parameters:
+        width: The system simd vector size.
+        type: The underlying dtype of computation.
+
+    Args:
+        storage: Pointer to the address to perform load.
+        lbound: lower bound of valid index within simd (inclusive).
+        rbound: upper bound of valid index within simd (non-inclusive).
+        data: The vector value to store.
     """
     # Create a mask based on input bounds.
     let effective_lbound = max(0, lbound)
