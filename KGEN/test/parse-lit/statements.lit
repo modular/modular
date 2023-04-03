@@ -6,7 +6,7 @@
 
 # RUN: kgen-translate %s -import-mojo -verify-diagnostics -I %S/../mojo-examples/ | FileCheck %s
 
-from prolog import Error, Int
+from Int import Int
 
 
 ##===----------------------------------------------------------------------===##
@@ -42,7 +42,7 @@ fn return_new_line() -> Int:
 fn return_impl_convert_raises() -> Int:
     # CHECK: %0 = kgen{{.*}}= 4}
     # CHECK: %1 = pop.variant.create %0
-    # CHECK: lit.return %1 : !pop.variant<@"$prolog"::@Error, @"$Int"::@Int>
+    # CHECK: lit.return %1 : !pop.variant<@{{.*}}::@Error, @"$Int"::@Int>
     return 4  # Implicit conversion from literal to Int
 
 
@@ -262,7 +262,7 @@ fn simpleTryExcept():
         # CHECK: pop.store
         a = Int(0)
         # CHECK-NEXT: lit.try.yield
-    # CHECK-NEXT: except (%{{.*}}: !kgen.declref<@"$prolog"::@Error>)
+    # CHECK-NEXT: except (%{{.*}}: !kgen.declref<@{{.*}}::@Error>)
     except:
         # CHECK-NEXT: lit.try.yield
         pass
@@ -294,7 +294,7 @@ fn eatError(err: Error):
 fn tryExceptArg():
     try:
         pass
-    # CHECK: except (%arg0: !kgen.declref<@"$prolog"::@Error>)
+    # CHECK: except (%arg0: !kgen.declref<@{{.*}}::@Error>)
     except err:
         # CHECK-NEXT: kgen.call @"{{.*}}::@"eatError{{.*}}(%arg0)
         eatError(err)
@@ -304,7 +304,7 @@ fn tryExceptArg():
 def tryExceptArgDef():
     try:
         pass
-    # CHECK: except (%arg0: !kgen.declref<@"$prolog"::@Error>)
+    # CHECK: except (%arg0: !kgen.declref<@{{.*}}::@Error>)
     except err:
         # CHECK-NEXT: lit.varlet.decl "err", var = true
         # CHECK: %[[ERRVAL:.*]] = pop.load %err
@@ -321,12 +321,12 @@ def propagateErrorInDef():
     # CHECK: %[[VALUE:.*]] = kgen.call @"{{.*}}"::@"maybeRaises
     # CHECK: %1 = pop.variant.is !kgen.declref<@"$Int"::@Int>, %0
     # CHECK:  %2 = hlcf.if %1
-    # CHECK:    %3 = pop.variant.get %0 : !pop.variant<@"$prolog"::@Error, @"$Int"::@Int> as !kgen.declref<@"$Int"::@Int>
+    # CHECK:    %3 = pop.variant.get %0 : !pop.variant<@{{.*}}::@Error, @"$Int"::@Int> as !kgen.declref<@"$Int"::@Int>
     # CHECK:    hlcf.yield %3 : !kgen.declref<@"$Int"::@Int>
     # CHECK:  } else {
-    # CHECK:    %3 = pop.variant.get %0 : !pop.variant<@"$prolog"::@Error, @"$Int"::@Int> as !kgen.declref<@"$prolog"::@Error>
-    # CHECK:    %4 = pop.variant.create %3 : !kgen.declref<@"$prolog"::@Error> -> !pop.variant<@"$prolog"::@Error, !lit.none>
-    # CHECK:    lit.return %4 : !pop.variant<@"$prolog"::@Error, !lit.none>
+    # CHECK:    %3 = pop.variant.get %0 : !pop.variant<@{{.*}}::@Error, @"$Int"::@Int> as !kgen.declref<@{{.*}}::@Error>
+    # CHECK:    %4 = pop.variant.create %3 : !kgen.declref<@{{.*}}::@Error> -> !pop.variant<@{{.*}}::@Error, !lit.none>
+    # CHECK:    lit.return %4 : !pop.variant<@{{.*}}::@Error, !lit.none>
     # CHECK:    kgen.unreachable
     # CHECK:  }
     # CHECK-NEXT: pop.store %2, %a
@@ -338,7 +338,7 @@ def propagateErrorInDef():
 fn propagateErrorInRaisingFn():
     # CHECK:  %a = lit.varlet.decl "a", var = true : <@"$Int"::@Int>
     var a: Int
-    # CHECK:  %0 = kgen.call @"$statements"::@"maybeRaises()"() : () throws -> !pop.variant<@"$prolog"::@Error, @"$Int"::@Int>
+    # CHECK:  %0 = kgen.call @"$statements"::@"maybeRaises()"() : () throws -> !pop.variant<@{{.*}}::@Error, @"$Int"::@Int>
     # CHECK:  %1 = pop.variant.is !kgen.declref<@"$Int"::@Int>, %0
     # CHECK:  %2 = hlcf.if %1 -> !kgen.declref<@"$Int"::@Int> {
     # CHECK:    %3 = pop.variant.get %0
@@ -357,12 +357,12 @@ fn propagateErrorInTry():
     var a: Int
     # CHECK: lit.try
     try:
-        # CHECK: %0 = kgen.call @"$statements"::@"maybeRaises()"() : () throws -> !pop.variant<@"$prolog"::@Error, @"$Int"::@Int>
-        # CHECK: %1 = pop.variant.is !kgen.declref<@"$Int"::@Int>, %0 : !pop.variant<@"$prolog"::@Error, @"$Int"::@Int>
+        # CHECK: %0 = kgen.call @"$statements"::@"maybeRaises()"() : () throws -> !pop.variant<@{{.*}}::@Error, @"$Int"::@Int>
+        # CHECK: %1 = pop.variant.is !kgen.declref<@"$Int"::@Int>, %0 : !pop.variant<@{{.*}}::@Error, @"$Int"::@Int>
         # CHECK: %2 = hlcf.if %1
         # CHECK: } else {
         # CHECK:   %3 = pop.variant.get %0
-        # CHECK:   lit.raise %3 : <@"$prolog"::@Error>
+        # CHECK:   lit.raise %3 : <@{{.*}}::@Error>
         # CHECK: }
 
         # CHECK-NEXT: pop.store %2, %a
@@ -374,10 +374,9 @@ fn propagateErrorInTry():
 
 # CHECK-LABEL: lit.func @"raiseError
 def raiseErrorInDef(err: Error):
-    # CHECK: %1 = pop.load %err_0
-    # CHECK: %2 = kgen.call {{.*}}"__copy__{{.*}}(%1)
-    # CHECK: %3 = pop.variant.create %2 : !kgen.declref<@"$prolog"::@Error> -> !pop.variant<@"$prolog"::@Error, !lit.none>
-    # CHECK: lit.return %3
+    # CHECK: %[[ERRVAL:.*]] = pop.load %err_0
+    # CHECK: %[[RES:.*]] = pop.variant.create %[[ERRVAL]] : !kgen.declref<@{{.*}}::@Error> -> !pop.variant<@{{.*}}::@Error, !lit.none>
+    # CHECK: lit.return %[[RES]]
     raise err
 
 
@@ -385,7 +384,7 @@ def raiseErrorInDef(err: Error):
 def raiseErrorInIf(cond: Bool, err: Error):
     # CHECK: hlcf.if
     if cond:
-        # CHECK: lit.return {{.*}} : !pop.variant<@"$prolog"::@Error, !lit.none>
+        # CHECK: lit.return {{.*}} : !pop.variant<@{{.*}}::@Error, !lit.none>
         raise err
 
 
@@ -393,8 +392,7 @@ def raiseErrorInIf(cond: Bool, err: Error):
 fn raiseErrorInTry(err: Error):
     # CHECK: lit.try {
     try:
-        # CHECK: %0 = kgen.call {{.*}}"__copy__{{.*}}(%err)
-        # CHECK-NEXT: lit.raise %0
+        # CHECK-NEXT: lit.raise {{.*}} : <@"$_CompilerBuiltin"::@Error>
         raise err
     except:
         pass

@@ -23,11 +23,6 @@ struct F32:
   var value : __mlir_type.`!pop.scalar<f32>`
 
 // -----
-
-# expected-error @+1 {{could not find an 'Error' type}}
-def foo(a): pass # expected-error {{could not find an 'object' type}}
-
-// -----
 # Crashed at top level.
 
 # https://github.com/modularml/modular/issues/6701

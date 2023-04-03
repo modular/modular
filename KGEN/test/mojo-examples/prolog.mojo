@@ -70,55 +70,6 @@ struct StringRef:
         )
 
 
-@register_passable
-struct Error:
-    var msg: StringRef
-
-    fn __copy__(self) -> Self:
-        return Self {msg: self.msg}
-
-    fn __init__(msg: StringRef) -> Error:
-        return Error {msg: msg}
-
-
-struct ErrorOr[type: __mlir_type.`!kgen.mlirtype`]:
-    var value: __mlir_type[`!pop.variant<`, Error, `, `, type, `>>`]
-
-    fn __init__(
-        value: __mlir_type[`!pop.variant<`, Error, `, `, type, `>>`]
-    ) -> ErrorOr[type]:
-        return ErrorOr[type] {value: value}
-
-    fn __init__(err: Error) -> ErrorOr[type]:
-        return ErrorOr[type] {
-            value: __mlir_op.`pop.variant.create`[
-                _type : __mlir_type[`!pop.variant<`, Error, `, `, type, `>`]
-            ](err)
-        }
-
-    fn __init__(value: type) -> ErrorOr[type]:
-        return ErrorOr[type] {
-            value: __mlir_op.`pop.variant.create`[
-                _type : __mlir_type[`!pop.variant<`, Error, `, `, type, `>`]
-            ](value)
-        }
-
-    fn __bool__(self: ErrorOr[type]) -> Bool:
-        return (
-            Bool.false()
-            if __mlir_op.`pop.variant.is`[testType : __mlir_attr[Error]](
-                self.value
-            )
-            else Bool.true()
-        )
-
-    fn getValue(self: ErrorOr[type]) -> type:
-        return __mlir_op.`pop.variant.get`[_type:type](self.value)
-
-    fn getError(self: ErrorOr[type]) -> Error:
-        return __mlir_op.`pop.variant.get`[_type:Error](self.value)
-
-
 # ===----------------------------------------------------------------------=== #
 # object
 # ===----------------------------------------------------------------------=== #
