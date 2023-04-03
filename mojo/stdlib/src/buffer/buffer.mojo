@@ -981,7 +981,7 @@ fn partial_simd_store[
 # ===----------------------------------------------------------------------===#
 
 # This type is "async safe" (see async_parallelize).
-# This struct must match DynamicRankBuffer in Kernels/lib/LitKernels/Kernels.cpp
+# This struct must match DynamicRankBuffer in Kernels/lib/MojoKernels/Kernels.cpp
 @register_passable("trivial")
 struct DynamicRankBuffer:
     """This buffer struct does not assume the rank to be static. It is not as
