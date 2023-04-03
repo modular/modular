@@ -6,7 +6,7 @@
 
 # RUN: kgen-translate -import-mojo -verify-diagnostics %s -I %S/../mojo-examples/
 
-from prolog import DType, Error, F32, Int, object
+from prolog import DType, F32, Int, object
 
 ##===----------------------------------------------------------------------===##
 # Input parameters

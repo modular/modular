@@ -6,7 +6,7 @@
 
 # RUN: kgen-translate %s -verify-diagnostics -import-mojo -I %S/../mojo-examples/ | FileCheck %s
 
-from prolog import Error, F32, Int
+from prolog import F32, Int
 from Range import range
 
 ##===----------------------------------------------------------------------===##
@@ -430,14 +430,14 @@ fn usePacks(x: F32, y: Int):
 # @raises decorator.
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.func @"defAlwaysRaises()"() throws -> !pop.variant<@"$prolog"::@Error, @"$Int"::@Int> attributes {isDef}
+# CHECK-LABEL: lit.func @"defAlwaysRaises()"() throws -> !pop.variant<@{{.*}}::@Error, @"$Int"::@Int> attributes {isDef}
 def defAlwaysRaises() -> Int:
     # CHECK: [[RESULT:%.*]] = kgen{{.*}}#lit.struct<{value: scalar<index> = 0}>
     # CHECK-NEXT: %1 = pop.variant.create [[RESULT]]
     # CHECK-NEXT: lit.return %1
     return Int(0)
 
-# CHECK-LABEL: lit.func @"fnThatRaises()"() throws -> !pop.variant<@"$prolog"::@Error, @"$Int"::@Int>
+# CHECK-LABEL: lit.func @"fnThatRaises()"() throws -> !pop.variant<@{{.*}}::@Error, @"$Int"::@Int>
 @raises
 fn fnThatRaises() -> Int:
     # CHECK: [[RESULT:%.*]] = kgen{{.*}}#lit.struct<{value: scalar<index> = 0}>
@@ -445,16 +445,16 @@ fn fnThatRaises() -> Int:
     # CHECK-NEXT: lit.return %1
     return Int(0)
 
-# CHECK-LABEL: lit.func @"raisesReturnsNone()"() throws -> !pop.variant<@"$prolog"::@Error, !lit.none>
+# CHECK-LABEL: lit.func @"raisesReturnsNone()"() throws -> !pop.variant<@{{.*}}::@Error, !lit.none>
 @raises
 fn raisesReturnsNone():
     # CHECK-NEXT: lit.end_func
     pass
 
 # COM: We can return an variant of error and index in a non-throwing function.
-# CHECK-LABEL: lit.func @"raisesReturnsVariant()"() -> !pop.variant<@"$prolog"::@Error, index>
-fn raisesReturnsVariant() -> __mlir_type.`!pop.variant<@"$prolog"::@Error, index>`:
-  return __mlir_op.`pop.variant.create`[_type: __mlir_type.`!pop.variant<@"$prolog"::@Error, index>`](1)
+# CHECK-LABEL: lit.func @"raisesReturnsVariant()"() -> !pop.variant<@{{.*}}::@Error, index>
+fn raisesReturnsVariant() -> __mlir_type[`!pop.variant<`,Error,`, index>`]:
+  return __mlir_op.`pop.variant.create`[_type: __mlir_type[`!pop.variant<`,Error,`, index>`]](1)
 
 ##===----------------------------------------------------------------------===##
 # Structs
