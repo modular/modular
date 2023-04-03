@@ -51,20 +51,20 @@ static void adjustTokenEndPoint(LitSharedState &shared, SMLoc &loc);
 
 /// Return the path containing the standard library. Returns nullopt if the
 /// standard library cannot be found.
-static std::optional<std::string> getStandardLibraryPath() {
+static std::optional<std::string> getAutoImportPath() {
   // TODO: Eventually we should resolve the standard library path to an actual
   // install of lit, for now though try to resolve the standard library path
   // within modular.
 
   // Check if we already have the path set.
   if (auto envDir = llvm::sys::Process::GetEnv("MODULAR_PATH"))
-    return (std::filesystem::path(*envDir) / "Kernels" / "lit-stdlib").string();
+    return (std::filesystem::path(*envDir) / "Kernels" / "mojo").string();
 
   // Otherwise, try to find modular relative to the current directory.
   std::filesystem::path path = std::filesystem::current_path();
   while (!path.empty()) {
     if (path.stem() == "modular")
-      return (path / "Kernels" / "lit-stdlib").string();
+      return (path / "Kernels" / "mojo").string();
     path = path.parent_path();
   }
   return std::nullopt;
@@ -77,8 +77,9 @@ struct LitSharedState::Impl {
   /// symbol tables.
   DenseMap<std::pair<SymbolTable *, StringAttr>, unsigned> symbolTableCounters;
 
-  /// The path of the standard library, or nullopt if it is not available.
-  std::optional<std::string> stdlibPath;
+  /// The auto import path (e.g. path to the stdlib), or nullopt if it is not
+  /// available.
+  std::optional<std::string> autoImportDir;
 
   /// The top-level decl containing everything being parsed.
   ASTDecl *topLevelDecl = nullptr;
@@ -112,7 +113,7 @@ LitSharedState::LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context,
     : diags(sourceMgr, context, useMLIRDiagnostics), options(options),
       declResolver(std::make_unique<DeclResolver>(*this)), runtime(runtime),
       impl(std::make_unique<Impl>()) {
-  impl->stdlibPath = getStandardLibraryPath();
+  impl->autoImportDir = getAutoImportPath();
   impl->validateDocStrings = validateDocStrings;
 
   context->loadDialect<DebugInfo::DebugInfoDialect, HLCF::HLCFDialect,
@@ -458,7 +459,8 @@ ASTType LitSharedState::lookupErrorType(SMLoc loc, ASTDecl &context) {
 /// Resolve the absolute path for a given module name. Returns nullopt if the
 /// module cannot be found.
 static std::optional<std::string>
-resolveModulePath(StringRef moduleName, const Optional<std::string> &stdLibDir,
+resolveModulePath(StringRef moduleName,
+                  const Optional<std::string> &autoImportDir,
                   llvm::SourceMgr &sourceMgr, llvm::SMLoc includeLoc) {
   // Python has lots of magic rules surrounding how modules get resolved. For
   // now, we just use the available include directories within the source
@@ -475,10 +477,17 @@ resolveModulePath(StringRef moduleName, const Optional<std::string> &stdLibDir,
     return std::nullopt;
   };
 
-  // Check the standard library first.
-  if (stdLibDir) {
-    if (auto path = checkPath(*stdLibDir))
+  // Check the auto import directory first.
+  if (autoImportDir) {
+    if (auto path = checkPath(*autoImportDir))
       return path;
+    // Cannot find the file, then check child directories of the auto import
+    // directory.
+    for (auto &childDir :
+         std::filesystem::recursive_directory_iterator(*autoImportDir))
+      if (childDir.is_directory())
+        if (auto path = checkPath(childDir.path().string()))
+          return path;
   }
 
   // Check the working directory.
@@ -494,6 +503,7 @@ resolveModulePath(StringRef moduleName, const Optional<std::string> &stdLibDir,
   for (StringRef includeDir : sourceMgr.getIncludeDirs())
     if (auto path = checkPath(includeDir))
       return path;
+
   return std::nullopt;
 }
 
@@ -524,7 +534,7 @@ LitSharedState::importModuleState(StringRef moduleName, llvm::SMLoc loc) {
 
   // Resolve the path for this module.
   std::optional<std::string> modulePath =
-      resolveModulePath(moduleName, impl->stdlibPath, getSourceMgr(), loc);
+      resolveModulePath(moduleName, impl->autoImportDir, getSourceMgr(), loc);
   if (!modulePath) {
     emitError(loc, "unable to locate module '") << moduleName << "'";
 
