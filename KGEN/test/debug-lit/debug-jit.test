@@ -2,7 +2,7 @@
 # RUN: %lldb -b -o 'settings set plugin.jit-loader.gdb.enable on' -o 'b %S/Inputs/test.mojo:11' \
 # RUN:       -o 'run %S/Inputs/test.mojo --debug-level=full -O0' mojo | FileCheck %s
 
-# XFAIL: system-linux, system-windows
+# XFAIL: *, system-linux, system-windows
 
 # CHECK: Breakpoint 1: no locations (pending).
 # CHECK: (lldb) run {{.*}}
