@@ -707,6 +707,8 @@ verifyStructFieldAndType(SymbolTableCollection &symbolTable, Operation *op,
                          DeclRefType ref, StringAttr fieldName, Type type) {
   ParameterEvaluator evaluator(ref.getParamValues());
   StructDeclOp structDecl = lookupStructDecl(symbolTable, op, ref);
+  if (!structDecl)
+    return op->emitOpError("struct ") << ref.getSymbol() << " cannot be found";
 
   for (StructFieldOp fieldDecl : structDecl.getFieldDecls()) {
     if (fieldDecl.getName() != fieldName)

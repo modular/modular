@@ -55,6 +55,19 @@ def LowerSemanticCF
 }
 
 //===----------------------------------------------------------------------===//
+// CheckLifetimes
+//===----------------------------------------------------------------------===//
+
+def CheckLifetimes : Pass<"check-lifetimes"> {
+  let summary = "Check and lower value lifetime invariants.";
+  let description = [{
+    The `check-lifetimes` pass inserts destructor calls after the last
+    use of a value, diagnoses use-before-definition problems, and implements a
+    borrow checker.
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // LowerLIT
 //===----------------------------------------------------------------------===//
 
@@ -470,9 +483,9 @@ def HoistTrivialInvariants : Pass<"hoist-trivial-invariants", "KGEN::FuncOp"> {
           hlcf.if %arg2 {
             %2 = pop.struct.extract %s[2] :
                         !pop.pointer<struct<index, index, index>>
-            // ... 
+            // ...
           } else {
-            // .. 
+            // ..
           }
         }
       }
@@ -485,13 +498,13 @@ def HoistTrivialInvariants : Pass<"hoist-trivial-invariants", "KGEN::FuncOp"> {
       %0 = pop.struct.extract %s[0] : !pop.pointer<struct<index, index, index>>
       %1 = pop.struct.extract %s[1] : !pop.pointer<struct<index, index, index>>
       %2 = pop.struct.extract %s[2] : !pop.pointer<struct<index, index, index>>
-      
+
       hlcf.loop {
         hlcf.loop {
           hlcf.if %arg2 {
-            // ... 
+            // ...
           } else {
-            // .. 
+            // ..
           }
         }
       }
