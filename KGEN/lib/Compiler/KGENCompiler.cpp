@@ -24,8 +24,14 @@ void KGEN::populateGenerateLibraryFilePasses(mlir::PassManager &pm,
                                              LLCL::Runtime &runtime) {
   pm.addPass(createVerifyParameters());
 
-  // This pass doesn't touch parameters, so re-verify after it.
+  // These passes doesn't touch parameters, no need to re-verify them after it.
+
+  // Lower semantic control flow operations like lit.return to terminators and
+  // diagnose unreachable code.
   pm.addPass(createLowerSemanticCF());
+
+  // Insert calls to destructors, reject use before free, and borrow check.
+  pm.addPass(createCheckLifetimes());
 
   pm.addPass(createLowerLIT());
   pm.addPass(createVerifyParameters());
