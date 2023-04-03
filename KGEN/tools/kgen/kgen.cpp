@@ -65,7 +65,7 @@ public:
   /// source ranges and fixit hints, but allow disabling this for testing.
   cl::opt<bool> enableMLIRDiagnostics{
       "enable-mlir-diagnostics",
-      cl::desc("Print .lit parser diagnostics through MLIR."), cl::init(false)};
+      cl::desc("Print .mojo diagnostics through MLIR."), cl::init(false)};
 
   /// Add all the input files provided on the command line to the SourceMgr.
   /// This is how MLIR parses multiple files.
@@ -205,9 +205,9 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   if (inputFileName.ends_with(".lit") || inputFileName.ends_with(".mojo") ||
       inputFileName.ends_with(".🔥")) {
     TimingScope litScope = timing.nest("Import Lit");
-    theModule = importLitFile(mgr, ctx, litScope, compilationOptions,
-                              clOptions.enableMLIRDiagnostics, *runtime,
-                              /*validateDocStrings=*/false, &includedFiles);
+    theModule = importMojoFile(mgr, ctx, litScope, compilationOptions,
+                               clOptions.enableMLIRDiagnostics, *runtime,
+                               /*validateDocStrings=*/false, &includedFiles);
   } else if (compilationOptions.getDebugInfoLevelForInput()) {
     theModule = DebugInfo::parseSourceFileWithDebugInfo(
         mgr, ctx, compilationOptions.getDIEmissionKind());

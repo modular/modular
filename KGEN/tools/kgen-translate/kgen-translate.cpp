@@ -41,9 +41,9 @@ int main(int argc, char *argv[]) {
         std::unique_ptr<LLCL::Runtime> runtime = clOptions.createRuntime();
         mlir::TimingScope ts;
         KGEN::CompilationOptions options = clOptions.getCompilationOptions();
-        return importLitFile(sourceMgr, context, ts, options,
-                             /*useMLIRDiagnostics=*/true, *runtime,
-                             validateDocStrings);
+        return importMojoFile(sourceMgr, context, ts, options,
+                              /*useMLIRDiagnostics=*/true, *runtime,
+                              validateDocStrings);
       });
 
   // Register LLVM IR generation.

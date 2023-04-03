@@ -25,7 +25,7 @@ namespace LLCL {
 class Runtime;
 } // namespace LLCL
 
-/// Parse a single .lit file and return the MLIR module for it.
+/// Parse a single .mojo file and return the MLIR module for it.
 ///
 /// When `useMLIRDiagnostics` is true, this prints diagnostics through MLIR (so
 /// MLIR features like -verify-diagnostics may be used).  When false, this
@@ -37,19 +37,19 @@ class Runtime;
 /// If `includedFiles` is provided, it is set to the list of included files when
 /// parsing imports.
 OwningOpRef<ModuleOp>
-importLitFile(llvm::SourceMgr &sourceMgr, MLIRContext *context,
-              mlir::TimingScope &ts, const KGEN::CompilationOptions &options,
-              bool useMLIRDiagnostics, LLCL::Runtime &runtime,
-              bool validateDocStrings = false,
-              SmallVectorImpl<std::string> *includedFiles = nullptr);
+importMojoFile(llvm::SourceMgr &sourceMgr, MLIRContext *context,
+               mlir::TimingScope &ts, const KGEN::CompilationOptions &options,
+               bool useMLIRDiagnostics, LLCL::Runtime &runtime,
+               bool validateDocStrings = false,
+               SmallVectorImpl<std::string> *includedFiles = nullptr);
 
-/// Parse a single .lit file and produce an appropriate document detailing the
+/// Parse a single .mojo file and produce an appropriate document detailing the
 /// API within the module. The generated documentation is piped into the
 /// provided output stream, in markdown format.
-LogicalResult generateLitDoc(llvm::SourceMgr &sourceMgr, MLIRContext *context,
-                             raw_ostream &outputOS, mlir::TimingScope &ts,
-                             const KGEN::CompilationOptions &options,
-                             LLCL::Runtime &runtime);
+LogicalResult generateMojoDoc(llvm::SourceMgr &sourceMgr, MLIRContext *context,
+                              raw_ostream &outputOS, mlir::TimingScope &ts,
+                              const KGEN::CompilationOptions &options,
+                              LLCL::Runtime &runtime);
 } // namespace M
 
 #endif // KGEN_PARSELIT_H

@@ -41,9 +41,9 @@ using llvm::SourceMgr;
 /// Parse the specified .lit file into the specified MLIR context. Returns the
 /// resultant IR, and the decl for the module represented by the input file.
 static std::tuple<OwningOpRef<mlir::ModuleOp>, ASTDecl *>
-importLitFileImpl(SourceMgr &sourceMgr, LitSharedState &sharedState,
-                  mlir::TimingScope &ts,
-                  SmallVectorImpl<std::string> *includedFiles = nullptr) {
+importMojoFileImpl(SourceMgr &sourceMgr, LitSharedState &sharedState,
+                   mlir::TimingScope &ts,
+                   SmallVectorImpl<std::string> *includedFiles = nullptr) {
   auto sourceBuf = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
   MLIRContext *context = sharedState.getContext();
 
@@ -116,24 +116,23 @@ importLitFileImpl(SourceMgr &sourceMgr, LitSharedState &sharedState,
   return {std::move(module), &moduleDecl};
 }
 
-OwningOpRef<mlir::ModuleOp>
-M::importLitFile(SourceMgr &sourceMgr, MLIRContext *context,
-                 mlir::TimingScope &ts, const KGEN::CompilationOptions &options,
-                 bool useMLIRDiagnostics, LLCL::Runtime &runtime,
-                 bool validateDocStrings,
-                 SmallVectorImpl<std::string> *includedFiles) {
+OwningOpRef<mlir::ModuleOp> M::importMojoFile(
+    SourceMgr &sourceMgr, MLIRContext *context, mlir::TimingScope &ts,
+    const KGEN::CompilationOptions &options, bool useMLIRDiagnostics,
+    LLCL::Runtime &runtime, bool validateDocStrings,
+    SmallVectorImpl<std::string> *includedFiles) {
   LitSharedState sharedState(sourceMgr, context, options, useMLIRDiagnostics,
                              runtime, validateDocStrings);
   auto [module, topLevelDecl] =
-      importLitFileImpl(sourceMgr, sharedState, ts, includedFiles);
+      importMojoFileImpl(sourceMgr, sharedState, ts, includedFiles);
   return std::move(module);
 }
 
-LogicalResult M::generateLitDoc(llvm::SourceMgr &sourceMgr,
-                                MLIRContext *context, raw_ostream &outputOS,
-                                mlir::TimingScope &ts,
-                                const KGEN::CompilationOptions &options,
-                                LLCL::Runtime &runtime) {
+LogicalResult M::generateMojoDoc(llvm::SourceMgr &sourceMgr,
+                                 MLIRContext *context, raw_ostream &outputOS,
+                                 mlir::TimingScope &ts,
+                                 const KGEN::CompilationOptions &options,
+                                 LLCL::Runtime &runtime) {
   // TODO: We should be able to cache when processing doc strings, but we need
   // to define when/how they get cached to not negatively affect the non-doc
   // string caring path.
@@ -141,7 +140,7 @@ LogicalResult M::generateLitDoc(llvm::SourceMgr &sourceMgr,
                              /*useMLIRDiagnostics=*/false, runtime,
                              /*validateDocStrings=*/false,
                              /*enableCaching=*/false);
-  auto [module, moduleDecl] = importLitFileImpl(sourceMgr, sharedState, ts);
+  auto [module, moduleDecl] = importMojoFileImpl(sourceMgr, sharedState, ts);
   if (!module)
     return failure();
 
