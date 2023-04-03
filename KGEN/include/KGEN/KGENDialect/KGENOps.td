@@ -268,7 +268,7 @@ def KGEN_CallParamOp : KGEN_CallOpBase<"call_param",
   let description = [{
     The `kgen.call_param` operation invokes a parametric callee. The callee is
     a parameter expression with a signature type, which in practice is either a
-    symbol constant, so KGEN function, generator, or interface, or a region
+    symbol constant (a KGEN function or generator), or a region
     body passed from higher up the call stack.
 
     Example:

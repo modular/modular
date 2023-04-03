@@ -1,5 +1,5 @@
-# RUN: kgen-translate -import-mojo %s | FileCheck %s
-
+# RUN: kgen-translate -import-mojo %s --mlir-print-debuginfo > %t.mlir
+# RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
 
 # CHECK-LABEL: lit.struct.decl @MemExample
 struct MemExample:
@@ -9,15 +9,17 @@ struct MemExample:
 # CHECK-LABEL: lit.struct.decl @RegExample
 @register_passable
 struct RegExample:
-  fn __init__() -> Self: pass
-  fn __del___(owned self): pass
+  fn __init__() -> Self:
+    return RegExample{}
+  fn __copy__(self) -> Self:
+    return RegExample{}
+  fn __del___(owned self):
+    pass
 
 
 # CHECK: lit.func @"destructors
 # CHECK-SAME: (%arg0: !pop.pointer<@"$ownership"::@MemExample> owned_in_mem)
 fn destructors(owned arg0: MemExample):
-  # CHECK: %arg0.arg = lit.owned.arg.decl "arg0", %arg0, #kgen.symbol.constant<@"$ownership"::@MemExample::@"__del___($ownership::MemExample)" >
-
   # CHECK: %mem = lit.varlet.decl "mem", var = true,
   # CHECK-SAME: #kgen.symbol.constant<@"$ownership"::@MemExample::@"__del___($ownership::MemExample)" >
   var mem = MemExample()
