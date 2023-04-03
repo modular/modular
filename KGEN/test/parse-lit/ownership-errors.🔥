@@ -7,6 +7,8 @@ struct MemExample:
     return MemExample{}
   fn __del___(owned self): pass
 
+fn take(x: MemExample): pass
+
 @register_passable
 struct RegExample:
   fn __init__() -> Self:
@@ -16,10 +18,50 @@ struct RegExample:
   fn __del___(owned self):
     pass
 
+fn take(x: RegExample): pass
+
+
+
+fn use_of_init() -> RegExample:
+  var a = RegExample()
+  return a   # OK!
+
+fn use_of_init2() -> MemExample:
+  var a = MemExample()
+  return a   # OK!
+
 fn use_of_uninit() -> RegExample:
-  var a : RegExample
+  var a : RegExample # expected-note {{value declared here}}
   return a   # expected-error {{invalid use of uninitialized value}}
 
 fn use_of_uninit2() -> MemExample:
-  var a : MemExample
+  var a : MemExample  # expected-note {{value declared here}}
   return a   # expected-error {{invalid use of uninitialized value}}
+
+fn use_of_uninit_if(cond: Bool):
+  var a : MemExample
+  if cond:
+    a = MemExample()
+  else:
+    a = MemExample()
+  take(a)  # Ok
+
+  var b : MemExample  # expected-note {{value declared here}}
+  if cond:
+    b = MemExample()
+  take(b) # expected-error {{invalid use of uninitialized value}}
+
+  var c : MemExample
+  if True:
+    c = MemExample()
+  take(c) # Ok.
+
+
+fn use_of_uninit_while(cond: Bool):
+  var a : MemExample
+  if cond:
+    # Infinite loop never returns
+    while True: pass
+  else:
+    a = MemExample()
+  take(a)  # Ok

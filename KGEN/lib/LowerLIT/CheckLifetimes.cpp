@@ -8,9 +8,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-//#include "KGEN/HLCFDialect/HLCFOps.h"
-#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENPasses.h"
+
+#include "KGEN/HLCFDialect/HLCFOps.h"
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
@@ -41,14 +42,17 @@ static std::vector<LIT::FuncOp> collectFunctions(Operation *op) {
 
 namespace {
 struct ValueInfo {
+  /// This is the location of the value being declared.
+  const Location loc;
+
   /// This is the destructor for the value if it exists, otherwise may be null.
-  TypedAttr dtor;
+  const TypedAttr dtor;
 
   /// True if this values starts out uninitialized at the beginning of its
   /// lifetime.
-  bool startsUninit;
+  const bool startsUninit;
   /// True if this value needs to be uninitialized at the end of its lifetime.
-  bool endsUninit;
+  const bool endsUninit;
 
   /// This is true if the value had a use-before-initialization error diagnosed.
   bool hasErrorDiagnosed;
@@ -62,7 +66,9 @@ struct ValueSet {
   /// Initialize the value set with one entry, so index #0 is always invalid and
   /// can be used as a sentinel, and so a null Value is always treated as
   /// untracked.
-  ValueSet() { addValue(Value(), TypedAttr(), false, false); }
+  ValueSet(MLIRContext *context) : context(context) {
+    addValue(Value(), TypedAttr(), false, false);
+  }
 
   /// Return the number of values we are tracking.
   MutableArrayRef<ValueInfo> getValueInfos() { return valueInfos; }
@@ -84,7 +90,8 @@ struct ValueSet {
       return;
 
     memoryObjectIndex[val] = valueInfos.size();
-    valueInfos.push_back({dtor, startsUninit, endsUninit, false});
+    Location loc = val ? val.getLoc() : mlir::UnknownLoc::get(context);
+    valueInfos.push_back({loc, dtor, startsUninit, endsUninit, false});
   }
 
   /// Given a pointer that is being accessed indirectly by an operation, return
@@ -92,6 +99,7 @@ struct ValueSet {
   size_t getPointerValueIndex(Value value);
 
 private:
+  MLIRContext *const context;
   SmallVector<ValueInfo> valueInfos;
   DenseMap<Value, size_t> memoryObjectIndex;
 };
@@ -144,7 +152,7 @@ struct CheckLifetimes : impl::CheckLifetimesBase<CheckLifetimes> {
   }
 
   LogicalResult processFunction(LIT::FuncOp func);
-  void scanForUninitializedValueUses(Block *block, BitVector &liveValues,
+  void scanForUninitializedValueUses(Block &block, BitVector &liveValues,
                                      ValueSet &valueSet);
 };
 } // namespace
@@ -153,7 +161,7 @@ LogicalResult CheckLifetimes::processFunction(LIT::FuncOp func) {
   // Pass #1: Collect all of the values declared in the function that have
   // ownership to track, and number them.
   SmallVector<OwnedArgDeclOp> ownedArgDecls;
-  ValueSet valueSet;
+  ValueSet valueSet(func.getContext());
   auto collectArguments = [&](SignatureType signature, Block *body) {
     for (auto [convention, bbArg] : llvm::zip(
              signature.getValueInputConventions(), body->getArguments())) {
@@ -198,7 +206,7 @@ LogicalResult CheckLifetimes::processFunction(LIT::FuncOp func) {
     if (!valueInfo.startsUninit)
       liveValues.set(idx);
 
-  scanForUninitializedValueUses(func.getBody(), liveValues, valueSet);
+  scanForUninitializedValueUses(*func.getBody(), liveValues, valueSet);
 
   // TODO: How do we want to handle captures in closures?  Their uses
   // effectively form the capture list for the closure.  Should this get
@@ -220,15 +228,16 @@ LogicalResult CheckLifetimes::processFunction(LIT::FuncOp func) {
 /// change its liveness state.  This diagnoses uses of values that are not yet
 /// initialized, and returns the set of values that are live at the end of the
 /// block.
-void CheckLifetimes::scanForUninitializedValueUses(Block *block,
+void CheckLifetimes::scanForUninitializedValueUses(Block &block,
                                                    BitVector &liveValues,
                                                    ValueSet &valueSet) {
-  for (Operation &op : *block) {
+  for (Operation &op : block) {
     // Verify that the specified value ID is live at this point, diagnosing an
     // error if not.
     auto checkValueIdLive = [&](size_t valueId) {
       if (!liveValues[valueId] && !valueSet[valueId].hasErrorDiagnosed) {
-        op.emitError("invalid use of uninitialized value");
+        auto diag = op.emitError("invalid use of uninitialized value");
+        diag.attachNote(valueSet[valueId].loc) << "value declared here";
         valueSet[valueId].hasErrorDiagnosed = true;
       }
     };
@@ -292,15 +301,50 @@ void CheckLifetimes::scanForUninitializedValueUses(Block *block,
           break;
         }
       }
+      continue;
     }
 
     // If this operation has a direct use of a value we are tracking, consider
-    // it a use that must be initialized.  This includes LoadOp.
+    // it a use that must be initialized.  This notably includes LoadOp.
+    bool hasUse = false;
     for (Value operand : op.getOperands())
-      checkSSAValueLive(operand);
+      hasUse |= checkSSAValueLive(operand) != 0;
+
+    // If this is a kgen.return then we have an exit from the function
+    // (including early returns and exception raises that leave the function).
+    // Check that all of the values we are tracking are managed correctly.
+    if (isa<KGEN::ReturnOp>(op)) {
+      auto valueInfosRef = valueSet.getValueInfos();
+      for (size_t i = 1, e = valueInfosRef.size(); i != e; ++i)
+        if (!valueInfosRef[i].endsUninit)
+          checkValueIdLive(i);
+      continue;
+    }
+
+    // An unreachable at the end of the block considers all values live, which
+    // makes it flexible when merging with any other control flow.
+    if (isa<KGEN::UnreachableOp>(op)) {
+      liveValues.set();
+      continue;
+    }
+
+    // 'if' operations treat the condition as a use but have live outs that are
+    // the intersection of the live values produced by the then/else branches.
+    if (isa<HLCF::IfOp, ParamIfOp>(op)) {
+      assert(op.getNumRegions() == 2 && op.getRegion(0).hasOneBlock() &&
+             op.getRegion(1).hasOneBlock() &&
+             "if-like op should have two single-block regions");
+      BitVector liveValuesCopy = liveValues;
+      scanForUninitializedValueUses(op.getRegion(0).front(), liveValues,
+                                    valueSet);
+      scanForUninitializedValueUses(op.getRegion(1).front(), liveValuesCopy,
+                                    valueSet);
+      liveValues &= liveValuesCopy;
+      continue;
+    }
 
 #if STAGING
-    if (!isMemoryEffectFree(&op))
+    if (hasUse && !isMemoryEffectFree(&op) && !isa<POP::LoadOp>(op))
       op.dump();
 #endif
   }
