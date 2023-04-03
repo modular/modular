@@ -44,14 +44,14 @@ struct Benchmark:
         min_tims_ns has elapsed and either max_time_ns OR max_iters is hit.
 
         Args:
-            num_warmup (Int): Number of warmup iterations to run before
-              starting benchmarking.
-            max_iters (Int): Max number of iterations to run.
-            min_time_ns (Int): Upper bound on benchmarking time in ns.
-            max_time_ns (Int): Lower bound on benchmarking time in ns.
+            num_warmup: Number of warmup iterations to run before starting
+              benchmarking.
+            max_iters: Max number of iterations to run.
+            min_time_ns: Upper bound on benchmarking time in ns.
+            max_time_ns: Lower bound on benchmarking time in ns.
 
         Returns:
-            Benchmark: A new constructed benchmark object.
+            A new constructed benchmark object.
         """
         return Benchmark {
             num_warmup: num_warmup,
@@ -70,10 +70,10 @@ struct Benchmark:
         max_time_ns OR max_iters is hit.
 
         Parameters:
-            func (!kgen.signature<() -> !lit.none>): The function to benchmark.
+            func: The function to benchmark.
 
         Returns:
-            Int: Average execution time of func in ns.
+            Average execution time of func in ns.
         """
 
         # run for specified number of warmup iterations
