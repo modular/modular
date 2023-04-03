@@ -126,6 +126,269 @@ size_t ValueSet::getPointerValueIndex(Value value) {
 }
 
 //===----------------------------------------------------------------------===//
+// UninitializedValueScan
+//===----------------------------------------------------------------------===//
+
+namespace {
+/// This helper class implements the second pass over a function body, which
+/// identifies and complains about uses of uninitialized values.
+struct UninitializedValueScan {
+  UninitializedValueScan(ValueSet &valueSet) : valueSet(valueSet) {}
+  UninitializedValueScan(const UninitializedValueScan &existing) = delete;
+
+  void scanFunction(LIT::FuncOp func);
+  void scanBlock(Block &body);
+
+private:
+  void checkOp(Operation &op);
+
+  /// This is metadata about all the values we are tracking.
+  ValueSet &valueSet;
+
+  /// This is the set of values known to be live at this point.
+  BitVector liveValues;
+
+  /// When analyzing the body of a loop, this bitset indicates what a 'continue'
+  /// should intersect with.
+  BitVector *continueSet = nullptr;
+  /// When analyzing the body of a loop, this bitset indicates what a 'break'
+  /// should intersect with.
+  BitVector *breakSet = nullptr;
+  /// When analyzing the body of a try, this bitset indicates what a 'raise'
+  /// should intersect with.
+  BitVector *raiseSet = nullptr;
+};
+} // namespace
+
+void UninitializedValueScan::scanFunction(LIT::FuncOp func) {
+  // Initialize the BitVector with all the elements that are live-in.  We treat
+  // all values live at the start of the function (even before they are actually
+  // defined) because we know that all uses must be after them due to SSA
+  // dominance.
+  liveValues.resize(valueSet.getValueInfos().size());
+  for (auto [idx, valueInfo] : llvm::enumerate(valueSet.getValueInfos()))
+    if (!valueInfo.startsUninit)
+      liveValues.set(idx);
+
+  // Scan the body of the function.
+  scanBlock(*func.getBody());
+}
+
+/// Scan a block top down, checking all the operations that may use a value or
+/// change its liveness state.  This diagnoses uses of values that are not yet
+/// initialized, and returns the set of values that are live at the end of the
+/// block.
+void UninitializedValueScan::scanBlock(Block &block) {
+  for (Operation &op : block)
+    checkOp(op);
+}
+
+void UninitializedValueScan::checkOp(Operation &op) {
+  // Verify that the specified value ID is live at this point, diagnosing an
+  // error if not.
+  auto checkValueIdLive = [&](size_t valueId) {
+    if (!liveValues[valueId] && !valueSet[valueId].hasErrorDiagnosed) {
+      auto diag = op.emitError("invalid use of uninitialized value");
+      diag.attachNote(valueSet[valueId].loc) << "value declared here";
+      valueSet[valueId].hasErrorDiagnosed = true;
+    }
+  };
+
+  auto checkSSAValueLive = [&](Value value) -> size_t {
+    size_t valueId = valueSet.getPointerValueIndex(value);
+    if (valueId)
+      checkValueIdLive(valueId);
+    return valueId;
+  };
+
+  auto checkDirectPointerLive = [&](Value value) -> size_t {
+    size_t valueId = valueSet.getDirectValueIndex(value);
+    if (valueId)
+      checkValueIdLive(valueId);
+    return valueId;
+  };
+
+  auto markValueIdState = [&](size_t valueId, bool isLive) {
+    if (valueId)
+      liveValues[valueId] = isLive;
+  };
+
+  // A store of a whole value is an initialization.
+  if (auto storeOp = dyn_cast<POP::StoreOp>(op)) {
+    // This marks its value live.
+    markValueIdState(valueSet.getDirectValueIndex(storeOp.getPtr()), true);
+    return;
+  }
+
+  // If this is a call, investigate each of the operands along with the
+  // argument convention effects.
+  if (isa<KGEN::CallOp>(op)) { // TODO: Generalize
+    auto call = dyn_cast<KGENCallOpInterface>(op);
+    auto signature = call.getCalleeType();
+    auto operands = call->getOperands();
+    assert(signature.getValueInputConventions().size() == operands.size());
+    for (auto [convention, operand] :
+         llvm::zip(signature.getValueInputConventions(), operands)) {
+      switch (convention) {
+      case ValueInputConvention::OwnedInReg:
+        // Transitions live -> dead.
+        markValueIdState(checkSSAValueLive(operand), false);
+        break;
+      case ValueInputConvention::BorrowedInReg:
+        // Live -> live.
+        checkSSAValueLive(operand);
+        break;
+      case ValueInputConvention::OwnedInMem:
+        // Transitions live -> dead.
+        markValueIdState(checkDirectPointerLive(operand), false);
+        break;
+      case ValueInputConvention::BorrowedInMem:
+      case ValueInputConvention::ByRef:
+        // Live -> live.
+        checkDirectPointerLive(operand);
+        break;
+      case ValueInputConvention::ByRefResult:
+        // This call defines the by-ref result.
+        markValueIdState(valueSet.getDirectValueIndex(operand), true);
+        break;
+      }
+    }
+    return;
+  }
+
+  // If this operation has a direct use of a value we are tracking, consider
+  // it a use that must be initialized.  This notably includes LoadOp.
+  bool hasUse = false;
+  for (Value operand : op.getOperands())
+    hasUse |= checkSSAValueLive(operand) != 0;
+
+  // If this is a kgen.return then we have an exit from the function
+  // (including early returns and exception raises that leave the function).
+  // Check that all of the values we are tracking are managed correctly.
+  if (isa<KGEN::ReturnOp>(op)) {
+    auto valueInfosRef = valueSet.getValueInfos();
+    for (size_t i = 1, e = valueInfosRef.size(); i != e; ++i)
+      if (!valueInfosRef[i].endsUninit)
+        checkValueIdLive(i);
+    return;
+  }
+
+  // An unreachable at the end of the block considers all values live, which
+  // makes it flexible when merging with any other control flow.
+  if (isa<KGEN::UnreachableOp>(op)) {
+    liveValues.set();
+    return;
+  }
+
+  if (isa<HLCF::BreakOp>(op)) {
+    assert(breakSet && "Not in a loop?");
+    *breakSet &= liveValues;
+    return;
+  }
+  if (isa<HLCF::ContinueOp>(op)) {
+    assert(continueSet && "Not in a loop?");
+    *continueSet &= liveValues;
+    return;
+  }
+  if (isa<LIT::TryRaiseOp>(op)) {
+    assert(raiseSet && "Not in a 'try'?");
+    *raiseSet &= liveValues;
+    return;
+  }
+
+  // 'if' operations treat the condition as a use but have live outs that are
+  // the intersection of the live values produced by the then/else branches.
+  if (isa<HLCF::IfOp, ParamIfOp>(op)) {
+    assert(op.getNumRegions() == 2 && op.getRegion(0).hasOneBlock() &&
+           op.getRegion(1).hasOneBlock() &&
+           "if-like op should have two single-block regions");
+    BitVector liveValuesCopy = liveValues;
+    scanBlock(op.getRegion(0).front());
+    liveValuesCopy.swap(liveValues);
+    scanBlock(op.getRegion(1).front());
+    liveValues &= liveValuesCopy;
+    return;
+  }
+
+  // For a loop, we analyze the body of the loop with the known live-ins but
+  // capture a new sets for continue and break results.
+  if (auto loopOp = dyn_cast<HLCF::LoopOp>(op)) {
+    UninitializedValueScan bodySets(valueSet);
+    // Loops are transparent to raise.
+    bodySets.raiseSet = raiseSet;
+
+    // The default continueSet is the live-in set of values.  This can lose
+    // values if some 'continue' path through the body of the loop consumes a
+    // value.
+    BitVector continueSet(liveValues);
+    bodySets.continueSet = &continueSet;
+
+    // The 'breakSet' of the loop body will be the live outs of the loop.  We
+    // use the existing liveValues that we'll continue with for that set, but
+    // need to start it out thinking that everything is live so intersections
+    // from the body work correctly.
+    liveValues.set();
+    bodySets.breakSet = &liveValues;
+
+    // Iteratively scan the loop body until the live-in set converges.  This is
+    // a trivial lattice with each bit converging to "not live in", so we know
+    // this will terminate.
+    size_t numLiveIn = continueSet.count();
+    while (1) {
+      // Scan the body: any breaks will intersect their live-out set with
+      // 'breakSet', and any continues will intersect their live-out set with
+      // 'continueSet'.
+      bodySets.liveValues = continueSet;
+      bodySets.scanBlock(loopOp.getBody().front());
+
+      // If any bits got cleared from the continueSet then we need to iterate.
+      size_t newLiveIn = continueSet.count();
+      if (newLiveIn == numLiveIn)
+        break;
+      numLiveIn = newLiveIn;
+    }
+    // Any code after the loop continues on with the breaks valid.
+    return;
+  }
+
+  if (auto tryOp = dyn_cast<LIT::TryOp>(op)) {
+    UninitializedValueScan bodySets(valueSet);
+    // Our current live-in set is live-in to the try body.
+    bodySets.liveValues = liveValues;
+
+    // Try is transparent to break/continue.
+    bodySets.continueSet = continueSet;
+    bodySets.breakSet = breakSet;
+
+    // We capture all the common values live-out of raise's as being the live-in
+    // to the except block.
+    BitVector exceptSet(liveValues.size(), true);
+    bodySets.raiseSet = &exceptSet;
+    bodySets.scanBlock(tryOp.getTryRegion().front());
+
+    // The live-ins to the except block are the exceptSet.
+    liveValues = std::move(exceptSet);
+    scanBlock(tryOp.getExceptRegion().front());
+
+    // The live-out set of the bodySet is the live-in to the else block, but
+    // exceptions raised in it go out of the try.
+    bodySets.raiseSet = raiseSet;
+    bodySets.scanBlock(tryOp.getElseRegion().front());
+
+    // The fall through live values are the intersection from the except and
+    // else blocks.
+    liveValues &= bodySets.liveValues;
+    return;
+  }
+
+  (void)hasUse;
+#if STAGING
+    if (hasUse && !isMemoryEffectFree(&op) && !isa<POP::LoadOp>(op))
+      op.dump();
+#endif
+}
+
+//===----------------------------------------------------------------------===//
 // Pass Definition
 //===----------------------------------------------------------------------===//
 
@@ -153,8 +416,6 @@ struct CheckLifetimes : impl::CheckLifetimesBase<CheckLifetimes> {
   }
 
   LogicalResult processFunction(LIT::FuncOp func);
-  void scanForUninitializedValueUses(Block &block, BitVector &liveValues,
-                                     ValueSet &valueSet);
 };
 } // namespace
 
@@ -196,18 +457,8 @@ LogicalResult CheckLifetimes::processFunction(LIT::FuncOp func) {
   });
 
   // Walk #2: Scan the function and identify any uses of values that are not
-  // defined.
-
-  // Initialize the BitVector with all the elements that are live-in.  We treat
-  // all values live at the start of the function (even before they are actually
-  // defined) because we know that all uses must be after them due to SSA
-  // dominance.
-  BitVector liveValues(valueSet.getValueInfos().size());
-  for (auto [idx, valueInfo] : llvm::enumerate(valueSet.getValueInfos()))
-    if (!valueInfo.startsUninit)
-      liveValues.set(idx);
-
-  scanForUninitializedValueUses(*func.getBody(), liveValues, valueSet);
+  // defined, emitting diagnostics as we go.
+  UninitializedValueScan(valueSet).scanFunction(func);
 
   // TODO: How do we want to handle captures in closures?  Their uses
   // effectively form the capture list for the closure.  Should this get
@@ -223,131 +474,4 @@ LogicalResult CheckLifetimes::processFunction(LIT::FuncOp func) {
   return failure(llvm::any_of(valueSet.getValueInfos(), [&](ValueInfo info) {
     return info.hasErrorDiagnosed;
   }));
-}
-
-/// Scan a block top down, checking all the operations that may use a value or
-/// change its liveness state.  This diagnoses uses of values that are not yet
-/// initialized, and returns the set of values that are live at the end of the
-/// block.
-void CheckLifetimes::scanForUninitializedValueUses(Block &block,
-                                                   BitVector &liveValues,
-                                                   ValueSet &valueSet) {
-  for (Operation &op : block) {
-    // Verify that the specified value ID is live at this point, diagnosing an
-    // error if not.
-    auto checkValueIdLive = [&](size_t valueId) {
-      if (!liveValues[valueId] && !valueSet[valueId].hasErrorDiagnosed) {
-        auto diag = op.emitError("invalid use of uninitialized value");
-        diag.attachNote(valueSet[valueId].loc) << "value declared here";
-        valueSet[valueId].hasErrorDiagnosed = true;
-      }
-    };
-
-    auto checkSSAValueLive = [&](Value value) -> size_t {
-      size_t valueId = valueSet.getPointerValueIndex(value);
-      if (valueId)
-        checkValueIdLive(valueId);
-      return valueId;
-    };
-
-    auto checkDirectPointerLive = [&](Value value) -> size_t {
-      size_t valueId = valueSet.getDirectValueIndex(value);
-      if (valueId)
-        checkValueIdLive(valueId);
-      return valueId;
-    };
-
-    auto markValueIdState = [&](size_t valueId, bool isLive) {
-      if (valueId)
-        liveValues[valueId] = isLive;
-    };
-
-    // A store of a whole value is an initialization.
-    if (auto storeOp = dyn_cast<POP::StoreOp>(op)) {
-      // This marks its value live.
-      markValueIdState(valueSet.getDirectValueIndex(storeOp.getPtr()), true);
-      continue;
-    }
-
-    // If this is a call, investigate each of the operands along with the
-    // argument convention effects.
-    if (isa<KGEN::CallOp>(op)) { // TODO: Generalize
-      auto call = dyn_cast<KGENCallOpInterface>(op);
-      auto signature = call.getCalleeType();
-      auto operands = call->getOperands();
-      assert(signature.getValueInputConventions().size() == operands.size());
-      for (auto [convention, operand] :
-           llvm::zip(signature.getValueInputConventions(), operands)) {
-        switch (convention) {
-        case ValueInputConvention::OwnedInReg:
-          // Transitions live -> dead.
-          markValueIdState(checkSSAValueLive(operand), false);
-          break;
-        case ValueInputConvention::BorrowedInReg:
-          // Live -> live.
-          checkSSAValueLive(operand);
-          break;
-        case ValueInputConvention::OwnedInMem:
-          // Transitions live -> dead.
-          markValueIdState(checkDirectPointerLive(operand), false);
-          break;
-        case ValueInputConvention::BorrowedInMem:
-        case ValueInputConvention::ByRef:
-          // Live -> live.
-          checkDirectPointerLive(operand);
-          break;
-        case ValueInputConvention::ByRefResult:
-          // This call defines the by-ref result.
-          markValueIdState(valueSet.getDirectValueIndex(operand), true);
-          break;
-        }
-      }
-      continue;
-    }
-
-    // If this operation has a direct use of a value we are tracking, consider
-    // it a use that must be initialized.  This notably includes LoadOp.
-    [[maybe_unused]] bool hasUse =
-        llvm::any_of(op.getOperands(), [&](auto operand) {
-          return checkSSAValueLive(operand) != 0;
-        });
-
-    // If this is a kgen.return then we have an exit from the function
-    // (including early returns and exception raises that leave the function).
-    // Check that all of the values we are tracking are managed correctly.
-    if (isa<KGEN::ReturnOp>(op)) {
-      auto valueInfosRef = valueSet.getValueInfos();
-      for (size_t i = 1, e = valueInfosRef.size(); i != e; ++i)
-        if (!valueInfosRef[i].endsUninit)
-          checkValueIdLive(i);
-      continue;
-    }
-
-    // An unreachable at the end of the block considers all values live, which
-    // makes it flexible when merging with any other control flow.
-    if (isa<KGEN::UnreachableOp>(op)) {
-      liveValues.set();
-      continue;
-    }
-
-    // 'if' operations treat the condition as a use but have live outs that are
-    // the intersection of the live values produced by the then/else branches.
-    if (isa<HLCF::IfOp, ParamIfOp>(op)) {
-      assert(op.getNumRegions() == 2 && op.getRegion(0).hasOneBlock() &&
-             op.getRegion(1).hasOneBlock() &&
-             "if-like op should have two single-block regions");
-      BitVector liveValuesCopy = liveValues;
-      scanForUninitializedValueUses(op.getRegion(0).front(), liveValues,
-                                    valueSet);
-      scanForUninitializedValueUses(op.getRegion(1).front(), liveValuesCopy,
-                                    valueSet);
-      liveValues &= liveValuesCopy;
-      continue;
-    }
-
-#if STAGING
-    if (hasUse && !isMemoryEffectFree(&op) && !isa<POP::LoadOp>(op))
-      op.dump();
-#endif
-  }
 }

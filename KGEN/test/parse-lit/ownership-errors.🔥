@@ -7,7 +7,7 @@ struct MemExample:
     return MemExample{}
   fn __del___(owned self): pass
 
-fn take(x: MemExample): pass
+fn use(x: MemExample): pass
 
 @register_passable
 struct RegExample:
@@ -18,7 +18,7 @@ struct RegExample:
   fn __del___(owned self):
     pass
 
-fn take(x: RegExample): pass
+fn use(x: RegExample): pass
 
 
 
@@ -44,17 +44,17 @@ fn use_of_uninit_if(cond: Bool):
     a = MemExample()
   else:
     a = MemExample()
-  take(a)  # Ok
+  use(a)  # Ok
 
   var b : MemExample  # expected-note {{value declared here}}
   if cond:
     b = MemExample()
-  take(b) # expected-error {{invalid use of uninitialized value}}
+  use(b) # expected-error {{invalid use of uninitialized value}}
 
   var c : MemExample
   if True:
     c = MemExample()
-  take(c) # Ok.
+  use(c) # Ok.
 
 
 fn use_of_uninit_while(cond: Bool):
@@ -64,4 +64,50 @@ fn use_of_uninit_while(cond: Bool):
     while True: pass
   else:
     a = MemExample()
-  take(a)  # Ok
+  use(a)  # Ok
+
+  var b : RegExample  # expected-note {{value declared here}}
+  while cond:
+    b = RegExample()
+
+  use(b)  # expected-error {{invalid use of uninitialized value}}
+
+
+
+fn use_of_uninit_raise(cond: Bool, err: Error):
+  var a : MemExample
+  try:
+    raise err
+  except:
+    a = MemExample()
+    pass
+  use(a)  # ok
+
+  var b : MemExample
+  try:
+    b = MemExample()
+    raise err
+  except:
+    pass
+  use(b)  # ok
+
+  var c : MemExample  # expected-note {{value declared here}}
+  try:
+    if cond:
+      c = MemExample()
+      raise err
+    else:
+      raise err
+  except:
+    pass
+  use(c)  # expected-error {{invalid use of uninitialized value}}
+
+  var d : MemExample
+  try:
+    if cond:
+      raise err
+  except:
+    d = MemExample()
+  else:
+    d = MemExample()
+  use(d)  # Ok
