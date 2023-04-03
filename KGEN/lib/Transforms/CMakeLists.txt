@@ -12,6 +12,7 @@ add_modular_conversion_library(KGENTransforms
   KnownVariant.cpp
   Mem2Reg.cpp
   OutlineClosures.cpp
+  SimplifyCF.cpp
   VerifyParameters.cpp
 
   DEPENDS
