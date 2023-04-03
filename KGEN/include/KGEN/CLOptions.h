@@ -134,19 +134,13 @@ public:
 
   KGENCommonOptions() : RuntimeWorkQueueCLOptions(WorkQueueType::kThreadPool) {}
 
-  /// Get the include directories (including subdirectories).
+  /// Get the include directories that exist on the file system.
   std::vector<std::string> getIncludePaths() const {
     std::vector<std::string> result;
-    for (auto &path : includePaths) {
-      std::filesystem::path includeDir(path);
-      if (!std::filesystem::is_directory(includeDir))
-        continue;
-      result.push_back(includeDir);
-      for (auto &path :
-           std::filesystem::recursive_directory_iterator(includeDir))
-        if (path.is_directory())
-          result.emplace_back(path.path().string());
-    }
+    result.reserve(includePaths.size());
+    for (auto &path : includePaths)
+      if (std::filesystem::is_directory(path))
+        result.push_back(path);
     return result;
   }
 
