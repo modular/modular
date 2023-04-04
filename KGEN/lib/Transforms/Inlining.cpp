@@ -451,9 +451,9 @@ void KGEN::inlineGeneratorCall(CallOp call, GeneratorOp callee,
 
   // Handle all terminators.
   unsigned numReturns = 0;
-  callee.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+  callee.getBodyRegion().walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
     // Walk over nested functions. Control-flow does not cross them.
-    if (op != callee && isa<FuncInterface>(op))
+    if (isa<FuncInterface>(op))
       return WalkResult::skip();
     if (!isa<ReturnOp, ParamResultBindOp>(op))
       return WalkResult::advance();
@@ -477,13 +477,13 @@ void KGEN::inlineGeneratorCall(CallOp call, GeneratorOp callee,
   });
   b.replaceOp(call, scope.getResults());
 
-  // If the scope was trivial (one return), fold it away.
-  assert(numReturns > 0);
-  if (numReturns == 1) {
-    for (Operation &op : llvm::make_early_inc_range(
-             scope.getBody().front().without_terminator()))
-      op.moveBefore(scope);
-    b.replaceOp(scope, scope.getBody().front().getTerminator()->getOperands());
+  // If the scope was trivial (one return at the end), fold it away.
+  if (numReturns == 1 && isa<ReturnOp>(callee.getBody()->getTerminator())) {
+    Operation *term = scope.getBody().front().getTerminator();
+    scope->getBlock()->getOperations().splice(
+        scope->getIterator(), scope.getBody().front().getOperations());
+    b.replaceOp(scope, term->getOperands());
+    term->erase();
   }
 }
 
@@ -615,7 +615,7 @@ void InliningGraphBase<DerivedT, NodeT>::build(ModuleOp module,
   auto workFn = [this, &symtab](std::pair<FuncOpT, NodeT> &value) {
     auto &[func, node] = value;
     NodeT *callerNode = &node;
-    func.walk([&](CallOpT call) {
+    func.getBodyRegion().walk([&](CallOpT call) {
       auto callee = symtab.lookup<FuncOpT>(
           cast<FlatSymbolRefAttr>(
               cast<SymbolConstantAttr>(call.getCallee()).getSymbol())
@@ -859,10 +859,10 @@ std::unique_ptr<mlir::Pass> KGEN::createAlwaysInlineParametric(
 /// The region is inserted into its own scope - either a loop or async execute
 /// op (depending on the type of the call). This scope is returned from the
 /// function.
-static std::pair<Operation *, int> inlineRegion(IRMapping &map,
-                                                KGENCallOpInterface call,
-                                                Region &region,
-                                                bool takeBody = false) {
+static std::pair<Operation *, bool> inlineRegion(IRMapping &map,
+                                                 KGENCallOpInterface call,
+                                                 Region &region,
+                                                 bool takeBody = false) {
   StringAttr label = StringAttr::get(call.getContext(), "inlined_cf_scope");
 
   mlir::IRRewriter b{OpBuilder(call)};
@@ -876,6 +876,7 @@ static std::pair<Operation *, int> inlineRegion(IRMapping &map,
   }
 
   Region &scopeBody = scope->getRegion(0);
+  bool returnAtEnd = isa<ReturnOp>(region.front().getTerminator());
   if (takeBody) {
     scopeBody.takeBody(region);
     for (auto [value, arg] :
@@ -903,7 +904,7 @@ static std::pair<Operation *, int> inlineRegion(IRMapping &map,
   });
   b.replaceOp(call, scope->getResults());
   assert(numReturns > 0);
-  return std::make_pair(scope, numReturns);
+  return std::make_pair(scope, numReturns == 1 && returnAtEnd);
 }
 
 /// Inlining might create trivial loops with a single break at the end. This
@@ -1001,7 +1002,7 @@ void InliningGraph::performInlining(InliningGraphNode *caller) {
 
   for (auto [call, callee] : caller->callsites) {
     Operation *scope;
-    size_t numReturns;
+    bool singleExit;
     // Check if this is the last use of the function.
     callee->mutex.lock_shared();
     IRMapping map;
@@ -1010,14 +1011,14 @@ void InliningGraph::performInlining(InliningGraphNode *caller) {
       // lock to wait for all other users to finish cloning.
       callee->mutex.unlock_shared();
       llvm::sys::SmartScopedWriter<true> lock(callee->mutex);
-      std::tie(scope, numReturns) =
+      std::tie(scope, singleExit) =
           inlineRegion(map, call, callee->func.getBodyRegion(),
                        /*takeBody=*/true);
       // Erase the empty function.
       callee->func->erase();
       callee->func = nullptr;
     } else {
-      std::tie(scope, numReturns) =
+      std::tie(scope, singleExit) =
           inlineRegion(map, call, callee->func.getBodyRegion());
       callee->mutex.unlock_shared();
     }
@@ -1027,13 +1028,13 @@ void InliningGraph::performInlining(InliningGraphNode *caller) {
     // successively inlined and updated.
     if (updateAttrName) {
       // We don't know where the op will end up, so tag it with an attribute.
-      // Encode information {trivialScope, noDebug} as bits.
+      // Encode information {singleExit, noDebug} as bits.
       uint8_t value =
-          (numReturns == 1) |
+          singleExit |
           ((callee->level == AlwaysInlineLevel::EnabledNoDebug) << 1);
       scope->setAttr(updateAttrName,
                      OpBuilder(scope->getContext()).getI8IntegerAttr(value));
-    } else if (numReturns == 1) {
+    } else if (singleExit) {
       foldTrivialLoop(scope);
     }
   };
@@ -1178,7 +1179,7 @@ static void updateScopeDebugInfoFrom(Operation *scope, IntegerAttr tag,
                                      StringAttr updateAttrName) {
   // Unpack the bits.
   auto value = static_cast<uint8_t>(tag.getInt());
-  auto trivialScope = static_cast<bool>(value);
+  auto singleExit = static_cast<bool>(value);
   auto noDebug = static_cast<bool>(value >> 1);
 
   // The scope operations contains the location of the call.
@@ -1222,7 +1223,7 @@ static void updateScopeDebugInfoFrom(Operation *scope, IntegerAttr tag,
   }
 
   // If this scope is a trivial control-flow scope, fold it away.
-  if (trivialScope)
+  if (singleExit)
     foldTrivialLoop(scope);
 }
 
