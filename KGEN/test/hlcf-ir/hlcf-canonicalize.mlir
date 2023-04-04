@@ -189,3 +189,43 @@ kgen.func @cond_return_two_ifs2(%cond: i1, %arg: index) -> index {
   }
   kgen.return %tt: index
 }
+
+// CHECK-LABEL: @empty_if_1
+kgen.func @empty_if_1(%cond: i1, %arg1: index, %arg2: index) -> index {
+  // CHECK-NEXT: kgen.return %arg1
+  hlcf.if %cond {
+    hlcf.yield
+  } else {
+    hlcf.yield
+  }
+  kgen.return %arg1: index
+}
+
+// CHECK-LABEL: @empty_if_2
+kgen.func @empty_if_2(%cond: i1, %arg1: index, %arg2: index) -> index {
+  // CHECK-NOT:  hlcf.if
+  // CHECK-NOT:  hlcf.yield %arg1, %arg2
+  // CHECK:      %[[RES:.*]] = index.add %arg1, %arg2
+  // CHECK-NEXT: kgen.return %[[RES]]
+  %a, %b = hlcf.if %cond -> index, index {
+    hlcf.yield %arg1, %arg2: index, index
+  } else {
+    hlcf.yield %arg1, %arg2: index, index
+  }
+  %r = index.add %a, %b
+  kgen.return %r: index
+}
+
+// CHECK-LABEL: @empty_if_partial
+kgen.func @empty_if_partial(%cond: i1, %arg1: index, %arg2: index) -> index {
+  // CHECK:      hlcf.if
+  // CHECK:      %[[RES:.*]] = index.add %arg1, %{{.*}}
+  // CHECK-NEXT: kgen.return %[[RES]]
+  %a, %b = hlcf.if %cond -> index, index {
+    hlcf.yield %arg1, %arg1: index, index
+  } else {
+    hlcf.yield %arg1, %arg2: index, index
+  }
+  %r = index.add %a, %b
+  kgen.return %r: index
+}
