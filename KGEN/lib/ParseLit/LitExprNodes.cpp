@@ -1435,17 +1435,33 @@ AnyValue ParenNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 }
 
 AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
-  // Emit each of the index values to generate error messages.
-  SmallVector<AnyValue> exprValues;
+  /// Emit each of the tuple elements.
+  SmallVector<ASTExprAnd<AnyValue>> elements;
   for (ExprNode *expr : exprs) {
-    exprValues.push_back(emitter.emitExpr(expr, EC_TupleElement));
-    if (!exprValues.back())
+    elements.push_back({emitter.emitExpr(expr, EC_TupleElement), expr});
+    if (!elements.back())
       return {};
   }
 
-  emitter.emitError(getLoc(), "FIXME: Cannot emit tuple expressions yet")
-      << getRange();
-  return {};
+  // Lookup the builtin TupleLiteral type, in order to call its constructor.
+  ASTDecl &compilerBuiltinDecl = emitter.shared.getCompilerBuiltInDecl();
+  LookupResult lookup = emitter.shared.lookupAndResolveDecl(
+      "TupleLiteral", getLoc(), compilerBuiltinDecl,
+      /*searchParentScopes=*/true);
+
+  // TupleLiteral must be in scope, since it is auto-imported.
+  if (lookup.isFailure()) {
+    emitter.emitError(
+        getLoc(), "internal error: could not find builtin 'TupleLiteral' type");
+    return {};
+  }
+
+  // Emit a call to the TupleLiteral constructor as an implicit conversion.
+  // The TupleLiteral's parameter values are inferred based on the element
+  // types.
+  return emitter.emitConstructorCall(
+      DeclRefType::get(lookup.getIfSuccess()[0]->getSymbolRef()), elements,
+      this, CallSyntax::kImplicitConvert, dest);
 }
 
 AnyValue ListNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {

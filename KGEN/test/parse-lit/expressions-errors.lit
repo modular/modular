@@ -135,9 +135,6 @@ def no_unused_values_in_def():
 ##===----------------------------------------------------------------------===##
 
 fn bad_tuple(a: Int):
-  _ = ()  # expected-error {{FIXME: Cannot emit tuple expressions yet}}
-  _ = (a, a)  # expected-error {{FIXME: Cannot emit tuple expressions yet}}
-  _ = (a,)  # expected-error {{FIXME: Cannot emit tuple expressions yet}}
   _ = (a, a, b)  # expected-error {{use of unknown declaration 'b'}}
 
 def tuple_return():
