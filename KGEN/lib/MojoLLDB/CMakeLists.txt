@@ -7,7 +7,9 @@
 add_modular_library(MojoLLDB SHARED
   Plugin.cpp
 
+  ExpressionParser/MojoExpressionParser.cpp
   ExpressionParser/MojoExpressionVariable.cpp
+  ExpressionParser/MojoUserExpression.cpp
   REPL/MojoREPL.cpp
   TypeSystem/MojoTypeSystem.cpp
 
