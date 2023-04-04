@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo %s -verify-diagnostics -I %S/../mojo-examples/ | FileCheck %s
+# RUN: kgen-translate -import-mojo %s -verify-diagnostics -I %S/../mojo-examples/ | kgen-opt -verify-parameters | FileCheck %s
 
 
 @adaptive
@@ -36,11 +36,14 @@ fn bar():
 
 
 fn main():
-    # CHECK: kgen.param.fork *"(adaptive)foo": () -> !lit.none = <[@"$adaptive"::@"foo()", @"$adaptive"::@"foo()_0"]>
-    # CHECK-NEXT: call_param[() -> !lit.none: *"(adaptive)foo"]()
+    # CHECK: kgen.param.fork *"(adaptive)foo[[S0:.*]]": () -> !lit.none = <[@"$adaptive"::@"foo()", @"$adaptive"::@"foo()_0"]>
+    # CHECK-NEXT: call_param[() -> !lit.none: *"(adaptive)foo[[S0]]"]()
+    foo()
+    # CHECK: kgen.param.fork *"(adaptive)foo[[S1:.*]]": () -> !lit.none =
+    # CHECK-NEXT: call_param[() -> !lit.none: *"(adaptive)foo[[S1]]"]()
     foo()
 
-    # CHECK: kgen.param.fork *"(adaptive)bar": () -> !lit.none = <[@"$adaptive"::@"bar()", @"$adaptive"::@"bar()_0"]>
-    # CHECK-NEXT: call_param[() -> !lit.none: *"(adaptive)bar"]()
+    # CHECK: kgen.param.fork *"(adaptive)bar{{.*}}": () -> !lit.none = <[@"$adaptive"::@"bar()", @"$adaptive"::@"bar()_0"]>
+    # CHECK-NEXT: call_param[() -> !lit.none: *"(adaptive)bar{{.*}}"]()
     bar()
     return

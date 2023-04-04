@@ -1210,7 +1210,7 @@ PValue OverloadSet::getCallee(ExprEmitter &emitter) const {
 
   if (!emitter.builder)
     return emitter.emitErrorForDynamicValueInParameter(
-        expr, "cannot emit call to adaptive function");
+        expr, "TODO: cannot call adaptive function in parameter contexts");
 
   // Otherwise, we have to construct a list to be called.
   SmallVector<TypedAttr> symbols = map_to_vector(fnDecls, [&](ASTDecl *decl) {
@@ -1227,14 +1227,16 @@ PValue OverloadSet::getCallee(ExprEmitter &emitter) const {
     return {};
 
   // If the callee is a list, create a param.fork op and create a
-  // CallParam on that. We want to get the name of the function that is
-  // being called and mangle it into the parameter name to ensure
-  // uniqueness.
-  StringRef mangledCall(expr->getRangeStart().getPointer(),
-                        expr->getRangeEnd().getPointer() -
-                            expr->getRangeStart().getPointer() - 1);
+  // CallParam on that. Mangle the declared parameter name with the line and
+  // column number to ensure uniqueness.
+  unsigned bufferID =
+      emitter.getSourceMgr().FindBufferContainingLoc(expr->getLoc());
+  auto [line, col] =
+      emitter.getSourceMgr().getLineAndColumn(expr->getLoc(), bufferID);
+
   auto decl = ParamDeclAttr::get(
-      emitter.builder->getStringAttr("(adaptive)" + mangledCall),
+      emitter.builder->getStringAttr("(adaptive)" + baseName + Twine(line) +
+                                     "_" + Twine(col)),
       variadic.getType().getResolvedElementType());
   emitter.builder->create<ParamForkOp>(
       emitter.translateLocation(expr->getLoc()), decl, variadic);
