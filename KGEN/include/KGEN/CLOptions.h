@@ -186,8 +186,6 @@ public:
           clEnumValN(Command::kEmitLLVM, "emit-llvm", "Emit funcs as LLVM IR."),
           clEnumValN(Command::kEmitAssembly, "emit-asm",
                      "Emit the funcs as assembly."),
-          clEnumValN(Command::kEmitAssembly, "S",
-                     "Emit the funcs as assembly (alias for emit-asm)."),
           clEnumValN(Command::kEmit, "emit", "Emit funcs as object files."),
           clEnumValN(
               Command::kEmitHeader, "emit-header",
