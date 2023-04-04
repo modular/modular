@@ -404,6 +404,8 @@ fn usePacks(x: F32, y: Int):
   let c = Tuple[Int](1)
   # CHECK: lit.varlet.decl "d", var = false : <@"$decls"::@Tuple<Ts: variadic<!kgen.mlirtype> = [f64, index]>>
   let d = Tuple(3.14, 6)
+  # CHECK: lit.varlet.decl "e", var = false : <@"$decls"::@Tuple<Ts: variadic<!kgen.mlirtype> = []>>
+  let e = Tuple()
 
   # CHECK: %[[PACK1:.*]] = kgen.param.constant: !pop.pack<[index]> = <<1>>
   # CHECK: kgen.call @"$decls"::@"pack(__mlir_type.!pop.pack<Ts>)"<:variadic<!kgen.mlirtype> [index]>(%[[PACK1]])
