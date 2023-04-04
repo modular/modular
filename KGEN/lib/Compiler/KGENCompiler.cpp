@@ -87,10 +87,10 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
                                          LLCL::Runtime &runtime,
                                          const CompilationOptions &options) {
   // Run the inliner, DCE, and cleanup the compiler globals.
+  pm.addPass(createEliminateDeadSymbols());
   pm.addPass(createForceInline(
       runtime,
       {options.debugLevel != CompilationOptions::DebugInfoLevel::kNoDebug}));
-  pm.addPass(createEliminateDeadSymbols());
   pm.addNestedPass<FuncOp>(createSimplifyCF());
   pm.addNestedPass<FuncOp>(createCleanupCompilerGlobals());
 
