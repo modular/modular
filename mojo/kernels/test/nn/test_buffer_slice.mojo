@@ -492,6 +492,255 @@ fn test_slice_negative_step_4D():
     )
 
 
+# CHECK-LABEL: == test_slice_negative_step_2
+fn test_slice_negative_step_2():
+    print("== test_slice_negative_step_2\n")
+
+    # CHECK: In shape:(3, 3)
+    # CHECK-NEXT: In strides:(3, 1)
+    # CHECK-NEXT: New shape:(1, 1)
+    # CHECK-NEXT: New strides:(-3, -1)
+
+    # CHECK-NEXT: [8.000000]
+
+    # print(np.arange(0, 9).reshape(3,3)[3:-2:-1, 3:-2:-1])
+    test_slice[9, 2, DimList[2].create_unknown()](
+        create_dim_list(3, 3),
+        Index(3, 3),
+        Index(-2, -2),
+        Index(-1, -1),
+        False,
+    )
+
+
+# CHECK-LABEL: == test_slice_negative_step_3
+fn test_slice_negative_step_3():
+    print("== test_slice_negative_step_3\n")
+
+    # CHECK: In shape:(3, 3)
+    # CHECK-NEXT: In strides:(3, 1)
+    # CHECK-NEXT: New shape:(2, 2)
+    # CHECK-NEXT: New strides:(-3, -1)
+
+    # CHECK-NEXT: [8.000000]
+    # CHECK-NEXT: [7.000000]
+    # CHECK-NEXT: [5.000000]
+    # CHECK-NEXT: [4.000000]
+
+    # print(np.arange(0, 9).reshape(3,3)[3:-3:-1, 3:-3:-1])
+    test_slice[9, 2, DimList[2].create_unknown()](
+        create_dim_list(3, 3),
+        Index(3, 3),
+        Index(-3, -3),
+        Index(-1, -1),
+        False,
+    )
+
+
+# CHECK-LABEL: == test_slice_negative_step_4
+fn test_slice_negative_step_4():
+    print("== test_slice_negative_step_4\n")
+
+    # CHECK: In shape:(3, 3)
+    # CHECK-NEXT: In strides:(3, 1)
+    # CHECK-NEXT: New shape:(3, 3)
+    # CHECK-NEXT: New strides:(-3, -1)
+
+    # CHECK-NEXT: [8.000000]
+    # CHECK-NEXT: [7.000000]
+    # CHECK-NEXT: [6.000000]
+    # CHECK-NEXT: [5.000000]
+    # CHECK-NEXT: [4.000000]
+    # CHECK-NEXT: [3.000000]
+    # CHECK-NEXT: [2.000000]
+    # CHECK-NEXT: [1.000000]
+    # CHECK-NEXT: [0.000000]
+
+    # print(np.arange(0, 9).reshape(3,3)[3:-3:-1, 3:-3:-1])
+    test_slice[9, 2, DimList[2].create_unknown()](
+        create_dim_list(3, 3),
+        Index(3, 3),
+        Index(-4, -4),
+        Index(-1, -1),
+        False,
+    )
+
+
+# CHECK-LABEL: == test_truncated_last_dim
+fn test_truncated_last_dim():
+    print("== test_truncated_last_dim\n")
+
+    # CHECK: In shape:(3, 3)
+    # CHECK-NEXT: In strides:(3, 1)
+    # CHECK-NEXT: New shape:(2, 2)
+    # CHECK-NEXT: New strides:(3, 2)
+
+    # CHECK-NEXT: [3.000000]
+    # CHECK-NEXT: [5.000000]
+    # CHECK-NEXT: [6.000000]
+    # CHECK-NEXT: [8.000000]
+
+    # print(torch.arange(0, 9).reshape(3,3)[1:56:1, 0:234567:2])
+    test_slice[9, 2, DimList[2].create_unknown()](
+        create_dim_list(3, 3),
+        Index(1, 0),
+        Index(56, 234567),
+        Index(1, 2),
+        False,
+    )
+
+
+# CHECK-LABEL: == test_truncated_last_dim_reverse
+fn test_truncated_last_dim_reverse():
+    print("== test_truncated_last_dim_reverse\n")
+
+    # CHECK: In shape:(3, 3)
+    # CHECK-NEXT: In strides:(3, 1)
+    # CHECK-NEXT: New shape:(3, 2)
+    # CHECK-NEXT: New strides:(-3, -2)
+
+    # CHECK-NEXT: [8.000000]
+    # CHECK-NEXT: [6.000000]
+    # CHECK-NEXT: [5.000000]
+    # CHECK-NEXT: [3.000000]
+    # CHECK-NEXT: [2.000000]
+    # CHECK-NEXT: [0.000000]
+
+    # print(np.arange(0, 9).reshape(3,3)[323534:-242:-1, 435432:-3242:-2])
+    test_slice[9, 2, DimList[2].create_unknown()](
+        create_dim_list(3, 3),
+        Index(323534, 435432),
+        Index(-242, -3242),
+        Index(-1, -2),
+        False,
+    )
+
+
+# CHECK-LABEL: == test_last_dim_edge
+fn test_last_dim_edge():
+    print("== test_last_dim_edge\n")
+
+    # CHECK: In shape:(3, 3)
+    # CHECK-NEXT: In strides:(3, 1)
+    # CHECK-NEXT: New shape:(2, 2)
+    # CHECK-NEXT: New strides:(-3, -1)
+
+    # CHECK-NEXT: [8.000000]
+    # CHECK-NEXT: [7.000000]
+    # CHECK-NEXT: [5.000000]
+    # CHECK-NEXT: [4.000000]
+
+    # print(np.arange(0, 9).reshape(3,3)[2:0:-1, 2:0:-1]
+    test_slice[9, 2, DimList[2].create_unknown()](
+        create_dim_list(3, 3),
+        Index(2, 2),
+        Index(0, 0),
+        Index(-1, -1),
+        False,
+    )
+
+
+# CHECK-LABEL: == test_last_dim_edge_2
+fn test_last_dim_edge_2():
+    print("== test_last_dim_edge_2\n")
+
+    # CHECK: In shape:(3, 3)
+    # CHECK-NEXT: In strides:(3, 1)
+    # CHECK-NEXT: New shape:(2, 2)
+    # CHECK-NEXT: New strides:(-3, -1)
+
+    # CHECK-NEXT: [8.000000]
+    # CHECK-NEXT: [7.000000]
+    # CHECK-NEXT: [5.000000]
+    # CHECK-NEXT: [4.000000]
+
+    # print(np.arange(0, 9).reshape(3,3)[3:0:-1, 3:0:-1])
+    test_slice[9, 2, DimList[2].create_unknown()](
+        create_dim_list(3, 3),
+        Index(3, 3),
+        Index(0, 0),
+        Index(-1, -1),
+        False,
+    )
+
+
+# CHECK-LABEL: == test_last_dim_edge_3
+fn test_last_dim_edge_3():
+    print("== test_last_dim_edge_3\n")
+
+    # CHECK: In shape:(3, 3)
+    # CHECK-NEXT: In strides:(3, 1)
+    # CHECK-NEXT: New shape:(2, 2)
+    # CHECK-NEXT: New strides:(-3, -1)
+
+    # CHECK-NEXT: [8.000000]
+    # CHECK-NEXT: [7.000000]
+    # CHECK-NEXT: [5.000000]
+    # CHECK-NEXT: [4.000000]
+
+    # print(np.arange(0, 9).reshape(3,3)[4:0:-1, 4:0:-1])
+    test_slice[9, 2, DimList[2].create_unknown()](
+        create_dim_list(3, 3),
+        Index(4, 4),
+        Index(0, 0),
+        Index(-1, -1),
+        False,
+    )
+
+
+# CHECK-LABEL: == test_last_dim_edge_4
+fn test_last_dim_edge_4():
+    print("== test_last_dim_edge_4\n")
+
+    # CHECK: In shape:(3, 3)
+    # CHECK-NEXT: In strides:(3, 1)
+    # CHECK-NEXT: New shape:(3, 3)
+    # CHECK-NEXT: New strides:(-3, -1)
+
+    # CHECK-NEXT: [8.000000]
+    # CHECK-NEXT: [7.000000]
+    # CHECK-NEXT: [6.000000]
+    # CHECK-NEXT: [5.000000]
+    # CHECK-NEXT: [4.000000]
+    # CHECK-NEXT: [3.000000]
+    # CHECK-NEXT: [2.000000]
+    # CHECK-NEXT: [1.000000]
+    # CHECK-NEXT: [0.000000]
+
+    # print(np.arange(0, 9).reshape(3,3)[4:-4:-1, 4:-4:-1])
+    test_slice[9, 2, DimList[2].create_unknown()](
+        create_dim_list(3, 3),
+        Index(4, 4),
+        Index(-4, -4),
+        Index(-1, -1),
+        False,
+    )
+
+
+# CHECK-LABEL: == test_out_of_bounds
+fn test_out_of_bounds():
+    print("== test_out_of_bounds\n")
+
+    # CHECK: In shape:(3, 3)
+    # CHECK-NEXT: In strides:(3, 1)
+    # CHECK-NEXT: New shape:(2, 2)
+    # CHECK-NEXT: New strides:(3, 1)
+
+    # CHECK-NEXT: [3.000000]
+    # CHECK-NEXT: [4.000000]
+    # CHECK-NEXT: [6.000000]
+    # CHECK-NEXT: [7.000000]
+
+    # print(np.arange(0, 9).reshape(3, 3)[1:5:1, -5:-1:1])
+    test_slice[9, 2, DimList[2].create_unknown()](
+        create_dim_list(3, 3),
+        Index(1, -5),
+        Index(5, -1),
+        Index(1, 1),
+        False,
+    )
+
+
 fn main():
     test_slice_basic()
     test_slice_identity()
@@ -506,3 +755,16 @@ fn main():
     test_slice_negative_step_2D()
     test_slice_negative_step_3D()
     test_slice_negative_step_4D()
+
+    test_slice_negative_step_2()
+    test_slice_negative_step_3()
+    test_slice_negative_step_4()
+
+    test_truncated_last_dim()
+    test_truncated_last_dim_reverse()
+    test_last_dim_edge()
+    test_last_dim_edge_2()
+    test_last_dim_edge_3()
+    test_last_dim_edge_4()
+
+    test_out_of_bounds()

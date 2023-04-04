@@ -14,7 +14,6 @@ from Int import Int
 from Range import range
 from DType import DType
 from TypeUtilities import rebind
-from IO import print
 
 
 fn slice_as_view[
@@ -44,7 +43,19 @@ fn slice_as_view[
         if stop < 0:
             stop = stop + tensor.dim(i)
 
-        # Offset the pointer to refect the new starting point.
+        # Allow start and stop to truncate like numpy and torch allow.
+        if start < 0:
+            start = 0
+        elif start >= tensor.dim(i):
+            start = tensor.dim(i) - 1
+
+        if stop < 0:
+            stop = -1
+        elif stop >= tensor.dim(i) and step > 0:
+            stop = tensor.dim(i)
+        elif stop >= tensor.dim(i) and step < 0:
+            stop = tensor.dim(i) - 1
+
         let new_offset = start * tensor.stride(i)
         new_data = new_data.offset(new_offset)
 
