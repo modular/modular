@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Host.h"
+#include "Support/AlignedAlloc.h"
 #include "Support/ErrorOr.h"
 #include "Support/SIMD.h"
 #include "llvm/ADT/STLExtras.h"
@@ -409,6 +410,8 @@ void M::HostMachineInfo::print(llvm::raw_ostream &os) const {
   os << numPhysicalCores;
   os << "\nsimd-bitwidth: ";
   os << simdBitWidth;
+  os << "\npreferred-mem-alignment: ";
+  os << preferredMemoryAlignment;
   os << "\nl1-cache-size: ";
   os << l1CacheSize;
   os << "\nl2-cache-size: ";
@@ -430,6 +433,7 @@ void M::HostMachineInfo::print(llvm::json::OStream &json) const {
   json.attribute("features", cpuFeatures);
   json.attribute("core-count", numPhysicalCores);
   json.attribute("simd-bitwidth", simdBitWidth);
+  json.attribute("preferred-mem-alignment", preferredMemoryAlignment);
   json.attribute("l1-cache-size", l1CacheSize);
   json.attribute("l2-cache-size", l2CacheSize);
   json.attribute("l3-cache-size", l3CacheSize);
@@ -460,6 +464,9 @@ void HostMachineInfo::print(HostProperty property,
     break;
   case HostProperty::SIMDBitWidth:
     os << simdBitWidth;
+    break;
+  case HostProperty::PreferredMemoryAlignment:
+    os << preferredMemoryAlignment;
     break;
   case HostProperty::L1CacheSize:
     os << l1CacheSize;
@@ -510,6 +517,7 @@ M::ErrorOr<HostMachineInfo> M::getHostMachineInfo() {
 
   machineInfo.numPhysicalCores = llvm::get_physical_cores();
   machineInfo.simdBitWidth = kPreferredSIMDBitWidth;
+  machineInfo.preferredMemoryAlignment = kPreferredMemoryAlignment;
 
   UNWRAP_ERROR(l1CacheSize, getHostCPUCacheSize(1));
   machineInfo.l1CacheSize = l1CacheSize;
