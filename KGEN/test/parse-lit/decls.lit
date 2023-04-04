@@ -198,8 +198,8 @@ fn adaptiveNestedFns(a: Int, b: Int):
     fn nestedFn(d: Int) -> Int:
         return b + d
 
-    # CHECK: kgen.param.fork *"(adaptive)nestedFn(":{{.*}} = <[*"nestedFn{{.*}}", *"nestedFn{{.*}}_0"]>
-    # CHECK: call_param[{{.*}}: *"(adaptive)nestedFn("]
+    # CHECK: kgen.param.fork *"(adaptive)nestedFn{{.*}}": {{.*}} = <[*"nestedFn{{.*}}", *"nestedFn{{.*}}_0"]>
+    # CHECK: call_param[{{.*}}: *"(adaptive)nestedFn{{.*}}"]
     let c = nestedFn(2)
 
 # CHECK-LABEL: lit.func @"nestedFnInLoop()"
