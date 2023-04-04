@@ -856,9 +856,10 @@ std::unique_ptr<mlir::Pass> KGEN::createAlwaysInlineParametric(
 /// The region is inserted into its own scope - either a loop or async execute
 /// op (depending on the type of the call). This scope is returned from the
 /// function.
-static std::pair<Operation *, int>
-inlineRegion(IRMapping &map, KGENCallOpInterface call, Region &region,
-             ArrayRef<BlockArgument> args, bool takeBody) {
+static std::pair<Operation *, int> inlineRegion(IRMapping &map,
+                                                KGENCallOpInterface call,
+                                                Region &region,
+                                                bool takeBody = false) {
   StringAttr label = StringAttr::get(call.getContext(), "inlined_cf_scope");
 
   mlir::IRRewriter b{OpBuilder(call)};
@@ -874,48 +875,32 @@ inlineRegion(IRMapping &map, KGENCallOpInterface call, Region &region,
   Region &scopeBody = scope->getRegion(0);
   if (takeBody) {
     scopeBody.takeBody(region);
-    for (auto [value, arg] : llvm::zip(call->getOperands(), args))
+    for (auto [value, arg] :
+         llvm::zip(call->getOperands(), scopeBody.getArguments()))
       arg.replaceAllUsesWith(value);
     scopeBody.front().eraseArguments(0, scopeBody.getNumArguments());
   } else {
     b.createBlock(&scopeBody);
-    for (auto [value, arg] : llvm::zip(call->getOperands(), args))
+    for (auto [value, arg] :
+         llvm::zip(call->getOperands(), region.getArguments()))
       map.map(arg, value);
     for (Operation &op : region.getOps())
       b.clone(op, map);
   }
 
   unsigned numReturns = 0;
-  scopeBody.walk([&](Operation *op) {
-    // Replace all returns with breaks to the control flow scope.
-    if (!isa<ReturnOp>(op))
-      return;
+  scopeBody.walk([&](ReturnOp op) {
     b.setInsertionPoint(op);
     if (isa<CallOp>(call.getOperation()))
-      b.replaceOpWithNewOp<HLCF::BreakOp>(op, op->getOperands(), label);
+      b.replaceOpWithNewOp<HLCF::BreakOp>(op, op.getOperands(), label);
     else
-      b.replaceOpWithNewOp<LIT::AsyncReturnOp>(op, op->getOperands());
+      b.replaceOpWithNewOp<LIT::AsyncReturnOp>(op, op.getOperands());
 
     ++numReturns;
   });
   b.replaceOp(call, scope->getResults());
   assert(numReturns > 0);
   return std::make_pair(scope, numReturns);
-}
-
-/// Replace the call operation with the body of the callee function.
-///
-/// The function body is inserted into its own scope - either a loop or async
-/// execute op (depending on the type of the call). This scope is returned from
-/// the function.
-static std::pair<Operation *, int> inlineFunctionBody(IRMapping &map,
-                                                      KGENCallOpInterface call,
-                                                      FuncOp callee,
-                                                      bool takeBody = false) {
-  TimeTraceScope<> traceScope("callee",
-                              [&] { return callee.getSymName().str(); });
-  return inlineRegion(map, call, callee.getBodyRegion(), callee.getArguments(),
-                      takeBody);
 }
 
 /// Inlining might create trivial loops with a single break at the end. This
@@ -999,11 +984,13 @@ void InliningGraph::performInlining(InliningGraphNode *caller) {
       callee->mutex.unlock_shared();
       llvm::sys::SmartScopedWriter<true> lock(callee->mutex);
       std::tie(scope, numReturns) =
-          inlineFunctionBody(map, call, callee->func, /*takeBody=*/true);
+          inlineRegion(map, call, callee->func.getBodyRegion(),
+                       /*takeBody=*/true);
       // Erase the empty function.
       callee->func->erase();
     } else {
-      std::tie(scope, numReturns) = inlineFunctionBody(map, call, callee->func);
+      std::tie(scope, numReturns) =
+          inlineRegion(map, call, callee->func.getBodyRegion());
       callee->mutex.unlock_shared();
     }
 
