@@ -31,7 +31,7 @@ elaborateGenerators(mlir::SymbolTableAnalysis &symtab,
                     KGEN::ParameterCollector::Analysis &paramCache,
                     LLCL::Runtime &runtime, TargetInfoAttr target,
                     ArrayRef<KGEN::GeneratorOp> generators,
-                    bool enableSearch = false);
+                    bool enableSearch = false, bool testDiagnostics = false);
 
 } // namespace M
 
