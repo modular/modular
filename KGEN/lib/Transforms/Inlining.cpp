@@ -933,15 +933,26 @@ struct InliningGraphNode
     : public InliningGraphNodeBase<InliningGraphNode, FuncOp,
                                    KGENCallOpInterface> {
   /// If the function will be inlined, removed it from the module so that it can
-  /// later be erased in parallel.
+  /// later be erased in parallel. Ownership is passed to the node.
   explicit InliningGraphNode(FuncOp func)
       : InliningGraphNodeBase(func), level(func.getAlwaysInlineLevel()) {
     if (level != AlwaysInlineLevel::Disabled)
       func->remove();
   }
 
+  /// This node takes ownership of the function. Everything else is
+  /// default-initialized.
   explicit InliningGraphNode(InliningGraphNode &&other)
-      : InliningGraphNodeBase(std::move(other)), level(other.level) {}
+      : InliningGraphNodeBase(std::move(other)), level(other.level) {
+    other.func = nullptr;
+  }
+
+  /// If an error occurred during inlining, nodes can end up owning the function
+  /// upon destruction. Erase the function.
+  ~InliningGraphNode() {
+    if (level != AlwaysInlineLevel::Disabled && func)
+      func->erase();
+  }
 
   /// The inlining level of the function.
   AlwaysInlineLevel level;
@@ -974,8 +985,10 @@ bool InliningGraph::prepareForInlining(InliningGraphNode *node) {
   // Skip inlining of functions with no callers. If it is an 'always_inline'
   // function, we need to erase it.
   if (node->callers.empty()) {
-    if (node->level != AlwaysInlineLevel::Disabled)
+    if (node->level != AlwaysInlineLevel::Disabled) {
       node->func->erase();
+      node->func = nullptr;
+    }
     return false;
   }
   return true;
@@ -1002,6 +1015,7 @@ void InliningGraph::performInlining(InliningGraphNode *caller) {
                        /*takeBody=*/true);
       // Erase the empty function.
       callee->func->erase();
+      callee->func = nullptr;
     } else {
       std::tie(scope, numReturns) =
           inlineRegion(map, call, callee->func.getBodyRegion());
