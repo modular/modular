@@ -20,14 +20,44 @@ if version_info.minor <= 8:
 else:
     List = list
 
+from dataclasses import asdict, dataclass, field
+from typing import Optional, Union
+
 version_string = _mecore.__version__
 
 
 class ModelKind(str, Enum):
+    """ModelKind represents the to-be-compiled model's framework"""
+
     PYTORCH_MODEL = "PyTorch Model"
     TENSORFLOW_MODEL = "TensorFlow Model"
     TFLITE_MODEL = "TFLite Model"
     UNKNOWN_MODEL = "Unknown Model"
+
+
+class TFSavedModelVersion(str, Enum):
+    V1 = "v1"
+    V2 = "v2"
+
+
+@dataclass
+class TFCompileOptions:
+    """TFCompileOptions is a class that can be used to configure compilation of TensorFlow saved models"""
+
+    saved_model_version: TFSavedModelVersion = field(
+        default=TFSavedModelVersion.V1
+    )
+    exported_name: str = field(default="serving_default")
+
+
+@dataclass
+class TFLiteCompileOptions:
+    """TFLiteCompileOptions is a class that can be used to configure compilation of TFLite models"""
+
+
+@dataclass
+class TorchCompileOptions:
+    """TorchCompileOptions is a class that can be used to configure compilation of PyTorch models"""
 
 
 class Model:
@@ -116,10 +146,17 @@ class InferenceSession:
 
     _impl: _InferenceSession
 
-    def __init__(self, config: dict = {}):
+    def __init__(self, config: Optional[dict] = None):
+        config = config or {}
         self._impl = _InferenceSession(config)
 
-    def compile(self, model_path: Path, config: dict = {}) -> Model:
+    def compile(
+        self,
+        model_path: Path,
+        options: Optional[
+            Union[TFCompileOptions, TorchCompileOptions, TFLiteCompileOptions]
+        ] = None,
+    ) -> Model:
         """Compile a saved model file/directory
 
         We support compiling Tensorflow models in the SavedModel format and traceable PyTorch models
@@ -139,7 +176,19 @@ class InferenceSession:
         RuntimeError
             We raise an exception if the path provided is invalid.
         """
-        _model = self._impl.compile(model_path, config)
+        options_dict = {}
+        if options:
+            options_dict = asdict(options)
+            if isinstance(options, TFCompileOptions):
+                options_dict["type"] = "tf"
+            elif isinstance(options, TorchCompileOptions):
+                options_dict["type"] = "torch"
+            elif isinstance(options, TFLiteCompileOptions):
+                options_dict["type"] = "tflite"
+            else:
+                raise TypeError("Invalid compilation options object.")
+
+        _model = self._impl.compile(model_path, options_dict)
 
         # TODO: Fix when real PyTorch support lands
         if model_path.suffix == ".onnx":
