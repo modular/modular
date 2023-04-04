@@ -18,7 +18,7 @@ from Math import min, max, add, div_ceil
 from Functional import async_parallelize, vectorize_unroll
 from LLCL import Runtime, OutputChainPtr
 from Pointer import Pointer
-from Pointer import DTypePointer, product as pointer_product
+from Pointer import DTypePointer
 from TargetInfo import dtype_simd_width
 from DType import DType
 from Numerics import neginf
