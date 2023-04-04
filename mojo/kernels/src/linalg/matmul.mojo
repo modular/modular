@@ -19,7 +19,6 @@ from Buffer import (
     partial_simd_store,
     _raw_stack_allocation,
 )
-from BuildInfo import is_relwithdebinfo_build, is_debug_build
 from Functional import tile, unswitch, unroll, unroll2
 from Index import Index, StaticIntTuple
 from Int import Int
@@ -40,25 +39,6 @@ from TargetInfo import (
 from Transpose import transpose_inplace
 from Intrinsics import PrefetchOptions
 from IO import print
-
-
-fn get_pack_data_size() -> Int:
-    """Utility to compute the number of elements to pack in each tile.
-    Returns:
-        The number of elements to pack.
-    """
-
-    if is_relwithdebinfo_build() or is_debug_build():
-        # Only use the large cache size for release build as debug build may
-        #  contain additional data could cause stack overflow.
-        return 1024
-
-    if os_is_macos():
-        # TODO: macos has lower stack limit so lower this allocation too.
-        return 16 * 1024
-
-    # TODO: This should be 1/2 of L2 cache size on Intel.
-    return 128 * 1024
 
 
 @register_passable("trivial")

@@ -9,8 +9,8 @@ from Matmul import (
     MatmulInnerLoopBPacked,
     GemmShape,
     MatmulConfig,
-    get_pack_data_size,
 )
+from MatmulUtils import get_pack_data_size
 from Buffer import NDBuffer
 from TargetInfo import dtype_simd_width
 from Index import Index

@@ -8,7 +8,8 @@ from Assert import debug_assert
 from Index import StaticIntTuple, Index
 from Int import Int
 from Math import div_ceil, max, min
-from TargetInfo import has_avx512f, has_neon
+from TargetInfo import has_avx512f, has_neon, os_is_macos
+from BuildInfo import is_relwithdebinfo_build, is_debug_build
 
 # The number of registers used for the inner kernel is:
 #   x86:  a_row_size*pack_inner_size + 1*pack_inner_size + 1
@@ -170,3 +171,29 @@ fn get_partitioned_matmul_mojo[
         sub_matmul_config.shape = Index(row_range1[1], col_range1[1], k)
 
     return sub_matmul_config
+
+
+fn get_pack_data_size() -> Int:
+    """Utility to compute the number of elements to pack in each tile.
+    Returns:
+        The number of elements to pack.
+    """
+
+    if is_relwithdebinfo_build() or is_debug_build():
+        # Only use the large cache size for release build as debug build may
+        #  contain additional data could cause stack overflow.
+        return 1024
+
+    if os_is_macos():
+        # TODO: macos has lower stack limit so lower this allocation too.
+        return 16 * 1024
+
+    # TODO: This should be 1/2 of L2 cache size on Intel.
+    # Graviton 2 and Skylake server have a 1 MiB L1 cache
+    # AMD Rome has a 512 KiB L2 cache
+    # return half the cache size as 4 byte elements
+    if has_neon():
+        return 128 * 1024
+    elif has_avx512f():
+        return 128 * 1024
+    return 64 * 1024

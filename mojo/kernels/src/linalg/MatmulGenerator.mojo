@@ -25,7 +25,6 @@ from IO import print
 from DType import DType
 from TargetInfo import dtype_simd_width
 from Matmul import (
-    get_pack_data_size,
     MatmulConfig,
     PackMatrixCols,
     PackMatrixRows,
@@ -36,6 +35,7 @@ from Matmul import (
     calculate_tile_n_k,
 )
 from Range import range
+from MatmulUtils import get_pack_data_size
 
 
 @register_passable("trivial")
