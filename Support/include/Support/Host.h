@@ -122,6 +122,7 @@ enum class HostProperty {
   Features,
   CoreCount,
   SIMDBitWidth,
+  PreferredMemoryAlignment,
   L1CacheSize,
   L2CacheSize,
   L3CacheSize,
@@ -137,6 +138,7 @@ struct HostMachineInfo {
   std::vector<std::string> cpuFeatures;
   size_t numPhysicalCores;
   size_t simdBitWidth;
+  size_t preferredMemoryAlignment;
   size_t l1CacheSize;
   size_t l2CacheSize;
   size_t l3CacheSize;
