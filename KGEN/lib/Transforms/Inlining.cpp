@@ -589,7 +589,7 @@ struct InliningGraphBase {
 
   /// The nodes in the graph. The map does not resize after it is constructed,
   /// so references always remain valid.
-  DenseMap<FuncOpT, NodeT> nodes;
+  llvm::MapVector<FuncOpT, NodeT> nodes;
   /// The runtime to use.
   LLCL::Runtime &runtime;
 
@@ -608,7 +608,7 @@ void InliningGraphBase<DerivedT, NodeT>::build(ModuleOp module,
 
   // Instantiate the nodes for each generator first.
   for (auto func : llvm::make_early_inc_range(module.getOps<FuncOpT>()))
-    nodes.try_emplace(func, NodeT(func));
+    nodes.insert(std::make_pair(func, NodeT(func)));
 
   // Build the graph by walking all the calls in each function and adding edges
   // as appropriate.
@@ -643,9 +643,8 @@ void InliningGraphBase<DerivedT, NodeT>::complete(NodeT *node) {
   // Since the function is complete, compute its callee graph, if it has
   // any callers.
   numProcessed.fetch_add(1);
-  if (node->callers.empty())
+  if (!getDerived().prepareForInlining(node))
     return;
-  getDerived().prepareForInlining(node);
 
   // Indicate it as complete to its callers by incrementing the ready counter on
   // the caller nodes. Schedule any ready callers.
@@ -735,7 +734,7 @@ struct ParametricInliningGraph
   }
   /// When a function is finished processing and will be inlined, compute is
   /// callee parameter graph.
-  void prepareForInlining(ParametricInliningGraphNode *node);
+  bool prepareForInlining(ParametricInliningGraphNode *node);
   /// Inline all functions by invoking the parametric inliner.
   void performInlining(ParametricInliningGraphNode *caller);
 
@@ -785,9 +784,13 @@ ParametricInliningGraph::getThreadLocalCache(uint64_t threadId) {
   return *cache;
 }
 
-void ParametricInliningGraph::prepareForInlining(
+bool ParametricInliningGraph::prepareForInlining(
     ParametricInliningGraphNode *node) {
+  // Skip inlining of functions with no callers.
+  if (node->callers.empty())
+    return false;
   node->calculateParams(getThreadLocalCache(llvm::get_threadid()));
+  return true;
 }
 
 void ParametricInliningGraph::performInlining(
@@ -956,16 +959,27 @@ struct InliningGraph
   bool shouldInline(InliningGraphNode *node) const {
     return node->level != AlwaysInlineLevel::Disabled;
   }
+  /// Erase dead 'always_inline' functions.
+  bool prepareForInlining(InliningGraphNode *node);
   /// Inline all functions by invoking the function inliner.
   void performInlining(InliningGraphNode *caller);
-  /// Functions have nothing to prepare.
-  void prepareForInlining(InliningGraphNode *node) {}
 
   /// When updating debug info, defer the update by tagging scope operations
   /// with an attribute. This is null if updates are not needed.
   StringAttr updateAttrName;
 };
 } // namespace
+
+bool InliningGraph::prepareForInlining(InliningGraphNode *node) {
+  // Skip inlining of functions with no callers. If it is an 'always_inline'
+  // function, we need to erase it.
+  if (node->callers.empty()) {
+    if (node->level != AlwaysInlineLevel::Disabled)
+      node->func->erase();
+    return false;
+  }
+  return true;
+}
 
 void InliningGraph::performInlining(InliningGraphNode *caller) {
   TimeTraceScope traceScope(
@@ -1097,14 +1111,10 @@ struct GraphTraits<InliningGraphNode *> {
 } // namespace llvm
 
 /// Given an inlining graph with a known cycle, diagnose the cycle error.
-static void diagnoseInliningCycle(ModuleOp module, InliningGraph &g) {
-  // Find the first incomplete root node from program order, since iterating the
-  // graph's hash map is non-deterministic.
+static void diagnoseInliningCycle(InliningGraph &g) {
   InliningGraphNode *root = nullptr;
-  for (auto func : module.getOps<FuncOp>()) {
-    InliningGraphNode &node = g.nodes.find(func)->second;
-    if (node.level != AlwaysInlineLevel::Disabled ||
-        node.numProcessedCalls == node.callsites.size())
+  for (auto &[func, node] : g.nodes) {
+    if (node.numProcessedCalls == node.callsites.size())
       continue;
     root = &node;
     break;
@@ -1259,7 +1269,7 @@ void ForceInlinePass::runOnOperation() {
 
   // Diagnose cycles, if there are any.
   if (graph.numProcessed != graph.nodes.size()) {
-    diagnoseInliningCycle(getOperation(), graph);
+    diagnoseInliningCycle(graph);
     return signalPassFailure();
   }
 
