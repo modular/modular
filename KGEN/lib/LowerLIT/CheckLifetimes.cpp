@@ -28,18 +28,86 @@ using llvm::BitVector;
 /// things in.
 enum { ENABLE_FOR_ALL = 0 };
 
-/// Find all the functions in the module, which may be buried in structures.
-static std::vector<LIT::FuncOp> collectFunctions(Operation *op) {
-  std::vector<LIT::FuncOp> result;
-  op->walk<mlir::WalkOrder::PreOrder>(
-      [&](LIT::FuncOp funcOp) -> mlir::WalkResult {
-        result.push_back(funcOp);
-        // Skip recursing into the function, all nested functions will be
-        // handled separately.
-        return WalkResult::skip();
+/// Find all the functions and types in the module.
+static std::pair<std::vector<LIT::FuncOp>,
+                 DenseMap<SymbolRefAttr, LIT::StructDeclOp>>
+collectFunctionsAndTypes(Operation *module) {
+  std::vector<LIT::FuncOp> funcList;
+  DenseMap<SymbolRefAttr, LIT::StructDeclOp> structMap;
+  module->walk<mlir::WalkOrder::PreOrder>(
+      [&](Operation *op) -> mlir::WalkResult {
+        if (auto funcOp = dyn_cast<LIT::FuncOp>(op)) {
+          funcList.push_back(funcOp);
+          // Skip recursing into the function, all nested functions will be
+          // handled separately, and structs don't currently live in functions.
+          return WalkResult::skip();
+        }
+        if (auto structOp = dyn_cast<LIT::StructDeclOp>(op))
+          structMap[getFullyResolvedSymbolRef(structOp)] = structOp;
+        return WalkResult::advance();
       });
-  return result;
+  return {std::move(funcList), std::move(structMap)};
 }
+
+//===----------------------------------------------------------------------===//
+// TypeDeclInfo
+//===----------------------------------------------------------------------===//
+
+/// Information about a struct declarations, used for field sensitive analysis.
+/// Value tracking is completely field sensitive, tracking values at the level
+/// of individual fields in their flattened representation.  To do this, we need
+/// an efficient mapping that tells us the number of (fully flattened) fields in
+/// struct.
+struct TypeDeclInfo {
+  TypeDeclInfo(DenseMap<SymbolRefAttr, LIT::StructDeclOp> &&structMap)
+      : structMap(std::move(structMap)) {}
+
+  /// Return the total number of flattened fields in the specified type.
+  size_t getNumFieldsInType(Type type);
+
+private:
+  DenseMap<SymbolRefAttr, LIT::StructDeclOp> structMap;
+
+  /// This keeps track of the number of fields in the struct specified by the
+  /// (fully flattened) symbol.
+  DenseMap<SymbolRefAttr, size_t> numFields;
+
+  /// A map from struct name and field name to index within the struct.  This
+  /// isn't the field number, this is the number of recursively flattened
+  /// fields until the start of the field.
+  DenseMap<std::pair<SymbolRefAttr, StringAttr>, size_t> fieldIndices;
+};
+
+/// Return the total number of flattened fields in the specified type.
+size_t TypeDeclInfo::getNumFieldsInType(Type type) {
+  // We currently treat all non-struct types as being a single element, even
+  // things like kgen.list containing struct types.
+  DeclRefType declRef = dyn_cast<DeclRefType>(type);
+  if (!declRef)
+    return 1;
+
+  // See if we've already looked this up, if so, just return the known value.
+  SymbolRefAttr structSymbol = declRef.getSymbol();
+  auto it = numFields.find(structSymbol);
+  if (it != numFields.end())
+    return it->second;
+
+  // If not, we compute it recursively.  Structs cannot be infinitely deep, so
+  // we can just do this recursively.
+  LIT::StructDeclOp decl = structMap[structSymbol];
+  assert(decl && "reference to struct that wasn't declared");
+
+  size_t totalFields = 0;
+  for (auto field : decl.getFieldDecls()) {
+    fieldIndices[{structSymbol, field.getNameAttr()}] = totalFields;
+    totalFields += getNumFieldsInType(field.getType());
+  }
+  return numFields[structSymbol] = totalFields;
+}
+
+//===----------------------------------------------------------------------===//
+// ValueInfo / ValueSet tracking
+//===----------------------------------------------------------------------===//
 
 namespace {
 struct ValueInfo {
@@ -67,8 +135,12 @@ struct ValueSet {
   /// Initialize the value set with one entry, so index #0 is always invalid and
   /// can be used as a sentinel, and so a null Value is always treated as
   /// untracked.
-  ValueSet(MLIRContext *context) : context(context) {
+  ValueSet(MLIRContext *context, TypeDeclInfo &typeDeclInfo)
+      : context(context), typeDeclInfo(typeDeclInfo) {
     addValue(Value(), TypedAttr(), false, false);
+
+    // TODO: make field sensitive;
+    (void)this->typeDeclInfo;
   }
 
   /// Return the number of values we are tracking.
@@ -101,6 +173,8 @@ struct ValueSet {
 
 private:
   MLIRContext *const context;
+  TypeDeclInfo &typeDeclInfo;
+
   SmallVector<ValueInfo> valueInfos;
   DenseMap<Value, size_t> memoryObjectIndex;
 };
@@ -402,28 +476,31 @@ struct CheckLifetimes : impl::CheckLifetimesBase<CheckLifetimes> {
   using CheckLifetimesBase::CheckLifetimesBase;
 
   void runOnOperation() override {
-    // Find all the functions in the module.
-    std::vector<LIT::FuncOp> functions = collectFunctions(getOperation());
+    // Find all the functions and structs in the module.
+    auto [functionVector, structMap] = collectFunctionsAndTypes(getOperation());
 
+    // Process all the structs into TypeDeclInfo.
+    TypeDeclInfo typeDeclInfo(std::move(structMap));
+
+    // TODO: Do in parallel, watch out for mutations of TypeDeclInfo though!
     bool hadError = false;
-
-    // TODO: Do in parallel.
-    for (auto func : functions)
-      hadError |= failed(processFunction(func));
+    for (auto func : functionVector)
+      hadError |= failed(processFunction(func, typeDeclInfo));
 
     if (hadError)
       return signalPassFailure();
   }
 
-  LogicalResult processFunction(LIT::FuncOp func);
+  LogicalResult processFunction(LIT::FuncOp func, TypeDeclInfo &typeDeclInfo);
 };
 } // namespace
 
-LogicalResult CheckLifetimes::processFunction(LIT::FuncOp func) {
+LogicalResult CheckLifetimes::processFunction(LIT::FuncOp func,
+                                              TypeDeclInfo &typeDeclInfo) {
   // Pass #1: Collect all of the values declared in the function that have
   // ownership to track, and number them.
   SmallVector<OwnedArgDeclOp> ownedArgDecls;
-  ValueSet valueSet(func.getContext());
+  ValueSet valueSet(func.getContext(), typeDeclInfo);
   auto collectArguments = [&](SignatureType signature, Block *body) {
     for (auto [convention, bbArg] : llvm::zip(
              signature.getValueInputConventions(), body->getArguments())) {
