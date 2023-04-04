@@ -1497,6 +1497,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   // These are /in/ our current scope because we do not want name conflicts with
   // them and they are instance (not type-level) values.
   // TODO: Generalize this to support nested structs and functions.
+  bool paramVararg = false;
   bool inAStruct = isa<StructDeclOp>(*decl.getParentDecl());
   if (inAStruct) {
     auto structDecl = cast<StructDeclOp>(*decl.getParentDecl());
@@ -1505,6 +1506,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
       auto paramRef = ParamDeclRefAttr::get(param);
       addFullyResolvedDecl(PValue(paramRef), param.getName(), parentLoc, &decl);
     }
+    paramVararg = structDecl.getParamVarargs();
   }
 
   // Parse declared meta parameters and add them to the current scope.
@@ -1516,7 +1518,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   // signature list resolve to enclosing scopes, and we add them before the
   // value signature list so the types and parameters can resolve to the bound
   // values.
-  bool paramVararg = false;
   if (parseOptionalParameterSignature(p, decl, inputParamDecls,
                                       resultParamDecls, paramVararg) ||
       p.parseToken(LitToken::l_paren, "expected '(' for parameter list"))

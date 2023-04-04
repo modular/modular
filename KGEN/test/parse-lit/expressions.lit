@@ -697,14 +697,14 @@ world"
 # CHECK-SAME: %[[ARGA:.*]]: !kgen.declref<@"$Int"::@Int>
 # CHECK-SAME: %[[ARGB:.*]]: !kgen.declref<@"$F32"::@F32>
 fn tuples(a: Int, b: F32):
-    # FIXME: This ought to work, but parameter inference currently fails.
-    #        error: invalid call to '__init__': callee expects 1 input parameter but 0 were provided
-    # _ = ()
-    # CHECK: %[[PACK0:.*]] = pop.pack.create(%[[ARGA]], %[[ARGB]])
-    # CHECK: kgen.call  @"{{.*}}@TupleLiteral::@"__init__({{.*}}TupleLiteral[Ts]=&,__mlir_type.!pop.pack<Ts>)"<:variadic<!kgen.mlirtype> [!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$F32"::@F32>]>(%{{.*}}, %[[PACK0]])
+    # CHECK: %[[PACK0:.*]] = kgen.param.constant: !pop.pack<[]> = <<>>
+    # CHECK: kgen.call  @"{{.*}}@TupleLiteral::@"__init__({{.*}}TupleLiteral[Ts]=&,__mlir_type.!pop.pack<Ts>)"<:variadic<!kgen.mlirtype> []>(%{{.*}}, %[[PACK0]])
+    _ = ()
+    # CHECK: %[[PACK1:.*]] = pop.pack.create(%[[ARGA]], %[[ARGB]])
+    # CHECK: kgen.call  @"{{.*}}@TupleLiteral::@"__init__({{.*}}TupleLiteral[Ts]=&,__mlir_type.!pop.pack<Ts>)"<:variadic<!kgen.mlirtype> [!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$F32"::@F32>]>(%{{.*}}, %[[PACK1]])
     _ = (a, b)
-    # CHECK: %[[PACK1:.*]] = pop.pack.create(%[[ARGA]])
-    # CHECK: kgen.call @"{{.*}}@TupleLiteral::@"__init__({{.*}}TupleLiteral[Ts]=&,__mlir_type.!pop.pack<Ts>)"<:variadic<!kgen.mlirtype> [!kgen.declref<@"$Int"::@Int>]>(%{{.*}}, %[[PACK1]])
+    # CHECK: %[[PACK2:.*]] = pop.pack.create(%[[ARGA]])
+    # CHECK: kgen.call @"{{.*}}@TupleLiteral::@"__init__({{.*}}TupleLiteral[Ts]=&,__mlir_type.!pop.pack<Ts>)"<:variadic<!kgen.mlirtype> [!kgen.declref<@"$Int"::@Int>]>(%{{.*}}, %[[PACK2]])
     _ = (a,)
 
 ##===----------------------------------------------------------------------===##
