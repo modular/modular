@@ -1569,11 +1569,12 @@ struct TiledMatmul[
 
 
 fn pack_b[
+    transpose_b: Bool,
+    simd_size: Int,
+    inner_size: Int,
     type: DType,
     src_shape: DimList[2],
     dst_shape: DimList[2],
-    simd_size: Int,
-    inner_size: Int,
 ](
     dst: NDBuffer[2, dst_shape, type],
     src: NDBuffer[2, src_shape, type],
@@ -1586,50 +1587,98 @@ fn pack_b[
     Tiles (not tile contents) are stored in row major order, so tile[i, j] is
     tile_n * tile_k bytes away from tile[i, j+1].
     """
-    let k_in = src.dim[0]()
-    let n_in = src.dim[1]()
-    let k_out = dst.dim[0]()
-    let n_out = dst.dim[1]()
-
     dst.zero()  # zero the padding to be safe, shouldn't be necessary
-
-    debug_assert(
-        k_out % tile_k == 0, "K dimension of output must be padded to tile_k"
-    )
-    debug_assert(
-        n_out % tile_n == 0, "N dimension of output must be padded to tile_n"
-    )
-
     let dst_flat = dst.flatten()
     var dst_offset: Int = 0
-    for idx_k in range(0, k_out, tile_k):
-        for idx_n in range(0, n_out, tile_n):
-            let packed_dst_view = NDBuffer[
-                3, DimList[3].create_unknown(), type
-            ](
-                dst_flat.data.offset(dst_offset),
-                create_dim_list(tile_n // inner_size, tile_k, inner_size),
-                type,
-            )
-            let valid_k = min(tile_k, k_in - idx_k)
-            let valid_n = min(tile_n, n_in - idx_n)
-            PackMatrixCols[
-                src_shape,
-                DimList[3].create_unknown(),
-                type,
-                simd_size,
-                inner_size,
-            ].run(
-                packed_dst_view,
-                src,
-                # Input is [K, N]:
-                # Starting global offset for packing.
-                Index(idx_k, idx_n),
-                Index(tile_k, tile_n),
-                # Valid amount of input from the starting offset.
-                Index(valid_k, valid_n),
-            )
-            dst_offset += tile_n * tile_k
+
+    @parameter
+    if not transpose_b:
+        let k_in = src.dim[0]()
+        let n_in = src.dim[1]()
+        let k_out = dst.dim[0]()
+        let n_out = dst.dim[1]()
+
+        debug_assert(
+            k_out % tile_k == 0,
+            "K dimension of output must be padded to tile_k",
+        )
+        debug_assert(
+            n_out % tile_n == 0,
+            "N dimension of output must be padded to tile_n",
+        )
+
+        for idx_k in range(0, k_out, tile_k):
+            for idx_n in range(0, n_out, tile_n):
+                let packed_dst_view = NDBuffer[
+                    3, DimList[3].create_unknown(), type
+                ](
+                    dst_flat.data.offset(dst_offset),
+                    create_dim_list(tile_n // inner_size, tile_k, inner_size),
+                    type,
+                )
+                let valid_k = min(tile_k, k_in - idx_k)
+                let valid_n = min(tile_n, n_in - idx_n)
+                PackMatrixCols[
+                    src_shape,
+                    DimList[3].create_unknown(),
+                    type,
+                    simd_size,
+                    inner_size,
+                ].run(
+                    packed_dst_view,
+                    src,
+                    # Input is [K, N]:
+                    # Starting global offset for packing.
+                    Index(idx_k, idx_n),
+                    Index(tile_k, tile_n),
+                    # Valid amount of input from the starting offset.
+                    Index(valid_k, valid_n),
+                )
+                dst_offset += tile_n * tile_k
+    else:
+        # _t = transpose, annoying WAR since variables can't have same name in if/else
+        let k_in_t = src.dim[1]()
+        let n_in_t = src.dim[0]()
+        let k_out_t = dst.dim[0]()
+        let n_out_t = dst.dim[1]()
+
+        debug_assert(
+            k_out_t % tile_k == 0,
+            "K dimension of output must be padded to tile_k",
+        )
+        debug_assert(
+            n_out_t % tile_n == 0,
+            "N dimension of output must be padded to tile_n",
+        )
+
+        for idx_n_t in range(0, n_out_t, tile_n):
+            for idx_k_t in range(0, k_out_t, tile_k):
+                let packed_dst_view_t = NDBuffer[
+                    3, DimList[3].create_unknown(), type
+                ](
+                    dst_flat.data.offset(dst_offset),
+                    create_dim_list(tile_n // inner_size, tile_k, inner_size),
+                    type,
+                )
+                let valid_k_t = min(tile_k, k_in_t - idx_k_t)
+                let valid_n_t = min(tile_n, n_in_t - idx_n_t)
+                PackMatrixRows[
+                    src_shape,
+                    DimList[3].create_unknown(),
+                    type,
+                    simd_size,
+                    inner_size,
+                ].run(
+                    packed_dst_view_t,
+                    src,
+                    # Input is [N, K]:
+                    # Starting global offset for packing.
+                    Index(idx_n_t, idx_k_t),
+                    Index(tile_n, tile_k),
+                    # Valid amount of input from the starting offset.
+                    Index(valid_n_t, valid_k_t),
+                )
+                dst_offset += tile_n * tile_k
 
 
 struct BTileGenerator[
@@ -1657,6 +1706,11 @@ struct BTileGenerator[
         b: NDBuffer[2, config.shape_b, type], tile_n_k: StaticIntTuple[2]
     ) -> BTileGenerator[config, type, transpose_b, b_packed]:
         var b_tile_stack_ptr = DTypePointer[type].get_null()
+
+        debug_assert(
+            not (transpose_b and b_packed),
+            "b cannot be both transposed and pre-packed.",
+        )
 
         @parameter
         if not b_packed:

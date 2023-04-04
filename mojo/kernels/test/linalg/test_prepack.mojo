@@ -55,7 +55,7 @@ fn test_prepack():
     for i in range(src_storage.__len__()):
         src_storage[i] = i
 
-    pack_b[type, src_shape_dyn, dst_shape_dyn, simd_size, inner_size](
+    pack_b[False, simd_size, inner_size, type, src_shape_dyn, dst_shape_dyn](
         dst_buf,
         src_buf,
         tile_n,
