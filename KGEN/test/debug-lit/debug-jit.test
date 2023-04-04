@@ -2,7 +2,9 @@
 # RUN: %lldb -b -o 'settings set plugin.jit-loader.gdb.enable on' -o 'b %S/Inputs/test.mojo:11' \
 # RUN:       -o 'run %S/Inputs/test.mojo --debug-level=full -O0' mojo | FileCheck %s
 
-# XFAIL: *, system-linux, system-windows
+# COM: This test passes most of the time on MacOS, but sometimes not. Disable it
+# COM: to keep people's local tests happy.
+# REQUIRES: DISABLED
 
 # CHECK: Breakpoint 1: no locations (pending).
 # CHECK: (lldb) run {{.*}}
