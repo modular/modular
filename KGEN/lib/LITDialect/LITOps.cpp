@@ -928,6 +928,10 @@ void AsyncCallOp::concretizeCallee(mlir::IRRewriter &b,
                                     getOperands());
 }
 
+void AsyncCallOp::updateCallee(SymbolConstantAttr callee) {
+  setCalleeAttr(callee);
+}
+
 //===----------------------------------------------------------------------===//
 // AsyncExecuteOp
 //===----------------------------------------------------------------------===//

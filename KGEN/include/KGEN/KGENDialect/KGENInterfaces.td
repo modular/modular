@@ -172,7 +172,9 @@ def KGEN_CallOpInterface : OpInterface<"KGENCallOpInterface"> {
   let methods = [
     InterfaceMethod<[{
       Get the parameter expression of the operation's callee.
-    }], "TypedAttr", "getCallee", (ins), [{}], [{ return nullptr; }]>,
+    }], "TypedAttr", "getCallee", (ins)>,
+    InterfaceMethod<[{
+    }], "void", "updateCallee", (ins "SymbolConstantAttr":$callee)>,
     InterfaceMethod<[{
       Get the values of the parameters passed to the callee's input parameters.
     }], "ArrayRef<TypedAttr>", "getParamValues", (ins), [{}],
@@ -198,7 +200,7 @@ def KGEN_CallOpInterface : OpInterface<"KGENCallOpInterface"> {
   let extraSharedClassDeclaration = [{
     /// Get the signature type of the callee.
     SignatureType getCalleeType() {
-      return cast<SignatureType>(getCallee().getType());
+      return cast<SignatureType>($_op.getCallee().getType());
     }
   }];
 

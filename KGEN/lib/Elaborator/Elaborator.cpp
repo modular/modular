@@ -2092,12 +2092,12 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
 
     // If this is a reference to a function that got renamed, update its
     // target.
-    TypeSwitch<Operation *>(op).Case<CallOp, AddressOfOp>([&](auto op) {
-      SymbolConstantAttr callee = op.getCallee();
+    TypeSwitch<Operation *>(op).Case([&](KGENCallOpInterface call) {
+      auto callee = cast<SymbolConstantAttr>(call.getCallee());
       auto newName = funcsToRename.lookup(
           cast<FlatSymbolRefAttr>(callee.getSymbol()).getAttr());
       if (newName)
-        op.setCalleeAttr(SymbolConstantAttr::get(
+        call.updateCallee(SymbolConstantAttr::get(
             FlatSymbolRefAttr::get(newName), callee.getType()));
     });
     return WalkResult::advance();

@@ -141,6 +141,9 @@ class KGEN_CallOpBase<string mnemonic, list<Trait> traits = []>
                                   ["isImplicitlyParametric"]>]> {
   code extraDefinition = [{}];
   let extraClassDefinition = extraDefinition # [{
+    void $cppClass::updateCallee(SymbolConstantAttr callee) {
+      setCalleeAttr(callee);
+    }
     void $cppClass::walkDeclarations(
         function_ref<void(ParamDeclAttr)> walkDecl) {
       llvm::for_each(getParamDecls(), walkDecl);
