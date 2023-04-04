@@ -6,6 +6,7 @@
 
 #include "MojoTypeSystem.h"
 #include "../ExpressionParser/MojoExpressionVariable.h"
+#include "../ExpressionParser/MojoUserExpression.h"
 #include "Cache/CacheDialect/CacheDialect.h"
 #include "KGEN/InitAllDialects.h"
 #include "KGEN/LowerToObject.h"
@@ -159,8 +160,12 @@ UserExpression *MojoTypeSystem::GetUserExpression(
     StringRef expr, StringRef prefix, lldb::LanguageType language,
     Expression::ResultType desiredType,
     const EvaluateExpressionOptions &options, ValueObject *ctxObj) {
-  // TODO: Add support for processing expressions.
-  return nullptr;
+  lldb::TargetSP target = impl->target.lock();
+  if (!target || ctxObj)
+    return nullptr;
+
+  return new MojoUserExpression(*target.get(), expr, prefix, language,
+                                desiredType, options);
 }
 
 PersistentExpressionState *MojoTypeSystem::GetPersistentExpressionState() {
