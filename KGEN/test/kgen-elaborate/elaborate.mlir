@@ -2048,3 +2048,18 @@ kgen.generator @unbox_in_result_sig() {
      ) -> () fn, apply(:(index) -> !pop.struct<index> @box, a))>
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: kgen.func @async_function()
+kgen.generator @async_function() async {
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @call_it
+kgen.generator @call_it() {
+  // CHECK: lit.async.call[<>() async -> (): @async_function]
+  kgen.param.declare fn: <>() async -> () = <@async_function>
+  lit.async.call[<>() async -> (): fn]()
+  kgen.return
+}
