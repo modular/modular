@@ -1,0 +1,78 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef KGEN_LIB_MOJOLLDB_REPL_MOJOREPL_H
+#define KGEN_LIB_MOJOLLDB_REPL_MOJOREPL_H
+
+#include "../Plugin.h"
+#include "lldb/Expression/REPL.h"
+#include "lldb/Utility/Status.h"
+#include "lldb/lldb-public.h"
+#include <string>
+#include <vector>
+
+namespace M::KGEN::Mojo {
+/// This class implements a MOJO repl plugin for LLDB.
+class MojoREPL : public lldb_private::REPL {
+public:
+  MojoREPL(lldb_private::Target &target);
+  ~MojoREPL() override;
+
+  //===--------------------------------------------------------------------===//
+  // Initialization
+  //===--------------------------------------------------------------------===//
+
+  static void Initialize();
+  static void Terminate();
+
+  static llvm::StringRef getPluginNameStatic() { return "Mojo REPL"; }
+
+protected:
+  lldb_private::Status DoInitialization() override { return {}; }
+
+  //===--------------------------------------------------------------------===//
+  // Utilities
+  //===--------------------------------------------------------------------===//
+
+  lldb_private::ConstString GetSourceFileBasename() override {
+    return lldb_private::ConstString("repl.mojo");
+  }
+
+  lldb::LanguageType GetLanguage() override { return eLanguageTypeMojo; }
+
+  //===--------------------------------------------------------------------===//
+  // Source Code Handling
+  //===--------------------------------------------------------------------===//
+
+  /// Return a string of characters which trigger auto-indentation.
+  const char *GetAutoIndentCharacters() override { return ""; }
+
+  /// Return if the given source string is a complete expression for the repl.
+  bool SourceIsComplete(const std::string &source) override;
+
+  /// Return the desired indentation for indenting the given source.
+  lldb::offset_t GetDesiredIndentation(const lldb_private::StringList &lines,
+                                       int cursorPosition,
+                                       int tabSize) override;
+
+  /// Process a code completion request on the given source.
+  void CompleteCode(const std::string &current_code,
+                    lldb_private::CompletionRequest &request) override;
+
+  //===--------------------------------------------------------------------===//
+  // Variable Printing
+  //===--------------------------------------------------------------------===//
+
+  /// Print the value of the given value object to the given output stream. An
+  /// expression variable may optionally be provided.
+  bool
+  PrintOneVariable(lldb_private::Debugger &debugger, lldb::StreamFileSP &output,
+                   lldb::ValueObjectSP &valobj,
+                   lldb_private::ExpressionVariable *var = nullptr) override;
+};
+} // namespace M::KGEN::Mojo
+
+#endif // KGEN_LIB_MOJOLLDB_REPL_MOJOREPL_H
