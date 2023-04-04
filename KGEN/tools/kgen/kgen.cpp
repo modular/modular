@@ -186,7 +186,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   TimingScope timing = timingManager->getRootScope();
 
   mlir::PassManager pm(ctx);
-  applyPassManagerCLOptions(pm);
+  if (failed(applyPassManagerCLOptions(pm)))
+    return failure();
   pm.enableTiming(timing);
   if (clOptions.enableMLIRCrashReproducer.getValue()) {
     ctx->disableMultithreading();
