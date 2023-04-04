@@ -95,6 +95,20 @@ struct HostInfoWrapper {
   }
 };
 
+struct HostStaticInfoWrapper {
+  static std::string wrapKey(const std::string &keyToBeWrapped) {
+    std::string features;
+    auto machineInfoOr = M::getHostMachineInfo();
+    if (machineInfoOr.isError())
+      return "";
+    HostMachineInfo machineInfo = machineInfoOr.takeValue();
+    std::string hostInfo;
+    llvm::raw_string_ostream os(hostInfo);
+    machineInfo.printStaticInfo(os);
+    return keyToBeWrapped + hostInfo;
+  }
+};
+
 /// Wrap a given key generator with one or more wrappers. Wrappers need to
 /// implement a static function wrapKey which takes a string and returns a
 /// string back. Wrapping works like this.
@@ -134,6 +148,12 @@ public:
 /// consistency.
 template <typename TyKey>
 using KeyWithHostInfo = WrappedKey<TyKey, HostInfoWrapper>;
+
+/// This key is similar to KeyWithHostInfo but does not contain information
+/// about number of cores or thread affinities.
+template <typename TyKey>
+using KeyWithStaticHostInfo = WrappedKey<TyKey, HostStaticInfoWrapper>;
+
 /// Provide a key that doesn't do any hashing - we only want to read things from
 /// keys provided to this.
 using ReadOnlyKey = TypeKey<llvm::StringRef>;
