@@ -148,6 +148,10 @@ struct HostMachineInfo {
   void print(llvm::raw_ostream &os) const;
   void print(llvm::json::OStream &json) const;
   void print(HostProperty property, llvm::raw_ostream &os) const;
+
+  /// Print information excluding the ones that are likely to change with
+  /// threading configuration, such as number of cores and affinities.
+  void printStaticInfo(llvm::raw_ostream &os) const;
 };
 
 /// Get information about the host machine.
