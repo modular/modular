@@ -14,7 +14,7 @@ from IO import print
 from List import Dim, DimList
 from LLCL import Runtime, OutputChainPtr
 from Math import add, div, erf, exp, mul, rsqrt, sqrt, sub, tanh, fma
-from Pointer import Pointer, DTypePointer, product
+from Pointer import Pointer, DTypePointer
 from Range import range
 from SIMD import SIMD
 from TargetInfo import simd_width, dtype_simd_width
