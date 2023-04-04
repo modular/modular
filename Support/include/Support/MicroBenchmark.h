@@ -161,7 +161,8 @@ struct MicroBenchmark {
     /// The maximum number of iterations to run for each benchmark. We assume
     /// that the function will reach the minimum runtime of the benchmark with
     /// 1,000,000,000 iterations.
-    uint64_t maxBenchmarkIterations = 1'000'000'000;
+    static constexpr uint64_t kDefaultMaxBenchmarkIterations = 1'000'000'000;
+    uint64_t maxBenchmarkIterations = kDefaultMaxBenchmarkIterations;
     /// The maximum runtime of a benchmarking is measured in seconds. The
     /// maximum runtime is set to 1m.
     std::chrono::milliseconds maxRuntime = std::chrono::seconds(60);
