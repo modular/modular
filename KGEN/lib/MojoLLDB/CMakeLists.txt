@@ -7,7 +7,9 @@
 add_modular_library(MojoLLDB SHARED
   Plugin.cpp
 
+  ExpressionParser/MojoExpressionVariable.cpp
   REPL/MojoREPL.cpp
+  TypeSystem/MojoTypeSystem.cpp
 
   LINK_COMPONENTS
   AllTargetsAsmParsers
@@ -16,7 +18,12 @@ add_modular_library(MojoLLDB SHARED
   AllTargetsInfos
 
   LINK_LIBS
+  KGENCompiler
+  KGENEmitObject
   LLCLRuntimeGlobals
+  ParseLit
+
+  MLIRBuiltinToLLVMIRTranslation
 
   liblldb
 )

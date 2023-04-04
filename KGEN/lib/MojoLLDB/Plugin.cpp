@@ -11,6 +11,7 @@
 
 #include "REPL/MojoREPL.h"
 #include "Support/SymbolExport.h"
+#include "TypeSystem/MojoTypeSystem.h"
 #include "llvm/Support/TargetSelect.h"
 
 using namespace M;
@@ -28,7 +29,11 @@ MODULAR_EXPORT bool LLDBPluginInitialize() {
 
   // Initialize the various plugin components.
   MojoREPL::Initialize();
+  MojoTypeSystem::Initialize();
   return true;
 }
 
-MODULAR_EXPORT void LLDBPluginTerminate() { MojoREPL::Terminate(); }
+MODULAR_EXPORT void LLDBPluginTerminate() {
+  MojoREPL::Terminate();
+  MojoTypeSystem::Terminate();
+}
