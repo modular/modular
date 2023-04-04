@@ -117,6 +117,10 @@ ErrorOr<TargetInfoAttr> getTargetInfoFor(MLIRContext *ctx,
 ErrorOr<std::unique_ptr<llvm::TargetMachine>>
 createTargetMachine(const CompilationOptions &options, bool isJIT);
 
+/// Run the llvm opt passes over `module` given `targetMachine`.
+LogicalResult runLLVMOptPasses(llvm::Module &module,
+                               llvm::TargetMachine &targetMachine);
+
 //===----------------------------------------------------------------------===//
 // ObjectCompilerLayer
 //===----------------------------------------------------------------------===//

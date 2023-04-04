@@ -68,8 +68,8 @@ ObjectCompiler::ObjectCompiler(
 
 /// Run the default LLVM optimization pipeline based on the select optimization
 /// level.
-static LogicalResult runOptPasses(llvm::Module &module,
-                                  llvm::TargetMachine &targetMachine) {
+LogicalResult KGEN::runLLVMOptPasses(llvm::Module &module,
+                                     llvm::TargetMachine &targetMachine) {
   TimeTraceScope<> traceScope("llvm-optimize", module.getName());
   using namespace llvm;
 
@@ -167,7 +167,7 @@ LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
     outFile->keep();
   }
 
-  if (failed(runOptPasses(module, targetMachine)))
+  if (failed(runLLVMOptPasses(module, targetMachine)))
     return failure();
 
   if (!options.saveTempsPrefix.empty()) {
