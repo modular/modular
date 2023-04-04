@@ -374,7 +374,10 @@ fn callVariadic[p: Int](x: Int):
 
 # CHECK: lit.struct.decl @Tuple<Ts: variadic<!kgen.mlirtype>>
 struct Tuple[*Ts: __mlir_type.`!kgen.mlirtype`]:
-  pass
+    var elements: __mlir_type[`!pop.pack<`, Ts, `>`]
+
+    fn __init__(*args: *Ts) -> Self:
+        return Self { elements: args }
 
 # CHECK-LABEL: lit.func @"pack(__mlir_type.!pop.pack<Ts>)"<Ts: variadic<!kgen.mlirtype>>(%args: !pop.pack<Ts>)
 fn pack[*Ts: __mlir_type.`!kgen.mlirtype`](owned *args: *Ts):
@@ -397,6 +400,10 @@ fn usePacks(x: F32, y: Int):
   var a: Tuple[Int]
   # CHECK: lit.varlet.decl "b", var = true : <@"$decls"::@Tuple<Ts: variadic<!kgen.mlirtype> = [!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$F32"::@F32>, !kgen.declref<@"$Int"::@Int>]>>
   var b: Tuple[Int, F32, Int]
+  # CHECK: lit.varlet.decl "c", var = false : <@"$decls"::@Tuple<Ts: variadic<!kgen.mlirtype> = [!kgen.declref<@"$Int"::@Int>]>>
+  let c = Tuple[Int](1)
+  # CHECK: lit.varlet.decl "d", var = false : <@"$decls"::@Tuple<Ts: variadic<!kgen.mlirtype> = [f64, index]>>
+  let d = Tuple(3.14, 6)
 
   # CHECK: %[[PACK1:.*]] = kgen.param.constant: !pop.pack<[index]> = <<1>>
   # CHECK: kgen.call @"$decls"::@"pack(__mlir_type.!pop.pack<Ts>)"<:variadic<!kgen.mlirtype> [index]>(%[[PACK1]])
