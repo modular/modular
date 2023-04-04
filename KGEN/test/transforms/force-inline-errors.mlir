@@ -4,7 +4,7 @@ kgen.func @ok_to_inline() always_inline {
   kgen.return
 }
 
-// expected-note @below {{to function marked 'always_inline' here}}
+// expected-error @below {{function has recursive call to 'always_inline' function}}
 // expected-note @below {{back to function here}}
 kgen.func @circular.a() always_inline {
   // expected-note @below {{through call here}}
@@ -26,9 +26,7 @@ kgen.func @circular.c() always_inline {
   kgen.return
 }
 
-// expected-error @below {{function has recursive call to 'always_inline' function}}
 kgen.func @top0() {
-  // expected-note @below {{through call here}}
   kgen.call @circular.a() : () -> ()
   kgen.call @ok_to_inline() : () -> ()
   kgen.return

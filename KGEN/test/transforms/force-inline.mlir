@@ -1,10 +1,12 @@
-// RUN: kgen-opt -force-inline -allow-unregistered-dialect -mlir-print-debuginfo -split-input-file %s | FileCheck %s
+// RUN: kgen-opt -force-inline=update-debug-info=true -allow-unregistered-dialect -mlir-print-debuginfo -split-input-file %s | FileCheck %s
 
+// CHECK-NOT: @inline_me.a
 kgen.func @inline_me.a() always_inline {
   "inline.a"() : () -> ()
   kgen.return
 }
 
+// CHECK-NOT: @inline_me.b
 kgen.func @inline_me.b() always_inline {
   "inline.b"() : () -> ()
   kgen.call @inline_me.a() : () -> ()
@@ -65,10 +67,7 @@ kgen.func @top2() -> index {
 
 // -----
 
-// CHECK-LABEL: kgen.func @inline_me.a
 kgen.func @inline_me.a() always_inline {
-  // CHECK-NEXT: inline.a
-  // CHECK-SAME: loc(#[[CALLEE_LOC:.*]])
   "inline.a"() : () -> ()
   kgen.return
 }
@@ -81,7 +80,7 @@ kgen.func @top0() {
   kgen.return
 }
 
-// CHECK: #[[INLINED_LOC]] = loc(callsite(#[[CALLEE_LOC]] at #{{.*}}))
+// CHECK: #[[INLINED_LOC]] = loc(callsite(#{{.*}} at #{{.*}}))
 
 // -----
 
@@ -154,4 +153,22 @@ kgen.func @call_it() -> !pop.coroutine<() -> (index)> {
   %coroHdl = lit.async.call[(index) async -> index: @async_fn](%idx2)
   // CHECK: kgen.return %0
   kgen.return %coroHdl : !pop.coroutine<() -> (index)>
+}
+
+// -----
+
+kgen.func @loop() always_inline {
+  hlcf.loop {
+    "inline.me"() : () -> ()
+    hlcf.break
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @top
+kgen.func @top() {
+  // CHECK-NEXT: hlcf.loop
+  // CHECK-NEXT: inline.me
+  kgen.call @loop() : () -> ()
+  kgen.return
 }

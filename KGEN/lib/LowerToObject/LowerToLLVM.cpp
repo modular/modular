@@ -70,7 +70,7 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module,
   // We only need to run the post-elaboration passes if we are JITing. In
   // non-JIT mode, we know the passes have already been run.
   if (isJIT)
-    populatePostElaborationPasses(mgr);
+    populatePostElaborationPasses(mgr, runtime, options);
 
   // If we aren't generating debug information, make sure it's been stripped.
   if (options.debugLevel == CompilationOptions::kNoDebug)

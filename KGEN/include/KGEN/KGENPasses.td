@@ -370,6 +370,11 @@ def ForceInline : Pass<"force-inline", "mlir::ModuleOp"> {
     appropriate for functions marked 'always_inline(nodebug)'. This pass must
     run on concrete KGEN IR.
   }];
+
+  let options = [
+    Option<"updateDebugInfo", "update-debug-info", "bool", "true",
+           "If true, debug info of inlined functions are updated accordingly.">
+  ];
 }
 
 //===----------------------------------------------------------------------===//
