@@ -172,3 +172,26 @@ kgen.func @top() {
   kgen.call @loop() : () -> ()
   kgen.return
 }
+
+// -----
+
+kgen.func @unreachable_and_early_ret() always_inline {
+  %true = index.bool.constant true
+  hlcf.if %true {
+    kgen.return
+  } else {
+    hlcf.yield
+  }
+  kgen.unreachable
+}
+
+// CHECK-LABEL: kgen.func @call_it
+kgen.func @call_it() {
+  // CHECK-NEXT: hlcf.loop
+      // CHECK: hlcf.break
+    // CHECK: kgen.unreachable
+  // CHECK-NEXT: }
+  // CHECK-NEXT: kgen.return
+  kgen.call @unreachable_and_early_ret() : () -> ()
+  kgen.return
+}

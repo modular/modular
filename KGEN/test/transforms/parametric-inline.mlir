@@ -998,3 +998,27 @@ kgen.generator @entry() {
   kgen.call @inline_me() : () -> ()
   kgen.return
 }
+
+// -----
+
+kgen.generator @unreachable_and_early_ret() always_inline {
+  %true = index.bool.constant true
+  hlcf.if %true {
+    kgen.return
+  } else {
+    hlcf.yield
+  }
+  kgen.unreachable
+}
+
+// CHECK-LABEL: kgen.generator @call_it
+kgen.generator @call_it() {
+  // CHECK-NEXT: hlcf.loop
+    // CHECK: hlcf.if
+      // CHECK-NEXT: hlcf.break
+    // CHECK: kgen.unreachable
+  // CHECK-NEXT: }
+  // CHECK-NEXT: kgen.return
+  kgen.call @unreachable_and_early_ret() : () -> ()
+  kgen.return
+}
