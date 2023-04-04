@@ -33,9 +33,9 @@ fn slice_as_view[
     var new_data = tensor.data
 
     for i in range(rank):
-        var start = Int.from_integral[index_type](starts[i].value)
-        var stop = Int.from_integral[index_type](ends[i].value)
-        let step = Int.from_integral[index_type](steps[i].value)
+        var start = starts[i].to_int()
+        var stop = ends[i].to_int()
+        let step = steps[i].to_int()
 
         if start < 0:
             start = start + tensor.dim(i)

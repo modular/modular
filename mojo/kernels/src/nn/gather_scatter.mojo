@@ -235,20 +235,11 @@ fn gather[
         for i in range(start_offset, end_offset):
             input.prefetch[
                 PrefetchOptions().for_read().high_locality().to_data_cache()
-            ](
-                (
-                    Int.from_integral[indices_type](
-                        indices[i + prefetch_offset].value
-                    )
-                ).value,
-                0,
-            )
+            ](indices[i + prefetch_offset].to_int(), 0)
 
             let output_row_ptr = output.data.offset(i * row_size)
             let input_row_ptr = input.data.offset(
-                (
-                    Int.from_integral[indices_type](indices[i].value) * row_size
-                ).value
+                indices[i].to_int() * row_size
             )
 
             @always_inline
@@ -293,7 +284,7 @@ fn gather[
 
     for i in range(output.dim[0]()):
         for j in range(output.dim[1]()):
-            let idx: Int = Int.from_integral[indices_type](indices[j].value)
+            let idx: Int = indices[j].to_int()
             output[StaticIntTuple[output_rank.__as_mlir_index()](i, j)] = input[
                 i, idx
             ]
