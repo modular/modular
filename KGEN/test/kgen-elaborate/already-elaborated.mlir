@@ -1,0 +1,11 @@
+// RUN: kgen-opt %s -elaborate-generators="test-diagnostics=true" -verify-diagnostics
+
+kgen.generator @foo() {
+  kgen.call @bar() : () -> ()
+  kgen.return
+}
+
+// expected-remark @below {{Generator has already been specialized}}
+kgen.generator @bar() {
+  kgen.return
+}

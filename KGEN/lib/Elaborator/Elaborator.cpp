@@ -975,12 +975,12 @@ public:
       LLCL::Runtime &runtime, LLCL::AsyncSideEffectMap &map,
       LLCL::RCRef<Cache::BlobCache<Cache::TransformCacheKey>> transformCache,
       LLCL::RCRef<Cache::BlobCache<Cache::RegionCacheKey>> regionCache,
-      bool enableSearch = false)
+      bool enableSearch = false, bool testDiagnostics = false)
       : Elaborator(analysis, paramCache, target, runtime, map,
                    transformCache.copy(), regionCache.copy(), enableSearch),
         root(analysis.getTopLevelOp<ModuleOp>(), IREvaluator(*this), alloc,
              logger),
-        evalSemaphore(1) {}
+        evalSemaphore(1), testDiagnostics(testDiagnostics) {}
 
   ErrorTreeOr<FuncOp>
   getConcreteFunction(Location loc, SymbolRefAttr symbolRef,
@@ -1109,6 +1109,10 @@ private:
   // TODO (#7826): Make this a NamedSemaphore so it's unique across processes
   //               too.
   Semaphore evalSemaphore;
+
+  /// If this is true, emit diagnostics for certain conditions that are
+  /// interesting to test for.
+  bool testDiagnostics;
 };
 } // namespace
 
@@ -1889,16 +1893,39 @@ ElaboratorImpl::specializeGenerator(ExpansionTreeNode *genNode) {
     return std::nullopt;
   }
 
-  // If we already have something in the tree then don't re-specialize.
+  // If this generator node is already concrete and has no error, don't
+  // re-concretize.
+  if (!genNode->expansions.empty() && !genNode->error.has_value()) {
+    LLVM_DEBUG(logger << "Result: Generator has already been specialized (node "
+                         "is known to be concrete)\n");
+    if (testDiagnostics)
+      generator.emitRemark("Generator has already been specialized");
+    return std::nullopt;
+  }
+
+  // Check if we have a FuncOp parented under the top level module.
   StringAttr mangledName = mangleParameterValues(generator, inputParamValues);
   if (Operation *op = lookup(mangledName)) {
-    if (ExpansionTreeNode *found =
-            topLevelTrees.lookup({op, genNode->inputParams})) {
-      LLVM_DEBUG(logger << "Result: Generator has already been specialized\n");
+    // See if we can find this node (func + input params) in the root.
+    // The top level thing will be a generator, so check its expansions for a
+    // node that has this op and these input parameters.
+    auto found = llvm::find_if(root.expansions, [&](ExpansionTreeNode *e) {
+      return e->op == op && e->inputParams == genNode->inputParams;
+    });
+    // If we found the node in the root's expansion list, then we should not
+    // re-specialize.
+    if (found != root.expansions.end()) {
+      // Great, already specialized this node - we're all done.
+      LLVM_DEBUG(logger << "Result: Generator has already been specialized "
+                           "(found concrete func under the root)\n");
 
-      // If we have the node, then take it as a child.
-      if (found->parent != genNode)
-        genNode->takeExpansion(found);
+      // If we have the node and its parentage is incorrect, then take it as a
+      // child.
+      if ((*found)->parent != genNode)
+        genNode->takeExpansion(*found);
+
+      if (testDiagnostics)
+        generator.emitRemark("Generator has already been specialized");
       return std::nullopt;
     }
   }
@@ -2122,7 +2149,7 @@ LogicalResult M::elaborateGenerators(mlir::SymbolTableAnalysis &analysis,
                                      LLCL::Runtime &runtime,
                                      TargetInfoAttr target,
                                      ArrayRef<GeneratorOp> primaryGenerators,
-                                     bool enableSearch) {
+                                     bool enableSearch, bool testDiagnostics) {
   TimeTraceScope<> traceScope("elaborate-generators");
   ModuleOp theModule = analysis.getTopLevelOp<ModuleOp>();
 
@@ -2145,9 +2172,9 @@ LogicalResult M::elaborateGenerators(mlir::SymbolTableAnalysis &analysis,
           regionCacheBackendOr.takeValue());
 
   // Now, construct and run the elaborator.
-  ElaboratorImpl impl(analysis, paramCache, target,
-                      transformCache->getRuntime(), asyncMap,
-                      transformCache.copy(), regionCache.copy(), enableSearch);
+  ElaboratorImpl impl(
+      analysis, paramCache, target, transformCache->getRuntime(), asyncMap,
+      transformCache.copy(), regionCache.copy(), enableSearch, testDiagnostics);
   return impl.run(primaryGenerators);
 }
 
@@ -2244,7 +2271,8 @@ public:
     }
 
     if (failed(elaborateGenerators(analysis, paramCache, *rt, target,
-                                   primaryGenerators, shouldDoSearch)))
+                                   primaryGenerators, shouldDoSearch,
+                                   testDiagnostics)))
       return signalPassFailure();
   }
 
