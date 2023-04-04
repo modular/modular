@@ -351,6 +351,16 @@ fn variadics(*a: Int):
   let elt0 = vaArgs[0]
   let elt1 = vaArgs[1]
 
+fn parameterizedVariadic[T: __mlir_type.`!kgen.mlirtype`](*args: T): pass
+
+struct ParameterizedStruct[T: __mlir_type.`!kgen.mlirtype`]:
+    fn __init__(*args: T) -> Self:
+        return Self {}
+
+struct VarArgsParameterizedStruct[*Is: Int]:
+    fn __init__() -> Self:
+        return Self {}
+
 # CHECK-LABEL: lit.func @"callVariadic
 fn callVariadic[p: Int](x: Int):
   # CHECK: %0 = kgen.param.constant: variadic<@"$Int"::@Int> = <[]>
@@ -371,6 +381,15 @@ fn callVariadic[p: Int](x: Int):
   alias EmptyVariadic = variadics()
   # CHECK: @"variadics($Int::Int*)", [p, {{.*}}scalar<index> = 1{{.*}}]
   alias NonEmptyVariadic = variadics(p, 1)
+
+  # CHECK: @"parameterizedVariadic(__mlir_type.!kgen.paramref<T>*)"<:type index>
+  parameterizedVariadic(1, 2)
+  # CHECK: kgen.call {{.*}}@ParameterizedStruct::@"__init__(${{.*}}::ParameterizedStruct[T]=&,__mlir_type.!kgen.paramref<T>*)"<:type index>
+  _ = ParameterizedStruct(3)
+  # CHECK: kgen.call {{.*}}@VarArgsParameterizedStruct::@"__init__(${{.*}}::VarArgsParameterizedStruct[Is]=&)"<:variadic<@"$Int"::@Int> [#lit.struct<{value: scalar<index> = 4}>, #lit.struct<{value: scalar<index> = 5}>]>
+  _ = VarArgsParameterizedStruct[4, 5]()
+  # CHECK: kgen.call {{.*}}@VarArgsParameterizedStruct::@"__init__(${{.*}}::VarArgsParameterizedStruct[Is]=&)"<:variadic<@"$Int"::@Int> []>
+  _ = VarArgsParameterizedStruct()
 
 # CHECK: lit.struct.decl @Tuple<Ts: variadic<!kgen.mlirtype>>
 struct Tuple[*Ts: __mlir_type.`!kgen.mlirtype`]:

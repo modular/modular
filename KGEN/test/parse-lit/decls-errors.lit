@@ -152,6 +152,13 @@ fn noDefaultVariadics(*a: Int = 42): pass
 fn exampleVariadic(a: F32, *b: Int): pass
 # expected-note @+1 {{function declared here}}
 fn exampleByRefVariadic(a: F32, *b&: Int): pass
+# expected-note @+1 {{function declared here}}
+fn parameterizedVariadic[T: __mlir_type.`!kgen.mlirtype`](*args: T): pass
+
+struct ParameterizedStruct[T: __mlir_type.`!kgen.mlirtype`]:
+    # expected-note @+1 {{function declared here}}
+    def __init__(*args: T) -> Self:
+        return Self {}
 
 fn badCalls(arg: Int):
   # expected-error @+1 {{argument #1 cannot be converted from '__mlir_type.f64' to '$Int::Int'}}
@@ -167,6 +174,16 @@ fn badCalls(arg: Int):
   exampleByRefVariadic(1.0, x, y)
   # expected-error @+1 {{argument #2 must be mutable in order to pass as a by-ref argument}}
   exampleByRefVariadic(1.0, x, 1)
+
+  # FIXME(#11803): These diagnostics could be improved.
+  # The user hasn't provided any arguments that could be used to infer `T`.
+  # expected-error @+1 {{callee expects 1 input parameter but 0 were provided}}
+  parameterizedVariadic()
+  # expected-error @+1 {{callee expects 1 input parameter but 0 were provided}}
+  let _ = ParameterizedStruct()
+  # We can't infer `T` with two arguments of different types.
+  # expected-error @+1 {{callee expects 1 input parameter but 0 were provided}}
+  parameterizedVariadic(1, 2.0)
 
 # expected-error @+1 {{unexpected token in expression}}
 fn invalidStarExpression(*x: *): pass
