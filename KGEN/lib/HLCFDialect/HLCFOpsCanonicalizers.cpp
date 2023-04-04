@@ -49,6 +49,70 @@ static void replaceOpWithRegion(PatternRewriter &rewriter, Operation *op,
 }
 
 namespace {
+/// If both branches of IfOp have just a YieldOp and yield the same value,
+/// replace the IfOp result with that value directly.
+///
+///   Before:
+///      %a, %b = hlcf.if %cond {
+///        hlcf.yield %c, %d
+///      } else {
+///        hlcf.yield %c, %d
+///      }
+///      return %a, %b
+///
+///   After:
+///      return %c, %d
+///
+/// Partial rewrites are supported too, e.g.:
+///   Before:
+///      %a, %b = hlcf.if %cond {
+///        hlcf.yield %x, %y
+///      } else {
+///        hlcf.yield %x, %z
+///      }
+///      return %a, %b
+///
+///   After:
+///      %a, %b = hlcf.if %cond {
+///        hlcf.yield %x, %y
+///      } else {
+///        hlcf.yield %x, %z
+///      }
+///      return %x, %b
+struct HoistYieldResults : public OpRewritePattern<IfOp> {
+  using OpRewritePattern<IfOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(IfOp op,
+                                PatternRewriter &rewriter) const override {
+    if (!isa<YieldOp>(op.getThenTerminator()) ||
+        !isa<YieldOp>(op.getElseTerminator()))
+      return failure();
+    if (&op.getThenBlock().getOperations().front() != op.getThenTerminator())
+      return failure();
+    if (&op.getElseBlock().getOperations().front() != op.getElseTerminator())
+      return failure();
+
+    bool changed = false;
+    bool allChanged = true;
+    for (auto [res, opndThen, opndElse] :
+         llvm::zip(op.getResults(), op.getThenTerminator()->getOperands(),
+                   op.getElseTerminator()->getOperands())) {
+      if (opndThen == opndElse) {
+        rewriter.replaceAllUsesWith(res, opndThen);
+        changed = true;
+      } else {
+        allChanged = false;
+      }
+    }
+    if (allChanged) {
+      rewriter.eraseOp(op);
+      changed = true;
+    }
+
+    return changed ? success() : failure();
+  }
+};
+
 /// If the IfOp condition is known at compile time, replace the IfOp with the
 /// contents of the corresponding branch. If the block we're inserting doesn't
 /// end with YieldOp, operations following the original IfOp will be discarded.
@@ -246,5 +310,5 @@ struct HoistConditionalReturn : public OpRewritePattern<IfOp> {
 void IfOp::getCanonicalizationPatterns(RewritePatternSet &results,
                                        MLIRContext *context) {
   results.add<RemoveStaticCondition, HoistUnconditionalReturn,
-              HoistConditionalReturn>(context);
+              HoistConditionalReturn, HoistYieldResults>(context);
 }
