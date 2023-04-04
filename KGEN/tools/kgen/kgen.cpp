@@ -52,6 +52,9 @@ public:
   cl::list<std::string> inputFiles{llvm::cl::Positional,
                                    cl::desc("<input files>")};
 
+  cl::opt<bool> emitTextualAsm{
+      "S", cl::desc("Print MLIR output files in textual form")};
+
   cl::opt<bool> ignoreFailures{
       "ignore-failure",
       cl::desc("Ignore execution failures. Any messages are still printed, but "
@@ -99,12 +102,23 @@ void CLOptions::addInputFilesToSourceMgrOrExit(llvm::SourceMgr &mgr) {
 static LogicalResult emitModuleIR(ModuleOp theModule, const CLOptions &opts) {
   TimeTraceScope<> traceScope("emit-module",
                               theModule.getSymName().value_or(""));
-  auto outFile = opts.getOutputFile(/*hasBinaryOutput=*/true, ".mlirbc");
-  if (!outFile)
-    return mlir::failure();
+  if (opts.emitTextualAsm) {
+    auto outFile = opts.getOutputFile(/*hasBinaryOutput=*/false, ".mlir");
+    if (!outFile)
+      return failure();
 
-  mlir::writeBytecodeToFile(theModule, outFile->os());
-  outFile->keep();
+    theModule.print(outFile->os());
+    // `print` does not insert a newline, so add one here.
+    outFile->os() << "\n";
+    outFile->keep();
+  } else {
+    auto outFile = opts.getOutputFile(/*hasBinaryOutput=*/true, ".mlirbc");
+    if (!outFile)
+      return failure();
+
+    mlir::writeBytecodeToFile(theModule, outFile->os());
+    outFile->keep();
+  }
 
   // Try to save the textual IR as an intermediate file.
   if (auto irFile = opts.getIntermediateFile(opts.outputFilename, ".mlir")) {
