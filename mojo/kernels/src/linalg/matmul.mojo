@@ -24,7 +24,7 @@ from Functional import tile, unswitch, unroll, unroll2
 from Index import Index, StaticIntTuple
 from Int import Int
 from List import Dim, DimList, VariadicList, create_dim_list
-from Math import min, fma, max
+from Math import min, fma, max, div_ceil
 from Matrix import Matrix
 from Memory import stack_allocation
 from Pointer import DTypePointer
@@ -1266,9 +1266,7 @@ fn calculate_tile_n_k[
     # Calculate number of InnerSize to fit in tile_n dimension,
     #  guranteed to be at least 2.
     let max_tile_n_in_inner_size = pack_cache_size // tile_k // pack_inner_size
-    let full_data_tile_n_in_inner_size = (
-        n + pack_inner_size - 1
-    ) // pack_inner_size
+    let full_data_tile_n_in_inner_size = div_ceil(n, pack_inner_size)
     let tile_n_in_inner_size = min(
         max_tile_n_in_inner_size, full_data_tile_n_in_inner_size
     )
@@ -1707,12 +1705,12 @@ struct BTileGenerator[
         tile_dim_nk: StaticIntTuple[2],
         valid_data_dim_nk: StaticIntTuple[2],
     ) -> NDBuffer[3, config.packed_shape, type]:
-        let tile_shape = create_dim_list(
+        let tile_shape_nopack = create_dim_list(
             tile_dim_nk[0] // inner_size, tile_dim_nk[1], inner_size
         )
         let packed_b = NDBuffer[3, config.packed_shape, type](
             self.b_tile_stack_ptr,
-            tile_shape,
+            tile_shape_nopack,
             type,
         )
 
@@ -1757,6 +1755,9 @@ struct BTileGenerator[
             # When packing is done online, tile_dim_nk can vary in each call to
             # get_tile (if handling a residual K tile), but packing assumes that
             # tile_k is constant.
+            let tile_shape_pack = create_dim_list(
+                self.tile_n_k[0] // inner_size, self.tile_n_k[1], inner_size
+            )
             let tile_k_idx = global_offset.K // self.tile_n_k[1]
             let b_flat = self.b.flatten()
             let n_padded = self.b.dim[1]()
@@ -1772,7 +1773,7 @@ struct BTileGenerator[
                     tile_k_idx * self.tile_n_k[1] * n_padded
                     + global_offset.N * self.tile_n_k[1]
                 ),
-                tile_shape,
+                tile_shape_pack,
                 type,
             )
             return b_tile_view
