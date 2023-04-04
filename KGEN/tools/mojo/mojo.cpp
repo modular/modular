@@ -258,8 +258,7 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return clOptions.reportError(transformCacheBackend.getError());
 
   auto &compileLayer = engine->addLayer<KGENCompilerLayer>(
-      pm, *runtime, target, build,
-      ElaborateGeneratorsOptions{clOptions.enableSearch}, objLayer,
+      pm, *runtime, target, build, clOptions.getCompilationOptions(), objLayer,
       std::move(*transformCacheBackend), std::move(*regionCacheBackend));
 
   // And add the module into the layer. This will actually compile it down to

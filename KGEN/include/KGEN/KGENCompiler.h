@@ -8,6 +8,7 @@
 #define KGEN_COMPILER_H
 
 #include "Cache/CacheDialect/CachedTransform.h"
+#include "KGEN/CompilationOptions.h"
 #include "KGEN/ExecutionEngine.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENPasses.h"
@@ -30,13 +31,16 @@ void populateGenerateLibraryFilePasses(mlir::PassManager &pm,
 /// means it runs pre-elaboration, elaboration, and then the post-elaboration
 /// cleanup passes. Its purpose is to populate the passes used to produce the
 /// format that we will end up using to produce an object file.
-void populateElaborateModulePasses(
-    mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
-    BuildInfoAttr build, const ElaborateGeneratorsOptions &elaborateOptions);
+void populateElaborateModulePasses(mlir::PassManager &pm,
+                                   LLCL::Runtime &runtime,
+                                   TargetInfoAttr target, BuildInfoAttr build,
+                                   const CompilationOptions &options);
 
 /// This populates the post-elaboration optimization and simplification passes.
 /// These passes are intended to run immediately after the elaborator.
-void populatePostElaborationPasses(mlir::PassManager &pm);
+void populatePostElaborationPasses(mlir::PassManager &pm,
+                                   LLCL::Runtime &runtime,
+                                   const CompilationOptions &options);
 
 //===----------------------------------------------------------------------===//
 // KGENCompilerLayer
@@ -56,7 +60,7 @@ public:
 
   KGENCompilerLayer(mlir::PassManager &pm, LLCL::Runtime &runtime,
                     TargetInfoAttr target, BuildInfoAttr build,
-                    ElaborateGeneratorsOptions elaborateOptions,
+                    const CompilationOptions &options,
                     ObjectCompilerLayer &base,
                     LLCL::RCRef<Cache::BlobCacheBackend> transformCacheBackend,
                     LLCL::RCRef<Cache::BlobCacheBackend> regionCacheBackend,
@@ -89,7 +93,7 @@ private:
   LLCL::Runtime &runtime;
   TargetInfoAttr target;
   BuildInfoAttr build;
-  ElaborateGeneratorsOptions elaborateOptions;
+  CompilationOptions options;
   ObjectCompilerLayer &baseLayer;
 
   LLCL::RCRef<Cache::RegionCache> regionCache;

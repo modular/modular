@@ -39,14 +39,15 @@ public:
   };
 
   CompilationOptions(
-      unsigned optimizationLevel = 3, DebugInfoLevel debugLevel = kNoDebug,
+      bool enableSearch = true, unsigned optimizationLevel = 3,
+      DebugInfoLevel debugLevel = kNoDebug,
       std::optional<DebugAtLevel> debugAtLevel = std::nullopt,
       bool enableXRayInstrumentation = false,
       std::string targetTriple = llvm::sys::getDefaultTargetTriple(),
       std::string targetCpu = llvm::sys::getHostCPUName().str(),
       std::string targetFeatures = getHostCPUFeatures())
-      : optimizationLevel(optimizationLevel), debugLevel(debugLevel),
-        debugAtLevel(debugAtLevel),
+      : enableSearch(enableSearch), optimizationLevel(optimizationLevel),
+        debugLevel(debugLevel), debugAtLevel(debugAtLevel),
         enableXRayInstrumentation(enableXRayInstrumentation),
         targetTriple(std::move(targetTriple)), targetCpu(std::move(targetCpu)),
         targetFeatures(std::move(targetFeatures)) {}
@@ -108,7 +109,8 @@ public:
   /// Save temporary files to a file with the given prefix.
   void setSaveTemps(std::string prefix) { saveTempsPrefix = prefix; }
 
-  unsigned optimizationLevel : 2;
+  bool enableSearch = true;
+  unsigned optimizationLevel = 3;
   DebugInfoLevel debugLevel = kNoDebug;
   std::optional<DebugAtLevel> debugAtLevel;
   bool enableXRayInstrumentation = false;

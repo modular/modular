@@ -62,9 +62,11 @@ void KGEN::populateGenerateLibraryFilePasses(mlir::PassManager &pm,
   pm.addNestedPass<GeneratorOp>(createConstraintReduction());
 }
 
-void KGEN::populateElaborateModulePasses(
-    mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
-    BuildInfoAttr build, const ElaborateGeneratorsOptions &elaborateOptions) {
+void KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
+                                         LLCL::Runtime &runtime,
+                                         TargetInfoAttr target,
+                                         BuildInfoAttr build,
+                                         const CompilationOptions &options) {
   populateGenerateLibraryFilePasses(pm, runtime);
 
   // Only outline closures just before elaboration - they aren't really
@@ -74,14 +76,20 @@ void KGEN::populateElaborateModulePasses(
 
   // After elaboration, we have no use for the parameter verifier anymore.
   pm.addPass(
-      createElaborateGenerators(runtime, target, build, elaborateOptions));
 
-  populatePostElaborationPasses(pm);
+      createElaborateGenerators(runtime, target, build,
+                                {options.enableSearch}));
+
+  populatePostElaborationPasses(pm, runtime, options);
 }
 
-void KGEN::populatePostElaborationPasses(mlir::PassManager &pm) {
+void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
+                                         LLCL::Runtime &runtime,
+                                         const CompilationOptions &options) {
   // Run the inliner, DCE, and cleanup the compiler globals.
-  pm.addPass(createForceInline());
+  pm.addPass(createForceInline(
+      runtime,
+      {options.debugLevel != CompilationOptions::DebugInfoLevel::kNoDebug}));
   pm.addPass(createEliminateDeadSymbols());
   pm.addNestedPass<FuncOp>(createSimplifyCF());
   pm.addNestedPass<FuncOp>(createCleanupCompilerGlobals());
@@ -167,7 +175,7 @@ char KGENCompilerLayer::ID;
 
 KGENCompilerLayer::KGENCompilerLayer(
     mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
-    BuildInfoAttr build, ElaborateGeneratorsOptions elaborateOptions,
+    BuildInfoAttr build, const CompilationOptions &options,
     ObjectCompilerLayer &base,
     LLCL::RCRef<Cache::BlobCacheBackend> transformCacheBackend,
     LLCL::RCRef<Cache::BlobCacheBackend> regionCacheBackend,
@@ -175,8 +183,8 @@ KGENCompilerLayer::KGENCompilerLayer(
     MaterializationLayer::AddToSearchOrderFn add)
     : llvm::RTTIExtends<KGENCompilerLayer, MaterializationLayer>(
           sess, dl, std::move(add)),
-      pm(pm), runtime(runtime), target(target), build(build),
-      elaborateOptions(std::move(elaborateOptions)), baseLayer(base) {
+      pm(pm), runtime(runtime), target(target), build(build), options(options),
+      baseLayer(base) {
   // Construct the caches.
   transformCache = LLCL::RCRef<Cache::TransformCache>::create(
       std::move(transformCacheBackend));
@@ -197,7 +205,7 @@ ErrorOrSuccess KGENCompilerLayer::add(StringRef libName, ModuleOp theModule) {
   // Set the target now, so it's included in the cache key.
   setTargetInfo(theModule, target);
   // Populate the passes.
-  populateElaborateModulePasses(pm, runtime, target, build, elaborateOptions);
+  populateElaborateModulePasses(pm, runtime, target, build, options);
 
   // TODO(11051): This is how it *should* be done, but because of the stack
   //   overflow issues, we have to do this manually for now.

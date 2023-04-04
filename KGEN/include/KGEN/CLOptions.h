@@ -159,7 +159,7 @@ public:
     std::optional<CompilationOptions::DebugAtLevel> debugAt;
     if (debugAtLevel.getNumOccurrences())
       debugAt = debugAtLevel;
-    return CompilationOptions(optLevel, debugInfoLevel, debugAt,
+    return CompilationOptions(enableSearch, optLevel, debugInfoLevel, debugAt,
                               enableXRayInstrumentation, targetTriple,
                               targetCpu, targetFeatures);
   }

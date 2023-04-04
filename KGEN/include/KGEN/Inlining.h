@@ -19,6 +19,7 @@ class GeneratorOp;
 /// into the call's context. This will mangle input parameters as necessary to
 /// ensure that there are no conflicts.
 void inlineGeneratorCall(CallOp call, GeneratorOp callee,
+                         AlwaysInlineLevel level,
                          ParameterUseDefGraph &topLevelGraph,
                          const ParameterUseDefGraph &calleeParams,
                          const llvm::SetVector<StringAttr> &calleeDecls,
