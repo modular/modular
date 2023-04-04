@@ -195,6 +195,10 @@ fn packArgOverload():
 fn packArgOverload(x: Int):
   pass
 
+struct ExamplePack[*Ts: __mlir_type.`!kgen.mlirtype`]:
+    fn __init__(*args: *Ts) -> Self: # expected-note {{function declared here}}
+        return Self {}
+
 fn badPackCalls():
   # expected-error @+1 {{invalid call to 'examplePack': callee expects 1 argument, but 2 were specified}}
   examplePack[Int](1, 2)
@@ -205,6 +209,10 @@ fn badPackCalls():
   # expected-warning @below {{could not infer parameter type for this value, because it is not concrete}}
   # expected-error @below {{invalid call to 'examplePack': callee expects 1 input parameter but 0 were provided}}
   examplePack(packArgOverload)
+
+  # FIXME: This ought to work, but parameter inference currently fails.
+  # expected-error @below {{invalid call to '__init__': callee expects 1 input parameter but 0 were provided}}
+  ExamplePack()
 
 ##===----------------------------------------------------------------------===##
 # Keyword Arguments
