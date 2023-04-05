@@ -82,7 +82,7 @@ fn test_if(a: Bool, b: Bool, c: Bool) -> Bool:
 
 # CHECK-LABEL: lit.func @"test_if_nested
 fn test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
-    # CHECK-NEXT:   %[[I1:.*]] = kgen.call @"$_CompilerBuiltin"::@Bool::@"__mlir_i1__($_CompilerBuiltin::Bool)"(%a)
+    # CHECK-NEXT:   %[[I1:.*]] = kgen.call @"$Bool"::@Bool::@"__mlir_i1__($Bool::Bool)"(%a)
     # CHECK-NEXT:              hlcf.if %[[I1]]
     if a:
         # CHECK-NEXT: %inside_a = lit.varlet.decl "inside_a", var = true
@@ -112,7 +112,7 @@ fn test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
     var z: Int = Int(4)
     return a
 
-# CHECK-LABEL: lit.func @"param_if{{.*}}<a: i1, b: @"$_CompilerBuiltin"::@Bool>()
+# CHECK-LABEL: lit.func @"param_if{{.*}}<a: i1, b: @"$Bool"::@Bool>()
 fn param_if[a: __mlir_type.i1, b: Bool]():
   # CHECK: kgen.param.if <a> {
   @parameter
@@ -120,7 +120,7 @@ fn param_if[a: __mlir_type.i1, b: Bool]():
     # CHECK: lit.varlet.decl "inside_1", var = true
     var inside_1: Int
   # CHECK: } else {
-  # CHECK:     kgen.param.if <apply{{.*}}@"$_CompilerBuiltin"::@Bool::@"__mlir_i1__{{.*}}b)> {
+  # CHECK:     kgen.param.if <apply{{.*}}@"$Bool"::@Bool::@"__mlir_i1__{{.*}}b)> {
   elif b:
   # CHECK:     lit.varlet.decl "inside_2", var = true
     var inside_2: Int
@@ -392,7 +392,7 @@ def raiseErrorInIf(cond: Bool, err: Error):
 fn raiseErrorInTry(err: Error):
     # CHECK: lit.try {
     try:
-        # CHECK-NEXT: lit.raise {{.*}} : <@"$_CompilerBuiltin"::@Error>
+        # CHECK-NEXT: lit.raise {{.*}} : <@"$Error"::@Error>
         raise err
     except:
         pass

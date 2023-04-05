@@ -1694,8 +1694,9 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
 
   // If the function raises, it implicitly gets a variant result type.
   if (bitEnumContainsAny(effects, FnEffects::Throws)) {
-    if (auto errorType = shared.lookupErrorType(decl.getLoc(), decl)) {
-      resultType = POP::VariantType::get({errorType, resultType});
+    if (ASTDecl *errorType = shared.getBuiltinErrorType(decl.getLoc())) {
+      resultType =
+          POP::VariantType::get({errorType->getSelfType(), resultType});
 
       // FIXME: We cannot return an Error type from a function that also throws.
       // This is because Variant collapses the variant to one case and we can't
@@ -1704,10 +1705,15 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
       if (cast<POP::VariantType>(resultType.mlirType).getNumTypes() == 1) {
         p.emitError(funcOp.getLoc(),
                     "cannot return and raise the same type from a function");
-        resultType =
-            POP::VariantType::get({errorType, shared.getTypeCheckErrorType()});
+        resultType = POP::VariantType::get(
+            {errorType->getSelfType(), shared.getTypeCheckErrorType()});
         decl.hasReferenceError = true;
       }
+    } else {
+      p.emitError(funcOp.getLoc(),
+                  "internal error: could not find builtin 'Error' type");
+      resultType = shared.getTypeCheckErrorType();
+      decl.hasReferenceError = true;
     }
   }
 

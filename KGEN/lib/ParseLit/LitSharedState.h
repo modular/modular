@@ -146,10 +146,6 @@ public:
   /// otherwise emit an error and return null.
   ASTType lookupObjectType(llvm::SMLoc loc, ASTDecl &context);
 
-  /// Lookup the `Error` type in the specified context and return it if found,
-  /// otherwise emit an error and return null.
-  ASTType lookupErrorType(llvm::SMLoc loc, ASTDecl &context);
-
   //===--------------------------------------------------------------------===//
   // Module Resolution
 
@@ -168,11 +164,26 @@ public:
   /// Get the list of files included while processing all modules.
   ArrayRef<std::string> getIncludedFiles() const;
 
-  // Name of the auto-imported compiler builtin module.
-  static constexpr const StringLiteral kCompilerBuiltInStr = "_CompilerBuiltin";
+  //===--------------------------------------------------------------------===//
+  // Builtin Module
 
-  // Get the scope of the auto-imported _CompilerBuiltin module.
-  ASTDecl &getCompilerBuiltInDecl();
+  /// The name of the builtin Bool module.
+  static constexpr StringLiteral kBuiltinBoolModuleName = "Bool";
+  /// The name of the builtin Tuple module.
+  static constexpr StringLiteral kBuiltinTupleModuleName = "Tuple";
+  /// The name of the builtin Error module.
+  static constexpr StringLiteral kBuiltinErrorModuleName = "Error";
+
+  /// Resolve a builtin module type.
+  ASTDecl *resolveBuiltinModuleType(llvm::SMLoc loc, StringRef moduleName,
+                                    StringRef typeName);
+
+  /// Get the builtin BoolLiteral type.
+  ASTDecl *getBuiltinBoolLiteral(llvm::SMLoc loc);
+  /// Get the builtin TupleLiteral type.
+  ASTDecl *getBuiltinTupleLiteral(llvm::SMLoc loc);
+  /// Get the builtin Error type.
+  ASTDecl *getBuiltinErrorType(llvm::SMLoc loc);
 
 private:
   /// The internal state of an imported module.

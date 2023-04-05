@@ -152,7 +152,7 @@ struct WeirdBoolish:
   fn __copy__(self) -> Self: pass;
 
 fn badAnd(a: Bool, b: WeirdBoolish):
-  _ = a and b # expected-error {{cannot find common type between '$_CompilerBuiltin::Bool' and '$expressions-errors::WeirdBoolish'}}
+  _ = a and b # expected-error {{cannot find common type between '$Bool::Bool' and '$expressions-errors::WeirdBoolish'}}
 
 # expected-error @+1 {{'Self' type may only be used inside a type}}
 fn badSelf(a: Self):

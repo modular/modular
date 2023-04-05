@@ -927,10 +927,11 @@ ParseResult LitStmtParser::parseTryStmt(size_t curIndent) {
   if (parseToken(LitToken::colon, "expected ':' after 'except'"))
     return failure();
 
-  auto errorType = shared.lookupErrorType(errValLoc, containingDecl);
-  if (!errorType)
+  ASTDecl *errorTypeDecl = shared.getBuiltinErrorType(errValLoc);
+  if (!errorTypeDecl)
     return failure();
 
+  ASTType errorType = errorTypeDecl->getSelfType();
   if (!errorType.isRegisterPassable(errValLoc, shared)) {
     emitError(errValLoc) << errorType << " is not a @register_passable type";
     return failure();
