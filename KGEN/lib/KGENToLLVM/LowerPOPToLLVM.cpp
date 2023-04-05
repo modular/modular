@@ -978,6 +978,27 @@ struct ConvertPOPPackGet : public ConvertPOPToLLVMPattern<PackGetOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPPackSize
+//===----------------------------------------------------------------------===//
+
+/// Converts a `pop.pack.size` into an LLVM constant representing the number of
+/// elements in the pack's underlying struct.
+struct ConvertPOPPackSize : public ConvertPOPToLLVMPattern<PackSizeOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(PackSizeOp op, PackSizeOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    // Return the number of elements in the pack's underlying storage.
+    auto type = cast<LLVM::LLVMStructType>(adaptor.getOperand().getType());
+    rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(
+        op, rewriter.getIntegerAttr(getTypeConverter()->getIndexType(),
+                                    type.getBody().size()));
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertPOPVariantCreate
 //===----------------------------------------------------------------------===//
 
@@ -1396,6 +1417,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPOr,
       ConvertPOPPackCreate,
       ConvertPOPPackGet,
+      ConvertPOPPackSize,
       ConvertPOPPointerBitcast,
       ConvertPOPPointerToIndex,
       ConvertPOPRem,

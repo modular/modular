@@ -863,20 +863,26 @@ kgen.generator @pack<Ts: variadic<!kgen.mlirtype>, T: type>(
   %arg2: f32,
   %arg3: i8
 ) -> i32 {
+  // CHECK: pop.pack.size %arg0 : <Ts>
+  %0 = pop.pack.size %arg0 : <Ts>
   // CHECK: pop.pack.get %arg0[3] : <Ts>
-  %0 = pop.pack.get %arg0[3] : <Ts>
+  %1 = pop.pack.get %arg0[3] : <Ts>
 
+  // CHECK: pop.pack.size %arg1 : <[i32, T]>
+  %2 = pop.pack.size %arg1 : <[i32, T]>
   // CHECK: pop.pack.get %arg1[0] : <[i32, T]>
-  %1 = pop.pack.get %arg1[0] : <[i32, T]>
+  %3 = pop.pack.get %arg1[0] : <[i32, T]>
   // CHECK: pop.pack.get %arg1[1] : <[i32, T]>
-  %2 = pop.pack.get %arg1[1] : <[i32, T]>
+  %4 = pop.pack.get %arg1[1] : <[i32, T]>
 
-  // CHECK: pop.pack.create(%arg2, %arg2, %arg3) : !pop.pack<[f32, f32, i8]>
-  %3 = pop.pack.create(%arg2, %arg2, %arg3) : !pop.pack<[f32, f32, i8]>
+  // CHECK: %[[PACK:.*]] = pop.pack.create(%arg2, %arg2, %arg3) : !pop.pack<[f32, f32, i8]>
+  %5 = pop.pack.create(%arg2, %arg2, %arg3) : !pop.pack<[f32, f32, i8]>
+  // CHECK: pop.pack.size %[[PACK]] : <[f32, f32, i8]>
+  %6 = pop.pack.size %5 : <[f32, f32, i8]>
   // CHECK: pop.pack.create() : !pop.pack<[]>
-  %4 = pop.pack.create() : !pop.pack<[]>
+  %7 = pop.pack.create() : !pop.pack<[]>
 
-  kgen.return %1 : i32
+  kgen.return %3 : i32
 }
 
 // CHECK-LABEL: @variant_type
