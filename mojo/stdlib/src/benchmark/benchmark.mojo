@@ -82,7 +82,7 @@ struct Benchmark:
         var toc = now()
 
         var prev_iters = self.num_warmup
-        var prev_dur = toc - tic if self.num_warmup > 0 else Int(0)
+        var prev_dur = toc - tic if self.num_warmup > 0 else 0
         var total_iters: Int = 0
         var time_elapsed: Int = 0
 
