@@ -1,4 +1,4 @@
-# Lightning Compile Time Code Evaluation
+# Mojo🔥 Compile Time Code Evaluation
 
 [TOC]
 
