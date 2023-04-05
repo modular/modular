@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from Assert import assert_param_bool_msg, debug_assert
-from Buffer import Buffer, NDBuffer
+from Buffer import Buffer, NDBuffer, prod_dims
 from DType import DType
 from Functional import vectorize, unroll
 from Index import StaticIntTuple
@@ -200,23 +200,6 @@ fn _reduce_3D[
         vectorize[usimd_width, reduce_w_chunked](c)
 
 
-fn _prod_dims[
-    start_dim: Int,
-    end_dim: Int,
-    rank: Int,
-    shape: DimList[rank],
-    type: DType,
-](x: NDBuffer[rank, shape, type]) -> Int:
-    var product: Int = 1
-
-    @always_inline
-    fn _compute_product[idx: Int]():
-        product *= x.dim[idx + start_dim]()
-
-    unroll[end_dim - start_dim, _compute_product]()
-    return product
-
-
 @always_inline
 fn reduce[
     simd_width: Int,
@@ -280,9 +263,9 @@ fn reduce[
     where H=prod(D1,...,Di-1), W = Di, and C = prod(Di+1,...,Dn).
     """
 
-    let h_dynamic = _prod_dims[0, reduce_axis](src)
+    let h_dynamic = prod_dims[0, reduce_axis](src)
     let w_dynamic = src.dim[reduce_axis]()
-    let c_dynamic = _prod_dims[reduce_axis + 1, rank](src)
+    let c_dynamic = prod_dims[reduce_axis + 1, rank](src)
 
     alias h_static = input_shape.product_range[0, reduce_axis]()
     alias w_static = input_shape.at[reduce_axis]()
