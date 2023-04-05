@@ -83,9 +83,9 @@ fn to_buffer[
     ](shape)
 
     var shape_ptr = Pointer(shape)
-    var shape_tuple: StaticIntTuple[Int(rank).__as_mlir_index()]
+    var shape_tuple: StaticIntTuple[rank]
 
-    var stride_tuple: StaticIntTuple[Int(rank).__as_mlir_index()]
+    var stride_tuple: StaticIntTuple[rank]
     var stride: Int = 1
     # Start from the back so we can accumulate the strides.
     for i in range(rank - 1, -1, -1):
@@ -114,7 +114,7 @@ fn elementwise_wrapper[
         __mlir_type.index,
         `>(`,
         StaticIntTuple[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1>: index`]
+            Int(__mlir_attr[`#kgen.param.index.ref<0, false, 1> : index`])
         ],
         ` borrow) -> !lit.none>`,
     ],
@@ -123,10 +123,10 @@ fn elementwise_wrapper[
     out_chain: OutputChainPtr,
 ):
     @always_inline
-    fn mogg_func[
-        simd_width: Int, rank: __mlir_type.index
-    ](idx: StaticIntTuple[rank]):
-        func[simd_width.__as_mlir_index(), rank](idx)
+    fn mogg_func[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
+        func[simd_width.__as_mlir_index(), rank.__as_mlir_index()](
+            rebind[StaticIntTuple[rank.__as_mlir_index()]](idx)
+        )
 
     alias unroll_factor: Int = 1
 
@@ -424,9 +424,9 @@ fn broadcast_to_tensor[
         output_rank, DimList[output_rank].create_unknown(), type
     ](
         original.data,
-        rebind[StaticIntTuple[Int(output_rank).__as_mlir_index()]](shape),
+        rebind[StaticIntTuple[output_rank]](shape),
         original.dynamic_dtype,
-        rebind[StaticIntTuple[Int(output_rank).__as_mlir_index()]](stride),
+        rebind[StaticIntTuple[output_rank]](stride),
     )
 
     return out
