@@ -66,6 +66,8 @@ static std::optional<std::string> getAutoImportPath() {
   while (!path.empty()) {
     if (path.stem() == "modular")
       return (path / "Kernels" / "mojo").string();
+    if (!path.has_parent_path())
+      break;
     path = path.parent_path();
   }
   return std::nullopt;
