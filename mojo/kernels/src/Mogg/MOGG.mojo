@@ -8,7 +8,6 @@ from Activations import relu
 from Buffer import NDBuffer
 from DType import DType
 from Functional import elementwise, unroll
-from Int import Int
 from Index import StaticIntTuple
 from IO import print
 from List import Dim, DimList
