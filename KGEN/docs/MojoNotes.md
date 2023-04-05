@@ -1,4 +1,4 @@
-# Mojo ⚡️ Notes
+# Mojo🔥 Notes
 
 Mojo is intended to evolve into a superset of Python, which adds
 first-class support for static types, "structs" with zero-cost abstraction
