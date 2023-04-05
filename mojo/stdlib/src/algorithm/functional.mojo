@@ -933,17 +933,17 @@ fn get_num_workers(problem_size: Int, runtime: Runtime) -> Int:
 @always_inline
 @adaptive
 fn elementwise[
-    rank: __mlir_type.index,
+    rank: Int,
     simd_width: Int,
     unroll_factor: Int,
     func: __mlir_type[
         `!kgen.signature<<`,
         Int,
         `,`,
-        __mlir_type.index,
+        Int,
         `>(`,
         StaticIntTuple[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1>: index`]
+            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, Int]
         ],
         ` borrow) -> !lit.none>`,
     ],
@@ -980,7 +980,7 @@ fn elementwise[
 
 @always_inline
 fn _get_nd_indices_from_flat_index[
-    rank: __mlir_type.index
+    rank: Int
 ](flat_index: Int, shape: StaticIntTuple[rank]) -> StaticIntTuple[rank]:
     """
     Converts a flat index into ND indices. The ND indices will iterate from
@@ -1024,17 +1024,17 @@ fn _get_nd_indices_from_flat_index[
 @always_inline
 @adaptive
 fn elementwise[
-    rank: __mlir_type.index,
+    rank: Int,
     simd_width: Int,
     unroll_factor: Int,
     func: __mlir_type[
         `!kgen.signature<<`,
         Int,
         `,`,
-        __mlir_type.index,
+        Int,
         `>(`,
         StaticIntTuple[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1>: index`]
+            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, Int]
         ],
         ` borrow) -> !lit.none>`,
     ],

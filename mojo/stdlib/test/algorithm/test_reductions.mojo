@@ -25,7 +25,7 @@ fn test_reductions():
     let vector = Buffer[size, DType.f32].stack_allocation()
 
     for i in range(size):
-        vector[i] = (i + 1).__as_mlir_index()
+        vector[i] = i + 1
 
     # CHECK: 1.000000
     print(min[simd_width](vector))
@@ -49,7 +49,7 @@ fn test_product():
     let vector = Buffer[size, DType.f32].stack_allocation()
 
     for i in range(size):
-        vector[i] = (i + 1).__as_mlir_index()
+        vector[i] = i + 1
 
     # CHECK: 3628800.000000
     print(product[simd_width](vector))
@@ -66,7 +66,7 @@ fn test_mean_variance():
     let vector = Buffer[size, DType.f32].stack_allocation()
 
     for i in range(size):
-        vector[i] = (i + 1).__as_mlir_index()
+        vector[i] = i + 1
 
     # CHECK: 50.500000
     print(mean[simd_width](vector))
@@ -83,7 +83,7 @@ fn test_3d_reductions():
     fn _test_3d_reductions[
         input_shape: DimList[3],
         output_shape: DimList[3],
-        reduce_axis: __mlir_type.index,
+        reduce_axis: Int,
     ]():
         let input = NDBuffer[3, input_shape, DType.f32].stack_allocation()
         let output = (

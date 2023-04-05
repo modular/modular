@@ -24,8 +24,8 @@ fn test_elementwise[
 ](dims: DimList[outer_rank]):
     var memory1 = _raw_stack_allocation[numelems, DType.f32, 1]()
     var buffer1 = NDBuffer[
-        outer_rank.__as_mlir_index(),
-        rebind[DimList[outer_rank.__as_mlir_index()]](static_shape),
+        outer_rank,
+        rebind[DimList[outer_rank]](static_shape),
         DType.f32,
     ](
         memory1.address,
@@ -35,8 +35,8 @@ fn test_elementwise[
 
     var memory2 = _raw_stack_allocation[numelems, DType.f32, 1]()
     var buffer2 = NDBuffer[
-        outer_rank.__as_mlir_index(),
-        rebind[DimList[outer_rank.__as_mlir_index()]](static_shape),
+        outer_rank,
+        rebind[DimList[outer_rank]](static_shape),
         DType.f32,
     ](
         memory2.address,
@@ -46,8 +46,8 @@ fn test_elementwise[
 
     var memory3 = _raw_stack_allocation[numelems, DType.f32, 1]()
     var out_buffer = NDBuffer[
-        outer_rank.__as_mlir_index(),
-        rebind[DimList[outer_rank.__as_mlir_index()]](static_shape),
+        outer_rank,
+        rebind[DimList[outer_rank]](static_shape),
         DType.f32,
     ](
         memory3.address,
@@ -63,22 +63,16 @@ fn test_elementwise[
         x += 1.0
 
     @always_inline
-    fn func[
-        simd_width: Int, rank: __mlir_type.index
-    ](idx: StaticIntTuple[rank]):
-        var index = rebind[
-            StaticIntTuple[Int(outer_rank.__as_mlir_index()).__as_mlir_index()]
-        ](idx)
+    fn func[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
+        var index = rebind[StaticIntTuple[outer_rank]](idx)
         var in1 = buffer1.simd_load[simd_width](index)
         var in2 = buffer2.simd_load[simd_width](index)
         out_buffer.simd_store[simd_width](index, mul(in1, in2))
 
     let runtime = Runtime(4)
     let out_chain = OwningOutputChainPtr(runtime)
-    elementwise[outer_rank.__as_mlir_index(), 1, 1, func](
-        rebind[StaticIntTuple[outer_rank.__as_mlir_index()]](
-            out_buffer.dynamic_shape
-        ),
+    elementwise[outer_rank, 1, 1, func](
+        rebind[StaticIntTuple[outer_rank]](out_buffer.dynamic_shape),
         out_chain.borrow(),
     )
     out_chain.wait()

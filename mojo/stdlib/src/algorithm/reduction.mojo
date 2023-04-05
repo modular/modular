@@ -177,17 +177,13 @@ fn _reduce_3D[
 
     # The width of this should be a multiple of the cache line size in order to
     # reuse the full cache line when an element of C is loaded.
-    fn get_unroll_factor[
-        simd_width: Int, dtype_size: __mlir_type.index
-    ]() -> Int:
+    fn get_unroll_factor[simd_width: Int, dtype_size: Int]() -> Int:
         alias cache_line_size = 64
         alias unroll_factor = cache_line_size // (simd_width * dtype_size)
         assert_param_bool_msg[unroll_factor > 0, "unroll_factor must be > 0"]()
         return unroll_factor
 
-    alias unroll_factor = get_unroll_factor[
-        simd_width, dtype_sizeof[type]().__as_mlir_index()
-    ]()
+    alias unroll_factor = get_unroll_factor[simd_width, dtype_sizeof[type]()]()
     alias usimd_width = unroll_factor * simd_width
     for i in range(h):
 
@@ -267,7 +263,7 @@ fn reduce[
         SIMD[1, __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType]],
         `>`,
     ],
-    reduce_axis: __mlir_type.index,
+    reduce_axis: Int,
 ](
     src: NDBuffer[rank, input_shape, type],
     dst: NDBuffer[rank, output_shape, acc_type],
@@ -359,7 +355,7 @@ fn max[
     input_shape: DimList[rank],
     output_shape: DimList[rank],
     type: DType,
-    reduce_axis: __mlir_type.index,
+    reduce_axis: Int,
 ](
     src: NDBuffer[rank, input_shape, type],
     dst: NDBuffer[rank, output_shape, type],
@@ -424,7 +420,7 @@ fn min[
     input_shape: DimList[rank],
     output_shape: DimList[rank],
     type: DType,
-    reduce_axis: __mlir_type.index,
+    reduce_axis: Int,
 ](
     src: NDBuffer[rank, input_shape, type],
     dst: NDBuffer[rank, output_shape, type],
@@ -489,7 +485,7 @@ fn sum[
     input_shape: DimList[rank],
     output_shape: DimList[rank],
     type: DType,
-    reduce_axis: __mlir_type.index,
+    reduce_axis: Int,
 ](
     src: NDBuffer[rank, input_shape, type],
     dst: NDBuffer[rank, output_shape, type],
@@ -554,7 +550,7 @@ fn product[
     input_shape: DimList[rank],
     output_shape: DimList[rank],
     type: DType,
-    reduce_axis: __mlir_type.index,
+    reduce_axis: Int,
 ](
     src: NDBuffer[rank, input_shape, type],
     dst: NDBuffer[rank, output_shape, type],
@@ -598,7 +594,7 @@ fn mean[
     input_shape: DimList[rank],
     output_shape: DimList[rank],
     type: DType,
-    reduce_axis: __mlir_type.index,
+    reduce_axis: Int,
 ](
     src: NDBuffer[rank, input_shape, type],
     dst: NDBuffer[rank, output_shape, type],
