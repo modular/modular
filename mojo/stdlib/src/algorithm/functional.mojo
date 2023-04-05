@@ -161,10 +161,9 @@ fn vectorize[
 
 
 fn _variadic_get(
-    a: __mlir_type[`!kgen.variadic<`, fn_sig_type, `>`],
-    idx: __mlir_type.`index`,
+    a: __mlir_type[`!kgen.variadic<`, fn_sig_type, `>`], idx: Int
 ) -> fn_sig_type:
-    return __mlir_op.`pop.variadic.get`(a, idx)
+    return __mlir_op.`pop.variadic.get`(a, idx.__as_mlir_index())
 
 
 @always_inline
