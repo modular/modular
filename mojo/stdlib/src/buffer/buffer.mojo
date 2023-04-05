@@ -23,6 +23,7 @@ from StaticTuple import StaticTuple
 from TargetInfo import dtype_sizeof, dtype_simd_width, dtype_alignof
 from TypeUtilities import rebind
 from Range import range
+from IO import print
 
 # The maximum tensor rank for any tensor shape.
 # This value must match kMaxRank in Support/include/Support/ML/TensorShape.h
@@ -370,6 +371,47 @@ struct Buffer[size: Dim, type: DType]:
 # ===----------------------------------------------------------------------===#
 
 
+fn _compute_nd_index[
+    rank: Int,
+    shape: DimList[rank],
+    type: DType,
+](buf: NDBuffer[rank, shape, type], index: Int) -> StaticIntTuple[rank]:
+    """Computes the NDBuffer's offset using the index positions provided.
+
+    Parameters:
+        rank: The rank of the NDBuffer.
+        shape: The shape of the NDBuffer.
+        type: The element-type of the NDBuffer.
+
+    Args:
+        buf: The NDBuffer.
+        index: The flat index position.
+
+    Returns:
+        The index positions.
+    """
+
+    @parameter
+    if rank == 0:
+        return StaticIntTuple[rank](0)
+
+    var result: StaticIntTuple[rank]
+
+    result[rank - 1] = index
+
+    @always_inline
+    fn body[idx: Int]():
+        result[rank - idx - 2] = result[rank - idx - 1] // buf.dim(
+            rank - idx - 1
+        )
+        result[rank - idx - 1] = result[rank - idx - 1] % buf.dim(
+            rank - idx - 1
+        )
+
+    unroll[rank - 1, body]()
+    return result
+
+
 fn _compute_ndbuffer_offset[
     rank: Int,
     shape: DimList[rank],
@@ -588,6 +630,18 @@ struct NDBuffer[
 
         unroll[rank, _fill]()
         return res
+
+    @always_inline
+    fn get_nd_index(self, idx: Int) -> StaticIntTuple[rank]:
+        """Computes the NDBuffer's ND-index based on the flat index.
+
+        Args:
+            idx: The flat index.
+
+        Returns:
+            The index positions.
+        """
+        return _compute_nd_index(self, idx)
 
     @always_inline
     fn size(self) -> Int:
@@ -1083,3 +1137,20 @@ struct DynamicRankBuffer:
         unroll[rank, _fill]()
 
         return result
+
+
+fn prod_dims[
+    start_dim: Int,
+    end_dim: Int,
+    rank: Int,
+    shape: DimList[rank],
+    type: DType,
+](x: NDBuffer[rank, shape, type]) -> Int:
+    var product: Int = 1
+
+    @always_inline
+    fn _compute_product[idx: Int]():
+        product *= x.dim[idx + start_dim]()
+
+    unroll[end_dim - start_dim, _compute_product]()
+    return product
