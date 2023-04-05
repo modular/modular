@@ -1204,6 +1204,36 @@ def POP_PackGetOp : POPOp<"pack.get", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
+// PackSizeOp
+//===----------------------------------------------------------------------===//
+
+def POP_PackSizeOp : POPOp<"pack.size", [Pure]> {
+  let summary = "given a pack, return its size";
+  let description = [{
+    The `pop.pack.size` operation takes an operand with a `!pop.pack` type and
+    returns the number of elements in the pack.
+
+    Example:
+
+    ```mlir
+    // Get the size of a pack.
+    pop.pack.size %0 : <Ts>
+    // Get the size of a concrete pack with 2 elements.
+    pop.pack.size %1 : <[i32, f32]>
+    ```
+  }];
+
+  let arguments = (ins POP_PackType:$operand);
+  let results = (outs Index:$result);
+
+  let assemblyFormat = [{
+    $operand attr-dict `:` type($operand)
+  }];
+
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // VariantCreateOp
 //===----------------------------------------------------------------------===//
 

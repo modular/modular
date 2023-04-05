@@ -684,6 +684,14 @@ kgen.func @pack_create_get(%arg0: f32, %arg1: si8) -> f32 {
   kgen.return %1 : f32
 }
 
+// CHECK-LABEL: @pack_size(
+kgen.func @pack_size() -> index {
+  // CHECK-NEXT: kgen.param.constant = <2>
+  %0 = kgen.param.constant: !pop.pack<[i1, i4]> = <<0, 1>>
+  %1 = pop.pack.size %0 : !pop.pack<[i1, i4]>
+  kgen.return %1 : index
+}
+
 // CHECK-LABEL: @variadic_create(
 kgen.func @variadic_create() -> !kgen.variadic<index> {
   // CHECK-NEXT: kgen.param.constant{{.*}} = <[13, 17]>

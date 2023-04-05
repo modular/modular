@@ -874,6 +874,17 @@ OpFoldResult PackGetOp::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
+// PackSizeOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult PackSizeOp::fold(FoldAdaptor adaptor) {
+  if (auto pack = dyn_cast_if_present<PackAttr>(adaptor.getOperand()))
+    return IntegerAttr::get(IndexType::get(getContext()),
+                            pack.getValues().size());
+  return {};
+}
+
+//===----------------------------------------------------------------------===//
 // VariantCreateOp
 //===----------------------------------------------------------------------===//
 
