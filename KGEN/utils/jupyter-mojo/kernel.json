@@ -1,0 +1,16 @@
+{
+  "display_name": "Mojo",
+  "argv": [
+    "python",
+    "-m",
+    "mojokernel",
+    "-f",
+    "{connection_file}"
+  ],
+  "language": "mojo",
+  "language_info": {
+    "name": "mojo",
+    "mimetype": "text/x-mojo",
+    "file_extension": ".mojo"
+  }
+}

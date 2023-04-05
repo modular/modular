@@ -223,7 +223,8 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
   // state.
   llvm::raw_string_ostream exprRawOS(m_transformed_text);
   mlir::raw_indented_ostream exprOSIndented(exprRawOS);
-  exprOSIndented << "from Pointer import Pointer\n"
+  exprOSIndented << "from IO import print\n"
+                 << "from Pointer import Pointer\n"
                  << "@export\nfn __lldb_expr__(__lldb_arg: "
                     "Pointer[__mlir_type.`!pop.scalar<invalid>`]):\n";
   exprOSIndented.printReindented(m_expr_text, "  ");
