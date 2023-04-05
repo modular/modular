@@ -1405,9 +1405,11 @@ fn create_kgen_list[
 @always_inline("nodebug")
 fn _get_kgen_list_item[
     index: Int,
-    size: __mlir_type.index,
+    size: Int,
     type: __mlir_type.`!kgen.mlirtype`,
-](lst: __mlir_type[`!kgen.list<`, type, `[`, size, `]>`]) -> type:
+](
+    lst: __mlir_type[`!kgen.list<`, type, `[`, size.__as_mlir_index(), `]>`]
+) -> type:
     """Gets the list element of an input list at position `index`.
 
     Parameters:
@@ -1425,45 +1427,6 @@ fn _get_kgen_list_item[
     return __mlir_op.`pop.list.get`[
         index : index.__as_mlir_index(), _type:type
     ](lst)
-
-
-# ===----------------------------------------------------------------------===#
-# contains
-# ===----------------------------------------------------------------------===#
-
-
-fn contains[
-    size: __mlir_type.index
-](
-    elem: __mlir_type.index, lst: __mlir_type[`!kgen.list<index[`, size, `]>`]
-) -> Bool:
-    """Checks if a given list contains the specified value.
-
-    Parameters:
-        size: the length of the list.
-
-    Args:
-        elem: The value to search.
-        lst: The input list.
-
-    Returns:
-        True if the value is in the list or False otherwise.
-    """
-    return _contains_impl[0, size](elem, lst)
-
-
-fn _contains_impl[
-    idx: __mlir_type.index, size: __mlir_type.index
-](
-    elem: __mlir_type.index, lst: __mlir_type[`!kgen.list<index[`, size, `]>`]
-) -> Bool:
-    @parameter
-    if idx == size:
-        return False
-    let ok = __mlir_op.`index.cmp`[
-        pred : __mlir_attr.`#index<cmp_predicate eq>`
-    ](_get_kgen_list_item[idx, size, __mlir_type.index](lst), elem)
-    return Bool(ok) or _contains_impl[idx + 1, size](elem, lst)
 
 
 # ===----------------------------------------------------------------------===#

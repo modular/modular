@@ -349,9 +349,7 @@ struct Buffer[size: Dim, type: DType]:
             Constructed buffer with the allocated space.
         """
         assert_param_bool_msg[size.has_value(), "must have known size"]()
-        var data_pointer = _raw_stack_allocation[
-            size.get().__as_mlir_index(), type, alignment.__as_mlir_index()
-        ]()
+        var data_pointer = _raw_stack_allocation[size.get(), type, alignment]()
         return Buffer[size, type](data_pointer.address)
 
     @staticmethod
@@ -410,10 +408,7 @@ fn _compute_ndbuffer_offset[
     rank: Int,
     shape: DimList[rank],
     type: DType,
-](
-    buf: NDBuffer[rank, shape, type],
-    idx: StaticIntTuple[rank.__as_mlir_index()],
-) -> Int:
+](buf: NDBuffer[rank, shape, type], idx: StaticIntTuple[rank],) -> Int:
     """Computes the NDBuffer's offset using the index positions provided.
 
     Parameters:
@@ -435,10 +430,7 @@ fn _compute_ndbuffer_offset[
     rank: Int,
     shape: DimList[rank],
     type: DType,
-](
-    buf: NDBuffer[rank, shape, type],
-    index: StaticTuple[rank.__as_mlir_index(), __mlir_type.index],
-) -> Int:
+](buf: NDBuffer[rank, shape, type], index: StaticTuple[rank, Int],) -> Int:
     """Computes the NDBuffer's offset using the index positions provided.
 
     Parameters:
@@ -470,9 +462,7 @@ fn _compute_ndbuffer_offset[
 
 fn _compute_ndbuffer_stride[
     rank: Int
-](shape: StaticIntTuple[rank.__as_mlir_index()]) -> StaticIntTuple[
-    rank.__as_mlir_index()
-]:
+](shape: StaticIntTuple[rank]) -> StaticIntTuple[rank]:
     """Computes the NDBuffer's default dynamic strides using the input shape.
     The default strides correspond to contiguous memory layout.
 
@@ -489,9 +479,9 @@ fn _compute_ndbuffer_stride[
 
     @parameter
     if rank == 1:
-        return StaticIntTuple[rank.__as_mlir_index()](1)
+        return StaticIntTuple[rank](1)
 
-    var stride: StaticIntTuple[rank.__as_mlir_index()] = shape
+    var stride: StaticIntTuple[rank] = shape
     stride[rank - 1] = 1
 
     @always_inline
@@ -518,9 +508,9 @@ struct NDBuffer[
     var data: DTypePointer[type]
     # This is added just to make it aligned with the zap.ndbuffer
     var _rank: Int
-    var dynamic_shape: StaticIntTuple[rank.__as_mlir_index()]
+    var dynamic_shape: StaticIntTuple[rank]
     var dynamic_dtype: DType
-    var dynamic_stride: StaticIntTuple[rank.__as_mlir_index()]
+    var dynamic_stride: StaticIntTuple[rank]
     var is_contiguous: Bool
 
     fn __init__(
@@ -542,7 +532,7 @@ struct NDBuffer[
 
     fn __init__(
         ptr: __mlir_type[`!pop.pointer<scalar<`, type.value, `>>`],
-        dynamic_shape: StaticIntTuple[rank.__as_mlir_index()],
+        dynamic_shape: StaticIntTuple[rank],
         dynamic_dtype: DType,
     ) -> NDBuffer[rank, shape, type]:
         return Self {
@@ -556,7 +546,7 @@ struct NDBuffer[
 
     fn __init__(
         ptr: DTypePointer[type],
-        dynamic_shape: StaticIntTuple[rank.__as_mlir_index()],
+        dynamic_shape: StaticIntTuple[rank],
         dynamic_dtype: DType,
     ) -> NDBuffer[rank, shape, type]:
         return NDBuffer[rank, shape, type] {
@@ -570,9 +560,9 @@ struct NDBuffer[
 
     fn __init__(
         ptr: DTypePointer[type],
-        dynamic_shape: StaticIntTuple[rank.__as_mlir_index()],
+        dynamic_shape: StaticIntTuple[rank],
         dynamic_dtype: DType,
-        dynamic_stride: StaticIntTuple[rank.__as_mlir_index()],
+        dynamic_stride: StaticIntTuple[rank],
     ) -> NDBuffer[rank, shape, type]:
         return NDBuffer[rank, shape, type] {
             data: ptr,
@@ -589,8 +579,8 @@ struct NDBuffer[
         return rank
 
     @always_inline
-    fn get_shape(self) -> StaticIntTuple[rank.__as_mlir_index()]:
-        var res: StaticIntTuple[rank.__as_mlir_index()]
+    fn get_shape(self) -> StaticIntTuple[rank]:
+        var res: StaticIntTuple[rank]
 
         @always_inline
         fn _fill[idx: Int]():
@@ -631,15 +621,11 @@ struct NDBuffer[
         )
 
     @always_inline
-    fn _offset(
-        self, idx: StaticIntTuple[rank.__as_mlir_index()]
-    ) -> DTypePointer[type]:
+    fn _offset(self, idx: StaticIntTuple[rank]) -> DTypePointer[type]:
         return self._offset(idx.as_tuple())
 
     @always_inline
-    fn _offset(
-        self, idx: StaticTuple[rank.__as_mlir_index(), __mlir_type.index]
-    ) -> DTypePointer[type]:
+    fn _offset(self, idx: StaticTuple[rank, Int]) -> DTypePointer[type]:
         """Computes the NDBuffer's offset using the index positions provided.
 
         Args:
@@ -658,9 +644,7 @@ struct NDBuffer[
         return self.simd_load[1](VariadicList[Int](idx))
 
     @always_inline
-    fn __getitem__(
-        self, idx: StaticIntTuple[rank.__as_mlir_index()]
-    ) -> SIMD[1, type]:
+    fn __getitem__(self, idx: StaticIntTuple[rank]) -> SIMD[1, type]:
         return self.simd_load[1](idx)
 
     @always_inline
@@ -681,15 +665,13 @@ struct NDBuffer[
 
     fn simd_load[
         width: Int,
-    ](self, idx: StaticIntTuple[rank.__as_mlir_index()]) -> SIMD[width, type]:
+    ](self, idx: StaticIntTuple[rank]) -> SIMD[width, type]:
         return self.simd_load[width](idx.as_tuple())
 
     @always_inline
     fn simd_load[
         width: Int,
-    ](
-        self, idx: StaticTuple[rank.__as_mlir_index(), __mlir_type.index]
-    ) -> SIMD[width, type]:
+    ](self, idx: StaticTuple[rank, Int]) -> SIMD[width, type]:
         debug_assert(
             self.is_contiguous or width == 1,
             "Function requires contiguous buffer.",
@@ -714,15 +696,13 @@ struct NDBuffer[
 
     fn aligned_simd_load[
         width: Int, alignment: Int
-    ](self, idx: StaticIntTuple[rank.__as_mlir_index()]) -> SIMD[width, type]:
+    ](self, idx: StaticIntTuple[rank]) -> SIMD[width, type]:
         return self.aligned_simd_load[width, alignment](idx.as_tuple())
 
     @always_inline
     fn aligned_simd_load[
         width: Int, alignment: Int
-    ](
-        self, idx: StaticTuple[rank.__as_mlir_index(), __mlir_type.index]
-    ) -> SIMD[width, type]:
+    ](self, idx: StaticTuple[rank, Int]) -> SIMD[width, type]:
         debug_assert(
             self.is_contiguous or width == 1,
             "Function requires contiguous buffer.",
@@ -730,16 +710,14 @@ struct NDBuffer[
         return self._offset(idx).aligned_simd_load[width, alignment]()
 
     @always_inline
-    fn __setitem__(
-        self, idx: StaticIntTuple[rank.__as_mlir_index()], val: SIMD[1, type]
-    ):
+    fn __setitem__(self, idx: StaticIntTuple[rank], val: SIMD[1, type]):
         # Stores a single value into the ndbuffer at the specified index
         self.simd_store[1](idx, val)
 
     @always_inline
     fn __setitem__(
         self,
-        idx: StaticTuple[rank.__as_mlir_index(), __mlir_type.index],
+        idx: StaticTuple[rank, Int],
         val: SIMD[1, type],
     ):
         # Stores a single value into the ndbuffer at the specified index
@@ -748,22 +726,14 @@ struct NDBuffer[
     @always_inline
     fn simd_store[
         width: Int
-    ](
-        self,
-        idx: StaticIntTuple[rank.__as_mlir_index()],
-        val: SIMD[width, type],
-    ):
+    ](self, idx: StaticIntTuple[rank], val: SIMD[width, type],):
         # Stores a simd value into the ndbuffer at the specified index
         self.simd_store[width](idx.as_tuple(), val)
 
     @always_inline
     fn simd_store[
         width: Int
-    ](
-        self,
-        idx: StaticTuple[rank.__as_mlir_index(), __mlir_type.index],
-        val: SIMD[width, type],
-    ):
+    ](self, idx: StaticTuple[rank, Int], val: SIMD[width, type],):
         debug_assert(
             self.is_contiguous or width == 1,
             "Function requires contiguous buffer.",
@@ -774,22 +744,14 @@ struct NDBuffer[
     @always_inline
     fn aligned_simd_store[
         width: Int, alignment: Int
-    ](
-        self,
-        idx: StaticIntTuple[rank.__as_mlir_index()],
-        val: SIMD[width, type],
-    ):
+    ](self, idx: StaticIntTuple[rank], val: SIMD[width, type],):
         # Stores a simd value into the ndbuffer at the specified index
         self.aligned_simd_store[width, alignment](idx.as_tuple(), val)
 
     @always_inline
     fn aligned_simd_store[
         width: Int, alignment: Int
-    ](
-        self,
-        idx: StaticTuple[rank.__as_mlir_index(), __mlir_type.index],
-        val: SIMD[width, type],
-    ):
+    ](self, idx: StaticTuple[rank, Int], val: SIMD[width, type],):
         debug_assert(
             self.is_contiguous or width == 1,
             "Function requires contiguous buffer.",
@@ -800,11 +762,7 @@ struct NDBuffer[
     @always_inline
     fn simd_nt_store[
         width: Int
-    ](
-        self,
-        idx: StaticIntTuple[rank.__as_mlir_index()],
-        val: SIMD[width, type],
-    ):
+    ](self, idx: StaticIntTuple[rank], val: SIMD[width, type],):
         # Stores a simd value into the ndbuffer at the specified index.
         # The address must properly aligned, see Buffer::simd_nt_store.
         self.simd_nt_store[width](idx.as_tuple(), val)
@@ -812,11 +770,7 @@ struct NDBuffer[
     @always_inline
     fn simd_nt_store[
         width: Int
-    ](
-        self,
-        idx: StaticTuple[rank.__as_mlir_index(), __mlir_type.index],
-        val: SIMD[width, type],
-    ):
+    ](self, idx: StaticTuple[rank, Int], val: SIMD[width, type],):
         debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
         # Stores a simd value into the ndbuffer at the specified index
         # The address must properly aligned, see Buffer::simd_nt_store.
@@ -1071,7 +1025,7 @@ struct DynamicRankBuffer:
     @always_inline
     fn to_ndbuffer[
         rank: Int, type: DType
-    ](self, stride: StaticIntTuple[rank.__as_mlir_index()]) -> NDBuffer[
+    ](self, stride: StaticIntTuple[rank]) -> NDBuffer[
         rank, DimList[rank].create_unknown(), type
     ]:
         debug_assert(
@@ -1087,7 +1041,7 @@ struct DynamicRankBuffer:
 
     @always_inline
     fn rank_dispatch[
-        func: __mlir_type.`!kgen.signature<<index>() -> !lit.none>`
+        func: __mlir_type[`!kgen.signature<<`, Int, `>() -> !lit.none>`]
     ](self):
         debug_assert(
             self.rank > 0 and self.rank <= max_rank,
@@ -1119,7 +1073,7 @@ struct DynamicRankBuffer:
         return tuple_product(self.shape, self.rank)
 
     @always_inline
-    fn get_shape[rank: Int](self) -> StaticIntTuple[rank.__as_mlir_index()]:
+    fn get_shape[rank: Int](self) -> StaticIntTuple[rank]:
         return self._shape_to_static_tuple[rank]()
 
     @always_inline
@@ -1128,16 +1082,12 @@ struct DynamicRankBuffer:
         return self.shape[idx]
 
     @always_inline
-    fn _shape_to_static_tuple[
-        rank: Int
-    ](self) -> StaticIntTuple[rank.__as_mlir_index()]:
-        var result: StaticIntTuple[rank.__as_mlir_index()]
+    fn _shape_to_static_tuple[rank: Int](self) -> StaticIntTuple[rank]:
+        var result: StaticIntTuple[rank]
 
         @always_inline
         fn _fill[idx: Int]():
-            result.__setitem__[idx.__as_mlir_index()](
-                self.dim(idx).__as_mlir_index()
-            )
+            result.__setitem__[idx](self.dim(idx))
 
         unroll[rank, _fill]()
 
