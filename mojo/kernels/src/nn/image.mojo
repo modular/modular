@@ -179,7 +179,7 @@ struct ImageData[
             return _compute_index_nhwc()
 
         debug_assert(False, "Invalid layout")
-        return Int(0)
+        return 0
 
     fn get_tuple_index(self, idx: Int) -> StaticIntTuple[4]:
         """Converts the flat index to the dimension index of the underlying
@@ -227,7 +227,7 @@ struct ImageData[
             return _compute_index_nhwc()
 
         debug_assert(False, "Invalid layout")
-        return Int(0)
+        return 0
 
     fn __getitem__(self, n: Int, c: Int, h: Int, w: Int) -> SIMD[1, type]:
         """Reads the underlying data buffer based on the tensor index and under-

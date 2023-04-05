@@ -781,7 +781,7 @@ struct PackIm2ColNCHW[
                 True,
             ](
                 # c_idx (ignored)
-                Int(0),
+                0,
                 # rs_idx (ignored)
                 Index(0, 0),
                 # local_tile_offset
