@@ -12,7 +12,6 @@
 
 
 from DType import DType
-from Int import Int
 from F32 import F32
 from SIMD import SIMD
 from IO import print, _printf
