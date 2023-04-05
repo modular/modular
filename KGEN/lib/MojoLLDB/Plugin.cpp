@@ -12,6 +12,7 @@
 #include "REPL/MojoREPL.h"
 #include "Support/SymbolExport.h"
 #include "TypeSystem/MojoTypeSystem.h"
+#include "lldb/API/SBDebugger.h"
 #include "llvm/Support/TargetSelect.h"
 
 using namespace M;
@@ -20,6 +21,9 @@ using namespace M::KGEN::Mojo;
 //===--------------------------------------------------------------===//
 // Plugin Initialization
 //===--------------------------------------------------------------===//
+
+/// LLDB has two different types of plugin initialization, we support them both
+/// here to provide flexibility for users.
 
 MODULAR_EXPORT bool LLDBPluginInitialize() {
   llvm::InitializeAllTargets();
@@ -37,3 +41,9 @@ MODULAR_EXPORT void LLDBPluginTerminate() {
   MojoREPL::Terminate();
   MojoTypeSystem::Terminate();
 }
+
+namespace lldb {
+MODULAR_VISIBILITY_EXPORT bool PluginInitialize(SBDebugger debugger) {
+  return LLDBPluginInitialize();
+}
+} // namespace lldb
