@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Cache/BlobCache.h"
-#include "Config/Config.h"
+#include "Config/Version.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Support/UnknownLocationDecoder.h"
@@ -512,7 +512,7 @@ M::Cache::getLocalDefaultBackendChain(LLCL::Runtime &runtime,
 
   // If no version is specified, use the default version.
   if (version.empty())
-    version = MODULAR_VERSION_STRING;
+    version = getModularVersionString();
 
   std::error_code ec;
   std::filesystem::path base = cacheDir;
@@ -569,7 +569,7 @@ M::Cache::getDefaultBackendChain(LLCL::Runtime &runtime, const URI &uri,
 
   // If no version is specified, use the default version.
   if (version.empty())
-    version = MODULAR_VERSION_STRING;
+    version = getModularVersionString();
 
   if (scheme == "s3") {
     StringRef path = uri.getPath();

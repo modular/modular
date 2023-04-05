@@ -23,6 +23,7 @@ add_modular_tool(kgen
   LITDialect
   LLCLRuntimeGlobals
   POPDialect
+  MVersion
 
   MLIRBuiltinToLLVMIRTranslation
   MLIRBytecodeWriter
