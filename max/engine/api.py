@@ -48,6 +48,7 @@ class TFCompileOptions:
         default=TFSavedModelVersion.V1
     )
     exported_name: str = field(default="serving_default")
+    compatibility_mode: bool = field(default=False)
 
 
 @dataclass
