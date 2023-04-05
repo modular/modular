@@ -319,7 +319,7 @@ kgen.generator @left_to_right_dependency<
 
 // CHECK-LABEL: kgen.generator @dependent_outline<a>
 kgen.generator @dependent_outline<a>() {
-  // CHECK-NEXT: kgen.param.declare fn: <type>(!pop.array<a, *0|0>) -> () =
+  // CHECK-NEXT: kgen.param.declare fn: <type>(!pop.array<a, *(0,0)>) -> () =
   // CHECK-SAME: <@dependent_outline_fn<a, :type #kgen.unbound>>
   kgen.param.declare.region fn = <b: type>(%arg0: !pop.array<a, b>) {
     kgen.return

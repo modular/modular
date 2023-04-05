@@ -86,13 +86,13 @@ kgen.generator @buffer<rank>() ->
 
 // CHECK-LABEL: kgen.generator @ref_it
 kgen.generator @ref_it() {
-  // CHECK-NEXT: = apply(:() -> !kgen.declref<@List<l: @Int = apply(:(index) -> !kgen.declref<@Int> @make, *1|0)
+  // CHECK-NEXT: = apply(:() -> !kgen.declref<@List<l: @Int = apply(:(index) -> !kgen.declref<@Int> @make, *(1,0))
   kgen.param.declare fn: <index>() ->
      !kgen.declref<@Buf<
-       r: @Int = apply(:(index) -> !kgen.declref<@Int> @make, *0|0),
-       s: @List<l: @Int = apply(:(index) -> !kgen.declref<@Int> @make, *0|0)> =
-         apply(:() -> !kgen.declref<@List<l: @Int = apply(:(index) -> !kgen.declref<@Int> @make, *1|0)>>
-                 @create<:@Int apply(:(index) -> !kgen.declref<@Int> @make, *0|0)>)>>
+       r: @Int = apply(:(index) -> !kgen.declref<@Int> @make, *(0,0)),
+       s: @List<l: @Int = apply(:(index) -> !kgen.declref<@Int> @make, *(0,0))> =
+         apply(:() -> !kgen.declref<@List<l: @Int = apply(:(index) -> !kgen.declref<@Int> @make, *(1,0))>>
+                 @create<:@Int apply(:(index) -> !kgen.declref<@Int> @make, *(0,0))>)>>
     = <@buffer>
   kgen.return
 }

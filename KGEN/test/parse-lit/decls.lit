@@ -317,7 +317,7 @@ fn callDefaultArgument(x: Int) -> Int:
 
 # CHECK-LABEL: lit.func @"defaultArgumentReferencesParameter
 # CHECK-SAME: (%a: !kgen.declref<@"$Int"::@Int> borrow = apply(:<>(!kgen.declref<@"$Int"::@Int> borrow, !kgen.declref<@"$Int"::@Int> borrow)
-# CHECK-SAME: -> !kgen.declref<@"$Int"::@Int> @"$Int"::@Int::@"__add__($Int::Int,$Int::Int)", *0|0, #lit.struct<{value: scalar<index> = 87}>))
+# CHECK-SAME: -> !kgen.declref<@"$Int"::@Int> @"$Int"::@Int::@"__add__($Int::Int,$Int::Int)", *(0,0), #lit.struct<{value: scalar<index> = 87}>))
 fn defaultArgumentReferencesParameter[p: Int](a: Int = p + 87) -> Int:
   return a
 
