@@ -3,8 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+
 from Index import Index, StaticIntTuple
-from Int import Int
 from Buffer import NDBuffer, Buffer
 from SIMD import SIMD
 from Image import (

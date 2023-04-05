@@ -7,7 +7,6 @@
 
 from Activations import relu, relu_n1, prelu, gelu, gelu_approximate
 from DType import DType
-from Int import Int
 from IO import print
 from Math import iota
 

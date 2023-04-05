@@ -14,7 +14,6 @@ from Buffer import Buffer, NDBuffer
 from DType import DType
 from Functional import vectorize
 from Index import Index
-from Int import Int
 from List import Dim, DimList
 from Memory import memcpy
 from Pointer import DTypePointer

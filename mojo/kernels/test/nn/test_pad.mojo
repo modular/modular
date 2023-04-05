@@ -8,7 +8,6 @@
 from Buffer import Buffer, NDBuffer
 from DType import DType
 from Index import StaticIntTuple
-from Int import Int
 from IO import print
 from List import create_dim_list
 from Pad import pad

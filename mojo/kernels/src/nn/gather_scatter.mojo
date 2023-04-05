@@ -11,7 +11,6 @@ from Functional import vectorize, vectorize_unroll, async_parallelize
 from Math import div_ceil
 from Index import Index, StaticIntTuple
 from Intrinsics import PrefetchOptions
-from Int import Int
 from List import Dim, DimList
 from LLCL import Runtime, OutputChainPtr
 from Math import add, min

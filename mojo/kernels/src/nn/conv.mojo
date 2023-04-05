@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from Index import Index, StaticIntTuple
-from Int import Int
 from Buffer import (
     NDBuffer,
     Buffer,

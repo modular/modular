@@ -11,7 +11,6 @@ from Concat import concat
 from DType import DType
 from Pointer import DTypePointer
 from Index import StaticIntTuple
-from Int import Int
 from Range import range
 from List import Dim, VariadicList
 

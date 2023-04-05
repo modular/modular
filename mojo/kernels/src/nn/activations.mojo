@@ -8,7 +8,6 @@
 
 from Assert import assert_param_bool_msg
 from DType import DType
-from Int import Int
 from Math import erf, exp, tanh, clamp, max, min
 from SIMD import SIMD
 

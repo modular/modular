@@ -10,7 +10,6 @@ from DType import DType
 from Range import range
 from DType import DType
 from Functional import elementwise
-from Int import Int
 from Math import mul
 from List import Dim, DimList, create_dim_list
 from IO import print

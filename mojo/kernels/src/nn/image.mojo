@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from Buffer import NDBuffer
-from Int import Int
 from SIMD import SIMD
 from Index import Index, StaticIntTuple
 from Assert import assert_param, assert_param_bool, debug_assert

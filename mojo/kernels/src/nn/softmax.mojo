@@ -8,7 +8,6 @@ from Assert import assert_param, assert_param_msg
 from Buffer import Buffer
 from DType import DType
 from Functional import vectorize_unroll
-from Int import Int
 from Math import exp, identity, log, mul, reciprocal, sub
 from List import Dim
 from Numerics import neginf

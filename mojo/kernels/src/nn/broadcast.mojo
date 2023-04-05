@@ -7,7 +7,6 @@
 from Assert import assert_param
 from Buffer import NDBuffer
 from DType import DType
-from Int import Int
 from Memory import memcpy
 from Pointer import DTypePointer
 from Range import range

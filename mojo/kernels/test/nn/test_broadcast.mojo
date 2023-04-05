@@ -9,7 +9,6 @@ from Broadcast import broadcast
 from Buffer import NDBuffer
 from DType import DType
 from Index import StaticIntTuple
-from Int import Int
 from IO import print
 from List import DimList, create_dim_list
 

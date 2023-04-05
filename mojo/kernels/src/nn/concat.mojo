@@ -8,7 +8,6 @@ from Assert import assert_param_bool_msg, debug_assert
 from Buffer import Buffer, DynamicRankBuffer
 from DType import DType
 from Index import product
-from Int import Int
 from List import Dim, VariadicList
 from Pointer import DTypePointer
 from Memory import memcpy

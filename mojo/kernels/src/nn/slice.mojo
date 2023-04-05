@@ -10,7 +10,6 @@ from List import Dim, DimList
 from LLCL import OutputChainPtr
 from Math import div_ceil
 from Index import StaticIntTuple
-from Int import Int
 from Range import range
 from DType import DType
 from TypeUtilities import rebind

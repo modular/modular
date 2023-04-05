@@ -15,7 +15,6 @@ from DType import DType
 from F32 import F32
 from Gather import gather
 from Index import StaticIntTuple
-from Int import Int
 from IO import print
 from List import create_dim_list
 from LLCL import Runtime, OwningOutputChainPtr
