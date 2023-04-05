@@ -14,7 +14,6 @@ from Buffer import (
     _raw_stack_allocation,
 )
 from Index import Index, StaticIntTuple
-from Int import Int
 from List import create_kgen_list, VariadicList, Dim, DimList
 from Pointer import DTypePointer
 from SIMD import SIMD

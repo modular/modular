@@ -17,7 +17,6 @@ from Index import Index
 from DType import DType
 from List import create_dim_list, DimList
 from IO import print
-from Int import Int
 
 
 alias simd_size: Int = dtype_simd_width[DType.f32]()

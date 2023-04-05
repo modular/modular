@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: mojo %s | FileCheck %s
 
-from Int import Int
 from List import DimList, Dim, create_dim_list
 from Matmul import pack_b
 from Math import div_ceil

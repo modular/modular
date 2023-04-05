@@ -6,7 +6,6 @@
 
 from Buffer import Buffer, NDBuffer
 from Assert import assert_param, debug_assert, assert_param_bool
-from Int import Int
 from Index import StaticIntTuple
 from SIMD import SIMD
 from List import create_kgen_list, DimList, Dim, create_dim_list

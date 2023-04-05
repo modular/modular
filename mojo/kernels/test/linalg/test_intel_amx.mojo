@@ -12,7 +12,6 @@
 
 from DType import DType
 
-from Int import Int
 from SIMD import SIMD
 from Pointer import Pointer, DTypePointer
 from Buffer import Buffer, NDBuffer

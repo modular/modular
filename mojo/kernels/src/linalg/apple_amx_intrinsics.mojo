@@ -14,7 +14,6 @@ from Assert import assert_param, assert_param_bool
 
 from Buffer import NDBuffer
 from DType import DType
-from Int import Int
 from IO import print
 from List import DimList, create_dim_list
 from Memory import memset_zero, memcpy

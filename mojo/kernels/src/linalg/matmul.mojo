@@ -21,7 +21,6 @@ from Buffer import (
 )
 from Functional import tile, unswitch, unroll, unroll2
 from Index import Index, StaticIntTuple
-from Int import Int
 from List import Dim, DimList, VariadicList, create_dim_list
 from Math import min, fma, max, div_ceil
 from Matrix import Matrix

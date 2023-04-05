@@ -9,7 +9,6 @@ from Buffer import NDBuffer
 from DType import DType
 from List import DimList
 from Index import StaticIntTuple
-from Int import Int
 from Pointer import Pointer, DTypePointer
 from SIMD import SIMD
 

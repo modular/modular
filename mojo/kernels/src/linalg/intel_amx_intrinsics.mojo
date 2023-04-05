@@ -10,7 +10,6 @@
 # ===----------------------------------------------------------------------===#
 
 from DType import DType
-from Int import Int
 from Pointer import Pointer, DTypePointer
 from StaticTuple import StaticTuple
 from Matmul import Matrix

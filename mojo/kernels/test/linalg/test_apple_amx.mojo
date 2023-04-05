@@ -15,7 +15,6 @@ from AppleAMX import amx_detail
 from Buffer import NDBuffer
 from DType import DType
 from F32 import F32
-from Int import Int
 from Index import StaticIntTuple
 from IO import print
 from List import DimList, create_dim_list

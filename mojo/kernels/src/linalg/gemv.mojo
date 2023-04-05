@@ -7,7 +7,6 @@
 from Buffer import NDBuffer, Buffer
 from DType import DType
 from Functional import unroll
-from Int import Int
 from List import Dim, DimList, create_dim_list
 from Range import range
 from SIMD import SIMD

@@ -6,7 +6,6 @@
 
 from Assert import debug_assert
 from Index import StaticIntTuple, Index
-from Int import Int
 from Math import div_ceil, max, min
 from TargetInfo import has_avx512f, has_neon, os_is_macos
 from BuildInfo import is_relwithdebinfo_build, is_debug_build

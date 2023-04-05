@@ -7,7 +7,6 @@
 
 from Matrix import Matrix
 from IO import print
-from Int import Int
 from Buffer import Buffer, NDBuffer
 from Pointer import Pointer, DTypePointer
 from DType import DType
