@@ -680,15 +680,20 @@ Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b,
   if (auto simd = dyn_cast<POP::SIMDAttr>(attr))
     return convertSIMDAttr(b, tc, simd);
 
-  // Convert array or struct constants to LLVM array or struct constants.
-  if (isa<POP::ArrayAttr, POP::StructAttr>(attr)) {
+  // Convert array, struct, or pack constants to LLVM array or struct constants.
+  if (isa<POP::ArrayAttr, POP::StructAttr, POP::PackAttr>(attr)) {
     Type type = tc.convertType(attr.getType());
     if (!type)
       return {};
     Value aggregate = b.create<LLVM::UndefOp>(type);
-    ArrayRef<TypedAttr> values = isa<POP::ArrayAttr>(attr)
-                                     ? cast<POP::ArrayAttr>(attr).getValues()
-                                     : cast<POP::StructAttr>(attr).getValues();
+    ArrayRef<TypedAttr> values;
+    if (auto arrayAttr = dyn_cast<POP::ArrayAttr>(attr))
+      values = arrayAttr.getValues();
+    else if (auto structAttr = dyn_cast<POP::StructAttr>(attr))
+      values = structAttr.getValues();
+    else
+      values = cast<POP::PackAttr>(attr).getValues();
+
     for (auto [idx, value] : llvm::enumerate(values)) {
       Value element = convertParameterToLLVM(b, tc, value);
       if (!element)

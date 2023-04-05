@@ -86,6 +86,20 @@ kgen.func @variadic_constant_1() -> !kgen.variadic<i32> {
   kgen.return %0 : !kgen.variadic<i32>
 }
 
+// CHECK-LABEL: @pack_constant_0
+kgen.func @pack_constant_0() -> !pop.pack<[i32, i8]> {
+  // CHECK-NEXT: { i32, i8 } { i32 1, i8 2 }
+  %0 = kgen.param.constant: !pop.pack<[i32, i8]> = <<1, 2>>
+  kgen.return %0 : !pop.pack<[i32, i8]>
+}
+
+// CHECK-LABEL: @pack_constant_1
+kgen.func @pack_constant_1() -> !pop.pack<[]> {
+  // CHECK-NEXT: {} undef
+  %0 = kgen.param.constant: !pop.pack<[]> = <<>>
+  kgen.return %0 : !pop.pack<[]>
+}
+
 // CHECK-LABEL: @pointer_constant
 kgen.func @pointer_constant() -> !pop.pointer<?> {
   // CHECK-NEXT: ptr null
