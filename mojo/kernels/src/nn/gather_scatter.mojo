@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from Assert import assert_param, assert_param_bool, debug_assert
-from Buffer import NDBuffer
+from Buffer import NDBuffer, prod_dims
 from DType import DType
 from Functional import vectorize, vectorize_unroll, async_parallelize
 from Math import div_ceil
@@ -19,7 +19,6 @@ from Range import range
 from TargetInfo import dtype_sizeof
 from TypeUtilities import rebind
 from SIMD import SIMD
-
 
 ## gather_reduce_2D_axis_1
 @adaptive
@@ -130,7 +129,7 @@ fn gather_reduce[
         let row_size = output.dim[1]()
 
         # need to reduce on an entire 2D slice at a time, otherwise multiple
-        # threads will try to accumulate in the same buffer simaltaneously
+        # threads will try to accumulate in the same buffer simultaneously
         let start_slice = task_id * num_chunks_per_task
         let end_slice = min(
             (task_id + 1) * num_chunks_per_task, indices.dim[0]()
@@ -274,11 +273,7 @@ fn gather[
 ](
     output: NDBuffer[output_rank, output_shape, type],
     input: NDBuffer[input_rank, input_shape, type],
-    indices: NDBuffer[
-        indices_rank,
-        indices_shape,
-        indices_type,
-    ],
+    indices: NDBuffer[indices_rank, indices_shape, indices_type],
     out_chain: OutputChainPtr,
 ):
     """Computes output[i, j] = input[i, indices[j]]"""
@@ -291,5 +286,53 @@ fn gather[
         for j in range(output.dim[1]()):
             let idx: Int = indices[j].to_int()
             output[StaticIntTuple[output_rank](i, j)] = input[i, idx]
+
+    out_chain.mark_ready()
+
+
+# gather_ND_input_MD_indices
+@adaptive
+fn gather_nd[
+    output_rank: Int,
+    output_shape: DimList[output_rank],
+    input_rank: Int,
+    input_shape: DimList[input_rank],
+    indices_rank: Int,
+    indices_shape: DimList[indices_rank],
+    type: DType,
+    indices_type: DType,
+    axis: Int,
+    simd_width: Int,
+](
+    output: NDBuffer[output_rank, output_shape, type],
+    input: NDBuffer[input_rank, input_shape, type],
+    indices: NDBuffer[
+        indices_rank,
+        indices_shape,
+        indices_type,
+    ],
+    out_chain: OutputChainPtr,
+):
+    """Computes output[d0, d1, ..., s0, s1, ..., sm, ..., dn-1, dn] =
+    input[d0, d1, ..., indices[s0, s1, ..., sm], ..., dn-1, dn]"""
+
+    let outer_dynamic = prod_dims[0, axis](input)
+    let indices_size = indices.size()
+    let inner_dynamic = prod_dims[axis + 1, input_rank](input)
+
+    for s in range(indices_size):
+        let tuple_s = indices.get_nd_index(s)
+        let idx: Int = indices[tuple_s].to_int()
+        for do in range(outer_dynamic):
+            for di in range(inner_dynamic):
+                output[
+                    output.get_nd_index(
+                        ((do * indices_size + s) * inner_dynamic) + di
+                    )
+                ] = input[
+                    input.get_nd_index(
+                        ((do * input.dim[axis]() + idx) * inner_dynamic) + di
+                    )
+                ]
 
     out_chain.mark_ready()
