@@ -7,7 +7,6 @@
 
 from DType import DType
 from SIMD import SIMD
-from Int import Int
 
 
 @register_passable("trivial")

@@ -12,7 +12,6 @@
 
 
 from DType import DType
-from Int import Int
 from IO import print
 from Range import range
 from SIMD import SIMD
