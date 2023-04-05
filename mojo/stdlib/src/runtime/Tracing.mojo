@@ -75,7 +75,7 @@ struct TraceLevel:
 fn is_profiling_enabled[type: TraceType, level: TraceLevel]() -> Bool:
     """Returns True if the profiling is enabled for that specific type and
     level and False otherwise."""
-    alias kProfilingTypeWidthBits = Int(3)
+    alias kProfilingTypeWidthBits = 3
     alias MODULAR_LLCL_MAX_PROFILING_LEVEL = (
         build_info_llcl_max_profiling_level()
     )

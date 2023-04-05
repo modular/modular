@@ -556,7 +556,7 @@ struct AsyncTaskGroup:
     var coroutines: UnsafeFixedVector[Coroutine[none]]
 
     fn __init__(self&, num_work_items: Int, out_chain: OutputChainPtr):
-        self.counter = num_work_items.__as_mlir_index()
+        self.counter = num_work_items
         self.out_chain = out_chain.deepcopy()
         self.coroutines = UnsafeFixedVector[Coroutine[none]](num_work_items)
 
