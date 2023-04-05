@@ -6,7 +6,6 @@
 # RUN: mojo %s | FileCheck %s
 
 from Benchmark import Benchmark
-from Int import Int
 from IO import print
 from Time import now
 from Range import range

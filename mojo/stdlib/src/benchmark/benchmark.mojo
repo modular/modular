@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """The module implements 'Benchmark' class for runtime benchmarking."""
 
-from Int import Int
 from Math import min, max
 from Range import range
 from Time import now
