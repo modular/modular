@@ -6,7 +6,6 @@
 
 # RUN: mojo %s -doc-gen | FileCheck %s
 
-from Int import Int
 
 # CHECK: # Module: lit-doc
 

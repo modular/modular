@@ -6,8 +6,6 @@
 
 # RUN: kgen-translate %s -import-mojo -verify-diagnostics -I %S/../mojo-examples/ | FileCheck %s
 
-from Int import Int
-
 
 ##===----------------------------------------------------------------------===##
 # pass

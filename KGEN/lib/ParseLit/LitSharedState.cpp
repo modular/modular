@@ -565,7 +565,7 @@ ASTDecl *LitSharedState::resolveBuiltinModuleType(llvm::SMLoc loc,
   ASTDecl &moduleDecl = *it->second->decl;
   LookupResult lookup = lookupAndResolveDecl(typeName, loc, moduleDecl,
                                              /*searchParentScopes=*/false);
-  if (lookup.isFailure())
+  if (lookup.isFailure() || lookup.getIfSuccess().empty())
     return nullptr;
   return lookup.getIfSuccess()[0];
 }
@@ -580,6 +580,10 @@ ASTDecl *LitSharedState::getBuiltinTupleLiteral(llvm::SMLoc loc) {
 
 ASTDecl *LitSharedState::getBuiltinErrorType(llvm::SMLoc loc) {
   return resolveBuiltinModuleType(loc, kBuiltinErrorModuleName, "Error");
+}
+
+ASTDecl *LitSharedState::getBuiltinIntType(llvm::SMLoc loc) {
+  return resolveBuiltinModuleType(loc, kBuiltinIntModuleName, "Int");
 }
 
 void LitSharedState::loadModulesFromCache(
@@ -768,8 +772,9 @@ LitSharedState::createModuleState(StringRef moduleName,
       lexer.getCursor(), endCursor, /*indentation=*/-1);
 
   // Auto-import the core Lang modules.
-  for (StringRef moduleName : {kBuiltinBoolModuleName, kBuiltinTupleModuleName,
-                               kBuiltinErrorModuleName}) {
+  for (StringRef moduleName :
+       {kBuiltinBoolModuleName, kBuiltinTupleModuleName,
+        kBuiltinErrorModuleName, kBuiltinIntModuleName}) {
     moduleDecl.addUnresolvedWildCardImport(
         StringAttr::get(getContext(), moduleName), lexer.getToken().getLoc());
   }

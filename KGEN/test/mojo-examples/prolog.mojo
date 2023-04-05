@@ -14,7 +14,6 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from Int import Int
 from SIMD import SIMD
 from F32 import F32
 from Assert import assert_param

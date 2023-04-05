@@ -8,7 +8,6 @@
 
 
 from IO import print
-from Int import Int
 
 
 @raises

@@ -7,7 +7,6 @@
 # RUN: mojo %s | FileCheck %s
 
 from Pointer import Pointer
-from Int import Int
 from IO import print
 
 

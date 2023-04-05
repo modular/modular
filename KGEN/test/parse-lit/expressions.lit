@@ -8,7 +8,7 @@
 
 # CHECK: module {
 
-from prolog import F32, Int, SIMD, DType, object
+from prolog import F32, SIMD, DType, object
 
 fn noop(): pass
 

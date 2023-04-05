@@ -280,8 +280,8 @@ DeclResolver::aliasDeclsImpl(const TinyPtrVector<ASTDecl *> &decls,
       for (ASTDecl *decl : it->second)
         decl->resolvedness = DeclResolvedness::fully;
       it->second = decls;
-      return success();
     }
+    return success();
   }
 
   // Rejecting overlap is conservative and not what python does, but we can

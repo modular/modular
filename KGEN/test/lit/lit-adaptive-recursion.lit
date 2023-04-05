@@ -6,7 +6,6 @@
 
 # RUN: mojo %s | FileCheck %s
 
-from Int import Int
 from IO import print
 from Assert import assert_param
 

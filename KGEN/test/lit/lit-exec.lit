@@ -7,7 +7,6 @@
 # RUN: mojo %s | FileCheck %s
 
 from F32 import F32
-from Int import Int
 from IO import print
 
 

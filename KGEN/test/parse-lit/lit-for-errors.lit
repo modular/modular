@@ -7,7 +7,6 @@
 # RUN: kgen-translate -import-mojo -verify-diagnostics %s
 
 from Pointer import Pointer
-from Int import Int
 from IO import print
 
 
