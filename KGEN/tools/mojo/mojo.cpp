@@ -73,6 +73,10 @@ public:
           clEnumValN(MojoCommand::kDemangle, "demangle",
                      "Demangle the name provided on the command line.")),
       cl::init(MojoCommand::kExecute)};
+
+  cl::opt<bool> validateDocStrings{
+      "doc-validate", cl::desc("Validate doc strings in the input Mojo file."),
+      cl::init(false)};
 };
 } // namespace
 
@@ -172,7 +176,8 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   }
 
   theModule = importMojoFile(mgr, ctx, mojoScope, compilationOptions,
-                             /*useMLIRDiagnostics=*/false, *runtime);
+                             /*useMLIRDiagnostics=*/false, *runtime,
+                             clOptions.validateDocStrings);
 
   if (!theModule)
     return clOptions.reportError("could not parse the module");
