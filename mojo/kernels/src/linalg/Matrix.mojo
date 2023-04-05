@@ -11,6 +11,7 @@ from List import DimList
 from Index import StaticIntTuple
 from Pointer import Pointer, DTypePointer
 from SIMD import SIMD
+from TargetInfo import dtype_alignof
 
 
 struct Matrix[
@@ -63,6 +64,35 @@ struct Matrix[
         """
         let dptr = DTypePointer[type](ptr.address)
         return NDBuffer[2, shape, type](dptr.address)
+
+    @staticmethod
+    @always_inline
+    fn aligned_stack_allocation[
+        alignment: Int
+    ]() -> Matrix[shape, type, transposed]:
+        """Constructs a matrix instance backed by stack allocated memory space.
+
+        Parameters:
+            alignment: address alignment requirement for the allocation.
+
+        Returns:
+            Constructed matrix with the allocated space.
+        """
+        return Self {
+            data: NDBuffer[2, shape, type].aligned_stack_allocation[alignment]()
+        }
+
+    @staticmethod
+    @always_inline
+    fn stack_allocation[]() -> Matrix[shape, type, transposed]:
+        """Constructs a matrix instance backed by stack allocated memory space.
+
+        Returns:
+            Constructed matrix with the allocated space.
+        """
+        return Matrix[shape, type, transposed].aligned_stack_allocation[
+            dtype_alignof[type]()
+        ]()
 
     fn __getitem__(self, x: Int, y: Int) -> SIMD[1, type]:
         """Returns the data stored at the given untransposed coordinate.
