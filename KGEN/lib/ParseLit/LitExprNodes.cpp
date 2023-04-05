@@ -293,10 +293,21 @@ AnyValue IntLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Make sure the value fits in 64-bits.  There are no negative values here.
   // TODO: Detect overflow errors.
-  // TODO: Switch to builtin.IntegerLiteralType.
   value = value.zextOrTrunc(64);
   auto attr = IntegerAttr::get(IndexType::get(emitter.getContext()), value);
-  return emitter.emitResult(attr, this, dest);
+
+  // Convert this to an instance of Int. Int must be in scope since it is
+  // auto-imported.
+  ASTDecl *decl = emitter.shared.getBuiltinIntType(getLoc());
+  if (!decl) {
+    emitter.emitError(getLoc(),
+                      "internal error: could not find builtin 'Int' type");
+    return {};
+  }
+
+  return emitter.emitConstructorCall(decl->getSelfType(),
+                                     {{AnyValue(attr), this}}, this,
+                                     CallSyntax::kImplicitConvert, dest);
 }
 
 AnyValue FloatLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {

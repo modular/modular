@@ -21,7 +21,7 @@ fn Rec2[
   pass
 
 # expected-note @+1 {{'Thing' declared here}}
-struct Thing[a: __mlir_type.index, b: __mlir_type.index]:
+struct Thing[a: Int, b: Int]:
   pass
 
 fn GoodUseOfThing(a: Thing[4, 5]):
@@ -30,19 +30,19 @@ fn GoodUseOfThing(a: Thing[4, 5]):
 fn MissingThingMetaParams(a: Thing):  # expected-error {{'Thing' expects 2 input parameters but 0 were provided}}
   pass
 
-# expected-error @+1 {{cannot apply more parameters to an already parameterized type '$parameters-errors::Thing[1, 2]'}}
+# expected-error-re @below {{cannot apply more parameters to an already parameterized type '$parameters-errors::Thing[{{.*}}1{{.*}}, {{.*}}2{{.*}}]'}}
 fn MultipleThingMetaparams(a: Thing[1,2][1]):
   pass
 
 fn OneMissingThingMetaParam(a: Thing[1]):  # expected-error {{'Thing' expects 2 input parameters but 1 was provided}}
   pass
 
-# expected-error @+1 {{'Thing' parameter #1 has '__mlir_type.index' type, but value has type '__mlir_type.f64'}}
+# expected-error @+1 {{'Thing' parameter #1 has '$Int::Int' type, but value has type '__mlir_type.f64'}}
 fn WeirdMetaParams(a: Thing[1, 1.5]):
   pass
 
 # expected-note @+1 {{previous definition here}}
-struct Parameterized[p1: __mlir_type.index]:
+struct Parameterized[p1: Int]:
   # expected-error @+1 {{invalid redefinition of 'p1'}}
   fn a[p1: Int](self):  # Cannot shadow parameter names.
     pass
@@ -57,7 +57,7 @@ struct Parameterized[p1: __mlir_type.index]:
 
   # expected-note @+2 {{'method' declared here}}
   # expected-note @+1 {{function declared here}}
-  fn method[B: __mlir_type.index](self, other: Parameterized[p1+B]):
+  fn method[B: Int](self, other: Parameterized[p1+B]):
     pass
 
 
@@ -65,13 +65,13 @@ struct Parameterized[p1: __mlir_type.index]:
 # of parameters.
 fn testTestParamStruct(a: Parameterized[4]):
   a.method[7](Parameterized[11]())
-  # expected-error @+1 {{invalid call to 'method': method argument #0 cannot be converted from '$parameters-errors::Parameterized[12]' to '$parameters-errors::Parameterized[11]'}}
+  # expected-error-re @below {{invalid call to 'method': method argument #0 cannot be converted from '$parameters-errors::Parameterized[{{.*}}12{{.*}}]' to '$parameters-errors::Parameterized[{{.*}}11{{.*}}]'}}
   a.method[7](Parameterized[12]())
   a.method[2](Parameterized[6]())
   a.method[2, 7] # expected-error {{'method' expects 2 input parameters but 3 were provided}}
 
 
-struct MySIMD[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
+struct MySIMD[size: Int, type: __mlir_type.`!kgen.dtype`]:
   # expected-note @below {{function declared here}}
   fn __add__(self, rhs: MySIMD[size, type]):
     pass
@@ -80,7 +80,7 @@ fn testSIMD(a: MySIMD[1, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`],
             b: MySIMD[2, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]):
   var x = a+a
   var y = b+b
-  var z = b+a  # expected-error {{invalid call to '__add__': right side cannot be converted from '$parameters-errors::MySIMD[1, f64]' to '$parameters-errors::MySIMD[2, si32]'}}
+  var z = b+a  # expected-error-re {{invalid call to '__add__': right side cannot be converted from '$parameters-errors::MySIMD[{{.*}}1{{.*}}, f64]' to '$parameters-errors::MySIMD[{{.*}}2{{.*}}, si32]'}}
 
 fn badReboundType[type: __mlir_type.`!kgen.dtype`,
                   val: __mlir_type[`!pop.scalar<`, type, `>`]]():
@@ -95,12 +95,12 @@ fn partialBindSignature[callable: __mlir_type.`!kgen.signature<<index, index>() 
   return callable[a]
 
 # expected-note @+1 {{function declared here}}
-def generic_fn[a: DType, b: __mlir_type.index](c : __mlir_type.index):
+def generic_fn[a: DType, b: Int](c : Int):
   pass
 
 def call_generic[dt: DType]():
   generic_fn[dt, 1, 42](57) # expected-error {{invalid call to 'generic_fn': callee expects 2 input parameters but 3 were provided}}
-  generic_fn[1, dt](57) # expected-error {{'__mlir_type.index' value cannot be converted to '$DType::DType' in call parameter}}
+  generic_fn[1, dt](57) # expected-error {{'$Int::Int' value cannot be converted to '$DType::DType' in call parameter}}
 
 fn meta_param_then_param_redef[
       dt: __mlir_type.index # expected-note {{previous definition here}}
@@ -147,25 +147,25 @@ struct ResultParams[a: Int -> b: Int, c: F32]:
   pass
 
 # expected-note @+1 {{function declared here}}
-fn hasResultParam[a: __mlir_type.index -> b: __mlir_type.index]():
+fn hasResultParam[a: Int -> b: Int]():
   param_return[a]
 
 # expected-note @+1 {{function declared here}}
-fn hasInputParam[a: __mlir_type.index]():
+fn hasInputParam[a: Int]():
   pass
 
 fn useResultParams():
   # expected-error @+1 {{invalid call to 'hasResultParam': callee expects 1 result parameter but 0 were provided}}
   hasResultParam[1]()
 
-  alias b: __mlir_type.index
+  alias b: Int
   hasResultParam[1 -> b]()  # expected-note {{previously defined here}}
 
   # expected-error @+1 {{'b' alias was defined by another result}}
   hasResultParam[1 -> b]()
 
-  alias c: __mlir_type.index
-  alias d: __mlir_type.index
+  alias c: Int
+  alias d: Int
   # expected-error @+1 {{invalid call to 'hasResultParam': callee expects 1 result parameter but 2 were provided}}
   hasResultParam[1 -> c, d]()
 
@@ -173,33 +173,33 @@ fn useResultParams():
   hasResultParam[1 -> e]()
 
   alias f: __mlir_type.f32 # expected-note {{alias forward declared here}}
-  # expected-error @+1 {{result parameter returns type '__mlir_type.index' but forward declaration is of type '__mlir_type.f32'}}
+  # expected-error @+1 {{result parameter returns type '$Int::Int' but forward declaration is of type '__mlir_type.f32'}}
   hasResultParam[1 -> f]()
 
   var varNotAlias : __mlir_type.f32 # expected-note {{'varNotAlias' declared here}}
   # expected-error @+1 {{'varNotAlias' is not a forward declared alias}}
   hasResultParam[1 -> varNotAlias]()
 
-  alias g: __mlir_type.index
+  alias g: Int
   # expected-error @+1 {{calls with result parameters must be called directly}}
   _ = hasResultParam[1 -> g]
 
   # expected-error @+1 {{calls with result parameters must be called directly}}
   _ = hasResultParam
 
-  # expected-error @+1 {{cannot use parameterized function of type '__mlir_type.!kgen.signature<<index>() -> !lit.none>' without binding all its parameters}}
+  # expected-error-re @+1 {{cannot use parameterized function of type '__mlir_type.!kgen.signature<<{{.*}}Int>() -> !lit.none>' without binding all its parameters}}
   _ = hasInputParam
 
   # expected-error @+1 {{invalid call to 'hasInputParam': callee expects 1 input parameter but 0 were provided}}
   hasInputParam()
 
   # Issue #6856: Cannot bind parameter results is parameter expressions
-  alias h: __mlir_type.index
+  alias h: Int
   # expected-error @+1 {{cannot call 'hasResultParam' in parameter expression because it has a parameter result}}
   alias x = hasResultParam[1 -> h]()
 
-fn incorrectParameterReturnType[()-> a: __mlir_type.index]():
-  # expected-error @+1 {{'__mlir_type.f64' value cannot be converted to '__mlir_type.index' in return parameter}}
+fn incorrectParameterReturnType[()-> a: Int]():
+  # expected-error @+1 {{'__mlir_type.f64' value cannot be converted to '$Int::Int' in return parameter}}
   param_return[4.0]
 
 ##===----------------------------------------------------------------------===##

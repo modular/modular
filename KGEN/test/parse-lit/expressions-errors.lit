@@ -27,7 +27,8 @@ fn negBuiltinType(x: __mlir_type.f64) :
 # LValue and RValues
 ##===----------------------------------------------------------------------===##
 
-42 = 17 # expected-error {{expression must be mutable in assignment}}
+fn assignRValue():
+  42 = 17 # expected-error {{expression must be mutable in assignment}}
 
 struct LValuesRvalues:
   fn __init__() -> LValuesRvalues:
@@ -105,7 +106,7 @@ fn unused_values():
   var x : Int = 42
 
   _ = 4+4 # OK: Explicitly ignored.
-  # expected-warning @+1 {{'__mlir_type.index' value is unused}}
+  # expected-warning @+1 {{'$Int::Int' value is unused}}
   4+4  # MValue
 
   _ = x # OK: Explicitly ignored.
@@ -148,7 +149,7 @@ def tuple_return():
 # TODO: Implement support for logical operators on memory-only types.
 @register_passable
 struct WeirdBoolish:
-  fn __bool__(self) -> Int: return Int(0)
+  fn __bool__(self) -> Int: return 0
   fn __copy__(self) -> Self: pass;
 
 fn badAnd(a: Bool, b: WeirdBoolish):
@@ -219,7 +220,7 @@ def bad_exprs(aaaa: Bool, bbbb: F32, cccc: Int):
   # expected-error @+1 {{true value of type '$F32::F32' is not compatible with false value '$Int::Int' in conditional}}
   _ = bbbb if aaaa else cccc
 
-  alias idx : __mlir_type.index = 4
+  alias idx : __mlir_type.index = (4).__as_mlir_index()
   # expected-error @+1 {{cannot emit this binary operator in parameter context yet}}
   _ = idx/idx
 
@@ -274,14 +275,14 @@ fn testSubscripts(a: WeirdArray, b: MultiSetItem, c: IncompatElementTypes):
 ##===----------------------------------------------------------------------===##
 
 # expected-note @+1 {{declared here}}
-fn bar[x: __mlir_type.index]() -> __mlir_type.index:
+fn bar[x: __mlir_type.index]() -> Int:
         return 1
 
 fn test_adaptive_set():
     # expected-error @+1 {{cannot form a reference to non @adaptive declaration of 'bar'}}
     alias bad = bar.__adaptive_set
     # expected-error @+1 {{'$Int::Int' value has no attribute '__adaptive_set'}}
-    alias bad_int= Int(5).__adaptive_set
+    alias bad_int= (5).__adaptive_set
 
 struct GetSettable:
   fn __getitem__(self, x: Int) -> Int: pass

@@ -74,7 +74,7 @@ fn test_if(a: Bool, b: Bool, c: Bool) -> Bool:
     # CHECK-NEXT:       }
     # CHECK-NEXT:       hlcf.yield
     # CHECK-NEXT:     }
-    var z: Int = Int(4)
+    var z: Int = 4
     return a
 
 
@@ -107,7 +107,7 @@ fn test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
     # CHECK-NEXT:               }
     # CHECK:                    hlcf.yield
     # CHECK-NEXT:             }
-    var z: Int = Int(4)
+    var z: Int = 4
     return a
 
 # CHECK-LABEL: lit.func @"param_if{{.*}}<a: i1, b: @"$Bool"::@Bool>()
@@ -163,11 +163,11 @@ fn test_while(a: Bool, b: Bool) -> Bool:
     var inside_b: Int
     var inside_else: Int
     while a:
-        inside_a = Int(0)
+        inside_a = 0
         if b:
-            inside_b = Int(1)
+            inside_b = 1
     else:
-        inside_else = Int(2)
+        inside_else = 2
     return a
 
 
@@ -195,12 +195,12 @@ def test_else_outside_while(a: Bool, b: Bool) -> Bool:
         # CHECK: {{.+}} = pop.load %a_0
         while a:
             # CHECK: pop.store {{.+}}, %inside_a
-            inside_a = Int(0)
+            inside_a = 0
             # CHECK: hlcf.continue
     # CHECK: } else {
     else:
         # CHECK: pop.store {{.+}}, %inside_else
-        inside_else = Int(2)
+        inside_else = 2
     # CHECK: }
     # CHECK: lit.return
     return a
@@ -258,7 +258,7 @@ fn simpleTryExcept():
     # CHECK: lit.try
     try:
         # CHECK: pop.store
-        a = Int(0)
+        a = 0
         # CHECK-NEXT: lit.try.yield
     # CHECK-NEXT: except (%{{.*}}: !kgen.declref<@{{.*}}::@Error>)
     except:
@@ -280,7 +280,7 @@ fn tryExceptElse():
     # CHECK: else
     else:
         # CHECK: pop.store
-        a = Int(0)
+        a = 0
         # CHECK-NEXT: lit.try.yield
 
 
@@ -311,7 +311,7 @@ def tryExceptArgDef():
 
 
 def maybeRaises() -> Int:
-    return Int(0)
+    return 0
 
 
 # CHECK-LABEL: lit.func @"propagateErrorInDef
@@ -422,6 +422,6 @@ fn rethrowsToRethrow():
 # struct Iterable:
 
 # fn test_for(iterable: Iterable):
-#  var result = Int(0)
+#  var result = 0
 #  for i in iterable:
 #    result += i

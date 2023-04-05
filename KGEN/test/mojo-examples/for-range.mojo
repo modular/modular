@@ -27,4 +27,4 @@ fn main():
     for z in range(0, 0, -3):
         print(z)
     else:
-        print(Int(42))
+        print(42)

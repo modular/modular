@@ -60,11 +60,12 @@ fn printInt(x: Int):
 
 fn main():
     let buffer = __mlir_op.`pop.stack_allocation`[
-        count:3, _type : __mlir_type[`!pop.pointer<`, Int, `>`]
+        count : (3).__as_mlir_index(),
+        _type : __mlir_type[`!pop.pointer<`, Int, `>`],
     ]()
     let my_pointer = Pointer[Int](buffer)
 
-    var my_list = MyList(my_pointer, Int(3))
+    var my_list = MyList(my_pointer, 3)
     my_list[0] = 25
     my_list[1] = 23
     my_list[2] = 19

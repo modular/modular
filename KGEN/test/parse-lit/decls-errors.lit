@@ -36,11 +36,11 @@ def missing_type_on_var_decl():
 
 def bad_stmt_list():
   # expected-error @+1 {{'if' statement must be on its own line}}
-  abc = Int(0); if abc != 0: pass
+  abc = 0; if abc != 0: pass
 
 def cantFwdDeclarePlusEqual():
   # expected-error @+1 {{use of unknown declaration 'x'}}
-  x += Int(4)
+  x += 4
 
 fn badTypeErrorMessage():
   var x: Int
@@ -218,7 +218,7 @@ fn badPackCalls():
   # expected-error @+1 {{invalid call to 'examplePack': callee expects 2 arguments, but 1 was specified}}
   examplePack[Int, F32](1)
   # expected-error @+1 {{invalid call to 'examplePack': argument #1 cannot be converted from '__mlir_type.index' to '$F32::F32'}}
-  examplePack[Int, F32](1, 2)
+  examplePack[Int, F32](1, (2).__as_mlir_index())
   # expected-warning @below {{could not infer parameter type for this value, because it is not concrete}}
   # expected-error @below {{invalid call to 'examplePack': callee expects 1 input parameter but 0 were provided}}
   examplePack(packArgOverload)
@@ -409,7 +409,7 @@ struct WrongSelfType[a: Int]:
 
 # Issue #6587: [Lit] Recursive constructors crash kgen
 struct BadInit[size: __mlir_type.index]:
-  fn __init__(elem: BadInit[1]) -> BadInit[size]:
+  fn __init__(elem: BadInit[(1).__as_mlir_index()]) -> BadInit[size]:
     var x : __mlir_type[`!pop.simd<`, size, `, f32>`]
     # expected-error @+1 {{'__mlir_type.!pop.simd<size, f32>' value cannot be converted to '$decls-errors::BadInit[size]'}}
     return x
