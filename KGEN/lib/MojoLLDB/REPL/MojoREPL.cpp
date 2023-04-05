@@ -20,6 +20,12 @@ using namespace M;
 using namespace M::KGEN::Mojo;
 using namespace lldb_private;
 
+#if defined(_WIN32)
+#define REPL_ENTRY_POINT_BIN "mojo-repl-entry-point.exe"
+#else
+#define REPL_ENTRY_POINT_BIN "mojo-repl-entry-point"
+#endif
+
 static llvm::Error createStringError(StringRef message) {
   return llvm::make_error<llvm::StringError>(message,
                                              llvm::inconvertibleErrorCode());
@@ -57,27 +63,23 @@ createInstanceFromTarget(Target &target, const char *replOptions) {
 }
 
 /// Create a target for use by the repl. The target is created by launching the
-/// mojo-repl utility executable. The executable is expected to be adjacent to
-/// the location of plugin library.
+/// mojo-repl-entry-point utility executable. The executable is expected to be
+/// adjacent to the location of plugin library.
 static llvm::Expected<lldb::TargetSP> createMojoReplTarget(Debugger &debugger) {
   // Find the mojo-repl executable. We look for it in the same directory as the
   // plugin.
-  FileSpec replExe(Host::GetModuleFileSpecForHostAddress(
+  FileSpec replEntryPoint(Host::GetModuleFileSpecForHostAddress(
       reinterpret_cast<void *>(createMojoReplTarget)));
-  if (!replExe)
+  if (!replEntryPoint)
     return createStringError("unable to locate REPL executable");
 
-#if defined(_WIN32)
-  replExe.SetFilename("mojo-repl.exe");
-#else
-  replExe.SetFilename("mojo-repl");
-#endif
-  std::string replExePath(replExe.GetPath());
+  replEntryPoint.SetFilename(REPL_ENTRY_POINT_BIN);
+  std::string replEntryPointPath(replEntryPoint.GetPath());
 
   // Make sure the REPL executable exists.
-  if (!FileSystem::Instance().Exists(replExe)) {
+  if (!FileSystem::Instance().Exists(replEntryPoint)) {
     return createStringError("REPL executable does not exist: '{0}'",
-                             replExePath.c_str());
+                             replEntryPointPath.c_str());
   }
 
   // Compute a generic triple for the REPL target.
@@ -97,7 +99,7 @@ static llvm::Expected<lldb::TargetSP> createMojoReplTarget(Debugger &debugger) {
   // Create a target for the repl executable.
   lldb::TargetSP target;
   Status error = debugger.GetTargetList().CreateTarget(
-      debugger, replExePath.c_str(), targetTriple.getTriple(),
+      debugger, replEntryPointPath.c_str(), targetTriple.getTriple(),
       eLoadDependentsYes, /*platform_options=*/nullptr, target);
   if (!error.Success()) {
     return createStringError("failed to create REPL target: %s",

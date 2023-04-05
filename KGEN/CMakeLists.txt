@@ -36,7 +36,7 @@ add_subdirectory(tools/kgen-opt)
 add_subdirectory(tools/kgen-execute)
 add_subdirectory(tools/kgen-translate)
 add_subdirectory(tools/mojo-lsp-server)
-add_subdirectory(tools/mojo-repl)
+add_subdirectory(tools/mojo-repl-entry-point)
 add_subdirectory(tools/mojo)
 
 # This function reads ${KGEN_LINK_LIBS} and puts the include flags into

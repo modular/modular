@@ -85,20 +85,22 @@ class MojoKernel(Kernel):
         """Load the libMojoJupyter library.
 
         The location of the library is determined by the location of the
-        `mojo-repl` executable. The library should either be adjacent, or within
-        a relative `../lib/` directory.
+        `mojo-repl-entry-point` executable. The library should either be
+        adjacent, or within a relative `../lib/` directory.
 
         On success, this initializes `mojoReplExe` returns the loaded library.
         """
         # Look for the mojo repl executable. This will have the various
         # necessary libraries adjacent to it.
-        self.mojoReplExe: Optional[str] = shutil.which("mojo-repl")
+        self.mojoReplExe: Optional[str] = shutil.which("mojo-repl-entry-point")
         if not self.mojoReplExe:
             from distutils.spawn import find_executable
 
-            self.mojoReplExe = find_executable("mojo-repl")
+            self.mojoReplExe = find_executable("mojo-repl-entry-point")
             if not self.mojoReplExe:
-                raise RuntimeError("Unable to locate `mojo-repl` executable.")
+                raise RuntimeError(
+                    "Unable to locate `mojo-repl-entry-point` executable."
+                )
 
         # Load the MojoJupyter library. This library provides the internal
         # implementation, and is located adjacent to the mojo repl executable or

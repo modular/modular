@@ -79,7 +79,7 @@ private:
   /// Initialize the target.
   LogicalResult initializeTarget(const char *mojoReplExe);
 
-  /// Launch the mojo-repl process.
+  /// Launch the mojo-repl-entry-point process.
   LogicalResult launchReplProcess();
 
   /// Report an error to the Jupyter kernel.
@@ -167,7 +167,7 @@ LogicalResult MojoKernel::initialize(const char *mojoReplExe) {
   if (!mainBreakpoint.IsValid())
     return reportKernelError("unable to create breakpoint for repl process");
 
-  // Launch the mojo-repl process.
+  // Launch the mojo-repl-entry-point process.
   if (failed(launchReplProcess()))
     return failure();
 
@@ -238,8 +238,9 @@ LogicalResult MojoKernel::launchReplProcess() {
                           /*stderr_path=*/nullptr, cwd.data(), launchFlags,
                           /*stop_at_entry=*/false, error);
   if (!process.IsValid() || process.GetState() != eStateStopped) {
-    return reportKernelError("Failed to launch `mojo-repl` process: " +
-                             Twine(error.GetCString()));
+    return reportKernelError(
+        "Failed to launch `mojo-repl-entry-point` process: " +
+        Twine(error.GetCString()));
   }
   return success();
 }
