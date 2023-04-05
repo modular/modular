@@ -8,7 +8,6 @@
 from Buffer import Buffer
 from DType import DType
 from Functional import vectorize, vectorize_unroll
-from Int import Int
 from IO import print
 from Memory import memcmp
 from Range import range

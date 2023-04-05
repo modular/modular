@@ -8,7 +8,6 @@
 from Buffer import Buffer
 from DType import DType
 from Functional import map
-from Int import Int
 from IO import print
 
 # CHECK-LABEL: test_map

@@ -8,7 +8,6 @@
 from Buffer import Buffer, NDBuffer
 from DType import DType
 from Reductions import sum, product, max, min, mean, variance
-from Int import Int
 from Index import StaticIntTuple
 from IO import print
 from Range import range

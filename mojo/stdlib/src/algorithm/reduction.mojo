@@ -9,7 +9,6 @@ from Buffer import Buffer, NDBuffer
 from DType import DType
 from Functional import vectorize, unroll
 from Index import StaticIntTuple
-from Int import Int
 from Numerics import inf, neginf
 from List import (
     DimList,

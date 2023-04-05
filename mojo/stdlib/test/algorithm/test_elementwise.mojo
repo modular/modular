@@ -9,7 +9,6 @@ from Buffer import NDBuffer, Buffer, _raw_stack_allocation
 from Range import range
 from DType import DType
 from Functional import elementwise
-from Int import Int
 from Math import mul, min
 from List import Dim, DimList, create_dim_list
 from IO import print

@@ -9,7 +9,6 @@ from Buffer import Buffer
 from DType import DType
 from Functional import parallelize, async_parallelize, map
 from Math import div_ceil, min
-from Int import Int
 from IO import print
 from LLCL import Runtime, OwningOutputChainPtr
 from SIMD import SIMD

@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: mojo %s | FileCheck %s
 
-from Int import Int
 from Functional import tile, unswitch, tile_and_unswitch
 from List import VariadicList
 from IO import print
