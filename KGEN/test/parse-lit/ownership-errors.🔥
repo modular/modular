@@ -1,20 +1,24 @@
-# RUN: kgen-translate -import-mojo %s --mlir-print-debuginfo > %t.mlir
-# RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-diagnostics
+# RUN: kgen-translate -import-mojo %s --mlir-print-debuginfo -o %t.mlir
+# RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-diagnostics -o /dev/null
 
 struct MemExample:
+  var memstate : __mlir_type.index
+
   fn __init__(self&): pass
   fn __copy__(self) -> Self:
-    return MemExample{}
+    return MemExample{memstate: 4}
   fn __del___(owned self): pass
 
 fn use(x: MemExample): pass
 
 @register_passable
 struct RegExample:
+  var regstate : __mlir_type.index
+
   fn __init__() -> Self:
-    return RegExample{}
+    return RegExample{regstate: 1}
   fn __copy__(self) -> Self:
-    return RegExample{}
+    return RegExample{regstate: 12}
   fn __del___(owned self):
     pass
 
@@ -111,3 +115,22 @@ fn use_of_uninit_raise(cond: Bool, err: Error):
   else:
     d = MemExample()
   use(d)  # Ok
+
+
+struct MoreComplexExample:
+  var mem: MemExample
+  var reg: RegExample
+
+  fn __init__(self&):
+    var result : MoreComplexExample # expected-note {{value declared here}}
+    result.mem = MemExample()
+    self = result  # expected-error {{invalid use of uninitialized value}}
+
+  fn __copy__(self) -> Self:
+    # This is ok.
+    var result : MoreComplexExample
+    result.mem = self.mem
+    result.reg = self.reg
+    return result
+
+  fn __del___(owned self): pass

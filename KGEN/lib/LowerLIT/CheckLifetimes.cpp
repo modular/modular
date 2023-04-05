@@ -63,23 +63,27 @@ struct TypeDeclInfo {
       : structMap(std::move(structMap)) {}
 
   /// Return the total number of flattened fields in the specified type.
-  size_t getNumFieldsInType(Type type);
+  unsigned getNumFieldsInType(Type type);
+
+  /// Return the start bit for a field with the specified name in the specified
+  /// type.
+  unsigned getFieldIndex(DeclRefType type, StringAttr fieldName);
 
 private:
   DenseMap<SymbolRefAttr, LIT::StructDeclOp> structMap;
 
   /// This keeps track of the number of fields in the struct specified by the
   /// (fully flattened) symbol.
-  DenseMap<SymbolRefAttr, size_t> numFields;
+  DenseMap<SymbolRefAttr, unsigned> numFields;
 
   /// A map from struct name and field name to index within the struct.  This
   /// isn't the field number, this is the number of recursively flattened
   /// fields until the start of the field.
-  DenseMap<std::pair<SymbolRefAttr, StringAttr>, size_t> fieldIndices;
+  DenseMap<std::pair<SymbolRefAttr, StringAttr>, unsigned> fieldIndices;
 };
 
 /// Return the total number of flattened fields in the specified type.
-size_t TypeDeclInfo::getNumFieldsInType(Type type) {
+unsigned TypeDeclInfo::getNumFieldsInType(Type type) {
   // We currently treat all non-struct types as being a single element, even
   // things like kgen.list containing struct types.
   DeclRefType declRef = dyn_cast<DeclRefType>(type);
@@ -105,17 +109,27 @@ size_t TypeDeclInfo::getNumFieldsInType(Type type) {
   return numFields[structSymbol] = totalFields;
 }
 
+/// Return the start bit for a field with the specified name in the specified
+/// type.
+unsigned TypeDeclInfo::getFieldIndex(DeclRefType type, StringAttr fieldName) {
+  return fieldIndices[{type.getSymbol(), fieldName}];
+}
+
 //===----------------------------------------------------------------------===//
 // ValueInfo / ValueSet tracking
 //===----------------------------------------------------------------------===//
 
 namespace {
 struct ValueInfo {
-  /// This is the location of the value being declared.
-  const Location loc;
+  /// This is the declared value being tracked.
+  const Value value;
 
   /// This is the destructor for the value if it exists, otherwise may be null.
   const TypedAttr dtor;
+
+  /// This indicates the (first, end] bitrange in the bit vector corresponding
+  /// to this value.
+  const unsigned startValueBit, endValueBit;
 
   /// True if this values starts out uninitialized at the beginning of its
   /// lifetime.
@@ -127,76 +141,142 @@ struct ValueInfo {
   bool hasErrorDiagnosed;
 };
 
+/// A ValueRef indicates a slice reference into the bitvector for all the
+/// values.
+struct ValueRef {
+  /// This is the entry # for the ValueInfo for the overall value.
+  unsigned valueId;
+
+  /// This is the (start, end] span of bits for the reference that we're
+  /// tracking, which may be a subset of the overall value.
+  unsigned startBit, endBit;
+
+  ValueRef() : valueId(0), startBit(~0U), endBit(~0U) {}
+  ValueRef(unsigned valueId, unsigned startBit, unsigned endBit)
+      : valueId(valueId), startBit(startBit), endBit(endBit) {}
+
+  /// Allow use of a ValueRef in a boolean condition.
+  operator bool() const { return valueId != 0; }
+
+  /// Test if all the bits in the range are set in the specified bitvector.
+  bool isAllPresent(const BitVector &bits) const {
+    // BitVector doesn't have a more efficient method for this.  We could make
+    // this more efficient for longer ranges if needed.
+    for (size_t i = startBit, e = endBit; i != e; ++i)
+      if (!bits[i])
+        return false;
+    return true;
+  }
+
+  /// Set the bits for this range to zero or one in the specified bitvector.
+  void markBits(BitVector &bits, bool newValue) const {
+    if (!valueId)
+      return;
+    if (newValue)
+      bits.set(startBit, endBit);
+    else
+      bits.reset(startBit, endBit);
+  }
+};
+
 /// This tracks the values in a function (including nested functions) that are
 /// relevant for ownership - that needs to be tracked for uses without being
 /// initialized, or that need a destructor to be run.
+///
+/// This tracks a /completely field sensitive/ view of the values under
+/// consideration, including their nested fields in a flattened representation.
+/// This gives us a fully precise view of the individual fields, and allows them
+/// to be initialized and consumed in a piecewise way.
 struct ValueSet {
-
   /// Initialize the value set with one entry, so index #0 is always invalid and
   /// can be used as a sentinel, and so a null Value is always treated as
   /// untracked.
-  ValueSet(MLIRContext *context, TypeDeclInfo &typeDeclInfo)
-      : context(context), typeDeclInfo(typeDeclInfo) {
-    addValue(Value(), TypedAttr(), false, false);
-
-    // TODO: make field sensitive;
-    (void)this->typeDeclInfo;
+  ValueSet(TypeDeclInfo &typeDeclInfo) : typeDeclInfo(typeDeclInfo) {
+    addValue(Value(), false, TypedAttr(), false, false);
   }
 
   /// Return the number of values we are tracking.
   MutableArrayRef<ValueInfo> getValueInfos() { return valueInfos; }
 
-  ValueInfo &operator[](size_t idx) { return valueInfos[idx]; }
-
-  /// If this value is directly tracked by the ValueSet, return the index of the
-  /// value, otherwise return zero.
-  size_t getDirectValueIndex(Value value) const {
-    auto it = memoryObjectIndex.find(value);
-    return it != memoryObjectIndex.end() ? it->second : 0;
-  }
-
-  // Add a value to the set that we are tracking, along with whether the value
-  // starts out initialized.
-  void addValue(Value val, TypedAttr dtor, bool startsUninit, bool endsUninit) {
+  /// Add a value to the set that we are tracking.  This includes:
+  ///  * the MLIR representation for the value itself
+  ///  * whether the value is a by-ref pointer to the underlying logical value
+  ///  * the destructor for the value
+  ///  * whether the value starts out uninit or init at the function start
+  ///  * whether the value is uninit or init at normal function return.
+  ///
+  void addValue(Value val, bool isByRef, TypedAttr dtor, bool startsUninit,
+                bool endsUninit) {
     // FIXME(staging): Ignore values without destructors.
     if (!ENABLE_FOR_ALL && !dtor && val)
       return;
 
-    memoryObjectIndex[val] = valueInfos.size();
-    Location loc = val ? val.getLoc() : mlir::UnknownLoc::get(context);
-    valueInfos.push_back({loc, dtor, startsUninit, endsUninit, false});
+    unsigned firstValueBit = getNumTotalBits();
+    unsigned numValueBits = 1;
+    // We are only field sensitive for memory objects, not in-register values.
+    // It isn't possible to update in-register values: register_passable values
+    // are always valid when present.  If they pass through memory, they are
+    // checked when loaded from memory.
+    if (val && isByRef) {
+      Type valType =
+          cast<POP::PointerType>(val.getType()).getResolvedElementType();
+      numValueBits = typeDeclInfo.getNumFieldsInType(valType);
+    }
+
+    valueInfoIndex[val] = valueInfos.size();
+    valueInfos.push_back({val, dtor, firstValueBit,
+                          firstValueBit + numValueBits, startsUninit,
+                          endsUninit, /*hasErrorDiagnosed=*/false});
+  }
+
+  /// If this value is directly tracked by the ValueSet, return the index of the
+  /// value, otherwise return zero.
+  ValueRef getDirectValueRef(Value value) const {
+    auto it = valueInfoIndex.find(value);
+    if (it == valueInfoIndex.end())
+      return ValueRef();
+    auto &entry = valueInfos[it->second];
+    return ValueRef{it->second, entry.startValueBit, entry.endValueBit};
   }
 
   /// Given a pointer that is being accessed indirectly by an operation, return
   /// the value number being referenced, or zero if not tracked.
-  size_t getPointerValueIndex(Value value);
+  ValueRef getPointerValueIndex(Value value);
+
+  /// Return the total number of bits we need to track in the bitvector.
+  unsigned getNumTotalBits() const {
+    return !valueInfos.empty() ? valueInfos.back().endValueBit : 0;
+  }
 
 private:
-  MLIRContext *const context;
   TypeDeclInfo &typeDeclInfo;
-
   SmallVector<ValueInfo> valueInfos;
-  DenseMap<Value, size_t> memoryObjectIndex;
+  DenseMap<Value, unsigned> valueInfoIndex;
 };
 } // namespace
 
 /// Given a pointer that is being accessed indirectly by an operation, return
 /// the value number being referenced, or zero if not tracked.
-size_t ValueSet::getPointerValueIndex(Value value) {
-  while (1) {
-    // Check to see if this is directly involved.
-    if (size_t index = getDirectValueIndex(value))
-      return index;
+ValueRef ValueSet::getPointerValueIndex(Value value) {
+  // If this is a GEP, check the base and focus in on a field of it.
+  if (auto structGEP = value.getDefiningOp<StructGEPOp>()) {
+    ValueRef baseVal = getPointerValueIndex(structGEP.getContainer());
+    if (!baseVal)
+      return baseVal;
 
-    // If this is a GEP, check the base.
-    if (auto structGEP = value.getDefiningOp<StructGEPOp>()) {
-      value = structGEP.getContainer();
-      continue;
-    }
-
-    // Otherwise, we don't know what this is.
-    return 0;
+    // Figure out what subset of elements we have indexed to.
+    auto containerType =
+        structGEP.getContainer().getType().getResolvedElementType();
+    unsigned fieldOffset = typeDeclInfo.getFieldIndex(
+        cast<DeclRefType>(containerType), structGEP.getFieldAttr());
+    unsigned startBit = baseVal.startBit + fieldOffset;
+    auto resultType = structGEP.getType().getResolvedElementType();
+    return ValueRef{baseVal.valueId, startBit,
+                    startBit + typeDeclInfo.getNumFieldsInType(resultType)};
   }
+
+  // Otherwise, we don't know what this is.
+  return ValueRef();
 }
 
 //===----------------------------------------------------------------------===//
@@ -239,10 +319,10 @@ void UninitializedValueScan::scanFunction(LIT::FuncOp func) {
   // all values live at the start of the function (even before they are actually
   // defined) because we know that all uses must be after them due to SSA
   // dominance.
-  liveValues.resize(valueSet.getValueInfos().size());
-  for (auto [idx, valueInfo] : llvm::enumerate(valueSet.getValueInfos()))
+  liveValues.resize(valueSet.getNumTotalBits());
+  for (const ValueInfo &valueInfo : valueSet.getValueInfos())
     if (!valueInfo.startsUninit)
-      liveValues.set(idx);
+      liveValues.set(valueInfo.startValueBit, valueInfo.endValueBit);
 
   // Scan the body of the function.
   scanBlock(*func.getBody());
@@ -258,39 +338,49 @@ void UninitializedValueScan::scanBlock(Block &block) {
 }
 
 void UninitializedValueScan::checkOp(Operation &op) {
+  // This op is handled when used.
+  if (isa<StructGEPOp>(op))
+    return;
+
   // Verify that the specified value ID is live at this point, diagnosing an
   // error if not.
-  auto checkValueIdLive = [&](size_t valueId) {
-    if (!liveValues[valueId] && !valueSet[valueId].hasErrorDiagnosed) {
+  auto checkLive = [&](ValueRef valueRef) {
+    if (valueRef.isAllPresent(liveValues))
+      return;
+    ValueInfo &valueEntry = valueSet.getValueInfos()[valueRef.valueId];
+    if (!valueEntry.hasErrorDiagnosed) {
       auto diag = op.emitError("invalid use of uninitialized value");
-      diag.attachNote(valueSet[valueId].loc) << "value declared here";
-      valueSet[valueId].hasErrorDiagnosed = true;
+      diag.attachNote(valueEntry.value.getLoc()) << "value declared here";
+      valueEntry.hasErrorDiagnosed = true;
     }
   };
 
-  auto checkSSAValueLive = [&](Value value) -> size_t {
-    size_t valueId = valueSet.getPointerValueIndex(value);
+  auto checkSSAValueLive = [&](Value value) -> ValueRef {
+    ValueRef valueId = valueSet.getDirectValueRef(value);
     if (valueId)
-      checkValueIdLive(valueId);
+      checkLive(valueId);
     return valueId;
   };
 
-  auto checkDirectPointerLive = [&](Value value) -> size_t {
-    size_t valueId = valueSet.getDirectValueIndex(value);
-    if (valueId)
-      checkValueIdLive(valueId);
-    return valueId;
-  };
-
-  auto markValueIdState = [&](size_t valueId, bool isLive) {
-    if (valueId)
-      liveValues[valueId] = isLive;
+  auto checkDirectPointerLive = [&](Value value) -> ValueRef {
+    ValueRef valueRef = valueSet.getPointerValueIndex(value);
+    if (valueRef)
+      checkLive(valueRef);
+    return valueRef;
   };
 
   // A store of a whole value is an initialization.
   if (auto storeOp = dyn_cast<POP::StoreOp>(op)) {
     // This marks its value live.
-    markValueIdState(valueSet.getDirectValueIndex(storeOp.getPtr()), true);
+    valueSet.getPointerValueIndex(storeOp.getPtr()).markBits(liveValues, true);
+    return;
+  }
+
+  // A load is a use of whatever fields are being referenced.
+  // an initialization.
+  if (auto loadOp = dyn_cast<POP::LoadOp>(op)) {
+    // This marks its value live.
+    checkLive(valueSet.getPointerValueIndex(loadOp.getPtr()));
     return;
   }
 
@@ -306,7 +396,7 @@ void UninitializedValueScan::checkOp(Operation &op) {
       switch (convention) {
       case ValueInputConvention::OwnedInReg:
         // Transitions live -> dead.
-        markValueIdState(checkSSAValueLive(operand), false);
+        checkSSAValueLive(operand).markBits(liveValues, false);
         break;
       case ValueInputConvention::BorrowedInReg:
         // Live -> live.
@@ -314,7 +404,7 @@ void UninitializedValueScan::checkOp(Operation &op) {
         break;
       case ValueInputConvention::OwnedInMem:
         // Transitions live -> dead.
-        markValueIdState(checkDirectPointerLive(operand), false);
+        checkDirectPointerLive(operand).markBits(liveValues, false);
         break;
       case ValueInputConvention::BorrowedInMem:
       case ValueInputConvention::ByRef:
@@ -323,7 +413,7 @@ void UninitializedValueScan::checkOp(Operation &op) {
         break;
       case ValueInputConvention::ByRefResult:
         // This call defines the by-ref result.
-        markValueIdState(valueSet.getDirectValueIndex(operand), true);
+        valueSet.getPointerValueIndex(operand).markBits(liveValues, true);
         break;
       }
     }
@@ -343,7 +433,8 @@ void UninitializedValueScan::checkOp(Operation &op) {
     auto valueInfosRef = valueSet.getValueInfos();
     for (size_t i = 1, e = valueInfosRef.size(); i != e; ++i)
       if (!valueInfosRef[i].endsUninit)
-        checkValueIdLive(i);
+        checkLive(ValueRef{unsigned(i), valueInfosRef[i].startValueBit,
+                           valueInfosRef[i].endValueBit});
     return;
   }
 
@@ -500,29 +591,32 @@ LogicalResult CheckLifetimes::processFunction(LIT::FuncOp func,
   // Pass #1: Collect all of the values declared in the function that have
   // ownership to track, and number them.
   SmallVector<OwnedArgDeclOp> ownedArgDecls;
-  ValueSet valueSet(func.getContext(), typeDeclInfo);
+  ValueSet valueSet(typeDeclInfo);
   auto collectArguments = [&](SignatureType signature, Block *body) {
     for (auto [convention, bbArg] : llvm::zip(
              signature.getValueInputConventions(), body->getArguments())) {
       if (convention == ValueInputConvention::ByRef ||
           convention == ValueInputConvention::ByRefResult)
-        valueSet.addValue(bbArg, /*no-dtor*/ TypedAttr(),
+        valueSet.addValue(bbArg, /*isByRef*/ true, /*no-dtor*/ TypedAttr(),
                           /*startsUninit*/ false, /*endsUninit*/ false);
     }
   };
   func->walk([&](Operation *op) {
     if (auto ownedArgDecl = dyn_cast<OwnedArgDeclOp>(op)) {
       ownedArgDecls.push_back(ownedArgDecl);
-      return valueSet.addValue(op->getResult(0), ownedArgDecl.getDtorAttr(),
+      return valueSet.addValue(op->getResult(0), /*isByRef*/ true,
+                               ownedArgDecl.getDtorAttr(),
                                /*startsUninit*/ false, /*endsUninit*/ true);
     }
     // LetReg starts out initialized with its own value.
     if (auto letReg = dyn_cast<LetRegDeclOp>(op))
-      return valueSet.addValue(op->getResult(0), letReg.getDtorAttr(),
+      return valueSet.addValue(op->getResult(0), /*isByRef*/ false,
+                               letReg.getDtorAttr(),
                                /*startsUninit*/ false, /*endsUninit*/ true);
     // VarLetDeclOp is uninit and ends that way.
     if (auto varLet = dyn_cast<VarLetDeclOp>(op))
-      return valueSet.addValue(op->getResult(0), varLet.getDtorAttr(),
+      return valueSet.addValue(op->getResult(0), /*isByRef*/ true,
+                               varLet.getDtorAttr(),
                                /*startsUninit*/ true, /*endsUninit*/ true);
 
     // Collect values we need to track from arguments to closures and the outer
@@ -548,7 +642,7 @@ LogicalResult CheckLifetimes::processFunction(LIT::FuncOp func,
   }
 
   // Return failure if we generated an error.
-  return failure(llvm::any_of(valueSet.getValueInfos(), [&](ValueInfo info) {
+  return failure(llvm::any_of(valueSet.getValueInfos(), [&](ValueInfo &info) {
     return info.hasErrorDiagnosed;
   }));
 }
