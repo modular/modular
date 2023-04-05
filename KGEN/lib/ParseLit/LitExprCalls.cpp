@@ -73,11 +73,11 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
                        expectedParamRef.getParam());
 
   // Handle when both are DeclRefTypes.
-  if (auto actualDRT = dyn_cast<DeclRefType>(actualType))
+  if (auto actualDRT = dyn_cast<DeclRefType>(actualType)) {
     if (auto expectedDRT = dyn_cast<DeclRefType>(expectedType)) {
-      // Fail if this is to two fundamentally different symbols.
+      // Ignore if these are two fundamentally different symbols.
       if (actualDRT.getSymbol() != expectedDRT.getSymbol())
-        return failure();
+        return success();
 
       // Fail if the parameter lists fundamentally mismatch.
       // TODO: Defaulted parameters could make this ok?
@@ -94,6 +94,7 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
       }
       return success();
     }
+  }
 
   // Handle various common POP types for convenience, starting with SIMDType.
   if (auto actual = dyn_cast<POP::SIMDType>(actualType))

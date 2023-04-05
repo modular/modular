@@ -161,7 +161,7 @@ struct my_iter_wrong_int:
     fn __len__(self: my_iter_wrong_int) -> MyInteger:
         if self.start < self.end:
             return MyInteger((self.end - self.start).value)
-        return MyInteger(0)
+        return MyInteger((0).__as_mlir_index())
 
 
 struct MyList_invalid_boxed_type:
@@ -195,27 +195,27 @@ fn printInt(x: Int):
 
 fn main():
     let buffer = __mlir_op.`pop.stack_allocation`[
-        count:3, _type : __mlir_type[`!pop.pointer<`, Int, `>`]
+        count:(3).__as_mlir_index(), _type : __mlir_type[`!pop.pointer<`, Int, `>`]
     ]()
     var my_pointer: Pointer[Int]
     my_pointer.address = buffer
 
-    let my_list_no_len = MyList_range_no_len(my_pointer, Int(3))
+    let my_list_no_len = MyList_range_no_len(my_pointer, 3)
     my_list_no_len[0] = 25
     my_list_no_len[1] = 23
     my_list_no_len[2] = 19
 
-    let my_list_no_next = MyList_range_no_next(my_pointer, Int(3))
+    let my_list_no_next = MyList_range_no_next(my_pointer, 3)
     my_list_no_next[0] = 25
     my_list_no_next[1] = 23
     my_list_no_next[2] = 19
 
-    let my_list_no_iter = MyList_no_iter(my_pointer, Int(3))
+    let my_list_no_iter = MyList_no_iter(my_pointer, 3)
     my_list_no_iter[0] = 25
     my_list_no_iter[1] = 23
     my_list_no_iter[2] = 19
 
-    let my_list_invalid_int = MyList_invalid_boxed_type(my_pointer, Int(3))
+    let my_list_invalid_int = MyList_invalid_boxed_type(my_pointer, 3)
     my_list_invalid_int[0] = 25
     my_list_invalid_int[1] = 23
     my_list_invalid_int[2] = 19

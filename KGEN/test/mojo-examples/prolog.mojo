@@ -16,7 +16,7 @@
 
 from SIMD import SIMD
 from F32 import F32
-from Assert import assert_param
+from Assert import assert_param, assert_param_bool
 from Range import range
 from IO import print
 from DType import DType
@@ -59,8 +59,8 @@ struct StringRef:
     fn empty() -> StringRef:
         let nullptr = __mlir_op.`pop.cast_from_builtin`[
             _type : __mlir_type.`!pop.scalar<index>`
-        ](__mlir_op.`index.constant`[value:0]())
-        let size = Int(0)
+        ]((0).__as_mlir_index())
+        let size = 0
         return StringRef(
             __mlir_op.`pop.index_to_pointer`[
                 _type : __mlir_type.`!pop.pointer<!pop.scalar<si8>>`

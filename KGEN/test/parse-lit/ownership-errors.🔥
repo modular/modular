@@ -6,7 +6,7 @@ struct MemExample:
 
   fn __init__(self&): pass
   fn __copy__(self) -> Self:
-    return MemExample{memstate: 4}
+    return MemExample{memstate: (4).__as_mlir_index()}
   fn __del___(owned self): pass
 
 fn use(x: MemExample): pass
@@ -16,9 +16,9 @@ struct RegExample:
   var regstate : __mlir_type.index
 
   fn __init__() -> Self:
-    return RegExample{regstate: 1}
+    return RegExample{regstate: (1).__as_mlir_index()}
   fn __copy__(self) -> Self:
-    return RegExample{regstate: 12}
+    return RegExample{regstate: (12).__as_mlir_index()}
   fn __del___(owned self):
     pass
 

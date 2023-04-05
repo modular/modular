@@ -718,7 +718,7 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
   }];
 
   let arguments = (ins Arg<POP_PointerType, "", [MemRead]>:$ptr,
-                       OptionalAttr<TypedAttrInterface>:$alignment);
+                       OptionalAttr<AttrOfType<Index>>:$alignment);
   let results = (outs AnyType:$result);
   let assemblyFormat = [{
     $ptr `` custom<OptionalAlignmentParamValue>($alignment) attr-dict `:`
@@ -755,7 +755,7 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
 
   let arguments = (ins AnyType:$arg,
                        Arg<POP_PointerType, "", [MemWrite]>:$ptr,
-                       OptionalAttr<TypedAttrInterface>:$alignment,
+                       OptionalAttr<AttrOfType<Index>>:$alignment,
                        UnitAttr:$nonTemporal);
   let assemblyFormat = [{
     $arg `,` $ptr `` custom<OptionalAlignmentParamValue>($alignment)
@@ -1430,8 +1430,8 @@ def POP_StackAllocationOp : POPOp<"stack_allocation",
     ```
   }];
 
-  let arguments = (ins TypedAttrInterface:$count,
-                       OptionalAttr<TypedAttrInterface>:$alignment);
+  let arguments = (ins AttrOfType<Index>:$count,
+                       OptionalAttr<AttrOfType<Index>>:$alignment);
   let results = (outs Res<POP_PointerType, "", [MemAlloc]>:$result);
   let results = (outs AnyType:$result);
 
