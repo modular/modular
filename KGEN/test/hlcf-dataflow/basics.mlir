@@ -85,6 +85,6 @@ func.func @return_and_terminator(%cond: i1) -> index {
     %c1 = index.constant 1
     hlcf.yield %c1 : index
   }
-  // CHECL: return_yield(1: index)
+  // CHECK: return_yield(1 : index)
   return {print_operand_constants = "return_yield"} %0 : index
 }
