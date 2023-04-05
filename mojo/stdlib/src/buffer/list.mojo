@@ -5,8 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """This module provides utilities for working with static and variadic lists."""
 
-from Int import Int
-
 from Assert import assert_param, assert_param_bool, debug_assert
 from Functional import unroll
 from TypeUtilities import rebind

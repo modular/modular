@@ -12,7 +12,6 @@ from Assert import (
 )
 from DType import DType
 from Functional import unroll, vectorize
-from Int import Int
 from Index import StaticIntTuple, product as tuple_product
 from List import Dim, DimList, VariadicList
 from Math import fma, min, max, iota
