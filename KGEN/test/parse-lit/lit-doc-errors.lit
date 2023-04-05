@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo -mojo-validate-doc-strings -verify-diagnostics %s
+# RUN: kgen-translate -import-mojo -mojo-doc-validate -verify-diagnostics %s
 
 
 struct ArgStruct:

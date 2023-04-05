@@ -28,7 +28,7 @@ int main(int argc, char *argv[]) {
   KGEN::KGENCommonOptions clOptions;
 
   cl::opt<bool> validateDocStrings{
-      "mojo-validate-doc-strings",
+      "mojo-doc-validate",
       cl::desc("Validate doc strings in the input Mojo file."),
       cl::init(false)};
 
