@@ -25,8 +25,13 @@ public:
     return false;
   }
 
+  /// Rewrite the expression using the fix-its contained in the diagnostic
+  /// manager. Returns true if any edits occurred, false if not.
+  bool RewriteExpression(
+      lldb_private::DiagnosticManager &diagnosticManager) override;
+
   /// Parse a single expression and convert it to IR.
-  LogicalResult parse();
+  LogicalResult parse(lldb_private::DiagnosticManager &diagnosticManager);
 
   /// Ready an already-parsed expression for execution, possibly evaluating it
   /// statically.
