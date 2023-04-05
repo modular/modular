@@ -300,7 +300,7 @@ lit.struct.decl @OuterParams<ty: type, fn: () -> !kgen.paramref<ty>> {
 
 // CHECK-LABEL: lit.func @ref_it
 lit.func @ref_it() {
-  // CHECK: F: <type, () -> !kgen.paramref<*1|0>>() -> () = <@OuterParams::@some_func>
-  kgen.param.declare F: <type, () -> !kgen.paramref<*1|0>>() -> () = <@OuterParams::@some_func>
+  // CHECK: F: <type, () -> !kgen.paramref<*(1,0)>>() -> () = <@OuterParams::@some_func>
+  kgen.param.declare F: <type, () -> !kgen.paramref<*(1,0)>>() -> () = <@OuterParams::@some_func>
   kgen.return
 }

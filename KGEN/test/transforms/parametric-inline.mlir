@@ -557,9 +557,9 @@ kgen.generator @callee<type: dtype>(%arg0: !pop.scalar<type>) -> !pop.scalar<typ
 // CHECK-LABEL: kgen.generator @replace_in_signature_with_shadow
 kgen.generator @replace_in_signature_with_shadow<width>() {
   // CHECK: kgen.param.declare width0 = <width>
-  // CHECK-NEXT: kgen.param.declare fn: <index>(!pop.simd<*0|0, bool>) -> () = <@param_arg>
+  // CHECK-NEXT: kgen.param.declare fn: <index>(!pop.simd<*(0,0), bool>) -> () = <@param_arg>
   // CHECK-NEXT: kgen.param.declare bound: (!pop.simd<width0, bool>) -> ()
-  // CHECK-SAME: = <bind_signature(:<index>(!pop.simd<*0|0, bool>) -> () fn, width0)>
+  // CHECK-SAME: = <bind_signature(:<index>(!pop.simd<*(0,0), bool>) -> () fn, width0)>
   kgen.call @callee<width>() : () -> ()
   kgen.return
 }
@@ -571,9 +571,9 @@ kgen.generator @param_arg<width>(%arg0: !pop.simd<width, bool>) {
 
 // CHECK-LABEL: kgen.generator @callee
 kgen.generator @callee<width>() always_inline {
-  kgen.param.declare fn: <index>(!pop.simd<*0|0, bool>) -> () = <@param_arg>
+  kgen.param.declare fn: <index>(!pop.simd<*(0,0), bool>) -> () = <@param_arg>
   kgen.param.declare bound: (!pop.simd<width, bool>) -> () =
-    <bind_signature(:<index>(!pop.simd<*0|0, bool>) -> () fn, width)>
+    <bind_signature(:<index>(!pop.simd<*(0,0), bool>) -> () fn, width)>
   kgen.return
 }
 

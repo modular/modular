@@ -360,7 +360,7 @@ kgen.generator @region_params<r3: () -> !pop.scalar<dt>>() {
 // -----
 
 kgen.generator @takeUnary
-  <unaryFn: <dtype>(!pop.scalar<*0|0>) -> !pop.scalar<*0|0>>() {
+  <unaryFn: <dtype>(!pop.scalar<*(0,0)>) -> !pop.scalar<*(0,0)>>() {
   kgen.return
 }
 
@@ -763,27 +763,27 @@ kgen.generator @missing_def<() -> out>() {
 
 kgen.generator @bad_index_ref() {
   // expected-error @below {{index reference has no contextual signature}}
-  kgen.param.declare a = <*0|0>
+  kgen.param.declare a = <*(0,0)>
   kgen.return
 }
 
 // -----
 
 // expected-error @below {{index reference depth 1 exceeds depth of contextual signatures: 1}}
-kgen.generator @bad_index_ref<fn: <index>(!pop.array<*1|0, i32>) -> ()>() {
+kgen.generator @bad_index_ref<fn: <index>(!pop.array<*(1,0), i32>) -> ()>() {
   kgen.return
 }
 
 // -----
 
 // expected-error-re @below {{index reference 1 is out of bounds: referenced signature {{.*}} has 1 input parameters}}
-kgen.generator @bad_index_ref<fn: <index>(!pop.array<*0|1, i32>) -> ()>() {
+kgen.generator @bad_index_ref<fn: <index>(!pop.array<*(0,1), i32>) -> ()>() {
   kgen.return
 }
 
 // -----
 
 // expected-error @below {{index reference type 'index' does not match parameter type 'i32'}}
-kgen.generator @bad_index_ref<fn: <i32, !pop.array<*0|0, i32>>() -> ()>() {
+kgen.generator @bad_index_ref<fn: <i32, !pop.array<*(0,0), i32>>() -> ()>() {
   kgen.return
 }
