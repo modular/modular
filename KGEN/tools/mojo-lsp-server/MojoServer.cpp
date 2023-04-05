@@ -228,7 +228,7 @@ static void writeCodeToFixMessage(raw_ostream &os, StringRef code) {
   }
 
   // Only show the first line if there are many.
-  StringRef result = code.split('\n').first;
+  StringRef result = code.ltrim().split('\n').first;
 
   // Shorten the message if it's too long.
   result = result.take_front(kMaxLen);

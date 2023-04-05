@@ -555,21 +555,24 @@ private:
   ///     ...
   ///   ElementN: ...
   ///
-  void
-  process2ColumnDocSection(ArrayRef<StringRef> &lines,
-                           function_ref<void(StringRef)> processEntryName) {
+  void process2ColumnDocSection(
+      ArrayRef<StringRef> &lines,
+      function_ref<void(StringRef, SMLoc)> processEntryName) {
     size_t sectionIndent = getIndentationLevel(lines[0]);
     lines = lines.drop_front();
     while (!lines.empty()) {
       size_t lineIndent = getIndentationLevel(lines[0]);
       if (lineIndent <= sectionIndent)
         break;
-      processEntryName(lines[0].split(':').first.trim());
+      StringRef entryName = lines[0].split(':').first.trim();
 
       // Skip additional description lines that have a larger indentation.
+      StringRef lastDocLine;
       do {
+        lastDocLine = lines[0];
         lines = lines.drop_front();
       } while (!lines.empty() && getIndentationLevel(lines[0]) > lineIndent);
+      processEntryName(entryName, SMLoc::getFromPointer(lastDocLine.end()));
     }
   }
 
@@ -578,54 +581,72 @@ private:
 
   /// Process a parameter or argument section.
   void processParamOrArgs(SMLoc loc, StringRef tag,
-                          llvm::MapVector<StringRef, bool> &elements,
+                          llvm::MapVector<StringRef, SMLoc> &elements,
                           ArrayRef<StringRef> &lines) {
+    StringRef sectionLine = lines[0];
     bool emittedUnexpectedOrderWarning = false;
     ptrdiff_t nextEltIndex = 0;
-    process2ColumnDocSection(lines, [&](StringRef paramName) {
-      SMLoc paramLoc = SMLoc::getFromPointer(paramName.data());
-      size_t currentEltIndex = nextEltIndex++;
+    SmallVector<SMLoc> elementDocEndLocs(elements.size());
+    process2ColumnDocSection(
+        lines, [&](StringRef paramName, SMLoc docEndLoc) {
+          SMLoc paramLoc = SMLoc::getFromPointer(paramName.data());
+          size_t currentEltIndex = nextEltIndex++;
 
-      auto it = elements.find(paramName);
-      if (it == elements.end()) {
-        sharedState.emitWarning(paramLoc)
-            << "unknown " << tag << " '" << paramName << "' in doc string";
-        return;
-      }
+          auto it = elements.find(paramName);
+          if (it == elements.end()) {
+            sharedState.emitWarning(paramLoc)
+                << "unknown " << tag << " '" << paramName << "' in doc string";
+            return;
+          }
 
-      // If we have already seen this element, emit a warning.
-      if (std::exchange(it->second, true)) {
-        sharedState.emitWarning(paramLoc)
-            << "duplicate " << tag << " '" << paramName << "' in doc string";
-        return;
-      }
+          // If we have already seen this element, emit a warning.
+          if (std::exchange(it->second, paramLoc).isValid()) {
+            sharedState.emitWarning(paramLoc) << "duplicate " << tag << " '"
+                                              << paramName << "' in doc string";
+            return;
+          }
 
-      // Ensure the elements are in the same order as the decl.
-      if (!emittedUnexpectedOrderWarning) {
-        size_t expectedEltIndex = it - elements.begin();
-        if (currentEltIndex != expectedEltIndex) {
-          sharedState.emitWarning(paramLoc)
-              << "'" << paramName << "' is defined at index "
-              << expectedEltIndex << ", but specified in doc string at index "
-              << currentEltIndex;
-          emittedUnexpectedOrderWarning = true;
-        }
-      }
-    });
+          // Ensure the elements are in the same order as the decl.
+          if (!emittedUnexpectedOrderWarning) {
+            size_t expectedEltIndex = it - elements.begin();
+            if (currentEltIndex != expectedEltIndex) {
+              sharedState.emitWarning(paramLoc)
+                  << "'" << paramName << "' is defined at index "
+                  << expectedEltIndex
+                  << ", but specified in doc string at index "
+                  << currentEltIndex;
+              emittedUnexpectedOrderWarning = true;
+            }
+          }
+
+          // Record the location of the end of the doc string for this element.
+          elementDocEndLocs[it - elements.begin()] = docEndLoc;
+        });
 
     // Emit warnings for any elements that were not documented.
-    for (auto &[element, seen] : elements) {
-      if (!seen) {
-        sharedState.emitWarning(loc)
-            << tag << " '" << element << "' is not documented";
-      }
+    StringRef indentStr =
+        sectionLine.take_front(loc.getPointer() - sectionLine.data());
+    SMLoc sectionEndLoc = SMLoc::getFromPointer(sectionLine.end());
+    for (auto [i, it] : llvm::enumerate(elements)) {
+      auto &[element, seenLoc] = it;
+      if (seenLoc.isValid())
+        continue;
+      LitDiagnostic diag = sharedState.emitWarning(loc)
+                           << tag << " '" << element << "' is not documented";
+
+      // Attach a fixit to add the element to the doc string.
+      SMLoc prevEndLoc = (i == 0) ? sectionEndLoc : elementDocEndLocs[i - 1];
+      diag.addFixIt(
+          LitFixIt(LitSourceRange::getByteLevel(prevEndLoc, prevEndLoc),
+                   "\n" + indentStr + std::string(4, ' ') + element + ":"));
+      elementDocEndLocs[i] = prevEndLoc;
     }
   }
-  void processArguments(SMLoc loc, llvm::MapVector<StringRef, bool> &elements,
+  void processArguments(SMLoc loc, llvm::MapVector<StringRef, SMLoc> &elements,
                         ArrayRef<StringRef> &lines) {
     processParamOrArgs(loc, "argument", elements, lines);
   }
-  void processParameters(SMLoc loc, llvm::MapVector<StringRef, bool> &elements,
+  void processParameters(SMLoc loc, llvm::MapVector<StringRef, SMLoc> &elements,
                          ArrayRef<StringRef> &lines) {
     processParamOrArgs(loc, "parameter", elements, lines);
   }
@@ -689,14 +710,14 @@ private:
       argNames = argNames.drop_front();
 
     // Grab the types of the arguments to the function.
-    llvm::MapVector<StringRef, bool> seenArguments;
+    llvm::MapVector<StringRef, SMLoc> seenArguments;
     for (StringAttr argName : argNames)
-      seenArguments.insert({argName, false});
+      seenArguments.insert({argName, SMLoc()});
 
     // Grab the parameters to the function.
-    llvm::MapVector<StringRef, bool> seenParameters;
+    llvm::MapVector<StringRef, SMLoc> seenParameters;
     for (auto [index, value] : llvm::enumerate(funcOp.getInputParams()))
-      seenParameters.insert({value.getName(), false});
+      seenParameters.insert({value.getName(), SMLoc()});
 
     // Process the sections of the doc string.
     DenseMap<StringRef, SMLoc> sections = {
@@ -726,9 +747,9 @@ private:
   void validateDecl(ASTDecl &decl, StructDeclOp structOp,
                     LitDocString &docStr) {
     // Grab the parameters to the struct.
-    llvm::MapVector<StringRef, bool> seenParameters;
+    llvm::MapVector<StringRef, SMLoc> seenParameters;
     for (auto [index, value] : llvm::enumerate(structOp.getInputParams()))
-      seenParameters.insert({value.getName(), false});
+      seenParameters.insert({value.getName(), SMLoc()});
 
     // Process the sections of the doc string.
     DenseMap<StringRef, SMLoc> sections = {
