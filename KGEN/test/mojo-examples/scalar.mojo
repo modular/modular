@@ -6,7 +6,7 @@
 
 # RUN: kgen-translate -import-mojo -verify-diagnostics %s | FileCheck %s
 
-from prolog import DType, F32, Scalar, SIMD, Int
+from prolog import DType, F32, Scalar, SIMD
 
 # REFERENCE
 #   kgen.generator.interface @erf_scalar<type: dtype>(%in: !pop.scalar<type>) -> !pop.scalar<type>

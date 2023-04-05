@@ -173,6 +173,8 @@ public:
   static constexpr StringLiteral kBuiltinTupleModuleName = "Tuple";
   /// The name of the builtin Error module.
   static constexpr StringLiteral kBuiltinErrorModuleName = "Error";
+  /// The name of the builtin Int module.
+  static constexpr StringLiteral kBuiltinIntModuleName = "Int";
 
   /// Resolve a builtin module type.
   ASTDecl *resolveBuiltinModuleType(llvm::SMLoc loc, StringRef moduleName,
@@ -184,6 +186,8 @@ public:
   ASTDecl *getBuiltinTupleLiteral(llvm::SMLoc loc);
   /// Get the builtin Error type.
   ASTDecl *getBuiltinErrorType(llvm::SMLoc loc);
+  /// Get the builtin Int type.
+  ASTDecl *getBuiltinIntType(llvm::SMLoc loc);
 
 private:
   /// The internal state of an imported module.

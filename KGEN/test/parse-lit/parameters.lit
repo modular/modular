@@ -6,7 +6,7 @@
 
 # RUN: kgen-translate -import-mojo %s -I %S/../mojo-examples/ -verify-diagnostics | FileCheck %s
 
-from prolog import assert_param, Int, SIMD
+from prolog import assert_param, SIMD
 from List import create_kgen_list
 from DType import DType
 

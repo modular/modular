@@ -7,7 +7,6 @@
 # RUN: kgen-translate -import-mojo %s | FileCheck %s
 
 from Pointer import Pointer
-from Int import Int
 from Range import range
 from IO import print
 

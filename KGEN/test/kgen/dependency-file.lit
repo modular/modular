@@ -8,7 +8,6 @@
 # RUN: cat %t.d | FileCheck %s
 
 # CHECK: {{.*}}.o: /{{.*}}/Int.mojo
-from Int import Int
 
 
 fn use_int(a: Int):

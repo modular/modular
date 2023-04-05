@@ -6,8 +6,6 @@
 
 # RUN: mojo %s -emit-header | FileCheck %s
 
-from Int import Int
-
 
 @register_passable("trivial")
 struct RegIntPair:
