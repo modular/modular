@@ -52,7 +52,7 @@ fn test_gather():
         ].aligned_stack_allocation[64]()
 
         for ii in range(num_indices):
-            indices[ii] = (ii // 2).__as_mlir_index()
+            indices[StaticIntTuple[1](ii)] = ii // 2
 
         # create output
         var output = NDBuffer[
@@ -62,9 +62,7 @@ fn test_gather():
         ].aligned_stack_allocation[64]()
 
         # Test gather
-        alias vector_width = simd_width[
-            __mlir_type.`!pop.scalar<f32>`
-        ]().__as_mlir_index()
+        alias vector_width = simd_width[__mlir_type.`!pop.scalar<f32>`]()
 
         let rt = Runtime(4)
         let out_chain = OwningOutputChainPtr(rt)
@@ -133,7 +131,7 @@ fn test_gather_empty_indices():
         ].aligned_stack_allocation[indices_size]()
 
         for ii in range(num_indices):
-            indices[ii] = (ii // 2).__as_mlir_index()
+            indices[StaticIntTuple[1](ii)] = ii // 2
 
         # create output
         var output = NDBuffer[
@@ -143,9 +141,7 @@ fn test_gather_empty_indices():
         ].aligned_stack_allocation[output_size]()
 
         # Test gather
-        alias vector_width = simd_width[
-            __mlir_type.`!pop.scalar<f32>`
-        ]().__as_mlir_index()
+        alias vector_width = simd_width[__mlir_type.`!pop.scalar<f32>`]()
 
         let rt = Runtime(4)
         let out_chain = OwningOutputChainPtr(rt)

@@ -31,8 +31,8 @@ fn gather_reduce[
     indices_rank: Int,
     indices_shape: DimList[indices_rank],
     type: DType,
-    gather_axis: __mlir_type.index,
-    reduce_axis: __mlir_type.index,
+    gather_axis: Int,
+    reduce_axis: Int,
     simd_width: Int,
     reduce_fn: __mlir_type[
         `!kgen.signature<<`,
@@ -148,7 +148,7 @@ fn gather_reduce[
 
                     # prefetch next k
                     let next_idx = indices._offset(
-                        StaticIntTuple[indices_rank.__as_mlir_index()](i, j)
+                        StaticIntTuple[indices_rank](i, j)
                     ).load()
                     input.prefetch[
                         PrefetchOptions()
@@ -290,8 +290,6 @@ fn gather[
     for i in range(output.dim[0]()):
         for j in range(output.dim[1]()):
             let idx: Int = indices[j].to_int()
-            output[StaticIntTuple[output_rank.__as_mlir_index()](i, j)] = input[
-                i, idx
-            ]
+            output[StaticIntTuple[output_rank](i, j)] = input[i, idx]
 
     out_chain.mark_ready()

@@ -108,7 +108,7 @@ fn _softmax_2_pass_step1[
 
 fn _softmax_2_pass_step2[
     simd_width: Int,
-    unroll_factor: __mlir_type.index,
+    unroll_factor: Int,
     buffer_size: Dim,
     type: DType,
 ](
@@ -162,7 +162,7 @@ fn softmax_2_pass[
       end for
 
     Args:
-        simd_width (__mlir_type.index): The simd_width to use in vectorization.
+        simd_width (Int): The simd_width to use in vectorization.
         buffer_size (Dim): The size of the input and output buffers.
         type (DType): The type of the input and output buffers.
         output (Buffer[buffer_size, type]): The output buffer in which to store the softmax values.
@@ -192,7 +192,7 @@ fn softmax_2_pass[
 
 fn _softmax_3_pass_step_2[
     simd_width: Int,
-    unroll_factor: __mlir_type.index,
+    unroll_factor: Int,
     buffer_size: Dim,
     type: DType,
     pre_update_func: __mlir_type[
@@ -264,7 +264,7 @@ fn _softmax_3_pass_step_2[
 
 fn _softmax_3_pass_step_3[
     simd_width: Int,
-    unroll_factor: __mlir_type.index,
+    unroll_factor: Int,
     buffer_size: Dim,
     type: DType,
     accum_proc_func: __mlir_type[
@@ -406,7 +406,7 @@ fn _softmax_3_pass_base[
     step can be different between the (regular) softmax and logsoftmax.
 
     Args:
-        simd_width (__mlir_type.index): The simd_width to use in vectorization.
+        simd_width (Int): The simd_width to use in vectorization.
         buffer_size (Dim): The size of the input and output buffers.
         type (DType): The type of the input and output buffers.
         logsoftmax (Bool): Perform logsoftmax if True, regular softmax otherwise.
@@ -466,7 +466,7 @@ fn softmax_3_pass[
       end for
 
     Args:
-        simd_width (__mlir_type.index): The simd_width to use in vectorization.
+        simd_width (Int): The simd_width to use in vectorization.
         buffer_size (Dim): The size of the input and output buffers.
         type (DType): The type of the input and output buffers.
         output (Buffer[buffer_size, type]): The output buffer in which to store the softmax values.
@@ -510,7 +510,7 @@ fn logsoftmax[
       end for
 
     Args:
-        simd_width (__mlir_type.index): The simd_width to use in vectorization.
+        simd_width (Int): The simd_width to use in vectorization.
         buffer_size (Dim): The size of the input and output buffers.
         type (DType): The type of the input and output buffers.
         output (Buffer[buffer_size, type]): The output buffer in which to store the softmax values.

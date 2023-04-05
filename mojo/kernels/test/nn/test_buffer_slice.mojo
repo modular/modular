@@ -31,16 +31,16 @@ fn print_elements[
 
     @always_inline
     fn print_elements_lambda[
-        simd_width: Int, rank: __mlir_type.index
+        simd_width: Int, rank: Int
     ](idx: StaticIntTuple[rank]):
-        var index = rebind[StaticIntTuple[in_rank.__as_mlir_index()]](idx)
+        var index = rebind[StaticIntTuple[in_rank]](idx)
         print(tensor[index])
 
     let runtime = Runtime(1)
     let out_chain = OwningOutputChainPtr(runtime)
 
-    elementwise[in_rank.__as_mlir_index(), 1, 1, print_elements_lambda](
-        rebind[StaticIntTuple[in_rank.__as_mlir_index()]](tensor.dynamic_shape),
+    elementwise[in_rank, 1, 1, print_elements_lambda](
+        rebind[StaticIntTuple[in_rank]](tensor.dynamic_shape),
         out_chain.borrow(),
     )
 
@@ -54,9 +54,9 @@ fn test_slice[
     numelems: Int, outer_rank: Int, static_shape: DimList[outer_rank]
 ](
     dims: DimList[outer_rank],
-    starts: StaticIntTuple[outer_rank.__as_mlir_index()],
-    stops: StaticIntTuple[outer_rank.__as_mlir_index()],
-    steps: StaticIntTuple[outer_rank.__as_mlir_index()],
+    starts: StaticIntTuple[outer_rank],
+    stops: StaticIntTuple[outer_rank],
+    steps: StaticIntTuple[outer_rank],
     use_copy: Bool,
 ):
 
@@ -65,8 +65,8 @@ fn test_slice[
 
     var memory1 = _raw_stack_allocation[numelems, DType.f32, 1]()
     var in_tensor = NDBuffer[
-        outer_rank.__as_mlir_index(),
-        rebind[DimList[outer_rank.__as_mlir_index()]](static_shape),
+        outer_rank,
+        rebind[DimList[outer_rank]](static_shape),
         DType.f32,
     ](
         memory1.address,
@@ -127,16 +127,12 @@ fn test_slice[
         print("As copy\n")
 
         var output_buffer = NDBuffer[
-            outer_rank.__as_mlir_index(),
-            rebind[DimList[outer_rank.__as_mlir_index()]](static_shape),
+            outer_rank,
+            rebind[DimList[outer_rank]](static_shape),
             DType.f32,
         ](
             output_mem.address,
-            rebind[
-                StaticIntTuple[
-                    Int(outer_rank.__as_mlir_index()).__as_mlir_index()
-                ]
-            ](sliced.dynamic_shape),
+            rebind[StaticIntTuple[outer_rank]](sliced.dynamic_shape),
             DType.f32,
         )
 

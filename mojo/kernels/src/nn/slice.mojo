@@ -24,8 +24,8 @@ fn slice_as_view[
     steps: Buffer[Dim(), index_type],
 ) -> NDBuffer[rank, DimList[rank].create_unknown(), type]:
 
-    var new_shape: StaticIntTuple[rank.__as_mlir_index()]
-    var new_stride: StaticIntTuple[rank.__as_mlir_index()]
+    var new_shape: StaticIntTuple[rank]
+    var new_stride: StaticIntTuple[rank]
 
     # The data does not change however we will be addressing a different
     # offset of the data.
@@ -92,15 +92,11 @@ fn slice_as_copy[
 
     # Copy lambda sliced view into output buffer.
     @always_inline
-    fn copy[
-        simd_width: Int, rank: __mlir_type.index
-    ](idx: StaticIntTuple[rank]):
-        let index = rebind[StaticIntTuple[in_rank.__as_mlir_index()]](idx)
+    fn copy[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
+        let index = rebind[StaticIntTuple[in_rank]](idx)
         output.simd_store[simd_width](
             index, sliced.simd_load[simd_width](index)
         )
 
     # Invoke copy.
-    elementwise[in_rank.__as_mlir_index(), 1, 1, copy](
-        output.dynamic_shape, out_chain
-    )
+    elementwise[in_rank, 1, 1, copy](output.dynamic_shape, out_chain)

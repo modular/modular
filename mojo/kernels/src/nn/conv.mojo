@@ -718,7 +718,7 @@ struct PackIm2ColNCHW[
             The next output index position in (ho, wo).
         """
         let vector = Buffer[
-            simd_size.__as_mlir_index(),
+            simd_size,
             type,
         ].stack_allocation()
 
@@ -1329,7 +1329,7 @@ struct ConvIm2ColNCHW[
         row_idx = self._outer_m_loop_row_helper[
             skip_col_bound,
             m_loop_pack_inner_size,
-            a_row_size.__as_mlir_index(),
+            a_row_size,
         ](b_packed, global_offset, sub_tile_n_k, row_idx, valid_row_count)
 
         row_idx = self._outer_m_loop_row_helper[
@@ -1498,7 +1498,7 @@ struct ConvNHWCInnerLoopFilterPacked[
     var conv_shape: ConvShape
 
     # Table of pointers for all the rows.
-    var offset_table: Buffer[a_row_size.__as_mlir_index(), DType.index]
+    var offset_table: Buffer[a_row_size, DType.index]
 
     var input_base_pointer: DTypePointer[value_type]
 
@@ -1536,9 +1536,7 @@ struct ConvNHWCInnerLoopFilterPacked[
             tile_n_k(StaticIntTuple): 2D dimension tuple describing the
                 size of the packed tile of B.
         """
-        let offset_table = Buffer[
-            a_row_size.__as_mlir_index(), DType.index
-        ].stack_allocation()
+        let offset_table = Buffer[a_row_size, DType.index].stack_allocation()
         var instance = ConvNHWCInnerLoopFilterPacked[
             shape_input,
             shape_c,
@@ -1593,7 +1591,7 @@ struct ConvNHWCInnerLoopFilterPacked[
             if hi_wi >= Index(0, 0) and hi_wi < Index(
                 self.conv_shape.h, self.conv_shape.w
             ):
-                self.offset_table[row_idx] = linear_offset.__as_mlir_index()
+                self.offset_table[row_idx] = linear_offset
             else:
                 self.offset_table[row_idx] = -1
 
@@ -1766,9 +1764,7 @@ struct ConvNHWCInnerLoopFilterPacked[
             if linear_offset == -1:
                 return SIMD[1, value_type](0)
             else:
-                self.offset_table[row_idx] = (
-                    linear_offset + 1
-                ).__as_mlir_index()
+                self.offset_table[row_idx] = linear_offset + 1
                 return self.input_base_pointer.load(linear_offset)
         else:
             let n_ho_wo = _m_to_n_ho_wo_nhwc(index_m_k[0], self.conv_shape)
@@ -1826,7 +1822,7 @@ struct ConvNHWCInnerLoopFilterPacked[
         var global_k = self.global_offset.K + tile_n_k_idx[1]
 
         let local_a = Buffer[
-            (simd_size * a_row_size).__as_mlir_index(),
+            (simd_size * a_row_size),
             value_type,
         ].stack_allocation()
 
