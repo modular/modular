@@ -76,7 +76,6 @@ fn gather_reduce[
     context, i is the batch dimension, j is the multi-hot dimension, and k is
     the embedding dimension.
     """
-    assert_param_bool[output_rank == 2]()
     assert_param_bool[input_rank == 2]()
     assert_param_bool[indices_rank == 2]()
     assert_param_bool[gather_axis == 0]()
@@ -103,8 +102,15 @@ fn gather_reduce[
     )
 
     let num_chunks_per_task = div_ceil(indices.dim[0](), num_tasks)
-    let output_bind = rebind[NDBuffer[2, DimList[2].create_unknown(), type]](
-        output
+
+    var output_2d_dims = StaticIntTuple[2](output.dim[0](), output.dim[1]())
+
+    @parameter
+    if output_rank == 3:
+        output_2d_dims[1] = output.dim[2]()
+
+    let output_bind = NDBuffer[2, DimList[2].create_unknown(), type](
+        output.data, output_2d_dims, type
     )
     let input_bind = rebind[NDBuffer[2, DimList[2].create_unknown(), type]](
         input
