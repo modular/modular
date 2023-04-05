@@ -7,7 +7,6 @@
 from Atomic import Atomic
 from Coroutine import Coroutine, _get_coro_resume_fn
 from DType import DType
-from Int import Int
 from Memory import _aligned_alloc, _aligned_free
 from Pointer import Pointer, DTypePointer
 from String import StringRef

@@ -6,7 +6,6 @@
 # RUN: mojo %s | FileCheck %s
 
 from IO import print
-from Int import Int
 from LLCL import Runtime
 from Tracing import Trace, TraceLevel
 from BuildInfo import build_info_llcl_max_profiling_level

@@ -9,7 +9,6 @@ from Atomic import Atomic
 from Coroutine import Coroutine
 from DType import DType
 from IO import print
-from Int import Int
 from LLCL import TaskGroup, Runtime, OwningOutputChainPtr, AsyncTaskGroupPtr
 from Pointer import Pointer
 from Memory import stack_allocation

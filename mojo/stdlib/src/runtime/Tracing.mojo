@@ -6,7 +6,6 @@
 
 from Assert import assert_param_bool
 from BuildInfo import build_info_llcl_max_profiling_level
-from Int import Int
 from String import StringRef
 
 
