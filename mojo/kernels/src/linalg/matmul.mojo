@@ -1651,8 +1651,8 @@ fn pack_b[
             "N dimension of output must be padded to tile_n",
         )
 
-        for idx_n_t in range(0, n_out_t, tile_n):
-            for idx_k_t in range(0, k_out_t, tile_k):
+        for idx_k_t in range(0, k_out_t, tile_k):
+            for idx_n_t in range(0, n_out_t, tile_n):
                 let packed_dst_view_t = NDBuffer[
                     3, DimList[3].create_unknown(), type
                 ](
