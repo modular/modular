@@ -10,10 +10,13 @@
 #include "KGEN/KGENCompiler.h"
 #include "KGEN/LowerToObject.h"
 #include "KGEN/ParseLit.h"
+#include "MojoDiagnostic.h"
+#include "lldb/Expression/DiagnosticManager.h"
 #include "lldb/Expression/IRExecutionUnit.h"
 #include "lldb/Target/ExecutionContextScope.h"
 #include "lldb/Target/StackFrame.h"
 #include "lldb/Target/Target.h"
+#include "lldb/Utility/LLDBLog.h"
 #include "mlir/Pass/PassManager.h"
 #include "llvm/Target/TargetMachine.h"
 
@@ -108,6 +111,33 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
 }
 
 //===----------------------------------------------------------------------===//
+// MojoDiagnostic
+//===----------------------------------------------------------------------===//
+
+/// Handle an llvm diagnostic by adding a MojoDiagnostic to the LLDB diagnostic
+/// manager.
+static void handleDiagnostic(const llvm::SMDiagnostic &diagnostic, void *ctx) {
+  auto *manager = (DiagnosticManager *)ctx;
+  // Turn the diagnostic severity into LLDB's severity.
+  DiagnosticSeverity severity;
+  switch (diagnostic.getKind()) {
+  case llvm::SourceMgr::DK_Error:
+    severity = eDiagnosticSeverityError;
+    break;
+  case llvm::SourceMgr::DK_Warning:
+    severity = eDiagnosticSeverityWarning;
+    break;
+  case llvm::SourceMgr::DK_Remark:
+    LLVM_FALLTHROUGH;
+  case llvm::SourceMgr::DK_Note:
+    severity = eDiagnosticSeverityRemark;
+    break;
+  }
+  manager->AddDiagnostic(
+      std::make_unique<MojoDiagnostic>(diagnostic, severity));
+}
+
+//===----------------------------------------------------------------------===//
 // MojoExpressionParser
 //===----------------------------------------------------------------------===//
 
@@ -118,28 +148,131 @@ MojoExpressionParser::MojoExpressionParser(
       impl(std::make_unique<Impl>(exeScope, expr, options)) {}
 MojoExpressionParser::~MojoExpressionParser() = default;
 
-M::LogicalResult MojoExpressionParser::parse() {
-  if (!impl->compiler)
+/// Apply fixits in the diagnostic manager to `expr` and set the fixed
+/// expression to the new text. Only if all diagnostics (a) have fix-its and (b)
+/// they can all be applied, will this rewrite the text. It will otherwise
+/// return false.
+bool MojoExpressionParser::RewriteExpression(
+    DiagnosticManager &diagnosticManager) {
+  Log *log = GetLog(LLDBLog::Expressions);
+  LLDB_LOG(log, "[mojo] Found {0} diagnostic{1}",
+           diagnosticManager.Diagnostics().size(),
+           diagnosticManager.Diagnostics().size() == 1 ? "" : "s");
+  StringRef originalText(impl->exprToParse.Text());
+  std::string newText = "";
+  auto applyFixit = [&](const llvm::SMFixIt &fixit) -> bool {
+    if (!newText.empty()) {
+      diagnosticManager.PutString(eDiagnosticSeverityError,
+                                  "[mojo] Found multiple fix-its, aborting");
+      return false;
+    }
+
+    llvm::SMRange range = fixit.getRange();
+    if (!range.isValid())
+      return false;
+
+    StringRef removedText(range.Start.getPointer(),
+                          range.End.getPointer() - range.Start.getPointer());
+    StringRef insertedText = fixit.getText();
+    LLDB_LOG(log, "[mojo] Change \"{0}\" to \"{1}\"", removedText,
+             insertedText);
+
+    // If the start is the end of the original text, just add it all.
+    if (range.Start.getPointer() >= originalText.end())
+      newText += originalText.rtrim();
+    else if (range.Start.getPointer() < originalText.end() &&
+             range.Start.getPointer() >= originalText.begin())
+      newText += originalText.substr(0, range.Start.getPointer() -
+                                            originalText.begin());
+
+    LLDB_LOG(log, "[mojo] New expr before fixit insertion:\n{0}", newText);
+
+    // Add the text to insert.
+    newText += insertedText;
+
+    // If the end is the beginning of the buffer, just add it all.
+    if (range.End.getPointer() == originalText.begin())
+      newText += originalText;
+    else if (range.End.getPointer() < originalText.end())
+      newText +=
+          originalText.substr(range.End.getPointer() - originalText.begin());
+
+    return true;
+  };
+
+  bool allDiagsHandled = true;
+  for (const auto &diag : diagnosticManager.Diagnostics()) {
+    LLDB_LOG(log, "[mojo] Diagnostic with message: {0}, fixits: {1}",
+             diag->GetMessage(), diag->HasFixIts());
+    // If it's a mojo diagnostic, it might have fix-its. If it does, and if that
+    // fails, return false. Otherwise, continue.
+    if (const auto *mojoDiag = llvm::dyn_cast<MojoDiagnostic>(diag.get())) {
+      for (const llvm::SMFixIt &fixit : mojoDiag->getFixIts()) {
+        if (!applyFixit(fixit)) {
+          allDiagsHandled = false;
+          break;
+        }
+      }
+      continue;
+    }
+
+    // Not a Mojo diagnostic, we didn't handle everything.
+    allDiagsHandled = false;
+  }
+
+  // If we handled all the diagnostics, then we set the fixed expression.
+  if (allDiagsHandled) {
+    Log *exprLog = GetLog(LLDBLog::Expressions);
+    LLDB_LOG(exprLog, "[mojo] Fixits applied to expression: \n{0}",
+             newText.c_str());
+    diagnosticManager.SetFixedExpression(newText);
+  } else {
+    LLDB_LOG(log, "[mojo] Unhandled diagnostics found!");
+  }
+
+  return allDiagsHandled;
+}
+
+M::LogicalResult
+MojoExpressionParser::parse(DiagnosticManager &diagnosticManager) {
+  Log *log = GetLog(LLDBLog::Expressions);
+  if (!impl->compiler) {
+    LLDB_LOG(log, "[mojo] No compiler");
     return failure();
+  }
 
   // TODO: We should print the expression to a file if we need debug information
   // attached.
-  auto buffer = llvm::MemoryBuffer::getMemBufferCopy(impl->exprToParse.Text());
+  auto buffer = llvm::MemoryBuffer::getMemBuffer(impl->exprToParse.Text());
   impl->sourceManager.AddNewSourceBuffer(std::move(buffer), llvm::SMLoc());
 
+  // Set the diagnostic handler to create MojoDiagnostics that we can use to
+  // capture fix-its.
+  impl->sourceManager.setDiagHandler(handleDiagnostic, &diagnosticManager);
+
   // Import the mojo module.
-  // TODO: Capture fixits, and apply them to the expression text.
   mlir::TimingScope scope;
   mlir::MLIRContext *ctx = impl->passManager->getContext();
   MojoParserConfig config(ctx, *impl->runtime, impl->compilationOptions);
   OwningOpRef<ModuleOp> module =
       importMojoFile(impl->sourceManager, config, scope);
-  if (!module)
+  if (!diagnosticManager.Diagnostics().empty()) {
+    LLDB_LOG(log, "[mojo] Emitted diagnostics of some kind");
     return failure();
+  }
+
+  if (!module) {
+    LLDB_LOG(log, "[mojo] Failed to parse the module");
+    return failure();
+  }
+
+  LLDB_LOG(log, "[mojo] Parsed module successfully");
 
   // Run the elaboration pipeline.
-  if (failed(impl->passManager->run(*module)))
+  if (failed(impl->passManager->run(*module))) {
+    LLDB_LOG(log, "[mojo] Elaboration failed");
     return failure();
+  }
 
   // Lower the module to LLVM IR.
   SymbolTable symtab(*module);
@@ -147,8 +280,10 @@ M::LogicalResult MojoExpressionParser::parse() {
   impl->llvmContext = std::make_unique<llvm::LLVMContext>();
   impl->llvmModule = impl->compiler->lowerAllFuncsToLLVM(
       symtab, exportedSymbols, *impl->llvmContext);
-  if (!impl->llvmModule)
+  if (!impl->llvmModule) {
+    LLDB_LOG(log, "[mojo] Lowering to LLVM failed");
     return failure();
+  }
 
   // TODO: Apply optimizations to the generated module.
   return success();

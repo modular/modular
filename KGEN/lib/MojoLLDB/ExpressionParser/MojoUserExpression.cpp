@@ -227,13 +227,35 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
                  << "from Pointer import Pointer\n"
                  << "@export\nfn __lldb_expr__(__lldb_arg: "
                     "Pointer[__mlir_type.`!pop.scalar<invalid>`]):\n";
+  size_t prefixSize = m_transformed_text.size();
   exprOSIndented.printReindented(m_expr_text, "  ");
 
-  LLDB_LOG(log, "Parsing the following code:\n{0}", m_transformed_text.c_str());
+  LLDB_LOG(log, "[mojo] Parsing the following code:\n{0}",
+           m_transformed_text.c_str());
 
   // Parse the expression.
   m_materializer_up = std::make_unique<Materializer>();
   impl->parser =
       std::make_unique<MojoExpressionParser>(exeScope, *this, m_options);
-  return impl->parser->parse();
+  if (failed(impl->parser->parse(diagnosticManager))) {
+    if (!diagnosticManager.HasFixIts())
+      return failure();
+
+    LLDB_LOG(log, "[mojo] Rewriting the input expression");
+    // If we can rewrite the expression, do so.
+    if (impl->parser->RewriteExpression(diagnosticManager)) {
+      llvm::raw_string_ostream fixedOS(m_fixed_text);
+      mlir::raw_indented_ostream indentedFixedOS(fixedOS);
+      // Drop the prefix and remove all indent.
+      indentedFixedOS.printReindented(
+          diagnosticManager.GetFixedExpression().substr(prefixSize), "");
+    }
+    // Clear out the diagnostics so we don't re-apply the fix-its.
+    std::string fixed = diagnosticManager.GetString();
+    diagnosticManager.Clear();
+    diagnosticManager.PutString(eDiagnosticSeverityRemark, fixed);
+    return failure();
+  }
+
+  return success();
 }
