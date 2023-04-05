@@ -210,7 +210,7 @@ struct DimList[length: Int]:
     fn _product_impl[i: Int, end: Int](self) -> Dim:
         @parameter
         if i >= end:
-            return Int(1)
+            return 1
         else:
             return self.at[i]() * self._product_impl[i + 1, end]()
 

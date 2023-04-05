@@ -715,15 +715,6 @@ struct NDBuffer[
         self.simd_store[1](idx, val)
 
     @always_inline
-    fn __setitem__(
-        self,
-        idx: StaticTuple[rank, Int],
-        val: SIMD[1, type],
-    ):
-        # Stores a single value into the ndbuffer at the specified index
-        self.simd_store[1](idx, val)
-
-    @always_inline
     fn simd_store[
         width: Int
     ](self, idx: StaticIntTuple[rank], val: SIMD[width, type],):
