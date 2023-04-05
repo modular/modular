@@ -113,7 +113,7 @@ fn test_transpose_8x8():
     for i in range(num_rows):
         for j in range(num_cols):
             let val = i * num_cols + j
-            matrix[StaticIntTuple[2](i, j)] = val.__as_mlir_index()
+            matrix[StaticIntTuple[2](i, j)] = val
 
     transpose_inplace[num_rows, num_cols, DType.index](matrix)
 
@@ -143,7 +143,7 @@ fn test_transpose_16x16():
     for i in range(num_rows):
         for j in range(num_cols):
             let val = i * num_cols + j
-            matrix[StaticIntTuple[2](i, j)] = val.__as_mlir_index()
+            matrix[StaticIntTuple[2](i, j)] = val
 
     transpose_inplace[num_rows, num_cols, DType.index](matrix)
 

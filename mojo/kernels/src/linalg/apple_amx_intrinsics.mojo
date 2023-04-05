@@ -212,49 +212,49 @@ struct amx_detail:
 
     @staticmethod
     fn _encode_load_store[
-        row_count: __mlir_type.index, type: DType
-    ](src: DTypePointer[type], start_index: Int) -> __mlir_type.index:
+        row_count: Int, type: DType
+    ](src: DTypePointer[type], start_index: Int) -> Int:
         """
         Utility to do the bit encoding for load and store ops.
         """
         var src_idx = src.__as_index() | (start_index << 56)
         if row_count == 2:
             src_idx |= 1 << 62
-        return src_idx.__as_mlir_index()
+        return src_idx
 
     @staticmethod
     fn store_x[
-        row_count: __mlir_type.index, type: DType
+        row_count: Int, type: DType
     ](src: DTypePointer[type], start_index: Int):
         ldx(_encode_load_store[row_count, type](src, start_index))
 
     @staticmethod
     fn store_y[
-        row_count: __mlir_type.index, type: DType
+        row_count: Int, type: DType
     ](src: DTypePointer[type], start_index: Int):
         ldy(_encode_load_store[row_count, type](src, start_index))
 
     @staticmethod
     fn store_z[
-        row_count: __mlir_type.index, type: DType
+        row_count: Int, type: DType
     ](src: DTypePointer[type], start_index: Int):
         ldz(_encode_load_store[row_count, type](src, start_index))
 
     @staticmethod
     fn read_x[
-        row_count: __mlir_type.index, type: DType
+        row_count: Int, type: DType
     ](src: DTypePointer[type], start_index: Int):
         stx(_encode_load_store[row_count, type](src, start_index))
 
     @staticmethod
     fn read_y[
-        row_count: __mlir_type.index, type: DType
+        row_count: Int, type: DType
     ](src: DTypePointer[type], start_index: Int):
         sty(_encode_load_store[row_count, type](src, start_index))
 
     @staticmethod
     fn load_z[
-        row_count: __mlir_type.index, type: DType
+        row_count: Int, type: DType
     ](src: DTypePointer[type], start_index: Int):
         stz(_encode_load_store[row_count, type](src, start_index))
 
@@ -324,7 +324,7 @@ struct amx_detail:
             0x8000000004004000 if is_x_destination else 0x8000000010004000
         )
 
-        extry(operand.__as_mlir_index())
+        extry(operand)
 
     @staticmethod
     fn fma[
@@ -377,7 +377,7 @@ struct amx_detail:
             | ((1 << 63) if is_row_mode else 0)
         )
 
-        fma32(operand.__as_mlir_index())
+        fma32(operand)
 
     @staticmethod
     fn dot_at_b(

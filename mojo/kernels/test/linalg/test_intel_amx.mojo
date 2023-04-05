@@ -126,8 +126,8 @@ fn setup_tile_config() -> tileconfig:
 
     @always_inline
     fn tc_fill[idx: Int]():
-        tc.rows.__setitem__[idx.__as_mlir_index()](nrows.value)
-        tc.colb.__setitem__[idx.__as_mlir_index()](colb.value)
+        tc.rows.__setitem__[idx](nrows.value)
+        tc.colb.__setitem__[idx](colb.value)
 
     unroll[8, tc_fill]()
     return tc

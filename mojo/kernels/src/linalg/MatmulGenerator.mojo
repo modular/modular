@@ -316,9 +316,9 @@ struct MatmulDynamicState[data_type: MatmulDataType]:
         """Allocate space for packing and maybe other intermediate data space."""
         # TODO: read these data out from matmul config.
         self.packed_b = _raw_stack_allocation[
-            get_pack_data_size().__as_mlir_index(),  # Count.
+            get_pack_data_size(),  # Count.
             data_type.value_type,  # Data type.
-            simd_byte_width().__as_mlir_index(),  # Alignment.
+            simd_byte_width(),  # Alignment.
         ]()
 
     # TODO:
@@ -644,9 +644,9 @@ struct PackInterface[
                 # data type.
                 data_type.value_type,
                 # simd size.
-                static_state.simd_size.__as_mlir_index(),
+                static_state.simd_size,
                 # pack inner size, in number of elements.
-                inner_size.__as_mlir_index(),
+                inner_size,
             ].run(
                 b_packed_buffer,
                 b_buffer,
@@ -676,9 +676,9 @@ struct PackInterface[
                 # data type.
                 data_type.value_type,
                 # simd size.
-                static_state.simd_size.__as_mlir_index(),
+                static_state.simd_size,
                 # pack inner size, in number of elements.
-                inner_size.__as_mlir_index(),
+                inner_size,
             ].run(
                 # Input is [K, N]:
                 b_packed_buffer,
@@ -776,9 +776,9 @@ struct MicroKernelInterface[
             DimList[3].create_unknown(),
             data_type.accum_type,
             data_type.value_type,
-            static_state.simd_size.__as_mlir_index(),
-            static_state.static_gemm_shape.M.get().__as_mlir_index(),
-            inner_size.__as_mlir_index(),
+            static_state.simd_size,
+            static_state.static_gemm_shape.M.get(),
+            inner_size,
             static_state.static_gemm_switch.N,
             prefetch_b_distance_k,
         ].run(

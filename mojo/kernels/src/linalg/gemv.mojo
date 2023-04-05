@@ -16,7 +16,7 @@ from Index import Index
 
 
 fn gemv[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     out_size: Dim,
     lhs_shape: DimList[2],
     rhs_size: Dim,

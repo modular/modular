@@ -17,7 +17,7 @@ from BuildInfo import is_relwithdebinfo_build, is_debug_build
 # The largest kernel for AVX is 4x3 which needs 16 registers and gives the best result.
 # For AVX512 a 5x4, 5x5, or 6x4 kernel can be used, 5x4 gives the best result.
 # For the Graviton 2 a 5x3 kernel gives the best result.
-fn get_matmul_a_row_size() -> __mlir_type.index:
+fn get_matmul_a_row_size() -> Int:
     @parameter
     if has_neon():
         return 8
@@ -26,7 +26,7 @@ fn get_matmul_a_row_size() -> __mlir_type.index:
     return 4
 
 
-fn get_matmul_pack_inner_size() -> __mlir_type.index:
+fn get_matmul_pack_inner_size() -> Int:
     @parameter
     if has_neon():
         return 2

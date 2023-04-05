@@ -60,16 +60,16 @@ struct MatmulConfig:
     var shape_bias: DimList[1]
 
     # Static info on simd vector size.
-    var simd_size: __mlir_type.index
+    var simd_size: Int
 
     # Static loop unrolling size on M dimension.
-    var a_row_size: __mlir_type.index
+    var a_row_size: Int
 
     # Static inner dimension of packed data layout.
-    var pack_inner_size: __mlir_type.index
+    var pack_inner_size: Int
 
     # Static info on number of elements to pack in the packing routine.
-    var pack_data_size: __mlir_type.index
+    var pack_data_size: Int
 
     # Prefetch distance for packed b vectors in micro kernels.
     var prefetch_b_distance_k: Int
