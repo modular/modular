@@ -131,9 +131,9 @@ M::LogicalResult MojoExpressionParser::parse() {
   // TODO: Capture fixits, and apply them to the expression text.
   mlir::TimingScope scope;
   mlir::MLIRContext *ctx = impl->passManager->getContext();
+  MojoParserConfig config(ctx, *impl->runtime, impl->compilationOptions);
   OwningOpRef<ModuleOp> module =
-      importMojoFile(impl->sourceManager, ctx, scope, impl->compilationOptions,
-                     /*useMLIRDiagnostics=*/false, *impl->runtime);
+      importMojoFile(impl->sourceManager, config, scope);
   if (!module)
     return failure();
 

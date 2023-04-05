@@ -24,6 +24,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "KGEN/ParseLit.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
@@ -106,19 +107,18 @@ struct LitSharedState::Impl {
   bool validateDocStrings = false;
 };
 
-LitSharedState::LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context,
-                               const CompilationOptions &options,
-                               bool useMLIRDiagnostics, LLCL::Runtime &runtime,
-                               bool validateDocStrings, bool enableCaching)
-    : diags(sourceMgr, context, useMLIRDiagnostics), options(options),
-      declResolver(std::make_unique<DeclResolver>(*this)), runtime(runtime),
-      impl(std::make_unique<Impl>()) {
+LitSharedState::LitSharedState(llvm::SourceMgr &sourceMgr,
+                               MojoParserConfig &config, bool enableCaching)
+    : diags(sourceMgr, config.context, config.useMLIRDiagnostics),
+      options(config.options),
+      declResolver(std::make_unique<DeclResolver>(*this)),
+      runtime(config.runtime), impl(std::make_unique<Impl>()) {
   impl->autoImportDir = getAutoImportPath();
-  impl->validateDocStrings = validateDocStrings;
+  impl->validateDocStrings = config.validateDocStrings;
 
-  context->loadDialect<DebugInfo::DebugInfoDialect, HLCF::HLCFDialect,
-                       POP::POPDialect, LITDialect, mlir::index::IndexDialect,
-                       KGENDialect>();
+  config.context->loadDialect<DebugInfo::DebugInfoDialect, HLCF::HLCFDialect,
+                              POP::POPDialect, LITDialect,
+                              mlir::index::IndexDialect, KGENDialect>();
 
   // Tell the diagnostics machinery how to find the end of a token lazily when
   // it needs it.
@@ -126,7 +126,7 @@ LitSharedState::LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context,
       [=](SMLoc &loc) { adjustTokenEndPoint(*this, loc); });
 
   if (options.getDebugInfoLevelForInput()) {
-    diBuilder = std::make_unique<DebugInfo::DIBuilder>(context);
+    diBuilder = std::make_unique<DebugInfo::DIBuilder>(config.context);
 
     // TODO: Dwarf technically has a language for python, but it's not really
     // what we want here AFAICT (our compilation model isn't the same as

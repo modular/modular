@@ -116,30 +116,23 @@ importMojoFileImpl(SourceMgr &sourceMgr, LitSharedState &sharedState,
   return {std::move(module), &moduleDecl};
 }
 
-OwningOpRef<mlir::ModuleOp> M::importMojoFile(
-    SourceMgr &sourceMgr, MLIRContext *context, mlir::TimingScope &ts,
-    const KGEN::CompilationOptions &options, bool useMLIRDiagnostics,
-    LLCL::Runtime &runtime, bool validateDocStrings,
-    SmallVectorImpl<std::string> *includedFiles) {
-  LitSharedState sharedState(sourceMgr, context, options, useMLIRDiagnostics,
-                             runtime, validateDocStrings);
+OwningOpRef<mlir::ModuleOp>
+M::importMojoFile(llvm::SourceMgr &sourceMgr, MojoParserConfig &config,
+                  mlir::TimingScope &ts,
+                  SmallVectorImpl<std::string> *includedFiles) {
+  LitSharedState sharedState(sourceMgr, config);
   auto [module, topLevelDecl] =
       importMojoFileImpl(sourceMgr, sharedState, ts, includedFiles);
   return std::move(module);
 }
 
 LogicalResult M::generateMojoDoc(llvm::SourceMgr &sourceMgr,
-                                 MLIRContext *context, raw_ostream &outputOS,
-                                 mlir::TimingScope &ts,
-                                 const KGEN::CompilationOptions &options,
-                                 LLCL::Runtime &runtime) {
+                                 MojoParserConfig &config,
+                                 raw_ostream &outputOS, mlir::TimingScope &ts) {
   // TODO: We should be able to cache when processing doc strings, but we need
   // to define when/how they get cached to not negatively affect the non-doc
   // string caring path.
-  LitSharedState sharedState(sourceMgr, context, options,
-                             /*useMLIRDiagnostics=*/false, runtime,
-                             /*validateDocStrings=*/false,
-                             /*enableCaching=*/false);
+  LitSharedState sharedState(sourceMgr, config, /*enableCaching=*/false);
   auto [module, moduleDecl] = importMojoFileImpl(sourceMgr, sharedState, ts);
   if (!module)
     return failure();

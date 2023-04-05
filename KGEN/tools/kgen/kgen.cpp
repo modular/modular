@@ -220,9 +220,9 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   if (inputFileName.ends_with(".lit") || inputFileName.ends_with(".mojo") ||
       inputFileName.ends_with(".🔥")) {
     TimingScope litScope = timing.nest("Import Lit");
-    theModule = importMojoFile(mgr, ctx, litScope, compilationOptions,
-                               clOptions.enableMLIRDiagnostics, *runtime,
-                               /*validateDocStrings=*/false, &includedFiles);
+    MojoParserConfig config(ctx, *runtime, compilationOptions);
+    config.useMLIRDiagnostics = clOptions.enableMLIRDiagnostics;
+    theModule = importMojoFile(mgr, config, litScope, &includedFiles);
   } else if (compilationOptions.getDebugInfoLevelForInput()) {
     theModule = DebugInfo::parseSourceFileWithDebugInfo(
         mgr, ctx, compilationOptions.getDIEmissionKind());

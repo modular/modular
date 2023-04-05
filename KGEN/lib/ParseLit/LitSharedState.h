@@ -16,6 +16,10 @@
 
 #include "mlir/IR/BuiltinOps.h"
 
+namespace M {
+struct MojoParserConfig;
+} // namespace M
+
 namespace M::DebugInfo {
 class DIBuilder;
 } // namespace M::DebugInfo
@@ -48,9 +52,7 @@ inline const char *plural(size_t value, const char *one = "",
 /// which are always shared across them.
 class LitSharedState {
 public:
-  LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context,
-                 const CompilationOptions &options, bool useMLIRDiagnostics,
-                 LLCL::Runtime &runtime, bool validateDocStrings = false,
+  LitSharedState(llvm::SourceMgr &sourceMgr, MojoParserConfig &config,
                  bool enableCaching = true);
   ~LitSharedState();
 
