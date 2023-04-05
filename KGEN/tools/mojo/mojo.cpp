@@ -165,20 +165,18 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return clOptions.reportError("expected a Mojo file");
   TimingScope mojoScope = timing.nest("Import Mojo");
 
+  MojoParserConfig parseConfig(ctx, *runtime, compilationOptions);
+  parseConfig.validateDocStrings = clOptions.validateDocStrings;
   if (clOptions.cmd == MojoCommand::kDocGen) {
     std::unique_ptr<llvm::ToolOutputFile> os =
         clOptions.getOutputFile(/*hasBinaryOutput=*/false, ".md");
-    if (failed(generateMojoDoc(mgr, ctx, os->os(), mojoScope,
-                               compilationOptions, *runtime)))
+    if (failed(generateMojoDoc(mgr, parseConfig, os->os(), mojoScope)))
       return clOptions.reportError("could not generate documentation");
     os->keep();
     return EXIT_SUCCESS;
   }
 
-  theModule = importMojoFile(mgr, ctx, mojoScope, compilationOptions,
-                             /*useMLIRDiagnostics=*/false, *runtime,
-                             clOptions.validateDocStrings);
-
+  theModule = importMojoFile(mgr, parseConfig, mojoScope);
   if (!theModule)
     return clOptions.reportError("could not parse the module");
 

@@ -41,9 +41,10 @@ int main(int argc, char *argv[]) {
         std::unique_ptr<LLCL::Runtime> runtime = clOptions.createRuntime();
         mlir::TimingScope ts;
         KGEN::CompilationOptions options = clOptions.getCompilationOptions();
-        return importMojoFile(sourceMgr, context, ts, options,
-                              /*useMLIRDiagnostics=*/true, *runtime,
-                              validateDocStrings);
+        MojoParserConfig config(context, *runtime, options);
+        config.useMLIRDiagnostics = true;
+        config.validateDocStrings = validateDocStrings;
+        return importMojoFile(sourceMgr, config, ts);
       });
 
   // Register LLVM IR generation.

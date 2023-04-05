@@ -183,10 +183,11 @@ void MojoDocument::initialize(const lsp::URIForFile &uri,
   // Parse the mojo file. Ignore the result for now as we aren't doing anything
   // other than collecting diagnostics at this point.
   MLIRContext context(MLIRContext::Threading::DISABLED);
+  KGEN::CompilationOptions compilationOptions;
   mlir::TimingScope ts;
-  M::importMojoFile(sourceMgr, &context, ts, KGEN::CompilationOptions(),
-                    /*useMLIRDiagnostics=*/false, runtime,
-                    /*validateDocStrings=*/true);
+  MojoParserConfig parseConfig(&context, runtime, compilationOptions);
+  parseConfig.validateDocStrings = true;
+  M::importMojoFile(sourceMgr, parseConfig, ts);
 
   // Process the collected diagnostics.
   for (ArrayRef<llvm::SMDiagnostic> diags : handlerCtx.smDiagnostics) {
