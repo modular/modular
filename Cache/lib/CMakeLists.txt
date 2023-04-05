@@ -14,10 +14,11 @@ add_modular_library(MCache
   LLCLRuntime
   LLCLSupport
   MSupport
-
-  DEPENDS
   MVersion
   )
+
+target_compile_definitions(MCache PRIVATE
+  "MODULAR_DERIVED_DIR=\"${MODULAR_DERIVED_DIR}\"")
 
 add_subdirectory(CacheDialect)
 add_subdirectory(CachePasses)

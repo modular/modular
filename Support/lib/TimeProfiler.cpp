@@ -6,7 +6,7 @@
 
 #include "Support/TimeProfiler.h"
 
-#include "Config/Config.h"
+#include "Config/Version.h"
 #include "Support/Host.h"
 
 #include "llvm/ADT/DenseSet.h"
@@ -285,8 +285,9 @@ void M::Detail::timeTraceProfilerWriteTrace(llvm::raw_pwrite_stream &os) {
   // Emit software version info
   jsonOS.attributeBegin("versionInfo");
   jsonOS.objectBegin();
-  jsonOS.attribute("modular-git-sha", MODULAR_VERSION_REVISION);
-  jsonOS.attribute("modular-build-type", MODULAR_BUILD_TYPE);
+  ModularVersion version = getModularVersion();
+  jsonOS.attribute("modular-git-sha", version.revision);
+  jsonOS.attribute("modular-build-type", version.buildType);
   std::ostringstream profilingLevelOctal;
   profilingLevelOctal << std::oct << "0" << MODULAR_LLCL_MAX_PROFILING_LEVEL;
   jsonOS.attribute("modular-profiling-level", profilingLevelOctal.str());

@@ -21,8 +21,6 @@ add_modular_library(MSupport
   LLVMTarget
   LLVMTargetParser
   MLIRSupport
-
-  DEPENDS
   MVersion
   )
 

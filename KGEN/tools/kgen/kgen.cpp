@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Cache/CacheDialect/CacheDialect.h"
-#include "Config/Config.h"
+#include "Config/Version.h"
 #include "KGEN/CLOptions.h"
 #include "KGEN/CompilerRT.h"
 #include "KGEN/EmitFuncHeader.h"
@@ -489,11 +489,12 @@ int main(int argc, char **argv) {
 
   // Override the default version printer.
   llvm::cl::SetVersionPrinter([](raw_ostream &os) {
+    ModularVersion version = getModularVersion();
     os << "KGEN compiler:\n  ";
-    os << "Modular version " << MODULAR_VERSION_MAJOR << '.'
-       << MODULAR_VERSION_MINOR << '.' << MODULAR_VERSION_PATCH << "\n  ";
-    os << "Git SHA " << MODULAR_VERSION_REVISION << "\n  ";
-    os << "Build config " << MODULAR_BUILD_TYPE << "\n\n";
+    os << "Modular version " << version.major << '.' << version.minor << '.'
+       << version.patch << "\n  ";
+    os << "Git SHA " << version.revision << "\n  ";
+    os << "Build config " << version.buildType << "\n\n";
 
     // Print the host target config.
     llvm::sys::printDefaultTargetAndDetectedCPU(os);

@@ -17,7 +17,7 @@ execute_process (
     OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 
-set(version_inc "${MODULAR_BINARY_DIR}/Config/include/Config/Version.h.inc")
+set(version_inc "${VERSION_OUTPUT_FILE}")
 
 string(TOLOWER ${MODULAR_BUILD_TYPE} MODULAR_BUILD_TYPE_LOWER)
 
