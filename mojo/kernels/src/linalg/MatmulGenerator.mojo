@@ -19,7 +19,7 @@ from Pointer import DTypePointer
 from SIMD import SIMD
 from TargetInfo import simd_byte_width
 from Math import div_ceil, min, max
-from Functional import tile, unswitch, tile_and_unswitch
+from Functional import tile, unswitch, tile_and_unswitch, vectorize_unroll
 from IO import print
 from DType import DType
 from TargetInfo import dtype_simd_width
@@ -951,13 +951,7 @@ struct MatmulGenerator[
 
         @parameter
         if action.do_epilog:
-            # This check ensures that the matmul has finished on the current tile.
-            # This needs to be updated once split K on threads is enabled.
-            if (
-                dynamic_state.global_offset.K + dynamic_state.valid_tile_bound.K
-                == dynamic_state.global_gemm_size.K
-            ):
-                epilog_function(dynamic_state)
+            epilog_function(dynamic_state)
 
     @staticmethod
     @always_inline
@@ -1291,17 +1285,32 @@ struct TiledMatmulBiasGenerated[
         #  bottleneck is `data_type`.
         @always_inline
         fn epilog_bias(dynamic_state: MatmulDynamicState[data_type]):
+            # This check ensures that we only add the bias once
+            if not (
+                dynamic_state.global_offset.K + dynamic_state.valid_tile_bound.K
+                == dynamic_state.global_gemm_size.K
+            ):
+                return
             # Get global c buffer.
             let c_buffer = dynamic_state.get_global_result_buffer()
 
             # Loop over the current tile.
-            for idx_m in range(dynamic_state.valid_tile_bound.M):
-                # Apply bias value to each row.
-                let m_coordinate = idx_m + dynamic_state.global_offset.M
-                let bias_value = bias[m_coordinate]
-                for idx_n in range(dynamic_state.valid_tile_bound.N):
-                    let n_coordinate = idx_n + dynamic_state.global_offset.N
-                    c_buffer[Index(m_coordinate, n_coordinate)] += bias_value
+            @always_inline
+            fn bias_col_chunk[col_chunk_size: Int](idx_n: Int):
+                let n_coord = idx_n + dynamic_state.global_offset.N
+                let bias_val = bias.simd_load[col_chunk_size](n_coord)
+                for idx_m in range(dynamic_state.valid_tile_bound.M):
+                    let m_coord = idx_m + dynamic_state.global_offset.M
+                    let c_coord = Index(m_coord, n_coord)
+                    let c_val = c_buffer.simd_load[col_chunk_size](c_coord)
+                    c_buffer.simd_store[col_chunk_size](
+                        c_coord, c_val + bias_val
+                    )
+
+            alias unroll_factor = 4  # TODO: Search
+            vectorize_unroll[unroll_factor, config.simd_size, bias_col_chunk](
+                dynamic_state.valid_tile_bound.N
+            )
 
         MatmulGenerator[data_type, epilog_bias].generate[
             MatmulStaticState.initialize[data_type, data_layout](),
