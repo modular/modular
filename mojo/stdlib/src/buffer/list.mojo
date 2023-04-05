@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""This module provides utilities for working with static and variadic lists."""
 
 from Int import Int
 
@@ -19,10 +20,12 @@ from Assert import assert_param_bool_msg
 
 @register_passable("trivial")
 struct Dim:
-    """A static or dynamic dimension modeled with an optional integer. This
-    class is meant to represent an optional static dimension. When a value is
-    present, the dimension has that static value. When a value is not present,
-    the dimension is dynamic."""
+    """A static or dynamic dimension modeled with an optional integer.
+
+    This class is meant to represent an optional static dimension. When a value
+    is present, the dimension has that static value. When a value is not
+    present, the dimension is dynamic.
+    """
 
     alias type = __mlir_type[`!pop.variant<i1, `, Int, `>`]
     var value: type
@@ -32,9 +35,10 @@ struct Dim:
         """Create a dimension from its underlying value type.
 
         Args:
-            value (type): The underlying value.
+            value: The underlying value.
+
         Returns:
-            Dim: A dimension value.
+            A dimension value.
         """
         return Dim {value: value}
 
@@ -43,9 +47,10 @@ struct Dim:
         """Create a statically-known dimension.
 
         Args:
-            value (Int): The static dimension value.
+            value: The static dimension value.
+
         Returns:
-            Dim: A dimension with a static value.
+            A dimension with a static value.
         """
         return __mlir_op.`pop.variant.create`[_type:type](value)
 
@@ -54,9 +59,10 @@ struct Dim:
         """Create a statically-known dimension.
 
         Args:
-            value (__mlir_type.index): The static dimension value.
+            value: The static dimension value.
+
         Returns:
-            Dim: A dimension with a static value.
+            A dimension with a static value.
         """
         return Int(value)
 
@@ -65,18 +71,16 @@ struct Dim:
         """Create a dynamic dimension.
 
         Returns:
-            Dim: A dimension value with no static value.
+            A dimension value with no static value.
         """
         return __mlir_op.`pop.variant.create`[_type:type](__mlir_attr.`0 : i1`)
 
     @always_inline
     fn __bool__(self) -> Bool:
-        """Return true if the dimension has a static value.
+        """Return True if the dimension has a static value.
 
-        Args:
-            self (Self): The dimension.
         Returns:
-            Bool: Whether the dimension has a value.
+            Whether the dimension has a static value.
         """
         return __mlir_op.`pop.variant.is`[testType : __mlir_attr[Int]](
             self.value
@@ -84,23 +88,19 @@ struct Dim:
 
     @always_inline
     fn has_value(self) -> Bool:
-        """Return true if the dimension has a static value.
+        """Return True if the dimension has a static value.
 
-        Args:
-            self (Self): The dimension.
         Returns:
-            Bool: Whether the dimension has a value.
+            Whether the dimension has a static value.
         """
         return self.__bool__()
 
     @always_inline
     fn is_dynamic(self) -> Bool:
-        """Return true if the dimension has a dynamic value.
+        """Return True if the dimension has a dynamic value.
 
-        Args:
-            self (Self): The dimension.
         Returns:
-            Bool: Whether the dimension is dynamic.
+            Whether the dimension is dynamic.
         """
         return not self.has_value()
 
@@ -108,37 +108,36 @@ struct Dim:
     fn get(self) -> Int:
         """Get the static dimension value.
 
-        Args:
-            self (Self): The dimension.
         Returns:
-            Bool: Whether the dimension is dynamic.
+            The static dimension value.
         """
         return __mlir_op.`pop.variant.get`[_type:Int](self.value)
 
     @always_inline
-    fn is_multiple[alignement: Int](self) -> Bool:
+    fn is_multiple[alignment: Int](self) -> Bool:
         """Check if the dimension is aligned.
 
-        Args:
-            alignement (Int): The alignment requirement.
-            self (Self): The dimension.
+        Parameters:
+            alignment: The alignment requirement.
+
         Returns:
-            Bool: Whether the dimension is aligned.
+            Whether the dimension is aligned.
         """
         if self.is_dynamic():
             return False
-        return self.get() % alignement == 0
+        return self.get() % alignment == 0
 
     @always_inline
     fn __mul__(self, rhs: Dim) -> Dim:
-        """Multiply two dimensions. If either are unknown, the result is unknown
-        as well.
+        """Multiply two dimensions.
+
+        If either are unknown, the result is unknown as well.
 
         Args:
-            self (Self): The dimension.
-            rhs (Dim): The other dimension.
+            rhs: The other dimension.
+
         Returns:
-            Dim: The product of the two dimensions.
+            The product of the two dimensions.
         """
         if not self or not rhs:
             return Dim()
@@ -149,10 +148,10 @@ struct Dim:
         """Compare two dimensions for equality.
 
         Args:
-            self (Self): The dimension.
-            rhs (Dim): The other dimension.
+            rhs: The other dimension.
+
         Returns:
-            Bool: True if the dimensions are the same.
+            True if the dimensions are the same.
         """
         if self and rhs:
             return self.get() == rhs.get()
@@ -179,9 +178,10 @@ struct DimList[length: Int]:
         """Create a dimension list from the underlying value type.
 
         Args:
-            value (list_type): The underlying value.
+            value: The underlying value.
+
         Returns:
-            Self: A dimension list.
+            A dimension list.
         """
         return Self {value: value}
 
@@ -189,10 +189,8 @@ struct DimList[length: Int]:
     fn __clone__(self&) -> Self:
         """Copy a dimension list.
 
-        Args:
-            self (Self): The list to copy.
         Returns:
-            Self: A dimension list.
+            A dimension list.
         """
         return Self {value: self.value}
 
@@ -201,11 +199,10 @@ struct DimList[length: Int]:
         """Get the dimension at a specified index.
 
         ParamArgs:
-            i (Int): The dimension index.
-        Args:
-            self (Self): The list to index.
+            i: The dimension index.
+
         Returns:
-            Dim: The dimension at the specified index.
+            The dimension at the specified index.
         """
         assert_param_bool_msg[i >= 0, "negative index"]()
         assert_param_bool_msg[i < length, "index exceeds length"]()
@@ -221,28 +218,28 @@ struct DimList[length: Int]:
 
     @always_inline
     fn product(self) -> Dim:
-        """Compute the product of all the dimensions in the list. If any are
-        dynamic, the result is a dynamic dimension value.
+        """Compute the product of all the dimensions in the list.
 
-        Args:
-            self (Self): The list whose product to find.
+        If any are dynamic, the result is a dynamic dimension value.
+
         Returns:
-            Dim: The product of all the dimensions.
+            The product of all the dimensions.
         """
         return self._product_impl[0, length]()
 
     @always_inline
     fn product_range[start: Int, end: Int](self) -> Dim:
-        """Compute the product of a range of the dimensions in the list. If any
-        in the range are dynamic, the result is a dynamic dimension value.
+        """Compute the product of a range of the dimensions in the list.
+
+        If any in the range are dynamic, the result is a dynamic dimension
+        value.
 
         ParamArgs:
-            start (Int): The starting index.
-            end (Int): The end index.
-        Args:
-            self (Self): The list whose product to find.
+            start: The starting index.
+            end: The end index.
+
         Returns:
-            Dim: The product of all the dimensions.
+            The product of all the dimensions.
         """
         return self._product_impl[start, end]()
 
@@ -260,10 +257,10 @@ struct DimList[length: Int]:
         value.
 
         Args:
-            self (Self): The list to search.
-            value (Dim): The value to find.
+            value: The value to find.
+
         Returns:
-            Bool: True if the list contains a dimension of the specified value.
+            True if the list contains a dimension of the specified value.
         """
         return self._contains_impl[0](value)
 
@@ -271,10 +268,8 @@ struct DimList[length: Int]:
     fn all_known(self) -> Bool:
         """Determine whether all dimensions are statically known.
 
-        Args:
-            self (Self): The list to check.
         Returns:
-            Bool: True if all dimensions have a static value.
+            True if all dimensions have a static value.
         """
         return not self.contains(Dim())
 
@@ -284,7 +279,7 @@ struct DimList[length: Int]:
         """Create a dimension list of all dynamic dimension values.
 
         Returns:
-            Self: A list of all dynamic dimension values.
+            A list of all dynamic dimension values.
         """
         assert_param_bool_msg[length > 0, "length must be positive"]()
         alias u = Dim()
@@ -346,10 +341,10 @@ fn create_dim_list(e0: Dim) -> DimList[1]:
     """Creates a list given a type and elements.
 
     Args:
-        e0 (Dim): The 1st element of the returned list.
+        e0: The 1st element of the returned list.
 
     Returns:
-        DimList[1]: The list containing the elements.
+        The list containing the elements.
     """
     return __mlir_op.`pop.list.create`[
         _type : __mlir_type[`!kgen.list<`, Dim, `[1]>`]
@@ -361,11 +356,11 @@ fn create_dim_list(e0: Dim, e1: Dim) -> DimList[2]:
     """Creates a list given a type and elements.
 
     Args:
-        e0 (Dim): The 1st element of the returned list.
-        e1 (Dim): The 2nd element of the returned list.
+        e0: The 1st element of the returned list.
+        e1: The 2nd element of the returned list.
 
     Returns:
-        DimList[2]: The list containing the elements.
+        The list containing the elements.
     """
     return __mlir_op.`pop.list.create`[
         _type : __mlir_type[`!kgen.list<`, Dim, `[2]>`]
@@ -377,12 +372,12 @@ fn create_dim_list(e0: Dim, e1: Dim, e2: Dim) -> DimList[3]:
     """Creates a list given a type and elements.
 
     Args:
-        e0 (Dim): The 1st element of the returned list.
-        e1 (Dim): The 2nd element of the returned list.
-        e2 (Dim): The 3rd element of the returned list.
+        e0: The 1st element of the returned list.
+        e1: The 2nd element of the returned list.
+        e2: The 3rd element of the returned list.
 
     Returns:
-        DimList[3]: The list containing the elements.
+        The list containing the elements.
     """
     return __mlir_op.`pop.list.create`[
         _type : __mlir_type[`!kgen.list<`, Dim, `[3]>`]
@@ -394,13 +389,13 @@ fn create_dim_list(e0: Dim, e1: Dim, e2: Dim, e3: Dim) -> DimList[4]:
     """Creates a list given a type and elements.
 
     Args:
-        e0 (Dim): The 1st element of the returned list.
-        e1 (Dim): The 2nd element of the returned list.
-        e2 (Dim): The 3rd element of the returned list.
-        e3 (Dim): The 4th element of the returned list.
+        e0: The 1st element of the returned list.
+        e1: The 2nd element of the returned list.
+        e2: The 3rd element of the returned list.
+        e3: The 4th element of the returned list.
 
     Returns:
-        DimList[4]: The list containing the elements.
+        The list containing the elements.
     """
     return __mlir_op.`pop.list.create`[
         _type : __mlir_type[`!kgen.list<`, Dim, `[4]>`]
@@ -412,14 +407,14 @@ fn create_dim_list(e0: Dim, e1: Dim, e2: Dim, e3: Dim, e4: Dim) -> DimList[5]:
     """Creates a list given a type and elements.
 
     Args:
-        e0 (Dim): The 1st element of the returned list.
-        e1 (Dim): The 2nd element of the returned list.
-        e2 (Dim): The 3rd element of the returned list.
-        e3 (Dim): The 4th element of the returned list.
-        e4 (Dim): The 5th element of the returned list.
+        e0: The 1st element of the returned list.
+        e1: The 2nd element of the returned list.
+        e2: The 3rd element of the returned list.
+        e3: The 4th element of the returned list.
+        e4: The 5th element of the returned list.
 
     Returns:
-        DimList[5]: The list containing the elements.
+        The list containing the elements.
     """
     return __mlir_op.`pop.list.create`[
         _type : __mlir_type[`!kgen.list<`, Dim, `[5]>`]
@@ -433,15 +428,15 @@ fn create_dim_list(
     """Creates a list given a type and elements.
 
     Args:
-        e0 (Dim): The 1st element of the returned list.
-        e1 (Dim): The 2nd element of the returned list.
-        e2 (Dim): The 3rd element of the returned list.
-        e3 (Dim): The 4th element of the returned list.
-        e4 (Dim): The 5th element of the returned list.
-        e5 (Dim): The 6th element of the returned list.
+        e0: The 1st element of the returned list.
+        e1: The 2nd element of the returned list.
+        e2: The 3rd element of the returned list.
+        e3: The 4th element of the returned list.
+        e4: The 5th element of the returned list.
+        e5: The 6th element of the returned list.
 
     Returns:
-        DimList[6]: The list containing the elements.
+        The list containing the elements.
     """
     return __mlir_op.`pop.list.create`[
         _type : __mlir_type[`!kgen.list<`, Dim, `[6]>`]
@@ -461,16 +456,16 @@ fn create_dim_list(
     """Creates a list given a type and elements.
 
     Args:
-        e0 (Dim): The 1st element of the returned list.
-        e1 (Dim): The 2nd element of the returned list.
-        e2 (Dim): The 3rd element of the returned list.
-        e3 (Dim): The 4th element of the returned list.
-        e4 (Dim): The 5th element of the returned list.
-        e5 (Dim): The 6th element of the returned list.
-        e6 (Dim): The 7th element of the returned list.
+        e0: The 1st element of the returned list.
+        e1: The 2nd element of the returned list.
+        e2: The 3rd element of the returned list.
+        e3: The 4th element of the returned list.
+        e4: The 5th element of the returned list.
+        e5: The 6th element of the returned list.
+        e6: The 7th element of the returned list.
 
     Returns:
-        DimList[7]: The list containing the elements.
+        The list containing the elements.
     """
     return __mlir_op.`pop.list.create`[
         _type : __mlir_type[`!kgen.list<`, Dim, `[7]>`]
@@ -491,17 +486,17 @@ fn create_dim_list(
     """Creates a list given a type and elements.
 
     Args:
-        e0 (Dim): The 1st element of the returned list.
-        e1 (Dim): The 2nd element of the returned list.
-        e2 (Dim): The 3rd element of the returned list.
-        e3 (Dim): The 4th element of the returned list.
-        e4 (Dim): The 5th element of the returned list.
-        e5 (Dim): The 6th element of the returned list.
-        e6 (Dim): The 7th element of the returned list.
-        e7 (Dim): The 8th element of the returned list.
+        e0: The 1st element of the returned list.
+        e1: The 2nd element of the returned list.
+        e2: The 3rd element of the returned list.
+        e3: The 4th element of the returned list.
+        e4: The 5th element of the returned list.
+        e5: The 6th element of the returned list.
+        e6: The 7th element of the returned list.
+        e7: The 8th element of the returned list.
 
     Returns:
-        DimList[8]: The list containing the elements.
+        The list containing the elements.
     """
     return __mlir_op.`pop.list.create`[
         _type : __mlir_type[`!kgen.list<`, Dim, `[8]>`]
@@ -523,18 +518,18 @@ fn create_dim_list(
     """Creates a list given a type and elements.
 
     Args:
-        e0 (Dim): The 1st element of the returned list.
-        e1 (Dim): The 2nd element of the returned list.
-        e2 (Dim): The 3rd element of the returned list.
-        e3 (Dim): The 4th element of the returned list.
-        e4 (Dim): The 5th element of the returned list.
-        e5 (Dim): The 6th element of the returned list.
-        e6 (Dim): The 7th element of the returned list.
-        e7 (Dim): The 8th element of the returned list.
-        e8 (Dim): The 9th element of the returned list.
+        e0: The 1st element of the returned list.
+        e1: The 2nd element of the returned list.
+        e2: The 3rd element of the returned list.
+        e3: The 4th element of the returned list.
+        e4: The 5th element of the returned list.
+        e5: The 6th element of the returned list.
+        e6: The 7th element of the returned list.
+        e7: The 8th element of the returned list.
+        e8: The 9th element of the returned list.
 
     Returns:
-        DimList[9]: The list containing the elements.
+        The list containing the elements.
     """
     return __mlir_op.`pop.list.create`[
         _type : __mlir_type[`!kgen.list<`, Dim, `[9]>`]
@@ -557,19 +552,19 @@ fn create_dim_list(
     """Creates a list given a type and elements.
 
     Args:
-        e0 (Dim): The 1st element of the returned list.
-        e1 (Dim): The 2nd element of the returned list.
-        e2 (Dim): The 3rd element of the returned list.
-        e3 (Dim): The 4th element of the returned list.
-        e4 (Dim): The 5th element of the returned list.
-        e5 (Dim): The 6th element of the returned list.
-        e6 (Dim): The 7th element of the returned list.
-        e7 (Dim): The 8th element of the returned list.
-        e8 (Dim): The 9th element of the returned list.
-        e9 (Dim): The 10th element of the returned list.
+        e0: The 1st element of the returned list.
+        e1: The 2nd element of the returned list.
+        e2: The 3rd element of the returned list.
+        e3: The 4th element of the returned list.
+        e4: The 5th element of the returned list.
+        e5: The 6th element of the returned list.
+        e6: The 7th element of the returned list.
+        e7: The 8th element of the returned list.
+        e8: The 9th element of the returned list.
+        e9: The 10th element of the returned list.
 
     Returns:
-        DimList[10]: The list containing the elements.
+        The list containing the elements.
     """
     return __mlir_op.`pop.list.create`[
         _type : __mlir_type[`!kgen.list<`, Dim, `[10]>`]
@@ -593,20 +588,20 @@ fn create_dim_list(
     """Creates a list given a type and elements.
 
     Args:
-        e0 (Dim): The 1st element of the returned list.
-        e1 (Dim): The 2nd element of the returned list.
-        e2 (Dim): The 3rd element of the returned list.
-        e3 (Dim): The 4th element of the returned list.
-        e4 (Dim): The 5th element of the returned list.
-        e5 (Dim): The 6th element of the returned list.
-        e6 (Dim): The 7th element of the returned list.
-        e7 (Dim): The 8th element of the returned list.
-        e8 (Dim): The 9th element of the returned list.
-        e9 (Dim): The 10th element of the returned list.
-        e10 (Dim): The 11th element of the returned list.
+        e0: The 1st element of the returned list.
+        e1: The 2nd element of the returned list.
+        e2: The 3rd element of the returned list.
+        e3: The 4th element of the returned list.
+        e4: The 5th element of the returned list.
+        e5: The 6th element of the returned list.
+        e6: The 7th element of the returned list.
+        e7: The 8th element of the returned list.
+        e8: The 9th element of the returned list.
+        e9: The 10th element of the returned list.
+        e10: The 11th element of the returned list.
 
     Returns:
-        DimList[11]: The list containing the elements.
+        The list containing the elements.
     """
     return __mlir_op.`pop.list.create`[
         _type : __mlir_type[`!kgen.list<`, Dim, `[11]>`]
@@ -631,21 +626,21 @@ fn create_dim_list(
     """Creates a list given a type and elements.
 
     Args:
-        e0 (Dim): The 1st element of the returned list.
-        e1 (Dim): The 2nd element of the returned list.
-        e2 (Dim): The 3rd element of the returned list.
-        e3 (Dim): The 4th element of the returned list.
-        e4 (Dim): The 5th element of the returned list.
-        e5 (Dim): The 6th element of the returned list.
-        e6 (Dim): The 7th element of the returned list.
-        e7 (Dim): The 8th element of the returned list.
-        e8 (Dim): The 9th element of the returned list.
-        e9 (Dim): The 10th element of the returned list.
-        e10 (Dim): The 11th element of the returned list.
-        e11 (Dim): The 12th element of the returned list.
+        e0: The 1st element of the returned list.
+        e1: The 2nd element of the returned list.
+        e2: The 3rd element of the returned list.
+        e3: The 4th element of the returned list.
+        e4: The 5th element of the returned list.
+        e5: The 6th element of the returned list.
+        e6: The 7th element of the returned list.
+        e7: The 8th element of the returned list.
+        e8: The 9th element of the returned list.
+        e9: The 10th element of the returned list.
+        e10: The 11th element of the returned list.
+        e11: The 12th element of the returned list.
 
     Returns:
-        DimList[12]: The list containing the elements.
+        The list containing the elements.
     """
     return __mlir_op.`pop.list.create`[
         _type : __mlir_type[`!kgen.list<`, Dim, `[12]>`]
@@ -671,22 +666,22 @@ fn create_dim_list(
     """Creates a list given a type and elements.
 
     Args:
-        e0 (Dim): The 1st element of the returned list.
-        e1 (Dim): The 2nd element of the returned list.
-        e2 (Dim): The 3rd element of the returned list.
-        e3 (Dim): The 4th element of the returned list.
-        e4 (Dim): The 5th element of the returned list.
-        e5 (Dim): The 6th element of the returned list.
-        e6 (Dim): The 7th element of the returned list.
-        e7 (Dim): The 8th element of the returned list.
-        e8 (Dim): The 9th element of the returned list.
-        e9 (Dim): The 10th element of the returned list.
-        e10 (Dim): The 11th element of the returned list.
-        e11 (Dim): The 12th element of the returned list.
-        e12 (Dim): The 13th element of the returned list.
+        e0: The 1st element of the returned list.
+        e1: The 2nd element of the returned list.
+        e2: The 3rd element of the returned list.
+        e3: The 4th element of the returned list.
+        e4: The 5th element of the returned list.
+        e5: The 6th element of the returned list.
+        e6: The 7th element of the returned list.
+        e7: The 8th element of the returned list.
+        e8: The 9th element of the returned list.
+        e9: The 10th element of the returned list.
+        e10: The 11th element of the returned list.
+        e11: The 12th element of the returned list.
+        e12: The 13th element of the returned list.
 
     Returns:
-        DimList[13]: The list containing the elements.
+        The list containing the elements.
     """
     return __mlir_op.`pop.list.create`[
         _type : __mlir_type[`!kgen.list<`, Dim, `[13]>`]
@@ -713,23 +708,23 @@ fn create_dim_list(
     """Creates a list given a type and elements.
 
     Args:
-        e0 (Dim): The 1st element of the returned list.
-        e1 (Dim): The 2nd element of the returned list.
-        e2 (Dim): The 3rd element of the returned list.
-        e3 (Dim): The 4th element of the returned list.
-        e4 (Dim): The 5th element of the returned list.
-        e5 (Dim): The 6th element of the returned list.
-        e6 (Dim): The 7th element of the returned list.
-        e7 (Dim): The 8th element of the returned list.
-        e8 (Dim): The 9th element of the returned list.
-        e9 (Dim): The 10th element of the returned list.
-        e10 (Dim): The 11th element of the returned list.
-        e11 (Dim): The 12th element of the returned list.
-        e12 (Dim): The 13th element of the returned list.
-        e13 (Dim): The 14th element of the returned list.
+        e0: The 1st element of the returned list.
+        e1: The 2nd element of the returned list.
+        e2: The 3rd element of the returned list.
+        e3: The 4th element of the returned list.
+        e4: The 5th element of the returned list.
+        e5: The 6th element of the returned list.
+        e6: The 7th element of the returned list.
+        e7: The 8th element of the returned list.
+        e8: The 9th element of the returned list.
+        e9: The 10th element of the returned list.
+        e10: The 11th element of the returned list.
+        e11: The 12th element of the returned list.
+        e12: The 13th element of the returned list.
+        e13: The 14th element of the returned list.
 
     Returns:
-        DimList[14]: The list containing the elements.
+        The list containing the elements.
     """
     return __mlir_op.`pop.list.create`[
         _type : __mlir_type[`!kgen.list<`, Dim, `[14]>`]
@@ -757,24 +752,24 @@ fn create_dim_list(
     """Creates a list given a type and elements.
 
     Args:
-        e0 (Dim): The 1st element of the returned list.
-        e1 (Dim): The 2nd element of the returned list.
-        e2 (Dim): The 3rd element of the returned list.
-        e3 (Dim): The 4th element of the returned list.
-        e4 (Dim): The 5th element of the returned list.
-        e5 (Dim): The 6th element of the returned list.
-        e6 (Dim): The 7th element of the returned list.
-        e7 (Dim): The 8th element of the returned list.
-        e8 (Dim): The 9th element of the returned list.
-        e9 (Dim): The 10th element of the returned list.
-        e10 (Dim): The 11th element of the returned list.
-        e11 (Dim): The 12th element of the returned list.
-        e12 (Dim): The 13th element of the returned list.
-        e13 (Dim): The 14th element of the returned list.
-        e14 (Dim): The 15th element of the returned list.
+        e0: The 1st element of the returned list.
+        e1: The 2nd element of the returned list.
+        e2: The 3rd element of the returned list.
+        e3: The 4th element of the returned list.
+        e4: The 5th element of the returned list.
+        e5: The 6th element of the returned list.
+        e6: The 7th element of the returned list.
+        e7: The 8th element of the returned list.
+        e8: The 9th element of the returned list.
+        e9: The 10th element of the returned list.
+        e10: The 11th element of the returned list.
+        e11: The 12th element of the returned list.
+        e12: The 13th element of the returned list.
+        e13: The 14th element of the returned list.
+        e14: The 15th element of the returned list.
 
     Returns:
-        DimList[15]: The list containing the elements.
+        The list containing the elements.
     """
     return __mlir_op.`pop.list.create`[
         _type : __mlir_type[`!kgen.list<`, Dim, `[15]>`]
@@ -803,25 +798,25 @@ fn create_dim_list(
     """Creates a list given a type and elements.
 
     Args:
-        e0 (Dim): The 1st element of the returned list.
-        e1 (Dim): The 2nd element of the returned list.
-        e2 (Dim): The 3rd element of the returned list.
-        e3 (Dim): The 4th element of the returned list.
-        e4 (Dim): The 5th element of the returned list.
-        e5 (Dim): The 6th element of the returned list.
-        e6 (Dim): The 7th element of the returned list.
-        e7 (Dim): The 8th element of the returned list.
-        e8 (Dim): The 9th element of the returned list.
-        e9 (Dim): The 10th element of the returned list.
-        e10 (Dim): The 11th element of the returned list.
-        e11 (Dim): The 12th element of the returned list.
-        e12 (Dim): The 13th element of the returned list.
-        e13 (Dim): The 14th element of the returned list.
-        e14 (Dim): The 15th element of the returned list.
-        e15 (Dim): The 16th element of the returned list.
+        e0: The 1st element of the returned list.
+        e1: The 2nd element of the returned list.
+        e2: The 3rd element of the returned list.
+        e3: The 4th element of the returned list.
+        e4: The 5th element of the returned list.
+        e5: The 6th element of the returned list.
+        e6: The 7th element of the returned list.
+        e7: The 8th element of the returned list.
+        e8: The 9th element of the returned list.
+        e9: The 10th element of the returned list.
+        e10: The 11th element of the returned list.
+        e11: The 12th element of the returned list.
+        e12: The 13th element of the returned list.
+        e13: The 14th element of the returned list.
+        e14: The 15th element of the returned list.
+        e15: The 16th element of the returned list.
 
     Returns:
-        DimList[16]: The list containing the elements.
+        The list containing the elements.
     """
     return __mlir_op.`pop.list.create`[
         _type : __mlir_type[`!kgen.list<`, Dim, `[16]>`]
@@ -839,12 +834,14 @@ fn create_kgen_list[
 ](e0: type) -> __mlir_type[`!kgen.list<`, type, `[1]>`]:
     """Creates a list given a type and elements.
 
+    Parameters:
+        type: The list type.
+
     Args:
-        type (!kgen.mlirtype): The list type.
-        e0 (type): The 1st element of the returned list.
+        e0: The 1st element of the returned list.
 
     Returns:
-        !kgen.list<type[1]>: The list containing the elements.
+        The list containing the elements.
     """
     return __mlir_op.`pop.list.create`[
         _type : __mlir_type[`!kgen.list<`, type, `[1]>`]
@@ -857,13 +854,15 @@ fn create_kgen_list[
 ](e0: type, e1: type) -> __mlir_type[`!kgen.list<`, type, `[2]>`]:
     """Creates a list given a type and elements.
 
+    Parameters:
+        type: The list type.
+
     Args:
-        type (!kgen.mlirtype): The list type.
-        e0 (type): The 1st element of the returned list.
-        e1 (type): The 2nd element of the returned list.
+        e0: The 1st element of the returned list.
+        e1: The 2nd element of the returned list.
 
     Returns:
-        !kgen.list<type[2]>: The list containing the elements.
+        The list containing the elements.
     """
     return __mlir_op.`pop.list.create`[
         _type : __mlir_type[`!kgen.list<`, type, `[2]>`]
@@ -876,14 +875,16 @@ fn create_kgen_list[
 ](e0: type, e1: type, e2: type) -> __mlir_type[`!kgen.list<`, type, `[3]>`]:
     """Creates a list given a type and elements.
 
+    Parameters:
+        type: The list type.
+
     Args:
-        type (!kgen.mlirtype): The list type.
-        e0 (type): The 1st element of the returned list.
-        e1 (type): The 2nd element of the returned list.
-        e2 (type): The 3rd element of the returned list.
+        e0: The 1st element of the returned list.
+        e1: The 2nd element of the returned list.
+        e2: The 3rd element of the returned list.
 
     Returns:
-        !kgen.list<type[3]>: The list containing the elements.
+        The list containing the elements.
     """
     return __mlir_op.`pop.list.create`[
         _type : __mlir_type[`!kgen.list<`, type, `[3]>`]
@@ -898,15 +899,17 @@ fn create_kgen_list[
 ]:
     """Creates a list given a type and elements.
 
+    Parameters:
+        type: The list type.
+
     Args:
-        type (!kgen.mlirtype): The list type.
-        e0 (type): The 1st element of the returned list.
-        e1 (type): The 2nd element of the returned list.
-        e2 (type): The 3rd element of the returned list.
-        e3 (type): The 4th element of the returned list.
+        e0: The 1st element of the returned list.
+        e1: The 2nd element of the returned list.
+        e2: The 3rd element of the returned list.
+        e3: The 4th element of the returned list.
 
     Returns:
-        !kgen.list<type[4]>: The list containing the elements.
+        The list containing the elements.
     """
     return __mlir_op.`pop.list.create`[
         _type : __mlir_type[`!kgen.list<`, type, `[4]>`]
@@ -921,16 +924,18 @@ fn create_kgen_list[
 ]:
     """Creates a list given a type and elements.
 
+    Parameters:
+        type: The list type.
+
     Args:
-        type (!kgen.mlirtype): The list type.
-        e0 (type): The 1st element of the returned list.
-        e1 (type): The 2nd element of the returned list.
-        e2 (type): The 3rd element of the returned list.
-        e3 (type): The 4th element of the returned list.
-        e4 (type): The 5th element of the returned list.
+        e0: The 1st element of the returned list.
+        e1: The 2nd element of the returned list.
+        e2: The 3rd element of the returned list.
+        e3: The 4th element of the returned list.
+        e4: The 5th element of the returned list.
 
     Returns:
-        !kgen.list<type[5]>: The list containing the elements.
+        The list containing the elements.
     """
     return __mlir_op.`pop.list.create`[
         _type : __mlir_type[`!kgen.list<`, type, `[5]>`]
@@ -945,17 +950,19 @@ fn create_kgen_list[
 ]:
     """Creates a list given a type and elements.
 
+    Parameters:
+        type: The list type.
+
     Args:
-        type (!kgen.mlirtype): The list type.
-        e0 (type): The 1st element of the returned list.
-        e1 (type): The 2nd element of the returned list.
-        e2 (type): The 3rd element of the returned list.
-        e3 (type): The 4th element of the returned list.
-        e4 (type): The 5th element of the returned list.
-        e5 (type): The 6th element of the returned list.
+        e0: The 1st element of the returned list.
+        e1: The 2nd element of the returned list.
+        e2: The 3rd element of the returned list.
+        e3: The 4th element of the returned list.
+        e4: The 5th element of the returned list.
+        e5: The 6th element of the returned list.
 
     Returns:
-        !kgen.list<type[6]>: The list containing the elements.
+        The list containing the elements.
     """
     return __mlir_op.`pop.list.create`[
         _type : __mlir_type[`!kgen.list<`, type, `[6]>`]
@@ -976,18 +983,20 @@ fn create_kgen_list[
 ) -> __mlir_type[`!kgen.list<`, type, `[7]>`]:
     """Creates a list given a type and elements.
 
+    Parameters:
+        type: The list type.
+
     Args:
-        type (!kgen.mlirtype): The list type.
-        e0 (type): The 1st element of the returned list.
-        e1 (type): The 2nd element of the returned list.
-        e2 (type): The 3rd element of the returned list.
-        e3 (type): The 4th element of the returned list.
-        e4 (type): The 5th element of the returned list.
-        e5 (type): The 6th element of the returned list.
-        e6 (type): The 7th element of the returned list.
+        e0: The 1st element of the returned list.
+        e1: The 2nd element of the returned list.
+        e2: The 3rd element of the returned list.
+        e3: The 4th element of the returned list.
+        e4: The 5th element of the returned list.
+        e5: The 6th element of the returned list.
+        e6: The 7th element of the returned list.
 
     Returns:
-        !kgen.list<type[7]>: The list containing the elements.
+        The list containing the elements.
     """
     return __mlir_op.`pop.list.create`[
         _type : __mlir_type[`!kgen.list<`, type, `[7]>`]
@@ -1009,19 +1018,21 @@ fn create_kgen_list[
 ) -> __mlir_type[`!kgen.list<`, type, `[8]>`]:
     """Creates a list given a type and elements.
 
+    Parameters:
+        type: The list type.
+
     Args:
-        type (!kgen.mlirtype): The list type.
-        e0 (type): The 1st element of the returned list.
-        e1 (type): The 2nd element of the returned list.
-        e2 (type): The 3rd element of the returned list.
-        e3 (type): The 4th element of the returned list.
-        e4 (type): The 5th element of the returned list.
-        e5 (type): The 6th element of the returned list.
-        e6 (type): The 7th element of the returned list.
-        e7 (type): The 8th element of the returned list.
+        e0: The 1st element of the returned list.
+        e1: The 2nd element of the returned list.
+        e2: The 3rd element of the returned list.
+        e3: The 4th element of the returned list.
+        e4: The 5th element of the returned list.
+        e5: The 6th element of the returned list.
+        e6: The 7th element of the returned list.
+        e7: The 8th element of the returned list.
 
     Returns:
-        !kgen.list<type[8]>: The list containing the elements.
+        The list containing the elements.
     """
     return __mlir_op.`pop.list.create`[
         _type : __mlir_type[`!kgen.list<`, type, `[8]>`]
@@ -1044,20 +1055,22 @@ fn create_kgen_list[
 ) -> __mlir_type[`!kgen.list<`, type, `[9]>`]:
     """Creates a list given a type and elements.
 
+    Parameters:
+        type: The list type.
+
     Args:
-        type (!kgen.mlirtype): The list type.
-        e0 (type): The 1st element of the returned list.
-        e1 (type): The 2nd element of the returned list.
-        e2 (type): The 3rd element of the returned list.
-        e3 (type): The 4th element of the returned list.
-        e4 (type): The 5th element of the returned list.
-        e5 (type): The 6th element of the returned list.
-        e6 (type): The 7th element of the returned list.
-        e7 (type): The 8th element of the returned list.
-        e8 (type): The 9th element of the returned list.
+        e0: The 1st element of the returned list.
+        e1: The 2nd element of the returned list.
+        e2: The 3rd element of the returned list.
+        e3: The 4th element of the returned list.
+        e4: The 5th element of the returned list.
+        e5: The 6th element of the returned list.
+        e6: The 7th element of the returned list.
+        e7: The 8th element of the returned list.
+        e8: The 9th element of the returned list.
 
     Returns:
-        !kgen.list<type[9]>: The list containing the elements.
+        The list containing the elements.
     """
     return __mlir_op.`pop.list.create`[
         _type : __mlir_type[`!kgen.list<`, type, `[9]>`]
@@ -1081,21 +1094,23 @@ fn create_kgen_list[
 ) -> __mlir_type[`!kgen.list<`, type, `[10]>`]:
     """Creates a list given a type and elements.
 
+    Parameters:
+        type: The list type.
+
     Args:
-        type (!kgen.mlirtype): The list type.
-        e0 (type): The 1st element of the returned list.
-        e1 (type): The 2nd element of the returned list.
-        e2 (type): The 3rd element of the returned list.
-        e3 (type): The 4th element of the returned list.
-        e4 (type): The 5th element of the returned list.
-        e5 (type): The 6th element of the returned list.
-        e6 (type): The 7th element of the returned list.
-        e7 (type): The 8th element of the returned list.
-        e8 (type): The 9th element of the returned list.
-        e9 (type): The 10th element of the returned list.
+        e0: The 1st element of the returned list.
+        e1: The 2nd element of the returned list.
+        e2: The 3rd element of the returned list.
+        e3: The 4th element of the returned list.
+        e4: The 5th element of the returned list.
+        e5: The 6th element of the returned list.
+        e6: The 7th element of the returned list.
+        e7: The 8th element of the returned list.
+        e8: The 9th element of the returned list.
+        e9: The 10th element of the returned list.
 
     Returns:
-        !kgen.list<type[10]>: The list containing the elements.
+        The list containing the elements.
     """
     return __mlir_op.`pop.list.create`[
         _type : __mlir_type[`!kgen.list<`, type, `[10]>`]
@@ -1120,22 +1135,24 @@ fn create_kgen_list[
 ) -> __mlir_type[`!kgen.list<`, type, `[11]>`]:
     """Creates a list given a type and elements.
 
+    Parameters:
+        type: The list type.
+
     Args:
-        type (!kgen.mlirtype): The list type.
-        e0 (type): The 1st element of the returned list.
-        e1 (type): The 2nd element of the returned list.
-        e2 (type): The 3rd element of the returned list.
-        e3 (type): The 4th element of the returned list.
-        e4 (type): The 5th element of the returned list.
-        e5 (type): The 6th element of the returned list.
-        e6 (type): The 7th element of the returned list.
-        e7 (type): The 8th element of the returned list.
-        e8 (type): The 9th element of the returned list.
-        e9 (type): The 10th element of the returned list.
-        e10 (type): The 11th element of the returned list.
+        e0: The 1st element of the returned list.
+        e1: The 2nd element of the returned list.
+        e2: The 3rd element of the returned list.
+        e3: The 4th element of the returned list.
+        e4: The 5th element of the returned list.
+        e5: The 6th element of the returned list.
+        e6: The 7th element of the returned list.
+        e7: The 8th element of the returned list.
+        e8: The 9th element of the returned list.
+        e9: The 10th element of the returned list.
+        e10: The 11th element of the returned list.
 
     Returns:
-        !kgen.list<type[11]>: The list containing the elements.
+        The list containing the elements.
     """
     return __mlir_op.`pop.list.create`[
         _type : __mlir_type[`!kgen.list<`, type, `[11]>`]
@@ -1161,23 +1178,25 @@ fn create_kgen_list[
 ) -> __mlir_type[`!kgen.list<`, type, `[12]>`]:
     """Creates a list given a type and elements.
 
+    Parameters:
+        type: The list type.
+
     Args:
-        type (!kgen.mlirtype): The list type.
-        e0 (type): The 1st element of the returned list.
-        e1 (type): The 2nd element of the returned list.
-        e2 (type): The 3rd element of the returned list.
-        e3 (type): The 4th element of the returned list.
-        e4 (type): The 5th element of the returned list.
-        e5 (type): The 6th element of the returned list.
-        e6 (type): The 7th element of the returned list.
-        e7 (type): The 8th element of the returned list.
-        e8 (type): The 9th element of the returned list.
-        e9 (type): The 10th element of the returned list.
-        e10 (type): The 11th element of the returned list.
-        e11 (type): The 12th element of the returned list.
+        e0: The 1st element of the returned list.
+        e1: The 2nd element of the returned list.
+        e2: The 3rd element of the returned list.
+        e3: The 4th element of the returned list.
+        e4: The 5th element of the returned list.
+        e5: The 6th element of the returned list.
+        e6: The 7th element of the returned list.
+        e7: The 8th element of the returned list.
+        e8: The 9th element of the returned list.
+        e9: The 10th element of the returned list.
+        e10: The 11th element of the returned list.
+        e11: The 12th element of the returned list.
 
     Returns:
-        !kgen.list<type[12]>: The list containing the elements.
+        The list containing the elements.
     """
     return __mlir_op.`pop.list.create`[
         _type : __mlir_type[`!kgen.list<`, type, `[12]>`]
@@ -1204,24 +1223,26 @@ fn create_kgen_list[
 ) -> __mlir_type[`!kgen.list<`, type, `[13]>`]:
     """Creates a list given a type and elements.
 
+    Parameters:
+        type: The list type.
+
     Args:
-        type (!kgen.mlirtype): The list type.
-        e0 (type): The 1st element of the returned list.
-        e1 (type): The 2nd element of the returned list.
-        e2 (type): The 3rd element of the returned list.
-        e3 (type): The 4th element of the returned list.
-        e4 (type): The 5th element of the returned list.
-        e5 (type): The 6th element of the returned list.
-        e6 (type): The 7th element of the returned list.
-        e7 (type): The 8th element of the returned list.
-        e8 (type): The 9th element of the returned list.
-        e9 (type): The 10th element of the returned list.
-        e10 (type): The 11th element of the returned list.
-        e11 (type): The 12th element of the returned list.
-        e12 (type): The 13th element of the returned list.
+        e0: The 1st element of the returned list.
+        e1: The 2nd element of the returned list.
+        e2: The 3rd element of the returned list.
+        e3: The 4th element of the returned list.
+        e4: The 5th element of the returned list.
+        e5: The 6th element of the returned list.
+        e6: The 7th element of the returned list.
+        e7: The 8th element of the returned list.
+        e8: The 9th element of the returned list.
+        e9: The 10th element of the returned list.
+        e10: The 11th element of the returned list.
+        e11: The 12th element of the returned list.
+        e12: The 13th element of the returned list.
 
     Returns:
-        !kgen.list<type[13]>: The list containing the elements.
+        The list containing the elements.
     """
     return __mlir_op.`pop.list.create`[
         _type : __mlir_type[`!kgen.list<`, type, `[13]>`]
@@ -1249,25 +1270,27 @@ fn create_kgen_list[
 ) -> __mlir_type[`!kgen.list<`, type, `[14]>`]:
     """Creates a list given a type and elements.
 
+    Parameters:
+        type: The list type.
+
     Args:
-        type (!kgen.mlirtype): The list type.
-        e0 (type): The 1st element of the returned list.
-        e1 (type): The 2nd element of the returned list.
-        e2 (type): The 3rd element of the returned list.
-        e3 (type): The 4th element of the returned list.
-        e4 (type): The 5th element of the returned list.
-        e5 (type): The 6th element of the returned list.
-        e6 (type): The 7th element of the returned list.
-        e7 (type): The 8th element of the returned list.
-        e8 (type): The 9th element of the returned list.
-        e9 (type): The 10th element of the returned list.
-        e10 (type): The 11th element of the returned list.
-        e11 (type): The 12th element of the returned list.
-        e12 (type): The 13th element of the returned list.
-        e13 (type): The 14th element of the returned list.
+        e0: The 1st element of the returned list.
+        e1: The 2nd element of the returned list.
+        e2: The 3rd element of the returned list.
+        e3: The 4th element of the returned list.
+        e4: The 5th element of the returned list.
+        e5: The 6th element of the returned list.
+        e6: The 7th element of the returned list.
+        e7: The 8th element of the returned list.
+        e8: The 9th element of the returned list.
+        e9: The 10th element of the returned list.
+        e10: The 11th element of the returned list.
+        e11: The 12th element of the returned list.
+        e12: The 13th element of the returned list.
+        e13: The 14th element of the returned list.
 
     Returns:
-        !kgen.list<type[14]>: The list containing the elements.
+        The list containing the elements.
     """
     return __mlir_op.`pop.list.create`[
         _type : __mlir_type[`!kgen.list<`, type, `[14]>`]
@@ -1296,26 +1319,28 @@ fn create_kgen_list[
 ) -> __mlir_type[`!kgen.list<`, type, `[15]>`]:
     """Creates a list given a type and elements.
 
+    Parameters:
+        type: The list type.
+
     Args:
-        type (!kgen.mlirtype): The list type.
-        e0 (type): The 1st element of the returned list.
-        e1 (type): The 2nd element of the returned list.
-        e2 (type): The 3rd element of the returned list.
-        e3 (type): The 4th element of the returned list.
-        e4 (type): The 5th element of the returned list.
-        e5 (type): The 6th element of the returned list.
-        e6 (type): The 7th element of the returned list.
-        e7 (type): The 8th element of the returned list.
-        e8 (type): The 9th element of the returned list.
-        e9 (type): The 10th element of the returned list.
-        e10 (type): The 11th element of the returned list.
-        e11 (type): The 12th element of the returned list.
-        e12 (type): The 13th element of the returned list.
-        e13 (type): The 14th element of the returned list.
-        e14 (type): The 15th element of the returned list.
+        e0: The 1st element of the returned list.
+        e1: The 2nd element of the returned list.
+        e2: The 3rd element of the returned list.
+        e3: The 4th element of the returned list.
+        e4: The 5th element of the returned list.
+        e5: The 6th element of the returned list.
+        e6: The 7th element of the returned list.
+        e7: The 8th element of the returned list.
+        e8: The 9th element of the returned list.
+        e9: The 10th element of the returned list.
+        e10: The 11th element of the returned list.
+        e11: The 12th element of the returned list.
+        e12: The 13th element of the returned list.
+        e13: The 14th element of the returned list.
+        e14: The 15th element of the returned list.
 
     Returns:
-        !kgen.list<type[15]>: The list containing the elements.
+        The list containing the elements.
     """
     return __mlir_op.`pop.list.create`[
         _type : __mlir_type[`!kgen.list<`, type, `[15]>`]
@@ -1345,27 +1370,29 @@ fn create_kgen_list[
 ) -> __mlir_type[`!kgen.list<`, type, `[16]>`]:
     """Creates a list given a type and elements.
 
+    Parameters:
+        type: The list type.
+
     Args:
-        type (!kgen.mlirtype): The list type.
-        e0 (type): The 1st element of the returned list.
-        e1 (type): The 2nd element of the returned list.
-        e2 (type): The 3rd element of the returned list.
-        e3 (type): The 4th element of the returned list.
-        e4 (type): The 5th element of the returned list.
-        e5 (type): The 6th element of the returned list.
-        e6 (type): The 7th element of the returned list.
-        e7 (type): The 8th element of the returned list.
-        e8 (type): The 9th element of the returned list.
-        e9 (type): The 10th element of the returned list.
-        e10 (type): The 11th element of the returned list.
-        e11 (type): The 12th element of the returned list.
-        e12 (type): The 13th element of the returned list.
-        e13 (type): The 14th element of the returned list.
-        e14 (type): The 15th element of the returned list.
-        e15 (type): The 16th element of the returned list.
+        e0: The 1st element of the returned list.
+        e1: The 2nd element of the returned list.
+        e2: The 3rd element of the returned list.
+        e3: The 4th element of the returned list.
+        e4: The 5th element of the returned list.
+        e5: The 6th element of the returned list.
+        e6: The 7th element of the returned list.
+        e7: The 8th element of the returned list.
+        e8: The 9th element of the returned list.
+        e9: The 10th element of the returned list.
+        e10: The 11th element of the returned list.
+        e11: The 12th element of the returned list.
+        e12: The 13th element of the returned list.
+        e13: The 14th element of the returned list.
+        e14: The 15th element of the returned list.
+        e15: The 16th element of the returned list.
 
     Returns:
-        !kgen.list<type[16]>: The list containing the elements.
+        The list containing the elements.
     """
     return __mlir_op.`pop.list.create`[
         _type : __mlir_type[`!kgen.list<`, type, `[16]>`]
@@ -1385,14 +1412,16 @@ fn _get_kgen_list_item[
 ](lst: __mlir_type[`!kgen.list<`, type, `[`, size, `]>`]) -> type:
     """Gets the list element of an input list at position `index`.
 
+    Parameters:
+        index: the position to get the value from.
+        size: the size of the list.
+        type: the element type of the list.
+
     Args:
-        index (index): the position to get the value from.
-        size (index): the size of the list.
-        type (!kgen.mlirtype): the element type of the list.
-        lst (!pop.list<type[size]>): the list to get the values from.
+        lst: the list to get the values from.
 
     Returns:
-        type: The value at position `index` in the list.
+        The value at position `index` in the list.
     """
     assert_param_bool[index <= size]()
     return __mlir_op.`pop.list.get`[
@@ -1410,6 +1439,18 @@ fn contains[
 ](
     elem: __mlir_type.index, lst: __mlir_type[`!kgen.list<index[`, size, `]>`]
 ) -> Bool:
+    """Checks if a given list contains the specified value.
+
+    Parameters:
+        size: the length of the list.
+
+    Args:
+        elem: The value to search.
+        lst: The input list.
+
+    Returns:
+        True if the value is in the list or False otherwise.
+    """
     return _contains_impl[0, size](elem, lst)
 
 
@@ -1446,10 +1487,10 @@ struct VariadicList[type: __mlir_type.`!kgen.mlirtype`]:
         """Constructs a VariadicList from a variadic list of arguments.
 
         Args:
-            *value (type):
-                The variadic argument list to construct the variadic list with.
+            value: The variadic argument list to construct the variadic list
+              with.
 
-        Returns (VariadicList):
+        Returns:
             The VariadicList constructed.
         """
         return Self(value)
@@ -1458,10 +1499,9 @@ struct VariadicList[type: __mlir_type.`!kgen.mlirtype`]:
         """Constructs a VariadicList from a variadic argument type.
 
         Args:
-            value (StorageType):
-                The variadic argument to construct the list with.
+            value: The variadic argument to construct the list with.
 
-        Returns (VariadicList):
+        Returns:
             The VariadicList constructed.
         """
         return Self {value: value}
@@ -1477,20 +1517,22 @@ struct VariadicList[type: __mlir_type.`!kgen.mlirtype`]:
 
     fn __getitem__(self, index: Int) -> type:
         """Accessor to a single element on the variadic list.
+
         Args:
-            index (Int):
-                The index of the element to access on the list.
-        Returns (type):
+            index: The index of the element to access on the list.
+
+        Returns:
             The element on the list corresponding to the given index.
         """
         return __mlir_op.`pop.variadic.get`(self.value, index.__as_mlir_index())
 
     fn __getitem__(self, index: __mlir_type.index) -> type:
         """Accessor to a single element on the variadic list.
+
         Args:
-            index (Int):
-                The index of the element to access on the list.
-        Returns (type):
+            index: The index of the element to access on the list.
+
+        Returns:
             The element on the list corresponding to the given index.
         """
         return __mlir_op.`pop.variadic.get`(self.value, index)
