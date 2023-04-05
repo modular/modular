@@ -331,7 +331,9 @@ fn simd_load_splat[
     index: StaticIntTuple[rank],
 ) -> SIMD[simd_width, type]:
     # Last dimension will be 0 for splats so don't compute last dim.
-    var flat_index = _compute_flat_index[type, rank, rank - 1](buffer, index)
+    var flat_index = _compute_flat_index[
+        type, rank, rank - (1).__as_mlir_index()
+    ](buffer, index)
 
     return buffer.data.load(flat_index)
 
