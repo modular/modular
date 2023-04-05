@@ -414,25 +414,27 @@ struct amx_detail:
 
         let buffer_bytecount = c.size() * sizeof[__mlir_type.f32]()
 
+        alias c256 = (256).__as_mlir_index()
+        alias c128 = (128).__as_mlir_index()
         let a_buffer: DTypePointer[
             DType.f32
         ] = __mlir_op.`pop.stack_allocation`[
-            count:256,
-            alignment:128,
+            count:c256,
+            alignment:c128,
             _type : __mlir_type.`!pop.pointer<scalar<f32>>`,
         ]()
         let b_buffer: DTypePointer[
             DType.f32
         ] = __mlir_op.`pop.stack_allocation`[
-            count:256,
-            alignment:128,
+            count:c256,
+            alignment:c128,
             _type : __mlir_type.`!pop.pointer<scalar<f32>>`,
         ]()
         let c_buffer: DTypePointer[
             DType.f32
         ] = __mlir_op.`pop.stack_allocation`[
-            count:256,
-            alignment:128,
+            count:c256,
+            alignment:c128,
             _type : __mlir_type.`!pop.pointer<scalar<f32>>`,
         ]()
 
