@@ -47,7 +47,7 @@ struct Chain:
     size is the same as the pointer width.
     """
 
-    var storage: __mlir_type.index
+    var storage: Pointer[Int]
 
 
 # FIXME(traits): This shouldn't be a register_passable type but we need this
