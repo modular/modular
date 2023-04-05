@@ -305,19 +305,19 @@ struct Boolish:
 
 # CHECK-LABEL: @"unary
 fn unary(a: Bool, b: Int, c: Boolish):
-  # CHECK: %0 = kgen.call @"$_CompilerBuiltin"::@Bool::@"__bool__($_CompilerBuiltin::Bool)"(%a)
-  # CHECK: %1 = kgen.call @"$_CompilerBuiltin"::@Bool::@"__invert__($_CompilerBuiltin::Bool)"(%0)
+  # CHECK: %0 = kgen.call @"$Bool"::@Bool::@"__bool__($Bool::Bool)"(%a)
+  # CHECK: %1 = kgen.call @"$Bool"::@Bool::@"__invert__($Bool::Bool)"(%0)
   # CHECK: %_ = lit.varlet.decl "_", var = false
   # CHECK: pop.store %1, %_
   _ = not a
 
   # CHECK: [[EQ:%.*]] = kgen.call @"$Int"::@Int::@"__eq__($Int::Int,$Int::Int)"
-  # CHECK: [[EQBOOL:%.*]] = kgen.call @"$_CompilerBuiltin"::@Bool::@"__bool__($_CompilerBuiltin::Bool)"([[EQ]])
-  # CHECK:  = kgen.call @"$_CompilerBuiltin"::@Bool::@"__invert__($_CompilerBuiltin::Bool)"([[EQBOOL]])
+  # CHECK: [[EQBOOL:%.*]] = kgen.call @"$Bool"::@Bool::@"__bool__($Bool::Bool)"([[EQ]])
+  # CHECK:  = kgen.call @"$Bool"::@Bool::@"__invert__($Bool::Bool)"([[EQBOOL]])
   _ = not b == 0
 
   # CHECK: [[BOOL:%.*]] = kgen.call @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)"(%c)
-  # CHECK:  = kgen.call @"$_CompilerBuiltin"::@Bool::@"__invert__($_CompilerBuiltin::Bool)"([[BOOL]])
+  # CHECK:  = kgen.call @"$Bool"::@Bool::@"__invert__($Bool::Bool)"([[BOOL]])
   _ = not c
 
 # CHECK-LABEL: lit.func @"andOr
@@ -351,7 +351,7 @@ fn andOr(a: Boolish, b: Boolish, x: Bool):
 
   # CHECK: [[ABOOL:%.*]] = kgen.call {{.*}}__bool__
   # CHECK: [[I1:%.*]] = kgen.call {{.*}}__mlir_i1__{{.*}}([[ABOOL]])
-  # CHECK:  = hlcf.if [[I1]] -> !kgen.declref<@"$_CompilerBuiltin"::@Bool> {
+  # CHECK:  = hlcf.if [[I1]] -> !kgen.declref<@"$Bool"::@Bool> {
   # CHECK:   hlcf.yield
   # CHECK: } else {
   # CHECK:   hlcf.yield
@@ -852,7 +852,7 @@ fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   hlcf.yield [[CMP_A_B]]
     # CHECK-NEXT: }
-    # CHECK-NEXT: pop.store %[[IF_A_B]], %res : !pop.pointer<@"$_CompilerBuiltin"::@Bool>
+    # CHECK-NEXT: pop.store %[[IF_A_B]], %res : !pop.pointer<@"$Bool"::@Bool>
     var res = a < b < c < d
 
     # COM: This checks the parsing precedence between `<` and `and`.
@@ -871,7 +871,7 @@ fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   hlcf.yield %[[IF_A_B]]
     # CHECK-NEXT: }
-    # CHECK-NEXT: pop.store %[[IF]], %res : !pop.pointer<@"$_CompilerBuiltin"::@Bool>
+    # CHECK-NEXT: pop.store %[[IF]], %res : !pop.pointer<@"$Bool"::@Bool>
     res = a < b < c and d < e
 
 # CHECK-LABEL: lit.func @"foo_adaptive(){{.*}} {isAdaptive}

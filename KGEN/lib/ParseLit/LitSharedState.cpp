@@ -450,12 +450,6 @@ ASTType LitSharedState::lookupObjectType(llvm::SMLoc loc, ASTDecl &context) {
   return lookupNonparameterizedNamedType("object", loc, context);
 }
 
-/// Lookup the `Error` type in the current context and return it if found,
-/// otherwise emit an error and return null.
-ASTType LitSharedState::lookupErrorType(SMLoc loc, ASTDecl &context) {
-  return lookupNonparameterizedNamedType("Error", loc, context);
-}
-
 /// Resolve the absolute path for a given module name. Returns nullopt if the
 /// module cannot be found.
 static std::optional<std::string>
@@ -561,12 +555,31 @@ LitSharedState::importModuleState(StringRef moduleName, llvm::SMLoc loc) {
   return createModuleState(moduleName, moduleBuffer, fileLoc);
 }
 
-ASTDecl &LitSharedState::getCompilerBuiltInDecl() {
-  StringAttr builtinStrAttr =
-      getMangledModuleName(getContext(), kCompilerBuiltInStr);
-  auto it = impl->importedModules.find(builtinStrAttr);
-  assert(it != impl->importedModules.end() && "_CompilerBuiltin must exist");
-  return *it->second->decl;
+ASTDecl *LitSharedState::resolveBuiltinModuleType(llvm::SMLoc loc,
+                                                  StringRef moduleName,
+                                                  StringRef typeName) {
+  StringAttr moduleStrAttr = getMangledModuleName(getContext(), moduleName);
+  auto it = impl->importedModules.find(moduleStrAttr);
+  if (it == impl->importedModules.end())
+    return nullptr;
+  ASTDecl &moduleDecl = *it->second->decl;
+  LookupResult lookup = lookupAndResolveDecl(typeName, loc, moduleDecl,
+                                             /*searchParentScopes=*/false);
+  if (lookup.isFailure())
+    return nullptr;
+  return lookup.getIfSuccess()[0];
+}
+
+ASTDecl *LitSharedState::getBuiltinBoolLiteral(llvm::SMLoc loc) {
+  return resolveBuiltinModuleType(loc, kBuiltinBoolModuleName, "BoolLiteral");
+}
+
+ASTDecl *LitSharedState::getBuiltinTupleLiteral(llvm::SMLoc loc) {
+  return resolveBuiltinModuleType(loc, kBuiltinTupleModuleName, "TupleLiteral");
+}
+
+ASTDecl *LitSharedState::getBuiltinErrorType(llvm::SMLoc loc) {
+  return resolveBuiltinModuleType(loc, kBuiltinErrorModuleName, "Error");
 }
 
 void LitSharedState::loadModulesFromCache(
@@ -753,10 +766,14 @@ LitSharedState::createModuleState(StringRef moduleName,
   ASTDecl &moduleDecl = declResolver->addDecl(
       fileOp, lexer.getToken().getLoc(), mangledName, impl->topLevelDecl,
       lexer.getCursor(), endCursor, /*indentation=*/-1);
-  // Auto-import the core Lang module declaration.
-  moduleDecl.addUnresolvedWildCardImport(
-      StringAttr::get(getContext(), kCompilerBuiltInStr),
-      lexer.getToken().getLoc());
+
+  // Auto-import the core Lang modules.
+  for (StringRef moduleName : {kBuiltinBoolModuleName, kBuiltinTupleModuleName,
+                               kBuiltinErrorModuleName}) {
+    moduleDecl.addUnresolvedWildCardImport(
+        StringAttr::get(getContext(), moduleName), lexer.getToken().getLoc());
+  }
+
   impl->importedModules.insert(
       {mangledName, std::make_unique<ModuleState>(&moduleDecl)});
   ModuleState &moduleState = *impl->importedModules.back().second;

@@ -315,20 +315,16 @@ AnyValue BoolLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   auto boolAttr = POP::SIMDAttr::get({value, KGENDType::kBool},
                                      POP::SIMDType::get(1, boolDType));
 
-  // Convert this to an instance of BoolLiteral.
-  ASTDecl &compilerBuiltinDecl = emitter.shared.getCompilerBuiltInDecl();
-  LookupResult lookup = emitter.shared.lookupAndResolveDecl(
-      "BoolLiteral", getLoc(), compilerBuiltinDecl,
-      /*searchParentScopes=*/true);
-
-  // BoolLiteral must be in scope since it is auto-imported.
-  if (lookup.isFailure()) {
+  // Convert this to an instance of BoolLiteral. BoolLiteral must be in scope
+  // since it is auto-imported.
+  ASTDecl *decl = emitter.shared.getBuiltinBoolLiteral(getLoc());
+  if (!decl) {
     emitter.emitError(
         getLoc(), "internal error: could not find builtin 'BoolLiteral' type");
     return {};
   }
 
-  return emitter.emitConstructorCall(lookup.getIfSuccess()[0]->getSelfType(),
+  return emitter.emitConstructorCall(decl->getSelfType(),
                                      {{AnyValue(boolAttr), this}}, this,
                                      CallSyntax::kImplicitConvert, dest);
 }
@@ -1444,13 +1440,9 @@ AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   // Lookup the builtin TupleLiteral type, in order to call its constructor.
-  ASTDecl &compilerBuiltinDecl = emitter.shared.getCompilerBuiltInDecl();
-  LookupResult lookup = emitter.shared.lookupAndResolveDecl(
-      "TupleLiteral", getLoc(), compilerBuiltinDecl,
-      /*searchParentScopes=*/true);
-
   // TupleLiteral must be in scope, since it is auto-imported.
-  if (lookup.isFailure()) {
+  ASTDecl *decl = emitter.shared.getBuiltinTupleLiteral(getLoc());
+  if (!decl) {
     emitter.emitError(
         getLoc(), "internal error: could not find builtin 'TupleLiteral' type");
     return {};
@@ -1459,9 +1451,9 @@ AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Emit a call to the TupleLiteral constructor as an implicit conversion.
   // The TupleLiteral's parameter values are inferred based on the element
   // types.
-  return emitter.emitConstructorCall(
-      DeclRefType::get(lookup.getIfSuccess()[0]->getSymbolRef()), elements,
-      this, CallSyntax::kImplicitConvert, dest);
+  return emitter.emitConstructorCall(DeclRefType::get(decl->getSymbolRef()),
+                                     elements, this,
+                                     CallSyntax::kImplicitConvert, dest);
 }
 
 AnyValue ListNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {

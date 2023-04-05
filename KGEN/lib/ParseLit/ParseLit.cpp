@@ -80,12 +80,15 @@ importMojoFileImpl(SourceMgr &sourceMgr, LitSharedState &sharedState,
   ASTDecl &moduleDecl =
       sharedState.createModule(moduleName, sourceBuf, fileLoc);
 
-  // Auto-import the core Lang module definition.
-  auto builtinStrAttr = StringAttr::get(module->getContext(),
-                                        LitSharedState::kCompilerBuiltInStr);
-  if (failed(sharedState.declResolver->importModule(
-          topLevelDecl, builtinStrAttr, builtinStrAttr, startSMLoc)))
-    return {nullptr, nullptr};
+  // Auto-import the core Lang modules.
+  for (StringRef moduleName : {LitSharedState::kBuiltinBoolModuleName,
+                               LitSharedState::kBuiltinTupleModuleName,
+                               LitSharedState::kBuiltinErrorModuleName}) {
+    auto builtinStrAttr = StringAttr::get(module->getContext(), moduleName);
+    if (failed(sharedState.declResolver->importModule(
+            topLevelDecl, builtinStrAttr, builtinStrAttr, startSMLoc)))
+      return {nullptr, nullptr};
+  }
 
   // With the top-level of the file parsed, we can now go ahead and resolve all
   // of the deferred declarations.
