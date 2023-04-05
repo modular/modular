@@ -7,7 +7,6 @@
 
 
 from DType import DType
-from Int import Int
 from IO import print
 from Math import erf
 from SIMD import SIMD

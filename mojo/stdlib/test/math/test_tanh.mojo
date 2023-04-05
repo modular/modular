@@ -6,7 +6,6 @@
 # RUN: mojo %s | FileCheck %s
 
 from DType import DType
-from Int import Int
 from IO import print
 from Math import tanh, iota
 

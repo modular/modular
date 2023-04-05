@@ -7,7 +7,6 @@
 
 from Assert import assert_param
 from DType import DType
-from Int import Int
 from IO import print
 from Math import ldexp, _bits_to_float
 from Numerics import FPUtils
