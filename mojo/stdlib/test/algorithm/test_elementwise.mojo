@@ -15,7 +15,7 @@ from IO import print
 from Index import StaticIntTuple
 from LLCL import Runtime, OwningOutputChainPtr
 from TypeUtilities import rebind
-from F32 import F32
+from SIMD import F32
 from SIMD import SIMD
 
 

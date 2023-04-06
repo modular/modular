@@ -73,9 +73,7 @@ fn reduce[
         SIMD[1, __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType]],
         `>`,
     ],
-](src: Buffer[size, type], init: SIMD[1, acc_type]) -> __mlir_type[
-    `!pop.scalar<`, acc_type.value, `>`
-]:
+](src: Buffer[size, type], init: SIMD[1, acc_type]) -> SIMD[1, acc_type]:
     alias unroll_factor = 8  # TODO: search
     # TODO: explicitly unroll like vectorize_unroll does.
     alias unrolled_simd_width = simd_width * unroll_factor
@@ -325,7 +323,7 @@ fn max[
     simd_width: Int,
     size: Dim,
     type: DType,
-](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type.value, `>`]:
+](src: Buffer[size, type]) -> SIMD[1, type]:
     """Computes the max element in a buffer."""
     return reduce[
         simd_width, size, type, type, _simd_max_elementwise, _simd_max
@@ -390,7 +388,7 @@ fn min[
     simd_width: Int,
     size: Dim,
     type: DType,
-](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type.value, `>`]:
+](src: Buffer[size, type]) -> SIMD[1, type]:
     """Computes the min element in a buffer."""
     return reduce[
         simd_width, size, type, type, _simd_min_elementwise, _simd_min
@@ -455,7 +453,7 @@ fn sum[
     simd_width: Int,
     size: Dim,
     type: DType,
-](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type.value, `>`]:
+](src: Buffer[size, type]) -> SIMD[1, type]:
     """Computes the sum element in a buffer."""
     return reduce[
         simd_width, size, type, type, _simd_sum_elementwise, _simd_sum
@@ -520,7 +518,7 @@ fn product[
     simd_width: Int,
     size: Dim,
     type: DType,
-](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type.value, `>`]:
+](src: Buffer[size, type]) -> SIMD[1, type]:
     """Computes the product element in a buffer."""
     return reduce[
         simd_width, size, type, type, _simd_product_elementwise, _simd_product
@@ -561,7 +559,7 @@ fn mean[
     simd_width: Int,
     size: Dim,
     type: DType,
-](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type.value, `>`]:
+](src: Buffer[size, type]) -> SIMD[1, type]:
     """Computes the mean value of the elements in a buffer."""
 
     debug_assert(src.__len__() != 0, "input must not be empty")
@@ -615,7 +613,7 @@ fn variance[
     simd_width: Int,
     size: Dim,
     type: DType,
-](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type.value, `>`]:
+](src: Buffer[size, type]) -> SIMD[1, type]:
     """Computes the variance value of the elements in a buffer."""
 
     debug_assert(src.__len__() > 1, "input length must be greater than 1")
