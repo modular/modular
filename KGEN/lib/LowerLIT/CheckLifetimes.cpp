@@ -311,7 +311,8 @@ struct ValueSet {
     if (val && trackable.isIndirect) {
       Type valType =
           cast<POP::PointerType>(val.getType()).getResolvedElementType();
-      numValueBits = typeDeclInfo.getNumFieldsInType(valType);
+      if (valType) // Parametric elements are treated as 1
+        numValueBits = typeDeclInfo.getNumFieldsInType(valType);
     }
 
     valueInfoIndex[val] = valueInfos.size();
