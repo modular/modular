@@ -36,8 +36,6 @@ struct SystemInfoCLIOptions {
                      "Host CPU features printed as comma-separated values"),
           clEnumValN(HostProperty::CoreCount, "core-count",
                      "Host number of cores"),
-          clEnumValN(HostProperty::SIMDBitWidth, "simd-bitwidth",
-                     "Host SIMD bitwidth"),
           clEnumValN(HostProperty::L1CacheSize, "l1-cache-size",
                      "Host L1 DCache size"),
           clEnumValN(HostProperty::L2CacheSize, "l2-cache-size",

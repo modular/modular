@@ -11,5 +11,6 @@ configure_lit_site_cfg(
 
 add_modular_testsuite(check-support
   TOOLS
+  build-info
   support-dialect-opt
   system-info)

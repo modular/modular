@@ -6,6 +6,7 @@
 
 add_modular_library(MSupport
   AlignedAlloc.cpp
+  BuildInfo.cpp
   CommonCLOptions.cpp
   Error.cpp
   HMAC.cpp
@@ -23,6 +24,12 @@ add_modular_library(MSupport
   MLIRSupport
   MVersion
   )
+
+set(BUILD_INFO_DEFINITIONS
+  "MODULAR_KERNELS_BUILD_TYPE=\"${MODULAR_KERNELS_BUILD_TYPE}\"")
+set_source_files_properties(BuildInfo.cpp PROPERTIES
+  COMPILE_DEFINITIONS "${BUILD_INFO_DEFINITIONS}")
+unset(BUILD_INFO_DEFINITIONS)
 
 add_subdirectory(ADT)
 add_subdirectory(Benchmark)

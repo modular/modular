@@ -6,6 +6,7 @@
 
 #include "Support/MDialect/MAttrs.h"
 #include "Config/Version.h"
+#include "Support/BuildInfo.h"
 #include "Support/Compiler/MLIRDenseAttrStorage.h"
 #include "Support/Host.h"
 #include "Support/MDialect/MDialect.h"
@@ -1007,9 +1008,10 @@ BuildInfoAttr M::lookupBuildInfo(Operation *from) {
 }
 
 BuildInfoAttr BuildInfoAttr::getForCurrentBuild(MLIRContext *ctx) {
-  return BuildInfoAttr::get(ctx, getModularVersion().buildType,
-                            MODULAR_KERNELS_BUILD_TYPE,
-                            MODULAR_LLCL_MAX_PROFILING_LEVEL);
+  BuildInfo buildInfo = getBuildInfo();
+  return BuildInfoAttr::get(ctx, buildInfo.buildType,
+                            buildInfo.kernelsBuildType,
+                            buildInfo.llclMaxProfilingLevel);
 }
 
 //===----------------------------------------------------------------------===//
