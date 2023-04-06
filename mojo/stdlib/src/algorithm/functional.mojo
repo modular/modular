@@ -232,10 +232,12 @@ fn vectorize_unroll[
     ):
         unrolled_func(unrolled_simd_idx)
 
-    for simd_idx in range(
-        vector_end_unrolled_simd, vector_end_simd, simd_width
-    ):
-        vector_func_impl(simd_idx)
+    @parameter
+    if unroll_factor != 1:
+        for simd_idx in range(
+            vector_end_unrolled_simd, vector_end_simd, simd_width
+        ):
+            vector_func_impl(simd_idx)
 
     for i in range(vector_end_simd, size):
         scalar_func_impl(i)
