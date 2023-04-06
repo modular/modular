@@ -15,7 +15,7 @@ from SIMD import SIMD
 
 # CHECK-LABEL: test_ldexp
 fn test_ldexp():
-    print("== test_ldexp\n")
+    print("== test_ldexp")
 
     # CHECK: 24.0
     print(ldexp(SIMD[1, DType.f32](1.5), 4))

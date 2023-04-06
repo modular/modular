@@ -19,7 +19,7 @@ from SIMD import SIMD
 
 # CHECK-LABEL: test_polynomial_evaluate_degree3
 fn test_polynomial_evaluate_degree3():
-    print("== test_polynomial_evaluate_degree3\n")
+    print("== test_polynomial_evaluate_degree3")
 
     alias simd_width = 1
     alias coeefs = VariadicList[SIMD[simd_width, DType.f64]](
@@ -85,7 +85,7 @@ fn test_polynomial_evaluate_degree3():
 
 # CHECK-LABEL: test_polynomial_evaluate_degree4
 fn test_polynomial_evaluate_degree4():
-    print("== test_polynomial_evaluate_degree4\n")
+    print("== test_polynomial_evaluate_degree4")
 
     alias simd_width = 1
     alias coeefs = VariadicList[SIMD[simd_width, DType.f64]](
@@ -154,7 +154,7 @@ fn test_polynomial_evaluate_degree4():
 # COM: Note that the estrin method currently goes up to degree 9
 # CHECK-LABEL: test_polynomial_evaluate_degree10
 fn test_polynomial_evaluate_degree10():
-    print("== test_polynomial_evaluate_degree10\n")
+    print("== test_polynomial_evaluate_degree10")
 
     alias simd_width = 1
     alias coeefs = VariadicList[SIMD[simd_width, DType.f64]](

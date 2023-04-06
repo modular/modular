@@ -14,7 +14,7 @@ from SIMD import SIMD
 
 # CHECK-LABEL: test_erf
 fn test_erf():
-    print("== test_erf\n")
+    print("== test_erf")
 
     # CHECK: 0.000000
     print(erf[1, DType.f32](SIMD[1, DType.f32](0)))

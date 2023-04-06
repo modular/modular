@@ -13,7 +13,7 @@ from SIMD import SIMD
 
 # CHECK-LABEL: test_exp
 fn test_exp():
-    print("== test_exp\n")
+    print("== test_exp")
 
     # CHECK: 0.904837
     print(exp[1, DType.f32](SIMD[1, DType.f32](-0.1)))

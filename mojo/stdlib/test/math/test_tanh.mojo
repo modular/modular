@@ -12,7 +12,7 @@ from Math import tanh, iota
 
 # CHECK-LABEL: test_tanh
 fn test_tanh():
-    print("== test_tanh\n")
+    print("== test_tanh")
 
     let simd_val = 0.5 * iota[4, DType.f32]()
 
