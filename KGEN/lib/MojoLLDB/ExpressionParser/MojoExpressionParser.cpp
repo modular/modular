@@ -18,6 +18,7 @@
 #include "lldb/Target/Target.h"
 #include "lldb/Utility/LLDBLog.h"
 #include "mlir/Pass/PassManager.h"
+#include "llvm/Support/Process.h"
 #include "llvm/Target/TargetMachine.h"
 
 using namespace M::KGEN::Mojo;
@@ -244,6 +245,18 @@ MojoExpressionParser::parse(DiagnosticManager &diagnosticManager) {
   if (!impl->compiler) {
     LLDB_LOG(log, "[mojo] No compiler");
     return failure();
+  }
+
+  // Add the build folder as an include dir if we have the correct environment
+  // variable. This is for the python configuration, which we use CMake to find.
+  // TODO: This is kinda awful, and we should probably pull in the python
+  //   location directly if we can.
+  std::optional<std::string> pathOr =
+      llvm::sys::Process::GetEnv("MODULAR_PATH");
+  if (pathOr) {
+    impl->sourceManager.setIncludeDirs(
+        {std::filesystem::path(*pathOr) / ".derived" / "build" / "Kernels" /
+         "mojo" / "Python"});
   }
 
   // TODO: We should print the expression to a file if we need debug information
