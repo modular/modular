@@ -47,6 +47,10 @@ SMLoc LitSourceRange::getEnd() const { return SMLoc::getFromPointer(end); }
 /// SourceMgrDiagnosticHandlerImpl; upstream this.
 class LitDiags::SourceMgrLocationMapper {
 public:
+  /// Constant string that we can use to signify an un-named file (usually means
+  /// reading from stdin or something).
+  static constexpr StringLiteral kUnnamedFileSigil = "<unknown>";
+
   /// Return the SrcManager buffer id for the specified file, or zero if none
   /// can be found.
   unsigned getBufferIDForFile(SourceMgr &sourceMgr, StringAttr filename);
@@ -90,7 +94,15 @@ SMLoc LitDiags::SourceMgrLocationMapper::convertLocToSMLoc(SourceMgr &sourceMgr,
   if (loc.getLine() == 0 || loc.getColumn() == 0)
     return SMLoc();
 
-  unsigned bufferId = getBufferIDForFile(sourceMgr, loc.getFilename());
+  // Default the buffer ID to 0 - this is the 'unknown' buffer ID since the
+  // SourceMgr starts at 1. This will result in a default-constructed SMLoc
+  // below unless we can match the filename in the loc.
+  unsigned bufferId = 0;
+  if (loc.getFilename() == kUnnamedFileSigil)
+    bufferId = sourceMgr.getMainFileID();
+  else
+    bufferId = getBufferIDForFile(sourceMgr, loc.getFilename());
+
   if (!bufferId)
     return SMLoc();
   return sourceMgr.FindLocForLineAndColumn(bufferId, loc.getLine(),
@@ -116,7 +128,7 @@ static StringAttr makeBufferNameIdentifier(const SourceMgr &sourceMgr,
   auto mainBuffer = sourceMgr.getMemoryBuffer(bufferID);
   StringRef bufferName = mainBuffer->getBufferIdentifier();
   if (bufferName.empty())
-    bufferName = "<unknown>";
+    bufferName = LitDiags::SourceMgrLocationMapper::kUnnamedFileSigil;
   return StringAttr::get(context, bufferName);
 }
 
