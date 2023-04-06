@@ -598,6 +598,7 @@ struct AsyncTaskGroup:
             paramDecls : __mlir_attr.`#kgen<param.decls[]>`,
         ]()
 
+    # TODO(#11915): Allow failure of coroutine to propagate error back to out_chain.
     fn add_task(self&, coroutine: Coroutine[NoneType]):
         let ctx_ptr = coroutine.get_ctx[AsyncTaskGroupContext]()
         let self_ptr = Pointer[AsyncTaskGroup].address_of(self)
