@@ -1081,11 +1081,12 @@ const SpecialFunctionInfo &SpecialFunctionInfo::get(SpecialFunctionKind kind) {
 ///
 /// This returns failure (after emitting an error) when a type checking problem
 /// is detected.
-static SpecialFunctionInfo
-verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr &name,
-                          SmallVector<ParsedArgument> &args,
-                          MutableArrayRef<Type> argTypes, ASTType &resultType,
-                          LitSharedState &shared) {
+static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
+                                      StringAttr &name,
+                                      SmallVector<ParsedArgument> &args,
+                                      MutableArrayRef<Type> argTypes,
+                                      ASTType &resultType,
+                                      LitSharedState &shared) {
   SpecialFunctionInfo fnInfo = SpecialFunctionInfo::get(name);
 
   // On any semantic error we mark the declaration erroneous - so references to
@@ -1330,7 +1331,6 @@ verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr &name,
   mangledName += ')';
 
   name = StringAttr::get(funcOp.getContext(), mangledName);
-  return fnInfo;
 }
 
 namespace {
@@ -1619,8 +1619,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   // decorator processing because that is how defs work in Python.  This also
   // fills in any implicitly declared types.
   StringAttr name = baseName;
-  SpecialFunctionInfo fnInfo = verifyFunctionNameBinding(
-      decl, funcOp, name, args, argTypes, resultType, shared);
+  verifyFunctionNameBinding(decl, funcOp, name, args, argTypes, resultType,
+                            shared);
 
   // Finally now that the full signature has been resolved, build our IR.
 
@@ -1774,18 +1774,12 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   // Bulk update the attributes.
   funcOp->setAttrs(attrs.getDictionary(funcOp.getContext()));
   funcOp.getBody()->addArguments(argTypes, argLocs);
-
-  // If this is a struct special function, see if we should attach it to
-  // surrounding struct decl op.
-  if (auto structOp = dyn_cast<StructDeclOp>(funcOp->getParentOp());
-      structOp && fnInfo.kind == SpecialFunctionKind::kDel)
-    structOp.setDestructorAttr(symbolName);
-  AlwaysInlineLevel inlineLevel = funcOp.getAlwaysInlineLevel();
   funcOp.setSignature(signature);
 
   // If the function represents a closure, we must resolve its body to identify
   // its fatness and update the signature to reflect the fat property
   // TODO: The type of a closure should not depend on its inline level.
+  AlwaysInlineLevel inlineLevel = funcOp.getAlwaysInlineLevel();
   if (funcOp->getParentOfType<LIT::FuncOp>() &&
       inlineLevel != AlwaysInlineLevel::Enabled) {
     decl.getCursor() = lexer.getCursor();
@@ -2380,6 +2374,12 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, LitLexer &lexer,
       rejectMemberIfPresent("__del__");
     }
   }
+
+  // Now that the struct body has been resolved, check to see if there is a
+  // destructor and install it if so.
+  if (auto dtorAttr = ExprEmitter::lookupDestructor(decl.getSelfType(),
+                                                    decl.getLoc(), shared))
+    structOp.setDestructorAttr(dtorAttr);
 
   return success();
 }
