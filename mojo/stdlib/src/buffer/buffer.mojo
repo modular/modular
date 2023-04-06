@@ -223,8 +223,7 @@ struct Buffer[size: Dim, type: DType]:
             idx: The index into the Buffer.
             val: The value to store.
         """
-        var simd_val: SIMD[1, type]
-        simd_val.value = val
+        var simd_val = SIMD[1, type](val)
         self.simd_store[1](idx, simd_val)
 
     fn __setitem__(self, idx: Int, val: SIMD[1, type]):
