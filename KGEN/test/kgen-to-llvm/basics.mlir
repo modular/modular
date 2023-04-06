@@ -79,4 +79,12 @@ kgen.func @constant_str() -> !kgen.string {
   kgen.return %0 : !kgen.string
 }
 
+// CHECK-LABEL: @undef_op
+kgen.func @undef_op() -> i32 {
+  // CHECK-NEXT: %0 = llvm.mlir.undef : i32
+  // CHECK-NEXT: llvm.return %0 : i32
+  %0 = kgen.undef : i32
+  kgen.return %0 : i32
+}
+
 }
