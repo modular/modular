@@ -220,8 +220,6 @@ bool MojoUserExpression::AddArguments(ExecutionContext &exeCtx,
 LogicalResult MojoUserExpression::wrapTextAndParseExpression(
     DiagnosticManager &diagnosticManager, ExecutionContext &exeCtx,
     ExecutionContextScope *exeScope) {
-  Log *log = GetLog(LLDBLog::Expressions);
-
   // Wrap the expression text in a function so that we can execute it.
   // TODO: This currently doesn't support imports or any kind of persistent
   // state.
