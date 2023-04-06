@@ -285,8 +285,16 @@ MojoExpressionParser::parse(DiagnosticManager &diagnosticManager) {
     return failure();
   }
 
-  // TODO: Apply optimizations to the generated module.
-  return success();
+  // Create the target machine so we can run the optimizer.
+  auto targetMachineOr =
+      KGEN::createTargetMachine(impl->compilationOptions, /*isJIT=*/true);
+  if (targetMachineOr.isError()) {
+    LLDB_LOG(log, "[mojo] Failed to create the target machine: {0}",
+             targetMachineOr.getError());
+    return failure();
+  }
+
+  return KGEN::runLLVMOptPasses(*impl->llvmModule, **targetMachineOr);
 }
 
 Status MojoExpressionParser::PrepareForExecution(
