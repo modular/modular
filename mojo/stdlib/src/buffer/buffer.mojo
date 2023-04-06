@@ -408,7 +408,7 @@ fn _compute_nd_index[
     if rank == 0:
         return StaticIntTuple[rank](0)
 
-    var result: StaticIntTuple[rank]
+    var result = StaticIntTuple[rank]()
 
     result[rank - 1] = index
 
@@ -540,7 +540,7 @@ fn _compute_ndbuffer_stride[
     if rank == 1:
         return StaticIntTuple[rank](1)
 
-    var stride: StaticIntTuple[rank] = shape
+    var stride = shape
     stride[rank - 1] = 1
 
     @always_inline
@@ -713,7 +713,7 @@ struct NDBuffer[
         Returns:
             A static tuple of size 'rank' representing shapes of the NDBuffer.
         """
-        var res: StaticIntTuple[rank]
+        var res = StaticIntTuple[rank]()
 
         @always_inline
         fn _fill[idx: Int]():
@@ -1542,7 +1542,7 @@ struct DynamicRankBuffer:
 
     @always_inline
     fn _shape_to_static_tuple[rank: Int](self) -> StaticIntTuple[rank]:
-        var result: StaticIntTuple[rank]
+        var result = StaticIntTuple[rank]()
 
         @always_inline
         fn _fill[idx: Int]():
