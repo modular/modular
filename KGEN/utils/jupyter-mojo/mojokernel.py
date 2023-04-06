@@ -92,11 +92,19 @@ class MojoKernel(Kernel):
         """
         # Look for the mojo repl executable. This will have the various
         # necessary libraries adjacent to it.
-        self.mojoReplExe: Optional[str] = shutil.which("mojo-repl-entry-point")
+        mojo_repl_exe_path = (
+            Path(os.environ.get("MODULAR_PATH")) / ".derived" / "build" / "lib"
+        )
+        self.mojoReplExe: Optional[str] = shutil.which(
+            "mojo-repl-entry-point",
+            path=mojo_repl_exe_path,
+        )
         if not self.mojoReplExe:
             from distutils.spawn import find_executable
 
-            self.mojoReplExe = find_executable("mojo-repl-entry-point")
+            self.mojoReplExe = find_executable(
+                "mojo-repl-entry-point", path=str(mojo_repl_exe_path)
+            )
             if not self.mojoReplExe:
                 raise RuntimeError(
                     "Unable to locate `mojo-repl-entry-point` executable."

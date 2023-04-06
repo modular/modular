@@ -1,7 +1,7 @@
 {
   "display_name": "Mojo",
   "argv": [
-    "python",
+    "python3",
     "-m",
     "mojokernel",
     "-f",
@@ -12,5 +12,8 @@
     "name": "mojo",
     "mimetype": "text/x-mojo",
     "file_extension": ".mojo"
+  },
+  "env": {
+    "PYTHONPATH": "${PYTHONPATH}:${MODULAR_PATH}/KGEN/utils/jupyter-mojo"
   }
 }
