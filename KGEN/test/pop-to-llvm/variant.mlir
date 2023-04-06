@@ -298,4 +298,12 @@ kgen.func @variant_get_5(%arg0: !pop.variant<pointer<index>>) -> !pop.pointer<in
   kgen.return %0 : !pop.pointer<index>
 }
 
+// CHECK-LABEL: @unpack_pointer
+kgen.func @unpack_pointer(%arg0: !pop.variant<pointer<i8>>) -> !pop.pointer<i8> {
+  // CHECK: trunc %{{.*}} : i64 to i64
+  // CHECK: inttoptr %{{.*}} : i64 to !llvm.ptr<i8>
+  %0 = pop.variant.get %arg0 : !pop.variant<pointer<i8>> as !pop.pointer<i8>
+  kgen.return %0 : !pop.pointer<i8>
+}
+
 }

@@ -421,7 +421,7 @@ Value VariantHelper::walkAndExtractVariant(ArrayRef<Value>::iterator &valueIt,
     else if (auto fpType = dyn_cast<FloatType>(type))
       normalizedType = b.getIntegerType(fpType.getWidth());
     else
-      normalizedType = b.getIntegerType(dl.getTypeAllocSize(type));
+      normalizedType = b.getIntegerType(dl.getTypeSizeInBits(type));
 
     unsigned curValueSize = normalizedType.getWidth();
     offset += curValueSize;
