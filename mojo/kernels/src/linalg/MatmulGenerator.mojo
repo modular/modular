@@ -287,7 +287,6 @@ struct MatmulDynamicState[data_type: MatmulDataType]:
             valid_tile_bound (GemmShape): Size of the tile on the gemm space
                 that this call should process.
         """
-        var dynamic_state: Self
 
         # Read out the global gemm space size.
         let global_gemm_size = GemmShape.get[
@@ -296,16 +295,19 @@ struct MatmulDynamicState[data_type: MatmulDataType]:
             data_type,
         ](c, a, b)
 
-        dynamic_state.global_gemm_size = global_gemm_size
-
-        # Read out dynamic tile offset and tile bound.
-        dynamic_state.global_offset = global_offset
-        dynamic_state.valid_tile_bound = valid_tile_bound
-
-        # Record data pointers for the operand and result space.
-        dynamic_state.a = a.data
-        dynamic_state.b = b.data
-        dynamic_state.c = c.data
+        var dynamic_state = Self {
+            # Record data pointers for the operand and result space.
+            a: a.data,
+            b: b.data,
+            c: c.data,
+            packed_b: DTypePointer[data_type.value_type](),
+            packed_a: DTypePointer[data_type.value_type](),
+            packed_c: DTypePointer[data_type.value_type](),
+            global_gemm_size: global_gemm_size,
+            # Read out dynamic tile offset and tile bound.
+            global_offset: global_offset,
+            valid_tile_bound: valid_tile_bound,
+        }
 
         # Allocate stack buffers for packing.
         dynamic_state._allocate_buffers()
