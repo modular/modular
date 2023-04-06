@@ -31,6 +31,7 @@
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/STLExtras.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/Transforms/RegionUtils.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/SaveAndRestore.h"
@@ -473,7 +474,11 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
             decl.hasReferenceError = true;
           }
         });
-    decl.resolvedness = DeclResolvedness::signature;
+    // Never regress resolvedness. In the case of non inlined nested functions,
+    // the body is fully resolved when the signature is resolved in order
+    // to identify the value of 'fat'
+    if (decl.resolvedness != DeclResolvedness::fully)
+      decl.resolvedness = DeclResolvedness::signature;
   }
 
   // If the declaration hasn't been fully parsed and we need to, do so.
@@ -941,7 +946,6 @@ parseOptionalParameterSignature(LitParserBase &p, ASTDecl &declScope,
         type = emitter.emitExprType(arg.typeExpr);
       else
         p.emitError(arg.loc, "parameters must always have a type");
-
       if (!type)
         type = TypeCheckErrorType::get(p.getContext());
 
@@ -1776,6 +1780,32 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   if (auto structOp = dyn_cast<StructDeclOp>(funcOp->getParentOp());
       structOp && fnInfo.kind == SpecialFunctionKind::kDel)
     structOp.setDestructorAttr(symbolName);
+  AlwaysInlineLevel inlineLevel = funcOp.getAlwaysInlineLevel();
+  funcOp.setSignature(signature);
+
+  // If the function represents a closure, we must resolve its body to identify
+  // its fatness and update the signature to reflect the fat property
+  // TODO: The type of a closure should not depend on its inline level.
+  if (funcOp->getParentOfType<LIT::FuncOp>() &&
+      inlineLevel != AlwaysInlineLevel::Enabled) {
+    decl.getCursor() = lexer.getCursor();
+    LitLexer nestedLexer(shared, decl.getCursor());
+    if (failed(resolveBody(funcOp, nestedLexer, decl)))
+      return failure();
+
+    decl.resolvedness = DeclResolvedness::fully;
+    llvm::SetVector<Value> captures;
+    mlir::getUsedValuesDefinedAbove(funcOp->getRegions(), captures);
+    if (!captures.empty()) {
+      funcOp.setSignature(funcOp.getSignature().getWithFnEffects(
+          bitEnumSet(effects, FnEffects::Fat)));
+    }
+  }
+  if (funcOp->getParentOfType<LIT::FuncOp>()) {
+    funcOp.setParamDeclAttr(
+        ParamDeclAttr::get(funcOp.getSymNameAttr(), funcOp.getSignature()));
+  }
+
   return success();
 }
 

@@ -14,4 +14,5 @@ add_modular_tool(mojo-lsp-server
   LLCLRuntimeGlobals
   ParseLit
   MLIRLspServerSupportLib
+  MLIRTransformUtils
 )
