@@ -24,8 +24,8 @@ fn slice_as_view[
     steps: Buffer[Dim(), index_type],
 ) -> NDBuffer[rank, DimList[rank].create_unknown(), type]:
 
-    var new_shape: StaticIntTuple[rank]
-    var new_stride: StaticIntTuple[rank]
+    var new_shape = StaticIntTuple[rank]()
+    var new_stride = StaticIntTuple[rank]()
 
     # The data does not change however we will be addressing a different
     # offset of the data.
