@@ -470,6 +470,7 @@ struct OutputChainPtr:
         @parameter
         if is_mojo_profiling_disabled[level]():
             return
+
         let str = detail_fn()
 
         self.trace[level](label, str.strref())
