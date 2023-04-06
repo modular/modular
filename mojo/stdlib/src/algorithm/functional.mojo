@@ -1005,7 +1005,7 @@ fn _get_nd_indices_from_flat_index[
     if rank == 2:
         return StaticIntTuple[rank](flat_index, 0)
 
-    var out: StaticIntTuple[rank]
+    var out = StaticIntTuple[rank]()
     var curr_index = flat_index
 
     @always_inline
