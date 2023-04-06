@@ -471,7 +471,8 @@ ParameterExprArrayAttr InputParamBindings::verifyBindings(
       if (!elements.back())
         return {};
     }
-    setParamValue(VariadicAttr::get(elements, cast<VariadicType>(type)));
+    setParamValue(VariadicAttr::get(
+        elements, VariadicType::get(evaluator.getReboundType(expectedType))));
   }
 
   // Check and complain if we have bindings that didn't get used.
