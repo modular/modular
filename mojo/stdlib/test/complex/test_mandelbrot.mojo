@@ -47,7 +47,7 @@ fn mandelbrot_iter(row: Int, col: Int) -> Int:
 
 # CHECK-LABEL: test_mandelbrot_iter
 fn test_mandelbrot_iter():
-    print("== test_mandelbrot_iter\n")
+    print("== test_mandelbrot_iter")
 
     # CHECK: 1
     print(mandelbrot_iter(0, 0))
