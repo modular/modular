@@ -71,6 +71,7 @@ fn OutputChainPtrDef(ty: OutputChainPtr) -> OutputChainPtr:
     return ty
 
 
+@always_inline
 fn to_buffer[
     type: DType, rank: __mlir_type.index
 ](
@@ -87,11 +88,16 @@ fn to_buffer[
 
     var stride_tuple: StaticIntTuple[rank]
     var stride: Int = 1
-    # Start from the back so we can accumulate the strides.
-    for i in range(rank - 1, -1, -1):
+
+    @always_inline
+    fn body[idx: Int]():
+        # Start from the back so we can accumulate the strides.
+        var i = rank - 1 - idx
         shape_tuple[i] = shape_ptr.load(i)
         stride_tuple[i] = stride
         stride *= shape_tuple[i]
+
+    unroll[rank, body]()
 
     return NDBuffer[rank, DimList[rank].create_unknown(), type](
         data, shape_tuple, DType(type), stride_tuple
