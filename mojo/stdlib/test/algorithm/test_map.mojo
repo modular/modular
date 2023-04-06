@@ -12,7 +12,7 @@ from IO import print
 
 # CHECK-LABEL: test_map
 fn test_map():
-    print("== test_map\n")
+    print("== test_map")
 
     let vector = Buffer[5, DType.f32].stack_allocation()
 

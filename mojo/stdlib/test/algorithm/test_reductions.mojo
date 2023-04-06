@@ -16,7 +16,7 @@ from List import DimList, create_dim_list
 
 # CHECK-LABEL: test_reductions
 fn test_reductions():
-    print("== test_reductions\n")
+    print("== test_reductions")
 
     alias simd_width = 4
     alias size = 100
@@ -40,7 +40,7 @@ fn test_reductions():
 # We use a smaller vector so that we do not overflow
 # CHECK-LABEL: test_product
 fn test_product():
-    print("== test_product\n")
+    print("== test_product")
 
     alias simd_width = 4
     alias size = 10
@@ -57,7 +57,7 @@ fn test_product():
 
 # CHECK-LABEL: test_mean_variance
 fn test_mean_variance():
-    print("== test_mean_variance\n")
+    print("== test_mean_variance")
 
     alias simd_width = 4
     alias size = 100
@@ -76,7 +76,7 @@ fn test_mean_variance():
 
 
 fn test_3d_reductions():
-    print("== test_3d_reductions\n")
+    print("== test_3d_reductions")
     alias simd_width = 4
 
     @always_inline

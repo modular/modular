@@ -7,7 +7,7 @@
 
 from Functional import tile, unswitch, tile_and_unswitch
 from List import VariadicList
-from IO import print
+from IO import print, _printf
 from Index import Index, StaticIntTuple
 from Range import range
 
@@ -27,7 +27,7 @@ fn print_number_static[tile_size: Int](data_idx: Int):
 
 # CHECK-LABEL: test_static_tile
 fn test_static_tile():
-    print("test_static_tile\n")
+    print("test_static_tile")
     # CHECK: (0, 4)
     # CHECK: (4, 6)
     tile[print_number_static, VariadicList[Int](4, 3, 2, 1)](0, 6)
@@ -41,7 +41,7 @@ fn test_static_tile():
 
 # CHECK-LABEL: test_dynamic_tile
 fn test_dynamic_tile():
-    print("test_dynamic_tile\n")
+    print("test_dynamic_tile")
     # CHECK: (1, 4)
     # CHECK: (4, 5)
     tile[print_number_dynamic](1, 5, VariadicList[Int](3, 2))
@@ -58,7 +58,7 @@ fn test_dynamic_tile():
 
 # CHECK-LABEL: test_unswitched_tile
 fn test_unswitched_tile():
-    print("test_unswitched_tile\n")
+    print("test_unswitched_tile")
 
     # A tiled function that takes a start and a dynamic boundary.
     @always_inline
@@ -86,7 +86,7 @@ fn test_unswitched_tile():
 
 # CHECK-LABEL: test_unswitched_2d_tile
 fn test_unswitched_2d_tile():
-    print("test_unswitched_2d_tile\n")
+    print("test_unswitched_2d_tile")
 
     # A tiled function that takes a start and a dynamic boundary.
     @always_inline
@@ -124,14 +124,14 @@ fn test_unswitched_2d_tile():
 
 # CHECK-LABEL: test_tile_and_unswitch
 fn test_tile_and_unswitch():
-    print("test_tile_and_unswitch\n")
+    print("test_tile_and_unswitch")
     # Helper workgroup function to test static workgroup tiling.
     @always_inline
     fn print_number_static_unswitched[
         tile_size: Int, static_switch: Bool
     ](data_idx: Int, upperbound: Int):
         print(Index(data_idx, tile_size, upperbound))
-        print("Unswitched: ")
+        _printf("Unswitched: ")
         print(static_switch)
 
     # CHECK: (0, 4, 6)

@@ -16,7 +16,7 @@ from Range import range
 
 # CHECK-LABEL: test_parallelize
 fn test_parallelize():
-    print("== test_parallelize\n")
+    print("== test_parallelize")
 
     let num_work_items = 4
 
@@ -54,7 +54,7 @@ fn test_parallelize():
 
 # CHECK-LABEL: test_async_parallelize
 fn test_async_parallelize():
-    print("== test_async_parallelize\n")
+    print("== test_async_parallelize")
 
     let num_work_items = 4
 

@@ -84,28 +84,28 @@ fn test_elementwise[
 
 
 fn main():
-    print("Testing 1D:\n")
+    print("Testing 1D:")
     test_elementwise[16, 1, DimList[1].create_unknown()](create_dim_list(16))
 
-    print("Testing 2D:\n")
+    print("Testing 2D:")
     test_elementwise[16, 2, DimList[2].create_unknown()](create_dim_list(4, 4))
 
-    print("Testing 3D:\n")
+    print("Testing 3D:")
     test_elementwise[16, 3, DimList[3].create_unknown()](
         create_dim_list(4, 2, 2)
     )
 
-    print("Testing 4D:\n")
+    print("Testing 4D:")
     test_elementwise[32, 4, DimList[4].create_unknown()](
         create_dim_list(4, 2, 2, 2)
     )
 
-    print("Testing 5D:\n")
+    print("Testing 5D:")
     test_elementwise[32, 5, DimList[5].create_unknown()](
         create_dim_list(4, 2, 1, 2, 2)
     )
 
-    print("Testing large:\n")
+    print("Testing large:")
     test_elementwise[131072, 2, DimList[2].create_unknown()](
         create_dim_list(1024, 128)
     )

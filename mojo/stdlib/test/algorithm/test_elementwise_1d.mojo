@@ -20,7 +20,7 @@ from TargetInfo import dtype_sizeof
 
 # CHECK-LABEL: test_elementwise_1d
 fn test_elementwise_1d():
-    print("== test_elementwise_1d\n")
+    print("== test_elementwise_1d")
 
     let rt = Runtime()
     let num_work_items = rt.parallelism_level()

@@ -15,7 +15,7 @@ from Range import range
 
 # CHECK-LABEL: test_vectorize
 fn test_vectorize():
-    print("== test_vectorize\n")
+    print("== test_vectorize")
 
     # Create a mem of size 5
     let vector = Buffer[5, DType.f32].stack_allocation()
@@ -69,7 +69,7 @@ fn test_vectorize():
 
 # CHECK-LABEL: test_vectorize_unroll
 fn test_vectorize_unroll():
-    print("== test_vectorize_unroll\n")
+    print("== test_vectorize_unroll")
 
     alias buf_len = 23
     let vec = Buffer[buf_len, DType.f32].stack_allocation()
