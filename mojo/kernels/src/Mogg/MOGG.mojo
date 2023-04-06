@@ -372,6 +372,7 @@ fn simd_store[
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline
 fn broadcast_to_tensor[
     type: DType,
     original_rank: __mlir_type.index,
@@ -387,13 +388,15 @@ fn broadcast_to_tensor[
     var shape = StaticIntTuple[output_rank]()
     var stride = StaticIntTuple[output_rank]()
 
+    # The offset from where the implicit new dimensions end. I.E broadcasting
+    # <1, 1> to <40,40,40,40> the two dimensions at the start are new
+    # dimensions and then the two ones are broadcasted.
+    var offset: Int = 0
+
     # New dimensions are always broadcast.
-    var difference: Int = target_rank - original_rank
-
-    if difference < 0:
-        difference = -difference
-
-    for i in range(difference):
+    @always_inline
+    fn add_new_dims[i: Int]():
+        @parameter
         if target_rank >= original_rank:
             shape[i] = target.dim(i)
             stride[i] = 0
@@ -401,14 +404,17 @@ fn broadcast_to_tensor[
             shape[i] = original.dim(i)
             stride[i] = original.stride(i)
 
-    # Broadcast the remainder as approprate.
-    for big_index in range(difference, output_rank, 1):
+    # Broadcast in dimensions the original started with.
+    @always_inline
+    fn broadcast_dim[small_index: Int]():
         # We are traversing as if they are the same size.
-        let small_index = big_index - difference
+        let big_index = small_index + offset
 
         # Switch the indexes depending on which is bigger.
         var orig_index = small_index
         var target_index = big_index
+
+        @parameter
         if target_rank < original_rank:
             orig_index = big_index
             target_index = small_index
@@ -426,6 +432,19 @@ fn broadcast_to_tensor[
             # change the strides but we do need to restore the old shape.
             shape[big_index] = original.dim(orig_index)
             stride[big_index] = original.stride(orig_index)
+
+    # Broadcast by appending new dimensions to the front if the sizes are not
+    # the same then broadcast each of remaining dimensions. We represent this
+    # using the unroll construct to help codegeneration.
+    @parameter
+    if target_rank < original_rank:
+        unroll[original_rank - target_rank, add_new_dims]()
+        offset = original_rank - target_rank
+        unroll[target_rank, broadcast_dim]()
+    else:
+        unroll[target_rank - original_rank, add_new_dims]()
+        offset = target_rank - original_rank
+        unroll[original_rank, broadcast_dim]()
 
     # Create a view of the original data with the new shape and strides.
     var out = NDBuffer[
@@ -452,7 +471,7 @@ fn mark_output_chain_ready(out_chain: OutputChainPtr):
 # Helper function to query buffer shapes for tests.
 fn print_buffer_info[
     type: DType, rank: __mlir_type.index
-](buffer: NDBuffer[rank, DimList[rank].create_unknown(), type],):
+](buffer: NDBuffer[rank, DimList[rank].create_unknown(), type]):
     _printf("Rank: ")
     print(rank)
     _printf("Shape: ")
