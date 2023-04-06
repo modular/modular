@@ -2063,3 +2063,17 @@ kgen.generator @call_it() {
   lit.async.call[<>() async -> (): fn]()
   kgen.return
 }
+
+// -----
+
+kgen.generator @make_one() -> index {
+  %0 = index.constant 1
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: kgen.func @parametric_const
+kgen.generator @parametric_const() {
+  // CHECK-NEXT: constant: variant<index, scalar<f32>> = <#pop.variant<1>>
+  kgen.param.constant: variant<index, simd<apply(:() -> index @make_one), f32>> = <#pop.variant<1>>
+  kgen.return
+}
