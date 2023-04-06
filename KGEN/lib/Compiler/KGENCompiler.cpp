@@ -111,7 +111,11 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
   pm.addPass(createPruneImpossibleVariants());
 #endif
 
+  pm.addNestedPass<FuncOp>(createSROA());
   pm.addNestedPass<FuncOp>(createMem2Reg());
+  pm.addNestedPass<FuncOp>(createSROA());
+  pm.addNestedPass<FuncOp>(createMem2Reg());
+  pm.addNestedPass<FuncOp>(mlir::createCanonicalizerPass(cannConfig));
 
   // Lower async functions as late as possible.
   pm.addPass(createLowerAsyncFunctions());

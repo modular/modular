@@ -550,3 +550,29 @@ def SimplifyCF : Pass<"simplify-cf", "KGEN::FuncOp"> {
     ```
   }];
 }
+
+//===----------------------------------------------------------------------===//
+// SROA
+//===----------------------------------------------------------------------===//
+
+def SROA : Pass<"sroa"> {
+  let summary = "Scalar replacement of aggregates";
+  let description = [{
+    SROA identifies memory allocations of compostite structures and breaks them
+    down into scalar alternatives where possible.
+
+    ```mlir
+      %struct = pop.stack_allocation 1 x !pop.struct<index, index, index, index> 
+    ```
+    Becomes 
+    ```mlir
+      %sclar1 = pop.stack_allocation 1 x index 
+      %sclar2 = pop.stack_allocation 1 x index 
+      %sclar3 = pop.stack_allocation 1 x index 
+      %sclar4 = pop.stack_allocation 1 x index 
+    ```
+
+    Doing this gives mem-2-reg an easier time identifying optimization
+    opportunities as it eliminates problematic aliasing.
+  }];
+}

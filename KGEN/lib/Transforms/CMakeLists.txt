@@ -13,6 +13,7 @@ add_modular_conversion_library(KGENTransforms
   Mem2Reg.cpp
   OutlineClosures.cpp
   SimplifyCF.cpp
+  SROA.cpp
   VerifyParameters.cpp
 
   DEPENDS
