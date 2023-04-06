@@ -65,6 +65,7 @@ fn _raw_stack_allocation[
 @register_passable("trivial")
 struct Buffer[size: Dim, type: DType]:
     """Defines a Buffer which can be parametrized on a static size and Dtype.
+
     The Buffer does not own its underlying pointer.
     """
 
@@ -200,7 +201,7 @@ struct Buffer[size: Dim, type: DType]:
 
         Parameters:
             width: The simd_width of the load.
-            alignment: The alignemnt value.
+            alignment: The alignment value.
 
         Args:
             idx: The index into the Buffer.
@@ -270,8 +271,9 @@ struct Buffer[size: Dim, type: DType]:
     fn simd_nt_store[width: Int](self, idx: Int, val: SIMD[width, type]):
         """Stores a simd value using non-temporal store.
 
-        The address must be properly aligned, 64B for avx512, 32B for avx2, and
-        16B for avx.
+        Constraints:
+            The address must be properly aligned, 64B for avx512, 32B for avx2,
+              and 16B for avx.
 
         Parameters:
             width: The width of the simd vector.
@@ -296,12 +298,16 @@ struct Buffer[size: Dim, type: DType]:
 
     @always_inline
     fn bytecount(self) -> Int:
-        """Return the size of the Buffer in bytes."""
+        """Return the size of the Buffer in bytes.
+
+        Returns:
+            The size of the Buffer in bytes.
+        """
         return self.__len__() * dtype_sizeof[type]()
 
     @always_inline
     fn zero(self):
-        """Set all bytes of the Buffer to 0"""
+        """Set all bytes of the Buffer to 0."""
         memset_zero(self.data, self.bytecount())
 
     fn simd_fill[
@@ -334,7 +340,7 @@ struct Buffer[size: Dim, type: DType]:
         width of type on the system.
 
         Args:
-            val:  value to store
+            val: The value to store.
         """
         return self.simd_fill[dtype_simd_width[type]()](val)
 
@@ -546,6 +552,11 @@ struct NDBuffer[
     shape: DimList[rank],
     type: DType,
 ]:
+    """An N-dimensional Buffer.
+
+    NDBuffer can be parametrized on rank, static dimensions and Dtype. It does
+    not own its underlying pointer.
+    """
 
     var data: DTypePointer[type]
     # This is added just to make it aligned with the zap.ndbuffer
@@ -558,6 +569,18 @@ struct NDBuffer[
     fn __init__(
         ptr: __mlir_type[`!pop.pointer<scalar<`, type.value, `>>`],
     ) -> NDBuffer[rank, shape, type]:
+        """Constructor for NDBuffer with statically known rank, shapes and
+        type.
+
+        Constraints:
+            The rank, shapes, and type are known.
+
+        Args:
+            ptr: Pointer to the data.
+
+        Returns:
+            The NDBuffer object.
+        """
         assert_param_bool_msg[
             shape.all_known(),
             "dimensions must all be known",
@@ -577,6 +600,20 @@ struct NDBuffer[
         dynamic_shape: StaticIntTuple[rank],
         dynamic_dtype: DType,
     ) -> NDBuffer[rank, shape, type]:
+        """Constructor for NDBuffer with statically known rank, but dynamic
+        shapes and type.
+
+        Constraints:
+            The rank is known.
+
+        Args:
+            ptr: Pointer to the data.
+            dynamic_shape: A static tuple of size 'rank' representing shapes.
+            dynamic_dtype: Dtype for the buffer.
+
+        Returns:
+            The NDBuffer object.
+        """
         return Self {
             data: ptr,
             _rank: rank,
@@ -591,6 +628,20 @@ struct NDBuffer[
         dynamic_shape: StaticIntTuple[rank],
         dynamic_dtype: DType,
     ) -> NDBuffer[rank, shape, type]:
+        """Constructor for NDBuffer with statically known rank, but dynamic
+        shapes and type.
+
+        Constraints:
+            The rank is known.
+
+        Args:
+            ptr: Pointer to the data.
+            dynamic_shape: A static tuple of size 'rank' representing shapes.
+            dynamic_dtype: Dtype for the buffer.
+
+        Returns:
+            The NDBuffer object.
+        """
         return NDBuffer[rank, shape, type] {
             data: ptr,
             _rank: rank,
@@ -606,6 +657,21 @@ struct NDBuffer[
         dynamic_dtype: DType,
         dynamic_stride: StaticIntTuple[rank],
     ) -> NDBuffer[rank, shape, type]:
+        """Constructor for strided NDBuffer with statically known rank, but
+        dynamic shapes and type.
+
+        Constraints:
+            The rank is known.
+
+        Args:
+            ptr: Pointer to the data.
+            dynamic_shape: A static tuple of size 'rank' representing shapes.
+            dynamic_dtype: Dtype for the buffer.
+            dynamic_stride: A static tuple of size 'rank' representing strides.
+
+        Returns:
+            The NDBuffer object.
+        """
         return NDBuffer[rank, shape, type] {
             data: ptr,
             _rank: rank,
@@ -618,10 +684,20 @@ struct NDBuffer[
 
     @always_inline
     fn get_rank(self) -> Int:
+        """Returns the rank of the buffer.
+
+        Returns:
+            The rank of NDBuffer.
+        """
         return rank
 
     @always_inline
     fn get_shape(self) -> StaticIntTuple[rank]:
+        """Returns the shapes of the buffer.
+
+        Returns:
+            A static tuple of size 'rank' representing shapes of the NDBuffer.
+        """
         var res: StaticIntTuple[rank]
 
         @always_inline
@@ -695,22 +771,68 @@ struct NDBuffer[
 
     @always_inline
     fn __getitem__(self, *idx: Int) -> SIMD[1, type]:
+        """Get an element from the buffer from the specified index.
+
+        Args:
+            idx: index of the element to retrieve.
+
+        Returns:
+            The value of the element.
+        """
         return self.simd_load[1](VariadicList[Int](idx))
 
     @always_inline
     fn __getitem__(self, idx: StaticIntTuple[rank]) -> SIMD[1, type]:
+        """Get an element from the buffer from the specified index.
+
+        Args:
+            idx: index of the element to retrieve.
+
+        Returns:
+            The value of the element.
+        """
         return self.simd_load[1](idx)
 
     @always_inline
     fn simd_load[
         width: Int,
     ](self, *idx: Int) -> SIMD[width, type]:
+        """Loads a simd value from the buffer at the specified index.
+
+        Constraints:
+            The buffer must be contiguous or width must be 1.
+
+        Parameters:
+            width: The simd_width of the load.
+
+        Args:
+            idx: The index into the NDBuffer.
+
+        Returns:
+            The simd value starting at the `idx` position and ending at
+            `idx+width`.
+        """
         return self.simd_load[width](VariadicList[Int](idx))
 
     @always_inline
     fn simd_load[
         width: Int,
     ](self, idx: VariadicList[Int]) -> SIMD[width, type]:
+        """Loads a simd value from the buffer at the specified index.
+
+        Constraints:
+            The buffer must be contiguous or width must be 1.
+
+        Parameters:
+            width: The simd_width of the load.
+
+        Args:
+            idx: The index into the NDBuffer.
+
+        Returns:
+            The simd value starting at the `idx` position and ending at
+            `idx+width`.
+        """
         debug_assert(
             self.is_contiguous or width == 1,
             "Function requires contiguous buffer.",
@@ -720,12 +842,42 @@ struct NDBuffer[
     fn simd_load[
         width: Int,
     ](self, idx: StaticIntTuple[rank]) -> SIMD[width, type]:
+        """Loads a simd value from the buffer at the specified index.
+
+        Constraints:
+            The buffer must be contiguous or width must be 1.
+
+        Parameters:
+            width: The simd_width of the load.
+
+        Args:
+            idx: The index into the NDBuffer.
+
+        Returns:
+            The simd value starting at the `idx` position and ending at
+            `idx+width`.
+        """
         return self.simd_load[width](idx.as_tuple())
 
     @always_inline
     fn simd_load[
         width: Int,
     ](self, idx: StaticTuple[rank, Int]) -> SIMD[width, type]:
+        """Loads a simd value from the buffer at the specified index.
+
+        Constraints:
+            The buffer must be contiguous or width must be 1.
+
+        Parameters:
+            width: The simd_width of the load.
+
+        Args:
+            idx: The index into the NDBuffer.
+
+        Returns:
+            The simd value starting at the `idx` position and ending at
+            `idx+width`.
+        """
         debug_assert(
             self.is_contiguous or width == 1,
             "Function requires contiguous buffer.",
@@ -736,12 +888,44 @@ struct NDBuffer[
     fn aligned_simd_load[
         width: Int, alignment: Int
     ](self, *idx: Int) -> SIMD[width, type]:
+        """Loads a simd value from the buffer at the specified index.
+
+        Constraints:
+            The buffer must be contiguous or width must be 1.
+
+        Parameters:
+            width: The simd_width of the load.
+            alignment: The alignment value.
+
+        Args:
+            idx: The index into the NDBuffer.
+
+        Returns:
+            The simd value starting at the `idx` position and ending at
+            `idx+width`.
+        """
         return self.aligned_simd_load[width, alignment](VariadicList[Int](idx))
 
     @always_inline
     fn aligned_simd_load[
         width: Int, alignment: Int
     ](self, idx: VariadicList[Int]) -> SIMD[width, type]:
+        """Loads a simd value from the buffer at the specified index.
+
+        Constraints:
+            The buffer must be contiguous or width must be 1.
+
+        Parameters:
+            width: The simd_width of the load.
+            alignment: The alignment value.
+
+        Args:
+            idx: The index into the NDBuffer.
+
+        Returns:
+            The simd value starting at the `idx` position and ending at
+            `idx+width`.
+        """
         debug_assert(
             self.is_contiguous or width == 1,
             "Function requires contiguous buffer.",
@@ -751,12 +935,44 @@ struct NDBuffer[
     fn aligned_simd_load[
         width: Int, alignment: Int
     ](self, idx: StaticIntTuple[rank]) -> SIMD[width, type]:
+        """Loads a simd value from the buffer at the specified index.
+
+        Constraints:
+            The buffer must be contiguous or width must be 1.
+
+        Parameters:
+            width: The simd_width of the load.
+            alignment: The alignment value.
+
+        Args:
+            idx: The index into the NDBuffer.
+
+        Returns:
+            The simd value starting at the `idx` position and ending at
+            `idx+width`.
+        """
         return self.aligned_simd_load[width, alignment](idx.as_tuple())
 
     @always_inline
     fn aligned_simd_load[
         width: Int, alignment: Int
     ](self, idx: StaticTuple[rank, Int]) -> SIMD[width, type]:
+        """Loads a simd value from the buffer at the specified index.
+
+        Constraints:
+            The buffer must be contiguous or width must be 1.
+
+        Parameters:
+            width: The simd_width of the load.
+            alignment: The alignment value.
+
+        Args:
+            idx: The index into the NDBuffer.
+
+        Returns:
+            The simd value starting at the `idx` position and ending at
+            `idx+width`.
+        """
         debug_assert(
             self.is_contiguous or width == 1,
             "Function requires contiguous buffer.",
@@ -765,64 +981,149 @@ struct NDBuffer[
 
     @always_inline
     fn __setitem__(self, idx: StaticIntTuple[rank], val: SIMD[1, type]):
-        # Stores a single value into the ndbuffer at the specified index
+        """Stores a single value into the buffer at the specified index.
+
+        Args:
+            idx: The index into the Buffer.
+            val: The value to store.
+        """
+        self.simd_store[1](idx, val)
+
         self.simd_store[1](idx, val)
 
     @always_inline
     fn simd_store[
         width: Int
     ](self, idx: StaticIntTuple[rank], val: SIMD[width, type],):
-        # Stores a simd value into the ndbuffer at the specified index
+        """Stores a simd value into the buffer at the specified index.
+
+        Constraints:
+            The buffer must be contiguous or width must be 1.
+
+        Parameters:
+            width: The width of the simd vector.
+
+        Args:
+            idx: The index into the Buffer.
+            val: The value to store.
+        """
         self.simd_store[width](idx.as_tuple(), val)
 
     @always_inline
     fn simd_store[
         width: Int
     ](self, idx: StaticTuple[rank, Int], val: SIMD[width, type],):
+        """Stores a simd value into the buffer at the specified index.
+
+        Constraints:
+            The buffer must be contiguous or width must be 1.
+
+        Parameters:
+            width: The width of the simd vector.
+
+        Args:
+            idx: The index into the Buffer.
+            val: The value to store.
+        """
         debug_assert(
             self.is_contiguous or width == 1,
             "Function requires contiguous buffer.",
         )
-        # Stores a simd value into the ndbuffer at the specified index
         self._offset(idx).simd_store[width](val)
 
     @always_inline
     fn aligned_simd_store[
         width: Int, alignment: Int
     ](self, idx: StaticIntTuple[rank], val: SIMD[width, type],):
-        # Stores a simd value into the ndbuffer at the specified index
+        """Stores a simd value into the buffer at the specified index.
+
+        Constraints:
+            The buffer must be contiguous or width must be 1.
+
+        Parameters:
+            width: The width of the simd vector.
+            alignment: The alignment value.
+
+        Args:
+            idx: The index into the Buffer.
+            val: The value to store.
+        """
         self.aligned_simd_store[width, alignment](idx.as_tuple(), val)
 
     @always_inline
     fn aligned_simd_store[
         width: Int, alignment: Int
     ](self, idx: StaticTuple[rank, Int], val: SIMD[width, type],):
+        """Stores a simd value into the buffer at the specified index.
+
+        Constraints:
+            The buffer must be contiguous or width must be 1.
+
+        Parameters:
+            width: The width of the simd vector.
+            alignment: The alignment value.
+
+        Args:
+            idx: The index into the Buffer.
+            val: The value to store.
+        """
         debug_assert(
             self.is_contiguous or width == 1,
             "Function requires contiguous buffer.",
         )
-        # Stores a simd value into the ndbuffer at the specified index
         self._offset(idx).aligned_simd_store[width, alignment](val)
 
     @always_inline
     fn simd_nt_store[
         width: Int
     ](self, idx: StaticIntTuple[rank], val: SIMD[width, type],):
-        # Stores a simd value into the ndbuffer at the specified index.
-        # The address must properly aligned, see Buffer::simd_nt_store.
+        """Stores a simd value using non-temporal store.
+
+        Constraints:
+            The buffer must be contiguous.
+            The address must be properly aligned, 64B for avx512, 32B for avx2,
+              and 16B for avx.
+
+        Parameters:
+            width: The width of the simd vector.
+
+        Args:
+            idx: The index into the Buffer.
+            val: The value to store.
+        """
         self.simd_nt_store[width](idx.as_tuple(), val)
 
     @always_inline
     fn simd_nt_store[
         width: Int
     ](self, idx: StaticTuple[rank, Int], val: SIMD[width, type],):
+        """Stores a simd value using non-temporal store.
+
+        Constraints:
+            The buffer must be contiguous.
+            The address must be properly aligned, 64B for avx512, 32B for avx2,
+              and 16B for avx.
+
+        Parameters:
+            width: The width of the simd vector.
+
+        Args:
+            idx: The index into the Buffer.
+            val: The value to store.
+        """
         debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
-        # Stores a simd value into the ndbuffer at the specified index
-        # The address must properly aligned, see Buffer::simd_nt_store.
         self._offset(idx).simd_nt_store[width](val)
 
     @always_inline
     fn dim[index: Int](self) -> Int:
+        """Get the buffer dimension at the given index.
+
+        Parameters:
+            index: The number of dimension to get.
+
+        Returns:
+            The buffer size at the given dimension.
+        """
         # First try to extract the static info on this dimension, could be either a
         # meta constant or an unknown.
         alias static_dim_value = shape.at[index]()
@@ -834,25 +1135,57 @@ struct NDBuffer[
 
     @always_inline
     fn dim(self, index: Int) -> Int:
+        """Get the buffer dimension at the given index.
+
+        Args:
+            index: The number of dimension to get.
+
+        Returns:
+            The buffer size at the given dimension.
+        """
         return self.dynamic_shape[index]
 
     @always_inline
     fn stride(self, index: Int) -> Int:
+        """Get the buffer stride at the given index.
+
+        Args:
+            index: The number of dimension to get the stride for.
+
+        Returns:
+            The stride at the given dimension.
+        """
         return self.dynamic_stride[index]
 
     @always_inline
     fn flatten(self) -> Buffer[Dim(), type]:
+        """Construct a flattened Buffer counterpart for this NDBuffer.
+
+        Constraints:
+            The buffer must be contiguous.
+
+        Returns:
+            Constructed Buffer object.
+        """
         debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
         return Buffer[Dim(), type](self.data.address, self.size())
 
     @always_inline
     fn bytecount(self) -> Int:
-        """Return the size of the NDBuffer in bytes."""
+        """Return the size of the NDBuffer in bytes.
+
+        Returns:
+            The size of the NDBuffer in bytes.
+        """
         return self.size() * dtype_sizeof[type]()
 
     @always_inline
     fn zero(self):
-        """Set all bytes of the NDBuffer to 0"""
+        """Set all bytes of the NDBuffer to 0.
+
+        Constraints:
+            The buffer must be contiguous.
+        """
         debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
         memset_zero(self.data, self.bytecount())
 
@@ -865,7 +1198,7 @@ struct NDBuffer[
             simd_width: The simd_width of the fill.
 
         Args:
-            val:  value to store
+            val: The value to store.
         """
         if val == 0:
             self.zero()
@@ -891,13 +1224,13 @@ struct NDBuffer[
     fn aligned_stack_allocation[
         alignment: Int
     ]() -> NDBuffer[rank, shape, type]:
-        """Constructs an ndbuffer instance backed by stack allocated memory space.
+        """Constructs an NDBuffer instance backed by stack allocated memory space.
 
         Parameters:
             alignment: address alignment requirement for the allocation.
 
         Returns:
-            Constructed ndbuffer with the allocated space.
+            Constructed NDBuffer with the allocated space.
         """
         let data_pointer = _raw_stack_allocation[
             shape.product().get(), type, alignment
@@ -907,10 +1240,10 @@ struct NDBuffer[
     @staticmethod
     @always_inline
     fn stack_allocation() -> NDBuffer[rank, shape, type]:
-        """Constructs an ndbuffer instance backed by stack allocated memory space.
+        """Constructs an NDBuffer instance backed by stack allocated memory space.
 
         Returns:
-            Constructed ndbuffer with the allocated space.
+            Constructed NDBuffer with the allocated space.
         """
         return NDBuffer[rank, shape, type].aligned_stack_allocation[
             dtype_alignof[type]()
@@ -927,13 +1260,6 @@ struct NDBuffer[
             idx: The N-D index of the prefetched location.
         """
         self._offset(idx).prefetch[params]()
-
-
-fn _neg[val: __mlir_type.i1]() -> __mlir_type.i1:
-    """Negates an i1 value"""
-    if val:
-        return __mlir_attr.`0:i1`
-    return __mlir_attr.`1:i1`
 
 
 fn partial_simd_load[
@@ -1023,10 +1349,11 @@ fn partial_simd_store[
 # This struct must match DynamicRankBuffer in Kernels/lib/MojoKernels/Kernels.cpp
 @register_passable("trivial")
 struct DynamicRankBuffer:
-    """This buffer struct does not assume the rank to be static. It is not as
-    efficient as the statically ranked buffer, but is useful when interacting
-    with external functions. In particular the shape is represented as a fixed
-    (ie max_rank) array of dimensions to simplify the ABI."""
+    """DynamicRankBuffer represents a buffer with unknown rank, shapes and dtype.
+
+    It is not as efficient as the statically ranked buffer, but is useful when
+    interacting with external functions. In particular the shape is represented
+    as a fixed (ie max_rank) array of dimensions to simplify the ABI."""
 
     var data: DTypePointer[DType.invalid.value]
     var rank: Int
@@ -1040,6 +1367,17 @@ struct DynamicRankBuffer:
         shape: StaticIntTuple[max_rank],
         type: DType,
     ) -> DynamicRankBuffer:
+        """Construct DynamicRankBuffer.
+
+        Args:
+            data: pointer to the underlying data.
+            rank: rank of the buffer.
+            shape: shapes of the buffer.
+            type: dtype of the buffer.
+
+        Returns:
+            Constructed DynamicRankBuffer.
+        """
         return DynamicRankBuffer {
             data: data,
             rank: rank,
@@ -1049,6 +1387,14 @@ struct DynamicRankBuffer:
 
     @always_inline
     fn to_buffer[type: DType](self) -> Buffer[Dim(), type]:
+        """Cast DynamicRankBuffer to Buffer.
+
+        Parameters:
+            type: dtype of the buffer.
+
+        Returns:
+            Constructed Buffer.
+        """
         return Buffer[Dim(), type](
             self.data.bitcast[type](), tuple_product(self.shape, self.rank)
         )
@@ -1057,6 +1403,18 @@ struct DynamicRankBuffer:
     fn to_ndbuffer[
         rank: Int, type: DType
     ](self) -> NDBuffer[rank, DimList[rank].create_unknown(), type]:
+        """Cast the buffer to NDBuffer.
+
+        Constraints:
+            Rank of DynamicRankBuffer must equal rank of NDBuffer.
+
+        Parameters:
+            rank: rank of the buffer.
+            type: dtype of the buffer.
+
+        Returns:
+            Constructed NDBuffer.
+        """
         debug_assert(
             self.rank == rank,
             "rank of DynamicRankBuffer must equal rank of NDBuffer",
@@ -1073,6 +1431,21 @@ struct DynamicRankBuffer:
     ](self, stride: StaticIntTuple[rank]) -> NDBuffer[
         rank, DimList[rank].create_unknown(), type
     ]:
+        """Cast the buffer to NDBuffer.
+
+        Constraints:
+            Rank of DynamicRankBuffer must equal rank of NDBuffer.
+
+        Parameters:
+            rank: rank of the buffer.
+            type: dtype of the buffer.
+
+        Args:
+            stride: strides of the buffer.
+
+        Returns:
+            Constructed NDBuffer.
+        """
         debug_assert(
             self.rank == rank,
             "rank of DynamicRankBuffer must equal rank of NDBuffer",
@@ -1088,9 +1461,19 @@ struct DynamicRankBuffer:
     fn rank_dispatch[
         func: __mlir_type[`!kgen.signature<<`, Int, `>() -> !lit.none>`]
     ](self):
+        """Dispatch the function call based on buffer rank.
+
+        Constraints:
+            Rank must be positive and less or equal to 5.
+
+        Parameters:
+            func: Function to dispatch. The function should be parametrized on
+              an index parameter, which will be used for rank when the function
+              will be called.
+        """
         debug_assert(
             self.rank > 0 and self.rank <= max_rank,
-            "rank be be positive and less or equal to 5",
+            "rank must be positive and less or equal to 5",
         )
 
         if self.rank == 1:
@@ -1115,14 +1498,32 @@ struct DynamicRankBuffer:
 
     @always_inline
     fn num_elements(self) -> Int:
+        """Get number of elements in the buffer.
+
+        Returns:
+            The number of elements in the buffer.
+        """
         return tuple_product(self.shape, self.rank)
 
     @always_inline
     fn get_shape[rank: Int](self) -> StaticIntTuple[rank]:
+        """Get a static tuple representing the buffer shape.
+
+        Parameters:
+            rank: Rank of the buffer.
+
+        Returns:
+            A static tuple of size 'Rank' filled with buffer shapes.
+        """
         return self._shape_to_static_tuple[rank]()
 
     @always_inline
     fn dim(self, idx: Int) -> Int:
+        """Get given dimension.
+
+        Returns:
+            The buffer size on the given dimension.
+        """
         debug_assert(idx < self.rank, "dimension index is out of bounds")
         return self.shape[idx]
 
