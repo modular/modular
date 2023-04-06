@@ -478,10 +478,16 @@ fn useParamVariadics():
 fn variadic_parameter[elems: __mlir_type.`!kgen.variadic<index>`]() -> Int:
     return 3
 
+fn dependent_variadic_parameter[
+    type: __mlir_type.`!kgen.mlirtype`, *values: type
+](): pass
+
 # CHECK-LABEL: lit.func @"pass_variadic()"<elems: variadic<index>>
 fn pass_variadic[elems: __mlir_type.`!kgen.variadic<index>`]():
     # CHECK-NEXT: kgen.call @"$parameters"::@"variadic_parameter()"<:variadic<index> elems>
-    let result = variadic_parameter[elems]()
+    _ = variadic_parameter[elems]()
+    # CHECK: kgen.call @"$parameters"::@"dependent_variadic_parameter()"<:type !kgen.declref<@"$Int"::@Int>, :variadic<@"$Int"::@Int>
+    _ = dependent_variadic_parameter[Int, 1, 2]()
 
 
 ##===----------------------------------------------------------------------===##
