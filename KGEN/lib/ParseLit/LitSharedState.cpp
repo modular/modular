@@ -776,7 +776,7 @@ LitSharedState::createModuleState(StringRef moduleName,
   // Auto-import the core Lang modules.
   for (StringRef moduleName : {kBuiltinBoolModuleName, kBuiltinTupleModuleName,
                                kBuiltinErrorModuleName, kBuiltinIntModuleName,
-                               kBuiltinAliasesModuleName}) {
+                               kBuiltinTypeAliasesModuleName}) {
     moduleDecl.addUnresolvedWildCardImport(
         StringAttr::get(getContext(), moduleName), lexer.getToken().getLoc());
   }
