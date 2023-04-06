@@ -12,7 +12,7 @@
 
 from Buffer import NDBuffer
 from DType import DType
-from F32 import F32
+from SIMD import F32
 from Gather import gather, gather_nd
 from Index import StaticIntTuple
 from IO import print

@@ -16,7 +16,7 @@ from IO import print, _printf
 from Index import StaticIntTuple, Index
 from LLCL import Runtime, OwningOutputChainPtr
 from TypeUtilities import rebind
-from F32 import F32
+from SIMD import F32
 from SIMD import SIMD
 from Slice import slice_as_view, slice_as_copy
 
