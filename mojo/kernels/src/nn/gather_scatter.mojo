@@ -197,6 +197,7 @@ fn gather[
     let indices_len = indices.size()
     # Short-circuit for trivial cases, and to avoid divide-by-zero
     if input.size() == 0 or indices_len == 0:
+        # No-op
         out_chain.mark_ready()
         return
 
@@ -282,12 +283,14 @@ fn gather[
     assert_param_bool[indices_rank == 1]()
     assert_param_bool[axis == 1]()
 
-    for i in range(output.dim[0]()):
-        for j in range(output.dim[1]()):
-            let idx: Int = indices[j].to_int()
-            output[StaticIntTuple[output_rank](i, j)] = input[i, idx]
+    @always_inline
+    fn task_func(task_id: Int):
+        for i in range(output.dim[0]()):
+            for j in range(output.dim[1]()):
+                let idx: Int = indices[j].to_int()
+                output[StaticIntTuple[output_rank](i, j)] = input[i, idx]
 
-    out_chain.mark_ready()
+    async_parallelize[task_func](out_chain, 1)
 
 
 # gather_ND_input_MD_indices
@@ -320,19 +323,22 @@ fn gather_nd[
     let indices_size = indices.size()
     let inner_dynamic = prod_dims[axis + 1, input_rank](input)
 
-    for s in range(indices_size):
-        let tuple_s = indices.get_nd_index(s)
-        let idx: Int = indices[tuple_s].to_int()
-        for do in range(outer_dynamic):
-            for di in range(inner_dynamic):
-                output[
-                    output.get_nd_index(
-                        ((do * indices_size + s) * inner_dynamic) + di
-                    )
-                ] = input[
-                    input.get_nd_index(
-                        ((do * input.dim[axis]() + idx) * inner_dynamic) + di
-                    )
-                ]
+    @always_inline
+    fn task_func(task_id: Int):
+        for s in range(indices_size):
+            let tuple_s = indices.get_nd_index(s)
+            let idx: Int = indices[tuple_s].to_int()
+            for do in range(outer_dynamic):
+                for di in range(inner_dynamic):
+                    output[
+                        output.get_nd_index(
+                            ((do * indices_size + s) * inner_dynamic) + di
+                        )
+                    ] = input[
+                        input.get_nd_index(
+                            ((do * input.dim[axis]() + idx) * inner_dynamic)
+                            + di
+                        )
+                    ]
 
-    out_chain.mark_ready()
+    async_parallelize[task_func](out_chain, 1)

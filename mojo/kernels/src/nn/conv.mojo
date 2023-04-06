@@ -905,12 +905,12 @@ struct PackIm2ColNCHW[
         var n_idx: Int = 0
         while n_idx < tile_n:
             # Map local tile index to global output matrix index.
-            var global_k_n_idx = self.global_offset + Index(k_idx, n_idx)
+            let global_k_n_idx = self.global_offset + Index(k_idx, n_idx)
             # Map output matrix index to output convolution image index.
-            var o_image_ho_wo = self._n_to_ho_wo(global_k_n_idx[1])
+            let o_image_ho_wo = self._n_to_ho_wo(global_k_n_idx[1])
             # Map output convolution image index to input convolution image
             #  index.
-            var i_image_h_w = self._output_to_input(
+            let i_image_h_w = self._output_to_input(
                 o_image_ho_wo, Index(crs[1], crs[2])
             )
 
@@ -1537,7 +1537,7 @@ struct ConvNHWCInnerLoopFilterPacked[
                 size of the packed tile of B.
         """
         let offset_table = Buffer[a_row_size, DType.index].stack_allocation()
-        var instance = ConvNHWCInnerLoopFilterPacked[
+        let instance = ConvNHWCInnerLoopFilterPacked[
             shape_input,
             shape_c,
             packed_shape,
@@ -1819,7 +1819,7 @@ struct ConvNHWCInnerLoopFilterPacked[
         let n_outer_idx = tile_n_k_idx[0] // pack_inner_size
 
         # Global K index.
-        var global_k = self.global_offset.K + tile_n_k_idx[1]
+        let global_k = self.global_offset.K + tile_n_k_idx[1]
 
         let local_a = Buffer[
             (simd_size * a_row_size),
@@ -1829,7 +1829,7 @@ struct ConvNHWCInnerLoopFilterPacked[
         @always_inline
         fn body[idx: Int]():
             alias fill_a_idx = idx
-            var global_m = self.global_offset.M + fill_a_idx
+            let global_m = self.global_offset.M + fill_a_idx
             let a_val_scalar = self._load_a(
                 Index(global_m, global_k), fill_a_idx
             )
@@ -1850,7 +1850,7 @@ struct ConvNHWCInnerLoopFilterPacked[
             let a_val = local_a.simd_load[simd_size](idx1 * simd_size).cast[
                 accum_type
             ]()
-            var c_idx = Index(idx1, col_idx)
+            let c_idx = Index(idx1, col_idx)
             var c_val = c_local.simd_load[simd_size](c_idx)
 
             c_val = a_val.fma(b_val, c_val)
