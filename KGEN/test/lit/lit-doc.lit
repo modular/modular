@@ -23,14 +23,12 @@ spills over to the next line."""
 
 # CHECK: This is a function summary.
 
-# CHECK: | Args | |
-# CHECK: | :---- | --- |
-# CHECK: | `` arg: Self& `` | This is a by-ref argument. |
-# CHECK: | `` *args: Self& `` | This is a variadic argument. |
+# CHECK: **Args:**
+# CHECK: - `` arg: Self& ``: This is a by-ref argument.
+# CHECK: - `` *args: Self& ``: This is a variadic argument.
 
-# CHECK: | Returns `` -> Self& `` |
-# CHECK: | :---- |
-# CHECK: | This is a by-ref return value.  |
+# CHECK: **Returns:**
+# CHECK: This is a by-ref return value.
 
 
 struct InMemoryStruct:
@@ -56,13 +54,12 @@ struct InMemoryStruct:
 # CHECK: This is a class summary.
 # CHECK: The is some kind of description.
 
-# CHECK: | Parameters | |
-# CHECK: | :---- | --- |
-# CHECK: | `` _type: __mlir_type.!kgen.dtype `` | This is a parameter. |
+# CHECK: **Parameters:**
+# CHECK: - `` _type: __mlir_type.!kgen.dtype ``: This is a parameter.
 
 # CHECK: ### `` fn_with_self_param(self: Self) ``
-# CHECK: | Parameters | |
-# CHECK: | `` param: Self `` | This is a Self parameter. |
+# CHECK: **Parameters:**
+# CHECK: - `` param: Self ``: This is a Self parameter.
 
 
 @register_passable
@@ -100,9 +97,8 @@ fn empty_fn():
 # CHECK: ## `` fn_with_args(arg: $Int::Int) ``
 # CHECK: This is a function summary.
 # CHECK: The is some kind of description.
-# CHECK: | Args | |
-# CHECK: | :---- | --- |
-# CHECK: | `` arg: $Int::Int `` | This is an argument. |
+# CHECK: **Args:**
+# CHECK: - `` arg: $Int::Int ``: This is an argument.
 
 
 fn fn_with_args(arg: Int):
@@ -120,9 +116,8 @@ fn fn_with_args(arg: Int):
 # CHECK: This is a function summary.
 # CHECK: The is some kind of description.
 
-# CHECK: | Parameters | |
-# CHECK: | :---- | --- |
-# CHECK: | `` param: __mlir_type.!kgen.dtype `` | This is a parameter. |
+# CHECK: **Parameters:**
+# CHECK: - `` param: __mlir_type.!kgen.dtype ``: This is a parameter.
 
 
 fn fn_with_params[param: __mlir_type.`!kgen.dtype`]():
@@ -140,13 +135,11 @@ fn fn_with_params[param: __mlir_type.`!kgen.dtype`]():
 # CHECK: This is a function summary.
 # CHECK: The is some kind of description.
 
-# CHECK: | Args | |
-# CHECK: | :---- | --- |
-# CHECK: | `` arg: $Int::Int `` | This is an argument. |
+# CHECK: **Args:**
+# CHECK: - `` arg: $Int::Int ``: This is an argument.
 
-# CHECK: | Returns `` -> $Int::Int `` |
-# CHECK: | :---- |
-# CHECK: | This is a return value.  |
+# CHECK: **Returns:**
+# CHECK: This is a return value.
 
 
 fn fn_with_params_and_return(arg: Int) -> Int:
