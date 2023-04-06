@@ -46,6 +46,9 @@ struct Chain:
 
     var storage: Pointer[Int]
 
+    fn __init__() -> Self:
+        return Self {storage: Pointer[Int].get_null()}
+
 
 # FIXME(traits): This shouldn't be a register_passable type but we need this
 # until we have traits for proper parametric types.
@@ -282,7 +285,7 @@ struct TaskGroup:
     var rt: Runtime
 
     fn __init__(rt: Runtime) -> TaskGroup:
-        var chain: Chain
+        var chain = Chain()
         _init_llcl_chain(rt, Pointer[Chain].address_of(chain))
         return TaskGroup {counter: 1, chain: chain, rt: rt}
 
