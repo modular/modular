@@ -84,9 +84,9 @@ fn to_buffer[
     ](shape)
 
     var shape_ptr = Pointer(shape)
-    var shape_tuple: StaticIntTuple[rank]
+    var shape_tuple = StaticIntTuple[rank]()
 
-    var stride_tuple: StaticIntTuple[rank]
+    var stride_tuple = StaticIntTuple[rank]()
     var stride: Int = 1
 
     @always_inline
