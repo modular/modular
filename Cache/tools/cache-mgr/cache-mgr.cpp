@@ -32,7 +32,12 @@ using BinaryBlobCacheKey = Keys::VariantTypeKey<Cache::BufferRef, StringRef>;
 /// specific keys. A value of None(Default) means the binary is target agnostic
 /// and add it to cache with key. Host means this binary is specific to current
 /// machine, and hence when generating key wrap it with host info.
-enum class BinaryTarget { None = 0, Host };
+enum class BinaryTarget {
+  None = 0,
+  Host,      // Specific to current machines.
+  HostStatic // Specific to current machine, but no info about
+             // thread affinities/number of cores.
+};
 
 /// Describes an input file, or a cached object request. An input file is simply
 /// a path, while a cached object request is `<hash> > <output-path>` or
@@ -88,7 +93,10 @@ public:
       cl::values(
           clEnumValN(BinaryTarget::None, "none", "Key is target agnostic"),
           clEnumValN(BinaryTarget::Host, "host",
-                     "Wrap the key with current host information.")),
+                     "Wrap the key with current host information."),
+          clEnumValN(BinaryTarget::HostStatic, "host-static",
+                     "Wrap the key with current host information, but don't "
+                     "consider number of cores or affinities.")),
       cl::desc("Augment key with information specific to a target hardware."),
       cl::init(BinaryTarget::None)};
 
@@ -112,6 +120,9 @@ public:
 static std::string wrapKey(BinaryBlobCacheKey::KeyTy key, BinaryTarget target) {
   if (target == BinaryTarget::Host)
     return Keys::KeyWithHostInfo<BinaryBlobCacheKey>::hashKey(std::move(key));
+  if (target == BinaryTarget::HostStatic)
+    return Keys::KeyWithStaticHostInfo<BinaryBlobCacheKey>::hashKey(
+        std::move(key));
   return BinaryBlobCacheKey::hashKey(std::move(key));
 }
 
