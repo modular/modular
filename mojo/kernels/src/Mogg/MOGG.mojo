@@ -9,7 +9,7 @@ from Buffer import NDBuffer
 from DType import DType
 from Functional import elementwise, unroll
 from Index import StaticIntTuple
-from IO import print
+from IO import print, _printf
 from List import Dim, DimList
 from LLCL import Runtime, OutputChainPtr
 from Math import add, div, erf, exp, mul, rsqrt, sqrt, sub, tanh, fma
@@ -447,10 +447,10 @@ fn mark_output_chain_ready(out_chain: OutputChainPtr):
 fn print_buffer_info[
     type: DType, rank: __mlir_type.index
 ](buffer: NDBuffer[rank, DimList[rank].create_unknown(), type],):
-    print("Rank: ")
+    _printf("Rank: ")
     print(rank)
-    print("Shape: ")
+    _printf("Shape: ")
     print(buffer.dynamic_shape)
 
-    print("Strides: ")
+    _printf("Strides: ")
     print(buffer.dynamic_stride)
