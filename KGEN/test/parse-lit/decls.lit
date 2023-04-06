@@ -10,6 +10,21 @@ from prolog import F32
 from Range import range
 
 ##===----------------------------------------------------------------------===##
+# closures
+##===----------------------------------------------------------------------===##
+
+fn fat_signature_types():
+    let x = (4).__as_mlir_index()
+    # CHECK: lit.func *"g(__mlir_type.index)"(%y: index borrow) fat -> index {
+    fn g(y: __mlir_type.index) -> __mlir_type.index:
+        return x
+
+    # CHECK: lit.func *"h(__mlir_type.index,__mlir_type.index)"<N>(%y: index borrow, %z: index borrow) fat -> index {
+    fn h[N: __mlir_type.index](y: __mlir_type.index, z: __mlir_type.index) -> __mlir_type.index:
+        return x
+
+
+##===----------------------------------------------------------------------===##
 # let
 ##===----------------------------------------------------------------------===##
 
@@ -616,9 +631,9 @@ fn topLevelFunction() -> Int:
   fn nestedFunction() -> Int:
     # CHECK-NEXT: pop.load %a
     return a
-  # CHECK: declare b: () -> !kgen.declref<@"$Int"::@Int> = <*"nestedFunction()">
+  # CHECK: declare b: <>() fat -> !kgen.declref<@"$Int"::@Int> = <*"nestedFunction()">
   alias b = nestedFunction
-  # CHECK: call_param[{{.*}}: *"nestedFunction()"]()
+  # CHECK: call_param[<>() fat -> !kgen.declref<@"$Int"::@Int>: *"nestedFunction()"]()
   return nestedFunction()
 
 # CHECK-LABEL: lit.struct.decl @SomeStruct
@@ -630,9 +645,9 @@ struct SomeStruct:
     fn nestedFunction() -> Int:
       # CHECK-NEXT: pop.load %a
       return a
-    # CHECK: declare b: () -> !kgen.declref<@"$Int"::@Int> = <*"nestedFunction()">
+    # CHECK: declare b: <>() fat -> !kgen.declref<@"$Int"::@Int> = <*"nestedFunction()">
     alias b = nestedFunction
-    # CHECK: call_param[{{.*}}: *"nestedFunction()"]()
+    # CHECK: call_param[<>() fat -> !kgen.declref<@"$Int"::@Int>: *"nestedFunction()"]()
     return nestedFunction()
 
 # CHECK-LABEL: lit.func @"topLevelParamFn()"<a_param>

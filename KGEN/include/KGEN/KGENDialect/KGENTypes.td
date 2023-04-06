@@ -234,6 +234,11 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     bool hasPackVarargs() {
       return bitEnumContainsAny(getFnEffects(), FnEffects::PackVararg);
     }
+    /// Return true if the function captures state, which means
+    /// it requires a context pointer.
+    bool isFat() {
+      return bitEnumContainsAny(getFnEffects(), FnEffects::Fat);
+    }
 
     /// Return the convention for the specified value input parameter.
     ValueInputConvention getInputConvention(size_t inputNo) {
