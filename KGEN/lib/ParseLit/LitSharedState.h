@@ -175,6 +175,8 @@ public:
   static constexpr StringLiteral kBuiltinErrorModuleName = "Error";
   /// The name of the builtin Int module.
   static constexpr StringLiteral kBuiltinIntModuleName = "Int";
+  /// The name of the builtin aliases module.
+  static constexpr StringLiteral kBuiltinAliasesModuleName = "Aliases";
 
   /// Resolve a builtin module type.
   ASTDecl *resolveBuiltinModuleType(llvm::SMLoc loc, StringRef moduleName,
