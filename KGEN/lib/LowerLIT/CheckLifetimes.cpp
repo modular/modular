@@ -80,6 +80,20 @@ struct LifetimeTrackable {
   /// This is true if the value is uninitialized at function exist, false if it
   /// ends up defined (e.g. as with a byref argument).
   bool endsUninit = false;
+
+  /// Return the type of the underlying value, looking through the pointer type
+  /// if this is an indirect reference.
+  Type getValueType(Value value) const {
+    // If this is a direct value, use the type directly.
+    if (!isIndirect)
+      return value.getType();
+
+    auto pointee =
+        llvm::cast<POP::PointerType>(value.getType()).getElementType();
+    if (auto type = dyn_cast<TypeConstantAttr>(pointee))
+      return type.getValue();
+    return ParamRefType::get(pointee);
+  }
 };
 
 LifetimeTrackable::LifetimeTrackable(Value v) {
@@ -164,6 +178,12 @@ struct TypeDeclInfo {
   /// type.
   unsigned getFieldIndex(DeclRefType type, StringAttr fieldName);
 
+  /// Given a field number that indicates a stored field in the specified type,
+  /// return the name of the field that contains it as well as its declared
+  /// type.
+  std::pair<StringAttr, Type> getFieldContaining(DeclRefType type,
+                                                 unsigned fieldNo);
+
 private:
   DenseMap<SymbolRefAttr, LIT::StructDeclOp> structMap;
 
@@ -210,6 +230,28 @@ unsigned TypeDeclInfo::getFieldIndex(DeclRefType type, StringAttr fieldName) {
   return fieldIndices[{type.getSymbol(), fieldName}];
 }
 
+/// Given a field number that indicates a stored field in the specified type,
+/// return the name of the field that contains it as well as its declared
+/// type.
+std::pair<StringAttr, Type>
+TypeDeclInfo::getFieldContaining(DeclRefType declRef, unsigned fieldNo) {
+  LIT::StructDeclOp decl = structMap[declRef.getSymbol()];
+  assert(decl && "reference to struct that wasn't declared");
+
+  // Scan to find the field that contains this.
+  unsigned startFieldIdx = 0;
+  for (auto field : decl.getFieldDecls()) {
+    // This range check is needed to handle zero-sized fields: they don't
+    // contain a field even if they start at the beginning of it.
+    unsigned numSubFields = getNumFieldsInType(field.getType());
+    if (startFieldIdx <= fieldNo && startFieldIdx + numSubFields > fieldNo) {
+      return {field.getNameAttr(), field.getType()};
+    }
+    startFieldIdx += numSubFields;
+  }
+  llvm_unreachable("invalid index into struct field numbering");
+}
+
 //===----------------------------------------------------------------------===//
 // ValueInfo / ValueSet tracking
 //===----------------------------------------------------------------------===//
@@ -233,7 +275,7 @@ struct ValueInfo {
   bool hasErrorDiagnosed;
 };
 
-/// A ValueRef indicates a slice reference into the bitvector for all the
+/// A ValueRef indicates a slice reference into the BitVector for all the
 /// values.
 struct ValueRef {
   /// This is the entry # for the ValueInfo for the overall value.
@@ -250,7 +292,7 @@ struct ValueRef {
   /// Allow use of a ValueRef in a boolean condition.
   operator bool() const { return valueId != 0; }
 
-  /// Test if all the bits in the range are set in the specified bitvector.
+  /// Test if all the bits in the range are set in the specified BitVector.
   bool isAllPresent(const BitVector &bits) const {
     // BitVector doesn't have a more efficient method for this.  We could make
     // this more efficient for longer ranges if needed.
@@ -260,7 +302,17 @@ struct ValueRef {
     return true;
   }
 
-  /// Set the bits for this range to zero or one in the specified bitvector.
+  /// Test if all the bits in the range are clear in the specified BitVector.
+  bool isAllMissing(const BitVector &bits) const {
+    // BitVector doesn't have a more efficient method for this.  We could make
+    // this more efficient for longer ranges if needed.
+    for (size_t i = startBit, e = endBit; i != e; ++i)
+      if (bits[i])
+        return false;
+    return true;
+  }
+
+  /// Set the bits for this range to zero or one in the specified BitVector.
   void markBits(BitVector &bits, bool newValue) const {
     if (!valueId)
       return;
@@ -309,10 +361,8 @@ struct ValueSet {
     // are always valid when present.  If they pass through memory, they are
     // checked when loaded from memory.
     if (val && trackable.isIndirect) {
-      Type valType =
-          cast<POP::PointerType>(val.getType()).getResolvedElementType();
-      if (valType) // Parametric elements are treated as 1
-        numValueBits = typeDeclInfo.getNumFieldsInType(valType);
+      Type valType = trackable.getValueType(val);
+      numValueBits = typeDeclInfo.getNumFieldsInType(valType);
     }
 
     valueInfoIndex[val] = valueInfos.size();
@@ -340,8 +390,9 @@ struct ValueSet {
     return !valueInfos.empty() ? valueInfos.back().endValueBit : 0;
   }
 
-private:
   TypeDeclInfo &typeDeclInfo;
+
+private:
   SmallVector<ValueInfo> valueInfos;
   DenseMap<Value, unsigned> valueInfoIndex;
 };
@@ -407,6 +458,38 @@ private:
 };
 } // namespace
 
+static Type digIntoTypeAtFieldOffset(Type type, unsigned firstInvalidOffset,
+                                     unsigned nextValidOffset,
+                                     InFlightDiagnostic &diag,
+                                     ValueSet &valueSet) {
+  auto &typeDeclInfo = valueSet.typeDeclInfo;
+
+  // Dig into the type to get to the right field.
+  while (firstInvalidOffset) {
+    // To index into this type, it must be a DeclRef.
+    DeclRefType declRefType = cast<DeclRefType>(type);
+    auto [fieldName, fieldType] =
+        typeDeclInfo.getFieldContaining(declRefType, firstInvalidOffset);
+    unsigned fieldBitOffset =
+        typeDeclInfo.getFieldIndex(declRefType, fieldName);
+    firstInvalidOffset -= fieldBitOffset;
+    nextValidOffset -= fieldBitOffset;
+    type = fieldType;
+    diag << "." << fieldName.str();
+  }
+
+  // Dig into the field to ignore trailing members that we don't care about.
+  while (nextValidOffset < typeDeclInfo.getNumFieldsInType(type)) {
+    DeclRefType declRefType = cast<DeclRefType>(type);
+    auto [fieldName, fieldType] =
+        typeDeclInfo.getFieldContaining(declRefType, 0);
+    type = fieldType;
+    diag << "." << fieldName.str();
+  }
+
+  return type;
+}
+
 // Verify that the specified ValueRef is live at this point, diagnosing an
 // error at the specified operation if not.
 void UninitializedValueScan::checkLive(Operation &op, ValueRef valueRef) {
@@ -423,10 +506,36 @@ void UninitializedValueScan::checkLive(Operation &op, ValueRef valueRef) {
   LifetimeTrackable trackable(valueEntry.value);
   assert(trackable && "value should be tracked");
 
-  auto diag = mlir::emitError(op.getLoc(), "use of uninitialized value ")
-              << trackable.name;
+  auto diag = mlir::emitError(op.getLoc(), "use of uninitialized value '")
+              << trackable.name.str();
+
+  // If some fields are present and others are missing, complain about the first
+  // whole field that is missing.
+  if (!valueRef.isAllMissing(liveValues)) {
+    // We know that something in valueRef is missing, but we don't know which
+    // piece.  Find the first bit in valueRef that isn't live.
+    unsigned firstMissingFieldNo =
+        liveValues.find_next_unset(valueRef.startBit - 1U);
+    // Find the area of overlap so we complain about larger aggregates that are
+    // fully uninit, not tiny parts of them.
+    unsigned firstPresentFieldNo = std::min(
+        unsigned(liveValues.find_next(firstMissingFieldNo)), valueRef.endBit);
+
+    // Ok, the uninitialized thing is [firstMissingFieldNo, firstPresentFieldNo)
+    // so we want to figure out which sub-piece of the whole value type is the
+    // problem, and identify a path that drills down through each of the named
+    // fields.
+    auto type = trackable.getValueType(valueEntry.value);
+    // Emit the field prefix for the specified type.
+    digIntoTypeAtFieldOffset(
+        type, firstMissingFieldNo - valueEntry.startValueBit,
+        firstPresentFieldNo - valueEntry.startValueBit, diag, valueSet);
+  }
+
+  diag << "'";
+
   diag.attachNote(valueEntry.value.getLoc())
-      << trackable.name << " declared here";
+      << "'" << trackable.name.str() << "' declared here";
 }
 
 void UninitializedValueScan::scanFunction(LIT::FuncOp func) {
