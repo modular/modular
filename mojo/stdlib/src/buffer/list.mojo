@@ -828,7 +828,7 @@ fn create_dim_list(
 
 @always_inline("nodebug")
 fn create_kgen_list[
-    type: __mlir_type.`!kgen.mlirtype`
+    type: AnyType
 ](e0: type) -> __mlir_type[`!kgen.list<`, type, `[1]>`]:
     """Creates a list given a type and elements.
 
@@ -848,7 +848,7 @@ fn create_kgen_list[
 
 @always_inline("nodebug")
 fn create_kgen_list[
-    type: __mlir_type.`!kgen.mlirtype`
+    type: AnyType
 ](e0: type, e1: type) -> __mlir_type[`!kgen.list<`, type, `[2]>`]:
     """Creates a list given a type and elements.
 
@@ -869,7 +869,7 @@ fn create_kgen_list[
 
 @always_inline("nodebug")
 fn create_kgen_list[
-    type: __mlir_type.`!kgen.mlirtype`
+    type: AnyType
 ](e0: type, e1: type, e2: type) -> __mlir_type[`!kgen.list<`, type, `[3]>`]:
     """Creates a list given a type and elements.
 
@@ -891,7 +891,7 @@ fn create_kgen_list[
 
 @always_inline("nodebug")
 fn create_kgen_list[
-    type: __mlir_type.`!kgen.mlirtype`
+    type: AnyType
 ](e0: type, e1: type, e2: type, e3: type) -> __mlir_type[
     `!kgen.list<`, type, `[4]>`
 ]:
@@ -916,7 +916,7 @@ fn create_kgen_list[
 
 @always_inline("nodebug")
 fn create_kgen_list[
-    type: __mlir_type.`!kgen.mlirtype`
+    type: AnyType
 ](e0: type, e1: type, e2: type, e3: type, e4: type,) -> __mlir_type[
     `!kgen.list<`, type, `[5]>`
 ]:
@@ -942,7 +942,7 @@ fn create_kgen_list[
 
 @always_inline("nodebug")
 fn create_kgen_list[
-    type: __mlir_type.`!kgen.mlirtype`
+    type: AnyType
 ](e0: type, e1: type, e2: type, e3: type, e4: type, e5: type) -> __mlir_type[
     `!kgen.list<`, type, `[6]>`
 ]:
@@ -969,7 +969,7 @@ fn create_kgen_list[
 
 @always_inline("nodebug")
 fn create_kgen_list[
-    type: __mlir_type.`!kgen.mlirtype`
+    type: AnyType
 ](
     e0: type,
     e1: type,
@@ -1003,7 +1003,7 @@ fn create_kgen_list[
 
 @always_inline("nodebug")
 fn create_kgen_list[
-    type: __mlir_type.`!kgen.mlirtype`
+    type: AnyType
 ](
     e0: type,
     e1: type,
@@ -1039,7 +1039,7 @@ fn create_kgen_list[
 
 @always_inline("nodebug")
 fn create_kgen_list[
-    type: __mlir_type.`!kgen.mlirtype`
+    type: AnyType
 ](
     e0: type,
     e1: type,
@@ -1077,7 +1077,7 @@ fn create_kgen_list[
 
 @always_inline("nodebug")
 fn create_kgen_list[
-    type: __mlir_type.`!kgen.mlirtype`
+    type: AnyType
 ](
     e0: type,
     e1: type,
@@ -1117,7 +1117,7 @@ fn create_kgen_list[
 
 @always_inline("nodebug")
 fn create_kgen_list[
-    type: __mlir_type.`!kgen.mlirtype`
+    type: AnyType
 ](
     e0: type,
     e1: type,
@@ -1159,7 +1159,7 @@ fn create_kgen_list[
 
 @always_inline("nodebug")
 fn create_kgen_list[
-    type: __mlir_type.`!kgen.mlirtype`
+    type: AnyType
 ](
     e0: type,
     e1: type,
@@ -1203,7 +1203,7 @@ fn create_kgen_list[
 
 @always_inline("nodebug")
 fn create_kgen_list[
-    type: __mlir_type.`!kgen.mlirtype`
+    type: AnyType
 ](
     e0: type,
     e1: type,
@@ -1249,7 +1249,7 @@ fn create_kgen_list[
 
 @always_inline("nodebug")
 fn create_kgen_list[
-    type: __mlir_type.`!kgen.mlirtype`
+    type: AnyType
 ](
     e0: type,
     e1: type,
@@ -1297,7 +1297,7 @@ fn create_kgen_list[
 
 @always_inline("nodebug")
 fn create_kgen_list[
-    type: __mlir_type.`!kgen.mlirtype`
+    type: AnyType
 ](
     e0: type,
     e1: type,
@@ -1347,7 +1347,7 @@ fn create_kgen_list[
 
 @always_inline("nodebug")
 fn create_kgen_list[
-    type: __mlir_type.`!kgen.mlirtype`
+    type: AnyType
 ](
     e0: type,
     e1: type,
@@ -1406,7 +1406,7 @@ fn create_kgen_list[
 fn _get_kgen_list_item[
     index: Int,
     size: Int,
-    type: __mlir_type.`!kgen.mlirtype`,
+    type: AnyType,
 ](
     lst: __mlir_type[`!kgen.list<`, type, `[`, size.__as_mlir_index(), `]>`]
 ) -> type:
@@ -1435,7 +1435,7 @@ fn _get_kgen_list_item[
 
 
 @register_passable("trivial")
-struct VariadicList[type: __mlir_type.`!kgen.mlirtype`]:
+struct VariadicList[type: AnyType]:
     """A utility class to access variadic function arguments. Provides a "list"
     view of the function argument so that the size of the argument list and each
     individual argument can be accessed.
