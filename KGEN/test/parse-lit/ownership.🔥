@@ -21,11 +21,8 @@ struct RegExample:
 # CHECK: lit.func @"destructors
 # CHECK-SAME: (%arg0: !pop.pointer<@"$ownership"::@MemExample> owned_in_mem)
 fn destructors(owned arg0: MemExample):
-  # CHECK: %mem = lit.varlet.decl "mem", var = true,
-  # CHECK-SAME: #kgen.symbol.constant<@"$ownership"::@MemExample::@"__del___($ownership::MemExample)" >
+  # CHECK: %mem = lit.varlet.decl "mem", var = true
   var mem = MemExample()
 
-  # CHECK: %reg = lit.letreg.decl "reg" = %1,
-  # CHECK-SAME: #kgen.symbol.constant<@"$ownership"::@RegExample::@"__del___($ownership::RegExample)" > : !kgen.signature<(!kgen.declref<@"$ownership"::@RegExample>) -> !lit.none>
-  # CHECK-SAME: : !kgen.declref<@"$ownership"::@RegExample>
+  # CHECK: %reg = lit.letreg.decl "reg" = %1
   let reg = RegExample()

@@ -58,10 +58,8 @@ struct MemoryOnlyPair:
   # CHECK-SAME: %self: !pop.pointer<@"$expressions"::@MemoryOnlyPair> owned_in_mem,
   # CHECK-SAME: %arg: !pop.pointer<@"$expressions"::@MemoryOnlyInt> owned_in_mem)
   fn method(owned self, owned arg: MemoryOnlyInt):
-    # CHECK: %self.arg = lit.owned.arg.decl "self", %self
-    # CHECK: %arg.arg = lit.owned.arg.decl "arg", %arg
-    # CHECK: %0 = lit.struct.gep %self.arg[y]
-    # CHECK: %1 = lit.struct.gep %arg.arg[x]
+    # CHECK: %0 = lit.struct.gep %self[y]
+    # CHECK: %1 = lit.struct.gep %arg[x]
     # CHECK: %2 = pop.load %0
     # CHECK: %3 = pop.load %1
     # CHECK: %4 = kgen.call @"{{.*}}__add__{{.*}}"(%2, %3)

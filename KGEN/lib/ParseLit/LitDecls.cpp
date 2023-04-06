@@ -1885,10 +1885,8 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, LitLexer &lexer,
                                      argName](CValue srcVal) -> DeclIRValue {
       ASTType declType = srcVal.getRValueType();
       Type varType = POP::PointerType::get(declType);
-      TypedAttr dtor =
-          ExprEmitter::lookupDestructor(declType, argDecl.getLoc(), shared);
       auto varDecl = builder.create<VarLetDeclOp>(bbArgLoc, varType, argName,
-                                                  /*isVar*/ 1, dtor);
+                                                  /*isVar*/ 1);
 
       // Emit the initializer expression into the slot.
       ExprEmitter emitter(shared, decl, builder, /*varDeclCursor*/ nullptr);
@@ -1913,13 +1911,8 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, LitLexer &lexer,
 
     case ValueInputConvention::OwnedInMem: {
       // OwnedInMem passes ownership of the argument into the callee so we
-      // can directly mutate it if we want to.  All references to it will go
-      // through this OwnedArgDeclOp which gives lifetime analysis information
-      // about the destructor to use.
-      TypedAttr dtor = ExprEmitter::lookupDestructor(
-          SLValue(bbArg).getRValueType(), argDecl.getLoc(), shared);
-      argIRValue = SLValue(builder.create<OwnedArgDeclOp>(
-          bbArg.getLoc(), bbArg.getType(), argName, bbArg, dtor));
+      // can directly mutate it if we want to.
+      argIRValue = SLValue(bbArg);
       break;
     }
 
@@ -2090,14 +2083,6 @@ LogicalResult DeclResolver::resolveSignature(VarLetDeclOp varOp,
 
   rejectDecorators(decorators, decl, shared);
 
-  // Now that we have resolved the type of the declaration - either from an
-  // explicit type or the initializer expression - look up the value destructor
-  // and install it if there is one.
-  ASTType declType = ASTType(varOp.getType()).getPointerElementType();
-  if (TypedAttr dtor =
-          ExprEmitter::lookupDestructor(declType, decl.getLoc(), shared))
-    varOp.setDtorAttr(dtor);
-
   // Now that this has been fully checked, we can promote to a LetRegDeclOp
   // if this was a non-parameteric register-passable `let` declaration with
   // an initializer.  We don't care about the address being available and
@@ -2114,9 +2099,8 @@ LogicalResult DeclResolver::resolveSignature(VarLetDeclOp varOp,
 
     // Create new LetRegDeclOp and put it into the ASTDecl.
     OpBuilder builder(theStore);
-    auto newLetOp =
-        builder.create<LetRegDeclOp>(varOp.getLoc(), varOp.getNameAttr(),
-                                     theStore.getArg(), varOp.getDtorAttr());
+    auto newLetOp = builder.create<LetRegDeclOp>(
+        varOp.getLoc(), varOp.getNameAttr(), theStore.getArg());
     decl.setIRValue(newLetOp.getOperation());
 
     // Remove the store and the original VarLetDeclOp.

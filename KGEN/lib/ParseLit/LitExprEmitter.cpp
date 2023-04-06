@@ -229,13 +229,12 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
 
   Type declIRType = POP::PointerType::get(slotType);
   auto nameAttr = StringAttr::get(emitter.getContext(), "anonymous*");
-  TypedAttr dtor = ExprEmitter::lookupDestructor(slotType, loc, emitter.shared);
 
   // We model this as an immutable let value with a separately stored
   // initializer.  We return an LValue for it because this method is used
   // for the initialization.
   return SLValue(emitter.builder->create<VarLetDeclOp>(
-      emitter.translateLocation(loc), declIRType, nameAttr, /*isVar*/ 0, dtor));
+      emitter.translateLocation(loc), declIRType, nameAttr, /*isVar*/ 0));
 }
 
 /// Return an SLValue for this destination of the specified type that we can
@@ -1230,12 +1229,9 @@ void StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
   ASTType rvalueType = baseVal.ir->elementType;
   Type declIRType = POP::PointerType::get(rvalueType);
   auto nameAttr = StringAttr::get(loc.getContext(), "__store_tmp__");
-  auto dtor =
-      ExprEmitter::lookupDestructor(rvalueType, expr->getLoc(), emitter.shared);
-
   auto tmpDecl =
       emitter.builder->create<VarLetDeclOp>(loc, declIRType, nameAttr,
-                                            /*isVar=*/true, dtor);
+                                            /*isVar=*/true);
 
   // Load the entire base LValue into tmpDecl.
   ValueDest tmpValueDest(SLValue(tmpDecl), EC_AttributeRefBase);

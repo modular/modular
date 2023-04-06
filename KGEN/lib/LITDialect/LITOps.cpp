@@ -903,11 +903,6 @@ void VarLetDeclOp::getAsmResultNames(
   setNameFn(getResult(), getName());
 }
 
-void OwnedArgDeclOp::getAsmResultNames(
-    function_ref<void(Value, StringRef)> setNameFn) {
-  setNameFn(getResult(), (getName() + ".arg").str());
-}
-
 //===----------------------------------------------------------------------===//
 // AsyncCallOp
 //===----------------------------------------------------------------------===//

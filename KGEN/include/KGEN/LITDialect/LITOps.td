@@ -485,11 +485,9 @@ def LIT_LetRegDeclOp : LITOp<"letreg.decl",
   let summary = "Register-primary local `let` declaration";
 
   // The destructor for the element type is specified if it exists.
-  let arguments = (ins StrAttr:$name, AnyType:$value,
-                       OptionalAttr<AttrOfType<KGEN_SignatureType>>:$dtor);
+  let arguments = (ins StrAttr:$name, AnyType:$value);
   let results = (outs AnyType:$result);
-  let assemblyFormat =
-    "$name `=` $value (`,` $dtor^)? `:` type($result) attr-dict";
+  let assemblyFormat = "$name `=` $value `:` type($result) attr-dict";
 
   let hasFolder = 1;
 
@@ -508,28 +506,11 @@ def LIT_VarLetDeclOp : LITOp<"varlet.decl",
 
   // The destructor for the element type is specified if it exists.
   let arguments = (ins StrAttr:$name,
-                       DefaultValuedAttr<BoolAttr, "false">:$isVar,
-                       OptionalAttr<AttrOfType<KGEN_SignatureType>>:$dtor);
+                       DefaultValuedAttr<BoolAttr, "false">:$isVar);
 
   let results = (outs POP_PointerType:$result);
   let assemblyFormat =
-    "$name `,` `var``=`$isVar (`,` $dtor^)? `:` type($result) attr-dict";
-}
-
-/// This declaration is produced by the parser for owned memory-only arguments,
-/// and is consumed/lowered by the lifetime analysis pass (providing a
-/// destructor to use).  It is a semantic noop but is not "Pure" because it may
-/// not be removed even if dead.
-def LIT_OwnedArgDeclOp : LITOp<"owned.arg.decl",
-      [DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>,
-       AllTypesMatch<["value", "result"]>]> {
-  let summary = "Owned memory-only argument declaration";
-
-  // The destructor for the element type is specified if it exists.
-  let arguments = (ins StrAttr:$name, POP_PointerType:$value,
-                       OptionalAttr<AttrOfType<KGEN_SignatureType>>:$dtor);
-  let results = (outs POP_PointerType:$result);
-  let assemblyFormat = "$name `,` $value (`,` $dtor^)? `:` type($result) attr-dict";
+    "$name `,` `var``=`$isVar `:` type($result) attr-dict";
 }
 
 //===----------------------------------------------------------------------===//
