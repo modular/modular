@@ -16,7 +16,6 @@ from SIMD import SIMD
 from Vector import InlinedFixedVector
 from String import StringRef
 
-alias none = __mlir_type.`!lit.none`
 alias InlinedFixedVectorLength = 64
 
 # ===----------------------------------------------------------------------===#
@@ -266,13 +265,13 @@ fn parallelize[
     async fn task_fn(i: Int):
         func(i)
 
-    var tasks = InlinedFixedVector[InlinedFixedVectorLength, Coroutine[none]](
-        num_work_items - 1
-    )
+    var tasks = InlinedFixedVector[
+        InlinedFixedVectorLength, Coroutine[NoneType]
+    ](num_work_items - 1)
     var tg = TaskGroup(out_chain.get_runtime())
     for i in range(num_work_items - 1):
-        let task: Coroutine[__mlir_type.`!lit.none`] = task_fn(i)
-        tg.create_task[none](task)
+        let task: Coroutine[NoneType] = task_fn(i)
+        tg.create_task[NoneType](task)
         tasks.append(task)
 
     func(num_work_items - 1)
@@ -327,7 +326,7 @@ fn async_parallelize[
 
     var atg = AsyncTaskGroupPtr(num_work_items, out_chain)
     for i in range(num_work_items):
-        let coroutine: Coroutine[__mlir_type.`!lit.none`] = task_fn(i)
+        let coroutine: Coroutine[NoneType] = task_fn(i)
         atg.add_task(coroutine)
 
 
@@ -349,14 +348,14 @@ fn invoke(
 
 
 fn invoke[
-    arg_type: __mlir_type.`!kgen.mlirtype`
+    arg_type: AnyType
 ](func: __mlir_type[`(`, arg_type, `) -> ()`], arg: arg_type):
     __mlir_op.`pop.call_indirect`[_type:[]](func, arg)
 
 
 fn invoke[
-    result_type: __mlir_type.`!kgen.mlirtype`,
-    arg_type: __mlir_type.`!kgen.mlirtype`,
+    result_type: AnyType,
+    arg_type: AnyType,
 ](
     func: __mlir_type[`(`, arg_type, `) -> (`, result_type, `)`], arg: arg_type
 ) -> result_type:
@@ -364,9 +363,9 @@ fn invoke[
 
 
 fn invoke[
-    result_type: __mlir_type.`!kgen.mlirtype`,
-    arg1_type: __mlir_type.`!kgen.mlirtype`,
-    arg2_type: __mlir_type.`!kgen.mlirtype`,
+    result_type: AnyType,
+    arg1_type: AnyType,
+    arg2_type: AnyType,
 ](
     func: __mlir_type[
         `(`, arg1_type, `,`, arg2_type, `) -> (`, result_type, `)`
@@ -378,10 +377,10 @@ fn invoke[
 
 
 fn invoke[
-    result_type: __mlir_type.`!kgen.mlirtype`,
-    arg1_type: __mlir_type.`!kgen.mlirtype`,
-    arg2_type: __mlir_type.`!kgen.mlirtype`,
-    arg3_type: __mlir_type.`!kgen.mlirtype`,
+    result_type: AnyType,
+    arg1_type: AnyType,
+    arg2_type: AnyType,
+    arg3_type: AnyType,
 ](
     func: __mlir_type[
         `(`,
@@ -562,7 +561,7 @@ fn tile[
 # ===----------------------------------------------------------------------===#
 
 
-struct NullaryClosure[result_type: __mlir_type.`!kgen.mlirtype`]:
+struct NullaryClosure[result_type: AnyType]:
     alias closure_type = __mlir_type[`!pop.closure<() -> `, result_type, `>`]
     var value: closure_type
 
@@ -601,8 +600,8 @@ struct NullaryClosure[result_type: __mlir_type.`!kgen.mlirtype`]:
 
 
 struct UnaryClosure[
-    input_type: __mlir_type.`!kgen.mlirtype`,
-    result_type: __mlir_type.`!kgen.mlirtype`,
+    input_type: AnyType,
+    result_type: AnyType,
 ]:
     alias closure_type = __mlir_type[
         `!pop.closure<(`, input_type, `) -> `, result_type, `>`
@@ -649,9 +648,9 @@ struct UnaryClosure[
 
 
 struct BinaryClosure[
-    lhs_type: __mlir_type.`!kgen.mlirtype`,
-    rhs_type: __mlir_type.`!kgen.mlirtype`,
-    result_type: __mlir_type.`!kgen.mlirtype`,
+    lhs_type: AnyType,
+    rhs_type: AnyType,
+    result_type: AnyType,
 ]:
     alias closure_type = __mlir_type[
         `!pop.closure<(`, lhs_type, `, `, rhs_type, `) -> `, result_type, `>`
