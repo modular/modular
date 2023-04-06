@@ -212,10 +212,10 @@ fn precedence_associativity(a: Int):
   z = (1).__as_mlir_index() + z
 
   # div tests
-  # CHECK: kgen.call @"$F32"::@F32::@"__truediv__($F32::F32,$F32::F32)"
+  # CHECK: kgen.call {{.*}}__truediv__
   var r0 = F32(33.0) / F32(42.0)
 
-  # CHECK: kgen.call @"$F32"::@F32::@"__truediv__($F32::F32,$F32::F32)"
+  # CHECK: kgen.call {{.*}}__truediv__
   var r1 = F32(33.0) / 42.0
 
 # CHECK-LABEL: lit.func @"reverse_operators
@@ -230,7 +230,7 @@ fn reverse_operators(a: Int):
   z = (3).__as_mlir_index() * z
 
   # div tests
-  # CHECK: kgen.call @"$F32"::@F32::@"__rtruediv__($F32::F32,$F32::F32)"
+  # CHECK: kgen.call {{.*}}__rtruediv__
   # CHECK: kgen.call @"$Int"::@Int::@"__rfloordiv__($Int::Int,$Int::Int)"
   var r1 = 33.0 / F32(42.0)
   z = (33).__as_mlir_index() // z
@@ -497,7 +497,7 @@ fn patterns():
 
   # CHECK: %someF32 = lit.varlet.decl "someF32", var = true
   # CHECK: [[F32:%.*]] = pop.load %someF32
-  # CHECK: {{%.*}} = kgen.call @"$F32"::@F32::@"__iadd__{{.*}}(%someF32, [[F32]])
+  # CHECK: {{%.*}} = kgen.call {{.*}}__iadd__{{.*}}(%someF32, [[F32]])
   var someF32 : F32
   (someF32) += someF32
 
@@ -692,13 +692,13 @@ world"
 
 # CHECK-LABEL: lit.func @"tuples
 # CHECK-SAME: %[[ARGA:.*]]: !kgen.declref<@"$Int"::@Int>
-# CHECK-SAME: %[[ARGB:.*]]: !kgen.declref<@"$F32"::@F32>
+# CHECK-SAME: %[[ARGB:.*]]: !kgen.declref<@"$SIMD"::@SIMD<{{.*}}f32
 fn tuples(a: Int, b: F32):
     # CHECK: %[[PACK0:.*]] = kgen.param.constant: !pop.pack<[]> = <<>>
     # CHECK: kgen.call  @"{{.*}}@TupleLiteral::@"__init__({{.*}}TupleLiteral[Ts]=&,__mlir_type.!pop.pack<Ts>)"<:variadic<!kgen.mlirtype> []>(%{{.*}}, %[[PACK0]])
     _ = ()
     # CHECK: %[[PACK1:.*]] = pop.pack.create(%[[ARGA]], %[[ARGB]])
-    # CHECK: kgen.call  @"{{.*}}@TupleLiteral::@"__init__({{.*}}TupleLiteral[Ts]=&,__mlir_type.!pop.pack<Ts>)"<:variadic<!kgen.mlirtype> [!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$F32"::@F32>]>(%{{.*}}, %[[PACK1]])
+    # CHECK: kgen.call  @"{{.*}}@TupleLiteral::@"__init__({{.*}}TupleLiteral[Ts]=&,__mlir_type.!pop.pack<Ts>)"<:variadic<!kgen.mlirtype> [!kgen.declref<@"$Int"::@Int>, !kgen.declref<{{.*}}SIMD{{.*}}f32{{.*}}>]>(%{{.*}}, %[[PACK1]])
     _ = (a, b)
     # CHECK: %[[PACK2:.*]] = pop.pack.create(%[[ARGA]])
     # CHECK: kgen.call @"{{.*}}@TupleLiteral::@"__init__({{.*}}TupleLiteral[Ts]=&,__mlir_type.!pop.pack<Ts>)"<:variadic<!kgen.mlirtype> [!kgen.declref<@"$Int"::@Int>]>(%{{.*}}, %[[PACK2]])

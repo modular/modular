@@ -99,7 +99,7 @@ def testLValuesRvalues():
 # expected-note @+1 {{function declared here}}
 fn badRef(val&: Int):
   var x = F32(1.0)
-  # expected-error @+1 {{invalid call to 'badRef': l-value of type '$F32::F32' cannot be converted to reference of type '$Int::Int'}}
+  # expected-error-re @+1 {{invalid call to 'badRef': l-value of type '$SIMD::SIMD[{{.*}}f32{{.*}}]' cannot be converted to reference of type '$Int::Int'}}
   badRef(x)
 
 fn unused_values():
@@ -217,7 +217,7 @@ fn slice_expression(a: Int):
 
 
 def bad_exprs(aaaa: Bool, bbbb: F32, cccc: Int):
-  # expected-error @+1 {{true value of type '$F32::F32' is not compatible with false value '$Int::Int' in conditional}}
+  # expected-error-re @+1 {{true value of type '$SIMD::SIMD[{{.*}}f32{{.*}}]' is not compatible with false value '$Int::Int' in conditional}}
   _ = bbbb if aaaa else cccc
 
   alias idx : __mlir_type.index = (4).__as_mlir_index()
@@ -265,7 +265,7 @@ fn testSubscripts(a: WeirdArray, b: MultiSetItem, c: IncompatElementTypes):
   b[1] = 4
 
   let tmp : Int = c[1]
-  # expected-error @+1 {{'$F32::F32' value cannot be converted to '$Int::Int' in assignment}}
+  # expected-error-re @+1 {{'$SIMD::SIMD[{{.*}}f32{{.*}}]' value cannot be converted to '$Int::Int' in assignment}}
   c[1] = F32(4.0)
   c[1] = tmp
 

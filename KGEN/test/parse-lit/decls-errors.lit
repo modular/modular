@@ -170,7 +170,7 @@ fn badCalls(arg: Int):
   var y: F32
   # expected-error @+1 {{invalid call to 'exampleByRefVariadic': argument #2 must be mutable in order to pass as a by-ref argument}}
   exampleByRefVariadic(1.0, x, arg)
-  # expected-error @+1 {{l-value of type '$F32::F32' cannot be converted to reference of type '$Int::Int'}}
+  # expected-error-re @+1 {{l-value of type '$SIMD::SIMD[{{.*}}f32{{.*}}]' cannot be converted to reference of type '$Int::Int'}}
   exampleByRefVariadic(1.0, x, y)
   # expected-error @+1 {{argument #2 must be mutable in order to pass as a by-ref argument}}
   exampleByRefVariadic(1.0, x, 1)
@@ -217,7 +217,7 @@ fn badPackCalls():
   examplePack[Int](1, 2)
   # expected-error @+1 {{invalid call to 'examplePack': callee expects 2 arguments, but 1 was specified}}
   examplePack[Int, F32](1)
-  # expected-error @+1 {{invalid call to 'examplePack': argument #1 cannot be converted from '__mlir_type.index' to '$F32::F32'}}
+  # expected-error-re @+1 {{invalid call to 'examplePack': argument #1 cannot be converted from '__mlir_type.index' to '$SIMD::SIMD[{{.*}}f32{{.*}}]'}}
   examplePack[Int, F32](1, (2).__as_mlir_index())
   # expected-warning @below {{could not infer parameter type for this value, because it is not concrete}}
   # expected-error @below {{invalid call to 'examplePack': callee expects 1 input parameter but 0 were provided}}
@@ -259,13 +259,13 @@ def fn_redecl():
 fn overloadIntF32(a: Int): pass
 
 # expected-note @below {{candidate declared here}}
-# expected-note @below {{candidate not viable: argument #0 cannot be converted from '$decls-errors::TestOverloading' to '$F32::F32'}}
+# expected-note-re @below {{candidate not viable: argument #0 cannot be converted from '$decls-errors::TestOverloading' to '$SIMD::SIMD[{{.*}}f32{{.*}}]'}}
 # expected-note @below {{candidate not viable: callee expects 1 argument}}
 fn overloadIntF32(a: F32): pass
 
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: callee expects 2 arguments}}
-# expected-note @below {{candidate not viable: argument #1 cannot be converted from '$F32::F32' to '$Int::Int'}}
+# expected-note-re @below {{candidate not viable: argument #1 cannot be converted from '$SIMD::SIMD[{{.*}}f32{{.*}}]' to '$Int::Int'}}
 fn overloadIntF32(a: Int, b: Int): pass
 
 # expected-note @below {{candidate declared here}}

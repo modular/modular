@@ -39,15 +39,16 @@ fn erf_scalar_taylor[type: DType](x: Scalar[type]) -> Scalar[type]:
 
 # CHECK-LABEL: lit.func @"fma_f32
 fn fma_f32(x: F32, y: F32, z: F32) -> F32:
-    # CHECK: %0 = kgen.call @"$F32"::@F32::@"__mul__{{.*}}(%x, %y)
-    # CHECK: %1 = kgen.call @"$F32"::@F32::@"__add__{{.*}}(%0, %z)
+    # CHECK: %0 = kgen.call {{.*}}__mul__{{.*}}(%x, %y)
+    # CHECK: %1 = kgen.call {{.*}}__add__{{.*}}(%0, %z)
     # CHECK: lit.return %1
     return x * y + z
 
 
 # CHECK-LABEL: lit.func @"erf_scalar_taylor_f32
 fn erf_scalar_taylor_f32(x: F32) -> F32:
-    # CHECK: = kgen.param.constant: @"$F32"::@F32 = <#lit.struct<{value: scalar<f32> = "-0.376126379"}>
+    # CHECK: %[[CST:.*]] = kgen.param.constant: f64 = <-0.3761{{.*}}>
+    # CHECK: kgen.call {{.*}}__init__(__mlir_type.f64){{.*}}(%[[CST]])
     return x * fma_f32(x * x, -0.37612638903183752463, 1.1283791670955125739)
 
 
