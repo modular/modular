@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo %s -I %S/../mojo-examples/ -verify-diagnostics | FileCheck %s
+# RUN: kgen-translate -import-mojo %s -I %S/../mojo-examples/ -verify-diagnostics | kgen-opt -verify-parameters | FileCheck %s
 
 from prolog import assert_param, assert_param_bool, SIMD
 from List import create_kgen_list
@@ -232,7 +232,14 @@ fn idx_result_params[a: __mlir_type.index -> b: __mlir_type.index, c: __mlir_typ
   # CHECK: %0 = kgen.param.constant = <add(a, 2)>
   # CHECK: %1 = kgen.call{{.*}}__init__{{.*}}(%0)
   # CHECK-NEXT: lit.return %1
+  # CHECK-NEXT: kgen.param.result_bind<?, ?>
   return a+(2).__as_mlir_index()
+
+# CHECK-LABEL: lit.func @"parametric_result_params()"
+fn parametric_result_params[T: AnyType, input: T -> out: T]():
+    # CHECK: lit.param_return<:!kgen.paramref<T> input>
+    # CHECK: kgen.param.result_bind<:!kgen.paramref<T> ?>
+    param_return[input]
 
 # CHECK-LABEL: lit.func @"just_result_params()"<() -> a>()
 fn just_result_params[() -> a: __mlir_type.index]():

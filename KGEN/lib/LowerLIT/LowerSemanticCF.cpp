@@ -68,6 +68,12 @@ static LogicalResult findParamReturn(Region &region,
   };
 
   auto opProcessor = [&](Operation *op) -> WalkResult {
+    // If we see a placeholder kgen.param.result_bind, erase it.
+    if (auto bind = dyn_cast<ParamResultBindOp>(op)) {
+      bind->erase();
+      return WalkResult::skip();
+    }
+
     // lit.param.return declares the result parameters.
     if (auto bind = dyn_cast<LIT::ParamReturnOp>(op)) {
       handleDefinition({llvm::to_vector(bind.getParameters()), bind.getLoc()});
