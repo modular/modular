@@ -95,8 +95,6 @@ fn test_runtime_taskgroup():
     rt.__del__()
 
 
-alias none = __mlir_type.`!lit.none`
-
 # TODO(#11329): Re-enable.
 # DISABLED-CHECK-LABEL: test_runtime_asynctaskgroup
 fn test_runtime_asynctaskgroup():
@@ -112,8 +110,8 @@ fn test_runtime_asynctaskgroup():
     let rt = Runtime(4)
     var out_chain = OwningOutputChainPtr(rt)
     var atg = AsyncTaskGroupPtr(2, out_chain.borrow())
-    let t0: Coroutine[none] = run(ptr)
-    let t1: Coroutine[none] = run(ptr)
+    let t0: Coroutine[NoneType] = run(ptr)
+    let t1: Coroutine[NoneType] = run(ptr)
     atg.add_task(t0)
     atg.add_task(t1)
     out_chain.wait()

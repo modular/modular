@@ -16,9 +16,6 @@ from Range import range
 from String import String
 from Tracing import TraceLevel, is_mojo_profiling_disabled
 
-alias typename = __mlir_type.`!kgen.mlirtype`
-alias none = __mlir_type.`!lit.none`
-
 # ===----------------------------------------------------------------------===#
 # num_cores
 # ===----------------------------------------------------------------------===#
@@ -107,7 +104,7 @@ fn _async_and_then(hdl: __mlir_type.`!pop.pointer<i8>`, chain: Pointer[Chain]):
     ](_get_coro_resume_fn(), chain.address, hdl)
 
 
-fn _async_execute[type: typename](handle: Coroutine[type], rt: Runtime):
+fn _async_execute[type: AnyType](handle: Coroutine[type], rt: Runtime):
     __mlir_op.`pop.external_call`[
         _type:[], func : __mlir_attr.`@KGEN_CompilerRT_LLCL_Execute`
     ](_get_coro_resume_fn(), handle._handle, rt.ptr)
@@ -185,7 +182,7 @@ struct Runtime:
             _type : __mlir_type.`!pop.scalar<si32>`,
         ](self.ptr)
 
-    fn create_task[type: typename](self, handle: Coroutine[type]) -> Task[type]:
+    fn create_task[type: AnyType](self, handle: Coroutine[type]) -> Task[type]:
         """Run the coroutine as a task on the LLCL Runtime."""
         let ctx = handle.get_ctx[AsyncContext]()
         _init_llcl_chain(self, AsyncContext.get_chain(ctx))
@@ -207,7 +204,7 @@ struct Runtime:
         _async_execute(handle, self)
         return Task[type] {handle: handle}
 
-    fn run[type: typename](self, handle: Coroutine[type]) -> type:
+    fn run[type: AnyType](self, handle: Coroutine[type]) -> type:
         let t = self.create_task(handle)
         let result = t.wait()
         t.__del__()
@@ -219,7 +216,7 @@ struct Runtime:
 # ===----------------------------------------------------------------------===#
 
 # TODO: This should not be implicitly copyable when we have ownership set up!
-struct Task[type: typename]:
+struct Task[type: AnyType]:
     var handle: Coroutine[type]
 
     fn get(self) -> type:
@@ -313,7 +310,7 @@ struct TaskGroup:
             paramDecls : __mlir_attr.`#kgen<param.decls[]>`,
         ]()
 
-    fn create_task[type: typename](self&, task: Coroutine[type]):
+    fn create_task[type: AnyType](self&, task: Coroutine[type]):
         self.counter += 1
         let task_group_txt = task.get_ctx[TaskGroupContext]()
         task_group_txt.store(
@@ -553,12 +550,12 @@ struct AsyncTaskGroup:
     # This will be copied on construction to guarantee the correct lifetime.
     var out_chain: OwningOutputChainPtr
     # Vector holding co-routines.
-    var coroutines: UnsafeFixedVector[Coroutine[none]]
+    var coroutines: UnsafeFixedVector[Coroutine[NoneType]]
 
     fn __init__(self&, num_work_items: Int, out_chain: OutputChainPtr):
         self.counter = num_work_items
         self.out_chain = out_chain.deepcopy()
-        self.coroutines = UnsafeFixedVector[Coroutine[none]](num_work_items)
+        self.coroutines = UnsafeFixedVector[Coroutine[NoneType]](num_work_items)
 
     fn __del__(self&):
         for j in range(self.coroutines.__len__()):
@@ -590,7 +587,7 @@ struct AsyncTaskGroup:
             paramDecls : __mlir_attr.`#kgen<param.decls[]>`,
         ]()
 
-    fn add_task(self&, coroutine: Coroutine[none]):
+    fn add_task(self&, coroutine: Coroutine[NoneType]):
         let ctx_ptr = coroutine.get_ctx[AsyncTaskGroupContext]()
         let self_ptr = Pointer[AsyncTaskGroup].address_of(self)
         __get_address_as_lvalue(ctx_ptr.address) = AsyncTaskGroupContext {
@@ -624,5 +621,5 @@ struct AsyncTaskGroupPtr:
             num_work_items, out_chain
         )
 
-    fn add_task(self&, coroutine: Coroutine[none]):
+    fn add_task(self&, coroutine: Coroutine[NoneType]):
         __get_address_as_lvalue(self.ptr.address).add_task(coroutine)
