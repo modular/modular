@@ -203,8 +203,8 @@ def KGEN_AddressOfOp : KGEN_CallOpBase<"addressof"> {
 // CallOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_CallOp : KGEN_CallOpBase<"call",
-    [DeclareOpInterfaceMethods<CallOpInterface>]> {
+def KGEN_CallOp : KGEN_CallOpBase<"call", [CalleeArgumentTypes,
+    CalleeResultTypes, DeclareOpInterfaceMethods<CallOpInterface>]> {
   let summary = "Call a func, generator, or generator interface";
   let description = [{
     The `kgen.call` operation invokes a parametric function. The callee must be
