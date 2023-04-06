@@ -213,7 +213,8 @@ public:
     // to the partial apply op
     rewriter.clearInsertionPoint();
     LLVM::LLVMFuncOp wrapperFn = rewriter.create<LLVM::LLVMFuncOp>(
-        op.getLoc(), "closure_wrapper_fn", wrapperFnType);
+        op.getLoc(), "closure_wrapper_fn", wrapperFnType,
+        LLVM::Linkage::Internal);
     wrapperFn.getBody().push_back(wrapperFnBody);
 
     symtab.insert(wrapperFn);
