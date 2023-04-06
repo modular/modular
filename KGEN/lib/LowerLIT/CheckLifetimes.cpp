@@ -276,7 +276,7 @@ ValueRef ValueSet::getPointerValueIndex(Value value) {
   }
 
   // Otherwise, we don't know what this is.
-  return ValueRef();
+  return getDirectValueRef(value);
 }
 
 //===----------------------------------------------------------------------===//
@@ -349,7 +349,8 @@ void UninitializedValueScan::checkOp(Operation &op) {
       return;
     ValueInfo &valueEntry = valueSet.getValueInfos()[valueRef.valueId];
     if (!valueEntry.hasErrorDiagnosed) {
-      auto diag = op.emitError("invalid use of uninitialized value");
+      auto diag =
+          mlir::emitError(op.getLoc(), "invalid use of uninitialized value");
       diag.attachNote(valueEntry.value.getLoc()) << "value declared here";
       valueEntry.hasErrorDiagnosed = true;
     }
