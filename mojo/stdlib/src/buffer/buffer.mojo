@@ -73,6 +73,7 @@ struct Buffer[size: Dim, type: DType]:
     var dynamic_size: Int
     var dtype: DType
 
+    @always_inline
     fn __init__(
         ptr: __mlir_type[`!pop.pointer<scalar<`, type.value, `>>`]
     ) -> Buffer[size, type]:
@@ -93,6 +94,7 @@ struct Buffer[size: Dim, type: DType]:
             data: DTypePointer[type](ptr), dynamic_size: size.get(), dtype: type
         }
 
+    @always_inline
     fn __init__(
         ptr: __mlir_type[`!pop.pointer<scalar<`, type.value, `>>`],
         in_size: Int,
@@ -120,6 +122,7 @@ struct Buffer[size: Dim, type: DType]:
             data: DTypePointer[type](ptr), dynamic_size: in_size, dtype: type
         }
 
+    @always_inline
     fn __init__(
         ptr: DTypePointer[type],
         in_size: Int,
@@ -147,6 +150,7 @@ struct Buffer[size: Dim, type: DType]:
             data: ptr, dynamic_size: in_size, dtype: type
         }
 
+    @always_inline
     fn __len__(self) -> Int:
         """Gets the size if it is a known constant, otherwise it gets the
         dynamic_size.
@@ -165,6 +169,7 @@ struct Buffer[size: Dim, type: DType]:
 
         return size.get()
 
+    @always_inline
     fn __getitem__(self, idx: Int) -> SIMD[1, type]:
         """Loads a single element (SIMD of size 1) from the buffer at the
         specified index.
@@ -212,6 +217,7 @@ struct Buffer[size: Dim, type: DType]:
         """
         return self.data.aligned_simd_load[width, alignment](idx)
 
+    @always_inline
     fn __setitem__(
         self,
         idx: Int,
@@ -226,6 +232,7 @@ struct Buffer[size: Dim, type: DType]:
         var simd_val = SIMD[1, type](val)
         self.simd_store[1](idx, simd_val)
 
+    @always_inline
     fn __setitem__(self, idx: Int, val: SIMD[1, type]):
         """Stores a single value into the buffer at the specified index.
 
@@ -376,6 +383,7 @@ struct Buffer[size: Dim, type: DType]:
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline
 fn _compute_nd_index[
     rank: Int,
     shape: DimList[rank],
@@ -417,6 +425,7 @@ fn _compute_nd_index[
     return result
 
 
+@always_inline
 fn _compute_ndbuffer_offset[
     rank: Int,
     shape: DimList[rank],
@@ -451,6 +460,7 @@ fn _compute_ndbuffer_offset[
     return result
 
 
+@always_inline
 fn _compute_ndbuffer_offset[
     rank: Int,
     shape: DimList[rank],
@@ -473,6 +483,7 @@ fn _compute_ndbuffer_offset[
     return _compute_ndbuffer_offset(buf, idx.as_tuple())
 
 
+@always_inline
 fn _compute_ndbuffer_offset[
     rank: Int,
     shape: DimList[rank],
@@ -507,6 +518,7 @@ fn _compute_ndbuffer_offset[
     return result
 
 
+@always_inline
 fn _compute_ndbuffer_stride[
     rank: Int
 ](shape: StaticIntTuple[rank]) -> StaticIntTuple[rank]:
@@ -565,6 +577,7 @@ struct NDBuffer[
     var dynamic_stride: StaticIntTuple[rank]
     var is_contiguous: Bool
 
+    @always_inline
     fn __init__(
         ptr: __mlir_type[`!pop.pointer<scalar<`, type.value, `>>`],
     ) -> NDBuffer[rank, shape, type]:
@@ -594,6 +607,7 @@ struct NDBuffer[
             is_contiguous: True,
         }
 
+    @always_inline
     fn __init__(
         ptr: __mlir_type[`!pop.pointer<scalar<`, type.value, `>>`],
         dynamic_shape: StaticIntTuple[rank],
@@ -622,6 +636,7 @@ struct NDBuffer[
             is_contiguous: True,
         }
 
+    @always_inline
     fn __init__(
         ptr: DTypePointer[type],
         dynamic_shape: StaticIntTuple[rank],
@@ -650,6 +665,7 @@ struct NDBuffer[
             is_contiguous: True,
         }
 
+    @always_inline
     fn __init__(
         ptr: DTypePointer[type],
         dynamic_shape: StaticIntTuple[rank],
@@ -986,8 +1002,6 @@ struct NDBuffer[
             idx: The index into the Buffer.
             val: The value to store.
         """
-        self.simd_store[1](idx, val)
-
         self.simd_store[1](idx, val)
 
     @always_inline
@@ -1539,6 +1553,7 @@ struct DynamicRankBuffer:
         return result
 
 
+@always_inline
 fn prod_dims[
     start_dim: Int,
     end_dim: Int,
