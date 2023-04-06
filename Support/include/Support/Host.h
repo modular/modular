@@ -42,7 +42,7 @@ namespace M {
 
 /// Describes the sockets, physical cores, and virtual cores in a CPU system
 /// when supported by the host os. However does not capture sharing of caches
-/// and plethora af other details. See https://www.open-mpi.org/projects/hwloc/
+/// and plethora of other details. See https://www.open-mpi.org/projects/hwloc/
 struct CPUSystemInfo {
   /// A 'virtual' core, generally without dedicated cache or ALU resources.
   /// Systems with hyperthreading can have multiple virtual cores per
@@ -106,6 +106,14 @@ ErrorOrSuccess runWithThreadAffinity(size_t cpuID,
                                      llvm::unique_function<void()> workFn);
 
 //===----------------------------------------------------------------------===//
+// CPU Model Info
+//===----------------------------------------------------------------------===//
+
+/// Get the actual model name of the host's CPU, e.g. "Intel(R) Xeon(R)
+/// Platinum 8275CL CPU @ 3.00GHz".
+ErrorOr<std::string> getHostCPUModelName();
+
+//===----------------------------------------------------------------------===//
 // Cache sizes
 //===----------------------------------------------------------------------===//
 
@@ -122,6 +130,7 @@ enum class HostProperty {
   TargetTriple,
   OS,
   Arch,
+  CPUModel,
   Features,
   CoreCount,
   SIMDBitWidth,
@@ -138,6 +147,7 @@ struct HostMachineInfo {
   std::string triple;
   std::string osName;
   std::string cpuArch;
+  std::string cpuModelName;
   std::vector<std::string> cpuFeatures;
   size_t numPhysicalCores;
   size_t simdBitWidth;
