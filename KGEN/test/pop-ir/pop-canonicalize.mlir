@@ -762,3 +762,12 @@ kgen.func @dtype_from_ui8() -> !kgen.dtype {
   %1 = pop.dtype.from_ui8 %0
   kgen.return %1 : !kgen.dtype
 }
+
+// CHECK-LABEL: @fold_offset
+// CHECK: (%[[ARG0:.*]]:
+kgen.func @fold_offset(%arg0: !pop.pointer<index>) -> (!pop.pointer<index>) {
+  // CHECK-NEXT: kgen.return %[[ARG0]]
+  %0 = kgen.param.constant = <0>
+  %1 = pop.offset %arg0[%0] : !pop.pointer<index>
+  kgen.return %1 : !pop.pointer<index>
+}

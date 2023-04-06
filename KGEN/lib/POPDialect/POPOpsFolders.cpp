@@ -651,6 +651,17 @@ ErrorTreeOr<SuccessType> OffsetOp::interpret(ArrayRef<Attribute> operands,
   return success();
 }
 
+OpFoldResult OffsetOp::fold(FoldAdaptor adaptor) {
+  IntegerAttr offset = dyn_cast_or_null<IntegerAttr>(adaptor.getIndex());
+  if (!offset)
+    return {};
+
+  if (offset.getInt() != 0)
+    return {};
+
+  return getPtr();
+}
+
 //===----------------------------------------------------------------------===//
 // StackAllocationOp
 //===----------------------------------------------------------------------===//
