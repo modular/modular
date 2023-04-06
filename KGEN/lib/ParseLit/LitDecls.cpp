@@ -1944,6 +1944,15 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, LitLexer &lexer,
     builder.create<LIT::ReturnOp>(loc, result);
   }
 
+  // Create a placeholder result bind op if the function has result parameters.
+  ArrayRef<ParamDeclAttr> resultParams = funcOp.getResultParams();
+  if (!resultParams.empty()) {
+    SmallVector<TypedAttr> placeholders;
+    for (ParamDeclAttr decl : resultParams)
+      placeholders.push_back(UnknownAttr::get(decl.getType()));
+    builder.create<ParamResultBindOp>(loc, placeholders);
+  }
+
   // Insert the default end terminator.
   builder.create<LIT::EndFuncOp>(loc);
 
