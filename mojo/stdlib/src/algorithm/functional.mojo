@@ -247,45 +247,6 @@ fn vectorize_unroll[
 
 
 @always_inline
-fn parallelize[
-    func: __mlir_type[`!kgen.signature<(`, Int, ` borrow) -> !lit.none>`],
-](out_chain: OutputChainPtr, num_work_items: Int):
-    # We have no tasks, so do nothing.
-    if num_work_items == 0:
-        out_chain.mark_ready()
-        return
-
-    # Only have a single task, just run it on the caller's thread.
-    if num_work_items == 1:
-        func(0)
-        out_chain.mark_ready()
-        return
-
-    @always_inline
-    async fn task_fn(i: Int):
-        func(i)
-
-    var tasks = InlinedFixedVector[
-        InlinedFixedVectorLength, Coroutine[NoneType]
-    ](num_work_items - 1)
-    var tg = TaskGroup(out_chain.get_runtime())
-    for i in range(num_work_items - 1):
-        let task: Coroutine[NoneType] = task_fn(i)
-        tg.create_task[NoneType](task)
-        tasks.append(task)
-
-    func(num_work_items - 1)
-
-    tg.wait()
-    out_chain.mark_ready()
-
-    tg.__del__()
-    for j in range(tasks.__len__()):
-        tasks[j].__del__()
-    tasks.__del__()
-
-
-@always_inline
 fn async_parallelize[
     func: __mlir_type[`!kgen.signature<(`, Int, ` borrow) -> !lit.none>`],
 ](out_chain: OutputChainPtr, num_work_items: Int):
@@ -304,19 +265,13 @@ fn async_parallelize[
        only pointers to buffers held alive by the runtime.
 
     If num_work_items is 0 then the out_chain is marked as ready
-    before async_parallelize returns. If num_work_items is 1 then func(0)
-    is executed and the out_chain is marked as ready before async_parallelize
-    returns.
+    before async_parallelize returns. If num_work_items is 1 then func(0) is
+    still executed as a sub-task.
     """
 
     # We have no tasks, so do nothing.
     if num_work_items == 0:
-        out_chain.mark_ready()
-        return
-
-    # Only have a single task, just run it on the caller's thread.
-    if num_work_items == 1:
-        func(0)
+        # No-op
         out_chain.mark_ready()
         return
 
@@ -1054,7 +1009,7 @@ fn elementwise[
     let total_size: Int = shape.flattened_length()
     let num_workers = get_num_workers(total_size, out_chain.get_runtime())
 
-    var parallelism_size: Int = total_size // shape[rank - 1]
+    let parallelism_size: Int = total_size // shape[rank - 1]
     let chunk_size = div_ceil(parallelism_size, num_workers)
 
     @always_inline
