@@ -774,9 +774,9 @@ LitSharedState::createModuleState(StringRef moduleName,
       lexer.getCursor(), endCursor, /*indentation=*/-1);
 
   // Auto-import the core Lang modules.
-  for (StringRef moduleName :
-       {kBuiltinBoolModuleName, kBuiltinTupleModuleName,
-        kBuiltinErrorModuleName, kBuiltinIntModuleName}) {
+  for (StringRef moduleName : {kBuiltinBoolModuleName, kBuiltinTupleModuleName,
+                               kBuiltinErrorModuleName, kBuiltinIntModuleName,
+                               kBuiltinAliasesModuleName}) {
     moduleDecl.addUnresolvedWildCardImport(
         StringAttr::get(getContext(), moduleName), lexer.getToken().getLoc());
   }
