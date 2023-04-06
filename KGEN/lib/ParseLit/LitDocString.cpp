@@ -47,9 +47,13 @@ LitDocString::LitDocString(StringRef rawDocString) {
 
   // Determine the minimum indentation (first line doesn't count).
   size_t indent = std::numeric_limits<size_t>::max();
-  for (auto &line : lines.drop_front())
-    if (size_t lineIndent = getIndentationLevel(line))
-      indent = std::min(indent, lineIndent);
+  for (StringRef line : lines.drop_front()) {
+    if (line.empty())
+      continue;
+    indent = std::min(indent, getIndentationLevel(line));
+    if (indent == 0)
+      break;
+  }
 
   // Remove the necessary indentation from all but the first line, which has all
   // leading whitespace removed.

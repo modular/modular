@@ -6,8 +6,14 @@
 
 # RUN: mojo %s -doc-gen | FileCheck %s
 
+"""
+This is a module summary, that
+spills over to the next line."""
+
 
 # CHECK: # Module: lit-doc
+
+# CHECK: This is a module summary, that spills over to the next line.
 
 # CHECK: [TOC]
 
