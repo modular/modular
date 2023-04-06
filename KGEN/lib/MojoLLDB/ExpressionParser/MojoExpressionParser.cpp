@@ -10,6 +10,7 @@
 #include "KGEN/KGENCompiler.h"
 #include "KGEN/LowerToObject.h"
 #include "KGEN/ParseLit.h"
+#include "Logging.h"
 #include "MojoDiagnostic.h"
 #include "lldb/Expression/DiagnosticManager.h"
 #include "lldb/Expression/IRExecutionUnit.h"
@@ -160,10 +161,9 @@ MojoExpressionParser::~MojoExpressionParser() = default;
 /// return false.
 bool MojoExpressionParser::RewriteExpression(
     DiagnosticManager &diagnosticManager) {
-  Log *log = GetLog(LLDBLog::Expressions);
-  LLDB_LOG(log, "[mojo] Found {0} diagnostic{1}",
-           diagnosticManager.Diagnostics().size(),
-           diagnosticManager.Diagnostics().size() == 1 ? "" : "s");
+  MOJO_EXPR_LOG("Found {0} diagnostic{1}",
+                diagnosticManager.Diagnostics().size(),
+                diagnosticManager.Diagnostics().size() == 1 ? "" : "s");
   StringRef originalText(impl->exprToParse.Text());
   std::string newText = "";
   auto applyFixit = [&](const llvm::SMFixIt &fixit) -> bool {
@@ -180,8 +180,7 @@ bool MojoExpressionParser::RewriteExpression(
     StringRef removedText(range.Start.getPointer(),
                           range.End.getPointer() - range.Start.getPointer());
     StringRef insertedText = fixit.getText();
-    LLDB_LOG(log, "[mojo] Change \"{0}\" to \"{1}\"", removedText,
-             insertedText);
+    MOJO_EXPR_LOG("Change \"{0}\" to \"{1}\"", removedText, insertedText);
 
     // If the start is the end of the original text, just add it all.
     if (range.Start.getPointer() >= originalText.end())
@@ -191,7 +190,7 @@ bool MojoExpressionParser::RewriteExpression(
       newText += originalText.substr(0, range.Start.getPointer() -
                                             originalText.begin());
 
-    LLDB_LOG(log, "[mojo] New expr before fixit insertion:\n{0}", newText);
+    MOJO_EXPR_LOG("New expr before fixit insertion:\n{0}", newText);
 
     // Add the text to insert.
     newText += insertedText;
@@ -208,8 +207,8 @@ bool MojoExpressionParser::RewriteExpression(
 
   bool allDiagsHandled = true;
   for (const auto &diag : diagnosticManager.Diagnostics()) {
-    LLDB_LOG(log, "[mojo] Diagnostic with message: {0}, fixits: {1}",
-             diag->GetMessage(), diag->HasFixIts());
+    MOJO_EXPR_LOG("Diagnostic with fixits: {0}, message:\n{1}",
+                  diag->HasFixIts(), diag->GetMessage());
     // If it's a mojo diagnostic, it might have fix-its. If it does, and if that
     // fails, return false. Otherwise, continue.
     if (const auto *mojoDiag = llvm::dyn_cast<MojoDiagnostic>(diag.get())) {
@@ -228,12 +227,10 @@ bool MojoExpressionParser::RewriteExpression(
 
   // If we handled all the diagnostics, then we set the fixed expression.
   if (allDiagsHandled) {
-    Log *exprLog = GetLog(LLDBLog::Expressions);
-    LLDB_LOG(exprLog, "[mojo] Fixits applied to expression: \n{0}",
-             newText.c_str());
+    MOJO_EXPR_LOG("Fixits applied to expression: \n{0}", newText.c_str());
     diagnosticManager.SetFixedExpression(newText);
   } else {
-    LLDB_LOG(log, "[mojo] Unhandled diagnostics found!");
+    MOJO_EXPR_LOG("Unhandled diagnostics found!");
   }
 
   return allDiagsHandled;
@@ -241,9 +238,8 @@ bool MojoExpressionParser::RewriteExpression(
 
 M::LogicalResult
 MojoExpressionParser::parse(DiagnosticManager &diagnosticManager) {
-  Log *log = GetLog(LLDBLog::Expressions);
   if (!impl->compiler) {
-    LLDB_LOG(log, "[mojo] No compiler");
+    MOJO_EXPR_LOG("No compiler");
     return failure();
   }
 
@@ -275,22 +271,36 @@ MojoExpressionParser::parse(DiagnosticManager &diagnosticManager) {
   OwningOpRef<ModuleOp> module =
       importMojoFile(impl->sourceManager, config, scope);
   if (!diagnosticManager.Diagnostics().empty()) {
-    LLDB_LOG(log, "[mojo] Emitted diagnostics of some kind");
+    MOJO_EXPR_LOG("Emitted diagnostics");
     return failure();
   }
 
   if (!module) {
-    LLDB_LOG(log, "[mojo] Failed to parse the module");
+    MOJO_EXPR_LOG("Failed to parse the module");
     return failure();
   }
 
-  LLDB_LOG(log, "[mojo] Parsed module successfully");
+  MOJO_EXPR_LOG("Parsed module successfully");
+
+  // Log the pre-elaboration module.
+  std::string preElaborationModule;
+  llvm::raw_string_ostream preElaborationStream(preElaborationModule);
+  impl->passManager->enableIRPrinting(
+      [](Pass *pass, Operation *) {
+        return pass->getName() == "ElaborateGenerators";
+      },
+      [](Pass *, Operation *) { return false; }, /*printModuleScope=*/false,
+      /*printAfterOnlyOnChange=*/false, /*printAfterOnlyOnFailure=*/false,
+      /*out=*/preElaborationStream);
 
   // Run the elaboration pipeline.
   if (failed(impl->passManager->run(*module))) {
-    LLDB_LOG(log, "[mojo] Elaboration failed");
+    MOJO_EXPR_LOG("Elaboration failed");
     return failure();
   }
+
+  MOJO_EXPR_LOG("Pre-elaboration module:\n{0}", preElaborationModule);
+  MOJO_EXPR_LOG("Elaborated module:\n{0}", *module);
 
   // Lower the module to LLVM IR.
   SymbolTable symtab(*module);
@@ -299,16 +309,18 @@ MojoExpressionParser::parse(DiagnosticManager &diagnosticManager) {
   impl->llvmModule = impl->compiler->lowerAllFuncsToLLVM(
       symtab, exportedSymbols, *impl->llvmContext);
   if (!impl->llvmModule) {
-    LLDB_LOG(log, "[mojo] Lowering to LLVM failed");
+    MOJO_EXPR_LOG("Lowering to LLVM failed");
     return failure();
   }
+
+  MOJO_EXPR_LOG("Pre-optimization LLVM module:\n{0}", *impl->llvmModule);
 
   // Create the target machine so we can run the optimizer.
   auto targetMachineOr =
       KGEN::createTargetMachine(impl->compilationOptions, /*isJIT=*/true);
   if (targetMachineOr.isError()) {
-    LLDB_LOG(log, "[mojo] Failed to create the target machine: {0}",
-             targetMachineOr.getError());
+    MOJO_EXPR_LOG("Failed to create the target machine: {0}",
+                  targetMachineOr.getError());
     return failure();
   }
 
