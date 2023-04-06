@@ -16,17 +16,11 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "llvm/ADT/BitVector.h"
-#include <llvm/ADT/STLExtras.h>
 
 using namespace M;
 using namespace KGEN;
 using namespace LIT;
 using llvm::BitVector;
-
-/// FIXME: This flag enables the checker for all values, when this is clear, it
-/// only enables it for things that have explicit destructors.  This helps stage
-/// things in.
-enum { ENABLE_FOR_ALL = 0 };
 
 /// Find all the functions and types in the module.
 static std::pair<std::vector<LIT::FuncOp>,
@@ -369,10 +363,6 @@ struct ValueSet {
   ///  * whether the value is uninit or init at normal function return.
   ///
   void addValue(Value val, LifetimeTrackable trackable) {
-    // FIXME(staging): Ignore values without destructors.
-    if (!ENABLE_FOR_ALL && val && !trackable.getDestructor(val, typeDeclInfo))
-      return;
-
     unsigned firstValueBit = getNumTotalBits();
     unsigned numValueBits = 1;
     // We are only field sensitive for memory objects, not in-register values.
@@ -616,10 +606,18 @@ void UninitializedValueScan::checkOp(Operation &op) {
 
   // If this is a call, investigate each of the operands along with the
   // argument convention effects.
-  if (isa<KGEN::CallOp>(op)) { // TODO: Generalize
-    auto call = dyn_cast<KGENCallOpInterface>(op);
-    auto signature = call.getCalleeType();
-    auto operands = call->getOperands();
+  if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
+    SignatureType signature = call.getCalleeType();
+    ValueRange operands;
+    if (isa<CallOp, CallParamOp, AsyncCallOp>(op))
+      operands = call->getOperands();
+    else if (isa<POP::CallIndirectOp>(op))
+      operands = call->getOperands().drop_front();
+    else {
+      assert(isa<AddressOfOp>(op) && "Unknown call op");
+      return; // AddressOf isn't a use of any SSA values.
+    }
+
     assert(signature.getValueInputConventions().size() == operands.size());
     for (auto [convention, operand] :
          llvm::zip(signature.getValueInputConventions(), operands)) {

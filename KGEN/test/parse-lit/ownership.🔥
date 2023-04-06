@@ -1,9 +1,10 @@
-# RUN: kgen-translate -import-mojo %s --mlir-print-debuginfo > %t.mlir
-# RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
+# RUN: kgen-translate -import-mojo %s --mlir-print-debuginfo -o %t.mlir
+# RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes | FileCheck %s
 
 # CHECK-LABEL: lit.struct.decl @MemExample
 struct MemExample:
   fn __init__(self&): pass
+  fn noop(self): pass
   fn __del___(owned self): pass
 
 # CHECK-LABEL: lit.struct.decl @RegExample
@@ -26,3 +27,19 @@ fn destructors(owned arg0: MemExample):
 
   # CHECK: %reg = lit.letreg.decl "reg" = %1
   let reg = RegExample()
+
+# CHECK: lit.func @"indirect_call
+fn indirect_call[
+        detail_fn: __mlir_type[
+            `!kgen.signature<(!pop.pointer<`,
+            MemExample,
+            `> byref_result) -> !lit.none>`,
+        ],
+    ]():
+       # CHECK: %mem = lit.varlet.decl
+       # CHECK-NEXT: kgen.call_param{{.*}}(%mem)
+       let mem = detail_fn()
+       # CHECK-NEXT: kgen.call @{{.*}}noop{{.*}}(%mem)
+       mem.noop()
+       # CHECK-NEXT: %2 = kgen.param.constant
+       # CHECK-NEXT: kgen.return %2
