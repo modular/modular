@@ -50,115 +50,6 @@ collectFunctionsAndTypes(Operation *module) {
 }
 
 //===----------------------------------------------------------------------===//
-// LifetimeTrackable
-//===----------------------------------------------------------------------===//
-
-/// This class provide an abstraction for analyzing lifetime-trackable values,
-/// e.g. variable definitions and owned arguments to functions.
-struct LifetimeTrackable {
-  LifetimeTrackable(Value value);
-
-  operator bool() const { return name != StringAttr(); }
-
-  /// This is the user's declared name for the value declaration, or null if
-  /// this isn't a tracked value.
-  StringAttr name;
-
-  /// This is the destructor for the value.
-  /// FIXME: Move this to struct decl.
-  TypedAttr dtor;
-
-  /// This is true if the SSA value is a pointer to the logical storage instead
-  /// of being the value itself.  This is always true for values of memory-only
-  /// type.
-  bool isIndirect = false;
-
-  /// This is true if the value is uninitialized at function entry, false if it
-  /// starts out initialized.
-  bool startsUninit = false;
-
-  /// This is true if the value is uninitialized at function exist, false if it
-  /// ends up defined (e.g. as with a byref argument).
-  bool endsUninit = false;
-
-  /// Return the type of the underlying value, looking through the pointer type
-  /// if this is an indirect reference.
-  Type getValueType(Value value) const {
-    // If this is a direct value, use the type directly.
-    if (!isIndirect)
-      return value.getType();
-
-    auto pointee =
-        llvm::cast<POP::PointerType>(value.getType()).getElementType();
-    if (auto type = dyn_cast<TypeConstantAttr>(pointee))
-      return type.getValue();
-    return ParamRefType::get(pointee);
-  }
-};
-
-LifetimeTrackable::LifetimeTrackable(Value v) {
-  if (!v) // Null value isn't tracked.
-    return;
-
-  if (auto ownedArgDecl = v.getDefiningOp<OwnedArgDeclOp>()) {
-    name = ownedArgDecl.getNameAttr();
-    dtor = ownedArgDecl.getDtorAttr();
-    isIndirect = true;
-    startsUninit = false;
-    endsUninit = true;
-    return;
-  }
-
-  // LetReg starts out initialized with its own value.
-  if (auto letReg = v.getDefiningOp<LetRegDeclOp>()) {
-    name = letReg.getNameAttr();
-    dtor = letReg.getDtorAttr();
-    isIndirect = false;
-    startsUninit = false;
-    endsUninit = true;
-    return;
-  }
-  // VarLetDeclOp is uninit and ends that way.
-  if (auto varLet = v.getDefiningOp<VarLetDeclOp>()) {
-    name = varLet.getNameAttr();
-    dtor = varLet.getDtorAttr();
-    isIndirect = true;
-    startsUninit = true;
-    endsUninit = true;
-    return;
-  }
-
-  // If this is a function argument, check to see what ownership it has.
-  auto bbArg = dyn_cast<BlockArgument>(v);
-  if (!bbArg || !bbArg.getOwner())
-    return;
-  SignatureType signature;
-  Operation *parentOp = bbArg.getOwner()->getParentOp();
-  StringArrayAttr valueNames;
-  if (auto func = dyn_cast<LIT::FuncOp>(parentOp)) {
-    signature = func.getSignature();
-    valueNames = func.getValueParamNamesAttr();
-  } else if (auto func = dyn_cast<ParamDeclareRegionOp>(parentOp)) {
-    signature = func.getSignature();
-    // FIXME(Issue #11918): Need valueNames for nested functions.
-  } else
-    return;
-
-  auto convention = signature.getValueInputConventions()[bbArg.getArgNumber()];
-  if (convention != ValueInputConvention::ByRef &&
-      convention != ValueInputConvention::ByRefResult)
-    return; // Untracked convention.
-
-  name = valueNames
-             ? valueNames[bbArg.getArgNumber()]
-             : StringAttr::get(bbArg.getContext(), "FIXME(Issue #11918)");
-  // no DTOR
-  isIndirect = true;
-  startsUninit = false;
-  endsUninit = false;
-}
-
-//===----------------------------------------------------------------------===//
 // TypeDeclInfo
 //===----------------------------------------------------------------------===//
 
@@ -183,6 +74,15 @@ struct TypeDeclInfo {
   /// type.
   std::pair<StringAttr, Type> getFieldContaining(DeclRefType type,
                                                  unsigned fieldNo);
+
+  /// Return the struct decl for the specified DeclRefType.
+  LIT::StructDeclOp getStructDeclForType(DeclRefType type) const {
+    // If not, we compute it recursively.  Structs cannot be infinitely deep, so
+    // we can just do this recursively.
+    auto it = structMap.find(type.getSymbol());
+    assert(it != structMap.end() && "reference to struct that wasn't declared");
+    return it->second;
+  }
 
 private:
   DenseMap<SymbolRefAttr, LIT::StructDeclOp> structMap;
@@ -235,8 +135,7 @@ unsigned TypeDeclInfo::getFieldIndex(DeclRefType type, StringAttr fieldName) {
 /// type.
 std::pair<StringAttr, Type>
 TypeDeclInfo::getFieldContaining(DeclRefType declRef, unsigned fieldNo) {
-  LIT::StructDeclOp decl = structMap[declRef.getSymbol()];
-  assert(decl && "reference to struct that wasn't declared");
+  LIT::StructDeclOp decl = getStructDeclForType(declRef);
 
   // Scan to find the field that contains this.
   unsigned startFieldIdx = 0;
@@ -250,6 +149,126 @@ TypeDeclInfo::getFieldContaining(DeclRefType declRef, unsigned fieldNo) {
     startFieldIdx += numSubFields;
   }
   llvm_unreachable("invalid index into struct field numbering");
+}
+
+//===----------------------------------------------------------------------===//
+// LifetimeTrackable
+//===----------------------------------------------------------------------===//
+
+/// This class provide an abstraction for analyzing lifetime-trackable values,
+/// e.g. variable definitions and owned arguments to functions.
+struct LifetimeTrackable {
+  LifetimeTrackable(Value value);
+
+  operator bool() const { return name != StringAttr(); }
+
+  /// This is the user's declared name for the value declaration, or null if
+  /// this isn't a tracked value.
+  StringAttr name;
+
+  /// This is true if the SSA value is a pointer to the logical storage instead
+  /// of being the value itself.  This is always true for values of memory-only
+  /// type.
+  bool isIndirect = false;
+
+  /// This is true if the value is uninitialized at function entry, false if it
+  /// starts out initialized.
+  bool startsUninit = false;
+
+  /// This is true if the value is uninitialized at function exist, false if it
+  /// ends up defined (e.g. as with a byref argument).
+  bool endsUninit = false;
+
+  /// Return the type of the underlying value, looking through the pointer type
+  /// if this is an indirect reference.
+  Type getValueType(Value value) const;
+
+  /// Get the destructor for this value if one exists, otherwise return null.
+  TypedAttr getDestructor(Value value, TypeDeclInfo &typeDeclInfo) const;
+};
+
+LifetimeTrackable::LifetimeTrackable(Value v) {
+  if (!v) // Null value isn't tracked.
+    return;
+
+  // LetReg starts out initialized with its own value.
+  if (auto letReg = v.getDefiningOp<LetRegDeclOp>()) {
+    name = letReg.getNameAttr();
+    isIndirect = false;
+    startsUninit = false;
+    endsUninit = true;
+    return;
+  }
+  // VarLetDeclOp is uninit and ends that way.
+  if (auto varLet = v.getDefiningOp<VarLetDeclOp>()) {
+    name = varLet.getNameAttr();
+    isIndirect = true;
+    startsUninit = true;
+    endsUninit = true;
+    return;
+  }
+
+  // If this is a function argument, check to see what ownership it has.
+  auto bbArg = dyn_cast<BlockArgument>(v);
+  if (!bbArg || !bbArg.getOwner())
+    return;
+  SignatureType signature;
+  Operation *parentOp = bbArg.getOwner()->getParentOp();
+  StringArrayAttr valueNames;
+  if (auto func = dyn_cast<LIT::FuncOp>(parentOp)) {
+    signature = func.getSignature();
+    valueNames = func.getValueParamNamesAttr();
+  } else if (auto func = dyn_cast<ParamDeclareRegionOp>(parentOp)) {
+    signature = func.getSignature();
+    // FIXME(Issue #11918): Need valueNames for nested functions.
+  } else
+    return;
+
+  switch (signature.getValueInputConventions()[bbArg.getArgNumber()]) {
+  case ValueInputConvention::OwnedInReg: // This gets and LValue slot.
+  case ValueInputConvention::BorrowedInReg:
+  case ValueInputConvention::BorrowedInMem:
+    // These are immutable so don't need to be tracked.
+    return;
+
+  case ValueInputConvention::OwnedInMem:
+    isIndirect = true;
+    startsUninit = false;
+    endsUninit = true;
+    break;
+  case ValueInputConvention::ByRef:
+  case ValueInputConvention::ByRefResult:
+    isIndirect = true;
+    startsUninit = false;
+    endsUninit = false;
+    break;
+  }
+
+  name = valueNames
+             ? valueNames[bbArg.getArgNumber()]
+             : StringAttr::get(bbArg.getContext(), "FIXME(Issue #11918)");
+}
+
+/// Return the type of the underlying value, looking through the pointer type
+/// if this is an indirect reference.
+Type LifetimeTrackable::getValueType(Value value) const {
+  // If this is a direct value, use the type directly.
+  if (!isIndirect)
+    return value.getType();
+
+  auto pointee = llvm::cast<POP::PointerType>(value.getType()).getElementType();
+  if (auto type = dyn_cast<TypeConstantAttr>(pointee))
+    return type.getValue();
+  return ParamRefType::get(pointee);
+}
+
+/// Get the destructor for this value if one exists, otherwise return null.
+TypedAttr LifetimeTrackable::getDestructor(Value value,
+                                           TypeDeclInfo &typeDeclInfo) const {
+  DeclRefType valueType = dyn_cast<DeclRefType>(getValueType(value));
+  if (!valueType)
+    return {};
+  return typeDeclInfo.getStructDeclForType(valueType).getDestructorAttr();
 }
 
 //===----------------------------------------------------------------------===//
@@ -351,7 +370,7 @@ struct ValueSet {
   ///
   void addValue(Value val, LifetimeTrackable trackable) {
     // FIXME(staging): Ignore values without destructors.
-    if (!ENABLE_FOR_ALL && !trackable.dtor && val)
+    if (!ENABLE_FOR_ALL && val && !trackable.getDestructor(val, typeDeclInfo))
       return;
 
     unsigned firstValueBit = getNumTotalBits();
@@ -801,12 +820,8 @@ LogicalResult CheckLifetimes::processFunction(LIT::FuncOp func,
                                               TypeDeclInfo &typeDeclInfo) {
   // Pass #1: Collect all of the values declared in the function that have
   // ownership to track, and number them.
-  SmallVector<OwnedArgDeclOp> ownedArgDecls;
   ValueSet valueSet(typeDeclInfo);
   func->walk([&](Operation *op) {
-    if (auto ownedArgDecl = dyn_cast<OwnedArgDeclOp>(op))
-      ownedArgDecls.push_back(ownedArgDecl);
-
     // All the ops that define trackable values have a single result.
     if (op->getNumResults() == 1)
       if (auto trackable = LifetimeTrackable(op->getResult(0)))
@@ -828,12 +843,6 @@ LogicalResult CheckLifetimes::processFunction(LIT::FuncOp func,
   // TODO: How do we want to handle captures in closures?  Their uses
   // effectively form the capture list for the closure.  Should this get
   // materialized by LowerSemanticCF before this pass?
-
-  // Finally, remove all the OwnedArgDeclOp's now that we're done with them.
-  for (auto ownedArg : ownedArgDecls) {
-    ownedArg.replaceAllUsesWith(ownedArg.getValue());
-    ownedArg->erase();
-  }
 
   // Return failure if we generated an error.
   return failure(llvm::any_of(valueSet.getValueInfos(), [&](ValueInfo &info) {

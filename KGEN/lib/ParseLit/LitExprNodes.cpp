@@ -400,9 +400,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     auto loc = getLocation(emitter);
     Type declIRType = POP::PointerType::get(contextualType);
     auto nameAttr = StringAttr::get(loc.getContext(), spelling);
-    auto dtor =
-        ExprEmitter::lookupDestructor(contextualType, getLoc(), emitter.shared);
-    return builder.create<VarLetDeclOp>(loc, declIRType, nameAttr, isVar, dtor);
+    return builder.create<VarLetDeclOp>(loc, declIRType, nameAttr, isVar);
   };
 
   // If the unresolved name is `_`, then we have a discard pattern.  Materialize

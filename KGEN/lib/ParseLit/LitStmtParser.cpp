@@ -817,19 +817,13 @@ ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
   // Emit a call to __iter__ into a var with an inferred type.
   VarLetDeclOp rangeRef = builder.create<VarLetDeclOp>(
       forLoc, POP::PointerType::get(UnresolvedType::get(getContext())),
-      "$RANGE", /*isVar*/ true, /*dtor=*/TypedAttr());
+      "$RANGE", /*isVar*/ true);
   ValueDest rangeDest(rangeRef, EC_ForIterator);
   if (!getEmitter().emitNamedMethodCall("__iter__", {loadedSeq}, rangeDest,
                                         CallSyntax::kImplicitConvert, seqExp)) {
     rangeDest.resetForError();
     return {};
   }
-
-  // Fill in the destructor now that we know the type.
-  if (auto dtor = ExprEmitter::lookupDestructor(
-          ASTType(rangeRef.getType()).getPointerElementType(), seqExp->getLoc(),
-          shared))
-    rangeRef.setDtorAttr(dtor);
 
   HLCF::LoopOp loopOp = builder.create<HLCF::LoopOp>(forLoc);
   Block *body = builder.createBlock(&loopOp.getBody());
@@ -947,11 +941,9 @@ ParseResult LitStmtParser::parseTryStmt(size_t curIndent) {
     if (func.getIsDef()) {
       // If we are parsing inside a 'def', create a mutable LValue to allow
       // reassignment.
-      auto dtor =
-          ExprEmitter::lookupDestructor(errVal.getType(), errValLoc, shared);
       auto varDecl = builder.create<VarLetDeclOp>(
           errVal.getLoc(), POP::PointerType::get(errVal.getType()), errName,
-          /*isVar*/ true, dtor);
+          /*isVar*/ true);
       getDeclResolver().addFullyResolvedDecl(DeclIRValue(varDecl), errName,
                                              errValLoc, &containingDecl);
       builder.create<POP::StoreOp>(errVal.getLoc(), errVal, varDecl,
@@ -1288,8 +1280,7 @@ ParseResult LitStmtParser::parseLetVarStmt(LitLexerCursor startCursor,
     // TODO (Issue#5005): Maintain scopes correctly so we don't have a conflict
     // between things like "if cond: var x = 1 else var x = 2"
     auto varType = POP::PointerType::get(unresolvedType);
-    declOp = builder.create<VarLetDeclOp>(loc, varType, name, isVar,
-                                          /*dtor*/ TypedAttr());
+    declOp = builder.create<VarLetDeclOp>(loc, varType, name, isVar);
   }
 
   // Skip the body of this definition: go to a token the starts a line at the
