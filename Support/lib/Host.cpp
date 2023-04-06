@@ -268,6 +268,63 @@ ErrorOrSuccess M::runWithThreadAffinity(size_t cpuID,
 }
 
 //===----------------------------------------------------------------------===//
+// CPU Model Info
+//===----------------------------------------------------------------------===//
+
+static ErrorOr<std::vector<std::string>> getAllHostCPUModelNames() {
+#if defined(__APPLE__)
+  size_t len = 0;
+  if (sysctlbyname("machdep.cpu.brand_string", nullptr, &len, nullptr, 0) ==
+          -1 &&
+      errno != ENOMEM)
+    return Error("Unable to query the machdep.cpu.brand_string for length: " +
+                 llvm::Twine(strerror(errno)));
+  SmallString<128> result;
+  result.resize(len);
+  if (sysctlbyname("machdep.cpu.brand_string", result.data(), &len, nullptr, 0))
+    return Error("Unable to query the machdep.cpu.brand_string for value: " +
+                 llvm::Twine(strerror(errno)));
+  result.resize(len);
+  return std::vector<std::string>{std::string(result)};
+#elif defined(__linux__)
+  llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> errOrBuf =
+      llvm::MemoryBuffer::getFileAsStream("/proc/cpuinfo");
+  if (std::error_code ec = errOrBuf.getError())
+    return Error("Can't open /proc/cpuinfo: " + llvm::Twine(ec.message()));
+  SmallVector<StringRef> lines;
+  (*errOrBuf)->getBuffer().split(lines, "\n", /*MaxSplit=*/-1,
+                                 /*KeepEmpty=*/false);
+  std::vector<std::string> modelNames;
+  for (StringRef line : lines) {
+    auto fields = line.split(':');
+    if (fields.first.trim() == "model name")
+      modelNames.push_back(fields.second.trim().str());
+  }
+  return modelNames;
+#elif defined(_MSC_VER)
+  // TODO: Implement for Windows.  This is very involved -- see
+  // https://github.com/Thomas-Sparber/wmi for a complete example.  (We'll need
+  // to fetch Win32_Processor.Name.)  For now, return an empty vector instead
+  // of returning an error.  If we return error, system-info.exe will fail even
+  // if we don't care about model name.
+  return std::vector<std::string>{};
+#else
+  return Error("Unsupported platform.");
+#endif
+}
+
+ErrorOr<std::string> M::getHostCPUModelName() {
+  UNWRAP_ERROR(allModelNames, getAllHostCPUModelNames());
+  std::sort(allModelNames.begin(), allModelNames.end());
+  allModelNames.erase(std::unique(allModelNames.begin(), allModelNames.end()),
+                      allModelNames.end());
+  std::string str;
+  llvm::raw_string_ostream os(str);
+  llvm::interleave(allModelNames, os, ", ");
+  return str;
+}
+
+//===----------------------------------------------------------------------===//
 // Cache sizes
 //===----------------------------------------------------------------------===//
 
@@ -467,6 +524,8 @@ void M::HostMachineInfo::print(llvm::raw_ostream &os) const {
   os << osName;
   os << "\narch: ";
   os << cpuArch;
+  os << "\ncpu-model: ";
+  os << cpuModelName;
   os << "\nfeatures: ";
   dumpFeatures(os, cpuFeatures);
   os << "\ncore-count: ";
@@ -493,6 +552,7 @@ void M::HostMachineInfo::print(llvm::json::OStream &json) const {
   json.attribute("target-triple", triple);
   json.attribute("os", osName);
   json.attribute("arch", cpuArch);
+  json.attribute("cpu-model", cpuModelName);
   json.attribute("features", cpuFeatures);
   json.attribute("core-count", numPhysicalCores);
   json.attribute("simd-bitwidth", simdBitWidth);
@@ -518,6 +578,9 @@ void HostMachineInfo::print(HostProperty property,
     break;
   case HostProperty::Arch:
     os << cpuArch;
+    break;
+  case HostProperty::CPUModel:
+    os << cpuModelName;
     break;
   case HostProperty::Features:
     dumpFeatures(os, cpuFeatures);
@@ -554,6 +617,7 @@ void HostMachineInfo::printStaticInfo(raw_ostream &os) const {
   print(HostProperty::TargetTriple, os);
   print(HostProperty::OS, os);
   print(HostProperty::Arch, os);
+  print(HostProperty::CPUModel, os);
   print(HostProperty::Features, os);
   print(HostProperty::SIMDBitWidth, os);
   print(HostProperty::L1CacheSize, os);
@@ -569,6 +633,8 @@ M::ErrorOr<HostMachineInfo> M::getHostMachineInfo() {
   machineInfo.osName =
       llvm::Triple::getOSTypeName(llvm::Triple(machineInfo.triple).getOS());
   machineInfo.cpuArch = llvm::sys::getHostCPUName();
+  UNWRAP_ERROR(cpuModelName, getHostCPUModelName());
+  machineInfo.cpuModelName = std::move(cpuModelName);
 
   llvm::StringMap<bool> features;
   llvm::sys::getHostCPUFeatures(features);

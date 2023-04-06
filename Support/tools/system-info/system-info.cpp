@@ -30,6 +30,8 @@ struct SystemInfoCLIOptions {
                      "Host target triple"),
           clEnumValN(HostProperty::OS, "os", "Host operating system"),
           clEnumValN(HostProperty::Arch, "arch", "Host CPU architecture"),
+          clEnumValN(HostProperty::CPUModel, "cpu-model",
+                     "Host CPU model name"),
           clEnumValN(HostProperty::Features, "features",
                      "Host CPU features printed as comma-separated values"),
           clEnumValN(HostProperty::CoreCount, "core-count",
