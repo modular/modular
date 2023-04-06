@@ -384,8 +384,8 @@ fn broadcast_to_tensor[
     target: NDBuffer[target_rank, DimList[target_rank].create_unknown(), type],
 ) -> NDBuffer[Int(output_rank), DimList[output_rank].create_unknown(), type]:
 
-    var shape: StaticIntTuple[output_rank]
-    var stride: StaticIntTuple[output_rank]
+    var shape = StaticIntTuple[output_rank]()
+    var stride = StaticIntTuple[output_rank]()
 
     # New dimensions are always broadcast.
     var difference: Int = target_rank - original_rank
