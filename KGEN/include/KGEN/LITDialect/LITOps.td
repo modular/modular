@@ -169,7 +169,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [Symbol, SymbolTable,
     KGEN_ParamDeclArrayAttr:$inputParams,
     UnitAttr:$paramVarargs,
     DefaultValuedOptionalAttr<I8Attr, "0">:$registerPassable,
-    OptionalAttr<SymbolRefAttr>:$destructor
+    OptionalAttr<AttrOfType<KGEN_SignatureType>>:$destructor
   );
   let regions = (region SizedRegion<1>:$fields);
   let assemblyFormat = [{
