@@ -164,10 +164,13 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [Symbol, SymbolTable,
     shouldn't be.
   }];
 
-  let arguments = (ins SymbolNameAttr:$sym_name,
-                       KGEN_ParamDeclArrayAttr:$inputParams,
-                       UnitAttr:$paramVarargs,
-                       DefaultValuedOptionalAttr<I8Attr, "0">:$registerPassable);
+  let arguments = (ins
+    SymbolNameAttr:$sym_name,
+    KGEN_ParamDeclArrayAttr:$inputParams,
+    UnitAttr:$paramVarargs,
+    DefaultValuedOptionalAttr<I8Attr, "0">:$registerPassable,
+    OptionalAttr<SymbolRefAttr>:$destructor
+  );
   let regions = (region SizedRegion<1>:$fields);
   let assemblyFormat = [{
     $sym_name `` custom<OptionalParameterSpec>($inputParams)
