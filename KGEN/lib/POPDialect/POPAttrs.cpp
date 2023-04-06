@@ -7,6 +7,7 @@
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
@@ -604,9 +605,12 @@ LogicalResult VariantAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                      << " is not a possible variant subtype";
 }
 
-/// The variant attribute is a constant if the value type is a constant.
+/// The variant attribute is a constant if the value type is a constant and its
+/// type is not parameterized. It is possible to materialize a constant value
+/// for a parametric variant type.
 bool VariantAttr::isConstant() const {
-  return ParameterAttr::isSimpleConstant(getValue());
+  return ParameterAttr::isSimpleConstant(getValue()) &&
+         !isParameterizedType(getType());
 }
 
 //===----------------------------------------------------------------------===//

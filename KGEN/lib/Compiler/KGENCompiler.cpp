@@ -75,10 +75,8 @@ void KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
   pm.addPass(createVerifyParameters());
 
   // After elaboration, we have no use for the parameter verifier anymore.
-  pm.addPass(
-
-      createElaborateGenerators(runtime, target, build,
-                                {options.enableSearch}));
+  pm.addPass(createElaborateGenerators(runtime, target, build,
+                                       {options.enableSearch}));
 
   populatePostElaborationPasses(pm, runtime, options);
 }
