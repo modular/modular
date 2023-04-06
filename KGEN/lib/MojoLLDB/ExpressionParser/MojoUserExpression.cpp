@@ -228,6 +228,7 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
   mlir::raw_indented_ostream exprOSIndented(exprRawOS);
   exprOSIndented << "from IO import print\n"
                  << "from Pointer import Pointer\n"
+                 << "from PythonInterface import PythonInterface\n"
                  << "@export\nfn __lldb_expr__(__lldb_arg: "
                     "Pointer[__mlir_type.`!pop.scalar<invalid>`]):\n";
   size_t prefixSize = m_transformed_text.size();

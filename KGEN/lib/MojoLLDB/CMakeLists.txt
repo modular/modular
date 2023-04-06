@@ -13,6 +13,9 @@ add_modular_library(MojoLLDB SHARED
   REPL/MojoREPL.cpp
   TypeSystem/MojoTypeSystem.cpp
 
+  DEPENDS
+  mojo-python-interop
+
   LINK_COMPONENTS
   AllTargetsAsmParsers
   AllTargetsCodeGens
