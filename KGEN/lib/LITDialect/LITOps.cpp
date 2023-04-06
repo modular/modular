@@ -530,7 +530,8 @@ LogicalResult StructDeclOp::verifyRegions() {
 void StructDeclOp::build(OpBuilder &builder, OperationState &result,
                          StringAttr name) {
   auto context = builder.getContext();
-  build(builder, result, name, ParamDeclArrayAttr::get(context, {}));
+  build(builder, result, name, ParamDeclArrayAttr::get(context, {}), false, 0,
+        nullptr);
   result.regions[0]->push_back(new Block());
 }
 

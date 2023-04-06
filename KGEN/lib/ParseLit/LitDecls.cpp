@@ -1077,12 +1077,11 @@ const SpecialFunctionInfo &SpecialFunctionInfo::get(SpecialFunctionKind kind) {
 ///
 /// This returns failure (after emitting an error) when a type checking problem
 /// is detected.
-static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
-                                      StringAttr &name,
-                                      SmallVector<ParsedArgument> &args,
-                                      MutableArrayRef<Type> argTypes,
-                                      ASTType &resultType,
-                                      LitSharedState &shared) {
+static SpecialFunctionInfo
+verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr &name,
+                          SmallVector<ParsedArgument> &args,
+                          MutableArrayRef<Type> argTypes, ASTType &resultType,
+                          LitSharedState &shared) {
   SpecialFunctionInfo fnInfo = SpecialFunctionInfo::get(name);
 
   // On any semantic error we mark the declaration erroneous - so references to
@@ -1110,8 +1109,8 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
   size_t selfArgNumber = 0;
   if (auto *parentDecl = decl.getParentDecl())
     if (isa<StructDeclOp>(*parentDecl)) {
-      //  The parent decl must be fully resolved in order to resolve any members
-      //  of it.
+      // The parent decl must be fully resolved in order to resolve any members
+      // of it.
       assert(parentDecl->resolvedness == DeclResolvedness::fully);
       selfType = parentDecl->getSelfType();
       // If there is an in-memory result, self is passed as arg #1.
@@ -1327,6 +1326,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
   mangledName += ')';
 
   name = StringAttr::get(funcOp.getContext(), mangledName);
+  return fnInfo;
 }
 
 namespace {
@@ -1615,8 +1615,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   // decorator processing because that is how defs work in Python.  This also
   // fills in any implicitly declared types.
   StringAttr name = baseName;
-  verifyFunctionNameBinding(decl, funcOp, name, args, argTypes, resultType,
-                            shared);
+  SpecialFunctionInfo fnInfo = verifyFunctionNameBinding(
+      decl, funcOp, name, args, argTypes, resultType, shared);
 
   // Finally now that the full signature has been resolved, build our IR.
 
@@ -1771,6 +1771,11 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   funcOp->setAttrs(attrs.getDictionary(funcOp.getContext()));
   funcOp.getBody()->addArguments(argTypes, argLocs);
 
+  // If this is a struct special function, see if we should attach it to
+  // surrounding struct decl op.
+  if (auto structOp = dyn_cast<StructDeclOp>(funcOp->getParentOp());
+      structOp && fnInfo.kind == SpecialFunctionKind::kDel)
+    structOp.setDestructorAttr(symbolName);
   return success();
 }
 

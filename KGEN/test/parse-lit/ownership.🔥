@@ -7,6 +7,7 @@ struct MemExample:
   fn __del___(owned self): pass
 
 # CHECK-LABEL: lit.struct.decl @RegExample
+# CHECK: attributes {{.*}}destructor = @"$ownership"::@RegExample::@"__del___({{.*}})"
 @register_passable
 struct RegExample:
   fn __init__() -> Self:
