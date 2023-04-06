@@ -13,6 +13,8 @@
 #include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
 #include "mlir/Support/IndentedOstream.h"
+#include "llvm/Support/CrashRecoveryContext.h"
+#include "llvm/Support/Signals.h"
 
 using namespace M;
 using namespace M::KGEN::Mojo;
@@ -237,9 +239,15 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
   m_materializer_up = std::make_unique<Materializer>();
   impl->parser =
       std::make_unique<MojoExpressionParser>(exeScope, *this, m_options);
-  if (failed(impl->parser->parse(diagnosticManager))) {
+
+  LogicalResult result = failure();
+  auto parseModule = [&]() {
+    result = impl->parser->parse(diagnosticManager);
+    if (succeeded(result))
+      return;
+
     if (!diagnosticManager.HasFixIts())
-      return failure();
+      return;
 
     LLDB_LOG(log, "[mojo] Rewriting the input expression");
     // If we can rewrite the expression, do so.
@@ -250,12 +258,20 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
       indentedFixedOS.printReindented(
           diagnosticManager.GetFixedExpression().substr(prefixSize), "");
     }
-    // Clear out the diagnostics so we don't re-apply the fix-its.
+    // Clear out the diagnostics so we don't re-apply
+    // the fix-its.
     std::string fixed = diagnosticManager.GetString();
     diagnosticManager.Clear();
     diagnosticManager.PutString(eDiagnosticSeverityRemark, fixed);
+  };
+
+  llvm::CrashRecoveryContext::Enable();
+  llvm::CrashRecoveryContext crc;
+  if (!crc.RunSafelyOnThread(parseModule)) {
+    LLDB_LOG(log, "[mojo] Crash detected");
+    diagnosticManager.PutString(eDiagnosticSeverityError, "crash detected");
     return failure();
   }
 
-  return success();
+  return result;
 }
