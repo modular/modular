@@ -104,36 +104,36 @@ fn test_3d_reductions():
         for ii in range(output.size()):
             print(output.flatten()[ii])
 
-    # CHECK: [6.000000]
-    # CHECK-NEXT: [22.000000]
-    # CHECK-NEXT: [38.000000]
-    # CHECK-NEXT: [54.000000]
+    # CHECK: 6.000000
+    # CHECK-NEXT: 22.000000
+    # CHECK-NEXT: 38.000000
+    # CHECK-NEXT: 54.000000
     _test_3d_reductions[
         create_dim_list(2, 2, 4),
         create_dim_list(2, 2, 1),
         2,
     ]()
-    # CHECK: [4.000000]
-    # CHECK-NEXT: [6.000000]
-    # CHECK-NEXT: [8.000000]
-    # CHECK-NEXT: [10.000000]
-    # CHECK-NEXT: [20.000000]
-    # CHECK-NEXT: [22.000000]
-    # CHECK-NEXT: [24.000000]
-    # CHECK-NEXT: [26.000000]
+    # CHECK: 4.000000
+    # CHECK-NEXT: 6.000000
+    # CHECK-NEXT: 8.000000
+    # CHECK-NEXT: 10.000000
+    # CHECK-NEXT: 20.000000
+    # CHECK-NEXT: 22.000000
+    # CHECK-NEXT: 24.000000
+    # CHECK-NEXT: 26.000000
     _test_3d_reductions[
         create_dim_list(2, 2, 4),
         create_dim_list(2, 1, 4),
         1,
     ]()
-    # CHECK: [8.000000]
-    # CHECK-NEXT: [10.000000]
-    # CHECK-NEXT: [12.000000]
-    # CHECK-NEXT: [14.000000]
-    # CHECK-NEXT: [16.000000]
-    # CHECK-NEXT: [18.000000]
-    # CHECK-NEXT: [20.000000]
-    # CHECK-NEXT: [22.000000]
+    # CHECK: 8.000000
+    # CHECK-NEXT: 10.000000
+    # CHECK-NEXT: 12.000000
+    # CHECK-NEXT: 14.000000
+    # CHECK-NEXT: 16.000000
+    # CHECK-NEXT: 18.000000
+    # CHECK-NEXT: 20.000000
+    # CHECK-NEXT: 22.000000
     _test_3d_reductions[
         create_dim_list(2, 2, 4),
         create_dim_list(1, 2, 4),
