@@ -210,6 +210,19 @@ struct MatmulDynamicState[data_type: MatmulDataType]:
     # Amount of valid data on each dimension.
     var valid_tile_bound: GemmShape
 
+    fn __init__() -> Self:
+        return Self {
+            a: DTypePointer[data_type.value_type](),
+            b: DTypePointer[data_type.value_type](),
+            c: DTypePointer[data_type.accum_type](),
+            packed_b: DTypePointer[data_type.value_type](),
+            packed_a: DTypePointer[data_type.value_type](),
+            packed_c: DTypePointer[data_type.value_type](),
+            global_gemm_size: GemmShape(0, 0, 0),
+            global_offset: GemmShape(0, 0, 0),
+            valid_tile_bound: GemmShape(0, 0, 0),
+        }
+
     fn apply_offset(
         self,
         dimension_idx: Int,
