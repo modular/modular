@@ -13,7 +13,7 @@ from Range import range
 
 # CHECK-LABEL: test_benchmark
 fn test_benchmark():
-    print("== test_benchmark\n")
+    print("== test_benchmark")
 
     @always_inline
     fn time_me():
