@@ -398,14 +398,12 @@ static bool compareConstants(CmpPredicate pred, ArgT lhs, ArgT rhs) {
 OpFoldResult CmpOp::fold(FoldAdaptor adaptor) {
   auto operands = adaptor.getOperands();
 
-  std::optional<KGENDType> dtype = getType().getResolvedDType();
   std::optional<KGENDType> operandTy = getLhs().getType().getResolvedDType();
   std::optional<int64_t> size = getType().getResolvedSize();
 
   // Handle the case of inputs being the same but non-constant. Avoid floats as
   // they could be NAN.
-  if (dtype && operandTy && size && dtype->isIntLike() && operandTy->isInt() &&
-      getLhs() == getRhs()) {
+  if (operandTy && size && operandTy->isIntLike() && getLhs() == getRhs()) {
     // Create a SIMD constant of all trues or all false.
     SmallVector<DTypeValue> allTrues(*size, {true, KGENDType::kBool});
     SmallVector<DTypeValue> allFalse(*size, {false, KGENDType::kBool});
