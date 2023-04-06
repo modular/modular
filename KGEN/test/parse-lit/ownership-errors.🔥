@@ -32,12 +32,12 @@ fn use_of_init2() -> MemExample:
   return a   # OK!
 
 fn use_of_uninit() -> RegExample:
-  var a : RegExample # expected-note {{value declared here}}
-  return a   # expected-error {{invalid use of uninitialized value}}
+  var a : RegExample # expected-note {{"a" declared here}}
+  return a   # expected-error {{use of uninitialized value "a"}}
 
 fn use_of_uninit2() -> MemExample:
-  var a : MemExample  # expected-note {{value declared here}}
-  return a   # expected-error {{invalid use of uninitialized value}}
+  var a : MemExample  # expected-note {{"a" declared here}}
+  return a   # expected-error {{use of uninitialized value "a"}}
 
 fn use_of_uninit_if(cond: Bool):
   var a : MemExample
@@ -47,10 +47,10 @@ fn use_of_uninit_if(cond: Bool):
     a = MemExample()
   use(a)  # Ok
 
-  var b : MemExample  # expected-note {{value declared here}}
+  var b : MemExample  # expected-note {{"b" declared here}}
   if cond:
     b = MemExample()
-  use(b) # expected-error {{invalid use of uninitialized value}}
+  use(b) # expected-error {{use of uninitialized value "b"}}
 
   var c : MemExample
   if True:
@@ -67,11 +67,11 @@ fn use_of_uninit_while(cond: Bool):
     a = MemExample()
   use(a)  # Ok
 
-  var b : RegExample  # expected-note {{value declared here}}
+  var b : RegExample  # expected-note {{"b" declared here}}
   while cond:
     b = RegExample()
 
-  use(b)  # expected-error {{invalid use of uninitialized value}}
+  use(b)  # expected-error {{use of uninitialized value "b"}}
 
 
 
@@ -92,7 +92,7 @@ fn use_of_uninit_raise(cond: Bool, err: Error):
     pass
   use(b)  # ok
 
-  var c : MemExample  # expected-note {{value declared here}}
+  var c : MemExample  # expected-note {{"c" declared here}}
   try:
     if cond:
       c = MemExample()
@@ -101,7 +101,7 @@ fn use_of_uninit_raise(cond: Bool, err: Error):
       raise err
   except:
     pass
-  use(c)  # expected-error {{invalid use of uninitialized value}}
+  use(c)  # expected-error {{use of uninitialized value "c"}}
 
   var d : MemExample
   try:
@@ -119,9 +119,9 @@ struct MoreComplexExample:
   var reg: RegExample
 
   fn __init__(self&):
-    var result : MoreComplexExample # expected-note {{value declared here}}
+    var result : MoreComplexExample # expected-note {{"result" declared here}}
     result.mem = MemExample()
-    self = result  # expected-error {{invalid use of uninitialized value}}
+    self = result  # expected-error {{use of uninitialized value "result"}}
 
   fn __copy__(self) -> Self:
     # This is ok.

@@ -50,6 +50,101 @@ collectFunctionsAndTypes(Operation *module) {
 }
 
 //===----------------------------------------------------------------------===//
+// LifetimeTrackable
+//===----------------------------------------------------------------------===//
+
+/// This class provide an abstraction for analyzing lifetime-trackable values,
+/// e.g. variable definitions and owned arguments to functions.
+struct LifetimeTrackable {
+  LifetimeTrackable(Value value);
+
+  operator bool() const { return name != StringAttr(); }
+
+  /// This is the user's declared name for the value declaration, or null if
+  /// this isn't a tracked value.
+  StringAttr name;
+
+  /// This is the destructor for the value.
+  /// FIXME: Move this to struct decl.
+  TypedAttr dtor;
+
+  /// This is true if the SSA value is a pointer to the logical storage instead
+  /// of being the value itself.  This is always true for values of memory-only
+  /// type.
+  bool isIndirect = false;
+
+  /// This is true if the value is uninitialized at function entry, false if it
+  /// starts out initialized.
+  bool startsUninit = false;
+
+  /// This is true if the value is uninitialized at function exist, false if it
+  /// ends up defined (e.g. as with a byref argument).
+  bool endsUninit = false;
+};
+
+LifetimeTrackable::LifetimeTrackable(Value v) {
+  if (!v) // Null value isn't tracked.
+    return;
+
+  if (auto ownedArgDecl = v.getDefiningOp<OwnedArgDeclOp>()) {
+    name = ownedArgDecl.getNameAttr();
+    dtor = ownedArgDecl.getDtorAttr();
+    isIndirect = true;
+    startsUninit = false;
+    endsUninit = true;
+    return;
+  }
+
+  // LetReg starts out initialized with its own value.
+  if (auto letReg = v.getDefiningOp<LetRegDeclOp>()) {
+    name = letReg.getNameAttr();
+    dtor = letReg.getDtorAttr();
+    isIndirect = false;
+    startsUninit = false;
+    endsUninit = true;
+    return;
+  }
+  // VarLetDeclOp is uninit and ends that way.
+  if (auto varLet = v.getDefiningOp<VarLetDeclOp>()) {
+    name = varLet.getNameAttr();
+    dtor = varLet.getDtorAttr();
+    isIndirect = true;
+    startsUninit = true;
+    endsUninit = true;
+    return;
+  }
+
+  // If this is a function argument, check to see what ownership it has.
+  auto bbArg = dyn_cast<BlockArgument>(v);
+  if (!bbArg || !bbArg.getOwner())
+    return;
+  SignatureType signature;
+  Operation *parentOp = bbArg.getOwner()->getParentOp();
+  StringArrayAttr valueNames;
+  if (auto func = dyn_cast<LIT::FuncOp>(parentOp)) {
+    signature = func.getSignature();
+    valueNames = func.getValueParamNamesAttr();
+  } else if (auto func = dyn_cast<ParamDeclareRegionOp>(parentOp)) {
+    signature = func.getSignature();
+    // FIXME(Issue #11918): Need valueNames for nested functions.
+  } else
+    return;
+
+  auto convention = signature.getValueInputConventions()[bbArg.getArgNumber()];
+  if (convention != ValueInputConvention::ByRef &&
+      convention != ValueInputConvention::ByRefResult)
+    return; // Untracked convention.
+
+  name = valueNames
+             ? valueNames[bbArg.getArgNumber()]
+             : StringAttr::get(bbArg.getContext(), "FIXME(Issue #11918)");
+  // no DTOR
+  isIndirect = true;
+  startsUninit = false;
+  endsUninit = false;
+}
+
+//===----------------------------------------------------------------------===//
 // TypeDeclInfo
 //===----------------------------------------------------------------------===//
 
@@ -124,9 +219,6 @@ struct ValueInfo {
   /// This is the declared value being tracked.
   const Value value;
 
-  /// This is the destructor for the value if it exists, otherwise may be null.
-  const TypedAttr dtor;
-
   /// This indicates the (first, end] bitrange in the bit vector corresponding
   /// to this value.
   const unsigned startValueBit, endValueBit;
@@ -192,7 +284,7 @@ struct ValueSet {
   /// can be used as a sentinel, and so a null Value is always treated as
   /// untracked.
   ValueSet(TypeDeclInfo &typeDeclInfo) : typeDeclInfo(typeDeclInfo) {
-    addValue(Value(), false, TypedAttr(), false, false);
+    addValue(Value(), LifetimeTrackable(Value()));
   }
 
   /// Return the number of values we are tracking.
@@ -205,10 +297,9 @@ struct ValueSet {
   ///  * whether the value starts out uninit or init at the function start
   ///  * whether the value is uninit or init at normal function return.
   ///
-  void addValue(Value val, bool isByRef, TypedAttr dtor, bool startsUninit,
-                bool endsUninit) {
+  void addValue(Value val, LifetimeTrackable trackable) {
     // FIXME(staging): Ignore values without destructors.
-    if (!ENABLE_FOR_ALL && !dtor && val)
+    if (!ENABLE_FOR_ALL && !trackable.dtor && val)
       return;
 
     unsigned firstValueBit = getNumTotalBits();
@@ -217,16 +308,16 @@ struct ValueSet {
     // It isn't possible to update in-register values: register_passable values
     // are always valid when present.  If they pass through memory, they are
     // checked when loaded from memory.
-    if (val && isByRef) {
+    if (val && trackable.isIndirect) {
       Type valType =
           cast<POP::PointerType>(val.getType()).getResolvedElementType();
       numValueBits = typeDeclInfo.getNumFieldsInType(valType);
     }
 
     valueInfoIndex[val] = valueInfos.size();
-    valueInfos.push_back({val, dtor, firstValueBit,
-                          firstValueBit + numValueBits, startsUninit,
-                          endsUninit, /*hasErrorDiagnosed=*/false});
+    valueInfos.push_back({val, firstValueBit, firstValueBit + numValueBits,
+                          trackable.startsUninit, trackable.endsUninit,
+                          /*hasErrorDiagnosed=*/false});
   }
 
   /// If this value is directly tracked by the ValueSet, return the index of the
@@ -295,6 +386,7 @@ struct UninitializedValueScan {
 
 private:
   void checkOp(Operation &op);
+  void checkLive(Operation &op, ValueRef valueRef);
 
   /// This is metadata about all the values we are tracking.
   ValueSet &valueSet;
@@ -313,6 +405,28 @@ private:
   BitVector *raiseSet = nullptr;
 };
 } // namespace
+
+// Verify that the specified ValueRef is live at this point, diagnosing an
+// error at the specified operation if not.
+void UninitializedValueScan::checkLive(Operation &op, ValueRef valueRef) {
+  // If the value is live then all is good.
+  if (valueRef.isAllPresent(liveValues))
+    return;
+
+  // Ok, it isn't, gear up to see how to best report the error.
+  ValueInfo &valueEntry = valueSet.getValueInfos()[valueRef.valueId];
+  if (valueEntry.hasErrorDiagnosed)
+    return; // Only report one error per symbolic value.
+  valueEntry.hasErrorDiagnosed = true;
+
+  LifetimeTrackable trackable(valueEntry.value);
+  assert(trackable && "value should be tracked");
+
+  auto diag = mlir::emitError(op.getLoc(), "use of uninitialized value ")
+              << trackable.name;
+  diag.attachNote(valueEntry.value.getLoc())
+      << trackable.name << " declared here";
+}
 
 void UninitializedValueScan::scanFunction(LIT::FuncOp func) {
   // Initialize the BitVector with all the elements that are live-in.  We treat
@@ -342,31 +456,17 @@ void UninitializedValueScan::checkOp(Operation &op) {
   if (isa<StructGEPOp>(op))
     return;
 
-  // Verify that the specified value ID is live at this point, diagnosing an
-  // error if not.
-  auto checkLive = [&](ValueRef valueRef) {
-    if (valueRef.isAllPresent(liveValues))
-      return;
-    ValueInfo &valueEntry = valueSet.getValueInfos()[valueRef.valueId];
-    if (!valueEntry.hasErrorDiagnosed) {
-      auto diag =
-          mlir::emitError(op.getLoc(), "invalid use of uninitialized value");
-      diag.attachNote(valueEntry.value.getLoc()) << "value declared here";
-      valueEntry.hasErrorDiagnosed = true;
-    }
-  };
-
   auto checkSSAValueLive = [&](Value value) -> ValueRef {
     ValueRef valueId = valueSet.getDirectValueRef(value);
     if (valueId)
-      checkLive(valueId);
+      checkLive(op, valueId);
     return valueId;
   };
 
   auto checkDirectPointerLive = [&](Value value) -> ValueRef {
     ValueRef valueRef = valueSet.getPointerValueIndex(value);
     if (valueRef)
-      checkLive(valueRef);
+      checkLive(op, valueRef);
     return valueRef;
   };
 
@@ -381,7 +481,7 @@ void UninitializedValueScan::checkOp(Operation &op) {
   // an initialization.
   if (auto loadOp = dyn_cast<POP::LoadOp>(op)) {
     // This marks its value live.
-    checkLive(valueSet.getPointerValueIndex(loadOp.getPtr()));
+    checkLive(op, valueSet.getPointerValueIndex(loadOp.getPtr()));
     return;
   }
 
@@ -434,8 +534,8 @@ void UninitializedValueScan::checkOp(Operation &op) {
     auto valueInfosRef = valueSet.getValueInfos();
     for (size_t i = 1, e = valueInfosRef.size(); i != e; ++i)
       if (!valueInfosRef[i].endsUninit)
-        checkLive(ValueRef{unsigned(i), valueInfosRef[i].startValueBit,
-                           valueInfosRef[i].endValueBit});
+        checkLive(op, ValueRef{unsigned(i), valueInfosRef[i].startValueBit,
+                               valueInfosRef[i].endValueBit});
     return;
   }
 
@@ -549,8 +649,8 @@ void UninitializedValueScan::checkOp(Operation &op) {
 
   (void)hasUse;
 #if STAGING
-    if (hasUse && !isMemoryEffectFree(&op) && !isa<POP::LoadOp>(op))
-      op.dump();
+  if (hasUse && !isMemoryEffectFree(&op) && !isa<POP::LoadOp>(op))
+    op.dump();
 #endif
 }
 
@@ -593,39 +693,22 @@ LogicalResult CheckLifetimes::processFunction(LIT::FuncOp func,
   // ownership to track, and number them.
   SmallVector<OwnedArgDeclOp> ownedArgDecls;
   ValueSet valueSet(typeDeclInfo);
-  auto collectArguments = [&](SignatureType signature, Block *body) {
-    for (auto [convention, bbArg] : llvm::zip(
-             signature.getValueInputConventions(), body->getArguments())) {
-      if (convention == ValueInputConvention::ByRef ||
-          convention == ValueInputConvention::ByRefResult)
-        valueSet.addValue(bbArg, /*isByRef*/ true, /*no-dtor*/ TypedAttr(),
-                          /*startsUninit*/ false, /*endsUninit*/ false);
-    }
-  };
   func->walk([&](Operation *op) {
-    if (auto ownedArgDecl = dyn_cast<OwnedArgDeclOp>(op)) {
+    if (auto ownedArgDecl = dyn_cast<OwnedArgDeclOp>(op))
       ownedArgDecls.push_back(ownedArgDecl);
-      return valueSet.addValue(op->getResult(0), /*isByRef*/ true,
-                               ownedArgDecl.getDtorAttr(),
-                               /*startsUninit*/ false, /*endsUninit*/ true);
-    }
-    // LetReg starts out initialized with its own value.
-    if (auto letReg = dyn_cast<LetRegDeclOp>(op))
-      return valueSet.addValue(op->getResult(0), /*isByRef*/ false,
-                               letReg.getDtorAttr(),
-                               /*startsUninit*/ false, /*endsUninit*/ true);
-    // VarLetDeclOp is uninit and ends that way.
-    if (auto varLet = dyn_cast<VarLetDeclOp>(op))
-      return valueSet.addValue(op->getResult(0), /*isByRef*/ true,
-                               varLet.getDtorAttr(),
-                               /*startsUninit*/ true, /*endsUninit*/ true);
 
-    // Collect values we need to track from arguments to closures and the outer
-    // function itself.
-    if (auto func = dyn_cast<LIT::FuncOp>(op))
-      collectArguments(func.getSignature(), func.getBody());
-    else if (auto func = dyn_cast<ParamDeclareRegionOp>(op))
-      collectArguments(func.getSignature(), func.getBody());
+    // All the ops that define trackable values have a single result.
+    if (op->getNumResults() == 1)
+      if (auto trackable = LifetimeTrackable(op->getResult(0)))
+        valueSet.addValue(op->getResult(0), trackable);
+
+    // If there are any regions, check the block arguments for arguments.
+    for (auto &region : op->getRegions()) {
+      for (auto &block : region)
+        for (auto arg : block.getArguments())
+          if (auto trackable = LifetimeTrackable(arg))
+            valueSet.addValue(arg, trackable);
+    }
   });
 
   // Walk #2: Scan the function and identify any uses of values that are not
