@@ -397,6 +397,37 @@ static bool compareConstants(CmpPredicate pred, ArgT lhs, ArgT rhs) {
 
 OpFoldResult CmpOp::fold(FoldAdaptor adaptor) {
   auto operands = adaptor.getOperands();
+
+  std::optional<KGENDType> dtype = getType().getResolvedDType();
+  std::optional<KGENDType> operandTy = getLhs().getType().getResolvedDType();
+  std::optional<int64_t> size = getType().getResolvedSize();
+
+  // Handle the case of inputs being the same but non-constant. Avoid floats as
+  // they could be NAN.
+  if (dtype && operandTy && size && dtype->isIntLike() && operandTy->isInt() &&
+      getLhs() == getRhs()) {
+    // Create a SIMD constant of all trues or all false.
+    SmallVector<DTypeValue> allTrues(*size, {true, KGENDType::kBool});
+    SmallVector<DTypeValue> allFalse(*size, {false, KGENDType::kBool});
+
+    switch (getPred()) {
+    case CmpPredicate::EQ:
+      return SIMDAttr::get(allTrues, getType());
+    case CmpPredicate::NE:
+      return SIMDAttr::get(allFalse, getType());
+    case CmpPredicate::LT:
+      return SIMDAttr::get(allFalse, getType());
+    case CmpPredicate::GT:
+      return SIMDAttr::get(allFalse, getType());
+    case CmpPredicate::LE:
+      return SIMDAttr::get(allTrues, getType());
+    case CmpPredicate::GE:
+      return SIMDAttr::get(allTrues, getType());
+    }
+  }
+
+  // Handle the case of applying the operation at compile time on the constant
+  // values.
   return foldSIMDOpResult<::detail::kOtherResult>(
       operands, KGENDType::kBool,
       [&](APSInt lhs, APSInt rhs) {

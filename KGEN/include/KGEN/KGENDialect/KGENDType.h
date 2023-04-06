@@ -47,6 +47,11 @@ public:
   /// index dtype is signed.
   constexpr bool isSInt() const { return isIndex() || DType::isSInt(); }
 
+  /// Returns true if the type is any valid integer representation.
+  constexpr bool isIntLike() const {
+    return isIndex() || isInt() || isBool() || isAddress();
+  }
+
   /// Return the element type for it's string representation.
   static FailureOr<KGENDType> getFromString(StringRef str) {
     if (str == "address")
