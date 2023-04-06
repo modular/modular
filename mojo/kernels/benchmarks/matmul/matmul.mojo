@@ -11,7 +11,7 @@
 
 from Benchmark import Benchmark
 from DType import DType
-from F32 import F32
+from SIMD import F32
 from Int import Int
 from IO import print
 from List import create_dim_list

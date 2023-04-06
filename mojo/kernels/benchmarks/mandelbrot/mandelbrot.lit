@@ -12,7 +12,7 @@
 
 
 from DType import DType
-from F32 import F32
+from SIMD import F32
 from SIMD import SIMD
 from IO import print, _printf
 from Range import range
