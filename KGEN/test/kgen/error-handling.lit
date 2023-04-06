@@ -7,7 +7,7 @@
 # RUN: mojo %s | FileCheck %s
 
 
-from IO import print
+from IO import print, _printf
 
 
 @raises
@@ -25,23 +25,23 @@ fn main():
     # CHECK: first success
     try:
         let a = implicitlyPropagate(False)
-        print("first success\n")
+        print("first success")
     except e0:
-        print("first had an error\n")
+        print("first had an error")
 
     # CHECK-NEXT: second had an error
     try:
         let b = implicitlyPropagate(True)
-        print("second success\n")
+        print("second success")
     except e1:
-        print("second had an error\n")
+        print("second had an error")
 
     # CHECK-NEXT: third: 0
-    print("third: ")
+    _printf("third: ")
     try:
         print(raiseErrorIf(False))
     except e2:
-        print("bad!\n")
+        print("bad!")
 
     # CHECK-NEXT: done
-    print("done\n")
+    print("done")
