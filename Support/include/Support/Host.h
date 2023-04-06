@@ -133,8 +133,6 @@ enum class HostProperty {
   CPUModel,
   Features,
   CoreCount,
-  SIMDBitWidth,
-  PreferredMemoryAlignment,
   L1CacheSize,
   L2CacheSize,
   L3CacheSize,
@@ -150,8 +148,6 @@ struct HostMachineInfo {
   std::string cpuModelName;
   std::vector<std::string> cpuFeatures;
   size_t numPhysicalCores;
-  size_t simdBitWidth;
-  size_t preferredMemoryAlignment;
   // These represent either data or unified cache size -- they do not include
   // instruction-only caches, but may include cache size that are shared
   // between instruction and data.

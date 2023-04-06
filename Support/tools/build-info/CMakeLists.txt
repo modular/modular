@@ -4,18 +4,9 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_dialect_library(MDialect
-  MAttrInterfaces.cpp
-  MAttrs.cpp
-  MDialect.cpp
-  MTypeInterfaces.cpp
-  MTypes.cpp
+add_modular_tool(build-info
+  build-info.cpp
 
-  DEPENDS
-  MVersion
-  MLIRMIncGen
-
-  LINK_LIBS PUBLIC
-  LLVMTargetParser
-  MLIRIR
+  LINK_LIBS PRIVATE
+  MSupport
 )
