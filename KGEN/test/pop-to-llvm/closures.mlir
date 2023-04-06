@@ -31,7 +31,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
     kgen.return %2 : !pop.closure<(index) -> !pop.scalar<f32>>
   }
 
-  // CHECK:  llvm.func @closure_wrapper_fn(%arg0: !llvm.ptr, %arg1: i64) -> f32 {
+  // CHECK:  llvm.func internal @closure_wrapper_fn(%arg0: !llvm.ptr, %arg1: i64) -> f32 {
   // CHECK:   %[[ENV_STRUCT:.*]] = llvm.bitcast %arg0 : !llvm.ptr to !llvm.ptr<struct<(ptr, struct<(f32)>)>>
   // CHECK:   %[[CALLEEPTR:.*]] = llvm.getelementptr %[[ENV_STRUCT]][0, 0] : (!llvm.ptr<struct<(ptr, struct<(f32)>)>>) -> !llvm.ptr<ptr<func<f32 (i64, f32)>>>
   // CHECK:   %[[CALLEE:.*]] = llvm.load %[[CALLEEPTR]] : !llvm.ptr<ptr<func<f32 (i64, f32)>>>
@@ -79,7 +79,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
     kgen.return
   }
 
-  // CHECK: llvm.func @closure_wrapper_fn(%arg0: !llvm.ptr) {
+  // CHECK: llvm.func internal @closure_wrapper_fn(%arg0: !llvm.ptr) {
   // CHECK:   %[[ENV_STRUCT:.*]] = llvm.bitcast %arg0 : !llvm.ptr to !llvm.ptr<struct<(ptr, struct<(i64, f32)>)>>
   // CHECK:   %[[CALLEEPTR:.*]] = llvm.getelementptr %[[ENV_STRUCT]][0, 0] : (!llvm.ptr<struct<(ptr, struct<(i64, f32)>)>>) -> !llvm.ptr<ptr<func<void (i64, f32)>>>
   // CHECK:   %[[CALLEE:.*]] = llvm.load %[[CALLEEPTR]] : !llvm.ptr<ptr<func<void (i64, f32)>>>
@@ -153,7 +153,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
     kgen.return %1 : index
   }
 
-  // CHECK: llvm.func @closure_wrapper_fn(%arg0: !llvm.ptr, %arg1: i64) -> i64 {
+  // CHECK: llvm.func internal @closure_wrapper_fn(%arg0: !llvm.ptr, %arg1: i64) -> i64 {
   // CHECK:  %[[ENV:.*]] = llvm.bitcast %arg0 : !llvm.ptr to !llvm.ptr<struct<(ptr, struct<(f32)>)>>
   // CHECK:  %[[CALLEEPTR:.*]] = llvm.getelementptr %[[ENV]][0, 0] : (!llvm.ptr<struct<(ptr, struct<(f32)>)>>) -> !llvm.ptr<ptr<func<i64 (i64, f32)>>>
   // CHECK:  %[[CALLEE:.*]] = llvm.load %[[CALLEEPTR]] : !llvm.ptr<ptr<func<i64 (i64, f32)>>>
@@ -205,8 +205,8 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
     kgen.return
   }
 
-  // CHECK-LABEL: llvm.func @closure_wrapper_fn(%arg0: !llvm.ptr) {
-  // CHECK-LABEL: llvm.func @closure_wrapper_fn_0(%arg0: !llvm.ptr) {
+  // CHECK-LABEL: llvm.func internal @closure_wrapper_fn(%arg0: !llvm.ptr) {
+  // CHECK-LABEL: llvm.func internal @closure_wrapper_fn_0(%arg0: !llvm.ptr) {
 }
 
 // -----
@@ -239,7 +239,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
     kgen.return
   }
 
-  // CHECK: llvm.func @closure_wrapper_fn(%arg0: !llvm.ptr) -> f32 {
+  // CHECK: llvm.func internal @closure_wrapper_fn(%arg0: !llvm.ptr) -> f32 {
   //   CHECK: %[[CLOSURE_STRUCTPTR:.*]] = llvm.bitcast %arg0 : !llvm.ptr to !llvm.ptr<struct<(ptr, struct<(f32, ptr<struct<(ptr, ptr)>>)>)>>
   //   CHECK: %[[I_WRAPPERFNPTRPTR:.*]] = llvm.getelementptr %[[CLOSURE_STRUCTPTR]][0, 0] : (!llvm.ptr<struct<(ptr, struct<(f32, ptr<struct<(ptr, ptr)>>)>)>>) -> !llvm.ptr<ptr<func<f32 (ptr<struct<(ptr, ptr)>>, f32)>>>
   //   CHECK: %[[I_WRAPPERFNPTR:.*]] = llvm.load %[[I_WRAPPERFNPTRPTR]] : !llvm.ptr<ptr<func<f32 (ptr<struct<(ptr, ptr)>>, f32)>>>
