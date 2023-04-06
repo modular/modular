@@ -224,6 +224,24 @@ struct ConvertKGENParamConstant
   }
 };
 
+//===----------------------------------------------------------------------===//
+// ConvertKGENUndef
+//===----------------------------------------------------------------------===//
+
+struct ConvertKGENUndef : public ConvertPOPToLLVMPattern<UndefOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(UndefOp op, UndefOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Type type = getTypeConverter()->convertType(op.getType());
+    if (!type)
+      return emitError(op->getLoc(), "failed to convert result type");
+    rewriter.replaceOpWithNewOp<LLVM::UndefOp>(op, type);
+    return success();
+  }
+};
+
 } // namespace
 
 //===----------------------------------------------------------------------===//
@@ -245,7 +263,8 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertKGENCall,
       ConvertKGENParamConstant,
       ConvertKGENReturn,
-      ConvertKGENUnreachable
+      ConvertKGENUnreachable,
+      ConvertKGENUndef
       // clang-format on
       >(typeConverter);
   patterns.insert<ConvertKGENFunc>(typeConverter, symtab);
@@ -537,7 +556,6 @@ void LowerKGENToLLVMPass::runOnOperation() {
   target.addLegalDialect<LLVM::LLVMDialect>();
   target.addLegalDialect<POP::POPDialect>();
   target.addLegalOp<mlir::UnrealizedConversionCastOp>();
-  target.addLegalOp<StaticUndefOp>();
 
   // Capture all the public symbols declared by kgen.export declarations.
   llvm::MapVector<StringAttr, ExportedSymbol> publicSymbols =

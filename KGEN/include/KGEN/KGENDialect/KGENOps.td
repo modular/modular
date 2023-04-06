@@ -739,21 +739,20 @@ def KGEN_RebindOp : KGENOp<"rebind", [Pure]> {
 }
 
 //===----------------------------------------------------------------------===//
-// StaticUndefOp
+// UndefOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_StaticUndefOp : KGENOp<"static.undef", [Pure]> {
+def KGEN_UndefOp : KGENOp<"undef", [Pure]> {
   let summary = "Return an undefined value.";
   let description = [{
-    The `kgen.static.undef` operation returns an undefined value of a given
-    type. This operation has no runtime representation and must be removed from
-    the IR to be valid; it is only valid inside statically-known dead code.
+    The `kgen.undef` operation returns an undefined value of a given type.
+    Accessing an undefined value is undefined behaviour (duh).
 
     Example:
 
     ```mlir
-    %0 = kgen.static.undef : !kgen.declref<@Int>
-    %1 = kgen.static.undef : !pop.struct<array<2, index>>
+    %0 = kgen.undef : !kgen.declref<@Int>
+    %1 = kgen.undef : !pop.struct<array<2, index>>
     ```
   }];
 
