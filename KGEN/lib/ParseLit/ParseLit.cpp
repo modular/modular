@@ -85,7 +85,7 @@ importMojoFileImpl(SourceMgr &sourceMgr, LitSharedState &sharedState,
                                LitSharedState::kBuiltinTupleModuleName,
                                LitSharedState::kBuiltinErrorModuleName,
                                LitSharedState::kBuiltinIntModuleName,
-                               LitSharedState::kBuiltinAliasesModuleName}) {
+                               LitSharedState::kBuiltinTypeAliasesModuleName}) {
     auto builtinStrAttr = StringAttr::get(module->getContext(), moduleName);
     if (failed(sharedState.declResolver->importModule(
             topLevelDecl, builtinStrAttr, builtinStrAttr, startSMLoc)))
