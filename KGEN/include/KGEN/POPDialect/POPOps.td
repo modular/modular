@@ -792,6 +792,8 @@ def POP_OffsetOp : POPOp<"offset", [Pure, AllTypesMatch<["result", "ptr"]>,
   let assemblyFormat = [{
     $ptr `[` $index `]` attr-dict `:` qualified(type($ptr))
   }];
+
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
