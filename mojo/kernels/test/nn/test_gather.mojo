@@ -25,7 +25,7 @@ from TargetInfo import simd_width
 
 # CHECK-LABEL: test_gather
 fn test_gather():
-    print("== test_gather\n")
+    print("== test_gather")
 
     @always_inline
     fn _test_gather[indices_type: DType]():
@@ -176,7 +176,7 @@ fn test_gather_3d():
 
 # CHECK-LABEL: test_gather_empty_indices
 fn test_gather_empty_indices():
-    print("== test_gather_empty_indices\n")
+    print("== test_gather_empty_indices")
 
     @always_inline
     fn _test_gather[indices_type: DType]():

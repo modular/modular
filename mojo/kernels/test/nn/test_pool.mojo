@@ -135,7 +135,7 @@ fn pool(pool_method: Int):
 
 # CHECK-LABEL: test_max_pool_2d
 fn test_max_pool_2d():
-    print("== test_max_pool_2d\n")
+    print("== test_max_pool_2d")
 
     # output should have form
     # ([[[[ 15.,  18.],
@@ -168,7 +168,7 @@ fn test_max_pool_2d():
 
 # CHECK-LABEL: test_avg_pool_2d
 fn test_avg_pool_2d():
-    print("== test_avg_pool_2d\n")
+    print("== test_avg_pool_2d")
 
     # output should have form
     # ([[[[  7.5000,  10.5000],

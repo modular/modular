@@ -12,7 +12,7 @@ from Math import iota
 
 # CHECK-LABEL: test_relu
 fn test_relu():
-    print("== test_relu\n")
+    print("== test_relu")
 
     let simd_val = iota[4, DType.f32]()
 
@@ -28,7 +28,7 @@ fn test_relu():
 
 # CHECK-LABEL: test_relu_n1
 fn test_relu_n1():
-    print("== test_relu_n1\n")
+    print("== test_relu_n1")
 
     let simd_val = iota[4, DType.f32]()
 
@@ -44,7 +44,7 @@ fn test_relu_n1():
 
 # CHECK-LABEL: test_prelu
 fn test_prelu():
-    print("== test_prelu\n")
+    print("== test_prelu")
 
     let simd_val = iota[4, DType.f32]()
 
@@ -60,7 +60,7 @@ fn test_prelu():
 
 # CHECK-LABEL: test_gelu
 fn test_gelu():
-    print("== test_gelu\n")
+    print("== test_gelu")
 
     let simd_val = 2 - 0.5 * iota[4, DType.f32]()
 

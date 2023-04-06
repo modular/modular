@@ -16,7 +16,7 @@ from List import Dim, VariadicList
 
 
 fn test_concat():
-    print("== test_concat\n")
+    print("== test_concat")
     alias x1_sz = 2 * 2 * 1 * 2
     alias x2_sz = 2 * 2 * 2 * 2
     alias x3_sz = 2 * 2 * 3 * 2

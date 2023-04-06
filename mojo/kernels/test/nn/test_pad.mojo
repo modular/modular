@@ -15,7 +15,7 @@ from Pad import pad
 
 # CHECK-LABEL: test_pad_1d
 fn test_pad_1d():
-    print("== test_pad_1d\n")
+    print("== test_pad_1d")
 
     alias in_shape = create_dim_list(3)
     alias out_shape = create_dim_list(6)
@@ -59,7 +59,7 @@ fn test_pad_1d():
 
 # CHECK-LABEL: test_pad_2d
 fn test_pad_2d():
-    print("== test_pad_2d\n")
+    print("== test_pad_2d")
 
     alias in_shape = create_dim_list(2, 2)
     alias out_shape = create_dim_list(3, 4)
@@ -123,7 +123,7 @@ fn test_pad_2d():
 
 # CHECK-LABEL: test_pad_3d
 fn test_pad_3d():
-    print("== test_pad_3d\n")
+    print("== test_pad_3d")
 
     alias in_shape = create_dim_list(1, 2, 2)
     alias out_shape = create_dim_list(2, 3, 3)

@@ -12,7 +12,7 @@ from DType import DType
 from Functional import elementwise
 from Math import mul
 from List import Dim, DimList, create_dim_list
-from IO import print
+from IO import print, _printf
 from Index import StaticIntTuple, Index
 from LLCL import Runtime, OwningOutputChainPtr
 from TypeUtilities import rebind
@@ -24,9 +24,9 @@ from Slice import slice_as_view, slice_as_copy
 fn print_elements[
     type: DType, in_rank: Int
 ](tensor: NDBuffer[in_rank, DimList[in_rank].create_unknown(), type]):
-    print("New shape:")
+    _printf("New shape: ")
     print(tensor.dynamic_shape)
-    print("New strides:")
+    _printf("New strides: ")
     print(tensor.dynamic_stride)
 
     @always_inline
@@ -74,9 +74,9 @@ fn test_slice[
         DType.f32,
     )
 
-    print("In shape:")
+    _printf("In shape: ")
     print(in_tensor.dynamic_shape)
-    print("In strides:")
+    _printf("In strides: ")
     print(in_tensor.dynamic_stride)
 
     var start_tensor_mem = _raw_stack_allocation[outer_rank, DType.index, 1]()
@@ -124,7 +124,7 @@ fn test_slice[
     if not use_copy:
         print_elements[DType.f32, outer_rank](sliced)
     else:
-        print("As copy\n")
+        print("As copy")
 
         var output_buffer = NDBuffer[
             outer_rank,
@@ -170,12 +170,12 @@ fn test_slice[
 
 # CHECK-LABEL: == test_slice_basic
 fn test_slice_basic():
-    print("== test_slice_basic\n")
+    print("== test_slice_basic")
 
-    # CHECK-NEXT: In shape:(4, 4, 4)
-    # CHECK-NEXT: In strides:(16, 4, 1)
-    # CHECK-NEXT: New shape:(2, 2, 2)
-    # CHECK-NEXT: New strides:(16, 4, 1)
+    # CHECK-NEXT: In shape: (4, 4, 4)
+    # CHECK-NEXT: In strides: (16, 4, 1)
+    # CHECK-NEXT: New shape: (2, 2, 2)
+    # CHECK-NEXT: New strides: (16, 4, 1)
     # CHECK-NEXT: [42.000000]
     # CHECK-NEXT: [43.000000]
     # CHECK-NEXT: [46.000000]
@@ -197,12 +197,12 @@ fn test_slice_basic():
 
 # CHECK-LABEL: == test_slice_identity
 fn test_slice_identity():
-    print("== test_slice_identity\n")
+    print("== test_slice_identity")
 
-    # CHECK-NEXT: In shape:(2, 2, 4)
-    # CHECK-NEXT: In strides:(8, 4, 1)
-    # CHECK-NEXT: New shape:(2, 2, 4)
-    # CHECK-NEXT: New strides:(8, 4, 1)
+    # CHECK-NEXT: In shape: (2, 2, 4)
+    # CHECK-NEXT: In strides: (8, 4, 1)
+    # CHECK-NEXT: New shape: (2, 2, 4)
+    # CHECK-NEXT: New strides: (8, 4, 1)
     # CHECK-NEXT: [0.000000]
     # CHECK-NEXT: [1.000000]
     # CHECK-NEXT: [2.000000]
@@ -234,12 +234,12 @@ fn test_slice_identity():
 
 # CHECK-LABEL: == test_slice_steps
 fn test_slice_steps():
-    print("== test_slice_steps\n")
+    print("== test_slice_steps")
 
-    # CHECK-NEXT: In shape:(2, 4, 8)
-    # CHECK-NEXT: In strides:(32, 8, 1)
-    # CHECK-NEXT: New shape:(1, 2, 4)
-    # CHECK-NEXT: New strides:(64, 16, 2)
+    # CHECK-NEXT: In shape: (2, 4, 8)
+    # CHECK-NEXT: In strides: (32, 8, 1)
+    # CHECK-NEXT: New shape: (1, 2, 4)
+    # CHECK-NEXT: New strides: (64, 16, 2)
     # CHECK-NEXT: [0.000000]
     # CHECK-NEXT: [2.000000]
     # CHECK-NEXT: [4.000000]
@@ -261,12 +261,12 @@ fn test_slice_steps():
 
 # CHECK-LABEL: == test_slice_1D
 fn test_slice_1D():
-    print("== test_slice_1D\n")
+    print("== test_slice_1D")
 
-    # CHECK-NEXT: In shape:(64, )
-    # CHECK-NEXT: In strides:(1, )
-    # CHECK-NEXT: New shape:(4, )
-    # CHECK-NEXT: New strides:(4, )
+    # CHECK-NEXT: In shape: (64, )
+    # CHECK-NEXT: In strides: (1, )
+    # CHECK-NEXT: New shape: (4, )
+    # CHECK-NEXT: New strides: (4, )
     # CHECK-NEXT: [16.000000]
     # CHECK-NEXT: [20.000000]
     # CHECK-NEXT: [24.000000]
@@ -280,12 +280,12 @@ fn test_slice_1D():
 
 # CHECK-LABEL: == test_slice_empty
 fn test_slice_empty():
-    print("== test_slice_empty\n")
+    print("== test_slice_empty")
 
-    # CHECK-NEXT: In shape:(64, )
-    # CHECK-NEXT: In strides:(1, )
-    # CHECK-NEXT: New shape:(0, )
-    # CHECK-NEXT: New strides:(1, )
+    # CHECK-NEXT: In shape: (64, )
+    # CHECK-NEXT: In strides: (1, )
+    # CHECK-NEXT: New shape: (0, )
+    # CHECK-NEXT: New strides: (1, )
 
     # print(torch.arange(0, 64)[8:8:1].flatten())
     test_slice[64, 1, DimList[1].create_unknown()](
@@ -295,12 +295,12 @@ fn test_slice_empty():
 
 # CHECK-LABEL: == test_slice_4D
 fn test_slice_4D():
-    print("== test_slice_4D\n")
+    print("== test_slice_4D")
 
-    # CHECK-NEXT: In shape:(2, 4, 4, 2)
-    # CHECK-NEXT: In strides:(32, 8, 2, 1)
-    # CHECK-NEXT: New shape:(1, 1, 4, 1)
-    # CHECK-NEXT: New strides:(32, 16, 2, 1)
+    # CHECK-NEXT: In shape: (2, 4, 4, 2)
+    # CHECK-NEXT: In strides: (32, 8, 2, 1)
+    # CHECK-NEXT: New shape: (1, 1, 4, 1)
+    # CHECK-NEXT: New strides: (32, 16, 2, 1)
     # CHECK-NEXT: [49.000000]
     # CHECK-NEXT: [51.000000]
     # CHECK-NEXT: [53.000000]
@@ -318,15 +318,15 @@ fn test_slice_4D():
 
 # CHECK-LABEL: == test_slice_copy
 fn test_slice_copy():
-    print("== test_slice_copy\n")
+    print("== test_slice_copy")
 
-    # CHECK-NEXT: In shape:(2, 4, 4, 2)
-    # CHECK-NEXT: In strides:(32, 8, 2, 1)
+    # CHECK-NEXT: In shape: (2, 4, 4, 2)
+    # CHECK-NEXT: In strides: (32, 8, 2, 1)
     # CHECK-NEXT: As copy
-    # CHECK-NEXT: New shape:(1, 1, 4, 1)
+    # CHECK-NEXT: New shape: (1, 1, 4, 1)
 
     # Strides should be contiguous in the copy.
-    # CHECK-NEXT: New strides:(4, 4, 1, 1)
+    # CHECK-NEXT: New strides: (4, 4, 1, 1)
     # CHECK-NEXT: [49.000000]
     # CHECK-NEXT: [51.000000]
     # CHECK-NEXT: [53.000000]
@@ -344,12 +344,12 @@ fn test_slice_copy():
 
 # CHECK-LABEL: == test_slice_negative
 fn test_slice_negative():
-    print("== test_slice_negative\n")
+    print("== test_slice_negative")
 
-    # CHECK-NEXT: In shape:(2, 4, 4, 2)
-    # CHECK-NEXT: In strides:(32, 8, 2, 1)
-    # CHECK-NEXT: New shape:(1, 2, 4, 1)
-    # CHECK-NEXT: New strides:(32, 16, 2, 1)
+    # CHECK-NEXT: In shape: (2, 4, 4, 2)
+    # CHECK-NEXT: In strides: (32, 8, 2, 1)
+    # CHECK-NEXT: New shape: (1, 2, 4, 1)
+    # CHECK-NEXT: New strides: (32, 16, 2, 1)
 
     # CHECK-NEXT: [1.000000]
     # CHECK-NEXT: [3.000000]
@@ -373,12 +373,12 @@ fn test_slice_negative():
 
 # CHECK-LABEL: == test_slice_negative_step_1D
 fn test_slice_negative_step_1D():
-    print("== test_slice_negative_step_1D\n")
+    print("== test_slice_negative_step_1D")
 
-    # CHECK: In shape:(15, )
-    # CHECK-NEXT: In strides:(1, )
-    # CHECK-NEXT: New shape:(6, )
-    # CHECK-NEXT: New strides:(-1, )
+    # CHECK: In shape: (15, )
+    # CHECK-NEXT: In strides: (1, )
+    # CHECK-NEXT: New shape: (6, )
+    # CHECK-NEXT: New strides: (-1, )
 
     # CHECK-NEXT: [14.000000]
     # CHECK-NEXT: [13.000000]
@@ -407,12 +407,12 @@ fn test_slice_negative_step_1D():
 
 # CHECK-LABEL: == test_slice_negative_step_2D
 fn test_slice_negative_step_2D():
-    print("== test_slice_negative_step_2D\n")
+    print("== test_slice_negative_step_2D")
 
-    # CHECK: In shape:(16, 4)
-    # CHECK-NEXT: In strides:(4, 1)
-    # CHECK-NEXT: New shape:(4, 2)
-    # CHECK-NEXT: New strides:(-8, -1)
+    # CHECK: In shape: (16, 4)
+    # CHECK-NEXT: In strides: (4, 1)
+    # CHECK-NEXT: New shape: (4, 2)
+    # CHECK-NEXT: New strides: (-8, -1)
 
     # CHECK-NEXT: [59.000000]
     # CHECK-NEXT: [58.000000]
@@ -435,12 +435,12 @@ fn test_slice_negative_step_2D():
 
 # CHECK-LABEL: == test_slice_negative_step_3D
 fn test_slice_negative_step_3D():
-    print("== test_slice_negative_step_3D\n")
+    print("== test_slice_negative_step_3D")
 
-    # CHECK: In shape:(8, 2, 4)
-    # CHECK-NEXT: In strides:(8, 4, 1)
-    # CHECK-NEXT: New shape:(2, 2, 2)
-    # CHECK-NEXT: New strides:(-16, 4, -2)
+    # CHECK: In shape: (8, 2, 4)
+    # CHECK-NEXT: In strides: (8, 4, 1)
+    # CHECK-NEXT: New shape: (2, 2, 2)
+    # CHECK-NEXT: New strides: (-16, 4, -2)
 
     # CHECK-NEXT: [59.000000]
     # CHECK-NEXT: [57.000000]
@@ -463,12 +463,12 @@ fn test_slice_negative_step_3D():
 
 # CHECK-LABEL: == test_slice_negative_step_4D
 fn test_slice_negative_step_4D():
-    print("== test_slice_negative_step_4D\n")
+    print("== test_slice_negative_step_4D")
 
-    # CHECK: In shape:(2, 4, 2, 4)
-    # CHECK-NEXT: In strides:(32, 8, 4, 1)
-    # CHECK-NEXT: New shape:(1, 2, 1, 3)
-    # CHECK-NEXT: New strides:(-32, -16, -4, -1)
+    # CHECK: In shape: (2, 4, 2, 4)
+    # CHECK-NEXT: In strides: (32, 8, 4, 1)
+    # CHECK-NEXT: New shape: (1, 2, 1, 3)
+    # CHECK-NEXT: New strides: (-32, -16, -4, -1)
 
     # CHECK-NEXT: [63.000000]
     # CHECK-NEXT: [62.000000]
@@ -489,12 +489,12 @@ fn test_slice_negative_step_4D():
 
 # CHECK-LABEL: == test_slice_negative_step_2
 fn test_slice_negative_step_2():
-    print("== test_slice_negative_step_2\n")
+    print("== test_slice_negative_step_2")
 
-    # CHECK: In shape:(3, 3)
-    # CHECK-NEXT: In strides:(3, 1)
-    # CHECK-NEXT: New shape:(1, 1)
-    # CHECK-NEXT: New strides:(-3, -1)
+    # CHECK: In shape: (3, 3)
+    # CHECK-NEXT: In strides: (3, 1)
+    # CHECK-NEXT: New shape: (1, 1)
+    # CHECK-NEXT: New strides: (-3, -1)
 
     # CHECK-NEXT: [8.000000]
 
@@ -510,12 +510,12 @@ fn test_slice_negative_step_2():
 
 # CHECK-LABEL: == test_slice_negative_step_3
 fn test_slice_negative_step_3():
-    print("== test_slice_negative_step_3\n")
+    print("== test_slice_negative_step_3")
 
-    # CHECK: In shape:(3, 3)
-    # CHECK-NEXT: In strides:(3, 1)
-    # CHECK-NEXT: New shape:(2, 2)
-    # CHECK-NEXT: New strides:(-3, -1)
+    # CHECK: In shape: (3, 3)
+    # CHECK-NEXT: In strides: (3, 1)
+    # CHECK-NEXT: New shape: (2, 2)
+    # CHECK-NEXT: New strides: (-3, -1)
 
     # CHECK-NEXT: [8.000000]
     # CHECK-NEXT: [7.000000]
@@ -534,12 +534,12 @@ fn test_slice_negative_step_3():
 
 # CHECK-LABEL: == test_slice_negative_step_4
 fn test_slice_negative_step_4():
-    print("== test_slice_negative_step_4\n")
+    print("== test_slice_negative_step_4")
 
-    # CHECK: In shape:(3, 3)
-    # CHECK-NEXT: In strides:(3, 1)
-    # CHECK-NEXT: New shape:(3, 3)
-    # CHECK-NEXT: New strides:(-3, -1)
+    # CHECK: In shape: (3, 3)
+    # CHECK-NEXT: In strides: (3, 1)
+    # CHECK-NEXT: New shape: (3, 3)
+    # CHECK-NEXT: New strides: (-3, -1)
 
     # CHECK-NEXT: [8.000000]
     # CHECK-NEXT: [7.000000]
@@ -563,12 +563,12 @@ fn test_slice_negative_step_4():
 
 # CHECK-LABEL: == test_truncated_last_dim
 fn test_truncated_last_dim():
-    print("== test_truncated_last_dim\n")
+    print("== test_truncated_last_dim")
 
-    # CHECK: In shape:(3, 3)
-    # CHECK-NEXT: In strides:(3, 1)
-    # CHECK-NEXT: New shape:(2, 2)
-    # CHECK-NEXT: New strides:(3, 2)
+    # CHECK: In shape: (3, 3)
+    # CHECK-NEXT: In strides: (3, 1)
+    # CHECK-NEXT: New shape: (2, 2)
+    # CHECK-NEXT: New strides: (3, 2)
 
     # CHECK-NEXT: [3.000000]
     # CHECK-NEXT: [5.000000]
@@ -587,12 +587,12 @@ fn test_truncated_last_dim():
 
 # CHECK-LABEL: == test_truncated_last_dim_reverse
 fn test_truncated_last_dim_reverse():
-    print("== test_truncated_last_dim_reverse\n")
+    print("== test_truncated_last_dim_reverse")
 
-    # CHECK: In shape:(3, 3)
-    # CHECK-NEXT: In strides:(3, 1)
-    # CHECK-NEXT: New shape:(3, 2)
-    # CHECK-NEXT: New strides:(-3, -2)
+    # CHECK: In shape: (3, 3)
+    # CHECK-NEXT: In strides: (3, 1)
+    # CHECK-NEXT: New shape: (3, 2)
+    # CHECK-NEXT: New strides: (-3, -2)
 
     # CHECK-NEXT: [8.000000]
     # CHECK-NEXT: [6.000000]
@@ -613,12 +613,12 @@ fn test_truncated_last_dim_reverse():
 
 # CHECK-LABEL: == test_last_dim_edge
 fn test_last_dim_edge():
-    print("== test_last_dim_edge\n")
+    print("== test_last_dim_edge")
 
-    # CHECK: In shape:(3, 3)
-    # CHECK-NEXT: In strides:(3, 1)
-    # CHECK-NEXT: New shape:(2, 2)
-    # CHECK-NEXT: New strides:(-3, -1)
+    # CHECK: In shape: (3, 3)
+    # CHECK-NEXT: In strides: (3, 1)
+    # CHECK-NEXT: New shape: (2, 2)
+    # CHECK-NEXT: New strides: (-3, -1)
 
     # CHECK-NEXT: [8.000000]
     # CHECK-NEXT: [7.000000]
@@ -637,12 +637,12 @@ fn test_last_dim_edge():
 
 # CHECK-LABEL: == test_last_dim_edge_2
 fn test_last_dim_edge_2():
-    print("== test_last_dim_edge_2\n")
+    print("== test_last_dim_edge_2")
 
-    # CHECK: In shape:(3, 3)
-    # CHECK-NEXT: In strides:(3, 1)
-    # CHECK-NEXT: New shape:(2, 2)
-    # CHECK-NEXT: New strides:(-3, -1)
+    # CHECK: In shape: (3, 3)
+    # CHECK-NEXT: In strides: (3, 1)
+    # CHECK-NEXT: New shape: (2, 2)
+    # CHECK-NEXT: New strides: (-3, -1)
 
     # CHECK-NEXT: [8.000000]
     # CHECK-NEXT: [7.000000]
@@ -661,12 +661,12 @@ fn test_last_dim_edge_2():
 
 # CHECK-LABEL: == test_last_dim_edge_3
 fn test_last_dim_edge_3():
-    print("== test_last_dim_edge_3\n")
+    print("== test_last_dim_edge_3")
 
-    # CHECK: In shape:(3, 3)
-    # CHECK-NEXT: In strides:(3, 1)
-    # CHECK-NEXT: New shape:(2, 2)
-    # CHECK-NEXT: New strides:(-3, -1)
+    # CHECK: In shape: (3, 3)
+    # CHECK-NEXT: In strides: (3, 1)
+    # CHECK-NEXT: New shape: (2, 2)
+    # CHECK-NEXT: New strides: (-3, -1)
 
     # CHECK-NEXT: [8.000000]
     # CHECK-NEXT: [7.000000]
@@ -685,12 +685,12 @@ fn test_last_dim_edge_3():
 
 # CHECK-LABEL: == test_last_dim_edge_4
 fn test_last_dim_edge_4():
-    print("== test_last_dim_edge_4\n")
+    print("== test_last_dim_edge_4")
 
-    # CHECK: In shape:(3, 3)
-    # CHECK-NEXT: In strides:(3, 1)
-    # CHECK-NEXT: New shape:(3, 3)
-    # CHECK-NEXT: New strides:(-3, -1)
+    # CHECK: In shape: (3, 3)
+    # CHECK-NEXT: In strides: (3, 1)
+    # CHECK-NEXT: New shape: (3, 3)
+    # CHECK-NEXT: New strides: (-3, -1)
 
     # CHECK-NEXT: [8.000000]
     # CHECK-NEXT: [7.000000]
@@ -714,12 +714,12 @@ fn test_last_dim_edge_4():
 
 # CHECK-LABEL: == test_out_of_bounds
 fn test_out_of_bounds():
-    print("== test_out_of_bounds\n")
+    print("== test_out_of_bounds")
 
-    # CHECK: In shape:(3, 3)
-    # CHECK-NEXT: In strides:(3, 1)
-    # CHECK-NEXT: New shape:(2, 2)
-    # CHECK-NEXT: New strides:(3, 1)
+    # CHECK: In shape: (3, 3)
+    # CHECK-NEXT: In strides: (3, 1)
+    # CHECK-NEXT: New shape: (2, 2)
+    # CHECK-NEXT: New strides: (3, 1)
 
     # CHECK-NEXT: [3.000000]
     # CHECK-NEXT: [4.000000]

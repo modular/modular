@@ -15,7 +15,7 @@ from List import DimList, create_dim_list
 
 # CHECK-LABEL: test_broadcast_same_shape
 fn test_broadcast_same_shape():
-    print("== test_broadcast_same_shape\n")
+    print("== test_broadcast_same_shape")
 
     # parameters
     alias input_shape = create_dim_list(1, 2, 1)
@@ -59,7 +59,7 @@ fn test_broadcast_same_shape():
 
 # CHECK-LABEL: test_broadcast_single_axis
 fn test_broadcast_single_axis():
-    print("== test_broadcast_single_axis\n")
+    print("== test_broadcast_single_axis")
 
     # parameters
     alias input_shape = create_dim_list(1, 2)
@@ -112,7 +112,7 @@ fn test_broadcast_single_axis():
 
 # CHECK-LABEL: test_broadcast_multi_axes
 fn test_broadcast_multi_axes():
-    print("== test_broadcast_multi_axes\n")
+    print("== test_broadcast_multi_axes")
 
     # parameters
     alias input_shape = create_dim_list(1, 2, 1)
