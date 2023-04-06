@@ -74,6 +74,21 @@ struct Buffer[size: Dim, type: DType]:
     var dtype: DType
 
     @always_inline
+    fn __init__() -> Buffer[size, type]:
+        """Default initializer for Buffer. By default the fields are all
+        inialized to 0.
+
+        Returns:
+            The NDBuffer object.
+        """
+
+        return Self {
+            data: DTypePointer[type].get_null(),
+            dynamic_size: 0,
+            dtype: type,
+        }
+
+    @always_inline
     fn __init__(
         ptr: __mlir_type[`!pop.pointer<scalar<`, type.value, `>>`]
     ) -> Buffer[size, type]:
@@ -578,6 +593,24 @@ struct NDBuffer[
     var is_contiguous: Bool
 
     @always_inline
+    fn __init__() -> NDBuffer[rank, shape, type]:
+        """Default initializer for NDBuffer. By default the fields are all
+        inialized to 0.
+
+        Returns:
+            The NDBuffer object.
+        """
+
+        return Self {
+            data: DTypePointer[type].get_null(),
+            _rank: rank,
+            dynamic_shape: StaticIntTuple[rank](),
+            dynamic_dtype: type,
+            dynamic_stride: StaticIntTuple[rank](),
+            is_contiguous: False,
+        }
+
+    @always_inline
     fn __init__(
         ptr: __mlir_type[`!pop.pointer<scalar<`, type.value, `>>`],
     ) -> NDBuffer[rank, shape, type]:
@@ -602,7 +635,7 @@ struct NDBuffer[
             data: ptr,
             _rank: rank,
             dynamic_shape: shape,
-            dynamic_dtype: type.value,
+            dynamic_dtype: type,
             dynamic_stride: _compute_ndbuffer_stride[rank](shape),
             is_contiguous: True,
         }
@@ -631,7 +664,7 @@ struct NDBuffer[
             data: ptr,
             _rank: rank,
             dynamic_shape: dynamic_shape,
-            dynamic_dtype: dynamic_dtype.value,
+            dynamic_dtype: dynamic_dtype,
             dynamic_stride: _compute_ndbuffer_stride[rank](dynamic_shape),
             is_contiguous: True,
         }
@@ -660,7 +693,7 @@ struct NDBuffer[
             data: ptr,
             _rank: rank,
             dynamic_shape: dynamic_shape,
-            dynamic_dtype: dynamic_dtype.value,
+            dynamic_dtype: dynamic_dtype,
             dynamic_stride: _compute_ndbuffer_stride[rank](dynamic_shape),
             is_contiguous: True,
         }
@@ -691,7 +724,7 @@ struct NDBuffer[
             data: ptr,
             _rank: rank,
             dynamic_shape: dynamic_shape,
-            dynamic_dtype: dynamic_dtype.value,
+            dynamic_dtype: dynamic_dtype,
             dynamic_stride: dynamic_stride,
             is_contiguous: _compute_ndbuffer_stride[rank](dynamic_shape)
             == dynamic_stride,
