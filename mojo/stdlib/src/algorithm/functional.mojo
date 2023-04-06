@@ -911,6 +911,7 @@ fn tile_and_unswitch[
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline
 fn get_num_workers(problem_size: Int, runtime: Runtime) -> Int:
     # Minimum number of elements to warrant an additional thread.
     # copied from https://github.com/pytorch/pytorch/blob/20dfce591ce88bc957ffcd0c8dc7d5f7611a4a3b/aten/src/ATen/TensorIterator.h#L86
