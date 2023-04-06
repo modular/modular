@@ -16,7 +16,7 @@ from Range import range
 
 # CHECK-LABEL: test_sync_coro
 fn test_sync_coro():
-    print("== test_sync_coro\n")
+    print("== test_sync_coro")
 
     async fn test_llcl_add[lhs: Int](rhs: Int) -> Int:
         return lhs + rhs
@@ -39,7 +39,7 @@ fn test_sync_coro():
 
 # CHECK-LABEL: test_runtime_task
 fn test_runtime_task():
-    print("== test_runtime_task\n")
+    print("== test_runtime_task")
 
     async fn test_llcl_add[lhs: Int](rhs: Int) -> Int:
         return lhs + rhs
@@ -62,7 +62,7 @@ fn test_runtime_task():
 
 # CHECK-LABEL: test_runtime_taskgroup
 fn test_runtime_taskgroup():
-    print("== test_runtime_taskgroup\n")
+    print("== test_runtime_taskgroup")
 
     async fn return_value[value: Int]() -> Int:
         return value
@@ -98,7 +98,7 @@ fn test_runtime_taskgroup():
 # TODO(#11329): Re-enable.
 # DISABLED-CHECK-LABEL: test_runtime_asynctaskgroup
 fn test_runtime_asynctaskgroup():
-    print("== test_runtime_asynctaskgroup\n")
+    print("== test_runtime_asynctaskgroup")
 
     var completed = Atomic[DType.index](0)
     let ptr = Pointer[Atomic[DType.index]].address_of(completed)
