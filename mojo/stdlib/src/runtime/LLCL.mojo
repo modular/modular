@@ -21,6 +21,7 @@ from Tracing import TraceLevel, is_mojo_profiling_disabled
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline
 fn num_cores() -> Int:
     """Returns the number of cores on the system.
 
@@ -362,6 +363,7 @@ struct OutputChainPtr:
     alias ptr_type = DTypePointer[DType.invalid.value]
     var ptr: ptr_type
 
+    @always_inline
     fn __init__(ptr: ptr_type) -> OutputChainPtr:
         """Casts a raw pointer to our OutputChainPtr."""
         return OutputChainPtr {ptr: ptr}
@@ -485,10 +487,12 @@ struct OwningOutputChainPtr:
     alias ptr_type = DTypePointer[DType.invalid.value]
     var ptr: ptr_type
 
+    @always_inline
     fn __init__(ptr: ptr_type) -> OwningOutputChainPtr:
         """Casts a raw pointer to our OwningOutputChainPtr."""
         return OwningOutputChainPtr {ptr: ptr}
 
+    @always_inline
     fn __init__(rt: Runtime) -> OwningOutputChainPtr:
         """Returns a pointer to a heap-allocated empty LLCL::OutputChain.
         The LLCL::OutputChain will have an empty location and an unemplaced
@@ -504,6 +508,7 @@ struct OwningOutputChainPtr:
     fn __copy__(self) -> Self:
         return Self {ptr: self.ptr}
 
+    @always_inline
     fn __del__(self):
         """Destroys the LLCL::OutputChain."""
         __mlir_op.`pop.external_call`[
@@ -511,6 +516,7 @@ struct OwningOutputChainPtr:
             _type:[],
         ](self.ptr)
 
+    @always_inline
     fn borrow(self) -> OutputChainPtr:
         """Returns non-owning pointer to same LLCL::OutputChain."""
         return OutputChainPtr(self.ptr)
@@ -555,11 +561,13 @@ struct AsyncTaskGroup:
     # Vector holding co-routines.
     var coroutines: UnsafeFixedVector[Coroutine[NoneType]]
 
+    @always_inline
     fn __init__(self&, num_work_items: Int, out_chain: OutputChainPtr):
         self.counter = num_work_items
         self.out_chain = out_chain.deepcopy()
         self.coroutines = UnsafeFixedVector[Coroutine[NoneType]](num_work_items)
 
+    @always_inline
     fn __del__(self&):
         for j in range(self.coroutines.__len__()):
             self.coroutines[j].__del__()
@@ -618,11 +626,13 @@ struct AsyncTaskGroupPtr:
 
     var ptr: Pointer[AsyncTaskGroup]
 
+    @always_inline
     fn __init__(self&, num_work_items: Int, out_chain: OutputChainPtr):
         self.ptr = _aligned_alloc[AsyncTaskGroup](sizeof[AsyncTaskGroup]())
         __get_address_as_lvalue(self.ptr.address) = AsyncTaskGroup(
             num_work_items, out_chain
         )
 
+    @always_inline
     fn add_task(self&, coroutine: Coroutine[NoneType]):
         __get_address_as_lvalue(self.ptr.address).add_task(coroutine)
