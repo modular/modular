@@ -50,15 +50,15 @@ fn test_concat():
 
     concat[type](output, concat_axis, input_list)
 
-    # CHECK-COUNT-2: [0.000000]
-    # CHECK-COUNT-4: [1.000000]
-    # CHECK-COUNT-6: [2.000000]
-    # CHECK-COUNT-2: [0.000000]
-    # CHECK-COUNT-4: [1.000000]
-    # CHECK-COUNT-6: [2.000000]
-    # CHECK-COUNT-2: [0.000000]
-    # CHECK-COUNT-4: [1.000000]
-    # CHECK-COUNT-6: [2.000000]
+    # CHECK-COUNT-2: 0.000000
+    # CHECK-COUNT-4: 1.000000
+    # CHECK-COUNT-6: 2.000000
+    # CHECK-COUNT-2: 0.000000
+    # CHECK-COUNT-4: 1.000000
+    # CHECK-COUNT-6: 2.000000
+    # CHECK-COUNT-2: 0.000000
+    # CHECK-COUNT-4: 1.000000
+    # CHECK-COUNT-6: 2.000000
     for ii in range(out_sz):
         print(output[ii])
 

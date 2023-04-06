@@ -176,14 +176,14 @@ fn test_slice_basic():
     # CHECK-NEXT: In strides: (16, 4, 1)
     # CHECK-NEXT: New shape: (2, 2, 2)
     # CHECK-NEXT: New strides: (16, 4, 1)
-    # CHECK-NEXT: [42.000000]
-    # CHECK-NEXT: [43.000000]
-    # CHECK-NEXT: [46.000000]
-    # CHECK-NEXT: [47.000000]
-    # CHECK-NEXT: [58.000000]
-    # CHECK-NEXT: [59.000000]
-    # CHECK-NEXT: [62.000000]
-    # CHECK-NEXT: [63.000000]
+    # CHECK-NEXT: 42.000000
+    # CHECK-NEXT: 43.000000
+    # CHECK-NEXT: 46.000000
+    # CHECK-NEXT: 47.000000
+    # CHECK-NEXT: 58.000000
+    # CHECK-NEXT: 59.000000
+    # CHECK-NEXT: 62.000000
+    # CHECK-NEXT: 63.000000
 
     # print(torch.arange(0, 64).reshape(4, 4, 4)[2:4:1, 2:4:1, 2:4:1].flatten())
     test_slice[64, 3, DimList[3].create_unknown()](
@@ -203,22 +203,22 @@ fn test_slice_identity():
     # CHECK-NEXT: In strides: (8, 4, 1)
     # CHECK-NEXT: New shape: (2, 2, 4)
     # CHECK-NEXT: New strides: (8, 4, 1)
-    # CHECK-NEXT: [0.000000]
-    # CHECK-NEXT: [1.000000]
-    # CHECK-NEXT: [2.000000]
-    # CHECK-NEXT: [3.000000]
-    # CHECK-NEXT: [4.000000]
-    # CHECK-NEXT: [5.000000]
-    # CHECK-NEXT: [6.000000]
-    # CHECK-NEXT: [7.000000]
-    # CHECK-NEXT: [8.000000]
-    # CHECK-NEXT: [9.000000]
-    # CHECK-NEXT: [10.000000]
-    # CHECK-NEXT: [11.000000]
-    # CHECK-NEXT: [12.000000]
-    # CHECK-NEXT: [13.000000]
-    # CHECK-NEXT: [14.000000]
-    # CHECK-NEXT: [15.000000]
+    # CHECK-NEXT: 0.000000
+    # CHECK-NEXT: 1.000000
+    # CHECK-NEXT: 2.000000
+    # CHECK-NEXT: 3.000000
+    # CHECK-NEXT: 4.000000
+    # CHECK-NEXT: 5.000000
+    # CHECK-NEXT: 6.000000
+    # CHECK-NEXT: 7.000000
+    # CHECK-NEXT: 8.000000
+    # CHECK-NEXT: 9.000000
+    # CHECK-NEXT: 10.000000
+    # CHECK-NEXT: 11.000000
+    # CHECK-NEXT: 12.000000
+    # CHECK-NEXT: 13.000000
+    # CHECK-NEXT: 14.000000
+    # CHECK-NEXT: 15.000000
 
     # print(torch.arange(0, 16).reshape(2, 2, 4)[0:2:1, 0:2:1, 0:4:1].flatten())
 
@@ -240,14 +240,14 @@ fn test_slice_steps():
     # CHECK-NEXT: In strides: (32, 8, 1)
     # CHECK-NEXT: New shape: (1, 2, 4)
     # CHECK-NEXT: New strides: (64, 16, 2)
-    # CHECK-NEXT: [0.000000]
-    # CHECK-NEXT: [2.000000]
-    # CHECK-NEXT: [4.000000]
-    # CHECK-NEXT: [6.000000]
-    # CHECK-NEXT: [16.000000]
-    # CHECK-NEXT: [18.000000]
-    # CHECK-NEXT: [20.000000]
-    # CHECK-NEXT: [22.000000]
+    # CHECK-NEXT: 0.000000
+    # CHECK-NEXT: 2.000000
+    # CHECK-NEXT: 4.000000
+    # CHECK-NEXT: 6.000000
+    # CHECK-NEXT: 16.000000
+    # CHECK-NEXT: 18.000000
+    # CHECK-NEXT: 20.000000
+    # CHECK-NEXT: 22.000000
 
     # print(torch.arange(0, 64).reshape(2, 4, 8)[0:2:2, 0:4:2, 0:8:2].flatten())
     test_slice[64, 3, DimList[3].create_unknown()](
@@ -267,10 +267,10 @@ fn test_slice_1D():
     # CHECK-NEXT: In strides: (1, )
     # CHECK-NEXT: New shape: (4, )
     # CHECK-NEXT: New strides: (4, )
-    # CHECK-NEXT: [16.000000]
-    # CHECK-NEXT: [20.000000]
-    # CHECK-NEXT: [24.000000]
-    # CHECK-NEXT: [28.000000]
+    # CHECK-NEXT: 16.000000
+    # CHECK-NEXT: 20.000000
+    # CHECK-NEXT: 24.000000
+    # CHECK-NEXT: 28.000000
 
     # print(torch.arange(0, 64)[16:30:4].flatten())
     test_slice[64, 1, DimList[1].create_unknown()](
@@ -301,10 +301,10 @@ fn test_slice_4D():
     # CHECK-NEXT: In strides: (32, 8, 2, 1)
     # CHECK-NEXT: New shape: (1, 1, 4, 1)
     # CHECK-NEXT: New strides: (32, 16, 2, 1)
-    # CHECK-NEXT: [49.000000]
-    # CHECK-NEXT: [51.000000]
-    # CHECK-NEXT: [53.000000]
-    # CHECK-NEXT: [55.000000]
+    # CHECK-NEXT: 49.000000
+    # CHECK-NEXT: 51.000000
+    # CHECK-NEXT: 53.000000
+    # CHECK-NEXT: 55.000000
 
     # print(torch.arange(0, 64).reshape(2, 4, 4, 2)[1:2:1, 2:4:2, 0:4:1, 1:2:1].flatten())
     test_slice[64, 4, DimList[4].create_unknown()](
@@ -327,10 +327,10 @@ fn test_slice_copy():
 
     # Strides should be contiguous in the copy.
     # CHECK-NEXT: New strides: (4, 4, 1, 1)
-    # CHECK-NEXT: [49.000000]
-    # CHECK-NEXT: [51.000000]
-    # CHECK-NEXT: [53.000000]
-    # CHECK-NEXT: [55.000000]
+    # CHECK-NEXT: 49.000000
+    # CHECK-NEXT: 51.000000
+    # CHECK-NEXT: 53.000000
+    # CHECK-NEXT: 55.000000
 
     # print(torch.arange(0, 64).reshape(2, 4, 4, 2)[1:2:1, 2:4:2, 0:4:1, 1:2:1].flatten())
     test_slice[64, 4, DimList[4].create_unknown()](
@@ -351,15 +351,15 @@ fn test_slice_negative():
     # CHECK-NEXT: New shape: (1, 2, 4, 1)
     # CHECK-NEXT: New strides: (32, 16, 2, 1)
 
-    # CHECK-NEXT: [1.000000]
-    # CHECK-NEXT: [3.000000]
-    # CHECK-NEXT: [5.000000]
-    # CHECK-NEXT: [7.000000]
+    # CHECK-NEXT: 1.000000
+    # CHECK-NEXT: 3.000000
+    # CHECK-NEXT: 5.000000
+    # CHECK-NEXT: 7.000000
 
-    # CHECK-NEXT: [17.000000]
-    # CHECK-NEXT: [19.000000]
-    # CHECK-NEXT: [21.000000]
-    # CHECK-NEXT: [23.000000]
+    # CHECK-NEXT: 17.000000
+    # CHECK-NEXT: 19.000000
+    # CHECK-NEXT: 21.000000
+    # CHECK-NEXT: 23.000000
 
     # print(torch.arange(0, 64).reshape(2, 4, 4, 2)[-2:-1:1, -4:-1:2, -4:4:1, -1:2:1].flatten())
     test_slice[64, 4, DimList[4].create_unknown()](
@@ -380,12 +380,12 @@ fn test_slice_negative_step_1D():
     # CHECK-NEXT: New shape: (6, )
     # CHECK-NEXT: New strides: (-1, )
 
-    # CHECK-NEXT: [14.000000]
-    # CHECK-NEXT: [13.000000]
-    # CHECK-NEXT: [12.000000]
-    # CHECK-NEXT: [11.000000]
-    # CHECK-NEXT: [10.000000]
-    # CHECK-NEXT: [9.000000]
+    # CHECK-NEXT: 14.000000
+    # CHECK-NEXT: 13.000000
+    # CHECK-NEXT: 12.000000
+    # CHECK-NEXT: 11.000000
+    # CHECK-NEXT: 10.000000
+    # CHECK-NEXT: 9.000000
 
     # print(np.arange(0, 15)[14:8:-1])
     test_slice[15, 1, DimList[1].create_unknown()](
@@ -414,14 +414,14 @@ fn test_slice_negative_step_2D():
     # CHECK-NEXT: New shape: (4, 2)
     # CHECK-NEXT: New strides: (-8, -1)
 
-    # CHECK-NEXT: [59.000000]
-    # CHECK-NEXT: [58.000000]
-    # CHECK-NEXT: [51.000000]
-    # CHECK-NEXT: [50.000000]
-    # CHECK-NEXT: [43.000000]
-    # CHECK-NEXT: [42.000000]
-    # CHECK-NEXT: [35.000000]
-    # CHECK-NEXT: [34.000000]
+    # CHECK-NEXT: 59.000000
+    # CHECK-NEXT: 58.000000
+    # CHECK-NEXT: 51.000000
+    # CHECK-NEXT: 50.000000
+    # CHECK-NEXT: 43.000000
+    # CHECK-NEXT: 42.000000
+    # CHECK-NEXT: 35.000000
+    # CHECK-NEXT: 34.000000
 
     # print(np.arange(0, 64).reshape(16, 4)[14:6:-2, -1:1:-1])
     test_slice[64, 2, DimList[2].create_unknown()](
@@ -442,14 +442,14 @@ fn test_slice_negative_step_3D():
     # CHECK-NEXT: New shape: (2, 2, 2)
     # CHECK-NEXT: New strides: (-16, 4, -2)
 
-    # CHECK-NEXT: [59.000000]
-    # CHECK-NEXT: [57.000000]
-    # CHECK-NEXT: [63.000000]
-    # CHECK-NEXT: [61.000000]
-    # CHECK-NEXT: [43.000000]
-    # CHECK-NEXT: [41.000000]
-    # CHECK-NEXT: [47.000000]
-    # CHECK-NEXT: [45.000000]
+    # CHECK-NEXT: 59.000000
+    # CHECK-NEXT: 57.000000
+    # CHECK-NEXT: 63.000000
+    # CHECK-NEXT: 61.000000
+    # CHECK-NEXT: 43.000000
+    # CHECK-NEXT: 41.000000
+    # CHECK-NEXT: 47.000000
+    # CHECK-NEXT: 45.000000
 
     # print(np.arange(0, 64).reshape(8, 2, 4)[-1:4:-2, :, 4:0:-2])
     test_slice[64, 3, DimList[3].create_unknown()](
@@ -470,12 +470,12 @@ fn test_slice_negative_step_4D():
     # CHECK-NEXT: New shape: (1, 2, 1, 3)
     # CHECK-NEXT: New strides: (-32, -16, -4, -1)
 
-    # CHECK-NEXT: [63.000000]
-    # CHECK-NEXT: [62.000000]
-    # CHECK-NEXT: [61.000000]
-    # CHECK-NEXT: [47.000000]
-    # CHECK-NEXT: [46.000000]
-    # CHECK-NEXT: [45.000000]
+    # CHECK-NEXT: 63.000000
+    # CHECK-NEXT: 62.000000
+    # CHECK-NEXT: 61.000000
+    # CHECK-NEXT: 47.000000
+    # CHECK-NEXT: 46.000000
+    # CHECK-NEXT: 45.000000
 
     # print(np.arange(0, 64).reshape(2, 4, 2, 4)[-1:0:-1, -1:0:-2, -1:0:-1, -1:0:-1].stride)
     test_slice[64, 4, DimList[4].create_unknown()](
@@ -496,7 +496,7 @@ fn test_slice_negative_step_2():
     # CHECK-NEXT: New shape: (1, 1)
     # CHECK-NEXT: New strides: (-3, -1)
 
-    # CHECK-NEXT: [8.000000]
+    # CHECK-NEXT: 8.000000
 
     # print(np.arange(0, 9).reshape(3,3)[3:-2:-1, 3:-2:-1])
     test_slice[9, 2, DimList[2].create_unknown()](
@@ -517,10 +517,10 @@ fn test_slice_negative_step_3():
     # CHECK-NEXT: New shape: (2, 2)
     # CHECK-NEXT: New strides: (-3, -1)
 
-    # CHECK-NEXT: [8.000000]
-    # CHECK-NEXT: [7.000000]
-    # CHECK-NEXT: [5.000000]
-    # CHECK-NEXT: [4.000000]
+    # CHECK-NEXT: 8.000000
+    # CHECK-NEXT: 7.000000
+    # CHECK-NEXT: 5.000000
+    # CHECK-NEXT: 4.000000
 
     # print(np.arange(0, 9).reshape(3,3)[3:-3:-1, 3:-3:-1])
     test_slice[9, 2, DimList[2].create_unknown()](
@@ -541,15 +541,15 @@ fn test_slice_negative_step_4():
     # CHECK-NEXT: New shape: (3, 3)
     # CHECK-NEXT: New strides: (-3, -1)
 
-    # CHECK-NEXT: [8.000000]
-    # CHECK-NEXT: [7.000000]
-    # CHECK-NEXT: [6.000000]
-    # CHECK-NEXT: [5.000000]
-    # CHECK-NEXT: [4.000000]
-    # CHECK-NEXT: [3.000000]
-    # CHECK-NEXT: [2.000000]
-    # CHECK-NEXT: [1.000000]
-    # CHECK-NEXT: [0.000000]
+    # CHECK-NEXT: 8.000000
+    # CHECK-NEXT: 7.000000
+    # CHECK-NEXT: 6.000000
+    # CHECK-NEXT: 5.000000
+    # CHECK-NEXT: 4.000000
+    # CHECK-NEXT: 3.000000
+    # CHECK-NEXT: 2.000000
+    # CHECK-NEXT: 1.000000
+    # CHECK-NEXT: 0.000000
 
     # print(np.arange(0, 9).reshape(3,3)[3:-3:-1, 3:-3:-1])
     test_slice[9, 2, DimList[2].create_unknown()](
@@ -570,10 +570,10 @@ fn test_truncated_last_dim():
     # CHECK-NEXT: New shape: (2, 2)
     # CHECK-NEXT: New strides: (3, 2)
 
-    # CHECK-NEXT: [3.000000]
-    # CHECK-NEXT: [5.000000]
-    # CHECK-NEXT: [6.000000]
-    # CHECK-NEXT: [8.000000]
+    # CHECK-NEXT: 3.000000
+    # CHECK-NEXT: 5.000000
+    # CHECK-NEXT: 6.000000
+    # CHECK-NEXT: 8.000000
 
     # print(torch.arange(0, 9).reshape(3,3)[1:56:1, 0:234567:2])
     test_slice[9, 2, DimList[2].create_unknown()](
@@ -594,12 +594,12 @@ fn test_truncated_last_dim_reverse():
     # CHECK-NEXT: New shape: (3, 2)
     # CHECK-NEXT: New strides: (-3, -2)
 
-    # CHECK-NEXT: [8.000000]
-    # CHECK-NEXT: [6.000000]
-    # CHECK-NEXT: [5.000000]
-    # CHECK-NEXT: [3.000000]
-    # CHECK-NEXT: [2.000000]
-    # CHECK-NEXT: [0.000000]
+    # CHECK-NEXT: 8.000000
+    # CHECK-NEXT: 6.000000
+    # CHECK-NEXT: 5.000000
+    # CHECK-NEXT: 3.000000
+    # CHECK-NEXT: 2.000000
+    # CHECK-NEXT: 0.000000
 
     # print(np.arange(0, 9).reshape(3,3)[323534:-242:-1, 435432:-3242:-2])
     test_slice[9, 2, DimList[2].create_unknown()](
@@ -620,10 +620,10 @@ fn test_last_dim_edge():
     # CHECK-NEXT: New shape: (2, 2)
     # CHECK-NEXT: New strides: (-3, -1)
 
-    # CHECK-NEXT: [8.000000]
-    # CHECK-NEXT: [7.000000]
-    # CHECK-NEXT: [5.000000]
-    # CHECK-NEXT: [4.000000]
+    # CHECK-NEXT: 8.000000
+    # CHECK-NEXT: 7.000000
+    # CHECK-NEXT: 5.000000
+    # CHECK-NEXT: 4.000000
 
     # print(np.arange(0, 9).reshape(3,3)[2:0:-1, 2:0:-1]
     test_slice[9, 2, DimList[2].create_unknown()](
@@ -644,10 +644,10 @@ fn test_last_dim_edge_2():
     # CHECK-NEXT: New shape: (2, 2)
     # CHECK-NEXT: New strides: (-3, -1)
 
-    # CHECK-NEXT: [8.000000]
-    # CHECK-NEXT: [7.000000]
-    # CHECK-NEXT: [5.000000]
-    # CHECK-NEXT: [4.000000]
+    # CHECK-NEXT: 8.000000
+    # CHECK-NEXT: 7.000000
+    # CHECK-NEXT: 5.000000
+    # CHECK-NEXT: 4.000000
 
     # print(np.arange(0, 9).reshape(3,3)[3:0:-1, 3:0:-1])
     test_slice[9, 2, DimList[2].create_unknown()](
@@ -668,10 +668,10 @@ fn test_last_dim_edge_3():
     # CHECK-NEXT: New shape: (2, 2)
     # CHECK-NEXT: New strides: (-3, -1)
 
-    # CHECK-NEXT: [8.000000]
-    # CHECK-NEXT: [7.000000]
-    # CHECK-NEXT: [5.000000]
-    # CHECK-NEXT: [4.000000]
+    # CHECK-NEXT: 8.000000
+    # CHECK-NEXT: 7.000000
+    # CHECK-NEXT: 5.000000
+    # CHECK-NEXT: 4.000000
 
     # print(np.arange(0, 9).reshape(3,3)[4:0:-1, 4:0:-1])
     test_slice[9, 2, DimList[2].create_unknown()](
@@ -692,15 +692,15 @@ fn test_last_dim_edge_4():
     # CHECK-NEXT: New shape: (3, 3)
     # CHECK-NEXT: New strides: (-3, -1)
 
-    # CHECK-NEXT: [8.000000]
-    # CHECK-NEXT: [7.000000]
-    # CHECK-NEXT: [6.000000]
-    # CHECK-NEXT: [5.000000]
-    # CHECK-NEXT: [4.000000]
-    # CHECK-NEXT: [3.000000]
-    # CHECK-NEXT: [2.000000]
-    # CHECK-NEXT: [1.000000]
-    # CHECK-NEXT: [0.000000]
+    # CHECK-NEXT: 8.000000
+    # CHECK-NEXT: 7.000000
+    # CHECK-NEXT: 6.000000
+    # CHECK-NEXT: 5.000000
+    # CHECK-NEXT: 4.000000
+    # CHECK-NEXT: 3.000000
+    # CHECK-NEXT: 2.000000
+    # CHECK-NEXT: 1.000000
+    # CHECK-NEXT: 0.000000
 
     # print(np.arange(0, 9).reshape(3,3)[4:-4:-1, 4:-4:-1])
     test_slice[9, 2, DimList[2].create_unknown()](
@@ -721,10 +721,10 @@ fn test_out_of_bounds():
     # CHECK-NEXT: New shape: (2, 2)
     # CHECK-NEXT: New strides: (3, 1)
 
-    # CHECK-NEXT: [3.000000]
-    # CHECK-NEXT: [4.000000]
-    # CHECK-NEXT: [6.000000]
-    # CHECK-NEXT: [7.000000]
+    # CHECK-NEXT: 3.000000
+    # CHECK-NEXT: 4.000000
+    # CHECK-NEXT: 6.000000
+    # CHECK-NEXT: 7.000000
 
     # print(np.arange(0, 9).reshape(3, 3)[1:5:1, -5:-1:1])
     test_slice[9, 2, DimList[2].create_unknown()](
