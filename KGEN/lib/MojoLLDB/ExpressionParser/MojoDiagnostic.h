@@ -15,12 +15,11 @@ namespace M::KGEN::Mojo {
 /// Custom diagnostic type that can contain fix-its.
 class MojoDiagnostic : public lldb_private::Diagnostic {
 public:
-
-  MojoDiagnostic(const llvm::SMDiagnostic &diagnostic,
+  MojoDiagnostic(StringRef message, llvm::ArrayRef<llvm::SMFixIt> fixits,
                  lldb_private::DiagnosticSeverity severity)
-      : Diagnostic(diagnostic.getMessage(), severity,
-                   lldb_private::eDiagnosticOriginLLVM, kMojoCompilerID),
-        fixits(diagnostic.getFixIts().begin(), diagnostic.getFixIts().end()) {}
+      : Diagnostic(message, severity, lldb_private::eDiagnosticOriginLLVM,
+                   kMojoCompilerID),
+        fixits(fixits.begin(), fixits.end()) {}
 
   static bool classof(const Diagnostic *diag) {
     return diag->getKind() == lldb_private::eDiagnosticOriginLLVM &&

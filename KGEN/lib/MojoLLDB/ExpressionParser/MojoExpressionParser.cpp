@@ -133,8 +133,13 @@ static void handleDiagnostic(const llvm::SMDiagnostic &diagnostic, void *ctx) {
     severity = eDiagnosticSeverityRemark;
     break;
   }
+  std::string msg;
+  llvm::raw_string_ostream diagnosticStream(msg);
+  diagnostic.print("mojo", diagnosticStream, /*ShowColors=*/false,
+                   /*ShowKindLabel=*/false);
+
   manager->AddDiagnostic(
-      std::make_unique<MojoDiagnostic>(diagnostic, severity));
+      std::make_unique<MojoDiagnostic>(msg, diagnostic.getFixIts(), severity));
 }
 
 //===----------------------------------------------------------------------===//
