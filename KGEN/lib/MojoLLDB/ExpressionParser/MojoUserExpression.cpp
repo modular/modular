@@ -8,6 +8,7 @@
 #include "../TypeSystem/MojoTypeSystem.h"
 #include "MojoExpressionParser.h"
 #include "MojoExpressionVariable.h"
+#include "lldb/Core/Debugger.h"
 #include "lldb/Expression/DiagnosticManager.h"
 #include "lldb/Expression/IRExecutionUnit.h"
 #include "lldb/Utility/LLDBLog.h"
@@ -250,19 +251,25 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
       return;
 
     LLDB_LOG(log, "[mojo] Rewriting the input expression");
-    // If we can rewrite the expression, do so.
-    if (impl->parser->RewriteExpression(diagnosticManager)) {
-      llvm::raw_string_ostream fixedOS(m_fixed_text);
-      mlir::raw_indented_ostream indentedFixedOS(fixedOS);
-      // Drop the prefix and remove all indent.
-      indentedFixedOS.printReindented(
-          diagnosticManager.GetFixedExpression().substr(prefixSize), "");
-    }
-    // Clear out the diagnostics so we don't re-apply
-    // the fix-its.
-    std::string fixed = diagnosticManager.GetString();
+
+    // If we can rewrite the expression, do so. If not, simply return.
+    if (!impl->parser->RewriteExpression(diagnosticManager))
+      return;
+    llvm::raw_string_ostream fixedOS(m_fixed_text);
+    mlir::raw_indented_ostream indentedFixedOS(fixedOS);
+
+    // Drop the prefix and remove all indent.
+    indentedFixedOS.printReindented(
+        diagnosticManager.GetFixedExpression().substr(prefixSize), "");
+    lldb::StreamSP outputStream =
+        exeCtx.GetTargetRef().GetDebugger().GetAsyncErrorStream();
+    outputStream->AsRawOstream()
+        << diagnosticManager.GetString()
+        << "Applied fix-its, evaluating new expression:\n"
+        << m_fixed_text << "\n";
+
+    // Clear the diagnostic manager so we don't re-fix something.
     diagnosticManager.Clear();
-    diagnosticManager.PutString(eDiagnosticSeverityRemark, fixed);
   };
 
   llvm::CrashRecoveryContext::Enable();
