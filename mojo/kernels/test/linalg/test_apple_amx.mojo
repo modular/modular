@@ -83,7 +83,7 @@ fn print_matrix(
 # CHECK-LABEL: test_amx_matmul
 fn test_amx_matmul():
     if is_apple_m1():
-        print("== test_amx_matmul\n")
+        print("== test_amx_matmul")
 
     var a_matrix = NDBuffer[
         2,

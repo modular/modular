@@ -46,7 +46,7 @@ fn print_buffer[n: Int, type: DType](a_ptr: DTypePointer[void]):
 fn print_matrix[m: Int, n: Int, type: DType](a_ptr: DTypePointer[void]):
     let a = Buffer[Dim(), type](a_ptr.bitcast[type]().address, m * n)
     for i in range(m):
-        print("row\n")
+        print("row")
         for j in range(n):
             let ai = __mlir_op.`pop.cast`[
                 _type:int32_pop,
@@ -146,14 +146,14 @@ fn main():
     # print_matrix[16, 16, DType.si32](c.data.bitcast[void]())
     var errors: Int = 0
     errors = memcmp(c.data.bitcast[void](), c2.data.bitcast[void](), 1024)
-    print("Emulated AMX-int8 matmul test.\n")
+    print("Emulated AMX-int8 matmul test.")
     # CHECK: 0
     print(errors)
     if errors != 0:
-        print("Matrices don't agree!\n\n")
+        print("Matrices don't agree!")
     memset_zero[DType.si32](c.data, 1024)
     if os_is_linux() and has_intel_amx() and init_intel_amx():
-        print("Hardware AMX-int8 matmul test.\n")
+        print("Hardware AMX-int8 matmul test.")
         var tc = setup_tile_config()
         let ptr = Pointer[tileconfig].address_of(tc)
         let tc_ptr = DTypePointer[void](
@@ -173,4 +173,4 @@ fn main():
     # CHECK: 0
     print(errors)
     if errors != 0:
-        print("\nMatrices don't agree!\n\n")
+        print("\nMatrices don't agree!")

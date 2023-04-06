@@ -17,7 +17,7 @@ from Index import StaticIntTuple
 
 # CHECK-LABEL: test_prepack
 fn test_prepack():
-    print("== test_prepack\n")
+    print("== test_prepack")
 
     alias k = 10
     alias tile_k = 4

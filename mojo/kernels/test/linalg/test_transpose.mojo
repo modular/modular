@@ -16,7 +16,7 @@ from Range import range
 
 # CHECK-LABEL: test_transpose_4x4
 fn test_transpose_4x4():
-    print("== test_transpose_4x4\n")
+    print("== test_transpose_4x4")
 
     # Create a matrix of the form
     # [[0, 1, 2, 3],
@@ -99,7 +99,7 @@ fn test_transpose_4x4():
 
 # CHECK-LABEL: test_transpose_8x8
 fn test_transpose_8x8():
-    print("== test_transpose_8x8\n")
+    print("== test_transpose_8x8")
 
     alias num_rows: Int = 8
     alias num_cols: Int = 8
@@ -124,12 +124,12 @@ fn test_transpose_8x8():
             let actual: Int = matrix[ii, jj][0].value
             # CHECK-NOT: Transpose 8x8 failed
             if expected != actual:
-                print("Transpose 8x8 failed\n")
+                print("Transpose 8x8 failed")
 
 
 # CHECK-LABEL: test_transpose_16x16
 fn test_transpose_16x16():
-    print("== test_transpose_16x16\n")
+    print("== test_transpose_16x16")
 
     alias num_rows: Int = 16
     alias num_cols: Int = 16
@@ -154,12 +154,12 @@ fn test_transpose_16x16():
             let actual: Int = matrix[ii, jj][0].value
             # CHECK-NOT: Transpose 16x16 failed
             if expected != actual:
-                print("Transpose 16x16 failed\n")
+                print("Transpose 16x16 failed")
 
 
 # CHECK-LABEL: test_transpose_2d_identity
 fn test_transpose_2d_identity():
-    print("== test_transpose_2d_identity\n")
+    print("== test_transpose_2d_identity")
 
     alias in_shape = create_dim_list(3, 3)
     # Create an input matrix of the form
@@ -220,7 +220,7 @@ fn test_transpose_2d_identity():
 
 # CHECK-LABEL: test_transpose_2d
 fn test_transpose_2d():
-    print("== test_transpose_2d\n")
+    print("== test_transpose_2d")
 
     alias in_shape = create_dim_list(3, 3)
     # Create an input matrix of the form
@@ -281,7 +281,7 @@ fn test_transpose_2d():
 
 # CHECK-LABEL: test_transpose_3d_identity
 fn test_transpose_3d_identity():
-    print("== test_transpose_3d_identity\n")
+    print("== test_transpose_3d_identity")
 
     alias in_shape = create_dim_list(2, 2, 3)
     # Create an input matrix of the form
@@ -355,7 +355,7 @@ fn test_transpose_3d_identity():
 
 # CHECK-LABEL: test_transpose_3d
 fn test_transpose_3d():
-    print("== test_transpose_3d\n")
+    print("== test_transpose_3d")
 
     alias in_shape = create_dim_list(2, 2, 3)
     # Create an input matrix of the form
@@ -431,7 +431,7 @@ fn test_transpose_3d():
 
 # CHECK-LABEL: test_transpose_si64
 fn test_transpose_si64():
-    print("== test_transpose_si64\n")
+    print("== test_transpose_si64")
 
     alias in_shape = create_dim_list(2, 2, 3)
     # Create an input matrix of the form

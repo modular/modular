@@ -20,7 +20,7 @@ from SIMD import SIMD
 from TargetInfo import simd_byte_width
 from Math import div_ceil, min, max
 from Functional import tile, unswitch, tile_and_unswitch, vectorize_unroll
-from IO import print
+from IO import print, _printf
 from DType import DType
 from TargetInfo import dtype_simd_width
 from Matmul import (
@@ -1118,20 +1118,20 @@ struct MatmulGenerator[
             dynamic_state(MatmulDynamicState[data_type]): the current dynamic
         state.
         """
-        print("global offset:")
+        _printf("global offset: ")
         print(dynamic_state.global_offset.as_index())
-        print("\ndynamic tile bound:")
+        _printf("dynamic tile bound: ")
         print(dynamic_state.valid_tile_bound.as_index())
-        print("\nstatic tile bound:")
+        _printf("static tile bound: ")
         print(static_state.static_gemm_shape._as_gemm_shape().as_index())
-        print("\ntranspose a and b:\n")
+        _printf("transpose a and b: ")
         print(static_state.static_data_layout.transpose_a)
         print(static_state.static_data_layout.transpose_b)
-        print("\npacked a,b,c:\n")
+        _printf("packed a,b,c: ")
         print(static_state.a_packed)
         print(static_state.b_packed)
         print(static_state.c_packed)
-        print("\nunswitched m,n,k:\n")
+        _printf("unswitched m,n,k: ")
         print(static_state.static_gemm_switch.M)
         print(static_state.static_gemm_switch.N)
         print(static_state.static_gemm_switch.K)

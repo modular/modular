@@ -34,7 +34,7 @@ fn test(m: Matrix[create_dim_list(4, 4), DType.si32, False]):
 
 
 fn test_matrix_static():
-    print("== test_matrix_static\n")
+    print("== test_matrix_static")
     let a = Buffer[16, DType.si32].stack_allocation()
     let m = Matrix[create_dim_list(4, 4), DType.si32, False](a.data)
     for i in range(16):
@@ -43,7 +43,7 @@ fn test_matrix_static():
 
 
 fn test_matrix_dynamic():
-    print("== test_matrix_dynamic\n")
+    print("== test_matrix_dynamic")
     let vec = DynamicVector[__mlir_type[`!pop.scalar<`, DType.si32.value, `>`]](
         16
     )

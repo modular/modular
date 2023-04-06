@@ -77,7 +77,7 @@ fn matmul_inner_loop(
 
 # CHECK-LABEL: test_micro_kernel
 fn test_micro_kernel():
-    print("== test_micro_kernel\n")
+    print("== test_micro_kernel")
 
     let a = (
         NDBuffer[2, create_dim_list(M, K), type]
