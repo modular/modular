@@ -6,6 +6,7 @@
 
 #include "MojoUserExpression.h"
 #include "../TypeSystem/MojoTypeSystem.h"
+#include "Logging.h"
 #include "MojoExpressionParser.h"
 #include "MojoExpressionVariable.h"
 #include "lldb/Core/Debugger.h"
@@ -234,8 +235,7 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
   size_t prefixSize = m_transformed_text.size();
   exprOSIndented.printReindented(m_expr_text, "  ");
 
-  LLDB_LOG(log, "[mojo] Parsing the following code:\n{0}",
-           m_transformed_text.c_str());
+  MOJO_EXPR_LOG("Parsing the following code:\n{0}", m_transformed_text.c_str());
 
   // Parse the expression.
   m_materializer_up = std::make_unique<Materializer>();
@@ -251,11 +251,12 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
     if (!diagnosticManager.HasFixIts())
       return;
 
-    LLDB_LOG(log, "[mojo] Rewriting the input expression");
+    MOJO_EXPR_LOG("Attempting to rewrite the input expression");
 
     // If we can rewrite the expression, do so. If not, simply return.
     if (!impl->parser->RewriteExpression(diagnosticManager))
       return;
+    MOJO_EXPR_LOG("Rewrote the input, next parse will be the fixed code");
     llvm::raw_string_ostream fixedOS(m_fixed_text);
     mlir::raw_indented_ostream indentedFixedOS(fixedOS);
 
@@ -276,7 +277,7 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
   llvm::CrashRecoveryContext::Enable();
   llvm::CrashRecoveryContext crc;
   if (!crc.RunSafelyOnThread(parseModule)) {
-    LLDB_LOG(log, "[mojo] Crash detected");
+    MOJO_EXPR_LOG("Crash detected");
     diagnosticManager.PutString(eDiagnosticSeverityError, "crash detected");
     return failure();
   }
