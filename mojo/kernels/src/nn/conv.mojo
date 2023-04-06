@@ -1054,22 +1054,6 @@ struct ConvIm2ColNCHW[
             filter(NDBuffer): The filter to convolve the input with.
             conv_shape: Struct describing the convolution dimensions.
         """
-        var conv: ConvIm2ColNCHW[
-            shape_input,
-            shape_filter,
-            shape_output,
-            packed_shape,
-            type,
-            simd_size,
-            a_row_size,
-            pack_inner_size,
-            pack_cache_size,
-        ]
-
-        conv.out = out
-        conv.input = input
-        conv.filter = filter
-        conv.conv_shape = conv_shape
 
         # Translate conv shape to gemm shape for computation mapping.
         let gemm_shape = GemmShape {
@@ -1078,12 +1062,21 @@ struct ConvIm2ColNCHW[
             K: (conv_shape.r * conv_shape.s * conv_shape.c),
         }
 
-        conv.gemm_shape = gemm_shape
-        conv.tile_n_k = calculate_tile_n_k[pack_cache_size, pack_inner_size](
+        let tile_n_k = calculate_tile_n_k[pack_cache_size, pack_inner_size](
             gemm_shape
         )
 
-        return conv
+        return Self {
+            out: out,
+            input: input,
+            filter: filter,
+            conv_shape: conv_shape,
+            gemm_shape: gemm_shape,
+            tile_n_k: tile_n_k,
+            batch_idx: 0,
+            c: NDBuffer[2, DimList[2].create_unknown(), type](),
+            a: NDBuffer[2, DimList[2].create_unknown(), type](),
+        }
 
     fn _run_implicit_matmul(self&):
         """Wrapper utility funciton: Allocates packing space on the stack and
@@ -2119,34 +2112,17 @@ struct ConvIm2ColNHWC[
             filter(NDBuffer): The filter to convolve the input with.
             conv_shape: Struct describing the convolution dimensions.
         """
-        var conv: ConvIm2ColNHWC[
-            shape_input,
-            shape_filter,
-            shape_output,
-            packed_shape,
-            type,
-            simd_size,
-            a_row_size,
-            pack_inner_size,
-            pack_cache_size,
-            filter_layout,
-        ]
-        conv.out = out
-        conv.input = input
-        conv.filter = filter
-        conv.tile_n_k = calculate_tile_n_k[pack_cache_size, pack_inner_size](
+
+        let tile_n_k = calculate_tile_n_k[pack_cache_size, pack_inner_size](
             GemmShape(
                 gemm_shape.M,
                 gemm_shape.N,
                 conv_shape.c,  # Do not yet pack more than C.
             )
         )
-        conv.gemm_shape = gemm_shape
-        conv.conv_shape = conv_shape
-
         # Output shape [N, F, Ho, Wo]
         let c_pointer = out._offset(Index(0, 0, 0, 0))
-        conv.c = NDBuffer[2, DimList[2].create_unknown(), type](
+        let c = NDBuffer[2, DimList[2].create_unknown(), type](
             c_pointer.address,
             create_dim_list(
                 gemm_shape.M,
@@ -2156,7 +2132,7 @@ struct ConvIm2ColNHWC[
         )
 
         # Create 2D view for input.
-        conv.a = NDBuffer[2, DimList[2].create_unknown(), type](
+        let a = NDBuffer[2, DimList[2].create_unknown(), type](
             input.data.address,
             create_dim_list(
                 gemm_shape.M,
@@ -2165,9 +2141,10 @@ struct ConvIm2ColNHWC[
             type,
         )
 
+        var b = NDBuffer[2, DimList[2].create_unknown(), type]()
         # Create 2D view for filter.
         if filter_layout == Image2DLayout.NHWC:  # FRSC layout
-            conv.b = NDBuffer[2, DimList[2].create_unknown(), type](
+            b = NDBuffer[2, DimList[2].create_unknown(), type](
                 filter.data.address,
                 create_dim_list(
                     gemm_shape.N,
@@ -2176,7 +2153,7 @@ struct ConvIm2ColNHWC[
                 type,
             )
         elif filter_layout == Image2DLayout.RSCF:  # RSCF layout
-            conv.b = NDBuffer[2, DimList[2].create_unknown(), type](
+            b = NDBuffer[2, DimList[2].create_unknown(), type](
                 filter.data.address,
                 create_dim_list(
                     gemm_shape.K,
@@ -2184,9 +2161,6 @@ struct ConvIm2ColNHWC[
                 ),
                 type,
             )
-
-        conv.num_tasks_m = num_tasks_m
-        conv.num_tasks_n = num_tasks_n
 
         let task_id_m = task_id // num_tasks_n
         let task_id_n = task_id % num_tasks_n
@@ -2196,12 +2170,28 @@ struct ConvIm2ColNHWC[
         let partition_n = get_partitioned_workload(
             task_id_n, num_tasks_n, gemm_shape.N
         )
-        conv.row_start_idx = partition_m[0]
-        conv.total_row_count = partition_m[1]
-        conv.col_start_idx = partition_n[0]
-        conv.total_col_count = partition_n[1]
+        let row_start_idx = partition_m[0]
+        let total_row_count = partition_m[1]
+        let col_start_idx = partition_n[0]
+        let total_col_count = partition_n[1]
 
-        return conv
+        return Self {
+            out: out,
+            input: input,
+            filter: filter,
+            tile_n_k: tile_n_k,
+            gemm_shape: gemm_shape,
+            conv_shape: conv_shape,
+            a: a,
+            b: b,
+            c: c,
+            num_tasks_m: num_tasks_m,
+            num_tasks_n: num_tasks_n,
+            row_start_idx: row_start_idx,
+            total_row_count: total_row_count,
+            col_start_idx: col_start_idx,
+            total_col_count: total_col_count,
+        }
 
     fn _run_implicit_matmul(self):
         """Wrapper utility funciton: Allocates packing space on the stack and
