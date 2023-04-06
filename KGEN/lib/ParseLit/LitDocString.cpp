@@ -161,7 +161,7 @@ private:
     generateMarkdownHeader([&] { os << name; });
   }
 
-  /// Generate a table from the given form:
+  /// Generate a list section from the given form:
   ///
   /// Header:
   ///   Element1: ...
@@ -169,39 +169,37 @@ private:
   ///     ...
   ///   ElementN: ...
   ///
-  void generateTwoColumnMarkdownTable(
-      StringRef header, ArrayRef<StringRef> lines, size_t &line, size_t lineE,
-      function_ref<void(StringRef)> processEntryName) {
-    os << "| " << header << " | |\n";
-    os << "| :---- | --- |\n";
+  void
+  generateMarkdownListSection(StringRef header, ArrayRef<StringRef> lines,
+                              size_t &line, size_t lineE,
+                              function_ref<void(StringRef)> processEntryName) {
+    os << "**" << header << ":**\n\n";
     for (++line; line < lineE && !lines[line].empty();) {
       // Extract the argument name and description.
       auto [argName, argDesc] = lines[line].split(':');
       argName = argName.trim();
       argDesc = argDesc.trim();
 
-      os << "| ";
+      os << "- ";
       processEntryName(argName);
-      os << " | " << argDesc;
+      os << ": " << argDesc;
 
       // Merge in additional description lines that have a larger
       // indentation.
       size_t indent = getIndentationLevel(lines[line]);
       while (++line < lineE && getIndentationLevel(lines[line]) > indent)
         os << " " << lines[line].trim();
-      os << " |\n";
+      os << "\n";
     }
     os << "\n\n";
   }
-  void generateTwoColumnMarkdownTable(StringRef header,
-                                      ArrayRef<StringRef> lines, size_t &line,
-                                      size_t lineE) {
-    generateTwoColumnMarkdownTable(
-        header, lines, line, lineE,
-        [&](StringRef entryName) { os << entryName; });
+  void generateMarkdownListSection(StringRef header, ArrayRef<StringRef> lines,
+                                   size_t &line, size_t lineE) {
+    generateMarkdownListSection(header, lines, line, lineE,
+                                [&](StringRef entryName) { os << entryName; });
   }
 
-  /// Generate a table from the given form:
+  /// Generate a paragraph section from the given form:
   ///
   /// Header:
   ///   Element1...
@@ -209,45 +207,40 @@ private:
   ///     ...
   ///   ElementN...
   ///
-  void generateSingleColumnMarkdownTable(const Twine &header,
-                                         ArrayRef<StringRef> lines,
-                                         size_t &line, size_t lineE) {
-    os << "| " << header << " |\n";
-    os << "| :---- |\n";
+  void generateParagraphMarkdownSection(const Twine &header,
+                                        ArrayRef<StringRef> lines, size_t &line,
+                                        size_t lineE) {
+    os << "**" << header << "**:\n\n";
     for (++line; line < lineE && !lines[line].empty();) {
-      // Extract the argument name and description.
-      os << "| " << lines[line].trim();
+      os << lines[line].trim();
 
       // Merge in additional description lines that have a larger
       // indentation.
       size_t indent = getIndentationLevel(lines[line]);
       while (++line < lineE && getIndentationLevel(lines[line]) > indent)
         os << " " << lines[line].trim();
-      os << " |\n";
+      os << "\n";
     }
     os << "\n\n";
   }
-  /// Generate a table from the given form:
+  /// Generate a list section from the given form:
   ///
   /// Header:
   ///   Element1...
-  void generateSingleEntrySingleColumnMarkdownTable(const Twine &header,
-                                                    ArrayRef<StringRef> lines,
-                                                    size_t &line,
-                                                    size_t lineE) {
-    os << "| " << header << " |\n";
-    os << "| :---- |\n";
+  void generateSingleEntryMarkdownListSection(StringRef header,
+                                              ArrayRef<StringRef> lines,
+                                              size_t &line, size_t lineE) {
+    os << "**" << header << ":**\n\n";
 
-    // Extract the argument name and description.
-    os << "| " << lines[++line].trim();
+    // Emit the description.
+    os << lines[++line].trim();
 
     // Merge in additional description lines that have equal or larger
     // indentation.
     size_t indent = getIndentationLevel(lines[line]);
     while (++line < lineE && getIndentationLevel(lines[line]) >= indent)
       os << " " << lines[line].trim();
-
-    os << " |\n\n\n";
+    os << "\n\n\n";
   }
 
   //===----------------------------------------------------------------------===//
@@ -263,8 +256,7 @@ private:
       if (it != paramToDetail.end())
         os << "`` " << it->second << " ``";
     };
-    generateTwoColumnMarkdownTable("Parameters", lines, line, lineE,
-                                   processParam);
+    generateMarkdownListSection("Parameters", lines, line, lineE, processParam);
   }
 
   //===----------------------------------------------------------------------===//
@@ -420,8 +412,8 @@ private:
           if (it != argNameToDetail.end())
             os << "`` " << it->second << " ``";
         };
-        generateTwoColumnMarkdownTable("Args", description, line, lineE,
-                                       processArg);
+        generateMarkdownListSection("Args", description, line, lineE,
+                                    processArg);
         continue;
       }
       if (description[line] == "Parameters:") {
@@ -430,14 +422,14 @@ private:
       }
       if (description[line] == "Returns:") {
         if (returnType) {
-          generateSingleEntrySingleColumnMarkdownTable(
-              "Returns `` -> " + *returnType + " ``", description, line, lineE);
+          generateSingleEntryMarkdownListSection("Returns", description, line,
+                                                 lineE);
         }
         continue;
       }
       if (description[line] == "Constraints:") {
-        generateSingleColumnMarkdownTable("Constraints", description, line,
-                                          lineE);
+        generateParagraphMarkdownSection("Constraints", description, line,
+                                         lineE);
         continue;
       }
 
