@@ -3,7 +3,9 @@
 
 # CHECK-LABEL: lit.struct.decl @MemExample
 struct MemExample:
-  fn __init__(self&): pass
+  var x : Int
+  fn __init__(self&):
+    self.x = 1
   fn noop(self): pass
   fn __del___(owned self): pass
 
@@ -22,11 +24,30 @@ struct RegExample:
 # CHECK: lit.func @"destructors
 # CHECK-SAME: (%arg0: !pop.pointer<@"$ownership"::@MemExample> owned_in_mem)
 fn destructors(owned arg0: MemExample):
-  # CHECK: %mem = lit.varlet.decl "mem", var = true
-  var mem = MemExample()
+  # CHECK-NEXT: %mem1 = lit.varlet.decl "mem1", var = true
+  var mem1 = MemExample()
+  # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%mem1)
+  # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}(%mem1)
 
-  # CHECK: %reg = lit.letreg.decl "reg" = %1
+  var mem2 = MemExample()
+  # CHECK-NEXT: %mem2 = lit.varlet.decl "mem2", var = true
+  # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%mem2)
+  mem2.noop()
+  # CHECK-NEXT: kgen.call {{.*}}noop{{.*}}(%mem2)
+  # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}(%mem2)
+
+  mem2 = MemExample()
+  # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%mem2)
+
+  # CHECK-NEXT: [[REGVAL:%.*]] = kgen.call @"$ownership"::@RegExample::@"__init__()"()
+  # CHECK-NEXT: %reg = lit.letreg.decl "reg" = [[REGVAL]]
   let reg = RegExample()
+  # FIXME: No result destructor!
+
+  mem2.noop()
+  # CHECK-NEXT: kgen.call {{.*}}noop{{.*}}(%mem2)
+  # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}(%mem2)
+
 
 # CHECK: lit.func @"indirect_call
 fn indirect_call[
@@ -41,5 +62,6 @@ fn indirect_call[
        let mem = detail_fn()
        # CHECK-NEXT: kgen.call @{{.*}}noop{{.*}}(%mem)
        mem.noop()
-       # CHECK-NEXT: %2 = kgen.param.constant
-       # CHECK-NEXT: kgen.return %2
+       # CHECK-NEXT: kgen.call @{{.*}}@"__del___{{.*}}(%mem)
+       # CHECK-NEXT: %3 = kgen.param.constant
+       # CHECK-NEXT: kgen.return %3
