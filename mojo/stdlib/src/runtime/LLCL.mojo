@@ -49,6 +49,9 @@ struct Chain:
     fn __init__() -> Self:
         return Self {storage: Pointer[Int].get_null()}
 
+    fn __bool__(self) -> Bool:
+        return self.storage != Pointer[Int].get_null()
+
 
 # FIXME(traits): This shouldn't be a register_passable type but we need this
 # until we have traits for proper parametric types.
@@ -363,6 +366,11 @@ struct OutputChainPtr:
     var ptr: ptr_type
 
     @always_inline
+    fn __init__() -> OutputChainPtr:
+        """Casts a raw null OutputChainPtr."""
+        return OutputChainPtr {ptr: ptr_type()}
+
+    @always_inline
     fn __init__(ptr: ptr_type) -> OutputChainPtr:
         """Casts a raw pointer to our OutputChainPtr."""
         return OutputChainPtr {ptr: ptr}
@@ -370,6 +378,10 @@ struct OutputChainPtr:
     @always_inline("nodebug")
     fn __copy__(self) -> Self:
         return Self {ptr: self.ptr}
+
+    @always_inline("nodebug")
+    fn __bool__(self) -> Bool:
+        return self.ptr != ptr_type()
 
     @always_inline
     fn deepcopy(self) -> OwningOutputChainPtr:
