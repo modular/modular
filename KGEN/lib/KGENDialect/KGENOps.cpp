@@ -837,6 +837,38 @@ LogicalResult ExportOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// CallSignatureOp
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseCallSignature(
+    OpAsmParser &p, Type &typeOfCallee,
+    SmallVectorImpl<Type> &argumentTypes,
+    SmallVectorImpl<Type> &resultTypes) {
+  TypeArrayAttr resultParams;
+  TypeArrayAttr parameterValues;
+  // We expect the following syntax: call_signature callee(dynamic args) :
+  // (argTypes...) -> resultType
+
+  SignatureType signature;
+  if (parseSignatureValues(p, parameterValues, resultParams, signature))
+    return failure();
+  typeOfCallee = signature;
+  llvm::append_range(argumentTypes, signature.getValueInputs());
+  llvm::append_range(resultTypes, signature.getValueResults());
+  return success();
+}
+
+static void printCallSignature(OpAsmPrinter &p, Operation *op,
+                                 Type calleeType, TypeRange argumentTypes,
+                                 TypeRange resultTypes) {
+  // We expect the following syntax: call_signature callee(dynamic args) :
+  // (argTypes...) fat -> calleeResultType
+  if (SignatureType sigType = cast<SignatureType>(calleeType)) {
+    printSignature(p, sigType);
+  }
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 

@@ -800,3 +800,37 @@ def KGEN_ExportOp : KGENOp<"export", [
   }];
   let hasVerifier = 1;
 }
+
+//===----------------------------------------------------------------------===//
+// CallSignatureOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_CallSignatureOp : KGENOp<"call_signature", [
+    TypesMatchWith<"operands match callee argument types","callee",
+    "arguments", "cast<SignatureType>($_self).getValueInputs()">,
+    CalleeResultTypes]> {
+  let summary = "Call a signature typed instance";
+
+  let description = [{
+    The `kgen.call_signature` operation takes an SSA value of `!kgen.signature`
+    type and invokes it with the provided operands as arguments.
+
+    Example:
+
+    ```mlir
+    %0 = kgen.call_signature %closure(%arg0, %arg1)
+      : (index, index) fat -> index
+    ```
+  }];
+
+  let arguments = (ins
+    KGEN_SignatureType:$callee,
+    Variadic<AnyType>:$arguments
+  );
+  let results = (outs Variadic<AnyType>:$results);
+  let assemblyFormat = [{
+     $callee `(` $arguments `)` `:`
+     custom<CallSignature>(type($callee), type($arguments), type($results))
+      attr-dict
+  }];
+}
