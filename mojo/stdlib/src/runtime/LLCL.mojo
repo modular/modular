@@ -7,7 +7,6 @@
 from Atomic import Atomic
 from Coroutine import Coroutine, _get_coro_resume_fn
 from DType import DType
-from Memory import _aligned_alloc, _aligned_free
 from Pointer import Pointer, DTypePointer
 from String import StringRef
 from Vector import UnsafeFixedVector
@@ -575,7 +574,7 @@ struct AsyncTaskGroup:
         self.coroutines.__del__()
         self.out_chain.__del__()
         let self_ptr = Pointer[AsyncTaskGroup].address_of(self)
-        _aligned_free[AsyncTaskGroup](self_ptr)
+        self_ptr.free()
 
     @always_inline
     fn _counter_decr(self&) -> Int:
@@ -630,7 +629,7 @@ struct AsyncTaskGroupPtr:
 
     @always_inline
     fn __init__(self&, num_work_items: Int, out_chain: OutputChainPtr):
-        self.ptr = _aligned_alloc[AsyncTaskGroup](sizeof[AsyncTaskGroup]())
+        self.ptr = Pointer[AsyncTaskGroup].alloc(1)
         __get_address_as_lvalue(self.ptr.address) = AsyncTaskGroup(
             num_work_items, out_chain
         )
