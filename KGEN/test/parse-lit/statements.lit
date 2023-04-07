@@ -373,7 +373,8 @@ fn propagateErrorInTry():
 # CHECK-LABEL: lit.func @"raiseError
 def raiseErrorInDef(err: Error):
     # CHECK: %[[ERRVAL:.*]] = pop.load %err_0
-    # CHECK: %[[RES:.*]] = pop.variant.create %[[ERRVAL]] : !kgen.declref<@{{.*}}::@Error> -> !pop.variant<@{{.*}}::@Error, !lit.none>
+    # CHECK: %[[ERRVALCOPY:.*]] = kgen.call {{.*}}@Error::@"__copy__
+    # CHECK: %[[RES:.*]] = pop.variant.create %[[ERRVALCOPY]] : !kgen.declref<@{{.*}}::@Error> -> !pop.variant<@{{.*}}::@Error, !lit.none>
     # CHECK: lit.return %[[RES]]
     raise err
 
@@ -390,6 +391,7 @@ def raiseErrorInIf(cond: Bool, err: Error):
 fn raiseErrorInTry(err: Error):
     # CHECK: lit.try {
     try:
+        # CHECK-NEXT: %[[ERR:.*]] = kgen.call {{.*}}@Error::@"__copy__
         # CHECK-NEXT: lit.raise {{.*}} : <@"$Error"::@Error>
         raise err
     except:
