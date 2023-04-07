@@ -885,6 +885,13 @@ kgen.generator @pack<Ts: variadic<!kgen.mlirtype>, T: type>(
   kgen.return %3 : i32
 }
 
+// CHECK-LABEL: @parametric_pack
+kgen.generator @parametric_pack<N, T: type>(%arg0: !pop.simd<N, bool>, %arg1: !kgen.paramref<T>) {
+  // CHECK-NEXT: pop.pack.create(%arg0, %arg1) : !pop.pack<[!pop.simd<N, bool>, T]>
+  %0 = pop.pack.create(%arg0, %arg1) : !pop.pack<[!pop.simd<N, bool>, T]>
+  kgen.return
+}
+
 // CHECK-LABEL: @variant_type
 kgen.generator @variant_type<N, T: type>(%a: !pop.simd<N, f32>) -> !kgen.paramref<T> {
   // CHECK: pop.variant.create %arg0 : !pop.simd<N, f32> -> !pop.variant<T, simd<N, f32>>

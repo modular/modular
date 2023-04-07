@@ -437,7 +437,7 @@ ParseResult PackCreateOp::parse(OpAsmParser &p, OperationState &result) {
 
   for (auto [i, operand, value] :
        llvm::zip(llvm::seq<size_t>(0, operands.size()), operands, values)) {
-    Type expected = cast<ConcreteTypeConstantAttr>(value).getValue();
+    Type expected = ParamRefType::get(value);
     if (p.resolveOperand(operand, expected, result.operands))
       return p.emitError(operand.location)
              << "operand #" << i
@@ -497,7 +497,7 @@ PackGetOp::inferReturnTypes(MLIRContext *context, std::optional<Location> loc,
 
   mlir::OperationName name(getOperationName(), attrs.getContext());
   auto indexAttr =
-      dyn_cast_if_present<mlir::IntegerAttr>(attrs.get(getIndexAttrName(name)));
+      dyn_cast_if_present<IntegerAttr>(attrs.get(getIndexAttrName(name)));
   if (!indexAttr)
     return emitError("expected an integer index attribute");
 
