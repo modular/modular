@@ -12,27 +12,38 @@
 from Benchmark import Benchmark
 from DType import DType
 from SIMD import F32
-from Int import Int
 from IO import print
-from List import create_dim_list
-from Matrix import Matrix
 from Pointer import DTypePointer
 from Range import range
-from TargetInfo import dtype_sizeof
 
-alias f32 = DType.f32
 
 alias M = 128
 alias N = 128
 alias K = 128
 
 
+struct Matrix:
+    var data: DTypePointer[DType.f32]
+    var rows: Int
+    var cols: Int
+
+    fn __init__(self&, rows: Int, cols: Int):
+        self.data = DTypePointer[DType.f32].alloc(rows * cols)
+        self.rows = rows
+        self.cols = cols
+
+    fn __del__(self):
+        self.data.free()
+
+    fn __getitem__(self, row: Int, col: Int) -> F32:
+        return self.data.load(row * self.cols + col)
+
+    fn __setitem__(self&, row: Int, col: Int, val: F32):
+        self.data.store(row * self.cols + col, val)
+
+
 @always_inline
-fn naive_matmul(
-    C: Matrix[create_dim_list(M, N), f32, False],
-    A: Matrix[create_dim_list(M, K), f32, False],
-    B: Matrix[create_dim_list(K, N), f32, False],
-):
+fn naive_matmul(C&: Matrix, A&: Matrix, B&: Matrix):
     for m in range(M):
         for n in range(N):
             for k in range(K):
@@ -40,12 +51,9 @@ fn naive_matmul(
 
 
 fn benchmark_naive_matmul():
-    let a_ptr = DTypePointer[f32].alloc(M * K)
-    let b_ptr = DTypePointer[f32].alloc(K * N)
-    let c_ptr = DTypePointer[f32].alloc(M * N)
-    let A = Matrix[create_dim_list(M, K), f32, False](a_ptr)
-    let B = Matrix[create_dim_list(K, N), f32, False](b_ptr)
-    let C = Matrix[create_dim_list(M, N), f32, False](c_ptr)
+    var A = Matrix(M, K)
+    var B = Matrix(K, N)
+    var C = Matrix(M, N)
 
     @always_inline
     fn benchmark_fn():
@@ -53,9 +61,9 @@ fn benchmark_naive_matmul():
 
     print(F32(Benchmark().run[benchmark_fn]()) / F32(1_000_000_000))
 
-    a_ptr.free()
-    b_ptr.free()
-    c_ptr.free()
+    A.__del__()
+    B.__del__()
+    C.__del__()
 
 
 fn main():
