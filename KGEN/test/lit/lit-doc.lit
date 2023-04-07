@@ -19,7 +19,8 @@ spills over to the next line."""
 
 # CHECK: ## InMemoryStruct
 
-# CHECK: ### `` fn_with_by_conventions(self: Self&, arg: Self&, *args: Self&) -> Self& ``
+# CHECK: ### fn_with_by_conventions
+# CHECK: >  `` fn_with_by_conventions(self: Self&, arg: Self&, *args: Self&) -> Self& ``
 
 # CHECK: This is a function summary.
 
@@ -57,7 +58,8 @@ struct InMemoryStruct:
 # CHECK: **Parameters:**
 # CHECK: - `` _type: __mlir_type.!kgen.dtype ``: This is a parameter.
 
-# CHECK: ### `` fn_with_self_param(self: Self) ``
+# CHECK: ### fn_with_self_param
+# CHECK: > `` fn_with_self_param(self: Self) ``
 # CHECK: **Parameters:**
 # CHECK: - `` param: Self ``: This is a Self parameter.
 
@@ -81,7 +83,8 @@ struct ParameterClass[_type: __mlir_type.`!kgen.dtype`]:
         return
 
 
-# CHECK: ## `` empty_fn() ``
+# CHECK: ## empty_fn
+# CHECK: > `` empty_fn() ``
 # CHECK: This is a function summary.
 # CHECK: The is some kind of description.
 
@@ -94,7 +97,8 @@ fn empty_fn():
     return
 
 
-# CHECK: ## `` fn_with_args(arg: $Int::Int) ``
+# CHECK: ## fn_with_args
+# CHECK: > `` fn_with_args(arg: $Int::Int) ``
 # CHECK: This is a function summary.
 # CHECK: The is some kind of description.
 # CHECK: **Args:**
@@ -112,7 +116,32 @@ fn fn_with_args(arg: Int):
     return
 
 
-# CHECK: ## `` fn_with_params() ``
+# CHECK: ## fn_with_overload
+# CHECK: > `` fn_with_overload() ``
+# CHECK: > `` fn_with_overload(arg: $Int::Int) ``
+
+
+fn fn_with_overload():
+    """This is a function summary.
+
+    The is some kind of description.
+    """
+    return
+
+
+fn fn_with_overload(arg: Int):
+    """This is a function summary.
+
+    The is some kind of description.
+
+    Args:
+        arg: This is an argument.
+    """
+    return
+
+
+# CHECK: ## fn_with_params
+# CHECK: > `` fn_with_params() ``
 # CHECK: This is a function summary.
 # CHECK: The is some kind of description.
 
@@ -131,7 +160,8 @@ fn fn_with_params[param: __mlir_type.`!kgen.dtype`]():
     return
 
 
-# CHECK: ## `` fn_with_params_and_return(arg: $Int::Int) -> $Int::Int ``
+# CHECK: ## fn_with_params_and_return
+# CHECK: > `` fn_with_params_and_return(arg: $Int::Int) -> $Int::Int ``
 # CHECK: This is a function summary.
 # CHECK: The is some kind of description.
 
