@@ -71,6 +71,18 @@ MODULAR_EXPORT MODULAR_ATTRIBUTE_USED void
 KGEN_CompilerRT_PrintToStdErr(const char *data, ssize_t size);
 
 //===----------------------------------------------------------------------===//
+// Random.cpp
+//===----------------------------------------------------------------------===//
+
+namespace M::KGEN {
+/// Register the Random functions.
+void registerRandom(std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);
+} // namespace M::KGEN
+
+MODULAR_EXPORT MODULAR_ATTRIBUTE_USED double
+KGEN_CompilerRT_RandomDouble(double min, double max);
+
+//===----------------------------------------------------------------------===//
 // System.cpp
 //===----------------------------------------------------------------------===//
 
@@ -106,6 +118,7 @@ KGEN_CompilerRT_dummylinkageinit() {
 #endif
   KGEN_CompilerRT_LLCL_Dummy();
   KGEN_CompilerRT_PrintToStdErr(nullptr, 0);
+  KGEN_CompilerRT_RandomDouble(0, 0);
   KGEN_CompilerRT_CoreCount();
   KGEN_CompilerRT_TimeTraceProfilerEnd();
 }

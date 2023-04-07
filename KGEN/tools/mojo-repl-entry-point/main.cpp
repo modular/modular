@@ -24,7 +24,8 @@ using namespace M;
 static void forceLinkCompilerRT() {
   llvm::nulls() << (void *)&KGEN::registerIntelAMX
                 << (void *)&KGEN::registerLLCL << (void *)&KGEN::registerMemory
-                << (void *)&KGEN::registerPrint << (void *)&KGEN::registerSystem
+                << (void *)&KGEN::registerPrint << (void *)&KGEN::registerRandom
+                << (void *)&KGEN::registerSystem
                 << (void *)&KGEN::registerTracing;
 }
 
