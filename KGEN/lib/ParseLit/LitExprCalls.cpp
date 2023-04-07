@@ -1558,9 +1558,13 @@ CValue ExprEmitter::emitIndirectCall(CRValue callee,
                                      const ExprNode *callExpr) {
   auto calleeSig = dyn_cast<SignatureType>(callee.getType().mlirType);
   if (!calleeSig) {
-    emitError(callExpr->getLoc(), "invalid function type to call ")
-        << ASTType(callee.getType()) << callExpr->getRange();
-    return {};
+    // If we are invoking something other than a SignatureType, try to invoke
+    // its `__call__` method.
+    SmallVector<ASTExprAnd<AnyValue>> callOperands;
+    callOperands.push_back({callee, callExpr});
+    llvm::append_range(callOperands, operands);
+    return emitNamedMethodCall("__call__", callOperands, dest,
+                               CallSyntax::kDirectCall, callExpr);
   }
 
   // Check to see if we can apply these operands to the callee signature.

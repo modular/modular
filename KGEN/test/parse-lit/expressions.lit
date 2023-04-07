@@ -898,3 +898,22 @@ fn lvalue_utilities(a&: Int):
   # Get and use an lvalue from an address.
   __get_address_as_lvalue(addr) = 42
   let val = __get_address_as_lvalue(addr)
+
+struct CallableStruct:
+    var value: Int
+
+    fn __init__(value: Int) -> Self:
+        return Self{value:value}
+
+    fn __copy__(self) -> Self:
+        return self.value
+
+    fn __call__(self, rhs: Int) -> Int:
+        return self.value + rhs
+
+# CHECK-LABEL: lit.func @"test_call_method()"
+fn test_call_method():
+    # CHECK: %[[C2:.*]] = kgen.param.constant{{.*}} 2
+    # CHECK-NEXT: kgen.call {{.*}}@"__call__{{.*}}"(%{{.*}}, %[[C2]])
+    let value = CallableStruct(5)
+    _ = value(2)
