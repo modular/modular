@@ -1563,7 +1563,8 @@ public:
           rewriter.getFunctionType(op.getOperandTypes(), op.getResultTypes());
     TypeConverter::SignatureConversion conversion(funcType->getNumInputs());
     Type signature = getTypeConverter()->convertFunctionSignature(
-        *funcType, op.getVariadicType().has_value(), conversion);
+        *funcType, op.getVariadicType().has_value(),
+        getTypeConverter()->getOptions().useBarePtrCallConv, conversion);
 
     // Lookup an existing function.
     auto func = symtab.lookup<LLVM::LLVMFuncOp>(op.getFuncAttr().getAttr());
