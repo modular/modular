@@ -32,7 +32,7 @@ fn test_sync_coro():
     let rt = Runtime(4)
     let coro: Coroutine[Int] = test_llcl_add_two_of_them(20, 30)
     # CHECK: 57
-    print(coro.__call__())
+    print(coro())
     coro.__del__()
     rt.__del__()
 
