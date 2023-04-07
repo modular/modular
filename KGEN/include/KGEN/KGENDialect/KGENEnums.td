@@ -171,7 +171,9 @@ def KGEN_FnEffects : I8BitEnumAttr<"FnEffects", "Function effects", [
   /// This function has vararg input parameters.
   I8BitEnumAttrCaseBit<"ParamVararg", 5, "param_vararg">,
   /// This function captures state.
-  I8BitEnumAttrCaseBit<"Fat", 6, "fat">
+  I8BitEnumAttrCaseBit<"Fat", 6, "fat">,
+  /// The return value of this function is a non-trivial owned register value.
+  I8BitEnumAttrCaseBit<"OwnedResult", 7, "ownedresult">,
 ]> {
   let cppNamespace = "M::KGEN";
 }

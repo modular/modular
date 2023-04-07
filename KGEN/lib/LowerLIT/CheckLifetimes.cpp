@@ -202,6 +202,20 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     return;
   }
 
+  /// Owned results of function calls are tracked as being initialized when
+  /// defined but needing to be destroyed by the end of function.
+  if (OpResult res = dyn_cast<OpResult>(v)) {
+    if (auto call = dyn_cast<KGENCallOpInterface>(res.getOwner())) {
+      if (call.getCalleeType().hasOwnedRegisterResult() &&
+          !isa<AddressOfOp>(res.getOwner())) {
+        name = StringAttr::get(v.getContext(), "<call result>");
+        isIndirect = false;
+        startsUninit = false;
+        endsUninit = true;
+      }
+    }
+  }
+
   // If this is a function argument, check to see what ownership it has.
   auto bbArg = dyn_cast<BlockArgument>(v);
   if (!bbArg || !bbArg.getOwner())
@@ -815,11 +829,7 @@ private:
 } // namespace
 
 void DestructorInsertion::scanFunction(LIT::FuncOp func) {
-  // Initialize the BitVector with all the elements that are live-out.
   consumedValues.resize(valueSet.getNumTotalBits());
-  for (const ValueInfo &valueInfo : valueSet.getValueInfos())
-    if (!valueInfo.endsUninit)
-      consumedValues.set(valueInfo.startValueBit, valueInfo.endValueBit);
 
   // Scan the body of the function.
   scanBlock(*func.getBody());
@@ -869,6 +879,19 @@ void DestructorInsertion::checkOp(Operation &op) {
       return; // AddressOf isn't a use of any SSA values.
     }
 
+    // If the result is defining an owned register value, then we treat this as
+    // a use (because it needs to be destroyed if the first utterance of this
+    // value) and then pass it up as being done).
+    if (signature.hasOwnedRegisterResult()) {
+      auto valueRef = valueSet.getDirectValueRef(op.getResult(0));
+      // If there is no use of the defined results, emit a dtor after the
+      // call.
+      checkUse(op, valueRef);
+      // This call defines the result, so anything above it is either dead or
+      // needs a destructor if live.
+      valueRef.markBits(consumedValues, false);
+    }
+
     assert(signature.getValueInputConventions().size() == operands.size());
     for (auto [convention, operand] :
          llvm::zip(signature.getValueInputConventions(), operands)) {
@@ -901,6 +924,33 @@ void DestructorInsertion::checkOp(Operation &op) {
     }
     return;
   }
+
+  // LetReg takes ownership of its operand value and defines its own value.
+  if (auto letReg = dyn_cast<LetRegDeclOp>(op)) {
+    checkUse(op, valueSet.getDirectValueRef(letReg));
+    valueSet.getDirectValueRef(letReg.getOperand())
+        .markBits(consumedValues, true);
+    return;
+  }
+
+  // A return consumes all the live-out values from the function.
+  if (isa<KGEN::ReturnOp>(op)) {
+    for (const ValueInfo &valueInfo : valueSet.getValueInfos())
+      if (!valueInfo.endsUninit)
+        consumedValues.set(valueInfo.startValueBit, valueInfo.endValueBit);
+    return;
+  }
+
+  // A unreachable consumes everything.  Nothing needs to be destroyed here!
+  if (isa<UnreachableOp>(op)) {
+    consumedValues.set();
+    return;
+  }
+
+  // Otherwise this some other operation that using a SSA value.  If this is the
+  // last use of the value, make sure we destroy it when done.
+  for (Value operand : op.getOperands())
+    checkUse(op, valueSet.getDirectValueRef(operand));
 }
 
 void DestructorInsertion::checkUse(Operation &op, ValueRef valueRef) {
@@ -912,6 +962,15 @@ void DestructorInsertion::checkUse(Operation &op, ValueRef valueRef) {
   const ValueInfo &valueInfo = valueSet.getValueInfos()[valueRef.valueId];
   if (valueInfo.hasErrorDiagnosed)
     return;
+
+  LifetimeTrackable trackable(valueInfo.value);
+  assert(trackable && "shouldn't be tracking untrackable things!");
+  TypedAttr dtor =
+      trackable.getDestructor(valueInfo.value, valueSet.typeDeclInfo);
+  if (!dtor)
+    return;
+
+  // FIXME: Move this after checking below.
 
   // Otherwise it is a use happening when the values become dead, we need to
   // emit a destructor call.  Check to make sure they whole value dies at once.
@@ -925,13 +984,6 @@ void DestructorInsertion::checkUse(Operation &op, ValueRef valueRef) {
   // Ok, this value will be consumed by the dtor we are emitting, so any uses
   // above this point won't need to emit this.
   valueRef.markBits(consumedValues, true);
-
-  LifetimeTrackable trackable(valueInfo.value);
-  assert(trackable && "shouldn't be tracking untrackable things!");
-  TypedAttr dtor =
-      trackable.getDestructor(valueInfo.value, valueSet.typeDeclInfo);
-  if (!dtor)
-    return;
 
   SignatureType signature = cast<SignatureType>(dtor.getType());
   assert(signature.getValueResults().size() == 1 &&

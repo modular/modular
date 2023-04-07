@@ -222,22 +222,32 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     bool isThrows() {
       return bitEnumContainsAny(getFnEffects(), FnEffects::Throws);
     }
+
     /// Return true if the function is async.
     bool isAsync() {
       return bitEnumContainsAny(getFnEffects(), FnEffects::Async);
     }
+
     /// Return true if the function has parameter varargs.
     bool hasParamVarargs() {
       return bitEnumContainsAny(getFnEffects(), FnEffects::ParamVararg);
     }
+
     /// Return true if the function has pack varargs.
     bool hasPackVarargs() {
       return bitEnumContainsAny(getFnEffects(), FnEffects::PackVararg);
     }
+
     /// Return true if the function captures state, which means
     /// it requires a context pointer.
     bool isFat() {
       return bitEnumContainsAny(getFnEffects(), FnEffects::Fat);
+    }
+
+    /// Return true if the SSA result of this signature is a non-trivial owned
+    /// register result.
+    bool hasOwnedRegisterResult() {
+      return bitEnumContainsAny(getFnEffects(), FnEffects::OwnedResult);
     }
 
     /// Return the convention for the specified value input parameter.

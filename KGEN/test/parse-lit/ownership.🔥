@@ -40,9 +40,9 @@ fn destructors(owned arg0: MemExample):
   # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%mem2)
 
   # CHECK-NEXT: [[REGVAL:%.*]] = kgen.call @"$ownership"::@RegExample::@"__init__()"()
-  # CHECK-NEXT: %reg = lit.letreg.decl "reg" = [[REGVAL]]
   let reg = RegExample()
-  # FIXME: No result destructor!
+  # CHECK-NEXT: %reg = lit.letreg.decl "reg" = [[REGVAL]]
+  # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}(%reg)
 
   mem2.noop()
   # CHECK-NEXT: kgen.call {{.*}}noop{{.*}}(%mem2)
