@@ -4,20 +4,16 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Assert import assert_param, debug_assert, assert_param_bool
 from Buffer import Buffer, NDBuffer
-from DType import DType
-from Functional import unroll, async_parallelize
+from Assert import assert_param, debug_assert, assert_param_bool
 from Index import StaticIntTuple
-from List import create_kgen_list, DimList, Dim, create_dim_list
-from LLCL import OutputChainPtr
-from Math import div_ceil, min
-from Memory import memcpy
-from Pointer import DTypePointer
-from Range import range
 from SIMD import SIMD
-from TargetInfo import dtype_sizeof
+from List import create_kgen_list, DimList, Dim, create_dim_list
+from Pointer import DTypePointer
+from DType import DType
+from Range import range
 from TypeUtilities import rebind
+from Functional import unroll
 
 
 fn _transpose_inplace_4x4[
@@ -353,21 +349,7 @@ fn _fill_strides[
     rank: Int,
     input_shape: DimList[rank],
     type: DType,
-](buf: NDBuffer[rank, input_shape, type], strides: DTypePointer[DType.index]):
-    """
-    Fill `strides`, which will be an array of strides indexed by axis, assuming
-    `buf` contains contiguous buf.
-
-    Note that `buf` is only used for querying its dimensions.
-    """
-    _fill_strides(buf, Buffer[rank, DType.index](strides.address))
-
-
-fn _fill_strides[
-    rank: Int,
-    input_shape: DimList[rank],
-    type: DType,
-](buf: NDBuffer[rank, input_shape, type], strides: Buffer[rank, DType.index]):
+](buf: NDBuffer[rank, input_shape, type], strides: Buffer[rank, DType.index],):
     """
     Fill `strides`, which will be an array of strides indexed by axis, assuming
     `buf` contains contiguous buf.
@@ -398,22 +380,6 @@ fn transpose[
     input: NDBuffer[rank, input_shape, type],
     perms: DTypePointer[DType.index],
 ):
-    transpose[rank, output_shape, input_shape, type](
-        output, input, perms, OutputChainPtr()
-    )
-
-
-fn transpose[
-    rank: Int,
-    output_shape: DimList[rank],
-    input_shape: DimList[rank],
-    type: DType,
-](
-    output: NDBuffer[rank, output_shape, type],
-    input: NDBuffer[rank, input_shape, type],
-    perms: DTypePointer[DType.index],
-    out_chain: OutputChainPtr,
-):
     """
     Permute the axis of `input` based on `perms`, and place the result in
     `output`.
@@ -427,16 +393,18 @@ fn transpose[
         transpose(output, input, [2, 0, 1])
         # guarantees output[x, y, z] = input[z, x, y]
     """
-    # Compute `permuted_input_strides`
-    let input_strides = DTypePointer[DType.index].alloc(rank)
-    let permuted_input_strides = DTypePointer[DType.index].alloc(rank)
-    _fill_strides(input, input_strides)
+    # Compute `permuted_input_strides_buf`
+    let input_strides_buf = Buffer[rank, DType.index].stack_allocation()
+    let permuted_input_strides_buf = Buffer[
+        rank, DType.index
+    ].stack_allocation()
+    _fill_strides(input, input_strides_buf)
     _permute_data[rank, DType.index](
-        input_strides, permuted_input_strides, perms
+        input_strides_buf.data, permuted_input_strides_buf.data, perms
     )
-    # Compute `output_strides `
-    let output_strides = DTypePointer[DType.index].alloc(rank)
-    _fill_strides(output, output_strides)
+    # Compute `output_strides_buf `
+    let output_strides_buf = Buffer[rank, DType.index].stack_allocation()
+    _fill_strides(output, output_strides_buf)
     # Kickoff; for intuition on permuted input strides, note that
     #   transpose(output, input, [2, 0, 1])
     # guarantees
@@ -451,20 +419,11 @@ fn transpose[
         init_axis,
         output,
         input.data,
-        permuted_input_strides,
-        output_strides,
+        permuted_input_strides_buf.data,
+        output_strides_buf.data,
         0,  # input_offset
         0,  # output_offset
-        out_chain,
     )
-    # TODO: We need to figure out a better way to do this, since we do not want
-    # to await here, but then we cannot free until all threads have used the
-    # strides. We need an out_chain.andThen(...) mechanism.
-    if out_chain:
-        out_chain.wait()
-    input_strides.free()
-    permuted_input_strides.free()
-    output_strides.free()
 
 
 fn _copy_with_strides[
@@ -479,7 +438,6 @@ fn _copy_with_strides[
     output_strides: DTypePointer[DType.index],
     input_offset: Int,
     output_offset: Int,
-    out_chain: OutputChainPtr,
 ):
     """
     Copy data from `input` to `output`, starting at corresponding offsets,
@@ -493,84 +451,34 @@ fn _copy_with_strides[
         input_offset (Int): The offset at which input data starts
         output_offset (Int): The offset at which output data starts
     """
-    if axis + 1 > rank and out_chain:
-        return out_chain.mark_error("out of range")
+    debug_assert(axis + 1 <= rank, "out of range")
 
     let axis_dim = output.dim(axis)
     let input_axis_stride: Int = input_strides.load(axis)[0].value
     let output_axis_stride: Int = output_strides.load(axis)[0].value
 
     if axis + 1 == rank:
+        # TODO speed this up if output_axis_stride is 1, i.e., contiguous?
         var src_ptr = input.offset(input_offset)
         var dst_ptr = output.data.offset(output_offset)
-        if input_axis_stride == 1 and output_axis_stride == 1:
-            memcpy(dst_ptr, src_ptr, axis_dim * dtype_sizeof[type]())
-        else:
-            for i in range(axis_dim):
-                dst_ptr.store(0, src_ptr.load(0))
-                src_ptr = src_ptr.offset(input_axis_stride)
-                dst_ptr = dst_ptr.offset(output_axis_stride)
-
-        if out_chain:
-            out_chain.mark_ready()
+        for i in range(axis_dim):
+            dst_ptr.store(0, src_ptr.load(0))
+            src_ptr = src_ptr.offset(input_axis_stride)
+            dst_ptr = dst_ptr.offset(output_axis_stride)
         return
 
     let next_axis = axis + 1
-
-    alias MB = 1024 * 1024 * 1024
-    if not out_chain or output.bytecount() <= 4 * MB:
-        var next_input_offset = input_offset
-        var next_output_offset = output_offset
-        for _ in range(axis_dim):
-            _copy_with_strides[rank, output_shape, type](
-                next_axis,
-                output,
-                input,
-                input_strides,
-                output_strides,
-                next_input_offset,
-                next_output_offset,
-                OutputChainPtr(),
-            )
-            next_input_offset += input_axis_stride
-            next_output_offset += output_axis_stride
-        if out_chain:
-            out_chain.mark_ready()
-    else:
-
-        # TODO: Find a heuristic to replace the magic numbers.
-        alias min_task_num_slices = 64
-
-        let work = axis_dim
-        let num_threads = out_chain.get_runtime().parallelism_level()
-        let num_tasks = min(div_ceil(work, min_task_num_slices), num_threads)
-        let work_block_size = div_ceil(work, num_tasks)
-
-        @always_inline
-        fn _parallel_copy(thread_id: Int):
-
-            var next_input_offset = (
-                thread_id * work_block_size * input_axis_stride + input_offset
-            )
-            var next_output_offset = (
-                thread_id * work_block_size * output_axis_stride + output_offset
-            )
-
-            for _ in range(
-                work_block_size * thread_id,
-                min(work_block_size * (thread_id + 1), work),
-            ):
-                _copy_with_strides[rank, output_shape, type](
-                    next_axis,
-                    output,
-                    input,
-                    input_strides,
-                    output_strides,
-                    next_input_offset,
-                    next_output_offset,
-                    OutputChainPtr(),
-                )
-                next_input_offset += input_axis_stride
-                next_output_offset += output_axis_stride
-
-        async_parallelize[_parallel_copy](out_chain, num_tasks)
+    var next_input_offset = input_offset
+    var next_output_offset = output_offset
+    for _ in range(axis_dim):
+        _copy_with_strides[rank, output_shape, type](
+            next_axis,
+            output,
+            input,
+            input_strides,
+            output_strides,
+            next_input_offset,
+            next_output_offset,
+        )
+        next_input_offset += input_axis_stride
+        next_output_offset += output_axis_stride
