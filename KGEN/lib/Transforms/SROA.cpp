@@ -55,6 +55,7 @@ struct Replacer {
     // We check if we can perform the optimization first.
     if (derived->canRun()) {
       // Create a new allocation for each scalar in the container.
+      builder.setInsertionPointAfter(alloc);
       derived->createScalarAllocs();
 
       // For each user of the allocation replace it with the scalar equivilent.
@@ -89,6 +90,13 @@ struct Replacer {
         return newVal;
       };
 
+      // A load from an allocation of N is implicitly a load from the first
+      // dimension.
+      if (std::is_same<ContainerType, POP::StackAllocationOp>::value) {
+        load.replaceAllUsesWith(getOrCreateLoad(0));
+        return;
+      }
+
       // Replace the *user* of each load with the loaded scalar or for GEPs the
       // pointer itself.
       for (Operation *loadUser : load->getUsers()) {
@@ -118,12 +126,16 @@ struct Replacer {
       for (Value newAlloc : newAllocas) {
         // Extract the sub element from the value we were about to store. Each
         // derived has its own way of extracting an element.
-        Value extract = derived->createExtract(store.getLoc(), operand,
-                                               builder.getIndexAttr(index));
+        Value extract = derived->createExtract(store.getLoc(), operand, index);
 
         // Store that into the subelement instead.
         builder.create<StoreOp>(store.getLoc(), extract, newAlloc);
-        index++;
+        ++index;
+
+        // Stack of >1 stores are implicity only a reference to the first
+        // element so we can stop after the first store.
+        if (std::is_same<ContainerType, POP::StackAllocationOp>::value)
+          break;
       }
     } else {
       derived->replaceUserImpl(user, toDelete);
@@ -161,7 +173,6 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, POP::StructType> {
   // Allocate the scalars which should replace the main alloc.
   void createScalarAllocs() {
     newAllocas.reserve(containerTy.getNumElements());
-    builder.setInsertionPointAfter(alloc);
     for (Type elem : containerTy.getParameterizedElementTypes()) {
       auto asPtr = PointerType::get(elem);
       Value v = builder.create<StackAllocationOp>(alloc.getLoc(), asPtr, 1);
@@ -179,8 +190,9 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, POP::StructType> {
   }
 
   /// The extractor op for structures.
-  Value createExtract(mlir::Location loc, Value operand, IntegerAttr index) {
-    return builder.create<POP::StructExtractOp>(loc, operand, index);
+  Value createExtract(mlir::Location loc, Value operand, int64_t index) {
+    return builder.create<POP::StructExtractOp>(loc, operand,
+                                                builder.getIndexAttr(index));
   }
 };
 
@@ -234,7 +246,6 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
   void createScalarAllocs() {
     int64_t numElems = *containerTy.getResolvedSize();
     newAllocas.reserve(numElems);
-    builder.setInsertionPointAfter(alloc);
 
     Type elem = containerTy.getResolvedElementType();
     auto asPtr = PointerType::get(elem);
@@ -246,8 +257,9 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
   }
 
   /// Create the array specific element extractor op.
-  Value createExtract(mlir::Location loc, Value operand, IntegerAttr index) {
-    return builder.create<POP::ArrayGetOp>(loc, operand, index);
+  Value createExtract(mlir::Location loc, Value operand, int64_t index) {
+    return builder.create<POP::ArrayGetOp>(loc, operand,
+                                           builder.getIndexAttr(index));
   }
 
   /// Handle the array specific ops.
@@ -257,6 +269,60 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
       APInt index;
       matchPattern(gep.getIndex(), mlir::m_ConstantInt(&index));
       gep.replaceAllUsesWith(newAllocas[index.getLimitedValue()]);
+    }
+  }
+};
+
+/// In this case we treat the underlaying stack allocation as the container
+/// itself.
+struct ReplaceStack : public Replacer<ReplaceStack, POP::StackAllocationOp> {
+  using ContainerType = POP::StackAllocationOp;
+
+  ReplaceStack(OpBuilder &builder, StackAllocationOp alloc)
+      : Replacer(builder, alloc, alloc) {}
+
+  bool canRun() {
+    for (Operation *user : alloc->getUsers()) {
+      if (!isa<POP::OffsetOp, POP::StoreOp, POP::LoadOp>(user))
+        return false;
+
+      // We only support offsets with constant terms.
+      if (auto offset = dyn_cast<POP::OffsetOp>(user)) {
+        APInt index;
+        if (!matchPattern(offset.getIndex(), mlir::m_ConstantInt(&index)))
+          return false;
+      }
+    }
+
+    return true;
+  }
+
+  /// Allocate the scalar stack allocations which replace the single array
+  /// allocation.
+  void createScalarAllocs() {
+    // The allocation is the aggregate in this case.
+    int64_t numElems = cast<IntegerAttr>(alloc.getCount()).getInt();
+    newAllocas.reserve(numElems);
+
+    auto ptr = cast<POP::PointerType>(alloc.getResult().getType());
+    for (int64_t i = 0; i < numElems; ++i) {
+      Value v = builder.create<StackAllocationOp>(alloc.getLoc(), ptr, 1);
+      newAllocas.push_back(v);
+    }
+  }
+
+  /// An extraction of something being stored to stack of N is always just the
+  /// operand itself.
+  Value createExtract(mlir::Location loc, Value operand, int64_t index) {
+    return operand;
+  }
+
+  void replaceUserImpl(Operation *user,
+                       SmallVectorImpl<Operation *> &toDelete) {
+    if (auto offset = dyn_cast<OffsetOp>(user)) {
+      APInt index;
+      matchPattern(offset.getIndex(), mlir::m_ConstantInt(&index));
+      offset.replaceAllUsesWith(newAllocas[index.getLimitedValue()]);
     }
   }
 };
@@ -271,15 +337,26 @@ void SROAPass::runOnOperation() {
   getOperation()->walk([&](StackAllocationOp alloc) {
     // Skip non singleton stack allocations.
     auto count = dyn_cast<IntegerAttr>(alloc.getCount());
-    if (!count || count.getInt() != 1)
+    if (!count)
+      return;
+
+    size_t numElems = count.getInt();
+
+    // We won't try to decompose large stack allocations.
+    if (numElems > 16)
       return;
 
     // Stack allocation is always a pointer to something.
     auto ptrType = cast<POP::PointerType>(alloc.getResult().getType());
 
-    // Obviously skip if it we are not dealing with a struct or array.
-    if (auto structTy =
-            dyn_cast<POP::StructType>(ptrType.getResolvedElementType())) {
+    // We decompose structs if there is one element otherwise we decompose the
+    // stack itself.
+    if (numElems != 1) {
+      // Replace stack of N with N stacks of 1.
+      ReplaceStack replacer{builder, alloc};
+      replacer.run(toDelete);
+    } else if (auto structTy = dyn_cast<POP::StructType>(
+                   ptrType.getResolvedElementType())) {
       ReplaceStructs replacer{builder, alloc, structTy};
       replacer.run(toDelete);
     } else if (auto arrayTy =

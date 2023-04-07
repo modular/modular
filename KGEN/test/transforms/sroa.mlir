@@ -120,3 +120,86 @@ kgen.func @struct_of_structs(%arg1: !pop.struct<struct<scalar<index>>, struct<sc
 
   kgen.return
 }
+
+// CHECK-LABEL: @stack_of_N
+// MEM2REG-LABEL: @stack_of_N
+// CHECK: (%[[ARG0:.*]]: index, %[[ARG1:.*]]: index, %[[ARG2:.*]]: index, %[[OUT_PTR:.*]]: !pop.pointer<index>)
+// MEM2REG: (%[[ARG0:.*]]: index, %[[ARG1:.*]]: index, %[[ARG2:.*]]: index, %[[OUT_PTR:.*]]: !pop.pointer<index>)
+kgen.func @stack_of_N(%val1: index, %val2: index, %val3: index, %output : !pop.pointer<index>) {
+  %0 = kgen.param.constant = <0>
+  %1 = kgen.param.constant = <1>
+  %2 = kgen.param.constant = <2>
+  
+  %alloc = pop.stack_allocation 3 x index 
+
+  // CHECK: %[[MEM1:.*]] = pop.stack_allocation 1 x index
+  // CHECK-NEXT: %[[MEM2:.*]] = pop.stack_allocation 1 x index
+  // CHECK-NEXT: %[[MEM3:.*]] = pop.stack_allocation 1 x index
+  // CHECK-NEXT: pop.store %[[ARG0]], %[[MEM1]] : !pop.pointer<index>
+  // CHECK-NEXT: pop.store %[[ARG1]], %[[MEM2]] : !pop.pointer<index>
+  // CHECK-NEXT: pop.store %[[ARG2]], %[[MEM3]] : !pop.pointer<index>
+
+  // Mem2Reg should eliminate everything
+  // MEM2REG-NEXT: kgen.param.constant = <0>
+  // MEM2REG-NEXT: kgen.param.constant = <1>
+  // MEM2REG-NEXT: kgen.param.constant = <2>
+  // MEM2REG-NEXT: pop.store %[[ARG2]], %[[OUT_PTR]] : !pop.pointer<index>
+  // MEM2REG-NEXT: kgen.return
+
+  %offset1 = pop.offset %alloc[%0] : !pop.pointer<index>
+  pop.store %val1, %offset1 : !pop.pointer<index>
+
+  %offset2 = pop.offset %alloc[%1] : !pop.pointer<index>
+  pop.store %val2, %offset2 : !pop.pointer<index>
+
+  %offset3 = pop.offset %alloc[%2] : !pop.pointer<index>
+  pop.store %val3, %offset3 : !pop.pointer<index>
+
+  %annoying_offset = pop.offset %alloc[%2] : !pop.pointer<index>
+  %load = pop.load %annoying_offset align 8  : !pop.pointer<index>
+  pop.store %load, %output : !pop.pointer<index>  
+  kgen.return
+}
+
+
+// CHECK-LABEL: @bigger_stack
+// CHECK: (%[[ARG0:.*]]: index, %[[OUT_PTR:.*]]: !pop.pointer<index>)
+kgen.func @bigger_stack(%val1: index, %output : !pop.pointer<index>) {
+  %0 = kgen.param.constant = <0>
+
+  // Larger stacks should not be touched.
+  // CHECK: pop.stack_allocation 32 x index 
+
+  %alloc = pop.stack_allocation 32 x index 
+  %offset = pop.offset %alloc[%0] : !pop.pointer<index>
+  pop.store %val1, %offset : !pop.pointer<index>
+  %load = pop.load %offset align 8  : !pop.pointer<index>
+  pop.store %load, %output : !pop.pointer<index>  
+  kgen.return
+}
+
+// Handle storing directly to the stack as an implicit offset of 0.
+// CHECK-LABEL: @n_stack_store
+// MEM2REG-LABEL: @n_stack_store
+// CHECK: (%[[ARG0:.*]]: index, %[[OUT_PTR:.*]]: !pop.pointer<index>)
+// MEM2REG: (%[[ARG0:.*]]: index, %[[OUT_PTR:.*]]: !pop.pointer<index>)
+kgen.func @n_stack_store(%val1: index, %output : !pop.pointer<index>) {
+  %alloc = pop.stack_allocation 3 x index 
+  pop.store %val1, %alloc : !pop.pointer<index>
+  %load = pop.load %alloc align 8  : !pop.pointer<index>
+  pop.store %load, %output : !pop.pointer<index>  
+
+  // CHECK-NEXT: %[[MEM1:.*]] = pop.stack_allocation 1 x index
+  // CHECK-NEXT: %[[MEM2:.*]] = pop.stack_allocation 1 x index
+  // CHECK-NEXT: %[[MEM3:.*]] = pop.stack_allocation 1 x index
+  // CHECK-NEXT: pop.store %[[ARG0]], %[[MEM1]] : !pop.pointer<index>
+  // CHECK-NEXT: %[[LOAD:.*]] = pop.load %[[MEM1]] : !pop.pointer<index>
+  // CHECK-NEXT: pop.store %[[LOAD]], %[[OUT_PTR]] : !pop.pointer<index>
+
+
+  // Mem2Reg should eliminate everything
+  // MEM2REG-NEXT: pop.store %[[ARG0]], %[[OUT_PTR]] : !pop.pointer<index>
+  // MEM2REG-NEXT: kgen.return
+
+  kgen.return
+}
