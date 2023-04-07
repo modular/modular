@@ -103,7 +103,7 @@ ErrorOrSuccess setThreadAffinity(size_t cpuID);
 /// id. Returns error if thread affinity is not supported on this target
 /// or the operation fails.
 ErrorOrSuccess runWithThreadAffinity(size_t cpuID,
-                                     llvm::unique_function<void()> workFn);
+                                     llvm::function_ref<void()> workFn);
 
 //===----------------------------------------------------------------------===//
 // CPU Model Info
@@ -193,9 +193,9 @@ ErrorOr<CPUSystemInfo> getLinuxX86CPUSystemInfo();
 #endif
 
 #if defined(HAVE_LINUX_SET_AFFINITY)
-ErrorOrSuccess setCallersThreadAffinityLinux(size_t cpuID);
-ErrorOrSuccess
-runWithThreadAffinityLinux(size_t cpuID, llvm::unique_function<void()> &workFn);
+ErrorOrSuccess setThreadAffinityLinux(size_t cpuID);
+ErrorOrSuccess runWithThreadAffinityLinux(size_t cpuID,
+                                          llvm::function_ref<void()> &workFn);
 #endif
 } // namespace Detail
 

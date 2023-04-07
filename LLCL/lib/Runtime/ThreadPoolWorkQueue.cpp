@@ -16,7 +16,7 @@
 #include "LLCL/Support/Profiling.h"
 #include "LLCL/Support/Semaphore.h"
 #include "LLCL/Support/SpinWaiter.h"
-#include "Support/Host.h"
+#include "LLCL/Support/ThreadAffinity.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Debug.h"
@@ -63,16 +63,9 @@ constexpr size_t kMinTaskListCapacity = 128;
 /// Number of task list slots per thread.
 constexpr size_t kTaskListSlotsPerThread = 16;
 
-/// Set to true to force worker threads to have affinity for a specific
-/// (physical) CPU on systems which support that.
-constexpr bool kUseThreadAffinity = true;
-
 /// Amount of time to spend spinning while waiting for work before going to
 /// sleep on a semaphore.
 constexpr std::chrono::nanoseconds kBusyWait = std::chrono::milliseconds(1);
-
-/// The distinguished CPU ID denoting 'no affinity to be set'.
-constexpr size_t kNoAffinity = ~0;
 
 //===----------------------------------------------------------------------===//
 // WorkerThread
@@ -339,13 +332,7 @@ void WorkQueueThread::runOnThread() {
   llvm::set_thread_name("LLCL Thread " + llvm::Twine(workerID));
 
   // On systems that support it, give the thread affinity for one CPU.
-  if (cpuID != kNoAffinity) {
-    ErrorOrSuccess errOr = setThreadAffinity(cpuID);
-    if (const char *err = errOr.getError()) {
-      LLVM_DEBUG(llvm::dbgs()
-                 << "unable to set thread affinity: " << err << "\n");
-    }
-  }
+  LLCL::setThreadAffinity(cpuID);
 
   // Run work items until the system is asked to shut down.
   runItemsOnOwningThread(
@@ -411,23 +398,15 @@ void WorkQueueThread::runItemsOnOwningThread(
     running = nullptr;
   }
 
-  bool haveRun = false;
-  if (workerID == 0 && cpuID != kNoAffinity) {
+  if (workerID == 0) {
     // Since caller is a 'foreign' thread, temporarily set its thread
     // affinity.
-    ErrorOrSuccess errOr = runWithThreadAffinity(cpuID, [&]() {
+    LLCL::runWithThreadAffinity(cpuID, [&]() {
       runItemsImpl<EarlyStopPredicateFn, LateStopPredicateFn>(
           earlyStopPredicate, lateStopPredicate, waitForTasks, spinningLabel,
           sleepingLabel);
     });
-    if (const char *err = errOr.getError()) {
-      LLVM_DEBUG(llvm::dbgs()
-                 << "unable to run with thread affinity: " << err << "\n");
-    } else {
-      haveRun = true;
-    }
-  }
-  if (!haveRun) {
+  } else {
     runItemsImpl<EarlyStopPredicateFn, LateStopPredicateFn>(
         earlyStopPredicate, lateStopPredicate, waitForTasks, spinningLabel,
         sleepingLabel);
@@ -816,70 +795,12 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values,
 // createThreadPoolWorkQueue entrypoint
 //===----------------------------------------------------------------------===//
 
-/// Determine the number of threads to use (based on the existing suggestion),
-/// and return a vector of CPU IDs for every such thread. The CPU ids may be
-/// kNoAffinity, indicating no affinity should be set.
-static std::vector<size_t> getCpuIDs(size_t numThreads) {
-  if constexpr (kUseThreadAffinity) {
-    if (haveThreadAffinity()) {
-      ErrorOr<CPUSystemInfo> errOrSystemInfo = CPUSystemInfo::get();
-      if (const char *err = errOrSystemInfo.getError()) {
-        LLVM_DEBUG(
-            llvm::dbgs()
-            << "createThreadPoolWorkQueue: Unable to determine CPUSystemInfo: "
-            << err << "\n");
-        // Fallthrough for fallback case.
-      } else {
-        LLVM_DEBUG(llvm::dbgs() << "createThreadPoolWorkQueue: System info is "
-                                << *errOrSystemInfo << "\n");
-        if (numThreads == 0) {
-          numThreads = errOrSystemInfo->sockets[0].physicalCores.size();
-          LLVM_DEBUG(llvm::dbgs()
-                     << "createThreadPoolWorkQueue: Defaulting number "
-                        "of threads to number of physical "
-                        "cores on first socket "
-                     << numThreads << "\n");
-        }
-        if (numThreads > kMaxWorkers) {
-          LLVM_DEBUG(
-              llvm::dbgs()
-              << "createThreadPoolWorkQueue: Reducing number of threads from "
-              << numThreads << " to " << kMaxWorkers << ".\n");
-          numThreads = kMaxWorkers;
-        }
-        std::vector<size_t> cpuIDs =
-            errOrSystemInfo->getPreferredCpuIDs(numThreads);
-        LLVM_DEBUG(llvm::dbgs() << "createThreadPoolWorkQueue: Using thread "
-                                   "affinity for CPUs {";
-                   llvm::interleave(cpuIDs, llvm::dbgs(), ", ");
-                   llvm::dbgs() << "}\n";);
-        return cpuIDs;
-      }
-    }
-  }
-
-  // Fallback case.
-  if (numThreads == 0) {
-    numThreads = llvm::get_physical_cores();
-    LLVM_DEBUG(llvm::dbgs() << "createThreadPoolWorkQueue: Defaulting "
-                               "number of threads to number of physical cores "
-                            << numThreads << "\n");
-  }
-  if (numThreads > kMaxWorkers) {
-    LLVM_DEBUG(llvm::dbgs()
-               << "createThreadPoolWorkQueue: Reducing number of threads from "
-               << numThreads << " to " << kMaxWorkers << ".\n");
-    numThreads = kMaxWorkers;
-  }
-  return std::vector<size_t>(numThreads, kNoAffinity);
-}
-
 std::unique_ptr<WorkQueue>
 M::LLCL::createThreadPoolWorkQueue(size_t numThreads, bool mainWillDonate) {
   // Using numThreads as a hint, figure out a CPU for each worker thread
   // and the main thread. The CPU ids may end up as kNoAffinity, but the
   // vector size will still guide the construction of worker threads.
-  std::vector<size_t> cpuIDs = getCpuIDs(numThreads);
+  std::vector<size_t> cpuIDs = getThreadAffinityCpuIds(numThreads, kMaxWorkers);
   assert(!cpuIDs.empty());
   size_t numCores = std::thread::hardware_concurrency();
   if (cpuIDs.size() != numCores)

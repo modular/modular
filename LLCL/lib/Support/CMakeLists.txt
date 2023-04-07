@@ -28,6 +28,7 @@ add_modular_library(LLCLSupport
   ReferenceCounted.cpp
   Semaphore.cpp
   SpinWaiter.cpp
+  ThreadAffinity.cpp
   UnknownLocationDecoder.cpp
   )
 target_link_libraries(LLCLSupport PUBLIC ${LIBS})
