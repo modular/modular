@@ -59,7 +59,8 @@ struct ConvertKGENFunc : public ConvertSymbolOpToLLVM<FuncOp> {
     TypeConverter::SignatureConversion result(func.getNumArguments());
     Type funcType = getTypeConverter()->convertFunctionSignature(
         func.getFunctionType(),
-        /*isVariadic=*/false, result);
+        /*isVariadic=*/false,
+        getTypeConverter()->getOptions().useBarePtrCallConv, result);
     if (!funcType)
       return emitError(func.getLoc(), "failed to convert func signature");
 
