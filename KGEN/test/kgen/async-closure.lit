@@ -29,7 +29,7 @@ fn foobar[pref: Int](a: Int):
 
     let coro: Coroutine[Int] = just_call_it[but_async]()
     print(pref)
-    print(coro.__call__())
+    print(coro())
     coro.__del__()
 
 
