@@ -55,9 +55,5 @@ file(GENERATE
   OUTPUT ${lldbinit}
   CONTENT "plugin load $<TARGET_FILE:MojoLLDB>\nlog enable -f ${logfile} lldb expr\n"
   TARGET MojoLLDB)
-add_custom_target(setup_lldbinit ALL DEPENDS ${lldbinit})
 
-# The custom target MojoREPL collects all the dependencies needed for LLDB to
-# automatically support Mojo.
-add_custom_target(MojoREPL)
-add_dependencies(MojoREPL setup_lldbinit MojoLLDB mojo-repl-entry-point)
+add_dependencies(MojoLLDB mojo-repl-entry-point)
