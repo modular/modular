@@ -380,14 +380,19 @@ struct ValueSet {
                           /*hasErrorDiagnosed=*/false});
   }
 
+  /// Return a reference to the entire value with the specified ID.
+  ValueRef getFullValueRef(unsigned valueId) const {
+    const auto &entry = valueInfos[valueId];
+    return ValueRef{valueId, entry.startValueBit, entry.endValueBit};
+  }
+
   /// If this value is directly tracked by the ValueSet, return the index of the
   /// value, otherwise return zero.
   ValueRef getDirectValueRef(Value value) const {
     auto it = valueInfoIndex.find(value);
     if (it == valueInfoIndex.end())
       return ValueRef();
-    auto &entry = valueInfos[it->second];
-    return ValueRef{it->second, entry.startValueBit, entry.endValueBit};
+    return getFullValueRef(it->second);
   }
 
   /// Given a pointer that is being accessed indirectly by an operation, return
@@ -661,8 +666,7 @@ void UninitializedValueScan::checkOp(Operation &op) {
     auto valueInfosRef = valueSet.getValueInfos();
     for (size_t i = 1, e = valueInfosRef.size(); i != e; ++i)
       if (!valueInfosRef[i].endsUninit)
-        checkLive(op, ValueRef{unsigned(i), valueInfosRef[i].startValueBit,
-                               valueInfosRef[i].endValueBit});
+        checkLive(op, valueSet.getFullValueRef(i));
     return;
   }
 
@@ -782,6 +786,176 @@ void UninitializedValueScan::checkOp(Operation &op) {
 }
 
 //===----------------------------------------------------------------------===//
+// DestructorInsertion
+//===----------------------------------------------------------------------===//
+
+namespace {
+/// This helper class implements the third pass over a function body, which
+/// inserts destructors after the last use of values.
+struct DestructorInsertion {
+  DestructorInsertion(ValueSet &valueSet) : valueSet(valueSet) {}
+  DestructorInsertion(const DestructorInsertion &existing) = delete;
+
+  void scanFunction(LIT::FuncOp func);
+  void scanBlock(Block &body);
+
+private:
+  void checkOp(Operation &op);
+  void checkLive(Operation &op, ValueRef valueRef);
+  void checkUse(Operation &op, ValueRef valueRef);
+
+  /// This is metadata about all the values we are tracking.
+  ValueSet &valueSet;
+
+  /// This is the set of values known to be used below this point, so they
+  /// should not be destroyed if there are uses.  Any use of a value /not/ in
+  /// this set will be a last use that does get destroyed.
+  BitVector consumedValues;
+};
+} // namespace
+
+void DestructorInsertion::scanFunction(LIT::FuncOp func) {
+  // Initialize the BitVector with all the elements that are live-out.
+  consumedValues.resize(valueSet.getNumTotalBits());
+  for (const ValueInfo &valueInfo : valueSet.getValueInfos())
+    if (!valueInfo.endsUninit)
+      consumedValues.set(valueInfo.startValueBit, valueInfo.endValueBit);
+
+  // Scan the body of the function.
+  scanBlock(*func.getBody());
+}
+
+/// Scan a block top down, checking all the operations that may use a value or
+/// change its liveness state.  This diagnoses uses of values that are not yet
+/// initialized, and returns the set of values that are live at the end of the
+/// block.
+void DestructorInsertion::scanBlock(Block &block) {
+  for (Operation &op : llvm::reverse(block))
+    checkOp(op);
+}
+
+void DestructorInsertion::checkOp(Operation &op) {
+  // This op is handled when used.
+  if (isa<StructGEPOp>(op))
+    return;
+
+  // A store to a value is an overwrite - this means that any incoming values
+  // are unused and should be destroyed if they exist.
+  if (auto storeOp = dyn_cast<POP::StoreOp>(op)) {
+    valueSet.getPointerValueIndex(storeOp.getPtr())
+        .markBits(consumedValues, false);
+    return;
+  }
+
+  // A load is a use of whatever fields are being referenced.  If this is the
+  // /last/ use of a value, emit a destructor of that value.
+  if (auto loadOp = dyn_cast<POP::LoadOp>(op)) {
+    // This marks its value live.
+    checkUse(op, valueSet.getPointerValueIndex(loadOp.getPtr()));
+    return;
+  }
+
+  // If this is a call, investigate each of the operands along with the
+  // argument convention effects.
+  if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
+    SignatureType signature = call.getCalleeType();
+    ValueRange operands;
+    if (isa<CallOp, CallParamOp, AsyncCallOp>(op))
+      operands = call->getOperands();
+    else if (isa<POP::CallIndirectOp>(op))
+      operands = call->getOperands().drop_front();
+    else {
+      assert(isa<AddressOfOp>(op) && "Unknown call op");
+      return; // AddressOf isn't a use of any SSA values.
+    }
+
+    assert(signature.getValueInputConventions().size() == operands.size());
+    for (auto [convention, operand] :
+         llvm::zip(signature.getValueInputConventions(), operands)) {
+      switch (convention) {
+      case ValueInputConvention::OwnedInReg:
+        // This consumes the value, so it isn't dead going upwards.
+        valueSet.getDirectValueRef(operand).markBits(consumedValues, true);
+        break;
+      case ValueInputConvention::OwnedInMem:
+        valueSet.getPointerValueIndex(operand).markBits(consumedValues, true);
+        break;
+      case ValueInputConvention::BorrowedInReg:
+        checkUse(op, valueSet.getDirectValueRef(operand));
+        break;
+      case ValueInputConvention::BorrowedInMem:
+      case ValueInputConvention::ByRef:
+        checkUse(op, valueSet.getPointerValueIndex(operand));
+        break;
+      case ValueInputConvention::ByRefResult: {
+        auto valueRef = valueSet.getPointerValueIndex(operand);
+        // If there is no use of the defined results, emit a dtor after the
+        // call.
+        checkUse(op, valueRef);
+        // This call defines the by-ref result, so anything above it is either
+        // dead or needs a destructor if live.
+        valueRef.markBits(consumedValues, false);
+        break;
+      }
+      }
+    }
+    return;
+  }
+}
+
+void DestructorInsertion::checkUse(Operation &op, ValueRef valueRef) {
+  // If this is an untracked reference or if all the referenced data is already
+  // known to be consumed at this point, then there is nothing to do.
+  if (!valueRef || valueRef.isAllPresent(consumedValues))
+    return;
+
+  const ValueInfo &valueInfo = valueSet.getValueInfos()[valueRef.valueId];
+  if (valueInfo.hasErrorDiagnosed)
+    return;
+
+  // Otherwise it is a use happening when the values become dead, we need to
+  // emit a destructor call.  Check to make sure they whole value dies at once.
+  if (!valueSet.getFullValueRef(valueRef.valueId)
+           .isAllMissing(consumedValues)) {
+    mlir::emitError(op.getLoc(),
+                    "last use of value with partially dead members");
+    return;
+  }
+
+  // Ok, this value will be consumed by the dtor we are emitting, so any uses
+  // above this point won't need to emit this.
+  valueRef.markBits(consumedValues, true);
+
+  LifetimeTrackable trackable(valueInfo.value);
+  assert(trackable && "shouldn't be tracking untrackable things!");
+  TypedAttr dtor =
+      trackable.getDestructor(valueInfo.value, valueSet.typeDeclInfo);
+  if (!dtor)
+    return;
+
+  SignatureType signature = cast<SignatureType>(dtor.getType());
+  assert(signature.getValueResults().size() == 1 &&
+         "dtor should have one result (none type)");
+  assert(signature.getValueInputs().size() == 1 &&
+         "dtor should have one operand");
+
+  // Emit the call to the destructor.
+  OpBuilder b(&op);
+  b.setInsertionPointAfter(&op);
+  if (auto symbolConstantDtor = dyn_cast<SymbolConstantAttr>(dtor)) {
+    b.create<CallOp>(op.getLoc(), signature.getValueResults()[0],
+                     symbolConstantDtor,
+                     b.getAttr<ParamDeclArrayAttr>(ArrayRef<ParamDeclAttr>()),
+                     ValueRange(valueInfo.value));
+  } else {
+    b.create<CallParamOp>(
+        op.getLoc(), signature.getValueResults()[0], dtor,
+        b.getAttr<ParamDeclArrayAttr>(ArrayRef<ParamDeclAttr>()),
+        ValueRange(valueInfo.value));
+  }
+}
+
+//===----------------------------------------------------------------------===//
 // Pass Definition
 //===----------------------------------------------------------------------===//
 
@@ -842,7 +1016,9 @@ LogicalResult CheckLifetimes::processFunction(LIT::FuncOp func,
   // effectively form the capture list for the closure.  Should this get
   // materialized by LowerSemanticCF before this pass?
 
-  // Return failure if we generated an error.
+  DestructorInsertion(valueSet).scanFunction(func);
+
+  // Return failure if we generated errors for any of the tracked values.
   return failure(llvm::any_of(valueSet.getValueInfos(), [&](ValueInfo &info) {
     return info.hasErrorDiagnosed;
   }));
