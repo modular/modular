@@ -279,12 +279,12 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // TODO (8082): This should not be necessary.
   std::vector<std::pair<StringLiteral, void *>> compilerRTFunctions;
-  KGEN::registerIntelAMX(compilerRTFunctions);
-  KGEN::registerLLCL(compilerRTFunctions);
-  KGEN::registerMemory(compilerRTFunctions);
-  KGEN::registerPrint(compilerRTFunctions);
-  KGEN::registerSystem(compilerRTFunctions);
-  KGEN::registerTracing(compilerRTFunctions);
+  registerIntelAMX(compilerRTFunctions);
+  registerLLCL(compilerRTFunctions);
+  registerMemory(compilerRTFunctions);
+  registerPrint(compilerRTFunctions);
+  registerSystem(compilerRTFunctions);
+  registerTracing(compilerRTFunctions);
   for (auto [name, ptr] : compilerRTFunctions)
     if (auto err = engine->add<StaticSymbolLayer>("exec", name, ptr))
       return failure(clOptions.reportError(err.getError()));

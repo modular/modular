@@ -9,6 +9,7 @@ add_modular_mlir_library(KGENCompilerRT
   LLCL.cpp
   Memory.cpp
   Print.cpp
+  Random.cpp
   Tracing.cpp
   System.cpp
   InitIntelAMX.cpp

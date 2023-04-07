@@ -48,12 +48,13 @@ M::KGEN::evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
 
   // TODO (8082): This should not be necessary.
   std::vector<std::pair<StringLiteral, void *>> compilerRTFunctions;
-  KGEN::registerIntelAMX(compilerRTFunctions);
-  KGEN::registerLLCL(compilerRTFunctions);
-  KGEN::registerMemory(compilerRTFunctions);
-  KGEN::registerPrint(compilerRTFunctions);
-  KGEN::registerSystem(compilerRTFunctions);
-  KGEN::registerTracing(compilerRTFunctions);
+  registerIntelAMX(compilerRTFunctions);
+  registerLLCL(compilerRTFunctions);
+  registerMemory(compilerRTFunctions);
+  registerPrint(compilerRTFunctions);
+  registerRandom(compilerRTFunctions);
+  registerSystem(compilerRTFunctions);
+  registerTracing(compilerRTFunctions);
   for (auto [name, ptr] : compilerRTFunctions)
     if (auto err = engine->add<StaticSymbolLayer>("evaluateSpecializations",
                                                   name, ptr))
