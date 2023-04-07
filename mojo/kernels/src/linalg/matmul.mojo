@@ -19,7 +19,7 @@ from Buffer import (
     partial_simd_store,
     _raw_stack_allocation,
 )
-from Functional import tile, unswitch, unroll, unroll2
+from Functional import tile, unswitch, unroll, unroll2, TernaryClosure
 from Index import Index, StaticIntTuple
 from List import Dim, DimList, VariadicList, create_dim_list
 from Math import min, fma, max, div_ceil
@@ -73,6 +73,12 @@ struct MatmulConfig:
 
     # Prefetch distance for packed b vectors in micro kernels.
     var prefetch_b_distance_k: Int
+
+
+fn _null_epilogue(
+    offset: GemmShape, tile_len: GemmShape, global_tile: GemmShape
+):
+    pass
 
 
 @register_passable("trivial")
@@ -264,6 +270,14 @@ struct GemmShape:
             rhs: Another gemm shape record to add with.
         """
         return self.as_index() + rhs.as_index()
+
+    fn __sub__(self, rhs: GemmShape) -> GemmShape:
+        """Coordinate-wise subtraction of two gemm shape records.
+
+        Args:
+            rhs: Another gemm shape record to subtract with.
+        """
+        return self.as_index() - rhs.as_index()
 
 
 @always_inline
@@ -1276,6 +1290,7 @@ struct TiledMatmul[
     transpose_a: Bool,
     transpose_b: Bool,
     b_packed: Bool,
+    elementwise_epilogue_enabled: Bool,
 ]:
     """Tiled matmul implementation integrating packing, inner loop and tile
     partitions.
@@ -1301,6 +1316,10 @@ struct TiledMatmul[
         config, value_type, transpose_b, b_packed
     ]
 
+    var elementwise_epilogue_fn: TernaryClosure[
+        GemmShape, GemmShape, GemmShape, __mlir_type.`!lit.none`
+    ]
+
     fn __copy__(self) -> Self:
         return Self {
             c: self.c,
@@ -1310,6 +1329,7 @@ struct TiledMatmul[
             global_tile_shape: self.global_tile_shape,
             global_tile_offset: self.global_tile_offset,
             b_tile_generator: self.b_tile_generator,
+            elementwise_epilogue_fn: self.elementwise_epilogue_fn,
         }
 
     # Interface method
@@ -1320,6 +1340,50 @@ struct TiledMatmul[
         b: NDBuffer[2, config.shape_b, value_type],
         global_tile_shape: GemmShape,
         global_tile_offset: GemmShape = GemmShape {M: 0, N: 0, K: 0},
+    ):
+
+        let func = __mlir_op.`kgen.addressof`[
+            _type : __mlir_type[
+                `(`,
+                GemmShape,
+                `,`,
+                GemmShape,
+                `,`,
+                GemmShape,
+                `) -> !lit.none`,
+            ],
+            callee:_null_epilogue,
+            paramDecls : __mlir_attr.`#kgen<param.decls[]>`,
+        ]()
+
+        let null_closure: TernaryClosure[
+            GemmShape, GemmShape, GemmShape, __mlir_type.`!lit.none`
+        ] = __mlir_op.`pop.partial_apply`[
+            boundInputs : __mlir_attr.`array<i64>`
+        ](
+            func
+        )
+
+        run(
+            c,
+            a,
+            b,
+            null_closure,
+            global_tile_shape,
+            global_tile_offset,
+        )
+
+    # Interface method
+    @staticmethod
+    fn run(
+        c: NDBuffer[2, config.shape_c, accum_type],
+        a: NDBuffer[2, config.shape_a, value_type],
+        b: NDBuffer[2, config.shape_b, value_type],
+        elementwise_epilogue_fn: TernaryClosure[
+            GemmShape, GemmShape, GemmShape, __mlir_type.`!lit.none`
+        ],
+        global_tile_shape: GemmShape,
+        global_tile_offset: GemmShape,
     ):
         """Interface function to run tiled matmul on a given sub-tile.
 
@@ -1338,7 +1402,13 @@ struct TiledMatmul[
         ](global_tile_shape)
 
         let matmul = TiledMatmul[
-            config, accum_type, value_type, transpose_a, transpose_b, b_packed
+            config,
+            accum_type,
+            value_type,
+            transpose_a,
+            transpose_b,
+            b_packed,
+            elementwise_epilogue_enabled,
         ] {
             c: c,
             a: a,
@@ -1349,6 +1419,7 @@ struct TiledMatmul[
             b_tile_generator: BTileGenerator[
                 config, value_type, transpose_b, b_packed
             ].get(b, tile_n_k),
+            elementwise_epilogue_fn: elementwise_epilogue_fn,
         }
 
         matmul._run()
@@ -1373,17 +1444,7 @@ struct TiledMatmul[
         """
         # valid distance in each dimension from the current offset to the end of the matrix
         let knm_bounds = (
-            Index(
-                self.global_tile_shape.K,
-                self.global_tile_shape.N,
-                self.global_tile_shape.M,
-            )
-            + Index(
-                self.global_tile_offset.K,
-                self.global_tile_offset.N,
-                self.global_tile_offset.M,
-            )
-            - Index(global_offset.K, global_offset.N, global_offset.M)
+            self.global_tile_shape + self.global_tile_offset - global_offset
         )
 
         let b_packed_tile = self.b_tile_generator.get_tile[
@@ -1391,12 +1452,12 @@ struct TiledMatmul[
         ](
             global_offset,
             Index(sub_tile_n, sub_tile_k),
-            Index(knm_bounds[1], knm_bounds[0]),
+            Index(knm_bounds.N, knm_bounds.K),
         )
 
         # Launch the MLoop
         let sub_tile_n_k = Index(
-            min(sub_tile_n, knm_bounds[1]), min(sub_tile_k, knm_bounds[0])
+            min(sub_tile_n, knm_bounds.N), min(sub_tile_k, knm_bounds.K)
         )
 
         @always_inline
@@ -1421,9 +1482,19 @@ struct TiledMatmul[
                 sub_tile_n_k,
             )
 
+            @parameter
+            if elementwise_epilogue_enabled:
+                self.elementwise_epilogue_fn.__call__(
+                    global_offset + GemmShape(row_offset, 0, 0),
+                    GemmShape {
+                        M: tile_size, N: sub_tile_n_k[0], K: knm_bounds.K
+                    },
+                    self.global_tile_shape,
+                )
+
         tile[row_iteration, VariadicList[Int](config.a_row_size, 4, 3, 2, 1)](
             0,  # starting row offset
-            knm_bounds[2],  # row bound
+            knm_bounds.M,  # row bound
         )
 
     #  Pack a subtile of B and iterate through all the rows of C.
