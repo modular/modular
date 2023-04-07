@@ -12,6 +12,7 @@
 #include "lldb/Utility/Status.h"
 #include "lldb/lldb-public.h"
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace M::KGEN::Mojo {
@@ -72,6 +73,12 @@ protected:
   PrintOneVariable(lldb_private::Debugger &debugger, lldb::StreamFileSP &output,
                    lldb::ValueObjectSP &valobj,
                    lldb_private::ExpressionVariable *var = nullptr) override;
+
+private:
+  /// This thread will listen to events in the underlying target and assumes
+  /// there is only one target at a time.
+  std::thread eventThread;
+  std::atomic_bool stopEventThread = false;
 };
 } // namespace M::KGEN::Mojo
 
