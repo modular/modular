@@ -1,0 +1,41 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef LLCL_SUPPORT_THREADAFFINITY_H
+#define LLCL_SUPPORT_THREADAFFINITY_H
+
+#include "llvm/ADT/FunctionExtras.h"
+
+#include <cstddef>
+#include <vector>
+
+namespace M::LLCL {
+
+/// Set to true to force worker threads to have affinity for a specific
+/// (physical) CPU on systems which support that.
+constexpr bool kUseThreadAffinity = true;
+
+/// The distinguished CPU ID denoting 'no affinity to be set'.
+constexpr size_t kNoAffinity = ~0;
+
+/// Determine the number of threads to use (based on the existing suggestion),
+/// and return a vector of CPU IDs for every such thread. The CPU ids may be
+/// kNoAffinity, indicating no affinity should be set. Gracefully and silently
+/// fallback to defaults if errors.
+std::vector<size_t> getThreadAffinityCpuIds(size_t numThreads,
+                                            size_t maxWorkers);
+
+/// Execute workFn with affinity to cpuID if it is not kNoAffinity.
+/// Gracefully and silently execute workFn directly if errors.
+void runWithThreadAffinity(size_t cpuID, llvm::function_ref<void()> workFn);
+
+/// Set the current thread's affinity to cpuID if it is not kNoAffinity.
+/// Gracefully and silently continue if errors.
+void setThreadAffinity(size_t cpuID);
+
+} // namespace M::LLCL
+
+#endif // LLCL_SUPPORT_THREADAFFINITY_H

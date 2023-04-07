@@ -204,7 +204,7 @@ std::vector<size_t> CPUSystemInfo::getPreferredCpuIDs(size_t numThreads) const {
 //===----------------------------------------------------------------------===//
 
 #if defined(HAVE_LINUX_SET_AFFINITY)
-ErrorOrSuccess M::Detail::setCallersThreadAffinityLinux(size_t cpuID) {
+ErrorOrSuccess M::Detail::setThreadAffinityLinux(size_t cpuID) {
   assert(cpuID < CPU_SETSIZE);
   cpu_set_t cpuset;
   CPU_ZERO(&cpuset);
@@ -217,7 +217,7 @@ ErrorOrSuccess M::Detail::setCallersThreadAffinityLinux(size_t cpuID) {
 
 ErrorOrSuccess
 M::Detail::runWithThreadAffinityLinux(size_t cpuID,
-                                      llvm::unique_function<void()> &workFn) {
+                                      llvm::function_ref<void()> &workFn) {
   assert(cpuID < CPU_SETSIZE);
   cpu_set_t origset;
   int rc = sched_getaffinity(0, sizeof(origset), &origset);
@@ -252,13 +252,13 @@ bool M::haveThreadAffinity() {
 
 ErrorOrSuccess M::setThreadAffinity(size_t cpuID) {
 #if defined(HAVE_LINUX_SET_AFFINITY)
-  return Detail::setCallersThreadAffinityLinux(cpuID);
+  return Detail::setThreadAffinityLinux(cpuID);
 #endif
   return Error("setThreadAffinity is not supported by this build");
 }
 
 ErrorOrSuccess M::runWithThreadAffinity(size_t cpuID,
-                                        llvm::unique_function<void()> workFn) {
+                                        llvm::function_ref<void()> workFn) {
 #if defined(HAVE_LINUX_SET_AFFINITY)
   return Detail::runWithThreadAffinityLinux(cpuID, workFn);
 #endif

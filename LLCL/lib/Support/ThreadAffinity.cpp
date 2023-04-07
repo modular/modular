@@ -1,0 +1,107 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+//
+// Helper for determining which CPU IDs to use for thread affinity given a
+// requested number of threads.
+//
+//===----------------------------------------------------------------------===//
+
+#include "LLCL/Support/ThreadAffinity.h"
+
+#include "Support/Host.h"
+#include "llvm/Support/Debug.h"
+#include "llvm/Support/Threading.h"
+#include "llvm/Support/raw_ostream.h"
+
+#include <vector>
+
+#define DEBUG_TYPE "llcl"
+
+std::vector<size_t> M::LLCL::getThreadAffinityCpuIds(size_t numThreads,
+                                                     size_t maxWorkers) {
+  if constexpr (kUseThreadAffinity) {
+    if (haveThreadAffinity()) {
+      ErrorOr<CPUSystemInfo> errOrSystemInfo = CPUSystemInfo::get();
+      if (const char *err = errOrSystemInfo.getError()) {
+        LLVM_DEBUG(
+            llvm::dbgs()
+            << "getThreadAffinityCpuIds: Unable to determine CPUSystemInfo: "
+            << err << "\n");
+        // Fallthrough for fallback case.
+      } else {
+        LLVM_DEBUG(llvm::dbgs() << "getThreadAffinityCpuIds: System info is "
+                                << *errOrSystemInfo << "\n");
+        if (numThreads == 0) {
+          numThreads = errOrSystemInfo->sockets[0].physicalCores.size();
+          LLVM_DEBUG(llvm::dbgs()
+                     << "getThreadAffinityCpuIds: Defaulting number "
+                        "of threads to number of physical "
+                        "cores on first socket "
+                     << numThreads << "\n");
+        }
+        if (numThreads > maxWorkers) {
+          LLVM_DEBUG(
+              llvm::dbgs()
+              << "getThreadAffinityCpuIds: Reducing number of threads from "
+              << numThreads << " to " << maxWorkers << ".\n");
+          numThreads = maxWorkers;
+        }
+        std::vector<size_t> cpuIDs =
+            errOrSystemInfo->getPreferredCpuIDs(numThreads);
+        LLVM_DEBUG(llvm::dbgs() << "getThreadAffinityCpuIds: Using thread "
+                                   "affinity for CPUs {";
+                   llvm::interleave(cpuIDs, llvm::dbgs(), ", ");
+                   llvm::dbgs() << "}\n";);
+        return cpuIDs;
+      }
+    }
+  }
+
+  // Fallback case.
+  if (numThreads == 0) {
+    numThreads = llvm::get_physical_cores();
+    LLVM_DEBUG(llvm::dbgs() << "getThreadAffinityCpuIds: Defaulting "
+                               "number of threads to number of physical cores "
+                            << numThreads << "\n");
+  }
+  if (numThreads > maxWorkers) {
+    LLVM_DEBUG(llvm::dbgs()
+               << "getThreadAffinityCpuIds: Reducing number of threads from "
+               << numThreads << " to " << maxWorkers << ".\n");
+    numThreads = maxWorkers;
+  }
+  return std::vector<size_t>(numThreads, kNoAffinity);
+}
+
+void M::LLCL::runWithThreadAffinity(size_t cpuID,
+                                    llvm::function_ref<void()> workFn) {
+  if constexpr (kUseThreadAffinity) {
+    if (cpuID == kNoAffinity) {
+      workFn();
+    } else {
+      ErrorOrSuccess errOr = M::runWithThreadAffinity(cpuID, workFn);
+      if (const char *err = errOr.getError()) {
+        LLVM_DEBUG(llvm::dbgs()
+                   << "unable to run with thread affinity: " << err << "\n");
+        workFn();
+      }
+    }
+  } else {
+    workFn();
+  }
+}
+
+void M::LLCL::setThreadAffinity(size_t cpuID) {
+  if constexpr (kUseThreadAffinity) {
+    if (cpuID != kNoAffinity) {
+      ErrorOrSuccess errOr = M::setThreadAffinity(cpuID);
+      if (const char *err = errOr.getError()) {
+        LLVM_DEBUG(llvm::dbgs()
+                   << "unable to set thread affinity: " << err << "\n");
+      }
+    }
+  }
+}

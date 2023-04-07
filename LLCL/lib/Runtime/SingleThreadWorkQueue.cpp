@@ -8,8 +8,11 @@
 
 #include "LLCL/Runtime/AnyAsyncValueRef.h"
 #include "LLCL/Support/ConcurrentQueue.h"
+#include "LLCL/Support/ThreadAffinity.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/ArrayRef.h"
+
+#define DEBUG_TYPE "llcl"
 
 using namespace M;
 using namespace LLCL;
@@ -22,7 +25,7 @@ namespace {
 /// donated.
 class SingleThreadWorkQueue : public WorkQueue {
 public:
-  SingleThreadWorkQueue() = default;
+  SingleThreadWorkQueue(size_t cpuID) : cpuID(cpuID) {}
 
   void shutdown() override {
     // Complete any work that's still in-flight.
@@ -50,9 +53,14 @@ public:
   size_t getParallelismLevel() const override { return 1; }
 
 private:
-  /// Execute blocks of work until stopPredicate is true.
+  /// Execute blocks of work until stopPredicate is true, setting thread
+  /// affinity if reqested.
   template <typename StopPredicateFn>
-  void runUntil(StopPredicateFn &&stopPredicate);
+  void runUntil(StopPredicateFn stopPredicate);
+
+  /// Actually run work items.
+  template <typename StopPredicateFn>
+  void runUntilImpl(StopPredicateFn stopPredicate);
 
   // Execute a single profiled work item.
   void doWork(ProfiledTaskFunction &&profiledTask) {
@@ -69,6 +77,8 @@ private:
     std::move(profiledTask.running).record();
   }
 
+  /// CPU ID to set affinity to when running the runUntil loop.
+  size_t cpuID;
   /// Pending work items.
   ConcurrentQueue<ProfiledTaskFunction> workItems;
   /// The profiling entry for the currently running work item, or null if none.
@@ -99,7 +109,12 @@ void SingleThreadWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values,
 }
 
 template <typename StopPredicateFn>
-void SingleThreadWorkQueue::runUntil(StopPredicateFn &&stopPredicate) {
+void SingleThreadWorkQueue::runUntil(StopPredicateFn stopPredicate) {
+  LLCL::runWithThreadAffinity(cpuID, [&]() { runUntilImpl(stopPredicate); });
+}
+
+template <typename StopPredicateFn>
+void SingleThreadWorkQueue::runUntilImpl(StopPredicateFn stopPredicate) {
   WorkProfilerEntry *origRunning = running;
   if (origRunning) {
     WorkProfilerEntry newRunning = origRunning->withNameSuffix(".post");
@@ -126,5 +141,8 @@ void SingleThreadWorkQueue::runUntil(StopPredicateFn &&stopPredicate) {
 }
 
 std::unique_ptr<WorkQueue> M::LLCL::createSingleThreadWorkQueue() {
-  return std::make_unique<SingleThreadWorkQueue>();
+  std::vector<size_t> cpuIDs =
+      getThreadAffinityCpuIds(/*numThreads=*/1, /*maxWorkers=*/1);
+  assert(cpuIDs.size() == 1);
+  return std::make_unique<SingleThreadWorkQueue>(cpuIDs[0]);
 }
