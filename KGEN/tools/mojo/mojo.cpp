@@ -84,7 +84,7 @@ public:
 static bool moduleExportsMain(ModuleOp theModule, SymbolTable &symtab,
                               bool &isDef) {
   MLIRContext *ctx = theModule.getContext();
-  auto emptyListType = KGEN::ListType::get(IntegerType::get(ctx, 1), 0);
+  auto emptyListType = ListType::get(IntegerType::get(ctx, 1), 0);
   for (auto exportOp : theModule.getOps<ExportOp>()) {
     // Is there an exported "main"?
     if (exportOp.getAlias() != "main")
@@ -96,7 +96,7 @@ static bool moduleExportsMain(ModuleOp theModule, SymbolTable &symtab,
     FunctionType funcType = func.getFunctionType();
     if (funcType.getNumInputs() != 0 || funcType.getNumResults() != 1)
       continue;
-    if (dyn_cast<KGEN::ListType>(funcType.getResult(0)) == emptyListType) {
+    if (dyn_cast<ListType>(funcType.getResult(0)) == emptyListType) {
       isDef = false;
       return true;
     }
@@ -109,11 +109,9 @@ static bool moduleExportsMain(ModuleOp theModule, SymbolTable &symtab,
     if (variantElementTys.size() != 2)
       return false;
     if (variantElementTys[0] !=
-        KGEN::ConcreteTypeConstantAttr::get(
-            POP::StructType::get(ctx, SmallVector<Type>{})))
+        ConcreteTypeConstantAttr::get(StringType::get(ctx)))
       return false;
-    if (variantElementTys[1] ==
-        KGEN::ConcreteTypeConstantAttr::get(emptyListType)) {
+    if (variantElementTys[1] == ConcreteTypeConstantAttr::get(emptyListType)) {
       isDef = true;
       return true;
     }
@@ -228,12 +226,12 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // TODO (8082): This should not be necessary.
   std::vector<std::pair<StringLiteral, void *>> compilerRTFunctions;
-  KGEN::registerIntelAMX(compilerRTFunctions);
-  KGEN::registerLLCL(compilerRTFunctions);
-  KGEN::registerMemory(compilerRTFunctions);
-  KGEN::registerPrint(compilerRTFunctions);
-  KGEN::registerSystem(compilerRTFunctions);
-  KGEN::registerTracing(compilerRTFunctions);
+  registerIntelAMX(compilerRTFunctions);
+  registerLLCL(compilerRTFunctions);
+  registerMemory(compilerRTFunctions);
+  registerPrint(compilerRTFunctions);
+  registerSystem(compilerRTFunctions);
+  registerTracing(compilerRTFunctions);
   for (auto [name, ptr] : compilerRTFunctions)
     if (auto err = engine->add<StaticSymbolLayer>("exec", name, ptr))
       return clOptions.reportError(err.getError());

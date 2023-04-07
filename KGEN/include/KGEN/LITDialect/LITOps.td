@@ -442,7 +442,7 @@ def LIT_TryRaiseOp : LITOp<"try.raise", [Terminator,
     propagate an error to the except region.
   }];
 
-  let arguments = (ins AnyTypeOf<[KGEN_DeclRefType, POP_StructType]>:$error);
+  let arguments = (ins AnyType:$error);
   let assemblyFormat = "$error attr-dict `:` type($error)";
 }
 

@@ -305,7 +305,7 @@ fn testResultParamThrowing[() -> b: Int]():
   # CHECK: lit.param_return<:@"$Int"::@Int #lit.struct<{{.*}} 1}
   param_return[1]
   # CHECK: lit.return %1 : !pop.variant<@{{.*}}::@Error, !lit.none>
-  raise Error{}
+  raise Error()
 
 # lit.func @"testMultipleParamReturn()"<a: {{.*}} -> b:
 fn testMultipleParamReturn[a: Bool -> b: Int]():
