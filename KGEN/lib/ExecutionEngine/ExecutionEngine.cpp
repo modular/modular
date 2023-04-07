@@ -192,6 +192,10 @@ static ErrorOrSuccess
 setupPlatform(StringRef orcRTPath, const llvm::DataLayout &dataLayout,
               llvm::orc::ExecutionSession &session,
               llvm::orc::ObjectLinkingLayer &objLinkingLayer) {
+  // No path to the orc runtime, exit early.
+  if (orcRTPath.empty())
+    return success();
+
   llvm::orc::JITDylib &platformStdlib =
       session.createBareJITDylib(platformStdlibName.str());
 
@@ -304,11 +308,13 @@ ExecutionEngine::create(ExecutionEngineOptions options,
   std::optional<BufferRef> rtBuf = std::move(*orcRTBuf);
   std::string orcRTPath;
 
-  if (!rtBuf.has_value())
-    return Error("could not find orc_rt in the cache");
+  if (rtBuf.has_value())
+    if (auto err = writeORCRTToFile(*rtBuf, orcRTPath))
+      return err.takeError();
 
-  if (auto err = writeORCRTToFile(*rtBuf, orcRTPath))
-    return err.takeError();
+  // Windows *requires* the orc runtime.
+  if (!rtBuf.has_value() && tt.isOSBinFormatCOFF())
+    return Error("could not find orc_rt in the cache");
 
   // Construct the object linking layer.
   ee->objectLayer =
