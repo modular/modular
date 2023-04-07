@@ -425,17 +425,6 @@ struct OutputChainPtr:
             message.length.value,
         )
 
-    fn wait(self):
-        """Returns only when the underlying LLCL::OutputChain is emplaced
-        or set to an error. May execute arbitrary tasks while waiting.
-
-        FOR USE IN TEST CODE ONLY. Kernels should never await.
-        """
-        __mlir_op.`pop.external_call`[
-            func : __mlir_attr.`@KGEN_CompilerRT_LLCL_OutputChainPtr_Await`,
-            _type:[],
-        ](self.ptr)
-
     @always_inline
     fn trace[level: TraceLevel](self, label: StringRef):
         """If enabled, begin a time profile entry with label which will end
