@@ -8,7 +8,11 @@
 #include "../Plugin.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/SymbolExport.h"
+#include "lldb/API/SBBroadcaster.h"
 #include "lldb/API/SBDebugger.h"
+#include "lldb/API/SBEvent.h"
+#include "lldb/API/SBListener.h"
+#include "lldb/API/SBProcess.h"
 #include "lldb/Breakpoint/BreakpointLocation.h"
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/Module.h"
@@ -37,11 +41,93 @@ static llvm::Error createStringError(const char *format, Args &&...args) {
 }
 
 //===----------------------------------------------------------------------===//
+// Target event listening
+//===----------------------------------------------------------------------===//
+
+static bool shouldStopListeningToEvents(lldb::StateType state) {
+  switch (state) {
+  case lldb::eStateConnected:
+  case lldb::eStateAttaching:
+  case lldb::eStateLaunching:
+  case lldb::eStateStepping:
+  case lldb::eStateSuspended:
+  case lldb::eStateStopped:
+  case lldb::eStateRunning:
+  case lldb::eStateCrashed:
+    return false;
+  case lldb::eStateInvalid:
+  case lldb::eStateDetached:
+  case lldb::eStateExited:
+  case lldb::eStateUnloaded:
+    // Only in these states we can't execute more expressions.
+    return true;
+  }
+}
+
+static void flushInferiorStderrAndStdout(lldb::SBProcess &process) {
+  constexpr size_t kBufferSize = 1024;
+  char buffer[kBufferSize];
+  size_t count;
+  {
+    auto &os = llvm::outs();
+    while ((count = process.GetSTDOUT(buffer, kBufferSize - 1)) > 0) {
+      buffer[count] = '\0';
+      os << buffer;
+    }
+  }
+  {
+    auto &os = llvm::errs();
+    while ((count = process.GetSTDERR(buffer, kBufferSize - 1)) > 0) {
+      buffer[count] = '\0';
+      os << buffer;
+    }
+  }
+}
+static void eventThreadFunction(lldb::SBTarget target,
+                                const std::atomic_bool &stopEventThread) {
+  lldb::SBProcess process(target.GetProcess());
+  assert(process.IsValid() &&
+         "A valid process should already exist for the REPL");
+  lldb::SBBroadcaster broadcaster(process.GetBroadcaster());
+  lldb::SBListener listener("mojo-repl.process-listener");
+  broadcaster.AddListener(listener, lldb::SBProcess::eBroadcastBitStateChanged |
+                                        lldb::SBProcess::eBroadcastBitSTDOUT |
+                                        lldb::SBProcess::eBroadcastBitSTDERR);
+  lldb::SBEvent event;
+  while (!stopEventThread) {
+    // We retry if we didn't get any events in the last second.
+    if (!listener.WaitForEvent(1, event))
+      continue;
+
+    const uint32_t eventMask = event.GetType();
+    if (eventMask & lldb::SBProcess::eBroadcastBitStateChanged) {
+      if (shouldStopListeningToEvents(
+              lldb::SBProcess::GetStateFromEvent(event)))
+        break;
+    } else if ((eventMask & lldb::SBProcess::eBroadcastBitSTDOUT) ||
+               (eventMask & lldb::SBProcess::eBroadcastBitSTDERR)) {
+      flushInferiorStderrAndStdout(process);
+    }
+  }
+}
+
+//===----------------------------------------------------------------------===//
 // MojoREPL
 //===----------------------------------------------------------------------===//
 
-MojoREPL::MojoREPL(Target &target) : REPL(eKindGo, target) {}
-MojoREPL::~MojoREPL() = default;
+MojoREPL::MojoREPL(Target &target) : REPL(eKindGo, target) {
+  eventThread = std::thread([this] {
+    eventThreadFunction(lldb::SBTarget(m_target.shared_from_this()),
+                        stopEventThread);
+  });
+}
+
+MojoREPL::~MojoREPL() {
+  if (eventThread.joinable()) {
+    stopEventThread = true;
+    eventThread.join();
+  }
+}
 
 //===----------------------------------------------------------------------===//
 // Initialization
@@ -234,7 +320,8 @@ createInstanceFromDebugger(Debugger &debugger, const char *replOptions) {
 static lldb::REPLSP createInstance(Status &error, lldb::LanguageType language,
                                    Debugger *debugger, Target *target,
                                    const char *replOptions) {
-
+  // Needed because the caller might have forgotten to clear this value.
+  error.Clear();
   if (target) {
     auto repl = createInstanceFromTarget(*target, replOptions);
     if (repl)
@@ -255,10 +342,10 @@ void MojoREPL::Initialize() {
   LanguageSet languages;
   languages.Insert(eLanguageTypeMojo);
   PluginManager::RegisterPlugin(getPluginNameStatic(), "Mojo language REPL",
-                                &createInstance, languages);
+                                createInstance, languages);
 }
 
-void MojoREPL::Terminate() { PluginManager::UnregisterPlugin(&createInstance); }
+void MojoREPL::Terminate() { PluginManager::UnregisterPlugin(createInstance); }
 
 //===----------------------------------------------------------------------===//
 // Source Code Handling
