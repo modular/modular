@@ -217,6 +217,21 @@ bool MojoUserExpression::AddArguments(ExecutionContext &exeCtx,
   return true;
 }
 
+/// Signal handler that will dump the stack trace to the log.
+static void dumpTraceOnSignal(void *) {
+  std::string traceStr;
+  llvm::raw_string_ostream trace(traceStr);
+  llvm::sys::PrintStackTrace(trace);
+  MOJO_EXPR_LOG("Backtrace:\n{0}", traceStr);
+}
+
+/// Register the trace dumping signal handler exactly once.
+static void registerTraceDumpHandler() {
+  static llvm::once_flag flag;
+  llvm::call_once(
+      flag, []() { llvm::sys::AddSignalHandler(dumpTraceOnSignal, nullptr); });
+}
+
 LogicalResult MojoUserExpression::wrapTextAndParseExpression(
     DiagnosticManager &diagnosticManager, ExecutionContext &exeCtx,
     ExecutionContextScope *exeScope) {
@@ -272,10 +287,17 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
     diagnosticManager.Clear();
   };
 
+  // Register the trace dump signal handler before we enable the
+  // CrashRecoveryContext so it is picked up properly.
+  registerTraceDumpHandler();
   llvm::CrashRecoveryContext::Enable();
   llvm::CrashRecoveryContext crc;
+  // Signal handlers don't fire unless this flag is set.
+  crc.DumpStackAndCleanupOnFailure = true;
   if (!crc.RunSafelyOnThread(parseModule)) {
-    MOJO_EXPR_LOG("Crash detected");
+    MOJO_EXPR_LOG("Crash recovered: CrashRecoveryContext::RetCode (on POSIX: "
+                  "signal number + 128) = {0}",
+                  crc.RetCode);
     diagnosticManager.PutString(eDiagnosticSeverityError, "crash detected");
     return failure();
   }
