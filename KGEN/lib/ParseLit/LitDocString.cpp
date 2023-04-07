@@ -117,16 +117,31 @@ private:
       return lhs.first.getValue() < rhs.first.getValue();
     });
 
+    // Skip declarations that were imported from other scopes.
+    // TODO: We should note that these are imported/aliases.
+    auto filterChildren = [&](TinyPtrVector<ASTDecl *> &children) {
+      return llvm::make_filter_range(children, [&](ASTDecl *child) {
+        return child->getParentDecl() == &decl;
+      });
+    };
+
     llvm::SaveAndRestore<size_t> saveDepth(depth, depth + 1);
     for (auto &child : children) {
-      for (auto &childDecl : child.second) {
-        // Skip declarations that were imported from other scopes.
-        // TODO: We should note that these are imported/aliases.
-        if (childDecl->getParentDecl() != &decl)
-          continue;
+      if (shouldHideName(child.first))
+        continue;
+      auto filteredChildren = filterChildren(child.second);
+      if (filteredChildren.empty())
+        continue;
 
-        generate(*childDecl);
+      // If the children are functions, generate all of the overloads under a
+      // single header.
+      if (isa<FuncOp>(**filteredChildren.begin())) {
+        generateLitMarkdownDocForFunctions(child.first, filteredChildren);
+        continue;
       }
+
+      for (auto &childDecl : filteredChildren)
+        generate(*childDecl);
     }
   }
 
@@ -322,8 +337,20 @@ private:
     // Strip off the mangled suffix from the base function name.
     StringRef name =
         funcOp.getName().take_until([](char c) { return c == '('; });
-    if (shouldHideName(name))
-      return;
+    return generateLitMarkdownDocForFunctions(name, ArrayRef<ASTDecl *>(&decl));
+  }
+  template <typename DeclRangeT>
+  void generateLitMarkdownDocForFunctions(StringRef name,
+                                          const DeclRangeT &decls) {
+    generateMarkdownHeader(name);
+    for (auto *decl : decls)
+      generateMarkdownForOverload(*decl, cast<FuncOp>(*decl), name);
+  }
+
+  /// Generate a markdown sub-section for the overload described by the given
+  /// function.
+  void generateMarkdownForOverload(ASTDecl &decl, FuncOp funcOp,
+                                   StringRef name) {
     SignatureType signature = funcOp.getSignature();
 
     auto argTypes = funcOp.getArgumentTypes();
@@ -375,28 +402,34 @@ private:
           generateTypeString(resultType, selfType, resultConvention);
     }
 
-    generateMarkdownHeader([&] {
-      // Strip off the mangled suffix from the base function name.
-      os << "`` " << name.split('(').first;
-
-      os << "(";
-      interleaveComma(argTypeNames, os);
-      os << ")";
-
-      if (resultTypeName)
-        os << " -> " << *resultTypeName;
-
-      os << " ``";
-    });
+    generateFunctionSignature(name, argTypeNames, resultTypeName);
 
     if (std::optional<LitDocString> docStr = getLitDocString(decl)) {
       os << docStr->getSummary() << "\n\n";
       processFunctionDocDescription(docStr->getDescription(), paramToDetail,
                                     argNameToDetail, resultTypeName);
+      os << "\n";
     }
 
     // Recursively generate documentation for the module's children.
     generateLitMarkdownForChildren(decl);
+  }
+
+  /// Generate markdown for the signature of a function, given its components.
+  void
+  generateFunctionSignature(StringRef name, ArrayRef<std::string> argTypeNames,
+                            const std::optional<std::string> &resultTypeName) {
+    // Strip off the mangled suffix from the base function name.
+    os << "> `` " << name.split('(').first;
+
+    os << "(";
+    interleaveComma(argTypeNames, os);
+    os << ")";
+
+    if (resultTypeName)
+      os << " -> " << *resultTypeName;
+
+    os << " ``\n\n";
   }
 
   void processFunctionDocDescription(
@@ -441,10 +474,7 @@ private:
   // Struct Markdown Generation
 
   void generateLitMarkdownDocFor(ASTDecl &decl, StructDeclOp structOp) {
-    StringRef name = structOp.getName();
-    if (shouldHideName(name))
-      return;
-    generateMarkdownHeader(name);
+    generateMarkdownHeader(structOp.getName());
 
     if (std::optional<LitDocString> docStr = getLitDocString(decl)) {
       os << docStr->getSummary() << "\n\n";
