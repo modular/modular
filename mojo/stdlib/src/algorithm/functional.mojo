@@ -654,6 +654,71 @@ struct BinaryClosure[
         )
 
 
+struct TernaryClosure[
+    arg1_type: AnyType,
+    arg2_type: AnyType,
+    arg3_type: AnyType,
+    result_type: AnyType,
+]:
+    alias closure_type = __mlir_type[
+        `!pop.closure<(`,
+        arg1_type,
+        `, `,
+        arg2_type,
+        `, `,
+        arg3_type,
+        `) -> `,
+        result_type,
+        `>`,
+    ]
+    var value: closure_type
+
+    @always_inline("nodebug")
+    fn __init__(value: closure_type) -> Self:
+        """Create a Ternary closure.
+
+        Arguments:
+          value: the closure value
+
+        Returns:
+          The Ternary closure.
+        """
+        return Self {value: value}
+
+    @always_inline("nodebug")
+    fn __copy__(self) -> Self:
+        """Clone a Ternary closure.
+
+        Arguments:
+          self: the value to clone
+
+        Returns:
+          A new Ternary closure.
+        """
+        return Self {value: self.value}
+
+    @always_inline("nodebug")
+    fn __call__(
+        self,
+        arg1: arg1_type,
+        arg2: arg2_type,
+        arg3: arg3_type,
+    ) -> result_type:
+        """Call a Ternary closure.
+
+        Arguments:
+          arg1: the first input to the Ternary closure
+          arg2: the second input to the Ternary closure
+          arg3: the third input to the Ternary closure
+
+        Returns:
+          The Ternary closure result.
+        """
+        return __mlir_op.`pop.call_indirect`[_type:result_type](
+            self.value, arg1, arg2, arg3
+        )
+
+
 # ===----------------------------------------------------------------------===#
 # Unswitch
 # ===----------------------------------------------------------------------===#
