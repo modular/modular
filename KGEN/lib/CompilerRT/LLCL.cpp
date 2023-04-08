@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/CompilerRT.h"
+#include "KGEN/OutputChain.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Runtime/AsyncValueRef.h"
@@ -16,6 +17,7 @@
 
 using namespace M;
 using namespace M::LLCL;
+using namespace M::KGEN;
 
 //===----------------------------------------------------------------------===//
 // Helpers
@@ -39,9 +41,6 @@ LLCLWrapper<T> wrap(T *ptr) {
 using LLCLRuntimeRef = LLCLWrapper<Runtime>;
 using LLCLOutputChainRef = LLCLWrapper<OutputChain>;
 using LLCLAsyncChainRef = LLCLWrapper<AsyncValueRef<Chain>>;
-
-/// Type of profiling entries for the Mojo tracer.
-using MojoProfilerEntry = ProfilerEntry<Trace::EnableTrace(Trace::kMojo, 1)>;
 
 /// Dummy entry point to force loading.
 /// (All the other entry points use LLCLWrapper which we don't want to
@@ -165,18 +164,14 @@ KGEN_CompilerRT_LLCL_OutputChainPtr_GetRuntime(LLCLOutputChainRef outChain) {
 /// Emplaces outChain.
 COMPILERRT_EXPORT void
 KGEN_CompilerRT_LLCL_OutputChainPtr_MarkReady(LLCLOutputChainRef outChain) {
-  // CAUTION: Don't move the outChain since we don't want to force explicit
-  // copies into Mojo code.
-  unwrap(outChain).copy().emplace();
+  unwrap(outChain).markReady();
 }
 
 /// Sets an error message on outChain.
 COMPILERRT_EXPORT void KGEN_CompilerRT_LLCL_OutputChainPtr_MarkError(
     LLCLOutputChainRef outChain, const char *messagePtr, ssize_t messageLen) {
-  // CAUTION: Don't move the outChain since we don't want to force explicit
-  // copies into Mojo code.
-  std::move(unwrap(outChain))
-      .setToError(Twine(StringRef(messagePtr, messageLen)));
+  StringRef message(messagePtr, messageLen);
+  unwrap(outChain).markError(message);
 }
 
 /// Returns an empty OutputChain, with empty chain and 'unknown' location.
@@ -203,31 +198,25 @@ KGEN_CompilerRT_LLCL_OutputChainPtr_Destroy(LLCLOutputChainRef outChain) {
 /// Processes work items until outChain is ready.
 COMPILERRT_EXPORT void
 KGEN_CompilerRT_LLCL_OutputChainPtr_Await(LLCLOutputChainRef outChain) {
-  await(unwrap(outChain));
+  unwrap(outChain).await();
 }
 
-/// Begins a profiling entry with label when called, and ends it when outChain
-/// is ready.
+/// Begins a profiling entry with name when called, and ends it when outChain
+/// is completed.
 COMPILERRT_EXPORT void KGEN_CompilerRT_LLCL_OutputChainPtr_Trace(
-    LLCLOutputChainRef outChain, const char *labelPtr, ssize_t labelLen) {
-  StringRef label(labelPtr, labelLen);
-  auto profilerEntry = MojoProfilerEntry::create(label);
-  unwrap(outChain).copy().andThenSync(
-      [profilerEntry = std::move(profilerEntry)]() mutable {
-        std::move(profilerEntry).record();
-      });
+    LLCLOutputChainRef outChain, const char *namePtr, ssize_t nameLen) {
+  StringRef name(namePtr, nameLen);
+  unwrap(outChain).trace(name, {});
 }
 
+/// Begins a profiling entry with name and detail when called, and ends it
+/// when outChain is completed.
 COMPILERRT_EXPORT void KGEN_CompilerRT_LLCL_OutputChainPtr_TraceDetailed(
-    LLCLOutputChainRef outChain, const char *labelPtr, ssize_t labelLen,
+    LLCLOutputChainRef outChain, const char *namePtr, ssize_t nameLen,
     const char *detailPtr, ssize_t detailLen) {
-  StringRef label(labelPtr, labelLen);
+  StringRef name(namePtr, nameLen);
   StringRef detail(detailPtr, detailLen);
-  auto profilerEntry = MojoProfilerEntry::create(label, detail);
-  unwrap(outChain).copy().andThenSync(
-      [profilerEntry = std::move(profilerEntry)]() mutable {
-        std::move(profilerEntry).record();
-      });
+  unwrap(outChain).trace(name, detail);
 }
 
 void M::KGEN::registerLLCL(

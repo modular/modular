@@ -191,11 +191,6 @@ private:
   EncodedLocation loc;
 };
 
-/// (Possibly) asynchronous computations may signal completion by emplacing
-/// or setting an error on an output AsyncValueRef<Chain> 'chain'. To avoid
-/// plumbing both the output chain and an EncodedLocation use this alias.
-using OutputChain = AsyncValueRefWithEncodedLocation<AsyncValueRef<Chain>>;
-
 } // namespace M::LLCL
 
 #endif // LLCL_RUNTIME_ASYNCVALUEREF_H
