@@ -10,8 +10,7 @@
 #
 # ===----------------------------------------------------------------------===#
 
-from Assert import assert_param, assert_param
-
+from Assert import assert_param
 from Buffer import NDBuffer
 from DType import DType
 from IO import print
