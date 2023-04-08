@@ -14,7 +14,7 @@ from Buffer import (
     _compute_ndbuffer_offset,
 )
 from SIMD import SIMD
-from Assert import assert_param, assert_param_bool, debug_assert
+from Assert import assert_param, debug_assert
 from MatmulUtils import (
     PartitionHeuristic,
     get_matmul_prefetch_b_distance_k,
@@ -42,7 +42,6 @@ from Image import (
     Image2DLayout,
     ImageShape,
 )
-from IO import _printf
 
 
 @register_passable("trivial")
@@ -85,8 +84,8 @@ fn get_conv2d_shape[
     stride: StaticIntTuple[2],
     dilation: StaticIntTuple[2],
 ) -> ConvShape:
-    assert_param_bool[data_layout == Image2DLayout.NCHW]()
-    assert_param_bool[filter_layout == Image2DLayout.NCHW]()
+    assert_param[data_layout == Image2DLayout.NCHW]()
+    assert_param[filter_layout == Image2DLayout.NCHW]()
 
     return ConvShape {
         n: input.dim[0](),
@@ -122,8 +121,8 @@ fn get_conv2d_shape[
     stride: StaticIntTuple[2],
     dilation: StaticIntTuple[2],
 ) -> ConvShape:
-    assert_param_bool[data_layout == Image2DLayout.NHWC]()
-    assert_param_bool[filter_layout == Image2DLayout.NHWC]()
+    assert_param[data_layout == Image2DLayout.NHWC]()
+    assert_param[filter_layout == Image2DLayout.NHWC]()
 
     return ConvShape {
         n: input.dim[0](),
@@ -159,8 +158,8 @@ fn get_conv2d_shape[
     stride: StaticIntTuple[2],
     dilation: StaticIntTuple[2],
 ) -> ConvShape:
-    assert_param_bool[data_layout == Image2DLayout.NHWC]()
-    assert_param_bool[filter_layout == Image2DLayout.RSCF]()
+    assert_param[data_layout == Image2DLayout.NHWC]()
+    assert_param[filter_layout == Image2DLayout.RSCF]()
 
     return ConvShape {
         n: input.dim[0](),

@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Assert import assert_param, assert_param_bool, debug_assert
+from Assert import assert_param, debug_assert
 from Buffer import NDBuffer, prod_dims
 from DType import DType
 from Functional import vectorize, vectorize_unroll, async_parallelize
@@ -74,10 +74,10 @@ fn gather_reduce[
     context, i is the batch dimension, j is the multi-hot dimension, and k is
     the embedding dimension.
     """
-    assert_param_bool[input_rank == 2]()
-    assert_param_bool[indices_rank == 2]()
-    assert_param_bool[gather_axis == 0]()
-    assert_param_bool[reduce_axis == 1]()
+    assert_param[input_rank == 2]()
+    assert_param[indices_rank == 2]()
+    assert_param[gather_axis == 0]()
+    assert_param[reduce_axis == 1]()
 
     # Short-circuit for trivial cases, and to avoid divide-by-zero
     if input.size() == 0 or indices.size() == 0:
@@ -189,10 +189,10 @@ fn gather[
     out_chain: OutputChainPtr,
 ):
     """Computes output[i, j] = input[indices[i], j]"""
-    assert_param_bool[output_rank == 2]()
-    assert_param_bool[input_rank == 2]()
-    assert_param_bool[indices_rank == 1]()
-    assert_param_bool[axis == 0]()
+    assert_param[output_rank == 2]()
+    assert_param[input_rank == 2]()
+    assert_param[indices_rank == 1]()
+    assert_param[axis == 0]()
 
     let indices_len = indices.size()
     # Short-circuit for trivial cases, and to avoid divide-by-zero
@@ -278,10 +278,10 @@ fn gather[
     out_chain: OutputChainPtr,
 ):
     """Computes output[i, j] = input[i, indices[j]]"""
-    assert_param_bool[output_rank == 2]()
-    assert_param_bool[input_rank == 2]()
-    assert_param_bool[indices_rank == 1]()
-    assert_param_bool[axis == 1]()
+    assert_param[output_rank == 2]()
+    assert_param[input_rank == 2]()
+    assert_param[indices_rank == 1]()
+    assert_param[axis == 1]()
 
     @always_inline
     fn task_func(task_id: Int):

@@ -6,7 +6,7 @@
 
 """The module contains implementations of activation functions."""
 
-from Assert import assert_param_bool_msg
+from Assert import assert_param_msg
 from DType import DType
 from Math import erf, exp, tanh, clamp, max, min, identity
 from SIMD import SIMD
@@ -53,7 +53,7 @@ fn dispatch_activation_fn[
     elif activation == ActivationType.SIGMOID:
         return sigmoid(val)
     else:
-        assert_param_bool_msg[False, "unsupported activation"]()
+        assert_param_msg[False, "unsupported activation"]()
 
     return val
 
@@ -175,7 +175,7 @@ fn gelu[
         type must be a floating point type.
     """
     alias SQRT_2 = 1.4142135623730950488
-    assert_param_bool_msg[
+    assert_param_msg[
         type.is_floating_point(),
         "dtype must be a floating point type",
     ]()
@@ -207,7 +207,7 @@ fn gelu_approximate[
         type must be a floating point type.
     """
     alias SQRT_TWO_OVER_PI = 0.797884560802865
-    assert_param_bool_msg[
+    assert_param_msg[
         type.is_floating_point(),
         "dtype must be a floating point type",
     ]()

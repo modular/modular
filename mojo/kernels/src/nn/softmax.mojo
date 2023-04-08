@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Assert import assert_param, assert_param_msg
+from Assert import assert_param
 from Buffer import Buffer
 from DType import DType
 from Functional import vectorize_unroll
