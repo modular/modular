@@ -578,11 +578,6 @@ struct ConvertPOPStructReplace : ConvertPOPToLLVMPattern<StructReplaceOp> {
   LogicalResult
   matchAndRewrite(StructReplaceOp op, StructReplaceOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    // If the struct has one element, just return the new value.
-    if (op.getType().getNumElements() == 1) {
-      rewriter.replaceOp(op, adaptor.getValue());
-      return success();
-    }
     rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(
         op, adaptor.getContainer(), adaptor.getValue(),
         op.getIndexAttr().getInt());
@@ -600,12 +595,6 @@ struct ConvertPOPStructGet : ConvertPOPToLLVMPattern<StructExtractOp> {
   LogicalResult
   matchAndRewrite(StructExtractOp op, StructExtractOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    // If the struct has one element, just return it.
-    if (op.getContainer().getType().getNumElements() == 1) {
-      rewriter.replaceOp(op, adaptor.getContainer());
-      return success();
-    }
-
     rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
         op, adaptor.getContainer(), op.getIndexAttr().getInt());
     return success();
@@ -625,11 +614,6 @@ struct ConvertPOPStructGEP : ConvertPOPToLLVMPattern<POP::StructGEPOp> {
     Type ptrType = convertType(op.getType());
     if (!ptrType)
       return op.emitError("failed to convert result type");
-    auto type = op.getContainer().getType().getElementTypeAs<StructType>();
-    if (type.getNumElements() == 1) {
-      rewriter.replaceOp(op, adaptor.getContainer());
-      return success();
-    }
     rewriter.replaceOpWithNewOp<LLVM::GEPOp>(
         op, ptrType, adaptor.getContainer(),
         ArrayRef<LLVM::GEPArg>{
@@ -961,14 +945,6 @@ struct ConvertPOPPackGet : public ConvertPOPToLLVMPattern<PackGetOp> {
   LogicalResult
   matchAndRewrite(PackGetOp op, PackGetOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    // If the pack is backed by a variadic attribute with only one element, just
-    // return that element.
-    if (auto variadic = op.getPack().getType().getVariadicAttr()) {
-      if (variadic.getValues().size() == 1) {
-        rewriter.replaceOp(op, adaptor.getPack());
-        return success();
-      }
-    }
     // Otherwise, extract the value at the specified index from the pack's
     // underlying storage.
     rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(

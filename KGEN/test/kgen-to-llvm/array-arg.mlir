@@ -20,8 +20,10 @@ kgen.func @array_in_struct(%s: !pop.struct<array<4, i32>>) {
 
 // CHECK-LABEL: llvm.func @array_in_struct
 // CHECK-SAME: %[[ARR_PTR:.*]]: !llvm.ptr<array<4 x i32>>
+// CHECK-NEXT: %[[UNDEF:.*]] = llvm.mlir.undef : !llvm.struct<(array<4 x i32>)>
 // CHECK-NEXT: %[[ARR:.*]] = llvm.load %[[ARR_PTR]]
-// CHECK-NEXT: %[[CAST:.*]] = builtin.unrealized_conversion_cast %[[ARR]]
+// CHECK-NEXT: %[[ARG:.*]] = llvm.insertvalue %[[ARR]], %[[UNDEF]][0]
+// CHECK-NEXT: %[[CAST:.*]] = builtin.unrealized_conversion_cast %[[ARG]]
 // CHECK-NEXT: "use"(%[[CAST]])
 
 kgen.export @array_arg to C

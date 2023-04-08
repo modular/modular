@@ -177,15 +177,6 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
   // Convert struct types to LLVM literal structs.
   auto convertElementTypesToStruct =
       [=](ArrayRef<TypedAttr> elements) -> std::optional<Type> {
-    // Unwrap structs with just one element.
-    if (elements.size() == 1) {
-      Type type = convertType(
-          llvm::cast<ConcreteTypeConstantAttr>(elements.front()).getValue());
-      if (!type)
-        return {};
-      return type;
-    }
-
     SmallVector<Type> types;
     types.reserve(elements.size());
     for (TypedAttr elementType : elements) {
@@ -629,10 +620,6 @@ static Value lowerStringToGlobalConstant(StringAttr strAttr,
 
 Value KGEN::materializeLLVMStruct(ImplicitLocOpBuilder &b, Type structType,
                                   ValueRange elements) {
-  // Elide the struct for single-element structs.
-  if (elements.size() == 1)
-    return elements.front();
-
   Value container = b.create<LLVM::UndefOp>(structType);
   for (auto [index, element] : llvm::enumerate(elements))
     container = b.create<LLVM::InsertValueOp>(container, element, index);

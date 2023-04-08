@@ -839,13 +839,13 @@ kgen.func @pack_create(%a: i32, %b: f64, %c: f32) {
 kgen.func @pack_get(
   %p0: !pop.pack<[i1]>,
   %p1: !pop.pack<[i32, f32]>
-) -> i1 {
-  // CHECK: builtin.unrealized_conversion_cast %{{.*}} : !pop.pack<[i1]> to i1
+) -> (i1, f32) {
+  // CHECK: llvm.extractvalue %0[0] : !llvm.struct<(i1)>
   %0 = pop.pack.get %p0[0] : <[i1]>
-  // CHECK: llvm.extractvalue %{{.*}}[1] : !llvm.struct<(i32, f32)>
+  // CHECK: llvm.extractvalue %1[1] : !llvm.struct<(i32, f32)>
   %1 = pop.pack.get %p1[1] : <[i32, f32]>
 
-  kgen.return %0 : i1
+  kgen.return %0, %1 : i1, f32
 }
 
 // CHECK-LABEL: @variadic_create
