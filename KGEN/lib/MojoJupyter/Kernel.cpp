@@ -16,6 +16,7 @@
 #include "lldb/Host/FileSystem.h"
 #include "lldb/Host/Host.h"
 #include "lldb/Host/HostInfo.h"
+#include "lldb/Target/Target.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/raw_ostream.h"
@@ -36,6 +37,28 @@ using OutputFn = void (*)(const char *, const char *);
 /// language type. Until then, pretend that we're Go.
 static inline constexpr lldb::LanguageType eLanguageTypeMojo =
     lldb::eLanguageTypeGo;
+
+//===----------------------------------------------------------------------===//
+// MojoExpressionEvaluationOptions
+//===----------------------------------------------------------------------===//
+
+namespace {
+struct MojoExpressionEvaluationOptions : public SBExpressionOptions {
+  MojoExpressionEvaluationOptions() {
+    SetLanguage(eLanguageTypeMojo);
+    SetUnwindOnError(false);
+    SetGenerateDebugInfo(true);
+
+    // Sets an infinite timeout so that users can run arbitrarily long
+    // computations.
+    SetTimeoutInMicroSeconds(0);
+
+    // TODO: This should be part of the public API, but for now we need to set
+    // it via the private API.
+    ref().SetREPLEnabled(true);
+  }
+};
+} // namespace
 
 //===----------------------------------------------------------------------===//
 // MojoKernel
@@ -102,7 +125,7 @@ private:
   SBDebugger debugger;
   SBTarget target;
   SBProcess process;
-  SBExpressionOptions exprOpts;
+  MojoExpressionEvaluationOptions exprOpts;
   SBThread mainThread;
 };
 } // namespace
@@ -175,15 +198,8 @@ LogicalResult MojoKernel::initialize(const char *mojoReplExe) {
   if (failed(launchReplProcess()))
     return failure();
 
-  // Initialize the expression options.
-  exprOpts = SBExpressionOptions();
-  exprOpts.SetLanguage(eLanguageTypeMojo);
-  exprOpts.SetUnwindOnError(false);
-  exprOpts.SetGenerateDebugInfo(true);
-
   // Sets an infinite timeout so that users can run arbitrarily long
   // computations.
-  exprOpts.SetTimeoutInMicroSeconds(0);
   mainThread = process.GetThreadAtIndex(0);
 
   LLVM_DEBUG(llvm::dbgs() << "Successfully built Mojo Jupyter kernel\n");

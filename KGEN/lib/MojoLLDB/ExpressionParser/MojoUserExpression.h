@@ -11,6 +11,7 @@
 #include "lldb/Expression/LLVMUserExpression.h"
 
 namespace M::KGEN::Mojo {
+class MojoPersistentExpressionState;
 class MojoTypeSystem;
 
 //===----------------------------------------------------------------------===//
@@ -78,7 +79,8 @@ private:
   LogicalResult
   wrapTextAndParseExpression(lldb_private::DiagnosticManager &diagnosticManager,
                              lldb_private::ExecutionContext &exeCtx,
-                             lldb_private::ExecutionContextScope *exeScope);
+                             lldb_private::ExecutionContextScope *exeScope,
+                             MojoPersistentExpressionState &state);
 
   //===--------------------------------------------------------------------===//
   // Fields
