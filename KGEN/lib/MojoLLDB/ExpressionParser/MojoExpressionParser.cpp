@@ -165,14 +165,11 @@ bool MojoExpressionParser::RewriteExpression(
                 diagnosticManager.Diagnostics().size(),
                 diagnosticManager.Diagnostics().size() == 1 ? "" : "s");
   StringRef originalText(impl->exprToParse.Text());
-  std::string newText = "";
+  // This takes advantage of the fact that fixits are ordered to apply multiple
+  // fixits to a single expression.
+  std::string newText;
+  size_t prevEnd = 0;
   auto applyFixit = [&](const llvm::SMFixIt &fixit) -> bool {
-    if (!newText.empty()) {
-      diagnosticManager.PutString(eDiagnosticSeverityError,
-                                  "[mojo] Found multiple fix-its, aborting");
-      return false;
-    }
-
     llvm::SMRange range = fixit.getRange();
     if (!range.isValid())
       return false;
@@ -182,26 +179,24 @@ bool MojoExpressionParser::RewriteExpression(
     StringRef insertedText = fixit.getText();
     MOJO_EXPR_LOG("Change \"{0}\" to \"{1}\"", removedText, insertedText);
 
-    // If the start is the end of the original text, just add it all.
-    if (range.Start.getPointer() >= originalText.end())
-      newText += originalText.rtrim();
-    else if (range.Start.getPointer() < originalText.end() &&
-             range.Start.getPointer() >= originalText.begin())
-      newText += originalText.substr(0, range.Start.getPointer() -
-                                            originalText.begin());
+    // The current range starts at the previous end pointer.
+    StringRef currentOriginalRange(originalText.begin() + prevEnd);
+
+    // Add the substring from the start of the current original text range.
+    if (range.Start.getPointer() < currentOriginalRange.end() &&
+        range.Start.getPointer() >= currentOriginalRange.begin())
+      newText += currentOriginalRange.substr(
+          0, range.Start.getPointer() - currentOriginalRange.begin());
 
     MOJO_EXPR_LOG("New expr before fixit insertion:\n{0}", newText);
 
     // Add the text to insert.
     newText += insertedText;
 
-    // If the end is the beginning of the buffer, just add it all.
-    if (range.End.getPointer() == originalText.begin())
-      newText += originalText;
-    else if (range.End.getPointer() < originalText.end())
-      newText +=
-          originalText.substr(range.End.getPointer() - originalText.begin());
-
+    // Update prevEnd. At the *very* end, we will clean up by adding the
+    // remaining substring. Subtract off the size of the inserted text because
+    // the pointers are all indexed off the original text.
+    prevEnd += range.End.getPointer() - currentOriginalRange.begin();
     return true;
   };
 
@@ -209,6 +204,7 @@ bool MojoExpressionParser::RewriteExpression(
   for (const auto &diag : diagnosticManager.Diagnostics()) {
     MOJO_EXPR_LOG("Diagnostic with fixits: {0}, message:\n{1}",
                   diag->HasFixIts(), diag->GetMessage());
+
     // If it's a mojo diagnostic, it might have fix-its. If it does, and if that
     // fails, return false. Otherwise, continue.
     if (const auto *mojoDiag = llvm::dyn_cast<MojoDiagnostic>(diag.get())) {
@@ -227,6 +223,10 @@ bool MojoExpressionParser::RewriteExpression(
 
   // If we handled all the diagnostics, then we set the fixed expression.
   if (allDiagsHandled) {
+    // Complete fixit handling by adding the substring from prevEnd to the end
+    // of the buffer. We do this here because we only want to do it if/once
+    // *all* diagnostics are handled.
+    newText += originalText.substr(prevEnd);
     MOJO_EXPR_LOG("Fixits applied to expression: \n{0}", newText.c_str());
     diagnosticManager.SetFixedExpression(newText);
   } else {
