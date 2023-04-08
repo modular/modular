@@ -19,7 +19,7 @@ func.func @terminators_conditionally_pure(%arg0: i1) {
 
     // CHECK: {d}
     hlcf.if %arg0 {
-      hlcf.break
+      hlcf.continue
     } else {
       hlcf.yield
     } {d}
@@ -121,6 +121,110 @@ kgen.func @hoist_cond_return_else(%cond: i1, %arg1: index, %arg2: index, %arg3: 
   }
   %r = index.add %a, %b
   kgen.return %r: index
+}
+
+// CHECK-LABEL: @hoist_cond_break
+kgen.func @hoist_cond_break(%cond: i1, %arg1: index, %arg2: index, %arg3: index) -> index {
+  // CHECK:      %[[LOOP_RES:.*]] = hlcf.loop
+  // CHECK-NEXT:   %[[IF_RES:.*]] = hlcf.if
+  // CHECK-NEXT:     hlcf.yield %arg1
+  // CHECK-NEXT:   else
+  // CHECK-NEXT:     %[[ELSE_VAL:.*]] = index.add
+  // CHECK-NEXT:     hlcf.yield %[[ELSE_VAL]]
+  // CHECK-NOT:    index.add
+  // CHECK:        hlcf.break %[[IF_RES]]
+  // CHECK:      kgen.return %[[LOOP_RES]]
+  %t = hlcf.loop () -> index {
+    %a, %b = hlcf.if %cond -> index, index {
+      hlcf.break %arg1: index
+    } else {
+      hlcf.yield %arg2, %arg3: index, index
+    }
+    %r = index.add %a, %b
+    hlcf.break %r: index
+  }
+  kgen.return %t: index
+}
+
+// CHECK-LABEL: @hoist_cond_break2
+kgen.func @hoist_cond_break2(%cond: i1, %arg1: index, %arg2: index, %arg3: index) -> index{
+  // CHECK:      hlcf.loop "outer"
+  // CHECK-NEXT:   hlcf.loop "inner"
+  // CHECK-NEXT:     hlcf.if
+  // CHECK-NEXT:       hlcf.yield
+  // CHECK-NEXT:     else
+  // CHECK-NEXT:       index.add
+  // CHECK-NEXT:       hlcf.yield
+  // CHECK:          hlcf.break "outer"
+  // CHECK:        hlcf.break "outer"
+  // CHECK:      kgen.return
+  %outer_res = hlcf.loop "outer" () -> index {
+    %inner_res = hlcf.loop "inner" () -> index {
+      %a, %b = hlcf.if %cond -> index, index {
+        hlcf.break "outer" %arg1: index
+      } else {
+        hlcf.yield %arg2, %arg3: index, index
+      }
+      %r = index.add %a, %b
+      hlcf.break "outer" %r: index
+    }
+    hlcf.break "outer" %inner_res: index
+  }
+  kgen.return %outer_res: index
+}
+
+// CHECK-LABEL: @hoist_cond_break3
+kgen.func @hoist_cond_break3(%cond: i1, %arg1: index, %arg2: index, %arg3: index) -> index{
+  // CHECK:      hlcf.loop "outer"
+  // CHECK-NEXT:   hlcf.loop "inner"
+  // CHECK-NEXT:     hlcf.if
+  // CHECK-NEXT:       hlcf.break
+  // CHECK-NEXT:     else
+  // CHECK-NEXT:       hlcf.yield
+  // CHECK:          index.add
+  // CHECK:          hlcf.break "outer"
+  // CHECK:        hlcf.break "outer"
+  // CHECK:      kgen.return
+  %outer_res = hlcf.loop "outer" () -> index {
+    %inner_res = hlcf.loop "inner" () -> index {
+      %a, %b = hlcf.if %cond -> index, index {
+        hlcf.break %arg1: index
+      } else {
+        hlcf.yield %arg2, %arg3: index, index
+      }
+      %r = index.add %a, %b
+      hlcf.break "outer" %r: index
+    }
+    hlcf.break "outer" %inner_res: index
+  }
+  kgen.return %outer_res: index
+}
+
+// CHECK-LABEL: @hoist_cond_break4
+kgen.func @hoist_cond_break4(%cond: i1, %arg1: index, %arg2: index, %arg3: index) -> index{
+  // CHECK:      hlcf.loop
+  // CHECK-NEXT:   hlcf.loop
+  // CHECK-NEXT:     hlcf.if
+  // CHECK-NEXT:       kgen.return
+  // CHECK-NEXT:     else
+  // CHECK-NEXT:       hlcf.yield
+  // CHECK:          index.add
+  // CHECK:          hlcf.break
+  // CHECK:        hlcf.break
+  // CHECK:      kgen.return
+  %outer_res = hlcf.loop () -> index {
+    %inner_res = hlcf.loop () -> index {
+      %a, %b = hlcf.if %cond -> index, index {
+        kgen.return %arg1: index
+      } else {
+        hlcf.yield %arg2, %arg3: index, index
+      }
+      %r = index.add %a, %b
+      hlcf.break %r: index
+    }
+    hlcf.break %inner_res: index
+  }
+  kgen.return %outer_res: index
 }
 
 // CHECK-LABEL: @dont_hoist_cond_return_nested

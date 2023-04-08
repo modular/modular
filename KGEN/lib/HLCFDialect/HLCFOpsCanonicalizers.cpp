@@ -231,12 +231,13 @@ struct HoistConditionalReturn : public OpRewritePattern<IfOp> {
     // nothing to do.
     // TODO: This should also work for BreakOp and ContinueOp (provided thenTerm
     // and elseTerm are of the same type)
-    if (!isa<KGEN::ReturnOp>(thenTerm) && !isa<KGEN::ReturnOp>(elseTerm))
+    if (!isa<KGEN::ReturnOp, BreakOp>(thenTerm) &&
+        !isa<KGEN::ReturnOp, BreakOp>(elseTerm))
       return rewriter.notifyMatchFailure(
-          op, "None of the branches ends with Return");
+          op, "None of the branches ends with Return/Break");
 
-    // One of the terminators is Return, now make sure that the other one is
-    // Yield.
+    // One of the terminators is Return/Break, now make sure that the other one
+    // is Yield.
     if (!isa<YieldOp>(thenTerm) && !isa<YieldOp>(elseTerm))
       return rewriter.notifyMatchFailure(
           op, "None of the branches ends with Yield");
@@ -244,9 +245,36 @@ struct HoistConditionalReturn : public OpRewritePattern<IfOp> {
     // If the parent block doesn't end with return, then we cannot return after
     // the IfOp, which is how we want to hoist return op from its branch. Hence,
     // bail out.
-    if (!isa<KGEN::ReturnOp>(parentBlockTerm))
+    if (!isa<KGEN::ReturnOp, BreakOp>(parentBlockTerm))
       return rewriter.notifyMatchFailure(
-          op, "Parent block doesn't end with Return");
+          op, "Parent block doesn't end with Return/Break");
+
+    // Figure out which block contains Return and which one contains Yield.
+    Operation *yieldTerm = nullptr, *returnTerm = nullptr;
+    if (isa<KGEN::ReturnOp, BreakOp>(thenTerm)) {
+      yieldTerm = elseTerm;
+      returnTerm = thenTerm;
+    } else {
+      assert((isa<KGEN::ReturnOp, BreakOp>(elseTerm)));
+      yieldTerm = thenTerm;
+      returnTerm = elseTerm;
+    }
+
+    if (isa<KGEN::ReturnOp>(parentBlockTerm)) {
+      if (!isa<KGEN::ReturnOp>(returnTerm))
+        return rewriter.notifyMatchFailure(
+            op, "Parent block is Return, but exiting terminator is Break");
+    } else {
+      assert((isa<BreakOp>(parentBlockTerm)));
+      if (!isa<BreakOp>(returnTerm))
+        return rewriter.notifyMatchFailure(
+            op, "Parent block is Break, but exiting terminator is Return");
+      if (cast<BreakOp>(parentBlockTerm).getLabelAttr() !=
+          cast<BreakOp>(returnTerm).getLabelAttr())
+        return rewriter.notifyMatchFailure(
+            op, "Break in the parent block's target is different from exiting "
+                "terminator break's target");
+    }
 
     // Now we know that we can transform this. Create a new IfOp (we can't use
     // the original IfOp because we might need a different number of result
@@ -259,17 +287,6 @@ struct HoistConditionalReturn : public OpRewritePattern<IfOp> {
                                 newIfOp.getThenRegion().begin());
     rewriter.inlineRegionBefore(op.getElseRegion(), newIfOp.getElseRegion(),
                                 newIfOp.getElseRegion().begin());
-
-    // Figure out which block contains Return and which one contains Yield.
-    Operation *yieldTerm = nullptr, *returnTerm = nullptr;
-    if (isa<KGEN::ReturnOp>(thenTerm)) {
-      yieldTerm = elseTerm;
-      returnTerm = thenTerm;
-    } else {
-      assert(isa<KGEN::ReturnOp>(elseTerm));
-      yieldTerm = thenTerm;
-      returnTerm = elseTerm;
-    }
 
     // Move the ops from the parent block following the original IfOp to a
     // separate block and then move that block into the 'yield' block in the new
@@ -290,7 +307,12 @@ struct HoistConditionalReturn : public OpRewritePattern<IfOp> {
     // At this point our new IfOp has its then and else block constructed, but
     // ending with returns. We need to replace them with yields and insert a
     // return after the new if op.
-    rewriter.create<KGEN::ReturnOp>(op.getLoc(), newIfOp->getResults());
+    if (auto br = dyn_cast<BreakOp>(returnTerm)) {
+      rewriter.create<BreakOp>(op.getLoc(), newIfOp->getResults(),
+                               br.getLabelAttr());
+    } else {
+      rewriter.create<KGEN::ReturnOp>(op.getLoc(), newIfOp->getResults());
+    }
 
     rewriter.setInsertionPoint(parentBlockTerm);
     rewriter.replaceOpWithNewOp<HLCF::YieldOp>(parentBlockTerm,
