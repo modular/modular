@@ -408,6 +408,10 @@ fn initializers():
   # Issue #7343: Trailing comma ok too.
   _ = Int{value: (42).value,}
 
+  # Issue #12067, suffix stuff ok.
+  _ = MemoryOnlyInt{ x: 1 }.x
+
+
 # CHECK-LABEL: lit.func @"test_if_cond
 def test_if_cond(cond: Bool):
     # CHECK:      %[[I:.*]] = lit.varlet.decl "i", var = true : <@"$Int"::@Int>

@@ -495,6 +495,7 @@ ParseResult ExprParser::parsePrefixExpr(ExprNode *&result) {
       if (parsePrefixLBrace(dict, loc, /*isSubscript=*/true))
         return failure();
       result = alloc<DictSubscriptNode>(result, dict);
+      continue;
     }
     break;
   }
