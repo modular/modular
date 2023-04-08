@@ -7,8 +7,8 @@
 from Assert import (
     assert_param,
     debug_assert,
-    assert_param_bool_msg,
-    assert_param_bool,
+    assert_param_msg,
+    assert_param,
 )
 from DType import DType
 from Functional import unroll, vectorize
@@ -104,7 +104,7 @@ struct Buffer[size: Dim, type: DType]:
             The buffer object.
         """
         # Construct a Buffer type with statically known size
-        assert_param_bool_msg[size.has_value(), "must have known size"]()
+        assert_param_msg[size.has_value(), "must have known size"]()
         return Buffer[size, type] {
             data: DTypePointer[type](ptr), dynamic_size: size.get(), dtype: type
         }
@@ -376,7 +376,7 @@ struct Buffer[size: Dim, type: DType]:
         Returns:
             Constructed buffer with the allocated space.
         """
-        assert_param_bool_msg[size.has_value(), "must have known size"]()
+        assert_param_msg[size.has_value(), "must have known size"]()
         var data_pointer = _raw_stack_allocation[size.get(), type, alignment]()
         return Buffer[size, type](data_pointer.address)
 
@@ -549,7 +549,7 @@ fn _compute_ndbuffer_stride[
     Returns:
         The default strides of the NDBuffer.
     """
-    assert_param_bool[rank > 0]()
+    assert_param[rank > 0]()
 
     @parameter
     if rank == 1:
@@ -626,7 +626,7 @@ struct NDBuffer[
         Returns:
             The NDBuffer object.
         """
-        assert_param_bool_msg[
+        assert_param_msg[
             shape.all_known(),
             "dimensions must all be known",
         ]()
@@ -793,7 +793,7 @@ struct NDBuffer[
         Returns:
             The offset into the NDBuffer given the indices.
         """
-        assert_param_bool[rank <= 5]()
+        assert_param[rank <= 5]()
         return self.data.offset(
             _compute_ndbuffer_offset[rank, shape, type](self, idx)
         )
@@ -812,7 +812,7 @@ struct NDBuffer[
         Returns:
             The offset into the NDBuffer given the indices.
         """
-        assert_param_bool[rank <= 5]()
+        assert_param[rank <= 5]()
         return self.data.offset(
             _compute_ndbuffer_offset[rank, shape, type](self, idx)
         )

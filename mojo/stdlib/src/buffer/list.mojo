@@ -5,10 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 """This module provides utilities for working with static and variadic lists."""
 
-from Assert import assert_param, assert_param_bool, debug_assert
+from Assert import assert_param, assert_param_msg, debug_assert
 from Functional import unroll
 from TypeUtilities import rebind
-from Assert import assert_param_bool_msg
 
 
 # ===----------------------------------------------------------------------===#
@@ -202,8 +201,8 @@ struct DimList[length: Int]:
         Returns:
             The dimension at the specified index.
         """
-        assert_param_bool_msg[i >= 0, "negative index"]()
-        assert_param_bool_msg[i < length, "index exceeds length"]()
+        assert_param_msg[i >= 0, "negative index"]()
+        assert_param_msg[i < length, "index exceeds length"]()
         return __mlir_op.`pop.list.get`[index : i.__as_mlir_index()](self.value)
 
     @always_inline
@@ -279,7 +278,7 @@ struct DimList[length: Int]:
         Returns:
             A list of all dynamic dimension values.
         """
-        assert_param_bool_msg[length > 0, "length must be positive"]()
+        assert_param_msg[length > 0, "length must be positive"]()
         alias u = Dim()
 
         @parameter
@@ -1423,7 +1422,7 @@ fn _get_kgen_list_item[
     Returns:
         The value at position `index` in the list.
     """
-    assert_param_bool[index <= size]()
+    assert_param[index <= size]()
     return __mlir_op.`pop.list.get`[
         index : index.__as_mlir_index(), _type:type
     ](lst)
