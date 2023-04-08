@@ -330,19 +330,20 @@ uint8_t *JITExecutionUnit::MemoryManager::allocateDataSection(
 uint64_t JITExecutionUnit::MemoryManager::getSymbolAddressAndPresence(
     const std::string &name, bool &missingWeak) {
   Log *log = GetLog(LLDBLog::Expressions);
-  ConstString nameCS(name.c_str());
+  const char *namePtr = name.c_str() + parent.impl->stripUnderscore;
+  ConstString nameCS(namePtr);
 
   lldb::addr_t ret = parent.findSymbol(nameCS, missingWeak);
   if (ret == LLDB_INVALID_ADDRESS) {
     LLDB_LOGF(log,
               "JITExecutionUnit::getSymbolAddress(Name=\"%s\") = <not found>",
-              name.c_str());
+              namePtr);
     parent.reportSymbolLookupError(nameCS);
     return 0;
   }
 
   LLDB_LOGF(log, "JITExecutionUnit::getSymbolAddress(Name=\"%s\") = %" PRIx64,
-            name.c_str(), ret);
+            namePtr, ret);
   return ret;
 }
 
