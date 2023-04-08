@@ -197,7 +197,7 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
     // Warn about dead code after the semantic terminator.
     Operation *nextOp = op.getNextNode();
     if (!nextOp->hasTrait<OpTrait::IsTerminator>())
-      nextOp->emitWarning("unreachable code after ") << stmtKind;
+      emitWarning(nextOp->getLoc(), "unreachable code after ") << stmtKind;
 
     // Remove the unreachable code.
     eraseOpToEndOfBlock(nextOp);
@@ -264,10 +264,11 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
       if (!tryBodyRaises) {
         Operation &firstOpInExcept = tryOp.getExceptRegion().front().front();
         if (!firstOpInExcept.hasTrait<OpTrait::IsTerminator>())
-          firstOpInExcept.emitWarning(
+          emitWarning(
+              firstOpInExcept.getLoc(),
               "'except' logic is unreachable, try doesn't raise an exception");
         else
-          tryOp->emitWarning("try body doesn't raise an exception");
+          emitWarning(tryOp->getLoc(), "try body doesn't raise an exception");
 
         Operation *firstExceptOp = &tryOp.getExceptRegion().front().front();
         OpBuilder(firstExceptOp).create<UnreachableOp>(firstExceptOp->getLoc());
@@ -284,7 +285,8 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
         Operation *firstElseOp = &tryOp.getElseRegion().front().front();
         OpBuilder(firstElseOp).create<UnreachableOp>(firstElseOp->getLoc());
         if (!isa<LIT::TryYieldOp>(firstElseOp))
-          firstElseOp->emitWarning("'else' logic in 'try' is unreachable");
+          emitWarning(firstElseOp->getLoc(),
+                      "'else' logic in 'try' is unreachable");
         eraseOpToEndOfBlock(firstElseOp);
       } else {
         lowerSemanticCFForBlock(tryOp.getElseRegion().front(), doesRaise,
@@ -347,7 +349,7 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
       Block &deadBlock = deadRegion->front();
       Operation *firstDeadOp = &deadBlock.front();
       if (!firstDeadOp->hasTrait<OpTrait::IsTerminator>())
-        firstDeadOp->emitWarning("unreachable code after 'if ")
+        emitWarning(firstDeadOp->getLoc(), "unreachable code after 'if ")
             << (constantCondValue ? "True'" : "False'");
       eraseOpToEndOfBlock(&deadBlock.front());
       OpBuilder::atBlockBegin(&deadBlock).create<UnreachableOp>(op.getLoc());
@@ -412,8 +414,8 @@ static LogicalResult lowerSemanticCF(LIT::FuncOp func) {
   // missing.
   if (!isa<LIT::NoneType>(declaredResultType) ||
       func.getSignature().hasMemoryOnlyResult()) {
-    return endFunc->emitError(
-        "return expected at end of function with results");
+    return emitError(endFunc->getLoc(),
+                     "return expected at end of function with results");
   }
 
   ImplicitLocOpBuilder b(func.getLoc(), endFunc);
@@ -448,7 +450,8 @@ static LogicalResult lowerNestedFunctions(LIT::FuncOp func) {
   // parameter declaration on the function declaration.
   ParamDeclAttr decl = func.getParamDeclAttr();
   if (!decl) {
-    func.emitError("nested function must have a parameter declaration");
+    emitError(func.getLoc(),
+              "nested function must have a parameter declaration");
     return failure();
   }
 
