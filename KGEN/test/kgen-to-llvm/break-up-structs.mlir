@@ -30,11 +30,14 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
 module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @kernel
   // CHECK-SAME: %[[V:.*]]: f32, %[[V_OUT:.*]]: !llvm.ptr<f32>
-  // CHECK: %[[S0:.*]] = llvm.mlir.undef : !llvm.struct<(struct<()>, f32)>
-  // CHECK: %[[EMPTY:.*]] = llvm.mlir.undef : !llvm.struct<()>
-  // CHECK: %[[S1:.*]] = llvm.insertvalue %[[EMPTY]], %[[S0]][0]
-  // CHECK: %[[ARG:.*]] = llvm.insertvalue %[[V]], %[[S1]][1]
-  // CHECK: %[[V_RESULT:.*]] = llvm.extractvalue %[[ARG]][1]
+  // CHECK-NEXT: %[[S0:.*]] = llvm.mlir.undef : !llvm.struct<(struct<()>, struct<(f32)>)>
+  // CHECK-NEXT: %[[EMPTY:.*]] = llvm.mlir.undef : !llvm.struct<()>
+  // CHECK-NEXT: %[[S1:.*]] = llvm.insertvalue %[[EMPTY]], %[[S0]][0]
+  // CHECK-NEXT: %[[S2:.*]] = llvm.mlir.undef : !llvm.struct<(f32)>
+  // CHECK-NEXT: %[[S3:.*]] = llvm.insertvalue %[[V]], %[[S2]][0]
+  // CHECK: %[[ARG:.*]] = llvm.insertvalue %[[S3]], %[[S1]][1]
+  // CHECK: %[[S4:.*]] = llvm.extractvalue %[[ARG]][1]
+  // CHECK: %[[V_RESULT:.*]] = llvm.extractvalue %[[S4]][0]
   // CHECK: llvm.store %[[V_RESULT]], %[[V_OUT]]
 
   kgen.func @kernel(%a: !nestedStruct) -> !nestedStruct {

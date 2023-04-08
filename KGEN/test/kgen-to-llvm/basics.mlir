@@ -87,4 +87,13 @@ kgen.func @undef_op() -> i32 {
   kgen.return %0 : i32
 }
 
+// CHECK-LABEL: @pack_constant
+kgen.func @pack_constant() {
+  // CHECK-NEXT: %0 = llvm.mlir.undef : !llvm.struct<(i64)>
+  // CHECK-NEXT: %1 = llvm.mlir.constant(1 : i64)
+  // CHECK-NEXT: %2 = llvm.insertvalue %1, %0[0] : !llvm.struct<(i64)>
+  %0 = kgen.param.constant: !pop.pack<[!pop.scalar<index>]> = <<1>>
+  kgen.return
+}
+
 }
