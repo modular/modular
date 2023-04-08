@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """This module implements higher-order functions."""
 
-from Assert import assert_param, assert_param_bool_msg
+from Assert import assert_param, assert_param_msg
 from Coroutine import Coroutine
 from DType import DType
 from Index import StaticIntTuple
@@ -181,7 +181,7 @@ fn vectorize[
     Args:
         size: The total loop count.
     """
-    assert_param_bool_msg[simd_width > 0, "simd width must be > 0"]()
+    assert_param_msg[simd_width > 0, "simd width must be > 0"]()
     vectorize_unroll[simd_width, 1, func](size)
 
 
@@ -208,8 +208,8 @@ fn vectorize_unroll[
     Args:
         size: The total loop count.
     """
-    assert_param_bool_msg[simd_width > 0, "simd width must be > 0"]()
-    assert_param_bool_msg[unroll_factor > 0, "unroll factor must be > 0"]()
+    assert_param_msg[simd_width > 0, "simd width must be > 0"]()
+    assert_param_msg[unroll_factor > 0, "unroll factor must be > 0"]()
 
     alias unrolled_simd_width = simd_width * unroll_factor
     let vector_end_unrolled_simd = (
@@ -1136,7 +1136,7 @@ fn elementwise[
         shape: The shape of the buffer.
         out_chain: The our chain to attach results to.
     """
-    assert_param_bool_msg[rank == 1, "Specialization for 1D"]()
+    assert_param_msg[rank == 1, "Specialization for 1D"]()
 
     let problem_size = shape.flattened_length()
     let num_workers = get_num_workers(problem_size, out_chain.get_runtime())
@@ -1249,7 +1249,7 @@ fn elementwise[
         out_chain: The our chain to attach results to.
     """
 
-    assert_param_bool_msg[rank > 1, "Specialization for ND where N > 1"]()
+    assert_param_msg[rank > 1, "Specialization for ND where N > 1"]()
 
     # Stategy: we parallelize over all dimensions except the innermost and
     # vectorize over the innermost dimension. We unroll the innermost dimension
