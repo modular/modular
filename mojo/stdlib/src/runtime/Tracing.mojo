@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Assert import assert_param_bool
+from Assert import assert_param
 from BuildInfo import build_info_llcl_max_profiling_level
 from String import StringRef
 
