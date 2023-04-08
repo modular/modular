@@ -185,12 +185,11 @@ struct Trace[level: TraceLevel]:
     fn __copy__(self) -> Self:
         return Self {}
 
-    fn __init__(name: StringRef) -> Trace[level]:
-        return Trace[level](name, "")
+    fn __init__(self&, name: StringRef):
+        self = Self(name, "")
 
-    fn __init__(name: StringRef, detail: StringRef) -> Trace[level]:
+    fn __init__(self&, name: StringRef, detail: StringRef):
         trace_range_push[trace_type, level](name, detail)
-        return Trace[level] {}
 
     fn __del__(self&):
         trace_range_pop[trace_type, level]()
