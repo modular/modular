@@ -4,16 +4,18 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Buffer import Buffer, NDBuffer
 from Assert import assert_param, debug_assert, assert_param_bool
-from Index import StaticIntTuple
-from SIMD import SIMD
-from List import create_kgen_list, DimList, Dim, create_dim_list
-from Pointer import DTypePointer
+from Buffer import Buffer, NDBuffer
 from DType import DType
-from Range import range
-from TypeUtilities import rebind
 from Functional import unroll
+from Index import StaticIntTuple
+from List import create_kgen_list, DimList, Dim, create_dim_list
+from Memory import memcpy
+from Pointer import DTypePointer
+from Range import range
+from SIMD import SIMD
+from TypeUtilities import rebind
+from TargetInfo import dtype_sizeof
 
 
 fn _transpose_inplace_4x4[
@@ -461,10 +463,13 @@ fn _copy_with_strides[
         # TODO speed this up if output_axis_stride is 1, i.e., contiguous?
         var src_ptr = input.offset(input_offset)
         var dst_ptr = output.data.offset(output_offset)
-        for i in range(axis_dim):
-            dst_ptr.store(0, src_ptr.load(0))
-            src_ptr = src_ptr.offset(input_axis_stride)
-            dst_ptr = dst_ptr.offset(output_axis_stride)
+        if input_axis_stride == 1 and output_axis_stride == 1:
+            memcpy(dst_ptr, src_ptr, axis_dim * dtype_sizeof[type]())
+        else:
+            for i in range(axis_dim):
+                dst_ptr.store(0, src_ptr.load(0))
+                src_ptr = src_ptr.offset(input_axis_stride)
+                dst_ptr = dst_ptr.offset(output_axis_stride)
         return
 
     let next_axis = axis + 1
