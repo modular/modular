@@ -736,7 +736,7 @@ Status JITExecutionUnit::disassembleFunction(Stream &stream,
   }
 
   LLDB_LOGF(log, "Function's code range is [0x%" PRIx64 "+0x%" PRIx64 "]",
-            funcRange.first, funcRange.second);
+            funcRange.first, (unsigned long long)funcRange.second);
 
   Target *target = exeCtx.GetTargetPtr();
   if (!target) {
