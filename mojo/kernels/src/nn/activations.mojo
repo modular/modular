@@ -8,8 +8,55 @@
 
 from Assert import assert_param_bool_msg
 from DType import DType
-from Math import erf, exp, tanh, clamp, max, min
+from Math import erf, exp, tanh, clamp, max, min, identity
 from SIMD import SIMD
+
+
+@register_passable("trivial")
+struct ActivationType:
+    var value: Int
+    alias IDENTITY = ActivationType(0)
+    alias RELU = ActivationType(1)
+    alias RELU6 = ActivationType(2)
+    alias RELU_N1 = ActivationType(3)
+    alias GELU = ActivationType(4)
+    alias GELU_APPROX = ActivationType(5)
+    alias SIGMOID = ActivationType(6)
+
+    @always_inline("nodebug")
+    fn __init__(value: Int) -> ActivationType:
+        return ActivationType {value: value}
+
+    @always_inline("nodebug")
+    fn __eq__(self, rhs: ActivationType) -> Bool:
+        return self.value == rhs.value
+
+    @always_inline("nodebug")
+    fn __ne__(self, rhs: ActivationType) -> Bool:
+        return self.value != rhs.value
+
+
+fn dispatch_activation_fn[
+    activation: ActivationType, simd_width: Int, type: DType
+](val: SIMD[simd_width, type]) -> SIMD[simd_width, type]:
+    @parameter
+    if activation == ActivationType.IDENTITY:
+        return identity(val)
+    elif activation == ActivationType.RELU6:
+        return relu6(val)
+    elif activation == ActivationType.RELU_N1:
+        return relu_n1(val)
+    elif activation == ActivationType.GELU:
+        return gelu(val)
+    elif activation == ActivationType.GELU_APPROX:
+        return gelu_approximate(val)
+    elif activation == ActivationType.SIGMOID:
+        return sigmoid(val)
+    else:
+        assert_param_bool_msg[False, "unsupported activation"]()
+
+    return val
+
 
 # ===----------------------------------------------------------------------===#
 # relu
