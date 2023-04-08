@@ -1158,7 +1158,10 @@ def PackCreateOp : POPOp<"pack.create", [Pure]> {
 
   let arguments = (ins Variadic<AnyType>:$elements);
   let results = (outs POP_PackType:$result);
-  let hasCustomAssemblyFormat = 1;
+  let assemblyFormat = [{
+    `(` $elements `)` attr-dict `:`
+    custom<PackCreateType>(type($result), type($elements))
+  }];
 
   let hasFolder = 1;
 }
