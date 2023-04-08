@@ -256,6 +256,7 @@ struct Naive2dConvolution[
         naive2d_convolution._outer_loop()
 
     fn __init__(
+        self&,
         output: ImageData[static_output_shape, type, static_data_layout],
         input: ImageData[static_input_shape, type, static_data_layout],
         filter: ImageData[static_filter_shape, type, static_filter_layout],
@@ -263,14 +264,7 @@ struct Naive2dConvolution[
         pad_w: StaticIntTuple[2],
         stride: StaticIntTuple[2],
         dilation: StaticIntTuple[2],
-    ) -> Naive2dConvolution[
-        static_output_shape,
-        static_filter_shape,
-        static_input_shape,
-        type,
-        static_data_layout,
-        static_filter_layout,
-    ]:
+    ):
         """Constructor of a convolution op instance on the given input and
         filter tensor and stores the result in the give output tensor.
 
@@ -290,34 +284,25 @@ struct Naive2dConvolution[
                 An instance of the convolution operator with the input and outp-
                     ut buffers registered.
         """
-        var naive2d_convolution: Naive2dConvolution[
-            static_output_shape,
-            static_filter_shape,
-            static_input_shape,
-            type,
-            static_data_layout,
-            static_filter_layout,
-        ]
         # Register input/output buffers and parameters.
-        naive2d_convolution.output = output
-        naive2d_convolution.input = input
-        naive2d_convolution.filter = filter
-        naive2d_convolution.pad_h = pad_h
-        naive2d_convolution.pad_w = pad_w
-        naive2d_convolution.stride = stride
-        naive2d_convolution.dilation = dilation
+        self.output = output
+        self.input = input
+        self.filter = filter
+        self.pad_h = pad_h
+        self.pad_w = pad_w
+        self.stride = stride
+        self.dilation = dilation
 
         # Derive layout agnostic shape information.
-        naive2d_convolution.output_shape = ImageShape.__init__[
+        self.output_shape = ImageShape.__init__[
             static_output_shape, type, static_data_layout
         ](output)
-        naive2d_convolution.input_shape = ImageShape.__init__[
+        self.input_shape = ImageShape.__init__[
             static_input_shape, type, static_data_layout
         ](input)
-        naive2d_convolution.filter_shape = ImageShape.__init__[
+        self.filter_shape = ImageShape.__init__[
             static_filter_shape, type, static_filter_layout
         ](filter)
-        return naive2d_convolution
 
     fn _outer_loop(self):
         """Implementation of the outermost loop of a convolution operator with
@@ -526,19 +511,14 @@ struct PackIm2ColNCHW[
                 self._pack_zeros_for_k(k_idx)
 
     fn __init__(
+        self&,
         origin_image: NDBuffer[4, static_original_shape, type],
         packed_matrix: NDBuffer[3, static_packed_shape, type],
         conv_shape: ConvShape,
         global_offset: StaticIntTuple[2],
         pack_tile_kn_dim: StaticIntTuple[2],
         batch_idx: Int,
-    ) -> PackIm2ColNCHW[
-        static_original_shape,
-        static_packed_shape,
-        type,
-        simd_size,
-        col_inner_size,
-    ]:
+    ):
         """Constructor of a Im2Col instance.
         Args:
             origin_image (NDBuffer): The tensor to be transformed.
@@ -551,27 +531,19 @@ struct PackIm2ColNCHW[
                 K and N dimension for packed layout.
             batch_idx (Int): The batch index in the original tensor.
         """
-        var pack: PackIm2ColNCHW[
-            static_original_shape,
-            static_packed_shape,
-            type,
-            simd_size,
-            col_inner_size,
-        ]
-
-        pack.origin_image = origin_image
-        pack.packed_matrix = packed_matrix
-        pack.conv_shape = conv_shape
-        pack.global_offset = global_offset
-        pack.pack_tile_kn_dim = pack_tile_kn_dim
-        pack.batch_idx = batch_idx
+        self.origin_image = origin_image
+        self.packed_matrix = packed_matrix
+        self.conv_shape = conv_shape
+        self.global_offset = global_offset
+        self.pack_tile_kn_dim = pack_tile_kn_dim
+        self.batch_idx = batch_idx
 
         # TODO:
         #  Assuming same-padding and stride-1, so output shape and input shape
         # are the same. Will extend this.
         let image_output_shape = Index(conv_shape.h, conv_shape.w)
-        pack.image_output_shape = image_output_shape
-        pack.im2col_output_shape = Index(
+        self.image_output_shape = image_output_shape
+        self.im2col_output_shape = Index(
             conv_shape.c * conv_shape.r * conv_shape.s,
             image_output_shape[0] * image_output_shape[1],
         )
@@ -588,10 +560,8 @@ struct PackIm2ColNCHW[
             # is_same_padding
             True,
         )
-        pack.pad_low = Index(pad_h[0], pad_w[0])
-        pack.pad_high = Index(pad_h[1], pad_h[1])
-
-        return pack
+        self.pad_low = Index(pad_h[0], pad_w[0])
+        self.pad_high = Index(pad_h[1], pad_h[1])
 
     fn _output_to_input(
         self, out_image_idx: StaticIntTuple[2], rs_idx: StaticIntTuple[2]
