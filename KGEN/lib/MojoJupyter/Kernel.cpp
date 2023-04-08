@@ -9,6 +9,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "../MojoLLDB/TypeSystem/MojoTypeSystem.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LogicalResult.h"
 #include "Support/SymbolExport.h"
@@ -17,10 +18,12 @@
 #include "lldb/Host/Host.h"
 #include "lldb/Host/HostInfo.h"
 #include "lldb/Target/Target.h"
+#include "lldb/Utility/Listener.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Triple.h"
+#include <fstream>
 #include <thread>
 
 #define DEBUG_TYPE "mojo-jupyter"
@@ -28,15 +31,33 @@
 using namespace lldb;
 using namespace lldb_private;
 using namespace M;
+using namespace M::KGEN::Mojo;
 
 /// An output function used to send output to the Jupyter kernel. The first
 /// argument is the output type, and the second is the output string.
 using OutputFn = void (*)(const char *, const char *);
 
-/// TODO(#11553): While the language is private we can't yet define a specific
-/// language type. Until then, pretend that we're Go.
-static inline constexpr lldb::LanguageType eLanguageTypeMojo =
-    lldb::eLanguageTypeGo;
+//===----------------------------------------------------------------------===//
+// MojoTarget
+//===----------------------------------------------------------------------===//
+
+struct MojoTarget : public SBTarget {
+  using SBTarget::SBTarget;
+  using SBTarget::operator=;
+
+  /// Return the persistent expression state for Mojo.
+  PersistentExpressionState *GetPersistentExpressionState() {
+    return GetSP()->GetPersistentExpressionStateForLanguage(eLanguageTypeMojo);
+  }
+
+  MojoTypeSystem &getMojoTypeSystem() {
+    if (auto typeSystemOr =
+            GetSP()->GetScratchTypeSystemForLanguage(eLanguageTypeMojo))
+      return *static_cast<MojoTypeSystem *>(typeSystemOr.get().get());
+    llvm::report_fatal_error(
+        "The Mojo type system plug-in must have already been registered.");
+  }
+};
 
 //===----------------------------------------------------------------------===//
 // MojoExpressionEvaluationOptions
@@ -79,7 +100,9 @@ public:
     std::atomic<bool> finished;
   };
 
-  MojoKernel(OutputFn outputFn) : outputFn(outputFn) {}
+  MojoKernel(OutputFn outputFn)
+      : outputFn(outputFn), mojoTypeSystemListener(Listener::MakeListener(
+                                "mojo-type-system.listener")) {}
   ~MojoKernel() {
     if (process.IsValid())
       process.Kill();
@@ -118,15 +141,18 @@ private:
     outputFn(type.data(), output.data());
   }
 
+  void flushLLDBStreams(ExpressionExecutionState *state);
+
   /// The output function used to send output to the Jupyter kernel.
   OutputFn outputFn;
 
   /// Various LLDB state used for tracking the repl process.
   SBDebugger debugger;
-  SBTarget target;
+  MojoTarget target;
   SBProcess process;
   MojoExpressionEvaluationOptions exprOpts;
   SBThread mainThread;
+  ListenerSP mojoTypeSystemListener;
 };
 } // namespace
 
@@ -262,6 +288,15 @@ LogicalResult MojoKernel::launchReplProcess() {
         "Failed to launch `mojo-repl-entry-point` process: " +
         Twine(error.GetCString()));
   }
+
+  {
+    std::ofstream os("/tmp/logs.txt", std::ofstream::out);
+    os << "will listen\n";
+  }
+  target.getMojoTypeSystem().AddListener(
+      mojoTypeSystemListener,
+      KGEN::Mojo::MojoTypeSystem::eBroadcastUserMessage);
+
   return success();
 }
 
@@ -286,28 +321,49 @@ MojoKernel::startExecution(const char *expr) {
   return state;
 }
 
-bool MojoKernel::checkExecutionFinished(ExpressionExecutionState *state) {
-  // Flush out any pending output.
+void MojoKernel::flushLLDBStreams(ExpressionExecutionState *state) {
+  // Reading the following streams from LLDB is thread safe becaause each reader
+  // has its own mutex.
+
+  // Flush type system messages.
+  lldb::EventSP event;
+  // The following gets the stream of events without timeout. All the messages
+  // will be read eventually anyway.
+  while (mojoTypeSystemListener->GetEvent(event, std::chrono::seconds(0))) {
+    size_t readLen = EventDataBytes::GetByteSizeFromEvent(event.get());
+    const char *rawData = static_cast<const char *>(
+        EventDataBytes::GetBytesFromEvent(event.get()));
+    StringRef data(rawData, readLen);
+    LLVM_DEBUG(llvm::dbgs()
+               << "type system message: " << readLen << " : " << data << "\n");
+    sendOutput("stderr", data);
+  }
+
   char outputBuffer[1024];
 
   // Read stdout from the process.
-  while (int readLen = process.GetSTDOUT(outputBuffer, 1023)) {
-    outputBuffer[readLen] = '\0';
-    LLVM_DEBUG(llvm::dbgs()
-               << "stdout: " << readLen << " : " << outputBuffer << "\n");
-    sendOutput("stdout", outputBuffer);
+  while (int readLen = process.GetSTDOUT(outputBuffer, 1024)) {
+    StringRef data(outputBuffer, readLen);
+    LLVM_DEBUG(llvm::dbgs() << "stdout: " << readLen << " : " << data << "\n");
+    sendOutput("stdout", data);
   }
   // Read stderr from the process.
-  while (int readLen = process.GetSTDERR(outputBuffer, 1023)) {
-    outputBuffer[readLen] = '\0';
-    LLVM_DEBUG(llvm::dbgs()
-               << "stderr: " << readLen << " : " << outputBuffer << "\n");
-    sendOutput("stderr", outputBuffer);
+  while (int readLen = process.GetSTDERR(outputBuffer, 1024)) {
+    StringRef data(outputBuffer, readLen);
+    LLVM_DEBUG(llvm::dbgs() << "stderr: " << readLen << " : " << data << "\n");
+    sendOutput("stderr", data);
   }
+}
 
+bool MojoKernel::checkExecutionFinished(ExpressionExecutionState *state) {
+  flushLLDBStreams(state);
   // Check to see if the expression is still executing.
   if (!state->finished)
     return false;
+
+  // It's possible that some messages were generated between between the last
+  // flush and the state->finished check.
+  flushLLDBStreams(state);
 
   // The expression has finished executing, process the results.
   LLVM_DEBUG(llvm::dbgs() << "Finished executing expression\n");

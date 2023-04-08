@@ -13,6 +13,7 @@
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/SymbolExport.h"
 #include "lldb/API/SBDebugger.h"
+#include "lldb/Core/Debugger.h"
 #include "lldb/Core/PluginManager.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -72,7 +73,9 @@ struct MojoTypeSystem::Impl {
 //===----------------------------------------------------------------------===//
 
 MojoTypeSystem::MojoTypeSystem(Target &target)
-    : impl(std::make_unique<Impl>(target)) {}
+    : Broadcaster(target.GetDebugger().GetBroadcasterManager(),
+                  "mojo-type-system.broadcaster"),
+      impl(std::make_unique<Impl>(target)) {}
 MojoTypeSystem::~MojoTypeSystem() = default;
 char MojoTypeSystem::ID = 0;
 
@@ -101,6 +104,12 @@ void MojoTypeSystem::Initialize() {
 
 void MojoTypeSystem::Terminate() {
   PluginManager::UnregisterPlugin(createInstance);
+}
+
+void MojoTypeSystem::broadcastUserMessage(StringRef message) {
+  lldb::EventSP event = std::make_shared<Event>(eBroadcastUserMessage,
+                                                new EventDataBytes(message));
+  BroadcastEvent(event);
 }
 
 //===----------------------------------------------------------------------===//
