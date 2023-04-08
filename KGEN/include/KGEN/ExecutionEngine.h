@@ -33,6 +33,9 @@ namespace M::KGEN {
 struct ExecutionEngineOptions {
   /// Whether or not to register the GDB plugins.
   bool registerDebugPlugins = false;
+
+  /// An ORC ExecutorProcessControl that the user can specify.
+  std::unique_ptr<llvm::orc::ExecutorProcessControl> epc = nullptr;
 };
 
 //===----------------------------------------------------------------------===//
@@ -292,8 +295,7 @@ public:
   llvm::orc::ObjectLayer &getLinkingLayer() { return *objectLayer; }
 
 private:
-  explicit ExecutionEngine(ExecutionEngineOptions options,
-                           std::unique_ptr<llvm::orc::ExecutionSession> session,
+  explicit ExecutionEngine(std::unique_ptr<llvm::orc::ExecutionSession> session,
                            const llvm::DataLayout &dl);
 
   /// This class is not copy-constructible.
@@ -306,9 +308,6 @@ private:
   /// dylib already exists - users should generally be cautious about adding
   /// dylibs to the search order.
   void addToSearchOrder(StringRef name, llvm::orc::JITDylib *dylib);
-
-  /// The compilation options to use.
-  ExecutionEngineOptions options;
 
   /// The ORC requires an ExecutionSession - this is how it coordinates
   /// execution across processes/machines.
