@@ -32,11 +32,12 @@ struct Benchmark:
         }
 
     fn __init__(
+        self&,
         num_warmup: Int = 10,
         max_iters: Int = 100_000,
         min_time_ns: Int = 500_000_000,  # 500ms
         max_time_ns: Int = 1000_000_000,  # 1s
-    ) -> Benchmark:
+    ):
         """Constructs a new benchmark object.
 
         Given a function the benchmark object will benchmark it until
@@ -52,12 +53,10 @@ struct Benchmark:
         Returns:
             A new constructed benchmark object.
         """
-        return Benchmark {
-            num_warmup: num_warmup,
-            max_iters: max_iters,
-            min_time_ns: min_time_ns,
-            max_time_ns: max_time_ns,
-        }
+        self.num_warmup = num_warmup
+        self.max_iters = max_iters
+        self.min_time_ns = min_time_ns
+        self.max_time_ns = max_time_ns
 
     @always_inline
     fn run[
