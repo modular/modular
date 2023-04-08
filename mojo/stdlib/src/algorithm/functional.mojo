@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""This module implements higher-order functions."""
 
 from Assert import assert_param, assert_param_bool_msg
 from Coroutine import Coroutine
@@ -27,8 +28,13 @@ alias InlinedFixedVectorLength = 64
 fn map[
     func: __mlir_type[`!kgen.signature<(`, Int, ` borrow) -> !lit.none>`],
 ](size: Int):
-    """
-    Map a function over a range from 0 to size.
+    """Map a function over a range from 0 to size.
+
+    Parameters:
+        func: Function to map.
+
+    Args:
+        size: number of elements.
     """
     for i in range(size):
         func(i)
@@ -44,8 +50,12 @@ fn unroll[
     count: Int,
     func: __mlir_type[`!kgen.signature<<`, Int, `>() -> !lit.none>`],
 ]():
-    """
-    Reateadly evaluate a function `count` times.
+    """Reateadly evaluate a function `count` times.
+
+    Parameters:
+        count: A number of repetitions.
+        func: The function to evaluate. The function should take a single Int
+          argument.
     """
     _unroll_impl[0, count, func]()
 
@@ -73,9 +83,13 @@ fn unroll2[
     dim1: Int,
     func: __mlir_type[`!kgen.signature<<`, Int, `, `, Int, `>() -> !lit.none>`],
 ]():
-    """
-    Reateadly evaluate a 2D nested loop where the outer iteration is `dim0` and
-    the inner iteration is `dim1`.
+    """Repeateadly evaluate a 2D nested loop.
+
+    Parameters:
+        dim0: The first dimension size.
+        dim1: The second dimension size.
+        func: The function to evaluate. The function should take two Int
+          arguments.
     """
 
     @always_inline
@@ -107,9 +121,14 @@ fn unroll3[
         `>() -> !lit.none>`,
     ],
 ]():
-    """
-    Reateadly evaluate a 3D nested loop where the outer iteration is `dim0`,
-    the middle iteration is `dim1`, and the inner most iteration is `dim2`.
+    """Repeateadly evaluate a 3D nested loop.
+
+    Parameters:
+        dim0: The first dimension size.
+        dim1: The second dimension size.
+        dim2: The second dimension size.
+        func: The function to evaluate. The function should take three Int
+          arguments.
     """
 
     @always_inline
@@ -154,6 +173,13 @@ fn vectorize[
 ](size: Int):
     """Map a function which is parametrized over a simd_width over a range
     from 0 to size in simd fashion.
+
+    Parameters:
+        simd_width: The SIMD vector width.
+        func: The function for the loop body.
+
+    Args:
+        size: The total loop count.
     """
     assert_param_bool_msg[simd_width > 0, "simd width must be > 0"]()
     vectorize_unroll[simd_width, 1, func](size)
@@ -173,6 +199,14 @@ fn vectorize_unroll[
 ](size: Int):
     """Map a function which is parametrized over a simd_width over a range
     from 0 to size in simd fashion and unroll the loop by unroll_factor.
+
+    Parameters:
+        simd_width: The SIMD vector width.
+        unroll_factor: The unroll factor for the main loop.
+        func: The function for the loop body.
+
+    Args:
+        size: The total loop count.
     """
     assert_param_bool_msg[simd_width > 0, "simd width must be > 0"]()
     assert_param_bool_msg[unroll_factor > 0, "unroll factor must be > 0"]()
@@ -252,8 +286,10 @@ fn vectorize_unroll[
 fn async_parallelize[
     func: __mlir_type[`!kgen.signature<(`, Int, ` borrow) -> !lit.none>`],
 ](out_chain: OutputChainPtr, num_work_items: Int):
-    """Execute func(0) ... func(num_work_items-1) as sub-tasks in parallel,
-    and mark out_chain as ready when all functions have returned. This function
+    """Execute func(0) ... func(num_work_items-1) as sub-tasks in parallel.
+
+    Execute func(0) ... func(num_work_items-1) as sub-tasks in parallel and
+    mark out_chain as ready when all functions have returned. This function
     will return when the sub-tasks have been scheduled but not necessarily
     completed. The runtime may execute the sub-tasks in any order and with any
     degree of concurrency.
@@ -269,6 +305,13 @@ fn async_parallelize[
     If num_work_items is 0 then the out_chain is marked as ready
     before async_parallelize returns. If num_work_items is 1 then func(0) is
     still executed as a sub-task.
+
+    Parameters:
+        func: The function to invoke.
+
+    Args:
+        out_chain: Out chain to attach results too.
+        num_work_items: Number of parallel tasks.
     """
 
     # We have no tasks, so do nothing.
@@ -293,12 +336,25 @@ fn async_parallelize[
 
 
 fn invoke(func: __mlir_type.`() -> ()`):
+    """Invoke a function.
+
+    Args:
+        func: The function to invoke.
+    """
     __mlir_op.`pop.call_indirect`[_type:[]](func)
 
 
 fn invoke(
     func: __mlir_type.`() -> (!pop.pointer<scalar<si8>>)`,
 ) -> __mlir_type.`!pop.pointer<scalar<si8>>`:
+    """Invoke a function.
+
+    Args:
+        func: The function to invoke.
+
+    Returns:
+        The result returned by the function.
+    """
     return __mlir_op.`pop.call_indirect`[
         _type : [__mlir_type.`!pop.pointer<scalar<si8>>`]
     ](func)
@@ -307,6 +363,15 @@ fn invoke(
 fn invoke[
     arg_type: AnyType
 ](func: __mlir_type[`(`, arg_type, `) -> ()`], arg: arg_type):
+    """Invoke a parametrized function.
+
+    Parameter:
+        arg_type: The type of the function input.
+
+    Args:
+        func: The function to invoke.
+        arg: The argument to pass to the function.
+    """
     __mlir_op.`pop.call_indirect`[_type:[]](func, arg)
 
 
@@ -316,6 +381,19 @@ fn invoke[
 ](
     func: __mlir_type[`(`, arg_type, `) -> (`, result_type, `)`], arg: arg_type
 ) -> result_type:
+    """Invoke a parametrized function.
+
+    Parameter:
+        result_type: The type of the function result.
+        arg_type: The type of the function input.
+
+    Args:
+        func: The function to invoke.
+        arg: The argument to pass to the function.
+
+    Returns:
+        The result returned by the function.
+    """
     return __mlir_op.`pop.call_indirect`[_type:[result_type]](func, arg)
 
 
@@ -330,6 +408,21 @@ fn invoke[
     arg1: arg1_type,
     arg2: arg2_type,
 ) -> result_type:
+    """Invoke a parametrized function.
+
+    Parameter:
+        result_type: The type of the function result.
+        arg1_type: The type of the 1st function input.
+        arg2_type: The type of the 2nd function input.
+
+    Args:
+        func: The function to invoke.
+        arg1: The 1st argument to pass to the function.
+        arg2: The 2nd argument to pass to the function.
+
+    Returns:
+        The result returned by the function.
+    """
     return __mlir_op.`pop.call_indirect`[_type:[result_type]](func, arg1, arg2)
 
 
@@ -354,6 +447,23 @@ fn invoke[
     arg2: arg2_type,
     arg3: arg3_type,
 ) -> result_type:
+    """Invoke a parametrized function.
+
+    Parameter:
+        result_type: The type of the function result.
+        arg1_type: The type of the 1st function input.
+        arg2_type: The type of the 2nd function input.
+        arg3_type: The type of the 3rd function input.
+
+    Args:
+        func: The function to invoke.
+        arg1: The 1st argument to pass to the function.
+        arg2: The 2nd argument to pass to the function.
+        arg3: The 3rd argument to pass to the function.
+
+    Returns:
+        The result returned by the function.
+    """
     return __mlir_op.`pop.call_indirect`[_type:[result_type]](
         func, arg1, arg2, arg3
     )
@@ -365,7 +475,7 @@ fn invoke[
 
 """
 Signature of a tiled function that performs some work with a static tile size
-  and an offset. i.e. func<tile_size: Int> (offset: Int)
+and an offset. i.e. func<tile_size: Int> (offset: Int)
 """
 alias Static1DTileUnitFunc = __mlir_type[
     `!kgen.signature<<`, Int, `>(`, Int, ` borrow) -> !lit.none>`
@@ -381,7 +491,7 @@ alias Dynamic1DTileUnitFunc = __mlir_type[
 
 """
 Signature of a tiled function that performs some work with a dynamic tile size
-    and a secondary static tile size.
+and a secondary static tile size.
 """
 alias BinaryTile1DTileUnitFunc = __mlir_type[
     `!kgen.signature<<`,
@@ -401,22 +511,27 @@ fn tile[
     """A generator that launches work groups in specified list of tile sizes.
 
     A workgroup function is a function that can process a configurable
-      consecutive "tile" of workload.
-      e.g. work_on[3](5) should launch computation on item 5,6,7, and should be
-      semantically equivalent to work_on[1](5),work_on[1](6),work_on[1](7).
+    consecutive "tile" of workload. E.g.
+      work_on[3](5)
+    should launch computation on item 5,6,7, and should be semantically
+    equivalent to
+      work_on[1](5), work_on[1](6), work_on[1](7).
 
     This generator will try to proceed with the given list of tile sizes on the
-     listed order. E.g.
+    listed order. E.g.
         tile [func, (3,2,1)](offset, upperbound)
     will try to call func[3] starting from offset until remaining work is less
-      than 3 from upperbound and then try func[2], and then func[1] etc.
+    than 3 from upperbound and then try func[2], and then func[1] etc.
+
+    Parameters:
+        workgroup_function: workgroup function that processes one tile of
+          workload.
+        tile_size_list: List of tile sizes to launch work.
 
     Args:
-        workgroup_function(Static1DTileUnitFunc): workgroup function that processes one
-            tile of workload.
-        tile_size_list(VariadicList[Int]): List of tile sizes to launch work.
-        offset(Int): The initial index to start the work from.
-        upperbound(Int): The runtime upperbound that the work function should not exceed.
+        offset: The initial index to start the work from.
+        upperbound: The runtime upperbound that the work function should not
+          exceed.
     """
 
     # Initialize where to start on the overall work load.
@@ -441,15 +556,19 @@ fn tile[
     workgroup_function: Dynamic1DTileUnitFunc,
 ](offset: Int, upperbound: Int, tile_size_list: VariadicList[Int]):
     """A generator that launches work groups in specified list of tile sizes.
+
     This is the version of tile generator for the case where work_group function
-      can take the tile size as a runtime value.
+    can take the tile size as a runtime value.
+
+    Parameters:
+        workgroup_function: workgroup function that processes one tile of
+          workload.
 
     Args:
-        workgroup_function(Dynamic1DTileUnitFunc): workgroup function that processes one
-            tile of workload.
-        tile_size_list(VariadicList[Int]): List of tile sizes to launch work.
-        offset(Int): The initial index to start the work from.
-        upperbound(Int): The runtime upperbound that the work function should not exceed.
+        offset: The initial index to start the work from.
+        upperbound: The runtime upperbound that the work function should not
+          exceed.
+        tile_size_list: List of tile sizes to launch work.
     """
     # Initialize the work_idx with the starting offset.
     var work_idx = offset
@@ -482,15 +601,20 @@ fn tile[
     """A generator that launches work groups in specified list of tile sizes until the
     sum of primary_tile_sizes has exceeded the upperbound.
 
+    Parameters:
+        secondary_tile_size_list: List of static tile sizes to launch work.
+        secondary_cleanup_tile: Last static tile to use when primary tile sizes
+          don't fit exactly within the upperbound.
+        workgroup_function: workgroup function that processes one tile of
+          workload.
+
     Args:
-        workgroup_function(BinaryTile1DTileUnitFunc): workgroup function that processes one
-            tile of workload.
-        secondary_tile_size_list(VariadicList[Int]): List of static tile sizes to launch work.
-        secondary_cleanup_tile(Int): Last static tile to use when primary tile sizes don't fit exactly within the upperbound.
-        offset(Int): The initial index to start the work from.
-        upperbound(Int): The runtime upperbound that the work function should not exceed.
-        primary_tile_size_list(VariadicList[Int]): List of dynamic tile sizes to launch work.
-        primary_cleanup_tile(Int): Last dynamic tile to use when primary tile sizes don't fit exactly within the upperbound.
+        offset: The initial index to start the work from.
+        upperbound: The runtime upperbound that the work function should not
+          exceed.
+        primary_tile_size_list: List of dynamic tile sizes to launch work.
+        primary_cleanup_tile: Last dynamic tile to use when primary tile sizes
+          don't fit exactly within the upperbound.
     """
     var work_idx = offset
     alias num_tiles = secondary_tile_size_list.__len__()
@@ -519,6 +643,8 @@ fn tile[
 
 
 struct NullaryClosure[result_type: AnyType]:
+    """A struct representing a 0-arguments closure."""
+
     alias closure_type = __mlir_type[`!pop.closure<() -> `, result_type, `>`]
     var value: closure_type
 
@@ -527,7 +653,7 @@ struct NullaryClosure[result_type: AnyType]:
         """Create a nullary closure.
 
         Arguments:
-          value: the closure value
+          value: the closure value.
 
         Returns:
           The nullary closure.
@@ -539,7 +665,7 @@ struct NullaryClosure[result_type: AnyType]:
         """Clone a nullary closure.
 
         Arguments:
-          self: the value to clone
+          self: the value to clone.
 
         Returns:
           A new nullary closure.
@@ -560,6 +686,8 @@ struct UnaryClosure[
     input_type: AnyType,
     result_type: AnyType,
 ]:
+    """A struct representing a single argument closure."""
+
     alias closure_type = __mlir_type[
         `!pop.closure<(`, input_type, `) -> `, result_type, `>`
     ]
@@ -570,7 +698,7 @@ struct UnaryClosure[
         """Create a unary closure.
 
         Arguments:
-          value: the closure value
+          value: the closure value.
 
         Returns:
           The unary closure.
@@ -582,7 +710,7 @@ struct UnaryClosure[
         """Clone a unary closure.
 
         Arguments:
-          self: the value to clone
+          self: the value to clone.
 
         Returns:
           A new unary closure.
@@ -609,6 +737,8 @@ struct BinaryClosure[
     rhs_type: AnyType,
     result_type: AnyType,
 ]:
+    """A struct representing a two arguments closure."""
+
     alias closure_type = __mlir_type[
         `!pop.closure<(`, lhs_type, `, `, rhs_type, `) -> `, result_type, `>`
     ]
@@ -619,7 +749,7 @@ struct BinaryClosure[
         """Create a binary closure.
 
         Arguments:
-          value: the closure value
+          value: the closure value.
 
         Returns:
           The binary closure.
@@ -631,7 +761,7 @@ struct BinaryClosure[
         """Clone a binary closure.
 
         Arguments:
-          self: the value to clone
+          self: the value to clone.
 
         Returns:
           A new binary closure.
@@ -643,8 +773,8 @@ struct BinaryClosure[
         """Call a binary closure.
 
         Arguments:
-          lhs: the first input to the binary closure
-          rhs: the second input to the binary closure
+          lhs: the first input to the binary closure.
+          rhs: the second input to the binary closure.
 
         Returns:
           The binary closure result.
@@ -660,6 +790,8 @@ struct TernaryClosure[
     arg3_type: AnyType,
     result_type: AnyType,
 ]:
+    """A struct representing a three arguments closure."""
+
     alias closure_type = __mlir_type[
         `!pop.closure<(`,
         arg1_type,
@@ -678,7 +810,7 @@ struct TernaryClosure[
         """Create a Ternary closure.
 
         Arguments:
-          value: the closure value
+          value: the closure value.
 
         Returns:
           The Ternary closure.
@@ -690,7 +822,7 @@ struct TernaryClosure[
         """Clone a Ternary closure.
 
         Arguments:
-          self: the value to clone
+          self: the value to clone.
 
         Returns:
           A new Ternary closure.
@@ -707,9 +839,9 @@ struct TernaryClosure[
         """Call a Ternary closure.
 
         Arguments:
-          arg1: the first input to the Ternary closure
-          arg2: the second input to the Ternary closure
-          arg3: the third input to the Ternary closure
+          arg1: the first input to the Ternary closure.
+          arg2: the second input to the Ternary closure.
+          arg3: the third input to the Ternary closure.
 
         Returns:
           The Ternary closure result.
@@ -740,7 +872,9 @@ alias SwitchedFunction2 = __mlir_type[
 
 @always_inline
 fn unswitch[switched_func: SwitchedFunction](dynamic_switch: Bool):
-    """Unswitch is a simple pattern that is similar idea to loop unswitching
+    """Perform a functional unswitch transformation.
+
+    Unswitch is a simple pattern that is similar idea to loop unswitching
     pass but extended to functional patterns. The pattern facilitates the
     following code transformation that reduces the number of branches in the
     generated code
@@ -759,16 +893,18 @@ fn unswitch[switched_func: SwitchedFunction](dynamic_switch: Bool):
     This unswitch function genralizes that pattern with the help of meta parame-
     ters and can be used to perform both loop unswitching and other tile predic-
     ate lifting like in simd and amx.
-        TODO: Generalize to support multiple predicates.
-        TODO: Once nested lambdas compose well should make unswitch compose with
-        tile in an easy way.
 
-        Args:
-            switched_func (SwitchedFunction): The function containing the inner
-                loop logic that can be unswitched.
+    TODO: Generalize to support multiple predicates.
+    TODO: Once nested lambdas compose well should make unswitch compose with
+    tile in an easy way.
 
-            dynamic_switch (Bool): The dynamic condition that enables the unswi-
-                tched code path.
+    Parameters:
+        switched_func: The function containing the inner loop logic that can be
+          unswitched.
+
+    Args:
+        dynamic_switch: The dynamic condition that enables the unswitched code
+          path.
     """
     if dynamic_switch:
         switched_func[True]()
@@ -780,17 +916,17 @@ fn unswitch[switched_func: SwitchedFunction](dynamic_switch: Bool):
 fn unswitch[
     switched_func: SwitchedFunction2
 ](dynamic_switch_a: Bool, dynamic_switch_b: Bool):
-    """This is a version of unswitch pattern that takes 2 predicates.
+    """Perform a functional 2-predicates unswitch transformation.
+
+    Parameters:
+        switched_func: The function containing the inner loop logic that has 2
+          predicates which can be unswitched.
 
     Args:
-        switched_func (SwitchedFunction2): The function containing the inner
-            loop logic that has 2 predicates which can be unswitched.
-
-        dynamic_switch_a (Bool): The first dynamic condition that enables the
-            outer unswitched code path.
-
-        dynamic_switch_b (Bool): The second dynamic condition that enables
-            the inner unswitched code path.
+        dynamic_switch_a: The first dynamic condition that enables the outer
+          unswitched code path.
+        dynamic_switch_b: The second dynamic condition that enables the inner
+          unswitched code path.
     """
     # TODO: This could be a lot easier to write once parameter names can be
     #  removed.
@@ -836,17 +972,22 @@ fn tile_and_unswitch[
     workgroup_function: Static1DTileUnswitchUnitFunc,
     tile_size_list: VariadicList[Int],
 ](offset: Int, upperbound: Int):
-    """A variant of static tile given a workgroup function that can be
-    unswitched. This generator is a fused version of tile and unswitch, where
-    the static unswitch is true throughout the "inner" portion of the workload
-    and is false only on the residue tile.
+    """Perform time and unswitch functional transformation.
+
+    A variant of static tile given a workgroup function that can be unswitched.
+    This generator is a fused version of tile and unswitch, where the static
+    unswitch is true throughout the "inner" portion of the workload and is
+    false only on the residue tile.
+
+    Parameters:
+        workgroup_function: workgroup function that processes one tile of
+          workload.
+        tile_size_list: List of tile sizes to launch work.
 
     Args:
-        workgroup_function(Static1DTileUnitFunc): workgroup function that processes one
-            tile of workload.
-        tile_size_list(VariadicList[Int]): List of tile sizes to launch work.
-        offset(Int): The initial index to start the work from.
-        upperbound(Int): The runtime upperbound that the work function should not exceed.
+        offset: The initial index to start the work from.
+        upperbound: The runtime upperbound that the work function should not
+          exceed.
     """
 
     # Initialize where to start on the overall work load.
@@ -891,17 +1032,21 @@ alias Dynamic1DTileUnswitchUnitFunc = __mlir_type[
 fn tile_and_unswitch[
     workgroup_function: Dynamic1DTileUnswitchUnitFunc,
 ](offset: Int, upperbound: Int, tile_size_list: VariadicList[Int]):
-    """A variant of dynamic tile given a workgroup function that can be
+    """Perform time and unswitch functional transformation.
+
+    A variant of dynamic tile given a workgroup function that can be
     unswitched. This generator is a fused version of tile and unswitch, where
     the static unswitch is true throughout the "inner" portion of the workload
     and is false only on the residue tile.
 
+    Parameters:
+        workgroup_function: workgroup function that processes one tile of
+          workload.
+
     Args:
-        workgroup_function(Dynamic1DTileUnitFunc): workgroup function that processes one
-            tile of workload.
-        tile_size_list(VariadicList[Int]): List of tile sizes to launch work.
-        offset(Int): The initial index to start the work from.
-        upperbound(Int): The runtime upperbound that the work function should not exceed.
+        offset: The initial index to start the work from.
+        upperbound: The runtime upperbound that the work function should not exceed.
+        tile_size_list: List of tile sizes to launch work.
     """
 
     # Initialize where to start on the overall work load.
@@ -935,6 +1080,15 @@ fn tile_and_unswitch[
 
 @always_inline
 fn get_num_workers(problem_size: Int, runtime: Runtime) -> Int:
+    """Return a number of workers to run in parallel.
+
+    Args:
+        problem_size: The number of parallel tasks.
+        runtime: Runtime object.
+
+    Returns:
+        The number of workers to run in parallel.
+    """
     # Minimum number of elements to warrant an additional thread.
     # copied from https://github.com/pytorch/pytorch/blob/20dfce591ce88bc957ffcd0c8dc7d5f7611a4a3b/aten/src/ATen/TensorIterator.h#L86
     # TODO: refine this heuristic. It may not be appropriate for more compute-heavy
@@ -969,6 +1123,19 @@ fn elementwise[
         ` borrow) -> !lit.none>`,
     ],
 ](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
+    """Execute func[width, rank](indices) as sub-tasks for a suitable
+    combination of width and indices so as to cover shape.
+
+    Parameters:
+        rank: The rank of the buffer.
+        simd_width: The SIMD vector width to use.
+        unroll_factor: The unroll factor to use.
+        func: The body function.
+
+    Args:
+        shape: The shape of the buffer.
+        out_chain: The our chain to attach results to.
+    """
     assert_param_bool_msg[rank == 1, "Specialization for 1D"]()
 
     let problem_size = shape.flattened_length()
@@ -1003,9 +1170,9 @@ fn elementwise[
 fn _get_nd_indices_from_flat_index[
     rank: Int
 ](flat_index: Int, shape: StaticIntTuple[rank]) -> StaticIntTuple[rank]:
-    """
-    Converts a flat index into ND indices. The ND indices will iterate from
-    right to left. I.E
+    """Converts a flat index into ND indices.
+
+    The ND indices will iterate from right to left. I.E
 
     shape = (20, 5, 2, N)
     _get_nd_indices_from_flat_index(1, shape) = (0, 0, 1, 0)
@@ -1016,9 +1183,15 @@ fn _get_nd_indices_from_flat_index[
     We ignore the Nth dimension to allow that to be traversed in the elementwise
     function.
 
+    Parameters:
+        rank: The rank of the ND index.
+
     Args:
-        flat_index: The flat index to convert
-        shape: The shape of the ND space we are converting into
+        flat_index: The flat index to convert.
+        shape: The shape of the ND space we are converting into.
+
+    Returns:
+        Constructed ND-index.
     """
 
     # The inner dimensions ([outer, outer, inner]) are not traversed here.
@@ -1061,8 +1234,19 @@ fn elementwise[
     ],
 ](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
     """Execute func[width, rank](indices) as sub-tasks for a suitable
-    combination of width and indices so as to cover shape. All free vars
-    in func must be "async safe", see async_parallelize.
+    combination of width and indices so as to cover shape.
+
+    All free vars in func must be "async safe", see async_parallelize.
+
+    Parameters:
+        rank: The rank of the buffer.
+        simd_width: The SIMD vector width to use.
+        unroll_factor: The unroll factor to use.
+        func: The body function.
+
+    Args:
+        shape: The shape of the buffer.
+        out_chain: The our chain to attach results to.
     """
 
     assert_param_bool_msg[rank > 1, "Specialization for ND where N > 1"]()
