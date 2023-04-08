@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -canonicalize | FileCheck %s
+// RUN: kgen-opt %s -canonicalize -allow-unregistered-dialect | FileCheck %s
 
 // CHECK-LABEL: @terminators_conditionally_pure
 func.func @terminators_conditionally_pure(%arg0: i1) {
@@ -26,6 +26,7 @@ func.func @terminators_conditionally_pure(%arg0: i1) {
 
     // CHECK: {e}
     hlcf.loop {
+      "some.operation"() : () -> ()
       hlcf.break
     } {e}
 
@@ -332,4 +333,48 @@ kgen.func @empty_if_partial(%cond: i1, %arg1: index, %arg2: index) -> index {
   }
   %r = index.add %a, %b
   kgen.return %r: index
+}
+
+// CHECK-LABEL: @dead_loop
+kgen.func @dead_loop() {
+  // CHECK-NOT:  hlcf.loop
+  // CHECK-NEXT: kgen.return
+  hlcf.loop {
+    hlcf.break
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: @dead_loop_inner
+kgen.func @dead_loop_inner(%arg0: index, %arg1: index) -> index{
+  // CHECK:      hlcf.loop
+  // CHECK-NOT:    hlcf.loop
+  // CHECK-NEXT:   index.add
+  // CHECK-NEXT:   hlcf.break %
+  // CHECK:      kgen.return
+  %r1 = hlcf.loop () -> index {
+    %r2 = hlcf.loop () -> index{
+      hlcf.break %arg0: index
+    }
+    %t = index.add %r2, %arg1
+    hlcf.break %t: index
+  }
+  kgen.return %r1: index
+}
+
+// CHECK-LABEL: @dead_loop_inner2
+kgen.func @dead_loop_inner2(%arg0: index, %arg1: index, %arg2: index) -> index{
+  // CHECK-NOT:  hlcf.loop
+  // CHECK-NOT:                index.add %arg0, %arg1
+  // CHECK-NEXT: %[[RES:.*]] = index.add %arg0, %arg2
+  // CHECK-NEXT: kgen.return %[[RES]]
+  %x = hlcf.loop "outer" () -> index {
+    hlcf.loop {
+      hlcf.break "outer" %arg0: index
+    }
+    %y = index.add %arg0, %arg1
+    hlcf.break %y: index
+  }
+  %z = index.add %x, %arg2
+  kgen.return %z: index
 }
