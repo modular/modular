@@ -52,8 +52,8 @@ struct Matrix[
         self.data = dptr.address
 
     fn __init__(
-        ptr: Pointer[__mlir_type[`!pop.scalar<`, type.value, `>`]]
-    ) -> Matrix[shape, type, transposed]:
+        self&, ptr: Pointer[__mlir_type[`!pop.scalar<`, type.value, `>`]]
+    ):
         """Constructor of a matrix from a Pointer.
 
         Args:
@@ -63,7 +63,7 @@ struct Matrix[
             The constructed matrix.
         """
         let dptr = DTypePointer[type](ptr.address)
-        return NDBuffer[2, shape, type](dptr.address)
+        self = Self(NDBuffer[2, shape, type](dptr.address))
 
     @staticmethod
     @always_inline
