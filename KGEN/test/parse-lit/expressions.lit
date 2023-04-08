@@ -188,7 +188,7 @@ fn precedence_associativity(a: Int):
   # CHECK-NEXT:  pop.store %[[ADD]], %z
   z = z + 3 * -2
   # CHECK-NEXT:  %[[Z:.*]] = pop.load %z
-  # CHECK-NEXT:  %[[FLOOR_DIV:.*]] = kgen.param.constant: @"$Int"::@Int = <{{.*}} = -1}
+  # CHECK-NEXT:  %[[FLOOR_DIV:.*]] = kgen.param.constant: @"$Int"::@Int = <{{.*}} = -2}
   # CHECK-NEXT:  %[[ADD:.*]] = kgen.call @"$Int"::@Int::@"__add__{{.*}}(%[[Z]], %[[FLOOR_DIV]])
   # CHECK-NEXT:  pop.store %[[ADD]], %z
   z = z + 3 // -2
