@@ -246,8 +246,13 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     startsUninit = false;
     endsUninit = true;
     break;
-  case ValueInputConvention::ByRef:
   case ValueInputConvention::ByRefResult:
+  case ValueInputConvention::InitSelf:
+    isIndirect = true;
+    startsUninit = false; /// <- FIXME
+    endsUninit = false;
+    break;
+  case ValueInputConvention::ByRef:
     isIndirect = true;
     startsUninit = false;
     endsUninit = false;
@@ -677,6 +682,7 @@ void UninitializedValueScan::checkOp(Operation &op) {
         checkDirectPointerLive(operand);
         break;
       case ValueInputConvention::ByRefResult:
+      case ValueInputConvention::InitSelf:
         // This call defines the by-ref result.
         valueSet.getPointerValueIndex(operand).markBits(liveValues, true);
         break;
@@ -921,11 +927,11 @@ void DestructorInsertion::checkOp(Operation &op) {
       case ValueInputConvention::ByRef:
         checkUse(op, valueSet.getPointerValueIndex(operand));
         break;
-      case ValueInputConvention::ByRefResult: {
+      case ValueInputConvention::ByRefResult:
+      case ValueInputConvention::InitSelf:
         // This defines the memory it writes to.
         checkDef(op, valueSet.getPointerValueIndex(operand));
         break;
-      }
       }
     }
     return;

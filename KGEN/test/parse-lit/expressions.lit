@@ -16,13 +16,14 @@ fn noop(): pass
 struct MemoryOnlyInt:
   var x: Int
 
-  # CHECK: lit.func @"__init__
-  fn __init__(a: Int = 42) -> Self:
-    # CHECK: %0 = lit.struct.gep %__result__[x]
+  # CHECK-LABEL: lit.func @"__init__
+  fn __init__(self&, a: Int = 42):
+    # CHECK: %0 = lit.struct.gep %self[x]
     # CHECK: %1 = {{.*}}constant: {{.*}}Int = {{.*}} 1
     # CHECK: pop.store %1, %0
-    return Self {x: 1}
+    self.x = 1
 
+  # CHECK-LABEL: lit.func @"__copy__
   fn __copy__(self: Self) -> Self:
     return Self{x: self.x}
 
@@ -33,8 +34,8 @@ struct MemoryOnlyInt:
 # This type is used to test implicit conversion from MemoryOnlyInt
 struct MemoryOnlyF64:
   var x: __mlir_type.f64
-  fn __init__(value: MemoryOnlyInt) -> Self:
-    return Self {x: 1.0}
+  fn __init__(self&, value: MemoryOnlyInt):
+    self.x = 1.0
 
 # CHECK-LABEL: lit.struct.decl @MemoryOnlyPair
 struct MemoryOnlyPair:
@@ -698,14 +699,14 @@ world"
 # CHECK-SAME: %[[ARGA:.*]]: !kgen.declref<@"$Int"::@Int>
 # CHECK-SAME: %[[ARGB:.*]]: !kgen.declref<@"$SIMD"::@SIMD<{{.*}}f32
 fn tuples(a: Int, b: F32):
-    # CHECK: %[[PACK0:.*]] = kgen.param.constant: !pop.pack<[]> = <<>>
-    # CHECK: kgen.call  @"{{.*}}@TupleLiteral::@"__init__({{.*}}TupleLiteral[Ts]=&,__mlir_type.!pop.pack<Ts>)"<:variadic<!kgen.mlirtype> []>(%{{.*}}, %[[PACK0]])
+    # CHECK: [[PACK0:%.*]] = kgen.param.constant: !pop.pack<[]> = <<>>
+    # CHECK: kgen.call  @"{{.*}}@TupleLiteral::@"__init__({{.*}}(%{{.*}}, [[PACK0]])
     _ = ()
     # CHECK: %[[PACK1:.*]] = pop.pack.create(%[[ARGA]], %[[ARGB]])
-    # CHECK: kgen.call  @"{{.*}}@TupleLiteral::@"__init__({{.*}}TupleLiteral[Ts]=&,__mlir_type.!pop.pack<Ts>)"<:variadic<!kgen.mlirtype> [!kgen.declref<@"$Int"::@Int>, !kgen.declref<{{.*}}SIMD{{.*}}f32{{.*}}>]>(%{{.*}}, %[[PACK1]])
+    # CHECK: kgen.call  @"{{.*}}@TupleLiteral::@"__init__({{.*}}(%{{.*}}, %[[PACK1]])
     _ = (a, b)
     # CHECK: %[[PACK2:.*]] = pop.pack.create(%[[ARGA]])
-    # CHECK: kgen.call @"{{.*}}@TupleLiteral::@"__init__({{.*}}TupleLiteral[Ts]=&,__mlir_type.!pop.pack<Ts>)"<:variadic<!kgen.mlirtype> [!kgen.declref<@"$Int"::@Int>]>(%{{.*}}, %[[PACK2]])
+    # CHECK: kgen.call @"{{.*}}@TupleLiteral::@"__init__({{.*}}(%{{.*}}, %[[PACK2]])
     _ = (a,)
 
 ##===----------------------------------------------------------------------===##
@@ -789,11 +790,11 @@ fn testSIMDGetter[type: DType](owned a: SIMD[2, type]) -> __mlir_type[
 struct MyInlineIntInit:
     var intVal: MemoryOnlyInt
     # CHECK-LABEL: lit.func @"__init__($expressions::MyInlineIntInit=&,$expressions::MemoryOnlyInt)"
-    # CHECK-SAME: (%__result__: !pop.pointer<{{.*}}> byref_result, %intVal: {{.*}}borrow_in_mem)
-    fn __init__(intVal: MemoryOnlyInt) -> Self:
-        # CHECK: %0 = lit.struct.gep %__result__[intVal]
+    # CHECK-SAME: (%self: !pop.pointer<@"$expressions"::@MyInlineIntInit> init_self, %intVal: !pop.pointer<@"$expressions"::@MemoryOnlyInt> borrow_in_mem) -> !lit.none
+    fn __init__(self&, intVal: MemoryOnlyInt):
+        # CHECK: %0 = lit.struct.gep %self[intVal]
         # CHECK: kgen.call {{.*}}__copy__{{.*}}(%0, %intVal)
-        return Self{intVal: intVal}
+        self.intVal = intVal
 
 struct IndexArray:
   fn __getitem__(self&, x: Int) -> Int: pass
@@ -906,8 +907,8 @@ fn lvalue_utilities(a&: Int):
 struct CallableStruct:
     var value: Int
 
-    fn __init__(value: Int) -> Self:
-        return Self{value:value}
+    fn __init__(self&, value: Int):
+        self.value = value
 
     fn __copy__(self) -> Self:
         return self.value

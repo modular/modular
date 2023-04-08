@@ -18,8 +18,10 @@ struct my_iter:
     fn __copy__(self) -> Self:
         return Self {start: self.start, end: self.end, list: self.list}
 
-    fn __init__(list: MyList) -> my_iter:
-        return my_iter {start: 0, end: list.size, list: list}
+    fn __init__(self&, list: MyList):
+        self.start = 0
+        self.end = list.size
+        self.list = list
 
     fn __next__(self&: my_iter) -> Int:
         let result: Int = self.start
@@ -39,8 +41,9 @@ struct MyList:
     fn __copy__(self) -> Self:
         return Self {start: self.start, size: self.size}
 
-    fn __init__(ptr: Pointer[Int], size: Int) -> MyList:
-        return MyList {start: ptr, size: size}
+    fn __init__(self&, ptr: Pointer[Int], size: Int):
+        self.start = ptr
+        self.size = size
 
     fn __setitem__(self&, idx: Int, val: Int):
         let ptr = self.start + idx

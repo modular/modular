@@ -756,8 +756,11 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   // If this is a computed LValue, then perform a writeback.
   if (auto dlValue = destLV.getIfDLValue()) {
     // If the value itself is an LValue, emit a load so we can call the setter.
-    if (auto valueLV = value.ir.getIfLValue())
+    if (auto valueLV = value.ir.getIfLValue()) {
       value.ir = emitLoadOfLValue({valueLV, value.expr}, ValueDest::none());
+      if (!value)
+        return {};
+    }
 
     // Then store into the dest DLValue.
     dlValue->emitStore(value, *this);
@@ -930,13 +933,23 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   if (!callee)
     return false;
 
+  // If this is a memory-only type, then we'll pass a self argument with the
+  // destination when invoking the method, use a temporary so we can
+  // conveniently type check this.
+  SmallVector<ASTExprAnd<AnyValue>> args;
+  if (!requiredType.isRegisterPassable(value.expr->getLoc(), shared)) {
+    auto attr = UnknownAttr::get(POP::PointerType::get(requiredType));
+    args.push_back({PValue(attr), value.expr});
+  }
+  args.push_back(value);
+
   // If we have at least one candidate, we check to see if any of them can
   // work. We disable implicit conversions though, to prevent converting
   // T -> S -> U in one step.
 
   // This needs to call filterOverloadSet manually because we cannot allow
   // implicit conversions here.
-  return succeeded(callee.filterOverloadSet({value},
+  return succeeded(callee.filterOverloadSet(args,
                                             /*allowImplicitConversions=*/false,
                                             /*emitDiagnosticOnFailure=*/false,
                                             *this));
@@ -1157,6 +1170,24 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
   if (callee.isNull())
     return {};
 
+  // Init for memory-only types get their self argument implicitly initialized
+  // and passed in as the first argument.
+  bool isMemoryOnly = !type.isRegisterPassable(expr->getLoc(), shared);
+  SmallVector<ASTExprAnd<AnyValue>> argsWithSelf;
+  if (isMemoryOnly) {
+    argsWithSelf.reserve(args.size() + 1);
+
+    // Unfortunately, we can't just use 'type' or the dest LValue as the buffer
+    // to initialize, because the concrete result type might need parameters to
+    // be inferred, and those may depend on other value arguments.  Handle this
+    // by setting up a placeholder with the type we know so far, and use that to
+    // filter the overload set.
+    auto attr = UnknownAttr::get(POP::PointerType::get(type));
+    argsWithSelf.push_back({PValue(attr), expr});
+    argsWithSelf.append(args.begin(), args.end());
+    args = argsWithSelf;
+  }
+
   if (failed(callee.filterOverloadSet(
           args, allowImplicitConversion,
           /*emitDiagnosticOnFailure=*/!hasCustomErrorReporting, *this))) {
@@ -1165,8 +1196,35 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
     return {};
   }
 
-  // Ok, cool we know it will succeed; do it.
-  return callee.emitCall(args, dest, *this);
+  // If we successfully resolve the overload set, we know the call will succeed,
+  // do it.
+  if (!isMemoryOnly)
+    return callee.emitCall(args, dest, *this);
+
+  auto calleeAttr = callee.getBoundConstantAttr(*this);
+  assert(calleeAttr && isa<SignatureType>(calleeAttr.getType()) &&
+         "Fully resolved call should have a concrete callee");
+  auto calleeSig = cast<SignatureType>(calleeAttr.getType());
+  auto firstArgRVType =
+      ASTType(calleeSig.getValueInputs()[0]).getPointerElementType();
+
+  // For a memory-only call, we need to replace the destination buffer with the
+  // actual destination lvalue to use.
+  SLValue destSLValue =
+      dest.getSLValueForResult(expr->getLoc(), firstArgRVType, *this);
+  argsWithSelf[0].ir = destSLValue;
+  if (!destSLValue)
+    return {};
+
+  // Emit the call, but not into 'dest', typically init will return None.
+  CValue result = callee.emitCall(args, ValueDest::none(), *this);
+  if (!result)
+    return {};
+
+  // Now that we've emitted the result into the result buffer, emit a conversion
+  // if the expected type and the actual type differ.  This can happen when the
+  // ValueDest isn't the same as the result, e.g. "var x: MemFloat = MemInt()".
+  return emitCResult(MRValue(destSLValue), expr, dest);
 }
 
 /// Emit the specified expression as a condition, converting it to an MLIR I1

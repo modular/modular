@@ -25,7 +25,7 @@
 
 SF(kNew,     "__new__"   ,  -1, kInvalid, kImplicitlyStaticMethod|kSelfResult)
 SF(kCopy,    "__copy__"  ,   1, kInvalid, kAllowByRefSelfInstMethod|kSelfResult)
-SF(kInit,    "__init__"  ,  -1, kInvalid, kImplicitlyStaticMethod|kSelfResult)
+SF(kInit,    "__init__"  ,  -1, kInvalid, kAllowByRefSelfInstMethod)
 // TODO: move checking to __del__ without extra _.
 SF(kDel,     "__del___"  ,   1, kInvalid, kRequiresOwnedSelfInstMethod|kNoneResult)
 

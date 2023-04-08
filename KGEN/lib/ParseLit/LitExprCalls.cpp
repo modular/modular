@@ -179,8 +179,6 @@ PValue ParameterInferenceState::infer(SignatureType signature,
   // getSpecializedSignature so we benefit from the already-fixed substitutions
   // being applied to the input types.  This can make them more concrete and
   // help with inferring dependent types based on already-bound parameters.
-  //
-  // signature = signature.getSpecializedSignature(bindingsSoFar + placeholders)
 
   // Match up the operands provided by the call to the input arguments.  Keep in
   // mind that the callee signature might not match at all, so we have to be
@@ -204,6 +202,14 @@ PValue ParameterInferenceState::infer(SignatureType signature,
 
       // TODO: If this argument is defaulted, infer against it.
 
+      // If we have a pack argument, then we're binding zero type values to it.
+      if (auto packType = getIfPackType(signature, expectedArgIdx)) {
+        SmallVector<TypedAttr> types;
+        inferredValues.push_back(KGEN::VariadicAttr::get(
+            {types}, cast<VariadicType>(packType.getVariadic().getType())));
+        continue;
+      }
+
       // Otherwise we have an argument count mismatch, just fail.
       return {};
     }
@@ -214,6 +220,13 @@ PValue ParameterInferenceState::infer(SignatureType signature,
       // We'll bind the next provided value.
       auto operand = operands[providedValueIdx++];
       switch (expectedConvention) {
+      case ValueInputConvention::InitSelf:
+        // If this is an UnknownAttr, then it is a placeholder for type
+        // checking, just let it pass.
+        if (auto pValue = operand.ir.getIfPValue())
+          if (isa<UnknownAttr>(pValue.get()))
+            return success();
+        [[fallthrough]];
       case ValueInputConvention::ByRef:
       case ValueInputConvention::ByRefResult: {
         // The actual value must be an lvalue if callee takes things by-ref.
@@ -758,6 +771,13 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
       assert(!signature.isKWVararg(expectedArgIdx) &&
              "keyword arguments and `**arg` variadics not supported yet");
       switch (expectedConvention) {
+      case ValueInputConvention::InitSelf:
+        // If this is an UnknownAttr, then it is a placeholder for type
+        // checking, just let it pass.
+        if (auto pValue = operand.ir.getIfPValue())
+          if (isa<UnknownAttr>(pValue.get()))
+            break;
+        [[fallthrough]];
       case ValueInputConvention::ByRef:
       case ValueInputConvention::ByRefResult: {
         // The actual value must be an lvalue if callee takes things by-ref.
@@ -1424,7 +1444,8 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
     return {};
   }
 
-  case ValueInputConvention::ByRef: {
+  case ValueInputConvention::ByRef:
+  case ValueInputConvention::InitSelf: {
     LValue baseLV = emitter.emitLValue(baseValue, ValueDest::none());
     if (!baseLV)
       return {};
@@ -1678,7 +1699,8 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       arg = argValAndExpr.ir.getIfMBValue();
       break;
     case ValueInputConvention::ByRef:
-    case ValueInputConvention::ByRefResult: {
+    case ValueInputConvention::ByRefResult:
+    case ValueInputConvention::InitSelf: {
       // We know that the operand is an LValue, but it might be
       // dynamic/computed.
       LValue lv = argValAndExpr.ir.getIfLValue();
@@ -1774,6 +1796,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       switch (convention) {
       case ValueInputConvention::ByRef:
       case ValueInputConvention::ByRefResult:
+      case ValueInputConvention::InitSelf:
         // By-ref arguments, must be lvalues.
         assert(operand.ir.getIfLValue() &&
                "Call should already be type checked");

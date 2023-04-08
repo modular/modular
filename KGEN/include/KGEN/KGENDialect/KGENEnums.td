@@ -149,6 +149,11 @@ def KGEN_ValueInputConvention : I32EnumAttr<"ValueInputConvention",
   ///
   /// The caller is responsible for destroying the value.
   I32EnumAttrCase<"ByRefResult", 5, "byref_result">,
+
+  /// This is used on the 'self' argument to `__init__`.  It has identical
+  /// semantics to ByRefResult on the callee side, but isn't a result on the
+  /// caller side.
+  I32EnumAttrCase<"InitSelf", 6, "init_self">,
 ]> {
   let cppNamespace = "M::KGEN";
 }

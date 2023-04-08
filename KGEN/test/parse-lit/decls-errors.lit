@@ -157,8 +157,8 @@ fn parameterizedVariadic[T: __mlir_type.`!kgen.mlirtype`](*args: T): pass
 
 struct ParameterizedStruct[T: __mlir_type.`!kgen.mlirtype`]:
     # expected-note @+1 {{function declared here}}
-    def __init__(*args: T) -> Self:
-        return Self {}
+    def __init__(self&, *args: T):
+        pass
 
 fn badCalls(arg: Int):
   # expected-error @+1 {{argument #1 cannot be converted from '__mlir_type.f64' to '$Int::Int'}}
@@ -301,8 +301,8 @@ fn badTakesAtLeastOneInt():
 
 
 struct ConvertibleFromInt:
-  fn __init__(value: Int) -> ConvertibleFromInt:
-    return ConvertibleFromInt{}
+  fn __init__(self&, value: Int):
+    pass
 
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: argument #1 cannot be converted from '$decls-errors::ConvertibleFromInt' to '$Int::Int'}}
@@ -383,10 +383,10 @@ struct SpecialFunctions:
 
 @register_passable
 struct WrongType:
-  # expected-error @+1 {{'__init__' with mutable self is not supported on register_passable types yet}}
+  # expected-error @+1 {{'__init__' on register_passable type must return Self}}
   def __init__(self): pass
 
-  # expected-error @+1 {{result type must be '$decls-errors::WrongType'}}
+  # expected-error @+1 {{'__init__' on register_passable type must return Self}}
   def __init__() -> Int: pass
 
   # expected-error @+1 {{result type must be '$decls-errors::WrongType'}}
@@ -409,10 +409,10 @@ struct WrongSelfType[a: Int]:
 
 # Issue #6587: [Lit] Recursive constructors crash kgen
 struct BadInit[size: __mlir_type.index]:
-  fn __init__(elem: BadInit[(1).__as_mlir_index()]) -> BadInit[size]:
+  fn __init__(self&, elem: BadInit[(1).__as_mlir_index()]):
     var x : __mlir_type[`!pop.simd<`, size, `, f32>`]
     # expected-error @+1 {{'__mlir_type.!pop.simd<size, f32>' value cannot be converted to '$decls-errors::BadInit[size]'}}
-    return x
+    self = x
 
 struct StructWithField:
   var field: __mlir_type.index

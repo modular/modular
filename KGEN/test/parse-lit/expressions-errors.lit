@@ -31,8 +31,8 @@ fn assignRValue():
   42 = 17 # expected-error {{expression must be mutable in assignment}}
 
 struct LValuesRvalues:
-  fn __init__() -> LValuesRvalues:
-    return LValuesRvalues{}
+  fn __init__(self&):
+    pass
 
   fn __copy__(self) -> Self:
     return Self{a: 1} # expected-error {{'$expressions-errors::LValuesRvalues' has no field named 'a'}}
@@ -48,11 +48,13 @@ struct LValuesRvalues:
 struct MemoryPrimaryPair:
   var x: Int
   var y: Int
-  fn __init__() -> Self: return Self {x: 0, y: 0}
+  fn __init__(self&):
+    self.x = 0
+    self.y = 0
   fn __copy__(self) -> Self: return Self {x: 0, y: 0}
 
 struct NonCopyable:
-  fn __init__() -> Self: return Self {}
+  fn __init__(self&): pass
 
 # expected-note @+1 {{function declared here}}
 fn generic_on_type_bad[T: __mlir_type.`!kgen.mlirtype`](a: T): pass
