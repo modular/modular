@@ -7,6 +7,7 @@
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/HLCFDialect/HLCFUtils.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "mlir/IR/PatternMatch.h"
 
 using namespace M;
 using namespace HLCF;

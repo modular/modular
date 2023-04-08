@@ -334,3 +334,19 @@ void IfOp::getCanonicalizationPatterns(RewritePatternSet &results,
   results.add<RemoveStaticCondition, HoistUnconditionalReturn,
               HoistConditionalReturn, HoistYieldResults>(context);
 }
+
+/// If the only operation in LoopOp is BreakOp, delete the loop.  Depending on
+/// whether the target of the BreakOp is this or outer loop, we might have to
+/// keep or delete it.
+LogicalResult LoopOp::canonicalize(LoopOp op, PatternRewriter &rewriter) {
+  Block &body = op.getBody().front();
+  if (auto br = dyn_cast<BreakOp>(body.getOperations().front())) {
+    if (br.getLabelAttr() == op.getLabelAttr())
+      rewriter.replaceOp(op, br.getOperands());
+    else
+      rewriter.inlineBlockBefore(&body, op);
+    return success();
+  }
+
+  return failure();
+}
