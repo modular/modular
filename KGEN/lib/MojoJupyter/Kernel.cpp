@@ -156,6 +156,10 @@ LogicalResult MojoKernel::initialize(const char *mojoReplExe) {
     return reportKernelError("unable to locate libMojoLLDB plugin");
   debugger.HandleCommand(("plugin load " + mojoPlugin.GetPath()).c_str());
 
+  // This will log to LLDB's stderr, which the notebook server will pick up (but
+  // not the notebook).
+  debugger.HandleCommand("log enable lldb expr");
+
   // Initialize the target.
   if (failed(initializeTarget(mojoReplExe)))
     return failure();
