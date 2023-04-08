@@ -54,6 +54,29 @@ fn get_min_task_size() -> Int:
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline
+fn get_matmul_num_tasks[
+    simd_size: Int
+](m: Int, n: Int, k: Int, max_num_tasks: Int) -> Int:
+    """Compute the number of tasks for parallel matmul.
+    The max number of tasks is typically the number of threads/cores."""
+
+    # The min tasks complexity is from MLAS.
+    # TODO: We can fine-tune this based on mojo.matmul's scaling.
+    var num_tasks = div_ceil(m * n * k, get_min_task_size())
+    num_tasks = min(num_tasks, max_num_tasks)
+
+    # Limit num_tasks by row-wise and column-wise partition because we don't
+    # support partition in k dim yet. E.x. 32x32x1024 uses 16 threads by min
+    # task complexity but we only want it to use <= 4 threads for now since
+    # M and N are very small.
+    var max_row_tasks = div_ceil(m, 2 * get_matmul_a_row_size())
+    var max_col_tasks = div_ceil(n, get_matmul_pack_inner_size() * simd_size)
+    num_tasks = min(num_tasks, max_row_tasks * max_col_tasks)
+
+    return num_tasks
+
+
 struct SubMatmulConfig:
     """Static configuration of sub-matrices in parallel matmul."""
 
@@ -62,6 +85,11 @@ struct SubMatmulConfig:
 
     # Dimension of sub-matrices.
     var shape: StaticIntTuple[3]
+
+    fn __init__(
+        offset: StaticIntTuple[3], shape: StaticIntTuple[3]
+    ) -> SubMatmulConfig:
+        return Self {offset: offset, shape: shape}
 
     fn __copy__(self) -> Self:
         return Self {
