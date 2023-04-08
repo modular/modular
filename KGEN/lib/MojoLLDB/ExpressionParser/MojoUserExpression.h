@@ -7,6 +7,7 @@
 #ifndef KGEN_LIB_MOJOLLDB_EXPRESSIONPARSER_MOJOUSEREXPRESSION_H
 #define KGEN_LIB_MOJOLLDB_EXPRESSIONPARSER_MOJOUSEREXPRESSION_H
 
+#include "JITUserExpression.h"
 #include "Support/LLVMForwardDecls.h"
 #include "lldb/Expression/LLVMUserExpression.h"
 
@@ -20,7 +21,7 @@ class MojoTypeSystem;
 
 /// MojoUserExpression encapsulates the objects needed to parse and interpret or
 /// JIT an expression.
-class MojoUserExpression : public lldb_private::LLVMUserExpression {
+class MojoUserExpression : public JitUserExpression {
   static char ID;
 
 public:
@@ -56,7 +57,7 @@ public:
   //===--------------------------------------------------------------------===//
 
   bool isA(const void *classID) const override {
-    return classID == &ID || lldb_private::LLVMUserExpression::isA(classID);
+    return classID == &ID || JitUserExpression::isA(classID);
   }
   static bool classof(const Expression *obj) { return obj->isA(&ID); }
 
@@ -65,13 +66,10 @@ private:
   // Expression parsing and execution
   //===--------------------------------------------------------------------===//
 
-  void ScanContext(lldb_private::ExecutionContext &exeCtx,
-                   lldb_private::Status &err) override;
-
   /// Add the function arguments used when invoking the wrapper function for the
   /// generated expression.
   bool
-  AddArguments(lldb_private::ExecutionContext &exeCtx,
+  addArguments(lldb_private::ExecutionContext &exeCtx,
                std::vector<lldb::addr_t> &args, lldb::addr_t structAddress,
                lldb_private::DiagnosticManager &diagnosticManager) override;
 

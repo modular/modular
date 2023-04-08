@@ -13,6 +13,7 @@
 #include "Support/SymbolExport.h"
 #include "TypeSystem/MojoTypeSystem.h"
 #include "lldb/API/SBDebugger.h"
+#include "llvm/ExecutionEngine/MCJIT.h"
 #include "llvm/Support/TargetSelect.h"
 
 using namespace M;
@@ -30,6 +31,7 @@ MODULAR_EXPORT bool LLDBPluginInitialize() {
   llvm::InitializeAllTargetMCs();
   llvm::InitializeAllAsmParsers();
   llvm::InitializeAllAsmPrinters();
+  LLVMLinkInMCJIT();
 
   // Initialize the various plugin components.
   MojoREPL::Initialize();

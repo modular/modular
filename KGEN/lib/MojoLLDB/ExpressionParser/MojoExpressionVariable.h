@@ -7,6 +7,7 @@
 #ifndef KGEN_LIB_MOJOLLDB_EXPRESSIONPARSER_MOJOEXPRESSIONVARIABLE_H
 #define KGEN_LIB_MOJOLLDB_EXPRESSIONPARSER_MOJOEXPRESSIONVARIABLE_H
 
+#include "JITExecutionUnit.h"
 #include "lldb/Core/Value.h"
 #include "lldb/Expression/ExpressionVariable.h"
 #include "lldb/Symbol/TaggedASTType.h"
@@ -91,6 +92,12 @@ public:
     return std::nullopt;
   }
 
+  /// Register the given expression unit.
+  void registerExecutionUnit(std::shared_ptr<JITExecutionUnit> &executionUnit);
+
+  /// Lookup a symbol with the provided name.
+  lldb::addr_t LookupSymbol(lldb_private::ConstString name) override;
+
   //===--------------------------------------------------------------------===//
   // RTTI support
   //===--------------------------------------------------------------------===//
@@ -104,6 +111,13 @@ public:
   static bool classof(const PersistentExpressionState *pv) {
     return pv->getKind() == classofKind();
   }
+
+private:
+  /// The execution units containing persisted symbols.
+  std::set<std::shared_ptr<JITExecutionUnit>> executionUnits;
+
+  /// The addresses of the symbols in executionUnits.
+  llvm::StringMap<lldb::addr_t> symbolMap;
 };
 } // namespace M::KGEN::Mojo
 

@@ -6,6 +6,7 @@
 
 #include "MojoExpressionParser.h"
 #include "../TypeSystem/MojoTypeSystem.h"
+#include "JITExecutionUnit.h"
 #include "KGEN/CompilerRT.h"
 #include "KGEN/KGENCompiler.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -40,6 +41,9 @@ struct MojoExpressionParser::Impl {
   Impl(ExecutionContextScope *exeScope, Expression &expr,
        const EvaluateExpressionOptions &options);
 
+  /// The expression being parsed.
+  Expression &expr;
+
   /// The type system associated with the evaluation of the current expression.
   MojoTypeSystem *typeSystem = nullptr;
 
@@ -64,9 +68,6 @@ struct MojoExpressionParser::Impl {
   /// The compiled llvm module.
   std::unique_ptr<llvm::Module> llvmModule;
 
-  /// The expression to be parsed.
-  Expression &exprToParse;
-
   /// The options to use when evaluating the expression.
   EvaluateExpressionOptions options;
 
@@ -78,7 +79,7 @@ struct MojoExpressionParser::Impl {
 MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
                                  Expression &expr,
                                  const EvaluateExpressionOptions &options)
-    : exprToParse(expr), options(options) {
+    : expr(expr), options(options) {
   // Bail out if we don't have a valid execution context.
   lldb::TargetSP target = exeScope ? exeScope->CalculateTarget() : nullptr;
   if (!target)
@@ -165,28 +166,28 @@ static void handleDiagnostic(const llvm::SMDiagnostic &diagnostic, void *ctx) {
 MojoExpressionParser::MojoExpressionParser(
     ExecutionContextScope *exeScope, Expression &expr,
     const EvaluateExpressionOptions &options)
-    : ExpressionParser(exeScope, expr, options.GetGenerateDebugInfo()),
-      impl(std::make_unique<Impl>(exeScope, expr, options)) {}
+    : impl(std::make_unique<Impl>(exeScope, expr, options)) {}
 MojoExpressionParser::~MojoExpressionParser() = default;
 
 /// Apply fixits in the diagnostic manager to `expr` and set the fixed
 /// expression to the new text. Only if all diagnostics (a) have fix-its and (b)
 /// they can all be applied, will this rewrite the text. It will otherwise
 /// return false.
-bool MojoExpressionParser::RewriteExpression(
-    DiagnosticManager &diagnosticManager) {
+LogicalResult
+MojoExpressionParser::rewriteExpression(DiagnosticManager &diagnosticManager) {
   MOJO_EXPR_LOG("Found {0} diagnostic{1}",
                 diagnosticManager.Diagnostics().size(),
                 diagnosticManager.Diagnostics().size() == 1 ? "" : "s");
-  StringRef originalText(impl->exprToParse.Text());
+  StringRef originalText(impl->expr.Text());
+
   // This takes advantage of the fact that fixits are ordered to apply multiple
   // fixits to a single expression.
   std::string newText;
   size_t prevEnd = 0;
-  auto applyFixit = [&](const llvm::SMFixIt &fixit) -> bool {
+  auto applyFixit = [&](const llvm::SMFixIt &fixit) -> LogicalResult {
     llvm::SMRange range = fixit.getRange();
     if (!range.isValid())
-      return false;
+      return failure();
 
     StringRef removedText(range.Start.getPointer(),
                           range.End.getPointer() - range.Start.getPointer());
@@ -211,7 +212,7 @@ bool MojoExpressionParser::RewriteExpression(
     // remaining substring. Subtract off the size of the inserted text because
     // the pointers are all indexed off the original text.
     prevEnd += range.End.getPointer() - currentOriginalRange.begin();
-    return true;
+    return success();
   };
 
   bool allDiagsHandled = true;
@@ -223,7 +224,7 @@ bool MojoExpressionParser::RewriteExpression(
     // fails, return false. Otherwise, continue.
     if (const auto *mojoDiag = llvm::dyn_cast<MojoDiagnostic>(diag.get())) {
       for (const llvm::SMFixIt &fixit : mojoDiag->getFixIts()) {
-        if (!applyFixit(fixit)) {
+        if (failed(applyFixit(fixit))) {
           allDiagsHandled = false;
           break;
         }
@@ -247,7 +248,7 @@ bool MojoExpressionParser::RewriteExpression(
     MOJO_EXPR_LOG("Unhandled diagnostics found!");
   }
 
-  return allDiagsHandled;
+  return success(allDiagsHandled);
 }
 
 M::LogicalResult
@@ -272,8 +273,7 @@ MojoExpressionParser::parse(DiagnosticManager &diagnosticManager) {
   // TODO: We should print the expression to a file if we need debug information
   // attached.
   StringRef moduleName = "__lldb_module__";
-  auto buffer =
-      llvm::MemoryBuffer::getMemBuffer(impl->exprToParse.Text(), moduleName);
+  auto buffer = llvm::MemoryBuffer::getMemBuffer(impl->expr.Text(), moduleName);
   impl->sourceManager.AddNewSourceBuffer(std::move(buffer), llvm::SMLoc());
 
   // Set the diagnostic handler to create MojoDiagnostics that we can use to
@@ -366,10 +366,10 @@ MojoExpressionParser::parse(DiagnosticManager &diagnosticManager) {
   return KGEN::runLLVMOptPasses(*impl->llvmModule, **targetMachineOr);
 }
 
-Status MojoExpressionParser::PrepareForExecution(
+Status MojoExpressionParser::prepareForExecution(
     lldb::addr_t &funcAddr, lldb::addr_t &funcEnd,
-    lldb::IRExecutionUnitSP &executionUnit, ExecutionContext &exeCtx,
-    bool &canInterpret, ExecutionPolicy executionPolicy) {
+    std::shared_ptr<JITExecutionUnit> &executionUnit, ExecutionContext &exeCtx,
+    ExecutionPolicy executionPolicy) {
   // Grab the LLVM module built during the parse phase.
   std::unique_ptr<llvm::Module> module = std::move(impl->llvmModule);
   if (!module) {
@@ -391,14 +391,13 @@ Status MojoExpressionParser::PrepareForExecution(
   std::vector<std::string> features(splitFeatures.begin(), splitFeatures.end());
 
   // Build the IR execution unit responsible for executing the generated IR.
-  ConstString functionName(m_expr.FunctionName());
-  executionUnit =
-      std::make_shared<IRExecutionUnit>(impl->llvmContext, module, functionName,
-                                        exeCtx.GetTargetSP(), sc, features);
+  ConstString functionName(impl->expr.FunctionName());
+  executionUnit = std::make_shared<JITExecutionUnit>(
+      impl->llvmContext, module, functionName, exeCtx.GetTargetSP(), sc,
+      features);
 
   // Extract the function information for the expression entry point.
-  Status error;
-  executionUnit->GetRunnableInfo(error, funcAddr, funcEnd);
+  Status error = executionUnit->getRunnableInfo(funcAddr, funcEnd);
   if (error.Fail())
     return error;
 
@@ -437,7 +436,7 @@ Status MojoExpressionParser::PrepareForExecution(
     assert(var && "expected valid variable in persistent state");
 
     // Try adding the variable to the expression materializer.
-    m_expr.GetMaterializer()->AddPersistentVariable(var, nullptr, error);
+    impl->expr.GetMaterializer()->AddPersistentVariable(var, nullptr, error);
     if (error.Fail())
       return error;
   }

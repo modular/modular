@@ -7,8 +7,8 @@
 #ifndef KGEN_LIB_MOJOLLDB_EXPRESSIONPARSER_MOJOEXPRESSIONPARSER_H
 #define KGEN_LIB_MOJOLLDB_EXPRESSIONPARSER_MOJOEXPRESSIONPARSER_H
 
+#include "JITExecutionUnit.h"
 #include "Support/LLVMCompilerForwardDecls.h"
-#include "lldb/Expression/ExpressionParser.h"
 
 namespace M::KGEN::LIT {
 class FuncOp;
@@ -16,24 +16,24 @@ class StructDeclOp;
 } // namespace M::KGEN::LIT
 
 namespace M::KGEN::Mojo {
-class MojoExpressionParser : public lldb_private::ExpressionParser {
+class MojoExpressionParser {
 public:
   MojoExpressionParser(lldb_private::ExecutionContextScope *exeScope,
                        lldb_private::Expression &expr,
                        const lldb_private::EvaluateExpressionOptions &options);
-  ~MojoExpressionParser() override;
+  ~MojoExpressionParser();
 
   /// Attempt to find possible command line completions for the given
   /// expression.
-  bool Complete(lldb_private::CompletionRequest &request, unsigned line,
-                unsigned pos, unsigned typedPos) override {
-    return false;
+  LogicalResult complete(lldb_private::CompletionRequest &request,
+                         unsigned line, unsigned pos, unsigned typedPos) {
+    return failure();
   }
 
   /// Rewrite the expression using the fix-its contained in the diagnostic
-  /// manager. Returns true if any edits occurred, false if not.
-  bool RewriteExpression(
-      lldb_private::DiagnosticManager &diagnosticManager) override;
+  /// manager.
+  LogicalResult
+  rewriteExpression(lldb_private::DiagnosticManager &diagnosticManager);
 
   /// Parse a single expression and convert it to IR.
   LogicalResult parse(lldb_private::DiagnosticManager &diagnosticManager);
@@ -41,11 +41,10 @@ public:
   /// Ready an already-parsed expression for execution, possibly evaluating it
   /// statically.
   lldb_private::Status
-  PrepareForExecution(lldb::addr_t &funcAddr, lldb::addr_t &funcEnd,
-                      lldb::IRExecutionUnitSP &executionUnit,
+  prepareForExecution(lldb::addr_t &funcAddr, lldb::addr_t &funcEnd,
+                      std::shared_ptr<JITExecutionUnit> &executionUnit,
                       lldb_private::ExecutionContext &exeCtx,
-                      bool &canInterpret,
-                      lldb_private::ExecutionPolicy executionPolicy) override;
+                      lldb_private::ExecutionPolicy executionPolicy);
 
 private:
   //===--------------------------------------------------------------------===//
