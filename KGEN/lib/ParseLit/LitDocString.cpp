@@ -303,6 +303,7 @@ private:
       switch (*convention) {
       case ValueInputConvention::ByRef:
       case ValueInputConvention::ByRefResult:
+      case ValueInputConvention::InitSelf:
         // TODO: This is probably wrong for ByRefResult?
         astType = astType.getPointerElementType();
         typeSuffix = "&";

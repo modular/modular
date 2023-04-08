@@ -494,15 +494,6 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
     return success();
   }
 
-  // If this is a return in an __init__ then the operand must be none, and we
-  // ignore it because the return slot is already set up.
-  if (containingDecl.isInitFnWithByRefResultSelf) {
-    if (operandExprs.size() != 1 ||
-        operandExprs[0]->kind != ExprNode::kNoneLiteral)
-      emitError(loc, "may only return None from an `__init__`");
-    return success();
-  }
-
   auto emitter = getEmitter();
 
   // Materialize the expression values into IR.

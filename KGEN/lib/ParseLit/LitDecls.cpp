@@ -655,11 +655,12 @@ struct ParsedArgument {
   SMLoc loc;
   // Specify argument passing convention, e.g. owned/byref etc.
   enum {
-    kConventionUnspec = 0,      // Nothing specified
-    kConventionByRef = 1,       // x&
-    kConventionOwned = 2,       // owned x
-    kConventionBorrowed = 3,    // borrowed x
-    kConventionByRefResult = 4, // No syntax: created by type checker.
+    kConventionUnspec = 0,         // Nothing specified
+    kConventionByRef = 1,          // x&
+    kConventionOwned = 2,          // owned x
+    kConventionBorrowed = 3,       // borrowed x
+    kConventionByRefResult = 4,    // No syntax: result slot
+    kConventionInitSelfResult = 5, // No syntax: __init__(self&) argument
   } convention = kConventionUnspec;
 
   // After type checking, this will hold the KGEN convention to use.
@@ -1111,43 +1112,48 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
 
   // If this definition is a struct/class member, compute the self type.
   ASTType selfType;
-  size_t selfArgNumber = 0;
+  ssize_t selfArgNumber = -1;
   if (auto *parentDecl = decl.getParentDecl())
     if (isa<StructDeclOp>(*parentDecl)) {
       // The parent decl must be fully resolved in order to resolve any members
       // of it.
       assert(parentDecl->resolvedness == DeclResolvedness::fully);
       selfType = parentDecl->getSelfType();
-      // If there is an in-memory result, self is passed as arg #1.
-      if (hasMemoryResult)
-        selfArgNumber = 1;
+      // If there is an in-memory result, self is passed as arg #1 otherwise #0.
+      selfArgNumber = hasMemoryResult ? 1 : 0;
     }
 
-  // __init__ has two modes: one that takes self mutably to fill in its members,
-  // and one that returns self by value.  In the former case, the first/self
-  // argument must be declared as a by-ref argument, but we need to promote it
-  // to ByRefResult since it is not initialized coming in.
-  if (fnInfo.kind == SpecialFunctionKind::kInit &&
-      resultType.isEqualCanon(shared.getNoneType()) && !hasMemoryResult &&
-      !args.empty() && selfType) {
-    SMLoc selfArgLoc = args[0].loc;
-    if (ASTType(selfType).isRegisterPassable(selfArgLoc, shared)) {
-      emitErrorLoc(selfArgLoc, "'__init__' with mutable self is not supported "
-                               "on register_passable types yet");
+  // __init__ is weird - for memory-primary results we define init in convention
+  // Python style, but for @register_passable values, we return it. In the
+  // former case, the first/self argument must be declared as a by-ref argument,
+  // but we need to change it to InitSelf since it is not initialized coming in.
+  if (fnInfo.kind == SpecialFunctionKind::kInit && selfType) {
+    if (ASTType(selfType).isRegisterPassable(decl.getLoc(), shared)) {
+      if (!resultType.isEqualCanon(selfType))
+        emitError("'__init__' on register_passable type must return Self");
+
+      // This form of __init__ is implicitly static, it doesn't take a 'self'.
+      funcOp.setIsStatic(true);
+    } else if (args.empty()) {
+      emitError("'__init__' requires a self argument");
     } else {
-      // Check that it was declared with & correctly, if not emit a fixit hint.
+      SMLoc selfArgLoc = args[0].loc;
+      // __init__ must take their self argument by-ref syntactically.
       if (args[0].convention != ParsedArgument::kConventionByRef) {
-        auto diag = emitErrorLoc(
-            selfArgLoc,
-            "'self' in struct '__init__' must be passed as mutable reference");
+        auto diag =
+            emitErrorLoc(selfArgLoc, "'self' in struct '__init__' must be "
+                                     "passed as mutable reference");
         if (args[0].convention == ParsedArgument::kConventionUnspec)
           diag << LitFixIt::insertAfterToken(selfArgLoc, "&", shared);
       }
 
-      // Regardless force it to byref-result so recovery follows the fix-it.
-      args[0].convention = ParsedArgument::kConventionByRefResult;
-      decl.isInitFnWithByRefResultSelf = true;
-      hasMemoryResult = true;
+      // Regardless force it to init_self so recovery follows the fix-it.
+      args[0].convention = ParsedArgument::kConventionInitSelfResult;
+
+      // Verify the self type is unspecified or correct.
+      if (argTypes[0] && !selfType.isEqualCanon(argTypes[0]))
+        emitErrorLoc(selfArgLoc, "")
+            << args[0].name << " incorrect Self type, expected " << selfType;
     }
   }
 
@@ -1156,7 +1162,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
   for (auto [arg, type] : llvm::zip(args, argTypes)) {
     if (!type) {
       // If this is the 'self' argument in a struct, default the type to Self.
-      if (size_t(&arg - &args[0]) == selfArgNumber && selfType &&
+      if (&arg - &args[0] == selfArgNumber && selfType &&
           !funcOp.getIsStatic()) {
         type = selfType;
       } else if (funcOp.getIsDef()) {
@@ -1194,7 +1200,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
 
   // Check that the 'self' argument of a method was specified correctly.
   if (selfType && !funcOp.getIsStatic()) {
-    if (selfArgNumber >= argTypes.size()) {
+    if (selfArgNumber >= ssize_t(argTypes.size())) {
       // TODO: We can/should relax this for 'def' declarations in the future,
       // they should be able to implicit ignore arguments like Python does.
       emitError("self argument must be present in instance method");
@@ -1215,7 +1221,8 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
 
   // Verify the operand count lines up.
   if (fnInfo.numOperands != -1 &&
-      size_t(fnInfo.numOperands + selfArgNumber) != args.size()) {
+      fnInfo.numOperands + std::max(selfArgNumber, ssize_t(0)) !=
+          ssize_t(args.size())) {
     size_t numOperands = fnInfo.numOperands;
     emitError("special function must have ")
         << numOperands << " operand" << plural(numOperands);
@@ -1226,7 +1233,10 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
     if (!selfType) {
       emitError("special function must be a method");
     } else if (funcOp.getIsStatic()) {
-      emitError("special method may not be a static method");
+      // kInit is sometimes static, sometimes a method, depending on whether it
+      // is register passable.
+      if (fnInfo.kind != SpecialFunctionKind::kInit)
+        emitError("special method may not be a static method");
     } else if (fnInfo.requiresOwnedSelfInstMethod()) {
       if (args[selfArgNumber].convention != ParsedArgument::kConventionOwned) {
         emitErrorLoc(args[selfArgNumber].loc, "self argument must be 'owned'")
@@ -1314,6 +1324,10 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
       break;
     case ParsedArgument::kConventionByRefResult:
       arg.kgenConvention = ValueInputConvention::ByRefResult;
+      mangledName += "=&";
+      break;
+    case ParsedArgument::kConventionInitSelfResult:
+      arg.kgenConvention = ValueInputConvention::InitSelf;
       mangledName += "=&";
       break;
     }
@@ -1746,8 +1760,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
     // the argument types referenced are not necessarily fully resolved.  We
     // create the decls here in order to pass location information for each
     // argument over to body resolution.
-    if (arg.kgenConvention != ValueInputConvention::ByRefResult ||
-        decl.isInitFnWithByRefResultSelf)
+    if (arg.kgenConvention != ValueInputConvention::ByRefResult)
       addDecl(DeclIRValue(), arg.loc, arg.name, &decl, LitLexerCursor(),
               LitLexerCursor(), /*indent*/ 0);
   }
@@ -1848,10 +1861,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, LitLexer &lexer,
                  funcSignature.getValueInputConventions())) {
 
     // Don't bind byref-result, it is handled specially by 'return'.
-    if (convention == ValueInputConvention::ByRefResult &&
-        // The self argument to __init__ is special, it is explicitly
-        // visible in the function but is byref-result.
-        !decl.isInitFnWithByRefResultSelf)
+    if (convention == ValueInputConvention::ByRefResult)
       continue;
 
     // Figure out which decl corresponds to this argument so we can finish it.
@@ -1914,15 +1924,12 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, LitLexer &lexer,
     // Arguments passed by-reference can be directly used.
     case ValueInputConvention::ByRef:
     case ValueInputConvention::ByRefResult:
-      argIRValue = SLValue(bbArg);
-      break;
-
-    case ValueInputConvention::OwnedInMem: {
+    case ValueInputConvention::InitSelf:
+    case ValueInputConvention::OwnedInMem:
       // OwnedInMem passes ownership of the argument into the callee so we
       // can directly mutate it if we want to.
       argIRValue = SLValue(bbArg);
       break;
-    }
 
     case ValueInputConvention::OwnedInReg:
       argIRValue = makeArgLValueVarSlot(SRValue(bbArg));
@@ -1960,14 +1967,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, LitLexer &lexer,
   if (LitParserBase::parseSuite(decl, lexer))
     return failure();
 
-  // If this is an init with an explicit self, emit a "return None" to cap off
-  // the end of the function.
   auto loc = funcOp.getLoc();
-  if (decl.isInitFnWithByRefResultSelf) {
-    Value result =
-        builder.create<ParamConstantOp>(loc, builder.getAttr<LIT::NoneAttr>());
-    builder.create<LIT::ReturnOp>(loc, result);
-  }
 
   // Create a placeholder result bind op if the function has result parameters.
   ArrayRef<ParamDeclAttr> resultParams = funcOp.getResultParams();

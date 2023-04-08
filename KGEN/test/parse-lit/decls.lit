@@ -347,8 +347,8 @@ struct VaList[EltType: __mlir_type.`!kgen.mlirtype`]:
   fn __copy__(self) -> Self:
     return Self{value: self.value}
 
-  fn __init__(value: StorageType) -> VaList[EltType]:
-    return Self{value: value}
+  fn __init__(self&, value: StorageType):
+    self.value = value
 
   fn size(self) -> __mlir_type.index:
     return __mlir_op.`pop.variadic.size`(self.value)
@@ -368,12 +368,12 @@ fn variadics(*a: Int):
 fn parameterizedVariadic[T: __mlir_type.`!kgen.mlirtype`](*args: T): pass
 
 struct ParameterizedStruct[T: __mlir_type.`!kgen.mlirtype`]:
-    fn __init__(*args: T) -> Self:
-        return Self {}
+    fn __init__(self&, *args: T):
+      pass
 
 struct VarArgsParameterizedStruct[*Is: Int]:
-    fn __init__() -> Self:
-        return Self {}
+    fn __init__(self&):
+        pass
 
 # CHECK-LABEL: lit.func @"callVariadic
 fn callVariadic[p: Int](x: Int):
@@ -409,8 +409,8 @@ fn callVariadic[p: Int](x: Int):
 struct Tuple[*Ts: __mlir_type.`!kgen.mlirtype`]:
     var elements: __mlir_type[`!pop.pack<`, Ts, `>`]
 
-    fn __init__(*args: *Ts) -> Self:
-        return Self { elements: args }
+    fn __init__(self&, *args: *Ts):
+        self.elements = args
 
 # CHECK-LABEL: lit.func @"pack(__mlir_type.!pop.pack<Ts>)"<Ts: variadic<!kgen.mlirtype>>(%args: !pop.pack<Ts>)
 fn pack[*Ts: __mlir_type.`!kgen.mlirtype`](owned *args: *Ts):
@@ -518,7 +518,7 @@ struct StructWithInit:
   var y: Int
 
   # CHECK: lit.func @"__init__($decls::StructWithInit=&,$Int::Int)"
-  # CHECK-SAME: (%self: !pop.pointer<@"$decls"::@StructWithInit> byref_result,
+  # CHECK-SAME: (%self: !pop.pointer<@"$decls"::@StructWithInit> init_self,
   fn __init__(self&, a: Int):
     # CHECK: %0 = lit.struct.gep %self[x]
     # CHECK: pop.store %a, %0
@@ -534,32 +534,31 @@ struct StructWithInit:
 
   # Not very useful, but this form also works, so test it.
   # CHECK: lit.func @"__init__
-  # CHECK-SAME: (%__result__: !pop.pointer<@"$decls"::@StructWithInit> byref_result
-  fn __init__(a: Int, b: Int) -> Self:
+  # CHECK-SAME: (%self: !pop.pointer<@"$decls"::@StructWithInit> init_self,
+  fn __init__(self&, a: Int, b: Int):
     # CHECK: hlcf.if
     if a == b:
-      # CHECK:  kgen.call {{.*}}__init__{{.*}}(%__result__, %a)
-      # CHECK: lit.return %3
-      return StructWithInit(a)
+      # CHECK:  kgen.call {{.*}}__init__{{.*}}(%self, %a)
+      self = StructWithInit(a)
     else:
 
-      # CHECK: [[XP:%.*]] = lit.struct.gep %__result__[x]
+      # CHECK: [[XP:%.*]] = lit.struct.gep %self[x]
       # CHECK: pop.store %a, [[XP]]
-      # CHECK: [[YP:%.*]] = lit.struct.gep %__result__[y]
+      # CHECK: [[YP:%.*]] = lit.struct.gep %self[y]
       # CHECK: pop.store %b, [[YP]]
-      return StructWithInit{x: a, y: b}
+      self.x = a
+      self.y = b
 
-  fn __init__() -> Self:
-    return Self(0)
+  fn __init__(self&):
+    self = Self(0)
 
 # CHECK-LABEL: lit.struct.decl @StructExample
 @register_passable
 struct StructExample:
   fn __copy__(self) -> Self:
-    return Self{}
+    return Self()
 
-  fn __init__() -> StructExample:
-    return Self {}
+  fn __init__() -> Self: return Self{}
 
   # CHECK: lit.func @"static($Int::Int)"(%x: !kgen.declref<@"$Int"::@Int> borrow) -> !lit.none attributes {isStatic} {
   @staticmethod
@@ -584,6 +583,21 @@ fn callStatic(a: Int):
   # CHECK: kgen.call @"$decls"::@StructExample::@"static{{.*}}(%a)
   StructExample().static(a)
 
+# CHECK-LABEL: lit.struct.decl @DelegatingInitMem
+# Issue #12042
+struct DelegatingInitMem:
+  var value: Int
+
+  # CHECK: lit.func @"__init__{{.*}}(%self
+  fn __init__(self&, value: Bool):
+    # CHECK: x
+    # CHECK: kgen.call @{{.*}}__init__{{.*}}(%self, %0)
+    self.__init__(42)
+
+  fn __init__(self&, value: Int):
+    self.value = value
+
+
 ##===----------------------------------------------------------------------===##
 # async/await
 ##===----------------------------------------------------------------------===##
@@ -607,8 +621,8 @@ async fn call_struct_async(f: StructWithAsync):
     _ = f.do_something()
 
 struct Awaitable:
-  fn __init__() -> Awaitable:
-    return Awaitable{}
+  fn __init__(self&):
+    pass
 
   fn __await__(self&) -> Int:
     return 0

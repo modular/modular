@@ -18,12 +18,10 @@ struct my_iter_no_len:
     fn __copy__(self) -> Self:
         return Self {start: self.start, end: self.end, list: self.list}
 
-    fn __init__(list: MyList_range_no_len) -> my_iter_no_len:
-        var result: my_iter_no_len
-        result.start = 0
-        result.end = list.size
-        result.list = list
-        return result
+    fn __init__(self&, list: MyList_range_no_len):
+        self.start = 0
+        self.end = list.size
+        self.list = list
 
     fn __next__(self&: my_iter_no_len) -> Int:
         let result: Int = self.start
@@ -38,11 +36,9 @@ struct MyList_range_no_len:
     fn __copy__(self) -> Self:
         return Self {start: self.start, size: self.size}
 
-    fn __init__(ptr: Pointer[Int], size: Int) -> MyList_range_no_len:
-        var result: MyList_range_no_len
-        result.start = ptr
-        result.size = size
-        return result
+    fn __init__(self&, ptr: Pointer[Int], size: Int):
+        self.start = ptr
+        self.size = size
 
     fn __setitem__(self, idx: Int, val: Int):
         let ptr = self.start + idx
@@ -64,12 +60,10 @@ struct my_iter_no_next:
     fn __copy__(self) -> Self:
         return Self {start: self.start, end: self.end, list: self.list}
 
-    fn __init__(list: MyList_range_no_next) -> my_iter_no_next:
-        var result: my_iter_no_next
-        result.start = 0
-        result.end = list.size
-        result.list = list
-        return result
+    fn __init__(self&, list: MyList_range_no_next):
+        self.start = 0
+        self.end = list.size
+        self.list = list
 
     fn __len__(self: my_iter_no_next) -> Int:
         if self.start < self.end:
@@ -84,11 +78,9 @@ struct MyList_range_no_next:
     fn __copy__(self) -> Self:
         return Self {start: self.start, size: self.size}
 
-    fn __init__(ptr: Pointer[Int], size: Int) -> MyList_range_no_next:
-        var result: MyList_range_no_next
-        result.start = ptr
-        result.size = size
-        return result
+    fn __init__(self&, ptr: Pointer[Int], size: Int):
+        self.start = ptr
+        self.size = size
 
     fn __setitem__(self, idx: Int, val: Int):
         let ptr = self.start + idx
@@ -109,11 +101,9 @@ struct MyList_no_iter:
     fn __copy__(self) -> Self:
         return Self {start: self.start, size: self.size}
 
-    fn __init__(ptr: Pointer[Int], size: Int) -> MyList_no_iter:
-        var result: MyList_no_iter
-        result.start = ptr
-        result.size = size
-        return result
+    fn __init__(self&, ptr: Pointer[Int], size: Int):
+        self.start = ptr
+        self.size = size
 
     fn __setitem__(self, idx: Int, val: Int):
         let ptr = self.start + idx
@@ -146,12 +136,10 @@ struct my_iter_wrong_int:
     fn __copy__(self) -> Self:
         return Self {start: self.start, end: self.end, list: self.list}
 
-    fn __init__(list: MyList_invalid_boxed_type) -> my_iter_wrong_int:
-        var result: my_iter_wrong_int
-        result.start = 0
-        result.end = list.size
-        result.list = list
-        return result
+    fn __init__(self&, list: MyList_invalid_boxed_type):
+        self.start = 0
+        self.end = list.size
+        self.list = list
 
     fn __next__(self&: my_iter_wrong_int) -> Int:
         let result: Int = self.start
@@ -171,11 +159,9 @@ struct MyList_invalid_boxed_type:
     fn __copy__(self) -> Self:
         return Self {start: self.start, size: self.size}
 
-    fn __init__(ptr: Pointer[Int], size: Int) -> MyList_invalid_boxed_type:
-        var result: MyList_invalid_boxed_type
-        result.start = ptr
-        result.size = size
-        return result
+    fn __init__(self&, ptr: Pointer[Int], size: Int):
+        self.start = ptr
+        self.size = size
 
     fn __setitem__(self, idx: Int, val: Int):
         let ptr = self.start + idx

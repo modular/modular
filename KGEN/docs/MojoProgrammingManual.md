@@ -720,24 +720,30 @@ struct Int:
 ```
 
 
-This decorator does not change the fundamental behavior of a type: it still needs to have a `__copy__` method to be copyable, may still have a `__init__` and `__del__` methods, etc. The major effect of this decorator is on internal implementation details:  `@register_passable` types are typically passed in machine registers (subject to the details of the underlying architecture of course).
+This decorator does not change the fundamental behavior of a type: it still
+needs to have a `__copy__` method to be copyable, may still have a `__init__`
+and `__del__` methods, etc. The major effect of this decorator is on internal
+implementation details:  `@register_passable` types are typically passed in
+machine registers (subject to the details of the underlying architecture of
+course).
 
 There are only a few observable effects of this decorator to the typical Mojo programmer:
 
-
-
-1. `@register_passable` types are not being able to hold instances of types that are not themselves `@register_passable`.
-2. instances of `@register_passable` types do not have predictable identity, and so the ‘self’ pointer is not stable/predictable (e.g. in hash tables).
-3. `@register_passable `arguments and result are exposed to C and C++ directly, instead of being passed by-pointer.
+1. `@register_passable` types are not being able to hold instances of types that
+   are not themselves `@register_passable`.
+2. instances of `@register_passable` types do not have predictable identity, and
+   so the ‘self’ pointer is not stable/predictable (e.g. in hash tables).
+3. `@register_passable `arguments and result are exposed to C and C++ directly,
+   instead of being passed by-pointer.
+4. The `__init__` method of this type returns its result by-value instead of
+   taking `self&`.
 
 We expect that this decorator will be used pervasively on core standard library types, but is safe to ignore for general application level code.
 
 
 ### How ‘`def`’ argument passing works
 
-Argument passing in `def` functions is quite simple:
-
-
+Argument passing in `def` functions is sugar for argument passing in `fn`:
 
 1. If there is no explicit type annotation, the compiler defaults to type `Object `(which is currently just stubbed out, it isn’t particularly useful yet).
 2. Arguments with explicit markers (e.g. by reference) obey their marker.
