@@ -2369,9 +2369,11 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, LitLexer &lexer,
 
   // Now that the struct body has been resolved, check to see if there is a
   // destructor and install it if so.
-  if (auto dtorAttr = ExprEmitter::lookupDestructor(decl.getSelfType(),
-                                                    decl.getLoc(), shared))
-    structOp.setDestructorAttr(dtorAttr);
+  if (!decl.hasReferenceError) {
+    if (auto dtorAttr = ExprEmitter::lookupDestructor(decl.getSelfType(),
+                                                      decl.getLoc(), shared))
+      structOp.setDestructorAttr(dtorAttr);
+  }
 
   return success();
 }

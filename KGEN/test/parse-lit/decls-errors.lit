@@ -529,3 +529,9 @@ def func_overloaded(x: Int):
 @export
 def func_overloaded(x: Bool):
   ...
+
+
+# Issue #12090
+from Pointer import DTypePointer # expected-note {{previous definition here}}
+struct DTypePointer: # expected-error {{invalid redefinition of 'DTypePointer'}}
+    pass
