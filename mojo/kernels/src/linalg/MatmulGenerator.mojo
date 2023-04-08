@@ -4,8 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Assert import assert_param_bool, debug_assert
-
+from Assert import assert_param, debug_assert
 from Buffer import (
     NDBuffer,
     Buffer,
@@ -750,13 +749,13 @@ struct MicroKernelInterface[
         state before applying the current action.
         """
         # This micro-kernel needs b to be packed, and a, c not packed.
-        assert_param_bool[static_state.b_packed]()
-        assert_param_bool[static_state.a_packed == False]()
-        assert_param_bool[static_state.c_packed == False]()
+        assert_param[static_state.b_packed]()
+        assert_param[static_state.a_packed == False]()
+        assert_param[static_state.c_packed == False]()
 
         # This micro-kernel requires constant tile size on the M and N dimension
         #  for register blocking.
-        assert_param_bool[static_state.static_gemm_shape.M.has_value()]()
+        assert_param[static_state.static_gemm_shape.M.has_value()]()
 
         # Calculate inner size on the packed layout.
         alias inner_size = static_state.static_data_layout.pack_b_inner_size
@@ -1044,7 +1043,7 @@ struct MatmulGenerator[
         # Dynamic tile shouldn't be applied to a dimension that's already
         #  static-shaped. Currently they do not yet compose.
         # Could add support if needed.
-        assert_param_bool[
+        assert_param[
             not static_state.static_gemm_shape[
                 current_action.tiled_dimension
             ].has_value()

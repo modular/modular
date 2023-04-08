@@ -10,7 +10,7 @@
 #
 # ===----------------------------------------------------------------------===#
 
-from Assert import assert_param, assert_param_bool
+from Assert import assert_param, assert_param
 
 from Buffer import NDBuffer
 from DType import DType
@@ -302,7 +302,7 @@ struct amx_detail:
             ]
         ]()
         # The type must be f32.
-        assert_param_bool[type == DType.f32]()
+        assert_param[type == DType.f32]()
 
         # make the y offset field
         #  shift left by 6 to make this an offset in rows,
@@ -359,7 +359,7 @@ struct amx_detail:
             ]
         ]()
         # The type must be f32.
-        assert_param_bool[type == DType.f32]()
+        assert_param[type == DType.f32]()
 
         let is_row_mode = __mlir_attr[
             `#kgen.param.expr<eq,`,

@@ -6,9 +6,8 @@
 
 from Assert import (
     assert_param,
-    assert_param_bool,
     debug_assert,
-    assert_param_bool_msg,
+    assert_param_msg,
 )
 from DType import DType
 from Buffer import (
@@ -441,7 +440,7 @@ struct PackMatrixRows[
                 amount of valid data on the global buffer starting from the
                 offset.
         """
-        assert_param_bool[row_inner_size % simd_size == 0]()
+        assert_param[row_inner_size % simd_size == 0]()
 
         let instance = Self {
             packed_matrix: packed_matrix,
@@ -670,7 +669,7 @@ struct PackMatrixCols[
                 amount of valid data on the global buffer starting from the
                 offset.
         """
-        assert_param_bool[column_inner_size % simd_size == 0]()
+        assert_param[column_inner_size % simd_size == 0]()
         debug_assert(
             pack_tile_dim[1] % column_inner_size == 0,
             "Unimplemented tile pattern.",
@@ -1045,7 +1044,7 @@ struct MatmulInnerLoopBPacked[
                 coordinates within the current processing tile to index the
                 packed B matrix.
         """
-        assert_param_bool[a_col_size > 1]()
+        assert_param[a_col_size > 1]()
 
         # Seek outer indices in packed layout.
         let n_outer_idx = tile_n_k_idx[0] // pack_inner_size
@@ -1118,7 +1117,7 @@ struct MatmulInnerLoopBPacked[
                 coordinates within the current processing tile to index the
                 packed B matrix.
         """
-        assert_param_bool[a_col_size == 1]()
+        assert_param[a_col_size == 1]()
         # Seek outer indices in packed layout.
         let n_outer_idx = tile_n_k_idx[0] // pack_inner_size
 
@@ -1169,7 +1168,7 @@ struct MatmulInnerLoopBPacked[
         """Utility funcion on the inner loop. Run the inner kernel on the whole
         (a_row_size, TileN, TileK) tile.
         """
-        assert_param_bool[not has_neon()]()
+        assert_param[not has_neon()]()
         # Allocate accumulation buffer.
         var c_local = NDBuffer[
             2,
@@ -1198,7 +1197,7 @@ struct MatmulInnerLoopBPacked[
         """Utility funcion on the inner loop. Run the inner kernel on the whole
         (a_row_size, TileN, TileK) tile.
         """
-        assert_param_bool[has_neon()]()
+        assert_param[has_neon()]()
         # Allocate accumulation buffer.
         var c_local = NDBuffer[
             2,

@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Assert import assert_param, debug_assert, assert_param_bool
+from Assert import assert_param, debug_assert
 from Buffer import Buffer, NDBuffer
 from DType import DType
 from Functional import unroll
@@ -23,8 +23,8 @@ fn _transpose_inplace_4x4[
     cols: Int,
     type: DType,
 ](buf0: NDBuffer[2, create_dim_list(rows, cols), type]):
-    assert_param_bool[rows == 4]()
-    assert_param_bool[cols == 4]()
+    assert_param[rows == 4]()
+    assert_param[cols == 4]()
     var buf = rebind[
         NDBuffer[
             2,
@@ -75,8 +75,8 @@ fn _transpose_inplace_8x8[
     cols: Int,
     type: DType,
 ](buf0: NDBuffer[2, create_dim_list(rows, cols), type]):
-    assert_param_bool[rows == 8]()
-    assert_param_bool[cols == 8]()
+    assert_param[rows == 8]()
+    assert_param[cols == 8]()
     var buf = rebind[
         NDBuffer[
             2,
@@ -157,8 +157,8 @@ fn _transpose_inplace_16x16[
     cols: Int,
     type: DType,
 ](buf0: NDBuffer[2, create_dim_list(rows, cols), type]):
-    assert_param_bool[rows == 16]()
-    assert_param_bool[cols == 16]()
+    assert_param[rows == 16]()
+    assert_param[cols == 16]()
     var buf = rebind[
         NDBuffer[
             2,
@@ -313,7 +313,7 @@ fn transpose_inplace[
     type: DType,
 ](buf: NDBuffer[2, create_dim_list(rows, cols), type]):
     # Reject sizes covered by specialized implementations
-    assert_param_bool[rows == cols]()
+    assert_param[rows == cols]()
 
     @parameter
     if rows == 4:
@@ -358,7 +358,7 @@ fn _fill_strides[
 
     Note that `buf` is only used for querying its dimensions.
     """
-    assert_param_bool[rank > 0]()
+    assert_param[rank > 0]()
     strides[rank - 1] = 1
 
     @always_inline
