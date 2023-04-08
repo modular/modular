@@ -2355,8 +2355,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, LitLexer &lexer,
     if (registerPassability == StructDeclOp::RP_RegisterPassableTrivial) {
       auto rejectMemberIfPresent = [&](StringRef name) {
         auto nameAttr = StringAttr::get(getContext(), name);
-        auto member = decl.lookupInCurrentScope(nameAttr);
-        if (member)
+        if (auto member = decl.lookupInCurrentScope(nameAttr))
           emitError((*member)[0]->getLoc())
               << "'@register_passable(\"trivial\")' types may not have a "
               << nameAttr << " method";

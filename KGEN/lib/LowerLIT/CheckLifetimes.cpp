@@ -107,8 +107,10 @@ unsigned TypeDeclInfo::getNumFieldsInType(Type type) {
 
   // If not, we compute it recursively.  Structs cannot be infinitely deep, so
   // we can just do this recursively.
-  LIT::StructDeclOp decl = structMap[structSymbol];
-  assert(decl && "reference to struct that wasn't declared");
+  auto smIt = structMap.find(structSymbol);
+  assert(smIt != structMap.end() && smIt->second &&
+         "reference to struct that wasn't declared");
+  LIT::StructDeclOp decl = smIt->second;
 
   size_t totalFields = 0;
   for (auto field : decl.getFieldDecls()) {
@@ -368,6 +370,8 @@ struct ValueSet {
 
   /// Return the number of values we are tracking.
   MutableArrayRef<ValueInfo> getValueInfos() { return valueInfos; }
+  ValueInfo &getValueInfo(size_t idx) { return valueInfos[idx]; }
+  const ValueInfo &getValueInfo(size_t idx) const { return valueInfos[idx]; }
 
   /// Add a value to the set that we are tracking.  This includes:
   ///  * the MLIR representation for the value itself
@@ -489,9 +493,7 @@ private:
 static Type digIntoTypeAtFieldOffset(Type type, unsigned firstInvalidOffset,
                                      unsigned nextValidOffset,
                                      InFlightDiagnostic &diag,
-                                     ValueSet &valueSet) {
-  auto &typeDeclInfo = valueSet.typeDeclInfo;
-
+                                     TypeDeclInfo &typeDeclInfo) {
   // Dig into the type to get to the right field.
   while (firstInvalidOffset) {
     // To index into this type, it must be a DeclRef.
@@ -518,6 +520,44 @@ static Type digIntoTypeAtFieldOffset(Type type, unsigned firstInvalidOffset,
   return type;
 }
 
+/// When complaining about a specific value, check to see if the /entire/
+/// field-sensitive value is missing from the specified bitvector.  If not,
+/// add a suffix that identifies the first whole field that is missing.
+static void addBadValueNameToDiag(const LifetimeTrackable &trackable,
+                                  ValueRef valueRef, const BitVector &bits,
+                                  ValueSet &valueSet,
+                                  mlir::InFlightDiagnostic &diag) {
+  diag << "'" << trackable.name.str();
+  // If the whole value is missing, then don't add any field information.
+  if (valueRef.isAllMissing(bits)) {
+    diag << "'";
+    return;
+  }
+
+  // We know that something in valueRef is missing, but we don't know which
+  // piece.  Find the first bit in valueRef that isn't live.
+  unsigned firstMissingFieldNo =
+      std::min(unsigned(bits.find_next_unset(valueRef.startBit - 1U)),
+               valueRef.endBit - 1);
+  // Find the area of overlap so we complain about larger aggregates that are
+  // fully uninit, not tiny parts of them.
+  unsigned firstPresentFieldNo =
+      std::min(unsigned(bits.find_next(firstMissingFieldNo)), valueRef.endBit);
+
+  const ValueInfo &valueEntry = valueSet.getValueInfo(valueRef.valueId);
+
+  // Ok, the uninitialized thing is [firstMissingFieldNo, firstPresentFieldNo)
+  // so we want to figure out which sub-piece of the whole value type is the
+  // problem, and identify a path that drills down through each of the named
+  // fields.
+  auto type = trackable.getValueType(valueEntry.value);
+  // Emit the field prefix for the specified type.
+  digIntoTypeAtFieldOffset(type, firstMissingFieldNo - valueEntry.startValueBit,
+                           firstPresentFieldNo - valueEntry.startValueBit, diag,
+                           valueSet.typeDeclInfo);
+  diag << "'";
+}
+
 // Verify that the specified ValueRef is live at this point, diagnosing an
 // error at the specified operation if not.
 void UninitializedValueScan::checkLive(Operation &op, ValueRef valueRef) {
@@ -526,7 +566,7 @@ void UninitializedValueScan::checkLive(Operation &op, ValueRef valueRef) {
     return;
 
   // Ok, it isn't, gear up to see how to best report the error.
-  ValueInfo &valueEntry = valueSet.getValueInfos()[valueRef.valueId];
+  ValueInfo &valueEntry = valueSet.getValueInfo(valueRef.valueId);
   if (valueEntry.hasErrorDiagnosed)
     return; // Only report one error per symbolic value.
   valueEntry.hasErrorDiagnosed = true;
@@ -534,33 +574,11 @@ void UninitializedValueScan::checkLive(Operation &op, ValueRef valueRef) {
   LifetimeTrackable trackable(valueEntry.value);
   assert(trackable && "value should be tracked");
 
-  auto diag = mlir::emitError(op.getLoc(), "use of uninitialized value '")
-              << trackable.name.str();
+  auto diag = mlir::emitError(op.getLoc(), "use of uninitialized value ");
 
   // If some fields are present and others are missing, complain about the first
   // whole field that is missing.
-  if (!valueRef.isAllMissing(liveValues)) {
-    // We know that something in valueRef is missing, but we don't know which
-    // piece.  Find the first bit in valueRef that isn't live.
-    unsigned firstMissingFieldNo =
-        liveValues.find_next_unset(valueRef.startBit - 1U);
-    // Find the area of overlap so we complain about larger aggregates that are
-    // fully uninit, not tiny parts of them.
-    unsigned firstPresentFieldNo = std::min(
-        unsigned(liveValues.find_next(firstMissingFieldNo)), valueRef.endBit);
-
-    // Ok, the uninitialized thing is [firstMissingFieldNo, firstPresentFieldNo)
-    // so we want to figure out which sub-piece of the whole value type is the
-    // problem, and identify a path that drills down through each of the named
-    // fields.
-    auto type = trackable.getValueType(valueEntry.value);
-    // Emit the field prefix for the specified type.
-    digIntoTypeAtFieldOffset(
-        type, firstMissingFieldNo - valueEntry.startValueBit,
-        firstPresentFieldNo - valueEntry.startValueBit, diag, valueSet);
-  }
-
-  diag << "'";
+  addBadValueNameToDiag(trackable, valueRef, liveValues, valueSet, diag);
 
   diag.attachNote(valueEntry.value.getLoc())
       << "'" << trackable.name.str() << "' declared here";
@@ -815,8 +833,10 @@ struct DestructorInsertion {
 
 private:
   void checkOp(Operation &op);
+  void markConsumed(ValueRef valueRef);
   void checkLive(Operation &op, ValueRef valueRef);
   void checkUse(Operation &op, ValueRef valueRef);
+  void checkDef(Operation &op, ValueRef valueRef);
 
   /// This is metadata about all the values we are tracking.
   ValueSet &valueSet;
@@ -852,15 +872,13 @@ void DestructorInsertion::checkOp(Operation &op) {
   // A store to a value is an overwrite - this means that any incoming values
   // are unused and should be destroyed if they exist.
   if (auto storeOp = dyn_cast<POP::StoreOp>(op)) {
-    valueSet.getPointerValueIndex(storeOp.getPtr())
-        .markBits(consumedValues, false);
+    checkDef(op, valueSet.getPointerValueIndex(storeOp.getPtr()));
     return;
   }
 
   // A load is a use of whatever fields are being referenced.  If this is the
   // /last/ use of a value, emit a destructor of that value.
   if (auto loadOp = dyn_cast<POP::LoadOp>(op)) {
-    // This marks its value live.
     checkUse(op, valueSet.getPointerValueIndex(loadOp.getPtr()));
     return;
   }
@@ -882,15 +900,8 @@ void DestructorInsertion::checkOp(Operation &op) {
     // If the result is defining an owned register value, then we treat this as
     // a use (because it needs to be destroyed if the first utterance of this
     // value) and then pass it up as being done).
-    if (signature.hasOwnedRegisterResult()) {
-      auto valueRef = valueSet.getDirectValueRef(op.getResult(0));
-      // If there is no use of the defined results, emit a dtor after the
-      // call.
-      checkUse(op, valueRef);
-      // This call defines the result, so anything above it is either dead or
-      // needs a destructor if live.
-      valueRef.markBits(consumedValues, false);
-    }
+    if (signature.hasOwnedRegisterResult())
+      checkDef(op, valueSet.getDirectValueRef(op.getResult(0)));
 
     assert(signature.getValueInputConventions().size() == operands.size());
     for (auto [convention, operand] :
@@ -911,13 +922,8 @@ void DestructorInsertion::checkOp(Operation &op) {
         checkUse(op, valueSet.getPointerValueIndex(operand));
         break;
       case ValueInputConvention::ByRefResult: {
-        auto valueRef = valueSet.getPointerValueIndex(operand);
-        // If there is no use of the defined results, emit a dtor after the
-        // call.
-        checkUse(op, valueRef);
-        // This call defines the by-ref result, so anything above it is either
-        // dead or needs a destructor if live.
-        valueRef.markBits(consumedValues, false);
+        // This defines the memory it writes to.
+        checkDef(op, valueSet.getPointerValueIndex(operand));
         break;
       }
       }
@@ -927,9 +933,10 @@ void DestructorInsertion::checkOp(Operation &op) {
 
   // LetReg takes ownership of its operand value and defines its own value.
   if (auto letReg = dyn_cast<LetRegDeclOp>(op)) {
-    checkUse(op, valueSet.getDirectValueRef(letReg));
-    valueSet.getDirectValueRef(letReg.getOperand())
-        .markBits(consumedValues, true);
+    // This defines the result value.  Emit a destructor if unused.
+    checkDef(op, valueSet.getDirectValueRef(letReg));
+    // This consumes the input.
+    markConsumed(valueSet.getDirectValueRef(letReg.getOperand()));
     return;
   }
 
@@ -953,37 +960,51 @@ void DestructorInsertion::checkOp(Operation &op) {
     checkUse(op, valueSet.getDirectValueRef(operand));
 }
 
+// When the specified value is consumed by an operation we know it doesn't need
+// to be destroyed above this point.
+void DestructorInsertion::markConsumed(ValueRef valueRef) {
+  valueRef.markBits(consumedValues, true);
+}
+
+/// This operation uses whatever fields are being referenced.  Iff this is the
+/// /last/ use of a value, emit a destructor of the overall value.
 void DestructorInsertion::checkUse(Operation &op, ValueRef valueRef) {
   // If this is an untracked reference or if all the referenced data is already
   // known to be consumed at this point, then there is nothing to do.
   if (!valueRef || valueRef.isAllPresent(consumedValues))
     return;
 
-  const ValueInfo &valueInfo = valueSet.getValueInfos()[valueRef.valueId];
+  ValueInfo &valueInfo = valueSet.getValueInfos()[valueRef.valueId];
   if (valueInfo.hasErrorDiagnosed)
     return;
 
   LifetimeTrackable trackable(valueInfo.value);
   assert(trackable && "shouldn't be tracking untrackable things!");
+
+  // Otherwise it is a use happening when the values become dead, we need to
+  // emit a destructor call.  Check to make sure they whole value dies at once.
+  ValueRef fullValueRef = valueSet.getFullValueRef(valueRef.valueId);
+
   TypedAttr dtor =
       trackable.getDestructor(valueInfo.value, valueSet.typeDeclInfo);
+
   if (!dtor)
     return;
 
   // FIXME: Move this after checking below.
-
-  // Otherwise it is a use happening when the values become dead, we need to
-  // emit a destructor call.  Check to make sure they whole value dies at once.
-  if (!valueSet.getFullValueRef(valueRef.valueId)
-           .isAllMissing(consumedValues)) {
-    mlir::emitError(op.getLoc(),
-                    "last use of value with partially dead members");
+  if (!fullValueRef.isAllMissing(consumedValues)) {
+    auto diag = mlir::emitError(
+        op.getLoc(), "last use of value with partially dead members ");
+    // Identify the first sub-field that is missing.
+    addBadValueNameToDiag(trackable, fullValueRef, consumedValues, valueSet,
+                          diag);
+    valueInfo.hasErrorDiagnosed = true;
     return;
   }
 
   // Ok, this value will be consumed by the dtor we are emitting, so any uses
   // above this point won't need to emit this.
-  valueRef.markBits(consumedValues, true);
+  fullValueRef.markBits(consumedValues, true);
 
   SignatureType signature = cast<SignatureType>(dtor.getType());
   assert(signature.getValueResults().size() == 1 &&
@@ -1005,6 +1026,17 @@ void DestructorInsertion::checkUse(Operation &op, ValueRef valueRef) {
         b.getAttr<ParamDeclArrayAttr>(ArrayRef<ParamDeclAttr>()),
         ValueRange(valueInfo.value));
   }
+}
+
+/// This operation defines the specified value.  If the value is dead on
+/// arrival, emit a destructor of the value.
+void DestructorInsertion::checkDef(Operation &op, ValueRef valueRef) {
+  // If there is no use of the value being defined, emit a dtor after the op.
+  checkUse(op, valueRef);
+
+  // This call defines the result, so anything above it is either dead or
+  // needs a destructor if live.
+  valueRef.markBits(consumedValues, false);
 }
 
 //===----------------------------------------------------------------------===//
