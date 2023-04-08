@@ -649,7 +649,7 @@ struct NullaryClosure[result_type: AnyType]:
     var value: closure_type
 
     @always_inline("nodebug")
-    fn __init__(value: closure_type) -> Self:
+    fn __init__(self&, value: closure_type):
         """Create a nullary closure.
 
         Arguments:
@@ -658,7 +658,7 @@ struct NullaryClosure[result_type: AnyType]:
         Returns:
           The nullary closure.
         """
-        return Self {value: value}
+        self.value = value
 
     @always_inline("nodebug")
     fn __copy__(self) -> Self:
@@ -694,7 +694,7 @@ struct UnaryClosure[
     var value: closure_type
 
     @always_inline("nodebug")
-    fn __init__(value: closure_type) -> Self:
+    fn __init__(self&, value: closure_type):
         """Create a unary closure.
 
         Arguments:
@@ -703,7 +703,7 @@ struct UnaryClosure[
         Returns:
           The unary closure.
         """
-        return Self {value: value}
+        self.value = value
 
     @always_inline("nodebug")
     fn __copy__(self) -> Self:
@@ -745,7 +745,7 @@ struct BinaryClosure[
     var value: closure_type
 
     @always_inline("nodebug")
-    fn __init__(value: closure_type) -> Self:
+    fn __init__(self&, value: closure_type):
         """Create a binary closure.
 
         Arguments:
@@ -754,7 +754,7 @@ struct BinaryClosure[
         Returns:
           The binary closure.
         """
-        return Self {value: value}
+        self.value = value
 
     @always_inline("nodebug")
     fn __copy__(self) -> Self:
@@ -806,7 +806,7 @@ struct TernaryClosure[
     var value: closure_type
 
     @always_inline("nodebug")
-    fn __init__(value: closure_type) -> Self:
+    fn __init__(self&, value: closure_type):
         """Create a Ternary closure.
 
         Arguments:
@@ -815,7 +815,7 @@ struct TernaryClosure[
         Returns:
           The Ternary closure.
         """
-        return Self {value: value}
+        self.value = value
 
     @always_inline("nodebug")
     fn __copy__(self) -> Self:
