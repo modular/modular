@@ -86,10 +86,9 @@ struct SubMatmulConfig:
     # Dimension of sub-matrices.
     var shape: StaticIntTuple[3]
 
-    fn __init__(
-        offset: StaticIntTuple[3], shape: StaticIntTuple[3]
-    ) -> SubMatmulConfig:
-        return Self {offset: offset, shape: shape}
+    fn __init__(self&, offset: StaticIntTuple[3], shape: StaticIntTuple[3]):
+        self.offset = offset
+        self.shape = shape
 
     fn __copy__(self) -> Self:
         return Self {
