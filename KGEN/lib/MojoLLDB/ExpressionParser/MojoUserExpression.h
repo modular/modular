@@ -80,6 +80,8 @@ private:
                              lldb_private::ExecutionContextScope *exeScope,
                              MojoPersistentExpressionState &state);
 
+  void notifyFixits(lldb_private::DiagnosticManager &diagnosticManager,
+                    StringRef fixedText);
   //===--------------------------------------------------------------------===//
   // Fields
   //===--------------------------------------------------------------------===//

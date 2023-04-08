@@ -14,6 +14,7 @@
 #include "lldb/Symbol/SymbolFile.h"
 #include "lldb/Symbol/Type.h"
 #include "lldb/Symbol/TypeSystem.h"
+#include "lldb/Utility/Broadcaster.h"
 #include "lldb/Utility/ConstString.h"
 #include "lldb/Utility/Flags.h"
 #include "lldb/lldb-private.h"
@@ -23,10 +24,23 @@ class Runtime;
 } // namespace M::LLCL
 
 namespace M::KGEN::Mojo {
-class MojoTypeSystem : public lldb_private::TypeSystem {
+class MojoTypeSystem : public lldb_private::TypeSystem,
+                       public lldb_private::Broadcaster {
   static char ID;
 
 public:
+  /// Broadcaster
+  /// @{
+  enum {
+    /// Informational messages related to Mojo targets that are not part of
+    /// the inferior's stderr or stout but should still be displayed to the
+    /// users when not using the CLI.
+    eBroadcastUserMessage = (1 << 0)
+  };
+
+  void broadcastUserMessage(StringRef message);
+  /// @}
+
   MojoTypeSystem(lldb_private::Target &target);
   ~MojoTypeSystem() override;
 

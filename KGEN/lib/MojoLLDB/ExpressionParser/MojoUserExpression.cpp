@@ -53,8 +53,8 @@ public:
     variable = varArg;
   }
 
-  void RegisterPersistentState(PersistentExpressionState *persistentStateArg) {
-    persistentState = persistentStateArg;
+  void RegisterPersistentState(PersistentExpressionState &persistentStateArg) {
+    persistentState = &persistentStateArg;
   }
 
   lldb::ExpressionVariableSP &GetVariable() { return variable; }
@@ -83,10 +83,28 @@ public:
 // MojoUserExpression::Impl
 //===----------------------------------------------------------------------===//
 
+static MojoTypeSystem &getMojoTypeSystem(Target &target) {
+  if (auto typeSystemOr =
+          target.GetScratchTypeSystemForLanguage(eLanguageTypeMojo))
+    return *llvm::cast<MojoTypeSystem>(typeSystemOr.get().get());
+  llvm::report_fatal_error(
+      "The Mojo type system plug-in must have already been registered.");
+}
+
+static MojoPersistentExpressionState &
+getMojoPersistentState(MojoTypeSystem &typeSystem) {
+  return *llvm::cast<MojoPersistentExpressionState>(
+      (typeSystem.GetPersistentExpressionState()));
+}
+
 struct MojoUserExpression::Impl {
   Impl(ExecutionContextScope &exeScope, Target &target)
-      : typeSystemHelper(target), resultDelegate(target.shared_from_this()) {}
+      : target(target), typeSystemHelper(target),
+        resultDelegate(target.shared_from_this()),
+        typeSystem(getMojoTypeSystem(target)),
+        persistentState(getMojoPersistentState(typeSystem)) {}
 
+  Target &target;
   /// The type system helper.
   MojoUserExpressionHelper typeSystemHelper;
 
@@ -96,6 +114,8 @@ struct MojoUserExpression::Impl {
 
   /// The underlying expression parser.
   std::unique_ptr<MojoExpressionParser> parser;
+  MojoTypeSystem &typeSystem;
+  MojoPersistentExpressionState &persistentState;
 };
 
 //===----------------------------------------------------------------------===//
@@ -118,12 +138,6 @@ char MojoUserExpression::ID;
 // Expression parsing and execution
 //===----------------------------------------------------------------------===//
 
-/// Return the persistent Mojo expression state for the given target.
-static MojoPersistentExpressionState *getPersistentState(Target *target) {
-  return llvm::cast<MojoPersistentExpressionState>(
-      target->GetPersistentExpressionStateForLanguage(eLanguageTypeMojo));
-}
-
 bool MojoUserExpression::Parse(DiagnosticManager &diagnosticManager,
                                ExecutionContext &exeCtx,
                                ExecutionPolicy executionPolicy,
@@ -132,31 +146,14 @@ bool MojoUserExpression::Parse(DiagnosticManager &diagnosticManager,
   // Setup the execution context.
   InstallContext(exeCtx);
 
-  // Extract a target from the execution context.
-  Target *target = exeCtx.GetTargetPtr();
-  if (!target) {
-    diagnosticManager.PutString(eDiagnosticSeverityError,
-                                "couldn't start parsing (no target)");
-    return false;
-  }
-
   // Initialize the persistent state.
-  auto *persistentState = getPersistentState(target);
-  if (!persistentState) {
-    diagnosticManager.PutString(eDiagnosticSeverityError,
-                                "couldn't start parsing (no persistent data)");
-    return false;
-  }
-  impl->resultDelegate.RegisterPersistentState(persistentState);
-
-  // Setup the target of the expression.
-  target = exeCtx.GetTargetPtr();
+  impl->resultDelegate.RegisterPersistentState(impl->persistentState);
 
   // Parse the expression text.
   Process *process = exeCtx.GetProcessPtr();
-  auto *exeScope = process ? (ExecutionContextScope *)process : target;
+  auto *exeScope = process ? (ExecutionContextScope *)process : &impl->target;
   if (failed(wrapTextAndParseExpression(diagnosticManager, exeCtx, exeScope,
-                                        *persistentState)))
+                                        impl->persistentState)))
     return false;
 
   // Prepare the output of the parser for execution, evaluating it statically if
@@ -171,7 +168,7 @@ bool MojoUserExpression::Parse(DiagnosticManager &diagnosticManager,
   if (executionUnit &&
       (m_options.GetExecutionPolicy() == eExecutionPolicyTopLevel ||
        executionUnit->getJittedFunctions().size() > 1)) {
-    persistentState->registerExecutionUnit(executionUnit);
+    impl->persistentState.registerExecutionUnit(executionUnit);
   }
 
   // Process any errors during code generation.
@@ -235,6 +232,24 @@ static void collectPersistentVariables(
         var->GetCompilerType().GetOpaqueQualType());
     variables.emplace_back(var->GetName().GetStringRef(), varType);
   }
+}
+
+void MojoUserExpression::notifyFixits(DiagnosticManager &diagnosticManager,
+                                      StringRef fixedText) {
+  std::string fixItsNotification;
+  {
+    llvm::raw_string_ostream os(fixItsNotification);
+    os << diagnosticManager.GetString()
+       << "Applied fix-its, evaluating new expression:\n"
+       << fixedText << "\n";
+  }
+
+  impl->target.GetDebugger().GetAsyncErrorStream()->AsRawOstream()
+      << fixItsNotification;
+
+  // Besides writing the notification to stderr, we also notify it to the type
+  // system broadcaster for external listeners.
+  impl->typeSystem.broadcastUserMessage(fixItsNotification);
 }
 
 LogicalResult MojoUserExpression::wrapTextAndParseExpression(
@@ -313,13 +328,8 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
     // Drop the prefix and remove all indent.
     indentedFixedOS.printReindented(
         diagnosticManager.GetFixedExpression().substr(prefixSize), "");
-    lldb::StreamSP outputStream =
-        exeCtx.GetTargetRef().GetDebugger().GetAsyncErrorStream();
-    outputStream->AsRawOstream()
-        << diagnosticManager.GetString()
-        << "Applied fix-its, evaluating new expression:\n"
-        << m_fixed_text << "\n";
 
+    notifyFixits(diagnosticManager, m_fixed_text);
     // Clear the diagnostic manager so we don't re-fix something.
     diagnosticManager.Clear();
   };

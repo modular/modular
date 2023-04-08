@@ -34,8 +34,8 @@ MODULAR_EXPORT bool LLDBPluginInitialize() {
   LLVMLinkInMCJIT();
 
   // Initialize the various plugin components.
-  MojoREPL::Initialize();
   MojoTypeSystem::Initialize();
+  MojoREPL::Initialize();
   return true;
 }
 
