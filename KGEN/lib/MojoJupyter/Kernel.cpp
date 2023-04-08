@@ -23,7 +23,6 @@
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Triple.h"
-#include <fstream>
 #include <thread>
 
 #define DEBUG_TYPE "mojo-jupyter"
@@ -289,10 +288,6 @@ LogicalResult MojoKernel::launchReplProcess() {
         Twine(error.GetCString()));
   }
 
-  {
-    std::ofstream os("/tmp/logs.txt", std::ofstream::out);
-    os << "will listen\n";
-  }
   target.getMojoTypeSystem().AddListener(
       mojoTypeSystemListener,
       KGEN::Mojo::MojoTypeSystem::eBroadcastUserMessage);

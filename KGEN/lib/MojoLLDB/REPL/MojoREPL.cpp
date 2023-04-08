@@ -83,6 +83,7 @@ static void flushInferiorStderrAndStdout(lldb::ProcessSP &process) {
     err->Flush();
   }
 }
+
 static void eventThreadFunction(const lldb::TargetSP &target,
                                 const std::atomic_bool &stopEventThread) {
   lldb::ProcessSP process(target->GetProcessSP());
