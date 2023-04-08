@@ -64,48 +64,48 @@ static bool shouldStopListeningToEvents(lldb::StateType state) {
   }
 }
 
-static void flushInferiorStderrAndStdout(lldb::SBProcess &process) {
+static void flushInferiorStderrAndStdout(lldb::ProcessSP &process) {
   constexpr size_t kBufferSize = 1024;
   char buffer[kBufferSize];
   size_t count;
+  lldb_private::Debugger &debugger = process->GetTarget().GetDebugger();
+  Status status;
   {
-    auto &os = llvm::outs();
-    while ((count = process.GetSTDOUT(buffer, kBufferSize - 1)) > 0) {
-      buffer[count] = '\0';
-      os << buffer;
-    }
+    lldb::StreamSP out(debugger.GetAsyncOutputStream());
+    while ((count = process->GetSTDOUT(buffer, kBufferSize, status)) > 0)
+      out->Write(buffer, count);
+    out->Flush();
   }
   {
-    auto &os = llvm::errs();
-    while ((count = process.GetSTDERR(buffer, kBufferSize - 1)) > 0) {
-      buffer[count] = '\0';
-      os << buffer;
-    }
+    lldb::StreamSP err(debugger.GetAsyncErrorStream());
+    while ((count = process->GetSTDERR(buffer, kBufferSize - 1, status)) > 0)
+      err->Write(buffer, count);
+    err->Flush();
   }
 }
-static void eventThreadFunction(lldb::SBTarget target,
+static void eventThreadFunction(const lldb::TargetSP &target,
                                 const std::atomic_bool &stopEventThread) {
-  lldb::SBProcess process(target.GetProcess());
-  assert(process.IsValid() &&
+  lldb::ProcessSP process(target->GetProcessSP());
+  assert(process->IsValid() &&
          "A valid process should already exist for the REPL");
-  lldb::SBBroadcaster broadcaster(process.GetBroadcaster());
-  lldb::SBListener listener("mojo-repl.process-listener");
-  broadcaster.AddListener(listener, lldb::SBProcess::eBroadcastBitStateChanged |
-                                        lldb::SBProcess::eBroadcastBitSTDOUT |
-                                        lldb::SBProcess::eBroadcastBitSTDERR);
-  lldb::SBEvent event;
+  lldb::ListenerSP listener =
+      Listener::MakeListener("mojo-repl.process-listener");
+  process->AddListener(listener, Process::eBroadcastBitStateChanged |
+                                     Process::eBroadcastBitSTDOUT |
+                                     Process::eBroadcastBitSTDERR);
   while (!stopEventThread) {
     // We retry if we didn't get any events in the last second.
-    if (!listener.WaitForEvent(1, event))
+    lldb::EventSP event;
+    if (!listener->GetEvent(event, std::chrono::seconds(1)))
       continue;
 
-    const uint32_t eventMask = event.GetType();
-    if (eventMask & lldb::SBProcess::eBroadcastBitStateChanged) {
+    const uint32_t eventMask = event->GetType();
+    if (eventMask & Process::eBroadcastBitStateChanged) {
       if (shouldStopListeningToEvents(
-              lldb::SBProcess::GetStateFromEvent(event)))
+              Process::ProcessEventData::GetStateFromEvent(event.get())))
         break;
-    } else if ((eventMask & lldb::SBProcess::eBroadcastBitSTDOUT) ||
-               (eventMask & lldb::SBProcess::eBroadcastBitSTDERR)) {
+    } else if ((eventMask & Process::eBroadcastBitSTDOUT) ||
+               (eventMask & Process::eBroadcastBitSTDERR)) {
       flushInferiorStderrAndStdout(process);
     }
   }
@@ -117,8 +117,7 @@ static void eventThreadFunction(lldb::SBTarget target,
 
 MojoREPL::MojoREPL(Target &target) : REPL(eKindGo, target) {
   eventThread = std::thread([this] {
-    eventThreadFunction(lldb::SBTarget(m_target.shared_from_this()),
-                        stopEventThread);
+    eventThreadFunction(m_target.shared_from_this(), stopEventThread);
   });
 }
 
