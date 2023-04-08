@@ -7,6 +7,8 @@
 add_modular_library(MojoLLDB SHARED
   Plugin.cpp
 
+  ExpressionParser/JITExecutionUnit.cpp
+  ExpressionParser/JITUserExpression.cpp
   ExpressionParser/MojoExpressionParser.cpp
   ExpressionParser/MojoExpressionVariable.cpp
   ExpressionParser/MojoUserExpression.cpp
@@ -21,6 +23,8 @@ add_modular_library(MojoLLDB SHARED
   AllTargetsCodeGens
   AllTargetsDescs
   AllTargetsInfos
+  ExecutionEngine
+  MCJIT
 
   LINK_LIBS
   KGENCompiler

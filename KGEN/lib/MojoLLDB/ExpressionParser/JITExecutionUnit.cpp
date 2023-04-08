@@ -1,0 +1,1094 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#include "JITExecutionUnit.h"
+#include "Support/LLVMForwardDecls.h"
+#include "lldb/Core/Debugger.h"
+#include "lldb/Core/Disassembler.h"
+#include "lldb/Core/Module.h"
+#include "lldb/Core/Section.h"
+#include "lldb/Expression/ObjectFileJIT.h"
+#include "lldb/Host/HostInfo.h"
+#include "lldb/Symbol/CompileUnit.h"
+#include "lldb/Symbol/SymbolContext.h"
+#include "lldb/Symbol/SymbolFile.h"
+#include "lldb/Symbol/SymbolVendor.h"
+#include "lldb/Target/ExecutionContext.h"
+#include "lldb/Target/Language.h"
+#include "lldb/Target/LanguageRuntime.h"
+#include "lldb/Target/Target.h"
+#include "lldb/Utility/DataBufferHeap.h"
+#include "lldb/Utility/DataExtractor.h"
+#include "lldb/Utility/LLDBAssert.h"
+#include "lldb/Utility/LLDBLog.h"
+#include "lldb/Utility/Log.h"
+#include "llvm/ExecutionEngine/ExecutionEngine.h"
+#include "llvm/ExecutionEngine/ObjectCache.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DiagnosticHandler.h"
+#include "llvm/IR/DiagnosticInfo.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
+#include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/raw_ostream.h"
+#include <optional>
+
+using namespace M;
+using namespace M::KGEN::Mojo;
+using namespace lldb_private;
+
+//===----------------------------------------------------------------------===//
+// Utils
+//===----------------------------------------------------------------------===//
+
+static const unsigned eSectionIDInvalid = -1;
+
+enum class AllocationKind { Stub, Code, Data, Global, Bytes };
+
+static lldb::SectionType
+getSectionTypeFromSectionName(const StringRef &name, AllocationKind allocKind) {
+  lldb::SectionType sectType = lldb::eSectionTypeCode;
+  switch (allocKind) {
+  case AllocationKind::Stub:
+  case AllocationKind::Code:
+    sectType = lldb::eSectionTypeCode;
+    break;
+  case AllocationKind::Data:
+  case AllocationKind::Global:
+    sectType = lldb::eSectionTypeData;
+    break;
+  case AllocationKind::Bytes:
+    sectType = lldb::eSectionTypeOther;
+    break;
+  }
+
+  if (!name.empty()) {
+    if (name.equals("__text") || name.equals(".text") ||
+        name.equals("__data") || name.equals(".data")) {
+      sectType = lldb::eSectionTypeCode;
+    } else if (name.startswith("__debug_") || name.startswith(".debug_")) {
+      const uint32_t name_idx = name[0] == '_' ? 8 : 7;
+      StringRef dwarf_name(name.substr(name_idx));
+      switch (dwarf_name[0]) {
+      case 'a':
+        if (dwarf_name.equals("abbrev"))
+          sectType = lldb::eSectionTypeDWARFDebugAbbrev;
+        else if (dwarf_name.equals("aranges"))
+          sectType = lldb::eSectionTypeDWARFDebugAranges;
+        else if (dwarf_name.equals("addr"))
+          sectType = lldb::eSectionTypeDWARFDebugAddr;
+        break;
+
+      case 'f':
+        if (dwarf_name.equals("frame"))
+          sectType = lldb::eSectionTypeDWARFDebugFrame;
+        break;
+
+      case 'i':
+        if (dwarf_name.equals("info"))
+          sectType = lldb::eSectionTypeDWARFDebugInfo;
+        break;
+
+      case 'l':
+        if (dwarf_name.equals("line"))
+          sectType = lldb::eSectionTypeDWARFDebugLine;
+        else if (dwarf_name.equals("loc"))
+          sectType = lldb::eSectionTypeDWARFDebugLoc;
+        else if (dwarf_name.equals("loclists"))
+          sectType = lldb::eSectionTypeDWARFDebugLocLists;
+        break;
+
+      case 'm':
+        if (dwarf_name.equals("macinfo"))
+          sectType = lldb::eSectionTypeDWARFDebugMacInfo;
+        break;
+
+      case 'p':
+        if (dwarf_name.equals("pubnames"))
+          sectType = lldb::eSectionTypeDWARFDebugPubNames;
+        else if (dwarf_name.equals("pubtypes"))
+          sectType = lldb::eSectionTypeDWARFDebugPubTypes;
+        break;
+
+      case 's':
+        if (dwarf_name.equals("str"))
+          sectType = lldb::eSectionTypeDWARFDebugStr;
+        else if (dwarf_name.equals("str_offsets"))
+          sectType = lldb::eSectionTypeDWARFDebugStrOffsets;
+        break;
+
+      case 'r':
+        if (dwarf_name.equals("ranges"))
+          sectType = lldb::eSectionTypeDWARFDebugRanges;
+        break;
+
+      default:
+        break;
+      }
+    } else if (name.startswith("__apple_") || name.startswith(".apple_")) {
+      sectType = lldb::eSectionTypeInvalid;
+    } else if (name.equals("__objc_imageinfo")) {
+      sectType = lldb::eSectionTypeOther;
+    }
+  }
+  return sectType;
+}
+
+//===----------------------------------------------------------------------===//
+// JITExecutionUnit::Impl
+//===----------------------------------------------------------------------===//
+
+struct JITExecutionUnit::Impl {
+  Impl(std::unique_ptr<llvm::LLVMContext> context,
+       std::unique_ptr<llvm::Module> module, ConstString &name,
+       const SymbolContext &symCtx, std::vector<std::string> &cpuFeatures)
+      : context(std::move(context)), module(std::move(module)),
+        cpuFeatures(cpuFeatures), name(name), symCtx(symCtx) {}
+
+  std::vector<AllocationRecord> records;
+
+  std::unique_ptr<llvm::LLVMContext> context;
+  std::unique_ptr<llvm::ExecutionEngine> executionEngine;
+  std::unique_ptr<llvm::ObjectCache> objectCache;
+  std::unique_ptr<llvm::Module> module;
+  std::vector<std::string> cpuFeatures;
+
+  /// The jitted functions and global variables.
+  std::vector<JittedFunction> jittedFunctions;
+  std::vector<JittedGlobalVariable> jittedGlobalVariables;
+
+  const lldb_private::ConstString name;
+  lldb_private::SymbolContext symCtx;
+  std::vector<lldb_private::ConstString> failedLookups;
+
+  std::atomic<bool> didJit{false};
+
+  lldb::addr_t functionLoadAddr = LLDB_INVALID_ADDRESS;
+  lldb::addr_t functionEndLoadAddr = LLDB_INVALID_ADDRESS;
+
+  /// True for platforms where global symbols have a _ prefix.
+  bool stripUnderscore = true;
+
+  /// True after allocations have been reported. It is possible that sections
+  /// will be allocated when this is true, in which case they weren't depended
+  /// on by any function. (Top-level code defining a variable, but defining no
+  /// functions using that variable, would do this.) If this is true, any
+  /// allocations need to be committed immediately -- no opportunity for
+  /// relocation.
+  bool reportedAllocations = false;
+};
+
+//===----------------------------------------------------------------------===//
+// JITExecutionUnit
+//===----------------------------------------------------------------------===//
+
+JITExecutionUnit::JITExecutionUnit(std::unique_ptr<llvm::LLVMContext> &context,
+                                   std::unique_ptr<llvm::Module> &module,
+                                   ConstString &name,
+                                   const lldb::TargetSP &target,
+                                   const SymbolContext &symCtx,
+                                   std::vector<std::string> &cpuFeatures)
+    : IRMemoryMap(target),
+      impl(std::make_unique<Impl>(std::move(context), std::move(module), name,
+                                  symCtx, cpuFeatures)) {}
+JITExecutionUnit::~JITExecutionUnit() = default;
+
+lldb_private::ConstString JITExecutionUnit::getFunctionName() {
+  return impl->name;
+}
+
+//===----------------------------------------------------------------------===//
+// JITExecutionUnit::MemoryManager
+//===----------------------------------------------------------------------===//
+
+class JITExecutionUnit::MemoryManager : public llvm::SectionMemoryManager {
+public:
+  MemoryManager(JITExecutionUnit &parent);
+  ~MemoryManager() override;
+
+  //===--------------------------------------------------------------------===//
+  // Allocation
+  //===--------------------------------------------------------------------===//
+
+  /// Allocate space for executable code, and add it to the space blocks map.
+  uint8_t *allocateCodeSection(uintptr_t size, unsigned alignment,
+                               unsigned sectionID,
+                               StringRef sectionName) override;
+
+  /// Allocate space for data, and add it to the space blocks map.
+  uint8_t *allocateDataSection(uintptr_t size, unsigned alignment,
+                               unsigned sectionID, StringRef sectionName,
+                               bool isReadOnly) override;
+
+  /// Called when object loading is complete and section page permissions
+  /// can be applied. Currently unimplemented for LLDB.
+  bool finalizeMemory(std::string *errMsg) override { return false; }
+
+  /// Ignore any EHFrame registration.
+  void registerEHFrames(uint8_t *addr, uint64_t loadAddr,
+                        size_t size) override {}
+  void deregisterEHFrames() override {}
+
+  //===--------------------------------------------------------------------===//
+  // Symbol Resolution
+  //===--------------------------------------------------------------------===//
+
+  /// Find the address of the symbol Name. If Name is a missing weak symbol then
+  /// missingWeak will be true.
+  uint64_t getSymbolAddressAndPresence(const std::string &name,
+                                       bool &missingWeak);
+
+  uint64_t getSymbolAddress(const std::string &name) override;
+
+  llvm::JITSymbol findSymbol(const std::string &name) override;
+
+  void *getPointerToNamedFunction(const std::string &name,
+                                  bool abortOnFailure = true) override;
+
+private:
+  /// The memory allocator to use in actually creating space. All calls are
+  /// passed through to it.
+  std::unique_ptr<SectionMemoryManager> defaultMM;
+  /// The execution unit this is a proxy for.
+  JITExecutionUnit &parent;
+};
+
+JITExecutionUnit::MemoryManager::MemoryManager(JITExecutionUnit &parent)
+    : defaultMM(new llvm::SectionMemoryManager()), parent(parent) {}
+
+JITExecutionUnit::MemoryManager::~MemoryManager() = default;
+
+//===----------------------------------------------------------------------===//
+// Allocation
+
+uint8_t *JITExecutionUnit::MemoryManager::allocateCodeSection(
+    uintptr_t size, unsigned alignment, unsigned sectionID,
+    StringRef sectionName) {
+  Log *log = GetLog(LLDBLog::Expressions);
+
+  uint8_t *returnValue =
+      defaultMM->allocateCodeSection(size, alignment, sectionID, sectionName);
+  parent.impl->records.emplace_back(
+      (uintptr_t)returnValue,
+      lldb::ePermissionsReadable | lldb::ePermissionsExecutable,
+      getSectionTypeFromSectionName(sectionName, AllocationKind::Code), size,
+      alignment, sectionID, sectionName.str().c_str());
+
+  LLDB_LOGF(log,
+            "JITExecutionUnit::allocateCodeSection(Size=0x%" PRIx64
+            ", Alignment=%u, SectionID=%u) = %p",
+            (uint64_t)size, alignment, sectionID, (void *)returnValue);
+
+  // If we've already reported allocation, commit this one immediately.
+  if (parent.impl->reportedAllocations) {
+    Status err;
+    lldb::ProcessSP process(
+        parent.GetBestExecutionContextScope()->CalculateProcess());
+    parent.commitOneAllocation(process, err, parent.impl->records.back());
+  }
+  return returnValue;
+}
+
+uint8_t *JITExecutionUnit::MemoryManager::allocateDataSection(
+    uintptr_t size, unsigned alignment, unsigned sectionID,
+    StringRef sectionName, bool isReadOnly) {
+  Log *log = GetLog(LLDBLog::Expressions);
+
+  uint8_t *returnValue = defaultMM->allocateDataSection(
+      size, alignment, sectionID, sectionName, isReadOnly);
+
+  uint32_t permissions = lldb::ePermissionsReadable;
+  if (!isReadOnly)
+    permissions |= lldb::ePermissionsWritable;
+
+  parent.impl->records.emplace_back(
+      (uintptr_t)returnValue, permissions,
+      getSectionTypeFromSectionName(sectionName, AllocationKind::Data), size,
+      alignment, sectionID, sectionName.str().c_str());
+  LLDB_LOGF(log,
+            "JITExecutionUnit::allocateDataSection(Size=0x%" PRIx64
+            ", Alignment=%u, SectionID=%u) = %p",
+            (uint64_t)size, alignment, sectionID, (void *)returnValue);
+
+  // If we've already reported allocation, commit this one immediately.
+  if (parent.impl->reportedAllocations) {
+    Status err;
+    lldb::ProcessSP process =
+        parent.GetBestExecutionContextScope()->CalculateProcess();
+    parent.commitOneAllocation(process, err, parent.impl->records.back());
+  }
+
+  return returnValue;
+}
+
+//===----------------------------------------------------------------------===//
+// Symbol Resolution
+
+uint64_t JITExecutionUnit::MemoryManager::getSymbolAddressAndPresence(
+    const std::string &name, bool &missingWeak) {
+  Log *log = GetLog(LLDBLog::Expressions);
+  ConstString nameCS(name.c_str());
+
+  lldb::addr_t ret = parent.findSymbol(nameCS, missingWeak);
+  if (ret == LLDB_INVALID_ADDRESS) {
+    LLDB_LOGF(log,
+              "JITExecutionUnit::getSymbolAddress(Name=\"%s\") = <not found>",
+              name.c_str());
+    parent.reportSymbolLookupError(nameCS);
+    return 0;
+  }
+
+  LLDB_LOGF(log, "JITExecutionUnit::getSymbolAddress(Name=\"%s\") = %" PRIx64,
+            name.c_str(), ret);
+  return ret;
+}
+
+uint64_t
+JITExecutionUnit::MemoryManager::getSymbolAddress(const std::string &name) {
+  bool missingWeak = false;
+  return getSymbolAddressAndPresence(name, missingWeak);
+}
+
+llvm::JITSymbol
+JITExecutionUnit::MemoryManager::findSymbol(const std::string &name) {
+  bool missingWeak = false;
+  uint64_t addr = getSymbolAddressAndPresence(name, missingWeak);
+
+  auto extraFlags =
+      missingWeak ? llvm::JITSymbolFlags::Weak : llvm::JITSymbolFlags::None;
+  return llvm::JITSymbol(addr, llvm::JITSymbolFlags::Exported | extraFlags);
+}
+
+void *JITExecutionUnit::MemoryManager::getPointerToNamedFunction(
+    const std::string &name, bool abortOnFailure) {
+  return (void *)getSymbolAddress(name);
+}
+
+//===----------------------------------------------------------------------===//
+// JIT Symbols
+//===----------------------------------------------------------------------===//
+
+namespace {
+class LoadAddressResolver {
+public:
+  LoadAddressResolver(Target *target, bool &symbolWasMissingWeak)
+      : target(target), symbolWasMissingWeak(symbolWasMissingWeak) {}
+
+  std::optional<lldb::addr_t> Resolve(SymbolContextList &scList) {
+    if (scList.IsEmpty())
+      return std::nullopt;
+    lldb::addr_t loadAddr = LLDB_INVALID_ADDRESS;
+
+    // symbolWasMissingWeak will be true only if we found only weak undefined
+    // references to this symbol.
+    symbolWasMissingWeak = true;
+
+    for (auto candidate : scList.SymbolContexts()) {
+      // Only symbols can be weak undefined.
+      if (!candidate.symbol ||
+          candidate.symbol->GetType() != lldb::eSymbolTypeUndefined ||
+          !candidate.symbol->IsWeak())
+        symbolWasMissingWeak = false;
+
+      // First try the symbol.
+      if (candidate.symbol) {
+        loadAddr = candidate.symbol->ResolveCallableAddress(*target);
+        if (loadAddr == LLDB_INVALID_ADDRESS) {
+          Address addr = candidate.symbol->GetAddress();
+          loadAddr = target->GetProcessSP() ? addr.GetLoadAddress(target)
+                                            : addr.GetFileAddress();
+        }
+      }
+
+      // If that didn't work, try the function.
+      if (loadAddr == LLDB_INVALID_ADDRESS && candidate.function) {
+        Address addr = candidate.function->GetAddressRange().GetBaseAddress();
+        loadAddr = target->GetProcessSP() ? addr.GetLoadAddress(target)
+                                          : addr.GetFileAddress();
+      }
+
+      // We found a load address.
+      if (loadAddr != LLDB_INVALID_ADDRESS) {
+        // If the load address is external, we're done.
+        const bool is_external =
+            (candidate.function) ||
+            (candidate.symbol && candidate.symbol->IsExternal());
+        if (is_external)
+          return loadAddr;
+
+        // Otherwise, remember the best internal load address.
+        if (bestInternalLoadAddr == LLDB_INVALID_ADDRESS)
+          bestInternalLoadAddr = loadAddr;
+      }
+    }
+
+    // You test the address of a weak symbol against NULL to see if it is
+    // present. So we should return 0 for a missing weak symbol.
+    if (symbolWasMissingWeak)
+      return 0;
+
+    return std::nullopt;
+  }
+
+  lldb::addr_t GetBestInternalLoadAddress() const {
+    return bestInternalLoadAddr;
+  }
+
+private:
+  Target *target;
+  bool &symbolWasMissingWeak;
+  lldb::addr_t bestInternalLoadAddr = LLDB_INVALID_ADDRESS;
+};
+} // namespace
+
+auto JITExecutionUnit::getJittedFunctions() -> ArrayRef<JittedFunction> {
+  return impl->jittedFunctions;
+}
+
+auto JITExecutionUnit::getJittedGlobalVariables()
+    -> ArrayRef<JittedGlobalVariable> {
+  return impl->jittedGlobalVariables;
+}
+
+lldb::addr_t JITExecutionUnit::findSymbol(lldb_private::ConstString name,
+                                          bool &missingWeak) {
+  std::vector<ConstString> names(1, name);
+
+  lldb::addr_t ret = findInSymbols(names, impl->symCtx, missingWeak);
+  if (ret != LLDB_INVALID_ADDRESS)
+    return ret;
+
+  // If we find the symbol in runtimes or user defined symbols it can't be a
+  // missing weak symbol.
+  missingWeak = false;
+  ret = findInRuntimes(names, impl->symCtx);
+  if (ret != LLDB_INVALID_ADDRESS)
+    return ret;
+  return findInUserDefinedSymbols(names, impl->symCtx);
+}
+
+lldb::addr_t
+JITExecutionUnit::findInSymbols(const std::vector<ConstString> &names,
+                                const lldb_private::SymbolContext &sc,
+                                bool &symbolWasMissingWeak) {
+  symbolWasMissingWeak = false;
+
+  Target *target = sc.target_sp.get();
+  if (!target) {
+    // We shouldn't be doing any symbol lookup at all without a target.
+    return LLDB_INVALID_ADDRESS;
+  }
+
+  LoadAddressResolver resolver(target, symbolWasMissingWeak);
+  ModuleFunctionSearchOptions functionOptions;
+  functionOptions.include_symbols = true;
+  functionOptions.include_inlines = false;
+
+  for (const ConstString &name : names) {
+    if (sc.module_sp) {
+      SymbolContextList scList;
+      sc.module_sp->FindFunctions(name, CompilerDeclContext(),
+                                  lldb::eFunctionNameTypeFull, functionOptions,
+                                  scList);
+      if (auto loadAddr = resolver.Resolve(scList))
+        return *loadAddr;
+    }
+
+    if (sc.target_sp) {
+      SymbolContextList scList;
+      sc.target_sp->GetImages().FindFunctions(name, lldb::eFunctionNameTypeFull,
+                                              functionOptions, scList);
+      if (auto loadAddr = resolver.Resolve(scList))
+        return *loadAddr;
+      scList.Clear();
+
+      sc.target_sp->GetImages().FindSymbolsWithNameAndType(
+          name, lldb::eSymbolTypeAny, scList);
+      if (auto loadAddr = resolver.Resolve(scList))
+        return *loadAddr;
+    }
+
+    lldb::addr_t bestInternalLoadAddr = resolver.GetBestInternalLoadAddress();
+    if (bestInternalLoadAddr != LLDB_INVALID_ADDRESS)
+      return bestInternalLoadAddr;
+  }
+
+  return LLDB_INVALID_ADDRESS;
+}
+
+lldb::addr_t
+JITExecutionUnit::findInRuntimes(const std::vector<ConstString> &names,
+                                 const lldb_private::SymbolContext &sc) {
+  lldb::ProcessSP process =
+      sc.target_sp ? sc.target_sp->GetProcessSP() : nullptr;
+  if (!process)
+    return LLDB_INVALID_ADDRESS;
+
+  for (const ConstString &name : names) {
+    for (LanguageRuntime *runtime : process->GetLanguageRuntimes()) {
+      lldb::addr_t symbolLoadAddr = runtime->LookupRuntimeSymbol(name);
+      if (symbolLoadAddr != LLDB_INVALID_ADDRESS)
+        return symbolLoadAddr;
+    }
+  }
+  return LLDB_INVALID_ADDRESS;
+}
+
+lldb::addr_t JITExecutionUnit::findInUserDefinedSymbols(
+    const std::vector<ConstString> &names,
+    const lldb_private::SymbolContext &sc) {
+  lldb::TargetSP target = sc.target_sp;
+  for (const ConstString &name : names) {
+    lldb::addr_t symbolLoadAddr = target->GetPersistentSymbol(name);
+    if (symbolLoadAddr != LLDB_INVALID_ADDRESS)
+      return symbolLoadAddr;
+  }
+  return LLDB_INVALID_ADDRESS;
+}
+
+void JITExecutionUnit::reportSymbolLookupError(ConstString name) {
+  impl->failedLookups.push_back(name);
+}
+
+//===----------------------------------------------------------------------===//
+// Allocation
+//===----------------------------------------------------------------------===//
+
+lldb::addr_t
+JITExecutionUnit::getRemoteAddressForLocal(lldb::addr_t localAddress) {
+  Log *log = GetLog(LLDBLog::Expressions);
+
+  for (AllocationRecord &record : impl->records) {
+    if (localAddress >= record.hostAddress &&
+        localAddress < record.hostAddress + record.size) {
+      if (record.processAddress == LLDB_INVALID_ADDRESS)
+        return LLDB_INVALID_ADDRESS;
+
+      lldb::addr_t ret =
+          record.processAddress + (localAddress - record.hostAddress);
+
+      LLDB_LOGF(log,
+                "JITExecutionUnit::GetRemoteAddressForLocal() found 0x%" PRIx64
+                " in [0x%" PRIx64 "..0x%" PRIx64 "], and returned 0x%" PRIx64
+                " from [0x%" PRIx64 "..0x%" PRIx64 "].",
+                localAddress, (uint64_t)record.hostAddress,
+                (uint64_t)record.hostAddress + (uint64_t)record.size, ret,
+                record.processAddress, record.processAddress + record.size);
+
+      return ret;
+    }
+  }
+
+  return LLDB_INVALID_ADDRESS;
+}
+
+JITExecutionUnit::AddrRange
+JITExecutionUnit::getRemoteRangeForLocal(lldb::addr_t localAddress) {
+  for (AllocationRecord &record : impl->records) {
+    if (localAddress >= record.hostAddress &&
+        localAddress < record.hostAddress + record.size) {
+      if (record.processAddress == LLDB_INVALID_ADDRESS)
+        return AddrRange(0, 0);
+      return AddrRange(record.processAddress, record.size);
+    }
+  }
+
+  return AddrRange(0, 0);
+}
+
+bool JITExecutionUnit::commitOneAllocation(lldb::ProcessSP &process,
+                                           Status &error,
+                                           AllocationRecord &record) {
+  if (record.processAddress != LLDB_INVALID_ADDRESS)
+    return true;
+
+  switch (record.sectType) {
+  case lldb::eSectionTypeInvalid:
+  case lldb::eSectionTypeDWARFDebugAbbrev:
+  case lldb::eSectionTypeDWARFDebugAddr:
+  case lldb::eSectionTypeDWARFDebugAranges:
+  case lldb::eSectionTypeDWARFDebugCuIndex:
+  case lldb::eSectionTypeDWARFDebugFrame:
+  case lldb::eSectionTypeDWARFDebugInfo:
+  case lldb::eSectionTypeDWARFDebugLine:
+  case lldb::eSectionTypeDWARFDebugLoc:
+  case lldb::eSectionTypeDWARFDebugLocLists:
+  case lldb::eSectionTypeDWARFDebugMacInfo:
+  case lldb::eSectionTypeDWARFDebugPubNames:
+  case lldb::eSectionTypeDWARFDebugPubTypes:
+  case lldb::eSectionTypeDWARFDebugRanges:
+  case lldb::eSectionTypeDWARFDebugStr:
+  case lldb::eSectionTypeDWARFDebugStrOffsets:
+  case lldb::eSectionTypeDWARFAppleNames:
+  case lldb::eSectionTypeDWARFAppleTypes:
+  case lldb::eSectionTypeDWARFAppleNamespaces:
+  case lldb::eSectionTypeDWARFAppleObjC:
+  case lldb::eSectionTypeDWARFGNUDebugAltLink:
+    error.Clear();
+    break;
+  default:
+    record.processAddress =
+        Malloc(record.size, record.alignment, record.permissions,
+               eAllocationPolicyProcessOnly, /*zero_memory=*/false, error);
+    break;
+  }
+
+  return error.Success();
+}
+
+bool JITExecutionUnit::commitAllocations(lldb::ProcessSP &process) {
+  lldb_private::Status err;
+  if (llvm::all_of(impl->records, [&](auto &record) {
+        return commitOneAllocation(process, err, record);
+      }))
+    return true;
+
+  // If we failed, free any of the allocations we've made so far.
+  for (AllocationRecord &record : impl->records) {
+    if (record.processAddress != LLDB_INVALID_ADDRESS) {
+      Free(record.processAddress, err);
+      record.processAddress = LLDB_INVALID_ADDRESS;
+    }
+  }
+  return false;
+}
+
+void JITExecutionUnit::reportAllocations(llvm::ExecutionEngine &engine) {
+  impl->reportedAllocations = true;
+
+  for (AllocationRecord &record : impl->records) {
+    if (record.processAddress == LLDB_INVALID_ADDRESS ||
+        record.sectionId == eSectionIDInvalid)
+      continue;
+
+    engine.mapSectionAddress((void *)record.hostAddress, record.processAddress);
+  }
+
+  // Trigger re-application of relocations.
+  engine.finalizeObject();
+}
+
+bool JITExecutionUnit::writeData(lldb::ProcessSP &process) {
+  bool wroteSomething = false;
+  for (AllocationRecord &record : impl->records) {
+    if (record.processAddress == LLDB_INVALID_ADDRESS)
+      continue;
+    lldb_private::Status err;
+    WriteMemory(record.processAddress, (uint8_t *)record.hostAddress,
+                record.size, err);
+    if (err.Success())
+      wroteSomething = true;
+  }
+  return wroteSomething;
+}
+
+void JITExecutionUnit::AllocationRecord::dump(Log *log) {
+  if (!log)
+    return;
+
+  LLDB_LOGF(log,
+            "[0x%llx+0x%llx]->0x%llx (alignment %d, section ID %d, name %s)",
+            (unsigned long long)hostAddress, (unsigned long long)size,
+            (unsigned long long)processAddress, (unsigned)alignment,
+            (unsigned)sectionId, name.c_str());
+}
+
+//===----------------------------------------------------------------------===//
+// Logging Utils
+//===----------------------------------------------------------------------===//
+
+Status JITExecutionUnit::disassembleFunction(Stream &stream,
+                                             lldb::ProcessSP &process) {
+  Log *log = GetLog(LLDBLog::Expressions);
+  ExecutionContext exeCtx(process);
+
+  lldb::addr_t funcLocalAddr = LLDB_INVALID_ADDRESS;
+  lldb::addr_t funcRemoteAddr = LLDB_INVALID_ADDRESS;
+  for (JittedFunction &function : impl->jittedFunctions) {
+    if (function.name == impl->name) {
+      funcLocalAddr = function.localAddr;
+      funcRemoteAddr = function.remoteAddr;
+      break;
+    }
+  }
+
+  if (funcLocalAddr == LLDB_INVALID_ADDRESS) {
+    Status ret;
+    ret.SetErrorStringWithFormat("Couldn't find function %s for disassembly",
+                                 impl->name.AsCString());
+    return ret;
+  }
+
+  LLDB_LOGF(log,
+            "Found function, has local address 0x%" PRIx64
+            " and remote address 0x%" PRIx64,
+            (uint64_t)funcLocalAddr, (uint64_t)funcRemoteAddr);
+
+  AddrRange funcRange = getRemoteRangeForLocal(funcLocalAddr);
+  if (funcRange.first == 0 && funcRange.second == 0) {
+    Status ret;
+    ret.SetErrorStringWithFormat("Couldn't find code range for function %s",
+                                 impl->name.AsCString());
+    return ret;
+  }
+
+  LLDB_LOGF(log, "Function's code range is [0x%" PRIx64 "+0x%" PRIx64 "]",
+            funcRange.first, funcRange.second);
+
+  Target *target = exeCtx.GetTargetPtr();
+  if (!target) {
+    Status ret;
+    ret.SetErrorToGenericError();
+    ret.SetErrorString("Couldn't find the target");
+    return ret;
+  }
+  lldb::WritableDataBufferSP buffer(new DataBufferHeap(funcRange.second, 0));
+
+  Status err;
+  Process *processPtr = exeCtx.GetProcessPtr();
+  processPtr->ReadMemory(funcRemoteAddr, buffer->GetBytes(),
+                         buffer->GetByteSize(), err);
+
+  if (!err.Success()) {
+    Status ret;
+    ret.SetErrorStringWithFormat("Couldn't read from process: %s",
+                                 err.AsCString("unknown error"));
+    return ret;
+  }
+
+  ArchSpec arch(target->GetArchitecture());
+
+  const char *pluginName = nullptr;
+  const char *flavorString = nullptr;
+  lldb::DisassemblerSP disassembler =
+      Disassembler::FindPlugin(arch, flavorString, pluginName);
+
+  if (!disassembler) {
+    Status ret;
+    ret.SetErrorStringWithFormat(
+        "Unable to find disassembler plug-in for %s architecture.",
+        arch.GetArchitectureName());
+    return ret;
+  }
+
+  if (!process) {
+    Status ret;
+    ret.SetErrorString("Couldn't find the process");
+    return ret;
+  }
+  DataExtractor extractor(buffer, process->GetByteOrder(),
+                          target->GetArchitecture().GetAddressByteSize());
+
+  if (log) {
+    LLDB_LOGF(log, "Function data has contents:");
+    extractor.PutToLog(log, 0, extractor.GetByteSize(), funcRemoteAddr, 16,
+                       DataExtractor::TypeUInt8);
+  }
+
+  disassembler->DecodeInstructions(Address(funcRemoteAddr), extractor, 0,
+                                   UINT32_MAX, false, false);
+
+  InstructionList &instructionList = disassembler->GetInstructionList();
+  instructionList.Dump(&stream, true, true, /*show_control_flow_kind=*/true,
+                       &exeCtx);
+
+  return Status();
+}
+
+//===----------------------------------------------------------------------===//
+// Compilation
+//===----------------------------------------------------------------------===//
+
+namespace {
+struct IRExecDiagnosticHandler : public llvm::DiagnosticHandler {
+  Status *err;
+  IRExecDiagnosticHandler(Status *err) : err(err) {}
+  bool handleDiagnostics(const llvm::DiagnosticInfo &DI) override {
+    if (DI.getKind() == llvm::DK_SrcMgr) {
+      const auto &DISM = llvm::cast<llvm::DiagnosticInfoSrcMgr>(DI);
+      if (err && err->Success()) {
+        err->SetErrorToGenericError();
+        err->SetErrorStringWithFormat(
+            "Inline assembly error: %s",
+            DISM.getSMDiag().getMessage().str().c_str());
+      }
+      return true;
+    }
+
+    return false;
+  }
+};
+
+class ObjectDumper : public llvm::ObjectCache {
+public:
+  ObjectDumper(FileSpec outputDir) : outDir(outputDir) {}
+
+  void notifyObjectCompiled(const llvm::Module *module,
+                            llvm::MemoryBufferRef object) override {
+    llvm::SmallVector<char, 256> resultPath;
+    FileSpec modelSpec = outDir.CopyByAppendingPathComponent(
+        "jit-object-" + module->getModuleIdentifier() + "-%%%.o");
+
+    int fd = 0;
+    std::error_code result =
+        llvm::sys::fs::createUniqueFile(modelSpec.GetPath(), fd, resultPath);
+    if (!result) {
+      llvm::raw_fd_ostream fds(fd, true);
+      fds.write(object.getBufferStart(), object.getBufferSize());
+    }
+  }
+
+  std::unique_ptr<llvm::MemoryBuffer>
+  getObject(const llvm::Module *module) override {
+    // Return nothing - we're just abusing the object-cache mechanism to dump
+    // objects.
+    return nullptr;
+  }
+
+private:
+  FileSpec outDir;
+};
+
+} // namespace
+
+Status JITExecutionUnit::getRunnableInfo(lldb::addr_t &funcAddr,
+                                         lldb::addr_t &funcEnd) {
+  lldb::ProcessSP process(GetProcessWP().lock());
+  funcAddr = LLDB_INVALID_ADDRESS;
+  funcEnd = LLDB_INVALID_ADDRESS;
+
+  Status error;
+  if (!process) {
+    error.SetErrorString("Couldn't write the JIT compiled code into the "
+                         "process because the process is invalid");
+    return error;
+  }
+
+  if (impl->didJit) {
+    funcAddr = impl->functionLoadAddr;
+    funcEnd = impl->functionEndLoadAddr;
+    return Status();
+  }
+  impl->didJit = true;
+
+  static std::recursive_mutex runnableInfoMutex;
+  std::lock_guard<std::recursive_mutex> guard(runnableInfoMutex);
+
+  Log *log = GetLog(LLDBLog::Expressions);
+  if (log) {
+    std::string s;
+    llvm::raw_string_ostream oss(s);
+    impl->module->print(oss, nullptr);
+    oss.flush();
+    LLDB_LOGF(log, "Module being sent to JIT: \n%s", s.c_str());
+  }
+
+  impl->module->getContext().setDiagnosticHandler(
+      std::make_unique<IRExecDiagnosticHandler>(&error));
+
+  llvm::Module *module = impl->module.get();
+  llvm::EngineBuilder builder(std::move(impl->module));
+  llvm::Triple triple(module->getTargetTriple());
+
+  std::string errorString;
+  builder.setEngineKind(llvm::EngineKind::JIT)
+      .setErrorStr(&errorString)
+      .setRelocationModel(triple.isOSBinFormatMachO() ? llvm::Reloc::PIC_
+                                                      : llvm::Reloc::Static)
+      .setMCJITMemoryManager(std::make_unique<MemoryManager>(*this))
+      .setOptLevel(llvm::CodeGenOpt::Less);
+
+  StringRef mArch;
+  StringRef mCPU;
+  llvm::SmallVector<std::string, 0> mAttrs;
+
+  for (std::string &feature : impl->cpuFeatures)
+    mAttrs.push_back(feature);
+
+  llvm::TargetMachine *target_machine =
+      builder.selectTarget(triple, mArch, mCPU, mAttrs);
+
+  impl->executionEngine.reset(builder.create(target_machine));
+
+  if (!impl->executionEngine) {
+    error.SetErrorToGenericError();
+    error.SetErrorStringWithFormat("Couldn't JIT the function: %s",
+                                   errorString.c_str());
+    return error;
+  }
+
+  impl->stripUnderscore =
+      (impl->executionEngine->getDataLayout().getGlobalPrefix() == '_');
+
+  if (FileSpec saveObjectsDir = process->GetTarget().GetSaveJITObjectsDir()) {
+    impl->objectCache = std::make_unique<ObjectDumper>(saveObjectsDir);
+    impl->executionEngine->setObjectCache(impl->objectCache.get());
+  }
+
+  // Make sure we see all sections, including ones that don't have relocations.
+  impl->executionEngine->setProcessAllSections(true);
+  impl->executionEngine->DisableLazyCompilation();
+
+  for (llvm::Function &function : *module) {
+    if (function.isDeclaration() || function.hasPrivateLinkage())
+      continue;
+    bool external = !function.hasLocalLinkage();
+
+    void *fnPtr = impl->executionEngine->getPointerToFunction(&function);
+    if (!error.Success())
+      return error;
+    if (!fnPtr) {
+      error.SetErrorToGenericError();
+      error.SetErrorStringWithFormat(
+          "'%s' was in the JITted module but wasn't lowered",
+          function.getName().str().c_str());
+      return error;
+    }
+    impl->jittedFunctions.emplace_back(function.getName().str().c_str(),
+                                       external,
+                                       reinterpret_cast<uintptr_t>(fnPtr));
+  }
+
+  commitAllocations(process);
+  reportAllocations(*impl->executionEngine);
+
+  // We have to do this after calling ReportAllocations because for the MCJIT,
+  // getGlobalValueAddress will cause the JIT to perform all relocations.  That
+  // can only be done once, and has to happen after we do the remapping from
+  // local -> remote. That means we don't know the local address of the
+  // Variables, but we don't need that for anything, so that's okay.
+
+  std::function<void(llvm::GlobalValue &)> registerOneValue =
+      [this](llvm::GlobalValue &val) {
+        if (!val.hasExternalLinkage() || val.isDeclaration())
+          return;
+        uint64_t varPtrAddr =
+            impl->executionEngine->getGlobalValueAddress(val.getName().str());
+        lldb::addr_t remoteAddr = getRemoteAddressForLocal(varPtrAddr);
+
+        // This is a really unfortunate API that sometimes returns local
+        // addresses and sometimes returns remote addresses, based on whether
+        // the variable was relocated during ReportAllocations or not.
+        if (remoteAddr == LLDB_INVALID_ADDRESS)
+          remoteAddr = varPtrAddr;
+
+        if (varPtrAddr) {
+          impl->jittedGlobalVariables.emplace_back(
+              val.getName().str().c_str(), LLDB_INVALID_ADDRESS, remoteAddr);
+        }
+      };
+
+  for (llvm::GlobalVariable &globalVar : module->globals())
+    registerOneValue(globalVar);
+  for (llvm::GlobalAlias &globalAlias : module->aliases())
+    registerOneValue(globalAlias);
+
+  writeData(process);
+
+  if (!impl->failedLookups.empty()) {
+    StreamString ss;
+    ss.PutCString("Couldn't lookup symbols:\n");
+
+    bool emitNewLine = false;
+    for (ConstString failedLookup : impl->failedLookups) {
+      if (emitNewLine)
+        ss.PutCString("\n");
+      emitNewLine = true;
+      ss.PutCString("  ");
+      ss.PutCString(Mangled(failedLookup).GetDemangledName().GetStringRef());
+    }
+    impl->failedLookups.clear();
+    error.SetErrorString(ss.GetString());
+    return error;
+  }
+
+  impl->functionLoadAddr = LLDB_INVALID_ADDRESS;
+  impl->functionEndLoadAddr = LLDB_INVALID_ADDRESS;
+
+  for (JittedFunction &jittedFn : impl->jittedFunctions) {
+    jittedFn.remoteAddr = getRemoteAddressForLocal(jittedFn.localAddr);
+
+    if (!impl->name.IsEmpty() && jittedFn.name == impl->name) {
+      AddrRange funcRange = getRemoteRangeForLocal(jittedFn.localAddr);
+      impl->functionEndLoadAddr = funcRange.first + funcRange.second;
+      impl->functionLoadAddr = jittedFn.remoteAddr;
+    }
+  }
+
+  if (log) {
+    LLDB_LOGF(log, "Code can be run in the target.");
+
+    StreamString disassemblyStream;
+    Status err = disassembleFunction(disassemblyStream, process);
+    if (!err.Success()) {
+      LLDB_LOGF(log, "Couldn't disassemble function : %s",
+                err.AsCString("unknown error"));
+    } else {
+      LLDB_LOGF(log, "Function disassembly:\n%s", disassemblyStream.GetData());
+    }
+
+    LLDB_LOGF(log, "Sections: ");
+    for (AllocationRecord &record : impl->records) {
+      record.dump(log);
+      if (record.processAddress != LLDB_INVALID_ADDRESS) {
+        Status err;
+        DataBufferHeap buffer(record.size, 0);
+        ReadMemory(buffer.GetBytes(), record.processAddress, record.size, err);
+
+        if (err.Success()) {
+          DataExtractor extractor(buffer.GetBytes(), buffer.GetByteSize(),
+                                  lldb::eByteOrderBig, 8);
+          extractor.PutToLog(log, 0, buffer.GetByteSize(),
+                             record.processAddress, 16,
+                             DataExtractor::TypeUInt8);
+        }
+        continue;
+      }
+
+      DataExtractor extractor((const void *)record.hostAddress, record.size,
+                              lldb::eByteOrderBig, 8);
+      extractor.PutToLog(log, 0, record.size, record.hostAddress, 16,
+                         DataExtractor::TypeUInt8);
+    }
+  }
+
+  funcAddr = impl->functionLoadAddr;
+  funcEnd = impl->functionEndLoadAddr;
+  return error;
+}
+
+//===----------------------------------------------------------------------===//
+// ObjectFileJITDelegate
+//===----------------------------------------------------------------------===//
+
+lldb::ByteOrder JITExecutionUnit::GetByteOrder() const {
+  ExecutionContext exeCtx(GetBestExecutionContextScope());
+  return exeCtx.GetByteOrder();
+}
+
+uint32_t JITExecutionUnit::GetAddressByteSize() const {
+  ExecutionContext exeCtx(GetBestExecutionContextScope());
+  return exeCtx.GetAddressByteSize();
+}
+
+void JITExecutionUnit::PopulateSectionList(
+    lldb_private::ObjectFile *objFile, lldb_private::SectionList &sectionList) {
+  for (AllocationRecord &record : impl->records) {
+    if (!record.size)
+      continue;
+    sectionList.AddSection(std::make_shared<lldb_private::Section>(
+        objFile->GetModule(), objFile, record.sectionId,
+        ConstString(record.name), record.sectType, record.processAddress,
+        record.size, record.hostAddress, record.size, 0, record.permissions));
+  }
+}
+
+ArchSpec JITExecutionUnit::GetArchitecture() {
+  ExecutionContext exeCtx(GetBestExecutionContextScope());
+  if (Target *target = exeCtx.GetTargetPtr())
+    return target->GetArchitecture();
+  return ArchSpec();
+}

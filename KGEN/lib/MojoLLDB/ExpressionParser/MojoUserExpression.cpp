@@ -108,8 +108,7 @@ MojoUserExpression::MojoUserExpression(ExecutionContextScope &exeScope,
                                        lldb::LanguageType language,
                                        ResultType desiredType,
                                        const EvaluateExpressionOptions &options)
-    : LLVMUserExpression(exeScope, expr, prefix, language, desiredType,
-                         options),
+    : JitUserExpression(exeScope, expr, prefix, language, desiredType, options),
       impl(std::make_unique<Impl>(exeScope, *m_target_wp.lock())) {}
 
 MojoUserExpression::~MojoUserExpression() = default;
@@ -150,13 +149,8 @@ bool MojoUserExpression::Parse(DiagnosticManager &diagnosticManager,
   }
   impl->resultDelegate.RegisterPersistentState(persistentState);
 
-  // Scan the current execution context.
-  Status error;
-  ScanContext(exeCtx, error);
-  if (!error.Success()) {
-    diagnosticManager.Printf(eDiagnosticSeverityError, "warning: %s\n",
-                             error.AsCString());
-  }
+  // Setup the target of the expression.
+  target = exeCtx.GetTargetPtr();
 
   // Parse the expression text.
   Process *process = exeCtx.GetProcessPtr();
@@ -167,18 +161,17 @@ bool MojoUserExpression::Parse(DiagnosticManager &diagnosticManager,
 
   // Prepare the output of the parser for execution, evaluating it statically if
   // possible.
-  Status jitError = impl->parser->PrepareForExecution(
-      m_jit_start_addr, m_jit_end_addr, m_execution_unit_sp, exeCtx,
-      m_can_interpret, executionPolicy);
+  Status jitError = impl->parser->prepareForExecution(
+      m_jit_start_addr, m_jit_end_addr, executionUnit, exeCtx, executionPolicy);
 
   // If a valid execution unit was produced and there is more than one external
   // function in the execution unit, it needs to keep living even if it's not
   // top level, because the result could refer to that function., register it if
   // necessary.
-  if (m_execution_unit_sp &&
+  if (executionUnit &&
       (m_options.GetExecutionPolicy() == eExecutionPolicyTopLevel ||
-       m_execution_unit_sp->GetJittedFunctions().size() > 1)) {
-    persistentState->RegisterExecutionUnit(m_execution_unit_sp);
+       executionUnit->getJittedFunctions().size() > 1)) {
+    persistentState->registerExecutionUnit(executionUnit);
   }
 
   // Process any errors during code generation.
@@ -206,11 +199,7 @@ lldb::ExpressionVariableSP MojoUserExpression::GetResultAfterDematerialization(
   return impl->resultDelegate.GetVariable();
 }
 
-void MojoUserExpression::ScanContext(ExecutionContext &exeCtx, Status &err) {
-  m_target = exeCtx.GetTargetPtr();
-}
-
-bool MojoUserExpression::AddArguments(ExecutionContext &exeCtx,
+bool MojoUserExpression::addArguments(ExecutionContext &exeCtx,
                                       std::vector<lldb::addr_t> &args,
                                       lldb::addr_t structAddress,
                                       DiagnosticManager &diagnosticManager) {
@@ -258,7 +247,7 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
   // Wrap the expression text in a function so that we can execute it.
   // TODO: This currently doesn't support imports or any kind of persistent
   // state.
-  llvm::raw_string_ostream exprRawOS(m_transformed_text);
+  llvm::raw_string_ostream exprRawOS(transformedText);
   mlir::raw_indented_ostream exprOSIndented(exprRawOS);
   exprOSIndented << "from IO import print\n"
                  << "from Pointer import Pointer\n\n"
@@ -293,13 +282,13 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
   }
   exprOSIndented << "):\n";
 
-  size_t prefixSize = m_transformed_text.size();
+  size_t prefixSize = transformedText.size();
   exprOSIndented.printReindented(m_expr_text, "    ");
 
-  MOJO_EXPR_LOG("Parsing the following code:\n{0}", m_transformed_text.c_str());
+  MOJO_EXPR_LOG("Parsing the following code:\n{0}", transformedText.c_str());
 
   // Parse the expression.
-  m_materializer_up = std::make_unique<Materializer>();
+  materializer = std::make_unique<Materializer>();
   impl->parser =
       std::make_unique<MojoExpressionParser>(exeScope, *this, m_options);
 
@@ -315,7 +304,7 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
     MOJO_EXPR_LOG("Attempting to rewrite the input expression");
 
     // If we can rewrite the expression, do so. If not, simply return.
-    if (!impl->parser->RewriteExpression(diagnosticManager))
+    if (failed(impl->parser->rewriteExpression(diagnosticManager)))
       return;
     MOJO_EXPR_LOG("Rewrote the input, next parse will be the fixed code");
     llvm::raw_string_ostream fixedOS(m_fixed_text);
