@@ -286,17 +286,22 @@ ExecutionEngine::create(ExecutionEngineOptions options,
   // Create the data layout from the target machine.
   const llvm::DataLayout &layout = tm.createDataLayout();
 
-  // Construct the ExecutionSession.
-  auto epcOr = llvm::orc::SelfExecutorProcessControl::Create();
-  if (!epcOr)
-    return Error(toString(epcOr.takeError()));
-
+  // Construct the ExecutionSession. The user may have passed in an
+  // ExecutorProcessControl that we need to use.
+  std::unique_ptr<llvm::orc::ExecutorProcessControl> epc =
+      std::move(options.epc);
+  if (!epc) {
+    auto epcOr = llvm::orc::SelfExecutorProcessControl::Create();
+    if (!epcOr)
+      return Error(toString(epcOr.takeError()));
+    epc = std::move(*epcOr);
+  }
   auto sessionPtr =
-      std::make_unique<llvm::orc::ExecutionSession>(std::move(*epcOr));
+      std::make_unique<llvm::orc::ExecutionSession>(std::move(epc));
 
   // Now we can actually create the ExecutionEngine.
   auto ee = std::unique_ptr<ExecutionEngine>(
-      new ExecutionEngine(std::move(options), std::move(sessionPtr), layout));
+      new ExecutionEngine(std::move(sessionPtr), layout));
 
   const llvm::Triple &tt = tm.getTargetTriple();
 
@@ -332,7 +337,7 @@ ExecutionEngine::create(ExecutionEngineOptions options,
     ee->objectLayer->setAutoClaimResponsibilityForObjectSymbols(true);
   }
 
-  if (ee->options.registerDebugPlugins) {
+  if (options.registerDebugPlugins) {
     llvm::orc::ExecutionSession &session = *ee->executionSession;
 
     // Get the registrar for the GDB JIT loader interface.
@@ -396,10 +401,9 @@ ExecutionEngine::createWithStandardLayers(ExecutionEngineOptions options,
 }
 
 ExecutionEngine::ExecutionEngine(
-    ExecutionEngineOptions options,
     std::unique_ptr<llvm::orc::ExecutionSession> session,
     const llvm::DataLayout &dl)
-    : options(std::move(options)), executionSession(std::move(session)),
+    : executionSession(std::move(session)),
       // Parse the layout so that we own the underlying memory. DataLayout is a
       // bit weird, it seems like it has some internal data structures that
       // every instance shares.
