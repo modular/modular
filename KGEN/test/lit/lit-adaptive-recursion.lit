@@ -7,18 +7,18 @@
 # RUN: mojo %s | FileCheck %s
 
 from IO import print
-from Assert import assert_param_bool
+from Assert import assert_param
 
 
 @adaptive
 fn foo[axis: Int](i: Int) -> Int:
-    assert_param_bool[axis < 0]()
+    assert_param[axis < 0]()
     return i
 
 
 @adaptive
 fn foo[axis: Int](i: Int) -> Int:
-    assert_param_bool[axis >= 0]()
+    assert_param[axis >= 0]()
     return foo[axis - 1](i)
 
 

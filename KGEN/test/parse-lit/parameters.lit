@@ -6,7 +6,7 @@
 
 # RUN: kgen-translate -import-mojo %s -I %S/../mojo-examples/ -verify-diagnostics | kgen-opt -verify-parameters | FileCheck %s
 
-from prolog import assert_param, assert_param_bool, SIMD
+from prolog import assert_param, assert_param, SIMD
 from List import create_kgen_list
 from DType import DType
 
@@ -27,8 +27,7 @@ struct StructWithIntParam[size: Int]:
 
 # CHECK-LABEL: lit.func @"paramArith{{.*}}"<x>() -> !lit.none {
 fn paramArith[x: __mlir_type.index]():
-  # CHECK: kgen.call @"$Assert"::@"assert_param()"<:i1 eq(x, -99)>()
-  # HECK: kgen.param.assert <eq(x, -99)>, "param assertion failed"
+  # CHECK: kgen.call @"$Assert"::@"assert_param()"{{.*}}eq(x, -99)
   assert_param[x == (-100).__as_mlir_index()+(1).__as_mlir_index()]()
 
 fn take_3index(a: Int, b: Int, c: Int) -> Int:
@@ -416,7 +415,7 @@ struct MyVector[size: Int, dtype: MyDType]:
 fn testMyDType[dt: MyDType](a: MyVector[4, MyDType.f32],
                             b: MyVector[4, dt]):
 
-   assert_param_bool[dt == MyDType.f64]()
+   assert_param[dt == MyDType.f64]()
 
 # Issue #6828: Unqualified name lookup into structs doesn't work
 # CHECK-LABEL: lit.struct.decl @UnqualAliasLookup<param>
