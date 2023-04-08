@@ -106,7 +106,11 @@ public:
 #ifndef NDEBUG
   /// Verify the integrity of the type to catch CompilerTypes that mix
   /// and match invalid TypeSystem/Opaque type pairs.
-  bool Verify(lldb::opaque_compiler_type_t type) override { return false; }
+  bool Verify(lldb::opaque_compiler_type_t type) override {
+    // MLIR type construction should already handle verifying the necessary
+    // invariants here.
+    return true;
+  }
 #endif
 
   lldb::LanguageType
@@ -175,9 +179,7 @@ public:
 
   std::optional<uint64_t>
   GetBitSize(lldb::opaque_compiler_type_t type,
-             lldb_private::ExecutionContextScope *exeScope) override {
-    return {};
-  }
+             lldb_private::ExecutionContextScope *exeScope) override;
 
   lldb::Encoding GetEncoding(lldb::opaque_compiler_type_t type,
                              uint64_t &count) override {

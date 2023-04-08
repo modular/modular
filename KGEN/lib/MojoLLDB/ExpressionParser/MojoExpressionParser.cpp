@@ -8,20 +8,27 @@
 #include "../TypeSystem/MojoTypeSystem.h"
 #include "KGEN/CompilerRT.h"
 #include "KGEN/KGENCompiler.h"
+#include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LowerToObject.h"
+#include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/ParseLit.h"
 #include "Logging.h"
 #include "MojoDiagnostic.h"
+#include "MojoExpressionVariable.h"
 #include "lldb/Expression/DiagnosticManager.h"
 #include "lldb/Expression/IRExecutionUnit.h"
+#include "lldb/Expression/Materializer.h"
 #include "lldb/Target/ExecutionContextScope.h"
 #include "lldb/Target/StackFrame.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Utility/LLDBLog.h"
+#include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Pass/PassManager.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Target/TargetMachine.h"
 
+using namespace M;
+using namespace M::KGEN;
 using namespace M::KGEN::Mojo;
 using namespace lldb_private;
 
@@ -32,6 +39,9 @@ using namespace lldb_private;
 struct MojoExpressionParser::Impl {
   Impl(ExecutionContextScope *exeScope, Expression &expr,
        const EvaluateExpressionOptions &options);
+
+  /// The type system associated with the evaluation of the current expression.
+  MojoTypeSystem *typeSystem = nullptr;
 
   /// The compilation options to use when compiling.
   KGEN::CompilationOptions compilationOptions;
@@ -59,6 +69,10 @@ struct MojoExpressionParser::Impl {
 
   /// The options to use when evaluating the expression.
   EvaluateExpressionOptions options;
+
+  /// A set of new persistent variables to be added to the persistent expression
+  /// state if compilation of the expression succeeds.
+  SmallVector<std::pair<StringRef, mlir::Type>> newPersistentVariables;
 };
 
 MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
@@ -77,7 +91,7 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
     llvm::consumeError(typeSystemOr.takeError());
     return;
   }
-  auto *typeSystem = llvm::cast<MojoTypeSystem>(typeSystemOr.get().get());
+  typeSystem = llvm::cast<MojoTypeSystem>(typeSystemOr.get().get());
   MLIRContext *ctx = typeSystem->getMLIRContext();
   runtime = &typeSystem->getRuntime();
 
@@ -257,7 +271,9 @@ MojoExpressionParser::parse(DiagnosticManager &diagnosticManager) {
 
   // TODO: We should print the expression to a file if we need debug information
   // attached.
-  auto buffer = llvm::MemoryBuffer::getMemBuffer(impl->exprToParse.Text());
+  StringRef moduleName = "__lldb_module__";
+  auto buffer =
+      llvm::MemoryBuffer::getMemBuffer(impl->exprToParse.Text(), moduleName);
   impl->sourceManager.AddNewSourceBuffer(std::move(buffer), llvm::SMLoc());
 
   // Set the diagnostic handler to create MojoDiagnostics that we can use to
@@ -292,6 +308,29 @@ MojoExpressionParser::parse(DiagnosticManager &diagnosticManager) {
       [](Pass *, Operation *) { return false; }, /*printModuleScope=*/false,
       /*printAfterOnlyOnChange=*/false, /*printAfterOnlyOnFailure=*/false,
       /*out=*/preElaborationStream);
+
+  // Extract the file module for the expression. File modules get mangled with
+  // a leading `$`.
+  auto fileModule =
+      module->lookupSymbol<LIT::FileModuleOp>(("$" + moduleName).str());
+  assert(fileModule && "expected to find the lldb file module");
+
+  // Grab the struct containing the persistent expression state.
+  auto persistentStateStruct =
+      fileModule.lookupSymbol<LIT::StructDeclOp>("__lldb_context__");
+  assert(persistentStateStruct && "expected to find persistent state struct");
+
+  // Extract the internal expression function.
+  auto functions = fileModule.getOps<LIT::FuncOp>();
+  auto exprFnIt = llvm::find_if(functions, [](LIT::FuncOp func) {
+    return func.getName().startswith("__lldb_expr_impl__(");
+  });
+  assert(exprFnIt != functions.end() && "expected lldb expression function");
+  LIT::FuncOp exprFunc = *exprFnIt;
+
+  // Process the variables within the expression.
+  if (impl->options.GetREPLEnabled())
+    processPersistentReplVariables(exprFunc, persistentStateStruct);
 
   // Run the elaboration pipeline.
   if (failed(impl->passManager->run(*module))) {
@@ -360,5 +399,143 @@ Status MojoExpressionParser::PrepareForExecution(
   // Extract the function information for the expression entry point.
   Status error;
   executionUnit->GetRunnableInfo(error, funcAddr, funcEnd);
+  if (error.Fail())
+    return error;
+
+  // Compute the target info to use for the persistent variable state.
+  lldb_private::Process *process = exeCtx.GetProcessPtr();
+  lldb::ByteOrder byteOrder = process->GetByteOrder();
+  size_t addressByteSize = process->GetAddressByteSize();
+
+  // If we successfully compiled the expression, we can now comfortably register
+  // the persistent state variables.
+  auto *persistentState = impl->typeSystem->GetPersistentExpressionState();
+
+  // Register the newly created persistent variables.
+  for (auto [name, mlirType] : impl->newPersistentVariables) {
+    CompilerType lldbType(impl->typeSystem->weak_from_this(),
+                          const_cast<void *>(mlirType.getAsOpaquePointer()));
+    lldb::ExpressionVariableSP var = persistentState->CreatePersistentVariable(
+        exeCtx.GetBestExecutionContextScope(), ConstString(name), lldbType,
+        byteOrder, addressByteSize);
+    if (!var) {
+      error.SetErrorString("failed to create persistent variable");
+      return error;
+    }
+
+    // Mark the variable as persistent, and notify LLDB that it needs to be
+    // allocated.
+    var->m_frozen_sp->SetHasCompleteType();
+    var->m_flags |= ExpressionVariable::EVKeepInTarget;
+    var->m_flags |= ExpressionVariable::EVIsLLDBAllocated;
+    var->m_flags |= ExpressionVariable::EVNeedsAllocation;
+  }
+
+  // Register the persistent variables with the materializer.
+  for (unsigned i = 0, e = persistentState->GetSize(); i < e; ++i) {
+    lldb::ExpressionVariableSP var = persistentState->GetVariableAtIndex(i);
+    assert(var && "expected valid variable in persistent state");
+
+    // Try adding the variable to the expression materializer.
+    m_expr.GetMaterializer()->AddPersistentVariable(var, nullptr, error);
+    if (error.Fail())
+      return error;
+  }
+
   return error;
+}
+
+//===----------------------------------------------------------------------===//
+// Persistent Variables
+//===----------------------------------------------------------------------===//
+
+void MojoExpressionParser::processPersistentReplVariables(
+    LIT::FuncOp func, LIT::StructDeclOp stateStruct) {
+  OpBuilder structBuilder = OpBuilder::atBlockEnd(stateStruct.getBody());
+  Value structValue = func.getArgument(0);
+  Attribute targetAttr =
+      KGEN::ParamOperatorAttr::get(POC::CurrentTarget, /*operands=*/{},
+                                   structBuilder.getType<KGEN::TargetType>());
+
+  // Utility functor to insert a new field into the persistent state struct.
+  // Returns a value corresponding to the address of the field.
+  auto insertField = [&](Operation *varOp, StringAttr name,
+                         POP::PointerType type) {
+    mlir::Type elementType = type.getResolvedElementType();
+    impl->newPersistentVariables.emplace_back(name, elementType);
+
+    structBuilder.create<LIT::StructFieldOp>(varOp->getLoc(), name,
+                                             POP::PointerType::get(type));
+
+    // Materialize a reference to the variable within the function.
+    mlir::ImplicitLocOpBuilder builder(varOp->getLoc(), varOp);
+    Value fieldGep = builder.create<LIT::StructGEPOp>(
+        varOp->getLoc(), POP::PointerType::get(POP::PointerType::get(type)),
+        name, structValue);
+    Value fieldLoad = builder.create<POP::LoadOp>(varOp->getLoc(), fieldGep);
+
+    // TODO: Whenever we have globals, we should be able to use a global
+    // variable for the address and ensure it gets preserved. For now, we just
+    // malloc the memory.
+    mlir::Type indexType = structBuilder.getIndexType();
+    Attribute sizeOfAttr = KGEN::ParamOperatorAttr::get(
+        POC::GetSizeOf,
+        {KGEN::ParameterizedTypeConstantAttr::get(elementType), targetAttr},
+        indexType);
+    Value sizeOf = builder.create<KGEN::ParamConstantOp>(indexType, sizeOfAttr);
+    auto mallocCall = builder.create<POP::ExternalCallOp>(
+        POP::PointerType::get(POP::SIMDType::get(
+            1, builder.getAttr<KGEN::DTypeConstantAttr>(KGENDType::invalid))),
+        "malloc", sizeOf, /*variadicType=*/TypeAttr());
+    Value mallocResult = mallocCall.getResult(0);
+    Value mallocCast =
+        builder.create<POP::PointerBitcastOp>(type, mallocResult);
+    builder.create<POP::StoreOp>(mallocCast, fieldLoad);
+
+    // Return a pointer to the new address of the variable.
+    return mallocCast;
+  };
+
+  // Functor used to consider if a variable should be persisted.
+  auto shouldBePersisted = [&](StringRef name) {
+    // Only consider variables that were written by users, not those
+    // auto-generated by the compiler.
+    return llvm::all_of(
+        name, [&](char c) { return llvm::isAlnum(c) || c == '_' || c == '$'; });
+  };
+
+  // Walk the function body collecting all variables defined at the top scope.
+  // In REPL mode, we persist any variables defined within the expression.
+  for (Operation &op : llvm::make_early_inc_range(*func.getBody())) {
+    // Handle register based let decls. These have an initializer, and never
+    // expose the actual pointer.
+    if (auto letOp = dyn_cast<LIT::LetRegDeclOp>(op)) {
+      StringAttr name = letOp.getNameAttr();
+      if (!shouldBePersisted(name.getValue()))
+        continue;
+
+      Value field =
+          insertField(letOp, name, POP::PointerType::get(letOp.getType()));
+
+      // Store the value in the persistent state struct.
+      OpBuilder builder(letOp);
+      builder.create<POP::StoreOp>(letOp.getLoc(), letOp.getValue(), field);
+
+      // Replace all references of the original decl with the initializer.
+      letOp.replaceAllUsesWith(letOp.getValue());
+      letOp.erase();
+      continue;
+    }
+    // Handle memory based let decls.
+    if (auto letOp = dyn_cast<LIT::VarLetDeclOp>(op)) {
+      StringAttr name = letOp.getNameAttr();
+      if (!shouldBePersisted(name.getValue()))
+        continue;
+
+      Value field = insertField(letOp, name, letOp.getType());
+      letOp.replaceAllUsesWith(field);
+      letOp.erase();
+      continue;
+    }
+  }
 }

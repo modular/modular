@@ -10,6 +10,11 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "lldb/Expression/ExpressionParser.h"
 
+namespace M::KGEN::LIT {
+class FuncOp;
+class StructDeclOp;
+} // namespace M::KGEN::LIT
+
 namespace M::KGEN::Mojo {
 class MojoExpressionParser : public lldb_private::ExpressionParser {
 public:
@@ -43,6 +48,21 @@ public:
                       lldb_private::ExecutionPolicy executionPolicy) override;
 
 private:
+  //===--------------------------------------------------------------------===//
+  // Persistent Variables
+  //===--------------------------------------------------------------------===//
+
+  /// Process the variables within the given function that should become
+  /// persistent when the function is executed within a REPL. Persistent
+  /// variables are added as fields to the given state struct, and references
+  /// within the function are rewritten in place.
+  void processPersistentReplVariables(LIT::FuncOp func,
+                                      LIT::StructDeclOp stateStruct);
+
+  //===--------------------------------------------------------------------===//
+  // Fields
+  //===--------------------------------------------------------------------===//
+
   struct Impl;
 
   std::unique_ptr<Impl> impl;

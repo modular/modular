@@ -128,6 +128,16 @@ lldb::Format MojoTypeSystem::GetFormat(lldb::opaque_compiler_type_t type) {
   return lldb::eFormatBytes;
 }
 
+std::optional<uint64_t>
+MojoTypeSystem::GetBitSize(lldb::opaque_compiler_type_t type,
+                           lldb_private::ExecutionContextScope *exeScope) {
+  // TODO: Realistically we should generically introspect the type and perform
+  // whatever necessary transformations to determine what the size should be
+  // when compiled. For now we just explicitly check for the single case that
+  // we ever generate variables for, i.e., Pointers.
+  return GetPointerByteSize() * CHAR_BIT;
+}
+
 //===----------------------------------------------------------------------===//
 // IsType Queries
 //===----------------------------------------------------------------------===//

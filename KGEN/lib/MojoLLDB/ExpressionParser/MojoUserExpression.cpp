@@ -14,6 +14,7 @@
 #include "lldb/Expression/IRExecutionUnit.h"
 #include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
+#include "mlir/IR/Types.h"
 #include "mlir/Support/IndentedOstream.h"
 #include "llvm/Support/CrashRecoveryContext.h"
 #include "llvm/Support/Signals.h"
@@ -84,8 +85,7 @@ public:
 
 struct MojoUserExpression::Impl {
   Impl(ExecutionContextScope &exeScope, Target &target)
-      : typeSystemHelper(target), resultDelegate(target.shared_from_this()),
-        persistentVariableDelegate() {}
+      : typeSystemHelper(target), resultDelegate(target.shared_from_this()) {}
 
   /// The type system helper.
   MojoUserExpressionHelper typeSystemHelper;
@@ -161,7 +161,8 @@ bool MojoUserExpression::Parse(DiagnosticManager &diagnosticManager,
   // Parse the expression text.
   Process *process = exeCtx.GetProcessPtr();
   auto *exeScope = process ? (ExecutionContextScope *)process : target;
-  if (failed(wrapTextAndParseExpression(diagnosticManager, exeCtx, exeScope)))
+  if (failed(wrapTextAndParseExpression(diagnosticManager, exeCtx, exeScope,
+                                        *persistentState)))
     return false;
 
   // Prepare the output of the parser for execution, evaluating it statically if
@@ -232,21 +233,68 @@ static void registerTraceDumpHandler() {
       flag, []() { llvm::sys::AddSignalHandler(dumpTraceOnSignal, nullptr); });
 }
 
+/// Collect the name and type of the current persistent variables within the
+/// given state.
+static void collectPersistentVariables(
+    MojoPersistentExpressionState &state,
+    SmallVectorImpl<std::pair<StringRef, mlir::Type>> &variables) {
+  for (unsigned i = 0, e = state.GetSize(); i < e; ++i) {
+    lldb::ExpressionVariableSP var = state.GetVariableAtIndex(i);
+    assert(var && "expected valid variable in persistent state");
+
+    mlir::Type varType = mlir::Type::getFromOpaquePointer(
+        var->GetCompilerType().GetOpaqueQualType());
+    variables.emplace_back(var->GetName().GetStringRef(), varType);
+  }
+}
+
 LogicalResult MojoUserExpression::wrapTextAndParseExpression(
     DiagnosticManager &diagnosticManager, ExecutionContext &exeCtx,
-    ExecutionContextScope *exeScope) {
+    ExecutionContextScope *exeScope, MojoPersistentExpressionState &state) {
+  // Collect the current persistent variables.
+  SmallVector<std::pair<StringRef, mlir::Type>> variables;
+  collectPersistentVariables(state, variables);
+
   // Wrap the expression text in a function so that we can execute it.
   // TODO: This currently doesn't support imports or any kind of persistent
   // state.
   llvm::raw_string_ostream exprRawOS(m_transformed_text);
   mlir::raw_indented_ostream exprOSIndented(exprRawOS);
   exprOSIndented << "from IO import print\n"
-                 << "from Pointer import Pointer\n"
-                 << "from PythonInterface import PythonInterface\n"
-                 << "@export\nfn __lldb_expr__(__lldb_arg: "
-                    "Pointer[__mlir_type.`!pop.scalar<invalid>`]):\n";
+                 << "from Pointer import Pointer\n\n"
+                 << "from PythonInterface import PythonInterface\n";
+
+  // Build the input struct, which contains each of the persistent variables.
+  exprOSIndented << "struct __lldb_context__:\n";
+  for (auto &var : variables) {
+    exprOSIndented << llvm::formatv(
+        "  var {0}: Pointer[Pointer[__mlir_type.`{1}`]]\n", var.first,
+        var.second);
+  }
+  if (variables.empty())
+    exprOSIndented << "  pass\n";
+  exprOSIndented << "\n";
+
+  // Generate a wrapper function to handle the extracting function arguments.
+  exprOSIndented << "@export\n"
+                    "fn __lldb_expr__(__lldb_arg&: __lldb_context__):\n"
+                    "  __lldb_expr_impl__(__lldb_arg";
+  for (auto &var : variables) {
+    exprOSIndented << formatv(
+        ", __get_address_as_lvalue(__lldb_arg.{0}.load().address)", var.first);
+  }
+  exprOSIndented << ")\n\n";
+
+  // Finally we can generate the actual expression function.
+  exprOSIndented << "fn __lldb_expr_impl__(__lldb_arg&: __lldb_context__";
+  for (auto &var : variables) {
+    exprOSIndented << llvm::formatv(", {0}&: __mlir_type.`{1}`", var.first,
+                                    var.second);
+  }
+  exprOSIndented << "):\n";
+
   size_t prefixSize = m_transformed_text.size();
-  exprOSIndented.printReindented(m_expr_text, "  ");
+  exprOSIndented.printReindented(m_expr_text, "    ");
 
   MOJO_EXPR_LOG("Parsing the following code:\n{0}", m_transformed_text.c_str());
 
