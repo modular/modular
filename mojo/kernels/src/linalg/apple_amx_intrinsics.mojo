@@ -32,8 +32,10 @@ struct amx_detail:
         # three nops.
         __mlir_op.`pop.inline_asm`[
             _type:[],
-            assembly:"nop\nnop\nnop\n.word (0x201000 + ($0 << 5) + $1)",
-            constraints:"i,i,~{memory}",
+            assembly : (
+                "nop\nnop\nnop\n.word (0x201000 + ($0 << 5) + $1)"
+            ).value,
+            constraints : ("i,i,~{memory}").value,
             hasSideEffects : __mlir_attr.unit,
         ](op, imm)
 
@@ -44,8 +46,10 @@ struct amx_detail:
         )
         __mlir_op.`pop.inline_asm`[
             _type:[],
-            assembly:".word (0x201000 + ($0 << 5) + 0$1 - ((0$1 >> 4) * 6))",
-            constraints:"i,r,~{memory}",
+            assembly : (
+                ".word (0x201000 + ($0 << 5) + 0$1 - ((0$1 >> 4) * 6))"
+            ).value,
+            constraints : ("i,r,~{memory}").value,
             hasSideEffects : __mlir_attr.unit,
         ](op, gpr)
 

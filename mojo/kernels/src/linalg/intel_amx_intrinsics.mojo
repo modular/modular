@@ -48,7 +48,10 @@ fn _tile_dpbssd[dst: Int, a: Int, b: Int]():
 
     See https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#expand=2206&ig_expand=7471,7472,7472&text=_tile_dpbssd
     """
-    __mlir_op.`pop.call_llvm_intrinsic`[intrin:"llvm.x86.tdpbssd", _type:[],](
+    __mlir_op.`pop.call_llvm_intrinsic`[
+        intrin : ("llvm.x86.tdpbssd").value,
+        _type:[],
+    ](
         __mlir_op.`pop.cast`[_type : __mlir_type.`!pop.scalar<si8>`](dst.value),
         __mlir_op.`pop.cast`[_type : __mlir_type.`!pop.scalar<si8>`](a.value),
         __mlir_op.`pop.cast`[_type : __mlir_type.`!pop.scalar<si8>`](b.value),
@@ -67,7 +70,7 @@ fn _tile_release():
     """
 
     __mlir_op.`pop.call_llvm_intrinsic`[
-        intrin:"llvm.x86.tilerelease",
+        intrin : ("llvm.x86.tilerelease").value,
         _type:[],
     ]()
 
@@ -80,7 +83,7 @@ fn _tile_zero[tdest: Int]():
     """
 
     __mlir_op.`pop.call_llvm_intrinsic`[
-        intrin:"llvm.x86.tilezero",
+        intrin : ("llvm.x86.tilezero").value,
         _type:[],
     ](__mlir_op.`pop.cast`[_type : __mlir_type.`!pop.scalar<si8>`](tdest.value))
 
@@ -92,7 +95,7 @@ fn _tile_loadd[dst: Int](base: DTypePointer[void], stride: Int):
     See https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#expand=2206&ig_expand=7471,7472,7472&text=_tile_loadd
     """
     __mlir_op.`pop.call_llvm_intrinsic`[
-        intrin:"llvm.x86.tileloadd64",
+        intrin : ("llvm.x86.tileloadd64").value,
         _type:[],
     ](
         __mlir_op.`pop.cast`[_type : __mlir_type.`!pop.scalar<si8>`](dst.value),
@@ -108,7 +111,7 @@ fn _tile_stored[src: Int](base: DTypePointer[void], stride: Int):
     See https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#expand=2206&ig_expand=7471,7472,7472&text=_tile_stored
     """
     __mlir_op.`pop.call_llvm_intrinsic`[
-        intrin:"llvm.x86.tilestored64",
+        intrin : ("llvm.x86.tilestored64").value,
         _type:[],
     ](
         __mlir_op.`pop.cast`[_type : __mlir_type.`!pop.scalar<si8>`](src.value),
@@ -123,7 +126,7 @@ fn _tile_loadconfig(mem_addr: DTypePointer[void]):
     See https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#expand=2206&ig_expand=7471,7472,7472&text=_tile_loadconfig
     """
     __mlir_op.`pop.call_llvm_intrinsic`[
-        intrin:"llvm.x86.ldtilecfg",
+        intrin : ("llvm.x86.ldtilecfg").value,
         _type:[],
     ](mem_addr)
 
@@ -134,7 +137,7 @@ fn _tile_storeconfig(mem_addr: DTypePointer[void]):
     See https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#expand=2206&ig_expand=7471,7472,7472&text=_tile_storeconfig
     """
     __mlir_op.`pop.call_llvm_intrinsic`[
-        intrin:"llvm.x86.sttilecfg",
+        intrin : ("llvm.x86.sttilecfg").value,
         _type:[],
     ](mem_addr)
 
