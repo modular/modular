@@ -1460,6 +1460,28 @@ struct ConvNHWCInnerLoopFilterPacked[
 
     var input_base_pointer: DTypePointer[value_type]
 
+    fn __init__(
+        self&,
+        c: NDBuffer[2, shape_c, accum_type],
+        input: NDBuffer[4, shape_input, value_type],
+        b_packed: NDBuffer[3, packed_shape, value_type],
+        global_offset: GemmShape,
+        tile_n_k: StaticIntTuple[2],
+        c_bound: StaticIntTuple[2],
+        conv_shape: ConvShape,
+        offset_table: Buffer[a_row_size, DType.index],
+        input_base_pointer: DTypePointer[value_type],
+    ):
+        self.c = c
+        self.input = input
+        self.b_packed = b_packed
+        self.global_offset = global_offset
+        self.tile_n_k = tile_n_k
+        self.c_bound = c_bound
+        self.conv_shape = conv_shape
+        self.offset_table = offset_table
+        self.input_base_pointer = input_base_pointer
+
     fn __copyinit__(self&, existing: Self):
         self.c = existing.c
         self.input = existing.input
@@ -1504,20 +1526,20 @@ struct ConvNHWCInnerLoopFilterPacked[
             pack_inner_size,
             skip_boundary_check,
             same_channel_index,
-        ] {
-            c: c,
-            input: input,
-            b_packed: b_packed,
-            global_offset: global_offset,
-            tile_n_k: tile_n_k,
-            c_bound: (
+        ](
+            c,
+            input,
+            b_packed,
+            global_offset,
+            tile_n_k,
+            (
                 Index(c.dim[0](), col_start_idx + total_col_count)
                 - Index(global_offset.M, global_offset.N)
             ),
-            conv_shape: conv_shape,
-            offset_table: offset_table,
-            input_base_pointer: input.data,
-        }
+            conv_shape,
+            offset_table,
+            input.data,
+        )
 
         instance._run_inner_loop()
 
