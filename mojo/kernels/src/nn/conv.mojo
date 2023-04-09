@@ -202,19 +202,17 @@ struct Naive2dConvolution[
     var input_shape: ImageShape
     var filter_shape: ImageShape
 
-    fn __copy__(self) -> Self:
-        return Self {
-            output: self.output,
-            input: self.input,
-            filter: self.filter,
-            pad_h: self.pad_h,
-            pad_w: self.pad_w,
-            stride: self.stride,
-            dilation: self.dilation,
-            output_shape: self.output_shape,
-            input_shape: self.input_shape,
-            filter_shape: self.filter_shape,
-        }
+    fn __copyinit__(self&, existing: Self):
+        self.output = existing.output
+        self.input = existing.input
+        self.filter = existing.filter
+        self.pad_h = existing.pad_h
+        self.pad_w = existing.pad_w
+        self.stride = existing.stride
+        self.dilation = existing.dilation
+        self.output_shape = existing.output_shape
+        self.input_shape = existing.input_shape
+        self.filter_shape = existing.filter_shape
 
     @staticmethod
     fn run(
@@ -458,19 +456,17 @@ struct PackIm2ColNCHW[
     var pad_low: StaticIntTuple[2]
     var pad_high: StaticIntTuple[2]
 
-    fn __copy__(self) -> Self:
-        return Self {
-            packed_matrix: self.packed_matrix,
-            origin_image: self.origin_image,
-            conv_shape: self.conv_shape,
-            global_offset: self.global_offset,
-            pack_tile_kn_dim: self.pack_tile_kn_dim,
-            batch_idx: self.batch_idx,
-            image_output_shape: self.image_output_shape,
-            im2col_output_shape: self.im2col_output_shape,
-            pad_low: self.pad_low,
-            pad_high: self.pad_high,
-        }
+    fn __copyinit__(self&, existing: Self):
+        self.packed_matrix = existing.packed_matrix
+        self.origin_image = existing.origin_image
+        self.conv_shape = existing.conv_shape
+        self.global_offset = existing.global_offset
+        self.pack_tile_kn_dim = existing.pack_tile_kn_dim
+        self.batch_idx = existing.batch_idx
+        self.image_output_shape = existing.image_output_shape
+        self.im2col_output_shape = existing.im2col_output_shape
+        self.pad_low = existing.pad_low
+        self.pad_high = existing.pad_high
 
     @staticmethod
     fn run(
@@ -1464,18 +1460,16 @@ struct ConvNHWCInnerLoopFilterPacked[
 
     var input_base_pointer: DTypePointer[value_type]
 
-    fn __copy__(self) -> Self:
-        return Self {
-            c: self.c,
-            input: self.input,
-            b_packed: self.b_packed,
-            global_offset: self.global_offset,
-            tile_n_k: self.tile_n_k,
-            c_bound: self.c_bound,
-            conv_shape: self.conv_shape,
-            offset_table: self.offset_table,
-            input_base_pointer: self.input_base_pointer,
-        }
+    fn __copyinit__(self&, existing: Self):
+        self.c = existing.c
+        self.input = existing.input
+        self.b_packed = existing.b_packed
+        self.global_offset = existing.global_offset
+        self.tile_n_k = existing.tile_n_k
+        self.c_bound = existing.c_bound
+        self.conv_shape = existing.conv_shape
+        self.offset_table = existing.offset_table
+        self.input_base_pointer = existing.input_base_pointer
 
     @staticmethod
     fn run(
