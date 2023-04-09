@@ -23,23 +23,19 @@ using namespace LIT;
 using llvm::BitVector;
 
 /// Find all the functions and types in the module.
-static std::pair<std::vector<LIT::FuncOp>,
+static std::pair<std::vector<mlir::FunctionOpInterface>,
                  DenseMap<SymbolRefAttr, LIT::StructDeclOp>>
 collectFunctionsAndTypes(Operation *module) {
-  std::vector<LIT::FuncOp> funcList;
+  std::vector<mlir::FunctionOpInterface> funcList;
   DenseMap<SymbolRefAttr, LIT::StructDeclOp> structMap;
-  module->walk<mlir::WalkOrder::PreOrder>(
-      [&](Operation *op) -> mlir::WalkResult {
-        if (auto funcOp = dyn_cast<LIT::FuncOp>(op)) {
-          funcList.push_back(funcOp);
-          // Skip recursing into the function, all nested functions will be
-          // handled separately, and structs don't currently live in functions.
-          return WalkResult::skip();
-        }
-        if (auto structOp = dyn_cast<LIT::StructDeclOp>(op))
-          structMap[getFullyResolvedSymbolRef(structOp)] = structOp;
-        return WalkResult::advance();
-      });
+  module->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+    // Collect functions and nested functions.
+    if (auto funcOp = dyn_cast<mlir::FunctionOpInterface>(op))
+      funcList.push_back(funcOp);
+    // Collect structs.
+    if (auto structOp = dyn_cast<LIT::StructDeclOp>(op))
+      structMap[getFullyResolvedSymbolRef(structOp)] = structOp;
+  });
   return {std::move(funcList), std::move(structMap)};
 }
 
@@ -247,9 +243,14 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     endsUninit = true;
     break;
   case ValueInputConvention::ByRefResult:
+    // FIXME(Issue#12196): __result__ slots in raising functions cannot properly
+    // model the behavior when an error is thrown, so we give up tracking them.
+    if (signature.isThrows())
+      return;
+
   case ValueInputConvention::InitSelf:
     isIndirect = true;
-    startsUninit = false; /// <- FIXME
+    startsUninit = true;
     endsUninit = false;
     break;
   case ValueInputConvention::ByRef:
@@ -259,6 +260,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     break;
   }
 
+  // FIXME(Issue #11918): Need valueNames for nested functions.
   name = valueNames
              ? valueNames[bbArg.getArgNumber()]
              : StringAttr::get(bbArg.getContext(), "FIXME(Issue #11918)");
@@ -470,7 +472,7 @@ struct UninitializedValueScan {
   UninitializedValueScan(ValueSet &valueSet) : valueSet(valueSet) {}
   UninitializedValueScan(const UninitializedValueScan &existing) = delete;
 
-  void scanFunction(LIT::FuncOp func);
+  void scanFunction(mlir::FunctionOpInterface func);
   void scanBlock(Block &body);
 
 private:
@@ -589,7 +591,7 @@ void UninitializedValueScan::checkLive(Operation &op, ValueRef valueRef) {
       << "'" << trackable.name.str() << "' declared here";
 }
 
-void UninitializedValueScan::scanFunction(LIT::FuncOp func) {
+void UninitializedValueScan::scanFunction(mlir::FunctionOpInterface func) {
   // Initialize the BitVector with all the elements that are live-in.  We treat
   // all values live at the start of the function (even before they are actually
   // defined) because we know that all uses must be after them due to SSA
@@ -600,7 +602,7 @@ void UninitializedValueScan::scanFunction(LIT::FuncOp func) {
       liveValues.set(valueInfo.startValueBit, valueInfo.endValueBit);
 
   // Scan the body of the function.
-  scanBlock(*func.getBody());
+  scanBlock(func.getFunctionBody().front());
 }
 
 /// Scan a block top down, checking all the operations that may use a value or
@@ -688,6 +690,12 @@ void UninitializedValueScan::checkOp(Operation &op) {
         break;
       }
     }
+
+    // If the result is defining an owned register value, then we treat this as
+    // a definition.
+    if (signature.hasOwnedRegisterResult())
+      valueSet.getDirectValueRef(op.getResult(0)).markBits(liveValues, true);
+
     return;
   }
 
@@ -834,7 +842,7 @@ struct DestructorInsertion {
   DestructorInsertion(ValueSet &valueSet) : valueSet(valueSet) {}
   DestructorInsertion(const DestructorInsertion &existing) = delete;
 
-  void scanFunction(LIT::FuncOp func);
+  void scanFunction(mlir::FunctionOpInterface func);
   void scanBlock(Block &body);
 
 private:
@@ -854,11 +862,11 @@ private:
 };
 } // namespace
 
-void DestructorInsertion::scanFunction(LIT::FuncOp func) {
+void DestructorInsertion::scanFunction(mlir::FunctionOpInterface func) {
   consumedValues.resize(valueSet.getNumTotalBits());
 
   // Scan the body of the function.
-  scanBlock(*func.getBody());
+  scanBlock(func.getFunctionBody().front());
 }
 
 /// Scan a block top down, checking all the operations that may use a value or
@@ -903,9 +911,7 @@ void DestructorInsertion::checkOp(Operation &op) {
       return; // AddressOf isn't a use of any SSA values.
     }
 
-    // If the result is defining an owned register value, then we treat this as
-    // a use (because it needs to be destroyed if the first utterance of this
-    // value) and then pass it up as being done).
+    // If the result is defining an owned register value, treat it as a def.
     if (signature.hasOwnedRegisterResult())
       checkDef(op, valueSet.getDirectValueRef(op.getResult(0)));
 
@@ -1074,16 +1080,21 @@ struct CheckLifetimes : impl::CheckLifetimesBase<CheckLifetimes> {
       return signalPassFailure();
   }
 
-  LogicalResult processFunction(LIT::FuncOp func, TypeDeclInfo &typeDeclInfo);
+  LogicalResult processFunction(mlir::FunctionOpInterface func,
+                                TypeDeclInfo &typeDeclInfo);
 };
 } // namespace
 
-LogicalResult CheckLifetimes::processFunction(LIT::FuncOp func,
+LogicalResult CheckLifetimes::processFunction(mlir::FunctionOpInterface func,
                                               TypeDeclInfo &typeDeclInfo) {
   // Pass #1: Collect all of the values declared in the function that have
   // ownership to track, and number them.
   ValueSet valueSet(typeDeclInfo);
-  func->walk([&](Operation *op) {
+  func->walk([&](Operation *op) -> WalkResult {
+    // Skip looking at nested functions, they are handled as separate contexts.
+    if (isa<ParamDeclareRegionOp>(op) && op != func)
+      return WalkResult::skip();
+
     // All the ops that define trackable values have a single result.
     if (op->getNumResults() == 1)
       if (auto trackable = LifetimeTrackable(op->getResult(0)))
@@ -1096,6 +1107,8 @@ LogicalResult CheckLifetimes::processFunction(LIT::FuncOp func,
           if (auto trackable = LifetimeTrackable(arg))
             valueSet.addValue(arg, trackable);
     }
+
+    return WalkResult::advance();
   });
 
   // Walk #2: Scan the function and identify any uses of values that are not
