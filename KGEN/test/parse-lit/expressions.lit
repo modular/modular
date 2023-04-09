@@ -299,7 +299,7 @@ fn comparisons(a: Int, b: Int):
 @register_passable
 struct Boolish:
   fn __copy__(self) -> Self: pass
-  fn __bool__(self) -> Bool: return Bool.true()
+  fn __bool__(self) -> Bool: return True
 
 # CHECK-LABEL: @"unary
 fn unary(a: Bool, b: Int, c: Boolish):
@@ -430,7 +430,7 @@ def test_if_cond(cond: Bool):
 
     # CHECK: [[TRUEB:%.+]] = kgen{{.*}}= true}
     # CHECK-NEXT: pop.store [[TRUEB]], %cond
-    cond = Bool.true()
+    cond = True
     i += i
     if cond:     # 'if' stmt, not an 'if' expression.
         i = i+i
