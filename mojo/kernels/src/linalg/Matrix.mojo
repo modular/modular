@@ -25,8 +25,8 @@ struct Matrix[
 
     var data: NDBuffer[2, shape, type]
 
-    fn __copy__(self) -> Self:
-        return Self {data: self.data}
+    fn __copyinit__(self&, existing: Self):
+        self.data = existing.data
 
     fn __init__(self&, data: NDBuffer[2, shape, type]):
         """Constructor of a matrix based on a buffer and a transpose flag.

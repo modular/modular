@@ -90,11 +90,9 @@ struct SubMatmulConfig:
         self.offset = offset
         self.shape = shape
 
-    fn __copy__(self) -> Self:
-        return Self {
-            offset: self.offset,
-            shape: self.shape,
-        }
+    fn __copyinit__(self&, existing: Self):
+        self.offset = existing.offset
+        self.shape = existing.shape
 
     @always_inline
     fn is_valid(self) -> Bool:

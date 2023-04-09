@@ -406,15 +406,13 @@ struct PackMatrixRows[
     # valid multiple-of-simd data bound within the tile.
     var valid_simd_dim: StaticIntTuple[2]
 
-    fn __copy__(self) -> Self:
-        return Self {
-            packed_matrix: self.packed_matrix,
-            original_matrix: self.original_matrix,
-            global_offset: self.global_offset,
-            pack_tile_dim: self.pack_tile_dim,
-            valid_data_dim: self.valid_data_dim,
-            valid_simd_dim: self.valid_simd_dim,
-        }
+    fn __copyinit__(self&, existing: Self):
+        self.packed_matrix = existing.packed_matrix
+        self.original_matrix = existing.original_matrix
+        self.global_offset = existing.global_offset
+        self.pack_tile_dim = existing.pack_tile_dim
+        self.valid_data_dim = existing.valid_data_dim
+        self.valid_simd_dim = existing.valid_simd_dim
 
     # Interface method:
     #  run the packing and store to the given buffer.
@@ -685,14 +683,12 @@ struct PackMatrixCols[
 
         instance._pack()
 
-    fn __copy__(self) -> Self:
-        return Self {
-            packed_matrix: self.packed_matrix,
-            original_matrix: self.original_matrix,
-            global_offset: self.global_offset,
-            pack_tile_dim: self.pack_tile_dim,
-            valid_data_dim: self.valid_data_dim,
-        }
+    fn __copyinit__(self&, existing: Self):
+        self.packed_matrix = existing.packed_matrix
+        self.original_matrix = existing.original_matrix
+        self.global_offset = existing.global_offset
+        self.pack_tile_dim = existing.pack_tile_dim
+        self.valid_data_dim = existing.valid_data_dim
 
     fn _pack_row_helper[
         # Skip column boundary checking in this row.
@@ -849,15 +845,13 @@ struct MatmulInnerLoopBPacked[
         }
         instance._run_inner_loop()
 
-    fn __copy__(self) -> Self:
-        return Self {
-            c: self.c,
-            a: self.a,
-            b_packed: self.b_packed,
-            global_offset: self.global_offset,
-            tile_n_k: self.tile_n_k,
-            c_bound: self.c_bound,
-        }
+    fn __copyinit__(self&, existing: Self):
+        self.c = existing.c
+        self.a = existing.a
+        self.b_packed = existing.b_packed
+        self.global_offset = existing.global_offset
+        self.tile_n_k = existing.tile_n_k
+        self.c_bound = existing.c_bound
 
     fn _initialize_c_tile(
         self,
@@ -1319,17 +1313,15 @@ struct TiledMatmul[
         GemmShape, GemmShape, GemmShape, __mlir_type.`!lit.none`
     ]
 
-    fn __copy__(self) -> Self:
-        return Self {
-            c: self.c,
-            a: self.a,
-            b: self.b,
-            tile_n_k: self.tile_n_k,
-            global_tile_shape: self.global_tile_shape,
-            global_tile_offset: self.global_tile_offset,
-            b_tile_generator: self.b_tile_generator,
-            elementwise_epilogue_fn: self.elementwise_epilogue_fn,
-        }
+    fn __copyinit__(self&, existing: Self):
+        self.c = existing.c
+        self.a = existing.a
+        self.b = existing.b
+        self.tile_n_k = existing.tile_n_k
+        self.global_tile_shape = existing.global_tile_shape
+        self.global_tile_offset = existing.global_tile_offset
+        self.b_tile_generator = existing.b_tile_generator
+        self.elementwise_epilogue_fn = existing.elementwise_epilogue_fn
 
     # Interface method
     @staticmethod
@@ -1793,12 +1785,10 @@ struct BTileGenerator[
             b: b, b_tile_stack_ptr: b_tile_stack_ptr, tile_n_k: tile_n_k
         }
 
-    fn __copy__(self) -> Self:
-        return Self {
-            b: self.b,
-            b_tile_stack_ptr: self.b_tile_stack_ptr,
-            tile_n_k: self.tile_n_k,
-        }
+    fn __copyinit__(self&, existing: Self):
+        self.b = existing.b
+        self.b_tile_stack_ptr = existing.b_tile_stack_ptr
+        self.tile_n_k = existing.tile_n_k
 
     fn get_tile[
         inner_size: Int
