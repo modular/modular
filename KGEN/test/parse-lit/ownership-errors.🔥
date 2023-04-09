@@ -7,8 +7,8 @@ struct MemExample:
   fn __init__(self&):  # expected-note {{'self' declared here}}
     pass
 
-  fn __copy__(self) -> Self:
-    return MemExample{memstate: (4).__as_mlir_index()}
+  fn __copyinit__(self&, existing: Self):
+    self.memstate = (4).__as_mlir_index()
   fn __del___(owned self): pass
 
 fn use(x: MemExample): pass
@@ -19,7 +19,7 @@ struct RegExample:
 
   fn __init__() -> Self:
     return RegExample{regstate: (1).__as_mlir_index()}
-  fn __copy__(self) -> Self:
+  fn __copyinit__(self) -> Self:
     return RegExample{regstate: (12).__as_mlir_index()}
   fn __del___(owned self):
     pass
@@ -120,8 +120,9 @@ struct TwoRegs:
   var reg1: RegExample
   var reg2: RegExample
 
-  fn __copy__(self)-> Self:
-    return Self{reg1: self.reg1, reg2: self.reg2}
+  fn __copyinit__(self&, existing: Self):
+    self.reg1 = existing.reg1
+    self.reg2 = existing.reg2
 
 
 struct MoreComplexExample:
@@ -134,12 +135,9 @@ struct MoreComplexExample:
     result.reg.reg2 = RegExample()
     self = result  # expected-error {{use of uninitialized value 'result.reg.reg1'}}
 
-  fn __copy__(self) -> Self:
-    # This is ok.
-    var result : MoreComplexExample
-    result.mem = self.mem
-    result.reg = self.reg
-    return result
+  fn __copyinit__(self&, existing: Self):
+    self.mem = existing.mem
+    self.reg = existing.reg
 
   fn __del___(owned self): pass
 

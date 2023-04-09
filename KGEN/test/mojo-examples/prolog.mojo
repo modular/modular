@@ -33,7 +33,7 @@ fn printInt(x: Int):
 
 @register_passable
 struct Scalar[type: DType]:
-    fn __copy__(self) -> Self:
+    fn __copyinit__(self) -> Self:
         return Self {}
 
 
@@ -47,7 +47,7 @@ struct StringRef:
     var data: __mlir_type.`!pop.pointer<!pop.scalar<si8>>`
     var size: Int
 
-    fn __copy__(self) -> Self:
+    fn __copyinit__(self) -> Self:
         return Self {data: self.data, size: self.size}
 
     fn __init__(
@@ -77,5 +77,5 @@ struct StringRef:
 # is just a placeholder to be used by untyped 'def' operands.
 @register_passable
 struct object:
-    fn __copy__(self) -> Self:
+    fn __copyinit__(self) -> Self:
         return Self {}

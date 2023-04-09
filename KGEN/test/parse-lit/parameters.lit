@@ -18,7 +18,7 @@ from DType import DType
 # CHECK-SAME: attributes {registerPassable = 1 : i8} {
 @register_passable
 struct OurSIMD[size: Int, dt: DType]:
-  fn __copy__(self) -> Self: pass
+  fn __copyinit__(self) -> Self: pass
 
 
 @register_passable
@@ -70,7 +70,7 @@ fn call_generic[dt: DType]():
 @register_passable
 struct TestParamStruct[A: __mlir_type.index]:
 
-  fn __copy__(self) -> Self:
+  fn __copyinit__(self) -> Self:
     return Self{}
 
   fn __init__() -> TestParamStruct[A]:
@@ -156,13 +156,13 @@ struct Pair[dt: DType]:
 
   # CHECK: lit.func @"__init__{{.*}} -> !kgen.declref<@"$parameters"::@Pair<dt: @"$DType"::@DType = dt>> attributes {isStatic}
   fn __init__(a: OurSIMD[42, dt]) -> Pair[dt]:
-    # CHECK: [[TMP:%.*]] = kgen.call {{.*}}__copy__{{.*}}(%a)
+    # CHECK: [[TMP:%.*]] = kgen.call {{.*}}__copyinit__{{.*}}(%a)
     # CHECK: %1 = kgen.param.constant: @"$Int"::@Int {{.*}} 4
     # CHECK: %2 = lit.struct.create(a=%0, b=%1) : (!kgen.declref<@"$parameters"::@OurSIMD<size: @"$Int"::@Int = #lit.struct<{value: scalar<index> = 42}>, dt: @"$DType"::@DType = dt>>, !kgen.declref<@"$Int"::@Int>) -> !kgen.declref<@"$parameters"::@Pair<dt: @"$DType"::@DType = dt>>
     return Pair[dt]{a: a, b: 4}
   # CHECK: }
 
-  fn __copy__(self) -> Self: pass
+  fn __copyinit__(self) -> Self: pass
 
 # CHECK: }
 
@@ -174,7 +174,7 @@ fn useParameterizedField[x: Pair[DType.f32]]():
 
 # CHECK-LABEL: lit.func @"makePair
 fn makePair(a: OurSIMD[42, DType.f32], b: Int) -> Pair[DType.f32]:
-  # CHECK: [[TMP1:%.*]] = kgen.call {{.*}}__copy__{{.*}}(%a)
+  # CHECK: [[TMP1:%.*]] = kgen.call {{.*}}__copyinit__{{.*}}(%a)
   # CHECK:  = lit.struct.create(a=[[TMP1]], b=%b)
   return Pair[DType.f32]{a: a, b: b}
 
@@ -393,7 +393,7 @@ fn testUseOfAliases(a: Bool):
 struct MyDType:
   var state : __mlir_type.index
 
-  fn __copy__(self) -> Self:
+  fn __copyinit__(self) -> Self:
     return Self{state: self.state}
 
   fn __init__(value: __mlir_type.index) -> MyDType:
@@ -534,7 +534,7 @@ struct Abstraction[a: Int]:
   fn __init__() -> Self:
       return Self{}
 
-  fn __copy__(self) -> Self:
+  fn __copyinit__(self) -> Self:
       return self
 
   @staticmethod
@@ -578,7 +578,7 @@ struct AnotherAbstraction[a: Int]:
     fn __init__() -> Self:
         return Self{value: Abstraction[a + 1]()}
 
-    fn __copy__(self) -> Self:
+    fn __copyinit__(self) -> Self:
         return Self{value: self.value}
 
 # CHECK-LABEL: lit.func @"testDependentField()"

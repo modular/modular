@@ -144,9 +144,6 @@ Here’s a simple definition of a struct:
           self.first = first
           self.second = second
 
-      def __copy__(self&, first: Int, second: Int):
-          xxxx
-
       def __lt__(self, rhs: MyPair) -> Bool:
           return self.first < rhs.first or
                 (self.first == rhs.first and
@@ -233,7 +230,7 @@ Alternative: instead of using a new keyword like fn, we could instead add a modi
 Programming patterns will vary widely across teams, and this level of strictness will not be for everyone.  We expect that folks who are used to C++ and already use MyPy-style type annotations in Python to prefer the use of ‘fn’s, but higher level programmers and ML researchers to continue to use ‘def’.  Mojo allows you to freely intermix ‘def’ and ‘fn’ declarations, e.g. implementing some methods with one and others with the other, and allows each team or programmer to decide what is best for their use-case.
 
 
-### The` __copy__` Special Method
+### The` __copyinit__` Special Method
 
 Mojo supports full “value semantics” as seen in languages like C++, and more advanced support than languages like Swift and Rust because it supports non-movable types like Atomic.  This is accessed by implementing special methods like `__init__` and `__del__` on structs, which give control over the lifetime of the logical value maintained by that struct.  For example, consider a dynamic string type that needs to allocate memory for the string data when constructed and destroy it when the value is destroyed:
 
@@ -263,8 +260,7 @@ If you go ahead and try this out, you might be surprised:
     fn useStrings():
         var a: MyString = "hello"
         print(a)   # Should print "hello"
-        var b = a  # ERROR: MyString doesn't implement __copy__
-
+        var b = a  # ERROR: MyString doesn't implement __copyinit__
 
         a = "Goodbye"
         print(b)   # Should print "hello"
@@ -274,20 +270,19 @@ If you go ahead and try this out, you might be surprised:
 
 The compiler isn’t allowing us to make a copy of our string: MyString contains an instance of Pointer (which is equivalent to a low-level C pointer), and Mojo can’t know “what the pointer means” or “how to copy it” - this is one reason why application level programmers should use higher level types like arrays and slices!  More generally, some types (like atomic numbers) cannot be copied or moved around at all, because their address provides an **identity** just like a class instance does.
 
-In this case, we do want our string to be copyable around, to enable this, we implement the `__copy__` special method, which is conventionally implemented like this:
+In this case, we do want our string to be copyable around, to enable this, we implement the `__copyinit__` special method, which is conventionally implemented like this:
 
 
 ```mojo
     struct MyString:
         ...
-        def __copy__(self) -> Self:
-            return Self { data: Pointer(strdup(self.data.address)) }
+        def __copyinit__(self&, existing: Self):
+            self.data = Pointer(strdup(self.data.address))
 ```
-
 
 With this implementation, our code above works correctly and the “b = a” copy produces a logically distinct instance of the string with its own lifetime and data.  The copy is made with the C strdup`()` function as instructed by the lines of code above.
 
-Mojo provides full control over the lifetime of a value, including the ability to make types copyable, move-only, and not-movable.  This is more control than languages like Swift and Rust, which require values to at least be movable.  If you are curious how ‘self’ can be passed into the `__copy__` method without itself creating a copy, check out the section on “Borrowed” argument convention below.
+Mojo provides full control over the lifetime of a value, including the ability to make types copyable, move-only, and not-movable.  This is more control than languages like Swift and Rust, which require values to at least be movable.  If you are curious how `existing` can be passed into the `__copyinit__` method without itself creating a copy, check out the section on "Borrowed" argument convention below.
 
 
 ## Parameterization: Compile time meta-programming
@@ -639,7 +634,7 @@ A nice thing about this system is that it all composes correctly.
 
 ### “Borrowed” Argument Convention
 
-Now that we know how by-reference argument passing works, you may wonder how by-value argument passing works and how that interacts with the `__copy__` method which implements copy constructors.  In Mojo, the default convention for passing arguments to functions is to pass with the “borrowed” argument convention.  You can spell this out explicitly if you’d like:
+Now that we know how by-reference argument passing works, you may wonder how by-value argument passing works and how that interacts with the `__copyinit__` method which implements copy constructors.  In Mojo, the default convention for passing arguments to functions is to pass with the “borrowed” argument convention.  You can spell this out explicitly if you’d like:
 
 
 ```mojo
@@ -655,7 +650,7 @@ This default applies to all arguments uniformly, including the `self` argument o
 
 ```mojo
 # A type that is so expensive to copy around we don't even have a
-# __copy__ method.
+# __copyinit__ method.
 struct SomethingBig:
     var id_number: Int
     var huge: InlinedArray[Int, 100000]
@@ -696,7 +691,7 @@ Rust is another important language and the Mojo and Rust borrow checkers enforce
 
 TOWRITE: You can opt-in to transferring instances of values.  Similar to ‘move’.
 
-TODO: Show an example of the consuming version of __copy__ which transfers ownership of a value when consume argument convention is wired up correctly.
+TODO: Show an example of the consuming version of __copyinit__ which transfers ownership of a value when consume argument convention is wired up correctly.
 
 
 ### `@register_passable` Struct Decorator
@@ -711,7 +706,7 @@ To solve this, Mojo allows structs to opt-in to being passed in a register inste
 struct Int:
    var value: __mlir_type.`!pop.scalar<index>`
 
-   fn __copy__(self) -> Self:
+   fn __copyinit__(self&, existing: Self):
        return Self {value: self.value}
 
    fn __init__(value: __mlir_type.`!pop.scalar<index>`) -> Self:
@@ -721,7 +716,7 @@ struct Int:
 
 
 This decorator does not change the fundamental behavior of a type: it still
-needs to have a `__copy__` method to be copyable, may still have a `__init__`
+needs to have a `__copyinit__` method to be copyable, may still have a `__init__`
 and `__del__` methods, etc. The major effect of this decorator is on internal
 implementation details:  `@register_passable` types are typically passed in
 machine registers (subject to the details of the underlying architecture of
@@ -735,8 +730,9 @@ There are only a few observable effects of this decorator to the typical Mojo pr
    so the ‘self’ pointer is not stable/predictable (e.g. in hash tables).
 3. `@register_passable `arguments and result are exposed to C and C++ directly,
    instead of being passed by-pointer.
-4. The `__init__` method of this type returns its result by-value instead of
-   taking `self&`.
+4. The `__init__` and `__copyinit__` methods of this type are implicitly static
+   (like `__new__` in Python) and returns its result by-value instead of taking
+   `self&`.
 
 We expect that this decorator will be used pervasively on core standard library types, but is safe to ignore for general application level code.
 
@@ -747,7 +743,7 @@ Argument passing in `def` functions is sugar for argument passing in `fn`:
 
 1. If there is no explicit type annotation, the compiler defaults to type `Object `(which is currently just stubbed out, it isn’t particularly useful yet).
 2. Arguments with explicit markers (e.g. by reference) obey their marker.
-3. Arguments without an argument convention are passed by implicit copy into a mutable var with the same name as the argument.  Implicit copy requires that the type have a `__copy__` method.
+3. Arguments without an argument convention are passed by implicit copy into a mutable var with the same name as the argument.  Implicit copy requires that the type have a `__copyinit__` method.
 
 These functions are equivalent (other than keyword argument label to callers):
 
