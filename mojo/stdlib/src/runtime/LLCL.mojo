@@ -208,7 +208,7 @@ struct Runtime:
             ]()
         )
         _async_execute(handle, self)
-        return Task[type] {handle: handle}
+        return Task[type](handle)
 
     fn run[type: AnyType](self, handle: Coroutine[type]) -> type:
         let t = self.create_task(handle)
@@ -224,6 +224,9 @@ struct Runtime:
 # TODO: This should not be implicitly copyable when we have ownership set up!
 struct Task[type: AnyType]:
     var handle: Coroutine[type]
+
+    fn __init__(self&, handle: Coroutine[type]):
+        self.handle = handle
 
     fn get(self) -> type:
         """Get the task's result value."""
@@ -558,6 +561,14 @@ struct AsyncTaskGroupContext:
     var callback: tg_callback_fn_type
     var async_task_group_ptr: Pointer[AsyncTaskGroup]
 
+    fn __init__(
+        self&,
+        callback: tg_callback_fn_type,
+        async_task_group_ptr: Pointer[AsyncTaskGroup],
+    ):
+        self.callback = callback
+        self.async_task_group_ptr = async_task_group_ptr
+
 
 struct AsyncTaskGroup:
     """The target of an AsyncTaskGroupPtr. Holds exactly num_work_items
@@ -614,10 +625,9 @@ struct AsyncTaskGroup:
     fn add_task(self&, coroutine: Coroutine[NoneType]):
         let ctx_ptr = coroutine.get_ctx[AsyncTaskGroupContext]()
         let self_ptr = Pointer[AsyncTaskGroup].address_of(self)
-        __get_address_as_lvalue(ctx_ptr.address) = AsyncTaskGroupContext {
-            callback: _get_complete_callback(),
-            async_task_group_ptr: self_ptr,
-        }
+        __get_address_as_lvalue(ctx_ptr.address) = AsyncTaskGroupContext(
+            _get_complete_callback(), self_ptr
+        )
         self.coroutines.append(coroutine)
         __mlir_op.`pop.external_call`[
             _type:[],
