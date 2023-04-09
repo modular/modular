@@ -1881,10 +1881,12 @@ def POP_CallLLVMIntrinsicOp : POPOp<"call_llvm_intrinsic"> {
         !pop.scalar<f32> -> !pop.scalar<f32>
     ```
   }];
-  let arguments = (ins StrAttr:$intrin, Variadic<AnyType>:$args);
+  let arguments = (ins AttrOfType<KGEN_StringType>:$intrin,
+                       Variadic<AnyType>:$args);
   let results = (outs Optional<AnyType>:$results);
   let assemblyFormat = [{
-    $intrin `(` $args `)` attr-dict `:`functional-type($args, $results)
+    custom<ParamValue>($intrin, "StringType::get($_ctxt)") `(` $args `)`
+    attr-dict `:` functional-type($args, $results)
   }];
 }
 
@@ -1901,13 +1903,14 @@ def POP_InlineAsmOp : POPOp<"inline_asm"> {
     Attempting to define or reference any symbol or any global behavior is
     considered undefined behavior at this time.
   }];
-  let arguments = (
-    ins Variadic<AnyType>:$operands,
-        StrAttr:$assembly,
-        StrAttr:$constraints,
-        UnitAttr:$hasSideEffects,
-        UnitAttr:$isStackAligned,
-        OptionalAttr<ArrayAttr>:$operandAttrs);
+  let arguments = (ins
+    Variadic<AnyType>:$operands,
+    AttrOfType<KGEN_StringType>:$assembly,
+    AttrOfType<KGEN_StringType>:$constraints,
+    UnitAttr:$hasSideEffects,
+    UnitAttr:$isStackAligned,
+    OptionalAttr<ArrayAttr>:$operandAttrs
+  );
 
   let results = (outs Optional<AnyType>:$res);
 
@@ -1916,7 +1919,8 @@ def POP_InlineAsmOp : POPOp<"inline_asm"> {
     (`stack_aligned` $isStackAligned^)?
     (`operand_attrs` `=` $operandAttrs^)?
     attr-dict
-    $assembly `,` $constraints
+    custom<ParamValue>($assembly, "StringType::get($_ctxt)") `,`
+    custom<ParamValue>($constraints, "StringType::get($_ctxt)")
     operands `:` functional-type(operands, results)
    }];
 }
