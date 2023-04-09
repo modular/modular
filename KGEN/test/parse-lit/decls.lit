@@ -344,8 +344,8 @@ struct VaList[EltType: __mlir_type.`!kgen.mlirtype`]:
   alias StorageType =  __mlir_type[`!kgen.variadic<`, EltType, `>`]
   var value: StorageType
 
-  fn __copy__(self) -> Self:
-    return Self{value: self.value}
+  fn __copyinit__(self&, existing: Self):
+    self.value = existing.value
 
   fn __init__(self&, value: StorageType):
     self.value = value
@@ -555,7 +555,7 @@ struct StructWithInit:
 # CHECK-LABEL: lit.struct.decl @StructExample
 @register_passable
 struct StructExample:
-  fn __copy__(self) -> Self:
+  fn __copyinit__(self) -> Self:
     return Self()
 
   fn __init__() -> Self: return Self{}

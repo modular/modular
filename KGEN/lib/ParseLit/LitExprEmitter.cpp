@@ -297,7 +297,7 @@ AnyValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
     return emitRValue({rbValue, value.expr}, dest);
   }
 
-  // Finally, if this is a BValue emit a __copy__, a load for a
+  // Finally, if this is a BValue emit a __copyinit__, a load for a
   // primitive MLIR type, or an error if neither approach works.
   auto bValue = value.ir.getIfBValue();
   assert(bValue && "No other value types");
@@ -414,12 +414,30 @@ CValue ExprEmitter::emitBValueToRValue(ASTExprAnd<BValue> value,
   if (auto pValue = value.ir.getIfPValue())
     return emitCResult(pValue, value.expr, dest);
 
-  // If this is a non-trivial type,
-  if (value.ir.getRValueType().getRegisterPassability(value.expr->getLoc(),
-                                                      shared) !=
-      StructDeclOp::RP_RegisterPassableTrivial)
-    return emitNamedMethodCall("__copy__", {value}, dest,
+  // If this is a non-trivial type, emit a call to __copyinit__ to copy it over.
+  ASTType valueType = value.ir.getRValueType();
+  switch (valueType.getRegisterPassability(value.expr->getLoc(), shared)) {
+  case StructDeclOp::RP_RegisterPassableTrivial:
+    break;
+  case StructDeclOp::RP_RegisterPassable:
+    // Register passable __copyinit__ has signature `(self&)->Self`.
+    return emitNamedMethodCall("__copyinit__", {value}, dest,
                                CallSyntax::kImplicitConvert, value.expr);
+  case StructDeclOp::RP_MemoryOnly:
+    // Memory-only __copyinit__ has signature `(self&, existing: Self)`.
+    SLValue destBuffer =
+        dest.getSLValueForResult(value.expr->getLoc(), valueType, *this);
+    if (!destBuffer)
+      return {};
+
+    ASTExprAnd<AnyValue> operands[] = {
+        ASTExprAnd<AnyValue>{destBuffer, value.expr}, value};
+    if (!emitNamedMethodCall("__copyinit__", operands, ValueDest::none(),
+                             CallSyntax::kImplicitConvert, value.expr))
+      return {};
+    // If we required an implicit conversion, make sure it happens.
+    return emitCResult(MRValue(destBuffer), value.expr, dest);
+  }
 
   // Otherwise we can emit a direct use/load for trivial types.
   SRValue result;
@@ -806,7 +824,7 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     return SBValue(rv);
   }
 
-  // If we have an MRValue in the wrong spot, emit a __copy__ call into the
+  // If we have an MRValue in the wrong spot, emit a __copyinit__ call into the
   // destination using MBValue -> RValue conversion.
   // TODO(move): This won't take ownership of the value.  When we have move
   // operations we should use them.
@@ -838,7 +856,7 @@ CValue ExprEmitter::emitLoadOfLValue(ASTExprAnd<LValue> value,
   auto slValue = value.ir.getIfSLValue();
   assert(slValue && "unknown lvalue kind");
 
-  // Emit a __copy__ or load of the value.
+  // Emit a __copyinit__ or load of the value.
   return emitBValueToRValue({MBValue(slValue), value.expr}, dest);
 }
 

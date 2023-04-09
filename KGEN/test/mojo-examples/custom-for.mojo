@@ -15,8 +15,10 @@ struct my_iter:
     var end: Int
     var list: MyList
 
-    fn __copy__(self) -> Self:
-        return Self {start: self.start, end: self.end, list: self.list}
+    fn __copyinit__(self&, existing: Self):
+        self.start = existing.start
+        self.end = existing.end
+        self.list = existing.list
 
     fn __init__(self&, list: MyList):
         self.start = 0
@@ -38,8 +40,9 @@ struct MyList:
     var start: Pointer[Int]
     var size: Int
 
-    fn __copy__(self) -> Self:
-        return Self {start: self.start, size: self.size}
+    fn __copyinit__(self&, existing: Self):
+        self.start = existing.start
+        self.size = existing.size
 
     fn __init__(self&, ptr: Pointer[Int], size: Int):
         self.start = ptr

@@ -15,8 +15,10 @@ struct my_iter_no_len:
     var end: Int
     var list: MyList_range_no_len
 
-    fn __copy__(self) -> Self:
-        return Self {start: self.start, end: self.end, list: self.list}
+    fn __copyinit__(self&, existing: Self):
+        self.start = existing.start
+        self.end = existing.end
+        self.list = existing.list
 
     fn __init__(self&, list: MyList_range_no_len):
         self.start = 0
@@ -33,8 +35,9 @@ struct MyList_range_no_len:
     var start: Pointer[Int]
     var size: Int
 
-    fn __copy__(self) -> Self:
-        return Self {start: self.start, size: self.size}
+    fn __copyinit__(self&, existing: Self):
+        self.start = existing.start
+        self.size = existing.size
 
     fn __init__(self&, ptr: Pointer[Int], size: Int):
         self.start = ptr
@@ -57,8 +60,10 @@ struct my_iter_no_next:
     var end: Int
     var list: MyList_range_no_next
 
-    fn __copy__(self) -> Self:
-        return Self {start: self.start, end: self.end, list: self.list}
+    fn __copyinit__(self&, existing: Self):
+        self.start = existing.start
+        self.end = existing.end
+        self.list = existing.list
 
     fn __init__(self&, list: MyList_range_no_next):
         self.start = 0
@@ -75,8 +80,9 @@ struct MyList_range_no_next:
     var start: Pointer[Int]
     var size: Int
 
-    fn __copy__(self) -> Self:
-        return Self {start: self.start, size: self.size}
+    fn __copyinit__(self&, existing: Self):
+        self.start = existing.start
+        self.size = existing.size
 
     fn __init__(self&, ptr: Pointer[Int], size: Int):
         self.start = ptr
@@ -98,8 +104,9 @@ struct MyList_no_iter:
     var start: Pointer[Int]
     var size: Int
 
-    fn __copy__(self) -> Self:
-        return Self {start: self.start, size: self.size}
+    fn __copyinit__(self&, existing: Self):
+        self.start = existing.start
+        self.size = existing.size
 
     fn __init__(self&, ptr: Pointer[Int], size: Int):
         self.start = ptr
@@ -133,8 +140,10 @@ struct my_iter_wrong_int:
     var end: Int
     var list: MyList_invalid_boxed_type
 
-    fn __copy__(self) -> Self:
-        return Self {start: self.start, end: self.end, list: self.list}
+    fn __copyinit__(self&, existing: Self):
+        self.start = existing.start
+        self.end = existing.end
+        self.list = existing.list
 
     fn __init__(self&, list: MyList_invalid_boxed_type):
         self.start = 0
@@ -156,8 +165,9 @@ struct MyList_invalid_boxed_type:
     var start: Pointer[Int]
     var size: Int
 
-    fn __copy__(self) -> Self:
-        return Self {start: self.start, size: self.size}
+    fn __copyinit__(self&, existing: Self):
+        self.start = existing.start
+        self.size = existing.size
 
     fn __init__(self&, ptr: Pointer[Int], size: Int):
         self.start = ptr

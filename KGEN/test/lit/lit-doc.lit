@@ -33,8 +33,8 @@ spills over to the next line."""
 
 
 struct InMemoryStruct:
-    fn __copy__(self) -> Self:
-        return Self {}
+    fn __copyinit__(self&, existing: Self):
+        pass
 
     fn fn_with_by_conventions(
         self&, arg&: InMemoryStruct, *args&: InMemoryStruct

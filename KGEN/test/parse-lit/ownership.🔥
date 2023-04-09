@@ -15,7 +15,7 @@ struct MemExample:
 struct RegExample:
   fn __init__() -> Self:
     return RegExample{}
-  fn __copy__(self) -> Self:
+  fn __copyinit__(self) -> Self:
     return RegExample{}
   fn __del___(owned self):
     pass

@@ -1093,12 +1093,13 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
   // On any semantic error we mark the declaration erroneous - so references to
   // it don't type check, and we clear our special function information.  This
   // reduces cascade errors.
-  auto emitErrorLoc = [&](SMLoc loc, const Twine &message) -> LitDiagnostic {
+  auto emitErrorLoc = [&](SMLoc loc,
+                          const Twine &message = Twine()) -> LitDiagnostic {
     fnInfo = SpecialFunctionInfo();
     decl.hasReferenceError = true;
     return shared.emitError(loc, message);
   };
-  auto emitError = [&](const Twine &message) -> LitDiagnostic {
+  auto emitError = [&](const Twine &message = Twine()) -> LitDiagnostic {
     fnInfo = SpecialFunctionInfo();
     decl.hasReferenceError = true;
     return shared.emitError(funcOp.getLoc(), message);
@@ -1123,37 +1124,23 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
       selfArgNumber = hasMemoryResult ? 1 : 0;
     }
 
-  // __init__ is weird - for memory-primary results we define init in convention
-  // Python style, but for @register_passable values, we return it. In the
-  // former case, the first/self argument must be declared as a by-ref argument,
-  // but we need to change it to InitSelf since it is not initialized coming in.
-  if (fnInfo.kind == SpecialFunctionKind::kInit && selfType) {
+  // __init__ and __copyinit__ are weird - for memory-primary results we define
+  // init in convention Python style, but for @register_passable values, we
+  // return it. In the former case, the first/self argument must be declared as
+  // a by-ref argument, but we need to change it to InitSelf since it is not
+  // initialized coming in.
+  if ((fnInfo.kind == SpecialFunctionKind::kInit ||
+       fnInfo.kind == SpecialFunctionKind::kCopyInit) &&
+      selfType) {
     if (ASTType(selfType).isRegisterPassable(decl.getLoc(), shared)) {
       if (!resultType.isEqualCanon(selfType))
-        emitError("'__init__' on register_passable type must return Self");
-
+        emitError() << name << " on register_passable type must return Self";
       // This form of __init__ is implicitly static, it doesn't take a 'self'.
-      funcOp.setIsStatic(true);
-    } else if (args.empty()) {
-      emitError("'__init__' requires a self argument");
+      if (fnInfo.kind == SpecialFunctionKind::kInit)
+        funcOp.setIsStatic(true);
     } else {
-      SMLoc selfArgLoc = args[0].loc;
-      // __init__ must take their self argument by-ref syntactically.
-      if (args[0].convention != ParsedArgument::kConventionByRef) {
-        auto diag =
-            emitErrorLoc(selfArgLoc, "'self' in struct '__init__' must be "
-                                     "passed as mutable reference");
-        if (args[0].convention == ParsedArgument::kConventionUnspec)
-          diag << LitFixIt::insertAfterToken(selfArgLoc, "&", shared);
-      }
-
-      // Regardless force it to init_self so recovery follows the fix-it.
-      args[0].convention = ParsedArgument::kConventionInitSelfResult;
-
-      // Verify the self type is unspecified or correct.
-      if (argTypes[0] && !selfType.isEqualCanon(argTypes[0]))
-        emitErrorLoc(selfArgLoc, "")
-            << args[0].name << " incorrect Self type, expected " << selfType;
+      if (!resultType.isEqualCanon(shared.getNoneType()))
+        emitError() << name << " on memory-only type must return None";
     }
   }
 
@@ -1235,6 +1222,8 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
     } else if (funcOp.getIsStatic()) {
       // kInit is sometimes static, sometimes a method, depending on whether it
       // is register passable.
+      // FIXME: We should change register_passable things to work like
+      // everything else.
       if (fnInfo.kind != SpecialFunctionKind::kInit)
         emitError("special method may not be a static method");
     } else if (fnInfo.requiresOwnedSelfInstMethod()) {
@@ -1255,13 +1244,13 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
     // Note: We could allow omitting result type and default it, at the cost of
     // extra language magic.
     if (!declaredResultType.isEqualCanon(selfType))
-      emitError("") << name << " result type must be " << selfType;
+      emitError() << name << " result type must be " << selfType;
   }
 
   // If the function is required to return None, verify that.
   if (fnInfo.hasNoneResult() &&
       !declaredResultType.isEqualCanon(shared.getNoneType())) {
-    emitError("") << name << " result type must be elided (or None)";
+    emitError() << name << " result type must be elided (or None)";
     resultType = shared.getNoneType();
   }
 
@@ -1274,14 +1263,35 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
     break;
   case SpecialFunctionKind::kLitBool:
     if (!resultType.mlirType.isSignlessInteger(1))
-      emitError("") << name << " result type must be __mlir_type.i1";
+      emitError() << name << " result type must be __mlir_type.i1";
     break;
-  case SpecialFunctionKind::kCopy:
-    if (fnInfo.isInstMethod() && selfType &&
-        args[selfArgNumber].convention != ParsedArgument::kConventionBorrowed)
-      emitErrorLoc(args[selfArgNumber].loc,
-                   "self argument must be passed as borrowed");
+  case SpecialFunctionKind::kInit:
+  case SpecialFunctionKind::kCopyInit: {
+    // This only applies to memory-only types, register-passable types are
+    // handled differently.
+    if (ASTType(selfType).isRegisterPassable(decl.getLoc(), shared))
+      break;
+
+    assert(!args.empty() && "arg count already checked above");
+    SMLoc selfArgLoc = args[0].loc;
+    // __init__ and __copyinit__ must take their self argument by-ref
+    // syntactically.
+    if (args[0].convention != ParsedArgument::kConventionByRef) {
+      auto diag = emitErrorLoc(selfArgLoc, "'self' in struct ")
+                  << name << " must be passed as mutable reference";
+      if (args[0].convention == ParsedArgument::kConventionUnspec)
+        diag << LitFixIt::insertAfterToken(selfArgLoc, "&", shared);
+    }
+
+    // Regardless force it to init_self so recovery follows the fix-it.
+    args[0].convention = ParsedArgument::kConventionInitSelfResult;
+
+    if (fnInfo.kind == SpecialFunctionKind::kCopyInit)
+      if (args[1].convention != ParsedArgument::kConventionBorrowed)
+        emitErrorLoc(args[1].loc,
+                     "existing value argument must be passed as borrowed");
     break;
+  }
   }
 
   // Mangle 'name', ensuring that overloaded methods get unique symbol names.
@@ -2351,7 +2361,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, LitLexer &lexer,
       return failure();
     }
 
-    // Trivial types may not have __copy__ or __del__ members.
+    // Trivial types may not have __copyinit__ or __del__ members.
     if (registerPassability == StructDeclOp::RP_RegisterPassableTrivial) {
       auto rejectMemberIfPresent = [&](StringRef name) {
         auto nameAttr = StringAttr::get(getContext(), name);
@@ -2361,7 +2371,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, LitLexer &lexer,
               << nameAttr << " method";
       };
 
-      rejectMemberIfPresent("__copy__");
+      rejectMemberIfPresent("__copyinit__");
       rejectMemberIfPresent("__del__");
     }
   }
