@@ -182,8 +182,8 @@ fn trace_range_pop[type: TraceType, level: TraceLevel]():
 struct Trace[level: TraceLevel]:
     alias trace_type = TraceType.MOJO
 
-    fn __copy__(self) -> Self:
-        return Self {}
+    fn __copyinit__(self&, existing: Self):
+        pass
 
     fn __init__(self&, name: StringRef):
         self = Self(name, "")

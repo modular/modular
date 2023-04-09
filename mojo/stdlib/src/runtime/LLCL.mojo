@@ -141,7 +141,7 @@ struct Runtime:
 
     # TODO: Probably don't want the runtime to be implicitly copyable.
     @always_inline("nodebug")
-    fn __copy__(self) -> Self:
+    fn __copyinit__(self) -> Self:
         return Self {ptr: self.ptr}
 
     fn __init__() -> Runtime:
@@ -376,7 +376,7 @@ struct OutputChainPtr:
         return OutputChainPtr {ptr: ptr}
 
     @always_inline("nodebug")
-    fn __copy__(self) -> Self:
+    fn __copyinit__(self) -> Self:
         return Self {ptr: self.ptr}
 
     @always_inline("nodebug")
@@ -517,10 +517,10 @@ struct OwningOutputChainPtr:
         return OwningOutputChainPtr {ptr: ptr}
 
     @always_inline("nodebug")
-    fn __copy__(self) -> Self:
+    fn __copyinit__(self) -> Self:
         return Self {ptr: self.ptr}
 
-    @always_inline
+    @always_inline("nodebug")
     fn __del__(self):
         """Destroys the LLCL::OutputChain."""
         __mlir_op.`pop.external_call`[
