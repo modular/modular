@@ -10,10 +10,11 @@
 # ===----------------------------------------------------------------------===#
 
 from DType import DType
+from Intrinsics import llvm_intrinsic
+from List import create_dim_list
+from Matmul import Matrix
 from Pointer import Pointer, DTypePointer
 from StaticTuple import StaticTuple
-from Matmul import Matrix
-from List import create_dim_list
 
 from Range import range
 from SIMD import SIMD
@@ -48,10 +49,7 @@ fn _tile_dpbssd[dst: Int, a: Int, b: Int]():
 
     See https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#expand=2206&ig_expand=7471,7472,7472&text=_tile_dpbssd
     """
-    __mlir_op.`pop.call_llvm_intrinsic`[
-        intrin : ("llvm.x86.tdpbssd").value,
-        _type:[],
-    ](
+    llvm_intrinsic["llvm.x86.tdpbssd", NoneType](
         __mlir_op.`pop.cast`[_type : __mlir_type.`!pop.scalar<si8>`](dst.value),
         __mlir_op.`pop.cast`[_type : __mlir_type.`!pop.scalar<si8>`](a.value),
         __mlir_op.`pop.cast`[_type : __mlir_type.`!pop.scalar<si8>`](b.value),
@@ -69,10 +67,7 @@ fn _tile_release():
     See https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#expand=2206&ig_expand=7471,7472,7472&text=_tile_release
     """
 
-    __mlir_op.`pop.call_llvm_intrinsic`[
-        intrin : ("llvm.x86.tilerelease").value,
-        _type:[],
-    ]()
+    llvm_intrinsic["llvm.x86.tilerelease", NoneType]()
 
 
 fn _tile_zero[tdest: Int]():
@@ -82,10 +77,11 @@ fn _tile_zero[tdest: Int]():
     See https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#expand=2206&ig_expand=7471,7472,7472&text=_tile_zero
     """
 
-    __mlir_op.`pop.call_llvm_intrinsic`[
-        intrin : ("llvm.x86.tilezero").value,
-        _type:[],
-    ](__mlir_op.`pop.cast`[_type : __mlir_type.`!pop.scalar<si8>`](tdest.value))
+    llvm_intrinsic["llvm.x86.tilezero", NoneType](
+        __mlir_op.`pop.cast`[_type : __mlir_type.`!pop.scalar<si8>`](
+            tdest.value
+        )
+    )
 
 
 fn _tile_loadd[dst: Int](base: DTypePointer[void], stride: Int):
@@ -94,10 +90,7 @@ fn _tile_loadd[dst: Int](base: DTypePointer[void], stride: Int):
 
     See https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#expand=2206&ig_expand=7471,7472,7472&text=_tile_loadd
     """
-    __mlir_op.`pop.call_llvm_intrinsic`[
-        intrin : ("llvm.x86.tileloadd64").value,
-        _type:[],
-    ](
+    llvm_intrinsic["llvm.x86.tileloadd64", NoneType](
         __mlir_op.`pop.cast`[_type : __mlir_type.`!pop.scalar<si8>`](dst.value),
         base,
         stride.value,
@@ -110,10 +103,7 @@ fn _tile_stored[src: Int](base: DTypePointer[void], stride: Int):
 
     See https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#expand=2206&ig_expand=7471,7472,7472&text=_tile_stored
     """
-    __mlir_op.`pop.call_llvm_intrinsic`[
-        intrin : ("llvm.x86.tilestored64").value,
-        _type:[],
-    ](
+    llvm_intrinsic["llvm.x86.tilestored64", NoneType](
         __mlir_op.`pop.cast`[_type : __mlir_type.`!pop.scalar<si8>`](src.value),
         base,
         stride,
@@ -125,10 +115,7 @@ fn _tile_loadconfig(mem_addr: DTypePointer[void]):
     Load tile configuration from a 64-byte memory location specified by mem_addr. The tile configuration format is specified below, and includes the tile type pallette, the number of bytes per row, and the number of rows. If the specified pallette_id is zero, that signifies the init state for both the tile config and the tile data, and the tiles are zeroed. Any invalid configurations will result in #GP fault.
     See https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#expand=2206&ig_expand=7471,7472,7472&text=_tile_loadconfig
     """
-    __mlir_op.`pop.call_llvm_intrinsic`[
-        intrin : ("llvm.x86.ldtilecfg").value,
-        _type:[],
-    ](mem_addr)
+    llvm_intrinsic["llvm.x86.ldtilecfg", NoneType](mem_addr)
 
 
 fn _tile_storeconfig(mem_addr: DTypePointer[void]):
@@ -136,10 +123,7 @@ fn _tile_storeconfig(mem_addr: DTypePointer[void]):
     Stores the current tile configuration to a 64-byte memory location specified by mem_addr. The tile configuration format is specified below, and includes the tile type pallette, the number of bytes per row, and the number of rows. If tiles are not configured, all zeroes will be stored to memory.
     See https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#expand=2206&ig_expand=7471,7472,7472&text=_tile_storeconfig
     """
-    __mlir_op.`pop.call_llvm_intrinsic`[
-        intrin : ("llvm.x86.sttilecfg").value,
-        _type:[],
-    ](mem_addr)
+    llvm_intrinsic["llvm.x86.sttilecfg", NoneType](mem_addr)
 
 
 fn init_intel_amx() -> Bool:

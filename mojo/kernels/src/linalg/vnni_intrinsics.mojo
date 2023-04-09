@@ -11,6 +11,7 @@
 
 from DType import DType
 from SIMD import SIMD
+from Intrinsics import llvm_intrinsic
 
 # ===----------------------------------------------------------------------===#
 # vpdpwssd
@@ -22,9 +23,8 @@ fn vpdpwssd(
     a: SIMD[16, DType.si32],
     b: SIMD[16, DType.si32],
 ) -> SIMD[16, DType.si32]:
-    return __mlir_op.`pop.call_llvm_intrinsic`[
-        intrin : ("llvm.x86.avx512.vpdpwssd.512").value,
-        _type : __mlir_type.`!pop.simd<16, si32>`,
+    return llvm_intrinsic[
+        "llvm.x86.avx512.vpdpwssd.512", __mlir_type.`!pop.simd<16, si32>`
     ](src.value, a.value, b.value)
 
 
@@ -33,9 +33,8 @@ fn vpdpwssd(
     a: SIMD[8, DType.si32],
     b: SIMD[8, DType.si32],
 ) -> SIMD[8, DType.si32]:
-    return __mlir_op.`pop.call_llvm_intrinsic`[
-        intrin : ("llvm.x86.avx512.vpdpwssd.256").value,
-        _type : __mlir_type.`!pop.simd<8, si32>`,
+    return llvm_intrinsic[
+        "llvm.x86.avx512.vpdpwssd.256", __mlir_type.`!pop.simd<8, si32>`
     ](src.value, a.value, b.value)
 
 
@@ -44,9 +43,8 @@ fn vpdpwssd(
     a: SIMD[4, DType.si32],
     b: SIMD[4, DType.si32],
 ) -> SIMD[4, DType.si32]:
-    return __mlir_op.`pop.call_llvm_intrinsic`[
-        intrin : ("llvm.x86.avx512.vpdpwssd.128").value,
-        _type : __mlir_type.`!pop.simd<4, si32>`,
+    return llvm_intrinsic[
+        "llvm.x86.avx512.vpdpwssd.128", __mlir_type.`!pop.simd<4, si32>`
     ](src.value, a.value, b.value)
 
 
@@ -60,9 +58,8 @@ fn vpdpwssds(
     a: SIMD[16, DType.si32],
     b: SIMD[16, DType.si32],
 ) -> SIMD[16, DType.si32]:
-    return __mlir_op.`pop.call_llvm_intrinsic`[
-        intrin : ("llvm.x86.avx512.vpdpwssds.512").value,
-        _type : __mlir_type.`!pop.simd<16, si32>`,
+    return llvm_intrinsic[
+        "llvm.x86.avx512.vpdpwssds.512", __mlir_type.`!pop.simd<16, si32>`
     ](src.value, a.value, b.value)
 
 
@@ -71,9 +68,8 @@ fn vpdpwssds(
     a: SIMD[8, DType.si32],
     b: SIMD[8, DType.si32],
 ) -> SIMD[8, DType.si32]:
-    return __mlir_op.`pop.call_llvm_intrinsic`[
-        intrin : ("llvm.x86.avx512.vpdpwssds.256").value,
-        _type : __mlir_type.`!pop.simd<8, si32>`,
+    return llvm_intrinsic[
+        "llvm.x86.avx512.vpdpwssds.256", __mlir_type.`!pop.simd<8, si32>`
     ](src.value, a.value, b.value)
 
 
@@ -82,9 +78,8 @@ fn vpdpwssds(
     a: SIMD[4, DType.si32],
     b: SIMD[4, DType.si32],
 ) -> SIMD[4, DType.si32]:
-    return __mlir_op.`pop.call_llvm_intrinsic`[
-        intrin : ("llvm.x86.avx512.vpdpwssds.128").value,
-        _type : __mlir_type.`!pop.simd<4, si32>`,
+    return llvm_intrinsic[
+        "llvm.x86.avx512.vpdpwssds.128", __mlir_type.`!pop.simd<4, si32>`
     ](src.value, a.value, b.value)
 
 
@@ -98,9 +93,8 @@ fn vpdpbusd(
     a: SIMD[16, DType.si32],
     b: SIMD[16, DType.si32],
 ) -> SIMD[16, DType.si32]:
-    return __mlir_op.`pop.call_llvm_intrinsic`[
-        intrin : ("llvm.x86.avx512.vpdpbusd.512").value,
-        _type : __mlir_type.`!pop.simd<16, si32>`,
+    return llvm_intrinsic[
+        "llvm.x86.avx512.vpdpbusd.512", __mlir_type.`!pop.simd<16, si32>`
     ](src.value, a.value, b.value)
 
 
@@ -109,9 +103,8 @@ fn vpdpbusd(
     a: SIMD[8, DType.si32],
     b: SIMD[8, DType.si32],
 ) -> SIMD[8, DType.si32]:
-    return __mlir_op.`pop.call_llvm_intrinsic`[
-        intrin : ("llvm.x86.avx512.vpdpbusd.256").value,
-        _type : __mlir_type.`!pop.simd<8, si32>`,
+    return llvm_intrinsic[
+        "llvm.x86.avx512.vpdpbusd.256", __mlir_type.`!pop.simd<8, si32>`
     ](src.value, a.value, b.value)
 
 
@@ -120,9 +113,8 @@ fn vpdpbusd(
     a: SIMD[4, DType.si32],
     b: SIMD[4, DType.si32],
 ) -> SIMD[4, DType.si32]:
-    return __mlir_op.`pop.call_llvm_intrinsic`[
-        intrin : ("llvm.x86.avx512.vpdpbusd.128").value,
-        _type : __mlir_type.`!pop.simd<4, si32>`,
+    return llvm_intrinsic[
+        "llvm.x86.avx512.vpdpbusd.128", __mlir_type.`!pop.simd<4, si32>`
     ](src.value, a.value, b.value)
 
 
@@ -136,9 +128,8 @@ fn vpdpbusds(
     a: SIMD[16, DType.si32],
     b: SIMD[16, DType.si32],
 ) -> SIMD[16, DType.si32]:
-    return __mlir_op.`pop.call_llvm_intrinsic`[
-        intrin : ("llvm.x86.avx512.vpdpbusds.512").value,
-        _type : __mlir_type.`!pop.simd<16, si32>`,
+    return llvm_intrinsic[
+        "llvm.x86.avx512.vpdpbusds.512", __mlir_type.`!pop.simd<16, si32>`
     ](src.value, a.value, b.value)
 
 
@@ -147,9 +138,8 @@ fn vpdpbusds(
     a: SIMD[8, DType.si32],
     b: SIMD[8, DType.si32],
 ) -> SIMD[8, DType.si32]:
-    return __mlir_op.`pop.call_llvm_intrinsic`[
-        intrin : ("llvm.x86.avx512.vpdpbusds.256").value,
-        _type : __mlir_type.`!pop.simd<8, si32>`,
+    return llvm_intrinsic[
+        "llvm.x86.avx512.vpdpbusds.256", __mlir_type.`!pop.simd<8, si32>`
     ](src.value, a.value, b.value)
 
 
@@ -158,7 +148,6 @@ fn vpdpbusds(
     a: SIMD[4, DType.si32],
     b: SIMD[4, DType.si32],
 ) -> SIMD[4, DType.si32]:
-    return __mlir_op.`pop.call_llvm_intrinsic`[
-        intrin : ("llvm.x86.avx512.vpdpbusds.128").value,
-        _type : __mlir_type.`!pop.simd<4, si32>`,
+    return llvm_intrinsic[
+        "llvm.x86.avx512.vpdpbusds.128", __mlir_type.`!pop.simd<4, si32>`
     ](src.value, a.value, b.value)
