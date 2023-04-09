@@ -661,7 +661,7 @@ struct NullaryClosure[result_type: AnyType]:
         self.value = value
 
     @always_inline("nodebug")
-    fn __copy__(self) -> Self:
+    fn __copyinit__(self&, existing: Self):
         """Clone a nullary closure.
 
         Arguments:
@@ -670,7 +670,7 @@ struct NullaryClosure[result_type: AnyType]:
         Returns:
           A new nullary closure.
         """
-        return Self {value: self.value}
+        self.value = existing.value
 
     @always_inline("nodebug")
     fn __call__(self) -> result_type:
@@ -706,7 +706,7 @@ struct UnaryClosure[
         self.value = value
 
     @always_inline("nodebug")
-    fn __copy__(self) -> Self:
+    fn __copyinit__(self&, existing: Self):
         """Clone a unary closure.
 
         Arguments:
@@ -715,7 +715,7 @@ struct UnaryClosure[
         Returns:
           A new unary closure.
         """
-        return Self {value: self.value}
+        self.value = existing.value
 
     @always_inline("nodebug")
     fn __call__(self, input: input_type) -> result_type:
@@ -757,7 +757,7 @@ struct BinaryClosure[
         self.value = value
 
     @always_inline("nodebug")
-    fn __copy__(self) -> Self:
+    fn __copyinit__(self&, existing: Self):
         """Clone a binary closure.
 
         Arguments:
@@ -766,7 +766,7 @@ struct BinaryClosure[
         Returns:
           A new binary closure.
         """
-        return Self {value: self.value}
+        self.value = existing.value
 
     @always_inline("nodebug")
     fn __call__(self, lhs: lhs_type, rhs: rhs_type) -> result_type:
@@ -818,7 +818,7 @@ struct TernaryClosure[
         self.value = value
 
     @always_inline("nodebug")
-    fn __copy__(self) -> Self:
+    fn __copyinit__(self&, existing: Self):
         """Clone a Ternary closure.
 
         Arguments:
@@ -827,7 +827,7 @@ struct TernaryClosure[
         Returns:
           A new Ternary closure.
         """
-        return Self {value: self.value}
+        self.value = existing.value
 
     @always_inline("nodebug")
     fn __call__(
