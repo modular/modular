@@ -78,9 +78,9 @@ struct Matrix[
         Returns:
             Constructed matrix with the allocated space.
         """
-        return Self {
-            data: NDBuffer[2, shape, type].aligned_stack_allocation[alignment]()
-        }
+        return Self(
+            NDBuffer[2, shape, type].aligned_stack_allocation[alignment]()
+        )
 
     @staticmethod
     @always_inline

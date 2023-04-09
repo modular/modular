@@ -406,6 +406,22 @@ struct PackMatrixRows[
     # valid multiple-of-simd data bound within the tile.
     var valid_simd_dim: StaticIntTuple[2]
 
+    fn __init__(
+        self&,
+        packed_matrix: NDBuffer[3, packed_shape, type],
+        original_matrix: NDBuffer[2, original_shape, type],
+        global_offset: StaticIntTuple[2],
+        pack_tile_dim: StaticIntTuple[2],
+        valid_data_dim: StaticIntTuple[2],
+        valid_simd_dim: StaticIntTuple[2],
+    ):
+        self.packed_matrix = packed_matrix
+        self.original_matrix = original_matrix
+        self.global_offset = global_offset
+        self.pack_tile_dim = pack_tile_dim
+        self.valid_data_dim = valid_data_dim
+        self.valid_simd_dim = valid_simd_dim
+
     fn __copyinit__(self&, existing: Self):
         self.packed_matrix = existing.packed_matrix
         self.original_matrix = existing.original_matrix
@@ -440,13 +456,13 @@ struct PackMatrixRows[
         """
         assert_param[row_inner_size % simd_size == 0]()
 
-        let instance = Self {
-            packed_matrix: packed_matrix,
-            original_matrix: original_matrix,
-            global_offset: global_offset,
-            pack_tile_dim: pack_tile_dim,
-            valid_data_dim: valid_data_dim,
-            valid_simd_dim: Index(
+        let instance = Self(
+            packed_matrix,
+            original_matrix,
+            global_offset,
+            pack_tile_dim,
+            valid_data_dim,
+            Index(
                 round_down_to_block[simd_size](
                     min(
                         valid_data_dim[0],
@@ -460,7 +476,7 @@ struct PackMatrixRows[
                     )
                 ),
             ),
-        }
+        )
 
         instance._pack()
 
@@ -644,6 +660,20 @@ struct PackMatrixCols[
     # valid data bound within the tile.
     var valid_data_dim: StaticIntTuple[2]
 
+    fn __init__(
+        self&,
+        packed_matrix: NDBuffer[3, packed_shape, type],
+        original_matrix: NDBuffer[2, original_shape, type],
+        global_offset: StaticIntTuple[2],
+        pack_tile_dim: StaticIntTuple[2],
+        valid_data_dim: StaticIntTuple[2],
+    ):
+        self.packed_matrix = packed_matrix
+        self.original_matrix = original_matrix
+        self.global_offset = global_offset
+        self.pack_tile_dim = pack_tile_dim
+        self.valid_data_dim = valid_data_dim
+
     # Interface function:
     @staticmethod
     fn run(
@@ -673,13 +703,13 @@ struct PackMatrixCols[
             "Unimplemented tile pattern.",
         )
 
-        let instance = Self {
-            packed_matrix: packed_matrix,
-            original_matrix: original_matrix,
-            global_offset: global_offset,
-            pack_tile_dim: pack_tile_dim,
-            valid_data_dim: valid_data_dim,
-        }
+        let instance = Self(
+            packed_matrix,
+            original_matrix,
+            global_offset,
+            pack_tile_dim,
+            valid_data_dim,
+        )
 
         instance._pack()
 
@@ -813,6 +843,22 @@ struct MatmulInnerLoopBPacked[
     #  local tile, in (a_row_size, TileN).
     var c_bound: StaticIntTuple[2]
 
+    fn __init__(
+        self&,
+        c: NDBuffer[2, shape_c, accum_type],
+        a: NDBuffer[2, shape_a, value_type],
+        b_packed: NDBuffer[3, packed_shape, value_type],
+        global_offset: GemmShape,
+        tile_n_k: StaticIntTuple[2],
+        c_bound: StaticIntTuple[2],
+    ):
+        self.c = c
+        self.a = a
+        self.b_packed = b_packed
+        self.global_offset = global_offset
+        self.tile_n_k = tile_n_k
+        self.c_bound = c_bound
+
     @staticmethod
     fn run(
         c: NDBuffer[2, shape_c, accum_type],
@@ -834,15 +880,15 @@ struct MatmulInnerLoopBPacked[
             tile_n_k(StaticIntTuple): 2D dimension tuple describing the
                 size of the packed tile of B.
         """
-        let instance = Self {
-            c: c,
-            a: a,
-            b_packed: b_packed,
-            global_offset: global_offset,
-            tile_n_k: tile_n_k,
-            c_bound: Index(global_bound.M, global_bound.N)
+        let instance = Self(
+            c,
+            a,
+            b_packed,
+            global_offset,
+            tile_n_k,
+            Index(global_bound.M, global_bound.N)
             - Index(global_offset.M, global_offset.N),
-        }
+        )
         instance._run_inner_loop()
 
     fn __copyinit__(self&, existing: Self):
@@ -1313,6 +1359,30 @@ struct TiledMatmul[
         GemmShape, GemmShape, GemmShape, __mlir_type.`!lit.none`
     ]
 
+    fn __init__(
+        self&,
+        c: NDBuffer[2, config.shape_c, accum_type],
+        a: NDBuffer[2, config.shape_a, value_type],
+        b: NDBuffer[2, config.shape_b, value_type],
+        tile_n_k: StaticIntTuple[2],
+        global_tile_offset: GemmShape,
+        global_tile_shape: GemmShape,
+        b_tile_generator: BTileGenerator[
+            config, value_type, transpose_b, b_packed
+        ],
+        elementwise_epilogue_fn: TernaryClosure[
+            GemmShape, GemmShape, GemmShape, __mlir_type.`!lit.none`
+        ],
+    ):
+        self.c = c
+        self.a = a
+        self.b = b
+        self.tile_n_k = tile_n_k
+        self.global_tile_shape = global_tile_shape
+        self.global_tile_offset = global_tile_offset
+        self.b_tile_generator = b_tile_generator
+        self.elementwise_epilogue_fn = elementwise_epilogue_fn
+
     fn __copyinit__(self&, existing: Self):
         self.c = existing.c
         self.a = existing.a
@@ -1400,18 +1470,18 @@ struct TiledMatmul[
             transpose_b,
             b_packed,
             elementwise_epilogue_enabled,
-        ] {
-            c: c,
-            a: a,
-            b: b,
-            tile_n_k: tile_n_k,
-            global_tile_offset: global_tile_offset,
-            global_tile_shape: global_tile_shape,
-            b_tile_generator: BTileGenerator[
-                config, value_type, transpose_b, b_packed
-            ].get(b, tile_n_k),
-            elementwise_epilogue_fn: elementwise_epilogue_fn,
-        }
+        ](
+            c,
+            a,
+            b,
+            tile_n_k,
+            global_tile_offset,
+            global_tile_shape,
+            BTileGenerator[config, value_type, transpose_b, b_packed].get(
+                b, tile_n_k
+            ),
+            elementwise_epilogue_fn,
+        )
 
         matmul._run()
 
@@ -1760,6 +1830,16 @@ struct BTileGenerator[
     var b_tile_stack_ptr: DTypePointer[type]
     var tile_n_k: StaticIntTuple[2]
 
+    fn __init__(
+        self&,
+        b: NDBuffer[2, config.shape_b, type],
+        b_tile_stack_ptr: DTypePointer[type],
+        tile_n_k: StaticIntTuple[2],
+    ):
+        self.b = b
+        self.b_tile_stack_ptr = b_tile_stack_ptr
+        self.tile_n_k = tile_n_k
+
     # needs to be always_inline so b_tile_stack_ptr gets allocated on caller's stack
     @always_inline
     @staticmethod
@@ -1781,9 +1861,9 @@ struct BTileGenerator[
                 alignof[SIMD[dtype_simd_width[type](), type]](),
             ]()
 
-        return BTileGenerator[config, type, transpose_b, b_packed] {
-            b: b, b_tile_stack_ptr: b_tile_stack_ptr, tile_n_k: tile_n_k
-        }
+        return BTileGenerator[config, type, transpose_b, b_packed](
+            b, b_tile_stack_ptr, tile_n_k
+        )
 
     fn __copyinit__(self&, existing: Self):
         self.b = existing.b
