@@ -30,6 +30,10 @@ struct MemIntPair:
     var first: Int
     var second: Int
 
+    fn __init__(self&, first: Int, second: Int):
+        self.first = first
+        self.second = second
+
 
 # CHECK: extern ssize_t first_mem(void *);
 @export
@@ -40,4 +44,4 @@ fn first_mem(pair: MemIntPair) -> Int:
 # CHECK: extern void make_mem_pair(void *, ssize_t, ssize_t);
 @export
 fn make_mem_pair(first: Int, second: Int) -> MemIntPair:
-    return MemIntPair {first: first, second: second}
+    return MemIntPair(first, second)

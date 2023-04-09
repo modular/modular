@@ -28,7 +28,7 @@ static std::pair<std::vector<mlir::FunctionOpInterface>,
 collectFunctionsAndTypes(Operation *module) {
   std::vector<mlir::FunctionOpInterface> funcList;
   DenseMap<SymbolRefAttr, LIT::StructDeclOp> structMap;
-  module->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+  module->walk([&](Operation *op) {
     // Collect functions and nested functions.
     if (auto funcOp = dyn_cast<mlir::FunctionOpInterface>(op))
       funcList.push_back(funcOp);
@@ -247,7 +247,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     // model the behavior when an error is thrown, so we give up tracking them.
     if (signature.isThrows())
       return;
-
+    [[fallthrough]];
   case ValueInputConvention::InitSelf:
     isIndirect = true;
     startsUninit = true;

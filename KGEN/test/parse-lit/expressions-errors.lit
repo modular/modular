@@ -31,11 +31,8 @@ fn assignRValue():
   42 = 17 # expected-error {{expression must be mutable in assignment}}
 
 struct LValuesRvalues:
-  fn __init__(self&):
-    pass
-
-  fn __copyinit__(self&, existing: Self):
-    _ = Self{a: 1} # expected-error {{'$expressions-errors::LValuesRvalues' has no field named 'a'}}
+  fn __init__(self&): pass
+  fn __copyinit__(self&, existing: Self): pass
 
   def normalMethod(self): pass
   # expected-note @+1 {{function declared here}}
@@ -165,6 +162,7 @@ fn badSelf(a: Self):
   var x: Self.field
 
 
+@register_passable
 struct MyIntPair:
   var a: Int
   var b: Int
