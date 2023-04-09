@@ -81,11 +81,7 @@ importMojoFileImpl(SourceMgr &sourceMgr, LitSharedState &sharedState,
       sharedState.createModule(moduleName, sourceBuf, fileLoc);
 
   // Auto-import the core Lang modules.
-  for (StringRef moduleName : {LitSharedState::kBuiltinBoolModuleName,
-                               LitSharedState::kBuiltinTupleModuleName,
-                               LitSharedState::kBuiltinErrorModuleName,
-                               LitSharedState::kBuiltinIntModuleName,
-                               LitSharedState::kBuiltinTypeAliasesModuleName}) {
+  for (StringRef moduleName : LitSharedState::kBuiltinModuleNames) {
     auto builtinStrAttr = StringAttr::get(module->getContext(), moduleName);
     if (failed(sharedState.declResolver->importModule(
             topLevelDecl, builtinStrAttr, builtinStrAttr, startSMLoc)))

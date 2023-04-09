@@ -374,9 +374,20 @@ std::string StringLiteralNode::getValue() const {
 AnyValue StringLiteralNode::emitIR(ValueDest &dest,
                                    ExprEmitter &emitter) const {
   std::string value = getValue();
-  auto attr =
-      StringAttr::get(value, KGEN::StringType::get(emitter.getContext()));
-  return emitter.emitResult(attr, this, dest);
+  auto attr = StringAttr::get(value, StringType::get(emitter.getContext()));
+
+  // Convert this to an instance of StringLiteral.
+  ASTDecl *decl = emitter.shared.getBuiltinStringLiteral(getLoc());
+  if (!decl) {
+    emitter.emitError(
+        getLoc(),
+        "internal error: could not find builtin 'StringLiteral' type");
+    return {};
+  }
+
+  return emitter.emitConstructorCall(decl->getSelfType(),
+                                     {{AnyValue(attr), this}}, this,
+                                     CallSyntax::kImplicitConvert, dest);
 }
 
 AnyValue NoneLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {

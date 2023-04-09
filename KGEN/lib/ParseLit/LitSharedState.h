@@ -177,6 +177,16 @@ public:
   static constexpr StringLiteral kBuiltinIntModuleName = "Int";
   /// The name of the builtin aliases module.
   static constexpr StringLiteral kBuiltinTypeAliasesModuleName = "TypeAliases";
+  /// The name of the builtin string module.
+  static constexpr StringLiteral kBuiltinStringModuleName = "StringLiteral";
+
+  /// All the builtin modules.
+  /// FIXME: We need a better way to include all the builtin modules. Perhaps
+  /// a proper Prolog module, but wildcard imports don't play nice togther.
+  static constexpr StringLiteral kBuiltinModuleNames[] = {
+      kBuiltinBoolModuleName,        kBuiltinTupleModuleName,
+      kBuiltinErrorModuleName,       kBuiltinIntModuleName,
+      kBuiltinTypeAliasesModuleName, kBuiltinStringModuleName};
 
   /// Resolve a builtin module type.
   ASTDecl *resolveBuiltinModuleType(llvm::SMLoc loc, StringRef moduleName,
@@ -190,6 +200,8 @@ public:
   ASTDecl *getBuiltinErrorType(llvm::SMLoc loc);
   /// Get the builtin Int type.
   ASTDecl *getBuiltinIntType(llvm::SMLoc loc);
+  /// Get the builtin String type.
+  ASTDecl *getBuiltinStringLiteral(llvm::SMLoc loc);
 
 private:
   /// The internal state of an imported module.

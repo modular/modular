@@ -207,13 +207,13 @@ fn fnWithCall[array: __mlir_type[`!pop.array<10, f32>`]]():
    # CHECK:  kgen.call @"$parameters"::@"fnToCall()"<10, :array<10, f32> array>()
    fnToCall[(10).__as_mlir_index(), array]()
 
-# CHECK-LABEL: lit.func @"meta_str()"<type: string>() -> !lit.none {
-fn meta_str[type: __mlir_type.`!kgen.string`]():
+# CHECK-LABEL: lit.func @"meta_str()"<type: {{.*}}@StringLiteral>() -> !lit.none {
+fn meta_str[type: StringLiteral]():
   pass
 
 # CHECK-LABEL: lit.func @"str_input_param()"() -> !lit.none {
 fn str_input_param():
-  # CHECK: %0 = kgen.call @"$parameters"::@"meta_str()"<:string "123">() : () -> !lit.none
+  # CHECK: %0 = kgen.call @"$parameters"::@"meta_str()"<:{{.*}}@StringLiteral {{.*}}"123"{{.*}}>() : () -> !lit.none
   meta_str["123"]()
 
 ##===----------------------------------------------------------------------===##
@@ -356,16 +356,16 @@ fn passFunctionParam2():
   #CHECK-SAME: <:<dtype>() -> !lit.none {{.*}}@"callableWithParam()">() : () -> !lit.none
   takeCallable2[callableWithParam]()
 
-# CHECK-LABEL: lit.func @"my_assert_param()"<cond: i1, message: string>() -> !lit.none {
-fn my_assert_param[cond: __mlir_type.i1, message: __mlir_type.`!kgen.string`]():
-    #CHECK: kgen.param.assert <cond>, message
-    __mlir_op.`kgen.param.assert`[cond:cond, message:message]()
+# CHECK-LABEL: lit.func @"my_assert_param()"<cond: i1, message: {{.*}}@StringLiteral>() -> !lit.none {
+fn my_assert_param[cond: __mlir_type.i1, message: StringLiteral]():
+    #CHECK: kgen.param.assert <cond>, #lit.struct.extract<{{.*}}message, "value">
+    __mlir_op.`kgen.param.assert`[cond:cond, message:message.value]()
     return
 
 
 # CHECK-LABEL: lit.func @"pass_str_param
 fn pass_str_param():
-    # CHECK: kgen.call {{.+}}my_assert_param()"<:i1 1, :string "foo">() : () -> !lit.none
+    # CHECK: kgen.call {{.+}}my_assert_param()"<:i1 1, :{{.*}}@StringLiteral {{.*}}"foo"{{.*}}>() : () -> !lit.none
     my_assert_param[(1).__as_mlir_index()==(1).__as_mlir_index(), "foo"]()
 
 ##===----------------------------------------------------------------------===##

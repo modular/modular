@@ -1150,9 +1150,10 @@ struct ConvertPOPInlineAsm : ConvertPOPToLLVMPattern<InlineAsmOp> {
     if (failed(getTypeConverter()->convertTypes(op->getResultTypes(), types)))
       return failure();
     rewriter.replaceOpWithNewOp<LLVM::InlineAsmOp>(
-        op, types, adaptor.getOperands(), adaptor.getAssemblyAttr(),
-        adaptor.getConstraintsAttr(), adaptor.getHasSideEffectsAttr(),
-        adaptor.getIsStackAlignedAttr(),
+        op, types, adaptor.getOperands(),
+        cast<StringAttr>(adaptor.getAssembly()),
+        cast<StringAttr>(adaptor.getConstraints()),
+        adaptor.getHasSideEffectsAttr(), adaptor.getIsStackAlignedAttr(),
         LLVM::AsmDialectAttr::get(op.getContext(), LLVM::AsmDialect::AD_ATT),
         adaptor.getOperandAttrsAttr());
     return success();

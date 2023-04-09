@@ -588,6 +588,11 @@ ASTDecl *LitSharedState::getBuiltinIntType(llvm::SMLoc loc) {
   return resolveBuiltinModuleType(loc, kBuiltinIntModuleName, "Int");
 }
 
+ASTDecl *LitSharedState::getBuiltinStringLiteral(llvm::SMLoc loc) {
+  return resolveBuiltinModuleType(loc, kBuiltinStringModuleName,
+                                  "StringLiteral");
+}
+
 void LitSharedState::loadModulesFromCache(
     MutableArrayRef<ModuleState *> moduleStates) {
   // If we don't have a valid cache, we can't do anything.
@@ -774,9 +779,7 @@ LitSharedState::createModuleState(StringRef moduleName,
       lexer.getCursor(), endCursor, /*indentation=*/-1);
 
   // Auto-import the core Lang modules.
-  for (StringRef moduleName : {kBuiltinBoolModuleName, kBuiltinTupleModuleName,
-                               kBuiltinErrorModuleName, kBuiltinIntModuleName,
-                               kBuiltinTypeAliasesModuleName}) {
+  for (StringRef moduleName : kBuiltinModuleNames) {
     moduleDecl.addUnresolvedWildCardImport(
         StringAttr::get(getContext(), moduleName), lexer.getToken().getLoc());
   }
