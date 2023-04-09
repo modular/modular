@@ -254,7 +254,7 @@ struct Task[type: AnyType]:
                 AsyncContext.get_chain(self.handle.get_ctx[AsyncContext]()),
             )
 
-        __mlir_op.`pop.coroutine.await`[_region:["await_body"]]()
+        __mlir_op.`pop.coroutine.await`[_region : [("await_body").value]]()
         return self.get()
 
     fn wait(self) -> type:
@@ -341,7 +341,7 @@ struct TaskGroup:
         __mlir_region await_body():
             await_body_impl(cur_hdl, self)
 
-        __mlir_op.`pop.coroutine.await`[_region:["await_body"]]()
+        __mlir_op.`pop.coroutine.await`[_region : [("await_body").value]]()
 
     fn wait(self&):
         self._task_complete()
