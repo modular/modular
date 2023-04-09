@@ -413,7 +413,7 @@ fn initializers():
   _ = Int{value: (42).value,}
 
   # Issue #12067, suffix stuff ok.
-  _ = MemoryOnlyInt{ x: 1 }.x
+  _ = Int{ value: (1).value }.value
 
 
 # CHECK-LABEL: lit.func @"test_if_cond
@@ -768,11 +768,9 @@ fn testMemoryOnlyIntArray(arr&: MemoryOnlyIntArray, x: Int, moi: MemoryOnlyInt):
 
   # Initialize in memory through a temp + setitem.
   # CHECK: [[ANON:%.*]] = lit.varlet.decl "anonymous*"
-  # CHECK: [[TMP:%.*]] = lit.struct.gep %anonymous2A_0[x]
-  # CHECK: %[[C42:.*]] = {{.*}}constant{{.*}} = 42
-  # CHECK: pop.store %[[C42]], [[TMP]]
+  # CHECK: kgen.call @"{{.*}}__init__{{.*}}([[ANON]],
   # CHECK: kgen.call {{.*}}"__setitem__{{.*}}(%arr, %x, [[ANON]])
-  arr[x] = MemoryOnlyInt{x: 42}
+  arr[x] = MemoryOnlyInt(42)
 
 # Check a load from a SIMD field works.
 # CHECK-LABEL: lit.func @"testSIMDGetter

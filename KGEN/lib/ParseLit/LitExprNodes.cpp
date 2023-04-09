@@ -1542,11 +1542,13 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
 
   // If this is a memory-only struct, initialize the fields into the result
   // buffer.
-  bool isResultMemoryOnly =
-      structOp.getRegisterPassable() == StructDeclOp::RP_MemoryOnly;
-  SLValue memoryOnlyBase;
-  if (isResultMemoryOnly)
-    memoryOnlyBase = dest.getSLValueForResult(getLoc(), initType, emitter);
+  if (structOp.getRegisterPassable() == StructDeclOp::RP_MemoryOnly) {
+    emitter.emitError(getLoc(),
+                      "this initializer syntax may only be used with "
+                      "'@register_passable' values; use '__init__' instead")
+        << getRange();
+    return {};
+  }
 
   DenseMap<StringAttr, ASTExprAnd<AnyValue>> fieldMapping;
   bool allInitializersPValues = true;
@@ -1593,26 +1595,11 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
       return {};
     }
 
-    // If we are memory-only, emit the initializers directly into the fields.
-    AnyValue value;
-    if (memoryOnlyBase) {
-      // For a memory-only aggregate, emit the field into the memory for the
-      // field in the aggregate.
-      auto fieldPtr = emitter.builder->create<StructGEPOp>(
-          getLocation(emitter), memoryOnlyBase, field);
-      ValueDest fieldDest(SLValue(fieldPtr), EC_FieldInitValue);
-      value = valueExpr->emitIR(fieldDest, emitter);
-      if (!value) {
-        fieldDest.resetForError();
-        return {};
-      }
-    } else {
-      // For register values, make sure we convert to the right dest field type.
-      auto fieldType = paramEvaluator.getReboundType(field.getType());
-      value = emitter.emitExpr(valueExpr, EC_FieldInitValue, fieldType);
-      if (!value)
-        return {};
-    }
+    // For register values, make sure we convert to the right dest field type.
+    auto fieldType = paramEvaluator.getReboundType(field.getType());
+    AnyValue value = emitter.emitExpr(valueExpr, EC_FieldInitValue, fieldType);
+    if (!value)
+      return {};
 
     // Keep track of whether everything is a PValue.
     if (allInitializersPValues && !value.getIfPValue())
@@ -1641,10 +1628,6 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
       return {};
     }
 
-    // Memory-only values have already been handled.
-    if (isResultMemoryOnly)
-      continue;
-
     // If all the initializers are PValues, we can emit this as a StructAttr.
     if (allInitializersPValues) {
       fieldParamValues.push_back(
@@ -1659,11 +1642,6 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
     fieldNames.push_back(field.getNameAttr());
     fieldSRValues.push_back(srValue);
   }
-
-  // If this is memory-only, we've initialized all the fields.  Just return
-  // the result.
-  if (isResultMemoryOnly)
-    return emitter.emitResult(MRValue(memoryOnlyBase), this, dest);
 
   // If all the fields are PValues, form a new PValue.
   if (allInitializersPValues) {
