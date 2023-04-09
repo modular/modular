@@ -65,3 +65,17 @@ fn indirect_call[
        # CHECK-NEXT: kgen.call @{{.*}}@"__del___{{.*}}(%mem)
        # CHECK-NEXT: %3 = kgen.param.constant
        # CHECK-NEXT: kgen.return %3
+
+
+
+@raises
+fn somethingThatRaises(): pass
+
+# FIXME(Issue#12196): We don't track the result slot at all to work around an
+# IR modeling issue.
+@raises
+fn thing_that_raises(value: Int, c: Bool) -> MemExample:
+    somethingThatRaises()
+    if c:
+        return MemExample()
+    raise Error("TypeError: cannot invert values of this type")

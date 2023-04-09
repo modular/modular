@@ -3,7 +3,10 @@
 struct MemExample:
   var memstate : __mlir_type.index
 
-  fn __init__(self&): pass
+  # expected-error @+1 {{use of uninitialized value 'self'}}
+  fn __init__(self&):  # expected-note {{'self' declared here}}
+    pass
+
   fn __copy__(self) -> Self:
     return MemExample{memstate: (4).__as_mlir_index()}
   fn __del___(owned self): pass
@@ -139,3 +142,15 @@ struct MoreComplexExample:
     return result
 
   fn __del___(owned self): pass
+
+
+fn testClosure(a: Bool):
+  if a:
+    return
+
+  @always_inline
+  fn thing() -> MemExample:
+    var x: MemExample # expected-note {{'x' declared here}}
+    return x # expected-error {{use of uninitialized value 'x'}}
+
+  _ = thing()
