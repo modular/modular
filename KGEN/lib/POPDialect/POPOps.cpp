@@ -443,11 +443,12 @@ static void printPackCreateType(OpAsmPrinter &p, Operation *op, Type resultType,
 
 /// Given a concrete pack type, such as `<[i32, f32]>`, and an index attribute,
 /// such as `1 : index`, we can infer the return type (`f32`). However, if the
-/// pack type is not concrete, such as `<Ts>`, then we need to parse the return
-/// type: "`->` type($result)".
+/// pack type is not concrete, such as `<Ts>`, or the index is a parametric
+/// expression, such as `add(I, 1)`, then we need to parse the return type:
+/// "`->` type($result)".
 static ParseResult
 parsePackGetResultType(AsmParser &p, OpAsmParser::UnresolvedOperand packOperand,
-                       Type type, IntegerAttr index, Type &resultType) {
+                       Type type, TypedAttr indexAttr, Type &resultType) {
   // Use the pack operand's location for errors. Otherwise, any errors emitted
   // appear on the line following the `pop.pack.get` op, since we're attempting
   // to parse a trailing `-> type($result)` that isn't there.
@@ -456,11 +457,13 @@ parsePackGetResultType(AsmParser &p, OpAsmParser::UnresolvedOperand packOperand,
   auto packType = dyn_cast<PackType>(type);
   if (!packType)
     return p.emitError(loc, "expected a pack type");
-  if (index.getInt() < 0)
+
+  auto index = dyn_cast<IntegerAttr>(indexAttr);
+  if (index && index.getInt() < 0)
     return p.emitError(loc) << "pack element index must not be negative";
 
   auto variadic = packType.getVariadicAttr();
-  if (variadic) {
+  if (variadic && index) {
     if (index.getInt() >= static_cast<int64_t>(variadic.getValues().size()))
       return p.emitError(loc) << "pack element index out of bounds";
 
@@ -477,34 +480,35 @@ parsePackGetResultType(AsmParser &p, OpAsmParser::UnresolvedOperand packOperand,
 /// inferred (see `parsePackGetResultType` above).
 static void printPackGetResultType(OpAsmPrinter &p, Operation *op,
                                    TypedValue<PackType> pack, PackType type,
-                                   IntegerAttr index, Type resultType) {
-  if (!pack.getType().getVariadicAttr()) {
+                                   TypedAttr indexAttr, Type resultType) {
+  if (!pack.getType().getVariadicAttr() || !isa<IntegerAttr>(indexAttr)) {
     p << " -> ";
     p.printType(resultType);
   }
 }
 
 LogicalResult PackGetOp::verify() {
-  size_t index = getIndexAttr().getInt();
-  if (index < 0)
+  auto index = dyn_cast<IntegerAttr>(getIndex());
+  if (index && index.getInt() < 0)
     return emitOpError("index ") << index << " must not be negative";
 
   // If we have a pack backed by an attribute, check that the provided index
   // attribute is within bounds.
   auto variadic = getPack().getType().getVariadicAttr();
-  if (!variadic)
+  if (!variadic || !index)
     return success();
 
   ArrayRef<TypedAttr> values = variadic.getValues();
-  if (index >= values.size())
+  if (index.getInt() >= static_cast<int64_t>(values.size()))
     return emitOpError("index ")
            << index << " is out of bounds (>=" << values.size() << ")";
-  TypedAttr value = values[index];
-  if (ParamRefType::get(value) != getType())
+  TypedAttr value = values[index.getInt()];
+  if (ParamRefType::get(value) != getType()) {
     return emitOpError("result")
            << " type " << getType()
            << " does not match pack element type at index " << index << ": "
            << value;
+  }
   return success();
 }
 
