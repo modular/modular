@@ -104,19 +104,23 @@ kgen.func @struct_of_structs(%arg1: !pop.struct<struct<scalar<index>>, struct<sc
   }
 
   // Just check this has been broken into several allocations.
-  // CHECK-NEXT: %[[MEM1:.*]] = pop.stack_allocation 1 x !pop.struct<scalar<index>> 
-  // CHECK-NEXT: %[[MEM2:.*]] = pop.stack_allocation 1 x !pop.struct<scalar<index>> 
-  // CHECK-NEXT: %[[MEM3:.*]] = pop.stack_allocation 1 x !pop.struct<scalar<index>> 
+  // CHECK-NEXT: %[[MEM1:.*]] = pop.stack_allocation 1 x !pop.scalar<index>
+  // CHECK-NEXT: %[[MEM2:.*]] = pop.stack_allocation 1 x !pop.scalar<index> 
+  // CHECK-NEXT: %[[MEM3:.*]] = pop.stack_allocation 1 x !pop.scalar<index> 
 
-  // Check mem2reg is able to eliminate what is left.
-  // MEM2REG: %[[SCALAR1:.*]] = pop.struct.extract %[[ARG0:.*]][0] : !pop.struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>
-  // MEM2REG-NEXT: %[[SCALAR2:.*]] = pop.struct.extract %[[ARG0:.*]][1] : !pop.struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>
-  // MEM2REG-NEXT: %[[SCALAR3:.*]] = pop.struct.extract %[[ARG0:.*]][2] : !pop.struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>
-  // MEM2REG-NEXT:  hlcf.loop {
-  // MEM2REG-NEXT:    hlcf.loop "inlined_cf_scope" {
-  // MEM2REG-NEXT:       %[[EXTRACT1:.*]] = pop.struct.extract %[[SCALAR3:.*]][0] : !pop.struct<scalar<index>>
-  // MEM2REG-NEXT:       %[[EXTRACT2:.*]] = pop.struct.extract %[[SCALAR1:.*]][0] : !pop.struct<scalar<index>>
-  // MEM2REG-NEXT:       pop.div %[[EXTRACT2]], %[[EXTRACT1]] : !pop.scalar<index>
+  // In this test the incoming argument is a struct of structs so we can't 
+  // sroa the argument. Still check that we are still left with no stack alloc
+  // and that all the innerloop uses are of the fully extracted base type.
+
+  // MEM2REG: %[[OP0:.*]] = pop.struct.extract %[[ARG0:.*]][0] : !pop.struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>
+  // MEM2REG-DAG: %[[OP1:.*]] = pop.struct.extract %[[OP0]][0] : !pop.struct<scalar<index>>
+  // MEM2REG-DAG: %[[OP2:.*]] = pop.struct.extract %[[ARG0]][1] : !pop.struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>
+  // MEM2REG-DAG: %[[OP3:.*]] = pop.struct.extract %[[OP2]][0] : !pop.struct<scalar<index>>
+  // MEM2REG-DAG: %[[OP4:.*]] = pop.struct.extract %[[ARG0]][2] : !pop.struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>
+  // MEM2REG-DAG: %[[OP5:.*]] = pop.struct.extract %[[OP4]][0] : !pop.struct<scalar<index>>
+  // MEM2REG-DAG:  hlcf.loop {
+  // MEM2REG-DAG:    hlcf.loop "inlined_cf_scope" {
+  // MEM2REG-DAG:       pop.div %[[OP1]], %[[OP5]] : !pop.scalar<index>
 
   kgen.return
 }
@@ -200,6 +204,84 @@ kgen.func @n_stack_store(%val1: index, %output : !pop.pointer<index>) {
   // Mem2Reg should eliminate everything
   // MEM2REG-NEXT: pop.store %[[ARG0]], %[[OUT_PTR]] : !pop.pointer<index>
   // MEM2REG-NEXT: kgen.return
+
+  kgen.return
+}
+
+// CHECK-LABEL: @n_stack_arrays
+// MEM2REG-LABEL: @n_stack_arrays
+// CHECK: (%[[ARG0:.*]]: !pop.array<3, index>, %[[OUT_PTR:.*]]: !pop.pointer<index>)
+// MEM2REG: (%[[ARG0:.*]]: !pop.array<3, index>, %[[OUT_PTR:.*]]: !pop.pointer<index>)
+kgen.func @n_stack_arrays(%val: !pop.array<3, index>, %output : !pop.pointer<index>) {
+  %0 = kgen.param.constant = <0>
+  %1 = kgen.param.constant = <1>
+
+  // CHECK: pop.stack_allocation 1 x index 
+  // CHECK-NEXT: pop.stack_allocation 1 x index 
+  // CHECK-NEXT: pop.stack_allocation 1 x index 
+  // CHECK-NEXT: pop.stack_allocation 1 x index 
+  // CHECK-NEXT: pop.stack_allocation 1 x index 
+  // CHECK-NEXT: pop.stack_allocation 1 x index 
+
+  // Mem2reg should have enough information to realize they are aliases of the
+  // same value.
+  // MEM2REG: pop.array.get %[[ARG0]][0] : !pop.array<3, index>
+  // MEM2REG-NEXT: pop.array.get %[[ARG0]][1] : !pop.array<3, index>
+  // MEM2REG-NEXT: pop.array.get %[[ARG0]][2] : !pop.array<3, index>
+  // MEM2REG-NEXT: pop.array.get %[[ARG0]][0] : !pop.array<3, index>
+  // MEM2REG-NEXT: pop.array.get %[[ARG0]][1] : !pop.array<3, index>
+  // MEM2REG-NEXT: pop.array.get %[[ARG0]][2] : !pop.array<3, index>
+
+  %alloc = pop.stack_allocation 5 x !pop.array<3, index> 
+  pop.store %val, %alloc : !pop.pointer<array<3, index>>
+  %offset = pop.offset %alloc[%1] : !pop.pointer<array<3, index>>
+  pop.store %val, %offset : !pop.pointer<array<3, index>>
+
+  %gep1 = pop.array.gep %alloc[%0] : <array<3, index>>
+  %gep2 = pop.array.gep %offset[%1] : <array<3, index>>
+
+  %load = pop.load %gep1 align 8  : !pop.pointer<index>
+  pop.store %load, %output : !pop.pointer<index>
+
+  %load2 = pop.load %gep2 align 8  : !pop.pointer<index>
+  pop.store %load2, %output : !pop.pointer<index>
+
+  kgen.return
+}
+
+// CHECK-LABEL: @n_stack_structs
+// MEM2REG-LABEL: @n_stack_structs
+// CHECK: (%[[ARG0:.*]]: !pop.struct<index, index>, %[[OUT_PTR:.*]]: !pop.pointer<index>)
+// MEM2REG: (%[[ARG0:.*]]: !pop.struct<index, index>, %[[OUT_PTR:.*]]: !pop.pointer<index>)
+kgen.func @n_stack_structs(%val: !pop.struct<index, index>, %output : !pop.pointer<index>) {
+  %1 = kgen.param.constant = <1>
+
+  %alloc = pop.stack_allocation 5 x !pop.struct<index, index> 
+  pop.store %val, %alloc : !pop.pointer<struct<index, index>>
+  %offset = pop.offset %alloc[%1] : !pop.pointer<struct<index, index>>
+  pop.store %val, %offset : !pop.pointer<struct<index, index>>
+
+  // CHECK: pop.stack_allocation 1 x index 
+  // CHECK-NEXT: pop.stack_allocation 1 x index 
+  // CHECK-NEXT: pop.stack_allocation 1 x index 
+  // CHECK-NEXT: pop.stack_allocation 1 x index 
+  // CHECK-NEXT: pop.stack_allocation 1 x index 
+  // CHECK-NEXT: pop.stack_allocation 1 x index 
+
+
+  // MEM2REG: pop.struct.extract %[[ARG0]][0] : !pop.struct<index, index>
+  // MEM2REG-NEXT: pop.struct.extract %[[ARG0]][1] : !pop.struct<index, index>
+  // MEM2REG-NEXT: pop.struct.extract %[[ARG0]][0] : !pop.struct<index, index>
+  // MEM2REG-NEXT: pop.struct.extract %[[ARG0]][1] : !pop.struct<index, index>
+
+  %gep1 = pop.struct.gep %alloc[0] : <struct<index, index>>
+  %gep2 = pop.struct.gep %offset[1] : <struct<index, index>>
+
+  %load = pop.load %gep1 align 8  : !pop.pointer<index>
+  pop.store %load, %output : !pop.pointer<index>
+
+  %load2 = pop.load %gep2 align 8  : !pop.pointer<index>
+  pop.store %load2, %output : !pop.pointer<index>
 
   kgen.return
 }
