@@ -309,7 +309,8 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
   // list.
   SmallVector<ParamDeclRefAttr> parameterRefs;
   auto parent = op->getParentOfType<DeclInterface>();
-  if (!parent)
+  // FIXME: `kgen.param.if` should get constraints.
+  if (!parent || isa<ParamIfOp>(parent))
     return failure();
 
   bool unused;

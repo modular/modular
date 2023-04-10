@@ -49,7 +49,8 @@ void KGEN::populateGenerateLibraryFilePasses(mlir::PassManager &pm,
   AlwaysInlineParametricOptions options;
   options.nodebugOnly = true;
   pm.addPass(createAlwaysInlineParametric(runtime, options));
-  pm.addPass(createVerifyParameters());
+  pm.addPass(createVerifyParameters(
+      VerifyParametersOptions{/*simplifyParameters=*/true}));
 
   // These passes don't influence parameters, so we don't need to verify them.
 
