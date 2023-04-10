@@ -948,7 +948,7 @@ struct ConvertPOPPackGet : public ConvertPOPToLLVMPattern<PackGetOp> {
     // Otherwise, extract the value at the specified index from the pack's
     // underlying storage.
     rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
-        op, adaptor.getPack(), op.getIndexAttr().getInt());
+        op, adaptor.getPack(), cast<IntegerAttr>(op.getIndex()).getInt());
     return success();
   }
 };
