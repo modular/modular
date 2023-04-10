@@ -73,8 +73,7 @@ public:
   /// TODO: Consider returning AsyncValueRef<Chain>, where the task has been
   /// enqueued only if the result is ready.
   virtual void addTask(TaskFunction &&work,
-                       WorkProfilerEntry &&profilerEntry =
-                           WorkProfilerEntry::create("llcl.doWork")) = 0;
+                       WorkProfilerEntry &&profilerEntry = {}) = 0;
 
   /// Enqueue a block of work to be run 'locally' on the current thread.
   ///
@@ -164,8 +163,8 @@ std::unique_ptr<WorkQueue> createSingleThreadWorkQueue();
 /// threads are expected to add a task for their request and sleep.
 ///
 /// The work queue must be shutdown before being destroyed.
-std::unique_ptr<WorkQueue> createThreadPoolWorkQueue(size_t numThreads = 0,
-                                                     bool mainWillDonate = true);
+std::unique_ptr<WorkQueue>
+createThreadPoolWorkQueue(size_t numThreads = 0, bool mainWillDonate = true);
 
 } // namespace M::LLCL
 

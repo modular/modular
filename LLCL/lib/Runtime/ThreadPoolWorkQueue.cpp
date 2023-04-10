@@ -430,9 +430,9 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
     // CAUTION: a work function may add to this list, and may even invoke
     // runItems recursively.
     while (!localTaskList.empty()) {
-      ProfiledTaskFunction labelledTask(
-          std::move(localTaskList.back()), /*waiting=*/InternalProfilerEntry(),
-          /*running=*/WorkProfilerEntry::create("llcl.waiter"));
+      ProfiledTaskFunction labelledTask(std::move(localTaskList.back()),
+                                        /*waiting=*/InternalProfilerEntry(),
+                                        /*running=*/WorkProfilerEntry());
       localTaskList.erase(localTaskList.end() - 1);
       doWork</*OnOwningThread=*/true>(std::move(labelledTask));
     }
@@ -661,7 +661,10 @@ void ThreadPoolWorkQueue::addTask(TaskFunction &&work,
   // CAUTION: This runs the risk of stack overflow, but we don't have a
   // choice. CAUTION: Any existing work item's profiling entry will include
   // execution time to run this work item.
-  profiledTask.running = profiledTask.running.withNameSuffix(".now");
+  if (profiledTask.running.empty())
+    profiledTask.running = WorkProfilerEntry::create("llcl.addTask.now");
+  else
+    profiledTask.running = profiledTask.running.withNameSuffix(".now");
   callerWorker->doWork</*OnOwningThread=*/false>(std::move(profiledTask));
 }
 
@@ -674,13 +677,13 @@ void ThreadPoolWorkQueue::addLocalTask(M::LLCL::TaskFunction work) {
     // there's no local task list we can enqueue to on this thread.
     if constexpr (kRunImmediatelyOnForeignThreads) {
       // Run right now.
-      ProfiledTaskFunction profiledTask(
-          std::move(work), /*waiting=*/InternalProfilerEntry(),
-          /*running=*/WorkProfilerEntry::create("llcl.waiter.now"));
+      ProfiledTaskFunction profiledTask(std::move(work),
+                                        /*waiting=*/InternalProfilerEntry(),
+                                        /*running=*/WorkProfilerEntry());
       callerWorker->doWork</*OnOwningThread=*/false>(std::move(profiledTask));
     } else {
       // Add as a task.
-      addTask(std::move(work), WorkProfilerEntry::create("llcl.waiter"));
+      addTask(std::move(work), WorkProfilerEntry::create("llcl.addLocalTask"));
     }
     return;
   }

@@ -208,6 +208,9 @@ struct TimeTraceProfiler {
 ///   -- profiling disabled at compile time.
 ///   static ProfilerEntry create(StringRef name, size_t value);
 ///
+///   -- Return true if entry is empty.
+///   bool empty() const;
+///
 ///   -- Restart the entry's clock.
 ///   void restart();
 ///
@@ -276,6 +279,7 @@ struct ProfilerEntry<false> {
   }
   static ProfilerEntry create(StringRef name, size_t value) { return {}; }
 
+  bool empty() { return true; }
   void restart() {}
   void record() && {}
   ProfilerEntry withNameSuffix(StringRef suffix) const { return {}; }
@@ -359,6 +363,8 @@ struct ProfilerEntry<true> {
       return {};
     return ProfilerEntry(name, value);
   }
+
+  bool empty() { return name.empty(); }
 
   void restart() {
     if (name.empty())
