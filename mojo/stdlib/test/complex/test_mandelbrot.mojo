@@ -23,8 +23,8 @@ fn mandelbrot_iter(row: Int, col: Int) -> Int:
     alias height = 375
     alias width = 500
 
-    let xRange: SIMD[1, DType.f32] = 2.0
-    let yRange: SIMD[1, DType.f32] = 1.5
+    let xRange: SIMD[DType.f32, 1] = 2.0
+    let yRange: SIMD[DType.f32, 1] = 1.5
     let minX = 0.5 - xRange
     let maxX = 0.5 + xRange
     let minY = -0.5 - yRange
@@ -61,8 +61,8 @@ fn test_mandelbrot_iter():
     # CHECK: 3
     print(mandelbrot_iter(100, 100))
 
-    let re = SIMD[1, DType.si32].splat(3)
-    let im = SIMD[1, DType.si32].splat(4)
+    let re = SIMD[DType.si32, 1].splat(3)
+    let im = SIMD[DType.si32, 1].splat(4)
     let z = Complex[1, DType.si32](re, im)
     # CHECK: 25
     print(z.norm().value)

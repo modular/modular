@@ -20,12 +20,12 @@ struct Complex[size: Int, type: DType]:
         type: DType of the value.
     """
 
-    var re: SIMD[size, type.value]
-    var im: SIMD[size, type.value]
+    var re: SIMD[type.value, size]
+    var im: SIMD[type.value, size]
 
     fn __init__(
-        re: SIMD[size, type.value],
-        im: SIMD[size, type.value],
+        re: SIMD[type.value, size],
+        im: SIMD[type.value, size],
     ) -> Complex[size, type]:
         """Construct a complex value.
 
@@ -64,7 +64,7 @@ struct Complex[size: Int, type: DType]:
         }
 
     # returns the squared magnitude
-    fn norm(self) -> SIMD[size, type.value]:
+    fn norm(self) -> SIMD[type.value, size]:
         """Returns the squared magnitude of the complex value.
 
         Returns:
