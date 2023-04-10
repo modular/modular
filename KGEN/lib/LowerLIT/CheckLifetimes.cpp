@@ -196,7 +196,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
   if (auto letReg = v.getDefiningOp<LetRegDeclOp>()) {
     name = letReg.getNameAttr();
     isIndirect = false;
-    startsUninit = false;
+    startsUninit = true; // Initialized at its definition point.
     endsUninit = true;
     return;
   }
@@ -217,7 +217,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
           !isa<AddressOfOp>(res.getOwner())) {
         name = StringAttr::get(v.getContext(), "<call result>");
         isIndirect = false;
-        startsUninit = false;
+        startsUninit = true;
         endsUninit = true;
       }
     }
@@ -779,6 +779,14 @@ void UninitializedValueScan::checkOp(Operation &op) {
   for (Value operand : op.getOperands())
     hasUse |= checkSSAValueLive(operand) != 0;
 
+  // LetReg defines its own value.
+  // TODO: can this be made more generic, or are there only a few things that
+  // can define owned values?
+  if (auto letReg = dyn_cast<LetRegDeclOp>(op)) {
+    valueSet.getDirectValueRef(letReg).markBits(liveValues, true);
+    return;
+  }
+
   // If this is a kgen.return then we have an exit from the function
   // (including early returns and exception raises that leave the function).
   // Check that all of the values we are tracking are managed correctly.
@@ -935,6 +943,8 @@ private:
   void markConsumed(Operation &op, ValueRef valueRef);
   void checkLive(Operation &op, ValueRef valueRef);
   void destroyWholeValueIfLastAccess(Operation &op, ValueRef valueRef);
+  void destroyWholeValueIfLastAccess(ValueRef valueRef, Block &block,
+                                     Block::iterator insertPt, Location loc);
   void checkDef(Operation &op, ValueRef valueRef);
   void destroyValuesAtEntry(const BitVector &entries, Block &block,
                             Location loc);
@@ -973,6 +983,16 @@ void DestructorInsertion::scanFunction(mlir::FunctionOpInterface func) {
   // Scan the body of the function.
   Block &funcBody = func.getFunctionBody().front();
   scanBlock(funcBody);
+
+  // If any owned argument values are unconsumed then they must be unused. Emit
+  // their destructor calls at the start of the function by acting as though
+  // there is a use.
+  for (auto [valueID, valueInfo] : llvm::enumerate(valueSet.getValueInfos())) {
+    if (valueInfo.startsUninit || valueID == 0)
+      continue;
+    destroyWholeValueIfLastAccess(valueSet.getFullValueRef(valueID), funcBody,
+                                  funcBody.begin(), valueInfo.value.getLoc());
+  }
 }
 
 /// Scan a block top down, checking all the operations that may use a value or
@@ -1237,6 +1257,14 @@ void DestructorInsertion::markConsumed(Operation &op, ValueRef valueRef) {
 /// /last/ use of a value, emit a destructor of the overall value.
 void DestructorInsertion::destroyWholeValueIfLastAccess(Operation &op,
                                                         ValueRef valueRef) {
+  // If needed, emit the destructor immediately after the specified operation.
+  destroyWholeValueIfLastAccess(valueRef, *op.getBlock(),
+                                std::next(Block::iterator(&op)), op.getLoc());
+}
+
+void DestructorInsertion::destroyWholeValueIfLastAccess(
+    ValueRef valueRef, Block &block, Block::iterator insertPt, Location loc) {
+
   if (!valueRef)
     return;
 
@@ -1260,8 +1288,7 @@ void DestructorInsertion::destroyWholeValueIfLastAccess(Operation &op,
   fullValueRef.markBits(consumedValues, true);
 
   // Destroy the value after the op.
-  emitDestructorCallAt(valueRef.valueId, *op.getBlock(),
-                       std::next(Block::iterator(&op)), op.getLoc());
+  emitDestructorCallAt(valueRef.valueId, block, insertPt, loc);
 }
 
 /// This operation defines the specified value.  If the value is dead on
