@@ -185,7 +185,7 @@ struct Buffer[size: Dim, type: DType]:
         return size.get()
 
     @always_inline
-    fn __getitem__(self, idx: Int) -> SIMD[1, type]:
+    fn __getitem__(self, idx: Int) -> SIMD[type, 1]:
         """Loads a single element (SIMD of size 1) from the buffer at the
         specified index.
 
@@ -198,7 +198,7 @@ struct Buffer[size: Dim, type: DType]:
         return self.simd_load[1](idx)
 
     @always_inline
-    fn simd_load[width: Int](self, idx: Int) -> SIMD[width, type]:
+    fn simd_load[width: Int](self, idx: Int) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
         Parameters:
@@ -216,7 +216,7 @@ struct Buffer[size: Dim, type: DType]:
     @always_inline
     fn aligned_simd_load[
         width: Int, alignment: Int
-    ](self, idx: Int) -> SIMD[width, type]:
+    ](self, idx: Int) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
         Parameters:
@@ -244,11 +244,11 @@ struct Buffer[size: Dim, type: DType]:
             idx: The index into the Buffer.
             val: The value to store.
         """
-        var simd_val = SIMD[1, type](val)
+        var simd_val = SIMD[type, 1](val)
         self.simd_store[1](idx, simd_val)
 
     @always_inline
-    fn __setitem__(self, idx: Int, val: SIMD[1, type]):
+    fn __setitem__(self, idx: Int, val: SIMD[type, 1]):
         """Stores a single value into the buffer at the specified index.
 
         Args:
@@ -260,7 +260,7 @@ struct Buffer[size: Dim, type: DType]:
     @always_inline
     fn simd_store[
         width: Int,
-    ](self, idx: Int, val: SIMD[width, type]):
+    ](self, idx: Int, val: SIMD[type, width]):
         """Stores a simd value into the buffer at the specified index.
 
         Parameters:
@@ -275,7 +275,7 @@ struct Buffer[size: Dim, type: DType]:
     @always_inline
     fn aligned_simd_store[
         width: Int, alignment: Int
-    ](self, idx: Int, val: SIMD[width, type]):
+    ](self, idx: Int, val: SIMD[type, width]):
         """Stores a simd value into the buffer at the specified index.
 
         Parameters:
@@ -289,7 +289,7 @@ struct Buffer[size: Dim, type: DType]:
         self.data.aligned_simd_store[width, alignment](idx, val)
 
     @always_inline
-    fn simd_nt_store[width: Int](self, idx: Int, val: SIMD[width, type]):
+    fn simd_nt_store[width: Int](self, idx: Int, val: SIMD[type, width]):
         """Stores a simd value using non-temporal store.
 
         Constraints:
@@ -333,7 +333,7 @@ struct Buffer[size: Dim, type: DType]:
 
     fn simd_fill[
         simd_width: Int
-    ](self, val: SIMD[1, type]) -> Buffer[size, type]:
+    ](self, val: SIMD[type, 1]) -> Buffer[size, type]:
         """Assigns val to all elements in chunks of size simd_width.
 
         Parameters:
@@ -354,7 +354,7 @@ struct Buffer[size: Dim, type: DType]:
         return self
 
     @always_inline
-    fn fill(self, val: SIMD[1, type]) -> Buffer[size, type]:
+    fn fill(self, val: SIMD[type, 1]) -> Buffer[size, type]:
         """Assigns val to all elements in the Buffer.
 
         The fill is performed in chunks of size N, where N is the native SIMD
@@ -818,7 +818,7 @@ struct NDBuffer[
         )
 
     @always_inline
-    fn __getitem__(self, *idx: Int) -> SIMD[1, type]:
+    fn __getitem__(self, *idx: Int) -> SIMD[type, 1]:
         """Get an element from the buffer from the specified index.
 
         Args:
@@ -830,7 +830,7 @@ struct NDBuffer[
         return self.simd_load[1](VariadicList[Int](idx))
 
     @always_inline
-    fn __getitem__(self, idx: StaticIntTuple[rank]) -> SIMD[1, type]:
+    fn __getitem__(self, idx: StaticIntTuple[rank]) -> SIMD[type, 1]:
         """Get an element from the buffer from the specified index.
 
         Args:
@@ -844,7 +844,7 @@ struct NDBuffer[
     @always_inline
     fn simd_load[
         width: Int,
-    ](self, *idx: Int) -> SIMD[width, type]:
+    ](self, *idx: Int) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
         Constraints:
@@ -865,7 +865,7 @@ struct NDBuffer[
     @always_inline
     fn simd_load[
         width: Int,
-    ](self, idx: VariadicList[Int]) -> SIMD[width, type]:
+    ](self, idx: VariadicList[Int]) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
         Constraints:
@@ -889,7 +889,7 @@ struct NDBuffer[
 
     fn simd_load[
         width: Int,
-    ](self, idx: StaticIntTuple[rank]) -> SIMD[width, type]:
+    ](self, idx: StaticIntTuple[rank]) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
         Constraints:
@@ -910,7 +910,7 @@ struct NDBuffer[
     @always_inline
     fn simd_load[
         width: Int,
-    ](self, idx: StaticTuple[rank, Int]) -> SIMD[width, type]:
+    ](self, idx: StaticTuple[rank, Int]) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
         Constraints:
@@ -935,7 +935,7 @@ struct NDBuffer[
     @always_inline
     fn aligned_simd_load[
         width: Int, alignment: Int
-    ](self, *idx: Int) -> SIMD[width, type]:
+    ](self, *idx: Int) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
         Constraints:
@@ -957,7 +957,7 @@ struct NDBuffer[
     @always_inline
     fn aligned_simd_load[
         width: Int, alignment: Int
-    ](self, idx: VariadicList[Int]) -> SIMD[width, type]:
+    ](self, idx: VariadicList[Int]) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
         Constraints:
@@ -982,7 +982,7 @@ struct NDBuffer[
 
     fn aligned_simd_load[
         width: Int, alignment: Int
-    ](self, idx: StaticIntTuple[rank]) -> SIMD[width, type]:
+    ](self, idx: StaticIntTuple[rank]) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
         Constraints:
@@ -1004,7 +1004,7 @@ struct NDBuffer[
     @always_inline
     fn aligned_simd_load[
         width: Int, alignment: Int
-    ](self, idx: StaticTuple[rank, Int]) -> SIMD[width, type]:
+    ](self, idx: StaticTuple[rank, Int]) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
         Constraints:
@@ -1028,7 +1028,7 @@ struct NDBuffer[
         return self._offset(idx).aligned_simd_load[width, alignment]()
 
     @always_inline
-    fn __setitem__(self, idx: StaticIntTuple[rank], val: SIMD[1, type]):
+    fn __setitem__(self, idx: StaticIntTuple[rank], val: SIMD[type, 1]):
         """Stores a single value into the buffer at the specified index.
 
         Args:
@@ -1040,7 +1040,7 @@ struct NDBuffer[
     @always_inline
     fn simd_store[
         width: Int
-    ](self, idx: StaticIntTuple[rank], val: SIMD[width, type],):
+    ](self, idx: StaticIntTuple[rank], val: SIMD[type, width],):
         """Stores a simd value into the buffer at the specified index.
 
         Constraints:
@@ -1058,7 +1058,7 @@ struct NDBuffer[
     @always_inline
     fn simd_store[
         width: Int
-    ](self, idx: StaticTuple[rank, Int], val: SIMD[width, type],):
+    ](self, idx: StaticTuple[rank, Int], val: SIMD[type, width],):
         """Stores a simd value into the buffer at the specified index.
 
         Constraints:
@@ -1080,7 +1080,7 @@ struct NDBuffer[
     @always_inline
     fn aligned_simd_store[
         width: Int, alignment: Int
-    ](self, idx: StaticIntTuple[rank], val: SIMD[width, type],):
+    ](self, idx: StaticIntTuple[rank], val: SIMD[type, width],):
         """Stores a simd value into the buffer at the specified index.
 
         Constraints:
@@ -1099,7 +1099,7 @@ struct NDBuffer[
     @always_inline
     fn aligned_simd_store[
         width: Int, alignment: Int
-    ](self, idx: StaticTuple[rank, Int], val: SIMD[width, type],):
+    ](self, idx: StaticTuple[rank, Int], val: SIMD[type, width],):
         """Stores a simd value into the buffer at the specified index.
 
         Constraints:
@@ -1122,7 +1122,7 @@ struct NDBuffer[
     @always_inline
     fn simd_nt_store[
         width: Int
-    ](self, idx: StaticIntTuple[rank], val: SIMD[width, type],):
+    ](self, idx: StaticIntTuple[rank], val: SIMD[type, width],):
         """Stores a simd value using non-temporal store.
 
         Constraints:
@@ -1142,7 +1142,7 @@ struct NDBuffer[
     @always_inline
     fn simd_nt_store[
         width: Int
-    ](self, idx: StaticTuple[rank, Int], val: SIMD[width, type],):
+    ](self, idx: StaticTuple[rank, Int], val: SIMD[type, width],):
         """Stores a simd value using non-temporal store.
 
         Constraints:
@@ -1237,7 +1237,7 @@ struct NDBuffer[
 
     fn simd_fill[
         simd_width: Int
-    ](self, val: SIMD[1, type]) -> NDBuffer[rank, shape, type]:
+    ](self, val: SIMD[type, 1]) -> NDBuffer[rank, shape, type]:
         """Assigns val to all elements in chunks of size simd_width.
 
         Parameters:
@@ -1253,7 +1253,7 @@ struct NDBuffer[
         return self
 
     @always_inline
-    fn fill(self, val: SIMD[1, type]) -> NDBuffer[rank, shape, type]:
+    fn fill(self, val: SIMD[type, 1]) -> NDBuffer[rank, shape, type]:
         """Assigns val to all elements in the Buffer.
 
         The fill is performed in chunks of size N, where N is the native SIMD
@@ -1314,8 +1314,8 @@ fn partial_simd_load[
     storage: DTypePointer[type],
     lbound: Int,
     rbound: Int,
-    pad_value: SIMD[1, type],
-) -> SIMD[width, type]:
+    pad_value: SIMD[type, 1],
+) -> SIMD[type, width]:
     """Loads a vector with dynamic bound.
 
     Out of bound data will be filled with pad value. Data is valid if
@@ -1355,7 +1355,7 @@ fn partial_simd_store[
     storage: DTypePointer[type],
     lbound: Int,
     rbound: Int,
-    data: SIMD[width, type],
+    data: SIMD[type, width],
 ):
     """Stores a vector with dynamic bound.
 
