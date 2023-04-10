@@ -18,6 +18,11 @@ def VerifyParameters : Pass<"verify-parameters", "mlir::ModuleOp"> {
     parameters with declarations, it detects conflicting declarations, and it
     detects cycles in parameter definitions and uses.
   }];
+
+  let options = [
+    Option<"simplifyParameters", "simplify", "bool", "false",
+           "If true, parameter simplification will run after verification.">
+  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -562,14 +567,14 @@ def SROA : Pass<"sroa"> {
     down into scalar alternatives where possible.
 
     ```mlir
-      %struct = pop.stack_allocation 1 x !pop.struct<index, index, index, index> 
+      %struct = pop.stack_allocation 1 x !pop.struct<index, index, index, index>
     ```
-    Becomes 
+    Becomes
     ```mlir
-      %sclar1 = pop.stack_allocation 1 x index 
-      %sclar2 = pop.stack_allocation 1 x index 
-      %sclar3 = pop.stack_allocation 1 x index 
-      %sclar4 = pop.stack_allocation 1 x index 
+      %sclar1 = pop.stack_allocation 1 x index
+      %sclar2 = pop.stack_allocation 1 x index
+      %sclar3 = pop.stack_allocation 1 x index
+      %sclar4 = pop.stack_allocation 1 x index
     ```
 
     Doing this gives mem-2-reg an easier time identifying optimization

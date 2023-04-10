@@ -98,6 +98,8 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
   Attribute result = attr;
   if (auto declRef = dyn_cast<ParamDeclRefAttr>(attr)) {
     result = upbindValue(paramValues[declRef.getName()]);
+    if (!result)
+      llvm::errs() << "MISSING PARAM: " << declRef.getName() << "\n";
     assert(result && "Verifier should check that all parameters are defined");
   } else if (auto indexRef = dyn_cast<ParamIndexRefAttr>(attr);
              indexRef && indexRef.getDepth() == rootDepth) {

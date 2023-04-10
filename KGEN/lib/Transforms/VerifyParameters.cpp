@@ -4,11 +4,14 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "KGEN/KGENPasses.h"
+#include "Support/TimeProfiler.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Threading.h"
-#include "mlir/IR/Verifier.h"
 #include "mlir/Pass/Pass.h"
 #include "llvm/Support/Mutex.h"
 
@@ -19,6 +22,91 @@ namespace M::KGEN {
 #define GEN_PASS_DEF_VERIFYPARAMETERS
 #include "KGEN/KGENPasses.h.inc"
 } // namespace M::KGEN
+
+/// Propagate trivial parameter declarations in the region, given the use-def
+/// graph for that region and the top-level graph to lookup nested regions.
+static void propagateTrivialParameters(Region *region,
+                                       const ParameterUseDefGraph &graph,
+                                       const ParameterUseDefGraph &topLevel,
+                                       ParameterEvaluator evaluator) {
+  // Function to walk all op users of parameters and substitute parameters based
+  // on the values currently in the evaluator.
+  auto processOp = [&](Operation *op) {
+    SmallVector<NamedAttribute> attrs;
+    bool changed = false;
+    for (const NamedAttribute &attr : op->getAttrs()) {
+      Attribute newAttr = evaluator.getReboundAttribute(attr.getValue());
+      attrs.emplace_back(attr.getName(), newAttr);
+      changed |= newAttr != attr.getValue();
+    }
+    if (changed)
+      op->setAttrs(DictionaryAttr::getWithSorted(op->getContext(), attrs));
+
+    op->setLoc(cast<Location>(evaluator.getReboundAttribute(op->getLoc())));
+
+    for (OpResult result : op->getResults())
+      result.setType(evaluator.getReboundType(result.getType()));
+    for (Region &region : op->getRegions())
+      for (BlockArgument arg : region.getArguments())
+        arg.setType(evaluator.getReboundType(arg.getType()));
+  };
+
+  // Collect the defining operations in topological order. The same operation
+  // can define multiple parameters, so punt them according to their most
+  // dominated definition. Do this by collecting them in reverse.
+  llvm::SetVector<Operation *> defOps;
+  for (StringAttr param : llvm::reverse(graph.params))
+    defOps.insert(graph.defs.at(param).defOp);
+  for (Operation *op : llvm::reverse(defOps)) {
+    if (auto decl = dyn_cast<DeclInterface>(op);
+        decl && op == region->getParentOp()) {
+      // For parent decl ops, bind input parameters to themselves.
+      for (ParamDeclAttr decl : decl.getInputParams()) {
+        decl = cast<ParamDeclAttr>(evaluator.getReboundAttribute(decl));
+        evaluator.setOrOverwriteParameterValue(decl,
+                                               ParamDeclRefAttr::get(decl));
+      }
+      // All required parameters are bound for the parent op. Process it now.
+      processOp(op);
+    } else if (auto declare = dyn_cast<ParamDeclareOp>(op)) {
+      // If the value of the declared parameter is "trivial", i.e. a simple
+      // constant, then propagate it.
+      Attribute value = evaluator.getReboundAttribute(declare.getValue());
+      // The type of the parameter may change. Try to rebind it.
+      auto decl = cast<ParamDeclAttr>(
+          evaluator.getReboundAttribute(declare.getParamDecl()));
+      if (ParameterAttr::isSimpleConstant(value)) {
+        evaluator.setOrOverwriteParameterValue(decl, value);
+        declare.erase();
+      } else {
+        evaluator.setOrOverwriteParameterValue(decl,
+                                               ParamDeclRefAttr::get(decl));
+        processOp(op);
+      }
+    } else {
+      // If this is any other operation, just walk its definitions in the
+      // current scope.
+      cast<ParamOpInterface>(op).walkDefinitions(
+          [&](ParamDeclAttr decl, const ParamDefValue &value) {
+            decl = cast<ParamDeclAttr>(evaluator.getReboundAttribute(decl));
+            evaluator.setOrOverwriteParameterValue(decl,
+                                                   ParamDeclRefAttr::get(decl));
+          });
+      // Nested regions can declare parameters, so we cannot fully rebind the
+      // operation now. It will be handled later when this function recurses.
+      if (!isa<ParamDeclareRegionOp>(op))
+        processOp(op);
+    }
+  }
+
+  for (Operation *op : graph.paramOps)
+    processOp(op);
+
+  // Recurse into nested parameter scopes.
+  for (Region *region : graph.nestedDecls)
+    propagateTrivialParameters(region, topLevel.nestedScopes.at(region),
+                               topLevel, evaluator.getParameterValues());
+}
 
 namespace {
 struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
@@ -40,8 +128,8 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
     for (auto decl : getOperation().getOps<DeclInterface>())
       for (Region &region : decl->getRegions())
         declRegions.push_back(&region);
-    auto workFunc = [&sharedSymtabs, &paramCache, &mutex,
-                     &threadCaches](Region *declRegion) {
+    auto workFunc = [&sharedSymtabs, &paramCache, &mutex, &threadCaches,
+                     simplify = bool(simplifyParameters)](Region *declRegion) {
       // Get the thread-local cache.
       ParameterCollector::Analysis *cache = nullptr;
       uint64_t threadId = llvm::get_threadid();
@@ -58,7 +146,14 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
       }
 
       ParameterUseDefGraph graph(*declRegion);
-      return graph.verify(sharedSymtabs, *cache);
+      if (failed(graph.verify(sharedSymtabs, *cache)))
+        return failure();
+      if (simplify) {
+        TimeTraceScope<> traceScope("propagateTrivialParameters");
+        propagateTrivialParameters(declRegion, graph, graph,
+                                   ParameterEvaluator());
+      }
+      return mlir::success();
     };
     if (failed(mlir::failableParallelForEach(&getContext(), declRegions,
                                              workFunc)))
@@ -77,7 +172,8 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
     // This pass does not modify any IR, so mark all analyses as preserved. In
     // addition, this signals the pass manager that the MLIR verifier need not
     // run after this pass.
-    markAllAnalysesPreserved();
+    if (!simplifyParameters)
+      markAllAnalysesPreserved();
   }
 };
 } // namespace
