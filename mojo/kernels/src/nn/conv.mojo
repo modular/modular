@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Index import Index, StaticIntTuple
+from Assert import assert_param, debug_assert
 from Buffer import (
     NDBuffer,
     Buffer,
@@ -13,14 +13,13 @@ from Buffer import (
     partial_simd_store,
     _compute_ndbuffer_offset,
 )
-from SIMD import SIMD
-from Assert import assert_param, debug_assert
-from MatmulUtils import (
-    PartitionHeuristic,
-    get_matmul_prefetch_b_distance_k,
-    get_partitioned_matmul,
-    get_min_task_size,
-)
+from DType import DType
+from Functional import unroll, unroll2, async_parallelize
+from Image import ImageData, Image2DLayout, ImageShape
+from Index import Index, StaticIntTuple
+from LLCL import OutputChainPtr
+from List import DimList, create_dim_list
+from Math import min, max
 from Matmul import (
     GemmShape,
     MatmulInnerLoopBPacked,
@@ -28,20 +27,11 @@ from Matmul import (
     PackMatrixCols,
     PackMatrixRows,
 )
-from Math import div_ceil, min, max
-from List import DimList, create_dim_list
+from MatmulUtils import get_matmul_prefetch_b_distance_k
+from Pointer import DTypePointer
 from Range import range
+from SIMD import SIMD
 from TargetInfo import simd_byte_width
-from Pointer import DTypePointer, Pointer
-from DType import DType
-from LLCL import Runtime, OutputChainPtr
-from Functional import unroll, unroll2, async_parallelize
-from Range import range
-from Image import (
-    ImageData,
-    Image2DLayout,
-    ImageShape,
-)
 
 
 @register_passable("trivial")

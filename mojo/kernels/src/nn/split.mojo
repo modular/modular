@@ -9,7 +9,6 @@ from Buffer import Buffer, DynamicRankBuffer
 from DType import DType
 from Index import product
 from List import Dim, VariadicList
-from Pointer import DTypePointer
 from Memory import memcpy
 from Range import range
 

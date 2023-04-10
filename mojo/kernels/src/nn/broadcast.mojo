@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Assert import assert_param
 from Buffer import NDBuffer
 from DType import DType
 from Memory import memcpy

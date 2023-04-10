@@ -9,11 +9,9 @@
 # pad
 # ===----------------------------------------------------------------------===#
 
-from Assert import assert_param, debug_assert
+from Assert import debug_assert
 from Buffer import Buffer, NDBuffer
 from DType import DType
-from Functional import vectorize
-from Index import Index
 from List import Dim, DimList
 from Memory import memcpy
 from Pointer import DTypePointer
@@ -21,9 +19,8 @@ from SIMD import SIMD
 
 # TODO Refactor -- we should decide on and put them into a more common file
 from Transpose import _fill_strides
-from TargetInfo import dtype_simd_width, dtype_sizeof
+from TargetInfo import dtype_sizeof
 from Range import range
-from IO import print
 
 
 fn _fill[

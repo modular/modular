@@ -5,13 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from Buffer import Buffer, NDBuffer
-from Functional import elementwise
-from List import Dim, DimList
-from LLCL import OutputChainPtr
-from Math import div_ceil
-from Index import StaticIntTuple
-from Range import range
 from DType import DType
+from Functional import elementwise
+from Index import StaticIntTuple
+from LLCL import OutputChainPtr
+from List import Dim, DimList
+from Math import div_ceil
+from Range import range
 from TypeUtilities import rebind
 
 

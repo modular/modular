@@ -4,12 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Assert import assert_param
 from Buffer import Buffer
 from DType import DType
 from Functional import vectorize_unroll
-from Math import exp, identity, log, mul, reciprocal, sub
 from List import Dim
+from Math import exp, identity, log, mul, reciprocal, sub
 from Numerics import neginf
 from Range import range
 from Reductions import max

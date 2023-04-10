@@ -4,24 +4,17 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from DType import DType
+from Functional import async_parallelize, vectorize_unroll
+from Image import ImageData, Image2DLayout, ImageShape
 from Index import Index, StaticIntTuple
-from Buffer import NDBuffer, Buffer
-from SIMD import SIMD
-from Image import (
-    ImageData,
-    Image2DLayout,
-    ImageShape,
-)
-from Range import range
+from LLCL import OutputChainPtr
 from List import DimList
 from Math import min, max, add, div_ceil
-from Functional import async_parallelize, vectorize_unroll
-from LLCL import Runtime, OutputChainPtr
-from Pointer import Pointer
-from Pointer import DTypePointer
-from TargetInfo import dtype_simd_width
-from DType import DType
 from Numerics import neginf
+from Range import range
+from SIMD import SIMD
+from TargetInfo import dtype_simd_width
 
 # Pooling method.
 @register_passable("trivial")

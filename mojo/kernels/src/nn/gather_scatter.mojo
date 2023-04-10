@@ -4,21 +4,20 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Assert import assert_param, debug_assert
+from Assert import assert_param
 from Buffer import NDBuffer, prod_dims
 from DType import DType
 from Functional import vectorize, vectorize_unroll, async_parallelize
-from Math import div_ceil
-from Index import Index, StaticIntTuple
+from Index import StaticIntTuple
 from Intrinsics import PrefetchOptions
-from List import Dim, DimList
-from LLCL import Runtime, OutputChainPtr
-from Math import add, min
-from Pointer import Pointer
+from LLCL import OutputChainPtr
+from List import DimList
+from Math import div_ceil
+from Math import min
 from Range import range
+from SIMD import SIMD
 from TargetInfo import dtype_sizeof
 from TypeUtilities import rebind
-from SIMD import SIMD
 
 ## gather_reduce_2D_axis_1
 @adaptive
