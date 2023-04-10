@@ -29,18 +29,6 @@ class MojoTypeSystem : public lldb_private::TypeSystem,
   static char ID;
 
 public:
-  /// Broadcaster
-  /// @{
-  enum {
-    /// Informational messages related to Mojo targets that are not part of
-    /// the inferior's stderr or stout but should still be displayed to the
-    /// users when not using the CLI.
-    eBroadcastUserMessage = (1 << 0)
-  };
-
-  void broadcastUserMessage(StringRef message);
-  /// @}
-
   MojoTypeSystem(lldb_private::Target &target);
   ~MojoTypeSystem() override;
 
@@ -64,6 +52,19 @@ public:
 
   llvm::StringRef GetPluginName() override { return getPluginNameStatic(); }
   static llvm::StringRef getPluginNameStatic() { return "Mojo"; }
+
+  //===--------------------------------------------------------------------===//
+  // Broadcaster
+  //===--------------------------------------------------------------------===//
+
+  enum {
+    /// Informational messages related to Mojo targets that are not part of
+    /// the inferior's stderr or stdout but should still be displayed to the
+    /// users when not using the CLI.
+    eBroadcastUserMessage = (1 << 0)
+  };
+
+  void broadcastUserMessage(StringRef message);
 
   //===--------------------------------------------------------------------===//
   // Dumping
