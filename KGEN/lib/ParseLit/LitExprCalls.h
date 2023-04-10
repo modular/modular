@@ -114,6 +114,7 @@ enum class CallSyntax : uint8_t {
   kOperator,         //< -x and x + y
   kReversedOperator, //< y + x          (where the method was looked up on x).
   kSubscript,        // v[1, 2]
+  kAttribute,        // v.x             (where x is not a static member of v).
   kImplicitConvert,  //< Conversion in an argument context
   kDestructor,       //< Destructor due to a value definition.
 };

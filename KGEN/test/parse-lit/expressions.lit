@@ -840,6 +840,42 @@ fn testWritebacks(a&: IndexArray, b&: IndexArrayArray):
   takeInOutInt(b[1][2])
 
 
+@register_passable
+struct ConstDynamicObject:
+    fn __init__() -> Self:
+        return Self{}
+
+    fn __getattr__(self, name: StringLiteral) -> Int:
+        return 0
+
+struct DynamicObject:
+    fn __init__(self&):
+        pass
+
+    fn __getattr__(self, name: StringLiteral) -> Int:
+        return 0
+
+    fn __setattr__(self, name: StringLiteral, value: Int):
+        pass
+
+
+# CHECK-LABEL: lit.func @"dynamic_attribute()"
+fn dynamic_attribute():
+    let const_obj = ConstDynamicObject()
+    # CHECK: %[[KEY:.*]] = kgen.param.constant{{.*}} "dynamic_attribute"
+    # CHECK: call {{.*}}@ConstDynamicObject::@"__getattr__{{.*}}"(%const_obj, %[[KEY]])
+    _ = const_obj.dynamic_attribute
+
+    var obj = DynamicObject()
+    # CHECK: %[[KEY:.*]] = kgen.param.constant{{.*}} "some_attr"
+    # CHECK: call {{.*}}@DynamicObject::@"__getattr__{{.*}}"(%obj, %[[KEY]])
+    _ = obj.some_attr
+    # CHECK: %[[KEY:.*]] = kgen.param.constant{{.*}} "some_attr"
+    # CHECK: %[[VALUE:.*]] = kgen.param.constant{{.*}} 42
+    # CHECK: call {{.*}}@DynamicObject::@"__setattr__{{.*}}(%obj, %[[KEY]], %[[VALUE]])
+    obj.some_attr = 42
+
+
 # CHECK-LABEL: lit.func @"chained_cmp
 fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
     # CHECK:      [[CMP_A_B:%.*]] = kgen.call @{{.*}}__lt__{{.*}}(%a, %b)

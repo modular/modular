@@ -663,6 +663,109 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
   return emitter.emitCResult(SBValue(extractVal), expr, dest);
 }
 
+/// Given a base value, emit access to a base value element using getter and
+/// setter methods and the provided arguments. If a getter is present on the
+/// base type but a setter is not, this method immediately emits a getter call.
+/// Otherwise, it returns a SubscriptDLValue for later materializing calls to
+/// the getter or setter as appropriate.
+static AnyValue
+emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
+                       ValueDest &dest, ExprEmitter &emitter, ASTType baseType,
+                       StringRef getterName, StringRef setterName,
+                       CallSyntax syntax, function_ref<void()> lookupError,
+                       ArrayRef<ASTExprAnd<AnyValue>> callArgs) {
+  // If there is no getter at all, then this is not a subscriptable type.
+  OverloadSet getter(baseType, getterName, node, syntax, emitter.shared,
+                     /*no error on failure*/ {});
+
+  // Check for the presence of a setitem but don't provide index values because
+  // we don't know what the ultimate element type is.  It may be overloaded and
+  // we don't know which candidate to pick until it is actually invoked.
+  OverloadSet setter(baseType, setterName, node, syntax, emitter.shared,
+                     /*no error on failure*/ {});
+
+  if (getter.isNull() && setter.isNull()) {
+    lookupError();
+    return {};
+  }
+
+  // If we just have a getter, emit this as a call to the getter immediately.
+  // The getter is allowed to return a reference if it has a physical lvalue.
+  if (setter.isNull())
+    return getter.emitCall(callArgs, dest, emitter);
+
+  // Ok, we have a setter and may have a getter.  Check to see if there is one
+  // specific known element type.
+  ASTType elementType;
+  if (!getter.isNull()) {
+    // If we have at least one getter implementation then filter it based on the
+    // indices we have.  This will ensure we treat its presence of indication
+    // that the type was intended to be subscriptable, but whine about index
+    // values and base type if they aren't actually compatible at this usage
+    // site.
+    if (failed(getter.filterOverloadSet(
+            callArgs, /*allowImplicitConversions=*/true,
+            /*emitDiagnosticOnFailure=*/true, emitter)))
+      return {};
+
+    assert(getter.fnDecls.size() == 1 && "Should be resolved");
+    auto directSymbolAttr = getter.getBoundConstantAttr(emitter);
+    if (!directSymbolAttr)
+      return {}; // Getter invalid.
+    auto sigType = cast<SignatureType>(directSymbolAttr.getType());
+    if (sigType.hasMemoryOnlyResult())
+      elementType =
+          ASTType(sigType.getValueInputs()[0]).getPointerElementType();
+    else {
+      assert(sigType.getValueResults().size() == 1);
+      elementType = ASTType(sigType.getValueResults()[0]);
+    }
+  } else {
+    // If we don't have a getter then check to see if we have a setter.  This is
+    // a bit tricky in that the setter candidate set is completely unfiltered.
+
+    // Cannot support overloaded setter.  We could make this more flexible in
+    // the future if needed, eg if they have common set values but different
+    // indices.
+    if (setter.fnDecls.size() != 1) {
+      auto diag = emitter.emitError(node->getLoc())
+                  << baseType << " has overloaded " << setterName
+                  << " implementations, which isn't supported"
+                  << node->getRange();
+      for (auto candidate : setter.fnDecls)
+        diag.attachNote(candidate->getLoc()) << "candidate declared here";
+      return {};
+    }
+
+    // TODO: This won't handle parameterized setters right, inferring the
+    // parameter types.  We should use something like
+    // `filterOverloadSetForValueType` or use a dummy value to filter the
+    // overload set.
+    auto directSymbolAttr = setter.getBoundConstantAttr(emitter);
+    if (!directSymbolAttr)
+      return {}; // Getter invalid.
+    auto sigType = cast<SignatureType>(directSymbolAttr.getType());
+    // Check basic sanity.
+    size_t setValueIdx = callArgs.size() + sigType.hasMemoryOnlyResult();
+    if (sigType.getValueInputs().size() <= setValueIdx) {
+      auto diag = emitter.emitError(node->getLoc())
+                  << setterName << " has too few arguments";
+      diag.attachNote(setter.fnDecls[0]->getLoc())
+          << setterName << " declared here";
+      return {};
+    }
+    elementType = sigType.getValueInputs()[setValueIdx];
+    auto setValueConvention = sigType.getInputConvention(setValueIdx);
+    if (setValueConvention != ValueInputConvention::OwnedInReg &&
+        setValueConvention != ValueInputConvention::BorrowedInReg)
+      elementType = elementType.getPointerElementType();
+  }
+
+  DLValue result(
+      LLCL::RCRef<SubscriptDLValue>::create(callArgs, elementType, node));
+  return emitter.emitResult(std::move(result), node, dest);
+}
+
 /// Emit a qualified attribute reference to MLIR.  On error, emit an error and
 /// return a null value.
 AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
@@ -734,12 +837,22 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
                                           /*searchParentScopes=*/false);
   ArrayRef<ASTDecl *> memberDecls = lookup.getIfSuccess();
   if (memberDecls.empty()) {
-    // If the error hasn't been diagnosed, handle it now.
-    if (lookup.isFailure())
-      emitter.emitError(getLoc(), "")
-          << baseRVType << " value has no attribute '" << attrSpelling << "'"
-          << getRange();
-    return {};
+    // The struct has no static member of the required name, but try to look for
+    // dynamic lookup attribute methods on the type.
+    auto lookupError = [&] {
+      // If the error hasn't been diagnosed, handle it now.
+      if (lookup.isFailure())
+        emitter.emitError(getLoc()) << baseRVType << " value has no attribute '"
+                                    << attrSpelling << "'" << getRange();
+    };
+
+    SmallVector<ASTExprAnd<AnyValue>> callArgs = {
+        {baseVal, base},
+        {StringAttr::get(attrSpelling, StringType::get(emitter.getContext())),
+         base}};
+    return emitGetterSetterAccess(
+        this, base, dest, emitter, baseRVType, "__getattr__", "__setattr__",
+        CallSyntax::kAttribute, lookupError, callArgs);
   }
 
   // Handle method references, which might be overloaded.
@@ -800,7 +913,6 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   // Reference to some non-function/struct member of the type.
-  // TODO: Handle __getattr__/__setattr__ methods if present.
   emitter.emitError(getLoc(), "reference to unknown member '")
       << attrSpelling << "'" << getRange();
   return {};
@@ -1265,103 +1377,18 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Okay, we're doing a normal value subscript.  Check for compatible
   // __getitem__ and __setitem__ implementations.
-  auto baseType = baseValue.getRValueType();
+  ASTType baseType = baseValue.getRValueType();
 
-  // If there is no __getitem__ at all, then this is not a subscriptable type.
-  OverloadSet getItem(baseType, "__getitem__", this, CallSyntax::kSubscript,
-                      emitter.shared, /*no error on failure*/ {});
-
-  // Check for the presence of a setitem but don't provide index values because
-  // we don't know what the ultimate element type is.  It may be overloaded and
-  // we don't know which candidate to pick until it is actually invoked.
-  OverloadSet setItem(baseType, "__setitem__", this, CallSyntax::kSubscript,
-                      emitter.shared, /*no error on failure*/ {});
-
-  if (getItem.isNull() && setItem.isNull()) {
-    emitter.emitError(getLoc(), "")
+  auto lookupError = [&] {
+    emitter.emitError(getLoc())
         << baseType
         << " is not subscriptable, it does not implement the "
            "`__getitem__`/`__setitem__` methods"
         << base->getRange();
-    return {};
-  }
-
-  // If we just have a getter, emit this as a call to __getitem__ immediately.
-  // __getitem__ is allowed to return a reference if it has a physical lvalue.
-  if (setItem.isNull())
-    return getItem.emitCall(indexValues, dest, emitter);
-
-  // Ok, we have a setter and may have a getter.  Check to see if there is one
-  // specific known element type.
-  ASTType elementType;
-  if (!getItem.isNull()) {
-    // If we have at least one __getitem__ implement then filter it based on the
-    // indices we have.  This will ensure we treat its presence of indication
-    // that the type was intended to be subscriptable, but whine about index
-    // values and base type if they aren't actually compatible at this usage
-    // site.
-    if (failed(getItem.filterOverloadSet(
-            indexValues, /*allowImplicitConversions=*/true,
-            /*emitDiagnosticOnFailure=*/true, emitter)))
-      return {};
-
-    assert(getItem.fnDecls.size() == 1 && "Should be resolved");
-    auto directSymbolAttr = getItem.getBoundConstantAttr(emitter);
-    if (!directSymbolAttr)
-      return {}; // Getter invalid.
-    auto sigType = cast<SignatureType>(directSymbolAttr.getType());
-    if (sigType.hasMemoryOnlyResult())
-      elementType =
-          ASTType(sigType.getValueInputs()[0]).getPointerElementType();
-    else {
-      assert(sigType.getValueResults().size() == 1);
-      elementType = ASTType(sigType.getValueResults()[0]);
-    }
-  } else {
-    // If we don't have a getter then check to see if we have a setter.  This is
-    // a bit tricky in that the setter candidate set is completely unfiltered.
-
-    // Cannot support overloaded setter.  We could make this more flexible in
-    // the future if needed, eg if they have common set values but different
-    // indices.
-    if (setItem.fnDecls.size() != 1) {
-      auto diag = emitter.emitError(getLoc())
-                  << baseType
-                  << " has overloaded __setitem__ implementations, which isn't "
-                     "supported"
-                  << getRange();
-      for (auto candidate : setItem.fnDecls)
-        diag.attachNote(candidate->getLoc()) << "candidate declared here";
-      return {};
-    }
-
-    // TODO: This won't handle parameterized setters right, inferring the
-    // parameter types.  We should use something like
-    // `filterOverloadSetForValueType` or use a dummy value to filter the
-    // overload set.
-    auto directSymbolAttr = setItem.getBoundConstantAttr(emitter);
-    if (!directSymbolAttr)
-      return {}; // Getter invalid.
-    auto sigType = cast<SignatureType>(directSymbolAttr.getType());
-    // Check basic sanity.
-    size_t setValueIdx = indexValues.size() + sigType.hasMemoryOnlyResult();
-    if (sigType.getValueInputs().size() <= setValueIdx) {
-      auto diag = emitter.emitError(getLoc())
-                  << "__setitem__ has too few arguments";
-      diag.attachNote(setItem.fnDecls[0]->getLoc())
-          << "__setitem__ declared here";
-      return {};
-    }
-    elementType = sigType.getValueInputs()[setValueIdx];
-    auto setValueConvention = sigType.getInputConvention(setValueIdx);
-    if (setValueConvention != ValueInputConvention::OwnedInReg &&
-        setValueConvention != ValueInputConvention::BorrowedInReg)
-      elementType = elementType.getPointerElementType();
-  }
-
-  DLValue result(
-      LLCL::RCRef<SubscriptDLValue>::create(indexValues, elementType, this));
-  return emitter.emitResult(std::move(result), this, dest);
+  };
+  return emitGetterSetterAccess(
+      this, base, dest, emitter, baseType, "__getitem__", "__setitem__",
+      CallSyntax::kSubscript, lookupError, indexValues);
 }
 
 AnyValue SubscriptArrowNode::emitIR(ValueDest &dest,
