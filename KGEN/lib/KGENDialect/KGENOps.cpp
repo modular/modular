@@ -791,6 +791,23 @@ OpFoldResult RebindOp::fold(FoldAdaptor adaptor) {
   return {};
 }
 
+/// If the operand to a rebind is defined by a rebind, use the second rebind's
+/// operand.
+LogicalResult RebindOp::canonicalize(RebindOp op, PatternRewriter &rewriter) {
+  RebindOp cur = op, parent;
+  // Climb all the way to the top to avoid recursively invoking this pattern.
+  // Do not fold rebinds across parameter domains, because this can lead to
+  // collision of name-shadowed parameters #12242.
+  auto nearestDecl = cur->getParentOfType<DeclInterface>();
+  while ((parent = cur.getOperand().getDefiningOp<RebindOp>()) &&
+         parent->getParentOfType<DeclInterface>() == nearestDecl)
+    cur = parent;
+  if (cur == op)
+    return failure();
+  rewriter.updateRootInPlace(op, [&] { op.setOperand(cur.getOperand()); });
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // ExportOp
 //===----------------------------------------------------------------------===//
@@ -840,10 +857,9 @@ LogicalResult ExportOp::verify() {
 // CallSignatureOp
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseCallSignature(
-    OpAsmParser &p, Type &typeOfCallee,
-    SmallVectorImpl<Type> &argumentTypes,
-    SmallVectorImpl<Type> &resultTypes) {
+static ParseResult parseCallSignature(OpAsmParser &p, Type &typeOfCallee,
+                                      SmallVectorImpl<Type> &argumentTypes,
+                                      SmallVectorImpl<Type> &resultTypes) {
   TypeArrayAttr resultParams;
   TypeArrayAttr parameterValues;
   // We expect the following syntax: call_signature callee(dynamic args) :
@@ -858,9 +874,8 @@ static ParseResult parseCallSignature(
   return success();
 }
 
-static void printCallSignature(OpAsmPrinter &p, Operation *op,
-                                 Type calleeType, TypeRange argumentTypes,
-                                 TypeRange resultTypes) {
+static void printCallSignature(OpAsmPrinter &p, Operation *op, Type calleeType,
+                               TypeRange argumentTypes, TypeRange resultTypes) {
   // We expect the following syntax: call_signature callee(dynamic args) :
   // (argTypes...) fat -> calleeResultType
   if (SignatureType sigType = cast<SignatureType>(calleeType)) {

@@ -736,6 +736,7 @@ def KGEN_RebindOp : KGENOp<"rebind", [Pure]> {
 
   let hasVerifier = 1;
   let hasFolder = 1;
+  let hasCanonicalizeMethod = 1;
 }
 
 //===----------------------------------------------------------------------===//
