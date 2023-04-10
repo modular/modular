@@ -453,22 +453,6 @@ kgen.func @call_param_in_func(%arg0: si32) -> si32 {
 
 // -----
 
-kgen.func @rebind(%a: !pop.scalar<f32>) {
-  // expected-error @below {{cannot rebind concrete input type '!pop.scalar<f32>' to different concrete output type '!pop.scalar<si32>'}}
-  %0 = kgen.rebind %a : !pop.scalar<f32> to !pop.scalar<si32>
-  kgen.return
-}
-
-// -----
-
-kgen.func @rebind(%a: !pop.scalar<f32>) {
-  // expected-error @below {{cannot rebind concrete input type '!pop.scalar<f32>' to different concrete output type 'i32'}}
-  %0 = kgen.rebind %a : !pop.scalar<f32> to i32
-  kgen.return
-}
-
-// -----
-
 // expected-note @below {{@ParamNamedA declared here}}
 lit.struct.decl @ParamNamedA<A> {}
 

@@ -599,6 +599,25 @@ processParamResultBindOp(ParamResultBindOp op, ExpansionTreeNode *parentNode) {
 }
 
 //===----------------------------------------------------------------------===//
+// processRebindOp
+//===----------------------------------------------------------------------===//
+
+static std::optional<ErrorTree> processRebindOp(IREvaluator &evaluator,
+                                                RebindOp op) {
+  ErrorTreeOr<Type> outType =
+      evaluator.concretizeParameterExpr(op.getLoc(), op.getType());
+  if (outType.isError())
+    return outType.takeError();
+  if (outType.getValue() != op.getInput().getType()) {
+    return ErrorTree(op.getLoc(), "operand and result type of rebind operation "
+                                  "did not concretize to the same type");
+  }
+  op.replaceAllUsesWith(op.getOperand());
+  op.erase();
+  return {};
+}
+
+//===----------------------------------------------------------------------===//
 // processParamAssertOp
 //===----------------------------------------------------------------------===//
 
@@ -1804,6 +1823,9 @@ LogicalResult ElaboratorImpl::processScope(ExpansionTreeNode *parentNode,
     } else if (auto fork = dyn_cast<ParamForkOp>(op)) {
       TimeTraceScope<EnableTracing> traceScope("processParamForkOp");
       result = processParamForkOp(parentNode, fork, remainingWorklist);
+    } else if (auto rebindOp = dyn_cast<RebindOp>(op)) {
+      TimeTraceScope<EnableTracing> traceScope("processRebindOp");
+      result = processRebindOp(parentNode->evaluator, rebindOp);
     } else if (auto assertOp = dyn_cast<ParamAssertOp>(op)) {
       TimeTraceScope<EnableTracing> traceScope("processParamAssertOp");
       result = processParamAssertOp(parentNode->evaluator, assertOp);
