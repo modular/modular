@@ -70,9 +70,7 @@ ParameterEvaluator::evaluateExpression(ParamOperatorAttr op) {
 /// Get the specified attribute with any nested parameter expressions rewritten.
 Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
   // These are common leaf attributes that we know are never parameterized.
-  // FIXME: Symbol references are always excepted because the elaborator wants
-  // to consider them as constants even when they are parametric.
-  if (ParameterAttr::isSimpleConstant(attr) && !isa<SymbolConstantAttr>(attr))
+  if (ParameterAttr::isSimpleConstant(attr))
     return attr;
 
   // If we've already processed this attribute, just reuse the memoized result.
