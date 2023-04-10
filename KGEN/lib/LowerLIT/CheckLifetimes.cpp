@@ -178,6 +178,11 @@ struct LifetimeTrackable {
   /// fully initialized when all their fields are initialized.
   bool isFullObjectLiveOnEntry = false;
 
+  /// True if this is the self member of a __del__ method for an object.  It
+  /// should not be treated as fully alive at the bottom of its __del__ so it
+  /// should never be fully destroyed (only its members).
+  bool isDelSelf = false;
+
   /// Return the type of the underlying value, looking through the pointer type
   /// if this is an indirect reference.
   Type getValueType(Value value) const;
@@ -235,7 +240,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     return;
 
   switch (signature.getValueInputConventions()[bbArg.getArgNumber()]) {
-  case ValueInputConvention::OwnedInReg: // This gets and LValue slot.
+  case ValueInputConvention::OwnedInReg: // This gets an LValue slot.
   case ValueInputConvention::BorrowedInReg:
   case ValueInputConvention::BorrowedInMem:
     // These are immutable so don't need to be tracked.
@@ -245,6 +250,20 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     isIndirect = true;
     startsUninit = false;
     endsUninit = true;
+
+    // Check to see if this is the 'self' member of a __del__ method.  In this
+    // case we want to treat the object as dead at the end of the function so
+    // it doesn't get a recursive call.
+    if (auto funcOp = dyn_cast<LIT::FuncOp>(bbArg.getOwner()->getParentOp())) {
+      if (auto structOp =
+              dyn_cast_or_null<LIT::StructDeclOp>(funcOp->getParentOp())) {
+        if (auto symbolDtor = dyn_cast_or_null<SymbolConstantAttr>(
+                structOp.getDestructorAttr())) {
+          if (symbolDtor == funcOp.getBoundReference())
+            isDelSelf = true;
+        }
+      }
+    }
     break;
   case ValueInputConvention::ByRefResult:
     // FIXME(Issue#12196): __result__ slots in raising functions cannot properly
@@ -312,6 +331,11 @@ struct ValueInfo {
   /// __init__/__copyinit__ method.  These have magic behavior so they become
   /// fully initialized when all their fields are initialized.
   const bool isFullObjectLiveOnEntry;
+
+  /// True if this is the self member of a __del__ method for an object.  It
+  /// should not be treated as fully alive at the bottom of its __del__ so it
+  /// should never be fully destroyed (only its members).
+  const bool isDelSelf;
 
   /// This is true if the value had a use-before-initialization error diagnosed.
   bool hasErrorDiagnosed;
@@ -418,6 +442,7 @@ struct ValueSet {
     valueInfos.push_back({val, firstValueBit, firstValueBit + numValueBits,
                           trackable.startsUninit, trackable.endsUninit,
                           trackable.isFullObjectLiveOnEntry,
+                          trackable.isDelSelf,
                           /*hasErrorDiagnosed=*/false});
   }
 
@@ -923,7 +948,8 @@ void DestructorInsertion::scanFunction(mlir::FunctionOpInterface func) {
   consumedValues.resize(valueSet.getNumTotalBits());
 
   // Scan the body of the function.
-  scanBlock(func.getFunctionBody().front());
+  Block &funcBody = func.getFunctionBody().front();
+  scanBlock(funcBody);
 }
 
 /// Scan a block top down, checking all the operations that may use a value or
@@ -1013,9 +1039,15 @@ void DestructorInsertion::checkOp(Operation &op) {
 
   // A return consumes all the live-out values from the function.
   if (isa<KGEN::ReturnOp>(op)) {
-    for (const ValueInfo &valueInfo : valueSet.getValueInfos())
+    for (const ValueInfo &valueInfo : valueSet.getValueInfos()) {
       if (!valueInfo.endsUninit)
         consumedValues.set(valueInfo.startValueBit, valueInfo.endValueBit);
+      // If this is 'self' in a del, then the full object bit is consumed even
+      // though the rest of the fields are not.  This ensures the sub-fields are
+      // destroyed but the full object is not.
+      else if (valueInfo.isDelSelf)
+        consumedValues.set(valueInfo.endValueBit - 1);
+    }
     return;
   }
 
@@ -1026,6 +1058,8 @@ void DestructorInsertion::checkOp(Operation &op) {
     return;
   }
 
+  // A raise will use the consume set that was seen on entry to the enclosing
+  // except block.
   if (isa<LIT::TryRaiseOp>(op)) {
     assert(raiseSet && "Not in a 'try'?");
     consumedValues = *raiseSet;
@@ -1081,7 +1115,7 @@ void DestructorInsertion::checkOp(Operation &op) {
     // input consumedValues set to the else block is.
     scanBlock(tryOp.getElseRegion().front());
 
-    // Ok, finally we process the try body.  Any 'raises' within the try body
+    // Ok, finally we process the try body.  Any 'raise's within the try body
     // use the consumed values set on entry to the except block.
     llvm::SaveAndRestore x(raiseSet, &exceptSets.consumedValues);
     scanBlock(tryOp.getTryRegion().front());

@@ -3,14 +3,18 @@
 
 # CHECK-LABEL: lit.struct.decl @MemExample
 struct MemExample:
-  fn __init__(self&): pass
+  var x : Int
+  fn __init__(self&): self.x = 42; pass
   fn noop(self): pass
 
-  # CHECK-LABEL: lit.func @"__del___
-  # CHECK-NEXT:    %0 = kgen.param.constant{{.*}} <#lit.none>
-  # CHECK-NEXT:    kgen.return %0 : !lit.none
-  fn __del___(owned self): pass
-
+  # Destructor should not recurse.
+  # CHECK-LABEL: lit.func @"__del__
+  # CHECK-NEXT:    kgen.call {{.*}}noop{{.*}}(%self)
+  # CHECK-NEXT:    %1 = kgen.param.constant{{.*}} <#lit.none>
+  # CHECK-NEXT:    kgen.return %1 : !lit.none
+  fn __del___(owned self):
+    self.noop()
+    pass
 
 # CHECK-LABEL: lit.struct.decl @RegExample
 # CHECK: attributes {{.*}}destructor = #kgen.symbol.constant<@"$ownership"::@RegExample::@"__del___
@@ -36,6 +40,7 @@ struct RegExample:
 # CHECK-LABEL: lit.func @"destructors
 # CHECK-SAME: (%arg0: !pop.pointer<@"$ownership"::@MemExample> owned_in_mem)
 fn destructors(owned arg0: MemExample):
+
   # CHECK-NEXT: %mem1 = lit.varlet.decl "mem1", var = true
   var mem1 = MemExample()
   # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%mem1)
