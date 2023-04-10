@@ -16,6 +16,7 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "llvm/ADT/BitVector.h"
+#include "llvm/Support/SaveAndRestore.h"
 
 using namespace M;
 using namespace KGEN;
@@ -911,6 +912,10 @@ private:
   /// should not be destroyed if there are uses.  Any use of a value /not/ in
   /// this set will be a last use that does get destroyed.
   BitVector consumedValues;
+
+  /// When analyzing the body of a try, this bitset indicates what a 'raise'
+  /// should produce based on its surrounding 'try's except block's expectation.
+  BitVector *raiseSet = nullptr;
 };
 } // namespace
 
@@ -1021,6 +1026,12 @@ void DestructorInsertion::checkOp(Operation &op) {
     return;
   }
 
+  if (isa<LIT::TryRaiseOp>(op)) {
+    assert(raiseSet && "Not in a 'try'?");
+    consumedValues = *raiseSet;
+    return;
+  }
+
   // 'if' operations propagate the consume sets into each branch, and use the
   // resulting consume sets to make sure the upward propagated set of consumed
   // values is consistent.
@@ -1054,6 +1065,26 @@ void DestructorInsertion::checkOp(Operation &op) {
     // Our final upward propagated consume set is the union of both sets now
     // that they both consume the same things.
     consumedValues |= thenConsumedValues;
+    return;
+  }
+
+  if (auto tryOp = dyn_cast<LIT::TryOp>(op)) {
+    // The except block is processed with a copy of the consumed value set from
+    // the bottom of the try.  After processing it, we know what the consumed
+    // values are for the exception block.
+    DestructorInsertion exceptSets(valueSet);
+    exceptSets.consumedValues = consumedValues;
+    exceptSets.raiseSet = raiseSet;
+    exceptSets.scanBlock(tryOp.getExceptRegion().front());
+
+    // The normal flow finishes with the else block, process it to see what the
+    // input consumedValues set to the else block is.
+    scanBlock(tryOp.getElseRegion().front());
+
+    // Ok, finally we process the try body.  Any 'raises' within the try body
+    // use the consumed values set on entry to the except block.
+    llvm::SaveAndRestore x(raiseSet, &exceptSets.consumedValues);
+    scanBlock(tryOp.getTryRegion().front());
     return;
   }
 
