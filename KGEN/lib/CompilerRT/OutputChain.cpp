@@ -6,6 +6,7 @@
 
 #include "KGEN/OutputChain.h"
 #include "LLCL/Runtime/Algorithms.h"
+#include "llvm/Support/Threading.h"
 
 using namespace M;
 using namespace KGEN;
@@ -58,4 +59,19 @@ void OutputChain::setToError(Error &&error) && {
 void OutputChain::complete() {
   refs.clear();
   std::move(profilerEntry).record();
+}
+
+void OutputChain::executeAsTask(void (*resume)(int8_t *), int8_t *hdl,
+                                size_t taskId) {
+  // If it is present, copy the profiling entry for use by the task.
+  MojoProfilerEntry taskProfilerEntry =
+      profilerEntry.withNameSuffix(".task").withDetailSuffix(
+          [=]() { return (Twine(" (task_id ") + Twine(taskId) + ")").str(); });
+  chain.getRuntime()->getWorkQueue()->addTask(
+      [taskProfilerEntry = std::move(taskProfilerEntry), resume,
+       hdl]() mutable {
+        taskProfilerEntry.restart();
+        resume(hdl);
+        std::move(taskProfilerEntry).record();
+      });
 }

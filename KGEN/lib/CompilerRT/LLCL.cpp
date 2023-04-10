@@ -219,6 +219,14 @@ COMPILERRT_EXPORT void KGEN_CompilerRT_LLCL_OutputChainPtr_TraceDetailed(
   unwrap(outChain).trace(name, detail);
 }
 
+/// Execute a coroutine.
+COMPILERRT_EXPORT void
+KGEN_CompilerRT_LLCL_OutputChainPtr_ExecuteAsTask(LLCLOutputChainRef outChain,
+                                                  void (*resume)(int8_t *),
+                                                  int8_t *hdl, size_t taskId) {
+  unwrap(outChain).executeAsTask(resume, hdl, taskId);
+}
+
 void M::KGEN::registerLLCL(
     std::vector<std::pair<llvm::StringLiteral, void *>> &funcs) {
   funcs.push_back({"KGEN_CompilerRT_LLCL_InitializeChain",
@@ -263,4 +271,6 @@ void M::KGEN::registerLLCL(
                    (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_Trace});
   funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_TraceDetailed",
                    (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_TraceDetailed});
+  funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_ExecuteAsTask",
+                   (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_ExecuteAsTask});
 }

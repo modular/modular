@@ -108,6 +108,10 @@ struct OutputChain {
   /// Called from the MEF side.
   void setToError(Error &&error) &&;
 
+  /// Begin executing the Mojo coroutine pointed to by hdl using the resumption
+  /// pointer to by resume.
+  void executeAsTask(void (*resume)(int8_t *), int8_t *hdl, size_t taskId);
+
 private:
   void complete();
 };
