@@ -902,9 +902,9 @@ struct DestructorInsertion {
 
 private:
   void checkOp(Operation &op);
-  void markConsumed(ValueRef valueRef);
+  void markConsumed(Operation &op, ValueRef valueRef);
   void checkLive(Operation &op, ValueRef valueRef);
-  void checkUse(Operation &op, ValueRef valueRef);
+  void destroyWholeValueIfLastAccess(Operation &op, ValueRef valueRef);
   void checkDef(Operation &op, ValueRef valueRef);
 
   /// This is metadata about all the values we are tracking.
@@ -948,7 +948,8 @@ void DestructorInsertion::checkOp(Operation &op) {
   // A load is a use of whatever fields are being referenced.  If this is the
   // /last/ use of a value, emit a destructor of that value.
   if (auto loadOp = dyn_cast<POP::LoadOp>(op)) {
-    checkUse(op, valueSet.getPointerValueIndex(loadOp.getPtr()));
+    destroyWholeValueIfLastAccess(
+        op, valueSet.getPointerValueIndex(loadOp.getPtr()));
     return;
   }
 
@@ -982,11 +983,12 @@ void DestructorInsertion::checkOp(Operation &op) {
         valueSet.getPointerValueIndex(operand).markBits(consumedValues, true);
         break;
       case ValueInputConvention::BorrowedInReg:
-        checkUse(op, valueSet.getDirectValueRef(operand));
+        destroyWholeValueIfLastAccess(op, valueSet.getDirectValueRef(operand));
         break;
       case ValueInputConvention::BorrowedInMem:
       case ValueInputConvention::ByRef:
-        checkUse(op, valueSet.getPointerValueIndex(operand));
+        destroyWholeValueIfLastAccess(op,
+                                      valueSet.getPointerValueIndex(operand));
         break;
       case ValueInputConvention::ByRefResult:
       case ValueInputConvention::InitSelf:
@@ -1003,7 +1005,7 @@ void DestructorInsertion::checkOp(Operation &op) {
     // This defines the result value.  Emit a destructor if unused.
     checkDef(op, valueSet.getDirectValueRef(letReg));
     // This consumes the input.
-    markConsumed(valueSet.getDirectValueRef(letReg.getOperand()));
+    markConsumed(op, valueSet.getDirectValueRef(letReg.getOperand()));
     return;
   }
 
@@ -1024,54 +1026,64 @@ void DestructorInsertion::checkOp(Operation &op) {
   // Otherwise this some other operation that using a SSA value.  If this is the
   // last use of the value, make sure we destroy it when done.
   for (Value operand : op.getOperands())
-    checkUse(op, valueSet.getDirectValueRef(operand));
+    destroyWholeValueIfLastAccess(op, valueSet.getDirectValueRef(operand));
 }
 
 // When the specified value is consumed by an operation we know it doesn't need
 // to be destroyed above this point.
-void DestructorInsertion::markConsumed(ValueRef valueRef) {
+void DestructorInsertion::markConsumed(Operation &op, ValueRef valueRef) {
+  // If this operation is consuming a sub-element of a value that is already
+  // marked to be consumed, then we have a case where a field of a value is
+  // being consumed, and then its ultimate destructor cannot be run.  This is
+  // a user error - we cannot run the destructor for a value when one of its
+  // fields has already been consumed.
+  //
+  // This happens on code like this, for example:
+  //   var a = Pair()
+  //   takeValue(a.x^)
+  //   useValue(a.y)
+  //   # inserted dtor.
+  if (!valueRef.isAllMissing(consumedValues)) {
+    llvm_unreachable(
+        "cannot currently consume fields; will happen with the ^ operator");
+  }
+
   valueRef.markBits(consumedValues, true);
 }
 
 /// This operation uses whatever fields are being referenced.  Iff this is the
 /// /last/ use of a value, emit a destructor of the overall value.
-void DestructorInsertion::checkUse(Operation &op, ValueRef valueRef) {
-  // If this is an untracked reference or if all the referenced data is already
-  // known to be consumed at this point, then there is nothing to do.
-  if (!valueRef || valueRef.isAllPresent(consumedValues))
+void DestructorInsertion::destroyWholeValueIfLastAccess(Operation &op,
+                                                        ValueRef valueRef) {
+  if (!valueRef)
     return;
 
   ValueInfo &valueInfo = valueSet.getValueInfos()[valueRef.valueId];
   if (valueInfo.hasErrorDiagnosed)
     return;
 
+  // If the value has already been consumed below this use then there is nothing
+  // to do.
+  // FIXME: Insert per-field destructors correctly!
+  if (consumedValues[valueInfo.endValueBit - 1])
+    return;
+
+  // Get the full bitset for the whole object.  We expect that nothing has been
+  // consumed if the destructor will be run.
+  ValueRef fullValueRef = valueSet.getFullValueRef(valueRef.valueId);
+  assert(fullValueRef.isAllMissing(consumedValues) &&
+         "cannot have partially consumed object");
+
+  // The dtor will consume the whole thing.
+  fullValueRef.markBits(consumedValues, true);
+
   LifetimeTrackable trackable(valueInfo.value);
   assert(trackable && "shouldn't be tracking untrackable things!");
-
-  // Otherwise it is a use happening when the values become dead, we need to
-  // emit a destructor call.  Check to make sure they whole value dies at once.
-  ValueRef fullValueRef = valueSet.getFullValueRef(valueRef.valueId);
-
   TypedAttr dtor =
       trackable.getDestructor(valueInfo.value, valueSet.typeDeclInfo);
 
   if (!dtor)
     return;
-
-  // FIXME: Move this after checking below.
-  if (!fullValueRef.isAllMissing(consumedValues)) {
-    auto diag = mlir::emitError(
-        op.getLoc(), "last use of value with partially dead members ");
-    // Identify the first sub-field that is missing.
-    addBadValueNameToDiag(trackable, fullValueRef, consumedValues, valueSet,
-                          diag);
-    valueInfo.hasErrorDiagnosed = true;
-    return;
-  }
-
-  // Ok, this value will be consumed by the dtor we are emitting, so any uses
-  // above this point won't need to emit this.
-  fullValueRef.markBits(consumedValues, true);
 
   SignatureType signature = cast<SignatureType>(dtor.getType());
   assert(signature.getValueResults().size() == 1 &&
@@ -1110,7 +1122,7 @@ void DestructorInsertion::checkUse(Operation &op, ValueRef valueRef) {
 /// arrival, emit a destructor of the value.
 void DestructorInsertion::checkDef(Operation &op, ValueRef valueRef) {
   // If there is no use of the value being defined, emit a dtor after the op.
-  checkUse(op, valueRef);
+  destroyWholeValueIfLastAccess(op, valueRef);
 
   // This call defines the result, so anything above it is either dead or
   // needs a destructor if live.
