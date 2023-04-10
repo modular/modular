@@ -148,30 +148,25 @@ Type ParameterEvaluator::getReboundType(Type type) {
   Type result = type;
 
   // Rebind types in aggregates that implement SubElementTypeInterface.
-  auto signature = dyn_cast<SignatureType>(type);
-  // Signature types with input parameters are special because they are
-  // "isolated from above" with respect to their contexts, so we don't rebind
-  // within them.
-  if (!signature || signature.getInputParamTypes().empty()) {
-    SmallVector<Attribute, 16> newAttrs;
-    SmallVector<Type, 16> newTypes;
-    bool changed = false;
-    rootDepth += !!signature;
-    type.walkImmediateSubElements(
-        [&](Attribute attr) {
-          Attribute newAttr = getReboundAttribute(attr);
-          changed |= newAttr != attr;
-          newAttrs.push_back(newAttr);
-        },
-        [&](Type type) {
-          Type newType = getReboundType(type);
-          changed |= newType != type;
-          newTypes.push_back(newType);
-        });
-    rootDepth -= !!signature;
-    if (changed)
-      result = type.replaceImmediateSubElements(newAttrs, newTypes);
-  }
+  bool isSignature = isa<SignatureType>(type);
+  SmallVector<Attribute, 16> newAttrs;
+  SmallVector<Type, 16> newTypes;
+  bool changed = false;
+  rootDepth += isSignature;
+  type.walkImmediateSubElements(
+      [&](Attribute attr) {
+        Attribute newAttr = getReboundAttribute(attr);
+        changed |= newAttr != attr;
+        newAttrs.push_back(newAttr);
+      },
+      [&](Type type) {
+        Type newType = getReboundType(type);
+        changed |= newType != type;
+        newTypes.push_back(newType);
+      });
+  rootDepth -= isSignature;
+  if (changed)
+    result = type.replaceImmediateSubElements(newAttrs, newTypes);
 
   rewritten.try_emplace({rootDepth, type.getAsOpaquePointer()},
                         result.getAsOpaquePointer());
