@@ -698,108 +698,6 @@ void JITExecutionUnit::AllocationRecord::dump(Log *log) {
 }
 
 //===----------------------------------------------------------------------===//
-// Logging Utils
-//===----------------------------------------------------------------------===//
-
-Status JITExecutionUnit::disassembleFunction(Stream &stream,
-                                             lldb::ProcessSP &process) {
-  Log *log = GetLog(LLDBLog::Expressions);
-  ExecutionContext exeCtx(process);
-
-  lldb::addr_t funcLocalAddr = LLDB_INVALID_ADDRESS;
-  lldb::addr_t funcRemoteAddr = LLDB_INVALID_ADDRESS;
-  for (JittedFunction &function : impl->jittedFunctions) {
-    if (function.name == impl->name) {
-      funcLocalAddr = function.localAddr;
-      funcRemoteAddr = function.remoteAddr;
-      break;
-    }
-  }
-
-  if (funcLocalAddr == LLDB_INVALID_ADDRESS) {
-    Status ret;
-    ret.SetErrorStringWithFormat("Couldn't find function %s for disassembly",
-                                 impl->name.AsCString());
-    return ret;
-  }
-
-  LLDB_LOGF(log,
-            "Found function, has local address 0x%" PRIx64
-            " and remote address 0x%" PRIx64,
-            (uint64_t)funcLocalAddr, (uint64_t)funcRemoteAddr);
-
-  AddrRange funcRange = getRemoteRangeForLocal(funcLocalAddr);
-  if (funcRange.first == 0 && funcRange.second == 0) {
-    Status ret;
-    ret.SetErrorStringWithFormat("Couldn't find code range for function %s",
-                                 impl->name.AsCString());
-    return ret;
-  }
-
-  LLDB_LOGF(log, "Function's code range is [0x%" PRIx64 "+0x%" PRIx64 "]",
-            funcRange.first, (unsigned long long)funcRange.second);
-
-  Target *target = exeCtx.GetTargetPtr();
-  if (!target) {
-    Status ret;
-    ret.SetErrorToGenericError();
-    ret.SetErrorString("Couldn't find the target");
-    return ret;
-  }
-  lldb::WritableDataBufferSP buffer(new DataBufferHeap(funcRange.second, 0));
-
-  Status err;
-  Process *processPtr = exeCtx.GetProcessPtr();
-  processPtr->ReadMemory(funcRemoteAddr, buffer->GetBytes(),
-                         buffer->GetByteSize(), err);
-
-  if (!err.Success()) {
-    Status ret;
-    ret.SetErrorStringWithFormat("Couldn't read from process: %s",
-                                 err.AsCString("unknown error"));
-    return ret;
-  }
-
-  ArchSpec arch(target->GetArchitecture());
-
-  const char *pluginName = nullptr;
-  const char *flavorString = nullptr;
-  lldb::DisassemblerSP disassembler =
-      Disassembler::FindPlugin(arch, flavorString, pluginName);
-
-  if (!disassembler) {
-    Status ret;
-    ret.SetErrorStringWithFormat(
-        "Unable to find disassembler plug-in for %s architecture.",
-        arch.GetArchitectureName());
-    return ret;
-  }
-
-  if (!process) {
-    Status ret;
-    ret.SetErrorString("Couldn't find the process");
-    return ret;
-  }
-  DataExtractor extractor(buffer, process->GetByteOrder(),
-                          target->GetArchitecture().GetAddressByteSize());
-
-  if (log) {
-    LLDB_LOGF(log, "Function data has contents:");
-    extractor.PutToLog(log, 0, extractor.GetByteSize(), funcRemoteAddr, 16,
-                       DataExtractor::TypeUInt8);
-  }
-
-  disassembler->DecodeInstructions(Address(funcRemoteAddr), extractor, 0,
-                                   UINT32_MAX, false, false);
-
-  InstructionList &instructionList = disassembler->GetInstructionList();
-  instructionList.Dump(&stream, true, true, /*show_control_flow_kind=*/true,
-                       &exeCtx);
-
-  return Status();
-}
-
-//===----------------------------------------------------------------------===//
 // Compilation
 //===----------------------------------------------------------------------===//
 
@@ -1021,16 +919,6 @@ Status JITExecutionUnit::getRunnableInfo(lldb::addr_t &funcAddr,
 
   if (log) {
     LLDB_LOGF(log, "Code can be run in the target.");
-
-    StreamString disassemblyStream;
-    Status err = disassembleFunction(disassemblyStream, process);
-    if (!err.Success()) {
-      LLDB_LOGF(log, "Couldn't disassemble function : %s",
-                err.AsCString("unknown error"));
-    } else {
-      LLDB_LOGF(log, "Function disassembly:\n%s", disassemblyStream.GetData());
-    }
-
     LLDB_LOGF(log, "Sections: ");
     for (AllocationRecord &record : impl->records) {
       record.dump(log);
