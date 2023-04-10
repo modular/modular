@@ -214,34 +214,24 @@ struct Pool2d[
             An instance of the pooling operator with the input and output buffers
             registered.
         """
-        var pool2d: Pool2d[
-            static_output_shape,
-            static_input_shape,
-            type,
-            static_data_layout,
-            init_fn,
-            update_fn,
-            reduce_fn,
-        ]
         # Register input/output buffers and parameters.
-        pool2d.output = output
-        pool2d.input = input
-        pool2d.pad_h = pad_h
-        pool2d.pad_w = pad_w
-        pool2d.filter_shape = filter_shape
-        pool2d.stride = stride
-        pool2d.dilation = dilation
-        pool2d.num_tasks = num_tasks
-
-        # Derive layout agnostic shape information.
-        pool2d.output_shape = ImageShape.__init__[
-            static_output_shape, type, static_data_layout
-        ](output)
-        pool2d.input_shape = ImageShape.__init__[
-            static_input_shape, type, static_data_layout
-        ](input)
-
-        return pool2d
+        return Self {
+            output: output,
+            input: input,
+            pad_h: pad_h,
+            pad_w: pad_w,
+            filter_shape: filter_shape,
+            stride: stride,
+            dilation: dilation,
+            num_tasks: num_tasks,
+            # Derive layout agnostic shape information.
+            output_shape: ImageShape.__init__[
+                static_output_shape, type, static_data_layout
+            ](output),
+            input_shape: ImageShape.__init__[
+                static_input_shape, type, static_data_layout
+            ](input),
+        }
 
     fn _compute_point(self, idx: Int) -> SIMD[1, type]:
         """Implementation of the inner loop computation of a pooling operator
