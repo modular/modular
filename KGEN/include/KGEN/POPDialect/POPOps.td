@@ -1188,18 +1188,18 @@ def POP_PackGetOp : POPOp<"pack.get", [Pure]> {
       %arg1: Ts,
     ) {
       // Get the first element, of type `i32`.
-      %0 = pop.pack.get %arg0[0] : !pop.pack<[i32, T]>
+      %0 = pop.pack.get %arg0[0] : <[i32, T]>
       // Get the second element, of type `!kgen.paramref<T>`.
-      %1 = pop.pack.get %arg0[1] : !pop.pack<[i32, T]>
+      %1 = pop.pack.get %arg0[1] : <[i32, T]>
 
       // Get the element at an offset `I + 1`. Because the type of the element
       // at this index cannot be inferred, it must be provided explicitly (here
       // as `!kgen.paramref<T>`).
-      %2 = pop.pack.get %arg0[add(I, 1)] : !pop.pack<[i32, T]> -> !kgen.paramref<T>
+      %2 = pop.pack.get %arg0[add(I, 1)] : <[i32, T]> -> !kgen.paramref<T>
 
       // Get the element at index 3. Again, becuase its type cannot be inferred,
       // it must be provided explicitly (here as `i8`).
-      %3 = pop.pack.get %arg1[3] : !pop.pack<Ts> -> i8
+      %3 = pop.pack.get %arg1[3] : <Ts> -> i8
 
       kgen.return
     }
