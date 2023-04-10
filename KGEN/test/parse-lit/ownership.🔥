@@ -33,7 +33,7 @@ struct RegExample:
   fn __del___(owned self):
     pass
 
-# CHECK: lit.func @"destructors
+# CHECK-LABEL: lit.func @"destructors
 # CHECK-SAME: (%arg0: !pop.pointer<@"$ownership"::@MemExample> owned_in_mem)
 fn destructors(owned arg0: MemExample):
   # CHECK-NEXT: %mem1 = lit.varlet.decl "mem1", var = true
@@ -60,8 +60,67 @@ fn destructors(owned arg0: MemExample):
   # CHECK-NEXT: kgen.call {{.*}}noop{{.*}}(%mem2)
   # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}(%mem2)
 
+# CHECK-LABEL: lit.func @"if_examples
+fn if_examples(cond: __mlir_type.i1):
+  # CHECK: %a = lit.varlet.decl
+  var a: MemExample
 
-# CHECK: lit.func @"indirect_call
+  # CHECK-NEXT: %b = lit.varlet.decl
+  # CHECK-NEXT: kgen.call @{{.*}}__init__{{.*}}(%b)
+  # CHECK-NEXT: kgen.call @{{.*}}__del__{{.*}}(%b)
+  var b = MemExample()
+
+  # CHECK: hlcf.if %cond {
+  if cond:
+    # CHECK-NEXT: kgen.call @{{.*}}__init__{{.*}}(%a)
+    # CHECK-NEXT: kgen.call @{{.*}}__del__{{.*}}(%a)
+    a = MemExample()
+  # CHECK-NEXT: hlcf.yield
+  # CHECK-NEXT: } else {
+  else:
+    # CHECK-NEXT: kgen.call @{{.*}}__init__{{.*}}(%b)
+    # CHECK-NEXT: kgen.call @{{.*}}__del__{{.*}}(%b)
+    b = MemExample()
+  # CHECK-NEXT:   hlcf.yield
+  # CHECK-NEXT: }
+
+  # CHECK-NEXT: %c = lit.varlet.decl
+  # CHECK-NEXT: kgen.call @{{.*}}__init__{{.*}}(%c)
+  var c = MemExample()
+  # CHECK: hlcf.if %cond {
+  if cond:
+    # CHECK-NEXT: kgen.call @{{.*}}__del__{{.*}}(%c)
+    # CHECK-NEXT: kgen.call @{{.*}}__init__{{.*}}(%c)
+    c = MemExample()
+  # CHECK-NEXT:   hlcf.yield
+  # CHECK-NEXT: } else {
+  else:
+    pass
+  # CHECK-NEXT:   hlcf.yield
+  # CHECK-NEXT: }
+  # CHECK-NEXT: kgen.call @{{.*}}noop{{.*}}(%c)
+  c.noop()
+  # CHECK-NEXT: kgen.call @{{.*}}__del__{{.*}}(%c)
+
+  # CHECK-NEXT:  %d = lit.varlet.decl "d"
+  # CHECK-NEXT: kgen.call @{{.*}}__init__{{.*}}(%d)
+  var d = MemExample()
+
+  # CHECK-NEXT: [[ONE:%[0-9]+]] = kgen.param.constant: i1 = <1>
+  # CHECK: hlcf.if [[ONE]] {
+  if True:
+    # CHECK-NEXT: kgen.call @{{.*}}noop{{.*}}(%d)
+    d.noop()
+  # CHECK-NEXT:   hlcf.yield
+  # CHECK-NEXT: } else {
+  # CHECK-NEXT:   kgen.unreachable
+  # CHECK-NEXT: }
+
+  # CHECK-NEXT: kgen.call @{{.*}}noop{{.*}}(%d)
+  d.noop()
+  # CHECK-NEXT: kgen.call @{{.*}}__del__{{.*}}(%d)
+
+# CHECK-LABEL: lit.func @"indirect_call
 fn indirect_call[
         detail_fn: __mlir_type[
             `!kgen.signature<(!pop.pointer<`,
@@ -77,8 +136,6 @@ fn indirect_call[
        # CHECK-NEXT: kgen.call @{{.*}}@"__del___{{.*}}(%mem)
        # CHECK-NEXT: %3 = kgen.param.constant
        # CHECK-NEXT: kgen.return %3
-
-
 
 @raises
 fn somethingThatRaises(): pass
