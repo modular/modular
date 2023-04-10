@@ -28,7 +28,7 @@ from IO import print
 
 fn _fill[
     type: DType
-](dst: DTypePointer[type], value: SIMD[1, type], count: Int):
+](dst: DTypePointer[type], value: SIMD[type, 1], count: Int):
     _ = Buffer[Dim(), type](dst.address, count).fill(value)
 
 
@@ -41,7 +41,7 @@ fn pad[
     output: NDBuffer[rank, output_shape, type],
     input: NDBuffer[rank, input_shape, type],
     paddings: DTypePointer[DType.index],
-    constant: SIMD[1, type],
+    constant: SIMD[type, 1],
 ):
     """
     Fill `output` with values from `input`, and edges padded with `constant`
@@ -94,7 +94,7 @@ fn _pad_impl[
     output: NDBuffer[rank, output_shape, type],
     input: DTypePointer[type],
     paddings: DTypePointer[DType.index],
-    constant: SIMD[1, type],
+    constant: SIMD[type, 1],
     output_strides: DTypePointer[DType.index],
     input_strides: DTypePointer[DType.index],
     output_offset: Int,

@@ -40,18 +40,18 @@ fn gather_reduce[
         DType,
         `>(`,
         SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
         ` borrow,`,
         SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
         ` borrow) ->`,
         SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
         `>`,
     ],
@@ -63,7 +63,7 @@ fn gather_reduce[
         indices_shape,
         DType.si32,
     ],
-    reduce_init: SIMD[1, type],
+    reduce_init: SIMD[type, 1],
     out_chain: OutputChainPtr,
 ):
     """Computes output[i, j, k] = input[indices[i, j], k] and simultaneously
@@ -139,7 +139,7 @@ fn gather_reduce[
 
             @always_inline
             fn _accum_in_place[simd_width: Int](k: Int):
-                var accum = SIMD[simd_width, type](reduce_init)
+                var accum = SIMD[type, simd_width](reduce_init)
                 for j in range(indices.dim[1]()):
                     """Computes output[i,k] = reduction over j of (input[indices[i,j],k])
                     for j in range [0,indices.dim[1])"""

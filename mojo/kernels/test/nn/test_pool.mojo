@@ -39,7 +39,7 @@ fn fill_buffer[
         s *= buf.dim(i)
 
     for j in range(s):
-        buf.flatten()[j] = SIMD[1, DType.f32.value](j)
+        buf.flatten()[j] = SIMD[DType.f32.value, 1](j)
 
 
 fn print_buffer[

@@ -95,18 +95,18 @@ fn test_slice[
     )
 
     for dim in range(outer_rank):
-        let start_val = SIMD[1, DType.index](starts[dim])
+        let start_val = SIMD[DType.index, 1](starts[dim])
         start_tensor.data.offset(dim).store(start_val)
 
-        let stop_val = SIMD[1, DType.index](stops[dim])
+        let stop_val = SIMD[DType.index, 1](stops[dim])
         end_tensor.data.offset(dim).store(stop_val)
 
-        let step_val = SIMD[1, DType.index](steps[dim])
+        let step_val = SIMD[DType.index, 1](steps[dim])
         step_tensor.data.offset(dim).store(step_val)
 
     var x: F32 = 0.0
     for i in range(numelems):
-        in_tensor.data.offset(i).store(SIMD[1, DType.f32](x.value))
+        in_tensor.data.offset(i).store(SIMD[DType.f32, 1](x.value))
         x += 1.0
 
     # Perform the slice even if we are testing the copy so we get the target size.

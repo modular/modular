@@ -53,23 +53,23 @@ struct Pool2d[
     static_input_shape: DimList[4],
     type: DType,
     static_data_layout: Image2DLayout,
-    init_fn: __mlir_type[`!kgen.signature<<>() -> `, SIMD[1, type], `>`],
+    init_fn: __mlir_type[`!kgen.signature<<>() -> `, SIMD[type, 1], `>`],
     update_fn: __mlir_type[
         `!kgen.signature<<>(`,
-        SIMD[1, type],
+        SIMD[type, 1],
         ` borrow,`,
-        SIMD[1, type],
+        SIMD[type, 1],
         ` borrow) -> `,
-        SIMD[1, type],
+        SIMD[type, 1],
         `>`,
     ],
     reduce_fn: __mlir_type[
         `!kgen.signature<<>(`,
-        SIMD[1, type],
+        SIMD[type, 1],
         ` borrow,`,
         Int,
         ` borrow) -> `,
-        SIMD[1, type],
+        SIMD[type, 1],
         `>`,
     ],
 ]:
@@ -156,7 +156,7 @@ struct Pool2d[
 
             @always_inline
             fn func_wrapper[simd_width: Int](idx: Int):
-                var values = SIMD[simd_width, type](0)
+                var values = SIMD[type, simd_width](0)
 
                 for i in range(simd_width):
                     # Compute the result value at this specific output position.
@@ -233,7 +233,7 @@ struct Pool2d[
             ](input),
         }
 
-    fn _compute_point(self, idx: Int) -> SIMD[1, type]:
+    fn _compute_point(self, idx: Int) -> SIMD[type, 1]:
         """Implementation of the inner loop computation of a pooling operator
         producing a single scalar value at the given output tensor index.
 
@@ -244,7 +244,7 @@ struct Pool2d[
         let output_idx = self.output.get_tuple_index(idx)
 
         # Initialize the result of this point.
-        var value: SIMD[1, type] = init_fn()
+        var value: SIMD[type, 1] = init_fn()
 
         # Extract the H and W size of the input image.
         let image_bound = StaticIntTuple[2](
@@ -294,34 +294,34 @@ struct Pool2d[
 
 
 @always_inline
-fn max_pool_init_fn[type: DType]() -> SIMD[1, type]:
+fn max_pool_init_fn[type: DType]() -> SIMD[type, 1]:
     return neginf[type]()
 
 
 @always_inline
 fn max_pool_update_fn[
     type: DType
-](a: SIMD[1, type], b: SIMD[1, type]) -> SIMD[1, type]:
+](a: SIMD[type, 1], b: SIMD[type, 1]) -> SIMD[type, 1]:
     return max(a, b)
 
 
 @always_inline
-fn max_pool_reduce_fn[type: DType](a: SIMD[1, type], s: Int) -> SIMD[1, type]:
+fn max_pool_reduce_fn[type: DType](a: SIMD[type, 1], s: Int) -> SIMD[type, 1]:
     return a
 
 
 @always_inline
-fn avg_pool_init_fn[type: DType]() -> SIMD[1, type]:
+fn avg_pool_init_fn[type: DType]() -> SIMD[type, 1]:
     return 0
 
 
 @always_inline
 fn avg_pool_update_fn[
     type: DType
-](a: SIMD[1, type], b: SIMD[1, type]) -> SIMD[1, type]:
+](a: SIMD[type, 1], b: SIMD[type, 1]) -> SIMD[type, 1]:
     return add(a, b)
 
 
 @always_inline
-fn avg_pool_reduce_fn[type: DType](a: SIMD[1, type], s: Int) -> SIMD[1, type]:
+fn avg_pool_reduce_fn[type: DType](a: SIMD[type, 1], s: Int) -> SIMD[type, 1]:
     return a / s

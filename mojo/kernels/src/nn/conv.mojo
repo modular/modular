@@ -333,7 +333,7 @@ struct Naive2dConvolution[
             value of the output tensor to produce.
         """
         # Initialize the result of this point.
-        var value: SIMD[1, type] = 0
+        var value: SIMD[type, 1] = 0
 
         # Extract the H and W size of the input image.
         let image_bound = StaticIntTuple[2](
@@ -616,10 +616,10 @@ struct PackIm2ColNCHW[
             let global_in_image_idx = global_in_image_offset + Index(0, col_idx)
 
             # Load a vector of image data or fill zero.
-            var image_data: SIMD[simd_size, type]
+            var image_data: SIMD[type, simd_size]
 
             if fill_zero:
-                image_data = SIMD[simd_size, type](0)
+                image_data = SIMD[type, simd_size](0)
             else:
                 image_data = self.origin_image.simd_load[simd_size](
                     # Indexing for nchw layout.
@@ -641,7 +641,7 @@ struct PackIm2ColNCHW[
     # Write a simd vector into packed layout buffer.
     @always_inline
     fn _pack_vector(
-        self, nk_idx: StaticIntTuple[2], vec_data: SIMD[simd_size, type]
+        self, nk_idx: StaticIntTuple[2], vec_data: SIMD[type, simd_size]
     ):
         """Utility to write a simd vector into the corresponding position in
         packed layout.
@@ -688,7 +688,7 @@ struct PackIm2ColNCHW[
         ].stack_allocation()
 
         # Initialize data with zero
-        vector.simd_store[simd_size](0, SIMD[simd_size, type](0))
+        vector.simd_store[simd_size](0, SIMD[type, simd_size](0))
 
         # calculate h and w output indices.
         var h_o_idx = global_out_image_offset[0]
@@ -702,7 +702,7 @@ struct PackIm2ColNCHW[
             let o_image_idx = Index(h_o_idx, w_o_idx)
             let i_image_idx = self._output_to_input(o_image_idx, rs_idx)
 
-            var element = SIMD[1, type](0)
+            var element = SIMD[type, 1](0)
             if self._is_valid_input_imageIdx(i_image_idx):
                 # within valid bound, load data.
                 element = self.origin_image[
@@ -1598,7 +1598,7 @@ struct ConvNHWCInnerLoopFilterPacked[
         fn outer_body[idx0: Int, idx1: Int]():
             c_local.simd_store[simd_size](
                 Index(idx0, idx1 * simd_size),
-                SIMD[simd_size, accum_type](0),
+                SIMD[accum_type, simd_size](0),
             )
 
         unroll2[a_row_size, pack_inner_size // simd_size, outer_body]()
@@ -1643,7 +1643,7 @@ struct ConvNHWCInnerLoopFilterPacked[
             let local_idx = Index(idx0, col_idx)
 
             # Load data from original matrix C.
-            var c_data: SIMD[simd_size, accum_type] = 0
+            var c_data: SIMD[accum_type, simd_size] = 0
             if skip_boundary_check or (
                 Index(idx0, col_idx + simd_size) <= (self.c_bound - tile_idx)
             ):
@@ -1660,7 +1660,7 @@ struct ConvNHWCInnerLoopFilterPacked[
                 )
             else:
                 # Fill zero if row out of bound
-                c_data = SIMD[simd_size, accum_type](0)
+                c_data = SIMD[accum_type, simd_size](0)
 
             # Store data to local buffer.
             c_local.simd_store[simd_size](local_idx, c_data)
@@ -1728,7 +1728,7 @@ struct ConvNHWCInnerLoopFilterPacked[
     @always_inline
     fn _load_a(
         self, index_m_k: StaticIntTuple[2], row_idx: Int
-    ) -> SIMD[1, value_type]:
+    ) -> SIMD[value_type, 1]:
         """Utility to load one value of Im2col transformed matrix from the
         pre-transformed image.
             Args:
@@ -1740,7 +1740,7 @@ struct ConvNHWCInnerLoopFilterPacked[
         if same_channel_index:
             let linear_offset: Int = Int(self.offset_table[row_idx].value)
             if linear_offset == -1:
-                return SIMD[1, value_type](0)
+                return SIMD[value_type, 1](0)
             else:
                 self.offset_table[row_idx] = linear_offset + 1
                 return self.input_base_pointer.load(linear_offset)
@@ -1769,7 +1769,7 @@ struct ConvNHWCInnerLoopFilterPacked[
                     )
                 )
 
-        return SIMD[1, value_type](0)
+        return SIMD[value_type, 1](0)
 
     fn _accumulate(
         self,
@@ -1811,7 +1811,7 @@ struct ConvNHWCInnerLoopFilterPacked[
             let a_val_scalar = self._load_a(
                 Index(global_m, global_k), fill_a_idx
             )
-            let a_fill_val = SIMD[simd_size, value_type](a_val_scalar)
+            let a_fill_val = SIMD[value_type, simd_size](a_val_scalar)
             local_a.simd_store[simd_size](fill_a_idx * simd_size, a_fill_val)
 
         unroll[a_row_size, body]()

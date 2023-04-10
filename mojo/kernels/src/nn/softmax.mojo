@@ -28,9 +28,9 @@ fn reduce_add_simd[
     step_simd_width: Int,
     type: DType,
 ](
-    scalar&: SIMD[1, type],
-    vector&: SIMD[simd_width, type],
-    val: SIMD[step_simd_width, type],
+    scalar&: SIMD[type, 1],
+    vector&: SIMD[type, simd_width],
+    val: SIMD[type, step_simd_width],
 ):
     """This functions adds val to either the scalar value or the vector value
     depending on the step_simd_width. This is useful when the simd_width varies
@@ -44,7 +44,7 @@ fn reduce_add_simd[
     else:
         # When the step_simd_Width is the same as the simd_width, then we add to
         # the vector value.
-        vector += rebind[SIMD[simd_width, type]](val)
+        vector += rebind[SIMD[type, simd_width]](val)
 
 
 # ===----------------------------------------------------------------------===#
@@ -70,8 +70,8 @@ fn _softmax_2_pass_step1[
     #   end for
     #   return runningMax, runningSum
 
-    var running_max_vec = SIMD[simd_width, type].splat(neginf[type]())
-    var running_sum_vec = SIMD[simd_width, type].splat(0)
+    var running_max_vec = SIMD[type, simd_width].splat(neginf[type]())
+    var running_sum_vec = SIMD[type, simd_width].splat(0)
 
     # TODO: Because vectorize cannot currently capture values from outside
     # scope, we therefore replicate the logic of Functional.vectorize here.
@@ -82,7 +82,7 @@ fn _softmax_2_pass_step1[
 
     for i in range(0, vector_end, simd_width):
         let simd_elem = input.simd_load[simd_width](i)
-        let new_max_vec = SIMD[simd_width, type].splat(
+        let new_max_vec = SIMD[type, simd_width].splat(
             running_max_vec.max(simd_elem).reduce_max()
         )
         running_sum_vec = running_sum_vec * exp[simd_width, type](
@@ -114,8 +114,8 @@ fn _softmax_2_pass_step2[
 ](
     output: Buffer[buffer_size, type],
     input: Buffer[buffer_size, type],
-    running_max: SIMD[1, type],
-    running_sum: SIMD[1, type],
+    running_max: SIMD[type, 1],
+    running_sum: SIMD[type, 1],
 ):
     # Step 2:
     #   for i = 0 to N do
@@ -124,8 +124,8 @@ fn _softmax_2_pass_step2[
 
     @always_inline
     fn _step_2[simd_width: Int](idx: Int):
-        let running_max_simd = SIMD[simd_width, type].splat(running_max)
-        let running_sum_simd = SIMD[simd_width, type].splat(running_sum)
+        let running_max_simd = SIMD[type, simd_width].splat(running_max)
+        let running_sum_simd = SIMD[type, simd_width].splat(running_sum)
         let input_val = input.simd_load[simd_width](idx)
         output.simd_store[simd_width](
             idx,
@@ -202,13 +202,13 @@ fn _softmax_3_pass_step_2[
         DType,
         `>(`,
         SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
         ` borrow) -> `,
         SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
         `>`,
     ],
@@ -219,21 +219,21 @@ fn _softmax_3_pass_step_2[
         DType,
         `>(`,
         SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
         ` borrow) -> `,
         SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
         `>`,
     ],
 ](
     output: Buffer[buffer_size, type],
     input: Buffer[buffer_size, type],
-    max_val: SIMD[1, type],
-) -> SIMD[1, type]:
+    max_val: SIMD[type, 1],
+) -> SIMD[type, 1]:
     # STEP 2: compute for each batch
     # for i = 0 to N do
     #   Output[i] = pre_update_func(Input[i] - max_val)
@@ -241,13 +241,13 @@ fn _softmax_3_pass_step_2[
     # end for
     alias outer_simd_width = simd_width
 
-    var accum_scalar: SIMD[1, type] = 0
-    var accum_simd: SIMD[outer_simd_width, type] = 0
+    var accum_scalar: SIMD[type, 1] = 0
+    var accum_simd: SIMD[type, outer_simd_width] = 0
 
     @always_inline
     fn step_2[simd_width: Int](idx: Int):
         var elem = input.simd_load[simd_width](idx) - SIMD[
-            simd_width, type
+            type, simd_width
         ].splat(max_val)
 
         elem = pre_update_func[simd_width, type](elem)
@@ -274,13 +274,13 @@ fn _softmax_3_pass_step_3[
         DType,
         `>(`,
         SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
         ` borrow) -> `,
         SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
         `>`,
     ],
@@ -291,22 +291,22 @@ fn _softmax_3_pass_step_3[
         DType,
         `>(`,
         SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
         ` borrow, `,
         SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
         ` borrow) -> `,
         SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
         `>`,
     ],
-](output: Buffer[buffer_size, type], accum: SIMD[1, type],):
+](output: Buffer[buffer_size, type], accum: SIMD[type, 1],):
     # STEP 3: normalize each batch
     # accum = accum_proc_func(accum)
     # for i = 0 to N do
@@ -316,7 +316,7 @@ fn _softmax_3_pass_step_3[
 
     @always_inline
     fn step_3[simd_width: Int](idx: Int):
-        let accum_simd = SIMD[simd_width, type].splat(accum_proc)
+        let accum_simd = SIMD[type, simd_width].splat(accum_proc)
         var elem = output.simd_load[simd_width](idx)
         elem = accum_apply_func[simd_width, type](elem, accum_simd)
         output.simd_store[simd_width](idx, elem)
@@ -335,13 +335,13 @@ fn _softmax_3_pass_base[
         DType,
         `>(`,
         SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
         ` borrow) -> `,
         SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
         `>`,
     ],
@@ -352,13 +352,13 @@ fn _softmax_3_pass_base[
         DType,
         `>(`,
         SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
         ` borrow) -> `,
         SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
         `>`,
     ],
@@ -369,13 +369,13 @@ fn _softmax_3_pass_base[
         DType,
         `>(`,
         SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
         ` borrow) -> `,
         SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
         `>`,
     ],
@@ -386,18 +386,18 @@ fn _softmax_3_pass_base[
         DType,
         `>(`,
         SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
         ` borrow, `,
         SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
         ` borrow) -> `,
         SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
         `>`,
     ],
