@@ -441,44 +441,54 @@ static void printPackCreateType(OpAsmPrinter &p, Operation *op, Type resultType,
 // PackGetOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult
-PackGetOp::inferReturnTypes(MLIRContext *context, std::optional<Location> loc,
-                            ValueRange operands, DictionaryAttr attrs,
-                            RegionRange regions, SmallVectorImpl<Type> &types) {
-  auto emitError = [&](const Twine &msg) -> LogicalResult {
-    return mlir::emitOptionalError(loc, msg);
-  };
-  if (operands.size() != 1)
-    return emitError("expected 1 operand");
+/// Given a concrete pack type, such as `<[i32, f32]>`, and an index attribute,
+/// such as `1 : index`, we can infer the return type (`f32`). However, if the
+/// pack type is not concrete, such as `<Ts>`, then we need to parse the return
+/// type: "`->` type($result)".
+static ParseResult
+parsePackGetResultType(AsmParser &p, OpAsmParser::UnresolvedOperand packOperand,
+                       Type type, IntegerAttr index, Type &resultType) {
+  // Use the pack operand's location for errors. Otherwise, any errors emitted
+  // appear on the line following the `pop.pack.get` op, since we're attempting
+  // to parse a trailing `-> type($result)` that isn't there.
+  llvm::SMLoc loc = packOperand.location;
 
-  auto type = dyn_cast<PackType>(operands.front().getType());
-  if (!type)
-    return emitError("expected a pack operand");
+  auto packType = dyn_cast<PackType>(type);
+  if (!packType)
+    return p.emitError(loc, "expected a pack type");
+  if (index.getInt() < 0)
+    return p.emitError(loc) << "pack element index must not be negative";
 
-  // If we have a pack backed by an attribute, then we can determine the return
-  // type based on the provided index attribute.
-  auto variadic = type.getVariadicAttr();
-  if (!variadic) {
-    // Otherwise, all we know is that the return type is a `!kgen.mlirtype`.
-    types.push_back(MLIRTypeType::get(type.getContext()));
+  auto variadic = packType.getVariadicAttr();
+  if (variadic) {
+    if (index.getInt() >= static_cast<int64_t>(variadic.getValues().size()))
+      return p.emitError(loc) << "pack element index out of bounds";
+
+    resultType = ParamRefType::get(variadic.getValues()[index.getInt()]);
     return success();
   }
 
-  mlir::OperationName name(getOperationName(), attrs.getContext());
-  auto indexAttr =
-      dyn_cast_if_present<IntegerAttr>(attrs.get(getIndexAttrName(name)));
-  if (!indexAttr)
-    return emitError("expected an integer index attribute");
+  if (p.parseArrow())
+    return p.emitError(loc) << "could not infer return type and none provided";
+  return p.parseType(resultType);
+}
 
-  size_t index = indexAttr.getInt();
-  if (index >= variadic.getValues().size())
-    return emitError("pack element index out of bounds");
-
-  types.push_back(ParamRefType::get(variadic.getValues()[index]));
-  return success();
+/// Only print "`->` type($result)" in cases where the return type cannot be
+/// inferred (see `parsePackGetResultType` above).
+static void printPackGetResultType(OpAsmPrinter &p, Operation *op,
+                                   TypedValue<PackType> pack, PackType type,
+                                   IntegerAttr index, Type resultType) {
+  if (!pack.getType().getVariadicAttr()) {
+    p << " -> ";
+    p.printType(resultType);
+  }
 }
 
 LogicalResult PackGetOp::verify() {
+  size_t index = getIndexAttr().getInt();
+  if (index < 0)
+    return emitOpError("index ") << index << " must not be negative";
+
   // If we have a pack backed by an attribute, check that the provided index
   // attribute is within bounds.
   auto variadic = getPack().getType().getVariadicAttr();
@@ -486,7 +496,6 @@ LogicalResult PackGetOp::verify() {
     return success();
 
   ArrayRef<TypedAttr> values = variadic.getValues();
-  size_t index = getIndexAttr().getInt();
   if (index >= values.size())
     return emitOpError("index ")
            << index << " is out of bounds (>=" << values.size() << ")";
