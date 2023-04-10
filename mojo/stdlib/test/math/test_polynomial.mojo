@@ -22,7 +22,7 @@ fn test_polynomial_evaluate_degree3():
     print("== test_polynomial_evaluate_degree3")
 
     alias simd_width = 1
-    alias coeefs = VariadicList[SIMD[simd_width, DType.f64]](
+    alias coeefs = VariadicList[SIMD[DType.f64, simd_width]](
         1000.0,
         1.0,
         1.0,
@@ -88,7 +88,7 @@ fn test_polynomial_evaluate_degree4():
     print("== test_polynomial_evaluate_degree4")
 
     alias simd_width = 1
-    alias coeefs = VariadicList[SIMD[simd_width, DType.f64]](
+    alias coeefs = VariadicList[SIMD[DType.f64, simd_width]](
         1000.0,
         99.0,
         -43.0,
@@ -157,7 +157,7 @@ fn test_polynomial_evaluate_degree10():
     print("== test_polynomial_evaluate_degree10")
 
     alias simd_width = 1
-    alias coeefs = VariadicList[SIMD[simd_width, DType.f64]](
+    alias coeefs = VariadicList[SIMD[DType.f64, simd_width]](
         20.0,
         9.0,
         1.0,

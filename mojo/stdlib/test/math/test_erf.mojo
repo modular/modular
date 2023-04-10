@@ -17,23 +17,23 @@ fn test_erf():
     print("== test_erf")
 
     # CHECK: 0.000000
-    print(erf[1, DType.f32](SIMD[1, DType.f32](0)))
+    print(erf[1, DType.f32](SIMD[DType.f32, 1](0)))
 
     # CHECK: 0.995322
     # CHECK: 0.995322
-    print(erf[2, DType.f32](SIMD[2, DType.f32](2)))
+    print(erf[2, DType.f32](SIMD[DType.f32, 2](2)))
 
     # CHECK: 0.112463
-    print(erf[1, DType.f32](SIMD[1, DType.f32](0.1)))
+    print(erf[1, DType.f32](SIMD[DType.f32, 1](0.1)))
 
     # CHECK: -0.112463
-    print(erf[1, DType.f32](SIMD[1, DType.f32](-0.1)))
+    print(erf[1, DType.f32](SIMD[DType.f32, 1](-0.1)))
 
     # CHECK: -0.842701
-    print(erf[1, DType.f32](SIMD[1, DType.f32](-1)))
+    print(erf[1, DType.f32](SIMD[DType.f32, 1](-1)))
 
     # CHECK: -0.995322
-    print(erf[1, DType.f32](SIMD[1, DType.f32](-2)))
+    print(erf[1, DType.f32](SIMD[DType.f32, 1](-2)))
 
 
 fn main():
