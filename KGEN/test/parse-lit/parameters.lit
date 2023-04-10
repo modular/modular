@@ -113,9 +113,9 @@ fn testTestParamStruct(a: TestParamStruct[(4).__as_mlir_index()]):
   a.method[(7).__as_mlir_index()](arg11)
 
 # CHECK-LABEL: lit.func @"testSIMD(
-fn testSIMD(a: SIMD[1, DType.f64],
-            b: SIMD[1, DType.si32],
-            ref&: SIMD[1, DType.si32]):
+fn testSIMD(a: SIMD[DType.f64, 1],
+            b: SIMD[DType.si32, 1],
+            ref&: SIMD[DType.si32, 1]):
   # CHECK: %field1 = lit.varlet.decl "field1", var = true : <scalar<f64>>
   var field1 = a.value
   # CHECK: %field2 = lit.varlet.decl "field2", var = true : <scalar<si32>>
@@ -124,9 +124,9 @@ fn testSIMD(a: SIMD[1, DType.f64],
   # Test calls to methods and operators on parameterized type.
   _ = a.fma(a, a)
   _ = b.fma(b, b)
-  # CHECK: kgen.call @"$SIMD"::@SIMD::@"__add__{{.*}}<{{.*}} 1{{.*}}, :{{.*}} dtype = f64{{.*}}>(%a, %a)
+  # CHECK: kgen.call @"$SIMD"::@SIMD::@"__add__{{.*}}<:{{.*}} dtype = f64{{.*}}, {{.*}} = 1{{.*}}>(%a, %a)
   var x = a+a
-  # CHECK: kgen.call @"$SIMD"::@SIMD::@"__add__{{.*}}<{{.*}} 1{{.*}}, :{{.*}} dtype = si32{{.*}}>(%b, %b)
+  # CHECK: kgen.call @"$SIMD"::@SIMD::@"__add__{{.*}}<:{{.*}} dtype = si32{{.*}}, {{.*}} = 1{{.*}}>(%b, %b)
   var y = b+b
 
 # Show that forward references of parameter names can be correctly resolved.
@@ -385,7 +385,7 @@ struct A[v: __mlir_type.index]:
 # CHECK-LABEL: lit.func @"testUseOfAliases
 fn testUseOfAliases(a: Bool):
   # This type checks.
-  _ = SIMD[4, DType(boolDtype)].splat(a.value)
+  _ = SIMD[DType(boolDtype), 4].splat(a.value)
   # CHECK: kgen.param.declare y = <44>
   alias y = A[(2).__as_mlir_index()].member
 

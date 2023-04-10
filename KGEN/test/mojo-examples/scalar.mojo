@@ -57,6 +57,6 @@ fn erf_scalar_taylor_f32(x: F32) -> F32:
 # CHECK-LABEL: lit.func @"erf_taylor_vector
 fn erf_taylor_vector[
     size: Int, type: __mlir_type.`!kgen.dtype`
-](x: SIMD[size, type]) -> SIMD[size, type]:
+](x: SIMD[type, size]) -> SIMD[type, size]:
     # CHECK: = kgen.param.constant: f64 = <-0.37612638903183754>
     return x * (x * x).fma(-0.37612638903183752463, 1.1283791670955125739)

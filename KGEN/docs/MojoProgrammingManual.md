@@ -325,14 +325,14 @@ Here is a (cut down) version of the SIMD API in the Mojo standard library:
         var value: … # Some low-level MLIR stuff here
 
         # Create a new SIMD from a number of scalars
-        fn __init__(self&, *elems: SIMD[1, type]):  ...
+        fn __init__(self&, *elems: SIMD[type, 1]):  ...
 
         # Fill a SIMD with a duplicated scalar value.
         @staticmethod
-        fn splat(x: SIMD[1, type]) -> SIMD[size, type]: ...
+        fn splat(x: SIMD[type, 1]) -> SIMD[type, size]: ...
 
         # Cast the elements of the SIMD to a different elt type.
-        fn cast[target: DType](self) -> SIMD[size, target]: ...
+        fn cast[target: DType](self) -> SIMD[target, size]: ...
 
         # Many standard operators are supported.
         fn __add__(self, rhs: Self) -> Self: ...
@@ -341,7 +341,7 @@ Here is a (cut down) version of the SIMD API in the Mojo standard library:
 
 Parameters in Mojo are declared in square brackets using an extended version of the [PEP695 syntax](https://peps.python.org/pep-0695/).  They are named and have types like normal values in a Mojo program, but they are evaluated at compile time instead of runtime by the target program.  The runtime program may use the value of parameters - because the parameters are resolved at compile time before they are needed by the runtime program - but the compile time parameter expressions may not use runtime values.
 
-In the case of the `SIMD` excerpt above, there are three declared parameters: the SIMD struct is parameterized by a ‘`size`’ parameter and a ‘`type`’ parameter.  The ‘`cast`’ method is further parameterized with a ‘`target`’ parameter.  Because SIMD is a parameterized type, the type of a ‘self’ argument carries the parameters - the full type name is “`SIMD[size, type]`”.  While it is always valid to write this out (as shown in the return type of `splat`), this can be verbose: we recommend using the `Self` type (from [PEP673](https://peps.python.org/pep-0673/)) like the `__add__` examples does.
+In the case of the `SIMD` excerpt above, there are three declared parameters: the SIMD struct is parameterized by a ‘`size`’ parameter and a ‘`type`’ parameter.  The ‘`cast`’ method is further parameterized with a ‘`target`’ parameter.  Because SIMD is a parameterized type, the type of a ‘self’ argument carries the parameters - the full type name is “`SIMD[type, size]`”.  While it is always valid to write this out (as shown in the return type of `splat`), this can be verbose: we recommend using the `Self` type (from [PEP673](https://peps.python.org/pep-0673/)) like the `__add__` examples does.
 
 
 ### Using parameterized types and functions
@@ -352,16 +352,16 @@ For this type, the ‘size’ specifies the number of elements in a SIMD vector 
 ```mojo
     fn funWithSIMD():
         # Make a vector of 4 floats.
-        let smallVec = SIMD[4, DType.f32](1.0, 2.0, 3.0, 4.0)
+        let smallVec = SIMD[DType.f32, 4](1.0, 2.0, 3.0, 4.0)
 
         # Make a big vector containing 1.0 in bfloat16 format.
-        let bigVec = SIMD[32, DType.bf16].splat(1.0)
+        let bigVec = SIMD[DType.bf16, 32].splat(1.0)
 
         # Do some math and convert the elements to float32.
         let biggerVec = (bigVec+bigVec).cast[DType.f32]()
 
         # You can write types out explicitly if you want of course.
-        let biggerVec2 : SIMD[32, DType.f32] = biggerVec
+        let biggerVec2 : SIMD[DType.f32, 32] = biggerVec
 ```
 
 
@@ -369,7 +369,7 @@ Note that the “cast” method needs an additional parameter to indicate what t
 
 
 ```mojo
-    fn rsqrt[width: Int, dt: DType](x: SIMD[width, dt]) -> SIMD[width, dt]:
+    fn rsqrt[width: Int, dt: DType](x: SIMD[dt, width]) -> SIMD[dt, width]:
        return 1 / sqrt(x)
 ```
 
@@ -384,10 +384,10 @@ All parameters and parameter expressions are typed using the same type system as
 
 ```
     fn concat[len1: Int, len2: Int, ty: DType](
-       lhs: SIMD[len1, ty], rhs: SIMD[len2, ty]) -> SIMD[len1+len2, ty]:
+       lhs: SIMD[ty, len1], rhs: SIMD[ty, len2]) -> SIMD[len1+len2, ty]:
          ...
 
-    fn use_vectors(a: SIMD[4, DType.f32], b: SIMD[8, DType.f16]):
+    fn use_vectors(a: SIMD[DType.f32, 4], b: SIMD[DType.f16, 8]):
         let x = concat(a, a)  # Length = 8
         let y = concat(b, b)  # Length = 16
 ```
@@ -404,7 +404,7 @@ While simple expressions are useful, sometimes you want to write imperative comp
 ```mojo
     struct SIMD[size: Int, type: DType]:
         ...
-        fn reduce_add(self) -> SIMD[1, type]:
+        fn reduce_add(self) -> SIMD[type, 1]:
             @parameter
             if size == 1:
                 return self[0]
@@ -512,8 +512,8 @@ Type are another common use for alias: because types are just compile time expre
 
 
 ```mojo
-    alias F32 = SIMD[1, DType.f32]
-    alias UI8 = SIMD[1, DType.ui8]
+    alias F32 = SIMD[DType.f32, 1]
+    alias UI8 = SIMD[DType.ui8, 1]
 
     var x : F32   # F32 works like a "typedef"
 ```
