@@ -68,7 +68,7 @@ struct MemoryOnlyPair:
     _ = self.y+arg.x
 
 fn inferred_function_with_memory_result[
-  width: Int](x: SIMD[width, DType.f32.value]) -> MemoryOnlyInt: pass
+  width: Int](x: SIMD[DType.f32.value, width]) -> MemoryOnlyInt: pass
 
 # CHECK-LABEL: lit.func @"memoryOnlyOps
 fn memoryOnlyOps(a&: MemoryOnlyPair) -> MemoryOnlyPair:
@@ -119,7 +119,7 @@ fn memoryOnlyOps(a&: MemoryOnlyPair) -> MemoryOnlyPair:
 
   # CHECK: [[TMP:%.*]] = lit.varlet.decl "_", var = false
   # CHECK-NEXT: kgen.call @{{.*}}inferred_function_with_memory_result{{.*}}([[TMP]]
-  _ = inferred_function_with_memory_result(SIMD[4, DType.f32.value]())
+  _ = inferred_function_with_memory_result(SIMD[DType.f32.value, 4]())
 
   # Memory-only default argument with memory-only result.
   # CHECK-NEXT: [[TMP:%.*]] = lit.varlet.decl "_", var = false
@@ -512,7 +512,7 @@ fn patterns():
   # CHECK: %someSIMD = lit.varlet.decl "someSIMD", var = true
   # CHECK: [[SIMD:%.*]] = pop.load %someSIMD
   # CHECK: {{%.*}} = kgen.call @"$SIMD"::@SIMD::@"__iadd__{{.*}}(%someSIMD, [[SIMD]])
-  var someSIMD : SIMD[4, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`]
+  var someSIMD : SIMD[DType.f64, 4]
   (someSIMD) += someSIMD
 
 # CHECK-LABEL: lit.func @"byval_byref_function($Int::Int,$Int::Int&)"(%a: !kgen.declref<@"$Int"::@Int> borrow, %b: !pop.pointer<@"$Int"::@Int> byref) -> !lit.none
@@ -774,7 +774,7 @@ fn testMemoryOnlyIntArray(arr&: MemoryOnlyIntArray, x: Int, moi: MemoryOnlyInt):
 
 # Check a load from a SIMD field works.
 # CHECK-LABEL: lit.func @"testSIMDGetter
-fn testSIMDGetter[type: DType](owned a: SIMD[2, type]) -> __mlir_type[
+fn testSIMDGetter[type: DType](owned a: SIMD[type, 2]) -> __mlir_type[
     `!pop.scalar<`, type.value, `>`]:
   # CHECK: %a_0 = lit.varlet.decl "a"
   # CHECK: pop.store %a, %a_0
