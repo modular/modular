@@ -57,8 +57,11 @@ void OutputChain::setToError(Error &&error) && {
 }
 
 void OutputChain::complete() {
-  refs.clear();
+  // IMPORTANT: Stop the profiling enry before doing any other work.
+  // Even the innocent looking refs.clear() may trigger frees which can
+  // be surprisingly expensive.
   std::move(profilerEntry).record();
+  refs.clear();
 }
 
 void OutputChain::executeAsTask(void (*resume)(int8_t *), int8_t *hdl,
