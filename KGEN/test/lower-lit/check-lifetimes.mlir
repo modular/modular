@@ -8,7 +8,7 @@ lit.file_module @"$check_lifetimes" {
 
     //   fn __init__(self&: Self):
     //     self.a = 1
-    lit.func @"__init__($check_lifetimes::Struct=&)"(%self: !pop.pointer<@"$check_lifetimes"::@Struct> byref_result) -> !lit.none attributes {isStatic} {
+    lit.func @"__init__($check_lifetimes::Struct=&)"(%self: !pop.pointer<@"$check_lifetimes"::@Struct> init_self) -> !lit.none attributes {isStatic} {
       %0 = lit.struct.gep %self[a] : <index> from <@"$check_lifetimes"::@Struct>
       %idx1 = index.constant 1
       pop.store %idx1, %0 : !pop.pointer<index>

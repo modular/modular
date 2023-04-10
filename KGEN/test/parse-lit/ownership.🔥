@@ -3,11 +3,14 @@
 
 # CHECK-LABEL: lit.struct.decl @MemExample
 struct MemExample:
-  var x : Int
-  fn __init__(self&):
-    self.x = 1
+  fn __init__(self&): pass
   fn noop(self): pass
+
+  # CHECK-LABEL: lit.func @"__del___
+  # CHECK-NEXT:    %0 = kgen.param.constant{{.*}} <#lit.none>
+  # CHECK-NEXT:    kgen.return %0 : !lit.none
   fn __del___(owned self): pass
+
 
 # CHECK-LABEL: lit.struct.decl @RegExample
 # CHECK: attributes {{.*}}destructor = #kgen.symbol.constant<@"$ownership"::@RegExample::@"__del___
@@ -17,9 +20,18 @@ struct RegExample:
     return RegExample{}
   fn __copyinit__(self) -> Self:
     return RegExample{}
+  # CHECK-LABEL: lit.func @"__del___
+  # CHECK-NEXT: %self_0 = lit.varlet.decl "self", var = true
+  # CHECK-NEXT: pop.store %self, %self_0
+
+  # FIXME: infinite recursion is bad.
+  # CHECK-NEXT: %0 = pop.load %self_0 : !pop.pointer<@"$ownership"::@RegExample>
+  # CHECK-NEXT: %1 = kgen.call @"$ownership"::@RegExample::@"__del___($ownership::RegExample)"(%0) : (!kgen.declref<@"$ownership"::@RegExample>) -> !lit.none
+
+  # CHECK-NEXT: %2 = kgen.param.constant{{.*}} <#lit.none>
+  # CHECK-NEXT: kgen.return %2
   fn __del___(owned self):
     pass
-
 
 # CHECK: lit.func @"destructors
 # CHECK-SAME: (%arg0: !pop.pointer<@"$ownership"::@MemExample> owned_in_mem)

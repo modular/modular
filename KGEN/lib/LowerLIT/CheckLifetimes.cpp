@@ -113,6 +113,7 @@ unsigned TypeDeclInfo::getNumFieldsInType(Type type) {
     fieldIndices[{structSymbol, field.getNameAttr()}] = totalFields;
     totalFields += getNumFieldsInType(field.getType());
   }
+
   return numFields[structSymbol] = totalFields;
 }
 
@@ -135,11 +136,11 @@ TypeDeclInfo::getFieldContaining(DeclRefType declRef, unsigned fieldNo) {
     // This range check is needed to handle zero-sized fields: they don't
     // contain a field even if they start at the beginning of it.
     unsigned numSubFields = getNumFieldsInType(field.getType());
-    if (startFieldIdx <= fieldNo && startFieldIdx + numSubFields > fieldNo) {
+    if (startFieldIdx <= fieldNo && startFieldIdx + numSubFields > fieldNo)
       return {field.getNameAttr(), field.getType()};
-    }
     startFieldIdx += numSubFields;
   }
+
   llvm_unreachable("invalid index into struct field numbering");
 }
 
@@ -170,6 +171,11 @@ struct LifetimeTrackable {
   /// This is true if the value is uninitialized at function exist, false if it
   /// ends up defined (e.g. as with a byref argument).
   bool endsUninit = false;
+
+  /// True if this is a InitSelf argument: the self parameter in an
+  /// __init__/__copyinit__ method.  These have magic behavior so they become
+  /// fully initialized when all their fields are initialized.
+  bool isFullObjectLiveOnEntry = false;
 
   /// Return the type of the underlying value, looking through the pointer type
   /// if this is an indirect reference.
@@ -247,11 +253,17 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     // model the behavior when an error is thrown, so we give up tracking them.
     if (signature.isThrows())
       return;
-    [[fallthrough]];
-  case ValueInputConvention::InitSelf:
     isIndirect = true;
     startsUninit = true;
     endsUninit = false;
+    break;
+  case ValueInputConvention::InitSelf:
+    // Unlike byref-result, we allow memberwise initialization of 'self' in an
+    // init method to construct a full value.
+    isIndirect = true;
+    startsUninit = true;
+    endsUninit = false;
+    isFullObjectLiveOnEntry = true;
     break;
   case ValueInputConvention::ByRef:
     isIndirect = true;
@@ -306,6 +318,11 @@ struct ValueInfo {
   const bool startsUninit;
   /// True if this value needs to be uninitialized at the end of its lifetime.
   const bool endsUninit;
+
+  /// True if this is a InitSelf argument: the self parameter in an
+  /// __init__/__copyinit__ method.  These have magic behavior so they become
+  /// fully initialized when all their fields are initialized.
+  const bool isFullObjectLiveOnEntry;
 
   /// This is true if the value had a use-before-initialization error diagnosed.
   bool hasErrorDiagnosed;
@@ -396,12 +413,17 @@ struct ValueSet {
     // checked when loaded from memory.
     if (val && trackable.isIndirect) {
       Type valType = trackable.getValueType(val);
-      numValueBits = typeDeclInfo.getNumFieldsInType(valType);
+      // We track one extra bit for the value so we know if it is fully
+      // initialized or not.  If so, we can run the destructor on the entire
+      // aggregate when it is unused.  This also allows us to track the
+      // initialization state of structures with no fields.
+      numValueBits = typeDeclInfo.getNumFieldsInType(valType) + 1;
     }
 
     valueInfoIndex[val] = valueInfos.size();
     valueInfos.push_back({val, firstValueBit, firstValueBit + numValueBits,
                           trackable.startsUninit, trackable.endsUninit,
+                          trackable.isFullObjectLiveOnEntry,
                           /*hasErrorDiagnosed=*/false});
   }
 
@@ -541,17 +563,32 @@ static void addBadValueNameToDiag(const LifetimeTrackable &trackable,
     return;
   }
 
+  // Figure out what the end of the field bits are so we can report the first
+  // fields.  The full object ends with a bit to track whether the whole value
+  // is initialized which we don't want to track.
+  const ValueInfo &valueEntry = valueSet.getValueInfo(valueRef.valueId);
+  unsigned fullValueStartBit = valueEntry.startValueBit;
+
+  unsigned endOfFullObjectFields = valueEntry.endValueBit - 1;
+  if (endOfFullObjectFields == fullValueStartBit) {
+    // No stored fields!
+    diag << "'";
+    return;
+  }
+
+  // The end of the reference is either the end of valueref (if that was a
+  // subfield of the overall object) or it is the end of full object.
+  unsigned endOfAccessFields = std::min(endOfFullObjectFields, valueRef.endBit);
+
   // We know that something in valueRef is missing, but we don't know which
   // piece.  Find the first bit in valueRef that isn't live.
   unsigned firstMissingFieldNo =
       std::min(unsigned(bits.find_next_unset(valueRef.startBit - 1U)),
-               valueRef.endBit - 1);
+               endOfAccessFields - 1);
   // Find the area of overlap so we complain about larger aggregates that are
   // fully uninit, not tiny parts of them.
-  unsigned firstPresentFieldNo =
-      std::min(unsigned(bits.find_next(firstMissingFieldNo)), valueRef.endBit);
-
-  const ValueInfo &valueEntry = valueSet.getValueInfo(valueRef.valueId);
+  unsigned firstPresentFieldNo = std::min(
+      unsigned(bits.find_next(firstMissingFieldNo)), endOfAccessFields);
 
   // Ok, the uninitialized thing is [firstMissingFieldNo, firstPresentFieldNo)
   // so we want to figure out which sub-piece of the whole value type is the
@@ -559,8 +596,8 @@ static void addBadValueNameToDiag(const LifetimeTrackable &trackable,
   // fields.
   auto type = trackable.getValueType(valueEntry.value);
   // Emit the field prefix for the specified type.
-  digIntoTypeAtFieldOffset(type, firstMissingFieldNo - valueEntry.startValueBit,
-                           firstPresentFieldNo - valueEntry.startValueBit, diag,
+  digIntoTypeAtFieldOffset(type, firstMissingFieldNo - fullValueStartBit,
+                           firstPresentFieldNo - fullValueStartBit, diag,
                            valueSet.typeDeclInfo);
   diag << "'";
 }
@@ -581,6 +618,19 @@ void UninitializedValueScan::checkLive(Operation &op, ValueRef valueRef) {
   LifetimeTrackable trackable(valueEntry.value);
   assert(trackable && "value should be tracked");
 
+  // If the fields are all valid except for the whole-object bit, then the user
+  // tried to initialize a value by initializing all its fields.  Reject this
+  // with a customized error.
+  if (trackable.isIndirect && valueRef.endBit == valueEntry.endValueBit &&
+      ValueRef(valueRef.valueId, valueRef.startBit, valueRef.endBit - 1)
+          .isAllPresent(liveValues)) {
+    auto diag = mlir::emitError(op.getLoc(), "'")
+                << trackable.name.str()
+                << "' used with all fields manually initialized "
+                   "but without calling an '__init__' method";
+    return;
+  }
+
   auto diag = mlir::emitError(op.getLoc(), "use of uninitialized value ");
 
   // If some fields are present and others are missing, complain about the first
@@ -598,8 +648,13 @@ void UninitializedValueScan::scanFunction(mlir::FunctionOpInterface func) {
   // dominance.
   liveValues.resize(valueSet.getNumTotalBits());
   for (const ValueInfo &valueInfo : valueSet.getValueInfos())
-    if (!valueInfo.startsUninit)
+    if (!valueInfo.startsUninit) {
+      // If the whole value is live on entry, notice that.
       liveValues.set(valueInfo.startValueBit, valueInfo.endValueBit);
+    } else if (valueInfo.isFullObjectLiveOnEntry) {
+      // If /just/ the full object bit is live on entry, set it.
+      liveValues.set(valueInfo.endValueBit - 1);
+    }
 
   // Scan the body of the function.
   scanBlock(func.getFunctionBody().front());
@@ -1024,19 +1079,30 @@ void DestructorInsertion::checkUse(Operation &op, ValueRef valueRef) {
   assert(signature.getValueInputs().size() == 1 &&
          "dtor should have one operand");
 
-  // Emit the call to the destructor.
   OpBuilder b(&op);
   b.setInsertionPointAfter(&op);
+
+  // We may have the value indirect (e.g. because it is in a var) which needs
+  // to be loaded to invoke the destructor.
+  Value valueToDestroy = valueInfo.value;
+  if (valueToDestroy.getType() != signature.getValueInputs()[0]) {
+    assert(POP::PointerType::get(signature.getValueInputs()[0]) ==
+           valueToDestroy.getType());
+    valueToDestroy = b.create<POP::LoadOp>(op.getLoc(), valueToDestroy,
+                                           /*align*/ std::nullopt);
+  }
+
+  // Emit the call to the destructor.
   if (auto symbolConstantDtor = dyn_cast<SymbolConstantAttr>(dtor)) {
     b.create<CallOp>(op.getLoc(), signature.getValueResults()[0],
                      symbolConstantDtor,
                      b.getAttr<ParamDeclArrayAttr>(ArrayRef<ParamDeclAttr>()),
-                     ValueRange(valueInfo.value));
+                     ValueRange(valueToDestroy));
   } else {
     b.create<CallParamOp>(
         op.getLoc(), signature.getValueResults()[0], dtor,
         b.getAttr<ParamDeclArrayAttr>(ArrayRef<ParamDeclAttr>()),
-        ValueRange(valueInfo.value));
+        ValueRange(valueToDestroy));
   }
 }
 

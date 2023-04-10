@@ -1,30 +1,34 @@
 # RUN: kgen %s -verify-diagnostics -emit-asm
 
 struct MemExample:
-  var memstate : __mlir_type.index
+  var memstate : Int
 
   # expected-error @+1 {{use of uninitialized value 'self'}}
   fn __init__(self&):  # expected-note {{'self' declared here}}
     pass
 
   fn __copyinit__(self&, existing: Self):
-    self.memstate = (4).__as_mlir_index()
+    self.memstate = 4
   fn __del___(owned self): pass
 
 fn use(x: MemExample): pass
 
 @register_passable
 struct RegExample:
-  var regstate : __mlir_type.index
+  var regstate : Int
 
   fn __init__() -> Self:
-    return RegExample{regstate: (1).__as_mlir_index()}
+    return RegExample{regstate: 1}
   fn __copyinit__(self) -> Self:
-    return RegExample{regstate: (12).__as_mlir_index()}
+    return RegExample{regstate: 12}
   fn __del___(owned self):
     pass
 
 fn use(x: RegExample): pass
+
+##===----------------------------------------------------------------------===##
+# Simple cases.
+##===----------------------------------------------------------------------===##
 
 fn use_of_init() -> RegExample:
   var a = RegExample()
@@ -41,6 +45,16 @@ fn use_of_uninit() -> RegExample:
 fn use_of_uninit2() -> MemExample:
   var a : MemExample  # expected-note {{'a' declared here}}
   return a   # expected-error {{use of uninitialized value 'a'}}
+
+fn invalid_partial_init() -> MemExample:
+  var x: MemExample
+  x.memstate = 42
+  return x  # expected-error {{'x' used with all fields manually initialized but without calling an '__init__' method}}
+
+
+##===----------------------------------------------------------------------===##
+# Control flow
+##===----------------------------------------------------------------------===##
 
 fn use_of_uninit_if(cond: Bool):
   var a : MemExample
@@ -60,7 +74,6 @@ fn use_of_uninit_if(cond: Bool):
     c = MemExample()
   use(c) # Ok.
 
-
 fn use_of_uninit_while(cond: Bool):
   var a : MemExample
   if cond:
@@ -75,8 +88,6 @@ fn use_of_uninit_while(cond: Bool):
     b = RegExample()
 
   use(b)  # expected-error {{use of uninitialized value 'b'}}
-
-
 
 fn use_of_uninit_raise(cond: Bool, err: Error):
   var a : MemExample
@@ -116,6 +127,10 @@ fn use_of_uninit_raise(cond: Bool, err: Error):
     d = MemExample()
   use(d)  # Ok
 
+##===----------------------------------------------------------------------===##
+# Complex aggregates
+##===----------------------------------------------------------------------===##
+
 struct TwoRegs:
   var reg1: RegExample
   var reg2: RegExample
@@ -140,7 +155,6 @@ struct MoreComplexExample:
     self.reg = existing.reg
 
   fn __del___(owned self): pass
-
 
 fn testClosure(a: Bool):
   if a:
