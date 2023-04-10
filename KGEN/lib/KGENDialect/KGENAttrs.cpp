@@ -716,7 +716,10 @@ verifyEvaluate(ArrayRef<TypedAttr> operands, Type type,
     return emitError() << "'evaluate' expected an evaluator and a variadic "
                           "list of implementations to evaluate";
 
-  auto evaluatorSignature = cast<SignatureType>(operands.back().getType());
+  auto evaluatorSignature = dyn_cast<SignatureType>(operands.back().getType());
+  if (!evaluatorSignature)
+    return emitError()
+           << "'evaluate' evaluator operand must be a signature type";
   if (!evaluatorSignature.getResultParamTypes().empty() ||
       !evaluatorSignature.getInputParamTypes().empty())
     return emitError() << "'evaluate' evaluator cannot be parametric";
