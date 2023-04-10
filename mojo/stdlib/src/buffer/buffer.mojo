@@ -4,12 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Assert import (
-    assert_param,
-    debug_assert,
-    assert_param_msg,
-    assert_param,
-)
+from Assert import assert_param, debug_assert, assert_param_msg
 from DType import DType
 from Functional import unroll, vectorize
 from Index import StaticIntTuple, product as tuple_product
@@ -21,9 +16,6 @@ from Intrinsics import PrefetchOptions, masked_load, masked_store
 from SIMD import SIMD
 from StaticTuple import StaticTuple
 from TargetInfo import dtype_sizeof, dtype_simd_width, dtype_alignof
-from TypeUtilities import rebind
-from Range import range
-from IO import print
 
 # The maximum tensor rank for any tensor shape.
 # This value must match kMaxRank in Support/include/Support/ML/TensorShape.h
