@@ -40,6 +40,7 @@ struct RegExample:
 # CHECK-LABEL: lit.func @"destructors
 # CHECK-SAME: (%arg0: !pop.pointer<@"$ownership"::@MemExample> owned_in_mem)
 fn destructors(owned arg0: MemExample):
+  # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}(%arg0)
 
   # CHECK-NEXT: %mem1 = lit.varlet.decl "mem1", var = true
   var mem1 = MemExample()
