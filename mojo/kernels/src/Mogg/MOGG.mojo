@@ -186,8 +186,8 @@ fn elementwise_wrapper[
 @always_inline
 fn mogg_add[
     simd_width: __mlir_type.index, type: DType
-](x: SIMD[simd_width, type], y: SIMD[simd_width, type]) -> SIMD[
-    simd_width, type
+](x: SIMD[type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
+    type, simd_width
 ]:
     return add(x, y)
 
@@ -195,8 +195,8 @@ fn mogg_add[
 @always_inline
 fn mogg_div[
     simd_width: __mlir_type.index, type: DType
-](x: SIMD[simd_width, type], y: SIMD[simd_width, type]) -> SIMD[
-    simd_width, type
+](x: SIMD[type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
+    type, simd_width
 ]:
     return div(x, y)
 
@@ -204,22 +204,22 @@ fn mogg_div[
 @always_inline
 fn mogg_erf[
     simd_width: __mlir_type.index, type: DType
-](x: SIMD[simd_width, type]) -> SIMD[simd_width, type]:
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     return erf(x)
 
 
 @always_inline
 fn mogg_exp[
     simd_width: __mlir_type.index, type: DType
-](x: SIMD[simd_width, type]) -> SIMD[simd_width, type]:
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     return exp(x)
 
 
 @always_inline
 fn mogg_mul[
     simd_width: __mlir_type.index, type: DType
-](x: SIMD[simd_width, type], y: SIMD[simd_width, type]) -> SIMD[
-    simd_width, type
+](x: SIMD[type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
+    type, simd_width
 ]:
     return mul(x, y)
 
@@ -227,29 +227,29 @@ fn mogg_mul[
 @always_inline
 fn mogg_relu[
     simd_width: __mlir_type.index, type: DType
-](x: SIMD[simd_width, type]) -> SIMD[simd_width, type]:
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     return relu(x)
 
 
 @always_inline
 fn mogg_rsqrt[
     simd_width: __mlir_type.index, type: DType
-](x: SIMD[simd_width, type]) -> SIMD[simd_width, type]:
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     return rsqrt(x)
 
 
 @always_inline
 fn mogg_sqrt[
     simd_width: __mlir_type.index, type: DType
-](x: SIMD[simd_width, type]) -> SIMD[simd_width, type]:
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     return sqrt(x)
 
 
 @always_inline
 fn mogg_sub[
     simd_width: __mlir_type.index, type: DType
-](x: SIMD[simd_width, type], y: SIMD[simd_width, type]) -> SIMD[
-    simd_width, type
+](x: SIMD[type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
+    type, simd_width
 ]:
     return sub(x, y)
 
@@ -257,7 +257,7 @@ fn mogg_sub[
 @always_inline
 fn mogg_tanh[
     simd_width: __mlir_type.index, type: DType
-](x: SIMD[simd_width, type]) -> SIMD[simd_width, type]:
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     return tanh(x)
 
 
@@ -292,7 +292,7 @@ fn simd_load_1D[
 ](
     buffer: NDBuffer[rank, DimList[rank].create_unknown(), type],
     index: StaticIntTuple[rank],
-) -> SIMD[simd_width, type]:
+) -> SIMD[type, simd_width]:
     let stride = buffer.dynamic_stride[rank - 1]
     if stride == 0:
         return simd_load_scalar[simd_width, type, rank](buffer)
@@ -307,7 +307,7 @@ fn simd_load_1D[
 fn simd_load_scalar[
     simd_width: __mlir_type.index, type: DType, rank: __mlir_type.index
 ](buffer: NDBuffer[rank, DimList[rank].create_unknown(), type]) -> SIMD[
-    simd_width, type
+    type, simd_width
 ]:
     return buffer.data.load(0)
 
@@ -319,7 +319,7 @@ fn simd_load_maybe_splat[
 ](
     buffer: NDBuffer[rank, DimList[rank].create_unknown(), type],
     index: StaticIntTuple[rank],
-) -> SIMD[simd_width, type]:
+) -> SIMD[type, simd_width]:
     var flat_index = _compute_flat_index[type, rank, rank](buffer, index)
 
     if buffer.dynamic_stride[rank - 1] == 0:
@@ -335,7 +335,7 @@ fn simd_load_splat[
 ](
     buffer: NDBuffer[rank, DimList[rank].create_unknown(), type],
     index: StaticIntTuple[rank],
-) -> SIMD[simd_width, type]:
+) -> SIMD[type, simd_width]:
     # Last dimension will be 0 for splats so don't compute last dim.
     var flat_index = _compute_flat_index[
         type, rank, rank - (1).__as_mlir_index()
@@ -350,7 +350,7 @@ fn simd_load[
 ](
     buffer: NDBuffer[rank, DimList[rank].create_unknown(), type],
     index: StaticIntTuple[rank],
-) -> SIMD[simd_width, type]:
+) -> SIMD[type, simd_width]:
     let flat_index = _compute_flat_index[type, rank, rank](buffer, index)
     return buffer.data.simd_load[simd_width](flat_index)
 
@@ -361,7 +361,7 @@ fn simd_store[
 ](
     buffer: NDBuffer[rank, DimList[rank].create_unknown(), type],
     index: StaticIntTuple[rank],
-    val: SIMD[simd_width, type],
+    val: SIMD[type, simd_width],
 ):
     let flat_index = _compute_flat_index[type, rank, rank](buffer, index)
     buffer.data.simd_store[simd_width](flat_index, val)
