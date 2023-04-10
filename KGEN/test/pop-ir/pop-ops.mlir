@@ -945,6 +945,15 @@ kgen.generator @partial_apply(
   kgen.return %4 : !pop.closure<() -> ()>
 }
 
+// CHECK-LABEL: @call_intrinsic
+kgen.generator @call_intrinsic<intrin: string>(%arg0: !pop.scalar<f32>) {
+  // CHECK-NEXT: %{{.*}} = pop.call_llvm_intrinsic "llvm.round", (%arg0) : (!pop.scalar<f32>) -> !pop.scalar<f32>
+  %0 = pop.call_llvm_intrinsic "llvm.round", (%arg0) : (!pop.scalar<f32>) -> !pop.scalar<f32>
+  // CHECK-NEXT: pop.call_llvm_intrinsic intrin, ()
+  pop.call_llvm_intrinsic intrin, () : () -> ()
+  kgen.return
+}
+
 // CHECK-LABEL: @inline_asm
 kgen.generator @inline_asm<type: type, dtype: dtype>(
     %arg0: !pop.scalar<si32>,
