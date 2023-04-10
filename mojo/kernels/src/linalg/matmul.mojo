@@ -150,14 +150,9 @@ struct GemmShape:
             a: Buffer containing matrix operand A.
             b: Buffer containing matrix operand B.
         """
-        var gemm_shape: GemmShape
-        gemm_shape.M = c.dim[0]()
-        gemm_shape.N = c.dim[1]()
-        if transpose_a:
-            gemm_shape.K = a.dim[0]()
-        else:
-            gemm_shape.K = a.dim[1]()
-        return gemm_shape
+        return GemmShape(
+            c.dim[0](), c.dim[1](), a.dim[0]() if transpose_a else a.dim[1]()
+        )
 
     @staticmethod
     fn get[
@@ -176,16 +171,11 @@ struct GemmShape:
             a: Buffer containing matrix operand A.
             b: Buffer containing matrix operand B.
         """
-        var gemm_shape: GemmShape
-        gemm_shape.M = c.dim[0]()
-        gemm_shape.N = c.dim[1]()
-
-        @parameter
-        if layout.transpose_a:
-            gemm_shape.K = a.dim[0]()
-        else:
-            gemm_shape.K = a.dim[1]()
-        return gemm_shape
+        return GemmShape(
+            c.dim[0](),
+            c.dim[1](),
+            a.dim[0]() if layout.transpose_a else a.dim[1](),
+        )
 
     @staticmethod
     fn get(
@@ -195,15 +185,11 @@ struct GemmShape:
         transpose_a: Bool,
         transpose_b: Bool,
     ) -> GemmShape:
-        var gemm_shape: GemmShape
-        gemm_shape.M = c.dim(0)
-        gemm_shape.N = c.dim(1)
-
-        if transpose_a:
-            gemm_shape.K = a.dim(0)
-        else:
-            gemm_shape.K = a.dim(1)
-        return gemm_shape
+        return GemmShape(
+            c.dim(0),
+            c.dim(1),
+            a.dim(0) if transpose_a else a.dim(1),
+        )
 
     # TODO: re-enable using StaticIntTuple.
     @always_inline

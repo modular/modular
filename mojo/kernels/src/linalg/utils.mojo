@@ -152,49 +152,49 @@ fn get_partitioned_matmul_mojo[
     micro_kernel_m: Int,
     micro_kernel_n: Int,
 ](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
-    var sub_matmul_config: SubMatmulConfig
-
     if m > n or (m == n and k <= m):
         let row_range = partition_work(task_id, num_tasks, m, micro_kernel_m)
-        sub_matmul_config.offset = StaticIntTuple[3](row_range[0], 0, 0)
-        sub_matmul_config.shape = StaticIntTuple[3](row_range[1], n, k)
-    else:
-        var num_col_tasks: Int = num_tasks
-        var num_row_tasks: Int = 1
-        # Try to find a factorization of num_task (aligned partition) where the
-        # column partition has multiple pack sizes. This is because it's
-        # relatively expensive to handle residual columns when there is only 1-2
-        # pack size per partition.
-        # We still maintain that there is more column partitions than row
-        # partitions since n > m.
-        let num_packs = max(n // micro_kernel_n, 1)
-        if num_packs < 2 * num_col_tasks:
-            var num_col_partitions: Int = num_tasks
-            var aligned_partition_found: Bool = False
-            while num_col_partitions > (num_tasks // num_col_partitions):
-                if (
-                    num_packs % num_col_partitions == 0
-                    and num_tasks % num_col_partitions == 0
-                ):
-                    aligned_partition_found = True
-                    break
-                num_col_partitions -= 1
-            # Adjust number of tasks based on partition
-            if aligned_partition_found:
-                num_col_tasks = num_col_partitions
-                num_row_tasks = num_tasks // num_col_tasks
-        let row_task_id = task_id // num_col_tasks
-        let col_task_id = task_id % num_col_tasks
-        let row_range1 = partition_work(
-            row_task_id, num_row_tasks, m, micro_kernel_m
+        return SubMatmulConfig(
+            StaticIntTuple[3](row_range[0], 0, 0),
+            StaticIntTuple[3](row_range[1], n, k),
         )
-        let col_range1 = partition_work(
-            col_task_id, num_col_tasks, n, micro_kernel_n
-        )
-        sub_matmul_config.offset = Index(row_range1[0], col_range1[0], 0)
-        sub_matmul_config.shape = Index(row_range1[1], col_range1[1], k)
 
-    return sub_matmul_config
+    var num_col_tasks: Int = num_tasks
+    var num_row_tasks: Int = 1
+    # Try to find a factorization of num_task (aligned partition) where the
+    # column partition has multiple pack sizes. This is because it's
+    # relatively expensive to handle residual columns when there is only 1-2
+    # pack size per partition.
+    # We still maintain that there is more column partitions than row
+    # partitions since n > m.
+    let num_packs = max(n // micro_kernel_n, 1)
+    if num_packs < 2 * num_col_tasks:
+        var num_col_partitions: Int = num_tasks
+        var aligned_partition_found: Bool = False
+        while num_col_partitions > (num_tasks // num_col_partitions):
+            if (
+                num_packs % num_col_partitions == 0
+                and num_tasks % num_col_partitions == 0
+            ):
+                aligned_partition_found = True
+                break
+            num_col_partitions -= 1
+        # Adjust number of tasks based on partition
+        if aligned_partition_found:
+            num_col_tasks = num_col_partitions
+            num_row_tasks = num_tasks // num_col_tasks
+    let row_task_id = task_id // num_col_tasks
+    let col_task_id = task_id % num_col_tasks
+    let row_range1 = partition_work(
+        row_task_id, num_row_tasks, m, micro_kernel_m
+    )
+    let col_range1 = partition_work(
+        col_task_id, num_col_tasks, n, micro_kernel_n
+    )
+    return SubMatmulConfig(
+        Index(row_range1[0], col_range1[0], 0),
+        Index(row_range1[1], col_range1[1], k),
+    )
 
 
 fn get_pack_data_size() -> Int:
