@@ -49,6 +49,11 @@ fn get_min_task_size() -> Int:
     return 65536
 
 
+# Unroll factor in packing B
+fn get_packB_unroll_factor() -> Int:
+    return 8
+
+
 # ===----------------------------------------------------------------------===#
 # Partition Heuristics
 # ===----------------------------------------------------------------------===#

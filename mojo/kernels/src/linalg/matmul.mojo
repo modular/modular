@@ -22,6 +22,7 @@ from Functional import tile, unswitch, unroll, unroll2, TernaryClosure
 from Index import Index, StaticIntTuple
 from List import Dim, DimList, VariadicList, create_dim_list
 from Math import min, fma, max, div_ceil
+from MatmulUtils import get_packB_unroll_factor
 from Matrix import Matrix
 from Memory import stack_allocation
 from Pointer import DTypePointer
@@ -706,36 +707,28 @@ struct PackMatrixCols[
         self.pack_tile_dim = existing.pack_tile_dim
         self.valid_data_dim = existing.valid_data_dim
 
-    fn _pack_row_helper[
-        # Skip column boundary checking in this row.
-        skip_col_bound: Bool,
-    ](self, tile_row_idx: Int):
-        """Helper function:  Packs a tiled row of original matrix into the
-        packed buffer, with boundary checking. Boundary checking can be
-        statically skipped., based on the parameters.
-        Args:
-            skip_col_bound(Bool): boundary check on y dimension will be
-                skipped if true.
-            fill_zero(Bool): the given row will be filled all zero if true.
-            tile_row_idx(Int): row index of the row to pack within the tile of
-                data to pack.
+    @always_inline
+    fn _pack_helper[
+        skip_row_bound: Bool, skip_col_bound: Bool
+    ](self, row_start: Int, valid_row_count: Int, col_start: Int):
+        """Helper function: copy several simd vectors on the column from the
+        original matrix to the packed buffer. The copies are unrolled and
+        prefetched (if not with neon).
+            Args:
+                skip_row_bound: Boundary check on row dimension will be skipped
+                    if true.
+                skip_col_bound: Boundary check on column dimension will be skipped
+                    if true.
         """
         alias alignment = alignof[SIMD[type, simd_size]]()
         alias is_row_aligned = original_shape.at[1]().is_multiple[alignment]()
 
-        for col_idx in range(0, self.pack_tile_dim[1], simd_size):
-            # Decl the data to fill in packed buffer.
-            var data: SIMD[type, simd_size]
+        alias unroll_factor = get_packB_unroll_factor()
 
-            # Calculate global coordinates.
-            let global_idx_pair = self.global_offset + Index(
-                tile_row_idx, col_idx
-            )
-            let global_idx = Index(
-                global_idx_pair[0],
-                global_idx_pair[1],
-            )
-
+        @always_inline
+        fn pack_vector(row_idx: Int, col_idx: Int):
+            let global_idx = self.global_offset + Index(row_idx, col_idx)
+            var data = SIMD[type, simd_size](0)
             if skip_col_bound or (
                 col_idx + simd_size <= self.valid_data_dim[1]
             ):
@@ -747,10 +740,7 @@ struct PackMatrixCols[
                     ](global_idx)
                 else:
                     data = self.original_matrix.simd_load[simd_size](global_idx)
-            elif col_idx >= self.valid_data_dim[1]:
-                # Starting point out of bound. Fill a zero vector.
-                data = SIMD[type, simd_size](0)
-            else:
+            elif col_idx < self.valid_data_dim[1]:
                 # Starting point within bound but cannot load a whole
                 #  vector. Do a partial load.
                 data = partial_simd_load[simd_size, type](
@@ -764,39 +754,58 @@ struct PackMatrixCols[
             let col_idx_outer = col_idx // column_inner_size
             let col_idx_inner = col_idx % column_inner_size
             self.packed_matrix.aligned_simd_store[simd_size, alignment](
-                Index(col_idx_outer, tile_row_idx, col_idx_inner),
+                Index(col_idx_outer, row_idx, col_idx_inner),
                 data,
             )
 
-    fn _pack_helper[skip_col_bound: Bool](self):
-        """Helper function: packs all the rows within the tile of data to pack
-        with statical option to skip boundary check.
-            Args:
-                skip_col_bound: Boundary check on column dimension will be skipped
-                    if true.
-        """
-        let valid_row_count = min(
-            self.valid_data_dim[0],
-            self.pack_tile_dim[0],
-        )
+        @always_inline
+        fn pack_body[idx: Int]():
+            pack_vector(row_start + idx, col_start)
 
-        for row_idx in range(valid_row_count):
-            self._pack_row_helper[skip_col_bound](row_idx)
+        @always_inline
+        fn prefetch_body[idx: Int]():
+            let global_row_idx = (
+                self.global_offset[0] + row_start + unroll_factor + idx
+            )
+            let global_col_idx = self.global_offset[1] + col_start
+            self.original_matrix.prefetch[
+                PrefetchOptions().for_read().high_locality().to_data_cache()
+            ](global_row_idx, global_col_idx)
+
+        @parameter
+        if skip_row_bound:
+            if not has_neon():
+                unroll[unroll_factor, prefetch_body]()
+            unroll[unroll_factor, pack_body]()
+        else:
+            for row_idx in range(row_start, valid_row_count):
+                pack_vector(row_idx, col_start)
 
     fn _pack(self):
-        """Helper function: packs all the rows within the tile of data to pack"""
-        # TODO:
-        #  This packing routine can be further peeled and vectorized
-        #    but dynamical tiling could cover some of the sub-optimality
-        #    here. In a follow up should extend the blocking scheme here.
-        @always_inline
-        fn pack_unit[static_switch: Bool]():
-            self._pack_helper[
-                # skip col bound check.
-                static_switch
-            ]()
+        """Copy the B tile from the original matrix to the packed buffer.
+        Each iteration copies a block of shape (unroll_factor, simd_size)."""
+        let valid_row_count = min(self.valid_data_dim[0], self.pack_tile_dim[0])
 
-        unswitch[pack_unit](self.pack_tile_dim[1] < self.valid_data_dim[1])
+        alias unroll_factor = get_packB_unroll_factor()
+
+        var row_idx: Int = 0
+        var col_idx: Int = 0
+
+        @always_inline
+        fn pack_unit[skip_row_bound: Bool, skip_col_bound: Bool]():
+            self._pack_helper[skip_row_bound, skip_col_bound](
+                row_idx, valid_row_count, col_idx
+            )
+
+        while row_idx < valid_row_count:
+            col_idx = 0
+            while col_idx < self.pack_tile_dim[1]:
+                unswitch[pack_unit](
+                    row_idx + unroll_factor < valid_row_count,
+                    col_idx + simd_size < self.valid_data_dim[1],
+                )
+                col_idx += simd_size
+            row_idx += unroll_factor
 
 
 struct MatmulInnerLoopBPacked[
