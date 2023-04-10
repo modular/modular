@@ -14,6 +14,30 @@ kgen.generator @rebind_folds<dtype: dtype, type: type>(
   kgen.return %0, %1, %2, %3 : i32, !pop.scalar<f32>, !pop.scalar<dtype>, !kgen.paramref<type>
 }
 
+// CHECK-LABEL: @rebind_canonicalize
+kgen.generator @rebind_canonicalize<dt1: dtype, dt2: dtype, dt3: dtype>(%arg0: !pop.scalar<dt1>) -> !pop.scalar<si32> {
+  // CHECK-NEXT: %0 = kgen.rebind %arg0 : !pop.scalar<dt1> to !pop.scalar<si32>
+  %0 = kgen.rebind %arg0 : !pop.scalar<dt1> to !pop.scalar<dt2>
+  %1 = kgen.rebind %0 : !pop.scalar<dt2> to !pop.scalar<dt3>
+  %2 = kgen.rebind %1 : !pop.scalar<dt3> to !pop.scalar<si32>
+  // CHECK-NEXT: return %0
+  kgen.return %2 : !pop.scalar<si32>
+}
+
+// CHECK-LABEL: @rebind_across_scopes
+kgen.generator @rebind_across_scopes<dt: dtype>(%arg0: !pop.scalar<dt>) {
+  kgen.param.declare dt1 = <dt>
+  // CHECK: rebind %arg0 : !pop.scalar<dt> to !pop.scalar<dt1>
+  %0 = kgen.rebind %arg0 : !pop.scalar<dt> to !pop.scalar<dt1>
+  // CHECK: param.declare.region
+  kgen.param.declare.region F = <dt: dtype>() -> !pop.scalar<dt> {
+    // CHECK: rebind %0 : !pop.scalar<dt1> to !pop.scalar<dt>
+    %1 = kgen.rebind %0 : !pop.scalar<dt1> to !pop.scalar<dt>
+    kgen.return %1 : !pop.scalar<dt>
+  }
+  kgen.return
+}
+
 // CHECK-LABEL: kgen.func @cast_from_folds
 // CHECK-SAME: (%[[ARG0:.*]]: !pop.scalar<f32>) -> !pop.scalar<f32> {
 kgen.func @cast_from_folds(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
