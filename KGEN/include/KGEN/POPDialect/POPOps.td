@@ -1170,8 +1170,7 @@ def PackCreateOp : POPOp<"pack.create", [Pure]> {
 // PackGetOp
 //===----------------------------------------------------------------------===//
 
-def POP_PackGetOp : POPOp<"pack.get", [Pure,
-    DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+def POP_PackGetOp : POPOp<"pack.get", [Pure]> {
   let summary = "pack get element";
   let description = [{
     The `pop.pack.get` operation returns the element of a pack at the provided
@@ -1185,15 +1184,17 @@ def POP_PackGetOp : POPOp<"pack.get", [Pure,
 
     ```mlir
     kgen.generator @pack<Ts: variadic<!kgen.mlirtype>, T: type>(
-      %arg0: Ts,
-      %arg1: !pop.pack<i32, T>
+      %arg0: !pop.pack<i32, T>
+      %arg1: Ts,
     ) {
-      // Get the element at index 3, of type `!kgen.mlirtype`.
-      %0 = pop.pack.get %arg0[3] : <Ts>
       // Get the first element, of type `i32`.
-      %1 = pop.pack.get %arg1[0] : <[i32, T]>
+      %0 = pop.pack.get %arg0[0] : !pop.pack<[i32, T]>
       // Get the second element, of type `!kgen.paramref<T>`.
-      %2 = pop.pack.get %arg1[1] : <[i32, T]>
+      %1 = pop.pack.get %arg0[1] : !pop.pack<[i32, T]>
+
+      // Get the element at index 3. Becuase its type cannot be inferred, it
+      // must be provided explicitly (here as `i8`).
+      %2 = pop.pack.get %arg1[3] : !pop.pack<Ts> -> i8
 
       kgen.return
     }
@@ -1202,7 +1203,11 @@ def POP_PackGetOp : POPOp<"pack.get", [Pure,
 
   let arguments = (ins POP_PackType:$pack, IndexAttr:$index);
   let results = (outs AnyType:$result);
-  let assemblyFormat = "$pack `[` $index `]` attr-dict `:` type($pack)";
+  let assemblyFormat = [{
+    $pack `[` $index `]` attr-dict `:` type($pack)
+    custom<PackGetResultType>(ref($pack), ref(type($pack)), ref($index),
+                              type($result))
+  }];
 
   let hasVerifier = 1;
   let hasFolder = 1;

@@ -865,8 +865,8 @@ kgen.generator @pack<Ts: variadic<!kgen.mlirtype>, T: type>(
 ) -> i32 {
   // CHECK: pop.pack.size %arg0 : <Ts>
   %0 = pop.pack.size %arg0 : <Ts>
-  // CHECK: pop.pack.get %arg0[3] : <Ts>
-  %1 = pop.pack.get %arg0[3] : <Ts>
+  // CHECK: pop.pack.get %arg0[3] : <Ts> -> i8
+  %1 = pop.pack.get %arg0[3] : <Ts> -> i8
 
   // CHECK: pop.pack.size %arg1 : <[i32, T]>
   %2 = pop.pack.size %arg1 : <[i32, T]>
