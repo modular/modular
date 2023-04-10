@@ -554,8 +554,11 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
   if (!value)
     return {};
 
-  assert(value.getRValueType().isRegisterPassable(expr->getLoc(), shared) &&
-         "cannot load non-register passable type into SSA register");
+  if (!value.getRValueType().isRegisterPassable(expr->getLoc(), shared)) {
+    emitError(expr->getLoc())
+        << "cannot load non-register passable type into SSA register";
+    return {};
+  }
 
   // If we have a value in memory, load it.
   if (auto mrValue = value.getIfMRValue()) {

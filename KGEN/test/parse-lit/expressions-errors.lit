@@ -153,8 +153,21 @@ struct WeirdBoolish:
   fn __bool__(self) -> Int: return 0
   fn __copyinit__(self) -> Self: pass;
 
-fn badAnd(a: Bool, b: WeirdBoolish):
+struct WeirdBoolishMem:
+  fn __bool__(self) -> Int: return 0
+  fn __copyinit__(self&, existing: Self):
+    pass;
+
+
+fn badAnd(a: Bool, b: WeirdBoolish, c: WeirdBoolishMem):
   _ = a and b # expected-error {{cannot find common type between '$Bool::Bool' and '$expressions-errors::WeirdBoolish'}}
+
+  # Issue #12010
+  # expected-error @+1 {{cannot load non-register passable type into SSA register}}
+  _ = c if not c else c
+
+  # expected-error @+1 {{cannot load non-register passable type into SSA register}}
+  _ = c and c
 
 # expected-error @+1 {{'Self' type may only be used inside a type}}
 fn badSelf(a: Self):
