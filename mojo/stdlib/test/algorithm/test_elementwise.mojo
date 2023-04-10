@@ -58,7 +58,7 @@ fn test_elementwise[
     var x: F32 = 1.0
     for i in range(numelems):
         buffer1.data.offset(i).store(2.0)
-        buffer2.data.offset(i).store(SIMD[1, DType.f32](x.value))
+        buffer2.data.offset(i).store(SIMD[DType.f32, 1](x.value))
         out_buffer.data.offset(i).store(0.0)
         x += 1.0
 

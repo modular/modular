@@ -44,18 +44,18 @@ fn reduce[
         DType,
         `>(`,
         SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
         ` borrow,`,
         SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
             __mlir_attr[`#kgen.param.index.ref<0, false, 2> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
         ` borrow) -> `,
         SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
         `>`,
     ],
@@ -66,18 +66,18 @@ fn reduce[
         DType,
         `>(`,
         SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
         ` borrow) -> `,
-        SIMD[1, __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType]],
+        SIMD[__mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType], 1],
         `>`,
     ],
-](src: Buffer[size, type], init: SIMD[1, acc_type]) -> SIMD[1, acc_type]:
+](src: Buffer[size, type], init: SIMD[acc_type, 1]) -> SIMD[acc_type, 1]:
     alias unroll_factor = 8  # TODO: search
     # TODO: explicitly unroll like vectorize_unroll does.
     alias unrolled_simd_width = simd_width * unroll_factor
-    var acc_simd = SIMD[unrolled_simd_width, acc_type].splat(init)
+    var acc_simd = SIMD[acc_type, unrolled_simd_width].splat(init)
     let len = src.__len__()
     let vector_end = (len // unrolled_simd_width) * unrolled_simd_width
     for i in range(0, vector_end, unrolled_simd_width):
@@ -107,18 +107,18 @@ fn _reduce_3D[
         DType,
         `>(`,
         SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
         ` borrow,`,
         SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
             __mlir_attr[`#kgen.param.index.ref<0, false, 2> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
         ` borrow) -> `,
         SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
         `>`,
     ],
@@ -129,11 +129,11 @@ fn _reduce_3D[
         DType,
         `>(`,
         SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
         ` borrow) -> `,
-        SIMD[1, __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType]],
+        SIMD[__mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType], 1],
         `>`,
     ],
 ](
@@ -143,7 +143,7 @@ fn _reduce_3D[
         output_shape,
         acc_type,
     ],
-    init: SIMD[1, acc_type],
+    init: SIMD[acc_type, 1],
 ):
     """Performs a reduction across axis 1 of a 3D input buffer."""
 
@@ -187,7 +187,7 @@ fn _reduce_3D[
 
         @always_inline
         fn reduce_w_chunked[simd_width: Int](idx: Int):
-            var accum = SIMD[simd_width, acc_type].splat(init)
+            var accum = SIMD[acc_type, simd_width].splat(init)
             for j in range(w):
                 let chunk = src.simd_load[simd_width](
                     StaticIntTuple[3](i, j, idx)
@@ -215,18 +215,18 @@ fn reduce[
         DType,
         `>(`,
         SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
         ` borrow,`,
         SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
             __mlir_attr[`#kgen.param.index.ref<0, false, 2> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
         ` borrow) -> `,
         SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
         `>`,
     ],
@@ -237,18 +237,18 @@ fn reduce[
         DType,
         `>(`,
         SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
         ` borrow) -> `,
-        SIMD[1, __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType]],
+        SIMD[__mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType], 1],
         `>`,
     ],
     reduce_axis: Int,
 ](
     src: NDBuffer[rank, input_shape, type],
     dst: NDBuffer[rank, output_shape, acc_type],
-    init: SIMD[1, acc_type],
+    init: SIMD[acc_type, 1],
 ):
     """Performs a reduction across reduce_axis of an NDBuffer (src) and stores
     the result in an NDBuffer (dst).
@@ -299,7 +299,7 @@ fn reduce[
 fn _simd_max[
     simd_width: Int,
     type: DType,
-](x: SIMD[simd_width, type]) -> SIMD[1, type]:
+](x: SIMD[type, simd_width]) -> SIMD[type, 1]:
     """Helper function that computes the max element in a simd vector and is
     compatible with the function signature expected by reduce_fn in reduce."""
     return x.reduce_max()
@@ -310,8 +310,8 @@ fn _simd_max_elementwise[
     simd_width: Int,
     acc_type: DType,
     type: DType,
-](x: SIMD[simd_width, acc_type], y: SIMD[simd_width, type]) -> SIMD[
-    simd_width, acc_type
+](x: SIMD[acc_type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
+    acc_type, simd_width
 ]:
     """Helper function that computes the elementwise max of each element in a
     simd vector and is compatible with the function signature expected by map_fn
@@ -323,7 +323,7 @@ fn max[
     simd_width: Int,
     size: Dim,
     type: DType,
-](src: Buffer[size, type]) -> SIMD[1, type]:
+](src: Buffer[size, type]) -> SIMD[type, 1]:
     """Computes the max element in a buffer."""
     return reduce[
         simd_width, size, type, type, _simd_max_elementwise, _simd_max
@@ -364,7 +364,7 @@ fn max[
 fn _simd_min[
     simd_width: Int,
     type: DType,
-](x: SIMD[simd_width, type]) -> SIMD[1, type]:
+](x: SIMD[type, simd_width]) -> SIMD[type, 1]:
     """Helper function that computes the min element in a simd vector and is
     compatible with the function signature expected by reduce_fn in reduce."""
     return x.reduce_min()
@@ -375,8 +375,8 @@ fn _simd_min_elementwise[
     simd_width: Int,
     acc_type: DType,
     type: DType,
-](x: SIMD[simd_width, acc_type], y: SIMD[simd_width, type]) -> SIMD[
-    simd_width, acc_type
+](x: SIMD[acc_type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
+    acc_type, simd_width
 ]:
     """Helper function that computes the elementwise min of each element in a
     simd vector and is compatible with the function signature expected by map_fn
@@ -388,7 +388,7 @@ fn min[
     simd_width: Int,
     size: Dim,
     type: DType,
-](src: Buffer[size, type]) -> SIMD[1, type]:
+](src: Buffer[size, type]) -> SIMD[type, 1]:
     """Computes the min element in a buffer."""
     return reduce[
         simd_width, size, type, type, _simd_min_elementwise, _simd_min
@@ -429,7 +429,7 @@ fn min[
 fn _simd_sum[
     simd_width: Int,
     type: DType,
-](x: SIMD[simd_width, type]) -> SIMD[1, type]:
+](x: SIMD[type, simd_width]) -> SIMD[type, 1]:
     """Helper function that computes the sum of elements in a simd vector and is
     compatible with the function signature expected by reduce_fn in reduce."""
     return x.reduce_add()
@@ -440,8 +440,8 @@ fn _simd_sum_elementwise[
     simd_width: Int,
     acc_type: DType,
     type: DType,
-](x: SIMD[simd_width, acc_type], y: SIMD[simd_width, type]) -> SIMD[
-    simd_width, acc_type
+](x: SIMD[acc_type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
+    acc_type, simd_width
 ]:
     """Helper function that computes the elementwise sum of each element in a
     simd vector and is compatible with the function signature expected by map_fn
@@ -453,7 +453,7 @@ fn sum[
     simd_width: Int,
     size: Dim,
     type: DType,
-](src: Buffer[size, type]) -> SIMD[1, type]:
+](src: Buffer[size, type]) -> SIMD[type, 1]:
     """Computes the sum element in a buffer."""
     return reduce[
         simd_width, size, type, type, _simd_sum_elementwise, _simd_sum
@@ -494,7 +494,7 @@ fn sum[
 fn _simd_product[
     simd_width: Int,
     type: DType,
-](x: SIMD[simd_width, type]) -> SIMD[1, type]:
+](x: SIMD[type, simd_width]) -> SIMD[type, 1]:
     """Helper function that computes the product of elements in a simd vector and is
     compatible with the function signature expected by reduce_fn in reduce."""
     return x.reduce_mul()
@@ -505,8 +505,8 @@ fn _simd_product_elementwise[
     simd_width: Int,
     acc_type: DType,
     type: DType,
-](x: SIMD[simd_width, acc_type], y: SIMD[simd_width, type]) -> SIMD[
-    simd_width, acc_type
+](x: SIMD[acc_type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
+    acc_type, simd_width
 ]:
     """Helper function that computes the elementwise product of each element in a
     simd vector and is compatible with the function signature expected by map_fn
@@ -518,7 +518,7 @@ fn product[
     simd_width: Int,
     size: Dim,
     type: DType,
-](src: Buffer[size, type]) -> SIMD[1, type]:
+](src: Buffer[size, type]) -> SIMD[type, 1]:
     """Computes the product element in a buffer."""
     return reduce[
         simd_width, size, type, type, _simd_product_elementwise, _simd_product
@@ -559,12 +559,12 @@ fn mean[
     simd_width: Int,
     size: Dim,
     type: DType,
-](src: Buffer[size, type]) -> SIMD[1, type]:
+](src: Buffer[size, type]) -> SIMD[type, 1]:
     """Computes the mean value of the elements in a buffer."""
 
     debug_assert(src.__len__() != 0, "input must not be empty")
 
-    return (SIMD[1, type](sum[simd_width, size, type](src)) / src.__len__())[
+    return (SIMD[type, 1](sum[simd_width, size, type](src)) / src.__len__())[
         0
     ].value
 
@@ -592,7 +592,7 @@ fn mean[
     ](src, dst)
 
     let n = src.dim[reduce_axis]()
-    let n_recip = SIMD[1, type](1) / n
+    let n_recip = SIMD[type, 1](1) / n
     let dst_1d = dst.flatten()
 
     @always_inline
@@ -613,7 +613,7 @@ fn variance[
     simd_width: Int,
     size: Dim,
     type: DType,
-](src: Buffer[size, type]) -> SIMD[1, type]:
+](src: Buffer[size, type]) -> SIMD[type, 1]:
     """Computes the variance value of the elements in a buffer."""
 
     debug_assert(src.__len__() > 1, "input length must be greater than 1")
@@ -625,15 +625,15 @@ fn variance[
         simd_width: Int,
         acc_type: DType,
         type: DType,
-    ](x: SIMD[simd_width, acc_type], y: SIMD[simd_width, type]) -> SIMD[
-        simd_width, acc_type
+    ](x: SIMD[acc_type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
+        acc_type, simd_width
     ]:
         """Helper function that computes the equation $sum (x_i - u)^2 + y$"""
-        let mean_simd = SIMD[simd_width, type](mean_value).cast[acc_type]()
+        let mean_simd = SIMD[type, simd_width](mean_value).cast[acc_type]()
         let diff = y.cast[acc_type]() - mean_simd
         return x + diff * diff
 
-    let numerator: SIMD[1, type] = reduce[
+    let numerator: SIMD[type, 1] = reduce[
         simd_width, size, type, type, _simd_variance_elementwise, _simd_sum
     ](src, 0)
     return (numerator / (src.__len__() - 1))[0].value
