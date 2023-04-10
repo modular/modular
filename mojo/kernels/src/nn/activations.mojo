@@ -6,7 +6,7 @@
 
 """The module contains implementations of activation functions."""
 
-from Assert import assert_param_msg
+from Assert import assert_param_msg, debug_assert
 from DType import DType
 from Math import erf, exp, tanh, clamp, max, min, identity
 from SIMD import SIMD
@@ -19,9 +19,9 @@ struct ActivationType:
     alias RELU = ActivationType(1)
     alias RELU6 = ActivationType(2)
     alias RELU_N1 = ActivationType(3)
+    alias SIGMOID = ActivationType(6)
     alias GELU = ActivationType(4)
     alias GELU_APPROX = ActivationType(5)
-    alias SIGMOID = ActivationType(6)
 
     @always_inline("nodebug")
     fn __init__(value: Int) -> ActivationType:
@@ -42,6 +42,8 @@ fn dispatch_activation_fn[
     @parameter
     if activation == ActivationType.IDENTITY:
         return identity(val)
+    elif activation == ActivationType.RELU:
+        return relu(val)
     elif activation == ActivationType.RELU6:
         return relu6(val)
     elif activation == ActivationType.RELU_N1:
@@ -56,6 +58,28 @@ fn dispatch_activation_fn[
         assert_param_msg[False, "unsupported activation"]()
 
     return val
+
+
+@always_inline
+fn activation_dispatch[
+    func: __mlir_type[`!kgen.signature<<`, ActivationType, `>() -> !lit.none>`]
+](activation: ActivationType):
+    if activation == ActivationType.IDENTITY:
+        func[ActivationType.IDENTITY]()
+    elif activation == ActivationType.RELU:
+        func[ActivationType.RELU]()
+    elif activation == ActivationType.RELU6:
+        func[ActivationType.RELU6]()
+    elif activation == ActivationType.RELU_N1:
+        func[ActivationType.RELU_N1]()
+    elif activation == ActivationType.GELU:
+        func[ActivationType.GELU]()
+    elif activation == ActivationType.GELU_APPROX:
+        func[ActivationType.GELU_APPROX]()
+    elif activation == ActivationType.SIGMOID:
+        func[ActivationType.SIGMOID]()
+    else:
+        debug_assert(True, "unsupported activation")
 
 
 # ===----------------------------------------------------------------------===#
