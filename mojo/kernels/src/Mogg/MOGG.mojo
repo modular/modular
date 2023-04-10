@@ -41,6 +41,7 @@ fn MOGGExport():
     alias _div = mogg_div
     alias _erf = mogg_erf
     alias _exp = mogg_exp
+    alias _load_scalar = load_scalar
     alias _mul = mogg_mul
     alias _rsqrt = mogg_rsqrt
     alias _sqrt = mogg_sqrt
@@ -51,10 +52,10 @@ fn MOGGExport():
     alias _simd_load = simd_load
     alias _simd_store = simd_store
     alias _simd_load_1D = simd_load_1D
-    alias _simd_load_scalar = simd_load_scalar
     alias _simd_load_splat = simd_load_splat
     alias _simd_load_maybe_splat = simd_load_maybe_splat
     alias _simd_target = get_target_simd
+    alias _splat = splat
     alias _elementwise = elementwise_wrapper
     alias _print_shape_info = print_buffer_info
     alias _mark_output_chain_ready = mark_output_chain_ready
@@ -295,21 +296,31 @@ fn simd_load_1D[
 ) -> SIMD[type, simd_width]:
     let stride = buffer.dynamic_stride[rank - 1]
     if stride == 0:
-        return simd_load_scalar[simd_width, type, rank](buffer)
+        let scalar = load_scalar[type, rank](buffer)
+        return splat[type, simd_width](scalar)
 
     let i = stride * index[rank - 1]
     return buffer.data.simd_load[simd_width](i)
 
 
 # If we know the tensor is actually a scalar tensor we can avoid all indexing
-# calculation.
+# calculation. It's broken into the two parts (load followed by splat) so we can
+# hoist the load from the lambda body.
 @always_inline
-fn simd_load_scalar[
-    simd_width: __mlir_type.index, type: DType, rank: __mlir_type.index
+fn load_scalar[
+    type: DType, rank: __mlir_type.index
 ](buffer: NDBuffer[rank, DimList[rank].create_unknown(), type]) -> SIMD[
-    type, simd_width
+    type, 1
 ]:
     return buffer.data.load(0)
+
+
+@always_inline
+fn splat[
+    type: DType,
+    simd_width: __mlir_type.index,
+](val: SIMD[type, 1]) -> SIMD[type, simd_width]:
+    return SIMD[type, simd_width].splat(val)
 
 
 # Load a tensor which might splat along the last dimension.
