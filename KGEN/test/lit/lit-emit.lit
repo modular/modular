@@ -19,4 +19,4 @@ fn call_me() -> F32:
 @export
 # CHECK: extern void main();
 fn main():
-    call_me()
+    _ = call_me()
