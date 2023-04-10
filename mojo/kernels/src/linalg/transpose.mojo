@@ -9,11 +9,10 @@ from Buffer import Buffer, NDBuffer
 from DType import DType
 from Functional import unroll
 from Index import StaticIntTuple
-from List import create_kgen_list, DimList, Dim, create_dim_list
+from List import DimList, create_dim_list
 from Memory import memcpy
 from Pointer import DTypePointer
 from Range import range
-from SIMD import SIMD
 from TypeUtilities import rebind
 from TargetInfo import dtype_sizeof
 

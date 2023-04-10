@@ -13,8 +13,7 @@
 from Assert import assert_param
 from Buffer import NDBuffer
 from DType import DType
-from IO import print
-from List import DimList, create_dim_list
+from List import create_dim_list
 from Memory import memset_zero, memcpy
 from Pointer import DTypePointer
 from Range import range

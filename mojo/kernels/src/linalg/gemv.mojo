@@ -8,10 +8,7 @@ from Buffer import NDBuffer, Buffer
 from DType import DType
 from Functional import unroll
 from List import Dim, DimList, create_dim_list
-from Range import range
 from SIMD import SIMD
-from TargetInfo import simd_width, sizeof
-from IO import print
 from Index import Index
 
 

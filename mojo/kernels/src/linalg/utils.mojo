@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Assert import debug_assert
 from Index import StaticIntTuple, Index
 from Math import div_ceil, max, min
 from TargetInfo import has_avx512f, has_neon, os_is_macos

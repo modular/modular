@@ -5,23 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from Assert import assert_param, debug_assert
-from Buffer import (
-    NDBuffer,
-    Buffer,
-    partial_simd_load,
-    partial_simd_store,
-    _raw_stack_allocation,
-)
+from Buffer import NDBuffer, _raw_stack_allocation
+from Functional import tile, tile_and_unswitch, vectorize_unroll
+from IO import print, _printf
 from Index import Index, StaticIntTuple
 from List import VariadicList, Dim, DimList
-from Pointer import DTypePointer
-from SIMD import SIMD
-from TargetInfo import simd_byte_width
 from Math import div_ceil, min, max
-from Functional import tile, unswitch, tile_and_unswitch, vectorize_unroll
-from IO import print, _printf
-from DType import DType
-from TargetInfo import dtype_simd_width
 from Matmul import (
     MatmulConfig,
     PackMatrixCols,
@@ -32,8 +21,11 @@ from Matmul import (
     MatmulOperandLayout,
     calculate_tile_n_k,
 )
-from Range import range
 from MatmulUtils import get_pack_data_size
+from Pointer import DTypePointer
+from Range import range
+from TargetInfo import dtype_simd_width
+from TargetInfo import simd_byte_width
 
 
 @register_passable("trivial")

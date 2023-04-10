@@ -13,11 +13,10 @@ from DType import DType
 from Intrinsics import llvm_intrinsic
 from List import create_dim_list
 from Matmul import Matrix
-from Pointer import Pointer, DTypePointer
-from StaticTuple import StaticTuple
-
+from Pointer import DTypePointer
 from Range import range
 from SIMD import SIMD
+from StaticTuple import StaticTuple
 
 alias void = DType.invalid.value
 

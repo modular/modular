@@ -4,11 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Assert import (
-    assert_param,
-    debug_assert,
-    assert_param_msg,
-)
+from Assert import assert_param, debug_assert
 from DType import DType
 from Buffer import (
     NDBuffer,
@@ -21,23 +17,15 @@ from Buffer import (
 from Functional import tile, unswitch, unroll, unroll2, TernaryClosure
 from Index import Index, StaticIntTuple
 from List import Dim, DimList, VariadicList, create_dim_list
-from Math import min, fma, max, div_ceil
+from Math import min, fma, div_ceil
 from MatmulUtils import get_packB_unroll_factor
 from Matrix import Matrix
-from Memory import stack_allocation
 from Pointer import DTypePointer
 from Range import range
 from SIMD import SIMD
-from TargetInfo import (
-    os_is_macos,
-    has_neon,
-    alignof,
-    dtype_simd_width,
-    dtype_sizeof,
-)
+from TargetInfo import has_neon, alignof, dtype_simd_width
 from Transpose import transpose_inplace
 from Intrinsics import PrefetchOptions
-from IO import print
 
 
 @register_passable("trivial")
