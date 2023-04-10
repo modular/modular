@@ -5,17 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 """This module implements higher-order functions."""
 
-from Assert import assert_param, assert_param_msg
+from Assert import assert_param_msg
 from Coroutine import Coroutine
-from DType import DType
 from Index import StaticIntTuple
 from List import VariadicList
-from LLCL import Runtime, TaskGroup, OutputChainPtr, AsyncTaskGroupPtr
+from LLCL import Runtime, OutputChainPtr, AsyncTaskGroupPtr
 from Math import div_ceil, min, max
 from Range import range
-from SIMD import SIMD
-from Vector import InlinedFixedVector
-from String import StringRef
 
 alias InlinedFixedVectorLength = 64
 

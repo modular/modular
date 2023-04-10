@@ -7,18 +7,13 @@
 from Assert import assert_param_msg, debug_assert
 from Buffer import Buffer, NDBuffer, prod_dims
 from DType import DType
-from Functional import vectorize, unroll
+from Functional import vectorize
 from Index import StaticIntTuple
 from Numerics import inf, neginf
-from List import (
-    DimList,
-    Dim,
-    create_dim_list,
-)
+from List import DimList, Dim, create_dim_list
 from Range import range
 from SIMD import SIMD
-from TargetInfo import dtype_simd_width, sizeof, dtype_sizeof
-from TypeUtilities import rebind
+from TargetInfo import dtype_sizeof
 
 # ===----------------------------------------------------------------------===#
 # reduce
