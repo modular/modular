@@ -13,16 +13,16 @@ from .api import (
     InferenceSession,
     Model,
     ModelKind,
+    TensorFlowLoadOptions,
     TensorSpec,
-    TFCompileOptions,
-    TFLiteCompileOptions,
+    TFLiteLoadOptions,
     TFSavedModelVersion,
-    TorchCompileOptions,
+    TorchLoadOptions,
     version_string,
 )
 
 __doc__ = (
-    "Modular engine provides methods to compile and execute saved models from"
+    "Modular engine provides methods to load and execute saved models from"
     " TensorFlow, PyTorch and ONNX."
 )
 __version__ = version_string

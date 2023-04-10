@@ -27,7 +27,7 @@ version_string = _mecore.__version__
 
 
 class ModelKind(str, Enum):
-    """ModelKind represents the to-be-compiled model's framework"""
+    """ModelKind represents the to-be-loaded model's framework"""
 
     PYTORCH_MODEL = "PyTorch Model"
     TENSORFLOW_MODEL = "TensorFlow Model"
@@ -41,8 +41,8 @@ class TFSavedModelVersion(str, Enum):
 
 
 @dataclass
-class TFCompileOptions:
-    """TFCompileOptions is a class that can be used to configure compilation of TensorFlow saved models"""
+class TensorFlowLoadOptions:
+    """TensorFlowLoadOptions is a class that can be used to configure loading of TensorFlow saved models"""
 
     saved_model_version: TFSavedModelVersion = field(
         default=TFSavedModelVersion.V1
@@ -52,19 +52,19 @@ class TFCompileOptions:
 
 
 @dataclass
-class TFLiteCompileOptions:
-    """TFLiteCompileOptions is a class that can be used to configure compilation of TFLite models"""
+class TFLiteLoadOptions:
+    """TFLiteLoadOptions is a class that can be used to configure loading of TFLite models"""
 
 
 @dataclass
-class TorchCompileOptions:
-    """TorchCompileOptions is a class that can be used to configure compilation of PyTorch models"""
+class TorchLoadOptions:
+    """TorchLoadOptions is a class that can be used to configure loading of PyTorch models"""
 
 
 class Model:
-    """A Model object represents a compiled model.
+    """A Model object represents a loaded model.
 
-    Model instances are created by calling compile on a native framework model
+    Model instances are created by calling load on a native framework model
     (e.g., a Tensorflow SavedModel) using an instance of the InferenceSession
     class.
     """
@@ -102,8 +102,8 @@ class Model:
         # The type would likely be Union[np.ndarray, torch.Tensor, tf.Tensor]
         return self._impl.execute(*args)
 
-    def load(self) -> None:
-        """Loads the compiled model and makes it ready for execution."""
+    def init(self) -> None:
+        """Initializes the loaded model and makes it ready for execution."""
         self._impl.load()
 
     @property
@@ -151,14 +151,14 @@ class InferenceSession:
         config = config or {}
         self._impl = _InferenceSession(config)
 
-    def compile(
+    def load(
         self,
         model_path: Path,
         options: Optional[
-            Union[TFCompileOptions, TorchCompileOptions, TFLiteCompileOptions]
+            Union[TensorFlowLoadOptions, TorchLoadOptions, TFLiteLoadOptions]
         ] = None,
     ) -> Model:
-        """Compile a saved model file/directory
+        """Load a saved model file/directory
 
         We support compiling Tensorflow models in the SavedModel format and traceable PyTorch models
 
@@ -170,7 +170,7 @@ class InferenceSession:
         Returns
         -------
         Model
-            A compiled model
+            A loaded model
 
         Raises
         ------
@@ -180,11 +180,11 @@ class InferenceSession:
         options_dict = {}
         if options:
             options_dict = asdict(options)
-            if isinstance(options, TFCompileOptions):
+            if isinstance(options, TensorFlowLoadOptions):
                 options_dict["type"] = "tf"
-            elif isinstance(options, TorchCompileOptions):
+            elif isinstance(options, TorchLoadOptions):
                 options_dict["type"] = "torch"
-            elif isinstance(options, TFLiteCompileOptions):
+            elif isinstance(options, TFLiteLoadOptions):
                 options_dict["type"] = "tflite"
             else:
                 raise TypeError("Invalid compilation options object.")
