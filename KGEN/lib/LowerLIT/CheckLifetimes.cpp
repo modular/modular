@@ -180,9 +180,6 @@ struct LifetimeTrackable {
   /// Return the type of the underlying value, looking through the pointer type
   /// if this is an indirect reference.
   Type getValueType(Value value) const;
-
-  /// Get the destructor for this value if one exists, otherwise return null.
-  TypedAttr getDestructor(Value value, TypeDeclInfo &typeDeclInfo) const;
 };
 
 LifetimeTrackable::LifetimeTrackable(Value v) {
@@ -291,15 +288,6 @@ Type LifetimeTrackable::getValueType(Value value) const {
   return ParamRefType::get(pointee);
 }
 
-/// Get the destructor for this value if one exists, otherwise return null.
-TypedAttr LifetimeTrackable::getDestructor(Value value,
-                                           TypeDeclInfo &typeDeclInfo) const {
-  DeclRefType valueType = dyn_cast<DeclRefType>(getValueType(value));
-  if (!valueType)
-    return {};
-  return typeDeclInfo.getStructDeclForType(valueType).getDestructorAttr();
-}
-
 //===----------------------------------------------------------------------===//
 // ValueInfo / ValueSet tracking
 //===----------------------------------------------------------------------===//
@@ -326,6 +314,11 @@ struct ValueInfo {
 
   /// This is true if the value had a use-before-initialization error diagnosed.
   bool hasErrorDiagnosed;
+
+  /// Return true if this value contains the specified bit.
+  bool contains(unsigned bitNo) const {
+    return startValueBit <= bitNo && bitNo < endValueBit;
+  }
 };
 
 /// A ValueRef indicates a slice reference into the BitVector for all the
@@ -906,6 +899,10 @@ private:
   void checkLive(Operation &op, ValueRef valueRef);
   void destroyWholeValueIfLastAccess(Operation &op, ValueRef valueRef);
   void checkDef(Operation &op, ValueRef valueRef);
+  void destroyValuesAtEntry(const BitVector &entries, Block &block,
+                            Location loc);
+  void emitDestructorCallAt(unsigned valueId, Block &block,
+                            Block::iterator insertPt, Location loc);
 
   /// This is metadata about all the values we are tracking.
   ValueSet &valueSet;
@@ -1017,9 +1014,46 @@ void DestructorInsertion::checkOp(Operation &op) {
     return;
   }
 
-  // A unreachable consumes everything.  Nothing needs to be destroyed here!
+  // A unreachable consumes nothing.  Nothing needs to be destroyed here!
   if (isa<UnreachableOp>(op)) {
-    consumedValues.set();
+    consumedValues.reset();
+    consumedValues.set(0); // Never destroy slot 0.
+    return;
+  }
+
+  // 'if' operations propagate the consume sets into each branch, and use the
+  // resulting consume sets to make sure the upward propagated set of consumed
+  // values is consistent.
+  if (isa<HLCF::IfOp, ParamIfOp>(op)) {
+    assert(op.getNumRegions() == 2 && op.getRegion(0).hasOneBlock() &&
+           op.getRegion(1).hasOneBlock() &&
+           "if-like op should have two single-block regions");
+    BitVector thenConsumedValues = consumedValues;
+    scanBlock(op.getRegion(0).front());
+    thenConsumedValues.swap(consumedValues);
+    scanBlock(op.getRegion(1).front());
+    // At this point, 'thenConsumedValues' is the set of upwardly consumed
+    // values from the 'then' block and 'consumedValues' is the set of upwardly
+    // consumed values from the else branch.  See if they disagree.
+    BitVector disagreements = consumedValues;
+    disagreements ^= thenConsumedValues;
+    if (disagreements.none())
+      return;
+
+    // If the true branch consumed values that the false branch didn't, then we
+    // need to destroy those corresponding values in the false branch.
+    BitVector consumedInThenButNotElse = thenConsumedValues;
+    consumedInThenButNotElse &= disagreements;
+    BitVector consumedInElseButNotThen = consumedValues;
+    consumedInElseButNotThen &= disagreements;
+    destroyValuesAtEntry(consumedInThenButNotElse, op.getRegion(1).front(),
+                         op.getLoc());
+    destroyValuesAtEntry(consumedInElseButNotThen, op.getRegion(0).front(),
+                         op.getLoc());
+
+    // Our final upward propagated consume set is the union of both sets now
+    // that they both consume the same things.
+    consumedValues |= thenConsumedValues;
     return;
   }
 
@@ -1043,10 +1077,12 @@ void DestructorInsertion::markConsumed(Operation &op, ValueRef valueRef) {
   //   takeValue(a.x^)
   //   useValue(a.y)
   //   # inserted dtor.
+#if 0 // FIXME.
   if (!valueRef.isAllMissing(consumedValues)) {
     llvm_unreachable(
         "cannot currently consume fields; will happen with the ^ operator");
   }
+#endif
 
   valueRef.markBits(consumedValues, true);
 }
@@ -1077,45 +1113,9 @@ void DestructorInsertion::destroyWholeValueIfLastAccess(Operation &op,
   // The dtor will consume the whole thing.
   fullValueRef.markBits(consumedValues, true);
 
-  LifetimeTrackable trackable(valueInfo.value);
-  assert(trackable && "shouldn't be tracking untrackable things!");
-  TypedAttr dtor =
-      trackable.getDestructor(valueInfo.value, valueSet.typeDeclInfo);
-
-  if (!dtor)
-    return;
-
-  SignatureType signature = cast<SignatureType>(dtor.getType());
-  assert(signature.getValueResults().size() == 1 &&
-         "dtor should have one result (none type)");
-  assert(signature.getValueInputs().size() == 1 &&
-         "dtor should have one operand");
-
-  OpBuilder b(&op);
-  b.setInsertionPointAfter(&op);
-
-  // We may have the value indirect (e.g. because it is in a var) which needs
-  // to be loaded to invoke the destructor.
-  Value valueToDestroy = valueInfo.value;
-  if (valueToDestroy.getType() != signature.getValueInputs()[0]) {
-    assert(POP::PointerType::get(signature.getValueInputs()[0]) ==
-           valueToDestroy.getType());
-    valueToDestroy = b.create<POP::LoadOp>(op.getLoc(), valueToDestroy,
-                                           /*align*/ std::nullopt);
-  }
-
-  // Emit the call to the destructor.
-  if (auto symbolConstantDtor = dyn_cast<SymbolConstantAttr>(dtor)) {
-    b.create<CallOp>(op.getLoc(), signature.getValueResults()[0],
-                     symbolConstantDtor,
-                     b.getAttr<ParamDeclArrayAttr>(ArrayRef<ParamDeclAttr>()),
-                     ValueRange(valueToDestroy));
-  } else {
-    b.create<CallParamOp>(
-        op.getLoc(), signature.getValueResults()[0], dtor,
-        b.getAttr<ParamDeclArrayAttr>(ArrayRef<ParamDeclAttr>()),
-        ValueRange(valueToDestroy));
-  }
+  // Destroy the value after the op.
+  emitDestructorCallAt(valueRef.valueId, *op.getBlock(),
+                       std::next(Block::iterator(&op)), op.getLoc());
 }
 
 /// This operation defines the specified value.  If the value is dead on
@@ -1127,6 +1127,90 @@ void DestructorInsertion::checkDef(Operation &op, ValueRef valueRef) {
   // This call defines the result, so anything above it is either dead or
   // needs a destructor if live.
   valueRef.markBits(consumedValues, false);
+}
+
+void DestructorInsertion::emitDestructorCallAt(unsigned valueId, Block &block,
+                                               Block::iterator insertPt,
+                                               Location loc) {
+  ValueInfo &valueInfo = valueSet.getValueInfo(valueId);
+  LifetimeTrackable trackable(valueInfo.value);
+  assert(trackable && "shouldn't be tracking untrackable things!");
+
+  DeclRefType valueType =
+      dyn_cast<DeclRefType>(trackable.getValueType(valueInfo.value));
+  if (!valueType)
+    return;
+  TypedAttr dtor =
+      valueSet.typeDeclInfo.getStructDeclForType(valueType).getDestructorAttr();
+  if (!dtor)
+    return;
+
+  SignatureType signature = cast<SignatureType>(dtor.getType());
+  assert(signature.getValueResults().size() == 1 &&
+         "dtor should have one result (none type)");
+  assert(signature.getValueInputs().size() == 1 &&
+         "dtor should have one operand");
+
+  OpBuilder b(&block, insertPt);
+
+  // We may have the value indirect (e.g. because it is in a var) which needs
+  // to be loaded to invoke the destructor.
+  Value valueToDestroy = valueInfo.value;
+  if (valueToDestroy.getType() != signature.getValueInputs()[0]) {
+    assert(POP::PointerType::get(signature.getValueInputs()[0]) ==
+           valueToDestroy.getType());
+    valueToDestroy = b.create<POP::LoadOp>(loc, valueToDestroy,
+                                           /*align*/ std::nullopt);
+  }
+
+  // Emit the call to the destructor.
+  if (auto symbolConstantDtor = dyn_cast<SymbolConstantAttr>(dtor)) {
+    b.create<CallOp>(loc, signature.getValueResults()[0], symbolConstantDtor,
+                     b.getAttr<ParamDeclArrayAttr>(ArrayRef<ParamDeclAttr>()),
+                     ValueRange(valueToDestroy));
+  } else {
+    b.create<CallParamOp>(
+        loc, signature.getValueResults()[0], dtor,
+        b.getAttr<ParamDeclArrayAttr>(ArrayRef<ParamDeclAttr>()),
+        ValueRange(valueToDestroy));
+  }
+}
+
+/// Destroy any values whose bits are indicated in the specified set.  Insert
+/// the destructor calls at the entry to the specified block.
+void DestructorInsertion::destroyValuesAtEntry(const BitVector &entries,
+                                               Block &block, Location loc) {
+  // If the block is unreachable, don't bother destroying anything.
+  if (isa<UnreachableOp>(block.front()))
+    return;
+
+  // As we scan through bits, we walk through corresponding ValueInfos to know
+  // what we are working with.
+  MutableArrayRef<ValueInfo> valueInfos = valueSet.getValueInfos();
+  size_t nextValueInfo = 0;
+
+  int nextToDestroy = entries.find_first();
+  while (nextToDestroy != -1) {
+    // Figure out which valueInfo this is.
+    while (!valueInfos[nextValueInfo].contains(nextToDestroy)) {
+      ++nextValueInfo;
+      assert(nextValueInfo != valueInfos.size() &&
+             "nothing contains this bit?");
+    }
+
+    // Ok, we know that we are destroying some field of this value.  If it is
+    // the entire value, emit a destructor call for it.
+    ValueRef fullValueRef = valueSet.getFullValueRef(nextValueInfo);
+    if (fullValueRef.isAllPresent(entries)) {
+      // FIXME: Should destroy subfields!
+
+      // Destroy this value at the start of the block.
+      emitDestructorCallAt(nextValueInfo, block, block.begin(), loc);
+    }
+
+    // Find the next object to destroy.
+    nextToDestroy = entries.find_next(fullValueRef.endBit - 1);
+  }
 }
 
 //===----------------------------------------------------------------------===//
