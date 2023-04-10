@@ -10,7 +10,6 @@ from DType import DType
 from Pointer import Pointer, DTypePointer
 from String import StringRef
 from Vector import UnsafeFixedVector
-from TargetInfo import sizeof
 from Range import range
 from String import String
 from Tracing import TraceLevel, is_mojo_profiling_disabled
