@@ -70,7 +70,7 @@ def generate_test_inputs(model: me.Model) -> List[np.ndarray]:
 
 def compile_and_execute_on_random_input(model_path: Path):
     session = me.InferenceSession()
-    model: me.Model = session.compile(model_path)
+    model: me.Model = session.load(model_path)
     assert model is not None
     inputs = generate_test_inputs(model)
     output = model.execute(*inputs)
