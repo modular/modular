@@ -787,3 +787,11 @@ kgen.generator @bad_index_ref<fn: <index>(!pop.array<*(0,1), i32>) -> ()>() {
 kgen.generator @bad_index_ref<fn: <i32, !pop.array<*(0,0), i32>>() -> ()>() {
   kgen.return
 }
+
+// -----
+
+kgen.generator @bad_evaluator() {
+  // expected-error @below {{'evaluate' evaluator operand must be a signature type}}
+  kgen.param.declare fn: () -> () = <evaluate(:variadic<!kgen.signature<() -> ()>> [@bad_evaluator], :i32 1)>
+  kgen.return
+}
