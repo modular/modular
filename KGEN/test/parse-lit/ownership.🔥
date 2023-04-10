@@ -208,6 +208,57 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
   d.noop()
   # CHECK-NEXT: kgen.call @{{.*}}__del__{{.*}}(%d)
 
+# CHECK-LABEL: lit.func @"loop_example
+fn loop_example(cond1: __mlir_type.i1, cond2: __mlir_type.i1):
+  # CHECK-NEXT: %a = lit.varlet.decl "a"
+  var a : MemExample
+  # CHECK-NEXT: %b = lit.varlet.decl "b"
+  var b : MemExample
+  # CHECK-NEXT: %c = lit.varlet.decl "c"
+  var c : MemExample
+
+  # CHECK-NEXT: kgen.call @{{.*}}__init__{{.*}}(%a)
+  a = MemExample()
+
+  # Unneeded boilerplate due to 'while True':
+  # CHECK-NEXT: hlcf.loop {
+  # CHECK-NEXT:  = kgen.param.constant: i1 = <1>
+  # CHECK-NEXT:      hlcf.if
+  # CHECK-NEXT:        hlcf.yield
+  # CHECK-NEXT:      } else {
+  # CHECK-NEXT:        kgen.unreachable
+  # CHECK-NEXT:      }
+  while True:
+    # CHECK-NEXT: kgen.call @{{.*}}__init__{{.*}}(%c)
+    c = MemExample()
+    # CHECK-NEXT: hlcf.if %cond2 {
+    if cond2:
+      # CHECK-NEXT: kgen.call @{{.*}}__init__{{.*}}(%b)
+      b = MemExample()
+      # CHECK-NEXT: hlcf.break
+      break
+    # CHECK-NEXT: } else {
+    # CHECK-NEXT:   kgen.call @{{.*}}__del__{{.*}}(%c)
+    # CHECK-NEXT:   kgen.call @{{.*}}__del__{{.*}}(%a)
+    # CHECK-NEXT:   hlcf.yield
+    # CHECK-NEXT: }
+
+    # CHECK-NEXT: kgen.call @{{.*}}__init__{{.*}}(%a)
+    # CHECK-NEXT: hlcf.continue
+    a = MemExample()
+  # CHECK-NEXT: }
+
+  # CHECK-NEXT: kgen.call @{{.*}}noop{{.*}}(%a)
+  a.noop()
+  # CHECK-NEXT: kgen.call @{{.*}}__del__{{.*}}(%a)
+
+  # CHECK-NEXT: kgen.call @{{.*}}noop{{.*}}(%b)
+  b.noop()
+  # CHECK-NEXT: kgen.call @{{.*}}__del__{{.*}}(%b)
+
+  # CHECK-NEXT: kgen.call @{{.*}}noop{{.*}}(%c)
+  c.noop()
+  # CHECK-NEXT: kgen.call @{{.*}}__del__{{.*}}(%c)
 
 
 # CHECK-LABEL: lit.func @"indirect_call

@@ -915,6 +915,17 @@ namespace {
 struct DestructorInsertion {
   DestructorInsertion(ValueSet &valueSet) : valueSet(valueSet) {}
   DestructorInsertion(const DestructorInsertion &existing) = delete;
+  DestructorInsertion(DestructorInsertion &&existing) = default;
+
+  static DestructorInsertion copy(const DestructorInsertion &existing) {
+    DestructorInsertion result(existing.valueSet);
+    result.consumedValues = existing.consumedValues;
+    result.raiseSet = existing.raiseSet;
+    result.breakSet = existing.breakSet;
+    result.continueSet = existing.continueSet;
+    result.dryRun = existing.dryRun;
+    return result;
+  }
 
   void scanFunction(mlir::FunctionOpInterface func);
   void scanBlock(Block &body);
@@ -938,9 +949,21 @@ private:
   /// this set will be a last use that does get destroyed.
   BitVector consumedValues;
 
+  /// When true, scanning an operation or block will not insert destructors, and
+  /// certain invariants don't hold.  This is used when processing loops,
+  /// because we need to iterate to a fixed point of values live in from
+  /// continue blocks before inserting destructors.
+  bool dryRun = false;
+
   /// When analyzing the body of a try, this bitset indicates what a 'raise'
   /// should produce based on its surrounding 'try's except block's expectation.
   BitVector *raiseSet = nullptr;
+
+  /// When analyzing the body of a loop, these bitset indicates what a 'break'
+  /// or 'continue' should produce based on its consumed value set for the
+  /// surrounding loop.
+  BitVector *breakSet = nullptr;
+  BitVector *continueSet = nullptr;
 };
 } // namespace
 
@@ -1066,6 +1089,17 @@ void DestructorInsertion::checkOp(Operation &op) {
     return;
   }
 
+  if (isa<HLCF::BreakOp>(op)) {
+    assert(breakSet && "Not in a loop?");
+    consumedValues = *breakSet;
+    return;
+  }
+  if (isa<HLCF::ContinueOp>(op)) {
+    assert(continueSet && "Not in a loop?");
+    consumedValues = *continueSet;
+    return;
+  }
+
   // 'if' operations propagate the consume sets into each branch, and use the
   // resulting consume sets to make sure the upward propagated set of consumed
   // values is consistent.
@@ -1106,8 +1140,7 @@ void DestructorInsertion::checkOp(Operation &op) {
     // The except block is processed with a copy of the consumed value set from
     // the bottom of the try.  After processing it, we know what the consumed
     // values are for the exception block.
-    DestructorInsertion exceptSets(valueSet);
-    exceptSets.consumedValues = consumedValues;
+    auto exceptSets = DestructorInsertion::copy(*this);
     exceptSets.raiseSet = raiseSet;
     exceptSets.scanBlock(tryOp.getExceptRegion().front());
 
@@ -1119,6 +1152,54 @@ void DestructorInsertion::checkOp(Operation &op) {
     // use the consumed values set on entry to the except block.
     llvm::SaveAndRestore x(raiseSet, &exceptSets.consumedValues);
     scanBlock(tryOp.getTryRegion().front());
+    return;
+  }
+
+  // For a loop, we know the consume sets for any break statements, but need to
+  // iterate the loop to find the right continue sets to use.
+  if (auto loopOp = dyn_cast<HLCF::LoopOp>(op)) {
+    auto loopBodySets = DestructorInsertion::copy(*this);
+    // Any 'break's within the loop will produce the consume set for the
+    // statement immediately after the loop.
+    loopBodySets.breakSet = &consumedValues;
+
+    // We start the continueSet with no values set to be consumed.
+    BitVector continueSet(consumedValues.size());
+    loopBodySets.continueSet = &continueSet;
+
+    // We need to dry run the body evaluation until we get to a stable continue
+    // set.
+    loopBodySets.dryRun = true;
+
+    // Iteratively scan the loop body until the continue set converges.
+    [[maybe_unused]] unsigned numIters = 0;
+    while (1) {
+      // Scan the body: any breaks will intersect their live-out set with
+      // 'breakSet', and any continues will intersect their live-out set with
+      // 'continueSet'.
+      loopBodySets.scanBlock(loopOp.getBody().front());
+
+      // If the continue set is unchanged, then we converged.
+      if (loopBodySets.consumedValues == continueSet)
+        break;
+      // Otherwise, use the set of values consumed on loop entry as the new
+      // continue set.
+      std::swap(loopBodySets.consumedValues, continueSet);
+
+      // This should converge trivially as we are setting bits in the continue
+      // set, but when we get a consume operator in the future this may be
+      // tricky.  Don't fall into an infinite loop on accident.
+      assert(++numIters < 5 && "Loop should converge in a couple iterations");
+    }
+
+    // Once we've converged to the right continue set, we can replay one final
+    // iteration in execute mode (if the enclosing context is not dryRun mode)
+    // to insert destructors.
+    if (!dryRun) {
+      loopBodySets.dryRun = false;
+      loopBodySets.scanBlock(loopOp.getBody().front());
+    }
+    consumedValues = std::move(loopBodySets.consumedValues);
     return;
   }
 
@@ -1197,6 +1278,11 @@ void DestructorInsertion::checkDef(Operation &op, ValueRef valueRef) {
 void DestructorInsertion::emitDestructorCallAt(unsigned valueId, Block &block,
                                                Block::iterator insertPt,
                                                Location loc) {
+  // If we are just computing the consumedValue set, don't actually insert a
+  // destructor call.
+  if (dryRun)
+    return;
+
   ValueInfo &valueInfo = valueSet.getValueInfo(valueId);
   LifetimeTrackable trackable(valueInfo.value);
   assert(trackable && "shouldn't be tracking untrackable things!");
@@ -1245,8 +1331,9 @@ void DestructorInsertion::emitDestructorCallAt(unsigned valueId, Block &block,
 /// the destructor calls at the entry to the specified block.
 void DestructorInsertion::destroyValuesAtEntry(const BitVector &entries,
                                                Block &block, Location loc) {
-  // If the block is unreachable, don't bother destroying anything.
-  if (isa<UnreachableOp>(block.front()))
+  // Don't bother destroying anything if the block is unreachable or we are just
+  // doing a dry run to compute consume sets.
+  if (isa<UnreachableOp>(block.front()) || dryRun)
     return;
 
   // As we scan through bits, we walk through corresponding ValueInfos to know
