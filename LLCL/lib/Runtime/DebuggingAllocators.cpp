@@ -54,27 +54,29 @@ public:
   }
 
   void deallocateBytes(void *ptr, size_t size) override {
-    auto curNumAllocations = --numAllocations;
-    (void)curNumAllocations;
-    assert(curNumAllocations >= 0 && "deallocation imbalance");
-    numBytesAllocated.fetch_sub(size);
+    [[maybe_unused]] ssize_t num = numAllocations--;
+    assert(num > 0 && "calls to deallocateBytes not balanced by allocateBytes");
+    [[maybe_unused]] ssize_t bytes = numBytesAllocated.fetch_sub(size);
+    assert(bytes > 0 &&
+           "deallocating more bytes than currently have outstanding");
     baseAllocator->deallocateBytes(ptr, size);
   }
 
   /// Print a message and exit(1) when memory leak is detected.
   void checkLeak() {
-    if (numBytesAllocated.load() != 0) {
-
-      llvm::report_fatal_error(
-          "Memory leak detected: " + llvm::Twine(numAllocations.load()) +
-          " alive allocations, " + llvm::Twine(numBytesAllocated.load()) +
-          " alive bytes\n" +
-          "Run with other allocators to debug what happened.\n");
-    }
+    if (numAllocations.load() == 0 && numBytesAllocated.load() == 0)
+      return;
+    llvm::report_fatal_error(
+        "Memory leak detected: " + llvm::Twine(numAllocations.load()) +
+        " alive allocations, " + llvm::Twine(numBytesAllocated.load()) +
+        " alive bytes\n" +
+        "Run with other allocators to debug what happened.\n");
   }
 
+protected:
   /// This keeps track of how many bytes/allocations are currently alive.
-  std::atomic<size_t> numBytesAllocated{0}, numAllocations{0};
+  /// Uses ssize_t so we can truck double deallocation.
+  std::atomic<ssize_t> numBytesAllocated{0}, numAllocations{0};
 
 private:
   std::unique_ptr<Allocator> baseAllocator;
@@ -154,7 +156,8 @@ public:
   }
 
   /// High-water marks for numAllocations and numBytesAllocated.
-  std::atomic<size_t> maxAllocations{0}, maxBytesAllocated{0};
+  /// Use ssize_t for consistency with LeakCheckAllocator.
+  std::atomic<ssize_t> maxAllocations{0}, maxBytesAllocated{0};
   /// Total number of bytes allocated.
   std::atomic<size_t> totalBytesAllocated{0};
   /// Total number of calls to allocateBytes.
