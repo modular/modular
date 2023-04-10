@@ -51,10 +51,10 @@ fn draw_mandelbrot[
 
 fn mandelbrot_kernel[
     simd_width: Int
-](c: Complex[simd_width, float_type], iter: Int) -> SIMD[simd_width, int_type]:
+](c: Complex[simd_width, float_type], iter: Int) -> SIMD[int_type, simd_width]:
     var z = Complex[simd_width, float_type](0, 0)
-    var nv: SIMD[simd_width, int_type] = 0
-    var mask: SIMD[simd_width, DType.bool] = -1
+    var nv: SIMD[int_type, simd_width] = 0
+    var mask: SIMD[DType.bool, simd_width] = -1
     var i: Int = iter
 
     while (i != 0) and mask.reduce_or():
@@ -74,21 +74,21 @@ fn mandelbrot[
 ](
     out: Matrix[create_dim_list(h, w), int_type, False],
     rows_per_worker: Int,
-    min_x: SIMD[simd_width, float_type],
-    max_x: SIMD[simd_width, float_type],
-    min_y: SIMD[simd_width, float_type],
-    max_y: SIMD[simd_width, float_type],
+    min_x: SIMD[float_type, simd_width],
+    max_x: SIMD[float_type, simd_width],
+    min_y: SIMD[float_type, simd_width],
+    max_y: SIMD[float_type, simd_width],
     rt: Runtime,
 ):
     # Each task gets a row
     @always_inline
     fn worker(row: Int):
-        let rowv: SIMD[simd_width, float_type] = row
+        let rowv: SIMD[float_type, simd_width] = row
         let simd_val = iota[simd_width, float_type]()
         let scalex = (max_x - min_x) / w
         let scaley = (max_y - min_y) / h
         for col in range(w // simd_width):
-            var colv: SIMD[simd_width, float_type] = col * simd_width
+            var colv: SIMD[float_type, simd_width] = col * simd_width
             colv = colv + simd_val
             let cx = min_x + colv * scalex
             let cy = min_y + rowv * scaley
