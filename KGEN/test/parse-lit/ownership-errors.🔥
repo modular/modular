@@ -1,14 +1,21 @@
 # RUN: kgen %s -verify-diagnostics -emit-asm
 
+struct Empty:
+  fn __init__(self&): pass
+  fn __copyinit__(self&, existing: Self): pass
+
 struct MemExample:
-  var memstate : Int
+  var x: Int
+  var y: Int
 
   # expected-error @+1 {{use of uninitialized value 'self'}}
   fn __init__(self&):  # expected-note {{'self' declared here}}
     pass
 
-  fn __copyinit__(self&, existing: Self):
-    self.memstate = 4
+  # expected-error @+1 {{use of uninitialized value 'self.y'}}
+  fn __copyinit__(self&, existing: Self): # expected-note {{'self' declared here}}
+    self.x = existing.x
+
   fn __del___(owned self): pass
 
 fn use(x: MemExample): pass
@@ -30,6 +37,10 @@ fn use(x: RegExample): pass
 # Simple cases.
 ##===----------------------------------------------------------------------===##
 
+fn use_of_empty() -> Empty:
+  var a: Empty
+  return a # expected-error {{'a' used with all fields manually initialized but without calling an '__init__' method}}
+
 fn use_of_init() -> RegExample:
   var a = RegExample()
   return a   # OK!
@@ -47,9 +58,20 @@ fn use_of_uninit2() -> MemExample:
   return a   # expected-error {{use of uninitialized value 'a'}}
 
 fn invalid_partial_init() -> MemExample:
-  var x: MemExample
-  x.memstate = 42
-  return x  # expected-error {{'x' used with all fields manually initialized but without calling an '__init__' method}}
+  var a: MemExample
+  a.x = 42
+  a.y = 42
+  return a  # expected-error {{'a' used with all fields manually initialized but without calling an '__init__' method}}
+
+fn field_sensitive():
+  var a : MemExample  # expected-note {{'a' declared here}}
+  a.x = 1
+  use(a)  # expected-error {{use of uninitialized value 'a.y'}}
+
+  var b = MemExample()
+  b.x = 1
+  b.y = 2
+  use(b)  # Ok
 
 
 ##===----------------------------------------------------------------------===##
