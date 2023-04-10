@@ -628,14 +628,16 @@ struct AsyncTaskGroup:
         __get_address_as_lvalue(ctx_ptr.address) = AsyncTaskGroupContext(
             _get_complete_callback(), self_ptr
         )
+        let task_id = self.coroutines.__len__()
         self.coroutines.append(coroutine)
         __mlir_op.`pop.external_call`[
             _type:[],
-            func : __mlir_attr.`@KGEN_CompilerRT_LLCL_Execute`,
+            func : __mlir_attr.`@KGEN_CompilerRT_LLCL_OutputChainPtr_ExecuteAsTask`,
         ](
+            self.out_chain.ptr,
             _get_coro_resume_fn(),
             coroutine._handle,
-            self.out_chain.borrow().get_runtime().ptr,
+            task_id,
         )
 
 
