@@ -895,6 +895,8 @@ void OverloadFitness::diagnose(SignatureType signature,
         diag << "index";
       else
         diag << "index #" << (payload - 1);
+    } else if (callable.syntax == CallSyntax::kAttribute && payload != 0) {
+      diag << "attribute name";
     } else {
       diag << "argument #" << payload;
     }

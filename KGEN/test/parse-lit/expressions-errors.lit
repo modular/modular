@@ -272,6 +272,20 @@ fn testSubscripts(a: WeirdArray, b: MultiSetItem, c: IncompatElementTypes):
   c[1] = tmp
 
 
+struct GetAttrNotString:
+    fn __init__(self&):
+        pass
+
+    # expected-note @below {{function declared here}}
+    fn __getattr__(self, idx: Int) -> Int:
+        return 0
+
+fn invalid_getattr():
+    let obj = GetAttrNotString()
+    # expected-error @below {{invalid call to '__getattr__': attribute name cannot be converted from '__mlir_type.!kgen.string' to '$Int::Int}}
+    obj.attr
+
+
 ##===----------------------------------------------------------------------===##
 # __adaptive_set errors
 ##===----------------------------------------------------------------------===##
