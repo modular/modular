@@ -48,7 +48,7 @@ fn gemv[
 
         @always_inline
         fn _set_zero[idx: Int]():
-            let zero = SIMD[col_block_size, type](0)
+            let zero = SIMD[type, col_block_size](0)
             accums.simd_store[col_block_size](Index(idx, 0), zero)
 
         unroll[row_block_size, _set_zero]()
@@ -97,7 +97,7 @@ fn gemv[
     row_idx = vector_end_row
     while row_idx < m:
         col_idx = 0
-        var simd_accum = SIMD[col_block_size, type](0)
+        var simd_accum = SIMD[type, col_block_size](0)
         while col_idx < vector_end_col:
 
             let row_chunk = lhs.simd_load[col_block_size](

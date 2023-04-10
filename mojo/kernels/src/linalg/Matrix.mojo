@@ -94,7 +94,7 @@ struct Matrix[
             dtype_alignof[type]()
         ]()
 
-    fn __getitem__(self, x: Int, y: Int) -> SIMD[1, type]:
+    fn __getitem__(self, x: Int, y: Int) -> SIMD[type, 1]:
         """Returns the data stored at the given untransposed coordinate.
 
         Args:
@@ -108,7 +108,7 @@ struct Matrix[
             return self.data[y, x]
         return self.data[x, y]
 
-    fn __setitem__(self, x: Int, y: Int, val: SIMD[1, type]):
+    fn __setitem__(self, x: Int, y: Int, val: SIMD[type, 1]):
         """Stores the data stored at the given untransposed coordinate.
 
         Args:
@@ -124,12 +124,12 @@ struct Matrix[
         else:
             self.data[StaticIntTuple[2](x, y)] = val
 
-    fn simd_load[width: Int](self, idxi: Int, idxj: Int) -> SIMD[width, type]:
+    fn simd_load[width: Int](self, idxi: Int, idxj: Int) -> SIMD[type, width]:
         assert_param[not transposed]()
         return self.data.simd_load[width](StaticIntTuple[2](idxi, idxj))
 
     fn simd_store[
         width: Int
-    ](self, idxi: Int, idxj: Int, val: SIMD[width, type]):
+    ](self, idxi: Int, idxj: Int, val: SIMD[type, width]):
         assert_param[not transposed]()
         return self.data.simd_store[width](StaticIntTuple[2](idxi, idxj), val)

@@ -64,7 +64,7 @@ fn identity_epilogue_rowise_func[
 @always_inline
 fn identity_epilogue_elemwise_func[
     accum_type: DType
-](row: Int, col: Int, val: SIMD[1, accum_type]) -> SIMD[1, accum_type]:
+](row: Int, col: Int, val: SIMD[accum_type, 1]) -> SIMD[accum_type, 1]:
     return val
 
 
@@ -82,8 +82,8 @@ fn init_matrices(
     let b2 = Buffer[1024, DType.si8].stack_allocation()
 
     for i in range(1024):
-        a[i] = SIMD[1, DType.si8](i & 127)
-        b2[i] = SIMD[1, DType.si8](i & 127)
+        a[i] = SIMD[DType.si8, 1](i & 127)
+        b2[i] = SIMD[DType.si8, 1](i & 127)
 
     memset_zero[DType.si32](c.data, 1024)
     memset_zero[DType.si32](c2.data, 1024)
@@ -119,8 +119,8 @@ fn setup_tile_config() -> tileconfig:
     let tc_ptr = DTypePointer[DType.si8](ptr.bitcast[int8_pop]().address)
     memset_zero(tc_ptr, 64)
 
-    let nrows: SIMD[1, DType.ui8] = 16
-    let colb: SIMD[1, DType.ui16] = 64
+    let nrows: SIMD[DType.ui8, 1] = 16
+    let colb: SIMD[DType.ui16, 1] = 64
 
     tc.palette_id = 1
 

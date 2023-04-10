@@ -26,13 +26,13 @@ struct __tile:
     """An AMX tile representation"""
 
     var buf: __mlir_type[`!pop.array<1024, si32>`]
-    var rows: SIMD[1, DType.si32]
-    var cols: SIMD[1, DType.si32]
+    var rows: SIMD[DType.si32, 1]
+    var cols: SIMD[DType.si32, 1]
 
 
 fn to_si8(
     val: Int,
-) -> SIMD[1, DType.si8]:
+) -> SIMD[DType.si8, 1]:
     """Converts an input integer to an si8 value"""
     return __mlir_op.`pop.cast`[_type : __mlir_type.`!pop.scalar<si8>`](
         val.value
@@ -141,8 +141,8 @@ fn init_intel_amx() -> Bool:
 #  uint8_t rows[16];
 # } tileconfig_t;
 struct tileconfig:
-    var palette_id: SIMD[1, DType.ui8]
-    var start_row: SIMD[1, DType.ui8]
+    var palette_id: SIMD[DType.ui8, 1]
+    var start_row: SIMD[DType.ui8, 1]
     var reserved: StaticTuple[14, __mlir_type.`!pop.scalar<ui8>`]
     var colb: StaticTuple[16, __mlir_type.`!pop.scalar<ui16>`]
     var rows: StaticTuple[16, __mlir_type.`!pop.scalar<ui8>`]
