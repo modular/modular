@@ -1887,7 +1887,7 @@ def POP_CallLLVMIntrinsicOp : POPOp<"call_llvm_intrinsic"> {
     Example:
 
     ```mlir
-      %0 = pop.call_llvm_intrinsic "llvm.round"(%arg0) :
+      %0 = pop.call_llvm_intrinsic "llvm.round", (%arg0) :
         !pop.scalar<f32> -> !pop.scalar<f32>
     ```
   }];
@@ -1895,7 +1895,7 @@ def POP_CallLLVMIntrinsicOp : POPOp<"call_llvm_intrinsic"> {
                        Variadic<AnyType>:$args);
   let results = (outs Optional<AnyType>:$results);
   let assemblyFormat = [{
-    custom<ParamValue>($intrin, "StringType::get($_ctxt)") `(` $args `)`
+    custom<ParamValue>($intrin, "StringType::get($_ctxt)") `,` `(` $args `)`
     attr-dict `:` functional-type($args, $results)
   }];
 }

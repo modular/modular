@@ -748,7 +748,7 @@ kgen.func @call_intrinsic(%inp: !pop.scalar<f32>) -> !pop.scalar<f32> {
   // CHECK: %[[INP_CAST:.*]] = builtin.unrealized_conversion_cast %arg0
   // CHECK: %[[RESULT:.*]] = llvm.call_intrinsic "llvm.round"(%[[INP_CAST]]) : (f32) -> f32
   // CHECK: %[[RES_CAST:.*]] = builtin.unrealized_conversion_cast %[[RESULT]]
-  %0 = pop.call_llvm_intrinsic "llvm.round"(%inp) : (!pop.scalar<f32>) -> !pop.scalar<f32>
+  %0 = pop.call_llvm_intrinsic "llvm.round", (%inp) : (!pop.scalar<f32>) -> !pop.scalar<f32>
   kgen.return %0 : !pop.scalar<f32>
 }
 
@@ -758,7 +758,7 @@ kgen.func @call_void_intrinsic(%arg0: !pop.scalar<si64>,
   // CHECK: %[[ARG0_CAST:.*]] = builtin.unrealized_conversion_cast %arg0
   // CHECK: %[[ARG1_CAST:.*]] = builtin.unrealized_conversion_cast %arg1
   // CHECK: llvm.call_intrinsic "llvm.lifetime.start"(%[[ARG0_CAST]], %[[ARG1_CAST]]) : (i64, !llvm.ptr<i8>) -> ()
-  pop.call_llvm_intrinsic "llvm.lifetime.start"(%arg0, %arg1) :
+  pop.call_llvm_intrinsic "llvm.lifetime.start", (%arg0, %arg1) :
     (!pop.scalar<si64>, !pop.pointer<si8>) -> ()
   kgen.return
 }
