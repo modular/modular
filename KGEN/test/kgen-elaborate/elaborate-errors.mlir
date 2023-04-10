@@ -200,3 +200,13 @@ kgen.generator @interpreter_state_owner() {
   ]>
   kgen.return
 }
+
+// -----
+
+// expected-error @below {{no viable expansions found}}
+kgen.generator @invalid_rebind(%arg0: !pop.scalar<si32>) {
+  kgen.param.declare dt: dtype = <ui32>
+  // expected-note @below {{operand and result type of rebind operation did not concretize to the same type}}
+  %0 = kgen.rebind %arg0 : !pop.scalar<si32> to !pop.scalar<dt>
+  kgen.return
+}

@@ -734,7 +734,6 @@ def KGEN_RebindOp : KGENOp<"rebind", [Pure]> {
   let results = (outs AnyType:$output);
   let assemblyFormat = "$input attr-dict `:` type($input) `to` type($output)";
 
-  let hasVerifier = 1;
   let hasFolder = 1;
   let hasCanonicalizeMethod = 1;
 }

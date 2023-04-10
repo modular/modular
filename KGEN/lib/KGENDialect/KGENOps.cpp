@@ -771,19 +771,6 @@ void ParamYieldOp::getBranchTargets(
 // RebindOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult RebindOp::verify() {
-  /// If either the input or output type are parameterized, return success.
-  /// Otherwise, require that the concrete input and output types are the same.
-  if (getInput().getType() == getType() ||
-      isParameterizedType(getInput().getType()) ||
-      isParameterizedType(getType()))
-    return success();
-
-  return emitError("cannot rebind concrete input type ")
-         << getInput().getType() << " to different concrete output type "
-         << getType();
-}
-
 /// Fold away the rebind if the input and output types are the same.
 OpFoldResult RebindOp::fold(FoldAdaptor adaptor) {
   if (getInput().getType() == getType())
@@ -802,6 +789,7 @@ LogicalResult RebindOp::canonicalize(RebindOp op, PatternRewriter &rewriter) {
   while ((parent = cur.getOperand().getDefiningOp<RebindOp>()) &&
          parent->getParentOfType<DeclInterface>() == nearestDecl)
     cur = parent;
+
   if (cur == op)
     return failure();
   rewriter.updateRootInPlace(op, [&] { op.setOperand(cur.getOperand()); });

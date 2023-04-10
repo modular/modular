@@ -1314,7 +1314,9 @@ kgen.generator @call_it() {
   kgen.return
 }
 
+// CHECK-LABEL: kgen.func @"rebind_value,dtype=ui8"
 kgen.generator @rebind_value<dtype: dtype>(%a: !pop.scalar<ui8>) -> !pop.scalar<dtype> {
+  // CHECK-NEXT: return %arg0 : !pop.scalar<ui8>
   %result = kgen.rebind %a : !pop.scalar<ui8> to !pop.scalar<dtype>
   kgen.return %result : !pop.scalar<dtype>
 }
