@@ -49,23 +49,26 @@ struct Replacer {
 
   /// Run the main replacement loop, going through all the uses of the stack and
   /// swapping them out for scalar equivalents.
-  void run(SmallVectorImpl<Operation *> &toDelete) {
+  bool run(SmallVectorImpl<Operation *> &toDelete) {
     Derived *derived = getDerived();
 
     // We check if we can perform the optimization first.
-    if (derived->canRun()) {
-      // Create a new allocation for each scalar in the container.
-      builder.setInsertionPointAfter(alloc);
-      derived->createScalarAllocs();
+    if (!derived->canRun())
+      return false;
 
-      // For each user of the allocation replace it with the scalar equivilent.
-      for (Operation *user : alloc->getUsers()) {
-        builder.setInsertionPointAfter(user);
-        derived->replaceUser(user, toDelete);
-        toDelete.push_back(user);
-      }
-      toDelete.push_back(alloc);
+    // Create a new allocation for each scalar in the container.
+    builder.setInsertionPointAfter(alloc);
+    derived->createScalarAllocs();
+
+    // For each user of the allocation replace it with the scalar equivilent.
+    for (Operation *user : alloc->getUsers()) {
+      builder.setInsertionPointAfter(user);
+      derived->replaceUser(user, toDelete);
+      toDelete.push_back(user);
     }
+    toDelete.push_back(alloc);
+
+    return true;
   }
 
   // Handle the cases which are the same for both array and struct (load/store)
@@ -116,6 +119,7 @@ struct Replacer {
           APInt index;
           matchPattern(gep.getIndex(), mlir::m_ConstantInt(&index));
           gep.replaceAllUsesWith(newAllocas[index.getLimitedValue()]);
+          toDelete.push_back(gep);
         }
       }
     } else if (auto store = dyn_cast<StoreOp>(user)) {
@@ -283,7 +287,8 @@ struct ReplaceStack : public Replacer<ReplaceStack, POP::StackAllocationOp> {
 
   bool canRun() {
     for (Operation *user : alloc->getUsers()) {
-      if (!isa<POP::OffsetOp, POP::StoreOp, POP::LoadOp>(user))
+      if (!isa<POP::OffsetOp, POP::StoreOp, POP::LoadOp, POP::ArrayGEPOp,
+               POP::StructGEPOp>(user))
         return false;
 
       // We only support offsets with constant terms.
@@ -323,6 +328,20 @@ struct ReplaceStack : public Replacer<ReplaceStack, POP::StackAllocationOp> {
       APInt index;
       matchPattern(offset.getIndex(), mlir::m_ConstantInt(&index));
       offset.replaceAllUsesWith(newAllocas[index.getLimitedValue()]);
+    } else if (auto gep = dyn_cast<ArrayGEPOp>(user)) {
+      // An array GEP is implicitly on the first element so swap it for a GEP on
+      // that allocation. We don't need to check the index because if it is
+      // illegal in the new one then it was illegal on the old gep. The index
+      // refers to the element in the array, the gep is always on the first
+      // element of the stack.
+      auto newGep = builder.create<ArrayGEPOp>(gep.getLoc(), newAllocas[0],
+                                               gep.getIndex());
+      gep.replaceAllUsesWith(newGep.getResult());
+    } else if (auto gep = dyn_cast<StructGEPOp>(user)) {
+      // Dito with struct geps, index is always legal.
+      auto newGep = builder.create<StructGEPOp>(gep.getLoc(), newAllocas[0],
+                                                gep.getIndex());
+      gep.replaceAllUsesWith(newGep.getResult());
     }
   }
 };
@@ -332,41 +351,54 @@ struct ReplaceStack : public Replacer<ReplaceStack, POP::StackAllocationOp> {
 void SROAPass::runOnOperation() {
   OpBuilder builder{getOperation()->getContext()};
 
-  SmallVector<Operation *, 32> toDelete;
+  // The loop limit is an arbritary value to provide an upperbound on compile
+  // time. However from experimentation this pass does not take a significant
+  // amount of time to run and is a net-postive on compile time.
+  constexpr size_t loopLimit = 10;
 
-  getOperation()->walk([&](StackAllocationOp alloc) {
-    // Skip non singleton stack allocations.
-    auto count = dyn_cast<IntegerAttr>(alloc.getCount());
-    if (!count)
-      return;
+  size_t iters = 0;
 
-    size_t numElems = count.getInt();
+  bool changed = true;
+  while (changed && iters < loopLimit) {
+    changed = false;
+    iters++;
 
-    // We won't try to decompose large stack allocations.
-    if (numElems > 16)
-      return;
+    SmallVector<Operation *, 32> toDelete;
 
-    // Stack allocation is always a pointer to something.
-    auto ptrType = cast<POP::PointerType>(alloc.getResult().getType());
+    getOperation()->walk([&](StackAllocationOp alloc) {
+      // Skip non singleton stack allocations.
+      auto count = dyn_cast<IntegerAttr>(alloc.getCount());
+      if (!count)
+        return;
 
-    // We decompose structs if there is one element otherwise we decompose the
-    // stack itself.
-    if (numElems != 1) {
-      // Replace stack of N with N stacks of 1.
-      ReplaceStack replacer{builder, alloc};
-      replacer.run(toDelete);
-    } else if (auto structTy = dyn_cast<POP::StructType>(
-                   ptrType.getResolvedElementType())) {
-      ReplaceStructs replacer{builder, alloc, structTy};
-      replacer.run(toDelete);
-    } else if (auto arrayTy =
-                   dyn_cast<POP::ArrayType>(ptrType.getResolvedElementType())) {
-      ReplaceArray replacer{builder, alloc, arrayTy};
-      replacer.run(toDelete);
-    }
-  });
+      size_t numElems = count.getInt();
 
-  // Delete the ops which are no longer used.
-  for (Operation *op : toDelete)
-    op->erase();
+      // We won't try to decompose large stack allocations.
+      if (numElems > 16)
+        return;
+
+      // Stack allocation is always a pointer to something.
+      auto ptrType = cast<POP::PointerType>(alloc.getResult().getType());
+
+      // We decompose structs if there is one element otherwise we decompose the
+      // stack itself.
+      if (numElems != 1) {
+        // Replace stack of N with N stacks of 1.
+        ReplaceStack replacer{builder, alloc};
+        changed |= replacer.run(toDelete);
+      } else if (auto structTy = dyn_cast<POP::StructType>(
+                     ptrType.getResolvedElementType())) {
+        ReplaceStructs replacer{builder, alloc, structTy};
+        changed |= replacer.run(toDelete);
+      } else if (auto arrayTy = dyn_cast<POP::ArrayType>(
+                     ptrType.getResolvedElementType())) {
+        ReplaceArray replacer{builder, alloc, arrayTy};
+        changed |= replacer.run(toDelete);
+      }
+    });
+
+    // Delete the ops which are no longer used.
+    for (Operation *op : toDelete)
+      op->erase();
+  }
 }
