@@ -527,8 +527,10 @@ std::optional<bool> DTypeConstantAttr::isLessThan(Attribute rhs) const {
 // SymbolConstantAttr
 //===----------------------------------------------------------------------===//
 
-/// Always a constant by definition.
-bool SymbolConstantAttr::isConstant() const { return true; }
+/// This symbol is a constant its bindings are constants.
+bool SymbolConstantAttr::isConstant() const {
+  return llvm::all_of(getParamValues(), ParameterAttr::isSimpleConstant);
+}
 
 LogicalResult
 SymbolConstantAttr::verifySymbolUses(Operation *module,
@@ -1737,9 +1739,7 @@ static TypedAttr getParamOperator(MLIRContext *context, POC opcode,
 
 TypedAttr ParamOperatorAttr::get(MLIRContext *context, POC opcode,
                                  ArrayRef<TypedAttr> operandsIn, Type type) {
-  auto result = getParamOperator(context, opcode, operandsIn, type);
-  assert((!type || type == result.getType()) && "unexpected type");
-  return result;
+  return getParamOperator(context, opcode, operandsIn, type);
 }
 
 TypedAttr

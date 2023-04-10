@@ -2077,3 +2077,24 @@ kgen.generator @parametric_const() {
   kgen.param.constant: variant<index, simd<apply(:() -> index @make_one), f32>> = <#pop.variant<1>>
   kgen.return
 }
+
+// -----
+
+kgen.generator @pass(%arg0: index) -> index {
+  kgen.return %arg0 : index
+}
+
+kgen.generator @make_array<size>() -> !pop.array<apply(:(index) -> index @pass, size), i1> {
+  %false = index.bool.constant false
+  %0 = pop.array.repeat [%false] : !pop.array<apply(:(index) -> index @pass, size), i1>
+  kgen.return %0 : !pop.array<apply(:(index) -> index @pass, size), i1>
+}
+
+// CHECK-LABEL: kgen.func @caller
+kgen.generator @caller() {
+  // CHECK-NEXT: array<2, i1> = <[0, 0]>
+  kgen.param.constant: array<apply(:(index) -> index @pass, 2), i1> = <
+    apply(:() -> !pop.array<apply(:(index) -> index @pass, 2), i1> @make_array<2>)
+  >
+  kgen.return
+}
