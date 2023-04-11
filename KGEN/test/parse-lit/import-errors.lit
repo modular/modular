@@ -64,6 +64,15 @@ from imported_module import (imported_fn --
 
 # // -----
 
+# Check that we properly allow import of an imported decl.
+
+from imported_module import *
+
+fn import_of_import(arg: F64):
+  pass
+
+# // -----
+
 from imported_module import *
 
 fn test_import():
