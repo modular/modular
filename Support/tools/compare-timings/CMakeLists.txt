@@ -4,12 +4,10 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_library(MSupportBenchmark
-  QuerySampleLibrary.cpp
-  Stats.cpp
-  SystemUnderTest.cpp
+add_modular_tool(compare-timings
+  compare-timings.cpp
 
-  LINK_LIBS PUBLIC
-  mlperf-loadgen
+  LINK_LIBS PRIVATE
   MSupport
+  MSupportBenchmark
 )
