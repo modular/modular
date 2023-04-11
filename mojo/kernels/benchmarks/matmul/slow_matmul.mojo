@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Range import _Range
+from Range import range
 from Object import object, empty_list
 from Random import random_f64
 from IO import print
@@ -14,12 +14,6 @@ from Benchmark import Benchmark
 
 def main():
     benchmark_matmul()
-
-
-def range(length) -> _Range:
-    if not length.value.is_int():
-        raise Error("TypeError: only integers can be iterated")
-    return _Range(length.value.get_as_int().value)
 
 
 def benchmark_matmul():
