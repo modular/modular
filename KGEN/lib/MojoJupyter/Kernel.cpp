@@ -15,6 +15,7 @@
 #include "Support/LogicalResult.h"
 #include "Support/SymbolExport.h"
 #include "lldb/API/LLDB.h"
+#include "lldb/Core/Debugger.h"
 #include "lldb/Expression/ExpressionVariable.h"
 #include "lldb/Host/FileSystem.h"
 #include "lldb/Host/Host.h"
@@ -23,6 +24,7 @@
 #include "lldb/Utility/Listener.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/Support/JSON.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Triple.h"
 #include <thread>
@@ -59,6 +61,21 @@ struct MojoTarget : public SBTarget {
       return *static_cast<MojoTypeSystem *>(typeSystemOr.get().get());
     llvm::report_fatal_error(
         "The Mojo type system plug-in must have already been registered.");
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// MojoDebugger
+//===----------------------------------------------------------------------===//
+
+struct MojoDebugger : public SBDebugger {
+  using SBDebugger::SBDebugger;
+  using SBDebugger::operator=;
+
+  /// Return a reference to the async error stream that the debugger holds.
+  raw_ostream &getAsyncErrorStream() {
+    auto *debuggerSPPtr = ((lldb::DebuggerSP *)this);
+    return (*debuggerSPPtr)->GetAsyncErrorStream()->AsRawOstream();
   }
 };
 
@@ -112,6 +129,11 @@ public:
     std::thread executionThread;
     std::atomic<bool> finished;
     KernelCellState *cellState = nullptr;
+
+    /// This is a list of debug messages that we'll only flush to the kernel's
+    /// stderr if we are told to do so.
+    std::deque<std::pair<MojoTypeSystem::MessageKind, std::string>>
+        debugMessages;
   };
 
   MojoKernel(OutputFn outputFn)
@@ -168,7 +190,7 @@ private:
   OutputFn outputFn;
 
   /// Various LLDB state used for tracking the repl process.
-  SBDebugger debugger;
+  MojoDebugger debugger;
   MojoTarget target;
   SBProcess process;
   MojoExpressionEvaluationOptions exprOpts;
@@ -233,10 +255,6 @@ LogicalResult MojoKernel::initialize(const char *mojoReplExe) {
   if (!FileSystem::Instance().Exists(mojoPlugin))
     return reportKernelError("unable to locate libMojoLLDB plugin");
   debugger.HandleCommand(("plugin load " + mojoPlugin.GetPath()).c_str());
-
-  // This will log to LLDB's stderr, which the notebook server will pick up (but
-  // not the notebook).
-  debugger.HandleCommand("log enable lldb expr");
 
   // Initialize the target.
   if (failed(initializeTarget(mojoReplExe)))
@@ -319,9 +337,8 @@ LogicalResult MojoKernel::launchReplProcess() {
         Twine(error.GetCString()));
   }
 
-  target.getMojoTypeSystem().AddListener(
-      mojoTypeSystemListener,
-      KGEN::Mojo::MojoTypeSystem::eBroadcastUserMessage);
+  target.getMojoTypeSystem().AddListener(mojoTypeSystemListener,
+                                         MojoTypeSystem::eAllMessagesMask);
 
   return success();
 }
@@ -362,17 +379,23 @@ void MojoKernel::flushLLDBStreams(ExpressionExecutionState *state) {
   // Flush type system messages.
   lldb::EventSP event;
 
+  // Various logging utilities (like CloudWatch) parse JSON automatically so we
+  // should use that for structured logging.
+  auto reportMessage = [this](StringRef type, StringRef message) {
+    llvm::json::OStream j(debugger.getAsyncErrorStream());
+    // Produce `{"type": <type>, "message": <message>}`
+    j.object([&]() {
+      j.attribute("type", type);
+      j.attribute("message", message);
+    });
+  };
+
   // The following gets the stream of events without timeout. All the messages
   // will be read eventually anyway.
   while (mojoTypeSystemListener->GetEvent(event, std::chrono::seconds(0))) {
-    size_t readLen = EventDataBytes::GetByteSizeFromEvent(event.get());
-    const char *rawData = static_cast<const char *>(
-        EventDataBytes::GetBytesFromEvent(event.get()));
-    StringRef data(rawData, readLen);
-    LLVM_DEBUG(llvm::dbgs()
-               << "type system message: " << readLen << " : " << data << "\n");
-    // We need to ensure that the output is null terminated.
-    sendOutput("stderr", data.str());
+    MojoTypeSystem::handleEvent(
+        event, state->debugMessages, reportMessage,
+        [&](StringRef msg) { sendOutput("stderr", msg); });
   }
 
   char outputBuffer[1024];

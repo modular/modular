@@ -106,10 +106,100 @@ void MojoTypeSystem::Terminate() {
   PluginManager::UnregisterPlugin(createInstance);
 }
 
+//===----------------------------------------------------------------------===//
+// Logging
+//===----------------------------------------------------------------------===//
+
 void MojoTypeSystem::broadcastUserMessage(StringRef message) {
-  lldb::EventSP event = std::make_shared<Event>(eBroadcastUserMessage,
-                                                new EventDataBytes(message));
+  lldb::EventSP event = std::make_shared<Event>(
+      eBroadcastUserMessage | eDebugLog, new EventDataBytes(message));
   BroadcastEvent(event);
+}
+
+void MojoTypeSystem::dumpIR(StringRef message) {
+  lldb::EventSP event =
+      std::make_shared<Event>(eDumpIR, new EventDataBytes(message));
+  BroadcastEvent(event);
+}
+
+void MojoTypeSystem::debugLog(StringRef message) {
+  lldb::EventSP event =
+      std::make_shared<Event>(eDebugLog, new EventDataBytes(message));
+  BroadcastEvent(event);
+}
+
+void MojoTypeSystem::flushIRDumpAndDebugLog() {
+  lldb::EventSP event = std::make_shared<Event>(eFlushIRAndDebugLog);
+  BroadcastEvent(event);
+}
+
+void MojoTypeSystem::errorLog(StringRef message) {
+  lldb::EventSP event =
+      std::make_shared<Event>(eErrorLog, new EventDataBytes(message));
+  BroadcastEvent(event);
+}
+
+//===----------------------------------------------------------------------===//
+// Listener Support
+//===----------------------------------------------------------------------===//
+
+/// Get a null-terminated string from an event.
+static std::string getStringFromEvent(const lldb::EventSP &event) {
+  size_t readLen = EventDataBytes::GetByteSizeFromEvent(event.get());
+  const char *rawData =
+      static_cast<const char *>(EventDataBytes::GetBytesFromEvent(event.get()));
+  return {rawData, readLen};
+}
+
+/// Stringify the event type.
+static std::string stringifyType(MojoTypeSystem::MessageKind type) {
+  SmallVector<std::string, 1> typeStrs;
+  if (type & MojoTypeSystem::eBroadcastUserMessage)
+    typeStrs.push_back("BroadcastUser");
+  if (type & MojoTypeSystem::eDumpIR)
+    typeStrs.push_back("DumpIR");
+  if (type & MojoTypeSystem::eDebugLog)
+    typeStrs.push_back("DebugLog");
+  if (type & MojoTypeSystem::eErrorLog)
+    typeStrs.push_back("ErrorLog");
+
+  std::string out;
+  llvm::raw_string_ostream outStream(out);
+  llvm::interleave(typeStrs, outStream, "|");
+  return out;
+}
+
+void MojoTypeSystem::handleEvent(
+    const lldb::EventSP &event,
+    std::deque<std::pair<MessageKind, std::string>> &debugMessageCache,
+    function_ref<void(StringRef, StringRef)> reportMessage,
+    function_ref<void(StringRef)> sendUserOutput) {
+  // If it's a user message broadcast, send that output.
+  if (event->GetType() & MojoTypeSystem::eBroadcastUserMessage)
+    sendUserOutput(getStringFromEvent(event));
+
+  // It may (also) be one of `eDumpIR`, `eDebugLog`, `eFlushIRAndDebugLog`, or
+  // `eErrorLog`. Flush that correctly.
+  if (event->GetType() & MojoTypeSystem::eDumpIR ||
+      event->GetType() & MojoTypeSystem::eDebugLog) {
+    debugMessageCache.emplace_back(MessageKind(event->GetType()),
+                                   getStringFromEvent(event));
+  } else if (event->GetType() & MojoTypeSystem::eFlushIRAndDebugLog) {
+    for (const auto &message : debugMessageCache)
+      reportMessage(stringifyType(message.first), message.second);
+
+    // Clear out the message cache.
+    debugMessageCache.clear();
+  } else if (event->GetType() & MojoTypeSystem::eErrorLog) {
+    reportMessage(stringifyType(MessageKind(event->GetType())),
+                  getStringFromEvent(event));
+  } else {
+    llvm::report_fatal_error("unknown message type");
+  }
+
+  // Pop the front message if we've exceeded 10 items in the deque.
+  if (debugMessageCache.size() > 10)
+    debugMessageCache.pop_front();
 }
 
 //===----------------------------------------------------------------------===//

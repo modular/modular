@@ -175,10 +175,10 @@ MojoExpressionParser::~MojoExpressionParser() = default;
 /// return false.
 LogicalResult
 MojoExpressionParser::rewriteExpression(DiagnosticManager &diagnosticManager) {
-  MOJO_EXPR_LOG("Found {0} diagnostic{1}",
-                diagnosticManager.Diagnostics().size(),
-                diagnosticManager.Diagnostics().size() == 1 ? "" : "s");
-  // originalText is the wrapped code, not what the user wrote.
+  impl->typeSystem->debugLog(
+      "Found {0} diagnostic{1}\n", diagnosticManager.Diagnostics().size(),
+      diagnosticManager.Diagnostics().size() == 1 ? "" : "s");
+  // `originalText` is the wrapped code, not what the user wrote.
   StringRef originalText(impl->expr.Text());
 
   // This takes advantage of the fact that fixits are ordered to apply multiple
@@ -193,7 +193,8 @@ MojoExpressionParser::rewriteExpression(DiagnosticManager &diagnosticManager) {
     StringRef removedText(range.Start.getPointer(),
                           range.End.getPointer() - range.Start.getPointer());
     StringRef insertedText = fixit.getText();
-    MOJO_EXPR_LOG("Change \"{0}\" to \"{1}\"", removedText, insertedText);
+    impl->typeSystem->debugLog("Change \"{0}\" to \"{1}\"", removedText,
+                               insertedText);
 
     // The current range starts at the previous end pointer.
     StringRef currentOriginalRange(originalText.begin() + prevEnd);
@@ -204,7 +205,8 @@ MojoExpressionParser::rewriteExpression(DiagnosticManager &diagnosticManager) {
       newText += currentOriginalRange.substr(
           0, range.Start.getPointer() - currentOriginalRange.begin());
 
-    MOJO_EXPR_LOG("New expr before fixit insertion:\n{0}", newText);
+    impl->typeSystem->debugLog("New expr before fixit insertion:\n{0}",
+                               newText);
 
     // Add the text to insert.
     newText += insertedText;
@@ -218,8 +220,8 @@ MojoExpressionParser::rewriteExpression(DiagnosticManager &diagnosticManager) {
 
   bool allDiagsHandled = true;
   for (const auto &diag : diagnosticManager.Diagnostics()) {
-    MOJO_EXPR_LOG("Diagnostic with fixits: {0}, message:\n{1}",
-                  diag->HasFixIts(), diag->GetMessage());
+    impl->typeSystem->debugLog("Diagnostic with fixits: {0}, message:\n{1}",
+                               diag->HasFixIts(), diag->GetMessage());
 
     // If it's a mojo diagnostic, it might have fix-its. If it does, and if that
     // fails, return false. Otherwise, continue.
@@ -243,10 +245,11 @@ MojoExpressionParser::rewriteExpression(DiagnosticManager &diagnosticManager) {
     // of the buffer. We do this here because we only want to do it if/once
     // *all* diagnostics are handled.
     newText += originalText.substr(prevEnd);
-    MOJO_EXPR_LOG("Fixits applied to expression: \n{0}", newText.c_str());
+    impl->typeSystem->debugLog("Fixits applied to expression: \n{0}",
+                               newText.c_str());
     diagnosticManager.SetFixedExpression(newText);
   } else {
-    MOJO_EXPR_LOG("Unhandled diagnostics found!");
+    impl->typeSystem->debugLog("Unhandled diagnostics found!");
   }
 
   return success(allDiagsHandled);
@@ -255,7 +258,7 @@ MojoExpressionParser::rewriteExpression(DiagnosticManager &diagnosticManager) {
 M::LogicalResult
 MojoExpressionParser::parse(DiagnosticManager &diagnosticManager) {
   if (!impl->compiler) {
-    MOJO_EXPR_LOG("No compiler");
+    impl->typeSystem->errorLog("No compiler");
     return failure();
   }
 
@@ -288,16 +291,16 @@ MojoExpressionParser::parse(DiagnosticManager &diagnosticManager) {
   OwningOpRef<ModuleOp> module =
       importMojoFile(impl->sourceManager, config, scope);
   if (!diagnosticManager.Diagnostics().empty()) {
-    MOJO_EXPR_LOG("Emitted diagnostics");
+    impl->typeSystem->debugLog("Emitted diagnostics");
     return failure();
   }
 
   if (!module) {
-    MOJO_EXPR_LOG("Failed to parse the module");
+    impl->typeSystem->errorLog("Failed to parse the module");
     return failure();
   }
 
-  MOJO_EXPR_LOG("Parsed module successfully");
+  impl->typeSystem->debugLog("Parsed module successfully\n");
 
   // Log the pre-elaboration module.
   std::string preElaborationModule;
@@ -335,12 +338,13 @@ MojoExpressionParser::parse(DiagnosticManager &diagnosticManager) {
 
   // Run the elaboration pipeline.
   if (failed(impl->passManager->run(*module))) {
-    MOJO_EXPR_LOG("Elaboration failed");
+    impl->typeSystem->errorLog("Elaboration failed");
     return failure();
   }
 
-  MOJO_EXPR_LOG("Pre-elaboration module:\n{0}", preElaborationModule);
-  MOJO_EXPR_LOG("Elaborated module:\n{0}", *module);
+  impl->typeSystem->dumpIR("Pre-elaboration module:\n{0}",
+                           preElaborationModule);
+  impl->typeSystem->dumpIR("Elaborated module:\n{0}", *module);
 
   // Lower the module to LLVM IR.
   SymbolTable symtab(*module);
@@ -349,18 +353,19 @@ MojoExpressionParser::parse(DiagnosticManager &diagnosticManager) {
   impl->llvmModule = impl->compiler->lowerAllFuncsToLLVM(
       symtab, exportedSymbols, *impl->llvmContext);
   if (!impl->llvmModule) {
-    MOJO_EXPR_LOG("Lowering to LLVM failed");
+    impl->typeSystem->errorLog("Lowering to LLVM failed");
     return failure();
   }
 
-  MOJO_EXPR_LOG("Pre-optimization LLVM module:\n{0}", *impl->llvmModule);
+  impl->typeSystem->dumpIR("Pre-optimization LLVM module:\n{0}",
+                           *impl->llvmModule);
 
   // Create the target machine so we can run the optimizer.
   auto targetMachineOr =
       KGEN::createTargetMachine(impl->compilationOptions, /*isJIT=*/true);
   if (targetMachineOr.isError()) {
-    MOJO_EXPR_LOG("Failed to create the target machine: {0}",
-                  targetMachineOr.getError());
+    impl->typeSystem->errorLog("Failed to create the target machine: {0}",
+                               targetMachineOr.getError());
     return failure();
   }
 

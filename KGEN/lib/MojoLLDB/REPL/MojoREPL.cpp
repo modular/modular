@@ -6,6 +6,7 @@
 
 #include "MojoREPL.h"
 #include "../Plugin.h"
+#include "../TypeSystem/MojoTypeSystem.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/SymbolExport.h"
 #include "lldb/API/SBBroadcaster.h"
@@ -94,11 +95,50 @@ static void eventThreadFunction(const lldb::TargetSP &target,
   process->AddListener(listener, Process::eBroadcastBitStateChanged |
                                      Process::eBroadcastBitSTDOUT |
                                      Process::eBroadcastBitSTDERR);
+  // Get a pointer to the mojo type system. We need that to read the various log
+  // messages.
+  auto typeSystemOr =
+      target->GetScratchTypeSystemForLanguage(eLanguageTypeMojo);
+  if (!typeSystemOr)
+    llvm::report_fatal_error("must be able to get the mojo type system");
+
+  std::shared_ptr<MojoTypeSystem> typeSystem =
+      std::static_pointer_cast<MojoTypeSystem>(*typeSystemOr);
+  if (!typeSystem)
+    llvm::report_fatal_error("must be able to get the mojo type system");
+
+  typeSystem->AddListener(listener, MojoTypeSystem::eAllMessagesMask);
+
+  // Construct the debug message cache, and pull out the error raw_ostream now.
+  std::deque<std::pair<MojoTypeSystem::MessageKind, std::string>> debugMessages;
+  auto errorStream = process->GetTarget().GetDebugger().GetAsyncErrorStream();
+  // Report a message to the error stream.
+  auto reportMessage = [errorStream](StringRef type, StringRef message) {
+    errorStream->AsRawOstream() << "[" << type << "] " << message << "\n";
+  };
+  auto sendUserOutput = [errorStream](StringRef message) {
+    errorStream->AsRawOstream() << "[User] " << message << "\n";
+  };
+  lldb::EventSP event;
   while (!stopEventThread) {
     // We retry if we didn't get any events in the last second.
-    lldb::EventSP event;
-    if (!listener->GetEvent(event, std::chrono::seconds(1)))
+    if (!listener->GetEvent(event, std::chrono::seconds(0)))
       continue;
+
+    // If the event broadcaster was the mojo type system, handle it separately.
+    // The event bitmasks may overlap, so we have to distinguish by checking
+    // which broadcaster sent the message.
+    if (event->GetBroadcaster() == typeSystem.get()) {
+      // Handle the mojo type system events by logging them to the debugger
+      // stderr.
+      MojoTypeSystem::handleEvent(event, debugMessages, reportMessage,
+                                  sendUserOutput);
+
+      // Flush the error stream immediately - otherwise it only shows up when we
+      // shut down the repl.
+      errorStream->Flush();
+      continue;
+    }
 
     const uint32_t eventMask = event->GetType();
     if (eventMask & Process::eBroadcastBitStateChanged) {
