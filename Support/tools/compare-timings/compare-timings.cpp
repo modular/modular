@@ -38,20 +38,43 @@ struct CompareTimingsCLOptions {
   }                                                                            \
   auto(var) = *var##OrErr;
 
+/// Prune samples outside of +/- this factor of the measured mean.
+constexpr double kPruneFactor = 0.5;
+
+/// Units and scale for samples.
+constexpr const char *kLatencyUnits = "ms";
+constexpr double kLatencyScale = 1e-6;
+
+/// In the latency histograms, round bucket boundaries to nearest 0.5ms.
+constexpr double kLatencyRounding = 0.5;
+
+/// In the ration histogram, round percentage to nearest 0.5%.
+constexpr double kPercentRounding = 0.5;
+
+/// Maximum number of sample when simulating a distribution.
+constexpr size_t kMaxSamples = 10000;
+
+/// Limit percentile for Welch t test
+constexpr double kWelchLimit = 5.0;
+
 int main(int argc, char **argv) {
   CompareTimingsCLOptions options;
 
   llvm::cl::ParseCommandLineOptions(argc, argv, "Compare timings tool");
 
-  BIND(aSamples, Samples::load("ns", options.a.getValue()));
+  BIND(aSamples,
+       Samples::load(kLatencyUnits, options.a.getValue(), kLatencyScale));
   BIND(aNormal, Normal::fromSamples(aSamples));
-  size_t aPruned = aSamples.prune(0.5 * aNormal.mean, 1.5 * aNormal.mean);
-  BIND(aHistogram, Histogram::fromSamples(aSamples, 1e6));
+  size_t aPruned = aSamples.prune(kPruneFactor * aNormal.mean,
+                                  (1.0 + kPruneFactor) * aNormal.mean);
+  BIND(aHistogram, Histogram::fromSamples(aSamples, kLatencyRounding));
 
-  BIND(bSamples, Samples::load("ns", options.b.getValue()));
+  BIND(bSamples,
+       Samples::load(kLatencyUnits, options.b.getValue(), kLatencyScale));
   BIND(bNormal, Normal::fromSamples(bSamples));
-  size_t bPruned = bSamples.prune(0.5 * bNormal.mean, 1.5 * bNormal.mean);
-  BIND(bHistogram, Histogram::fromSamples(bSamples, 1e6));
+  size_t bPruned = bSamples.prune(kPruneFactor * bNormal.mean,
+                                  (1.0 + kPruneFactor) * bNormal.mean);
+  BIND(bHistogram, Histogram::fromSamples(bSamples, kLatencyRounding));
 
   llvm::outs() << "A:\n";
   llvm::outs() << "  pruned:   " << aPruned << "\n";
@@ -70,26 +93,22 @@ int main(int argc, char **argv) {
   llvm::outs() << "\n";
 
   llvm::outs() << "Speedup of B w.r.t. A:\n";
-  BIND(ratioSamples,
-       Samples::ratio(
-           aSamples, bSamples,
-           /*numSamples=*/
-           std::min(aSamples.numSamples() * bSamples.numSamples(), 25000lu)));
+  BIND(ratioSamples, Samples::ratio(aSamples, bSamples, kMaxSamples));
   ratioSamples.printSummary();
-  BIND(ratioHisogram, Histogram::fromSamples(ratioSamples, 0.01));
+  BIND(ratioHisogram, Histogram::fromSamples(ratioSamples, kPercentRounding));
   llvm::outs() << "  histogram:\n";
   ratioHisogram.printSummary();
   llvm::outs() << "\n";
 
   llvm::outs() << "Welch t-test:\n";
   double welchPercentile =
-      welchTTest(aSamples, aNormal, bSamples, bNormal, /*numSamples=*/1000);
+      welchTTest(aSamples, aNormal, bSamples, bNormal, kMaxSamples);
   llvm::outs() << "  %ile:       " << llvm::format("%.2f", welchPercentile)
                << "%\n";
-  if (welchPercentile <= 5.0)
+  if (welchPercentile <= kWelchLimit)
     llvm::outs() << "  <<<B APPEARS FASTER THAN A>>>\n";
-  else if (welchPercentile >= 95.0)
-    llvm::outs() << "  <<<A APPEARS FASTER THAN B>>>\n";
+  else if (welchPercentile >= (100.0 - kWelchLimit))
+    llvm::outs() << "  <<<B APPEARS SLOWER THAN A>>>\n";
   llvm::outs() << "\n";
 
   return 0;

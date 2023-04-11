@@ -38,10 +38,11 @@ struct Samples {
   /// Returns percentile of given value.
   double percentileOf(Sample value) const;
 
-  /// Returns samples loaded from filename.
-  static ErrorOr<Samples> load(StringRef units, StringRef filename);
+  /// Returns samples loaded from filename and scaled by given scale.
+  static ErrorOr<Samples> load(StringRef units, StringRef filename,
+                               double scale);
 
-  /// Returns samples of lhs / rhs.
+  /// Returns samples of lhs / rhs as percentage.
   static ErrorOr<Samples> ratio(const Samples &lhs, const Samples &rhs,
                                 size_t numSamples);
 

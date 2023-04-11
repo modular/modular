@@ -23,7 +23,8 @@ static std::mt19937 &getRandomGenerator() {
   return gen;
 }
 
-ErrorOr<Samples> Samples::load(StringRef units, StringRef filename) {
+ErrorOr<Samples> Samples::load(StringRef units, StringRef filename,
+                               double scale) {
   Samples result;
   result.units = units;
 
@@ -40,7 +41,7 @@ ErrorOr<Samples> Samples::load(StringRef units, StringRef filename) {
     Sample sample;
     if (line.getAsDouble(sample))
       return Error("ill-formed timing entry");
-    result.samples.push_back(sample);
+    result.samples.push_back(sample * scale);
   }
   std::sort(result.samples.begin(), result.samples.end());
   return result;
@@ -49,13 +50,13 @@ ErrorOr<Samples> Samples::load(StringRef units, StringRef filename) {
 ErrorOr<Samples> Samples::ratio(const Samples &lhs, const Samples &rhs,
                                 size_t numSamples) {
   Samples result;
-  result.units = "";
+  result.units = "%";
   for (size_t i = 0; i < numSamples; ++i) {
     Sample left = lhs.random();
     Sample right = rhs.random();
     if (right == 0.0)
       return Error("divide by zero");
-    result.samples.push_back(left / right);
+    result.samples.push_back(left * 100.0 / right);
   }
   std::sort(result.samples.begin(), result.samples.end());
   return result;
@@ -162,7 +163,7 @@ constexpr double kTolerance = 0.005;
 
 void Normal::printSummary() const {
   llvm::outs() << "  mean&sd:  " << llvm::format(kSampleFmt, mean) << units
-               << " +/-" << llvm::format(kSampleFmt, stdDev) << "("
+               << " +/-" << llvm::format(kSampleFmt, stdDev) << units << " ("
                << llvm::format(kPercentFmt, stdDev * 100.0 / mean) << "%)\n";
   // Suggested minimum sample size. Only valid if underlying distribution
   // is Gaussian, hence the simple-minded histogram printing.
@@ -204,7 +205,11 @@ ErrorOr<Histogram> Histogram::fromSamples(const Samples &samples,
   result.lower = result.roundDown(result.lower);
   result.upper = result.roundUp(result.upper);
   result.numBuckets = std::min(kMaxBuckets, result.n);
-  result.width = (result.upper - result.lower) / result.numBuckets;
+  result.width = result.roundUp((result.upper - result.lower) /
+                                static_cast<double>(result.numBuckets));
+  result.numBuckets =
+      std::lround(std::ceil((result.upper - result.lower) / result.width));
+  result.upper = result.lower + result.width * result.numBuckets;
 
   // Fill buckets
   result.counts.resize(result.numBuckets, 0);
@@ -228,14 +233,14 @@ void Histogram::printSummary() {
   double maxCount =
       static_cast<double>(*std::max_element(counts.begin(), counts.end()));
   for (size_t bucket = 0; bucket < numBuckets; ++bucket) {
-    double bucketLowerBound = roundDown(lower + bucket * width);
+    double bucketLowerBound = lower + bucket * width;
     size_t height = static_cast<size_t>(
         std::lround(std::ceil(static_cast<double>(counts[bucket]) / maxCount *
                               static_cast<double>(kHistogramChars))));
     llvm::outs() << "  " << llvm::format(kFixedWidthFmt, bucketLowerBound)
                  << units << " " << std::string(height, '*') << "\n";
   }
-  double upperBound = roundDown(lower + numBuckets * width);
+  double upperBound = lower + numBuckets * width;
   llvm::outs() << "  " << llvm::format(kFixedWidthFmt, upperBound) << units
                << "\n";
 }
