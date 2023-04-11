@@ -667,6 +667,7 @@ def POP_SIMDShuffleOp : POPOp<"simd.shuffle", [Pure,
     custom<ShuffleMask>($mask, ref(type($result))) attr-dict
   }];
   let hasVerifier = 1;
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//

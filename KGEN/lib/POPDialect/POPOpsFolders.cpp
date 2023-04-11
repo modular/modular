@@ -189,18 +189,18 @@ static SIMDAttr foldSIMDOp(ArrayRef<Attribute> operands, KGENDType inputDType,
                            KGENDType resultDType, OpFns &&...ops) {
   if (inputDType.isInt())
     return ::detail::foldSIMDOpDType<APSInt>(
-        [](DTypeValue val) { return val.getIntVal(); }, operands, resultDType,
-        std::forward<OpFns>(ops)...);
+        [](const DTypeValue &val) { return val.getIntVal(); }, operands,
+        resultDType, std::forward<OpFns>(ops)...);
   // FIXME: Should we even do floating point folds? Results don't match hardware
   // and not all float semantics are supported.
   if (inputDType.isFloat())
     return ::detail::foldSIMDOpDType<APFloat>(
-        [](DTypeValue val) { return val.getFloatVal(); }, operands, resultDType,
-        std::forward<OpFns>(ops)...);
+        [](const DTypeValue &val) { return val.getFloatVal(); }, operands,
+        resultDType, std::forward<OpFns>(ops)...);
   if (inputDType.isBool())
     return ::detail::foldSIMDOpDType<bool>(
-        [](DTypeValue val) { return val.getBoolVal(); }, operands, resultDType,
-        std::forward<OpFns>(ops)...);
+        [](const DTypeValue &val) { return val.getBoolVal(); }, operands,
+        resultDType, std::forward<OpFns>(ops)...);
   if constexpr (indexFoldType != kNoIndex) {
     if (inputDType.isIndex())
       return ::detail::foldSIMDOpIndex<indexFoldType>(
@@ -628,6 +628,38 @@ OpFoldResult SIMDInsertElementOp::fold(FoldAdaptor adaptor) {
   SmallVector<DTypeValue> values(vec.getValues());
   values[idx.getInt()] = val.getValues().front();
   return SIMDAttr::get(values, getType());
+}
+
+//===----------------------------------------------------------------------===//
+// SIMDShuffleOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult SIMDShuffleOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
+  std::optional<int64_t> size = getType().getResolvedSize();
+  auto lhs = dyn_cast_if_present<SIMDAttr>(operands[0]);
+  auto rhs = dyn_cast_if_present<SIMDAttr>(operands[1]);
+  auto mask = dyn_cast_if_present<ListAttr>(adaptor.getMaskAttr());
+  if (!size || !lhs || !rhs || !mask)
+    return {};
+
+  // Is the mask a known constant.
+  if (llvm::any_of(mask.getValues(), [](Attribute operand) {
+        return !isa_and_nonnull<IntegerAttr>(operand);
+      }))
+    return {};
+
+  // Concatenate the input simd vectors.
+  SmallVector<DTypeValue> args(lhs.getValues());
+  llvm::append_range(args, rhs.getValues());
+
+  // Perform the permutation based on the mask.
+  SmallVector<DTypeValue> result;
+  result.reserve(mask.getValues().size());
+  for (TypedAttr maskVal : mask.getValues())
+    result.emplace_back(args[cast<IntegerAttr>(maskVal).getInt()]);
+
+  return SIMDAttr::get(result, getType());
 }
 
 //===----------------------------------------------------------------------===//
