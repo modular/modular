@@ -152,8 +152,10 @@ bool MojoUserExpression::Parse(DiagnosticManager &diagnosticManager,
   // Parse the expression text.
   Process *process = exeCtx.GetProcessPtr();
   auto *exeScope = process ? (ExecutionContextScope *)process : &impl->target;
-  if (failed(wrapTextAndParseExpression(diagnosticManager, exeCtx, exeScope,
-                                        impl->persistentState)))
+
+  MojoExpressionSourceCode sourceCode(m_expr_text);
+  if (failed(wrapTextAndParseExpression(sourceCode, diagnosticManager, exeCtx,
+                                        exeScope, impl->persistentState)))
     return false;
 
   // Prepare the output of the parser for execution, evaluating it statically if
@@ -172,6 +174,11 @@ bool MojoUserExpression::Parse(DiagnosticManager &diagnosticManager,
 
   if (process && m_jit_start_addr != LLDB_INVALID_ADDRESS)
     m_jit_process_wp = lldb::ProcessWP(process->shared_from_this());
+
+  /// If JITting went well, we proceed to save the user code for subsequent
+  /// evaluations.
+  if (keepResultInMemory)
+    impl->persistentState.registerUserSourceCode(sourceCode);
   return true;
 }
 
@@ -241,8 +248,22 @@ void MojoUserExpression::notifyFixits(DiagnosticManager &diagnosticManager,
 }
 
 LogicalResult MojoUserExpression::wrapTextAndParseExpression(
+    const MojoExpressionSourceCode &sourceCode,
     DiagnosticManager &diagnosticManager, ExecutionContext &exeCtx,
     ExecutionContextScope *exeScope, MojoPersistentExpressionState &state) {
+
+  // We use the following comments to identify the chunks of code written by the
+  // user. After we apply fix-its, we need to extract these two chunks and
+  // combine them into the new source code to evaluate.
+  constexpr StringLiteral kTopLevelBlockBegin =
+      "#==__lldb_expr_top_level_code_begin\n";
+  constexpr StringLiteral kTopLevelBlockEnd =
+      "#==__lldb_expr_top_level_code_end\n";
+  constexpr StringLiteral kMainBodyBlockBegin =
+      "    #==__lldb_expr_main_body_code_begin\n";
+  constexpr StringLiteral kMainBodyBlockEnd =
+      "    #==__lldb_expr_main_body_code_end\n";
+
   // Collect the current persistent variables.
   SmallVector<std::pair<StringRef, mlir::Type>> variables;
   collectPersistentVariables(state, variables);
@@ -252,11 +273,24 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
   // state.
   llvm::raw_string_ostream exprRawOS(transformedText);
   mlir::raw_indented_ostream exprOSIndented(exprRawOS);
+
   exprOSIndented << "from IO import print\n"
                  << "from Pointer import Pointer\n\n"
                  << "from PythonInterface import PythonInterface\n";
 
-  // Build the input struct, which contains each of the persistent variables.
+  // We insert the previously executed top level code to ensure functions,
+  // imports and classes are preserved. This also ensures that saved
+  // variables can be inspected again because the user defined types are
+  // included in these pieces of code.
+  for (const auto &prevSourceCode : state.getRegisteredUserSourceCodes())
+    exprOSIndented << prevSourceCode.getTopLevelCode();
+
+  // The following is the first chunk of code written by the user.
+  exprOSIndented << kTopLevelBlockBegin << sourceCode.getTopLevelCode()
+                 << kTopLevelBlockEnd;
+
+  // Build the input struct, which contains each of the persistent
+  // variables.
   exprOSIndented << "struct __lldb_context__:\n";
   for (auto &var : variables) {
     exprOSIndented << llvm::formatv(
@@ -285,8 +319,10 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
   }
   exprOSIndented << "):\n";
 
-  size_t prefixSize = transformedText.size();
-  exprOSIndented.printReindented(m_expr_text, "    ");
+  // The following is the other chunk of code just written by the user.
+  exprOSIndented << kMainBodyBlockBegin;
+  exprOSIndented.printReindented(sourceCode.getMainBodyCode(), "    ");
+  exprOSIndented << kMainBodyBlockEnd;
 
   MOJO_EXPR_LOG("Parsing the following code:\n{0}", transformedText.c_str());
 
@@ -312,11 +348,20 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
     MOJO_EXPR_LOG("Rewrote the input, next parse will be the fixed code");
     llvm::raw_string_ostream fixedOS(m_fixed_text);
     mlir::raw_indented_ostream indentedFixedOS(fixedOS);
+    StringRef fixedText = diagnosticManager.GetFixedExpression();
+    // Get the modified top level code
+    indentedFixedOS << fixedText.slice(fixedText.find(kTopLevelBlockBegin) +
+                                           kTopLevelBlockBegin.size(),
+                                       fixedText.find(kTopLevelBlockEnd));
 
-    // Drop the prefix and remove all indent.
+    // Get the modified main body and remove all indent.
     indentedFixedOS.printReindented(
-        diagnosticManager.GetFixedExpression().substr(prefixSize), "");
+        fixedText.slice(fixedText.find(kMainBodyBlockBegin) +
+                            kMainBodyBlockBegin.size(),
+                        fixedText.find(kMainBodyBlockEnd)),
+        "");
 
+    MOJO_EXPR_LOG("The new unwrapped code will be:\n{0}", m_fixed_text);
     notifyFixits(diagnosticManager, m_fixed_text);
     // Clear the diagnostic manager so we don't re-fix something.
     diagnosticManager.Clear();
@@ -336,6 +381,5 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
     diagnosticManager.PutString(eDiagnosticSeverityError, "crash detected");
     return failure();
   }
-
   return result;
 }

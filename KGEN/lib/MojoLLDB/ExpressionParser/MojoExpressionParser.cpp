@@ -178,6 +178,7 @@ MojoExpressionParser::rewriteExpression(DiagnosticManager &diagnosticManager) {
   MOJO_EXPR_LOG("Found {0} diagnostic{1}",
                 diagnosticManager.Diagnostics().size(),
                 diagnosticManager.Diagnostics().size() == 1 ? "" : "s");
+  // originalText is the wrapped code, not what the user wrote.
   StringRef originalText(impl->expr.Text());
 
   // This takes advantage of the fact that fixits are ordered to apply multiple
