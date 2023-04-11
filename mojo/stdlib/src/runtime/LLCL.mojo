@@ -67,7 +67,7 @@ struct AsyncContext:
     to available.
     """
 
-    alias callback_fn_type = __mlir_type[`(`, Chain, `) -> !lit.none`]
+    alias callback_fn_type = __mlir_type[`(`, Chain, `) -> `, NoneType]
 
     var callback: callback_fn_type
     var chain: Chain
@@ -274,7 +274,7 @@ struct Task[type: AnyType]:
 @register_passable("trivial")
 struct TaskGroupContext:
     alias tg_callback_fn_type = __mlir_type[
-        `(!pop.pointer<`, TaskGroup, `>) -> !lit.none`
+        `(!pop.pointer<`, TaskGroup, `>) -> `, NoneType
     ]
 
     var callback: tg_callback_fn_type
@@ -308,11 +308,11 @@ struct TaskGroup:
 
     @staticmethod
     fn _get_complete_callback() -> __mlir_type[
-        `(!pop.pointer<`, TaskGroup, `>) -> !lit.none`
+        `(!pop.pointer<`, TaskGroup, `>) -> `, NoneType
     ]:
         return __mlir_op.`kgen.addressof`[
             _type : [
-                __mlir_type[`(!pop.pointer<`, TaskGroup, `>) -> !lit.none`]
+                __mlir_type[`(!pop.pointer<`, TaskGroup, `>) -> `, NoneType]
             ],
             callee:_task_complete,
             paramDecls : __mlir_attr.`#kgen<param.decls[]>`,
@@ -472,7 +472,9 @@ struct OutputChainPtr:
         detail_fn: __mlir_type[
             `!kgen.signature<(!pop.pointer<`,
             String,
-            `> byref_result) -> !lit.none>`,
+            `> byref_result) -> `,
+            NoneType,
+            `>`,
         ],
     ](self, label: StringRef):
         """If enabled, begin a time profile entry with label and detail which
@@ -554,7 +556,7 @@ struct OwningOutputChainPtr:
 
 struct AsyncTaskGroupContext:
     alias tg_callback_fn_type = __mlir_type[
-        `(!pop.pointer<`, AsyncTaskGroup, `>) -> !lit.none`
+        `(!pop.pointer<`, AsyncTaskGroup, `>) -> `, NoneType
     ]
 
     var callback: tg_callback_fn_type
@@ -610,11 +612,13 @@ struct AsyncTaskGroup:
 
     @staticmethod
     fn _get_complete_callback() -> __mlir_type[
-        `(!pop.pointer<`, AsyncTaskGroup, `>) -> !lit.none`
+        `(!pop.pointer<`, AsyncTaskGroup, `>) -> `, NoneType
     ]:
         return __mlir_op.`kgen.addressof`[
             _type : [
-                __mlir_type[`(!pop.pointer<`, AsyncTaskGroup, `>) -> !lit.none`]
+                __mlir_type[
+                    `(!pop.pointer<`, AsyncTaskGroup, `>) -> `, NoneType
+                ]
             ],
             callee:_task_complete,
             paramDecls : __mlir_attr.`#kgen<param.decls[]>`,
