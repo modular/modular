@@ -9,11 +9,15 @@ from Assert import assert_param_msg
 from Coroutine import Coroutine
 from Index import StaticIntTuple
 from List import VariadicList
-from LLCL import Runtime, OutputChainPtr, AsyncTaskGroupPtr
+from LLCL import (
+    num_cores,
+    Runtime,
+    OutputChainPtr,
+    OwningOutputChainPtr,
+    AsyncTaskGroupPtr,
+)
 from Math import div_ceil, min, max
 from Range import range
-
-alias InlinedFixedVectorLength = 64
 
 # ===----------------------------------------------------------------------===#
 # Map
@@ -292,7 +296,8 @@ fn vectorize_unroll[
 fn async_parallelize[
     func: __mlir_type[`!kgen.signature<(`, Int, ` borrow) -> `, NoneType, `>`],
 ](out_chain: OutputChainPtr, num_work_items: Int):
-    """Execute func(0) ... func(num_work_items-1) as sub-tasks in parallel.
+    """Execute func(0) ... func(num_work_items-1) as sub-tasks in parallel and
+    return imediatly.
 
     Execute func(0) ... func(num_work_items-1) as sub-tasks in parallel and
     mark out_chain as ready when all functions have returned. This function
@@ -334,6 +339,54 @@ fn async_parallelize[
     for i in range(num_work_items):
         let coroutine: Coroutine[NoneType] = task_fn(i)
         atg.add_task(coroutine)
+
+
+# ===----------------------------------------------------------------------===#
+# Parallelize
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn parallelize[
+    func: __mlir_type[`!kgen.signature<(`, Int, ` borrow) -> `, NoneType, `>`],
+]():
+    """Execute func(0) ... func(N-1) as sub-tasks in parallel and block until
+    completion. N is chosen to be the number of physical processors on the
+    system.
+
+    Execute func(0) ... func(N-1) as sub-tasks in parallel. This function will
+    return after all the sub-tasks have completely been executed
+    (and unlike async_parallelize this is a blocking operation).
+
+    Parameters:
+        func: The function to invoke.
+    """
+    return parallelize[func](num_cores())
+
+
+@always_inline
+fn parallelize[
+    func: __mlir_type[`!kgen.signature<(`, Int, ` borrow) -> `, NoneType, `>`],
+](num_work_items: Int):
+    """Execute func(0) ... func(num_work_items-1) as sub-tasks in parallel and
+    block until completion.
+
+    Execute func(0) ... func(num_work_items-1) as sub-tasks in parallel. This
+    function will return after all the sub-tasks have completely been executed
+    (and unlike async_parallelize this is a blocking operation).
+
+    Parameters:
+        func: The function to invoke.
+
+    Args:
+        num_work_items: Number of parallel tasks.
+    """
+    let rt = Runtime(num_work_items)
+    let out_chain = OwningOutputChainPtr(rt)
+    async_parallelize[func](out_chain.borrow(), num_work_items)
+    out_chain.wait()
+    out_chain.__del__()
+    rt.__del__()
 
 
 # ===----------------------------------------------------------------------===#

@@ -7,10 +7,10 @@
 
 from Buffer import Buffer
 from DType import DType
-from Functional import async_parallelize, map
+from Functional import async_parallelize, parallelize, map
 from Math import div_ceil, min
 from IO import print
-from LLCL import Runtime, OwningOutputChainPtr
+from LLCL import num_cores, Runtime, OwningOutputChainPtr
 from SIMD import SIMD
 from Range import range
 
@@ -52,5 +52,33 @@ fn test_async_parallelize():
             print("ERROR: Expecting the result to be i + 2")
 
 
+# CHECK-LABEL: test_parallelize
+fn test_parallelize():
+    print("== test_parallelize")
+
+    let num_work_items = num_cores()
+
+    let vector = Buffer[20, DType.index].stack_allocation()
+
+    for i in range(vector.__len__()):
+        vector[i] = i
+
+    let chunk_size = div_ceil(vector.__len__(), num_work_items)
+
+    @always_inline
+    fn parallel_fn(thread_id: Int):
+        let start = thread_id * chunk_size
+        let end = min(start + chunk_size, vector.__len__())
+
+        @always_inline
+        fn add_two(idx: Int):
+            vector[start + idx] = vector[start + idx] + 2
+
+        map[add_two](end - start)
+
+    parallelize[parallel_fn](num_work_items)
+
+
 fn main():
     test_async_parallelize()
+    test_parallelize()
