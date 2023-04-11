@@ -317,7 +317,7 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
   llvm::raw_string_ostream exprRawOS(transformedText);
   mlir::raw_indented_ostream exprOSIndented(exprRawOS);
 
-  exprOSIndented << "from IO import print\n"
+  exprOSIndented << "from IO import _printf, print\n"
                  << "from Pointer import Pointer\n\n"
                  << "from PythonInterface import PythonInterface\n";
 
@@ -347,15 +347,20 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
   // Generate a wrapper function to handle the extracting function arguments.
   exprOSIndented << "@export\n"
                     "fn __lldb_expr__(__lldb_arg&: __lldb_context__):\n"
-                    "  __lldb_expr_impl__(__lldb_arg";
+                    "  try:\n"
+                    "    __lldb_expr_impl__(__lldb_arg";
   for (auto &var : variables) {
     exprOSIndented << formatv(
         ", __get_address_as_lvalue(__lldb_arg.{0}.load().address)", var.first);
   }
-  exprOSIndented << ")\n\n";
+  exprOSIndented << ")\n"
+                    "  except error:\n"
+                    "    _printf(\"Error: \")\n"
+                    "    print(error.value)\n\n";
 
   // Finally we can generate the actual expression function.
-  exprOSIndented << "fn __lldb_expr_impl__(__lldb_arg&: __lldb_context__";
+  exprOSIndented << "@raises\n"
+                 << "fn __lldb_expr_impl__(__lldb_arg&: __lldb_context__";
   for (auto &var : variables) {
     exprOSIndented << llvm::formatv(", {0}&: __mlir_type.`{1}`", var.first,
                                     var.second);
