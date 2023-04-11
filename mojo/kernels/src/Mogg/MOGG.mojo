@@ -21,50 +21,49 @@ from TypeUtilities import rebind
 from Tracing import Trace, TraceLevel
 from String import String
 
-# ===----------------------------------------------------------------------===#
-# This file contains the MOGG operation bindings. These should avoid passing
-# in complex types as we have to generate the calls using the C++ interface.
-#
-# They should follow the following guidelines:
-# 1. Match the MGP convention of passing in the tensor pointers. (sizes tbd)
-# 2. Take attribute parameters at the end and match the MO name exactly. (largely tbd)
-# 3. Include new features by importing directly in this file and adding a wrapper which calls it.
-# ===----------------------------------------------------------------------===#
-
 # Prevent these functions from being DCE'd by explicitly exporting them.
 @export
 fn MOGGExport():
     alias _indices = TensorIndicesTypeDef
     alias _out_chain = OutputChainPtrDef
+    alias _simd_typedef = SimdTypeDef
+    alias _index_typedef = IndexTypeDef
+    alias _dtype_f32 = DTypeF32TypeDef
     alias _to_buffer = to_buffer
-    alias _add = mogg_add
-    alias _div = mogg_div
-    alias _erf = mogg_erf
-    alias _exp = mogg_exp
+    alias _add = add
+    alias _div = div
+    alias _erf = erf
+    alias _exp = exp
     alias _load_scalar = load_scalar
-    alias _mul = mogg_mul
-    alias _rsqrt = mogg_rsqrt
-    alias _sqrt = mogg_sqrt
-    alias _sub = mogg_sub
-    alias _tanh = mogg_tanh
-    alias _relu = mogg_relu
+    alias _mul = mul
+    alias _rsqrt = rsqrt
+    alias _sqrt = sqrt
+    alias _sub = sub
+    alias _tanh = tanh
+    alias _relu = relu
     alias _broadcast = broadcast_to_tensor
     alias _simd_load = simd_load
     alias _simd_store = simd_store
     alias _simd_load_1D = simd_load_1D
     alias _simd_load_splat = simd_load_splat
     alias _simd_load_maybe_splat = simd_load_maybe_splat
-    alias _simd_target = get_target_simd
+    alias _simd_target = dtype_simd_width
     alias _splat = splat
     alias _elementwise = elementwise_wrapper
     alias _print_shape_info = print_buffer_info
     alias _mark_output_chain_ready = mark_output_chain_ready
 
 
+# ===----------------------------------------------------------------------===#
 # Nop functions to expose different types to the compiler.
-fn TensorIndicesTypeDef[
-    rank: __mlir_type.index
-](ty: StaticIntTuple[rank]) -> StaticIntTuple[rank]:
+# ===----------------------------------------------------------------------===#
+
+
+fn DTypeF32TypeDef(ty: DType.type) -> DType.type:
+    return DType.f32.value
+
+
+fn IndexTypeDef(ty: Int) -> Int:
     return ty
 
 
@@ -72,9 +71,26 @@ fn OutputChainPtrDef(ty: OutputChainPtr) -> OutputChainPtr:
     return ty
 
 
+fn SimdTypeDef[
+    type: DType, simd_width: Int
+](ty: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    return ty
+
+
+fn TensorIndicesTypeDef[
+    rank: Int
+](ty: StaticIntTuple[rank]) -> StaticIntTuple[rank]:
+    return ty
+
+
+# ===----------------------------------------------------------------------===#
+# Basic generated kernel building blocks
+# ===----------------------------------------------------------------------===#
+
+
 @always_inline
 fn to_buffer[
-    type: DType, rank: __mlir_type.index
+    type: DType, rank: Int
 ](
     data: __mlir_type[`!pop.pointer<scalar<`, type.value, `>>`],
     shape: __mlir_type.`!pop.pointer<index>`,
@@ -105,23 +121,19 @@ fn to_buffer[
     )
 
 
-fn get_target_simd[type: DType]() -> __mlir_type.index:
-    return dtype_simd_width[type]().__as_mlir_index()
-
-
 @always_inline
 fn elementwise_wrapper[
-    simd_width: __mlir_type.index,
+    simd_width: Int,
     type: DType,
-    rank: __mlir_type.index,
+    rank: Int,
     func: __mlir_type[
         `!kgen.signature<<`,
-        __mlir_type.index,
+        Int,
         `,`,
-        __mlir_type.index,
+        Int,
         `>(`,
         StaticIntTuple[
-            Int(__mlir_attr[`#kgen.param.index.ref<0, false, 1> : index`])
+            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, Int]
         ],
         ` borrow) -> !lit.none>`,
     ],
@@ -129,12 +141,6 @@ fn elementwise_wrapper[
     buffer: NDBuffer[rank, DimList[rank].create_unknown(), type],
     out_chain: OutputChainPtr,
 ):
-    @always_inline
-    fn mogg_func[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
-        func[simd_width.__as_mlir_index(), rank.__as_mlir_index()](
-            rebind[StaticIntTuple[rank.__as_mlir_index()]](idx)
-        )
-
     alias unroll_factor: Int = 1
 
     @always_inline
@@ -173,93 +179,10 @@ fn elementwise_wrapper[
         return res
 
     out_chain.trace_detail[TraceLevel.OP, description_fn]("mogg.element_wise")
-    elementwise[rank, simd_width, unroll_factor, mogg_func](
+    elementwise[rank, simd_width, unroll_factor, func](
         rebind[StaticIntTuple[rank]](buffer.dynamic_shape),
         out_chain,
     )
-
-
-# ===----------------------------------------------------------------------===#
-# Kernel hooks
-# ===----------------------------------------------------------------------===#
-
-
-@always_inline
-fn mogg_add[
-    simd_width: __mlir_type.index, type: DType
-](x: SIMD[type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
-    type, simd_width
-]:
-    return add(x, y)
-
-
-@always_inline
-fn mogg_div[
-    simd_width: __mlir_type.index, type: DType
-](x: SIMD[type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
-    type, simd_width
-]:
-    return div(x, y)
-
-
-@always_inline
-fn mogg_erf[
-    simd_width: __mlir_type.index, type: DType
-](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    return erf(x)
-
-
-@always_inline
-fn mogg_exp[
-    simd_width: __mlir_type.index, type: DType
-](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    return exp(x)
-
-
-@always_inline
-fn mogg_mul[
-    simd_width: __mlir_type.index, type: DType
-](x: SIMD[type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
-    type, simd_width
-]:
-    return mul(x, y)
-
-
-@always_inline
-fn mogg_relu[
-    simd_width: __mlir_type.index, type: DType
-](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    return relu(x)
-
-
-@always_inline
-fn mogg_rsqrt[
-    simd_width: __mlir_type.index, type: DType
-](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    return rsqrt(x)
-
-
-@always_inline
-fn mogg_sqrt[
-    simd_width: __mlir_type.index, type: DType
-](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    return sqrt(x)
-
-
-@always_inline
-fn mogg_sub[
-    simd_width: __mlir_type.index, type: DType
-](x: SIMD[type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
-    type, simd_width
-]:
-    return sub(x, y)
-
-
-@always_inline
-fn mogg_tanh[
-    simd_width: __mlir_type.index, type: DType
-](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    return tanh(x)
 
 
 # ===----------------------------------------------------------------------===#
@@ -269,7 +192,7 @@ fn mogg_tanh[
 
 @always_inline
 fn _compute_flat_index[
-    type: DType, rank: __mlir_type.index, iters: __mlir_type.index
+    type: DType, rank: Int, iters: Int
 ](
     buffer: NDBuffer[rank, DimList[rank].create_unknown(), type],
     index: StaticIntTuple[rank],
@@ -289,7 +212,7 @@ fn _compute_flat_index[
 # this `if` as it should be a constant.
 @always_inline
 fn simd_load_1D[
-    simd_width: __mlir_type.index, type: DType, rank: __mlir_type.index
+    simd_width: Int, type: DType, rank: Int
 ](
     buffer: NDBuffer[rank, DimList[rank].create_unknown(), type],
     index: StaticIntTuple[rank],
@@ -308,7 +231,7 @@ fn simd_load_1D[
 # hoist the load from the lambda body.
 @always_inline
 fn load_scalar[
-    type: DType, rank: __mlir_type.index
+    type: DType, rank: Int
 ](buffer: NDBuffer[rank, DimList[rank].create_unknown(), type]) -> SIMD[
     type, 1
 ]:
@@ -318,7 +241,7 @@ fn load_scalar[
 @always_inline
 fn splat[
     type: DType,
-    simd_width: __mlir_type.index,
+    simd_width: Int,
 ](val: SIMD[type, 1]) -> SIMD[type, simd_width]:
     return SIMD[type, simd_width].splat(val)
 
@@ -326,7 +249,7 @@ fn splat[
 # Load a tensor which might splat along the last dimension.
 @always_inline
 fn simd_load_maybe_splat[
-    simd_width: __mlir_type.index, type: DType, rank: __mlir_type.index
+    simd_width: Int, type: DType, rank: Int
 ](
     buffer: NDBuffer[rank, DimList[rank].create_unknown(), type],
     index: StaticIntTuple[rank],
@@ -342,7 +265,7 @@ fn simd_load_maybe_splat[
 # Load a tensor which does a splat along the last dimension.
 @always_inline
 fn simd_load_splat[
-    simd_width: __mlir_type.index, type: DType, rank: __mlir_type.index
+    simd_width: Int, type: DType, rank: Int
 ](
     buffer: NDBuffer[rank, DimList[rank].create_unknown(), type],
     index: StaticIntTuple[rank],
@@ -357,7 +280,7 @@ fn simd_load_splat[
 
 @always_inline
 fn simd_load[
-    simd_width: __mlir_type.index, type: DType, rank: __mlir_type.index
+    simd_width: Int, type: DType, rank: Int
 ](
     buffer: NDBuffer[rank, DimList[rank].create_unknown(), type],
     index: StaticIntTuple[rank],
@@ -368,7 +291,7 @@ fn simd_load[
 
 @always_inline
 fn simd_store[
-    simd_width: __mlir_type.index, type: DType, rank: __mlir_type.index
+    simd_width: Int, type: DType, rank: Int
 ](
     buffer: NDBuffer[rank, DimList[rank].create_unknown(), type],
     index: StaticIntTuple[rank],
@@ -386,15 +309,15 @@ fn simd_store[
 @always_inline
 fn broadcast_to_tensor[
     type: DType,
-    original_rank: __mlir_type.index,
-    target_rank: __mlir_type.index,
-    output_rank: __mlir_type.index,
+    original_rank: Int,
+    target_rank: Int,
+    output_rank: Int,
 ](
     original: NDBuffer[
         original_rank, DimList[original_rank].create_unknown(), type
     ],
     target: NDBuffer[target_rank, DimList[target_rank].create_unknown(), type],
-) -> NDBuffer[Int(output_rank), DimList[output_rank].create_unknown(), type]:
+) -> NDBuffer[output_rank, DimList[output_rank].create_unknown(), type]:
 
     var shape = StaticIntTuple[output_rank]()
     var stride = StaticIntTuple[output_rank]()
@@ -481,7 +404,7 @@ fn mark_output_chain_ready(out_chain: OutputChainPtr):
 
 # Helper function to query buffer shapes for tests.
 fn print_buffer_info[
-    type: DType, rank: __mlir_type.index
+    type: DType, rank: Int
 ](buffer: NDBuffer[rank, DimList[rank].create_unknown(), type]):
     _printf("Rank: ")
     print(rank)
