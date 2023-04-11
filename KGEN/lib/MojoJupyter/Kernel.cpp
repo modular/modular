@@ -145,6 +145,7 @@ private:
 
   /// Report an error to the Jupyter kernel.
   LogicalResult reportKernelError(const Twine &message) {
+    llvm::errs() << "error: " << message << "\n";
     sendOutput("error", message.str().c_str());
     return failure();
   }
