@@ -331,19 +331,22 @@ void MojoKernel::flushLLDBStreams(ExpressionExecutionState *state) {
     StringRef data(rawData, readLen);
     LLVM_DEBUG(llvm::dbgs()
                << "type system message: " << readLen << " : " << data << "\n");
-    sendOutput("stderr", data);
+    // We need to ensure that the output is null terminated.
+    sendOutput("stderr", data.str());
   }
 
   char outputBuffer[1024];
 
   // Read stdout from the process.
-  while (int readLen = process.GetSTDOUT(outputBuffer, 1024)) {
+  while (int readLen = process.GetSTDOUT(outputBuffer, 1023)) {
+    outputBuffer[readLen] = '\0';
     StringRef data(outputBuffer, readLen);
     LLVM_DEBUG(llvm::dbgs() << "stdout: " << readLen << " : " << data << "\n");
     sendOutput("stdout", data);
   }
   // Read stderr from the process.
   while (int readLen = process.GetSTDERR(outputBuffer, 1024)) {
+    outputBuffer[readLen] = '\0';
     StringRef data(outputBuffer, readLen);
     LLVM_DEBUG(llvm::dbgs() << "stderr: " << readLen << " : " << data << "\n");
     sendOutput("stderr", data);
