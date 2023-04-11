@@ -135,7 +135,9 @@ fn elementwise_wrapper[
         StaticIntTuple[
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, Int]
         ],
-        ` borrow) -> !lit.none>`,
+        ` borrow) -> `,
+        NoneType,
+        `>`,
     ],
 ](
     buffer: NDBuffer[rank, DimList[rank].create_unknown(), type],
