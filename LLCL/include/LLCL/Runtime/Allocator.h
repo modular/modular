@@ -12,10 +12,17 @@
 #ifndef LLCL_RUNTIME_ALLOCATOR_H
 #define LLCL_RUNTIME_ALLOCATOR_H
 
+#include "LLCL/Support/Profiling.h"
 #include "Support/AlignedAlloc.h"
+
 #include <memory>
 
 namespace M::LLCL {
+
+/// If enabled, the time for every alloc, free and copy is tracable.
+/// Names: "mem.alloc", "mem.free", "mem.copy"
+using MemAllocFreeCopyProfilerEntry =
+    ProfilerEntry<Trace::EnableTrace(Trace::kMem, 1)>;
 
 /// This class defines an abstract interface for custom allocators to implement.
 /// This is intended for use by large object allocations (e.g. tensor data), not
@@ -102,6 +109,11 @@ createProfilingAllocator(std::unique_ptr<Allocator> baseAllocator);
 /// For use when ASAN build is not available. Expensive!
 std::unique_ptr<Allocator> createUseAfterFreeAllocator();
 #endif
+
+/// As for std::memcpy, but wrapped by profiling if enabled. There's no
+/// alignment constraints on dst and src, and they need not have been
+/// allocated by one of our allocators.
+void profiledMemcpy(void *dst, const void *src, size_t size);
 
 } // namespace M::LLCL
 

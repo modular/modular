@@ -10,7 +10,6 @@
 #include "LLCL/Runtime/AsyncValueRef.h"
 #include "LLCL/Support/Chain.h"
 #include "LLCL/Support/Profiling.h"
-#include "Support/TimeProfiler.h"
 #include "llvm/ADT/ArrayRef.h"
 
 namespace M::KGEN {

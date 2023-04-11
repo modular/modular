@@ -21,7 +21,6 @@
 #include "LLCL/Runtime/CompactRuntimePtr.h"
 #include "LLCL/Runtime/WorkQueue.h"
 #include "LLCL/Support/Chain.h"
-#include "Support/TimeProfiler.h"
 #include "llvm/ADT/StringRef.h"
 #include <atomic>
 
