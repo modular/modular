@@ -7,6 +7,7 @@
 #include "LLCL/Runtime/Allocator.h"
 #include "Support/AlignedAlloc.h"
 
+using namespace M;
 using namespace M::LLCL;
 
 namespace {
@@ -15,14 +16,35 @@ namespace {
 class MallocAllocator : public Allocator {
   // Allocate the specified number of bytes with the specified alignment.
   void *allocateBytes(size_t size, size_t alignment) override {
-    return M::alignedAlloc(alignment, size);
+    TimeTraceScope scope(
+        MemAllocFreeCopyProfilerEntry::create("mem.alloc", [alignment, size]() {
+          return (Twine("size:") + Twine(size) +
+                  "B, align:" + Twine(alignment) + "B")
+              .str();
+        }));
+
+    return alignedAlloc(alignment, size);
   }
 
   // Deallocate the specified pointer that has the specified size.
-  void deallocateBytes(void *ptr, size_t size) override { M::alignedFree(ptr); }
+  void deallocateBytes(void *ptr, size_t size) override {
+    TimeTraceScope scope(
+        MemAllocFreeCopyProfilerEntry::create("mem.free", [size]() {
+          return (Twine("size:") + Twine(size) + "B").str();
+        }));
+    alignedFree(ptr);
+  }
 };
 } // namespace
 
 std::unique_ptr<Allocator> M::LLCL::createMallocAllocator() {
   return std::make_unique<MallocAllocator>();
+}
+
+void M::LLCL::profiledMemcpy(void *dst, const void *src, size_t size) {
+  TimeTraceScope scope(
+      MemAllocFreeCopyProfilerEntry::create("mem.copy", [size]() {
+        return (Twine("size:") + Twine(size) + "B").str();
+      }));
+  std::memcpy(dst, src, size);
 }
