@@ -8,6 +8,7 @@
 #define KGEN_LIB_MOJOLLDB_EXPRESSIONPARSER_MOJOUSEREXPRESSION_H
 
 #include "JITUserExpression.h"
+#include "MojoExpressionSourceCode.h"
 #include "Support/LLVMForwardDecls.h"
 #include "lldb/Expression/LLVMUserExpression.h"
 
@@ -75,7 +76,8 @@ private:
 
   /// Process and wrap the expression text, and then parse it.
   LogicalResult
-  wrapTextAndParseExpression(lldb_private::DiagnosticManager &diagnosticManager,
+  wrapTextAndParseExpression(const MojoExpressionSourceCode &sourceCode,
+                             lldb_private::DiagnosticManager &diagnosticManager,
                              lldb_private::ExecutionContext &exeCtx,
                              lldb_private::ExecutionContextScope *exeScope,
                              MojoPersistentExpressionState &state);

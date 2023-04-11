@@ -8,6 +8,7 @@
 #define KGEN_LIB_MOJOLLDB_EXPRESSIONPARSER_MOJOEXPRESSIONVARIABLE_H
 
 #include "JITExecutionUnit.h"
+#include "MojoUserExpression.h"
 #include "lldb/Core/Value.h"
 #include "lldb/Expression/ExpressionVariable.h"
 #include "lldb/Symbol/TaggedASTType.h"
@@ -135,6 +136,12 @@ public:
     return std::nullopt;
   }
 
+  /// Register the given user code that was successfully JITted.
+  void registerUserSourceCode(const MojoExpressionSourceCode &sourceCode);
+
+  /// Return a list of user source codes that were correctly JITted previously.
+  ArrayRef<MojoExpressionSourceCode> getRegisteredUserSourceCodes() const;
+
   /// Lookup a symbol with the provided name.
   lldb::addr_t LookupSymbol(lldb_private::ConstString name) override;
 
@@ -158,6 +165,11 @@ private:
 
   /// The addresses of the symbols in executionUnits.
   llvm::StringMap<lldb::addr_t> symbolMap;
+
+  /// Pieces of source code that were executed in previous expression
+  /// evaluations. They are needed to persist entities other than variables,
+  /// like functions, structs and imports.
+  std::vector<MojoExpressionSourceCode> sourceCodes;
 };
 } // namespace M::KGEN::Mojo
 

@@ -142,3 +142,13 @@ lldb::addr_t MojoPersistentExpressionState::LookupSymbol(ConstString name) {
     return si->second;
   return PersistentExpressionState::LookupSymbol(name);
 }
+
+void MojoPersistentExpressionState::registerUserSourceCode(
+    const MojoExpressionSourceCode &sourceCode) {
+  sourceCodes.push_back(sourceCode);
+}
+
+ArrayRef<MojoExpressionSourceCode>
+MojoPersistentExpressionState::getRegisteredUserSourceCodes() const {
+  return sourceCodes;
+}

@@ -8,6 +8,7 @@
 #define KGEN_LIB_MOJOLLDB_EXPRESSIONPARSER_MOJOEXPRESSIONPARSER_H
 
 #include "JITExecutionUnit.h"
+#include "MojoExpressionSourceCode.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 
 namespace M::KGEN::LIT {
