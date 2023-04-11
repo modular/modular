@@ -1254,6 +1254,10 @@ ParseResult LitStmtParser::parseLetVarStmt(LitLexerCursor startCursor,
                                   : "expected name for 'let' declaration"))
     return failure();
 
+  // Skip the body of this definition: go to a token the starts a line at the
+  // same indent level (or less) as the current definition.
+  skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
+
   auto unresolvedType = UnresolvedType::get(getContext());
   // If we're in a struct, then this is a field declaration.
   Operation *declOp;
@@ -1263,7 +1267,7 @@ ParseResult LitStmtParser::parseLetVarStmt(LitLexerCursor startCursor,
     if (!isVar)
       emitError(loc, "'let' fields in structs are not supported yet");
     declOp = builder.create<StructFieldOp>(loc, name, unresolvedType);
-  } else {
+  } else if (isa<LIT::FuncOp>(containingDecl)) {
     // Otherwise this is a local let/var definition.
 
     // Emit the vardecl at the current insertion point.  Unlike implicitly
@@ -1272,11 +1276,10 @@ ParseResult LitStmtParser::parseLetVarStmt(LitLexerCursor startCursor,
     // between things like "if cond: var x = 1 else var x = 2"
     auto varType = POP::PointerType::get(unresolvedType);
     declOp = builder.create<VarLetDeclOp>(loc, varType, name, isVar);
+  } else {
+    emitError(loc, "cannot declare value outside a function");
+    return success(); // Continue parsing.
   }
-
-  // Skip the body of this definition: go to a token the starts a line at the
-  // same indent level (or less) as the current definition.
-  skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
 
   // Remember that we parsed this declaration so we can finish type checking it
   // when it gets referenced.
