@@ -7,8 +7,9 @@
 """The module contains implementations of activation functions."""
 
 from Assert import assert_param_msg, debug_assert
+from Bit import _is_neg
 from DType import DType
-from Math import erf, exp, tanh, clamp, max, min, identity
+from Math import erf, exp, clamp, max, min, identity, tanh
 from SIMD import SIMD
 
 
@@ -16,12 +17,14 @@ from SIMD import SIMD
 struct ActivationType:
     var value: Int
     alias IDENTITY = ActivationType(0)
-    alias RELU = ActivationType(1)
-    alias RELU6 = ActivationType(2)
-    alias RELU_N1 = ActivationType(3)
+    alias GELU = ActivationType(1)
+    alias GELU_APPROX = ActivationType(2)
+    alias RELU = ActivationType(3)
+    alias RELU_N1 = ActivationType(4)
+    alias RELU6 = ActivationType(5)
     alias SIGMOID = ActivationType(6)
-    alias GELU = ActivationType(4)
-    alias GELU_APPROX = ActivationType(5)
+    alias SIGN = ActivationType(7)
+    alias TANH = ActivationType(8)
 
     @always_inline("nodebug")
     fn __init__(value: Int) -> ActivationType:
@@ -35,7 +38,35 @@ struct ActivationType:
     fn __ne__(self, rhs: ActivationType) -> Bool:
         return self.value != rhs.value
 
+    @always_inline
+    fn dispatch[
+        func: __mlir_type[
+            `!kgen.signature<<`, ActivationType, `>() -> `, NoneType, `>`
+        ]
+    ](self):
+        if self == ActivationType.IDENTITY:
+            func[ActivationType.IDENTITY]()
+        elif self == ActivationType.RELU:
+            func[ActivationType.RELU]()
+        elif self == ActivationType.RELU6:
+            func[ActivationType.RELU6]()
+        elif self == ActivationType.RELU_N1:
+            func[ActivationType.RELU_N1]()
+        elif self == ActivationType.GELU:
+            func[ActivationType.GELU]()
+        elif self == ActivationType.GELU_APPROX:
+            func[ActivationType.GELU_APPROX]()
+        elif self == ActivationType.SIGMOID:
+            func[ActivationType.SIGMOID]()
+        elif self == ActivationType.SIGN:
+            func[ActivationType.SIGN]()
+        elif self == ActivationType.TANH:
+            func[ActivationType.TANH]()
+        else:
+            debug_assert(True, "unsupported activation")
 
+
+@always_inline
 fn dispatch_activation_fn[
     activation: ActivationType, simd_width: Int, type: DType
 ](val: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
@@ -54,34 +85,51 @@ fn dispatch_activation_fn[
         return gelu_approximate(val)
     elif activation == ActivationType.SIGMOID:
         return sigmoid(val)
+    elif activation == ActivationType.SIGN:
+        return sign(val)
+    elif activation == ActivationType.TANH:
+        return _tanh(val)
     else:
         assert_param_msg[False, "unsupported activation"]()
 
     return val
 
 
+# ===----------------------------------------------------------------------===#
+# _tanh
+# ===----------------------------------------------------------------------===#
+
+
+fn _tanh[
+    simd_width: Int, type: DType
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    return tanh(x)
+
+
+# ===----------------------------------------------------------------------===#
+# sign
+# ===----------------------------------------------------------------------===#
+
+
 @always_inline
-fn activation_dispatch[
-    func: __mlir_type[
-        `!kgen.signature<<`, ActivationType, `>() -> `, NoneType, `>`
-    ]
-](activation: ActivationType):
-    if activation == ActivationType.IDENTITY:
-        func[ActivationType.IDENTITY]()
-    elif activation == ActivationType.RELU:
-        func[ActivationType.RELU]()
-    elif activation == ActivationType.RELU6:
-        func[ActivationType.RELU6]()
-    elif activation == ActivationType.RELU_N1:
-        func[ActivationType.RELU_N1]()
-    elif activation == ActivationType.GELU:
-        func[ActivationType.GELU]()
-    elif activation == ActivationType.GELU_APPROX:
-        func[ActivationType.GELU_APPROX]()
-    elif activation == ActivationType.SIGMOID:
-        func[ActivationType.SIGMOID]()
-    else:
-        debug_assert(True, "unsupported activation")
+fn sign[
+    simd_width: Int, type: DType
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    """Compute the sign (0, 1) of the input value.
+
+    Parameters:
+        simd_width: SIMD width used for the computation.
+        type: dtype used for the computation.
+
+    Args:
+        x (SIMD[type, simd_width]): The value to compute the sign operation on.
+
+    Returns:
+        SIMD[type, simd_width]: The result of the sign operation.
+    """
+    let is_neg_mask = _is_neg(x)
+    let is_zero_mask = x == 0
+    return is_neg_mask.select[type](-1, is_zero_mask.select[type](0, 1))
 
 
 # ===----------------------------------------------------------------------===#
@@ -89,6 +137,7 @@ fn activation_dispatch[
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline
 fn relu[
     simd_width: Int, type: DType
 ](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
@@ -112,6 +161,7 @@ fn relu[
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline
 fn relu6[
     simd_width: Int, type: DType
 ](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
@@ -135,6 +185,7 @@ fn relu6[
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline
 fn prelu[
     simd_width: Int, type: DType
 ](x: SIMD[type, simd_width], alpha: SIMD[type, 1]) -> SIMD[type, simd_width]:
@@ -158,6 +209,7 @@ fn prelu[
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline
 fn relu_n1[
     simd_width: Int, type: DType
 ](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
@@ -181,6 +233,7 @@ fn relu_n1[
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline
 fn gelu[
     simd_width: Int, type: DType
 ](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
@@ -213,6 +266,7 @@ fn gelu[
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline
 fn gelu_approximate[
     simd_width: Int, type: DType
 ](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
@@ -246,6 +300,7 @@ fn gelu_approximate[
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline
 fn sigmoid[
     simd_width: Int, type: DType
 ](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
