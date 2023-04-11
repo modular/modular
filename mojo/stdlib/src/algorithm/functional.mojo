@@ -22,7 +22,7 @@ alias InlinedFixedVectorLength = 64
 
 @always_inline
 fn map[
-    func: __mlir_type[`!kgen.signature<(`, Int, ` borrow) -> !lit.none>`],
+    func: __mlir_type[`!kgen.signature<(`, Int, ` borrow) -> `, NoneType, `>`],
 ](size: Int):
     """Map a function over a range from 0 to size.
 
@@ -44,7 +44,7 @@ fn map[
 @always_inline
 fn unroll[
     count: Int,
-    func: __mlir_type[`!kgen.signature<<`, Int, `>() -> !lit.none>`],
+    func: __mlir_type[`!kgen.signature<<`, Int, `>() -> `, NoneType, `>`],
 ]():
     """Reateadly evaluate a function `count` times.
 
@@ -60,7 +60,7 @@ fn unroll[
 fn _unroll_impl[
     idx: Int,
     count: Int,
-    func: __mlir_type[`!kgen.signature<<`, Int, `>() -> !lit.none>`],
+    func: __mlir_type[`!kgen.signature<<`, Int, `>() -> `, NoneType, `>`],
 ]():
     @parameter
     if idx < count:
@@ -77,7 +77,9 @@ fn _unroll_impl[
 fn unroll2[
     dim0: Int,
     dim1: Int,
-    func: __mlir_type[`!kgen.signature<<`, Int, `, `, Int, `>() -> !lit.none>`],
+    func: __mlir_type[
+        `!kgen.signature<<`, Int, `, `, Int, `>() -> `, NoneType, `>`
+    ],
 ]():
     """Repeateadly evaluate a 2D nested loop.
 
@@ -114,7 +116,9 @@ fn unroll3[
         Int,
         `, `,
         Int,
-        `>() -> !lit.none>`,
+        `>() -> `,
+        NoneType,
+        `>`,
     ],
 ]():
     """Repeateadly evaluate a 3D nested loop.
@@ -144,7 +148,9 @@ fn unroll3[
 alias fn_sig_type = __mlir_type[
     `!kgen.signature<(`,
     Int,
-    `) -> !lit.none>`,
+    `) -> `,
+    NoneType,
+    `>`,
 ]
 
 alias fn_simd_sig_type = __mlir_type[
@@ -152,7 +158,9 @@ alias fn_simd_sig_type = __mlir_type[
     Int,
     `>(`,
     Int,
-    ` borrow) -> !lit.none>`,
+    ` borrow) -> `,
+    NoneType,
+    `>`,
 ]
 
 
@@ -164,7 +172,9 @@ fn vectorize[
         Int,
         `>(`,
         Int,
-        ` borrow) -> !lit.none>`,
+        ` borrow) -> `,
+        NoneType,
+        `>`,
     ],
 ](size: Int):
     """Map a function which is parametrized over a simd_width over a range
@@ -280,7 +290,7 @@ fn vectorize_unroll[
 
 @always_inline
 fn async_parallelize[
-    func: __mlir_type[`!kgen.signature<(`, Int, ` borrow) -> !lit.none>`],
+    func: __mlir_type[`!kgen.signature<(`, Int, ` borrow) -> `, NoneType, `>`],
 ](out_chain: OutputChainPtr, num_work_items: Int):
     """Execute func(0) ... func(num_work_items-1) as sub-tasks in parallel.
 
@@ -474,7 +484,7 @@ Signature of a tiled function that performs some work with a static tile size
 and an offset. i.e. func<tile_size: Int> (offset: Int)
 """
 alias Static1DTileUnitFunc = __mlir_type[
-    `!kgen.signature<<`, Int, `>(`, Int, ` borrow) -> !lit.none>`
+    `!kgen.signature<<`, Int, `>(`, Int, ` borrow) -> `, NoneType, `>`
 ]
 
 """
@@ -482,7 +492,7 @@ Signature of a tiled function that performs some work with a dynamic tile size
   and an offset. i.e. func(offset: Inttile_size: Int)
 """
 alias Dynamic1DTileUnitFunc = __mlir_type[
-    `!kgen.signature<(`, Int, ` borrow,`, Int, ` borrow) -> !lit.none>`
+    `!kgen.signature<(`, Int, ` borrow,`, Int, ` borrow) -> `, NoneType, `>`
 ]
 
 """
@@ -496,7 +506,9 @@ alias BinaryTile1DTileUnitFunc = __mlir_type[
     Int,
     ` borrow,`,
     Int,
-    ` borrow) -> !lit.none>`,
+    ` borrow) -> `,
+    NoneType,
+    `>`,
 ]
 
 
@@ -853,7 +865,7 @@ struct TernaryClosure[
 
 # Signature of a function that unswitch can take.
 alias SwitchedFunction = __mlir_type[
-    `!kgen.signature<<`, Bool, `>() -> !lit.none>`
+    `!kgen.signature<<`, Bool, `>() -> `, NoneType, `>`
 ]
 
 # Version of unswitch supporting 2 predicates.
@@ -862,7 +874,9 @@ alias SwitchedFunction2 = __mlir_type[
     Bool,
     `,`,
     Bool,
-    `>() -> !lit.none>`,
+    `>() -> `,
+    NoneType,
+    `>`,
 ]
 
 
@@ -959,7 +973,9 @@ alias Static1DTileUnswitchUnitFunc = __mlir_type[
     Int,
     ` borrow,`,
     Int,
-    ` borrow) -> !lit.none>`,
+    ` borrow) -> `,
+    NoneType,
+    `>`,
 ]
 
 
@@ -1020,7 +1036,9 @@ alias Dynamic1DTileUnswitchUnitFunc = __mlir_type[
     Int,
     ` borrow,`,
     Int,
-    ` borrow) -> !lit.none>`,
+    ` borrow) -> `,
+    NoneType,
+    `>`,
 ]
 
 
@@ -1116,7 +1134,9 @@ fn elementwise[
         StaticIntTuple[
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, Int]
         ],
-        ` borrow) -> !lit.none>`,
+        ` borrow) -> `,
+        NoneType,
+        `>`,
     ],
 ](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
     """Execute func[width, rank](indices) as sub-tasks for a suitable
@@ -1226,7 +1246,9 @@ fn elementwise[
         StaticIntTuple[
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, Int]
         ],
-        ` borrow) -> !lit.none>`,
+        ` borrow) -> `,
+        NoneType,
+        `>`,
     ],
 ](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
     """Execute func[width, rank](indices) as sub-tasks for a suitable
