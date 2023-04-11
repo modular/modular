@@ -2414,9 +2414,8 @@ LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
 
   ASTType type;
   // Parse the type if present.
-  if (p.parseToken(LitToken::kw_var,
-                   "internal error: checked by stmt parser") ||
-      p.parseToken(LitToken::identifier,
+  p.consumeToken(); // let or var.
+  if (p.parseToken(LitToken::identifier,
                    "internal error: checked by stmt parser") ||
       p.parseToken(LitToken::colon,
                    "struct field declaration must have a type") ||

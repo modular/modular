@@ -283,7 +283,8 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   }
 
   // No ops, we can't actually do anything.
-  if (theModule->getOps().empty())
+  auto symbolRange = theModule->getOps<mlir::SymbolOpInterface>();
+  if (symbolRange.empty())
     return clOptions.reportError(
         "no functions were left in the module after compiling, this usually "
         "means that there was no `@export`ed function to use as a root - did "
@@ -293,8 +294,7 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // TODO(#10893): This behavior is sketchy. We should be exporting the roots of
   //   callstacks we want codegen'd. This requires updating tests.
   if (exports.empty()) {
-    StringAttr name =
-        (*theModule->getOps<mlir::SymbolOpInterface>().begin()).getNameAttr();
+    StringAttr name = (*symbolRange.begin()).getNameAttr();
     exports.insert({name, {name, false}});
   }
 
