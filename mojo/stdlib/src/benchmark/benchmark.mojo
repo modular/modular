@@ -47,9 +47,6 @@ struct Benchmark:
             max_iters: Max number of iterations to run.
             min_time_ns: Upper bound on benchmarking time in ns.
             max_time_ns: Lower bound on benchmarking time in ns.
-
-        Returns:
-            A new constructed benchmark object.
         """
         self.num_warmup = num_warmup
         self.max_iters = max_iters
