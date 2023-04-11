@@ -10,6 +10,7 @@
 #include "../Plugin.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/SymbolExport.h"
 #include "lldb/Symbol/CompilerType.h"
 #include "lldb/Symbol/SymbolFile.h"
 #include "lldb/Symbol/Type.h"
@@ -57,14 +58,77 @@ public:
   // Broadcaster
   //===--------------------------------------------------------------------===//
 
-  enum {
+  /// The convention for message naming is that a `Message` suffix means
+  /// something we should display to the user, while other suffixes are used for
+  /// various kinds of logging.
+  enum MessageKind : uint32_t {
     /// Informational messages related to Mojo targets that are not part of
     /// the inferior's stderr or stdout but should still be displayed to the
     /// users when not using the CLI.
-    eBroadcastUserMessage = (1 << 0)
+    eBroadcastUserMessage = (1u << 0),
+    /// An IR dump that we are emitting for debug purposes. This will not be
+    /// flushed to stderr unless `eFlushToStderr` is produced.
+    eDumpIR = (1u << 1),
+    /// A debug log message. This will not be flushed to stderr unless
+    /// `eFlushToStderr` is produced.
+    eDebugLog = (1u << 2),
+    /// A signal that the plugin should flush its IR and log buffers to the
+    /// stderr.
+    eFlushIRAndDebugLog = (1u << 3),
+    /// A log message that we should always flush to the stderr.
+    eErrorLog = (1u << 4),
+    /// A mask that we can use to listen for all MojoTypeSystem messages.
+    eAllMessagesMask = (1u << 5) - 1,
   };
 
   void broadcastUserMessage(StringRef message);
+
+  /// Log the provided IR, copying the underlying bytes into the Event object
+  /// (to avoid lifetime issues).
+  void dumpIR(StringRef message);
+  /// Use llvm::formatv to log an IR.
+  template <typename... Args>
+  void dumpIR(StringRef fmt, Args &&...args) {
+    dumpIR(llvm::formatv(fmt.data(), std::forward<Args>(args)...).str());
+  }
+
+  /// Log the provided message, copying the underlying bytes into the Event
+  /// object (to avoid lifetime issues).
+  void debugLog(StringRef message);
+  /// Use llvm::formatv to log a message.
+  template <typename... Args>
+  void debugLog(StringRef fmt, Args &&...args) {
+    debugLog(llvm::formatv(fmt.data(), std::forward<Args>(args)...).str());
+  }
+
+  /// Flush the debug logs.
+  void flushIRDumpAndDebugLog();
+
+  /// Log an error message, copying the underlying bytes into the Event object
+  /// (to avoid lifetime issues).
+  void errorLog(StringRef message);
+  /// Use llvm::formatv to log a message.
+  template <typename... Args>
+  void errorLog(StringRef fmt, Args &&...args) {
+    errorLog(llvm::formatv(fmt.data(), std::forward<Args>(args)...).str());
+  }
+
+  /// This function provides a reasonable default message handling policy. Users
+  /// that want different behavior are encouraged to provide their own handler.
+  /// The behavior of this function is to:
+  ///  - Send eBroadcastUserMessage to `sendUserOutput`
+  ///  - Send eIRMessage to `debugMessageCache`
+  ///  - Treat eDebugMessage same as eIRMessage
+  ///  - On eFlushToStderr flush `debugMessageCache` to `reportMessage`
+  ///  - Send eErrorMessage to `reportMessage`
+  /// `debugMessageCache` is capped at a static number of the most recent items.
+  /// The first argument to `reportMessage` is the string-ified version of the
+  /// message kind.
+  static void handleEvent(
+      const lldb::EventSP &event,
+      std::deque<std::pair<MessageKind, std::string>> &debugMessageCache,
+      function_ref<void(StringRef, StringRef)> reportMessage,
+      function_ref<void(StringRef)> sendUserOutput);
 
   //===--------------------------------------------------------------------===//
   // Dumping
@@ -529,5 +593,37 @@ protected:
   std::unique_ptr<Impl> impl;
 };
 } // namespace M::KGEN::Mojo
+
+/// Allow cast<MojoTypeSystem>(lldb::TypeSystemSP) ->
+/// std::shared_ptr<MojoTypeSystem>. This is necessary because the standard LLVM
+/// infra does not support std::shared_ptr.
+namespace llvm {
+template <>
+struct CastInfo<M::KGEN::Mojo::MojoTypeSystem, lldb::TypeSystemSP> {
+  using To = std::shared_ptr<M::KGEN::Mojo::MojoTypeSystem>;
+  using From = lldb::TypeSystemSP;
+  static inline bool isPossible(From &f) {
+    return llvm::isa<M::KGEN::Mojo::MojoTypeSystem>(&*f);
+  }
+
+  static To doCast(From &f) {
+    return std::static_pointer_cast<M::KGEN::Mojo::MojoTypeSystem>(f);
+  }
+
+  static inline To castFailed() { return nullptr; }
+
+  static To doCastIfPossible(From &f) {
+    if (!isPossible(f))
+      return castFailed();
+    return doCast(f);
+  }
+};
+
+template <>
+struct CastInfo<M::KGEN::Mojo::MojoTypeSystem, const lldb::TypeSystemSP>
+    : public ConstStrippingForwardingCast<
+          M::KGEN::Mojo::MojoTypeSystem, const lldb::TypeSystemSP,
+          CastInfo<M::KGEN::Mojo::MojoTypeSystem, lldb::TypeSystemSP>> {};
+} // namespace llvm
 
 #endif // KGEN_LIB_MOJOLLDB_TYPESYSTEM_MOJOTYPESYSTEM_H

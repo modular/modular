@@ -16,6 +16,7 @@
 #include "lldb/Utility/Log.h"
 #include "mlir/IR/Types.h"
 #include "mlir/Support/IndentedOstream.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/CrashRecoveryContext.h"
 #include "llvm/Support/Signals.h"
 
@@ -138,11 +139,33 @@ char MojoUserExpression::ID;
 // Expression parsing and execution
 //===----------------------------------------------------------------------===//
 
+/// Handle a 'special expression' - which starts with `!`. Returns an error if
+/// we don't recognize the expression. On success, sets the text to an empty
+/// string so we just don't execute anything.
+static bool handleSpecialExpr(std::string &text,
+                              DiagnosticManager &diagnosticManager,
+                              MojoTypeSystem &typeSystem) {
+  if (text == "!dump_logs\n") {
+    typeSystem.flushIRDumpAndDebugLog();
+    text = "";
+    return true;
+  }
+
+  diagnosticManager.Printf(eDiagnosticSeverityError,
+                           "Unknown special expression: %s", text.c_str());
+  return false;
+}
+
 bool MojoUserExpression::Parse(DiagnosticManager &diagnosticManager,
                                ExecutionContext &exeCtx,
                                ExecutionPolicy executionPolicy,
                                bool keepResultInMemory,
                                bool generateDebugInfo) {
+  // Check to see if it's a special expression.
+  if (StringRef(m_expr_text).starts_with("!"))
+    if (!handleSpecialExpr(m_expr_text, diagnosticManager, impl->typeSystem))
+      return false;
+
   // Setup the execution context.
   InstallContext(exeCtx);
 
@@ -199,19 +222,44 @@ bool MojoUserExpression::addArguments(ExecutionContext &exeCtx,
   return true;
 }
 
-/// Signal handler that will dump the stack trace to the log.
-static void dumpTraceOnSignal(void *) {
+/// Signal handler that will dump the stack trace to the log. If we can't pull
+/// out the mojo type system, we simply return because the only purpose of this
+/// handler is to print a stack trace to the mojo log.
+static void dumpTraceOnSignal(void *cookie) {
+  auto *debugger = (Debugger *)cookie;
+
+  // Pull the type system out of the current target.
+  lldb::TargetSP currentTarget = debugger->GetSelectedTarget();
+  if (!currentTarget)
+    return;
+  auto typeSystemOr =
+      currentTarget->GetScratchTypeSystemForLanguage(eLanguageTypeMojo);
+  if (!typeSystemOr)
+    return;
+
+  // Make sure it's the Mojo type system, otherwise we can't necessarily
+  // broadcast on its channel.
+  std::shared_ptr<MojoTypeSystem> typeSystem =
+      dyn_cast<MojoTypeSystem>(*typeSystemOr);
+  if (!typeSystem)
+    return;
+
+  // Great - now we can broadcast to it.
   std::string traceStr;
   llvm::raw_string_ostream trace(traceStr);
   llvm::sys::PrintStackTrace(trace);
-  MOJO_EXPR_LOG("Backtrace:\n{0}", traceStr);
+  typeSystem->errorLog("Backtrace:\n{0}", traceStr);
+
+  // Also make sure to flush the debug logs.
+  typeSystem->flushIRDumpAndDebugLog();
 }
 
 /// Register the trace dumping signal handler exactly once.
-static void registerTraceDumpHandler() {
+static void registerTraceDumpHandler(Debugger &debugger) {
   static llvm::once_flag flag;
-  llvm::call_once(
-      flag, []() { llvm::sys::AddSignalHandler(dumpTraceOnSignal, nullptr); });
+  llvm::call_once(flag, [&]() {
+    llvm::sys::AddSignalHandler(dumpTraceOnSignal, (void *)&debugger);
+  });
 }
 
 /// Collect the name and type of the current persistent variables within the
@@ -232,15 +280,10 @@ static void collectPersistentVariables(
 void MojoUserExpression::notifyFixits(DiagnosticManager &diagnosticManager,
                                       StringRef fixedText) {
   std::string fixItsNotification;
-  {
-    llvm::raw_string_ostream os(fixItsNotification);
-    os << diagnosticManager.GetString()
-       << "Applied fix-its, evaluating new expression:\n"
-       << fixedText << "\n";
-  }
-
-  impl->target.GetDebugger().GetAsyncErrorStream()->AsRawOstream()
-      << fixItsNotification;
+  llvm::raw_string_ostream os(fixItsNotification);
+  os << diagnosticManager.GetString()
+     << "Applied fix-its, evaluating new expression:\n"
+     << fixedText;
 
   // Besides writing the notification to stderr, we also notify it to the type
   // system broadcaster for external listeners.
@@ -324,7 +367,8 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
   exprOSIndented.printReindented(sourceCode.getMainBodyCode(), "    ");
   exprOSIndented << kMainBodyBlockEnd;
 
-  MOJO_EXPR_LOG("Parsing the following code:\n{0}", transformedText.c_str());
+  impl->typeSystem.debugLog("Parsing the following code:\n{0}",
+                            transformedText.c_str());
 
   // Parse the expression.
   materializer = std::make_unique<Materializer>();
@@ -340,12 +384,13 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
     if (!diagnosticManager.HasFixIts())
       return;
 
-    MOJO_EXPR_LOG("Attempting to rewrite the input expression");
+    impl->typeSystem.debugLog("Attempting to rewrite the input expression");
 
     // If we can rewrite the expression, do so. If not, simply return.
     if (failed(impl->parser->rewriteExpression(diagnosticManager)))
       return;
-    MOJO_EXPR_LOG("Rewrote the input, next parse will be the fixed code");
+    impl->typeSystem.debugLog(
+        "Rewrote the input, next parse will be the fixed code");
     llvm::raw_string_ostream fixedOS(m_fixed_text);
     mlir::raw_indented_ostream indentedFixedOS(fixedOS);
     StringRef fixedText = diagnosticManager.GetFixedExpression();
@@ -361,7 +406,8 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
                         fixedText.find(kMainBodyBlockEnd)),
         "");
 
-    MOJO_EXPR_LOG("The new unwrapped code will be:\n{0}", m_fixed_text);
+    impl->typeSystem.debugLog("The new unwrapped code will be:\n{0}",
+                              m_fixed_text);
     notifyFixits(diagnosticManager, m_fixed_text);
     // Clear the diagnostic manager so we don't re-fix something.
     diagnosticManager.Clear();
@@ -369,17 +415,22 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
 
   // Register the trace dump signal handler before we enable the
   // CrashRecoveryContext so it is picked up properly.
-  registerTraceDumpHandler();
+  registerTraceDumpHandler(exeCtx.GetTargetRef().GetDebugger());
   llvm::CrashRecoveryContext::Enable();
+  // Disable the crash recovery context for the next time around.
+  auto scopeExit =
+      llvm::make_scope_exit([]() { llvm::CrashRecoveryContext::Disable(); });
   llvm::CrashRecoveryContext crc;
   // Signal handlers don't fire unless this flag is set.
   crc.DumpStackAndCleanupOnFailure = true;
   if (!crc.RunSafelyOnThread(parseModule)) {
-    MOJO_EXPR_LOG("Crash recovered: CrashRecoveryContext::RetCode (on POSIX: "
-                  "signal number + 128) = {0}",
-                  crc.RetCode);
+    impl->typeSystem.errorLog(
+        "Crash recovered: CrashRecoveryContext::RetCode (on POSIX: "
+        "signal number + 128) = {0}",
+        crc.RetCode);
     diagnosticManager.PutString(eDiagnosticSeverityError, "crash detected");
     return failure();
   }
+
   return result;
 }
