@@ -810,7 +810,9 @@ struct MatmulGenerator[
     epilog_function: __mlir_type[
         `!kgen.signature<(`,
         MatmulDynamicState[data_type],
-        ` borrow) -> !lit.none>`,
+        ` borrow) -> `,
+        NoneType,
+        `>`,
     ],
 ]:
     """A matmul generator that realizes matmul algorithms given a set of tiling

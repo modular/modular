@@ -285,7 +285,9 @@ fn naive_matmul[
         Buffer[
             Dim(), __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, DType]
         ],
-        ` borrow) -> !lit.none>`,
+        ` borrow) -> `,
+        NoneType,
+        `>`,
     ],
 ](
     c: NDBuffer[2, shape_c, accum_type],
@@ -1339,7 +1341,7 @@ struct TiledMatmul[
     ]
 
     var elementwise_epilogue_fn: TernaryClosure[
-        GemmShape, GemmShape, GemmShape, __mlir_type.`!lit.none`
+        GemmShape, GemmShape, GemmShape, NoneType
     ]
 
     fn __init__(
@@ -1354,7 +1356,7 @@ struct TiledMatmul[
             config, value_type, transpose_b, b_packed
         ],
         elementwise_epilogue_fn: TernaryClosure[
-            GemmShape, GemmShape, GemmShape, __mlir_type.`!lit.none`
+            GemmShape, GemmShape, GemmShape, NoneType
         ],
     ):
         self.c = c
@@ -1394,14 +1396,15 @@ struct TiledMatmul[
                 GemmShape,
                 `,`,
                 GemmShape,
-                `) -> !lit.none`,
+                `) -> `,
+                NoneType,
             ],
             callee:_null_epilogue,
             paramDecls : __mlir_attr.`#kgen<param.decls[]>`,
         ]()
 
         let null_closure: TernaryClosure[
-            GemmShape, GemmShape, GemmShape, __mlir_type.`!lit.none`
+            GemmShape, GemmShape, GemmShape, NoneType
         ] = __mlir_op.`pop.partial_apply`[
             boundInputs : __mlir_attr.`array<i64>`
         ](
@@ -1424,7 +1427,7 @@ struct TiledMatmul[
         a: NDBuffer[2, config.shape_a, value_type],
         b: NDBuffer[2, config.shape_b, value_type],
         elementwise_epilogue_fn: TernaryClosure[
-            GemmShape, GemmShape, GemmShape, __mlir_type.`!lit.none`
+            GemmShape, GemmShape, GemmShape, NoneType
         ],
         global_tile_shape: GemmShape,
         global_tile_offset: GemmShape,
