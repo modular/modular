@@ -160,18 +160,6 @@ bool MojoUserExpression::Parse(DiagnosticManager &diagnosticManager,
   // possible.
   Status jitError = impl->parser->prepareForExecution(
       m_jit_start_addr, m_jit_end_addr, executionUnit, exeCtx, executionPolicy);
-
-  // If a valid execution unit was produced and there is more than one external
-  // function in the execution unit, it needs to keep living even if it's not
-  // top level, because the result could refer to that function., register it if
-  // necessary.
-  if (executionUnit &&
-      (m_options.GetExecutionPolicy() == eExecutionPolicyTopLevel ||
-       executionUnit->getJittedFunctions().size() > 1)) {
-    impl->persistentState.registerExecutionUnit(executionUnit);
-  }
-
-  // Process any errors during code generation.
   if (!jitError.Success()) {
     const char *errorCStr = jitError.AsCString();
     if (errorCStr && errorCStr[0])

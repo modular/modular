@@ -9,8 +9,11 @@
 #include "lldb/Core/ValueObjectConstResult.h"
 #include "lldb/Utility/LLDBLog.h"
 
+using namespace M;
 using namespace M::KGEN::Mojo;
 using namespace lldb_private;
+
+using JittedEntity = JITExecutionUnit::JittedEntity;
 
 //===----------------------------------------------------------------------===//
 // MojoExpressionVariable
@@ -46,6 +49,78 @@ MojoExpressionVariable::MojoExpressionVariable(ExecutionContextScope *exeScope,
 // MojoPersistentExpressionState
 //===----------------------------------------------------------------------===//
 
+//===----------------------------------------------------------------------===//
+// Expression Instance
+
+/// Walk the external JIT symbols within the given execution unit, invoking the
+/// provided callback for each.
+static void walkExternalJITSymbols(
+    JITExecutionUnit &executionUnit, Log *log,
+    function_ref<void(const JITExecutionUnit::JittedEntity &)> callback) {
+  LLDB_LOGF(log, "Processing JITted Functions:\n");
+  for (const auto &jitSym : executionUnit.getJittedFunctions()) {
+    if (jitSym.external && jitSym.name != executionUnit.getFunctionName() &&
+        jitSym.remoteAddr != LLDB_INVALID_ADDRESS) {
+      LLDB_LOGF(log, "  Function: %s at 0x%" PRIx64 ".",
+                jitSym.name.GetCString(), jitSym.remoteAddr);
+      callback(jitSym);
+    }
+  }
+
+  LLDB_LOGF(log, "Processing JIIted Symbols:\n");
+  for (const auto &jitSym : executionUnit.getJittedGlobalVariables()) {
+    if (jitSym.remoteAddr != LLDB_INVALID_ADDRESS) {
+      LLDB_LOGF(log, "  Symbol: %s at 0x%" PRIx64 ".", jitSym.name.GetCString(),
+                jitSym.remoteAddr);
+      callback(jitSym);
+    }
+  }
+}
+
+void MojoPersistentExpressionState::registerExpressionInstance(
+    std::shared_ptr<JITExecutionUnit> executionUnit,
+    std::vector<lldb::ExpressionVariableSP> &&variables) {
+  Log *log = GetLog(LLDBLog::Expressions);
+
+  // Register the JIT symbols within the execution unit.
+  if (executionUnit) {
+    auto walkFn = [&](const JittedEntity &jitSym) {
+      symbolMap[jitSym.name.GetStringRef()] = jitSym.remoteAddr;
+    };
+    walkExternalJITSymbols(*executionUnit, log, walkFn);
+  }
+
+  // Push a new expression state.
+  expressionInstances.emplace_back(std::make_unique<ExpressionInstanceState>(
+      std::move(executionUnit), std::move(variables)));
+}
+
+void MojoPersistentExpressionState::resetStateToBeforeExpressionInstance(
+    size_t index) {
+  assert(index < getNumExpressionInstances() && "invalid expression instance");
+  Log *log = GetLog(LLDBLog::Expressions);
+
+  // Drop each of the instance states in reverse up to the given index.
+  for (auto &exprInst :
+       llvm::reverse(llvm::drop_begin(expressionInstances, index))) {
+    // Drop all of the JIT symbols that we previously registered.
+    if (exprInst->executionUnit) {
+      auto walkFn = [&](const JittedEntity &jitSym) {
+        symbolMap.erase(jitSym.name.GetStringRef());
+      };
+      walkExternalJITSymbols(*exprInst->executionUnit, log, walkFn);
+    }
+
+    // Drop the persistent variables.
+    for (const lldb::ExpressionVariableSP &var : exprInst->persistentVariables)
+      RemoveVariable(var);
+  }
+  expressionInstances.resize(index);
+}
+
+//===----------------------------------------------------------------------===//
+// PersistentExpressionState
+
 lldb::ExpressionVariableSP
 MojoPersistentExpressionState::CreatePersistentVariable(
     const lldb::ValueObjectSP &valobj) {
@@ -66,30 +141,4 @@ lldb::addr_t MojoPersistentExpressionState::LookupSymbol(ConstString name) {
   if (si != symbolMap.end())
     return si->second;
   return PersistentExpressionState::LookupSymbol(name);
-}
-
-void MojoPersistentExpressionState::registerExecutionUnit(
-    std::shared_ptr<JITExecutionUnit> &executionUnit) {
-  Log *log = GetLog(LLDBLog::Expressions);
-  executionUnits.insert(executionUnit);
-
-  LLDB_LOGF(log, "Registering JITted Functions:\n");
-  for (const auto &jittedFunction : executionUnit->getJittedFunctions()) {
-    if (jittedFunction.external &&
-        jittedFunction.name != executionUnit->getFunctionName() &&
-        jittedFunction.remoteAddr != LLDB_INVALID_ADDRESS) {
-      symbolMap[jittedFunction.name.GetStringRef()] = jittedFunction.remoteAddr;
-      LLDB_LOGF(log, "  Function: %s at 0x%" PRIx64 ".",
-                jittedFunction.name.GetCString(), jittedFunction.remoteAddr);
-    }
-  }
-
-  LLDB_LOGF(log, "Registering JIIted Symbols:\n");
-  for (const auto &globalVar : executionUnit->getJittedGlobalVariables()) {
-    if (globalVar.remoteAddr != LLDB_INVALID_ADDRESS) {
-      symbolMap[globalVar.name.GetStringRef()] = globalVar.remoteAddr;
-      LLDB_LOGF(log, "  Symbol: %s at 0x%" PRIx64 ".",
-                globalVar.name.GetCString(), globalVar.remoteAddr);
-    }
-  }
 }
