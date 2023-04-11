@@ -20,12 +20,15 @@ def main():
         default=sys.executable,
         help="The python interpreter to use when launching the kernel.",
     )
+    parser.add_argument("--no-user", dest="user", action="store_false")
+    parser.set_defaults(user=True)
+
     args = parser.parse_args()
 
     kernel_dir = Path(__file__).parent / "kernel"
     kernel_install_dir = Path(
         KernelSpecManager().install_kernel_spec(
-            str(kernel_dir), "mojo-jupyter-kernel", user=True
+            str(kernel_dir), "mojo-jupyter-kernel", user=args.user
         )
     )
 
