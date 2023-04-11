@@ -4,10 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from enum import Enum
-from pathlib import Path
-from sys import version_info
-
 from .api import (
     DType,
     InferenceSession,
