@@ -62,7 +62,9 @@ fn dispatch_activation_fn[
 
 @always_inline
 fn activation_dispatch[
-    func: __mlir_type[`!kgen.signature<<`, ActivationType, `>() -> !lit.none>`]
+    func: __mlir_type[
+        `!kgen.signature<<`, ActivationType, `>() -> `, NoneType, `>`
+    ]
 ](activation: ActivationType):
     if activation == ActivationType.IDENTITY:
         func[ActivationType.IDENTITY]()
