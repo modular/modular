@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from Assert import debug_assert
 from Buffer import Buffer, NDBuffer
 from DType import DType
 from Functional import elementwise
@@ -13,6 +14,64 @@ from List import Dim, DimList
 from Math import div_ceil
 from Range import range
 from TypeUtilities import rebind
+
+# ===----------------------------------------------------------------------===#
+# slice
+# ===----------------------------------------------------------------------===#
+#
+# TODO: This should be moved into the Stdlib folder, but currently that would
+# create a naming conflict with this file. Placed here temporarily.
+#
+# ===----------------------------------------------------------------------===#
+
+
+@register_passable("trivial")
+struct slice:
+    var start: Int
+    var end: Int
+    var step: Int
+
+    @always_inline("nodebug")
+    fn __init__() -> Self:
+        return Self {start: 0, end: -1, step: 1}
+
+    @always_inline("nodebug")
+    fn __init__(end: Int) -> Self:
+        return Self {start: 0, end: end, step: 1}
+
+    @always_inline("nodebug")
+    fn __init__(start: Int, end: Int) -> Self:
+        return Self {start: start, end: end, step: 1}
+
+    @always_inline("nodebug")
+    fn __init__(start: Int, end: Int, step: Int) -> Self:
+        return Self {start: start, end: end, step: step}
+
+    @always_inline("nodebug")
+    fn __eq__(self, other: Self) -> Bool:
+        return (
+            self.start == other.start
+            and self.end == other.end
+            and self.step == other.step
+        )
+
+    @always_inline("nodebug")
+    fn __ne__(self, other: Self) -> Bool:
+        return not (self == other)
+
+    @always_inline("nodebug")
+    fn __len__(self) -> Int:
+        debug_assert(self != Self(), "invalid range, end value must be known")
+
+        if self.step > 0:
+            return div_ceil(self.end - self.start, self.step)
+        else:
+            return div_ceil(self.start - self.end, -self.step)
+
+
+# ===----------------------------------------------------------------------===#
+# slice_as_view
+# ===----------------------------------------------------------------------===#
 
 
 fn slice_as_view[
@@ -62,16 +121,19 @@ fn slice_as_view[
         # So to step we can just increase the stride.
         new_stride[i] = tensor.stride(i) * step
 
-        # If the steps are positive we traverse from start, if negative from stop.
-        if step > 0:
-            new_shape[i] = div_ceil(stop - start, step)
-        else:
-            new_shape[i] = div_ceil(start - stop, -step)
+        # If the steps are positive we traverse from start, if negative from
+        # stop.
+        new_shape[i] = slice(start, stop, step).__len__()
 
     # Create the new view
     return NDBuffer[rank, DimList[rank].create_unknown(), type](
         new_data, new_shape, tensor.dynamic_dtype, new_stride
     )
+
+
+# ===----------------------------------------------------------------------===#
+# slice_as_copy
+# ===----------------------------------------------------------------------===#
 
 
 fn slice_as_copy[
