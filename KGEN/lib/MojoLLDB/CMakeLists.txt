@@ -37,6 +37,9 @@ add_modular_library(MojoLLDB SHARED
   liblldb
 )
 
+# Ensure symbols from the plugin library are visible.
+set_target_properties(MojoLLDB PROPERTIES CXX_VISIBILITY_PRESET default)
+
 # This creates an lldbinit file that is read automatically by our build of LLDB
 # and is used to load the MojoLLDB plugin at startup.
 set(lldbinit ${CMAKE_BINARY_DIR}/lib/lldbinit)

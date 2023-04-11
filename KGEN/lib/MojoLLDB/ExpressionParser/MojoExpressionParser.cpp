@@ -408,9 +408,11 @@ Status MojoExpressionParser::prepareForExecution(
 
   // If we successfully compiled the expression, we can now comfortably register
   // the persistent state variables.
-  auto *persistentState = impl->typeSystem->GetPersistentExpressionState();
+  auto *persistentState = static_cast<MojoPersistentExpressionState *>(
+      impl->typeSystem->GetPersistentExpressionState());
 
   // Register the newly created persistent variables.
+  std::vector<lldb::ExpressionVariableSP> peristentVariables;
   for (auto [name, mlirType] : impl->newPersistentVariables) {
     CompilerType lldbType(impl->typeSystem->weak_from_this(),
                           const_cast<void *>(mlirType.getAsOpaquePointer()));
@@ -428,6 +430,7 @@ Status MojoExpressionParser::prepareForExecution(
     var->m_flags |= ExpressionVariable::EVKeepInTarget;
     var->m_flags |= ExpressionVariable::EVIsLLDBAllocated;
     var->m_flags |= ExpressionVariable::EVNeedsAllocation;
+    peristentVariables.emplace_back(std::move(var));
   }
 
   // Register the persistent variables with the materializer.
@@ -441,6 +444,20 @@ Status MojoExpressionParser::prepareForExecution(
       return error;
   }
 
+  // If a valid execution unit was produced and there is more than one external
+  // function in the execution unit, it needs to keep living even if it's not
+  // top level, because the result could refer to that function, register it if
+  // necessary.
+  std::shared_ptr<JITExecutionUnit> persistedExecutionUnit;
+  if (executionUnit &&
+      (impl->options.GetExecutionPolicy() == eExecutionPolicyTopLevel ||
+       executionUnit->getJittedFunctions().size() > 1)) {
+    persistedExecutionUnit = executionUnit;
+  }
+
+  // Register the persisted state for this execution.
+  persistentState->registerExpressionInstance(std::move(persistedExecutionUnit),
+                                              std::move(peristentVariables));
   return error;
 }
 

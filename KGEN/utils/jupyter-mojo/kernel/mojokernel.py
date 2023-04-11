@@ -129,15 +129,23 @@ class MojoKernel(Kernel):
         store_history: bool = True,
         user_expressions: Optional[Dict[str, Any]] = None,
         allow_stdin: bool = False,
+        *,
+        cell_id: Optional[str] = None,
     ):
         """Execute a code cell."""
         # TODO: Better propagate errors from the kernel execution, process
         # provided arguments, etc.
 
+        # Build the c conformed cell id.
+        c_cell_id = ctypes.c_char_p(0)
+        if cell_id:
+            c_cell_id = ctypes.c_char_p(cell_id.encode("utf-8"))
+
         # Start execution of the expression.
         executionState: ctypes.c_void_p = (
             self.lib_mojo_jupyter.startMojoExecution(
                 ctypes.c_void_p(self.mojo_kernel),
+                c_cell_id,
                 ctypes.c_char_p(code.encode("utf-8")),
             )
         )

@@ -9,11 +9,13 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "../MojoLLDB/ExpressionParser/MojoExpressionVariable.h"
 #include "../MojoLLDB/TypeSystem/MojoTypeSystem.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LogicalResult.h"
 #include "Support/SymbolExport.h"
 #include "lldb/API/LLDB.h"
+#include "lldb/Expression/ExpressionVariable.h"
 #include "lldb/Host/FileSystem.h"
 #include "lldb/Host/Host.h"
 #include "lldb/Host/HostInfo.h"
@@ -36,6 +38,7 @@ using namespace M::KGEN::Mojo;
 /// argument is the output type, and the second is the output string.
 using OutputFn = void (*)(const char *, const char *);
 
+namespace {
 //===----------------------------------------------------------------------===//
 // MojoTarget
 //===----------------------------------------------------------------------===//
@@ -45,8 +48,9 @@ struct MojoTarget : public SBTarget {
   using SBTarget::operator=;
 
   /// Return the persistent expression state for Mojo.
-  PersistentExpressionState *GetPersistentExpressionState() {
-    return GetSP()->GetPersistentExpressionStateForLanguage(eLanguageTypeMojo);
+  MojoPersistentExpressionState *GetPersistentExpressionState() {
+    return static_cast<MojoPersistentExpressionState *>(
+        GetSP()->GetPersistentExpressionStateForLanguage(eLanguageTypeMojo));
   }
 
   MojoTypeSystem &getMojoTypeSystem() {
@@ -62,7 +66,6 @@ struct MojoTarget : public SBTarget {
 // MojoExpressionEvaluationOptions
 //===----------------------------------------------------------------------===//
 
-namespace {
 struct MojoExpressionEvaluationOptions : public SBExpressionOptions {
   MojoExpressionEvaluationOptions() {
     SetLanguage(eLanguageTypeMojo);
@@ -78,17 +81,28 @@ struct MojoExpressionEvaluationOptions : public SBExpressionOptions {
     ref().SetREPLEnabled(true);
   }
 };
-} // namespace
 
 //===----------------------------------------------------------------------===//
 // MojoKernel
 //===----------------------------------------------------------------------===//
 
-namespace {
 /// This class contains all of the various state needed to run the Mojo Jupyter
 /// kernel.
 class MojoKernel {
 public:
+  /// Information related to a specific kernel cell.
+  struct KernelCellState {
+    KernelCellState(StringRef id) : id(id) {}
+
+    /// The string identifier of the cell.
+    StringRef id;
+
+    /// The index of the expression instance associated with this cell within
+    /// the Mojo persistent state, or nullopt if the cell was not successfully
+    /// executed.
+    std::optional<unsigned> replExprIdx;
+  };
+
   /// This struct represents a single expression evaluation request. It is used
   /// to pass the result of the evaluation back to the caller, which can query
   /// the status of the execution.
@@ -97,6 +111,7 @@ public:
     SBValue result;
     std::thread executionThread;
     std::atomic<bool> finished;
+    KernelCellState *cellState = nullptr;
   };
 
   MojoKernel(OutputFn outputFn)
@@ -112,9 +127,10 @@ public:
   /// Initialize the kernel.
   LogicalResult initialize(const char *mojoReplExe);
 
-  /// Start execution of the given expression string. Returns the state of the
-  /// expression execution.
-  ExpressionExecutionState *startExecution(const char *expr);
+  /// Start execution of the given cell identifier and expression string.
+  /// Returns the state of the expression execution.
+  ExpressionExecutionState *startExecution(const char *cellId,
+                                           const char *expr);
 
   /// Check if the given expression has finished execution, also taking this
   /// time to flush any collected output.
@@ -140,7 +156,12 @@ private:
     outputFn(type.data(), output.data());
   }
 
+  /// Flush the LLDB output streams associated within the given execution state.
   void flushLLDBStreams(ExpressionExecutionState *state);
+
+  /// Initialize the given cell for execution. Returns the associated cell
+  /// state, or nullptr if the cell was invalid.
+  KernelCellState *initializeCellForExecution(const char *cellId);
 
   /// The output function used to send output to the Jupyter kernel.
   OutputFn outputFn;
@@ -152,6 +173,14 @@ private:
   MojoExpressionEvaluationOptions exprOpts;
   SBThread mainThread;
   ListenerSP mojoTypeSystemListener;
+
+  /// The mojo persistent expression state.
+  MojoPersistentExpressionState *exprState = nullptr;
+
+  /// An ordered list containing information about each of the cells that have
+  /// been executed.
+  std::vector<std::unique_ptr<KernelCellState>> cells;
+  llvm::StringMap<unsigned> cellIdToIndex;
 };
 } // namespace
 
@@ -168,8 +197,8 @@ MODULAR_EXPORT MojoKernel *initMojoKernel(OutputFn outputFn,
 }
 
 MODULAR_EXPORT MojoKernel::ExpressionExecutionState *
-startMojoExecution(MojoKernel *kernel, const char *code) {
-  return kernel->startExecution(code);
+startMojoExecution(MojoKernel *kernel, const char *cellId, const char *code) {
+  return kernel->startExecution(cellId, code);
 }
 
 MODULAR_EXPORT int
@@ -255,6 +284,7 @@ LogicalResult MojoKernel::initializeTarget(const char *mojoReplExe) {
     return reportKernelError("failed to create target: " +
                              Twine(error.GetCString()));
   }
+  exprState = target.GetPersistentExpressionState();
 
   return success();
 }
@@ -300,17 +330,25 @@ LogicalResult MojoKernel::launchReplProcess() {
 //===----------------------------------------------------------------------===//
 
 MojoKernel::ExpressionExecutionState *
-MojoKernel::startExecution(const char *expr) {
+MojoKernel::startExecution(const char *cellId, const char *expr) {
   ExpressionExecutionState *state = new ExpressionExecutionState();
+  state->cellState = initializeCellForExecution(cellId);
 
   // Start execution of the expression in a separate thread, so that way the
   // calling client can control waiting for the expression to complete.
   state->executionThread =
       std::thread([this, state, expr = std::string(expr)]() mutable {
         LLVM_DEBUG(llvm::dbgs() << "Executing expression: " << expr << "\n");
+        unsigned exprInstIdx = exprState->getNumExpressionInstances();
         state->result = target.EvaluateExpression(expr.data(), exprOpts);
         state->error = state->result.GetError();
         state->finished = true;
+
+        // If the REPL pushed a new expression state, associate it with the
+        // cell.
+        unsigned newExprInstIdx = exprState->getNumExpressionInstances();
+        if (state->cellState && newExprInstIdx != exprInstIdx)
+          state->cellState->replExprIdx = exprInstIdx;
       });
 
   return state;
@@ -322,6 +360,7 @@ void MojoKernel::flushLLDBStreams(ExpressionExecutionState *state) {
 
   // Flush type system messages.
   lldb::EventSP event;
+
   // The following gets the stream of events without timeout. All the messages
   // will be read eventually anyway.
   while (mojoTypeSystemListener->GetEvent(event, std::chrono::seconds(0))) {
@@ -354,13 +393,11 @@ void MojoKernel::flushLLDBStreams(ExpressionExecutionState *state) {
 }
 
 bool MojoKernel::checkExecutionFinished(ExpressionExecutionState *state) {
-  flushLLDBStreams(state);
   // Check to see if the expression is still executing.
-  if (!state->finished)
+  if (!state->finished) {
+    flushLLDBStreams(state);
     return false;
-
-  // It's possible that some messages were generated between between the last
-  // flush and the state->finished check.
+  }
   flushLLDBStreams(state);
 
   // The expression has finished executing, process the results.
@@ -379,4 +416,37 @@ bool MojoKernel::checkExecutionFinished(ExpressionExecutionState *state) {
   state->executionThread.join();
   delete state;
   return true;
+}
+
+MojoKernel::KernelCellState *
+MojoKernel::initializeCellForExecution(const char *cellId) {
+  if (!cellId)
+    return nullptr;
+  auto [cellIt, inserted] = cellIdToIndex.insert({cellId, cells.size()});
+
+  // If this is a new cell, we just need to construct a new state.
+  if (inserted) {
+    return &*cells.emplace_back(
+        std::make_unique<KernelCellState>(cellIt->first()));
+  }
+  KernelCellState *cellState = cells[cellIt->second].get();
+  unsigned nextCellIndex = cellIt->second + 1;
+
+  // Otherwise, this is a pre-existing cell. Reset the REPL state to just before
+  // this cell.
+  bool shouldResetExprState = true;
+  auto resetExprState = [&](std::optional<unsigned> exprIdx) {
+    if (exprIdx && std::exchange(shouldResetExprState, false))
+      exprState->resetStateToBeforeExpressionInstance(*exprIdx);
+  };
+
+  // Reset any REPL state associated with cells starting with this one,
+  // completely dropping follow-on cells.
+  resetExprState(cellState->replExprIdx);
+  for (auto &cellState : llvm::drop_begin(cells, nextCellIndex)) {
+    resetExprState(cellState->replExprIdx);
+    cellIdToIndex.erase(cellState->id);
+  }
+  cells.resize(nextCellIndex);
+  return cellState;
 }

@@ -59,10 +59,51 @@ public:
 /// Mojo expression invocations.
 class MojoPersistentExpressionState
     : public lldb_private::PersistentExpressionState {
-
 public:
   MojoPersistentExpressionState() : PersistentExpressionState(classofKind()) {}
   ~MojoPersistentExpressionState() override = default;
+
+  //===--------------------------------------------------------------------===//
+  // Expression Instance
+  //===--------------------------------------------------------------------===//
+
+  /// This struct represents all of the state related to a single successful
+  /// expression evaluation.
+  struct ExpressionInstanceState {
+    ExpressionInstanceState(std::shared_ptr<JITExecutionUnit> executionUnit,
+                            std::vector<lldb::ExpressionVariableSP> &&variables)
+        : executionUnit(std::move(executionUnit)),
+          persistentVariables(std::move(variables)) {}
+
+    /// An optional execution unit associated with the expression, present only
+    /// when JIT symbols must be persisted.
+    std::shared_ptr<JITExecutionUnit> executionUnit;
+
+    /// The persistent variables added during the execution of the expression.
+    std::vector<lldb::ExpressionVariableSP> persistentVariables;
+  };
+
+  /// Returns the number of expression instances.
+  size_t getNumExpressionInstances() const {
+    return expressionInstances.size();
+  }
+
+  /// Returns the expression instances persisted within the state.
+  auto getExpressionInstances() const {
+    return llvm::make_pointee_range(expressionInstances);
+  }
+
+  /// Register a new expression instance.
+  void registerExpressionInstance(
+      std::shared_ptr<JITExecutionUnit> executionUnit,
+      std::vector<lldb::ExpressionVariableSP> &&variables);
+
+  /// Reset the expression state to before the  instance at the provided index.
+  void resetStateToBeforeExpressionInstance(size_t index);
+
+  //===--------------------------------------------------------------------===//
+  // PersistentExpressionState
+  //===--------------------------------------------------------------------===//
 
   lldb::ExpressionVariableSP
   CreatePersistentVariable(const lldb::ValueObjectSP &valobj) override;
@@ -80,7 +121,9 @@ public:
     return isError ? "$E" : "$R";
   }
 
-  void RemovePersistentVariable(lldb::ExpressionVariableSP variable) override {}
+  void RemovePersistentVariable(lldb::ExpressionVariableSP variable) override {
+    RemoveVariable(variable);
+  }
 
   lldb_private::ConstString
   GetNextPersistentVariableName(bool isError = false) override {
@@ -91,9 +134,6 @@ public:
       lldb_private::ConstString typeName) override {
     return std::nullopt;
   }
-
-  /// Register the given expression unit.
-  void registerExecutionUnit(std::shared_ptr<JITExecutionUnit> &executionUnit);
 
   /// Lookup a symbol with the provided name.
   lldb::addr_t LookupSymbol(lldb_private::ConstString name) override;
@@ -113,8 +153,8 @@ public:
   }
 
 private:
-  /// The execution units containing persisted symbols.
-  std::set<std::shared_ptr<JITExecutionUnit>> executionUnits;
+  /// Instance state associated with successful expression evaluations.
+  std::vector<std::unique_ptr<ExpressionInstanceState>> expressionInstances;
 
   /// The addresses of the symbols in executionUnits.
   llvm::StringMap<lldb::addr_t> symbolMap;
