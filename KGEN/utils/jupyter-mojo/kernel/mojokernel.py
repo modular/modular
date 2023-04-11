@@ -11,6 +11,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
+import argparse
 import ctypes
 import os
 import shutil
@@ -93,7 +94,7 @@ class MojoKernel(Kernel):
         # Look for the mojo repl executable. This will have the various
         # necessary libraries adjacent to it.
         mojo_repl_exe_path = (
-            Path(os.environ.get("MODULAR_PATH")) / ".derived" / "build" / "lib"
+            Path(os.environ["MODULAR_PATH"]) / ".derived" / "build" / "lib"
         )
         self.mojoReplExe: Optional[str] = shutil.which(
             "mojo-repl-entry-point",
@@ -173,8 +174,18 @@ class MojoKernel(Kernel):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument(
+        "--modular-path",
+        required=True,
+        help="The value of the env var MODULAR_PATH.",
+    )
+    args, jupyter_args = parser.parse_known_args()
+
+    os.environ["MODULAR_PATH"] = args.modular_path
+
     # We pass the kernel name as a command-line arg, since Jupyter gives those
     # highest priority (in particular overriding any system-wide config).
     IPKernelApp.launch_instance(
-        argv=sys.argv + ["--IPKernelApp.kernel_class=__main__.MojoKernel"]
+        argv=jupyter_args + ["--IPKernelApp.kernel_class=__main__.MojoKernel"]
     )

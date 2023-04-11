@@ -7,6 +7,7 @@
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -40,6 +41,8 @@ def main():
             str(kernel_install_dir / "mojokernel.py"),
             "-f",
             "{connection_file}",
+            "--modular-path",
+            str(os.environ["MODULAR_PATH"]),
         ],
         "language": "mojo",
         "language_info": {
