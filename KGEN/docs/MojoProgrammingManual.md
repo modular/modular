@@ -888,8 +888,7 @@ to a buffer of data, you might write it like this:
 ```mojo
     def exp_buffer[dt: DType](data: ArraySlice[dt]):
         # Pick vector length for this dtype and hardware
-        alias vector_len: Int
-        autotune[Int, 4, 1, 8, 16, 32 -> vector_len]()
+        alias vector_len = autotune(4, 1, 8, 16, 32)
 
         # Use it as the vectorization length
         vectorize[exp[dt, vector_len]](data)
