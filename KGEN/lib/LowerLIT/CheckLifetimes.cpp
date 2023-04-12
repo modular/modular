@@ -452,18 +452,9 @@ struct ValueSet {
     return ValueRef{valueId, entry.startValueBit, entry.endValueBit};
   }
 
-  /// If this value is directly tracked by the ValueSet, return the index of the
-  /// value, otherwise return zero.
-  ValueRef getDirectValueRef(Value value) const {
-    auto it = valueInfoIndex.find(value);
-    if (it == valueInfoIndex.end())
-      return ValueRef();
-    return getFullValueRef(it->second);
-  }
-
-  /// Given a pointer that is being accessed indirectly by an operation, return
-  /// the value number being referenced, or zero if not tracked.
-  ValueRef getPointerValueIndex(Value value);
+  /// Given a pointer or value that is being accessed by an operation, return
+  /// the ValueRef for the object being tracked or null if untracked.
+  ValueRef getValueRef(Value value) const;
 
   /// Return the total number of bits we need to track in the bitvector.
   unsigned getNumTotalBits() const {
@@ -480,10 +471,10 @@ private:
 
 /// Given a pointer that is being accessed indirectly by an operation, return
 /// the value number being referenced, or zero if not tracked.
-ValueRef ValueSet::getPointerValueIndex(Value value) {
+ValueRef ValueSet::getValueRef(Value value) const {
   // If this is a GEP, check the base and focus in on a field of it.
   if (auto structGEP = value.getDefiningOp<StructGEPOp>()) {
-    ValueRef baseVal = getPointerValueIndex(structGEP.getContainer());
+    ValueRef baseVal = getValueRef(structGEP.getContainer());
     if (!baseVal)
       return baseVal;
 
@@ -499,7 +490,10 @@ ValueRef ValueSet::getPointerValueIndex(Value value) {
   }
 
   // Otherwise, we don't know what this is.
-  return getDirectValueRef(value);
+  auto it = valueInfoIndex.find(value);
+  if (it == valueInfoIndex.end())
+    return ValueRef();
+  return getFullValueRef(it->second);
 }
 
 //===----------------------------------------------------------------------===//
@@ -694,14 +688,14 @@ void UninitializedValueScan::checkOp(Operation &op) {
     return;
 
   auto checkSSAValueLive = [&](Value value) -> ValueRef {
-    ValueRef valueId = valueSet.getDirectValueRef(value);
+    ValueRef valueId = valueSet.getValueRef(value);
     if (valueId)
       checkLive(op, valueId);
     return valueId;
   };
 
   auto checkDirectPointerLive = [&](Value value) -> ValueRef {
-    ValueRef valueRef = valueSet.getPointerValueIndex(value);
+    ValueRef valueRef = valueSet.getValueRef(value);
     if (valueRef)
       checkLive(op, valueRef);
     return valueRef;
@@ -710,7 +704,7 @@ void UninitializedValueScan::checkOp(Operation &op) {
   // A store of a whole value is an initialization.
   if (auto storeOp = dyn_cast<POP::StoreOp>(op)) {
     // This marks its value live.
-    valueSet.getPointerValueIndex(storeOp.getPtr()).markBits(liveValues, true);
+    valueSet.getValueRef(storeOp.getPtr()).markBits(liveValues, true);
     return;
   }
 
@@ -718,7 +712,7 @@ void UninitializedValueScan::checkOp(Operation &op) {
   // an initialization.
   if (auto loadOp = dyn_cast<POP::LoadOp>(op)) {
     // This marks its value live.
-    checkLive(op, valueSet.getPointerValueIndex(loadOp.getPtr()));
+    checkLive(op, valueSet.getValueRef(loadOp.getPtr()));
     return;
   }
 
@@ -760,7 +754,7 @@ void UninitializedValueScan::checkOp(Operation &op) {
       case ValueInputConvention::ByRefResult:
       case ValueInputConvention::InitSelf:
         // This call defines the by-ref result.
-        valueSet.getPointerValueIndex(operand).markBits(liveValues, true);
+        valueSet.getValueRef(operand).markBits(liveValues, true);
         break;
       }
     }
@@ -768,7 +762,7 @@ void UninitializedValueScan::checkOp(Operation &op) {
     // If the result is defining an owned register value, then we treat this as
     // a definition.
     if (signature.hasOwnedRegisterResult())
-      valueSet.getDirectValueRef(op.getResult(0)).markBits(liveValues, true);
+      valueSet.getValueRef(op.getResult(0)).markBits(liveValues, true);
 
     return;
   }
@@ -783,7 +777,7 @@ void UninitializedValueScan::checkOp(Operation &op) {
   // TODO: can this be made more generic, or are there only a few things that
   // can define owned values?
   if (auto letReg = dyn_cast<LetRegDeclOp>(op)) {
-    valueSet.getDirectValueRef(letReg).markBits(liveValues, true);
+    valueSet.getValueRef(letReg).markBits(liveValues, true);
     return;
   }
 
@@ -942,10 +936,10 @@ private:
   void checkOp(Operation &op);
   void markConsumed(Operation &op, ValueRef valueRef);
   void checkLive(Operation &op, ValueRef valueRef);
-  void destroyWholeValueIfLastAccess(Operation &op, ValueRef valueRef);
-  void destroyWholeValueIfLastAccess(ValueRef valueRef, Block &block,
-                                     Block::iterator insertPt, Location loc);
-  void checkDef(Operation &op, ValueRef valueRef);
+  void checkUse(Value value, Operation &op);
+  void checkUse(Value value, Block &block, Block::iterator insertPt,
+                Location loc);
+  void checkDef(Value value, Operation &op);
   void destroyValuesAtEntry(const BitVector &entries, Block &block,
                             Location loc);
   void emitDestructorCallAt(unsigned valueId, Block &block,
@@ -990,8 +984,8 @@ void DestructorInsertion::scanFunction(mlir::FunctionOpInterface func) {
   for (auto [valueID, valueInfo] : llvm::enumerate(valueSet.getValueInfos())) {
     if (valueInfo.startsUninit || valueID == 0)
       continue;
-    destroyWholeValueIfLastAccess(valueSet.getFullValueRef(valueID), funcBody,
-                                  funcBody.begin(), valueInfo.value.getLoc());
+    checkUse(valueInfo.value, funcBody, funcBody.begin(),
+             valueInfo.value.getLoc());
   }
 }
 
@@ -1012,15 +1006,14 @@ void DestructorInsertion::checkOp(Operation &op) {
   // A store to a value is an overwrite - this means that any incoming values
   // are unused and should be destroyed if they exist.
   if (auto storeOp = dyn_cast<POP::StoreOp>(op)) {
-    checkDef(op, valueSet.getPointerValueIndex(storeOp.getPtr()));
+    checkDef(storeOp.getPtr(), op);
     return;
   }
 
   // A load is a use of whatever fields are being referenced.  If this is the
   // /last/ use of a value, emit a destructor of that value.
   if (auto loadOp = dyn_cast<POP::LoadOp>(op)) {
-    destroyWholeValueIfLastAccess(
-        op, valueSet.getPointerValueIndex(loadOp.getPtr()));
+    checkUse(loadOp.getPtr(), op);
     return;
   }
 
@@ -1040,31 +1033,26 @@ void DestructorInsertion::checkOp(Operation &op) {
 
     // If the result is defining an owned register value, treat it as a def.
     if (signature.hasOwnedRegisterResult())
-      checkDef(op, valueSet.getDirectValueRef(op.getResult(0)));
+      checkDef(op.getResult(0), op);
 
     assert(signature.getValueInputConventions().size() == operands.size());
     for (auto [convention, operand] :
          llvm::zip(signature.getValueInputConventions(), operands)) {
       switch (convention) {
       case ValueInputConvention::OwnedInReg:
-        // This consumes the value, so it isn't dead going upwards.
-        valueSet.getDirectValueRef(operand).markBits(consumedValues, true);
-        break;
       case ValueInputConvention::OwnedInMem:
-        valueSet.getPointerValueIndex(operand).markBits(consumedValues, true);
+        // This consumes the value, so it isn't dead going upwards.
+        valueSet.getValueRef(operand).markBits(consumedValues, true);
         break;
       case ValueInputConvention::BorrowedInReg:
-        destroyWholeValueIfLastAccess(op, valueSet.getDirectValueRef(operand));
-        break;
       case ValueInputConvention::BorrowedInMem:
       case ValueInputConvention::ByRef:
-        destroyWholeValueIfLastAccess(op,
-                                      valueSet.getPointerValueIndex(operand));
+        checkUse(operand, op);
         break;
       case ValueInputConvention::ByRefResult:
       case ValueInputConvention::InitSelf:
         // This defines the memory it writes to.
-        checkDef(op, valueSet.getPointerValueIndex(operand));
+        checkDef(operand, op);
         break;
       }
     }
@@ -1074,9 +1062,9 @@ void DestructorInsertion::checkOp(Operation &op) {
   // LetReg takes ownership of its operand value and defines its own value.
   if (auto letReg = dyn_cast<LetRegDeclOp>(op)) {
     // This defines the result value.  Emit a destructor if unused.
-    checkDef(op, valueSet.getDirectValueRef(letReg));
+    checkDef(letReg, op);
     // This consumes the input.
-    markConsumed(op, valueSet.getDirectValueRef(letReg.getOperand()));
+    markConsumed(op, valueSet.getValueRef(letReg.getOperand()));
     return;
   }
 
@@ -1226,7 +1214,7 @@ void DestructorInsertion::checkOp(Operation &op) {
   // Otherwise this some other operation that using a SSA value.  If this is the
   // last use of the value, make sure we destroy it when done.
   for (Value operand : op.getOperands())
-    destroyWholeValueIfLastAccess(op, valueSet.getDirectValueRef(operand));
+    checkUse(operand, op);
 }
 
 // When the specified value is consumed by an operation we know it doesn't need
@@ -1255,16 +1243,14 @@ void DestructorInsertion::markConsumed(Operation &op, ValueRef valueRef) {
 
 /// This operation uses whatever fields are being referenced.  Iff this is the
 /// /last/ use of a value, emit a destructor of the overall value.
-void DestructorInsertion::destroyWholeValueIfLastAccess(Operation &op,
-                                                        ValueRef valueRef) {
+void DestructorInsertion::checkUse(Value value, Operation &op) {
   // If needed, emit the destructor immediately after the specified operation.
-  destroyWholeValueIfLastAccess(valueRef, *op.getBlock(),
-                                std::next(Block::iterator(&op)), op.getLoc());
+  checkUse(value, *op.getBlock(), std::next(Block::iterator(&op)), op.getLoc());
 }
 
-void DestructorInsertion::destroyWholeValueIfLastAccess(
-    ValueRef valueRef, Block &block, Block::iterator insertPt, Location loc) {
-
+void DestructorInsertion::checkUse(Value value, Block &block,
+                                   Block::iterator insertPt, Location loc) {
+  ValueRef valueRef = valueSet.getValueRef(value);
   if (!valueRef)
     return;
 
@@ -1293,13 +1279,13 @@ void DestructorInsertion::destroyWholeValueIfLastAccess(
 
 /// This operation defines the specified value.  If the value is dead on
 /// arrival, emit a destructor of the value.
-void DestructorInsertion::checkDef(Operation &op, ValueRef valueRef) {
+void DestructorInsertion::checkDef(Value value, Operation &op) {
   // If there is no use of the value being defined, emit a dtor after the op.
-  destroyWholeValueIfLastAccess(op, valueRef);
+  checkUse(value, op);
 
   // This call defines the result, so anything above it is either dead or
   // needs a destructor if live.
-  valueRef.markBits(consumedValues, false);
+  valueSet.getValueRef(value).markBits(consumedValues, false);
 }
 
 void DestructorInsertion::emitDestructorCallAt(unsigned valueId, Block &block,
