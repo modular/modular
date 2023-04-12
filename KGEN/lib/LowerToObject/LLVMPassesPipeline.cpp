@@ -3,6 +3,9 @@
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
+
+#include "LLVMPassesPipeline.h"
+#include "KGEN/CompilationOptions.h"
 #include "llvm/Analysis/GlobalsModRef.h"
 #include "llvm/Analysis/OptimizationRemarkEmitter.h"
 #include "llvm/Analysis/ProfileSummaryInfo.h"
@@ -30,7 +33,10 @@
 #include "llvm/Transforms/IPO/OpenMPOpt.h"
 #include "llvm/Transforms/IPO/SCCP.h"
 #include "llvm/Transforms/InstCombine/InstCombine.h"
+#include "llvm/Transforms/Instrumentation/AddressSanitizer.h"
+#include "llvm/Transforms/Instrumentation/AddressSanitizerOptions.h"
 #include "llvm/Transforms/Instrumentation/CGProfile.h"
+#include "llvm/Transforms/Instrumentation/ThreadSanitizer.h"
 #include "llvm/Transforms/Scalar/ADCE.h"
 #include "llvm/Transforms/Scalar/AlignmentFromAssumptions.h"
 #include "llvm/Transforms/Scalar/AnnotationRemarks.h"
@@ -79,6 +85,24 @@
 #include "llvm/Transforms/Vectorize/VectorCombine.h"
 
 using namespace llvm;
+using namespace M::KGEN;
+
+static void addSanitizers(ModulePassManager &modulePassManager,
+                          const CompilationOptions &options) {
+  if (options.sanitizers.has(CompilationOptions::Sanitizers::kThread)) {
+    modulePassManager.addPass(ModuleThreadSanitizerPass());
+    modulePassManager.addPass(
+        llvm::createModuleToFunctionPassAdaptor(llvm::ThreadSanitizerPass()));
+  }
+
+  if (options.sanitizers.has(CompilationOptions::Sanitizers::kAddress)) {
+    AddressSanitizerOptions Opts;
+    bool moduleUseAfterScope = false;
+    bool useOdrIndicator = false;
+    modulePassManager.addPass(
+        AddressSanitizerPass(Opts, moduleUseAfterScope, useOdrIndicator));
+  }
+}
 
 static FunctionPassManager buildFunctionSimplificationPipeline() {
   FunctionPassManager FPM;
@@ -349,7 +373,7 @@ static void addVectorPasses(FunctionPassManager &FPM) {
   FPM.addPass(AlignmentFromAssumptionsPass());
 }
 
-static ModulePassManager buildO3Pipeline() {
+static ModulePassManager buildO3Pipeline(const CompilationOptions &options) {
   ModulePassManager MPM;
 
   // Convert @llvm.global.annotations to !annotation metadata.
@@ -513,6 +537,9 @@ static ModulePassManager buildO3Pipeline() {
       createModuleToFunctionPassAdaptor(std::move(OptimizePM),
                                         /*EagerlyInvalidateAnalyses*/ true));
 
+  // Add any relevant sanitizers.
+  addSanitizers(MPM, options);
+
   // Now we need to do some global optimization transforms.
   // FIXME: It would seem like these should come first in the optimization
   // pipeline and maybe be the bottom of the canonicalization pipeline? Weird
@@ -533,7 +560,7 @@ static ModulePassManager buildO3Pipeline() {
   return MPM;
 }
 
-static ModulePassManager buildO0Pipeline() {
+static ModulePassManager buildO0Pipeline(const CompilationOptions &options) {
   ModulePassManager MPM;
 
   // Build a minimal pipeline based on the semantics required by LLVM,
@@ -553,16 +580,22 @@ static ModulePassManager buildO0Pipeline() {
   CoroPM.addPass(GlobalDCEPass());
   MPM.addPass(CoroConditionalWrapper(std::move(CoroPM)));
 
+  // Add any relevant sanitizers.
+  addSanitizers(MPM, options);
+
   MPM.addPass(createModuleToFunctionPassAdaptor(AnnotationRemarksPass()));
 
   return MPM;
 }
 
-ModulePassManager buildPipeline(CodeGenOpt::Level Level) {
-  assert((Level == CodeGenOpt::Level::None ||
-          Level == CodeGenOpt::Level::Aggressive) &&
-         "Only OptLevel::None and OptLevel::Aggressive are supported");
-  if (Level == CodeGenOpt::Level::None)
-    return buildO0Pipeline();
-  return buildO3Pipeline();
+ModulePassManager
+M::KGEN::buildLLVMOptimizationPipeline(const CompilationOptions &options) {
+  CodeGenOpt::Level optLevel = options.getCodeGenOptLevel();
+
+  assert((optLevel == CodeGenOpt::Level::None ||
+          optLevel == CodeGenOpt::Level::Aggressive) &&
+         "only OptLevel::None and OptLevel::Aggressive are supported");
+  if (optLevel == CodeGenOpt::Level::None)
+    return buildO0Pipeline(options);
+  return buildO3Pipeline(options);
 }

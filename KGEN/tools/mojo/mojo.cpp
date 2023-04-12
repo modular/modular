@@ -124,7 +124,7 @@ static bool moduleExportsMain(ModuleOp theModule, SymbolTable &symtab,
 /// output to the specific ostream provided to it, rather it opens and writes to
 /// files that are designated by the funcs it operates on.
 static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
-                           const CLOptions &clOptions) {
+                           CLOptions &clOptions) {
   // Allow unregistered dialects, we will verify we know what to do with it
   // later.
   ctx->allowUnregisteredDialects();

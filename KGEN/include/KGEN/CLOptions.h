@@ -145,7 +145,7 @@ public:
   }
 
   /// Return a compilation options object based on the command line options.
-  CompilationOptions getCompilationOptions() const {
+  CompilationOptions getCompilationOptions() {
     // Grab the optimization level. For now use an aggressive default.
     unsigned optLevel = 3;
     if (optLevel0)
@@ -160,6 +160,7 @@ public:
     if (debugAtLevel.getNumOccurrences())
       debugAt = debugAtLevel;
     return CompilationOptions(enableSearch, optLevel, debugInfoLevel, debugAt,
+                              sanitizerOptions.getBits(),
                               enableXRayInstrumentation, targetTriple,
                               targetCpu, targetFeatures);
   }
@@ -171,6 +172,14 @@ private:
   cl::opt<bool> optLevel2{"O2", cl::desc("Enable most optimizations")};
   cl::opt<bool> optLevel3{"O3",
                           cl::desc("Aggressively enable all optimizations")};
+
+  using SanitizerKind = KGEN::CompilationOptions::Sanitizers::SanitizerKind;
+  llvm::cl::bits<SanitizerKind> sanitizerOptions{
+      "sanitize", cl::desc("Enable the given sanitizer"),
+      cl::values(clEnumValN(SanitizerKind::kAddress, "address",
+                            "Enable address sanitizer"),
+                 clEnumValN(SanitizerKind::kThread, "thread",
+                            "Enable thread sanitizer"))};
 };
 
 class KGENCLOptions : public KGENCommonOptions, public CommonCLOptions {

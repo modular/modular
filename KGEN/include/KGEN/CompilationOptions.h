@@ -38,16 +38,38 @@ public:
     kDebugAtLLVM
   };
 
+  /// The sanitizers enabled for the compilation.
+  class Sanitizers {
+  public:
+    /// The various sanitizers that can be enabled.
+    enum SanitizerKind { kAddress, kThread };
+
+    Sanitizers(unsigned sanitizerMask = 0) : sanitizerMask(sanitizerMask) {}
+
+    /// Check if the given sanitizer is enabled.
+    bool has(SanitizerKind sanitizer) const {
+      return sanitizerMask & (1 << sanitizer);
+    }
+
+    /// Returns if any sanitizer is enabled.
+    operator bool() const { return sanitizerMask != 0; }
+
+  private:
+    unsigned sanitizerMask;
+  };
+
   CompilationOptions(
       bool enableSearch = true, unsigned optimizationLevel = 3,
       DebugInfoLevel debugLevel = kNoDebug,
       std::optional<DebugAtLevel> debugAtLevel = std::nullopt,
+      Sanitizers sanitizers = Sanitizers(),
       bool enableXRayInstrumentation = false,
       std::string targetTriple = llvm::sys::getDefaultTargetTriple(),
       std::string targetCpu = llvm::sys::getHostCPUName().str(),
       std::string targetFeatures = getHostCPUFeatures())
       : enableSearch(enableSearch), optimizationLevel(optimizationLevel),
         debugLevel(debugLevel), debugAtLevel(debugAtLevel),
+        sanitizers(sanitizers),
         enableXRayInstrumentation(enableXRayInstrumentation),
         targetTriple(std::move(targetTriple)), targetCpu(std::move(targetCpu)),
         targetFeatures(std::move(targetFeatures)) {}
@@ -101,6 +123,13 @@ public:
         break;
       }
     }
+    if (sanitizers) {
+      os << ", sanitizers: ";
+      if (sanitizers.has(Sanitizers::kAddress))
+        os << " address";
+      if (sanitizers.has(Sanitizers::kThread))
+        os << " thread";
+    }
     if (enableXRayInstrumentation)
       os << ", enableXRayInstrumentation";
     os << " }";
@@ -113,6 +142,7 @@ public:
   unsigned optimizationLevel = 3;
   DebugInfoLevel debugLevel = kNoDebug;
   std::optional<DebugAtLevel> debugAtLevel;
+  Sanitizers sanitizers = Sanitizers();
   bool enableXRayInstrumentation = false;
   std::string targetTriple = llvm::sys::getDefaultTargetTriple();
   std::string targetCpu = llvm::sys::getHostCPUName().str();

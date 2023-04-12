@@ -8,7 +8,7 @@
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
-#include "KGEN/LLVMPassesPipeline.h"
+#include "LLVMPassesPipeline.h"
 #include "LowerToObjectImpl.h"
 #include "Support/SIMD.h"
 #include "Support/TempFile.h"
@@ -69,7 +69,8 @@ ObjectCompiler::ObjectCompiler(
 /// Run the default LLVM optimization pipeline based on the select optimization
 /// level.
 LogicalResult KGEN::runLLVMOptPasses(llvm::Module &module,
-                                     llvm::TargetMachine &targetMachine) {
+                                     llvm::TargetMachine &targetMachine,
+                                     const CompilationOptions &options) {
   TimeTraceScope<> traceScope("llvm-optimize", module.getName());
   using namespace llvm;
 
@@ -105,7 +106,7 @@ LogicalResult KGEN::runLLVMOptPasses(llvm::Module &module,
   passBuilder.crossRegisterProxies(loopAnalysisMgr, funcAnalysisMgr,
                                    sccAnalysisMgr, moduleAnalysisMgr);
 
-  ModulePassManager modulePassMgr = buildPipeline(targetMachine.getOptLevel());
+  ModulePassManager modulePassMgr = buildLLVMOptimizationPipeline(options);
 
   // Now that we have all of the passes ready, run them.
   modulePassMgr.run(module, moduleAnalysisMgr);
@@ -167,7 +168,7 @@ LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
     outFile->keep();
   }
 
-  if (failed(runLLVMOptPasses(module, targetMachine)))
+  if (failed(runLLVMOptPasses(module, targetMachine, options)))
     return failure();
 
   if (!options.saveTempsPrefix.empty()) {
