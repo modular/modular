@@ -141,9 +141,6 @@ class KGEN_CallOpBase<string mnemonic, list<Trait> traits = []>
                                   ["isImplicitlyParametric"]>]> {
   code extraDefinition = [{}];
   let extraClassDefinition = extraDefinition # [{
-    void $cppClass::updateCallee(SymbolConstantAttr callee) {
-      setCalleeAttr(callee);
-    }
     void $cppClass::walkDeclarations(
         function_ref<void(ParamDeclAttr)> walkDecl) {
       llvm::for_each(getParamDecls(), walkDecl);
@@ -469,6 +466,44 @@ def KGEN_ParamForkOp : KGENOp<"param.fork",
   let assemblyFormat = [{
     custom<ParamForkOpValue>($paramDecl, $values) attr-dict
   }];
+}
+
+//===----------------------------------------------------------------------===//
+// ParamApplyOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_ParamApplyOp : KGENOp<"param.apply",
+    [DeclareOpInterfaceMethods<KGEN_CallOpInterface>,
+     DeclareOpInterfaceMethods<ParamOpInterface>]> {
+  let summary = "Function call in parameter domain.";
+  let description = [{
+    The `kgen.param.apply` operation is a call operation entirely in the
+    parameter domain. The operands to the call are parameter expressions and the
+    results of the call are bound to parameter declarations. This is the 'apply'
+    operator as an operation.
+
+    This form of the 'apply' operator is beneficial for the elaborator, because
+    it gives the elaborator a "save point" for multiversioning functions, if
+    the 'apply' callee has multiple implementations.
+
+    The callee is limited to a single result value with no result parameters.
+
+    Example:
+
+    ```mlir
+    kgen.param.declare sw: i1 = <1>
+    kgen.param.apply A = [(i1) -> !pop.simd<8, f32>: callee](sw)
+    ```
+  }];
+
+  let arguments = (ins KGEN_ParamDeclAttr:$paramDecl,
+                       AttrOfType<KGEN_SignatureType>:$callee,
+                       KGEN_ParameterExprArrayAttr:$operands);
+  let assemblyFormat = [{
+    custom<ParamApplyOp>($paramDecl, $callee, $operands) attr-dict
+  }];
+
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

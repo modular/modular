@@ -174,7 +174,9 @@ def KGEN_CallOpInterface : OpInterface<"KGENCallOpInterface"> {
       Get the parameter expression of the operation's callee.
     }], "TypedAttr", "getCallee", (ins)>,
     InterfaceMethod<[{
-    }], "void", "updateCallee", (ins "SymbolConstantAttr":$callee)>,
+    }], "void", "updateCallee", (ins "SymbolConstantAttr":$callee), [{}], [{
+      $_op.setCalleeAttr(callee);
+    }]>,
     InterfaceMethod<[{
       Get the values of the parameters passed to the callee's input parameters.
     }], "ArrayRef<TypedAttr>", "getParamValues", (ins), [{}],
