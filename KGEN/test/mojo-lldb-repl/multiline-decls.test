@@ -1,0 +1,82 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# RUN: %lldb -R go -r <%s 2>&1 | FileCheck %s
+
+# Note: in REPL mode, expressions are delimited by empty lines.
+
+# Will test a simple multiline function call
+# CHECK: 12
+print(12
+)
+
+# Will test a struct with multiline declaration
+struct Foo[
+    *Ts: AnyType
+    ]:
+  fn __init__(self&):
+    pass
+  fn foo(self):
+    print("called foo")
+
+# CHECK: called foo
+Foo[Int]().foo()
+
+# Will test a struct with decorator and a multiline declaration
+@register_passable
+struct \
+  Bar:
+  fn __init__() -> Self:
+    return Self{}
+  fn bar(self):
+    print("called bar")
+
+# Wil test variable persistence by using `bar` in a later expression
+let bar = Bar()
+
+# CHECK: called bar
+bar.bar()
+
+# Will test a multiline declaration for a function
+fn foo(x
+: Int
+) -> Int       :
+  print(x * x)
+  return x - 1
+
+# CHECK: 176400
+foo(420)
+
+# Will test a function with a decorator
+@always_inline
+fn zaz():
+  print("zaz")
+
+# CHECK: zaz
+zaz()
+
+# Will test a multiline alias with imports and a function that uses this alias
+
+from Buffer import (
+  DynamicRankBuffer
+)
+
+from LLCL import OutputChainPtr
+
+alias unary_fn_type = __mlir_type[
+    `(`,
+    DynamicRankBuffer,
+    `, `,
+    DynamicRankBuffer,
+    `, `,
+    OutputChainPtr,
+    `) -> `,
+    NoneType,
+]
+
+# CHECK-NOT: error
+fn using_alias(callback: unary_fn_type):
+  pass
