@@ -15,8 +15,6 @@ from Math import div_ceil
 from Range import range
 from TypeUtilities import rebind
 
-from BuiltinSlice import slice
-
 # ===----------------------------------------------------------------------===#
 # slice_as_view
 # ===----------------------------------------------------------------------===#
