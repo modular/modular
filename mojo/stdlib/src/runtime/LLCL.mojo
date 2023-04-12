@@ -487,8 +487,8 @@ struct OutputChainPtr:
             return
 
         let str = detail_fn()
-        self.trace[level](label, str.strref_dangerous())
-        str.strref_keepalive()
+        self.trace[level](label, str._strref_dangerous())
+        str._strref_keepalive()
 
 
 @register_passable
