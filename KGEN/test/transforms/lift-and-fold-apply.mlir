@@ -4,12 +4,15 @@ kgen.generator @pass(%arg0: index) -> index {
   kgen.return %arg0 : index
 }
 
+// CHECK-LABEL: kgen.generator @take_and_pass
+// CHECK-SAME: !pop.array<*[[L0:.*]], index>
 kgen.generator @take_and_pass<N>() -> !pop.array<apply(:(index) -> index @pass, N), index> {
+  // CHECK-NEXT: apply *[[L0]] = [(index) -> index: @pass](N)
   kgen.unreachable
 }
 
-// CHECK-LABEL: kgen.generator @main
-kgen.generator @main() {
+// CHECK-LABEL: kgen.generator @lift_apply
+kgen.generator @lift_apply() {
   kgen.param.declare p0 = <1>
   kgen.param.declare p1 = <add(p0, 1)>
   // CHECK: apply *[[L0:.*]] = [(index) -> index: @pass](p0)
@@ -34,5 +37,27 @@ kgen.generator @main() {
     kgen.return
   }
 
+  kgen.return
+}
+
+kgen.generator @consume<N>(%arg0: !pop.array<N, index>) {
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @apply_value_crosses
+kgen.generator @apply_value_crosses(%arg0: !pop.array<apply(:(index) -> index @pass, 1), index>) {
+  // CHECK-NEXT: apply *[[L0:.*]] = [(index) -> index: @pass](1)
+  // CHECK: kgen.param.if
+  kgen.param.if <0> {
+    // CHECK-NEXT: apply *[[L1:.*]] = [(index) -> index: @pass](2)
+    // CHECK: constant = <*[[L1]]>
+    kgen.param.constant = <apply(:(index) -> index @pass, 2)>
+    // CHECK-NEXT: call @consume<*[[L0]]>(%arg0) : (!pop.array<*[[L0]], index>)
+    kgen.call @consume<apply(:(index) -> index @pass, 1)>(%arg0)
+      : (!pop.array<apply(:(index) -> index @pass, 1), index>) -> ()
+    kgen.return
+  } else {
+    kgen.param.yield
+  }
   kgen.return
 }

@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENPasses.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
@@ -17,31 +18,17 @@ namespace M::KGEN {
 #include "KGEN/KGENPasses.h.inc"
 } // namespace M::KGEN
 
-static void liftAndFoldApplys(Location loc, Region *body) {
-  DenseMap<ParamOperatorAttr, Attribute> lifted;
+using LiftedMapStack =
+    SmallVector<std::pair<Region *, DenseMap<ParamOperatorAttr, Attribute>>>;
+
+/// Recursively lift and fold apply operators within the provided body.
+static void liftAndFoldApply(Region *body, ImplicitLocOpBuilder &b,
+                             ParameterCollector &collector,
+                             LiftedMapStack &lifted, unsigned &counter,
+                             const ParameterUseDefGraph &graph,
+                             const ParameterUseDefGraph &topLevel) {
   mlir::AttrTypeReplacer replacer;
-
-  ImplicitLocOpBuilder b(loc, OpBuilder(loc.getContext()));
-  unsigned counter = 0;
-
-  // Lift 'apply' operators into `kgen.param.apply` operations.
-  replacer.addReplacement([&](ParamOperatorAttr op) -> Attribute {
-    if (op.getOpcode() != POC::Apply)
-      return op;
-    if (auto it = lifted.find(op); it != lifted.end())
-      return it->second;
-    // Generate a name for the lifted parameter.
-    auto decl = ParamDeclAttr::get(
-        b.getStringAttr("(lifted)apply_" + Twine(counter++)), op.getType());
-
-    // Explicitly recurse on all operands to lift nested 'apply' operators.
-    TypedAttr callee = replacer.replace(op.getOperands().front());
-    SmallVector<TypedAttr> operands;
-    for (TypedAttr operand : op.getOperands().drop_front())
-      operands.push_back(replacer.replace(operand));
-    b.create<ParamApplyOp>(decl, callee, operands);
-    return lifted.try_emplace(op, ParamDeclRefAttr::get(decl)).first->second;
-  });
+  lifted.emplace_back().first = body;
 
   // Skip over parameterized signatures. We cannot generically pull out 'apply'
   // operators from within signature types because the parameter expressions may
@@ -55,7 +42,78 @@ static void liftAndFoldApplys(Location loc, Region *body) {
     return std::make_pair(signature, WalkResult::skip());
   });
 
-  // If the parent is an operation, extract 'apply' operators and place them at
+  replacer.addReplacement([&](ParamOperatorAttr op) -> Attribute {
+    if (op.getOpcode() != POC::Apply)
+      return op;
+
+    // When we encounter an 'apply' operator, check the lifted map for this
+    // scope for an operator of the same value in the current scope that has
+    // already been lifted.
+    DenseMap<ParamOperatorAttr, Attribute> &curMap = lifted.back().second;
+    if (auto it = curMap.find(op); it != curMap.end())
+      return it->second;
+
+    // Collect all parameter uses within the operator so we can check the
+    // declaring operations to determine the highest scope into which we could
+    // lift this operator.
+    SmallVector<ParamDeclRefAttr> uses;
+    bool hasConstExpr;
+    collector.collectUsesFromAttr(op, uses, hasConstExpr);
+
+    // Baseline is the top-level scope, which would be valid for empty uses.
+    Region *upperBound = topLevel.scope;
+    for (ParamDeclRefAttr use : uses) {
+      const ParamDeclaration &decl = graph.decls.at(use.getName());
+      if (upperBound->isProperAncestor(decl.scope))
+        upperBound = decl.scope;
+    }
+
+    // Walk backwards starting from the next-nearest scope to determine the
+    // lowest scope in which this operator has been lifted. This is important
+    // because we don't want to hoist invalid operators out of conditionals.
+    Attribute existing;
+    for (std::pair<Region *, DenseMap<ParamOperatorAttr, Attribute>> &frame :
+         llvm::reverse(lifted)) {
+      // Skip the current scope.
+      if (frame.first != body) {
+        // Look for a lifted operator in this scope's cache.
+        if (auto it = frame.second.find(op); it != frame.second.end()) {
+          existing = it->second;
+          break;
+        }
+      }
+      // Stop once we reach the upper bound.
+      if (frame.first == upperBound)
+        break;
+    }
+
+    // If we didn't find an existing lifted operator, then lift the operator at
+    // the current scope.
+    if (!existing) {
+      // Explicit recurse on the operator.
+      Type type = replacer.replace(op.getType());
+      TypedAttr callee = replacer.replace(op.getOperands().front());
+      SmallVector<TypedAttr> operands;
+      for (TypedAttr operand : op.getOperands().drop_front())
+        operands.push_back(replacer.replace(operand));
+
+      // Generate a name for the lifted parameter.
+      auto decl = ParamDeclAttr::get(
+          b.getStringAttr("(lifted)apply_" + Twine(counter++)), type);
+
+      // Create the operation and set the value of the lifted operator.
+      b.create<ParamApplyOp>(decl, callee, operands);
+      existing = ParamDeclRefAttr::get(decl);
+    }
+
+    // Map the created or existing parameter into the current scope. This also
+    // has the effect of allowing searches for the same operator to end early in
+    // nested scopes.
+    curMap.try_emplace(op, existing);
+    return existing;
+  });
+
+  // If the parent is a function, extract 'apply' operators and place them at
   // the start of the body.
   if (auto func = dyn_cast<GeneratorOp>(body->getParentOp())) {
     b.setLoc(func.getLoc());
@@ -75,12 +133,29 @@ static void liftAndFoldApplys(Location loc, Region *body) {
     // Walk over nested parameter scopes, since lifted apply operators with name
     // shadowing can cause collisions.
     if (isa<DeclInterface>(op)) {
-      for (Region &region : op->getRegions())
-        liftAndFoldApplys(op->getLoc(), &region);
+      for (Region &region : op->getRegions()) {
+        liftAndFoldApply(&region, b, collector, lifted, counter,
+                         topLevel.nestedScopes.at(&region), topLevel);
+      }
       return WalkResult::skip();
     }
     return WalkResult::advance();
   });
+
+  lifted.pop_back();
+}
+
+/// Entry point for `liftAndFoldApply`. This function keeps a cache of lifted
+/// operators for each scope.
+static void liftAndFoldApply(Region *body,
+                             ParameterCollector::Analysis &paramCache,
+                             const ParameterUseDefGraph &topLevel) {
+  ImplicitLocOpBuilder b(body->getParentOp()->getLoc(),
+                         OpBuilder(body->getContext()));
+  LiftedMapStack lifted;
+  unsigned counter = 0;
+  ParameterCollector collector(paramCache);
+  liftAndFoldApply(body, b, collector, lifted, counter, topLevel, topLevel);
 }
 
 namespace {
@@ -88,8 +163,13 @@ struct LiftAndFoldApplyPass : impl::LiftAndFoldApplyBase<LiftAndFoldApplyPass> {
   using LiftAndFoldApplyBase::LiftAndFoldApplyBase;
 
   void runOnOperation() override {
-    for (auto func : getOperation().getOps<GeneratorOp>())
-      liftAndFoldApplys(func.getLoc(), &func.getBodyRegion());
+    auto &paramCache = getAnalysis<ParameterCollector::Analysis>();
+
+    for (auto func : getOperation().getOps<GeneratorOp>()) {
+      ParameterUseDefGraph graph(func.getBodyRegion());
+      graph.calculate(paramCache);
+      liftAndFoldApply(&func.getBodyRegion(), paramCache, graph);
+    }
   }
 };
 } // namespace
