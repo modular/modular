@@ -11,10 +11,13 @@
 using namespace M;
 using namespace KGEN;
 
-OutputChain OutputChain::copy() {
+OutputChain OutputChain::fork() {
+  // Chain and location are copied.
   OutputChain result(chain.copy(), loc.copy());
+  // The 'prototype' profiler entry and references can be moved.
   result.prototypeProfilerEntry = std::move(prototypeProfilerEntry);
   result.refs = std::move(refs);
+  // The actual profiler entry is left alone.
   return result;
 }
 
@@ -47,24 +50,26 @@ void OutputChain::trace(StringRef name, StringRef detail) {
 
 void OutputChain::markReady() {
   complete();
-  // Don't consume the chain since Mojo is not copying/moving OutputChains.
+  // CAUTION: Must copy so chain remains valid.
   chain.copy().emplace();
 }
 
 void OutputChain::markError(StringRef message) {
   complete();
-  // Don't consume the chain since Mojo is not copying/moving OutputChains.
+  // CAUTION: Must copy so chain remains valid.
   chain.copy().setToError({Twine(message), std::move(loc)});
 }
 
-void OutputChain::emplace() && {
+void OutputChain::emplace() {
   complete();
-  std::move(chain).emplace();
+  // CAUTION: Must copy so chain remains valid.
+  chain.copy().emplace();
 }
 
-void OutputChain::setToError(Error &&error) && {
+void OutputChain::setToError(Error &&error) {
   complete();
-  std::move(chain).setToError({std::move(error), std::move(loc)});
+  // CAUTION: Must copy so chain remains valid.
+  chain.copy().setToError({std::move(error), std::move(loc)});
 }
 
 void OutputChain::recordProfilerEntry() && {
