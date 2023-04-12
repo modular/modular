@@ -1160,12 +1160,36 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 }
 
 AnyValue SliceNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
-  auto diag =
-      emitter.emitError(getLoc(), "TODO: SliceNode::emitIR not implemented yet")
-      << getRange();
-  diag.attachNote(getLocation(emitter))
-      << "keyword arguments aren't supported yet";
-  return {};
+  // Emit the slice index expressions as values. Any one of them could be null
+  // if they were not present. Emit them as `None` in that case.
+  SmallVector<ASTExprAnd<AnyValue>> ctorArgs;
+  auto emitOrNone = [&](ExprNode *const expr, llvm::SMLoc loc) -> ParseResult {
+    if (!expr) {
+      ctorArgs.push_back({NoneAttr::get(emitter.getContext()), this});
+      return success();
+    }
+    AnyValue value = emitter.emitExpr(expr, EC_SliceIndex);
+    if (!value)
+      return failure();
+    ctorArgs.push_back({value, expr});
+    return success();
+  };
+
+  // The location of the first colon is always set. The location of the second
+  // colon is set if there is a stride.
+  if (emitOrNone(lower, getLoc()) || emitOrNone(upper, colon1Loc) ||
+      emitOrNone(stride, stride ? colon2Loc : colon1Loc))
+    return {};
+
+  // Lookup the builtin slice type and emit a constructor call.
+  ASTDecl *decl = emitter.shared.getBuiltinSliceType(getLoc());
+  if (!decl) {
+    emitter.emitError(getLoc(),
+                      "internal error: could not find builtin 'slice' type");
+    return {};
+  }
+  return emitter.emitConstructorCall(decl->getSelfType(), ctorArgs, this,
+                                     CallSyntax::kImplicitConvert, dest);
 }
 
 /// Given a value of type type, substitute parameters into the type, producing
@@ -1732,75 +1756,83 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
 
   // FIXME: We currently hack in index type support as transition to proper
   // expression support.
-  if (auto lhsParam = lhs.ir.getIfPValue(), rhsParam = rhs.ir.getIfPValue();
-      lhsParam && lhsParam.getType().mlirType.isIndex() && rhsParam &&
-      rhsParam.getType().mlirType.isIndex()) {
-    POC opcode;
-    bool needsInvert = false;
-    switch (kind) {
-    default:
-      emitter.emitError(
-          callNode->getLoc(),
-          "cannot emit this binary operator in parameter context yet")
-          << callNode->getRange();
-      return {};
-    case ExprNode::kSub: {
-      auto value = ParamOperatorAttr::getSub(lhsParam, rhsParam);
+  PValue lhsParam = lhs.ir.getIfPValue(), rhsParam = rhs.ir.getIfPValue();
+  if (lhsParam && rhsParam) {
+    if (lhsParam.getType().mlirType.isIndex() &&
+        rhsParam.getType().mlirType.isIndex()) {
+      POC opcode;
+      bool needsInvert = false;
+      switch (kind) {
+      default:
+        emitter.emitError(
+            callNode->getLoc(),
+            "cannot emit this binary operator in parameter context yet")
+            << callNode->getRange();
+        return {};
+      case ExprNode::kSub: {
+        auto value = ParamOperatorAttr::getSub(lhsParam, rhsParam);
+        return emitter.emitResult(value, callNode, dest);
+      }
+      case ExprNode::kAdd:
+        opcode = POC::Add;
+        break;
+      case ExprNode::kMul:
+        opcode = POC::Mul;
+        break;
+      case ExprNode::kAnd:
+        opcode = POC::And;
+        break;
+      case ExprNode::kOr:
+        opcode = POC::Or;
+        break;
+      case ExprNode::kXor:
+        opcode = POC::Xor;
+        break;
+      case ExprNode::kLShift:
+        opcode = POC::Shl;
+        break;
+      case ExprNode::kRShift:
+        opcode = POC::Shr;
+        break;
+      case ExprNode::kFloorDiv:
+        opcode = POC::Div;
+        break;
+      case ExprNode::kMod:
+        opcode = POC::Mod;
+        break;
+      case ExprNode::kCmpEQ:
+        opcode = POC::EQ;
+        break;
+      case ExprNode::kCmpNE:
+        opcode = POC::EQ;
+        needsInvert = true;
+        break;
+      case ExprNode::kCmpGE:
+        opcode = POC::LT;
+        needsInvert = true;
+        break;
+      case ExprNode::kCmpGT:
+        opcode = POC::LE;
+        needsInvert = true;
+        break;
+      case ExprNode::kCmpLT:
+        opcode = POC::LT;
+        break;
+      case ExprNode::kCmpLE:
+        opcode = POC::LE;
+        break;
+      }
+      auto value = ParamOperatorAttr::get((POC)opcode, lhsParam, rhsParam);
+      if (needsInvert)
+        value = ParamOperatorAttr::getNot(value);
       return emitter.emitResult(value, callNode, dest);
+    } else if (isa<MLIRTypeType>(lhsParam.getType().mlirType) &&
+               isa<MLIRTypeType>(rhsParam.getType().mlirType)) {
+      // FIXME: MLIR types should be wrapped in their own custom type too.
+      if (kind == ExprNode::Kind::kCmpEQ)
+        return ParamOperatorAttr::get(POC::EQ,
+                                      {lhsParam.get(), rhsParam.get()});
     }
-    case ExprNode::kAdd:
-      opcode = POC::Add;
-      break;
-    case ExprNode::kMul:
-      opcode = POC::Mul;
-      break;
-    case ExprNode::kAnd:
-      opcode = POC::And;
-      break;
-    case ExprNode::kOr:
-      opcode = POC::Or;
-      break;
-    case ExprNode::kXor:
-      opcode = POC::Xor;
-      break;
-    case ExprNode::kLShift:
-      opcode = POC::Shl;
-      break;
-    case ExprNode::kRShift:
-      opcode = POC::Shr;
-      break;
-    case ExprNode::kFloorDiv:
-      opcode = POC::Div;
-      break;
-    case ExprNode::kMod:
-      opcode = POC::Mod;
-      break;
-    case ExprNode::kCmpEQ:
-      opcode = POC::EQ;
-      break;
-    case ExprNode::kCmpNE:
-      opcode = POC::EQ;
-      needsInvert = true;
-      break;
-    case ExprNode::kCmpGE:
-      opcode = POC::LT;
-      needsInvert = true;
-      break;
-    case ExprNode::kCmpGT:
-      opcode = POC::LE;
-      needsInvert = true;
-      break;
-    case ExprNode::kCmpLT:
-      opcode = POC::LT;
-      break;
-    case ExprNode::kCmpLE:
-      opcode = POC::LE;
-      break;
-    }
-    auto value = ParamOperatorAttr::get((POC)opcode, lhsParam, rhsParam);
-    if (needsInvert)
-      value = ParamOperatorAttr::getNot(value);
-    return emitter.emitResult(value, callNode, dest);
   }
 
   // If this operator maps onto a special function, attempt to lower it.

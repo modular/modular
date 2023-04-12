@@ -219,16 +219,6 @@ fn dict_parse_errors(a: Int):
   # expected-error @+1 {{dictionary comprehension must start with single key:value pair}}
   _ = {key:value, key:value for (key,value) in dict.items()}
 
-fn slice_expression(a: Int):
-  # expected-note @+1 {{keyword arguments aren't supported yet}}
-  a[:]    # expected-error {{TODO: SliceNode::emitIR not implemented yet}}
-  # expected-note @+1 {{keyword arguments}}
-  a[::]   # expected-error {{TODO: SliceNode::emitIR not implemented yet}}
-  # expected-note @+1 {{keyword arguments}}
-  a[1:2]  # expected-error {{TODO: SliceNode::emitIR not implemented yet}}
-  # expected-note @+1 {{keyword arguments}}
-  a[:2:3] # expected-error {{TODO: SliceNode::emitIR not implemented yet}}
-
 
 
 def bad_exprs(aaaa: Bool, bbbb: F32, cccc: Int):
