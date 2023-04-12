@@ -14,7 +14,7 @@ from Buffer import (
     partial_simd_store,
     _raw_stack_allocation,
 )
-from Functional import tile, unswitch, unroll, unroll2, TernaryClosure
+from Functional import tile, unswitch, unroll, unroll2, BinaryClosure
 from Index import Index, StaticIntTuple
 from List import Dim, DimList, VariadicList, create_dim_list
 from Math import min, fma, div_ceil
@@ -63,9 +63,7 @@ struct MatmulConfig:
     var prefetch_b_distance_k: Int
 
 
-fn _null_epilogue(
-    offset: GemmShape, tile_len: GemmShape, global_tile: GemmShape
-):
+fn _null_epilogue(offset: GemmShape, tile_len: GemmShape):
     pass
 
 
@@ -1340,9 +1338,7 @@ struct TiledMatmul[
         config, value_type, transpose_b, b_packed
     ]
 
-    var elementwise_epilogue_fn: TernaryClosure[
-        GemmShape, GemmShape, GemmShape, NoneType
-    ]
+    var elementwise_epilogue_fn: BinaryClosure[GemmShape, GemmShape, NoneType]
 
     fn __init__(
         self&,
@@ -1355,9 +1351,7 @@ struct TiledMatmul[
         b_tile_generator: BTileGenerator[
             config, value_type, transpose_b, b_packed
         ],
-        elementwise_epilogue_fn: TernaryClosure[
-            GemmShape, GemmShape, GemmShape, NoneType
-        ],
+        elementwise_epilogue_fn: BinaryClosure[GemmShape, GemmShape, NoneType],
     ):
         self.c = c
         self.a = a
@@ -1394,8 +1388,6 @@ struct TiledMatmul[
                 GemmShape,
                 `,`,
                 GemmShape,
-                `,`,
-                GemmShape,
                 `) -> `,
                 NoneType,
             ],
@@ -1403,8 +1395,8 @@ struct TiledMatmul[
             paramDecls : __mlir_attr.`#kgen<param.decls[]>`,
         ]()
 
-        let null_closure: TernaryClosure[
-            GemmShape, GemmShape, GemmShape, NoneType
+        let null_closure: BinaryClosure[
+            GemmShape, GemmShape, NoneType
         ] = __mlir_op.`pop.partial_apply`[
             boundInputs : __mlir_attr.`array<i64>`
         ](
@@ -1426,9 +1418,7 @@ struct TiledMatmul[
         c: NDBuffer[2, config.shape_c, accum_type],
         a: NDBuffer[2, config.shape_a, value_type],
         b: NDBuffer[2, config.shape_b, value_type],
-        elementwise_epilogue_fn: TernaryClosure[
-            GemmShape, GemmShape, GemmShape, NoneType
-        ],
+        elementwise_epilogue_fn: BinaryClosure[GemmShape, GemmShape, NoneType],
         global_tile_shape: GemmShape,
         global_tile_offset: GemmShape,
     ):
@@ -1472,7 +1462,7 @@ struct TiledMatmul[
         matmul._run()
 
     fn _outer_m_loop_helper[
-        skip_col_bound: Bool, m_loop_pack_inner_size: Int
+        last_k_tile: Bool, skip_col_bound: Bool, m_loop_pack_inner_size: Int
     ](self, global_offset: GemmShape, sub_tile_n: Int, sub_tile_k: Int,):
         """
         Helper function: Pack a subtile of B and iterate through all the rows
@@ -1530,13 +1520,12 @@ struct TiledMatmul[
             )
 
             @parameter
-            if elementwise_epilogue_enabled:
+            if elementwise_epilogue_enabled & last_k_tile:
                 self.elementwise_epilogue_fn(
                     global_offset + GemmShape(row_offset, 0, 0),
                     GemmShape {
                         M: tile_size, N: sub_tile_n_k[0], K: sub_tile_n_k[1]
                     },
-                    self.global_tile_shape,
                 )
 
         tile[row_iteration, VariadicList[Int](config.a_row_size, 4, 3, 2, 1)](
@@ -1546,7 +1535,7 @@ struct TiledMatmul[
 
     #  Pack a subtile of B and iterate through all the rows of C.
     fn _outer_m_loop[
-        m_loop_pack_inner_size: Int
+        last_k_tile: Bool, m_loop_pack_inner_size: Int
     ](self, global_offset: GemmShape, sub_tile_n: Int, sub_tile_k: Int,):
         """Pack a subtile of B and iterate through all the rows
         of C.
@@ -1573,6 +1562,7 @@ struct TiledMatmul[
         @always_inline
         fn unswitched_mloop[static_switch: Bool]():
             self._outer_m_loop_helper[
+                last_k_tile,
                 static_switch,  # skip_col_bound
                 m_loop_pack_inner_size,
             ](global_offset, sub_tile_n, sub_tile_k)
@@ -1580,11 +1570,9 @@ struct TiledMatmul[
         unswitch[unswitched_mloop](valid_col_count >= sub_tile_n)
 
     # Iterate on the N dimension of the gemm space.
-    fn _outer_n_loop(
-        self,
-        global_offset: GemmShape,
-        sub_tile_k: Int,
-    ):
+    fn _outer_n_loop[
+        last_k_tile: Bool
+    ](self, global_offset: GemmShape, sub_tile_k: Int,):
         """Iterate on the N dimension of the whole problem space.
 
         Args:
@@ -1602,7 +1590,7 @@ struct TiledMatmul[
 
         @always_inline
         fn m_loop[secondary_tile_size: Int](col_idx: Int, tile_size_n: Int):
-            self._outer_m_loop[secondary_tile_size](
+            self._outer_m_loop[last_k_tile, secondary_tile_size](
                 global_offset + GemmShape(0, col_idx, 0),
                 tile_size_n,
                 sub_tile_k,
@@ -1642,9 +1630,16 @@ struct TiledMatmul[
         # Each tiled iteration on the k dimension.
         @always_inline
         fn k_iteration(k_offset: Int, k_tile_size: Int):
-            self._outer_n_loop(
-                GemmShape(0, 0, k_offset) + self.global_tile_offset,
-                k_tile_size,
+            @always_inline
+            fn outer_n_loop[last_k_tile: Bool]():
+                self._outer_n_loop[last_k_tile](
+                    GemmShape(0, 0, k_offset) + self.global_tile_offset,
+                    k_tile_size,
+                )
+
+            unswitch[outer_n_loop](
+                k_offset + k_tile_size + self.global_tile_offset.K
+                == self.global_tile_shape.K
             )
 
         tile[k_iteration](
