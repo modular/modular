@@ -810,6 +810,30 @@ static StringAttr getMangledRegionParamName(ParamDeclareRegionOp decl) {
 // completeCallProcessing
 //===----------------------------------------------------------------------===//
 
+/// Complete processing of a `kgen.param.apply` operation by invoking the
+/// interpreter on the concrete callee and binding its result.
+static std::optional<ErrorTree>
+processParamApplyOp(ParamApplyOp op, FuncOp func, ExpansionTreeNode *parent) {
+  SmallVector<TypedAttr> operands;
+  for (TypedAttr operand : op.getOperands()) {
+    ErrorTreeOr<Attribute> value =
+        parent->evaluator.concretizeParameterExpr(op.getLoc(), operand);
+    if (value.isError())
+      return value.takeError();
+    operands.push_back(value.takeValue());
+  }
+  ErrorTreeOr<TypedAttr> result =
+      parent->evaluator.evaluateFunction(func, operands);
+  if (result.isError())
+    return result.takeError();
+
+  // Bind the result and erase the operation.
+  parent->evaluator.setOrOverwriteParameterValue(op.getParamDecl(),
+                                                 result.takeValue());
+  op.erase();
+  return {};
+}
+
 /// Complete processing of a generator user by resolving any bound result types
 /// or parameters in the parent scope. This is the step that propagates result
 /// parameters from the inner scope to the outer scope.
@@ -832,6 +856,14 @@ static void completeCallProcessing(KGENCallOpInterface user,
     return;
 
   FuncOp newCalleeFunc = *newCalleeFuncOr;
+
+  // If this is a `kgen.param.apply`, bind its result here.
+  if (auto apply = dyn_cast<ParamApplyOp>(*user)) {
+    if (std::optional<ErrorTree> err =
+            processParamApplyOp(apply, newCalleeFunc, parentNode))
+      thisNode->setToError(std::move(*err));
+    return;
+  }
 
   // Resolve any bound result types.
   SmallVector<Type> resultTypes;
@@ -1997,9 +2029,9 @@ ElaboratorImpl::specializeGenerator(ExpansionTreeNode *genNode) {
   auto funcScope = logger.scope("Specializing Function: @", func.getName());
   logger.logOp("Function", func);
 
-  // Always process the new func.
-  std::vector<Operation *> opsToRewrite = {newFunc};
+  std::vector<Operation *> opsToRewrite;
   collectOpsToProcess(&func.getBodyRegion(), uses, opsToRewrite);
+  opsToRewrite.push_back(newFunc);
   llvm::append_range(opsToRewrite, uses.paramOps);
 
   // Process the worklist. Only finalize the function if this succeeded.

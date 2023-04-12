@@ -97,10 +97,11 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
   // If this is a foldable parameter expression, do it.
   Attribute result = attr;
   if (auto declRef = dyn_cast<ParamDeclRefAttr>(attr)) {
-    result = upbindValue(paramValues[declRef.getName()]);
+    result = paramValues[declRef.getName()];
     if (!result)
       llvm::errs() << "MISSING PARAM: " << declRef.getName() << "\n";
     assert(result && "Verifier should check that all parameters are defined");
+    result = upbindValue(result);
   } else if (auto indexRef = dyn_cast<ParamIndexRefAttr>(attr);
              indexRef && indexRef.getDepth() == rootDepth) {
     result = upbindValue((indexRef.getIsResult()

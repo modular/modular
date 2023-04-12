@@ -2100,3 +2100,29 @@ kgen.generator @caller() {
   >
   kgen.return
 }
+
+// CHECK-LABEL: kgen.func @two_versions_concrete_1
+// CHECK-NEXT: constant = <2>
+
+// CHECK-LABEL: kgen.func @two_versions
+// CHECK-NEXT: constant = <1>
+
+kgen.generator @two_versions(%arg0: index) -> index {
+  kgen.param.fork value = <[1, 2]>
+  %0 = kgen.param.constant = <value>
+  %1 = index.add %0, %arg0
+  kgen.return %1 : index
+}
+
+// CHECK-LABEL: kgen.func @param_apply
+// CHECK-NEXT: constant = <2>
+
+// CHECK-LABEL: kgen.func @param_apply_concrete_2
+// CHECK-NEXT: constant = <3>
+
+kgen.generator @param_apply() {
+  kgen.param.declare operand = <1>
+  kgen.param.apply result = [(index) -> index: @two_versions](operand)
+  %0 = kgen.param.constant = <result>
+  kgen.return
+}

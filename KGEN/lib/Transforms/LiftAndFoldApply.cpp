@@ -43,7 +43,35 @@ static void liftAndFoldApplys(Location loc, Region *body) {
     return lifted.try_emplace(op, ParamDeclRefAttr::get(decl)).first->second;
   });
 
+  // Skip over parameterized signatures. We cannot generically pull out 'apply'
+  // operators from within signature types because the parameter expressions may
+  // reference signature parameters. This OK, however, since every parametric
+  // signature requires some concretization point in the elaborator to be
+  // useful, and we will pull out the 'apply' operator at those points.
+  replacer.addReplacement([](SignatureType signature) {
+    if (signature.getInputParamTypes().empty() &&
+        signature.getResultParamTypes().empty())
+      return std::make_pair(signature, WalkResult::advance());
+    return std::make_pair(signature, WalkResult::skip());
+  });
+
+  // If the parent is an operation, extract 'apply' operators and place them at
+  // the start of the body.
+  if (auto func = dyn_cast<GeneratorOp>(body->getParentOp())) {
+    b.setLoc(func.getLoc());
+    b.setInsertionPointToStart(func.getBody());
+    replacer.replaceElementsIn(func, /*replaceAttrs=*/true,
+                               /*replaceLocs=*/true, /*replaceTypes=*/true);
+  }
+
   body->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+    // Insert the apply operations as close to the original location of the
+    // 'apply' operator as possible.
+    b.setLoc(op->getLoc());
+    b.setInsertionPoint(op);
+    replacer.replaceElementsIn(op, /*replaceAttrs=*/true, /*replaceLocs=*/true,
+                               /*replaceTypes=*/true);
+
     // Walk over nested parameter scopes, since lifted apply operators with name
     // shadowing can cause collisions.
     if (isa<DeclInterface>(op)) {
@@ -51,13 +79,6 @@ static void liftAndFoldApplys(Location loc, Region *body) {
         liftAndFoldApplys(op->getLoc(), &region);
       return WalkResult::skip();
     }
-
-    // Insert the apply operations as close to the original location of the
-    // 'apply' operator as possible.
-    b.setLoc(op->getLoc());
-    b.setInsertionPoint(op);
-    replacer.replaceElementsIn(op, /*replaceAttrs=*/true, /*replaceLocs=*/true,
-                               /*replaceTypes=*/true);
     return WalkResult::advance();
   });
 }
