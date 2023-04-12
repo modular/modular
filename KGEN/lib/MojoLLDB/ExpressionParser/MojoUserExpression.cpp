@@ -359,8 +359,7 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
                     "    print(error.value)\n\n";
 
   // Finally we can generate the actual expression function.
-  exprOSIndented << "@raises\n"
-                 << "fn __lldb_expr_impl__(__lldb_arg&: __lldb_context__";
+  exprOSIndented << "def __lldb_expr_impl__(__lldb_arg&: __lldb_context__";
   for (auto &var : variables) {
     exprOSIndented << llvm::formatv(", {0}&: __mlir_type.`{1}`", var.first,
                                     var.second);
