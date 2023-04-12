@@ -17,7 +17,8 @@ void BuildInfo::print(llvm::raw_ostream &os) const {
   os << "\ngit-revision: " << gitRevision;
   os << "\nbuild-type: " << buildType;
   os << "\nkernels-build-type: " << kernelsBuildType;
-  os << "\nllcl-max-profiling-level: " << llclMaxProfilingLevel;
+  os << "\nllcl-max-profiling-level: "
+     << llvm::format("0%04o", llclMaxProfilingLevel);
   os << "\nsimd-bitwidth: " << simdBitWidth;
   os << "\npreferred-mem-alignment: " << preferredMemoryAlignment;
   os << "\n";
