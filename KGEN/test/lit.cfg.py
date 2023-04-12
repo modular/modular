@@ -46,3 +46,7 @@ tools = [
 ]
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)
+
+llvm_config.with_system_environment(
+    ["HOME", "INCLUDE", "LIB", "TMP", "TEMP", "MODULAR_PATH", "PYTHONPATH"]
+)
