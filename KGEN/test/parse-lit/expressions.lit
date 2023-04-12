@@ -130,6 +130,8 @@ fn memoryOnlyOps(a&: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: [[VARIADIC:%.*]]  = pop.variadic.create [%regX, %regX]
   # CHECK-NEXT: kgen.call @{{.*}}variadic{{.*}}([[VARIADIC]])
   MemoryOnlyInt.variadic(regX, regX)
+  # CHECK-NEXT: lit.ownership.use %regX : !pop.pointer<@"$expressions"::@MemoryOnlyInt>
+  # CHECK-NEXT: lit.ownership.use %regX
 
   # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%__result__, %v2)
   # CHECK-NEXT: [[NONEVAL:%.*]] = kgen.param.constant: !lit.none = <#lit.none>

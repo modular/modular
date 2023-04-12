@@ -67,12 +67,12 @@ static void lowerLITOps(LIT::FuncOp func,
       funcSpAttr && funcSpAttr.getCompileUnit().getEmissionKind() ==
                         DebugInfo::EmissionKind::Full;
   func.walk([&](Operation *op) {
-    mlir::IRRewriter b{OpBuilder(op)};
-    if (isa<AliasForwardDeclOp>(op)) {
-      // lit.alias.fwd.decl is used internally by the frontend, but is not
-      // needed by lowering at all.
+    if (isa<AliasForwardDeclOp, OwnershipUseOp>(op)) {
+      // lit.alias.fwd.decl and lit.ownership.use are used internally by the
+      // frontend and ownership lowering, but is not needed after that.
       op->erase();
     } else if (auto letDecl = dyn_cast<LIT::LetRegDeclOp>(op)) {
+      mlir::IRRewriter b{OpBuilder(op)};
       // Build information for this decl if necessary.
       if (buildingDebugVars) {
         buildDebugInfoValue(letDecl, letDecl.getLoc(), letDecl.getName(),
@@ -82,6 +82,7 @@ static void lowerLITOps(LIT::FuncOp func,
 
       b.replaceOp(letDecl, letDecl.getOperand());
     } else if (auto varDecl = dyn_cast<LIT::VarLetDeclOp>(op)) {
+      mlir::IRRewriter b{OpBuilder(op)};
       StringAttr varName = varDecl.getNameAttr();
       auto varType = varDecl.getType();
 
