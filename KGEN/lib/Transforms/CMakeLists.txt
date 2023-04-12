@@ -10,6 +10,7 @@ add_modular_conversion_library(KGENTransforms
   HoistTrivialInvariants.cpp
   Inlining.cpp
   KnownVariant.cpp
+  LiftAndFoldApply.cpp
   Mem2Reg.cpp
   OutlineClosures.cpp
   SimplifyCF.cpp

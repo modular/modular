@@ -182,6 +182,7 @@ void ParamDeclareRegionOp::collectParameterUses(
 //===----------------------------------------------------------------------===//
 // ParamForkOp
 //===----------------------------------------------------------------------===//
+
 static ParseResult parseParamForkOpValue(OpAsmParser &p,
                                          ParamDeclAttr &paramDecl,
                                          TypedAttr &value) {
@@ -211,6 +212,84 @@ static void printParamForkOpValue(OpAsmPrinter &p, Operation *,
 void ParamForkOp::walkDefinitions(
     function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {
   walkDef(getParamDecl(), getValuesAttr());
+}
+
+//===----------------------------------------------------------------------===//
+// ParamApplyOp
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseParamApplyOp(AsmParser &p, ParamDeclAttr &paramDecl,
+                                     TypedAttr &callee,
+                                     ParameterExprArrayAttr &operands) {
+  StringAttr paramName;
+  SignatureType calleeType;
+  SmallVector<TypedAttr> operandValues;
+  llvm::SMLoc sigLoc;
+  if (parseParamName(p, paramName) || p.parseEqual() || p.parseLSquare() ||
+      parseKGENType(p, calleeType) || p.parseColon() ||
+      p.getCurrentLocation(&sigLoc) || parseParamValue(p, callee, calleeType) ||
+      p.parseRSquare() || p.parseLParen() ||
+      failableInterleave(
+          calleeType.getValueInputs(),
+          [&](Type type) {
+            return parseParamValue(p, operandValues.emplace_back(), type);
+          },
+          [&] { return p.parseComma(); }) ||
+      p.parseRParen())
+    return failure();
+  if (calleeType.getValueResults().size() != 1)
+    return p.emitError(sigLoc, "expected callee to have 1 result");
+  paramDecl =
+      ParamDeclAttr::get(paramName, calleeType.getValueResults().front());
+  operands = ParameterExprArrayAttr::get(p.getContext(), operandValues);
+  return success();
+}
+
+static void printParamApplyOp(AsmPrinter &p, Operation *op,
+                              ParamDeclAttr paramDecl, TypedAttr callee,
+                              ParameterExprArrayAttr operands) {
+  printParamName(p, paramDecl.getName());
+  p << " = [";
+  printKGENType(p, callee.getType());
+  p << ": ";
+  printParamValue(p, callee);
+  p << "](";
+  llvm::interleaveComma(operands, p,
+                        [&](TypedAttr value) { printParamValue(p, value); });
+  p << ')';
+}
+
+LogicalResult ParamApplyOp::verify() {
+  auto type = cast<SignatureType>(getCallee().getType());
+  if (type.getInputParamTypes().empty() && type.getResultParamTypes().empty())
+    return success();
+  return emitOpError("callee signature must be concrete");
+}
+
+void ParamApplyOp::walkDefinitions(
+    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {
+  ParamDefValue def;
+  def.exprs.push_back(getCallee());
+  llvm::append_range(def.exprs, getOperands());
+  walkDef(getParamDecl(), def);
+}
+
+void ParamApplyOp::walkDeclarations(
+    function_ref<void(ParamDeclAttr)> walkDecl) {
+  walkDecl(getParamDecl());
+}
+
+void ParamApplyOp::renameDeclarations(ArrayRef<ParamDeclAttr> decls) {
+  assert(decls.size() == 1);
+  setParamDeclAttr(decls.front());
+}
+
+void ParamApplyOp::concretizeCallee(mlir::IRRewriter &b,
+                                    SymbolConstantAttr callee,
+                                    TypeRange resultTypes) {
+  // `resultTypes` refer to the operation's results, of which there are none.
+  assert(resultTypes.empty());
+  setCalleeAttr(callee);
 }
 
 //===----------------------------------------------------------------------===//
