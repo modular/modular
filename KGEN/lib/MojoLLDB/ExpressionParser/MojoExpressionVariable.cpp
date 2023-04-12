@@ -79,7 +79,8 @@ static void walkExternalJITSymbols(
 
 void MojoPersistentExpressionState::registerExpressionInstance(
     std::shared_ptr<JITExecutionUnit> executionUnit,
-    std::vector<lldb::ExpressionVariableSP> &&variables) {
+    std::vector<lldb::ExpressionVariableSP> &&variables,
+    const MojoExpressionSourceCode &sourceCode) {
   Log *log = GetLog(LLDBLog::Expressions);
 
   // Register the JIT symbols within the execution unit.
@@ -92,7 +93,7 @@ void MojoPersistentExpressionState::registerExpressionInstance(
 
   // Push a new expression state.
   expressionInstances.emplace_back(std::make_unique<ExpressionInstanceState>(
-      std::move(executionUnit), std::move(variables)));
+      std::move(executionUnit), std::move(variables), sourceCode));
 }
 
 void MojoPersistentExpressionState::resetStateToBeforeExpressionInstance(
@@ -141,14 +142,4 @@ lldb::addr_t MojoPersistentExpressionState::LookupSymbol(ConstString name) {
   if (si != symbolMap.end())
     return si->second;
   return PersistentExpressionState::LookupSymbol(name);
-}
-
-void MojoPersistentExpressionState::registerUserSourceCode(
-    const MojoExpressionSourceCode &sourceCode) {
-  sourceCodes.push_back(sourceCode);
-}
-
-ArrayRef<MojoExpressionSourceCode>
-MojoPersistentExpressionState::getRegisteredUserSourceCodes() const {
-  return sourceCodes;
 }

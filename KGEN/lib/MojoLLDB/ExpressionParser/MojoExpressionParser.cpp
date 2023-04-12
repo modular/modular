@@ -376,7 +376,8 @@ MojoExpressionParser::parse(DiagnosticManager &diagnosticManager) {
 Status MojoExpressionParser::prepareForExecution(
     lldb::addr_t &funcAddr, lldb::addr_t &funcEnd,
     std::shared_ptr<JITExecutionUnit> &executionUnit, ExecutionContext &exeCtx,
-    ExecutionPolicy executionPolicy) {
+    ExecutionPolicy executionPolicy, const MojoExpressionSourceCode &sourceCode,
+    bool keepResultInMemory) {
   // Grab the LLVM module built during the parse phase.
   std::unique_ptr<llvm::Module> module = std::move(impl->llvmModule);
   if (!module) {
@@ -405,7 +406,7 @@ Status MojoExpressionParser::prepareForExecution(
 
   // Extract the function information for the expression entry point.
   Status error = executionUnit->getRunnableInfo(funcAddr, funcEnd);
-  if (error.Fail())
+  if (error.Fail() || !keepResultInMemory)
     return error;
 
   // Compute the target info to use for the persistent variable state.
@@ -464,7 +465,8 @@ Status MojoExpressionParser::prepareForExecution(
 
   // Register the persisted state for this execution.
   persistentState->registerExpressionInstance(std::move(persistedExecutionUnit),
-                                              std::move(peristentVariables));
+                                              std::move(peristentVariables),
+                                              sourceCode);
   return error;
 }
 

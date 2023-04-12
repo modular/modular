@@ -72,9 +72,10 @@ public:
   /// expression evaluation.
   struct ExpressionInstanceState {
     ExpressionInstanceState(std::shared_ptr<JITExecutionUnit> executionUnit,
-                            std::vector<lldb::ExpressionVariableSP> &&variables)
+                            std::vector<lldb::ExpressionVariableSP> &&variables,
+                            const MojoExpressionSourceCode &sourceCode)
         : executionUnit(std::move(executionUnit)),
-          persistentVariables(std::move(variables)) {}
+          persistentVariables(std::move(variables)), sourceCode(sourceCode) {}
 
     /// An optional execution unit associated with the expression, present only
     /// when JIT symbols must be persisted.
@@ -82,6 +83,9 @@ public:
 
     /// The persistent variables added during the execution of the expression.
     std::vector<lldb::ExpressionVariableSP> persistentVariables;
+
+    /// The source code after fix-its.
+    MojoExpressionSourceCode sourceCode;
   };
 
   /// Returns the number of expression instances.
@@ -97,7 +101,8 @@ public:
   /// Register a new expression instance.
   void registerExpressionInstance(
       std::shared_ptr<JITExecutionUnit> executionUnit,
-      std::vector<lldb::ExpressionVariableSP> &&variables);
+      std::vector<lldb::ExpressionVariableSP> &&variables,
+      const MojoExpressionSourceCode &sourceCode);
 
   /// Reset the expression state to before the  instance at the provided index.
   void resetStateToBeforeExpressionInstance(size_t index);
@@ -136,12 +141,6 @@ public:
     return std::nullopt;
   }
 
-  /// Register the given user code that was successfully JITted.
-  void registerUserSourceCode(const MojoExpressionSourceCode &sourceCode);
-
-  /// Return a list of user source codes that were correctly JITted previously.
-  ArrayRef<MojoExpressionSourceCode> getRegisteredUserSourceCodes() const;
-
   /// Lookup a symbol with the provided name.
   lldb::addr_t LookupSymbol(lldb_private::ConstString name) override;
 
@@ -165,11 +164,6 @@ private:
 
   /// The addresses of the symbols in executionUnits.
   llvm::StringMap<lldb::addr_t> symbolMap;
-
-  /// Pieces of source code that were executed in previous expression
-  /// evaluations. They are needed to persist entities other than variables,
-  /// like functions, structs and imports.
-  std::vector<MojoExpressionSourceCode> sourceCodes;
 };
 } // namespace M::KGEN::Mojo
 
