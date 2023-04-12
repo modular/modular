@@ -147,36 +147,15 @@ fn elementwise_wrapper[
 
     @always_inline
     fn description_fn() -> String:
-        let x_separator = String("x")
-        let semicolon_separator = String(";")
-        let shape_header = String("shape=")
-        let unroll_factor_header = String("unroll_factor=")
-        let vector_width_header = String("vector_width=")
+        let shape_tmp = String("x").join[rank](buffer.get_shape())
+        let shape_str = String("shape=") + shape_tmp
 
-        let shape_tmp = x_separator.join[rank](buffer.get_shape())
-        let shape_str = shape_header.append(shape_tmp)
+        let unroll_factor_str = String("unroll_factor=") + String(unroll_factor)
+        let vector_width_str = String("vector_width=") + String(simd_width)
 
-        let unroll_factor_tmp = String(unroll_factor)
-        let unroll_factor_str = unroll_factor_header.append(unroll_factor_tmp)
-
-        let vector_width_tmp = String(simd_width)
-        let vector_width_str = vector_width_header.append(vector_width_tmp)
-
-        let res = semicolon_separator.join(
+        let res = String(";").join(
             shape_str, unroll_factor_str, vector_width_str
         )
-
-        x_separator.__del__()
-        semicolon_separator.__del__()
-        shape_header.__del__()
-        unroll_factor_header.__del__()
-        vector_width_header.__del__()
-        shape_tmp.__del__()
-        shape_str.__del__()
-        unroll_factor_tmp.__del__()
-        unroll_factor_str.__del__()
-        vector_width_tmp.__del__()
-        vector_width_str.__del__()
 
         return res
 
