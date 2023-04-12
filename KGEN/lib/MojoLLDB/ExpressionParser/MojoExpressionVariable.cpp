@@ -80,7 +80,8 @@ static void walkExternalJITSymbols(
 void MojoPersistentExpressionState::registerExpressionInstance(
     std::shared_ptr<JITExecutionUnit> executionUnit,
     std::vector<lldb::ExpressionVariableSP> &&variables,
-    const MojoExpressionSourceCode &sourceCode) {
+    std::optional<MojoExpressionSourceCode> sourceCode,
+    std::optional<std::string> pythonModuleName) {
   Log *log = GetLog(LLDBLog::Expressions);
 
   // Register the JIT symbols within the execution unit.
@@ -93,7 +94,8 @@ void MojoPersistentExpressionState::registerExpressionInstance(
 
   // Push a new expression state.
   expressionInstances.emplace_back(std::make_unique<ExpressionInstanceState>(
-      std::move(executionUnit), std::move(variables), sourceCode));
+      std::move(executionUnit), std::move(variables), std::move(sourceCode),
+      std::move(pythonModuleName)));
 }
 
 void MojoPersistentExpressionState::resetStateToBeforeExpressionInstance(
@@ -117,6 +119,19 @@ void MojoPersistentExpressionState::resetStateToBeforeExpressionInstance(
       RemoveVariable(var);
   }
   expressionInstances.resize(index);
+}
+
+//===----------------------------------------------------------------------===//
+// Python Expression State
+
+bool MojoPersistentExpressionState::hasInitializedPython() const {
+  return llvm::any_of(expressionInstances, [](const auto &exprInst) {
+    return exprInst->pythonModuleName.has_value();
+  });
+}
+
+std::string MojoPersistentExpressionState::getNextPythonExpressionModuleName() {
+  return "lldb_python_module_" + std::to_string(nextPythonModuleID++);
 }
 
 //===----------------------------------------------------------------------===//

@@ -40,6 +40,10 @@ public:
   /// Text() should contain the definition of this function.
   const char *FunctionName() override { return "__lldb_expr__"; }
 
+  /// Return the module name used to wrap the expression if it is a python
+  /// expression. Returns nullopt if this is a pure mojo expression.
+  const std::optional<std::string> &getPythonModuleName();
+
   /// Parse the expression.
   bool Parse(lldb_private::DiagnosticManager &diagnosticManager,
              lldb_private::ExecutionContext &exeCtx,
@@ -81,6 +85,14 @@ private:
                              lldb_private::ExecutionContext &exeCtx,
                              lldb_private::ExecutionContextScope *exeScope,
                              MojoPersistentExpressionState &state);
+
+  /// Process and wrap the given expression text, which contains python
+  /// expressions, and then parse it.
+  LogicalResult wrapTextAndParsePythonExpression(
+      StringRef pythonExpr, lldb_private::DiagnosticManager &diagnosticManager,
+      lldb_private::ExecutionContext &exeCtx,
+      lldb_private::ExecutionContextScope *exeScope,
+      MojoPersistentExpressionState &state);
 
   void notifyFixits(lldb_private::DiagnosticManager &diagnosticManager,
                     StringRef fixedText);

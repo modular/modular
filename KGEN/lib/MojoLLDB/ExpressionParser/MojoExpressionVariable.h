@@ -73,9 +73,12 @@ public:
   struct ExpressionInstanceState {
     ExpressionInstanceState(std::shared_ptr<JITExecutionUnit> executionUnit,
                             std::vector<lldb::ExpressionVariableSP> &&variables,
-                            const MojoExpressionSourceCode &sourceCode)
+                            std::optional<MojoExpressionSourceCode> sourceCode,
+                            std::optional<std::string> pythonModuleName)
         : executionUnit(std::move(executionUnit)),
-          persistentVariables(std::move(variables)), sourceCode(sourceCode) {}
+          persistentVariables(std::move(variables)),
+          sourceCode(std::move(sourceCode)),
+          pythonModuleName(std::move(pythonModuleName)) {}
 
     /// An optional execution unit associated with the expression, present only
     /// when JIT symbols must be persisted.
@@ -85,7 +88,11 @@ public:
     std::vector<lldb::ExpressionVariableSP> persistentVariables;
 
     /// The source code after fix-its.
-    MojoExpressionSourceCode sourceCode;
+    std::optional<MojoExpressionSourceCode> sourceCode;
+
+    /// The name of the python module represented by the expression, if it was
+    /// a python expression, nullopt if it was a mojo expression.
+    std::optional<std::string> pythonModuleName;
   };
 
   /// Returns the number of expression instances.
@@ -102,10 +109,22 @@ public:
   void registerExpressionInstance(
       std::shared_ptr<JITExecutionUnit> executionUnit,
       std::vector<lldb::ExpressionVariableSP> &&variables,
-      const MojoExpressionSourceCode &sourceCode);
+      std::optional<MojoExpressionSourceCode> sourceCode,
+      std::optional<std::string> pythonModuleName);
 
   /// Reset the expression state to before the  instance at the provided index.
   void resetStateToBeforeExpressionInstance(size_t index);
+
+  //===--------------------------------------------------------------------===//
+  // Python Expression State
+  //===--------------------------------------------------------------------===//
+
+  /// Returns true if python is known to have already been initialized by the
+  /// persistent expression state.
+  bool hasInitializedPython() const;
+
+  /// Return the next name to use for a Python expression module.
+  std::string getNextPythonExpressionModuleName();
 
   //===--------------------------------------------------------------------===//
   // PersistentExpressionState
@@ -164,6 +183,9 @@ private:
 
   /// The addresses of the symbols in executionUnits.
   llvm::StringMap<lldb::addr_t> symbolMap;
+
+  /// The next identifier to use when building a python expression module.
+  size_t nextPythonModuleID = 0;
 };
 } // namespace M::KGEN::Mojo
 
