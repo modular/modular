@@ -812,3 +812,20 @@ def LIT_UnboundRegionOp : LITOp<"unbound_region"> {
 
   let hasVerifier = 1;
 }
+
+
+//===----------------------------------------------------------------------===//
+// OwnershipUseOp
+//===----------------------------------------------------------------------===//
+
+/// This op looks like a use of a value (or its pointee) which keeps the value
+/// live until at least this point.  This operation is a noop that is removed by
+/// the LowerLIT pass.
+def LIT_OwnershipUseOp : LITOp<"ownership.use"> {
+  let summary = "A use of a value to keep the value alive";
+
+  // The destructor for the element type is specified if it exists.
+  let arguments = (ins AnyType:$value);
+  let results = (outs);
+  let assemblyFormat = "$value `:` type($value) attr-dict";
+}

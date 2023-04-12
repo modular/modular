@@ -1639,31 +1639,51 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
                                       ValueDest &dest,
                                       const ExprNode *callExpr) {
   SignatureType calleeSig = cast<SignatureType>(callee.getType().mlirType);
+  Location loc = translateLocation(callExpr->getLoc());
 
   assert(calleeSig.getResultParamTypes().size() == resultParams.size() &&
          "Type checking should be done");
 
-  struct WritebackClearer {
+  /// This struct accumulates information about IR to emit after the call, e.g.
+  /// writebacks for computed inout lvalues, and lifetime markers.
+  struct AfterCallActions {
     const ExprNode *expr;
+    Location loc;
+
     // The first entry of this is a ValueDest for a DLValue that we can invoke
     // for the setter.
-    SmallVector<std::pair<ValueDest, SLValue>> elements;
+    SmallVector<std::pair<ValueDest, SLValue>> lvalueWritebacks;
+
+    /// This is a list of values that we need to keep alive across the duration
+    /// of the call.  They will get lit.ownership.use operations at the end of
+    /// the call.
+    SmallVector<Value> valuesToKeepAlive;
+
+    AfterCallActions(const ExprNode *expr, Location loc)
+        : expr(expr), loc(loc) {}
 
     void emit(ExprEmitter &emitter) {
-      while (!elements.empty()) {
-        auto elt = elements.pop_back_val();
+      // Emit the elements and clear the writebacks so the ValueDest's get
+      // destroyed when they are emitted into.
+      while (!lvalueWritebacks.empty()) {
+        auto elt = lvalueWritebacks.pop_back_val();
         if (!emitter.emitResult(MRValue(elt.second), expr, elt.first))
           elt.first.resetForError();
       }
+
+      // Emit all the lit.ownership.use ops.
+      for (auto value : valuesToKeepAlive)
+        emitter.builder->create<OwnershipUseOp>(loc, value);
     }
 
     // If an error happens before we emit the write backs, make sure to nuke
     // them so they don't crash the compiler.
-    ~WritebackClearer() {
-      while (!elements.empty())
-        elements.pop_back_val().first.resetForError();
+    ~AfterCallActions() {
+      // If any error occurs during IR emission, these won't be emitted.
+      while (!lvalueWritebacks.empty())
+        lvalueWritebacks.pop_back_val().first.resetForError();
     }
-  } writebackHandler{callExpr, {}};
+  } afterCallActions(callExpr, loc);
 
   /// This function emits the specified pre-emitted argument into a single MLIR
   /// Value suitable for passing to the callee with the specified convention.
@@ -1727,7 +1747,8 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
         dlvBuffer.resetForError();
         return {};
       }
-      writebackHandler.elements.push_back({std::move(dlvBuffer), slvBuffer});
+      afterCallActions.lvalueWritebacks.push_back(
+          {std::move(dlvBuffer), slvBuffer});
       return slvBuffer;
     }
     }
@@ -1884,6 +1905,10 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       if (!argVal)
         return {};
       args.push_back(argVal);
+
+      // Make sure the values in the pack stay live across the entire call, not
+      // just the pop.variadic.create op.
+      afterCallActions.valuesToKeepAlive.push_back(argVal);
     }
 
     Location loc = translateLocation(callExpr->getLoc());
@@ -1945,7 +1970,6 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
   // Otherwise, materialize PValue and DLValue's as SSA values for emission.
   SmallVector<Value> callArgs;
 
-  Location loc = translateLocation(callExpr->getLoc());
   for (auto [argValAndExpr, conventionX, calleeArgTypeAndIdx] :
        llvm::zip(argumentValues, calleeSig.getValueInputConventions(),
                  llvm::enumerate(calleeSig.getValueInputs()))) {
@@ -1989,8 +2013,9 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
   }
   Value callResult = callOp->getResult(0);
 
-  // If there were any writebacks to handle, emit them before handling errors.
-  writebackHandler.emit(*this);
+  // If there were any writebacks to handle, emit them before handling raised
+  // errors.
+  afterCallActions.emit(*this);
 
   // If the callee can raise an error, it will be represented as a variant: try
   // to unwrap it.
