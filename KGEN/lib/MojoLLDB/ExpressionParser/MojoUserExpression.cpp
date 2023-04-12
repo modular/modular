@@ -179,14 +179,16 @@ bool MojoUserExpression::Parse(DiagnosticManager &diagnosticManager,
   auto *exeScope = process ? (ExecutionContextScope *)process : &impl->target;
 
   MojoExpressionSourceCode sourceCode(m_expr_text);
-  if (failed(wrapTextAndParseExpression(sourceCode, diagnosticManager, exeCtx,
-                                        exeScope, impl->persistentState)))
+  if (failed(wrapTextAndParseExpression(MojoExpressionSourceCode(m_expr_text),
+                                        diagnosticManager, exeCtx, exeScope,
+                                        impl->persistentState)))
     return false;
 
   // Prepare the output of the parser for execution, evaluating it statically if
   // possible.
   Status jitError = impl->parser->prepareForExecution(
-      m_jit_start_addr, m_jit_end_addr, executionUnit, exeCtx, executionPolicy);
+      m_jit_start_addr, m_jit_end_addr, executionUnit, exeCtx, executionPolicy,
+      sourceCode, keepResultInMemory);
   if (!jitError.Success()) {
     const char *errorCStr = jitError.AsCString();
     if (errorCStr && errorCStr[0])
@@ -199,11 +201,6 @@ bool MojoUserExpression::Parse(DiagnosticManager &diagnosticManager,
 
   if (process && m_jit_start_addr != LLDB_INVALID_ADDRESS)
     m_jit_process_wp = lldb::ProcessWP(process->shared_from_this());
-
-  /// If JITting went well, we proceed to save the user code for subsequent
-  /// evaluations.
-  if (keepResultInMemory)
-    impl->persistentState.registerUserSourceCode(sourceCode);
   return true;
 }
 
@@ -327,8 +324,8 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
   // imports and classes are preserved. This also ensures that saved
   // variables can be inspected again because the user defined types are
   // included in these pieces of code.
-  for (const auto &prevSourceCode : state.getRegisteredUserSourceCodes())
-    exprOSIndented << prevSourceCode.getTopLevelCode();
+  for (const auto &exprInst : impl->persistentState.getExpressionInstances())
+    exprOSIndented << exprInst.sourceCode.getTopLevelCode();
 
   // The following is the first chunk of code written by the user.
   exprOSIndented << kTopLevelBlockBegin << sourceCode.getTopLevelCode()

@@ -45,7 +45,9 @@ public:
   prepareForExecution(lldb::addr_t &funcAddr, lldb::addr_t &funcEnd,
                       std::shared_ptr<JITExecutionUnit> &executionUnit,
                       lldb_private::ExecutionContext &exeCtx,
-                      lldb_private::ExecutionPolicy executionPolicy);
+                      lldb_private::ExecutionPolicy executionPolicy,
+                      const MojoExpressionSourceCode &sourceCode,
+                      bool keepResultInMemory);
 
 private:
   //===--------------------------------------------------------------------===//
