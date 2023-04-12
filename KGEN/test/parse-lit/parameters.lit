@@ -592,3 +592,14 @@ fn testDependentField():
     # CHECK: %[[VALUE:.*]] = lit.struct.extract %rvalue[value]
     # CHECK-NEXT: kgen.rebind %[[VALUE]] {{.*}} to {{.*}}@Abstraction<a: {{.*}} = {{.*}} 2}>>
     takeAbstraction2(rvalue.value)
+
+
+fn tail_types[T: AnyType, *U: AnyType](a: T, *b: *U):
+    pass
+
+# CHECK-LABEL: lit.func @"call_with_tail_types()"
+fn call_with_tail_types():
+    # CHECK: call {{.*}}tail_types{{.*}}<:type {{.*}}@Int>, :variadic<!kgen.mlirtype> []>
+    tail_types(1)
+    # CHECK: call {{.*}}tail_types{{.*}}<:type {{.*}}@Int>, :variadic<!kgen.mlirtype> [f64]>
+    tail_types(1, 1.2)

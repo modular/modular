@@ -204,6 +204,8 @@ PValue ParameterInferenceState::infer(SignatureType signature,
 
       // If we have a pack argument, then we're binding zero type values to it.
       if (auto packType = getIfPackType(signature, expectedArgIdx)) {
+        if (!inferredValues.empty())
+          break;
         SmallVector<TypedAttr> types;
         inferredValues.push_back(KGEN::VariadicAttr::get(
             {types}, cast<VariadicType>(packType.getVariadic().getType())));
@@ -270,6 +272,8 @@ PValue ParameterInferenceState::infer(SignatureType signature,
     // multiple type values.  We need to consume all remaining arguments and use
     // their types as bindings.
     if (auto packType = getIfPackType(signature, expectedArgIdx)) {
+      if (!inferredValues.empty())
+        break;
       SmallVector<TypedAttr> types;
       while (providedValueIdx != operands.size()) {
         ASTExprAnd<AnyValue> operand = operands[providedValueIdx++];
@@ -297,7 +301,8 @@ PValue ParameterInferenceState::infer(SignatureType signature,
   }
 
   // If we have left over operands, then this signature cannot match.
-  if (providedValueIdx != operands.size())
+  if (providedValueIdx != operands.size() &&
+      !bitEnumContainsAny(signature.getFnEffects(), FnEffects::ParamVararg))
     return {};
 
   // If we have no inferred values or if they disagree, then we fail to infer.
