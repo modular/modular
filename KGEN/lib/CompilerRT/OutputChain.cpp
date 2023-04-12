@@ -13,9 +13,8 @@ using namespace KGEN;
 
 OutputChain OutputChain::copy() {
   OutputChain result(chain.copy(), loc.copy());
-  result.profilerEntry = std::move(profilerEntry);
-  for (const auto &ref : refs)
-    result.refs.emplace_back(ref.copy());
+  result.prototypeProfilerEntry = std::move(prototypeProfilerEntry);
+  result.refs = std::move(refs);
   return result;
 }
 
@@ -31,7 +30,19 @@ void OutputChain::transfer(SmallVector<LLCL::AnyAsyncValueRef> &&argRefs) {
 }
 
 void OutputChain::trace(StringRef name, StringRef detail) {
-  profilerEntry = MojoProfilerEntry::create(name, detail);
+  if (profilerEntry.empty()) {
+    // Establish the profiling entry for this Mojo kernel call.
+    profilerEntry = MojoProfilerEntry::create(name, detail);
+  } else {
+    // Merge the given details into the existing profile entry. This is useful
+    // when we need to combine profile data contributed from both the C++
+    // and Mojo sides.
+    profilerEntry.withNameSuffix(name).withDetailSuffix(
+        [&]() { return detail.str(); });
+  }
+  // (Re)establish the 'prototype' profile entry, which is only used
+  // by executeAsTask() below.
+  prototypeProfilerEntry = profilerEntry.copy<MojoProfilerEntry>();
 }
 
 void OutputChain::markReady() {
@@ -56,11 +67,18 @@ void OutputChain::setToError(Error &&error) && {
   std::move(chain).setToError({std::move(error), std::move(loc)});
 }
 
+void OutputChain::recordProfilerEntry() && {
+  std::move(profilerEntry).record();
+}
+
 void OutputChain::complete() {
   // IMPORTANT: Stop the profiling enry before doing any other work.
   // Even the innocent looking refs.clear() may trigger frees which can
-  // be surprisingly expensive.
+  // be surprisingly expensive, and we don't want that to be included in
+  // the kernel's time.
   std::move(profilerEntry).record();
+  // IMPORTANT: Clear the refs before marking the output chain as ready
+  // so that waiters won't see stray references.
   refs.clear();
 }
 
@@ -68,7 +86,7 @@ void OutputChain::executeAsTask(void (*resume)(int8_t *), int8_t *hdl,
                                 size_t taskId) {
   // If it is present, copy the profiling entry for use by the task.
   MojoProfilerEntry taskProfilerEntry =
-      profilerEntry.withNameSuffix(".task").withDetailSuffix(
+      prototypeProfilerEntry.withNameSuffix(".task").withDetailSuffix(
           [=]() { return (Twine(" (task_id ") + Twine(taskId) + ")").str(); });
   chain.getRuntime()->getWorkQueue()->addTask(
       [taskProfilerEntry = std::move(taskProfilerEntry), resume,
