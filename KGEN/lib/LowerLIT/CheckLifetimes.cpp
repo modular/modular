@@ -17,6 +17,7 @@
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "llvm/ADT/BitVector.h"
 #include "llvm/Support/SaveAndRestore.h"
+#include "llvm/Support/raw_ostream.h"
 
 using namespace M;
 using namespace KGEN;
@@ -38,6 +39,19 @@ collectFunctionsAndTypes(Operation *module) {
       structMap[getFullyResolvedSymbolRef(structOp)] = structOp;
   });
   return {std::move(funcList), std::move(structMap)};
+}
+
+/// When isIndirect is true, this strips off the top level pointer from the
+/// specified type, otherwise it returns it unmodified.
+static Type getTypeOrPointeeType(Type type, bool isIndirect) {
+  // If this is a direct value, use the type directly.
+  if (!isIndirect)
+    return type;
+
+  auto pointee = llvm::cast<POP::PointerType>(type).getElementType();
+  if (auto type = dyn_cast<TypeConstantAttr>(pointee))
+    return type.getValue();
+  return ParamRefType::get(pointee);
 }
 
 //===----------------------------------------------------------------------===//
@@ -73,6 +87,13 @@ struct TypeDeclInfo {
     auto it = structMap.find(type.getSymbol());
     assert(it != structMap.end() && "reference to struct that wasn't declared");
     return it->second;
+  }
+
+  TypedAttr getDestructorForType(Type type) const {
+    DeclRefType valueType = dyn_cast<DeclRefType>(type);
+    if (!valueType) // Values of raw MLIR type don't have destructors.
+      return {};
+    return getStructDeclForType(valueType).getDestructorAttr();
   }
 
 private:
@@ -185,7 +206,9 @@ struct LifetimeTrackable {
 
   /// Return the type of the underlying value, looking through the pointer type
   /// if this is an indirect reference.
-  Type getValueType(Value value) const;
+  Type getValueType(Value value) const {
+    return getTypeOrPointeeType(value.getType(), isIndirect);
+  }
 };
 
 LifetimeTrackable::LifetimeTrackable(Value v) {
@@ -295,19 +318,6 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
              : StringAttr::get(bbArg.getContext(), "FIXME(Issue #11918)");
 }
 
-/// Return the type of the underlying value, looking through the pointer type
-/// if this is an indirect reference.
-Type LifetimeTrackable::getValueType(Value value) const {
-  // If this is a direct value, use the type directly.
-  if (!isIndirect)
-    return value.getType();
-
-  auto pointee = llvm::cast<POP::PointerType>(value.getType()).getElementType();
-  if (auto type = dyn_cast<TypeConstantAttr>(pointee))
-    return type.getValue();
-  return ParamRefType::get(pointee);
-}
-
 //===----------------------------------------------------------------------===//
 // ValueInfo / ValueSet tracking
 //===----------------------------------------------------------------------===//
@@ -401,6 +411,12 @@ struct ValueRef {
     else
       bits.reset(startBit, endBit);
   }
+
+  /// Return the type of the underlying value, looking through the pointer type
+  /// if this is an indirect reference.
+  Type getValueType(Value value) const {
+    return getTypeOrPointeeType(value.getType(), isIndirect);
+  }
 };
 
 /// This tracks the values in a function (including nested functions) that are
@@ -473,11 +489,28 @@ struct ValueSet {
 
   TypeDeclInfo &typeDeclInfo;
 
+  raw_ostream &printBV(const BitVector &bits, raw_ostream &os) const;
+
 private:
   SmallVector<ValueInfo> valueInfos;
   DenseMap<Value, unsigned> valueInfoIndex;
 };
 } // namespace
+
+raw_ostream &ValueSet::printBV(const BitVector &bv, raw_ostream &os) const {
+  if (bv.size() != getNumTotalBits())
+    return os << "WRONG LENGTH BIT VECTOR";
+
+  os << '[';
+  llvm::interleave(
+      valueInfos,
+      [&](const ValueInfo &vi) {
+        for (size_t i = vi.startValueBit, e = vi.endValueBit; i != e; ++i)
+          os << (bv.test(i) ? '1' : '0');
+      },
+      [&]() { os << ' '; });
+  return os << ']';
+}
 
 /// Given a pointer that is being accessed indirectly by an operation, return
 /// the value number being referenced, or zero if not tracked.
@@ -922,10 +955,11 @@ struct DestructorInsertion {
   void scanFunction(mlir::FunctionOpInterface func);
   void scanBlock(Block &body);
 
+  LLVM_DUMP_METHOD void dump() const;
+
 private:
   void checkOp(Operation &op);
-  void markConsumed(Operation &op, ValueRef valueRef);
-  void checkLive(Operation &op, ValueRef valueRef);
+  void markConsumed(Value value, Operation &op);
   void checkUse(Value value, Operation &op);
   void checkUse(Value value, Block &block, Block::iterator insertPt,
                 Location loc);
@@ -960,6 +994,29 @@ private:
   BitVector *continueSet = nullptr;
 };
 } // namespace
+
+void DestructorInsertion::dump() const {
+  auto &os = llvm::errs();
+  os << "DestructorInsertion";
+  if (dryRun)
+    os << " [DRYRUN]";
+  os << "\n  ";
+  valueSet.printBV(consumedValues, os) << "\n";
+
+  if (raiseSet) {
+    os << " raise: ";
+    valueSet.printBV(*raiseSet, os) << "\n";
+  }
+  if (breakSet) {
+    os << " break: ";
+    valueSet.printBV(*breakSet, os) << "\n";
+  }
+  if (continueSet) {
+    os << " continue: ";
+    valueSet.printBV(*continueSet, os) << "\n";
+  }
+  os.flush();
+}
 
 void DestructorInsertion::scanFunction(mlir::FunctionOpInterface func) {
   consumedValues.resize(valueSet.getNumTotalBits());
@@ -996,6 +1053,7 @@ void DestructorInsertion::checkOp(Operation &op) {
   // A store to a value is an overwrite - this means that any incoming values
   // are unused and should be destroyed if they exist.
   if (auto storeOp = dyn_cast<POP::StoreOp>(op)) {
+    checkUse(storeOp.getArg(), op);
     checkDef(storeOp.getPtr(), op);
     return;
   }
@@ -1054,7 +1112,7 @@ void DestructorInsertion::checkOp(Operation &op) {
     // This defines the result value.  Emit a destructor if unused.
     checkDef(letReg, op);
     // This consumes the input.
-    markConsumed(op, valueSet.getValueRef(letReg.getOperand()));
+    markConsumed(letReg.getOperand(), op);
     return;
   }
 
@@ -1209,7 +1267,8 @@ void DestructorInsertion::checkOp(Operation &op) {
 
 // When the specified value is consumed by an operation we know it doesn't need
 // to be destroyed above this point.
-void DestructorInsertion::markConsumed(Operation &op, ValueRef valueRef) {
+void DestructorInsertion::markConsumed(Value value, Operation &op) {
+  ValueRef valueRef = valueSet.getValueRef(value);
   // If this operation is consuming a sub-element of a value that is already
   // marked to be consumed, then we have a case where a field of a value is
   // being consumed, and then its ultimate destructor cannot be run.  This is
@@ -1290,12 +1349,8 @@ void DestructorInsertion::emitDestructorCallAt(unsigned valueId, Block &block,
   LifetimeTrackable trackable(valueInfo.value);
   assert(trackable && "shouldn't be tracking untrackable things!");
 
-  DeclRefType valueType =
-      dyn_cast<DeclRefType>(trackable.getValueType(valueInfo.value));
-  if (!valueType)
-    return;
-  TypedAttr dtor =
-      valueSet.typeDeclInfo.getStructDeclForType(valueType).getDestructorAttr();
+  TypedAttr dtor = valueSet.typeDeclInfo.getDestructorForType(
+      trackable.getValueType(valueInfo.value));
   if (!dtor)
     return;
 
