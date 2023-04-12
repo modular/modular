@@ -7,6 +7,7 @@
 
 from Assert import assert_param, assert_param_msg
 from TypeUtilities import rebind
+from Pointer import Pointer
 
 
 # ===----------------------------------------------------------------------===#
@@ -1428,7 +1429,7 @@ fn _get_kgen_list_item[
 
 
 # ===----------------------------------------------------------------------===#
-# VariadicList
+# VariadicList / VariadicListMem
 # ===----------------------------------------------------------------------===#
 
 
@@ -1485,13 +1486,46 @@ struct VariadicList[type: AnyType]:
         """
         return __mlir_op.`pop.variadic.get`(self.value, index.__as_mlir_index())
 
-    fn __getitem__(self, index: __mlir_type.index) -> type:
+
+@register_passable("trivial")
+struct VariadicListMem[type: AnyType]:
+    """A utility class to access variadic function arguments of memory-only
+    types that may have ownership. It exposes pointers to the elements in a way
+    that can be enumerated.  Each element may be accessed with
+    `__get_address_as_lvalue`.
+    """
+
+    alias StorageType = __mlir_type[`!kgen.variadic<!pop.pointer<`, type, `>>`]
+    var value: StorageType
+
+    fn __init__(value: StorageType) -> Self:
+        """Constructs a VariadicList from a variadic argument type.
+
+        Args:
+            value: The variadic argument to construct the list with.
+
+        Returns:
+            The VariadicList constructed.
+        """
+        return Self {value: value}
+
+    fn __len__(self) -> Int:
+        """Gets the size of the list.
+
+        Returns:
+            The number of elements on the variadic list.
+        """
+
+        return __mlir_op.`pop.variadic.size`(self.value)
+
+    fn __getitem__(self, index: Int) -> __mlir_type[`!pop.pointer<`, type, `>`]:
         """Accessor to a single element on the variadic list.
 
         Args:
             index: The index of the element to access on the list.
 
         Returns:
-            The element on the list corresponding to the given index.
+            A low-level pointer to the element on the list corresponding to the
+            given index.
         """
-        return __mlir_op.`pop.variadic.get`(self.value, index)
+        return __mlir_op.`pop.variadic.get`(self.value, index.__as_mlir_index())
