@@ -113,6 +113,11 @@ static void liftAndFoldApply(Region *body, ImplicitLocOpBuilder &b,
     return existing;
   });
 
+  // Constraints must be evaluatable in isolation.
+  replacer.addReplacement([](ConstraintArrayAttr constraints) {
+    return std::make_pair(constraints, WalkResult::skip());
+  });
+
   // If the parent is a function, extract 'apply' operators and place them at
   // the start of the body.
   if (auto func = dyn_cast<GeneratorOp>(body->getParentOp())) {
@@ -170,6 +175,7 @@ struct LiftAndFoldApplyPass : impl::LiftAndFoldApplyBase<LiftAndFoldApplyPass> {
       graph.calculate(paramCache);
       liftAndFoldApply(&func.getBodyRegion(), paramCache, graph);
     }
+    markAllAnalysesPreserved();
   }
 };
 } // namespace

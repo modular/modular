@@ -67,20 +67,6 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
 ]>;
 
 //===----------------------------------------------------------------------===//
-// InputGenKindAttr
-//===----------------------------------------------------------------------===//
-
-/// This defines the Input Generation Kind enum attribute.
-def KGEN_InputGenKindAttr : I32EnumAttr<"InputGenKind", "Input Generation Kind", [
-  I32EnumAttrCase<"Zeros", 0, "zeros">,
-  I32EnumAttrCase<"Ones", 1, "ones">,
-  I32EnumAttrCase<"Random", 2, "random">,
-]> {
-  let cppNamespace = "M::KGEN";
-  let genSpecializedAttr = 0;
-}
-
-//===----------------------------------------------------------------------===//
 // AlwaysInlineLevelAttr
 //===----------------------------------------------------------------------===//
 
