@@ -31,7 +31,6 @@ class ModelKind(str, Enum):
 
     PYTORCH_MODEL = "PyTorch Model"
     TENSORFLOW_MODEL = "TensorFlow Model"
-    TFLITE_MODEL = "TFLite Model"
     UNKNOWN_MODEL = "Unknown Model"
 
 
@@ -49,11 +48,6 @@ class TensorFlowLoadOptions:
     )
     exported_name: str = field(default="serving_default")
     compatibility_mode: bool = field(default=False)
-
-
-@dataclass
-class TFLiteLoadOptions:
-    """TFLiteLoadOptions is a class that can be used to configure loading of TFLite models"""
 
 
 @dataclass
@@ -155,7 +149,7 @@ class InferenceSession:
         self,
         model_path: Path,
         options: Optional[
-            Union[TensorFlowLoadOptions, TorchLoadOptions, TFLiteLoadOptions]
+            Union[TensorFlowLoadOptions, TorchLoadOptions]
         ] = None,
     ) -> Model:
         """Load a saved model file/directory
@@ -184,18 +178,13 @@ class InferenceSession:
                 options_dict["type"] = "tf"
             elif isinstance(options, TorchLoadOptions):
                 options_dict["type"] = "torch"
-            elif isinstance(options, TFLiteLoadOptions):
-                options_dict["type"] = "tflite"
             else:
                 raise TypeError("Invalid compilation options object.")
 
         _model = self._impl.compile(model_path, options_dict)
 
-        # TODO: Fix when real PyTorch support lands
         if model_path.suffix == ".onnx":
             model_kind = ModelKind.PYTORCH_MODEL
-        elif model_path.suffix == ".tflite":
-            model_kind = ModelKind.TFLITE_MODEL
         elif os.path.isdir(model_path):
             model_kind = ModelKind.TENSORFLOW_MODEL
         else:
