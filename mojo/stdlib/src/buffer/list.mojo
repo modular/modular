@@ -1454,7 +1454,7 @@ struct VariadicList[type: AnyType]:
         """
         return Self(value)
 
-    fn __init__(value: StorageType) -> VariadicList[type]:
+    fn __init__(value: StorageType) -> Self:
         """Constructs a VariadicList from a variadic argument type.
 
         Args:
