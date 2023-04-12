@@ -386,12 +386,12 @@ struct OutputChainPtr:
         return self.ptr != ptr_type()
 
     @always_inline
-    fn deepcopy(self) -> OwningOutputChainPtr:
+    fn fork(self) -> OwningOutputChainPtr:
         """Returns a pointer to a fresh heap-allocated LLCL::OutputChain
-        containing a copy of this. The result must be explicitly destroyed.
+        containing a 'fork' of this. The result must be explicitly destroyed.
         """
         return __mlir_op.`pop.external_call`[
-            func : __mlir_attr.`@KGEN_CompilerRT_LLCL_OutputChainPtr_CreateCopy`,
+            func : __mlir_attr.`@KGEN_CompilerRT_LLCL_OutputChainPtr_CreateFork`,
             _type:[OwningOutputChainPtr],
         ](self.ptr)
 
@@ -577,8 +577,8 @@ struct AsyncTaskGroup:
 
     # Number of tasks still in flight.
     var counter: Atomic[DType.index]
-    # Output chain to mark_ready when last task completed.
-    # This will be copied on construction to guarantee the correct lifetime.
+    # Output chain to mark_ready/mark_error when last task completed.
+    # This will be 'forked' on construction to guarantee the correct lifetime.
     var out_chain: OwningOutputChainPtr
     # Vector holding co-routines.
     var coroutines: UnsafeFixedVector[Coroutine[NoneType]]
@@ -586,7 +586,7 @@ struct AsyncTaskGroup:
     @always_inline
     fn __init__(self&, num_work_items: Int, out_chain: OutputChainPtr):
         self.counter = num_work_items
-        self.out_chain = out_chain.deepcopy()
+        self.out_chain = out_chain.fork()
         self.coroutines = UnsafeFixedVector[Coroutine[NoneType]](num_work_items)
 
     @always_inline
