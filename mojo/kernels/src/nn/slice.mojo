@@ -15,59 +15,7 @@ from Math import div_ceil
 from Range import range
 from TypeUtilities import rebind
 
-# ===----------------------------------------------------------------------===#
-# slice
-# ===----------------------------------------------------------------------===#
-#
-# TODO: This should be moved into the Stdlib folder, but currently that would
-# create a naming conflict with this file. Placed here temporarily.
-#
-# ===----------------------------------------------------------------------===#
-
-
-@register_passable("trivial")
-struct slice:
-    var start: Int
-    var end: Int
-    var step: Int
-
-    @always_inline("nodebug")
-    fn __init__() -> Self:
-        return Self {start: 0, end: -1, step: 1}
-
-    @always_inline("nodebug")
-    fn __init__(end: Int) -> Self:
-        return Self {start: 0, end: end, step: 1}
-
-    @always_inline("nodebug")
-    fn __init__(start: Int, end: Int) -> Self:
-        return Self {start: start, end: end, step: 1}
-
-    @always_inline("nodebug")
-    fn __init__(start: Int, end: Int, step: Int) -> Self:
-        return Self {start: start, end: end, step: step}
-
-    @always_inline("nodebug")
-    fn __eq__(self, other: Self) -> Bool:
-        return (
-            self.start == other.start
-            and self.end == other.end
-            and self.step == other.step
-        )
-
-    @always_inline("nodebug")
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
-    @always_inline("nodebug")
-    fn __len__(self) -> Int:
-        debug_assert(self != Self(), "invalid range, end value must be known")
-
-        if self.step > 0:
-            return div_ceil(self.end - self.start, self.step)
-        else:
-            return div_ceil(self.start - self.end, -self.step)
-
+from BuiltinSlice import slice
 
 # ===----------------------------------------------------------------------===#
 # slice_as_view
