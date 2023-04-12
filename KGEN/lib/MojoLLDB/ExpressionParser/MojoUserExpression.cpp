@@ -105,13 +105,19 @@ struct MojoUserExpression::Impl {
         typeSystem(getMojoTypeSystem(target)),
         persistentState(getMojoPersistentState(typeSystem)) {}
 
+  /// The target associated with this expression.
   Target &target;
+
   /// The type system helper.
   MojoUserExpressionHelper typeSystemHelper;
 
   /// The various expression delegates.
   ResultDelegate resultDelegate;
   PersistentVariableDelegate persistentVariableDelegate;
+
+  /// The name of the python module that wraps the expression, if the expression
+  /// is a Python expression, nullopt otherwise.
+  std::optional<std::string> pythonModuleName;
 
   /// The underlying expression parser.
   std::unique_ptr<MojoExpressionParser> parser;
@@ -178,17 +184,27 @@ bool MojoUserExpression::Parse(DiagnosticManager &diagnosticManager,
   Process *process = exeCtx.GetProcessPtr();
   auto *exeScope = process ? (ExecutionContextScope *)process : &impl->target;
 
-  MojoExpressionSourceCode sourceCode(m_expr_text);
-  if (failed(wrapTextAndParseExpression(MojoExpressionSourceCode(m_expr_text),
-                                        diagnosticManager, exeCtx, exeScope,
-                                        impl->persistentState)))
+  // If the expression starts with `>python`, the user wants to treat this as a
+  // python expression. Otherwise, it should be treated as a Mojo expression.
+  StringRef exprText(m_expr_text);
+  std::optional<MojoExpressionSourceCode> mojoSourceCode;
+  if (!exprText.consume_front(">python\n")) {
+    mojoSourceCode.emplace(exprText);
+    if (failed(wrapTextAndParseExpression(*mojoSourceCode, diagnosticManager,
+                                          exeCtx, exeScope,
+                                          impl->persistentState)))
+      return false;
+  } else if (failed(wrapTextAndParsePythonExpression(
+                 exprText, diagnosticManager, exeCtx, exeScope,
+                 impl->persistentState))) {
     return false;
+  }
 
   // Prepare the output of the parser for execution, evaluating it statically if
   // possible.
   Status jitError = impl->parser->prepareForExecution(
       m_jit_start_addr, m_jit_end_addr, executionUnit, exeCtx, executionPolicy,
-      sourceCode, keepResultInMemory);
+      std::move(mojoSourceCode), keepResultInMemory);
   if (!jitError.Success()) {
     const char *errorCStr = jitError.AsCString();
     if (errorCStr && errorCStr[0])
@@ -324,8 +340,10 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
   // imports and classes are preserved. This also ensures that saved
   // variables can be inspected again because the user defined types are
   // included in these pieces of code.
-  for (const auto &exprInst : impl->persistentState.getExpressionInstances())
-    exprOSIndented << exprInst.sourceCode.getTopLevelCode();
+  for (const auto &exprInst : impl->persistentState.getExpressionInstances()) {
+    if (exprInst.sourceCode)
+      exprOSIndented << exprInst.sourceCode->getTopLevelCode();
+  }
 
   // The following is the first chunk of code written by the user.
   exprOSIndented << kTopLevelBlockBegin << sourceCode.getTopLevelCode()
@@ -436,4 +454,105 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
   }
 
   return result;
+}
+
+//===----------------------------------------------------------------------===//
+// Python expression parsing and execution
+
+const std::optional<std::string> &MojoUserExpression::getPythonModuleName() {
+  return impl->pythonModuleName;
+}
+
+/// Import the various top-level python symbols defined in the given python
+/// expression into the current mojo context by emitting binding code to the
+/// given stream.
+static void importPythonSymbolsIntoMojo(StringRef pythonExpr,
+                                        StringRef moduleName,
+                                        raw_ostream &mojoExprOS) {
+  // FIXME: This is an extremely hacky and limited python ast extractor. We
+  // should really be using pythons pre-existing ast utilities, but we currently
+  // don't have that available. When LLDB is built with python enabled, we
+  // should kill all of this logic and use that to ask python for the
+  // interesting bits instead.
+  SmallVector<StringRef> lines;
+  pythonExpr.split(lines, "\n");
+
+  llvm::Regex importRegex(R"(^import ([_0-9a-zA-Z]+)$)");
+  llvm::Regex importAsRegex(R"(^import ([_0-9a-zA-Z]+) as ([_0-9a-zA-Z]+)$)");
+  llvm::Regex defRegex(R"(^def ([_0-9a-zA-Z]+)\()");
+  llvm::Regex valueRegex(R"(^([_0-9a-zA-Z]+) =)");
+  for (StringRef line : lines) {
+    SmallVector<StringRef, 2> matches;
+    if (importRegex.match(line, &matches)) {
+      mojoExprOS << llvm::formatv(
+          "var {0} = __repl_python__.importModule(\"{0}\")", matches[1]);
+    } else if (importAsRegex.match(line, &matches)) {
+      mojoExprOS << llvm::formatv(
+          "var {0} = __repl_python__.importModule(\"{1}\")", matches[2],
+          matches[1]);
+    } else if (defRegex.match(line, &matches) ||
+               valueRegex.match(line, &matches)) {
+      mojoExprOS << llvm::formatv("var {0} = {1}.{0}", matches[1], moduleName);
+    }
+  }
+}
+
+LogicalResult MojoUserExpression::wrapTextAndParsePythonExpression(
+    StringRef pythonExpr, lldb_private::DiagnosticManager &diagnosticManager,
+    lldb_private::ExecutionContext &exeCtx,
+    lldb_private::ExecutionContextScope *exeScope,
+    MojoPersistentExpressionState &state) {
+  impl->typeSystem.debugLog("Parsing the following python code:\n{0}",
+                            pythonExpr.data());
+
+  // Generate a wrapper python expression that builds a new module from the
+  // given source expression string.
+  //   {0}: The escaped source expression string.
+  //   {1}: The name of the module to create.
+  const char *pythonWrapperExpr = R"(
+import sys, types
+
+code_string = '{0}'
+expr_module = types.ModuleType('{1}')
+exec(code_string, expr_module.__dict__)
+sys.modules['{1}'] = expr_module
+  )";
+  std::string escapedPythonExpr;
+  llvm::raw_string_ostream(escapedPythonExpr).write_escaped(pythonExpr);
+  std::string moduleName = state.getNextPythonExpressionModuleName();
+  std::string wrappedPythonExpr =
+      llvm::formatv(pythonWrapperExpr, escapedPythonExpr, moduleName).str();
+  impl->typeSystem.debugLog("Wrapped python code:\n{0}",
+                            wrappedPythonExpr.data());
+
+  // Build the Mojo expression we'll use to process the python. This consists of
+  // the wrapped python expression, and implicit imports for any of the
+  // top-level entities we want extract from the python expression.
+  std::string mojoExpr;
+  llvm::raw_string_ostream mojoExprOS(mojoExpr);
+
+  // If we haven't initialized python yet, do that as part of this expression.
+  if (!state.hasInitializedPython())
+    mojoExprOS << "var __repl_python__ = PythonInterface()\n\n";
+
+  // Evaluate the wrapped python expression.
+  mojoExprOS << "__repl_python__.eval(\"";
+  mojoExprOS.write_escaped(wrappedPythonExpr);
+  mojoExprOS << "\")\n\n"
+             << llvm::formatv(
+                    "var {0} = __repl_python__.importModule(\"{0}\")\n\n",
+                    moduleName);
+
+  // Import the interesting top-level symbols from the python module into the
+  // mojo context.
+  importPythonSymbolsIntoMojo(pythonExpr, moduleName, mojoExprOS);
+
+  // Now that we've got a Mojo expression, parse it the way we would any other
+  // expression.
+  m_expr_text = mojoExprOS.str();
+  impl->pythonModuleName = std::move(moduleName);
+
+  MojoExpressionSourceCode sourceCode(m_expr_text);
+  return wrapTextAndParseExpression(sourceCode, diagnosticManager, exeCtx,
+                                    exeScope, state);
 }

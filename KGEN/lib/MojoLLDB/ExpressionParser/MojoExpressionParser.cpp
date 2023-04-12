@@ -38,11 +38,11 @@ using namespace lldb_private;
 //===----------------------------------------------------------------------===//
 
 struct MojoExpressionParser::Impl {
-  Impl(ExecutionContextScope *exeScope, Expression &expr,
+  Impl(ExecutionContextScope *exeScope, MojoUserExpression &expr,
        const EvaluateExpressionOptions &options);
 
   /// The expression being parsed.
-  Expression &expr;
+  MojoUserExpression &expr;
 
   /// The type system associated with the evaluation of the current expression.
   MojoTypeSystem *typeSystem = nullptr;
@@ -77,7 +77,7 @@ struct MojoExpressionParser::Impl {
 };
 
 MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
-                                 Expression &expr,
+                                 MojoUserExpression &expr,
                                  const EvaluateExpressionOptions &options)
     : expr(expr), options(options) {
   // Bail out if we don't have a valid execution context.
@@ -164,7 +164,7 @@ static void handleDiagnostic(const llvm::SMDiagnostic &diagnostic, void *ctx) {
 //===----------------------------------------------------------------------===//
 
 MojoExpressionParser::MojoExpressionParser(
-    ExecutionContextScope *exeScope, Expression &expr,
+    ExecutionContextScope *exeScope, MojoUserExpression &expr,
     const EvaluateExpressionOptions &options)
     : impl(std::make_unique<Impl>(exeScope, expr, options)) {}
 MojoExpressionParser::~MojoExpressionParser() = default;
@@ -376,7 +376,8 @@ MojoExpressionParser::parse(DiagnosticManager &diagnosticManager) {
 Status MojoExpressionParser::prepareForExecution(
     lldb::addr_t &funcAddr, lldb::addr_t &funcEnd,
     std::shared_ptr<JITExecutionUnit> &executionUnit, ExecutionContext &exeCtx,
-    ExecutionPolicy executionPolicy, const MojoExpressionSourceCode &sourceCode,
+    ExecutionPolicy executionPolicy,
+    std::optional<MojoExpressionSourceCode> sourceCode,
     bool keepResultInMemory) {
   // Grab the LLVM module built during the parse phase.
   std::unique_ptr<llvm::Module> module = std::move(impl->llvmModule);
@@ -464,9 +465,9 @@ Status MojoExpressionParser::prepareForExecution(
   }
 
   // Register the persisted state for this execution.
-  persistentState->registerExpressionInstance(std::move(persistedExecutionUnit),
-                                              std::move(peristentVariables),
-                                              sourceCode);
+  persistentState->registerExpressionInstance(
+      std::move(persistedExecutionUnit), std::move(peristentVariables),
+      std::move(sourceCode), impl->expr.getPythonModuleName());
   return error;
 }
 

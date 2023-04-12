@@ -17,10 +17,12 @@ class StructDeclOp;
 } // namespace M::KGEN::LIT
 
 namespace M::KGEN::Mojo {
+class MojoUserExpression;
+
 class MojoExpressionParser {
 public:
   MojoExpressionParser(lldb_private::ExecutionContextScope *exeScope,
-                       lldb_private::Expression &expr,
+                       MojoUserExpression &expr,
                        const lldb_private::EvaluateExpressionOptions &options);
   ~MojoExpressionParser();
 
@@ -46,7 +48,7 @@ public:
                       std::shared_ptr<JITExecutionUnit> &executionUnit,
                       lldb_private::ExecutionContext &exeCtx,
                       lldb_private::ExecutionPolicy executionPolicy,
-                      const MojoExpressionSourceCode &sourceCode,
+                      std::optional<MojoExpressionSourceCode> sourceCode,
                       bool keepResultInMemory);
 
 private:
