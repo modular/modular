@@ -119,7 +119,8 @@ createTargetMachine(const CompilationOptions &options, bool isJIT);
 
 /// Run the llvm opt passes over `module` given `targetMachine`.
 LogicalResult runLLVMOptPasses(llvm::Module &module,
-                               llvm::TargetMachine &targetMachine);
+                               llvm::TargetMachine &targetMachine,
+                               const CompilationOptions &options);
 
 //===----------------------------------------------------------------------===//
 // ObjectCompilerLayer

@@ -369,7 +369,8 @@ MojoExpressionParser::parse(DiagnosticManager &diagnosticManager) {
     return failure();
   }
 
-  return KGEN::runLLVMOptPasses(*impl->llvmModule, **targetMachineOr);
+  return KGEN::runLLVMOptPasses(*impl->llvmModule, **targetMachineOr,
+                                impl->compilationOptions);
 }
 
 Status MojoExpressionParser::prepareForExecution(

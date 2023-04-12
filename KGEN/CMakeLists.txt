@@ -54,6 +54,22 @@ macro(_setup_libs)
   endforeach ()
 endmacro()
 
+# This function reads MODULAR_KERNELS_USE_SANITIZER and sets up the KGEN flags
+# to enable sanitizers.
+macro(_setup_santizer_flags)
+  set(KGEN_SANITIZER_OPTIONS "")
+  set(KGEN_SANITIZER_LIBS "")
+
+  string(TOLOWER ${MODULAR_KERNELS_USE_SANITIZER} lower_MODULAR_KERNELS_USE_SANITIZER)
+  if (lower_MODULAR_KERNELS_USE_SANITIZER STREQUAL "address")
+    set(KGEN_SANITIZER_OPTIONS "--sanitize=address")
+    set(KGEN_SANITIZER_LIBS ${KGEN_ASAN_LIBRARY})
+  elseif (lower_MODULAR_KERNELS_USE_SANITIZER STREQUAL "thread")
+    set(KGEN_SANITIZER_OPTIONS "--sanitize=thread")
+    set(KGEN_SANITIZER_LIBS ${KGEN_TSAN_LIBRARY})
+  endif()
+endmacro()
+
 # This function reads the MODULAR_KERNELS_BUILD_TYPE and sets up the KGEN
 # optimization and debug flags into KGEN_OPTIMIZATION_LEVEL and KGEN_DEBUG_LEVEL
 # respectively.
@@ -142,6 +158,10 @@ function(add_kgen_kernel target)
   _setup_libs()
   _setup_debug_flags()
 
+  if (MODULAR_KERNELS_USE_SANITIZER)
+    _setup_santizer_flags()
+  endif()
+
   # If we built with MODULAR_KGEN_ENABLE_SEARCH=ON, then turn on
   # KGEN_ENABLE_SEARCH unconditionally.
   if (MODULAR_KGEN_ENABLE_SEARCH)
@@ -165,6 +185,7 @@ function(add_kgen_kernel target)
     -d ${header_file_name_rel}.d
     -O${KGEN_OPTIMIZATION_LEVEL}
     -debug-level=${KGEN_DEBUG_LEVEL}
+    ${KGEN_SANITIZER_OPTIONS}
     $<$<BOOL:${MODULAR_ENABLE_XRAY}>:-xray-instrument>
 
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
@@ -193,6 +214,7 @@ function(add_kgen_kernel target)
     -d ${archive_file_name_rel}.d
     -O${KGEN_OPTIMIZATION_LEVEL}
     -debug-level=${KGEN_DEBUG_LEVEL}
+    ${KGEN_SANITIZER_OPTIONS}
     $<$<BOOL:${MODULAR_ENABLE_XRAY}>:-xray-instrument>
 
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
@@ -205,7 +227,7 @@ function(add_kgen_kernel target)
 
   add_library(${target} IMPORTED STATIC)
   add_dependencies(${target} ${KGEN_LIB_DEPENDS} kgen ${target}-archive)
-  target_link_libraries(${target} INTERFACE KGENCompilerRT)
+  target_link_libraries(${target} INTERFACE KGENCompilerRT ${KGEN_SANITIZER_LIBS})
   set_target_properties(${target} PROPERTIES
     IMPORTED_LOCATION ${CMAKE_CURRENT_BINARY_DIR}/${archive_file_name}
     LINKER_LANGUAGE C

@@ -165,7 +165,7 @@ static LogicalResult createDependencyFile(const CLOptions &clOptions,
 /// output to the specific ostream provided to it, rather it opens and writes to
 /// files that are designated by the funcs it operates on.
 static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
-                                     const CLOptions &clOptions) {
+                                     CLOptions &clOptions) {
   DialectRegistry registry;
   TraceProfiler tracer(clOptions);
 
