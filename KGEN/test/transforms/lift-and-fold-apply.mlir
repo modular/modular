@@ -61,3 +61,22 @@ kgen.generator @apply_value_crosses(%arg0: !pop.array<apply(:(index) -> index @p
   }
   kgen.return
 }
+
+
+// CHECK-LABEL: kgen.generator @lift_from_bind_signature
+kgen.generator @lift_from_bind_signature<
+    dispatch: <() -> !pop.array<apply(:(index) -> index @pass, 1), index>>() -> ()>() {
+  // CHECK-NEXT: apply *[[L0:.*]] = [(index) -> index: @pass](1)
+  // CHECK-NEXT: bind_signature({{.*}} dispatch, @
+  kgen.param.declare fn: () -> () = <bind_signature(
+    :<() -> !pop.array<apply(:(index) -> index @pass, 1), index>>() -> () dispatch,
+    @take_and_pass<1>)>
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @isolated_constraints
+// CHECK-NEXT: constraints <[eq(apply
+kgen.generator @isolated_constraints()
+    constraints <[eq(apply(:(index) -> index @pass, 1), 1), "1"]> {
+  kgen.return
+}

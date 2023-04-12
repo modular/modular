@@ -848,8 +848,10 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << "'get_alignof' should return an index";
     break;
   case POC::BindSignature: {
-    if (failed(verifyBindSignature(operands, emitError)))
-      return failure();
+    // It's possible that a function's specialized signature is more specific
+    // than KGEN can determine using a `ParameterEvaluator`. In particular,
+    // types need to be allowed to vary when parameter expression nodes rooted
+    // at 'apply' operators are allowed to differ.
     break;
   }
   case POC::Apply:
