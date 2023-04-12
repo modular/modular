@@ -28,12 +28,24 @@ namespace M::LLCL {
 using TaskFunction = llvm::unique_function<void()>;
 
 /// Time profiling entries for capturing the running time of tasks.
+/// May supplied as optional argument to WorkQueue::addTask.
+/// Also names: "llcl.addTask.now", "llcl.addLocalTask.task",
+///             "llcl.addLocalTask.now"
 using WorkProfilerEntry = ProfilerEntry<Trace::EnableTrace(Trace::kLLCL, 1)>;
 
 /// Time profiling entries for capturing the waiting time of tasks and
 /// other internal LLCL measurements.
+/// Names: "llcl.shutdown", "llcl.shutdown.spinning", "llcl.shutdown.sleeping",
+///        "llcl.runOnThread.spinning", "llcl.runOnThread.sleeping",
+///        "llcl.await.spinning", "llcl.await.sleeping"
 using InternalProfilerEntry =
     ProfilerEntry<Trace::EnableTrace(Trace::kLLCL, 2)>;
+
+/// Time profiling entries for capturing every execution of a task or
+/// local task when no explicit profiling entries were provided.
+/// Names: "llcl.doWork", "llcl.waiter"
+using AllWorkItemsProfilerEntry =
+    ProfilerEntry<Trace::EnableTrace(Trace::kLLCL, 3)>;
 
 /// This is an interface to various implementations of work queues:
 /// different execution methods which are often current. These
@@ -73,7 +85,9 @@ public:
   /// TODO: Consider returning AsyncValueRef<Chain>, where the task has been
   /// enqueued only if the result is ready.
   virtual void addTask(TaskFunction &&work,
-                       WorkProfilerEntry &&profilerEntry = {}) = 0;
+                       WorkProfilerEntry &&profilerEntry =
+                           AllWorkItemsProfilerEntry::create("llcl.doWork")
+                               .copy<WorkProfilerEntry>()) = 0;
 
   /// Enqueue a block of work to be run 'locally' on the current thread.
   ///

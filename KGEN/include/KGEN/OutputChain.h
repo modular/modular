@@ -43,9 +43,28 @@ using MojoProfilerEntry = M::ProfilerEntry<Trace::EnableTrace(Trace::kMojo, 1)>;
 /// the profiling entry has been recorded or the additional refs have been
 /// released. By taking responsibility here we guarantee ordering.
 struct OutputChain {
+  /// Chain on which consumers are waiting.
   AsyncValueRef<Chain> chain;
+  /// Location to use for any errors.
   LLCL::EncodedLocation loc;
+  /// The profiler entry for the kernel execution. Begins when the
+  /// kernel is called, and ends when either the kernel calls markReady()/
+  /// markError(), or the kernel returns to the MEF executor.
+  ///
+  /// For synchronous kernels, this profiler entry will capture the true
+  /// work of the kernel. The kernel will not have launched any sub-tasks.
+  ///
+  /// For asynchronous kernels, this profiler entry will live only while the
+  /// kernel establishes its sub-tasks, and will be recorded when the kernel
+  /// returns to MEF.
   MojoProfilerEntry profilerEntry;
+  /// The 'prototype' profiler entry to be used when the Mojo kernel calls
+  /// executeAsTask. Each task will append '.task' to the profile name,
+  /// and some task id details to the profile details. This entry, however,
+  /// is never recorded.
+  MojoProfilerEntry prototypeProfilerEntry;
+  /// AsyncValue references to hold alive until markReady() or markError()
+  /// is called.
   SmallVector<LLCL::AnyAsyncValueRef> refs;
 
   OutputChain(AsyncValueRef<Chain> chain, LLCL::EncodedLocation loc)
@@ -58,12 +77,15 @@ struct OutputChain {
   OutputChain(OutputChain &&) = default;
   OutputChain &operator=(OutputChain &&) = default;
 
-  // Return copy of this output chain. The chain, location and all refs
-  // will be copied into the result. However, the profiling entry will be
-  // moved into the result.
+  // Return copy of this output chain. The chain, location,
+  // prototypeProfilerEntry and all refs are moved into the result.
+  // However, the profilerEntry is not moved since it will be used on the
+  // MEF side.
   //
-  // Called from the Mojo side to establish a heap-allocated version of
-  // the OutputChain for a call, which will be deleted on completion.
+  // Called from the Mojo side to take over ownership of the OutputChain as
+  // a heap-allocated object which can live until markReady() or markError()
+  // are called. Only used by asynchronous kernels, synchronous kernels will
+  // work directly with the output chain passed to them.
   OutputChain copy();
 
   // Processes work items until the chain is completed.
@@ -81,8 +103,7 @@ struct OutputChain {
   void transfer(LLCL::AnyAsyncValueRef &&argRef);
   void transfer(SmallVector<LLCL::AnyAsyncValueRef> &&argRefs);
 
-  /// Adds tracing entry with name and detail. The trace begins when the
-  /// call is made, and ends when markReady() or markError() are called.
+  /// Adds tracing entry with name and detail.
   ///
   /// Called from the Mojo side.
   void trace(StringRef name, StringRef detail);
@@ -99,13 +120,21 @@ struct OutputChain {
 
   /// Emplace the chain.
   ///
-  /// Called from the MEF side.
+  /// Called from the MEF side when there's nothing to be done by
+  /// a Mojo kernel.
   void emplace() &&;
 
   /// Set the chain to the given error.
   ///
-  /// Called from the MEF side.
+  /// Called from the MEF side when an error is detected before entering
+  /// the Mojo kernel.
   void setToError(Error &&error) &&;
+
+  /// Record any profiling entry if it has not been recorded already.
+  ///
+  /// Called from the MEF side when control returns. The kernel may have
+  /// launched sub-tasks, which will continue to execute asynchronously.
+  void recordProfilerEntry() &&;
 
   /// Begin executing the Mojo coroutine pointed to by hdl using the resumption
   /// pointer to by resume.

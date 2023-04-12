@@ -430,9 +430,12 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
     // CAUTION: a work function may add to this list, and may even invoke
     // runItems recursively.
     while (!localTaskList.empty()) {
-      ProfiledTaskFunction labelledTask(std::move(localTaskList.back()),
-                                        /*waiting=*/InternalProfilerEntry(),
-                                        /*running=*/WorkProfilerEntry());
+      ProfiledTaskFunction labelledTask(
+          std::move(localTaskList.back()),
+          /*waiting=*/InternalProfilerEntry(),
+          /*running=*/
+          AllWorkItemsProfilerEntry::create("llcl.waiter")
+              .copy<WorkProfilerEntry>());
       localTaskList.erase(localTaskList.end() - 1);
       doWork</*OnOwningThread=*/true>(std::move(labelledTask));
     }
@@ -496,8 +499,8 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
 
     {
       // Ok, finally block.
-      TimeTraceScope scope(InternalProfilerEntry::create(
-          sleepingLabel, printWorkerId(workerID)));
+      TimeTraceScope scope(
+          WorkProfilerEntry::create(sleepingLabel, printWorkerId(workerID)));
       sema.wait();
     }
 
@@ -677,13 +680,16 @@ void ThreadPoolWorkQueue::addLocalTask(M::LLCL::TaskFunction work) {
     // there's no local task list we can enqueue to on this thread.
     if constexpr (kRunImmediatelyOnForeignThreads) {
       // Run right now.
-      ProfiledTaskFunction profiledTask(std::move(work),
-                                        /*waiting=*/InternalProfilerEntry(),
-                                        /*running=*/WorkProfilerEntry());
+      ProfiledTaskFunction profiledTask(
+          std::move(work),
+          /*waiting=*/InternalProfilerEntry(),
+          /*running=*/
+          WorkProfilerEntry::create("llcl.addLocalTask.now"));
       callerWorker->doWork</*OnOwningThread=*/false>(std::move(profiledTask));
     } else {
       // Add as a task.
-      addTask(std::move(work), WorkProfilerEntry::create("llcl.addLocalTask"));
+      addTask(std::move(work),
+              WorkProfilerEntry::create("llcl.addLocalTask.task"));
     }
     return;
   }

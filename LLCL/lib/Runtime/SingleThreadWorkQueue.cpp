@@ -46,7 +46,8 @@ public:
   }
 
   void addLocalTask(TaskFunction work) override {
-    addTask(std::move(work), WorkProfilerEntry::create("llcl.waiter"));
+    addTask(std::move(work), AllWorkItemsProfilerEntry::create("llcl.waiter")
+                                 .copy<WorkProfilerEntry>());
   }
 
   void await(llvm::ArrayRef<AnyAsyncValueRef> values, bool mayDonate) override;
