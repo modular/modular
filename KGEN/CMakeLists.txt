@@ -36,6 +36,7 @@ add_subdirectory(tools/kgen-opt)
 add_subdirectory(tools/kgen-execute)
 add_subdirectory(tools/kgen-translate)
 add_subdirectory(tools/mojo-lsp-server)
+add_subdirectory(tools/mojo-jupyter-executor)
 add_subdirectory(tools/mojo-repl-entry-point)
 add_subdirectory(tools/mojo)
 
