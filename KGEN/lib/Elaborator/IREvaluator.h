@@ -45,6 +45,10 @@ public:
   /// inflated as well.
   ErrorOr<Region *> lookupFunctionBody(SymbolRefAttr symbol) override;
 
+  /// Evaluate the function with the provided constant inputs.
+  ErrorTreeOr<TypedAttr> evaluateFunction(FuncOp func,
+                                          ArrayRef<TypedAttr> inputs);
+
 private:
   Attribute getReboundAttribute(Attribute attr) {
     return ParameterEvaluator::getReboundAttribute(attr);
@@ -52,10 +56,6 @@ private:
   Type getReboundType(Type type) {
     return ParameterEvaluator::getReboundType(type);
   }
-
-  /// Evaluate the function with the provided constant inputs.
-  ErrorTreeOr<TypedAttr> evaluateFunction(FuncOp func,
-                                          ArrayRef<TypedAttr> inputs);
 
   /// The symbol table to lookup symbol references.
   SymbolTable *symtab;
