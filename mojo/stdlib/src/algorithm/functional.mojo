@@ -533,7 +533,7 @@ fn invoke[
 # ===----------------------------------------------------------------------===#
 
 """
-Signature of a tiled function that performs some work with a static tile size
+Signature of a 1d tiled function that performs some work with a static tile size
 and an offset. i.e. func<tile_size: Int> (offset: Int)
 """
 alias Static1DTileUnitFunc = __mlir_type[
@@ -541,12 +541,13 @@ alias Static1DTileUnitFunc = __mlir_type[
 ]
 
 """
-Signature of a tiled function that performs some work with a dynamic tile size
-  and an offset. i.e. func(offset: Inttile_size: Int)
+Signature of a 1d tiled function that performs some work with a dynamic tile size
+  and an offset. i.e. func(offset: Int, tile_size: Int)
 """
 alias Dynamic1DTileUnitFunc = __mlir_type[
     `!kgen.signature<(`, Int, ` borrow,`, Int, ` borrow) -> `, NoneType, `>`
 ]
+
 
 """
 Signature of a tiled function that performs some work with a dynamic tile size
@@ -696,6 +697,66 @@ fn tile[
         workgroup_function[secondary_cleanup_tile](
             work_idx, primary_cleanup_tile
         )
+
+
+# ===----------------------------------------------------------------------===#
+# tile2d
+# ===----------------------------------------------------------------------===#
+
+"""
+Signature of a 2d tiled function that performs some work with a static tile size
+and an offset. i.e.
+func<tile_size_x: Int, tile_size_y: Int> (offset_x: Int, offset_y: Int)
+"""
+alias Static2DTileUnitFunc = __mlir_type[
+    `!kgen.signature<<`,
+    Int,
+    `,`,
+    Int,
+    `>(`,
+    Int,
+    ` borrow,`,
+    Int,
+    ` borrow) -> `,
+    NoneType,
+    `>`,
+]
+
+
+@always_inline
+fn tile[
+    workgroup_function: Static2DTileUnitFunc, tile_size_list: VariadicList[Int]
+](offset_x: Int, offset_y: Int, upperbound_x: Int, upperbound_y: Int):
+
+    assert_param_msg[
+        tile_size_list.__len__() % 2 == 0,
+        "number of tile sizes must be divisible by 2",
+    ]()
+
+    # Initialize where to start on the overall work load.
+    var current_offset_x: Int = offset_x
+    var current_offset_y: Int = offset_y
+
+    @always_inline
+    fn static_tile_impl[idx: Int]():
+        # Get the 2d tile size to proceed with.
+        alias tile_size_x = tile_size_list[2 * idx]
+        alias tile_size_y = tile_size_list[2 * idx + 1]
+
+        let tmp_x = current_offset_x
+
+        # Process work with the 2d tile size until there's not enough remaining
+        # work to fit in a tile.
+        while current_offset_y <= upperbound_y - tile_size_y:
+            current_offset_x = tmp_x
+            while current_offset_x <= upperbound_x - tile_size_x:
+                workgroup_function[tile_size_x, tile_size_y](
+                    current_offset_x, current_offset_y
+                )
+                current_offset_x += tile_size_x
+            current_offset_y += tile_size_y
+
+    unroll[tile_size_list.__len__() // 2, static_tile_impl]()
 
 
 # ===----------------------------------------------------------------------===#

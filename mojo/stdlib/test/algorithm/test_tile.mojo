@@ -25,6 +25,14 @@ fn print_number_static[tile_size: Int](data_idx: Int):
     print_number_dynamic(data_idx, tile_size)
 
 
+# Helper workgroup function to test static workgroup tiling.
+@always_inline
+fn print_tile2d_static[
+    tile_size_x: Int, tile_size_y: Int
+](offset_x: Int, offset_y: Int):
+    print(Index(tile_size_x, tile_size_y, offset_x, offset_y))
+
+
 # CHECK-LABEL: test_static_tile
 fn test_static_tile():
     print("test_static_tile")
@@ -37,6 +45,55 @@ fn test_static_tile():
     # CHECK: (1, 5)
     # CHECK: (5, 6)
     tile[print_number_static, VariadicList[Int](4, 3, 2, 1)](1, 6)
+
+
+# CHECK-LABEL: test_static_tile2d
+fn test_static_tile2d():
+    print("test_static_tile2d")
+    # CHECK: (2, 2, 0, 0)
+    # CHECK: (2, 2, 2, 0)
+    # CHECK: (2, 2, 4, 0)
+    # CHECK: (2, 2, 0, 2)
+    # CHECK: (2, 2, 2, 2)
+    # CHECK: (2, 2, 4, 2)
+    # CHECK: (2, 2, 0, 4)
+    # CHECK: (2, 2, 2, 4)
+    # CHECK: (2, 2, 4, 4)
+    # CHECK: ========
+    tile[print_tile2d_static, VariadicList[Int](2, 2)](0, 0, 6, 6)
+    print("========")
+    # CHECK: (4, 4, 4, 4)
+    # CHECK: (4, 4, 8, 4)
+    # CHECK: (4, 4, 12, 4)
+    # CHECK: (4, 4, 4, 8)
+    # CHECK: (4, 4, 8, 8)
+    # CHECK: (4, 4, 12, 8)
+    # CHECK: (4, 4, 4, 12)
+    # CHECK: (4, 4, 8, 12)
+    # CHECK: (4, 4, 12, 12)
+    # CHECK: ========
+    tile[print_tile2d_static, VariadicList[Int](4, 4)](4, 4, 16, 16)
+    print("========")
+    # CHECK: (5, 4, 1, 1)
+    # CHECK: (5, 4, 6, 1)
+    # CHECK: (5, 4, 11, 1)
+    # CHECK: (5, 4, 16, 1)
+    # CHECK: (5, 4, 21, 1)
+    # CHECK: (5, 4, 26, 1)
+    # CHECK: (5, 4, 31, 1)
+    # CHECK: (5, 4, 36, 1)
+    # CHECK: (5, 4, 41, 1)
+    # CHECK: (5, 4, 46, 1)
+    # CHECK: (5, 4, 51, 1)
+    # CHECK: (1, 1, 56, 5)
+    # CHECK: (1, 1, 57, 5)
+    # CHECK: (1, 1, 58, 5)
+    # CHECK: (1, 1, 59, 5)
+    # CHECK: (1, 1, 56, 6)
+    # CHECK: (1, 1, 57, 6)
+    # CHECK: (1, 1, 58, 6)
+    # CHECK: (1, 1, 59, 6)
+    tile[print_tile2d_static, VariadicList[Int](5, 4, 1, 1)](1, 1, 60, 7)
 
 
 # CHECK-LABEL: test_dynamic_tile
@@ -159,6 +216,7 @@ fn test_tile_and_unswitch():
 
 fn main():
     test_static_tile()
+    test_static_tile2d()
     test_dynamic_tile()
     test_unswitched_tile()
     test_unswitched_2d_tile()
