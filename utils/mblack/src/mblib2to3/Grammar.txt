@@ -57,7 +57,7 @@ typedargslist: tfpdef ['=' test] (',' tfpdef ['=' test])* ',' '/' [
                      [',' ['**' tname [',']]] | '**' tname [','])
                      | tfpdef ['=' test] (',' tfpdef ['=' test])* [','])
 
-tname: NAME [metaparams] [':' test]
+tname: ['owned'] NAME [metaparams] [':' test]
 tname_star: NAME [':' (test|star_expr)]
 tfpdef: tname | '(' tfplist ')'
 tfplist: tfpdef (',' tfpdef)* [',']
