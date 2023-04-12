@@ -206,8 +206,9 @@ ErrorOrSuccess KGENCompilerLayer::add(StringRef libName, ModuleOp theModule) {
   llvm::orc::ResourceTrackerSP resourceTracker =
       dylib->getDefaultResourceTracker();
 
-  // Set the target now, so it's included in the cache key.
+  // Set the target and build info now, so it's included in the cache key.
   setTargetInfo(theModule, target);
+  setBuildInfo(theModule, build);
   // Populate the passes.
   populateElaborateModulePasses(pm, runtime, target, build, options);
 
