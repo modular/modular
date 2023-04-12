@@ -180,7 +180,10 @@ fn elementwise_wrapper[
 
         return res
 
-    out_chain.trace_detail[TraceLevel.OP, description_fn]("mogg.element_wise")
+    # A profiling entry has already been established on the C++ side which
+    # includes the (fused) kernel name. However we'd like to augment it with
+    # the details derived from the arguments.
+    out_chain.trace_detail[TraceLevel.OP, description_fn]("")
     elementwise[rank, simd_width, unroll_factor, func](
         rebind[StaticIntTuple[rank]](buffer.dynamic_shape),
         out_chain,
