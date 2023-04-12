@@ -327,6 +327,9 @@ struct ValueInfo {
   /// True if this value needs to be uninitialized at the end of its lifetime.
   const bool endsUninit;
 
+  /// True if this value lives in memory, not a @register_passable SSA value.
+  const bool isIndirect;
+
   /// True if this is a InitSelf argument: the self parameter in an
   /// __init__/__copyinit__ method.  These have magic behavior so they become
   /// fully initialized when all their fields are initialized.
@@ -356,9 +359,15 @@ struct ValueRef {
   /// tracking, which may be a subset of the overall value.
   unsigned startBit, endBit;
 
-  ValueRef() : valueId(0), startBit(~0U), endBit(~0U) {}
-  ValueRef(unsigned valueId, unsigned startBit, unsigned endBit)
-      : valueId(valueId), startBit(startBit), endBit(endBit) {}
+  /// This is true if this value reference is looking at the value indirectly,
+  /// not as a @register_passable value in an SSA value.
+  bool isIndirect;
+
+  ValueRef() : valueId(0), startBit(~0U), endBit(~0U), isIndirect(false) {}
+  ValueRef(unsigned valueId, unsigned startBit, unsigned endBit,
+           bool isIndirect)
+      : valueId(valueId), startBit(startBit), endBit(endBit),
+        isIndirect(isIndirect) {}
 
   /// Allow use of a ValueRef in a boolean condition.
   operator bool() const { return valueId != 0; }
@@ -439,17 +448,18 @@ struct ValueSet {
     }
 
     valueInfoIndex[val] = valueInfos.size();
-    valueInfos.push_back({val, firstValueBit, firstValueBit + numValueBits,
-                          trackable.startsUninit, trackable.endsUninit,
-                          trackable.isFullObjectLiveOnEntry,
-                          trackable.isDelSelf,
-                          /*hasErrorDiagnosed=*/false});
+    valueInfos.push_back(
+        {val, firstValueBit, firstValueBit + numValueBits,
+         trackable.startsUninit, trackable.endsUninit, trackable.isIndirect,
+         trackable.isFullObjectLiveOnEntry, trackable.isDelSelf,
+         /*hasErrorDiagnosed=*/false});
   }
 
   /// Return a reference to the entire value with the specified ID.
   ValueRef getFullValueRef(unsigned valueId) const {
     const auto &entry = valueInfos[valueId];
-    return ValueRef{valueId, entry.startValueBit, entry.endValueBit};
+    return ValueRef{valueId, entry.startValueBit, entry.endValueBit,
+                    entry.isIndirect};
   }
 
   /// Given a pointer or value that is being accessed by an operation, return
@@ -486,7 +496,8 @@ ValueRef ValueSet::getValueRef(Value value) const {
     unsigned startBit = baseVal.startBit + fieldOffset;
     auto resultType = structGEP.getType().getResolvedElementType();
     return ValueRef{baseVal.valueId, startBit,
-                    startBit + typeDeclInfo.getNumFieldsInType(resultType)};
+                    startBit + typeDeclInfo.getNumFieldsInType(resultType),
+                    /*isIndirect=*/true};
   }
 
   // Otherwise, we don't know what this is.
@@ -512,7 +523,7 @@ struct UninitializedValueScan {
 
 private:
   void checkOp(Operation &op);
-  void checkLive(Operation &op, ValueRef valueRef);
+  ValueRef checkLive(Value value, Operation &op);
 
   /// This is metadata about all the values we are tracking.
   ValueSet &valueSet;
@@ -617,15 +628,19 @@ static void addBadValueNameToDiag(const LifetimeTrackable &trackable,
 
 // Verify that the specified ValueRef is live at this point, diagnosing an
 // error at the specified operation if not.
-void UninitializedValueScan::checkLive(Operation &op, ValueRef valueRef) {
+ValueRef UninitializedValueScan::checkLive(Value value, Operation &op) {
+  ValueRef valueRef = valueSet.getValueRef(value);
+  if (!valueRef)
+    return valueRef;
+
   // If the value is live then all is good.
   if (valueRef.isAllPresent(liveValues))
-    return;
+    return valueRef;
 
   // Ok, it isn't, gear up to see how to best report the error.
   ValueInfo &valueEntry = valueSet.getValueInfo(valueRef.valueId);
   if (valueEntry.hasErrorDiagnosed)
-    return; // Only report one error per symbolic value.
+    return valueRef; // Only report one error per symbolic value.
   valueEntry.hasErrorDiagnosed = true;
 
   LifetimeTrackable trackable(valueEntry.value);
@@ -635,13 +650,14 @@ void UninitializedValueScan::checkLive(Operation &op, ValueRef valueRef) {
   // tried to initialize a value by initializing all its fields.  Reject this
   // with a customized error.
   if (trackable.isIndirect && valueRef.endBit == valueEntry.endValueBit &&
-      ValueRef(valueRef.valueId, valueRef.startBit, valueRef.endBit - 1)
+      ValueRef(valueRef.valueId, valueRef.startBit, valueRef.endBit - 1,
+               /*isIndirect=*/true)
           .isAllPresent(liveValues)) {
     auto diag = mlir::emitError(op.getLoc(), "'")
                 << trackable.name.str()
                 << "' used with all fields manually initialized "
                    "but without calling an '__init__' method";
-    return;
+    return valueRef;
   }
 
   auto diag = mlir::emitError(op.getLoc(), "use of uninitialized value ");
@@ -652,6 +668,7 @@ void UninitializedValueScan::checkLive(Operation &op, ValueRef valueRef) {
 
   diag.attachNote(valueEntry.value.getLoc())
       << "'" << trackable.name.str() << "' declared here";
+  return valueRef;
 }
 
 void UninitializedValueScan::scanFunction(mlir::FunctionOpInterface func) {
@@ -687,20 +704,6 @@ void UninitializedValueScan::checkOp(Operation &op) {
   if (isa<StructGEPOp>(op))
     return;
 
-  auto checkSSAValueLive = [&](Value value) -> ValueRef {
-    ValueRef valueId = valueSet.getValueRef(value);
-    if (valueId)
-      checkLive(op, valueId);
-    return valueId;
-  };
-
-  auto checkDirectPointerLive = [&](Value value) -> ValueRef {
-    ValueRef valueRef = valueSet.getValueRef(value);
-    if (valueRef)
-      checkLive(op, valueRef);
-    return valueRef;
-  };
-
   // A store of a whole value is an initialization.
   if (auto storeOp = dyn_cast<POP::StoreOp>(op)) {
     // This marks its value live.
@@ -712,7 +715,7 @@ void UninitializedValueScan::checkOp(Operation &op) {
   // an initialization.
   if (auto loadOp = dyn_cast<POP::LoadOp>(op)) {
     // This marks its value live.
-    checkLive(op, valueSet.getValueRef(loadOp.getPtr()));
+    checkLive(loadOp.getPtr(), op);
     return;
   }
 
@@ -735,21 +738,15 @@ void UninitializedValueScan::checkOp(Operation &op) {
          llvm::zip(signature.getValueInputConventions(), operands)) {
       switch (convention) {
       case ValueInputConvention::OwnedInReg:
-        // Transitions live -> dead.
-        checkSSAValueLive(operand).markBits(liveValues, false);
-        break;
-      case ValueInputConvention::BorrowedInReg:
-        // Live -> live.
-        checkSSAValueLive(operand);
-        break;
       case ValueInputConvention::OwnedInMem:
         // Transitions live -> dead.
-        checkDirectPointerLive(operand).markBits(liveValues, false);
+        checkLive(operand, op).markBits(liveValues, false);
         break;
       case ValueInputConvention::BorrowedInMem:
       case ValueInputConvention::ByRef:
+      case ValueInputConvention::BorrowedInReg:
         // Live -> live.
-        checkDirectPointerLive(operand);
+        checkLive(operand, op);
         break;
       case ValueInputConvention::ByRefResult:
       case ValueInputConvention::InitSelf:
@@ -769,9 +766,8 @@ void UninitializedValueScan::checkOp(Operation &op) {
 
   // If this operation has a direct use of a value we are tracking, consider
   // it a use that must be initialized.  This notably includes LoadOp.
-  bool hasUse = false;
   for (Value operand : op.getOperands())
-    hasUse |= checkSSAValueLive(operand) != 0;
+    checkLive(operand, op);
 
   // LetReg defines its own value.
   // TODO: can this be made more generic, or are there only a few things that
@@ -785,10 +781,10 @@ void UninitializedValueScan::checkOp(Operation &op) {
   // (including early returns and exception raises that leave the function).
   // Check that all of the values we are tracking are managed correctly.
   if (isa<KGEN::ReturnOp>(op)) {
-    auto valueInfosRef = valueSet.getValueInfos();
-    for (size_t i = 1, e = valueInfosRef.size(); i != e; ++i)
-      if (!valueInfosRef[i].endsUninit)
-        checkLive(op, valueSet.getFullValueRef(i));
+    for (const ValueInfo &valueInfo :
+         llvm::drop_begin(valueSet.getValueInfos()))
+      if (!valueInfo.endsUninit)
+        checkLive(valueInfo.value, op);
     return;
   }
 
@@ -899,12 +895,6 @@ void UninitializedValueScan::checkOp(Operation &op) {
     liveValues &= bodySets.liveValues;
     return;
   }
-
-  (void)hasUse;
-#if STAGING
-  if (hasUse && !isMemoryEffectFree(&op) && !isa<POP::LoadOp>(op))
-    op.dump();
-#endif
 }
 
 //===----------------------------------------------------------------------===//
