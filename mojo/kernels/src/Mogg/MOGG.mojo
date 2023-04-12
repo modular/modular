@@ -123,6 +123,7 @@ fn to_buffer[
 
 @always_inline
 fn elementwise_wrapper[
+    trace_description: StringLiteral,
     simd_width: Int,
     type: DType,
     rank: Int,
@@ -147,22 +148,21 @@ fn elementwise_wrapper[
 
     @always_inline
     fn description_fn() -> String:
-        let shape_tmp = String("x").join[rank](buffer.get_shape())
-        let shape_str = String("shape=") + shape_tmp
+        let name_str = String("name=") + trace_description
+        let shape_str = String("shape=") + String("x").join[rank](
+            buffer.get_shape()
+        )
 
-        let unroll_factor_str = String("unroll_factor=") + String(unroll_factor)
-        let vector_width_str = String("vector_width=") + String(simd_width)
+        let unroll_factor_str = String("unroll_factor=") + unroll_factor
+        let vector_width_str = String("vector_width=") + simd_width
 
         let res = String(";").join(
-            shape_str, unroll_factor_str, vector_width_str
+            name_str, shape_str, unroll_factor_str, vector_width_str
         )
 
         return res
 
-    # A profiling entry has already been established on the C++ side which
-    # includes the (fused) kernel name. However we'd like to augment it with
-    # the details derived from the arguments.
-    out_chain.trace_detail[TraceLevel.OP, description_fn]("")
+    out_chain.trace_detail[TraceLevel.OP, description_fn]("mojo.elementwise")
     elementwise[rank, simd_width, unroll_factor, func](
         rebind[StaticIntTuple[rank]](buffer.dynamic_shape),
         out_chain,
