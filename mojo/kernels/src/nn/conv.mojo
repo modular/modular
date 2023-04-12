@@ -14,7 +14,7 @@ from Buffer import (
     _compute_ndbuffer_offset,
 )
 from DType import DType
-from Functional import unroll, unroll2, async_parallelize
+from Functional import unroll, unroll2, async_parallelize, tile
 from Image import ImageData, Image2DLayout, ImageShape
 from Index import Index, StaticIntTuple
 from LLCL import OutputChainPtr
@@ -32,6 +32,9 @@ from Pointer import DTypePointer
 from Range import range
 from SIMD import SIMD
 from TargetInfo import simd_byte_width
+
+
+alias MAX_NUM_CHANNELS_TILE = 384
 
 
 @register_passable("trivial")
@@ -1446,7 +1449,9 @@ struct ConvNHWCInnerLoopFilterPacked[
     var conv_shape: ConvShape
 
     # Table of pointers for all the rows.
-    var offset_table: Buffer[a_row_size, DType.index]
+    var offset_table: NDBuffer[
+        2, create_dim_list(MAX_NUM_CHANNELS_TILE, a_row_size), DType.index
+    ]
 
     var input_base_pointer: DTypePointer[value_type]
 
@@ -1459,7 +1464,9 @@ struct ConvNHWCInnerLoopFilterPacked[
         tile_n_k: StaticIntTuple[2],
         c_bound: StaticIntTuple[2],
         conv_shape: ConvShape,
-        offset_table: Buffer[a_row_size, DType.index],
+        offset_table: NDBuffer[
+            2, create_dim_list(MAX_NUM_CHANNELS_TILE, a_row_size), DType.index
+        ],
         input_base_pointer: DTypePointer[value_type],
     ):
         self.c = c
@@ -1504,7 +1511,9 @@ struct ConvNHWCInnerLoopFilterPacked[
             tile_n_k(StaticIntTuple): 2D dimension tuple describing the
                 size of the packed tile of B.
         """
-        let offset_table = Buffer[a_row_size, DType.index].stack_allocation()
+        let offset_table = NDBuffer[
+            2, create_dim_list(MAX_NUM_CHANNELS_TILE, a_row_size), DType.index
+        ].stack_allocation()
         let instance = ConvNHWCInnerLoopFilterPacked[
             shape_input,
             shape_c,
@@ -1535,35 +1544,41 @@ struct ConvNHWCInnerLoopFilterPacked[
 
     fn _initialize_offset_table(self):
         let k_offset = self.global_offset.K
-        let r_s_c = _k_to_r_s_c_nhwc(k_offset, self.conv_shape)
-        let r_s = Index(r_s_c[0], r_s_c[1])
 
-        @always_inline
-        fn body[idx: Int]():
-            alias row_idx = idx
-            let m_offset = self.global_offset.M + row_idx
-            let n_ho_wo = _m_to_n_ho_wo_nhwc(m_offset, self.conv_shape)
-            let ho_wo = Index(n_ho_wo[1], n_ho_wo[2])
-            let hi_wi = _ho_wo_to_hi_wi(ho_wo, r_s, self.conv_shape)
+        # tile_n_k[1] is multiple of conv_shape.c
+        let num_channels = self.tile_n_k[1] // self.conv_shape.c
+        for channel_idx in range(num_channels):
+            let k = self.global_offset.K + channel_idx * self.conv_shape.c
+            let r_s_c = _k_to_r_s_c_nhwc(k, self.conv_shape)
+            let r_s = Index(r_s_c[0], r_s_c[1])
 
-            let linear_offset = _compute_ndbuffer_offset(
-                self.input,
-                Index(
-                    n_ho_wo[0],
-                    hi_wi[0],
-                    hi_wi[1],
-                    r_s_c[2],
-                ),
-            )
+            @always_inline
+            fn body[idx: Int]():
+                alias row_idx = idx
+                let m_offset = self.global_offset.M + row_idx
+                let n_ho_wo = _m_to_n_ho_wo_nhwc(m_offset, self.conv_shape)
+                let ho_wo = Index(n_ho_wo[1], n_ho_wo[2])
+                let hi_wi = _ho_wo_to_hi_wi(ho_wo, r_s, self.conv_shape)
 
-            if hi_wi >= Index(0, 0) and hi_wi < Index(
-                self.conv_shape.h, self.conv_shape.w
-            ):
-                self.offset_table[row_idx] = linear_offset
-            else:
-                self.offset_table[row_idx] = -1
+                let linear_offset = _compute_ndbuffer_offset(
+                    self.input,
+                    Index(
+                        n_ho_wo[0],
+                        hi_wi[0],
+                        hi_wi[1],
+                        r_s_c[2],
+                    ),
+                )
 
-        unroll[a_row_size, body]()
+                let offset_idx = Index(channel_idx, row_idx)
+                if hi_wi >= Index(0, 0) and hi_wi < Index(
+                    self.conv_shape.h, self.conv_shape.w
+                ):
+                    self.offset_table[offset_idx] = linear_offset
+                else:
+                    self.offset_table[offset_idx] = -1
+
+            unroll[a_row_size, body]()
 
     fn _initialize_c_tile(
         self,
@@ -1717,7 +1732,7 @@ struct ConvNHWCInnerLoopFilterPacked[
 
     @always_inline
     fn _load_a(
-        self, index_m_k: StaticIntTuple[2], row_idx: Int
+        self, channel_idx: Int, index_m_k: StaticIntTuple[2], row_idx: Int
     ) -> SIMD[value_type, 1]:
         """Utility to load one value of Im2col transformed matrix from the
         pre-transformed image.
@@ -1727,39 +1742,13 @@ struct ConvNHWCInnerLoopFilterPacked[
             Returns (SIMD):
                 Value loaded from the translated address of image input.
         """
-        if same_channel_index:
-            let linear_offset: Int = Int(self.offset_table[row_idx].value)
-            if linear_offset == -1:
-                return SIMD[value_type, 1](0)
-            else:
-                self.offset_table[row_idx] = linear_offset + 1
-                return self.input_base_pointer.load(linear_offset)
+        let channel_offset = index_m_k[1] - channel_idx * self.conv_shape.c
+        let offset_idx = Index(channel_idx, row_idx)
+        let linear_offset: Int = Int(self.offset_table[offset_idx].value)
+        if linear_offset == -1:
+            return SIMD[value_type, 1](0)
         else:
-            let n_ho_wo = _m_to_n_ho_wo_nhwc(index_m_k[0], self.conv_shape)
-            let rsc = _k_to_r_s_c_nhwc(index_m_k[1], self.conv_shape)
-            let hi_wi = _ho_wo_to_hi_wi(
-                Index(n_ho_wo[1], n_ho_wo[2]),
-                Index(rsc[0], rsc[1]),
-                self.conv_shape,
-            )
-
-            if hi_wi < Index(
-                self.conv_shape.h, self.conv_shape.w
-            ) and hi_wi >= Index(0, 0):
-                return self.input.simd_load[1](
-                    Index(
-                        # N
-                        n_ho_wo[0],
-                        # H
-                        hi_wi[0],
-                        # W
-                        hi_wi[1],
-                        # C
-                        rsc[2],
-                    )
-                )
-
-        return SIMD[value_type, 1](0)
+            return self.input_base_pointer.load(linear_offset + channel_offset)
 
     fn _accumulate(
         self,
@@ -1771,6 +1760,7 @@ struct ConvNHWCInnerLoopFilterPacked[
             ),
             accum_type,
         ],
+        channel_idx: Int,
         tile_n_k_idx: StaticIntTuple[2],
     ):
         """Utility funcion on the inner loop. Launch one tile of fma on the
@@ -1787,7 +1777,6 @@ struct ConvNHWCInnerLoopFilterPacked[
         let n_outer_idx = tile_n_k_idx[0] // pack_inner_size
 
         # Global K index.
-        let global_k = self.global_offset.K + tile_n_k_idx[1]
 
         let local_a = Buffer[
             (simd_size * a_row_size),
@@ -1799,7 +1788,7 @@ struct ConvNHWCInnerLoopFilterPacked[
             alias fill_a_idx = idx
             let global_m = self.global_offset.M + fill_a_idx
             let a_val_scalar = self._load_a(
-                Index(global_m, global_k), fill_a_idx
+                channel_idx, Index(global_m, tile_n_k_idx[1]), fill_a_idx
             )
             let a_fill_val = SIMD[value_type, simd_size](a_val_scalar)
             local_a.simd_store[simd_size](fill_a_idx * simd_size, a_fill_val)
@@ -1840,6 +1829,10 @@ struct ConvNHWCInnerLoopFilterPacked[
             accum_type,
         ].stack_allocation()
 
+        let num_channels = self.tile_n_k[1] // self.conv_shape.c
+
+        self._initialize_offset_table()
+
         for idx_n in range(0, self.tile_n_k[0], pack_inner_size):
             # Initialize accumulation buffer
             #  either zero filling or load existing value.
@@ -1850,13 +1843,15 @@ struct ConvNHWCInnerLoopFilterPacked[
 
             # Iterate on tile K dimension.
             # Allocate offset table.
-            if same_channel_index:
-                self._initialize_offset_table()
 
             # Not unrolled on K path.
-            for idx_k in range(self.tile_n_k[1]):
-                # accumulate data for this (n, k) index
-                self._accumulate(c_local, Index(idx_n, idx_k))
+            var channel_offset: Int = 0
+            for channel_idx in range(num_channels):
+                for idx_k in range(
+                    channel_offset, channel_offset + self.conv_shape.c
+                ):
+                    self._accumulate(c_local, channel_idx, Index(idx_n, idx_k))
+                channel_offset += self.conv_shape.c
 
             self._store_c_tile(c_local, Index(0, idx_n))
 
@@ -2088,12 +2083,16 @@ struct ConvIm2ColNHWC[
             conv_shape: Struct describing the convolution dimensions.
         """
 
-        let tile_n_k = calculate_tile_n_k[pack_cache_size, pack_inner_size](
+        let tile_n_k_raw = calculate_tile_n_k[pack_cache_size, pack_inner_size](
             GemmShape(
                 gemm_shape.M,
                 gemm_shape.N,
-                conv_shape.c,  # Do not yet pack more than C.
+                gemm_shape.K,  # Do not yet pack more than C.
             )
+        )
+        # Round k to multiple of number of channels.
+        let tile_n_k = Index(
+            tile_n_k_raw[0], tile_n_k_raw[1] - tile_n_k_raw[1] % conv_shape.c
         )
         # Output shape [N, F, Ho, Wo]
         let c_pointer = out._offset(Index(0, 0, 0, 0))
@@ -2200,30 +2199,19 @@ struct ConvIm2ColNHWC[
         let valid_k_count = self.gemm_shape.K
         var k_idx: Int = 0
 
-        # Assume starting at multiple of channel count always.
-        # TODO: relax this assumption for perf coverage.
-        while k_idx < valid_k_count:
-            var processed_k: Int = 0
-            # Proceed with the largest K tile until crossing
-            #  valid boundary.
-            while processed_k <= (self.conv_shape.c - tile_k):
-                self._outer_n_loop(b_packed, GemmShape(0, 0, k_idx), tile_k)
-                k_idx += tile_k
-                processed_k += tile_k
+        @always_inline
+        fn k_iteration(k_offset: Int, k_tile_size: Int):
+            self._outer_n_loop(
+                b_packed,
+                GemmShape(0, 0, k_offset),
+                k_tile_size,
+            )
 
-            # Launch another k tile to clean up the residue to the c boundary.
-            let remaining_k = self.conv_shape.c - processed_k
-
-            # Do a residue tile if original gemm shape K is not
-            #  a multiple of tile K.
-            if remaining_k > 0:
-                # TODO: possibly need to re-adjust N tile here, if the
-                #  residue K is small then could use L2 cache better by
-                #  having a wider N.
-                self._outer_n_loop(
-                    b_packed, GemmShape(0, 0, k_idx), remaining_k
-                )
-                k_idx += remaining_k
+        tile[k_iteration](
+            0,  # k offset
+            valid_k_count,  # valid K count
+            self.tile_n_k[1],  # max tile k size
+        )
 
     fn _outer_n_loop(
         self,
@@ -2531,7 +2519,7 @@ struct ConvIm2ColNHWC[
                 RowSize,
                 m_loop_pack_inner_size,
                 skip_col_bound,
-                True,  # same_channel_index
+                False,  # same_channel_index
             ].run(
                 self.c,
                 self.input,
