@@ -65,21 +65,6 @@ struct MojoTarget : public SBTarget {
 };
 
 //===----------------------------------------------------------------------===//
-// MojoDebugger
-//===----------------------------------------------------------------------===//
-
-struct MojoDebugger : public SBDebugger {
-  using SBDebugger::SBDebugger;
-  using SBDebugger::operator=;
-
-  /// Return a reference to the async error stream that the debugger holds.
-  raw_ostream &getAsyncErrorStream() {
-    auto *debuggerSPPtr = ((lldb::DebuggerSP *)this);
-    return (*debuggerSPPtr)->GetAsyncErrorStream()->AsRawOstream();
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // MojoExpressionEvaluationOptions
 //===----------------------------------------------------------------------===//
 
@@ -118,6 +103,11 @@ public:
     /// the Mojo persistent state, or nullopt if the cell was not successfully
     /// executed.
     std::optional<unsigned> replExprIdx;
+
+    /// This is a list of debug messages that we'll only flush to the kernel's
+    /// stderr if we are told to do so.
+    std::deque<std::pair<MojoTypeSystem::MessageKind, std::string>>
+        debugMessages;
   };
 
   /// This struct represents a single expression evaluation request. It is used
@@ -129,11 +119,6 @@ public:
     std::thread executionThread;
     std::atomic<bool> finished;
     KernelCellState *cellState = nullptr;
-
-    /// This is a list of debug messages that we'll only flush to the kernel's
-    /// stderr if we are told to do so.
-    std::deque<std::pair<MojoTypeSystem::MessageKind, std::string>>
-        debugMessages;
   };
 
   MojoKernel(OutputFn outputFn)
@@ -168,7 +153,7 @@ private:
   /// Report an error to the Jupyter kernel.
   LogicalResult reportKernelError(const Twine &message) {
     llvm::errs() << "error: " << message << "\n";
-    sendOutput("error", message.str().c_str());
+    sendOutput("error", message.str());
     return failure();
   }
 
@@ -190,7 +175,7 @@ private:
   OutputFn outputFn;
 
   /// Various LLDB state used for tracking the repl process.
-  MojoDebugger debugger;
+  SBDebugger debugger;
   MojoTarget target;
   SBProcess process;
   MojoExpressionEvaluationOptions exprOpts;
@@ -381,21 +366,23 @@ void MojoKernel::flushLLDBStreams(ExpressionExecutionState *state) {
 
   // Various logging utilities (like CloudWatch) parse JSON automatically so we
   // should use that for structured logging.
-  auto reportMessage = [this](StringRef type, StringRef message) {
-    llvm::json::OStream j(debugger.getAsyncErrorStream());
+  auto reportMessage = [](StringRef type, StringRef message) {
+    llvm::json::OStream j(llvm::errs());
     // Produce `{"type": <type>, "message": <message>}`
     j.object([&]() {
       j.attribute("type", type);
       j.attribute("message", message);
     });
+    llvm::errs() << "\n";
   };
 
   // The following gets the stream of events without timeout. All the messages
   // will be read eventually anyway.
   while (mojoTypeSystemListener->GetEvent(event, std::chrono::seconds(0))) {
     MojoTypeSystem::handleEvent(
-        event, state->debugMessages, reportMessage,
+        event, state->cellState->debugMessages, reportMessage,
         [&](StringRef msg) { sendOutput("stderr", msg); });
+    event->Clear();
   }
 
   char outputBuffer[1024];

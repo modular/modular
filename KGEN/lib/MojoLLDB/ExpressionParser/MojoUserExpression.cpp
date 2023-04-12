@@ -145,7 +145,9 @@ char MojoUserExpression::ID;
 static bool handleSpecialExpr(std::string &text,
                               DiagnosticManager &diagnosticManager,
                               MojoTypeSystem &typeSystem) {
-  if (text == "!dump_logs\n") {
+  // Use rtrim to remove newlines/whitespace at the end. We want the exact
+  // equality check here so we don't match on something like `!dump_logs_foo`.
+  if (StringRef(text).rtrim() == "!dump_logs") {
     typeSystem.flushIRDumpAndDebugLog();
     text = "";
     return true;
