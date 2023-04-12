@@ -77,16 +77,22 @@ struct OutputChain {
   OutputChain(OutputChain &&) = default;
   OutputChain &operator=(OutputChain &&) = default;
 
-  // Return copy of this output chain. The chain, location,
-  // prototypeProfilerEntry and all refs are moved into the result.
-  // However, the profilerEntry is not moved since it will be used on the
-  // MEF side.
+  // Return a 'fork' of this output chain:
+  //  - The chain and location are copied, so are valid in both this and the
+  //    result.
+  //  - The prototypeProfilerEntry and all refs are moved into the result,
+  //    on the assumption the caller will create sub-tasks and take
+  //    responsibility for calling markReady/markError when they complete.
+  //  - The profilerEntry is not moved or copied, on the assumption it
+  //    will be recorded by recordProfilerEntry.
   //
-  // Called from the Mojo side to take over ownership of the OutputChain as
-  // a heap-allocated object which can live until markReady() or markError()
-  // are called. Only used by asynchronous kernels, synchronous kernels will
-  // work directly with the output chain passed to them.
-  OutputChain copy();
+  // Called from Mojo asynchronous kernels to prepare for executing sub-tasks.
+  // The fork result will constructed into a heap allocated object, and
+  // deleted from the Mojo side when all sub-tasks have completed.
+  //
+  // Synchronous Mojo kernels will not call fork, and instead will work
+  // directly with the output chain passed to them.
+  OutputChain fork();
 
   // Processes work items until the chain is completed.
   // FOR USE BY TESTING AND SEARCH ONLY.
@@ -110,30 +116,41 @@ struct OutputChain {
 
   /// Indicate the Mojo call is complete.
   ///
-  /// Called from the Mojo side.
+  /// Called from the Mojo side.  The chain is not consumed so that we can
+  //  /// always safely await and check for errors on the chain irrespective of
+  //  /// whether the Mojo kernel is asynchronous or synchronous.
   void markReady();
 
   /// Indicate the Mojo call failed with the given message.
   ///
-  /// Called from the Mojo side.
+  /// Called from the Mojo side. The chain is not consumed so that we can
+  /// always safely await and check for errors on the chain irrespective of
+  /// whether the Mojo kernel is asynchronous or synchronous.
   void markError(StringRef message);
 
   /// Emplace the chain.
   ///
   /// Called from the MEF side when there's nothing to be done by
-  /// a Mojo kernel.
-  void emplace() &&;
+  /// a Mojo kernel. The chain is not consumed so that we can
+  /// always safely await and check for errors on the chain irrespective of
+  /// whether the Mojo kernel is asynchronous or synchronous.
+  void emplace();
 
   /// Set the chain to the given error.
   ///
   /// Called from the MEF side when an error is detected before entering
-  /// the Mojo kernel.
-  void setToError(Error &&error) &&;
+  /// the Mojo kernel. The chain is not consumed so that we can
+  /// always safely await and check for errors on the chain irrespective of
+  /// whether the Mojo kernel is asynchronous or synchronous.
+  void setToError(Error &&error);
 
   /// Record any profiling entry if it has not been recorded already.
   ///
-  /// Called from the MEF side when control returns. The kernel may have
-  /// launched sub-tasks, which will continue to execute asynchronously.
+  /// Called from the MEF side when control returns from a Mojo kernel. If the
+  /// kernel is asynchronous then it's launched sub-tasks will continue, but
+  /// we'll stop the profiling entry now to avoid confusing traces. If the
+  /// kernel is synchronous then hopefully it's profiling entry was already
+  /// stopped, and this call is a no-op.
   void recordProfilerEntry() &&;
 
   /// Begin executing the Mojo coroutine pointed to by hdl using the resumption

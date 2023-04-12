@@ -184,8 +184,8 @@ KGEN_CompilerRT_LLCL_OutputChainPtr_CreateEmpty(LLCLRuntimeRef rt) {
 
 /// Returns a fresh OutputChain who's contents is copied from outChain.
 COMPILERRT_EXPORT LLCLOutputChainRef
-KGEN_CompilerRT_LLCL_OutputChainPtr_CreateCopy(LLCLOutputChainRef outChain) {
-  return wrap(new OutputChain(unwrap(outChain).copy()));
+KGEN_CompilerRT_LLCL_OutputChainPtr_CreateFork(LLCLOutputChainRef outChain) {
+  return wrap(new OutputChain(unwrap(outChain).fork()));
 }
 
 /// Destroys outChain, which must be the result of a CreateEmpty or
@@ -262,8 +262,8 @@ void M::KGEN::registerLLCL(
                    (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_MarkError});
   funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_CreateEmpty",
                    (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_CreateEmpty});
-  funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_CreateCopy",
-                   (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_CreateCopy});
+  funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_CreateFork",
+                   (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_CreateFork});
   funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_Destroy",
                    (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_Destroy});
   funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_Await",
