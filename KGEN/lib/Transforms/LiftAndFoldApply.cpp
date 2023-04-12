@@ -9,6 +9,8 @@
 #include "KGEN/KGENPasses.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
+#include "mlir/IR/Threading.h"
+#include "llvm/Support/Mutex.h"
 
 using namespace M;
 using namespace KGEN;
@@ -170,11 +172,34 @@ struct LiftAndFoldApplyPass : impl::LiftAndFoldApplyBase<LiftAndFoldApplyPass> {
   void runOnOperation() override {
     auto &paramCache = getAnalysis<ParameterCollector::Analysis>();
 
-    for (auto func : getOperation().getOps<GeneratorOp>()) {
+    // Give each thread a copy of the parameter cache, rather than each work
+    // item.
+    DenseMap<uint64_t, ParameterCollector::Analysis> threadCaches;
+    if (getContext().isMultithreadingEnabled())
+      threadCaches.reserve(getContext().getThreadPool().getThreadCount());
+    llvm::sys::SmartRWMutex<true> mutex;
+
+    auto workFunc = [&paramCache, &mutex, &threadCaches](GeneratorOp func) {
+      // Get the thread-local cache.
+      ParameterCollector::Analysis *cache = nullptr;
+      uint64_t threadId = llvm::get_threadid();
+      {
+        llvm::sys::SmartScopedReader<true> lock(mutex);
+        auto it = threadCaches.find(threadId);
+        if (it != threadCaches.end())
+          cache = &it->second;
+      }
+      if (!cache) {
+        llvm::sys::SmartScopedWriter<true> lock(mutex);
+        // Each thread gets a copy of the saved cache.
+        cache = &threadCaches.try_emplace(threadId, paramCache).first->second;
+      }
       ParameterUseDefGraph graph(func.getBodyRegion());
-      graph.calculate(paramCache);
-      liftAndFoldApply(&func.getBodyRegion(), paramCache, graph);
-    }
+      graph.calculate(*cache);
+      liftAndFoldApply(&func.getBodyRegion(), *cache, graph);
+    };
+    mlir::parallelForEach(&getContext(), getOperation().getOps<GeneratorOp>(),
+                          workFunc);
     markAllAnalysesPreserved();
   }
 };
