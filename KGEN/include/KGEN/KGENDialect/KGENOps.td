@@ -854,7 +854,7 @@ def KGEN_CallSignatureOp : KGENOp<"call_signature", [
 
     ```mlir
     %0 = kgen.call_signature %closure(%arg0, %arg1)
-      : (index, index) fat -> index
+      : (index, index) capturing -> index
     ```
   }];
 

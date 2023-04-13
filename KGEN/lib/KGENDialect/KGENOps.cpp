@@ -944,7 +944,7 @@ static ParseResult parseCallSignature(OpAsmParser &p, Type &typeOfCallee,
 static void printCallSignature(OpAsmPrinter &p, Operation *op, Type calleeType,
                                TypeRange argumentTypes, TypeRange resultTypes) {
   // We expect the following syntax: call_signature callee(dynamic args) :
-  // (argTypes...) fat -> calleeResultType
+  // (argTypes...) capturing -> calleeResultType
   if (SignatureType sigType = cast<SignatureType>(calleeType)) {
     printSignature(p, sigType);
   }

@@ -15,11 +15,11 @@ from Range import range
 
 fn fat_signature_types():
     let x = (4).__as_mlir_index()
-    # CHECK: lit.func *"g(__mlir_type.index)"(%y: index borrow) fat -> index {
+    # CHECK: lit.func *"g(__mlir_type.index)"(%y: index borrow) capturing -> index {
     fn g(y: __mlir_type.index) -> __mlir_type.index:
         return x
 
-    # CHECK: lit.func *"h(__mlir_type.index,__mlir_type.index)"<N>(%y: index borrow, %z: index borrow) fat -> index {
+    # CHECK: lit.func *"h(__mlir_type.index,__mlir_type.index)"<N>(%y: index borrow, %z: index borrow) capturing -> index {
     fn h[N: __mlir_type.index](y: __mlir_type.index, z: __mlir_type.index) -> __mlir_type.index:
         return x
 
@@ -224,7 +224,7 @@ fn nestedFnInLoop():
       # CHECK: [[I:%.*]] = kgen.call @{{.*}}__next__
       # CHECK: lit.func *"foo()"
       @always_inline
-      @thin
+      @noncapturing
       fn foo() -> Int:
           # CHECK-NEXT: return [[I]]
           return i
@@ -645,9 +645,9 @@ fn topLevelFunction() -> Int:
   fn nestedFunction() -> Int:
     # CHECK-NEXT: pop.load %a
     return a
-  # CHECK: declare b: <>() fat -> !kgen.declref<@"$Int"::@Int> = <*"nestedFunction()">
+  # CHECK: declare b: <>() capturing -> !kgen.declref<@"$Int"::@Int> = <*"nestedFunction()">
   alias b = nestedFunction
-  # CHECK: call_param[<>() fat -> !kgen.declref<@"$Int"::@Int>: *"nestedFunction()"]()
+  # CHECK: call_param[<>() capturing -> !kgen.declref<@"$Int"::@Int>: *"nestedFunction()"]()
   return nestedFunction()
 
 # CHECK-LABEL: lit.struct.decl @SomeStruct
@@ -659,22 +659,22 @@ struct SomeStruct:
     fn nestedFunction() -> Int:
       # CHECK-NEXT: pop.load %a
       return a
-    # CHECK: declare b: <>() fat -> !kgen.declref<@"$Int"::@Int> = <*"nestedFunction()">
+    # CHECK: declare b: <>() capturing -> !kgen.declref<@"$Int"::@Int> = <*"nestedFunction()">
     alias b = nestedFunction
-    # CHECK: call_param[<>() fat -> !kgen.declref<@"$Int"::@Int>: *"nestedFunction()"]()
+    # CHECK: call_param[<>() capturing -> !kgen.declref<@"$Int"::@Int>: *"nestedFunction()"]()
     return nestedFunction()
 
 
 # CHECK-LABEL: lit.func @"closureParameter()"
-# CHECK-SAME: fat ->
-fn closureParameter[func: __mlir_type.`!kgen.signature<() fat -> index>`]():
+# CHECK-SAME: capturing ->
+fn closureParameter[func: __mlir_type.`!kgen.signature<() capturing -> index>`]():
     pass
 
 
 # CHECK-LABEL: lit.func @"topLevelParamFn()"<a_param>
 fn topLevelParamFn[a_param: __mlir_type.index]():
   # CHECK: lit.func *"nestedFunction()"<b_param>
-  @thin
+  @noncapturing
   fn nestedFunction[b_param: __mlir_type.index]():
     return
   # CHECK: declare ref: <index>() -> !lit.none = <*"nestedFunction()">
@@ -685,7 +685,7 @@ fn topLevelParamFn[a_param: __mlir_type.index]():
   let value = 0
   fn capturingNestedFunction() -> Int:
     return value
-  # CHECK: declare fatRef: <>() fat -> {{.*}}@Int> = <*"capturingNestedFunction()">
+  # CHECK: declare fatRef: <>() capturing -> {{.*}}@Int> = <*"capturingNestedFunction()">
   alias fatRef = capturingNestedFunction
 
 
@@ -693,7 +693,7 @@ struct SomeParamStruct[c_param: Int]:
   # CHECK-LABEL: lit.func @"topLevelParamFn({{.*}})"<a_param{{.*}}>
   fn topLevelParamFn[a_param: Int](self):
     # CHECK: lit.func *"nestedFunction()"<b_param{{.*}}>
-    @thin
+    @noncapturing
     fn nestedFunction[b_param: Int]():
       return
     # CHECK: declare ref: <@"$Int"::@Int>() -> !lit.none = <*"nestedFunction()">

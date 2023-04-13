@@ -13,7 +13,13 @@ from IO import print
 @always_inline
 async fn just_call_it[
     func: __mlir_type[
-        `!kgen.signature<<`, Int, `>(`, Int, ` borrow) async|fat -> `, Int, `>`
+        `!kgen.signature<<`,
+        Int,
+        `>(`,
+        Int,
+        ` borrow) async|capturing -> `,
+        Int,
+        `>`,
     ]
 ]() -> Int:
     let coro: Coroutine[Int] = func[3](2)

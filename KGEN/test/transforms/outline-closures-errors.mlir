@@ -3,7 +3,7 @@
 kgen.generator @thin_nested_fn_captures() {
   // expected-note @below {{captured value defined here}}
   %0 = index.constant 0
-  // expected-error @below {{nested function is marked as @thin, but it captures values}}
+  // expected-error @below {{nested function is marked as @noncapturing, but it captures values}}
   kgen.param.declare.region Fn = () -> index {
     // expected-note @below {{use of captured value here}}
     kgen.return %0 : index

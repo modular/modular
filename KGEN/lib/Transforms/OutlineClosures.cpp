@@ -79,10 +79,10 @@ void OutlineClosuresPass::runOnOperation() {
 
       // If the body is not isolated from above *and* it's not marked
       // always_inline, emit an error.
-      if (!isolated && !regionDecl.getSignature().isFat()) {
-        InFlightDiagnostic diag =
-            mlir::emitError(regionDecl.getLoc())
-            << "nested function is marked as @thin, but it captures values";
+      if (!isolated && !regionDecl.getSignature().isCapturing()) {
+        InFlightDiagnostic diag = mlir::emitError(regionDecl.getLoc())
+                                  << "nested function is marked as "
+                                     "@noncapturing, but it captures values";
         Value capture = captures.front();
         Operation *user =
             *llvm::find_if(capture.getUsers(), [&](Operation *op) {

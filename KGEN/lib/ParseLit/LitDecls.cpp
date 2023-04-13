@@ -489,7 +489,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
         });
     // Never regress resolvedness. In the case of non inlined nested functions,
     // the body is fully resolved when the signature is resolved in order
-    // to identify the value of 'fat'
+    // to identify the value of 'capturing'
     if (decl.resolvedness != DeclResolvedness::fully)
       decl.resolvedness = DeclResolvedness::signature;
   }
@@ -1501,12 +1501,12 @@ void FnDecorators::applyLate(SymbolRefAttr symbolName, StringRef unmangledName,
     if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
       if (declRef->spelling == "export") {
         applyLateExport(loc, symbolName, unmangledName);
-      } else if (declRef->spelling == "thin") {
+      } else if (declRef->spelling == "noncapturing") {
         signature = signature.getWithFnEffects(
-            bitEnumClear(signature.getFnEffects(), FnEffects::Fat));
-      } else if (declRef->spelling == "fat") {
+            bitEnumClear(signature.getFnEffects(), FnEffects::Capturing));
+      } else if (declRef->spelling == "closure") {
         signature = signature.getWithFnEffects(signature.getFnEffects() |
-                                               FnEffects::Fat);
+                                               FnEffects::Capturing);
       } else {
         emitError(decorator->getLoc(), "unsupported decorator: @")
             << declRef->spelling << declRef->getRange();
@@ -1738,20 +1738,20 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
 
   // Nested functions are capturing by default.
   if (funcOp->getParentOfType<FuncOp>())
-    effects = effects | FnEffects::Fat;
+    effects = effects | FnEffects::Capturing;
 
   // Any function that contains a capturing closure as a parameter is itself
   // capturing.
   // TODO: Check struct elements too.
-  bool transitivelyFat = llvm::any_of(
+  bool transivelyCaptures = llvm::any_of(
       llvm::concat<ParamDeclAttr>(inputParamDecls, resultParamDecls),
       [](ParamDeclAttr decl) {
         if (auto signature = dyn_cast<SignatureType>(decl.getType()))
-          return signature.isFat();
+          return signature.isCapturing();
         return false;
       });
-  if (transitivelyFat)
-    effects = effects | FnEffects::Fat;
+  if (transivelyCaptures)
+    effects = effects | FnEffects::Capturing;
 
   // We know the result type of the function is register passable (because
   // otherwise it would be promoted to an argument).  If the result of the
@@ -1833,11 +1833,11 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   FnDecorators(decl, shared)
       .applyLate(symbolName, baseName, decoratorExprs, signature);
 
-  // If the user tried to mark a transitive fat closure as thin, emit an error.
-  if (transitivelyFat && !signature.isFat()) {
-    return p.emitError(
-        funcOp.getLoc(),
-        "cannot mark a function with capturing closure parameters as @thin");
+  // If the user tried to mark a transitive capturing closure as thin, emit an
+  // error.
+  if (transivelyCaptures && !signature.isCapturing()) {
+    return p.emitError(funcOp.getLoc(), "cannot mark a function with capturing "
+                                        "closure parameters as @noncapturing");
   }
 
   attrs.set(funcOp.getSignatureAttrName(), TypeAttr::get(signature));
