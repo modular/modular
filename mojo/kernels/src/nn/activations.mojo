@@ -41,7 +41,11 @@ struct ActivationType:
     @always_inline
     fn dispatch[
         func: __mlir_type[
-            `!kgen.signature<<`, ActivationType, `>() fat -> `, NoneType, `>`
+            `!kgen.signature<<`,
+            ActivationType,
+            `>() capturing -> `,
+            NoneType,
+            `>`,
         ]
     ](self):
         if self == ActivationType.IDENTITY:
