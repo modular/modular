@@ -23,8 +23,9 @@ using namespace M;
 /// running in the repl to use the compiler-rt runtime functions.
 static void forceLinkCompilerRT() {
   llvm::nulls() << (void *)&KGEN::registerIntelAMX
-                << (void *)&KGEN::registerLLCL << (void *)&KGEN::registerMemory
-                << (void *)&KGEN::registerPrint << (void *)&KGEN::registerRandom
+                << (void *)&KGEN::registerLLCL << (void *)&KGEN::registerPython
+                << (void *)&KGEN::registerMemory << (void *)&KGEN::registerPrint
+                << (void *)&KGEN::registerRandom
                 << (void *)&KGEN::registerSystem
                 << (void *)&KGEN::registerTracing;
 }
