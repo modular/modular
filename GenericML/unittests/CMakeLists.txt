@@ -5,7 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_subdirectory(GraphCompiler/Conversion)
-add_subdirectory(GraphCompiler/MOGG)
+add_subdirectory(GraphCompiler/Matchers)
 if (TARGET modular-pybind-ext)
   add_subdirectory(API)
 endif()
