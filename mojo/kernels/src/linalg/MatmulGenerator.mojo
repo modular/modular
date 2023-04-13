@@ -810,7 +810,7 @@ struct MatmulGenerator[
     epilog_function: __mlir_type[
         `!kgen.signature<(`,
         MatmulDynamicState[data_type],
-        ` borrow) fat -> `,
+        ` borrow) capturing -> `,
         NoneType,
         `>`,
     ],
