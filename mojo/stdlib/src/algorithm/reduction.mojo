@@ -47,7 +47,7 @@ fn reduce[
             __mlir_attr[`#kgen.param.index.ref<0, false, 2> : `, DType],
             __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
-        ` borrow) fat -> `,
+        ` borrow) capturing -> `,
         SIMD[
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
             __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
@@ -110,7 +110,7 @@ fn _reduce_3D[
             __mlir_attr[`#kgen.param.index.ref<0, false, 2> : `, DType],
             __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
-        ` borrow) fat -> `,
+        ` borrow) capturing -> `,
         SIMD[
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
             __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
@@ -218,7 +218,7 @@ fn reduce[
             __mlir_attr[`#kgen.param.index.ref<0, false, 2> : `, DType],
             __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
         ],
-        ` borrow) fat -> `,
+        ` borrow) capturing -> `,
         SIMD[
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
             __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
@@ -301,7 +301,7 @@ fn _simd_max[
 
 
 @always_inline
-@fat
+@closure
 fn _simd_max_elementwise[
     simd_width: Int,
     acc_type: DType,
@@ -367,7 +367,7 @@ fn _simd_min[
 
 
 @always_inline
-@fat
+@closure
 fn _simd_min_elementwise[
     simd_width: Int,
     acc_type: DType,
@@ -433,7 +433,7 @@ fn _simd_sum[
 
 
 @always_inline
-@fat
+@closure
 fn _simd_sum_elementwise[
     simd_width: Int,
     acc_type: DType,
@@ -499,7 +499,7 @@ fn _simd_product[
 
 
 @always_inline
-@fat
+@closure
 fn _simd_product_elementwise[
     simd_width: Int,
     acc_type: DType,
