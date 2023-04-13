@@ -284,11 +284,9 @@ llvm::Error MojoREPL::launchEntryPointProcess(Target &target,
   // Configure the launch environment to use the target's environment. In
   // addition, we also ensure that the library path includes the directory
   // containing the REPL executable.
-  launchInfo.GetEnvironment() = target.GetTargetEnvironment();
-  launchInfo.GetEnvironment().insert(
-      ("LD_LIBRARY_PATH=$LD_LIBRARY_PATH;" +
-       exeModule->GetFileSpec().GetDirectory().GetStringRef())
-          .str());
+  launchInfo.GetEnvironment() = target.GetEnvironment();
+  launchInfo.GetEnvironment()["LD_LIBRARY_PATH"] +=
+      (":" + exeModule->GetFileSpec().GetDirectory().GetStringRef()).str();
 
   // Launch the process synchronously, waiting for it to stop at the REPL
   // breakpoint.
