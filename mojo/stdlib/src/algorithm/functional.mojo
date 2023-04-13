@@ -26,7 +26,9 @@ from Range import range
 
 @always_inline
 fn map[
-    func: __mlir_type[`!kgen.signature<(`, Int, ` borrow) -> `, NoneType, `>`],
+    func: __mlir_type[
+        `!kgen.signature<(`, Int, ` borrow) fat -> `, NoneType, `>`
+    ],
 ](size: Int):
     """Map a function over a range from 0 to size.
 
@@ -48,7 +50,7 @@ fn map[
 @always_inline
 fn unroll[
     count: Int,
-    func: __mlir_type[`!kgen.signature<<`, Int, `>() -> `, NoneType, `>`],
+    func: __mlir_type[`!kgen.signature<<`, Int, `>() fat -> `, NoneType, `>`],
 ]():
     """Reateadly evaluate a function `count` times.
 
@@ -64,7 +66,7 @@ fn unroll[
 fn _unroll_impl[
     idx: Int,
     count: Int,
-    func: __mlir_type[`!kgen.signature<<`, Int, `>() -> `, NoneType, `>`],
+    func: __mlir_type[`!kgen.signature<<`, Int, `>() fat -> `, NoneType, `>`],
 ]():
     @parameter
     if idx < count:
@@ -82,7 +84,7 @@ fn unroll2[
     dim0: Int,
     dim1: Int,
     func: __mlir_type[
-        `!kgen.signature<<`, Int, `, `, Int, `>() -> `, NoneType, `>`
+        `!kgen.signature<<`, Int, `, `, Int, `>() fat -> `, NoneType, `>`
     ],
 ]():
     """Repeateadly evaluate a 2D nested loop.
@@ -120,7 +122,7 @@ fn unroll3[
         Int,
         `, `,
         Int,
-        `>() -> `,
+        `>() fat -> `,
         NoneType,
         `>`,
     ],
@@ -152,7 +154,7 @@ fn unroll3[
 alias fn_sig_type = __mlir_type[
     `!kgen.signature<(`,
     Int,
-    `) -> `,
+    `) fat -> `,
     NoneType,
     `>`,
 ]
@@ -162,7 +164,7 @@ alias fn_simd_sig_type = __mlir_type[
     Int,
     `>(`,
     Int,
-    ` borrow) -> `,
+    ` borrow) fat -> `,
     NoneType,
     `>`,
 ]
@@ -176,7 +178,7 @@ fn vectorize[
         Int,
         `>(`,
         Int,
-        ` borrow) -> `,
+        ` borrow) fat -> `,
         NoneType,
         `>`,
     ],
@@ -294,7 +296,9 @@ fn vectorize_unroll[
 
 @always_inline
 fn async_parallelize[
-    func: __mlir_type[`!kgen.signature<(`, Int, ` borrow) -> `, NoneType, `>`],
+    func: __mlir_type[
+        `!kgen.signature<(`, Int, ` borrow) fat -> `, NoneType, `>`
+    ],
 ](out_chain: OutputChainPtr, num_work_items: Int):
     """Execute func(0) ... func(num_work_items-1) as sub-tasks in parallel and
     return imediatly.
@@ -348,7 +352,9 @@ fn async_parallelize[
 
 @always_inline
 fn parallelize[
-    func: __mlir_type[`!kgen.signature<(`, Int, ` borrow) -> `, NoneType, `>`],
+    func: __mlir_type[
+        `!kgen.signature<(`, Int, ` borrow) fat -> `, NoneType, `>`
+    ],
 ]():
     """Execute func(0) ... func(N-1) as sub-tasks in parallel and block until
     completion. N is chosen to be the number of physical processors on the
@@ -366,7 +372,9 @@ fn parallelize[
 
 @always_inline
 fn parallelize[
-    func: __mlir_type[`!kgen.signature<(`, Int, ` borrow) -> `, NoneType, `>`],
+    func: __mlir_type[
+        `!kgen.signature<(`, Int, ` borrow) fat -> `, NoneType, `>`
+    ],
 ](num_work_items: Int):
     """Execute func(0) ... func(num_work_items-1) as sub-tasks in parallel and
     block until completion.
@@ -537,7 +545,7 @@ Signature of a 1d tiled function that performs some work with a static tile size
 and an offset. i.e. func<tile_size: Int> (offset: Int)
 """
 alias Static1DTileUnitFunc = __mlir_type[
-    `!kgen.signature<<`, Int, `>(`, Int, ` borrow) -> `, NoneType, `>`
+    `!kgen.signature<<`, Int, `>(`, Int, ` borrow) fat -> `, NoneType, `>`
 ]
 
 """
@@ -545,7 +553,7 @@ Signature of a 1d tiled function that performs some work with a dynamic tile siz
   and an offset. i.e. func(offset: Int, tile_size: Int)
 """
 alias Dynamic1DTileUnitFunc = __mlir_type[
-    `!kgen.signature<(`, Int, ` borrow,`, Int, ` borrow) -> `, NoneType, `>`
+    `!kgen.signature<(`, Int, ` borrow,`, Int, ` borrow) fat -> `, NoneType, `>`
 ]
 
 
@@ -560,7 +568,7 @@ alias BinaryTile1DTileUnitFunc = __mlir_type[
     Int,
     ` borrow,`,
     Int,
-    ` borrow) -> `,
+    ` borrow) fat -> `,
     NoneType,
     `>`,
 ]
@@ -717,7 +725,7 @@ alias Static2DTileUnitFunc = __mlir_type[
     Int,
     ` borrow,`,
     Int,
-    ` borrow) -> `,
+    ` borrow) fat -> `,
     NoneType,
     `>`,
 ]
@@ -980,7 +988,7 @@ struct TernaryClosure[
 
 # Signature of a function that unswitch can take.
 alias SwitchedFunction = __mlir_type[
-    `!kgen.signature<<`, Bool, `>() -> `, NoneType, `>`
+    `!kgen.signature<<`, Bool, `>() fat -> `, NoneType, `>`
 ]
 
 # Version of unswitch supporting 2 predicates.
@@ -989,7 +997,7 @@ alias SwitchedFunction2 = __mlir_type[
     Bool,
     `,`,
     Bool,
-    `>() -> `,
+    `>() fat -> `,
     NoneType,
     `>`,
 ]
@@ -1088,7 +1096,7 @@ alias Static1DTileUnswitchUnitFunc = __mlir_type[
     Int,
     ` borrow,`,
     Int,
-    ` borrow) -> `,
+    ` borrow) fat -> `,
     NoneType,
     `>`,
 ]
@@ -1151,7 +1159,7 @@ alias Dynamic1DTileUnswitchUnitFunc = __mlir_type[
     Int,
     ` borrow,`,
     Int,
-    ` borrow) -> `,
+    ` borrow) fat -> `,
     NoneType,
     `>`,
 ]
@@ -1249,7 +1257,7 @@ fn elementwise[
         StaticIntTuple[
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, Int]
         ],
-        ` borrow) -> `,
+        ` borrow) fat -> `,
         NoneType,
         `>`,
     ],
@@ -1361,7 +1369,7 @@ fn elementwise[
         StaticIntTuple[
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, Int]
         ],
-        ` borrow) -> `,
+        ` borrow) fat -> `,
         NoneType,
         `>`,
     ],
