@@ -25,6 +25,7 @@
 #include "lldb/Utility/LLDBLog.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Pass/PassManager.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Target/TargetMachine.h"
 
@@ -280,13 +281,31 @@ MojoExpressionParser::parse(DiagnosticManager &diagnosticManager) {
   auto buffer = llvm::MemoryBuffer::getMemBuffer(impl->expr.Text(), moduleName);
   impl->sourceManager.AddNewSourceBuffer(std::move(buffer), llvm::SMLoc());
 
+  // Pull out the context.
+  mlir::MLIRContext *ctx = impl->passManager->getContext();
+
+  // Register the source manager diagnostic handler so we get all the MLIR
+  // diagnostics through the handler we already have and so it's all forwarded
+  // to the LLDB streams. If the handler can't use the source manager for an
+  // error, it'll print to errStream, which we will flush if it's non-empty on
+  // scope exit.
+  std::string errs;
+  llvm::raw_string_ostream errStream(errs);
+  mlir::SourceMgrDiagnosticHandler handler(impl->sourceManager, ctx, errStream);
+
+  // On scope exit, if we've printed any errors make sure to log them.
+  auto printOnError = llvm::make_scope_exit([&]() {
+    if (errs.empty())
+      return;
+    impl->typeSystem->errorLog("{0}", errs);
+  });
+
   // Set the diagnostic handler to create MojoDiagnostics that we can use to
   // capture fix-its.
   impl->sourceManager.setDiagHandler(handleDiagnostic, &diagnosticManager);
 
   // Import the mojo module.
   mlir::TimingScope scope;
-  mlir::MLIRContext *ctx = impl->passManager->getContext();
   MojoParserConfig config(ctx, *impl->runtime, impl->compilationOptions);
   OwningOpRef<ModuleOp> module =
       importMojoFile(impl->sourceManager, config, scope);
@@ -300,7 +319,7 @@ MojoExpressionParser::parse(DiagnosticManager &diagnosticManager) {
     return failure();
   }
 
-  impl->typeSystem->debugLog("Parsed module successfully\n");
+  impl->typeSystem->debugLog("Parsed module successfully");
 
   // Log the pre-elaboration module.
   std::string preElaborationModule;
