@@ -233,6 +233,11 @@ MojoExpressionParser::rewriteExpression(DiagnosticManager &diagnosticManager) {
           break;
         }
       }
+
+      // If we were unable to handle a diagnostic, or it had no fix-its, log it.
+      if (!allDiagsHandled || mojoDiag->getFixIts().empty())
+        impl->typeSystem->logDiagnostic(*mojoDiag);
+
       continue;
     }
 
