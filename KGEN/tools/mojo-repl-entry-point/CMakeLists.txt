@@ -12,9 +12,11 @@ add_modular_tool(mojo-repl-entry-point
   LINK_LIBS PUBLIC
   KGENCompilerRT
   LLCLRuntimeGlobals
-
-  Python3::Python
 )
+
+if (Python3_FOUND)
+  target_link_libraries(mojo-repl-entry-point PUBLIC Python3::Python)
+endif()
 
 # This target is supposed to be located next to libMojoLLDB.
 set_target_properties(mojo-repl-entry-point PROPERTIES
