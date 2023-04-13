@@ -472,7 +472,7 @@ struct OutputChainPtr:
         detail_fn: __mlir_type[
             `!kgen.signature<(!pop.pointer<`,
             String,
-            `> byref_result) -> `,
+            `> byref_result) fat -> `,
             NoneType,
             `>`,
         ],
