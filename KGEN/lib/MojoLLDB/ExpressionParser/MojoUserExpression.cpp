@@ -485,14 +485,15 @@ static void importPythonSymbolsIntoMojo(StringRef pythonExpr,
     SmallVector<StringRef, 2> matches;
     if (importRegex.match(line, &matches)) {
       mojoExprOS << llvm::formatv(
-          "var {0} = __repl_python__.importModule(\"{0}\")", matches[1]);
+          "var {0} = __repl_python__.importModule(\"{0}\")\n", matches[1]);
     } else if (importAsRegex.match(line, &matches)) {
       mojoExprOS << llvm::formatv(
-          "var {0} = __repl_python__.importModule(\"{1}\")", matches[2],
+          "var {0} = __repl_python__.importModule(\"{1}\")\n", matches[2],
           matches[1]);
     } else if (defRegex.match(line, &matches) ||
                valueRegex.match(line, &matches)) {
-      mojoExprOS << llvm::formatv("var {0} = {1}.{0}", matches[1], moduleName);
+      mojoExprOS << llvm::formatv("var {0} = {1}.{0}\n", matches[1],
+                                  moduleName);
     }
   }
 }
