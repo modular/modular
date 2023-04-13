@@ -106,6 +106,22 @@ void registerTracing(
 MODULAR_EXPORT MODULAR_ATTRIBUTE_USED void
 KGEN_CompilerRT_TimeTraceProfilerEnd();
 
+//===----------------------------------------------------------------------===//
+// Python.cpp
+//===----------------------------------------------------------------------===//
+
+namespace M::KGEN {
+/// Register the Python functions.
+void registerPython(std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);
+} // namespace M::KGEN
+
+MODULAR_EXPORT MODULAR_ATTRIBUTE_USED void *
+KGEN_CompilerRT_Python_GetGlobalPython(ssize_t objSize, void (*initFn)(void *));
+
+//===----------------------------------------------------------------------===//
+// Linkage
+//===----------------------------------------------------------------------===//
+
 /// This declaration is used to ensure that the individual .o files are linked
 /// into things that include this header. We only need to 'call' one function
 /// from each .cpp file. Note that this function should never actually be
@@ -121,6 +137,7 @@ KGEN_CompilerRT_dummylinkageinit() {
   KGEN_CompilerRT_RandomDouble(0, 0);
   KGEN_CompilerRT_CoreCount();
   KGEN_CompilerRT_TimeTraceProfilerEnd();
+  KGEN_CompilerRT_Python_GetGlobalPython(0, nullptr);
 }
 
 #endif // KGEN_COMPILER_RT_H

@@ -11,6 +11,7 @@ add_modular_mlir_library(KGENCompilerRT
   Memory.cpp
   OutputChain.cpp
   Print.cpp
+  Python.cpp
   Random.cpp
   System.cpp
   Tracing.cpp

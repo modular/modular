@@ -228,6 +228,7 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   std::vector<std::pair<StringLiteral, void *>> compilerRTFunctions;
   registerIntelAMX(compilerRTFunctions);
   registerLLCL(compilerRTFunctions);
+  registerPython(compilerRTFunctions);
   registerMemory(compilerRTFunctions);
   registerPrint(compilerRTFunctions);
   registerRandom(compilerRTFunctions);
