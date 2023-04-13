@@ -55,7 +55,7 @@ struct Benchmark:
 
     @always_inline
     fn run[
-        func: __mlir_type[`!kgen.signature<() -> `, NoneType, `>`]
+        func: __mlir_type[`!kgen.signature<() capturing -> `, NoneType, `>`]
     ](self) -> Int:
         """Benchmark the given function.
 
