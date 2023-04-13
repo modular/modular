@@ -198,7 +198,7 @@ kgen.func @call_it() {
 
 // -----
 
-kgen.func @fat_closure() fat -> index {
+kgen.func @fat_closure() capturing -> index {
   %0 = pop.compiler.global_load "var" : index
   kgen.return %0 : index
 }
@@ -208,6 +208,6 @@ kgen.func @caller() {
   %0 = index.constant 0
   pop.compiler.global_store "var", %0 : index
   // CHECK: pop.compiler.global_load "var"
-  %1 = kgen.call @fat_closure() : () fat -> index
+  %1 = kgen.call @fat_closure() : () capturing -> index
   kgen.return
 }

@@ -240,8 +240,8 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
 
     /// Return true if the function captures state, which means
     /// it requires a context pointer.
-    bool isFat() {
-      return bitEnumContainsAny(getFnEffects(), FnEffects::Fat);
+    bool isCapturing() {
+      return bitEnumContainsAny(getFnEffects(), FnEffects::Capturing);
     }
 
     /// Return true if the SSA result of this signature is a non-trivial owned
