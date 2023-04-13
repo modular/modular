@@ -518,8 +518,20 @@ expr_module = types.ModuleType('{1}')
 exec(code_string, expr_module.__dict__)
 sys.modules['{1}'] = expr_module
   )";
+
+  // Generate an escaped version of the python expression to import, also taking
+  // this time to add implicit imports for any previously defined modules.
   std::string escapedPythonExpr;
-  llvm::raw_string_ostream(escapedPythonExpr).write_escaped(pythonExpr);
+  llvm::raw_string_ostream escapedPythonExprOS(escapedPythonExpr);
+  for (const auto &exprInst : state.getExpressionInstances()) {
+    if (exprInst.pythonModuleName) {
+      escapedPythonExprOS.write_escaped(
+          llvm::formatv("from {0} import *\n", *exprInst.pythonModuleName)
+              .str());
+    }
+  }
+  escapedPythonExprOS.write_escaped(pythonExpr);
+
   std::string moduleName = state.getNextPythonExpressionModuleName();
   std::string wrappedPythonExpr =
       llvm::formatv(pythonWrapperExpr, escapedPythonExpr, moduleName).str();
