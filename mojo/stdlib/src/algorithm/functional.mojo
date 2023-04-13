@@ -393,9 +393,16 @@ fn parallelize[
     Args:
         num_work_items: Number of parallel tasks.
     """
-    let rt = Runtime(num_work_items)
+    let core_count = num_cores()
+    let chunk_size = max(div_ceil(num_work_items, core_count), 1)
+    let rt = Runtime(core_count)
     let out_chain = OwningOutputChainPtr(rt)
-    async_parallelize[func](out_chain.borrow(), num_work_items)
+
+    def coarsed_func(thread_idx: Int):
+        for i in range(chunk_size):
+            func(chunk_size * thread_idx + i)
+
+    async_parallelize[func](out_chain.borrow(), core_count)
     out_chain.wait()
     out_chain.__del__()
     rt.__del__()
