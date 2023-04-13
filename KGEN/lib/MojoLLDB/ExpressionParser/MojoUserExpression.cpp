@@ -511,7 +511,7 @@ LogicalResult MojoUserExpression::wrapTextAndParsePythonExpression(
   const char *pythonWrapperExpr = R"(
 import sys, types
 
-code_string = '{0}'
+code_string = "{0}"
 expr_module = types.ModuleType('{1}')
 exec(code_string, expr_module.__dict__)
 sys.modules['{1}'] = expr_module
