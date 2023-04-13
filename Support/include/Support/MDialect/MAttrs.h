@@ -300,6 +300,12 @@ getAttrForTensorDataCopy(ShapedType type, StringRef bufferName,
                          ArrayRef<char> data,
                          DenseResourceElementsHandleManager &resourceManager);
 
+/// Return the contents of the IntArrayElementsAttr as a vector in int64_t.
+SmallVector<int64_t> getIntBlob(IntArrayElementsAttr intElemsAttr);
+
+/// Return the contents of the FloatArrayElementsAttr as a vector in float.
+SmallVector<float> getFloatBlob(FloatArrayElementsAttr floatElemsAttr);
+
 //===----------------------------------------------------------------------===//
 // TargetInfoAttr
 //===----------------------------------------------------------------------===//

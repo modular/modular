@@ -11,6 +11,7 @@
 #include "Support/Host.h"
 #include "Support/MDialect/MDialect.h"
 #include "Support/MDialect/MTypes.h"
+#include "Support/STLExtras.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectImplementation.h"
@@ -555,6 +556,18 @@ ElementsAttr M::getAttrForTensorDataCopy(
       data, elementByteAlign);
   return DenseResourceElementsAttr::get(
       type, resourceManager.insert(bufferName, std::move(blob)));
+}
+
+SmallVector<int64_t> M::getIntBlob(IntArrayElementsAttr intElemsAttr) {
+  return map_to_vector(intElemsAttr.getValues(), [](const llvm::APInt &dim) {
+    return dim.getSExtValue();
+  });
+}
+
+SmallVector<float> M::getFloatBlob(FloatArrayElementsAttr floatElemsAttr) {
+  return map_to_vector(
+      floatElemsAttr.getValues(),
+      [](const llvm::APFloat &dim) { return dim.convertToFloat(); });
 }
 
 //===----------------------------------------------------------------------===//
