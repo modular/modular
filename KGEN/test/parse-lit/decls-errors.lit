@@ -129,6 +129,15 @@ fn testThingWithStaticMethod():
 fn cant_raise_return(a: Error) -> Error:
   return a
 
+
+fn top_level_fn():
+    @thin
+    # expected-error @below {{cannot mark a function with capturing closure parameters as @thin}}
+    fn not_really_thin[func: __mlir_type.`!kgen.signature<() fat -> index>`]():
+        return
+    return
+
+
 ##===----------------------------------------------------------------------===##
 # Default Arguments, Varargs, and Packs
 ##===----------------------------------------------------------------------===##

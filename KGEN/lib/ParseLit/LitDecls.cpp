@@ -1378,7 +1378,8 @@ struct FnDecorators : public LitSharedStateUser {
 
   void apply(SmallVector<ExprNode *> &decoratorExprs);
   void applyLate(SymbolRefAttr symbolName, StringRef unmangledName,
-                 SmallVector<ExprNode *> &decoratorExprs);
+                 SmallVector<ExprNode *> &decoratorExprs,
+                 SignatureType &signature);
 
 private:
   void applyAdaptive(const DeclRefNode &node);
@@ -1491,7 +1492,8 @@ void FnDecorators::applyLateExport(Location loc, SymbolRefAttr symbolName,
 }
 
 void FnDecorators::applyLate(SymbolRefAttr symbolName, StringRef unmangledName,
-                             SmallVector<ExprNode *> &decoratorExprs) {
+                             SmallVector<ExprNode *> &decoratorExprs,
+                             SignatureType &signature) {
   // Scan through and process decorator expressions that are in the late pass.
   for (ExprNode *decorator : decoratorExprs) {
     Location loc = translateLocation(decorator->getLoc());
@@ -1499,11 +1501,16 @@ void FnDecorators::applyLate(SymbolRefAttr symbolName, StringRef unmangledName,
     if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
       if (declRef->spelling == "export") {
         applyLateExport(loc, symbolName, unmangledName);
-        continue;
+      } else if (declRef->spelling == "thin") {
+        signature = signature.getWithFnEffects(
+            bitEnumClear(signature.getFnEffects(), FnEffects::Fat));
+      } else if (declRef->spelling == "fat") {
+        signature = signature.getWithFnEffects(signature.getFnEffects() |
+                                               FnEffects::Fat);
+      } else {
+        emitError(decorator->getLoc(), "unsupported decorator: @")
+            << declRef->spelling << declRef->getRange();
       }
-
-      emitError(decorator->getLoc(), "unsupported decorator: @")
-          << declRef->spelling << declRef->getRange();
       continue;
     } else if (auto callNode = dyn_cast<CallNode>(decorator)) {
       if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee))
@@ -1687,10 +1694,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   SymbolRefAttr symbolName = getFullyResolvedSymbolRef(funcOp);
   declForFuncSymbol[symbolName] = &decl;
 
-  // TODO: Handle the export attribute somehow else.  It should be a 'body
-  // decorator' that is handled after the decl is fully resolved.
-  FnDecorators(decl, shared).applyLate(symbolName, baseName, decoratorExprs);
-
   // If have a main function, fn main(), export it automatically.
   if (!inAStruct && isMainFunction(baseName, inputParamDecls, resultParamDecls,
                                    argTypes, resultType))
@@ -1732,6 +1735,23 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   FnEffects effects = funcOp.getMetadata().getFnEffects();
   if (paramVararg)
     effects = effects | FnEffects::ParamVararg;
+
+  // Nested functions are capturing by default.
+  if (funcOp->getParentOfType<FuncOp>())
+    effects = effects | FnEffects::Fat;
+
+  // Any function that contains a capturing closure as a parameter is itself
+  // capturing.
+  // TODO: Check struct elements too.
+  bool transitivelyFat = llvm::any_of(
+      llvm::concat<ParamDeclAttr>(inputParamDecls, resultParamDecls),
+      [](ParamDeclAttr decl) {
+        if (auto signature = dyn_cast<SignatureType>(decl.getType()))
+          return signature.isFat();
+        return false;
+      });
+  if (transitivelyFat)
+    effects = effects | FnEffects::Fat;
 
   // We know the result type of the function is register passable (because
   // otherwise it would be promoted to an argument).  If the result of the
@@ -1807,6 +1827,19 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
       [&] { return mlir::emitError(funcOp.getLoc()); });
   if (!signature)
     return failure();
+
+  // FIXME: Handle "late" decorators somehow else. They should be "body
+  // decorators" that are applied after the decl is fully resolved.
+  FnDecorators(decl, shared)
+      .applyLate(symbolName, baseName, decoratorExprs, signature);
+
+  // If the user tried to mark a transitive fat closure as thin, emit an error.
+  if (transitivelyFat && !signature.isFat()) {
+    return p.emitError(
+        funcOp.getLoc(),
+        "cannot mark a function with capturing closure parameters as @thin");
+  }
+
   attrs.set(funcOp.getSignatureAttrName(), TypeAttr::get(signature));
 
   // If this is a nested function, set its parameter declaration. It will be
@@ -1818,31 +1851,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   // Bulk update the attributes.
   funcOp->setAttrs(attrs.getDictionary(funcOp.getContext()));
   funcOp.getBody()->addArguments(argTypes, argLocs);
-  funcOp.setSignature(signature);
-
-  // If the function represents a closure, we must resolve its body to identify
-  // its fatness and update the signature to reflect the fat property
-  // TODO: The type of a closure should not depend on its inline level.
-  AlwaysInlineLevel inlineLevel = funcOp.getAlwaysInlineLevel();
-  if (funcOp->getParentOfType<LIT::FuncOp>() &&
-      inlineLevel != AlwaysInlineLevel::Enabled) {
-    decl.getCursor() = lexer.getCursor();
-    LitLexer nestedLexer(shared, decl.getCursor());
-    if (failed(resolveBody(funcOp, nestedLexer, decl)))
-      return failure();
-
-    decl.resolvedness = DeclResolvedness::fully;
-    llvm::SetVector<Value> captures;
-    mlir::getUsedValuesDefinedAbove(funcOp->getRegions(), captures);
-    if (!captures.empty()) {
-      funcOp.setSignature(funcOp.getSignature().getWithFnEffects(
-          bitEnumSet(effects, FnEffects::Fat)));
-    }
-  }
-  if (funcOp->getParentOfType<LIT::FuncOp>()) {
-    funcOp.setParamDeclAttr(
-        ParamDeclAttr::get(funcOp.getSymNameAttr(), funcOp.getSignature()));
-  }
 
   return success();
 }

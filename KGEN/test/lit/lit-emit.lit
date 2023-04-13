@@ -16,7 +16,6 @@ fn call_me() -> F32:
     return 1.0
 
 
-@export
 # CHECK: extern void main();
 fn main():
     _ = call_me()
