@@ -60,7 +60,7 @@ fn test_static_tile2d():
     # CHECK: (2, 2, 2, 4)
     # CHECK: (2, 2, 4, 4)
     # CHECK: ========
-    tile[print_tile2d_static, VariadicList[Int](2, 2)](0, 0, 6, 6)
+    tile[print_tile2d_static, 2, 2](0, 0, 6, 6)
     print("========")
     # CHECK: (4, 4, 4, 4)
     # CHECK: (4, 4, 8, 4)
@@ -72,7 +72,7 @@ fn test_static_tile2d():
     # CHECK: (4, 4, 8, 12)
     # CHECK: (4, 4, 12, 12)
     # CHECK: ========
-    tile[print_tile2d_static, VariadicList[Int](4, 4)](4, 4, 16, 16)
+    tile[print_tile2d_static, 4, 4](4, 4, 16, 16)
     print("========")
     # CHECK: (5, 4, 1, 1)
     # CHECK: (5, 4, 6, 1)
@@ -93,7 +93,7 @@ fn test_static_tile2d():
     # CHECK: (1, 1, 57, 6)
     # CHECK: (1, 1, 58, 6)
     # CHECK: (1, 1, 59, 6)
-    tile[print_tile2d_static, VariadicList[Int](5, 4, 1, 1)](1, 1, 60, 7)
+    tile[print_tile2d_static, 5, 4, 1, 1](1, 1, 60, 7)
 
 
 # CHECK-LABEL: test_dynamic_tile

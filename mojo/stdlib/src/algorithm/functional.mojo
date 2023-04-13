@@ -725,8 +725,9 @@ alias Static2DTileUnitFunc = __mlir_type[
 
 @always_inline
 fn tile[
-    workgroup_function: Static2DTileUnitFunc, tile_size_list: VariadicList[Int]
+    workgroup_function: Static2DTileUnitFunc, *tile_size_list_vararg: Int
 ](offset_x: Int, offset_y: Int, upperbound_x: Int, upperbound_y: Int):
+    alias tile_size_list = VariadicList[Int](tile_size_list_vararg)
 
     assert_param_msg[
         tile_size_list.__len__() % 2 == 0,
