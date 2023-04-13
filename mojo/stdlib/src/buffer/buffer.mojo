@@ -1498,7 +1498,7 @@ struct DynamicRankBuffer:
     @always_inline
     fn rank_dispatch[
         func: __mlir_type[
-            `!kgen.signature<<`, Int, `>() fat -> `, NoneType, `>`
+            `!kgen.signature<<`, Int, `>() capturing -> `, NoneType, `>`
         ]
     ](self):
         """Dispatch the function call based on buffer rank.
