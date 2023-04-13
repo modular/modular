@@ -2180,7 +2180,7 @@ def POP_CoroutineHandleOp : POPOp<"coroutine.handle"> {
 // CoroutineOpaqueHandleOp
 //===----------------------------------------------------------------------===//
 
-def POP_CoroutineOpaqueHandleOp : POPOp<"coroutine.opaque_handle", [Pure]> {
+def POP_CoroutineOpaqueHandleOp : POPOp<"coroutine.opaque_handle"> {
   let summary = "Get an opaque handle to the current coroutine, if it is one.";
   let description = [{
     The `pop.coroutine.opaque_handle` returns an opaque handle to the current

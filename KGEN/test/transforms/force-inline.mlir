@@ -195,3 +195,19 @@ kgen.func @call_it() {
   kgen.call @unreachable_and_early_ret() : () -> ()
   kgen.return
 }
+
+// -----
+
+kgen.func @fat_closure() fat -> index {
+  %0 = pop.compiler.global_load "var" : index
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: kgen.func @caller
+kgen.func @caller() {
+  %0 = index.constant 0
+  pop.compiler.global_store "var", %0 : index
+  // CHECK: pop.compiler.global_load "var"
+  %1 = kgen.call @fat_closure() : () fat -> index
+  kgen.return
+}
