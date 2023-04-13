@@ -25,6 +25,9 @@ class Runtime;
 } // namespace M::LLCL
 
 namespace M::KGEN::Mojo {
+/// Forward declaration for use below.
+class MojoDiagnostic;
+
 class MojoTypeSystem : public lldb_private::TypeSystem,
                        public lldb_private::Broadcaster {
   static char ID;
@@ -112,6 +115,9 @@ public:
   void errorLog(StringRef fmt, Args &&...args) {
     errorLog(llvm::formatv(fmt.data(), std::forward<Args>(args)...).str());
   }
+
+  /// Log a mojo diagnostic to the appropriate channel(s).
+  void logDiagnostic(const MojoDiagnostic &diag);
 
   /// This function provides a reasonable default message handling policy. Users
   /// that want different behavior are encouraged to provide their own handler.

@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MojoTypeSystem.h"
+#include "../ExpressionParser/MojoDiagnostic.h"
 #include "../ExpressionParser/MojoExpressionVariable.h"
 #include "../ExpressionParser/MojoUserExpression.h"
 #include "Cache/CacheDialect/CacheDialect.h"
@@ -138,6 +139,20 @@ void MojoTypeSystem::errorLog(StringRef message) {
   lldb::EventSP event = std::make_shared<Event>(eErrorLog | eFlushIRAndDebugLog,
                                                 new EventDataBytes(message));
   BroadcastEvent(event);
+}
+
+void MojoTypeSystem::logDiagnostic(const MojoDiagnostic &diag) {
+  // TODO: We should handle fixit notification here as well.
+  switch (diag.GetSeverity()) {
+  case eDiagnosticSeverityError:
+    errorLog(diag.GetMessage());
+    break;
+  case eDiagnosticSeverityWarning:
+    LLVM_FALLTHROUGH;
+  case eDiagnosticSeverityRemark:
+    debugLog(diag.GetMessage());
+    break;
+  }
 }
 
 //===----------------------------------------------------------------------===//
