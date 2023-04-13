@@ -2333,6 +2333,38 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   return success();
 }
 
+/// Look up the __del__ destructor for the specified `type` which is needed
+/// for the specified declaration (typically a var or argument declaration).
+/// This returns the destructor if successful, diagnoses an error if not, and
+/// returns null if there is no defined destructor.
+static TypedAttr lookupDestructor(ASTType type, SMLoc loc,
+                                  LitSharedState &shared) {
+  ASTDecl *decl = type.getDecl(shared);
+  if (!decl)
+    return {}; // MLIR types have no destructor.
+
+  const TinyPtrVector<ASTDecl *> *entries = decl->lookupInCurrentScope(
+      StringAttr::get(shared.getContext(), "__del___"));
+  // If there are no __del__ methods, return null.  This is valid.
+  if (!entries)
+    return {};
+  if (entries->size() != 1) {
+    auto diag = shared.emitError(loc, "invalid overloaded '__del__' method");
+    for (auto candidate : *entries)
+      diag.attachNote(candidate->getLoc()) << "candidate declared here";
+    return {};
+  }
+  ASTDecl &delDecl = *(*entries)[0];
+  LIT::FuncOp func = dyn_cast<LIT::FuncOp>(delDecl);
+  if (!func) {
+    shared.emitError((*entries)[0]->getLoc(), "'__del__' must be a method");
+    return {};
+  }
+  if (failed(shared.declResolver->resolveSignature(delDecl, loc)))
+    return {};
+  return func.getBoundReference();
+}
+
 ParseResult DeclResolver::resolveBody(StructDeclOp structOp, LitLexer &lexer,
                                       ASTDecl &decl) {
   if (LitParserBase::parseSuite(decl, lexer))
@@ -2400,8 +2432,8 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, LitLexer &lexer,
   // Now that the struct body has been resolved, check to see if there is a
   // destructor and install it if so.
   if (!decl.hasReferenceError) {
-    if (auto dtorAttr = ExprEmitter::lookupDestructor(decl.getSelfType(),
-                                                      decl.getLoc(), shared))
+    if (auto dtorAttr =
+            lookupDestructor(decl.getSelfType(), decl.getLoc(), shared))
       structOp.setDestructorAttr(dtorAttr);
   }
 

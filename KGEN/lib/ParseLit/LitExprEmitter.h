@@ -328,13 +328,6 @@ public:
   /// but not guaranteed).  This reports and error and returns null on error.
   RValue emitI1(ASTExprAnd<CValue> expr, CValue &boolResult);
 
-  /// Look up the __del__ destructor for the specified `type` which is needed
-  /// for the specified declaration (typically a var or argument declaration).
-  /// This returns the destructor if successful, diagnoses an error if not, and
-  /// returns null if there is no defined destructor.
-  static TypedAttr lookupDestructor(ASTType type, SMLoc loc,
-                                    LitSharedState &shared);
-
   //===--------------------------------------------------------------------===//
   // Emission helpers for various value classifications.
 
