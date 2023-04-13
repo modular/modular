@@ -190,14 +190,12 @@ static ErrorOrSuccess writeORCRTToFile(BufferRef &buf, std::string &outPath) {
 /// up the various symbols that complex code will need to execute on a target.
 static ErrorOrSuccess
 setupPlatform(StringRef orcRTPath, const llvm::DataLayout &dataLayout,
+              llvm::orc::JITDylib &platformStdlib,
               llvm::orc::ExecutionSession &session,
               llvm::orc::ObjectLinkingLayer &objLinkingLayer) {
   // No path to the orc runtime, exit early.
   if (orcRTPath.empty())
     return success();
-
-  llvm::orc::JITDylib &platformStdlib =
-      session.createBareJITDylib(platformStdlibName.str());
 
   // Add the current process symbols in.
   if (auto generator =
@@ -325,9 +323,14 @@ ExecutionEngine::create(ExecutionEngineOptions options,
   ee->objectLayer =
       std::make_unique<llvm::orc::ObjectLinkingLayer>(*ee->executionSession);
 
+  // Construct the platform stdlib - this way we don't have to worry about
+  // whether or not we have it later on.
+  llvm::orc::JITDylib &platformStdlib =
+      ee->executionSession->createBareJITDylib(platformStdlibName.str());
+
   // If we have the platform support library, use it.
-  if (auto err = setupPlatform(orcRTPath, ee->dataLayout, *ee->executionSession,
-                               *ee->objectLayer))
+  if (auto err = setupPlatform(orcRTPath, ee->dataLayout, platformStdlib,
+                               *ee->executionSession, *ee->objectLayer))
     return err.takeError();
 
   // COFF format binaries (Windows) need special handling to deal with
@@ -342,11 +345,9 @@ ExecutionEngine::create(ExecutionEngineOptions options,
 
     // Get the registrar for the GDB JIT loader interface.
     if (tt.isOSBinFormatMachO()) {
-      llvm::orc::JITDylib &dylib =
-          *(session.getJITDylibByName(platformStdlibName));
       // We have to explicitly define these wrapper symbols on macOS because
       // they're hidden visibility.
-      auto err = dylib.define(llvm::orc::absoluteSymbols(
+      auto err = platformStdlib.define(llvm::orc::absoluteSymbols(
           {{session.intern("_llvm_orc_registerJITLoaderGDBWrapper"),
             {llvm::orc::ExecutorAddr::fromPtr(
                  &llvm_orc_registerJITLoaderGDBWrapper),
@@ -361,7 +362,7 @@ ExecutionEngine::create(ExecutionEngineOptions options,
 
       // Create and register the JIT DebugInfo plugin.
       auto plugin = llvm::orc::GDBJITDebugInfoRegistrationPlugin::Create(
-          session, dylib, tt);
+          session, platformStdlib, tt);
       if (!plugin)
         return Error(llvm::toString(plugin.takeError()));
 
@@ -379,9 +380,7 @@ ExecutionEngine::create(ExecutionEngineOptions options,
   }
 
   // Add the platform dylib to the search order.
-  ee->addToSearchOrder(
-      platformStdlibName,
-      ee->executionSession->getJITDylibByName(platformStdlibName));
+  ee->addToSearchOrder(platformStdlibName, &platformStdlib);
 
   return std::move(ee);
 }
