@@ -14,7 +14,14 @@ from Buffer import (
     _compute_ndbuffer_offset,
 )
 from DType import DType
-from Functional import unroll, unroll2, async_parallelize, tile
+from Functional import (
+    unroll,
+    unroll2,
+    async_parallelize,
+    tile,
+    BinaryClosure,
+    unswitch,
+)
 from Image import ImageData, Image2DLayout, ImageShape
 from Index import Index, StaticIntTuple
 from LLCL import OutputChainPtr
@@ -26,6 +33,7 @@ from Matmul import (
     calculate_tile_n_k,
     PackMatrixCols,
     PackMatrixRows,
+    _null_epilogue,
 )
 from MatmulUtils import get_matmul_prefetch_b_distance_k
 from Pointer import DTypePointer
@@ -1948,7 +1956,6 @@ fn get_partitioned_workload(
 #  Could drastically clean up when non-inlined closure is supported or without
 #   language support the conv op and matmul op should share a "gemm skeleton"
 #   library to de-duplicate.
-@register_passable("trivial")
 struct ConvIm2ColNHWC[
     shape_input: DimList[4],
     shape_filter: DimList[4],
@@ -1960,6 +1967,7 @@ struct ConvIm2ColNHWC[
     pack_inner_size: Int,
     pack_cache_size: Int,
     filter_layout: Image2DLayout,
+    elementwise_epilogue_enabled: Bool,
 ]:
     var out: NDBuffer[4, shape_output, type]
     var input: NDBuffer[4, shape_input, type]
@@ -1986,6 +1994,8 @@ struct ConvIm2ColNHWC[
     var col_start_idx: Int
     var total_col_count: Int
 
+    var elementwise_epilogue_fn: BinaryClosure[GemmShape, GemmShape, NoneType]
+
     # Interface method
     @staticmethod
     fn run(
@@ -1993,6 +2003,38 @@ struct ConvIm2ColNHWC[
         input: NDBuffer[4, shape_input, type],
         filter: NDBuffer[4, shape_filter, type],
         conv_shape: ConvShape,
+        out_chain: OutputChainPtr,
+    ):
+        let func = __mlir_op.`kgen.addressof`[
+            _type : __mlir_type[
+                `(`,
+                GemmShape,
+                `,`,
+                GemmShape,
+                `) -> `,
+                NoneType,
+            ],
+            callee:_null_epilogue,
+            paramDecls : __mlir_attr.`#kgen<param.decls[]>`,
+        ]()
+
+        let null_closure: BinaryClosure[
+            GemmShape, GemmShape, NoneType
+        ] = __mlir_op.`pop.partial_apply`[
+            boundInputs : __mlir_attr.`array<i64>`
+        ](
+            func
+        )
+        run(out, input, filter, conv_shape, null_closure, out_chain)
+
+    # Interface method
+    @staticmethod
+    fn run(
+        out: NDBuffer[4, shape_output, type],
+        input: NDBuffer[4, shape_input, type],
+        filter: NDBuffer[4, shape_filter, type],
+        conv_shape: ConvShape,
+        elementwise_epilogue_fn: BinaryClosure[GemmShape, GemmShape, NoneType],
         out_chain: OutputChainPtr,
     ):
         """Interface function to run im2col convolution on the given images and
@@ -2039,6 +2081,7 @@ struct ConvIm2ColNHWC[
                 pack_inner_size,
                 pack_cache_size,
                 filter_layout,
+                elementwise_epilogue_enabled,
             ](
                 out,
                 input,
@@ -2048,12 +2091,14 @@ struct ConvIm2ColNHWC[
                 num_tasks_m,
                 num_tasks_n,
                 task_id,
+                elementwise_epilogue_fn,
             )
             conv._run_implicit_matmul()
 
         async_parallelize[task_func](out_chain, num_tasks_m * num_tasks_n)
 
     fn __init__(
+        self&,
         out: NDBuffer[4, shape_output, type],
         input: NDBuffer[4, shape_input, type],
         filter: NDBuffer[4, shape_filter, type],
@@ -2062,18 +2107,8 @@ struct ConvIm2ColNHWC[
         num_tasks_m: Int,
         num_tasks_n: Int,
         task_id: Int,
-    ) -> ConvIm2ColNHWC[
-        shape_input,
-        shape_filter,
-        shape_output,
-        packed_shape,
-        type,
-        simd_size,
-        a_row_size,
-        pack_inner_size,
-        pack_cache_size,
-        filter_layout,
-    ]:
+        elementwise_epilogue_fn: BinaryClosure[GemmShape, GemmShape, NoneType],
+    ):
         """Constructor of an instance of the im2col conv2d operator.
 
         Args:
@@ -2149,23 +2184,22 @@ struct ConvIm2ColNHWC[
         let col_start_idx = partition_n[0]
         let total_col_count = partition_n[1]
 
-        return Self {
-            out: out,
-            input: input,
-            filter: filter,
-            tile_n_k: tile_n_k,
-            gemm_shape: gemm_shape,
-            conv_shape: conv_shape,
-            a: a,
-            b: b,
-            c: c,
-            num_tasks_m: num_tasks_m,
-            num_tasks_n: num_tasks_n,
-            row_start_idx: row_start_idx,
-            total_row_count: total_row_count,
-            col_start_idx: col_start_idx,
-            total_col_count: total_col_count,
-        }
+        self.out = out
+        self.input = input
+        self.filter = filter
+        self.tile_n_k = tile_n_k
+        self.gemm_shape = gemm_shape
+        self.conv_shape = conv_shape
+        self.a = a
+        self.b = b
+        self.c = c
+        self.num_tasks_m = num_tasks_m
+        self.num_tasks_n = num_tasks_n
+        self.row_start_idx = row_start_idx
+        self.total_row_count = total_row_count
+        self.col_start_idx = col_start_idx
+        self.total_col_count = total_col_count
+        self.elementwise_epilogue_fn = elementwise_epilogue_fn
 
     fn _run_implicit_matmul(self):
         """Wrapper utility funciton: Allocates packing space on the stack and
@@ -2196,24 +2230,31 @@ struct ConvIm2ColNHWC[
             b_packed(NDBuffer): B matrix in packed layout.
         """
         let tile_k = self.tile_n_k[1]
-        let valid_k_count = self.gemm_shape.K
         var k_idx: Int = 0
 
         @always_inline
         fn k_iteration(k_offset: Int, k_tile_size: Int):
-            self._outer_n_loop(
-                b_packed,
-                GemmShape(0, 0, k_offset),
-                k_tile_size,
+            @always_inline
+            fn outer_n_switch[last_k_tile: Bool]():
+                self._outer_n_loop[last_k_tile](
+                    b_packed,
+                    GemmShape(0, 0, k_offset),
+                    k_tile_size,
+                )
+
+            unswitch[outer_n_switch](
+                k_offset + k_tile_size == self.gemm_shape.K
             )
 
         tile[k_iteration](
             0,  # k offset
-            valid_k_count,  # valid K count
+            self.gemm_shape.K,
             self.tile_n_k[1],  # max tile k size
         )
 
-    fn _outer_n_loop(
+    fn _outer_n_loop[
+        last_k_tile: Bool
+    ](
         self,
         b_packed: NDBuffer[3, packed_shape, type],
         global_offset: GemmShape,
@@ -2236,8 +2277,9 @@ struct ConvIm2ColNHWC[
         )
 
         var col_idx: Int = self.col_start_idx
+
         # Proceed with the large tile:
-        col_idx = self._outer_n_loop_helper[pack_inner_size](
+        col_idx = self._outer_n_loop_helper[last_k_tile, pack_inner_size](
             remapped_bpacked,
             global_offset,
             tile_n,
@@ -2251,7 +2293,7 @@ struct ConvIm2ColNHWC[
             remapped_bpacked = self._view_buffer_as(
                 b_packed.data, simd_size, sub_tile_k, simd_size
             )
-            col_idx = self._outer_n_loop_helper[simd_size](
+            col_idx = self._outer_n_loop_helper[last_k_tile, simd_size](
                 remapped_bpacked,
                 global_offset,
                 simd_size,
@@ -2263,7 +2305,7 @@ struct ConvIm2ColNHWC[
         # Cover the last sub simdsize tile:
         # This call will handle the sub-simd size boundary.
         if col_idx < valid_col_end:
-            self._outer_m_loop[simd_size](
+            self._outer_m_loop[last_k_tile, simd_size](
                 remapped_bpacked,
                 global_offset + GemmShape(0, col_idx, 0),
                 simd_size,
@@ -2271,7 +2313,7 @@ struct ConvIm2ColNHWC[
             )
 
     fn _outer_n_loop_helper[
-        m_loop_pack_inner_size: Int
+        last_k_tile: Bool, m_loop_pack_inner_size: Int
     ](
         self,
         b_packed: NDBuffer[3, packed_shape, type],
@@ -2298,7 +2340,7 @@ struct ConvIm2ColNHWC[
         """
         var col_idx = start_idx
         while col_idx <= (valid_col_count - sub_tile_n):
-            self._outer_m_loop[m_loop_pack_inner_size](
+            self._outer_m_loop[last_k_tile, m_loop_pack_inner_size](
                 b_packed,
                 global_offset + GemmShape(0, col_idx, 0),
                 sub_tile_n,
@@ -2308,7 +2350,7 @@ struct ConvIm2ColNHWC[
         return col_idx
 
     fn _outer_m_loop[
-        m_loop_pack_inner_size: Int
+        last_k_tile: Bool, m_loop_pack_inner_size: Int
     ](
         self,
         b_packed: NDBuffer[3, packed_shape, type],
@@ -2336,21 +2378,18 @@ struct ConvIm2ColNHWC[
         #  no need to check boundary when loading C
         #  on this tile.
         # TODO: this could be in finer granularity.
-        if valid_col_count >= sub_tile_n:
+        @always_inline
+        fn outer_m_helper_switch[skip_col_bound: Bool]():
             self._outer_m_loop_helper[
-                # skip_col_bound
-                True,
-                m_loop_pack_inner_size,
-            ](b_packed, global_offset, sub_tile_n, sub_tile_k)
-        else:
-            self._outer_m_loop_helper[
-                # skip_col_bound
-                False,
+                last_k_tile,
+                skip_col_bound,
                 m_loop_pack_inner_size,
             ](b_packed, global_offset, sub_tile_n, sub_tile_k)
 
+        unswitch[outer_m_helper_switch](valid_col_count >= sub_tile_n)
+
     fn _outer_m_loop_helper[
-        skip_col_bound: Bool, m_loop_pack_inner_size: Int
+        last_k_tile: Bool, skip_col_bound: Bool, m_loop_pack_inner_size: Int
     ](
         self,
         b_packed: NDBuffer[3, packed_shape, type],
@@ -2419,23 +2458,23 @@ struct ConvIm2ColNHWC[
         #  then reduce row size to maximizing unrolled tiles.
         var row_idx: Int = self.row_start_idx
         row_idx = self._outer_m_loop_row_helper[
-            skip_col_bound, m_loop_pack_inner_size, a_row_size
+            last_k_tile, skip_col_bound, m_loop_pack_inner_size, a_row_size
         ](b_packed, global_offset, sub_tile_n_k, row_idx, valid_row_end)
 
         row_idx = self._outer_m_loop_row_helper[
-            skip_col_bound, m_loop_pack_inner_size, 4
+            last_k_tile, skip_col_bound, m_loop_pack_inner_size, 4
         ](b_packed, global_offset, sub_tile_n_k, row_idx, valid_row_end)
 
         row_idx = self._outer_m_loop_row_helper[
-            skip_col_bound, m_loop_pack_inner_size, 3
+            last_k_tile, skip_col_bound, m_loop_pack_inner_size, 3
         ](b_packed, global_offset, sub_tile_n_k, row_idx, valid_row_end)
 
         row_idx = self._outer_m_loop_row_helper[
-            skip_col_bound, m_loop_pack_inner_size, 2
+            last_k_tile, skip_col_bound, m_loop_pack_inner_size, 2
         ](b_packed, global_offset, sub_tile_n_k, row_idx, valid_row_end)
 
         row_idx = self._outer_m_loop_row_helper[
-            skip_col_bound, m_loop_pack_inner_size, 1
+            last_k_tile, skip_col_bound, m_loop_pack_inner_size, 1
         ](b_packed, global_offset, sub_tile_n_k, row_idx, valid_row_end)
 
     fn _can_skip_hw_check(
@@ -2475,6 +2514,7 @@ struct ConvIm2ColNHWC[
         return True
 
     fn _outer_m_loop_row_helper[
+        last_k_tile: Bool,
         skip_col_bound: Bool,
         m_loop_pack_inner_size: Int,
         RowSize: Int,
@@ -2531,6 +2571,13 @@ struct ConvIm2ColNHWC[
                 self.total_col_count,
             )
             row_idx += RowSize
+
+            @parameter
+            if elementwise_epilogue_enabled & last_k_tile:
+                self.elementwise_epilogue_fn(
+                    current_offset,
+                    GemmShape {M: RowSize, N: sub_tile_n_k[0], K: 0},
+                )
         return row_idx
 
     # Utility to reshape the dynamic buffer:
