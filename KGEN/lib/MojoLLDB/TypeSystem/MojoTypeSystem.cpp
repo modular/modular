@@ -134,8 +134,9 @@ void MojoTypeSystem::flushIRDumpAndDebugLog() {
 }
 
 void MojoTypeSystem::errorLog(StringRef message) {
-  lldb::EventSP event =
-      std::make_shared<Event>(eErrorLog, new EventDataBytes(message));
+  // When we hit an error, we want to flush the debug logs as well.
+  lldb::EventSP event = std::make_shared<Event>(eErrorLog | eFlushIRAndDebugLog,
+                                                new EventDataBytes(message));
   BroadcastEvent(event);
 }
 
@@ -178,10 +179,14 @@ void MojoTypeSystem::handleEvent(
   if (event->GetType() & MojoTypeSystem::eBroadcastUserMessage)
     sendUserOutput(getStringFromEvent(event));
 
-  // It may (also) be one of `eDumpIR`, `eDebugLog`, `eFlushIRAndDebugLog`, or
-  // `eErrorLog`. Flush that correctly.
-  if (event->GetType() & MojoTypeSystem::eDumpIR ||
-      event->GetType() & MojoTypeSystem::eDebugLog) {
+  // If it's an error log, send that output as well.
+  if (event->GetType() & MojoTypeSystem::eErrorLog)
+    reportMessage(stringifyType(MessageKind(event->GetType())),
+                  getStringFromEvent(event));
+
+  // It may (also) be one of `eDumpIR`, `eDebugLog` or `eFlushIRAndDebugLog`.
+  // Flush that correctly.
+  if (event->GetType() & (eDumpIR | eDebugLog)) {
     debugMessageCache.emplace_back(MessageKind(event->GetType()),
                                    getStringFromEvent(event));
   } else if (event->GetType() & MojoTypeSystem::eFlushIRAndDebugLog) {
@@ -190,15 +195,10 @@ void MojoTypeSystem::handleEvent(
 
     // Clear out the message cache.
     debugMessageCache.clear();
-  } else if (event->GetType() & MojoTypeSystem::eErrorLog) {
-    reportMessage(stringifyType(MessageKind(event->GetType())),
-                  getStringFromEvent(event));
-  } else {
-    llvm::report_fatal_error("unknown message type");
   }
 
-  // Pop the front message if we've exceeded 10 items in the deque.
-  if (debugMessageCache.size() > 10)
+  // Pop the front message if we've exceeded 40 items in the deque.
+  if (debugMessageCache.size() > 40)
     debugMessageCache.pop_front();
 }
 
