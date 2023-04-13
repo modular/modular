@@ -10,6 +10,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "../MojoLLDB/ExpressionParser/MojoExpressionVariable.h"
+#include "../MojoLLDB/REPL/MojoREPL.h"
 #include "../MojoLLDB/TypeSystem/MojoTypeSystem.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LogicalResult.h"
@@ -20,6 +21,8 @@
 #include "lldb/Host/FileSystem.h"
 #include "lldb/Host/Host.h"
 #include "lldb/Host/HostInfo.h"
+#include "lldb/Interpreter/CommandInterpreter.h"
+#include "lldb/Interpreter/CommandReturnObject.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Utility/Listener.h"
 #include "llvm/ADT/ScopeExit.h"
@@ -40,34 +43,26 @@ using namespace M::KGEN::Mojo;
 /// argument is the output type, and the second is the output string.
 using OutputFn = void (*)(const char *, const char *);
 
-namespace {
-//===----------------------------------------------------------------------===//
-// MojoTarget
-//===----------------------------------------------------------------------===//
+/// Return the persistent expression state for Mojo.
+static MojoPersistentExpressionState *
+getPersistentExpressionState(const TargetSP &target) {
+  return static_cast<MojoPersistentExpressionState *>(
+      target->GetPersistentExpressionStateForLanguage(eLanguageTypeMojo));
+}
 
-struct MojoTarget : public SBTarget {
-  using SBTarget::SBTarget;
-  using SBTarget::operator=;
-
-  /// Return the persistent expression state for Mojo.
-  MojoPersistentExpressionState *GetPersistentExpressionState() {
-    return static_cast<MojoPersistentExpressionState *>(
-        GetSP()->GetPersistentExpressionStateForLanguage(eLanguageTypeMojo));
-  }
-
-  MojoTypeSystem &getMojoTypeSystem() {
-    if (auto typeSystemOr =
-            GetSP()->GetScratchTypeSystemForLanguage(eLanguageTypeMojo))
-      return *static_cast<MojoTypeSystem *>(typeSystemOr.get().get());
-    llvm::report_fatal_error(
-        "The Mojo type system plug-in must have already been registered.");
-  }
-};
+static MojoTypeSystem &getMojoTypeSystem(const TargetSP &target) {
+  if (auto typeSystemOr =
+          target->GetScratchTypeSystemForLanguage(eLanguageTypeMojo))
+    return *static_cast<MojoTypeSystem *>(typeSystemOr.get().get());
+  llvm::report_fatal_error(
+      "The Mojo type system plug-in must have already been registered.");
+}
 
 //===----------------------------------------------------------------------===//
 // MojoExpressionEvaluationOptions
 //===----------------------------------------------------------------------===//
 
+namespace {
 struct MojoExpressionEvaluationOptions : public SBExpressionOptions {
   MojoExpressionEvaluationOptions() {
     SetLanguage(eLanguageTypeMojo);
@@ -78,8 +73,6 @@ struct MojoExpressionEvaluationOptions : public SBExpressionOptions {
     // computations.
     SetTimeoutInMicroSeconds(0);
 
-    // TODO: This should be part of the public API, but for now we need to set
-    // it via the private API.
     ref().SetREPLEnabled(true);
   }
 };
@@ -115,7 +108,7 @@ public:
   /// the status of the execution.
   struct ExpressionExecutionState {
     SBError error;
-    SBValue result;
+    ValueObjectSP result;
     std::thread executionThread;
     std::atomic<bool> finished;
     KernelCellState *cellState = nullptr;
@@ -125,9 +118,10 @@ public:
       : outputFn(outputFn), mojoTypeSystemListener(Listener::MakeListener(
                                 "mojo-type-system.listener")) {}
   ~MojoKernel() {
-    if (process.IsValid())
-      process.Kill();
-    SBDebugger::Destroy(debugger);
+    if (process->IsValid())
+      process->Destroy(/*force_kill=*/true);
+    SBDebugger sbdebugger(debugger);
+    SBDebugger::Destroy(sbdebugger);
     SBDebugger::Terminate();
   }
 
@@ -175,11 +169,11 @@ private:
   OutputFn outputFn;
 
   /// Various LLDB state used for tracking the repl process.
-  SBDebugger debugger;
-  MojoTarget target;
-  SBProcess process;
+  DebuggerSP debugger;
+  TargetSP target;
+  ProcessSP process;
   MojoExpressionEvaluationOptions exprOpts;
-  SBThread mainThread;
+  ThreadSP mainThread;
   ListenerSP mojoTypeSystemListener;
 
   /// The mojo persistent expression state.
@@ -223,11 +217,11 @@ MODULAR_EXPORT void destroyMojoKernel(MojoKernel *kernel) { delete kernel; }
 
 LogicalResult MojoKernel::initialize(const char *mojoReplExe) {
   // Initialize a new debugger instance.
+  // We need to initialize with SBDebugger because that's the only way we can
+  // support loading public plugins like MojoLLDB.
   SBDebugger::Initialize();
-  debugger = SBDebugger::Create();
-  if (!debugger.IsValid())
-    return failure();
-  debugger.SetAsync(false);
+  debugger = Debugger::CreateInstance();
+  debugger->SetAsyncExecution(false);
 
   // Initialize the Mojo LLDB plugin. We expect the plugin to be adjacent to the
   // MojoJupyter library.
@@ -239,7 +233,11 @@ LogicalResult MojoKernel::initialize(const char *mojoReplExe) {
       ("libMojoLLDB" + mojoPlugin.GetFileNameExtension().GetStringRef()).str());
   if (!FileSystem::Instance().Exists(mojoPlugin))
     return reportKernelError("unable to locate libMojoLLDB plugin");
-  debugger.HandleCommand(("plugin load " + mojoPlugin.GetPath()).c_str());
+
+  CommandReturnObject result(/*colors=*/false);
+  debugger->GetCommandInterpreter().HandleCommand(
+      ("plugin load " + mojoPlugin.GetPath()).c_str(),
+      /*add_to_history=*/eLazyBoolNo, result);
 
   // Initialize the target.
   if (failed(initializeTarget(mojoReplExe)))
@@ -247,18 +245,23 @@ LogicalResult MojoKernel::initialize(const char *mojoReplExe) {
 
   // Create a breakpoint within the repl to act as an anchor for expression
   // evaluation.
-  SBBreakpoint mainBreakpoint = target.BreakpointCreateByName(
-      "main", target.GetExecutable().GetFilename());
-  if (!mainBreakpoint.IsValid())
+  BreakpointSP mainBreakpoint = target->CreateBreakpoint(
+      /*all modules*/ nullptr, /*all sources*/ nullptr, "main",
+      eFunctionNameTypeAuto, eLanguageTypeUnknown,
+      /*offset=*/0,
+      /*skip_prologue=*/eLazyBoolCalculate,
+      /*internal=*/false, /*hardware=*/false);
+  if (!mainBreakpoint)
     return reportKernelError("unable to create breakpoint for repl process");
 
   // Launch the mojo-repl-entry-point process.
   if (failed(launchReplProcess()))
     return failure();
+  process = target->GetProcessSP();
 
   // Sets an infinite timeout so that users can run arbitrarily long
   // computations.
-  mainThread = process.GetThreadAtIndex(0);
+  mainThread = process->GetThreadList().GetThreadAtIndex(0);
 
   LLVM_DEBUG(llvm::dbgs() << "Successfully built Mojo Jupyter kernel\n");
   return success();
@@ -280,50 +283,27 @@ LogicalResult MojoKernel::initializeTarget(const char *mojoReplExe) {
   targetTriple.setOSName(os.str());
 
   // Create a new target for the REPL executable.
-  SBError error;
-  target = debugger.CreateTarget(
-      mojoReplExe, /*target_triple=*/targetTriple.getTriple().c_str(),
-      /*platform_name=*/"", /*add_dependent_modules=*/true, error);
-  if (!target.IsValid()) {
-    return reportKernelError("failed to create target: " +
-                             Twine(error.GetCString()));
-  }
-  exprState = target.GetPersistentExpressionState();
+  debugger->GetTargetList().CreateTarget(
+      *debugger, mojoReplExe,
+      /*target_triple=*/targetTriple.getTriple().c_str(),
+      /*add_dependent_modules=*/eLoadDependentsYes,
+      /*platform_options=*/nullptr, target);
+
+  if (!target)
+    return reportKernelError("failed to create target: invalid debugger");
+  exprState = getPersistentExpressionState(target);
 
   return success();
 }
 
 LogicalResult MojoKernel::launchReplProcess() {
-  auto launchFlags = target.GetLaunchInfo().GetLaunchFlags();
-  launchFlags |= lldb::eLaunchFlagDisableASLR;
-
-  // Configure the launch environment to use the target's environment. In
-  // addition, we also ensure that the library path includes the directory
-  // containing the REPL executable.
-  SBEnvironment env = target.GetEnvironment();
-  StringRef cwd(target.GetExecutable().GetDirectory());
-  env.Set("LD_LIBRARY_PATH", ("$LD_LIBRARY_PATH;" + cwd + "/").str().c_str(),
-          /*override=*/true);
-  SBStringList envEntries = env.GetEntries();
-  std::vector<const char *> envArray;
-  for (int i = 0, e = envEntries.GetSize(); i < e; ++i)
-    envArray.push_back(envEntries.GetStringAtIndex(i));
-  envArray.push_back(nullptr);
-
-  SBListener listener;
-  SBError error;
-  process = target.Launch(listener, /*argv=*/nullptr, envArray.data(),
-                          /*stdin_path=*/nullptr, /*stdout_path=*/nullptr,
-                          /*stderr_path=*/nullptr, cwd.data(), launchFlags,
-                          /*stop_at_entry=*/false, error);
-  if (!process.IsValid() || process.GetState() != eStateStopped) {
+  if (llvm::Error err = MojoREPL::launchEntryPointProcess(*target, *debugger)) {
     return reportKernelError(
         "Failed to launch `mojo-repl-entry-point` process: " +
-        Twine(error.GetCString()));
+        llvm::toString(std::move(err)));
   }
-
-  target.getMojoTypeSystem().AddListener(mojoTypeSystemListener,
-                                         MojoTypeSystem::eAllMessagesMask);
+  getMojoTypeSystem(target).AddListener(mojoTypeSystemListener,
+                                        MojoTypeSystem::eAllMessagesMask);
 
   return success();
 }
@@ -343,8 +323,10 @@ MojoKernel::startExecution(const char *cellId, const char *expr) {
       std::thread([this, state, expr = std::string(expr)]() mutable {
         LLVM_DEBUG(llvm::dbgs() << "Executing expression: " << expr << "\n");
         unsigned exprInstIdx = exprState->getNumExpressionInstances();
-        state->result = target.EvaluateExpression(expr.data(), exprOpts);
-        state->error = state->result.GetError();
+        SBValue value =
+            SBTarget(target).EvaluateExpression(expr.data(), exprOpts).GetSP();
+        state->result = value.GetSP();
+        state->error = value.GetError();
         state->finished = true;
 
         // If the REPL pushed a new expression state, associate it with the
@@ -388,14 +370,15 @@ void MojoKernel::flushLLDBStreams(ExpressionExecutionState *state) {
   char outputBuffer[1024];
 
   // Read stdout from the process.
-  while (int readLen = process.GetSTDOUT(outputBuffer, 1023)) {
+  Status unused;
+  while (int readLen = process->GetSTDOUT(outputBuffer, 1023, unused)) {
     outputBuffer[readLen] = '\0';
     StringRef data(outputBuffer, readLen);
     LLVM_DEBUG(llvm::dbgs() << "stdout: " << readLen << " : " << data << "\n");
     sendOutput("stdout", data);
   }
   // Read stderr from the process.
-  while (int readLen = process.GetSTDERR(outputBuffer, 1024)) {
+  while (int readLen = process->GetSTDERR(outputBuffer, 1024, unused)) {
     outputBuffer[readLen] = '\0';
     StringRef data(outputBuffer, readLen);
     LLVM_DEBUG(llvm::dbgs() << "stderr: " << readLen << " : " << data << "\n");
@@ -417,7 +400,7 @@ bool MojoKernel::checkExecutionFinished(ExpressionExecutionState *state) {
   // Process the result.
   auto errorType = state->error.GetType();
   if (errorType == eErrorTypeInvalid)
-    sendOutput("stdout", state->result.GetObjectDescription());
+    sendOutput("stdout", state->result->GetObjectDescription());
   else if (errorType != eErrorTypeGeneric)
     sendOutput("stderr", state->error.GetCString());
   else

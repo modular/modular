@@ -262,7 +262,8 @@ static llvm::Error createReplBreakpoint(Target &target) {
 
 /// Launch the repl executable process within the target, and wait for the repl
 /// breakpoint to be hit.
-static llvm::Error launchReplProcess(Target &target, Debugger &debugger) {
+llvm::Error MojoREPL::launchEntryPointProcess(Target &target,
+                                              Debugger &debugger) {
   ProcessLaunchInfo launchInfo;
   if (target.GetDisableASLR())
     launchInfo.GetFlags().Set(lldb::eLaunchFlagDisableASLR);
@@ -341,7 +342,7 @@ createInstanceFromDebugger(Debugger &debugger, const char *replOptions) {
     return error;
 
   // Launch the repl process and wait for it to trigger the breakpoint.
-  if (llvm::Error error = launchReplProcess(**target, debugger))
+  if (llvm::Error error = MojoREPL::launchEntryPointProcess(**target, debugger))
     return error;
 
   // The process is active and stopped, we can build the REPL now.
