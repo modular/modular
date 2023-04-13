@@ -27,7 +27,7 @@ version_string = _mecore.__version__
 
 
 class ModelKind(str, Enum):
-    """ModelKind represents the to-be-loaded model's framework"""
+    """The model format."""
 
     PYTORCH_MODEL = "PyTorch Model"
     TENSORFLOW_MODEL = "TensorFlow Model"
@@ -41,26 +41,32 @@ class TFSavedModelVersion(str, Enum):
 
 @dataclass
 class TensorFlowLoadOptions:
-    """TensorFlowLoadOptions is a class that can be used to configure loading of TensorFlow saved models"""
+    """Configures how to load TensorFlow saved models."""
 
     saved_model_version: TFSavedModelVersion = field(
         default=TFSavedModelVersion.V1
     )
+
     exported_name: str = field(default="serving_default")
+    """The exported name from the TF model's signature."""
+
     compatibility_mode: bool = field(default=False)
+    """Indicates whether or not the model will fall back to using
+    TF kernels."""
 
 
 @dataclass
 class TorchLoadOptions:
-    """TorchLoadOptions is a class that can be used to configure loading of PyTorch models"""
+    """Configures how to load PyTorch models."""
 
 
 class Model:
-    """A Model object represents a loaded model.
+    """A loaded model that you can execute with the Modular Engine.
 
-    Model instances are created by calling load on a native framework model
-    (e.g., a Tensorflow SavedModel) using an instance of the InferenceSession
-    class.
+    You should not instantiate this class directly. Instead create a
+    :obj:`Model` by passing your model file to :func:`InferenceSession.load()`.
+    Then you can run the model by passing your input data to
+    :func:`Model.execute()`.
     """
 
     _impl: _Model
@@ -74,22 +80,23 @@ class Model:
         return model
 
     def execute(self, *args) -> None:
-        """Executes the model for the provided input tensors and returns outputs as tensors.
+        """Executes the model with the provided input tensors and returns
+        outputs as tensors.
 
         Parameters
         ----------
         ``*args``
-            Input tensors, objects of NumPy `ndarray` or TensorFlow `Tensor` type.
+            Input tensors as :obj:`np.ndarray` data.
 
         Returns
         -------
         np.ndarray
-            Output tensors have type np.ndarray
+            Output tensors.
 
         Raises
         ------
         RuntimeError
-            We raise an exception if input tensors don't match what the model expects.
+            If the input tensors don't match what the model expects.
         """
 
         # TODO(10070): Fix above docstring after all desired tensor types are supported.
@@ -97,20 +104,26 @@ class Model:
         return self._impl.execute(*args)
 
     def init(self) -> None:
-        """Initializes the loaded model and makes it ready for execution."""
+        """Initializes the loaded model and prepares it for execution.
+
+        Calling this is optional to warm-up the model; you can instead just
+        call :func:`execute()` and it will call this for you."""
         self._impl.load()
 
     @property
     def input_metadata(self) -> List["TensorSpec"]:
-        """Metadata about input tensors the model expects."""
+        """Metadata about the input tensors that the model expects."""
         return [TensorSpec._init(spec) for spec in self._impl.input_metadata]
 
     @property
     def kind(self) -> str:
+        """The :obj:`ModelKind` value."""
         return self._kind.value
 
 
 class DType(Enum):
+    """The tensor data type."""
+
     bool = 0
     si8 = 1
     si16 = 2
@@ -131,12 +144,13 @@ class DType(Enum):
 
 
 class InferenceSession:
-    """An InferenceSession object represents a session for compiling and executing models.
+    """Manages an inference session in which you can load and run models.
 
     Parameters
     ----------
     config: dict
-        Options to configure the inference session. Keys include - number of threads.
+        Configuration details about the inference session, such as the number
+        of threads.
     """
 
     _impl: _InferenceSession
@@ -152,24 +166,23 @@ class InferenceSession:
             Union[TensorFlowLoadOptions, TorchLoadOptions]
         ] = None,
     ) -> Model:
-        """Load a saved model file/directory
-
-        We support compiling Tensorflow models in the SavedModel format and traceable PyTorch models
+        """Loads a trained model and compiles it for inference.
 
         Parameters
         ----------
         model_path: pathlib.Path
-            Path to the saved model
+            Path to a model. May be a Tensorflow model in the SavedModel
+            format or a traceable PyTorch model.
 
         Returns
         -------
         Model
-            A loaded model
+            The loaded model, compiled and ready to execute.
 
         Raises
         ------
         RuntimeError
-            We raise an exception if the path provided is invalid.
+            If the path provided is invalid.
         """
         options_dict = {}
         if options:
@@ -194,7 +207,7 @@ class InferenceSession:
 
 
 class TensorSpec:
-    """A TensorSpec object represents a tensor's specifications, namely it's shape and data type."""
+    """Represents a tensor's specifications, namely its shape and data type."""
 
     _impl: _TensorSpec
 
@@ -206,10 +219,10 @@ class TensorSpec:
 
     @property
     def shape(self) -> List[int]:
-        """The shape of the tensor returned as a list of integers.
+        """The shape of the tensor as a list of integers.
 
-        If the dimension is indeterminate for a certain axis, like the first
-        axis of a batched tensor - it is denoted by `None`."""
+        If a dimension is indeterminate for a certain axis, like the first
+        axis of a batched tensor, that axis is denoted by ``None``."""
         return self._impl.shape
 
     @property
