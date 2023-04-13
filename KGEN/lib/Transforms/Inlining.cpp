@@ -936,27 +936,36 @@ struct InliningGraphNode
   /// If the function will be inlined, removed it from the module so that it can
   /// later be erased in parallel. Ownership is passed to the node.
   explicit InliningGraphNode(FuncOp func)
-      : InliningGraphNodeBase(func), level(func.getAlwaysInlineLevel()) {
-    if (level != AlwaysInlineLevel::Disabled)
+      : InliningGraphNodeBase(func), level(func.getAlwaysInlineLevel()),
+        signature(func.getSignature()) {
+    if (shouldInline())
       func->remove();
   }
 
   /// This node takes ownership of the function. Everything else is
   /// default-initialized.
   explicit InliningGraphNode(InliningGraphNode &&other)
-      : InliningGraphNodeBase(std::move(other)), level(other.level) {
+      : InliningGraphNodeBase(std::move(other)), level(other.level),
+        signature(other.signature) {
     other.func = nullptr;
+  }
+
+  /// Return true if the node should be inlined.
+  bool shouldInline() {
+    return level != AlwaysInlineLevel::Disabled || signature.isFat();
   }
 
   /// If an error occurred during inlining, nodes can end up owning the function
   /// upon destruction. Erase the function.
   ~InliningGraphNode() {
-    if (level != AlwaysInlineLevel::Disabled && func)
+    if (shouldInline() && func)
       func->erase();
   }
 
   /// The inlining level of the function.
   AlwaysInlineLevel level;
+  /// The signature of the function.
+  SignatureType signature;
   /// Track the number of times the function has been inlined. Once the counter
   /// reaches the number of callers, the function can be erased.
   std::atomic<size_t> numTimesInlined = 0;
@@ -969,7 +978,7 @@ struct InliningGraph
 
   /// Inline all functions marked `always_inline`.
   bool shouldInline(InliningGraphNode *node) const {
-    return node->level != AlwaysInlineLevel::Disabled;
+    return node->shouldInline();
   }
   /// Erase dead 'always_inline' functions.
   bool prepareForInlining(InliningGraphNode *node);
@@ -986,7 +995,7 @@ bool InliningGraph::prepareForInlining(InliningGraphNode *node) {
   // Skip inlining of functions with no callers. If it is an 'always_inline'
   // function, we need to erase it.
   if (node->callers.empty()) {
-    if (node->level != AlwaysInlineLevel::Disabled) {
+    if (node->shouldInline()) {
       node->func->erase();
       node->func = nullptr;
     }
@@ -1294,7 +1303,7 @@ void ForceInlinePass::runOnOperation() {
     ParallelState state(*rt);
     for (auto &[func, node] : graph.nodes) {
       // Update root nodes that call `always_inline` functions.
-      if (node.level != AlwaysInlineLevel::Disabled || node.callsites.empty())
+      if (node.shouldInline() || node.callsites.empty())
         continue;
       state.startWork();
       rt->getWorkQueue()->addTask([func = func, updateAttrName, &state] {
