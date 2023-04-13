@@ -136,7 +136,7 @@ fn elementwise_wrapper[
         StaticIntTuple[
             __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, Int]
         ],
-        ` borrow) fat -> `,
+        ` borrow) capturing -> `,
         NoneType,
         `>`,
     ],
