@@ -31,6 +31,10 @@ public:
 
   static llvm::StringRef getPluginNameStatic() { return "Mojo REPL"; }
 
+  /// Launch the entry point process that is used to JIT Mojo expressions.
+  static llvm::Error launchEntryPointProcess(lldb_private::Target &target,
+                                             lldb_private::Debugger &debugger);
+
 protected:
   lldb_private::Status DoInitialization() override { return {}; }
 
