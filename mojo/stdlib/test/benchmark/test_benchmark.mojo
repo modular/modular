@@ -16,6 +16,7 @@ fn test_benchmark():
     print("== test_benchmark")
 
     @always_inline
+    @thin
     fn time_me():
         for i in range(100):
             print("")
