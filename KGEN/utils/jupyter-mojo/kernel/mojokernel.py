@@ -96,16 +96,12 @@ class MojoKernel(Kernel):
         mojo_repl_exe_path = (
             Path(os.environ["MODULAR_PATH"]) / ".derived" / "build" / "lib"
         )
-        self.mojoReplExe: Optional[str] = shutil.which(
-            "mojo-repl-entry-point",
-            path=mojo_repl_exe_path,
-        )
+        os.environ["PATH"] += os.pathsep + str(mojo_repl_exe_path)
+        self.mojoReplExe: Optional[str] = shutil.which("mojo-repl-entry-point")
         if not self.mojoReplExe:
             from distutils.spawn import find_executable
 
-            self.mojoReplExe = find_executable(
-                "mojo-repl-entry-point", path=str(mojo_repl_exe_path)
-            )
+            self.mojoReplExe = find_executable("mojo-repl-entry-point")
             if not self.mojoReplExe:
                 raise RuntimeError(
                     "Unable to locate `mojo-repl-entry-point` executable."
