@@ -1182,7 +1182,6 @@ struct TiledMatmulGenerated[
 
         # Define an no-op epilog function.
         @always_inline
-        @thin
         fn epilog_no_op(dynamic_state: MatmulDynamicState[data_type]):
             return
 
@@ -1293,7 +1292,6 @@ struct TiledMatmulBiasGenerated[
         #  2. Would be nice not to have to define this epilog inplace, current
         #  bottleneck is `data_type`.
         @always_inline
-        @thin
         fn epilog_bias(dynamic_state: MatmulDynamicState[data_type]):
             # This check ensures that we only add the bias once
             if not (
