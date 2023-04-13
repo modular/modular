@@ -1019,28 +1019,6 @@ RValue ExprEmitter::emitI1(ASTExprAnd<CValue> value, CValue &boolResult) {
   return emitRValue({litBoolCall, value.expr}, EC_BoolCondition);
 }
 
-/// Look up the __del__ destructor for the specified `type` which is needed
-/// for the specified declaration (typically a var or argument declaration).
-/// This returns the destructor if successful, diagnoses an error if not, and
-/// returns null if there is no defined destructor.
-TypedAttr ExprEmitter::lookupDestructor(ASTType type, SMLoc loc,
-                                        LitSharedState &shared) {
-  DeclRefNode declNode(StringRef(loc.getPointer(), 1));
-  OverloadSet dtorSet(type, "__del___", &declNode, CallSyntax::kDestructor,
-                      shared, /*errorHandler=*/{});
-  // If there are no __del__ methods, return null.  This is valid.
-  if (dtorSet.isNull())
-    return {};
-
-  assert(!dtorSet.fnDecls.empty());
-
-  // Ok, if there are candidates, we need to resolve down to a single one.  Emit
-  // an error if we can't.
-  ExprEmitter emitter(shared, *dtorSet.fnDecls[0], EC_Destructor,
-                      /*varDeclCursor*/ nullptr);
-  return dtorSet.getBoundConstantAttr(emitter);
-}
-
 //===----------------------------------------------------------------------===//
 // ExprEmitter implementation
 //===----------------------------------------------------------------------===//

@@ -89,12 +89,9 @@ struct TypeDeclInfo {
     return it->second;
   }
 
-  TypedAttr getDestructorForType(Type type) const {
-    DeclRefType valueType = dyn_cast<DeclRefType>(type);
-    if (!valueType) // Values of raw MLIR type don't have destructors.
-      return {};
-    return getStructDeclForType(valueType).getDestructorAttr();
-  }
+  /// Given the RValue type for a value that needs to be destroyed, return the
+  /// destructor the invoke, or null if there is none.
+  SymbolConstantAttr getDestructorForType(Type type) const;
 
 private:
   DenseMap<SymbolRefAttr, LIT::StructDeclOp> structMap;
@@ -108,6 +105,35 @@ private:
   /// fields until the start of the field.
   DenseMap<std::pair<SymbolRefAttr, StringAttr>, unsigned> fieldIndices;
 };
+
+/// Given the RValue type for a value that needs to be destroyed, return the
+/// destructor the invoke, or null if there is none.
+SymbolConstantAttr TypeDeclInfo::getDestructorForType(Type type) const {
+  DeclRefType valueType = dyn_cast<DeclRefType>(type);
+  if (!valueType) // Values of raw MLIR type don't have destructors.
+    return {};
+  TypedAttr dtorAttr = getStructDeclForType(valueType).getDestructorAttr();
+  if (!dtorAttr)
+    return {};
+
+  // If there are parameters to the type, then the dtor will have those
+  // parameters as well, substitute them in.
+  assert(isa<SymbolConstantAttr>(dtorAttr) && "What kind of dtor is this??");
+  SymbolConstantAttr attr = cast<SymbolConstantAttr>(dtorAttr);
+  assert(attr.getParamValues().empty() && "dtor should be unparameterized");
+  if (valueType.getParamValues().empty())
+    return attr;
+
+  SmallVector<TypedAttr> paramValues;
+  for (ParamBindAttr bind : valueType.getParamValues())
+    paramValues.push_back(bind.getValue());
+
+  auto newSig = attr.getType().getSpecializedSignature(
+      paramValues, []() -> InFlightDiagnostic {
+        llvm_unreachable("incorrect parameters to dtor when inserting");
+      });
+  return SymbolConstantAttr::get(attr.getSymbol(), paramValues, newSig);
+}
 
 /// Return the total number of flattened fields in the specified type.
 unsigned TypeDeclInfo::getNumFieldsInType(Type type) {
@@ -1349,7 +1375,7 @@ void DestructorInsertion::emitDestructorCallAt(unsigned valueId, Block &block,
   LifetimeTrackable trackable(valueInfo.value);
   assert(trackable && "shouldn't be tracking untrackable things!");
 
-  TypedAttr dtor = valueSet.typeDeclInfo.getDestructorForType(
+  SymbolConstantAttr dtor = valueSet.typeDeclInfo.getDestructorForType(
       trackable.getValueType(valueInfo.value));
   if (!dtor)
     return;
@@ -1373,16 +1399,9 @@ void DestructorInsertion::emitDestructorCallAt(unsigned valueId, Block &block,
   }
 
   // Emit the call to the destructor.
-  if (auto symbolConstantDtor = dyn_cast<SymbolConstantAttr>(dtor)) {
-    b.create<CallOp>(loc, signature.getValueResults()[0], symbolConstantDtor,
-                     b.getAttr<ParamDeclArrayAttr>(ArrayRef<ParamDeclAttr>()),
-                     ValueRange(valueToDestroy));
-  } else {
-    b.create<CallParamOp>(
-        loc, signature.getValueResults()[0], dtor,
-        b.getAttr<ParamDeclArrayAttr>(ArrayRef<ParamDeclAttr>()),
-        ValueRange(valueToDestroy));
-  }
+  b.create<CallOp>(loc, signature.getValueResults()[0], dtor,
+                   b.getAttr<ParamDeclArrayAttr>(ArrayRef<ParamDeclAttr>()),
+                   ValueRange(valueToDestroy));
 }
 
 /// Destroy any values whose bits are indicated in the specified set.  Insert

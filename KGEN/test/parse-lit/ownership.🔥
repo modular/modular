@@ -290,3 +290,17 @@ fn thing_that_raises(value: Int, c: Bool) -> MemExample:
     if c:
         return MemExample()
     raise Error("TypeError: cannot invert values of this type")
+
+
+struct Parameterized[level: Int]:
+    fn __init__(self&): pass
+
+    fn __del___(owned self):
+        pass
+
+# CHECK-LABEL: lit.func @"test_parameterized
+fn test_parameterized():
+  # CHECK: %x = lit.varlet.decl "x"
+  let x = Parameterized[4]()
+
+  # CHECK: kgen.call @"$ownership"::@Parameterized::@"__del___($ownership::Parameterized[level])"<:@"$Int"::@Int #lit.struct<{value: scalar<index> = 4}>>(%x)
