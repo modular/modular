@@ -773,7 +773,7 @@ fn tile[
         alias tile_size_x = tile_size_list[2 * idx]
         alias tile_size_y = tile_size_list[2 * idx + 1]
 
-        let tmp_x = current_offset_x
+        let tmp_x = offset_x
 
         # Process work with the 2d tile size until there's not enough remaining
         # work to fit in a tile.
