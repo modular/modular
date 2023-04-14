@@ -72,7 +72,7 @@ struct TypeDeclInfo {
 
   /// Return the start bit for a field with the specified name in the specified
   /// type.
-  unsigned getFieldIndex(DeclRefType type, StringAttr fieldName);
+  unsigned getFieldIndex(DeclRefType type, StringAttr fieldName) const;
 
   /// Given a field number that indicates a stored field in the specified type,
   /// return the name of the field that contains it as well as its declared
@@ -167,8 +167,12 @@ unsigned TypeDeclInfo::getNumFieldsInType(Type type) {
 
 /// Return the start bit for a field with the specified name in the specified
 /// type.
-unsigned TypeDeclInfo::getFieldIndex(DeclRefType type, StringAttr fieldName) {
-  return fieldIndices[{type.getSymbol(), fieldName}];
+unsigned TypeDeclInfo::getFieldIndex(DeclRefType type,
+                                     StringAttr fieldName) const {
+  auto it = fieldIndices.find({type.getSymbol(), fieldName});
+  assert(it != fieldIndices.end() &&
+         "shouldn't get field index of unused value");
+  return it->second;
 }
 
 /// Given a field number that indicates a stored field in the specified type,
@@ -517,6 +521,8 @@ struct ValueSet {
 
   raw_ostream &printBV(const BitVector &bits, raw_ostream &os) const;
 
+  LLVM_DUMP_METHOD void dump() const;
+
 private:
   SmallVector<ValueInfo> valueInfos;
   DenseMap<Value, unsigned> valueInfoIndex;
@@ -538,14 +544,51 @@ raw_ostream &ValueSet::printBV(const BitVector &bv, raw_ostream &os) const {
   return os << ']';
 }
 
+void ValueSet::dump() const {
+  auto &os = llvm::errs();
+  os << "ValueSet with " << valueInfos.size() << " values\n";
+  os << "  SI = startsInit, EI = endsInit, [*] = isIndirect";
+  os << "  FL=isFullObjectLiveOnEntry, DEL = isDelSelf, ERR = hadErrorDiag\n";
+
+  for (auto [idx, info] : llvm::enumerate(valueInfos)) {
+    os << "  #" << idx << " [" << info.startValueBit << ":" << info.endValueBit
+       << ")";
+
+    if (!info.startsUninit)
+      os << " SI";
+    if (!info.endsUninit)
+      os << " EI";
+    if (info.isIndirect)
+      os << " [*]";
+    if (info.isFullObjectLiveOnEntry)
+      os << " FL";
+    if (info.isDelSelf)
+      os << " DEL";
+    if (info.hasErrorDiagnosed)
+      os << " ERR";
+    os << "\t";
+    if (info.value)
+      os << info.value;
+    else
+      os << "<<null sentinel>>";
+    os << "\n";
+  }
+  os.flush();
+}
+
 /// Given a pointer that is being accessed indirectly by an operation, return
 /// the value number being referenced, or zero if not tracked.
 ValueRef ValueSet::getValueRef(Value value) const {
+  // If this is a value we're tracking, return it.
+  auto it = valueInfoIndex.find(value);
+  if (it != valueInfoIndex.end())
+    return getFullValueRef(it->second);
+
   // If this is a GEP, check the base and focus in on a field of it.
   if (auto structGEP = value.getDefiningOp<StructGEPOp>()) {
     ValueRef baseVal = getValueRef(structGEP.getContainer());
-    if (!baseVal)
-      return baseVal;
+    if (!baseVal || !baseVal.isIndirect)
+      return {};
 
     // Figure out what subset of elements we have indexed to.
     auto containerType =
@@ -560,10 +603,7 @@ ValueRef ValueSet::getValueRef(Value value) const {
   }
 
   // Otherwise, we don't know what this is.
-  auto it = valueInfoIndex.find(value);
-  if (it == valueInfoIndex.end())
-    return ValueRef();
-  return getFullValueRef(it->second);
+  return ValueRef();
 }
 
 //===----------------------------------------------------------------------===//
@@ -579,6 +619,8 @@ struct UninitializedValueScan {
 
   void scanFunction(mlir::FunctionOpInterface func);
   void scanBlock(Block &body);
+
+  LLVM_DUMP_METHOD void dump() const;
 
 private:
   void checkOp(Operation &op);
@@ -601,6 +643,26 @@ private:
   BitVector *raiseSet = nullptr;
 };
 } // namespace
+
+void UninitializedValueScan::dump() const {
+  auto &os = llvm::errs();
+  os << "UninitializedValueScan\n  ";
+  valueSet.printBV(liveValues, os) << "\n";
+
+  if (raiseSet) {
+    os << " raise: ";
+    valueSet.printBV(*raiseSet, os) << "\n";
+  }
+  if (breakSet) {
+    os << " break: ";
+    valueSet.printBV(*breakSet, os) << "\n";
+  }
+  if (continueSet) {
+    os << " continue: ";
+    valueSet.printBV(*continueSet, os) << "\n";
+  }
+  os.flush();
+}
 
 static Type digIntoTypeAtFieldOffset(Type type, unsigned firstInvalidOffset,
                                      unsigned nextValidOffset,

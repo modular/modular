@@ -14,7 +14,6 @@ struct MemExample:
   # CHECK-NEXT:    kgen.return %1 : !lit.none
   fn __del___(owned self):
     self.noop()
-    pass
 
 # CHECK-LABEL: lit.struct.decl @RegExample
 # CHECK: attributes {{.*}}destructor = #kgen.symbol.constant<@"$ownership"::@RegExample::@"__del___
@@ -291,7 +290,6 @@ fn thing_that_raises(value: Int, c: Bool) -> MemExample:
         return MemExample()
     raise Error("TypeError: cannot invert values of this type")
 
-
 struct Parameterized[level: Int]:
     fn __init__(self&): pass
 
@@ -304,3 +302,12 @@ fn test_parameterized():
   let x = Parameterized[4]()
 
   # CHECK: kgen.call @"$ownership"::@Parameterized::@"__del___($ownership::Parameterized[level])"<:@"$Int"::@Int #lit.struct<{value: scalar<index> = 4}>>(%x)
+
+struct Complicated:
+  var a: MemExample
+  var b: MemExample
+
+# Issue #12068 - This shouldn't crash.
+fn testPointerGEP(ptr: __mlir_type[`!pop.pointer<`, Complicated, `>`]) -> Int:
+  let addr = ptr
+  return __get_address_as_lvalue(addr).b.x
