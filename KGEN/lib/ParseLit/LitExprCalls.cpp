@@ -206,9 +206,8 @@ PValue ParameterInferenceState::infer(SignatureType signature,
       if (auto packType = getIfPackType(signature, expectedArgIdx)) {
         if (!inferredValues.empty())
           break;
-        SmallVector<TypedAttr> types;
-        inferredValues.push_back(KGEN::VariadicAttr::get(
-            {types}, cast<VariadicType>(packType.getVariadic().getType())));
+        inferredValues.push_back(VariadicAttr::get(
+            {}, cast<VariadicType>(packType.getVariadic().getType())));
         continue;
       }
 
@@ -288,7 +287,7 @@ PValue ParameterInferenceState::infer(SignatureType signature,
             ParameterizedTypeConstantAttr::get(value.getRValueType()));
       }
 
-      inferredValues.push_back(KGEN::VariadicAttr::get(
+      inferredValues.push_back(VariadicAttr::get(
           types, cast<VariadicType>(packType.getVariadic().getType())));
       continue;
     }
@@ -389,28 +388,38 @@ ParameterExprArrayAttr InputParamBindings::verifyBindings(
 
     // Check to see if we ran out of bindings to provide to this param decl.
     if (nextBinding == bindings.size()) {
+      // If we have a method to infer parameter values, invoke it to see if we
+      // can get an inferred value for the parameter.
+      if (parameterInferenceHook) {
+        Type requestedType = evaluator.getReboundType(type);
+        Type expectedType = requestedType;
+        // If this is a vararg parameter, infer using the element type.
+        if (isVararg && isa<VariadicType>(requestedType)) {
+          expectedType =
+              ASTType(cast<VariadicType>(expectedType).getElementType());
+        }
+        if (auto value = parameterInferenceHook(index, type, expectedType,
+                                                newBindings)) {
+          assert(value.getType().mlirType == requestedType &&
+                 "inferred a default parameter value of wrong type");
+          setParamValue(value);
+          continue;
+        }
+      }
+
       // If the parameter decl is a variadic parameter list, and do not have
       // pack operands that could be used to infer those parameters, then we can
       // fulfill it with an empty list.  We know it must be the last parameter
       // decl.
       if (isVararg && !isPackVararg) {
-        auto emptyVariadic = KGEN::VariadicAttr::get(
-            ArrayRef<TypedAttr>(), cast<KGEN::VariadicType>(type));
+        // If this isn't actually a variadic type, then we simply reached the
+        // end of the parameter list.
+        if (!isa<VariadicType>(type))
+          continue;
+        auto emptyVariadic =
+            VariadicAttr::get(ArrayRef<TypedAttr>(), cast<VariadicType>(type));
         setParamValue(emptyVariadic);
         continue;
-      }
-
-      // If we have a method to infer parameter values, invoke it to see if we
-      // can get an inferred value for the parameter.
-      if (parameterInferenceHook) {
-        auto expectedType = evaluator.getReboundType(type);
-        if (auto value = parameterInferenceHook(index, type, expectedType,
-                                                newBindings)) {
-          assert(value.getType().mlirType == expectedType &&
-                 "inferred a default parameter value of wrong type");
-          setParamValue(value);
-          continue;
-        }
       }
 
       // TODO: Apply default values for parameters.
@@ -465,10 +474,11 @@ ParameterExprArrayAttr InputParamBindings::verifyBindings(
       return {};
     };
 
-    // Scalar parameter values are installed directly.
-    PValue paramValue;
-    if (!isVararg) {
-      // Otherwise we get a single value.
+    // Scalar parameter values are installed directly. Or, if we have a variadic
+    // of the same type, we can use it as the value of the parameter directly.
+    // FIXME: This allows passing a variadic `Ts` directly. Do we want a new
+    // PValue classification for `*Ts`, which is required to pass this legally?
+    if (!isVararg || binding.getValue().getType() == type) {
       PValue paramValue = handleSingleParameterValue(binding, type);
       if (!paramValue)
         return {};

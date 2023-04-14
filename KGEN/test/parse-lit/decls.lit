@@ -145,6 +145,27 @@ fn callOverload(a: Int):
   packOverload()
 
 
+struct VariadicStruct[*Ts: AnyType]:
+    fn __init__(self&):
+        pass
+
+    @staticmethod
+    fn param_func[i: Int]():
+        pass
+
+
+fn take_variadic_struct[*Ts: AnyType](a: VariadicStruct[Ts]):
+    pass
+
+
+# CHECK-LABEL: lit.func @"variadic_params()"
+fn variadic_params():
+    # CHECK-NEXT: call {{.*}}param_func()"<:variadic<!kgen.mlirtype> [{{.*}}Int>, {{.*}}SIMD{{.*}}f32}>, size: {{.*}}Int = {{.*}}1
+    VariadicStruct[Int, F32].param_func[4]()
+    # CHECK: call {{.*}}take_variadic_struct{{.*}}<:variadic<!kgen.mlirtype> [{{.*}}Int>, {{.*}}SIMD{{.*}}f32
+    take_variadic_struct(VariadicStruct[Int, F32]())
+
+
 # Test that pointers don't get confused with by-ref arguments.
 # CHECK-LABEL: lit.func @"testPointerArgs{{.*}}(%ptr: !pop.pointer<si32> borrow) -> si32 {
 fn testPointerArgs(ptr: __mlir_type.`!pop.pointer<si32>`) -> __mlir_type.si32:
