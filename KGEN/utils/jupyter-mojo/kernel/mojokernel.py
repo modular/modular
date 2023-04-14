@@ -43,6 +43,7 @@ class MojoKernel(Kernel):
             "file_extension": ".mojo",
         }
         self.banner = ""
+        self.auto_gen_cell_id_count = 0
         super(MojoKernel, self).__init__(**kwargs)
 
         # Load the MojoJupyter library, and initialize the result types of the
@@ -133,16 +134,17 @@ class MojoKernel(Kernel):
         # TODO: Better propagate errors from the kernel execution, process
         # provided arguments, etc.
 
-        # Build the c conformed cell id.
-        c_cell_id = ctypes.c_char_p(0)
-        if cell_id:
-            c_cell_id = ctypes.c_char_p(cell_id.encode("utf-8"))
+        # jupyter on the cli doesn't provide a cell id, so we need to
+        # autogenerate one.
+        if cell_id is None:
+            cell_id = f"__autogen_cell_id_{self.auto_gen_cell_id_count}"
+            self.auto_gen_cell_id_count += 1
 
         # Start execution of the expression.
         executionState: ctypes.c_void_p = (
             self.lib_mojo_jupyter.startMojoExecution(
                 ctypes.c_void_p(self.mojo_kernel),
-                c_cell_id,
+                ctypes.c_char_p(cell_id.encode("utf-8")),
                 ctypes.c_char_p(code.encode("utf-8")),
             )
         )
