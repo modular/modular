@@ -215,16 +215,17 @@ public:
   CValue emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands, ValueDest &dest,
                   ExprEmitter &emitter);
 
+  /// Filter down and complete this overload set based on knowledge that we need
+  /// to produce a function pointer with the specified type.
+  LogicalResult filterOverloadSetForValueType(ASTType functionType,
+                                              bool emitDiagnosticOnFailure,
+                                              ExprEmitter &emitter);
+
 private:
   /// Resolve the callee into either a single PValue callee (if there's only
   /// one decl provided) or a variadic that contains all the possible adaptive
   /// overloads.
   PValue getCallee(ExprEmitter &emitter) const;
-
-  /// Filter down and complete this overload set based on knowledge that we need
-  /// to produce a function pointer with the specified type.
-  LogicalResult filterOverloadSetForValueType(ASTType functionType,
-                                              ExprEmitter &emitter);
 };
 
 /// This provides a wrapper around OverloadSet which is reference counted,
@@ -247,11 +248,12 @@ inline ORValue ORValue::create(Args &&...args) {
       new OverloadSetWrapper(OverloadSet(std::forward<Args>(args)...))));
 }
 
-inline OverloadSet *ORValue::operator->() {
-  return &storage.getPointer()->overloadSet;
+inline const OverloadSet &ORValue::operator*() const {
+  return storage.getPointer()->overloadSet;
 }
-inline const OverloadSet *ORValue::operator->() const {
-  return &storage.getPointer()->overloadSet;
+
+inline OverloadSet &ORValue::operator*() {
+  return storage.getPointer()->overloadSet;
 }
 
 } // namespace M::KGEN::LIT
