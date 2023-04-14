@@ -1536,11 +1536,12 @@ AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 }
 
 AnyValue ListNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
-  // TODO: Introduce a ListLiteral type instead of using TupleLitera.
-  ASTDecl *decl = emitter.shared.getBuiltinTupleLiteral(getLoc());
+  // Lookup the builtin ListLiteral type, in order to call its constructor.
+  // ListLiteral must be in scope, since it is auto-imported.
+  ASTDecl *decl = emitter.shared.getBuiltinListLiteral(getLoc());
   if (!decl) {
     emitter.emitError(
-        getLoc(), "internal error: could not find builtin 'TupleLiteral' type");
+        getLoc(), "internal error: could not find builtin 'ListLiteral' type");
     return {};
   }
   return emitHeterogenousSequence(dest, emitter, decl, this, exprs);

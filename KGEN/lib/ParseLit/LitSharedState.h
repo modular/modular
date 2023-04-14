@@ -181,6 +181,8 @@ public:
   static constexpr StringLiteral kBuiltinStringModuleName = "StringLiteral";
   /// The name of the builtin slice module.
   static constexpr StringLiteral kBuiltinSliceModuleName = "BuiltinSlice";
+  /// The name of the builtin list module.
+  static constexpr StringLiteral kBuiltinListModuleName = "BuiltinList";
 
   /// All the builtin modules.
   /// FIXME: We need a better way to include all the builtin modules. Perhaps
@@ -189,7 +191,7 @@ public:
       kBuiltinBoolModuleName,        kBuiltinTupleModuleName,
       kBuiltinErrorModuleName,       kBuiltinIntModuleName,
       kBuiltinTypeAliasesModuleName, kBuiltinStringModuleName,
-      kBuiltinSliceModuleName};
+      kBuiltinSliceModuleName,       kBuiltinListModuleName};
 
   /// Resolve a builtin module type.
   ASTDecl *resolveBuiltinModuleType(llvm::SMLoc loc, StringRef moduleName,
@@ -207,6 +209,8 @@ public:
   ASTDecl *getBuiltinStringLiteral(llvm::SMLoc loc);
   /// Get the builtin Slice type.
   ASTDecl *getBuiltinSliceType(llvm::SMLoc loc);
+  /// Get the builtin ListLiteral type.
+  ASTDecl *getBuiltinListLiteral(llvm::SMLoc loc);
 
 private:
   /// The internal state of an imported module.
