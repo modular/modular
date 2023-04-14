@@ -395,17 +395,18 @@ fn parallelize[
     """
     let core_count = num_cores()
     let chunk_size = max(div_ceil(num_work_items, core_count), 1)
-    let rt = Runtime(core_count)
-    let out_chain = OwningOutputChainPtr(rt)
 
-    def coarsed_func(thread_idx: Int):
+    @always_inline
+    fn coarsed_func(thread_idx: Int):
         for i in range(
             chunk_size * thread_idx,
-            min(chunk_size * thread_idx, num_work_items),
+            min(chunk_size * (thread_idx + 1), num_work_items),
         ):
             func(i)
 
-    async_parallelize[func](out_chain.borrow(), core_count)
+    let rt = Runtime(core_count)
+    let out_chain = OwningOutputChainPtr(rt)
+    async_parallelize[coarsed_func](out_chain.borrow(), core_count)
     out_chain.wait()
     out_chain.__del__()
     rt.__del__()
