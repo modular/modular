@@ -5,7 +5,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "MojoTypeSystem.h"
+#include "../../ParseLit/ASTType.h"
 #include "../ExpressionParser/MojoDiagnostic.h"
+#include "../ExpressionParser/MojoExpressionParser.h"
 #include "../ExpressionParser/MojoExpressionVariable.h"
 #include "../ExpressionParser/MojoUserExpression.h"
 #include "Cache/CacheDialect/CacheDialect.h"
@@ -250,6 +252,34 @@ MojoTypeSystem::GetBitSize(lldb::opaque_compiler_type_t type,
   // when compiled. For now we just explicitly check for the single case that
   // we ever generate variables for, i.e., Pointers.
   return GetPointerByteSize() * CHAR_BIT;
+}
+
+ConstString MojoTypeSystem::GetTypeName(lldb::opaque_compiler_type_t type,
+                                        bool baseOnly) {
+  if (!type)
+    return {};
+
+  std::string name;
+  llvm::raw_string_ostream os(name);
+  mlir::Type::getFromOpaquePointer(type).print(os);
+  return ConstString(name);
+}
+
+ConstString
+MojoTypeSystem::GetDisplayTypeName(lldb::opaque_compiler_type_t type) {
+  if (!type)
+    return {};
+
+  std::string name =
+      LIT::ASTType(mlir::Type::getFromOpaquePointer(type)).getAsString();
+
+  // We need to delete the artificial module we use for expression evaluations
+  // to avoid confusing the user.
+  if (size_t pos = name.find(MojoExpressionParser::kExprModuleName);
+      pos != std::string::npos)
+    name.replace(pos, MojoExpressionParser::kExprModuleName.size(), "");
+
+  return ConstString(name);
 }
 
 //===----------------------------------------------------------------------===//

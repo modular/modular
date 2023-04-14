@@ -21,6 +21,8 @@ class MojoUserExpression;
 
 class MojoExpressionParser {
 public:
+  static constexpr StringLiteral kExprModuleName = "__lldb_module__";
+
   MojoExpressionParser(lldb_private::ExecutionContextScope *exeScope,
                        MojoUserExpression &expr,
                        const lldb_private::EvaluateExpressionOptions &options);

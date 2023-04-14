@@ -238,20 +238,17 @@ public:
   uint32_t GetPointerByteSize() override { return 8; }
 
   lldb_private::ConstString GetTypeName(lldb::opaque_compiler_type_t type,
-                                        bool baseOnly) override {
-    return {};
-  }
+                                        bool baseOnly) override;
 
   lldb_private::ConstString
-  GetDisplayTypeName(lldb::opaque_compiler_type_t type) override {
-    return {};
-  }
+  GetDisplayTypeName(lldb::opaque_compiler_type_t type) override;
 
   uint32_t GetTypeInfo(
       lldb::opaque_compiler_type_t type,
       lldb_private::CompilerType *pointeeOrElementCompilerType) override {
     return {};
   }
+
   /// An overload of GetTypeInfo that uses a null
   /// `pointeeOrElementCompilerType`.
   uint32_t GetTypeInfo(lldb::opaque_compiler_type_t type) {
