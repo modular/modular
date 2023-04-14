@@ -136,7 +136,7 @@ fn trace_range_push[
     # profiling is enabled.
     __mlir_op.`pop.external_call`[
         func : __mlir_attr.`@KGEN_CompilerRT_TimeTraceProfilerBegin`,
-        _type:[],
+        _type:None,
     ](
         name.data.address,
         name.length.value,
@@ -169,7 +169,7 @@ fn trace_range_pop[type: TraceType, level: TraceLevel]():
     # profiling is enabled.
     __mlir_op.`pop.external_call`[
         func : __mlir_attr.`@KGEN_CompilerRT_TimeTraceProfilerEnd`,
-        _type:[],
+        _type:None,
     ]()
 
 
