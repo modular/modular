@@ -419,7 +419,7 @@ fn invoke(func: __mlir_type.`() -> ()`):
     Args:
         func: The function to invoke.
     """
-    __mlir_op.`pop.call_indirect`[_type:[]](func)
+    __mlir_op.`pop.call_indirect`[_type:None](func)
 
 
 fn invoke(
@@ -434,7 +434,7 @@ fn invoke(
         The result returned by the function.
     """
     return __mlir_op.`pop.call_indirect`[
-        _type : [__mlir_type.`!pop.pointer<scalar<si8>>`]
+        _type : __mlir_type.`!pop.pointer<scalar<si8>>`
     ](func)
 
 
@@ -450,7 +450,7 @@ fn invoke[
         func: The function to invoke.
         arg: The argument to pass to the function.
     """
-    __mlir_op.`pop.call_indirect`[_type:[]](func, arg)
+    __mlir_op.`pop.call_indirect`[_type:None](func, arg)
 
 
 fn invoke[
@@ -472,7 +472,7 @@ fn invoke[
     Returns:
         The result returned by the function.
     """
-    return __mlir_op.`pop.call_indirect`[_type:[result_type]](func, arg)
+    return __mlir_op.`pop.call_indirect`[_type:result_type](func, arg)
 
 
 fn invoke[
@@ -501,7 +501,7 @@ fn invoke[
     Returns:
         The result returned by the function.
     """
-    return __mlir_op.`pop.call_indirect`[_type:[result_type]](func, arg1, arg2)
+    return __mlir_op.`pop.call_indirect`[_type:result_type](func, arg1, arg2)
 
 
 fn invoke[
@@ -542,7 +542,7 @@ fn invoke[
     Returns:
         The result returned by the function.
     """
-    return __mlir_op.`pop.call_indirect`[_type:[result_type]](
+    return __mlir_op.`pop.call_indirect`[_type:result_type](
         func, arg1, arg2, arg3
     )
 
