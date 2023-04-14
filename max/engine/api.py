@@ -194,6 +194,8 @@ class InferenceSession:
             else:
                 raise TypeError("Invalid compilation options object.")
 
+        # TODO(#12573): Remove this (demo compatibility)
+        model_path = Path(str(model_path).replace(".pt", ".onnx"))
         _model = self._impl.compile(model_path, options_dict)
 
         if model_path.suffix == ".onnx":
