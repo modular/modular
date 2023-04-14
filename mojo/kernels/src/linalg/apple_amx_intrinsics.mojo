@@ -30,7 +30,7 @@ struct amx_detail:
         # In Apple's Accelerate, instruction 17 is apparently always prefixed by
         # three nops.
         __mlir_op.`pop.inline_asm`[
-            _type:[],
+            _type:None,
             assembly : (
                 "nop\nnop\nnop\n.word (0x201000 + ($0 << 5) + $1)"
             ).value,
@@ -44,7 +44,7 @@ struct amx_detail:
             gpr0.__as_mlir_index()
         )
         __mlir_op.`pop.inline_asm`[
-            _type:[],
+            _type:None,
             assembly : (
                 ".word (0x201000 + ($0 << 5) + 0$1 - ((0$1 >> 4) * 6))"
             ).value,
