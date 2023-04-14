@@ -846,10 +846,25 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
                                     << attrSpelling << "'" << getRange();
     };
 
-    SmallVector<ASTExprAnd<AnyValue>> callArgs = {
-        {baseVal, base},
-        {StringAttr::get(attrSpelling, StringType::get(emitter.getContext())),
-         base}};
+    // Emit the value as a StringLiteral.
+    ASTDecl *decl = emitter.shared.getBuiltinStringLiteral(getLoc());
+    if (!decl) {
+      emitter.emitError(
+          getLoc(),
+          "internal error: could not find builtin 'StringLiteral' type");
+      return {};
+    }
+
+    auto attr =
+        StringAttr::get(attrSpelling, StringType::get(emitter.getContext()));
+    ValueDest keyDest(EC_AttributeRefBase);
+    AnyValue key = emitter.emitConstructorCall(
+        decl->getSelfType(), {{AnyValue(attr), this}}, this,
+        CallSyntax::kImplicitConvert, keyDest);
+    if (!key)
+      return {};
+
+    SmallVector<ASTExprAnd<AnyValue>> callArgs = {{baseVal, base}, {key, base}};
     return emitGetterSetterAccess(
         this, base, dest, emitter, baseRVType, "__getattr__", "__setattr__",
         CallSyntax::kAttribute, lookupError, callArgs);

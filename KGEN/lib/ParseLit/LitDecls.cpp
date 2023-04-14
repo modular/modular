@@ -1767,10 +1767,10 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
       resultType =
           POP::VariantType::get({errorType->getSelfType(), resultType});
 
-      // FIXME: We cannot return an Error type from a function that also throws.
-      // This is because Variant collapses the variant to one case and we can't
-      // tell which is which.  We could fix this in a number of ways in the
-      // future if/when it matters.
+      // FIXME(#12604): We cannot return an Error type from a function that also
+      // throws. This is because Variant collapses the variant to one case and
+      // we can't tell which is which.  We could fix this in a number of ways in
+      // the future if/when it matters.
       if (cast<POP::VariantType>(resultType.mlirType).getNumTypes() == 1) {
         p.emitError(funcOp.getLoc(),
                     "cannot return and raise the same type from a function");

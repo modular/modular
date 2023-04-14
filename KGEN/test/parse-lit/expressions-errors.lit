@@ -294,7 +294,7 @@ struct GetAttrNotString:
 
 fn invalid_getattr():
     let obj = GetAttrNotString()
-    # expected-error @below {{invalid call to '__getattr__': attribute name cannot be converted from '__mlir_type.!kgen.string' to '$Int::Int}}
+    # expected-error @below {{invalid call to '__getattr__': attribute name cannot be converted from '$StringLiteral::StringLiteral' to '$Int::Int}}
     obj.attr
 
 
