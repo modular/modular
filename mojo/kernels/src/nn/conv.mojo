@@ -26,7 +26,7 @@ from Image import ImageData, Image2DLayout, ImageShape
 from Index import Index, StaticIntTuple
 from LLCL import OutputChainPtr
 from List import DimList, create_dim_list
-from Math import min, max
+from Math import min, max, div_ceil
 from Matmul import (
     GemmShape,
     MatmulInnerLoopBPacked,
@@ -1553,8 +1553,12 @@ struct ConvNHWCInnerLoopFilterPacked[
     fn _initialize_offset_table(self):
         let k_offset = self.global_offset.K
 
-        # tile_n_k[1] is multiple of conv_shape.c
-        let num_channels = self.tile_n_k[1] // self.conv_shape.c
+        # tile_n_k[1] is either multiple of conv_shape.c or it fits in one
+        # channel. For now, We avoid tiles that partially cover more than
+        # one channel.
+        # Map a channel's starting k index to the corresponding localtion in
+        # the 4D input tensor
+        let num_channels = div_ceil(self.tile_n_k[1], self.conv_shape.c)
         for channel_idx in range(num_channels):
             let k = self.global_offset.K + channel_idx * self.conv_shape.c
             let r_s_c = _k_to_r_s_c_nhwc(k, self.conv_shape)
@@ -1784,8 +1788,6 @@ struct ConvNHWCInnerLoopFilterPacked[
         # Seek outer indices in packed layout.
         let n_outer_idx = tile_n_k_idx[0] // pack_inner_size
 
-        # Global K index.
-
         let local_a = Buffer[
             (simd_size * a_row_size),
             value_type,
@@ -1837,7 +1839,7 @@ struct ConvNHWCInnerLoopFilterPacked[
             accum_type,
         ].stack_allocation()
 
-        let num_channels = self.tile_n_k[1] // self.conv_shape.c
+        let num_channels = div_ceil(self.tile_n_k[1], self.conv_shape.c)
 
         self._initialize_offset_table()
 
@@ -1849,17 +1851,18 @@ struct ConvNHWCInnerLoopFilterPacked[
             else:
                 self._load_c_tile(c_local, Index(0, idx_n))
 
-            # Iterate on tile K dimension.
-            # Allocate offset table.
-
-            # Not unrolled on K path.
-            var channel_offset: Int = 0
+            var k_offset = 0
             for channel_idx in range(num_channels):
                 for idx_k in range(
-                    channel_offset, channel_offset + self.conv_shape.c
+                    k_offset,
+                    min(k_offset + self.conv_shape.c, self.tile_n_k[1]),
                 ):
-                    self._accumulate(c_local, channel_idx, Index(idx_n, idx_k))
-                channel_offset += self.conv_shape.c
+                    self._accumulate(
+                        c_local,
+                        channel_idx,
+                        Index(idx_n, idx_k),
+                    )
+                k_offset += self.conv_shape.c
 
             self._store_c_tile(c_local, Index(0, idx_n))
 
@@ -2118,7 +2121,7 @@ struct ConvIm2ColNHWC[
             conv_shape: Struct describing the convolution dimensions.
         """
 
-        let tile_n_k_raw = calculate_tile_n_k[pack_cache_size, pack_inner_size](
+        var tile_n_k = calculate_tile_n_k[pack_cache_size, pack_inner_size](
             GemmShape(
                 gemm_shape.M,
                 gemm_shape.N,
@@ -2126,9 +2129,8 @@ struct ConvIm2ColNHWC[
             )
         )
         # Round k to multiple of number of channels.
-        let tile_n_k = Index(
-            tile_n_k_raw[0], tile_n_k_raw[1] - tile_n_k_raw[1] % conv_shape.c
-        )
+        if tile_n_k[1] > conv_shape.c:
+            tile_n_k[1] = tile_n_k[1] - tile_n_k[1] % conv_shape.c
         # Output shape [N, F, Ho, Wo]
         let c_pointer = out._offset(Index(0, 0, 0, 0))
         let c = NDBuffer[2, DimList[2].create_unknown(), type](
@@ -2219,8 +2221,10 @@ struct ConvIm2ColNHWC[
             self.tile_n_k[1],
             pack_inner_size,
         )
-
-        self._outer_k_loop(mapped_bpacked)
+        if self.tile_n_k[1] < self.conv_shape.c:
+            self._outer_k_loop_large_channel(mapped_bpacked)
+        else:
+            self._outer_k_loop(mapped_bpacked)
 
     # Iterate over the K dimension of the gemm space.
     fn _outer_k_loop(self, b_packed: NDBuffer[3, packed_shape, type]):
@@ -2229,6 +2233,11 @@ struct ConvIm2ColNHWC[
         Args:
             b_packed(NDBuffer): B matrix in packed layout.
         """
+        debug_assert(
+            self.tile_n_k[1] >= self.conv_shape.c,
+            "channel size must not be less than tile size.",
+        )
+
         let tile_k = self.tile_n_k[1]
         var k_idx: Int = 0
 
@@ -2251,6 +2260,45 @@ struct ConvIm2ColNHWC[
             self.gemm_shape.K,
             self.tile_n_k[1],  # max tile k size
         )
+
+    fn _outer_k_loop_large_channel(
+        self, b_packed: NDBuffer[3, packed_shape, type]
+    ):
+        """Iterate on the K dimension of the whole problem space.
+
+        Args:
+            b_packed(NDBuffer): B matrix in packed layout.
+        """
+        debug_assert(
+            self.tile_n_k[1] < self.conv_shape.c,
+            "channel size must be greater than tile size.",
+        )
+
+        let tile_k = self.tile_n_k[1]
+        let valid_k_count = self.gemm_shape.K
+        var k_idx: Int = 0
+
+        @always_inline
+        fn k_iteration(channel_start: Int, channel_size: Int):
+            @always_inline
+            fn k_iteration_helper(k_offset: Int, k_tile_size: Int):
+                @always_inline
+                fn outer_n_switch[last_k_tile: Bool]():
+                    self._outer_n_loop[last_k_tile](
+                        b_packed,
+                        GemmShape(0, 0, k_offset),
+                        k_tile_size,
+                    )
+
+                unswitch[outer_n_switch](
+                    k_offset + k_tile_size == self.gemm_shape.K
+                )
+
+            tile[k_iteration_helper](
+                channel_start, channel_start + channel_size, self.tile_n_k[1]
+            )
+
+        tile[k_iteration](0, self.gemm_shape.K, self.conv_shape.c)
 
     fn _outer_n_loop[
         last_k_tile: Bool
