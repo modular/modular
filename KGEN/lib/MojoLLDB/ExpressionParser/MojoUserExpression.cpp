@@ -476,7 +476,7 @@ static void importPythonSymbolsIntoMojo(StringRef pythonExpr,
   pythonExpr.split(lines, "\n");
 
   llvm::Regex importRegex(R"(^import ([_0-9a-zA-Z]+)$)");
-  llvm::Regex importAsRegex(R"(^import ([_0-9a-zA-Z]+) as ([_0-9a-zA-Z]+)$)");
+  llvm::Regex importAsRegex(R"(^import ([_0-9a-zA-Z\.]+) as ([_0-9a-zA-Z]+)$)");
   llvm::Regex defRegex(R"(^def ([_0-9a-zA-Z]+)\()");
   llvm::Regex valueRegex(R"(^([_0-9a-zA-Z]+) =)");
   for (StringRef line : lines) {
