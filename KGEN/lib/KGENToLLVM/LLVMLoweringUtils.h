@@ -135,7 +135,8 @@ Value materializeLLVMStruct(ImplicitLocOpBuilder &b, Type structType,
 /// Generate the LLVM IR to materialize a constant of the given value. This is
 /// used to convert attribute values in `kgen.param.constant`.
 Value convertParameterToLLVM(ImplicitLocOpBuilder &b,
-                             POPToLLVMTypeConverter &tc, TypedAttr attr);
+                             POPToLLVMTypeConverter &tc, SymbolTable &symtab,
+                             TypedAttr attr);
 
 //===----------------------------------------------------------------------===//
 // POPToLLVMDebugInfoTypeConverter

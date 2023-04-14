@@ -210,14 +210,15 @@ struct ConvertKGENUnreachable : public ConvertPOPToLLVMPattern<UnreachableOp> {
 //===----------------------------------------------------------------------===//
 
 struct ConvertKGENParamConstant
-    : public ConvertPOPToLLVMPattern<ParamConstantOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+    : public ConvertSymbolOpToLLVM<ParamConstantOp> {
+  using ConvertSymbolOpToLLVM::ConvertSymbolOpToLLVM;
 
   LogicalResult
   matchAndRewrite(ParamConstantOp op, ParamConstantOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     ImplicitLocOpBuilder b(op.getLoc(), rewriter);
-    Value value = convertParameterToLLVM(b, *getTypeConverter(), op.getValue());
+    Value value =
+        convertParameterToLLVM(b, *getTypeConverter(), symtab, op.getValue());
     if (!value)
       return failure();
     rewriter.replaceOp(op, value);
@@ -262,13 +263,13 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       // clang-format off
       ConvertKGENAddressOf,
       ConvertKGENCall,
-      ConvertKGENParamConstant,
       ConvertKGENReturn,
       ConvertKGENUnreachable,
       ConvertKGENUndef
       // clang-format on
       >(typeConverter);
-  patterns.insert<ConvertKGENFunc>(typeConverter, symtab);
+  patterns.insert<ConvertKGENParamConstant, ConvertKGENFunc>(typeConverter,
+                                                             symtab);
   // Just remove ExportOps.
   patterns.add(removeExportOps);
 }

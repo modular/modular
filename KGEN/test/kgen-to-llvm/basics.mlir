@@ -1,6 +1,7 @@
 // RUN: kgen-opt -split-input-file -lower-kgen-to-llvm %s | FileCheck %s
 
 module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+// CHECK-LABEL: llvm.mlir.global internal constant @_static_string_{{.*}}("AB\00") {addr_space = 0 : i32}
 
 // CHECK-LABEL: llvm.func internal @trivial
 // CHECK-SAME: (%[[ARG0:.*]]: i32)
@@ -67,12 +68,23 @@ kgen.func @address_dtype(%arg0 : !pop.simd<1, address>, %arg1 : !pop.simd<4, add
 }
 
 kgen.func @constant_str() -> !kgen.string {
-  // CHECK: %[[GLOBAL_STR:.*]] = pop.global_constant: array<3, scalar<si8>> = <[65, 66, 0]>
-  // CHECK: %[[BITCAST:.*]] = pop.pointer.bitcast %[[GLOBAL_STR]] : !pop.pointer<array<3, scalar<si8>>> to !pop.pointer<i8>
-  // CHECK: %[[CONV_CAST:.*]] = builtin.unrealized_conversion_cast %[[BITCAST]] : !pop.pointer<i8> to !llvm.ptr<i8>
+  // CHECK: %[[GLOBAL_STR:.*]] = llvm.mlir.addressof @_static_string_{{.*}} : !llvm.ptr<array<3 x i8>>
+  // CHECK: %[[GEP:.*]] = llvm.getelementptr %0[0, 0] : (!llvm.ptr<array<3 x i8>>) -> !llvm.ptr<i8>
   // CHECK: %[[LENGTH:.*]] = llvm.mlir.constant(2 : i64) : i64
   // CHECK: %[[STRUCT:.*]] = llvm.mlir.undef : !llvm.struct<(ptr<i8>, i64)>
-  // CHECK: %[[VAL0:.*]] = llvm.insertvalue %[[CONV_CAST]], %[[STRUCT]][0] : !llvm.struct<(ptr<i8>, i64)>
+  // CHECK: %[[VAL0:.*]] = llvm.insertvalue %[[GEP]], %[[STRUCT]][0] : !llvm.struct<(ptr<i8>, i64)>
+  // CHECK: %[[VAL1:.*]] = llvm.insertvalue %[[LENGTH]], %[[VAL0]][1] : !llvm.struct<(ptr<i8>, i64)>
+  %0 = kgen.param.constant: string = <"AB">
+  // CHECK: llvm.return %[[VAL1]] : !llvm.struct<(ptr<i8>, i64)>
+  kgen.return %0 : !kgen.string
+}
+
+kgen.func @constant_str_2() -> !kgen.string {
+  // CHECK: %[[GLOBAL_STR:.*]] = llvm.mlir.addressof @_static_string_{{.*}} : !llvm.ptr<array<3 x i8>>
+  // CHECK: %[[GEP:.*]] = llvm.getelementptr %0[0, 0] : (!llvm.ptr<array<3 x i8>>) -> !llvm.ptr<i8>
+  // CHECK: %[[LENGTH:.*]] = llvm.mlir.constant(2 : i64) : i64
+  // CHECK: %[[STRUCT:.*]] = llvm.mlir.undef : !llvm.struct<(ptr<i8>, i64)>
+  // CHECK: %[[VAL0:.*]] = llvm.insertvalue %[[GEP]], %[[STRUCT]][0] : !llvm.struct<(ptr<i8>, i64)>
   // CHECK: %[[VAL1:.*]] = llvm.insertvalue %[[LENGTH]], %[[VAL0]][1] : !llvm.struct<(ptr<i8>, i64)>
   %0 = kgen.param.constant: string = <"AB">
   // CHECK: llvm.return %[[VAL1]] : !llvm.struct<(ptr<i8>, i64)>

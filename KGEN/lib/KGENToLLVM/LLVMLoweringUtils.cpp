@@ -581,40 +581,74 @@ static Value convertSIMDAttr(ImplicitLocOpBuilder &b,
       values));
 }
 
+/// Copied from LLVM::createGlobalString but now takes a symbol table so the
+/// global is properly registered.
+static Value getOrCreateGlobalString(Location loc, OpBuilder &builder,
+                                     SymbolTable &symtab, StringRef name,
+                                     StringRef value, LLVM::Linkage linkage,
+                                     bool useOpaquePointers) {
+  assert(builder.getInsertionBlock() &&
+         builder.getInsertionBlock()->getParentOp() &&
+         "expected builder to point to a block constrained in an op");
+  auto module =
+      builder.getInsertionBlock()->getParentOp()->getParentOfType<ModuleOp>();
+  assert(module && "builder points to an op outside of a module");
+
+  // Create the global at the entry of the module.
+  MLIRContext *ctx = builder.getContext();
+  auto type = LLVM::LLVMArrayType::get(IntegerType::get(ctx, 8), value.size());
+  auto global = llvm::dyn_cast_if_present<LLVM::GlobalOp>(symtab.lookup(name));
+  if (!global) {
+    OpBuilder moduleBuilder(module.getBodyRegion(), builder.getListener());
+    global = moduleBuilder.create<LLVM::GlobalOp>(
+        loc, type, /*isConstant=*/true, linkage, name,
+        builder.getStringAttr(value), /*alignment=*/0);
+    // Insert the global into the symbol table.
+    symtab.insert(global, moduleBuilder.getInsertionPoint());
+  }
+
+  LLVM::LLVMPointerType resultType;
+  LLVM::LLVMPointerType charPtr;
+  if (!useOpaquePointers) {
+    resultType = LLVM::LLVMPointerType::get(type);
+    charPtr = LLVM::LLVMPointerType::get(IntegerType::get(ctx, 8));
+  } else {
+    resultType = charPtr = LLVM::LLVMPointerType::get(ctx);
+  }
+
+  // Get the pointer to the first character in the global string.
+  Value globalPtr = builder.create<LLVM::AddressOfOp>(loc, resultType,
+                                                      global.getSymNameAttr());
+  return builder.create<LLVM::GEPOp>(loc, charPtr, type, globalPtr,
+                                     ArrayRef<LLVM::GEPArg>{0, 0});
+}
+
 /// Lower the string to a pop.global_constant and create a llvm struct of type
 /// !llvm.struct<(ptr<i8>, i64)> holding the pointer to the global string and
 /// its size.
 static Value lowerStringToGlobalConstant(StringAttr strAttr,
                                          ImplicitLocOpBuilder &b,
+                                         SymbolTable &symtab,
                                          Type strSizeType) {
-  SmallVector<TypedAttr> values;
-  StringRef str = strAttr.getValue();
-  auto charType = b.getType<POP::SIMDType>(1, DType::si8);
-  for (char c : str)
-    values.push_back(POP::SIMDAttr::get(
-        {APSInt(APInt(CHAR_BIT, c), /*isUnsigned=*/false), DType::si8},
-        charType));
-  values.push_back(POP::SIMDAttr::get(
-      {APSInt(APInt(CHAR_BIT, '\0'), /*isUnsigned=*/false), DType::si8},
-      charType));
-  // Accommodate for an additional \0 in the global constant for C interop.
-  auto arrayType = POP::ArrayType::get(str.size() + 1, charType);
-  Value globalConst = b.create<POP::GlobalConstantOp>(
-      POP::PointerType::get(arrayType), POP::ArrayAttr::get(values, arrayType));
-  IntegerType byteType = b.getI8Type();
-  Value ptrBitcast = b.create<POP::PointerBitcastOp>(
-      b.getLoc(), POP::PointerType::get(byteType), globalConst);
-  Value unrealizedCast =
-      b.create<mlir::UnrealizedConversionCastOp>(
-           b.getLoc(), LLVM::LLVMPointerType::get(byteType), ptrBitcast)
-          .getResult(0);
+  StringRef strAttrRef = strAttr.getValue();
+  // This is safe because StringAttr always stores a null terminator. If the
+  // string is empty, we won't use this anyway.
+  StringRef str(strAttrRef.data(), strAttrRef.size() + 1);
+  if (strAttrRef.empty())
+    str = "\0";
+
+  Value llvmString = getOrCreateGlobalString(
+      b.getLoc(), b, symtab,
+      "_static_string_" + std::to_string(llvm::hash_value(strAttrRef)), str,
+      LLVM::Linkage::Internal,
+      /*useOpaquePointers=*/false);
   // The actual string size does not include \0.
-  Value sizeVal =
-      b.create<LLVM::ConstantOp>(b.getLoc(), b.getI64IntegerAttr(str.size()));
+  Value sizeVal = b.create<LLVM::ConstantOp>(
+      b.getLoc(), b.getI64IntegerAttr(strAttr.size()));
   Value undefOp = b.create<LLVM::UndefOp>(
       b.getLoc(), getLLVMTypeForKGENStringType(b.getContext(), strSizeType));
   Value structVal0 =
-      b.create<LLVM::InsertValueOp>(b.getLoc(), undefOp, unrealizedCast, 0);
+      b.create<LLVM::InsertValueOp>(b.getLoc(), undefOp, llvmString, 0);
   return b.create<LLVM::InsertValueOp>(b.getLoc(), structVal0, sizeVal, 1);
 }
 
@@ -627,7 +661,8 @@ Value KGEN::materializeLLVMStruct(ImplicitLocOpBuilder &b, Type structType,
 }
 
 Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b,
-                                   POPToLLVMTypeConverter &tc, TypedAttr attr) {
+                                   POPToLLVMTypeConverter &tc,
+                                   SymbolTable &symtab, TypedAttr attr) {
   //===--------------------------------------------------------------------===//
   // Builtin
 
@@ -658,7 +693,8 @@ Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b,
   // Convert string constant to a struct{ptr, size} of type
   // !llvm.struct<(ptr<i8>, index).
   if (auto stringAttr = dyn_cast<StringAttr>(attr))
-    return lowerStringToGlobalConstant(stringAttr, b, tc.getIndexType());
+    return lowerStringToGlobalConstant(stringAttr, b, symtab,
+                                       tc.getIndexType());
 
   //===--------------------------------------------------------------------===//
   // POP
@@ -682,7 +718,7 @@ Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b,
       values = cast<POP::PackAttr>(attr).getValues();
 
     for (auto [idx, value] : llvm::enumerate(values)) {
-      Value element = convertParameterToLLVM(b, tc, value);
+      Value element = convertParameterToLLVM(b, tc, symtab, value);
       if (!element)
         return {};
       // If this is a struct with one element, return it directly.
@@ -700,7 +736,7 @@ Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b,
         tc.convertType(variant.getType()));
     if (!variantType)
       return {};
-    Value value = convertParameterToLLVM(b, tc, variant.getValue());
+    Value value = convertParameterToLLVM(b, tc, symtab, variant.getValue());
     if (!value)
       return {};
 
@@ -725,7 +761,7 @@ Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b,
 
     // 2. Store elements of the sequence into the allocated space.
     for (auto [idx, value] : llvm::enumerate(variadic.getValues())) {
-      Value element = convertParameterToLLVM(b, tc, value);
+      Value element = convertParameterToLLVM(b, tc, symtab, value);
       if (!element)
         return {};
 
