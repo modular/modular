@@ -17,9 +17,11 @@
 #include "Support/FunctionExtras.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/DenseMapInfo.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/MathExtras.h"
 
+#include <limits>
 #include <tuple>
 
 namespace M {
@@ -502,5 +504,26 @@ inline llvm::hash_code hash_value(DType dtype) {
 }
 
 } // namespace M
+
+// Provide the DenseMapInfo for DType so we can use it in llvm::DenseMaps.
+namespace llvm {
+template <>
+struct DenseMapInfo<M::DType> {
+  static M::DType getEmptyKey() {
+    return M::DType(std::numeric_limits<uint8_t>::max());
+  }
+  static M::DType getTombstoneKey() {
+    return M::DType(std::numeric_limits<uint8_t>::max() - 1);
+  }
+  static unsigned getHashValue(const M::DType &dtype) {
+    return M::hash_value(dtype);
+  }
+
+  static bool isEqual(const M::DType &LHS, const M::DType &RHS) {
+    return LHS == RHS;
+  }
+};
+
+} // namespace llvm
 
 #endif // SUPPORT_ML_DTYPE_H
