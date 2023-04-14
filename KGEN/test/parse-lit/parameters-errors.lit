@@ -125,7 +125,6 @@ fn funnyArgs[a: Int, /, b: Int, *,
 fn variadicResultParams[() -> *b: Int]():
   pass
 
-# expected-note @+1 {{function declared here}}
 fn variadicIntParams[*a: Int]():
   pass
 
@@ -134,7 +133,7 @@ fn callVariadic():
   variadicIntParams[1]() # OK
   variadicIntParams[1, 2]() # OK
 
-  variadicIntParams[1.0]() # expected-error {{invalid call to 'variadicIntParams': callee parameter #0 has '$Int::Int' type, but value has type '__mlir_type.f64'}}
+  variadicIntParams[1.0]() # expected-error {{'__mlir_type.f64' value cannot be converted to '$Int::Int' in call parameter}}
 
 
 
