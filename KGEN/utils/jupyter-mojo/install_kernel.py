@@ -45,10 +45,16 @@ def main():
             str(os.environ["MODULAR_PATH"]),
         ],
         "language": "mojo",
+        "codemirror_mode": "mojo",
         "language_info": {
             "name": "mojo",
             "mimetype": "text/x-mojo",
             "file_extension": ".mojo",
+            "codemirror_mode": {"name": "mojo"},
+        },
+        "resources": {
+            "logo-64x64": str(kernel_install_dir / "logo-64x64.png"),
+            "logo-svg": str(kernel_install_dir / "logo.svg"),
         },
     }
     kernel_json_path = kernel_install_dir / "kernel.json"
