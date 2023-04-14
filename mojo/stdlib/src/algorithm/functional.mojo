@@ -399,8 +399,11 @@ fn parallelize[
     let out_chain = OwningOutputChainPtr(rt)
 
     def coarsed_func(thread_idx: Int):
-        for i in range(chunk_size):
-            func(chunk_size * thread_idx + i)
+        for i in range(
+            chunk_size * thread_idx,
+            min(chunk_size * thread_idx, num_work_items),
+        ):
+            func(i)
 
     async_parallelize[func](out_chain.borrow(), core_count)
     out_chain.wait()
