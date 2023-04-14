@@ -1145,6 +1145,8 @@ static void diagnoseInliningCycle(InliningGraph &g) {
   }
   assert(root && "expected to find the root node of a cycle");
   llvm::scc_iterator<InliningGraphNode *> sccIt = llvm::scc_begin(root);
+  while (!sccIt.hasCycle() && !sccIt.isAtEnd())
+    ++sccIt;
   assert(sccIt.hasCycle() && "expected a cycle in the SCC");
   // Build a set of nodes in the SCC for efficient queries.
   DenseSet<InliningGraphNodeRef> sccNodes;
