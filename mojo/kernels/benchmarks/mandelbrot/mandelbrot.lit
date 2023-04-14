@@ -24,7 +24,7 @@ from String import StringRef
 from LLCL import num_cores, Runtime, TaskGroup
 from Functional import parallelize
 from Math import iota
-from Complex import Complex
+from Complex import ComplexSIMD
 from Benchmark import Benchmark
 from Assert import assert_param_msg
 from Pointer import Pointer, DTypePointer
@@ -51,8 +51,10 @@ fn draw_mandelbrot[
 
 fn mandelbrot_kernel[
     simd_width: Int
-](c: Complex[simd_width, float_type], iter: Int) -> SIMD[int_type, simd_width]:
-    var z = Complex[simd_width, float_type](0, 0)
+](c: ComplexSIMD[float_type, simd_width], iter: Int) -> SIMD[
+    int_type, simd_width
+]:
+    var z = ComplexSIMD[float_type, simd_width](0, 0)
     var nv: SIMD[int_type, simd_width] = 0
     var mask: SIMD[DType.bool, simd_width] = -1
     var i: Int = iter
@@ -92,7 +94,7 @@ fn mandelbrot[
             colv = colv + simd_val
             let cx = min_x + colv * scalex
             let cy = min_y + rowv * scaley
-            let c = Complex[simd_width, float_type](cx, cy)
+            let c = ComplexSIMD[simd_width, float_type](cx, cy)
             out.simd_store[simd_width](
                 row, col * simd_width, mandelbrot_kernel[simd_width](c, iter)
             )
