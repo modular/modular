@@ -41,6 +41,7 @@ class MojoKernel(Kernel):
             "name": "mojo",
             "mimetype": "text/x-mojo",
             "file_extension": ".mojo",
+            "codemirror_mode": {"name": "mojo"},
         }
         self.banner = ""
         self.auto_gen_cell_id_count = 0
