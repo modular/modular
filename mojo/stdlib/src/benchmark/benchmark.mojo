@@ -31,7 +31,7 @@ struct Benchmark:
 
     fn __init__(
         self&,
-        num_warmup: Int = 10,
+        num_warmup: Int = 2,
         max_iters: Int = 100_000,
         min_time_ns: Int = 500_000_000,  # 500ms
         max_time_ns: Int = 1000_000_000,  # 1s
