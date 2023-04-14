@@ -944,12 +944,14 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   bool hadTypeSpec = false;
   for (auto &attr : unboundOp.getAttrs()) {
     if (attr.getName() == "_type") {
-      // The value must be a type value, or array thereof.
+      // We expect either a single type or `None`.
       if (isa<NoneAttr>(attr.getValue())) {
-        // TODO: We don't currently have array attrs for lists, but we use
-        // NoneAttr to mark an empty list for operations with no result.
-      } else if (auto typedAttr = dyn_cast<TypedAttr>(attr.getValue())) {
-        state.types.push_back(ASTType(typedAttr).mlirType);
+      } else if (auto value = dyn_cast<TypedAttr>(attr.getValue())) {
+        if (!isa<MLIRTypeType>(value.getType())) {
+          emitter.emitError(call.getLoc(), "_type value is not a type");
+          return {};
+        }
+        state.types.push_back(ASTType(value));
       } else {
         emitter.emitError(call.getLoc(), "unknown _type value");
         return {};
@@ -1501,8 +1503,12 @@ AnyValue ParenNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   return subExpr->emitIR(dest, emitter);
 }
 
-AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
-  /// Emit each of the tuple elements.
+/// Both tuple literals and list literals are emitted as heterogenous sequences,
+/// with each element type encoded in a variadic type parameter.
+static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
+                                         ASTDecl *decl, const ExprNode *node,
+                                         ArrayRef<ExprNode *> exprs) {
+  // Emit each of the tuple elements.
   SmallVector<ASTExprAnd<AnyValue>> elements;
   for (ExprNode *expr : exprs) {
     elements.push_back({emitter.emitExpr(expr, EC_TupleElement), expr});
@@ -1510,6 +1516,14 @@ AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       return {};
   }
 
+  // Emit a call to the builtin type constructor as an implicit conversion.
+  // The type parameters are inferred from the element types.
+  return emitter.emitConstructorCall(DeclRefType::get(decl->getSymbolRef()),
+                                     elements, node,
+                                     CallSyntax::kImplicitConvert, dest);
+}
+
+AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Lookup the builtin TupleLiteral type, in order to call its constructor.
   // TupleLiteral must be in scope, since it is auto-imported.
   ASTDecl *decl = emitter.shared.getBuiltinTupleLiteral(getLoc());
@@ -1518,34 +1532,18 @@ AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
         getLoc(), "internal error: could not find builtin 'TupleLiteral' type");
     return {};
   }
-
-  // Emit a call to the TupleLiteral constructor as an implicit conversion.
-  // The TupleLiteral's parameter values are inferred based on the element
-  // types.
-  return emitter.emitConstructorCall(DeclRefType::get(decl->getSymbolRef()),
-                                     elements, this,
-                                     CallSyntax::kImplicitConvert, dest);
+  return emitHeterogenousSequence(dest, emitter, decl, this, exprs);
 }
 
 AnyValue ListNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
-  SmallVector<AnyValue> elements;
-  for (ExprNode *expr : exprs) {
-    elements.push_back(emitter.emitExpr(expr, EC_ListField));
-    if (!elements.back())
-      return {};
+  // TODO: Introduce a ListLiteral type instead of using TupleLitera.
+  ASTDecl *decl = emitter.shared.getBuiltinTupleLiteral(getLoc());
+  if (!decl) {
+    emitter.emitError(
+        getLoc(), "internal error: could not find builtin 'TupleLiteral' type");
+    return {};
   }
-
-  // TODO: If all of these are meta values, produce some typed array constant.
-  // We cannot use ArrayAttr here though, because it isn't a TypedAttr.
-
-  // TODO: Form a dynamic array value instead of returning the last element.
-  if (!elements.empty())
-    return emitter.emitResult(elements.back(), this, dest);
-
-  // TODO: None is the wrong thing, but is useful for now for referring to type
-  // arrays used by __mlir_op.
-  auto noneAttr = emitter.shared.getNoneAttr();
-  return emitter.emitResult(PValue(noneAttr), this, dest);
+  return emitHeterogenousSequence(dest, emitter, decl, this, exprs);
 }
 
 AnyValue DictionaryNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {

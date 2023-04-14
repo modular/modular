@@ -388,22 +388,20 @@ z
   # CHECK-NEXT: lit.return [[TMP]]
   return x
 
-# CHECK-LABEL: lit.func @"listValues()"() -> !kgen.declref<@"$Int"::@Int>
-fn listValues() -> Int:
-  # CHECK: %[[THREE:.*]] = {{.*}} 3
-  # CHECK-NEXT: pop.store %[[THREE:.*]], %a
+# CHECK-LABEL: lit.func @"listValues()"
+fn listValues():
+  # CHECK: %[[LIST:.*]] = kgen.call @"$Tuple"::@TupleLiteral::@"__init__
+  # CHECK-NEXT: pop.store %[[LIST:.*]], %a
   var a = [1, 2, 2+1]
-  # CHECK: %[[THREE:.*]] = {{.*}} 3
-  # CHECK-NEXT: pop.store %[[THREE:.*]], %a
+  # CHECK: %[[LIST:.*]] = kgen.call @"$Tuple"::@TupleLiteral::@"__init__
+  # CHECK-NEXT: pop.store %[[LIST:.*]], %a
   a = [1, 2, 2+1,]
-  # CHECK: %[[THREE:.*]] = {{.*}} 3
-  # CHECK-NEXT: pop.store %[[THREE:.*]], %a
-  a = [1, 2,
-            2+1]
-  # CHECK:      %[[NONE:.*]] = kgen.param.constant: !lit.none = <#lit.none>
-  # CHECK-NEXT: pop.store %[[NONE:.*]], %b
+  # CHECK: %[[LIST:.*]] = kgen.call @"$Tuple"::@TupleLiteral::@"__init__
+  # CHECK-NEXT: pop.store %[[LIST:.*]], %a
+  a = [1, 2, 2+1]
+  # CHECK: %[[LIST:.*]] = kgen.call @"$Tuple"::@TupleLiteral::@"__init__
+  # CHECK-NEXT: pop.store %[[LIST:.*]], %b
   var b = []
-  return a
 
 # CHECK-LABEL: lit.func @"initializers
 fn initializers():
@@ -704,14 +702,14 @@ world"
 # CHECK-SAME: %[[ARGA:.*]]: !kgen.declref<@"$Int"::@Int>
 # CHECK-SAME: %[[ARGB:.*]]: !kgen.declref<@"$SIMD"::@SIMD<{{.*}}f32
 fn tuples(a: Int, b: F32):
-    # CHECK: [[PACK0:%.*]] = kgen.param.constant: !pop.pack<[]> = <<>>
-    # CHECK: kgen.call  @"{{.*}}@TupleLiteral::@"__init__({{.*}}(%{{.*}}, [[PACK0]])
+    # CHECK: %[[PACK0:.*]] = kgen.param.constant: !pop.pack<[]> = <<>>
+    # CHECK: kgen.call @"{{.*}}@TupleLiteral::@"__init__({{.*}}(%[[PACK0]])
     _ = ()
     # CHECK: %[[PACK1:.*]] = pop.pack.create(%[[ARGA]], %[[ARGB]])
-    # CHECK: kgen.call  @"{{.*}}@TupleLiteral::@"__init__({{.*}}(%{{.*}}, %[[PACK1]])
+    # CHECK: kgen.call @"{{.*}}@TupleLiteral::@"__init__({{.*}}(%[[PACK1]])
     _ = (a, b)
     # CHECK: %[[PACK2:.*]] = pop.pack.create(%[[ARGA]])
-    # CHECK: kgen.call @"{{.*}}@TupleLiteral::@"__init__({{.*}}(%{{.*}}, %[[PACK2]])
+    # CHECK: kgen.call @"{{.*}}@TupleLiteral::@"__init__({{.*}}(%[[PACK2]])
     _ = (a,)
 
 ##===----------------------------------------------------------------------===##
