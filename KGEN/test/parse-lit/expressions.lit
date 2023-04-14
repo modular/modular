@@ -390,16 +390,16 @@ z
 
 # CHECK-LABEL: lit.func @"listValues()"
 fn listValues():
-  # CHECK: %[[LIST:.*]] = kgen.call @"$Tuple"::@TupleLiteral::@"__init__
+  # CHECK: %[[LIST:.*]] = kgen.call {{.*}}@ListLiteral::@"__init__
   # CHECK-NEXT: pop.store %[[LIST:.*]], %a
   var a = [1, 2, 2+1]
-  # CHECK: %[[LIST:.*]] = kgen.call @"$Tuple"::@TupleLiteral::@"__init__
+  # CHECK: %[[LIST:.*]] = kgen.call {{.*}}@ListLiteral::@"__init__
   # CHECK-NEXT: pop.store %[[LIST:.*]], %a
   a = [1, 2, 2+1,]
-  # CHECK: %[[LIST:.*]] = kgen.call @"$Tuple"::@TupleLiteral::@"__init__
+  # CHECK: %[[LIST:.*]] = kgen.call {{.*}}@ListLiteral::@"__init__
   # CHECK-NEXT: pop.store %[[LIST:.*]], %a
   a = [1, 2, 2+1]
-  # CHECK: %[[LIST:.*]] = kgen.call @"$Tuple"::@TupleLiteral::@"__init__
+  # CHECK: %[[LIST:.*]] = kgen.call {{.*}}@ListLiteral::@"__init__
   # CHECK-NEXT: pop.store %[[LIST:.*]], %b
   var b = []
 

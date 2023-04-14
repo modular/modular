@@ -597,6 +597,10 @@ ASTDecl *LitSharedState::getBuiltinSliceType(llvm::SMLoc loc) {
   return resolveBuiltinModuleType(loc, kBuiltinSliceModuleName, "slice");
 }
 
+ASTDecl *LitSharedState::getBuiltinListLiteral(llvm::SMLoc loc) {
+  return resolveBuiltinModuleType(loc, kBuiltinListModuleName, "ListLiteral");
+}
+
 void LitSharedState::loadModulesFromCache(
     MutableArrayRef<ModuleState *> moduleStates) {
   // If we don't have a valid cache, we can't do anything.
