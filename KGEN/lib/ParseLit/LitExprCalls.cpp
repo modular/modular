@@ -808,9 +808,20 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
             expectedConvention == ValueInputConvention::BorrowedInMem)
           expectedType = expectedType.getPointerElementType();
 
-        auto argVal = operand.ir.getIfCValue();
-        assert(argVal && "TODO(ORValue): need to verify operand can match");
+        // If the argument is an overload set, see if it can be resolve to the
+        // right type.
+        if (auto orValue = operand.ir.getIfORValue()) {
+          // Intentionally copy the overload set since we need to mutate it to
+          // test for filtering.
+          OverloadSet setCopy(*orValue);
+          if (failed(setCopy.filterOverloadSetForValueType(
+                  expectedType, /*emitDiagnosticOnFailure=*/false, emitter)))
+            return {kArgWrongType, providedValueIdx, expectedType, newBindings};
+          break;
+        }
 
+        auto argVal = operand.ir.getIfCValue();
+        assert(argVal && "we handled ORValue above");
         auto argType = argVal.getRValueType();
         // Otherwise, we pass as an r-value.  If the argument types match, then
         // they are good.
@@ -907,7 +918,22 @@ void OverloadFitness::diagnose(SignatureType signature,
     }
   };
 
-  // TODO: Would be really nice to range underline the operand in question!
+  // This adds a string describing the type of the payload operand to the
+  // diagnostic.
+  auto addPayloadRValueTypeName = [&]() {
+    if (auto cValue = operands[payload].ir.getIfCValue()) {
+      diag << cValue.getRValueType();
+      return;
+    }
+    // If this is a single element overload set, then we can use the only
+    // candidates type since it must not have worked out.
+    const OverloadSet &ovset = *operands[payload].ir.getIfORValue();
+    if (ovset.fnDecls.size() == 1)
+      diag << ASTType(cast<LIT::FuncOp>(*ovset.fnDecls[0]).getSignature());
+    else
+      diag << "unknown overload";
+  };
+
   switch (kind) {
   case kValid:
     diag << "candidate is viable";
@@ -952,17 +978,13 @@ void OverloadFitness::diagnose(SignatureType signature,
     return;
   case kArgNotLValue:
     if (callable.syntax == CallSyntax::kMethodCall && payload == 0) {
-      if (auto crVal = operands[0].ir.getIfCValue())
-        diag << "invalid use of mutating method on rvalue of type "
-             << ASTType(crVal.getRValueType());
-      else
-        diag << "invalid use of mutating method on value of unknown type";
-      diag << operands[0].expr->getRange();
-      return;
+      diag << "invalid use of mutating method on rvalue of type ";
+      addPayloadRValueTypeName();
+    } else {
+      describePayloadArgumentNo();
+      diag << " must be mutable in order to pass as a by-ref argument";
     }
-    diag << "argument #" << payload
-         << " must be mutable in order to pass as a by-ref argument"
-         << operands[0].expr->getRange();
+    diag << operands[payload].expr->getRange();
     return;
   case kArgWrongLVType:
     diag << "l-value of type "
@@ -973,9 +995,9 @@ void OverloadFitness::diagnose(SignatureType signature,
 
   case kArgWrongType:
     describePayloadArgumentNo();
-    diag << " cannot be converted from "
-         << operands[payload].ir.getIfCValue().getRValueType() << " to " << type
-         << operands[payload].expr->getRange();
+    diag << " cannot be converted from ";
+    addPayloadRValueTypeName();
+    diag << " to " << type << operands[payload].expr->getRange();
     break;
 
   case kArgGenericMem:
@@ -1113,12 +1135,15 @@ LogicalResult OverloadSet::filterOverloadSet(
 
 /// Filter down and complete this overload set based on knowledge that we need
 /// to produce a function pointer with the specified type.
-LogicalResult OverloadSet::filterOverloadSetForValueType(ASTType functionType,
-                                                         ExprEmitter &emitter) {
+LogicalResult OverloadSet::filterOverloadSetForValueType(
+    ASTType functionType, bool emitDiagnosticOnFailure, ExprEmitter &emitter) {
   // If the target type is something weird then don't filter.  Let the error be
   // reported another way.
-  if (!isa<SignatureType>(functionType.mlirType))
+  if (!isa<SignatureType>(functionType.mlirType)) {
+    if (!emitDiagnosticOnFailure)
+      return failure();
     return success();
+  }
 
   // TODO: This is using an exact match which is perhaps too specific of a
   // check.  We could do some amount of parameter inference to support cases
@@ -1196,6 +1221,10 @@ LogicalResult OverloadSet::filterOverloadSetForValueType(ASTType functionType,
 
     return success();
   }
+
+  // If we aren't to emit a diagnostic, just return the failure.
+  if (!emitDiagnosticOnFailure)
+    return failure();
 
   auto diag = emitter.emitError(expr->getLoc());
   if (validCandidates.empty()) {
@@ -1401,7 +1430,8 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
   if (fnDecls.size() > 1) {
     if (ASTType expectedType = dest.resolveImpliedType(
             expr->getLoc(), /*no implied type*/ Type(), emitter)) {
-      if (failed(filterOverloadSetForValueType(expectedType, emitter)))
+      if (failed(filterOverloadSetForValueType(
+              expectedType, /*emitDiagnosticOnFailure=*/true, emitter)))
         return {};
     }
   }

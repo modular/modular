@@ -27,10 +27,10 @@
 //       MRValue        <- with an owned value in memory
 //       PValue         <- with a parameter value
 //
-// This is another parallel hierarchy:
+// This is another parallel hierarchy, which excludes ORValue:
 //
 //   CValue        <- Concrete value: LValue or RValue with a known type.
-//     LValue       <- LValue stored in memory
+//     LValue        <- mutable reference
 //     BValue        <- Borrowed value
 //     CRValue       <- Concrete RValue
 //
@@ -242,8 +242,10 @@ public:
   bool operator!() const { return isNull(); }
   explicit operator bool() const { return !isNull(); }
 
-  OverloadSet *operator->();
-  const OverloadSet *operator->() const;
+  OverloadSet *operator->() { return &**this; }
+  const OverloadSet *operator->() const { return &**this; }
+  const OverloadSet &operator*() const;
+  OverloadSet &operator*();
 
   template <typename... Args>
   static ORValue create(Args &&...args);

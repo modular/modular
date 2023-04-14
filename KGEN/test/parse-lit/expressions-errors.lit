@@ -23,6 +23,15 @@ fn negBuiltinType(x: __mlir_type.f64) :
     # expected-error @+1 {{'__mlir_type.f64' does not implement the '__neg__' method}}
     _ = -x
 
+# expected-note @+1 {{function declared here}}
+fn some_fn_take_int(a: Int): pass
+fn some_fn_ret_int() -> Int: return 42
+
+# Issue #11288
+fn test_overload_set():
+  # expected-error @+1 {{invalid call to 'some_fn_take_int': argument #0 cannot be converted from '__mlir_type.!kgen.signature<() -> !kgen.declref<_"$Int"::_Int>>' to '$Int::Int'}}
+  some_fn_take_int(some_fn_ret_int)
+
 ##===----------------------------------------------------------------------===##
 # LValue and RValues
 ##===----------------------------------------------------------------------===##
@@ -74,7 +83,7 @@ def testLValuesRvalues():
   LValuesRvalues().normalMethod()
   LValuesRvalues().mutatingMethod()  # expected-error {{invalid use of mutating method on rvalue of type '$expressions-errors::LValuesRvalues'}}
 
-  # expected-error @+1 {{argument #1 must be mutable in order to pass as a by-ref argument}}
+  # expected-error @+1 {{method argument #0 must be mutable in order to pass as a by-ref argument}}
   LValuesRvalues().takesByRef(LValuesRvalues())
 
   # We can not implicitly declare things on the RHS
