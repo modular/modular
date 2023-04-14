@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from Range import range
-from Object import object, empty_list
+from Object import object
 from Random import random_f64
 from IO import print
 from SIMD import F64
@@ -17,16 +17,16 @@ def main():
 
 
 def benchmark_matmul():
-    var C: object = empty_list {}
-    var A: object = empty_list {}
-    var B: object = empty_list {}
+    var C: object = []
+    var A: object = []
+    var B: object = []
     var c: object
     var b: object
     var a: object
     for i in range(128):
-        c = empty_list {}
-        b = empty_list {}
-        a = empty_list {}
+        c = []
+        b = []
+        a = []
         for j in range(128):
             c.append(0)
             b.append(random_f64(-5, 5))
