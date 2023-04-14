@@ -1433,7 +1433,7 @@ struct ConvNHWCInnerLoopFilterPacked[
     a_row_size: Int,
     pack_inner_size: Int,
     skip_boundary_check: Bool,
-    same_channel_index: Bool,
+    use_padding: Bool,
 ]:
     """Inner loop implementation for mlas-style tiled inner loops for a NHWC
     im2col convolution. Accumulates a gemm tile of input defined by (M, N, K) of
@@ -1522,6 +1522,7 @@ struct ConvNHWCInnerLoopFilterPacked[
         let offset_table = NDBuffer[
             2, create_dim_list(MAX_NUM_CHANNELS_TILE, a_row_size), DType.index
         ].stack_allocation()
+
         let instance = ConvNHWCInnerLoopFilterPacked[
             shape_input,
             shape_c,
@@ -1532,7 +1533,7 @@ struct ConvNHWCInnerLoopFilterPacked[
             a_row_size,
             pack_inner_size,
             skip_boundary_check,
-            same_channel_index,
+            use_padding,
         ](
             c,
             input,
@@ -1757,8 +1758,15 @@ struct ConvNHWCInnerLoopFilterPacked[
         let channel_offset = index_m_k[1] - channel_idx * self.conv_shape.c
         let offset_idx = Index(channel_idx, row_idx)
         let linear_offset: Int = Int(self.offset_table[offset_idx].value)
-        if linear_offset == -1:
-            return SIMD[value_type, 1](0)
+
+        @parameter
+        if use_padding:
+            if linear_offset == -1:
+                return SIMD[value_type, 1](0)
+            else:
+                return self.input_base_pointer.load(
+                    linear_offset + channel_offset
+                )
         else:
             return self.input_base_pointer.load(linear_offset + channel_offset)
 
@@ -2595,37 +2603,46 @@ struct ConvIm2ColNHWC[
                     start_idx.
         """
         var row_idx = start_idx
-        while row_idx <= (valid_row_count - RowSize):
-            let current_offset = global_offset + GemmShape(row_idx, 0, 0)
-            ConvNHWCInnerLoopFilterPacked[
-                shape_input,
-                DimList[2].create_unknown(),
-                packed_shape,
-                type,
-                type,
-                simd_size,
-                RowSize,
-                m_loop_pack_inner_size,
-                skip_col_bound,
-                False,  # same_channel_index
-            ].run(
-                self.c,
-                self.input,
-                b_packed,
-                current_offset,
-                sub_tile_n_k,
-                self.conv_shape,
-                self.col_start_idx,
-                self.total_col_count,
-            )
-            row_idx += RowSize
 
-            @parameter
-            if elementwise_epilogue_enabled & last_k_tile:
-                self.elementwise_epilogue_fn(
+        @always_inline
+        fn m_loop_switch[use_padding: Bool]():
+            while row_idx <= (valid_row_count - RowSize):
+                let current_offset = global_offset + GemmShape(row_idx, 0, 0)
+                ConvNHWCInnerLoopFilterPacked[
+                    shape_input,
+                    DimList[2].create_unknown(),
+                    packed_shape,
+                    type,
+                    type,
+                    simd_size,
+                    RowSize,
+                    m_loop_pack_inner_size,
+                    skip_col_bound,
+                    use_padding,
+                ].run(
+                    self.c,
+                    self.input,
+                    b_packed,
                     current_offset,
-                    GemmShape {M: RowSize, N: sub_tile_n_k[0], K: 0},
+                    sub_tile_n_k,
+                    self.conv_shape,
+                    self.col_start_idx,
+                    self.total_col_count,
                 )
+                row_idx += RowSize
+
+                @parameter
+                if elementwise_epilogue_enabled & last_k_tile:
+                    self.elementwise_epilogue_fn(
+                        current_offset,
+                        GemmShape {M: RowSize, N: sub_tile_n_k[0], K: 0},
+                    )
+
+        unswitch[m_loop_switch](
+            (self.conv_shape.pad_h != Index(0, 0))
+            or (self.conv_shape.pad_w != Index(0, 0))
+        )
+
         return row_idx
 
     # Utility to reshape the dynamic buffer:
