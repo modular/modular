@@ -1,0 +1,28 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# RUN: %lldb -R go -r <%s 2>&1 | FileCheck %s
+
+# Note: in REPL mode, expressions are delimited by empty lines.
+
+# CHECK: ($Int::Int) x =
+let x = 12
+
+# CHECK: ($StringLiteral::StringLiteral) y =
+let y = "foo"
+
+struct Bar:
+  fn __init__(self&):
+    pass
+
+# CHECK: ($::Bar) z =
+let z = Bar()
+
+# CHECK: ($DType::DType) dtype =
+# CHECK: (__mlir_type.!kgen.dtype) dtype_value =
+from DType import DType
+var dtype = DType.bool
+var dtype_value = dtype.get_value()
