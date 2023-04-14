@@ -9,24 +9,25 @@ from DType import DType
 from SIMD import SIMD
 
 
+alias ComplexF32 = ComplexSIMD[DType.f32, 1]
+alias ComplexF64 = ComplexSIMD[DType.f64, 1]
+
+
 @register_passable("trivial")
-struct Complex[size: Int, type: DType]:
-    """Represents a complex value.
+struct ComplexSIMD[type: DType, size: Int]:
+    """Represents a complex SIMD value.
 
     The class provides basic methods for manipulating complex values.
 
     Parameters:
-        size: SIMD width of the value.
         type: DType of the value.
+        size: SIMD width of the value.
     """
 
-    var re: SIMD[type.value, size]
-    var im: SIMD[type.value, size]
+    var re: SIMD[type, size]
+    var im: SIMD[type, size]
 
-    fn __init__(
-        re: SIMD[type.value, size],
-        im: SIMD[type.value, size],
-    ) -> Complex[size, type]:
+    fn __init__(re: SIMD[type, size], im: SIMD[type, size]) -> Self:
         """Construct a complex value.
 
         Args:
@@ -36,9 +37,9 @@ struct Complex[size: Int, type: DType]:
         Returns:
             The constructed Complex object.
         """
-        return Complex[size, type] {re: re, im: im}
+        return Self {re: re, im: im}
 
-    fn __add__(self, rhs: Complex[size, type]) -> Complex[size, type]:
+    fn __add__(self, rhs: Self) -> Self:
         """Add two complex values.
 
         Args:
@@ -47,9 +48,9 @@ struct Complex[size: Int, type: DType]:
         Returns:
             A sum of this and RHS complex values.
         """
-        return Complex[size, type] {re: self.re + rhs.re, im: self.im + rhs.im}
+        return Self {re: self.re + rhs.re, im: self.im + rhs.im}
 
-    fn __mul__(self, rhs: Complex[size, type]) -> Complex[size, type]:
+    fn __mul__(self, rhs: Self) -> Self:
         """Multiple two complex values.
 
         Args:
@@ -58,13 +59,21 @@ struct Complex[size: Int, type: DType]:
         Returns:
             A product of this and RHS complex values.
         """
-        return Complex[size, type] {
-            re: self.re.fma(rhs.re, -self.im * rhs.im),
-            im: self.re.fma(rhs.im, self.im * rhs.re),
-        }
+        return Self(
+            self.re.fma(rhs.re, -self.im * rhs.im),
+            self.re.fma(rhs.im, self.im * rhs.re),
+        )
+
+    fn __neg__(self) -> Self:
+        """Negates the complex value.
+
+        Returns:
+            The negative of the complex value.
+        """
+        return ComplexSIMD(-self.re, -self.im)
 
     # returns the squared magnitude
-    fn norm(self) -> SIMD[type.value, size]:
+    fn norm(self) -> SIMD[type, size]:
         """Returns the squared magnitude of the complex value.
 
         Returns:
@@ -73,9 +82,7 @@ struct Complex[size: Int, type: DType]:
         return self.re.fma(self.re, self.im * self.im)
 
     # fma(self, b, c)
-    fn fma(
-        self, b: Complex[size, type], c: Complex[size, type]
-    ) -> Complex[size, type]:
+    fn fma(self, b: Self, c: Self) -> Self:
         """Compute FMA operation.
 
         Compute fused multiple-add with two other complex values:
@@ -88,13 +95,13 @@ struct Complex[size: Int, type: DType]:
         Returns:
             Computed `Self * B + C` complex value.
         """
-        return Complex[size, type](
-            self.re.fma(b.re, -self.im.fma(b.im, -c.re)),
+        return Self(
+            self.re.fma(b.re, -(self.im.fma(b.im, c.re))),
             self.re.fma(b.im, self.im.fma(b.re, c.im)),
         )
 
     # fma(self, self, c)
-    fn sq_add(self, c: Complex[size, type]) -> Complex[size, type]:
+    fn sq_add(self, c: Self) -> Self:
         """Compute Square-Add operation.
 
         Compute `Self * Self + C`.
@@ -105,7 +112,7 @@ struct Complex[size: Int, type: DType]:
         Returns:
             Computed `Self * Self + C` complex value.
         """
-        return Complex[size, type](
+        return Self(
             self.re.fma(self.re, self.im.fma(-self.im, c.re)),
             self.re.fma(self.im + self.im, c.im),
         )

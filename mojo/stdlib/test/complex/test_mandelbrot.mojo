@@ -14,8 +14,8 @@
 from DType import DType
 from IO import print
 from Range import range
-from SIMD import SIMD
-from Complex import Complex
+from SIMD import SIMD, F32
+from Complex import ComplexSIMD, ComplexF32
 
 
 fn mandelbrot_iter(row: Int, col: Int) -> Int:
@@ -23,14 +23,14 @@ fn mandelbrot_iter(row: Int, col: Int) -> Int:
     alias height = 375
     alias width = 500
 
-    let xRange: SIMD[DType.f32, 1] = 2.0
-    let yRange: SIMD[DType.f32, 1] = 1.5
+    let xRange: F32 = 2.0
+    let yRange: F32 = 1.5
     let minX = 0.5 - xRange
     let maxX = 0.5 + xRange
     let minY = -0.5 - yRange
     let maxY = -0.5 + yRange
 
-    let c = Complex[1, DType.f32](
+    let c = ComplexF32(
         minX + col * xRange / width, maxY - row * yRange / height
     )
 
@@ -63,7 +63,7 @@ fn test_mandelbrot_iter():
 
     let re = SIMD[DType.si32, 1].splat(3)
     let im = SIMD[DType.si32, 1].splat(4)
-    let z = Complex[1, DType.si32](re, im)
+    let z = ComplexSIMD[DType.si32, 1](re, im)
     # CHECK: 25
     print(z.norm().value)
 
