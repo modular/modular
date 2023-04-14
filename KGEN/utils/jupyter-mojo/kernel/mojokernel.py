@@ -13,15 +13,139 @@
 
 import argparse
 import ctypes
+import json
 import os
 import shutil
-import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Callable
 
 from ipykernel.kernelapp import IPKernelApp
 from ipykernel.kernelbase import Kernel
+
+# ===----------------------------------------------------------------------=== #
+# OutputProcessor
+# ===----------------------------------------------------------------------=== #
+
+# Special start and end output markers that denote a display message.
+display_start = "%%%%%%%DISPLAY_START"
+display_end = "%%%%%%%DISPLAY_END"
+
+
+class OutputProcessor:
+    """
+    Process the output coming from stdout/stderr to find special markers that
+    indicate specific messages need to be sent.
+    """
+
+    def __init__(self, kernel: Kernel):
+        # The kernel object that we are processing output for.
+        self.kernel = kernel
+
+        # The current contents of a pending display message.
+        self.pending_display_message = None
+
+    # Create the output callback function. This is called by the MojoJupyter
+    # library to send output back to the Jupyter client.
+    def process_output(self, name: bytes, msg: bytes) -> None:
+        """Process output from the Mojo kernel."""
+        msgstr = msg.decode()
+
+        def send_stream(text: str) -> None:
+            """
+            Send a stream message to the client. Uses `name` from the upper
+            scope to determine which stream (stdout vs stderr).
+            """
+            stream_content = {
+                "name": name.decode(),
+                "text": text,
+            }
+            self.kernel.log.info(stream_content)
+            self.kernel.send_response(
+                self.kernel.iopub_socket, "stream", stream_content
+            )
+
+        # Short-circuit stderr right away - we don't report images or anything
+        # through stderr, and we should always report it immediately.
+        if name.decode() == "stderr":
+            send_stream(msgstr)
+            return
+
+        # If we don't have a pending display message, and we don't have a
+        # display start marker, then just send the output as a normal stream message.
+        display_marker_loc = msgstr.find(display_start)
+        if self.pending_display_message is None and display_marker_loc == -1:
+            send_stream(msgstr)
+            return
+
+        while len(msgstr) > 0:
+            # Buffer the display message, sending the correct bits to the stdout.
+            if self.pending_display_message is None:
+                # We need this for the case where we've just come back around from sending a display message.
+                if display_marker_loc == -1:
+                    send_stream(msgstr)
+                    msgstr = ""
+                    continue
+
+                # Send the beginning of the message to the stream output.
+                if display_marker_loc > 0:
+                    send_stream(msgstr[:display_marker_loc])
+                # Meanwhile, set up for the display message.
+                self.pending_display_message = ""
+                msgstr = msgstr[display_marker_loc + len(display_start) :]
+                continue
+            # endif self.pending_display_message is None
+
+            # Try to find the end marker. If we did find it, add it to the
+            # pending display message and send it out.
+            display_marker_loc = msgstr.find(display_end)
+            if display_marker_loc != -1:
+                self.pending_display_message += msgstr[:display_marker_loc]
+                self._send_display_message()
+                # Reset display_marker_loc to a potential display_start index
+                # and reset msgstr so things get sent properly.
+                msgstr = msgstr[display_marker_loc + len(display_end) :]
+                display_marker_loc = msgstr.find(display_start)
+                continue
+            # endif display_marker_loc != -1
+
+            self.pending_display_message += msgstr
+            # If we just completed the display end message, send it out.
+            display_marker_loc = self.pending_display_message.find(display_end)
+            if display_marker_loc == -1:
+                msgstr = ""
+                continue
+            self.pending_display_message = self.pending_display_message[
+                :display_marker_loc
+            ]
+            # Discard the display end message.
+            msgstr = self.pending_display_message[
+                display_marker_loc + len(display_end) :
+            ].rstrip("\r\n")
+            self._send_display_message()
+
+            # Finally, flush the stream from the message.
+            send_stream(msgstr)
+        # endwhile len(msgstr) > 0
+
+    def _send_display_message(self):
+        """Send the current pending display message to the client."""
+
+        display_message = json.loads(self.pending_display_message)
+        self.kernel.send_response(
+            self.kernel.iopub_socket,
+            "display_data",
+            {
+                "data": display_message[0],
+                "metadata": display_message[1],
+            },
+        )
+        self.pending_display_message = None
+
+
+# ===----------------------------------------------------------------------=== #
+# MojoKernel
+# ===----------------------------------------------------------------------=== #
 
 
 class MojoKernel(Kernel):
@@ -59,17 +183,10 @@ class MojoKernel(Kernel):
         self.output_callback_type: ctypes.CFUNCTYPE = ctypes.CFUNCTYPE(
             None, ctypes.c_char_p, ctypes.c_char_p
         )
-
-        # Create the output callback function. This is called by the MojoJupyter
-        # library to send output back to the Jupyter client.
-        def output_callback(name: str, msg: str):
-            stream_content = {
-                "name": name.decode("utf-8"),
-                "text": msg.decode("utf-8"),
-            }
-            self.send_response(self.iopub_socket, "stream", stream_content)
-
-        self.output_callback = self.output_callback_type(output_callback)
+        self.output_processor = OutputProcessor(self)
+        self.output_callback = self.output_callback_type(
+            lambda name, msg: self.output_processor.process_output(name, msg)
+        )
 
         self.mojo_kernel: ctypes.c_void_p = (
             self.lib_mojo_jupyter.initMojoKernel(
@@ -79,6 +196,42 @@ class MojoKernel(Kernel):
         )
         if not self.mojo_kernel:
             raise RuntimeError("Unable to initialize Mojo kernel.")
+
+        self._initialize_repl_matplotlib()
+
+    def _initialize_repl_matplotlib(self):
+        """Initialize the matplotlib backend within the REPL."""
+
+        # Read the matplotlib backend module into a string. This will be splat
+        # into an expression sent to the REPL.
+        with open(
+            Path(__file__).parent / "matplotlib_backend.py",
+            "r",
+        ) as f:
+            backend_string = f.read()
+
+        # The `enable_matplotlib` modules expects a `backend_str` variable
+        # containing the source for the backend module. It also expects a
+        # `display_start` and `display_end` that provide the begin/end markers
+        # it should use.
+        exec_string = (
+            ">python\n\n"
+            f'display_start = "{display_start}"\n'
+            f'display_end = "{display_end}"\n'
+            f'backend_str = """{backend_string}"""\n\n'
+        )
+
+        # Read `enable_matplotlib.py` into a string so we can send it to the
+        # repl.
+        with open(
+            Path(__file__).parent / "enable_matplotlib.py",
+            "r",
+        ) as f:
+            exec_string += f.read()
+
+        # Directly execute the python expression within the REPL. This will
+        # ensure it gets initialized before any user expressions are sent.
+        self.do_execute(exec_string)
 
     def __del__(self):
         """Destroy the Mojo kernel."""
@@ -124,7 +277,7 @@ class MojoKernel(Kernel):
     def do_execute(
         self,
         code: str,
-        silent: bool,
+        silent: bool = False,
         store_history: bool = True,
         user_expressions: Optional[Dict[str, Any]] = None,
         allow_stdin: bool = False,

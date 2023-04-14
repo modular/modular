@@ -485,9 +485,13 @@ static void importPythonSymbolsIntoMojo(StringRef pythonExpr,
       mojoExprOS << llvm::formatv(
           "var {0} = __repl_python__.importModule(\"{0}\")\n", matches[1]);
     } else if (importAsRegex.match(line, &matches)) {
-      mojoExprOS << llvm::formatv(
-          "var {0} = __repl_python__.importModule(\"{1}\")\n", matches[2],
-          matches[1]);
+      // Private import aliases (starting with a leading underscore) should not
+      // be exposed to mojo.
+      if (!matches[2].starts_with("_")) {
+        mojoExprOS << llvm::formatv(
+            "var {0} = __repl_python__.importModule(\"{1}\")\n", matches[2],
+            matches[1]);
+      }
     } else if (defRegex.match(line, &matches) ||
                valueRegex.match(line, &matches)) {
       mojoExprOS << llvm::formatv("var {0} = {1}.{0}\n", matches[1],
