@@ -11,7 +11,6 @@ from .api import (
     ModelKind,
     TensorFlowLoadOptions,
     TensorSpec,
-    TFSavedModelVersion,
     TorchLoadOptions,
     version_string,
 )
