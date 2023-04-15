@@ -265,7 +265,7 @@ def kw8[*Ts: __mlir_type.`!kgen.mlirtype`](*a: *Ts, *b: *Ts): pass # expected-er
 def fn_redecl():
   pass
 
-# expected-error @+1 {{redefinition of function 'fn_redecl()' with identical signature}}
+# expected-error @+1 {{redefinition of function 'fn_redecl' with identical signature}}
 def fn_redecl():
   pass
 

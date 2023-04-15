@@ -167,14 +167,6 @@ private:
   ParseResult resolveBody(AliasForwardDeclOp op, LitLexer &lexer,
                           ASTDecl &decl);
 
-  /// A valid main function must have signature main().
-  /// No parameters are allowed and here must be only one main in the final
-  /// object file.
-  bool isMainFunction(StringAttr &name,
-                      SmallVectorImpl<ParamDeclAttr> &inputParamDecls,
-                      SmallVectorImpl<ParamDeclAttr> &resultParamDecls,
-                      MutableArrayRef<Type> argTypes, ASTType &resultType);
-
 private:
   /// Add a pre-existing set of declarations, which may optionally be imported
   /// from a given module, as children of the specified context, using the
