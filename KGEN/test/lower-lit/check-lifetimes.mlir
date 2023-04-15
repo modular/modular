@@ -26,7 +26,9 @@ lit.file_module @"$check_lifetimes" {
   // fn useDtor(a: Struct, owned b: Struct):
 
   // CHECK-LABEL: lit.func @useDtor
-  lit.func @useDtor(%a: !pop.pointer<@"$check_lifetimes"::@Struct> borrow_in_mem, %b: !pop.pointer<@"$check_lifetimes"::@Struct> owned_in_mem) -> !lit.none {
+  lit.func @useDtor(
+    %a: !pop.pointer<@"$check_lifetimes"::@Struct> borrow_in_mem,
+    %b: !pop.pointer<@"$check_lifetimes"::@Struct> owned_in_mem) -> !lit.none {
 
     // b.a = 42
     // CHECK-NEXT: %0 = lit.struct.gep %b[a]

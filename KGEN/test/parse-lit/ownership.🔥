@@ -300,7 +300,6 @@ struct Parameterized[level: Int]:
 fn test_parameterized():
   # CHECK: %x = lit.varlet.decl "x"
   let x = Parameterized[4]()
-
   # CHECK: kgen.call @"$ownership"::@Parameterized::@"__del___($ownership::Parameterized[level])"<:@"$Int"::@Int #lit.struct<{value: scalar<index> = 4}>>(%x)
 
 struct Complicated:
@@ -311,3 +310,39 @@ struct Complicated:
 fn testPointerGEP(ptr: __mlir_type[`!pop.pointer<`, Complicated, `>`]) -> Int:
   let addr = ptr
   return __get_address_as_lvalue(addr).b.x
+
+
+# CHECK-LABEL: lit.struct.decl @FieldSensitiveMemExample
+struct FieldSensitiveMemExample:
+  var f1 : MemExample
+  var f2 : MemExample
+
+  # CHECK: lit.func @"__init__
+  fn __init__(self&):
+    # CHECK-NEXT: %0 = lit.struct.gep %self[f1]
+    # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%0)
+    self.f1 = MemExample()
+    # CHECK-NEXT: %2 = lit.struct.gep %self[f2]
+    # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%2)
+    self.f2 = MemExample()
+    # CHECK-NEXT: kgen.param.constant: !lit.none = <#lit.none>
+    # CHECK-NEXT: kgen.return
+
+  # CHECK-LABEL: lit.func @"__del__
+  fn __del___(owned self):
+    # CHECK-NEXT: %0 = lit.struct.gep %self[f1]
+    # CHECK-NEXT: kgen.call @{{.*}}@"__del___{{.*}}(%0)
+    # CHECK-NEXT: %2 = lit.struct.gep %self[f2]
+    # CHECK-NEXT: kgen.call @{{.*}}@"__del___{{.*}}(%2)
+    # CHECK-NEXT: kgen.param.constant: !lit.none
+    pass
+
+ # CHECK-LABEL: lit.func @"mutate
+ fn mutate(self&):
+    # CHECK-NEXT: %0 = lit.struct.gep %self[f1]
+    # CHECK-NEXT: kgen.call @{{.*}}@"__del___{{.*}}(%0)
+
+    # CHECK-NEXT: %2 = lit.struct.gep %self[f1]
+    # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%2)
+    self.f1 = MemExample()
+    # CHECK-NEXT: kgen.param.constant: !lit.none = <#lit.none>

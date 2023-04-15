@@ -8,7 +8,7 @@ struct MemExample:
   var x: Int
   var y: Int
 
-  # expected-error @+1 {{use of uninitialized value 'self'}}
+  # expected-error @+1 {{use of uninitialized value 'self.x'}}
   fn __init__(self&):  # expected-note {{'self' declared here}}
     pass
 
