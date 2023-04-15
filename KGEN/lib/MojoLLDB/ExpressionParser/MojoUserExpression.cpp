@@ -184,11 +184,13 @@ bool MojoUserExpression::Parse(DiagnosticManager &diagnosticManager,
   Process *process = exeCtx.GetProcessPtr();
   auto *exeScope = process ? (ExecutionContextScope *)process : &impl->target;
 
-  // If the expression starts with `>python`, the user wants to treat this as a
-  // python expression. Otherwise, it should be treated as a Mojo expression.
+  // If the expression starts with `%python` or `>python`, the user wants to
+  // treat this as a python expression. Otherwise, it should be treated as a
+  // Mojo expression.
   StringRef exprText(m_expr_text);
   std::optional<MojoExpressionSourceCode> mojoSourceCode;
-  if (!exprText.consume_front(">python\n")) {
+  if (!exprText.consume_front(">python\n") &&
+      !exprText.consume_front("%python\n")) {
     mojoSourceCode.emplace(exprText);
     if (failed(wrapTextAndParseExpression(*mojoSourceCode, diagnosticManager,
                                           exeCtx, exeScope,
