@@ -14,6 +14,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPOps.h"
+#include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "llvm/ADT/BitVector.h"
 #include "llvm/Support/SaveAndRestore.h"
@@ -161,6 +162,13 @@ unsigned TypeDeclInfo::getNumFieldsInType(Type type) {
     fieldIndices[{structSymbol, field.getNameAttr()}] = totalFields;
     totalFields += getNumFieldsInType(field.getType());
   }
+
+  // We always track an extra bit per struct.  On the outer level of a value
+  // this tracks whether the object is fully constructed (not just field
+  // constructed).  On individual fields, it tracks whether the field itself is
+  // initialized or whether its subfields are initialized.  This also allows us
+  // to support (sub)fields that have zero members soundly.
+  ++totalFields;
 
   return numFields[structSymbol] = totalFields;
 }
@@ -412,6 +420,8 @@ struct ValueRef {
   /// Allow use of a ValueRef in a boolean condition.
   operator bool() const { return valueId != 0; }
 
+  unsigned getNumBits() const { return endBit - startBit; }
+
   /// Test if all the bits in the range are set in the specified BitVector.
   bool isAllPresent(const BitVector &bits) const {
     // BitVector doesn't have a more efficient method for this.  We could make
@@ -447,6 +457,14 @@ struct ValueRef {
   Type getValueType(Value value) const {
     return getTypeOrPointeeType(value.getType(), isIndirect);
   }
+
+  /// Given a field ref with fields, return a sub-field that starts at the
+  /// specified bit offset and has the specified size.
+  ValueRef getSubfield(unsigned offset, unsigned width) const {
+    assert(startBit + offset + width < endBit && "Not a valid subfield");
+    return ValueRef(valueId, startBit + offset, startBit + offset + width,
+                    isIndirect);
+  }
 };
 
 /// This tracks the values in a function (including nested functions) that are
@@ -461,7 +479,8 @@ struct ValueSet {
   /// Initialize the value set with one entry, so index #0 is always invalid and
   /// can be used as a sentinel, and so a null Value is always treated as
   /// untracked.
-  ValueSet(TypeDeclInfo &typeDeclInfo) : typeDeclInfo(typeDeclInfo) {
+  ValueSet(TypeDeclInfo &typeDeclInfo, mlir::FunctionOpInterface func)
+      : typeDeclInfo(typeDeclInfo), func(func) {
     addValue(Value(), LifetimeTrackable(Value()));
   }
 
@@ -486,11 +505,7 @@ struct ValueSet {
     // checked when loaded from memory.
     if (val && trackable.isIndirect) {
       Type valType = trackable.getValueType(val);
-      // We track one extra bit for the value so we know if it is fully
-      // initialized or not.  If so, we can run the destructor on the entire
-      // aggregate when it is unused.  This also allows us to track the
-      // initialization state of structures with no fields.
-      numValueBits = typeDeclInfo.getNumFieldsInType(valType) + 1;
+      numValueBits = typeDeclInfo.getNumFieldsInType(valType);
     }
 
     valueInfoIndex[val] = valueInfos.size();
@@ -520,12 +535,19 @@ struct ValueSet {
   TypeDeclInfo &typeDeclInfo;
 
   raw_ostream &printBV(const BitVector &bits, raw_ostream &os) const;
+  LLVM_DUMP_METHOD void dumpBV(const BitVector &bits) const {
+    auto &os = llvm::errs();
+    printBV(bits, os) << "\n";
+    os.flush();
+  }
 
   LLVM_DUMP_METHOD void dump() const;
+  void printFuncName(raw_ostream &os) const;
 
 private:
   SmallVector<ValueInfo> valueInfos;
   DenseMap<Value, unsigned> valueInfoIndex;
+  mlir::FunctionOpInterface func;
 };
 } // namespace
 
@@ -544,9 +566,18 @@ raw_ostream &ValueSet::printBV(const BitVector &bv, raw_ostream &os) const {
   return os << ']';
 }
 
+void ValueSet::printFuncName(raw_ostream &os) const {
+  if (auto funcOp = dyn_cast<LIT::FuncOp>(func))
+    os << "'" << funcOp.getName() << "'";
+  else
+    os << "(non func)";
+}
+
 void ValueSet::dump() const {
   auto &os = llvm::errs();
-  os << "ValueSet with " << valueInfos.size() << " values\n";
+  os << "ValueSet with " << valueInfos.size() << " values for ";
+  printFuncName(os);
+  os << "\n";
   os << "  SI = startsInit, EI = endsInit, [*] = isIndirect";
   os << "  FL=isFullObjectLiveOnEntry, DEL = isDelSelf, ERR = hadErrorDiag\n";
 
@@ -567,11 +598,20 @@ void ValueSet::dump() const {
     if (info.hasErrorDiagnosed)
       os << " ERR";
     os << "\t";
-    if (info.value)
-      os << info.value;
-    else
-      os << "<<null sentinel>>";
-    os << "\n";
+
+    if (!info.value) {
+      os << "<<null sentinel>>\n";
+      continue;
+    }
+
+    // If this is a function argument, be nice and include the name.
+    if (auto bbArg = dyn_cast<BlockArgument>(info.value)) {
+      if (auto fn =
+              dyn_cast_or_null<LIT::FuncOp>(bbArg.getOwner()->getParentOp()))
+        os << fn.getValueParamNames()[bbArg.getArgNumber()] << " ";
+    }
+
+    os << info.value << "\n";
   }
   os.flush();
 }
@@ -646,7 +686,14 @@ private:
 
 void UninitializedValueScan::dump() const {
   auto &os = llvm::errs();
-  os << "UninitializedValueScan\n  ";
+  if (valueSet.getValueInfos().size() < 10) {
+    valueSet.dump();
+    os << "\n";
+  }
+
+  os << "UninitializedValueScan for ";
+  valueSet.printFuncName(os);
+  os << "\n";
   valueSet.printBV(liveValues, os) << "\n";
 
   if (raiseSet) {
@@ -771,8 +818,7 @@ ValueRef UninitializedValueScan::checkLive(Value value, Operation &op) {
   // tried to initialize a value by initializing all its fields.  Reject this
   // with a customized error.
   if (trackable.isIndirect && valueRef.endBit == valueEntry.endValueBit &&
-      ValueRef(valueRef.valueId, valueRef.startBit, valueRef.endBit - 1,
-               /*isIndirect=*/true)
+      valueRef.getSubfield(0, valueRef.getNumBits() - 1)
           .isAllPresent(liveValues)) {
     auto diag = mlir::emitError(op.getLoc(), "'")
                 << trackable.name.str()
@@ -1054,8 +1100,12 @@ private:
   void checkDef(Value value, Operation &op);
   void destroyValuesAtEntry(const BitVector &entries, Block &block,
                             Location loc);
-  void emitDestructorCallAt(unsigned valueId, Block &block,
+  void destroyValueIfNeeded(Value value, ValueRef valueRef, Block &block,
                             Block::iterator insertPt, Location loc);
+  void destroyValueIfNeeded(Value value, ValueRef valueRef,
+                            mlir::ImplicitLocOpBuilder &builder);
+  void emitDestructorCallAt(Value value, ValueRef valueRef,
+                            mlir::ImplicitLocOpBuilder &builder);
 
   /// This is metadata about all the values we are tracking.
   ValueSet &valueSet;
@@ -1085,7 +1135,13 @@ private:
 
 void DestructorInsertion::dump() const {
   auto &os = llvm::errs();
-  os << "DestructorInsertion";
+  if (valueSet.getValueInfos().size() < 10) {
+    valueSet.dump();
+    os << "\n";
+  }
+
+  os << "DestructorInsertion for ";
+  valueSet.printFuncName(os);
   if (dryRun)
     os << " [DRYRUN]";
   os << "\n  ";
@@ -1108,6 +1164,7 @@ void DestructorInsertion::dump() const {
 
 void DestructorInsertion::scanFunction(mlir::FunctionOpInterface func) {
   consumedValues.resize(valueSet.getNumTotalBits());
+  consumedValues.set(0); // Never destroy slot 0, it is already destroyed.
 
   // Scan the body of the function.
   Block &funcBody = func.getFunctionBody().front();
@@ -1199,7 +1256,7 @@ void DestructorInsertion::checkOp(Operation &op) {
   if (auto letReg = dyn_cast<LetRegDeclOp>(op)) {
     // This defines the result value.  Emit a destructor if unused.
     checkDef(letReg, op);
-    // This consumes the input.
+    // This uses the input.
     markConsumed(letReg.getOperand(), op);
     return;
   }
@@ -1221,7 +1278,7 @@ void DestructorInsertion::checkOp(Operation &op) {
   // A unreachable consumes nothing.  Nothing needs to be destroyed here!
   if (isa<UnreachableOp>(op)) {
     consumedValues.reset();
-    consumedValues.set(0); // Never destroy slot 0.
+    consumedValues.set(0); // Never destroy slot 0, it is already destroyed.
     return;
   }
 
@@ -1271,12 +1328,9 @@ void DestructorInsertion::checkOp(Operation &op) {
     consumedInElseButNotThen &= disagreements;
     destroyValuesAtEntry(consumedInThenButNotElse, op.getRegion(1).front(),
                          op.getLoc());
+    consumedValues = thenConsumedValues;
     destroyValuesAtEntry(consumedInElseButNotThen, op.getRegion(0).front(),
                          op.getLoc());
-
-    // Our final upward propagated consume set is the union of both sets now
-    // that they both consume the same things.
-    consumedValues |= thenConsumedValues;
     return;
   }
 
@@ -1309,6 +1363,7 @@ void DestructorInsertion::checkOp(Operation &op) {
 
     // We start the continueSet with no values set to be consumed.
     BitVector continueSet(consumedValues.size());
+    continueSet.set(0); // Never destroy slot 0, it is already destroyed.
     loopBodySets.continueSet = &continueSet;
 
     // We need to dry run the body evaluation until we get to a stable continue
@@ -1333,7 +1388,8 @@ void DestructorInsertion::checkOp(Operation &op) {
       // This should converge trivially as we are setting bits in the continue
       // set, but when we get a consume operator in the future this may be
       // tricky.  Don't fall into an infinite loop on accident.
-      assert(++numIters < 5 && "Loop should converge in a couple iterations");
+      ++numIters;
+      assert(numIters < 5 && "Loop should converge in a couple iterations");
     }
 
     // Once we've converged to the right continue set, we can replay one final
@@ -1368,12 +1424,16 @@ void DestructorInsertion::markConsumed(Value value, Operation &op) {
   //   takeValue(a.x^)
   //   useValue(a.y)
   //   # inserted dtor.
-#if 0 // FIXME.
   if (!valueRef.isAllMissing(consumedValues)) {
+    SymbolConstantAttr dtor = valueSet.typeDeclInfo.getDestructorForType(
+        valueRef.getValueType(value));
+    // Trivial types don't have ownership.
+    if (!dtor)
+      return;
+
     llvm_unreachable(
         "cannot currently consume fields; will happen with the ^ operator");
   }
-#endif
 
   valueRef.markBits(consumedValues, true);
 }
@@ -1395,29 +1455,42 @@ void DestructorInsertion::checkUse(Value value, Block &block,
   if (valueInfo.hasErrorDiagnosed)
     return;
 
-  // If the value has already been consumed below this use then there is nothing
-  // to do.
-  // FIXME: Insert per-field destructors correctly!
-  if (consumedValues[valueInfo.endValueBit - 1])
-    return;
+  // If this is the last use of some value that needs to be destroyed when
+  // dead, emit the whole object destructor for the overall value.
+  //
+  //   init(&aggregate)
+  //   use(aggregate.field1)
+  //   use(aggregate.field2)  <<-- We are here.
+  //
+  // Here we emit `dtor(&aggregate)` to destroy the overall value, which will
+  // also handle deleting the field in question.
+  if (value != valueInfo.value && !consumedValues[valueInfo.endValueBit - 1]) {
+    value = valueInfo.value;
+    valueRef = valueSet.getFullValueRef(valueRef.valueId);
+  }
 
-  // Get the full bitset for the whole object.  We expect that nothing has been
-  // consumed if the destructor will be run.
-  ValueRef fullValueRef = valueSet.getFullValueRef(valueRef.valueId);
-  assert(fullValueRef.isAllMissing(consumedValues) &&
-         "cannot have partially consumed object");
-
-  // The dtor will consume the whole thing.
-  fullValueRef.markBits(consumedValues, true);
-
-  // Destroy the value after the op.
-  emitDestructorCallAt(valueRef.valueId, block, insertPt, loc);
+  // Otherwise, it is possible that that ValueRef is live but the overall object
+  // will be consumed, this happens in scenarios like:
+  //
+  //   init(&aggregate)
+  //   use(&aggregate.field1)  <<-- We are here.
+  //   ... field1 is not consumed here...
+  //   aggregate.field1 = newValue  // overwrite field1.
+  //   consume(&aggregate)
+  //
+  // In this case, we need to destroy field1 after this use.
+  destroyValueIfNeeded(value, valueRef, block, insertPt, loc);
 }
 
 /// This operation defines the specified value.  If the value is dead on
 /// arrival, emit a destructor of the value.
 void DestructorInsertion::checkDef(Value value, Operation &op) {
-  // If there is no use of the value being defined, emit a dtor after the op.
+  // If there is no use of the value we are defined, emit a dtor after the op.
+  // This happens when we have things like:
+  //
+  //   init(&aggregate)
+  //   ...
+  //   aggregate.field1 = newValue  <<-- we are here
   checkUse(value, op);
 
   // This call defines the result, so anything above it is either dead or
@@ -1425,21 +1498,85 @@ void DestructorInsertion::checkDef(Value value, Operation &op) {
   valueSet.getValueRef(value).markBits(consumedValues, false);
 }
 
-void DestructorInsertion::emitDestructorCallAt(unsigned valueId, Block &block,
+/// Destroy the specified ValueRef which either itself entirely (or some
+/// sub-fields need to be destroyed).
+void DestructorInsertion::destroyValueIfNeeded(Value value, ValueRef valueRef,
+                                               Block &block,
                                                Block::iterator insertPt,
                                                Location loc) {
-  // If we are just computing the consumedValue set, don't actually insert a
-  // destructor call.
-  if (dryRun)
+  assert(valueRef && "Only works on valid refs");
+
+  // If we are just computing the consumedValue set, don't actually insert any
+  // destructor calls.
+  if (dryRun) {
+    valueRef.markBits(consumedValues, true);
+    return;
+  }
+
+  mlir::ImplicitLocOpBuilder builder(loc, &block, insertPt);
+  destroyValueIfNeeded(value, valueRef, builder);
+}
+
+/// Recursive version of destroyValueIfNeeded invoked when we know that we are
+/// inserting destructors.
+void DestructorInsertion::destroyValueIfNeeded(
+    Value value, ValueRef valueRef, mlir::ImplicitLocOpBuilder &builder) {
+
+  // If nothing in this value needs destroying, then ignore the request.
+  if (valueRef.isAllPresent(consumedValues))
     return;
 
-  ValueInfo &valueInfo = valueSet.getValueInfo(valueId);
-  LifetimeTrackable trackable(valueInfo.value);
-  assert(trackable && "shouldn't be tracking untrackable things!");
+  // If the entire value needs to be destroyed, then emit a destructor for the
+  // whole value.
+  if (valueRef.isAllMissing(consumedValues)) {
+    emitDestructorCallAt(value, valueRef, builder);
+    valueRef.markBits(consumedValues, true);
+    return;
+  }
 
-  SymbolConstantAttr dtor = valueSet.typeDeclInfo.getDestructorForType(
-      trackable.getValueType(valueInfo.value));
-  if (!dtor)
+  // Otherwise, we must have an indirect value where some fields are present and
+  // some are missing.  Recursively walk the type and destroy just the fields
+  // that are missing.
+  assert(valueRef.isIndirect && "only indirect values are field sensitive");
+  assert(consumedValues.test(valueRef.endBit - 1) &&
+         "whole object must be destroyed if only some fields are missing");
+  DeclRefType valueType = cast<DeclRefType>(valueRef.getValueType(value));
+
+  LIT::StructDeclOp structDecl =
+      valueSet.typeDeclInfo.getStructDeclForType(valueType);
+
+  unsigned nextBit = 0;
+  for (auto field : structDecl.getFieldDecls()) {
+    auto fieldPtr = builder.create<StructGEPOp>(value, field);
+    unsigned numBits =
+        valueSet.typeDeclInfo.getNumFieldsInType(field.getType());
+    destroyValueIfNeeded(fieldPtr, valueRef.getSubfield(nextBit, numBits),
+                         builder);
+
+    // If there was no destructor generated (because the element has no
+    // destructor) then remove the unused pointer access.
+    if (fieldPtr.use_empty())
+      fieldPtr->erase();
+    nextBit += numBits;
+  }
+  // The whole object bit should exist after all the fields.
+  assert(valueRef.startBit + nextBit + 1 == valueRef.endBit &&
+         "Lost track of bits");
+}
+
+/// Emit one destructor call for one entire value or field.  This should only be
+/// called by destroyValueIfNeeded.
+void DestructorInsertion::emitDestructorCallAt(Value value, ValueRef valueRef,
+                                               ImplicitLocOpBuilder &builder) {
+  // We are going to emit a destructor for the specified ValueRef, so all none
+  // of the things we are about to destroy should already be destroyed.
+  assert(!dryRun && "this inserts!");
+  assert(valueRef.isAllMissing(consumedValues) &&
+         "cannot have partially consumed object");
+
+  SymbolConstantAttr dtor =
+      valueSet.typeDeclInfo.getDestructorForType(valueRef.getValueType(value));
+  if (!dtor) // Not all types have destructors.
     return;
 
   SignatureType signature = cast<SignatureType>(dtor.getType());
@@ -1448,22 +1585,21 @@ void DestructorInsertion::emitDestructorCallAt(unsigned valueId, Block &block,
   assert(signature.getValueInputs().size() == 1 &&
          "dtor should have one operand");
 
-  OpBuilder b(&block, insertPt);
-
-  // We may have the value indirect (e.g. because it is in a var) which needs
-  // to be loaded to invoke the destructor.
-  Value valueToDestroy = valueInfo.value;
+  // We may have a @register_passable value indirect (e.g. because it is in a
+  // var).  If so, it needs to be loaded to invoke the destructor.
+  Value valueToDestroy = value;
   if (valueToDestroy.getType() != signature.getValueInputs()[0]) {
     assert(POP::PointerType::get(signature.getValueInputs()[0]) ==
            valueToDestroy.getType());
-    valueToDestroy = b.create<POP::LoadOp>(loc, valueToDestroy,
-                                           /*align*/ std::nullopt);
+    valueToDestroy = builder.create<POP::LoadOp>(valueToDestroy,
+                                                 /*align*/ std::nullopt);
   }
 
   // Emit the call to the destructor.
-  b.create<CallOp>(loc, signature.getValueResults()[0], dtor,
-                   b.getAttr<ParamDeclArrayAttr>(ArrayRef<ParamDeclAttr>()),
-                   ValueRange(valueToDestroy));
+  builder.create<CallOp>(
+      signature.getValueResults()[0], dtor,
+      builder.getAttr<ParamDeclArrayAttr>(ArrayRef<ParamDeclAttr>()),
+      ValueRange(valueToDestroy));
 }
 
 /// Destroy any values whose bits are indicated in the specified set.  Insert
@@ -1472,8 +1608,10 @@ void DestructorInsertion::destroyValuesAtEntry(const BitVector &entries,
                                                Block &block, Location loc) {
   // Don't bother destroying anything if the block is unreachable or we are just
   // doing a dry run to compute consume sets.
-  if (isa<UnreachableOp>(block.front()) || dryRun)
+  if (isa<UnreachableOp>(block.front()) || dryRun) {
+    consumedValues |= entries;
     return;
+  }
 
   // As we scan through bits, we walk through corresponding ValueInfos to know
   // what we are working with.
@@ -1490,14 +1628,13 @@ void DestructorInsertion::destroyValuesAtEntry(const BitVector &entries,
     }
 
     // Ok, we know that we are destroying some field of this value.  If it is
-    // the entire value, emit a destructor call for it.
+    // the entire value, emit a destructor call for it or the fields of it that
+    // need to be destroyed.
     ValueRef fullValueRef = valueSet.getFullValueRef(nextValueInfo);
-    if (fullValueRef.isAllPresent(entries)) {
-      // FIXME: Should destroy subfields!
 
-      // Destroy this value at the start of the block.
-      emitDestructorCallAt(nextValueInfo, block, block.begin(), loc);
-    }
+    // Destroy this value at the start of the block.
+    destroyValueIfNeeded(valueInfos[nextValueInfo].value, fullValueRef, block,
+                         block.begin(), loc);
 
     // Find the next object to destroy.
     nextToDestroy = entries.find_next(fullValueRef.endBit - 1);
@@ -1542,7 +1679,7 @@ LogicalResult CheckLifetimes::processFunction(mlir::FunctionOpInterface func,
                                               TypeDeclInfo &typeDeclInfo) {
   // Pass #1: Collect all of the values declared in the function that have
   // ownership to track, and number them.
-  ValueSet valueSet(typeDeclInfo);
+  ValueSet valueSet(typeDeclInfo, func);
   func->walk([&](Operation *op) -> WalkResult {
     // Skip looking at nested functions, they are handled as separate contexts.
     if (isa<ParamDeclareRegionOp>(op) && op != func)
