@@ -331,8 +331,11 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
   mlir::raw_indented_ostream exprOSIndented(exprRawOS);
 
   exprOSIndented << "from IO import _printf, print\n"
-                 << "from Pointer import Pointer\n\n"
-                 << "from PythonInterface import PythonInterface\n";
+                 << "from Pointer import Pointer\n"
+                 << "from PythonInterface import PythonInterface\n"
+                 << "from PythonObject import PythonObject\n"
+                 // Use `PythonObject` so that the import gets resolved.
+                 << "fn use_python():\n  var py_obj = PythonObject(0)\n\n";
 
   // We insert the previously executed top level code to ensure functions,
   // imports and classes are preserved. This also ensures that saved
