@@ -71,6 +71,10 @@ public:
   /// Return the StructDeclOp::RegisterPassable enum for this type.
   uint8_t getRegisterPassability(llvm::SMLoc loc, LitSharedState &shared) const;
 
+  /// Return true if this type needs to be destroyed.  This is false for trivial
+  /// types like Int.  Note: this resolves the body of a struct type.
+  bool hasDestructor(llvm::SMLoc loc, LitSharedState &shared) const;
+
   /// Given a POP::PointerType, return the element as an ASTType.  This aborts
   /// if the current type isn't a pointer.
   ASTType getPointerElementType() const;

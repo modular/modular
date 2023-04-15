@@ -31,6 +31,7 @@
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/STLExtras.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Transforms/RegionUtils.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
@@ -1096,7 +1097,7 @@ const SpecialFunctionInfo &SpecialFunctionInfo::get(SpecialFunctionKind kind) {
 /// This returns failure (after emitting an error) when a type checking problem
 /// is detected.
 static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
-                                      StringAttr &name,
+                                      StringAttr name,
                                       SmallVector<ParsedArgument> &args,
                                       MutableArrayRef<Type> argTypes,
                                       ASTType &resultType,
@@ -1307,21 +1308,9 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
   }
   }
 
-  // Mangle 'name', ensuring that overloaded methods get unique symbol names.
-  SmallString<64> mangledName(name.getValue().begin(), name.getValue().end());
-  mangledName += '(';
-
-  // Finally, after all semantic checks are done, update the types to reflect
-  // ABI information form the calling convention.
-
   // Now that all the types and signature information have been resolved,
-  // compute the final MLIR types, KGEN conventions and mangled name.
+  // compute the final MLIR types and KGEN conventions.
   for (auto [arg, argType] : llvm::zip(args, argTypes)) {
-    // Update the mangled name for this argument.
-    if (&arg != &args[0])
-      mangledName += ",";
-
-    mangledName += ASTType(argType).getAsString();
     switch (arg.convention) {
     case ParsedArgument::kConventionUnspec:
       llvm_unreachable("should be resolved above");
@@ -1343,15 +1332,12 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
       break;
     case ParsedArgument::kConventionByRef:
       arg.kgenConvention = ValueInputConvention::ByRef;
-      mangledName += '&';
       break;
     case ParsedArgument::kConventionByRefResult:
       arg.kgenConvention = ValueInputConvention::ByRefResult;
-      mangledName += "=&";
       break;
     case ParsedArgument::kConventionInitSelfResult:
       arg.kgenConvention = ValueInputConvention::InitSelf;
-      mangledName += "=&";
       break;
     }
 
@@ -1361,13 +1347,53 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
       argType = POP::PointerType::get(argType);
     if (arg.vararg == VarArgKind::VarArg)
       argType = KGEN::VariadicType::get(argType);
+  }
+}
 
-    if (arg.vararg == VarArgKind::VarArg)
+// Mangle 'name', ensuring that overloaded methods get unique symbol names.
+static StringAttr getMangledName(StringAttr baseName, SignatureType signature) {
+  SmallString<64> mangledName(baseName.getValue().begin(),
+                              baseName.getValue().end());
+  mangledName += '(';
+  size_t argNo = 0;
+  for (auto [convention, argType] : llvm::zip(
+           signature.getValueInputConventions(), signature.getValueInputs())) {
+    // Update the mangled name for this argument.
+    if (argNo != 0)
+      mangledName += ",";
+
+    // If this had adjustments added to it because of its argument convention /
+    // variadic state, strip them off.
+    ASTType type = argType;
+    if (signature.isVararg(argNo))
+      type = type.getVariadicElementType();
+    if (convention != ValueInputConvention::OwnedInReg &&
+        convention != ValueInputConvention::BorrowedInReg)
+      type = type.getPointerElementType();
+    mangledName += type.getAsString();
+
+    // Add suffix to disambiguate overloadable conventions.
+    switch (convention) {
+    case ValueInputConvention::OwnedInReg:
+    case ValueInputConvention::OwnedInMem:
+    case ValueInputConvention::BorrowedInReg:
+    case ValueInputConvention::BorrowedInMem:
+      break;
+    case ValueInputConvention::ByRef:
+      mangledName += '&';
+      break;
+    case ValueInputConvention::ByRefResult:
+    case ValueInputConvention::InitSelf:
+      mangledName += "=&";
+      break;
+    }
+
+    if (signature.isVararg(argNo))
       mangledName += '*';
+    ++argNo;
   }
   mangledName += ')';
-
-  name = StringAttr::get(funcOp.getContext(), mangledName);
+  return StringAttr::get(baseName.getContext(), mangledName);
 }
 
 namespace {
@@ -1524,6 +1550,25 @@ void FnDecorators::applyLate(SymbolRefAttr symbolName, StringRef unmangledName,
   }
 }
 
+/// A valid main function must have signature main().
+/// No parameters are allowed and here must be only one main in the final
+/// object file.
+static bool isMainFunction(StringAttr &name, SignatureType signature,
+                           LitSharedState &shared) {
+  if (name != kMainSymbolName || !signature.getInputParamTypes().empty() ||
+      !signature.getResultParamTypes().empty() ||
+      !signature.getValueInputs().empty())
+    return false;
+
+  // Check the result type is none, but we have to strip off the variant if this
+  // throws.
+  ASTType resultType = signature.getValueResults()[0];
+  if (signature.isThrows())
+    resultType = cast<POP::VariantType>(resultType.mlirType).getType(1);
+
+  return resultType.isEqualCanon(shared.getNoneType());
+}
+
 /// funcdef ::=  [decorators] "def" identifier [meta_signature]
 ///              "(" [argument_list] ")" ["->" expression] ":" suite
 ///
@@ -1662,71 +1707,10 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   // name-binding specific checks over the declaration.  This happens after
   // decorator processing because that is how defs work in Python.  This also
   // fills in any implicitly declared types.
-  StringAttr name = baseName;
-  verifyFunctionNameBinding(decl, funcOp, name, args, argTypes, resultType,
+  verifyFunctionNameBinding(decl, funcOp, baseName, args, argTypes, resultType,
                             shared);
 
   // Finally now that the full signature has been resolved, build our IR.
-
-  // Set the symbol to the mangled name and check for redefinition.
-  NamedAttrList attrs = funcOp->getAttrDictionary();
-  attrs.set(funcOp.getSymNameAttrName(), name);
-
-  // Remove the temporary "sym_namex" attribute set up in FuncOp::build, see
-  // that method for an explanation.
-  attrs.erase("sym_namex");
-  funcOp->setAttrs(attrs.getDictionary(funcOp.getContext()));
-
-  if (Operation *existing = shared.setResolvedDeclSymbol(funcOp)) {
-    // If the thing is adaptive, then we actually don't want to error.
-    if (!cast<LIT::FuncOp>(existing).getIsAdaptive()) {
-      // On redefinition this is an overload of the same name and same
-      // signature.
-      auto diag = p.emitError(funcOp.getLoc(), "redefinition of function ")
-                  << name << " with identical signature";
-      diag.attachNote(existing->getLoc()) << "previous definition here";
-      decl.hasReferenceError = true;
-    }
-  }
-
-  // Remember the mapping from its fully mangled symbol so we can find its AST
-  // representation and body from IR references.
-  SymbolRefAttr symbolName = getFullyResolvedSymbolRef(funcOp);
-  declForFuncSymbol[symbolName] = &decl;
-
-  // If have a main function, fn main(), export it automatically.
-  if (!inAStruct && isMainFunction(baseName, inputParamDecls, resultParamDecls,
-                                   argTypes, resultType))
-    getDeclResolver().exportMain(decl.getParentDecl(), symbolName);
-
-  // Generate a debug subprogram for this function.
-  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  if (auto &diBuilder = shared.diBuilder) {
-    FileLineColLoc fileLineCol =
-        funcOp.getLoc()->findInstanceOf<FileLineColLoc>();
-
-    // Compute the subprogram flags.
-    /// If we have any optimizations, mark the subprogram as optimized.
-    DebugInfo::SubprogramFlags spFlags =
-        shared.options.optimizationLevel ? DebugInfo::SubprogramFlags::Optimized
-                                         : DebugInfo::SubprogramFlags::None;
-    /// If the function has a body, treat it as a definition.
-    if (!funcOp.isExternal())
-      spFlags = spFlags | DebugInfo::SubprogramFlags::Definition;
-
-    // Use unresolved types now for simplicity, these will get resolved during
-    // compilation.
-    auto mapUnresolvedType = [](Type type) -> DebugInfo::DIType {
-      return DebugInfo::DIUnresolvedMLIRType::get(type);
-    };
-    auto type = DebugInfo::DISubroutineType::get(
-        getContext(), map_to_vector(argTypes, mapUnresolvedType),
-        mapUnresolvedType(resultType.mlirType));
-    diScopeGuard = diBuilder->pushSubprogram(
-        baseName, name, diBuilder->createFile(fileLineCol),
-        fileLineCol.getLine(), fileLineCol.getLine(), spFlags, type);
-    funcOp->setLoc(diBuilder->createScopedLoc(fileLineCol));
-  }
 
   // Handle function effects.
   SmallVector<Location> argLocs;
@@ -1809,7 +1793,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   }
 
   OpBuilder builder = decl.getDeclEndBuilder();
-  attrs = funcOp->getAttrDictionary();
+  NamedAttrList attrs = funcOp->getAttrDictionary();
   auto inputParamsAttr = builder.getAttr<ParamDeclArrayAttr>(inputParamDecls);
   auto resultParamsAttr = builder.getAttr<ParamDeclArrayAttr>(resultParamDecls);
   attrs.set(funcOp.getValueParamNamesAttrName(),
@@ -1828,29 +1812,88 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   if (!signature)
     return failure();
 
+  attrs.set(funcOp.getSignatureAttrName(), TypeAttr::get(signature));
+
+  // Set the symbol to the mangled name and check for redefinition.
+  attrs.set(funcOp.getSymNameAttrName(), getMangledName(baseName, signature));
+
+  // Remove the temporary "sym_namex" attribute set up in FuncOp::build, see
+  // that method for an explanation.
+  attrs.erase("sym_namex");
+
+  // Bulk update the attributes.
+  funcOp->setAttrs(attrs.getDictionary(funcOp.getContext()));
+
+  if (Operation *existing = shared.setResolvedDeclSymbol(funcOp)) {
+    // If the thing is adaptive, then we actually don't want to error.
+    if (!cast<LIT::FuncOp>(existing).getIsAdaptive()) {
+      // On redefinition this is an overload of the same name and same
+      // signature.
+      auto diag = p.emitError(funcOp.getLoc(), "redefinition of function ")
+                  << baseName << " with identical signature";
+      diag.attachNote(existing->getLoc()) << "previous definition here";
+      decl.hasReferenceError = true;
+    }
+  }
+
+  // Remember the mapping from its fully mangled symbol so we can find its AST
+  // representation and body from IR references.
+  SymbolRefAttr symbolName = getFullyResolvedSymbolRef(funcOp);
+  declForFuncSymbol[symbolName] = &decl;
+
+  // If have a main function, fn main(), export it automatically.
+  if (!inAStruct && isMainFunction(baseName, signature, shared))
+    getDeclResolver().exportMain(decl.getParentDecl(), symbolName);
+
+  // Generate a debug subprogram for this function.
+  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+  if (auto &diBuilder = shared.diBuilder) {
+    FileLineColLoc fileLineCol =
+        funcOp.getLoc()->findInstanceOf<FileLineColLoc>();
+
+    // Compute the subprogram flags.
+    /// If we have any optimizations, mark the subprogram as optimized.
+    DebugInfo::SubprogramFlags spFlags =
+        shared.options.optimizationLevel ? DebugInfo::SubprogramFlags::Optimized
+                                         : DebugInfo::SubprogramFlags::None;
+    /// If the function has a body, treat it as a definition.
+    if (!funcOp.isExternal())
+      spFlags = spFlags | DebugInfo::SubprogramFlags::Definition;
+
+    // Use unresolved types now for simplicity, these will get resolved during
+    // compilation.
+    auto mapUnresolvedType = [](Type type) -> DebugInfo::DIType {
+      return DebugInfo::DIUnresolvedMLIRType::get(type);
+    };
+    auto type = DebugInfo::DISubroutineType::get(
+        getContext(), map_to_vector(argTypes, mapUnresolvedType),
+        mapUnresolvedType(resultType.mlirType));
+    diScopeGuard = diBuilder->pushSubprogram(
+        baseName, funcOp.getNameAttr(), diBuilder->createFile(fileLineCol),
+        fileLineCol.getLine(), fileLineCol.getLine(), spFlags, type);
+    funcOp->setLoc(diBuilder->createScopedLoc(fileLineCol));
+  }
+
   // FIXME: Handle "late" decorators somehow else. They should be "body
   // decorators" that are applied after the decl is fully resolved.
   FnDecorators(decl, shared)
       .applyLate(symbolName, baseName, decoratorExprs, signature);
-
-  // If the user tried to mark a transitive capturing closure as thin, emit an
-  // error.
-  if (transivelyCaptures && !signature.isCapturing()) {
-    return p.emitError(funcOp.getLoc(), "cannot mark a function with capturing "
-                                        "closure parameters as @noncapturing");
-  }
-
-  attrs.set(funcOp.getSignatureAttrName(), TypeAttr::get(signature));
+  if (funcOp.getSignature() != signature)
+    funcOp.setSignature(signature);
 
   // If this is a nested function, set its parameter declaration. It will be
   // referenced via parameter references instead of symbol references.
-  if (funcOp->getParentOfType<LIT::FuncOp>()) {
-    attrs.set(funcOp.getParamDeclAttrName(),
-              ParamDeclAttr::get(funcOp.getSymNameAttr(), signature));
-  }
-  // Bulk update the attributes.
-  funcOp->setAttrs(attrs.getDictionary(funcOp.getContext()));
+  if (funcOp->getParentOfType<LIT::FuncOp>())
+    funcOp.setParamDeclAttr(
+        ParamDeclAttr::get(funcOp.getSymNameAttr(), signature));
+
   funcOp.getBody()->addArguments(argTypes, argLocs);
+
+  // If the user tried to mark a transitive capturing closure as thin, emit an
+  // error.
+  if (transivelyCaptures && !signature.isCapturing())
+    return p.emitError(funcOp.getLoc(), "cannot mark a function with capturing "
+                                        "closure parameters as @noncapturing");
 
   return success();
 }
@@ -2337,19 +2380,15 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
 /// for the specified declaration (typically a var or argument declaration).
 /// This returns the destructor if successful, diagnoses an error if not, and
 /// returns null if there is no defined destructor.
-static TypedAttr lookupDestructor(ASTType type, SMLoc loc,
-                                  LitSharedState &shared) {
-  ASTDecl *decl = type.getDecl(shared);
-  if (!decl)
-    return {}; // MLIR types have no destructor.
-
-  const TinyPtrVector<ASTDecl *> *entries = decl->lookupInCurrentScope(
+static TypedAttr lookupDestructor(ASTDecl &structDecl, LitSharedState &shared) {
+  const TinyPtrVector<ASTDecl *> *entries = structDecl.lookupInCurrentScope(
       StringAttr::get(shared.getContext(), "__del___"));
   // If there are no __del__ methods, return null.  This is valid.
   if (!entries)
     return {};
   if (entries->size() != 1) {
-    auto diag = shared.emitError(loc, "invalid overloaded '__del__' method");
+    auto diag = shared.emitError(structDecl.getLoc(),
+                                 "invalid overloaded '__del__' method");
     for (auto candidate : *entries)
       diag.attachNote(candidate->getLoc()) << "candidate declared here";
     return {};
@@ -2360,81 +2399,142 @@ static TypedAttr lookupDestructor(ASTType type, SMLoc loc,
     shared.emitError((*entries)[0]->getLoc(), "'__del__' must be a method");
     return {};
   }
-  if (failed(shared.declResolver->resolveSignature(delDecl, loc)))
+  if (failed(
+          shared.declResolver->resolveSignature(delDecl, structDecl.getLoc())))
     return {};
   return func.getBoundReference();
 }
 
+/// Given a struct that has no explicitly defined __del__ member, define a new
+/// one with an empty body.  This allows the CheckLifetimes pass to insert field
+/// dels as needed, and makes sure that anything that refers to this struct
+/// properly runs its destructor.
+static TypedAttr synthesizeEmptyDtor(StructDeclOp structOp, ASTDecl &structDecl,
+                                     DeclResolver &resolver) {
+  auto builder = ImplicitLocOpBuilder::atBlockEnd(
+      structOp.getLoc(), &structOp.getFields().front());
+
+  // Figure out the type of the 'self' argument.  It is the struct's `Self`
+  // type for register passable things, or indirect for a memory-only type.
+  ASTType selfType = structDecl.getSelfType();
+  // The argument is always owned.
+  ValueInputConvention convention = ValueInputConvention::OwnedInReg;
+  if (!selfType.isRegisterPassable(structDecl.getLoc(), resolver.shared)) {
+    selfType = POP::PointerType::get(selfType);
+    convention = ValueInputConvention::OwnedInMem;
+  }
+
+  // Get the signature for the function.  This is (owned selfType)->None.
+  auto fnType = builder.getFunctionType(selfType.mlirType,
+                                        resolver.shared.getNoneType().mlirType);
+  auto metadata = builder.getAttr<MetadataAttr>(
+      convention, /*no default args=*/ArrayRef<TypedAttr>(), FnEffects());
+  auto signature = SignatureType::get({}, {}, fnType, metadata);
+  StringAttr selfName = builder.getStringAttr("self");
+
+  // Create the empty dtor function.
+  StringAttr name =
+      getMangledName(builder.getStringAttr("__del___"), signature);
+  auto funcOp = builder.create<LIT::FuncOp>(name, signature, selfName);
+  // Set up the body.
+  Block *body = funcOp.getBody();
+  body->addArgument(selfType, structOp.getLoc());
+  builder.setInsertionPointToStart(body);
+  builder.create<LIT::EndFuncOp>();
+
+  // Register the dtor in the struct.
+  resolver.addFullyResolvedDecl(funcOp.getOperation(), "__del___",
+                                structDecl.getLoc(), &structDecl);
+  return funcOp.getBoundReference();
+}
+
 ParseResult DeclResolver::resolveBody(StructDeclOp structOp, LitLexer &lexer,
-                                      ASTDecl &decl) {
-  if (LitParserBase::parseSuite(decl, lexer))
+                                      ASTDecl &structDecl) {
+  if (LitParserBase::parseSuite(structDecl, lexer))
     return failure();
 
   // Mark the declaration as fully resolved so we can lookup into it.
-  decl.resolvedness = DeclResolvedness::fully;
+  structDecl.resolvedness = DeclResolvedness::fully;
 
-  // Register-passable structs may only contain register-passable stored values.
-  // TODO(traits): We need to type constrain mlirtype parameters to being
-  // register-only types to support things like this correctly:
-  //  struct P[T: mlirtype]:
-  //    var storage : T
   uint8_t registerPassability = structOp.getRegisterPassable();
-  if (registerPassability != StructDeclOp::RP_MemoryOnly) {
-    for (StructFieldOp field : structOp.getFieldDecls()) {
-      // Make sure the field is fully resolved.
-      auto elt = decl.lookupInCurrentScope(field.getNameAttr());
-      assert(elt && elt->size() == 1 && "field decls cannot be overloaded");
-      ASTDecl &fieldASTDecl = *elt->front();
-      if (failed(resolveSignature(fieldASTDecl, fieldASTDecl.getLoc())))
-        continue;
 
+  // Track whether any field needs destruction, if so, we need a __del__ method.
+  bool needsDtorForFields = false;
+
+  // Now that the body is completely resolved, check the declared fields for
+  // extra invariants.
+  for (StructFieldOp field : structOp.getFieldDecls()) {
+    // Make sure the field is signature resolved so we can get its type.
+    auto fieldEntry = structDecl.lookupInCurrentScope(field.getNameAttr());
+    assert(fieldEntry && fieldEntry->size() == 1 &&
+           "field decls cannot be overloaded");
+    ASTDecl &fieldASTDecl = *fieldEntry->front();
+    if (failed(resolveSignature(fieldASTDecl, fieldASTDecl.getLoc())))
+      continue;
+    ASTType fieldType(field.getType());
+
+    // If any field of this struct has a destructor, then the struct needs one.
+    needsDtorForFields |=
+        fieldType.hasDestructor(fieldASTDecl.getLoc(), shared);
+
+    // Register-passable structs may only contain register-passable stored
+    // values.
+    // TODO(traits): We need to type constrain mlirtype parameters to being
+    // register-only types to support things like this correctly:
+    //  struct P[T: mlirtype]:
+    //    var storage : T
+    if (registerPassability != StructDeclOp::RP_MemoryOnly) {
       // If the field is at least as register-passable as the container then
       // we're happy.
-      if (ASTType(field.getType())
-              .getRegisterPassability(fieldASTDecl.getLoc(), shared) >=
-          registerPassability)
-        continue;
+      if (fieldType.getRegisterPassability(fieldASTDecl.getLoc(), shared) <
+          registerPassability) {
+        StringRef trivialSuffix;
+        if (registerPassability == StructDeclOp::RP_RegisterPassableTrivial)
+          trivialSuffix = "(\"trivial\")";
 
-      StringRef trivialSuffix;
-      if (registerPassability == StructDeclOp::RP_RegisterPassableTrivial)
-        trivialSuffix = "(\"trivial\")";
+        auto diag = emitError(structOp.getLoc())
+                    << "all members of '@register_passable" << trivialSuffix
+                    << "' struct must themselves be '@register_passable"
+                    << trivialSuffix << "'";
+        diag.attachNote(fieldASTDecl.getLoc())
+            << field.getNameAttr() << " declared with type " << fieldType;
 
-      auto diag = emitError(structOp.getLoc())
-                  << "all members of '@register_passable" << trivialSuffix
-                  << "' struct must themselves be '@register_passable"
-                  << trivialSuffix << "'";
-      diag.attachNote(fieldASTDecl.getLoc())
-          << field.getNameAttr() << " declared with type "
-          << ASTType(field.getType());
-
-      // We cannot support IRGen'ing references to this type, since it will
-      // break invariant about being register passable without being composed of
-      // such types.
-      decl.hasReferenceError = true;
-      return failure();
+        // We cannot support IRGen'ing references to this type, since it will
+        // break invariant about being register passable without being composed
+        // of such types.
+        structDecl.hasReferenceError = true;
+        return failure();
+      }
     }
+  }
 
-    // Trivial types may not have __copyinit__ or __del__ members.
-    if (registerPassability == StructDeclOp::RP_RegisterPassableTrivial) {
-      auto rejectMemberIfPresent = [&](StringRef name) {
-        auto nameAttr = StringAttr::get(getContext(), name);
-        if (auto member = decl.lookupInCurrentScope(nameAttr))
-          emitError((*member)[0]->getLoc())
-              << "'@register_passable(\"trivial\")' types may not have a "
-              << nameAttr << " method";
-      };
+  // Trivial types may not have __copyinit__ or __del__ members.
+  if (registerPassability == StructDeclOp::RP_RegisterPassableTrivial) {
+    auto rejectMemberIfPresent = [&](StringRef name) {
+      auto nameAttr = StringAttr::get(getContext(), name);
+      if (auto member = structDecl.lookupInCurrentScope(nameAttr))
+        emitError((*member)[0]->getLoc())
+            << "'@register_passable(\"trivial\")' types may not have a "
+            << nameAttr << " method";
+    };
 
-      rejectMemberIfPresent("__copyinit__");
-      rejectMemberIfPresent("__del__");
-    }
+    rejectMemberIfPresent("__copyinit__");
+    rejectMemberIfPresent("__del__");
   }
 
   // Now that the struct body has been resolved, check to see if there is a
   // destructor and install it if so.
-  if (!decl.hasReferenceError) {
-    if (auto dtorAttr =
-            lookupDestructor(decl.getSelfType(), decl.getLoc(), shared))
+  if (!structDecl.hasReferenceError) {
+    // Check to see if we have an explicitly declared destructor.  If so, attach
+    // it to the type.
+    if (auto dtorAttr = lookupDestructor(structDecl, shared)) {
       structOp.setDestructorAttr(dtorAttr);
+    } else if (needsDtorForFields) {
+      // If one of the fields needs to be destroyed, then we synthesize an empty
+      // del function so that lifetime checking can handle field destruction.
+      structOp.setDestructorAttr(
+          synthesizeEmptyDtor(structOp, structDecl, *this));
+    }
   }
 
   return success();
@@ -2488,13 +2588,4 @@ ParseResult DeclResolver::resolveSignature(LIT::UnresolvedImportOp op,
   return getDeclResolver().importModule(*decl.getParentDecl(),
                                         op.getModuleNameAttr(),
                                         op.getImportNameAttr(), decl.getLoc());
-}
-
-bool DeclResolver::isMainFunction(
-    StringAttr &name, SmallVectorImpl<ParamDeclAttr> &inputParamDecls,
-    SmallVectorImpl<ParamDeclAttr> &resultParamDecls,
-    MutableArrayRef<Type> argTypes, ASTType &resultType) {
-  return name == kMainSymbolName && inputParamDecls.empty() &&
-         resultParamDecls.empty() && argTypes.empty() &&
-         resultType.isEqualCanon(shared.getNoneType());
 }

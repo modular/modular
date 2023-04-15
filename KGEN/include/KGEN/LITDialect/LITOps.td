@@ -85,6 +85,8 @@ def LIT_FuncOp : LITOp<"func", [
   let builders = [
     // Create a func with a region and a body block.
     OpBuilder<(ins)>,
+    OpBuilder<(ins "StringAttr":$name, "SignatureType":$signature,
+                   "ArrayRef<StringAttr>":$argNames)>,
   ];
 
   let hasCustomAssemblyFormat = 1;

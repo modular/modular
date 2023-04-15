@@ -88,6 +88,22 @@ bool ASTType::isRegisterPassable(llvm::SMLoc loc,
   return getRegisterPassability(loc, shared) != StructDeclOp::RP_MemoryOnly;
 }
 
+/// Return true if this type needs to be destroyed.  This is false for trivial
+/// types like Int.  Note: this resolves the body of a struct type.
+bool ASTType::hasDestructor(llvm::SMLoc loc, LitSharedState &shared) const {
+  ASTDecl *decl = getDecl(shared);
+  if (!decl) // MLIR types are assumed to be register-passable + Trivial.
+    return false;
+
+  // Make sure we know about the signature of the type.
+  if (failed(shared.declResolver->resolveFully(*decl, loc)))
+    return false;
+
+  auto structOp = dyn_cast<StructDeclOp>(*decl);
+  assert(structOp && "only one user-defined type so far");
+  return structOp.getDestructorAttr() != TypedAttr();
+}
+
 /// Given a POP::PointerType, return the element as an ASTType.  This aborts
 /// if the current type isn't a pointer.
 ASTType ASTType::getPointerElementType() const {

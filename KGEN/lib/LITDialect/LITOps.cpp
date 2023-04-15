@@ -499,6 +499,22 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
   result.addRegion()->push_back(new Block());
 }
 
+/// Build a function in a default configuration, used by member synthesization.
+void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
+                        StringAttr name, SignatureType signature,
+                        ArrayRef<StringAttr> argNames) {
+  auto context = builder.getContext();
+  build(builder, result, name, ParamDeclAttr(),
+        StringArrayAttr::get(context, argNames), TypeAttr::get(signature),
+        TypeAttr::get(signature.getValues()),
+        /*paramDecls=*/ParamDeclArrayAttr::get(context, {}),
+        /*resultParams=*/ParamDeclArrayAttr::get(context, {}),
+        ConstraintArrayAttr::get(context, {}), /*isStatic=*/mlir::UnitAttr(),
+        /*isAdaptive=*/mlir::UnitAttr(), /*UnitAttr=*/mlir::UnitAttr(),
+        AlwaysInlineLevelAttr::get(context, AlwaysInlineLevel::Disabled));
+  result.regions[0]->push_back(new Block());
+}
+
 //===----------------------------------------------------------------------===//
 // StructDeclOp
 //===----------------------------------------------------------------------===//
