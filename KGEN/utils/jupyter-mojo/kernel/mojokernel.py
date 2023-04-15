@@ -18,7 +18,7 @@ import os
 import shutil
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional, Callable
+from typing import Any, Dict, Optional
 
 from ipykernel.kernelapp import IPKernelApp
 from ipykernel.kernelbase import Kernel
@@ -215,7 +215,7 @@ class MojoKernel(Kernel):
         # `display_start` and `display_end` that provide the begin/end markers
         # it should use.
         exec_string = (
-            ">python\n\n"
+            "%python\n\n"
             f'display_start = "{display_start}"\n'
             f'display_end = "{display_end}"\n'
             f'backend_str = """{backend_string}"""\n\n'
