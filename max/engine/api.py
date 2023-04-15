@@ -34,18 +34,9 @@ class ModelKind(str, Enum):
     UNKNOWN_MODEL = "Unknown Model"
 
 
-class TFSavedModelVersion(str, Enum):
-    V1 = "v1"
-    V2 = "v2"
-
-
 @dataclass
 class TensorFlowLoadOptions:
     """Configures how to load TensorFlow saved models."""
-
-    saved_model_version: TFSavedModelVersion = field(
-        default=TFSavedModelVersion.V1
-    )
 
     exported_name: str = field(default="serving_default")
     """The exported name from the TF model's signature."""
