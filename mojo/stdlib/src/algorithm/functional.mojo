@@ -754,39 +754,50 @@ alias Static2DTileUnitFunc = __mlir_type[
 
 @always_inline
 fn tile[
-    workgroup_function: Static2DTileUnitFunc, *tile_size_list_vararg: Int
+    workgroup_function: Static2DTileUnitFunc,
+    tile_sizes_x: VariadicList[Int],
+    tile_sizes_y: VariadicList[Int],
 ](offset_x: Int, offset_y: Int, upperbound_x: Int, upperbound_y: Int):
-    alias tile_size_list = VariadicList[Int](tile_size_list_vararg)
+    """Launches workgroup_function using the largest tile sizes possible in each
+    dimension, starting from the x and y offset, until the x and y upperbounds
+    are reached.
 
-    assert_param_msg[
-        tile_size_list.__len__() % 2 == 0,
-        "number of tile sizes must be divisible by 2",
-    ]()
-
+    Parameters:
+        workgroup_function: funtion that is invoked for each tile and offset.
+        tile_sizes_x: list of tile sizes to use for the first parameter of workgroup_function.
+        tile_sizes_y: list of tile sizes to use for the second parameter of workgroup_function.
+    Args:
+        offset_x: initial x offset passed to workgroup_function.
+        offset_y: initial y offset passed to workgroup_function.
+        upperbound_x: max offset in x dimension passed to workgroup function.
+        upperbound_y: max offset in y dimension passed to workgroup function.
+    """
     # Initialize where to start on the overall work load.
     var current_offset_x: Int = offset_x
     var current_offset_y: Int = offset_y
 
+    alias num_tiles_x = tile_sizes_x.__len__()
+    alias num_tiles_y = tile_sizes_y.__len__()
+
     @always_inline
-    fn static_tile_impl[idx: Int]():
-        # Get the 2d tile size to proceed with.
-        alias tile_size_x = tile_size_list[2 * idx]
-        alias tile_size_y = tile_size_list[2 * idx + 1]
-
-        let tmp_x = offset_x
-
-        # Process work with the 2d tile size until there's not enough remaining
-        # work to fit in a tile.
+    fn tile_on_y[idx_y: Int]():
+        alias tile_size_y = tile_sizes_y[idx_y]
         while current_offset_y <= upperbound_y - tile_size_y:
-            current_offset_x = tmp_x
-            while current_offset_x <= upperbound_x - tile_size_x:
-                workgroup_function[tile_size_x, tile_size_y](
-                    current_offset_x, current_offset_y
-                )
-                current_offset_x += tile_size_x
+            current_offset_x = offset_x
+
+            @always_inline
+            fn tile_on_x[idx_x: Int]():
+                alias tile_size_x = tile_sizes_x[idx_x]
+                while current_offset_x <= upperbound_x - tile_size_x:
+                    workgroup_function[tile_size_x, tile_size_y](
+                        current_offset_x, current_offset_y
+                    )
+                    current_offset_x += tile_size_x
+
+            unroll[num_tiles_x, tile_on_x]()
             current_offset_y += tile_size_y
 
-    unroll[tile_size_list.__len__() // 2, static_tile_impl]()
+    unroll[num_tiles_y, tile_on_y]()
 
 
 # ===----------------------------------------------------------------------===#
