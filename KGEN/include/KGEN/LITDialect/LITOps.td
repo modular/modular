@@ -819,7 +819,6 @@ def LIT_UnboundRegionOp : LITOp<"unbound_region"> {
   let hasVerifier = 1;
 }
 
-
 //===----------------------------------------------------------------------===//
 // OwnershipUseOp
 //===----------------------------------------------------------------------===//
@@ -829,6 +828,23 @@ def LIT_UnboundRegionOp : LITOp<"unbound_region"> {
 /// the LowerLIT pass.
 def LIT_OwnershipUseOp : LITOp<"ownership.use"> {
   let summary = "A use of a value to keep the value alive";
+
+  // The destructor for the element type is specified if it exists.
+  let arguments = (ins AnyType:$value);
+  let results = (outs);
+  let assemblyFormat = "$value `:` type($value) attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
+// OwnershipMarkDestroyedOp
+//===----------------------------------------------------------------------===//
+
+/// This op informs CheckLifetimes that the specified value does not need its
+/// full object destructor to run.  This corresponds to things like Rust's
+/// mem::forget and is synthesized in __del__ methods to indicate that self is
+/// destroyed.
+def LIT_OwnershipMarkDestroyedOp : LITOp<"ownership.mark.destroyed"> {
+  let summary = "Mark a value as not need a dtor to run";
 
   // The destructor for the element type is specified if it exists.
   let arguments = (ins AnyType:$value);
