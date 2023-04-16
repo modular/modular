@@ -196,8 +196,13 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
       [&](Operation &op, StringRef stmtKind) -> ImplicitLocOpBuilder {
     // Warn about dead code after the semantic terminator.
     Operation *nextOp = op.getNextNode();
-    if (!nextOp->hasTrait<OpTrait::IsTerminator>())
-      emitWarning(nextOp->getLoc(), "unreachable code after ") << stmtKind;
+    if (!nextOp->hasTrait<OpTrait::IsTerminator>()) {
+      // Don't complain if the location is the same as the enclosing function,
+      // it is automatically synthesized.
+      auto funcOp = nextOp->getParentOfType<LIT::FuncOp>();
+      if (!funcOp || funcOp->getLoc() != nextOp->getLoc())
+        emitWarning(nextOp->getLoc(), "unreachable code after ") << stmtKind;
+    }
 
     // Remove the unreachable code.
     eraseOpToEndOfBlock(nextOp);
@@ -408,30 +413,9 @@ static LogicalResult lowerSemanticCF(LIT::FuncOp func) {
   if (!endFunc)
     return success();
 
-  Type declaredResultType = func.getResultTypeWithoutErrorVariant();
-
-  // A return is required if the function has a non-none result, diagnose if
-  // missing.
-  if (!isa<LIT::NoneType>(declaredResultType) ||
-      func.getSignature().hasMemoryOnlyResult()) {
-    return emitError(endFunc->getLoc(),
-                     "return expected at end of function with results");
-  }
-
-  ImplicitLocOpBuilder b(func.getLoc(), endFunc);
-  if (!isa<LIT::NoneType>(declaredResultType)) {
-    b.create<KGEN::UnreachableOp>();
-  } else {
-    // The function returns none.
-    Value retVal = b.create<ParamConstantOp>(b.getAttr<LIT::NoneAttr>());
-
-    // Wrap the result value if necessary.
-    if (func.isThrows())
-      retVal = b.create<VariantCreateOp>(func.getResultType(), retVal);
-    b.create<KGEN::ReturnOp>(retVal);
-  }
-  endFunc->erase();
-  return success();
+  // A return is required if the function, diagnose it if missing.
+  return emitError(endFunc->getLoc(),
+                   "return expected at end of function with results");
 }
 
 //===----------------------------------------------------------------------===//
@@ -485,8 +469,10 @@ struct LowerSemanticCFPass : impl::LowerSemanticCFBase<LowerSemanticCFPass> {
       // Lower things like lit.break into hlcf.break which are terminators,
       // and diagnose unreachable code.
       hadError |= failed(lowerSemanticCF(func));
+
       // Lower 'lit.param.return' into 'kgen.param.result_bind'.
       hadError |= failed(lowerParamResults(func));
+
       // Lower nested functions by converting them to region declarations.
       // This could erase func!
       hadError |= failed(lowerNestedFunctions(func));

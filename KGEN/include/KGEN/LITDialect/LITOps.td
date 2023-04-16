@@ -80,6 +80,10 @@ def LIT_FuncOp : LITOp<"func", [
     /// Return a reference for this function, optionally bound to a set of
     /// parameter bindings.
     TypedAttr getBoundReference(ParameterExprArrayAttr bindings = {});
+
+    /// This adds a default return (lit.return of None, potentially converted
+    /// to a variant) and emits a EndFuncOp.
+    void appendDefaultReturnAndEndOp();
   }];
 
   let builders = [

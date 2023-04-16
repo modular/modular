@@ -14,7 +14,7 @@
 # CHECK-LABEL: lit.func @"pass()
 def `pass`():
     pass
-    # CHECK-NEXT: lit.end_func
+    # CHECK: lit.end_func
 
 
 ##===----------------------------------------------------------------------===##
@@ -180,6 +180,8 @@ fn test_while(a: Bool, b: Bool) -> Bool:
 # CHECK-NEXT:     }
 # CHECK-NEXT:     hlcf.continue
 # CHECK-NEXT:   }
+# CHECK-NEXT:   %0 = kgen.param.constant: !lit.none = <#lit.none>
+# CHECK-NEXT:   lit.return %0 :  !lit.none
 # CHECK-NEXT:   lit.end_func
 # CHECK-NEXT: }
 fn test_simple(a: Bool):
@@ -305,8 +307,8 @@ def tryExceptArgDef():
     # CHECK: except (%arg0: !kgen.declref<@{{.*}}::@Error>)
     except err:
         # CHECK-NEXT: lit.varlet.decl "err", var = true
-        # CHECK: %[[ERRVAL:.*]] = pop.load %err
-        # CHECK: eatError{{.*}}(%[[ERRVAL]])
+        # CHECK: [[ERRVAL:%.*]] = pop.load %err
+        # CHECK: eatError{{.*}}([[ERRVAL]])
         eatError(err)
 
 
@@ -319,12 +321,12 @@ def propagateErrorInDef():
     # CHECK: %[[VALUE:.*]] = kgen.call @"{{.*}}"::@"maybeRaises
     # CHECK: %1 = pop.variant.is !kgen.declref<@"$Int"::@Int>, %0
     # CHECK:  %2 = hlcf.if %1
-    # CHECK:    %3 = pop.variant.get %0 : !pop.variant<@{{.*}}::@Error, @"$Int"::@Int> as !kgen.declref<@"$Int"::@Int>
-    # CHECK:    hlcf.yield %3 : !kgen.declref<@"$Int"::@Int>
+    # CHECK:    [[VAR:%.*]] = pop.variant.get %0 : !pop.variant<@{{.*}}::@Error, @"$Int"::@Int> as !kgen.declref<@"$Int"::@Int>
+    # CHECK:    hlcf.yield [[VAR]] : !kgen.declref<@"$Int"::@Int>
     # CHECK:  } else {
-    # CHECK:    %3 = pop.variant.get %0 : !pop.variant<@{{.*}}::@Error, @"$Int"::@Int> as !kgen.declref<@{{.*}}::@Error>
-    # CHECK:    %4 = pop.variant.create %3 : !kgen.declref<@{{.*}}::@Error> -> !pop.variant<@{{.*}}::@Error, !lit.none>
-    # CHECK:    lit.return %4 : !pop.variant<@{{.*}}::@Error, !lit.none>
+    # CHECK:    [[ERR:%.*]] = pop.variant.get %0 : !pop.variant<@{{.*}}::@Error, @"$Int"::@Int> as !kgen.declref<@{{.*}}::@Error>
+    # CHECK:    [[VAR:%.*]] = pop.variant.create [[ERR]] : !kgen.declref<@{{.*}}::@Error> -> !pop.variant<@{{.*}}::@Error, !lit.none>
+    # CHECK:    lit.return [[VAR]] : !pop.variant<@{{.*}}::@Error, !lit.none>
     # CHECK:    kgen.unreachable
     # CHECK:  }
     # CHECK-NEXT: pop.store %2, %a
@@ -339,12 +341,12 @@ fn propagateErrorInRaisingFn():
     # CHECK:  %0 = kgen.call @"$statements"::@"maybeRaises()"() : () throws -> !pop.variant<@{{.*}}::@Error, @"$Int"::@Int>
     # CHECK:  %1 = pop.variant.is !kgen.declref<@"$Int"::@Int>, %0
     # CHECK:  %2 = hlcf.if %1 -> !kgen.declref<@"$Int"::@Int> {
-    # CHECK:    %3 = pop.variant.get %0
-    # CHECK:    hlcf.yield %3 : !kgen.declref<@"$Int"::@Int>
+    # CHECK:    [[ERR:%.*]] = pop.variant.get %0
+    # CHECK:    hlcf.yield [[ERR]] : !kgen.declref<@"$Int"::@Int>
     # CHECK:  } else {
-    # CHECK:    %3 = pop.variant.get %0
-    # CHECK:    %4 = pop.variant.create %3
-    # CHECK:    lit.return %4
+    # CHECK:    [[ERR:%.*]] = pop.variant.get %0
+    # CHECK:    [[VAR:%.*]] = pop.variant.create [[ERR]]
+    # CHECK:    lit.return [[VAR]]
     # CHECK:    kgen.unreachable
     # CHECK:  }
     # CHECK:  pop.store %2, %a
@@ -355,15 +357,15 @@ fn propagateErrorInTry():
     var a: Int
     # CHECK: lit.try
     try:
-        # CHECK: %0 = kgen.call @"$statements"::@"maybeRaises()"() : () throws -> !pop.variant<@{{.*}}::@Error, @"$Int"::@Int>
-        # CHECK: %1 = pop.variant.is !kgen.declref<@"$Int"::@Int>, %0 : !pop.variant<@{{.*}}::@Error, @"$Int"::@Int>
-        # CHECK: %2 = hlcf.if %1
+        # CHECK: %1 = kgen.call @"$statements"::@"maybeRaises()"() : () throws -> !pop.variant<@{{.*}}::@Error, @"$Int"::@Int>
+        # CHECK: %2 = pop.variant.is !kgen.declref<@"$Int"::@Int>, %1 : !pop.variant<@{{.*}}::@Error, @"$Int"::@Int>
+        # CHECK: %3 = hlcf.if %2
         # CHECK: } else {
-        # CHECK:   %3 = pop.variant.get %0
-        # CHECK:   lit.raise %3 : <@{{.*}}::@Error>
+        # CHECK:   [[ERR:%.*]] = pop.variant.get %1
+        # CHECK:   lit.raise [[ERR]] : <@{{.*}}::@Error>
         # CHECK: }
 
-        # CHECK-NEXT: pop.store %2, %a
+        # CHECK-NEXT: pop.store %3, %a
         a = maybeRaises()
         # CHECK-NEXT: lit.try.yield
     except:

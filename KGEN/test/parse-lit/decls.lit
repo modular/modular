@@ -86,7 +86,7 @@ def var_decls():
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.func @"empty_def()"() -> !lit.none {
-# CHECK-NEXT: lit.end_func
+# CHECK: lit.end_func
 fn empty_def():
   pass
 
@@ -512,6 +512,9 @@ fn fnThatRaises() -> Int:
 # CHECK-LABEL: lit.func @"raisesReturnsNone()"() throws -> !pop.variant<@{{.*}}::@Error, !lit.none>
 @raises
 fn raisesReturnsNone():
+    # CHECK-NEXT: %0 = kgen.param.constant: !lit.none
+    # CHECK-NEXT: %1 = pop.variant.create %0
+    # CHECK-NEXT: lit.return %1
     # CHECK-NEXT: lit.end_func
     pass
 
