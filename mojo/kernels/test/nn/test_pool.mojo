@@ -72,9 +72,10 @@ fn pool(pool_method: Int):
     )
 
     # Create an output buffer.
-    var output_buffer = (
-        NDBuffer[4, out_shape, DType.f32.value].stack_allocation().fill(0)
-    )
+    var output_buffer = NDBuffer[
+        4, out_shape, DType.f32.value
+    ].stack_allocation()
+    output_buffer.fill(0)
 
     var output = ImageData[out_shape, DType.f32.value, Image2DLayout.NCHW](
         output_buffer

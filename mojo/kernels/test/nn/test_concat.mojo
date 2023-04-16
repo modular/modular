@@ -25,9 +25,12 @@ fn test_concat():
     alias rank = 4
     alias concat_axis = 2
 
-    let x1 = Buffer[x1_sz, type].stack_allocation().fill(0)
-    let x2 = Buffer[x2_sz, type].stack_allocation().fill(1)
-    let x3 = Buffer[x3_sz, type].stack_allocation().fill(2)
+    var x1 = Buffer[x1_sz, type].stack_allocation()
+    x1.fill(0)
+    var x2 = Buffer[x2_sz, type].stack_allocation()
+    x2.fill(1)
+    var x3 = Buffer[x3_sz, type].stack_allocation()
+    x3.fill(2)
     let s1 = StaticIntTuple[max_rank](2, 2, 1, 2, 0)
     let s2 = StaticIntTuple[max_rank](2, 2, 2, 2, 0)
     let s3 = StaticIntTuple[max_rank](2, 2, 3, 2, 0)
@@ -43,7 +46,8 @@ fn test_concat():
     )
 
     alias out_sz = x1_sz + x2_sz + x3_sz
-    let _output = Buffer[out_sz, type].stack_allocation().fill(-1)
+    var _output = Buffer[out_sz, type].stack_allocation()
+    _output.fill(-1)
     let output = Buffer[Dim(), type](_output.data, _output.__len__())
 
     let input_list = VariadicList[DynamicRankBuffer](x1_dyn, x2_dyn, x3_dyn)
