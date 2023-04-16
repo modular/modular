@@ -775,9 +775,9 @@ LitSharedState::createModuleState(StringRef moduleName,
                                   const llvm::MemoryBuffer *moduleBuffer,
                                   FileLineColLoc loc) {
   StringAttr mangledName = getMangledModuleName(getContext(), moduleName);
-  LitLexer lexer(*this, moduleBuffer);
-  LitLexerCursor endCursor(
-      {LitToken::eof, StringRef(moduleBuffer->getBufferEnd() + 1, 0), 0});
+  Lexer lexer(*this, moduleBuffer);
+  LexerCursor endCursor(
+      {Token::eof, StringRef(moduleBuffer->getBufferEnd() + 1, 0), 0});
 
   // Create a new decl for this module.
   auto moduleBuilder = impl->topLevelDecl->getDeclEndBuilder();
@@ -1014,6 +1014,6 @@ ArrayRef<std::string> LitSharedState::getIncludedFiles() const {
 
 /// Given a pointer to the start of a token, find the end of it.
 static void adjustTokenEndPoint(LitSharedState &shared, SMLoc &loc) {
-  size_t tokenSize = LitLexer::getTokenLength(shared, loc);
+  size_t tokenSize = Lexer::getTokenLength(shared, loc);
   loc = SMLoc::getFromPointer(loc.getPointer() + tokenSize);
 }

@@ -12,7 +12,7 @@
 #ifndef LIT_PARSER_BASE_H
 #define LIT_PARSER_BASE_H
 
-#include "LitLexer.h"
+#include "Lexer.h"
 #include "mlir/IR/Diagnostics.h"
 
 namespace M::KGEN::LIT {
@@ -27,13 +27,13 @@ class ASTDecl;
 /// which is independent of the concrete grammar.
 class LitParserBase : public LitSharedStateUser {
 public:
-  LitParserBase(LitLexer &lexer)
+  LitParserBase(Lexer &lexer)
       : LitSharedStateUser(lexer.shared), lexer(lexer) {}
 
-  LitLexer &getLexer() { return lexer; }
+  Lexer &getLexer() { return lexer; }
 
   /// Return the current token the parser is inspecting.
-  const LitToken &getToken() const { return lexer.getToken(); }
+  const Token &getToken() const { return lexer.getToken(); }
   StringRef getTokenSpelling() const { return getToken().getSpelling(); }
 
   //===--------------------------------------------------------------------===//
@@ -63,7 +63,7 @@ public:
 
   /// This returns the current lexer cursor and succeeds, so it can be used in a
   /// parser pipeline.
-  ParseResult getCursor(LitLexerCursor &cursor) const {
+  ParseResult getCursor(LexerCursor &cursor) const {
     cursor = lexer.getCursor();
     return success();
   }
@@ -86,7 +86,7 @@ public:
   /// If the current token has the specified kind, consume it and return true.
   /// If not, return false.  If 'tokLoc' is non-null, it is filled in with the
   /// location of the consumed token (on success).
-  bool consumeIf(LitToken::Kind kind, llvm::SMLoc *tokLoc = nullptr) {
+  bool consumeIf(Token::Kind kind, llvm::SMLoc *tokLoc = nullptr) {
     if (getToken().isNot(kind))
       return false;
     if (tokLoc)
@@ -98,9 +98,9 @@ public:
   /// Advance the current lexer onto the next token.
   ///
   /// This returns the consumed token.
-  LitToken consumeToken() {
-    LitToken consumedToken = getToken();
-    assert(consumedToken.isNot(LitToken::eof) && "shouldn't advance past EOF");
+  Token consumeToken() {
+    Token consumedToken = getToken();
+    assert(consumedToken.isNot(Token::eof) && "shouldn't advance past EOF");
     lexer.lexToken();
     return consumedToken;
   }
@@ -110,8 +110,8 @@ public:
   /// to more self-documenting code with better checking.
   ///
   /// This returns the consumed token.
-  LitToken consumeToken(LitToken::Kind kind) {
-    LitToken consumedToken = getToken();
+  Token consumeToken(Token::Kind kind) {
+    Token consumedToken = getToken();
     assert(consumedToken.is(kind) && "consumed an unexpected token");
     consumeToken();
     return consumedToken;
@@ -120,7 +120,7 @@ public:
   /// Consume the specified token if present and return success.  On failure,
   /// output a diagnostic and return failure. If `loc` is set, it is populated
   /// with the source location of the token.
-  ParseResult parseToken(LitToken::Kind expectedToken, const Twine &message,
+  ParseResult parseToken(Token::Kind expectedToken, const Twine &message,
                          SMLoc *loc = nullptr);
 
   /// Consume an identifier token, binding its name into the specified result
@@ -134,7 +134,7 @@ public:
   ///
   /// list ::= (element)* STOPTOKEN
   ///
-  ParseResult parseListUntil(LitToken::Kind stopToken,
+  ParseResult parseListUntil(Token::Kind stopToken,
                              const std::function<ParseResult()> &parseElement);
 
   /// Parse a list of elements continued with a separator token, like a comma.
@@ -144,15 +144,14 @@ public:
   /// separated_list ::= (element (SEPARATOR element)* [SEPARATOR] TERMINATOR
   ///
   ParseResult
-  parseSeparatedList(LitToken::Kind separator,
+  parseSeparatedList(Token::Kind separator,
                      const std::function<ParseResult()> &parseElement,
-                     ArrayRef<LitToken::Kind> terminators,
-                     bool *hadTrailingSep);
+                     ArrayRef<Token::Kind> terminators, bool *hadTrailingSep);
   ParseResult
   parseCommaSeparatedList(const std::function<ParseResult()> &parseElement,
-                          ArrayRef<LitToken::Kind> terminators,
+                          ArrayRef<Token::Kind> terminators,
                           bool *hadTrailingSep = nullptr) {
-    return parseSeparatedList(LitToken::comma, parseElement, terminators,
+    return parseSeparatedList(Token::comma, parseElement, terminators,
                               hadTrailingSep);
   }
 
@@ -171,7 +170,7 @@ public:
   /// eat trailing components that lack a \.
   void eatToEndOfLine() {
     while (!getToken().getIndentation().has_value() &&
-           getToken().isNot(LitToken::eof))
+           getToken().isNot(Token::eof))
       consumeToken();
   }
 
@@ -208,10 +207,10 @@ public:
   ExprNode *getNoneExpr(SMLoc loc);
 
   /// Parse a 'suite' production into the declaration specified by `decl`.
-  static ParseResult parseSuite(ASTDecl &decl, LitLexer &lexer);
+  static ParseResult parseSuite(ASTDecl &decl, Lexer &lexer);
 
 public:
-  LitLexer &lexer;
+  Lexer &lexer;
 
   LitParserBase(const LitParserBase &) = delete;
   void operator=(const LitParserBase &) = delete;

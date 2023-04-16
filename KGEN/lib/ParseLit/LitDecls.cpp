@@ -11,10 +11,10 @@
 #include "LitDecls.h"
 #include "ASTDecl.h"
 #include "IRValues.h"
+#include "Lexer.h"
 #include "LitDocString.h"
 #include "LitExprEmitter.h"
 #include "LitExprNodes.h"
-#include "LitLexer.h"
 #include "LitParameterEvaluator.h"
 #include "LitParserBase.h"
 
@@ -158,8 +158,8 @@ DeclResolver::~DeclResolver() {
 
 /// Add a new declaration that needs to be resolved.
 ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
-                               ASTDecl *parentDecl, LitLexerCursor cursor,
-                               LitLexerCursor endCursor, ssize_t indentation) {
+                               ASTDecl *parentDecl, LexerCursor cursor,
+                               LexerCursor endCursor, ssize_t indentation) {
   ASTDecl *decl = shared.allocPersistent<ASTDecl>(
       irValue, loc, parentDecl, cursor, endCursor, indentation);
   parsedDeclList.push_back(decl);
@@ -367,8 +367,8 @@ LogicalResult DeclResolver::importWildCardDeclsFromModule(ASTDecl &context,
 
 /// Add a new declaration that needs to be resolved.
 ASTDecl &DeclResolver::addDecl(Operation *op, SMLoc loc, StringAttr name,
-                               ASTDecl *parentDecl, LitLexerCursor cursor,
-                               LitLexerCursor endCursor, ssize_t indentation) {
+                               ASTDecl *parentDecl, LexerCursor cursor,
+                               LexerCursor endCursor, ssize_t indentation) {
   return addDecl(DeclIRValue(op), loc, name, parentDecl, cursor, endCursor,
                  indentation);
 }
@@ -377,8 +377,8 @@ ASTDecl &DeclResolver::addDecl(Operation *op, SMLoc loc, StringAttr name,
 ASTDecl &DeclResolver::addFullyResolvedDecl(DeclIRValue declVal,
                                             StringAttr name, SMLoc loc,
                                             ASTDecl *parentDecl) {
-  auto &decl = addDecl(declVal, loc, name, parentDecl, LitLexerCursor(),
-                       LitLexerCursor(), 0);
+  auto &decl =
+      addDecl(declVal, loc, name, parentDecl, LexerCursor(), LexerCursor(), 0);
   decl.resolvedness = DeclResolvedness::fully;
   return decl;
 }
@@ -469,7 +469,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     TypeSwitch<ASTDecl &>(decl)
         .Case<LIT::FuncOp, StructDeclOp, StructFieldOp, VarLetDeclOp,
               ParamDeclareOp, UnresolvedImportOp>([&](auto op) {
-          LitLexer lexer(shared, decl.getCursor());
+          Lexer lexer(shared, decl.getCursor());
 
           // Resolve the signature: on a parse error, we note that the decl
           // is malformed and should not be referenced to silence downstream
@@ -498,14 +498,14 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
   // If the declaration hasn't been fully parsed and we need to, do so.
   if (decl.resolvedness < DeclResolvedness::fully &&
       howResolved == DeclResolvedness::fully) {
-    auto checkEndOfBodyCursor = [&](LitLexer &lexer) {
+    auto checkEndOfBodyCursor = [&](Lexer &lexer) {
       // If the final parse of the declaration didn't match the initial
       // parse, report an error about unrecognized tokens at end of
       // declaration.
       if (!decl.isMatchingEndCursor(lexer.getCursor()) &&
           !decl.hasReferenceError) {
-        if (lexer.getToken().isAny(LitToken::kw_def, LitToken::kw_struct,
-                                   LitToken::kw_class, LitToken::kw_var))
+        if (lexer.getToken().isAny(Token::kw_def, Token::kw_struct,
+                                   Token::kw_class, Token::kw_var))
           lexer.emitTokenError(
               "definition isn't on its own line at the correct "
               "indentation");
@@ -520,7 +520,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
               VarLetDeclOp, LetRegDeclOp, ParamDeclareOp, AliasForwardDeclOp>(
             [&](auto op) {
               // Parse the body of the declaration from the correct point.
-              LitLexer lexer(shared, decl.getCursor());
+              Lexer lexer(shared, decl.getCursor());
               if (resolveBody(op, lexer, decl))
                 return;
 
@@ -709,11 +709,11 @@ struct ParsedArgument {
     // NOTE: We might consider a postfix ^ syntax after the language bakes out
     // more, that is probably going to be tightly coupled to ownership transfer,
     // but this is more explicit for now.
-    if (p.consumeIf(LitToken::kw_owned))
+    if (p.consumeIf(Token::kw_owned))
       convention = kConventionOwned;
 
     SMLoc borrowLoc;
-    if (p.consumeIf(LitToken::kw_borrowed, &borrowLoc)) {
+    if (p.consumeIf(Token::kw_borrowed, &borrowLoc)) {
       if (convention != kConventionUnspec)
         p.emitError(borrowLoc, "argument already has a convention specified");
       convention = kConventionBorrowed;
@@ -724,18 +724,17 @@ struct ParsedArgument {
     // The first token of an argument may be a standalone '*' or '/' marker, and
     // the '*' may also be part of a varargs specification.  Check for these
     // first.
-    if (p.consumeIf(LitToken::slash)) {
+    if (p.consumeIf(Token::slash)) {
       markerInfo = KWArgMarkerInfo::kSlash;
       return success();
     }
-    if (p.consumeIf(LitToken::star)) {
-      if (p.getToken().isAny(LitToken::comma, LitToken::r_paren,
-                             LitToken::r_square)) {
+    if (p.consumeIf(Token::star)) {
+      if (p.getToken().isAny(Token::comma, Token::r_paren, Token::r_square)) {
         markerInfo = KWArgMarkerInfo::kStar;
         return success();
       }
       vararg = VarArgKind::VarArg;
-    } else if (p.consumeIf(LitToken::star_star)) {
+    } else if (p.consumeIf(Token::star_star)) {
       vararg = VarArgKind::KWVarArg;
       kwArgHandling = KWArgHandling::kKeywordOnly;
     }
@@ -747,7 +746,7 @@ struct ParsedArgument {
 
     // Process any convention markers.
     SMLoc ampLoc;
-    if (p.consumeIf(LitToken::amp, &ampLoc)) { // '&' => by-ref
+    if (p.consumeIf(Token::amp, &ampLoc)) { // '&' => by-ref
       if (convention != kConventionUnspec)
         p.emitError(ampLoc, "argument already has a convention specified");
       else
@@ -755,9 +754,9 @@ struct ParsedArgument {
     }
 
     // Parse an optional type annotation: `":" ["*"] expression`.
-    if (p.consumeIf(LitToken::colon)) {
+    if (p.consumeIf(Token::colon)) {
       SMLoc starLoc = p.getToken().getLoc();
-      if (p.getToken().getKind() == LitToken::star) {
+      if (p.getToken().getKind() == Token::star) {
         if (vararg != VarArgKind::VarArg)
           p.emitError(starLoc, "only variadic arguments' types can be unpacked")
                   .attachNote(identifierLoc)
@@ -770,7 +769,7 @@ struct ParsedArgument {
 
     // Parse an optional default argument value: `"=" expression`.
     SMLoc equalLoc;
-    if (p.consumeIf(LitToken::equal, &equalLoc)) {
+    if (p.consumeIf(Token::equal, &equalLoc)) {
       if (p.parseExpression(initExpr, std::nullopt))
         return failure();
 
@@ -799,11 +798,11 @@ struct ParsedArgument {
                                      SmallVectorImpl<ParsedArgument> &args,
                                      bool isParameterList) {
     // Figure out where to stop scanning.
-    SmallVector<LitToken::Kind, 2> stopTokens;
+    SmallVector<Token::Kind, 2> stopTokens;
     if (isParameterList)
-      stopTokens.append({LitToken::r_square, LitToken::minus_greater});
+      stopTokens.append({Token::r_square, Token::minus_greater});
     else
-      stopTokens.push_back(LitToken::r_paren);
+      stopTokens.push_back(Token::r_paren);
 
     // As we parse all of the arguments and the keyword arguments and markers,
     // we resolve the markers and check the invariants.  Python's parameter
@@ -916,14 +915,14 @@ parseOptionalParameterSignature(LitParserBase &p, ASTDecl &declScope,
                                 SmallVector<ParamDeclAttr> &inputParams,
                                 SmallVector<ParamDeclAttr> &resultParams,
                                 bool &paramVararg) {
-  if (!p.consumeIf(LitToken::l_square) || p.consumeIf(LitToken::r_square))
+  if (!p.consumeIf(Token::l_square) || p.consumeIf(Token::r_square))
     return success();
 
   SmallVector<ParsedArgument> args;
 
   // Parse the meta parameters.  We either have () or a parameter list.
-  if (p.consumeIf(LitToken::l_paren)) {
-    if (p.parseToken(LitToken::r_paren,
+  if (p.consumeIf(Token::l_paren)) {
+    if (p.parseToken(Token::r_paren,
                      "expected ')' in empty parameter list; try dropping the "
                      "'(' if you have parameters"))
       return failure();
@@ -1000,7 +999,7 @@ parseOptionalParameterSignature(LitParserBase &p, ASTDecl &declScope,
   processParameterArgs(args, inputParams, /*isResultParams=*/false);
 
   // Parse the meta results if present.
-  if (p.consumeIf(LitToken::minus_greater)) {
+  if (p.consumeIf(Token::minus_greater)) {
     args.clear();
     // Parse a result parameter list.
     if (ParsedArgument::parseAndResolvePresentArgumentList(
@@ -1008,7 +1007,7 @@ parseOptionalParameterSignature(LitParserBase &p, ASTDecl &declScope,
       return failure();
     processParameterArgs(args, resultParams, /*isResultParams=*/true);
   }
-  return p.parseToken(LitToken::r_square, "expected ']' for parameter list");
+  return p.parseToken(Token::r_square, "expected ']' for parameter list");
 }
 
 //===----------------------------------------------------------------------===//
@@ -1017,7 +1016,7 @@ parseOptionalParameterSignature(LitParserBase &p, ASTDecl &declScope,
 
 void LitParserBase::parseDocString(ASTDecl &decl) {
   // The doc string is simply a follow-on string literal.
-  if (getToken().isNot(LitToken::string))
+  if (getToken().isNot(Token::string))
     return;
   decl.setDocString(consumeToken());
 }
@@ -1034,7 +1033,7 @@ SmallVector<ExprNode *> LitParserBase::parseDecorators(ssize_t indentation) {
   SmallVector<ExprNode *> result;
   if (getToken().getIndentation())
     indentation = getToken().getIndentation().value();
-  while (consumeIf(LitToken::at)) {
+  while (consumeIf(Token::at)) {
     ExprNode *decoratorExpr;
     if (parseExpression(decoratorExpr, indentation))
       break;
@@ -1566,14 +1565,13 @@ static bool isMainFunction(StringAttr &name, LIT::FuncOp func,
 /// funcdef ::=  [decorators] "def" identifier [meta_signature]
 ///              "(" [argument_list] ")" ["->" expression] ":" suite
 ///
-LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
-                                             LitLexer &lexer, ASTDecl &decl) {
+LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
+                                             ASTDecl &decl) {
   LitParserBase p(lexer);
   SmallVector<ExprNode *> decoratorExprs = p.parseDecorators(decl);
-  assert(p.getToken().isAny(LitToken::kw_async, LitToken::kw_def,
-                            LitToken::kw_fn) &&
+  assert(p.getToken().isAny(Token::kw_async, Token::kw_def, Token::kw_fn) &&
          "not a function definition?");
-  p.consumeIf(LitToken::kw_async);
+  p.consumeIf(Token::kw_async);
   p.consumeToken();
 
   StringAttr baseName;
@@ -1607,24 +1605,24 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   // values.
   if (parseOptionalParameterSignature(p, decl, inputParamDecls,
                                       resultParamDecls, paramVararg) ||
-      p.parseToken(LitToken::l_paren, "expected '(' for parameter list"))
+      p.parseToken(Token::l_paren, "expected '(' for parameter list"))
     return failure();
 
   // Parse the argument list next if present.
-  if (!p.consumeIf(LitToken::r_paren)) {
+  if (!p.consumeIf(Token::r_paren)) {
     if (ParsedArgument::parseAndResolvePresentArgumentList(
             p, args, /*isParameterList=*/false) ||
-        p.parseToken(LitToken::r_paren, "expected ')' in argument list"))
+        p.parseToken(Token::r_paren, "expected ')' in argument list"))
       return failure();
   }
 
   // Parse the result type if present.
   ExprNode *resultTypeExpr = nullptr;
-  if (p.consumeIf(LitToken::minus_greater)) {
+  if (p.consumeIf(Token::minus_greater)) {
     if (p.parseExpression(resultTypeExpr, std::nullopt))
       return failure();
   }
-  if (p.parseToken(LitToken::colon, "expected ':' in function definition"))
+  if (p.parseToken(Token::colon, "expected ':' in function definition"))
     return failure();
 
   // Resolve the result parameter types now that the arguments are in scope.
@@ -1782,8 +1780,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
     // create the decls here in order to pass location information for each
     // argument over to body resolution.
     if (arg.kgenConvention != ValueInputConvention::ByRefResult)
-      addDecl(DeclIRValue(), arg.loc, arg.name, &decl, LitLexerCursor(),
-              LitLexerCursor(), /*indent*/ 0);
+      addDecl(DeclIRValue(), arg.loc, arg.name, &decl, LexerCursor(),
+              LexerCursor(), /*indent*/ 0);
   }
 
   OpBuilder builder = decl.getDeclEndBuilder();
@@ -1892,7 +1890,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   return success();
 }
 
-ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, LitLexer &lexer,
+ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
                                       ASTDecl &decl) {
   // Push the debug scope for this function if necessary so that nested
   // operations have proper debug info.
@@ -2070,7 +2068,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, LitLexer &lexer,
 // Module Decl implementation
 //===----------------------------------------------------------------------===//
 
-ParseResult DeclResolver::resolveBody(LIT::FileModuleOp op, LitLexer &lexer,
+ParseResult DeclResolver::resolveBody(LIT::FileModuleOp op, Lexer &lexer,
                                       ASTDecl &decl) {
   // Push a scope for the file of this module.
   DebugInfo::DIBuilder::ScopeGuard fileGuard;
@@ -2094,26 +2092,25 @@ ParseResult DeclResolver::resolveBody(LIT::FileModuleOp op, LitLexer &lexer,
 /// var_decl_stmt ::= var_or_let identifier ":" expression ["=" expression]
 ///                 | var_or_let identifier "=" expression
 /// var_or_let    ::= "var" | "let"
-LogicalResult DeclResolver::resolveSignature(VarLetDeclOp varOp,
-                                             LitLexer &lexer, ASTDecl &decl) {
+LogicalResult DeclResolver::resolveSignature(VarLetDeclOp varOp, Lexer &lexer,
+                                             ASTDecl &decl) {
   LitParserBase p(lexer);
   SmallVector<ExprNode *> decorators = p.parseDecorators(decl);
 
   p.consumeToken(); // eat the let/var.
-  if (p.parseToken(LitToken::identifier,
-                   "internal error: checked by stmt parser"))
+  if (p.parseToken(Token::identifier, "internal error: checked by stmt parser"))
     return failure();
 
   //  Parse the type if present.
   ASTType parsedType;
-  if (p.consumeIf(LitToken::colon)) {
+  if (p.consumeIf(Token::colon)) {
     if (parseType(p, parsedType, *decl.getParentDecl(), decl.getIndentation()))
       return failure();
   }
 
   // Parse the initializer if present.
   ExprNode *initExpr = nullptr;
-  if (p.consumeIf(LitToken::equal)) {
+  if (p.consumeIf(Token::equal)) {
     if (p.parseExpression(initExpr, decl.getIndentation()))
       return failure();
   }
@@ -2188,12 +2185,12 @@ LogicalResult DeclResolver::resolveSignature(VarLetDeclOp varOp,
   return success();
 }
 
-ParseResult DeclResolver::resolveBody(VarLetDeclOp op, LitLexer &lexer,
+ParseResult DeclResolver::resolveBody(VarLetDeclOp op, Lexer &lexer,
                                       ASTDecl &decl) {
   return success();
 }
 
-ParseResult DeclResolver::resolveBody(LetRegDeclOp op, LitLexer &lexer,
+ParseResult DeclResolver::resolveBody(LetRegDeclOp op, Lexer &lexer,
                                       ASTDecl &decl) {
   return success();
 }
@@ -2206,25 +2203,23 @@ ParseResult DeclResolver::resolveBody(LetRegDeclOp op, LitLexer &lexer,
 ///                   | "alias" identifier "=" expression
 ///
 LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
-                                             LitLexer &lexer, ASTDecl &decl) {
+                                             Lexer &lexer, ASTDecl &decl) {
   LitParserBase p(lexer);
   SmallVector<ExprNode *> decoratorExprs = p.parseDecorators(decl);
 
   // Parse the type if present.
-  if (p.parseToken(LitToken::kw_alias,
-                   "internal error: checked by stmt parser") ||
-      p.parseToken(LitToken::identifier,
-                   "internal error: checked by stmt parser"))
+  if (p.parseToken(Token::kw_alias, "internal error: checked by stmt parser") ||
+      p.parseToken(Token::identifier, "internal error: checked by stmt parser"))
     return failure();
 
   ASTType type;
-  if (p.consumeIf(LitToken::colon)) {
+  if (p.consumeIf(Token::colon)) {
     if (parseType(p, type, *decl.getParentDecl(), decl.getIndentation()))
       return failure();
   }
 
   // Handle the case where there is no initializer.
-  if (!p.consumeIf(LitToken::equal)) {
+  if (!p.consumeIf(Token::equal)) {
     // If there was neither a type or initializer, reject the var.
     if (!type) {
       p.emitError(paramDeclOp.getLoc(),
@@ -2287,13 +2282,13 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
   return success();
 }
 
-ParseResult DeclResolver::resolveBody(ParamDeclareOp op, LitLexer &lexer,
+ParseResult DeclResolver::resolveBody(ParamDeclareOp op, Lexer &lexer,
                                       ASTDecl &decl) {
   return success();
 }
 
 ParseResult DeclResolver::resolveBody(AliasForwardDeclOp aliasFwdDeclOp,
-                                      LitLexer &lexer, ASTDecl &decl) {
+                                      Lexer &lexer, ASTDecl &decl) {
   return success();
 }
 
@@ -2305,20 +2300,20 @@ ParseResult DeclResolver::resolveBody(AliasForwardDeclOp aliasFwdDeclOp,
 ///   [decorators] "struct" identifier [meta_signature] ":" suite
 ///
 LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
-                                             LitLexer &lexer, ASTDecl &decl) {
+                                             Lexer &lexer, ASTDecl &decl) {
   LitParserBase p(lexer);
   SmallVector<ExprNode *> decoratorExprs = p.parseDecorators(decl);
 
   SmallVector<ParamDeclAttr> inputParamDecls;
   SmallVector<ParamDeclAttr> resultParamDecls;
   bool paramVarargs = false;
-  if (p.parseToken(LitToken::kw_struct,
+  if (p.parseToken(Token::kw_struct,
                    "internal error: checked by stmt parser") ||
-      p.parseToken(LitToken::identifier,
+      p.parseToken(Token::identifier,
                    "internal error: checked by stmt parser") ||
       parseOptionalParameterSignature(p, decl, inputParamDecls,
                                       resultParamDecls, paramVarargs) ||
-      p.parseToken(LitToken::colon, "expected ':' in struct definition"))
+      p.parseToken(Token::colon, "expected ':' in struct definition"))
     return failure();
 
   structOp.setInputParams(inputParamDecls);
@@ -2442,7 +2437,7 @@ static TypedAttr synthesizeEmptyDtor(StructDeclOp structOp, ASTDecl &structDecl,
   return funcOp.getBoundReference();
 }
 
-ParseResult DeclResolver::resolveBody(StructDeclOp structOp, LitLexer &lexer,
+ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
                                       ASTDecl &structDecl) {
   if (LitParserBase::parseSuite(structDecl, lexer))
     return failure();
@@ -2542,17 +2537,16 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, LitLexer &lexer,
 /// TODO: Support default values?
 ///
 LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
-                                             LitLexer &lexer, ASTDecl &decl) {
+                                             Lexer &lexer, ASTDecl &decl) {
   LitParserBase p(lexer);
   SmallVector<ExprNode *> decoratorExprs = p.parseDecorators(decl);
 
   ASTType type;
   // Parse the type if present.
   p.consumeToken(); // let or var.
-  if (p.parseToken(LitToken::identifier,
+  if (p.parseToken(Token::identifier,
                    "internal error: checked by stmt parser") ||
-      p.parseToken(LitToken::colon,
-                   "struct field declaration must have a type") ||
+      p.parseToken(Token::colon, "struct field declaration must have a type") ||
       parseType(p, type, *decl.getParentDecl(), decl.getIndentation()))
     return failure();
 
@@ -2561,7 +2555,7 @@ LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
   return success();
 }
 
-ParseResult DeclResolver::resolveBody(StructFieldOp op, LitLexer &lexer,
+ParseResult DeclResolver::resolveBody(StructFieldOp op, Lexer &lexer,
                                       ASTDecl &decl) {
   return success();
 }
@@ -2571,7 +2565,7 @@ ParseResult DeclResolver::resolveBody(StructFieldOp op, LitLexer &lexer,
 //===----------------------------------------------------------------------===//
 
 ParseResult DeclResolver::resolveSignature(LIT::UnresolvedImportOp op,
-                                           LitLexer &lexer, ASTDecl &decl) {
+                                           Lexer &lexer, ASTDecl &decl) {
   // Check if we are importing a specific decl within the module, or the
   // module itself.
   if (auto declName = op.getDeclNameAttr()) {

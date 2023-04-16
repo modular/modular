@@ -14,11 +14,11 @@ add_modular_conversion_library(ParseLit
   LitExprEmitter.cpp
   LitExprNodes.cpp
   LitExprParser.cpp
-  LitLexer.cpp
+  Lexer.cpp
   LitParserBase.cpp
   LitSharedState.cpp
   LitStmtParser.cpp
-  ParseLit.cpp
+  ParseDriver.cpp
 
   DEPENDS
   KGENVersion

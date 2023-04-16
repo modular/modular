@@ -9,10 +9,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "ASTDecl.h"
+#include "Lexer.h"
 #include "LitDecls.h"
 #include "LitExprEmitter.h"
 #include "LitExprNodes.h"
-#include "LitLexer.h"
 #include "LitParserBase.h"
 
 #include "KGEN/CompilationOptions.h"
@@ -54,7 +54,7 @@ static OpT getBlockParentOfType(Block *block) {
 /// grammar.
 namespace {
 struct LitStmtParser : public LitParserBase {
-  LitStmtParser(LitLexer &lexer, ASTDecl &containingDecl)
+  LitStmtParser(Lexer &lexer, ASTDecl &containingDecl)
       : LitParserBase(lexer), containingDecl(containingDecl),
         builder(containingDecl.getDeclEndBuilder()) {
 
@@ -100,7 +100,7 @@ struct LitStmtParser : public LitParserBase {
                         size_t curIndent);
 
   // Compound statements.
-  ParseResult parseIfStmt(LitLexerCursor startCursor, size_t curIndent);
+  ParseResult parseIfStmt(LexerCursor startCursor, size_t curIndent);
   ParseResult parseWhileStmt(size_t curIndent);
   ParseResult parseForStmt(size_t curIndent);
   ParseResult parseTryStmt(size_t curIndent);
@@ -109,18 +109,18 @@ struct LitStmtParser : public LitParserBase {
   ParseResult parseReturnStmt(size_t returnIndent);
   ParseResult parseParamReturnStmt(size_t returnIndent);
   ParseResult parseRaiseStmt(size_t raiseIndent);
-  ParseResult parseBreakOrContinueStmt(LitToken::Kind kind, StringRef name,
+  ParseResult parseBreakOrContinueStmt(Token::Kind kind, StringRef name,
                                        StringRef opName);
 
   // Declarations.
   ParseResult parseFromImportStmt();
   ParseResult parseImportStmt();
-  ParseResult parseDefFnStmt(LitLexerCursor startCursor, size_t curIndent);
-  ParseResult parseStructStmt(LitLexerCursor startCursor, size_t curIndent);
-  ParseResult parseClassStmt(LitLexerCursor startCursor, size_t curIndent);
-  ParseResult parseLetVarStmt(LitLexerCursor startCursor, size_t stmtIndent);
-  ParseResult parseAliasDeclStmt(LitLexerCursor startCursor, size_t stmtIndent);
-  ParseResult parseMLIRRegionStmt(LitLexerCursor startCursor, size_t curIndent);
+  ParseResult parseDefFnStmt(LexerCursor startCursor, size_t curIndent);
+  ParseResult parseStructStmt(LexerCursor startCursor, size_t curIndent);
+  ParseResult parseClassStmt(LexerCursor startCursor, size_t curIndent);
+  ParseResult parseLetVarStmt(LexerCursor startCursor, size_t stmtIndent);
+  ParseResult parseAliasDeclStmt(LexerCursor startCursor, size_t stmtIndent);
+  ParseResult parseMLIRRegionStmt(LexerCursor startCursor, size_t curIndent);
 
 private:
   /// This is declaration / scope that we're parsing into.
@@ -160,7 +160,7 @@ void LitStmtParser::pushLocalScope(
 /// stmt_list ::=  simple_stmt (";" simple_stmt)* [";"]
 ParseResult LitStmtParser::parseSuite(ssize_t curIndent) {
   // Ignore empty body at end of file: a `pass` is not required.
-  if (getToken().is(LitToken::eof))
+  if (getToken().is(Token::eof))
     return success();
 
   /// This function parses a stmt_list, and if simpleStmtOnly is false, it
@@ -183,7 +183,7 @@ ParseResult LitStmtParser::parseSuite(ssize_t curIndent) {
       stmtListOnly = true;
 
       // Continue if we see a semicolon that isn't at the end of the line.
-    } while (consumeIf(LitToken::semi) &&
+    } while (consumeIf(Token::semi) &&
              !getToken().getIndentation().has_value());
     return success();
   };
@@ -205,7 +205,7 @@ ParseResult LitStmtParser::parseSuite(ssize_t curIndent) {
     return success();
   }
 
-  while (getToken().isNot(LitToken::eof)) {
+  while (getToken().isNot(Token::eof)) {
     auto indent = getToken().getIndentation();
     if (!indent.has_value())
       return emitTokenError("statements must start at the beginning of a line");
@@ -327,7 +327,7 @@ ParseResult LitStmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
                                      size_t stmtIndent) {
   // This is the cursor for the start of the declaration, that will be used in
   // the signature resolution phase.
-  LitLexerCursor startCursor = getLexer().getCursor();
+  LexerCursor startCursor = getLexer().getCursor();
 
   // This emits an error message if we parsed a decorator, because this
   // statement doesn't support them.
@@ -350,82 +350,82 @@ ParseResult LitStmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
 
   // Skip over any decorators that are present.  These will be reparsed during
   // signature resolution phase of a declaration.
-  while (consumeIf(LitToken::at))
+  while (consumeIf(Token::at))
     skipUntilIndentation(stmtIndent);
 
   switch (getToken().getKind()) {
     //===------------------------------------------------------------------===//
     // Compound statements.
     //===------------------------------------------------------------------===//
-  case LitToken::kw_if:
+  case Token::kw_if:
     rejectSimpleStmt(); // Not a simple_stmt.
     return parseIfStmt(startCursor, stmtIndent);
-  case LitToken::kw_for:
+  case Token::kw_for:
     rejectDecorator();  // Decorators not allowed.
     rejectSimpleStmt(); // Not a simple_stmt.
     return parseForStmt(stmtIndent);
-  case LitToken::kw_while:
+  case Token::kw_while:
     rejectDecorator();  // Decorators not allowed.
     rejectSimpleStmt(); // Not a simple_stmt.
     return parseWhileStmt(stmtIndent);
-  case LitToken::kw_try:
+  case Token::kw_try:
     rejectDecorator(); // Decorators not allowed.
     rejectSimpleStmt();
     return parseTryStmt(stmtIndent);
-  case LitToken::kw_async:
-  case LitToken::kw_def:
-  case LitToken::kw_fn:
+  case Token::kw_async:
+  case Token::kw_def:
+  case Token::kw_fn:
     rejectSimpleStmt(); // Not a simple_stmt.
     return parseDefFnStmt(startCursor, stmtIndent);
-  case LitToken::kw_struct:
+  case Token::kw_struct:
     rejectSimpleStmt(); // Not a simple_stmt.
     return parseStructStmt(startCursor, stmtIndent);
-  case LitToken::kw_class:
+  case Token::kw_class:
     rejectSimpleStmt(); // Not a simple_stmt.
     return parseClassStmt(startCursor, stmtIndent);
 
     //===------------------------------------------------------------------===//
     // Simple statements.
     //===------------------------------------------------------------------===//
-  case LitToken::kw_from:
+  case Token::kw_from:
     rejectDecorator(); // Decorators not allowed.
     return parseFromImportStmt();
-  case LitToken::kw_import:
+  case Token::kw_import:
     rejectDecorator(); // Decorators not allowed.
     return parseImportStmt();
 
-  case LitToken::kw_pass:
-  case LitToken::dot_dot_dot:
-  case LitToken::string:
+  case Token::kw_pass:
+  case Token::dot_dot_dot:
+  case Token::string:
     // doc string
     // pass_stmt ::= "pass"
     consumeToken();
     return success();
-  case LitToken::kw_let:
-  case LitToken::kw_var:
+  case Token::kw_let:
+  case Token::kw_var:
     return parseLetVarStmt(startCursor, stmtIndent);
-  case LitToken::kw_alias:
+  case Token::kw_alias:
     return parseAliasDeclStmt(startCursor, stmtIndent);
-  case LitToken::kw___mlir_region:
+  case Token::kw___mlir_region:
     rejectDecorator();
     rejectSimpleStmt();
     return parseMLIRRegionStmt(startCursor, stmtIndent);
-  case LitToken::kw_return:
+  case Token::kw_return:
     rejectDecorator(); // Decorators not allowed.
     return parseReturnStmt(stmtIndent);
-  case LitToken::kw_param_return:
+  case Token::kw_param_return:
     rejectDecorator(); // Decorators not allowed.
     return parseParamReturnStmt(stmtIndent);
-  case LitToken::kw_raise:
+  case Token::kw_raise:
     rejectDecorator(); // Decorators not allowed.
     return parseRaiseStmt(stmtIndent);
-  case LitToken::kw_continue:
+  case Token::kw_continue:
     rejectDecorator(); // Decorators not allowed.
-    return parseBreakOrContinueStmt(LitToken::kw_continue, "continue",
+    return parseBreakOrContinueStmt(Token::kw_continue, "continue",
                                     LIT::ContinueOp::getOperationName());
-  case LitToken::kw_break:
+  case Token::kw_break:
     rejectDecorator(); // Decorators not allowed.
-    return parseBreakOrContinueStmt(LitToken::kw_break, "break",
+    return parseBreakOrContinueStmt(Token::kw_break, "break",
                                     LIT::BreakOp::getOperationName());
   default:
     break;
@@ -462,7 +462,7 @@ ParseResult LitStmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
 /// return_stmt ::= "return" [expression_list]
 ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   auto decl = dyn_cast<LIT::FuncOp>(containingDecl);
-  auto loc = consumeToken(LitToken::kw_return).getLoc();
+  auto loc = consumeToken(Token::kw_return).getLoc();
 
   // If there is an expression list present, parse it.
   SmallVector<ExprNode *> operandExprs;
@@ -531,7 +531,7 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
 
 /// param_return_stmt ::= "param_return" "[" expression ("," expression)* "]"
 ParseResult LitStmtParser::parseParamReturnStmt(size_t returnIndent) {
-  SMLoc loc = consumeToken(LitToken::kw_param_return).getLoc();
+  SMLoc loc = consumeToken(Token::kw_param_return).getLoc();
   auto decl = dyn_cast<LIT::FuncOp>(containingDecl);
   if (!decl) {
     emitError(loc, "invalid context for parameter return");
@@ -540,16 +540,16 @@ ParseResult LitStmtParser::parseParamReturnStmt(size_t returnIndent) {
 
   // Parse the result parameter list.
   SMLoc startLoc, endLoc;
-  if (parseToken(LitToken::l_square, "expected '[' to begin parameter list",
+  if (parseToken(Token::l_square, "expected '[' to begin parameter list",
                  &startLoc))
     return success();
   SmallVector<ExprNode *> exprs;
-  if (!consumeIf(LitToken::r_square, &endLoc)) {
+  if (!consumeIf(Token::r_square, &endLoc)) {
     // TODO use hadTrailingSep to return a singleton tuple ex. `return 1,`
     if (parseExpressionList(exprs, returnIndent,
                             /*hasTrailingComma=*/nullptr))
       return failure();
-    if (parseToken(LitToken::r_square, "expected ']' at end of parameter list",
+    if (parseToken(Token::r_square, "expected ']' at end of parameter list",
                    &endLoc))
       return success();
   }
@@ -643,7 +643,7 @@ LogicalResult ExprEmitter::emitRaise(SRValue errorValue, Location raiseLoc) {
 }
 
 ParseResult LitStmtParser::parseRaiseStmt(size_t raiseIndent) {
-  auto loc = consumeToken(LitToken::kw_raise).getLoc();
+  auto loc = consumeToken(Token::kw_raise).getLoc();
 
   ExprNode *errorExpr = nullptr;
   if (!getToken().getIndentation().has_value() ||
@@ -699,7 +699,7 @@ ParseResult LitStmtParser::parseRaiseStmt(size_t raiseIndent) {
 
 /// break_stmt ::= "break"
 /// continue_stmt ::= "continue"
-ParseResult LitStmtParser::parseBreakOrContinueStmt(LitToken::Kind kind,
+ParseResult LitStmtParser::parseBreakOrContinueStmt(Token::Kind kind,
                                                     StringRef name,
                                                     StringRef opName) {
   llvm::SMLoc loc = consumeToken(kind).getLoc();
@@ -724,12 +724,11 @@ ParseResult LitStmtParser::parseBreakOrContinueStmt(LitToken::Kind kind,
 /// while_stmt ::=  "while" assignment_expression ":" suite
 ///                 ["else" ":" suite]
 ParseResult LitStmtParser::parseWhileStmt(size_t curIndent) {
-  Location whileLoc =
-      translateLocation(consumeToken(LitToken::kw_while).getLoc());
+  Location whileLoc = translateLocation(consumeToken(Token::kw_while).getLoc());
 
   ExprNode *condExp = nullptr;
   if (parseExpression(condExp, std::nullopt) ||
-      parseToken(LitToken::colon, "expected ':' after expression"))
+      parseToken(Token::colon, "expected ':' after expression"))
     return failure();
 
   // We will be moving the builder into sub-regions that are created, make sure
@@ -761,10 +760,9 @@ ParseResult LitStmtParser::parseWhileStmt(size_t curIndent) {
 
   // The 'else' block is executed only when the condition check fails.
   if (getToken().getIndentation().has_value() &&
-      *getToken().getIndentation() >= curIndent &&
-      consumeIf(LitToken::kw_else)) {
+      *getToken().getIndentation() >= curIndent && consumeIf(Token::kw_else)) {
     builder.setInsertionPointToStart(exit);
-    if (parseToken(LitToken::colon, "expected ':' after else") ||
+    if (parseToken(Token::colon, "expected ':' after else") ||
         parseLocalScopeSuite(curIndent))
       return failure();
   }
@@ -774,7 +772,7 @@ ParseResult LitStmtParser::parseWhileStmt(size_t curIndent) {
 /// for_stmt ::=  "for" target_list "in" starred_list ":" suite
 ///              ["else" ":" suite]
 ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
-  Location forLoc = translateLocation(consumeToken(LitToken::kw_for).getLoc());
+  Location forLoc = translateLocation(consumeToken(Token::kw_for).getLoc());
 
   // parse [target_list] in [starred_list]
   // for now, we expect target_list to be an identifier
@@ -782,16 +780,16 @@ ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
   // returns a type that defines __len__ and __next__
   StringAttr target = StringAttr::get(getContext(), getToken().getSpelling());
   SMLoc identifierLocation;
-  if (parseToken(LitToken::identifier, "expected identifier for target in for",
+  if (parseToken(Token::identifier, "expected identifier for target in for",
                  &identifierLocation))
     return failure();
-  if (parseToken(LitToken::kw_in, "expected 'in' after target identifier. Note "
-                                  "that target lists are not yet supported."))
+  if (parseToken(Token::kw_in, "expected 'in' after target identifier. Note "
+                               "that target lists are not yet supported."))
     return failure();
 
   ExprNode *seqExp = nullptr;
   if (parseExpression(seqExp, std::nullopt) ||
-      parseToken(LitToken::colon, "expected ':' after expression"))
+      parseToken(Token::colon, "expected ':' after expression"))
     return failure();
 
   // We will be moving the builder into sub-regions that are created, make sure
@@ -868,10 +866,9 @@ ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
 
   // The 'else' block is executed only when the condition check fails.
   if (getToken().getIndentation().has_value() &&
-      *getToken().getIndentation() >= curIndent &&
-      consumeIf(LitToken::kw_else)) {
+      *getToken().getIndentation() >= curIndent && consumeIf(Token::kw_else)) {
     builder.setInsertionPointToStart(exit);
-    if (parseToken(LitToken::colon, "expected ':' after else") ||
+    if (parseToken(Token::colon, "expected ':' after else") ||
         parseLocalScopeSuite(curIndent))
       return failure();
   }
@@ -882,12 +879,12 @@ ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
 ///              ["else" suite]
 ParseResult LitStmtParser::parseTryStmt(size_t curIndent) {
   auto func = getBlockParentOfType<LIT::FuncOp>(builder.getInsertionBlock());
-  SMLoc loc = consumeToken(LitToken::kw_try).getLoc();
+  SMLoc loc = consumeToken(Token::kw_try).getLoc();
 
   // Restore the builder to its current insertion point after parsing.
   llvm::SaveAndRestore builderSaver(builder);
   auto tryOp = builder.create<TryOp>(translateLocation(loc));
-  if (parseToken(LitToken::colon, "expected ':' after 'try'"))
+  if (parseToken(Token::colon, "expected ':' after 'try'"))
     return failure();
 
   // Parse the try suite.
@@ -897,19 +894,19 @@ ParseResult LitStmtParser::parseTryStmt(size_t curIndent) {
   builder.create<TryYieldOp>(translateLocation(getToken().getLoc()));
 
   SMLoc errValLoc;
-  if (parseToken(LitToken::kw_except, "expected 'except' after try block",
+  if (parseToken(Token::kw_except, "expected 'except' after try block",
                  &errValLoc))
     return failure();
 
   // Parse an optional identifier to bind the error.
   StringAttr errName;
-  if (getToken().is(LitToken::identifier)) {
-    LitToken idTok = consumeToken(LitToken::identifier);
+  if (getToken().is(Token::identifier)) {
+    Token idTok = consumeToken(Token::identifier);
     errName = StringAttr::get(getContext(), idTok.getSpelling());
     errValLoc = idTok.getLoc();
   }
 
-  if (parseToken(LitToken::colon, "expected ':' after 'except'"))
+  if (parseToken(Token::colon, "expected ':' after 'except'"))
     return failure();
 
   ASTDecl *errorTypeDecl = shared.getBuiltinErrorType(errValLoc);
@@ -954,8 +951,8 @@ ParseResult LitStmtParser::parseTryStmt(size_t curIndent) {
 
   // Parse the else suite if present. Otherwise, leave it as empty.
   builder.createBlock(&tryOp.getElseRegion());
-  if (consumeIf(LitToken::kw_else)) {
-    if (parseToken(LitToken::colon, "expected ':' after 'else'") ||
+  if (consumeIf(Token::kw_else)) {
+    if (parseToken(Token::colon, "expected ':' after 'else'") ||
         parseLocalScopeSuite(curIndent))
       return failure();
   }
@@ -967,7 +964,7 @@ ParseResult LitStmtParser::parseTryStmt(size_t curIndent) {
 /// if_stmt ::=  "if" assignment_expression ":" suite
 ///             ("elif" assignment_expression ":" suite)*
 ///             ["else" ":" suite]
-ParseResult LitStmtParser::parseIfStmt(LitLexerCursor startCursor,
+ParseResult LitStmtParser::parseIfStmt(LexerCursor startCursor,
                                        size_t curIndent) {
   // This is enabled with the @parameter decorator.
   bool isParamIf = false;
@@ -989,7 +986,7 @@ ParseResult LitStmtParser::parseIfStmt(LitLexerCursor startCursor,
     }
   }
   Location ifLoc = translateLocation(getToken().getLoc());
-  if (parseToken(LitToken::kw_if, "expected 'if' token after decorators"))
+  if (parseToken(Token::kw_if, "expected 'if' token after decorators"))
     return failure();
 
   // We will be moving the builder into sub-regions that are created, make sure
@@ -998,7 +995,7 @@ ParseResult LitStmtParser::parseIfStmt(LitLexerCursor startCursor,
 
   ExprNode *condExp = nullptr;
   if (parseExpression(condExp, std::nullopt) ||
-      parseToken(LitToken::colon, "expected ':' after 'if' expression"))
+      parseToken(Token::colon, "expected ':' after 'if' expression"))
     return failure();
 
   // Each if/elif conditions could be dynamic or static, use some helpers to
@@ -1062,13 +1059,12 @@ ParseResult LitStmtParser::parseIfStmt(LitLexerCursor startCursor,
     return failure();
   createYield(ifLoc);
 
-  while (getToken().is(LitToken::kw_elif) &&
+  while (getToken().is(Token::kw_elif) &&
          getToken().getIndentation().has_value() &&
          *getToken().getIndentation() >= curIndent) {
-    Location elifLoc =
-        translateLocation(consumeToken(LitToken::kw_elif).getLoc());
+    Location elifLoc = translateLocation(consumeToken(Token::kw_elif).getLoc());
     if (parseExpression(condExp, std::nullopt) ||
-        parseToken(LitToken::colon, "expected ':' after 'elif' expression"))
+        parseToken(Token::colon, "expected ':' after 'elif' expression"))
       return failure();
 
     createElseBlock();
@@ -1084,9 +1080,8 @@ ParseResult LitStmtParser::parseIfStmt(LitLexerCursor startCursor,
 
   createElseBlock();
   if (getToken().getIndentation().has_value() &&
-      *getToken().getIndentation() >= curIndent &&
-      consumeIf(LitToken::kw_else)) {
-    if (parseToken(LitToken::colon, "expected ':' after else"))
+      *getToken().getIndentation() >= curIndent && consumeIf(Token::kw_else)) {
+    if (parseToken(Token::colon, "expected ':' after else"))
       return failure();
     if (failed(parseLocalScopeSuite(curIndent)))
       return failure();
@@ -1104,39 +1099,39 @@ ParseResult LitStmtParser::parseIfStmt(LitLexerCursor startCursor,
 /// module          ::=  (identifier ".")* identifier
 /// relative_module ::=  "."* module | "."+
 ParseResult LitStmtParser::parseFromImportStmt() {
-  consumeToken(LitToken::kw_from);
+  consumeToken(Token::kw_from);
 
   // TODO: Support packages, this currently just handles basic module importing.
 
   // Parse the relative module we are importing from.
-  if (getToken().isAny(LitToken::dot, LitToken::dot_dot_dot))
+  if (getToken().isAny(Token::dot, Token::dot_dot_dot))
     return emitTokenError(
         "TODO: relative package imports are not yet supported");
   SMLoc importLoc = getToken().getLoc();
   StringRef moduleName = getTokenSpelling();
-  if (parseToken(LitToken::identifier, "expected module name") ||
-      parseToken(LitToken::kw_import, "expected 'import' after module name"))
+  if (parseToken(Token::identifier, "expected module name") ||
+      parseToken(Token::kw_import, "expected 'import' after module name"))
     return failure();
 
   // Check for a wildcard import.
-  if (consumeIf(LitToken::star)) {
+  if (consumeIf(Token::star)) {
     containingDecl.addUnresolvedWildCardImport(
         builder.getStringAttr(moduleName), importLoc);
     return success();
   }
 
   // Parse the set of constructs to import.
-  bool isTupleImport = consumeIf(LitToken::l_paren);
+  bool isTupleImport = consumeIf(Token::l_paren);
   do {
     // Parse the next construct to import.
     SMLoc importSourceNameLoc = getToken().getLoc();
     StringRef importSourceName = getTokenSpelling();
-    if (parseToken(LitToken::identifier, "expected construct name to import"))
+    if (parseToken(Token::identifier, "expected construct name to import"))
       return failure();
     StringRef importDestName = importSourceName;
-    if (consumeIf(LitToken::kw_as)) {
+    if (consumeIf(Token::kw_as)) {
       importDestName = getTokenSpelling();
-      if (parseToken(LitToken::identifier,
+      if (parseToken(Token::identifier,
                      "expected name to import '" + importSourceName + "' as"))
         return failure();
     }
@@ -1152,17 +1147,17 @@ ParseResult LitStmtParser::parseFromImportStmt() {
         getLexer().getCursor(), getLexer().getCursor(), /*indentation=*/-1);
 
     // Check for more elements to import.
-    if (!consumeIf(LitToken::comma))
+    if (!consumeIf(Token::comma))
       break;
     // For tuple imports, there may optionally be a trailing comma at the end of
     // the list.
-    if (isTupleImport && getToken().is(LitToken::r_paren))
+    if (isTupleImport && getToken().is(Token::r_paren))
       break;
   } while (true);
 
   // Check for the end of the tuple import.
   if (isTupleImport &&
-      parseToken(LitToken::r_paren, "expected ')' after import list"))
+      parseToken(Token::r_paren, "expected ')' after import list"))
     return failure();
   return success();
 }
@@ -1171,7 +1166,7 @@ ParseResult LitStmtParser::parseFromImportStmt() {
 ///                  ("," module ["as" identifier])*
 /// module      ::=  (identifier ".")* identifier
 ParseResult LitStmtParser::parseImportStmt() {
-  consumeToken(LitToken::kw_import);
+  consumeToken(Token::kw_import);
 
   // TODO: Support packages, this currently just handles basic module importing.
 
@@ -1179,14 +1174,14 @@ ParseResult LitStmtParser::parseImportStmt() {
   do {
     SMLoc importLoc = getToken().getLoc();
     StringRef moduleName = getTokenSpelling();
-    if (parseToken(LitToken::identifier, "expected module name"))
+    if (parseToken(Token::identifier, "expected module name"))
       return failure();
 
     // Check for a name binding.
     StringRef boundModuleName = moduleName;
-    if (consumeIf(LitToken::kw_as)) {
+    if (consumeIf(Token::kw_as)) {
       boundModuleName = getTokenSpelling();
-      if (parseToken(LitToken::identifier, "expected name to bind import"))
+      if (parseToken(Token::identifier, "expected name to bind import"))
         return failure();
     }
 
@@ -1198,7 +1193,7 @@ ParseResult LitStmtParser::parseImportStmt() {
     getDeclResolver().addDecl(importDecl, importLoc, importDestNameAttr,
                               &containingDecl, getLexer().getCursor(),
                               getLexer().getCursor(), /*indentation=*/-1);
-  } while (consumeIf(LitToken::comma));
+  } while (consumeIf(Token::comma));
   return success();
 }
 
@@ -1206,11 +1201,11 @@ ParseResult LitStmtParser::parseImportStmt() {
 // Definition statements
 //===----------------------------------------------------------------------===//
 
-ParseResult LitStmtParser::parseDefFnStmt(LitLexerCursor startCursor,
+ParseResult LitStmtParser::parseDefFnStmt(LexerCursor startCursor,
                                           size_t curIndent) {
-  bool isAsync = consumeIf(LitToken::kw_async);
+  bool isAsync = consumeIf(Token::kw_async);
   // isDef is true when introduced by the 'def' keywords instead of 'fn'.
-  bool isDef = getToken().is(LitToken::kw_def);
+  bool isDef = getToken().is(Token::kw_def);
   SMLoc loc = getToken().getLoc();
   consumeToken();
 
@@ -1244,9 +1239,9 @@ ParseResult LitStmtParser::parseDefFnStmt(LitLexerCursor startCursor,
   return success();
 }
 
-ParseResult LitStmtParser::parseLetVarStmt(LitLexerCursor startCursor,
+ParseResult LitStmtParser::parseLetVarStmt(LexerCursor startCursor,
                                            size_t stmtIndent) {
-  bool isVar = getToken().is(LitToken::kw_var);
+  bool isVar = getToken().is(Token::kw_var);
   auto smLoc = consumeToken().getLoc();
   auto loc = translateLocation(smLoc);
   StringAttr name;
@@ -1289,9 +1284,9 @@ ParseResult LitStmtParser::parseLetVarStmt(LitLexerCursor startCursor,
   return success();
 }
 
-ParseResult LitStmtParser::parseAliasDeclStmt(LitLexerCursor startCursor,
+ParseResult LitStmtParser::parseAliasDeclStmt(LexerCursor startCursor,
                                               size_t stmtIndent) {
-  auto smLoc = consumeToken(LitToken::kw_alias).getLoc();
+  auto smLoc = consumeToken(Token::kw_alias).getLoc();
   auto loc = translateLocation(smLoc);
   StringAttr name;
   if (parseIdentifier(name, "expected name for 'alias' declaration"))
@@ -1315,13 +1310,13 @@ ParseResult LitStmtParser::parseAliasDeclStmt(LitLexerCursor startCursor,
   return success();
 }
 
-ParseResult LitStmtParser::parseStructStmt(LitLexerCursor startCursor,
+ParseResult LitStmtParser::parseStructStmt(LexerCursor startCursor,
                                            size_t curIndent) {
   // We don't support structs in structs (yet?).
   if (isa<StructDeclOp>(containingDecl))
     emitTokenError("nested struct not supported here");
 
-  auto smLoc = consumeToken(LitToken::kw_struct).getLoc();
+  auto smLoc = consumeToken(Token::kw_struct).getLoc();
   auto loc = translateLocation(smLoc);
 
   StringAttr nameAttr;
@@ -1341,10 +1336,10 @@ ParseResult LitStmtParser::parseStructStmt(LitLexerCursor startCursor,
   return success();
 }
 
-ParseResult LitStmtParser::parseClassStmt(LitLexerCursor startCursor,
+ParseResult LitStmtParser::parseClassStmt(LexerCursor startCursor,
                                           size_t curIndent) {
   emitTokenError("classes are not supported yet");
-  consumeToken(LitToken::kw_class).getLoc();
+  consumeToken(Token::kw_class).getLoc();
 
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
@@ -1357,9 +1352,9 @@ ParseResult LitStmtParser::parseClassStmt(LitLexerCursor startCursor,
 /// used to define regions for MLIR operations.
 ///
 /// region_stmt ::= "__mlir_region" identifier "(" [argument_list] ")" ":" suite
-ParseResult LitStmtParser::parseMLIRRegionStmt(LitLexerCursor startCursor,
+ParseResult LitStmtParser::parseMLIRRegionStmt(LexerCursor startCursor,
                                                size_t curIndent) {
-  SMLoc loc = consumeToken(LitToken::kw___mlir_region).getLoc();
+  SMLoc loc = consumeToken(Token::kw___mlir_region).getLoc();
 
   // We will be moving the builder into the contained region, so save it here.
   llvm::SaveAndRestore builderSaver(builder);
@@ -1367,7 +1362,7 @@ ParseResult LitStmtParser::parseMLIRRegionStmt(LitLexerCursor startCursor,
   // Resolve the signature and the body immediately.
   StringAttr identifier;
   if (parseIdentifier(identifier, "expected a region name") ||
-      parseToken(LitToken::l_paren, "expected '(' for parameter list"))
+      parseToken(Token::l_paren, "expected '(' for parameter list"))
     return failure();
 
   // Create the decl corresponding to the region declaration.
@@ -1385,14 +1380,14 @@ ParseResult LitStmtParser::parseMLIRRegionStmt(LitLexerCursor startCursor,
   SmallVector<RegionArgument> args;
   SmallVector<Type> argTypes;
   SmallVector<Location> argLocs;
-  if (!consumeIf(LitToken::r_paren)) {
+  if (!consumeIf(Token::r_paren)) {
     // Parse simple argument: MLIR operations don't have input conventions.
     auto parseArg = [&]() -> ParseResult {
       RegionArgument &arg = args.emplace_back();
       ExprNode *typeExpr;
       if (getLocation(arg.loc) ||
           parseIdentifier(arg.name, "expected an identifier") ||
-          parseToken(LitToken::colon, "expected ':' after region argument") ||
+          parseToken(Token::colon, "expected ':' after region argument") ||
           parseExpression(typeExpr, std::nullopt))
         return failure();
       ASTType type = getEmitter().emitExprType(typeExpr);
@@ -1402,9 +1397,9 @@ ParseResult LitStmtParser::parseMLIRRegionStmt(LitLexerCursor startCursor,
       argLocs.push_back(translateLocation(arg.loc));
       return success();
     };
-    if (parseCommaSeparatedList(parseArg, LitToken::r_paren))
+    if (parseCommaSeparatedList(parseArg, Token::r_paren))
       return failure();
-    consumeToken(LitToken::r_paren);
+    consumeToken(Token::r_paren);
   }
 
   builder.createBlock(&op.getRegion());
@@ -1426,7 +1421,7 @@ ParseResult LitStmtParser::parseMLIRRegionStmt(LitLexerCursor startCursor,
                                            parsedArg.loc, &decl);
   }
 
-  if (parseToken(LitToken::colon, "expected ':' after region argument list"))
+  if (parseToken(Token::colon, "expected ':' after region argument list"))
     return failure();
   LitStmtParser parser(lexer, decl);
   return parser.parseLocalScopeSuite(curIndent);
@@ -1438,8 +1433,7 @@ ParseResult LitStmtParser::parseMLIRRegionStmt(LitLexerCursor startCursor,
 
 /// Parse a 'suite' production into the declaration specified by `ASTDecl`.
 /// This is the main entrypoint to this file.
-ParseResult LitParserBase::parseSuite(ASTDecl &containingDecl,
-                                      LitLexer &lexer) {
+ParseResult LitParserBase::parseSuite(ASTDecl &containingDecl, Lexer &lexer) {
   LitStmtParser parser(lexer, containingDecl);
 
   // Parse the docstring if present.

@@ -289,7 +289,7 @@ Location ExprNode::getLocation(ExprEmitter &emitter) const {
 
 AnyValue IntLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // TODO: Handle contextual types.
-  APInt value = LitLexer::getIntegerLiteralValue(spelling);
+  APInt value = Lexer::getIntegerLiteralValue(spelling);
 
   // Make sure the value fits in 64-bits.  There are no negative values here.
   // TODO: Detect overflow errors.
@@ -312,7 +312,7 @@ AnyValue IntLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
 AnyValue FloatLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // TODO: this assumes float literal are always doubles
-  APFloat value = LitLexer::getFloatLiteralValue(spelling);
+  APFloat value = Lexer::getFloatLiteralValue(spelling);
   auto attr = FloatAttr::get(FloatType::getF64(emitter.getContext()),
                              APFloat(value.convertToDouble()));
   // FIXME: This should eventually use a float literal type.
@@ -367,7 +367,7 @@ AnyValue SelfLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 std::string StringLiteralNode::getValue() const {
   std::string result;
   for (auto spelling : spellings)
-    result += LitLexer::getStringLiteralValue(spelling);
+    result += Lexer::getStringLiteralValue(spelling);
   return result;
 }
 

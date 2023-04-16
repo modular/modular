@@ -11,8 +11,8 @@
 #ifndef LIT_DECL_AST_H
 #define LIT_DECL_AST_H
 
+#include "Lexer.h"
 #include "LitDecls.h"
-#include "LitLexer.h"
 #include "LitSharedState.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Builders.h"
@@ -72,11 +72,11 @@ public:
   /// of resolution.  For example, after initial scanning of a 'def', this will
   /// be on the def token.  After processing the signature, this will be after
   /// the colon.
-  LitLexerCursor &getCursor() { return cursor; }
+  LexerCursor &getCursor() { return cursor; }
 
   /// Return true if the end of the speculatively scanned decl matches the
   /// specified cursor.
-  bool isMatchingEndCursor(const LitLexerCursor &cursor) const {
+  bool isMatchingEndCursor(const LexerCursor &cursor) const {
     return endCursorState == cursor.getState();
   }
 
@@ -118,8 +118,8 @@ public:
   StringRef getDocString() const { return docString; }
 
   /// Set the doc string for this decl.
-  void setDocString(LitToken docStringTok) {
-    assert(docStringTok.is(LitToken::string) &&
+  void setDocString(Token docStringTok) {
+    assert(docStringTok.is(Token::string) &&
            "doc-string must be a string literal");
     this->docString = docStringTok.getSpelling().drop_front().drop_back();
   }
@@ -176,7 +176,7 @@ private:
   friend class DeclResolver;
   friend class LitSharedState;
   ASTDecl(DeclIRValue irValue, llvm::SMLoc loc, ASTDecl *parentDecl,
-          LitLexerCursor cursor, LitLexerCursor endCursor, ssize_t indentation)
+          LexerCursor cursor, LexerCursor endCursor, ssize_t indentation)
       : irValue(irValue), loc(loc), parentDecl(std::move(parentDecl)),
         cursor(cursor), endCursorState(endCursor.getState()),
         indentation(indentation) {}
@@ -201,7 +201,7 @@ private:
 
   /// This is the cursor that points to the next part of declaration to continue
   /// parsing as the declaration is progressively resolved.
-  LitLexerCursor cursor;
+  LexerCursor cursor;
 
   /// This is the lexer cursor state for the first token /after/ the
   /// declaration.  This is used to make sure that bits of a declaration are not
