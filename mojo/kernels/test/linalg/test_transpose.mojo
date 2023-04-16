@@ -188,7 +188,8 @@ fn test_transpose_2d_identity():
     #  [-1, -1, -1],
     #  [-1, -1, -1]]
     alias out_shape = create_dim_list(3, 3)
-    var output = NDBuffer[2, out_shape, DType.index].stack_allocation().fill(0)
+    var output = NDBuffer[2, out_shape, DType.index].stack_allocation()
+    output.fill(0)
 
     # transpose
     transpose(output, input, perm.data)
@@ -249,7 +250,8 @@ fn test_transpose_2d():
     #  [-1, -1, -1],
     #  [-1, -1, -1]]
     alias out_shape = create_dim_list(3, 3)
-    var output = NDBuffer[2, out_shape, DType.index].stack_allocation().fill(0)
+    var output = NDBuffer[2, out_shape, DType.index].stack_allocation()
+    output.fill(0)
 
     # transpose
     transpose(output, input, perm.data)
@@ -316,7 +318,8 @@ fn test_transpose_3d_identity():
     #  [[-1, -1, -1],
     #   [-1, -1, -1]]]
     alias out_shape = create_dim_list(2, 2, 3)
-    var output = NDBuffer[3, out_shape, DType.index].stack_allocation().fill(0)
+    var output = NDBuffer[3, out_shape, DType.index].stack_allocation()
+    output.fill(0)
 
     # transpose
     transpose(output, input, perm.data)
@@ -390,7 +393,8 @@ fn test_transpose_3d():
     #  [[-1, -1, -1],
     #   [-1, -1, -1]]]
     alias out_shape = create_dim_list(3, 2, 2)
-    var output = NDBuffer[3, out_shape, DType.index].stack_allocation().fill(0)
+    var output = NDBuffer[3, out_shape, DType.index].stack_allocation()
+    output.fill(0)
 
     # transpose
     transpose(output, input, perm.data)
@@ -466,7 +470,8 @@ fn test_transpose_si64():
     #  [[-1, -1, -1],
     #   [-1, -1, -1]]]
     alias out_shape = create_dim_list(3, 2, 2)
-    var output = NDBuffer[3, out_shape, DType.si64].stack_allocation().fill(0)
+    var output = NDBuffer[3, out_shape, DType.si64].stack_allocation()
+    output.fill(0)
 
     # transpose
     transpose(output, input, perm.data)
