@@ -19,6 +19,8 @@ lit.func @no_return_result2(%x: !pop.pointer<i32> byref_result) -> !lit.none {
 
 // expected-error @below {{missing parameter return for function with result parameters}}
 lit.func @no_return_result3<() -> index>() -> !lit.none {
+  %0 = kgen.param.constant: !lit.none = <#lit.none>
+  lit.return %0 :  !lit.none
   lit.end_func
 }
 
@@ -34,6 +36,9 @@ lit.func @result_params5<() -> r0>() -> !lit.none {
 
   // expected-error @+1 {{result parameters already defined in this scope}}
   lit.param_return<2>
+
+  %0 = kgen.param.constant: !lit.none = <#lit.none>
+  lit.return %0 :  !lit.none
   lit.end_func
 }
 

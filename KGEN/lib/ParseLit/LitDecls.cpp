@@ -1553,20 +1553,14 @@ void FnDecorators::applyLate(SymbolRefAttr symbolName, StringRef unmangledName,
 /// A valid main function must have signature main().
 /// No parameters are allowed and here must be only one main in the final
 /// object file.
-static bool isMainFunction(StringAttr &name, SignatureType signature,
+static bool isMainFunction(StringAttr &name, LIT::FuncOp func,
                            LitSharedState &shared) {
-  if (name != kMainSymbolName || !signature.getInputParamTypes().empty() ||
-      !signature.getResultParamTypes().empty() ||
-      !signature.getValueInputs().empty())
-    return false;
-
-  // Check the result type is none, but we have to strip off the variant if this
-  // throws.
-  ASTType resultType = signature.getValueResults()[0];
-  if (signature.isThrows())
-    resultType = cast<POP::VariantType>(resultType.mlirType).getType(1);
-
-  return resultType.isEqualCanon(shared.getNoneType());
+  SignatureType signature = func.getSignature();
+  return name == kMainSymbolName && signature.getInputParamTypes().empty() &&
+         signature.getResultParamTypes().empty() &&
+         signature.getValueInputs().empty() &&
+         ASTType(func.getResultTypeWithoutErrorVariant())
+             .isEqualCanon(shared.getNoneType());
 }
 
 /// funcdef ::=  [decorators] "def" identifier [meta_signature]
@@ -1842,7 +1836,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   declForFuncSymbol[symbolName] = &decl;
 
   // If have a main function, fn main(), export it automatically.
-  if (!inAStruct && isMainFunction(baseName, signature, shared))
+  if (!inAStruct && isMainFunction(baseName, funcOp, shared))
     getDeclResolver().exportMain(decl.getParentDecl(), symbolName);
 
   // Generate a debug subprogram for this function.
@@ -2052,8 +2046,9 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, LitLexer &lexer,
     builder.create<ParamResultBindOp>(loc, placeholders);
   }
 
-  // Insert the default end terminator.
-  builder.create<LIT::EndFuncOp>(loc);
+  // Emit a default "return None" if the function returns nothing, and add an
+  // endop terminator.
+  funcOp.appendDefaultReturnAndEndOp();
 
   // Check that any alias forward declarations have been completed.
   if (!shared.diags.isErrorEmitted()) {
@@ -2439,8 +2434,7 @@ static TypedAttr synthesizeEmptyDtor(StructDeclOp structOp, ASTDecl &structDecl,
   // Set up the body.
   Block *body = funcOp.getBody();
   body->addArgument(selfType, structOp.getLoc());
-  builder.setInsertionPointToStart(body);
-  builder.create<LIT::EndFuncOp>();
+  funcOp.appendDefaultReturnAndEndOp();
 
   // Register the dtor in the struct.
   resolver.addFullyResolvedDecl(funcOp.getOperation(), "__del___",

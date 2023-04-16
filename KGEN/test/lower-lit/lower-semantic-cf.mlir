@@ -110,8 +110,9 @@ lit.func @result_parameters<() -> r1: i32, r2: i64>(%c: i1) {
 
 // CHECK-LABEL: lit.func @no_return
 lit.func @no_return() -> !lit.none {
-  // CHECK-NEXT: %0 = kgen.param.constant: !lit.none = <#lit.none>
-  // CHECK-NEXT: kgen.return %0
+  // CHECK: kgen.return
+  %0 = kgen.param.constant: !lit.none = <#lit.none>
+  lit.return %0 :  !lit.none
   lit.end_func
 }
 
@@ -173,6 +174,7 @@ lit.func @raise_raise() throws -> !pop.variant<@Error, index> {
   } else {
     lit.try.yield
   }
+
   lit.end_func
 }
 
@@ -182,6 +184,9 @@ lit.func @raise_raise() throws -> !pop.variant<@Error, index> {
 // CHECK-LABEL: @no_return_throws
 // CHECK-SAME ) -> !pop.variant<@Error, !lit.none>
 lit.func @no_return_throws() throws -> !pop.variant<@Error, !lit.none> {
+  %0 = kgen.param.constant: !lit.none = <#lit.none>
+  %tmp2 = pop.variant.create %0 : !lit.none -> !pop.variant<@Error, !lit.none>
+  lit.return %tmp2 : !pop.variant<@Error, !lit.none>
   // CHECK-NEXT: %0 = kgen.param.constant: !lit.none = <#lit.none>
   // CHECK-NEXT: %1 = pop.variant.create %0
   // CHECK-NEXT: kgen.return %1
@@ -232,6 +237,10 @@ lit.func @ref(%e: !kgen.declref<@Error>,
 lit.func @parametric_throws<fn: <>() throws -> !pop.variant<@Error, !lit.none>>() throws -> !pop.variant<@Error, !lit.none> {
   // CHECK-NEXT: %[[MAYBE_ERR:.*]] = kgen.call_param[<>() throws -> !pop.variant<@Error, !lit.none>: fn]()
   kgen.call_param[<>() throws -> !pop.variant<@Error, !lit.none>: fn]()
+
+  %0 = kgen.param.constant: !lit.none = <#lit.none>
+  %tmp2 = pop.variant.create %0 : !lit.none -> !pop.variant<@Error, !lit.none>
+  lit.return %tmp2 : !pop.variant<@Error, !lit.none>
   lit.end_func
 }
 
@@ -247,6 +256,9 @@ lit.file_module @Module {
       // CHECK-NEXT: !kgen.signature<() throws -> !pop.variant<@Error, !lit.none>>
       %x = lit.struct.extract %self[x] : !kgen.signature<() throws -> !pop.variant<@Error, !lit.none>>
         from !kgen.declref<@Module::@Struct>
+      %0 = kgen.param.constant: !lit.none = <#lit.none>
+      %tmp2 = pop.variant.create %0 : !lit.none -> !pop.variant<@Error, !lit.none>
+      lit.return %tmp2 : !pop.variant<@Error, !lit.none>
       lit.end_func
     }
   }
@@ -266,6 +278,8 @@ lit.func @coroutine() async -> index {
 lit.func @call_coroutine<coro: <>() async -> !lit.none>() async -> !lit.none {
   // CHECK-NEXT: lit.async.call[<>() async -> !lit.none: coro]()
   lit.async.call[<>() async -> !lit.none: coro]()
+  %0 = kgen.param.constant: !lit.none = <#lit.none>
+  lit.return %0 :  !lit.none
   lit.end_func
 }
 
@@ -300,6 +314,10 @@ lit.func @call_throwing_coro(%err: !kgen.declref<@Error>) async|throws -> !pop.v
     = <@throwing_coro<:i1 1, 0>>
   // CHECK: lit.async.call[<>(!kgen.declref<@Error>) throws|async -> !pop.variant<@Error, index>: callee](%err)
   %hdl = lit.async.call[<>(!kgen.declref<@Error>) async|throws -> !pop.variant<@Error, index> : callee](%err)
+
+  %0 = kgen.param.constant: !lit.none = <#lit.none>
+  %tmp2 = pop.variant.create %0 : !lit.none -> !pop.variant<@Error, !lit.none>
+  lit.return %tmp2 : !pop.variant<@Error, !lit.none>
   lit.end_func
 }
 
@@ -348,14 +366,20 @@ lit.func @topFunc() -> !lit.none {
   lit.func midFunc() -> !lit.none {
     // CHECK: kgen.param.declare.region botFunc
     lit.func botFunc() -> !lit.none {
+      %0 = kgen.param.constant: !lit.none = <#lit.none>
+      lit.return %0 :  !lit.none
       lit.end_func
     }
     // CHECK: declare bot: () -> !lit.none = <botFunc>
     kgen.param.declare bot: () -> !lit.none = <botFunc>
+    %0 = kgen.param.constant: !lit.none = <#lit.none>
+    lit.return %0 :  !lit.none
     lit.end_func
   }
   // CHECK: declare mid: () -> !lit.none = <midFunc>
   kgen.param.declare mid: () -> !lit.none = <midFunc>
+  %0 = kgen.param.constant: !lit.none = <#lit.none>
+  lit.return %0 :  !lit.none
   lit.end_func
 }
 
@@ -446,6 +470,8 @@ lit.func @result_params_fallthrough<() -> r0>() -> !lit.none {
   // CHECK: kgen.param.result_bind<1>
   // CHECK: kgen.return %0
   lit.param_return<1>
+  %0 = kgen.param.constant: !lit.none = <#lit.none>
+  lit.return %0 :  !lit.none
   lit.end_func
 }
 
@@ -459,5 +485,7 @@ lit.func @pointlessTry() -> !lit.none {
   } else {
     lit.try.yield
   }
+  %0 = kgen.param.constant: !lit.none = <#lit.none>
+  lit.return %0 :  !lit.none
   lit.end_func
 }
