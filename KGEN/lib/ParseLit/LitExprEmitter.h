@@ -193,6 +193,11 @@ public:
   SLValue getSLValueForResult(SMLoc loc, ASTType resultType,
                               ExprEmitter &emitter);
 
+  /// If this ValueDest specifies an SLValue that will be returned by
+  /// getSLValueForResult with the specified type, return it.  Otherwise return
+  /// null.
+  SLValue getDefinedSLValueIfExists(ASTType resultType, ExprEmitter &emitter);
+
   /// When an error is emitted instead of generating IR, this method resets the
   /// ValueDest so it doesn't complain when emission is done.
   void resetForError() { representation = NullRepresentation(); }

@@ -7,6 +7,9 @@ struct MemExample:
   fn __init__(self&): self.x = 42; pass
   fn noop(self): pass
 
+  fn __copyinit__(self&, existing: Self):
+    self.x = existing.x
+
   # Destructor should not recurse.
   # CHECK-LABEL: lit.func @"__del__
   # CHECK-NEXT:    kgen.call {{.*}}noop{{.*}}(%self)
@@ -325,6 +328,14 @@ struct FieldSensitiveMemExample:
     # CHECK-NEXT: kgen.param.constant: !lit.none = <#lit.none>
     # CHECK-NEXT: kgen.return
 
+ # CHECK: lit.func @"__init__
+  fn __init__(self&, a: MemExample, b: MemExample):
+    self.f1 = a
+    self.f2 = b
+
+  fn __copyinit__(self&, existing: Self):
+    self = Self(existing.f1, existing.f2)
+
  # CHECK-LABEL: lit.func @"mutate
  fn mutate(self&):
     # CHECK-NEXT: %0 = lit.struct.gep %self[f1]
@@ -370,3 +381,31 @@ fn disableDtor(owned x: FieldSensitiveMemExample):
   __mlir_op.`lit.ownership.mark.destroyed`[_type : None](
      __get_lvalue_as_address(x)
   )
+
+
+# Result optimization cannot emit directly into a value that is passed as an
+# argument, because this forms a mutable reference to something immutably
+# borrowed implicitly.  We must invoke the copy ctor.
+# CHECK-LABEL: lit.func @"use_and_return
+fn use_and_return(a: FieldSensitiveMemExample) -> FieldSensitiveMemExample:
+  # This will read from 'a' and write into the result slot in an arbitrary
+  # order. They cannot alias.
+  return FieldSensitiveMemExample(a.f2, a.f1)
+
+# CHECK-LABEL: lit.func @"test_result_optimization
+fn test_result_optimization():
+  # CHECK-NEXT: %example = lit.varlet.decl "example"
+  # CHECK-NEXT: kgen.call @{{.*}}"__init__{{.*}}(%example)
+  var example = FieldSensitiveMemExample()
+  # CHECK: %__call_result_tmp__ = lit.varlet.decl
+  # CHECK-NEXT: kgen.call @"$ownership{{.*}}(%__call_result_tmp__, %example)
+  example = use_and_return(example)
+  # CHECK-NEXT: kgen.call @{{.*}}@"__del___{{.*}}(%example)
+  # CHECK-NEXT: kgen.call @{{.*}}@"__copyinit__{{.*}}(%example, %__call_result_tmp__)
+  # CHECK-NEXT: kgen.call @{{.*}}@"__del___{{.*}}(%__call_result_tmp__)
+
+  example.mutate()
+  # CHECK-NEXT: kgen.call @{{.*}}@"mutate{{.*}}(%example)
+  # CHECK-NEXT: kgen.call @{{.*}}@"__del___{{.*}}(%example)
+
+  # CHECK-NEXT: kgen.param.constant: !lit.none = <#lit.none>
