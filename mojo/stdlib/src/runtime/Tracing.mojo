@@ -190,5 +190,5 @@ struct Trace[level: TraceLevel]:
     fn __init__(self&, name: StringRef, detail: StringRef):
         trace_range_push[trace_type, level](name, detail)
 
-    fn __del__(self&):
+    fn stop(self):
         trace_range_pop[trace_type, level]()

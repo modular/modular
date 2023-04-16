@@ -20,7 +20,7 @@ fn test_tracing[level: TraceLevel]():
     async fn test_tracing_add[lhs: Int](rhs: Int) -> Int:
         var trace = Trace[level]("trace event 2", "detail event 2")
         let res = lhs + rhs
-        trace.__del__()
+        trace.stop()
         return res
 
     async fn test_tracing_add_two_of_them(rt: Runtime, a: Int, b: Int) -> Int:
@@ -35,7 +35,7 @@ fn test_tracing[level: TraceLevel]():
     var trace = Trace[level]("trace event 1", "detail event 1")
     let task = rt.create_task[Int](test_tracing_add_two_of_them(rt, 10, 20))
     _ = task.wait()
-    trace.__del__()
+    trace.stop()
     task.__del__()
     rt.__del__()
 
