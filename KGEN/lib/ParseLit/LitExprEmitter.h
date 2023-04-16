@@ -213,19 +213,19 @@ private:
 
 /// This class is the main driver for expression emission, providing helper
 /// functions used by the individual node emission hooks.
-class ExprEmitter : public LitSharedStateUser {
+class ExprEmitter : public SharedStateUser {
 public:
   // Create an ExprEmitter for a dynamic context with a builder.
-  ExprEmitter(LitSharedState &shared, ASTDecl &declScope, OpBuilder builder,
+  ExprEmitter(SharedState &shared, ASTDecl &declScope, OpBuilder builder,
               Operation *varDeclCursor)
-      : LitSharedStateUser(shared), builder(std::move(builder)),
+      : SharedStateUser(shared), builder(std::move(builder)),
         paramContext(EC_Unknown), declScope(declScope),
         varDeclCursor(varDeclCursor) {}
 
   /// Create an ExprEmitter for a parameter context.
-  ExprEmitter(LitSharedState &shared, ASTDecl &declScope,
-              ExprContext paramContext, Operation *varDeclCursor)
-      : LitSharedStateUser(shared), builder({}), paramContext(paramContext),
+  ExprEmitter(SharedState &shared, ASTDecl &declScope, ExprContext paramContext,
+              Operation *varDeclCursor)
+      : SharedStateUser(shared), builder({}), paramContext(paramContext),
         declScope(declScope), varDeclCursor(varDeclCursor) {}
 
   //===--------------------------------------------------------------------===//

@@ -14,7 +14,7 @@
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "LitSharedState.h"
+#include "SharedState.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -42,7 +42,7 @@ ASTType::ASTType(TypedAttr typeParamExpr) {
   mlirType = ParamRefType::get(typeParamExpr);
 }
 
-ASTDecl *ASTType::getDecl(LitSharedState &shared) const {
+ASTDecl *ASTType::getDecl(SharedState &shared) const {
   if (auto declRef = dyn_cast<DeclRefType>(mlirType))
     return &shared.declResolver->getDeclForTypeSymbol(declRef.getSymbol());
   return nullptr;
@@ -64,7 +64,7 @@ bool ASTType::isEqualCanon(ASTType other) const {
 
 /// Return the StructDeclOp::RegisterPassable enum for this type.
 uint8_t ASTType::getRegisterPassability(llvm::SMLoc loc,
-                                        LitSharedState &shared) const {
+                                        SharedState &shared) const {
   ASTDecl *decl = getDecl(shared);
   if (!decl) // MLIR types are assumed to be register-passable + Trivial.
     return StructDeclOp::RP_RegisterPassableTrivial;
@@ -83,14 +83,13 @@ uint8_t ASTType::getRegisterPassability(llvm::SMLoc loc,
 ///
 /// The location specifies the location of the reference in case the use is
 /// invalid in this location.
-bool ASTType::isRegisterPassable(llvm::SMLoc loc,
-                                 LitSharedState &shared) const {
+bool ASTType::isRegisterPassable(llvm::SMLoc loc, SharedState &shared) const {
   return getRegisterPassability(loc, shared) != StructDeclOp::RP_MemoryOnly;
 }
 
 /// Return true if this type needs to be destroyed.  This is false for trivial
 /// types like Int.  Note: this resolves the body of a struct type.
-bool ASTType::hasDestructor(llvm::SMLoc loc, LitSharedState &shared) const {
+bool ASTType::hasDestructor(llvm::SMLoc loc, SharedState &shared) const {
   ASTDecl *decl = getDecl(shared);
   if (!decl) // MLIR types are assumed to be register-passable + Trivial.
     return false;

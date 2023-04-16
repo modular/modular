@@ -9,10 +9,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LIT_SHARED_STATE_H
-#define LIT_SHARED_STATE_H
+#ifndef SHARED_STATE_H
+#define SHARED_STATE_H
 
-#include "LitDiags.h"
+#include "Diags.h"
 
 #include "mlir/IR/BuiltinOps.h"
 
@@ -50,13 +50,13 @@ inline const char *plural(size_t value, const char *one = "",
 
 /// This is state shared across multiple different instances of LitParser
 /// which are always shared across them.
-class LitSharedState {
+class SharedState {
 public:
-  LitSharedState(llvm::SourceMgr &sourceMgr, MojoParserConfig &config,
-                 bool enableCaching = true);
-  ~LitSharedState();
+  SharedState(llvm::SourceMgr &sourceMgr, MojoParserConfig &config,
+              bool enableCaching = true);
+  ~SharedState();
 
-  LitDiags diags; // Contains SourceMgr and MLIRContext pointers.
+  Diags diags; // Contains SourceMgr and MLIRContext pointers.
   const CompilationOptions &options;
 
   std::unique_ptr<DeclResolver> declResolver;
@@ -243,15 +243,15 @@ private:
 };
 
 /// This class is intended to be used as a convenience base class for subsystems
-/// that want to have access to various LitSharedState functionality in a
+/// that want to have access to various SharedState functionality in a
 /// convenient way.
-class LitSharedStateUser {
+class SharedStateUser {
 public:
-  LitSharedStateUser(LitSharedState &shared) : shared(shared) {}
+  SharedStateUser(SharedState &shared) : shared(shared) {}
 
-  /// This reference provides direct access to LitSharedState for anything
+  /// This reference provides direct access to SharedState for anything
   /// fancy.
-  LitSharedState &shared;
+  SharedState &shared;
 
   // Convenience forwarding functions used pervasively through the frontend.
 
@@ -326,4 +326,4 @@ public:
 
 } // namespace M::KGEN::LIT
 
-#endif // LIT_SHARED_STATE_H
+#endif // SHARED_STATE_H

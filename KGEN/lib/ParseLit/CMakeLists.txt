@@ -6,19 +6,19 @@
 
 add_modular_conversion_library(ParseLit
   ASTType.cpp
+  Diags.cpp
   IRValues.cpp
   LitDecls.cpp
-  LitDiags.cpp
-  LitDocString.cpp
+  DocString.cpp
   LitExprCalls.cpp
   LitExprEmitter.cpp
   LitExprNodes.cpp
-  LitExprParser.cpp
   Lexer.cpp
-  LitParserBase.cpp
-  LitSharedState.cpp
-  LitStmtParser.cpp
-  ParseDriver.cpp
+  ParserBase.cpp
+  ParserDriver.cpp
+  ParserExprs.cpp
+  ParserStmts.cpp
+  SharedState.cpp
 
   DEPENDS
   KGENVersion

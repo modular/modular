@@ -4,28 +4,28 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file contains utilities for processing and formatting Lit doc strings
+// This file contains utilities for processing and formatting Mojo doc strings
 // into various formats.
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LITDOCSTRING_H
-#define LITDOCSTRING_H
+#ifndef DOCSTRING_H
+#define DOCSTRING_H
 
 #include "Lexer.h"
-#include "LitSharedState.h"
+#include "SharedState.h"
 #include "Support/ADT/SmartVariant.h"
 
 namespace M::KGEN::LIT {
 //===----------------------------------------------------------------------===//
-// LitDocString
+// DocString
 //===----------------------------------------------------------------------===//
 
 /// This class represents a processed Lit doc string.
-class LitDocString {
+class DocString {
 public:
-  /// Construct a new LitDocString from a given raw doc-string.
-  LitDocString(StringRef rawDocString);
+  /// Construct a new DocString from a given raw doc-string.
+  DocString(StringRef rawDocString);
 
   /// Return the summary of the doc string.
   StringRef getSummary() const { return summary; }
@@ -50,8 +50,8 @@ void generateLitMarkdownDoc(ASTDecl &decl, raw_ostream &os);
 
 /// Validate the doc string for the given decl, emitting warnings for any
 /// invalid format issues.
-void validateLitDocString(LitSharedState &sharedState, ASTDecl &decl);
+void validateDocString(SharedState &sharedState, ASTDecl &decl);
 
 } // namespace M::KGEN::LIT
 
-#endif // LITDOCSTRING_H
+#endif // DOCSTRING_H

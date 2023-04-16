@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "LitDiags.h"
+#include "Diags.h"
 #include "Lexer.h"
 
 #include "mlir/IR/BuiltinAttributes.h"
@@ -45,7 +45,7 @@ SMLoc LitSourceRange::getEnd() const { return SMLoc::getFromPointer(end); }
 ///
 /// TODO(mlir upstream): This was refactored out of
 /// SourceMgrDiagnosticHandlerImpl; upstream this.
-class LitDiags::SourceMgrLocationMapper {
+class Diags::SourceMgrLocationMapper {
 public:
   /// Constant string that we can use to signify an un-named file (usually means
   /// reading from stdin or something).
@@ -64,8 +64,9 @@ private:
   llvm::DenseMap<StringAttr, unsigned> filenameToBufId;
 };
 
-unsigned LitDiags::SourceMgrLocationMapper::getBufferIDForFile(
-    llvm::SourceMgr &sourceMgr, StringAttr filename) {
+unsigned
+Diags::SourceMgrLocationMapper::getBufferIDForFile(llvm::SourceMgr &sourceMgr,
+                                                   StringAttr filename) {
   // Check for an existing mapping to the buffer id for this file.
   auto bufferIt = filenameToBufId.find(filename);
   if (bufferIt != filenameToBufId.end())
@@ -87,8 +88,8 @@ unsigned LitDiags::SourceMgrLocationMapper::getBufferIDForFile(
 
 /// Get a memory buffer for the given file, or the main file of the source
 /// manager if one doesn't exist. This always returns non-null.
-SMLoc LitDiags::SourceMgrLocationMapper::convertLocToSMLoc(SourceMgr &sourceMgr,
-                                                           FileLineColLoc loc) {
+SMLoc Diags::SourceMgrLocationMapper::convertLocToSMLoc(SourceMgr &sourceMgr,
+                                                        FileLineColLoc loc) {
   // The column and line may be zero to represent unknown column and/or unknown
   /// line/column information.
   if (loc.getLine() == 0 || loc.getColumn() == 0)
@@ -109,15 +110,15 @@ SMLoc LitDiags::SourceMgrLocationMapper::convertLocToSMLoc(SourceMgr &sourceMgr,
                                            loc.getColumn());
 }
 
-SMLoc LitDiags::SourceMgrLocationMapper::convertLocToSMLoc(SourceMgr &sourceMgr,
-                                                           Location loc) {
+SMLoc Diags::SourceMgrLocationMapper::convertLocToSMLoc(SourceMgr &sourceMgr,
+                                                        Location loc) {
   if (auto fileLineCol = dyn_cast<FileLineColLoc>(loc))
     return convertLocToSMLoc(sourceMgr, fileLineCol);
   return SMLoc();
 }
 
 //===----------------------------------------------------------------------===//
-// LitDiags implementation
+// Diags implementation
 //===----------------------------------------------------------------------===//
 
 /// Get the name of the main buffer so we can rapidly build Location objects
@@ -128,7 +129,7 @@ static StringAttr makeBufferNameIdentifier(const SourceMgr &sourceMgr,
   auto mainBuffer = sourceMgr.getMemoryBuffer(bufferID);
   StringRef bufferName = mainBuffer->getBufferIdentifier();
   if (bufferName.empty())
-    bufferName = LitDiags::SourceMgrLocationMapper::kUnnamedFileSigil;
+    bufferName = Diags::SourceMgrLocationMapper::kUnnamedFileSigil;
   return StringAttr::get(context, bufferName);
 }
 
@@ -139,8 +140,8 @@ static const void *makeMainBufferNameIdentifier(const SourceMgr &sourceMgr,
       .getAsOpaquePointer();
 }
 
-LitDiags::LitDiags(SourceMgr &sourceMgr, MLIRContext *context,
-                   bool useMLIRDiagnostics)
+Diags::Diags(SourceMgr &sourceMgr, MLIRContext *context,
+             bool useMLIRDiagnostics)
     : sourceMgr(sourceMgr), context(context),
       bufferNameIdentifier(makeMainBufferNameIdentifier(sourceMgr, context)),
       useMLIRDiagnostics(useMLIRDiagnostics) {
@@ -149,37 +150,37 @@ LitDiags::LitDiags(SourceMgr &sourceMgr, MLIRContext *context,
     sourceMgrMapper = std::make_unique<SourceMgrLocationMapper>();
 }
 
-LitDiags::~LitDiags() {}
+Diags::~Diags() {}
 
 /// Return the identifier for the main buffer in the SourceMgr.
-StringAttr LitDiags::getBufferNameIdentifier() const {
+StringAttr Diags::getBufferNameIdentifier() const {
   return StringAttr::getFromOpaquePointer(bufferNameIdentifier);
 }
 
 /// Emit an error through the parser's logic.
-LitDiagnostic LitDiags::emitError(Location loc, const Twine &message) {
+LitDiagnostic Diags::emitError(Location loc, const Twine &message) {
   diagnosticEmitted = errorEmitted = true;
   return LitDiagnostic(loc, *this, /*isWarning=*/false) << message;
 }
 
 /// Emit an error through the parser's logic.
-LitDiagnostic LitDiags::emitError(llvm::SMLoc loc, const Twine &message) {
+LitDiagnostic Diags::emitError(llvm::SMLoc loc, const Twine &message) {
   return emitError(translateLocation(loc), message);
 }
 
 /// Emit a warning.
-LitDiagnostic LitDiags::emitWarning(Location loc, const Twine &message) {
+LitDiagnostic Diags::emitWarning(Location loc, const Twine &message) {
   diagnosticEmitted = true;
   return LitDiagnostic(loc, *this, /*isWarning=*/true) << message;
 }
-LitDiagnostic LitDiags::emitWarning(llvm::SMLoc loc, const Twine &message) {
+LitDiagnostic Diags::emitWarning(llvm::SMLoc loc, const Twine &message) {
   return emitWarning(translateLocation(loc), message);
 }
 
 /// Encode the specified source location information into a Location object
 /// for attachment to the IR or error reporting.  This always returns a
 /// FileLineColLoc.
-Location LitDiags::translateLocation(SMLoc loc) const {
+Location Diags::translateLocation(SMLoc loc) const {
   // TODO: Implement a cache here to speed up location translation.
   unsigned bufferID = sourceMgr.FindBufferContainingLoc(loc);
   auto lineAndColumn = sourceMgr.getLineAndColumn(loc, bufferID);
@@ -214,7 +215,7 @@ LitDiagnostic::LitDiagnostic(LitDiagnostic &&other)
   other.diags = nullptr;
 }
 
-LitDiagnostic::LitDiagnostic(Location loc, LitDiags &diags, bool isWarning)
+LitDiagnostic::LitDiagnostic(Location loc, Diags &diags, bool isWarning)
     : diags(&diags), isWarning(isWarning) {
   messages.push_back({loc, /*message=*/"", /*ranges=*/{}, /*fixIts=*/{}});
 }
@@ -293,7 +294,7 @@ void LitDiagnostic::addText(const Twine &text) {
   messages.back().text += text.str();
 }
 
-static SMRange translateToSMRange(LitSourceRange range, LitDiags *diags) {
+static SMRange translateToSMRange(LitSourceRange range, Diags *diags) {
   SMRange byteLevelRange{range.getStart(), range.getEnd()};
 
   // LitSourceRange typically represents the end of range in terms of the start
@@ -333,7 +334,7 @@ LitFixIt LitFixIt::insertBeforeToken(SMLoc loc, const Twine &text) {
 /// This constructor creates a fixit that inserts some text after the token
 /// at the specified location.
 LitFixIt LitFixIt::insertAfterToken(SMLoc loc, const Twine &text,
-                                    LitSharedState &shared) {
+                                    SharedState &shared) {
   // Find end of token.
   size_t tokenSize = Lexer::getTokenLength(shared, loc);
   loc = SMLoc::getFromPointer(loc.getPointer() + tokenSize);

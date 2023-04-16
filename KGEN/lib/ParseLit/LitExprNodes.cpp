@@ -15,7 +15,7 @@
 #include "LitExprCalls.h"
 #include "LitExprEmitter.h"
 #include "LitParameterEvaluator.h"
-#include "LitSharedState.h"
+#include "SharedState.h"
 #include "SpecialFunctions.h"
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
@@ -40,7 +40,7 @@ using namespace M::KGEN::LIT;
 /// it into an Attribute (which may not be a TypedAttr) and return it.  On
 /// error, emit a diagnostic and return null.
 static Attribute parseMLIRAttrFromString(StringRef name, SMLoc loc,
-                                         LitSharedState &shared) {
+                                         SharedState &shared) {
   Attribute result;
   std::string errorMsg;
   {
@@ -73,7 +73,7 @@ static Attribute parseMLIRAttrFromString(StringRef name, SMLoc loc,
 /// This implements __mlir_attr.x lookup, synthesizing a PValue for the
 /// attribute on demand.
 static PValue synthesizeMLIRAttrFromString(StringRef name, SMLoc loc,
-                                           LitSharedState &shared) {
+                                           SharedState &shared) {
   auto attr = parseMLIRAttrFromString(name, loc, shared);
   if (!attr)
     return {};
@@ -231,7 +231,7 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
 /// function definition.
 static PValue resolveParamDeclareValue(ParamDeclareOp param,
                                        ParamBindArrayAttr bindings,
-                                       LitSharedState &shared) {
+                                       SharedState &shared) {
   // If the param is declared in a function, then just directly use it.
   Operation *parent = param->getParentOp();
   while (1) {
@@ -556,7 +556,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 /// This uses the MLIR parser to turn the specified MLIR type name into an MLIR
 /// type.
 static ASTType parseMLIRType(StringRef name, const ExprNode *node,
-                             LitSharedState &shared) {
+                             SharedState &shared) {
   Type result;
   {
     // Capture errors thrown by parseType and ignore them.

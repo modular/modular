@@ -9,11 +9,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "LitParserBase.h"
+#include "ParserBase.h"
 using namespace M::KGEN::LIT;
 using namespace M;
 
-LitDiagnostic LitParserBase::emitError(SMLoc loc, const Twine &message) {
+LitDiagnostic ParserBase::emitError(SMLoc loc, const Twine &message) {
   auto diag = shared.emitError(loc, message);
 
   // If we hit a parse error in response to a lexer error, then the lexer
@@ -25,8 +25,8 @@ LitDiagnostic LitParserBase::emitError(SMLoc loc, const Twine &message) {
 
 /// Consume the specified token if present and return success.  On failure,
 /// output a diagnostic and return failure.
-ParseResult LitParserBase::parseToken(Token::Kind expectedToken,
-                                      const Twine &message, SMLoc *loc) {
+ParseResult ParserBase::parseToken(Token::Kind expectedToken,
+                                   const Twine &message, SMLoc *loc) {
   if (loc)
     *loc = getToken().getLoc();
   if (consumeIf(expectedToken))
@@ -50,8 +50,8 @@ ParseResult LitParserBase::parseToken(Token::Kind expectedToken,
 /// Consume an identifier token, binding its name into the specified result
 /// string attribute. If `loc` is set, it is populated with the source location
 /// of the token.
-ParseResult LitParserBase::parseIdentifier(StringAttr &result,
-                                           const Twine &message, SMLoc *loc) {
+ParseResult ParserBase::parseIdentifier(StringAttr &result,
+                                        const Twine &message, SMLoc *loc) {
   if (loc)
     *loc = getToken().getLoc();
   result = StringAttr::get(getContext(), getToken().getSpelling());
@@ -63,8 +63,9 @@ ParseResult LitParserBase::parseIdentifier(StringAttr &result,
 ///
 /// list ::= (element)* STOPTOKEN
 ///
-ParseResult LitParserBase::parseListUntil(
-    Token::Kind rightToken, const std::function<ParseResult()> &parseElement) {
+ParseResult
+ParserBase::parseListUntil(Token::Kind rightToken,
+                           const std::function<ParseResult()> &parseElement) {
 
   while (!consumeIf(rightToken)) {
     if (parseElement())
@@ -79,7 +80,7 @@ ParseResult LitParserBase::parseListUntil(
 ///
 /// separated_list ::= (element (SEPARATOR element)* [SEPARATOR] TERMINATOR
 ///
-ParseResult LitParserBase::parseSeparatedList(
+ParseResult ParserBase::parseSeparatedList(
     Token::Kind separator, const std::function<ParseResult()> &parseElement,
     ArrayRef<Token::Kind> terminators, bool *hadTrailingSep) {
   if (hadTrailingSep)
@@ -109,8 +110,7 @@ ParseResult LitParserBase::parseSeparatedList(
 /// When stopOnSemicolon is true this will stop at the first semicolon seen.
 /// This should only be used for statements that can share a line with other
 /// statements with ; separation.
-void LitParserBase::skipUntilIndentation(size_t minIndent,
-                                         bool stopOnSemicolon) {
+void ParserBase::skipUntilIndentation(size_t minIndent, bool stopOnSemicolon) {
   // This keeps track of open brackets we are inside of.
   SmallVector<Token> openBrackets;
 

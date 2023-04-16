@@ -12,7 +12,7 @@
 #define LITDECLS_H
 
 #include "IRValues.h"
-#include "LitSharedState.h"
+#include "SharedState.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
@@ -31,8 +31,8 @@ class FileModuleOp;
 class FuncOp;
 class Lexer;
 class LexerCursor;
-class LitParserBase;
-class LitSharedState;
+class ParserBase;
+class SharedState;
 class UnresolvedImportOp;
 class VarLetDeclOp;
 class LetRegDeclOp;
@@ -49,9 +49,9 @@ class StructFieldOp;
 using DeclIRValue = PointerUnion<Operation *, PValue, SRValue, MRValue, SBValue,
                                  MBValue, SLValue>;
 
-class DeclResolver : public LitSharedStateUser {
+class DeclResolver : public SharedStateUser {
 public:
-  DeclResolver(LitSharedState &state);
+  DeclResolver(SharedState &state);
   ~DeclResolver();
 
   /// Resolve all of the declarations that are visible, processing the entire
@@ -197,7 +197,7 @@ private:
   DenseMap<ASTDecl *, llvm::SMLoc> declsCurrentlyProcessing;
 
   /// Allow access to private fields.
-  friend LitSharedState;
+  friend SharedState;
 
   DeclResolver(const DeclResolver &) = delete;
   DeclResolver &operator=(const DeclResolver &) = delete;

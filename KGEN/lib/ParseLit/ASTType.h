@@ -22,7 +22,7 @@ class ParamBindArrayAttr;
 
 namespace M::KGEN::LIT {
 class ASTDecl;
-class LitSharedState;
+class SharedState;
 class LitDiagnostic;
 
 /// This is a simple wrapper around an MLIR Type that provides helpful utilities
@@ -50,7 +50,7 @@ public:
 
   /// If this is a user declared type, return the declaration that this came
   /// from.  If this is a raw MLIR type, return null.
-  ASTDecl *getDecl(LitSharedState &shared) const;
+  ASTDecl *getDecl(SharedState &shared) const;
 
   /// If this is a parametric user defined type, return all parameter bindings
   /// on this reference to the type.  Note that this is potentially a partial
@@ -66,14 +66,14 @@ public:
   ///
   /// The location specifies the location of the reference in case the use is
   /// invalid in this location.
-  bool isRegisterPassable(llvm::SMLoc loc, LitSharedState &shared) const;
+  bool isRegisterPassable(llvm::SMLoc loc, SharedState &shared) const;
 
   /// Return the StructDeclOp::RegisterPassable enum for this type.
-  uint8_t getRegisterPassability(llvm::SMLoc loc, LitSharedState &shared) const;
+  uint8_t getRegisterPassability(llvm::SMLoc loc, SharedState &shared) const;
 
   /// Return true if this type needs to be destroyed.  This is false for trivial
   /// types like Int.  Note: this resolves the body of a struct type.
-  bool hasDestructor(llvm::SMLoc loc, LitSharedState &shared) const;
+  bool hasDestructor(llvm::SMLoc loc, SharedState &shared) const;
 
   /// Given a POP::PointerType, return the element as an ASTType.  This aborts
   /// if the current type isn't a pointer.

@@ -13,7 +13,7 @@
 #include "LitDecls.h"
 #include "LitExprEmitter.h"
 #include "LitExprNodes.h"
-#include "LitParserBase.h"
+#include "ParserBase.h"
 
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
@@ -47,15 +47,15 @@ static OpT getBlockParentOfType(Block *block) {
 }
 
 //===----------------------------------------------------------------------===//
-// LitStmtParser
+// StmtParser
 //===----------------------------------------------------------------------===//
 
 /// This class provides the implementation details of the concrete Lightning
 /// grammar.
 namespace {
-struct LitStmtParser : public LitParserBase {
-  LitStmtParser(Lexer &lexer, ASTDecl &containingDecl)
-      : LitParserBase(lexer), containingDecl(containingDecl),
+struct StmtParser : public ParserBase {
+  StmtParser(Lexer &lexer, ASTDecl &containingDecl)
+      : ParserBase(lexer), containingDecl(containingDecl),
         builder(containingDecl.getDeclEndBuilder()) {
 
     // If we are parsing into a 'def', then we need a position to synthesize
@@ -70,7 +70,7 @@ struct LitStmtParser : public LitParserBase {
     }
   }
 
-  ~LitStmtParser() {
+  ~StmtParser() {
     // The varDeclCursor operation is no longer needed.
     if (varDeclCursor)
       varDeclCursor->erase();
@@ -138,8 +138,7 @@ private:
 };
 } // namespace
 
-void LitStmtParser::pushLocalScope(
-    DebugInfo::DIBuilder::ScopeGuard &scopeGuard) {
+void StmtParser::pushLocalScope(DebugInfo::DIBuilder::ScopeGuard &scopeGuard) {
   SMLoc curLoc = getToken().getLoc();
   auto &sourceMgr = getSourceMgr();
   unsigned bufferID = sourceMgr.FindBufferContainingLoc(curLoc);
@@ -158,7 +157,7 @@ void LitStmtParser::pushLocalScope(
 /// suite     ::=  [stmt_list NEWLINE] | NEWLINE INDENT statement+ DEDENT
 /// statement ::=  stmt_list NEWLINE | compound_stmt
 /// stmt_list ::=  simple_stmt (";" simple_stmt)* [";"]
-ParseResult LitStmtParser::parseSuite(ssize_t curIndent) {
+ParseResult StmtParser::parseSuite(ssize_t curIndent) {
   // Ignore empty body at end of file: a `pass` is not required.
   if (getToken().is(Token::eof))
     return success();
@@ -218,7 +217,7 @@ ParseResult LitStmtParser::parseSuite(ssize_t curIndent) {
   return success();
 }
 
-ParseResult LitStmtParser::parseLocalScopeSuite(ssize_t curIndent) {
+ParseResult StmtParser::parseLocalScopeSuite(ssize_t curIndent) {
   // If we are generating debug info, push a local scope for the suite.
   DebugInfo::DIBuilder::ScopeGuard scopeGuard;
   if (shared.diBuilder)
@@ -231,7 +230,7 @@ ParseResult LitStmtParser::parseLocalScopeSuite(ssize_t curIndent) {
 /// Emit a warning when an expression is emitted at statement context, and it
 /// returns a result.
 static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
-                                  LitSharedState &shared) {
+                                  SharedState &shared) {
   ASTType valueType = value.getRValueType();
 
   // Return true if the specified type can be implicitly ignored.
@@ -323,8 +322,8 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
 ///               | global_stmt [TODO]
 ///               | nonlocal_stmtParseResult [TODO]
 ///
-ParseResult LitStmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
-                                     size_t stmtIndent) {
+ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
+                                  size_t stmtIndent) {
   // This is the cursor for the start of the declaration, that will be used in
   // the signature resolution phase.
   LexerCursor startCursor = getLexer().getCursor();
@@ -460,7 +459,7 @@ ParseResult LitStmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
 //===----------------------------------------------------------------------===//
 
 /// return_stmt ::= "return" [expression_list]
-ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
+ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
   auto decl = dyn_cast<LIT::FuncOp>(containingDecl);
   auto loc = consumeToken(Token::kw_return).getLoc();
 
@@ -530,7 +529,7 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
 }
 
 /// param_return_stmt ::= "param_return" "[" expression ("," expression)* "]"
-ParseResult LitStmtParser::parseParamReturnStmt(size_t returnIndent) {
+ParseResult StmtParser::parseParamReturnStmt(size_t returnIndent) {
   SMLoc loc = consumeToken(Token::kw_param_return).getLoc();
   auto decl = dyn_cast<LIT::FuncOp>(containingDecl);
   if (!decl) {
@@ -642,7 +641,7 @@ LogicalResult ExprEmitter::emitRaise(SRValue errorValue, Location raiseLoc) {
   return success();
 }
 
-ParseResult LitStmtParser::parseRaiseStmt(size_t raiseIndent) {
+ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
   auto loc = consumeToken(Token::kw_raise).getLoc();
 
   ExprNode *errorExpr = nullptr;
@@ -699,9 +698,9 @@ ParseResult LitStmtParser::parseRaiseStmt(size_t raiseIndent) {
 
 /// break_stmt ::= "break"
 /// continue_stmt ::= "continue"
-ParseResult LitStmtParser::parseBreakOrContinueStmt(Token::Kind kind,
-                                                    StringRef name,
-                                                    StringRef opName) {
+ParseResult StmtParser::parseBreakOrContinueStmt(Token::Kind kind,
+                                                 StringRef name,
+                                                 StringRef opName) {
   llvm::SMLoc loc = consumeToken(kind).getLoc();
 
   // Ensure the break statement is being parsed within a loop context.
@@ -723,7 +722,7 @@ ParseResult LitStmtParser::parseBreakOrContinueStmt(Token::Kind kind,
 
 /// while_stmt ::=  "while" assignment_expression ":" suite
 ///                 ["else" ":" suite]
-ParseResult LitStmtParser::parseWhileStmt(size_t curIndent) {
+ParseResult StmtParser::parseWhileStmt(size_t curIndent) {
   Location whileLoc = translateLocation(consumeToken(Token::kw_while).getLoc());
 
   ExprNode *condExp = nullptr;
@@ -771,7 +770,7 @@ ParseResult LitStmtParser::parseWhileStmt(size_t curIndent) {
 
 /// for_stmt ::=  "for" target_list "in" starred_list ":" suite
 ///              ["else" ":" suite]
-ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
+ParseResult StmtParser::parseForStmt(size_t curIndent) {
   Location forLoc = translateLocation(consumeToken(Token::kw_for).getLoc());
 
   // parse [target_list] in [starred_list]
@@ -877,7 +876,7 @@ ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
 
 /// try_stmt ::= "try" ":" suite "except" [identifier] ":" suite
 ///              ["else" suite]
-ParseResult LitStmtParser::parseTryStmt(size_t curIndent) {
+ParseResult StmtParser::parseTryStmt(size_t curIndent) {
   auto func = getBlockParentOfType<LIT::FuncOp>(builder.getInsertionBlock());
   SMLoc loc = consumeToken(Token::kw_try).getLoc();
 
@@ -964,8 +963,7 @@ ParseResult LitStmtParser::parseTryStmt(size_t curIndent) {
 /// if_stmt ::=  "if" assignment_expression ":" suite
 ///             ("elif" assignment_expression ":" suite)*
 ///             ["else" ":" suite]
-ParseResult LitStmtParser::parseIfStmt(LexerCursor startCursor,
-                                       size_t curIndent) {
+ParseResult StmtParser::parseIfStmt(LexerCursor startCursor, size_t curIndent) {
   // This is enabled with the @parameter decorator.
   bool isParamIf = false;
 
@@ -1098,7 +1096,7 @@ ParseResult LitStmtParser::parseIfStmt(LexerCursor startCursor,
 ///                      | "from" relative_module "import" "*"
 /// module          ::=  (identifier ".")* identifier
 /// relative_module ::=  "."* module | "."+
-ParseResult LitStmtParser::parseFromImportStmt() {
+ParseResult StmtParser::parseFromImportStmt() {
   consumeToken(Token::kw_from);
 
   // TODO: Support packages, this currently just handles basic module importing.
@@ -1165,7 +1163,7 @@ ParseResult LitStmtParser::parseFromImportStmt() {
 /// import_stmt ::=  "import" module ["as" identifier]
 ///                  ("," module ["as" identifier])*
 /// module      ::=  (identifier ".")* identifier
-ParseResult LitStmtParser::parseImportStmt() {
+ParseResult StmtParser::parseImportStmt() {
   consumeToken(Token::kw_import);
 
   // TODO: Support packages, this currently just handles basic module importing.
@@ -1201,8 +1199,8 @@ ParseResult LitStmtParser::parseImportStmt() {
 // Definition statements
 //===----------------------------------------------------------------------===//
 
-ParseResult LitStmtParser::parseDefFnStmt(LexerCursor startCursor,
-                                          size_t curIndent) {
+ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
+                                       size_t curIndent) {
   bool isAsync = consumeIf(Token::kw_async);
   // isDef is true when introduced by the 'def' keywords instead of 'fn'.
   bool isDef = getToken().is(Token::kw_def);
@@ -1239,8 +1237,8 @@ ParseResult LitStmtParser::parseDefFnStmt(LexerCursor startCursor,
   return success();
 }
 
-ParseResult LitStmtParser::parseLetVarStmt(LexerCursor startCursor,
-                                           size_t stmtIndent) {
+ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
+                                        size_t stmtIndent) {
   bool isVar = getToken().is(Token::kw_var);
   auto smLoc = consumeToken().getLoc();
   auto loc = translateLocation(smLoc);
@@ -1284,8 +1282,8 @@ ParseResult LitStmtParser::parseLetVarStmt(LexerCursor startCursor,
   return success();
 }
 
-ParseResult LitStmtParser::parseAliasDeclStmt(LexerCursor startCursor,
-                                              size_t stmtIndent) {
+ParseResult StmtParser::parseAliasDeclStmt(LexerCursor startCursor,
+                                           size_t stmtIndent) {
   auto smLoc = consumeToken(Token::kw_alias).getLoc();
   auto loc = translateLocation(smLoc);
   StringAttr name;
@@ -1310,8 +1308,8 @@ ParseResult LitStmtParser::parseAliasDeclStmt(LexerCursor startCursor,
   return success();
 }
 
-ParseResult LitStmtParser::parseStructStmt(LexerCursor startCursor,
-                                           size_t curIndent) {
+ParseResult StmtParser::parseStructStmt(LexerCursor startCursor,
+                                        size_t curIndent) {
   // We don't support structs in structs (yet?).
   if (isa<StructDeclOp>(containingDecl))
     emitTokenError("nested struct not supported here");
@@ -1336,8 +1334,8 @@ ParseResult LitStmtParser::parseStructStmt(LexerCursor startCursor,
   return success();
 }
 
-ParseResult LitStmtParser::parseClassStmt(LexerCursor startCursor,
-                                          size_t curIndent) {
+ParseResult StmtParser::parseClassStmt(LexerCursor startCursor,
+                                       size_t curIndent) {
   emitTokenError("classes are not supported yet");
   consumeToken(Token::kw_class).getLoc();
 
@@ -1352,8 +1350,8 @@ ParseResult LitStmtParser::parseClassStmt(LexerCursor startCursor,
 /// used to define regions for MLIR operations.
 ///
 /// region_stmt ::= "__mlir_region" identifier "(" [argument_list] ")" ":" suite
-ParseResult LitStmtParser::parseMLIRRegionStmt(LexerCursor startCursor,
-                                               size_t curIndent) {
+ParseResult StmtParser::parseMLIRRegionStmt(LexerCursor startCursor,
+                                            size_t curIndent) {
   SMLoc loc = consumeToken(Token::kw___mlir_region).getLoc();
 
   // We will be moving the builder into the contained region, so save it here.
@@ -1423,7 +1421,7 @@ ParseResult LitStmtParser::parseMLIRRegionStmt(LexerCursor startCursor,
 
   if (parseToken(Token::colon, "expected ':' after region argument list"))
     return failure();
-  LitStmtParser parser(lexer, decl);
+  StmtParser parser(lexer, decl);
   return parser.parseLocalScopeSuite(curIndent);
 }
 
@@ -1433,8 +1431,8 @@ ParseResult LitStmtParser::parseMLIRRegionStmt(LexerCursor startCursor,
 
 /// Parse a 'suite' production into the declaration specified by `ASTDecl`.
 /// This is the main entrypoint to this file.
-ParseResult LitParserBase::parseSuite(ASTDecl &containingDecl, Lexer &lexer) {
-  LitStmtParser parser(lexer, containingDecl);
+ParseResult ParserBase::parseSuite(ASTDecl &containingDecl, Lexer &lexer) {
+  StmtParser parser(lexer, containingDecl);
 
   // Parse the docstring if present.
   parser.parseDocString(containingDecl);

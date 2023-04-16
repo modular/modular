@@ -45,7 +45,7 @@ namespace {
 /// information about the specified parameter.
 class ParameterInferenceState {
 public:
-  ParameterInferenceState(LitSharedState &state, size_t index, Type type)
+  ParameterInferenceState(SharedState &state, size_t index, Type type)
       : state(state), parameterIndex(index) {}
 
   /// Given an incomplete parameter binding set for a call to the specified
@@ -59,7 +59,7 @@ private:
   LogicalResult matchTypes(Type actualType, Type expectedType);
   LogicalResult matchParams(TypedAttr actualAttr, TypedAttr expectedAttr);
 
-  LitSharedState &state;
+  SharedState &state;
   size_t parameterIndex;
   SmallVector<PValue> inferredValues;
 };
@@ -1372,7 +1372,7 @@ TypedAttr OverloadSet::getBoundConstantAttr(ExprEmitter &emitter) const {
 /// failure.
 OverloadSet::OverloadSet(ASTType type, StringRef methodName,
                          const ExprNode *expr, CallSyntax syntax,
-                         LitSharedState &shared,
+                         SharedState &shared,
                          std::function<void()> errorHandler)
     : expr(expr), syntax(syntax) {
 
