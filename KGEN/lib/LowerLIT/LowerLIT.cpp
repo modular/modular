@@ -67,8 +67,8 @@ static void lowerLITOps(LIT::FuncOp func,
       funcSpAttr && funcSpAttr.getCompileUnit().getEmissionKind() ==
                         DebugInfo::EmissionKind::Full;
   func.walk([&](Operation *op) {
-    if (isa<AliasForwardDeclOp, OwnershipUseOp>(op)) {
-      // lit.alias.fwd.decl and lit.ownership.use are used internally by the
+    if (isa<AliasForwardDeclOp, OwnershipUseOp, OwnershipMarkDestroyedOp>(op)) {
+      // lit.alias.fwd.decl and lit.ownership.* are used internally by the
       // frontend and ownership lowering, but is not needed after that.
       op->erase();
     } else if (auto letDecl = dyn_cast<LIT::LetRegDeclOp>(op)) {

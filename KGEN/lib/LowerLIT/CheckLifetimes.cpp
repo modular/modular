@@ -237,11 +237,6 @@ struct LifetimeTrackable {
   /// fully initialized when all their fields are initialized.
   bool isFullObjectLiveOnEntry = false;
 
-  /// True if this is the self member of a __del__ method for an object.  It
-  /// should not be treated as fully alive at the bottom of its __del__ so it
-  /// should never be fully destroyed (only its members).
-  bool isDelSelf = false;
-
   /// Return the type of the underlying value, looking through the pointer type
   /// if this is an indirect reference.
   Type getValueType(Value value) const {
@@ -311,20 +306,6 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     isIndirect = true;
     startsUninit = false;
     endsUninit = true;
-
-    // Check to see if this is the 'self' member of a __del__ method.  In this
-    // case we want to treat the object as dead at the end of the function so
-    // it doesn't get a recursive call.
-    if (auto funcOp = dyn_cast<LIT::FuncOp>(bbArg.getOwner()->getParentOp())) {
-      if (auto structOp =
-              dyn_cast_or_null<LIT::StructDeclOp>(funcOp->getParentOp())) {
-        if (auto symbolDtor = dyn_cast_or_null<SymbolConstantAttr>(
-                structOp.getDestructorAttr())) {
-          if (symbolDtor == funcOp.getBoundReference())
-            isDelSelf = true;
-        }
-      }
-    }
     break;
   case ValueInputConvention::ByRefResult:
     // FIXME(Issue#12196): __result__ slots in raising functions cannot properly
@@ -383,17 +364,17 @@ struct ValueInfo {
   /// fully initialized when all their fields are initialized.
   const bool isFullObjectLiveOnEntry;
 
-  /// True if this is the self member of a __del__ method for an object.  It
-  /// should not be treated as fully alive at the bottom of its __del__ so it
-  /// should never be fully destroyed (only its members).
-  const bool isDelSelf;
-
   /// This is true if the value had a use-before-initialization error diagnosed.
   bool hasErrorDiagnosed;
 
   /// Return true if this value contains the specified bit.
   bool contains(unsigned bitNo) const {
     return startValueBit <= bitNo && bitNo < endValueBit;
+  }
+
+  StringAttr getName() const {
+    assert(value && "cannot get name of null entry");
+    return LifetimeTrackable(value).name;
   }
 };
 
@@ -509,11 +490,11 @@ struct ValueSet {
     }
 
     valueInfoIndex[val] = valueInfos.size();
-    valueInfos.push_back(
-        {val, firstValueBit, firstValueBit + numValueBits,
-         trackable.startsUninit, trackable.endsUninit, trackable.isIndirect,
-         trackable.isFullObjectLiveOnEntry, trackable.isDelSelf,
-         /*hasErrorDiagnosed=*/false});
+    valueInfos.push_back({val, firstValueBit, firstValueBit + numValueBits,
+                          trackable.startsUninit, trackable.endsUninit,
+                          trackable.isIndirect,
+                          trackable.isFullObjectLiveOnEntry,
+                          /*hasErrorDiagnosed=*/false});
   }
 
   /// Return a reference to the entire value with the specified ID.
@@ -579,7 +560,7 @@ void ValueSet::dump() const {
   printFuncName(os);
   os << "\n";
   os << "  SI = startsInit, EI = endsInit, [*] = isIndirect";
-  os << "  FL=isFullObjectLiveOnEntry, DEL = isDelSelf, ERR = hadErrorDiag\n";
+  os << "  FL=isFullObjectLiveOnEntry, ERR = hadErrorDiag\n";
 
   for (auto [idx, info] : llvm::enumerate(valueInfos)) {
     os << "  #" << idx << " [" << info.startValueBit << ":" << info.endValueBit
@@ -593,8 +574,6 @@ void ValueSet::dump() const {
       os << " [*]";
     if (info.isFullObjectLiveOnEntry)
       os << " FL";
-    if (info.isDelSelf)
-      os << " DEL";
     if (info.hasErrorDiagnosed)
       os << " ERR";
     os << "\t";
@@ -717,8 +696,14 @@ static Type digIntoTypeAtFieldOffset(Type type, unsigned firstInvalidOffset,
                                      TypeDeclInfo &typeDeclInfo) {
   // Dig into the type to get to the right field.
   while (firstInvalidOffset) {
+    // If this is the full-object bit for this entire type, then we found the
+    // problem.
+    if (firstInvalidOffset + 1 == typeDeclInfo.getNumFieldsInType(type))
+      return type;
+
     // To index into this type, it must be a DeclRef.
     DeclRefType declRefType = cast<DeclRefType>(type);
+
     auto [fieldName, fieldType] =
         typeDeclInfo.getFieldContaining(declRefType, firstInvalidOffset);
     unsigned fieldBitOffset =
@@ -744,11 +729,12 @@ static Type digIntoTypeAtFieldOffset(Type type, unsigned firstInvalidOffset,
 /// When complaining about a specific value, check to see if the /entire/
 /// field-sensitive value is missing from the specified bitvector.  If not,
 /// add a suffix that identifies the first whole field that is missing.
-static void addBadValueNameToDiag(const LifetimeTrackable &trackable,
-                                  ValueRef valueRef, const BitVector &bits,
+static void addBadValueNameToDiag(ValueRef valueRef, const BitVector &bits,
                                   ValueSet &valueSet,
                                   mlir::InFlightDiagnostic &diag) {
-  diag << "'" << trackable.name.str();
+  const ValueInfo &valueEntry = valueSet.getValueInfo(valueRef.valueId);
+
+  diag << "'" << valueEntry.getName().str();
   // If the whole value is missing, then don't add any field information.
   if (valueRef.isAllMissing(bits)) {
     diag << "'";
@@ -758,7 +744,6 @@ static void addBadValueNameToDiag(const LifetimeTrackable &trackable,
   // Figure out what the end of the field bits are so we can report the first
   // fields.  The full object ends with a bit to track whether the whole value
   // is initialized which we don't want to track.
-  const ValueInfo &valueEntry = valueSet.getValueInfo(valueRef.valueId);
   unsigned fullValueStartBit = valueEntry.startValueBit;
 
   unsigned endOfFullObjectFields = valueEntry.endValueBit - 1;
@@ -786,7 +771,7 @@ static void addBadValueNameToDiag(const LifetimeTrackable &trackable,
   // so we want to figure out which sub-piece of the whole value type is the
   // problem, and identify a path that drills down through each of the named
   // fields.
-  auto type = trackable.getValueType(valueEntry.value);
+  auto type = valueRef.getValueType(valueEntry.value);
   // Emit the field prefix for the specified type.
   digIntoTypeAtFieldOffset(type, firstMissingFieldNo - fullValueStartBit,
                            firstPresentFieldNo - fullValueStartBit, diag,
@@ -811,17 +796,14 @@ ValueRef UninitializedValueScan::checkLive(Value value, Operation &op) {
     return valueRef; // Only report one error per symbolic value.
   valueEntry.hasErrorDiagnosed = true;
 
-  LifetimeTrackable trackable(valueEntry.value);
-  assert(trackable && "value should be tracked");
-
   // If the fields are all valid except for the whole-object bit, then the user
   // tried to initialize a value by initializing all its fields.  Reject this
   // with a customized error.
-  if (trackable.isIndirect && valueRef.endBit == valueEntry.endValueBit &&
+  if (valueRef.isIndirect && valueRef.endBit == valueEntry.endValueBit &&
       valueRef.getSubfield(0, valueRef.getNumBits() - 1)
           .isAllPresent(liveValues)) {
     auto diag = mlir::emitError(op.getLoc(), "'")
-                << trackable.name.str()
+                << valueEntry.getName().str()
                 << "' used with all fields manually initialized "
                    "but without calling an '__init__' method";
     return valueRef;
@@ -831,10 +813,10 @@ ValueRef UninitializedValueScan::checkLive(Value value, Operation &op) {
 
   // If some fields are present and others are missing, complain about the first
   // whole field that is missing.
-  addBadValueNameToDiag(trackable, valueRef, liveValues, valueSet, diag);
+  addBadValueNameToDiag(valueRef, liveValues, valueSet, diag);
 
   diag.attachNote(valueEntry.value.getLoc())
-      << "'" << trackable.name.str() << "' declared here";
+      << "'" << valueEntry.getName().str() << "' declared here";
   return valueRef;
 }
 
@@ -1266,11 +1248,6 @@ void DestructorInsertion::checkOp(Operation &op) {
     for (const ValueInfo &valueInfo : valueSet.getValueInfos()) {
       if (!valueInfo.endsUninit)
         consumedValues.set(valueInfo.startValueBit, valueInfo.endValueBit);
-      // If this is 'self' in a del, then the full object bit is consumed even
-      // though the rest of the fields are not.  This ensures the sub-fields are
-      // destroyed but the full object is not.
-      else if (valueInfo.isDelSelf)
-        consumedValues.set(valueInfo.endValueBit - 1);
     }
     return;
   }
@@ -1298,6 +1275,15 @@ void DestructorInsertion::checkOp(Operation &op) {
   if (isa<HLCF::ContinueOp>(op)) {
     assert(continueSet && "Not in a loop?");
     consumedValues = *continueSet;
+    return;
+  }
+
+  // The lit.ownership.mark.destroyed op consumes the whole object bit of a
+  // value only, but not its fields.    This ensures the sub-fields are
+  // destroyed but the full object is not.  It is used in destructors primarily.
+  if (auto markDestroyed = dyn_cast<LIT::OwnershipMarkDestroyedOp>(op)) {
+    if (auto valueRef = valueSet.getValueRef(markDestroyed.getValue()))
+      consumedValues.set(valueRef.endBit - 1);
     return;
   }
 
@@ -1538,9 +1524,27 @@ void DestructorInsertion::destroyValueIfNeeded(
   // some are missing.  Recursively walk the type and destroy just the fields
   // that are missing.
   assert(valueRef.isIndirect && "only indirect values are field sensitive");
-  assert(consumedValues.test(valueRef.endBit - 1) &&
-         "whole object must be destroyed if only some fields are missing");
   DeclRefType valueType = cast<DeclRefType>(valueRef.getValueType(value));
+
+  // If a field of a value is destroyed but the whole value is not, then we have
+  // an error.  We cannot run the destructor on the whole object if one of the
+  // fields is missing.
+  if (!consumedValues.test(valueRef.endBit - 1)) {
+    ValueInfo &valueEntry = valueSet.getValueInfo(valueRef.valueId);
+    if (valueEntry.hasErrorDiagnosed)
+      return; // Only report one error per symbolic value.
+    valueEntry.hasErrorDiagnosed = true;
+
+    auto diag = mlir::emitError(builder.getLoc(), "field ");
+    auto aliveValues = consumedValues;
+    aliveValues.flip();
+    // If some fields are present and others are missing, complain about the
+    // first whole field that is missing.
+    addBadValueNameToDiag(valueRef, aliveValues, valueSet, diag);
+    diag << " destroyed out of the middle of a value, preventing the overall "
+            "value from being destroyed";
+    return;
+  }
 
   LIT::StructDeclOp structDecl =
       valueSet.typeDeclInfo.getStructDeclForType(valueType);

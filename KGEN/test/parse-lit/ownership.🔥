@@ -11,6 +11,7 @@ struct MemExample:
   # CHECK-LABEL: lit.func @"__del__
   # CHECK-NEXT:    kgen.call {{.*}}noop{{.*}}(%self)
   # CHECK-NEXT:    %1 = kgen.param.constant{{.*}} <#lit.none>
+  # CHECK-NEXT:    lit.ownership.mark.destroyed %self
   # CHECK-NEXT:    kgen.return %1 : !lit.none
   fn __del___(owned self):
     self.noop()
@@ -26,12 +27,11 @@ struct RegExample:
   # CHECK-LABEL: lit.func @"__del___
   # CHECK-NEXT: %self_0 = lit.varlet.decl "self", var = true
   # CHECK-NEXT: pop.store %self, %self_0
-
   # FIXME: infinite recursion is bad.
   # CHECK-NEXT: %0 = pop.load %self_0 : !pop.pointer<@"$ownership"::@RegExample>
-  # CHECK-NEXT: %1 = kgen.call @"$ownership"::@RegExample::@"__del___($ownership::RegExample)"(%0) : (!kgen.declref<@"$ownership"::@RegExample>) -> !lit.none
-
+  # CHECK-NEXT: %1 = kgen.call @"$ownership"::@RegExample::@"__del___
   # CHECK-NEXT: %2 = kgen.param.constant{{.*}} <#lit.none>
+  # CHECK-NEXT: lit.ownership.mark.destroyed %self
   # CHECK-NEXT: kgen.return %2
   fn __del___(owned self):
     pass
@@ -338,6 +338,20 @@ struct FieldSensitiveMemExample:
     self.f1 = MemExample()
     # CHECK-NEXT: kgen.param.constant: !lit.none = <#lit.none>
 
+ # CHECK-LABEL: lit.func @"mutate2
+ fn mutate2(self&):
+    # Disable the dtor of 'f1' before we overwrite it to show we can do this.
+    # CHECK-NEXT: %0 = lit.struct.gep %self[f1]
+    # CHECK-NEXT: lit.ownership.mark.destroyed %0
+    __mlir_op.`lit.ownership.mark.destroyed`[_type : None](
+       __get_lvalue_as_address(self.f1)
+    )
+
+    # CHECK-NEXT: %1 = lit.struct.gep %self[f1]
+    # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%1)
+    self.f1 = MemExample()
+    # CHECK-NEXT: kgen.param.constant: !lit.none = <#lit.none>
+
 
   # CHECK-LABEL: lit.func @"__del__
   # CHECK-NEXT: %0 = lit.struct.gep %self[f1]
@@ -345,3 +359,17 @@ struct FieldSensitiveMemExample:
   # CHECK-NEXT: %2 = lit.struct.gep %self[f2]
   # CHECK-NEXT: kgen.call @{{.*}}@"__del___{{.*}}(%2)
   # CHECK-NEXT: kgen.param.constant: !lit.none
+  # CHECK-NEXT: lit.ownership.mark.destroyed %self
+
+# This disables the destructor of 'x' which causes the fields to be destroyed.
+# CHECK-LABEL: lit.func @"disableDtor
+fn disableDtor(owned x: FieldSensitiveMemExample):
+  # CHECK-NEXT: %0 = lit.struct.gep %x[f1]
+  # CHECK-NEXT: kgen.call @{{.*}}@"__del___{{.*}}(%0)
+  # CHECK-NEXT: %2 = lit.struct.gep %x[f2]
+  # CHECK-NEXT: kgen.call @{{.*}}@"__del___{{.*}}(%2)
+  # CHECK-NEXT: lit.ownership.mark.destroyed %x
+  # CHECK-NEXT: kgen.param.constant: !lit.none
+  __mlir_op.`lit.ownership.mark.destroyed`[_type : None](
+     __get_lvalue_as_address(x)
+  )
