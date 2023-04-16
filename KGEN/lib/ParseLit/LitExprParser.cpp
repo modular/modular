@@ -21,8 +21,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "Lexer.h"
 #include "LitExprNodes.h"
-#include "LitLexer.h"
 #include "LitParserBase.h"
 #include "llvm/Support/SaveAndRestore.h"
 using namespace M::KGEN::LIT;
@@ -65,14 +65,14 @@ namespace M::KGEN::LIT {
 /// idiom.
 class ExprParser : public LitParserBase {
 public:
-  ExprParser(LitLexer &lexer, std::optional<size_t> stmtIndent)
+  ExprParser(Lexer &lexer, std::optional<size_t> stmtIndent)
       : LitParserBase(lexer), stmtIndent(stmtIndent) {}
 
   ~ExprParser() {}
 
   // Expressions.
   ParseResult parseExpressionList(SmallVectorImpl<ExprNode *> &results,
-                                  ArrayRef<LitToken::Kind> terminators,
+                                  ArrayRef<Token::Kind> terminators,
                                   bool *hadTrailingComma = nullptr);
   ParseResult parseExpression(ExprNode *&result,
                               Precedence minPrec = Precedence::kLowestExpr);
@@ -143,7 +143,7 @@ bool ExprParser::isTokenStartOfNextStatement() {
 /// expression_list ::= expression ("," expression)* [","]
 ParseResult
 ExprParser::parseExpressionList(SmallVectorImpl<ExprNode *> &results,
-                                ArrayRef<LitToken::Kind> terminators,
+                                ArrayRef<Token::Kind> terminators,
                                 bool *hadTrailingComma) {
   return parseCommaSeparatedList(
       [&]() -> ParseResult {
@@ -160,89 +160,89 @@ struct InfixInfo {
   bool isLeftAssociative;
 
   /// Classify a token for an infix operator.
-  static InfixInfo get(LitToken::Kind tokKind) {
+  static InfixInfo get(Token::Kind tokKind) {
     switch (tokKind) {
     default:
       return {Precedence::kInvalid, ExprNode::kLastBinOp, false};
-    case LitToken::equal:
+    case Token::equal:
       return {Precedence::kLowestExpr, ExprNode::kAssign, false};
-    case LitToken::plus_equal:
+    case Token::plus_equal:
       return {Precedence::kLowestExpr, ExprNode::kIAdd, false};
-    case LitToken::minus_equal:
+    case Token::minus_equal:
       return {Precedence::kLowestExpr, ExprNode::kISub, false};
-    case LitToken::star_equal:
+    case Token::star_equal:
       return {Precedence::kLowestExpr, ExprNode::kIMul, false};
-    case LitToken::at_equal:
+    case Token::at_equal:
       return {Precedence::kLowestExpr, ExprNode::kIMatMul, false};
-    case LitToken::slash_equal:
+    case Token::slash_equal:
       return {Precedence::kLowestExpr, ExprNode::kITrueDiv, false};
-    case LitToken::percent_equal:
+    case Token::percent_equal:
       return {Precedence::kLowestExpr, ExprNode::kIMod, false};
-    case LitToken::amp_equal:
+    case Token::amp_equal:
       return {Precedence::kLowestExpr, ExprNode::kIAnd, false};
-    case LitToken::pipe_equal:
+    case Token::pipe_equal:
       return {Precedence::kLowestExpr, ExprNode::kIOr, false};
-    case LitToken::circumflex_equal:
+    case Token::circumflex_equal:
       return {Precedence::kLowestExpr, ExprNode::kIXor, false};
-    case LitToken::less_less_equal:
+    case Token::less_less_equal:
       return {Precedence::kLowestExpr, ExprNode::kILShift, false};
-    case LitToken::right_right_equal:
+    case Token::right_right_equal:
       return {Precedence::kLowestExpr, ExprNode::kIRShift, false};
-    case LitToken::star_star_equal:
+    case Token::star_star_equal:
       return {Precedence::kLowestExpr, ExprNode::kIPow, false};
-    case LitToken::slash_slash_equal:
+    case Token::slash_slash_equal:
       return {Precedence::kLowestExpr, ExprNode::kIFloorDiv, false};
-    case LitToken::plus:
+    case Token::plus:
       return {Precedence::kSum, ExprNode::kAdd, false};
-    case LitToken::minus:
+    case Token::minus:
       return {Precedence::kSum, ExprNode::kSub, false};
-    case LitToken::star:
+    case Token::star:
       return {Precedence::kTerm, ExprNode::kMul, false};
-    case LitToken::at:
+    case Token::at:
       return {Precedence::kTerm, ExprNode::kMatMul, false};
-    case LitToken::slash:
+    case Token::slash:
       return {Precedence::kTerm, ExprNode::kTrueDiv, false};
-    case LitToken::slash_slash:
+    case Token::slash_slash:
       return {Precedence::kTerm, ExprNode::kFloorDiv, false};
-    case LitToken::percent:
+    case Token::percent:
       return {Precedence::kTerm, ExprNode::kMod, false};
-    case LitToken::kw_or:
+    case Token::kw_or:
       return {Precedence::kBoolOr, ExprNode::kBoolOr, false};
-    case LitToken::kw_and:
+    case Token::kw_and:
       return {Precedence::kBoolAnd, ExprNode::kBoolAnd, false};
-    case LitToken::kw_not:
+    case Token::kw_not:
       return {Precedence::kBoolNot, ExprNode::kBoolNot, false};
-    case LitToken::kw_in:
+    case Token::kw_in:
       return {Precedence::kComparison, ExprNode::kCmpIn, false};
-    case LitToken::kw_is:
+    case Token::kw_is:
       return {Precedence::kComparison, ExprNode::kCmpIs, false};
-    case LitToken::less:
+    case Token::less:
       return {Precedence::kComparison, ExprNode::kCmpLT, false};
-    case LitToken::less_equal:
+    case Token::less_equal:
       return {Precedence::kComparison, ExprNode::kCmpLE, false};
-    case LitToken::greater:
+    case Token::greater:
       return {Precedence::kComparison, ExprNode::kCmpGT, false};
-    case LitToken::greater_equal:
+    case Token::greater_equal:
       return {Precedence::kComparison, ExprNode::kCmpGE, false};
-    case LitToken::exclaim_equal:
+    case Token::exclaim_equal:
       return {Precedence::kComparison, ExprNode::kCmpNE, false};
-    case LitToken::equal_equal:
+    case Token::equal_equal:
       return {Precedence::kComparison, ExprNode::kCmpEQ, false};
-    case LitToken::pipe:
+    case Token::pipe:
       return {Precedence::kOr, ExprNode::kOr, false};
-    case LitToken::circumflex:
+    case Token::circumflex:
       return {Precedence::kXor, ExprNode::kXor, false};
-    case LitToken::amp:
+    case Token::amp:
       return {Precedence::kAnd, ExprNode::kAnd, false};
-    case LitToken::less_less:
+    case Token::less_less:
       return {Precedence::kShift, ExprNode::kLShift, false};
-    case LitToken::right_right:
+    case Token::right_right:
       return {Precedence::kShift, ExprNode::kRShift, false};
-    case LitToken::kw_if:
+    case Token::kw_if:
       return {Precedence::kIfElse, ExprNode::kIfElse, false};
-    case LitToken::star_star:
+    case Token::star_star:
       return {Precedence::kPower, ExprNode::kPow, true};
-    case LitToken::kw_await:
+    case Token::kw_await:
       return {Precedence::kAwait, ExprNode::kAwait, false};
     }
   }
@@ -260,10 +260,10 @@ ParseResult ExprParser::parseExpression(ExprNode *&expr, Precedence minPrec) {
   // together before returning to the operator that called it.
   InfixInfo infixInfo = InfixInfo::get(getToken().getKind());
   while (!isTokenStartOfNextStatement() && minPrec < infixInfo.precedence) {
-    LitToken::Kind tokKind = getToken().getKind();
+    Token::Kind tokKind = getToken().getKind();
     auto binOpLoc = consumeToken().getLoc();
 
-    if (tokKind == LitToken::Kind::kw_if) {
+    if (tokKind == Token::Kind::kw_if) {
       // Conditional if - else expression.
       // trueExpr 'if' condition 'else' falseExpr.
       ExprNode *cond;
@@ -272,7 +272,7 @@ ParseResult ExprParser::parseExpression(ExprNode *&expr, Precedence minPrec) {
 
       ExprNode *falseExpr;
       auto elseLoc = getToken().getLoc();
-      if (parseToken(LitToken::Kind::kw_else,
+      if (parseToken(Token::Kind::kw_else,
                      "expecting an 'else' followed by an expression") ||
           parseExpression(falseExpr, infixInfo.precedence))
         return failure();
@@ -282,11 +282,10 @@ ParseResult ExprParser::parseExpression(ExprNode *&expr, Precedence minPrec) {
     }
 
     // rhs 'is' 'not' lhs -> a is not True.
-    if (tokKind == LitToken::Kind::kw_is && consumeIf(LitToken::Kind::kw_not))
+    if (tokKind == Token::Kind::kw_is && consumeIf(Token::Kind::kw_not))
       infixInfo.nodeKind = ExprNode::Kind::kCmpIsNot;
     // rhs 'not' 'in' lhs -> a not in {1, 2}.
-    else if (tokKind == LitToken::Kind::kw_not &&
-             consumeIf(LitToken::Kind::kw_in)) {
+    else if (tokKind == Token::Kind::kw_not && consumeIf(Token::Kind::kw_in)) {
       infixInfo.nodeKind = ExprNode::Kind::kCmpNotIn;
       infixInfo.precedence = Precedence::kComparison;
     }
@@ -311,7 +310,7 @@ ParseResult ExprParser::parseExpression(ExprNode *&expr, Precedence minPrec) {
 /// star_expression ::= '*' bitwise_or | expression
 ParseResult ExprParser::parseStarExpression(ExprNode *&expr, Precedence minPrec) {
   SMLoc starLoc;
-  if (consumeIf(LitToken::star, &starLoc)) {
+  if (consumeIf(Token::star, &starLoc)) {
     ExprNode *subExpr = nullptr;
     if (parseExpression(subExpr, minPrec))
       return failure();
@@ -322,19 +321,19 @@ ParseResult ExprParser::parseStarExpression(ExprNode *&expr, Precedence minPrec)
   return parseExpression(expr, minPrec);
 }
 
-static ExprNode::Kind getUnaryOpKind(LitToken::Kind tokKind) {
+static ExprNode::Kind getUnaryOpKind(Token::Kind tokKind) {
   switch (tokKind) {
   default:
     llvm_unreachable("invalid unary token");
-  case LitToken::kw_await:
+  case Token::kw_await:
     return ExprNode::kAwait;
-  case LitToken::kw_not:
+  case Token::kw_not:
     return ExprNode::kBoolNot;
-  case LitToken::plus:
+  case Token::plus:
     return ExprNode::kPos;
-  case LitToken::minus:
+  case Token::minus:
     return ExprNode::kNeg;
-  case LitToken::tilde:
+  case Token::tilde:
     return ExprNode::kInvert;
   }
 }
@@ -382,13 +381,13 @@ ParseResult ExprParser::parseComparisonExpr(ExprNode *&expr, ExprNode *rhs,
 /// u_expr ::=  power | "-" u_expr | "+" u_expr | "~" u_expr
 ///
 ParseResult ExprParser::parsePrefixExpr(ExprNode *&result) {
-  LitToken::Kind tokKind = getToken().getKind();
+  Token::Kind tokKind = getToken().getKind();
   switch (tokKind) {
-  case LitToken::plus:
-  case LitToken::minus:
-  case LitToken::tilde:
-  case LitToken::kw_await:
-  case LitToken::kw_not: { // u_expr
+  case Token::plus:
+  case Token::minus:
+  case Token::tilde:
+  case Token::kw_await:
+  case Token::kw_not: { // u_expr
     auto unaryLoc = consumeToken().getLoc();
     ExprNode *expr;
     Precedence precedence = InfixInfo::get(tokKind).precedence;
@@ -397,62 +396,62 @@ ParseResult ExprParser::parsePrefixExpr(ExprNode *&result) {
     result = alloc<UnaryOpNode>(getUnaryOpKind(tokKind), unaryLoc, expr);
     break;
   }
-  case LitToken::identifier: // primary -> atom -> identifier
+  case Token::identifier: // primary -> atom -> identifier
     result = alloc<DeclRefNode>(getToken().getSpelling());
-    consumeToken(LitToken::identifier);
+    consumeToken(Token::identifier);
     break;
-  case LitToken::integer: // primary -> literal -> integer
+  case Token::integer: // primary -> literal -> integer
     result = alloc<IntLiteralNode>(getToken().getSpelling());
-    consumeToken(LitToken::integer);
+    consumeToken(Token::integer);
     break;
-  case LitToken::kw_False:
+  case Token::kw_False:
     result = alloc<BoolLiteralNode>(getToken().getLoc(), false);
-    consumeToken(LitToken::kw_False);
+    consumeToken(Token::kw_False);
     break;
-  case LitToken::kw_True:
+  case Token::kw_True:
     result = alloc<BoolLiteralNode>(getToken().getLoc(), true);
-    consumeToken(LitToken::kw_True);
+    consumeToken(Token::kw_True);
     break;
-  case LitToken::kw_Self:
+  case Token::kw_Self:
     result = alloc<SelfLiteralNode>(getToken().getLoc());
-    consumeToken(LitToken::kw_Self);
+    consumeToken(Token::kw_Self);
     break;
-  case LitToken::float_num: // primary -> literal -> floatnumber
+  case Token::float_num: // primary -> literal -> floatnumber
     result = alloc<FloatLiteralNode>(getToken().getSpelling());
-    consumeToken(LitToken::float_num);
+    consumeToken(Token::float_num);
     break;
-  case LitToken::string: { // primary -> literal -> stringliteral
+  case Token::string: { // primary -> literal -> stringliteral
     SmallVector<StringRef> spellings;
     // Python supports string literal concatenation
-    while (getToken().is(LitToken::string)) {
+    while (getToken().is(Token::string)) {
       spellings.push_back(getToken().getSpelling());
-      consumeToken(LitToken::string);
+      consumeToken(Token::string);
     }
     result = alloc<StringLiteralNode>(copyArrayRef<StringRef>(spellings));
     break;
   }
-  case LitToken::kw_None:
+  case Token::kw_None:
     result = getNoneExpr(getToken().getLoc());
-    consumeToken(LitToken::kw_None);
+    consumeToken(Token::kw_None);
     break;
-  case LitToken::l_paren: // primary -> atom -> enclosure -> parenth_form
-    if (parsePrefixLParen(result, consumeToken(LitToken::l_paren).getLoc()))
+  case Token::l_paren: // primary -> atom -> enclosure -> parenth_form
+    if (parsePrefixLParen(result, consumeToken(Token::l_paren).getLoc()))
       return failure();
     break;
-  case LitToken::l_square: // list_display
-    if (parsePrefixLSquare(result, consumeToken(LitToken::l_square).getLoc()))
+  case Token::l_square: // list_display
+    if (parsePrefixLSquare(result, consumeToken(Token::l_square).getLoc()))
       return failure();
     break;
-  case LitToken::l_brace: { // dict_display
+  case Token::l_brace: { // dict_display
     DictionaryNode *dict = nullptr;
-    if (parsePrefixLBrace(dict, consumeToken(LitToken::l_brace).getLoc(),
+    if (parsePrefixLBrace(dict, consumeToken(Token::l_brace).getLoc(),
                           /*isSubscript=*/false))
       return failure();
     result = dict;
     break;
   }
-  case LitToken::kw___get_address_as_lvalue:
-  case LitToken::kw___get_lvalue_as_address:
+  case Token::kw___get_address_as_lvalue:
+  case Token::kw___get_lvalue_as_address:
     if (failed(parseLValueConvert(result)))
       return failure();
     break;
@@ -469,28 +468,28 @@ ParseResult ExprParser::parsePrefixExpr(ExprNode *&result) {
     auto loc = getToken().getLoc();
 
     // Handle "attributeref": x.y
-    if (consumeIf(LitToken::dot)) {
+    if (consumeIf(Token::dot)) {
       if (parseAttributeRefSuffix(result, loc))
         return failure();
       continue;
     }
 
     // Handle calls.
-    if (consumeIf(LitToken::l_paren)) {
+    if (consumeIf(Token::l_paren)) {
       if (parseCallSuffix(result, loc))
         return failure();
       continue;
     }
 
     // Handle "subscription" and "slicing" array subscripts and slicing.
-    if (consumeIf(LitToken::l_square)) {
+    if (consumeIf(Token::l_square)) {
       if (parseSubscriptSuffix(result, loc))
         return failure();
       continue;
     }
 
     // Handle dictionary indexing.
-    if (consumeIf(LitToken::l_brace)) {
+    if (consumeIf(Token::l_brace)) {
       DictionaryNode *dict = nullptr;
       if (parsePrefixLBrace(dict, loc, /*isSubscript=*/true))
         return failure();
@@ -512,10 +511,10 @@ ParseResult ExprParser::parsePrefixLParen(ExprNode *&result, SMLoc lparenLoc) {
   bool hadTrailingComma = false;
 
   // Empty parens is a tuple.
-  if (!consumeIf(LitToken::r_paren, &rparenLoc)) {
-    if (parseExpressionList(exprs, LitToken::r_paren, &hadTrailingComma) ||
-        parseToken(LitToken::r_paren,
-                   "expected ')' in parenthesized expression", &rparenLoc))
+  if (!consumeIf(Token::r_paren, &rparenLoc)) {
+    if (parseExpressionList(exprs, Token::r_paren, &hadTrailingComma) ||
+        parseToken(Token::r_paren, "expected ')' in parenthesized expression",
+                   &rparenLoc))
       return failure();
   }
 
@@ -536,14 +535,13 @@ ParseResult ExprParser::parsePrefixLSquare(ExprNode *&result,
   SMLoc rsquareLoc;
   SmallVector<ExprNode *> exprs;
   // Handle empty list: []
-  if (consumeIf(LitToken::r_square, &rsquareLoc)) {
+  if (consumeIf(Token::r_square, &rsquareLoc)) {
     result = alloc<ListNode>(lsquareLoc, exprs, rsquareLoc);
     return success();
   }
 
-  if (parseExpressionList(exprs, LitToken::r_square) ||
-      getLocation(rsquareLoc) ||
-      parseToken(LitToken::r_square, "expected ']' in list expression"))
+  if (parseExpressionList(exprs, Token::r_square) || getLocation(rsquareLoc) ||
+      parseToken(Token::r_square, "expected ']' in list expression"))
     return failure();
   result =
       alloc<ListNode>(lsquareLoc, copyArrayRef<ExprNode *>(exprs), rsquareLoc);
@@ -564,24 +562,24 @@ ParseResult ExprParser::parsePrefixLBrace(DictionaryNode *&result,
   /// diagnose it as a typo error.
   auto parseColonOrEqual = [&]() -> ParseResult {
     auto loc = getToken().getLoc();
-    if (consumeIf(LitToken::equal)) {
+    if (consumeIf(Token::equal)) {
       emitTokenError("expected ':' after dictionary key, not '='")
           << LitFixIt::replaceToken(loc, ":");
       return success();
     }
-    return parseToken(LitToken::colon, "expected ':' in dictionary");
+    return parseToken(Token::colon, "expected ':' in dictionary");
   };
 
   // Parse all the comma separated elements.
-  while (elements.empty() || consumeIf(LitToken::comma)) {
+  while (elements.empty() || consumeIf(Token::comma)) {
     // Allow empty initializers and trailing comma in the initializer.
-    if (getToken().is(LitToken::r_brace))
+    if (getToken().is(Token::r_brace))
       break;
 
     ExprNode *key = nullptr, *value = nullptr;
     // Handle normal key:value and dictionary unpacking.  The later has a null
     // key in the DictionaryNode representation.
-    if (!consumeIf(LitToken::star_star)) {
+    if (!consumeIf(Token::star_star)) {
       if (parseExpression(key) || parseColonOrEqual())
         return failure();
     }
@@ -592,7 +590,7 @@ ParseResult ExprParser::parsePrefixLBrace(DictionaryNode *&result,
 
   // Handle dict_comprehension if present
   SMLoc forLoc;
-  if (consumeIf(LitToken::kw_for, &forLoc)) {
+  if (consumeIf(Token::kw_for, &forLoc)) {
     if (elements.size() != 1 || !elements[0].first)
       emitError(
           forLoc,
@@ -603,7 +601,7 @@ ParseResult ExprParser::parsePrefixLBrace(DictionaryNode *&result,
   }
 
   // Otherwise we must be out of elements.
-  if (parseToken(LitToken::r_brace, "expected '}' at end of dictionary",
+  if (parseToken(Token::r_brace, "expected '}' at end of dictionary",
                  &rbraceLoc))
     return failure();
 
@@ -617,7 +615,7 @@ ParseResult ExprParser::parsePrefixLBrace(DictionaryNode *&result,
 ParseResult ExprParser::parseAttributeRefSuffix(ExprNode *&result,
                                                 SMLoc dotLoc) {
   StringRef spelling = getTokenSpelling();
-  if (parseToken(LitToken::identifier, "expected name in attribute reference"))
+  if (parseToken(Token::identifier, "expected name in attribute reference"))
     return failure();
 
   result = alloc<AttributeRefNode>(result, dotLoc, spelling);
@@ -641,12 +639,11 @@ ParseResult ExprParser::parseCallSuffix(ExprNode *&result, SMLoc lparenLoc) {
   SmallVector<ExprNode *> args;
   SMLoc rparenLoc;
   // TODO: Handle comprehension arguments, stars, etc.
-  if (!consumeIf(LitToken::r_paren, &rparenLoc)) {
+  if (!consumeIf(Token::r_paren, &rparenLoc)) {
     // Expressions continue maximally because we are within ()'s.
     llvm::SaveAndRestore<std::optional<size_t>> X(stmtIndent, std::nullopt);
-    if (parseExpressionList(args, LitToken::r_paren) ||
-        getLocation(rparenLoc) ||
-        parseToken(LitToken::r_paren, "expected ')' in call argument list")) {
+    if (parseExpressionList(args, Token::r_paren) || getLocation(rparenLoc) ||
+        parseToken(Token::r_paren, "expected ')' in call argument list")) {
       return failure();
     }
   }
@@ -674,9 +671,9 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
   /// Consume either a colon or an equal sign.  If we have an equal sign,
   /// diagnose it as a typo error.
   auto consumeColonOrEqual = [&]() -> SMLoc {
-    assert(getToken().isAny(LitToken::colon, LitToken::equal));
+    assert(getToken().isAny(Token::colon, Token::equal));
     auto loc = getToken().getLoc();
-    if (getToken().is(LitToken::equal))
+    if (getToken().is(Token::equal))
       emitTokenError("expected ':' in subscript slice, not '='")
           << LitFixIt::replaceToken(loc, ":");
     consumeToken();
@@ -687,12 +684,12 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
     ExprNode *firstExpr = nullptr;
     // If this has a leading expr it could be an expr only or could be the first
     // (optional) part of a slice.
-    if (getToken().isNot(LitToken::colon)) {
+    if (getToken().isNot(Token::colon)) {
       if (parseExpression(firstExpr))
         return failure();
       // If we had an expr with no trailing colon, then we are done with the
       // expr case.
-      if (getToken().isNot(LitToken::colon, LitToken::equal)) {
+      if (getToken().isNot(Token::colon, Token::equal)) {
         indices.push_back(firstExpr);
         return success();
       }
@@ -703,16 +700,16 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
     ExprNode *secondExpr = nullptr, *thirdExpr = nullptr;
 
     // Parse the second expr if present.
-    if (getToken().isNot(LitToken::colon, LitToken::equal, LitToken::comma,
-                         LitToken::r_square)) {
+    if (getToken().isNot(Token::colon, Token::equal, Token::comma,
+                         Token::r_square)) {
       if (parseExpression(secondExpr))
         return failure();
     }
 
     // Parse a second colon if present and stride expression.
-    if (getToken().isAny(LitToken::colon, LitToken::equal)) {
+    if (getToken().isAny(Token::colon, Token::equal)) {
       colon2Loc = consumeColonOrEqual();
-      if (getToken().isNot(LitToken::comma, LitToken::r_square)) {
+      if (getToken().isNot(Token::comma, Token::r_square)) {
         if (parseExpression(thirdExpr))
           return failure();
       }
@@ -724,13 +721,13 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
 
   SMLoc rsquareLoc;
   if (parseCommaSeparatedList(parseExprOrSlice,
-                              {LitToken::r_square, LitToken::minus_greater}) ||
+                              {Token::r_square, Token::minus_greater}) ||
       getLocation(rsquareLoc))
     return failure();
 
   // If we have no arrow, handle this as a normal subscript.
-  if (!consumeIf(LitToken::minus_greater)) {
-    if (parseToken(LitToken::r_square, "expected ']' in call argument list"))
+  if (!consumeIf(Token::minus_greater)) {
+    if (parseToken(Token::r_square, "expected ']' in call argument list"))
       return failure();
     result = alloc<SubscriptNode>(
         result, lsquareLoc, copyArrayRef<ExprNode *>(indices), rsquareLoc);
@@ -742,9 +739,9 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
   SmallVector<ExprNode *> arrowExprs;
   std::swap(indices, arrowExprs);
   if (parseCommaSeparatedList(parseExprOrSlice,
-                              {LitToken::r_square, LitToken::minus_greater}) ||
+                              {Token::r_square, Token::minus_greater}) ||
       getLocation(rsquareLoc) ||
-      parseToken(LitToken::r_square, "expected ']' in call argument list"))
+      parseToken(Token::r_square, "expected ']' in call argument list"))
     return failure();
 
   std::swap(indices, arrowExprs);
@@ -755,16 +752,15 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
 }
 
 ParseResult ExprParser::parseLValueConvert(ExprNode *&result) {
-  bool isLValueToAddress = getToken().is(LitToken::kw___get_lvalue_as_address);
-  assert(getToken().isAny(LitToken::kw___get_address_as_lvalue,
-                          LitToken::kw___get_lvalue_as_address));
+  bool isLValueToAddress = getToken().is(Token::kw___get_lvalue_as_address);
+  assert(getToken().isAny(Token::kw___get_address_as_lvalue,
+                          Token::kw___get_lvalue_as_address));
   SMLoc baseLoc = consumeToken().getLoc();
 
   ExprNode *subExpr = nullptr;
   SMLoc rpLoc;
-  if (parseToken(LitToken::l_paren, "expected '('") ||
-      parseExpression(subExpr) ||
-      parseToken(LitToken::r_paren, "expected '('", &rpLoc))
+  if (parseToken(Token::l_paren, "expected '('") || parseExpression(subExpr) ||
+      parseToken(Token::r_paren, "expected '('", &rpLoc))
     return failure();
 
   result = alloc<LValueConvertNode>(isLValueToAddress, baseLoc, subExpr, rpLoc);
@@ -780,7 +776,7 @@ LitParserBase::parseExpressionList(SmallVectorImpl<ExprNode *> &results,
                                    std::optional<size_t> stmtIndent,
                                    bool *hadTrailingSep) {
   return ExprParser(getLexer(), stmtIndent)
-      .parseExpressionList(results, LitToken::Kind::eof, hadTrailingSep);
+      .parseExpressionList(results, Token::Kind::eof, hadTrailingSep);
 }
 
 /// Expression parsing.  Each of these take a `stmtIndent` specifier that

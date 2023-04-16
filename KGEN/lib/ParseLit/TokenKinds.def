@@ -95,7 +95,7 @@ TOK_PUNCTUATION(slash_slash_equal, "//=")
 TOK_PUNCTUATION(less_less_equal, "<<=")
 TOK_PUNCTUATION(right_right_equal, ">>=")
 
-// Keywords.  These turn "foo" into LitToken::kw_foo enums.
+// Keywords.  These turn "foo" into Token::kw_foo enums.
 // See reserved_keywords at cpython/3.X/Parser/parser.c
 
 // NOTE: Please key these alphabetized to make it easier to find something in

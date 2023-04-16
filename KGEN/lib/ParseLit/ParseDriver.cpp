@@ -12,9 +12,9 @@
 
 #include "ASTDecl.h"
 #include "KGEN/CompilationOptions.h"
+#include "Lexer.h"
 #include "LitDecls.h"
 #include "LitDocString.h"
-#include "LitLexer.h"
 #include "LitParserBase.h"
 #include "LitSharedState.h"
 
@@ -53,10 +53,10 @@ importMojoFileImpl(SourceMgr &sourceMgr, LitSharedState &sharedState,
                           /*column=*/0);
   mlir::OwningOpRef<ModuleOp> module(ModuleOp::create(fileLoc));
 
-  LitLexer lexer(sharedState, sourceBuf);
+  Lexer lexer(sharedState, sourceBuf);
   auto startSMLoc = lexer.getToken().getLoc();
-  LitLexerCursor endFileCursor(
-      {LitToken::eof, StringRef(sourceBuf->getBufferEnd() + 1, 0), 0});
+  LexerCursor endFileCursor(
+      {Token::eof, StringRef(sourceBuf->getBufferEnd() + 1, 0), 0});
 
   // Create the top-level outer decl, which will contain all things we parse.
   ASTDecl &topLevelDecl = sharedState.declResolver->addDecl(

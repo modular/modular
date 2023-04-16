@@ -18,14 +18,14 @@ LitDiagnostic LitParserBase::emitError(SMLoc loc, const Twine &message) {
 
   // If we hit a parse error in response to a lexer error, then the lexer
   // already reported the error.
-  if (getToken().is(LitToken::error))
+  if (getToken().is(Token::error))
     diag.abandon();
   return diag;
 }
 
 /// Consume the specified token if present and return success.  On failure,
 /// output a diagnostic and return failure.
-ParseResult LitParserBase::parseToken(LitToken::Kind expectedToken,
+ParseResult LitParserBase::parseToken(Token::Kind expectedToken,
                                       const Twine &message, SMLoc *loc) {
   if (loc)
     *loc = getToken().getLoc();
@@ -40,7 +40,7 @@ ParseResult LitParserBase::parseToken(LitToken::Kind expectedToken,
   auto diag = emitError(diagLoc, message);
 
   // Customize the error if an identifier was expected by a keyword was found.
-  if (expectedToken == LitToken::identifier && getToken().isKeyword())
+  if (expectedToken == Token::identifier && getToken().isKeyword())
     diag.attachNote(diagLoc) << "escape keyword '" << getToken().getSpelling()
                              << "' with backticks to use it as an identifier";
 
@@ -55,7 +55,7 @@ ParseResult LitParserBase::parseIdentifier(StringAttr &result,
   if (loc)
     *loc = getToken().getLoc();
   result = StringAttr::get(getContext(), getToken().getSpelling());
-  return parseToken(LitToken::identifier, message);
+  return parseToken(Token::identifier, message);
 }
 
 /// Parse a list of elements, terminated with an arbitrary token.  This does
@@ -64,8 +64,7 @@ ParseResult LitParserBase::parseIdentifier(StringAttr &result,
 /// list ::= (element)* STOPTOKEN
 ///
 ParseResult LitParserBase::parseListUntil(
-    LitToken::Kind rightToken,
-    const std::function<ParseResult()> &parseElement) {
+    Token::Kind rightToken, const std::function<ParseResult()> &parseElement) {
 
   while (!consumeIf(rightToken)) {
     if (parseElement())
@@ -81,8 +80,8 @@ ParseResult LitParserBase::parseListUntil(
 /// separated_list ::= (element (SEPARATOR element)* [SEPARATOR] TERMINATOR
 ///
 ParseResult LitParserBase::parseSeparatedList(
-    LitToken::Kind separator, const std::function<ParseResult()> &parseElement,
-    ArrayRef<LitToken::Kind> terminators, bool *hadTrailingSep) {
+    Token::Kind separator, const std::function<ParseResult()> &parseElement,
+    ArrayRef<Token::Kind> terminators, bool *hadTrailingSep) {
   if (hadTrailingSep)
     *hadTrailingSep = false;
   if (parseElement())
@@ -113,9 +112,9 @@ ParseResult LitParserBase::parseSeparatedList(
 void LitParserBase::skipUntilIndentation(size_t minIndent,
                                          bool stopOnSemicolon) {
   // This keeps track of open brackets we are inside of.
-  SmallVector<LitToken> openBrackets;
+  SmallVector<Token> openBrackets;
 
-  auto handleCloseBracket = [&](LitToken::Kind leftBracket) {
+  auto handleCloseBracket = [&](Token::Kind leftBracket) {
     // If we see the correct closing bracket for the structure we're in, then
     // just pop out of that context and keep going.
     if (!openBrackets.empty() && openBrackets.back().getKind() == leftBracket) {
@@ -132,7 +131,7 @@ void LitParserBase::skipUntilIndentation(size_t minIndent,
 
   // We scan until we find the specified indentation at the same expression
   // level as the current token.
-  while (getToken().isNot(LitToken::eof)) {
+  while (getToken().isNot(Token::eof)) {
     // If we are outside a bracketed expression, check indentation.
     if (auto indent = getToken().getIndentation())
       if (*indent <= minIndent && openBrackets.empty())
@@ -142,26 +141,26 @@ void LitParserBase::skipUntilIndentation(size_t minIndent,
     switch (getToken().getKind()) {
     default:
       break;
-    case LitToken::l_paren:
-    case LitToken::l_square:
-    case LitToken::l_brace:
+    case Token::l_paren:
+    case Token::l_square:
+    case Token::l_brace:
       // Remember that we're nested.
       openBrackets.push_back(getToken());
       break;
 
       // Handle closing brackets.
-    case LitToken::r_paren:
-      handleCloseBracket(LitToken::l_paren);
+    case Token::r_paren:
+      handleCloseBracket(Token::l_paren);
       break;
-    case LitToken::r_square:
-      handleCloseBracket(LitToken::l_square);
+    case Token::r_square:
+      handleCloseBracket(Token::l_square);
       break;
-    case LitToken::r_brace:
-      handleCloseBracket(LitToken::l_brace);
+    case Token::r_brace:
+      handleCloseBracket(Token::l_brace);
       break;
 
       // Stop on semicolons when outside a bracket expression if requested.
-    case LitToken::semi:
+    case Token::semi:
       if (stopOnSemicolon && openBrackets.empty())
         return;
       break;

@@ -8,8 +8,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LEXER_H
-#define LEXER_H
+#ifndef LITLEXER_H
+#define LITLEXER_H
 
 #include "LitSharedState.h"
 #include "mlir/IR/BuiltinAttributes.h"
@@ -201,4 +201,4 @@ inline LexerCursor Lexer::getCursor() const { return LexerCursor(*this); }
 
 } // namespace M::KGEN::LIT
 
-#endif // LEXER_H
+#endif // LITLEXER_H

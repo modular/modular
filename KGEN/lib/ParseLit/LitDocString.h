@@ -12,7 +12,7 @@
 #ifndef LITDOCSTRING_H
 #define LITDOCSTRING_H
 
-#include "LitLexer.h"
+#include "Lexer.h"
 #include "LitSharedState.h"
 #include "Support/ADT/SmartVariant.h"
 

@@ -29,8 +29,8 @@ class AliasForwardDeclOp;
 class ASTDecl;
 class FileModuleOp;
 class FuncOp;
-class LitLexer;
-class LitLexerCursor;
+class Lexer;
+class LexerCursor;
 class LitParserBase;
 class LitSharedState;
 class UnresolvedImportOp;
@@ -60,11 +60,11 @@ public:
 
   /// Add a new declaration that needs to be resolved.
   ASTDecl &addDecl(Operation *decl, llvm::SMLoc loc, StringAttr baseName,
-                   ASTDecl *parentDecl, LitLexerCursor cursor,
-                   LitLexerCursor endCursor, ssize_t indentation);
+                   ASTDecl *parentDecl, LexerCursor cursor,
+                   LexerCursor endCursor, ssize_t indentation);
   ASTDecl &addDecl(DeclIRValue decl, llvm::SMLoc loc, StringAttr baseName,
-                   ASTDecl *parentDecl, LitLexerCursor cursor,
-                   LitLexerCursor endCursor, ssize_t indentation);
+                   ASTDecl *parentDecl, LexerCursor cursor,
+                   LexerCursor endCursor, ssize_t indentation);
 
   /// Add a pre-existing set of declarations as children of the specified
   /// context, using the provided alias name (which may differ from that of the
@@ -142,30 +142,25 @@ private:
   /// check the signature for the operation.  On parse failure, these should
   /// return a failure, which will cause the driver to mark the decl as invalid
   /// for further references.
-  LogicalResult resolveSignature(LIT::FuncOp op, LitLexer &lexer,
-                                 ASTDecl &decl);
-  ParseResult resolveBody(LIT::FuncOp op, LitLexer &lexer, ASTDecl &decl);
+  LogicalResult resolveSignature(LIT::FuncOp op, Lexer &lexer, ASTDecl &decl);
+  ParseResult resolveBody(LIT::FuncOp op, Lexer &lexer, ASTDecl &decl);
 
-  ParseResult resolveBody(LIT::FileModuleOp op, LitLexer &lexer, ASTDecl &decl);
+  ParseResult resolveBody(LIT::FileModuleOp op, Lexer &lexer, ASTDecl &decl);
 
-  ParseResult resolveSignature(LIT::UnresolvedImportOp op, LitLexer &lexer,
+  ParseResult resolveSignature(LIT::UnresolvedImportOp op, Lexer &lexer,
                                ASTDecl &decl);
 
-  LogicalResult resolveSignature(StructDeclOp op, LitLexer &lexer,
+  LogicalResult resolveSignature(StructDeclOp op, Lexer &lexer, ASTDecl &decl);
+  ParseResult resolveBody(StructDeclOp op, Lexer &lexer, ASTDecl &decl);
+  LogicalResult resolveSignature(StructFieldOp op, Lexer &lexer, ASTDecl &decl);
+  ParseResult resolveBody(StructFieldOp op, Lexer &lexer, ASTDecl &decl);
+  LogicalResult resolveSignature(VarLetDeclOp op, Lexer &lexer, ASTDecl &decl);
+  ParseResult resolveBody(VarLetDeclOp op, Lexer &lexer, ASTDecl &decl);
+  ParseResult resolveBody(LetRegDeclOp op, Lexer &lexer, ASTDecl &decl);
+  LogicalResult resolveSignature(ParamDeclareOp op, Lexer &lexer,
                                  ASTDecl &decl);
-  ParseResult resolveBody(StructDeclOp op, LitLexer &lexer, ASTDecl &decl);
-  LogicalResult resolveSignature(StructFieldOp op, LitLexer &lexer,
-                                 ASTDecl &decl);
-  ParseResult resolveBody(StructFieldOp op, LitLexer &lexer, ASTDecl &decl);
-  LogicalResult resolveSignature(VarLetDeclOp op, LitLexer &lexer,
-                                 ASTDecl &decl);
-  ParseResult resolveBody(VarLetDeclOp op, LitLexer &lexer, ASTDecl &decl);
-  ParseResult resolveBody(LetRegDeclOp op, LitLexer &lexer, ASTDecl &decl);
-  LogicalResult resolveSignature(ParamDeclareOp op, LitLexer &lexer,
-                                 ASTDecl &decl);
-  ParseResult resolveBody(ParamDeclareOp op, LitLexer &lexer, ASTDecl &decl);
-  ParseResult resolveBody(AliasForwardDeclOp op, LitLexer &lexer,
-                          ASTDecl &decl);
+  ParseResult resolveBody(ParamDeclareOp op, Lexer &lexer, ASTDecl &decl);
+  ParseResult resolveBody(AliasForwardDeclOp op, Lexer &lexer, ASTDecl &decl);
 
 private:
   /// Add a pre-existing set of declarations, which may optionally be imported

@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "LitDiags.h"
-#include "LitLexer.h"
+#include "Lexer.h"
 
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Diagnostics.h"
@@ -335,7 +335,7 @@ LitFixIt LitFixIt::insertBeforeToken(SMLoc loc, const Twine &text) {
 LitFixIt LitFixIt::insertAfterToken(SMLoc loc, const Twine &text,
                                     LitSharedState &shared) {
   // Find end of token.
-  size_t tokenSize = LitLexer::getTokenLength(shared, loc);
+  size_t tokenSize = Lexer::getTokenLength(shared, loc);
   loc = SMLoc::getFromPointer(loc.getPointer() + tokenSize);
   return LitFixIt(LitSourceRange::getByteLevel(loc, loc), text);
 }

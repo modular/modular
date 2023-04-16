@@ -8,7 +8,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "LitLexer.h"
+#include "Lexer.h"
 #include "mlir/IR/Diagnostics.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/Error.h"
@@ -26,43 +26,41 @@ using llvm::SourceMgr;
 #define isdigit(x) DO_NOT_USE_SLOW_CTYPE_FUNCTIONS
 
 //===----------------------------------------------------------------------===//
-// LitToken
+// Token
 //===----------------------------------------------------------------------===//
 
-SMLoc LitToken::getLoc() const {
-  return SMLoc::getFromPointer(spelling.data());
-}
+SMLoc Token::getLoc() const { return SMLoc::getFromPointer(spelling.data()); }
 
-SMLoc LitToken::getEndLoc() const {
+SMLoc Token::getEndLoc() const {
   return SMLoc::getFromPointer(spelling.data() + spelling.size());
 }
 
-SMRange LitToken::getLocRange() const { return SMRange(getLoc(), getEndLoc()); }
+SMRange Token::getLocRange() const { return SMRange(getLoc(), getEndLoc()); }
 
 /// Return true if this is one of the keyword token kinds (e.g. kw_pass).
-bool LitToken::isKeyword() const {
+bool Token::isKeyword() const {
   switch (kind) {
   default:
     return false;
 #define TOK_KEYWORD(SPELLING)                                                  \
   case kw_##SPELLING:                                                          \
     return true;
-#include "LitTokenKinds.def"
+#include "TokenKinds.def"
   }
 }
 
 //===----------------------------------------------------------------------===//
-// LitLexer
+// Lexer
 //===----------------------------------------------------------------------===//
 
-LitLexer::LitLexer(LitSharedState &shared, const llvm::MemoryBuffer *buffer)
+Lexer::Lexer(LitSharedState &shared, const llvm::MemoryBuffer *buffer)
     : LitSharedStateUser(shared), curBuffer(buffer->getBuffer()),
       curPtr(curBuffer.begin()),
       // Prime the first token.
       curToken(lexTokenImpl()) {}
 
 static StringRef getBuffer(LitSharedState &sharedState,
-                           const LitLexerCursor &cursor) {
+                           const LexerCursor &cursor) {
   auto &sourceMgr = sharedState.getSourceMgr();
   unsigned cursorBufferId =
       sourceMgr.FindBufferContainingLoc(cursor.getToken().getLoc());
@@ -71,23 +69,23 @@ static StringRef getBuffer(LitSharedState &sharedState,
   return buffer->getBuffer();
 }
 
-LitLexer::LitLexer(LitSharedState &shared, const LitLexerCursor &cursor)
+Lexer::Lexer(LitSharedState &shared, const LexerCursor &cursor)
     : LitSharedStateUser(shared), curBuffer(getBuffer(shared, cursor)),
-      curToken(LitToken::eof, {}, 0) {
+      curToken(Token::eof, {}, 0) {
   cursor.restore(*this);
 }
 
-/// Emit an error message and return a LitToken::error token.
-LitToken LitLexer::emitErrorAt(const char *loc, const Twine &message) {
+/// Emit an error message and return a Token::error token.
+Token Lexer::emitErrorAt(const char *loc, const Twine &message) {
   shared.diags.emitError(SMLoc::getFromPointer(loc), message);
-  return formToken(LitToken::error, loc, -1);
+  return formToken(Token::error, loc, -1);
 }
 
 //===----------------------------------------------------------------------===//
 // Lexer Implementation Methods
 //===----------------------------------------------------------------------===//
 
-LitToken LitLexer::lexTokenImpl() {
+Token Lexer::lexTokenImpl() {
   // This keeps track of the indentation of the current token from the start of
   // the line.  The first byte of the file starts with an indentation of zero,
   // but subsequent tokens always start out by following an existing token, so
@@ -97,7 +95,7 @@ LitToken LitLexer::lexTokenImpl() {
   // This is a helper lambda for forming tokens with tokStart and indentation,
   // and optionally incrementing `curPtr` to make some of the conditionals below
   // ergonomic.
-  auto formToken = [&](LitToken::Kind kind, size_t incr = 0) -> LitToken {
+  auto formToken = [&](Token::Kind kind, size_t incr = 0) -> Token {
     curPtr += incr;
     return this->formToken(kind, tokStart, indentation);
   };
@@ -111,7 +109,7 @@ LitToken LitLexer::lexTokenImpl() {
       // This may either be a nul character in the source file or may be the EOF
       // marker that MemoryBuffer guarantees will be there.
       if (curPtr - 1 == curBuffer.end())
-        return this->formToken(LitToken::eof, tokStart, 0);
+        return this->formToken(Token::eof, tokStart, 0);
 
       [[fallthrough]]; // Treat as whitespace.
 
@@ -172,111 +170,111 @@ LitToken LitLexer::lexTokenImpl() {
       return lexString(tokStart, indentation);
     case '%':
       if (*curPtr == '=')
-        return formToken(LitToken::percent_equal, 1);
-      return formToken(LitToken::percent);
+        return formToken(Token::percent_equal, 1);
+      return formToken(Token::percent);
     case '&':
       if (*curPtr == '=')
-        return formToken(LitToken::amp_equal, 1);
-      return formToken(LitToken::amp);
+        return formToken(Token::amp_equal, 1);
+      return formToken(Token::amp);
     case '(':
-      return formToken(LitToken::l_paren);
+      return formToken(Token::l_paren);
     case ')':
-      return formToken(LitToken::r_paren);
+      return formToken(Token::r_paren);
     case '*':
       if (*curPtr == '=')
-        return formToken(LitToken::star_equal, 1);
+        return formToken(Token::star_equal, 1);
       if (*curPtr == '*') {
         if (curPtr[1] == '=')
-          return formToken(LitToken::star_star_equal, 2);
-        return formToken(LitToken::star_star, 1);
+          return formToken(Token::star_star_equal, 2);
+        return formToken(Token::star_star, 1);
       }
-      return formToken(LitToken::star);
+      return formToken(Token::star);
     case '+':
       if (*curPtr == '=')
-        return formToken(LitToken::plus_equal, 1);
-      return formToken(LitToken::plus);
+        return formToken(Token::plus_equal, 1);
+      return formToken(Token::plus);
     case ',':
-      return formToken(LitToken::comma);
+      return formToken(Token::comma);
     case '-':
       if (*curPtr == '=')
-        return formToken(LitToken::minus_equal, 1);
+        return formToken(Token::minus_equal, 1);
       if (*curPtr == '>')
-        return formToken(LitToken::minus_greater, 1);
-      return formToken(LitToken::minus);
+        return formToken(Token::minus_greater, 1);
+      return formToken(Token::minus);
     case '.':
       if (llvm::isDigit(*curPtr))
         return lexFloat(tokStart, indentation);
       if (*curPtr == '.' && curPtr[1] == '.')
-        return formToken(LitToken::dot_dot_dot, 2);
-      return formToken(LitToken::dot);
+        return formToken(Token::dot_dot_dot, 2);
+      return formToken(Token::dot);
     case '/':
       if (*curPtr == '=')
-        return formToken(LitToken::slash_equal, 1);
+        return formToken(Token::slash_equal, 1);
       if (*curPtr == '/') {
         if (curPtr[1] == '=')
-          return formToken(LitToken::slash_slash_equal, 2);
-        return formToken(LitToken::slash_slash, 1);
+          return formToken(Token::slash_slash_equal, 2);
+        return formToken(Token::slash_slash, 1);
       }
-      return formToken(LitToken::slash);
+      return formToken(Token::slash);
     case ':':
       // TODO: Python keeps track of nesting level in the lexer to report
       // mismatched tokens here.  How does that affect error recovery?
       if (*curPtr == '=')
-        return formToken(LitToken::colon_equal, 1);
-      return formToken(LitToken::colon);
+        return formToken(Token::colon_equal, 1);
+      return formToken(Token::colon);
     case ';':
-      return formToken(LitToken::semi);
+      return formToken(Token::semi);
     case '<':
       switch (*curPtr) {
       case '<':
         if (curPtr[1] == '=')
-          return formToken(LitToken::less_less_equal, 2);
-        return formToken(LitToken::less_less, 1);
+          return formToken(Token::less_less_equal, 2);
+        return formToken(Token::less_less, 1);
       case '=':
-        return formToken(LitToken::less_equal, 1);
+        return formToken(Token::less_equal, 1);
       case '>':
-        return formToken(LitToken::less_greater, 1);
+        return formToken(Token::less_greater, 1);
       }
-      return formToken(LitToken::less);
+      return formToken(Token::less);
     case '=':
       if (*curPtr == '=')
-        return formToken(LitToken::equal_equal, 1);
-      return formToken(LitToken::equal);
+        return formToken(Token::equal_equal, 1);
+      return formToken(Token::equal);
     case '>':
       switch (*curPtr) {
       case '=':
-        return formToken(LitToken::greater_equal, 1);
+        return formToken(Token::greater_equal, 1);
       case '>':
         if (curPtr[1] == '=')
-          return formToken(LitToken::right_right_equal, 2);
-        return formToken(LitToken::right_right, 1);
+          return formToken(Token::right_right_equal, 2);
+        return formToken(Token::right_right, 1);
       }
-      return formToken(LitToken::greater);
+      return formToken(Token::greater);
     case '@':
       if (*curPtr == '=')
-        return formToken(LitToken::at_equal, 1);
-      return formToken(LitToken::at);
+        return formToken(Token::at_equal, 1);
+      return formToken(Token::at);
     case '[':
-      return formToken(LitToken::l_square);
+      return formToken(Token::l_square);
     case ']':
-      return formToken(LitToken::r_square);
+      return formToken(Token::r_square);
     case '^':
       if (*curPtr == '=')
-        return formToken(LitToken::circumflex_equal, 1);
-      return formToken(LitToken::circumflex);
+        return formToken(Token::circumflex_equal, 1);
+      return formToken(Token::circumflex);
     case '{':
-      return formToken(LitToken::l_brace);
+      return formToken(Token::l_brace);
     case '|':
       if (*curPtr == '=')
-        return formToken(LitToken::pipe_equal, 1);
-      return formToken(LitToken::pipe);
+        return formToken(Token::pipe_equal, 1);
+      return formToken(Token::pipe);
     case '}':
-      return formToken(LitToken::r_brace);
+      return formToken(Token::r_brace);
     case '~':
-      return formToken(LitToken::tilde);
+      return formToken(Token::tilde);
     case '!':
       if (*curPtr == '=')
-        return formToken(LitToken::exclaim_equal, 1);
+        return formToken(Token::exclaim_equal, 1);
       return emitErrorAt(tokStart, "unexpected character");
 
     case '0':
@@ -303,8 +301,7 @@ LitToken LitLexer::lexTokenImpl() {
 ///
 /// TODO: Python supports unicode in is_potential_identifier_start etc.
 ///
-LitToken LitLexer::lexIdentifierOrKeyword(const char *tokStart,
-                                          ssize_t indentation) {
+Token Lexer::lexIdentifierOrKeyword(const char *tokStart, ssize_t indentation) {
   // Match the rest of the identifier regex: [0-9a-zA-Z_$]*
   while (llvm::isAlpha(*curPtr) || llvm::isDigit(*curPtr) || *curPtr == '_' ||
          *curPtr == '$')
@@ -313,27 +310,25 @@ LitToken LitLexer::lexIdentifierOrKeyword(const char *tokStart,
   StringRef spelling(tokStart, curPtr - tokStart);
 
   // Check to see if this identifier is a keyword.
-  LitToken::Kind kind = llvm::StringSwitch<LitToken::Kind>(spelling)
-#define TOK_KEYWORD(SPELLING) .Case(#SPELLING, LitToken::kw_##SPELLING)
-#include "LitTokenKinds.def"
-                            .Default(LitToken::identifier);
+  Token::Kind kind = llvm::StringSwitch<Token::Kind>(spelling)
+#define TOK_KEYWORD(SPELLING) .Case(#SPELLING, Token::kw_##SPELLING)
+#include "TokenKinds.def"
+                         .Default(Token::identifier);
 
-  return LitToken(kind, spelling, indentation);
+  return Token(kind, spelling, indentation);
 }
 
 /// Lex an identifier with backtick syntax, e.g. `ide nt if ier` or `fn`.  These
 /// may contain any character other than vertical whitespace and `'s in them and
 /// are otherwise interpreted verbatim as an identifier.
-LitToken LitLexer::lexBacktickIdentifier(const char *tokStart,
-                                         ssize_t indentation) {
+Token Lexer::lexBacktickIdentifier(const char *tokStart, ssize_t indentation) {
   assert(curPtr[-1] == '`');
   while (true) {
     switch (*curPtr++) {
     case '`':
       // Found the end character.
-      return LitToken(LitToken::identifier,
-                      StringRef(tokStart + 1, curPtr - tokStart - 2),
-                      indentation);
+      return Token(Token::identifier,
+                   StringRef(tokStart + 1, curPtr - tokStart - 2), indentation);
     case '\n':
     case '\r':
     case '\v':
@@ -355,7 +350,7 @@ LitToken LitLexer::lexBacktickIdentifier(const char *tokStart,
 }
 
 /// Skip a comment line, starting with a '#' and going to end of line.
-void LitLexer::skipComment() {
+void Lexer::skipComment() {
   while (true) {
     switch (*curPtr++) {
     case '\n':
@@ -395,7 +390,7 @@ static bool isOctalDigit(char C) { return C >= '0' && C <= '7'; }
 ///                      quote>
 /// longstringchar  ::=  <any source character except "\">
 /// stringescapeseq ::=  "\" <any source character>
-LitToken LitLexer::lexString(const char *tokStart, ssize_t indentation) {
+Token Lexer::lexString(const char *tokStart, ssize_t indentation) {
   curPtr = tokStart;
   bool isRaw = false;
   bool isTripleQuote = false;
@@ -486,12 +481,12 @@ done:
   ++curPtr;
 
   if (!isTripleQuote)
-    return formToken(LitToken::string, tokStart, indentation);
+    return formToken(Token::string, tokStart, indentation);
 
   // Use only one character quotes: strip the rest when forming the final
   // string token.
   tokStart += 2;
-  return {LitToken::string, StringRef(tokStart, curPtr - tokStart - 2),
+  return {Token::string, StringRef(tokStart, curPtr - tokStart - 2),
           indentation};
 }
 
@@ -515,7 +510,7 @@ done:
 ///   same thing for  bininteger, octinteger and hexinteger
 /// - Python warns if the numeric literal is immediately followed by
 ///   other keyword or identifier.
-LitToken LitLexer::lexInteger(const char *tokStart, ssize_t indentation) {
+Token Lexer::lexInteger(const char *tokStart, ssize_t indentation) {
   assert(llvm::isDigit(curPtr[-1]));
 
   if (curPtr[-1] == '0') {
@@ -571,7 +566,7 @@ LitToken LitLexer::lexInteger(const char *tokStart, ssize_t indentation) {
   if (*curPtr == '.' || *curPtr == 'e' || *curPtr == 'E' || *curPtr == 'j' ||
       *curPtr == 'J')
     return lexFloat(tokStart, indentation);
-  return formToken(LitToken::integer, tokStart, indentation);
+  return formToken(Token::integer, tokStart, indentation);
 }
 
 /// Lex a float number literal.
@@ -587,7 +582,7 @@ LitToken LitLexer::lexInteger(const char *tokStart, ssize_t indentation) {
 /// - Python uses the following more restrictive productions, which
 ///   disallows `1__9_` for example:
 ///   digitpart     ::=  digit (["_"] digit)*
-LitToken LitLexer::lexFloat(const char *tokStart, ssize_t indentation) {
+Token Lexer::lexFloat(const char *tokStart, ssize_t indentation) {
   assert(*tokStart == '.' || llvm::isDigit(*tokStart));
   // lexFloat could have been called from lexInteger so reset curPtr to undo
   // previous increments done by lexInteger
@@ -613,7 +608,7 @@ LitToken LitLexer::lexFloat(const char *tokStart, ssize_t indentation) {
     while (llvm::isDigit(*curPtr) || *curPtr == '_')
       ++curPtr;
   }
-  return formToken(LitToken::float_num, tokStart, indentation);
+  return formToken(Token::float_num, tokStart, indentation);
 }
 
 static std::string filterUnderscores(StringRef spelling) {
@@ -628,7 +623,7 @@ static std::string filterUnderscores(StringRef spelling) {
 
 /// Return the a value for the specified string, which is known to have been
 /// lexed as a float literal token.
-APFloat LitLexer::getFloatLiteralValue(StringRef spelling) {
+APFloat Lexer::getFloatLiteralValue(StringRef spelling) {
   std::string digits = filterUnderscores(spelling);
   spelling = StringRef(digits);
   APFloat num(0.0);
@@ -644,7 +639,7 @@ APFloat LitLexer::getFloatLiteralValue(StringRef spelling) {
 
 /// Return the a string value of `spelling` after the escape sequences are
 /// handled. `spelling` is known to have been lexed as a string literal token.
-std::string LitLexer::getStringLiteralValue(StringRef spelling) {
+std::string Lexer::getStringLiteralValue(StringRef spelling) {
   bool isRaw = false;
   if (spelling[0] == 'r' || spelling[0] == 'R') {
     isRaw = true;
@@ -736,7 +731,7 @@ std::string LitLexer::getStringLiteralValue(StringRef spelling) {
 
 /// Return the a value for the specified string, which is known to have been
 /// lexed as an integer literal token.
-APInt LitLexer::getIntegerLiteralValue(StringRef spelling) {
+APInt Lexer::getIntegerLiteralValue(StringRef spelling) {
   APInt result;
   unsigned base = 10;
   if (spelling[0] == '0' && spelling.size() > 2) {
@@ -771,7 +766,7 @@ APInt LitLexer::getIntegerLiteralValue(StringRef spelling) {
 /// Given a location that is at the start of a line, scan backwards to find
 /// the end of the last line that contains a token, or start of the source
 /// buffer if there is none.
-SMLoc LitLexer::findEndOfPreviousLine(SMLoc loc) const {
+SMLoc Lexer::findEndOfPreviousLine(SMLoc loc) const {
   // To find the end of the previous line, we repeatedly segment the buffer into
   // chunks from the current position to the start of the current line and scan
   // it to see if it contains any tokens.  If not, we keep going, if so we use
@@ -790,8 +785,8 @@ SMLoc LitLexer::findEndOfPreviousLine(SMLoc loc) const {
 
     // Scan from the start of the line to the current position.
     auto *lineStart = curBuffer.data() + nextNewLine;
-    LitLexerCursor cursor({LitToken::plus, StringRef(lineStart, 0), 0});
-    LitLexer tmpLexer(shared, cursor);
+    LexerCursor cursor({Token::plus, StringRef(lineStart, 0), 0});
+    Lexer tmpLexer(shared, cursor);
     tmpLexer.lexToken();
 
     // If the token is on this line, then there was at least one token on this
@@ -804,14 +799,13 @@ SMLoc LitLexer::findEndOfPreviousLine(SMLoc loc) const {
   }
 }
 
-LitLexer::LitLexer(LitSharedState &shared, StringRef curBuffer,
-                   const char *curPtr)
+Lexer::Lexer(LitSharedState &shared, StringRef curBuffer, const char *curPtr)
     : LitSharedStateUser(shared), curBuffer(curBuffer), curPtr(curPtr),
       curToken(lexTokenImpl()) {}
 
 /// Given a valid pointer into a source buffer for some token, return the
 /// length of the token by re-lex'ing it.  This is efficient.
-size_t LitLexer::getTokenLength(LitSharedState &shared, SMLoc loc) {
+size_t Lexer::getTokenLength(LitSharedState &shared, SMLoc loc) {
   // Because we know the pointer is to a valid place in a source buffer, and
   // because we know that all source buffers are NUL terminated, we know that
   // the end of buffer check isn't needed.  This allows us to form a lexer
@@ -823,6 +817,6 @@ size_t LitLexer::getTokenLength(LitSharedState &shared, SMLoc loc) {
   if (*curPtr == '\0')
     return 0;
 
-  LitLexer lexer(shared, StringRef(curPtr, ~0ULL), curPtr);
+  Lexer lexer(shared, StringRef(curPtr, ~0ULL), curPtr);
   return lexer.getToken().getSpelling().size();
 }
