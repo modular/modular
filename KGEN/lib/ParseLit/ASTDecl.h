@@ -13,7 +13,7 @@
 
 #include "Lexer.h"
 #include "LitDecls.h"
-#include "LitSharedState.h"
+#include "SharedState.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Builders.h"
 #include "llvm/ADT/MapVector.h"
@@ -106,7 +106,7 @@ public:
   }
 
   /// Given an MLIR op for a struct declaration, return the self type.
-  ASTType computeSelfTypeForStruct(LitSharedState &state);
+  ASTType computeSelfTypeForStruct(SharedState &state);
 
   /// Add an unresolved wild card import into this scope.
   void addUnresolvedWildCardImport(StringAttr importedModule, SMLoc loc) {
@@ -174,7 +174,7 @@ public:
 
 private:
   friend class DeclResolver;
-  friend class LitSharedState;
+  friend class SharedState;
   ASTDecl(DeclIRValue irValue, llvm::SMLoc loc, ASTDecl *parentDecl,
           LexerCursor cursor, LexerCursor endCursor, ssize_t indentation)
       : irValue(irValue), loc(loc), parentDecl(std::move(parentDecl)),

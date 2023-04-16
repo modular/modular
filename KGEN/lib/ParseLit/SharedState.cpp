@@ -4,11 +4,11 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file provides the implementation of the LitSharedState class.
+// This file provides the implementation of the SharedState class.
 //
 //===----------------------------------------------------------------------===//
 
-#include "LitSharedState.h"
+#include "SharedState.h"
 #include "ASTDecl.h"
 #include "ASTType.h"
 #include "IRValues.h"
@@ -48,7 +48,7 @@ using namespace M::KGEN::LIT;
 using llvm::SMLoc;
 using llvm::SourceMgr;
 
-static void adjustTokenEndPoint(LitSharedState &shared, SMLoc &loc);
+static void adjustTokenEndPoint(SharedState &shared, SMLoc &loc);
 
 /// Return the path containing the standard library. Returns nullopt if the
 /// standard library cannot be found.
@@ -73,7 +73,7 @@ static std::optional<std::string> getAutoImportPath() {
   return std::nullopt;
 }
 
-struct LitSharedState::Impl {
+struct SharedState::Impl {
   SymbolTableCollection symbolTables;
 
   /// A map of symbol tables to unique counters for names within those
@@ -109,8 +109,8 @@ struct LitSharedState::Impl {
   bool validateDocStrings = false;
 };
 
-LitSharedState::LitSharedState(llvm::SourceMgr &sourceMgr,
-                               MojoParserConfig &config, bool enableCaching)
+SharedState::SharedState(llvm::SourceMgr &sourceMgr, MojoParserConfig &config,
+                         bool enableCaching)
     : diags(sourceMgr, config.context, config.useMLIRDiagnostics),
       options(config.options),
       declResolver(std::make_unique<DeclResolver>(*this)),
@@ -152,13 +152,13 @@ LitSharedState::LitSharedState(llvm::SourceMgr &sourceMgr,
   }
 }
 
-LitSharedState::~LitSharedState() { declResolver.reset(); }
+SharedState::~SharedState() { declResolver.reset(); }
 
-bool LitSharedState::shouldValidateDocStrings() const {
+bool SharedState::shouldValidateDocStrings() const {
   return impl->validateDocStrings;
 }
 
-void LitSharedState::initialize(ASTDecl &topLevelDecl) {
+void SharedState::initialize(ASTDecl &topLevelDecl) {
   assert(!impl->topLevelDecl && "already initialized");
   impl->topLevelDecl = &topLevelDecl;
 
@@ -180,39 +180,38 @@ void LitSharedState::initialize(ASTDecl &topLevelDecl) {
   topLevelDecl.resolvedness = DeclResolvedness::fully;
 }
 
-LitDiagnostic LitSharedState::emitError(Location loc, const Twine &message) {
+LitDiagnostic SharedState::emitError(Location loc, const Twine &message) {
   return diags.emitError(loc, message);
 }
 
 /// Emit an error through the parser's logic.
-LitDiagnostic LitSharedState::emitError(llvm::SMLoc loc, const Twine &message) {
+LitDiagnostic SharedState::emitError(llvm::SMLoc loc, const Twine &message) {
   return diags.emitError(loc, message);
 }
 
 /// Emit a warning.
-LitDiagnostic LitSharedState::emitWarning(Location loc, const Twine &message) {
+LitDiagnostic SharedState::emitWarning(Location loc, const Twine &message) {
   return diags.emitWarning(loc, message);
 }
-LitDiagnostic LitSharedState::emitWarning(llvm::SMLoc loc,
-                                          const Twine &message) {
+LitDiagnostic SharedState::emitWarning(llvm::SMLoc loc, const Twine &message) {
   return diags.emitWarning(loc, message);
 }
 
 /// Inflate a lightweight SMLoc into an MLIR Location object for addition
 /// into the IR.
-Location LitSharedState::translateLocation(llvm::SMLoc loc) const {
+Location SharedState::translateLocation(llvm::SMLoc loc) const {
   auto fileLoc = diags.translateLocation(loc);
   return diBuilder ? diBuilder->createScopedLoc(fileLoc) : fileLoc;
 }
 
-ASTType LitSharedState::getTypeCheckErrorType() const {
+ASTType SharedState::getTypeCheckErrorType() const {
   return impl->typeCheckErrorType;
 }
-ASTType LitSharedState::getNoneType() const { return impl->noneType; }
-NoneAttr LitSharedState::getNoneAttr() const { return impl->noneAttr; }
+ASTType SharedState::getNoneType() const { return impl->noneType; }
+NoneAttr SharedState::getNoneAttr() const { return impl->noneAttr; }
 
 /// Add declarations for magic things to the builtins decl.
-void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
+void SharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
   DeclResolver &resolver = *declResolver;
   MLIRContext *context = getContext();
 
@@ -240,7 +239,7 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
 /// Set the symbol for the specified declaration (known to be an operation)
 /// into the MLIR symbol table for its container.  If the symbol is already
 /// declared in the same MLIR scope, then return the conflicting operation.
-Operation *LitSharedState::setResolvedDeclSymbol(Operation *declOp) {
+Operation *SharedState::setResolvedDeclSymbol(Operation *declOp) {
   assert(declOp && "Cannot set a symbol for non-operation decl");
 
   // We look up the symbol in the enclosing symbol table.  For example, for a
@@ -278,7 +277,7 @@ Operation *LitSharedState::setResolvedDeclSymbol(Operation *declOp) {
 // ModuleState
 //===----------------------------------------------------------------------===//
 
-struct LitSharedState::ModuleState {
+struct SharedState::ModuleState {
   ModuleState(ASTDecl *decl = nullptr) : decl(decl) {}
 
   /// Build the cache key for this module.
@@ -315,9 +314,8 @@ struct LitSharedState::ModuleState {
 
 /// Perform a name lookup in the specified scope and return the named
 /// declaration as a LookupResult.
-auto LitSharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
-                                          ASTDecl &scope,
-                                          bool searchParentScopes)
+auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
+                                       ASTDecl &scope, bool searchParentScopes)
     -> LookupResult {
 
   // Ensure the context is fully resolved, so all its members are known.  It
@@ -408,18 +406,17 @@ auto LitSharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
 }
 
 /// Perform a name lookup for a member in the specified type.
-auto LitSharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
-                                          ASTType scope,
-                                          bool searchParentScopes)
+auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc, ASTType scope,
+                                       bool searchParentScopes)
     -> LookupResult {
   if (auto *decl = scope.getDecl(*this))
     return lookupAndResolveDecl(name, loc, *decl, searchParentScopes);
   return LookupResult::getFailure();
 }
 
-ASTType LitSharedState::lookupNonparameterizedNamedType(StringRef name,
-                                                        llvm::SMLoc loc,
-                                                        ASTDecl &context) {
+ASTType SharedState::lookupNonparameterizedNamedType(StringRef name,
+                                                     llvm::SMLoc loc,
+                                                     ASTDecl &context) {
   LookupResult result =
       lookupAndResolveDecl(name, loc, context, /*searchParentScopes=*/true);
   if (result.isErroneous())
@@ -448,7 +445,7 @@ ASTType LitSharedState::lookupNonparameterizedNamedType(StringRef name,
 
 /// Lookup the `object` type in the specified context and return it if found,
 /// otherwise emit an error and return null.
-ASTType LitSharedState::lookupObjectType(llvm::SMLoc loc, ASTDecl &context) {
+ASTType SharedState::lookupObjectType(llvm::SMLoc loc, ASTDecl &context) {
   return lookupNonparameterizedNamedType("object", loc, context);
 }
 
@@ -509,12 +506,12 @@ static StringAttr getMangledModuleName(MLIRContext *ctx, StringRef moduleName) {
   return StringAttr::get(ctx, "$" + moduleName);
 }
 
-ASTDecl &LitSharedState::importModule(StringRef moduleName, llvm::SMLoc loc) {
+ASTDecl &SharedState::importModule(StringRef moduleName, llvm::SMLoc loc) {
   return *importModuleState(moduleName, loc).decl;
 }
 
-LitSharedState::ModuleState &
-LitSharedState::importModuleState(StringRef moduleName, llvm::SMLoc loc) {
+SharedState::ModuleState &SharedState::importModuleState(StringRef moduleName,
+                                                         llvm::SMLoc loc) {
   TimeTraceScope<> fullTimeScope(("importModule: " + moduleName).str());
 
   // Mangle the module name during import to avoid conflicts with symbols that
@@ -557,9 +554,9 @@ LitSharedState::importModuleState(StringRef moduleName, llvm::SMLoc loc) {
   return createModuleState(moduleName, moduleBuffer, fileLoc);
 }
 
-ASTDecl *LitSharedState::resolveBuiltinModuleType(llvm::SMLoc loc,
-                                                  StringRef moduleName,
-                                                  StringRef typeName) {
+ASTDecl *SharedState::resolveBuiltinModuleType(llvm::SMLoc loc,
+                                               StringRef moduleName,
+                                               StringRef typeName) {
   StringAttr moduleStrAttr = getMangledModuleName(getContext(), moduleName);
   auto it = impl->importedModules.find(moduleStrAttr);
   if (it == impl->importedModules.end())
@@ -572,36 +569,36 @@ ASTDecl *LitSharedState::resolveBuiltinModuleType(llvm::SMLoc loc,
   return lookup.getIfSuccess()[0];
 }
 
-ASTDecl *LitSharedState::getBuiltinBoolLiteral(llvm::SMLoc loc) {
+ASTDecl *SharedState::getBuiltinBoolLiteral(llvm::SMLoc loc) {
   return resolveBuiltinModuleType(loc, kBuiltinBoolModuleName, "BoolLiteral");
 }
 
-ASTDecl *LitSharedState::getBuiltinTupleLiteral(llvm::SMLoc loc) {
+ASTDecl *SharedState::getBuiltinTupleLiteral(llvm::SMLoc loc) {
   return resolveBuiltinModuleType(loc, kBuiltinTupleModuleName, "TupleLiteral");
 }
 
-ASTDecl *LitSharedState::getBuiltinErrorType(llvm::SMLoc loc) {
+ASTDecl *SharedState::getBuiltinErrorType(llvm::SMLoc loc) {
   return resolveBuiltinModuleType(loc, kBuiltinErrorModuleName, "Error");
 }
 
-ASTDecl *LitSharedState::getBuiltinIntType(llvm::SMLoc loc) {
+ASTDecl *SharedState::getBuiltinIntType(llvm::SMLoc loc) {
   return resolveBuiltinModuleType(loc, kBuiltinIntModuleName, "Int");
 }
 
-ASTDecl *LitSharedState::getBuiltinStringLiteral(llvm::SMLoc loc) {
+ASTDecl *SharedState::getBuiltinStringLiteral(llvm::SMLoc loc) {
   return resolveBuiltinModuleType(loc, kBuiltinStringModuleName,
                                   "StringLiteral");
 }
 
-ASTDecl *LitSharedState::getBuiltinSliceType(llvm::SMLoc loc) {
+ASTDecl *SharedState::getBuiltinSliceType(llvm::SMLoc loc) {
   return resolveBuiltinModuleType(loc, kBuiltinSliceModuleName, "slice");
 }
 
-ASTDecl *LitSharedState::getBuiltinListLiteral(llvm::SMLoc loc) {
+ASTDecl *SharedState::getBuiltinListLiteral(llvm::SMLoc loc) {
   return resolveBuiltinModuleType(loc, kBuiltinListModuleName, "ListLiteral");
 }
 
-void LitSharedState::loadModulesFromCache(
+void SharedState::loadModulesFromCache(
     MutableArrayRef<ModuleState *> moduleStates) {
   // If we don't have a valid cache, we can't do anything.
   if (!impl->transformCache || moduleStates.empty())
@@ -764,16 +761,16 @@ void LitSharedState::loadModulesFromCache(
   }
 }
 
-ASTDecl &LitSharedState::createModule(StringRef moduleName,
-                                      const llvm::MemoryBuffer *moduleBuffer,
-                                      FileLineColLoc loc) {
+ASTDecl &SharedState::createModule(StringRef moduleName,
+                                   const llvm::MemoryBuffer *moduleBuffer,
+                                   FileLineColLoc loc) {
   return *createModuleState(moduleName, moduleBuffer, loc).decl;
 }
 
-LitSharedState::ModuleState &
-LitSharedState::createModuleState(StringRef moduleName,
-                                  const llvm::MemoryBuffer *moduleBuffer,
-                                  FileLineColLoc loc) {
+SharedState::ModuleState &
+SharedState::createModuleState(StringRef moduleName,
+                               const llvm::MemoryBuffer *moduleBuffer,
+                               FileLineColLoc loc) {
   StringAttr mangledName = getMangledModuleName(getContext(), moduleName);
   Lexer lexer(*this, moduleBuffer);
   LexerCursor endCursor(
@@ -825,8 +822,8 @@ LitSharedState::createModuleState(StringRef moduleName,
   return moduleState;
 }
 
-void LitSharedState::resolveModuleDependencies(ModuleState &moduleState,
-                                               StringRef moduleBuffer) {
+void SharedState::resolveModuleDependencies(ModuleState &moduleState,
+                                            StringRef moduleBuffer) {
   ASTDecl &moduleDecl = *moduleState.decl;
 
   llvm::MapVector<StringAttr, SMLoc> dependencies;
@@ -964,7 +961,7 @@ void LitSharedState::resolveModuleDependencies(ModuleState &moduleState,
   impl->activelyResolvingModuleDeps = false;
 }
 
-void LitSharedState::cacheParsedModules() {
+void SharedState::cacheParsedModules() {
   // If we don't have a valid cache, we can't do anything.
   if (!impl->transformCache)
     return;
@@ -1008,12 +1005,12 @@ void LitSharedState::cacheParsedModules() {
   await(results);
 }
 
-ArrayRef<std::string> LitSharedState::getIncludedFiles() const {
+ArrayRef<std::string> SharedState::getIncludedFiles() const {
   return impl->includedFiles;
 }
 
 /// Given a pointer to the start of a token, find the end of it.
-static void adjustTokenEndPoint(LitSharedState &shared, SMLoc &loc) {
+static void adjustTokenEndPoint(SharedState &shared, SMLoc &loc) {
   size_t tokenSize = Lexer::getTokenLength(shared, loc);
   loc = SMLoc::getFromPointer(loc.getPointer() + tokenSize);
 }

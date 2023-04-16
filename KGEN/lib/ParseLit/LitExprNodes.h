@@ -16,8 +16,8 @@
 #ifndef LIT_EXPR_NODES_H
 #define LIT_EXPR_NODES_H
 
+#include "Diags.h"
 #include "IRValues.h"
-#include "LitDiags.h"
 #include "LitExprNode.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"

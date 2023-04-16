@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "LitDocString.h"
+#include "DocString.h"
 #include "ASTDecl.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "mlir/Support/IndentedOstream.h"
@@ -21,19 +21,19 @@ static size_t getIndentationLevel(StringRef str) {
   return str.size() - str.ltrim().size();
 }
 
-/// Extract a LitDocString from a given decl, or None if there is no doc string.
-static std::optional<LitDocString> getLitDocString(ASTDecl &decl) {
+/// Extract a DocString from a given decl, or None if there is no doc string.
+static std::optional<DocString> getDocString(ASTDecl &decl) {
   StringRef docStr = decl.getDocString();
   if (docStr.empty())
     return std::nullopt;
-  return LitDocString(docStr);
+  return DocString(docStr);
 }
 
 //===----------------------------------------------------------------------===//
-// LitDocString
+// DocString
 //===----------------------------------------------------------------------===//
 
-LitDocString::LitDocString(StringRef rawDocString) {
+DocString::DocString(StringRef rawDocString) {
   // This function processes a doc-string, following a similar structure as
   // defined by PEP 257 for how multi-line doc strings should be formatted.
   // https://peps.python.org/pep-0257/#multi-line-docstrings
@@ -145,13 +145,13 @@ private:
     }
   }
 
-  /// Extract a LitDocString from a given decl, or None if there is no doc
+  /// Extract a DocString from a given decl, or None if there is no doc
   /// string.
-  std::optional<LitDocString> getLitDocString(ASTDecl &decl) {
+  std::optional<DocString> getDocString(ASTDecl &decl) {
     StringRef docStr = decl.getDocString();
     if (docStr.empty())
       return std::nullopt;
-    return LitDocString(docStr);
+    return DocString(docStr);
   }
 
   /// Return if the given name should be hidden from the markdown output.
@@ -405,7 +405,7 @@ private:
 
     generateFunctionSignature(name, argTypeNames, resultTypeName);
 
-    if (std::optional<LitDocString> docStr = getLitDocString(decl)) {
+    if (std::optional<DocString> docStr = getDocString(decl)) {
       os << docStr->getSummary() << "\n\n";
       processFunctionDocDescription(docStr->getDescription(), paramToDetail,
                                     argNameToDetail, resultTypeName);
@@ -477,7 +477,7 @@ private:
   void generateLitMarkdownDocFor(ASTDecl &decl, StructDeclOp structOp) {
     generateMarkdownHeader(structOp.getName());
 
-    if (std::optional<LitDocString> docStr = getLitDocString(decl)) {
+    if (std::optional<DocString> docStr = getDocString(decl)) {
       os << docStr->getSummary() << "\n\n";
 
       // Grab the types of the parameters to the struct.
@@ -521,7 +521,7 @@ private:
     const char *tableOfContents = "[TOC]\n\n";
 
     // If the module has a doc string, emit it.
-    if (std::optional<LitDocString> docStr = getLitDocString(decl)) {
+    if (std::optional<DocString> docStr = getDocString(decl)) {
       os << docStr->getSummary() << "\n\n" << tableOfContents;
       for (StringRef descLine : docStr->getDescription())
         os << descLine << "\n";
@@ -560,10 +560,10 @@ void M::KGEN::LIT::generateLitMarkdownDoc(ASTDecl &decl, raw_ostream &os) {
 namespace {
 class DocStringValidator {
 public:
-  DocStringValidator(LitSharedState &sharedState) : sharedState(sharedState) {}
+  DocStringValidator(SharedState &sharedState) : sharedState(sharedState) {}
 
   void validate(ASTDecl &decl) {
-    std::optional<LitDocString> docStr = getLitDocString(decl);
+    std::optional<DocString> docStr = getDocString(decl);
     if (docStr && !decl.hasReferenceError) {
       TypeSwitch<ASTDecl &>(decl).Case<FuncOp, StructDeclOp>(
           [&](auto op) { validateDecl(decl, op, *docStr); });
@@ -722,7 +722,7 @@ private:
   // Functions
 
   /// Generate markdown documentation for the given function.
-  void validateDecl(ASTDecl &decl, FuncOp funcOp, LitDocString &docStr) {
+  void validateDecl(ASTDecl &decl, FuncOp funcOp, DocString &docStr) {
     SignatureType signature = funcOp.getSignature();
     auto argNames = funcOp.getValueParamNames();
     bool hasResultType = !funcOp.getResultType().isa<LIT::NoneType>();
@@ -771,8 +771,7 @@ private:
   //===----------------------------------------------------------------------===//
   // Structs
 
-  void validateDecl(ASTDecl &decl, StructDeclOp structOp,
-                    LitDocString &docStr) {
+  void validateDecl(ASTDecl &decl, StructDeclOp structOp, DocString &docStr) {
     // Grab the parameters to the struct.
     llvm::MapVector<StringRef, SMLoc> seenParameters;
     for (auto [index, value] : llvm::enumerate(structOp.getInputParams()))
@@ -791,12 +790,11 @@ private:
   }
 
   /// Reference to the main shared state.
-  LitSharedState &sharedState;
+  SharedState &sharedState;
 };
 } // namespace
 
-void M::KGEN::LIT::validateLitDocString(LitSharedState &sharedState,
-                                        ASTDecl &decl) {
+void M::KGEN::LIT::validateDocString(SharedState &sharedState, ASTDecl &decl) {
   DocStringValidator validator(sharedState);
   validator.validate(decl);
 }

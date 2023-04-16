@@ -10,13 +10,13 @@
 
 #include "LitDecls.h"
 #include "ASTDecl.h"
+#include "DocString.h"
 #include "IRValues.h"
 #include "Lexer.h"
-#include "LitDocString.h"
 #include "LitExprEmitter.h"
 #include "LitExprNodes.h"
 #include "LitParameterEvaluator.h"
-#include "LitParserBase.h"
+#include "ParserBase.h"
 
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -24,7 +24,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
-#include "LitSharedState.h"
+#include "SharedState.h"
 #include "SpecialFunctions.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
@@ -45,8 +45,7 @@ static constexpr const StringLiteral kMainSymbolName = "main";
 
 /// Parse an expression and immediately resolve it to a type.  This returns
 /// failure on parse error.
-static ParseResult parseType(LitParserBase &p, ASTType &result,
-                             ASTDecl &declScope,
+static ParseResult parseType(ParserBase &p, ASTType &result, ASTDecl &declScope,
                              std::optional<size_t> stmtIndent) {
   ExprNode *expr = nullptr;
   if (p.parseExpression(expr, stmtIndent))
@@ -112,7 +111,7 @@ SymbolRefAttr ASTDecl::getSymbolRef() const {
 }
 
 /// Given an MLIR op for a struct declaration, return the self type.
-ASTType ASTDecl::computeSelfTypeForStruct(LitSharedState &state) {
+ASTType ASTDecl::computeSelfTypeForStruct(SharedState &state) {
   auto structOp = cast<StructDeclOp>(*this);
 
   SmallVector<ParamBindAttr> parameters;
@@ -147,7 +146,7 @@ ASTType ASTDecl::computeSelfTypeForStruct(LitSharedState &state) {
 //     bar()
 //   foo()
 
-DeclResolver::DeclResolver(LitSharedState &state) : LitSharedStateUser(state) {}
+DeclResolver::DeclResolver(SharedState &state) : SharedStateUser(state) {}
 
 DeclResolver::~DeclResolver() {
   // Run the destructors on all the ASTDecl objects to make sure any
@@ -536,7 +535,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
 
     // With the decl fully processed, validate the doc string.
     if (shared.shouldValidateDocStrings())
-      validateLitDocString(shared, decl);
+      validateDocString(shared, decl);
   }
 
   declsCurrentlyProcessing.erase(&decl);
@@ -702,7 +701,7 @@ struct ParsedArgument {
     kStar,      //< This argument is a standalone '*' marker.
   };
 
-  ParseResult parse(LitParserBase &p, KWArgMarkerInfo &markerInfo) {
+  ParseResult parse(ParserBase &p, KWArgMarkerInfo &markerInfo) {
     loc = p.getToken().getLoc();
 
     // The owned/borrowed keyword sets convention.
@@ -794,7 +793,7 @@ struct ParsedArgument {
   ///   https://peps.python.org/pep-0570/#how-to-teach-this
   ///
   static ParseResult
-  parseAndResolvePresentArgumentList(LitParserBase &p,
+  parseAndResolvePresentArgumentList(ParserBase &p,
                                      SmallVectorImpl<ParsedArgument> &args,
                                      bool isParameterList) {
     // Figure out where to stop scanning.
@@ -910,11 +909,9 @@ struct ParsedArgument {
 /// meta_signature    ::= "[" meta_param_list ("->" meta_result_types)? "]"
 /// meta_param_list   ::= argument_list | "(" ")"
 /// meta_result_types ::= expression ("," expression)*
-static ParseResult
-parseOptionalParameterSignature(LitParserBase &p, ASTDecl &declScope,
-                                SmallVector<ParamDeclAttr> &inputParams,
-                                SmallVector<ParamDeclAttr> &resultParams,
-                                bool &paramVararg) {
+static ParseResult parseOptionalParameterSignature(
+    ParserBase &p, ASTDecl &declScope, SmallVector<ParamDeclAttr> &inputParams,
+    SmallVector<ParamDeclAttr> &resultParams, bool &paramVararg) {
   if (!p.consumeIf(Token::l_square) || p.consumeIf(Token::r_square))
     return success();
 
@@ -1014,7 +1011,7 @@ parseOptionalParameterSignature(LitParserBase &p, ASTDecl &declScope,
 // Doc String support logic
 //===----------------------------------------------------------------------===//
 
-void LitParserBase::parseDocString(ASTDecl &decl) {
+void ParserBase::parseDocString(ASTDecl &decl) {
   // The doc string is simply a follow-on string literal.
   if (getToken().isNot(Token::string))
     return;
@@ -1025,11 +1022,11 @@ void LitParserBase::parseDocString(ASTDecl &decl) {
 // Decorator support logic
 //===----------------------------------------------------------------------===//
 
-SmallVector<ExprNode *> LitParserBase::parseDecorators(ASTDecl &decl) {
+SmallVector<ExprNode *> ParserBase::parseDecorators(ASTDecl &decl) {
   return parseDecorators(decl.getParentDecl()->getIndentation());
 }
 
-SmallVector<ExprNode *> LitParserBase::parseDecorators(ssize_t indentation) {
+SmallVector<ExprNode *> ParserBase::parseDecorators(ssize_t indentation) {
   SmallVector<ExprNode *> result;
   if (getToken().getIndentation())
     indentation = getToken().getIndentation().value();
@@ -1043,7 +1040,7 @@ SmallVector<ExprNode *> LitParserBase::parseDecorators(ssize_t indentation) {
 }
 
 static void rejectDecorators(ArrayRef<ExprNode *> decoratorExprs, ASTDecl &decl,
-                             LitSharedState &shared) {
+                             SharedState &shared) {
   if (!decoratorExprs.empty())
     shared.emitError(decoratorExprs[0]->getLoc(),
                      "decorators not supported on this statement")
@@ -1100,7 +1097,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
                                       SmallVector<ParsedArgument> &args,
                                       MutableArrayRef<Type> argTypes,
                                       ASTType &resultType,
-                                      LitSharedState &shared) {
+                                      SharedState &shared) {
   SpecialFunctionInfo fnInfo = SpecialFunctionInfo::get(name);
 
   // On any semantic error we mark the declaration erroneous - so references to
@@ -1396,9 +1393,9 @@ static StringAttr getMangledName(StringAttr baseName, SignatureType signature) {
 }
 
 namespace {
-struct FnDecorators : public LitSharedStateUser {
-  FnDecorators(ASTDecl &decl, LitSharedState &shared)
-      : LitSharedStateUser(shared), decl(decl), funcOp(cast<LIT::FuncOp>(decl)),
+struct FnDecorators : public SharedStateUser {
+  FnDecorators(ASTDecl &decl, SharedState &shared)
+      : SharedStateUser(shared), decl(decl), funcOp(cast<LIT::FuncOp>(decl)),
         isMethod(isa<StructDeclOp>(*decl.getParentDecl())) {}
 
   void apply(SmallVector<ExprNode *> &decoratorExprs);
@@ -1553,7 +1550,7 @@ void FnDecorators::applyLate(SymbolRefAttr symbolName, StringRef unmangledName,
 /// No parameters are allowed and here must be only one main in the final
 /// object file.
 static bool isMainFunction(StringAttr &name, LIT::FuncOp func,
-                           LitSharedState &shared) {
+                           SharedState &shared) {
   SignatureType signature = func.getSignature();
   return name == kMainSymbolName && signature.getInputParamTypes().empty() &&
          signature.getResultParamTypes().empty() &&
@@ -1567,7 +1564,7 @@ static bool isMainFunction(StringAttr &name, LIT::FuncOp func,
 ///
 LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
                                              ASTDecl &decl) {
-  LitParserBase p(lexer);
+  ParserBase p(lexer);
   SmallVector<ExprNode *> decoratorExprs = p.parseDecorators(decl);
   assert(p.getToken().isAny(Token::kw_async, Token::kw_def, Token::kw_fn) &&
          "not a function definition?");
@@ -2030,7 +2027,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
 
   // With all the argument declarations set up, we can resolve the body of the
   // function.
-  if (LitParserBase::parseSuite(decl, lexer))
+  if (ParserBase::parseSuite(decl, lexer))
     return failure();
 
   auto loc = funcOp.getLoc();
@@ -2082,7 +2079,7 @@ ParseResult DeclResolver::resolveBody(LIT::FileModuleOp op, Lexer &lexer,
     }
   }
 
-  return LitParserBase::parseSuite(decl, lexer);
+  return ParserBase::parseSuite(decl, lexer);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2094,7 +2091,7 @@ ParseResult DeclResolver::resolveBody(LIT::FileModuleOp op, Lexer &lexer,
 /// var_or_let    ::= "var" | "let"
 LogicalResult DeclResolver::resolveSignature(VarLetDeclOp varOp, Lexer &lexer,
                                              ASTDecl &decl) {
-  LitParserBase p(lexer);
+  ParserBase p(lexer);
   SmallVector<ExprNode *> decorators = p.parseDecorators(decl);
 
   p.consumeToken(); // eat the let/var.
@@ -2204,7 +2201,7 @@ ParseResult DeclResolver::resolveBody(LetRegDeclOp op, Lexer &lexer,
 ///
 LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
                                              Lexer &lexer, ASTDecl &decl) {
-  LitParserBase p(lexer);
+  ParserBase p(lexer);
   SmallVector<ExprNode *> decoratorExprs = p.parseDecorators(decl);
 
   // Parse the type if present.
@@ -2301,7 +2298,7 @@ ParseResult DeclResolver::resolveBody(AliasForwardDeclOp aliasFwdDeclOp,
 ///
 LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
                                              Lexer &lexer, ASTDecl &decl) {
-  LitParserBase p(lexer);
+  ParserBase p(lexer);
   SmallVector<ExprNode *> decoratorExprs = p.parseDecorators(decl);
 
   SmallVector<ParamDeclAttr> inputParamDecls;
@@ -2370,7 +2367,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
 /// for the specified declaration (typically a var or argument declaration).
 /// This returns the destructor if successful, diagnoses an error if not, and
 /// returns null if there is no defined destructor.
-static TypedAttr lookupDestructor(ASTDecl &structDecl, LitSharedState &shared) {
+static TypedAttr lookupDestructor(ASTDecl &structDecl, SharedState &shared) {
   const TinyPtrVector<ASTDecl *> *entries = structDecl.lookupInCurrentScope(
       StringAttr::get(shared.getContext(), "__del___"));
   // If there are no __del__ methods, return null.  This is valid.
@@ -2439,7 +2436,7 @@ static TypedAttr synthesizeEmptyDtor(StructDeclOp structOp, ASTDecl &structDecl,
 
 ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
                                       ASTDecl &structDecl) {
-  if (LitParserBase::parseSuite(structDecl, lexer))
+  if (ParserBase::parseSuite(structDecl, lexer))
     return failure();
 
   // Mark the declaration as fully resolved so we can lookup into it.
@@ -2538,7 +2535,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
 ///
 LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
                                              Lexer &lexer, ASTDecl &decl) {
-  LitParserBase p(lexer);
+  ParserBase p(lexer);
   SmallVector<ExprNode *> decoratorExprs = p.parseDecorators(decl);
 
   ASTType type;

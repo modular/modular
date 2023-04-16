@@ -53,13 +53,13 @@ bool Token::isKeyword() const {
 // Lexer
 //===----------------------------------------------------------------------===//
 
-Lexer::Lexer(LitSharedState &shared, const llvm::MemoryBuffer *buffer)
-    : LitSharedStateUser(shared), curBuffer(buffer->getBuffer()),
+Lexer::Lexer(SharedState &shared, const llvm::MemoryBuffer *buffer)
+    : SharedStateUser(shared), curBuffer(buffer->getBuffer()),
       curPtr(curBuffer.begin()),
       // Prime the first token.
       curToken(lexTokenImpl()) {}
 
-static StringRef getBuffer(LitSharedState &sharedState,
+static StringRef getBuffer(SharedState &sharedState,
                            const LexerCursor &cursor) {
   auto &sourceMgr = sharedState.getSourceMgr();
   unsigned cursorBufferId =
@@ -69,8 +69,8 @@ static StringRef getBuffer(LitSharedState &sharedState,
   return buffer->getBuffer();
 }
 
-Lexer::Lexer(LitSharedState &shared, const LexerCursor &cursor)
-    : LitSharedStateUser(shared), curBuffer(getBuffer(shared, cursor)),
+Lexer::Lexer(SharedState &shared, const LexerCursor &cursor)
+    : SharedStateUser(shared), curBuffer(getBuffer(shared, cursor)),
       curToken(Token::eof, {}, 0) {
   cursor.restore(*this);
 }
@@ -799,13 +799,13 @@ SMLoc Lexer::findEndOfPreviousLine(SMLoc loc) const {
   }
 }
 
-Lexer::Lexer(LitSharedState &shared, StringRef curBuffer, const char *curPtr)
-    : LitSharedStateUser(shared), curBuffer(curBuffer), curPtr(curPtr),
+Lexer::Lexer(SharedState &shared, StringRef curBuffer, const char *curPtr)
+    : SharedStateUser(shared), curBuffer(curBuffer), curPtr(curPtr),
       curToken(lexTokenImpl()) {}
 
 /// Given a valid pointer into a source buffer for some token, return the
 /// length of the token by re-lex'ing it.  This is efficient.
-size_t Lexer::getTokenLength(LitSharedState &shared, SMLoc loc) {
+size_t Lexer::getTokenLength(SharedState &shared, SMLoc loc) {
   // Because we know the pointer is to a valid place in a source buffer, and
   // because we know that all source buffers are NUL terminated, we know that
   // the end of buffer check isn't needed.  This allows us to form a lexer

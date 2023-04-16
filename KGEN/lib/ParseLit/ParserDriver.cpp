@@ -4,19 +4,19 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file provides the main entrypoints for the lit parser.
+// This file provides the main entrypoints for the Mojo parser.
 //
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/ParseLit.h"
 
 #include "ASTDecl.h"
+#include "DocString.h"
 #include "KGEN/CompilationOptions.h"
 #include "Lexer.h"
 #include "LitDecls.h"
-#include "LitDocString.h"
-#include "LitParserBase.h"
-#include "LitSharedState.h"
+#include "ParserBase.h"
+#include "SharedState.h"
 
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPDialect.h"
@@ -41,7 +41,7 @@ using llvm::SourceMgr;
 /// Parse the specified .lit file into the specified MLIR context. Returns the
 /// resultant IR, and the decl for the module represented by the input file.
 static std::tuple<OwningOpRef<mlir::ModuleOp>, ASTDecl *>
-importMojoFileImpl(SourceMgr &sourceMgr, LitSharedState &sharedState,
+importMojoFileImpl(SourceMgr &sourceMgr, SharedState &sharedState,
                    mlir::TimingScope &ts,
                    SmallVectorImpl<std::string> *includedFiles = nullptr) {
   auto sourceBuf = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
@@ -81,7 +81,7 @@ importMojoFileImpl(SourceMgr &sourceMgr, LitSharedState &sharedState,
       sharedState.createModule(moduleName, sourceBuf, fileLoc);
 
   // Auto-import the core Lang modules.
-  for (StringRef moduleName : LitSharedState::kBuiltinModuleNames) {
+  for (StringRef moduleName : SharedState::kBuiltinModuleNames) {
     auto builtinStrAttr = StringAttr::get(module->getContext(), moduleName);
     if (failed(sharedState.declResolver->importModule(
             topLevelDecl, builtinStrAttr, builtinStrAttr, startSMLoc)))
@@ -121,7 +121,7 @@ OwningOpRef<mlir::ModuleOp>
 M::importMojoFile(llvm::SourceMgr &sourceMgr, MojoParserConfig &config,
                   mlir::TimingScope &ts,
                   SmallVectorImpl<std::string> *includedFiles) {
-  LitSharedState sharedState(sourceMgr, config);
+  SharedState sharedState(sourceMgr, config);
   auto [module, topLevelDecl] =
       importMojoFileImpl(sourceMgr, sharedState, ts, includedFiles);
   return std::move(module);
@@ -133,7 +133,7 @@ LogicalResult M::generateMojoDoc(llvm::SourceMgr &sourceMgr,
   // TODO: We should be able to cache when processing doc strings, but we need
   // to define when/how they get cached to not negatively affect the non-doc
   // string caring path.
-  LitSharedState sharedState(sourceMgr, config, /*enableCaching=*/false);
+  SharedState sharedState(sourceMgr, config, /*enableCaching=*/false);
   auto [module, moduleDecl] = importMojoFileImpl(sourceMgr, sharedState, ts);
   if (!module)
     return failure();

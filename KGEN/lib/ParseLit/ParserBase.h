@@ -4,13 +4,13 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file provides the base class for Lit file parsers that is common between
+// This file provides the base class for Mojo parsers that is common between
 // expression and statement parsing.
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LIT_PARSER_BASE_H
-#define LIT_PARSER_BASE_H
+#ifndef PARSERBASE_H
+#define PARSERBASE_H
 
 #include "Lexer.h"
 #include "mlir/IR/Diagnostics.h"
@@ -20,15 +20,14 @@ class ExprNode;
 class ASTDecl;
 
 //===----------------------------------------------------------------------===//
-// LitParserBase
+// ParserBase
 //===----------------------------------------------------------------------===//
 
 /// This class implements logic that is common to many parts of the parser, but
 /// which is independent of the concrete grammar.
-class LitParserBase : public LitSharedStateUser {
+class ParserBase : public SharedStateUser {
 public:
-  LitParserBase(Lexer &lexer)
-      : LitSharedStateUser(lexer.shared), lexer(lexer) {}
+  ParserBase(Lexer &lexer) : SharedStateUser(lexer.shared), lexer(lexer) {}
 
   Lexer &getLexer() { return lexer; }
 
@@ -40,7 +39,7 @@ public:
   // Error Handling
   //===--------------------------------------------------------------------===//
 
-  using LitSharedStateUser::emitError;
+  using SharedStateUser::emitError;
 
   /// Emit an error at a specific lexer location.
   LitDiagnostic emitError(llvm::SMLoc loc, const Twine &message = {});
@@ -212,10 +211,10 @@ public:
 public:
   Lexer &lexer;
 
-  LitParserBase(const LitParserBase &) = delete;
-  void operator=(const LitParserBase &) = delete;
+  ParserBase(const ParserBase &) = delete;
+  void operator=(const ParserBase &) = delete;
 };
 
 } // namespace M::KGEN::LIT
 
-#endif // LIT_PARSER_BASE_H
+#endif // PARSERBASE_H

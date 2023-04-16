@@ -162,7 +162,7 @@ public:
   /// the problem hasn't already been diagnosed and it is non-null. This does
   /// not emit an error on failure.
   OverloadSet(ASTType type, StringRef methodName, const ExprNode *callExpr,
-              CallSyntax syntax, LitSharedState &shared,
+              CallSyntax syntax, SharedState &shared,
               std::function<void()> errorHandler);
 
   /// Form an OverloadSet with a lookup of a named method on the specified type,

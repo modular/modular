@@ -43,7 +43,7 @@
 #define IRVALUES_H
 
 #include "ASTType.h"
-#include "LitSharedState.h"
+#include "SharedState.h"
 
 #include "LLCL/Support/RCRef.h"
 #include "LLCL/Support/ReferenceCounted.h"

@@ -23,7 +23,7 @@
 
 #include "Lexer.h"
 #include "LitExprNodes.h"
-#include "LitParserBase.h"
+#include "ParserBase.h"
 #include "llvm/Support/SaveAndRestore.h"
 using namespace M::KGEN::LIT;
 using namespace M;
@@ -63,10 +63,10 @@ enum class Precedence {
 namespace M::KGEN::LIT {
 /// This class implements the ExprParser interface, implemented with the pImpl
 /// idiom.
-class ExprParser : public LitParserBase {
+class ExprParser : public ParserBase {
 public:
   ExprParser(Lexer &lexer, std::optional<size_t> stmtIndent)
-      : LitParserBase(lexer), stmtIndent(stmtIndent) {}
+      : ParserBase(lexer), stmtIndent(stmtIndent) {}
 
   ~ExprParser() {}
 
@@ -772,9 +772,9 @@ ParseResult ExprParser::parseLValueConvert(ExprNode *&result) {
 //===----------------------------------------------------------------------===//
 
 ParseResult
-LitParserBase::parseExpressionList(SmallVectorImpl<ExprNode *> &results,
-                                   std::optional<size_t> stmtIndent,
-                                   bool *hadTrailingSep) {
+ParserBase::parseExpressionList(SmallVectorImpl<ExprNode *> &results,
+                                std::optional<size_t> stmtIndent,
+                                bool *hadTrailingSep) {
   return ExprParser(getLexer(), stmtIndent)
       .parseExpressionList(results, Token::Kind::eof, hadTrailingSep);
 }
@@ -786,13 +786,13 @@ LitParserBase::parseExpressionList(SmallVectorImpl<ExprNode *> &results,
 /// expression on the next line - when it is more indented than the start of
 /// the current statement.  This can be passed in as None when there is a
 /// trailing punctuator that naturally terminates the expression.
-ParseResult LitParserBase::parseExpression(ExprNode *&result,
-                                           std::optional<size_t> stmtIndent) {
+ParseResult ParserBase::parseExpression(ExprNode *&result,
+                                        std::optional<size_t> stmtIndent) {
   return ExprParser(getLexer(), stmtIndent)
       .parseExpression(result, Precedence::kLowestExpr);
 }
 
-ParseResult LitParserBase::parseStarExpression(ExprNode *&result) {
+ParseResult ParserBase::parseStarExpression(ExprNode *&result) {
   return ExprParser(getLexer(), std::nullopt)
       .parseStarExpression(result, Precedence::kLowestExpr);
 }
@@ -813,13 +813,14 @@ ParseResult LitParserBase::parseStarExpression(ExprNode *&result) {
 ///            | ">>=" | "<<=" | "&=" | "^=" | "|="
 ///
 /// Parse an expression, allowing `=`, and `+=`.
-ParseResult LitParserBase::parseExpressionOrAssignmentStmt(
-    ExprNode *&result, std::optional<size_t> stmtIndent) {
+ParseResult
+ParserBase::parseExpressionOrAssignmentStmt(ExprNode *&result,
+                                            std::optional<size_t> stmtIndent) {
   return ExprParser(getLexer(), stmtIndent)
       .parseExpression(result, Precedence::kAssignStmt);
 }
 
 /// Return an expression node for None at the specified location.
-ExprNode *LitParserBase::getNoneExpr(SMLoc loc) {
+ExprNode *ParserBase::getNoneExpr(SMLoc loc) {
   return ExprParser(getLexer(), 0).getNoneExpr(loc);
 }

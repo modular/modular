@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LITDIAGS_H
-#define LITDIAGS_H
+#ifndef DIAGS_H
+#define DIAGS_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include <functional>
@@ -30,12 +30,12 @@ using llvm::SourceMgr;
 class LitDiagnostic;
 class LitSourceRange;
 class LitFixIt;
-class LitSharedState;
+class SharedState;
 
-class LitDiags {
+class Diags {
 public:
-  LitDiags(SourceMgr &sourceMgr, MLIRContext *context, bool useMLIRDiagnostics);
-  ~LitDiags();
+  Diags(SourceMgr &sourceMgr, MLIRContext *context, bool useMLIRDiagnostics);
+  ~Diags();
 
   llvm::SourceMgr &sourceMgr;
   MLIRContext *const context;
@@ -83,7 +83,7 @@ public:
 
 private:
   friend class LitDiagnostic;
-  LitDiags(const LitDiags &) = delete;
+  Diags(const Diags &) = delete;
 
   /// This is set to true if an error occurred at any point processing the
   /// file.
@@ -102,7 +102,7 @@ private:
 /// by any number of note messages.
 class LitDiagnostic {
 public:
-  LitDiagnostic(Location loc, LitDiags &diags, bool isWarning);
+  LitDiagnostic(Location loc, Diags &diags, bool isWarning);
   ~LitDiagnostic();
   LitDiagnostic(LitDiagnostic &&other);
 
@@ -156,7 +156,7 @@ private:
   std::vector<Message> messages;
 
   /// This is the diagnostic object to emit to, or null if abandoned.
-  LitDiags *diags;
+  Diags *diags;
 
   /// True if this is a warning, false if this is an error.
   bool isWarning;
@@ -217,7 +217,7 @@ public:
   /// This constructor creates a fixit that inserts some text after the token
   /// at the specified location.
   static LitFixIt insertAfterToken(SMLoc loc, const Twine &text,
-                                   LitSharedState &shared);
+                                   SharedState &shared);
 
   /// This is the source range to remove.
   LitSourceRange range;
@@ -238,4 +238,4 @@ void addToDiagnostic(LitFixIt fixIt, LitDiagnostic &diag);
 
 } // namespace M::KGEN::LIT
 
-#endif // LITDIAGS_H
+#endif // DIAGS_H

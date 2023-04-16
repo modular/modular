@@ -8,10 +8,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LITLEXER_H
-#define LITLEXER_H
+#ifndef LEXER_H
+#define LEXER_H
 
-#include "LitSharedState.h"
+#include "SharedState.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/SourceMgr.h"
@@ -100,10 +100,10 @@ private:
 };
 
 /// This implements a lexer for .mojo files.
-class Lexer : public LitSharedStateUser {
+class Lexer : public SharedStateUser {
 public:
-  Lexer(LitSharedState &sharedState, const llvm::MemoryBuffer *buffer);
-  Lexer(LitSharedState &sharedState, const LexerCursor &cursor);
+  Lexer(SharedState &sharedState, const llvm::MemoryBuffer *buffer);
+  Lexer(SharedState &sharedState, const LexerCursor &cursor);
 
   /// Move to the next valid token.
   void lexToken() { curToken = lexTokenImpl(); }
@@ -134,7 +134,7 @@ public:
 
   /// Given a valid pointer into a source buffer for some token, return the
   /// length of the token by re-lex'ing it.  This is efficient.
-  static size_t getTokenLength(LitSharedState &shared, SMLoc loc);
+  static size_t getTokenLength(SharedState &shared, SMLoc loc);
 
 private:
   Token lexTokenImpl();
@@ -155,7 +155,7 @@ private:
   void skipComment();
 
 private:
-  Lexer(LitSharedState &shared, StringRef curBuffer, const char *curPtr);
+  Lexer(SharedState &shared, StringRef curBuffer, const char *curPtr);
 
   StringRef curBuffer;
   const char *curPtr;
@@ -201,4 +201,4 @@ inline LexerCursor Lexer::getCursor() const { return LexerCursor(*this); }
 
 } // namespace M::KGEN::LIT
 
-#endif // LITLEXER_H
+#endif // LEXER_H
