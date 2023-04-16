@@ -32,7 +32,7 @@ struct Matrix:
         self.rows = rows
         self.cols = cols
 
-    fn __del__(self):
+    fn __del___(owned self):
         self.data.free()
 
     fn __getitem__(self, row: Int, col: Int) -> F32:
@@ -60,10 +60,6 @@ fn benchmark_naive_matmul():
         naive_matmul(A, B, C)
 
     print(F32(Benchmark().run[benchmark_fn]()) / F32(1_000_000_000))
-
-    A.__del__()
-    B.__del__()
-    C.__del__()
 
 
 fn main():
