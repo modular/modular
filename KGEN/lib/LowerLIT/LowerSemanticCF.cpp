@@ -463,7 +463,16 @@ static LogicalResult handleDestructors(LIT::FuncOp func) {
 
   assert(func.getBody()->getNumArguments() == 1 &&
          "__del__ should have one argument");
-  auto selfArg = func.getBody()->getArgument(0);
+  Value selfArg = func.getBody()->getArgument(0);
+
+  // If this is a @register_passable type, the value will be stored in a
+  // box and we want to treat the box as the thing that we track.
+  if (func.getSignature().getInputConvention(0) ==
+      ValueInputConvention::OwnedInReg) {
+    assert(selfArg.hasOneUse() && "expect one store of self to a box");
+    auto store = cast<StoreOp>(*selfArg.user_begin());
+    selfArg = store.getPtr();
+  }
 
   // Ok, we have a destructor, insert the operation at before every lit.return
   // that destroys the self argument.  We do this before semantic CF lowering
