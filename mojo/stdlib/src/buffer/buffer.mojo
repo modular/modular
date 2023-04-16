@@ -53,8 +53,7 @@ fn _raw_stack_allocation[
 # ===----------------------------------------------------------------------===#
 
 # This type is "async safe" (see async_parallelize).
-# TODO: This should not be implicitly copyable when we have ownership set up!
-@register_passable("trivial")
+@register_passable
 struct Buffer[size: Dim, type: DType]:
     """Defines a Buffer which can be parametrized on a static size and Dtype.
 
@@ -323,9 +322,7 @@ struct Buffer[size: Dim, type: DType]:
         """Set all bytes of the Buffer to 0."""
         memset_zero(self.data, self.bytecount())
 
-    fn simd_fill[
-        simd_width: Int
-    ](self, val: SIMD[type, 1]) -> Buffer[size, type]:
+    fn simd_fill[simd_width: Int](self, val: SIMD[type, 1]):
         """Assigns val to all elements in chunks of size simd_width.
 
         Parameters:
@@ -336,17 +333,16 @@ struct Buffer[size: Dim, type: DType]:
         """
         if val == 0:
             self.zero()
-            return self
+            return
 
         @always_inline
         fn _fill[simd_width: Int](idx: Int):
             self.simd_store[simd_width](idx, val)
 
         vectorize[simd_width, _fill](self.__len__())
-        return self
 
     @always_inline
-    fn fill(self, val: SIMD[type, 1]) -> Buffer[size, type]:
+    fn fill(self, val: SIMD[type, 1]):
         """Assigns val to all elements in the Buffer.
 
         The fill is performed in chunks of size N, where N is the native SIMD
@@ -355,7 +351,7 @@ struct Buffer[size: Dim, type: DType]:
         Args:
             val: The value to store.
         """
-        return self.simd_fill[dtype_simd_width[type]()](val)
+        self.simd_fill[dtype_simd_width[type]()](val)
 
     @staticmethod
     @always_inline
@@ -1227,9 +1223,7 @@ struct NDBuffer[
         debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
         memset_zero(self.data, self.bytecount())
 
-    fn simd_fill[
-        simd_width: Int
-    ](self, val: SIMD[type, 1]) -> NDBuffer[rank, shape, type]:
+    fn simd_fill[simd_width: Int](self, val: SIMD[type, 1]):
         """Assigns val to all elements in chunks of size simd_width.
 
         Parameters:
@@ -1240,12 +1234,11 @@ struct NDBuffer[
         """
         if val == 0:
             self.zero()
-            return self
-        _ = self.flatten().simd_fill[simd_width](val)
-        return self
+            return
+        self.flatten().simd_fill[simd_width](val)
 
     @always_inline
-    fn fill(self, val: SIMD[type, 1]) -> NDBuffer[rank, shape, type]:
+    fn fill(self, val: SIMD[type, 1]):
         """Assigns val to all elements in the Buffer.
 
         The fill is performed in chunks of size N, where N is the native SIMD
@@ -1255,7 +1248,7 @@ struct NDBuffer[
             val: The value to store.
         """
         debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
-        return self.simd_fill[dtype_simd_width[type]()](val)
+        self.simd_fill[dtype_simd_width[type]()](val)
 
     @staticmethod
     @always_inline
