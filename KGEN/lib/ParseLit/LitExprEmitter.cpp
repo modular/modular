@@ -148,6 +148,36 @@ ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
   return cast<LValue>(representation).getRValueType();
 }
 
+/// If this ValueDest specifies an SLValue that will be returned by
+/// getSLValueForResult with the specified type, return it.  Otherwise return
+/// null.  This does not modify the ValueDest.
+///
+/// NOTE: This needs to be kept in sync with getLValueForResult.
+SLValue ValueDest::getDefinedSLValueIfExists(ASTType resultType,
+                                             ExprEmitter &emitter) {
+  // If we have an uncollapsed expression, emit it to learn more about it.
+  if (const ExprNode *target = dyn_cast<const ExprNode *>(representation)) {
+    ValueDest dest(LValueInitializerType{resultType}, getContext());
+    if (LValue lValue = emitter.emitExprLValue(target, dest)) {
+      representation = lValue;
+    } else {
+      dest.resetForError();
+      representation = NullRepresentation(); // Consumed!
+    }
+  }
+
+  // Check for the simple case.
+  if (LValue lValue = dyn_cast<LValue>(representation)) {
+    if (auto slValue = lValue.getIfSLValue()) {
+      if (lValue.getRValueType().isEqualCanon(resultType))
+        return slValue;
+    }
+  }
+
+  // Otherwise, this would create a new buffer.
+  return {};
+}
+
 /// Project a ValueDest into an lvalue with the specified underlying (RValue)
 /// type.
 ///
@@ -161,6 +191,8 @@ ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
 /// the requested type, which may return a temporary buffer.  In this case it
 /// will not consume the ValueDest, so any user should reemit the ultimate
 /// value through it with emitResult.
+///
+/// NOTE: This needs to be kept in sync with getDefinedSLValueIfExists.
 LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
                                      bool allowIncompatibleTypes,
                                      bool requireSLValue,

@@ -1673,6 +1673,90 @@ inlineFunctionCallIntoPValue(AnyValue callee,
   return evaluator.evaluateFunctionCall(calleeSymbolCst.getSymbol(), arguments);
 }
 
+/// Given a call to a function with a memory only result and the desired value
+/// destination, decide if it is safe to directly emit into the slot.  Doing so
+/// requires a form of alias analysis to determine whether any input arguments
+/// could alias the result slot.  We cannot emit into the result slot when
+/// passing the value as an argument like 'x = foo(x)' or 'x = x + 1'.
+///
+/// At this point, we've already applied implicit conversions and converted
+/// things to RValues or BValues as required by the argument convention, but
+/// things may still be in parameter space.
+static bool isSafeToUseValueDestForDirectResult(
+    ASTType destRValueType, ValueDest &dest,
+    ArrayRef<ASTExprAnd<AnyValue>> argValues,
+    ArrayRef<ValueInputConvention> argConventions, ExprEmitter &emitter) {
+  // Drop the first argument which is the return slot.
+  assert(argConventions[0] == ValueInputConvention::ByRefResult);
+  argValues = argValues.drop_front();
+  argConventions = argConventions.drop_front();
+
+  // Check to see if the destination provides a buffer.  If not, it is safe to
+  // emit into it, but it doesn't actually matter.
+  Value destBuffer = dest.getDefinedSLValueIfExists(destRValueType, emitter);
+  if (!destBuffer)
+    return true;
+
+  // Check to see if the specified argument value pointer could alias with the
+  // destination buffer, returning true if it might.
+  // FIXME: This isn't correct, we could be returning into a field but passing
+  // an aggregate or visa versa.
+  // FIXME: This needs to be extended to support lifetimes.
+  auto valueMightAlias = [&](Value ptrVal) -> bool {
+    return ptrVal == destBuffer;
+  };
+
+  // If any of the arguments might alias, then we need to use a temporary
+  // buffer.
+  for (auto [value, convention] : llvm::zip(argValues, argConventions)) {
+    switch (convention) {
+    case ValueInputConvention::OwnedInReg:
+    case ValueInputConvention::BorrowedInReg:
+      // Register conventions can never alias the result.
+      continue;
+
+    case ValueInputConvention::OwnedInMem:
+    case ValueInputConvention::BorrowedInMem:
+    case ValueInputConvention::ByRefResult:
+    case ValueInputConvention::ByRef:
+    case ValueInputConvention::InitSelf:
+      // Parameter values will never alias.
+      if (value.ir.getIfPValue())
+        continue;
+      if (auto sl = value.ir.getIfSLValue()) {
+        if (valueMightAlias(sl))
+          return false;
+        continue;
+      }
+      if (auto mb = value.ir.getIfMBValue()) {
+        if (valueMightAlias(mb))
+          return false;
+        continue;
+      }
+      if (auto mb = value.ir.getIfMRValue()) {
+        if (valueMightAlias(mb))
+          return false;
+        continue;
+      }
+      // Dynamic variadic memory values are passed with a pop.variadic.create,
+      // check each field.
+      if (auto sr = value.ir.getIfSRValue()) {
+        if (auto variadic = sr.getDefiningOp<POP::VariadicCreateOp>()) {
+          for (auto operand : variadic.getOperands()) {
+            if (valueMightAlias(operand))
+              return false;
+          }
+          continue;
+        }
+      }
+      llvm_unreachable("Unknown value kind for memory convention");
+    }
+  }
+
+  // If no problems are found, it is safe!
+  return true;
+}
+
 CValue ExprEmitter::emitCallUnchecked(CRValue callee,
                                       ArrayRef<ASTExprAnd<AnyValue>> operands,
                                       ArrayRef<ParamDeclAttr> resultParams,
@@ -1680,6 +1764,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
                                       const ExprNode *callExpr) {
   SignatureType calleeSig = cast<SignatureType>(callee.getType().mlirType);
   Location loc = translateLocation(callExpr->getLoc());
+  SmallVector<ASTExprAnd<AnyValue>> argumentValues;
 
   assert(calleeSig.getResultParamTypes().size() == resultParams.size() &&
          "Type checking should be done");
@@ -1754,9 +1839,8 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
               << expr->getRange();
           return {};
         }
-        auto load =
-            builder->create<POP::LoadOp>(expr->getLocation(*this), mbVal,
-                                         /*alignment=*/std::nullopt);
+        auto load = builder->create<POP::LoadOp>(loc, mbVal,
+                                                 /*alignment=*/std::nullopt);
         argValAndExpr.ir = SBValue(load);
       }
 
@@ -1765,8 +1849,32 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     case ValueInputConvention::BorrowedInMem:
       arg = argValAndExpr.ir.getIfMBValue();
       break;
+    case ValueInputConvention::ByRefResult: {
+      auto tmpSlotAddr = argValAndExpr.ir.getIfSLValue();
+      assert(tmpSlotAddr && "byref_result value start in a temp slot");
+      auto rvalueType = ASTType(tmpSlotAddr.getType()).getPointerElementType();
+
+      // Often the result of the call will be directly assigned into a
+      // user-defined var or other location with existing storage.  In these
+      // cases, we really want to assign directly into the existing slot.
+      //
+      // However, we cannot do that if the destination slot is also being passed
+      // into the call as an input value, as in: `x = foo(x)` or `x = x + 1`.
+      // In these cases we really do need a temporary+copy in the var slot.
+      // At this point we've got enough information about the arguments to make
+      // that assessment in a correct way.
+      if (!isSafeToUseValueDestForDirectResult(
+              rvalueType, dest, argumentValues,
+              calleeSig.getValueInputConventions(), *this))
+        return tmpSlotAddr;
+
+      // Okay it is safe to use, so remove the temporary allocation we aren't
+      // going to use.
+      tmpSlotAddr.getDefiningOp<VarLetDeclOp>()->erase();
+      // Get the SLValue of the destination slot.
+      return dest.getSLValueForResult(callExpr->getLoc(), rvalueType, *this);
+    }
     case ValueInputConvention::ByRef:
-    case ValueInputConvention::ByRefResult:
     case ValueInputConvention::InitSelf: {
       // We know that the operand is an LValue, but it might be
       // dynamic/computed.
@@ -1803,7 +1911,6 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
   // Emit all the arguments.  We iterate by expected arguments since we're
   // building the argument list of the call.  Default arguments and
   // variadics get filled in here.
-  SmallVector<ASTExprAnd<AnyValue>> argumentValues;
   size_t nextOperandIdx = 0;
   size_t nextDefaultIdx = 0;
 
@@ -1818,15 +1925,16 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     Type expectedType = evaluator.refineType(expectedTypeX);
     ValueInputConvention convention = conventionX;
 
-    // If this is the return slot for a call, propagate the ValueDest into it.
+    // If this is the return slot for a call, we want to propagate the ValueDest
+    // into this, but we need information about each argument being emitted
+    // before we can do that.  As such, we just use a var decl and replace it
+    // opportunistically later if we can.
     if (convention == ValueInputConvention::ByRefResult) {
       assert(idx == 0 && calleeSig.hasMemoryOnlyResult());
-      auto rvalueType = ASTType(expectedType).getPointerElementType();
-      SLValue result =
-          dest.getSLValueForResult(callExpr->getLoc(), rvalueType, *this);
-      if (!result)
-        return {};
-      argumentValues.push_back({result, callExpr});
+      auto resultTmp = builder->create<VarLetDeclOp>(loc, expectedType,
+                                                     "__call_result_tmp__",
+                                                     /*isVar*/ 0);
+      argumentValues.push_back({SLValue(resultTmp), callExpr});
       continue;
     }
 
@@ -2025,6 +2133,8 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       convention = ValueInputConvention::OwnedInReg;
 
     Value arg = emitPreemittedArgumentAsDynamicValue(argValAndExpr, convention);
+    if (!arg)
+      return {};
     if (arg.getType() != calleeArgType)
       arg = builder->create<RebindOp>(loc, calleeArgType, arg);
     callArgs.push_back(arg);
@@ -2095,12 +2205,10 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
   // If there is a memory result slot, the value we filled in is our MRValue
   // result and we've already handled the ValueDest by emitting into it.
   if (calleeSig.hasMemoryOnlyResult()) {
-    auto resultVal = argumentValues[0].ir.getIfSLValue();
-    assert(resultVal && "result destination slots are always SLValues");
     // Re-emit the value in case a conversion was required or if the result was
     // a dynamic-lvalue.  In both case we will have emitted into a temporary
     // slot and 'dest' will have the ultimate location to write to.
-    return emitCResult(MRValue(resultVal), callExpr, dest);
+    return emitCResult(MRValue(callArgs[0]), callExpr, dest);
   }
 
   // Otherwise, register-passable results are the call result which may need to
