@@ -392,17 +392,34 @@ fn use_and_return(a: FieldSensitiveMemExample) -> FieldSensitiveMemExample:
   # order. They cannot alias.
   return FieldSensitiveMemExample(a.f2, a.f1)
 
+fn use_and_return2(a: FieldSensitiveMemExample) -> MemExample:
+  return a.f2
+
 # CHECK-LABEL: lit.func @"test_result_optimization
 fn test_result_optimization():
   # CHECK-NEXT: %example = lit.varlet.decl "example"
   # CHECK-NEXT: kgen.call @{{.*}}"__init__{{.*}}(%example)
   var example = FieldSensitiveMemExample()
+
+  # Direct reuse of the result slot forces a temporary.
+
   # CHECK: %__call_result_tmp__ = lit.varlet.decl
   # CHECK-NEXT: kgen.call @"$ownership{{.*}}(%__call_result_tmp__, %example)
-  example = use_and_return(example)
   # CHECK-NEXT: kgen.call @{{.*}}@"__del___{{.*}}(%example)
   # CHECK-NEXT: kgen.call @{{.*}}@"__copyinit__{{.*}}(%example, %__call_result_tmp__)
   # CHECK-NEXT: kgen.call @{{.*}}@"__del___{{.*}}(%__call_result_tmp__)
+  example = use_and_return(example)
+
+  # Aliased reuse of part of the result slot forces a temporary.
+
+  # CHECK-NEXT: %__call_result_tmp___0 = lit.varlet.decl
+  # CHECK-NEXT: [[F1:%.*]] = lit.struct.gep %example[f1]
+  # CHECK-NEXT: kgen.call @"$ownership"::@"use_and_return2{{.*}}(%__call_result_tmp___0, %example)
+  example.f1 = use_and_return2(example)
+  # CHECK-NEXT: [[F1_2:%.*]] = lit.struct.gep %example[f1]
+  # CHECK-NEXT: kgen.call @{{.*}}@"__del___{{.*}}([[F1_2]])
+  # CHECK-NEXT: kgen.call @{{.*}}@"__copyinit__{{.*}}([[F1]], %__call_result_tmp___0)
+  # CHECK-NEXT: kgen.call @{{.*}}@"__del___{{.*}}(%__call_result_tmp___0)
 
   example.mutate()
   # CHECK-NEXT: kgen.call @{{.*}}@"mutate{{.*}}(%example)

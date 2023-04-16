@@ -17,6 +17,7 @@
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/LITDialect/LifetimeTrackable.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
@@ -1697,13 +1698,22 @@ static bool isSafeToUseValueDestForDirectResult(
   if (!destBuffer)
     return true;
 
+  // See if the destination buffer is something that ownership can track.  If
+  // not, we cannot make reliable determinations about aliasing.
+  Value underlyingDest =
+      LifetimeTrackable::findUnderlyingValueFromField(destBuffer);
+  if (!underlyingDest)
+    return false;
+
   // Check to see if the specified argument value pointer could alias with the
-  // destination buffer, returning true if it might.
-  // FIXME: This isn't correct, we could be returning into a field but passing
-  // an aggregate or visa versa.
-  // FIXME: This needs to be extended to support lifetimes.
-  auto valueMightAlias = [&](Value ptrVal) -> bool {
-    return ptrVal == destBuffer;
+  // destination buffer, returning true if it might.  We can only disambiguate
+  // this safely when we can prove that the pointer points to a different
+  // distinguishable object than the result slot.
+  // TODO: This will need to be extended to support lifetimes.
+  auto ptrGuaranteedNoAlias = [&](Value ptrVal) -> bool {
+    Value underlyingPtr =
+        LifetimeTrackable::findUnderlyingValueFromField(ptrVal);
+    return underlyingPtr && underlyingPtr != underlyingDest;
   };
 
   // If any of the arguments might alias, then we need to use a temporary
@@ -1724,26 +1734,26 @@ static bool isSafeToUseValueDestForDirectResult(
       if (value.ir.getIfPValue())
         continue;
       if (auto sl = value.ir.getIfSLValue()) {
-        if (valueMightAlias(sl))
-          return false;
-        continue;
+        if (ptrGuaranteedNoAlias(sl))
+          continue;
+        return false;
       }
       if (auto mb = value.ir.getIfMBValue()) {
-        if (valueMightAlias(mb))
-          return false;
-        continue;
+        if (ptrGuaranteedNoAlias(mb))
+          continue;
+        return false;
       }
       if (auto mb = value.ir.getIfMRValue()) {
-        if (valueMightAlias(mb))
-          return false;
-        continue;
+        if (ptrGuaranteedNoAlias(mb))
+          continue;
+        return false;
       }
       // Dynamic variadic memory values are passed with a pop.variadic.create,
       // check each field.
       if (auto sr = value.ir.getIfSRValue()) {
         if (auto variadic = sr.getDefiningOp<POP::VariadicCreateOp>()) {
           for (auto operand : variadic.getOperands()) {
-            if (valueMightAlias(operand))
+            if (!ptrGuaranteedNoAlias(operand))
               return false;
           }
           continue;
