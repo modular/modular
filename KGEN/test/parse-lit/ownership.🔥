@@ -27,12 +27,9 @@ struct RegExample:
   # CHECK-LABEL: lit.func @"__del___
   # CHECK-NEXT: %self_0 = lit.varlet.decl "self", var = true
   # CHECK-NEXT: pop.store %self, %self_0
-  # FIXME: infinite recursion is bad.
-  # CHECK-NEXT: %0 = pop.load %self_0 : !pop.pointer<@"$ownership"::@RegExample>
-  # CHECK-NEXT: %1 = kgen.call @"$ownership"::@RegExample::@"__del___
-  # CHECK-NEXT: %2 = kgen.param.constant{{.*}} <#lit.none>
-  # CHECK-NEXT: lit.ownership.mark.destroyed %self
-  # CHECK-NEXT: kgen.return %2
+  # CHECK-NEXT: %0 = kgen.param.constant{{.*}} <#lit.none>
+  # CHECK-NEXT: lit.ownership.mark.destroyed %self_0
+  # CHECK-NEXT: kgen.return %0
   fn __del___(owned self):
     pass
 
