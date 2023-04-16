@@ -86,9 +86,9 @@ fn test_3d_reductions():
         reduce_axis: Int,
     ]():
         let input = NDBuffer[3, input_shape, DType.f32].stack_allocation()
-        let output = (
-            NDBuffer[3, output_shape, DType.f32].stack_allocation().fill(0)
-        )
+        var output = NDBuffer[3, output_shape, DType.f32].stack_allocation()
+        output.fill(0)
+
         for i in range(input.size()):
             input.flatten()[i] = i
 
