@@ -773,11 +773,9 @@ void UninitializedValueScan::checkOp(Operation &op) {
   for (Value operand : op.getOperands())
     checkLive(operand, op);
 
-  // LetReg defines its own value.
-  // TODO: can this be made more generic, or are there only a few things that
-  // can define owned values?
-  if (auto letReg = dyn_cast<LetRegDeclOp>(op)) {
-    valueSet.getValueRef(letReg).markBits(liveValues, true);
+  // lit.letreg.decl and lit.ownership.end.lifetime define their own values.
+  if (isa<LetRegDeclOp, OwnershipEndLifetimeOp>(op)) {
+    valueSet.getValueRef(op.getResult(0)).markBits(liveValues, true);
     return;
   }
 
@@ -920,6 +918,7 @@ struct DestructorInsertion {
     result.breakSet = existing.breakSet;
     result.continueSet = existing.continueSet;
     result.dryRun = existing.dryRun;
+    result.functionSignature = existing.functionSignature;
     return result;
   }
 
@@ -967,6 +966,9 @@ private:
   /// surrounding loop.
   BitVector *breakSet = nullptr;
   BitVector *continueSet = nullptr;
+
+  /// This is the signature of the current function being analyzed.
+  SignatureType functionSignature;
 };
 } // namespace
 
@@ -1000,6 +1002,11 @@ void DestructorInsertion::dump() const {
 }
 
 void DestructorInsertion::scanFunction(mlir::FunctionOpInterface func) {
+  if (auto fnInterface = dyn_cast<FuncInterface>(func.getOperation()))
+    functionSignature = fnInterface.getSignature();
+  else // Unknown function kind.
+    return;
+
   consumedValues.resize(valueSet.getNumTotalBits());
   consumedValues.set(0); // Never destroy slot 0, it is already destroyed.
 
@@ -1098,12 +1105,26 @@ void DestructorInsertion::checkOp(Operation &op) {
     return;
   }
 
+  // lit.ownership.end.lifetime defines a new value and ends the range of the
+  // operand.
+  if (auto endLifetime = dyn_cast<OwnershipEndLifetimeOp>(op)) {
+    checkDef(endLifetime, op);
+    markConsumed(endLifetime.getOperand(), op);
+    return;
+  }
+
   // A return consumes all the live-out values from the function.
   if (isa<KGEN::ReturnOp>(op)) {
+    consumedValues.reset();
+    consumedValues.set(0); // Never destroy slot 0, it is already destroyed.
     for (const ValueInfo &valueInfo : valueSet.getValueInfos()) {
       if (!valueInfo.endsUninit)
         consumedValues.set(valueInfo.startValueBit, valueInfo.endValueBit);
     }
+
+    // If the result operand is ownedresult, then consume it.
+    if (functionSignature.hasOwnedRegisterResult())
+      markConsumed(op.getOperand(0), op);
     return;
   }
 

@@ -22,6 +22,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/LITDialect/LifetimeTrackable.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
@@ -2040,6 +2041,53 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
   return emitter.emitResult(SRValue(ifOp.getResult(0)), this, dest);
 }
 
+/// Emit the x^ expression.
+AnyValue UnaryOpNode::emitConsume(AnyValue argValue, ValueDest &dest,
+                                  ExprEmitter &emitter) const {
+  if (!emitter.builder)
+    return emitter.emitErrorForDynamicValueInParameter(
+        this, "cannot consume a value in this context");
+
+  // If this is a value we can track the lifetime of, then we can end that
+  // value's lifetime to make a new RValue, otherwise return null.
+  auto handleLifetimeEnd = [&](Value v, bool isRegister) -> AnyValue {
+    // Lifetime checking needs to understand this value or field.
+    if (!LifetimeTrackable::findUnderlyingValueFromField(v))
+      return {};
+
+    auto newVal = emitter.builder->create<OwnershipEndLifetimeOp>(
+        getLocation(emitter), v, isRegister);
+    if (isRegister)
+      return emitter.emitResult(SRValue(newVal), this, dest);
+    return emitter.emitResult(MRValue(newVal), this, dest);
+  };
+
+  // The consume expression expects the result to be a ownable value that it can
+  // launder into an RValue.
+  if (auto sl = argValue.getIfSLValue()) {
+    if (auto result = handleLifetimeEnd(sl, /*isRegister=*/false))
+      return result;
+    // TODO: When we support explicit move operations and have an lvalue, we can
+    // invoke it.
+  }
+  if (auto mb = argValue.getIfMBValue())
+    if (auto result = handleLifetimeEnd(mb, /*isRegister=*/false))
+      return result;
+  if (auto mr = argValue.getIfMRValue())
+    if (auto result = handleLifetimeEnd(mr, /*isRegister=*/false))
+      return result;
+  if (auto sb = argValue.getIfSBValue())
+    if (auto result = handleLifetimeEnd(sb, /*isRegister=*/true))
+      return result;
+  if (auto sr = argValue.getIfSRValue())
+    if (auto result = handleLifetimeEnd(sr, /*isRegister=*/true))
+      return result;
+
+  emitter.emitError(getLoc(),
+                    "expression does not designate a value with a lifetime");
+  return {};
+}
+
 AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   auto exprRep = subExpr->emitIR(ValueDest::none(), emitter);
   if (!exprRep)
@@ -2071,13 +2119,14 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     }
   }
 
+  // Handle special cases that don't correspond to special functions, such as
+  // `not x`, `*args: *Ts`, `x^` etc
+  if (kind == kConsume)
+    return emitConsume(exprRep, dest, emitter);
+
   ASTExprAnd<AnyValue> argValue = {exprRep, subExpr};
   Kind kindToEmit = kind;
-
-  // Handle special cases that don't correspond to special functions, such as
-  // `not x` or `*args: *Ts`.
-  auto pValue = exprRep.getIfPValue();
-  if (kindToEmit == kBoolNot) {
+  if (kind == kBoolNot) {
     // Turn this into a call to __bool__.
     argValue.ir =
         emitter.emitNamedMethodCall("__bool__", argValue, ValueDest::none(),
@@ -2086,22 +2135,24 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       return {};
     // Now that we know we bool-ized the expression, invert it with ~.
     kindToEmit = kInvert;
-  } else if (kindToEmit == kUnpack && pValue) {
-    // There are two distinct cases of unpacking:
-    // 1. Unpacking within an expression list, e.g. `a = [1, 2]; b = (0, *a)`,
-    //    with the result being a tuple `b` with 3 elements `0, 1, 2`. This is
-    //    handled with the special function `__iter__`.
-    // 2. Unpacking within a type annotation, e.g. `*args: *Ts`, with the result
-    //    being akin to the types of `Ts` being mapped to the type annotations
-    //    for the arguments `args`: `args[0]: Ts[0], args[1]: Ts[1], ...`. This
-    //    is not handled with a special function of any kind, and so is handled
-    //    here.
-    if (!isa<VariadicType>(pValue.get().getType())) {
-      emitter.emitError(getLoc(), "only variadic types may be unpacked");
-      return {};
+  } else if (kind == kUnpack) {
+    if (auto pValue = exprRep.getIfPValue()) {
+      // There are two distinct cases of unpacking:
+      // 1. Unpacking within an expression list, e.g. `a = [1, 2]; b = (0, *a)`,
+      //    with the result being a tuple `b` with 3 elements `0, 1, 2`. This is
+      //    handled with the special function `__iter__`.
+      // 2. Unpacking in a type annotation, e.g. `*args: *Ts`, with the result
+      //    being akin to the types of `Ts` being mapped to the type annotations
+      //    for the arguments `args`: `args[0]: Ts[0], args[1]: Ts[1], ...`.
+      //    This is not handled with a special function of any kind, and so is
+      //    handled here.
+      if (!isa<VariadicType>(pValue.get().getType())) {
+        emitter.emitError(getLoc(), "only variadic types may be unpacked");
+        return {};
+      }
+      return emitter.emitResult(
+          TypeConstantAttr::get(POP::PackType::get(pValue.get())), this, dest);
     }
-    return emitter.emitResult(
-        TypeConstantAttr::get(POP::PackType::get(pValue.get())), this, dest);
   }
 
   // If this operator maps onto a special function, attempt to lower it.

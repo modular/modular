@@ -71,6 +71,9 @@ static void lowerLITOps(LIT::FuncOp func,
       // lit.alias.fwd.decl and lit.ownership.* are used internally by the
       // frontend and ownership lowering, but is not needed after that.
       op->erase();
+    } else if (auto endLifetime = dyn_cast<OwnershipEndLifetimeOp>(op)) {
+      endLifetime.getResult().replaceAllUsesWith(endLifetime.getOperand());
+      op->erase();
     } else if (auto letDecl = dyn_cast<LIT::LetRegDeclOp>(op)) {
       mlir::IRRewriter b{OpBuilder(op)};
       // Build information for this decl if necessary.
