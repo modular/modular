@@ -334,7 +334,7 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
 
   exprOSIndented << "from IO import _printf, print\n"
                  << "from Pointer import Pointer\n"
-                 << "from PythonInterface import PythonInterface\n"
+                 << "from PythonInterface import Python\n"
                  << "from PythonObject import PythonObject\n"
                  // Use `PythonObject` so that the import gets resolved.
                  << "fn use_python():\n  var py_obj = PythonObject(0)\n\n";
@@ -488,13 +488,13 @@ static void importPythonSymbolsIntoMojo(StringRef pythonExpr,
     SmallVector<StringRef, 2> matches;
     if (importRegex.match(line, &matches)) {
       mojoExprOS << llvm::formatv(
-          "var {0} = __repl_python__.importModule(\"{0}\")\n", matches[1]);
+          "var {0} = __repl_python__.import_module(\"{0}\")\n", matches[1]);
     } else if (importAsRegex.match(line, &matches)) {
       // Private import aliases (starting with a leading underscore) should not
       // be exposed to mojo.
       if (!matches[2].starts_with("_")) {
         mojoExprOS << llvm::formatv(
-            "var {0} = __repl_python__.importModule(\"{1}\")\n", matches[2],
+            "var {0} = __repl_python__.import_module(\"{1}\")\n", matches[2],
             matches[1]);
       }
     } else if (defRegex.match(line, &matches) ||
@@ -553,15 +553,14 @@ sys.modules['{1}'] = expr_module
 
   // If we haven't initialized python yet, do that as part of this expression.
   if (!state.hasInitializedPython())
-    mojoExprOS << "var __repl_python__ = PythonInterface()\n\n";
+    mojoExprOS << "var __repl_python__ = Python()\n\n";
 
   // Evaluate the wrapped python expression.
   mojoExprOS << "__repl_python__.eval(\"";
   mojoExprOS.write_escaped(wrappedPythonExpr);
   mojoExprOS << "\")\n\n"
-             << llvm::formatv(
-                    "var {0} = __repl_python__.importModule(\"{0}\")\n\n",
-                    moduleName);
+             << llvm::formatv("var {0} = Python.import_module(\"{0}\")\n\n",
+                              moduleName);
 
   // Import the interesting top-level symbols from the python module into the
   // mojo context.
