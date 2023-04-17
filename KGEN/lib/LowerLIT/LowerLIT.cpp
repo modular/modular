@@ -74,6 +74,9 @@ static void lowerLITOps(LIT::FuncOp func,
     } else if (auto endLifetime = dyn_cast<OwnershipEndLifetimeOp>(op)) {
       endLifetime.getResult().replaceAllUsesWith(endLifetime.getOperand());
       op->erase();
+    } else if (auto loadConsume = dyn_cast<LoadConsumeOp>(op)) {
+      mlir::IRRewriter b{OpBuilder(op)};
+      b.replaceOpWithNewOp<POP::LoadOp>(loadConsume, loadConsume.getPtr());
     } else if (auto letDecl = dyn_cast<LIT::LetRegDeclOp>(op)) {
       mlir::IRRewriter b{OpBuilder(op)};
       // Build information for this decl if necessary.

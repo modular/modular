@@ -479,9 +479,7 @@ CValue ExprEmitter::emitBValueToRValue(ASTExprAnd<BValue> value,
     result = SRValue(sbVal);
   } else {
     if (!builder) {
-      emitError(value.expr->getLoc(),
-                "cannot use a dynamic value in a parameter context")
-          << value.expr->getRange();
+      emitErrorForDynamicValueInParameter(value.expr);
       return {};
     }
     auto mbVal = value.ir.getIfMBValue();
@@ -589,21 +587,20 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
     return {};
 
   if (!value.getRValueType().isRegisterPassable(expr->getLoc(), shared)) {
-    emitError(expr->getLoc())
-        << "cannot load non-register passable type into SSA register";
+    emitError(expr->getLoc()) << "cannot load non-register passable type into "
+                                 "SSA register (compiler bug, please report!)";
     return {};
   }
 
-  // If we have a value in memory, load it.
+  // If we have a value in memory, use a LoadConsumeOp to load it.
   if (auto mrValue = value.getIfMRValue()) {
-    // TODO(moves): we should move from the value instead of clone+destroy it.
-    // FIXME: can't this just emit a load from the memory directly if the RValue
-    // type is register primary because we own it?  Will need to check to see
-    // how the borrow checker handles this.
-    auto rv = emitBValueToRValue({MBValue(mrValue), expr}, ValueDest::none());
-    if (auto sr = rv.getIfSRValue())
-      return sr;
-    return emitSRValue({rv, expr}, context);
+    if (!builder) {
+      emitErrorForDynamicValueInParameter(expr);
+      return {};
+    }
+    Value result =
+        builder->create<LoadConsumeOp>(expr->getLocation(*this), mrValue);
+    return SRValue(result);
   }
 
   // If this is already an SRValue, return it.
@@ -647,8 +644,7 @@ PValue ExprEmitter::emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
     return result;
 
   // Otherwise diagnose this as "not a parameter".
-  emitError(value.expr->getLoc(), "cannot use a dynamic value")
-      << getContextMessage(context) << value.expr->getRange();
+  emitErrorForDynamicValueInParameter(value.expr);
   return {};
 }
 

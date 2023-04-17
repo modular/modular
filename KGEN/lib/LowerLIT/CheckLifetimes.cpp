@@ -716,10 +716,10 @@ void UninitializedValueScan::checkOp(Operation &op) {
   }
 
   // A load is a use of whatever fields are being referenced.
-  // an initialization.
-  if (auto loadOp = dyn_cast<POP::LoadOp>(op)) {
-    // This marks its value live.
-    checkLive(loadOp.getPtr(), op);
+  if (isa<POP::LoadOp, LoadConsumeOp>(op)) {
+    checkLive(op.getOperand(0), op);
+    if (isa<LoadConsumeOp>(op))
+      valueSet.getValueRef(op.getResult(0)).markBits(liveValues, true);
     return;
   }
 
@@ -1039,22 +1039,6 @@ void DestructorInsertion::checkOp(Operation &op) {
   if (isa<StructGEPOp>(op))
     return;
 
-  // A store consumes a value and overwrites the destination - this means that
-  // any incoming values are unused and should be destroyed if they exist.
-  if (auto storeOp = dyn_cast<POP::StoreOp>(op)) {
-    markConsumed(storeOp.getArg(), op);
-    checkDef(storeOp.getPtr(), op);
-    return;
-  }
-
-  // A load is a use of whatever fields are being referenced.  If this is the
-  // /last/ use of a value, emit a destructor of that value.  LoadOps are used
-  // to model a /borrow/ of the underlying value.
-  if (auto loadOp = dyn_cast<POP::LoadOp>(op)) {
-    checkUse(loadOp.getPtr(), op);
-    return;
-  }
-
   // If this is a call, investigate each of the operands along with the
   // argument convention effects.
   if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
@@ -1103,6 +1087,30 @@ void DestructorInsertion::checkOp(Operation &op) {
     checkDef(letReg, op);
     // This consumes its input.
     markConsumed(letReg.getOperand(), op);
+    return;
+  }
+
+  // A store consumes a value and overwrites the destination.
+  if (auto storeOp = dyn_cast<POP::StoreOp>(op)) {
+    markConsumed(storeOp.getArg(), op);
+    checkDef(storeOp.getPtr(), op);
+    return;
+  }
+
+  // A load is a use of whatever fields are being referenced.  If this is the
+  // /last/ use of a value, emit a destructor of that value.  LoadOps are used
+  // to model a /borrow/ of the underlying value, so they don't define a new
+  // value.
+  if (auto loadOp = dyn_cast<POP::LoadOp>(op)) {
+    checkUse(loadOp.getPtr(), op);
+    return;
+  }
+
+  // Load memory and consume it, producing a new value.  This is a /consume/ of
+  // the underlying value.
+  if (auto loadConsumeOp = dyn_cast<LoadConsumeOp>(op)) {
+    checkDef(loadConsumeOp, op);
+    markConsumed(loadConsumeOp.getPtr(), op);
     return;
   }
 
