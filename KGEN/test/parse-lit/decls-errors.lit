@@ -9,6 +9,27 @@
 from prolog import DType, F32, object
 from Pointer import Pointer
 
+
+##===----------------------------------------------------------------------===##
+# Closures
+##===----------------------------------------------------------------------===##
+
+fn bind_fat_to_thin_target[
+    g: __mlir_type.`!kgen.signature<(index borrow) -> index>`
+](x: __mlir_type.index):
+    pass
+
+
+fn bind_fat_to_thin_main():
+    let x = (4).__as_mlir_index()
+
+    fn g(y: __mlir_type.index) -> __mlir_type.index:
+        return x
+
+    # expected-error @below {{'__mlir_type.!kgen.signature<(index borrow) capturing -> index>' value cannot be converted to '__mlir_type.!kgen.signature<(index borrow) -> index>' in call parameter}}
+    alias Bound = bind_fat_to_thin_target[g]
+    Bound((3).__as_mlir_index())
+
 ##===----------------------------------------------------------------------===##
 # Var / Let
 ##===----------------------------------------------------------------------===##
