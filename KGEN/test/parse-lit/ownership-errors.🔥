@@ -178,6 +178,8 @@ struct MoreComplexExample:
 
   fn __del___(owned self): pass
 
+fn use(x: MoreComplexExample): pass
+
 fn testClosure(a: Bool):
   if a:
     return
@@ -194,3 +196,23 @@ fn disableDtor(owned x: MoreComplexExample):
    __mlir_op.`lit.ownership.mark.destroyed`[_type : None](
      __get_lvalue_as_address(x.mem)
   )
+
+
+# expected-error @+1 {{field 'x.mem' destroyed out of the middle of a value, preventing the overall value from being destroyed}}
+fn fieldConsumeError(owned x: MoreComplexExample,
+                     owned y: MoreComplexExample,
+                     owned z: MoreComplexExample):
+  _ = x.mem^
+
+  # This is ok because we replace the mem field.
+  _ = y.mem^
+  y.mem = MemExample()
+
+  # expected-error @+1 {{value 'z.mem' cannot be consumed, because it is used later}}
+  _ = z.mem^
+  _ = z.mem^
+  z.mem = MemExample()
+
+  # expected-error @+1 {{value 'z.mem' cannot be consumed, because it is used later}}
+  _ = z.mem^
+  use(z)
