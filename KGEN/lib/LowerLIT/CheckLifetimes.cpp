@@ -476,6 +476,16 @@ ValueRef ValueSet::getValueRef(Value value) const {
                     /*isIndirect=*/true};
   }
 
+  // If this is a load from a lifetime tracked indirect value, then this is a
+  // borrow of that value.
+  if (auto load = value.getDefiningOp<POP::LoadOp>())
+    if (auto valueRef = getValueRef(load.getPtr())) {
+      if (valueRef.isIndirect) {
+        valueRef.isIndirect = false;
+        return valueRef;
+      }
+    }
+
   // Otherwise, we don't know what this is.
   return ValueRef();
 }
@@ -1285,25 +1295,24 @@ void DestructorInsertion::checkOp(Operation &op) {
 void DestructorInsertion::markConsumed(Value value, Operation &op) {
   ValueRef valueRef = valueSet.getValueRef(value);
   // If this operation is consuming a sub-element of a value that is already
-  // marked to be consumed, then we have a case where a field of a value is
-  // being consumed, and then its ultimate destructor cannot be run.  This is
-  // a user error - we cannot run the destructor for a value when one of its
-  // fields has already been consumed.
+  // marked to be consumed, then it is being used down below.
   //
   // This happens on code like this, for example:
   //   var a = Pair()
-  //   takeValue(a.x^)
-  //   useValue(a.y)
-  //   # inserted dtor.
+  //   _ = a.x^
+  //   use(a.x)
   if (!valueRef.isAllMissing(consumedValues)) {
     SymbolConstantAttr dtor = valueSet.typeDeclInfo.getDestructorForType(
         valueRef.getValueType(value));
-    // Trivial types don't have ownership.
+    // Trivial types don't have __copyinit__ methods, and therefore cannot have
+    // ownership tracked for them.
     if (!dtor)
       return;
-
-    llvm_unreachable(
-        "cannot currently consume fields; will happen with the ^ operator");
+    auto diag = mlir::emitError(op.getLoc(), "value ");
+    // If some fields are present and others are missing, complain about the
+    // first whole field that is missing.
+    addBadValueNameToDiag(valueRef, consumedValues, valueSet, diag);
+    diag << " cannot be consumed, because it is used later";
   }
 
   valueRef.markBits(consumedValues, true);
@@ -1408,7 +1417,6 @@ void DestructorInsertion::destroyValueIfNeeded(
   // Otherwise, we must have an indirect value where some fields are present and
   // some are missing.  Recursively walk the type and destroy just the fields
   // that are missing.
-  assert(valueRef.isIndirect && "only indirect values are field sensitive");
   DeclRefType valueType = cast<DeclRefType>(valueRef.getValueType(value));
 
   // If a field of a value is destroyed but the whole value is not, then we have
@@ -1436,16 +1444,21 @@ void DestructorInsertion::destroyValueIfNeeded(
 
   unsigned nextBit = 0;
   for (auto field : structDecl.getFieldDecls()) {
-    auto fieldPtr = builder.create<StructGEPOp>(value, field);
+    Operation *fieldVal;
+    if (valueRef.isIndirect)
+      fieldVal = builder.create<StructGEPOp>(value, field);
+    else
+      fieldVal = builder.create<StructExtractOp>(value, field);
+
     unsigned numBits =
         valueSet.typeDeclInfo.getNumFieldsInType(field.getType());
-    destroyValueIfNeeded(fieldPtr, valueRef.getSubfield(nextBit, numBits),
-                         builder);
+    destroyValueIfNeeded(fieldVal->getResult(0),
+                         valueRef.getSubfield(nextBit, numBits), builder);
 
     // If there was no destructor generated (because the element has no
     // destructor) then remove the unused pointer access.
-    if (fieldPtr.use_empty())
-      fieldPtr->erase();
+    if (fieldVal->use_empty())
+      fieldVal->erase();
     nextBit += numBits;
   }
   // The whole object bit should exist after all the fields.

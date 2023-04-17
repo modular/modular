@@ -469,11 +469,11 @@ fn test_result_consume_reg(cond: __mlir_type.i1) -> RegExample:
     # CHECK-NEXT: kgen.return [[TMP2]]
     return example2^
   else: # CHECK-NEXT: } else {
-    # FIXME: This is wrong
+    # TODO: This isn't doing a return slot optimization.
     # CHECK-NEXT: [[TMP2:%.*]] = pop.load %example2
+    # CHECK-NEXT: [[TMP4:%.*]] = kgen.call {{.*}}__copyinit__{{.*}}([[TMP2]])
     # CHECK-NEXT: [[TMP3:%.*]] = pop.load %example2
     # CHECK-NEXT: kgen.call {{.*}}__del___{{.*}}([[TMP3]])
-    # CHECK-NEXT: [[TMP4:%.*]] = kgen.call {{.*}}__copyinit__{{.*}}([[TMP2]])
     # CHECK-NEXT: kgen.return [[TMP4]]
     return example2
 
