@@ -23,6 +23,75 @@ fn fat_signature_types():
     fn h[N: __mlir_type.index](y: __mlir_type.index, z: __mlir_type.index) -> __mlir_type.index:
         return x
 
+fn take_closure(
+    g: __mlir_type.`!kgen.signature<(index borrow) capturing -> index>`,
+    x: __mlir_type.index,
+):
+    # CHECK: %0 = kgen.call_signature  %g(%x) : (index borrow) capturing -> index
+    let result = g(x)
+
+
+fn take_closure_no_param_main():
+    let x = (4).__as_mlir_index()
+
+    fn g(y: __mlir_type.index) -> __mlir_type.index:
+        return x
+
+    # CHECK: %0 = kgen.param.constant: <>(index borrow) capturing -> index = <*"g(__mlir_type.index)">
+    # CHECK: %W = lit.letreg.decl "W" = %0 : !kgen.signature<(index borrow) capturing -> index>
+    let W = g
+    # CHECK: %1 = kgen.call @"$decls"::@"take_closure(__mlir_type.!kgen.signature<(index borrow) capturing -> index>,__mlir_type.index)"(%W, %idx3) : (!kgen.signature<(index borrow) capturing -> index> borrow, index borrow) -> !lit.none
+    take_closure(W, (3).__as_mlir_index())
+
+
+fn take_closure_with_param_main():
+    let x = (4).__as_mlir_index()
+    let w = (5).__as_mlir_index()
+
+    fn h[N: __mlir_type.index, M: __mlir_type.index](y: __mlir_type.index) -> __mlir_type.index:
+        return x
+
+    fn g[N: __mlir_type.index](y: __mlir_type.index) -> __mlir_type.index:
+        return x
+
+    # CHECK: kgen.param.declare Bound: <>(index borrow) capturing -> index = <bind_signature(:<index>(index borrow) capturing -> index *"g(__mlir_type.index)", 3)>
+    # CHECK: %0 = kgen.param.constant: <>(index borrow) capturing -> index = <Bound>
+    alias Bound = g[(3).__as_mlir_index()]
+
+    # CHECK: %value = lit.letreg.decl "value" = %0 : !kgen.signature<(index borrow) capturing -> index>
+    let value = Bound
+    # CHECK: %1 = kgen.call @"$decls"::@"take_closure(__mlir_type.!kgen.signature<(index borrow) capturing -> index>,__mlir_type.index)"(%value, %x) : (!kgen.signature<(index borrow) capturing -> index> borrow, index borrow) -> !lit.none
+    take_closure(value, x)
+
+    # CHECK: %2 = kgen.param.constant: <>(index borrow) capturing -> index = <bind_signature(:<index, index>(index borrow) capturing -> index *"h(__mlir_type.index)", 1, 8)>
+    # CHECK: %Q = lit.letreg.decl "Q" = %2 : !kgen.signature<(index borrow) capturing -> index>
+    let Q = h[(1).__as_mlir_index(), (8).__as_mlir_index()]
+    take_closure(Q, x)
+
+@raises
+fn take_closure_raises(
+    g: __mlir_type[
+        `!kgen.signature<(index borrow) throws|capturing -> !pop.variant<`,
+        Error,
+        `, index>>`,
+    ],
+    x: __mlir_type.index,
+):
+    # CHECK: %0 = kgen.call_signature %g(%x) : (index borrow) throws|capturing -> !pop.variant<@{{.*}}::@Error, index>
+    let result = g(x)
+
+
+@raises
+fn throws_main():
+    let x = (4).__as_mlir_index()
+
+    # CHECK: lit.func *"g(__mlir_type.index)"(%y: index borrow) throws|capturing -> !pop.variant<@{{.*}}::@Error, index> {
+    @raises
+    fn g(y: __mlir_type.index) -> __mlir_type.index:
+        return x
+
+    let W = g
+    take_closure_raises(W, (3).__as_mlir_index())
 
 ##===----------------------------------------------------------------------===##
 # let

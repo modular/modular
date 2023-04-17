@@ -2167,9 +2167,8 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
                                             resultParams, callArgs);
     }
   } else {
-    // Otherwise emit calls to SSA values with call_indirect.
-    callOp = builder->create<POP::CallIndirectOp>(
-        loc, resultTypes, callee.getIfSRValue(), callArgs);
+    callOp = builder->create<CallSignatureOp>(loc, resultTypes,
+                                              callee.getIfSRValue(), callArgs);
   }
   Value callResult = callOp->getResult(0);
 
