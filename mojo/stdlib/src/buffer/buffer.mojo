@@ -8,11 +8,12 @@ from Assert import assert_param, debug_assert, assert_param_msg
 from DType import DType
 from Functional import unroll, vectorize
 from Index import StaticIntTuple, product as tuple_product
+from Intrinsics import PrefetchOptions, masked_load, masked_store
 from List import Dim, DimList, VariadicList
+from LLCL import OutputChainPtr
 from Math import fma, min, max, iota
 from Memory import stack_allocation, memset_zero
 from Pointer import DTypePointer
-from Intrinsics import PrefetchOptions, masked_load, masked_store
 from SIMD import SIMD
 from StaticTuple import StaticTuple
 from TargetInfo import dtype_sizeof, dtype_simd_width, dtype_alignof
@@ -1508,6 +1509,52 @@ struct DynamicRankBuffer:
             self.rank > 0 and self.rank <= max_rank,
             "rank must be positive and less or equal to 5",
         )
+
+        if self.rank == 1:
+            func[1]()
+            return
+
+        if self.rank == 2:
+            func[2]()
+            return
+
+        if self.rank == 3:
+            func[3]()
+            return
+
+        if self.rank == 4:
+            func[4]()
+            return
+
+        if self.rank == 5:
+            func[5]()
+            return
+
+    @always_inline
+    fn rank_dispatch[
+        func: __mlir_type[
+            `!kgen.signature<<`, Int, `>() capturing -> `, NoneType, `>`
+        ]
+    ](self, out_chain: OutputChainPtr):
+        """Dispatch the function call based on buffer rank.
+
+        Constraints:
+            Rank must be positive and less or equal to 5.
+
+        Parameters:
+            func: Function to dispatch. The function should be parametrized on
+              an index parameter, which will be used for rank when the function
+              will be called.
+
+        Args:
+            out_chain: The output chain.
+        """
+        if self.rank <= 0 or self.rank > max_rank:
+            out_chain.mark_error(
+                "invalid rank, the rank bust be positive and less than or"
+                " equal to 5"
+            )
+            return
 
         if self.rank == 1:
             func[1]()
