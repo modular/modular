@@ -14,7 +14,7 @@ fn get_conv_a_row_size() -> Int:
         return 8
     elif has_avx512f():
         return 5
-    return 5
+    return 3
 
 
 fn get_conv_pack_inner_size() -> Int:
