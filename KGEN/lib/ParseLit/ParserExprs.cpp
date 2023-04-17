@@ -96,7 +96,7 @@ private:
   /// if it is part of this one.
   bool isTokenStartOfNextStatement();
 
-  ParseResult parsePrefixExpr(ExprNode *&result);
+  ParseResult parsePrimaryExpr(ExprNode *&result);
   ParseResult parsePrefixLParen(ExprNode *&result, SMLoc lparenLoc);
   ParseResult parsePrefixLSquare(ExprNode *&result, SMLoc lsquareLoc);
   ParseResult parsePrefixLBrace(DictionaryNode *&result, SMLoc lbraceLoc,
@@ -252,7 +252,7 @@ struct InfixInfo {
 /// Parse an expression using top-down operator precedence parsing.
 ParseResult ExprParser::parseExpression(ExprNode *&expr, Precedence minPrec) {
   // Parse any prefix expression like -1.
-  if (parsePrefixExpr(expr))
+  if (parsePrimaryExpr(expr))
     return failure();
 
   // Consume infix tokens until we meet a token whose tokPrecedence is equal or
@@ -364,6 +364,34 @@ ParseResult ExprParser::parseComparisonExpr(ExprNode *&expr, ExprNode *rhs,
   return success();
 }
 
+/// Return true if the specified token kind is the start of a primary
+/// expression.
+static bool isPrimaryExprToken(Token::Kind tokKind) {
+  switch (tokKind) {
+  case Token::plus:
+  case Token::minus:
+  case Token::tilde:
+  case Token::kw_await:
+  case Token::kw_not:
+  case Token::identifier:
+  case Token::integer:
+  case Token::kw_False:
+  case Token::kw_True:
+  case Token::kw_Self:
+  case Token::float_num:
+  case Token::string:
+  case Token::kw_None:
+  case Token::l_paren:
+  case Token::l_square:
+  case Token::l_brace:
+  case Token::kw___get_address_as_lvalue:
+  case Token::kw___get_lvalue_as_address:
+    return true;
+  default:
+    return false;
+  }
+}
+
 /// Parse the expression identified by the current token and provided
 /// `precedence`.  Store the resulting expression in `expr`.
 /// Prefix expressions supported are:
@@ -380,7 +408,7 @@ ParseResult ExprParser::parseComparisonExpr(ExprNode *&expr, ExprNode *rhs,
 ///
 /// u_expr ::=  power | "-" u_expr | "+" u_expr | "~" u_expr
 ///
-ParseResult ExprParser::parsePrefixExpr(ExprNode *&result) {
+ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
   Token::Kind tokKind = getToken().getKind();
   switch (tokKind) {
   case Token::plus:
@@ -462,6 +490,10 @@ ParseResult ExprParser::parsePrefixExpr(ExprNode *&result) {
     return failure();
   }
 
+  // Check isPrimaryExprToken agrees with the cases above.
+  assert(isPrimaryExprToken(tokKind) &&
+         "isPrimaryExprToken out of sync with grammar above");
+
   // Parse postfix productions so long as they aren't the start of the next
   // statement.
   while (!isTokenStartOfNextStatement()) {
@@ -496,6 +528,24 @@ ParseResult ExprParser::parsePrefixExpr(ExprNode *&result) {
       result = alloc<DictSubscriptNode>(result, dict);
       continue;
     }
+
+    // Handle postfix ^.  This is a bit tricky because ^ is also an infix
+    // expression.  We handle this by consuming it and backtracking if needed.
+    if (getToken().is(Token::circumflex)) {
+      auto cursor = lexer.getCursor();
+      auto loc = consumeToken(Token::circumflex).getLoc();
+
+      // We know this is a binary ^ if there is a primary expression after it.
+      if (isPrimaryExprToken(getToken().getKind()) &&
+          !isTokenStartOfNextStatement()) {
+        cursor.restore(lexer);
+        break;
+      }
+
+      result = alloc<UnaryOpNode>(ExprNode::kConsume, loc, result);
+      continue;
+    }
+
     break;
   }
 

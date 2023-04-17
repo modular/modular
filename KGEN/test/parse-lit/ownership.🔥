@@ -426,3 +426,81 @@ fn test_result_optimization():
   # CHECK-NEXT: kgen.call @{{.*}}@"__del___{{.*}}(%example)
 
   # CHECK-NEXT: kgen.param.constant: !lit.none = <#lit.none>
+
+
+##===----------------------------------------------------------------------===##
+# Consume Expressions
+##===----------------------------------------------------------------------===##
+
+# CHECK: lit.func @"test_result_consume_reg
+fn test_result_consume_reg(cond: __mlir_type.i1) -> RegExample:
+  # CHECK-NEXT: [[TMP:%.*]] = kgen.call {{.*}}__init__{{.*}}()
+  # CHECK-NEXT: %example1 = lit.letreg.decl "example1" = [[TMP]]
+  let example1 = RegExample()
+
+  # CHECK-NEXT: hlcf.if %cond
+  if (cond):
+    # Transferring ownership to the result means the copy ctor/dtor isn't
+    # invoked.
+
+    # CHECK-NEXT: [[TMP:%.*]] = lit.ownership.end.lifetime %example1
+    # CHECK-NEXT: kgen.return [[TMP]]
+    return example1^
+
+  # CHECK: hlcf.if %cond
+  if (cond):
+    # Normal copying isn't as efficient but still works.
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.call {{.*}}__copyinit__{{.*}}(%example1)
+    # CHECK-NEXT: kgen.call {{.*}}__del___{{.*}}(%example1)
+    # CHECK-NEXT: kgen.return [[TMP]]
+    return example1
+
+  # Make sure var bindings work the same way even though the IR differs.
+
+  # CHECK: %example2 = lit.varlet.decl
+  # CHECK-NEXT: [[TMP:%.*]] = kgen.call {{.*}}__init__{{.*}}()
+  # CHECK-NEXT: pop.store [[TMP]], %example2
+  var example2 = RegExample()
+
+  # FIXME: This is wrong.  Not tracking ownership transfer of pop.store right.
+  # Does it consume its operand or not?
+
+  # CHECK: hlcf.if %cond
+  if (cond):
+    return example2^
+  else:
+    return example2
+
+# CHECK: lit.func @"consumeMem
+fn consumeMem(owned x: MemExample):
+  # CHECK-NEXT: kgen.call {{.*}}__del___{{.*}}(%x)
+  # CHECK-NEXT: kgen.param.constant: !lit.none
+  pass
+
+# CHECK: lit.func @"test_result_consume_mem
+fn test_result_consume_mem(cond: __mlir_type.i1) -> MemExample:
+  # CHECK-NEXT: %example = lit.varlet.decl
+  # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%example)
+  var example = MemExample()
+
+  # This doesn't consume example, so it must copy it. It does consume the copy.
+  # CHECK-NEXT: %anonymous2A = lit.varlet.decl
+  # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%anonymous2A, %example)
+  # CHECK-NEXT: kgen.call {{.*}}consumeMem{{.*}}(%anonymous2A)
+  consumeMem(example)
+
+  # This does consume example, so no copy needed.
+  # CHECK-NEXT: [[CONSUME:%.*]] = lit.ownership.end.lifetime %example
+  # CHECK-NEXT: kgen.call {{.*}}consumeMem{{.*}}([[CONSUME]])
+  consumeMem(example^)
+
+  # CHECK-NEXT: %example2 = lit.varlet.decl
+  # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%example2)
+  var example2 = MemExample()
+
+  # TODO: This isn't doing return slot optimization.
+  # CHECK-NEXT: [[CONSUME:%.*]] = lit.ownership.end.lifetime %example2
+  # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%__result__, [[CONSUME]])
+  # CHECK-NEXT: kgen.call {{.*}}__del___{{.*}}([[CONSUME]])
+  # CHECK-NEXT: kgen.param.constant: !lit.none
+  return example2^

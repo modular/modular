@@ -490,7 +490,6 @@ def LIT_LetRegDeclOp : LITOp<"letreg.decl",
           Pure, AllTypesMatch<["value", "result"]>,]> {
   let summary = "Register-primary local `let` declaration";
 
-  // The destructor for the element type is specified if it exists.
   let arguments = (ins StrAttr:$name, AnyType:$value);
   let results = (outs AnyType:$result);
   let assemblyFormat = "$name `=` $value `:` type($result) attr-dict";
@@ -510,7 +509,6 @@ def LIT_VarLetDeclOp : LITOp<"varlet.decl",
          [DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>]> {
   let summary = "Addressible local let or var declaration";
 
-  // The destructor for the element type is specified if it exists.
   let arguments = (ins StrAttr:$name,
                        DefaultValuedAttr<BoolAttr, "false">:$isVar);
 
@@ -829,9 +827,25 @@ def LIT_UnboundRegionOp : LITOp<"unbound_region"> {
 def LIT_OwnershipUseOp : LITOp<"ownership.use"> {
   let summary = "A use of a value to keep the value alive";
 
-  // The destructor for the element type is specified if it exists.
   let arguments = (ins AnyType:$value);
   let results = (outs);
+  let assemblyFormat = "$value `:` type($value) attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
+// OwnershipEndLifetimeOp
+//===----------------------------------------------------------------------===//
+
+/// This op is spelled `x^` when `x` is a lifetime-tracked value.  It indicates
+/// that the lifetime of `x` ends here and a new value is created.
+///
+/// This works with both register and memory values.
+def LIT_OwnershipEndLifetimeOp : LITOp<"ownership.end.lifetime",
+                                       [AllTypesMatch<["value", "newValue"]>]> {
+  let summary = "End the lifetime of a tracked value and start a new lifetime";
+
+  let arguments = (ins AnyType:$value, BoolAttr:$isReg);
+  let results = (outs AnyType:$newValue);
   let assemblyFormat = "$value `:` type($value) attr-dict";
 }
 
@@ -846,7 +860,6 @@ def LIT_OwnershipUseOp : LITOp<"ownership.use"> {
 def LIT_OwnershipMarkDestroyedOp : LITOp<"ownership.mark.destroyed"> {
   let summary = "Mark a value as not need a dtor to run";
 
-  // The destructor for the element type is specified if it exists.
   let arguments = (ins AnyType:$value);
   let results = (outs);
   let assemblyFormat = "$value `:` type($value) attr-dict";

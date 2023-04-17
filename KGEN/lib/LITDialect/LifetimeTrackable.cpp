@@ -37,6 +37,16 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     return;
   }
 
+  // The lit.ownership.end.lifetime op ends a register/mem lifetime and creates
+  // a new one.  This defines the properties of its new lifetime.
+  if (auto endLifetime = v.getDefiningOp<OwnershipEndLifetimeOp>()) {
+    name = StringAttr::get(v.getContext(), "(consumed value)");
+    isIndirect = !endLifetime.getIsReg();
+    startsUninit = true;
+    endsUninit = true;
+    return;
+  }
+
   /// Owned results of function calls are tracked as being initialized when
   /// defined but needing to be destroyed by the end of function.
   if (OpResult res = dyn_cast<OpResult>(v)) {

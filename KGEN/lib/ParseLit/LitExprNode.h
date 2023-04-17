@@ -53,15 +53,16 @@ public:
     kChainedCmp,     // a < b <= c
     kLValueConvert,  // __get_lvalue_as_address(x)/__get_address_as_lvalue(x)
 
-    // Unary expressions.
+    // Prefix and Postfix unary expressions.
     kNeg,     // -x
     kPos,     // +x
     kInvert,  // ~x
     kUnpack,  // *x
     kBoolNot, // not x
     kAwait,   // await x
+    kConsume, // x^
     kFirstUnaryOp = kNeg,
-    kLastUnaryOp = kAwait,
+    kLastUnaryOp = kConsume,
 
     // Binary expressions.
     kAdd,
