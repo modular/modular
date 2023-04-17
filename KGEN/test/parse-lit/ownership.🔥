@@ -462,13 +462,23 @@ fn test_result_consume_reg(cond: __mlir_type.i1) -> RegExample:
   # CHECK-NEXT: pop.store [[TMP]], %example2
   var example2 = RegExample()
 
-  # FIXME: This is wrong.  Not tracking ownership transfer of pop.store right.
-  # Does it consume its operand or not?
-
-  # CHECK: hlcf.if %cond
+  # CHECK-NEXT: hlcf.if %cond
   if (cond):
+    # FIXME: This is wrong
+    # CHECK-NEXT: [[TMP:%.*]] = lit.ownership.end.lifetime %example2
+    # CHECK-NEXT: [[TMP2:%.*]] = pop.load [[TMP]]
+    # CHECK-NEXT: [[TMP3:%.*]] = pop.load [[TMP]]
+    # CHECK-NEXT: kgen.call {{.*}}__del___{{.*}}([[TMP3]])
+    # CHECK-NEXT: [[TMP4:%.*]] = kgen.call {{.*}}__copyinit__{{.*}}([[TMP2]])
+    # CHECK-NEXT: kgen.return [[TMP4]]
     return example2^
-  else:
+  else: # CHECK-NEXT: } else {
+    # FIXME: This is wrong
+    # CHECK-NEXT: [[TMP2:%.*]] = pop.load %example2
+    # CHECK-NEXT: [[TMP3:%.*]] = pop.load %example2
+    # CHECK-NEXT: kgen.call {{.*}}__del___{{.*}}([[TMP3]])
+    # CHECK-NEXT: [[TMP4:%.*]] = kgen.call {{.*}}__copyinit__{{.*}}([[TMP2]])
+    # CHECK-NEXT: kgen.return [[TMP4]]
     return example2
 
 # CHECK: lit.func @"consumeMem

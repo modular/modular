@@ -482,13 +482,17 @@ def LIT_AliasForwardDeclOp : LITOp<"alias.fwd.decl"> {
 // LetRegDeclOp / VarLetDeclOp
 //===----------------------------------------------------------------------===//
 
-/// This declaration is used for register primary values assigned to a let
-/// declaration which have an inline initializer.  It does not expose an address
-/// for the value.
 def LIT_LetRegDeclOp : LITOp<"letreg.decl",
          [DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>,
           Pure, AllTypesMatch<["value", "result"]>,]> {
   let summary = "Register-primary local `let` declaration";
+  let description = [{
+    This declaration is used for register primary values assigned to a let
+    declaration which have an inline initializer.  It does not expose an address
+    for the value.
+
+    This op consumes the ownership of its input value, and takes ownership.
+  }];
 
   let arguments = (ins StrAttr:$name, AnyType:$value);
   let results = (outs AnyType:$result);
@@ -502,13 +506,14 @@ def LIT_LetRegDeclOp : LITOp<"letreg.decl",
   ];
 }
 
-/// This declaration is used for var declarations, let declarations with an
-/// out-of-line initializer, and for memory-only let declarations.  It enables
-/// these use-cases by exposing an address.
 def LIT_VarLetDeclOp : LITOp<"varlet.decl",
          [DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>]> {
   let summary = "Addressible local let or var declaration";
-
+  let description = [{
+    This declaration is used for var declarations, let declarations with an
+    out-of-line initializer, and for memory-only let declarations.  It enables
+    these use-cases by exposing an address.
+  }];
   let arguments = (ins StrAttr:$name,
                        DefaultValuedAttr<BoolAttr, "false">:$isVar);
 
@@ -821,12 +826,17 @@ def LIT_UnboundRegionOp : LITOp<"unbound_region"> {
 // OwnershipUseOp
 //===----------------------------------------------------------------------===//
 
-/// This op looks like a use of a value (or its pointee) which keeps the value
-/// live until at least this point.  This operation is a noop that is removed by
-/// the LowerLIT pass.
 def LIT_OwnershipUseOp : LITOp<"ownership.use"> {
   let summary = "A use of a value to keep the value alive";
+  let description = [{
+    This op looks like a use of a value (or its pointee) which keeps the value
+    live until at least this point.  This operation is a noop that is removed by
+    the LowerLIT pass.
 
+    ```mlir
+    lit.ownership.use %0 : !somestring
+    ```
+  }];
   let arguments = (ins AnyType:$value);
   let results = (outs);
   let assemblyFormat = "$value `:` type($value) attr-dict";
@@ -836,13 +846,19 @@ def LIT_OwnershipUseOp : LITOp<"ownership.use"> {
 // OwnershipEndLifetimeOp
 //===----------------------------------------------------------------------===//
 
-/// This op is spelled `x^` when `x` is a lifetime-tracked value.  It indicates
-/// that the lifetime of `x` ends here and a new value is created.
-///
-/// This works with both register and memory values.
 def LIT_OwnershipEndLifetimeOp : LITOp<"ownership.end.lifetime",
                                        [AllTypesMatch<["value", "newValue"]>]> {
   let summary = "End the lifetime of a tracked value and start a new lifetime";
+  let description = [{
+    This op is spelled `x^` when `x` is a lifetime-tracked value.  It indicates
+    that the lifetime of `x` ends here and a new value is created.
+
+    This works with both register and memory values.
+
+    ```mlir
+    %1 = lit.ownership.end.lifetime %0 : !somestring
+    ```
+  }];
 
   let arguments = (ins AnyType:$value, BoolAttr:$isReg);
   let results = (outs AnyType:$newValue);
@@ -853,12 +869,18 @@ def LIT_OwnershipEndLifetimeOp : LITOp<"ownership.end.lifetime",
 // OwnershipMarkDestroyedOp
 //===----------------------------------------------------------------------===//
 
-/// This op informs CheckLifetimes that the specified value does not need its
-/// full object destructor to run.  This corresponds to things like Rust's
-/// mem::forget and is synthesized in __del__ methods to indicate that self is
-/// destroyed.
 def LIT_OwnershipMarkDestroyedOp : LITOp<"ownership.mark.destroyed"> {
   let summary = "Mark a value as not need a dtor to run";
+  let description = [{
+    This op informs CheckLifetimes that the specified value does not need its
+    full object destructor to run.  This corresponds to things like Rust's
+    mem::forget and is synthesized in __del__ methods to indicate that self is
+    destroyed.
+
+    ```mlir
+    lit.ownership.mark.destroyed %0 : !somestring
+    ```
+  }];
 
   let arguments = (ins AnyType:$value);
   let results = (outs);
