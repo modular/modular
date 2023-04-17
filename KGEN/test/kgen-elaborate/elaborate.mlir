@@ -2126,3 +2126,76 @@ kgen.generator @param_apply() {
   %0 = kgen.param.constant = <result>
   kgen.return
 }
+
+// -----
+// COM: This crashes if you don't handle nested parameter ifs correctly *with* multi-versioned kgen.param.apply.
+
+kgen.generator @"$List::VariadicList::__init__(__mlir_type.!kgen.paramref<type>*)"<type: type>(%arg0: !kgen.variadic<type>) vararg -> !kgen.variadic<type> {
+  %0 = kgen.call @"$List::VariadicList::__init__(__mlir_type.!kgen.variadic<type>)"<:type type>(%arg0) : (!kgen.variadic<type>) -> !kgen.variadic<type>
+  kgen.return %0 : !kgen.variadic<type>
+}
+kgen.generator @"$List::VariadicList::__init__(__mlir_type.!kgen.variadic<type>)"<type: type>(%arg0: !kgen.variadic<type>) -> !kgen.variadic<type> {
+  kgen.return %arg0 : !kgen.variadic<type>
+}
+
+kgen.generator @make_index_list() -> !kgen.variadic<!pop.scalar<index>> {
+  %0 = kgen.param.constant: variadic<!pop.scalar<index>> = <[0, 1, 2]>
+  %1 = kgen.call @"$List::VariadicList::__init__(__mlir_type.!kgen.paramref<type>*)"<:type !pop.scalar<index>>(%0) : (!kgen.variadic<!pop.scalar<index>>) vararg -> !kgen.variadic<!pop.scalar<index>>
+  kgen.return %1 : !kgen.variadic<!pop.scalar<index>>
+}
+
+// CHECK-LABEL: kgen.func @fork_on_index_list
+// CHECK-LABEL: kgen.func @fork_on_index_list
+// CHECK-LABEL: kgen.func @fork_on_index_list
+
+kgen.generator @fork_on_index_list() {
+  kgen.param.apply idx_list = [() -> !kgen.variadic<!pop.scalar<index>>: @make_index_list]()
+  kgen.param.fork value: !pop.scalar<index> = <idx_list>
+  kgen.return
+}
+
+// COM: We expect 3 nested_param_if functions, each one calling a different fork_on_index_list
+
+// CHECK-LABEL: kgen.func @nested_param_if
+// CHECK-NEXT: kgen.param.constant = <32>
+// CHECK-NEXT: kgen.call @fork_on_index_list
+// CHECK-NEXT: kgen.return
+
+// CHECK-LABEL: kgen.func @nested_param_if
+// CHECK-NEXT: kgen.param.constant = <32>
+// CHECK-NEXT: kgen.call @fork_on_index_list
+// CHECK-NEXT: kgen.return
+
+// CHECK-LABEL: kgen.func @nested_param_if
+// CHECK-NEXT: kgen.param.constant = <32>
+// CHECK-NEXT: kgen.call @fork_on_index_list
+// CHECK-NEXT: kgen.return
+
+kgen.generator @nested_param_if() -> index {
+  kgen.param.declare condition = <1>
+  %cst = kgen.param.if <eq(condition, 1)> -> index {
+    %cst = kgen.param.constant = <32>
+    kgen.param.yield %cst : index
+  } else {
+    %out = kgen.param.if <eq(condition, 2)> -> index {
+      %ten = kgen.param.constant = <10>
+      kgen.param.yield %ten : index
+    } else {
+      %eleven = kgen.param.constant = <10>
+      kgen.param.yield %eleven : index
+    }
+    kgen.param.yield %out : index
+  }
+  kgen.call @fork_on_index_list() : () -> ()
+  kgen.return %cst : index
+}
+
+// CHECK-LABEL: kgen.func @apply_nested_if
+// CHECK-LABEL: kgen.func @apply_nested_if
+// CHECK-LABEL: kgen.func @apply_nested_if
+
+kgen.generator @apply_nested_if() {
+  kgen.param.apply result = [() -> index: @nested_param_if]()
+  %0 = kgen.param.constant = <result>
+  kgen.return
+}
