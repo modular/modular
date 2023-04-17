@@ -823,6 +823,31 @@ def LIT_UnboundRegionOp : LITOp<"unbound_region"> {
 }
 
 //===----------------------------------------------------------------------===//
+// LoadConsumeOp
+//===----------------------------------------------------------------------===//
+
+def LIT_LoadConsumeOp : LITOp<"load.consume",
+                              [PointerElementType<"ptr", "result">]> {
+  let summary = "consuming pointer load operation";
+  let description = [{
+    Loads the data at the given pointer like `pop.load`, but consume the
+    ownership of the memory being accessed.  This is used when performing
+    MRValue to SRValue conversion (i.e. when consuming a `var` of
+    `@register_passable` type), and is lowered to `pop.load`.
+
+    Example:
+
+    ```mlir
+    %0 = lit.load.consume %ptr0 : !pop.pointer<scalar<f32>>
+    ```
+  }];
+
+  let arguments = (ins Arg<POP_PointerType, "", [MemRead]>:$ptr);
+  let results = (outs AnyType:$result);
+  let assemblyFormat = "$ptr attr-dict `:` qualified(type($ptr))";
+}
+
+//===----------------------------------------------------------------------===//
 // OwnershipUseOp
 //===----------------------------------------------------------------------===//
 

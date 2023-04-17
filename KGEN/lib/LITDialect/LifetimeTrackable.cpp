@@ -37,6 +37,14 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     return;
   }
 
+  if (auto loadConsume = v.getDefiningOp<LoadConsumeOp>()) {
+    name = StringAttr::get(v.getContext(), "(anonymous value)");
+    isIndirect = false;
+    startsUninit = true;
+    endsUninit = true;
+    return;
+  }
+
   // The lit.ownership.end.lifetime op ends a register/mem lifetime and creates
   // a new one.  This defines the properties of its new lifetime.
   if (auto endLifetime = v.getDefiningOp<OwnershipEndLifetimeOp>()) {
