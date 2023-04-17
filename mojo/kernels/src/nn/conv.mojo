@@ -24,9 +24,10 @@ from Functional import (
 )
 from Image import ImageData, Image2DLayout, ImageShape
 from Index import Index, StaticIntTuple
+from Intrinsics import PrefetchOptions
 from LLCL import OutputChainPtr
 from List import DimList, create_dim_list
-from Math import min, max, div_ceil
+from Math import min, max, fma, div_ceil
 from Matmul import (
     GemmShape,
     MatmulInnerLoopBPacked,
@@ -1551,7 +1552,7 @@ struct ConvNHWCInnerLoopFilterPacked[
 
         instance._run_inner_loop()
 
-    fn _initialize_offset_table(self):
+    fn _initialize_offset_table(self, num_segments: Int, contiguous_len: Int):
         let k_offset = self.global_offset.K
 
         # tile_n_k[1] is either multiple of conv_shape.c or it fits in one
@@ -1559,9 +1560,8 @@ struct ConvNHWCInnerLoopFilterPacked[
         # one channel.
         # Map a channel's starting k index to the corresponding localtion in
         # the 4D input tensor
-        let num_channels = div_ceil(self.tile_n_k[1], self.conv_shape.c)
-        for channel_idx in range(num_channels):
-            let k = self.global_offset.K + channel_idx * self.conv_shape.c
+        for segment_idx in range(num_segments):
+            let k = self.global_offset.K + segment_idx * contiguous_len
             let r_s_c = _k_to_r_s_c_nhwc(k, self.conv_shape)
             let r_s = Index(r_s_c[0], r_s_c[1])
 
@@ -1583,7 +1583,7 @@ struct ConvNHWCInnerLoopFilterPacked[
                     ),
                 )
 
-                let offset_idx = Index(channel_idx, row_idx)
+                let offset_idx = Index(segment_idx, row_idx)
                 if hi_wi >= Index(0, 0) and hi_wi < Index(
                     self.conv_shape.h, self.conv_shape.w
                 ):
@@ -1745,7 +1745,7 @@ struct ConvNHWCInnerLoopFilterPacked[
 
     @always_inline
     fn _load_a(
-        self, channel_idx: Int, index_m_k: StaticIntTuple[2], row_idx: Int
+        self, segment_idx: Int, k_idx: Int, row_idx: Int, contiguous_len: Int
     ) -> SIMD[value_type, 1]:
         """Utility to load one value of Im2col transformed matrix from the
         pre-transformed image.
@@ -1755,8 +1755,8 @@ struct ConvNHWCInnerLoopFilterPacked[
             Returns (SIMD):
                 Value loaded from the translated address of image input.
         """
-        let channel_offset = index_m_k[1] - channel_idx * self.conv_shape.c
-        let offset_idx = Index(channel_idx, row_idx)
+        let segment_offset = k_idx - segment_idx * contiguous_len
+        let offset_idx = Index(segment_idx, row_idx)
         let linear_offset: Int = Int(self.offset_table[offset_idx].value)
 
         @parameter
@@ -1765,10 +1765,10 @@ struct ConvNHWCInnerLoopFilterPacked[
                 return SIMD[value_type, 1](0)
             else:
                 return self.input_base_pointer.load(
-                    linear_offset + channel_offset
+                    linear_offset + segment_offset
                 )
         else:
-            return self.input_base_pointer.load(linear_offset + channel_offset)
+            return self.input_base_pointer.load(linear_offset + segment_offset)
 
     fn _accumulate(
         self,
@@ -1780,8 +1780,9 @@ struct ConvNHWCInnerLoopFilterPacked[
             ),
             accum_type,
         ],
-        channel_idx: Int,
+        segment_idx: Int,
         tile_n_k_idx: StaticIntTuple[2],
+        contiguous_len: Int,
     ):
         """Utility funcion on the inner loop. Launch one tile of fma on the
         local accumulation buffer.
@@ -1796,39 +1797,25 @@ struct ConvNHWCInnerLoopFilterPacked[
         # Seek outer indices in packed layout.
         let n_outer_idx = tile_n_k_idx[0] // pack_inner_size
 
-        let local_a = Buffer[
-            (simd_size * a_row_size),
-            value_type,
-        ].stack_allocation()
-
-        @always_inline
-        fn body[idx: Int]():
-            alias fill_a_idx = idx
-            let global_m = self.global_offset.M + fill_a_idx
-            let a_val_scalar = self._load_a(
-                channel_idx, Index(global_m, tile_n_k_idx[1]), fill_a_idx
-            )
-            let a_fill_val = SIMD[value_type, simd_size](a_val_scalar)
-            local_a.simd_store[simd_size](fill_a_idx * simd_size, a_fill_val)
-
-        unroll[a_row_size, body]()
-
         @always_inline
         fn outer_body[idx0: Int, idx1: Int]():
             alias col_idx = idx0 * simd_size
+            let c_idx = Index(idx1, col_idx)
 
             # Loop over local accumulator tiles.
             let b_val = self.b_packed.simd_load[simd_size](
                 Index(n_outer_idx, tile_n_k_idx[1], col_idx)
             ).cast[accum_type]()
 
-            let a_val = local_a.simd_load[simd_size](idx1 * simd_size).cast[
+            let a_val_scalar = self._load_a(
+                segment_idx, tile_n_k_idx[1], idx1, contiguous_len
+            )
+            let a_val = SIMD[value_type, simd_size](a_val_scalar).cast[
                 accum_type
             ]()
-            let c_idx = Index(idx1, col_idx)
             var c_val = c_local.simd_load[simd_size](c_idx)
 
-            c_val = a_val.fma(b_val, c_val)
+            c_val = fma[simd_size, accum_type](a_val, b_val, c_val)
             c_local.simd_store[simd_size](c_idx, c_val)
 
         unroll2[pack_inner_size // simd_size, a_row_size, outer_body]()
@@ -1847,9 +1834,15 @@ struct ConvNHWCInnerLoopFilterPacked[
             accum_type,
         ].stack_allocation()
 
-        let num_channels = div_ceil(self.tile_n_k[1], self.conv_shape.c)
+        let max_contiguous_len = self.conv_shape.s * self.conv_shape.c
+        let contiguous_len = (
+            max_contiguous_len
+            if self.tile_n_k[1] >= max_contiguous_len and not use_padding
+            else self.conv_shape.c
+        )
+        let num_segments = div_ceil(self.tile_n_k[1], contiguous_len)
 
-        self._initialize_offset_table()
+        self._initialize_offset_table(num_segments, contiguous_len)
 
         for idx_n in range(0, self.tile_n_k[0], pack_inner_size):
             # Initialize accumulation buffer
@@ -1860,17 +1853,17 @@ struct ConvNHWCInnerLoopFilterPacked[
                 self._load_c_tile(c_local, Index(0, idx_n))
 
             var k_offset = 0
-            for channel_idx in range(num_channels):
+            for segment_idx in range(num_segments):
                 for idx_k in range(
-                    k_offset,
-                    min(k_offset + self.conv_shape.c, self.tile_n_k[1]),
+                    k_offset, min(k_offset + contiguous_len, self.tile_n_k[1])
                 ):
                     self._accumulate(
                         c_local,
-                        channel_idx,
+                        segment_idx,
                         Index(idx_n, idx_k),
+                        contiguous_len,
                     )
-                k_offset += self.conv_shape.c
+                k_offset += contiguous_len
 
             self._store_c_tile(c_local, Index(0, idx_n))
 
@@ -2133,12 +2126,26 @@ struct ConvIm2ColNHWC[
             GemmShape(
                 gemm_shape.M,
                 gemm_shape.N,
-                gemm_shape.K,  # Do not yet pack more than C.
+                gemm_shape.K,
             )
         )
-        # Round k to multiple of number of channels.
-        if tile_n_k[1] > conv_shape.c:
+        # We only support unit dilation. The data corresponds to conv_shape.s
+        # channels are contiguous in memory.
+        debug_assert(
+            conv_shape.dilation == Index(1, 1), "Dilation must be [1, 1]."
+        )
+        let contiguous_len = conv_shape.s * conv_shape.c
+        # Round k to multiple of contiguous segments if applicable.
+        if (
+            (conv_shape.pad_h == Index(0, 0))
+            & (conv_shape.pad_w == Index(0, 0))
+            & (tile_n_k[1] > contiguous_len)
+        ):
+            tile_n_k[1] = tile_n_k[1] - tile_n_k[1] % contiguous_len
+        # Round k to multiple of channel size if applicable.
+        elif tile_n_k[1] > conv_shape.c:
             tile_n_k[1] = tile_n_k[1] - tile_n_k[1] % conv_shape.c
+
         # Output shape [N, F, Ho, Wo]
         let c_pointer = out._offset(Index(0, 0, 0, 0))
         let c = NDBuffer[2, DimList[2].create_unknown(), type](
