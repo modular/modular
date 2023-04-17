@@ -1799,10 +1799,16 @@ ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent) {
   // considering we're about to delete the op itself.
   ParameterUseDefGraph &paramGraph = *parent->paramGraph;
   auto eraseIfScopes = [op](ParameterUseDefGraph &graph) mutable {
-    graph.nestedScopes.erase(&op.getThenRegion());
-    graph.nestedScopes.erase(&op.getElseRegion());
+    // Erase any regions from the nested scopes that belong either to this op or
+    // under this op.
+    for (auto [r, _] : graph.nestedScopes)
+      if (op->isAncestor(r->getParentOp()))
+        graph.nestedScopes.erase(r);
+
+    // Do the same for nested decls. These two are somehow not always in sync,
+    // so we have to check both separately.
     auto newEnd = llvm::remove_if(graph.nestedDecls, [&](Region *r) {
-      return r == &op.getThenRegion() || r == &op.getElseRegion();
+      return op->isAncestor(r->getParentOp());
     });
     graph.nestedDecls.erase(newEnd, graph.nestedDecls.end());
   };
