@@ -60,6 +60,16 @@ struct ConditionallyOwnedPointer {
                                      /*shouldDelete=*/true);
   }
 
+  /// Allocate a `U *` that this class will own (and therefore delete). This
+  /// overload allows the user to allocate a different type than `T` with the
+  /// restriction that `U *` must be derived from `T *`.
+  template <typename U, typename... Args>
+  static ConditionallyOwnedPointer allocate(Args &&...args) {
+    static_assert(std::is_base_of_v<T, U>, "`U` must be derived from `T`");
+    return ConditionallyOwnedPointer(new U(std::forward<Args>(args)...),
+                                     /*shouldDelete=*/true);
+  }
+
   /// Borrow the provided `T *`.
   static ConditionallyOwnedPointer borrow(T *ptr) {
     return ConditionallyOwnedPointer(ptr, /*shouldDelete=*/false);
