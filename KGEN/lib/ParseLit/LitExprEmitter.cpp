@@ -853,9 +853,9 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
       return {};
   }
 
-  // If this is an SRValue then store the value to memory.
+  // If this is an SRValue then store the value to memory.  StoreOp takes
+  // ownership of the input SRValue.
   if (auto rv = value.ir.getIfSRValue()) {
-    // Does this kill las use of emitSRValue?
     auto loc = translateLocation(value.expr->getLoc());
     builder->create<POP::StoreOp>(loc, rv, destPtr, /*alignment=*/std::nullopt);
     return SBValue(rv);

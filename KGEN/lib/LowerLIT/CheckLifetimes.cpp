@@ -1039,16 +1039,17 @@ void DestructorInsertion::checkOp(Operation &op) {
   if (isa<StructGEPOp>(op))
     return;
 
-  // A store to a value is an overwrite - this means that any incoming values
-  // are unused and should be destroyed if they exist.
+  // A store consumes a value and overwrites the destination - this means that
+  // any incoming values are unused and should be destroyed if they exist.
   if (auto storeOp = dyn_cast<POP::StoreOp>(op)) {
-    checkUse(storeOp.getArg(), op);
+    markConsumed(storeOp.getArg(), op);
     checkDef(storeOp.getPtr(), op);
     return;
   }
 
   // A load is a use of whatever fields are being referenced.  If this is the
-  // /last/ use of a value, emit a destructor of that value.
+  // /last/ use of a value, emit a destructor of that value.  LoadOps are used
+  // to model a /borrow/ of the underlying value.
   if (auto loadOp = dyn_cast<POP::LoadOp>(op)) {
     checkUse(loadOp.getPtr(), op);
     return;
@@ -1100,7 +1101,7 @@ void DestructorInsertion::checkOp(Operation &op) {
   if (auto letReg = dyn_cast<LetRegDeclOp>(op)) {
     // This defines the result value.  Emit a destructor if unused.
     checkDef(letReg, op);
-    // This uses the input.
+    // This consumes its input.
     markConsumed(letReg.getOperand(), op);
     return;
   }
