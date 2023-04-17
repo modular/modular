@@ -1,4 +1,6 @@
-# Mojo🔥 Programmer’s Manual
+---
+title: Mojo🔥 programming manual
+---
 
 Mojo🔥 is a first-class programming language that utilizes a number of
 next-generation compiler technologies. The compiler itself has integrated
