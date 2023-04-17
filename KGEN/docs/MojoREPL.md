@@ -1,0 +1,78 @@
+# Mojo🔥 REPL
+
+[TOC]
+
+## Introduction
+
+A Read Eval Print Loop, or REPL, is an effective tool for providing a powerful
+interactive development experience. Mojo provides a powerful REPL experience
+built on top of the [LLDB debugger](https://lldb.llvm.org/), which also provides
+the debugging environment for the Mojo Language.
+
+## Getting started
+
+There are several entry points with which to experience the Mojo Repl, with the
+main two being the [LLDB REPL](#lldb-command-line-repl), and a
+[Jupyter Notebook](#jupyter-notebook). Each entry point contains specific setup
+instructions, please refer to each section for more detailed information.
+
+### LLDB Command Line REPL
+
+In addition to providing the underpinning technology, LLDB can also be used as
+a command line driver for interacting with the REPL. To start an interactive
+REPL session within LLDB, Mojo provides a convenient utility with the necessary
+setup:
+
+```shell
+# Build the Mojo REPL and all of the various dependencies.
+$ build MojoLLDB
+
+# Launch the REPL.
+$ mojo-repl
+```
+
+Once run, you'll be provided with a REPL environment where you can immediately
+start running expressions:
+
+```shell
+Welcome to Mojo.
+Type :help for assistance.
+  1>
+```
+
+### Jupyter Notebook
+
+Jupyter notebooks are a common environment for interacting with REPLs of all
+shapes and sizes. Mojo provides a custom kernel implementation for interacting
+with the REPL in any jupyter environment.
+
+```shell
+# Ensure the Mojo Jupyter Kernel is installed in the local environment.
+$ install_python_deps
+
+# Build all of the necessary REPL functionality to run the jupyter kernel.
+$ build MojoJupyter
+```
+
+#### VSCode Notebooks
+
+VSCode provides a powerful suite of notebook functionality, which can be easily
+integrated with the Mojo Kernel. To change the kernel within a notebook, simply
+pick `Select Kernel` in the upper right of the notebook, and select Mojo.
+Depending on your setup, you may need to find the kernel via:
+ `> Select Another Kernel > Jupyter Kernel > Mojo`
+
+#### JupyterLab Notebooks
+
+JupyterLab is the latest web-based interactive development environment for
+notebooks provided by the Jupyter Project. The kernel should be available
+directly, but you may need to initialize Jupyter first if you haven't
+already:
+
+```shell
+# Setup JupyterLab and the Mojo Jupyter extension.
+$ jupyter-init
+
+# Start a Jupyter server.
+$ jupyter-lab
+```
