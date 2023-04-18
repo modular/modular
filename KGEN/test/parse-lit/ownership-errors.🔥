@@ -161,6 +161,18 @@ struct TwoRegs:
     self.reg1 = existing.reg1
     self.reg2 = existing.reg2
 
+@register_passable
+struct TwoRegsRP:
+  var reg1: RegExample
+  var reg2: RegExample
+
+  fn __init__() -> Self:
+    return Self{reg1: RegExample(), reg2: RegExample()}
+
+  fn __copyinit__(existing: Self) -> Self:
+    return Self{reg1: existing.reg1, reg2: existing.reg2}
+
+
 
 struct MoreComplexExample:
   var mem: MemExample
@@ -202,7 +214,7 @@ fn disableDtor(owned x: MoreComplexExample):
 fn fieldConsumeError(owned x: MoreComplexExample,
                      owned y: MoreComplexExample,
                      owned z: MoreComplexExample):
-  _ = x.mem^
+  _ = x.mem^  # Error diagnosed above.
 
   # This is ok because we replace the mem field.
   _ = y.mem^
@@ -216,3 +228,7 @@ fn fieldConsumeError(owned x: MoreComplexExample,
   # expected-error @+1 {{value 'z.mem' cannot be consumed, because it is used later}}
   _ = z.mem^
   use(z)
+
+  # expected-error @+1 {{field 'twoRegsRP.reg1' destroyed out of the middle of a value, preventing the overall value from being destroyed}}
+  var twoRegsRP = TwoRegsRP()
+  _ = twoRegsRP.reg1^

@@ -1116,19 +1116,11 @@ void DestructorInsertion::checkOp(Operation &op) {
     return;
   }
 
-  // Load memory and consume it, producing a new value.  This is a /consume/ of
-  // the underlying value.
-  if (auto loadConsumeOp = dyn_cast<LoadConsumeOp>(op)) {
-    checkDef(loadConsumeOp, op);
-    markConsumed(loadConsumeOp.getPtr(), op);
-    return;
-  }
-
-  // lit.ownership.end.lifetime defines a new value and ends the range of the
-  // operand.
-  if (auto endLifetime = dyn_cast<OwnershipEndLifetimeOp>(op)) {
-    checkDef(endLifetime, op);
-    markConsumed(endLifetime.getOperand(), op);
+  // These operations consume their operands and define a result.
+  if (isa<LoadConsumeOp, OwnershipEndLifetimeOp, StructCreateOp>(op)) {
+    checkDef(op.getResult(0), op);
+    for (auto operand : op.getOperands())
+      markConsumed(operand, op);
     return;
   }
 

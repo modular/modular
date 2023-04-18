@@ -1887,6 +1887,30 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   return success();
 }
 
+/// Create a mutable VarDecl for a function argument that captures its value.
+/// argValue specifies the argument with the correct valuetype.
+static SLValue makeArgLValueVarSlot(CValue argValue, StringAttr argName,
+                                    ASTDecl &parentDecl, OpBuilder &builder,
+                                    SMLoc loc, SharedState &shared) {
+  // Emit the initializer expression into the slot.
+  ExprEmitter emitter(shared, parentDecl, builder,
+                      /*varDeclCursor*/ nullptr);
+
+  ASTType declType = argValue.getRValueType();
+  Type varType = POP::PointerType::get(declType);
+  auto varDecl = builder.create<VarLetDeclOp>(shared.translateLocation(loc),
+                                              varType, argName,
+                                              /*isVar*/ 1);
+
+  // Expr to provide location information.
+  DeclRefNode srcExpr(StringRef(loc.getPointer(), argName.size()));
+  ValueDest dest(SLValue(varDecl), EC_DefArgumentShadow);
+  if (!emitter.emitBValue({argValue, &srcExpr}, dest))
+    dest.resetForError();
+
+  return SLValue(varDecl);
+};
+
 ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
                                       ASTDecl &decl) {
   // Push the debug scope for this function if necessary so that nested
@@ -1961,27 +1985,6 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
       continue;
     }
 
-    auto makeArgLValueVarSlot = [&, bbArgLoc = bbArg.getLoc(),
-                                 argName =
-                                     argName](CValue srcVal) -> DeclIRValue {
-      ASTType declType = srcVal.getRValueType();
-      Type varType = POP::PointerType::get(declType);
-      auto varDecl = builder.create<VarLetDeclOp>(bbArgLoc, varType, argName,
-                                                  /*isVar*/ 1);
-
-      // Emit the initializer expression into the slot.
-      ExprEmitter emitter(shared, decl, builder, /*varDeclCursor*/ nullptr);
-
-      // Expr to provide location information.
-      DeclRefNode srcExpr(
-          StringRef(argDecl.getLoc().getPointer(), argName.size()));
-      ValueDest dest(SLValue(varDecl), EC_DefArgumentShadow);
-      if (!emitter.emitBValue({srcVal, &srcExpr}, dest))
-        dest.resetForError();
-
-      return SLValue(varDecl);
-    };
-
     DeclIRValue argIRValue;
     switch (convention) {
     // Arguments passed by-reference can be directly used.
@@ -1995,7 +1998,8 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
       break;
 
     case ValueInputConvention::OwnedInReg:
-      argIRValue = makeArgLValueVarSlot(SRValue(bbArg));
+      argIRValue = makeArgLValueVarSlot(SRValue(bbArg), argName, decl, builder,
+                                        argDecl.getLoc(), shared);
       break;
 
     case ValueInputConvention::BorrowedInReg:
@@ -2016,7 +2020,8 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
         srcVal = MBValue(bbArg);
       else
         srcVal = SBValue(bbArg);
-      argIRValue = makeArgLValueVarSlot(srcVal);
+      argIRValue = makeArgLValueVarSlot(srcVal, argName, decl, builder,
+                                        argDecl.getLoc(), shared);
       break;
     }
 
@@ -2423,14 +2428,26 @@ static TypedAttr synthesizeEmptyDtor(StructDeclOp structOp, ASTDecl &structDecl,
   StringAttr name =
       getMangledName(builder.getStringAttr("__del___"), signature);
   auto funcOp = builder.create<LIT::FuncOp>(name, signature, selfName);
-  // Set up the body.
-  Block *body = funcOp.getBody();
-  body->addArgument(selfType, structOp.getLoc());
-  funcOp.appendDefaultReturnAndEndOp();
 
   // Register the dtor in the struct.
-  resolver.addFullyResolvedDecl(funcOp.getOperation(), "__del___",
-                                structDecl.getLoc(), &structDecl);
+  ASTDecl &funcDecl = resolver.addFullyResolvedDecl(
+      funcOp.getOperation(), "__del___", structDecl.getLoc(), &structDecl);
+
+  // Set up the body.
+  Block *body = funcOp.getBody();
+  BlockArgument arg = body->addArgument(selfType, structOp.getLoc());
+
+  // We need to make a var box + store for register_passable values since that
+  // is what lifetime tracking expects.
+  if (convention == ValueInputConvention::OwnedInReg) {
+    builder.setInsertionPointToStart(body);
+    (void)makeArgLValueVarSlot(SRValue(arg), selfName, funcDecl, builder,
+                               structDecl.getLoc(), resolver.shared);
+  }
+
+  // Finish off the function with a return + lit.endfunc.
+  funcOp.appendDefaultReturnAndEndOp();
+
   return funcOp.getBoundReference();
 }
 

@@ -36,6 +36,9 @@ struct RegExample:
   fn __del___(owned self):
     pass
 
+fn consume(owned a: RegExample): pass
+fn use(owned a: RegExample): pass
+
 # CHECK-LABEL: lit.func @"destructors
 # CHECK-SAME: (%arg0: !pop.pointer<@"$ownership"::@MemExample> owned_in_mem)
 fn destructors(owned arg0: MemExample):
@@ -510,3 +513,70 @@ fn test_result_consume_mem(cond: __mlir_type.i1) -> MemExample:
   # CHECK-NEXT: kgen.call {{.*}}__del___{{.*}}([[CONSUME]])
   # CHECK-NEXT: kgen.param.constant: !lit.none
   return example2^
+
+# CHECK-LABEL: lit.struct.decl @BigRegExample
+@register_passable
+struct BigRegExample:
+  var a: RegExample
+  var b: RegExample
+
+  # CHECK-LABEL: lit.func @"__init__()"
+  fn __init__() -> Self:
+    # CHECK-NEXT: %0 = kgen.call {{.*}}__init__{{.*}}()
+    # CHECK-NEXT: %1 = kgen.call {{.*}}__init__{{.*}}()
+    # CHECK-NEXT: %2 = lit.struct.create(a=%0, b=%1)
+    # CHECK-NEXT: kgen.return %2
+    return BigRegExample{a: RegExample(), b: RegExample() }
+
+  # CHECK-LABEL: lit.func @"__copyinit__
+  fn __copyinit__(self) -> Self:
+    # CHECK-NEXT: %0 = lit.struct.extract %self[a]
+    # CHECK-NEXT: %1 = lit.struct.extract %self[b]
+    # CHECK-NEXT: %2 = kgen.call {{.*}}__copyinit__{{.*}}(%0)
+    # CHECK-NEXT: %3 = kgen.call {{.*}}__copyinit__{{.*}}(%1)
+    # CHECK-NEXT: %4 = lit.struct.create(a=%2, b=%3)
+    # CHECK-NEXT: kgen.return %4
+    return BigRegExample{a: self.a, b: self.b }
+
+  # CHECK-LABEL: lit.func @"__del___
+  # CHECK-NEXT: %self_0 = lit.varlet.decl "self", var = true
+  # CHECK-NEXT: pop.store %self, %self_0
+
+  # CHECK-NEXT: %0 = lit.struct.gep %self_0[a]
+  # CHECK-NEXT: %1 = pop.load %0
+  # CHECK-NEXT: kgen.call {{.*}}__del___{{.*}}(%1)
+  # CHECK-NEXT: %3 = lit.struct.gep %self_0[b]
+  # CHECK-NEXT: %4 = pop.load %3
+  # CHECK-NEXT: kgen.call {{.*}}__del___{{.*}}(%4)
+  # CHECK-NEXT: %6 = kgen.param.constant{{.*}} <#lit.none>
+  # CHECK-NEXT: lit.ownership.mark.destroyed %self_0
+  # CHECK-NEXT: kgen.return %6
+
+
+# CHECK-LABEL: lit.func @"bigreg_test
+fn bigreg_test():
+  # CHECK-NEXT: %varThing = lit.varlet.decl "varThing"
+  # CHECK-NEXT: %0 = kgen.call {{.*}}__init__()
+  # CHECK-NEXT: pop.store %0, %varThing
+  var varThing = BigRegExample()
+
+  # CHECK-NEXT: %1 = lit.struct.gep %varThing[a]
+  # CHECK-NEXT: %2 = lit.ownership.end.lifetime %1
+  # CHECK-NEXT: %3 = lit.load.consume %2
+  # CHECK-NEXT: kgen.call {{.*}}consume{{.*}}(%3)
+  consume(varThing.a^)
+
+  # CHECK-NEXT: %5 = lit.struct.gep %varThing[b]
+  # CHECK-NEXT: %6 = pop.load %5
+  # CHECK-NEXT: %7 = kgen.call {{.*}}__copyinit__{{.*}}(%6)
+  # CHECK-NEXT: kgen.call {{.*}}use{{.*}}(%7)
+  use(varThing.b)
+
+  # CHECK-NEXT: %9 = kgen.call {{.*}}__init__
+  # CHECK-NEXT: %10 = lit.struct.gep %varThing[a]
+  # CHECK-NEXT: pop.store %9, %10
+  # CHECK-NEXT: %11 = pop.load %varThing
+  # CHECK-NEXT: kgen.call {{.*}}__del___{{.*}}(%11)
+  varThing.a = RegExample()
+
+  # CHECK-NEXT: kgen.param.constant: !lit.none
