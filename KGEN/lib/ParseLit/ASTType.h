@@ -75,6 +75,10 @@ public:
   /// types like Int.  Note: this resolves the body of a struct type.
   bool hasDestructor(llvm::SMLoc loc, SharedState &shared) const;
 
+  /// Return true if this type is copyable, either because it is trivial or has
+  /// a copy constructor. Note: this resolves the body of a struct type.
+  bool isCopyable(llvm::SMLoc loc, SharedState &shared) const;
+
   /// Given a POP::PointerType, return the element as an ASTType.  This aborts
   /// if the current type isn't a pointer.
   ASTType getPointerElementType() const;
