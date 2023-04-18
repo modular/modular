@@ -114,7 +114,7 @@ public:
   /// the status of the execution.
   struct ExpressionExecutionState {
     ExpressionExecutionState(KernelCellState &cellState)
-        : cellState(cellState) {}
+        : finished(false), cellState(cellState) {}
     SBError error;
     ValueObjectSP result;
     std::thread executionThread;
@@ -159,11 +159,11 @@ public:
 
   /// Start execution of the given cell identifier and expression string.
   /// Returns the state of the expression execution.
-  ExpressionExecutionState *startExecution(StringRef cellId, const char *expr);
+  void startExecution(StringRef cellId, const char *expr);
 
-  /// Check if the given expression has finished execution, also taking this
+  /// Check if the current expression has finished execution, also taking this
   /// time to flush any collected output.
-  bool checkExecutionFinished(ExpressionExecutionState *state);
+  bool checkExecutionFinished();
 
 private:
   /// Initialize the target.
@@ -186,8 +186,9 @@ private:
     outputFn(type.data(), output.data());
   }
 
-  /// Flush the LLDB output streams associated within the given execution state.
-  void flushLLDBStreams(ExpressionExecutionState *state);
+  /// Flush the LLDB output streams associated within the current execution
+  /// state.
+  void flushLLDBStreams();
 
   /// Initialize the given cell for execution. Returns the associated cell
   /// state, or nullptr if the cell was invalid.
@@ -212,6 +213,10 @@ private:
   /// The mojo persistent expression state.
   MojoPersistentExpressionState *exprState = nullptr;
 
+  /// The current execution state, or nullopt if no execution is currently
+  /// happening.
+  std::optional<ExpressionExecutionState> executionState;
+
   /// An ordered list containing information about each of the cells that have
   /// been executed.
   std::vector<std::unique_ptr<KernelCellState>> cells;
@@ -231,15 +236,13 @@ MODULAR_EXPORT MojoKernel *initMojoKernel(OutputFn outputFn,
   return kernel.release();
 }
 
-MODULAR_EXPORT MojoKernel::ExpressionExecutionState *
-startMojoExecution(MojoKernel *kernel, const char *cellId, const char *code) {
-  return kernel->startExecution(cellId, code);
+MODULAR_EXPORT void startMojoExecution(MojoKernel *kernel, const char *cellId,
+                                       const char *code) {
+  kernel->startExecution(cellId, code);
 }
 
-MODULAR_EXPORT int
-checkMojoExecutionFinished(MojoKernel *kernel,
-                           MojoKernel::ExpressionExecutionState *state) {
-  return kernel->checkExecutionFinished(state);
+MODULAR_EXPORT int checkMojoExecutionFinished(MojoKernel *kernel) {
+  return kernel->checkExecutionFinished();
 }
 
 MODULAR_EXPORT void destroyMojoKernel(MojoKernel *kernel) { delete kernel; }
@@ -346,34 +349,32 @@ LogicalResult MojoKernel::launchReplProcess() {
 // Execution
 //===----------------------------------------------------------------------===//
 
-MojoKernel::ExpressionExecutionState *
-MojoKernel::startExecution(StringRef cellId, const char *expr) {
-  ExpressionExecutionState *state =
-      new ExpressionExecutionState(initializeCellForExecution(cellId));
+void MojoKernel::startExecution(StringRef cellId, const char *expr) {
+  executionState.emplace(initializeCellForExecution(cellId));
 
   // Start execution of the expression in a separate thread, so that way the
   // calling client can control waiting for the expression to complete.
-  state->executionThread =
-      std::thread([this, state, expr = std::string(expr)]() mutable {
+  executionState->executionThread =
+      std::thread([this, expr = std::string(expr)]() mutable {
         LLVM_DEBUG(llvm::dbgs() << "Executing expression: " << expr << "\n");
         unsigned exprInstIdx = exprState->getNumExpressionInstances();
         SBValue value =
             SBTarget(target).EvaluateExpression(expr.data(), exprOpts).GetSP();
-        state->result = value.GetSP();
-        state->error = value.GetError();
-        state->finished = true;
+        executionState->result = value.GetSP();
+        executionState->error = value.GetError();
 
         // If the REPL pushed a new expression state, associate it with the
         // cell.
         unsigned newExprInstIdx = exprState->getNumExpressionInstances();
         if (newExprInstIdx != exprInstIdx)
-          state->cellState.replExprIdx = exprInstIdx;
-      });
+          executionState->cellState.replExprIdx = exprInstIdx;
 
-  return state;
+        // Mark the execution as finished.
+        executionState->finished = true;
+      });
 }
 
-void MojoKernel::flushLLDBStreams(ExpressionExecutionState *state) {
+void MojoKernel::flushLLDBStreams() {
   // Reading the following streams from LLDB is thread safe becaause each reader
   // has its own mutex.
 
@@ -396,7 +397,7 @@ void MojoKernel::flushLLDBStreams(ExpressionExecutionState *state) {
   // will be read eventually anyway.
   while (mojoTypeSystemListener->GetEvent(event, std::chrono::seconds(0))) {
     MojoTypeSystem::handleEvent(
-        event, state->cellState.debugMessages, reportMessage,
+        event, executionState->cellState.debugMessages, reportMessage,
         [&](StringRef msg) { sendOutput("stderr", msg); });
     event->Clear();
   }
@@ -420,29 +421,32 @@ void MojoKernel::flushLLDBStreams(ExpressionExecutionState *state) {
   }
 }
 
-bool MojoKernel::checkExecutionFinished(ExpressionExecutionState *state) {
+bool MojoKernel::checkExecutionFinished() {
+  if (!executionState)
+    return true;
+
   // Check to see if the expression is still executing.
-  if (!state->finished) {
-    flushLLDBStreams(state);
+  if (!executionState->finished) {
+    flushLLDBStreams();
     return false;
   }
-  flushLLDBStreams(state);
+  flushLLDBStreams();
 
   // The expression has finished executing, process the results.
   LLVM_DEBUG(llvm::dbgs() << "Finished executing expression\n");
 
   // Process the result.
-  auto errorType = state->error.GetType();
+  auto errorType = executionState->error.GetType();
   if (errorType == eErrorTypeInvalid)
-    sendOutput("stdout", state->result->GetObjectDescription());
+    sendOutput("stdout", executionState->result->GetObjectDescription());
   else if (errorType != eErrorTypeGeneric)
-    sendOutput("stderr", state->error.GetCString());
+    sendOutput("stderr", executionState->error.GetCString());
   else
-    state->error.Clear();
+    executionState->error.Clear();
 
   // Clean up the state now that we're done with it.
-  state->executionThread.join();
-  delete state;
+  executionState->executionThread.join();
+  executionState.reset();
   return true;
 }
 

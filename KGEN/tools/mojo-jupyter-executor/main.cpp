@@ -30,15 +30,12 @@ using namespace M;
 using OutputFn = void (*)(const char *, const char *);
 
 using OpaqueMojoKernel = void *;
-using OpaqueExecutionState = void *;
 
 MODULAR_EXPORT OpaqueMojoKernel initMojoKernel(OutputFn outputFn,
                                                const char *mojoReplExe);
-MODULAR_EXPORT OpaqueExecutionState startMojoExecution(OpaqueMojoKernel kernel,
-                                                       const char *cellId,
-                                                       const char *code);
-MODULAR_EXPORT int checkMojoExecutionFinished(OpaqueMojoKernel kernel,
-                                              OpaqueExecutionState state);
+MODULAR_EXPORT void startMojoExecution(OpaqueMojoKernel kernel,
+                                       const char *cellId, const char *code);
+MODULAR_EXPORT int checkMojoExecutionFinished(OpaqueMojoKernel kernel);
 MODULAR_EXPORT void destroyMojoKernel(OpaqueMojoKernel kernel);
 
 //===----------------------------------------------------------------------===//
@@ -62,25 +59,14 @@ public:
   // Execution
   //===--------------------------------------------------------------------===//
 
-  /// This class represents a single cell execution.
-  class Execution {
-  public:
-    Execution(MojoKernel *kernel, OpaqueExecutionState state)
-        : kernel(kernel), state(state) {}
-
-    /// Return if the execution has finished.
-    bool hasFinished() const {
-      return checkMojoExecutionFinished(kernel->kernel, state);
-    }
-
-  private:
-    MojoKernel *kernel;
-    OpaqueExecutionState state;
-  };
-
   /// Start a new cell execution.
-  Execution startExecution(const char *cellId, const char *code) {
-    return Execution(this, startMojoExecution(kernel, cellId, code));
+  void startExecution(const char *cellId, const char *code) {
+    startMojoExecution(kernel, cellId, code);
+  }
+
+  /// Check if the current execution has finished.
+  bool hasExecutionFinished() const {
+    return checkMojoExecutionFinished(kernel);
   }
 
 private:
@@ -99,7 +85,7 @@ private:
 /// we need to be able to (for example) print the logs generated for the current
 /// cell. In order to switch cells, you can use `:next-cell` or
 /// `:prev-cell`. In order to exit cleanly, use `:exit`.
-static void executeAsREPL(MojoKernel *kernel) {
+static void executeAsREPL(MojoKernel &kernel) {
   int idx = 0;
   std::cout << "[" << idx << "] > ";
   for (std::string line; std::getline(std::cin, line);) {
@@ -122,9 +108,8 @@ static void executeAsREPL(MojoKernel *kernel) {
       continue;
     }
 
-    auto execution =
-        kernel->startExecution(std::to_string(idx).c_str(), line.c_str());
-    while (!execution.hasFinished())
+    kernel.startExecution(std::to_string(idx).c_str(), line.c_str());
+    while (!kernel.hasExecutionFinished())
       continue;
   }
 }
@@ -133,7 +118,7 @@ static void executeAsREPL(MojoKernel *kernel) {
 // Jupyter Executor
 //===----------------------------------------------------------------------===//
 
-static LogicalResult executeNotebook(MojoKernel *kernel,
+static LogicalResult executeNotebook(MojoKernel &kernel,
                                      StringRef notebookPath) {
   std::string errorMsg;
   std::unique_ptr<llvm::MemoryBuffer> notebookFile =
@@ -180,9 +165,8 @@ static LogicalResult executeNotebook(MojoKernel *kernel,
     code += "\n\n";
 
     // Execute the cell code.
-    auto execution = kernel->startExecution(
-        ("cell_" + Twine(index)).str().c_str(), code.c_str());
-    while (!execution.hasFinished())
+    kernel.startExecution(("cell_" + Twine(index)).str().c_str(), code.c_str());
+    while (!kernel.hasExecutionFinished())
       continue;
   }
   return success();
@@ -215,10 +199,10 @@ int main(int argc, char *argv[]) {
 
   // If we have a notebook path, execute it, otherwise run in REPL mode.
   if (notebookPath.getNumOccurrences()) {
-    if (failed(executeNotebook(&kernel, notebookPath)))
+    if (failed(executeNotebook(kernel, notebookPath)))
       return 1;
   } else {
-    executeAsREPL(&kernel);
+    executeAsREPL(kernel);
   }
   return 0;
 }
