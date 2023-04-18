@@ -123,3 +123,40 @@ kgen.func @store_alloca() -> i32 {
   %3 = pop.load %2 : !pop.pointer<i32>
   kgen.return %3 : i32
 }
+
+// CHECK-LABEL: @try_region
+kgen.func @try_region() {
+  %0 = pop.stack_allocation 1 x index
+  %1 = pop.stack_allocation 1 x index
+  %idx2 = index.constant 2
+  %idx3 = index.constant 3
+  pop.store %idx2, %0 : !pop.pointer<index>
+  pop.store %idx3, %1 : !pop.pointer<index>
+  // CHECK: lit.try
+  lit.try {
+    // CHECK-NEXT: "use"(%idx2)
+    %2 = pop.load %0 : !pop.pointer<index>
+    "use"(%2) : (index) -> ()
+    // CHECK-NEXT: pop.store
+    pop.store %idx2, %1 : !pop.pointer<index>
+    lit.try.yield
+  // CHECK: except
+  } except (%e: !pop.struct<>) {
+    // CHECK-NEXT: pop.load
+    %2 = pop.load %1 : !pop.pointer<index>
+    "use"(%2) : (index) -> ()
+    lit.try.yield
+  // CHECK: else
+  } else {
+    // CHECK-NEXT: "use"(%idx2)
+    %2 = pop.load %0 : !pop.pointer<index>
+    "use"(%2) : (index) -> ()
+    lit.try.yield
+  // CHECK: }
+  }
+  // CHECK-NEXT: "use"(%idx3)
+  pop.store %idx3, %0 : !pop.pointer<index>
+  %2 = pop.load %0 : !pop.pointer<index>
+  "use"(%2) : (index) -> ()
+  kgen.return
+}
