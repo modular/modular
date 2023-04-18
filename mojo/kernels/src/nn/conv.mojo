@@ -34,7 +34,7 @@ from Matmul import (
     calculate_tile_n_k,
     PackMatrixCols,
     PackMatrixRows,
-    _null_epilogue,
+    null_epilogue,
 )
 from MatmulUtils import get_matmul_prefetch_b_distance_k
 from Pointer import DTypePointer
@@ -2018,7 +2018,7 @@ struct ConvIm2ColNHWC[
                 `) -> `,
                 NoneType,
             ],
-            callee:_null_epilogue,
+            callee:null_epilogue,
             paramDecls : __mlir_attr.`#kgen<param.decls[]>`,
         ]()
 
@@ -2100,6 +2100,13 @@ struct ConvIm2ColNHWC[
             conv._run_implicit_matmul()
 
         async_parallelize[task_func](out_chain, num_tasks_m * num_tasks_n)
+
+        # TODO (#12624): Closure captures some state on the stack so this needs
+        # to be synchronous in order to keep that state alive
+        __mlir_op.`pop.external_call`[
+            func : __mlir_attr.`@KGEN_CompilerRT_LLCL_OutputChainPtr_Await`,
+            _type:None,
+        ](out_chain.ptr)
 
     fn __init__(
         self&,
@@ -2636,14 +2643,24 @@ struct ConvIm2ColNHWC[
                     self.col_start_idx,
                     self.total_col_count,
                 )
-                row_idx += RowSize
 
                 @parameter
                 if elementwise_epilogue_enabled & last_k_tile:
                     self.elementwise_epilogue_fn(
                         current_offset,
-                        GemmShape {M: RowSize, N: sub_tile_n_k[0], K: 0},
+                        GemmShape {
+                            M: RowSize,
+                            # TODO: simplify propagation of bounds
+                            N: min(
+                                sub_tile_n_k[0],
+                                self.col_start_idx
+                                + self.total_col_count
+                                - current_offset.N,
+                            ),
+                            K: 0,
+                        },
                     )
+                row_idx += RowSize
 
         unswitch[m_loop_switch](
             (self.conv_shape.pad_h != Index(0, 0))

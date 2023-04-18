@@ -11,6 +11,7 @@ from Bit import _is_neg
 from DType import DType
 from Math import erf, exp, clamp, max, min, identity, tanh
 from SIMD import SIMD
+from LLCL import OutputChainPtr
 
 
 @register_passable("trivial")
@@ -47,7 +48,7 @@ struct ActivationType:
             NoneType,
             `>`,
         ]
-    ](self):
+    ](self, out_chain: OutputChainPtr):
         if self == ActivationType.IDENTITY:
             func[ActivationType.IDENTITY]()
         elif self == ActivationType.RELU:
@@ -67,7 +68,7 @@ struct ActivationType:
         elif self == ActivationType.TANH:
             func[ActivationType.TANH]()
         else:
-            debug_assert(True, "unsupported activation")
+            out_chain.mark_error("Unsupported activation function.")
 
 
 @always_inline
