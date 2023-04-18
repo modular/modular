@@ -18,61 +18,6 @@ namespace M::KGEN {
 class IREvaluator;
 
 //===----------------------------------------------------------------------===//
-// New elaborator entry point
-//===----------------------------------------------------------------------===//
-
-LogicalResult elaborateGeneratorsV2(mlir::SymbolTableAnalysis &analysis,
-                                    LLCL::Runtime &runtime,
-                                    TargetInfoAttr target,
-                                    ArrayRef<GeneratorOp> primaryGenerators,
-                                    bool enableSearch);
-
-//===----------------------------------------------------------------------===//
-// ElaboratedGenerator
-//===----------------------------------------------------------------------===//
-
-/// This typedef represents a generator declaration + a set of input
-/// parameters that provide a complete binding for something that can be
-/// resolved.
-using DeclAndInputParamsPair = std::pair<DeclInterface, ArrayAttr>;
-
-/// This class keeps track of one result from binding a generator to a set of
-/// input parameters.  It holds both the func that gets produced as well as
-/// the (transitive) set of generator bindings used to create it.  This is
-/// used to ensure that further-derived generators are only elaborated with
-/// consistent bindings.
-class ElaboratedGenerator {
-public:
-  explicit ElaboratedGenerator(FuncOp func) : func(func) {}
-
-  /// This is the func that is produced.
-  FuncOp func;
-
-  /// These are the bindings used to produce the func.  The results are
-  /// transitively flattened, so we don't need to maintain a tree of bindings.
-  SmallDenseMap<DeclAndInputParamsPair, FuncOp> bindings;
-
-  /// If we have a binding for the specified generator+InputParamSet, return
-  /// it, otherwise return null.
-  FuncOp getBinding(DeclAndInputParamsPair key) const;
-
-  /// Return true if the set of bindings in this elaborated func are
-  /// consistent with the specified set of bindings.
-  bool isConsistentWith(const ElaboratedGenerator &other) const;
-
-  /// Declare that we're resolving the specified `declAndInputParams` to a
-  /// specified callee.  The callee is known to have bindings that are
-  /// consistent with ours, but may have additional entries to merge in.
-  void addBinding(DeclAndInputParamsPair declAndInputParams,
-                  const ElaboratedGenerator &newCallee);
-
-  LLVM_DUMP_METHOD void dump() const;
-
-private:
-  void addOneBinding(DeclAndInputParamsPair declAndInputParams, FuncOp result);
-};
-
-//===----------------------------------------------------------------------===//
 // Elaborator
 //===----------------------------------------------------------------------===//
 
