@@ -81,12 +81,11 @@ struct StructWithLets:
 
 def func():
   never_declared_fn() # expected-error {{use of unknown declaration 'never_declared_fn'}}
-  pass
 
 # expected-error @+1 {{special function must have 2 operands}}
-def __add__(): pass
+fn __add__(): pass
 # expected-error @+1 {{special function must be a method}}
-def __sub__(self, a): pass
+fn __sub__(self: Int, a: Int): pass
 
 # Test differences between fn and def.
 fn testFn(a: Int, b): # expected-error {{'fn' parameter type must be specified}}
@@ -158,6 +157,10 @@ fn top_level_fn():
         return
     return
 
+# expected-note @+2 {{consider passing by reference instead}}
+# expected-error @+1 {{'def' requires argument type '$decls-errors::ThingWithStaticMethod' to be copyable, but it doesn't provide a '__copyinit__' method}}
+def use_non_copyable_type(a: ThingWithStaticMethod):
+  pass
 
 ##===----------------------------------------------------------------------===##
 # Default Arguments, Varargs, and Packs

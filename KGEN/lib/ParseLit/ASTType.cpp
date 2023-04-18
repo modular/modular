@@ -103,6 +103,25 @@ bool ASTType::hasDestructor(llvm::SMLoc loc, SharedState &shared) const {
   return structOp.getDestructorAttr() != TypedAttr();
 }
 
+/// Return true if this type is copyable, either because it is trivial or has
+/// a copy constructor. Note: this resolves the body of a struct type.
+bool ASTType::isCopyable(llvm::SMLoc loc, SharedState &shared) const {
+  ASTDecl *typeDecl = getDecl(shared);
+  if (!typeDecl)
+    return true; // MLIR Types are copyable.
+
+  if (failed(shared.declResolver->resolveFully(*typeDecl, loc)))
+    return true;
+
+  // If the type is trivial, then it is copyable.
+  if (cast<StructDeclOp>(*typeDecl).getRegisterPassable() ==
+      StructDeclOp::RP_RegisterPassableTrivial)
+    return true;
+
+  auto copyName = StringAttr::get(shared.getContext(), "__copyinit__");
+  return typeDecl->lookupInCurrentScope(copyName) != nullptr;
+}
+
 /// Given a POP::PointerType, return the element as an ASTType.  This aborts
 /// if the current type isn't a pointer.
 ASTType ASTType::getPointerElementType() const {

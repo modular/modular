@@ -2005,21 +2005,35 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     case ValueInputConvention::BorrowedInReg:
     case ValueInputConvention::BorrowedInMem:
       // If this was passed by-value, then it becomes an rvalue in a `fn`.
-      if (!funcOp.getIsDef()) {
-        if (convention == ValueInputConvention::BorrowedInMem)
-          argIRValue = MBValue(bbArg);
-        else
-          argIRValue = SBValue(bbArg);
+      if (convention == ValueInputConvention::BorrowedInMem)
+        argIRValue = MBValue(bbArg);
+      else
+        argIRValue = SBValue(bbArg);
+      if (!funcOp.getIsDef())
         break;
-      }
 
-      // In a `def`, we create a mutable var.decl lvalue to allow
-      // reassignment.  Figure out how to model the input value.
+      // In a `def`, we create a mutable var.decl lvalue to allow reassignment.
+      // Figure out how to model the input value.
       CValue srcVal;
       if (convention == ValueInputConvention::BorrowedInMem)
         srcVal = MBValue(bbArg);
       else
         srcVal = SBValue(bbArg);
+
+      // Check that the value is copyable - if not we want to emit a specific
+      // error.
+      if (!srcVal.getRValueType().isCopyable(argDecl.getLoc(), shared)) {
+        auto diag =
+            emitError(argDecl.getLoc())
+            << "'def' requires argument type " << srcVal.getRValueType()
+            << " to be copyable, but it doesn't provide a '__copyinit__' "
+               "method";
+        diag.attachNote(argDecl.getLoc())
+            << "consider passing by reference instead"
+            << LitFixIt::insertAfterToken(argDecl.getLoc(), "&", shared);
+        break;
+      }
+
       argIRValue = makeArgLValueVarSlot(srcVal, argName, decl, builder,
                                         argDecl.getLoc(), shared);
       break;
