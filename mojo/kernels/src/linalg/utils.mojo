@@ -4,9 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from DType import DType
 from Index import StaticIntTuple, Index
 from Math import div_ceil, max, min
-from TargetInfo import has_avx512f, has_neon, os_is_macos
+from TargetInfo import has_avx512f, has_neon, os_is_macos, dtype_simd_width
 from BuildInfo import is_relwithdebinfo_build, is_debug_build
 
 # The number of registers used for the inner kernel is:
@@ -148,7 +149,8 @@ fn get_partitioned_matmul[
     # @parameter
     # if heuristic == PartitionHeuristic.MOJO:
     return get_partitioned_matmul_mojo[
-        get_matmul_a_row_size(), get_matmul_pack_inner_size()
+        get_matmul_a_row_size(),
+        get_matmul_pack_inner_size() * dtype_simd_width[DType.f32](),
     ](m, n, k, task_id, num_tasks)
 
 
@@ -156,6 +158,12 @@ fn get_partitioned_matmul_mojo[
     micro_kernel_m: Int,
     micro_kernel_n: Int,
 ](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
+    # Based on current performance measuremnt of DLRM. Row-wise Partition
+    # leads to better performance for (m == n and k < m). The reason is not
+    # in the shape but how we set cache size (hardcoded for now) and
+    # decide tile shape.
+    # TODO: generalize if condition once we can configure cache and tiling
+    # parameters based on hardwared spec and thread count.
     if m > n or (m == n and k <= m):
         let row_range = partition_work(task_id, num_tasks, m, micro_kernel_m)
         return SubMatmulConfig(
