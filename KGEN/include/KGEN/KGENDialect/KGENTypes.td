@@ -151,7 +151,7 @@ def KGEN_ListType : KGENType<"List", "list", [
 
   let extraClassDeclaration = [{
     /// Try to narrow the length expression to an integer.
-    Optional<int64_t> getResolvedLength() const;
+    std::optional<int64_t> getResolvedLength() const;
     /// Try to narrow the type expression of the list element type to an MLIR
     /// type.
     Type getResolvedElementType() const;

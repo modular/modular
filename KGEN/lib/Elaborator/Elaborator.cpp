@@ -1182,7 +1182,7 @@ void ElaboratorImpl::finalizeAndVerifyFunction(
   // emitted.
   std::string verificationErrorStr;
   llvm::raw_string_ostream verificationError(verificationErrorStr);
-  Optional<Location> verificationLoc;
+  std::optional<Location> verificationLoc;
   mlir::ScopedDiagnosticHandler diagHandler(
       func.getContext(), [&](Diagnostic &diag) -> LogicalResult {
         // Combine multiple verification errors.

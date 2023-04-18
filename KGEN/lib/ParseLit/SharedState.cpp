@@ -453,7 +453,7 @@ ASTType SharedState::lookupObjectType(llvm::SMLoc loc, ASTDecl &context) {
 /// module cannot be found.
 static std::optional<std::string>
 resolveModulePath(StringRef moduleName,
-                  const Optional<std::string> &autoImportDir,
+                  const std::optional<std::string> &autoImportDir,
                   llvm::SourceMgr &sourceMgr, llvm::SMLoc includeLoc) {
   // Python has lots of magic rules surrounding how modules get resolved. For
   // now, we just use the available include directories within the source

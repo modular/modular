@@ -29,7 +29,7 @@ void ControlFlowTree::buildTree(ControlFlowNode node, unsigned &nodeId,
       if (!terminator || terminator->hasTrait<mlir::OpTrait::ReturnLike>())
         continue;
 
-      Optional<unsigned> nodeId;
+      std::optional<unsigned> nodeId;
       for (unsigned id : llvm::reverse(nodeIds)) {
         if (terminator.isParentNode(ops[id])) {
           nodeId = id;

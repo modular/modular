@@ -59,7 +59,7 @@ struct ControlFlowConverter {
 } // namespace
 
 static Block *getTargetBlock(ArrayRef<Block *> entries, Block *after,
-                             Optional<unsigned> index) {
+                             std::optional<unsigned> index) {
   if (!index)
     return after;
   return entries[*index];
