@@ -90,6 +90,55 @@ TEST_P(AsyncValueTest, AnyProducerConsumer) {
 // No stray references
 //===----------------------------------------------------------------------===//
 
+TEST_P(AsyncValueTest, IsUnique) {
+  auto runtime = createRuntime();
+
+  {
+    auto ref = AsyncValueRef<int>::allocate(*runtime);
+    ASSERT_TRUE(ref.getPointer()->isUnique());
+    std::move(ref).emplace(42);
+  }
+
+  {
+    auto ref = AsyncValueRef<int>::allocate(*runtime);
+    auto ref2 = ref.copy();
+    ASSERT_FALSE(ref.getPointer()->isUnique());
+    std::move(ref).emplace(42);
+  }
+
+  {
+    auto indirectRef = AnyAsyncValueRef::createIndirect(*runtime);
+    auto concreteRef = AsyncValueRef<int>::createReady(*runtime, 42);
+    indirectRef.copy().resolveIndirect(std::move(concreteRef));
+    ASSERT_TRUE(indirectRef.getPointer()->isUnique());
+  }
+
+  {
+    auto indirectRef = AnyAsyncValueRef::createIndirect(*runtime);
+    auto concreteRef = AsyncValueRef<int>::allocate(*runtime);
+    indirectRef.copy().resolveIndirect(concreteRef.copy());
+    ASSERT_FALSE(indirectRef.getPointer()->isUnique());
+    std::move(concreteRef).emplace(42);
+  }
+
+  {
+    auto indirectRef = AnyAsyncValueRef::createIndirect(*runtime);
+    auto concreteRef = AsyncValueRef<int>::createReady(*runtime, 42);
+    auto concreteRef2 = concreteRef.copy();
+    auto concreteRef3 = concreteRef.copy();
+    indirectRef.copy().resolveIndirect(std::move(concreteRef));
+    ASSERT_FALSE(indirectRef.getPointer()->isUnique());
+  }
+
+  {
+    auto indirectRef = AnyAsyncValueRef::createIndirect(*runtime);
+    auto indirectRef2 = indirectRef.copy();
+    auto concreteRef = AsyncValueRef<int>::createReady(*runtime, 42);
+    indirectRef.copy().resolveIndirect(std::move(concreteRef));
+    ASSERT_FALSE(indirectRef.getPointer()->isUnique());
+  }
+}
+
 TEST_P(AsyncValueTest, SyncConsuming) {
   auto runtime = createRuntime();
   auto finished = AsyncValueRef<int>::allocate(*runtime);
@@ -97,11 +146,11 @@ TEST_P(AsyncValueTest, SyncConsuming) {
   ref.andThenSync([ref = ref.copy(), finished = finished.copy()]() mutable {
     // At this point r is the only remaining reference due to the use
     // of AsyncValue::emplace below.
-    EXPECT_EQ(ref.getPointer()->getRefCount(), 1u);
+    EXPECT_TRUE(ref.getPointer()->isUnique());
     EXPECT_EQ(ref.get<int>(), 1);
     std::move(finished).emplace(2);
   });
-  EXPECT_EQ(ref.getPointer()->getRefCount(), 2u);
+  EXPECT_EQ(ref.getPointer()->getRefCountForDebugging(), 2u);
   std::move(ref).emplace<int>(1);
   await(finished);
   EXPECT_EQ(finished.get(), 2);
@@ -114,11 +163,11 @@ TEST_P(AsyncValueTest, AsyncConsuming) {
   ref.andThenAsync([ref = ref.copy(), finished = finished.copy()]() mutable {
     // At this point r is the only remaining reference due to the use
     // of AsyncValue::emplace below.
-    EXPECT_EQ(ref.getPointer()->getRefCount(), 1u);
+    EXPECT_TRUE(ref.getPointer()->isUnique());
     EXPECT_EQ(ref.get<int>(), 1);
     std::move(finished).emplace(2);
   });
-  EXPECT_EQ(ref.getPointer()->getRefCount(), 2u);
+  EXPECT_EQ(ref.getPointer()->getRefCountForDebugging(), 2u);
   std::move(ref).emplace<int>(1);
   await(finished);
   EXPECT_EQ(finished.get(), 2);
@@ -264,8 +313,8 @@ TEST_P(AsyncValueTest, TupleAndThenSync) {
                                            AnyAsyncValueRef ref2) mutable {
                 // Confirm that the closure is running after the original
                 // `ref` is destroyed.
-                EXPECT_EQ(ref1.getPointer()->getRefCount(), 1u);
-                EXPECT_EQ(ref2.getPointer()->getRefCount(), 1u);
+                EXPECT_TRUE(ref1.getPointer()->isUnique());
+                EXPECT_TRUE(ref2.getPointer()->isUnique());
                 EXPECT_EQ(ref1.get<int>(), 1);
                 EXPECT_EQ(ref2.get<char>(), 'a');
                 std::move(finished).emplace(2);
@@ -286,8 +335,8 @@ TEST_P(AsyncValueTest, TupleAndThenAsync) {
                                             AnyAsyncValueRef ref2) mutable {
                  // Confirm that the closure is running after the original
                  // `ref` is destroyed.
-                 EXPECT_EQ(ref1.getPointer()->getRefCount(), 1u);
-                 EXPECT_EQ(ref2.getPointer()->getRefCount(), 1u);
+                 EXPECT_TRUE(ref1.getPointer()->isUnique());
+                 EXPECT_TRUE(ref2.getPointer()->isUnique());
                  EXPECT_EQ(ref1.get<int>(), 1);
                  EXPECT_EQ(ref2.get<char>(), 'a');
                  std::move(finished).emplace(2);
@@ -306,17 +355,17 @@ TEST_P(AsyncValueTest, ArrayCopyingSync) {
   refs.emplace_back(AnyAsyncValueRef::allocate<int>(*runtime));
   refs[0].copy().emplace<int>(1);
   refs[1].copy().emplace<int>(2);
-  andThenSyncCopying(llvm::ArrayRef(refs),
-                     [finished = finished.copy()](
-                         llvm::ArrayRef<AnyAsyncValueRef> elts) mutable {
-                       // `refs` is copied, so each element has refcount 2 when
-                       // the completion function is executed.
-                       EXPECT_EQ(elts[0].getPointer()->getRefCount(), 2u);
-                       EXPECT_EQ(elts[1].getPointer()->getRefCount(), 2u);
-                       EXPECT_EQ(elts[0].get<int>(), 1);
-                       EXPECT_EQ(elts[1].get<int>(), 2);
-                       std::move(finished).emplace(3);
-                     });
+  andThenSyncCopying(
+      llvm::ArrayRef(refs), [finished = finished.copy()](
+                                llvm::ArrayRef<AnyAsyncValueRef> elts) mutable {
+        // `refs` is copied, so each element has refcount 2 when
+        // the completion function is executed.
+        EXPECT_EQ(elts[0].getPointer()->getRefCountForDebugging(), 2u);
+        EXPECT_EQ(elts[1].getPointer()->getRefCountForDebugging(), 2u);
+        EXPECT_EQ(elts[0].get<int>(), 1);
+        EXPECT_EQ(elts[1].get<int>(), 2);
+        std::move(finished).emplace(3);
+      });
   await(finished);
   EXPECT_EQ(finished.get(), 3);
 }
@@ -329,17 +378,17 @@ TEST_P(AsyncValueTest, ArrayCopyingAsync) {
   refs.emplace_back(AnyAsyncValueRef::allocate<int>(*runtime));
   refs[0].copy().emplace<int>(1);
   refs[1].copy().emplace<int>(2);
-  andThenAsyncCopying(llvm::ArrayRef(refs),
-                      [finished = finished.copy()](
-                          llvm::ArrayRef<AnyAsyncValueRef> elts) mutable {
-                        // `refs` is copied, so each element has refcount 2 when
-                        // the completion function is executed.
-                        EXPECT_EQ(elts[0].getPointer()->getRefCount(), 2u);
-                        EXPECT_EQ(elts[1].getPointer()->getRefCount(), 2u);
-                        EXPECT_EQ(elts[0].get<int>(), 1);
-                        EXPECT_EQ(elts[1].get<int>(), 2);
-                        std::move(finished).emplace(3);
-                      });
+  andThenAsyncCopying(
+      llvm::ArrayRef(refs), [finished = finished.copy()](
+                                llvm::ArrayRef<AnyAsyncValueRef> elts) mutable {
+        // `refs` is copied, so each element has refcount 2 when
+        // the completion function is executed.
+        EXPECT_EQ(elts[0].getPointer()->getRefCountForDebugging(), 2u);
+        EXPECT_EQ(elts[1].getPointer()->getRefCountForDebugging(), 2u);
+        EXPECT_EQ(elts[0].get<int>(), 1);
+        EXPECT_EQ(elts[1].get<int>(), 2);
+        std::move(finished).emplace(3);
+      });
   await(finished);
   EXPECT_EQ(finished.get(), 3);
 }
@@ -352,17 +401,18 @@ TEST_P(AsyncValueTest, ArrayMovingSync) {
   refs.emplace_back(AnyAsyncValueRef::allocate<int>(*runtime));
   refs[0].copy().emplace<int>(1);
   refs[1].copy().emplace<int>(2);
-  andThenSyncMoving(llvm::MutableArrayRef(refs),
-                    [finished = finished.copy()](
-                        llvm::MutableArrayRef<AnyAsyncValueRef> elts) mutable {
-                      // `refs` is moved, so each element has refcount 1 when
-                      // the completion function is executed.
-                      EXPECT_EQ(elts[0].getPointer()->getRefCount(), 1u);
-                      EXPECT_EQ(elts[1].getPointer()->getRefCount(), 1u);
-                      EXPECT_EQ(elts[0].get<int>(), 1);
-                      EXPECT_EQ(elts[1].get<int>(), 2);
-                      std::move(finished).emplace(3);
-                    });
+  andThenSyncMoving(
+      llvm::MutableArrayRef(refs),
+      [finished = finished.copy()](
+          llvm::MutableArrayRef<AnyAsyncValueRef> elts) mutable {
+        // `refs` is moved, so each element has refcount 1 when
+        // the completion function is executed.
+        EXPECT_TRUE(elts[0].getPointer()->isUnique());
+        EXPECT_TRUE(elts[1].getPointer()->isUnique());
+        EXPECT_EQ(elts[0].get<int>(), 1);
+        EXPECT_EQ(elts[1].get<int>(), 2);
+        std::move(finished).emplace(3);
+      });
   await(finished);
   EXPECT_EQ(finished.get(), 3);
 }
@@ -375,17 +425,18 @@ TEST_P(AsyncValueTest, ArrayMovingAsync) {
   refs.emplace_back(AnyAsyncValueRef::allocate<int>(*runtime));
   refs[0].copy().emplace<int>(1);
   refs[1].copy().emplace<int>(2);
-  andThenAsyncMoving(llvm::MutableArrayRef(refs),
-                     [finished = finished.copy()](
-                         llvm::MutableArrayRef<AnyAsyncValueRef> elts) mutable {
-                       // `refs` is moved, so each element has refcount 1 when
-                       // the completion function is executed.
-                       EXPECT_EQ(elts[0].getPointer()->getRefCount(), 1u);
-                       EXPECT_EQ(elts[1].getPointer()->getRefCount(), 1u);
-                       EXPECT_EQ(elts[0].get<int>(), 1);
-                       EXPECT_EQ(elts[1].get<int>(), 2);
-                       std::move(finished).emplace(3);
-                     });
+  andThenAsyncMoving(
+      llvm::MutableArrayRef(refs),
+      [finished = finished.copy()](
+          llvm::MutableArrayRef<AnyAsyncValueRef> elts) mutable {
+        // `refs` is moved, so each element has refcount 1 when
+        // the completion function is executed.
+        EXPECT_TRUE(elts[0].getPointer()->isUnique());
+        EXPECT_TRUE(elts[1].getPointer()->isUnique());
+        EXPECT_EQ(elts[0].get<int>(), 1);
+        EXPECT_EQ(elts[1].get<int>(), 2);
+        std::move(finished).emplace(3);
+      });
   await(finished);
   EXPECT_EQ(finished.get(), 3);
 }

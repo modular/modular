@@ -564,6 +564,15 @@ static llvm::StringRef stateToString(AsyncValue::State state) {
   llvm::llvm_unreachable_internal("missing case");
 }
 
+bool AsyncValue::isUniqueSlow() const {
+  assert(getSubclassKind() == SubclassKind::kIndirect);
+  assert(isReady(getState()) && "can only check for uniqueness of indirect "
+                                "async values after they are completed");
+  return static_cast<const Detail::IndirectAsyncValue *>(this)
+      ->value.getPointer()
+      ->isUnique();
+}
+
 /// CAUTION: Not thread safe!
 void AsyncValue::printDebug(raw_ostream &os) const {
   os << "AsyncValue(";
@@ -578,7 +587,7 @@ void AsyncValue::printDebug(raw_ostream &os) const {
   os << ", typeID=" << typeID.getTypeName();
   os << ", state=" << stateToString(getState());
 
-  if (subclassKind == SubclassKind::kIndirect && typeID != TypeID()) {
+  if (subclassKind == SubclassKind::kIndirect && isReady(getState())) {
     auto *indirect = static_cast<const Detail::IndirectAsyncValue *>(this);
     if (indirect->value.getPointer())
       os << ", value=" << *indirect->value.getPointer();
