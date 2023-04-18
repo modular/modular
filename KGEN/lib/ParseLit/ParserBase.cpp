@@ -65,7 +65,7 @@ ParseResult ParserBase::parseIdentifier(StringAttr &result,
 ///
 ParseResult
 ParserBase::parseListUntil(Token::Kind rightToken,
-                           const std::function<ParseResult()> &parseElement) {
+                           const function_ref<ParseResult()> &parseElement) {
 
   while (!consumeIf(rightToken)) {
     if (parseElement())
@@ -81,7 +81,7 @@ ParserBase::parseListUntil(Token::Kind rightToken,
 /// separated_list ::= (element (SEPARATOR element)* [SEPARATOR] TERMINATOR
 ///
 ParseResult ParserBase::parseSeparatedList(
-    Token::Kind separator, const std::function<ParseResult()> &parseElement,
+    Token::Kind separator, const function_ref<ParseResult()> &parseElement,
     ArrayRef<Token::Kind> terminators, bool *hadTrailingSep) {
   if (hadTrailingSep)
     *hadTrailingSep = false;
