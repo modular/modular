@@ -134,7 +134,7 @@ public:
   /// list ::= (element)* STOPTOKEN
   ///
   ParseResult parseListUntil(Token::Kind stopToken,
-                             const std::function<ParseResult()> &parseElement);
+                             const function_ref<ParseResult()> &parseElement);
 
   /// Parse a list of elements continued with a separator token, like a comma.
   /// The list ends either with a terminator, which is not consumed, or a new
@@ -144,10 +144,10 @@ public:
   ///
   ParseResult
   parseSeparatedList(Token::Kind separator,
-                     const std::function<ParseResult()> &parseElement,
+                     const function_ref<ParseResult()> &parseElement,
                      ArrayRef<Token::Kind> terminators, bool *hadTrailingSep);
   ParseResult
-  parseCommaSeparatedList(const std::function<ParseResult()> &parseElement,
+  parseCommaSeparatedList(const function_ref<ParseResult()> &parseElement,
                           ArrayRef<Token::Kind> terminators,
                           bool *hadTrailingSep = nullptr) {
     return parseSeparatedList(Token::comma, parseElement, terminators,
