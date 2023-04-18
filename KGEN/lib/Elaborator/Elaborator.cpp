@@ -837,11 +837,10 @@ processParamApplyOp(ParamApplyOp op, FuncOp func, ExpansionTreeNode *parent) {
 /// Complete processing of a generator user by resolving any bound result types
 /// or parameters in the parent scope. This is the step that propagates result
 /// parameters from the inner scope to the outer scope.
-static void completeCallProcessing(KGENCallOpInterface user,
-                                   ArrayRef<ParamDeclAttr> decls,
-                                   ExpansionTreeNode *thisNode,
-                                   ExpansionTreeNode *parentNode,
-                                   Logger &logger) {
+static std::optional<ErrorTree>
+completeCallProcessing(KGENCallOpInterface user, ArrayRef<ParamDeclAttr> decls,
+                       ExpansionTreeNode *thisNode,
+                       ExpansionTreeNode *parentNode, Logger &logger) {
 
   // Add the callee's bindings to the parent of the call. This ensures that we
   // don't re-bind something we've already bound.
@@ -853,17 +852,13 @@ static void completeCallProcessing(KGENCallOpInterface user,
 
   ErrorTreeOr<FuncOp> newCalleeFuncOr = thisNode->getFirstConcrete();
   if (newCalleeFuncOr.isError())
-    return;
+    return {};
 
   FuncOp newCalleeFunc = *newCalleeFuncOr;
 
   // If this is a `kgen.param.apply`, bind its result here.
-  if (auto apply = dyn_cast<ParamApplyOp>(*user)) {
-    if (std::optional<ErrorTree> err =
-            processParamApplyOp(apply, newCalleeFunc, parentNode))
-      thisNode->setToError(std::move(*err));
-    return;
-  }
+  if (auto apply = dyn_cast<ParamApplyOp>(*user))
+    return processParamApplyOp(apply, newCalleeFunc, parentNode);
 
   // Resolve any bound result types.
   SmallVector<Type> resultTypes;
@@ -872,7 +867,7 @@ static void completeCallProcessing(KGENCallOpInterface user,
         parentNode->evaluator.concretizeParameterExpr(user.getLoc(), result);
     if (typeOr.isError()) {
       thisNode->setToError(typeOr.takeError());
-      return;
+      return {};
     }
 
     resultTypes.push_back(typeOr.takeValue());
@@ -906,11 +901,11 @@ static void completeCallProcessing(KGENCallOpInterface user,
     thisNode->setToError(
         ErrorTree(userLoc, "could not resolve callee's necessary result "
                            "parameters, infinite recursive loop?"));
-    return;
+    return {};
   }
   // No decls, so we don't have to do anything.
   if (decls.empty())
-    return;
+    return {};
 
   // Bind the result parameters to the output parameter decls.
   assert(decls.size() == resultParams.size());
@@ -919,6 +914,7 @@ static void completeCallProcessing(KGENCallOpInterface user,
                                 << "\n");
     parentNode->evaluator.setOrOverwriteParameterValue(decl, bindValue);
   }
+  return {};
 }
 
 //===----------------------------------------------------------------------===//
@@ -1448,8 +1444,8 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
   if (found != parent->bindings.end()) {
     LLVM_DEBUG(
         found->getSecond()->print(logger.scope("Result: Existing Binding")));
-    completeCallProcessing(user, decls, found->getSecond(), parent, logger);
-    return std::nullopt;
+    return completeCallProcessing(user, decls, found->getSecond(), parent,
+                                  logger);
   }
 
   // Find the tree node that corresponds to the thing we're calling.
@@ -1569,8 +1565,9 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
     // Bind this concrete impl to this callee for this node.
     newNode->bindings[{calleeOp, inputParamKey}] = c;
 
-    completeCallProcessing(map.lookup(user.getOperation()), decls, c, newNode,
-                           logger);
+    if (std::optional<ErrorTree> err = completeCallProcessing(
+            map.lookup(user.getOperation()), decls, c, newNode, logger))
+      return err;
 
     LLVM_DEBUG(newNode->print(logger << "New Op "));
 
@@ -1590,9 +1587,7 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
 
   // Call completeGeneratorUserProcessing on the first concrete thing. This will
   // flow nested bindings upward correctly.
-  completeCallProcessing(user, decls, concrete.front(), parent, logger);
-
-  return std::nullopt;
+  return completeCallProcessing(user, decls, concrete.front(), parent, logger);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2322,7 +2317,7 @@ public:
     // Same for the target info, the build info is concretized in the IR.
     if (BuildInfoAttr bld = getBuildInfo(theModule)) {
       if (bld != build) {
-        theModule->emitError("build did not match, expected ")
+        mlir::emitError(theModule.getLoc(), "build did not match, expected ")
             << build << " but got " << bld;
         return signalPassFailure();
       }
