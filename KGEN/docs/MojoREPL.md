@@ -109,6 +109,30 @@ jupyter environment.
 $ mojo-jupyter-executor notebook.ipynb
 ```
 
+The executor also has a REPL mode, where you can execute an individual cell at
+a time. You can start the executor in this mode by running:
+
+```shell
+$ mojo-jupyter-executor
+```
+
+You will see a command prompt, where you can run simple commands like so:
+
+```shell
+[0] > print("hello")
+[stdout] hello
+
+[0] > :next-cell
+[1] > 
+```
+
+The number in square brackets is the 'cell ID' - this does not auto-increment 
+because you might want to (for example) dump the logs from a previous command
+in the same cell. You can control which cell you're in with the special 
+commands `:next-cell` and `:prev-cell`. These increment and decrement the cell
+counter, respectively. You can also cleanly exit the REPL mode by running
+`:exit`.
+
 ## `MojoREPL` Developer Guide
 
 ### Logging
