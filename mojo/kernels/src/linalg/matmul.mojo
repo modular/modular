@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from Activations import ActivationType
 from Assert import assert_param, debug_assert
 from DType import DType
 from Buffer import (
@@ -14,7 +15,7 @@ from Buffer import (
     partial_simd_store,
     _raw_stack_allocation,
 )
-from Functional import tile, unswitch, unroll, unroll2, BinaryClosure
+from Functional import tile, unswitch, unroll, unroll2, BinaryClosure, vectorize
 from Index import Index, StaticIntTuple
 from List import Dim, DimList, VariadicList, create_dim_list
 from Math import min, fma, div_ceil
@@ -63,8 +64,99 @@ struct MatmulConfig:
     var prefetch_b_distance_k: Int
 
 
-fn _null_epilogue(offset: GemmShape, tile_len: GemmShape):
+fn null_epilogue(offset: GemmShape, tile_len: GemmShape):
     pass
+
+
+fn activation_epilogue[
+    simd_width: Int,
+    type: DType,
+    shape_c: DimList[2],
+    activation_type: ActivationType,
+    activation_dispatch: __mlir_type[
+        `!kgen.signature<<`,
+        ActivationType,
+        `,`,
+        Int,
+        `,`,
+        DType,
+        `>(`,
+        SIMD[
+            __mlir_attr[`#kgen.param.index.ref<0, false, 2> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, Int],
+        ],
+        ` borrow) -> `,
+        SIMD[
+            __mlir_attr[`#kgen.param.index.ref<0, false, 2> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, Int],
+        ],
+        `>`,
+    ],
+](offset: GemmShape, tile_len: GemmShape, c: NDBuffer[2, shape_c, type],):
+    @parameter
+    if activation_type == ActivationType.IDENTITY:
+        return
+
+    @always_inline
+    fn activation_on_col_chunk[col_chunk_size: Int](idx_n: Int):
+        let n_coord = idx_n + offset.N
+        for idx_m in range(tile_len.M):
+            let m_coord = idx_m + offset.M
+            let c_coord = Index(m_coord, n_coord)
+            let c_val = c.simd_load[col_chunk_size](c_coord)
+            let activation = activation_dispatch[
+                activation_type, col_chunk_size, type
+            ](c_val)
+            c.simd_store[col_chunk_size](c_coord, activation)
+
+    vectorize[simd_width, activation_on_col_chunk](tile_len.N)
+
+
+fn bias_activation_epilogue[
+    simd_width: Int,
+    type: DType,
+    shape_c: DimList[2],
+    shape_bias: DimList[1],
+    activation_type: ActivationType,
+    activation_dispatch: __mlir_type[
+        `!kgen.signature<<`,
+        ActivationType,
+        `,`,
+        Int,
+        `,`,
+        DType,
+        `>(`,
+        SIMD[
+            __mlir_attr[`#kgen.param.index.ref<0, false, 2> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, Int],
+        ],
+        ` borrow) -> `,
+        SIMD[
+            __mlir_attr[`#kgen.param.index.ref<0, false, 2> : `, DType],
+            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, Int],
+        ],
+        `>`,
+    ],
+](
+    offset: GemmShape,
+    tile_len: GemmShape,
+    c: NDBuffer[2, shape_c, type],
+    bias: NDBuffer[1, shape_bias, type],
+):
+    @always_inline
+    fn bias_col_chunk[col_chunk_size: Int](idx_n: Int):
+        let n_coord = idx_n + offset.N
+        let bias_val = bias.simd_load[col_chunk_size](n_coord)
+        for idx_m in range(tile_len.M):
+            let m_coord = idx_m + offset.M
+            let c_coord = Index(m_coord, n_coord)
+            let c_val = c.simd_load[col_chunk_size](c_coord)
+            let activation = activation_dispatch[
+                activation_type, col_chunk_size, type
+            ](c_val + bias_val)
+            c.simd_store[col_chunk_size](c_coord, activation)
+
+    vectorize[simd_width, bias_col_chunk](tile_len.N)
 
 
 @register_passable("trivial")
@@ -1391,7 +1483,7 @@ struct TiledMatmul[
                 `) -> `,
                 NoneType,
             ],
-            callee:_null_epilogue,
+            callee:null_epilogue,
             paramDecls : __mlir_attr.`#kgen<param.decls[]>`,
         ]()
 
