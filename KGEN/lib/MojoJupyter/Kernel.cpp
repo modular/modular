@@ -262,8 +262,9 @@ LogicalResult MojoKernel::initialize(const char *mojoReplExe) {
       reinterpret_cast<void *>(initMojoKernel)));
   if (!mojoPlugin)
     return reportKernelError("unable to resolve libMojoJupyter location");
-  mojoPlugin.SetFilename(
-      ("libMojoLLDB" + mojoPlugin.GetFileNameExtension().GetStringRef()).str());
+
+  StringRef libExt = mojoPlugin.GetFilename().GetStringRef().split('.').second;
+  mojoPlugin.SetFilename(("libMojoLLDB." + libExt).str());
   if (!FileSystem::Instance().Exists(mojoPlugin))
     return reportKernelError("unable to locate libMojoLLDB plugin");
 

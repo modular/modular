@@ -11,52 +11,95 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/CompilerRT.h"
+#include "mlir/Support/FileUtilities.h"
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/Support/CommandLine.h"
+#include "llvm/Support/JSON.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/raw_ostream.h"
 #include <filesystem>
 #include <iostream>
 
-namespace M::KGEN::Mojo {
-class MojoKernel;
-class ExpressionExecutionState;
-} // namespace M::KGEN::Mojo
+using namespace M;
 
-using namespace M::KGEN::Mojo;
+//===----------------------------------------------------------------------===//
+// Kernel C-API
+//===----------------------------------------------------------------------===//
 
 using OutputFn = void (*)(const char *, const char *);
 
-extern "C" MojoKernel *initMojoKernel(OutputFn outputFn,
-                                      const char *mojoReplExe);
-extern "C" ExpressionExecutionState *
-startMojoExecution(MojoKernel *kernel, const char *cellId, const char *code);
-extern "C" int checkMojoExecutionFinished(MojoKernel *kernel,
-                                          ExpressionExecutionState *state);
-extern "C" void destroyMojoKernel(MojoKernel *kernel);
+using OpaqueMojoKernel = void *;
+using OpaqueExecutionState = void *;
+
+MODULAR_EXPORT OpaqueMojoKernel initMojoKernel(OutputFn outputFn,
+                                               const char *mojoReplExe);
+MODULAR_EXPORT OpaqueExecutionState startMojoExecution(OpaqueMojoKernel kernel,
+                                                       const char *cellId,
+                                                       const char *code);
+MODULAR_EXPORT int checkMojoExecutionFinished(OpaqueMojoKernel kernel,
+                                              OpaqueExecutionState state);
+MODULAR_EXPORT void destroyMojoKernel(OpaqueMojoKernel kernel);
 
 //===----------------------------------------------------------------------===//
-// Entry Point
+// MojoKernel
 //===----------------------------------------------------------------------===//
 
-/// This main function provides a REPL-like experience that calls into the
-/// Jupyter kernel. You can enter code at the prompt and execute it - the prompt
-/// itself will tell you the current 'cell'. This does not change automatically
-/// because we need to be able to (for example) print the logs generated for the
-/// current cell. In order to switch cells, you can use `:next-cell` or
+namespace {
+class MojoKernel {
+public:
+  MojoKernel(OutputFn outputFn, const char *mojoReplExe)
+      : kernel(initMojoKernel(outputFn, mojoReplExe)) {}
+  ~MojoKernel() {
+    if (kernel)
+      destroyMojoKernel(kernel);
+  }
+
+  /// The kernel is valid if it is non-null.
+  operator bool() const { return kernel; }
+
+  //===--------------------------------------------------------------------===//
+  // Execution
+  //===--------------------------------------------------------------------===//
+
+  /// This class represents a single cell execution.
+  class Execution {
+  public:
+    Execution(MojoKernel *kernel, OpaqueExecutionState state)
+        : kernel(kernel), state(state) {}
+
+    /// Return if the execution has finished.
+    bool hasFinished() const {
+      return checkMojoExecutionFinished(kernel->kernel, state);
+    }
+
+  private:
+    MojoKernel *kernel;
+    OpaqueExecutionState state;
+  };
+
+  /// Start a new cell execution.
+  Execution startExecution(const char *cellId, const char *code) {
+    return Execution(this, startMojoExecution(kernel, cellId, code));
+  }
+
+private:
+  /// The internal kernel object returned from the jupyter kernel.
+  OpaqueMojoKernel kernel;
+};
+} // namespace
+
+//===----------------------------------------------------------------------===//
+// REPL Executor
+//===----------------------------------------------------------------------===//
+
+/// This function provides a REPL-like experience that calls into the Jupyter
+/// kernel. You can enter code at the prompt and execute it - the prompt itself
+/// will tell you the current 'cell'. This does not change automatically because
+/// we need to be able to (for example) print the logs generated for the current
+/// cell. In order to switch cells, you can use `:next-cell` or
 /// `:prev-cell`. In order to exit cleanly, use `:exit`.
-
-int main(int argc, char *argv[]) {
-  std::optional<std::string> pathOr =
-      llvm::sys::Process::GetEnv("MODULAR_PATH");
-  std::filesystem::path exePath = std::filesystem::path(pathOr.value_or(".")) /
-                                  ".derived" / "build" / "lib" /
-                                  "mojo-repl-entry-point";
-
-  auto *kernel = initMojoKernel(
-      [](const char *kind, const char *msg) {
-        llvm::outs() << "[" << kind << "] " << msg << "\n";
-      },
-      exePath.c_str());
+static void executeAsREPL(MojoKernel *kernel) {
   int idx = 0;
   std::cout << "[" << idx << "] > ";
   for (std::string line; std::getline(std::cin, line);) {
@@ -79,10 +122,103 @@ int main(int argc, char *argv[]) {
       continue;
     }
 
-    auto *execution =
-        startMojoExecution(kernel, std::to_string(idx).c_str(), line.c_str());
-    while (!checkMojoExecutionFinished(kernel, execution))
+    auto execution =
+        kernel->startExecution(std::to_string(idx).c_str(), line.c_str());
+    while (!execution.hasFinished())
       continue;
   }
-  destroyMojoKernel(kernel);
+}
+
+//===----------------------------------------------------------------------===//
+// Jupyter Executor
+//===----------------------------------------------------------------------===//
+
+static LogicalResult executeNotebook(MojoKernel *kernel,
+                                     StringRef notebookPath) {
+  std::string errorMsg;
+  std::unique_ptr<llvm::MemoryBuffer> notebookFile =
+      mlir::openInputFile(notebookPath, &errorMsg);
+  if (!notebookFile) {
+    llvm::errs() << "error opening notebook file: " << errorMsg << "\n";
+    return failure();
+  }
+
+  // Parse the notebook file into a json object.
+  auto notebookJSON = llvm::json::parse(notebookFile->getBuffer());
+  if (!notebookJSON) {
+    llvm::errs() << "error parsing notebook file: " << notebookJSON.takeError()
+                 << "\n";
+    return failure();
+  }
+  auto notebook = notebookJSON->getAsObject();
+  if (!notebook) {
+    llvm::errs() << "error parsing notebook file: not a json object\n";
+    return failure();
+  }
+
+  // Check that we can actually find the cells.
+  auto *cells = notebook->getArray("cells");
+  if (!cells) {
+    llvm::errs() << "error parsing notebook file: no cells found\n";
+    return failure();
+  }
+
+  for (const auto &[index, cell] : llvm::enumerate(*cells)) {
+    // We only care about code cells.
+    auto *cellObj = cell.getAsObject();
+    auto *source = cellObj->getArray("source");
+    if (cellObj->getString("cell_type") != "code" || !source)
+      continue;
+
+    // Concatenate all of the lines of the cell into a single string.
+    std::string code;
+    for (const auto &line : *source)
+      if (std::optional<StringRef> lineStr = line.getAsString())
+        code += *lineStr;
+    if (code.empty())
+      continue;
+    code += "\n\n";
+
+    // Execute the cell code.
+    auto execution = kernel->startExecution(
+        ("cell_" + Twine(index)).str().c_str(), code.c_str());
+    while (!execution.hasFinished())
+      continue;
+  }
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// Entry Point
+//===----------------------------------------------------------------------===//
+
+int main(int argc, char *argv[]) {
+  llvm::cl::opt<std::string> notebookPath(
+      llvm::cl::desc("Optional notebook to execute, if not present the "
+                     "executor will run in REPL mode"),
+      llvm::cl::Positional, llvm::cl::Optional);
+  llvm::cl::ParseCommandLineOptions(argc, argv);
+
+  // Determine the path of the repl entry point.
+  std::optional<std::string> pathOr =
+      llvm::sys::Process::GetEnv("MODULAR_PATH");
+  std::filesystem::path exePath = std::filesystem::path(pathOr.value_or(".")) /
+                                  ".derived" / "build" / "lib" /
+                                  "mojo-repl-entry-point";
+
+  // Initialize the kernel.
+  MojoKernel kernel(
+      [](const char *kind, const char *msg) {
+        llvm::outs() << "[" << kind << "] " << msg << "\n";
+      },
+      exePath.c_str());
+
+  // If we have a notebook path, execute it, otherwise run in REPL mode.
+  if (notebookPath.getNumOccurrences()) {
+    if (failed(executeNotebook(&kernel, notebookPath)))
+      return 1;
+  } else {
+    executeAsREPL(&kernel);
+  }
+  return 0;
 }
