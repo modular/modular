@@ -81,5 +81,30 @@ $ jupyter-lab
 
 ### Environment Variables
  * `MOJO_JUPYTER_LOG_FILE`: Setting this will cause the jupyter notebook kernel
-     to log to the file specified. We recommend providing an absolute path 
-     here. If this is unspecified, the kernel simply logs to the stderr.  
+     to log to the file specified. We recommend providing an absolute path
+     here. If this is unspecified, the kernel simply logs to the stderr.
+
+## Debugging Compiler Issues
+
+Debugging compiler issues within the REPL environment is much different from
+debugging issues with a single .mojo or .🔥 module. Given that the REPL executes
+expressions across multiple invocations, it requires a different kind of mindset
+when debugging a crash or miscompilation. This section contains useful tips and
+tricks to make debugging issues within the REPL a bit easier.
+
+### mojo-jupyter-executor
+
+Jupyter notebooks generally involve a UI frontend component, with the backend
+execution somewhat hidden and difficult to interact with outside of logs; not to
+mention that the backend entry point is defined within python. This makes it
+difficult to debug Mojo issues the traditional way, i.e. via a debugger. To make
+this debugging flow a bit easier, Mojo provides a utility
+`mojo-jupyter-executor` that can be used to execute a notebook in an environment
+that is amenable to traditional debugging, e.g. via LLDB. To execute a notebook,
+simply provide it to `mojo-jupyter-executor`. This will launch the Mojo Jupyter
+kernel and execute each cell individually, as you would expect in a normal
+jupyter environment.
+
+```shell
+$ mojo-jupyter-executor notebook.ipynb
+```
