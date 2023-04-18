@@ -152,7 +152,7 @@ class InferenceSession:
 
     def load(
         self,
-        model_path: Path,
+        model_path: Union[str, Path],
         options: Optional[
             Union[TensorFlowLoadOptions, TorchLoadOptions]
         ] = None,
@@ -161,7 +161,7 @@ class InferenceSession:
 
         Parameters
         ----------
-        model_path: pathlib.Path
+        model_path: Union[str, pathlib.Path]
             Path to a model. May be a Tensorflow model in the SavedModel
             format or a traceable PyTorch model.
 
