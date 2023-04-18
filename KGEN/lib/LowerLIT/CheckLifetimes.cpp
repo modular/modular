@@ -1521,14 +1521,42 @@ void DestructorInsertion::destroyValuesAtEntry(const BitVector &entries,
              "nothing contains this bit?");
     }
 
-    // Ok, we know that we are destroying some field of this value.  If it is
-    // the entire value, emit a destructor call for it or the fields of it that
-    // need to be destroyed.
+    // Ok, we know that we are destroying some field of this value, find the
+    // whole value so we know the MLIR value.
     ValueRef fullValueRef = valueSet.getFullValueRef(nextValueInfo);
 
-    // Destroy this value at the start of the block.
-    destroyValueIfNeeded(valueInfos[nextValueInfo].value, fullValueRef, block,
-                         block.begin(), loc);
+    // If it is the entire value, emit a destructor call for it and mark those
+    // bits consumed.
+    if (fullValueRef.isAllPresent(entries)) {
+      destroyValueIfNeeded(valueInfos[nextValueInfo].value, fullValueRef, block,
+                           block.begin(), loc);
+    } else {
+      // If not, then we need to carefully destroy just the subfields requested.
+      // We cannot let destroyValueIfNeeded destroy other fields of the overall
+      // value that happen to be unconsumed.
+      unsigned valSize = fullValueRef.getNumBits();
+      // Note: would really like a BitVector::slice operation.
+      llvm::SmallBitVector origConsumed(valSize);
+      for (size_t i = 0, overallBit = fullValueRef.startBit; i != valSize;
+           ++i, ++overallBit) {
+        origConsumed[i] = consumedValues[overallBit];
+        // If we are not to destroy this, pretend it is already destroyed.
+        if (!entries[overallBit])
+          consumedValues[overallBit] = true;
+      }
+
+      // Destroy anything in the value that needs to go.
+      destroyValueIfNeeded(valueInfos[nextValueInfo].value, fullValueRef, block,
+                           block.begin(), loc);
+
+      // Restore any bits we fibbed about.
+      for (size_t i = 0, overallBit = fullValueRef.startBit; i != valSize;
+           ++i, ++overallBit) {
+        // If we are not to destroy this, pretend it is already destroyed.
+        if (!entries[overallBit])
+          consumedValues[overallBit] = origConsumed[i];
+      }
+    }
 
     // Find the next object to destroy.
     nextToDestroy = entries.find_next(fullValueRef.endBit - 1);

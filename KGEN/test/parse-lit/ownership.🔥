@@ -580,3 +580,46 @@ fn bigreg_test():
   varThing.a = RegExample()
 
   # CHECK-NEXT: kgen.param.constant: !lit.none
+
+# CHECK-LABEL: lit.struct.decl @ExoticDelExample
+@register_passable
+struct ExoticDelExample:
+  var cond: __mlir_type.i1
+  var b: BigRegExample
+  var c: RegExample
+
+ # CHECK-LABEL: lit.func @"__del___
+  fn __del___(owned self):
+    # CHECK-NEXT: %self_0 = lit.varlet.decl "self", var = true
+    # CHECK-NEXT: pop.store %self, %self_0
+
+    # self.b gets destroyed ASAP since it isn't used.
+    # CHECK-NEXT: %0 = lit.struct.gep %self_0[b]
+    # CHECK-NEXT: %1 = pop.load %0
+    # CHECK-NEXT: %2 = kgen.call {{.*}}__del___{{.*}}(%1)
+
+    # Test the condition
+    # CHECK-NEXT: %3 = lit.struct.gep %self_0[cond] : <i1> from <@"$ownership"::@ExoticDelExample>
+    # CHECK-NEXT: %4 = pop.load %3 : !pop.pointer<i1>
+    # CHECK-NEXT: hlcf.if %4 {
+    if self.cond:
+      # This side we manually consume for c.
+
+      # CHECK-NEXT: %6 = lit.struct.gep %self_0[c]
+      # CHECK-NEXT: %7 = lit.ownership.end.lifetime %6
+      # CHECK-NEXT: %8 = lit.load.consume %7
+      # CHECK-NEXT: %9 = kgen.call {{.*}}consume{{.*}}(%8)
+      # CHECK-NEXT: hlcf.yield
+      consume(self.c^)
+
+    # CHECK-NEXT: } else {
+    # Destroy C automatically on the else side.
+    # CHECK-NEXT:  %6 = lit.struct.gep %self_0[c]
+    # CHECK-NEXT:  %7 = pop.load %6
+    # CHECK-NEXT:  %8 = kgen.call {{.*}}__del___{{.*}}(%7)
+    # CHECK-NEXT:  hlcf.yield
+    # CHECK-NEXT:}
+
+    # CHECK-NEXT:%5 = kgen.param.constant: !lit.none = <#lit.none>
+    # CHECK-NEXT:lit.ownership.mark.destroyed %self_0
+    # CHECK-NEXT:kgen.return %5 : !lit.none
