@@ -7,6 +7,7 @@
 #include "MojoUserExpression.h"
 #include "../TypeSystem/MojoTypeSystem.h"
 #include "Logging.h"
+#include "MojoDiagnostic.h"
 #include "MojoExpressionParser.h"
 #include "MojoExpressionVariable.h"
 #include "lldb/Core/Debugger.h"
@@ -405,8 +406,13 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
     if (succeeded(result))
       return;
 
-    if (!diagnosticManager.HasFixIts())
+    if (!diagnosticManager.HasFixIts()) {
+      // Log the diagnostics emitted during parsing.
+      for (const auto &diag : diagnosticManager.Diagnostics())
+        if (const auto *mojoDiag = llvm::dyn_cast<MojoDiagnostic>(diag.get()))
+          impl->typeSystem.logDiagnostic(*mojoDiag);
       return;
+    }
 
     impl->typeSystem.debugLog("Attempting to rewrite the input expression");
 
