@@ -20,6 +20,8 @@
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Expression/ExpressionVariable.h"
 #include "lldb/Host/HostInfo.h"
+#include "lldb/Utility/LLDBLog.h"
+#include "lldb/Utility/Log.h"
 
 using namespace M;
 using namespace M::KGEN::Mojo;
@@ -114,7 +116,14 @@ static void eventThreadFunction(const lldb::TargetSP &target,
   auto errorStream = process->GetTarget().GetDebugger().GetAsyncErrorStream();
   // Report a message to the error stream.
   auto reportMessage = [errorStream](StringRef type, StringRef message) {
-    errorStream->AsRawOstream() << "[" << type << "] " << message << "\n";
+    // If the LLDB Expression logs are enabled, we should send our message
+    // there. This has the benefit of being able to automatically send our logs
+    // to a file if the LLDB log has been configured to do so. And if not, they
+    // will appear in the error stream anyway.
+    if (Log *log = GetLog(LLDBLog::Expressions))
+      LLDB_LOG(log, "[{0}] {1}", type, message);
+    else
+      errorStream->AsRawOstream() << "[" << type << "] " << message << "\n";
   };
   auto sendUserOutput = [errorStream](StringRef message) {
     errorStream->AsRawOstream() << "[User] " << message << "\n";
