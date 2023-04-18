@@ -54,6 +54,9 @@ fn MOGGExport():
     alias _print_shape_info = print_buffer_info
     alias _mark_output_chain_ready = mark_output_chain_ready
 
+    alias _test_many_ranks_and_types = test_many_ranks_and_types
+    alias _test_one_rank_many_tensor = test_one_rank_many_tensor
+
 
 # ===----------------------------------------------------------------------===#
 # Nop functions to expose different types to the compiler.
@@ -402,3 +405,49 @@ fn print_buffer_info[
 
     _printf("Strides: ")
     print(buffer.dynamic_stride)
+
+
+# ===----------------------------------------------------------------------===#
+# Special targets just for generation tests
+# ===----------------------------------------------------------------------===#
+
+
+fn test_many_ranks_and_types[
+    type1: DType,
+    rank1: Int,
+    type2: DType,
+    rank2: Int,
+    type3: DType,
+    rank3: Int,
+    type4: DType,
+    rank4: Int,
+    type5: DType,
+    rank5: Int,
+](
+    tensor1: NDBuffer[rank1, DimList[rank1].create_unknown(), type1],
+    tensor2: NDBuffer[rank2, DimList[rank2].create_unknown(), type2],
+    tensor3: NDBuffer[rank3, DimList[rank3].create_unknown(), type3],
+    tensor4: NDBuffer[rank4, DimList[rank4].create_unknown(), type4],
+    tensor5: NDBuffer[rank5, DimList[rank5].create_unknown(), type5],
+) -> NDBuffer[rank1, DimList[rank1].create_unknown(), type1]:
+    """
+    Used as a test target to ensure parameter deduction works when there are
+    many to deduce and also used to check errors.
+    """
+    return tensor1
+
+
+fn test_one_rank_many_tensor[
+    type: DType, rank: Int
+](
+    tensor1: NDBuffer[rank, DimList[rank].create_unknown(), type],
+    tensor2: NDBuffer[rank, DimList[rank].create_unknown(), type],
+    tensor3: NDBuffer[rank, DimList[rank].create_unknown(), type],
+    tensor4: NDBuffer[rank, DimList[rank].create_unknown(), type],
+    tensor5: NDBuffer[rank, DimList[rank].create_unknown(), type],
+) -> NDBuffer[rank, DimList[rank].create_unknown(), type]:
+    """
+    Used as a test target to ensure we can deduce type and rank when used by
+    many arguments.
+    """
+    return tensor1
