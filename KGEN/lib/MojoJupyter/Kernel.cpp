@@ -139,6 +139,7 @@ public:
     std::error_code ec;
     logStream = ConditionallyOwnedPointer<llvm::raw_ostream>::allocate<
         llvm::raw_fd_ostream>(*logFilePath, ec);
+    logStream->SetUnbuffered();
 
     // We must not error opening the log file provided.
     if (ec)
