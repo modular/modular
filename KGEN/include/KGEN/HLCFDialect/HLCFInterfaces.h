@@ -28,10 +28,10 @@ LogicalResult verifyControlFlowTerminator(ControlFlowTerminator op);
 
 namespace M::HLCF {
 struct ControlFlowTarget {
-  ControlFlowTarget(Optional<unsigned> index, ValueRange inputs = {})
+  ControlFlowTarget(std::optional<unsigned> index, ValueRange inputs = {})
       : index(index), inputs(inputs) {}
 
-  Optional<unsigned> index;
+  std::optional<unsigned> index;
   ValueRange inputs;
 };
 } // namespace M::HLCF
