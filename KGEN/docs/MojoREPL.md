@@ -108,3 +108,35 @@ jupyter environment.
 ```shell
 $ mojo-jupyter-executor notebook.ipynb
 ```
+
+## `MojoREPL` Developer Guide
+
+### Logging
+You can log information by using the methods on `MojoTypeSystem`. The way
+we log is by emitting events to the LLDB event handler interface.
+
+The way we treat event kinds is as follows (list in `MojoTypeSystem.h`):
+* `BroadcastUserMessage` events are flushed to the user's stderr immediately.
+* `DebugLog` events are buffered internally until either a
+  `FlushDebugAndIRDump` or an `ErrorLog` are sent.
+* `DumpIR` events are treated the same as `DebugLog`.
+* `ErrorLog` events are flushed immediately.
+
+Events are mostly handled by `MojoTypeSystem::handleEvent`, which implements 
+the behavior above. A new user can do whatever they want with the various 
+events as befits their specific application.
+
+Feel free to add more event kinds as is appropriate - event kinds ending
+with `Message` are shown to the user in the notebook, while event kinds
+ending in `Log` are not shown to the user.
+
+#### MojoJupyter Log Format
+The JSON format you'll see in the jupyter kernel logs is:
+```json
+{
+  // `|` separated list of event kinds. Each log event can be more than one 
+  // kind.
+  "type": "DebugLog|DumpIR|ErrorLog|BroadcastUserMessage",
+  "message": "<log message>"
+}
+```
