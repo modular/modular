@@ -312,11 +312,24 @@ public:
            state <= State::kUnconstructed4ValidOOLWaiterSlots;
   }
 
-  /// Return true if reference count is 1.
-  bool isUnique() const { return refcount.load() == 1; }
+  /// Returns true if the caller holds the only reference which could change
+  /// the AsyncValue.
+  ///  - For concrete AsyncValues, the ref count must be 1.
+  ///  - For *completed* indirect AsyncValues, both this and the target
+  ///    AsyncValue must have a ref count of 1.
+  ///
+  /// We don't allow yet-to-be completed indirect AsyncValues to be tested
+  /// for uniqueness since it is racy w.r.t. completion.
+  bool isUnique() const {
+    if (refcount.load() > 1)
+      return false;
+    if (getSubclassKind() == SubclassKind::kIndirect)
+      return isUniqueSlow();
+    return true;
+  }
 
   /// Returns the current reference count.
-  size_t getRefCount() const { return refcount.load(); }
+  size_t getRefCountForDebugging() const { return refcount.load(); }
 
   /// Return true if we tracking of live AsyncValue instances is enabled.
   static constexpr bool isAllocationTrackingEnabled() {
@@ -356,6 +369,9 @@ private:
 
   /// Decrease the reference count of this object, potentially deallocating it.
   void dropRef(uint16_t count = 1);
+
+  /// Slow path for isUnique for IndirectAsyncValues.
+  bool isUniqueSlow() const;
 
   //===--------------------------------------------------------------------===//
   // State held by an AsyncValue
