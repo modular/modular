@@ -153,8 +153,8 @@ static bool handleSpecialExpr(std::string &text,
                               DiagnosticManager &diagnosticManager,
                               MojoTypeSystem &typeSystem) {
   // Use rtrim to remove newlines/whitespace at the end. We want the exact
-  // equality check here so we don't match on something like `!dump_logs_foo`.
-  if (StringRef(text).rtrim() == "!dump_logs") {
+  // equality check here so we don't match on something like `!dump-logs-foo`.
+  if (StringRef(text).rtrim() == "!dump-logs") {
     typeSystem.flushIRDumpAndDebugLog();
     text = "";
     return true;

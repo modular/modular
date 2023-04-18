@@ -164,3 +164,14 @@ The JSON format you'll see in the jupyter kernel logs is:
   "message": "<log message>"
 }
 ```
+
+### Special Commands
+
+We support special commands in the MojoExpressionParser, which means they're 
+available across anything that uses the core expression parsing infrastructure.
+These commands start with `!` and do things like dumping internal logs. Again,
+feel free to add new commands, just please document them here!
+
+Current commands:
+* `!dump-logs` - This command sends a `FlushIRAndDebugLog` event, which 
+   instructs the various clients to flush their debug log caches immediately.
