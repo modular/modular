@@ -33,6 +33,7 @@ fn MOGGExport():
     alias _to_buffer = to_buffer
     alias _add = add
     alias _div = div
+    alias _cast = cast
     alias _erf = erf
     alias _exp = exp
     alias _load_scalar = load_scalar
@@ -48,7 +49,8 @@ fn MOGGExport():
     alias _simd_load_1D = simd_load_1D
     alias _simd_load_splat = simd_load_splat
     alias _simd_load_maybe_splat = simd_load_maybe_splat
-    alias _simd_target = dtype_simd_width
+    alias _simd_target = get_target_simd
+    alias _simd_width_to_int = simd_width_to_int
     alias _splat = splat
     alias _elementwise = elementwise_wrapper
     alias _print_shape_info = print_buffer_info
@@ -383,6 +385,29 @@ fn broadcast_to_tensor[
     )
 
     return out
+
+
+# When we have many SIMD types in one kernel we need to use the `min` of them.
+# This involves applying parameter expressions to this result which must be
+# `mlir.index` typed so we need to return as `mlir.index` and then cast to int.
+fn get_target_simd[type: DType]() -> __mlir_type.index:
+    return dtype_simd_width[type]().__as_mlir_index()
+
+
+fn simd_width_to_int[simd_width: __mlir_type.index]() -> Int:
+    return Int(simd_width)
+
+
+# ===----------------------------------------------------------------------===#
+# Cast op
+# ===----------------------------------------------------------------------===#
+
+# Cast a SIMD value to a new SIMD value of different type.
+@always_inline
+fn cast[
+    type: DType, new_type: DType, simd_width: Int
+](value: SIMD[type, simd_width],) -> SIMD[new_type, simd_width]:
+    return value.cast[new_type]()
 
 
 # ===----------------------------------------------------------------------===#
