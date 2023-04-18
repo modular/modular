@@ -175,7 +175,6 @@ class MojoKernel(Kernel):
         # functions we use.
         self.lib_mojo_jupyter: ctypes.CDLL = self.load_mojo_lib()
         self.lib_mojo_jupyter.initMojoKernel.restype = ctypes.c_void_p
-        self.lib_mojo_jupyter.startMojoExecution.restype = ctypes.c_void_p
         self.lib_mojo_jupyter.checkMojoExecutionFinished.restype = ctypes.c_int
 
         # The type of the output callback function. It takes a name and a
@@ -295,12 +294,10 @@ class MojoKernel(Kernel):
             self.auto_gen_cell_id_count += 1
 
         # Start execution of the expression.
-        executionState: ctypes.c_void_p = (
-            self.lib_mojo_jupyter.startMojoExecution(
-                ctypes.c_void_p(self.mojo_kernel),
-                ctypes.c_char_p(cell_id.encode("utf-8")),
-                ctypes.c_char_p(code.encode("utf-8")),
-            )
+        self.lib_mojo_jupyter.startMojoExecution(
+            ctypes.c_void_p(self.mojo_kernel),
+            ctypes.c_char_p(cell_id.encode("utf-8")),
+            ctypes.c_char_p(code.encode("utf-8")),
         )
 
         # Wait for the execution to finish.
@@ -312,7 +309,6 @@ class MojoKernel(Kernel):
             # Poll the kernel to see if the execution has finished.
             result: bool = self.lib_mojo_jupyter.checkMojoExecutionFinished(
                 ctypes.c_void_p(self.mojo_kernel),
-                ctypes.c_void_p(executionState),
             )
             if result:
                 break
