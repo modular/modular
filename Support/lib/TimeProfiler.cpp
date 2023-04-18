@@ -134,6 +134,8 @@ struct GlobalProfilerContext {
 
   /// A set of active thread profiler contexts.
   DenseSet<ThreadProfilerContext *> threadProfilerContexts;
+
+  SmallVector<std::string> inputShapes;
 };
 } // anonymous namespace
 
@@ -194,6 +196,11 @@ void M::Detail::timeTraceProfilerDestroy() {
 
   delete GlobalProfilerContext::instance;
   GlobalProfilerContext::instance = nullptr;
+}
+
+void M::Detail::timeTraceProfilerAddInputShape(const std::string &shape) {
+  assert(GlobalProfilerContext::instance && "profiler should be initialized");
+  GlobalProfilerContext::instance->inputShapes.push_back(shape);
 }
 
 //===----------------------------------------------------------------------===//
@@ -281,6 +288,18 @@ void M::Detail::timeTraceProfilerWriteTrace(llvm::raw_pwrite_stream &os) {
                    time_point_cast<microseconds>(ctx.beginningOfTime)
                        .time_since_epoch()
                        .count());
+
+  // Emit input tensor info
+  jsonOS.attributeBegin("tensorInfo");
+  jsonOS.objectBegin();
+  jsonOS.attributeBegin("inputShapes");
+  jsonOS.arrayBegin();
+  for (auto &shape : ctx.inputShapes)
+    jsonOS.value(shape);
+  jsonOS.arrayEnd();
+  jsonOS.attributeEnd();
+  jsonOS.objectEnd();
+  jsonOS.attributeEnd();
 
   // Emit software version info
   jsonOS.attributeBegin("versionInfo");

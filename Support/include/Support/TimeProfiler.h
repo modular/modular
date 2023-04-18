@@ -140,6 +140,10 @@ void timeTraceProfilerWriteTrace(llvm::raw_pwrite_stream &os);
 /// Data is textual, one line per event.
 void timeTraceProfilerWriteEventStream(llvm::raw_pwrite_stream &OS);
 
+/// Append given input shape to internal list.
+/// These will be included in metadata written to output stream.
+void timeTraceProfilerAddInputShape(const std::string &shape);
+
 /// Write profiling data to a file.
 /// The function will write to preferredFileName if provided, if not then will
 /// write to fallbackFileName appending .time-trace. Returns a StringError
@@ -155,6 +159,10 @@ struct TimeTraceProfiler {
     Detail::timeTraceProfilerInitialize(timeTraceGranularity, procName);
   }
   ~TimeTraceProfiler() { Detail::timeTraceProfilerDestroy(); }
+
+  void addInputShape(const std::string &shape) {
+    Detail::timeTraceProfilerAddInputShape(shape);
+  }
 
   //===--------------------------------------------------------------------===//
   // Output

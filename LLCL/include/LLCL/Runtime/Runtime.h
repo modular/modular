@@ -55,6 +55,9 @@ public:
   /// already happened, without doing an extraneous memory allocation.
   const AsyncValueRef<Chain> &getReadyChain() const { return readyChain; }
 
+  /// Return a reference to the profiler instance, if its been initialized.
+  std::optional<TimeTraceProfiler> &getProfiler() { return profiler; }
+
   //===--------------------------------------------------------------------===//
   // Memory Management
   //===--------------------------------------------------------------------===//
