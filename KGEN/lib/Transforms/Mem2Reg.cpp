@@ -4,9 +4,10 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPOps.h"
+#include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
-#include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
 using namespace KGEN;
@@ -107,15 +108,17 @@ void Mem2RegPass::promoteAlloc(StackAllocationOp alloc,
   for (Operation *user : users) {
     if (auto load = dyn_cast<LoadOp>(user)) {
       // We can't elide the load if it is loading uninitialized memory.
+      mlir::IRRewriter b{OpBuilder(load)};
       if (!curVal) {
         load.emitWarning("load of uninitialized memory")
                 .attachNote(alloc.getLoc())
             << "memory allocated here";
-        return;
+        // Replace the load with an undef vale.
+        b.replaceOpWithNewOp<UndefOp>(load, load.getType());
+      } else {
+        // Replace the load with the current value.
+        b.replaceOp(load, curVal);
       }
-      // Replace the load with the current value.
-      load.replaceAllUsesWith(curVal);
-      load->erase();
       ++numLoadsElided;
     } else {
       // The user must be a store. Save the new value.

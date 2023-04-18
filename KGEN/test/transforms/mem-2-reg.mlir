@@ -86,10 +86,10 @@ kgen.generator @nested_alloc(%arg0: index) -> index {
 
 // CHECK-LABEL: @read_uninitialized
 kgen.generator @read_uninitialized() -> index {
-  // CHECK-NEXT: %0 = pop.stack_allocation
+  // CHECK-NEXT: %0 = kgen.undef : index
   %0 = pop.stack_allocation 1 x index
-  // CHECK-NEXT: pop.load %0
   %1 = pop.load %0 : !pop.pointer<index>
+  // CHECK-NEXT: kgen.return %0
   kgen.return %1 : index
 }
 
