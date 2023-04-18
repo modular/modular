@@ -210,3 +210,19 @@ kgen.generator @invalid_rebind(%arg0: !pop.scalar<si32>) {
   %0 = kgen.rebind %arg0 : !pop.scalar<si32> to !pop.scalar<dt>
   kgen.return
 }
+
+// -----
+
+// expected-note @below {{failed to interpret function @fails_concrete}}
+kgen.generator @fails() -> index {
+  // expected-note @below {{failed to fold operation kgen.unreachable()}}
+  kgen.unreachable
+}
+
+// expected-error @below {{no viable expansions found}}
+kgen.generator @failed_apply() {
+  // expected-note @below {{failed to evaluate 'apply'}}
+  kgen.param.apply value = [() -> index: @fails]()
+  kgen.param.constant = <value>
+  kgen.return
+}
