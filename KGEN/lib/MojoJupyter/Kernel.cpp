@@ -14,6 +14,7 @@
 #include "../MojoLLDB/TypeSystem/MojoTypeSystem.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LogicalResult.h"
+#include "Support/STLExtras.h"
 #include "Support/SymbolExport.h"
 #include "lldb/API/LLDB.h"
 #include "lldb/Core/Debugger.h"
@@ -28,8 +29,10 @@
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/JSON.h"
+#include "llvm/Support/Process.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Triple.h"
+#include <filesystem>
 #include <thread>
 
 #define DEBUG_TYPE "mojo-jupyter"
@@ -121,7 +124,28 @@ public:
 
   MojoKernel(OutputFn outputFn)
       : outputFn(outputFn), mojoTypeSystemListener(Listener::MakeListener(
-                                "mojo-type-system.listener")) {}
+                                "mojo-type-system.listener")) {
+    // Check for an environment variable we'll use to specify the log file path.
+    std::optional<std::string> logFilePath =
+        llvm::sys::Process::GetEnv("MOJO_JUPYTER_LOG_FILE");
+    if (!logFilePath.has_value()) {
+      // If we don't have a log file path, simply log to stderr.
+      logStream =
+          ConditionallyOwnedPointer<llvm::raw_ostream>::borrow(&llvm::errs());
+      return;
+    }
+
+    // We have a path, log to a file.
+    std::error_code ec;
+    logStream = ConditionallyOwnedPointer<llvm::raw_ostream>::allocate<
+        llvm::raw_fd_ostream>(*logFilePath, ec);
+
+    // We must not error opening the log file provided.
+    if (ec)
+      llvm::report_fatal_error("Error opening " + Twine(*logFilePath) +
+                               " for logging: " + ec.message());
+  }
+
   ~MojoKernel() {
     if (process->IsValid())
       process->Destroy(/*force_kill=*/true);
@@ -179,6 +203,11 @@ private:
   MojoExpressionEvaluationOptions exprOpts;
   ThreadSP mainThread;
   ListenerSP mojoTypeSystemListener;
+
+  /// The stream to write logs to. This may point to a file if the
+  /// `MOJO_JUPYTER_LOG_FILE` env variable is specified, otherwise it points to
+  /// stderr.
+  ConditionallyOwnedPointer<llvm::raw_ostream> logStream;
 
   /// The mojo persistent expression state.
   MojoPersistentExpressionState *exprState = nullptr;
@@ -352,14 +381,14 @@ void MojoKernel::flushLLDBStreams(ExpressionExecutionState *state) {
 
   // Various logging utilities (like CloudWatch) parse JSON automatically so we
   // should use that for structured logging.
-  auto reportMessage = [](StringRef type, StringRef message) {
-    llvm::json::OStream j(llvm::errs());
+  auto reportMessage = [&](StringRef type, StringRef message) {
+    llvm::json::OStream j(*logStream);
     // Produce `{"type": <type>, "message": <message>}`
     j.object([&]() {
       j.attribute("type", type);
       j.attribute("message", message);
     });
-    llvm::errs() << "\n";
+    *logStream << "\n";
   };
 
   // The following gets the stream of events without timeout. All the messages

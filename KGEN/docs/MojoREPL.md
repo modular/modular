@@ -76,3 +76,10 @@ $ jupyter-init
 # Start a Jupyter server.
 $ jupyter-lab
 ```
+
+## Configuration
+
+### Environment Variables
+ * `MOJO_JUPYTER_LOG_FILE`: Setting this will cause the jupyter notebook kernel
+     to log to the file specified. We recommend providing an absolute path 
+     here. If this is unspecified, the kernel simply logs to the stderr.  
