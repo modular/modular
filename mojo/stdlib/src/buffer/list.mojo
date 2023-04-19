@@ -1433,6 +1433,211 @@ fn _get_kgen_list_item[
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline("nodebug")
+fn _convert_int_to_index_variadic_list[
+    sz: Int
+](l: VariadicList[Int]) -> VariadicList[__mlir_type.`index`]:
+    """Converts VariadicList[Int] to VariadicList[__mlir_type.`index`].
+
+    Constraints:
+        Maximum supported list length is 15.
+
+    Parameters:
+        sz: The length of the list.
+
+    Args:
+        l: The list to convert.
+
+    Returns:
+        The produced index-typed list.
+    """
+
+    @parameter
+    if sz == 0:
+        return VariadicList[__mlir_type.`index`]()
+    elif sz == 1:
+        return VariadicList[__mlir_type.`index`](l[0].__as_mlir_index())
+    elif sz == 2:
+        return VariadicList[__mlir_type.`index`](
+            l[0].__as_mlir_index(), l[1].__as_mlir_index()
+        )
+    elif sz == 3:
+        return VariadicList[__mlir_type.`index`](
+            l[0].__as_mlir_index(),
+            l[1].__as_mlir_index(),
+            l[2].__as_mlir_index(),
+        )
+    elif sz == 4:
+        return VariadicList[__mlir_type.`index`](
+            l[0].__as_mlir_index(),
+            l[1].__as_mlir_index(),
+            l[2].__as_mlir_index(),
+            l[3].__as_mlir_index(),
+        )
+    elif sz == 5:
+        return VariadicList[__mlir_type.`index`](
+            l[0].__as_mlir_index(),
+            l[1].__as_mlir_index(),
+            l[2].__as_mlir_index(),
+            l[3].__as_mlir_index(),
+            l[4].__as_mlir_index(),
+        )
+    elif sz == 6:
+        return VariadicList[__mlir_type.`index`](
+            l[0].__as_mlir_index(),
+            l[1].__as_mlir_index(),
+            l[2].__as_mlir_index(),
+            l[3].__as_mlir_index(),
+            l[4].__as_mlir_index(),
+            l[5].__as_mlir_index(),
+        )
+    elif sz == 7:
+        return VariadicList[__mlir_type.`index`](
+            l[0].__as_mlir_index(),
+            l[1].__as_mlir_index(),
+            l[2].__as_mlir_index(),
+            l[3].__as_mlir_index(),
+            l[4].__as_mlir_index(),
+            l[5].__as_mlir_index(),
+            l[6].__as_mlir_index(),
+        )
+    elif sz == 8:
+        return VariadicList[__mlir_type.`index`](
+            l[0].__as_mlir_index(),
+            l[1].__as_mlir_index(),
+            l[2].__as_mlir_index(),
+            l[3].__as_mlir_index(),
+            l[4].__as_mlir_index(),
+            l[5].__as_mlir_index(),
+            l[6].__as_mlir_index(),
+            l[7].__as_mlir_index(),
+        )
+    elif sz == 9:
+        return VariadicList[__mlir_type.`index`](
+            l[0].__as_mlir_index(),
+            l[1].__as_mlir_index(),
+            l[2].__as_mlir_index(),
+            l[3].__as_mlir_index(),
+            l[4].__as_mlir_index(),
+            l[5].__as_mlir_index(),
+            l[6].__as_mlir_index(),
+            l[7].__as_mlir_index(),
+            l[8].__as_mlir_index(),
+        )
+    elif sz == 10:
+        return VariadicList[__mlir_type.`index`](
+            l[0].__as_mlir_index(),
+            l[1].__as_mlir_index(),
+            l[2].__as_mlir_index(),
+            l[3].__as_mlir_index(),
+            l[4].__as_mlir_index(),
+            l[5].__as_mlir_index(),
+            l[6].__as_mlir_index(),
+            l[7].__as_mlir_index(),
+            l[8].__as_mlir_index(),
+            l[9].__as_mlir_index(),
+        )
+    elif sz == 11:
+        return VariadicList[__mlir_type.`index`](
+            l[0].__as_mlir_index(),
+            l[1].__as_mlir_index(),
+            l[2].__as_mlir_index(),
+            l[3].__as_mlir_index(),
+            l[4].__as_mlir_index(),
+            l[5].__as_mlir_index(),
+            l[6].__as_mlir_index(),
+            l[7].__as_mlir_index(),
+            l[8].__as_mlir_index(),
+            l[9].__as_mlir_index(),
+            l[10].__as_mlir_index(),
+        )
+    elif sz == 12:
+        return VariadicList[__mlir_type.`index`](
+            l[0].__as_mlir_index(),
+            l[1].__as_mlir_index(),
+            l[2].__as_mlir_index(),
+            l[3].__as_mlir_index(),
+            l[4].__as_mlir_index(),
+            l[5].__as_mlir_index(),
+            l[6].__as_mlir_index(),
+            l[7].__as_mlir_index(),
+            l[8].__as_mlir_index(),
+            l[9].__as_mlir_index(),
+            l[10].__as_mlir_index(),
+            l[11].__as_mlir_index(),
+        )
+    elif sz == 13:
+        return VariadicList[__mlir_type.`index`](
+            l[0].__as_mlir_index(),
+            l[1].__as_mlir_index(),
+            l[2].__as_mlir_index(),
+            l[3].__as_mlir_index(),
+            l[4].__as_mlir_index(),
+            l[5].__as_mlir_index(),
+            l[6].__as_mlir_index(),
+            l[7].__as_mlir_index(),
+            l[8].__as_mlir_index(),
+            l[9].__as_mlir_index(),
+            l[10].__as_mlir_index(),
+            l[11].__as_mlir_index(),
+            l[12].__as_mlir_index(),
+        )
+    elif sz == 14:
+        return VariadicList[__mlir_type.`index`](
+            l[0].__as_mlir_index(),
+            l[1].__as_mlir_index(),
+            l[2].__as_mlir_index(),
+            l[3].__as_mlir_index(),
+            l[4].__as_mlir_index(),
+            l[5].__as_mlir_index(),
+            l[6].__as_mlir_index(),
+            l[7].__as_mlir_index(),
+            l[8].__as_mlir_index(),
+            l[9].__as_mlir_index(),
+            l[10].__as_mlir_index(),
+            l[11].__as_mlir_index(),
+            l[12].__as_mlir_index(),
+            l[13].__as_mlir_index(),
+        )
+    elif sz == 15:
+        return VariadicList[__mlir_type.`index`](
+            l[0].__as_mlir_index(),
+            l[1].__as_mlir_index(),
+            l[2].__as_mlir_index(),
+            l[3].__as_mlir_index(),
+            l[4].__as_mlir_index(),
+            l[5].__as_mlir_index(),
+            l[6].__as_mlir_index(),
+            l[7].__as_mlir_index(),
+            l[8].__as_mlir_index(),
+            l[9].__as_mlir_index(),
+            l[10].__as_mlir_index(),
+            l[11].__as_mlir_index(),
+            l[12].__as_mlir_index(),
+            l[13].__as_mlir_index(),
+            l[14].__as_mlir_index(),
+        )
+    assert_param[sz == 16]()
+    return VariadicList[__mlir_type.`index`](
+        l[0].__as_mlir_index(),
+        l[1].__as_mlir_index(),
+        l[2].__as_mlir_index(),
+        l[3].__as_mlir_index(),
+        l[4].__as_mlir_index(),
+        l[5].__as_mlir_index(),
+        l[6].__as_mlir_index(),
+        l[7].__as_mlir_index(),
+        l[8].__as_mlir_index(),
+        l[9].__as_mlir_index(),
+        l[10].__as_mlir_index(),
+        l[11].__as_mlir_index(),
+        l[12].__as_mlir_index(),
+        l[13].__as_mlir_index(),
+        l[14].__as_mlir_index(),
+        l[15].__as_mlir_index(),
+    )
+
+
 @register_passable("trivial")
 struct VariadicList[type: AnyType]:
     """A utility class to access variadic function arguments. Provides a "list"
