@@ -207,7 +207,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     ctx->disableMultithreading();
     pm.enableCrashReproducerGeneration(clOptions.inputFilename.getValue() +
                                            ".repro.mlir",
-                                       /*genLocalReproducer=*/true);
+                                       /*genLocalReproducer=*/false);
   }
 
   // Set up the runtime.
