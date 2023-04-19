@@ -358,9 +358,25 @@ void MojoKernel::startExecution(StringRef cellId, const char *expr) {
   executionState->executionThread =
       std::thread([this, expr = std::string(expr)]() mutable {
         LLVM_DEBUG(llvm::dbgs() << "Executing expression: " << expr << "\n");
+
+        SBValue value;
         unsigned exprInstIdx = exprState->getNumExpressionInstances();
-        SBValue value =
-            SBTarget(target).EvaluateExpression(expr.data(), exprOpts).GetSP();
+
+        // If the expression starts with `:`, then it is an LLDB command,
+        // otherwise it is a Mojo expression.
+        if (StringRef command(expr); command.consume_front(":")) {
+          CommandReturnObject result(/*colors=*/false);
+          target->GetDebugger().GetCommandInterpreter().HandleCommand(
+              command.rtrim().str().c_str(),
+              /*add_to_history=*/lldb_private::eLazyBoolNo, result);
+          sendOutput("output", result.GetOutputData());
+          sendOutput("error", result.GetErrorData());
+        } else {
+          value = SBTarget(target)
+                      .EvaluateExpression(expr.data(), exprOpts)
+                      .GetSP();
+        }
+
         executionState->result = value.GetSP();
         executionState->error = value.GetError();
 

@@ -146,35 +146,11 @@ char MojoUserExpression::ID;
 // Expression parsing and execution
 //===----------------------------------------------------------------------===//
 
-/// Handle a 'special expression' - which starts with `!`. Returns an error if
-/// we don't recognize the expression. On success, sets the text to an empty
-/// string so we just don't execute anything.
-static bool handleSpecialExpr(std::string &text,
-                              DiagnosticManager &diagnosticManager,
-                              MojoTypeSystem &typeSystem) {
-  // Use rtrim to remove newlines/whitespace at the end. We want the exact
-  // equality check here so we don't match on something like `!dump-logs-foo`.
-  if (StringRef(text).rtrim() == "!dump-logs") {
-    typeSystem.flushIRDumpAndDebugLog();
-    text = "";
-    return true;
-  }
-
-  diagnosticManager.Printf(eDiagnosticSeverityError,
-                           "Unknown special expression: %s", text.c_str());
-  return false;
-}
-
 bool MojoUserExpression::Parse(DiagnosticManager &diagnosticManager,
                                ExecutionContext &exeCtx,
                                ExecutionPolicy executionPolicy,
                                bool keepResultInMemory,
                                bool generateDebugInfo) {
-  // Check to see if it's a special expression.
-  if (StringRef(m_expr_text).starts_with("!"))
-    if (!handleSpecialExpr(m_expr_text, diagnosticManager, impl->typeSystem))
-      return false;
-
   // Setup the execution context.
   InstallContext(exeCtx);
 
