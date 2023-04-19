@@ -41,29 +41,29 @@ fn _transpose_inplace_4x4[
     let row3 = buf.simd_load[4](StaticIntTuple[2](3, 0))
 
     let tmp0 = row0.shuffle[
-        4, __mlir_attr.`#kgen<list[0, 1, 4, 5]> : !kgen.list<index[4]>`
+        4, __mlir_attr.`#kgen<variadic<0, 1, 4, 5>> : !kgen.variadic<index>`
     ](row1)
     let tmp1 = row2.shuffle[
-        4, __mlir_attr.`#kgen<list[0, 1, 4, 5]> : !kgen.list<index[4]>`
+        4, __mlir_attr.`#kgen<variadic<0, 1, 4, 5>> : !kgen.variadic<index>`
     ](row3)
     let tmp2 = row0.shuffle[
-        4, __mlir_attr.`#kgen<list[2, 3, 6, 7]> : !kgen.list<index[4]>`
+        4, __mlir_attr.`#kgen<variadic<2, 3, 6, 7>> : !kgen.variadic<index>`
     ](row1)
     let tmp3 = row2.shuffle[
-        4, __mlir_attr.`#kgen<list[2, 3, 6, 7]> : !kgen.list<index[4]>`
+        4, __mlir_attr.`#kgen<variadic<2, 3, 6, 7>> : !kgen.variadic<index>`
     ](row3)
 
     let r0 = tmp0.shuffle[
-        4, __mlir_attr.`#kgen<list[0, 2, 4, 6]> : !kgen.list<index[4]>`
+        4, __mlir_attr.`#kgen<variadic<0, 2, 4, 6>> : !kgen.variadic<index>`
     ](tmp1)
     let r1 = tmp0.shuffle[
-        4, __mlir_attr.`#kgen<list[1, 3, 5, 7]> : !kgen.list<index[4]>`
+        4, __mlir_attr.`#kgen<variadic<1, 3, 5, 7>> : !kgen.variadic<index>`
     ](tmp1)
     let r2 = tmp2.shuffle[
-        4, __mlir_attr.`#kgen<list[0, 2, 4, 6]> : !kgen.list<index[4]>`
+        4, __mlir_attr.`#kgen<variadic<0, 2, 4, 6>> : !kgen.variadic<index>`
     ](tmp3)
     let r3 = tmp2.shuffle[
-        4, __mlir_attr.`#kgen<list[1, 3, 5, 7]> : !kgen.list<index[4]>`
+        4, __mlir_attr.`#kgen<variadic<1, 3, 5, 7>> : !kgen.variadic<index>`
     ](tmp3)
 
     buf.simd_store[4](StaticIntTuple[2](0, 0), r0)
@@ -97,10 +97,10 @@ fn _transpose_inplace_8x8[
     let row7 = buf.simd_load[8](StaticIntTuple[2](7, 0))
 
     alias permute_0 = (
-        __mlir_attr.`#kgen<list[0, 8, 1, 9, 4, 12, 5, 13]> : !kgen.list<index[8]>`
+        __mlir_attr.`#kgen<variadic<0, 8, 1, 9, 4, 12, 5, 13>> : !kgen.variadic<index>`
     )
     alias permute_1 = (
-        __mlir_attr.`#kgen<list[2, 10, 3, 11, 6, 14, 7, 15]> : !kgen.list<index[8]>`
+        __mlir_attr.`#kgen<variadic<2, 10, 3, 11, 6, 14, 7, 15>> : !kgen.variadic<index>`
     )
 
     let k0 = row0.shuffle[8, permute_0](row1)
@@ -113,10 +113,10 @@ fn _transpose_inplace_8x8[
     let k7 = row6.shuffle[8, permute_1](row7)
 
     alias permute_2 = (
-        __mlir_attr.`#kgen<list[0, 1, 8, 9, 4, 5, 12, 13]> : !kgen.list<index[8]>`
+        __mlir_attr.`#kgen<variadic<0, 1, 8, 9, 4, 5, 12, 13>> : !kgen.variadic<index>`
     )
     alias permute_3 = (
-        __mlir_attr.`#kgen<list[2, 3, 10, 11, 6, 7, 14, 15]> : !kgen.list<index[8]>`
+        __mlir_attr.`#kgen<variadic<2, 3, 10, 11, 6, 7, 14, 15>> : !kgen.variadic<index>`
     )
 
     let k020 = k0.shuffle[8, permute_2](k2)
@@ -129,10 +129,10 @@ fn _transpose_inplace_8x8[
     let k571 = k5.shuffle[8, permute_3](k7)
 
     alias permute_4 = (
-        __mlir_attr.`#kgen<list[0, 1, 2, 3, 8, 9, 10, 11]> : !kgen.list<index[8]>`
+        __mlir_attr.`#kgen<variadic<0, 1, 2, 3, 8, 9, 10, 11>> : !kgen.variadic<index>`
     )
     alias permute_5 = (
-        __mlir_attr.`#kgen<list[4, 5, 6, 7, 12, 13, 14, 15]> : !kgen.list<index[8]>`
+        __mlir_attr.`#kgen<variadic<4, 5, 6, 7, 12, 13, 14, 15>> : !kgen.variadic<index>`
     )
 
     let r0 = k020.shuffle[8, permute_4](k460)
@@ -170,28 +170,28 @@ fn _transpose_inplace_16x16[
     ](buf0)
 
     alias permute_0 = (
-        __mlir_attr.`#kgen<list[0, 16, 1, 17, 4, 20, 5, 21, 8, 24, 9, 25, 12, 28, 13, 29]> : !kgen.list<index[16]>`
+        __mlir_attr.`#kgen<variadic<0, 16, 1, 17, 4, 20, 5, 21, 8, 24, 9, 25, 12, 28, 13, 29>> : !kgen.variadic<index>`
     )
     alias permute_1 = (
-        __mlir_attr.`#kgen<list[2, 18, 3, 19, 6, 22, 7, 23, 10, 26, 11, 27, 14, 30, 15, 31]> : !kgen.list<index[16]>`
+        __mlir_attr.`#kgen<variadic<2, 18, 3, 19, 6, 22, 7, 23, 10, 26, 11, 27, 14, 30, 15, 31>> : !kgen.variadic<index>`
     )
     alias permute_2 = (
-        __mlir_attr.`#kgen<list[0, 1, 16, 17, 4, 5, 20, 21, 8, 9, 24, 25, 12, 13, 28, 29]> : !kgen.list<index[16]>`
+        __mlir_attr.`#kgen<variadic<0, 1, 16, 17, 4, 5, 20, 21, 8, 9, 24, 25, 12, 13, 28, 29>> : !kgen.variadic<index>`
     )
     alias permute_3 = (
-        __mlir_attr.`#kgen<list[2, 3, 18, 19, 6, 7, 22, 23, 10, 11, 26, 27, 14, 15, 30, 31]> : !kgen.list<index[16]>`
+        __mlir_attr.`#kgen<variadic<2, 3, 18, 19, 6, 7, 22, 23, 10, 11, 26, 27, 14, 15, 30, 31>> : !kgen.variadic<index>`
     )
     alias permute_4 = (
-        __mlir_attr.`#kgen<list[0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27]> : !kgen.list<index[16]>`
+        __mlir_attr.`#kgen<variadic<0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27>> : !kgen.variadic<index>`
     )
     alias permute_5 = (
-        __mlir_attr.`#kgen<list[4, 5, 6, 7, 12, 13, 14, 15, 20, 21, 22, 23, 28, 29, 30, 31]> : !kgen.list<index[16]>`
+        __mlir_attr.`#kgen<variadic<4, 5, 6, 7, 12, 13, 14, 15, 20, 21, 22, 23, 28, 29, 30, 31>> : !kgen.variadic<index>`
     )
     alias permute_6 = (
-        __mlir_attr.`#kgen<list[0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27]> : !kgen.list<index[16]>`
+        __mlir_attr.`#kgen<variadic<0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27>> : !kgen.variadic<index>`
     )
     alias permute_7 = (
-        __mlir_attr.`#kgen<list[4, 5, 6, 7, 12, 13, 14, 15, 20, 21, 22, 23, 28, 29, 30, 31]> : !kgen.list<index[16]>`
+        __mlir_attr.`#kgen<variadic<4, 5, 6, 7, 12, 13, 14, 15, 20, 21, 22, 23, 28, 29, 30, 31>> : !kgen.variadic<index>`
     )
 
     let row00 = buf.simd_load[16](StaticIntTuple[2](0, 0))
