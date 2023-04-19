@@ -206,16 +206,12 @@ void MojoTypeSystem::handleEvent(
   // It may (also) be one of `eDumpIR`, `eDebugLog` or `eFlushIRAndDebugLog`.
   // Flush that correctly.
   if (event->GetType() & (eDumpIR | eDebugLog)) {
-    // If the LLDB Expressions logs are enabled, we should send this message out
-    // right away instead of collecting it in the cache. The cache actually
-    // comes handy when the logs are not enabled.
     if (Log *log = GetLog(LLDBLog::Expressions)) {
       LLDB_LOG(log, "[{0}] {1}", stringifyType(MessageKind(event->GetType())),
                getStringFromEvent(event));
-    } else {
-      debugMessageCache.emplace_back(MessageKind(event->GetType()),
-                                     getStringFromEvent(event));
     }
+    debugMessageCache.emplace_back(MessageKind(event->GetType()),
+                                   getStringFromEvent(event));
   } else if (event->GetType() & MojoTypeSystem::eFlushIRAndDebugLog) {
     for (const auto &message : debugMessageCache)
       reportMessage(stringifyType(message.first), message.second);
