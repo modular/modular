@@ -1857,19 +1857,21 @@ struct ConvNHWCInnerLoopFilterPacked[
             else:
                 self._load_c_tile(c_local, Index(0, idx_n))
 
-            var k_offset = 0
-            for segment_idx in range(num_segments):
-                for idx_k in range(
-                    k_offset, min(k_offset + contiguous_len, self.tile_n_k[1])
-                ):
+            var segment_idx = 0
+            while segment_idx < num_segments:
+                var start = segment_idx * contiguous_len
+                var chunk = min(contiguous_len, self.tile_n_k[1] - start)
+                var j = 0
+                while j < chunk:
+                    var idx_k = segment_idx * contiguous_len + j
                     self._accumulate(
                         c_local,
                         segment_idx,
                         Index(idx_n, idx_k),
                         contiguous_len,
                     )
-                k_offset += contiguous_len
-
+                    j += 1
+                segment_idx += 1
             self._store_c_tile(c_local, Index(0, idx_n))
 
 
