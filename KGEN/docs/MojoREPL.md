@@ -11,7 +11,7 @@ the debugging environment for the Mojo Language.
 
 ## Getting started
 
-There are several entry points with which to experience the Mojo Repl, with the
+There are several entry points with which to experience the Mojo REPL, with the
 main two being the [LLDB REPL](#lldb-command-line-repl), and a
 [Jupyter Notebook](#jupyter-notebook). Each entry point contains specific setup
 instructions, please refer to each section for more detailed information.
@@ -123,12 +123,12 @@ You will see a command prompt, where you can run simple commands like so:
 [stdout] hello
 
 [0] > :next-cell
-[1] > 
+[1] >
 ```
 
-The number in square brackets is the 'cell ID' - this does not auto-increment 
+The number in square brackets is the 'cell ID' - this does not auto-increment
 because you might want to (for example) dump the logs from a previous command
-in the same cell. You can control which cell you're in with the special 
+in the same cell. You can control which cell you're in with the special
 commands `:next-cell` and `:prev-cell`. These increment and decrement the cell
 counter, respectively. You can also cleanly exit the REPL mode by running
 `:exit`.
@@ -146,8 +146,8 @@ The way we treat event kinds is as follows (list in `MojoTypeSystem.h`):
 * `DumpIR` events are treated the same as `DebugLog`.
 * `ErrorLog` events are flushed immediately.
 
-Events are mostly handled by `MojoTypeSystem::handleEvent`, which implements 
-the behavior above. A new user can do whatever they want with the various 
+Events are mostly handled by `MojoTypeSystem::handleEvent`, which implements
+the behavior above. A new user can do whatever they want with the various
 events as befits their specific application.
 
 Feel free to add more event kinds as is appropriate - event kinds ending
@@ -158,20 +158,23 @@ ending in `Log` are not shown to the user.
 The JSON format you'll see in the jupyter kernel logs is:
 ```json
 {
-  // `|` separated list of event kinds. Each log event can be more than one 
+  // `|` separated list of event kinds. Each log event can be more than one
   // kind.
   "type": "DebugLog|DumpIR|ErrorLog|BroadcastUserMessage",
   "message": "<log message>"
 }
 ```
 
-### Special Commands
+### LLDB and Mojo Commands
 
-We support special commands in the MojoExpressionParser, which means they're 
-available across anything that uses the core expression parsing infrastructure.
-These commands start with `!` and do things like dumping internal logs. Again,
-feel free to add new commands, just please document them here!
+We support executing arbitrary LLDB commands in the Notebook and the CLI REPL.
+If an expression starts with `:`, then the rest of the text is handled as an
+LLDB command.
 
-Current commands:
-* `!dump-logs` - This command sends a `FlushIRAndDebugLog` event, which 
+Moreover, we support a set of Mojo commands inside the LLDB command tree, which
+do things like dumping internal logs. Again, feel free to add new commands,
+just please document them here!
+
+Current Mojo commands:
+* `:mojo dump-logs` - This command sends a `FlushIRAndDebugLog` event, which
    instructs the various clients to flush their debug log caches immediately.
