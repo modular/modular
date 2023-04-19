@@ -131,7 +131,9 @@ bool MojoPersistentExpressionState::hasInitializedPython() const {
 }
 
 std::string MojoPersistentExpressionState::getNextPythonExpressionModuleName() {
-  return "lldb_python_module_" + std::to_string(nextPythonModuleID++);
+  return (getPythonExpressionModuleNamePrefix() +
+          std::to_string(nextPythonModuleID++))
+      .str();
 }
 
 //===----------------------------------------------------------------------===//

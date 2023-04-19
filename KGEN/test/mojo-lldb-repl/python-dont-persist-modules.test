@@ -1,0 +1,24 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# UNSUPPORTED: asan
+# RUN: %lldb -R go -r <%s 2>&1 | FileCheck %s
+
+# Note: in REPL mode, expressions are delimited by empty lines.
+
+%python
+def foo():
+  return "this is sparta"
+# CHECK: ($PythonInterface::Python) __repl_python__ =
+# CHECK-NEXT: ($PythonObject::PythonObject) foo =
+
+%python
+x = foo()
+# CHECK-NEXT: ($PythonObject::PythonObject) x =
+
+%python
+print(x)
+# CHECK-NOT: lldb_python_module

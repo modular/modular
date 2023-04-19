@@ -32,13 +32,24 @@ $ mojo-repl
 ```
 
 Once run, you'll be provided with a REPL environment where you can immediately
-start running expressions:
+start running expressions, which are delimited by blank lines as in the
+following example:
 
 ```shell
 Welcome to Mojo.
 Type :help for assistance.
-  1>
+  1> let my_var = "Welcome to Mojo!"
+  2.
+  2> print(my_var)
+  3.
+  Welcome to Mojo!
 ```
+
+As you can see, the REPL persists variables that are created in an expression so
+that they can be accessed in later expressions. The only exception are variables
+that start with the `__lldb` prefix, which are discarded right after the
+expression. In fact, this prefix is used for internal variables in the
+underlying expression evaluation engine.
 
 ### Jupyter Notebook
 
