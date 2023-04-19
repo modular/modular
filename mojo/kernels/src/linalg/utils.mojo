@@ -6,7 +6,8 @@
 
 from DType import DType
 from Index import StaticIntTuple, Index
-from Math import div_ceil, max, min
+from Math import div_ceil, max, min, sqrt
+from SIMD import F32
 from TargetInfo import has_avx512f, has_neon, os_is_macos, dtype_simd_width
 from BuildInfo import is_relwithdebinfo_build, is_debug_build
 
@@ -108,7 +109,8 @@ struct SubMatmulConfig:
 struct PartitionHeuristic:
     var value: Int
     alias MOJO = PartitionHeuristic(0)
-    alias ONEDNN = PartitionHeuristic(1)
+    alias Im2col = PartitionHeuristic(1)
+    alias ONEDNN = PartitionHeuristic(2)
 
     @always_inline("nodebug")
     fn __init__(value: Int) -> PartitionHeuristic:
@@ -146,12 +148,17 @@ fn get_partitioned_matmul[
     heuristic: PartitionHeuristic
 ](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
     # TODO: Add oneDNN/MLAS partition heuristic and use the parameter if below.
-    # @parameter
-    # if heuristic == PartitionHeuristic.MOJO:
-    return get_partitioned_matmul_mojo[
-        get_matmul_a_row_size(),
-        get_matmul_pack_inner_size() * dtype_simd_width[DType.f32](),
-    ](m, n, k, task_id, num_tasks)
+    @parameter
+    if heuristic == PartitionHeuristic.MOJO:
+        return get_partitioned_matmul_mojo[
+            get_matmul_a_row_size(),
+            get_matmul_pack_inner_size() * dtype_simd_width[DType.f32](),
+        ](m, n, k, task_id, num_tasks)
+    else:
+        return get_partitioned_matmul_im2col[
+            get_matmul_a_row_size(),
+            get_matmul_pack_inner_size() * dtype_simd_width[DType.f32](),
+        ](m, n, k, task_id, num_tasks)
 
 
 fn get_partitioned_matmul_mojo[
@@ -195,6 +202,7 @@ fn get_partitioned_matmul_mojo[
         if aligned_partition_found:
             num_col_tasks = num_col_partitions
             num_row_tasks = num_tasks // num_col_tasks
+
     let row_task_id = task_id // num_col_tasks
     let col_task_id = task_id % num_col_tasks
     let row_range1 = partition_work(
@@ -206,6 +214,64 @@ fn get_partitioned_matmul_mojo[
     return SubMatmulConfig(
         Index(row_range1[0], col_range1[0], 0),
         Index(row_range1[1], col_range1[1], k),
+    )
+
+
+fn get_partitioned_matmul_im2col[
+    micro_kernel_m: Int,
+    micro_kernel_n: Int,
+](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
+    @always_inline
+    fn int_sqrt_floor(val: Int) -> Int:
+        return Int(sqrt(F32(val)).cast[DType.index]().value)
+
+    # Accessing A is more expensive in im2col than accessing B.
+    # Time a factor to M to let the heuristic bias on partitioning M.
+    # TODO: make this bias factor part of function parameter/argument and
+    # unifies interface with matmul partition, e.x. bias=1 for matmul.
+    alias bias = 2
+    let m_biased = m * bias
+    # The ideal partition in theory is to balance the cost of memory access in
+    # M and N dimensions using square sub-matrix (after applying the bias).
+    let ideal_num_col_tasks = int_sqrt_floor(div_ceil(n * num_tasks, m_biased))
+    var num_row_tasks = num_tasks // ideal_num_col_tasks
+    var num_col_tasks = ideal_num_col_tasks
+
+    # Prioritize having at least two packs in N so that A is reused.
+    var max_num_col_tasks = min(div_ceil(n, 2 * micro_kernel_n), num_tasks)
+    if ideal_num_col_tasks > max_num_col_tasks:
+        num_col_tasks = max_num_col_tasks
+        num_row_tasks = num_tasks // num_col_tasks
+    # In this branch, not all threads get used for ideal_num_col_tasks
+    # Check for alternative factorizations use the most threads.
+    elif num_tasks % ideal_num_col_tasks != 0:
+        # Set 20% deviation.
+        # TODO: Make this tuning parameter a function parameter/argument.
+        let eps = div_ceil(2 * ideal_num_col_tasks, 10)
+        max_num_col_tasks = min(max_num_col_tasks, ideal_num_col_tasks + eps)
+        var num_col_tasks_tmp = max(ideal_num_col_tasks - eps, 1)
+        var num_threads_used = (
+            num_tasks // ideal_num_col_tasks
+        ) * ideal_num_col_tasks
+        while num_col_tasks_tmp <= max_num_col_tasks:
+            let num_row_tasks_tmp = num_tasks // num_col_tasks_tmp
+            if num_row_tasks_tmp * num_col_tasks_tmp > num_threads_used:
+                num_col_tasks = num_col_tasks_tmp
+                num_row_tasks = num_row_tasks_tmp
+                num_threads_used = num_row_tasks_tmp * num_col_tasks_tmp
+            num_col_tasks_tmp += 1
+
+    let row_task_id = task_id // num_col_tasks
+    let col_task_id = task_id % num_col_tasks
+    let row_range = partition_work(
+        row_task_id, num_row_tasks, m, micro_kernel_m
+    )
+    let col_range = partition_work(
+        col_task_id, num_col_tasks, n, micro_kernel_n
+    )
+    return SubMatmulConfig(
+        Index(row_range[0], col_range[0], 0),
+        Index(row_range[1], col_range[1], k),
     )
 
 
