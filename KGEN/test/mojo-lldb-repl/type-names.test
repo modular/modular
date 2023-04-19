@@ -19,7 +19,7 @@ struct Bar:
   fn __init__(self&):
     pass
 
-# CHECK: ($::Bar) z =
+# CHECK: (Bar) z =
 let z = Bar()
 
 # CHECK: ($DType::DType) dtype =

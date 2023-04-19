@@ -21,8 +21,6 @@ class MojoUserExpression;
 
 class MojoExpressionParser {
 public:
-  static constexpr StringLiteral kExprModuleName = "__lldb_module__";
-
   MojoExpressionParser(lldb_private::ExecutionContextScope *exeScope,
                        MojoUserExpression &expr,
                        const lldb_private::EvaluateExpressionOptions &options);
@@ -52,6 +50,9 @@ public:
                       lldb_private::ExecutionPolicy executionPolicy,
                       std::optional<MojoExpressionSourceCode> sourceCode,
                       bool keepResultInMemory);
+
+  /// Get the name of the module where expressions are JITted.
+  static StringRef getJITModuleName() { return "__lldb_module__"; }
 
 private:
   //===--------------------------------------------------------------------===//
