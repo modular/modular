@@ -605,7 +605,7 @@ struct PackIm2ColNCHW[
         # assert_param[is_disivible_by[block_size, simd_size]()]
 
         # Convert output index to input index.
-        var global_in_image_offset = self._output_to_input(
+        let global_in_image_offset = self._output_to_input(
             global_out_image_offset, rs_idx
         )
 

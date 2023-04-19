@@ -94,7 +94,7 @@ fn slice_as_copy[
 ):
 
     # Apply slice to the tensor
-    var sliced = slice_as_view[type, index_type, in_rank](
+    let sliced = slice_as_view[type, index_type, in_rank](
         tensor, start, end, step
     )
 
