@@ -42,19 +42,6 @@ static void expandListOp(POP::ListCreateOp createOp) {
   createOp->erase();
 }
 
-static void expandListOp(POP::SIMDShuffleOp shuffleOp) {
-  // Shuffles don't actually want their mask lowered.  They are the only
-  // operation like this.
-  auto maskAttr = shuffleOp->getAttrOfType<POP::ArrayAttr>("mask");
-  assert(maskAttr && "mask should have been lowered");
-
-  // Get the ListType/ListAttr back.
-  auto indexType = IndexType::get(shuffleOp.getContext());
-  auto listType = KGEN::ListType::get(indexType, maskAttr.getValues().size());
-  auto listAttr = KGEN::ListAttr::get(maskAttr.getValues(), listType);
-  shuffleOp->setAttr("mask", listAttr);
-}
-
 //===----------------------------------------------------------------------===//
 // Pass Definition
 //===----------------------------------------------------------------------===//
@@ -97,8 +84,7 @@ void LowerKGENListPass::runOnOperation() {
 
   // Rewrite list ops to array ops.
   getOperation()->walk([&](Operation *op) {
-    TypeSwitch<Operation *>(op)
-        .Case<POP::ListGetOp, POP::ListCreateOp, POP::SIMDShuffleOp>(
-            [&](auto op) { expandListOp(op); });
+    TypeSwitch<Operation *>(op).Case<POP::ListGetOp, POP::ListCreateOp>(
+        [&](auto op) { expandListOp(op); });
   });
 }
