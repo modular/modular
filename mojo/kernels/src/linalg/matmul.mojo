@@ -654,7 +654,7 @@ struct PackMatrixRows[
         transpose helper function until all required data has been packed.
         """
 
-        var transpose_buffer = NDBuffer[
+        let transpose_buffer = NDBuffer[
             2,
             create_dim_list(simd_size, simd_size),
             type,
