@@ -138,7 +138,8 @@ struct Replacer {
 
         // Stack of >1 stores are implicity only a reference to the first
         // element so we can stop after the first store.
-        if (std::is_same<ContainerType, POP::StackAllocationOp>::value)
+        if constexpr (std::is_same<ContainerType,
+                                   POP::StackAllocationOp>::value)
           break;
       }
     } else {
@@ -162,6 +163,11 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, POP::StructType> {
       if (!isa<POP::StructGEPOp, POP::StructExtractOp, POP::StoreOp,
                POP::LoadOp>(user))
         return false;
+
+      // If the user is the argument of the store, then we cannot elide.
+      if (auto store = dyn_cast<POP::StoreOp>(user))
+        if (store.getArg() == alloc)
+          return false;
 
       // We can SROA loads if they are only used in extract ops.
       if (auto load = dyn_cast<POP::LoadOp>(user)) {
@@ -218,6 +224,11 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
       // a call then we cannot perfom the optimization.
       if (!isa<POP::ArrayGEPOp, POP::StoreOp, POP::LoadOp>(user))
         return false;
+
+      // If the user is the argument of the store, then we cannot elide.
+      if (auto store = dyn_cast<POP::StoreOp>(user))
+        if (store.getArg() == alloc)
+          return false;
 
       // We allow loads if they are only then used in GEPs or Gets.
       if (auto load = dyn_cast<POP::LoadOp>(user)) {
@@ -290,6 +301,11 @@ struct ReplaceStack : public Replacer<ReplaceStack, POP::StackAllocationOp> {
       if (!isa<POP::OffsetOp, POP::StoreOp, POP::LoadOp, POP::ArrayGEPOp,
                POP::StructGEPOp>(user))
         return false;
+
+      // If the user is the argument of the store, then we cannot elide.
+      if (auto store = dyn_cast<POP::StoreOp>(user))
+        if (store.getArg() == alloc)
+          return false;
 
       // We only support offsets with constant terms.
       if (auto offset = dyn_cast<POP::OffsetOp>(user)) {
