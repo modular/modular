@@ -36,7 +36,12 @@ from Matmul import (
     PackMatrixRows,
     null_epilogue,
 )
-from MatmulUtils import get_matmul_prefetch_b_distance_k
+from MatmulUtils import (
+    get_matmul_prefetch_b_distance_k,
+    get_partitioned_matmul,
+    get_min_task_size,
+    PartitionHeuristic,
+)
 from Pointer import DTypePointer
 from Range import range
 from SIMD import SIMD
@@ -1987,8 +1992,7 @@ struct ConvIm2ColNHWC[
     var a: NDBuffer[2, DimList[2].create_unknown(), type]
     var b: NDBuffer[2, DimList[2].create_unknown(), type]
 
-    var num_tasks_m: Int
-    var num_tasks_n: Int
+    var num_tasks: Int
 
     # Partitioned row index for the current thread.
     var row_start_idx: Int
@@ -2059,17 +2063,9 @@ struct ConvIm2ColNHWC[
         }
 
         let num_threads = out_chain.get_runtime().parallelism_level()
-        let complexity = gemm_shape.M
-
-        # minimum number of rows each thread should take.
-        let row_block_unit: Int = 32
-        let col_block_unit: Int = pack_inner_size
-
-        # TODO: add a proper partition heuristic.
-        let num_tasks_m = max(min(complexity // row_block_unit, num_threads), 1)
-        let num_tasks_n = max(
-            min(num_threads // num_tasks_m, gemm_shape.N // col_block_unit),
-            1,
+        let complexity = gemm_shape.M * gemm_shape.N * gemm_shape.K
+        let num_tasks = min(
+            div_ceil(complexity, get_min_task_size()), num_threads
         )
 
         @always_inline
@@ -2092,14 +2088,13 @@ struct ConvIm2ColNHWC[
                 filter,
                 conv_shape,
                 gemm_shape,
-                num_tasks_m,
-                num_tasks_n,
+                num_tasks,
                 task_id,
                 elementwise_epilogue_fn,
             )
             conv._run_implicit_matmul()
 
-        async_parallelize[task_func](out_chain, num_tasks_m * num_tasks_n)
+        async_parallelize[task_func](out_chain, num_tasks)
 
         # TODO (#12624): Closure captures some state on the stack so this needs
         # to be synchronous in order to keep that state alive
@@ -2115,8 +2110,7 @@ struct ConvIm2ColNHWC[
         filter: NDBuffer[4, shape_filter, type],
         conv_shape: ConvShape,
         gemm_shape: GemmShape,
-        num_tasks_m: Int,
-        num_tasks_n: Int,
+        num_tasks: Int,
         task_id: Int,
         elementwise_epilogue_fn: BinaryClosure[GemmShape, GemmShape, NoneType],
     ):
@@ -2195,18 +2189,13 @@ struct ConvIm2ColNHWC[
                 type,
             )
 
-        let task_id_m = task_id // num_tasks_n
-        let task_id_n = task_id % num_tasks_n
-        let partition_m = get_partitioned_workload(
-            task_id_m, num_tasks_m, gemm_shape.M
-        )
-        let partition_n = get_partitioned_workload(
-            task_id_n, num_tasks_n, gemm_shape.N
-        )
-        let row_start_idx = partition_m[0]
-        let total_row_count = partition_m[1]
-        let col_start_idx = partition_n[0]
-        let total_col_count = partition_n[1]
+        let sub_matmul_config = get_partitioned_matmul[
+            PartitionHeuristic.Im2col
+        ](gemm_shape.M, gemm_shape.N, gemm_shape.K, task_id, num_tasks)
+        let row_start_idx = sub_matmul_config.offset[0]
+        let total_row_count = sub_matmul_config.shape[0]
+        let col_start_idx = sub_matmul_config.offset[1]
+        let total_col_count = sub_matmul_config.shape[1]
 
         self.out = out
         self.input = input
@@ -2217,8 +2206,7 @@ struct ConvIm2ColNHWC[
         self.a = a
         self.b = b
         self.c = c
-        self.num_tasks_m = num_tasks_m
-        self.num_tasks_n = num_tasks_n
+        self.num_tasks = num_tasks
         self.row_start_idx = row_start_idx
         self.total_row_count = total_row_count
         self.col_start_idx = col_start_idx
@@ -2229,6 +2217,9 @@ struct ConvIm2ColNHWC[
         """Wrapper utility funciton: Allocates packing space on the stack and
         run the matmul routine on the whole problem space.
         """
+        if self.total_row_count <= 0 or self.total_col_count <= 0:
+            return
+
         # Allocate buffer to pack transformed image.
         var _bpacked_data = _raw_stack_allocation[
             pack_cache_size,  # Count.
