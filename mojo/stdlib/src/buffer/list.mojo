@@ -165,9 +165,7 @@ struct DimList[length: Int]:
     """This type represents a list of dimensions. Each dimension may have a
     static value or not have a value, which represents a dynamic dimension."""
 
-    alias list_type = __mlir_type[
-        `!kgen.list<`, Dim, `[`, length.__as_mlir_index(), `]>`
-    ]
+    alias list_type = __mlir_type[`!kgen.variadic<`, Dim, `>`]
     var value: list_type
 
     @always_inline("nodebug")
@@ -203,7 +201,7 @@ struct DimList[length: Int]:
         """
         assert_param_msg[i >= 0, "negative index"]()
         assert_param_msg[i < length, "index exceeds length"]()
-        return __mlir_op.`pop.list.get`[index : i.__as_mlir_index()](self.value)
+        return __mlir_op.`pop.variadic.get`(self.value, i.__as_mlir_index())
 
     @always_inline
     fn _product_impl[i: Int, end: Int](self) -> Dim:
@@ -343,8 +341,8 @@ fn create_dim_list(e0: Dim) -> DimList[1]:
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.list.create`[
-        _type : __mlir_type[`!kgen.list<`, Dim, `[1]>`]
+    return __mlir_op.`pop.variadic.create`[
+        _type : __mlir_type[`!kgen.variadic<`, Dim, `>`]
     ](e0)
 
 
@@ -359,8 +357,8 @@ fn create_dim_list(e0: Dim, e1: Dim) -> DimList[2]:
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.list.create`[
-        _type : __mlir_type[`!kgen.list<`, Dim, `[2]>`]
+    return __mlir_op.`pop.variadic.create`[
+        _type : __mlir_type[`!kgen.variadic<`, Dim, `>`]
     ](e0, e1)
 
 
@@ -376,8 +374,8 @@ fn create_dim_list(e0: Dim, e1: Dim, e2: Dim) -> DimList[3]:
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.list.create`[
-        _type : __mlir_type[`!kgen.list<`, Dim, `[3]>`]
+    return __mlir_op.`pop.variadic.create`[
+        _type : __mlir_type[`!kgen.variadic<`, Dim, `>`]
     ](e0, e1, e2)
 
 
@@ -394,8 +392,8 @@ fn create_dim_list(e0: Dim, e1: Dim, e2: Dim, e3: Dim) -> DimList[4]:
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.list.create`[
-        _type : __mlir_type[`!kgen.list<`, Dim, `[4]>`]
+    return __mlir_op.`pop.variadic.create`[
+        _type : __mlir_type[`!kgen.variadic<`, Dim, `>`]
     ](e0, e1, e2, e3)
 
 
@@ -413,8 +411,8 @@ fn create_dim_list(e0: Dim, e1: Dim, e2: Dim, e3: Dim, e4: Dim) -> DimList[5]:
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.list.create`[
-        _type : __mlir_type[`!kgen.list<`, Dim, `[5]>`]
+    return __mlir_op.`pop.variadic.create`[
+        _type : __mlir_type[`!kgen.variadic<`, Dim, `>`]
     ](e0, e1, e2, e3, e4)
 
 
@@ -435,8 +433,8 @@ fn create_dim_list(
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.list.create`[
-        _type : __mlir_type[`!kgen.list<`, Dim, `[6]>`]
+    return __mlir_op.`pop.variadic.create`[
+        _type : __mlir_type[`!kgen.variadic<`, Dim, `>`]
     ](e0, e1, e2, e3, e4, e5)
 
 
@@ -464,8 +462,8 @@ fn create_dim_list(
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.list.create`[
-        _type : __mlir_type[`!kgen.list<`, Dim, `[7]>`]
+    return __mlir_op.`pop.variadic.create`[
+        _type : __mlir_type[`!kgen.variadic<`, Dim, `>`]
     ](e0, e1, e2, e3, e4, e5, e6)
 
 
@@ -495,8 +493,8 @@ fn create_dim_list(
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.list.create`[
-        _type : __mlir_type[`!kgen.list<`, Dim, `[8]>`]
+    return __mlir_op.`pop.variadic.create`[
+        _type : __mlir_type[`!kgen.variadic<`, Dim, `>`]
     ](e0, e1, e2, e3, e4, e5, e6, e7)
 
 
@@ -528,8 +526,8 @@ fn create_dim_list(
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.list.create`[
-        _type : __mlir_type[`!kgen.list<`, Dim, `[9]>`]
+    return __mlir_op.`pop.variadic.create`[
+        _type : __mlir_type[`!kgen.variadic<`, Dim, `>`]
     ](e0, e1, e2, e3, e4, e5, e6, e7, e8)
 
 
@@ -563,8 +561,8 @@ fn create_dim_list(
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.list.create`[
-        _type : __mlir_type[`!kgen.list<`, Dim, `[10]>`]
+    return __mlir_op.`pop.variadic.create`[
+        _type : __mlir_type[`!kgen.variadic<`, Dim, `>`]
     ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9)
 
 
@@ -600,8 +598,8 @@ fn create_dim_list(
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.list.create`[
-        _type : __mlir_type[`!kgen.list<`, Dim, `[11]>`]
+    return __mlir_op.`pop.variadic.create`[
+        _type : __mlir_type[`!kgen.variadic<`, Dim, `>`]
     ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10)
 
 
@@ -639,8 +637,8 @@ fn create_dim_list(
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.list.create`[
-        _type : __mlir_type[`!kgen.list<`, Dim, `[12]>`]
+    return __mlir_op.`pop.variadic.create`[
+        _type : __mlir_type[`!kgen.variadic<`, Dim, `>`]
     ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11)
 
 
@@ -680,8 +678,8 @@ fn create_dim_list(
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.list.create`[
-        _type : __mlir_type[`!kgen.list<`, Dim, `[13]>`]
+    return __mlir_op.`pop.variadic.create`[
+        _type : __mlir_type[`!kgen.variadic<`, Dim, `>`]
     ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12)
 
 
@@ -723,8 +721,8 @@ fn create_dim_list(
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.list.create`[
-        _type : __mlir_type[`!kgen.list<`, Dim, `[14]>`]
+    return __mlir_op.`pop.variadic.create`[
+        _type : __mlir_type[`!kgen.variadic<`, Dim, `>`]
     ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13)
 
 
@@ -768,8 +766,8 @@ fn create_dim_list(
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.list.create`[
-        _type : __mlir_type[`!kgen.list<`, Dim, `[15]>`]
+    return __mlir_op.`pop.variadic.create`[
+        _type : __mlir_type[`!kgen.variadic<`, Dim, `>`]
     ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14)
 
 
@@ -815,8 +813,8 @@ fn create_dim_list(
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.list.create`[
-        _type : __mlir_type[`!kgen.list<`, Dim, `[16]>`]
+    return __mlir_op.`pop.variadic.create`[
+        _type : __mlir_type[`!kgen.variadic<`, Dim, `>`]
     ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15)
 
 
@@ -828,7 +826,7 @@ fn create_dim_list(
 @always_inline("nodebug")
 fn create_kgen_list[
     type: AnyType
-](e0: type) -> __mlir_type[`!kgen.list<`, type, `[1]>`]:
+](e0: type) -> __mlir_type[`!kgen.variadic<`, type, `>`]:
     """Creates a list given a type and elements.
 
     Parameters:
@@ -840,15 +838,15 @@ fn create_kgen_list[
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.list.create`[
-        _type : __mlir_type[`!kgen.list<`, type, `[1]>`]
+    return __mlir_op.`pop.variadic.create`[
+        _type : __mlir_type[`!kgen.variadic<`, type, `>`]
     ](e0)
 
 
 @always_inline("nodebug")
 fn create_kgen_list[
     type: AnyType
-](e0: type, e1: type) -> __mlir_type[`!kgen.list<`, type, `[2]>`]:
+](e0: type, e1: type) -> __mlir_type[`!kgen.variadic<`, type, `>`]:
     """Creates a list given a type and elements.
 
     Parameters:
@@ -861,15 +859,15 @@ fn create_kgen_list[
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.list.create`[
-        _type : __mlir_type[`!kgen.list<`, type, `[2]>`]
+    return __mlir_op.`pop.variadic.create`[
+        _type : __mlir_type[`!kgen.variadic<`, type, `>`]
     ](e0, e1)
 
 
 @always_inline("nodebug")
 fn create_kgen_list[
     type: AnyType
-](e0: type, e1: type, e2: type) -> __mlir_type[`!kgen.list<`, type, `[3]>`]:
+](e0: type, e1: type, e2: type) -> __mlir_type[`!kgen.variadic<`, type, `>`]:
     """Creates a list given a type and elements.
 
     Parameters:
@@ -883,8 +881,8 @@ fn create_kgen_list[
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.list.create`[
-        _type : __mlir_type[`!kgen.list<`, type, `[3]>`]
+    return __mlir_op.`pop.variadic.create`[
+        _type : __mlir_type[`!kgen.variadic<`, type, `>`]
     ](e0, e1, e2)
 
 
@@ -892,7 +890,7 @@ fn create_kgen_list[
 fn create_kgen_list[
     type: AnyType
 ](e0: type, e1: type, e2: type, e3: type) -> __mlir_type[
-    `!kgen.list<`, type, `[4]>`
+    `!kgen.variadic<`, type, `>`
 ]:
     """Creates a list given a type and elements.
 
@@ -908,8 +906,8 @@ fn create_kgen_list[
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.list.create`[
-        _type : __mlir_type[`!kgen.list<`, type, `[4]>`]
+    return __mlir_op.`pop.variadic.create`[
+        _type : __mlir_type[`!kgen.variadic<`, type, `>`]
     ](e0, e1, e2, e3)
 
 
@@ -917,7 +915,7 @@ fn create_kgen_list[
 fn create_kgen_list[
     type: AnyType
 ](e0: type, e1: type, e2: type, e3: type, e4: type,) -> __mlir_type[
-    `!kgen.list<`, type, `[5]>`
+    `!kgen.variadic<`, type, `>`
 ]:
     """Creates a list given a type and elements.
 
@@ -934,8 +932,8 @@ fn create_kgen_list[
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.list.create`[
-        _type : __mlir_type[`!kgen.list<`, type, `[5]>`]
+    return __mlir_op.`pop.variadic.create`[
+        _type : __mlir_type[`!kgen.variadic<`, type, `>`]
     ](e0, e1, e2, e3, e4)
 
 
@@ -943,7 +941,7 @@ fn create_kgen_list[
 fn create_kgen_list[
     type: AnyType
 ](e0: type, e1: type, e2: type, e3: type, e4: type, e5: type) -> __mlir_type[
-    `!kgen.list<`, type, `[6]>`
+    `!kgen.variadic<`, type, `>`
 ]:
     """Creates a list given a type and elements.
 
@@ -961,8 +959,8 @@ fn create_kgen_list[
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.list.create`[
-        _type : __mlir_type[`!kgen.list<`, type, `[6]>`]
+    return __mlir_op.`pop.variadic.create`[
+        _type : __mlir_type[`!kgen.variadic<`, type, `>`]
     ](e0, e1, e2, e3, e4, e5)
 
 
@@ -977,7 +975,7 @@ fn create_kgen_list[
     e4: type,
     e5: type,
     e6: type,
-) -> __mlir_type[`!kgen.list<`, type, `[7]>`]:
+) -> __mlir_type[`!kgen.variadic<`, type, `>`]:
     """Creates a list given a type and elements.
 
     Parameters:
@@ -995,8 +993,8 @@ fn create_kgen_list[
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.list.create`[
-        _type : __mlir_type[`!kgen.list<`, type, `[7]>`]
+    return __mlir_op.`pop.variadic.create`[
+        _type : __mlir_type[`!kgen.variadic<`, type, `>`]
     ](e0, e1, e2, e3, e4, e5, e6)
 
 
@@ -1012,7 +1010,7 @@ fn create_kgen_list[
     e5: type,
     e6: type,
     e7: type,
-) -> __mlir_type[`!kgen.list<`, type, `[8]>`]:
+) -> __mlir_type[`!kgen.variadic<`, type, `>`]:
     """Creates a list given a type and elements.
 
     Parameters:
@@ -1031,8 +1029,8 @@ fn create_kgen_list[
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.list.create`[
-        _type : __mlir_type[`!kgen.list<`, type, `[8]>`]
+    return __mlir_op.`pop.variadic.create`[
+        _type : __mlir_type[`!kgen.variadic<`, type, `>`]
     ](e0, e1, e2, e3, e4, e5, e6, e7)
 
 
@@ -1049,7 +1047,7 @@ fn create_kgen_list[
     e6: type,
     e7: type,
     e8: type,
-) -> __mlir_type[`!kgen.list<`, type, `[9]>`]:
+) -> __mlir_type[`!kgen.variadic<`, type, `>`]:
     """Creates a list given a type and elements.
 
     Parameters:
@@ -1069,8 +1067,8 @@ fn create_kgen_list[
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.list.create`[
-        _type : __mlir_type[`!kgen.list<`, type, `[9]>`]
+    return __mlir_op.`pop.variadic.create`[
+        _type : __mlir_type[`!kgen.variadic<`, type, `>`]
     ](e0, e1, e2, e3, e4, e5, e6, e7, e8)
 
 
@@ -1088,7 +1086,7 @@ fn create_kgen_list[
     e7: type,
     e8: type,
     e9: type,
-) -> __mlir_type[`!kgen.list<`, type, `[10]>`]:
+) -> __mlir_type[`!kgen.variadic<`, type, `>`]:
     """Creates a list given a type and elements.
 
     Parameters:
@@ -1109,8 +1107,8 @@ fn create_kgen_list[
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.list.create`[
-        _type : __mlir_type[`!kgen.list<`, type, `[10]>`]
+    return __mlir_op.`pop.variadic.create`[
+        _type : __mlir_type[`!kgen.variadic<`, type, `>`]
     ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9)
 
 
@@ -1129,7 +1127,7 @@ fn create_kgen_list[
     e8: type,
     e9: type,
     e10: type,
-) -> __mlir_type[`!kgen.list<`, type, `[11]>`]:
+) -> __mlir_type[`!kgen.variadic<`, type, `>`]:
     """Creates a list given a type and elements.
 
     Parameters:
@@ -1151,8 +1149,8 @@ fn create_kgen_list[
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.list.create`[
-        _type : __mlir_type[`!kgen.list<`, type, `[11]>`]
+    return __mlir_op.`pop.variadic.create`[
+        _type : __mlir_type[`!kgen.variadic<`, type, `>`]
     ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10)
 
 
@@ -1172,7 +1170,7 @@ fn create_kgen_list[
     e9: type,
     e10: type,
     e11: type,
-) -> __mlir_type[`!kgen.list<`, type, `[12]>`]:
+) -> __mlir_type[`!kgen.variadic<`, type, `>`]:
     """Creates a list given a type and elements.
 
     Parameters:
@@ -1195,8 +1193,8 @@ fn create_kgen_list[
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.list.create`[
-        _type : __mlir_type[`!kgen.list<`, type, `[12]>`]
+    return __mlir_op.`pop.variadic.create`[
+        _type : __mlir_type[`!kgen.variadic<`, type, `>`]
     ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11)
 
 
@@ -1217,7 +1215,7 @@ fn create_kgen_list[
     e10: type,
     e11: type,
     e12: type,
-) -> __mlir_type[`!kgen.list<`, type, `[13]>`]:
+) -> __mlir_type[`!kgen.variadic<`, type, `>`]:
     """Creates a list given a type and elements.
 
     Parameters:
@@ -1241,8 +1239,8 @@ fn create_kgen_list[
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.list.create`[
-        _type : __mlir_type[`!kgen.list<`, type, `[13]>`]
+    return __mlir_op.`pop.variadic.create`[
+        _type : __mlir_type[`!kgen.variadic<`, type, `>`]
     ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12)
 
 
@@ -1264,7 +1262,7 @@ fn create_kgen_list[
     e11: type,
     e12: type,
     e13: type,
-) -> __mlir_type[`!kgen.list<`, type, `[14]>`]:
+) -> __mlir_type[`!kgen.variadic<`, type, `>`]:
     """Creates a list given a type and elements.
 
     Parameters:
@@ -1289,8 +1287,8 @@ fn create_kgen_list[
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.list.create`[
-        _type : __mlir_type[`!kgen.list<`, type, `[14]>`]
+    return __mlir_op.`pop.variadic.create`[
+        _type : __mlir_type[`!kgen.variadic<`, type, `>`]
     ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13)
 
 
@@ -1313,7 +1311,7 @@ fn create_kgen_list[
     e12: type,
     e13: type,
     e14: type,
-) -> __mlir_type[`!kgen.list<`, type, `[15]>`]:
+) -> __mlir_type[`!kgen.variadic<`, type, `>`]:
     """Creates a list given a type and elements.
 
     Parameters:
@@ -1339,8 +1337,8 @@ fn create_kgen_list[
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.list.create`[
-        _type : __mlir_type[`!kgen.list<`, type, `[15]>`]
+    return __mlir_op.`pop.variadic.create`[
+        _type : __mlir_type[`!kgen.variadic<`, type, `>`]
     ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14)
 
 
@@ -1364,7 +1362,7 @@ fn create_kgen_list[
     e13: type,
     e14: type,
     e15: type,
-) -> __mlir_type[`!kgen.list<`, type, `[16]>`]:
+) -> __mlir_type[`!kgen.variadic<`, type, `>`]:
     """Creates a list given a type and elements.
 
     Parameters:
@@ -1391,8 +1389,8 @@ fn create_kgen_list[
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.list.create`[
-        _type : __mlir_type[`!kgen.list<`, type, `[16]>`]
+    return __mlir_op.`pop.variadic.create`[
+        _type : __mlir_type[`!kgen.variadic<`, type, `>`]
     ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15)
 
 
@@ -1406,9 +1404,7 @@ fn _get_kgen_list_item[
     index: Int,
     size: Int,
     type: AnyType,
-](
-    lst: __mlir_type[`!kgen.list<`, type, `[`, size.__as_mlir_index(), `]>`]
-) -> type:
+](lst: __mlir_type[`!kgen.variadic<`, type, `>`]) -> type:
     """Gets the list element of an input list at position `index`.
 
     Parameters:
@@ -1423,9 +1419,9 @@ fn _get_kgen_list_item[
         The value at position `index` in the list.
     """
     assert_param[index <= size]()
-    return __mlir_op.`pop.list.get`[
-        index : index.__as_mlir_index(), _type:type
-    ](lst)
+    return __mlir_op.`pop.variadic.get`[_type:type](
+        lst, index.__as_mlir_index()
+    )
 
 
 # ===----------------------------------------------------------------------===#

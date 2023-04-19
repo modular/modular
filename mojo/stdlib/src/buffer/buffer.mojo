@@ -1291,7 +1291,7 @@ struct NDBuffer[
         Args:
             idx: The N-D index of the prefetched location.
         """
-        self._offset(idx).prefetch[params]()
+        self._offset(VariadicList[Int](idx)).prefetch[params]()
 
 
 fn partial_simd_load[
