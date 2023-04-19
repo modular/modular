@@ -123,6 +123,11 @@ public:
   /// persistent expression state.
   bool hasInitializedPython() const;
 
+  /// Return the prefix of all python expression modules.
+  static StringRef getPythonExpressionModuleNamePrefix() {
+    return "__lldb_python_module_";
+  }
+
   /// Return the next name to use for a Python expression module.
   std::string getNextPythonExpressionModuleName();
 
