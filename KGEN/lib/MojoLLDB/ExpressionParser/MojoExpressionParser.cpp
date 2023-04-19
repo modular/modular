@@ -168,6 +168,7 @@ MojoExpressionParser::MojoExpressionParser(
     ExecutionContextScope *exeScope, MojoUserExpression &expr,
     const EvaluateExpressionOptions &options)
     : impl(std::make_unique<Impl>(exeScope, expr, options)) {}
+
 MojoExpressionParser::~MojoExpressionParser() = default;
 
 /// Apply fixits in the diagnostic manager to `expr` and set the fixed
@@ -283,7 +284,7 @@ MojoExpressionParser::parse(DiagnosticManager &diagnosticManager) {
   // TODO: We should print the expression to a file if we need debug information
   // attached.
   auto buffer =
-      llvm::MemoryBuffer::getMemBuffer(impl->expr.Text(), kExprModuleName);
+      llvm::MemoryBuffer::getMemBuffer(impl->expr.Text(), getJITModuleName());
   impl->sourceManager.AddNewSourceBuffer(std::move(buffer), llvm::SMLoc());
 
   // Pull out the context.
@@ -340,7 +341,7 @@ MojoExpressionParser::parse(DiagnosticManager &diagnosticManager) {
   // Extract the file module for the expression. File modules get mangled with
   // a leading `$`.
   auto fileModule =
-      module->lookupSymbol<LIT::FileModuleOp>(("$" + kExprModuleName).str());
+      module->lookupSymbol<LIT::FileModuleOp>(("$" + getJITModuleName()).str());
   assert(fileModule && "expected to find the lldb file module");
 
   // Grab the struct containing the persistent expression state.

@@ -12,6 +12,7 @@
 #include "../ExpressionParser/MojoUserExpression.h"
 #include "Cache/CacheDialect/CacheDialect.h"
 #include "KGEN/InitAllDialects.h"
+#include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LowerToObject.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/SymbolExport.h"
@@ -279,11 +280,14 @@ MojoTypeSystem::GetDisplayTypeName(lldb::opaque_compiler_type_t type) {
   std::string name =
       LIT::ASTType(mlir::Type::getFromOpaquePointer(type)).getAsString();
 
+  auto mangledOr =
+      LIT::MangledSymbol::demangle(StringAttr::get(&impl->mlirContext, name));
+
   // We need to delete the artificial module we use for expression evaluations
   // to avoid confusing the user.
-  if (size_t pos = name.find(MojoExpressionParser::kExprModuleName);
-      pos != std::string::npos)
-    name.replace(pos, MojoExpressionParser::kExprModuleName.size(), "");
+  if (!failed(mangledOr) && mangledOr->moduleName &&
+      mangledOr->moduleName == MojoExpressionParser::getJITModuleName())
+    return ConstString(mangledOr->symName);
 
   return ConstString(name);
 }
