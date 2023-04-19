@@ -139,15 +139,17 @@ class InferenceSession:
 
     Parameters
     ----------
-    config: dict
-        Configuration details about the inference session, such as the number
-        of threads.
+    num_threads: Optional[int]
+        Number of threads to use for the inference session. This parameter
+        defaults to the number of physical cores on your machine.
     """
 
     _impl: _InferenceSession
 
-    def __init__(self, config: Optional[dict] = None):
-        config = config or {}
+    def __init__(self, num_threads: Optional[int] = None):
+        config = {}
+        if num_threads:
+            config = {"num_threads": num_threads}
         self._impl = _InferenceSession(config)
 
     def load(
