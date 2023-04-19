@@ -11,10 +11,12 @@
 #include "ASTType.h"
 #include "ASTDecl.h"
 #include "IRValues.h"
+#include "LitExprNode.h"
+#include "SharedState.h"
+
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "SharedState.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -120,6 +122,53 @@ bool ASTType::isCopyable(llvm::SMLoc loc, SharedState &shared) const {
 
   auto copyName = StringAttr::get(shared.getContext(), "__copyinit__");
   return typeDecl->lookupInCurrentScope(copyName) != nullptr;
+}
+
+/// Return true if this type is movable, either because it is trivial, a
+/// register passable type, or has a move constructor. Note: this resolves the
+/// body of a struct type.
+bool ASTType::isMovableFrom(ASTExprAnd<CValue> value,
+                            SharedState &shared) const {
+  ASTDecl *typeDecl = getDecl(shared);
+  if (!typeDecl) // MLIR Types are movable.
+    return true;
+
+  SMLoc loc = value.expr->getLoc();
+  if (failed(shared.declResolver->resolveFully(*typeDecl, loc)))
+    return true;
+
+  // If the type is register passable at all, then it is movable.
+  if (isRegisterPassable(loc, shared))
+    return true;
+
+  auto moveName = StringAttr::get(shared.getContext(), "__moveinit__");
+  const TinyPtrVector<ASTDecl *> *moveDecls =
+      typeDecl->lookupInCurrentScope(moveName);
+  if (!moveDecls)
+    return false;
+
+  // Check all the available candidate to see if we have one that cooperates
+  // with this value kind.
+  for (ASTDecl *decl : *moveDecls) {
+    auto func = dyn_cast<LIT::FuncOp>(*decl);
+    if (!func || failed(shared.declResolver->resolveFully(*decl, loc)))
+      continue;
+
+    auto signature = func.getSignature();
+    if (signature.getValueInputConventions().size() != 2 ||
+        signature.getValueInputConventions()[0] !=
+            ValueInputConvention::InitSelf)
+      continue;
+    if (signature.getValueInputConventions()[1] ==
+            ValueInputConvention::ByRef &&
+        value.ir.getIfLValue())
+      return true;
+    if (signature.getValueInputConventions()[1] ==
+            ValueInputConvention::OwnedInMem &&
+        value.ir.getIfRValue())
+      return true;
+  }
+  return false;
 }
 
 /// Given a POP::PointerType, return the element as an ASTType.  This aborts

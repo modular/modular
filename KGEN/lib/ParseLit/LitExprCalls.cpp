@@ -799,7 +799,6 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
         // The actual value must be an lvalue if callee takes things by-ref.
         auto argVal = operand.ir.getIfLValue();
         if (!argVal)
-          // TODO(clValue): pass to byref arguments and result slots.
           return {kArgNotLValue, providedValueIdx, Type(), newBindings};
 
         // By-ref argument types must exactly match, no conversions are allowed.

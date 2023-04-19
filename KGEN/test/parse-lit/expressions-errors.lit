@@ -94,8 +94,8 @@ def testLValuesRvalues():
   var nc1 = NonCopyable()
   let nc2 = NonCopyable()
 
-  let nc3 = nc1 # expected-error {{'$expressions-errors::NonCopyable' does not implement the '__copyinit__' method}}
-  let nc4 = nc2 # expected-error {{'$expressions-errors::NonCopyable' does not implement the '__copyinit__' method}}
+  let nc3 = nc1 # expected-error {{value of type '$expressions-errors::NonCopyable' cannot be copied into its destination}}
+  let nc4 = nc2 # expected-error {{value of type '$expressions-errors::NonCopyable' cannot be copied into its destination}}
 
   let mpPair = MemoryPrimaryPair()
   mpPair.x = 1 # expected-error {{expression must be mutable in assignment}}

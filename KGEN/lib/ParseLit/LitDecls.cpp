@@ -1134,17 +1134,23 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
       selfArgNumber = hasMemoryResult ? 1 : 0;
     }
 
-  // __init__ and __copyinit__ are weird - for memory-primary results we define
+  // __*init__ methods are weird - for memory-primary results we define
   // init in convention Python style, but for @register_passable values, we
   // return it. In the former case, the first/self argument must be declared as
   // a by-ref argument, but we need to change it to InitSelf since it is not
   // initialized coming in.
   if ((fnInfo.kind == SpecialFunctionKind::kInit ||
-       fnInfo.kind == SpecialFunctionKind::kCopyInit) &&
+       fnInfo.kind == SpecialFunctionKind::kCopyInit ||
+       fnInfo.kind == SpecialFunctionKind::kMoveInit) &&
       selfType) {
     if (ASTType(selfType).isRegisterPassable(decl.getLoc(), shared)) {
-      if (!resultType.isEqualCanon(selfType))
-        emitError() << name << " on register_passable type must return Self";
+      if (fnInfo.kind == SpecialFunctionKind::kMoveInit) {
+        emitError() << name
+                    << " is not supported for @register_passable types, they "
+                       "are always movable by copying a register";
+      } else if (!resultType.isEqualCanon(selfType))
+        emitError() << name << " on @register_passable type must return Self";
+
       // This form of __init__ is implicitly static, it doesn't take a 'self'.
       if (fnInfo.kind == SpecialFunctionKind::kInit)
         funcOp.setIsStatic(true);
@@ -1198,8 +1204,9 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
   // Check that the 'self' argument of a method was specified correctly.
   if (selfType && !funcOp.getIsStatic()) {
     if (selfArgNumber >= ssize_t(argTypes.size())) {
-      // TODO: We can/should relax this for 'def' declarations in the future,
-      // they should be able to implicit ignore arguments like Python does.
+      // TODO('def' allows unused arguments): We can/should relax this for
+      // 'def' declarations in the future, they should be able to implicit
+      // ignore arguments like Python does.
       emitError("self argument must be present in instance method");
     } else if (!ASTType(argTypes[selfArgNumber]).isEqualCanon(selfType)) {
       auto diag = emitErrorLoc(args[selfArgNumber].loc,
@@ -1276,7 +1283,8 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
       emitError() << name << " result type must be __mlir_type.i1";
     break;
   case SpecialFunctionKind::kInit:
-  case SpecialFunctionKind::kCopyInit: {
+  case SpecialFunctionKind::kCopyInit:
+  case SpecialFunctionKind::kMoveInit: {
     // This only applies to memory-only types, register-passable types are
     // handled differently.
     if (ASTType(selfType).isRegisterPassable(decl.getLoc(), shared))
@@ -1284,7 +1292,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
 
     assert(!args.empty() && "arg count already checked above");
     SMLoc selfArgLoc = args[0].loc;
-    // __init__ and __copyinit__ must take their self argument by-ref
+    // __init__/__copyinit__/__moveinit__ must take their self argument by-ref
     // syntactically.
     if (args[0].convention != ParsedArgument::kConventionByRef) {
       auto diag = emitErrorLoc(selfArgLoc, "'self' in struct ")
@@ -1296,10 +1304,18 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
     // Regardless force it to init_self so recovery follows the fix-it.
     args[0].convention = ParsedArgument::kConventionInitSelfResult;
 
-    if (fnInfo.kind == SpecialFunctionKind::kCopyInit)
+    if (fnInfo.kind == SpecialFunctionKind::kCopyInit) {
       if (args[1].convention != ParsedArgument::kConventionBorrowed)
         emitErrorLoc(args[1].loc,
                      "existing value argument must be passed as borrowed");
+    } else if (fnInfo.kind == SpecialFunctionKind::kMoveInit) {
+      if (args[1].convention != ParsedArgument::kConventionByRef &&
+          args[1].convention != ParsedArgument::kConventionOwned) {
+        emitErrorLoc(
+            args[1].loc,
+            "existing value argument must be passed as by-ref or owned");
+      }
+    }
     break;
   }
   }

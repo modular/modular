@@ -259,9 +259,10 @@ public:
   // This emits the value to the specified value dest, transfering ownership to
   // the destination and returning a reference if dest consumes it, or the
   // RValue directly if not.
-  AnyValue emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
+  CValue emitCRValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
 
-  /// This helper emits the specified value as an RValue.
+  /// This helper emits the specified value as an RValue.  This can propagate an
+  /// ORValue.
   RValue emitRValue(ASTExprAnd<AnyValue> value, ExprContext context,
                     ASTType resultType = {});
 
@@ -401,11 +402,6 @@ public:
   /// the casting code and return the pop scalar index value
   SRValue emitBoxedIntAsPopScalar(Value numberValue, const ExprNode *source);
 
-  /// Given an BValue, produce a standalone rvalue in the specified destination
-  /// by emitting a clone call.  This returns a BValue if dest takes ownership,
-  /// otherwise it returns an RValue.
-  CValue emitBValueToRValue(ASTExprAnd<BValue> value, ValueDest &dest);
-
   /// Given a value with a known type, emit a store to the specified LValue.
   /// This returns an borrowed reference to the value after it is done.  The
   /// types must match for this call.
@@ -416,6 +412,11 @@ public:
   /// dest (if specified) or returning it if not.  This returns an RValue if
   /// there is no consuming dest, otherwise a BValue.
   CValue emitLoadOfLValue(ASTExprAnd<LValue> value, ValueDest &dest);
+
+  /// Emit a copy of the specified value, producing a new owned instance of the
+  /// value in the specified destination.  This returns an RValue if
+  /// there is no consuming dest, otherwise a BValue.
+  CValue emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest);
 
   /// Emit the logic to raise from the current scope, returning failure (but NOT
   /// emitting an error) if it is invalid to return from the current context,
