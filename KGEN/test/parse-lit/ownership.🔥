@@ -616,10 +616,112 @@ struct ExoticDelExample:
     # Destroy C automatically on the else side.
     # CHECK-NEXT:  %6 = lit.struct.gep %self_0[c]
     # CHECK-NEXT:  %7 = pop.load %6
-    # CHECK-NEXT:  %8 = kgen.call {{.*}}__del___{{.*}}(%7)
+    # CHECK-NEXT:  kgen.call {{.*}}__del___{{.*}}(%7)
     # CHECK-NEXT:  hlcf.yield
     # CHECK-NEXT:}
 
     # CHECK-NEXT:%5 = kgen.param.constant: !lit.none = <#lit.none>
     # CHECK-NEXT:lit.ownership.mark.destroyed %self_0
     # CHECK-NEXT:kgen.return %5 : !lit.none
+
+##===----------------------------------------------------------------------===##
+# Moves
+##===----------------------------------------------------------------------===##
+
+# This type is a unique value that cannot be moved without ending lifetime.
+struct MemoryUniqueMovable:
+  fn __init__(self&): pass
+  fn __moveinit__(self&, owned existing: Self):
+    pass
+
+# This type is both movable by stealing.
+struct MemoryDestroyMovable:
+  fn __init__(self&): pass
+  fn __moveinit__(self&, existing&: Self): pass
+  fn __del___(owned self): pass
+
+# This type is both movable and copyable and can steal.
+struct MemoryMovableCopyable:
+  fn __init__(self&): pass
+  fn __moveinit__(self&, existing&: Self): pass
+  fn __moveinit__(self&, owned existing: Self): pass
+  fn __copyinit__(self&, existing: Self): pass
+  fn __del___(owned self): pass
+
+# CHECK-LABEL: lit.func @"result_mem1
+fn result_mem1(owned a: MemoryUniqueMovable) -> MemoryUniqueMovable:
+  # CHECK-NEXT: %0 = lit.ownership.end.lifetime %a
+  # CHECK-NEXT: kgen.call {{.*}}__moveinit__{{.*}}(%__result__, %0)
+  # CHECK-NEXT: kgen.param.constant: !lit.none
+  # CHECK-NEXT: kgen.return
+  return a^
+
+# CHECK-LABEL: lit.func @"result_mem2
+fn result_mem2(owned a: MemoryDestroyMovable) -> MemoryDestroyMovable:
+  # CHECK-NEXT: kgen.call {{.*}}__moveinit__{{.*}}(%__result__, %a){{.*}}init_self{{.*}} byref
+  # CHECK-NEXT: kgen.call {{.*}}__del___{{.*}}(%a)
+  # CHECK-NEXT: kgen.param.constant: !lit.none
+  # CHECK-NEXT: kgen.return
+  return a
+
+# CHECK-LABEL: lit.func @"result_mem3
+fn result_mem3(owned a: MemoryMovableCopyable) -> MemoryMovableCopyable:
+  # CHECK-NEXT: %0 = lit.ownership.end.lifetime %a
+  # CHECK-NEXT: kgen.call {{.*}}__moveinit__{{.*}}(%__result__, %0){{.*}}init_self{{.*}} owned_in_mem
+  # CHECK-NEXT: kgen.param.constant: !lit.none
+  # CHECK-NEXT: kgen.return
+  return a^
+
+@register_passable
+struct RegUniqueMovable:
+  fn __init__() -> Self: return Self{}
+  fn __del___(owned self): pass
+
+@register_passable
+struct RegMovableCopyable:
+  fn __init__() -> Self: return Self{}
+  fn __copyinit__(existing: Self) -> Self: return Self{}
+  fn __del___(owned self): pass
+
+# CHECK-LABEL: lit.func @"result_reg1
+fn result_reg1(owned a: RegUniqueMovable) -> RegUniqueMovable:
+  # CHECK-NEXT: %a_0 = lit.varlet.decl "a", var = true
+  # CHECK-NEXT: pop.store %a, %a_0
+  # CHECK-NEXT: %0 = lit.ownership.end.lifetime %a_0
+  # CHECK-NEXT: %1 = lit.load.consume %0
+  # CHECK-NEXT: kgen.return %1
+  return a^
+
+# CHECK-LABEL: lit.func @"result_reg2
+fn result_reg2(owned a: RegMovableCopyable) -> RegMovableCopyable:
+  # CHECK-NEXT: %a_0 = lit.varlet.decl "a", var = true
+  # CHECK-NEXT: pop.store %a, %a_0
+  # CHECK-NEXT: %0 = pop.load %a_0
+  # CHECK-NEXT: %1 = kgen.call {{.*}}__copyinit__{{.*}}(%0){{.*}}borrow
+  # CHECK-NEXT: %2 = pop.load %a_0
+  # CHECK-NEXT: kgen.call {{.*}}__del___{{.*}}(%2)
+  # CHECK-NEXT: kgen.return %1
+  return a
+
+# CHECK-LABEL: lit.func @"result_reg3
+fn result_reg3(owned a: RegMovableCopyable) -> RegMovableCopyable:
+  # CHECK-NEXT: %a_0 = lit.varlet.decl "a", var = true
+  # CHECK-NEXT: pop.store %a, %a_0
+  # CHECK-NEXT: %0 = lit.ownership.end.lifetime %a_0
+  # CHECK-NEXT: %1 = lit.load.consume %0
+  # CHECK-NEXT: kgen.return %1
+  return a^
+
+# CHECK-LABEL: lit.func @"result_reg4
+fn result_reg4(owned a: RegMovableCopyable) -> RegMovableCopyable:
+  # CHECK-NEXT: %a_0 = lit.varlet.decl "a", var = true
+  # CHECK-NEXT: pop.store %a, %a_0
+
+  # CHECK-NEXT: %0 = lit.ownership.end.lifetime %a_0
+  # CHECK-NEXT: %1 = lit.load.consume %0
+  # CHECK-NEXT: %x = lit.letreg.decl "x" = %1
+  let x = a^
+
+  # CHECK-NEXT: %2 = lit.ownership.end.lifetime %x
+  # CHECK-NEXT: kgen.return %2
+  return x^

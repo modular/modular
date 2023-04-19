@@ -424,18 +424,20 @@ struct SpecialFunctions:
 
 @register_passable
 struct WrongType:
-  # expected-error @+1 {{'__init__' on register_passable type must return Self}}
+  # expected-error @+1 {{'__init__' on @register_passable type must return Self}}
   def __init__(self): pass
 
-  # expected-error @+2 {{'__init__' on register_passable type must return Self}}
+  # expected-error @+2 {{'__init__' on @register_passable type must return Self}}
   # expected-error @+1 {{self argument must be present in instance method}}
   def __init__() -> Int: pass
 
-  # expected-error @+1 {{'__copyinit__' on register_passable type must return Self}}
+  # expected-error @+1 {{'__copyinit__' on @register_passable type must return Self}}
   fn __copyinit__(self&, existing&: Int): pass
 
   fn __copyinit__(self&) -> WrongType: pass
 
+  # expected-error @+1 {{'__moveinit__' is not supported for @register_passable types, they are always movable by copying a register}}
+  fn __moveinit__(self&) -> Self: pass
 
 struct WrongSelfType[a: Int]:
   # expected-error @+1 {{'self' argument must have type '$decls-errors::WrongSelfType[a]'}}

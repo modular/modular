@@ -22,8 +22,11 @@ class ParamBindArrayAttr;
 
 namespace M::KGEN::LIT {
 class ASTDecl;
+class CValue;
 class SharedState;
 class LitDiagnostic;
+template <typename ValueType>
+struct ASTExprAnd;
 
 /// This is a simple wrapper around an MLIR Type that provides helpful utilities
 /// for working with our types, provides pretty printing in diagnostics, and
@@ -78,6 +81,11 @@ public:
   /// Return true if this type is copyable, either because it is trivial or has
   /// a copy constructor. Note: this resolves the body of a struct type.
   bool isCopyable(llvm::SMLoc loc, SharedState &shared) const;
+
+  /// Return whether this type is movable, either because it is trivial, a
+  /// register passable type, or has a move constructor that works with the
+  /// specified input value.  Note: this resolves the body of a struct type.
+  bool isMovableFrom(ASTExprAnd<CValue> value, SharedState &shared) const;
 
   /// Given a POP::PointerType, return the element as an ASTType.  This aborts
   /// if the current type isn't a pointer.
