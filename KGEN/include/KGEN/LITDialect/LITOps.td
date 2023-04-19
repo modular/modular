@@ -412,13 +412,15 @@ def LIT_TryOp : LITOp<"try", [DeclareOpInterfaceMethods<ControlFlowNode>]> {
     ```
   }];
 
-  let regions = (region MinSizedRegion<1>:$tryRegion,
-                        MinSizedRegion<1>:$exceptRegion,
-                        MinSizedRegion<1>:$elseRegion);
+  let regions = (region SizedRegion<1>:$tryRegion, SizedRegion<1>:$exceptRegion,
+                        SizedRegion<1>:$elseRegion);
+  let results = (outs Variadic<AnyType>:$results);
   let assemblyFormat = [{
-    $tryRegion `except` custom<ExceptRegion>($exceptRegion) `else` $elseRegion
-    attr-dict
+    (`->` type($results)^)? $tryRegion `except`
+    custom<ExceptRegion>($exceptRegion) `else` $elseRegion attr-dict
   }];
+
+  let builders = [OpBuilder<(ins), [{ build($_builder, $_state, {}); }]>];
 
   let hasVerifier = 1;
 }
@@ -433,7 +435,10 @@ def LIT_TryYieldOp : LITOp<"try.yield", [Pure, Terminator,
   let description = [{
     The `lit.try.yield` operation is used as a terminator to `lit.try` regions.
   }];
-  let assemblyFormat = "attr-dict";
+  let arguments = (ins Variadic<AnyType>:$operands);
+  let assemblyFormat = "($operands^ `:` type($operands))? attr-dict";
+
+  let builders = [OpBuilder<(ins), [{ build($_builder, $_state, {}); }]>];
 }
 
 //===----------------------------------------------------------------------===//
@@ -448,8 +453,13 @@ def LIT_TryRaiseOp : LITOp<"try.raise", [Terminator,
     propagate an error to the except region.
   }];
 
-  let arguments = (ins AnyType:$error);
-  let assemblyFormat = "$error attr-dict `:` type($error)";
+  let arguments = (ins AnyType:$error, Variadic<AnyType>:$trailing);
+  let assemblyFormat = [{
+    $error (`(` $trailing^ `:` type($trailing) `)`)? attr-dict `:` type($error)
+  }];
+
+  let builders = [OpBuilder<(ins "Value":$error),
+                            [{ build($_builder, $_state, error, {}); }]>];
 }
 
 //===----------------------------------------------------------------------===//

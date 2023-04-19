@@ -856,24 +856,20 @@ static void printExceptRegion(OpAsmPrinter &p, Operation *op, Region &region) {
 }
 
 LogicalResult TryOp::verify() {
-  if (getTryRegion().getNumArguments() != 0)
-    return emitOpError("expected try region to have zero arguments");
-  if (getExceptRegion().getNumArguments() != 1)
-    return emitOpError("expected except region to have one arguments");
-  if (getElseRegion().getNumArguments() != 0)
-    return emitOpError("expected else region to have zero arguments");
+  if (getExceptRegion().getNumArguments() < 1)
+    return emitOpError("expected except region to have at least one argument");
   return success();
 }
 
 void TryOp::getEntryTargets(ArrayRef<Attribute> operands,
                             SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
   assert(operands.empty());
-  targets.emplace_back(0);
+  targets.emplace_back(0, getTryRegion().getArguments());
 }
 
 ValueRange TryOp::getEntryArguments(std::optional<unsigned> target) {
   if (!target)
-    return {};
+    return getResults();
   return getRegion(*target).getArguments();
 }
 
@@ -896,13 +892,13 @@ void TryYieldOp::getBranchTargets(
   switch (region->getRegionNumber()) {
   case TRY:
     // Yield from the 'try' region branches to the 'else' region.
-    targets.emplace_back(ELSE);
+    targets.emplace_back(ELSE, getOperands());
     break;
   case EXCEPT:
   case ELSE:
     // Yield from either the 'except' or 'else' regions branches back to the
     // parent operation.
-    targets.emplace_back(std::nullopt);
+    targets.emplace_back(std::nullopt, getOperands());
     break;
   default:
     llvm_unreachable("unknown lit.try region");

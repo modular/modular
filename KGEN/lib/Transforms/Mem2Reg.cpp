@@ -4,8 +4,10 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/HLCFDialect/Analysis/CFG.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPOps.h"
+#include "KGEN/POPDialect/POPTypes.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
 
@@ -18,116 +20,257 @@ namespace M::KGEN {
 #include "KGEN/KGENPasses.h.inc"
 } // namespace M::KGEN
 
-namespace {
-class Mem2RegPass : public M::KGEN::impl::Mem2RegBase<Mem2RegPass> {
-public:
-  void runOnOperation() override;
+/// Return the pointer element type of an allocation.
+static Type getAllocType(StackAllocationOp alloc) {
+  return ParamRefType::get(cast<PointerType>(alloc.getType()).getElementType());
+}
 
-private:
-  /// Check whether the operation has only single block regions.
-  bool allSingleBlock(Operation *op) {
-    for (Region &region : op->getRegions()) {
-      if (!region.empty() && !llvm::hasSingleElement(region))
+/// Return true if the store to an alloc crosses a region of an unknown
+/// operation.
+static bool crossesUnknownRegion(StackAllocationOp alloc, Operation *op) {
+  for (Operation *cur = op->getParentOp(), *parent = alloc->getParentOp();
+       cur != parent; cur = cur->getParentOp()) {
+    // If there is any non-control-flow operation between the store and the
+    // allocation, then the store crosses an unknown region.
+    if (!isa<HLCF::ControlFlowNode>(cur))
+      return true;
+  }
+  return false;
+}
+
+/// We can promote a stack allocation if all its uses are as the pointer to
+/// loads and stores and no load or store crosses a region of an unknown
+/// operation.
+static bool canPromote(StackAllocationOp alloc) {
+  for (Operation *user : alloc->getUsers()) {
+    if (isa<LoadOp>(user)) {
+      if (crossesUnknownRegion(alloc, user))
         return false;
-      for (Operation &op : region.getOps())
-        if (op.getNumRegions() && !allSingleBlock(&op))
-          return false;
+      continue;
     }
-    return true;
+    auto store = dyn_cast<StoreOp>(user);
+    if (!store || store.getArg() == alloc || crossesUnknownRegion(alloc, store))
+      return false;
+  }
+  return true;
+}
+
+static LogicalResult
+processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
+              llvm::MapVector<StackAllocationOp, Value> &state,
+              DenseMap<HLCF::ControlFlowTerminator, ArrayRef<StackAllocationOp>>
+                  termVariants) {
+  // This analysis only works on single-block regions.
+  if (!llvm::hasSingleElement(region)) {
+    return region.getParentOp()->emitError(
+        "'mem-2-reg' can only be run on operations with all single block "
+        "regions");
   }
 
-  /// Promote a single alloc given its users in order.
-  void promoteAlloc(StackAllocationOp alloc, ArrayRef<Operation *> users);
+  auto valueOrUndef = [](StackAllocationOp alloc, Operation *op,
+                         Value value) -> Value {
+    if (LLVM_LIKELY(value))
+      return value;
+    // If the value is undefined, materialize an undef operation and emit
+    // a warning.
+    op->emitWarning("load of uninitialized memory").attachNote(alloc.getLoc())
+        << "memory allocated here";
+    return OpBuilder(op).create<UndefOp>(op->getLoc(), getAllocType(alloc));
+  };
+
+  for (Operation &op : llvm::make_early_inc_range(region.front())) {
+    if (auto alloc = dyn_cast<StackAllocationOp>(op)) {
+      // If we can promote this stack allocation, initialize its state with an
+      // undefined value.
+      if (canPromote(alloc))
+        state.insert({alloc, {}});
+      continue;
+    }
+    if (auto load = dyn_cast<LoadOp>(op)) {
+      // If we can elide this load, replace the result of the load with the last
+      // value of the stack allocation.
+      if (auto alloc = load.getPtr().getDefiningOp<StackAllocationOp>()) {
+        if (auto it = state.find(alloc); it != state.end()) {
+          load.replaceAllUsesWith(valueOrUndef(alloc, load, it->second));
+          load.erase();
+        }
+      }
+      continue;
+    }
+    if (auto store = dyn_cast<StoreOp>(op)) {
+      // If we can elide this store, capture the last written value and erase
+      // the operation.
+      if (auto alloc = store.getPtr().getDefiningOp<StackAllocationOp>()) {
+        if (auto it = state.find(alloc); it != state.end()) {
+          it->second = store.getArg();
+          store.erase();
+        }
+      }
+      continue;
+    }
+    if (auto term = dyn_cast<HLCF::ControlFlowTerminator>(op)) {
+      // Look up the required variant values, if there are any.
+      auto it = termVariants.find(term);
+      if (it == termVariants.end() || it->second.empty())
+        continue;
+      // Bind the last values to the operands.
+      SmallVector<Value> newOperands;
+      for (StackAllocationOp alloc : it->second) {
+        newOperands.push_back(
+            valueOrUndef(alloc, &op, state.find(alloc)->second));
+      }
+      if (!op.hasTrait<OpTrait::VariadicOperands>()) {
+        return op.emitOpError(
+            "must have trailing variadic operands to be used in 'mem-2-reg'");
+      }
+      op.insertOperands(op.getNumOperands(), newOperands);
+      continue;
+    }
+
+    // If this operation has regions, recurse into the regions.
+    unsigned numRegions = op.getNumRegions();
+    if (!numRegions)
+      continue;
+
+    auto node = dyn_cast<HLCF::ControlFlowNode>(op);
+    if (!node) {
+      // This is an unknown operation. Process it as if it were isolated.
+      for (Region &region : op.getRegions())
+        if (failed(processRegion(region, cfg, state, termVariants)))
+          return failure();
+      continue;
+    }
+
+    // For control-flow operations, all current stack allocations are visible
+    // within the regions. Determine which are variant. These values will have
+    // to be carried through the regions using iteration variables.
+    std::vector<StackAllocationOp> variant;
+    for (StackAllocationOp alloc : llvm::make_first_range(state)) {
+      for (Operation *user : alloc->getUsers()) {
+        auto store = dyn_cast<StoreOp>(user);
+        if (!store)
+          continue;
+        if (op.isProperAncestor(store)) {
+          variant.push_back(alloc);
+          break;
+        }
+      }
+    }
+
+    // Map the required variant values to predecessor terminators of the end of
+    // the operation and to each region.
+    llvm::BitVector regionPreds(op.getNumRegions());
+    llvm::BitVector parentPred(op.getNumRegions());
+    if (!variant.empty()) {
+      for (Operation *pred : cfg.predecessors.at({node, {}})) {
+        if (auto term = dyn_cast<HLCF::ControlFlowTerminator>(pred)) {
+          termVariants.try_emplace(term, variant);
+        } else {
+          return pred->emitError(
+              "TODO: parent operation that branches to itself");
+        }
+      }
+      for (Region &region : op.getRegions()) {
+        ArrayRef<Operation *> preds =
+            cfg.predecessors.at({node, region.getRegionNumber()});
+        for (Operation *pred : preds) {
+          if (auto term = dyn_cast<HLCF::ControlFlowTerminator>(pred)) {
+            termVariants.try_emplace(term, variant);
+            regionPreds.set(region.getRegionNumber());
+          } else {
+            assert(pred == &op);
+            parentPred.set(region.getRegionNumber());
+          }
+        }
+      }
+    }
+
+    // For each region with region predecessors (demarcated by a terminator)
+    // and variant allocations, introduce block arguments.
+    bool parentHasInit = false;
+    for (Region &region : op.getRegions()) {
+      // Copy the current state.
+      llvm::MapVector<StackAllocationOp, Value> nestedState = state;
+
+      if (!variant.empty()) {
+        // Determine if there are any region predecessors.
+        if (regionPreds[region.getRegionNumber()]) {
+          for (StackAllocationOp alloc : variant) {
+            // Bind the block argument to the value of the variant allocation.
+            nestedState[alloc] =
+                region.addArgument(getAllocType(alloc), op.getLoc());
+          }
+          // If one of the predecessors is the parent operation, we need to
+          // add initializer operands to it if this hasn't already been done.
+          if (!parentHasInit && parentPred[region.getRegionNumber()]) {
+            parentHasInit = true;
+            SmallVector<Value> initOperands;
+            for (StackAllocationOp alloc : variant) {
+              initOperands.push_back(
+                  valueOrUndef(alloc, &op, state.find(alloc)->second));
+            }
+            if (!op.hasTrait<OpTrait::VariadicOperands>()) {
+              return op.emitOpError("must have trailing variadic operands to "
+                                    "be used in 'mem-2-reg'");
+            }
+            op.insertOperands(op.getNumOperands(), initOperands);
+          }
+        }
+      }
+      // Okay, now recurse into the region.
+      if (failed(processRegion(region, cfg, nestedState, termVariants)))
+        return failure();
+
+      // Erase elided allocations in the nested region.
+      for (StackAllocationOp alloc : llvm::make_first_range(nestedState))
+        if (!state.contains(alloc))
+          alloc.erase();
+    }
+
+    // After processing the regions, we need to add results to the operation
+    // to merge the values of variant allocations, and then bind those as the
+    // current values of those allocations.
+    if (!variant.empty()) {
+      if (!op.hasTrait<OpTrait::VariadicResults>()) {
+        return op.emitOpError(
+            "must have trailing variadic results to be used in 'mem-2-reg'");
+      }
+      SmallVector<Type> newTypes = llvm::to_vector(op.getResultTypes());
+      for (StackAllocationOp alloc : variant)
+        newTypes.push_back(getAllocType(alloc));
+      Operation *newOp = Operation::create(
+          op.getLoc(), op.getName(), newTypes, op.getOperands(),
+          op.getAttrDictionary(), {}, op.getNumRegions());
+      OpBuilder(&op).insert(newOp);
+      for (unsigned i = 0, e = op.getNumRegions(); i != e; ++i)
+        newOp->getRegion(i).takeBody(op.getRegion(i));
+      unsigned iterStart = op.getNumResults();
+      for (auto [i, alloc] : llvm::enumerate(variant))
+        state.find(alloc)->second = newOp->getResult(iterStart + i);
+      op.replaceAllUsesWith(newOp->getResults().slice(0, iterStart));
+      op.erase();
+    }
+  }
+
+  return success();
+}
+
+namespace {
+struct Mem2RegPass : public M::KGEN::impl::Mem2RegBase<Mem2RegPass> {
+  void runOnOperation() override;
 };
 } // namespace
 
-/// We can promote a stack allocation value to a register if:
-/// - it allocates one element and uses the default alignment
-/// - its only uses are loads anywhere and stores within its own scope
-///
-/// `Operation::getUsers` does not return the users in any particular order, so
-/// we have to walk the IR in order to get the users in sequence.
 void Mem2RegPass::runOnOperation() {
-  // Require that this operation has only single-block regions.
-  if (!allSingleBlock(getOperation())) {
-    getOperation()->emitError("'ssa-formation' can only be run on operations "
-                              "with all single block regions");
-    return signalPassFailure();
+  auto &cfg = getAnalysis<HLCF::CFGAnalysis>();
+  for (Region &region : getOperation()->getRegions()) {
+    llvm::MapVector<StackAllocationOp, Value> entryState;
+    DenseMap<HLCF::ControlFlowTerminator, ArrayRef<StackAllocationOp>>
+        termVariants;
+    if (failed(processRegion(region, cfg, entryState, termVariants)))
+      return signalPassFailure();
+    // Erase elided allocations.
+    for (StackAllocationOp alloc : llvm::make_first_range(entryState))
+      alloc.erase();
   }
-
-  DenseMap<StackAllocationOp, std::vector<Operation *>> users;
-  getOperation()->walk([&](Operation *op) {
-    if (auto alloc = dyn_cast<StackAllocationOp>(op)) {
-      // Initialize the users for this alloc if it is valid for SSA formation.
-      auto count = dyn_cast<IntegerAttr>(alloc.getCount());
-      if (count && count.getInt() == 1 && !alloc.getAlignmentAttr())
-        users.insert({alloc, {}});
-      return;
-    }
-    if (auto load = dyn_cast<LoadOp>(op)) {
-      // If the load is a user of an alloc that is still valid for SSA
-      // formation, add it as a user.
-      if (auto alloc = load.getPtr().getDefiningOp<StackAllocationOp>())
-        if (auto it = users.find(alloc); it != users.end())
-          it->second.push_back(load);
-      return;
-    }
-    if (auto store = dyn_cast<StoreOp>(op)) {
-      // If the store is a user of an alloc that is still valid for SSA
-      // formation and the store is in the same region as the alloc, then add it
-      // as a user. If it is in another scope, however, invalidate the alloc for
-      // SSA formation.
-      if (auto alloc = store.getPtr().getDefiningOp<StackAllocationOp>()) {
-        if (auto it = users.find(alloc); it != users.end()) {
-          if (store->getBlock() == alloc->getBlock())
-            it->second.push_back(store);
-          else
-            users.erase(it);
-        }
-      }
-      // Using an alloc as the store value invalidates it.
-      if (auto alloc = store.getArg().getDefiningOp<StackAllocationOp>())
-        users.erase(alloc);
-      return;
-    }
-    // Any other use of a stack allocation invalidates it.
-    for (Value operand : op->getOperands())
-      if (auto alloc = operand.getDefiningOp<StackAllocationOp>())
-        users.erase(alloc);
-  });
-
-  // Now go through the valid allocs and their users and rewrite them.
-  for (auto &[alloc, users] : users)
-    promoteAlloc(alloc, users);
-}
-
-void Mem2RegPass::promoteAlloc(StackAllocationOp alloc,
-                               ArrayRef<Operation *> users) {
-  // Track the current value of the memory.
-  Value curVal;
-  for (Operation *user : users) {
-    if (auto load = dyn_cast<LoadOp>(user)) {
-      // We can't elide the load if it is loading uninitialized memory.
-      mlir::IRRewriter b{OpBuilder(load)};
-      if (!curVal) {
-        load.emitWarning("load of uninitialized memory")
-                .attachNote(alloc.getLoc())
-            << "memory allocated here";
-        // Replace the load with an undef vale.
-        b.replaceOpWithNewOp<UndefOp>(load, load.getType());
-      } else {
-        // Replace the load with the current value.
-        b.replaceOp(load, curVal);
-      }
-      ++numLoadsElided;
-    } else {
-      // The user must be a store. Save the new value.
-      auto store = cast<StoreOp>(user);
-      curVal = store.getArg();
-      store->erase();
-      ++numStoresElided;
-    }
-  }
-  alloc->erase();
-  ++numAllocsElided;
 }

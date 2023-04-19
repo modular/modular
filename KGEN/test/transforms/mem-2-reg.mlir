@@ -41,19 +41,22 @@ kgen.generator @use_in_region(%arg0: index, %arg1: i1) -> index {
 
 // CHECK-LABEL: @store_in_region
 kgen.generator @store_in_region(%arg0: index, %arg1: index, %arg2: i1) -> index {
-  // CHECK-NEXT: stack_allocation
   %0 = pop.stack_allocation 1 x index
   pop.store %arg0, %0 : !pop.pointer<index>
 
+  // CHECK-NEXT: %0 = hlcf.if %arg2 -> index
   hlcf.if %arg2 {
     %1 = pop.load %0 : !pop.pointer<index>
+    // CHECK-NEXT: return %arg0
     kgen.return %1 : index
   } else {
+    // CHECK: hlcf.yield %arg1 : index
     pop.store %arg1, %0 : !pop.pointer<index>
     hlcf.yield
   }
 
   %1 = pop.load %0 : !pop.pointer<index>
+  // CHECK: return %0
   kgen.return %1 : index
 }
 
@@ -69,18 +72,20 @@ kgen.generator @unknown_use(%arg0: index) -> index {
 
 // CHECK-LABEL: @nested_alloc
 kgen.generator @nested_alloc(%arg0: index) -> index {
-  // CHECK-NEXT: hlcf.loop
+  // CHECK-NEXT: %0 = hlcf.loop
   %0 = hlcf.loop () -> index {
     %1 = pop.stack_allocation 1 x index
     pop.store %arg0, %1 : !pop.pointer<index>
-    // CHECK-NEXT: hlcf.loop
+    // CHECK-NEXT: %1 = hlcf.loop
     %2 = hlcf.loop () -> index {
       %3 = pop.load %1 : !pop.pointer<index>
       // CHECK-NEXT: hlcf.break %arg0
       hlcf.break %3 : index
     }
+    // CHECK: break %1
     hlcf.break %2 : index
   }
+  // CHECK: return %0
   kgen.return %0 : index
 }
 
@@ -95,20 +100,22 @@ kgen.generator @read_uninitialized() -> index {
 
 // CHECK-LABEL: @if_empty_block
 kgen.generator @if_empty_block(%arg0: i1, %arg1: index) -> index{
-  // CHECK-NEXT: %0 = pop.stack_allocation
   %0 = pop.stack_allocation 1 x index
   %1 = pop.stack_allocation 1 x index
   pop.store %arg1, %0 : !pop.pointer<index>
-  // CHECK-NEXT: hlcf.if
+  // CHECK-NEXT: %0 = hlcf.if %arg0 -> index
   hlcf.if %arg0 {
-    // CHECK-NEXT: pop.store %arg1, %0
     %2 = pop.load %0 : !pop.pointer<index>
     pop.store %2, %1 : !pop.pointer<index>
+    // CHECK-NEXT: yield %arg1
     hlcf.yield
   } else {
+    // CHECK: %1 = kgen.undef : index
+    // CHECK-NEXT: yield %1
     hlcf.yield
   }
   %2 = pop.load %1 : !pop.pointer<index>
+  // CHECK: return %0
   kgen.return %2 : index
 }
 
@@ -124,6 +131,64 @@ kgen.func @store_alloca() -> i32 {
   kgen.return %3 : i32
 }
 
+// CHECK-LABEL: @loop_variant
+kgen.func @loop_variant(%arg0: index, %arg1: index, %lb: index, %ub: index, %step: index) -> (index, index) {
+  %var0 = pop.stack_allocation 1 x index
+  %var1 = pop.stack_allocation 1 x index
+  // COM: var var0 = arg0
+  // COM: var var1 = arg1
+  pop.store %arg0, %var0 : !pop.pointer<index>
+  pop.store %arg1, %var1 : !pop.pointer<index>
+
+  %varIndex = pop.stack_allocation 1 x index
+  pop.store %lb, %varIndex : !pop.pointer<index>
+
+  // COM: for i in range(lb, ub, step)
+  // CHECK-NEXT: %0:3 = hlcf.loop (%arg5 = %arg0 : index, %arg6 = %arg1 : index, %arg7 = %arg2 : index)
+  // CHECK-SAME: -> (index, index, index)
+  hlcf.loop {
+    %curIndex = pop.load %varIndex : !pop.pointer<index>
+    // CHECK-NEXT: %[[COND:.*]] = index.cmp slt(%arg7, %arg3)
+    %cond = index.cmp slt(%curIndex, %ub)
+    // CHECK-NEXT: hlcf.if %[[COND]]
+    hlcf.if %cond {
+      hlcf.yield
+    } else {
+      // CHECK: break %arg5, %arg6, %arg7
+      hlcf.break
+    }
+
+    // COM: var0 += var1 + i
+    %v00 = pop.load %var0 : !pop.pointer<index>
+    %v01 = pop.load %var1 : !pop.pointer<index>
+    %v02 = pop.load %varIndex : !pop.pointer<index>
+    // CHECK: %[[V0:.*]] = index.add %arg6, %arg7
+    %v03 = index.add %v01, %v02
+    // CHECK-NEXT: %[[V1:.*]] = index.add %[[V0]], %arg5
+    %v04 = index.add %v03, %v00
+    pop.store %v04, %var0 : !pop.pointer<index>
+
+    // COM: var1 *= var0
+    %v10 = pop.load %var0 : !pop.pointer<index>
+    %v11 = pop.load %var1 : !pop.pointer<index>
+    // CHECK-NEXT: %[[V2:.*]] = index.mul %[[V1]], %arg6
+    %v12 = index.mul %v10, %v11
+    pop.store %v12, %var1 : !pop.pointer<index>
+
+    %i0 = pop.load %varIndex : !pop.pointer<index>
+    // CHECK-NEXT: %[[V3:.*]] = index.add %arg7, %arg4
+    %i1 = index.add %i0, %step
+    pop.store %i1, %varIndex : !pop.pointer<index>
+    // CHECK-NEXT: continue %[[V1]], %[[V2]], %[[V3]]
+    hlcf.continue
+  }
+
+  // COM: return var0, var1
+  %r0 = pop.load %var0 : !pop.pointer<index>
+  %r1 = pop.load %var1 : !pop.pointer<index>
+  kgen.return %r0, %r1 : index, index
+}
+
 // CHECK-LABEL: @try_region
 kgen.func @try_region() {
   %0 = pop.stack_allocation 1 x index
@@ -132,25 +197,28 @@ kgen.func @try_region() {
   %idx3 = index.constant 3
   pop.store %idx2, %0 : !pop.pointer<index>
   pop.store %idx3, %1 : !pop.pointer<index>
-  // CHECK: lit.try
+  // CHECK: %0 = lit.try -> index
   lit.try {
     // CHECK-NEXT: "use"(%idx2)
     %2 = pop.load %0 : !pop.pointer<index>
     "use"(%2) : (index) -> ()
-    // CHECK-NEXT: pop.store
     pop.store %idx2, %1 : !pop.pointer<index>
+    // CHECK-NEXT: yield %idx2
     lit.try.yield
   // CHECK: except
   } except (%e: !pop.struct<>) {
-    // CHECK-NEXT: pop.load
     %2 = pop.load %1 : !pop.pointer<index>
+    // COM: This is dead code.
+    // CHECK: "use"(%idx3)
     "use"(%2) : (index) -> ()
     lit.try.yield
   // CHECK: else
   } else {
-    // CHECK-NEXT: "use"(%idx2)
+  // CHECK-NEXT: ^bb0(%arg0: index):
+    // CHECK-NEXT: "use"(%idx2, %arg0)
     %2 = pop.load %0 : !pop.pointer<index>
-    "use"(%2) : (index) -> ()
+    %3 = pop.load %1 : !pop.pointer<index>
+    "use"(%2, %3) : (index, index) -> ()
     lit.try.yield
   // CHECK: }
   }
@@ -158,5 +226,41 @@ kgen.func @try_region() {
   pop.store %idx3, %0 : !pop.pointer<index>
   %2 = pop.load %0 : !pop.pointer<index>
   "use"(%2) : (index) -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: @pass_new_result
+kgen.func @pass_new_result(%arg0: index) {
+  %alloc = pop.stack_allocation 1 x index
+  // CHECK-NEXT: %0:2 = hlcf.loop () -> (index, index)
+  %0 = hlcf.loop () -> index {
+    %idx0 = index.constant 0
+    pop.store %idx0, %alloc : !pop.pointer<index>
+    // CHECK: break %arg0, %idx0
+    hlcf.break %arg0 : index
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: @unknown_region_op
+kgen.generator @unknown_region_op() {
+  // CHECK-NEXT: pop.stack_allocation
+  %alloc0 = pop.stack_allocation 1 x index
+  // CHECK-NEXT: pop.stack_allocation
+  %alloc1 = pop.stack_allocation 1 x index
+
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+  pop.store %idx0, %alloc0 : !pop.pointer<index>
+  pop.store %idx1, %alloc1 : !pop.pointer<index>
+
+  // CHECK: region Fn
+  kgen.param.declare.region Fn = (%arg0: index) -> (index, index) {
+    pop.store %arg0, %alloc1 : !pop.pointer<index>
+    %0 = pop.load %alloc1 : !pop.pointer<index>
+    %1 = pop.load %alloc0 : !pop.pointer<index>
+    kgen.return %0, %1 : index, index
+  }
+
   kgen.return
 }
