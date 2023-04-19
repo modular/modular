@@ -115,7 +115,7 @@ fn to_buffer[
         _type : __mlir_type.`!pop.pointer<!pop.scalar<index>>`
     ](shape)
 
-    var shape_ptr = Pointer(shape)
+    let shape_ptr = Pointer(shape)
     var shape_tuple = StaticIntTuple[rank]()
 
     var stride_tuple = StaticIntTuple[rank]()
