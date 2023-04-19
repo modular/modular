@@ -951,6 +951,52 @@ static void printCallSignature(OpAsmPrinter &p, Operation *op, Type calleeType,
 }
 
 //===----------------------------------------------------------------------===//
+// StageClosureOp
+//===----------------------------------------------------------------------===//
+
+FunctionType StageClosureOp::getFunctionType() {
+  return getResult().getType().getValues();
+}
+
+ArrayRef<Type> StageClosureOp::getArgumentTypes() {
+  return getResult().getType().getValueInputs();
+}
+
+ArrayRef<Type> StageClosureOp::getResultTypes() {
+  return getResult().getType().getValueResults();
+}
+
+static ParseResult parseStageClosureOp(OpAsmParser &p, Type &resultType,
+                                       Region &body) {
+  // we expect the following syntax:
+  // kgen.stage_closure = () capturing -> index {
+  // } { name = foo }
+  SignatureType signatureType;
+  ParamDeclArrayAttr inputParams;
+  ParamDeclArrayAttr resultParams;
+  FunctionType functionTypeValue;
+  SmallVector<OpAsmParser::Argument> args;
+  llvm::SMLoc bodyLoc;
+  if (p.parseEqual() ||
+      parseFunctionSignature(p, args, inputParams, resultParams,
+                             functionTypeValue, signatureType) ||
+      p.getCurrentLocation(&bodyLoc) || p.parseRegion(body, args))
+    return failure();
+  if (!inputParams.empty() || !resultParams.empty())
+    return p.emitError(bodyLoc, "staged closures cannot have parameters");
+  resultType = signatureType;
+  return success();
+}
+
+static void printStageClosureOp(OpAsmPrinter &p, Operation *op,
+                                SignatureType resultType, Region &body) {
+  p << "= ";
+  printFunctionSignature(p, body, {}, {}, resultType.getValues(), resultType);
+  p << ' ';
+  p.printRegion(body, /*printEntryBlockArgs=*/false);
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 

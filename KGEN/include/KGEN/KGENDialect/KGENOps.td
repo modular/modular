@@ -869,3 +869,52 @@ def KGEN_CallSignatureOp : KGENOp<"call_signature", [
       attr-dict
   }];
 }
+
+//===----------------------------------------------------------------------===//
+// StageClosureOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_StageClosureOp : KGENOp<"stage_closure",
+    [Pure, FunctionOpInterface]> {
+  let summary = "Stage a closure declaring a concrete region";
+  let description = [{
+      The `kgen.stage_closure` operation declares a named concrete region.
+      The region can capture values from its parent region. This op
+      allows us to model nested callable functions within their original
+      scope before lifting them into functions so that we may perform
+      transformations that depend on the original structure of the scopes.
+
+    ```mlir
+    kgen.stage_closure = () capturing -> index {
+      kgen.return %7 : index
+    } { name = my_nested_fn }
+    ```
+    }];
+    let results = (outs KGEN_SignatureType:$result);
+    let regions = (region SizedRegion<1>:$bodyRegion);
+
+    let extraClassDeclaration = [{
+        FunctionType getFunctionType();
+        ArrayRef<Type> getArgumentTypes();
+        ArrayRef<Type> getResultTypes();
+
+        TypeAttr getFunctionTypeAttr() { return TypeAttr::get(getFunctionType()); }
+        void setFunctionTypeAttr(TypeAttr type) {
+          llvm_unreachable("can't opaquely set the function type");
+        }
+        ArrayAttr getArgAttrsAttr() { return {}; }
+        ArrayAttr getResAttrsAttr() { return {}; }
+        Attribute removeArgAttrsAttr() { llvm_unreachable("no argument attrs"); }
+        Attribute removeResAttrsAttr() { llvm_unreachable("no result attrs"); }
+        void setArgAttrsAttr(ArrayAttr attrs) {
+          llvm_unreachable("no argument attrs");
+        }
+        void setResAttrsAttr(ArrayAttr attrs) {
+          llvm_unreachable("no result attrs");
+        }
+        bool isOptionalSymbol() { return true; }
+    }];
+    let assemblyFormat = [{
+        custom<StageClosureOp>(type($result), $bodyRegion) attr-dict
+    }];
+}

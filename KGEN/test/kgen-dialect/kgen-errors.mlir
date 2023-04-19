@@ -779,3 +779,15 @@ kgen.generator @bad_evaluator() {
   kgen.param.declare fn: () -> () = <evaluate(:variadic<!kgen.signature<() -> ()>> [@bad_evaluator], :i32 1)>
   kgen.return
 }
+
+// -----
+
+kgen.func @stage_closure() -> !kgen.list<i1[0]> {
+    %idx98 = index.constant 98
+    // expected-error @below {{staged closures cannot have parameters}}
+    %0 = kgen.stage_closure = <n : ui32>() capturing -> index {
+      kgen.return %idx98 : index
+    } { name = "k" }
+    %3 = kgen.param.constant: list<i1[0]> = <[]>
+    kgen.return %3 : !kgen.list<i1[0]>
+}
