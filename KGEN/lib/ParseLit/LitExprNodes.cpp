@@ -1132,7 +1132,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
 }
 
 AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
-  RValue calleeVal = emitter.emitExprRValue(callee, EC_CallCalleeValue);
+  AnyValue calleeVal = emitter.emitExpr(callee, EC_CallCalleeValue);
   if (!calleeVal)
     return {};
 
@@ -1173,7 +1173,7 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   // Otherwise, we must have a concrete RValue, emit an indirect call.
-  auto crVal = calleeVal.getIfCRValue();
+  auto crVal = calleeVal.getIfCValue();
   return emitter.emitIndirectCall(crVal, operands, dest, this);
 }
 

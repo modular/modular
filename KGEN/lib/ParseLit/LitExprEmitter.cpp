@@ -352,11 +352,21 @@ CValue ExprEmitter::emitCRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   return emitCopyOfValue({cValue, value.expr}, dest);
 }
 
+CRValue ExprEmitter::emitCRValue(ASTExprAnd<AnyValue> value,
+                                 ExprContext context) {
+  ValueDest dest(context);
+  auto cr = emitCRValue(value, dest);
+  if (!cr)
+    return {};
+  assert(cr.getIfCRValue() && "Should return a CRValue");
+  return cr.getIfCRValue();
+}
+
 CValue ExprEmitter::emitCValue(ASTExprAnd<AnyValue> value, ExprContext context,
                                ASTType resultType) {
   ValueDest dest(resultType, context);
-  if (auto cr = emitCValue(value, dest))
-    return cr;
+  if (auto c = emitCValue(value, dest))
+    return c;
   dest.resetForError();
   return {};
 }

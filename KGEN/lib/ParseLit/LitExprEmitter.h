@@ -260,6 +260,7 @@ public:
   // the destination and returning a reference if dest consumes it, or the
   // RValue directly if not.
   CValue emitCRValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
+  CRValue emitCRValue(ASTExprAnd<AnyValue> value, ExprContext context);
 
   /// This helper emits the specified value as an RValue.  This can propagate an
   /// ORValue.
@@ -311,7 +312,7 @@ public:
   /// Emit an indirect call to a resolved value, checking for compatibility and
   /// then generating the call logic.  This emits an error and returns null on
   /// failure.
-  CValue emitIndirectCall(CRValue callee,
+  CValue emitIndirectCall(CValue callee,
                           ArrayRef<ASTExprAnd<AnyValue>> operands,
                           ValueDest &dest, const ExprNode *callExpr);
 

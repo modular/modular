@@ -983,9 +983,6 @@ struct CallableStruct:
     fn __init__(self&, value: Int):
         self.value = value
 
-    fn __copyinit__(self&, existing: Self):
-        self.value = existing.value
-
     fn __call__(self, rhs: Int) -> Int:
         return self.value + rhs
 
