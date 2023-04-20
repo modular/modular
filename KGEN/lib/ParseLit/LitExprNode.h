@@ -51,6 +51,7 @@ public:
     kSlice,          // :, a:, :a, ::, a:b:c, etc.  Only valid in subscripts.
     kDictSubscript,  // thing{a: 1, x: 2}
     kChainedCmp,     // a < b <= c
+    kFunctionType,   // async fn[](owned Int, &F32) capturing raises -> F64
     kLValueConvert,  // __get_lvalue_as_address(x)/__get_address_as_lvalue(x)
 
     // Prefix and Postfix unary expressions.

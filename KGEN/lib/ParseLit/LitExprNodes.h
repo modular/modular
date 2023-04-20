@@ -18,16 +18,15 @@
 
 #include "Diags.h"
 #include "IRValues.h"
+#include "KGEN/KGENDialect/KGENAttrs.h"
 #include "LitExprNode.h"
-#include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/StringRef.h"
-#include "llvm/Support/SMLoc.h"
 
 namespace M::KGEN {
 class SignatureType;
-}
+} // namespace M::KGEN
 
 namespace M::KGEN::LIT {
+struct ParsedArgument;
 class SRValue;
 
 /// This returns an SMLoc from a StringRef that points into the source buffer.
@@ -463,6 +462,32 @@ struct ChainedCmpOpNode final : public ExprNode {
   AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
   AnyValue emitNextCmp(ExprEmitter &emitter, size_t opIdx, SRValue lastCmp,
                        SRValue lastExpr) const;
+};
+
+struct FunctionTypeNode final : public ExprNode {
+  FunctionTypeNode(SMLoc baseLoc, ArrayRef<ParsedArgument> inputParams,
+                   ArrayRef<ParsedArgument> resultParams,
+                   ArrayRef<ParsedArgument> arguments,
+                   const ExprNode *resultTypeExpr, FnEffects effects,
+                   SMLoc endLoc)
+      : ExprNode(kFunctionType), baseLoc(baseLoc), inputParams(inputParams),
+        resultParams(resultParams), arguments(arguments),
+        resultTypeExpr(resultTypeExpr), effects(effects), endLoc(endLoc) {}
+
+  SMLoc baseLoc;
+  ArrayRef<ParsedArgument> inputParams;
+  ArrayRef<ParsedArgument> resultParams;
+  ArrayRef<ParsedArgument> arguments;
+  const ExprNode *resultTypeExpr;
+  FnEffects effects;
+  SMLoc endLoc;
+
+  static bool classof(const ExprNode *node) {
+    return node->kind == kFunctionType;
+  }
+  SMLoc getLoc() const override { return baseLoc; }
+  LitSourceRange getRange() const override { return {baseLoc, endLoc}; }
+  AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
 };
 
 /// __get_lvalue_as_address(someSLValue)  # returns pop.pointer.

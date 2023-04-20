@@ -244,7 +244,7 @@ struct ParsedArgument {
 
   VarArgKind vararg = VarArgKind::None;
   StringAttr name;
-  ExprNode *typeExpr = nullptr;
+  const ExprNode *typeExpr = nullptr;
   ExprNode *initExpr = nullptr;
 
   /// This gets set to true when there is a /diagnosed/ error that should
@@ -264,7 +264,8 @@ struct ParsedArgument {
     kStar,      //< This argument is a standalone '*' marker.
   };
 
-  ParseResult parse(ParserBase &p, KWArgMarkerInfo &markerInfo);
+  ParseResult parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
+                    bool omitName = false);
 
   /// This method handles the function argument list for a Python function.
   /// Python has some pretty interesting rules where standalone '*' and '/'
@@ -276,10 +277,9 @@ struct ParsedArgument {
   /// This classification logic is described here:
   ///   https://peps.python.org/pep-0570/#how-to-teach-this
   ///
-  static ParseResult
-  parseAndResolvePresentArgumentList(ParserBase &p,
-                                     SmallVectorImpl<ParsedArgument> &args,
-                                     bool isParameterList);
+  static ParseResult parseAndResolvePresentArgumentList(
+      ParserBase &p, SmallVectorImpl<ParsedArgument> &args,
+      bool isParameterList, bool omitNames = false);
 };
 
 } // namespace M::KGEN::LIT
