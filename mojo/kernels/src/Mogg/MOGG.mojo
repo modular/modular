@@ -8,6 +8,7 @@ from Activations import relu
 from Buffer import NDBuffer
 from DType import DType
 from Functional import elementwise, unroll
+from Intrinsics import strided_load
 from Index import StaticIntTuple
 from IO import print, _printf
 from List import Dim, DimList
@@ -50,9 +51,11 @@ fn MOGGExport():
     alias _simd_load_1D = simd_load_1D
     alias _simd_load_splat = simd_load_splat
     alias _simd_load_maybe_splat = simd_load_maybe_splat
+    alias _simd_load_strided = simd_load_strided
     alias _simd_target = get_target_simd
     alias _simd_width_to_int = simd_width_to_int
     alias _splat = splat
+    alias _transpose = transpose
     alias _elementwise = elementwise_wrapper
     alias _print_shape_info = print_buffer_info
     alias _mark_output_chain_ready = mark_output_chain_ready
@@ -277,6 +280,27 @@ fn simd_load[
 
 
 @always_inline
+fn simd_load_strided[
+    simd_width: Int, type: DType, rank: Int
+](
+    buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    index: StaticIntTuple[rank],
+) -> SIMD[type, simd_width]:
+    var flat_index = _compute_flat_index[type, rank, rank](buffer, index)
+
+    let stride = buffer.dynamic_stride[rank - 1]
+
+    # We aren't loading from something of stride == 1 or stride == 0 then
+    # we have to use a gather load unfortunately.
+    if stride > 1:
+        return strided_load[simd_width, type](
+            buffer.data.offset(flat_index), stride
+        )
+    else:
+        return buffer.data.simd_load[simd_width](flat_index)
+
+
+@always_inline
 fn simd_store[
     simd_width: Int, type: DType, rank: Int
 ](
@@ -401,6 +425,37 @@ fn cast[
     type: DType, new_type: DType, simd_width: Int
 ](value: SIMD[type, simd_width],) -> SIMD[new_type, simd_width]:
     return value.cast[new_type]()
+
+
+# ===----------------------------------------------------------------------===#
+# Transpose op
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn transpose[
+    rank: Int,
+    type: DType,
+    int_type: DType,
+](
+    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    perms: NDBuffer[1, DimList.create_unknown[1](), int_type],
+) -> NDBuffer[rank, DimList.create_unknown[rank](), type]:
+    var new_shape = StaticIntTuple[rank]()
+    var new_stride = StaticIntTuple[rank]()
+
+    @always_inline
+    fn body[i: Int]():
+        let dim = perms[i].to_int()
+        new_shape[i] = input.dynamic_shape[dim]
+        new_stride[i] = input.dynamic_stride[dim]
+
+    unroll[rank, body]()
+
+    # Create the transposed view.
+    return NDBuffer[rank, DimList.create_unknown[rank](), type](
+        input.data, new_shape, input.dynamic_dtype, new_stride
+    )
 
 
 # ===----------------------------------------------------------------------===#
