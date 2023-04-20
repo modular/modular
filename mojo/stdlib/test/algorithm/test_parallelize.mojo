@@ -42,6 +42,7 @@ fn test_async_parallelize():
     let out_chain = OwningOutputChainPtr(rt)
     async_parallelize[parallel_fn](out_chain.borrow(), num_work_items)
     out_chain.wait()
+    out_chain.__del__()
     rt.__del__()
 
     # CHECK-NOT: ERROR
