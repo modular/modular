@@ -10,7 +10,7 @@ from Range import range
 from DType import DType
 from Functional import elementwise
 from Math import mul, min
-from List import Dim, DimList, create_dim_list
+from List import Dim, DimList
 from IO import print
 from Index import StaticIntTuple
 from LLCL import Runtime, OwningOutputChainPtr
@@ -20,12 +20,12 @@ from SIMD import SIMD
 
 
 fn test_elementwise[
-    numelems: Int, outer_rank: Int, static_shape: DimList[outer_rank]
-](dims: DimList[outer_rank]):
+    numelems: Int, outer_rank: Int, static_shape: DimList
+](dims: DimList):
     var memory1 = _raw_stack_allocation[numelems, DType.f32, 1]()
     var buffer1 = NDBuffer[
         outer_rank,
-        rebind[DimList[outer_rank]](static_shape),
+        rebind[DimList](static_shape),
         DType.f32,
     ](
         memory1.address,
@@ -36,7 +36,7 @@ fn test_elementwise[
     var memory2 = _raw_stack_allocation[numelems, DType.f32, 1]()
     var buffer2 = NDBuffer[
         outer_rank,
-        rebind[DimList[outer_rank]](static_shape),
+        rebind[DimList](static_shape),
         DType.f32,
     ](
         memory2.address,
@@ -47,7 +47,7 @@ fn test_elementwise[
     var memory3 = _raw_stack_allocation[numelems, DType.f32, 1]()
     var out_buffer = NDBuffer[
         outer_rank,
-        rebind[DimList[outer_rank]](static_shape),
+        rebind[DimList](static_shape),
         DType.f32,
     ](
         memory3.address,
@@ -85,30 +85,22 @@ fn test_elementwise[
 
 fn main():
     print("Testing 1D:")
-    test_elementwise[16, 1, DimList[1].create_unknown()](create_dim_list(16))
+    test_elementwise[16, 1, DimList.create_unknown[1]()](DimList(16))
 
     print("Testing 2D:")
-    test_elementwise[16, 2, DimList[2].create_unknown()](create_dim_list(4, 4))
+    test_elementwise[16, 2, DimList.create_unknown[2]()](DimList(4, 4))
 
     print("Testing 3D:")
-    test_elementwise[16, 3, DimList[3].create_unknown()](
-        create_dim_list(4, 2, 2)
-    )
+    test_elementwise[16, 3, DimList.create_unknown[3]()](DimList(4, 2, 2))
 
     print("Testing 4D:")
-    test_elementwise[32, 4, DimList[4].create_unknown()](
-        create_dim_list(4, 2, 2, 2)
-    )
+    test_elementwise[32, 4, DimList.create_unknown[4]()](DimList(4, 2, 2, 2))
 
     print("Testing 5D:")
-    test_elementwise[32, 5, DimList[5].create_unknown()](
-        create_dim_list(4, 2, 1, 2, 2)
-    )
+    test_elementwise[32, 5, DimList.create_unknown[5]()](DimList(4, 2, 1, 2, 2))
 
     print("Testing large:")
-    test_elementwise[131072, 2, DimList[2].create_unknown()](
-        create_dim_list(1024, 128)
-    )
+    test_elementwise[131072, 2, DimList.create_unknown[2]()](DimList(1024, 128))
 
 
 # CHECK: Testing 1D:

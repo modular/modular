@@ -10,7 +10,7 @@ from DType import DType
 from Functional import vectorize
 from Index import StaticIntTuple
 from Numerics import inf, neginf
-from List import DimList, Dim, create_dim_list
+from List import DimList, Dim
 from Range import range
 from SIMD import SIMD
 from TargetInfo import dtype_sizeof
@@ -89,8 +89,8 @@ fn reduce[
 @always_inline
 fn _reduce_3D[
     simd_width: Int,
-    input_shape: DimList[3],
-    output_shape: DimList[2],
+    input_shape: DimList,
+    output_shape: DimList,
     type: DType,
     acc_type: DType,
     map_fn: __mlir_type[
@@ -197,8 +197,8 @@ fn _reduce_3D[
 fn reduce[
     simd_width: Int,
     rank: Int,
-    input_shape: DimList[rank],
-    output_shape: DimList[rank],
+    input_shape: DimList,
+    output_shape: DimList,
     type: DType,
     acc_type: DType,
     map_fn: __mlir_type[
@@ -264,8 +264,8 @@ fn reduce[
     alias w_static = input_shape.at[reduce_axis]()
     alias c_static = input_shape.product_range[reduce_axis + 1, rank]()
 
-    alias input_3d_shape = create_dim_list(h_static, w_static, c_static)
-    alias output_3d_shape = create_dim_list(h_static, c_static)
+    alias input_3d_shape = DimList(h_static, w_static, c_static)
+    alias output_3d_shape = DimList(h_static, c_static)
 
     let input_3d = NDBuffer[3, input_3d_shape, type](
         src.data, StaticIntTuple[3](h_dynamic, w_dynamic, c_dynamic), type
@@ -329,8 +329,8 @@ fn max[
 fn max[
     simd_width: Int,
     rank: Int,
-    input_shape: DimList[rank],
-    output_shape: DimList[rank],
+    input_shape: DimList,
+    output_shape: DimList,
     type: DType,
     reduce_axis: Int,
 ](
@@ -395,8 +395,8 @@ fn min[
 fn min[
     simd_width: Int,
     rank: Int,
-    input_shape: DimList[rank],
-    output_shape: DimList[rank],
+    input_shape: DimList,
+    output_shape: DimList,
     type: DType,
     reduce_axis: Int,
 ](
@@ -461,8 +461,8 @@ fn sum[
 fn sum[
     simd_width: Int,
     rank: Int,
-    input_shape: DimList[rank],
-    output_shape: DimList[rank],
+    input_shape: DimList,
+    output_shape: DimList,
     type: DType,
     reduce_axis: Int,
 ](
@@ -527,8 +527,8 @@ fn product[
 fn product[
     simd_width: Int,
     rank: Int,
-    input_shape: DimList[rank],
-    output_shape: DimList[rank],
+    input_shape: DimList,
+    output_shape: DimList,
     type: DType,
     reduce_axis: Int,
 ](
@@ -571,8 +571,8 @@ fn mean[
 fn mean[
     simd_width: Int,
     rank: Int,
-    input_shape: DimList[rank],
-    output_shape: DimList[rank],
+    input_shape: DimList,
+    output_shape: DimList,
     type: DType,
     reduce_axis: Int,
 ](

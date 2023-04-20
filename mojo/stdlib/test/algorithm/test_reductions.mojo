@@ -11,7 +11,7 @@ from Reductions import sum, product, max, min, mean, variance
 from Index import StaticIntTuple
 from IO import print
 from Range import range
-from List import DimList, create_dim_list
+from List import DimList
 
 
 # CHECK-LABEL: test_reductions
@@ -81,8 +81,8 @@ fn test_3d_reductions():
 
     @always_inline
     fn _test_3d_reductions[
-        input_shape: DimList[3],
-        output_shape: DimList[3],
+        input_shape: DimList,
+        output_shape: DimList,
         reduce_axis: Int,
     ]():
         let input = NDBuffer[3, input_shape, DType.f32].stack_allocation()
@@ -109,8 +109,8 @@ fn test_3d_reductions():
     # CHECK-NEXT: 38.000000
     # CHECK-NEXT: 54.000000
     _test_3d_reductions[
-        create_dim_list(2, 2, 4),
-        create_dim_list(2, 2, 1),
+        DimList(2, 2, 4),
+        DimList(2, 2, 1),
         2,
     ]()
     # CHECK: 4.000000
@@ -122,8 +122,8 @@ fn test_3d_reductions():
     # CHECK-NEXT: 24.000000
     # CHECK-NEXT: 26.000000
     _test_3d_reductions[
-        create_dim_list(2, 2, 4),
-        create_dim_list(2, 1, 4),
+        DimList(2, 2, 4),
+        DimList(2, 1, 4),
         1,
     ]()
     # CHECK: 8.000000
@@ -135,8 +135,8 @@ fn test_3d_reductions():
     # CHECK-NEXT: 20.000000
     # CHECK-NEXT: 22.000000
     _test_3d_reductions[
-        create_dim_list(2, 2, 4),
-        create_dim_list(1, 2, 4),
+        DimList(2, 2, 4),
+        DimList(1, 2, 4),
         0,
     ]()
 

@@ -11,7 +11,7 @@ from DType import DType
 from Functional import elementwise
 from Math import erf, exp, tanh, div_ceil
 from Activations import gelu
-from List import Dim, DimList, create_dim_list
+from List import Dim, DimList
 from IO import print
 from Index import StaticIntTuple
 from LLCL import Runtime, OwningOutputChainPtr
