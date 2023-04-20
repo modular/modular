@@ -30,44 +30,10 @@ fn reduce[
     size: Dim,
     type: DType,
     acc_type: DType,
-    map_fn: __mlir_type[
-        `!kgen.signature<<`,
-        Int,
-        `,`,
-        DType,
-        `,`,
-        DType,
-        `>(`,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
-        ],
-        ` borrow,`,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 2> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
-        ],
-        ` borrow) capturing -> `,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
-        ],
-        `>`,
-    ],
-    reduce_fn: __mlir_type[
-        `!kgen.signature<<`,
-        Int,
-        `,`,
-        DType,
-        `>(`,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
-        ],
-        ` borrow) -> `,
-        SIMD[__mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType], 1],
-        `>`,
-    ],
+    map_fn: fn[width: Int, acc_type: DType, type: DType] (
+        SIMD[acc_type, width], SIMD[type, width]
+    ) capturing -> SIMD[acc_type, width],
+    reduce_fn: fn[width: Int, type: DType] (SIMD[type, width]) -> SIMD[type, 1],
 ](src: Buffer[size, type], init: SIMD[acc_type, 1]) -> SIMD[acc_type, 1]:
     alias unroll_factor = 8  # TODO: search
     # TODO: explicitly unroll like vectorize_unroll does.
@@ -93,44 +59,10 @@ fn _reduce_3D[
     output_shape: DimList,
     type: DType,
     acc_type: DType,
-    map_fn: __mlir_type[
-        `!kgen.signature<<`,
-        Int,
-        `,`,
-        DType,
-        `,`,
-        DType,
-        `>(`,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
-        ],
-        ` borrow,`,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 2> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
-        ],
-        ` borrow) capturing -> `,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
-        ],
-        `>`,
-    ],
-    reduce_fn: __mlir_type[
-        `!kgen.signature<<`,
-        Int,
-        `,`,
-        DType,
-        `>(`,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
-        ],
-        ` borrow) -> `,
-        SIMD[__mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType], 1],
-        `>`,
-    ],
+    map_fn: fn[width: Int, acc_type: DType, type: DType] (
+        SIMD[acc_type, width], SIMD[type, width]
+    ) capturing -> SIMD[acc_type, width],
+    reduce_fn: fn[width: Int, type: DType] (SIMD[type, width]) -> SIMD[type, 1],
 ](
     src: NDBuffer[3, input_shape, type],
     dst: NDBuffer[
@@ -201,44 +133,10 @@ fn reduce[
     output_shape: DimList,
     type: DType,
     acc_type: DType,
-    map_fn: __mlir_type[
-        `!kgen.signature<<`,
-        Int,
-        `,`,
-        DType,
-        `,`,
-        DType,
-        `>(`,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
-        ],
-        ` borrow,`,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 2> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
-        ],
-        ` borrow) capturing -> `,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
-        ],
-        `>`,
-    ],
-    reduce_fn: __mlir_type[
-        `!kgen.signature<<`,
-        Int,
-        `,`,
-        DType,
-        `>(`,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
-        ],
-        ` borrow) -> `,
-        SIMD[__mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType], 1],
-        `>`,
-    ],
+    map_fn: fn[width: Int, acc_type: DType, type: DType] (
+        SIMD[acc_type, width], SIMD[type, width]
+    ) capturing -> SIMD[acc_type, width],
+    reduce_fn: fn[width: Int, type: DType] (SIMD[type, width]) -> SIMD[type, 1],
     reduce_axis: Int,
 ](
     src: NDBuffer[rank, input_shape, type],

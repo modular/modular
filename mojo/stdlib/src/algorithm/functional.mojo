@@ -25,11 +25,7 @@ from Range import range
 
 
 @always_inline
-fn map[
-    func: __mlir_type[
-        `!kgen.signature<(`, Int, ` borrow) capturing -> `, NoneType, `>`
-    ],
-](size: Int):
+fn map[func: fn (Int) capturing -> None](size: Int):
     """Map a function over a range from 0 to size.
 
     Parameters:
@@ -50,9 +46,7 @@ fn map[
 @always_inline
 fn unroll[
     count: Int,
-    func: __mlir_type[
-        `!kgen.signature<<`, Int, `>() capturing -> `, NoneType, `>`
-    ],
+    func: fn[idx: Int] () capturing -> None,
 ]():
     """Reateadly evaluate a function `count` times.
 
@@ -68,9 +62,7 @@ fn unroll[
 fn _unroll_impl[
     idx: Int,
     count: Int,
-    func: __mlir_type[
-        `!kgen.signature<<`, Int, `>() capturing -> `, NoneType, `>`
-    ],
+    func: fn[idx: Int] () capturing -> None,
 ]():
     @parameter
     if idx < count:
@@ -87,9 +79,7 @@ fn _unroll_impl[
 fn unroll2[
     dim0: Int,
     dim1: Int,
-    func: __mlir_type[
-        `!kgen.signature<<`, Int, `, `, Int, `>() capturing -> `, NoneType, `>`
-    ],
+    func: fn[idx0: Int, idx1: Int] () capturing -> None,
 ]():
     """Repeateadly evaluate a 2D nested loop.
 
@@ -119,17 +109,7 @@ fn unroll3[
     dim0: Int,
     dim1: Int,
     dim2: Int,
-    func: __mlir_type[
-        `!kgen.signature<<`,
-        Int,
-        `, `,
-        Int,
-        `, `,
-        Int,
-        `>() capturing -> `,
-        NoneType,
-        `>`,
-    ],
+    func: fn[idx0: Int, idx1: Int, idx2: Int] () capturing -> None,
 ]():
     """Repeateadly evaluate a 3D nested loop.
 
@@ -155,37 +135,10 @@ fn unroll3[
 # ===----------------------------------------------------------------------===#
 
 
-alias fn_sig_type = __mlir_type[
-    `!kgen.signature<(`,
-    Int,
-    `) capturing -> `,
-    NoneType,
-    `>`,
-]
-
-alias fn_simd_sig_type = __mlir_type[
-    `!kgen.signature<<`,
-    Int,
-    `>(`,
-    Int,
-    ` borrow) capturing -> `,
-    NoneType,
-    `>`,
-]
-
-
 @always_inline
 fn vectorize[
     simd_width: Int,
-    func: __mlir_type[
-        `!kgen.signature<<`,
-        Int,
-        `>(`,
-        Int,
-        ` borrow) capturing -> `,
-        NoneType,
-        `>`,
-    ],
+    func: fn[width: Int] (Int) capturing -> None,
 ](size: Int):
     """Map a function which is parametrized over a simd_width over a range
     from 0 to size in simd fashion.
@@ -202,8 +155,9 @@ fn vectorize[
 
 
 fn _variadic_get(
-    a: __mlir_type[`!kgen.variadic<`, fn_sig_type, `>`], idx: Int
-) -> fn_sig_type:
+    a: __mlir_type[`!kgen.variadic<`, fn (Int) capturing -> NoneType, `>`],
+    idx: Int,
+) -> fn (Int) capturing -> NoneType:
     return __mlir_op.`pop.variadic.get`(a, idx.__as_mlir_index())
 
 
@@ -211,7 +165,7 @@ fn _variadic_get(
 fn vectorize_unroll[
     simd_width: Int,
     unroll_factor: Int,
-    func: fn_simd_sig_type,
+    func: fn[width: Int] (Int) capturing -> NoneType,
 ](size: Int):
     """Map a function which is parametrized over a simd_width over a range
     from 0 to size in simd fashion and unroll the loop by unroll_factor.
@@ -242,20 +196,26 @@ fn vectorize_unroll[
         `#kgen.param.expr<get_all_impls,`,
         func[simd_width],
         `> :`,
-        __mlir_type[`!kgen.variadic<`, fn_sig_type, `>`],
+        __mlir_type[`!kgen.variadic<`, fn (Int) capturing -> NoneType, `>`],
     ]
     # TODO: `kgen.param.fork` and `get_all_impls` invocations should have
     # nice looking wrappers.
     __mlir_op.`kgen.param.fork`[
         paramDecl : __mlir_attr[
-            `#kgen<param.decl result_hidden :`, fn_sig_type, `>`
+            `#kgen<param.decl result_hidden :`,
+            fn (Int) capturing -> NoneType,
+            `>`,
         ],
         values : __mlir_attr[
-            vector_func_impls, `: !kgen.variadic<`, fn_sig_type, `>`
+            vector_func_impls,
+            `: !kgen.variadic<`,
+            fn (Int) capturing -> NoneType,
+            `>`,
         ],
     ]()
     alias vector_func_impl = __mlir_attr[
-        `#kgen.param.decl.ref<"result_hidden"> :`, fn_sig_type
+        `#kgen.param.decl.ref<"result_hidden"> :`,
+        fn (Int) capturing -> NoneType,
     ]
 
     # For scalar version we will just get the first available implementation.
@@ -265,7 +225,7 @@ fn vectorize_unroll[
         `#kgen.param.expr<get_all_impls,`,
         func[1],
         `> :`,
-        __mlir_type[`!kgen.variadic<`, fn_sig_type, `>`],
+        __mlir_type[`!kgen.variadic<`, fn (Int) capturing -> NoneType, `>`],
     ]
     alias scalar_func_impl = _variadic_get(scalar_func_impls, 0)
 
@@ -300,9 +260,7 @@ fn vectorize_unroll[
 
 @always_inline
 fn async_parallelize[
-    func: __mlir_type[
-        `!kgen.signature<(`, Int, ` borrow) capturing -> `, NoneType, `>`
-    ],
+    func: fn (Int) capturing -> None
 ](out_chain: OutputChainPtr, num_work_items: Int):
     """Execute func(0) ... func(num_work_items-1) as sub-tasks in parallel and
     return imediatly.
@@ -355,11 +313,7 @@ fn async_parallelize[
 
 
 @always_inline
-fn parallelize[
-    func: __mlir_type[
-        `!kgen.signature<(`, Int, ` borrow) capturing -> `, NoneType, `>`
-    ],
-]():
+fn parallelize[func: fn (Int) capturing -> None]():
     """Execute func(0) ... func(N-1) as sub-tasks in parallel and block until
     completion. N is chosen to be the number of physical processors on the
     system.
@@ -375,11 +329,7 @@ fn parallelize[
 
 
 @always_inline
-fn parallelize[
-    func: __mlir_type[
-        `!kgen.signature<(`, Int, ` borrow) capturing -> `, NoneType, `>`
-    ],
-](num_work_items: Int):
+fn parallelize[func: fn (Int) capturing -> None](num_work_items: Int):
     """Execute func(0) ... func(num_work_items-1) as sub-tasks in parallel and
     block until completion.
 
@@ -558,40 +508,20 @@ fn invoke[
 Signature of a 1d tiled function that performs some work with a static tile size
 and an offset. i.e. func<tile_size: Int> (offset: Int)
 """
-alias Static1DTileUnitFunc = __mlir_type[
-    `!kgen.signature<<`, Int, `>(`, Int, ` borrow) capturing -> `, NoneType, `>`
-]
+alias Static1DTileUnitFunc = fn[width: Int] (Int) capturing -> None
 
 """
 Signature of a 1d tiled function that performs some work with a dynamic tile size
   and an offset. i.e. func(offset: Int, tile_size: Int)
 """
-alias Dynamic1DTileUnitFunc = __mlir_type[
-    `!kgen.signature<(`,
-    Int,
-    ` borrow,`,
-    Int,
-    ` borrow) capturing -> `,
-    NoneType,
-    `>`,
-]
+alias Dynamic1DTileUnitFunc = fn (Int, Int) capturing -> None
 
 
 """
 Signature of a tiled function that performs some work with a dynamic tile size
 and a secondary static tile size.
 """
-alias BinaryTile1DTileUnitFunc = __mlir_type[
-    `!kgen.signature<<`,
-    Int,
-    `>(`,
-    Int,
-    ` borrow,`,
-    Int,
-    ` borrow) capturing -> `,
-    NoneType,
-    `>`,
-]
+alias BinaryTile1DTileUnitFunc = fn[width: Int] (Int, Int) capturing -> None
 
 
 @always_inline
@@ -736,19 +666,9 @@ Signature of a 2d tiled function that performs some work with a static tile size
 and an offset. i.e.
 func<tile_size_x: Int, tile_size_y: Int> (offset_x: Int, offset_y: Int)
 """
-alias Static2DTileUnitFunc = __mlir_type[
-    `!kgen.signature<<`,
-    Int,
-    `,`,
-    Int,
-    `>(`,
-    Int,
-    ` borrow,`,
-    Int,
-    ` borrow) capturing -> `,
-    NoneType,
-    `>`,
-]
+alias Static2DTileUnitFunc = fn[tile_x: Int, tile_y: Int] (
+    Int, Int
+) capturing -> None
 
 
 @always_inline
@@ -1018,20 +938,10 @@ struct TernaryClosure[
 # ===----------------------------------------------------------------------===#
 
 # Signature of a function that unswitch can take.
-alias SwitchedFunction = __mlir_type[
-    `!kgen.signature<<`, Bool, `>() capturing -> `, NoneType, `>`
-]
+alias SwitchedFunction = fn[sw: Bool] () capturing -> None
 
 # Version of unswitch supporting 2 predicates.
-alias SwitchedFunction2 = __mlir_type[
-    `!kgen.signature<<`,
-    Bool,
-    `,`,
-    Bool,
-    `>() capturing -> `,
-    NoneType,
-    `>`,
-]
+alias SwitchedFunction2 = fn[sw0: Bool, sw1: Bool] () capturing -> None
 
 
 @always_inline
@@ -1118,19 +1028,9 @@ fn unswitch[
 Signature of a tiled function that performs some work with a static tile size
   and an offset. i.e. func<tile_size: Int> (offset: Int)
 """
-alias Static1DTileUnswitchUnitFunc = __mlir_type[
-    `!kgen.signature<<`,
-    Int,
-    `, `,
-    Bool,
-    `>(`,
-    Int,
-    ` borrow,`,
-    Int,
-    ` borrow) capturing -> `,
-    NoneType,
-    `>`,
-]
+alias Static1DTileUnswitchUnitFunc = fn[width: Int, sw: Bool] (
+    Int, Int
+) capturing -> None
 
 
 @always_inline
@@ -1181,19 +1081,9 @@ fn tile_and_unswitch[
         )
 
 
-alias Dynamic1DTileUnswitchUnitFunc = __mlir_type[
-    `!kgen.signature<<`,
-    Bool,
-    `>(`,
-    Int,
-    ` borrow,`,
-    Int,
-    ` borrow,`,
-    Int,
-    ` borrow) capturing -> `,
-    NoneType,
-    `>`,
-]
+alias Dynamic1DTileUnswitchUnitFunc = fn[sw: Bool] (
+    Int, Int, Int
+) capturing -> None
 
 
 @always_inline
@@ -1279,19 +1169,7 @@ fn elementwise[
     rank: Int,
     simd_width: Int,
     unroll_factor: Int,
-    func: __mlir_type[
-        `!kgen.signature<<`,
-        Int,
-        `,`,
-        Int,
-        `>(`,
-        StaticIntTuple[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, Int]
-        ],
-        ` borrow) capturing -> `,
-        NoneType,
-        `>`,
-    ],
+    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
 ](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
     """Execute func[width, rank](indices) as sub-tasks for a suitable
     combination of width and indices so as to cover shape.
@@ -1391,19 +1269,7 @@ fn elementwise[
     rank: Int,
     simd_width: Int,
     unroll_factor: Int,
-    func: __mlir_type[
-        `!kgen.signature<<`,
-        Int,
-        `,`,
-        Int,
-        `>(`,
-        StaticIntTuple[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, Int]
-        ],
-        ` borrow) capturing -> `,
-        NoneType,
-        `>`,
-    ],
+    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
 ](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
     """Execute func[width, rank](indices) as sub-tasks for a suitable
     combination of width and indices so as to cover shape.
