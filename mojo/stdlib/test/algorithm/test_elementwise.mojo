@@ -76,7 +76,6 @@ fn test_elementwise[
         out_chain.borrow(),
     )
     out_chain.wait()
-    out_chain.__del__()
     runtime.__del__()
 
     for i2 in range(min(numelems, 64)):
