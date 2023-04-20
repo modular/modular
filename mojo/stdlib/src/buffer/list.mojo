@@ -552,6 +552,7 @@ struct VariadicList[type: AnyType]:
     alias StorageType = __mlir_type[`!kgen.variadic<`, type, `>`]
     var value: StorageType
 
+    @always_inline
     fn __init__(*value: type) -> Self:
         """Constructs a VariadicList from a variadic list of arguments.
 
@@ -564,6 +565,7 @@ struct VariadicList[type: AnyType]:
         """
         return Self(value)
 
+    @always_inline
     fn __init__(value: StorageType) -> Self:
         """Constructs a VariadicList from a variadic argument type.
 
@@ -575,6 +577,7 @@ struct VariadicList[type: AnyType]:
         """
         return Self {value: value}
 
+    @always_inline
     fn __len__(self) -> Int:
         """Gets the size of the list.
 
@@ -584,6 +587,7 @@ struct VariadicList[type: AnyType]:
 
         return __mlir_op.`pop.variadic.size`(self.value)
 
+    @always_inline
     fn __getitem__(self, index: Int) -> type:
         """Accessor to a single element on the variadic list.
 
@@ -607,6 +611,7 @@ struct VariadicListMem[type: AnyType]:
     alias StorageType = __mlir_type[`!kgen.variadic<!pop.pointer<`, type, `>>`]
     var value: StorageType
 
+    @always_inline
     fn __init__(value: StorageType) -> Self:
         """Constructs a VariadicList from a variadic argument type.
 
@@ -618,6 +623,7 @@ struct VariadicListMem[type: AnyType]:
         """
         return Self {value: value}
 
+    @always_inline
     fn __len__(self) -> Int:
         """Gets the size of the list.
 
@@ -627,6 +633,7 @@ struct VariadicListMem[type: AnyType]:
 
         return __mlir_op.`pop.variadic.size`(self.value)
 
+    @always_inline
     fn __getitem__(self, index: Int) -> __mlir_type[`!pop.pointer<`, type, `>`]:
         """Accessor to a single element on the variadic list.
 
