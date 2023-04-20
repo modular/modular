@@ -128,7 +128,6 @@ fn pool(pool_method: Int):
             out_chain.borrow(),
         )
     out_chain.wait()
-    out_chain.__del__()
     runtime.__del__()
 
     print_buffer(output_buffer)
