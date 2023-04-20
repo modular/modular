@@ -1490,11 +1490,7 @@ struct DynamicRankBuffer:
         )
 
     @always_inline
-    fn rank_dispatch[
-        func: __mlir_type[
-            `!kgen.signature<<`, Int, `>() capturing -> `, NoneType, `>`
-        ]
-    ](self):
+    fn rank_dispatch[func: fn[rank: Int] () capturing -> None](self):
         """Dispatch the function call based on buffer rank.
 
         Constraints:
@@ -1532,9 +1528,7 @@ struct DynamicRankBuffer:
 
     @always_inline
     fn rank_dispatch[
-        func: __mlir_type[
-            `!kgen.signature<<`, Int, `>() capturing -> `, NoneType, `>`
-        ]
+        func: fn[rank: Int] () capturing -> None
     ](self, out_chain: OutputChainPtr):
         """Dispatch the function call based on buffer rank.
 
