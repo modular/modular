@@ -29,13 +29,11 @@ def test_single_threaded_execute_tensorflow(
     )
 
 
-# TODO: Enable these as MOONX op coverage allows
-@pytest.mark.skip(reason="Models use unsupported ops")
 @pytest.mark.parametrize(
     "model_path_fixture",
     [
-        "onnx_maskrcnn",
-        "onnx_camembert",
+        "onnx_dlrm",
+        "onnx_bert",
     ],
 )
 def test_single_threaded_execute_onnx(model_path_fixture, request) -> None:

@@ -5,24 +5,23 @@
 # ===----------------------------------------------------------------------=== #
 """All fixtures for end-to-end testing"""
 from pathlib import Path
-
-import pytest
 from typing import Generator
 
+import pytest
 from model_fixtures.utils import ModelFormat, fixture_generator
 
 
 @pytest.fixture(scope="session")
-def onnx_maskrcnn() -> Generator:
+def onnx_dlrm() -> Generator:
     """This is a path to a model about 180 MB in size."""
 
-    key = "mask_rcnn_resnet50_fpn-pytorch.yaml"
+    key = "dlrm-rm1-multihot-pytorch-nobag"
     yield fixture_generator(key, ModelFormat.onnx)
 
 
 @pytest.fixture(scope="session")
-def onnx_camembert() -> Generator:
+def onnx_bert() -> Generator:
     """This is a path to a model about 400 MB in size."""
 
-    key = "camembert-base"
+    key = "bert-base-uncased-pytorch-seqlen-128"
     yield fixture_generator(key, ModelFormat.onnx)
