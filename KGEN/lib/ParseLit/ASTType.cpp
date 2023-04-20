@@ -200,7 +200,18 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType astType) {
     if (!params.empty()) {
       os << '[';
       llvm::interleaveComma(params, os, [&](ParamBindAttr bind) {
-        os << getParamAsString(bind.getValue());
+        // If the parameter is a type, print it nicely.
+        auto val = PValue(bind.getValue());
+
+        if (ASTType type = val.getIfTypeValue())
+          if (!isa<ParamRefType>(type.mlirType)) {
+            os << type;
+            return;
+          }
+
+        // Otherwise, ask KGEN to do it.  This is gross and needs to be
+        // improved.
+        os << getParamAsString(val.get());
       });
       os << ']';
     }

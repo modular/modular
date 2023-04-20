@@ -225,6 +225,11 @@ fn badCalls(arg: Int):
   # expected-error @+1 {{callee expects 1 input parameter but 0 were provided}}
   parameterizedVariadic(1, 2.0)
 
+fn badError(a: ParameterizedStruct[Int]):
+  # expected-error @+1 {{'$decls-errors::ParameterizedStruct[$Int::Int]' value cannot be converted to '$decls-errors::ParameterizedStruct[$Bool::Bool]' in 'let' initializer}}
+  let b: ParameterizedStruct[Bool] = a
+
+
 # expected-error @+1 {{unexpected token in expression}}
 fn invalidStarExpression(*x: *): pass
 
