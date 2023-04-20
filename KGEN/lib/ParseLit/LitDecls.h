@@ -12,10 +12,8 @@
 #define LITDECLS_H
 
 #include "IRValues.h"
+#include "KGEN/KGENDialect/KGENAttrs.h"
 #include "SharedState.h"
-#include "Support/LLVMCompilerForwardDecls.h"
-#include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/DenseSet.h"
 
 namespace M::KGEN {
 class ParamBindArrayAttr;
@@ -201,6 +199,87 @@ private:
 
   DeclResolver(const DeclResolver &) = delete;
   DeclResolver &operator=(const DeclResolver &) = delete;
+};
+
+//===----------------------------------------------------------------------===//
+// Argument and Parameter List Parsing
+//===----------------------------------------------------------------------===//
+
+/// Specify variadic argument kind, e.g. `*x` or `**x`.
+enum VarArgKind {
+  /// Not a variadic argument, e.g. `x` or `x: Int`.
+  None,
+  /// A homogeneously typed variadic argument, e.g. `*x` or `*x: Int`.
+  VarArg,
+  /// A heterogeneously typed variadic argument, e.g. `*x: *Ts`.
+  PackVarArg,
+  /// A variadic keywords argument, e.g. `**x`.
+  KWVarArg
+};
+
+/// Parsing support for a function argument and input parameter:
+///
+/// argument_list      ::= argument ("," argument)*
+/// argument           ::= "/" | "*"
+/// argument           ::= [argument_ownership] [argument_variadic] identifier
+///                        [argument_reference] [argument_type] ["=" expression]
+/// argument_ownership ::= "owned" | "borrowed"
+/// argument_variadic  ::= "*" | "**"
+/// argument_reference ::= "&"
+/// argument_type      ::= ":" star_expression
+struct ParsedArgument {
+  SMLoc loc;
+  // Specify argument passing convention, e.g. owned/byref etc.
+  enum {
+    kConventionUnspec = 0,         // Nothing specified
+    kConventionByRef = 1,          // x&
+    kConventionOwned = 2,          // owned x
+    kConventionBorrowed = 3,       // borrowed x
+    kConventionByRefResult = 4,    // No syntax: result slot
+    kConventionInitSelfResult = 5, // No syntax: __init__(self&) argument
+  } convention = kConventionUnspec;
+
+  // After type checking, this will hold the KGEN convention to use.
+  ValueInputConvention kgenConvention = ValueInputConvention(128);
+
+  VarArgKind vararg = VarArgKind::None;
+  StringAttr name;
+  ExprNode *typeExpr = nullptr;
+  ExprNode *initExpr = nullptr;
+
+  /// This gets set to true when there is a /diagnosed/ error that should
+  /// prevent subsequent references to this argument.
+  bool isErroneous = false;
+
+  /// This specifies the handling of keyword arguments in a list.
+  enum class KWArgHandling {
+    kPositionalOnly,      //< before a standalone '/'
+    kPositionalOrKeyword, //< before a standalone '*'
+    kKeywordOnly          //< after a standalone '*'
+  } kwArgHandling = KWArgHandling::kPositionalOrKeyword;
+
+  enum class KWArgMarkerInfo {
+    kNotMarker, //< This is a normal argument.
+    kSlash,     //< This argument is a standalone '/' marker.
+    kStar,      //< This argument is a standalone '*' marker.
+  };
+
+  ParseResult parse(ParserBase &p, KWArgMarkerInfo &markerInfo);
+
+  /// This method handles the function argument list for a Python function.
+  /// Python has some pretty interesting rules where standalone '*' and '/'
+  /// markers (when used in place of an argument) actually change the
+  /// interpretation of other argument definitions by specifying how they behave
+  /// w.r.t. keyword arguments.  We resolve these here so the client doesn't
+  /// have to deal with them.
+  ///
+  /// This classification logic is described here:
+  ///   https://peps.python.org/pep-0570/#how-to-teach-this
+  ///
+  static ParseResult
+  parseAndResolvePresentArgumentList(ParserBase &p,
+                                     SmallVectorImpl<ParsedArgument> &args,
+                                     bool isParameterList);
 };
 
 } // namespace M::KGEN::LIT
