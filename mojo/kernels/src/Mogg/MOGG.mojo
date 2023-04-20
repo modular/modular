@@ -142,19 +142,7 @@ fn elementwise_wrapper[
     simd_width: Int,
     type: DType,
     rank: Int,
-    func: __mlir_type[
-        `!kgen.signature<<`,
-        Int,
-        `,`,
-        Int,
-        `>(`,
-        StaticIntTuple[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, Int]
-        ],
-        ` borrow) capturing -> `,
-        NoneType,
-        `>`,
-    ],
+    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
 ](
     buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_chain: OutputChainPtr,
