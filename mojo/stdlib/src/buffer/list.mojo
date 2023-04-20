@@ -165,7 +165,7 @@ struct DimList[length: Int]:
     """This type represents a list of dimensions. Each dimension may have a
     static value or not have a value, which represents a dynamic dimension."""
 
-    alias list_type = __mlir_type[`!kgen.variadic<`, Dim, `>`]
+    alias list_type = VariadicList[Dim]
     var value: list_type
 
     @always_inline("nodebug")
@@ -201,7 +201,7 @@ struct DimList[length: Int]:
         """
         assert_param_msg[i >= 0, "negative index"]()
         assert_param_msg[i < length, "index exceeds length"]()
-        return __mlir_op.`pop.variadic.get`(self.value, i.__as_mlir_index())
+        return self.value[i]
 
     @always_inline
     fn _product_impl[i: Int, end: Int](self) -> Dim:
@@ -341,9 +341,7 @@ fn create_dim_list(e0: Dim) -> DimList[1]:
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.variadic.create`[
-        _type : __mlir_type[`!kgen.variadic<`, Dim, `>`]
-    ](e0)
+    return VariadicList[Dim](e0)
 
 
 @always_inline("nodebug")
@@ -357,9 +355,7 @@ fn create_dim_list(e0: Dim, e1: Dim) -> DimList[2]:
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.variadic.create`[
-        _type : __mlir_type[`!kgen.variadic<`, Dim, `>`]
-    ](e0, e1)
+    return VariadicList[Dim](e0, e1)
 
 
 @always_inline("nodebug")
@@ -374,9 +370,7 @@ fn create_dim_list(e0: Dim, e1: Dim, e2: Dim) -> DimList[3]:
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.variadic.create`[
-        _type : __mlir_type[`!kgen.variadic<`, Dim, `>`]
-    ](e0, e1, e2)
+    return VariadicList[Dim](e0, e1, e2)
 
 
 @always_inline("nodebug")
@@ -392,9 +386,7 @@ fn create_dim_list(e0: Dim, e1: Dim, e2: Dim, e3: Dim) -> DimList[4]:
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.variadic.create`[
-        _type : __mlir_type[`!kgen.variadic<`, Dim, `>`]
-    ](e0, e1, e2, e3)
+    return VariadicList[Dim](e0, e1, e2, e3)
 
 
 @always_inline("nodebug")
@@ -411,9 +403,7 @@ fn create_dim_list(e0: Dim, e1: Dim, e2: Dim, e3: Dim, e4: Dim) -> DimList[5]:
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.variadic.create`[
-        _type : __mlir_type[`!kgen.variadic<`, Dim, `>`]
-    ](e0, e1, e2, e3, e4)
+    return VariadicList[Dim](e0, e1, e2, e3, e4)
 
 
 @always_inline("nodebug")
@@ -433,9 +423,7 @@ fn create_dim_list(
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.variadic.create`[
-        _type : __mlir_type[`!kgen.variadic<`, Dim, `>`]
-    ](e0, e1, e2, e3, e4, e5)
+    return VariadicList[Dim](e0, e1, e2, e3, e4, e5)
 
 
 @always_inline("nodebug")
@@ -462,9 +450,7 @@ fn create_dim_list(
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.variadic.create`[
-        _type : __mlir_type[`!kgen.variadic<`, Dim, `>`]
-    ](e0, e1, e2, e3, e4, e5, e6)
+    return VariadicList[Dim](e0, e1, e2, e3, e4, e5, e6)
 
 
 @always_inline("nodebug")
@@ -493,9 +479,7 @@ fn create_dim_list(
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.variadic.create`[
-        _type : __mlir_type[`!kgen.variadic<`, Dim, `>`]
-    ](e0, e1, e2, e3, e4, e5, e6, e7)
+    return VariadicList[Dim](e0, e1, e2, e3, e4, e5, e6, e7)
 
 
 @always_inline("nodebug")
@@ -526,9 +510,7 @@ fn create_dim_list(
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.variadic.create`[
-        _type : __mlir_type[`!kgen.variadic<`, Dim, `>`]
-    ](e0, e1, e2, e3, e4, e5, e6, e7, e8)
+    return VariadicList[Dim](e0, e1, e2, e3, e4, e5, e6, e7, e8)
 
 
 @always_inline("nodebug")
@@ -561,9 +543,7 @@ fn create_dim_list(
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.variadic.create`[
-        _type : __mlir_type[`!kgen.variadic<`, Dim, `>`]
-    ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9)
+    return VariadicList[Dim](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9)
 
 
 @always_inline("nodebug")
@@ -598,9 +578,7 @@ fn create_dim_list(
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.variadic.create`[
-        _type : __mlir_type[`!kgen.variadic<`, Dim, `>`]
-    ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10)
+    return VariadicList[Dim](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10)
 
 
 @always_inline("nodebug")
@@ -637,9 +615,7 @@ fn create_dim_list(
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.variadic.create`[
-        _type : __mlir_type[`!kgen.variadic<`, Dim, `>`]
-    ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11)
+    return VariadicList[Dim](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11)
 
 
 @always_inline("nodebug")
@@ -678,9 +654,9 @@ fn create_dim_list(
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.variadic.create`[
-        _type : __mlir_type[`!kgen.variadic<`, Dim, `>`]
-    ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12)
+    return VariadicList[Dim](
+        e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12
+    )
 
 
 @always_inline("nodebug")
@@ -721,9 +697,9 @@ fn create_dim_list(
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.variadic.create`[
-        _type : __mlir_type[`!kgen.variadic<`, Dim, `>`]
-    ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13)
+    return VariadicList[Dim](
+        e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13
+    )
 
 
 @always_inline("nodebug")
@@ -766,9 +742,9 @@ fn create_dim_list(
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.variadic.create`[
-        _type : __mlir_type[`!kgen.variadic<`, Dim, `>`]
-    ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14)
+    return VariadicList[Dim](
+        e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14
+    )
 
 
 @always_inline("nodebug")
@@ -813,614 +789,8 @@ fn create_dim_list(
     Returns:
         The list containing the elements.
     """
-    return __mlir_op.`pop.variadic.create`[
-        _type : __mlir_type[`!kgen.variadic<`, Dim, `>`]
-    ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15)
-
-
-# ===----------------------------------------------------------------------===#
-# create_kgen_list
-# ===----------------------------------------------------------------------===#
-
-
-@always_inline("nodebug")
-fn create_kgen_list[
-    type: AnyType
-](e0: type) -> __mlir_type[`!kgen.variadic<`, type, `>`]:
-    """Creates a list given a type and elements.
-
-    Parameters:
-        type: The list type.
-
-    Args:
-        e0: The 1st element of the returned list.
-
-    Returns:
-        The list containing the elements.
-    """
-    return __mlir_op.`pop.variadic.create`[
-        _type : __mlir_type[`!kgen.variadic<`, type, `>`]
-    ](e0)
-
-
-@always_inline("nodebug")
-fn create_kgen_list[
-    type: AnyType
-](e0: type, e1: type) -> __mlir_type[`!kgen.variadic<`, type, `>`]:
-    """Creates a list given a type and elements.
-
-    Parameters:
-        type: The list type.
-
-    Args:
-        e0: The 1st element of the returned list.
-        e1: The 2nd element of the returned list.
-
-    Returns:
-        The list containing the elements.
-    """
-    return __mlir_op.`pop.variadic.create`[
-        _type : __mlir_type[`!kgen.variadic<`, type, `>`]
-    ](e0, e1)
-
-
-@always_inline("nodebug")
-fn create_kgen_list[
-    type: AnyType
-](e0: type, e1: type, e2: type) -> __mlir_type[`!kgen.variadic<`, type, `>`]:
-    """Creates a list given a type and elements.
-
-    Parameters:
-        type: The list type.
-
-    Args:
-        e0: The 1st element of the returned list.
-        e1: The 2nd element of the returned list.
-        e2: The 3rd element of the returned list.
-
-    Returns:
-        The list containing the elements.
-    """
-    return __mlir_op.`pop.variadic.create`[
-        _type : __mlir_type[`!kgen.variadic<`, type, `>`]
-    ](e0, e1, e2)
-
-
-@always_inline("nodebug")
-fn create_kgen_list[
-    type: AnyType
-](e0: type, e1: type, e2: type, e3: type) -> __mlir_type[
-    `!kgen.variadic<`, type, `>`
-]:
-    """Creates a list given a type and elements.
-
-    Parameters:
-        type: The list type.
-
-    Args:
-        e0: The 1st element of the returned list.
-        e1: The 2nd element of the returned list.
-        e2: The 3rd element of the returned list.
-        e3: The 4th element of the returned list.
-
-    Returns:
-        The list containing the elements.
-    """
-    return __mlir_op.`pop.variadic.create`[
-        _type : __mlir_type[`!kgen.variadic<`, type, `>`]
-    ](e0, e1, e2, e3)
-
-
-@always_inline("nodebug")
-fn create_kgen_list[
-    type: AnyType
-](e0: type, e1: type, e2: type, e3: type, e4: type,) -> __mlir_type[
-    `!kgen.variadic<`, type, `>`
-]:
-    """Creates a list given a type and elements.
-
-    Parameters:
-        type: The list type.
-
-    Args:
-        e0: The 1st element of the returned list.
-        e1: The 2nd element of the returned list.
-        e2: The 3rd element of the returned list.
-        e3: The 4th element of the returned list.
-        e4: The 5th element of the returned list.
-
-    Returns:
-        The list containing the elements.
-    """
-    return __mlir_op.`pop.variadic.create`[
-        _type : __mlir_type[`!kgen.variadic<`, type, `>`]
-    ](e0, e1, e2, e3, e4)
-
-
-@always_inline("nodebug")
-fn create_kgen_list[
-    type: AnyType
-](e0: type, e1: type, e2: type, e3: type, e4: type, e5: type) -> __mlir_type[
-    `!kgen.variadic<`, type, `>`
-]:
-    """Creates a list given a type and elements.
-
-    Parameters:
-        type: The list type.
-
-    Args:
-        e0: The 1st element of the returned list.
-        e1: The 2nd element of the returned list.
-        e2: The 3rd element of the returned list.
-        e3: The 4th element of the returned list.
-        e4: The 5th element of the returned list.
-        e5: The 6th element of the returned list.
-
-    Returns:
-        The list containing the elements.
-    """
-    return __mlir_op.`pop.variadic.create`[
-        _type : __mlir_type[`!kgen.variadic<`, type, `>`]
-    ](e0, e1, e2, e3, e4, e5)
-
-
-@always_inline("nodebug")
-fn create_kgen_list[
-    type: AnyType
-](
-    e0: type,
-    e1: type,
-    e2: type,
-    e3: type,
-    e4: type,
-    e5: type,
-    e6: type,
-) -> __mlir_type[`!kgen.variadic<`, type, `>`]:
-    """Creates a list given a type and elements.
-
-    Parameters:
-        type: The list type.
-
-    Args:
-        e0: The 1st element of the returned list.
-        e1: The 2nd element of the returned list.
-        e2: The 3rd element of the returned list.
-        e3: The 4th element of the returned list.
-        e4: The 5th element of the returned list.
-        e5: The 6th element of the returned list.
-        e6: The 7th element of the returned list.
-
-    Returns:
-        The list containing the elements.
-    """
-    return __mlir_op.`pop.variadic.create`[
-        _type : __mlir_type[`!kgen.variadic<`, type, `>`]
-    ](e0, e1, e2, e3, e4, e5, e6)
-
-
-@always_inline("nodebug")
-fn create_kgen_list[
-    type: AnyType
-](
-    e0: type,
-    e1: type,
-    e2: type,
-    e3: type,
-    e4: type,
-    e5: type,
-    e6: type,
-    e7: type,
-) -> __mlir_type[`!kgen.variadic<`, type, `>`]:
-    """Creates a list given a type and elements.
-
-    Parameters:
-        type: The list type.
-
-    Args:
-        e0: The 1st element of the returned list.
-        e1: The 2nd element of the returned list.
-        e2: The 3rd element of the returned list.
-        e3: The 4th element of the returned list.
-        e4: The 5th element of the returned list.
-        e5: The 6th element of the returned list.
-        e6: The 7th element of the returned list.
-        e7: The 8th element of the returned list.
-
-    Returns:
-        The list containing the elements.
-    """
-    return __mlir_op.`pop.variadic.create`[
-        _type : __mlir_type[`!kgen.variadic<`, type, `>`]
-    ](e0, e1, e2, e3, e4, e5, e6, e7)
-
-
-@always_inline("nodebug")
-fn create_kgen_list[
-    type: AnyType
-](
-    e0: type,
-    e1: type,
-    e2: type,
-    e3: type,
-    e4: type,
-    e5: type,
-    e6: type,
-    e7: type,
-    e8: type,
-) -> __mlir_type[`!kgen.variadic<`, type, `>`]:
-    """Creates a list given a type and elements.
-
-    Parameters:
-        type: The list type.
-
-    Args:
-        e0: The 1st element of the returned list.
-        e1: The 2nd element of the returned list.
-        e2: The 3rd element of the returned list.
-        e3: The 4th element of the returned list.
-        e4: The 5th element of the returned list.
-        e5: The 6th element of the returned list.
-        e6: The 7th element of the returned list.
-        e7: The 8th element of the returned list.
-        e8: The 9th element of the returned list.
-
-    Returns:
-        The list containing the elements.
-    """
-    return __mlir_op.`pop.variadic.create`[
-        _type : __mlir_type[`!kgen.variadic<`, type, `>`]
-    ](e0, e1, e2, e3, e4, e5, e6, e7, e8)
-
-
-@always_inline("nodebug")
-fn create_kgen_list[
-    type: AnyType
-](
-    e0: type,
-    e1: type,
-    e2: type,
-    e3: type,
-    e4: type,
-    e5: type,
-    e6: type,
-    e7: type,
-    e8: type,
-    e9: type,
-) -> __mlir_type[`!kgen.variadic<`, type, `>`]:
-    """Creates a list given a type and elements.
-
-    Parameters:
-        type: The list type.
-
-    Args:
-        e0: The 1st element of the returned list.
-        e1: The 2nd element of the returned list.
-        e2: The 3rd element of the returned list.
-        e3: The 4th element of the returned list.
-        e4: The 5th element of the returned list.
-        e5: The 6th element of the returned list.
-        e6: The 7th element of the returned list.
-        e7: The 8th element of the returned list.
-        e8: The 9th element of the returned list.
-        e9: The 10th element of the returned list.
-
-    Returns:
-        The list containing the elements.
-    """
-    return __mlir_op.`pop.variadic.create`[
-        _type : __mlir_type[`!kgen.variadic<`, type, `>`]
-    ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9)
-
-
-@always_inline("nodebug")
-fn create_kgen_list[
-    type: AnyType
-](
-    e0: type,
-    e1: type,
-    e2: type,
-    e3: type,
-    e4: type,
-    e5: type,
-    e6: type,
-    e7: type,
-    e8: type,
-    e9: type,
-    e10: type,
-) -> __mlir_type[`!kgen.variadic<`, type, `>`]:
-    """Creates a list given a type and elements.
-
-    Parameters:
-        type: The list type.
-
-    Args:
-        e0: The 1st element of the returned list.
-        e1: The 2nd element of the returned list.
-        e2: The 3rd element of the returned list.
-        e3: The 4th element of the returned list.
-        e4: The 5th element of the returned list.
-        e5: The 6th element of the returned list.
-        e6: The 7th element of the returned list.
-        e7: The 8th element of the returned list.
-        e8: The 9th element of the returned list.
-        e9: The 10th element of the returned list.
-        e10: The 11th element of the returned list.
-
-    Returns:
-        The list containing the elements.
-    """
-    return __mlir_op.`pop.variadic.create`[
-        _type : __mlir_type[`!kgen.variadic<`, type, `>`]
-    ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10)
-
-
-@always_inline("nodebug")
-fn create_kgen_list[
-    type: AnyType
-](
-    e0: type,
-    e1: type,
-    e2: type,
-    e3: type,
-    e4: type,
-    e5: type,
-    e6: type,
-    e7: type,
-    e8: type,
-    e9: type,
-    e10: type,
-    e11: type,
-) -> __mlir_type[`!kgen.variadic<`, type, `>`]:
-    """Creates a list given a type and elements.
-
-    Parameters:
-        type: The list type.
-
-    Args:
-        e0: The 1st element of the returned list.
-        e1: The 2nd element of the returned list.
-        e2: The 3rd element of the returned list.
-        e3: The 4th element of the returned list.
-        e4: The 5th element of the returned list.
-        e5: The 6th element of the returned list.
-        e6: The 7th element of the returned list.
-        e7: The 8th element of the returned list.
-        e8: The 9th element of the returned list.
-        e9: The 10th element of the returned list.
-        e10: The 11th element of the returned list.
-        e11: The 12th element of the returned list.
-
-    Returns:
-        The list containing the elements.
-    """
-    return __mlir_op.`pop.variadic.create`[
-        _type : __mlir_type[`!kgen.variadic<`, type, `>`]
-    ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11)
-
-
-@always_inline("nodebug")
-fn create_kgen_list[
-    type: AnyType
-](
-    e0: type,
-    e1: type,
-    e2: type,
-    e3: type,
-    e4: type,
-    e5: type,
-    e6: type,
-    e7: type,
-    e8: type,
-    e9: type,
-    e10: type,
-    e11: type,
-    e12: type,
-) -> __mlir_type[`!kgen.variadic<`, type, `>`]:
-    """Creates a list given a type and elements.
-
-    Parameters:
-        type: The list type.
-
-    Args:
-        e0: The 1st element of the returned list.
-        e1: The 2nd element of the returned list.
-        e2: The 3rd element of the returned list.
-        e3: The 4th element of the returned list.
-        e4: The 5th element of the returned list.
-        e5: The 6th element of the returned list.
-        e6: The 7th element of the returned list.
-        e7: The 8th element of the returned list.
-        e8: The 9th element of the returned list.
-        e9: The 10th element of the returned list.
-        e10: The 11th element of the returned list.
-        e11: The 12th element of the returned list.
-        e12: The 13th element of the returned list.
-
-    Returns:
-        The list containing the elements.
-    """
-    return __mlir_op.`pop.variadic.create`[
-        _type : __mlir_type[`!kgen.variadic<`, type, `>`]
-    ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12)
-
-
-@always_inline("nodebug")
-fn create_kgen_list[
-    type: AnyType
-](
-    e0: type,
-    e1: type,
-    e2: type,
-    e3: type,
-    e4: type,
-    e5: type,
-    e6: type,
-    e7: type,
-    e8: type,
-    e9: type,
-    e10: type,
-    e11: type,
-    e12: type,
-    e13: type,
-) -> __mlir_type[`!kgen.variadic<`, type, `>`]:
-    """Creates a list given a type and elements.
-
-    Parameters:
-        type: The list type.
-
-    Args:
-        e0: The 1st element of the returned list.
-        e1: The 2nd element of the returned list.
-        e2: The 3rd element of the returned list.
-        e3: The 4th element of the returned list.
-        e4: The 5th element of the returned list.
-        e5: The 6th element of the returned list.
-        e6: The 7th element of the returned list.
-        e7: The 8th element of the returned list.
-        e8: The 9th element of the returned list.
-        e9: The 10th element of the returned list.
-        e10: The 11th element of the returned list.
-        e11: The 12th element of the returned list.
-        e12: The 13th element of the returned list.
-        e13: The 14th element of the returned list.
-
-    Returns:
-        The list containing the elements.
-    """
-    return __mlir_op.`pop.variadic.create`[
-        _type : __mlir_type[`!kgen.variadic<`, type, `>`]
-    ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13)
-
-
-@always_inline("nodebug")
-fn create_kgen_list[
-    type: AnyType
-](
-    e0: type,
-    e1: type,
-    e2: type,
-    e3: type,
-    e4: type,
-    e5: type,
-    e6: type,
-    e7: type,
-    e8: type,
-    e9: type,
-    e10: type,
-    e11: type,
-    e12: type,
-    e13: type,
-    e14: type,
-) -> __mlir_type[`!kgen.variadic<`, type, `>`]:
-    """Creates a list given a type and elements.
-
-    Parameters:
-        type: The list type.
-
-    Args:
-        e0: The 1st element of the returned list.
-        e1: The 2nd element of the returned list.
-        e2: The 3rd element of the returned list.
-        e3: The 4th element of the returned list.
-        e4: The 5th element of the returned list.
-        e5: The 6th element of the returned list.
-        e6: The 7th element of the returned list.
-        e7: The 8th element of the returned list.
-        e8: The 9th element of the returned list.
-        e9: The 10th element of the returned list.
-        e10: The 11th element of the returned list.
-        e11: The 12th element of the returned list.
-        e12: The 13th element of the returned list.
-        e13: The 14th element of the returned list.
-        e14: The 15th element of the returned list.
-
-    Returns:
-        The list containing the elements.
-    """
-    return __mlir_op.`pop.variadic.create`[
-        _type : __mlir_type[`!kgen.variadic<`, type, `>`]
-    ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14)
-
-
-@always_inline("nodebug")
-fn create_kgen_list[
-    type: AnyType
-](
-    e0: type,
-    e1: type,
-    e2: type,
-    e3: type,
-    e4: type,
-    e5: type,
-    e6: type,
-    e7: type,
-    e8: type,
-    e9: type,
-    e10: type,
-    e11: type,
-    e12: type,
-    e13: type,
-    e14: type,
-    e15: type,
-) -> __mlir_type[`!kgen.variadic<`, type, `>`]:
-    """Creates a list given a type and elements.
-
-    Parameters:
-        type: The list type.
-
-    Args:
-        e0: The 1st element of the returned list.
-        e1: The 2nd element of the returned list.
-        e2: The 3rd element of the returned list.
-        e3: The 4th element of the returned list.
-        e4: The 5th element of the returned list.
-        e5: The 6th element of the returned list.
-        e6: The 7th element of the returned list.
-        e7: The 8th element of the returned list.
-        e8: The 9th element of the returned list.
-        e9: The 10th element of the returned list.
-        e10: The 11th element of the returned list.
-        e11: The 12th element of the returned list.
-        e12: The 13th element of the returned list.
-        e13: The 14th element of the returned list.
-        e14: The 15th element of the returned list.
-        e15: The 16th element of the returned list.
-
-    Returns:
-        The list containing the elements.
-    """
-    return __mlir_op.`pop.variadic.create`[
-        _type : __mlir_type[`!kgen.variadic<`, type, `>`]
-    ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15)
-
-
-# ===----------------------------------------------------------------------===#
-# _get_kgen_list_item
-# ===----------------------------------------------------------------------===#
-
-
-@always_inline("nodebug")
-fn _get_kgen_list_item[
-    index: Int,
-    size: Int,
-    type: AnyType,
-](lst: __mlir_type[`!kgen.variadic<`, type, `>`]) -> type:
-    """Gets the list element of an input list at position `index`.
-
-    Parameters:
-        index: the position to get the value from.
-        size: the size of the list.
-        type: the element type of the list.
-
-    Args:
-        lst: the list to get the values from.
-
-    Returns:
-        The value at position `index` in the list.
-    """
-    assert_param[index <= size]()
-    return __mlir_op.`pop.variadic.get`[_type:type](
-        lst, index.__as_mlir_index()
+    return VariadicList[Dim](
+        e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15
     )
 
 
