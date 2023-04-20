@@ -313,6 +313,7 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
                  << "from Pointer import Pointer\n"
                  << "from PythonInterface import Python\n"
                  << "from PythonObject import PythonObject\n"
+                 << "from Range import range\n"
                  // Use `PythonObject` so that the import gets resolved.
                  << "fn use_python():\n  var py_obj = PythonObject(0)\n\n";
 
