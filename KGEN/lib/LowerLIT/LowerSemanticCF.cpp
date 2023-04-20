@@ -449,48 +449,6 @@ static LogicalResult lowerNestedFunctions(LIT::FuncOp func) {
   return success();
 }
 
-/// In the __del__ method for a struct, we need to mark 'self' as being
-/// destroyed before any return operation.
-static LogicalResult handleDestructors(LIT::FuncOp func) {
-  // Check to see if this is the `__del__` member for a struct.
-  auto structOp = dyn_cast_or_null<LIT::StructDeclOp>(func->getParentOp());
-  if (!structOp)
-    return success(); // Not a method.
-  auto symbolDtor =
-      dyn_cast_or_null<SymbolConstantAttr>(structOp.getDestructorAttr());
-  if (!symbolDtor || symbolDtor != func.getBoundReference())
-    return success(); // this method isn't the destructor.
-
-  assert(func.getBody()->getNumArguments() == 1 &&
-         "__del__ should have one argument");
-  Value selfArg = func.getBody()->getArgument(0);
-
-  // If this is a @register_passable type, the value will be stored in a
-  // box and we want to treat the box as the thing that we track.
-  if (func.getSignature().getInputConvention(0) ==
-      ValueInputConvention::OwnedInReg) {
-    assert(selfArg.hasOneUse() && "expect one store of self to a box");
-    auto store = cast<StoreOp>(*selfArg.user_begin());
-    selfArg = store.getPtr();
-  }
-
-  // Ok, we have a destructor, insert the operation at before every lit.return
-  // that destroys the self argument.  We do this before semantic CF lowering
-  // because we want to get all normal returns for the function but not the
-  // any raises.
-  func.walk([&](Operation *op) -> WalkResult {
-    if (isa<LIT::FuncOp>(op) && op != func)
-      return WalkResult::skip();
-    if (auto normalReturn = dyn_cast<LIT::ReturnOp>(op)) {
-      OpBuilder b(normalReturn);
-      b.create<LIT::OwnershipMarkDestroyedOp>(normalReturn.getLoc(), selfArg);
-    }
-    return WalkResult::advance();
-  });
-
-  return success();
-}
-
 //===----------------------------------------------------------------------===//
 // Pass Definition
 //===----------------------------------------------------------------------===//
@@ -508,10 +466,6 @@ struct LowerSemanticCFPass : impl::LowerSemanticCFBase<LowerSemanticCFPass> {
     // Walk all functions and update them.
     bool hadError = false;
     getOperation().walk<mlir::WalkOrder::PostOrder>([&](LIT::FuncOp func) {
-      // Insert OwnershipMarkDestroyedOp into destructor bodies before semantic
-      // CF lowering.
-      hadError |= failed(handleDestructors(func));
-
       // Lower things like lit.break into hlcf.break which are terminators,
       // and diagnose unreachable code.
       hadError |= failed(lowerSemanticCF(func));

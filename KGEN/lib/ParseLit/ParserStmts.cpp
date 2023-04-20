@@ -524,7 +524,7 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
     resultSRValue = builder.create<POP::VariantCreateOp>(
         mlirLoc, decl.getResultType(), resultSRValue);
 
-  builder.create<LIT::ReturnOp>(mlirLoc, resultSRValue);
+  ExprEmitter::emitNormalReturn(builder, mlirLoc, resultSRValue, getDecl());
   return success();
 }
 

@@ -7,6 +7,9 @@ struct MemExample:
   fn __init__(self&): self.x = 42; pass
   fn noop(self): pass
 
+  fn __moveinit__(self&, owned existing: Self):
+    self.x = existing.x
+
   fn __copyinit__(self&, existing: Self):
     self.x = existing.x
 
@@ -421,8 +424,7 @@ fn test_result_optimization():
   example.f1 = use_and_return2(example)
   # CHECK-NEXT: [[F1_2:%.*]] = lit.struct.gep %example[f1]
   # CHECK-NEXT: kgen.call @{{.*}}@"__del___{{.*}}([[F1_2]])
-  # CHECK-NEXT: kgen.call @{{.*}}@"__copyinit__{{.*}}([[F1]], %__call_result_tmp___0)
-  # CHECK-NEXT: kgen.call @{{.*}}@"__del___{{.*}}(%__call_result_tmp___0)
+  # CHECK-NEXT: kgen.call @{{.*}}@"__moveinit__{{.*}}([[F1]], %__call_result_tmp___0)
 
   example.mutate()
   # CHECK-NEXT: kgen.call @{{.*}}@"mutate{{.*}}(%example)
@@ -507,10 +509,8 @@ fn test_result_consume_mem(cond: __mlir_type.i1) -> MemExample:
   # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%example2)
   var example2 = MemExample()
 
-  # TODO: This isn't doing return slot optimization.
   # CHECK-NEXT: [[CONSUME:%.*]] = lit.ownership.end.lifetime %example2
-  # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%__result__, [[CONSUME]])
-  # CHECK-NEXT: kgen.call {{.*}}__del___{{.*}}([[CONSUME]])
+  # CHECK-NEXT: kgen.call {{.*}}__moveinit__{{.*}}(%__result__, [[CONSUME]])
   # CHECK-NEXT: kgen.param.constant: !lit.none
   return example2^
 
@@ -629,23 +629,71 @@ struct ExoticDelExample:
 ##===----------------------------------------------------------------------===##
 
 # This type is a unique value that cannot be moved without ending lifetime.
+# CHECK-LABEL: lit.struct.decl @MemoryUniqueMovable
 struct MemoryUniqueMovable:
-  fn __init__(self&): pass
+  var state: MemExample
+
+  fn __init__(self&): self.state = MemExample()
+
+  # CHECK: lit.func @"__moveinit__
   fn __moveinit__(self&, owned existing: Self):
-    pass
+    # Mercilously steal 'existing's state which could be interesting.
+
+    # CHECK-NEXT: %0 = lit.struct.gep %existing[state]
+    # CHECK-NEXT: %1 = lit.ownership.end.lifetime %0
+    # CHECK-NEXT: %2 = lit.struct.gep %self[state]
+    # CHECK-NEXT: kgen.call {{.*}}__moveinit__{{.*}}(%2, %1)
+    self.state = existing.state^
+
+    # CHECK-NEXT: kgen.param.constant: !lit.none
+    # CHECK-NEXT: lit.ownership.mark.destroyed %existing
+    # CHECK-NEXT: kgen.return
+
 
 # This type is both movable by stealing.
+# CHECK-LABEL: lit.struct.decl @MemoryDestroyMovable
 struct MemoryDestroyMovable:
-  fn __init__(self&): pass
-  fn __moveinit__(self&, existing&: Self): pass
+  var state: MemExample
+
+  fn __init__(self&): self.state = MemExample()
+
+  # CHECK: lit.func @"__moveinit__
+  fn __moveinit__(self&, existing&: Self):
+    # Take 'existing's state which could be interesting.
+    # CHECK-NEXT: %0 = lit.struct.gep %existing[state]
+    # CHECK-NEXT: %1 = lit.ownership.end.lifetime %0
+    # CHECK-NEXT: %2 = lit.struct.gep %self[state]
+    # CHECK-NEXT: kgen.call {{.*}}__moveinit__{{.*}}(%2, %1)
+    self.state = existing.state^
+
+    # Replace it with a default initialized one that can be destructed.
+    # CHECK-NEXT: %4 = lit.struct.gep %existing[state]
+    # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%4)
+    existing.state = MemExample()
+
+    # CHECK-NEXT: kgen.param.constant: !lit.none
+    # CHECK-NEXT: kgen.return
+
   fn __del___(owned self): pass
 
 # This type is both movable and copyable and can steal.
+# CHECK-LABEL: lit.struct.decl @MemoryMovableCopyable
 struct MemoryMovableCopyable:
-  fn __init__(self&): pass
-  fn __moveinit__(self&, existing&: Self): pass
-  fn __moveinit__(self&, owned existing: Self): pass
-  fn __copyinit__(self&, existing: Self): pass
+  var state: MemExample
+
+  fn __init__(self&): self.state = MemExample()
+
+  fn __moveinit__(self&, existing&: Self):
+    # Take 'existing's state which could be interesting.
+    self.state = existing.state^
+    # Replace it with a default initialized one that can be destructed.
+    existing.state = MemExample()
+
+  fn __moveinit__(self&, owned existing: Self):
+    # Mercilously steal 'existing's state which could be interesting.
+    self.state = existing.state^
+
+  fn __copyinit__(self&, existing: Self): self.state = existing.state
   fn __del___(owned self): pass
 
 # CHECK-LABEL: lit.func @"result_mem1

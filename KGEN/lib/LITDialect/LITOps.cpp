@@ -283,32 +283,6 @@ TypedAttr LIT::FuncOp::getBoundReference(ParameterExprArrayAttr bindings) {
                                  resultType);
 }
 
-/// This adds a default return (lit.return of None, potentially converted
-/// to a variant) and emits a EndFuncOp.
-void LIT::FuncOp::appendDefaultReturnAndEndOp() {
-  Block &body = *getBody();
-  auto b = OpBuilder::atBlockEnd(&body);
-
-  // If the function returns None, insert a "return None".
-  if (isa<LIT::NoneType>(getResultTypeWithoutErrorVariant()) &&
-      !getSignature().hasMemoryOnlyResult() &&
-      // No default return needed if we ended in a return.
-      (body.empty() || !isa<LIT::ReturnOp>(body.back()))) {
-    // The function returns none.
-    Value retVal =
-        b.create<ParamConstantOp>(getLoc(), b.getAttr<LIT::NoneAttr>());
-
-    // Wrap the result value if necessary.
-    if (isThrows())
-      retVal =
-          b.create<POP::VariantCreateOp>(getLoc(), getResultType(), retVal);
-    b.create<LIT::ReturnOp>(getLoc(), retVal);
-  }
-
-  // Insert the default end terminator.
-  b.create<LIT::EndFuncOp>(getLoc());
-}
-
 // These FuncOp attributes are disallowed while parsing since they can
 // be inferred. Likewise while printing we ignore them.
 static StringRef disallowedAttrNames[] = {

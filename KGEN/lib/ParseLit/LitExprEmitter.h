@@ -423,6 +423,12 @@ public:
   /// or emitting a TryRaise/return if it is valid.
   /// TODO: Generalize to support memory-only errors.
   LogicalResult emitRaise(SRValue errorValue, Location raiseLoc);
+
+  /// Emit a normal return (not a 'raise' return) out of the function, along
+  /// with any special logic that goes with it.  `funcDecl` indicates the
+  /// function we are returning out of.
+  static void emitNormalReturn(OpBuilder &builder, Location loc, Value value,
+                               const ASTDecl &funcDecl);
 };
 
 } // namespace M::KGEN::LIT
