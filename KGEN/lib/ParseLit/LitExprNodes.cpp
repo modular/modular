@@ -327,12 +327,12 @@ AnyValue BoolLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   auto boolAttr = POP::SIMDAttr::get({value, KGENDType::kBool},
                                      POP::SIMDType::get(1, boolDType));
 
-  // Convert this to an instance of BoolLiteral. BoolLiteral must be in scope
-  // since it is auto-imported.
-  ASTDecl *decl = emitter.shared.getBuiltinBoolLiteral(getLoc());
+  // Convert this to an instance of Bool. Bool must be in scope since it is
+  // auto-imported.
+  ASTDecl *decl = emitter.shared.getBuiltinBoolType(getLoc());
   if (!decl) {
-    emitter.emitError(
-        getLoc(), "internal error: could not find builtin 'BoolLiteral' type");
+    emitter.emitError(getLoc(),
+                      "internal error: could not find builtin 'Bool' type");
     return {};
   }
 

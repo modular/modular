@@ -569,8 +569,8 @@ ASTDecl *SharedState::resolveBuiltinModuleType(llvm::SMLoc loc,
   return lookup.getIfSuccess()[0];
 }
 
-ASTDecl *SharedState::getBuiltinBoolLiteral(llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(loc, kBuiltinBoolModuleName, "BoolLiteral");
+ASTDecl *SharedState::getBuiltinBoolType(llvm::SMLoc loc) {
+  return resolveBuiltinModuleType(loc, kBuiltinBoolModuleName, "Bool");
 }
 
 ASTDecl *SharedState::getBuiltinTupleLiteral(llvm::SMLoc loc) {
