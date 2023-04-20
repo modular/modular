@@ -807,13 +807,7 @@ struct MicroKernelInterface[
 
 struct MatmulGenerator[
     data_type: MatmulDataType,
-    epilog_function: __mlir_type[
-        `!kgen.signature<(`,
-        MatmulDynamicState[data_type],
-        ` borrow) capturing -> `,
-        NoneType,
-        `>`,
-    ],
+    epilog_function: fn (MatmulDynamicState[data_type]) capturing -> None,
 ]:
     """A matmul generator that realizes matmul algorithms given a set of tiling
     actions.

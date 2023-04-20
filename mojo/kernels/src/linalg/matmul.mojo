@@ -73,25 +73,9 @@ fn activation_epilogue[
     type: DType,
     shape_c: DimList,
     activation_type: ActivationType,
-    activation_dispatch: __mlir_type[
-        `!kgen.signature<<`,
-        ActivationType,
-        `,`,
-        Int,
-        `,`,
-        DType,
-        `>(`,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 2> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, Int],
-        ],
-        ` borrow) -> `,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 2> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, Int],
-        ],
-        `>`,
-    ],
+    activation_dispatch: fn[act: ActivationType, width: Int, type: DType] (
+        SIMD[type, width]
+    ) -> SIMD[type, width],
 ](offset: GemmShape, tile_len: GemmShape, c: NDBuffer[2, shape_c, type],):
     @parameter
     if activation_type == ActivationType.IDENTITY:
@@ -118,25 +102,9 @@ fn bias_activation_epilogue[
     shape_c: DimList,
     shape_bias: DimList,
     activation_type: ActivationType,
-    activation_dispatch: __mlir_type[
-        `!kgen.signature<<`,
-        ActivationType,
-        `,`,
-        Int,
-        `,`,
-        DType,
-        `>(`,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 2> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, Int],
-        ],
-        ` borrow) -> `,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 2> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, Int],
-        ],
-        `>`,
-    ],
+    activation_dispatch: fn[act: ActivationType, width: Int, type: DType] (
+        SIMD[type, width]
+    ) -> SIMD[type, width],
 ](
     offset: GemmShape,
     tile_len: GemmShape,
@@ -353,32 +321,10 @@ fn naive_matmul[
     value_type: DType,
     transpose_a: Bool,
     transpose_b: Bool,
-    epilogue_elemwise_func: __mlir_type[
-        `!kgen.signature<<`,
-        DType,
-        `>(`,
-        Int,  # Row
-        ` borrow,`,
-        Int,  # Col
-        ` borrow,`,
-        SIMD[__mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, DType], 1],
-        ` borrow) -> `,
-        SIMD[__mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, DType], 1],
-        `>`,
+    epilogue_elemwise_func: fn[type: DType] (Int, Int, SIMD[type, 1]) -> SIMD[
+        type, 1
     ],
-    epilogue_rowise_func: __mlir_type[
-        `!kgen.signature<<`,
-        DType,
-        `>(`,
-        Int,  # Row
-        ` borrow,`,
-        Buffer[
-            Dim(), __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, DType]
-        ],
-        ` borrow) -> `,
-        NoneType,
-        `>`,
-    ],
+    epilogue_rowise_func: fn[type: DType] (Int, Buffer[Dim(), type]) -> None,
 ](
     c: NDBuffer[2, shape_c, accum_type],
     a: NDBuffer[2, shape_a, value_type],
