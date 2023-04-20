@@ -19,7 +19,7 @@ from Range import range
 from Vector import DynamicVector
 from Buffer import Buffer, NDBuffer
 from Matrix import Matrix
-from List import Dim, DimList, create_dim_list
+from List import Dim, DimList
 from String import StringRef
 from LLCL import num_cores, Runtime, TaskGroup
 from Functional import parallelize
@@ -35,7 +35,7 @@ alias int_type = DType.si64
 
 fn draw_mandelbrot[
     h: __mlir_type.index, w: __mlir_type.index
-](out: Matrix[create_dim_list(h, w), int_type, False]):
+](out: Matrix[DimList(h, w), int_type, False]):
     let sr = StringRef(".,c8M@jawrpogOQEPGJ")
     let charset = Buffer[Dim(), DType.si8](sr.data.address, sr.length)
     for row in range(h):
@@ -74,7 +74,7 @@ fn mandelbrot[
     iter: Int,
     parallel: Bool,
 ](
-    out: Matrix[create_dim_list(h, w), int_type, False],
+    out: Matrix[DimList(h, w), int_type, False],
     rows_per_worker: Int,
     min_x: SIMD[float_type, simd_width],
     max_x: SIMD[float_type, simd_width],
@@ -121,7 +121,7 @@ fn main():
         width * height
     )
     let dptr = DTypePointer[int_type](vec.data.address)
-    let m: Matrix[create_dim_list(height, width), int_type, False] = vec.data
+    let m: Matrix[DimList(height, width), int_type, False] = vec.data
 
     @always_inline
     fn bench_parallel[simd_width: __mlir_type.index]():
