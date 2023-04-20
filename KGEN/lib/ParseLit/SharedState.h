@@ -197,8 +197,8 @@ public:
   ASTDecl *resolveBuiltinModuleType(llvm::SMLoc loc, StringRef moduleName,
                                     StringRef typeName);
 
-  /// Get the builtin BoolLiteral type.
-  ASTDecl *getBuiltinBoolLiteral(llvm::SMLoc loc);
+  /// Get the builtin Bool type.
+  ASTDecl *getBuiltinBoolType(llvm::SMLoc loc);
   /// Get the builtin TupleLiteral type.
   ASTDecl *getBuiltinTupleLiteral(llvm::SMLoc loc);
   /// Get the builtin Error type.

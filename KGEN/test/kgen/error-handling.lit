@@ -11,13 +11,13 @@ from IO import print, _printf
 
 
 @raises
-fn raiseErrorIf(cond: BoolLiteral) -> Int:
+fn raiseErrorIf(cond: Bool) -> Int:
     if cond:
         raise Error()
     return 0
 
 
-def implicitlyPropagate(cond: BoolLiteral) -> Int:
+def implicitlyPropagate(cond: Bool) -> Int:
     return raiseErrorIf(cond)
 
 
