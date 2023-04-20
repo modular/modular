@@ -46,25 +46,9 @@ struct Pool2d[
     static_input_shape: DimList,
     type: DType,
     static_data_layout: Image2DLayout,
-    init_fn: __mlir_type[`!kgen.signature<<>() -> `, SIMD[type, 1], `>`],
-    update_fn: __mlir_type[
-        `!kgen.signature<<>(`,
-        SIMD[type, 1],
-        ` borrow,`,
-        SIMD[type, 1],
-        ` borrow) -> `,
-        SIMD[type, 1],
-        `>`,
-    ],
-    reduce_fn: __mlir_type[
-        `!kgen.signature<<>(`,
-        SIMD[type, 1],
-        ` borrow,`,
-        Int,
-        ` borrow) -> `,
-        SIMD[type, 1],
-        `>`,
-    ],
+    init_fn: fn () -> SIMD[type, 1],
+    update_fn: fn (SIMD[type, 1], SIMD[type, 1]) -> SIMD[type, 1],
+    reduce_fn: fn (SIMD[type, 1], Int) -> SIMD[type, 1],
 ]:
     """Struct wrapper for pool implementation."""
 

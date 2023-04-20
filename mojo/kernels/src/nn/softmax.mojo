@@ -194,39 +194,11 @@ fn _softmax_3_pass_step_2[
     unroll_factor: Int,
     buffer_size: Dim,
     type: DType,
-    pre_update_func: __mlir_type[
-        `!kgen.signature<<`,
-        Int,
-        `,`,
-        DType,
-        `>(`,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
-        ],
-        ` borrow) -> `,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
-        ],
-        `>`,
+    pre_update_func: fn[width: Int, type: DType] (SIMD[type, width]) -> SIMD[
+        type, width
     ],
-    post_update_func: __mlir_type[
-        `!kgen.signature<<`,
-        Int,
-        `,`,
-        DType,
-        `>(`,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
-        ],
-        ` borrow) -> `,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
-        ],
-        `>`,
+    post_update_func: fn[width: Int, type: DType] (SIMD[type, width]) -> SIMD[
+        type, width
     ],
 ](
     output: Buffer[buffer_size, type],
@@ -266,45 +238,12 @@ fn _softmax_3_pass_step_3[
     unroll_factor: Int,
     buffer_size: Dim,
     type: DType,
-    accum_proc_func: __mlir_type[
-        `!kgen.signature<<`,
-        Int,
-        `,`,
-        DType,
-        `>(`,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
-        ],
-        ` borrow) -> `,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
-        ],
-        `>`,
+    accum_proc_func: fn[width: Int, type: DType] (SIMD[type, width]) -> SIMD[
+        type, width
     ],
-    accum_apply_func: __mlir_type[
-        `!kgen.signature<<`,
-        Int,
-        `,`,
-        DType,
-        `>(`,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
-        ],
-        ` borrow, `,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
-        ],
-        ` borrow) -> `,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
-        ],
-        `>`,
-    ],
+    accum_apply_func: fn[width: Int, type: DType] (
+        SIMD[type, width], SIMD[type, width]
+    ) -> SIMD[type, width],
 ](output: Buffer[buffer_size, type], accum: SIMD[type, 1],):
     # STEP 3: normalize each batch
     # accum = accum_proc_func(accum)
@@ -327,79 +266,18 @@ fn _softmax_3_pass_base[
     simd_width: Int,
     buffer_size: Dim,
     type: DType,
-    step2_pre_update_func: __mlir_type[
-        `!kgen.signature<<`,
-        Int,
-        `,`,
-        DType,
-        `>(`,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
-        ],
-        ` borrow) -> `,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
-        ],
-        `>`,
-    ],
-    step2_post_update_func: __mlir_type[
-        `!kgen.signature<<`,
-        Int,
-        `,`,
-        DType,
-        `>(`,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
-        ],
-        ` borrow) -> `,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
-        ],
-        `>`,
-    ],
-    step3_accum_proc_func: __mlir_type[
-        `!kgen.signature<<`,
-        Int,
-        `,`,
-        DType,
-        `>(`,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
-        ],
-        ` borrow) -> `,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
-        ],
-        `>`,
-    ],
-    step3_accum_apply_func: __mlir_type[
-        `!kgen.signature<<`,
-        Int,
-        `,`,
-        DType,
-        `>(`,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
-        ],
-        ` borrow, `,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
-        ],
-        ` borrow) -> `,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
-        ],
-        `>`,
-    ],
+    step2_pre_update_func: fn[width: Int, type: DType] (
+        SIMD[type, width]
+    ) -> SIMD[type, width],
+    step2_post_update_func: fn[width: Int, type: DType] (
+        SIMD[type, width]
+    ) -> SIMD[type, width],
+    step3_accum_proc_func: fn[width: Int, type: DType] (
+        SIMD[type, width]
+    ) -> SIMD[type, width],
+    step3_accum_apply_func: fn[width: Int, type: DType] (
+        SIMD[type, width], SIMD[type, width]
+    ) -> SIMD[type, width],
 ](output: Buffer[buffer_size, type], input: Buffer[buffer_size, type]):
     """Performs an unbatched three-pass softmax. The actual behavior of each
     step can be different between the (regular) softmax and logsoftmax.

@@ -32,28 +32,9 @@ fn gather_reduce[
     gather_axis: Int,
     reduce_axis: Int,
     simd_width: Int,
-    reduce_fn: __mlir_type[
-        `!kgen.signature<<`,
-        Int,
-        `,`,
-        DType,
-        `>(`,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
-        ],
-        ` borrow,`,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
-        ],
-        ` borrow) ->`,
-        SIMD[
-            __mlir_attr[`#kgen.param.index.ref<0, false, 1> : `, DType],
-            __mlir_attr[`#kgen.param.index.ref<0, false, 0> : `, Int],
-        ],
-        `>`,
-    ],
+    reduce_fn: fn[width: Int, type: DType] (
+        SIMD[type, width], SIMD[type, width]
+    ) -> SIMD[type, width],
 ](
     output: NDBuffer[output_rank, output_shape, type],
     input: NDBuffer[input_rank, input_shape, type],

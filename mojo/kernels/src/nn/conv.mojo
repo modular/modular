@@ -1841,9 +1841,8 @@ struct ConvNHWCInnerLoopFilterPacked[
 
         let max_contiguous_len = self.conv_shape.s * self.conv_shape.c
         let contiguous_len = (
-            max_contiguous_len
-            if self.tile_n_k[1] >= max_contiguous_len and not use_padding
-            else self.conv_shape.c
+            max_contiguous_len if self.tile_n_k[1] >= max_contiguous_len
+            and not use_padding else self.conv_shape.c
         )
         let num_segments = div_ceil(self.tile_n_k[1], contiguous_len)
 
