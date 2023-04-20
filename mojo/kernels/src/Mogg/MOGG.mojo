@@ -109,7 +109,7 @@ fn to_buffer[
 ](
     data: __mlir_type[`!pop.pointer<scalar<`, type.value, `>>`],
     shape: __mlir_type.`!pop.pointer<index>`,
-) -> NDBuffer[rank, DimList[rank].create_unknown(), type]:
+) -> NDBuffer[rank, DimList.create_unknown[rank](), type]:
 
     let shape_scalar = __mlir_op.`pop.pointer.bitcast`[
         _type : __mlir_type.`!pop.pointer<!pop.scalar<index>>`
@@ -131,7 +131,7 @@ fn to_buffer[
 
     unroll[rank, body]()
 
-    return NDBuffer[rank, DimList[rank].create_unknown(), type](
+    return NDBuffer[rank, DimList.create_unknown[rank](), type](
         data, shape_tuple, DType(type), stride_tuple
     )
 
@@ -156,7 +156,7 @@ fn elementwise_wrapper[
         `>`,
     ],
 ](
-    buffer: NDBuffer[rank, DimList[rank].create_unknown(), type],
+    buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_chain: OutputChainPtr,
 ):
     alias unroll_factor: Int = 1
@@ -193,7 +193,7 @@ fn elementwise_wrapper[
 fn _compute_flat_index[
     type: DType, rank: Int, iters: Int
 ](
-    buffer: NDBuffer[rank, DimList[rank].create_unknown(), type],
+    buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
     index: StaticIntTuple[rank],
 ) -> Int:
     var flat_index: Int = 0
@@ -213,7 +213,7 @@ fn _compute_flat_index[
 fn simd_load_1D[
     simd_width: Int, type: DType, rank: Int
 ](
-    buffer: NDBuffer[rank, DimList[rank].create_unknown(), type],
+    buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
     index: StaticIntTuple[rank],
 ) -> SIMD[type, simd_width]:
     let stride = buffer.dynamic_stride[rank - 1]
@@ -231,7 +231,7 @@ fn simd_load_1D[
 @always_inline
 fn load_scalar[
     type: DType, rank: Int
-](buffer: NDBuffer[rank, DimList[rank].create_unknown(), type]) -> SIMD[
+](buffer: NDBuffer[rank, DimList.create_unknown[rank](), type]) -> SIMD[
     type, 1
 ]:
     return buffer.data.load(0)
@@ -250,7 +250,7 @@ fn splat[
 fn simd_load_maybe_splat[
     simd_width: Int, type: DType, rank: Int
 ](
-    buffer: NDBuffer[rank, DimList[rank].create_unknown(), type],
+    buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
     index: StaticIntTuple[rank],
 ) -> SIMD[type, simd_width]:
     var flat_index = _compute_flat_index[type, rank, rank](buffer, index)
@@ -266,7 +266,7 @@ fn simd_load_maybe_splat[
 fn simd_load_splat[
     simd_width: Int, type: DType, rank: Int
 ](
-    buffer: NDBuffer[rank, DimList[rank].create_unknown(), type],
+    buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
     index: StaticIntTuple[rank],
 ) -> SIMD[type, simd_width]:
     # Last dimension will be 0 for splats so don't compute last dim.
@@ -281,7 +281,7 @@ fn simd_load_splat[
 fn simd_load[
     simd_width: Int, type: DType, rank: Int
 ](
-    buffer: NDBuffer[rank, DimList[rank].create_unknown(), type],
+    buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
     index: StaticIntTuple[rank],
 ) -> SIMD[type, simd_width]:
     let flat_index = _compute_flat_index[type, rank, rank](buffer, index)
@@ -292,7 +292,7 @@ fn simd_load[
 fn simd_store[
     simd_width: Int, type: DType, rank: Int
 ](
-    buffer: NDBuffer[rank, DimList[rank].create_unknown(), type],
+    buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
     index: StaticIntTuple[rank],
     val: SIMD[type, simd_width],
 ):
@@ -313,10 +313,10 @@ fn broadcast_to_tensor[
     output_rank: Int,
 ](
     original: NDBuffer[
-        original_rank, DimList[original_rank].create_unknown(), type
+        original_rank, DimList.create_unknown[original_rank](), type
     ],
-    target: NDBuffer[target_rank, DimList[target_rank].create_unknown(), type],
-) -> NDBuffer[output_rank, DimList[output_rank].create_unknown(), type]:
+    target: NDBuffer[target_rank, DimList.create_unknown[target_rank](), type],
+) -> NDBuffer[output_rank, DimList.create_unknown[output_rank](), type]:
 
     var shape = StaticIntTuple[output_rank]()
     var stride = StaticIntTuple[output_rank]()
@@ -381,7 +381,7 @@ fn broadcast_to_tensor[
 
     # Create a view of the original data with the new shape and strides.
     var out = NDBuffer[
-        output_rank, DimList[output_rank].create_unknown(), type
+        output_rank, DimList.create_unknown[output_rank](), type
     ](
         original.data,
         rebind[StaticIntTuple[output_rank]](shape),
@@ -427,7 +427,7 @@ fn mark_output_chain_ready(out_chain: OutputChainPtr):
 # Helper function to query buffer shapes for tests.
 fn print_buffer_info[
     type: DType, rank: Int
-](buffer: NDBuffer[rank, DimList[rank].create_unknown(), type]):
+](buffer: NDBuffer[rank, DimList.create_unknown[rank](), type]):
     _printf("Rank: ")
     print(rank)
     _printf("Shape: ")
@@ -454,12 +454,12 @@ fn test_many_ranks_and_types[
     type5: DType,
     rank5: Int,
 ](
-    tensor1: NDBuffer[rank1, DimList[rank1].create_unknown(), type1],
-    tensor2: NDBuffer[rank2, DimList[rank2].create_unknown(), type2],
-    tensor3: NDBuffer[rank3, DimList[rank3].create_unknown(), type3],
-    tensor4: NDBuffer[rank4, DimList[rank4].create_unknown(), type4],
-    tensor5: NDBuffer[rank5, DimList[rank5].create_unknown(), type5],
-) -> NDBuffer[rank1, DimList[rank1].create_unknown(), type1]:
+    tensor1: NDBuffer[rank1, DimList.create_unknown[rank1](), type1],
+    tensor2: NDBuffer[rank2, DimList.create_unknown[rank2](), type2],
+    tensor3: NDBuffer[rank3, DimList.create_unknown[rank3](), type3],
+    tensor4: NDBuffer[rank4, DimList.create_unknown[rank4](), type4],
+    tensor5: NDBuffer[rank5, DimList.create_unknown[rank5](), type5],
+) -> NDBuffer[rank1, DimList.create_unknown[rank1](), type1]:
     """
     Used as a test target to ensure parameter deduction works when there are
     many to deduce and also used to check errors.
@@ -470,12 +470,12 @@ fn test_many_ranks_and_types[
 fn test_one_rank_many_tensor[
     type: DType, rank: Int
 ](
-    tensor1: NDBuffer[rank, DimList[rank].create_unknown(), type],
-    tensor2: NDBuffer[rank, DimList[rank].create_unknown(), type],
-    tensor3: NDBuffer[rank, DimList[rank].create_unknown(), type],
-    tensor4: NDBuffer[rank, DimList[rank].create_unknown(), type],
-    tensor5: NDBuffer[rank, DimList[rank].create_unknown(), type],
-) -> NDBuffer[rank, DimList[rank].create_unknown(), type]:
+    tensor1: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    tensor2: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    tensor3: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    tensor4: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    tensor5: NDBuffer[rank, DimList.create_unknown[rank](), type],
+) -> NDBuffer[rank, DimList.create_unknown[rank](), type]:
     """
     Used as a test target to ensure we can deduce type and rank when used by
     many arguments.
