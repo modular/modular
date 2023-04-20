@@ -15,7 +15,7 @@ from TargetInfo import dtype_alignof
 
 
 struct Matrix[
-    shape: DimList[2],
+    shape: DimList,
     type: DType,
     transposed: Bool,
 ]:

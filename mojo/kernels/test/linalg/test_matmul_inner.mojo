@@ -15,7 +15,7 @@ from Buffer import NDBuffer
 from TargetInfo import dtype_simd_width
 from Index import Index
 from DType import DType
-from List import create_dim_list, DimList
+from List import DimList
 from IO import print
 
 
@@ -35,11 +35,11 @@ alias tile_inner_size: Int = pack_inner_size * simd_size
 
 @export
 fn matmul_inner_loop(
-    c: NDBuffer[2, create_dim_list(M, N), type],
-    a: NDBuffer[2, create_dim_list(M, K), type],
+    c: NDBuffer[2, DimList(M, N), type],
+    a: NDBuffer[2, DimList(M, K), type],
     b_packed: NDBuffer[
         3,
-        create_dim_list(
+        DimList(
             N // tile_inner_size,
             K,
             tile_inner_size,
@@ -49,9 +49,9 @@ fn matmul_inner_loop(
 ):
 
     MatmulInnerLoopBPacked[
-        create_dim_list(M, K),
-        create_dim_list(M, N),
-        create_dim_list(
+        DimList(M, K),
+        DimList(M, N),
+        DimList(
             N // tile_inner_size,
             K,
             tile_inner_size,
@@ -79,14 +79,12 @@ fn matmul_inner_loop(
 fn test_micro_kernel():
     print("== test_micro_kernel")
 
-    var a = NDBuffer[2, create_dim_list(M, K), type].aligned_stack_allocation[
-        128
-    ]()
+    var a = NDBuffer[2, DimList(M, K), type].aligned_stack_allocation[128]()
     a.fill(1)
 
     var b_packed = NDBuffer[
         3,
-        create_dim_list(
+        DimList(
             N // tile_inner_size,
             K,
             tile_inner_size,
@@ -95,9 +93,7 @@ fn test_micro_kernel():
     ].aligned_stack_allocation[128]()
     b_packed.fill(1)
 
-    var c = NDBuffer[2, create_dim_list(M, N), type].aligned_stack_allocation[
-        128
-    ]()
+    var c = NDBuffer[2, DimList(M, N), type].aligned_stack_allocation[128]()
     c.fill(0)
 
     matmul_inner_loop(c, a, b_packed)

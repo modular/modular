@@ -11,7 +11,7 @@ from DType import DType
 from Functional import unroll, async_parallelize
 from Index import StaticIntTuple
 from LLCL import OutputChainPtr
-from List import DimList, create_dim_list, VariadicList
+from List import DimList, VariadicList
 from Math import div_ceil, min
 from Memory import memcpy
 from Pointer import DTypePointer
@@ -24,13 +24,13 @@ fn _transpose_inplace_4x4[
     rows: Int,
     cols: Int,
     type: DType,
-](buf0: NDBuffer[2, create_dim_list(rows, cols), type]):
+](buf0: NDBuffer[2, DimList(rows, cols), type]):
     assert_param[rows == 4]()
     assert_param[cols == 4]()
     var buf = rebind[
         NDBuffer[
             2,
-            create_dim_list(4, 4),
+            DimList(4, 4),
             type,
         ],
     ](buf0)
@@ -60,13 +60,13 @@ fn _transpose_inplace_8x8[
     rows: Int,
     cols: Int,
     type: DType,
-](buf0: NDBuffer[2, create_dim_list(rows, cols), type]):
+](buf0: NDBuffer[2, DimList(rows, cols), type]):
     assert_param[rows == 8]()
     assert_param[cols == 8]()
     var buf = rebind[
         NDBuffer[
             2,
-            create_dim_list(8, 8),
+            DimList(8, 8),
             type,
         ],
     ](buf0)
@@ -130,13 +130,13 @@ fn _transpose_inplace_16x16[
     rows: Int,
     cols: Int,
     type: DType,
-](buf0: NDBuffer[2, create_dim_list(rows, cols), type]):
+](buf0: NDBuffer[2, DimList(rows, cols), type]):
     assert_param[rows == 16]()
     assert_param[cols == 16]()
     var buf = rebind[
         NDBuffer[
             2,
-            create_dim_list(16, 16),
+            DimList(16, 16),
             type,
         ],
     ](buf0)
@@ -273,7 +273,7 @@ fn _transpose_inplace_naive[
     rows: Int,
     cols: Int,
     type: DType,
-](buf: NDBuffer[2, create_dim_list(rows, cols), type]):
+](buf: NDBuffer[2, DimList(rows, cols), type]):
     for i in range(rows):
         for j in range(i + 1, cols):
             let tmp = buf[i, j]
@@ -285,7 +285,7 @@ fn transpose_inplace[
     rows: Int,
     cols: Int,
     type: DType,
-](buf: NDBuffer[2, create_dim_list(rows, cols), type]):
+](buf: NDBuffer[2, DimList(rows, cols), type]):
     # Reject sizes covered by specialized implementations
     assert_param[rows == cols]()
 
@@ -323,7 +323,7 @@ fn _permute_data[
 
 fn _fill_strides[
     rank: Int,
-    input_shape: DimList[rank],
+    input_shape: DimList,
     type: DType,
 ](buf: NDBuffer[rank, input_shape, type], strides: DTypePointer[DType.index]):
     """
@@ -337,7 +337,7 @@ fn _fill_strides[
 
 fn _fill_strides[
     rank: Int,
-    input_shape: DimList[rank],
+    input_shape: DimList,
     type: DType,
 ](buf: NDBuffer[rank, input_shape, type], strides: Buffer[rank, DType.index]):
     """
@@ -362,8 +362,8 @@ fn _fill_strides[
 
 fn transpose[
     rank: Int,
-    output_shape: DimList[rank],
-    input_shape: DimList[rank],
+    output_shape: DimList,
+    input_shape: DimList,
     type: DType,
 ](
     output: NDBuffer[rank, output_shape, type],
@@ -396,8 +396,8 @@ fn transpose[
 
 fn transpose[
     rank: Int,
-    output_shape: DimList[rank],
-    input_shape: DimList[rank],
+    output_shape: DimList,
+    input_shape: DimList,
     type: DType,
 ](
     output: NDBuffer[rank, output_shape, type],
@@ -467,7 +467,7 @@ fn transpose[
 
 fn _copy_with_strides[
     rank: Int,
-    output_shape: DimList[rank],
+    output_shape: DimList,
     type: DType,
 ](
     axis: Int,

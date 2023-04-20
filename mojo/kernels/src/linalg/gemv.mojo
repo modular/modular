@@ -7,7 +7,7 @@
 from Buffer import NDBuffer, Buffer
 from DType import DType
 from Functional import unroll
-from List import Dim, DimList, create_dim_list
+from List import Dim, DimList
 from SIMD import SIMD
 from Index import Index
 
@@ -15,7 +15,7 @@ from Index import Index
 fn gemv[
     simd_width: Int,
     out_size: Dim,
-    lhs_shape: DimList[2],
+    lhs_shape: DimList,
     rhs_size: Dim,
     type: DType,
 ](
@@ -35,7 +35,7 @@ fn gemv[
     # Allocate row_block_size accumulator values. This is a matrix of row_block_size x col_block_size
     let accums = NDBuffer[
         2,
-        create_dim_list(row_block_size, col_block_size),
+        DimList(row_block_size, col_block_size),
         type,
     ].aligned_stack_allocation[64]()
 

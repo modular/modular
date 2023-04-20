@@ -333,7 +333,7 @@ struct MatmulDynamicState[data_type: MatmulDataType]:
     @always_inline
     fn get_global_operand_buffer[
         operand_id: Int, transposed: Bool
-    ](self) -> NDBuffer[2, DimList[2].create_unknown(), data_type.value_type]:
+    ](self) -> NDBuffer[2, DimList.create_unknown[2](), data_type.value_type]:
         """Utility to get an NDBuffer handle to the global space holding the
         operands.
             Args:
@@ -371,18 +371,18 @@ struct MatmulDynamicState[data_type: MatmulDataType]:
                 )
             buffer_pointer = self.b
 
-        return NDBuffer[2, DimList[2].create_unknown(), data_type.value_type](
+        return NDBuffer[2, DimList.create_unknown[2](), data_type.value_type](
             buffer_pointer, buffer_shape, data_type.value_type
         )
 
     @always_inline
     fn get_global_result_buffer(
         self,
-    ) -> NDBuffer[2, DimList[2].create_unknown(), data_type.accum_type]:
+    ) -> NDBuffer[2, DimList.create_unknown[2](), data_type.accum_type]:
         """Utility to get an NDBuffer handle to the global space holding the
         result i.e. matrix C buffer.
         """
-        return NDBuffer[2, DimList[2].create_unknown(), data_type.accum_type](
+        return NDBuffer[2, DimList.create_unknown[2](), data_type.accum_type](
             self.c,
             Index(self.global_gemm_size.M, self.global_gemm_size.N),
             data_type.accum_type,
@@ -392,7 +392,7 @@ struct MatmulDynamicState[data_type: MatmulDataType]:
     fn get_packed_operand_buffer[
         operand_id: Int, inner_size: Int
     ](self, tile_dimension: StaticIntTuple[2]) -> NDBuffer[
-        3, DimList[3].create_unknown(), data_type.value_type
+        3, DimList.create_unknown[3](), data_type.value_type
     ]:
         """Utility to get an NDBuffer handle to the local space holding the
         packed operands when applicable.
@@ -423,7 +423,7 @@ struct MatmulDynamicState[data_type: MatmulDataType]:
         if operand_id == GemmIdentifiers.OperandB:
             buffer_pointer = self.packed_b
 
-        return NDBuffer[3, DimList[3].create_unknown(), data_type.value_type](
+        return NDBuffer[3, DimList.create_unknown[3](), data_type.value_type](
             buffer_pointer, buffer_shape, data_type.value_type
         )
 
@@ -644,9 +644,9 @@ struct PackInterface[
         if static_state.static_data_layout.transpose_b:
             PackMatrixRows[
                 # original buffer size.
-                DimList[2].create_unknown(),
+                DimList.create_unknown[2](),
                 # packed buffer size.
-                DimList[3].create_unknown(),
+                DimList.create_unknown[3](),
                 # data type.
                 data_type.value_type,
                 # simd size.
@@ -676,9 +676,9 @@ struct PackInterface[
         else:
             PackMatrixCols[
                 # original buffer size.
-                DimList[2].create_unknown(),
+                DimList.create_unknown[2](),
                 # packed buffer size.
-                DimList[3].create_unknown(),
+                DimList.create_unknown[3](),
                 # data type.
                 data_type.value_type,
                 # simd size.
@@ -775,11 +775,11 @@ struct MicroKernelInterface[
         alias prefetch_b_distance_k = 4
         MatmulInnerLoopBPacked[
             # shape a
-            DimList[2].create_unknown(),
+            DimList.create_unknown[2](),
             # shape c
-            DimList[2].create_unknown(),
+            DimList.create_unknown[2](),
             # shape packed_b
-            DimList[3].create_unknown(),
+            DimList.create_unknown[3](),
             data_type.accum_type,
             data_type.value_type,
             static_state.simd_size,

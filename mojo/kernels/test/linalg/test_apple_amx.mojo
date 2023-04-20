@@ -17,7 +17,7 @@ from DType import DType
 from SIMD import F32
 from Index import StaticIntTuple
 from IO import print
-from List import DimList, create_dim_list
+from List import DimList
 from Range import range
 from SIMD import SIMD
 from TargetInfo import is_apple_m1, sizeof
@@ -26,7 +26,7 @@ from TargetInfo import is_apple_m1, sizeof
 fn fill_a(
     buf: NDBuffer[
         2,
-        create_dim_list(16, 16),
+        DimList(16, 16),
         DType.f32,
     ]
 ):
@@ -42,7 +42,7 @@ fn fill_a(
 fn fill_b(
     buf: NDBuffer[
         2,
-        create_dim_list(16, 16),
+        DimList(16, 16),
         DType.f32,
     ]
 ):
@@ -58,7 +58,7 @@ fn fill_b(
 fn clear_c(
     buf: NDBuffer[
         2,
-        create_dim_list(16, 16),
+        DimList(16, 16),
         DType.f32,
     ]
 ):
@@ -68,7 +68,7 @@ fn clear_c(
 fn print_matrix(
     buf: NDBuffer[
         2,
-        create_dim_list(16, 16),
+        DimList(16, 16),
         DType.f32,
     ]
 ):
@@ -87,17 +87,17 @@ fn test_amx_matmul():
 
     var a_matrix = NDBuffer[
         2,
-        create_dim_list(16, 16),
+        DimList(16, 16),
         DType.f32,
     ].stack_allocation()
     var b_matrix = NDBuffer[
         2,
-        create_dim_list(16, 16),
+        DimList(16, 16),
         DType.f32,
     ].stack_allocation()
     var c_matrix = NDBuffer[
         2,
-        create_dim_list(16, 16),
+        DimList(16, 16),
         DType.f32,
     ].stack_allocation()
 

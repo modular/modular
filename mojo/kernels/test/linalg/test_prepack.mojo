@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: mojo %s | FileCheck %s
 
-from List import DimList, Dim, create_dim_list
+from List import DimList, Dim
 from Matmul import pack_b
 from Math import div_ceil
 from DType import DType
@@ -30,10 +30,10 @@ fn test_prepack():
     alias k_padded = div_ceil(k, tile_k) * tile_k
     alias n_padded = div_ceil(n, tile_n) * tile_n
 
-    alias src_shape_dyn = DimList[2].create_unknown()
-    alias dst_shape_dyn = DimList[2].create_unknown()
-    alias src_shape_static = create_dim_list(k, n)
-    alias dst_shape_static = create_dim_list(k_padded, n_padded)
+    alias src_shape_dyn = DimList.create_unknown[2]()
+    alias dst_shape_dyn = DimList.create_unknown[2]()
+    alias src_shape_static = DimList(k, n)
+    alias dst_shape_static = DimList(k_padded, n_padded)
 
     let src_storage = Buffer[Dim(n * k), type].aligned_stack_allocation[64]()
     src_storage.fill(0)

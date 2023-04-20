@@ -11,7 +11,7 @@
 
 from DType import DType
 from Intrinsics import llvm_intrinsic
-from List import create_dim_list
+from List import DimList
 from Matmul import Matrix
 from Pointer import DTypePointer
 from Range import range
@@ -152,9 +152,9 @@ fn _tile_dpbssd_emulated(
     aptr: DTypePointer[DType.si8],
     bptr: DTypePointer[DType.si8],
 ):
-    let a = Matrix[create_dim_list(16, 64), DType.si8, False](aptr)
-    let b = Matrix[create_dim_list(16, 64), DType.si8, False](bptr)
-    let c = Matrix[create_dim_list(16, 16), DType.si32, False](cptr)
+    let a = Matrix[DimList(16, 64), DType.si8, False](aptr)
+    let b = Matrix[DimList(16, 64), DType.si8, False](bptr)
+    let c = Matrix[DimList(16, 16), DType.si32, False](cptr)
 
     for i in range(16):
         for j in range(16):

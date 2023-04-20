@@ -17,7 +17,7 @@ from Buffer import (
 )
 from Functional import tile, unswitch, unroll, unroll2, BinaryClosure, vectorize
 from Index import Index, StaticIntTuple
-from List import Dim, DimList, VariadicList, create_dim_list
+from List import Dim, DimList, VariadicList
 from Math import min, fma, div_ceil
 from MatmulUtils import get_packB_unroll_factor
 from Matrix import Matrix
@@ -34,19 +34,19 @@ struct MatmulConfig:
     """Static configuration of tiled matmul algorithms."""
 
     # Static shape info of Operand A.
-    var shape_a: DimList[2]
+    var shape_a: DimList
 
     # Static shape info of Operand B.
-    var shape_b: DimList[2]
+    var shape_b: DimList
 
     # Static shape info of Operand C.
-    var shape_c: DimList[2]
+    var shape_c: DimList
 
     # Static packed shape info of the packed buffer.
-    var packed_shape: DimList[3]
+    var packed_shape: DimList
 
     # Static packed shape info of the bias vector.
-    var shape_bias: DimList[1]
+    var shape_bias: DimList
 
     # Static info on simd vector size.
     var simd_size: Int
@@ -71,7 +71,7 @@ fn null_epilogue(offset: GemmShape, tile_len: GemmShape):
 fn activation_epilogue[
     simd_width: Int,
     type: DType,
-    shape_c: DimList[2],
+    shape_c: DimList,
     activation_type: ActivationType,
     activation_dispatch: __mlir_type[
         `!kgen.signature<<`,
@@ -115,8 +115,8 @@ fn activation_epilogue[
 fn bias_activation_epilogue[
     simd_width: Int,
     type: DType,
-    shape_c: DimList[2],
-    shape_bias: DimList[1],
+    shape_c: DimList,
+    shape_bias: DimList,
     activation_type: ActivationType,
     activation_dispatch: __mlir_type[
         `!kgen.signature<<`,
@@ -208,9 +208,9 @@ struct GemmShape:
     fn get[
         transpose_a: Bool,
         transpose_b: Bool,
-        shape_c: DimList[2],
-        shape_a: DimList[2],
-        shape_b: DimList[2],
+        shape_c: DimList,
+        shape_a: DimList,
+        shape_b: DimList,
         accum_type: DType,
         value_type: DType,
     ](
@@ -346,9 +346,9 @@ struct GemmShape:
 
 @always_inline
 fn naive_matmul[
-    shape_a: DimList[2],
-    shape_b: DimList[2],
-    shape_c: DimList[2],
+    shape_a: DimList,
+    shape_b: DimList,
+    shape_c: DimList,
     accum_type: DType,
     value_type: DType,
     transpose_a: Bool,
@@ -447,9 +447,9 @@ fn round_down_to_block[block_size: Int](original_size: Int) -> Int:
 
 struct PackMatrixRows[
     # original matrix shape list
-    original_shape: DimList[2],
+    original_shape: DimList,
     # packed matrix shape list
-    packed_shape: DimList[3],
+    packed_shape: DimList,
     type: DType,
     simd_size: Int,
     row_inner_size: Int,
@@ -554,7 +554,7 @@ struct PackMatrixRows[
         self,
         transpose_buffer: NDBuffer[
             2,
-            create_dim_list(simd_size, simd_size),
+            DimList(simd_size, simd_size),
             type,
         ],
         local_off_set: StaticIntTuple[2],
@@ -656,7 +656,7 @@ struct PackMatrixRows[
 
         let transpose_buffer = NDBuffer[
             2,
-            create_dim_list(simd_size, simd_size),
+            DimList(simd_size, simd_size),
             type,
         ].aligned_stack_allocation[alignof[SIMD[type, simd_size]]()]()
 
@@ -703,9 +703,9 @@ struct PackMatrixRows[
 
 struct PackMatrixCols[
     # original matrix shape list
-    original_shape: DimList[2],
+    original_shape: DimList,
     # packed matrix shape list
-    packed_shape: DimList[3],
+    packed_shape: DimList,
     type: DType,
     simd_size: Int,
     column_inner_size: Int,
@@ -889,9 +889,9 @@ struct PackMatrixCols[
 
 
 struct MatmulInnerLoopBPacked[
-    shape_a: DimList[2],
-    shape_c: DimList[2],
-    packed_shape: DimList[3],
+    shape_a: DimList,
+    shape_c: DimList,
+    packed_shape: DimList,
     accum_type: DType,
     value_type: DType,
     simd_size: Int,
@@ -978,7 +978,7 @@ struct MatmulInnerLoopBPacked[
         self,
         c_local: NDBuffer[
             2,
-            create_dim_list(a_row_size, pack_inner_size),
+            DimList(a_row_size, pack_inner_size),
             accum_type,
         ],
     ):
@@ -1005,7 +1005,7 @@ struct MatmulInnerLoopBPacked[
         self,
         c_local: NDBuffer[
             2,
-            create_dim_list(a_row_size, pack_inner_size),
+            DimList(a_row_size, pack_inner_size),
             accum_type,
         ],
         # indexing within tile, in (m,n)
@@ -1075,7 +1075,7 @@ struct MatmulInnerLoopBPacked[
         self,
         c_local: NDBuffer[
             2,
-            create_dim_list(a_row_size, pack_inner_size),
+            DimList(a_row_size, pack_inner_size),
             accum_type,
         ],
         tile_idx: StaticIntTuple[2],
@@ -1144,7 +1144,7 @@ struct MatmulInnerLoopBPacked[
         self,
         c_local: NDBuffer[
             2,
-            create_dim_list(a_row_size, pack_inner_size),
+            DimList(a_row_size, pack_inner_size),
             accum_type,
         ],
         tile_n_k_idx: StaticIntTuple[2],
@@ -1217,7 +1217,7 @@ struct MatmulInnerLoopBPacked[
         self,
         c_local: NDBuffer[
             2,
-            create_dim_list(a_row_size, pack_inner_size),
+            DimList(a_row_size, pack_inner_size),
             accum_type,
         ],
         tile_n_k_idx: StaticIntTuple[2],
@@ -1286,7 +1286,7 @@ struct MatmulInnerLoopBPacked[
         # Allocate accumulation buffer.
         var c_local = NDBuffer[
             2,
-            create_dim_list(a_row_size, pack_inner_size),
+            DimList(a_row_size, pack_inner_size),
             accum_type,
         ].aligned_stack_allocation[alignof[SIMD[accum_type, simd_size]]()]()
 
@@ -1315,7 +1315,7 @@ struct MatmulInnerLoopBPacked[
         # Allocate accumulation buffer.
         var c_local = NDBuffer[
             2,
-            create_dim_list(a_row_size, pack_inner_size),
+            DimList(a_row_size, pack_inner_size),
             accum_type,
         ].aligned_stack_allocation[alignof[SIMD[accum_type, simd_size]]()]()
 
@@ -1760,7 +1760,7 @@ struct TiledMatmul[
         """
         return NDBuffer[3, config.packed_shape, value_type](
             b_packed_ptr.address,
-            create_dim_list(tile_n // n_inner_size, tile_k, n_inner_size),
+            DimList(tile_n // n_inner_size, tile_k, n_inner_size),
             value_type,
         )
 
@@ -1776,8 +1776,8 @@ fn pack_b[
     simd_size: Int,
     inner_size: Int,
     type: DType,
-    src_shape: DimList[2],
-    dst_shape: DimList[2],
+    src_shape: DimList,
+    dst_shape: DimList,
 ](
     dst: NDBuffer[2, dst_shape, type],
     src: NDBuffer[2, src_shape, type],
@@ -1813,17 +1813,17 @@ fn pack_b[
         for idx_k in range(0, k_out, tile_k):
             for idx_n in range(0, n_out, tile_n):
                 let packed_dst_view = NDBuffer[
-                    3, DimList[3].create_unknown(), type
+                    3, DimList.create_unknown[3](), type
                 ](
                     dst_flat.data.offset(dst_offset),
-                    create_dim_list(tile_n // inner_size, tile_k, inner_size),
+                    DimList(tile_n // inner_size, tile_k, inner_size),
                     type,
                 )
                 let valid_k = min(tile_k, k_in - idx_k)
                 let valid_n = min(tile_n, n_in - idx_n)
                 PackMatrixCols[
                     src_shape,
-                    DimList[3].create_unknown(),
+                    DimList.create_unknown[3](),
                     type,
                     simd_size,
                     inner_size,
@@ -1857,17 +1857,17 @@ fn pack_b[
         for idx_k_t in range(0, k_out_t, tile_k):
             for idx_n_t in range(0, n_out_t, tile_n):
                 let packed_dst_view_t = NDBuffer[
-                    3, DimList[3].create_unknown(), type
+                    3, DimList.create_unknown[3](), type
                 ](
                     dst_flat.data.offset(dst_offset),
-                    create_dim_list(tile_n // inner_size, tile_k, inner_size),
+                    DimList(tile_n // inner_size, tile_k, inner_size),
                     type,
                 )
                 let valid_k_t = min(tile_k, k_in_t - idx_k_t)
                 let valid_n_t = min(tile_n, n_in_t - idx_n_t)
                 PackMatrixRows[
                     src_shape,
-                    DimList[3].create_unknown(),
+                    DimList.create_unknown[3](),
                     type,
                     simd_size,
                     inner_size,
@@ -1950,7 +1950,7 @@ struct BTileGenerator[
         tile_dim_nk: StaticIntTuple[2],
         valid_data_dim_nk: StaticIntTuple[2],
     ) -> NDBuffer[3, config.packed_shape, type]:
-        let tile_shape_nopack = create_dim_list(
+        let tile_shape_nopack = DimList(
             tile_dim_nk[0] // inner_size, tile_dim_nk[1], inner_size
         )
         let packed_b = NDBuffer[3, config.packed_shape, type](
@@ -2000,7 +2000,7 @@ struct BTileGenerator[
             # When packing is done online, tile_dim_nk can vary in each call to
             # get_tile (if handling a residual K tile), but packing assumes that
             # tile_k is constant.
-            let tile_shape_pack = create_dim_list(
+            let tile_shape_pack = DimList(
                 self.tile_n_k[0] // inner_size, self.tile_n_k[1], inner_size
             )
             let tile_k_idx = global_offset.K // self.tile_n_k[1]

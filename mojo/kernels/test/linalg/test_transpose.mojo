@@ -9,7 +9,7 @@ from Buffer import Buffer, NDBuffer
 from DType import DType
 from Index import Index, StaticIntTuple
 from IO import print
-from List import create_dim_list
+from List import DimList
 from Transpose import transpose, transpose_inplace
 from Range import range
 
@@ -25,7 +25,7 @@ fn test_transpose_4x4():
     #  [12, 13, 14, 15]]
     var matrix = NDBuffer[
         2,
-        create_dim_list(4, 4),
+        DimList(4, 4),
         DType.index,
     ].stack_allocation()
 
@@ -106,7 +106,7 @@ fn test_transpose_8x8():
 
     var matrix = NDBuffer[
         2,
-        create_dim_list(num_rows, num_cols),
+        DimList(num_rows, num_cols),
         DType.index,
     ].stack_allocation()
 
@@ -136,7 +136,7 @@ fn test_transpose_16x16():
 
     var matrix = NDBuffer[
         2,
-        create_dim_list(num_rows, num_cols),
+        DimList(num_rows, num_cols),
         DType.index,
     ].stack_allocation()
 
@@ -161,7 +161,7 @@ fn test_transpose_16x16():
 fn test_transpose_2d_identity():
     print("== test_transpose_2d_identity")
 
-    alias in_shape = create_dim_list(3, 3)
+    alias in_shape = DimList(3, 3)
     # Create an input matrix of the form
     # [[1, 2, 3],
     #  [4, 5, 6],
@@ -187,7 +187,7 @@ fn test_transpose_2d_identity():
     # [[-1, -1, -1],
     #  [-1, -1, -1],
     #  [-1, -1, -1]]
-    alias out_shape = create_dim_list(3, 3)
+    alias out_shape = DimList(3, 3)
     var output = NDBuffer[2, out_shape, DType.index].stack_allocation()
     output.fill(0)
 
@@ -223,7 +223,7 @@ fn test_transpose_2d_identity():
 fn test_transpose_2d():
     print("== test_transpose_2d")
 
-    alias in_shape = create_dim_list(3, 3)
+    alias in_shape = DimList(3, 3)
     # Create an input matrix of the form
     # [[1, 2, 3],
     #  [4, 5, 6],
@@ -249,7 +249,7 @@ fn test_transpose_2d():
     # [[-1, -1, -1],
     #  [-1, -1, -1],
     #  [-1, -1, -1]]
-    alias out_shape = create_dim_list(3, 3)
+    alias out_shape = DimList(3, 3)
     var output = NDBuffer[2, out_shape, DType.index].stack_allocation()
     output.fill(0)
 
@@ -285,7 +285,7 @@ fn test_transpose_2d():
 fn test_transpose_3d_identity():
     print("== test_transpose_3d_identity")
 
-    alias in_shape = create_dim_list(2, 2, 3)
+    alias in_shape = DimList(2, 2, 3)
     # Create an input matrix of the form
     # [[[1, 2, 3],
     #   [4, 5, 6]],
@@ -317,7 +317,7 @@ fn test_transpose_3d_identity():
     #   [-1, -1, -1]],
     #  [[-1, -1, -1],
     #   [-1, -1, -1]]]
-    alias out_shape = create_dim_list(2, 2, 3)
+    alias out_shape = DimList(2, 2, 3)
     var output = NDBuffer[3, out_shape, DType.index].stack_allocation()
     output.fill(0)
 
@@ -360,7 +360,7 @@ fn test_transpose_3d_identity():
 fn test_transpose_3d():
     print("== test_transpose_3d")
 
-    alias in_shape = create_dim_list(2, 2, 3)
+    alias in_shape = DimList(2, 2, 3)
     # Create an input matrix of the form
     # [[[1, 2, 3],
     #   [4, 5, 6]],
@@ -392,7 +392,7 @@ fn test_transpose_3d():
     #   [-1, -1, -1]],
     #  [[-1, -1, -1],
     #   [-1, -1, -1]]]
-    alias out_shape = create_dim_list(3, 2, 2)
+    alias out_shape = DimList(3, 2, 2)
     var output = NDBuffer[3, out_shape, DType.index].stack_allocation()
     output.fill(0)
 
@@ -437,7 +437,7 @@ fn test_transpose_3d():
 fn test_transpose_si64():
     print("== test_transpose_si64")
 
-    alias in_shape = create_dim_list(2, 2, 3)
+    alias in_shape = DimList(2, 2, 3)
     # Create an input matrix of the form
     # [[[1, 2, 3],
     #   [4, 5, 6]],
@@ -469,7 +469,7 @@ fn test_transpose_si64():
     #   [-1, -1, -1]],
     #  [[-1, -1, -1],
     #   [-1, -1, -1]]]
-    alias out_shape = create_dim_list(3, 2, 2)
+    alias out_shape = DimList(3, 2, 2)
     var output = NDBuffer[3, out_shape, DType.si64].stack_allocation()
     output.fill(0)
 
