@@ -799,11 +799,12 @@ feeding in a value from the context. That value can be of any type:
 
 ```mojo
     fn parallelize[
-       func: Function[(Int), None]
-    ](rt: Runtime, num_work_items: Int):
+        arg_type: AnyType,
+        func: fn(Int, arg_type) -> None,
+    ](rt: Runtime, num_work_items: Int, arg: arg_type):
         # Not actually parallel: see Functional.mojo for real impl.
         for i in range(num_work_items):
-           func(i)
+           func(i, arg)
 ```
 
 This is possible because the ‘func’ parameter is allowed to refer to the
@@ -1223,8 +1224,8 @@ understand and utilize effectively.
 
 TOWRITE: Each decorator should be mentioned.
 
-`@always_inline(nodebug)`: same thing but without debug information so you don’t
-step into the + method on Int.
+`@always_inline("nodebug")`: same thing but without debug information so you
+don’t step into the + method on Int.
 
 ### Direct Access to MLIR
 

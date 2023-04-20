@@ -641,7 +641,8 @@ Type LitParameterEvaluator::refineType(Type type) {
 // Argument and Parameter List Parsing
 //===----------------------------------------------------------------------===//
 
-ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo) {
+ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
+                                  bool omitName) {
   loc = p.getToken().getLoc();
 
   // The owned/borrowed keyword sets convention.
@@ -678,10 +679,14 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo) {
     kwArgHandling = KWArgHandling::kKeywordOnly;
   }
 
+  // When parsing a function type, the name is optional.
   SMLoc identifierLoc;
-  if (p.parseIdentifier(name, "expected parameter name", &identifierLoc))
-    // TODO: Scan ahead for better recovery.
-    return failure();
+  if (!omitName) {
+    if (p.parseIdentifier(name, "expected parameter name", &identifierLoc)) {
+      // TODO: Scan ahead for better recovery.
+      return failure();
+    }
+  }
 
   // Process any convention markers.
   SMLoc ampLoc;
@@ -692,19 +697,25 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo) {
       convention = kConventionByRef;
   }
 
-  // Parse an optional type annotation: `":" ["*"] expression`.
-  if (p.consumeIf(Token::colon)) {
+  // Parse an optional type annotation: `":" ["*"] expression`. Omit the colon
+  // if a name was not specified.
+  if (!name || p.consumeIf(Token::colon)) {
     SMLoc starLoc = p.getToken().getLoc();
     if (p.getToken().getKind() == Token::star) {
       if (vararg != VarArgKind::VarArg) {
-        p.emitError(starLoc, "only variadic arguments' types can be unpacked")
-                .attachNote(identifierLoc)
-            << "'" << name.getValue() << "' is not a variadic argument";
+        LitDiagnostic diag = p.emitError(
+            starLoc, "only variadic arguments' types can be unpacked");
+        if (name) {
+          diag.attachNote(identifierLoc)
+              << "'" << name.getValue() << "' is not a variadic argument";
+        }
       }
       vararg = VarArgKind::PackVarArg;
     }
-    if (p.parseStarExpression(typeExpr))
+    ExprNode *typeExprNode;
+    if (p.parseStarExpression(typeExprNode))
       return failure();
+    typeExpr = typeExprNode;
   }
 
   // Parse an optional default argument value: `"=" expression`.
@@ -724,8 +735,8 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo) {
 }
 
 ParseResult ParsedArgument::parseAndResolvePresentArgumentList(
-    ParserBase &p, SmallVectorImpl<ParsedArgument> &args,
-    bool isParameterList) {
+    ParserBase &p, SmallVectorImpl<ParsedArgument> &args, bool isParameterList,
+    bool omitNames) {
   // Figure out where to stop scanning.
   SmallVector<Token::Kind, 2> stopTokens;
   if (isParameterList)
@@ -788,7 +799,7 @@ ParseResult ParsedArgument::parseAndResolvePresentArgumentList(
     KWArgMarkerInfo marker = KWArgMarkerInfo::kNotMarker;
     ParsedArgument arg;
     arg.kwArgHandling = defaultKWArgHandling;
-    if (arg.parse(p, marker))
+    if (arg.parse(p, marker, omitNames))
       return failure();
 
     // If this argument is just a marker, process it.

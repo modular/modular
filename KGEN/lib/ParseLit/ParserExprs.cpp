@@ -22,9 +22,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "Lexer.h"
+#include "LitDecls.h"
 #include "LitExprNodes.h"
 #include "ParserBase.h"
 #include "llvm/Support/SaveAndRestore.h"
+
 using namespace M::KGEN::LIT;
 using namespace M;
 
@@ -106,6 +108,7 @@ private:
   ParseResult parseSubscriptSuffix(ExprNode *&result, SMLoc lsquareLoc);
   ParseResult parseComparisonExpr(ExprNode *&result, ExprNode *rhs,
                                   ExprNode::Kind kind, SMLoc loc);
+  ParseResult parseFunctionType(ExprNode *&result);
   ParseResult parseLValueConvert(ExprNode *&result);
 
   /// This specifies the indentation level of the start of the statement that
@@ -308,7 +311,8 @@ ParseResult ExprParser::parseExpression(ExprNode *&expr, Precedence minPrec) {
 }
 
 /// star_expression ::= '*' bitwise_or | expression
-ParseResult ExprParser::parseStarExpression(ExprNode *&expr, Precedence minPrec) {
+ParseResult ExprParser::parseStarExpression(ExprNode *&expr,
+                                            Precedence minPrec) {
   SMLoc starLoc;
   if (consumeIf(Token::star, &starLoc)) {
     ExprNode *subExpr = nullptr;
@@ -384,6 +388,9 @@ static bool isPrimaryExprToken(Token::Kind tokKind) {
   case Token::l_paren:
   case Token::l_square:
   case Token::l_brace:
+  case Token::kw_async:
+  case Token::kw_def:
+  case Token::kw_fn:
   case Token::kw___get_address_as_lvalue:
   case Token::kw___get_lvalue_as_address:
     return true;
@@ -478,6 +485,14 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
     result = dict;
     break;
   }
+
+  case Token::kw_async:
+  case Token::kw_def:
+  case Token::kw_fn:
+    if (failed(parseFunctionType(result)))
+      return failure();
+    break;
+
   case Token::kw___get_address_as_lvalue:
   case Token::kw___get_lvalue_as_address:
     if (failed(parseLValueConvert(result)))
@@ -801,6 +816,97 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
   return success();
 }
 
+/// Parse the input and result parameters, if they are present.
+static ParseResult
+parseOptionalFunctionParameters(ParserBase &p,
+                                SmallVectorImpl<ParsedArgument> &inputParams,
+                                SmallVectorImpl<ParsedArgument> &resultParams) {
+  if (!p.consumeIf(Token::l_square))
+    return success();
+  // Handle '[]'.
+  if (p.consumeIf(Token::r_square))
+    return success();
+
+  if (p.consumeIf(Token::l_paren)) {
+    if (p.parseToken(Token::r_paren,
+                     "expected ')' in empty parameter list; try dropping the "
+                     "'(' if you have parameters"))
+      return failure();
+  } else {
+    // Parse an actual parameter list.
+    if (ParsedArgument::parseAndResolvePresentArgumentList(
+            p, inputParams, /*isParameterList=*/true))
+      return failure();
+  }
+
+  // Parse result parameters if present.
+  if (p.consumeIf(Token::minus_greater)) {
+    if (ParsedArgument::parseAndResolvePresentArgumentList(
+            p, resultParams, /*isParameterList=*/true))
+      return failure();
+  }
+  return p.parseToken(Token::r_square, "expected ']' for parameter list");
+}
+
+ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
+  SMLoc baseLoc = getToken().getLoc();
+  SmallVector<ParsedArgument> inputParams, resultParams, arguments;
+  ExprNode *resultTypeExpr;
+  FnEffects effects = FnEffects::None;
+
+  // Parse the function effects from the leading keyword.
+  if (consumeIf(Token::kw_async))
+    effects = effects | FnEffects::Async;
+  if (consumeToken().is(Token::kw_def))
+    effects = effects | FnEffects::Throws;
+
+  // Parameter signature.
+  if (parseOptionalFunctionParameters(*this, inputParams, resultParams))
+    return failure();
+
+  // Parse the argument list next if present.
+  if (parseToken(Token::l_paren, "expected '(' for argument list"))
+    return failure();
+  if (!consumeIf(Token::r_paren)) {
+    if (ParsedArgument::parseAndResolvePresentArgumentList(
+            *this, arguments, /*isParameterList=*/false, /*omitNames=*/true) ||
+        parseToken(Token::r_paren, "expected ')' in argument list"))
+      return failure();
+  }
+
+  // Parse other function effects.
+  while (getToken().is(Token::identifier)) {
+    StringAttr effectName;
+    SMLoc loc;
+    if (parseIdentifier(effectName, "expected a function effect", &loc))
+      return failure();
+    if (effectName == "raises") {
+      if (bitEnumContainsAny(effects, FnEffects::Throws))
+        emitError(loc, "function effect 'raises' was already specified");
+      effects = effects | FnEffects::Throws;
+    } else if (effectName == "capturing") {
+      if (bitEnumContainsAny(effects, FnEffects::Capturing))
+        emitError(loc, "function effect 'capturing' was already specified");
+      effects = effects | FnEffects::Capturing;
+    } else {
+      emitError(loc, "unknown function effect '")
+          << effectName.getValue() << "', expected 'raises' or 'capturing'";
+    }
+  }
+
+  // Parse the result type.
+  SMLoc endLoc = getToken().getEndLoc();
+  if (parseToken(Token::minus_greater, "expected '->' in function type") ||
+      ParserBase::parseExpression(resultTypeExpr, stmtIndent))
+    return failure();
+
+  result = alloc<FunctionTypeNode>(
+      baseLoc, copyArrayRef<ParsedArgument>(inputParams),
+      copyArrayRef<ParsedArgument>(resultParams),
+      copyArrayRef<ParsedArgument>(arguments), resultTypeExpr, effects, endLoc);
+  return success();
+}
+
 ParseResult ExprParser::parseLValueConvert(ExprNode *&result) {
   bool isLValueToAddress = getToken().is(Token::kw___get_lvalue_as_address);
   assert(getToken().isAny(Token::kw___get_address_as_lvalue,
@@ -810,7 +916,7 @@ ParseResult ExprParser::parseLValueConvert(ExprNode *&result) {
   ExprNode *subExpr = nullptr;
   SMLoc rpLoc;
   if (parseToken(Token::l_paren, "expected '('") || parseExpression(subExpr) ||
-      parseToken(Token::r_paren, "expected '('", &rpLoc))
+      parseToken(Token::r_paren, "expected ')'", &rpLoc))
     return failure();
 
   result = alloc<LValueConvertNode>(isLValueToAddress, baseLoc, subExpr, rpLoc);

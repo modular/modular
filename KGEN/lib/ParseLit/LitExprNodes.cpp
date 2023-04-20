@@ -2284,6 +2284,210 @@ AnyValue ChainedCmpOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
                             dest);
 }
 
+AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
+  // Parameters declared within the function type must be visible. Create a
+  // dummy declaration.
+  ASTDecl &dummyScope = emitter.getDeclResolver().addFullyResolvedDecl(
+      nullptr, StringAttr(), getLoc(), &emitter.declScope);
+  ExprEmitter typeEmitter(emitter.shared, dummyScope, EC_Type, nullptr);
+
+  bool paramVararg = false;
+  auto processParameterArgs = [&](ArrayRef<ParsedArgument> args,
+                                  SmallVectorImpl<ParamDeclAttr> &params,
+                                  bool isResultParams) {
+    for (auto &arg : args) {
+      // Check for things supported in arguments that are not supported in
+      // parameters.
+      if (arg.initExpr)
+        typeEmitter.emitError(
+            arg.loc, "TODO: default values in parameters not supported");
+
+      ASTType type;
+      if (arg.typeExpr)
+        type = typeEmitter.emitExprType(arg.typeExpr);
+      else
+        typeEmitter.emitError(arg.loc, "parameters must always have a type");
+      if (!type)
+        type = TypeCheckErrorType::get(emitter.getContext());
+
+      // Parameters must be register passable for now.
+      if (!type.isRegisterPassable(arg.loc, emitter.shared)) {
+        typeEmitter.emitError(arg.loc, "cannot use type ")
+            << type
+            << " in a parameter: only @register_passable types are supported "
+               "right now";
+        type = TypeCheckErrorType::get(emitter.getContext());
+      }
+
+      VarArgKind vararg = arg.vararg;
+      if (vararg != VarArgKind::None && isResultParams)
+        typeEmitter.emitError(arg.loc, "result parameters may not be variadic");
+      if (vararg == VarArgKind::PackVarArg)
+        typeEmitter.emitError(arg.loc, "parameters may not be variadic packs");
+
+      if (vararg == VarArgKind::VarArg &&
+          !isa<TypeCheckErrorType>(type.mlirType)) {
+        type = KGEN::VariadicType::get(type);
+        paramVararg = true;
+      }
+
+      // TODO: Parameter decls should support conventions at some point.
+      if (arg.convention != ParsedArgument::kConventionUnspec)
+        typeEmitter.emitError(arg.loc,
+                              "parameters must always be passed by-value");
+
+      // Bind the parsed type expression so references from other parameters
+      // can be resolved.
+      auto tmpDecl = ParamDeclRefAttr::get(arg.name, type);
+      emitter.getDeclResolver().addFullyResolvedDecl(PValue(tmpDecl), arg.name,
+                                                     arg.loc, &dummyScope);
+      params.push_back(ParamDeclAttr::get(arg.name, type));
+    }
+  };
+
+  SmallVector<ParamDeclAttr> inputParamDecls, resultParamDecls;
+  processParameterArgs(inputParams, inputParamDecls, /*isResultParams=*/false);
+  processParameterArgs(resultParams, resultParamDecls, /*isResultParams=*/true);
+
+  SmallVector<ParsedArgument> args = llvm::to_vector(arguments);
+
+  ASTType resultType;
+  FnEffects fnEffects = effects;
+  if (paramVararg)
+    fnEffects = fnEffects | FnEffects::ParamVararg;
+  if (isa<NoneLiteralNode>(resultTypeExpr)) {
+    // If the result type is a `None` literal, then convert it to NoneType.
+    resultType = emitter.shared.getNoneType();
+  } else {
+    resultType = typeEmitter.emitExprType(resultTypeExpr);
+    if (!resultType)
+      return {};
+
+    // Memory-only types get passed as the first argument to the function
+    // by-reference.
+    uint8_t rp = resultType.getRegisterPassability(getLoc(), emitter.shared);
+    if (rp == StructDeclOp::RP_MemoryOnly) {
+      // Synthesize a result argument for this, and use None as the actual
+      // function result.
+      ParsedArgument resultArg;
+      resultArg.loc = resultTypeExpr->getLoc();
+      resultArg.name = StringAttr::get(emitter.getContext(), "__result__");
+      resultArg.convention = ParsedArgument::kConventionByRefResult;
+      resultArg.typeExpr = resultTypeExpr;
+      args.insert(args.begin(), resultArg);
+      resultType = emitter.shared.getNoneType();
+    } else if (rp != StructDeclOp::RP_RegisterPassableTrivial) {
+      // We know the result type of the function is register passable (because
+      // otherwise it would be promoted to an argument).  If the result of the
+      // function is a non-trivial type, mark the function effect as having an
+      // owned result so ownership tracking will notice it.
+      fnEffects = fnEffects | FnEffects::OwnedResult;
+    }
+  }
+
+  SmallVector<Type> argTypes;
+  SmallVector<TypedAttr> defaults;
+  SmallVector<ValueInputConvention> inputConventions;
+
+  bool seenInitExpr = false;
+  for (auto [idx, arg] : llvm::enumerate(args)) {
+    if (!arg.typeExpr) {
+      typeEmitter.emitError(arg.loc, "missing type?");
+      return {};
+    }
+    ASTType type = typeEmitter.emitExprType(arg.typeExpr);
+    if (!type)
+      return {};
+
+    // Determine the required function effects from the conventions.
+    if (arg.vararg == VarArgKind::VarArg)
+      fnEffects = fnEffects | FnEffects::Vararg;
+    else if (arg.vararg == VarArgKind::PackVarArg)
+      fnEffects = fnEffects | FnEffects::PackVararg;
+    else if (arg.vararg == VarArgKind::KWVarArg)
+      fnEffects = fnEffects | FnEffects::KWVararg;
+
+    // If no convention was explicitly specified, provide a default.
+    if (arg.convention == ParsedArgument::kConventionUnspec)
+      arg.convention = ParsedArgument::kConventionBorrowed;
+
+    switch (arg.convention) {
+    case ParsedArgument::kConventionUnspec:
+      llvm_unreachable("should be resolved above");
+    case ParsedArgument::kConventionOwned:
+      // Memory-only owned argument are passed with a layer of indirection and
+      // use a specific convention to model this.
+      if (type.isRegisterPassable(arg.loc, emitter.shared))
+        arg.kgenConvention = ValueInputConvention::OwnedInReg;
+      else
+        arg.kgenConvention = ValueInputConvention::OwnedInMem;
+      break;
+    case ParsedArgument::kConventionBorrowed:
+      // Memory-only owned argument are passed with a layer of indirection and
+      // use a specific convention to model this.
+      if (type.isRegisterPassable(arg.loc, emitter.shared))
+        arg.kgenConvention = ValueInputConvention::BorrowedInReg;
+      else
+        arg.kgenConvention = ValueInputConvention::BorrowedInMem;
+      break;
+    case ParsedArgument::kConventionByRef:
+      arg.kgenConvention = ValueInputConvention::ByRef;
+      break;
+    case ParsedArgument::kConventionByRefResult:
+      arg.kgenConvention = ValueInputConvention::ByRefResult;
+      break;
+    case ParsedArgument::kConventionInitSelfResult:
+      arg.kgenConvention = ValueInputConvention::InitSelf;
+      break;
+    }
+
+    // Adjust the MLIR type if needed.
+    if (arg.kgenConvention != ValueInputConvention::OwnedInReg &&
+        arg.kgenConvention != ValueInputConvention::BorrowedInReg)
+      type = POP::PointerType::get(type);
+    if (arg.vararg == VarArgKind::VarArg)
+      type = KGEN::VariadicType::get(type);
+
+    if (arg.initExpr) {
+      seenInitExpr = true;
+    } else if (seenInitExpr) {
+      typeEmitter.emitError(arg.loc,
+                            "non-default argument follows default argument")
+          << arg.typeExpr->getRange();
+    }
+
+    // Emit default argument values.
+    if (const ExprNode *initExpr = arg.initExpr) {
+      PValue value =
+          typeEmitter.emitExprPValue(initExpr, EC_DefaultArgument, type);
+      if (!value)
+        return {};
+      defaults.push_back(value);
+    }
+
+    argTypes.push_back(type);
+    inputConventions.push_back(arg.kgenConvention);
+  }
+
+  // Build the signature type.
+  Builder b(emitter.getContext());
+  auto inputParamsAttr = b.getAttr<ParamDeclArrayAttr>(inputParamDecls);
+  auto resultParamsAttr = b.getAttr<ParamDeclArrayAttr>(resultParamDecls);
+  FunctionType functionType =
+      b.getFunctionType(argTypes, {resultType.mlirType});
+
+  // Compute the signature of the function.
+  auto signature = IndexRefRemapper::remapToSignature(
+      inputParamsAttr, resultParamsAttr, functionType,
+      b.getAttr<MetadataAttr>(inputConventions, defaults, fnEffects),
+      [&] { return mlir::emitError(emitter.translateLocation(getLoc())); });
+  if (!signature) {
+    typeEmitter.emitError(getLoc(), "failed to construct signature type");
+    return {};
+  }
+  return ASTType(signature);
+}
+
 AnyValue LValueConvertNode::emitIR(ValueDest &dest,
                                    ExprEmitter &emitter) const {
   // The two cases have different codegen patterns.
