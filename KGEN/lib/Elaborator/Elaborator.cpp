@@ -1087,6 +1087,13 @@ public:
       KGENCallOpInterface user, SymbolConstantAttr calleeSymbol,
       ExpansionTreeNode *parent, ArrayRef<Operation *> remainingWorklist);
 
+  /// Process a parameter constant op. If the type of the constant op is
+  /// a fat region, then
+  std::optional<ErrorTree>
+  processParamConstantOp(ParamConstantOp parameterConstantOp,
+                         ExpansionTreeNode *parent,
+                         ArrayRef<Operation *> remainingWorklist);
+
   /// Resolve call input parameters - this is a complex function because calls
   /// can have regions. We take the body of those regions and put it into a
   /// generator with a specially prepared ParameterEvaluator scope and elaborate
@@ -1160,6 +1167,9 @@ private:
   /// If this is true, emit diagnostics for certain conditions that are
   /// interesting to test for.
   bool testDiagnostics;
+
+  /// Remove parameter declare regions after generator elaboration.
+  SmallVector<OwningOpRef<ParamDeclareRegionOp>> paramDeclareRegionOps;
 };
 } // namespace
 
@@ -1193,7 +1203,6 @@ void ElaboratorImpl::finalizeAndVerifyFunction(
         }
         return success();
       });
-
   // Verify the function.
   if (failed(verify(func))) {
     node->setToError(ErrorTree(*verificationLoc, Twine("verification error: ") +
@@ -1619,6 +1628,84 @@ ElaboratorImpl::resolveCallInputParams(KGENCallOpInterface call,
 }
 
 //===----------------------------------------------------------------------===//
+// ElaboratorImpl::processParamConstantOp
+//===----------------------------------------------------------------------===//
+
+std::optional<ErrorTree> ElaboratorImpl::processParamConstantOp(
+    ParamConstantOp parameterConstantOp, ExpansionTreeNode *parent,
+    ArrayRef<Operation *> remainingWorklist) {
+  ErrorTreeOr<Attribute> symbol = parent->evaluator.concretizeParameterExpr(
+      parameterConstantOp.getLoc(), parameterConstantOp.getValue());
+
+  if (symbol.isError())
+    return symbol.takeError();
+
+  auto decl = dyn_cast<RegionAttr>(*symbol);
+  if (!decl)
+    return processGenericOp(parent->evaluator, parameterConstantOp);
+
+  ParameterUseDefGraph *regionGraph =
+      parent->knownRegions.lookup(decl.getRegionName());
+  if (!regionGraph) {
+    parent->setToError(
+        ErrorTree(parameterConstantOp.getLoc(),
+                  "Parameter constant op processing failed because the param "
+                  "use def of the region it references is null."));
+    return parent->error->copy();
+  }
+  Region *sourceRegion = regionGraph->scope;
+
+  mlir::IRRewriter rewriter{OpBuilder(parameterConstantOp)};
+  // Encode parameter information into name for uniqueness
+  std::string stagedFunctionName = decl.getRegionName().str();
+  llvm::raw_string_ostream stream(stagedFunctionName);
+  for (TypedAttr binding : decl.getParamValues()) {
+    if (IntegerAttr indexAttr = dyn_cast<IntegerAttr>(binding)) {
+      stream << indexAttr.getValue();
+    } else if (DTypeConstantAttr kgenDType =
+                   dyn_cast<DTypeConstantAttr>(binding)) {
+      stream << kgenDType.getDType().getAsString();
+    } else {
+      binding.walkImmediateSubElements(
+          [&stream](Attribute attr) { attr.print(stream); },
+          [&stream](Type type) { type.print(stream); });
+    }
+  }
+  auto stageClosureOp = rewriter.replaceOpWithNewOp<StageClosureOp>(
+      parameterConstantOp, decl.getType());
+  stageClosureOp->setAttr(
+      StringAttr::get(rewriter.getContext(), "name"),
+      StringAttr::get(rewriter.getContext(), stagedFunctionName));
+
+  Region &targetRegion = stageClosureOp.getBodyRegion();
+  IRMapping map;
+  sourceRegion->cloneInto(&targetRegion, map);
+  map.map(sourceRegion->getParentOp(), stageClosureOp.getOperation());
+
+  // Set any bindings on the region in the evaluator context.
+  for (auto [decl, value] : llvm::zip(
+           sourceRegion->getParentOfType<DeclInterface>().getInputParams(),
+           decl.getParamValues()))
+    parent->evaluator.setOrOverwriteParameterValue(decl, value);
+
+  // Recurse into the region.
+  std::vector<Operation *> opsToRewriteInRegion;
+  collectOpsToProcess(&targetRegion, *regionGraph, opsToRewriteInRegion);
+  llvm::append_range(opsToRewriteInRegion, regionGraph->paramOps);
+  auto opsToRewrite = map_to_vector(
+      opsToRewriteInRegion, [&](Operation *op) { return map.lookup(op); });
+
+  IREvaluator evaluator(*this, parent->evaluator.getParameterValues());
+  llvm::SaveAndRestore<IREvaluator> save(parent->evaluator);
+  parent->evaluator.clearCache();
+  // Process the ops we just collected.
+  if (failed(processScope(parent, opsToRewrite)))
+    return parent->error->copy();
+
+  return std::nullopt;
+}
+
+//===----------------------------------------------------------------------===//
 // ElaboratorImpl::processCallOp
 //===----------------------------------------------------------------------===//
 
@@ -1833,6 +1920,7 @@ LogicalResult ElaboratorImpl::processScope(ExpansionTreeNode *parentNode,
 
   // Processing an op may generate more stuff, or even delete the op being
   // processed.
+  SmallVector<ParamDeclareRegionOp> declareRegionOps;
   for (auto iter = worklist.begin(), end = worklist.end(); iter != end;
        ++iter) {
     Operation *op = *iter;
@@ -1847,9 +1935,10 @@ LogicalResult ElaboratorImpl::processScope(ExpansionTreeNode *parentNode,
     if (auto declare = dyn_cast<ParamDeclareOp>(op)) {
       TimeTraceScope<EnableTracing> traceScope("processParamDeclareOp");
       result = processParamDeclareOp(parentNode->evaluator, declare);
-    } else if (auto declare = dyn_cast<ParamDeclareRegionOp>(op)) {
+    } else if (auto paramDeclareRegionOp = dyn_cast<ParamDeclareRegionOp>(op)) {
       TimeTraceScope<EnableTracing> traceScope("processParamDeclareRegionOp");
-      result = processParamDeclareRegionOp(declare, parentNode);
+      result = processParamDeclareRegionOp(paramDeclareRegionOp, parentNode);
+      declareRegionOps.push_back(paramDeclareRegionOp);
     } else if (auto bind = dyn_cast<ParamResultBindOp>(op)) {
       TimeTraceScope<EnableTracing> traceScope("processParamResultBindOp");
       result = processParamResultBindOp(bind, parentNode);
@@ -1868,6 +1957,8 @@ LogicalResult ElaboratorImpl::processScope(ExpansionTreeNode *parentNode,
     } else if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
       TimeTraceScope<EnableTracing> traceScope("processCallOp");
       result = processCallOp(call, parentNode, remainingWorklist);
+    } else if (auto value = dyn_cast<ParamConstantOp>(op)) {
+      result = processParamConstantOp(value, parentNode, remainingWorklist);
     } else {
       TimeTraceScope<EnableTracing> traceScope("processGenericOp");
       result = processGenericOp(parentNode->evaluator, op);
@@ -1886,6 +1977,11 @@ LogicalResult ElaboratorImpl::processScope(ExpansionTreeNode *parentNode,
       return failure();
   }
 
+  for (ParamDeclareRegionOp paramDeclareRegionOp : declareRegionOps) {
+    paramDeclareRegionOp->remove();
+    paramDeclareRegionOps.push_back(
+        OwningOpRef<ParamDeclareRegionOp>(paramDeclareRegionOp));
+  }
   LLVM_DEBUG(parentNode->print(logger << "Completed processing "));
   return success();
 }

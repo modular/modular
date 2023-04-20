@@ -76,9 +76,6 @@ void OutlineClosuresPass::runOnOperation() {
       llvm::SetVector<Value> captures;
       mlir::getUsedValuesDefinedAbove(regionDecl->getRegions(), captures);
       bool isolated = captures.empty();
-
-      // If the body is not isolated from above *and* it's not marked
-      // always_inline, emit an error.
       if (!isolated && !regionDecl.getSignature().isCapturing()) {
         InFlightDiagnostic diag = mlir::emitError(regionDecl.getLoc())
                                   << "nested function is marked as "
