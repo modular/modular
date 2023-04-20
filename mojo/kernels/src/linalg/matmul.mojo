@@ -1240,8 +1240,7 @@ struct MatmulInnerLoopBPacked[
         let global_k = self.global_offset.K + tile_n_k_idx[1]
 
         # Prefetch B matrix.
-        # TODO(#10919): Use `@parameter` if here, there is a bug where invalid
-        # code is generated and accuracy is not maintained.
+        @parameter
         if prefetch_b_distance > 0:
 
             @always_inline
