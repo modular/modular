@@ -286,7 +286,7 @@ properties, structs are static, bound at compile time, and are stored inlined
 into their container instead of being implicitly indirect and reference
 counted. Following Mojo’s general approach, we aren’t saying that static is
 better than dynamic: we’re saying that they are both important tools and that
-one should be able to use the right tool for a job. This approach is has
+one should be able to use the right tool for a job. This approach has
 precedent in other languages, e.g. Swift, C# and others.
 
 Here’s a simple definition of a struct:
@@ -400,7 +400,7 @@ Swift, etc) where you can define the same function name with multiple different
 signatures. When resolving a function call, Mojo will try each candidate and
 use the one that works (if only one works), pick the closest match (if it can
 determine a close match) or report the call as being ambiguous if it can’t
-figure out which one to pick. In the later case, you can resolve the ambiguity
+figure out which one to pick. In the latter case, you can resolve the ambiguity
 by adding an explicit cast on the call site. Let’s look at an example:
 
 ```mojo
@@ -659,7 +659,7 @@ parameter. Because SIMD is a parameterized type, the type of a ‘self’ argume
 carries the parameters - the full type name is “`SIMD[type, size]`”. While it
 is always valid to write this out (as shown in the return type of `splat`),
 this can be verbose: we recommend using the `Self` type (from
-[PEP673](https://peps.python.org/pep-0673/)) like the `__add__` examples does.
+[PEP673](https://peps.python.org/pep-0673/)) like the `__add__` example does.
 
 ### Using parameterized types and functions
 
@@ -761,7 +761,7 @@ This makes use of two new features: “`@parameter if`” is an if statement tha
 runs at compile time. It requires that its condition be a valid parameter
 expression, and ensures that only the live branch of the if is compiled into
 the program. This example also introduces the “`alias`” declaration, which is
-like ‘let’ but which is guaranteed to be evaluated at compile time value.
+like ‘let’ but which is guaranteed to be evaluated at compile time.
 
 ### Mojo Types are just Parameter Expressions
 
@@ -1374,7 +1374,7 @@ programmers don’t just seek “performance” they also typically want a lot o
 While we are a fan of these approaches, and feel they are valuable and exciting
 to the community, they unfortunately do not satisfy our needs. We are looking
 to eliminate the need to use C or C++ within Python libraries, we seek the
-higher performance possible, and we cannot accept dynamic features at all in
+highest performance possible, and we cannot accept dynamic features at all in
 some cases, so these approaches don’t help.
 
 #### Python Subsets and other Python-like Languages
