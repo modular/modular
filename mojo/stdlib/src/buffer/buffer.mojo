@@ -338,7 +338,7 @@ struct Buffer[size: Dim, type: DType]:
 
         @always_inline
         fn _fill[simd_width: Int](idx: Int):
-            self.simd_store[simd_width](idx, val)
+            self.simd_store[simd_width](idx, SIMD[type, simd_width].splat(val))
 
         vectorize[simd_width, _fill](self.__len__())
 
