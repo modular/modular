@@ -1052,6 +1052,21 @@ static void rejectDecorators(ArrayRef<ExprNode *> decoratorExprs, ASTDecl &decl,
 // Function Decl implementation
 //===----------------------------------------------------------------------===//
 
+/// For a LIT::FuncOp, this returns whether the function is a special function
+/// like __init__.
+void ASTDecl::setSpecialFunctionKind(SpecialFunctionKind kind) {
+  assert(isa<LIT::FuncOp>(*this));
+  specialFunctionKind = uint8_t(kind);
+}
+
+SpecialFunctionKind ASTDecl::getSpecialFunctionKind() const {
+  assert(
+      isa<LIT::FuncOp>(*this) && resolvedness >= DeclResolvedness::signature &&
+      "Can only get special function kind from signature resolved functions");
+
+  return SpecialFunctionKind(specialFunctionKind);
+}
+
 /// If this is a special function like __init__ return the enum that
 /// identifies it, otherwise return kNormal.
 SpecialFunctionKind SpecialFunctionInfo::getKind(StringRef name) {
@@ -1360,6 +1375,10 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
     if (arg.vararg == VarArgKind::VarArg)
       argType = KGEN::VariadicType::get(argType);
   }
+
+  // If we have a special function kind and didn't have any errors with it,
+  // remember which kind it is.
+  decl.setSpecialFunctionKind(fnInfo.kind);
 }
 
 // Mangle 'name', ensuring that overloaded methods get unique symbol names.
@@ -1927,6 +1946,80 @@ static SLValue makeArgLValueVarSlot(CValue argValue, StringAttr argName,
   return SLValue(varDecl);
 };
 
+/// Emit a normal return (not a 'raise' return) out of the function, along with
+/// any special logic that goes with it.
+void ExprEmitter::emitNormalReturn(OpBuilder &builder, Location loc,
+                                   Value value, const ASTDecl &funcDecl) {
+  switch (funcDecl.getSpecialFunctionKind()) {
+  default:
+    break;
+
+  /// In the __del__ method for a struct, we need to mark 'self' as being
+  /// destroyed before any return operation.
+  case SpecialFunctionKind::kDel: {
+    auto func = cast<LIT::FuncOp>(funcDecl);
+    assert(func.getBody()->getNumArguments() == 1 &&
+           "__del__ should have one argument");
+    Value selfArg = func.getBody()->getArgument(0);
+
+    // If this is a @register_passable type, the value will be stored in a
+    // box and we want to treat the box as the thing that we track.
+    if (func.getSignature().getInputConvention(0) ==
+        ValueInputConvention::OwnedInReg) {
+      assert(selfArg.hasOneUse() && "expect one store of self to a box");
+      auto store = cast<POP::StoreOp>(*selfArg.user_begin());
+      selfArg = store.getPtr();
+    }
+    builder.create<LIT::OwnershipMarkDestroyedOp>(loc, selfArg);
+    break;
+  }
+
+  /// In the __moveinit__ method for a struct, we need to mark 'existing' as
+  /// being destroyed before any return operation if it is owned convention.
+  case SpecialFunctionKind::kMoveInit: {
+    auto func = cast<LIT::FuncOp>(funcDecl);
+    assert(func.getBody()->getNumArguments() == 2 &&
+           "__moveinit__ should have to arguments");
+    // Don't change `__moveinit__(owned self, existing&: Self)`.
+    if (func.getSignature().getInputConvention(1) !=
+        ValueInputConvention::OwnedInMem)
+      break;
+
+    Value existingArg = func.getBody()->getArgument(1);
+    builder.create<LIT::OwnershipMarkDestroyedOp>(loc, existingArg);
+    break;
+  }
+  }
+
+  // Finally we emit a normal return with lit.return.
+  builder.create<LIT::ReturnOp>(loc, value);
+}
+/// This adds a default return (lit.return of None, potentially converted
+/// to a variant) and emits a EndFuncOp.
+static void appendDefaultReturnAndEndOp(LIT::FuncOp func, ASTDecl &funcDecl) {
+  Block &body = *func.getBody();
+  auto b = OpBuilder::atBlockEnd(&body);
+  Location loc = func.getLoc();
+
+  // If the function returns None, insert a "return None".
+  if (isa<LIT::NoneType>(func.getResultTypeWithoutErrorVariant()) &&
+      !func.getSignature().hasMemoryOnlyResult() &&
+      // No default return needed if we ended in a return.
+      (body.empty() || !isa<LIT::ReturnOp>(body.back()))) {
+    // The function returns none.
+    Value retVal = b.create<ParamConstantOp>(loc, b.getAttr<LIT::NoneAttr>());
+
+    // Wrap the result value if necessary.
+    if (func.isThrows())
+      retVal =
+          b.create<POP::VariantCreateOp>(loc, func.getResultType(), retVal);
+    ExprEmitter::emitNormalReturn(b, loc, retVal, funcDecl);
+  }
+
+  // Insert the default end terminator.
+  b.create<LIT::EndFuncOp>(loc);
+}
+
 ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
                                       ASTDecl &decl) {
   // Push the debug scope for this function if necessary so that nested
@@ -2078,7 +2171,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
 
   // Emit a default "return None" if the function returns nothing, and add an
   // endop terminator.
-  funcOp.appendDefaultReturnAndEndOp();
+  appendDefaultReturnAndEndOp(funcOp, decl);
 
   // Check that any alias forward declarations have been completed.
   if (!shared.diags.isErrorEmitted()) {
@@ -2462,6 +2555,7 @@ static TypedAttr synthesizeEmptyDtor(StructDeclOp structOp, ASTDecl &structDecl,
   // Register the dtor in the struct.
   ASTDecl &funcDecl = resolver.addFullyResolvedDecl(
       funcOp.getOperation(), "__del___", structDecl.getLoc(), &structDecl);
+  funcDecl.setSpecialFunctionKind(SpecialFunctionKind::kDel);
 
   // Set up the body.
   Block *body = funcOp.getBody();
@@ -2476,7 +2570,7 @@ static TypedAttr synthesizeEmptyDtor(StructDeclOp structOp, ASTDecl &structDecl,
   }
 
   // Finish off the function with a return + lit.endfunc.
-  funcOp.appendDefaultReturnAndEndOp();
+  appendDefaultReturnAndEndOp(funcOp, funcDecl);
 
   return funcOp.getBoundReference();
 }
