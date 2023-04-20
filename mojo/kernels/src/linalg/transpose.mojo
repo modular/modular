@@ -8,15 +8,16 @@
 from Assert import assert_param
 from Buffer import Buffer, NDBuffer
 from DType import DType
-from Functional import unroll, async_parallelize
+from Functional import unroll, async_parallelize, vectorize
 from Index import StaticIntTuple
-from LLCL import OutputChainPtr
+from Intrinsics import strided_load, strided_store
 from List import DimList, VariadicList
+from LLCL import OutputChainPtr
 from Math import div_ceil, min
 from Memory import memcpy
 from Pointer import DTypePointer
 from Range import range
-from TargetInfo import dtype_sizeof
+from TargetInfo import dtype_sizeof, dtype_simd_width
 from TypeUtilities import rebind
 
 
@@ -504,10 +505,19 @@ fn _copy_with_strides[
         if input_axis_stride == 1 and output_axis_stride == 1:
             memcpy(dst_ptr, src_ptr, axis_dim * dtype_sizeof[type]())
         else:
-            for i in range(axis_dim):
-                dst_ptr.store(0, src_ptr.load(0))
-                src_ptr = src_ptr.offset(input_axis_stride)
-                dst_ptr = dst_ptr.offset(output_axis_stride)
+
+            @always_inline
+            fn _copy[simd_width: Int](offset: Int):
+                strided_store[simd_width, type](
+                    strided_load[simd_width, type](src_ptr, input_axis_stride),
+                    dst_ptr,
+                    output_axis_stride,
+                )
+                src_ptr = src_ptr.offset(simd_width * input_axis_stride)
+                dst_ptr = dst_ptr.offset(simd_width * output_axis_stride)
+
+            alias vector_width = dtype_simd_width[type]()
+            vectorize[vector_width, _copy](axis_dim)
 
         if out_chain:
             out_chain.mark_ready()
