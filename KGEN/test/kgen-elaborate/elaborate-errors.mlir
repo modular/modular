@@ -226,3 +226,21 @@ kgen.generator @failed_apply() {
   kgen.param.constant = <value>
   kgen.return
 }
+
+// -----
+
+// expected-error @+1 {{no viable expansions found}}
+kgen.generator @closure_with_invalid_scope() {
+  %idx4 = index.constant 4
+
+  kgen.param.declare.region k = <dt:dtype>() capturing -> index {
+    kgen.param.declare B : !kgen.string = <"foo">
+
+    // expected-note @+1 {{constraint failed: foo}}
+    kgen.param.assert <eq(2, 3)>, B
+    kgen.return %idx4 : index
+  }
+  %0 = kgen.param.constant: <>() capturing -> index = <bind_signature(:<dtype>() capturing -> index k, si32)>
+  kgen.return
+}
+
