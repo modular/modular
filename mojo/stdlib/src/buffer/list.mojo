@@ -161,24 +161,35 @@ struct Dim:
 
 
 @register_passable("trivial")
-struct DimList[length: Int]:
+struct DimList:
     """This type represents a list of dimensions. Each dimension may have a
     static value or not have a value, which represents a dynamic dimension."""
 
-    alias list_type = VariadicList[Dim]
-    var value: list_type
+    var value: VariadicList[Dim]
 
     @always_inline("nodebug")
-    fn __init__(value: list_type) -> Self:
-        """Create a dimension list from the underlying value type.
+    fn __init__(values: VariadicList[Dim]) -> Self:
+        """Create a dimension list from the given list of values.
 
         Args:
-            value: The underlying value.
+            values: The initial dim values list.
 
         Returns:
             A dimension list.
         """
-        return Self {value: value}
+        return Self {value: values}
+
+    @always_inline("nodebug")
+    fn __init__(*values: Dim) -> Self:
+        """Create a dimension list from the given Dim values.
+
+        Args:
+            values: The initial dim values.
+
+        Returns:
+            A dimension list.
+        """
+        return VariadicList[Dim](values)
 
     @always_inline("nodebug")
     fn __clone__(self&) -> Self:
@@ -200,7 +211,6 @@ struct DimList[length: Int]:
             The dimension at the specified index.
         """
         assert_param_msg[i >= 0, "negative index"]()
-        assert_param_msg[i < length, "index exceeds length"]()
         return self.value[i]
 
     @always_inline
@@ -212,7 +222,7 @@ struct DimList[length: Int]:
             return self.at[i]() * self._product_impl[i + 1, end]()
 
     @always_inline
-    fn product(self) -> Dim:
+    fn product[length: Int](self) -> Dim:
         """Compute the product of all the dimensions in the list.
 
         If any are dynamic, the result is a dynamic dimension value.
@@ -239,15 +249,17 @@ struct DimList[length: Int]:
         return self._product_impl[start, end]()
 
     @always_inline
-    fn _contains_impl[i: Int](self, value: Dim) -> Bool:
+    fn _contains_impl[i: Int, length: Int](self, value: Dim) -> Bool:
         @parameter
         if i >= length:
             return False
         else:
-            return self.at[i]() == value or self._contains_impl[i + 1](value)
+            return self.at[i]() == value or self._contains_impl[i + 1, length](
+                value
+            )
 
     @always_inline
-    fn contains(self, value: Dim) -> Bool:
+    fn contains[length: Int](self, value: Dim) -> Bool:
         """Determine whether the dimension list contains a specified dimension
         value.
 
@@ -257,20 +269,20 @@ struct DimList[length: Int]:
         Returns:
             True if the list contains a dimension of the specified value.
         """
-        return self._contains_impl[0](value)
+        return self._contains_impl[0, length](value)
 
     @always_inline
-    fn all_known(self) -> Bool:
+    fn all_known[length: Int](self) -> Bool:
         """Determine whether all dimensions are statically known.
 
         Returns:
             True if all dimensions have a static value.
         """
-        return not self.contains(Dim())
+        return not self.contains[length](Dim())
 
     @always_inline
     @staticmethod
-    fn create_unknown() -> Self:
+    fn create_unknown[length: Int]() -> Self:
         """Create a dimension list of all dynamic dimension values.
 
         Returns:
@@ -281,517 +293,43 @@ struct DimList[length: Int]:
 
         @parameter
         if length == 1:
-            return rebind[Self](create_dim_list(u))
+            return rebind[Self](DimList(u))
         elif length == 2:
-            return rebind[Self](create_dim_list(u, u))
+            return rebind[Self](DimList(u, u))
         elif length == 3:
-            return rebind[Self](create_dim_list(u, u, u))
+            return rebind[Self](DimList(u, u, u))
         elif length == 4:
-            return rebind[Self](create_dim_list(u, u, u, u))
+            return rebind[Self](DimList(u, u, u, u))
         elif length == 5:
-            return rebind[Self](create_dim_list(u, u, u, u, u))
+            return rebind[Self](DimList(u, u, u, u, u))
         elif length == 6:
-            return rebind[Self](create_dim_list(u, u, u, u, u, u))
+            return rebind[Self](DimList(u, u, u, u, u, u))
         elif length == 7:
-            return rebind[Self](create_dim_list(u, u, u, u, u, u, u))
+            return rebind[Self](DimList(u, u, u, u, u, u, u))
         elif length == 8:
-            return rebind[Self](create_dim_list(u, u, u, u, u, u, u, u))
+            return rebind[Self](DimList(u, u, u, u, u, u, u, u))
         elif length == 9:
-            return rebind[Self](create_dim_list(u, u, u, u, u, u, u, u, u))
+            return rebind[Self](DimList(u, u, u, u, u, u, u, u, u))
         elif length == 10:
-            return rebind[Self](create_dim_list(u, u, u, u, u, u, u, u, u, u))
+            return rebind[Self](DimList(u, u, u, u, u, u, u, u, u, u))
         elif length == 11:
-            return rebind[Self](
-                create_dim_list(u, u, u, u, u, u, u, u, u, u, u)
-            )
+            return rebind[Self](DimList(u, u, u, u, u, u, u, u, u, u, u))
         elif length == 12:
-            return rebind[Self](
-                create_dim_list(u, u, u, u, u, u, u, u, u, u, u, u)
-            )
+            return rebind[Self](DimList(u, u, u, u, u, u, u, u, u, u, u, u))
         elif length == 13:
-            return rebind[Self](
-                create_dim_list(u, u, u, u, u, u, u, u, u, u, u, u, u)
-            )
+            return rebind[Self](DimList(u, u, u, u, u, u, u, u, u, u, u, u, u))
         elif length == 14:
             return rebind[Self](
-                create_dim_list(u, u, u, u, u, u, u, u, u, u, u, u, u, u)
+                DimList(u, u, u, u, u, u, u, u, u, u, u, u, u, u)
             )
         elif length == 15:
             return rebind[Self](
-                create_dim_list(u, u, u, u, u, u, u, u, u, u, u, u, u, u, u)
+                DimList(u, u, u, u, u, u, u, u, u, u, u, u, u, u, u)
             )
         else:
             return rebind[Self](
-                create_dim_list(u, u, u, u, u, u, u, u, u, u, u, u, u, u, u, u)
+                DimList(u, u, u, u, u, u, u, u, u, u, u, u, u, u, u, u)
             )
-
-
-# ===----------------------------------------------------------------------===#
-# create_dim_list
-# ===----------------------------------------------------------------------===#
-
-
-@always_inline("nodebug")
-fn create_dim_list(e0: Dim) -> DimList[1]:
-    """Creates a list given a type and elements.
-
-    Args:
-        e0: The 1st element of the returned list.
-
-    Returns:
-        The list containing the elements.
-    """
-    return VariadicList[Dim](e0)
-
-
-@always_inline("nodebug")
-fn create_dim_list(e0: Dim, e1: Dim) -> DimList[2]:
-    """Creates a list given a type and elements.
-
-    Args:
-        e0: The 1st element of the returned list.
-        e1: The 2nd element of the returned list.
-
-    Returns:
-        The list containing the elements.
-    """
-    return VariadicList[Dim](e0, e1)
-
-
-@always_inline("nodebug")
-fn create_dim_list(e0: Dim, e1: Dim, e2: Dim) -> DimList[3]:
-    """Creates a list given a type and elements.
-
-    Args:
-        e0: The 1st element of the returned list.
-        e1: The 2nd element of the returned list.
-        e2: The 3rd element of the returned list.
-
-    Returns:
-        The list containing the elements.
-    """
-    return VariadicList[Dim](e0, e1, e2)
-
-
-@always_inline("nodebug")
-fn create_dim_list(e0: Dim, e1: Dim, e2: Dim, e3: Dim) -> DimList[4]:
-    """Creates a list given a type and elements.
-
-    Args:
-        e0: The 1st element of the returned list.
-        e1: The 2nd element of the returned list.
-        e2: The 3rd element of the returned list.
-        e3: The 4th element of the returned list.
-
-    Returns:
-        The list containing the elements.
-    """
-    return VariadicList[Dim](e0, e1, e2, e3)
-
-
-@always_inline("nodebug")
-fn create_dim_list(e0: Dim, e1: Dim, e2: Dim, e3: Dim, e4: Dim) -> DimList[5]:
-    """Creates a list given a type and elements.
-
-    Args:
-        e0: The 1st element of the returned list.
-        e1: The 2nd element of the returned list.
-        e2: The 3rd element of the returned list.
-        e3: The 4th element of the returned list.
-        e4: The 5th element of the returned list.
-
-    Returns:
-        The list containing the elements.
-    """
-    return VariadicList[Dim](e0, e1, e2, e3, e4)
-
-
-@always_inline("nodebug")
-fn create_dim_list(
-    e0: Dim, e1: Dim, e2: Dim, e3: Dim, e4: Dim, e5: Dim
-) -> DimList[6]:
-    """Creates a list given a type and elements.
-
-    Args:
-        e0: The 1st element of the returned list.
-        e1: The 2nd element of the returned list.
-        e2: The 3rd element of the returned list.
-        e3: The 4th element of the returned list.
-        e4: The 5th element of the returned list.
-        e5: The 6th element of the returned list.
-
-    Returns:
-        The list containing the elements.
-    """
-    return VariadicList[Dim](e0, e1, e2, e3, e4, e5)
-
-
-@always_inline("nodebug")
-fn create_dim_list(
-    e0: Dim,
-    e1: Dim,
-    e2: Dim,
-    e3: Dim,
-    e4: Dim,
-    e5: Dim,
-    e6: Dim,
-) -> DimList[7]:
-    """Creates a list given a type and elements.
-
-    Args:
-        e0: The 1st element of the returned list.
-        e1: The 2nd element of the returned list.
-        e2: The 3rd element of the returned list.
-        e3: The 4th element of the returned list.
-        e4: The 5th element of the returned list.
-        e5: The 6th element of the returned list.
-        e6: The 7th element of the returned list.
-
-    Returns:
-        The list containing the elements.
-    """
-    return VariadicList[Dim](e0, e1, e2, e3, e4, e5, e6)
-
-
-@always_inline("nodebug")
-fn create_dim_list(
-    e0: Dim,
-    e1: Dim,
-    e2: Dim,
-    e3: Dim,
-    e4: Dim,
-    e5: Dim,
-    e6: Dim,
-    e7: Dim,
-) -> DimList[8]:
-    """Creates a list given a type and elements.
-
-    Args:
-        e0: The 1st element of the returned list.
-        e1: The 2nd element of the returned list.
-        e2: The 3rd element of the returned list.
-        e3: The 4th element of the returned list.
-        e4: The 5th element of the returned list.
-        e5: The 6th element of the returned list.
-        e6: The 7th element of the returned list.
-        e7: The 8th element of the returned list.
-
-    Returns:
-        The list containing the elements.
-    """
-    return VariadicList[Dim](e0, e1, e2, e3, e4, e5, e6, e7)
-
-
-@always_inline("nodebug")
-fn create_dim_list(
-    e0: Dim,
-    e1: Dim,
-    e2: Dim,
-    e3: Dim,
-    e4: Dim,
-    e5: Dim,
-    e6: Dim,
-    e7: Dim,
-    e8: Dim,
-) -> DimList[9]:
-    """Creates a list given a type and elements.
-
-    Args:
-        e0: The 1st element of the returned list.
-        e1: The 2nd element of the returned list.
-        e2: The 3rd element of the returned list.
-        e3: The 4th element of the returned list.
-        e4: The 5th element of the returned list.
-        e5: The 6th element of the returned list.
-        e6: The 7th element of the returned list.
-        e7: The 8th element of the returned list.
-        e8: The 9th element of the returned list.
-
-    Returns:
-        The list containing the elements.
-    """
-    return VariadicList[Dim](e0, e1, e2, e3, e4, e5, e6, e7, e8)
-
-
-@always_inline("nodebug")
-fn create_dim_list(
-    e0: Dim,
-    e1: Dim,
-    e2: Dim,
-    e3: Dim,
-    e4: Dim,
-    e5: Dim,
-    e6: Dim,
-    e7: Dim,
-    e8: Dim,
-    e9: Dim,
-) -> DimList[10]:
-    """Creates a list given a type and elements.
-
-    Args:
-        e0: The 1st element of the returned list.
-        e1: The 2nd element of the returned list.
-        e2: The 3rd element of the returned list.
-        e3: The 4th element of the returned list.
-        e4: The 5th element of the returned list.
-        e5: The 6th element of the returned list.
-        e6: The 7th element of the returned list.
-        e7: The 8th element of the returned list.
-        e8: The 9th element of the returned list.
-        e9: The 10th element of the returned list.
-
-    Returns:
-        The list containing the elements.
-    """
-    return VariadicList[Dim](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9)
-
-
-@always_inline("nodebug")
-fn create_dim_list(
-    e0: Dim,
-    e1: Dim,
-    e2: Dim,
-    e3: Dim,
-    e4: Dim,
-    e5: Dim,
-    e6: Dim,
-    e7: Dim,
-    e8: Dim,
-    e9: Dim,
-    e10: Dim,
-) -> DimList[11]:
-    """Creates a list given a type and elements.
-
-    Args:
-        e0: The 1st element of the returned list.
-        e1: The 2nd element of the returned list.
-        e2: The 3rd element of the returned list.
-        e3: The 4th element of the returned list.
-        e4: The 5th element of the returned list.
-        e5: The 6th element of the returned list.
-        e6: The 7th element of the returned list.
-        e7: The 8th element of the returned list.
-        e8: The 9th element of the returned list.
-        e9: The 10th element of the returned list.
-        e10: The 11th element of the returned list.
-
-    Returns:
-        The list containing the elements.
-    """
-    return VariadicList[Dim](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10)
-
-
-@always_inline("nodebug")
-fn create_dim_list(
-    e0: Dim,
-    e1: Dim,
-    e2: Dim,
-    e3: Dim,
-    e4: Dim,
-    e5: Dim,
-    e6: Dim,
-    e7: Dim,
-    e8: Dim,
-    e9: Dim,
-    e10: Dim,
-    e11: Dim,
-) -> DimList[12]:
-    """Creates a list given a type and elements.
-
-    Args:
-        e0: The 1st element of the returned list.
-        e1: The 2nd element of the returned list.
-        e2: The 3rd element of the returned list.
-        e3: The 4th element of the returned list.
-        e4: The 5th element of the returned list.
-        e5: The 6th element of the returned list.
-        e6: The 7th element of the returned list.
-        e7: The 8th element of the returned list.
-        e8: The 9th element of the returned list.
-        e9: The 10th element of the returned list.
-        e10: The 11th element of the returned list.
-        e11: The 12th element of the returned list.
-
-    Returns:
-        The list containing the elements.
-    """
-    return VariadicList[Dim](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11)
-
-
-@always_inline("nodebug")
-fn create_dim_list(
-    e0: Dim,
-    e1: Dim,
-    e2: Dim,
-    e3: Dim,
-    e4: Dim,
-    e5: Dim,
-    e6: Dim,
-    e7: Dim,
-    e8: Dim,
-    e9: Dim,
-    e10: Dim,
-    e11: Dim,
-    e12: Dim,
-) -> DimList[13]:
-    """Creates a list given a type and elements.
-
-    Args:
-        e0: The 1st element of the returned list.
-        e1: The 2nd element of the returned list.
-        e2: The 3rd element of the returned list.
-        e3: The 4th element of the returned list.
-        e4: The 5th element of the returned list.
-        e5: The 6th element of the returned list.
-        e6: The 7th element of the returned list.
-        e7: The 8th element of the returned list.
-        e8: The 9th element of the returned list.
-        e9: The 10th element of the returned list.
-        e10: The 11th element of the returned list.
-        e11: The 12th element of the returned list.
-        e12: The 13th element of the returned list.
-
-    Returns:
-        The list containing the elements.
-    """
-    return VariadicList[Dim](
-        e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12
-    )
-
-
-@always_inline("nodebug")
-fn create_dim_list(
-    e0: Dim,
-    e1: Dim,
-    e2: Dim,
-    e3: Dim,
-    e4: Dim,
-    e5: Dim,
-    e6: Dim,
-    e7: Dim,
-    e8: Dim,
-    e9: Dim,
-    e10: Dim,
-    e11: Dim,
-    e12: Dim,
-    e13: Dim,
-) -> DimList[14]:
-    """Creates a list given a type and elements.
-
-    Args:
-        e0: The 1st element of the returned list.
-        e1: The 2nd element of the returned list.
-        e2: The 3rd element of the returned list.
-        e3: The 4th element of the returned list.
-        e4: The 5th element of the returned list.
-        e5: The 6th element of the returned list.
-        e6: The 7th element of the returned list.
-        e7: The 8th element of the returned list.
-        e8: The 9th element of the returned list.
-        e9: The 10th element of the returned list.
-        e10: The 11th element of the returned list.
-        e11: The 12th element of the returned list.
-        e12: The 13th element of the returned list.
-        e13: The 14th element of the returned list.
-
-    Returns:
-        The list containing the elements.
-    """
-    return VariadicList[Dim](
-        e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13
-    )
-
-
-@always_inline("nodebug")
-fn create_dim_list(
-    e0: Dim,
-    e1: Dim,
-    e2: Dim,
-    e3: Dim,
-    e4: Dim,
-    e5: Dim,
-    e6: Dim,
-    e7: Dim,
-    e8: Dim,
-    e9: Dim,
-    e10: Dim,
-    e11: Dim,
-    e12: Dim,
-    e13: Dim,
-    e14: Dim,
-) -> DimList[15]:
-    """Creates a list given a type and elements.
-
-    Args:
-        e0: The 1st element of the returned list.
-        e1: The 2nd element of the returned list.
-        e2: The 3rd element of the returned list.
-        e3: The 4th element of the returned list.
-        e4: The 5th element of the returned list.
-        e5: The 6th element of the returned list.
-        e6: The 7th element of the returned list.
-        e7: The 8th element of the returned list.
-        e8: The 9th element of the returned list.
-        e9: The 10th element of the returned list.
-        e10: The 11th element of the returned list.
-        e11: The 12th element of the returned list.
-        e12: The 13th element of the returned list.
-        e13: The 14th element of the returned list.
-        e14: The 15th element of the returned list.
-
-    Returns:
-        The list containing the elements.
-    """
-    return VariadicList[Dim](
-        e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14
-    )
-
-
-@always_inline("nodebug")
-fn create_dim_list(
-    e0: Dim,
-    e1: Dim,
-    e2: Dim,
-    e3: Dim,
-    e4: Dim,
-    e5: Dim,
-    e6: Dim,
-    e7: Dim,
-    e8: Dim,
-    e9: Dim,
-    e10: Dim,
-    e11: Dim,
-    e12: Dim,
-    e13: Dim,
-    e14: Dim,
-    e15: Dim,
-) -> DimList[16]:
-    """Creates a list given a type and elements.
-
-    Args:
-        e0: The 1st element of the returned list.
-        e1: The 2nd element of the returned list.
-        e2: The 3rd element of the returned list.
-        e3: The 4th element of the returned list.
-        e4: The 5th element of the returned list.
-        e5: The 6th element of the returned list.
-        e6: The 7th element of the returned list.
-        e7: The 8th element of the returned list.
-        e8: The 9th element of the returned list.
-        e9: The 10th element of the returned list.
-        e10: The 11th element of the returned list.
-        e11: The 12th element of the returned list.
-        e12: The 13th element of the returned list.
-        e13: The 14th element of the returned list.
-        e14: The 15th element of the returned list.
-        e15: The 16th element of the returned list.
-
-    Returns:
-        The list containing the elements.
-    """
-    return VariadicList[Dim](
-        e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15
-    )
 
 
 # ===----------------------------------------------------------------------===#
