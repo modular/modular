@@ -531,11 +531,7 @@ struct OwningOutputChainPtr:
         return OwningOutputChainPtr {ptr: ptr}
 
     @always_inline("nodebug")
-    fn __copyinit__(self) -> Self:
-        return Self {ptr: self.ptr}
-
-    @always_inline("nodebug")
-    fn __del__(self):
+    fn __del___(owned self):
         """Destroys the LLCL::OutputChain."""
         __mlir_op.`pop.external_call`[
             func : __mlir_attr.`@KGEN_CompilerRT_LLCL_OutputChainPtr_Destroy`,
@@ -606,7 +602,6 @@ struct AsyncTaskGroup:
         for j in range(self.coroutines.__len__()):
             self.coroutines[j].__del__()
         self.coroutines.__del__()
-        self.out_chain.__del__()
         let self_ptr = Pointer[AsyncTaskGroup].address_of(self)
         self_ptr.free()
 
