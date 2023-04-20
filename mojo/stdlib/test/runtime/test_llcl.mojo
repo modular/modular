@@ -119,6 +119,7 @@ fn test_runtime_asynctaskgroup():
     print(Int(completed.value))
     t0.__del__()
     t1.__del__()
+    out_chain.__del__()
     rt.__del__()
 
 
