@@ -54,9 +54,7 @@ struct Benchmark:
         self.max_time_ns = max_time_ns
 
     @always_inline
-    fn run[
-        func: __mlir_type[`!kgen.signature<() capturing -> `, NoneType, `>`]
-    ](self) -> Int:
+    fn run[func: fn () capturing -> None](self) -> Int:
         """Benchmark the given function.
 
         Benchmarking continues until min_tims_ns has elapsed and either
