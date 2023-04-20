@@ -1620,11 +1620,11 @@ CValue OverloadSet::emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
 }
 
 /// Emit an indirect call to a resolved value.
-CValue ExprEmitter::emitIndirectCall(CRValue callee,
+CValue ExprEmitter::emitIndirectCall(CValue callee,
                                      ArrayRef<ASTExprAnd<AnyValue>> operands,
                                      ValueDest &dest,
                                      const ExprNode *callExpr) {
-  auto calleeSig = dyn_cast<SignatureType>(callee.getType().mlirType);
+  auto calleeSig = dyn_cast<SignatureType>(callee.getRValueType().mlirType);
   if (!calleeSig) {
     // If we are invoking something other than a SignatureType, try to invoke
     // its `__call__` method.
@@ -1634,6 +1634,11 @@ CValue ExprEmitter::emitIndirectCall(CRValue callee,
     return emitNamedMethodCall("__call__", callOperands, dest,
                                CallSyntax::kDirectCall, callExpr);
   }
+
+  // If we have a function pointer, resolve it to an RValue.
+  CRValue calleeRV = emitCRValue({callee, callExpr}, EC_CallCalleeValue);
+  if (!calleeRV)
+    return {};
 
   // Check to see if we can apply these operands to the callee signature.
   OverloadSet bindings{"callee", /*params=*/{}, ParamBindArrayAttr(), callExpr,
@@ -1648,7 +1653,7 @@ CValue ExprEmitter::emitIndirectCall(CRValue callee,
     return {};
   }
 
-  return emitCallUnchecked(callee, operands, /*resultParams=*/{}, dest,
+  return emitCallUnchecked(calleeRV, operands, /*resultParams=*/{}, dest,
                            callExpr);
 }
 
