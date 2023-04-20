@@ -16,7 +16,7 @@ from SIMD import F32
 from Gather import gather, gather_nd
 from Index import StaticIntTuple
 from IO import print
-from List import create_dim_list
+from List import DimList
 from LLCL import Runtime, OwningOutputChainPtr
 from Range import range
 from SIMD import SIMD
@@ -35,7 +35,7 @@ fn test_gather():
         # Setup input.
         var input = NDBuffer[
             2,
-            create_dim_list(num_rows, row_size),
+            DimList(num_rows, row_size),
             DType.f32,
         ].aligned_stack_allocation[64]()
 
@@ -47,7 +47,7 @@ fn test_gather():
         alias num_indices = 16
         var indices = NDBuffer[
             1,
-            create_dim_list(num_indices),
+            DimList(num_indices),
             indices_type,
         ].aligned_stack_allocation[64]()
 
@@ -57,7 +57,7 @@ fn test_gather():
         # create output
         var output = NDBuffer[
             2,
-            create_dim_list(num_indices, row_size),
+            DimList(num_indices, row_size),
             DType.f32,
         ].aligned_stack_allocation[64]()
 
@@ -68,11 +68,11 @@ fn test_gather():
         let out_chain = OwningOutputChainPtr(rt)
         gather[
             2,
-            create_dim_list(num_indices, row_size),
+            DimList(num_indices, row_size),
             2,
-            create_dim_list(num_rows, row_size),
+            DimList(num_rows, row_size),
             1,
-            create_dim_list(num_indices),
+            DimList(num_indices),
             DType.f32,
             indices_type,
             0,
@@ -110,7 +110,7 @@ fn test_gather_3d():
         # Setup input.
         var input = NDBuffer[
             3,
-            create_dim_list(num_rows, row_size, 1),
+            DimList(num_rows, row_size, 1),
             DType.f32,
         ].aligned_stack_allocation[64]()
 
@@ -122,7 +122,7 @@ fn test_gather_3d():
         alias num_indices = 16
         var indices = NDBuffer[
             2,
-            create_dim_list(num_indices, 1),
+            DimList(num_indices, 1),
             indices_type,
         ].aligned_stack_allocation[64]()
 
@@ -132,7 +132,7 @@ fn test_gather_3d():
         # create output
         var output = NDBuffer[
             4,
-            create_dim_list(num_indices, 1, row_size, 1),
+            DimList(num_indices, 1, row_size, 1),
             DType.f32,
         ].aligned_stack_allocation[64]()
 
@@ -143,11 +143,11 @@ fn test_gather_3d():
         let out_chain = OwningOutputChainPtr(rt)
         gather_nd[
             4,
-            create_dim_list(num_indices, 1, row_size, 1),
+            DimList(num_indices, 1, row_size, 1),
             3,
-            create_dim_list(num_rows, row_size, 1),
+            DimList(num_rows, row_size, 1),
             2,
-            create_dim_list(num_indices, 1),
+            DimList(num_indices, 1),
             DType.f32,
             indices_type,
             0,
@@ -190,7 +190,7 @@ fn test_gather_empty_indices():
         # Setup input.
         var input = NDBuffer[
             2,
-            create_dim_list(num_rows, row_size),
+            DimList(num_rows, row_size),
             DType.f32,
         ].aligned_stack_allocation[input_size]()
 
@@ -201,7 +201,7 @@ fn test_gather_empty_indices():
         # Setup indices.
         var indices = NDBuffer[
             1,
-            create_dim_list(num_indices),
+            DimList(num_indices),
             indices_type,
         ].aligned_stack_allocation[indices_size]()
 
@@ -211,7 +211,7 @@ fn test_gather_empty_indices():
         # create output
         var output = NDBuffer[
             2,
-            create_dim_list(num_indices, row_size),
+            DimList(num_indices, row_size),
             DType.f32,
         ].aligned_stack_allocation[output_size]()
 
@@ -222,11 +222,11 @@ fn test_gather_empty_indices():
         let out_chain = OwningOutputChainPtr(rt)
         gather[
             2,
-            create_dim_list(num_indices, row_size),
+            DimList(num_indices, row_size),
             2,
-            create_dim_list(num_rows, row_size),
+            DimList(num_rows, row_size),
             1,
-            create_dim_list(num_indices),
+            DimList(num_indices),
             DType.f32,
             indices_type,
             0,

@@ -42,8 +42,8 @@ struct PoolMethod:
 
 @register_passable("trivial")
 struct Pool2d[
-    static_output_shape: DimList[4],
-    static_input_shape: DimList[4],
+    static_output_shape: DimList,
+    static_input_shape: DimList,
     type: DType,
     static_data_layout: Image2DLayout,
     init_fn: __mlir_type[`!kgen.signature<<>() -> `, SIMD[type, 1], `>`],

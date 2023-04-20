@@ -31,8 +31,8 @@ fn _fill[
 
 fn pad[
     rank: Int,
-    output_shape: DimList[rank],
-    input_shape: DimList[rank],
+    output_shape: DimList,
+    input_shape: DimList,
     type: DType,
 ](
     output: NDBuffer[rank, output_shape, type],
@@ -84,7 +84,7 @@ fn pad[
 
 fn _pad_impl[
     rank: Int,
-    output_shape: DimList[rank],
+    output_shape: DimList,
     type: DType,
 ](
     axis: Int,

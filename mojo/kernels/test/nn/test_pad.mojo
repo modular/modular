@@ -9,7 +9,7 @@ from Buffer import Buffer, NDBuffer
 from DType import DType
 from Index import StaticIntTuple
 from IO import print
-from List import create_dim_list
+from List import DimList
 from Pad import pad
 
 
@@ -17,8 +17,8 @@ from Pad import pad
 fn test_pad_1d():
     print("== test_pad_1d")
 
-    alias in_shape = create_dim_list(3)
-    alias out_shape = create_dim_list(6)
+    alias in_shape = DimList(3)
+    alias out_shape = DimList(6)
 
     # Create an input matrix of the form
     # [1, 2, 3]
@@ -62,8 +62,8 @@ fn test_pad_1d():
 fn test_pad_2d():
     print("== test_pad_2d")
 
-    alias in_shape = create_dim_list(2, 2)
-    alias out_shape = create_dim_list(3, 4)
+    alias in_shape = DimList(2, 2)
+    alias out_shape = DimList(3, 4)
 
     # Create an input matrix of the form
     # [[1, 2],
@@ -127,8 +127,8 @@ fn test_pad_2d():
 fn test_pad_3d():
     print("== test_pad_3d")
 
-    alias in_shape = create_dim_list(1, 2, 2)
-    alias out_shape = create_dim_list(2, 3, 3)
+    alias in_shape = DimList(1, 2, 2)
+    alias out_shape = DimList(2, 3, 3)
 
     # Create an input matrix of the form
     # [[[1, 2],

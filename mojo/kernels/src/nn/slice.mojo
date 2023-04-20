@@ -23,11 +23,11 @@ from TypeUtilities import rebind
 fn slice_as_view[
     type: DType, index_type: DType, rank: Int
 ](
-    tensor: NDBuffer[rank, DimList[rank].create_unknown(), type],
+    tensor: NDBuffer[rank, DimList.create_unknown[rank](), type],
     starts: Buffer[Dim(), index_type],
     ends: Buffer[Dim(), index_type],
     steps: Buffer[Dim(), index_type],
-) -> NDBuffer[rank, DimList[rank].create_unknown(), type]:
+) -> NDBuffer[rank, DimList.create_unknown[rank](), type]:
 
     var new_shape = StaticIntTuple[rank]()
     var new_stride = StaticIntTuple[rank]()
@@ -72,7 +72,7 @@ fn slice_as_view[
         new_shape[i] = slice(start, stop, step).__len__()
 
     # Create the new view
-    return NDBuffer[rank, DimList[rank].create_unknown(), type](
+    return NDBuffer[rank, DimList.create_unknown[rank](), type](
         new_data, new_shape, tensor.dynamic_dtype, new_stride
     )
 
@@ -85,8 +85,8 @@ fn slice_as_view[
 fn slice_as_copy[
     type: DType, index_type: DType, in_rank: Int
 ](
-    output: NDBuffer[in_rank, DimList[in_rank].create_unknown(), type],
-    tensor: NDBuffer[in_rank, DimList[in_rank].create_unknown(), type],
+    output: NDBuffer[in_rank, DimList.create_unknown[in_rank](), type],
+    tensor: NDBuffer[in_rank, DimList.create_unknown[in_rank](), type],
     start: Buffer[Dim(), index_type],
     end: Buffer[Dim(), index_type],
     step: Buffer[Dim(), index_type],

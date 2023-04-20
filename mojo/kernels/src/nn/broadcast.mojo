@@ -20,8 +20,8 @@ from TargetInfo import dtype_sizeof
 
 fn _get_rightmost_broadcast_axis[
     rank: Int,
-    output_shape: DimList[rank],
-    input_shape: DimList[rank],
+    output_shape: DimList,
+    input_shape: DimList,
     type: DType,
 ](
     output: NDBuffer[rank, output_shape, type],
@@ -52,8 +52,8 @@ fn _get_rightmost_broadcast_axis[
 
 fn broadcast[
     rank: Int,
-    output_shape: DimList[rank],
-    input_shape: DimList[rank],
+    output_shape: DimList,
+    input_shape: DimList,
     type: DType,
 ](
     output: NDBuffer[rank, output_shape, type],
@@ -98,8 +98,8 @@ fn broadcast[
 
 fn broadcast_impl[
     rank: Int,
-    output_shape: DimList[rank],
-    input_shape: DimList[rank],
+    output_shape: DimList,
+    input_shape: DimList,
     type: DType,
 ](
     axis: Int,

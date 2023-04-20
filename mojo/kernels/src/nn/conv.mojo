@@ -26,7 +26,7 @@ from Image import ImageData, Image2DLayout, ImageShape
 from Index import Index, StaticIntTuple
 from Intrinsics import PrefetchOptions
 from LLCL import OutputChainPtr
-from List import DimList, create_dim_list
+from List import DimList
 from Math import min, max, fma, div_ceil
 from Matmul import (
     GemmShape,
@@ -76,9 +76,9 @@ struct ConvShape:
 
 @adaptive
 fn get_conv2d_shape[
-    output_shape: DimList[4],
-    input_shape: DimList[4],
-    filter_shape: DimList[4],
+    output_shape: DimList,
+    input_shape: DimList,
+    filter_shape: DimList,
     type: DType,
     data_layout: Image2DLayout,
     filter_layout: Image2DLayout,
@@ -113,9 +113,9 @@ fn get_conv2d_shape[
 
 @adaptive
 fn get_conv2d_shape[
-    output_shape: DimList[4],
-    input_shape: DimList[4],
-    filter_shape: DimList[4],
+    output_shape: DimList,
+    input_shape: DimList,
+    filter_shape: DimList,
     type: DType,
     data_layout: Image2DLayout,
     filter_layout: Image2DLayout,
@@ -150,9 +150,9 @@ fn get_conv2d_shape[
 
 @adaptive
 fn get_conv2d_shape[
-    output_shape: DimList[4],
-    input_shape: DimList[4],
-    filter_shape: DimList[4],
+    output_shape: DimList,
+    input_shape: DimList,
+    filter_shape: DimList,
     type: DType,
     data_layout: Image2DLayout,
     filter_layout: Image2DLayout,
@@ -186,9 +186,9 @@ fn get_conv2d_shape[
 
 
 struct Naive2dConvolution[
-    static_output_shape: DimList[4],
-    static_filter_shape: DimList[4],
-    static_input_shape: DimList[4],
+    static_output_shape: DimList,
+    static_filter_shape: DimList,
+    static_input_shape: DimList,
     type: DType,
     static_data_layout: Image2DLayout,
     static_filter_layout: Image2DLayout,
@@ -429,9 +429,9 @@ fn conv_one_dimensional_padding(
 
 struct PackIm2ColNCHW[
     # original matrix shape list
-    static_original_shape: DimList[4],
+    static_original_shape: DimList,
     # packed matrix shape list
-    static_packed_shape: DimList[3],
+    static_packed_shape: DimList,
     type: DType,
     simd_size: Int,
     col_inner_size: Int,
@@ -926,10 +926,10 @@ struct PackIm2ColNCHW[
 #   library to de-duplicate.
 @register_passable("trivial")
 struct ConvIm2ColNCHW[
-    shape_input: DimList[4],
-    shape_filter: DimList[4],
-    shape_output: DimList[4],
-    packed_shape: DimList[3],
+    shape_input: DimList,
+    shape_filter: DimList,
+    shape_output: DimList,
+    packed_shape: DimList,
     type: DType,
     simd_size: Int,
     a_row_size: Int,
@@ -949,10 +949,10 @@ struct ConvIm2ColNCHW[
     var batch_idx: Int
 
     # Temporary buffer for the implicit matmul calls.
-    var c: NDBuffer[2, DimList[2].create_unknown(), type]
+    var c: NDBuffer[2, DimList.create_unknown[2](), type]
 
     # 2D view of the filter as implicit matmul input.
-    var a: NDBuffer[2, DimList[2].create_unknown(), type]
+    var a: NDBuffer[2, DimList.create_unknown[2](), type]
 
     # Interface method
     @staticmethod
@@ -1046,8 +1046,8 @@ struct ConvIm2ColNCHW[
             gemm_shape: gemm_shape,
             tile_n_k: tile_n_k,
             batch_idx: 0,
-            c: NDBuffer[2, DimList[2].create_unknown(), type](),
-            a: NDBuffer[2, DimList[2].create_unknown(), type](),
+            c: NDBuffer[2, DimList.create_unknown[2](), type](),
+            a: NDBuffer[2, DimList.create_unknown[2](), type](),
         }
 
     fn _run_implicit_matmul(self&):
@@ -1349,8 +1349,8 @@ struct ConvIm2ColNCHW[
         var row_idx = start_idx
         while row_idx <= (valid_row_count - RowSize):
             MatmulInnerLoopBPacked[
-                DimList[2].create_unknown(),  # shape_a
-                DimList[2].create_unknown(),  # shape c
+                DimList.create_unknown[2](),  # shape_a
+                DimList.create_unknown[2](),  # shape c
                 packed_shape,  # packed_shape
                 type,  # accum_type
                 type,  # value_type
@@ -1376,9 +1376,9 @@ struct ConvIm2ColNCHW[
         """
         # Ouput shape [N, F, Ho, Wo]
         let c_pointer = self.out._offset(Index(self.batch_idx, 0, 0, 0))
-        self.c = NDBuffer[2, DimList[2].create_unknown(), type](
+        self.c = NDBuffer[2, DimList.create_unknown[2](), type](
             c_pointer.address,
-            create_dim_list(
+            DimList(
                 self.conv_shape.f,
                 self.conv_shape.out_h * self.conv_shape.out_w,
             ),
@@ -1386,9 +1386,9 @@ struct ConvIm2ColNCHW[
         )
 
         # Create 2D view for filter.
-        self.a = NDBuffer[2, DimList[2].create_unknown(), type](
+        self.a = NDBuffer[2, DimList.create_unknown[2](), type](
             self.filter.data.address,
-            create_dim_list(
+            DimList(
                 self.gemm_shape.M,
                 self.gemm_shape.K,
             ),
@@ -1416,7 +1416,7 @@ struct ConvIm2ColNCHW[
         """
         return NDBuffer[3, packed_shape, type](
             b_packed.address,
-            create_dim_list(
+            DimList(
                 tile_n // n_inner_size,
                 tile_k,
                 n_inner_size,
@@ -1430,9 +1430,9 @@ struct ConvIm2ColNCHW[
 #   language support the conv op and matmul op should share a "gemm skeleton"
 #   library to de-duplicate.
 struct ConvNHWCInnerLoopFilterPacked[
-    shape_input: DimList[4],
-    shape_c: DimList[2],
-    packed_shape: DimList[3],
+    shape_input: DimList,
+    shape_c: DimList,
+    packed_shape: DimList,
     accum_type: DType,
     value_type: DType,
     simd_size: Int,
@@ -1464,7 +1464,7 @@ struct ConvNHWCInnerLoopFilterPacked[
 
     # Table of pointers for all the rows.
     var offset_table: NDBuffer[
-        2, create_dim_list(MAX_NUM_CHANNELS_TILE, a_row_size), DType.index
+        2, DimList(MAX_NUM_CHANNELS_TILE, a_row_size), DType.index
     ]
 
     var input_base_pointer: DTypePointer[value_type]
@@ -1479,7 +1479,7 @@ struct ConvNHWCInnerLoopFilterPacked[
         c_bound: StaticIntTuple[2],
         conv_shape: ConvShape,
         offset_table: NDBuffer[
-            2, create_dim_list(MAX_NUM_CHANNELS_TILE, a_row_size), DType.index
+            2, DimList(MAX_NUM_CHANNELS_TILE, a_row_size), DType.index
         ],
         input_base_pointer: DTypePointer[value_type],
     ):
@@ -1526,7 +1526,7 @@ struct ConvNHWCInnerLoopFilterPacked[
                 size of the packed tile of B.
         """
         let offset_table = NDBuffer[
-            2, create_dim_list(MAX_NUM_CHANNELS_TILE, a_row_size), DType.index
+            2, DimList(MAX_NUM_CHANNELS_TILE, a_row_size), DType.index
         ].stack_allocation()
 
         let instance = ConvNHWCInnerLoopFilterPacked[
@@ -1602,7 +1602,7 @@ struct ConvNHWCInnerLoopFilterPacked[
         self,
         c_local: NDBuffer[
             2,
-            create_dim_list(
+            DimList(
                 a_row_size,
                 pack_inner_size * simd_size,
             ),
@@ -1630,7 +1630,7 @@ struct ConvNHWCInnerLoopFilterPacked[
         self,
         c_local: NDBuffer[
             2,
-            create_dim_list(
+            DimList(
                 a_row_size,
                 pack_inner_size * simd_size,
             ),
@@ -1694,7 +1694,7 @@ struct ConvNHWCInnerLoopFilterPacked[
         self,
         c_local: NDBuffer[
             2,
-            create_dim_list(
+            DimList(
                 a_row_size,
                 pack_inner_size * simd_size,
             ),
@@ -1779,7 +1779,7 @@ struct ConvNHWCInnerLoopFilterPacked[
         self,
         c_local: NDBuffer[
             2,
-            create_dim_list(
+            DimList(
                 a_row_size,
                 pack_inner_size * simd_size,
             ),
@@ -1832,7 +1832,7 @@ struct ConvNHWCInnerLoopFilterPacked[
         # Allocate accumulation buffer.
         var c_local = NDBuffer[
             2,
-            create_dim_list(
+            DimList(
                 a_row_size,
                 pack_inner_size * simd_size,
             ),
@@ -1968,10 +1968,10 @@ fn get_partitioned_workload(
 #   language support the conv op and matmul op should share a "gemm skeleton"
 #   library to de-duplicate.
 struct ConvIm2ColNHWC[
-    shape_input: DimList[4],
-    shape_filter: DimList[4],
-    shape_output: DimList[4],
-    packed_shape: DimList[3],
+    shape_input: DimList,
+    shape_filter: DimList,
+    shape_output: DimList,
+    packed_shape: DimList,
     type: DType,
     simd_size: Int,
     a_row_size: Int,
@@ -1990,9 +1990,9 @@ struct ConvIm2ColNHWC[
     var conv_shape: ConvShape
 
     # 2D view of the tensors as implicit matmul input.
-    var c: NDBuffer[2, DimList[2].create_unknown(), type]
-    var a: NDBuffer[2, DimList[2].create_unknown(), type]
-    var b: NDBuffer[2, DimList[2].create_unknown(), type]
+    var c: NDBuffer[2, DimList.create_unknown[2](), type]
+    var a: NDBuffer[2, DimList.create_unknown[2](), type]
+    var b: NDBuffer[2, DimList.create_unknown[2](), type]
 
     var num_tasks: Int
 
@@ -2151,9 +2151,9 @@ struct ConvIm2ColNHWC[
 
         # Output shape [N, F, Ho, Wo]
         let c_pointer = out._offset(Index(0, 0, 0, 0))
-        let c = NDBuffer[2, DimList[2].create_unknown(), type](
+        let c = NDBuffer[2, DimList.create_unknown[2](), type](
             c_pointer.address,
-            create_dim_list(
+            DimList(
                 gemm_shape.M,
                 gemm_shape.N,
             ),
@@ -2161,30 +2161,30 @@ struct ConvIm2ColNHWC[
         )
 
         # Create 2D view for input.
-        let a = NDBuffer[2, DimList[2].create_unknown(), type](
+        let a = NDBuffer[2, DimList.create_unknown[2](), type](
             input.data.address,
-            create_dim_list(
+            DimList(
                 gemm_shape.M,
                 gemm_shape.K,
             ),
             type,
         )
 
-        var b = NDBuffer[2, DimList[2].create_unknown(), type]()
+        var b = NDBuffer[2, DimList.create_unknown[2](), type]()
         # Create 2D view for filter.
         if filter_layout == Image2DLayout.NHWC:  # FRSC layout
-            b = NDBuffer[2, DimList[2].create_unknown(), type](
+            b = NDBuffer[2, DimList.create_unknown[2](), type](
                 filter.data.address,
-                create_dim_list(
+                DimList(
                     gemm_shape.N,
                     gemm_shape.K,
                 ),
                 type,
             )
         elif filter_layout == Image2DLayout.RSCF:  # RSCF layout
-            b = NDBuffer[2, DimList[2].create_unknown(), type](
+            b = NDBuffer[2, DimList.create_unknown[2](), type](
                 filter.data.address,
-                create_dim_list(
+                DimList(
                     gemm_shape.K,
                     gemm_shape.N,
                 ),
@@ -2478,7 +2478,7 @@ struct ConvIm2ColNHWC[
         # pack B:
         if filter_layout == Image2DLayout.NHWC:
             PackMatrixRows[
-                DimList[2].create_unknown(),
+                DimList.create_unknown[2](),
                 packed_shape,
                 type,
                 simd_size,
@@ -2496,7 +2496,7 @@ struct ConvIm2ColNHWC[
             )
         else:  # TODO: add assert, filter layout should be RSCF.
             PackMatrixCols[
-                DimList[2].create_unknown(),
+                DimList.create_unknown[2](),
                 packed_shape,
                 type,
                 simd_size,
@@ -2617,7 +2617,7 @@ struct ConvIm2ColNHWC[
                 let current_offset = global_offset + GemmShape(row_idx, 0, 0)
                 ConvNHWCInnerLoopFilterPacked[
                     shape_input,
-                    DimList[2].create_unknown(),
+                    DimList.create_unknown[2](),
                     packed_shape,
                     type,
                     type,
@@ -2683,7 +2683,7 @@ struct ConvIm2ColNHWC[
         """
         return NDBuffer[3, packed_shape, type](
             b_packed.address,
-            create_dim_list(
+            DimList(
                 tile_n // n_inner_size,
                 tile_k,
                 n_inner_size,

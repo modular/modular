@@ -23,11 +23,11 @@ from TypeUtilities import rebind
 @adaptive
 fn gather_reduce[
     output_rank: Int,
-    output_shape: DimList[output_rank],
+    output_shape: DimList,
     input_rank: Int,
-    input_shape: DimList[input_rank],
+    input_shape: DimList,
     indices_rank: Int,
-    indices_shape: DimList[indices_rank],
+    indices_shape: DimList,
     type: DType,
     gather_axis: Int,
     reduce_axis: Int,
@@ -106,10 +106,10 @@ fn gather_reduce[
     if output_rank == 3:
         output_2d_dims[1] = output.dim[2]()
 
-    let output_bind = NDBuffer[2, DimList[2].create_unknown(), type](
+    let output_bind = NDBuffer[2, DimList.create_unknown[2](), type](
         output.data, output_2d_dims, type
     )
-    let input_bind = rebind[NDBuffer[2, DimList[2].create_unknown(), type]](
+    let input_bind = rebind[NDBuffer[2, DimList.create_unknown[2](), type]](
         input
     )
     let indices_bind = rebind[
@@ -172,11 +172,11 @@ fn gather_reduce[
 @adaptive
 fn gather[
     output_rank: Int,
-    output_shape: DimList[output_rank],
+    output_shape: DimList,
     input_rank: Int,
-    input_shape: DimList[input_rank],
+    input_shape: DimList,
     indices_rank: Int,
-    indices_shape: DimList[indices_rank],
+    indices_shape: DimList,
     type: DType,
     indices_type: DType,
     axis: Int,
@@ -215,10 +215,10 @@ fn gather[
     let num_tasks = min(div_ceil(indices_len, min_task_num_rows), num_threads)
 
     let num_chunks_per_task = div_ceil(indices_len, num_tasks)
-    let output_bind = rebind[NDBuffer[2, DimList[2].create_unknown(), type]](
+    let output_bind = rebind[NDBuffer[2, DimList.create_unknown[2](), type]](
         output
     )
-    let input_bind = rebind[NDBuffer[2, DimList[2].create_unknown(), type]](
+    let input_bind = rebind[NDBuffer[2, DimList.create_unknown[2](), type]](
         input
     )
 
@@ -261,11 +261,11 @@ fn gather[
 @adaptive
 fn gather[
     output_rank: Int,
-    output_shape: DimList[output_rank],
+    output_shape: DimList,
     input_rank: Int,
-    input_shape: DimList[input_rank],
+    input_shape: DimList,
     indices_rank: Int,
-    indices_shape: DimList[indices_rank],
+    indices_shape: DimList,
     type: DType,
     indices_type: DType,
     axis: Int,
@@ -296,11 +296,11 @@ fn gather[
 @adaptive
 fn gather_nd[
     output_rank: Int,
-    output_shape: DimList[output_rank],
+    output_shape: DimList,
     input_rank: Int,
-    input_shape: DimList[input_rank],
+    input_shape: DimList,
     indices_rank: Int,
-    indices_shape: DimList[indices_rank],
+    indices_shape: DimList,
     type: DType,
     indices_type: DType,
     axis: Int,

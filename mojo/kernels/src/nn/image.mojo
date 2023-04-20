@@ -59,7 +59,7 @@ struct Image2DLayout:
 
 @register_passable("trivial")
 struct ImageData[
-    shape: DimList[4],
+    shape: DimList,
     type: DType,
     static_layout: Image2DLayout,
 ]:
@@ -271,7 +271,7 @@ struct ImageShape:
     var W: Int
 
     fn __init__[
-        shape: DimList[4],
+        shape: DimList,
         type: DType,
         layout: Image2DLayout,
     ](image_data: ImageData[shape, type, layout]) -> ImageShape:

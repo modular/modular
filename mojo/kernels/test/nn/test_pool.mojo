@@ -9,7 +9,7 @@ from Buffer import Buffer, NDBuffer
 from DType import DType
 from Index import StaticIntTuple
 from IO import print
-from List import create_dim_list, DimList
+from List import DimList
 from Image import (
     ImageData,
     Image2DLayout,
@@ -32,7 +32,7 @@ from LLCL import Runtime, OwningOutputChainPtr
 
 
 fn fill_buffer[
-    shape: DimList[4]
+    shape: DimList
 ](buf: NDBuffer[4, shape, DType.f32.value,]):
     var s: Int = 1
     for i in range(buf.get_rank()):
@@ -43,7 +43,7 @@ fn fill_buffer[
 
 
 fn print_buffer[
-    shape: DimList[4]
+    shape: DimList
 ](buf: NDBuffer[4, shape, DType.f32,]):
     var s: Int = 1
     for i in range(buf.get_rank()):
@@ -59,8 +59,8 @@ struct PoolMethod:
 
 
 fn pool(pool_method: Int):
-    alias in_shape = create_dim_list(2, 2, 5, 7)
-    alias out_shape = create_dim_list(2, 2, 2, 2)
+    alias in_shape = DimList(2, 2, 5, 7)
+    alias out_shape = DimList(2, 2, 2, 2)
 
     # Create an input buffer.
     var input_buffer = NDBuffer[4, in_shape, DType.f32.value].stack_allocation()
