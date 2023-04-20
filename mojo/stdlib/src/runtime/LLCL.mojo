@@ -480,14 +480,7 @@ struct OutputChainPtr:
 
     @always_inline
     fn trace_detail[
-        level: TraceLevel,
-        detail_fn: __mlir_type[
-            `!kgen.signature<(!pop.pointer<`,
-            String,
-            `> byref_result) capturing -> `,
-            NoneType,
-            `>`,
-        ],
+        level: TraceLevel, detail_fn: fn () capturing -> String
     ](self, label: StringRef):
         """If enabled, begin a time profile entry with label and detail which
         will end when this chain is completed, either by mark_ready() or
