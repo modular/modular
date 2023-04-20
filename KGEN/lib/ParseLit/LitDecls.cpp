@@ -641,266 +641,190 @@ Type LitParameterEvaluator::refineType(Type type) {
 // Argument and Parameter List Parsing
 //===----------------------------------------------------------------------===//
 
-namespace {
-/// Specify variadic argument kind, e.g. `*x` or `**x`.
-enum VarArgKind {
-  /// Not a variadic argument, e.g. `x` or `x: Int`.
-  None,
-  /// A homogeneously typed variadic argument, e.g. `*x` or `*x: Int`.
-  VarArg,
-  /// A heterogeneously typed variadic argument, e.g. `*x: *Ts`.
-  PackVarArg,
-  /// A variadic keywords argument, e.g. `**x`.
-  KWVarArg
-};
+ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo) {
+  loc = p.getToken().getLoc();
 
-/// Parsing support for a function argument and input parameter:
-///
-/// argument_list      ::= argument ("," argument)*
-/// argument           ::= "/" | "*"
-/// argument           ::= [argument_ownership] [argument_variadic] identifier
-///                        [argument_reference] [argument_type] ["=" expression]
-/// argument_ownership ::= "owned" | "borrowed"
-/// argument_variadic  ::= "*" | "**"
-/// argument_reference ::= "&"
-/// argument_type      ::= ":" star_expression
-struct ParsedArgument {
-  SMLoc loc;
-  // Specify argument passing convention, e.g. owned/byref etc.
-  enum {
-    kConventionUnspec = 0,         // Nothing specified
-    kConventionByRef = 1,          // x&
-    kConventionOwned = 2,          // owned x
-    kConventionBorrowed = 3,       // borrowed x
-    kConventionByRefResult = 4,    // No syntax: result slot
-    kConventionInitSelfResult = 5, // No syntax: __init__(self&) argument
-  } convention = kConventionUnspec;
+  // The owned/borrowed keyword sets convention.
+  // NOTE: We might consider a postfix ^ syntax after the language bakes out
+  // more, that is probably going to be tightly coupled to ownership transfer,
+  // but this is more explicit for now.
+  if (p.consumeIf(Token::kw_owned))
+    convention = kConventionOwned;
 
-  // After type checking, this will hold the KGEN convention to use.
-  ValueInputConvention kgenConvention = ValueInputConvention(128);
+  SMLoc borrowLoc;
+  if (p.consumeIf(Token::kw_borrowed, &borrowLoc)) {
+    if (convention != kConventionUnspec)
+      p.emitError(borrowLoc, "argument already has a convention specified");
+    convention = kConventionBorrowed;
+  }
 
-  VarArgKind vararg = VarArgKind::None;
-  StringAttr name;
-  ExprNode *typeExpr = nullptr;
-  ExprNode *initExpr = nullptr;
+  markerInfo = KWArgMarkerInfo::kNotMarker;
 
-  /// This gets set to true when there is a /diagnosed/ error that should
-  /// prevent subsequent references to this argument.
-  bool isErroneous = false;
-
-  /// This specifies the handling of keyword arguments in a list.
-  enum class KWArgHandling {
-    kPositionalOnly,      //< before a standalone '/'
-    kPositionalOrKeyword, //< before a standalone '*'
-    kKeywordOnly          //< after a standalone '*'
-  } kwArgHandling = KWArgHandling::kPositionalOrKeyword;
-
-  enum class KWArgMarkerInfo {
-    kNotMarker, //< This is a normal argument.
-    kSlash,     //< This argument is a standalone '/' marker.
-    kStar,      //< This argument is a standalone '*' marker.
-  };
-
-  ParseResult parse(ParserBase &p, KWArgMarkerInfo &markerInfo) {
-    loc = p.getToken().getLoc();
-
-    // The owned/borrowed keyword sets convention.
-    // NOTE: We might consider a postfix ^ syntax after the language bakes out
-    // more, that is probably going to be tightly coupled to ownership transfer,
-    // but this is more explicit for now.
-    if (p.consumeIf(Token::kw_owned))
-      convention = kConventionOwned;
-
-    SMLoc borrowLoc;
-    if (p.consumeIf(Token::kw_borrowed, &borrowLoc)) {
-      if (convention != kConventionUnspec)
-        p.emitError(borrowLoc, "argument already has a convention specified");
-      convention = kConventionBorrowed;
-    }
-
-    markerInfo = KWArgMarkerInfo::kNotMarker;
-
-    // The first token of an argument may be a standalone '*' or '/' marker, and
-    // the '*' may also be part of a varargs specification.  Check for these
-    // first.
-    if (p.consumeIf(Token::slash)) {
-      markerInfo = KWArgMarkerInfo::kSlash;
-      return success();
-    }
-    if (p.consumeIf(Token::star)) {
-      if (p.getToken().isAny(Token::comma, Token::r_paren, Token::r_square)) {
-        markerInfo = KWArgMarkerInfo::kStar;
-        return success();
-      }
-      vararg = VarArgKind::VarArg;
-    } else if (p.consumeIf(Token::star_star)) {
-      vararg = VarArgKind::KWVarArg;
-      kwArgHandling = KWArgHandling::kKeywordOnly;
-    }
-
-    SMLoc identifierLoc;
-    if (p.parseIdentifier(name, "expected parameter name", &identifierLoc))
-      // TODO: Scan ahead for better recovery.
-      return failure();
-
-    // Process any convention markers.
-    SMLoc ampLoc;
-    if (p.consumeIf(Token::amp, &ampLoc)) { // '&' => by-ref
-      if (convention != kConventionUnspec)
-        p.emitError(ampLoc, "argument already has a convention specified");
-      else
-        convention = kConventionByRef;
-    }
-
-    // Parse an optional type annotation: `":" ["*"] expression`.
-    if (p.consumeIf(Token::colon)) {
-      SMLoc starLoc = p.getToken().getLoc();
-      if (p.getToken().getKind() == Token::star) {
-        if (vararg != VarArgKind::VarArg)
-          p.emitError(starLoc, "only variadic arguments' types can be unpacked")
-                  .attachNote(identifierLoc)
-              << "'" << name.getValue() << "' is not a variadic argument";
-        vararg = VarArgKind::PackVarArg;
-      }
-      if (p.parseStarExpression(typeExpr))
-        return failure();
-    }
-
-    // Parse an optional default argument value: `"=" expression`.
-    SMLoc equalLoc;
-    if (p.consumeIf(Token::equal, &equalLoc)) {
-      if (p.parseExpression(initExpr, std::nullopt))
-        return failure();
-
-      // Default args and varargs don't mix.
-      if (vararg != VarArgKind::None) {
-        p.emitError(equalLoc, "variadic arguments may not have defaults")
-            << initExpr->getRange();
-        initExpr = nullptr;
-      }
-    }
-    return success();
-  };
-
-  /// This method handles the function argument list for a Python function.
-  /// Python has some pretty interesting rules where standalone '*' and '/'
-  /// markers (when used in place of an argument) actually change the
-  /// interpretation of other argument definitions by specifying how they behave
-  /// w.r.t. keyword arguments.  We resolve these here so the client doesn't
-  /// have to deal with them.
-  ///
-  /// This classification logic is described here:
-  ///   https://peps.python.org/pep-0570/#how-to-teach-this
-  ///
-  static ParseResult
-  parseAndResolvePresentArgumentList(ParserBase &p,
-                                     SmallVectorImpl<ParsedArgument> &args,
-                                     bool isParameterList) {
-    // Figure out where to stop scanning.
-    SmallVector<Token::Kind, 2> stopTokens;
-    if (isParameterList)
-      stopTokens.append({Token::r_square, Token::minus_greater});
-    else
-      stopTokens.push_back(Token::r_paren);
-
-    // As we parse all of the arguments and the keyword arguments and markers,
-    // we resolve the markers and check the invariants.  Python's parameter
-    // grammar embeds checking for `/` and `*` into it, but we do this ad-hoc
-    // for simplicity, according to the following rules:
-    //
-    //   1) Only one '/' and '*' marker may exist in the parameter list.
-    //   2) They are specified in that order.
-    //   3) `/` cannot be first, and '*' cannot be last in the list.
-    //
-    // See this for more information:
-    // https://peps.python.org/pep-0570/#how-to-teach-this
-    bool hasSlashMarker = false, hasStarMarker = false;
-    auto defaultKWArgHandling = KWArgHandling::kPositionalOrKeyword;
-
-    // This is invoked when we see a '/' marker.
-    auto handleSlashMarker = [&](SMLoc loc) {
-      if (hasSlashMarker) {
-        p.emitError(loc,
-                    "cannot have two '/' markers in the same argument list");
-        return;
-      }
-      if (hasStarMarker) {
-        p.emitError(loc, "cannot specify '/' marker after '*' marker");
-        return;
-      }
-
-      if (args.empty())
-        p.emitError(
-            loc, "'/' marker cannot be used at the start of the argument list");
-
-      // Ok, process it by changing all arguments we've seen to be positional
-      // only.  The remaining ones will stay kPositionalOrKeyword though.
-      for (auto &arg : args)
-        arg.kwArgHandling = KWArgHandling::kPositionalOnly;
-      hasSlashMarker = true;
-    };
-
-    // This is invoked when we see a '*' marker or '*arg' argument.
-    auto handleStarMarker = [&](SMLoc loc, bool isMarker) {
-      if (hasStarMarker)
-        p.emitError(loc,
-                    "cannot have two '*' markers in the same argument list");
-
-      // Diagnose '*' marker at end of argument list for completeness.
-      if (p.getToken().isAny(stopTokens) && isMarker)
-        p.emitError(loc, "'*' marker is not allowed at end of argument list");
-
-      // From now on, any parsed arguments are keyword only.
-      defaultKWArgHandling = KWArgHandling::kKeywordOnly;
-      hasStarMarker = true;
-    };
-
-    // This parses either an argument or a keyword argument specifier.
-    auto parseArgument = [&]() -> ParseResult {
-      KWArgMarkerInfo marker = KWArgMarkerInfo::kNotMarker;
-      ParsedArgument arg;
-      arg.kwArgHandling = defaultKWArgHandling;
-      if (arg.parse(p, marker))
-        return failure();
-
-      // If this argument is just a marker, process it.
-      if (marker == KWArgMarkerInfo::kSlash)
-        return handleSlashMarker(arg.loc), success();
-      if (marker == KWArgMarkerInfo::kStar)
-        return handleStarMarker(arg.loc, /*isMarker=*/true), success();
-
-      // Otherwise, if this is a varargs marker, handle it as a marker and an
-      // argument.
-      if (arg.vararg == VarArgKind::VarArg ||
-          arg.vararg == VarArgKind::PackVarArg)
-        handleStarMarker(arg.loc, /*isMarker=*/false);
-
-      // If we have a **arg then it must be the last argument.
-      if (arg.vararg == VarArgKind::KWVarArg &&
-          p.getToken().isNot(stopTokens)) {
-        p.emitError(arg.loc, "'**' marker must be at end of argument list");
-        arg.vararg = VarArgKind::None;
-      }
-
-      // Otherwise just remember the argument.
-      args.push_back(arg);
-      return success();
-    };
-
-    // Parse a list of arguments and keyword argument specifiers.  Each argument
-    // will leave its `kwargHandling` default initialized.
-    if (p.parseCommaSeparatedList(parseArgument, stopTokens))
-      return failure();
-
-    // TODO(Keyword Args): now that we parsed a fully generic parameter list,
-    // reject keyword arguments.
-    if (!args.empty() &&
-        args.back().kwArgHandling == KWArgHandling::kKeywordOnly)
-      p.emitError(args.back().loc, "TODO: keyword arguments not supported yet");
+  // The first token of an argument may be a standalone '*' or '/' marker, and
+  // the '*' may also be part of a varargs specification.  Check for these
+  // first.
+  if (p.consumeIf(Token::slash)) {
+    markerInfo = KWArgMarkerInfo::kSlash;
     return success();
   }
-};
-} // namespace
+  if (p.consumeIf(Token::star)) {
+    if (p.getToken().isAny(Token::comma, Token::r_paren, Token::r_square)) {
+      markerInfo = KWArgMarkerInfo::kStar;
+      return success();
+    }
+    vararg = VarArgKind::VarArg;
+  } else if (p.consumeIf(Token::star_star)) {
+    vararg = VarArgKind::KWVarArg;
+    kwArgHandling = KWArgHandling::kKeywordOnly;
+  }
+
+  SMLoc identifierLoc;
+  if (p.parseIdentifier(name, "expected parameter name", &identifierLoc))
+    // TODO: Scan ahead for better recovery.
+    return failure();
+
+  // Process any convention markers.
+  SMLoc ampLoc;
+  if (p.consumeIf(Token::amp, &ampLoc)) { // '&' => by-ref
+    if (convention != kConventionUnspec)
+      p.emitError(ampLoc, "argument already has a convention specified");
+    else
+      convention = kConventionByRef;
+  }
+
+  // Parse an optional type annotation: `":" ["*"] expression`.
+  if (p.consumeIf(Token::colon)) {
+    SMLoc starLoc = p.getToken().getLoc();
+    if (p.getToken().getKind() == Token::star) {
+      if (vararg != VarArgKind::VarArg) {
+        p.emitError(starLoc, "only variadic arguments' types can be unpacked")
+                .attachNote(identifierLoc)
+            << "'" << name.getValue() << "' is not a variadic argument";
+      }
+      vararg = VarArgKind::PackVarArg;
+    }
+    if (p.parseStarExpression(typeExpr))
+      return failure();
+  }
+
+  // Parse an optional default argument value: `"=" expression`.
+  SMLoc equalLoc;
+  if (p.consumeIf(Token::equal, &equalLoc)) {
+    if (p.parseExpression(initExpr, std::nullopt))
+      return failure();
+
+    // Default args and varargs don't mix.
+    if (vararg != VarArgKind::None) {
+      p.emitError(equalLoc, "variadic arguments may not have defaults")
+          << initExpr->getRange();
+      initExpr = nullptr;
+    }
+  }
+  return success();
+}
+
+ParseResult ParsedArgument::parseAndResolvePresentArgumentList(
+    ParserBase &p, SmallVectorImpl<ParsedArgument> &args,
+    bool isParameterList) {
+  // Figure out where to stop scanning.
+  SmallVector<Token::Kind, 2> stopTokens;
+  if (isParameterList)
+    stopTokens.append({Token::r_square, Token::minus_greater});
+  else
+    stopTokens.push_back(Token::r_paren);
+
+  // As we parse all of the arguments and the keyword arguments and markers, we
+  // resolve the markers and check the invariants.  Python's parameter grammar
+  // embeds checking for `/` and `*` into it, but we do this ad-hoc for
+  // simplicity, according to the following rules:
+  //
+  //   1) Only one '/' and '*' marker may exist in the parameter list.
+  //   2) They are specified in that order.
+  //   3) `/` cannot be first, and '*' cannot be last in the list.
+  //
+  // See this for more information:
+  // https://peps.python.org/pep-0570/#how-to-teach-this
+  bool hasSlashMarker = false, hasStarMarker = false;
+  auto defaultKWArgHandling = KWArgHandling::kPositionalOrKeyword;
+
+  // This is invoked when we see a '/' marker.
+  auto handleSlashMarker = [&](SMLoc loc) {
+    if (hasSlashMarker) {
+      p.emitError(loc, "cannot have two '/' markers in the same argument list");
+      return;
+    }
+    if (hasStarMarker) {
+      p.emitError(loc, "cannot specify '/' marker after '*' marker");
+      return;
+    }
+
+    if (args.empty())
+      p.emitError(
+          loc, "'/' marker cannot be used at the start of the argument list");
+
+    // Ok, process it by changing all arguments we've seen to be positional
+    // only.  The remaining ones will stay kPositionalOrKeyword though.
+    for (ParsedArgument &arg : args)
+      arg.kwArgHandling = KWArgHandling::kPositionalOnly;
+    hasSlashMarker = true;
+  };
+
+  // This is invoked when we see a '*' marker or '*arg' argument.
+  auto handleStarMarker = [&](SMLoc loc, bool isMarker) {
+    if (hasStarMarker)
+      p.emitError(loc, "cannot have two '*' markers in the same argument list");
+
+    // Diagnose '*' marker at end of argument list for completeness.
+    if (p.getToken().isAny(stopTokens) && isMarker)
+      p.emitError(loc, "'*' marker is not allowed at end of argument list");
+
+    // From now on, any parsed arguments are keyword only.
+    defaultKWArgHandling = KWArgHandling::kKeywordOnly;
+    hasStarMarker = true;
+  };
+
+  // This parses either an argument or a keyword argument specifier.
+  auto parseArgument = [&]() -> ParseResult {
+    KWArgMarkerInfo marker = KWArgMarkerInfo::kNotMarker;
+    ParsedArgument arg;
+    arg.kwArgHandling = defaultKWArgHandling;
+    if (arg.parse(p, marker))
+      return failure();
+
+    // If this argument is just a marker, process it.
+    if (marker == KWArgMarkerInfo::kSlash)
+      return handleSlashMarker(arg.loc), success();
+    if (marker == KWArgMarkerInfo::kStar)
+      return handleStarMarker(arg.loc, /*isMarker=*/true), success();
+
+    // Otherwise, if this is a varargs marker, handle it as a marker and an
+    // argument.
+    if (arg.vararg == VarArgKind::VarArg ||
+        arg.vararg == VarArgKind::PackVarArg)
+      handleStarMarker(arg.loc, /*isMarker=*/false);
+
+    // If we have a **arg then it must be the last argument.
+    if (arg.vararg == VarArgKind::KWVarArg && p.getToken().isNot(stopTokens)) {
+      p.emitError(arg.loc, "'**' marker must be at end of argument list");
+      arg.vararg = VarArgKind::None;
+    }
+
+    // Otherwise just remember the argument.
+    args.push_back(arg);
+    return success();
+  };
+
+  // Parse a list of arguments and keyword argument specifiers.  Each argument
+  // will leave its `kwargHandling` default initialized.
+  if (p.parseCommaSeparatedList(parseArgument, stopTokens))
+    return failure();
+
+  // TODO(Keyword Args): now that we parsed a fully generic parameter list,
+  // reject keyword arguments.
+  if (!args.empty() && args.back().kwArgHandling == KWArgHandling::kKeywordOnly)
+    p.emitError(args.back().loc, "TODO: keyword arguments not supported yet");
+  return success();
+}
 
 //===----------------------------------------------------------------------===//
 // Parameter signature implementation
