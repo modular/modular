@@ -17,6 +17,7 @@ import json
 import os
 import shutil
 import time
+import traceback
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -45,6 +46,19 @@ class OutputProcessor:
         # The current contents of a pending display message.
         self.pending_display_message = None
 
+    def send_message(self, name: str, text: str) -> None:
+        """
+        Send a stream message to the client. `name` should be stderr or stderr.
+        """
+        stream_content = {
+            "name": name,
+            "text": text,
+        }
+        self.kernel.log.info(stream_content)
+        self.kernel.send_response(
+            self.kernel.iopub_socket, "stream", stream_content
+        )
+
     # Create the output callback function. This is called by the MojoJupyter
     # library to send output back to the Jupyter client.
     def process_output(self, name: bytes, msg: bytes) -> None:
@@ -52,18 +66,7 @@ class OutputProcessor:
         msgstr = msg.decode()
 
         def send_stream(text: str) -> None:
-            """
-            Send a stream message to the client. Uses `name` from the upper
-            scope to determine which stream (stdout vs stderr).
-            """
-            stream_content = {
-                "name": name.decode(),
-                "text": text,
-            }
-            self.kernel.log.info(stream_content)
-            self.kernel.send_response(
-                self.kernel.iopub_socket, "stream", stream_content
-            )
+            self.send_message(name.decode(), text)
 
         # Short-circuit stderr right away - we don't report images or anything
         # through stderr, and we should always report it immediately.
@@ -198,6 +201,17 @@ class MojoKernel(Kernel):
 
         self._initialize_repl_matplotlib()
 
+    def _send_internal_error_message(self):
+        self.output_processor.send_message(
+            "stderr",
+            (
+                "Internal Mojo Kernel Error\n\nThe Jupyter Notebook encountered"
+                " an internal errora and was unable to evaluate the provided"
+                " expression. Please report this issue.\n\nMore information"
+                " about this error can be found in the server error log."
+            ),
+        )
+
     def _initialize_repl_matplotlib(self):
         """Initialize the matplotlib backend within the REPL."""
 
@@ -289,36 +303,45 @@ class MojoKernel(Kernel):
 
         # jupyter on the cli doesn't provide a cell id, so we need to
         # autogenerate one.
-        if cell_id is None:
-            cell_id = f"__autogen_cell_id_{self.auto_gen_cell_id_count}"
-            self.auto_gen_cell_id_count += 1
+        try:
+            if cell_id is None:
+                cell_id = f"__autogen_cell_id_{self.auto_gen_cell_id_count}"
+                self.auto_gen_cell_id_count += 1
 
-        # Start execution of the expression.
-        self.lib_mojo_jupyter.startMojoExecution(
-            ctypes.c_void_p(self.mojo_kernel),
-            ctypes.c_char_p(cell_id.encode("utf-8")),
-            ctypes.c_char_p(code.encode("utf-8")),
-        )
-
-        # Wait for the execution to finish.
-        while True:
-            # Sleep for a bit to avoid busy spinning while waiting for the
-            # execution to finish.
-            time.sleep(0.05)
-
-            # Poll the kernel to see if the execution has finished.
-            result: bool = self.lib_mojo_jupyter.checkMojoExecutionFinished(
+            # Start execution of the expression.
+            self.lib_mojo_jupyter.startMojoExecution(
                 ctypes.c_void_p(self.mojo_kernel),
+                ctypes.c_char_p(cell_id.encode("utf-8")),
+                ctypes.c_char_p(code.encode("utf-8")),
             )
-            if result:
-                break
 
-        return {
-            "status": "ok",
-            "execution_count": self.execution_count,
-            "payload": [],
-            "user_expressions": {},
-        }
+            # Wait for the execution to finish.
+            while True:
+                # Sleep for a bit to avoid busy spinning while waiting for the
+                # execution to finish.
+                time.sleep(0.05)
+
+                # Poll the kernel to see if the execution has finished.
+                result: bool = self.lib_mojo_jupyter.checkMojoExecutionFinished(
+                    ctypes.c_void_p(self.mojo_kernel),
+                )
+                if result:
+                    break
+
+            return {
+                "status": "ok",
+                "execution_count": self.execution_count,
+                "payload": [],
+                "user_expressions": {},
+            }
+        except:
+            traceback.print_exc()
+            self._send_internal_error_message()
+
+            return {
+                "status": "error",
+                "execution_count": self.execution_count,
+            }
 
 
 if __name__ == "__main__":
