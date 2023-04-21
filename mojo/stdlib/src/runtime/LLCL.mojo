@@ -389,7 +389,7 @@ struct OutputChainPtr:
     @always_inline
     fn fork(self) -> OwningOutputChainPtr:
         """Returns a pointer to a fresh heap-allocated LLCL::OutputChain
-        containing a 'fork' of this. The result must be explicitly destroyed.
+        containing a 'fork' of this.
         """
         return __mlir_op.`pop.external_call`[
             func : __mlir_attr.`@KGEN_CompilerRT_LLCL_OutputChainPtr_CreateFork`,
@@ -507,6 +507,11 @@ struct OwningOutputChainPtr:
     var ptr: ptr_type
 
     @always_inline
+    fn __init__() -> OwningOutputChainPtr:
+        """Creates a null OwningOutputChainPtr."""
+        return OwningOutputChainPtr {ptr: ptr_type()}
+
+    @always_inline
     fn __init__(ptr: ptr_type) -> OwningOutputChainPtr:
         """Casts a raw pointer to our OwningOutputChainPtr."""
         return OwningOutputChainPtr {ptr: ptr}
@@ -524,11 +529,7 @@ struct OwningOutputChainPtr:
         return OwningOutputChainPtr {ptr: ptr}
 
     @always_inline("nodebug")
-    fn __copyinit__(self) -> Self:
-        return Self {ptr: self.ptr}
-
-    @always_inline("nodebug")
-    fn __del__(self):
+    fn __del___(owned self):
         """Destroys the LLCL::OutputChain."""
         __mlir_op.`pop.external_call`[
             func : __mlir_attr.`@KGEN_CompilerRT_LLCL_OutputChainPtr_Destroy`,
@@ -594,12 +595,17 @@ struct AsyncTaskGroup:
         self.out_chain = out_chain.fork()
         self.coroutines = UnsafeFixedVector[Coroutine[NoneType]](num_work_items)
 
+    # This destroy's self when all the references are gone.
     @always_inline
-    fn __del__(self&):
+    fn destroy(self&):
         for j in range(self.coroutines.__len__()):
             self.coroutines[j].__del__()
         self.coroutines.__del__()
-        self.out_chain.__del__()
+
+        # Replace the out_chain owned by this value with a null one, so the old
+        # value is destroyed.
+        self.out_chain = OwningOutputChainPtr()
+
         let self_ptr = Pointer[AsyncTaskGroup].address_of(self)
         self_ptr.free()
 
@@ -611,7 +617,7 @@ struct AsyncTaskGroup:
     fn _task_complete(self&):
         if self._counter_decr() == 0:
             self.out_chain.borrow().mark_ready()
-            self.__del__()
+            self.destroy()
 
     @staticmethod
     fn _get_complete_callback() -> __mlir_type[
