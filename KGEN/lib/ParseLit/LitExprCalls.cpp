@@ -1848,13 +1848,12 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
         const ExprNode *expr = argValAndExpr.expr;
         // TODO: Factor this into a helper.
         if (!builder) {
-          emitError(expr->getLoc(),
-                    "cannot use a dynamic value in a parameter context")
-              << expr->getRange();
+          emitErrorForDynamicValueInParameter(expr);
           return {};
         }
-        auto load = builder->create<POP::LoadOp>(loc, mbVal,
-                                                 /*alignment=*/std::nullopt);
+        auto load =
+            builder->create<POP::LoadOp>(expr->getLocation(*this), mbVal,
+                                         /*alignment=*/std::nullopt);
         argValAndExpr.ir = SBValue(load);
       }
 

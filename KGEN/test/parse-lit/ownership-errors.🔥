@@ -73,6 +73,13 @@ fn field_sensitive():
   b.y = 2
   use(b)  # Ok
 
+# Issue #12859, bad location info
+fn take_int(a: Int): pass
+fn uninit_lvalue_int():
+  var x: Int # expected-note {{'x' declared here}}
+  take_int(
+      x)  # expected-error {{use of uninitialized value 'x'}}
+
 
 ##===----------------------------------------------------------------------===##
 # Control flow
