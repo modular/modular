@@ -136,6 +136,11 @@ static StringAttr makeBufferNameIdentifier(const SourceMgr &sourceMgr,
 /// This sets up the buffer name identifier for the main buffer.
 static const void *makeMainBufferNameIdentifier(const SourceMgr &sourceMgr,
                                                 MLIRContext *context) {
+  if (!sourceMgr.getNumBuffers()) {
+    StringRef name = Diags::SourceMgrLocationMapper::kUnnamedFileSigil;
+    return StringAttr::get(context, name).getAsOpaquePointer();
+  }
+
   return makeBufferNameIdentifier(sourceMgr, sourceMgr.getMainFileID(), context)
       .getAsOpaquePointer();
 }

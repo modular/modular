@@ -1,0 +1,613 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+//
+// This file provides the main entrypoints for the Mojo parser.
+//
+//===----------------------------------------------------------------------===//
+
+#include "ASTDecl.h"
+#include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/POPDialect/POPOps.h"
+#include "KGEN/ParseLit.h"
+#include "Lexer.h"
+#include "LitDecls.h"
+#include "ParserDriverImpl.h"
+#include "Support/DebugInfoDialect/IR/DIBuilder.h"
+#include "mlir/IR/ImplicitLocOpBuilder.h"
+#include "mlir/IR/Verifier.h"
+#include "mlir/Support/IndentedOstream.h"
+#include "llvm/ADT/ScopeExit.h"
+#include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/SourceMgr.h"
+
+using namespace M;
+using namespace M::KGEN;
+using namespace M::KGEN::LIT;
+
+//===----------------------------------------------------------------------===//
+// Expression Extraction
+//===----------------------------------------------------------------------===//
+
+/// Return true if the given line matches any of the given prefixes.
+template <typename Prefixes>
+static bool matchesAnyPrefix(StringRef line, const Prefixes &prefixes) {
+  return llvm::any_of(
+      prefixes, [&](StringRef prefix) { return line.starts_with(prefix); });
+}
+
+static bool isFunctionOrStructDeclaration(StringRef code) {
+  static constexpr auto kPrefixes = {"fn ",
+                                     "def ",
+                                     "struct ",
+                                     "@adaptive",
+                                     "@always_inline",
+                                     "@export",
+                                     "@register_passable"};
+  return matchesAnyPrefix(code, kPrefixes);
+}
+
+static bool isIndented(StringRef code) {
+  static constexpr auto kPrefixes = {" ", "\t"};
+  return matchesAnyPrefix(code, kPrefixes);
+}
+
+static bool isSimpleImport(StringRef code) {
+  // `import` is a reserved keyword.
+  return code.starts_with("import ");
+}
+
+static bool isFromImport(StringRef code) {
+  // `from` is a reserved keyword.
+  return code.starts_with("from ");
+}
+
+static bool isAlias(StringRef code) { return code.starts_with("alias "); }
+
+static bool isOpenParenthesis(char c) { return c == '(' || c == '['; }
+
+static bool isCloseParenthesis(char c) { return c == ')' || c == ']'; }
+
+/// Parse the beginning of `unparsedCode` as a simple `import *` statement. If
+/// the parsing fails, false is returned. `unparsedCode` is modified to point to
+/// the next statement is the parsing was successful, in which case true is
+/// returned.
+static bool tryHandleSimpleImport(StringRef &unparsedCode,
+                                  llvm::raw_string_ostream &topLevelOS) {
+  if (!isSimpleImport(unparsedCode))
+    return false;
+  // It seems that mojo doesn't support simple imports yet.
+  auto [line, rest] = unparsedCode.split("\n");
+  topLevelOS << line << "\n";
+  unparsedCode = rest;
+  return true;
+}
+
+/// Parse the beginning of `unparsedCode` as a `from * import` statement, a
+/// `fn`, a `def` or a `struct` top level statement. If the parsing fails, false
+/// is returned. `unparsedCode` is modified to point to the next statement is
+/// the parsing was successful, in which case true is returned.
+static bool
+tryHandleFromImportAliasFunctionOrStruct(StringRef &unparsedCode,
+                                         llvm::raw_string_ostream &topLevelOS) {
+  bool isFunctionOrStruct = isFunctionOrStructDeclaration(unparsedCode);
+  if (!isFunctionOrStruct && !isFromImport(unparsedCode) &&
+      !isAlias(unparsedCode))
+    return false;
+
+  // These statements can have a hierarchy of () or [], so we need to parse
+  // until we have visited all of them.
+
+  // If we are in a function or struct, we also need to find a : outside of any
+  // parenthesis.
+  bool requiresOuterColon = isFunctionOrStruct;
+
+  // The following block will find the top declaration and not the body of the
+  // entity we are parsing. For example, if we have the function
+  //
+  //   fn foo() -> Int:
+  //     return 12
+  //
+  // then this block find the `fn foo() -> Int:\n`, even if it's split across
+  // many lines. The body will be handled later.
+  {
+    // This is an iterator of the unparsed code.
+    size_t pos = 0;
+    // This counts how many unmatched ( or [ we have found so far.
+    size_t openings = 0;
+    for (size_t end = unparsedCode.size(); pos < end; ++pos) {
+      if (unparsedCode[pos] == '\n' && openings == 0 && !requiresOuterColon)
+        break;
+
+      if (isOpenParenthesis(unparsedCode[pos]))
+        ++openings;
+      else if (isCloseParenthesis(unparsedCode[pos]))
+        --openings;
+      else if (unparsedCode[pos] == ':' && openings == 0)
+        requiresOuterColon = false;
+    }
+    topLevelOS << unparsedCode.substr(0, pos + 1);
+    unparsedCode = unparsedCode.substr(pos + 1);
+  }
+
+  if (isFunctionOrStruct) {
+    // We now absorb all indented code included empty lines, which make the body
+    // of the entity we are parsing. This doesn't apply to aliases, for example.
+    while (!unparsedCode.empty()) {
+      auto [line, rest] = unparsedCode.split("\n");
+      if (!line.empty() && !isIndented(line))
+        break;
+      unparsedCode = rest;
+      topLevelOS << line << "\n";
+    }
+  }
+  return true;
+}
+
+static void extractExpressionCode(StringRef exprText, std::string &topLevelCode,
+                                  std::string &mainBodyCode) {
+  llvm::raw_string_ostream topLevelOS(topLevelCode), mainBodyOS(mainBodyCode);
+
+  StringRef unparsedCode = exprText;
+
+  /// The following code will consume chunks of code assigning them to either
+  /// the top-level or the main body sections.
+  while (!unparsedCode.empty()) {
+    // Note: We are not yet handling multiline expressions with \.
+    if (!tryHandleFromImportAliasFunctionOrStruct(unparsedCode, topLevelOS) &&
+        !tryHandleSimpleImport(unparsedCode, topLevelOS)) {
+      // Any other case is just main body code.
+      auto [line, rest] = unparsedCode.split("\n");
+      mainBodyOS << line << "\n";
+      unparsedCode = rest;
+    }
+  }
+
+  auto ensureEOLTerminated = [](auto &str) {
+    if (!str.empty() && str.back() != '\n')
+      str += '\n';
+  };
+
+  ensureEOLTerminated(topLevelCode);
+  ensureEOLTerminated(mainBodyCode);
+}
+
+//===----------------------------------------------------------------------===//
+// Expression Wrapping
+//===----------------------------------------------------------------------===//
+
+/// We use the following comments to identify the chunks of code written by the
+/// user. After we apply fix-its, we need to extract these two chunks and
+/// combine them into the new source code to evaluate.
+constexpr StringLiteral kTopLevelBlockBegin =
+    "#==__lldb_expr_top_level_code_begin\n";
+constexpr StringLiteral kTopLevelBlockEnd =
+    "#==__lldb_expr_top_level_code_end\n";
+constexpr StringLiteral kMainBodyBlockBegin =
+    "    #==__lldb_expr_main_body_code_begin\n";
+constexpr StringLiteral kMainBodyBlockEnd =
+    "    #==__lldb_expr_main_body_code_end\n";
+
+/// Wrap the provided expression text in a function so that it can be executed.
+/// The generated function uses the provided name, and the provided variables
+/// are passed via fields to a generated struct that is used as the first
+/// argument of the function.
+static std::string
+wrapExpressionText(StringRef wrappedFnName, StringRef exprText,
+                   ArrayRef<std::pair<StringRef, Type>> variables,
+                   bool isFirstREPLCell) {
+  // Wrap the expression text in a function so that we can execute it.
+  std::string transformedText;
+  llvm::raw_string_ostream exprRawOS(transformedText);
+  mlir::raw_indented_ostream exprOSIndented(exprRawOS);
+
+  // Insert a preamble of imports used by the expression wrapper.
+  if (isFirstREPLCell) {
+    exprOSIndented << "from IO import _printf, print\n"
+                   << "from Pointer import Pointer\n"
+                   << "from PythonInterface import Python\n"
+                   << "from PythonObject import PythonObject\n"
+                   << "from Range import range\n\n";
+  }
+
+  // Build the input struct, which contains each of the persistent variables.
+  exprOSIndented << "struct __mojo_repl_context__:\n";
+  for (auto &[name, type] : variables) {
+    exprOSIndented << llvm::formatv(
+        "  var {0}: Pointer[Pointer[__mlir_type.`{1}`]]\n", name, type);
+  }
+  if (variables.empty())
+    exprOSIndented << "  pass\n";
+  exprOSIndented << "\n";
+
+  // Extract out the top-level code from the expression code.
+  std::string topLevelCode, mainBodyCode;
+  extractExpressionCode(exprText, topLevelCode, mainBodyCode);
+
+  // Splat out the top-level code.
+  exprOSIndented << kTopLevelBlockBegin << topLevelCode << kTopLevelBlockEnd;
+
+  // Generate a wrapper function to handle the extracting function arguments as
+  // references.
+  exprOSIndented << "fn " << wrappedFnName
+                 << "(__mojo_repl_arg&: __mojo_repl_context__):\n"
+                    "  try:\n"
+                    "    __mojo_repl_expr_impl__(__mojo_repl_arg";
+  for (auto &var : variables) {
+    exprOSIndented << formatv(
+        ", __get_address_as_lvalue(__mojo_repl_arg.{0}.load().address)",
+        var.first);
+  }
+  exprOSIndented << ")\n"
+                    "  except error:\n"
+                    "    _printf(\"Error: \")\n"
+                    "    print(error.value)\n\n";
+
+  // Finally we can generate the actual expression function.
+  exprOSIndented
+      << "def __mojo_repl_expr_impl__(__mojo_repl_arg&: __mojo_repl_context__";
+  for (auto &var : variables) {
+    exprOSIndented << llvm::formatv(", {0}&: __mlir_type.`{1}`", var.first,
+                                    var.second);
+  }
+  exprOSIndented << "):\n";
+
+  // Splat out the main body code inside of a nested def. This will allow for us
+  // to redefine previous variables transparently.
+  exprOSIndented << "  def __mojo_repl_expr_body__():\n";
+
+  // The following is the other chunk of code just written by the user.
+  exprOSIndented << kMainBodyBlockBegin;
+  exprOSIndented.printReindented(mainBodyCode, "    ");
+  exprOSIndented << kMainBodyBlockEnd
+                 << "    return\n"
+                    "  __mojo_repl_expr_body__()\n";
+
+  return transformedText;
+}
+
+/// Unwrap the given expression string, extracting the user written code from
+/// the auto-generated boilerplate.
+static std::string unwrapExpressionText(StringRef exprText) {
+  std::string result;
+  llvm::raw_string_ostream resultOS(result);
+  mlir::raw_indented_ostream indentedResultOS(resultOS);
+
+  // Splice out the top level code.
+  indentedResultOS << exprText.slice(exprText.find(kTopLevelBlockBegin) +
+                                         kTopLevelBlockBegin.size(),
+                                     exprText.find(kTopLevelBlockEnd));
+
+  // Splice out the main body and remove all indent.
+  indentedResultOS.printReindented(
+      exprText.slice(exprText.find(kMainBodyBlockBegin) +
+                         kMainBodyBlockBegin.size(),
+                     exprText.find(kMainBodyBlockEnd)),
+      "");
+
+  return result;
+}
+
+//===----------------------------------------------------------------------===//
+// Persistent Variables
+//===----------------------------------------------------------------------===//
+
+// Simple utility functor for looking up a decl that's known to exist.
+static ASTDecl &lookupSingleDecl(ASTDecl &decl, StringRef name) {
+  return *decl.lookupInCurrentScope(StringAttr::get(decl.getContext(), name))
+              ->front();
+}
+
+/// Process all of the top-level variables defined within the expression body to
+/// see which should be persisted. If a variable is persisted, it will be
+/// added to the state struct and the expression body will be rewritten to
+/// access it via the state struct.
+/// TODO: It'd be a bit nicer to have this handled when actually parsing the
+/// variables, but for now we do this as a post-processing step.
+static void processVariablesForPersistence(MojoParserREPLListener &listener,
+                                           ASTDecl &exprFnDecl,
+                                           ASTDecl &stateStructDecl) {
+  auto exprFn = cast<KGEN::LIT::FuncOp>(exprFnDecl);
+  auto stateStruct = cast<KGEN::LIT::StructDeclOp>(stateStructDecl);
+
+  // Grab all of the variables within the expression body and sort them by name,
+  // so that we can deterministically process them.
+  ASTDecl &exprBodyDecl =
+      lookupSingleDecl(exprFnDecl, "__mojo_repl_expr_body__");
+  SmallVector<std::pair<StringAttr, ASTDecl *>> variables;
+  for (auto &[name, decls] : exprBodyDecl.getDeclsInScope())
+    if (decls.size() == 1 && isa<LetRegDeclOp, VarLetDeclOp>(*decls.front()))
+      variables.emplace_back(name, decls.front());
+  llvm::sort(variables, [](const auto &lhs, const auto &rhs) {
+    return lhs.first.getValue() < rhs.first.getValue();
+  });
+
+  OpBuilder structBuilder = OpBuilder::atBlockEnd(stateStruct.getBody());
+  Value structValue = exprFn.getArgument(0);
+  Attribute targetAttr =
+      KGEN::ParamOperatorAttr::get(POC::CurrentTarget, /*operands=*/{},
+                                   structBuilder.getType<KGEN::TargetType>());
+
+  // Utility functor to check if a variable should be inserted, and if so insert
+  // a new field into the persistent state struct. If the variable was
+  // persisted, returns a value corresponding to the address of the field.
+  // Returns nullptr otherwise.
+  auto checkInsertPersistentVar = [&](Operation *varOp, StringAttr name,
+                                      POP::PointerType type) {
+    mlir::Type elementType = type.getResolvedElementType();
+
+    // Check if the variable should be persisted.
+    if (!listener.shouldPersistVariable(name, elementType))
+      return Value();
+
+    // The variable was persisted, insert a new field into the state struct.
+    std::string newFieldName = ("__new_repl_var_" + name.strref()).str();
+    structBuilder.create<LIT::StructFieldOp>(varOp->getLoc(), newFieldName,
+                                             POP::PointerType::get(type));
+
+    // Materialize a reference to the variable within the function.
+    mlir::ImplicitLocOpBuilder builder(varOp->getLoc(), varOp);
+    Value fieldGep = builder.create<LIT::StructGEPOp>(
+        varOp->getLoc(), POP::PointerType::get(POP::PointerType::get(type)),
+        newFieldName, structValue);
+    Value fieldLoad = builder.create<POP::LoadOp>(varOp->getLoc(), fieldGep);
+
+    // TODO: Whenever we have globals, we should be able to use a global
+    // variable for the address and ensure it gets preserved. For now, we just
+    // malloc the memory.
+    mlir::Type indexType = structBuilder.getIndexType();
+    Attribute sizeOfAttr = KGEN::ParamOperatorAttr::get(
+        POC::GetSizeOf,
+        {KGEN::ParameterizedTypeConstantAttr::get(elementType), targetAttr},
+        indexType);
+    Value sizeOf = builder.create<KGEN::ParamConstantOp>(indexType, sizeOfAttr);
+    auto mallocCall = builder.create<POP::ExternalCallOp>(
+        POP::PointerType::get(POP::SIMDType::get(
+            1, builder.getAttr<KGEN::DTypeConstantAttr>(KGENDType::invalid))),
+        "malloc", sizeOf, /*variadicType=*/TypeAttr());
+    Value mallocResult = mallocCall.getResult(0);
+    Value mallocCast =
+        builder.create<POP::PointerBitcastOp>(type, mallocResult);
+    builder.create<POP::StoreOp>(mallocCast, fieldLoad);
+
+    // Return a pointer to the new address of the variable.
+    return mallocCast;
+  };
+
+  for (auto &[name, decl] : variables) {
+    // Handle register based let decls. These have an initializer, and never
+    // expose the actual pointer.
+    if (auto letOp = dyn_cast<LIT::LetRegDeclOp>(*decl)) {
+      Value field = checkInsertPersistentVar(
+          letOp, letOp.getNameAttr(), POP::PointerType::get(letOp.getType()));
+      if (!field)
+        continue;
+      decl->setIRValue(MRValue(field));
+
+      // Store the value in the persistent state struct.
+      OpBuilder builder(letOp);
+      builder.create<POP::StoreOp>(letOp.getLoc(), letOp.getValue(), field);
+
+      // Replace all references of the original decl with the initializer.
+      letOp.replaceAllUsesWith(letOp.getValue());
+      letOp.erase();
+      continue;
+    }
+    // Handle memory based let decls.
+    if (auto letOp = dyn_cast<LIT::VarLetDeclOp>(*decl)) {
+      if (Value field = checkInsertPersistentVar(letOp, letOp.getNameAttr(),
+                                                 letOp.getType())) {
+        decl->setIRValue(MRValue(field));
+        letOp.replaceAllUsesWith(field);
+        letOp.erase();
+      }
+      continue;
+    }
+  }
+}
+
+//===----------------------------------------------------------------------===//
+// Diagnostics
+//===----------------------------------------------------------------------===//
+
+namespace {
+/// This class implements a diagnostic handler for REPL cells.
+class REPLDiagnosticHandler {
+public:
+  REPLDiagnosticHandler(MojoParserREPLListener &listener,
+                        llvm::SourceMgr &sourceMgr)
+      : listener(listener) {
+    sourceMgr.setDiagHandler(handleDiagnostic, this);
+  }
+
+  /// This method processes all of the diagnostics that have been collected.
+  /// `exprText` is the text of the wrapped expression that was parsed.
+  LogicalResult processDiagnostics(StringRef exprText);
+
+private:
+  /// A static diagnostic handler function that is usable with SourceMgr. This
+  /// handler simply collects diagnostics, which will get processed later.
+  static void handleDiagnostic(const llvm::SMDiagnostic &diagnostic,
+                               void *ctx) {
+    auto *handler = static_cast<REPLDiagnosticHandler *>(ctx);
+    handler->diagnostics.push_back(diagnostic);
+  }
+
+  MojoParserREPLListener &listener;
+  std::vector<llvm::SMDiagnostic> diagnostics;
+};
+} // namespace
+
+LogicalResult REPLDiagnosticHandler::processDiagnostics(StringRef exprText) {
+  if (diagnostics.empty())
+    return success();
+
+  // Notify the listener of the diagnostics.
+  listener.notifyDiagnostics(diagnostics);
+
+  // Process all of the diagnostics to check for errors, and apply fixits if
+  // possible.
+
+  // This takes advantage of the fact that fixits are ordered to apply multiple
+  // fixits to a single expression.
+  std::string newText;
+  size_t prevEnd = 0;
+  auto applyFixit = [&](const llvm::SMFixIt &fixit) -> LogicalResult {
+    llvm::SMRange range = fixit.getRange();
+    if (!range.isValid())
+      return failure();
+
+    StringRef removedText(range.Start.getPointer(),
+                          range.End.getPointer() - range.Start.getPointer());
+    StringRef insertedText = fixit.getText();
+
+    // The current range starts at the previous end pointer.
+    StringRef currentOriginalRange(exprText.begin() + prevEnd);
+
+    // Add the substring from the start of the current original text range.
+    if (range.Start.getPointer() < currentOriginalRange.end() &&
+        range.Start.getPointer() >= currentOriginalRange.begin())
+      newText += currentOriginalRange.substr(
+          0, range.Start.getPointer() - currentOriginalRange.begin());
+
+    // Add the text to insert.
+    newText += insertedText;
+
+    // Update prevEnd. At the *very* end, we will clean up by adding the
+    // remaining substring. Subtract off the size of the inserted text because
+    // the pointers are all indexed off the original text.
+    prevEnd += range.End.getPointer() - currentOriginalRange.begin();
+    return success();
+  };
+
+  bool hadFixit = false;
+  bool allDiagsHandled = llvm::all_of(diagnostics, [&](const auto &diag) {
+    if (diag.getFixIts().empty())
+      return diag.getKind() != llvm::SourceMgr::DK_Error;
+
+    hadFixit = true;
+    return llvm::all_of(diag.getFixIts(), [&](const llvm::SMFixIt &fixit) {
+      return succeeded(applyFixit(fixit));
+    });
+  });
+
+  // If we handled all the diagnostics and we applied fixits, notify the
+  // listener that we have an improved expression.
+  if (allDiagsHandled && hadFixit) {
+    // Complete fixit handling by adding the substring from prevEnd to the end
+    // of the buffer. We do this here because we only want to do it if/once
+    // *all* diagnostics are handled.
+    newText += exprText.substr(prevEnd);
+    listener.notifyFixedExpr(unwrapExpressionText(newText));
+  }
+
+  return success(allDiagsHandled);
+}
+
+//===----------------------------------------------------------------------===//
+// Driver
+//===----------------------------------------------------------------------===//
+
+MojoASTDeclRef MojoParserContext::parseREPLExpresion(
+    MojoParserREPLListener &listener, StringRef exprId, StringRef exprText,
+    StringRef replExprFnName,
+    ArrayRef<std::pair<StringRef, Type>> replVariables) {
+  llvm::SourceMgr &sourceMgr = getSourceMgr();
+
+  // Set up a diagnostic handler to process diagnostics emitted during parsing.
+  auto oldDiagHandler = sourceMgr.getDiagHandler();
+  auto oldDiagContext = sourceMgr.getDiagContext();
+  auto resetHandlerOnExit = llvm::make_scope_exit(
+      [&] { sourceMgr.setDiagHandler(oldDiagHandler, oldDiagContext); });
+  REPLDiagnosticHandler diagHandler(listener, sourceMgr);
+
+  // Wrap the expression text in a function so that we can execute it.
+  std::string wrappedExprText =
+      wrapExpressionText(replExprFnName, exprText, replVariables,
+                         /*isFirstREPLCell=*/!impl->lastREPLModuleDecl);
+  listener.notifyWrappedExpr(wrappedExprText);
+
+  // TODO: We should print the expression to a file if we need debug
+  // information attached.
+  auto buffer = llvm::MemoryBuffer::getMemBufferCopy(wrappedExprText, exprId);
+  const llvm::MemoryBuffer *sourceBuf = sourceMgr.getMemoryBuffer(
+      sourceMgr.AddNewSourceBuffer(std::move(buffer), llvm::SMLoc()));
+
+  // If we are emitting debug info, create a file entry for this file.
+  DebugInfo::DIBuilder::ScopeGuard fileGuard;
+  if (impl->sharedState.diBuilder)
+    fileGuard = impl->sharedState.diBuilder->pushFile(exprId, "/");
+
+  // Create the input module.
+  MLIRContext *ctx = impl->sharedState.getContext();
+  auto fileLoc = FileLineColLoc::get(ctx, exprId, /*line=*/0, /*column=*/0);
+  ASTDecl &moduleDecl =
+      impl->sharedState.createModule(exprId, sourceBuf, fileLoc);
+
+  // Before resolving everything in the REPL cell, resolve the body and import
+  // as many of the previously defined REPL decls that we can.
+  if (impl->lastREPLModuleDecl) {
+    // Explicitly import any decls from the previous REPL module that aren't
+    // already defined in the current module. We can't use wildcards here
+    // because we also want to import _ and other traditionally "hidden" decls
+    // from previous cells.
+    SmallVector<std::pair<StringAttr, const TinyPtrVector<ASTDecl *>>> fnDecls;
+    auto &moduleChildDecls = moduleDecl.getDeclsInScope();
+    for (auto &[name, decls] : impl->lastREPLModuleDecl->getDeclsInScope()) {
+      auto existingDeclsIt = moduleChildDecls.find(name);
+      if (existingDeclsIt == moduleChildDecls.end()) {
+        impl->sharedState.declResolver->aliasDecls(decls, name, SMLoc(),
+                                                   moduleDecl);
+        continue;
+      }
+      // If we hit an overlap and these are function decls, save them for
+      // processing for later. We might be able to import if the signatures
+      // don't overlap.
+      if (isa<LIT::FuncOp>(*existingDeclsIt->second.front()) &&
+          isa<LIT::FuncOp>(*decls.front())) {
+        fnDecls.push_back({name, decls});
+      }
+    }
+
+    // Now that we've imported all of the decls we can, go ahead and import the
+    // functions that have name overlaps. We do this afterwards so that we can
+    // resolve the signature of the pre-existing functions to see if there are
+    // signature overlaps (to avoid duplicate function declarations).
+    for (auto &[name, decls] : fnDecls) {
+      (void)impl->sharedState.declResolver->tryAliasDecls(decls, name, SMLoc(),
+                                                          moduleDecl);
+    }
+  }
+
+  // With the top-level of the file parsed, we can now go ahead and resolve all
+  // of the deferred declarations.
+  impl->sharedState.declResolver->resolveAll();
+
+  // Clear up the error state so that we are still able to parse future cells,
+  // we'll handle diagnostic checks below.
+  impl->sharedState.diags.clear();
+
+  // Check if we have a non-recoverable parse error, or emitted an error and
+  // then recovered.
+  if (failed(diagHandler.processDiagnostics(sourceBuf->getBuffer())) ||
+      failed(mlir::verify(*impl->module))) {
+    // In the case of failure, remove the module so that it doesn't prevent
+    // parsing future cells.
+    impl->detachedREPLModules.push_back(moduleDecl.getIfOperation());
+    moduleDecl.getIfOperation()->remove();
+    return nullptr;
+  }
+
+  // Process variables within the expression function for persistence.
+  processVariablesForPersistence(
+      listener, lookupSingleDecl(moduleDecl, "__mojo_repl_expr_impl__"),
+      lookupSingleDecl(moduleDecl, "__mojo_repl_context__"));
+
+  // Update the last REPL module decl.
+  impl->lastREPLModuleDecl = &moduleDecl;
+  return MojoASTDeclRef(&lookupSingleDecl(moduleDecl, replExprFnName));
+}

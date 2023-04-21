@@ -47,6 +47,9 @@ public:
 
   bool isDiagnosticEmitted() const { return diagnosticEmitted; }
 
+  /// Clear out the current diagnostic state.
+  void clear() { errorEmitted = diagnosticEmitted = false; }
+
   /// Emit an error.
   LitDiagnostic emitError(Location loc, const Twine &message);
   LitDiagnostic emitError(llvm::SMLoc loc, const Twine &message);

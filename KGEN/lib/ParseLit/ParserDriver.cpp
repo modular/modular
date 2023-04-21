@@ -16,6 +16,7 @@
 #include "Lexer.h"
 #include "LitDecls.h"
 #include "ParserBase.h"
+#include "ParserDriverImpl.h"
 #include "SharedState.h"
 
 #include "KGEN/LITDialect/LITOps.h"
@@ -33,6 +34,64 @@ using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
 using llvm::SourceMgr;
+
+//===----------------------------------------------------------------------===//
+// MojoASTDeclRef
+//===----------------------------------------------------------------------===//
+
+/// Unwrap a raw ASTDecl pointer.
+static ASTDecl *unwrapMojoASTDecl(void *declImpl) {
+  assert(declImpl && "expected valid MojoASTDeclRef impl");
+  return reinterpret_cast<ASTDecl *>(declImpl);
+}
+
+Operation *MojoASTDeclRef::getIfOperation() const {
+  return unwrapMojoASTDecl(impl)->getIfOperation();
+}
+
+//===----------------------------------------------------------------------===//
+// MojoParserContext::Impl
+//===----------------------------------------------------------------------===//
+
+MojoParserContext::Impl::Impl(llvm::SourceMgr &sourceMgr,
+                              MojoParserConfig &config)
+    : sharedState(sourceMgr, config, /*enableCaching=*/false) {
+  // Create the top-level outer decl, which will contain all things we parse.
+  module = ModuleOp::create(UnknownLoc::get(sharedState.getContext()));
+  topLevelDecl = &sharedState.declResolver->addDecl(
+      *module, SMLoc(), StringAttr(), /*parentDecl=*/nullptr, LexerCursor(),
+      LexerCursor(), /*indentation=*/-1);
+  sharedState.initialize(*topLevelDecl);
+
+  // Auto-import the core Lang modules.
+  for (StringRef moduleName : SharedState::kBuiltinModuleNames) {
+    auto builtinStrAttr = StringAttr::get(module->getContext(), moduleName);
+    if (failed(sharedState.declResolver->importModule(
+            *topLevelDecl, builtinStrAttr, builtinStrAttr, SMLoc())))
+      return;
+  }
+}
+
+//===----------------------------------------------------------------------===//
+// MojoParserContext
+//===----------------------------------------------------------------------===//
+
+MojoParserContext::MojoParserContext(SourceMgr &sourceMgr,
+                                     MojoParserConfig &config)
+    : impl(std::make_unique<Impl>(sourceMgr, config)) {}
+MojoParserContext::~MojoParserContext() = default;
+
+ModuleOp MojoParserContext::getModule() {
+  return cast<ModuleOp>(impl->topLevelDecl->getIfOperation());
+}
+
+llvm::SourceMgr &MojoParserContext::getSourceMgr() {
+  return impl->sharedState.getSourceMgr();
+}
+
+const KGEN::CompilationOptions &MojoParserContext::getCompilationOptions() {
+  return impl->sharedState.options;
+}
 
 //===----------------------------------------------------------------------===//
 // Driver

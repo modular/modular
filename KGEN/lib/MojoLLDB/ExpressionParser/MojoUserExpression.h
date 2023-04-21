@@ -8,7 +8,6 @@
 #define KGEN_LIB_MOJOLLDB_EXPRESSIONPARSER_MOJOUSEREXPRESSION_H
 
 #include "JITUserExpression.h"
-#include "MojoExpressionSourceCode.h"
 #include "Support/LLVMForwardDecls.h"
 #include "lldb/Expression/LLVMUserExpression.h"
 
@@ -37,7 +36,6 @@ public:
   //===--------------------------------------------------------------------===//
 
   /// Return the function name that should be used for executing the expression.
-  /// Text() should contain the definition of this function.
   const char *FunctionName() override { return "__lldb_expr__"; }
 
   /// Return the module name used to wrap the expression if it is a python
@@ -56,6 +54,9 @@ public:
   /// Return the result variable for this expression after dematerialization.
   lldb::ExpressionVariableSP GetResultAfterDematerialization(
       lldb_private::ExecutionContextScope *exeScope) override;
+
+  /// Set the fixed expression text for this expression.
+  void setFixedText(StringRef fixedText) { m_fixed_text = fixedText.str(); }
 
   //===--------------------------------------------------------------------===//
   // RTTI support
@@ -80,8 +81,7 @@ private:
 
   /// Process and wrap the expression text, and then parse it.
   LogicalResult
-  wrapTextAndParseExpression(const MojoExpressionSourceCode &sourceCode,
-                             lldb_private::DiagnosticManager &diagnosticManager,
+  wrapTextAndParseExpression(lldb_private::DiagnosticManager &diagnosticManager,
                              lldb_private::ExecutionContext &exeCtx,
                              lldb_private::ExecutionContextScope *exeScope,
                              MojoPersistentExpressionState &state);
@@ -94,8 +94,6 @@ private:
       lldb_private::ExecutionContextScope *exeScope,
       MojoPersistentExpressionState &state);
 
-  void notifyFixits(lldb_private::DiagnosticManager &diagnosticManager,
-                    StringRef fixedText);
   //===--------------------------------------------------------------------===//
   // Fields
   //===--------------------------------------------------------------------===//

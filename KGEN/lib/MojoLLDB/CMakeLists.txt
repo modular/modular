@@ -11,7 +11,6 @@ add_modular_library(MojoLLDB SHARED
   ExpressionParser/JITExecutionUnit.cpp
   ExpressionParser/JITUserExpression.cpp
   ExpressionParser/MojoExpressionParser.cpp
-  ExpressionParser/MojoExpressionSourceCode.cpp
   ExpressionParser/MojoExpressionVariable.cpp
   ExpressionParser/MojoUserExpression.cpp
   REPL/MojoREPL.cpp

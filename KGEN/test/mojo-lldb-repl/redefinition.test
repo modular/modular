@@ -1,0 +1,20 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# UNSUPPORTED: asan
+# RUN: %lldb -R go -r <%s 2>&1 | FileCheck %s
+
+# Note: in REPL mode, expressions are delimited by empty lines.
+
+# Initially define an integer value of 10.
+let value = 10
+
+# Check that we can redefine this in a followup expression.
+print(value)
+let value = True
+print(value)
+# CHECK: 10
+# CHECK: True

@@ -40,10 +40,6 @@ public:
     return materializer.get();
   }
 
-  /// Return the string that the parser should parse.  Must be a full
-  /// translation unit.
-  const char *Text() override { return transformedText.c_str(); }
-
   //--------------------------------------------------------------------------//
   // llvm casting support
   //--------------------------------------------------------------------------//
@@ -69,9 +65,6 @@ protected:
   addArguments(lldb_private::ExecutionContext &exeCtx,
                std::vector<lldb::addr_t> &args, lldb::addr_t structAddress,
                lldb_private::DiagnosticManager &diagnosticManager) = 0;
-
-  /// The text of the expression, as send to the parser.
-  std::string transformedText;
 
   /// The execution unit the expression is stored in.
   std::shared_ptr<JITExecutionUnit> executionUnit;

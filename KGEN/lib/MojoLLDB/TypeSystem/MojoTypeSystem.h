@@ -20,6 +20,10 @@
 #include "lldb/Utility/Flags.h"
 #include "lldb/lldb-private.h"
 
+namespace M {
+class MojoParserContext;
+} // namespace M
+
 namespace M::LLCL {
 class Runtime;
 } // namespace M::LLCL
@@ -41,6 +45,9 @@ public:
 
   /// Return the LLCL runtime for this type system.
   LLCL::Runtime &getRuntime();
+
+  /// Return the Mojo parser context attached to this type system.
+  MojoParserContext &getParserContext();
 
   /// Return if the given language is supported by this type system.
   bool SupportsLanguage(lldb::LanguageType language) override {

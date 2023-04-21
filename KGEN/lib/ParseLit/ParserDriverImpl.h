@@ -1,0 +1,45 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef LIB_KGEN_PARSELIT_PARSERDRIVERIMPL_H
+#define LIB_KGEN_PARSELIT_PARSERDRIVERIMPL_H
+
+#include "KGEN/ParseLit.h"
+#include "SharedState.h"
+
+namespace M {
+/// This class represents the internal implementation of the parser driver.
+struct MojoParserContext::Impl {
+  Impl(llvm::SourceMgr &sourceMgr, MojoParserConfig &config);
+
+  //===--------------------------------------------------------------------===//
+  // General State
+  //===--------------------------------------------------------------------===//
+
+  /// The shared state for the parser.
+  KGEN::LIT::SharedState sharedState;
+
+  /// The top level decl for everything being parsed.
+  KGEN::LIT::ASTDecl *topLevelDecl = nullptr;
+
+  /// The main module we are parsing into.
+  mlir::OwningOpRef<ModuleOp> module;
+
+  //===--------------------------------------------------------------------===//
+  // REPL State
+  //===--------------------------------------------------------------------===//
+
+  /// The decl of the last REPL module to be parsed.
+  KGEN::LIT::ASTDecl *lastREPLModuleDecl = nullptr;
+
+  /// The detached IR created for invalid REPL modules.
+  /// TODO: We should restructure the parser to make it clean to drop parsed
+  /// modules in the case of failure, in which case we could remove this.
+  SmallVector<OwningOpRef<Operation *>> detachedREPLModules;
+};
+} // namespace M
+
+#endif // LIB_KGEN_PARSELIT_PARSERDRIVERIMPL_H

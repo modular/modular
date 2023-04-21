@@ -16,6 +16,7 @@ add_modular_conversion_library(ParseLit
   Lexer.cpp
   ParserBase.cpp
   ParserDriver.cpp
+  ParserDriverREPL.cpp
   ParserExprs.cpp
   ParserStmts.cpp
   SharedState.cpp
