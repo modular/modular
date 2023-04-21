@@ -1592,7 +1592,9 @@ struct ConvNHWCInnerLoopFilterPacked[
                 if hi_wi >= Index(0, 0) and hi_wi < Index(
                     self.conv_shape.h, self.conv_shape.w
                 ):
-                    self.offset_table[offset_idx] = linear_offset
+                    self.offset_table[offset_idx] = (
+                        linear_offset - segment_idx * contiguous_len
+                    )
                 else:
                     self.offset_table[offset_idx] = -1
 
@@ -1750,7 +1752,7 @@ struct ConvNHWCInnerLoopFilterPacked[
 
     @always_inline
     fn _load_a(
-        self, segment_idx: Int, k_idx: Int, row_idx: Int, contiguous_len: Int
+        self, segment_idx: Int, k_idx: Int, row_idx: Int
     ) -> SIMD[value_type, 1]:
         """Utility to load one value of Im2col transformed matrix from the
         pre-transformed image.
@@ -1760,7 +1762,6 @@ struct ConvNHWCInnerLoopFilterPacked[
             Returns (SIMD):
                 Value loaded from the translated address of image input.
         """
-        let segment_offset = k_idx - segment_idx * contiguous_len
         let offset_idx = Index(segment_idx, row_idx)
         let linear_offset: Int = Int(self.offset_table[offset_idx].value)
 
@@ -1769,11 +1770,9 @@ struct ConvNHWCInnerLoopFilterPacked[
             if linear_offset == -1:
                 return SIMD[value_type, 1](0)
             else:
-                return self.input_base_pointer.load(
-                    linear_offset + segment_offset
-                )
+                return self.input_base_pointer.load(linear_offset + k_idx)
         else:
-            return self.input_base_pointer.load(linear_offset + segment_offset)
+            return self.input_base_pointer.load(linear_offset + k_idx)
 
     fn _accumulate(
         self,
@@ -1812,9 +1811,7 @@ struct ConvNHWCInnerLoopFilterPacked[
                 Index(n_outer_idx, tile_n_k_idx[1], col_idx)
             ).cast[accum_type]()
 
-            let a_val_scalar = self._load_a(
-                segment_idx, tile_n_k_idx[1], idx1, contiguous_len
-            )
+            let a_val_scalar = self._load_a(segment_idx, tile_n_k_idx[1], idx1)
             let a_val = SIMD[value_type, simd_size](a_val_scalar).cast[
                 accum_type
             ]()
