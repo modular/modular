@@ -48,7 +48,6 @@ fn test_elementwise_1d():
         StaticIntTuple[1](num_elements), out_chain.borrow()
     )
     out_chain.wait()
-    out_chain.__del__()
     rt.__del__()
 
     # CHECK: 0.841345
