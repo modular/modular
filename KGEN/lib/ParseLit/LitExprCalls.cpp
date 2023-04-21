@@ -2102,13 +2102,13 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     // normal value' check which aborts (at compile time) if interpretation
     // throws an error.
     if (calleeSig.isThrows()) {
-      emitError(callExpr->getLoc(), "TODO: cannot call potentially raising "
-                                    "function in parameter expression");
+      emitErrorForDynamicValueInParameter(
+          callExpr, "TODO: cannot call potentially raising function");
       return {};
     }
     if (calleeSig.isAsync()) {
-      emitError(callExpr->getLoc(),
-                "cannot call async function in parameter expression");
+      emitErrorForDynamicValueInParameter(callExpr,
+                                          "cannot call async function");
       return {};
     }
 
