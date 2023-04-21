@@ -68,7 +68,6 @@ fn take_closure_with_param_main():
     let Q = h[(1).__as_mlir_index(), (8).__as_mlir_index()]
     take_closure(Q, x)
 
-@raises
 fn take_closure_raises(
     g: __mlir_type[
         `!kgen.signature<(index borrow) throws|capturing -> !pop.variant<`,
@@ -76,18 +75,16 @@ fn take_closure_raises(
         `, index>>`,
     ],
     x: __mlir_type.index,
-):
+) raises:
     # CHECK: %0 = kgen.call_signature %g(%x) : (index borrow) throws|capturing -> !pop.variant<@{{.*}}::@Error, index>
     let result = g(x)
 
 
-@raises
-fn throws_main():
+fn throws_main() raises:
     let x = (4).__as_mlir_index()
 
     # CHECK: lit.func *"g(__mlir_type.index)"(%y: index borrow) throws|capturing -> !pop.variant<@{{.*}}::@Error, index> {
-    @raises
-    fn g(y: __mlir_type.index) -> __mlir_type.index:
+    fn g(y: __mlir_type.index) raises -> __mlir_type.index:
         return x
 
     let W = g
@@ -560,7 +557,7 @@ fn usePacks(x: F32, y: Int):
   variadicParameter((2).__as_mlir_index())
 
 ##===----------------------------------------------------------------------===##
-# @raises decorator.
+# raises specifier.
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.func @"defAlwaysRaises()"() throws -> !pop.variant<@{{.*}}::@Error, @"$Int"::@Int> attributes {isDef}
@@ -571,16 +568,14 @@ def defAlwaysRaises() -> Int:
     return 0
 
 # CHECK-LABEL: lit.func @"fnThatRaises()"() throws -> !pop.variant<@{{.*}}::@Error, @"$Int"::@Int>
-@raises
-fn fnThatRaises() -> Int:
+fn fnThatRaises() raises -> Int:
     # CHECK: [[RESULT:%.*]] = kgen{{.*}}#lit.struct<{value: scalar<index> = 0}>
     # CHECK-NEXT: %1 = pop.variant.create [[RESULT]]
     # CHECK-NEXT: lit.return %1
     return 0
 
 # CHECK-LABEL: lit.func @"raisesReturnsNone()"() throws -> !pop.variant<@{{.*}}::@Error, !lit.none>
-@raises
-fn raisesReturnsNone():
+fn raisesReturnsNone() raises:
     # CHECK-NEXT: %0 = kgen.param.constant: !lit.none
     # CHECK-NEXT: %1 = pop.variant.create %0
     # CHECK-NEXT: lit.return %1

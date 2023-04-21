@@ -298,8 +298,7 @@ fn testResultParamConversion[() -> b: Int](a: Int):
   param_return[4]
 
 # lit.func @"testResultParamThrowing()"<() -> b:
-@raises
-fn testResultParamThrowing[() -> b: Int]():
+fn testResultParamThrowing[() -> b: Int]() raises:
   # CHECK: lit.param_return<:@"$Int"::@Int #lit.struct<{{.*}} 1}
   param_return[1]
   # CHECK: lit.return %1 : !pop.variant<@{{.*}}::@Error, !lit.none>

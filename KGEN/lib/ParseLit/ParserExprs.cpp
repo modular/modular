@@ -878,22 +878,20 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
 
   // Parse other function effects.
   while (getToken().is(Token::identifier)) {
-    StringAttr effectName;
-    SMLoc loc;
-    if (parseIdentifier(effectName, "expected a function effect", &loc))
-      return failure();
-    if (effectName == "raises") {
+    SMLoc loc = getToken().getLoc();
+    if (getToken().getSpelling() == "raises") {
       if (bitEnumContainsAny(effects, FnEffects::Throws))
         emitError(loc, "function effect 'raises' was already specified");
       effects = effects | FnEffects::Throws;
-    } else if (effectName == "capturing") {
+    } else if (getToken().getSpelling() == "capturing") {
       if (bitEnumContainsAny(effects, FnEffects::Capturing))
         emitError(loc, "function effect 'capturing' was already specified");
       effects = effects | FnEffects::Capturing;
     } else {
       emitError(loc, "unknown function effect '")
-          << effectName.getValue() << "', expected 'raises' or 'capturing'";
+          << getToken().getSpelling() << "', expected 'raises' or 'capturing'";
     }
+    consumeToken();
   }
 
   // Parse the result type.

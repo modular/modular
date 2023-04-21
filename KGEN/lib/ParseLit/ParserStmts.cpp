@@ -1208,7 +1208,7 @@ ParseResult StmtParser::parseImportStmt() {
 
 ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
                                        size_t curIndent) {
-  bool isAsync = consumeIf(Token::kw_async);
+  consumeIf(Token::kw_async);
   // isDef is true when introduced by the 'def' keywords instead of 'fn'.
   bool isDef = getToken().is(Token::kw_def);
   SMLoc loc = getToken().getLoc();
@@ -1219,22 +1219,10 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
     return failure();
 
   auto funcDecl = builder.create<LIT::FuncOp>(translateLocation(loc));
-  auto fnEffects = FnEffects::None;
 
   // If marked as 'def', remember this on the function decl.
-  if (isDef) {
+  if (isDef)
     funcDecl.setIsDef(true);
-    fnEffects = fnEffects | FnEffects::Throws;
-  }
-
-  // If declared async, remember this as a function effect.
-  if (isAsync)
-    fnEffects = fnEffects | FnEffects::Async;
-
-  if (fnEffects != FnEffects::None) {
-    auto newSig = funcDecl.getSignature().getWithFnEffects(fnEffects);
-    funcDecl.setSignature(newSig);
-  }
 
   // Skip the body of this definition: go to a token at the start of the next
   // line at the same indent level (or less) as the current definition.

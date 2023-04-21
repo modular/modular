@@ -287,13 +287,11 @@ fn indirect_call[
        # CHECK-NEXT: %3 = kgen.param.constant
        # CHECK-NEXT: kgen.return %3
 
-@raises
-fn somethingThatRaises(): pass
+fn somethingThatRaises() raises: pass
 
 # FIXME(Issue#12196): We don't track the result slot at all to work around an
 # IR modeling issue.
-@raises
-fn thing_that_raises(value: Int, c: Bool) -> MemExample:
+fn thing_that_raises(value: Int, c: Bool) raises -> MemExample:
     somethingThatRaises()
     if c:
         return MemExample()

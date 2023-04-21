@@ -462,7 +462,7 @@ declared. This catches name typos and dovetails with the scoping provided by
 ‘let’ and ‘var’.
 
 4. Both support raising exceptions, but this must be explicitly declared on a
-‘fn’ with the @raises decorator.
+‘fn’ with the `raises` keyword.
 
 Programming patterns will vary widely across teams, and this level of
 strictness will not be for everyone. We expect that folks who are used to C++

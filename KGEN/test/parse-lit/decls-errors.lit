@@ -144,9 +144,8 @@ fn testThingWithStaticMethod():
   ThingWithStaticMethod.splat(4.0)
 
 
-@raises
 # expected-error @+1 {{cannot return and raise the same type from a function}}
-fn cant_raise_return(a: Error) -> Error:
+fn cant_raise_return(a: Error) raises -> Error:
   return a
 
 

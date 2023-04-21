@@ -10,8 +10,7 @@
 from IO import print, _printf
 
 
-@raises
-fn raiseErrorIf(cond: Bool) -> Int:
+fn raiseErrorIf(cond: Bool) raises -> Int:
     if cond:
         raise Error()
     return 0
