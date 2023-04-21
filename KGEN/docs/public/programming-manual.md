@@ -199,9 +199,10 @@ The simplest way to run a mojo program is to type “mojo hello.mojo”, for exa
 There are several missing features that we will build in to make this more
 similar to Python over time, including importing builtin declarations by
 default, adding support for top-level code (instead of requiring the use of a
-`main` function), etc, but this will get you started. There are lots and lots
-of examples of Mojo code in the modular code-base, for example take a look in
-`Kernels/Benchmarks` and `KGEN/test/mojo-examples` for small applications.
+`main` function), etc, but this will get you started. (Functions like `print`
+and `range` are imported by default within Mojo notebooks.) There are lots and
+lots of examples of Mojo code in the modular code-base, for example take a look
+in `Kernels/Benchmarks` and `KGEN/test/mojo-examples` for small applications.
 
 If you are interested in diving into the more of the internal implementation
 details of Mojo, it can be instructive to look at types in the standard
