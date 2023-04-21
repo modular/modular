@@ -640,6 +640,12 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
       return failure();
     return success();
   }
+  case (uint32_t)POC::VariadicGet: {
+    if (parseParamValue(p, operands.emplace_back(), type) || p.parseComma() ||
+        parseIndexParamValue(p, operands.emplace_back()))
+      return failure();
+    return success();
+  }
   }
   llvm_unreachable("unknown operator");
 }
@@ -884,6 +890,16 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
     // Then print the type of the evaluator and the evaluator.
     printColonTypeOrIndexPrefix(p, operands.back().getType());
     printParamValue(p, operands.back());
+    break;
+
+  case POC::VariadicGet:
+    p << ':';
+    printKGENType(p, operands.front().getType());
+    p << ' ';
+    printParamValue(p, operands.front());
+    p << ", ";
+    printIndexParamValue(p, operands.back());
+    break;
   }
 }
 

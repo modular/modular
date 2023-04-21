@@ -84,6 +84,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in tuple element";
   case EC_SubscriptBase: // x[y]
     return " in subscript base";
+  case EC_Subscript: // y[x]
+    return " in subscript";
   case EC_SliceIndex: // y[:x:]
     return " in slice index";
   case EC_ParameterList: // something[paramValue]

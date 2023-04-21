@@ -1398,8 +1398,7 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     }
   }
 
-  // Otherwise, if there is no symbol, it is just an LValue or RValue being
-  // subscript.
+  // Check for attribute bindings to an MLIR operation.
   if (auto value = baseValue.getIfPValue()) {
     if (auto unboundOperator =
             dyn_cast<UnboundMLIROperationAttr>(value.get())) {
@@ -1431,6 +1430,52 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Okay, we're doing a normal value subscript.  Check for compatible
   // __getitem__ and __setitem__ implementations.
   ASTType baseType = baseValue.getRValueType();
+
+  // Check if we are subscripting a variadic. Emit `pop.variadic.get`.
+  // FIXME(#13015): We shouldn't need this code. Variadic arguments should emit
+  // a standard library type that implements `__getitem__` and `__setitem__`.
+  if (auto variadic = dyn_cast<VariadicType>(baseType.mlirType)) {
+    // Attempt to convert the index.
+    if (indexValues.size() != 2) {
+      emitter.emitError(getLoc())
+          << "variadic can only be subscripted with a single index";
+      return {};
+    }
+    ValueDest indexDest(EC_Subscript);
+    const ExprNode *indexExpr = indexValues.back().expr;
+    CValue index =
+        emitter.emitNamedMethodCall("__index__", indexValues.back(), indexDest,
+                                    CallSyntax::kMethodCall, indexExpr);
+    if (!index)
+      return {};
+    // Convert the index value to an MLIR index type.
+    indexDest = {EC_Subscript};
+    CValue mlirIndex = emitter.emitNamedMethodCall(
+        "__as_mlir_index", {{index, indexExpr}}, indexDest,
+        CallSyntax::kMethodCall, indexExpr);
+    if (!mlirIndex)
+      return {};
+    // Inside a parameter context, emit a parameter operator.
+    if (!emitter.builder) {
+      return ParamOperatorAttr::get(
+          POC::VariadicGet,
+          {emitter.emitPValue(indexValues.front(), EC_Subscript),
+           mlirIndex.getIfPValue()});
+    }
+    // Otherwise, emit an MLIR operation.
+    Value value = emitter.builder->create<POP::VariadicGetOp>(
+        emitter.translateLocation(getLoc()),
+        emitter.emitSRValue(indexValues.front(), EC_Subscript),
+        emitter.emitSRValue({mlirIndex, indexExpr}, EC_Subscript));
+    // FIXME: Should not be doing a bare `!pop.pointer` type check.
+    if (auto ptrType = dyn_cast<POP::PointerType>(
+            ASTType(variadic.getElementType()).mlirType)) {
+      if (!ASTType(ptrType.getElementType())
+               .isRegisterPassable(getLoc(), emitter.shared))
+        return emitter.emitResult(MRValue(value), this, dest);
+    }
+    return emitter.emitResult(SRValue(value), this, dest);
+  }
 
   auto lookupError = [&] {
     emitter.emitError(getLoc())

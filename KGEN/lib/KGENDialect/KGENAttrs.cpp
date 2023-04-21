@@ -737,7 +737,7 @@ LogicalResult ParamOperatorAttr::verify(
   if (!llvm::is_contained({POC::BindSignature, POC::Apply, POC::Rebind,
                            POC::Evaluate, POC::TargetHasFeature,
                            POC::TargetGetField, POC::BuildInfoGetField,
-                           POC::GetSizeOf, POC::GetAlignOf},
+                           POC::GetSizeOf, POC::GetAlignOf, POC::VariadicGet},
                           opcode) &&
       !llvm::all_of(operands, [&](auto operand) {
         return operand.getType() == operands.front().getType();
@@ -870,6 +870,23 @@ LogicalResult ParamOperatorAttr::verify(
     if (operands.size() != 1)
       return emitError() << "'get_all_impls' expects one operand";
     break;
+  case POC::VariadicGet: {
+    if (operands.size() != 2)
+      return emitError() << "'variadic_get' expected two operands";
+    auto variadicType = ::dyn_cast<VariadicType>(operands.front().getType());
+    if (!variadicType)
+      return emitError()
+             << "'variadic_get' expected first operand to be a variadic value";
+    if (!::isa<IndexType>(operands.back().getType()))
+      return emitError()
+             << "'variadic_get' expected second operand to be an index";
+    auto elType = ParamRefType::get(variadicType.getElementType());
+    if (type != elType)
+      return emitError() << "'variadic_get' result type should be variadic "
+                            "element type: expected "
+                         << elType << " but got " << type;
+    break;
+  }
   }
   return success();
 }
@@ -1640,6 +1657,18 @@ static TypedAttr simplifyRebind(ArrayRef<TypedAttr> operands, Type resultType) {
   return input.getType() == resultType ? input : nullptr;
 }
 
+static TypedAttr simplifyVariadicGet(ArrayRef<TypedAttr> operands,
+                                     Type &resultType) {
+  auto variadicType = cast<VariadicType>(operands.front().getType());
+  resultType = ParamRefType::get(variadicType.getElementType());
+  auto variadic = dyn_cast<VariadicAttr>(operands.front());
+  auto index = dyn_cast<IntegerAttr>(operands.back());
+  if (!variadic || !index || index.getInt() < 0 ||
+      index.getInt() >= static_cast<ssize_t>(variadic.getValues().size()))
+    return {};
+  return variadic.getValues()[index.getInt()];
+}
+
 /// Construct a parameter operator attribute, folding it if possible.
 static TypedAttr getParamOperator(MLIRContext *context, POC opcode,
                                   ArrayRef<TypedAttr> operandsIn,
@@ -1733,6 +1762,9 @@ static TypedAttr getParamOperator(MLIRContext *context, POC opcode,
   case POC::GetAllImpls:
     // Do nothing.
     break;
+  case POC::VariadicGet:
+    result = simplifyVariadicGet(operands, resultType);
+    break;
   }
 
   // If we folded to an operand, return it.
@@ -1766,7 +1798,7 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
   assert(llvm::is_contained({POC::BindSignature, POC::Apply, POC::Evaluate,
                              POC::TargetHasFeature, POC::TargetGetField,
                              POC::BuildInfoGetField, POC::GetSizeOf,
-                             POC::GetAlignOf},
+                             POC::GetAlignOf, POC::VariadicGet},
                             opcode) ||
          llvm::all_of(operandsIn.drop_front(),
                       [&](auto op) { return op.getType() == resultType; }));

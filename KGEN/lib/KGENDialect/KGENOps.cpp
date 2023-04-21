@@ -48,20 +48,27 @@ static LogicalResult checkReturnArguments(T op) {
 // custom<ParamConstantOpValue>
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseParamConstantOpValue(OpAsmParser &p, TypedAttr &value) {
-  Type type;
-  if (parseColonTypeOrIndex(p, type) || p.parseEqual() || p.parseLess() ||
-      parseParamValue(p, value, type) || p.parseGreater())
+static ParseResult parseParamConstantOpValue(OpAsmParser &p, TypedAttr &value,
+                                             Type &resultType) {
+  if (parseColonTypeOrIndex(p, resultType) || p.parseEqual() || p.parseLess() ||
+      parseParamValue(p, value, resultType) || p.parseGreater())
     return failure();
   return success();
 }
 
 static void printParamConstantOpValue(OpAsmPrinter &p, Operation *,
-                                      TypedAttr value) {
+                                      TypedAttr value, Type resultType) {
   printColonTypeOrIndex(p, value.getType());
   p << " = <";
   printParamValue(p, value);
   p << ">";
+}
+
+LogicalResult ParamConstantOp::verify() {
+  if (getValue().getType() == getType())
+    return success();
+  return emitOpError() << "parameter type " << getValue().getType()
+                       << " does not match result type " << getType();
 }
 
 //===----------------------------------------------------------------------===//
@@ -72,7 +79,8 @@ static ParseResult parseParamDeclareOpValue(OpAsmParser &p,
                                             ParamDeclAttr &paramDecl,
                                             TypedAttr &value) {
   StringAttr name;
-  if (parseParamName(p, name) || parseParamConstantOpValue(p, value))
+  Type type;
+  if (parseParamName(p, name) || parseParamConstantOpValue(p, value, type))
     return failure();
 
   paramDecl = ParamDeclAttr::get(name, value.getType());
@@ -82,7 +90,7 @@ static ParseResult parseParamDeclareOpValue(OpAsmParser &p,
 static void printParamDeclareOpValue(OpAsmPrinter &p, Operation *,
                                      ParamDeclAttr paramDecl, TypedAttr value) {
   printParamName(p, paramDecl.getName());
-  printParamConstantOpValue(p, nullptr, value);
+  printParamConstantOpValue(p, nullptr, value, nullptr);
 }
 
 void ParamDeclareOp::walkDefinitions(
