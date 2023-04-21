@@ -901,3 +901,32 @@ def KGEN_StageClosureOp : KGENOp<"stage_closure",
         custom<StageClosureOp>(type($result), $bodyRegion) attr-dict
     }];
 }
+
+//===----------------------------------------------------------------------===//
+// CreateClosureOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_CreateClosureOp : KGENOp<"create_closure", [Pure]> {
+  let summary = "Create a closure from variables and a function.";
+  let description = [{
+      The `kgen.create_closure` operation represents the instantiation of
+      a closure. This op allows us to model closure creation
+      in terms of a function and local captured variables.
+
+        ```mlir
+        %0 = kgen.create_closure @h(%idx98) :
+              (!kgen.signature<(index) -> index>, index) ->
+              (!kgen.signature<() capturing -> index>)
+        ```
+  }];
+
+  let arguments = (ins KGEN_SymbolConstantAttr:$callee,
+                     Variadic<AnyType>:$captures
+  );
+  let results = (outs KGEN_SignatureType:$result);
+  let assemblyFormat = [{
+      custom<CreateClosureOp>($callee, $captures, type($captures), type($result))
+       attr-dict
+  }];
+}
+
