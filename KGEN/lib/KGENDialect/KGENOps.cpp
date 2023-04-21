@@ -997,6 +997,59 @@ static void printStageClosureOp(OpAsmPrinter &p, Operation *op,
 }
 
 //===----------------------------------------------------------------------===//
+// CreateClosureOp
+//===----------------------------------------------------------------------===//
+
+static ParseResult
+parseCreateClosureOp(OpAsmParser &p, SymbolConstantAttr &callee,
+                     SmallVectorImpl<OpAsmParser::UnresolvedOperand> &captures,
+                     SmallVectorImpl<Type> &captureTypes, Type &resultType) {
+  StringAttr functionName;
+  if (p.parseSymbolName(functionName) ||
+      p.parseOperandList(captures, AsmParser::Delimiter::Paren) ||
+      p.parseColon())
+    return failure();
+
+  SymbolRefAttr symbolRef = SymbolRefAttr::get(functionName, {});
+  ::mlir::FunctionType functionType;
+  if (p.parseType(functionType))
+    return ::mlir::failure();
+
+  if (functionType.getInputs().size() == 0) {
+    p.emitError(p.getCurrentLocation(),
+                "CreateClosure must have at least one argument");
+    return failure();
+  }
+  Type symbolType = functionType.getInputs().front();
+  if (!symbolType.isa<SignatureType>()) {
+    p.emitError(p.getCurrentLocation(),
+                "CreateClosure must accept a signature type");
+    return failure();
+  }
+
+  llvm::append_range(captureTypes, functionType.getInputs().slice(1));
+  resultType = functionType.getResult(0);
+  callee =
+      SymbolConstantAttr::get(symbolRef, {}, cast<SignatureType>(symbolType));
+  return success();
+}
+
+static void printCreateClosureOp(OpAsmPrinter &p, Operation *op,
+                                 SymbolConstantAttr callee, ValueRange captures,
+                                 TypeRange captureTypes, Type resultType) {
+  p << callee.getSymbol();
+  p << '(';
+  p.printOperands(captures);
+  p << ") : ";
+  SignatureType calleeSignatureType = callee.getType();
+  SmallVector<Type> types;
+  types.push_back(calleeSignatureType);
+  llvm::append_range(types, captureTypes);
+  printSignature(p, SignatureType::get(FunctionType::get(
+                        op->getContext(), TypeRange(types), resultType)));
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 
