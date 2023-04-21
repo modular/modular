@@ -52,6 +52,7 @@ enum ExprContext {
   EC_ListField,             // [x, y]
   EC_TupleElement,          // (x, y)
   EC_SubscriptBase,         // x[y]
+  EC_Subscript,             // y[x]
   EC_SliceIndex,            // y[:x:]
   EC_ParameterList,         // something[x]
   EC_Destructor,            // Looking up T's destructor for `var x : T`

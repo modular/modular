@@ -791,3 +791,31 @@ kgen.func @stage_closure() -> !kgen.list<i1[0]> {
     %3 = kgen.param.constant: list<i1[0]> = <[]>
     kgen.return %3 : !kgen.list<i1[0]>
 }
+
+// -----
+
+kgen.generator @variadic_get() {
+  // expected-error @below {{custom op 'kgen.param.constant' 'variadic_get' expected first operand to be a variadic value}}
+  kgen.param.constant = <variadic_get(:si32 2, 1)>
+}
+
+// -----
+
+kgen.generator @variadic_get() {
+  // expected-error @below {{'variadic_get' expected two operands}}
+  kgen.param.constant = <#kgen.param.expr<variadic_get>>
+}
+
+// -----
+
+kgen.generator @variadic_get() {
+  // expected-error @below {{'variadic_get' expected second operand to be an index}}
+  kgen.param.constant = <#kgen.param.expr<variadic_get, #kgen.variadic<> : !kgen.variadic<si32>, "foo">>
+}
+
+// -----
+
+kgen.generator @variadic_get() {
+  // expected-error @below {{custom op 'kgen.param.constant' 'variadic_get' result type should be variadic element type: expected 'si32' but got 'index'}}
+  kgen.param.constant = <variadic_get(:variadic<si32> [], 1)>
+}

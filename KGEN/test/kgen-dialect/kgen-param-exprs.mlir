@@ -157,6 +157,12 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
   // CHECK: list_rebound: list<index[2]> = <list_input>
   kgen.param.declare list_rebound: list<index[2]> = <rebind(:list<index[2]> list_input)>
 
+  kgen.param.declare args: variadic<si32> = <[1, 2]>
+  // CHECK: constant: si32 = <variadic_get(:variadic<si32> args, 2)>
+  kgen.param.constant: si32 = <variadic_get(:variadic<si32> args, 2)>
+  // CHECK: constant = <2>
+  kgen.param.constant = <variadic_get(:variadic<index> [1, 2], 1)>
+
   kgen.return
 }
 
