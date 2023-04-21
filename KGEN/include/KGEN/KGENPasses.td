@@ -580,6 +580,22 @@ def SimplifyCF : Pass<"simplify-cf", "KGEN::FuncOp"> {
 }
 
 //===----------------------------------------------------------------------===//
+// RuntimeClosures
+//===----------------------------------------------------------------------===//
+
+def RuntimeClosures : Pass<"runtime-closures", "ModuleOp"> {
+  let summary = "Lowers kgen.signature types into kgen closures";
+
+  let description = [{
+    Lift regions of StageClosures into functions.
+    Replace occurrences of StageClosure with CreateClosure, which has a
+    list of captures and a function symbol.
+  }];
+
+  let dependentDialects = ["KGENDialect"];
+}
+
+//===----------------------------------------------------------------------===//
 // SROA
 //===----------------------------------------------------------------------===//
 

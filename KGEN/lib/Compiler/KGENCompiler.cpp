@@ -92,9 +92,9 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
   pm.addPass(createForceInline(
       runtime,
       {options.debugLevel != CompilationOptions::DebugInfoLevel::kNoDebug}));
+
   pm.addNestedPass<FuncOp>(createSimplifyCF());
   pm.addNestedPass<FuncOp>(createCleanupCompilerGlobals());
-
   pm.addNestedPass<FuncOp>(createMem2Reg());
   pm.addNestedPass<FuncOp>(mlir::createCSEPass());
 
@@ -118,6 +118,7 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
   pm.addNestedPass<FuncOp>(createMem2Reg());
   pm.addNestedPass<FuncOp>(mlir::createCanonicalizerPass(cannConfig));
 
+  pm.addPass(createRuntimeClosures());
   // Lower async functions as late as possible.
   pm.addPass(createLowerAsyncFunctions());
 
