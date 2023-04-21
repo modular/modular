@@ -138,25 +138,8 @@ class KGEN_CallOpBase<string mnemonic, list<Trait> traits = []>
     : KGENOp<mnemonic, traits # [
         DeclareOpInterfaceMethods<KGEN_CallOpInterface>,
         DeclareOpInterfaceMethods<ParamOpInterface,
-                                  ["isImplicitlyParametric"]>]> {
-  code extraDefinition = [{}];
-  let extraClassDefinition = extraDefinition # [{
-    void $cppClass::walkDeclarations(
-        function_ref<void(ParamDeclAttr)> walkDecl) {
-      llvm::for_each(getParamDecls(), walkDecl);
-    }
-    void $cppClass::walkDefinitions(
-        function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {
-      for (ParamDeclAttr decl : getParamDecls())
-        walkDef(decl, getCallee());
-    }
-    void $cppClass::renameDeclarations(ArrayRef<ParamDeclAttr> decls) {
-      assert(decls.size() == getParamDecls().size());
-      setParamDeclsAttr(ParamDeclArrayAttr::get(getContext(), decls));
-    }
-    bool $cppClass::isImplicitlyParametric() { return true; }
-  }];
-}
+                                  ["isImplicitlyParametric"]>]>,
+      CallLikeOperation;
 
 //===----------------------------------------------------------------------===//
 // AddressOf

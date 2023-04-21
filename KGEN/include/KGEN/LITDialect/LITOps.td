@@ -534,8 +534,9 @@ def LIT_VarLetDeclOp : LITOp<"varlet.decl",
 
 def LIT_AsyncCallOp : LITOp<"async.call", [CalleeArgumentTypes,
     DeclareOpInterfaceMethods<KGEN_CallOpInterface>,
+    DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric"]>,
     TypesMatchWith<"coroutine of callee result types", "callee", "coroutine",
-                    "getCoroutineOfResultTypes($_self)">]> {
+                    "getCoroutineOfResultTypes($_self)">]>, CallLikeOperation {
   let summary = "Call to an async function.";
   let description = [{
     The `lit.async.call` operation calls an `async` parametric callable. It

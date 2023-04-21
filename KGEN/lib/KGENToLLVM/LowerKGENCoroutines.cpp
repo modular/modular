@@ -618,6 +618,17 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
       opaque.replaceAllUsesWith(cstNullPtr);
       opaque.erase();
     }
+
+    // If we saw any `pop.coroutine.await` operations not inside a coroutine,
+    // that likely means an `__await__` function was not marked as
+    // `always_inline`.
+    if (!awaits.empty()) {
+      Operation *op = awaits.front();
+      return mlir::emitError(op->getLoc(), "coroutine await operation is not "
+                                           "contained inside an async function")
+                 .attachNote(op->getParentOfType<LLVMFuncOp>().getLoc())
+             << "should this function be marked @always_inline?";
+    }
     return success();
   }
 

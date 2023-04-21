@@ -327,4 +327,24 @@ class NoParamDecls {
   }];
 }
 
+class CallLikeOperation {
+  code extraDefinition = [{}];
+  code extraClassDefinition = extraDefinition # [{
+    void $cppClass::walkDeclarations(
+        function_ref<void(ParamDeclAttr)> walkDecl) {
+      llvm::for_each(getParamDecls(), walkDecl);
+    }
+    void $cppClass::walkDefinitions(
+        function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {
+      for (ParamDeclAttr decl : getParamDecls())
+        walkDef(decl, getCallee());
+    }
+    void $cppClass::renameDeclarations(ArrayRef<ParamDeclAttr> decls) {
+      assert(decls.size() == getParamDecls().size());
+      setParamDeclsAttr(ParamDeclArrayAttr::get(getContext(), decls));
+    }
+    bool $cppClass::isImplicitlyParametric() { return true; }
+  }];
+}
+
 #endif // KGEN_KGENDIALECT_KGENDECLINTERFACE_TD

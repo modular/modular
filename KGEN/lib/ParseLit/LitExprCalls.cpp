@@ -2107,6 +2107,11 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
                                     "function in parameter expression");
       return {};
     }
+    if (calleeSig.isAsync()) {
+      emitError(callExpr->getLoc(),
+                "cannot call async function in parameter expression");
+      return {};
+    }
 
     // Emitting a call in a parameter context. Generate an apply operator.
     SmallVector<TypedAttr> operands({callee.getIfPValue().get()});
