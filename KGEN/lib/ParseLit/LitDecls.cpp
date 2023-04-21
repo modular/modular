@@ -1901,8 +1901,14 @@ void ExprEmitter::emitNormalReturn(OpBuilder &builder, Location loc,
     // box and we want to treat the box as the thing that we track.
     if (func.getSignature().getInputConvention(0) ==
         ValueInputConvention::OwnedInReg) {
-      assert(selfArg.hasOneUse() && "expect one store of self to a box");
-      auto store = cast<POP::StoreOp>(*selfArg.user_begin());
+      // Find the single store and ignore debug.value operations.
+      POP::StoreOp store;
+      for (auto user : selfArg.getUsers()) {
+        if (isa<DebugInfo::ValueOp>(user))
+          continue;
+        assert(!store && "Should only have a single store");
+        store = cast<POP::StoreOp>(user);
+      }
       selfArg = store.getPtr();
     }
     builder.create<LIT::OwnershipMarkDestroyedOp>(loc, selfArg);
