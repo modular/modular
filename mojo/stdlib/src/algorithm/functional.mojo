@@ -91,12 +91,14 @@ fn unroll2[
     """
 
     @always_inline
-    fn func_wrapper[idx: Int]():
-        alias idx0 = idx // dim1
-        alias idx1 = idx % dim1
-        func[idx0, idx1]()
+    fn outer_func_wrapper[idx0: Int]():
+        @always_inline
+        fn inner_func_wrapper[idx1: Int]():
+            func[idx0, idx1]()
 
-    unroll[dim0 * dim1, func_wrapper]()
+        unroll[dim1, inner_func_wrapper]()
+
+    unroll[dim0, outer_func_wrapper]()
 
 
 # ===----------------------------------------------------------------------===#
