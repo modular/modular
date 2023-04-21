@@ -1,7 +1,5 @@
 # LLCL: Low Level Concurrency Library
 
-[TOC]
-
 ## Introduction
 
 This library contains low level support for domain independent parallel CPU

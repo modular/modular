@@ -1,7 +1,5 @@
 # KGEN ⚜️: Kernel Generator Infrastructure
 
-[TOC]
-
 This is the main documentation for the "KGEN ⚜️" kernel generator infrastructure.
 KGEN allows defining parametric kernel generators with multiple implementations
 and uses search to find the best implementation for a given hardware and

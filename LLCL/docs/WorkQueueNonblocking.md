@@ -1,7 +1,5 @@
 # The nonblocking design of `M::LLCL::WorkQueue`
 
-[TOC]
-
 ## Introduction
 
 One of the key problems that a thread pool must solve is how they behave when an

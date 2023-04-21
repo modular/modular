@@ -2,8 +2,6 @@
 
 Modular Confidential (obviously), May 14, 2022
 
-[TOC]
-
 ## Introduction
 
 "Kernel libraries" provide high performance implementations of numeric and data
