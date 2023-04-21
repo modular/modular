@@ -1094,6 +1094,24 @@ public:
                          ExpansionTreeNode *parent,
                          ArrayRef<Operation *> remainingWorklist);
 
+  /// Concretize a region and replace the param constant op that referenced it
+  /// with it.
+  std::optional<ErrorTree> replaceParamWithConcreteRegion(
+      RegionAttr regionAttr, ParamConstantOp paramConstantOp,
+      ExpansionTreeNode *parent, ArrayRef<Operation *> remainingWorklist);
+
+  /// Inline an outlined closure by replacing the parameter constant op
+  /// with a stage closure op.
+  std::optional<ErrorTree> replaceParamWithConcreteRegionFromOutlinedClosure(
+      SymbolConstantAttr calleeSymbol, ParamConstantOp parameterConstantOp,
+      ExpansionTreeNode *parent, ArrayRef<Operation *> remainingWorklist);
+
+  /// Create a node for a callee and concretize it if needed.
+  ErrorTreeOr<ExpansionTreeNode *>
+  createCalleeNode(std::pair<Operation *, ArrayAttr> &&key,
+                   SymbolConstantAttr calleeSymbol, ExpansionTreeNode *parent,
+                   Operation *user);
+
   /// Resolve call input parameters - this is a complex function because calls
   /// can have regions. We take the body of those regions and put it into a
   /// generator with a specially prepared ParameterEvaluator scope and elaborate
@@ -1103,8 +1121,7 @@ public:
   /// - we have to interact with the module symbol table to put these regions
   /// into top-level generators.
   ErrorTreeOr<ArrayAttr>
-  resolveCallInputParams(KGENCallOpInterface call,
-                         ExpansionTreeNode *parentNode,
+  resolveCallInputParams(Operation *call, ExpansionTreeNode *parentNode,
                          ArrayRef<TypedAttr> inputValues);
 
   /// Process a param.declare.region op by creating a generator with the correct
@@ -1415,6 +1432,61 @@ ElaboratorImpl::spawnParamForkClone(ParamForkOp forkOp, Attribute value,
   return std::nullopt;
 }
 
+ErrorTreeOr<ExpansionTreeNode *>
+ElaboratorImpl::createCalleeNode(std::pair<Operation *, ArrayAttr> &&key,
+                                 SymbolConstantAttr calleeSymbol,
+                                 ExpansionTreeNode *parent, Operation *user) {
+  // Find the tree node that corresponds to the thing we're calling.
+  ExpansionTreeNode *node = topLevelTrees.lookup(key);
+  // If we haven't found this callee yet, we have to add it to the tree!
+  if (!node) {
+    // Use the parent of the call to show the expansion depth, and inherit the
+    // evaluator from the root.
+    node =
+        ExpansionTreeNode::create(key.first, key.second, &root,
+                                  IREvaluator(*this), parent->expansionDepth);
+    if (node->error)
+      return ErrorTreeOr<ExpansionTreeNode *>(std::move(node->error).value());
+
+    topLevelTrees[key] = node;
+
+    // Set the region parameters on the callee by performing the name rebind and
+    // handling any parameter captures. This can't be pushed into
+    // specializeGenerator below because it requires passing specific values
+    // from the caller's node to the callee's node.
+    for (TypedAttr bind : calleeSymbol.getParamValues()) {
+      ErrorTreeOr<Attribute> attrValue =
+          parent->evaluator.concretizeParameterExpr(user->getLoc(), bind);
+      if (attrValue.isError())
+        return ErrorTreeOr<ExpansionTreeNode *>(attrValue.takeError());
+
+      Attribute value = attrValue.takeValue();
+      if (auto region = dyn_cast<RegionAttr>(value)) {
+        // Set the known regions correctly by updating the name.
+        ParameterUseDefGraph *graph =
+            parent->knownRegions.lookup(region.getRegionName());
+        node->knownRegions[region.getRegionName()] = graph;
+
+        // Do the same for any potential parameter captures.
+        for (ParamDeclRefAttr param : graph->usesFromAbove) {
+          ErrorTreeOr<Attribute> attr =
+              parent->evaluator.concretizeParameterExpr(user->getLoc(), param);
+          if (attr.isError())
+            return ErrorTreeOr<ExpansionTreeNode *>(attr.takeError());
+
+          node->evaluator.setOrOverwriteParameterValue(param.getName(), *attr);
+        }
+      }
+    }
+
+    if (isa<GeneratorOp>(key.first)) {
+      if (auto err = specializeGenerator(node))
+        return ErrorTreeOr<ExpansionTreeNode *>(std::move(err).value());
+    }
+  }
+  return ErrorTreeOr<ExpansionTreeNode *>(node);
+}
+
 //===----------------------------------------------------------------------===//
 // ElaboratorImpl::processGeneratorUser
 //===----------------------------------------------------------------------===//
@@ -1458,57 +1530,11 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
   }
 
   // Find the tree node that corresponds to the thing we're calling.
-  ExpansionTreeNode *calleeNode =
-      topLevelTrees.lookup({calleeOp, inputParamKey});
-  // If we haven't found this callee yet, we have to add it to the tree!
-  if (!calleeNode) {
-    // Use the parent of the call to show the expansion depth, and inherit the
-    // evaluator from the root.
-    calleeNode =
-        ExpansionTreeNode::create(calleeOp, inputParamKey, &root,
-                                  IREvaluator(*this), parent->expansionDepth);
-    if (calleeNode->error)
-      return std::move(calleeNode->error);
-
-    topLevelTrees[{calleeOp, inputParamKey}] = calleeNode;
-
-    // Set the region parameters on the callee by performing the name rebind and
-    // handling any parameter captures. This can't be pushed into
-    // specializeGenerator below because it requires passing specific values
-    // from the caller's node to the callee's node.
-    for (TypedAttr bind : calleeSymbol.getParamValues()) {
-      ErrorTreeOr<Attribute> attrValue =
-          parent->evaluator.concretizeParameterExpr(user.getLoc(), bind);
-      if (attrValue.isError())
-        return attrValue.takeError();
-
-      Attribute value = attrValue.takeValue();
-      if (auto region = dyn_cast<RegionAttr>(value)) {
-        // Set the known regions correctly by updating the name.
-        ParameterUseDefGraph *graph =
-            parent->knownRegions.lookup(region.getRegionName());
-        calleeNode->knownRegions[region.getRegionName()] = graph;
-
-        // Do the same for any potential parameter captures.
-        for (ParamDeclRefAttr param : graph->usesFromAbove) {
-          ErrorTreeOr<Attribute> attr =
-              parent->evaluator.concretizeParameterExpr(user.getLoc(), param);
-          if (attr.isError())
-            return attr.takeError();
-
-          calleeNode->evaluator.setOrOverwriteParameterValue(param.getName(),
-                                                             *attr);
-        }
-      }
-    }
-
-    if (isa<GeneratorOp>(calleeOp)) {
-      if (auto err = specializeGenerator(calleeNode))
-        return err;
-    } else if (isa<FuncOp>(calleeOp)) {
-      // Nothing to be done - it's specialized already.
-    }
-  }
+  ErrorTreeOr<ExpansionTreeNode *> maybeCalleeNode =
+      createCalleeNode({calleeOp, inputParamKey}, calleeSymbol, parent, user);
+  if (maybeCalleeNode.isError())
+    return maybeCalleeNode.takeError();
+  ExpansionTreeNode *calleeNode = maybeCalleeNode.takeValue();
   LLVM_DEBUG(calleeNode->print(logger));
 
   // Complete processing for all the leaves of this subtree.
@@ -1605,7 +1631,7 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
 
 /// Resolve input params on a call_param op.
 ErrorTreeOr<ArrayAttr>
-ElaboratorImpl::resolveCallInputParams(KGENCallOpInterface call,
+ElaboratorImpl::resolveCallInputParams(Operation *call,
                                        ExpansionTreeNode *parentNode,
                                        ArrayRef<TypedAttr> inputValues) {
   LLVM_DEBUG(logger.logOp("Resolving Call Input Params", call);
@@ -1616,7 +1642,7 @@ ElaboratorImpl::resolveCallInputParams(KGENCallOpInterface call,
   for (TypedAttr param : inputValues) {
     // Fold the parameter expression in this context to a simple constant.
     ErrorTreeOr<Attribute> valueOr =
-        parentNode->evaluator.concretizeParameterExpr(call.getLoc(), param);
+        parentNode->evaluator.concretizeParameterExpr(call->getLoc(), param);
     if (valueOr.isError())
       return valueOr.takeError();
 
@@ -1627,39 +1653,25 @@ ElaboratorImpl::resolveCallInputParams(KGENCallOpInterface call,
   return ArrayAttr::get(call->getContext(), boundInputParams);
 }
 
-//===----------------------------------------------------------------------===//
-// ElaboratorImpl::processParamConstantOp
-//===----------------------------------------------------------------------===//
-
-std::optional<ErrorTree> ElaboratorImpl::processParamConstantOp(
-    ParamConstantOp parameterConstantOp, ExpansionTreeNode *parent,
-    ArrayRef<Operation *> remainingWorklist) {
-  ErrorTreeOr<Attribute> symbol = parent->evaluator.concretizeParameterExpr(
-      parameterConstantOp.getLoc(), parameterConstantOp.getValue());
-
-  if (symbol.isError())
-    return symbol.takeError();
-
-  auto decl = dyn_cast<RegionAttr>(*symbol);
-  if (!decl)
-    return processGenericOp(parent->evaluator, parameterConstantOp);
-
+std::optional<ErrorTree> ElaboratorImpl::replaceParamWithConcreteRegion(
+    RegionAttr regionAttr, ParamConstantOp paramConstantOp,
+    ExpansionTreeNode *parent, ArrayRef<Operation *> remainingWorklist) {
   ParameterUseDefGraph *regionGraph =
-      parent->knownRegions.lookup(decl.getRegionName());
+      parent->knownRegions.lookup(regionAttr.getRegionName());
   if (!regionGraph) {
     parent->setToError(
-        ErrorTree(parameterConstantOp.getLoc(),
-                  "Parameter constant op processing failed because the param "
+        ErrorTree(paramConstantOp.getLoc(),
+                  "Region concretization failed because the param "
                   "use def of the region it references is null."));
     return parent->error->copy();
   }
   Region *sourceRegion = regionGraph->scope;
 
-  mlir::IRRewriter rewriter{OpBuilder(parameterConstantOp)};
+  mlir::IRRewriter rewriter{OpBuilder(paramConstantOp)};
   // Encode parameter information into name for uniqueness
-  std::string stagedFunctionName = decl.getRegionName().str();
+  std::string stagedFunctionName = regionAttr.getRegionName().str();
   llvm::raw_string_ostream stream(stagedFunctionName);
-  for (TypedAttr binding : decl.getParamValues()) {
+  for (TypedAttr binding : regionAttr.getParamValues()) {
     if (IntegerAttr indexAttr = dyn_cast<IntegerAttr>(binding)) {
       stream << indexAttr.getValue();
     } else if (DTypeConstantAttr kgenDType =
@@ -1672,7 +1684,7 @@ std::optional<ErrorTree> ElaboratorImpl::processParamConstantOp(
     }
   }
   auto stageClosureOp = rewriter.replaceOpWithNewOp<StageClosureOp>(
-      parameterConstantOp, decl.getType());
+      paramConstantOp, regionAttr.getType());
   stageClosureOp->setAttr(
       StringAttr::get(rewriter.getContext(), "name"),
       StringAttr::get(rewriter.getContext(), stagedFunctionName));
@@ -1685,7 +1697,7 @@ std::optional<ErrorTree> ElaboratorImpl::processParamConstantOp(
   // Set any bindings on the region in the evaluator context.
   for (auto [decl, value] : llvm::zip(
            sourceRegion->getParentOfType<DeclInterface>().getInputParams(),
-           decl.getParamValues()))
+           regionAttr.getParamValues()))
     parent->evaluator.setOrOverwriteParameterValue(decl, value);
 
   // Recurse into the region.
@@ -1703,6 +1715,79 @@ std::optional<ErrorTree> ElaboratorImpl::processParamConstantOp(
     return parent->error->copy();
 
   return std::nullopt;
+}
+
+std::optional<ErrorTree>
+ElaboratorImpl::replaceParamWithConcreteRegionFromOutlinedClosure(
+    SymbolConstantAttr calleeSymbol, ParamConstantOp parameterConstantOp,
+    ExpansionTreeNode *parent, ArrayRef<Operation *> remainingWorklist) {
+  FuncInterface calleeOp = lookup(calleeSymbol.getSymbol());
+  if (!calleeOp)
+    return ErrorTree(parameterConstantOp.getLoc(),
+                     "could not find callee '" +
+                         mlir::debugString(calleeSymbol) + "'");
+
+  auto resolvedCallParamsOr = resolveCallInputParams(
+      parameterConstantOp, parent, calleeSymbol.getParamValues());
+  if (resolvedCallParamsOr.isError())
+    return resolvedCallParamsOr.takeError();
+  ArrayAttr inputParamKey = *resolvedCallParamsOr;
+  ErrorTreeOr<ExpansionTreeNode *> maybeCalleeNode = createCalleeNode(
+      {calleeOp, inputParamKey}, calleeSymbol, parent, parameterConstantOp);
+  if (maybeCalleeNode.isError())
+    return maybeCalleeNode.takeError();
+  ExpansionTreeNode *calleeNode = maybeCalleeNode.takeValue();
+  std::vector<FuncOp> concreteCandidates;
+  calleeNode->getAllConcrete(concreteCandidates);
+  if (concreteCandidates.size() > 1)
+    return ErrorTree(
+        parameterConstantOp.getLoc(),
+        "expected the callee node to yield a single concrete function");
+  FuncOp &outlinedFn = concreteCandidates.front();
+  mlir::IRRewriter rewriter{OpBuilder(parameterConstantOp)};
+  if (!outlinedFn.getSignature().isCapturing()) {
+    rewriter.replaceOpWithNewOp<CreateClosureOp>(parameterConstantOp,
+                                                 outlinedFn.getSignature(),
+                                                 calleeSymbol, ValueRange());
+    return {};
+  }
+
+  Region &sourceRegion = outlinedFn.getBodyRegion();
+  auto stageClosureOp = rewriter.replaceOpWithNewOp<StageClosureOp>(
+      parameterConstantOp,
+      SignatureType::get(concreteCandidates.front().getFunctionType()));
+  stageClosureOp->setAttr(
+      StringAttr::get(rewriter.getContext(), "name"),
+      StringAttr::get(rewriter.getContext(), outlinedFn.getSymName()));
+
+  Region &targetRegion = stageClosureOp.getBodyRegion();
+  IRMapping map;
+  sourceRegion.cloneInto(&targetRegion, map);
+  return std::nullopt;
+}
+
+//===----------------------------------------------------------------------===//
+// ElaboratorImpl::processParamConstantOp
+//===----------------------------------------------------------------------===//
+
+std::optional<ErrorTree> ElaboratorImpl::processParamConstantOp(
+    ParamConstantOp parameterConstantOp, ExpansionTreeNode *parent,
+    ArrayRef<Operation *> remainingWorklist) {
+  ErrorTreeOr<Attribute> symbol = parent->evaluator.concretizeParameterExpr(
+      parameterConstantOp.getLoc(), parameterConstantOp.getValue());
+
+  if (symbol.isError())
+    return symbol.takeError();
+
+  if (auto region = dyn_cast<RegionAttr>(*symbol)) {
+    return replaceParamWithConcreteRegion(region, parameterConstantOp, parent,
+                                          remainingWorklist);
+  } else if (auto calleeSymbol = dyn_cast<SymbolConstantAttr>(*symbol)) {
+    return replaceParamWithConcreteRegionFromOutlinedClosure(
+        calleeSymbol, parameterConstantOp, parent, remainingWorklist);
+  } else {
+    return processGenericOp(parent->evaluator, parameterConstantOp);
+  }
 }
 
 //===----------------------------------------------------------------------===//
