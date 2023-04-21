@@ -897,6 +897,36 @@ def LIT_OwnershipEndLifetimeOp : LITOp<"ownership.end.lifetime",
   let assemblyFormat = "$value `:` type($value) attr-dict";
 }
 
+
+//===----------------------------------------------------------------------===//
+// OwnershipMakePointerLValue
+//===----------------------------------------------------------------------===//
+
+def LIT_OwnershipMakePointerLValue : LITOp<"ownership.make.pointer.lvalue",
+                                        [AllTypesMatch<["ptr", "valuePtr"]>]> {
+  let summary = "Project a pointer address as an tracked LValue";
+  let description = [{
+    This op projects a !pop.pointer value as an LValue, whose value is
+    initialized on entry (or not) based on the first property, and initialized
+    after last use (or not) depending on the second one.
+
+    This works with memory values.
+
+    ```mlir
+    %1 = lit.ownership.make.pointer.lvalue %0 : !pop.pointer<@MyStruct>
+    ```
+  }];
+
+  let arguments = (ins PointerOf<KGEN_DeclRefType>:$ptr,
+                       BoolAttr:$liveOnEntry,
+                       BoolAttr:$liveOnExit);
+  let results = (outs PointerOf<KGEN_DeclRefType>:$valuePtr);
+  let assemblyFormat = [{
+    $ptr `live_on_entry``=`$liveOnEntry`,` `exit``=`$liveOnExit
+    `:` type($ptr) attr-dict
+  }];
+}
+
 //===----------------------------------------------------------------------===//
 // OwnershipMarkDestroyedOp
 //===----------------------------------------------------------------------===//

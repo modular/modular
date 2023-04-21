@@ -321,27 +321,57 @@ fn testPointerGEP(ptr: __mlir_type[`!pop.pointer<`, Complicated, `>`]) -> Int:
 # This exercises turning a pop.pointer into an RValue, which produces an 'owned'
 # pointer magically from memory.
 # CHECK-LABEL: lit.func @"testTakePointeeAsOwned
-fn testTakePointeeAsOwned(ptr: __mlir_type[`!pop.pointer<`, MemExample, `>`]):
+fn testTakePointeeAsOwned(ptr: __mlir_type[`!pop.pointer<`, MemExample, `>`],
+                          i1ptr: __mlir_type.`!pop.pointer<i1>`):
   # This should run the destructor.
   # TODO: Not great that discard patterns are causing things to need to be movable.
   # CHECK-NEXT: [[PTR:%.*]] = lit.ownership.end.lifetime %ptr
   # CHECK-NEXT: %_ = lit.varlet.decl "_"
   # CHECK-NEXT: kgen.call {{.*}}__moveinit__{{.*}}(%_, [[PTR]])
   # CHECK-NEXT: kgen.call {{.*}}__del___{{.*}}(%_)
-  _ = __take_pointee_as_owned_object(ptr)
+  _ = __get_address_as_owned_value(ptr)
 
   # This should run the destructor and not get omitted.
   # CHECK-NEXT: [[PTR:%.*]] = lit.ownership.end.lifetime %ptr
   # CHECK-NEXT: kgen.call {{.*}}__del___{{.*}}([[PTR]])
-  __take_pointee_as_owned_object(ptr)  # expected-warning {{'$ownership::MemExample' value is unused}}
+  __get_address_as_owned_value(ptr)  # expected-warning {{'$ownership::MemExample' value is unused}}
 
   # The RValue can be consumed directly.
   # CHECK-NEXT: [[PTR:%.*]] = lit.ownership.end.lifetime %ptr
   # CHECK-NEXT: kgen.call {{.*}}consume{{.*}}([[PTR]])
-  consume(__take_pointee_as_owned_object(ptr))
+  consume(__get_address_as_owned_value(ptr))
+
+  # i1 doesn't have ownership but should still work for generality.
+  # CHECK-NEXT: [[I1VAL:%.*]] = lit.load.consume %i1ptr
+  # CHECK-NEXT: %ownedI1 = lit.letreg.decl "ownedI1" = [[I1VAL]]
+  let ownedI1 = __get_address_as_owned_value(i1ptr)
 
   # CHECK-NEXT: kgen.param.constant: !lit.none = <#lit.none>
 
+
+# CHECK-LABEL: testGetAsUnitializedObject
+fn testGetAsUnitializedObject(ptr: __mlir_type[`!pop.pointer<`, MemExample, `>`],
+                             i1ptr: __mlir_type.`!pop.pointer<i1>`):
+  # Overwriting the value in a __get_address_as_lvalue forces it to be destroyed
+  # before the overwrite.
+
+  # CHECK-NEXT: [[PTR:%.*]]  = lit.ownership.make.pointer.lvalue %ptr live_on_entry = true, exit = true
+  # CHECK-NEXT: kgen.call {{.*}}__del___{{.*}}([[PTR]])
+  # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}([[PTR]])
+  __get_address_as_lvalue(ptr) = MemExample()
+
+  # Overwriting the value in a __get_address_as_uninit_lvalue does not destroy
+  # the memory, because it is uninit.
+  # CHECK-NEXT: [[PTR:%.*]]  = lit.ownership.make.pointer.lvalue %ptr live_on_entry = false, exit = true
+  # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}([[PTR]])
+  __get_address_as_uninit_lvalue(ptr) = MemExample()
+
+  # i1 doesn't have ownership but should still work for generality.
+  # CHECK-NEXT: [[I1VAL:%.*]] = pop.load %i1ptr
+  # CHECK-NEXT: %i1Val = lit.letreg.decl "i1Val" = [[I1VAL]]
+  let i1Val = __get_address_as_lvalue(i1ptr)
+
+  # CHECK-NEXT: kgen.param.constant: !lit.none
 
 # CHECK-LABEL: lit.struct.decl @FieldSensitiveMemExample
 struct FieldSensitiveMemExample:

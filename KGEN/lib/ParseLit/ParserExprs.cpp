@@ -393,7 +393,8 @@ static bool isPrimaryExprToken(Token::Kind tokKind) {
   case Token::kw_fn:
   case Token::kw___get_address_as_lvalue:
   case Token::kw___get_lvalue_as_address:
-  case Token::kw___take_pointee_as_owned_object:
+  case Token::kw___get_address_as_owned_value:
+  case Token::kw___get_address_as_uninit_lvalue:
     return true;
   default:
     return false;
@@ -496,7 +497,8 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
 
   case Token::kw___get_address_as_lvalue:
   case Token::kw___get_lvalue_as_address:
-  case Token::kw___take_pointee_as_owned_object:
+  case Token::kw___get_address_as_owned_value:
+  case Token::kw___get_address_as_uninit_lvalue:
     if (failed(parseAddressConvert(result)))
       return failure();
     break;
@@ -922,11 +924,14 @@ ParseResult ExprParser::parseAddressConvert(ExprNode *&result) {
   case Token::kw___get_address_as_lvalue:
     nodeKind = ExprNode::kGetAddressAsLValue;
     break;
+  case Token::kw___get_address_as_uninit_lvalue:
+    nodeKind = ExprNode::kGetAddressAsUninitLValue;
+    break;
   case Token::kw___get_lvalue_as_address:
     nodeKind = ExprNode::kGetLValueAsAddress;
     break;
-  case Token::kw___take_pointee_as_owned_object:
-    nodeKind = ExprNode::kTakeAddressAsOwned;
+  case Token::kw___get_address_as_owned_value:
+    nodeKind = ExprNode::kGetAddressAsOwned;
     break;
   }
   SMLoc baseLoc = consumeToken().getLoc();

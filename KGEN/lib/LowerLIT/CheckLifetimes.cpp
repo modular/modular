@@ -789,6 +789,13 @@ void UninitializedValueScan::checkOp(Operation &op) {
     return;
   }
 
+  // OwnershipMakePointerLValue is a def if liveOnEntry.
+  if (auto makePointer = dyn_cast<OwnershipMakePointerLValue>(op)) {
+    checkLive(makePointer.getOperand(), op);
+    if (makePointer.getLiveOnEntry())
+      valueSet.getValueRef(op.getResult(0)).markBits(liveValues, true);
+  }
+
   // If this is a kgen.return then we have an exit from the function
   // (including early returns and exception raises that leave the function).
   // Check that all of the values we are tracking are managed correctly.
@@ -1122,6 +1129,13 @@ void DestructorInsertion::checkOp(Operation &op) {
     for (auto operand : op.getOperands())
       markConsumed(operand, op);
     return;
+  }
+
+  // OwnershipMakePointerLValue is a def if liveOnEntry.
+  if (auto makePointer = dyn_cast<OwnershipMakePointerLValue>(op)) {
+    checkUse(makePointer.getOperand(), op);
+    if (makePointer.getLiveOnEntry())
+      checkUse(makePointer.getResult(), op);
   }
 
   // A return consumes all the live-out values from the function.
