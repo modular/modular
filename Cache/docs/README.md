@@ -1,7 +1,5 @@
 # Cache
 
-[TOC]
-
 ## Glossary of Terms
 
 `CAS` - **C**ontent **A**ddressible **S**tore

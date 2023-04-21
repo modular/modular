@@ -1,7 +1,5 @@
 # Mojo🔥 REPL
 
-[TOC]
-
 ## Introduction
 
 A Read Eval Print Loop, or REPL, is an effective tool for providing a powerful

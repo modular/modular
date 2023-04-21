@@ -1,7 +1,5 @@
 # The `M::LLCL::AsyncValue` family of types
 
-[TOC]
-
 This document explains some of the concepts behind `AsyncValue` and related
 types like `AsyncValueRef<T>`.
 

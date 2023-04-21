@@ -15,8 +15,6 @@ spills over to the next line."""
 
 # CHECK: This is a module summary, that spills over to the next line.
 
-# CHECK: [TOC]
-
 # CHECK: ## InMemoryStruct
 
 # CHECK: ### fn_with_by_conventions

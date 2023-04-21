@@ -2,8 +2,6 @@
 
 Modular Confidential (obviously)
 
-[TOC]
-
 # Introduction
 
 This document outlines tasks for the implementation work to bring up the [Generative Kernel Compiler + Language](https://docs.google.com/document/u/1/d/12J0o1z4NgJvsWsi6LsHuGhZUBeRYPrJ9WdLHJCO0nYk/edit).  This document describes the implementation effort in granular chunks.  It is intended to be a working document that we evolve over time.

@@ -1,7 +1,5 @@
 # Mojo🔥 Compile Time Code Evaluation
 
-[TOC]
-
 ## Introduction
 
 The Mojo programming language provides a rich metaprogramming model. Part of
