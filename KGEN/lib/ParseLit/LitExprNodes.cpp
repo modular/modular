@@ -2156,7 +2156,7 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   } else if (kind == kAwait) {
     // Diagnose errors with 'await'.
     if (!emitter.builder) {
-      emitter.emitError(getLoc(), "cannot await inside a parameter expression");
+      emitter.emitErrorForDynamicValueInParameter(this, "cannot await");
       return {};
     }
     Operation *func = emitter.builder->getInsertionBlock()->getParentOp();
