@@ -433,7 +433,11 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
        llvm::enumerate(asyncFnBody.getArguments().drop_back())) {
     b.setLoc(arg.getLoc());
     for (OpOperand &use : llvm::make_early_inc_range(arg.getUses())) {
-      b.setInsertionPoint(use.getOwner());
+      // If the coroutine does not suspend, we want to load as early as possible
+      // to avoid generating these loads inside of nested loops.
+      if (!noSuspend)
+        b.setInsertionPoint(use.getOwner());
+
       // Obtain start of the context from the frame pointer.
       Value contextPtr = b.create<GEPOp>(
           contextPtrType, hdl, GEPArg(-contextBaseSize), /*inbounds=*/true);
