@@ -879,6 +879,59 @@ ParseResult ParsedArgument::parseAndResolvePresentArgumentList(
 // Parameter signature implementation
 //===----------------------------------------------------------------------===//
 
+void ParsedArgument::processParameterArgs(
+    ExprEmitter &emitter, ASTDecl &declScope, ArrayRef<ParsedArgument> args,
+    SmallVectorImpl<ParamDeclAttr> &params, bool isResultParams,
+    bool &paramVararg) {
+  for (const ParsedArgument &arg : args) {
+    // Check for things supported in arguments that are not supported in
+    // parameters.
+    if (arg.initExpr)
+      emitter.emitError(arg.loc,
+                        "TODO: default values in parameters not supported");
+
+    ASTType type;
+    if (arg.typeExpr)
+      type = emitter.emitExprType(arg.typeExpr);
+    else
+      emitter.emitError(arg.loc, "parameters must always have a type");
+    if (!type)
+      type = TypeCheckErrorType::get(emitter.getContext());
+
+    // Parameters must be register passable for now.
+    if (!type.isRegisterPassable(arg.loc, emitter.shared)) {
+      emitter.emitError(arg.loc, "cannot use type ")
+          << type
+          << " in a parameter: only @register_passable types are supported "
+             "right now";
+      type = TypeCheckErrorType::get(emitter.getContext());
+    }
+
+    VarArgKind vararg = arg.vararg;
+    if (vararg != VarArgKind::None && isResultParams)
+      emitter.emitError(arg.loc, "result parameters may not be variadic");
+    if (vararg == VarArgKind::PackVarArg)
+      emitter.emitError(arg.loc, "parameters may not be variadic packs");
+
+    if (vararg == VarArgKind::VarArg &&
+        !isa<TypeCheckErrorType>(type.mlirType)) {
+      type = VariadicType::get(type);
+      paramVararg = true;
+    }
+
+    // TODO: Parameter decls should support conventions at some point.
+    if (arg.convention != ParsedArgument::kConventionUnspec)
+      emitter.emitError(arg.loc, "parameters must always be passed by-value");
+
+    // Bind the parsed type expression so references from other parameters
+    // can be resolved.
+    auto tmpDecl = ParamDeclRefAttr::get(arg.name, type);
+    emitter.getDeclResolver().addFullyResolvedDecl(PValue(tmpDecl), arg.name,
+                                                   arg.loc, &declScope);
+    params.push_back(ParamDeclAttr::get(arg.name, type));
+  }
+}
+
 /// meta_signature    ::= "[" meta_param_list ("->" meta_result_types)? "]"
 /// meta_param_list   ::= argument_list | "(" ")"
 /// meta_result_types ::= expression ("," expression)*
@@ -903,9 +956,6 @@ static ParseResult parseOptionalParameterSignature(
       return failure();
   }
 
-  // Resolve each of the parameter declarations.
-  auto &declResolver = p.getDeclResolver();
-
   // Mark the decl container as 'fully resolved' temporarily to facilitate
   // this, so it doesn't attempt to get resolved again.
   // FIXME(5975): This is a hack and shouldn't be needed.  The problem is
@@ -915,58 +965,9 @@ static ParseResult parseOptionalParameterSignature(
   llvm::SaveAndRestore X(declScope.resolvedness, DeclResolvedness::fully);
   ExprEmitter emitter(p.shared, declScope, EC_Type, nullptr);
 
-  auto processParameterArgs = [&](ArrayRef<ParsedArgument> args,
-                                  SmallVectorImpl<ParamDeclAttr> &params,
-                                  bool isResultParams) {
-    for (auto &arg : args) {
-      // Check for things supported in arguments that are not supported in
-      // parameters.
-      if (arg.initExpr)
-        p.emitError(arg.loc,
-                    "TODO: default values in parameters not supported");
-
-      ASTType type;
-      if (arg.typeExpr)
-        type = emitter.emitExprType(arg.typeExpr);
-      else
-        p.emitError(arg.loc, "parameters must always have a type");
-      if (!type)
-        type = TypeCheckErrorType::get(p.getContext());
-
-      // Parameters must be register passable for now.
-      if (!type.isRegisterPassable(arg.loc, p.shared)) {
-        p.emitError(arg.loc, "cannot use type ")
-            << type
-            << " in a parameter: only @register_passable types are supported "
-               "right now";
-        type = TypeCheckErrorType::get(p.getContext());
-      }
-
-      VarArgKind vararg = arg.vararg;
-      if (vararg != VarArgKind::None && isResultParams)
-        p.emitError(arg.loc, "result parameters may not be variadic");
-      if (vararg == VarArgKind::PackVarArg)
-        p.emitError(arg.loc, "parameters may not be variadic packs");
-
-      if (vararg == VarArgKind::VarArg &&
-          !isa<TypeCheckErrorType>(type.mlirType)) {
-        type = KGEN::VariadicType::get(type);
-        paramVararg = true;
-      }
-
-      // TODO: Parameter decls should support conventions at some point.
-      if (arg.convention != ParsedArgument::kConventionUnspec)
-        p.emitError(arg.loc, "parameters must always be passed by-value");
-
-      // Bind the parsed type expression so references from other parameters
-      // can be resolved.
-      auto tmpDecl = ParamDeclRefAttr::get(arg.name, type);
-      declResolver.addFullyResolvedDecl(PValue(tmpDecl), arg.name, arg.loc,
-                                        &declScope);
-      params.push_back(ParamDeclAttr::get(arg.name, type));
-    }
-  };
-  processParameterArgs(args, inputParams, /*isResultParams=*/false);
+  // Resolve each of the parameter declarations.
+  ParsedArgument::processParameterArgs(emitter, declScope, args, inputParams,
+                                       /*isResultParams=*/false, paramVararg);
 
   // Parse the meta results if present.
   if (p.consumeIf(Token::minus_greater)) {
@@ -975,9 +976,149 @@ static ParseResult parseOptionalParameterSignature(
     if (ParsedArgument::parseAndResolvePresentArgumentList(
             p, args, /*isParameterList=*/true))
       return failure();
-    processParameterArgs(args, resultParams, /*isResultParams=*/true);
+    ParsedArgument::processParameterArgs(emitter, declScope, args, resultParams,
+                                         /*isResultParams=*/true, paramVararg);
   }
   return p.parseToken(Token::r_square, "expected ']' for parameter list");
+}
+
+ASTType ParsedArgument::emitFunctionArgumentsAndResults(
+    function_ref<ParseResult()> reportError, SharedState &shared,
+    ExprEmitter &typeEmitter, const ExprNode *resultTypeExpr,
+    FnEffects &effects, SmallVectorImpl<ParsedArgument> &args,
+    SmallVectorImpl<Type> &argTypes, SmallVectorImpl<TypedAttr> &defaults) {
+  // Resolve the result type and any argument types that are present, leaving
+  // any unspecified types null.
+  ASTType resultType;
+  if (!resultTypeExpr) {
+    // TODO: We shouldn't default this to none for 'def's.  This should default
+    // to object type.  Our return checker is currently a lame duck.
+    resultType = shared.getNoneType();
+  } else if (isa<NoneLiteralNode>(resultTypeExpr)) {
+    // If the result type is a `None` literal, then convert it to NoneType.
+    resultType = shared.getNoneType();
+  } else {
+    resultType = typeEmitter.emitExprType(resultTypeExpr);
+    // On error, a diagnostic will be emitted, but we don't want to kill the
+    // entire function definition.  We won't be able to correctly type check any
+    // calls to this function though.
+    if (!resultType) {
+      resultType = shared.getTypeCheckErrorType();
+      if (reportError())
+        return {};
+    }
+
+    // Memory-only types get passed as the first argument to the function
+    // by-reference.
+    uint8_t rp =
+        resultType.getRegisterPassability(resultTypeExpr->getLoc(), shared);
+    if (rp == StructDeclOp::RP_MemoryOnly) {
+      // Synthesize a result argument for this, and use None as the actual
+      // function result.
+      ParsedArgument resultArg;
+      resultArg.loc = resultTypeExpr->getLoc();
+      resultArg.name = StringAttr::get(shared.getContext(), "__result__");
+      resultArg.convention = ParsedArgument::kConventionByRefResult;
+      resultArg.typeExpr = resultTypeExpr;
+      args.insert(args.begin(), resultArg);
+      resultType = shared.getNoneType();
+    } else if (rp != StructDeclOp::RP_RegisterPassableTrivial) {
+      // We know the result type of the function is register passable (because
+      // otherwise it would be promoted to an argument).  If the result of the
+      // function is a non-trivial type, mark the function effect as having an
+      // owned result so ownership tracking will notice it.
+      effects = effects | FnEffects::OwnedResult;
+    }
+  }
+
+  bool seenInitExpr = false;
+  for (auto [idx, arg] : llvm::enumerate(args)) {
+    ASTType type;
+    if (arg.typeExpr) {
+      type = typeEmitter.emitExprType(arg.typeExpr);
+
+      // If the type couldn't be emitted, mark this argument erroneous (so uses
+      // within the body of the function don't trigger secondary errors) and
+      // mark the function erroneous so calls to it won't resolve.  Put in a
+      // placeholder type so we can continue type checking.
+      if (!type) {
+        if (reportError())
+          return {};
+        type = shared.getTypeCheckErrorType();
+      }
+    }
+    argTypes.push_back(type);
+
+    // Determine the required function effects from the conventions.
+    if (arg.vararg == VarArgKind::VarArg)
+      effects = effects | FnEffects::Vararg;
+    else if (arg.vararg == VarArgKind::PackVarArg)
+      effects = effects | FnEffects::PackVararg;
+    else if (arg.vararg == VarArgKind::KWVarArg)
+      effects = effects | FnEffects::KWVararg;
+
+    // If no convention was explicitly specified, provide a default.
+    if (arg.convention == ParsedArgument::kConventionUnspec)
+      arg.convention = ParsedArgument::kConventionBorrowed;
+
+    // Emit default argument values.
+    if (const ExprNode *initExpr = arg.initExpr) {
+      seenInitExpr = true;
+      PValue value =
+          typeEmitter.emitExprPValue(initExpr, EC_DefaultArgument, type);
+      if (!value)
+        return {};
+      defaults.push_back(value);
+    } else if (seenInitExpr) {
+      typeEmitter.emitError(arg.loc,
+                            "non-default argument follows default argument")
+          << arg.typeExpr->getRange();
+    }
+  }
+  return resultType;
+}
+
+void ParsedArgument::computeArgumentConventions(
+    SharedState &shared, MutableArrayRef<ParsedArgument> args,
+    MutableArrayRef<Type> argTypes) {
+  for (auto [arg, argType] : llvm::zip(args, argTypes)) {
+    switch (arg.convention) {
+    case ParsedArgument::kConventionUnspec:
+      llvm_unreachable("should be resolved above");
+    case ParsedArgument::kConventionOwned:
+      // Memory-only owned argument are passed with a layer of indirection and
+      // use a specific convention to model this.
+      if (ASTType(argType).isRegisterPassable(arg.loc, shared))
+        arg.kgenConvention = ValueInputConvention::OwnedInReg;
+      else
+        arg.kgenConvention = ValueInputConvention::OwnedInMem;
+      break;
+    case ParsedArgument::kConventionBorrowed:
+      // Memory-only owned argument are passed with a layer of indirection and
+      // use a specific convention to model this.
+      if (ASTType(argType).isRegisterPassable(arg.loc, shared))
+        arg.kgenConvention = ValueInputConvention::BorrowedInReg;
+      else
+        arg.kgenConvention = ValueInputConvention::BorrowedInMem;
+      break;
+    case ParsedArgument::kConventionByRef:
+      arg.kgenConvention = ValueInputConvention::ByRef;
+      break;
+    case ParsedArgument::kConventionByRefResult:
+      arg.kgenConvention = ValueInputConvention::ByRefResult;
+      break;
+    case ParsedArgument::kConventionInitSelfResult:
+      arg.kgenConvention = ValueInputConvention::InitSelf;
+      break;
+    }
+
+    // Adjust the MLIR type if needed.
+    if (arg.kgenConvention != ValueInputConvention::OwnedInReg &&
+        arg.kgenConvention != ValueInputConvention::BorrowedInReg)
+      argType = POP::PointerType::get(argType);
+    if (arg.vararg == VarArgKind::VarArg)
+      argType = KGEN::VariadicType::get(argType);
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -1112,7 +1253,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
   // If this definition is a struct/class member, compute the self type.
   ASTType selfType;
   ssize_t selfArgNumber = -1;
-  if (auto *parentDecl = decl.getParentDecl())
+  if (auto *parentDecl = decl.getParentDecl()) {
     if (isa<StructDeclOp>(*parentDecl)) {
       // The parent decl must be fully resolved in order to resolve any members
       // of it.
@@ -1121,6 +1262,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
       // If there is an in-memory result, self is passed as arg #1 otherwise #0.
       selfArgNumber = hasMemoryResult ? 1 : 0;
     }
+  }
 
   // __*init__ methods are weird - for memory-primary results we define
   // init in convention Python style, but for @register_passable values, we
@@ -1149,11 +1291,10 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
   }
 
   // Fill in any missing arguments or diagnose missing ones in fn's.
-  bool seenInitExpr = false;
-  for (auto [arg, type] : llvm::zip(args, argTypes)) {
+  for (auto [i, arg, type] : llvm::enumerate(args, argTypes)) {
     if (!type) {
       // If this is the 'self' argument in a struct, default the type to Self.
-      if (&arg - &args[0] == selfArgNumber && selfType &&
+      if (static_cast<ssize_t>(i) == selfArgNumber && selfType &&
           !funcOp.getIsStatic()) {
         type = selfType;
       } else if (funcOp.getIsDef()) {
@@ -1168,16 +1309,6 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
         type = shared.getTypeCheckErrorType();
       }
     }
-    if (arg.initExpr) {
-      seenInitExpr = true;
-    } else if (seenInitExpr) {
-      shared.emitError(arg.loc, "non-default argument follows default argument")
-          << arg.typeExpr->getRange();
-    }
-
-    // If no convention was explicitly specified, provide a default.
-    if (arg.convention == ParsedArgument::kConventionUnspec)
-      arg.convention = ParsedArgument::kConventionBorrowed;
   }
 
   ASTType declaredResultType =
@@ -1310,44 +1441,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
 
   // Now that all the types and signature information have been resolved,
   // compute the final MLIR types and KGEN conventions.
-  for (auto [arg, argType] : llvm::zip(args, argTypes)) {
-    switch (arg.convention) {
-    case ParsedArgument::kConventionUnspec:
-      llvm_unreachable("should be resolved above");
-    case ParsedArgument::kConventionOwned:
-      // Memory-only owned argument are passed with a layer of indirection and
-      // use a specific convention to model this.
-      if (ASTType(argType).isRegisterPassable(arg.loc, shared))
-        arg.kgenConvention = ValueInputConvention::OwnedInReg;
-      else
-        arg.kgenConvention = ValueInputConvention::OwnedInMem;
-      break;
-    case ParsedArgument::kConventionBorrowed:
-      // Memory-only owned argument are passed with a layer of indirection and
-      // use a specific convention to model this.
-      if (ASTType(argType).isRegisterPassable(arg.loc, shared))
-        arg.kgenConvention = ValueInputConvention::BorrowedInReg;
-      else
-        arg.kgenConvention = ValueInputConvention::BorrowedInMem;
-      break;
-    case ParsedArgument::kConventionByRef:
-      arg.kgenConvention = ValueInputConvention::ByRef;
-      break;
-    case ParsedArgument::kConventionByRefResult:
-      arg.kgenConvention = ValueInputConvention::ByRefResult;
-      break;
-    case ParsedArgument::kConventionInitSelfResult:
-      arg.kgenConvention = ValueInputConvention::InitSelf;
-      break;
-    }
-
-    // Adjust the MLIR type if needed.
-    if (arg.kgenConvention != ValueInputConvention::OwnedInReg &&
-        arg.kgenConvention != ValueInputConvention::BorrowedInReg)
-      argType = POP::PointerType::get(argType);
-    if (arg.vararg == VarArgKind::VarArg)
-      argType = KGEN::VariadicType::get(argType);
-  }
+  ParsedArgument::computeArgumentConventions(shared, args, argTypes);
 
   // If we have a special function kind and didn't have any errors with it,
   // remember which kind it is.
@@ -1576,7 +1670,10 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   SmallVector<ExprNode *> decoratorExprs = p.parseDecorators(decl);
   assert(p.getToken().isAny(Token::kw_async, Token::kw_def, Token::kw_fn) &&
          "not a function definition?");
-  p.consumeIf(Token::kw_async);
+  FnEffects effects =
+      p.consumeIf(Token::kw_async) ? FnEffects::Async : FnEffects::None;
+  if (p.getToken().is(Token::kw_def))
+    effects = effects | FnEffects::Throws;
   p.consumeToken();
 
   StringAttr baseName;
@@ -1613,12 +1710,29 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
       p.parseToken(Token::l_paren, "expected '(' for parameter list"))
     return failure();
 
+  if (paramVararg)
+    effects = effects | FnEffects::ParamVararg;
+
   // Parse the argument list next if present.
   if (!p.consumeIf(Token::r_paren)) {
     if (ParsedArgument::parseAndResolvePresentArgumentList(
             p, args, /*isParameterList=*/false) ||
         p.parseToken(Token::r_paren, "expected ')' in argument list"))
       return failure();
+  }
+
+  // Check for function effects.
+  if (p.getToken().is(Token::identifier)) {
+    SMLoc loc = p.getToken().getLoc();
+    if (p.getToken().getSpelling() == "raises") {
+      if (bitEnumContainsAny(effects, FnEffects::Throws))
+        p.emitError(loc, "function effect 'raises' was already specified");
+      effects = effects | FnEffects::Throws;
+    } else {
+      emitError(loc, "unknown function effect '")
+          << p.getToken().getSpelling() << "', expected 'raises'";
+    }
+    p.consumeToken();
   }
 
   // Parse the result type if present.
@@ -1633,72 +1747,23 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // Resolve the result parameter types now that the arguments are in scope.
   ExprEmitter typeEmitter(shared, decl, EC_Type, nullptr);
 
-  // Resolve the result type and any argument types that are present, leaving
-  // any unspecified types null.
-  SmallVector<Type> argTypes;
-  SmallVector<TypedAttr> defaults;
-
-  ASTType resultType;
-  if (!resultTypeExpr) {
-    // TODO: We shouldn't default this to none for 'def's.  This should default
-    // to object type.  Our return checker is currently a lame duck.
-    resultType = shared.getNoneType();
-  } else {
-    resultType = typeEmitter.emitExprType(resultTypeExpr);
-    // On error, a diagnostic will be emitted, but we don't want to kill the
-    // entire function definition.  We won't be able to correctly type check any
-    // calls to this function though.
-    if (!resultType) {
-      resultType = shared.getTypeCheckErrorType();
-      decl.hasReferenceError = true;
-    }
-
-    // Memory-only types get passed as the first argument to the function
-    // by-reference.
-    if (!resultType.isRegisterPassable(resultTypeExpr->getLoc(), shared)) {
-      // Synthesize a result argument for this, and use None as the actual
-      // function result.
-      ParsedArgument resultArg;
-      resultArg.loc = resultTypeExpr->getLoc();
-      resultArg.name = StringAttr::get(shared.getContext(), "__result__");
-      resultArg.convention = ParsedArgument::kConventionByRefResult;
-      resultArg.typeExpr = resultTypeExpr;
-      args.insert(args.begin(), resultArg);
-      resultType = shared.getNoneType();
-    }
-  }
-
-  for (auto [idx, arg] : llvm::enumerate(args)) {
-    ASTType type;
-    if (arg.typeExpr) {
-      type = typeEmitter.emitExprType(arg.typeExpr);
-
-      // If the type couldn't be emitted, mark this argument erroneous (so uses
-      // within the body of the function don't trigger secondary errors) and
-      // mark the function erroneous so calls to it won't resolve.  Put in a
-      // placeholder type so we can continue type checking.
-      if (!type) {
-        decl.hasReferenceError = true;
-        type = shared.getTypeCheckErrorType();
-      }
-    }
-    argTypes.push_back(type);
-
-    // Emit default argument values.
-    if (const ExprNode *initExpr = arg.initExpr) {
-      ExprEmitter emitter(shared, decl, /*builder*/ {},
-                          /*varDeclCursor*/ nullptr);
-      PValue value = emitter.emitExprPValue(initExpr, EC_DefaultArgument, type);
-      if (!value)
-        return failure();
-      defaults.push_back(value);
-    }
-  }
-
   // Now that we have figured out the lexical structure, allow decorators to
   // take a crack at the signature.
   // Okay, apply them now.
   FnDecorators(decl, shared).apply(decoratorExprs);
+
+  // Emitt he argument and result types.
+  SmallVector<Type> argTypes;
+  SmallVector<TypedAttr> defaults;
+  auto reportError = [&] {
+    decl.hasReferenceError = true;
+    return success();
+  };
+  ASTType resultType = ParsedArgument::emitFunctionArgumentsAndResults(
+      reportError, shared, typeEmitter, resultTypeExpr, effects, args, argTypes,
+      defaults);
+  if (!resultType)
+    return failure();
 
   // Now that all the structural properties are determined, perform any
   // name-binding specific checks over the declaration.  This happens after
@@ -1712,10 +1777,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // Handle function effects.
   SmallVector<Location> argLocs;
   SmallVector<StringAttr> argNames;
-  SmallVector<ValueInputConvention> inputConventions;
-  FnEffects effects = funcOp.getMetadata().getFnEffects();
-  if (paramVararg)
-    effects = effects | FnEffects::ParamVararg;
 
   // Nested functions are capturing by default.
   if (funcOp->getParentOfType<FuncOp>())
@@ -1768,16 +1829,11 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   }
 
   // Handle argument effects and build the ASTDecls for the arguments.
+  SmallVector<ValueInputConvention> inputConventions;
   for (const ParsedArgument &arg : args) {
     argLocs.push_back(p.translateLocation(arg.loc));
     argNames.push_back(arg.name);
     inputConventions.push_back(arg.kgenConvention);
-    if (arg.vararg == VarArgKind::VarArg)
-      effects = effects | FnEffects::Vararg;
-    else if (arg.vararg == VarArgKind::PackVarArg)
-      effects = effects | FnEffects::PackVararg;
-    else if (arg.vararg == VarArgKind::KWVarArg)
-      effects = effects | FnEffects::KWVararg;
 
     // Add an ASTDecl for the argument.  This will actually be set up during
     // body resolution (when the vardecls and other things are set up) because

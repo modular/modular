@@ -286,6 +286,27 @@ struct ParsedArgument {
   static ParseResult parseAndResolvePresentArgumentList(
       ParserBase &p, SmallVectorImpl<ParsedArgument> &args,
       bool isParameterList, bool omitNames = false);
+
+  /// Process parsed parameter arguments into input or result parameters by
+  /// determining the correct parameter types and conventions.
+  static void processParameterArgs(ExprEmitter &emitter, ASTDecl &declScope,
+                                   ArrayRef<ParsedArgument> args,
+                                   SmallVectorImpl<ParamDeclAttr> &params,
+                                   bool isResultParams, bool &paramVararg);
+
+  /// Emit the argument types, default values, and result type and determine
+  /// the argument conventions.
+  static ASTType emitFunctionArgumentsAndResults(
+      function_ref<ParseResult()> reportError, SharedState &shared,
+      ExprEmitter &typeEmitter, const ExprNode *resultTypeExpr,
+      FnEffects &effects, SmallVectorImpl<ParsedArgument> &args,
+      SmallVectorImpl<Type> &argTypes, SmallVectorImpl<TypedAttr> &defaults);
+
+  /// Given a fully resolved signature, compute the final types and KGEN input
+  /// conventions of the arguments.
+  static void computeArgumentConventions(SharedState &shared,
+                                         MutableArrayRef<ParsedArgument> args,
+                                         MutableArrayRef<Type> argTypes);
 };
 
 } // namespace M::KGEN::LIT
