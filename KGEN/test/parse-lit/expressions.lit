@@ -33,7 +33,7 @@ struct MemoryOnlyInt:
 
 # This type is used to test implicit conversion from MemoryOnlyInt
 struct MemoryOnlyF64:
-  var x: __mlir_type.f64
+  var x: FloatLiteral
   fn __init__(self&, value: MemoryOnlyInt):
     self.x = 1.0
 
@@ -501,7 +501,7 @@ fn patterns():
   # CHECK: [[TMP:%.*]] = pop.load %someInt
 
   (_) = 1.0
-  # CHECK: = kgen.param.constant: f64 = <1.0
+  # CHECK: = kgen.param.constant: {{.*}}FloatLiteral = <{{.*}}"1"
 
   # CHECK: %someF32 = lit.varlet.decl "someF32", var = true
   # CHECK: [[F32:%.*]] = pop.load %someF32
@@ -616,28 +616,28 @@ def tmp():
     a = 0B10101       # CHECK: 21
     a = 0o711         # CHECK: 457
     a = 0O711         # CHECK: 457
-    b = 1.1           # CHECK: 1.100000e+00
-    b = .1            # CHECK: 1.000000e-01
-    b = 1.            # CHECK: 1.000000e+00
-    b = 1e2           # CHECK: 1.000000e+02
-    b = 1.1e2         # CHECK: 1.100000e+02
-    b = .1e2          # CHECK: 1.000000e+01
-    b = 1.e2          # CHECK: 1.000000e+02
-    b = 1e+2          # CHECK: 1.000000e+02
-    b = 1.1e-2        # CHECK: 1.100000e-02
-    b = .1e+2         # CHECK: 1.000000e+01
-    b = 1.e-2         # CHECK: 1.000000e-02
-    b = 0.1           # CHECK: 1.000000e-01
-    b = 0.            # CHECK: 0.000000e+00
-    b = 0e2           # CHECK: 0.000000e+00
-    b = 0.1e2         # CHECK: 1.000000e+01
-    b = 0.e2          # CHECK: 0.000000e+00
-    b = 0e+2          # CHECK: 0.000000e+00
-    b = 0.1e-2        # CHECK: 1.000000e-03
-    b = 0.e-2         # CHECK: 0.000000e+00
-    b = 12.31e+11     # CHECK: 1.231000e+12
-    b = 1_2.3__1e+1_1 # CHECK: 1.231000e+12
-    b = 12.31E-3      # CHECK: 1.231000e-02
+    b = 1.1           # CHECK: "1.10000{{.*}}"
+    b = .1            # CHECK: "0.10000{{.*}}"
+    b = 1.            # CHECK: "1"
+    b = 1e2           # CHECK: "100"
+    b = 1.1e2         # CHECK: "110"
+    b = .1e2          # CHECK: "10"
+    b = 1.e2          # CHECK: "100"
+    b = 1e+2          # CHECK: "100"
+    b = 1.1e-2        # CHECK: "0.01099{{.*}}"
+    b = .1e+2         # CHECK: "10"
+    b = 1.e-2         # CHECK: "0.01"
+    b = 0.1           # CHECK: "0.100000{{.*}}"
+    b = 0.            # CHECK: "0"
+    b = 0e2           # CHECK: "0"
+    b = 0.1e2         # CHECK: "10"
+    b = 0.e2          # CHECK: "0"
+    b = 0e+2          # CHECK: "0"
+    b = 0.1e-2        # CHECK: "0.001"
+    b = 0.e-2         # CHECK: "0"
+    b = 12.31e+11     # CHECK: "1.231E+12"
+    b = 1_2.3__1e+1_1 # CHECK: "1.231E+12"
+    b = 12.31E-3      # CHECK: "0.01231"
     c = False         # CHECK: @Bool = <#lit.struct<{value: scalar<bool> = false}>>
     c = True          # CHECK: @Bool = <#lit.struct<{value: scalar<bool> = true}>>
 

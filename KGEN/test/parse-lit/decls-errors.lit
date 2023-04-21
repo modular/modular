@@ -35,7 +35,7 @@ fn bind_fat_to_thin_main():
 ##===----------------------------------------------------------------------===##
 
 def var_decl_without_type():
-  # expected-error @+1 {{'__mlir_type.f64' value cannot be converted to '$decls-errors::ReturnFromStruct'}}
+  # expected-error @+1 {{'$FloatLiteral::FloatLiteral' value cannot be converted to '$decls-errors::ReturnFromStruct'}}
   var y : ReturnFromStruct = 1.0
 
   # expected-error @+1 {{declaration must have either a type or an initializer}}
@@ -124,7 +124,7 @@ fn missing_ret_val() -> __mlir_type.index:
   return # expected-error {{'None' value cannot be converted to '__mlir_type.index' in return}}
 
 fn ret_type_mismatch() -> __mlir_type.index:
-  return 4.0 # expected-error {{'__mlir_type.f64' value cannot be converted to '__mlir_type.index' in return}}
+  return 4.0 # expected-error {{'$FloatLiteral::FloatLiteral' value cannot be converted to '__mlir_type.index' in return}}
 
 async fn testAsyncVoid(): pass
 async fn testAsyncInt() -> Int: return 42
@@ -140,7 +140,7 @@ struct ThingWithStaticMethod:
      pass
 
 fn testThingWithStaticMethod():
-  # expected-error @+1 {{invalid call to 'splat': argument #0 cannot be converted from '__mlir_type.f64' to '$Int::Int'}}
+  # expected-error @+1 {{invalid call to 'splat': argument #0 cannot be converted from '$FloatLiteral::FloatLiteral' to '$Int::Int'}}
   ThingWithStaticMethod.splat(4.0)
 
 
@@ -175,7 +175,7 @@ fn defaultArgumentUnknownDeclaration(a: Int = unknown): pass
 # expected-error @+1 {{use of unknown declaration 'a'}}
 fn defaultArgumentReferencesArgument(a: Int = 0, b: Int = a): pass
 
-# expected-error @+1 {{'__mlir_type.f64' value cannot be converted to '$Int::Int' in default argument}}
+# expected-error @+1 {{'$FloatLiteral::FloatLiteral' value cannot be converted to '$Int::Int' in default argument}}
 fn defaultArgumentBadType(a: Int = 1.0): pass
 
 # expected-error @+1 {{'**' marker must be at end of argument list}}
@@ -201,9 +201,9 @@ struct ParameterizedStruct[T: __mlir_type.`!kgen.mlirtype`]:
         pass
 
 fn badCalls(arg: Int):
-  # expected-error @+1 {{argument #1 cannot be converted from '__mlir_type.f64' to '$Int::Int'}}
+  # expected-error @+1 {{argument #1 cannot be converted from '$FloatLiteral::FloatLiteral' to '$Int::Int'}}
   exampleVariadic(1.0, 1.0)
-  # expected-error @+1 {{argument #3 cannot be converted from '__mlir_type.f64' to '$Int::Int'}}
+  # expected-error @+1 {{argument #3 cannot be converted from '$FloatLiteral::FloatLiteral' to '$Int::Int'}}
   exampleVariadic(1.0, 1, 2, 1.0)
 
   var x: Int

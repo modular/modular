@@ -214,6 +214,8 @@ public:
   ASTDecl *getBuiltinSliceType(llvm::SMLoc loc);
   /// Get the builtin ListLiteral type.
   ASTDecl *getBuiltinListLiteral(llvm::SMLoc loc);
+  /// Get the builtin FloatLiteral type.
+  ASTDecl *getBuiltinDoubleType(llvm::SMLoc loc);
 
 private:
   /// The internal state of an imported module.

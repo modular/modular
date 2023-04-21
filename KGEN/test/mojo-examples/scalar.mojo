@@ -47,8 +47,8 @@ fn fma_f32(x: F32, y: F32, z: F32) -> F32:
 
 # CHECK-LABEL: lit.func @"erf_scalar_taylor_f32
 fn erf_scalar_taylor_f32(x: F32) -> F32:
-    # CHECK: %[[CST:.*]] = kgen.param.constant: f64 = <-0.3761{{.*}}>
-    # CHECK: kgen.call {{.*}}__init__(__mlir_type.f64){{.*}}(%[[CST]])
+    # CHECK: %[[CST:.*]] = kgen.param.constant: {{.*}}FloatLiteral = <{{.*}}"-0.3761{{.*}}>
+    # CHECK: kgen.call {{.*}}__init__($FloatLiteral::FloatLiteral){{.*}}(%[[CST]])
     return x * fma_f32(x * x, -0.37612638903183752463, 1.1283791670955125739)
 
 
@@ -58,5 +58,5 @@ fn erf_scalar_taylor_f32(x: F32) -> F32:
 fn erf_taylor_vector[
     size: Int, type: __mlir_type.`!kgen.dtype`
 ](x: SIMD[type, size]) -> SIMD[type, size]:
-    # CHECK: = kgen.param.constant: f64 = <-0.37612638903183754>
+    # CHECK: = kgen.param.constant: {{.*}}FloatLiteral = <{{.*}}"-0.37612638903183754"}>>
     return x * (x * x).fma(-0.37612638903183752463, 1.1283791670955125739)

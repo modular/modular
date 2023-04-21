@@ -316,9 +316,19 @@ AnyValue FloatLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   APFloat value = Lexer::getFloatLiteralValue(spelling);
   auto attr = FloatAttr::get(FloatType::getF64(emitter.getContext()),
                              APFloat(value.convertToDouble()));
-  // FIXME: This should eventually use a float literal type.
-  // when we support conversions.
-  return emitter.emitResult(attr, this, dest);
+
+  // Convert this to an instance of FloatLiteral. FloatLiteral must be in scope
+  // since it is auto-imported.
+  ASTDecl *decl = emitter.shared.getBuiltinDoubleType(getLoc());
+  if (!decl) {
+    emitter.emitError(
+        getLoc(), "internal error: could not find builtin 'FloatLiteral' type");
+    return {};
+  }
+
+  return emitter.emitConstructorCall(decl->getSelfType(),
+                                     {{AnyValue(attr), this}}, this,
+                                     CallSyntax::kImplicitConvert, dest);
 }
 
 AnyValue BoolLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {

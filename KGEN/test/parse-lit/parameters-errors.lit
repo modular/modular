@@ -37,7 +37,7 @@ fn MultipleThingMetaparams(a: Thing[1,2][1]):
 fn OneMissingThingMetaParam(a: Thing[1]):  # expected-error {{'Thing' expects 2 input parameters but 1 was provided}}
   pass
 
-# expected-error @+1 {{'Thing' parameter #1 has '$Int::Int' type, but value has type '__mlir_type.f64'}}
+# expected-error @+1 {{'Thing' parameter #1 has '$Int::Int' type, but value has type '$FloatLiteral::FloatLiteral'}}
 fn WeirdMetaParams(a: Thing[1, 1.5]):
   pass
 
@@ -133,7 +133,7 @@ fn callVariadic():
   variadicIntParams[1]() # OK
   variadicIntParams[1, 2]() # OK
 
-  variadicIntParams[1.0]() # expected-error {{'__mlir_type.f64' value cannot be converted to '$Int::Int' in call parameter}}
+  variadicIntParams[1.0]() # expected-error {{'$FloatLiteral::FloatLiteral' value cannot be converted to '$Int::Int' in call parameter}}
 
 
 
@@ -198,7 +198,7 @@ fn useResultParams():
   alias x = hasResultParam[1 -> h]()
 
 fn incorrectParameterReturnType[()-> a: Int]():
-  # expected-error @+1 {{'__mlir_type.f64' value cannot be converted to '$Int::Int' in return parameter}}
+  # expected-error @+1 {{'$FloatLiteral::FloatLiteral' value cannot be converted to '$Int::Int' in return parameter}}
   param_return[4.0]
 
 ##===----------------------------------------------------------------------===##
@@ -228,7 +228,7 @@ struct BadAliasStruct:
 
 
 fn testConversionQoI():
-  # expected-error @+1 {{'__mlir_type.f64' value cannot be converted to '$Int::Int' in alias}}
+  # expected-error @+1 {{'$FloatLiteral::FloatLiteral' value cannot be converted to '$Int::Int' in alias}}
   alias intVal : Int = 1.2
 
 

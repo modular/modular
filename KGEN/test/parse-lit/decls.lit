@@ -101,8 +101,8 @@ fn throws_main():
 def let_decls():
   # CHECK: %x = lit.letreg.decl "x" = %idx123 : index
   let x = (123).__as_mlir_index()
-  # CHECK: %0 = kgen.param.constant: f64 = <1.000000e+00>
-  # CHECK: %y = lit.letreg.decl "y" = %0 : f64
+  # CHECK: %0 = kgen.param.constant: {{.*}}FloatLiteral = <{{.*}}"1"{{.*}}>
+  # CHECK: %y = lit.letreg.decl "y" = %0 : {{.*}}FloatLiteral
   let y = 1.0
 
   # CHECK: [[TMP:%.*]] = kgen.call @"$Int"::@Int::@"__init__{{.*}}(%x)
@@ -526,7 +526,7 @@ fn usePacks(x: F32, y: Int):
   var b: Tuple[Int, F32, Int]
   # CHECK: lit.varlet.decl "c", var = false : <@"$decls"::@Tuple<Ts: variadic<!kgen.mlirtype> = [!kgen.declref<@"$Int"::@Int>]>>
   let c = Tuple[Int](1)
-  # CHECK: lit.varlet.decl "d", var = false : <@"$decls"::@Tuple<Ts: variadic<!kgen.mlirtype> = [f64, index]>>
+  # CHECK: lit.varlet.decl "d", var = false : <@"$decls"::@Tuple<Ts: variadic<!kgen.mlirtype> = [{{.*}}FloatLiteral>, index]>>
   let d = Tuple(3.14, (6).__as_mlir_index())
   # CHECK: lit.varlet.decl "e", var = false : <@"$decls"::@Tuple<Ts: variadic<!kgen.mlirtype> = []>>
   let e = Tuple()
@@ -534,8 +534,8 @@ fn usePacks(x: F32, y: Int):
   # CHECK: %[[PACK1:.*]] = kgen.param.constant: !pop.pack<[index]> = <<1>>
   # CHECK: kgen.call @"$decls"::@"pack{{.*}}(%[[PACK1]])
   pack((1).__as_mlir_index())
-  # CHECK: %[[PACK2:.*]] = kgen.param.constant: !pop.pack<[index, f64, index]> = <<1, 3.14{{.*}}, 2>>
-  # CHECK: kgen.call @"$decls"::@"pack{{.*}} [index, f64, index]>(%[[PACK2]])
+  # CHECK: %[[PACK2:.*]] = kgen.param.constant: !pop.pack<[index, {{.*}}FloatLiteral>, index]> = <<1, {{.*}}3.14{{.*}}, 2>>
+  # CHECK: kgen.call @"$decls"::@"pack{{.*}} [index, {{.*}}FloatLiteral>, index]>(%[[PACK2]])
   pack((1).__as_mlir_index(), 3.14, (2).__as_mlir_index())
   # CHECK: %[[PACK3:.*]] = kgen.param.constant: !pop.pack<[]> = <<>>
   # CHECK: kgen.call @"$decls"::@"pack{{.*}} []>(%[[PACK3]])
