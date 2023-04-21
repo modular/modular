@@ -1110,6 +1110,8 @@ kgen.func @string_ops(%a: !kgen.string) ->  index {
   %0 = pop.string.address %a
   // CHECK: pop.string.size %arg0
   %1 = pop.string.size %a
+  // CHECK: pop.string.concat %arg0, %arg0
+  %2 = pop.string.concat %a, %a
   kgen.return %1: index
 }
 
