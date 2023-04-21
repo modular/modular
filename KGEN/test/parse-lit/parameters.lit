@@ -600,5 +600,5 @@ fn tail_types[T: AnyType, *U: AnyType](a: T, *b: *U):
 fn call_with_tail_types():
     # CHECK: call {{.*}}tail_types{{.*}}<:type {{.*}}@Int>, :variadic<!kgen.mlirtype> []>
     tail_types(1)
-    # CHECK: call {{.*}}tail_types{{.*}}<:type {{.*}}@Int>, :variadic<!kgen.mlirtype> [f64]>
+    # CHECK: call {{.*}}tail_types{{.*}}<:type {{.*}}@Int>, :variadic<!kgen.mlirtype> [{{.*}}FloatLiteral>]>
     tail_types(1, 1.2)

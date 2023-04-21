@@ -244,7 +244,7 @@ fn dict_expression(a: Int):
   _ = MyIntPair{a: a, **a}
   # expected-error @+1 {{no value for field 'b' specified}}
   _ = MyIntPair{a: 4}
-  # expected-error @+1 {{'__mlir_type.f64' value cannot be converted to '$Int::Int' in field initializer}}
+  # expected-error @+1 {{'$FloatLiteral::FloatLiteral' value cannot be converted to '$Int::Int' in field initializer}}
   _ = MyIntPair{a: 4.0, b: 4}
   _ = MyIntPair{a: 4, b: 4}
 
@@ -302,7 +302,7 @@ struct IncompatElementTypes:
   fn __setitem__(self, x: Int, y: F32): pass
 
 fn testSubscripts(a: WeirdArray, b: MultiSetItem, c: IncompatElementTypes):
-  # expected-error @+1 {{invalid call to '__getitem__': index cannot be converted from '__mlir_type.f64' to '$Int::Int'}}
+  # expected-error @+1 {{invalid call to '__getitem__': index cannot be converted from '$FloatLiteral::FloatLiteral' to '$Int::Int'}}
   _ = a[1.0]
 
   # expected-error @+1 {{invalid call to '__getitem__': callee expects 2 arguments, but 3 were specified}}
