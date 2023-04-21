@@ -13,6 +13,7 @@ add_modular_conversion_library(KGENToLLVM
   LowerKGENList.cpp
   LowerPOPToLLVM.cpp
   LowerPOPClosuresToLLVM.cpp
+  LowerKGENClosuresToLLVM.cpp
 
   DEPENDS
   MLIRKGENPasses

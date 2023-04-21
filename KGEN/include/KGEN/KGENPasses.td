@@ -620,3 +620,29 @@ def SROA : Pass<"sroa"> {
     opportunities as it eliminates problematic aliasing.
   }];
 }
+
+//===----------------------------------------------------------------------===//
+// LowerRuntimeClosures
+//===----------------------------------------------------------------------===//
+
+def LowerRuntimeClosures : Pass<"lower-runtime-closures", "mlir::ModuleOp"> {
+  let summary = "Lowers closure types into struct of two pointers";
+
+  let description = [{
+    In the runtime-closures pass, we lifted nested functions into top level
+     functions and replaced references to them with kgen closure operations.
+     In this pass, the closure operations are lowered to llvm dialect.
+
+    1) The op that represents a closure creation should lower to
+        (a) a top level function that knows how to unpack the state
+            and call the lifted function
+        (b) an allocation of memory and storage of captured state
+        (c) creation of a struct that contains a pointer to (a) and a pointer to (b)
+    2) The op that represents a closure inmvocation should be lowered to
+        (a) extraction of function pointer from struct
+        (b) extraction of data pointer from struct
+        (c) invoke function with (b) + dynamic arguments
+  }];
+
+  let dependentDialects = ["KGENDialect", "POP::POPDialect"];
+}
