@@ -52,7 +52,13 @@ public:
     kDictSubscript,  // thing{a: 1, x: 2}
     kChainedCmp,     // a < b <= c
     kFunctionType,   // async fn[](owned Int, &F32) capturing raises -> F64
-    kLValueConvert,  // __get_lvalue_as_address(x)/__get_address_as_lvalue(x)
+
+    // Address conversions
+    kGetLValueAsAddress, // __get_lvalue_as_address(x)
+    kGetAddressAsLValue, // __get_address_as_lvalue(x)
+    kTakeAddressAsOwned, // __take_pointee_as_owned_object(x)
+    kFirstAddressConvert = kGetLValueAsAddress,
+    kLastAddressConvert = kTakeAddressAsOwned,
 
     // Prefix and Postfix unary expressions.
     kNeg,     // -x

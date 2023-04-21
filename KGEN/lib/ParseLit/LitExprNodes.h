@@ -490,21 +490,24 @@ struct FunctionTypeNode final : public ExprNode {
   AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
 };
 
-/// __get_lvalue_as_address(someSLValue)  # returns pop.pointer.
-/// __get_address_as_lvalue(pop_pointer)  # returns an SLValue
-struct LValueConvertNode final : public ExprNode {
-  LValueConvertNode(bool isLValueToAddress, SMLoc baseLoc, ExprNode *subExpr,
-                    SMLoc rparenLoc)
-      : ExprNode(kLValueConvert), isLValueToAddress(isLValueToAddress),
-        baseLoc(baseLoc), subExpr(subExpr), rparenLoc(rparenLoc) {}
+/// __get_lvalue_as_address(someSLValue)        # returns pop.pointer
+/// __get_address_as_lvalue(pop_pointer)        # returns SLValue
+/// __take_pointee_as_owned_object(pop_pointer) # returns RValue
+struct AddressConvertNode final : public ExprNode {
+  AddressConvertNode(ExprNode::Kind kind, SMLoc baseLoc, ExprNode *subExpr,
+                     SMLoc rparenLoc)
+      : ExprNode(kind), baseLoc(baseLoc), subExpr(subExpr),
+        rparenLoc(rparenLoc) {
+    assert(classof(this) && "Kind is wrong");
+  }
 
-  bool isLValueToAddress;
   const SMLoc baseLoc;
   ExprNode *const subExpr;
   const SMLoc rparenLoc;
 
   static bool classof(const ExprNode *node) {
-    return node->kind == kLValueConvert;
+    return node->kind >= kFirstAddressConvert &&
+           node->kind <= kLastAddressConvert;
   }
   SMLoc getLoc() const override { return baseLoc; }
   LitSourceRange getRange() const override { return {baseLoc, rparenLoc}; }

@@ -2512,23 +2512,22 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   return ASTType(signature);
 }
 
-AnyValue LValueConvertNode::emitIR(ValueDest &dest,
-                                   ExprEmitter &emitter) const {
-  // The two cases have different codegen patterns.
-  if (isLValueToAddress) {
-    // __get_lvalue_as_address(someSLValue) returns a pop.pointer.
+AnyValue AddressConvertNode::emitIR(ValueDest &dest,
+                                    ExprEmitter &emitter) const {
+  // __get_lvalue_as_address(someSLValue) returns a pop.pointer.
+  if (kind == kGetLValueAsAddress) {
     LValue result = emitter.emitExprLValue(subExpr, EC_Unknown);
     if (result && !result.getIfSLValue())
       emitter.emitError(getLoc(),
                         "cannot use a dynamic lvalue in this operator")
           << getRange();
 
-    // Return the SLValue as an SRValue since the pointer itself is the result.
+    // Return the SLValue as an SRValue since the pointer itself is the
+    // result.
     return emitter.emitResult(SRValue(result.getIfSLValue()), this, dest);
   }
 
-  // __get_address_as_lvalue(pop_pointer)  # returns an SLValue
-  auto exprVal = emitter.emitExprSRValue(subExpr, EC_Unknown);
+  SRValue exprVal = emitter.emitExprSRValue(subExpr, EC_Unknown);
   if (!exprVal)
     return {};
   if (!isa<POP::PointerType>(exprVal.getType().mlirType)) {
@@ -2537,5 +2536,19 @@ AnyValue LValueConvertNode::emitIR(ValueDest &dest,
         << exprVal.getType() << getRange();
     return {};
   }
-  return emitter.emitResult(SLValue(exprVal), this, dest);
+
+  // __get_address_as_lvalue(pop_pointer)  # returns an SLValue
+  if (kind == kGetAddressAsLValue)
+    return emitter.emitResult(SLValue(exprVal), this, dest);
+
+  /// __take_pointee_as_owned_object(pop_pointer) # returns RValue
+  assert(kind == ExprNode::kTakeAddressAsOwned);
+  if (!emitter.builder)
+    return emitter.emitErrorForDynamicValueInParameter(this);
+
+  // Make sure to take ownership of the address and create a new lifetime
+  // tracked value.
+  exprVal = emitter.builder->create<OwnershipEndLifetimeOp>(
+      getLocation(emitter), exprVal, /*isRegister=*/false);
+  return emitter.emitResult(MRValue(exprVal), this, dest);
 }
