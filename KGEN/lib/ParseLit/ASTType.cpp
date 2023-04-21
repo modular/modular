@@ -217,6 +217,104 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType astType) {
     }
   } else if (isa<LIT::NoneType>(type)) {
     os << "None";
+
+  } else if (auto sig = dyn_cast<SignatureType>(type)) {
+    if (sig.isAsync())
+      os << "async ";
+    os << "fn";
+    if (!sig.getInputParamTypes().empty() ||
+        !sig.getResultParamTypes().empty()) {
+      os << '[';
+      if (!sig.getInputParamTypes().empty()) {
+        auto printFn = [&](auto p) {
+          auto [i, type] = p;
+          if (bitEnumContainsAny(sig.getFnEffects(), FnEffects::ParamVararg) &&
+              i == sig.getInputParamTypes().size() - 1) {
+            os << '*';
+            os << ASTType(cast<VariadicType>(type).getElementType());
+          } else {
+            os << ASTType(type);
+          }
+        };
+        llvm::interleaveComma(llvm::enumerate(sig.getInputParamTypes()), os,
+                              printFn);
+      } else {
+        os << "()";
+      }
+      if (!sig.getResultParamTypes().empty()) {
+        os << " -> ";
+        llvm::interleaveComma(sig.getResultParamTypes(), os,
+                              [&](Type type) { os << ASTType(type); });
+      }
+      os << ']';
+    }
+    os << '(';
+    Type inMemResult;
+    for (auto [i, type, convention] : llvm::enumerate(
+             sig.getValueInputs(), sig.getValueInputConventions())) {
+      if (i > (inMemResult ? 1 : 0))
+        os << ", ";
+      if (convention == ValueInputConvention::ByRefResult) {
+        // Print this later.
+        inMemResult = type;
+        continue;
+      }
+      bool needSpace = false;
+      if (convention == ValueInputConvention::OwnedInMem ||
+          convention == ValueInputConvention::OwnedInReg) {
+        os << "owned";
+        needSpace = true;
+      }
+      if (sig.isVararg(i) || sig.isPackVararg(i)) {
+        os << '*';
+        needSpace = sig.isPackVararg(i);
+      }
+      if (convention == ValueInputConvention::ByRef)
+        os << '&';
+      if (needSpace)
+        os << ' ';
+      if (sig.isPackVararg(i)) {
+        os << '*';
+        // This should always be a parameter reference. If not, print the value
+        // directly.
+        TypedAttr types = cast<POP::PackType>(type).getVariadic();
+        if (auto ref = dyn_cast<ParamIndexRefAttr>(types))
+          os << '$' << ref.getIndex();
+        else
+          os << cast<POP::PackType>(type).getVariadic();
+        continue;
+      }
+      ASTType actualType = type;
+      if (sig.isVararg(i))
+        actualType = cast<VariadicType>(actualType.mlirType).getElementType();
+      if (convention != ValueInputConvention::OwnedInReg &&
+          convention != ValueInputConvention::BorrowedInReg) {
+        actualType =
+            cast<POP::PointerType>(actualType.mlirType).getElementType();
+      }
+      os << actualType;
+    }
+    os << ')';
+    for (auto [enabled, effect] :
+         {std::make_pair(sig.isThrows(), "raises"),
+          std::make_pair(sig.isCapturing(), "capturing")})
+      if (enabled)
+        os << ' ' << effect;
+    os << " -> ";
+    if (inMemResult)
+      os << ASTType(cast<POP::PointerType>(inMemResult).getElementType());
+    else if (isa<NoneType>(sig.getValueResults().front()))
+      os << "None";
+    else
+      os << ASTType(sig.getValueResults().front());
+
+  } else if (auto paramRef = dyn_cast<ParamRefType>(type)) {
+    if (auto indexRef = dyn_cast<ParamIndexRefAttr>(paramRef.getParam()))
+      os << '$' << indexRef.getIndex();
+    else
+      os << getParamAsString(paramRef.getParam());
+  } else if (isa<MLIRTypeType>(type)) {
+    os << "AnyType";
   } else {
     os << "__mlir_type." << type;
   }

@@ -26,7 +26,7 @@ fn bind_fat_to_thin_main():
     fn g(y: __mlir_type.index) -> __mlir_type.index:
         return x
 
-    # expected-error @below {{'__mlir_type.!kgen.signature<(index borrow) capturing -> index>' value cannot be converted to '__mlir_type.!kgen.signature<(index borrow) -> index>' in call parameter}}
+    # expected-error @below {{'fn(__mlir_type.index) capturing -> __mlir_type.index' value cannot be converted to 'fn(__mlir_type.index) -> __mlir_type.index' in call parameter}}
     alias Bound = bind_fat_to_thin_target[g]
     Bound((3).__as_mlir_index())
 
