@@ -1858,15 +1858,16 @@ struct ConvNHWCInnerLoopFilterPacked[
 
             var segment_idx = 0
             while segment_idx < num_segments:
-                var start = segment_idx * contiguous_len
-                var chunk = min(contiguous_len, self.tile_n_k[1] - start)
+                let pos = segment_idx * contiguous_len
+                let chunk = contiguous_len if segment_idx < (
+                    self.tile_n_k[1] // contiguous_len
+                ) else self.tile_n_k[1] - pos
                 var j = 0
                 while j < chunk:
-                    var idx_k = segment_idx * contiguous_len + j
                     self._accumulate(
                         c_local,
                         segment_idx,
-                        Index(idx_n, idx_k),
+                        Index(idx_n, pos + j),
                         contiguous_len,
                     )
                     j += 1
