@@ -16,6 +16,7 @@ add_modular_conversion_library(KGENTransforms
   SimplifyCF.cpp
   SROA.cpp
   VerifyParameters.cpp
+  RuntimeClosures.cpp
 
   DEPENDS
   MLIRKGENPasses
