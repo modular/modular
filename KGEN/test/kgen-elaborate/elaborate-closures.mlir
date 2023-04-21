@@ -119,3 +119,46 @@ kgen.generator @main_make_closure_with_symbol_param() {
   %1 = kgen.param.constant: <>() capturing -> index = <Bound2>
   kgen.return
 }
+
+// COM: Ensure that regions lifted by OutlineClosures pass are not erased
+// CHECK: kgen.func @"foo_k,N=5,M=3"() capturing -> !pop.scalar<index> {
+kgen.generator @foo_k<N, M>() capturing -> !pop.scalar<index> {
+  %0 = pop.compiler.global_load "foo_context_var_0" : !pop.struct<scalar<index>>
+  %1 = pop.struct.extract %0[0] : !pop.struct<scalar<index>>
+  %2 = kgen.param.constant = <M>
+  %3 = kgen.param.constant = <N>
+  %4 = pop.cast_from_builtin %2 : index to !pop.scalar<index>
+  %5 = pop.cast_from_builtin %3 : index to !pop.scalar<index>
+  %6 = pop.add %4, %5 : !pop.scalar<index>
+  %7 = pop.add %1, %6 : !pop.scalar<index>
+  kgen.return %7 : !pop.scalar<index>
+}
+// CHECK: kgen.func @"foo,N=5"(%arg0: !pop.scalar<index>) {
+kgen.generator @foo<N>(%arg0: !pop.scalar<index>) {
+  %0 = pop.struct.create(%arg0) : !pop.struct<scalar<index>>
+  pop.compiler.global_store "foo_context_var_0", %0 : !pop.struct<scalar<index>>
+  kgen.param.declare k: <index>() capturing -> !pop.scalar<index> = <@foo_k<N, #kgen.unbound>>
+  // CHECK: %1 = kgen.stage_closure = () -> !pop.scalar<index> {
+  // CHECK: %3 = pop.compiler.global_load "foo_context_var_0" : !pop.struct<scalar<index>>
+  // CHECK: %4 = pop.struct.extract %3[0] : !pop.struct<scalar<index>>
+  // CHECK: %5 = kgen.param.constant = <3>
+  // CHECK: %6 = kgen.param.constant = <5>
+  // CHECK: %7 = pop.cast_from_builtin %5 : index to !pop.scalar<index>
+  // CHECK: %8 = pop.cast_from_builtin %6 : index to !pop.scalar<index>
+  // CHECK: %9 = pop.add %7, %8 : !pop.scalar<index>
+  // CHECK: %10 = pop.add %4, %9 : !pop.scalar<index>
+  // CHECK: kgen.return %10 : !pop.scalar<index>
+  // CHECK: } {name = "foo_k,N=5,M=3"}
+  %1 = kgen.param.constant: <>() capturing -> !pop.scalar<index> = <bind_signature(:<index>() capturing -> !pop.scalar<index> k, 3)>
+  %2 = kgen.call_signature %1() : () capturing -> !pop.scalar<index>
+  kgen.return
+}
+kgen.generator @main() {
+  %idx4 = index.constant 4
+  %0 = pop.cast_from_builtin %idx4 : index to !pop.scalar<index>
+  kgen.param.declare Bound: (!pop.scalar<index>) -> () = <@foo<5>>
+  // CHECK: kgen.call @"foo,N=5"(%0) : (!pop.scalar<index>) -> ()
+  kgen.call_param[(!pop.scalar<index>) -> (): Bound](%0)
+  kgen.return
+}
+

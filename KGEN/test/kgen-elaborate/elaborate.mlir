@@ -2036,7 +2036,7 @@ kgen.generator @callee<a: !pop.struct<index>>(
 
 // CHECK-LABEL: kgen.func @unbox_in_result_sig
 kgen.generator @unbox_in_result_sig() {
-  // CHECK-NEXT: constant: (!pop.array<2, index>) -> () = <@callee<:struct<index> { 2 }>>
+  // CHECK-NEXT: %0 = kgen.create_closure @callee() : (!kgen.signature<(!pop.array<2, index>) -> ()>) -> !kgen.signature<(!pop.array<2, index>) -> ()>
   kgen.param.declare a = <2>
   kgen.param.declare fn: <!pop.struct<index>>(
     !pop.array< apply(:(!pop.struct<index>) -> index @unbox, *(0,0)), index>
