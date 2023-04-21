@@ -635,7 +635,7 @@ struct AsyncTaskGroup:
     fn add_task(self&, coroutine: Coroutine[NoneType]):
         let ctx_ptr = coroutine.get_ctx[AsyncTaskGroupContext]()
         let self_ptr = Pointer[AsyncTaskGroup].address_of(self)
-        __get_address_as_lvalue(ctx_ptr.address) = AsyncTaskGroupContext(
+        __get_address_as_uninit_lvalue(ctx_ptr.address) = AsyncTaskGroupContext(
             _get_complete_callback(), self_ptr
         )
         let task_id = self.coroutines.__len__()
@@ -664,7 +664,7 @@ struct AsyncTaskGroupPtr:
     @always_inline
     fn __init__(self&, num_work_items: Int, out_chain: OutputChainPtr):
         self.ptr = Pointer[AsyncTaskGroup].alloc(1)
-        __get_address_as_lvalue(self.ptr.address) = AsyncTaskGroup(
+        __get_address_as_uninit_lvalue(self.ptr.address) = AsyncTaskGroup(
             num_work_items, out_chain
         )
 
