@@ -7,6 +7,7 @@
 # RUN: kgen-translate -import-mojo -verify-diagnostics %s -I %S/../mojo-examples/
 
 from prolog import DType, F32, object
+from Coroutine import Coroutine
 
 ##===----------------------------------------------------------------------===##
 # Conversions
@@ -245,6 +246,18 @@ def bad_assignment0(a: Int, b: Int):
 def bad_assignment1(a: Int, b: Int):
    # expected-error @+1 {{expected ')' in parenthesized expression}}
    a = (b += b)
+
+async fn async_function() -> Int:
+    return 0
+
+fn call_async_fn_in_param():
+    # expected-error @below {{cannot call async function in parameter expression}}
+    alias result = async_function()
+    alias awaitable: Coroutine[Int]
+    # expected-error @below {{cannot await inside a parameter expression}}
+    alias await_it = await awaitable
+    # expected-error @below {{cannot await inside a non-async function}}
+    await Coroutine[Int](async_function())
 
 ##===----------------------------------------------------------------------===##
 # Computed Properties and Subscripts

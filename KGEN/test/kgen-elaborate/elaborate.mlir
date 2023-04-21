@@ -2199,3 +2199,18 @@ kgen.generator @apply_nested_if() {
   %0 = kgen.param.constant = <result>
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: kgen.func @async_fn() async
+kgen.generator @async_fn() async {
+  kgen.return
+}
+
+kgen.export @nonparametric_async_call
+// CHECK-LABEL: kgen.func @nonparametric_async_call
+kgen.generator @nonparametric_async_call() {
+  // CHECK-NEXT: call[<>() async -> (): @async_fn]
+  lit.async.call[<>() async -> (): @async_fn]()
+  kgen.return
+}

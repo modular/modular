@@ -2153,6 +2153,20 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       return emitter.emitResult(
           TypeConstantAttr::get(POP::PackType::get(pValue.get())), this, dest);
     }
+  } else if (kind == kAwait) {
+    // Diagnose errors with 'await'.
+    if (!emitter.builder) {
+      emitter.emitError(getLoc(), "cannot await inside a parameter expression");
+      return {};
+    }
+    Operation *func = emitter.builder->getInsertionBlock()->getParentOp();
+    while (!isa<FuncOp>(func))
+      func = func->getParentOp();
+    if (!cast<FuncOp>(func).getSignature().isAsync()) {
+      emitter.emitError(getLoc(), "cannot await inside a non-async function")
+          << getRange();
+      return {};
+    }
   }
 
   // If this operator maps onto a special function, attempt to lower it.
