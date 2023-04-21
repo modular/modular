@@ -9,8 +9,8 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "mlir/Support/IndentedOstream.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/JSON.h"
 #include "llvm/Support/Regex.h"
-#include "llvm/Support/SaveAndRestore.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -93,24 +93,24 @@ DocString::DocString(StringRef rawDocString) {
 }
 
 //===----------------------------------------------------------------------===//
-// Markdown Generation
+// JSON Generation
 //===----------------------------------------------------------------------===//
 
 namespace {
-class MarkdownGenerator {
+class JSONGenerator {
 public:
-  MarkdownGenerator(raw_ostream &os) : os(os) {}
+  JSONGenerator(raw_ostream &os) : os(os, /*IndentSize=*/2) {}
 
   void generate(ASTDecl &decl) {
     TypeSwitch<ASTDecl &>(decl).Case<FileModuleOp, FuncOp, StructDeclOp>(
-        [&](auto op) { generateLitMarkdownDocFor(decl, op); });
+        [&](auto op) { generateJSONFor(decl, op); });
   }
 
 private:
-  //===----------------------------------------------------------------------===//
+  //===--------------------------------------------------------------------===//
   // Utils
 
-  void generateLitMarkdownForChildren(ASTDecl &decl) {
+  void generateJSONForChildren(ASTDecl &decl) {
     SmallVector<std::pair<StringAttr, TinyPtrVector<ASTDecl *>>> children(
         decl.getDeclsInScope().begin(), decl.getDeclsInScope().end());
     llvm::sort(children, [](auto &lhs, auto &rhs) {
@@ -125,24 +125,25 @@ private:
       });
     };
 
-    llvm::SaveAndRestore<size_t> saveDepth(depth, depth + 1);
-    for (auto &child : children) {
-      if (shouldHideName(child.first))
-        continue;
-      auto filteredChildren = filterChildren(child.second);
-      if (filteredChildren.empty())
-        continue;
+    os.attributeArray("children", [&] {
+      for (auto &child : children) {
+        if (shouldHideName(child.first))
+          continue;
+        auto filteredChildren = filterChildren(child.second);
+        if (filteredChildren.empty())
+          continue;
 
-      // If the children are functions, generate all of the overloads under a
-      // single header.
-      if (isa<FuncOp>(**filteredChildren.begin())) {
-        generateLitMarkdownDocForFunctions(child.first, filteredChildren);
-        continue;
+        // If the children are functions, generate all of the overloads under a
+        // single object.
+        if (isa<FuncOp>(**filteredChildren.begin())) {
+          generateJSONForFunctions(child.first, filteredChildren);
+          continue;
+        }
+
+        for (auto &childDecl : filteredChildren)
+          generate(*childDecl);
       }
-
-      for (auto &childDecl : filteredChildren)
-        generate(*childDecl);
-    }
+    });
   }
 
   /// Extract a DocString from a given decl, or None if there is no doc
@@ -154,7 +155,7 @@ private:
     return DocString(docStr);
   }
 
-  /// Return if the given name should be hidden from the markdown output.
+  /// Return if the given name should be hidden from the output.
   bool shouldHideName(StringRef name) {
     // Non-underscore names are never hidden.
     if (!name.startswith("_"))
@@ -165,18 +166,7 @@ private:
     return !(name.startswith("__") && name.endswith("__"));
   }
 
-  void generateMarkdownHeader(function_ref<void()> nameFn) {
-    for (size_t i = 0; i < depth; ++i)
-      os.write('#');
-    os << " ";
-    nameFn();
-    os << "\n\n";
-  }
-  void generateMarkdownHeader(const Twine &name) {
-    generateMarkdownHeader([&] { os << name; });
-  }
-
-  /// Generate a list section from the given form:
+  /// Generate an array section from the given form:
   ///
   /// Header:
   ///   Element1: ...
@@ -184,97 +174,56 @@ private:
   ///     ...
   ///   ElementN: ...
   ///
-  void
-  generateMarkdownListSection(StringRef header, ArrayRef<StringRef> lines,
-                              size_t &line, size_t lineE,
-                              function_ref<void(StringRef)> processEntryName) {
-    os << "**" << header << ":**\n\n";
-    for (++line; line < lineE && !lines[line].empty();) {
-      // Extract the argument name and description.
-      auto [argName, argDesc] = lines[line].split(':');
-      argName = argName.trim();
-      argDesc = argDesc.trim();
+  template <typename DetailMapT>
+  void generateArraySection(StringRef header, ArrayRef<StringRef> lines,
+                            size_t &line, size_t lineE, DetailMapT &&entryMap) {
+    std::string fullArgDesc;
+    llvm::raw_string_ostream fullArgDescOS(fullArgDesc);
+    os.attributeArray(header, [&] {
+      for (++line; line < lineE && !lines[line].empty();) {
+        // Extract the argument name and description.
+        auto [argName, argDesc] = lines[line].split(':');
+        argName = argName.trim();
+        argDesc = argDesc.trim();
 
-      os << "- ";
-      processEntryName(argName);
-      os << ": " << argDesc;
+        fullArgDesc.clear();
+        fullArgDescOS << argDesc;
 
-      // Merge in additional description lines that have a larger
-      // indentation.
-      size_t indent = getIndentationLevel(lines[line]);
-      while (++line < lineE && getIndentationLevel(lines[line]) > indent)
-        os << " " << lines[line].trim();
-      os << "\n";
-    }
-    os << "\n\n";
+        // Merge in additional description lines that have a larger indentation.
+        size_t indent = getIndentationLevel(lines[line]);
+        while (++line < lineE && getIndentationLevel(lines[line]) > indent)
+          fullArgDescOS << " " << lines[line].trim();
+
+        // If it's a known entry, process it, otherwise skip it.
+        if (auto it = entryMap.find(argName); it != entryMap.end()) {
+          os.object([&] {
+            os.attribute("signature", it->second);
+            os.attribute("description", fullArgDesc);
+          });
+        }
+      }
+    });
   }
-  void generateMarkdownListSection(StringRef header, ArrayRef<StringRef> lines,
-                                   size_t &line, size_t lineE) {
-    generateMarkdownListSection(header, lines, line, lineE,
-                                [&](StringRef entryName) { os << entryName; });
-  }
 
-  /// Generate a paragraph section from the given form:
+  /// Generate a string attribute from the given paragraph form:
   ///
   /// Header:
   ///   Element1...
-  ///   Element2...
-  ///     ...
-  ///   ElementN...
-  ///
-  void generateParagraphMarkdownSection(const Twine &header,
-                                        ArrayRef<StringRef> lines, size_t &line,
-                                        size_t lineE) {
-    os << "**" << header << "**:\n\n";
-    for (++line; line < lineE && !lines[line].empty();) {
-      os << lines[line].trim();
-
-      // Merge in additional description lines that have a larger
-      // indentation.
-      size_t indent = getIndentationLevel(lines[line]);
-      while (++line < lineE && getIndentationLevel(lines[line]) > indent)
-        os << " " << lines[line].trim();
-      os << "\n";
-    }
-    os << "\n\n";
-  }
-  /// Generate a list section from the given form:
-  ///
-  /// Header:
-  ///   Element1...
-  void generateSingleEntryMarkdownListSection(StringRef header,
-                                              ArrayRef<StringRef> lines,
-                                              size_t &line, size_t lineE) {
-    os << "**" << header << ":**\n\n";
-
-    // Emit the description.
-    os << lines[++line].trim();
+  void generateParagraphSection(StringRef header, ArrayRef<StringRef> lines,
+                                size_t &line, size_t lineE) {
+    std::string paragraph;
+    llvm::raw_string_ostream paragraphOS(paragraph);
+    paragraphOS << lines[++line].trim();
 
     // Merge in additional description lines that have equal or larger
     // indentation.
     size_t indent = getIndentationLevel(lines[line]);
     while (++line < lineE && getIndentationLevel(lines[line]) >= indent)
-      os << " " << lines[line].trim();
-    os << "\n\n\n";
+      paragraphOS << " " << lines[line].trim();
+    os.attribute(header, paragraphOS.str());
   }
 
-  //===----------------------------------------------------------------------===//
-  // Parameters
-
-  /// Generate a markdown table for a parameter section of a doc-string, using
-  /// the provided mapping for types and verification of parameters.
-  void generateParameterTable(const llvm::StringMap<std::string> &paramToDetail,
-                              ArrayRef<StringRef> lines, size_t &line,
-                              size_t lineE) {
-    auto processParam = [&](StringRef paramName) {
-      auto it = paramToDetail.find(paramName);
-      if (it != paramToDetail.end())
-        os << "`` " << it->second << " ``";
-    };
-    generateMarkdownListSection("Parameters", lines, line, lineE, processParam);
-  }
-
-  //===----------------------------------------------------------------------===//
+  //===--------------------------------------------------------------------===//
   // Types
 
   /// Generate a documentation string for the given type, with an optional
@@ -330,28 +279,30 @@ private:
     return os.str();
   }
 
-  //===----------------------------------------------------------------------===//
-  // Function Markdown Generation
+  //===--------------------------------------------------------------------===//
+  // Function Generation
 
-  /// Generate markdown documentation for the given function.
-  void generateLitMarkdownDocFor(ASTDecl &decl, FuncOp funcOp) {
+  /// Generate documentation for the given function.
+  void generateJSONFor(ASTDecl &decl, FuncOp funcOp) {
     // Strip off the mangled suffix from the base function name.
     StringRef name =
         funcOp.getName().take_until([](char c) { return c == '('; });
-    return generateLitMarkdownDocForFunctions(name, ArrayRef<ASTDecl *>(&decl));
+    return generateJSONForFunctions(name, ArrayRef<ASTDecl *>(&decl));
   }
   template <typename DeclRangeT>
-  void generateLitMarkdownDocForFunctions(StringRef name,
-                                          const DeclRangeT &decls) {
-    generateMarkdownHeader(name);
-    for (auto *decl : decls)
-      generateMarkdownForOverload(*decl, cast<FuncOp>(*decl), name);
+  void generateJSONForFunctions(StringRef name, const DeclRangeT &decls) {
+    os.object([&] {
+      os.attribute("kind", "function");
+      os.attribute("name", name);
+      os.attributeArray("overloads", [&] {
+        for (auto *decl : decls)
+          generateJSONForOverload(*decl, cast<FuncOp>(*decl), name);
+      });
+    });
   }
 
-  /// Generate a markdown sub-section for the overload described by the given
-  /// function.
-  void generateMarkdownForOverload(ASTDecl &decl, FuncOp funcOp,
-                                   StringRef name) {
+  /// Generate a sub-section for the overload described by the given function.
+  void generateJSONForOverload(ASTDecl &decl, FuncOp funcOp, StringRef name) {
     SignatureType signature = funcOp.getSignature();
 
     auto argTypes = funcOp.getArgumentTypes();
@@ -403,34 +354,36 @@ private:
           generateTypeString(resultType, selfType, resultConvention);
     }
 
-    generateFunctionSignature(name, argTypeNames, resultTypeName);
+    os.object([&] {
+      os.attribute("signature", generateFunctionSignature(name, argTypeNames,
+                                                          resultTypeName));
 
-    if (std::optional<DocString> docStr = getDocString(decl)) {
-      os << docStr->getSummary() << "\n\n";
-      processFunctionDocDescription(docStr->getDescription(), paramToDetail,
-                                    argNameToDetail, resultTypeName);
-      os << "\n";
-    }
-
-    // Recursively generate documentation for the module's children.
-    generateLitMarkdownForChildren(decl);
+      // Emit the doc string if present.
+      if (std::optional<DocString> docStr = getDocString(decl)) {
+        os.attribute("summary", docStr->getSummary());
+        processFunctionDocDescription(docStr->getDescription(), paramToDetail,
+                                      argNameToDetail, resultTypeName);
+      }
+    });
   }
 
-  /// Generate markdown for the signature of a function, given its components.
-  void
+  /// Generate a string for the signature of a function, given its components.
+  std::string
   generateFunctionSignature(StringRef name, ArrayRef<std::string> argTypeNames,
                             const std::optional<std::string> &resultTypeName) {
-    // Strip off the mangled suffix from the base function name.
-    os << "> `` " << name.split('(').first;
+    std::string signature;
+    llvm::raw_string_ostream signatureOS(signature);
 
-    os << "(";
-    interleaveComma(argTypeNames, os);
-    os << ")";
+    // Strip off the mangled suffix from the base function name.
+    signatureOS << name.split('(').first;
+
+    signatureOS << "(";
+    interleaveComma(argTypeNames, signatureOS);
+    signatureOS << ")";
 
     if (resultTypeName)
-      os << " -> " << *resultTypeName;
-
-    os << " ``\n\n";
+      signatureOS << " -> " << *resultTypeName;
+    return signatureOS.str();
   }
 
   void processFunctionDocDescription(
@@ -439,103 +392,95 @@ private:
       const llvm::StringMap<StringRef> &argNameToDetail,
       const std::optional<std::string> &returnType) {
     // Process the lines of the description, looking for markers.
+    SmallVector<StringRef> pureDescriptionLines;
     for (size_t line = 0, lineE = description.size(); line < lineE; ++line) {
       if (description[line] == "Args:") {
-        auto processArg = [&](StringRef argName) {
-          auto it = argNameToDetail.find(argName);
-          if (it != argNameToDetail.end())
-            os << "`` " << it->second << " ``";
-        };
-        generateMarkdownListSection("Args", description, line, lineE,
-                                    processArg);
-        continue;
+        generateArraySection("args", description, line, lineE, argNameToDetail);
+      } else if (description[line] == "Parameters:") {
+        generateArraySection("parameters", description, line, lineE,
+                             paramToDetail);
+      } else if (description[line] == "Returns:") {
+        if (returnType)
+          generateParagraphSection("returns", description, line, lineE);
+      } else if (description[line] == "Constraints:") {
+        generateParagraphSection("constraints", description, line, lineE);
+      } else {
+        pureDescriptionLines.push_back(description[line]);
       }
-      if (description[line] == "Parameters:") {
-        generateParameterTable(paramToDetail, description, line, lineE);
-        continue;
-      }
-      if (description[line] == "Returns:") {
-        if (returnType) {
-          generateSingleEntryMarkdownListSection("Returns", description, line,
-                                                 lineE);
-        }
-        continue;
-      }
-      if (description[line] == "Constraints:") {
-        generateParagraphMarkdownSection("Constraints", description, line,
-                                         lineE);
-        continue;
-      }
-
-      os << description[line] << "\n";
     }
+    os.attribute("description", llvm::join(pureDescriptionLines, "\n"));
   }
 
-  //===----------------------------------------------------------------------===//
-  // Struct Markdown Generation
+  //===--------------------------------------------------------------------===//
+  // Struct Generation
 
-  void generateLitMarkdownDocFor(ASTDecl &decl, StructDeclOp structOp) {
-    generateMarkdownHeader(structOp.getName());
+  void generateJSONFor(ASTDecl &decl, StructDeclOp structOp) {
+    os.object([&] {
+      os.attribute("kind", "struct");
+      os.attribute("name", structOp.getName());
 
-    if (std::optional<DocString> docStr = getDocString(decl)) {
-      os << docStr->getSummary() << "\n\n";
+      // Emit the doc string if present.
+      if (std::optional<DocString> docStr = getDocString(decl)) {
+        os.attribute("summary", docStr->getSummary());
 
-      // Grab the types of the parameters to the struct.
-      llvm::StringMap<std::string> paramToDetail;
-      for (auto [index, value] : llvm::enumerate(structOp.getInputParams())) {
-        paramToDetail[value.getName()] =
-            generateTypeString(value.getType(), /*selfType=*/std::nullopt,
-                               /*convention=*/std::nullopt, value.getName());
+        // Grab the types of the parameters to the struct.
+        llvm::StringMap<std::string> paramToDetail;
+        for (auto [index, value] : llvm::enumerate(structOp.getInputParams())) {
+          paramToDetail[value.getName()] =
+              generateTypeString(value.getType(), /*selfType=*/std::nullopt,
+                                 /*convention=*/std::nullopt, value.getName());
+        }
+        processStructDocDescription(docStr->getDescription(), paramToDetail);
       }
 
-      processStructDocDescription(docStr->getDescription(), paramToDetail);
-    }
-
-    // Recursively generate documentation for the module's children.
-    generateLitMarkdownForChildren(decl);
+      // Recursively generate documentation for the module's children.
+      generateJSONForChildren(decl);
+    });
   }
 
   void processStructDocDescription(
       ArrayRef<StringRef> description,
       const llvm::StringMap<std::string> &paramToDetail) {
     // Process the lines of the description, looking for markers.
+    SmallVector<StringRef> pureDescriptionLines;
     for (size_t line = 0, lineE = description.size(); line < lineE; ++line) {
       if (description[line] == "Parameters:") {
-        generateParameterTable(paramToDetail, description, line, lineE);
+        generateArraySection("parameters", description, line, lineE,
+                             paramToDetail);
         continue;
       }
-
-      os << description[line] << "\n";
+      pureDescriptionLines.push_back(description[line]);
     }
+    os.attribute("description", llvm::join(pureDescriptionLines, "\n"));
   }
 
-  //===----------------------------------------------------------------------===//
-  // Module Markdown Generation
+  //===--------------------------------------------------------------------===//
+  // Module Generation
 
-  void generateLitMarkdownDocFor(ASTDecl &decl, FileModuleOp moduleOp) {
-    StringRef name = moduleOp.getName();
-    name.consume_front("$");
-    generateMarkdownHeader("Module: " + name);
+  void generateJSONFor(ASTDecl &decl, FileModuleOp moduleOp) {
+    os.object([&] {
+      os.attribute("kind", "module");
 
-    // If the module has a doc string, emit it.
-    if (std::optional<DocString> docStr = getDocString(decl)) {
-      os << docStr->getSummary() << "\n\n";
-      for (StringRef descLine : docStr->getDescription())
-        os << descLine << "\n";
-    }
+      StringRef name = moduleOp.getName();
+      name.consume_front("$");
+      os.attribute("name", name);
 
-    // Recursively generate documentation for the module's children.
-    generateLitMarkdownForChildren(decl);
+      // Emit the doc string if present.
+      if (std::optional<DocString> docStr = getDocString(decl)) {
+        os.attribute("summary", docStr->getSummary());
+        os.attribute("description", llvm::join(docStr->getDescription(), "\n"));
+      }
+
+      // Recursively generate documentation for the module's children.
+      generateJSONForChildren(decl);
+    });
   }
 
-  //===----------------------------------------------------------------------===//
+  //===--------------------------------------------------------------------===//
   // Fields
 
   /// The output stream.
-  raw_ostream &os;
-
-  /// The current depth of the markdown header.
-  size_t depth = 1;
+  llvm::json::OStream os;
 };
 } // namespace
 
@@ -543,8 +488,8 @@ private:
 // Entry Point
 //===----------------------------------------------------------------------===//
 
-void M::KGEN::LIT::generateLitMarkdownDoc(ASTDecl &decl, raw_ostream &os) {
-  MarkdownGenerator generator(os);
+void M::KGEN::LIT::generateMojoDocJSON(ASTDecl &decl, raw_ostream &os) {
+  JSONGenerator generator(os);
   generator.generate(decl);
 }
 
@@ -716,7 +661,7 @@ private:
   //===----------------------------------------------------------------------===//
   // Functions
 
-  /// Generate markdown documentation for the given function.
+  /// Validate documentation for the given function.
   void validateDecl(ASTDecl &decl, FuncOp funcOp, DocString &docStr) {
     SignatureType signature = funcOp.getSignature();
     auto argNames = funcOp.getValueParamNames();

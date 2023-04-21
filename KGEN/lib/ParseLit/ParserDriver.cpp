@@ -197,7 +197,7 @@ LogicalResult M::generateMojoDoc(llvm::SourceMgr &sourceMgr,
   if (!module)
     return failure();
 
-  auto docTS = ts.nest("Lit Markdown Generation");
-  generateLitMarkdownDoc(*moduleDecl, outputOS);
+  auto docTS = ts.nest("Lit Documentation Generation");
+  generateMojoDocJSON(*moduleDecl, outputOS);
   return success();
 }

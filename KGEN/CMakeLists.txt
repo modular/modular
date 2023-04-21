@@ -7,6 +7,8 @@
 set(KGEN_SOURCE_DIR ${MODULAR_SOURCE_DIR}/KGEN)
 set(KGEN_BINARY_DIR ${MODULAR_BINARY_DIR}/KGEN)
 
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+
 # add_kgen_translation_library is a wrapper around add_modular_mlir_library that
 # automatically links the library into kgen-translate.
 function(add_kgen_translation_library name)
@@ -240,16 +242,34 @@ endfunction()
 function(add_mojo_doc doc_filename output_file output_directory)
   _setup_libs()
 
+  set(GEN_DOC_JSON_FILE ${MODULAR_BINARY_DIR}/docs/${output_directory}${output_file}.mojodoc.json)
   set(GEN_DOC_FILE ${MODULAR_BINARY_DIR}/docs/${output_directory}${output_file}.md)
 
+  # Generate the JSON file containing the documentation description.
   add_custom_command(
-    OUTPUT "${GEN_DOC_FILE}"
+    OUTPUT "${GEN_DOC_JSON_FILE}"
 
     COMMAND $<TARGET_FILE:mojo> -doc-gen
-    -o ${GEN_DOC_FILE} ${KGEN_INCLUDE_FLAGS} ${doc_filename}
+    -o ${GEN_DOC_JSON_FILE} ${KGEN_INCLUDE_FLAGS} ${doc_filename}
 
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     DEPENDS mojo ${doc_filename} ${KGEN_LIB_DEPENDS}
+  )
+
+  # Process the JSON file into a markdown that can be rendered.
+  add_custom_command(
+    OUTPUT "${GEN_DOC_FILE}"
+
+    DEPENDS
+      ${MODULAR_SOURCE_DIR}/KGEN/utils/mojodoc_json_to_markdown.py
+      "${GEN_DOC_JSON_FILE}"
+
+    COMMAND
+      "${Python3_EXECUTABLE}"
+      ${MODULAR_SOURCE_DIR}/KGEN/utils/mojodoc_json_to_markdown.py
+      -o ${GEN_DOC_FILE} ${GEN_DOC_JSON_FILE}
+
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
   )
 
   add_custom_target(${output_file}DocGen DEPENDS ${GEN_DOC_FILE})

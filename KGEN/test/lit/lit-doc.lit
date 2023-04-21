@@ -11,23 +11,32 @@ This is a module summary, that
 spills over to the next line."""
 
 
-# CHECK: # Module: lit-doc
+# CHECK:  "kind": "module",
+# CHECK:  "name": "lit-doc",
+# CHECK:  "summary": "This is a module summary, that spills over to the next line.",
+# CHECK:  "description": "",
+# CHECK:  "children": [
 
-# CHECK: This is a module summary, that spills over to the next line.
+# CHECK:  "kind": "struct",
+# CHECK:  "name": "InMemoryStruct",
+# CHECK:  "children": [
 
-# CHECK: ## InMemoryStruct
-
-# CHECK: ### fn_with_by_conventions
-# CHECK: >  `` fn_with_by_conventions(self: Self&, arg: Self&, *args: Self&) -> Self& ``
-
-# CHECK: This is a function summary.
-
-# CHECK: **Args:**
-# CHECK: - `` arg: Self& ``: This is a by-ref argument.
-# CHECK: - `` *args: Self& ``: This is a variadic argument.
-
-# CHECK: **Returns:**
-# CHECK: This is a by-ref return value.
+# CHECK:  "kind": "function",
+# CHECK:  "name": "fn_with_by_conventions",
+# CHECK:  "overloads"
+# CHECK:      "signature": "fn_with_by_conventions(self: Self&, arg: Self&, *args: Self&) -> Self&",
+# CHECK:      "summary": "This is a function summary.",
+# CHECK:      "args"
+# CHECK:        {
+# CHECK:          "signature": "arg: Self&",
+# CHECK:          "description": "This is a by-ref argument."
+# CHECK:        },
+# CHECK:        {
+# CHECK:          "signature": "*args: Self&",
+# CHECK:          "description": "This is a variadic argument."
+# CHECK:        }
+# CHECK:      "returns": "This is a by-ref return value.",
+# CHECK:      "description": ""
 
 
 struct InMemoryStruct:
@@ -49,17 +58,21 @@ struct InMemoryStruct:
         return arg
 
 
-# CHECK: ## ParameterClass
-# CHECK: This is a class summary.
-# CHECK: The is some kind of description.
+# CHECK:  "kind": "struct",
+# CHECK:  "name": "ParameterClass",
+# CHECK:  "summary": "This is a class summary.",
+# CHECK:  "parameters": [
+# CHECK:      "signature": "_type: __mlir_type.!kgen.dtype",
+# CHECK:      "description": "This is a parameter."
+# CHECK:  ],
+# CHECK:  "description": "The is some kind of description.\n",
 
-# CHECK: **Parameters:**
-# CHECK: - `` _type: __mlir_type.!kgen.dtype ``: This is a parameter.
-
-# CHECK: ### fn_with_self_param
-# CHECK: > `` fn_with_self_param(self: Self) ``
-# CHECK: **Parameters:**
-# CHECK: - `` param: Self ``: This is a Self parameter.
+# CHECK:      "kind": "function",
+# CHECK:      "name": "fn_with_self_param",
+# CHECK:          "signature": "fn_with_self_param(self: Self)",
+# CHECK:          "parameters": [
+# CHECK:              "signature": "param: Self",
+# CHECK:              "description": "This is a Self parameter."
 
 
 @register_passable
@@ -81,10 +94,12 @@ struct ParameterClass[_type: __mlir_type.`!kgen.dtype`]:
         return
 
 
-# CHECK: ## empty_fn
-# CHECK: > `` empty_fn() ``
-# CHECK: This is a function summary.
-# CHECK: The is some kind of description.
+# CHECK:  "name": "empty_fn",
+# CHECK:  "overloads": [
+# CHECK:      "signature": "empty_fn()",
+# CHECK:      "summary": "This is a function summary.",
+# CHECK:      "description": "The is some kind of description."
+# CHECK:  ]
 
 
 fn empty_fn():
@@ -95,12 +110,14 @@ fn empty_fn():
     return
 
 
-# CHECK: ## fn_with_args
-# CHECK: > `` fn_with_args(arg: $Int::Int) ``
-# CHECK: This is a function summary.
-# CHECK: The is some kind of description.
-# CHECK: **Args:**
-# CHECK: - `` arg: $Int::Int ``: This is an argument.
+# CHECK:  "kind": "function",
+# CHECK:  "name": "fn_with_args",
+# CHECK:  "overloads":
+# CHECK:      "signature": "fn_with_args(arg: $Int::Int)",
+# CHECK:      "summary": "This is a function summary.",
+# CHECK:      "args":
+# CHECK:          "signature": "arg: $Int::Int",
+# CHECK:          "description": "This is an argument."
 
 
 fn fn_with_args(arg: Int):
@@ -114,9 +131,11 @@ fn fn_with_args(arg: Int):
     return
 
 
-# CHECK: ## fn_with_overload
-# CHECK: > `` fn_with_overload() ``
-# CHECK: > `` fn_with_overload(arg: $Int::Int) ``
+# CHECK:  "kind": "function",
+# CHECK:  "name": "fn_with_overload",
+# CHECK:  "overloads": [
+# CHECK:      "signature": "fn_with_overload()",
+# CHECK:      "signature": "fn_with_overload(arg: $Int::Int)",
 
 
 fn fn_with_overload():
@@ -138,13 +157,13 @@ fn fn_with_overload(arg: Int):
     return
 
 
-# CHECK: ## fn_with_params
-# CHECK: > `` fn_with_params() ``
-# CHECK: This is a function summary.
-# CHECK: The is some kind of description.
-
-# CHECK: **Parameters:**
-# CHECK: - `` param: __mlir_type.!kgen.dtype ``: This is a parameter.
+# CHECK:  "kind": "function",
+# CHECK:  "name": "fn_with_params",
+# CHECK:  "overloads":
+# CHECK:      "signature": "fn_with_params()",
+# CHECK:      "parameters": [
+# CHECK:          "signature": "param: __mlir_type.!kgen.dtype",
+# CHECK:          "description": "This is a parameter."
 
 
 fn fn_with_params[param: __mlir_type.`!kgen.dtype`]():
@@ -158,16 +177,14 @@ fn fn_with_params[param: __mlir_type.`!kgen.dtype`]():
     return
 
 
-# CHECK: ## fn_with_params_and_return
-# CHECK: > `` fn_with_params_and_return(arg: $Int::Int) -> $Int::Int ``
-# CHECK: This is a function summary.
-# CHECK: The is some kind of description.
-
-# CHECK: **Args:**
-# CHECK: - `` arg: $Int::Int ``: This is an argument.
-
-# CHECK: **Returns:**
-# CHECK: This is a return value.
+# CHECK: "kind": "function",
+# CHECK: "name": "fn_with_params_and_return",
+# CHECK: "overloads":
+# CHECK:     "signature": "fn_with_params_and_return(arg: $Int::Int) -> $Int::Int",
+# CHECK:     "args":
+# CHECK:         "signature": "arg: $Int::Int",
+# CHECK:         "description": "This is an argument."
+# CHECK:     "returns": "This is a return value."
 
 
 fn fn_with_params_and_return(arg: Int) -> Int:
