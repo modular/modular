@@ -1139,7 +1139,7 @@ CValue ExprEmitter::emitExprCValue(const ExprNode *expr, ExprContext context) {
 SRValue ExprEmitter::emitExprSRValue(const ExprNode *expr, ExprContext context,
                                      ASTType resultType) {
   assert(expr && "cannot emit a null node");
-  return emitSRValue({emitExpr(expr, context), expr}, context);
+  return emitSRValue({emitExpr(expr, context, resultType), expr}, context);
 }
 
 /// This helper emits the specified expression as a parameter value, diagnosing

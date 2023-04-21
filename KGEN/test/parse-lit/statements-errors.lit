@@ -110,6 +110,10 @@ fn cannotReRaise():
 fn cannotRaise(err: Error):
     raise err # expected-error {{cannot raise error in a context that cannot raise}}
 
+# Issue #12358
+@raises
+fn raise_bad_type():
+    raise 42  # expected-error {{'$Int::Int' value cannot be converted to '$Error::Error' in raised value}}
 
 # Issue #6909
 # expected-error @below {{expected name for 'alias' declaration}}
