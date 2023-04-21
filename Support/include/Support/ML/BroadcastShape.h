@@ -66,7 +66,7 @@ void computeBatchIndices(int64_t outputBatchSize, ArrayRef<int64_t> reshape,
                          ArrayRef<int64_t> bcast,
                          llvm::SmallVectorImpl<int64_t> &out_indices);
 
-template <int N>
+template <int N = 2>
 class BCastList {
 public:
   /// A vector of int64_t representing the shape of tensor. The 0-th element is
