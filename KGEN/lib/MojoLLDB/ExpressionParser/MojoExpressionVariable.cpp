@@ -100,24 +100,6 @@ void MojoPersistentExpressionState::registerExpressionInstance(
 
 void MojoPersistentExpressionState::resetStateToBeforeExpressionInstance(
     size_t index) {
-  assert(index < getNumExpressionInstances() && "invalid expression instance");
-  Log *log = GetLog(LLDBLog::Expressions);
-
-  // Drop each of the instance states in reverse up to the given index.
-  for (auto &exprInst :
-       llvm::reverse(llvm::drop_begin(expressionInstances, index))) {
-    // Drop all of the JIT symbols that we previously registered.
-    if (exprInst->executionUnit) {
-      auto walkFn = [&](const JittedEntity &jitSym) {
-        symbolMap.erase(jitSym.name.GetStringRef());
-      };
-      walkExternalJITSymbols(*exprInst->executionUnit, log, walkFn);
-    }
-
-    // Drop the persistent variables.
-    for (const lldb::ExpressionVariableSP &var : exprInst->persistentVariables)
-      RemoveVariable(var);
-  }
   expressionInstances.resize(index);
 }
 

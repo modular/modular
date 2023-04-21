@@ -18,6 +18,7 @@
 #include "mlir/IR/Types.h"
 #include "mlir/Support/IndentedOstream.h"
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/Sequence.h"
 #include "llvm/Support/CrashRecoveryContext.h"
 #include "llvm/Support/Signals.h"
 
@@ -259,9 +260,12 @@ static void registerTraceDumpHandler(Debugger &debugger) {
 static void collectPersistentVariables(
     MojoPersistentExpressionState &state,
     SmallVectorImpl<std::pair<StringRef, mlir::Type>> &variables) {
-  for (unsigned i = 0, e = state.GetSize(); i < e; ++i) {
+  DenseSet<ConstString> persistentVariableNames;
+  for (int i : llvm::reverse(llvm::seq<int>(0, state.GetSize()))) {
     lldb::ExpressionVariableSP var = state.GetVariableAtIndex(i);
     assert(var && "expected valid variable in persistent state");
+    if (!persistentVariableNames.insert(var->GetName()).second)
+      continue;
 
     mlir::Type varType = mlir::Type::getFromOpaquePointer(
         var->GetCompilerType().GetOpaqueQualType());
@@ -364,10 +368,13 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
   }
   exprOSIndented << "):\n";
 
-  // The following is the other chunk of code just written by the user.
-  exprOSIndented << kMainBodyBlockBegin;
+  // The following is the other chunk of code just written by the user. We wrap
+  // this in a nexted def to allow the user to re-define variables.
+  exprOSIndented << "  def __lldb_expr_impl_body__():\n" << kMainBodyBlockBegin;
   exprOSIndented.printReindented(sourceCode.getMainBodyCode(), "    ");
-  exprOSIndented << kMainBodyBlockEnd;
+  exprOSIndented << kMainBodyBlockEnd
+                 << "    return\n"
+                    "  __lldb_expr_impl_body__()\n";
 
   impl->typeSystem.debugLog("Parsing the following code:\n{0}",
                             transformedText.c_str());

@@ -445,6 +445,22 @@ Status MojoExpressionParser::prepareForExecution(
   auto *persistentState = static_cast<MojoPersistentExpressionState *>(
       impl->typeSystem->GetPersistentExpressionState());
 
+  // Register the current persistent variables with the materializer.
+  DenseSet<ConstString> persistentVariableNames;
+  for (int i : llvm::reverse(llvm::seq<int>(0, persistentState->GetSize()))) {
+    lldb::ExpressionVariableSP var = persistentState->GetVariableAtIndex(i);
+    assert(var && "expected valid variable in persistent state");
+
+    // Skip variables that got redefined.
+    if (!persistentVariableNames.insert(var->GetName()).second)
+      continue;
+
+    // Try adding the variable to the expression materializer.
+    impl->expr.GetMaterializer()->AddPersistentVariable(var, nullptr, error);
+    if (error.Fail())
+      return error;
+  }
+
   // Register the newly created persistent variables.
   std::vector<lldb::ExpressionVariableSP> peristentVariables;
   for (auto [name, mlirType] : impl->newPersistentVariables) {
@@ -464,18 +480,12 @@ Status MojoExpressionParser::prepareForExecution(
     var->m_flags |= ExpressionVariable::EVKeepInTarget;
     var->m_flags |= ExpressionVariable::EVIsLLDBAllocated;
     var->m_flags |= ExpressionVariable::EVNeedsAllocation;
-    peristentVariables.emplace_back(std::move(var));
-  }
 
-  // Register the persistent variables with the materializer.
-  for (unsigned i = 0, e = persistentState->GetSize(); i < e; ++i) {
-    lldb::ExpressionVariableSP var = persistentState->GetVariableAtIndex(i);
-    assert(var && "expected valid variable in persistent state");
-
-    // Try adding the variable to the expression materializer.
+    // Adding the variable to the expression materializer.
     impl->expr.GetMaterializer()->AddPersistentVariable(var, nullptr, error);
     if (error.Fail())
       return error;
+    peristentVariables.emplace_back(std::move(var));
   }
 
   // If a valid execution unit was produced and there is more than one external
@@ -515,14 +525,15 @@ void MojoExpressionParser::processPersistentReplVariables(
     mlir::Type elementType = type.getResolvedElementType();
     impl->newPersistentVariables.emplace_back(name, elementType);
 
-    structBuilder.create<LIT::StructFieldOp>(varOp->getLoc(), name,
+    std::string newFieldName = ("__new_repl_var_" + name.strref()).str();
+    structBuilder.create<LIT::StructFieldOp>(varOp->getLoc(), newFieldName,
                                              POP::PointerType::get(type));
 
     // Materialize a reference to the variable within the function.
     mlir::ImplicitLocOpBuilder builder(varOp->getLoc(), varOp);
     Value fieldGep = builder.create<LIT::StructGEPOp>(
         varOp->getLoc(), POP::PointerType::get(POP::PointerType::get(type)),
-        name, structValue);
+        newFieldName, structValue);
     Value fieldLoad = builder.create<POP::LoadOp>(varOp->getLoc(), fieldGep);
 
     // TODO: Whenever we have globals, we should be able to use a global
@@ -558,9 +569,11 @@ void MojoExpressionParser::processPersistentReplVariables(
         name, [&](char c) { return llvm::isAlnum(c) || c == '_' || c == '$'; });
   };
 
-  // Walk the function body collecting all variables defined at the top scope.
-  // In REPL mode, we persist any variables defined within the expression.
-  for (Operation &op : llvm::make_early_inc_range(*func.getBody())) {
+  // Walk the inner body function, which contains the user code, to collect all
+  // of the top-level variables. In REPL mode, we persist any variables defined
+  // within the expression.
+  auto bodyFunc = *func.getBody()->getOps<LIT::FuncOp>().begin();
+  for (Operation &op : llvm::make_early_inc_range(*bodyFunc.getBody())) {
     // Handle register based let decls. These have an initializer, and never
     // expose the actual pointer.
     if (auto letOp = dyn_cast<LIT::LetRegDeclOp>(op)) {
