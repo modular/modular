@@ -55,6 +55,16 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     return;
   }
 
+  // The lit.ownership.make.pointer.lvalue op takes an address and projects to a
+  // liveness tracked indirect value.
+  if (auto makePointer = v.getDefiningOp<OwnershipMakePointerLValue>()) {
+    name = StringAttr::get(v.getContext(), "(pointee value)");
+    isIndirect = true;
+    startsUninit = !makePointer.getLiveOnEntry();
+    endsUninit = !makePointer.getLiveOnExit();
+    return;
+  }
+
   /// Owned results of function calls are tracked as being initialized when
   /// defined but needing to be destroyed by the end of function.
   if (OpResult res = dyn_cast<OpResult>(v)) {

@@ -54,11 +54,12 @@ public:
     kFunctionType,   // async fn[](owned Int, &F32) capturing raises -> F64
 
     // Address conversions
-    kGetLValueAsAddress, // __get_lvalue_as_address(x)
-    kGetAddressAsLValue, // __get_address_as_lvalue(x)
-    kTakeAddressAsOwned, // __take_pointee_as_owned_object(x)
+    kGetLValueAsAddress,       // __get_lvalue_as_address(x)
+    kGetAddressAsLValue,       // __get_address_as_lvalue(x)
+    kGetAddressAsUninitLValue, // __get_address_as_uninit_lvalue(x)
+    kGetAddressAsOwned,        // __get_address_as_owned_value(x)
     kFirstAddressConvert = kGetLValueAsAddress,
-    kLastAddressConvert = kTakeAddressAsOwned,
+    kLastAddressConvert = kGetAddressAsOwned,
 
     // Prefix and Postfix unary expressions.
     kNeg,     // -x

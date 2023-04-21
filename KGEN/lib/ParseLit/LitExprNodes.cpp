@@ -2413,7 +2413,7 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
     LValue result = emitter.emitExprLValue(subExpr, EC_Unknown);
     if (result && !result.getIfSLValue())
       emitter.emitError(getLoc(),
-                        "cannot use a dynamic lvalue in this operator")
+                        "cannot use a dynamic LValue in this operator")
           << getRange();
 
     // Return the SLValue as an SRValue since the pointer itself is the
@@ -2424,25 +2424,39 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
   SRValue exprVal = emitter.emitExprSRValue(subExpr, EC_Unknown);
   if (!exprVal)
     return {};
-  if (!isa<POP::PointerType>(exprVal.getType().mlirType)) {
+  auto pointerType = dyn_cast<POP::PointerType>(exprVal.getType().mlirType);
+  if (!pointerType) {
     emitter.emitError(getLoc(),
                       "operand must have '!pop.pointer<T>' type, not ")
         << exprVal.getType() << getRange();
     return {};
   }
 
-  // __get_address_as_lvalue(pop_pointer)  # returns an SLValue
-  if (kind == kGetAddressAsLValue)
-    return emitter.emitResult(SLValue(exprVal), this, dest);
-
-  /// __take_pointee_as_owned_object(pop_pointer) # returns RValue
-  assert(kind == ExprNode::kTakeAddressAsOwned);
   if (!emitter.builder)
     return emitter.emitErrorForDynamicValueInParameter(this);
 
-  // Make sure to take ownership of the address and create a new lifetime
-  // tracked value.
-  exprVal = emitter.builder->create<OwnershipEndLifetimeOp>(
-      getLocation(emitter), exprVal, /*isRegister=*/false);
-  return emitter.emitResult(MRValue(exprVal), this, dest);
+  // If this is a user defined type with ownership, emit lifetime intrinsics for
+  // it, if not, we don't need/want them.
+  auto pointeeType = ASTType(pointerType).getPointerElementType();
+  bool needsLifetime = isa<DeclRefType>(pointeeType.mlirType);
+
+  /// __get_address_as_owned_value(pop_pointer) # returns RValue
+  if (kind == ExprNode::kGetAddressAsOwned) {
+    // Make sure to take ownership of the address and create a new lifetime
+    // tracked value.
+    if (needsLifetime)
+      exprVal = emitter.builder->create<OwnershipEndLifetimeOp>(
+          getLocation(emitter), exprVal, /*isRegister=*/false);
+    return emitter.emitResult(MRValue(exprVal), this, dest);
+  }
+
+  // These both return an SLValue with different ownership semantics.
+  // __get_address_as_lvalue(ptr) & __get_address_as_uninit_lvalue(ptr)
+  assert(kind == kGetAddressAsLValue || kind == kGetAddressAsUninitLValue);
+  if (needsLifetime)
+    exprVal = emitter.builder->create<OwnershipMakePointerLValue>(
+        getLocation(emitter), exprVal,
+        /*isLiveOnEntry=*/kind == kGetAddressAsLValue, /*isLiveOnExit=*/true);
+
+  return emitter.emitResult(SLValue(exprVal), this, dest);
 }

@@ -495,7 +495,7 @@ struct FunctionTypeNode final : public ExprNode {
 
 /// __get_lvalue_as_address(someSLValue)        # returns pop.pointer
 /// __get_address_as_lvalue(pop_pointer)        # returns SLValue
-/// __take_pointee_as_owned_object(pop_pointer) # returns RValue
+/// __get_address_as_owned_value(pop_pointer) # returns RValue
 struct AddressConvertNode final : public ExprNode {
   AddressConvertNode(ExprNode::Kind kind, SMLoc baseLoc, ExprNode *subExpr,
                      SMLoc rparenLoc)
