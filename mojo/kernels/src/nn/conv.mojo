@@ -26,7 +26,7 @@ from Image import ImageData, Image2DLayout, ImageShape
 from Index import Index, StaticIntTuple
 from Intrinsics import PrefetchOptions
 from LLCL import OutputChainPtr
-from List import DimList
+from List import DimList, VariadicList
 from Math import min, max, fma, div_ceil
 from Matmul import (
     GemmShape,
@@ -2333,83 +2333,24 @@ struct ConvIm2ColNHWC[
         let valid_col_end: Int = self.col_start_idx + self.total_col_count
         let tile_n: Int = self.tile_n_k[0]
 
-        # Remap buffer indices for current tile.
-        var remapped_bpacked = self._view_buffer_as(
-            b_packed.data, tile_n, sub_tile_k, pack_inner_size
-        )
-
-        var col_idx: Int = self.col_start_idx
-
-        # Proceed with the large tile:
-        col_idx = self._outer_n_loop_helper[last_k_tile, pack_inner_size](
-            remapped_bpacked,
-            global_offset,
-            tile_n,
-            sub_tile_k,
-            col_idx,
-            valid_col_end,
-        )
-
-        # Cover residual tiles.
-        if col_idx < valid_col_end:
-            remapped_bpacked = self._view_buffer_as(
-                b_packed.data, simd_size, sub_tile_k, simd_size
+        fn m_loop[tile_inner: Int](col_idx: Int, tile_size_n: Int):
+            # Remap buffer indices for current tile.
+            let remapped_bpacked = self._view_buffer_as(
+                b_packed.data, tile_size_n, sub_tile_k, tile_inner
             )
-            col_idx = self._outer_n_loop_helper[last_k_tile, simd_size](
-                remapped_bpacked,
-                global_offset,
-                simd_size,
-                sub_tile_k,
-                col_idx,
-                valid_col_end,
-            )
-
-        # Cover the last sub simdsize tile:
-        # This call will handle the sub-simd size boundary.
-        if col_idx < valid_col_end:
-            self._outer_m_loop[last_k_tile, simd_size](
+            self._outer_m_loop[last_k_tile, tile_inner](
                 remapped_bpacked,
                 global_offset + GemmShape(0, col_idx, 0),
-                simd_size,
+                tile_size_n,
                 sub_tile_k,
             )
 
-    fn _outer_n_loop_helper[
-        last_k_tile: Bool, m_loop_pack_inner_size: Int
-    ](
-        self,
-        b_packed: NDBuffer[3, packed_shape, type],
-        global_offset: GemmShape,
-        sub_tile_n: Int,
-        sub_tile_k: Int,
-        start_idx: Int,
-        valid_col_count: Int,
-    ) -> Int:
-        """Helper function: Iterate on the N dimension by steps of size
-            sub_tile_n without crossing valid boundary.
+        alias secondary_tiles = VariadicList[Int](pack_inner_size, simd_size)
+        let primary_tiles = VariadicList[Int](tile_n, simd_size)
 
-        Args:
-            m_loop_pack_inner_size(index): Inner dimension of the packed data
-                layout.
-            b_packed(NDBuffer): B matrix in packed layout.
-            global_offset(GemmShape): 3D global offset within the whole
-                matmul problem space.
-            sub_tile_n(Int): Dynamic tile size to use on N dimension.
-            sub_tile_k(Int): Dynamic tile size to use on K dimension.
-            start_idx(Int): Starting index on N dimension.
-            valid_col_count(Int): Number of valid columns remaining on the
-                current processing tile.
-        """
-        var col_idx = start_idx
-        while col_idx <= (valid_col_count - sub_tile_n):
-            self._outer_m_loop[last_k_tile, m_loop_pack_inner_size](
-                b_packed,
-                global_offset + GemmShape(0, col_idx, 0),
-                sub_tile_n,
-                sub_tile_k,
-            )
-            col_idx += sub_tile_n
-        return col_idx
+        tile[secondary_tiles, simd_size, m_loop](
+            self.col_start_idx, valid_col_end, primary_tiles, simd_size
+        )
 
     fn _outer_m_loop[
         last_k_tile: Bool, m_loop_pack_inner_size: Int
