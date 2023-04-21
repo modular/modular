@@ -183,6 +183,8 @@ public:
   static constexpr StringLiteral kBuiltinSliceModuleName = "BuiltinSlice";
   /// The name of the builtin list module.
   static constexpr StringLiteral kBuiltinListModuleName = "BuiltinList";
+  /// The name of the builtin FloatLiteral module.
+  static constexpr StringLiteral kBuiltinDoubleModuleName = "FloatLiteral";
 
   /// All the builtin modules.
   /// FIXME: We need a better way to include all the builtin modules. Perhaps
@@ -191,7 +193,8 @@ public:
       kBuiltinBoolModuleName,        kBuiltinTupleModuleName,
       kBuiltinErrorModuleName,       kBuiltinIntModuleName,
       kBuiltinTypeAliasesModuleName, kBuiltinStringModuleName,
-      kBuiltinSliceModuleName,       kBuiltinListModuleName};
+      kBuiltinSliceModuleName,       kBuiltinListModuleName,
+      kBuiltinDoubleModuleName};
 
   /// Resolve a builtin module type.
   ASTDecl *resolveBuiltinModuleType(llvm::SMLoc loc, StringRef moduleName,
