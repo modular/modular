@@ -670,8 +670,15 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
   // If we had an error, emit it.
   Value errorVal;
   if (errorExpr) {
+    ASTDecl *errorType = shared.getBuiltinErrorType(loc);
+    if (!errorType) {
+      emitError(loc, "could not find the builtin 'Error' type");
+      return success();
+    }
+
     // TODO: Support memory-only error values.
-    errorVal = getEmitter().emitExprSRValue(errorExpr, EC_RaiseValue);
+    errorVal = getEmitter().emitExprSRValue(errorExpr, EC_RaiseValue,
+                                            errorType->getSelfType());
     if (!errorVal)
       return success();
   } else {

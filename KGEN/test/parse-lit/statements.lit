@@ -418,6 +418,14 @@ fn rethrowsToRethrow():
         # CHECK: lit.return %0
         return
 
+# Issue #12358
+# CHECK-LABEL: lit.func @"raise_string
+@raises
+fn raise_string():
+   # CHECK-NEXT: %0 = kgen.param.constant: @"$Error"::@Error =
+   # CHECK-NEXT: %1 = pop.variant.create %0
+   # CHECK-NEXT: lit.return %1
+   raise "thing"
 
 ##===----------------------------------------------------------------------===##
 
