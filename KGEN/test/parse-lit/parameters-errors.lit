@@ -186,7 +186,7 @@ fn useResultParams():
   # expected-error @+1 {{calls with result parameters must be called directly}}
   _ = hasResultParam
 
-  # expected-error-re @+1 {{cannot use parameterized function of type '__mlir_type.!kgen.signature<<{{.*}}Int>() -> !lit.none>' without binding all its parameters}}
+  # expected-error-re @+1 {{cannot use parameterized function of type 'fn[$Int::Int]() -> None' without binding all its parameters}}
   _ = hasInputParam
 
   # expected-error @+1 {{invalid call to 'hasInputParam': callee expects 1 input parameter but 0 were provided}}

@@ -30,8 +30,31 @@ fn some_fn_ret_int() -> Int: return 42
 
 # Issue #11288
 fn test_overload_set():
-  # expected-error @+1 {{invalid call to 'some_fn_take_int': argument #0 cannot be converted from '__mlir_type.!kgen.signature<() -> !kgen.declref<_"$Int"::_Int>>' to '$Int::Int'}}
+  # expected-error @+1 {{invalid call to 'some_fn_take_int': argument #0 cannot be converted from 'fn() -> $Int::Int' to '$Int::Int'}}
   some_fn_take_int(some_fn_ret_int)
+
+
+struct MemType: pass
+
+
+fn test_func_type():
+    # expected-error @below {{fn($Int::Int) -> $Int::Int}}
+    alias f0: fn(Int) -> Int = test_func_type
+    # expected-error @below {{async fn() -> None}}
+    alias f1: async fn() -> None = test_func_type
+    # expected-error @below {{fn[$Int::Int]() -> $expressions-errors::MemType}}
+    alias f2: fn[a: Int]() -> MemType = test_func_type
+    # expected-error @below {{fn[$Int::Int](owned $Int::Int) -> $expressions-errors::MemType}}
+    alias f3: fn[a: Int](owned Int) -> MemType = test_func_type
+    # expected-error @below {{fn[$Int::Int](*&$Int::Int) -> None}}
+    alias f4: fn[a: Int](*&Int) -> None = test_func_type
+    # expected-error @below {{fn(*$expressions-errors::MemType) raises capt}}
+    alias f5: def(*MemType) capturing -> None = test_func_type
+    # expected-error @below {{fn[*AnyType](owned* *$0) capt}}
+    alias f6: fn[*Ts: AnyType](owned* *Ts) capturing -> None = test_func_type
+    # expected-error @below {{fn[AnyType](*&$0) capturing -> None}}
+    alias f7: fn[T: AnyType](*&T) capturing -> None = test_func_type
+
 
 ##===----------------------------------------------------------------------===##
 # LValue and RValues

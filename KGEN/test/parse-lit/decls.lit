@@ -40,7 +40,7 @@ fn take_closure_no_param_main():
     # CHECK: %0 = kgen.param.constant: <>(index borrow) capturing -> index = <*"g(__mlir_type.index)">
     # CHECK: %W = lit.letreg.decl "W" = %0 : !kgen.signature<(index borrow) capturing -> index>
     let W = g
-    # CHECK: %1 = kgen.call @"$decls"::@"take_closure(__mlir_type.!kgen.signature<(index borrow) capturing -> index>,__mlir_type.index)"(%W, %idx3) : (!kgen.signature<(index borrow) capturing -> index> borrow, index borrow) -> !lit.none
+    # CHECK: %1 = kgen.call @"$decls"::@"take_closure{{.*}}"(%W, %idx3) : (!kgen.signature<(index borrow) capturing -> index> borrow, index borrow) -> !lit.none
     take_closure(W, (3).__as_mlir_index())
 
 
@@ -60,7 +60,7 @@ fn take_closure_with_param_main():
 
     # CHECK: %value = lit.letreg.decl "value" = %0 : !kgen.signature<(index borrow) capturing -> index>
     let value = Bound
-    # CHECK: %1 = kgen.call @"$decls"::@"take_closure(__mlir_type.!kgen.signature<(index borrow) capturing -> index>,__mlir_type.index)"(%value, %x) : (!kgen.signature<(index borrow) capturing -> index> borrow, index borrow) -> !lit.none
+    # CHECK: %1 = kgen.call @"$decls"::@"take_closure{{.*}}"(%value, %x) : (!kgen.signature<(index borrow) capturing -> index> borrow, index borrow) -> !lit.none
     take_closure(value, x)
 
     # CHECK: %2 = kgen.param.constant: <>(index borrow) capturing -> index = <bind_signature(:<index, index>(index borrow) capturing -> index *"h(__mlir_type.index)", 1, 8)>
@@ -487,9 +487,9 @@ fn callVariadic[p: Int](x: Int):
   # CHECK: @"variadics($Int::Int*)", [p, {{.*}}scalar<index> = 1{{.*}}]
   alias NonEmptyVariadic = variadics(p, 1)
 
-  # CHECK: @"parameterizedVariadic(__mlir_type.!kgen.paramref<*(0,0)>*)"<:type !kgen.declref<@"$Int"::@Int>>
+  # CHECK: @"parameterizedVariadic{{.*}}"<:type !kgen.declref<@"$Int"::@Int>>
   parameterizedVariadic(1, 2)
-  # CHECK: kgen.call {{.*}}@ParameterizedStruct::@"__init__(${{.*}}::ParameterizedStruct[T]=&,__mlir_type.!kgen.paramref<T>*)"<:type !kgen.declref<@"$Int"::@Int>>
+  # CHECK: kgen.call {{.*}}@ParameterizedStruct::@"__init__(${{.*}}::ParameterizedStruct[T]=&,T*)"<:type !kgen.declref<@"$Int"::@Int>>
   _ = ParameterizedStruct(3)
   # CHECK: kgen.call {{.*}}@VarArgsParameterizedStruct::@"__init__(${{.*}}::VarArgsParameterizedStruct[Is]=&)"<:variadic<@"$Int"::@Int> [#lit.struct<{value: scalar<index> = 4}>, #lit.struct<{value: scalar<index> = 5}>]>
   _ = VarArgsParameterizedStruct[4, 5]()
