@@ -451,17 +451,17 @@ number of limitations compared to ‘`def`’s:
 a ‘let’), instead of mutable (like a ‘var’). This catches accidental mutations,
 and permits the use of non-copyable types as arguments.
 
-1. Argument values require a type specification (except for `self` in a
+2. Argument values require a type specification (except for `self` in a
 method), catching accidental omission of type specifications. Similarly, a
 missing return type specifier is interpreted as returning `None` instead of an
 unknown return type. Note that both can be explicitly declared to return
 “`object`”, which allows one to opt-in to the behavior of a `def` if desired.
 
-1. Implicit declaration of local variables is disabled, so all locals must be
+3. Implicit declaration of local variables is disabled, so all locals must be
 declared. This catches name typos and dovetails with the scoping provided by
 ‘let’ and ‘var’.
 
-1. Both support raising exceptions, but this must be explicitly declared on a
+4. Both support raising exceptions, but this must be explicitly declared on a
 ‘fn’ with the @raises decorator.
 
 Programming patterns will vary widely across teams, and this level of
