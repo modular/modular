@@ -22,6 +22,9 @@ struct MemExample:
   fn __del___(owned self):
     self.noop()
 
+fn consume(owned a: MemExample): pass
+fn use(owned a: MemExample): pass
+
 # CHECK-LABEL: lit.struct.decl @RegExample
 # CHECK: attributes {{.*}}destructor = #kgen.symbol.constant<@"$ownership"::@RegExample::@"__del___
 @register_passable
@@ -317,6 +320,30 @@ fn testPointerGEP(ptr: __mlir_type[`!pop.pointer<`, Complicated, `>`]) -> Int:
   let addr = ptr
   return __get_address_as_lvalue(addr).b.x
 
+# This exercises turning a pop.pointer into an RValue, which produces an 'owned'
+# pointer magically from memory.
+# CHECK-LABEL: lit.func @"testTakePointeeAsOwned
+fn testTakePointeeAsOwned(ptr: __mlir_type[`!pop.pointer<`, MemExample, `>`]):
+  # This should run the destructor.
+  # TODO: Not great that discard patterns are causing things to need to be movable.
+  # CHECK-NEXT: [[PTR:%.*]] = lit.ownership.end.lifetime %ptr
+  # CHECK-NEXT: %_ = lit.varlet.decl "_"
+  # CHECK-NEXT: kgen.call {{.*}}__moveinit__{{.*}}(%_, [[PTR]])
+  # CHECK-NEXT: kgen.call {{.*}}__del___{{.*}}(%_)
+  _ = __take_pointee_as_owned_object(ptr)
+
+  # This should run the destructor and not get omitted.
+  # CHECK-NEXT: [[PTR:%.*]] = lit.ownership.end.lifetime %ptr
+  # CHECK-NEXT: kgen.call {{.*}}__del___{{.*}}([[PTR]])
+  __take_pointee_as_owned_object(ptr)  # expected-warning {{'$ownership::MemExample' value is unused}}
+
+  # The RValue can be consumed directly.
+  # CHECK-NEXT: [[PTR:%.*]] = lit.ownership.end.lifetime %ptr
+  # CHECK-NEXT: kgen.call {{.*}}consume{{.*}}([[PTR]])
+  consume(__take_pointee_as_owned_object(ptr))
+
+  # CHECK-NEXT: kgen.param.constant: !lit.none = <#lit.none>
+
 
 # CHECK-LABEL: lit.struct.decl @FieldSensitiveMemExample
 struct FieldSensitiveMemExample:
@@ -431,7 +458,6 @@ fn test_result_optimization():
   # CHECK-NEXT: kgen.call @{{.*}}@"__del___{{.*}}(%example)
 
   # CHECK-NEXT: kgen.param.constant: !lit.none = <#lit.none>
-
 
 ##===----------------------------------------------------------------------===##
 # Consume Expressions

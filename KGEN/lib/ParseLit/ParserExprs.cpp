@@ -109,7 +109,7 @@ private:
   ParseResult parseComparisonExpr(ExprNode *&result, ExprNode *rhs,
                                   ExprNode::Kind kind, SMLoc loc);
   ParseResult parseFunctionType(ExprNode *&result);
-  ParseResult parseLValueConvert(ExprNode *&result);
+  ParseResult parseAddressConvert(ExprNode *&result);
 
   /// This specifies the indentation level of the start of the statement that
   /// contains this expression if the expression can exist at the end of the
@@ -393,6 +393,7 @@ static bool isPrimaryExprToken(Token::Kind tokKind) {
   case Token::kw_fn:
   case Token::kw___get_address_as_lvalue:
   case Token::kw___get_lvalue_as_address:
+  case Token::kw___take_pointee_as_owned_object:
     return true;
   default:
     return false;
@@ -495,7 +496,8 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
 
   case Token::kw___get_address_as_lvalue:
   case Token::kw___get_lvalue_as_address:
-    if (failed(parseLValueConvert(result)))
+  case Token::kw___take_pointee_as_owned_object:
+    if (failed(parseAddressConvert(result)))
       return failure();
     break;
 
@@ -907,10 +909,21 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   return success();
 }
 
-ParseResult ExprParser::parseLValueConvert(ExprNode *&result) {
-  bool isLValueToAddress = getToken().is(Token::kw___get_lvalue_as_address);
-  assert(getToken().isAny(Token::kw___get_address_as_lvalue,
-                          Token::kw___get_lvalue_as_address));
+ParseResult ExprParser::parseAddressConvert(ExprNode *&result) {
+  ExprNode::Kind nodeKind;
+  switch (getToken().getKind()) {
+  default:
+    llvm_unreachable("bad token");
+  case Token::kw___get_address_as_lvalue:
+    nodeKind = ExprNode::kGetAddressAsLValue;
+    break;
+  case Token::kw___get_lvalue_as_address:
+    nodeKind = ExprNode::kGetLValueAsAddress;
+    break;
+  case Token::kw___take_pointee_as_owned_object:
+    nodeKind = ExprNode::kTakeAddressAsOwned;
+    break;
+  }
   SMLoc baseLoc = consumeToken().getLoc();
 
   ExprNode *subExpr = nullptr;
@@ -919,7 +932,7 @@ ParseResult ExprParser::parseLValueConvert(ExprNode *&result) {
       parseToken(Token::r_paren, "expected ')'", &rpLoc))
     return failure();
 
-  result = alloc<LValueConvertNode>(isLValueToAddress, baseLoc, subExpr, rpLoc);
+  result = alloc<AddressConvertNode>(nodeKind, baseLoc, subExpr, rpLoc);
   return success();
 }
 
