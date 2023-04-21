@@ -211,6 +211,7 @@ wrapExpressionText(StringRef wrappedFnName, StringRef exprText,
                    << "from Pointer import Pointer\n"
                    << "from PythonInterface import Python\n"
                    << "from PythonObject import PythonObject\n"
+                   << "from Object import object\n"
                    << "from Range import range\n\n";
   }
 
@@ -254,11 +255,11 @@ wrapExpressionText(StringRef wrappedFnName, StringRef exprText,
     exprOSIndented << llvm::formatv(", {0}&: __mlir_type.`{1}`", var.first,
                                     var.second);
   }
-  exprOSIndented << "):\n";
+  exprOSIndented << ") -> None:\n";
 
   // Splat out the main body code inside of a nested def. This will allow for us
   // to redefine previous variables transparently.
-  exprOSIndented << "  def __mojo_repl_expr_body__():\n";
+  exprOSIndented << "  def __mojo_repl_expr_body__() -> None:\n";
 
   // The following is the other chunk of code just written by the user.
   exprOSIndented << kMainBodyBlockBegin;

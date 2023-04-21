@@ -9,6 +9,6 @@
 from IO import print
 
 
-def main():
+def main() -> None:
     # CHECK: Hello, world!
     print("Hello, world!\n")

@@ -469,10 +469,11 @@ struct FunctionTypeNode final : public ExprNode {
                    ArrayRef<ParsedArgument> resultParams,
                    ArrayRef<ParsedArgument> arguments,
                    const ExprNode *resultTypeExpr, FnEffects effects,
-                   SMLoc endLoc)
+                   SMLoc endLoc, bool isDef, SMLoc resultLoc)
       : ExprNode(kFunctionType), baseLoc(baseLoc), inputParams(inputParams),
         resultParams(resultParams), arguments(arguments),
-        resultTypeExpr(resultTypeExpr), effects(effects), endLoc(endLoc) {}
+        resultTypeExpr(resultTypeExpr), effects(effects), endLoc(endLoc),
+        isDef(isDef), resultLoc(resultLoc) {}
 
   SMLoc baseLoc;
   ArrayRef<ParsedArgument> inputParams;
@@ -481,6 +482,8 @@ struct FunctionTypeNode final : public ExprNode {
   const ExprNode *resultTypeExpr;
   FnEffects effects;
   SMLoc endLoc;
+  bool isDef;
+  SMLoc resultLoc;
 
   static bool classof(const ExprNode *node) {
     return node->kind == kFunctionType;

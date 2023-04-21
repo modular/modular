@@ -60,6 +60,9 @@ public:
 
     /// This method must return Self.
     kSelfResult = 1 << 6,
+
+    /// This method is a struct initializer.
+    kInitializer = 1 << 7,
   };
 
   /// Return true if this is any kind of instance method.
@@ -79,6 +82,9 @@ public:
 
   /// Return true if this special function must return None.
   bool hasNoneResult() const { return (flags & kNoneResult) != 0; }
+
+  /// Return true if this special function is an initializer.
+  bool isInitializer() const { return (flags & kInitializer) != 0; }
 
   /// Return a record that describes special functions like __init__.  The
   /// kind field identifies it.

@@ -853,14 +853,17 @@ parseOptionalFunctionParameters(ParserBase &p,
 ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   SMLoc baseLoc = getToken().getLoc();
   SmallVector<ParsedArgument> inputParams, resultParams, arguments;
-  ExprNode *resultTypeExpr;
+  ExprNode *resultTypeExpr = nullptr;
   FnEffects effects = FnEffects::None;
+  bool isDef = false;
 
   // Parse the function effects from the leading keyword.
   if (consumeIf(Token::kw_async))
     effects = effects | FnEffects::Async;
-  if (consumeToken().is(Token::kw_def))
+  if (consumeToken().is(Token::kw_def)) {
     effects = effects | FnEffects::Throws;
+    isDef = true;
+  }
 
   // Parameter signature.
   if (parseOptionalFunctionParameters(*this, inputParams, resultParams))
@@ -896,14 +899,18 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
 
   // Parse the result type.
   SMLoc endLoc = getToken().getEndLoc();
-  if (parseToken(Token::minus_greater, "expected '->' in function type") ||
-      ParserBase::parseExpression(resultTypeExpr, stmtIndent))
-    return failure();
+  SMLoc resultLoc = getToken().getLoc();
+  if (!isDef || getToken().is(Token::minus_greater)) {
+    if (parseToken(Token::minus_greater, "expected '->' in function type") ||
+        ParserBase::parseExpression(resultTypeExpr, stmtIndent))
+      return failure();
+  }
 
   result = alloc<FunctionTypeNode>(
       baseLoc, copyArrayRef<ParsedArgument>(inputParams),
       copyArrayRef<ParsedArgument>(resultParams),
-      copyArrayRef<ParsedArgument>(arguments), resultTypeExpr, effects, endLoc);
+      copyArrayRef<ParsedArgument>(arguments), resultTypeExpr, effects, endLoc,
+      isDef, resultLoc);
   return success();
 }
 

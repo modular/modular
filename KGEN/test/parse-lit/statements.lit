@@ -7,11 +7,14 @@
 # RUN: kgen-translate %s -import-mojo -verify-diagnostics -I %S/../mojo-examples/ | FileCheck %s
 
 
+from prolog import object
+
+
 ##===----------------------------------------------------------------------===##
 # pass
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.func @"pass()
+# CHECK-LABEL: lit.func @"pass
 def `pass`():
     pass
     # CHECK: lit.end_func
@@ -246,7 +249,7 @@ def test_early_return():
     c = 3
     # CHECK: lit.return
     return
-    # CHECK-NEXT: lit.end_func
+    # CHECK: lit.end_func
 
 
 ##===----------------------------------------------------------------------===##

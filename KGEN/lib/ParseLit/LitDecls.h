@@ -12,8 +12,10 @@
 #define LITDECLS_H
 
 #include "IRValues.h"
-#include "KGEN/KGENDialect/KGENAttrs.h"
 #include "SharedState.h"
+#include "SpecialFunctions.h"
+
+#include "KGEN/KGENDialect/KGENAttrs.h"
 
 namespace M::KGEN {
 class ParamBindArrayAttr;
@@ -300,7 +302,10 @@ struct ParsedArgument {
       function_ref<ParseResult()> reportError, SharedState &shared,
       ExprEmitter &typeEmitter, const ExprNode *resultTypeExpr,
       FnEffects &effects, SmallVectorImpl<ParsedArgument> &args,
-      SmallVectorImpl<Type> &argTypes, SmallVectorImpl<TypedAttr> &defaults);
+      SmallVectorImpl<Type> &argTypes, SmallVectorImpl<TypedAttr> &defaults,
+      bool isDef, SMLoc resultLoc, ASTDecl &Scope,
+      SpecialFunctionInfo fnInfo = SpecialFunctionInfo(),
+      StringRef funcName = "");
 
   /// Given a fully resolved signature, compute the final types and KGEN input
   /// conventions of the arguments.

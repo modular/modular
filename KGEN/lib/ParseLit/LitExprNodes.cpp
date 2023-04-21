@@ -2378,7 +2378,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   SmallVector<TypedAttr> defaults;
   ASTType resultType = ParsedArgument::emitFunctionArgumentsAndResults(
       [&] { return failure(); }, emitter.shared, typeEmitter, resultTypeExpr,
-      effects, args, argTypes, defaults);
+      effects, args, argTypes, defaults, isDef, resultLoc, emitter.declScope);
   if (!resultType)
     return {};
 

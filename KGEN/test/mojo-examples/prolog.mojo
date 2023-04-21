@@ -20,6 +20,7 @@ from Assert import assert_param, assert_param
 from Range import range
 from IO import print
 from DType import DType
+from Object import object
 
 # CHECK: lit.func @"printInt
 fn printInt(x: Int):
@@ -67,15 +68,3 @@ struct StringRef:
             ](nullptr),
             size,
         )
-
-
-# ===----------------------------------------------------------------------=== #
-# object
-# ===----------------------------------------------------------------------=== #
-
-# TODO: This should eventually model a dynamic object base class.  For now, this
-# is just a placeholder to be used by untyped 'def' operands.
-@register_passable
-struct object:
-    fn __copyinit__(self) -> Self:
-        return Self {}
