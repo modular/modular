@@ -11,10 +11,8 @@
 
 # Initially define an integer value of 10.
 let value = 10
+# CHECK: ($Int::Int) value
 
 # Check that we can redefine this in a followup expression.
-print(value)
 let value = True
-print(value)
-# CHECK: 10
-# CHECK: True
+# CHECK: ($Bool::Bool) value
