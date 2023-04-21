@@ -1270,6 +1270,29 @@ OpFoldResult VariadicSizeOp::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
+// StringSizeOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult StringSizeOp::fold(FoldAdaptor adaptor) {
+  if (auto str = dyn_cast_or_null<StringAttr>(adaptor.getStr()))
+    return Builder(getContext()).getIndexAttr(str.getValue().size());
+  return {};
+}
+
+//===----------------------------------------------------------------------===//
+// StringConcatOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult StringConcatOp::fold(FoldAdaptor adaptor) {
+  auto lhs = dyn_cast_or_null<StringAttr>(adaptor.getLhs());
+  auto rhs = dyn_cast_or_null<StringAttr>(adaptor.getRhs());
+  if (!lhs || !rhs)
+    return {};
+  return StringAttr::get(lhs.getValue() + rhs.getValue(),
+                         StringType::get(getContext()));
+}
+
+//===----------------------------------------------------------------------===//
 // DTypeToUI8
 //===----------------------------------------------------------------------===//
 

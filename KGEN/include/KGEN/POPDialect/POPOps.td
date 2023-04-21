@@ -2455,8 +2455,35 @@ def POP_StringSizeOp : POPOp<"string.size", [Pure]> {
   let arguments = (ins KGEN_StringType:$str);
   let results = (outs Index:$result);
   let assemblyFormat = "$str attr-dict";
+
+  let hasFolder = 1;
 }
 
+//===----------------------------------------------------------------------===//
+// StringConcatOp
+//===----------------------------------------------------------------------===//
+
+def POP_StringConcatOp : POPOp<"string.concat", [Pure]> {
+  let summary = "Concat two strings.";
+  let description = [{
+    The `pop.string.concat` operation takes two `!kgen.string` values and
+    concatenates them, producing a new `!kgen.string` value. Because string
+    values are backed by global constants, this operation does not have a
+    runtime representation.
+
+    Example:
+
+    ```mlir
+    %0 = pop.string.concat %lhs, %rhs
+    ```
+  }];
+
+  let arguments = (ins KGEN_StringType:$lhs, KGEN_StringType:$rhs);
+  let results = (outs KGEN_StringType:$result);
+  let assemblyFormat = "$lhs `,` $rhs attr-dict";
+
+  let hasFolder = 1;
+}
 
 //===----------------------------------------------------------------------===//
 // DTypeToUI8

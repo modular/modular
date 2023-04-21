@@ -831,3 +831,13 @@ kgen.func @fold_offset(%arg0: !pop.pointer<index>) -> (!pop.pointer<index>) {
   %1 = pop.offset %arg0[%0] : !pop.pointer<index>
   kgen.return %1 : !pop.pointer<index>
 }
+
+// CHECK-LABEL: @string_ops
+kgen.func @string_ops() -> (index, !kgen.string) {
+  %str = kgen.param.constant: string = <"four">
+  // CHECK-DAG: kgen.param.constant = <4>
+  %0 = pop.string.size %str
+  // CHECK-DAG: kgen.param.constant: string = <"fourfour">
+  %1 = pop.string.concat %str, %str
+  kgen.return %0, %1 : index, !kgen.string
+}
