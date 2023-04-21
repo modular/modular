@@ -13,6 +13,7 @@
 #include "DocString.h"
 #include "IRValues.h"
 #include "Lexer.h"
+#include "LitExprCalls.h"
 #include "LitExprEmitter.h"
 #include "LitExprNodes.h"
 #include "LitParameterEvaluator.h"
@@ -986,14 +987,31 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
     function_ref<ParseResult()> reportError, SharedState &shared,
     ExprEmitter &typeEmitter, const ExprNode *resultTypeExpr,
     FnEffects &effects, SmallVectorImpl<ParsedArgument> &args,
-    SmallVectorImpl<Type> &argTypes, SmallVectorImpl<TypedAttr> &defaults) {
+    SmallVectorImpl<Type> &argTypes, SmallVectorImpl<TypedAttr> &defaults,
+    bool isDef, SMLoc resultLoc, ASTDecl &scope, SpecialFunctionInfo fnInfo,
+    StringRef funcName) {
   // Resolve the result type and any argument types that are present, leaving
   // any unspecified types null.
   ASTType resultType;
+  size_t skipIndex = 0;
   if (!resultTypeExpr) {
-    // TODO: We shouldn't default this to none for 'def's.  This should default
-    // to object type.  Our return checker is currently a lame duck.
     resultType = shared.getNoneType();
+    // Don't insert the return value for certain special functions.
+    if (isDef && !fnInfo.hasNoneResult() && !fnInfo.isInitializer()) {
+      // Insert an object memory-only result type.
+      ParsedArgument resultArg;
+      resultArg.loc = resultLoc;
+      resultArg.name = StringAttr::get(shared.getContext(), "__result__");
+      resultArg.convention = ParsedArgument::kConventionByRefResult;
+      args.insert(args.begin(), resultArg);
+      skipIndex = 1;
+      argTypes.push_back(shared.lookupObjectType(resultLoc, scope));
+      if (!argTypes.back()) {
+        if (reportError())
+          return {};
+        argTypes.back() = shared.getTypeCheckErrorType();
+      }
+    }
   } else if (isa<NoneLiteralNode>(resultTypeExpr)) {
     // If the result type is a `None` literal, then convert it to NoneType.
     resultType = shared.getNoneType();
@@ -1003,9 +1021,9 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
     // entire function definition.  We won't be able to correctly type check any
     // calls to this function though.
     if (!resultType) {
-      resultType = shared.getTypeCheckErrorType();
       if (reportError())
         return {};
+      resultType = shared.getTypeCheckErrorType();
     }
 
     // Memory-only types get passed as the first argument to the function
@@ -1021,6 +1039,8 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
       resultArg.convention = ParsedArgument::kConventionByRefResult;
       resultArg.typeExpr = resultTypeExpr;
       args.insert(args.begin(), resultArg);
+      argTypes.push_back(resultType);
+      skipIndex = 1;
       resultType = shared.getNoneType();
     } else if (rp != StructDeclOp::RP_RegisterPassableTrivial) {
       // We know the result type of the function is register passable (because
@@ -1032,7 +1052,7 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
   }
 
   bool seenInitExpr = false;
-  for (auto [idx, arg] : llvm::enumerate(args)) {
+  for (auto [idx, arg] : llvm::enumerate(llvm::drop_begin(args, skipIndex))) {
     ASTType type;
     if (arg.typeExpr) {
       type = typeEmitter.emitExprType(arg.typeExpr);
@@ -1225,10 +1245,8 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
                                       StringAttr name,
                                       SmallVector<ParsedArgument> &args,
                                       MutableArrayRef<Type> argTypes,
-                                      ASTType &resultType,
-                                      SharedState &shared) {
-  SpecialFunctionInfo fnInfo = SpecialFunctionInfo::get(name);
-
+                                      ASTType &resultType, SharedState &shared,
+                                      SpecialFunctionInfo fnInfo) {
   // On any semantic error we mark the declaration erroneous - so references to
   // it don't type check, and we clear our special function information.  This
   // reduces cascade errors.
@@ -1737,6 +1755,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
   // Parse the result type if present.
   ExprNode *resultTypeExpr = nullptr;
+  SMLoc resultLoc = p.getToken().getLoc();
   if (p.consumeIf(Token::minus_greater)) {
     if (p.parseExpression(resultTypeExpr, std::nullopt))
       return failure();
@@ -1759,9 +1778,10 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     decl.hasReferenceError = true;
     return success();
   };
+  SpecialFunctionInfo fnInfo = SpecialFunctionInfo::get(baseName);
   ASTType resultType = ParsedArgument::emitFunctionArgumentsAndResults(
       reportError, shared, typeEmitter, resultTypeExpr, effects, args, argTypes,
-      defaults);
+      defaults, funcOp.getIsDef(), resultLoc, decl, fnInfo);
   if (!resultType)
     return failure();
 
@@ -1770,7 +1790,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // decorator processing because that is how defs work in Python.  This also
   // fills in any implicitly declared types.
   verifyFunctionNameBinding(decl, funcOp, baseName, args, argTypes, resultType,
-                            shared);
+                            shared, fnInfo);
 
   // Finally now that the full signature has been resolved, build our IR.
 
@@ -2029,18 +2049,16 @@ void ExprEmitter::emitNormalReturn(OpBuilder &builder, Location loc,
   // Finally we emit a normal return with lit.return.
   builder.create<LIT::ReturnOp>(loc, value);
 }
+
 /// This adds a default return (lit.return of None, potentially converted
 /// to a variant) and emits a EndFuncOp.
-static void appendDefaultReturnAndEndOp(LIT::FuncOp func, ASTDecl &funcDecl) {
+static void appendDefaultReturnAndEndOp(LIT::FuncOp func, ASTDecl &funcDecl,
+                                        SharedState &shared) {
   Block &body = *func.getBody();
   auto b = OpBuilder::atBlockEnd(&body);
   Location loc = func.getLoc();
 
-  // If the function returns None, insert a "return None".
-  if (isa<LIT::NoneType>(func.getResultTypeWithoutErrorVariant()) &&
-      !func.getSignature().hasMemoryOnlyResult() &&
-      // No default return needed if we ended in a return.
-      (body.empty() || !isa<LIT::ReturnOp>(body.back()))) {
+  auto makeNoneReturn = [&] {
     // The function returns none.
     Value retVal = b.create<ParamConstantOp>(loc, b.getAttr<LIT::NoneAttr>());
 
@@ -2049,6 +2067,37 @@ static void appendDefaultReturnAndEndOp(LIT::FuncOp func, ASTDecl &funcDecl) {
       retVal =
           b.create<POP::VariantCreateOp>(loc, func.getResultType(), retVal);
     ExprEmitter::emitNormalReturn(b, loc, retVal, funcDecl);
+  };
+
+  // If the function returns None, insert a "return None".
+  Type normalResult = func.getResultTypeWithoutErrorVariant();
+  if (isa<LIT::NoneType>(normalResult) &&
+      !func.getSignature().hasMemoryOnlyResult() &&
+      // No default return needed if we ended in a return.
+      (body.empty() || !isa<LIT::ReturnOp>(body.back()))) {
+    makeNoneReturn();
+  } else if (func.getIsDef() && func.getSignature().hasMemoryOnlyResult()) {
+    // If this `def` returns an object but is missing a return, insert one
+    // automatically.
+    auto objType = shared.lookupObjectType(funcDecl.getLoc(), funcDecl);
+    if (objType && objType.isEqualCanon(
+                       cast<POP::PointerType>(func.getArgument(0).getType())
+                           .getElementType())) {
+      // Emit `object()` into the memory type return slot.
+      ExprEmitter emitter(shared, funcDecl, EC_ReturnValue,
+                          /*varDeclCursor=*/nullptr);
+      emitter.builder = b;
+      ValueDest resultDest(SLValue(func.getArgument(0)), EC_ReturnValue);
+      // Create a dummy node to pass down.
+      ExprNode *noneExpr =
+          shared.allocPersistent<NoneLiteralNode>(funcDecl.getLoc());
+      CValue result = emitter.emitConstructorCall(
+          objType, {}, noneExpr, CallSyntax::kImplicitConvert, resultDest);
+      if (!result || !emitter.emitResult(result, noneExpr, resultDest))
+        resultDest.resetForError();
+      else
+        makeNoneReturn();
+    }
   }
 
   // Insert the default end terminator.
@@ -2206,7 +2255,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
 
   // Emit a default "return None" if the function returns nothing, and add an
   // endop terminator.
-  appendDefaultReturnAndEndOp(funcOp, decl);
+  appendDefaultReturnAndEndOp(funcOp, decl, shared);
 
   // Check that any alias forward declarations have been completed.
   if (!shared.diags.isErrorEmitted()) {
@@ -2605,7 +2654,7 @@ static TypedAttr synthesizeEmptyDtor(StructDeclOp structOp, ASTDecl &structDecl,
   }
 
   // Finish off the function with a return + lit.endfunc.
-  appendDefaultReturnAndEndOp(funcOp, funcDecl);
+  appendDefaultReturnAndEndOp(funcOp, funcDecl, resolver.shared);
 
   return funcOp.getBoundReference();
 }

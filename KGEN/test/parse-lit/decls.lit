@@ -6,7 +6,7 @@
 
 # RUN: kgen-translate %s -verify-diagnostics -import-mojo -I %S/../mojo-examples/ | FileCheck %s
 
-from prolog import F32
+from prolog import F32, object
 from Range import range
 
 ##===----------------------------------------------------------------------===##
@@ -95,7 +95,7 @@ fn throws_main() raises:
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL:  lit.func @"let_decls()
-def let_decls():
+def let_decls() -> None:
   # CHECK: %x = lit.letreg.decl "x" = %idx123 : index
   let x = (123).__as_mlir_index()
   # CHECK: %0 = kgen.param.constant: {{.*}}FloatLiteral = <{{.*}}"1"{{.*}}>
@@ -118,7 +118,7 @@ def let_decls():
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL:  lit.func @"var_decls()
-def var_decls():
+def var_decls() -> None:
   # Implicit declaration is mutable.
   # CHECK: %x = lit.varlet.decl "x", var = true
   x = (123).__as_mlir_index()
@@ -556,6 +556,26 @@ fn usePacks(x: F32, y: Int):
   # CHECK: kgen.call {{.*}}variadicParameter{{.*}}<:variadic<!kgen.mlirtype> []>
   variadicParameter((2).__as_mlir_index())
 
+# CHECK-LABEL: lit.func @"implicit_return_obj
+# CHECK-SAME: object{{.*}} byref_result
+def implicit_return_obj():
+    # CHECK: if
+    if False:
+        # CHECK: kgen.call {{.*}}object::@"__init__{{.*}}%__result__
+        # CHECK: pop.variant.create
+        # CHECK: return
+        return
+    # CHECK: else
+    else:
+        # CHECK: kgen.call {{.*}}object::@"__init__{{.*}}%__result__
+        # CHECK: pop.variant.create
+        # CHECK: return
+        return 5
+    # CHECK: kgen.call {{.*}}object::@"__init__
+    # CHECK: pop.variant.create
+    # CHECK: lit.return
+    _ = 5
+
 ##===----------------------------------------------------------------------===##
 # raises specifier.
 ##===----------------------------------------------------------------------===##
@@ -796,5 +816,5 @@ struct SomeParamStruct[c_param: Int]:
 
 @export("my_named_export")
 # CHECK: kgen.export @"$decls"::@"export_me()" to C as @my_named_export
-def export_me():
+def export_me() -> None:
   ...

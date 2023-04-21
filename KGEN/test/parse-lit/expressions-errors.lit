@@ -69,7 +69,7 @@ struct LValuesRvalues:
 
   def normalMethod(self): pass
   # expected-note @+1 {{function declared here}}
-  def mutatingMethod(self&): pass
+  def mutatingMethod(self&) -> None: pass
   # expected-note @+1 {{function declared here}}
   def takesByRef(self, x&: LValuesRvalues): pass
 
@@ -93,7 +93,7 @@ fn generic_on_type_bad[T: __mlir_type.`!kgen.mlirtype`](a: T): pass
 
 fn generic_on_type_ok[T: __mlir_type.`!kgen.mlirtype`](): pass
 
-def testLValuesRvalues():
+def testLValuesRvalues() -> None:
   # Test with lvalues
   var lv: LValuesRvalues
   lv.normalMethod()

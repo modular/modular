@@ -542,8 +542,8 @@ fn mvalueStructField():
   alias value = int.value
   alias foldToValue = (5).value
 
-# CHECK-LABEL: lit.func @"defTests({{.*}}, %untyped: !kgen.declref<@"$prolog"::@object> borrow)
-def defTests(a: Int, b: Int, untyped):
+# CHECK-LABEL: lit.func @"defTests({{.*}}, %untyped: !pop.pointer<@"$Object"::@object> borrow_in_mem)
+def defTests(a: Int, b: Int, untyped) -> None:
   # CHECK: [[B:%.*]] = pop.load %b_1
   # CHECK-NEXT: pop.store [[B]], %a_0
   a = b # Parameters are mutable!
