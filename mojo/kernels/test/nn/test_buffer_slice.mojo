@@ -45,7 +45,6 @@ fn print_elements[
     )
 
     out_chain.wait()
-    out_chain.__del__()
     runtime.__del__()
 
 
@@ -155,7 +154,6 @@ fn test_slice[
             out_chain.borrow(),
         )
         out_chain.wait()
-        out_chain.__del__()
 
         print_elements[DType.f32, outer_rank](
             rebind[
