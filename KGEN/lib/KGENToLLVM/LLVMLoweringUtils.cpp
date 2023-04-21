@@ -234,6 +234,16 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
     return Builder(&getContext()).getI8Type();
   });
 
+  addConversion([=](SignatureType signatureType) -> std::optional<Type> {
+    MLIRContext *ctx = signatureType.getContext();
+    if (signatureType.isCapturing()) {
+      auto pointerTy = LLVM::LLVMPointerType::get(ctx);
+      return LLVM::LLVMStructType::getLiteral(ctx, {pointerTy, pointerTy});
+    } else {
+      return convertType(signatureType.getValues());
+    }
+  });
+
   // Convert variant types to a struct with enough space to contain the largest
   // variant type plus a discriminator.
   addConversion([=](POP::VariantType variant) -> std::optional<Type> {
