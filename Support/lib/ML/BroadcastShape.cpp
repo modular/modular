@@ -10,6 +10,10 @@
 
 using namespace M;
 
+// Explicitly instantiate the constructor since it is defined out of line.
+template M::BCastList<>::BCastList(ArrayRef<ArrayRef<int64_t>> x,
+                                   bool fewerDimsOptimization);
+
 // TODO: This is the same value that MLIR uses currently. We need to decide how
 // to reference it, but Support/ML shouldn't depend on mlir, so we may need to
 // move this file.
