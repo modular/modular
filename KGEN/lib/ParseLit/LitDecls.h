@@ -69,6 +69,12 @@ public:
   /// decl).
   void aliasDecls(const TinyPtrVector<ASTDecl *> &decls, StringAttr name,
                   llvm::SMLoc aliasLoc, ASTDecl &context);
+  /// Try to add a pre-existing set of declarations as children of the specified
+  /// context, using the provided alias name (which may differ from that of the
+  /// decl). Does not error on failure, but returns a failure result.
+  LogicalResult tryAliasDecls(const TinyPtrVector<ASTDecl *> &decls,
+                              StringAttr name, llvm::SMLoc aliasLoc,
+                              ASTDecl &context);
   /// Add a pre-existing set of declarations imported from the given module, as
   /// children of the specified context, using the provided alias name (which
   /// may differ from that of the decl).
@@ -166,7 +172,7 @@ private:
   /// provided alias name (which may differ from that of the decl).
   LogicalResult aliasDeclsImpl(const TinyPtrVector<ASTDecl *> &decls,
                                StringAttr name, llvm::SMLoc aliasLoc,
-                               ASTDecl &context,
+                               ASTDecl &context, bool emitDiagnostics = true,
                                StringAttr moduleName = StringAttr(),
                                StringAttr declNameInModule = StringAttr());
 

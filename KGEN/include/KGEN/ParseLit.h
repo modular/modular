@@ -11,6 +11,7 @@
 #include <string>
 
 namespace llvm {
+class SMDiagnostic;
 class SourceMgr;
 } // namespace llvm
 namespace mlir {
@@ -48,6 +49,144 @@ struct MojoParserConfig {
   /// If true, this will process and validate the doc strings in the file.
   bool validateDocStrings = false;
 };
+
+//===----------------------------------------------------------------------===//
+// MojoASTDeclRef
+//===----------------------------------------------------------------------===//
+
+/// This class provides a view into an Mojo AST declaration.
+class MojoASTDeclRef {
+public:
+  MojoASTDeclRef() : MojoASTDeclRef(nullptr) {}
+
+  /// Returns the operation corresponding to this decl if there is one, nullptr
+  /// otherwise. The returned operation should only be used for introspection,
+  /// it should not be modified in any way.
+  Operation *getIfOperation() const;
+
+  /// Returns if the AST declaration is valid.
+  operator bool() const { return impl != nullptr; }
+
+private:
+  MojoASTDeclRef(void *impl) : impl(impl) {}
+
+  /// Allow MojoParserContext to access the internal implementation.
+  friend class MojoParserContext;
+
+  /// The internal implementation of the AST declaration.
+  void *impl;
+};
+
+//===----------------------------------------------------------------------===//
+// MojoParserREPLListener
+//===----------------------------------------------------------------------===//
+
+/// This class provides a listener for interacting with the parser for REPL
+/// like expressions. It contains various hooks to allow for customizing the
+/// behavior of the parser.
+class MojoParserREPLListener {
+public:
+  virtual ~MojoParserREPLListener() = default;
+
+  //===------------------------------------------------------------------===//
+  // Notifications
+
+  /// The following methods are called by the parser to notify the listener of
+  /// various events during parsing. These can be useful for logging,
+  /// debugging, etc.
+
+  /// Notify the listener that the parser has wrapped the input expression
+  /// into code capable of being parsed. `wrappedExpr` is the fully wrapped
+  /// expression.
+  virtual void notifyWrappedExpr(StringRef wrappedExpr) = 0;
+
+  /// Notify the listener that the parser applied fixes the original input
+  /// expression.
+  virtual void notifyFixedExpr(StringRef fixedExpr) = 0;
+
+  /// Notify the listener that the given set of diagnostics were emitted while
+  /// parsing the wrapped expression.
+  virtual void notifyDiagnostics(ArrayRef<llvm::SMDiagnostic> diagnostics) = 0;
+
+  //===------------------------------------------------------------------===//
+  // Queries
+
+  /// The following methods are called by the parser to query the listener for
+  /// various information. These can be useful for customizing the behavior of
+  /// the parser.
+
+  /// Query the listener to see if a variable with the given name and type
+  /// should be persisted. If this returns true, the variable will be appended
+  /// to the list of fields within the struct passed to the expression
+  /// function.
+  virtual bool shouldPersistVariable(StringRef name, Type type) = 0;
+};
+
+//===----------------------------------------------------------------------===//
+// MojoParserContext
+//===----------------------------------------------------------------------===//
+
+/// This class provides a context for parsing and interacting with Mojo
+/// modules.
+class MojoParserContext {
+public:
+  MojoParserContext(llvm::SourceMgr &sourceMgr, MojoParserConfig &config);
+  ~MojoParserContext();
+
+  /// Return the current module being parsed.
+  ModuleOp getModule();
+
+  /// Return the source manager used by the parser.
+  llvm::SourceMgr &getSourceMgr();
+
+  /// Return the compilation options used by the parser.
+  const KGEN::CompilationOptions &getCompilationOptions();
+
+  //===--------------------------------------------------------------------===//
+  // REPL
+
+  /// The following methods provide functionality for interacting with the
+  /// parser context from REPL like environments.
+
+  /// The following methods allow for interacting with the parser for REPL
+  /// like expressions, i.e., in environments like Jupyter notebooks. `exprId`
+  /// is a unique identifier for the expression being parsed, and is used as the
+  /// generated module name. `exprText` is the expression to parse.
+  /// `replExprFnName` is the name of the function to use for wrapping the
+  /// expression. `replVariables` is a list of pre-existing variables to make
+  /// available to the expression function, these variables should be used as
+  /// `Pointer[Pointer[]]` fields within a struct that is passed by reference to
+  /// the expression function. For example, given the following expression:
+  ///
+  ///   print(a)
+  ///
+  /// Where `a` is a pre-existing repl variable with type `Int`, the
+  /// expression wrapper will effectively emulate the following:
+  ///
+  ///   struct ReplContext:
+  ///     var a: Pointer[Pointer[Int]]
+  ///
+  ///   fn replExprFn(context&: ReplContext):
+  ///      print(context.a.load().load())
+  ///
+  /// In the case of success, the decl corresponding to the expr function is
+  /// returned. In the case of an error, a null decl is returned.
+  MojoASTDeclRef
+  parseREPLExpresion(MojoParserREPLListener &listener, StringRef exprId,
+                     StringRef exprText, StringRef replExprFnName,
+                     ArrayRef<std::pair<StringRef, Type>> replVariables);
+
+protected:
+  /// A struct representing the internal state of the parser.
+  struct Impl;
+
+  /// The internal state of the parser.
+  std::unique_ptr<Impl> impl;
+};
+
+//===----------------------------------------------------------------------===//
+// Driver Entry Points
+//===----------------------------------------------------------------------===//
 
 /// Parse a single .mojo file and return the MLIR module for it.
 ///

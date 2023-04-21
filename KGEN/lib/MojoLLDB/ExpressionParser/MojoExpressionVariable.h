@@ -73,11 +73,9 @@ public:
   struct ExpressionInstanceState {
     ExpressionInstanceState(std::shared_ptr<JITExecutionUnit> executionUnit,
                             std::vector<lldb::ExpressionVariableSP> &&variables,
-                            std::optional<MojoExpressionSourceCode> sourceCode,
                             std::optional<std::string> pythonModuleName)
         : executionUnit(std::move(executionUnit)),
           persistentVariables(std::move(variables)),
-          sourceCode(std::move(sourceCode)),
           pythonModuleName(std::move(pythonModuleName)) {}
 
     /// An optional execution unit associated with the expression, present only
@@ -86,9 +84,6 @@ public:
 
     /// The persistent variables added during the execution of the expression.
     std::vector<lldb::ExpressionVariableSP> persistentVariables;
-
-    /// The source code after fix-its.
-    std::optional<MojoExpressionSourceCode> sourceCode;
 
     /// The name of the python module represented by the expression, if it was
     /// a python expression, nullopt if it was a mojo expression.
@@ -109,11 +104,13 @@ public:
   void registerExpressionInstance(
       std::shared_ptr<JITExecutionUnit> executionUnit,
       std::vector<lldb::ExpressionVariableSP> &&variables,
-      std::optional<MojoExpressionSourceCode> sourceCode,
       std::optional<std::string> pythonModuleName);
 
-  /// Reset the expression state to before the  instance at the provided index.
-  void resetStateToBeforeExpressionInstance(size_t index);
+  /// Return the next name to use for a expression module.
+  std::string getNextExpressionModuleName();
+
+  /// Return if the given module name is an expression module name.
+  static bool isExpressionModuleName(StringRef moduleName);
 
   //===--------------------------------------------------------------------===//
   // Python Expression State
@@ -188,6 +185,9 @@ private:
 
   /// The addresses of the symbols in executionUnits.
   llvm::StringMap<lldb::addr_t> symbolMap;
+
+  /// The next identifier to use when building a expression module.
+  size_t nextExpressionModuleID = 0;
 
   /// The next identifier to use when building a python expression module.
   size_t nextPythonModuleID = 0;

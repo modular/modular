@@ -80,7 +80,6 @@ static void walkExternalJITSymbols(
 void MojoPersistentExpressionState::registerExpressionInstance(
     std::shared_ptr<JITExecutionUnit> executionUnit,
     std::vector<lldb::ExpressionVariableSP> &&variables,
-    std::optional<MojoExpressionSourceCode> sourceCode,
     std::optional<std::string> pythonModuleName) {
   Log *log = GetLog(LLDBLog::Expressions);
 
@@ -94,13 +93,17 @@ void MojoPersistentExpressionState::registerExpressionInstance(
 
   // Push a new expression state.
   expressionInstances.emplace_back(std::make_unique<ExpressionInstanceState>(
-      std::move(executionUnit), std::move(variables), std::move(sourceCode),
+      std::move(executionUnit), std::move(variables),
       std::move(pythonModuleName)));
 }
 
-void MojoPersistentExpressionState::resetStateToBeforeExpressionInstance(
-    size_t index) {
-  expressionInstances.resize(index);
+std::string MojoPersistentExpressionState::getNextExpressionModuleName() {
+  return ("Expression [" + Twine(nextExpressionModuleID++) + "]").str();
+}
+
+bool MojoPersistentExpressionState::isExpressionModuleName(
+    StringRef moduleName) {
+  return moduleName.starts_with("Expression [") && moduleName.endswith("]");
 }
 
 //===----------------------------------------------------------------------===//

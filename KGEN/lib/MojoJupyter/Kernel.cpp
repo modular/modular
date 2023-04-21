@@ -98,11 +98,6 @@ public:
     /// The string identifier of the cell.
     std::string id;
 
-    /// The index of the expression instance associated with this cell within
-    /// the Mojo persistent state, or nullopt if the cell was not successfully
-    /// executed.
-    std::optional<unsigned> replExprIdx;
-
     /// This is a list of debug messages that we'll only flush to the kernel's
     /// stderr if we are told to do so.
     std::deque<std::pair<MojoTypeSystem::MessageKind, std::string>>
@@ -193,7 +188,12 @@ private:
 
   /// Initialize the given cell for execution. Returns the associated cell
   /// state, or nullptr if the cell was invalid.
-  KernelCellState &initializeCellForExecution(StringRef cellId);
+  KernelCellState &initializeCellForExecution(StringRef cellId) {
+    auto [it, inserted] = cells.insert({cellId, nullptr});
+    if (inserted)
+      it->second = std::make_unique<KernelCellState>(it->first());
+    return *it->second;
+  }
 
   /// The output function used to send output to the Jupyter kernel.
   OutputFn outputFn;
@@ -218,10 +218,8 @@ private:
   /// happening.
   std::optional<ExpressionExecutionState> executionState;
 
-  /// An ordered list containing information about each of the cells that have
-  /// been executed.
-  std::vector<std::unique_ptr<KernelCellState>> cells;
-  llvm::StringMap<unsigned> cellIdToIndex;
+  /// Information about each of the cells that have been executed.
+  llvm::StringMap<std::unique_ptr<KernelCellState>> cells;
 };
 } // namespace
 
@@ -355,40 +353,31 @@ void MojoKernel::startExecution(StringRef cellId, const char *expr) {
 
   // Start execution of the expression in a separate thread, so that way the
   // calling client can control waiting for the expression to complete.
-  executionState->executionThread =
-      std::thread([this, expr = std::string(expr)]() mutable {
-        LLVM_DEBUG(llvm::dbgs() << "Executing expression: " << expr << "\n");
+  executionState->executionThread = std::thread([this, expr = std::string(
+                                                           expr)]() mutable {
+    LLVM_DEBUG(llvm::dbgs() << "Executing expression: " << expr << "\n");
 
-        SBValue value;
-        unsigned exprInstIdx = exprState->getNumExpressionInstances();
+    // If the expression starts with `:`, then it is an LLDB command,
+    // otherwise it is a Mojo expression.
+    SBValue value;
+    if (StringRef command(expr); command.consume_front(":")) {
+      CommandReturnObject result(/*colors=*/false);
+      target->GetDebugger().GetCommandInterpreter().HandleCommand(
+          command.rtrim().str().c_str(),
+          /*add_to_history=*/lldb_private::eLazyBoolNo, result);
+      sendOutput("output", result.GetOutputData());
+      sendOutput("error", result.GetErrorData());
+    } else {
+      value =
+          SBTarget(target).EvaluateExpression(expr.data(), exprOpts).GetSP();
+    }
 
-        // If the expression starts with `:`, then it is an LLDB command,
-        // otherwise it is a Mojo expression.
-        if (StringRef command(expr); command.consume_front(":")) {
-          CommandReturnObject result(/*colors=*/false);
-          target->GetDebugger().GetCommandInterpreter().HandleCommand(
-              command.rtrim().str().c_str(),
-              /*add_to_history=*/lldb_private::eLazyBoolNo, result);
-          sendOutput("output", result.GetOutputData());
-          sendOutput("error", result.GetErrorData());
-        } else {
-          value = SBTarget(target)
-                      .EvaluateExpression(expr.data(), exprOpts)
-                      .GetSP();
-        }
+    executionState->result = value.GetSP();
+    executionState->error = value.GetError();
 
-        executionState->result = value.GetSP();
-        executionState->error = value.GetError();
-
-        // If the REPL pushed a new expression state, associate it with the
-        // cell.
-        unsigned newExprInstIdx = exprState->getNumExpressionInstances();
-        if (newExprInstIdx != exprInstIdx)
-          executionState->cellState.replExprIdx = exprInstIdx;
-
-        // Mark the execution as finished.
-        executionState->finished = true;
-      });
+    // Mark the execution as finished.
+    executionState->finished = true;
+  });
 }
 
 void MojoKernel::flushLLDBStreams() {
@@ -465,35 +454,4 @@ bool MojoKernel::checkExecutionFinished() {
   executionState->executionThread.join();
   executionState.reset();
   return true;
-}
-
-MojoKernel::KernelCellState &
-MojoKernel::initializeCellForExecution(StringRef cellId) {
-  auto [cellIt, inserted] = cellIdToIndex.insert({cellId, cells.size()});
-
-  // If this is a new cell, we just need to construct a new state.
-  if (inserted) {
-    return *cells.emplace_back(
-        std::make_unique<KernelCellState>(cellIt->first()));
-  }
-  KernelCellState &cellState = *cells[cellIt->second];
-  unsigned nextCellIndex = cellIt->second + 1;
-
-  // Otherwise, this is a pre-existing cell. Reset the REPL state to just before
-  // this cell.
-  bool shouldResetExprState = true;
-  auto resetExprState = [&](std::optional<unsigned> exprIdx) {
-    if (exprIdx && std::exchange(shouldResetExprState, false))
-      exprState->resetStateToBeforeExpressionInstance(*exprIdx);
-  };
-
-  // Reset any REPL state associated with cells starting with this one,
-  // completely dropping follow-on cells.
-  resetExprState(cellState.replExprIdx);
-  for (auto &cellState : llvm::drop_begin(cells, nextCellIndex)) {
-    resetExprState(cellState->replExprIdx);
-    cellIdToIndex.erase(cellState->id);
-  }
-  cells.resize(nextCellIndex);
-  return cellState;
 }

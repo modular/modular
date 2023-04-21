@@ -14,6 +14,7 @@
 #include "KGEN/InitAllDialects.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LowerToObject.h"
+#include "KGEN/ParseLit.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/SymbolExport.h"
 #include "lldb/API/SBDebugger.h"
@@ -26,6 +27,7 @@
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
+#include "llvm/Support/Process.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -57,6 +59,28 @@ struct MojoTypeSystem::Impl {
     // Configure the runtime.
     runtime = std::make_unique<LLCL::Runtime>(
         LLCL::createMallocAllocator(), LLCL::createThreadPoolWorkQueue());
+
+    // Add the build folder as an include dir if we have the correct environment
+    // variable. This is for the python configuration, which we use CMake to
+    // find.
+    // TODO: This is kinda awful, and we should probably pull in the python
+    //       location directly if we can.
+    if (auto pathOr = llvm::sys::Process::GetEnv("MODULAR_PATH")) {
+      sourceMgr.setIncludeDirs({std::filesystem::path(*pathOr) / ".derived" /
+                                "build" / "Kernels" / "mojo" / "Python"});
+    }
+
+    // Compute the target information for the expression.
+    // TODO: Populate cpu features properly here.
+    ArchSpec targetArch = target.GetArchitecture();
+    if (targetArch.IsValid())
+      compilationOptions.targetTriple = targetArch.GetTriple().str();
+    compilationOptions.targetCpu = targetArch.GetClangTargetCPU();
+
+    // Configure the parser context.
+    MojoParserConfig parserConfig(&mlirContext, *runtime, compilationOptions);
+    parserContext =
+        std::make_unique<MojoParserContext>(sourceMgr, parserConfig);
   }
 
   /// The MLIR context to use for compilation/processing associated with this
@@ -66,6 +90,15 @@ struct MojoTypeSystem::Impl {
   /// The LLCL runtime to use for compilation/processing associated with this
   /// typesystem.
   std::unique_ptr<LLCL::Runtime> runtime;
+
+  /// The compilation options to use when compiling.
+  KGEN::CompilationOptions compilationOptions;
+
+  /// The source manager used for expression compilation.
+  llvm::SourceMgr sourceMgr;
+
+  /// The main parser context used for compilation.
+  std::unique_ptr<MojoParserContext> parserContext;
 
   /// The target that this typesystem is associated with.
   lldb::TargetWP target;
@@ -86,6 +119,11 @@ MojoTypeSystem::~MojoTypeSystem() = default;
 char MojoTypeSystem::ID = 0;
 
 MLIRContext *MojoTypeSystem::getMLIRContext() { return &impl->mlirContext; }
+
+MojoParserContext &MojoTypeSystem::getParserContext() {
+  return *impl->parserContext;
+}
+
 LLCL::Runtime &MojoTypeSystem::getRuntime() { return *impl->runtime; }
 
 //===----------------------------------------------------------------------===//
@@ -147,7 +185,6 @@ void MojoTypeSystem::errorLog(StringRef message) {
 }
 
 void MojoTypeSystem::logDiagnostic(const MojoDiagnostic &diag) {
-  // TODO: We should handle fixit notification here as well.
   switch (diag.GetSeverity()) {
   case eDiagnosticSeverityError:
     errorLog(diag.GetMessage());
@@ -285,8 +322,9 @@ MojoTypeSystem::GetDisplayTypeName(lldb::opaque_compiler_type_t type) {
 
   // We need to delete the artificial module we use for expression evaluations
   // to avoid confusing the user.
-  if (!failed(mangledOr) && mangledOr->moduleName &&
-      mangledOr->moduleName == MojoExpressionParser::getJITModuleName())
+  if (succeeded(mangledOr) && mangledOr->moduleName &&
+      MojoPersistentExpressionState::isExpressionModuleName(
+          mangledOr->moduleName))
     return ConstString(mangledOr->symName);
 
   return ConstString(name);

@@ -256,17 +256,24 @@ void DeclResolver::aliasDecls(const TinyPtrVector<ASTDecl *> &decls,
   (void)aliasDeclsImpl(decls, name, aliasLoc, context);
 }
 
+LogicalResult DeclResolver::tryAliasDecls(const TinyPtrVector<ASTDecl *> &decls,
+                                          StringAttr name, llvm::SMLoc aliasLoc,
+                                          ASTDecl &context) {
+  return aliasDeclsImpl(decls, name, aliasLoc, context,
+                        /*emitDiagnostics=*/false);
+}
+
 LogicalResult DeclResolver::aliasImportDecls(
     const TinyPtrVector<ASTDecl *> &decls, StringAttr name, StringAttr declName,
     StringAttr moduleName, llvm::SMLoc aliasLoc, ASTDecl &context) {
-  return aliasDeclsImpl(decls, name, aliasLoc, context, moduleName, declName);
+  return aliasDeclsImpl(decls, name, aliasLoc, context,
+                        /*emitDiagnostics=*/true, moduleName, declName);
 }
 
-LogicalResult
-DeclResolver::aliasDeclsImpl(const TinyPtrVector<ASTDecl *> &decls,
-                             StringAttr name, llvm::SMLoc aliasLoc,
-                             ASTDecl &context, StringAttr moduleName,
-                             StringAttr declNameInModule) {
+LogicalResult DeclResolver::aliasDeclsImpl(
+    const TinyPtrVector<ASTDecl *> &decls, StringAttr name,
+    llvm::SMLoc aliasLoc, ASTDecl &context, bool emitDiagnostics,
+    StringAttr moduleName, StringAttr declNameInModule) {
   // Check to see if the decl is an import. We create new decls within the
   // context for thse instead of aliasing, because import decls lazily replace
   // themselves with new decls (depending on what gets imported). That
@@ -283,6 +290,7 @@ DeclResolver::aliasDeclsImpl(const TinyPtrVector<ASTDecl *> &decls,
   auto [it, inserted] = context.declsInScope.try_emplace(name, decls);
   if (inserted)
     return success();
+  TinyPtrVector<ASTDecl *> &entries = it->second;
 
   // We hit an overlap, check to see if this is just resolving a module import.
   // If so, replace the unresolved import with the real decls.
@@ -291,21 +299,51 @@ DeclResolver::aliasDeclsImpl(const TinyPtrVector<ASTDecl *> &decls,
     if (importOp && importOp.getModuleNameAttr() == moduleName &&
         importOp.getDeclNameAttr() == declNameInModule) {
       // Mark the placeholder imports as being resolved.
-      for (ASTDecl *decl : it->second)
+      for (ASTDecl *decl : entries)
         decl->resolvedness = DeclResolvedness::fully;
-      it->second = decls;
+      entries = decls;
     }
     return success();
+  }
+  ASTDecl *existing = it->second.back();
+
+  // If the decls are functions, try to merge them into the existing set.
+  if (isa<LIT::FuncOp>(*frontDecl) && isa<LIT::FuncOp>(*existing)) {
+    // Check that none of the decls are already in the set.
+    auto canMergeDecl = [&](ASTDecl *decl) {
+      LIT::FuncOp declOp = cast<LIT::FuncOp>(decl->getIfOperation());
+      bool isAdaptive = declOp.getIsAdaptive();
+      return llvm::all_of(entries, [&](ASTDecl *existing) {
+        if (failed(resolve(*existing, DeclResolvedness::signature, aliasLoc)))
+          return false;
+        LIT::FuncOp existingOp = cast<LIT::FuncOp>(existing->getIfOperation());
+
+        // If the decl is adaptive, we can merge it with another adaptive decl.
+        if (isAdaptive != existingOp.getIsAdaptive())
+          return false;
+        if (isAdaptive)
+          return true;
+
+        // Otherwise, check that the signatures don't match.
+        return declOp.getFullSignature() != existingOp.getFullSignature();
+      });
+    };
+    if (llvm::all_of(decls, canMergeDecl)) {
+      for (ASTDecl *decl : decls)
+        entries.push_back(decl);
+      return success();
+    }
   }
 
   // Rejecting overlap is conservative and not what python does, but we can
   // relax this in the future when we know what the right policy should be.
-  ASTDecl *existing = it->second.back();
-  auto diag = emitError(aliasLoc, "invalid redefinition of ") << name;
-  diag.attachNote(existing->getLoc()) << "previous definition here";
+  if (emitDiagnostics) {
+    auto diag = emitError(aliasLoc, "invalid redefinition of ") << name;
+    diag.attachNote(existing->getLoc()) << "previous definition here";
 
-  for (ASTDecl *previous : it->second)
-    previous->hasReferenceError = true;
+    for (ASTDecl *previous : it->second)
+      previous->hasReferenceError = true;
+  }
   return failure();
 }
 

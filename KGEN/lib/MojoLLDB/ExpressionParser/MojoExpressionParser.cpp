@@ -49,13 +49,7 @@ struct MojoExpressionParser::Impl {
   MojoTypeSystem *typeSystem = nullptr;
 
   /// The compilation options to use when compiling.
-  KGEN::CompilationOptions compilationOptions;
-
-  /// A source manager to use when compiling.
-  llvm::SourceMgr sourceManager;
-
-  /// The main LLCL runtime.
-  LLCL::Runtime *runtime = nullptr;
+  const KGEN::CompilationOptions *compilationOptions = nullptr;
 
   /// The pass manager to use when compiling.
   std::unique_ptr<mlir::PassManager> passManager;
@@ -94,20 +88,13 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
     return;
   }
   typeSystem = llvm::cast<MojoTypeSystem>(typeSystemOr.get().get());
+  compilationOptions = &typeSystem->getParserContext().getCompilationOptions();
   MLIRContext *ctx = typeSystem->getMLIRContext();
-  runtime = &typeSystem->getRuntime();
-
-  // Compute the target information for the expression.
-  // TODO: Populate cpu features properly here.
-  ArchSpec targetArch = target->GetArchitecture();
-  if (targetArch.IsValid())
-    compilationOptions.targetTriple = targetArch.GetTriple().str();
-  compilationOptions.targetCpu = targetArch.GetClangTargetCPU();
 
   // Compute the target info to use for compilation.
   ErrorOr<TargetInfoAttr> targetInfoOr = getTargetInfoFor(
-      ctx, compilationOptions.targetTriple, compilationOptions.targetCpu,
-      compilationOptions.targetFeatures);
+      ctx, compilationOptions->targetTriple, compilationOptions->targetCpu,
+      compilationOptions->targetFeatures);
   if (targetInfoOr.isError())
     return;
   auto targetInfo = targetInfoOr.takeValue();
@@ -116,49 +103,107 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
   BuildInfoAttr buildInfo = BuildInfoAttr::getForCurrentBuild(ctx);
   passManager =
       std::make_unique<mlir::PassManager>(ctx, ModuleOp::getOperationName());
-  populateElaborateModulePasses(*passManager, *runtime, targetInfo, buildInfo,
-                                compilationOptions);
+  populateElaborateModulePasses(*passManager, typeSystem->getRuntime(),
+                                targetInfo, buildInfo, compilationOptions);
 
   // Create the compiler instance.
   auto compilerOr =
       ObjectCompiler::create(typeSystem->getRuntime(), *passManager,
-                             ".kgen_cache", compilationOptions);
+                             ".kgen_cache", *compilationOptions);
   if (failed(compilerOr))
     return;
   compiler = std::make_unique<KGEN::ObjectCompiler>(std::move(*compilerOr));
 }
 
 //===----------------------------------------------------------------------===//
-// MojoDiagnostic
+// LLDBMojoREPLListener
 //===----------------------------------------------------------------------===//
 
-/// Handle an llvm diagnostic by adding a MojoDiagnostic to the LLDB diagnostic
-/// manager.
-static void handleDiagnostic(const llvm::SMDiagnostic &diagnostic, void *ctx) {
-  auto *manager = (DiagnosticManager *)ctx;
-  // Turn the diagnostic severity into LLDB's severity.
-  DiagnosticSeverity severity;
-  switch (diagnostic.getKind()) {
-  case llvm::SourceMgr::DK_Error:
-    severity = eDiagnosticSeverityError;
-    break;
-  case llvm::SourceMgr::DK_Warning:
-    severity = eDiagnosticSeverityWarning;
-    break;
-  case llvm::SourceMgr::DK_Remark:
-    LLVM_FALLTHROUGH;
-  case llvm::SourceMgr::DK_Note:
-    severity = eDiagnosticSeverityRemark;
-    break;
-  }
-  std::string msg;
-  llvm::raw_string_ostream diagnosticStream(msg);
-  diagnostic.print("mojo", diagnosticStream, /*ShowColors=*/false,
-                   /*ShowKindLabel=*/false);
+namespace {
+/// This class implements a parser listener that communicates between the Mojo
+/// parser and the repl.
+class LLDBMojoREPLListener : public MojoParserREPLListener {
+public:
+  LLDBMojoREPLListener(
+      MojoTypeSystem &typeSystem, MojoUserExpression &expr,
+      DiagnosticManager &diagnosticManager,
+      const EvaluateExpressionOptions &options,
+      SmallVectorImpl<std::pair<StringRef, mlir::Type>> &newPersistentVariables)
+      : typeSystem(typeSystem), expr(expr),
+        diagnosticManager(diagnosticManager), options(options),
+        newPersistentVariables(newPersistentVariables) {}
+  ~LLDBMojoREPLListener() override = default;
 
-  manager->AddDiagnostic(
-      std::make_unique<MojoDiagnostic>(msg, diagnostic.getFixIts(), severity));
-}
+  //===--------------------------------------------------------------------===//
+  // Notifications
+
+  void notifyWrappedExpr(StringRef wrappedExpr) override {
+    typeSystem.debugLog("Parsing the following code:\n{0}", wrappedExpr.data());
+  }
+
+  void notifyFixedExpr(StringRef fixedExpr) override {
+    expr.setFixedText(fixedExpr);
+  }
+
+  void notifyDiagnostics(ArrayRef<llvm::SMDiagnostic> diagnostics) override {
+    typeSystem.debugLog("Found {0} diagnostic{1}\n", diagnostics.size(),
+                        diagnostics.size() == 1 ? "" : "s");
+
+    for (const llvm::SMDiagnostic &diag : diagnostics) {
+      typeSystem.debugLog("Diagnostic with fixits: {0}, message:\n{1}",
+                          diag.getFixIts().size(), diag.getMessage());
+
+      // Turn the diagnostic severity into LLDB's severity.
+      DiagnosticSeverity severity;
+      switch (diag.getKind()) {
+      case llvm::SourceMgr::DK_Error:
+        severity = eDiagnosticSeverityError;
+        break;
+      case llvm::SourceMgr::DK_Warning:
+        severity = eDiagnosticSeverityWarning;
+        break;
+      case llvm::SourceMgr::DK_Remark:
+        LLVM_FALLTHROUGH;
+      case llvm::SourceMgr::DK_Note:
+        severity = eDiagnosticSeverityRemark;
+        break;
+      }
+      std::string msg;
+      llvm::raw_string_ostream diagnosticStream(msg);
+      diag.print("", diagnosticStream, /*ShowColors=*/false,
+                 /*ShowKindLabel=*/false);
+
+      diagnosticManager.AddDiagnostic(
+          std::make_unique<MojoDiagnostic>(msg, severity));
+    }
+  }
+
+  //===--------------------------------------------------------------------===//
+  // Queries
+
+  bool shouldPersistVariable(StringRef name, mlir::Type type) override {
+    // Only consider variables that were written by users, not those generated
+    // by LLDB, which start with __lldb.
+    if (name.starts_with("__lldb"))
+      return false;
+    // TODO: For now, we only persist variables in REPL mode. We should define
+    // a policy for non-REPL mode (e.g. clang/swift using leading $ for variable
+    // names to indicate persistence).
+    if (!options.GetREPLEnabled())
+      return false;
+
+    newPersistentVariables.emplace_back(name, type);
+    return true;
+  }
+
+private:
+  MojoTypeSystem &typeSystem;
+  MojoUserExpression &expr;
+  DiagnosticManager &diagnosticManager;
+  const EvaluateExpressionOptions &options;
+  SmallVectorImpl<std::pair<StringRef, mlir::Type>> &newPersistentVariables;
+};
+} // namespace
 
 //===----------------------------------------------------------------------===//
 // MojoExpressionParser
@@ -171,124 +216,35 @@ MojoExpressionParser::MojoExpressionParser(
 
 MojoExpressionParser::~MojoExpressionParser() = default;
 
-/// Apply fixits in the diagnostic manager to `expr` and set the fixed
-/// expression to the new text. Only if all diagnostics (a) have fix-its and (b)
-/// they can all be applied, will this rewrite the text. It will otherwise
-/// return false.
-LogicalResult
-MojoExpressionParser::rewriteExpression(DiagnosticManager &diagnosticManager) {
-  impl->typeSystem->debugLog(
-      "Found {0} diagnostic{1}\n", diagnosticManager.Diagnostics().size(),
-      diagnosticManager.Diagnostics().size() == 1 ? "" : "s");
-  // `originalText` is the wrapped code, not what the user wrote.
-  StringRef originalText(impl->expr.Text());
-
-  // This takes advantage of the fact that fixits are ordered to apply multiple
-  // fixits to a single expression.
-  std::string newText;
-  size_t prevEnd = 0;
-  auto applyFixit = [&](const llvm::SMFixIt &fixit) -> LogicalResult {
-    llvm::SMRange range = fixit.getRange();
-    if (!range.isValid())
-      return failure();
-
-    StringRef removedText(range.Start.getPointer(),
-                          range.End.getPointer() - range.Start.getPointer());
-    StringRef insertedText = fixit.getText();
-    impl->typeSystem->debugLog("Change \"{0}\" to \"{1}\"", removedText,
-                               insertedText);
-
-    // The current range starts at the previous end pointer.
-    StringRef currentOriginalRange(originalText.begin() + prevEnd);
-
-    // Add the substring from the start of the current original text range.
-    if (range.Start.getPointer() < currentOriginalRange.end() &&
-        range.Start.getPointer() >= currentOriginalRange.begin())
-      newText += currentOriginalRange.substr(
-          0, range.Start.getPointer() - currentOriginalRange.begin());
-
-    impl->typeSystem->debugLog("New expr before fixit insertion:\n{0}",
-                               newText);
-
-    // Add the text to insert.
-    newText += insertedText;
-
-    // Update prevEnd. At the *very* end, we will clean up by adding the
-    // remaining substring. Subtract off the size of the inserted text because
-    // the pointers are all indexed off the original text.
-    prevEnd += range.End.getPointer() - currentOriginalRange.begin();
-    return success();
-  };
-
-  bool allDiagsHandled = true;
-  for (const auto &diag : diagnosticManager.Diagnostics()) {
-    impl->typeSystem->debugLog("Diagnostic with fixits: {0}, message:\n{1}",
-                               diag->HasFixIts(), diag->GetMessage());
-
-    // If it's a mojo diagnostic, it might have fix-its. If it does, and if that
-    // fails, return false. Otherwise, continue.
-    if (const auto *mojoDiag = llvm::dyn_cast<MojoDiagnostic>(diag.get())) {
-      for (const llvm::SMFixIt &fixit : mojoDiag->getFixIts()) {
-        if (failed(applyFixit(fixit))) {
-          allDiagsHandled = false;
-          break;
-        }
-      }
-
-      // If we were unable to handle a diagnostic, or it had no fix-its, log it.
-      if (!allDiagsHandled || mojoDiag->getFixIts().empty())
-        impl->typeSystem->logDiagnostic(*mojoDiag);
-
+/// Collect the name and type of the current persistent variables within the
+/// given state.
+static void collectPersistentVariables(
+    MojoPersistentExpressionState &state,
+    SmallVectorImpl<std::pair<StringRef, mlir::Type>> &variables) {
+  DenseSet<ConstString> persistentVariableNames;
+  for (int i : llvm::reverse(llvm::seq<int>(0, state.GetSize()))) {
+    lldb::ExpressionVariableSP var = state.GetVariableAtIndex(i);
+    assert(var && "expected valid variable in persistent state");
+    if (!persistentVariableNames.insert(var->GetName()).second)
       continue;
-    }
 
-    // Not a Mojo diagnostic, we didn't handle everything.
-    allDiagsHandled = false;
+    mlir::Type varType = mlir::Type::getFromOpaquePointer(
+        var->GetCompilerType().GetOpaqueQualType());
+    variables.emplace_back(var->GetName().GetStringRef(), varType);
   }
-
-  // If we handled all the diagnostics, then we set the fixed expression.
-  if (allDiagsHandled) {
-    // Complete fixit handling by adding the substring from prevEnd to the end
-    // of the buffer. We do this here because we only want to do it if/once
-    // *all* diagnostics are handled.
-    newText += originalText.substr(prevEnd);
-    impl->typeSystem->debugLog("Fixits applied to expression: \n{0}",
-                               newText.c_str());
-    diagnosticManager.SetFixedExpression(newText);
-  } else {
-    impl->typeSystem->debugLog("Unhandled diagnostics found!");
-  }
-
-  return success(allDiagsHandled);
 }
 
 M::LogicalResult
-MojoExpressionParser::parse(DiagnosticManager &diagnosticManager) {
+MojoExpressionParser::parse(MojoPersistentExpressionState &state,
+                            DiagnosticManager &diagnosticManager) {
   if (!impl->compiler) {
     impl->typeSystem->errorLog("No compiler");
     return failure();
   }
 
-  // Add the build folder as an include dir if we have the correct environment
-  // variable. This is for the python configuration, which we use CMake to find.
-  // TODO: This is kinda awful, and we should probably pull in the python
-  //   location directly if we can.
-  std::optional<std::string> pathOr =
-      llvm::sys::Process::GetEnv("MODULAR_PATH");
-  if (pathOr) {
-    impl->sourceManager.setIncludeDirs(
-        {std::filesystem::path(*pathOr) / ".derived" / "build" / "Kernels" /
-         "mojo" / "Python"});
-  }
-
-  // TODO: We should print the expression to a file if we need debug information
-  // attached.
-  auto buffer =
-      llvm::MemoryBuffer::getMemBuffer(impl->expr.Text(), getJITModuleName());
-  impl->sourceManager.AddNewSourceBuffer(std::move(buffer), llvm::SMLoc());
-
-  // Pull out the context.
-  mlir::MLIRContext *ctx = impl->passManager->getContext();
+  MojoParserContext &parserContext = impl->typeSystem->getParserContext();
+  MLIRContext *ctx = impl->typeSystem->getMLIRContext();
+  llvm::SourceMgr &sourceMgr = parserContext.getSourceMgr();
 
   // Register the source manager diagnostic handler so we get all the MLIR
   // diagnostics through the handler we already have and so it's all forwarded
@@ -297,7 +253,7 @@ MojoExpressionParser::parse(DiagnosticManager &diagnosticManager) {
   // scope exit.
   std::string errs;
   llvm::raw_string_ostream errStream(errs);
-  mlir::SourceMgrDiagnosticHandler handler(impl->sourceManager, ctx, errStream);
+  mlir::SourceMgrDiagnosticHandler handler(sourceMgr, ctx, errStream);
 
   // On scope exit, if we've printed any errors make sure to log them.
   auto printOnError = llvm::make_scope_exit([&]() {
@@ -306,26 +262,55 @@ MojoExpressionParser::parse(DiagnosticManager &diagnosticManager) {
     impl->typeSystem->errorLog("{0}", errs);
   });
 
-  // Set the diagnostic handler to create MojoDiagnostics that we can use to
-  // capture fix-its.
-  impl->sourceManager.setDiagHandler(handleDiagnostic, &diagnosticManager);
+  // Collect the current persistent variables.
+  SmallVector<std::pair<StringRef, mlir::Type>> variables;
+  collectPersistentVariables(state, variables);
 
-  // Import the mojo module.
-  mlir::TimingScope scope;
-  MojoParserConfig config(ctx, *impl->runtime, impl->compilationOptions);
-  OwningOpRef<ModuleOp> module =
-      importMojoFile(impl->sourceManager, config, scope);
+  // Parse the expression.
+  std::string expressionId = state.getNextExpressionModuleName();
+  LLDBMojoREPLListener listener(*impl->typeSystem, impl->expr,
+                                diagnosticManager, impl->options,
+                                impl->newPersistentVariables);
+  StringRef exprFnName = impl->expr.FunctionName();
+  MojoASTDeclRef exprFnDecl = parserContext.parseREPLExpresion(
+      listener, expressionId, impl->expr.Text(), exprFnName, variables);
+
+  // Log the received diagnostics to the user.
   if (!diagnosticManager.Diagnostics().empty()) {
     impl->typeSystem->debugLog("Emitted diagnostics");
+    for (const auto &diag : diagnosticManager.Diagnostics())
+      impl->typeSystem->logDiagnostic(*cast<MojoDiagnostic>(diag.get()));
+  }
+
+  // If the parser supplied a fixed expression, abort processing and use that
+  // expression instead.
+  if (!impl->expr.GetFixedText().empty() &&
+      impl->options.GetAutoApplyFixIts()) {
+    impl->typeSystem->debugLog(
+        "Rewrote the input, next parse will be the fixed code:\n{0}",
+        impl->expr.GetFixedText());
+
+    // Clear the diagnostic manager so we don't re-fix something.
+    diagnosticManager.Clear();
     return failure();
   }
 
-  if (!module) {
+  if (!exprFnDecl) {
     impl->typeSystem->errorLog("Failed to parse the module");
     return failure();
   }
-
   impl->typeSystem->debugLog("Parsed module successfully");
+
+  // Create a clone of the parser module so that we can compile it without
+  // thrashing on the current parser state.
+  OwningOpRef<ModuleOp> module = parserContext.getModule().clone();
+
+  // Ensure the expression function gets exported.
+  LIT::FuncOp exprFn = cast<LIT::FuncOp>(exprFnDecl.getIfOperation());
+  OpBuilder exportBuilder = OpBuilder::atBlockEnd(module->getBody());
+  exportBuilder.create<ExportOp>(exprFn.getLoc(),
+                                 LIT::getFullyResolvedSymbolRef(exprFn),
+                                 exprFnName, /*isCExport=*/true);
 
   // Log the pre-elaboration module.
   std::string preElaborationModule;
@@ -337,29 +322,6 @@ MojoExpressionParser::parse(DiagnosticManager &diagnosticManager) {
       [](Pass *, Operation *) { return false; }, /*printModuleScope=*/false,
       /*printAfterOnlyOnChange=*/false, /*printAfterOnlyOnFailure=*/false,
       /*out=*/preElaborationStream);
-
-  // Extract the file module for the expression. File modules get mangled with
-  // a leading `$`.
-  auto fileModule =
-      module->lookupSymbol<LIT::FileModuleOp>(("$" + getJITModuleName()).str());
-  assert(fileModule && "expected to find the lldb file module");
-
-  // Grab the struct containing the persistent expression state.
-  auto persistentStateStruct =
-      fileModule.lookupSymbol<LIT::StructDeclOp>("__lldb_context__");
-  assert(persistentStateStruct && "expected to find persistent state struct");
-
-  // Extract the internal expression function.
-  auto functions = fileModule.getOps<LIT::FuncOp>();
-  auto exprFnIt = llvm::find_if(functions, [](LIT::FuncOp func) {
-    return func.getName().startswith("__lldb_expr_impl__(");
-  });
-  assert(exprFnIt != functions.end() && "expected lldb expression function");
-  LIT::FuncOp exprFunc = *exprFnIt;
-
-  // Process the variables within the expression.
-  if (impl->options.GetREPLEnabled())
-    processPersistentReplVariables(exprFunc, persistentStateStruct);
 
   // Run the elaboration pipeline.
   if (failed(impl->passManager->run(*module))) {
@@ -401,9 +363,7 @@ MojoExpressionParser::parse(DiagnosticManager &diagnosticManager) {
 Status MojoExpressionParser::prepareForExecution(
     lldb::addr_t &funcAddr, lldb::addr_t &funcEnd,
     std::shared_ptr<JITExecutionUnit> &executionUnit, ExecutionContext &exeCtx,
-    ExecutionPolicy executionPolicy,
-    std::optional<MojoExpressionSourceCode> sourceCode,
-    bool keepResultInMemory) {
+    ExecutionPolicy executionPolicy, bool keepResultInMemory) {
   // Grab the LLVM module built during the parse phase.
   std::unique_ptr<llvm::Module> module = std::move(impl->llvmModule);
   if (!module) {
@@ -421,7 +381,7 @@ Status MojoExpressionParser::prepareForExecution(
 
   // Extract the target features.
   SmallVector<StringRef> splitFeatures;
-  StringRef(impl->compilationOptions.targetFeatures).split(splitFeatures, ",");
+  StringRef(impl->compilationOptions->targetFeatures).split(splitFeatures, ",");
   std::vector<std::string> features(splitFeatures.begin(), splitFeatures.end());
 
   // Build the IR execution unit responsible for executing the generated IR.
@@ -500,109 +460,8 @@ Status MojoExpressionParser::prepareForExecution(
   }
 
   // Register the persisted state for this execution.
-  persistentState->registerExpressionInstance(
-      std::move(persistedExecutionUnit), std::move(peristentVariables),
-      std::move(sourceCode), impl->expr.getPythonModuleName());
+  persistentState->registerExpressionInstance(std::move(persistedExecutionUnit),
+                                              std::move(peristentVariables),
+                                              impl->expr.getPythonModuleName());
   return error;
-}
-
-//===----------------------------------------------------------------------===//
-// Persistent Variables
-//===----------------------------------------------------------------------===//
-
-void MojoExpressionParser::processPersistentReplVariables(
-    LIT::FuncOp func, LIT::StructDeclOp stateStruct) {
-  OpBuilder structBuilder = OpBuilder::atBlockEnd(stateStruct.getBody());
-  Value structValue = func.getArgument(0);
-  Attribute targetAttr =
-      KGEN::ParamOperatorAttr::get(POC::CurrentTarget, /*operands=*/{},
-                                   structBuilder.getType<KGEN::TargetType>());
-
-  // Utility functor to insert a new field into the persistent state struct.
-  // Returns a value corresponding to the address of the field.
-  auto insertField = [&](Operation *varOp, StringAttr name,
-                         POP::PointerType type) {
-    mlir::Type elementType = type.getResolvedElementType();
-    impl->newPersistentVariables.emplace_back(name, elementType);
-
-    std::string newFieldName = ("__new_repl_var_" + name.strref()).str();
-    structBuilder.create<LIT::StructFieldOp>(varOp->getLoc(), newFieldName,
-                                             POP::PointerType::get(type));
-
-    // Materialize a reference to the variable within the function.
-    mlir::ImplicitLocOpBuilder builder(varOp->getLoc(), varOp);
-    Value fieldGep = builder.create<LIT::StructGEPOp>(
-        varOp->getLoc(), POP::PointerType::get(POP::PointerType::get(type)),
-        newFieldName, structValue);
-    Value fieldLoad = builder.create<POP::LoadOp>(varOp->getLoc(), fieldGep);
-
-    // TODO: Whenever we have globals, we should be able to use a global
-    // variable for the address and ensure it gets preserved. For now, we just
-    // malloc the memory.
-    mlir::Type indexType = structBuilder.getIndexType();
-    Attribute sizeOfAttr = KGEN::ParamOperatorAttr::get(
-        POC::GetSizeOf,
-        {KGEN::ParameterizedTypeConstantAttr::get(elementType), targetAttr},
-        indexType);
-    Value sizeOf = builder.create<KGEN::ParamConstantOp>(indexType, sizeOfAttr);
-    auto mallocCall = builder.create<POP::ExternalCallOp>(
-        POP::PointerType::get(POP::SIMDType::get(
-            1, builder.getAttr<KGEN::DTypeConstantAttr>(KGENDType::invalid))),
-        "malloc", sizeOf, /*variadicType=*/TypeAttr());
-    Value mallocResult = mallocCall.getResult(0);
-    Value mallocCast =
-        builder.create<POP::PointerBitcastOp>(type, mallocResult);
-    builder.create<POP::StoreOp>(mallocCast, fieldLoad);
-
-    // Return a pointer to the new address of the variable.
-    return mallocCast;
-  };
-
-  // Functor used to consider if a variable should be persisted.
-  auto shouldBePersisted = [&](StringRef name) {
-    // Only consider variables that were written by users, not those
-    // auto-generated by the compiler or by LLDB, which start with __lldb.
-    if (name.starts_with("__lldb"))
-      return false;
-
-    return llvm::all_of(
-        name, [&](char c) { return llvm::isAlnum(c) || c == '_' || c == '$'; });
-  };
-
-  // Walk the inner body function, which contains the user code, to collect all
-  // of the top-level variables. In REPL mode, we persist any variables defined
-  // within the expression.
-  auto bodyFunc = *func.getBody()->getOps<LIT::FuncOp>().begin();
-  for (Operation &op : llvm::make_early_inc_range(*bodyFunc.getBody())) {
-    // Handle register based let decls. These have an initializer, and never
-    // expose the actual pointer.
-    if (auto letOp = dyn_cast<LIT::LetRegDeclOp>(op)) {
-      StringAttr name = letOp.getNameAttr();
-      if (!shouldBePersisted(name.getValue()))
-        continue;
-
-      Value field =
-          insertField(letOp, name, POP::PointerType::get(letOp.getType()));
-
-      // Store the value in the persistent state struct.
-      OpBuilder builder(letOp);
-      builder.create<POP::StoreOp>(letOp.getLoc(), letOp.getValue(), field);
-
-      // Replace all references of the original decl with the initializer.
-      letOp.replaceAllUsesWith(letOp.getValue());
-      letOp.erase();
-      continue;
-    }
-    // Handle memory based let decls.
-    if (auto letOp = dyn_cast<LIT::VarLetDeclOp>(op)) {
-      StringAttr name = letOp.getNameAttr();
-      if (!shouldBePersisted(name.getValue()))
-        continue;
-
-      Value field = insertField(letOp, name, letOp.getType());
-      letOp.replaceAllUsesWith(field);
-      letOp.erase();
-      continue;
-    }
-  }
 }

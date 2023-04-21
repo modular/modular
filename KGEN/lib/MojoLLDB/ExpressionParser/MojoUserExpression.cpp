@@ -166,12 +166,9 @@ bool MojoUserExpression::Parse(DiagnosticManager &diagnosticManager,
   // treat this as a python expression. Otherwise, it should be treated as a
   // Mojo expression.
   StringRef exprText(m_expr_text);
-  std::optional<MojoExpressionSourceCode> mojoSourceCode;
   if (!exprText.consume_front(">python\n") &&
       !exprText.consume_front("%python\n")) {
-    mojoSourceCode.emplace(exprText);
-    if (failed(wrapTextAndParseExpression(*mojoSourceCode, diagnosticManager,
-                                          exeCtx, exeScope,
+    if (failed(wrapTextAndParseExpression(diagnosticManager, exeCtx, exeScope,
                                           impl->persistentState)))
       return false;
   } else if (failed(wrapTextAndParsePythonExpression(
@@ -184,7 +181,7 @@ bool MojoUserExpression::Parse(DiagnosticManager &diagnosticManager,
   // possible.
   Status jitError = impl->parser->prepareForExecution(
       m_jit_start_addr, m_jit_end_addr, executionUnit, exeCtx, executionPolicy,
-      std::move(mojoSourceCode), keepResultInMemory);
+      keepResultInMemory);
   if (!jitError.Success()) {
     const char *errorCStr = jitError.AsCString();
     if (errorCStr && errorCStr[0])
@@ -255,189 +252,30 @@ static void registerTraceDumpHandler(Debugger &debugger) {
   });
 }
 
-/// Collect the name and type of the current persistent variables within the
-/// given state.
-static void collectPersistentVariables(
-    MojoPersistentExpressionState &state,
-    SmallVectorImpl<std::pair<StringRef, mlir::Type>> &variables) {
-  DenseSet<ConstString> persistentVariableNames;
-  for (int i : llvm::reverse(llvm::seq<int>(0, state.GetSize()))) {
-    lldb::ExpressionVariableSP var = state.GetVariableAtIndex(i);
-    assert(var && "expected valid variable in persistent state");
-    if (!persistentVariableNames.insert(var->GetName()).second)
-      continue;
-
-    mlir::Type varType = mlir::Type::getFromOpaquePointer(
-        var->GetCompilerType().GetOpaqueQualType());
-    variables.emplace_back(var->GetName().GetStringRef(), varType);
-  }
-}
-
-void MojoUserExpression::notifyFixits(DiagnosticManager &diagnosticManager,
-                                      StringRef fixedText) {
-  std::string fixItsNotification;
-  llvm::raw_string_ostream os(fixItsNotification);
-  os << diagnosticManager.GetString()
-     << "Applied fix-its, evaluating new expression:\n"
-     << fixedText;
-
-  // Besides writing the notification to stderr, we also notify it to the type
-  // system broadcaster for external listeners.
-  impl->typeSystem.broadcastUserMessage(fixItsNotification);
-}
-
 LogicalResult MojoUserExpression::wrapTextAndParseExpression(
-    const MojoExpressionSourceCode &sourceCode,
     DiagnosticManager &diagnosticManager, ExecutionContext &exeCtx,
     ExecutionContextScope *exeScope, MojoPersistentExpressionState &state) {
-
-  // We use the following comments to identify the chunks of code written by the
-  // user. After we apply fix-its, we need to extract these two chunks and
-  // combine them into the new source code to evaluate.
-  constexpr StringLiteral kTopLevelBlockBegin =
-      "#==__lldb_expr_top_level_code_begin\n";
-  constexpr StringLiteral kTopLevelBlockEnd =
-      "#==__lldb_expr_top_level_code_end\n";
-  constexpr StringLiteral kMainBodyBlockBegin =
-      "    #==__lldb_expr_main_body_code_begin\n";
-  constexpr StringLiteral kMainBodyBlockEnd =
-      "    #==__lldb_expr_main_body_code_end\n";
-
-  // Collect the current persistent variables.
-  SmallVector<std::pair<StringRef, mlir::Type>> variables;
-  collectPersistentVariables(state, variables);
-
-  // Wrap the expression text in a function so that we can execute it.
-  // TODO: This currently doesn't support imports or any kind of persistent
-  // state.
-  llvm::raw_string_ostream exprRawOS(transformedText);
-  mlir::raw_indented_ostream exprOSIndented(exprRawOS);
-
-  exprOSIndented << "from IO import _printf, print\n"
-                 << "from Pointer import Pointer\n"
-                 << "from PythonInterface import Python\n"
-                 << "from PythonObject import PythonObject\n"
-                 << "from Range import range\n"
-                 // Use `PythonObject` so that the import gets resolved.
-                 << "fn use_python():\n  var py_obj = PythonObject(0)\n\n";
-
-  // We insert the previously executed top level code to ensure functions,
-  // imports and classes are preserved. This also ensures that saved
-  // variables can be inspected again because the user defined types are
-  // included in these pieces of code.
-  for (const auto &exprInst : impl->persistentState.getExpressionInstances()) {
-    if (exprInst.sourceCode)
-      exprOSIndented << exprInst.sourceCode->getTopLevelCode();
-  }
-
-  // The following is the first chunk of code written by the user.
-  exprOSIndented << kTopLevelBlockBegin << sourceCode.getTopLevelCode()
-                 << kTopLevelBlockEnd;
-
-  // Build the input struct, which contains each of the persistent
-  // variables.
-  exprOSIndented << "struct __lldb_context__:\n";
-  for (auto &var : variables) {
-    exprOSIndented << llvm::formatv(
-        "  var {0}: Pointer[Pointer[__mlir_type.`{1}`]]\n", var.first,
-        var.second);
-  }
-  if (variables.empty())
-    exprOSIndented << "  pass\n";
-  exprOSIndented << "\n";
-
-  // Generate a wrapper function to handle the extracting function arguments.
-  exprOSIndented << "@export\n"
-                    "fn __lldb_expr__(__lldb_arg&: __lldb_context__):\n"
-                    "  try:\n"
-                    "    __lldb_expr_impl__(__lldb_arg";
-  for (auto &var : variables) {
-    exprOSIndented << formatv(
-        ", __get_address_as_lvalue(__lldb_arg.{0}.load().address)", var.first);
-  }
-  exprOSIndented << ")\n"
-                    "  except error:\n"
-                    "    _printf(\"Error: \")\n"
-                    "    print(error.value)\n\n";
-
-  // Finally we can generate the actual expression function.
-  exprOSIndented << "def __lldb_expr_impl__(__lldb_arg&: __lldb_context__";
-  for (auto &var : variables) {
-    exprOSIndented << llvm::formatv(", {0}&: __mlir_type.`{1}`", var.first,
-                                    var.second);
-  }
-  exprOSIndented << "):\n";
-
-  // The following is the other chunk of code just written by the user. We wrap
-  // this in a nexted def to allow the user to re-define variables.
-  exprOSIndented << "  def __lldb_expr_impl_body__():\n" << kMainBodyBlockBegin;
-  exprOSIndented.printReindented(sourceCode.getMainBodyCode(), "    ");
-  exprOSIndented << kMainBodyBlockEnd
-                 << "    return\n"
-                    "  __lldb_expr_impl_body__()\n";
-
-  impl->typeSystem.debugLog("Parsing the following code:\n{0}",
-                            transformedText.c_str());
-
   // Parse the expression.
   materializer = std::make_unique<Materializer>();
   impl->parser =
       std::make_unique<MojoExpressionParser>(exeScope, *this, m_options);
 
-  LogicalResult result = failure();
-  auto parseModule = [&]() {
-    result = impl->parser->parse(diagnosticManager);
-    if (succeeded(result))
-      return;
-
-    if (!diagnosticManager.HasFixIts()) {
-      // Log the diagnostics emitted during parsing.
-      for (const auto &diag : diagnosticManager.Diagnostics())
-        if (const auto *mojoDiag = llvm::dyn_cast<MojoDiagnostic>(diag.get()))
-          impl->typeSystem.logDiagnostic(*mojoDiag);
-      return;
-    }
-
-    impl->typeSystem.debugLog("Attempting to rewrite the input expression");
-
-    // If we can rewrite the expression, do so. If not, simply return.
-    if (failed(impl->parser->rewriteExpression(diagnosticManager)))
-      return;
-    impl->typeSystem.debugLog(
-        "Rewrote the input, next parse will be the fixed code");
-    llvm::raw_string_ostream fixedOS(m_fixed_text);
-    mlir::raw_indented_ostream indentedFixedOS(fixedOS);
-    StringRef fixedText = diagnosticManager.GetFixedExpression();
-    // Get the modified top level code
-    indentedFixedOS << fixedText.slice(fixedText.find(kTopLevelBlockBegin) +
-                                           kTopLevelBlockBegin.size(),
-                                       fixedText.find(kTopLevelBlockEnd));
-
-    // Get the modified main body and remove all indent.
-    indentedFixedOS.printReindented(
-        fixedText.slice(fixedText.find(kMainBodyBlockBegin) +
-                            kMainBodyBlockBegin.size(),
-                        fixedText.find(kMainBodyBlockEnd)),
-        "");
-
-    impl->typeSystem.debugLog("The new unwrapped code will be:\n{0}",
-                              m_fixed_text);
-    notifyFixits(diagnosticManager, m_fixed_text);
-    // Clear the diagnostic manager so we don't re-fix something.
-    diagnosticManager.Clear();
-  };
-
   // Register the trace dump signal handler before we enable the
   // CrashRecoveryContext so it is picked up properly.
   registerTraceDumpHandler(exeCtx.GetTargetRef().GetDebugger());
   llvm::CrashRecoveryContext::Enable();
+
   // Disable the crash recovery context for the next time around.
   auto scopeExit =
       llvm::make_scope_exit([]() { llvm::CrashRecoveryContext::Disable(); });
   llvm::CrashRecoveryContext crc;
+
   // Signal handlers don't fire unless this flag is set.
   crc.DumpStackAndCleanupOnFailure = true;
-  if (!crc.RunSafelyOnThread(parseModule)) {
+
+  LogicalResult result = failure();
+  if (!crc.RunSafelyOnThread(
+          [&]() { result = impl->parser->parse(state, diagnosticManager); })) {
     impl->typeSystem.errorLog(
         "Crash recovered: CrashRecoveryContext::RetCode (on POSIX: "
         "signal number + 128) = {0}",
@@ -561,7 +399,5 @@ sys.modules['{1}'] = expr_module
   m_expr_text = mojoExprOS.str();
   impl->pythonModuleName = std::move(moduleName);
 
-  MojoExpressionSourceCode sourceCode(m_expr_text);
-  return wrapTextAndParseExpression(sourceCode, diagnosticManager, exeCtx,
-                                    exeScope, state);
+  return wrapTextAndParseExpression(diagnosticManager, exeCtx, exeScope, state);
 }
