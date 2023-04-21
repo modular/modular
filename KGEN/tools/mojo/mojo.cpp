@@ -63,7 +63,7 @@ public:
       cl::desc("The command to execute"),
       cl::values(
           clEnumValN(MojoCommand::kDocGen, "doc-gen",
-                     "Generate markdown documentation."),
+                     "Generate documentation information in json."),
           clEnumValN(MojoCommand::kEmit, "emit", "Emit funcs as object files."),
           clEnumValN(
               MojoCommand::kEmitHeader, "emit-header",

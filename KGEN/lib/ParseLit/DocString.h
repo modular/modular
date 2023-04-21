@@ -45,8 +45,63 @@ private:
 // Entry Point
 //===----------------------------------------------------------------------===//
 
-/// Generate markdown documentation for the given decl.
-void generateLitMarkdownDoc(ASTDecl &decl, raw_ostream &os);
+/// Generate a JSON representation of the documentation for the given decl, and
+/// write it to the given output stream. The output of the generation is defined
+/// in the following format:
+///
+/// Module:
+///  {
+///    "kind": "module",
+///    "name": "...",
+///    "summary": "...",
+///    "description": "...",
+///    "children": [ ... ]
+///  }
+///
+/// Struct:
+/// {
+///   "kind": "struct",
+///   "name": "...",
+///   "summary": "...",
+///   "description": "...",
+///   "parameters": [
+///     {
+///       "signature": "bar: Int",
+///       "description": "...",
+///     }
+///   ],
+///   "children": [ ... ]
+/// }
+///
+/// Function:
+/// {
+///   "kind": "function",
+///   "name": "baz",
+///   "overloads": [
+///     {
+///       "signature": "baz() -> Int",
+///       "summary": "...",
+///       "description": "...",
+///       "args": [
+///         {
+///           "signature": "foo: Int",
+///           "description": "...",
+///         }
+///       ]
+///       "parameters": [
+///         {
+///           "signature": "bar: Int",
+///           "description": "...",
+///         }
+///       ],
+///       "returns": "...",
+///       "constraints": "..."
+///     }
+///   ]
+/// }
+///
+///
+void generateMojoDocJSON(ASTDecl &decl, raw_ostream &os);
 
 /// Validate the doc string for the given decl, emitting warnings for any
 /// invalid format issues.
