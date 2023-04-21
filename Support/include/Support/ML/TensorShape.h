@@ -256,6 +256,7 @@ public:
   TensorShape() = default;
   TensorShape(const TensorShape &) = default;
   TensorShape(TensorShape &&) = default;
+  TensorShape &operator=(const TensorShape &) = default;
   TensorShape &operator=(TensorShape &&) = default;
 
   // Allow constructing from both 32/64-bit and signed/unsigned integer
