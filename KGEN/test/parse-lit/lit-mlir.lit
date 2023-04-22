@@ -119,7 +119,7 @@ fn getAddressOf[T: __mlir_type.`!kgen.mlirtype`](arg&: T) -> MyPointer[T]:
     return __mlir_op.`pop.pointer.bitcast`[_type : MyPointer[T].StorageTy](
         __get_lvalue_as_address(arg)
     )
-
+    # CHECK-NEXT: lit.ownership.def.lvalue %arg
     # CHECK-NEXT: %0 = kgen.call @"{{.*}}@MyPointer::@"__init__(__mlir_type.!pop.pointer<eltType>)"<:type T>(%arg)
     # CHECK-NEXT: lit.return %0
 
