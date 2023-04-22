@@ -558,6 +558,8 @@ void LowerKGENToLLVMPass::runOnOperation() {
   target.addLegalDialect<LLVM::LLVMDialect>();
   target.addLegalDialect<POP::POPDialect>();
   target.addLegalOp<mlir::UnrealizedConversionCastOp>();
+  target.addLegalOp<KGEN::CallSignatureOp>();
+  target.addLegalOp<KGEN::CreateClosureOp>();
 
   // Capture all the public symbols declared by kgen.export declarations.
   llvm::MapVector<StringAttr, ExportedSymbol> publicSymbols =

@@ -138,7 +138,7 @@ kgen.generator @foo<N>(%arg0: !pop.scalar<index>) {
   %0 = pop.struct.create(%arg0) : !pop.struct<scalar<index>>
   pop.compiler.global_store "foo_context_var_0", %0 : !pop.struct<scalar<index>>
   kgen.param.declare k: <index>() capturing -> !pop.scalar<index> = <@foo_k<N, #kgen.unbound>>
-  // CHECK: %1 = kgen.stage_closure = () -> !pop.scalar<index> {
+  // CHECK: %1 = kgen.stage_closure = () capturing -> !pop.scalar<index> {
   // CHECK: %3 = pop.compiler.global_load "foo_context_var_0" : !pop.struct<scalar<index>>
   // CHECK: %4 = pop.struct.extract %3[0] : !pop.struct<scalar<index>>
   // CHECK: %5 = kgen.param.constant = <3>

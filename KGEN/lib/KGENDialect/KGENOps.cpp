@@ -1008,6 +1008,13 @@ static void printStageClosureOp(OpAsmPrinter &p, Operation *op,
 // CreateClosureOp
 //===----------------------------------------------------------------------===//
 
+void CreateClosureOp::concretizeCallee(mlir::IRRewriter &b,
+                                       SymbolConstantAttr callee,
+                                       TypeRange resultTypes) {
+  b.replaceOpWithNewOp<CreateClosureOp>(*this, resultTypes, callee,
+                                        getOperands());
+}
+
 static ParseResult
 parseCreateClosureOp(OpAsmParser &p, SymbolConstantAttr &callee,
                      SmallVectorImpl<OpAsmParser::UnresolvedOperand> &captures,
