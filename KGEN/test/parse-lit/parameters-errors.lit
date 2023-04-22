@@ -6,7 +6,7 @@
 
 # RUN: kgen-translate -import-mojo -verify-diagnostics %s -I %S/../mojo-examples/
 
-from prolog import DType, F32, object
+from prolog import DType, F32, object, SIMD
 
 ##===----------------------------------------------------------------------===##
 # Input parameters
@@ -30,14 +30,14 @@ fn GoodUseOfThing(a: Thing[4, 5]):
 fn MissingThingMetaParams(a: Thing):  # expected-error {{'Thing' expects 2 input parameters but 0 were provided}}
   pass
 
-# expected-error-re @below {{cannot apply more parameters to an already parameterized type '$parameters-errors::Thing[{{.*}}1{{.*}}, {{.*}}2{{.*}}]'}}
+# expected-error-re @below {{cannot apply more parameters to an already parameterized type 'Thing[{{.*}}1{{.*}}, {{.*}}2{{.*}}]'}}
 fn MultipleThingMetaparams(a: Thing[1,2][1]):
   pass
 
 fn OneMissingThingMetaParam(a: Thing[1]):  # expected-error {{'Thing' expects 2 input parameters but 1 was provided}}
   pass
 
-# expected-error @+1 {{'Thing' parameter #1 has '$Int::Int' type, but value has type '$FloatLiteral::FloatLiteral'}}
+# expected-error @+1 {{'Thing' parameter #1 has 'Int' type, but value has type 'FloatLiteral'}}
 fn WeirdMetaParams(a: Thing[1, 1.5]):
   pass
 
@@ -65,7 +65,7 @@ struct Parameterized[p1: Int]:
 # of parameters.
 fn testTestParamStruct(a: Parameterized[4]):
   a.method[7](Parameterized[11]())
-  # expected-error-re @below {{invalid call to 'method': method argument #0 cannot be converted from '$parameters-errors::Parameterized[{{.*}}12{{.*}}]' to '$parameters-errors::Parameterized[{{.*}}11{{.*}}]'}}
+  # expected-error-re @below {{invalid call to 'method': method argument #0 cannot be converted from 'Parameterized[{{.*}}12{{.*}}]' to 'Parameterized[{{.*}}11{{.*}}]'}}
   a.method[7](Parameterized[12]())
   a.method[2](Parameterized[6]())
   a.method[2, 7] # expected-error {{'method' expects 2 input parameters but 3 were provided}}
@@ -80,7 +80,7 @@ fn testSIMD(a: MySIMD[1, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`],
             b: MySIMD[2, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]):
   var x = a+a
   var y = b+b
-  var z = b+a  # expected-error-re {{invalid call to '__add__': right side cannot be converted from '$parameters-errors::MySIMD[{{.*}}1{{.*}}, f64]' to '$parameters-errors::MySIMD[{{.*}}2{{.*}}, si32]'}}
+  var z = b+a  # expected-error-re {{invalid call to '__add__': right side cannot be converted from 'MySIMD[{{.*}}1{{.*}}, f64]' to 'MySIMD[{{.*}}2{{.*}}, si32]'}}
 
 fn badReboundType[type: __mlir_type.`!kgen.dtype`,
                   val: __mlir_type[`!pop.scalar<`, type, `>`]]():
@@ -100,7 +100,7 @@ def generic_fn[a: DType, b: Int](c : Int):
 
 def call_generic[dt: DType]():
   generic_fn[dt, 1, 42](57) # expected-error {{invalid call to 'generic_fn': callee expects 2 input parameters but 3 were provided}}
-  generic_fn[1, dt](57) # expected-error {{'$Int::Int' value cannot be converted to '$DType::DType' in call parameter}}
+  generic_fn[1, dt](57) # expected-error {{'Int' value cannot be converted to 'DType' in call parameter}}
 
 fn meta_param_then_param_redef[
       dt: __mlir_type.index # expected-note {{previous definition here}}
@@ -133,7 +133,7 @@ fn callVariadic():
   variadicIntParams[1]() # OK
   variadicIntParams[1, 2]() # OK
 
-  variadicIntParams[1.0]() # expected-error {{'$FloatLiteral::FloatLiteral' value cannot be converted to '$Int::Int' in call parameter}}
+  variadicIntParams[1.0]() # expected-error {{'FloatLiteral' value cannot be converted to 'Int' in call parameter}}
 
 
 
@@ -172,7 +172,7 @@ fn useResultParams():
   hasResultParam[1 -> e]()
 
   alias f: __mlir_type.f32 # expected-note {{alias forward declared here}}
-  # expected-error @+1 {{result parameter returns type '$Int::Int' but forward declaration is of type '__mlir_type.f32'}}
+  # expected-error @+1 {{result parameter returns type 'Int' but forward declaration is of type '__mlir_type.f32'}}
   hasResultParam[1 -> f]()
 
   var varNotAlias : __mlir_type.f32 # expected-note {{'varNotAlias' declared here}}
@@ -186,7 +186,7 @@ fn useResultParams():
   # expected-error @+1 {{calls with result parameters must be called directly}}
   _ = hasResultParam
 
-  # expected-error-re @+1 {{cannot use parameterized function of type 'fn[$Int::Int]() -> None' without binding all its parameters}}
+  # expected-error-re @+1 {{cannot use parameterized function of type 'fn[Int]() -> None' without binding all its parameters}}
   _ = hasInputParam
 
   # expected-error @+1 {{invalid call to 'hasInputParam': callee expects 1 input parameter but 0 were provided}}
@@ -198,8 +198,23 @@ fn useResultParams():
   alias x = hasResultParam[1 -> h]()
 
 fn incorrectParameterReturnType[()-> a: Int]():
-  # expected-error @+1 {{'$FloatLiteral::FloatLiteral' value cannot be converted to '$Int::Int' in return parameter}}
+  # expected-error @+1 {{'FloatLiteral' value cannot be converted to 'Int' in return parameter}}
   param_return[4.0]
+
+# expected-note @below {{function declared here}}
+fn take_simd8(x: SIMD[DType.f32, 8]):
+    pass
+
+fn add_param_arg[x: Int](y: Int) -> Int:
+    return x + y
+
+fn pass_simd():
+    # expected-error @below {{cannot be converted from 'SIMD[f32, add_param_arg[8](8)]' to 'SIMD[f32, 8]'}}
+    take_simd8(SIMD[DType.f32, add_param_arg[8](8)]())
+    alias bar = add_param_arg
+    # expected-error @below {{cannot be converted from 'SIMD[f32, bar[8](8)]' to 'SIMD[f32, 8]'}}
+    take_simd8(SIMD[DType.f32, bar[8](8)]())
+
 
 ##===----------------------------------------------------------------------===##
 # First-class functions as parameters.
@@ -228,7 +243,7 @@ struct BadAliasStruct:
 
 
 fn testConversionQoI():
-  # expected-error @+1 {{'$FloatLiteral::FloatLiteral' value cannot be converted to '$Int::Int' in alias}}
+  # expected-error @+1 {{'FloatLiteral' value cannot be converted to 'Int' in alias}}
   alias intVal : Int = 1.2
 
 

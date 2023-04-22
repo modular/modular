@@ -14,7 +14,7 @@ from Coroutine import Coroutine
 ##===----------------------------------------------------------------------===##
 
 def invalid_conversion(a: Int, b: __mlir_type.index):
-  b = a # expected-error {{'$Int::Int' value cannot be converted to '__mlir_type.index' in assignment}}
+  b = a # expected-error {{'Int' value cannot be converted to '__mlir_type.index' in assignment}}
 
 struct NotBoolConvertible:
   pass
@@ -30,7 +30,7 @@ fn some_fn_ret_int() -> Int: return 42
 
 # Issue #11288
 fn test_overload_set():
-  # expected-error @+1 {{invalid call to 'some_fn_take_int': argument #0 cannot be converted from 'fn() -> $Int::Int' to '$Int::Int'}}
+  # expected-error @+1 {{invalid call to 'some_fn_take_int': argument #0 cannot be converted from 'fn() -> Int' to 'Int'}}
   some_fn_take_int(some_fn_ret_int)
 
 
@@ -38,17 +38,17 @@ struct MemType: pass
 
 
 fn test_func_type():
-    # expected-error @below {{fn($Int::Int) -> $Int::Int}}
+    # expected-error @below {{fn(Int) -> Int}}
     alias f0: fn(Int) -> Int = test_func_type
     # expected-error @below {{async fn() -> None}}
     alias f1: async fn() -> None = test_func_type
-    # expected-error @below {{fn[$Int::Int]() -> $expressions-errors::MemType}}
+    # expected-error @below {{fn[Int]() -> MemType}}
     alias f2: fn[a: Int]() -> MemType = test_func_type
-    # expected-error @below {{fn[$Int::Int](owned $Int::Int) -> $expressions-errors::MemType}}
+    # expected-error @below {{fn[Int](owned Int) -> MemType}}
     alias f3: fn[a: Int](owned Int) -> MemType = test_func_type
-    # expected-error @below {{fn[$Int::Int](*&$Int::Int) -> None}}
+    # expected-error @below {{fn[Int](*&Int) -> None}}
     alias f4: fn[a: Int](*&Int) -> None = test_func_type
-    # expected-error @below {{fn(*$expressions-errors::MemType) raises capt}}
+    # expected-error @below {{fn(*MemType) raises capturing -> None}}
     alias f5: def(*MemType) capturing -> None = test_func_type
     # expected-error @below {{fn[*AnyType](owned* *$0) capt}}
     alias f6: fn[*Ts: AnyType](owned* *Ts) capturing -> None = test_func_type
@@ -105,7 +105,7 @@ def testLValuesRvalues() -> None:
 
   # Test with rvalues
   LValuesRvalues().normalMethod()
-  LValuesRvalues().mutatingMethod()  # expected-error {{invalid use of mutating method on rvalue of type '$expressions-errors::LValuesRvalues'}}
+  LValuesRvalues().mutatingMethod()  # expected-error {{invalid use of mutating method on rvalue of type 'LValuesRvalues'}}
 
   # expected-error @+1 {{method argument #0 must be mutable in order to pass as a by-ref argument}}
   LValuesRvalues().takesByRef(LValuesRvalues())
@@ -118,12 +118,12 @@ def testLValuesRvalues() -> None:
   var nc1 = NonCopyable()
   let nc2 = NonCopyable()
 
-  let nc3 = nc1 # expected-error {{value of type '$expressions-errors::NonCopyable' cannot be copied into its destination}}
-  let nc4 = nc2 # expected-error {{value of type '$expressions-errors::NonCopyable' cannot be copied into its destination}}
+  let nc3 = nc1 # expected-error {{value of type 'NonCopyable' cannot be copied into its destination}}
+  let nc4 = nc2 # expected-error {{value of type 'NonCopyable' cannot be copied into its destination}}
 
   let mpPair = MemoryPrimaryPair()
 
-  # expected-error @+1 {{invalid call to 'generic_on_type_bad': argument #0 cannot bind generic !mlirtype to memory-only type '$expressions-errors::MemoryPrimaryPair'}}
+  # expected-error @+1 {{invalid call to 'generic_on_type_bad': argument #0 cannot bind generic !mlirtype to memory-only type 'MemoryPrimaryPair'}}
   generic_on_type_bad[MemoryPrimaryPair](mpPair)
 
   # This should be allowed.
@@ -132,22 +132,22 @@ def testLValuesRvalues() -> None:
 # expected-note @+1 {{function declared here}}
 fn badRef(val&: Int):
   var x = F32(1.0)
-  # expected-error-re @+1 {{invalid call to 'badRef': l-value of type '$SIMD::SIMD[{{.*}}f32{{.*}}]' cannot be converted to reference of type '$Int::Int'}}
+  # expected-error-re @+1 {{invalid call to 'badRef': l-value of type 'SIMD[{{.*}}f32{{.*}}]' cannot be converted to reference of type 'Int'}}
   badRef(x)
 
 fn unused_values():
   var x : Int = 42
 
   _ = 4+4 # OK: Explicitly ignored.
-  # expected-warning @+1 {{'$Int::Int' value is unused}}
+  # expected-warning @+1 {{'Int' value is unused}}
   4+4  # MValue
 
   _ = x # OK: Explicitly ignored.
-  # expected-warning @+1 {{'$Int::Int' value is unused}}
+  # expected-warning @+1 {{'Int' value is unused}}
   x  # LValue
 
   _ = x+1 # OK: Explicitly ignored.
-  # expected-warning @+1 {{'$Int::Int' value is unused}}
+  # expected-warning @+1 {{'Int' value is unused}}
   x+1 # DRValue
 
   # expected-warning @+1 {{function pointer was formed but not called, did you forget '()'s?}}
@@ -192,7 +192,7 @@ struct WeirdBoolishMem:
 
 
 fn badAnd(a: Bool, b: WeirdBoolish, c: WeirdBoolishMem):
-  _ = a and b # expected-error {{cannot find common type between '$Bool::Bool' and '$expressions-errors::WeirdBoolish'}}
+  _ = a and b # expected-error {{cannot find common type between 'Bool' and 'WeirdBoolish'}}
 
   # Issue #12010
   # expected-error @+1 {{cannot load non-register passable type into SSA register}}
@@ -243,7 +243,7 @@ fn dict_expression(a: Int):
   _ = MyIntPair{a: a, **a}
   # expected-error @+1 {{no value for field 'b' specified}}
   _ = MyIntPair{a: 4}
-  # expected-error @+1 {{'$FloatLiteral::FloatLiteral' value cannot be converted to '$Int::Int' in field initializer}}
+  # expected-error @+1 {{'FloatLiteral' value cannot be converted to 'Int' in field initializer}}
   _ = MyIntPair{a: 4.0, b: 4}
   _ = MyIntPair{a: 4, b: 4}
 
@@ -254,7 +254,7 @@ fn dict_parse_errors(a: Int):
 
 
 def bad_exprs(aaaa: Bool, bbbb: F32, cccc: Int):
-  # expected-error-re @+1 {{true value of type '$SIMD::SIMD[{{.*}}f32{{.*}}]' is not compatible with false value '$Int::Int' in conditional}}
+  # expected-error-re @+1 {{true value of type 'SIMD[{{.*}}f32{{.*}}]' is not compatible with false value 'Int' in conditional}}
   _ = bbbb if aaaa else cccc
 
   alias idx : __mlir_type.index = (4).__as_mlir_index()
@@ -301,7 +301,7 @@ struct IncompatElementTypes:
   fn __setitem__(self, x: Int, y: F32): pass
 
 fn testSubscripts(a: WeirdArray, b: MultiSetItem, c: IncompatElementTypes):
-  # expected-error @+1 {{invalid call to '__getitem__': index cannot be converted from '$FloatLiteral::FloatLiteral' to '$Int::Int'}}
+  # expected-error @+1 {{invalid call to '__getitem__': index cannot be converted from 'FloatLiteral' to 'Int'}}
   _ = a[1.0]
 
   # expected-error @+1 {{invalid call to '__getitem__': callee expects 2 arguments, but 3 were specified}}
@@ -310,11 +310,11 @@ fn testSubscripts(a: WeirdArray, b: MultiSetItem, c: IncompatElementTypes):
   # expected-error @+1 {{expression must be mutable in assignment}}
   a[1] = 4
 
-  # expected-error @+1 {{'$expressions-errors::MultiSetItem' has overloaded __setitem__ implementations, which isn't supported}}
+  # expected-error @+1 {{'MultiSetItem' has overloaded __setitem__ implementations, which isn't supported}}
   b[1] = 4
 
   let tmp : Int = c[1]
-  # expected-error-re @+1 {{'$SIMD::SIMD[{{.*}}f32{{.*}}]' value cannot be converted to '$Int::Int' in assignment}}
+  # expected-error-re @+1 {{'SIMD[{{.*}}f32{{.*}}]' value cannot be converted to 'Int' in assignment}}
   c[1] = F32(4.0)
   c[1] = tmp
 
@@ -329,7 +329,7 @@ struct GetAttrNotString:
 
 fn invalid_getattr():
     let obj = GetAttrNotString()
-    # expected-error @below {{invalid call to '__getattr__': attribute name cannot be converted from '$StringLiteral::StringLiteral' to '$Int::Int}}
+    # expected-error @below {{invalid call to '__getattr__': attribute name cannot be converted from 'StringLiteral' to 'Int}}
     obj.attr
 
 
@@ -344,7 +344,7 @@ fn bar[x: __mlir_type.index]() -> Int:
 fn test_adaptive_set():
     # expected-error @+1 {{cannot form a reference to non @adaptive declaration of 'bar'}}
     alias bad = bar.__adaptive_set
-    # expected-error @+1 {{'$Int::Int' value has no attribute '__adaptive_set'}}
+    # expected-error @+1 {{'Int' value has no attribute '__adaptive_set'}}
     alias bad_int= (5).__adaptive_set
 
 struct GetSettable:

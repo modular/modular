@@ -216,22 +216,22 @@ fn main():
     my_list_invalid_int[1] = 23
     my_list_invalid_int[2] = 19
 
-    # expected-error @+1 {{'$lit-for-errors::my_iter_no_len' does not implement the '__len__' method}}
+    # expected-error @+1 {{'my_iter_no_len' does not implement the '__len__' method}}
     for item in my_list_no_len:
         # expected-error @+1 {{use of unknown declaration 'item', `fn` declarations require explicit variable declarations}}
         printInt(item)
 
-    # expected-error @+1 {{'$lit-for-errors::my_iter_no_next' does not implement the '__next__' method}}
+    # expected-error @+1 {{'my_iter_no_next' does not implement the '__next__' method}}
     for item in my_list_no_next:
         # expected-error @+1 {{use of unknown declaration 'item', `fn` declarations require explicit variable declarations}}
         printInt(item)
 
-    # expected-error @+1 {{'$lit-for-errors::MyList_no_iter' does not implement the '__iter__' method}}
+    # expected-error @+1 {{'MyList_no_iter' does not implement the '__iter__' method}}
     for item in my_list_no_iter:
         # expected-error @+1 {{use of unknown declaration 'item', `fn` declarations require explicit variable declarations}}
         printInt(item)
 
-    # expected-error @+1 {{'$lit-for-errors::MyInteger' does not implement the '__as_mlir_index' method}}
+    # expected-error @+1 {{'MyInteger' does not implement the '__as_mlir_index' method}}
     for item in my_list_invalid_int:
         # expected-error @+1 {{use of unknown declaration 'item', `fn` declarations require explicit variable declarations}}
         printInt(item)

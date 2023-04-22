@@ -84,7 +84,7 @@ fn memoryOnlyOps(a&: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%_, %a)
   _ = a
 
-  a  # expected-warning {{'$expressions::MemoryOnlyPair' value is unused}}
+  a  # expected-warning {{'MemoryOnlyPair' value is unused}}
 
   # CHECK-NEXT: %regX = lit.varlet.decl
   # CHECK-NEXT: [[AX:%.*]] = lit.struct.gep %a[x]

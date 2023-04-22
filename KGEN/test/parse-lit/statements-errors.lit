@@ -80,7 +80,7 @@ struct NotBoolConvertible:
     pass
 
 def test_bool_context(a: NotBoolConvertible):
-  if a: # expected-error {{::NotBoolConvertible' does not implement the '__bool__' method}}
+  if a: # expected-error {{NotBoolConvertible' does not implement the '__bool__' method}}
      pass
 
 fn test_if_decorator(a: Bool):
@@ -112,7 +112,7 @@ fn cannotRaise(err: Error):
 
 # Issue #12358
 fn raise_bad_type() raises:
-    raise 42  # expected-error {{'$Int::Int' value cannot be converted to '$Error::Error' in raised value}}
+    raise 42  # expected-error {{'Int' value cannot be converted to 'Error' in raised value}}
 
 # Issue #6909
 # expected-error @below {{expected name for 'alias' declaration}}

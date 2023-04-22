@@ -18,7 +18,7 @@
 namespace M::KGEN {
 class ParamBindAttr;
 class ParamBindArrayAttr;
-}
+} // namespace M::KGEN
 
 namespace M::KGEN::LIT {
 class ASTDecl;
@@ -98,7 +98,7 @@ public:
   /// Convert this type to a human readable string representation so it can be
   /// printed out for diagnostics.  This may also be inserted into raw_ostream
   /// and diagnostics.
-  std::string getAsString() const;
+  std::string getAsString(bool forDiag = false) const;
 
   /// Print to standard error with newline after it, for use in a debugger.
   void dump() const;
@@ -110,6 +110,10 @@ public:
   static ASTType getFromVoidPointer(void *ptr) {
     return ASTType(Type::getFromOpaquePointer(ptr));
   }
+
+  /// Print the ASTType. If `forDiag` is set, prettier printing is used to
+  /// print the type.
+  void print(raw_ostream &os, bool forDiag = false) const;
 };
 
 void addToDiagnostic(ASTType type, LitDiagnostic &diag);
