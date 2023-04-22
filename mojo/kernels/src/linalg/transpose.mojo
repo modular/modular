@@ -28,7 +28,7 @@ fn _transpose_inplace_4x4[
 ](buf0: NDBuffer[2, DimList(rows, cols), type]):
     assert_param[rows == 4]()
     assert_param[cols == 4]()
-    var buf = rebind[
+    let buf = rebind[
         NDBuffer[
             2,
             DimList(4, 4),
@@ -64,7 +64,7 @@ fn _transpose_inplace_8x8[
 ](buf0: NDBuffer[2, DimList(rows, cols), type]):
     assert_param[rows == 8]()
     assert_param[cols == 8]()
-    var buf = rebind[
+    let buf = rebind[
         NDBuffer[
             2,
             DimList(8, 8),

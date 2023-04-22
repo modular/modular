@@ -76,8 +76,8 @@ fn get_matmul_num_tasks[
     # support partition in k dim yet. E.x. 32x32x1024 uses 16 threads by min
     # task complexity but we only want it to use <= 4 threads for now since
     # M and N are very small.
-    var max_row_tasks = div_ceil(m, 2 * get_matmul_a_row_size())
-    var max_col_tasks = div_ceil(n, get_matmul_pack_inner_size() * simd_size)
+    let max_row_tasks = div_ceil(m, 2 * get_matmul_a_row_size())
+    let max_col_tasks = div_ceil(n, get_matmul_pack_inner_size() * simd_size)
     num_tasks = min(num_tasks, max_row_tasks * max_col_tasks)
 
     return num_tasks

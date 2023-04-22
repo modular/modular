@@ -1230,7 +1230,7 @@ struct MatmulInnerLoopBPacked[
         """
         assert_param[not has_neon()]()
         # Allocate accumulation buffer.
-        var c_local = NDBuffer[
+        let c_local = NDBuffer[
             2,
             DimList(a_row_size, pack_inner_size),
             accum_type,
