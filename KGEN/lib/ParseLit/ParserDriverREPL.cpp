@@ -148,14 +148,35 @@ tryHandleFromImportAliasFunctionOrStruct(StringRef &unparsedCode,
   return true;
 }
 
+static std::string removeComments(StringRef exprText) {
+  // We are only handling comments that start with #. ''' and """ are trickier
+  // and we should instead use the actual mojo parser to handle them instead of
+  // doing these hacks.
+  std::string uncommentedCode;
+
+  while (!exprText.empty()) {
+    auto [line, rest] = exprText.split("\n");
+    exprText = rest;
+    if (line.ltrim().starts_with("#"))
+      continue;
+
+    if (!uncommentedCode.empty())
+      uncommentedCode += '\n';
+    uncommentedCode += line;
+  }
+
+  return uncommentedCode;
+}
+
 static void extractExpressionCode(StringRef exprText, std::string &topLevelCode,
                                   std::string &mainBodyCode) {
   llvm::raw_string_ostream topLevelOS(topLevelCode), mainBodyOS(mainBodyCode);
 
-  StringRef unparsedCode = exprText;
+  std::string uncommentedCode = removeComments(exprText);
+  StringRef unparsedCode = uncommentedCode;
 
-  /// The following code will consume chunks of code assigning them to either
-  /// the top-level or the main body sections.
+  // The following code will consume chunks of code assigning them to either
+  // the top-level or the main body sections.
   while (!unparsedCode.empty()) {
     // Note: We are not yet handling multiline expressions with \.
     if (!tryHandleFromImportAliasFunctionOrStruct(unparsedCode, topLevelOS) &&
