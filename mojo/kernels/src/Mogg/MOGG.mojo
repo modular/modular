@@ -124,7 +124,7 @@ fn to_buffer[
     @always_inline
     fn body[idx: Int]():
         # Start from the back so we can accumulate the strides.
-        var i = rank - 1 - idx
+        let i = rank - 1 - idx
         shape_tuple[i] = shape_ptr.load(i)
         stride_tuple[i] = stride
         stride *= shape_tuple[i]
@@ -241,7 +241,7 @@ fn simd_load_maybe_splat[
     buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
     index: StaticIntTuple[rank],
 ) -> SIMD[type, simd_width]:
-    var flat_index = _compute_flat_index[type, rank, rank](buffer, index)
+    let flat_index = _compute_flat_index[type, rank, rank](buffer, index)
 
     if buffer.dynamic_stride[rank - 1] == 0:
         return buffer.data.load(flat_index)
@@ -258,7 +258,7 @@ fn simd_load_splat[
     index: StaticIntTuple[rank],
 ) -> SIMD[type, simd_width]:
     # Last dimension will be 0 for splats so don't compute last dim.
-    var flat_index = _compute_flat_index[
+    let flat_index = _compute_flat_index[
         type, rank, rank - (1).__as_mlir_index()
     ](buffer, index)
 
