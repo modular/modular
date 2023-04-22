@@ -217,8 +217,9 @@ fn disableDtor(owned x: MoreComplexExample):
   )
 
 
-# expected-error @+1 {{field 'x.mem' destroyed out of the middle of a value, preventing the overall value from being destroyed}}
-fn fieldConsumeError(owned x: MoreComplexExample,
+# expected-error @+2 {{field 'x.mem' destroyed out of the middle of a value, preventing the overall value from being destroyed}}
+fn fieldConsumeError(owned w: MoreComplexExample,
+                     owned x: MoreComplexExample,
                      owned y: MoreComplexExample,
                      owned z: MoreComplexExample):
   _ = x.mem^  # Error diagnosed above.
@@ -232,9 +233,9 @@ fn fieldConsumeError(owned x: MoreComplexExample,
   _ = z.mem^
   z.mem = MemExample()
 
-  # expected-error @+1 {{value 'z.mem' cannot be consumed, because it is used later}}
-  _ = z.mem^
-  use(z)
+  # expected-error @+1 {{value 'w.mem' cannot be consumed, because it is used later}}
+  _ = w.mem^
+  use(w)
 
   # expected-error @+1 {{field 'twoRegsRP.reg1' destroyed out of the middle of a value, preventing the overall value from being destroyed}}
   var twoRegsRP = TwoRegsRP()
