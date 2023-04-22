@@ -298,7 +298,7 @@ fn _softmax_3_pass_base[
 
     # STEP 2
     alias unroll_factor = 8  # TODO: search
-    var accum = _softmax_3_pass_step_2[
+    let accum = _softmax_3_pass_step_2[
         simd_width,
         unroll_factor,
         buffer_size,

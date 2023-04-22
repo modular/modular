@@ -248,7 +248,7 @@ struct Naive2dConvolution[
                     ons with assumed tuple def (dilation_h, dilation_w).
         """
         # Create an instance of the convolution op.
-        var naive2d_convolution = Naive2dConvolution[
+        let naive2d_convolution = Naive2dConvolution[
             static_output_shape,
             static_filter_shape,
             static_input_shape,
