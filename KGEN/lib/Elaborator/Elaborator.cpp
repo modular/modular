@@ -1754,8 +1754,7 @@ ElaboratorImpl::replaceParamWithConcreteRegionFromOutlinedClosure(
 
   Region &sourceRegion = outlinedFn.getBodyRegion();
   auto stageClosureOp = rewriter.replaceOpWithNewOp<StageClosureOp>(
-      parameterConstantOp,
-      SignatureType::get(concreteCandidates.front().getFunctionType()));
+      parameterConstantOp, outlinedFn.getSignature());
   stageClosureOp->setAttr(
       StringAttr::get(rewriter.getContext(), "name"),
       StringAttr::get(rewriter.getContext(), outlinedFn.getSymName()));

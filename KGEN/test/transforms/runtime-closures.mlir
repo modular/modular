@@ -5,7 +5,7 @@ kgen.func @take_closure_no_args(%arg0: !kgen.signature<() capturing -> index>) {
     kgen.return
 }
 
-// CHECK: kgen.func @h(%arg0: index) -> index always_inline {
+// CHECK: kgen.func @h(%arg0: index) -> index {
 kgen.func @main_closure_arg(%arg0: index) {
     // CHECK: %0 = kgen.create_closure @h(%arg0) : (!kgen.signature<(index) -> index>, index) -> !kgen.signature<() capturing -> index>
     %0 = kgen.stage_closure = () capturing -> index {
@@ -15,7 +15,7 @@ kgen.func @main_closure_arg(%arg0: index) {
     kgen.return
 }
 
-// CHECK: kgen.func @two_captures(%arg0: index, %arg1: index, %arg2: index) -> index always_inline {
+// CHECK: kgen.func @two_captures(%arg0: index, %arg1: index, %arg2: index) -> index {
 kgen.func @capturing_region(%arg0: index, %arg1: index) {
     %idx4 = index.constant 4
     // CHECK: %0 = kgen.create_closure @two_captures(%arg0, %arg1) : (!kgen.signature<(index, index, index) -> index>, index, index) -> !kgen.signature<(index) capturing -> index>
@@ -27,8 +27,8 @@ kgen.func @capturing_region(%arg0: index, %arg1: index) {
     kgen.return
 }
 
-// CHECK:   kgen.func @stage_closure(%arg0: index) -> index always_inline {
-// CHECK:   kgen.func @stage_closure_0(%arg0: index) -> index always_inline {
+// CHECK:   kgen.func @stage_closure(%arg0: index) -> index {
+// CHECK:   kgen.func @stage_closure_0(%arg0: index) -> index {
 kgen.func @multiple_staged_closures_no_name_attr(%arg0: index, %arg1: index) {
     // CHECK: %0 = kgen.create_closure @stage_closure(%arg0) : (!kgen.signature<(index) -> index>, index) -> !kgen.signature<() capturing -> index>
     %0 = kgen.stage_closure = () capturing -> index {
@@ -43,7 +43,7 @@ kgen.func @multiple_staged_closures_no_name_attr(%arg0: index, %arg1: index) {
     kgen.return
 }
 
-// CHECK: kgen.func @stage_closure_1() -> index always_inline {
+// CHECK: kgen.func @stage_closure_1() -> index {
 kgen.func @constant_in(%arg0: index, %arg1: index) {
     %idx4 = index.constant 4
     // CHECK: %0 = kgen.create_closure @stage_closure_1() : (!kgen.signature<() -> index>) -> !kgen.signature<() capturing -> index>

@@ -85,7 +85,7 @@ SymbolConstantAttr callSymbolOfLiftedRegion(StageClosureOp opWithRegion,
 
   auto lifted = builder.create<FuncOp>(
       opWithRegion->getLoc(), StringAttr::get(builder.getContext(), name),
-      liftedSignature, AlwaysInlineLevel::Enabled);
+      liftedSignature, AlwaysInlineLevel::Disabled);
   symtab.insert(lifted);
   auto liftedSymbol = SymbolConstantAttr::get(
       SymbolRefAttr::get(lifted.getSymNameAttr()), liftedSignature);

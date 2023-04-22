@@ -913,7 +913,8 @@ def KGEN_StageClosureOp : KGENOp<"stage_closure",
 // CreateClosureOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_CreateClosureOp : KGENOp<"create_closure", [Pure]> {
+def KGEN_CreateClosureOp : KGENOp<"create_closure", [
+    Pure, DeclareOpInterfaceMethods<KGEN_CallOpInterface>]> {
   let summary = "Create a closure from variables and a function.";
   let description = [{
       The `kgen.create_closure` operation represents the instantiation of
