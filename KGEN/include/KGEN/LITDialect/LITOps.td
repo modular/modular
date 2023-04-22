@@ -516,16 +516,18 @@ def LIT_VarLetDeclOp : LITOp<"varlet.decl",
          [DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>]> {
   let summary = "Addressible local let or var declaration";
   let description = [{
-    This declaration is used for var declarations, let declarations with an
-    out-of-line initializer, and for memory-only let declarations.  It enables
-    these use-cases by exposing an address.
+    This declaration is used for var and let declarations with an exposed
+    address.  `isVar` indicates if this is mutable at the source level, and
+    `isSynthesized` bit indicates whether this was created internally, which
+    supresses some warnings.
   }];
-  let arguments = (ins StrAttr:$name,
-                       DefaultValuedAttr<BoolAttr, "false">:$isVar);
+  let arguments = (ins StrAttr:$name, BoolAttr:$isVar, BoolAttr:$isSynthesized);
 
   let results = (outs POP_PointerType:$result);
-  let assemblyFormat =
-    "$name `,` `var``=`$isVar `:` type($result) attr-dict";
+  let assemblyFormat = [{
+    $name `,` `var``=`$isVar`,` `synth``=`$isSynthesized
+          `:` type($result) attr-dict
+  }];
 }
 
 //===----------------------------------------------------------------------===//

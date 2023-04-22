@@ -666,11 +666,14 @@ ValueRef UninitializedValueScan::checkLive(Value value, Operation &op) {
   // with a customized error.
   if (valueRef.isIndirect && valueRef.endBit == valueEntry.endValueBit &&
       valueRef.getSubfield(0, valueRef.getNumBits() - 1)
-          .isAllPresent(liveValues)) {
+          .isAllPresent(liveValues) &&
+      valueRef.getNumBits() != 1) {
     auto diag = mlir::emitError(op.getLoc(), "'")
                 << valueEntry.getName().str()
                 << "' used with all fields manually initialized "
                    "but without calling an '__init__' method";
+    diag.attachNote(valueEntry.value.getLoc())
+        << "'" << valueEntry.getName().str() << "' declared here";
     return valueRef;
   }
 

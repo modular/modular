@@ -72,7 +72,7 @@ fn inferred_function_with_memory_result[
 
 # CHECK-LABEL: lit.func @"memoryOnlyOps
 fn memoryOnlyOps(a&: MemoryOnlyPair) -> MemoryOnlyPair:
-  # CHECK-NEXT: %v1 = lit.varlet.decl "v1", var = true : <@"$expressions"::@MemoryOnlyPair>
+  # CHECK-NEXT: %v1 = lit.varlet.decl {{.*}} : <@"$expressions"::@MemoryOnlyPair>
   # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%v1, %a)
   var v1 = a
 
@@ -86,7 +86,7 @@ fn memoryOnlyOps(a&: MemoryOnlyPair) -> MemoryOnlyPair:
 
   a  # expected-warning {{'$expressions::MemoryOnlyPair' value is unused}}
 
-  # CHECK-NEXT: %regX = lit.varlet.decl "regX", var = false :
+  # CHECK-NEXT: %regX = lit.varlet.decl
   # CHECK-NEXT: [[AX:%.*]] = lit.struct.gep %a[x]
   # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%regX, [[AX]])
   let regX = a.x
@@ -112,7 +112,7 @@ fn memoryOnlyOps(a&: MemoryOnlyPair) -> MemoryOnlyPair:
   let v2xx = v2.x.x
 
   # Implicit conversion between memory-only types.
-  # CHECK-NEXT: %mpFloat = lit.varlet.decl "mpFloat", var = false
+  # CHECK-NEXT: %mpFloat = lit.varlet.decl
   # CHECK-NEXT: [[V2X:%.*]] = lit.struct.gep %v2[x]
   # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%mpFloat, [[V2X]])
   let mpFloat : MemoryOnlyF64 = v2.x
@@ -418,7 +418,7 @@ fn initializers():
 
 # CHECK-LABEL: lit.func @"test_if_cond
 def test_if_cond(cond: Bool):
-    # CHECK:      %[[I:.*]] = lit.varlet.decl "i", var = true : <@"$Int"::@Int>
+    # CHECK:      %[[I:.*]] = lit.varlet.decl "i"
     # CHECK-NEXT: %[[COND:.*]] = pop.load %cond_0
     # CHECK: %[[LIT_BOOLI1:.*]] = kgen.call {{.*}}__mlir_i1__{{.*}}(%[[COND]])
     # CHECK-NEXT: %[[IF_RES:.*]] = hlcf.if %[[LIT_BOOLI1]]
@@ -794,7 +794,7 @@ fn testMemoryOnlyIntArray(arr&: MemoryOnlyIntArray, x: Int, moi: MemoryOnlyInt):
   # CHECK: kgen.call {{.*}}__setitem__{{.*}}(%arr, %x, [[ANON]])
   arr[x] = arr[x]
 
-  # CHECK: [[ANON:%.*]] = lit.varlet.decl "__store_tmp__", var = true
+  # CHECK: [[ANON:%.*]] = lit.varlet.decl "__store_tmp__"
   # CHECK: kgen.call {{.*}}__getitem__{{.*}}([[ANON]], %arr, %x)
   # CHECK: [[XP:%.*]] = lit.struct.gep %__store_tmp__[x]
   # CHECK: %[[C1:.*]] = {{.*}}constant{{.*}} = 1
@@ -855,8 +855,8 @@ fn testWritebacks(a&: IndexArray, b&: IndexArrayArray):
   # CHECK-NEXT: %[[V5:.*]] = kgen.call {{.*}}__setitem__{{.*}}(%a, %[[V3]], %[[V4]])
   takeInOutInt(a[0]);
 
-  # CHECK: %anonymous2A_0 = lit.varlet.decl "anonymous*", var = false
-  # CHECK: %anonymous2A_1 = lit.varlet.decl "anonymous*", var = false : <@"$expressions"::@IndexArray>
+  # CHECK: %anonymous2A_0 = lit.varlet.decl
+  # CHECK: %anonymous2A_1 = lit.varlet.decl {{.*}}: <@"$expressions"::@IndexArray>
   # CHECK-NEXT: %[[C1:.*]] = {{.*}}constant{{.*}} = 1
   # CHECK-NEXT: %[[V4:.*]] = {{.*}}__getitem__{{.*}}(%anonymous2A_1, %b, %[[C1]])
   # CHECK-NEXT: %[[C2:.*]] = {{.*}}constant{{.*}} = 2
@@ -865,7 +865,7 @@ fn testWritebacks(a&: IndexArray, b&: IndexArrayArray):
   # CHECK-NEXT: %[[V6:.*]] = kgen.call {{.*}}__setitem__{{.*}}(%b, %[[C1]], %anonymous2A_1)
   # CHECK-NEXT: pop.store %[[V5]], %anonymous2A_0
   # CHECK-NEXT: %[[V7:.*]] = kgen.call {{.*}}takeInOutInt{{.*}}(%anonymous2A_0)
-  # CHECK-NEXT: %anonymous2A_2 = lit.varlet.decl "anonymous*", var = false
+  # CHECK-NEXT: %anonymous2A_2 = lit.varlet.decl {{.*}}
   # CHECK-NEXT: %[[C1:.*]] = {{.*}}constant{{.*}} = 1
   # CHECK-NEXT: %[[V8:.*]] = kgen.call {{.*}}__getitem__{{.*}}(%anonymous2A_2, %b, %[[C1]])
   # CHECK-NEXT: %[[C2:.*]] = {{.*}}constant{{.*}} = 2

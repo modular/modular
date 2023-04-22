@@ -9,8 +9,8 @@ lit.func @trivial_generator(%name: si32) -> si32 {
 // One implementation of dynamic_thing
 // CHECK-LABEL: lit.func @vardecl
 lit.func @vardecl<ty : dtype>(%x : i32) {
-// CHECK-NEXT: %a = lit.varlet.decl "a", var = true : <scalar<ty>>
-  %a = lit.varlet.decl "a", var = true: !pop.pointer<scalar<ty>>
+// CHECK-NEXT: %a = lit.varlet.decl "a", var = true, synth = false : <scalar<ty>>
+  %a = lit.varlet.decl "a", var = true, synth = false: !pop.pointer<scalar<ty>>
 
   // CHECK-NEXT: %y = lit.letreg.decl "y" = %x : i32
   %y = lit.letreg.decl "y" = %x: i32
@@ -27,8 +27,8 @@ lit.struct.decl @SomeStruct<ty: dtype> {
     kgen.return
   }
 
-  // CHECK: %size = lit.varlet.decl "size", var = true : <scalar<ty>>
-  %size = lit.varlet.decl "size", var = true : !pop.pointer<scalar<ty>>
+  // CHECK: %size = lit.varlet.decl "size", var = true, synth = false : <scalar<ty>>
+  %size = lit.varlet.decl "size", var = true, synth = false : !pop.pointer<scalar<ty>>
 
   // CHECK: lit.func @getMyType
   // CHECK-NEXT: kgen.param.constant: dtype = <ty>
@@ -282,7 +282,7 @@ lit.func @param_return_no_results<() -> ()>() {
 }
 
 lit.struct.decl @GiveMeDefault {
-  lit.varlet.decl "size", var = true : !pop.pointer<scalar<index>>
+  lit.varlet.decl "size", var = true, synth = false : !pop.pointer<scalar<index>>
 }
 
 // CHECK-LABEL: lit.func @default_struct

@@ -38,7 +38,7 @@ lit.file_module @"$check_lifetimes" {
 
 
     // var c = Struct()
-    %c = lit.varlet.decl "c", var = true : <@"$check_lifetimes"::@Struct>
+    %c = lit.varlet.decl "c", var = true, synth = false : <@"$check_lifetimes"::@Struct>
     %0 = kgen.call @"$check_lifetimes"::@Struct::@"__init__($check_lifetimes::Struct=&)"(%c) : (!pop.pointer<@"$check_lifetimes"::@Struct> byref_result) -> !lit.none
 
     %none = kgen.param.constant: !lit.none = <#lit.none>

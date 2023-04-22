@@ -270,7 +270,8 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
   // initializer.  We return an LValue for it because this method is used
   // for the initialization.
   return SLValue(emitter.builder->create<VarLetDeclOp>(
-      emitter.translateLocation(loc), declIRType, nameAttr, /*isVar*/ 0));
+      emitter.translateLocation(loc), declIRType, nameAttr, /*isVar*/ false,
+      /*isSynth=*/true));
 }
 
 /// Return an SLValue for this destination of the specified type that we can
@@ -1379,7 +1380,7 @@ void StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
   auto nameAttr = StringAttr::get(loc.getContext(), "__store_tmp__");
   auto tmpDecl =
       emitter.builder->create<VarLetDeclOp>(loc, declIRType, nameAttr,
-                                            /*isVar=*/true);
+                                            /*isVar=*/false, /*isSynth=*/false);
 
   // Load the entire base LValue into tmpDecl.
   ValueDest tmpValueDest(SLValue(tmpDecl), EC_AttributeRefBase);

@@ -12,17 +12,17 @@ fn mlirMagicTest(
 ) -> __mlir_type.index:
     # CHECK: kgen.param.declare a = <1>
     alias a: __mlir_type.index = (1).__as_mlir_index()
-    # CHECK: %b = lit.varlet.decl "b", var = true : <f64>
+    # CHECK: %b = lit.varlet.decl "b", var = true, synth = false : <f64>
     var b: __mlir_type.f64
-    # CHECK: %c = lit.varlet.decl "c", var = true : <pointer<pointer<f32>>>
+    # CHECK: %c = lit.varlet.decl "c", var = true, synth = false : <pointer<pointer<f32>>>
     var c: __mlir_type.`!pop.pointer<!pop.pointer<f32>>`
 
-    # CHECK: %d = lit.varlet.decl "d", var = true : <i17>
+    # CHECK: %d = lit.varlet.decl
     # CHECK: [[TMP:%.*]] = kgen.param.constant: i17 = <4>
     # CHECK: pop.store [[TMP]], %d : !pop.pointer<i17>
     var d = __mlir_attr.`4: i17`
 
-    # CHECK: %dt = lit.varlet.decl "dt", var = true : <dtype>
+    # CHECK: %dt = lit.varlet.decl
     # CHECK: [[TMP:%.*]] = kgen.param.constant: dtype = <f32>
     # CHECK: pop.store [[TMP]], %dt  : !pop.pointer<dtype>
     var dt = __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype `
@@ -51,9 +51,9 @@ fn mlirMagicTest(
 
 # CHECK-LABEL: lit.func @"mlirTypesAndAttrs
 fn mlirTypesAndAttrs[dtype: __mlir_type.`!kgen.dtype`]():
-    # CHECK: %a = lit.varlet.decl "a", var = true : <scalar<dtype>>
+    # CHECK: %a = lit.varlet.decl "a", var = true, synth = false : <scalar<dtype>>
     var a: __mlir_type[`!pop.scalar<`, dtype, `>`]
-    # CHECK: %b = lit.varlet.decl "b", var = true : <simd<4, dtype>>
+    # CHECK: %b = lit.varlet.decl "b", var = true, synth = false : <simd<4, dtype>>
     var b: __mlir_type[`!pop.simd<4, `, dtype, `>`]
 
 
@@ -65,13 +65,13 @@ struct ComplexSubstitution[type: __mlir_type.`!kgen.dtype`]:
 
 # Issue #6374: [Lit] Add support for type placeholder
 fn typePlaceholder():
-    # CHECK: %x = lit.varlet.decl "x", var = true : <!kgen.list<i32[2]>>
+    # CHECK: %x = lit.varlet.decl {{.*}} : <!kgen.list<i32[2]>>
     var x: __mlir_type[`!kgen.list<`, __mlir_type.i32, `[2]>`]
 
 
 # CHECK-LABEL: lit.func @"fancierSubstitutions
 fn fancierSubstitutions():
-    # CHECK: = lit.varlet.decl "complexInt", var = true : <complex<i32>>
+    # CHECK: = lit.varlet.decl {{.*}} : <complex<i32>>
     var complexInt: __mlir_type[`complex<`, __mlir_type.i32, `>`]
 
     alias a: __mlir_type.index = (1).__as_mlir_index()

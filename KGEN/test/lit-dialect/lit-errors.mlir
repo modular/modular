@@ -2,7 +2,7 @@
 
 lit.struct.decl @SomeStruct {
   // expected-error @+1 {{invalid use of parameter with no declaration "ty"}}
-  %size = lit.varlet.decl "size", var = true : !pop.pointer<simd<1, ty>>
+  %size = lit.varlet.decl "size", var = true, synth = false : !pop.pointer<simd<1, ty>>
 }
 
 // -----
