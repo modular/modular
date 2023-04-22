@@ -1,5 +1,5 @@
 # RUN: kgen-translate -import-mojo %s --mlir-print-debuginfo -o %t.mlir
-# RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes | FileCheck %s
+# RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
 
 # CHECK-LABEL: lit.struct.decl @MemExample
 struct MemExample:
@@ -51,7 +51,7 @@ fn destructors(owned arg0: MemExample):
   # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}(%arg0)
 
   # CHECK-NEXT: %mem1 = lit.varlet.decl "mem1", var = true
-  var mem1 = MemExample()
+  var mem1 = MemExample() # expected-warning {{consider switching to a 'let'}}
   # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%mem1)
   # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}(%mem1)
 
@@ -77,7 +77,7 @@ fn destructors(owned arg0: MemExample):
 # CHECK-LABEL: lit.func @"if_examples
 fn if_examples(cond: __mlir_type.i1):
   # CHECK: %a = lit.varlet.decl
-  var a: MemExample
+  var a: MemExample  # expected-warning {{consider switching to a 'let'}}
 
   # CHECK-NEXT: %b = lit.varlet.decl
   # CHECK-NEXT: kgen.call @{{.*}}__init__{{.*}}(%b)
@@ -118,7 +118,7 @@ fn if_examples(cond: __mlir_type.i1):
 
   # CHECK-NEXT:  %d = lit.varlet.decl "d"
   # CHECK-NEXT: kgen.call @{{.*}}__init__{{.*}}(%d)
-  var d = MemExample()
+  var d = MemExample()  # expected-warning {{consider switching to a 'let'}}
 
   # CHECK-NEXT: [[ONE:%[0-9]+]] = kgen.param.constant: i1 = <1>
   # CHECK: hlcf.if [[ONE]] {
@@ -137,7 +137,7 @@ fn if_examples(cond: __mlir_type.i1):
 # CHECK-LABEL: lit.func @"try_examples
 fn try_examples(cond: __mlir_type.i1, err: Error):
   # CHECK-NEXT: %a = lit.varlet.decl
-  var a : MemExample
+  let a : MemExample
   # CHECK-NEXT: lit.try {
   # CHECK-NOT: %a
   try:
@@ -175,7 +175,7 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
   # CHECK-NEXT: kgen.call @{{.*}}__del__{{.*}}(%b)
 
   # CHECK-NEXT: %c = lit.varlet.decl
-  var c : MemExample
+  let c : MemExample
   # CHECK-NEXT: lit.try {
   try:
     # CHECK-NEXT: kgen.call @{{.*}}__init__{{.*}}(%c)
@@ -194,7 +194,7 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
   # CHECK-NEXT: kgen.call @{{.*}}__del__{{.*}}(%c)
 
   # CHECK-NEXT: %d = lit.varlet.decl
-  var d : MemExample
+  let d : MemExample
   # CHECK-NEXT: lit.try {
   try:
     # CHECK-NEXT:  hlcf.if %cond {
@@ -222,9 +222,9 @@ fn loop_example(cond1: __mlir_type.i1, cond2: __mlir_type.i1):
   # CHECK-NEXT: %a = lit.varlet.decl "a"
   var a : MemExample
   # CHECK-NEXT: %b = lit.varlet.decl "b"
-  var b : MemExample
+  let b : MemExample
   # CHECK-NEXT: %c = lit.varlet.decl "c"
-  var c : MemExample
+  let c : MemExample
 
   # CHECK-NEXT: kgen.call @{{.*}}__init__{{.*}}(%a)
   a = MemExample()
@@ -334,7 +334,7 @@ fn testTakePointeeAsOwned(ptr: __mlir_type[`!pop.pointer<`, MemExample, `>`],
   # This should run the destructor and not get omitted.
   # CHECK-NEXT: [[PTR:%.*]] = lit.ownership.end.lifetime %ptr
   # CHECK-NEXT: kgen.call {{.*}}__del___{{.*}}([[PTR]])
-  __get_address_as_owned_value(ptr)  # expected-warning {{'$ownership::MemExample' value is unused}}
+  __get_address_as_owned_value(ptr)
 
   # The RValue can be consumed directly.
   # CHECK-NEXT: [[PTR:%.*]] = lit.ownership.end.lifetime %ptr
@@ -521,7 +521,7 @@ fn test_result_consume_reg(cond: __mlir_type.i1) -> RegExample:
   # CHECK: %example2 = lit.varlet.decl
   # CHECK-NEXT: [[TMP:%.*]] = kgen.call {{.*}}__init__{{.*}}()
   # CHECK-NEXT: pop.store [[TMP]], %example2
-  var example2 = RegExample()
+  var example2 = RegExample() # expected-warning {{consider switching to a 'let'}}
 
   # CHECK-NEXT: hlcf.if %cond
   if (cond):
@@ -548,7 +548,7 @@ fn consumeMem(owned x: MemExample):
 fn test_result_consume_mem(cond: __mlir_type.i1) -> MemExample:
   # CHECK-NEXT: %example = lit.varlet.decl
   # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%example)
-  var example = MemExample()
+  let example = MemExample()
 
   # This doesn't consume example, so it must copy it. It does consume the copy.
   # CHECK-NEXT: %anonymous2A = lit.varlet.decl
@@ -563,7 +563,7 @@ fn test_result_consume_mem(cond: __mlir_type.i1) -> MemExample:
 
   # CHECK-NEXT: %example2 = lit.varlet.decl
   # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%example2)
-  var example2 = MemExample()
+  let example2 = MemExample()
 
   # CHECK-NEXT: [[CONSUME:%.*]] = lit.ownership.end.lifetime %example2
   # CHECK-NEXT: kgen.call {{.*}}__moveinit__{{.*}}(%__result__, [[CONSUME]])

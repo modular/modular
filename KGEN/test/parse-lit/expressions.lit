@@ -845,7 +845,7 @@ fn takeInOutInt(a&: Int): pass
 
  # CHECK-LABEL: lit.func @"testWritebacks
 fn testWritebacks(a&: IndexArray, b&: IndexArrayArray):
-  # CHECK: %anonymous2A = lit.varlet.decl "anonymous*", var = false
+  # CHECK: %anonymous2A = lit.varlet.decl "anonymous*", var = true
   # CHECK-NEXT: %[[V0:.*]] = {{.*}}constant{{.*}} = 0
   # CHECK-NEXT: %[[V1:.*]] = kgen.call {{.*}}__getitem__{{.*}}(%a, %[[V0]])
   # CHECK-NEXT: pop.store %[[V1]], %anonymous2A

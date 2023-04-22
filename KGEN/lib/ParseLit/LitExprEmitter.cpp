@@ -270,7 +270,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
   // initializer.  We return an LValue for it because this method is used
   // for the initialization.
   return SLValue(emitter.builder->create<VarLetDeclOp>(
-      emitter.translateLocation(loc), declIRType, nameAttr, /*isVar*/ false,
+      emitter.translateLocation(loc), declIRType, nameAttr, /*isVar*/ true,
       /*isSynth=*/true));
 }
 

@@ -219,8 +219,18 @@ struct ValueInfo {
   /// fully initialized when all their fields are initialized.
   const bool isFullObjectLiveOnEntry;
 
+  /// True if this is a 'let' declaration which isn't allowed to be mutated
+  /// after it is initialized.
+  const bool isLet;
+
   /// This is true if the value had a use-before-initialization error diagnosed.
   bool hasErrorDiagnosed;
+
+  /// This bit gets set to true when an already-initialized var gets
+  /// overwritten.  At the end of the uninit analysis, vars that are not mutated
+  /// get a warning that indicate they should be written as 'let's.  This is
+  /// also used to implement late initialization for lets.
+  bool isMutatedWhenInitialized;
 
   /// Return true if this value contains the specified bit.
   bool contains(unsigned bitNo) const {
@@ -257,6 +267,11 @@ struct ValueRef {
   operator bool() const { return valueId != 0; }
 
   unsigned getNumBits() const { return endBit - startBit; }
+
+  bool operator==(ValueRef rhs) const {
+    return startBit == rhs.startBit && endBit == rhs.endBit;
+  }
+  bool operator!=(ValueRef rhs) const { return !(*this == rhs); }
 
   /// Test if all the bits in the range are set in the specified BitVector.
   bool isAllPresent(const BitVector &bits) const {
@@ -312,6 +327,10 @@ struct ValueRef {
 /// This gives us a fully precise view of the individual fields, and allows them
 /// to be initialized and consumed in a piecewise way.
 struct ValueSet {
+  /// This provides information about the types referenced from values, e.g. the
+  /// number of fields they have.
+  TypeDeclInfo &typeDeclInfo;
+
   /// Initialize the value set with one entry, so index #0 is always invalid and
   /// can be used as a sentinel, and so a null Value is always treated as
   /// untracked.
@@ -344,12 +363,19 @@ struct ValueSet {
       numValueBits = typeDeclInfo.getNumFieldsInType(valType);
     }
 
+    // Determine if we should reject mutations after initialization.
+    bool isLet = false;
+    if (val)
+      if (VarLetDeclOp varLet = val.getDefiningOp<VarLetDeclOp>())
+        isLet = !varLet.getIsVar();
+
     valueInfoIndex[val] = valueInfos.size();
     valueInfos.push_back({val, firstValueBit, firstValueBit + numValueBits,
                           trackable.startsUninit, trackable.endsUninit,
                           trackable.isIndirect,
-                          trackable.isFullObjectLiveOnEntry,
-                          /*hasErrorDiagnosed=*/false});
+                          trackable.isFullObjectLiveOnEntry, isLet,
+                          /*hasErrorDiagnosed=*/false,
+                          /*isMutatedWhenInitialized=*/false});
   }
 
   /// Return a reference to the entire value with the specified ID.
@@ -367,8 +393,6 @@ struct ValueSet {
   unsigned getNumTotalBits() const {
     return !valueInfos.empty() ? valueInfos.back().endValueBit : 0;
   }
-
-  TypeDeclInfo &typeDeclInfo;
 
   raw_ostream &printBV(const BitVector &bits, raw_ostream &os) const;
   LLVM_DUMP_METHOD void dumpBV(const BitVector &bits) const {
@@ -508,7 +532,9 @@ struct UninitializedValueScan {
 
 private:
   void checkOp(Operation &op);
-  ValueRef checkLive(Value value, Operation &op);
+  ValueRef checkUse(Value value, Operation &op);
+  ValueRef checkDef(Value value, Operation &op);
+  ValueRef checkConsume(Value value, Operation &op);
 
   /// This is metadata about all the values we are tracking.
   ValueSet &valueSet;
@@ -516,15 +542,20 @@ private:
   /// This is the set of values known to be live at this point.
   BitVector liveValues;
 
+  /// This is the set of values known to be mutated on any prior paths, used for
+  /// let-var warnings and errors about lazy-initialized let's.  This can be
+  /// true when the value isn't live because the value has since been consumed.
+  BitVector everMutatedValues;
+
   /// When analyzing the body of a loop, this bitset indicates what a 'continue'
   /// should intersect with.
-  BitVector *continueSet = nullptr;
+  BitVector *continueSet = nullptr, *continueEverMutatedSet = nullptr;
   /// When analyzing the body of a loop, this bitset indicates what a 'break'
   /// should intersect with.
-  BitVector *breakSet = nullptr;
-  /// When analyzing the body of a try, this bitset indicates what a 'raise'
-  /// should intersect with.
-  BitVector *raiseSet = nullptr;
+  BitVector *breakSet = nullptr, *breakEverMutatedSet = nullptr;
+  /// When analyzing the body of a try, this bitset indicates what a
+  /// 'raise' should intersect with.
+  BitVector *raiseSet = nullptr, *raiseEverMutatedSet = nullptr;
 };
 } // namespace
 
@@ -537,8 +568,9 @@ void UninitializedValueScan::dump() const {
 
   os << "UninitializedValueScan for ";
   valueSet.printFuncName(os);
-  os << "\n";
-  valueSet.printBV(liveValues, os) << "\n";
+  os << "\n  live = ";
+  valueSet.printBV(liveValues, os) << "\n  mutated = ";
+  valueSet.printBV(everMutatedValues, os) << "\n";
 
   if (raiseSet) {
     os << " raise: ";
@@ -646,7 +678,7 @@ static void addBadValueNameToDiag(ValueRef valueRef, const BitVector &bits,
 
 // Verify that the specified ValueRef is live at this point, diagnosing an
 // error at the specified operation if not.
-ValueRef UninitializedValueScan::checkLive(Value value, Operation &op) {
+ValueRef UninitializedValueScan::checkUse(Value value, Operation &op) {
   ValueRef valueRef = valueSet.getValueRef(value);
   if (!valueRef)
     return valueRef;
@@ -688,19 +720,83 @@ ValueRef UninitializedValueScan::checkLive(Value value, Operation &op) {
   return valueRef;
 }
 
+ValueRef UninitializedValueScan::checkDef(Value value, Operation &op) {
+  ValueRef valueRef = valueSet.getValueRef(value);
+  if (!valueRef)
+    return valueRef;
+
+  // If we are overwriting a value that has already been specified, then the
+  // underlying value must be declared a 'var' and not a 'let'.
+  if (!valueRef.isAllMissing(everMutatedValues)) {
+    ValueInfo &info = valueSet.getValueInfo(valueRef.valueId);
+
+    // If this was declared as a let, then this is an error.
+    if (info.isLet && !info.hasErrorDiagnosed) {
+      auto diag =
+          mlir::emitError(op.getLoc(), "invalid mutation of immutable value ");
+      addBadValueNameToDiag(valueRef, everMutatedValues, valueSet, diag);
+      diag.attachNote(info.value.getLoc())
+          << "'" << info.getName().str() << "' declared here";
+      info.hasErrorDiagnosed = true;
+    }
+
+    // If this is a var, then just notice the mutation so it doesn't get
+    // suggested to promote to a let.
+    info.isMutatedWhenInitialized = true;
+  }
+
+  // Finally, marks its value live so any use after this isn't treated as
+  // uninitialized.
+  valueRef.markBits(liveValues, true);
+  valueRef.markBits(everMutatedValues, true);
+  return valueRef;
+}
+
+ValueRef UninitializedValueScan::checkConsume(Value value, Operation &op) {
+  ValueRef valueRef = valueSet.getValueRef(value);
+  if (!valueRef)
+    return valueRef;
+
+  // If we are overwriting a value that has already been specified, then the
+  // underlying value must be declared a 'var' and not a 'let'.
+  if (!valueRef.isAllMissing(everMutatedValues)) {
+    ValueInfo &info = valueSet.getValueInfo(valueRef.valueId);
+
+    // If this was declared as a let, then this is an error.
+    if (info.isLet && !info.hasErrorDiagnosed) {
+      auto diag =
+          mlir::emitError(op.getLoc(), "invalid mutation of immutable value ");
+      addBadValueNameToDiag(valueRef, everMutatedValues, valueSet, diag);
+      diag.attachNote(info.value.getLoc())
+          << "'" << info.getName().str() << "' declared here";
+      info.hasErrorDiagnosed = true;
+    }
+
+    // If this is a var, then just notice the mutation so it doesn't get
+    // suggested to promote to a let.
+    info.isMutatedWhenInitialized = true;
+  }
+
+  // This marks its value as dead.
+  valueRef.markBits(liveValues, false);
+  valueRef.markBits(everMutatedValues, true);
+  return valueRef;
+}
+
 void UninitializedValueScan::scanFunction(mlir::FunctionOpInterface func) {
   // Initialize the BitVector with all the elements that are live-in.  We treat
   // all values live at the start of the function (even before they are actually
   // defined) because we know that all uses must be after them due to SSA
   // dominance.
   liveValues.resize(valueSet.getNumTotalBits());
-  for (const ValueInfo &valueInfo : valueSet.getValueInfos())
-    if (!valueInfo.startsUninit) {
+  everMutatedValues.resize(valueSet.getNumTotalBits());
+  for (const ValueInfo &info : valueSet.getValueInfos())
+    if (!info.startsUninit) {
       // If the whole value is live on entry, notice that.
-      liveValues.set(valueInfo.startValueBit, valueInfo.endValueBit);
-    } else if (valueInfo.isFullObjectLiveOnEntry) {
+      liveValues.set(info.startValueBit, info.endValueBit);
+    } else if (info.isFullObjectLiveOnEntry) {
       // If /just/ the full object bit is live on entry, set it.
-      liveValues.set(valueInfo.endValueBit - 1);
+      liveValues.set(info.endValueBit - 1);
     }
 
   // Scan the body of the function.
@@ -722,17 +818,17 @@ void UninitializedValueScan::checkOp(Operation &op) {
     return;
 
   // A store of a whole value is an initialization.
-  if (auto storeOp = dyn_cast<POP::StoreOp>(op)) {
-    // This marks its value live.
-    valueSet.getValueRef(storeOp.getPtr()).markBits(liveValues, true);
+  if (isa<POP::StoreOp, OwnershipDefLValueOp>(op)) {
+    // Mark the pointer as being mutated.
+    checkDef(op.getOperands().back(), op);
     return;
   }
 
   // A load is a use of whatever fields are being referenced.
   if (isa<POP::LoadOp, LoadConsumeOp>(op)) {
-    checkLive(op.getOperand(0), op);
+    checkUse(op.getOperand(0), op);
     if (isa<LoadConsumeOp>(op))
-      valueSet.getValueRef(op.getResult(0)).markBits(liveValues, true);
+      checkDef(op.getResult(0), op);
     return;
   }
 
@@ -756,19 +852,20 @@ void UninitializedValueScan::checkOp(Operation &op) {
       switch (convention) {
       case ValueInputConvention::OwnedInReg:
       case ValueInputConvention::OwnedInMem:
-        // Transitions live -> dead.
-        checkLive(operand, op).markBits(liveValues, false);
+        checkUse(operand, op); // Live -> dead
+        checkConsume(operand, op);
         break;
       case ValueInputConvention::BorrowedInMem:
-      case ValueInputConvention::ByRef:
       case ValueInputConvention::BorrowedInReg:
-        // Live -> live.
-        checkLive(operand, op);
+        checkUse(operand, op); // Live -> live
+        break;
+      case ValueInputConvention::ByRef:
+        checkUse(operand, op); // Life -> Live
+        checkDef(operand, op);
         break;
       case ValueInputConvention::ByRefResult:
       case ValueInputConvention::InitSelf:
-        // This call defines the by-ref result.
-        valueSet.getValueRef(operand).markBits(liveValues, true);
+        checkDef(operand, op); // This call defines the by-ref result.
         break;
       }
     }
@@ -776,7 +873,7 @@ void UninitializedValueScan::checkOp(Operation &op) {
     // If the result is defining an owned register value, then we treat this as
     // a definition.
     if (signature.hasOwnedRegisterResult())
-      valueSet.getValueRef(op.getResult(0)).markBits(liveValues, true);
+      checkDef(op.getResult(0), op);
 
     return;
   }
@@ -784,19 +881,20 @@ void UninitializedValueScan::checkOp(Operation &op) {
   // If this operation has a direct use of a value we are tracking, consider
   // it a use that must be initialized.  This notably includes LoadOp.
   for (Value operand : op.getOperands())
-    checkLive(operand, op);
+    checkUse(operand, op);
 
   // lit.letreg.decl and lit.ownership.end.lifetime define their own values.
   if (isa<LetRegDeclOp, OwnershipEndLifetimeOp>(op)) {
-    valueSet.getValueRef(op.getResult(0)).markBits(liveValues, true);
+    checkDef(op.getResult(0), op);
     return;
   }
 
   // OwnershipMakePointerLValue is a def if liveOnEntry.
   if (auto makePointer = dyn_cast<OwnershipMakePointerLValue>(op)) {
-    checkLive(makePointer.getOperand(), op);
+    checkUse(makePointer.getOperand(), op);
+    checkDef(makePointer.getOperand(), op);
     if (makePointer.getLiveOnEntry())
-      valueSet.getValueRef(op.getResult(0)).markBits(liveValues, true);
+      checkDef(makePointer.getResult(), op);
   }
 
   // If this is a kgen.return then we have an exit from the function
@@ -806,7 +904,7 @@ void UninitializedValueScan::checkOp(Operation &op) {
     for (const ValueInfo &valueInfo :
          llvm::drop_begin(valueSet.getValueInfos()))
       if (!valueInfo.endsUninit)
-        checkLive(valueInfo.value, op);
+        checkUse(valueInfo.value, op);
     return;
   }
 
@@ -820,16 +918,19 @@ void UninitializedValueScan::checkOp(Operation &op) {
   if (isa<HLCF::BreakOp>(op)) {
     assert(breakSet && "Not in a loop?");
     *breakSet &= liveValues;
+    *breakEverMutatedSet |= everMutatedValues;
     return;
   }
   if (isa<HLCF::ContinueOp>(op)) {
     assert(continueSet && "Not in a loop?");
     *continueSet &= liveValues;
+    *continueEverMutatedSet |= everMutatedValues;
     return;
   }
   if (isa<LIT::TryRaiseOp>(op)) {
     assert(raiseSet && "Not in a 'try'?");
     *raiseSet &= liveValues;
+    *raiseEverMutatedSet |= everMutatedValues;
     return;
   }
 
@@ -840,10 +941,13 @@ void UninitializedValueScan::checkOp(Operation &op) {
            op.getRegion(1).hasOneBlock() &&
            "if-like op should have two single-block regions");
     BitVector liveValuesCopy = liveValues;
+    BitVector everMutatedCopy = everMutatedValues;
     scanBlock(op.getRegion(0).front());
     liveValuesCopy.swap(liveValues);
+    everMutatedCopy.swap(everMutatedValues);
     scanBlock(op.getRegion(1).front());
     liveValues &= liveValuesCopy;
+    everMutatedValues |= everMutatedCopy;
     return;
   }
 
@@ -853,12 +957,15 @@ void UninitializedValueScan::checkOp(Operation &op) {
     UninitializedValueScan bodySets(valueSet);
     // Loops are transparent to raise.
     bodySets.raiseSet = raiseSet;
+    bodySets.raiseEverMutatedSet = raiseEverMutatedSet;
 
     // The default continueSet is the live-in set of values.  This can lose
     // values if some 'continue' path through the body of the loop consumes a
     // value.
     BitVector continueSet(liveValues);
     bodySets.continueSet = &continueSet;
+    BitVector continueEverMutatedSet(everMutatedValues);
+    bodySets.continueEverMutatedSet = &continueEverMutatedSet;
 
     // The 'breakSet' of the loop body will be the live outs of the loop.  We
     // use the existing liveValues that we'll continue with for that set, but
@@ -866,6 +973,7 @@ void UninitializedValueScan::checkOp(Operation &op) {
     // from the body work correctly.
     liveValues.set();
     bodySets.breakSet = &liveValues;
+    bodySets.breakEverMutatedSet = &everMutatedValues;
 
     // Iteratively scan the loop body until the live-in set converges.  This is
     // a trivial lattice with each bit converging to "not live in", so we know
@@ -876,6 +984,7 @@ void UninitializedValueScan::checkOp(Operation &op) {
       // 'breakSet', and any continues will intersect their live-out set with
       // 'continueSet'.
       bodySets.liveValues = continueSet;
+      bodySets.everMutatedValues = continueEverMutatedSet;
       bodySets.scanBlock(loopOp.getBody().front());
 
       // If any bits got cleared from the continueSet then we need to iterate.
@@ -892,29 +1001,37 @@ void UninitializedValueScan::checkOp(Operation &op) {
     UninitializedValueScan bodySets(valueSet);
     // Our current live-in set is live-in to the try body.
     bodySets.liveValues = liveValues;
+    bodySets.everMutatedValues = everMutatedValues;
 
     // Try is transparent to break/continue.
     bodySets.continueSet = continueSet;
+    bodySets.continueEverMutatedSet = continueEverMutatedSet;
     bodySets.breakSet = breakSet;
+    bodySets.breakEverMutatedSet = breakEverMutatedSet;
 
     // We capture all the common values live-out of raise's as being the live-in
     // to the except block.
     BitVector exceptSet(liveValues.size(), true);
     bodySets.raiseSet = &exceptSet;
+    BitVector exceptEverMutatedSet(liveValues.size(), false);
+    bodySets.raiseEverMutatedSet = &exceptEverMutatedSet;
     bodySets.scanBlock(tryOp.getTryRegion().front());
 
     // The live-ins to the except block are the exceptSet.
     liveValues = std::move(exceptSet);
+    everMutatedValues = std::move(exceptEverMutatedSet);
     scanBlock(tryOp.getExceptRegion().front());
 
     // The live-out set of the bodySet is the live-in to the else block, but
     // exceptions raised in it go out of the try.
     bodySets.raiseSet = raiseSet;
+    bodySets.raiseEverMutatedSet = raiseEverMutatedSet;
     bodySets.scanBlock(tryOp.getElseRegion().front());
 
     // The fall through live values are the intersection from the except and
     // else blocks.
     liveValues &= bodySets.liveValues;
+    everMutatedValues |= bodySets.everMutatedValues;
     return;
   }
 }
@@ -1628,10 +1745,17 @@ LogicalResult CheckLifetimes::processFunction(mlir::FunctionOpInterface func,
   // Pass #1: Collect all of the values declared in the function that have
   // ownership to track, and number them.
   ValueSet valueSet(typeDeclInfo, func);
-  func->walk([&](Operation *op) -> WalkResult {
+
+  /// This is set to true if the function has nested functions inside of it.
+  /// Some of our analyses are not safe in the face of closures yet.
+  bool hasClosures = false;
+
+  func->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) -> WalkResult {
     // Skip looking at nested functions, they are handled as separate contexts.
-    if (isa<ParamDeclareRegionOp>(op) && op != func)
+    if (isa<ParamDeclareRegionOp>(op) && op != func) {
+      hasClosures = true;
       return WalkResult::skip();
+    }
 
     // All the ops that define trackable values have a single result.
     if (op->getNumResults() == 1)
@@ -1658,6 +1782,26 @@ LogicalResult CheckLifetimes::processFunction(mlir::FunctionOpInterface func,
   // materialized by LowerSemanticCF before this pass?
 
   DestructorInsertion(valueSet).scanFunction(func);
+
+  // Now that we've looked at all the uses and definitions in the function,
+  // diagnose any 'var's that should be written as 'let's with a warning.
+  //
+  // FIXME: Our analysis is not safe in the presence of closures, so disable
+  // this check for now if we see any.
+  if (!hasClosures)
+    for (const ValueInfo &info : valueSet.getValueInfos()) {
+      if (info.hasErrorDiagnosed || info.isMutatedWhenInitialized ||
+          !info.value)
+        continue;
+      VarLetDeclOp varLet = info.value.getDefiningOp<VarLetDeclOp>();
+      if (!varLet || varLet.getIsSynthesized() || !varLet.getIsVar())
+        continue;
+      mlir::emitWarning(varLet.getLoc())
+          << "'" << varLet.getName()
+          << "' was declared as a 'var' but never mutated, consider switching "
+             "to "
+             "a 'let'";
+    }
 
   // Return failure if we generated errors for any of the tracked values.
   return failure(llvm::any_of(valueSet.getValueInfos(), [&](ValueInfo &info) {

@@ -38,6 +38,7 @@ lit.file_module @"$check_lifetimes" {
 
 
     // var c = Struct()
+    // expected-warning @+1 {{'c' was declared as a 'var' but never mutated, consider switching to a 'let'}}
     %c = lit.varlet.decl "c", var = true, synth = false : <@"$check_lifetimes"::@Struct>
     %0 = kgen.call @"$check_lifetimes"::@Struct::@"__init__($check_lifetimes::Struct=&)"(%c) : (!pop.pointer<@"$check_lifetimes"::@Struct> byref_result) -> !lit.none
 
