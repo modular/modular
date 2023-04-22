@@ -623,7 +623,7 @@ struct PackIm2ColNCHW[
             let global_in_image_idx = global_in_image_offset + Index(0, col_idx)
 
             # Load a vector of image data or fill zero.
-            var image_data: SIMD[type, simd_size]
+            let image_data: SIMD[type, simd_size]
 
             if fill_zero:
                 image_data = SIMD[type, simd_size](0)
@@ -1055,7 +1055,7 @@ struct ConvIm2ColNCHW[
         run the matmul routine on the whole problem space.
         """
         # Allocate buffer to pack transformed image.
-        var _bpacked_data = _raw_stack_allocation[
+        let _bpacked_data = _raw_stack_allocation[
             pack_cache_size,  # Count.
             type,  # Data type.
             simd_byte_width(),  # Alignment.
@@ -1729,7 +1729,7 @@ struct ConvNHWCInnerLoopFilterPacked[
             let local_idx = Index(idx0, col_idx)
 
             # Load data from original matrix C.
-            var c_data = c_local.simd_load[simd_size](local_idx)
+            let c_data = c_local.simd_load[simd_size](local_idx)
 
             if skip_boundary_check or (
                 Index(idx0, col_idx + simd_size) <= (self.c_bound - tile_idx)
@@ -1827,7 +1827,7 @@ struct ConvNHWCInnerLoopFilterPacked[
         (a_row_size, TileN, TileK) tile.
         """
         # Allocate accumulation buffer.
-        var c_local = NDBuffer[
+        let c_local = NDBuffer[
             2,
             DimList(
                 a_row_size,
@@ -1948,7 +1948,7 @@ fn get_partitioned_workload(
     """
     var divided_load = total_load // number_of_tasks
     let residue_load = total_load % number_of_tasks
-    var start_idx: Int
+    let start_idx: Int
     if task_idx < residue_load:
         start_idx = task_idx * (divided_load + 1)
         divided_load += 1
@@ -2220,7 +2220,7 @@ struct ConvIm2ColNHWC[
             return
 
         # Allocate buffer to pack transformed image.
-        var _bpacked_data = _raw_stack_allocation[
+        let _bpacked_data = _raw_stack_allocation[
             pack_cache_size,  # Count.
             type,  # Data type.
             simd_byte_width(),  # Alignment.

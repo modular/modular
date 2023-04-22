@@ -68,7 +68,7 @@ fn broadcast[
         output (NDBuffer): the output buffer
         input (NDBuffer): the input buffer
     """
-    var rightmost_broadcast_axis: Int = _get_rightmost_broadcast_axis[
+    let rightmost_broadcast_axis: Int = _get_rightmost_broadcast_axis[
         rank, output_shape, input_shape, type
     ](output, input)
 
