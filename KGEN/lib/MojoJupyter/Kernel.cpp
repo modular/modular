@@ -397,13 +397,17 @@ void MojoKernel::flushLLDBStreams() {
   // Various logging utilities (like CloudWatch) parse JSON automatically so we
   // should use that for structured logging.
   auto reportMessage = [&](StringRef type, StringRef message) {
-    llvm::json::OStream j(*logStream);
-    // Produce `{"type": <type>, "message": <message>}`
-    j.object([&]() {
-      j.attribute("type", type);
-      j.attribute("message", message);
-    });
-    *logStream << "\n";
+    if (llvm::sys::Process::GetEnv("MOJO_JUPYTER_JSON_LOGS")) {
+      llvm::json::OStream j(*logStream);
+      // Produce `{"type": <type>, "message": <message>}`
+      j.object([&]() {
+        j.attribute("type", type);
+        j.attribute("message", message);
+      });
+      *logStream << "\n";
+    } else {
+      *logStream << '[' << type << "] " << message << "\n";
+    }
   };
 
   // The following gets the stream of events without timeout. All the messages
