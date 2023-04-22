@@ -236,8 +236,7 @@ struct Buffer[size: Dim, type: DType]:
             idx: The index into the Buffer.
             val: The value to store.
         """
-        var simd_val = SIMD[type, 1](val)
-        self.simd_store[1](idx, simd_val)
+        self.simd_store[1](idx, SIMD[type, 1](val))
 
     @always_inline
     fn __setitem__(self, idx: Int, val: SIMD[type, 1]):
@@ -366,7 +365,7 @@ struct Buffer[size: Dim, type: DType]:
             Constructed buffer with the allocated space.
         """
         assert_param_msg[size.has_value(), "must have known size"]()
-        var data_pointer = _raw_stack_allocation[size.get(), type, alignment]()
+        let data_pointer = _raw_stack_allocation[size.get(), type, alignment]()
         return Buffer[size, type](data_pointer.address)
 
     @staticmethod
