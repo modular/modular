@@ -48,7 +48,7 @@ fn unroll[
     count: Int,
     func: fn[idx: Int] () capturing -> None,
 ]():
-    """Reateadly evaluate a function `count` times.
+    """Repeatedly evaluate a function `count` times.
 
     Parameters:
         count: A number of repetitions.
