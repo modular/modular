@@ -11,32 +11,19 @@ from IO import print
 
 
 @always_inline
-async fn just_call_it[
-    func: __mlir_type[
-        `!kgen.signature<<`,
-        Int,
-        `>(`,
-        Int,
-        ` borrow) async|capturing -> `,
-        Int,
-        `>`,
-    ]
-]() -> Int:
+async fn just_call_it[func: async fn[a: Int] (Int) capturing -> Int]() -> Int:
     let coro: Coroutine[Int] = func[3](2)
     let result = await coro
-    coro.__del__()
     return result
 
 
 fn foobar[pref: Int](a: Int):
-    @always_inline
     async fn but_async[c: Int](b: Int) -> Int:
         return a + b + c
 
     let coro: Coroutine[Int] = just_call_it[but_async]()
     print(pref)
     print(coro())
-    coro.__del__()
 
 
 fn main():
