@@ -17,7 +17,6 @@ from Pointer import Pointer, DTypePointer
 from Range import range
 from SIMD import SIMD
 from TargetInfo import simd_width, dtype_simd_width
-from TypeUtilities import rebind
 from Tracing import Trace, TraceLevel
 from String import String
 
@@ -167,7 +166,7 @@ fn elementwise_wrapper[
 
     out_chain.trace_detail[TraceLevel.OP, description_fn]("mojo.elementwise")
     elementwise[rank, simd_width, unroll_factor, func](
-        rebind[StaticIntTuple[rank]](buffer.dynamic_shape),
+        buffer.dynamic_shape,
         out_chain,
     )
 
@@ -372,9 +371,9 @@ fn broadcast_to_tensor[
         output_rank, DimList.create_unknown[output_rank](), type
     ](
         original.data,
-        rebind[StaticIntTuple[output_rank]](shape),
+        shape,
         original.dynamic_dtype,
-        rebind[StaticIntTuple[output_rank]](stride),
+        stride,
     )
 
     return out
