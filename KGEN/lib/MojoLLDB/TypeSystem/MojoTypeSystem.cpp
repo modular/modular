@@ -155,8 +155,8 @@ void MojoTypeSystem::Terminate() {
 //===----------------------------------------------------------------------===//
 
 void MojoTypeSystem::broadcastUserMessage(StringRef message) {
-  lldb::EventSP event = std::make_shared<Event>(
-      eBroadcastUserMessage | eDebugLog, new EventDataBytes(message));
+  lldb::EventSP event = std::make_shared<Event>(eBroadcastUserMessage,
+                                                new EventDataBytes(message));
   BroadcastEvent(event);
 }
 
@@ -178,10 +178,11 @@ void MojoTypeSystem::flushIRDumpAndDebugLog() {
 }
 
 void MojoTypeSystem::errorLog(StringRef message) {
-  // When we hit an error, we want to flush the debug logs as well.
-  lldb::EventSP event = std::make_shared<Event>(eErrorLog | eFlushIRAndDebugLog,
-                                                new EventDataBytes(message));
+  lldb::EventSP event =
+      std::make_shared<Event>(eErrorLog, new EventDataBytes(message));
   BroadcastEvent(event);
+  // When we hit an error, we want to flush the debug logs as well.
+  flushIRDumpAndDebugLog();
 }
 
 void MojoTypeSystem::logDiagnostic(const MojoDiagnostic &diag) {
@@ -232,35 +233,46 @@ void MojoTypeSystem::handleEvent(
     std::deque<std::pair<MessageKind, std::string>> &debugMessageCache,
     function_ref<void(StringRef, StringRef)> reportMessage,
     function_ref<void(StringRef)> sendUserOutput) {
-  // If it's a user message broadcast, send that output.
-  if (event->GetType() & MojoTypeSystem::eBroadcastUserMessage)
-    sendUserOutput(getStringFromEvent(event));
+  assert(llvm::popcount(event->GetType()) == 1 &&
+         "a message must contain one single type");
 
-  // If it's an error log, send that output as well.
-  if (event->GetType() & MojoTypeSystem::eErrorLog)
+  auto addEventToDebugMessageCache = [&] {
+    debugMessageCache.emplace_back(MessageKind(event->GetType()),
+                                   getStringFromEvent(event));
+    // Pop the front message if we've exceeded 40 items in the deque.
+    if (debugMessageCache.size() > 40)
+      debugMessageCache.pop_front();
+  };
+
+  if (event->GetType() & MojoTypeSystem::eBroadcastUserMessage) {
+    // If it's a user message broadcast, send that output.
+    sendUserOutput(getStringFromEvent(event));
+    addEventToDebugMessageCache();
+  } else if (event->GetType() & MojoTypeSystem::eErrorLog) {
+    // If it's an error log, send that output as well.
     reportMessage(stringifyType(MessageKind(event->GetType())),
                   getStringFromEvent(event));
-
-  // It may (also) be one of `eDumpIR`, `eDebugLog` or `eFlushIRAndDebugLog`.
-  // Flush that correctly.
-  if (event->GetType() & (eDumpIR | eDebugLog)) {
+  } else if (event->GetType() & (eDumpIR | eDebugLog)) {
+    // These logs are only displayed right away if the LLDB expr logs are
+    // enabled.
     if (Log *log = GetLog(LLDBLog::Expressions)) {
       LLDB_LOG(log, "[{0}] {1}", stringifyType(MessageKind(event->GetType())),
                getStringFromEvent(event));
     }
-    debugMessageCache.emplace_back(MessageKind(event->GetType()),
-                                   getStringFromEvent(event));
+
+    // These messages are extremely noisy, so we don't want to add them to the
+    // cache by default.
+    if (llvm::sys::Process::GetEnv("MOJO_REPL_VERBOSE_LOG"))
+      addEventToDebugMessageCache();
   } else if (event->GetType() & MojoTypeSystem::eFlushIRAndDebugLog) {
     for (const auto &message : debugMessageCache)
       reportMessage(stringifyType(message.first), message.second);
 
     // Clear out the message cache.
     debugMessageCache.clear();
+  } else {
+    llvm_unreachable("Unexpected message type");
   }
-
-  // Pop the front message if we've exceeded 40 items in the deque.
-  if (debugMessageCache.size() > 40)
-    debugMessageCache.pop_front();
 }
 
 //===----------------------------------------------------------------------===//
