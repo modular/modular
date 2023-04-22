@@ -812,7 +812,7 @@ ParseResult StmtParser::parseForStmt(size_t curIndent) {
   // Emit a call to __iter__ into a var with an inferred type.
   VarLetDeclOp rangeRef = builder.create<VarLetDeclOp>(
       forLoc, POP::PointerType::get(UnresolvedType::get(getContext())),
-      "$RANGE", /*isVar*/ true);
+      "$RANGE", /*isVar*/ true, /*isSynth=*/true);
   ValueDest rangeDest(rangeRef, EC_ForIterator);
   if (!getEmitter().emitNamedMethodCall("__iter__", {loadedSeq}, rangeDest,
                                         CallSyntax::kImplicitConvert, seqExp)) {
@@ -937,7 +937,7 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
       // reassignment.
       auto varDecl = builder.create<VarLetDeclOp>(
           errVal.getLoc(), POP::PointerType::get(errVal.getType()), errName,
-          /*isVar*/ true);
+          /*isVar*/ true, /*isSynth=*/true);
       getDeclResolver().addFullyResolvedDecl(DeclIRValue(varDecl), errName,
                                              errValLoc, &containingDecl);
       builder.create<POP::StoreOp>(errVal.getLoc(), errVal, varDecl,
@@ -1263,7 +1263,8 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
     // TODO (Issue#5005): Maintain scopes correctly so we don't have a conflict
     // between things like "if cond: var x = 1 else var x = 2"
     auto varType = POP::PointerType::get(unresolvedType);
-    declOp = builder.create<VarLetDeclOp>(loc, varType, name, isVar);
+    declOp = builder.create<VarLetDeclOp>(loc, varType, name, isVar,
+                                          /*isSynth=*/false);
   } else {
     emitError(loc, "cannot declare value outside a function");
     return success(); // Continue parsing.

@@ -134,12 +134,12 @@ def var_decls() -> None:
   # CHECK: kgen.param.constant: @"$StringLiteral"::@StringLiteral = <#lit.struct<{value: string = "hello"}>>
   let const_str = "hello"
 
-  # CHECK: %str = lit.varlet.decl "str", var = true : <{{.*}}@StringLiteral>
+  # CHECK: %str = lit.varlet.decl {{.*}} : <{{.*}}@StringLiteral>
   # CHECK: [[CONST:%.*]] = kgen.param.constant: {{.*}} = "hello"
   # CHECK: pop.store [[CONST]], %str
   var str = "hello"
 
-  # CHECK: %z = lit.varlet.decl "z", var = true : <index>
+  # CHECK: %z = lit.varlet.decl {{.*}} : <index>
   # CHECK-NEXT: [[TMP:%.*]] = pop.load %x : !pop.pointer<index>
   # CHECK-NEXT: pop.store [[TMP]], %z
   var z = x
@@ -517,15 +517,15 @@ fn variadicParameter[*Ts: __mlir_type.`!kgen.mlirtype`](x: Int): pass
 # CHECK-SAME: [[ARGX:%.*]]: !kgen.declref<@"$SIMD"::@SIMD{{.*}}f32
 # CHECK-SAME: [[ARGY:%.*]]: !kgen.declref<@"$Int"::@Int>
 fn usePacks(x: F32, y: Int):
-  # CHECK: lit.varlet.decl "a", var = true : <@"$decls"::@Tuple<Ts: variadic<!kgen.mlirtype> = [!kgen.declref<@"$Int"::@Int>]>>
+  # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@Tuple<Ts: variadic<!kgen.mlirtype> = [!kgen.declref<@"$Int"::@Int>]>>
   var a: Tuple[Int]
-  # CHECK: lit.varlet.decl "b", var = true : <@"$decls"::@Tuple<Ts: variadic<!kgen.mlirtype> = [!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$SIMD"::@SIMD{{.*}}f32{{.*}}>, !kgen.declref<@"$Int"::@Int>]>>
+  # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@Tuple<Ts: variadic<!kgen.mlirtype> = [!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$SIMD"::@SIMD{{.*}}f32{{.*}}>, !kgen.declref<@"$Int"::@Int>]>>
   var b: Tuple[Int, F32, Int]
-  # CHECK: lit.varlet.decl "c", var = false : <@"$decls"::@Tuple<Ts: variadic<!kgen.mlirtype> = [!kgen.declref<@"$Int"::@Int>]>>
+  # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@Tuple<Ts: variadic<!kgen.mlirtype> = [!kgen.declref<@"$Int"::@Int>]>>
   let c = Tuple[Int](1)
-  # CHECK: lit.varlet.decl "d", var = false : <@"$decls"::@Tuple<Ts: variadic<!kgen.mlirtype> = [{{.*}}FloatLiteral>, index]>>
+  # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@Tuple<Ts: variadic<!kgen.mlirtype> = [{{.*}}FloatLiteral>, index]>>
   let d = Tuple(3.14, (6).__as_mlir_index())
-  # CHECK: lit.varlet.decl "e", var = false : <@"$decls"::@Tuple<Ts: variadic<!kgen.mlirtype> = []>>
+  # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@Tuple<Ts: variadic<!kgen.mlirtype> = []>>
   let e = Tuple()
 
   # CHECK: %[[PACK1:.*]] = kgen.param.constant: !pop.pack<[index]> = <<1>>

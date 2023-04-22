@@ -15,7 +15,7 @@ lit.func @trivial_generator(%arg0: si32) -> si32 {
 // CHECK-NEXT:  }
 
 lit.func @varDecl(%arg0: index) -> index {
-  %a = lit.varlet.decl "a", var = true : <index>
+  %a = lit.varlet.decl "a", var = true, synth=false : <index>
   kgen.return %arg0 : index
 }
 

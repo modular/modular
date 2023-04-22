@@ -417,13 +417,15 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // This creates an untyped VarLetDeclOp which is then inferred from its
   // initializer.  `isVar` indicates whether this should be considered mutable.
-  auto createVarDecl = [&](OpBuilder &builder, bool isVar) -> VarLetDeclOp {
+  auto createVarDecl = [&](OpBuilder &builder, bool isVar,
+                           bool isSynth) -> VarLetDeclOp {
     auto contextualType = dest.getIfLValueInitializerType();
     assert(contextualType && "must have contextual type");
     auto loc = getLocation(emitter);
     Type declIRType = POP::PointerType::get(contextualType);
     auto nameAttr = StringAttr::get(loc.getContext(), spelling);
-    return builder.create<VarLetDeclOp>(loc, declIRType, nameAttr, isVar);
+    return builder.create<VarLetDeclOp>(loc, declIRType, nameAttr, isVar,
+                                        isSynth);
   };
 
   // If the unresolved name is `_`, then we have a discard pattern.  Materialize
@@ -437,7 +439,8 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
                         "discard pattern requires an initializing expression");
       return {};
     }
-    auto result = SLValue(createVarDecl(*emitter.builder, /*isVar=*/false));
+    auto result = SLValue(
+        createVarDecl(*emitter.builder, /*isVar=*/false, /*isSynth=*/true));
     return emitter.emitResult(result, this, dest);
   }
 
@@ -451,7 +454,8 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // scope per function and all variables belong to that scope, so builders
     // should reflect that.
     OpBuilder varDeclBuilder(emitter.varDeclCursor);
-    auto varDecl = createVarDecl(varDeclBuilder, /*isVar=*/true);
+    auto varDecl = // Marked isSynth to disable warnings.
+        createVarDecl(varDeclBuilder, /*isVar=*/true, /*isSynth=*/true);
 
     // In a normal implicit declaration, we add it to the name table so
     // subsequent uses find this one.

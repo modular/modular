@@ -38,8 +38,8 @@ fn use(x: RegExample): pass
 ##===----------------------------------------------------------------------===##
 
 fn use_of_empty() -> Empty:
-  var a: Empty
-  return a # expected-error {{'a' used with all fields manually initialized but without calling an '__init__' method}}
+  var a: Empty # expected-note {{'a' declared here}}
+  return a # expected-error {{use of uninitialized value 'a'}}
 
 fn use_of_init() -> RegExample:
   var a = RegExample()
@@ -58,7 +58,7 @@ fn use_of_uninit2() -> MemExample:
   return a   # expected-error {{use of uninitialized value 'a'}}
 
 fn invalid_partial_init() -> MemExample:
-  var a: MemExample
+  var a: MemExample  # expected-note {{'a' declared here}}
   a.x = 42
   a.y = 42
   return a  # expected-error {{'a' used with all fields manually initialized but without calling an '__init__' method}}

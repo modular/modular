@@ -1984,7 +1984,8 @@ static SLValue makeArgLValueVarSlot(CValue argValue, StringAttr argName,
   Type varType = POP::PointerType::get(declType);
   auto varDecl = builder.create<VarLetDeclOp>(shared.translateLocation(loc),
                                               varType, argName,
-                                              /*isVar*/ 1);
+                                              /*isVar*/ true,
+                                              /*isSynthesized*/ true);
 
   // Expr to provide location information.
   DeclRefNode srcExpr(StringRef(loc.getPointer(), argName.size()));

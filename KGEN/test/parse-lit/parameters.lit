@@ -88,13 +88,13 @@ struct TestParamStruct[A: __mlir_type.index]:
     alias C = B*A
     # CHECK: kgen.param.declare D: @"$parameters"::@TestParamStruct<A = 1> = <apply(:<>() ownedresult -> !kgen.declref<@"$parameters"::@TestParamStruct<A = 1>> @"$parameters"::@TestParamStruct::@"__init__()"<1>)>
     alias D = TestParamStruct[(1).__as_mlir_index()]()
-    # CHECK: %temp = lit.varlet.decl "temp", var = true : <@"$parameters"::@TestParamStruct<A = C>>
+    # CHECK: %temp = lit.varlet.decl {{.*}} : <@"$parameters"::@TestParamStruct<A = C>>
     var temp: TestParamStruct[C]
 
     # CHECK: kgen.param.declare intVal: @"$Int"::@Int = <#lit.struct<{value: scalar<index> = 42}>>
     alias intVal : Int = 42
 
-    # CHECK:  %temp2 = lit.varlet.decl "temp2", var = true : <@"$parameters"::@TestParamStruct<A = mul(A, A)>>
+    # CHECK:  %temp2 = lit.varlet.decl {{.*}} : <@"$parameters"::@TestParamStruct<A = mul(A, A)>>
     var temp2: TestParamStruct[TestParamStruct[A].TypeLevelAlias]
 
   # CHECK: kgen.param.declare TypeLevelAlias = <mul(A, A)>
@@ -102,7 +102,7 @@ struct TestParamStruct[A: __mlir_type.index]:
 
 # Test that we support partially bound parameters.
 fn testTestParamStruct(a: TestParamStruct[(4).__as_mlir_index()]):
-  # CHECK: %arg11 = lit.varlet.decl "arg11", var = true : <@"$parameters"::@TestParamStruct<A = 11>>
+  # CHECK: %arg11 = lit.varlet.decl {{.*}} : <@"$parameters"::@TestParamStruct<A = 11>>
   # CHECK: %0 = kgen.call @"$parameters"::@TestParamStruct::@"__init__{{.*}}<11>() : () ownedresult -> !kgen.declref<@"$parameters"::@TestParamStruct<A = 11>>
   # CHECK: pop.store %0, %arg11 : !pop.pointer<@"$parameters"::@TestParamStruct<A = 11>>
   var arg11 = TestParamStruct[(11).__as_mlir_index()]()
@@ -115,9 +115,9 @@ fn testTestParamStruct(a: TestParamStruct[(4).__as_mlir_index()]):
 fn testSIMD(a: SIMD[DType.f64, 1],
             b: SIMD[DType.si32, 1],
             ref&: SIMD[DType.si32, 1]):
-  # CHECK: %field1 = lit.varlet.decl "field1", var = true : <scalar<f64>>
+  # CHECK: %field1 = lit.varlet.decl {{.*}} : <scalar<f64>>
   var field1 = a.value
-  # CHECK: %field2 = lit.varlet.decl "field2", var = true : <scalar<si32>>
+  # CHECK: %field2 = lit.varlet.decl {{.*}} : <scalar<si32>>
   var field2 = ref.value
 
   # Test calls to methods and operators on parameterized type.
@@ -192,7 +192,7 @@ struct ParamSubst[
 
 # CHECK-LABEL: lit.func @"testParamSubst
 fn testParamSubst():
-  # CHECK: %xx = lit.varlet.decl "xx", var = true : <@"$parameters"::@ParamSubst<rank = 2, shape: list<index[2]> = [1, 2]>>
+  # CHECK: %xx = lit.varlet.decl {{.*}} : <@"$parameters"::@ParamSubst<rank = 2, shape: list<index[2]> = [1, 2]>>
   var xx : ParamSubst[(2).__as_mlir_index(), __mlir_attr.`#kgen<list[1, 2]> : !kgen.list<index[2]>`]
 
 
@@ -458,11 +458,11 @@ fn useParamVariadics():
   # CHECK-NEXT:  %fnLet = lit.letreg.decl "fnLet" = [[TMP]] : !kgen.signature<() param_vararg -> !lit.none>
   let fnLet = fnWithVariadics
 
-  # CHECK-NEXT: %a = lit.varlet.decl "a", var = true : <@"{{.*}}::@StructWithVariadics<b: variadic<@"$Int"::@Int> = []>>
+  # CHECK-NEXT: %a = lit.varlet.decl {{.*}} <@"{{.*}}::@StructWithVariadics<b: variadic<@"$Int"::@Int> = []>>
   var a: StructWithVariadics
-  # CHECK-NEXT: %b = lit.varlet.decl "b", var = true : <@{{.*}}::@StructWithVariadics<b: variadic<@"$Int"::@Int> = [#lit.struct<{value: scalar<index> = 1}>]>>
+  # CHECK-NEXT: %b = lit.varlet.decl {{.*}} : <@{{.*}}::@StructWithVariadics<b: variadic<@"$Int"::@Int> = [#lit.struct<{value: scalar<index> = 1}>]>>
   var b: StructWithVariadics[1]
-  # CHECK-NEXT: %c = lit.varlet.decl "c", var = true : <@{{.*}}::@StructWithVariadics<b: variadic<@"$Int"::@Int> = [#lit.struct<{value: scalar<index> = 1}>, #lit.struct<{value: scalar<index> = 2}>]>>
+  # CHECK-NEXT: %c = lit.varlet.decl {{.*}} : <@{{.*}}::@StructWithVariadics<b: variadic<@"$Int"::@Int> = [#lit.struct<{value: scalar<index> = 1}>, #lit.struct<{value: scalar<index> = 2}>]>>
   var c: StructWithVariadics[1, 2]
 
   # CHECK: kgen.call {{.*}}@StructWithVariadics::@"__init__(${{.*}}::StructWithVariadics[b]=&,$Int::Int)"<:variadic<@"$Int"::@Int> [#lit.struct<{value: scalar<index> = 1}>]>
