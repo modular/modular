@@ -408,7 +408,7 @@ fn rethrowsToRethrow():
         # CHECK: lit.try {
         try:
             # CHECK:  kgen.call @"$statements"::@"maybeRaises()"()
-            maybeRaises() # expected-warning {{'$Int::Int' value is unused}}
+            maybeRaises() # expected-warning {{'Int' value is unused}}
         # CHECK: } except (%arg0:
         except:
             # CHECK: lit.raise %arg0

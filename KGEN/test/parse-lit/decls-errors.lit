@@ -6,7 +6,7 @@
 
 # RUN: kgen-translate -import-mojo -verify-diagnostics %s -I %S/../mojo-examples/
 
-from prolog import DType, F32, object
+from prolog import DType, F32, object, SIMD
 from Pointer import Pointer
 
 
@@ -35,11 +35,14 @@ fn bind_fat_to_thin_main():
 ##===----------------------------------------------------------------------===##
 
 def var_decl_without_type():
-  # expected-error @+1 {{'$FloatLiteral::FloatLiteral' value cannot be converted to '$decls-errors::ReturnFromStruct'}}
+  # expected-error @+1 {{'FloatLiteral' value cannot be converted to 'ReturnFromStruct'}}
   var y : ReturnFromStruct = 1.0
 
   # expected-error @+1 {{declaration must have either a type or an initializer}}
   var x
+
+  # expected-error @below {{SIMD[f32, 16]' value cannot be converted to 'SIMD[f32, 8]'}}
+  let z: SIMD[DType.f32, 8] = SIMD[DType.f32, 16]()
 
 def var_decl():
   x = 123        # expected-note {{previous definition here}}
@@ -116,7 +119,7 @@ fn test_bool_context(a: NotBoolConvertible): pass
 
 fn voidReturningFn(): pass
 fn badCall():
-  # expected-error @+1 {{invalid call to 'test_bool_context': argument #0 cannot be converted from 'None' to '$decls-errors::NotBoolConvertible'}}
+  # expected-error @+1 {{invalid call to 'test_bool_context': argument #0 cannot be converted from 'None' to 'NotBoolConvertible'}}
   test_bool_context(voidReturningFn())
 
 
@@ -124,7 +127,7 @@ fn missing_ret_val() -> __mlir_type.index:
   return # expected-error {{'None' value cannot be converted to '__mlir_type.index' in return}}
 
 fn ret_type_mismatch() -> __mlir_type.index:
-  return 4.0 # expected-error {{'$FloatLiteral::FloatLiteral' value cannot be converted to '__mlir_type.index' in return}}
+  return 4.0 # expected-error {{'FloatLiteral' value cannot be converted to '__mlir_type.index' in return}}
 
 async fn testAsyncVoid(): pass
 async fn testAsyncInt() -> Int: return 42
@@ -140,7 +143,7 @@ struct ThingWithStaticMethod:
      pass
 
 fn testThingWithStaticMethod():
-  # expected-error @+1 {{invalid call to 'splat': argument #0 cannot be converted from '$FloatLiteral::FloatLiteral' to '$Int::Int'}}
+  # expected-error @+1 {{invalid call to 'splat': argument #0 cannot be converted from 'FloatLiteral' to 'Int'}}
   ThingWithStaticMethod.splat(4.0)
 
 
@@ -157,7 +160,7 @@ fn top_level_fn():
     return
 
 # expected-note @+2 {{consider passing by reference instead}}
-# expected-error @+1 {{'def' requires argument type '$decls-errors::ThingWithStaticMethod' to be copyable, but it doesn't provide a '__copyinit__' method}}
+# expected-error @+1 {{'def' requires argument type 'ThingWithStaticMethod' to be copyable, but it doesn't provide a '__copyinit__' method}}
 def use_non_copyable_type(a: ThingWithStaticMethod):
   pass
 
@@ -174,7 +177,7 @@ fn defaultArgumentUnknownDeclaration(a: Int = unknown): pass
 # expected-error @+1 {{use of unknown declaration 'a'}}
 fn defaultArgumentReferencesArgument(a: Int = 0, b: Int = a): pass
 
-# expected-error @+1 {{'$FloatLiteral::FloatLiteral' value cannot be converted to '$Int::Int' in default argument}}
+# expected-error @+1 {{'FloatLiteral' value cannot be converted to 'Int' in default argument}}
 fn defaultArgumentBadType(a: Int = 1.0): pass
 
 # expected-error @+1 {{'**' marker must be at end of argument list}}
@@ -200,16 +203,16 @@ struct ParameterizedStruct[T: __mlir_type.`!kgen.mlirtype`]:
         pass
 
 fn badCalls(arg: Int):
-  # expected-error @+1 {{argument #1 cannot be converted from '$FloatLiteral::FloatLiteral' to '$Int::Int'}}
+  # expected-error @+1 {{argument #1 cannot be converted from 'FloatLiteral' to 'Int'}}
   exampleVariadic(1.0, 1.0)
-  # expected-error @+1 {{argument #3 cannot be converted from '$FloatLiteral::FloatLiteral' to '$Int::Int'}}
+  # expected-error @+1 {{argument #3 cannot be converted from 'FloatLiteral' to 'Int'}}
   exampleVariadic(1.0, 1, 2, 1.0)
 
   var x: Int
   var y: F32
   # expected-error @+1 {{invalid call to 'exampleByRefVariadic': argument #2 must be mutable in order to pass as a by-ref argument}}
   exampleByRefVariadic(1.0, x, arg)
-  # expected-error-re @+1 {{l-value of type '$SIMD::SIMD[{{.*}}f32{{.*}}]' cannot be converted to reference of type '$Int::Int'}}
+  # expected-error-re @+1 {{l-value of type 'SIMD[{{.*}}f32{{.*}}]' cannot be converted to reference of type 'Int'}}
   exampleByRefVariadic(1.0, x, y)
   # expected-error @+1 {{argument #2 must be mutable in order to pass as a by-ref argument}}
   exampleByRefVariadic(1.0, x, 1)
@@ -225,7 +228,7 @@ fn badCalls(arg: Int):
   parameterizedVariadic(1, 2.0)
 
 fn badError(a: ParameterizedStruct[Int]):
-  # expected-error @+1 {{'$decls-errors::ParameterizedStruct[$Int::Int]' value cannot be converted to '$decls-errors::ParameterizedStruct[$Bool::Bool]' in 'let' initializer}}
+  # expected-error @+1 {{'ParameterizedStruct[Int]' value cannot be converted to 'ParameterizedStruct[Bool]' in 'let' initializer}}
   let b: ParameterizedStruct[Bool] = a
 
 
@@ -261,7 +264,7 @@ fn badPackCalls():
   examplePack[Int](1, 2)
   # expected-error @+1 {{invalid call to 'examplePack': callee expects 2 arguments, but 1 was specified}}
   examplePack[Int, F32](1)
-  # expected-error-re @+1 {{invalid call to 'examplePack': argument #1 cannot be converted from '__mlir_type.index' to '$SIMD::SIMD[{{.*}}f32{{.*}}]'}}
+  # expected-error-re @+1 {{invalid call to 'examplePack': argument #1 cannot be converted from '__mlir_type.index' to 'SIMD[{{.*}}f32{{.*}}]'}}
   examplePack[Int, F32](1, (2).__as_mlir_index())
   # expected-warning @below {{could not infer parameter type for this value, because it is not concrete}}
   # expected-error @below {{invalid call to 'examplePack': callee expects 1 input parameter but 0 were provided}}
@@ -298,18 +301,18 @@ def fn_redecl():
   pass
 
 # expected-note @below {{candidate declared here}}
-# expected-note @below {{candidate not viable: argument #0 cannot be converted from '$decls-errors::TestOverloading' to '$Int::Int'}}
+# expected-note @below {{candidate not viable: argument #0 cannot be converted from 'TestOverloading' to 'Int'}}
 # expected-note @below {{candidate not viable: callee expects 1 argument}}
 fn overloadIntF32(a: Int): pass
 
 # expected-note @below {{candidate declared here}}
-# expected-note-re @below {{candidate not viable: argument #0 cannot be converted from '$decls-errors::TestOverloading' to '$SIMD::SIMD[{{.*}}f32{{.*}}]'}}
+# expected-note-re @below {{candidate not viable: argument #0 cannot be converted from 'TestOverloading' to 'SIMD[{{.*}}f32{{.*}}]'}}
 # expected-note @below {{candidate not viable: callee expects 1 argument}}
 fn overloadIntF32(a: F32): pass
 
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: callee expects 2 arguments}}
-# expected-note-re @below {{candidate not viable: argument #1 cannot be converted from '$SIMD::SIMD[{{.*}}f32{{.*}}]' to '$Int::Int'}}
+# expected-note-re @below {{candidate not viable: argument #1 cannot be converted from 'SIMD[{{.*}}f32{{.*}}]' to 'Int'}}
 fn overloadIntF32(a: Int, b: Int): pass
 
 # expected-note @below {{candidate declared here}}
@@ -349,10 +352,10 @@ struct ConvertibleFromInt:
     pass
 
 # expected-note @below {{candidate declared here}}
-# expected-note @below {{candidate not viable: argument #1 cannot be converted from '$decls-errors::ConvertibleFromInt' to '$Int::Int'}}
+# expected-note @below {{candidate not viable: argument #1 cannot be converted from 'ConvertibleFromInt' to 'Int'}}
 fn ambiguousConversions(a: ConvertibleFromInt, b: Int): pass
 # expected-note @below {{candidate declared here}}
-# expected-note @below {{candidate not viable: argument #0 cannot be converted from '$decls-errors::ConvertibleFromInt' to '$Int::Int'}}
+# expected-note @below {{candidate not viable: argument #0 cannot be converted from 'ConvertibleFromInt' to 'Int'}}
 fn ambiguousConversions(a: Int, b: ConvertibleFromInt): pass
 
 fn testAmbiguousConversions(a: Int, b: ConvertibleFromInt):
@@ -367,7 +370,7 @@ fn testAmbiguousConversions(a: Int, b: ConvertibleFromInt):
   localFn(a, b)
   localFn(a, a)
   localFn(1, b)
-  # expected-error @+1 {{invalid indirect call: argument #0 cannot be converted from '$decls-errors::ConvertibleFromInt' to '$Int::Int'}}
+  # expected-error @+1 {{invalid indirect call: argument #0 cannot be converted from 'ConvertibleFromInt' to 'Int'}}
   localFn(b, b)
 
 ##===----------------------------------------------------------------------===##
@@ -424,7 +427,7 @@ struct SpecialFunctions:
 
   fn failures(self):
     self+self # Supports this, even though it isn't valid.  Shouldn't crash.
-    self*self # expected-error {{'$decls-errors::SpecialFunctions' does not implement the '__mul__' method}}
+    self*self # expected-error {{'SpecialFunctions' does not implement the '__mul__' method}}
 
 @register_passable
 struct WrongType:
@@ -444,7 +447,7 @@ struct WrongType:
   fn __moveinit__(self&) -> Self: pass
 
 struct WrongSelfType[a: Int]:
-  # expected-error @+1 {{'self' argument must have type '$decls-errors::WrongSelfType[a]'}}
+  # expected-error @+1 {{'self' argument must have type 'WrongSelfType[a]'}}
   fn badMethod(self: Int): pass
   fn goodMethod(self&: WrongSelfType[a]): pass
 
@@ -455,7 +458,7 @@ struct WrongSelfType[a: Int]:
 struct BadInit[size: __mlir_type.index]:
   fn __init__(self&, elem: BadInit[(1).__as_mlir_index()]):
     var x : __mlir_type[`!pop.simd<`, size, `, f32>`]
-    # expected-error @+1 {{'__mlir_type.!pop.simd<size, f32>' value cannot be converted to '$decls-errors::BadInit[size]'}}
+    # expected-error @+1 {{'__mlir_type.!pop.simd<size, f32>' value cannot be converted to 'BadInit[size]'}}
     self = x
 
 struct StructWithField:
@@ -469,7 +472,7 @@ fn unqualifiedNameLookup(a: StructWithField):
   # expected-error @+1 {{StructWithField' value has no attribute 'badPropertyError'}}
   StructWithField.badPropertyError
 
-  # expected-error @+1 {{cannot access instance field 'field' without an instance of '$decls-errors::StructWithField'}}
+  # expected-error @+1 {{cannot access instance field 'field' without an instance of 'StructWithField'}}
   StructWithField.field
 
 struct DirectInstanceReference:
@@ -479,7 +482,7 @@ struct DirectInstanceReference:
     var xx = value
 
 fn field_indexes(a: DirectInstanceReference):
-  a.badField = 42 # expected-error {{'$decls-errors::DirectInstanceReference' value has no attribute 'badField'}}
+  a.badField = 42 # expected-error {{'DirectInstanceReference' value has no attribute 'badField'}}
 
 # https://github.com/modularml/modular/issues/6701
 struct MLIRAttrWithinStruct: # expected-note {{previously used here}}
@@ -494,7 +497,7 @@ struct InMemStruct: pass
 @register_passable
 struct InRegStruct:
   var x: Int # ok
-  var y: InMemStruct # expected-note {{'y' declared with type '$decls-errors::InMemStruct'}}
+  var y: InMemStruct # expected-note {{'y' declared with type 'InMemStruct'}}
 
 struct OtherInMemStruct:
   var x: Int # ok

@@ -183,18 +183,105 @@ ASTType ASTType::getVariadicElementType() const {
   return ASTType(cast<VariadicType>(mlirType).getElementType());
 }
 
-/// Convert this type to a human readable string representation so it can be
-/// printed out for diagnostics.
-raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType astType) {
-  if (!astType)
-    return os << "<<NULL ASTTYPE>>";
-
-  auto type = astType.mlirType;
-  if (auto declRef = dyn_cast<DeclRefType>(type)) {
-    SymbolRefAttr symbol = declRef.getSymbol();
+/// Pretty print a symbol reference.
+static void printSymbol(raw_ostream &os, SymbolRefAttr symbol, bool forDiag) {
+  if (forDiag) {
+    StringAttr leaf;
+    if (symbol.getNestedReferences().empty())
+      leaf = symbol.getRootReference();
+    else
+      leaf = symbol.getNestedReferences().back().getAttr();
+    // Demangle the function name.
+    size_t sigMangleStart = leaf.getValue().find('(');
+    if (sigMangleStart != std::string::npos)
+      os << leaf.getValue().take_front(sigMangleStart);
+    else
+      os << leaf.getValue();
+  } else {
     os << symbol.getRootReference().strref();
     for (FlatSymbolRefAttr nestedRef : symbol.getNestedReferences())
       os << "::" << nestedRef.getValue();
+  }
+}
+
+/// Pretty print a parameter value.
+static void printParam(raw_ostream &os, TypedAttr param, bool forDiag) {
+  if (auto structAttr = dyn_cast<StructAttr>(param)) {
+    // If the struct has a single element, elide the braces.
+    if (forDiag && structAttr.getValues().size() == 1) {
+      printParam(os, std::get<1>(structAttr.getValues().front()), forDiag);
+    } else {
+      os << '{';
+      llvm::interleaveComma(structAttr.getValues(), os, [&](auto value) {
+        printParam(os, std::get<1>(value), forDiag);
+      });
+      os << '}';
+    }
+    return;
+  }
+  if (auto symbolCst = dyn_cast<SymbolConstantAttr>(param)) {
+    printSymbol(os, symbolCst.getSymbol(), forDiag);
+    if (!symbolCst.getParamValues().empty()) {
+      os << '[';
+      llvm::interleaveComma(
+          symbolCst.getParamValues(), os,
+          [&](TypedAttr value) { printParam(os, value, forDiag); });
+      os << ']';
+    }
+    return;
+  }
+  if (auto op = dyn_cast<ParamOperatorAttr>(param)) {
+    // Sugar the parameter operators the parser can generate.
+    switch (op.getOpcode()) {
+    case POC::Apply:
+      printParam(os, op.getOperands().front(), forDiag);
+      os << '(';
+      llvm::interleaveComma(
+          op.getOperands().drop_front(), os,
+          [&](TypedAttr value) { printParam(os, value, forDiag); });
+      os << ')';
+      return;
+    case POC::BindSignature:
+      printParam(os, op.getOperands().front(), forDiag);
+      os << '[';
+      llvm::interleaveComma(
+          op.getOperands().drop_front(), os,
+          [&](TypedAttr value) { printParam(os, value, forDiag); });
+      os << ']';
+      return;
+    case POC::Rebind:
+      // Just omit the types.
+      printParam(os, op.getOperands().front(), forDiag);
+      return;
+    case POC::VariadicGet:
+      printParam(os, op.getOperands().front(), forDiag);
+      os << '[';
+      printParam(os, op.getOperands().back(), forDiag);
+      os << ']';
+      return;
+    default:
+      break;
+    }
+  }
+  if (auto typeAttr = dyn_cast<TypeConstantAttr>(param)) {
+    ASTType(typeAttr.getValue()).print(os, forDiag);
+    return;
+  }
+
+  os << getParamAsString(param);
+}
+
+void ASTType::print(raw_ostream &os, bool forDiag) const {
+  if (!mlirType) {
+    os << "<<NULL ASTTYPE>>";
+    return;
+  }
+
+  Type type = mlirType;
+  if (auto declRef = dyn_cast<DeclRefType>(type)) {
+    SymbolRefAttr symbol = declRef.getSymbol();
+    // Only print the leaf reference when pretty printing types.
+    printSymbol(os, symbol, forDiag);
 
     ParamBindArrayAttr params = declRef.getParamValues();
     if (!params.empty()) {
@@ -205,19 +292,16 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType astType) {
 
         if (ASTType type = val.getIfTypeValue())
           if (!isa<ParamRefType>(type.mlirType)) {
-            os << type;
+            type.print(os, forDiag);
             return;
           }
 
-        // Otherwise, ask KGEN to do it.  This is gross and needs to be
-        // improved.
-        os << getParamAsString(val.get());
+        printParam(os, val, forDiag);
       });
       os << ']';
     }
   } else if (isa<LIT::NoneType>(type)) {
     os << "None";
-
   } else if (auto sig = dyn_cast<SignatureType>(type)) {
     if (sig.isAsync())
       os << "async ";
@@ -231,9 +315,10 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType astType) {
           if (bitEnumContainsAny(sig.getFnEffects(), FnEffects::ParamVararg) &&
               i == sig.getInputParamTypes().size() - 1) {
             os << '*';
-            os << ASTType(cast<VariadicType>(type).getElementType());
+            ASTType(cast<VariadicType>(type).getElementType())
+                .print(os, forDiag);
           } else {
-            os << ASTType(type);
+            ASTType(type).print(os, forDiag);
           }
         };
         llvm::interleaveComma(llvm::enumerate(sig.getInputParamTypes()), os,
@@ -243,8 +328,9 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType astType) {
       }
       if (!sig.getResultParamTypes().empty()) {
         os << " -> ";
-        llvm::interleaveComma(sig.getResultParamTypes(), os,
-                              [&](Type type) { os << ASTType(type); });
+        llvm::interleaveComma(sig.getResultParamTypes(), os, [&](Type type) {
+          ASTType(type).print(os, forDiag);
+        });
       }
       os << ']';
     }
@@ -292,7 +378,7 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType astType) {
         actualType =
             cast<POP::PointerType>(actualType.mlirType).getElementType();
       }
-      os << actualType;
+      actualType.print(os, forDiag);
     }
     os << ')';
     for (auto [enabled, effect] :
@@ -301,13 +387,14 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType astType) {
       if (enabled)
         os << ' ' << effect;
     os << " -> ";
-    if (inMemResult)
-      os << ASTType(cast<POP::PointerType>(inMemResult).getElementType());
-    else if (isa<NoneType>(sig.getValueResults().front()))
+    if (inMemResult) {
+      ASTType(cast<POP::PointerType>(inMemResult).getElementType())
+          .print(os, forDiag);
+    } else if (isa<NoneType>(sig.getValueResults().front())) {
       os << "None";
-    else
-      os << ASTType(sig.getValueResults().front());
-
+    } else {
+      ASTType(sig.getValueResults().front()).print(os, forDiag);
+    }
   } else if (auto paramRef = dyn_cast<ParamRefType>(type)) {
     if (auto indexRef = dyn_cast<ParamIndexRefAttr>(paramRef.getParam()))
       os << '$' << indexRef.getIndex();
@@ -318,14 +405,21 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType astType) {
   } else {
     os << "__mlir_type." << type;
   }
+}
 
+/// Convert this type to a human readable string representation so it can be
+/// printed out for diagnostics.
+raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType astType) {
+  if (!astType)
+    return os << "<<NULL ASTTYPE>>";
+  astType.print(os);
   return os;
 }
 
-std::string ASTType::getAsString() const {
+std::string ASTType::getAsString(bool forDiag) const {
   std::string result;
   llvm::raw_string_ostream os(result);
-  os << *this;
+  print(os, forDiag);
   // Having "@" in mangled names confuses gnu ld and triggers error at linking
   // stage. See issue #6918. So replacing "@" with "_".
   std::replace(result.begin(), result.end(), '@', '_');
@@ -333,7 +427,7 @@ std::string ASTType::getAsString() const {
 }
 
 void LIT::addToDiagnostic(ASTType type, LitDiagnostic &diag) {
-  diag << '\'' << type.getAsString() << '\'';
+  diag << '\'' << type.getAsString(/*forDiag=*/true) << '\'';
 }
 
 /// Print to standard error with newline after it, for use in a debugger.
