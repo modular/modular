@@ -538,7 +538,7 @@ struct PackMatrixRows[
                     start_idx_global[0] + inner_row_idx,
                     start_idx_global[1],
                 )
-                var row_data: SIMD[type, simd_size]
+                let row_data: SIMD[type, simd_size]
                 if skip_col_bound:
                     # This is fastest path where both row and col bounds
                     #  are skipped so the code path is simd-in and simd-out
@@ -1052,7 +1052,7 @@ struct MatmulInnerLoopBPacked[
             let local_idx = Index(idx0, idx1 * simd_size)
 
             # Load data from original matrix C.
-            var c_data = c_local.aligned_simd_load[simd_size, alignment](
+            let c_data = c_local.aligned_simd_load[simd_size, alignment](
                 local_idx
             )
 
@@ -1259,7 +1259,7 @@ struct MatmulInnerLoopBPacked[
         """
         assert_param[has_neon()]()
         # Allocate accumulation buffer.
-        var c_local = NDBuffer[
+        let c_local = NDBuffer[
             2,
             DimList(a_row_size, pack_inner_size),
             accum_type,
