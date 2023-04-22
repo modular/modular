@@ -274,8 +274,6 @@ static llvm::Error createReplBreakpoint(Target &target) {
 llvm::Error MojoREPL::launchEntryPointProcess(Target &target,
                                               Debugger &debugger) {
   ProcessLaunchInfo launchInfo;
-  if (target.GetDisableASLR())
-    launchInfo.GetFlags().Set(lldb::eLaunchFlagDisableASLR);
   if (target.GetDisableSTDIO())
     launchInfo.GetFlags().Set(lldb::eLaunchFlagDisableSTDIO);
 
