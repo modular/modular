@@ -2412,17 +2412,28 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
 AnyValue AddressConvertNode::emitIR(ValueDest &dest,
                                     ExprEmitter &emitter) const {
+  if (!emitter.builder)
+    return emitter.emitErrorForDynamicValueInParameter(this);
+
   // __get_lvalue_as_address(someSLValue) returns a pop.pointer.
   if (kind == kGetLValueAsAddress) {
     LValue result = emitter.emitExprLValue(subExpr, EC_Unknown);
-    if (result && !result.getIfSLValue())
+    if (!result)
+      return {};
+    SLValue resultPtr = result.getIfSLValue();
+    if (!resultPtr) {
       emitter.emitError(getLoc(),
                         "cannot use a dynamic LValue in this operator")
           << getRange();
+      return {};
+    }
+    // Emit an intrinsic so the compiler knows the value is mutable.
+    emitter.builder->create<OwnershipDefLValueOp>(getLocation(emitter),
+                                                  resultPtr);
 
     // Return the SLValue as an SRValue since the pointer itself is the
     // result.
-    return emitter.emitResult(SRValue(result.getIfSLValue()), this, dest);
+    return emitter.emitResult(SRValue(resultPtr), this, dest);
   }
 
   SRValue exprVal = emitter.emitExprSRValue(subExpr, EC_Unknown);
@@ -2435,9 +2446,6 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
         << exprVal.getType() << getRange();
     return {};
   }
-
-  if (!emitter.builder)
-    return emitter.emitErrorForDynamicValueInParameter(this);
 
   // If this is a user defined type with ownership, emit lifetime intrinsics for
   // it, if not, we don't need/want them.

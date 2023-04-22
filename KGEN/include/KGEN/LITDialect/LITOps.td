@@ -877,6 +877,26 @@ def LIT_OwnershipUseOp : LITOp<"ownership.use"> {
 }
 
 //===----------------------------------------------------------------------===//
+// OwnershipDefLValueOp
+//===----------------------------------------------------------------------===//
+
+def LIT_OwnershipDefLValueOp : LITOp<"ownership.def.lvalue"> {
+  let summary = "A definition of a memory object, marking implicit mutation";
+  let description = [{
+    This op looks like a def of the pointee at the specified address, which
+    allows CheckLifetimes to know that it must be mutable at this point.  This
+    operation is a noop that is removed by the LowerLIT pass.
+
+    ```mlir
+    lit.ownership.def.lvalue %0 : !somestring
+    ```
+  }];
+  let arguments = (ins AnyType:$value);
+  let results = (outs);
+  let assemblyFormat = "$value `:` type($value) attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
 // OwnershipEndLifetimeOp
 //===----------------------------------------------------------------------===//
 
