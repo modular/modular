@@ -42,11 +42,11 @@ fn use_of_empty() -> Empty:
   return a # expected-error {{use of uninitialized value 'a'}}
 
 fn use_of_init() -> RegExample:
-  var a = RegExample()
+  var a = RegExample() # expected-warning {{never mutated}}
   return a   # OK!
 
 fn use_of_init2() -> MemExample:
-  var a = MemExample()
+  var a = MemExample() # expected-warning {{never mutated}}
   return a   # OK!
 
 fn use_of_uninit() -> RegExample:
@@ -58,7 +58,7 @@ fn use_of_uninit2() -> MemExample:
   return a   # expected-error {{use of uninitialized value 'a'}}
 
 fn invalid_partial_init() -> MemExample:
-  var a: MemExample  # expected-note {{'a' declared here}}
+  var a: MemExample # expected-note {{'a' declared here}}
   a.x = 42
   a.y = 42
   return a  # expected-error {{'a' used with all fields manually initialized but without calling an '__init__' method}}
@@ -86,7 +86,7 @@ fn uninit_lvalue_int():
 ##===----------------------------------------------------------------------===##
 
 fn use_of_uninit_if(cond: Bool):
-  var a : MemExample
+  var a : MemExample # expected-warning {{never mutated}}
   if cond:
     a = MemExample()
   else:
@@ -98,13 +98,13 @@ fn use_of_uninit_if(cond: Bool):
     b = MemExample()
   use(b) # expected-error {{use of uninitialized value 'b'}}
 
-  var c : MemExample
+  var c : MemExample # expected-warning {{never mutated}}
   if True:
     c = MemExample()
   use(c) # Ok.
 
 fn use_of_uninit_while(cond: Bool):
-  var a : MemExample
+  var a : MemExample # expected-warning {{never mutated}}
   if cond:
     # Infinite loop never returns
     while True: pass
@@ -119,7 +119,7 @@ fn use_of_uninit_while(cond: Bool):
   use(b)  # expected-error {{use of uninitialized value 'b'}}
 
 fn use_of_uninit_raise(cond: Bool, err: Error):
-  var a : MemExample
+  var a : MemExample # expected-warning {{'a' was declared as a 'var' but never mutated, consider switching to a 'let'}}
   try:
     raise err
   except:
@@ -127,7 +127,7 @@ fn use_of_uninit_raise(cond: Bool, err: Error):
     pass
   use(a)  # ok
 
-  var b : MemExample
+  var b : MemExample # expected-warning {{'b' was declared as a 'var' but never mutated, consider switching to a 'let'}}
   try:
     b = MemExample()
     raise err
@@ -146,7 +146,7 @@ fn use_of_uninit_raise(cond: Bool, err: Error):
     pass
   use(c)  # expected-error {{use of uninitialized value 'c'}}
 
-  var d : MemExample
+  var d : MemExample # expected-warning {{'d' was declared as a 'var' but never mutated, consider switching to a 'let'}}
   try:
     if cond:
       raise err
@@ -163,6 +163,9 @@ fn use_of_uninit_raise(cond: Bool, err: Error):
 struct TwoRegs:
   var reg1: RegExample
   var reg2: RegExample
+  fn __init__(self&):
+    self.reg1 = RegExample()
+    self.reg2 = RegExample()
 
   fn __copyinit__(self&, existing: Self):
     self.reg1 = existing.reg1
@@ -240,3 +243,37 @@ fn fieldConsumeError(owned w: MoreComplexExample,
   # expected-error @+1 {{field 'twoRegsRP.reg1' destroyed out of the middle of a value, preventing the overall value from being destroyed}}
   var twoRegsRP = TwoRegsRP()
   _ = twoRegsRP.reg1^
+
+##===----------------------------------------------------------------------===##
+# var -> let and incorrect let warnings
+##===----------------------------------------------------------------------===##
+
+fn use(a: Int): pass
+
+fn testVarToLet(cond: Bool):
+  var a : Int # expected-warning {{'a' was declared as a 'var' but never mutated, consider switching to a 'let'}}
+  if cond:
+    a = 1
+  else:
+    a = 2
+  use(a)
+
+  var b : Int # expected-warning {{consider switching to a 'let'}}
+  if cond:
+    b = 1
+    use(b)
+
+  var c : Int
+  if cond:
+    c = 1
+  c = 2  # This is correct to be a var.
+  use(c)
+
+  let d : TwoRegs
+  d = TwoRegs()
+  let e = d^    # Consume from let is fine.
+
+
+fn invalid_let():
+  let twoRegs = TwoRegs() # expected-note {{'twoRegs' declared here}}
+  twoRegs.reg1 = RegExample() # expected-error {{invalid mutation of immutable value 'twoRegs.reg1'}}

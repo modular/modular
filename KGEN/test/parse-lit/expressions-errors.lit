@@ -122,7 +122,6 @@ def testLValuesRvalues() -> None:
   let nc4 = nc2 # expected-error {{value of type '$expressions-errors::NonCopyable' cannot be copied into its destination}}
 
   let mpPair = MemoryPrimaryPair()
-  mpPair.x = 1 # expected-error {{expression must be mutable in assignment}}
 
   # expected-error @+1 {{invalid call to 'generic_on_type_bad': argument #0 cannot bind generic !mlirtype to memory-only type '$expressions-errors::MemoryPrimaryPair'}}
   generic_on_type_bad[MemoryPrimaryPair](mpPair)

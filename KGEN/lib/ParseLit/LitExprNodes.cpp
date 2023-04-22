@@ -542,10 +542,9 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Variable references resolve to an MBValue or LValue addressing the
   // memory.
   if (auto var = dyn_cast<VarLetDeclOp>(decl)) {
-    if (var.getIsVar()) // var
-      return emitter.emitResult(LValue(var.getResult()), this, dest);
-    // let
-    return emitter.emitResult(MBValue(var.getResult()), this, dest);
+    // We handle both var and let's as mutable lvalues and let check lifetimes
+    // diagnose any problems.  This allows us to handle late-initialized lets.
+    return emitter.emitResult(LValue(var.getResult()), this, dest);
   }
 
   // RValue's and LValues always resolve to their known value.

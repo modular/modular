@@ -1946,7 +1946,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       assert(idx == 0 && calleeSig.hasMemoryOnlyResult());
       auto resultTmp = builder->create<VarLetDeclOp>(loc, expectedType,
                                                      "__call_result_tmp__",
-                                                     /*isVar=*/false,
+                                                     /*isVar=*/true,
                                                      /*isSynth=*/true);
       argumentValues.push_back({SLValue(resultTmp), callExpr});
       continue;
