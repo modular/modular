@@ -206,7 +206,7 @@ class MojoKernel(Kernel):
             "stderr",
             (
                 "Internal Mojo Kernel Error\n\nThe Jupyter Notebook encountered"
-                " an internal errora and was unable to evaluate the provided"
+                " an internal error and was unable to evaluate the provided"
                 " expression. Please report this issue.\n\nMore information"
                 " about this error can be found in the server error log."
             ),
@@ -301,20 +301,8 @@ class MojoKernel(Kernel):
         # TODO: Better propagate errors from the kernel execution, process
         # provided arguments, etc.
 
-        # jupyter on the cli doesn't provide a cell id, so we need to
-        # autogenerate one.
-        try:
-            if cell_id is None:
-                cell_id = f"__autogen_cell_id_{self.auto_gen_cell_id_count}"
-                self.auto_gen_cell_id_count += 1
-
-            # Start execution of the expression.
-            self.lib_mojo_jupyter.startMojoExecution(
-                ctypes.c_void_p(self.mojo_kernel),
-                ctypes.c_char_p(cell_id.encode("utf-8")),
-                ctypes.c_char_p(code.encode("utf-8")),
-            )
-
+        # Wait for the currently running execution to finish.
+        def wait_for_execution():
             # Wait for the execution to finish.
             while True:
                 # Sleep for a bit to avoid busy spinning while waiting for the
@@ -328,12 +316,41 @@ class MojoKernel(Kernel):
                 if result:
                     break
 
+        try:
+            # jupyter on the cli doesn't provide a cell id, so we need to
+            # autogenerate one.
+            if cell_id is None:
+                cell_id = f"__autogen_cell_id_{self.auto_gen_cell_id_count}"
+                self.auto_gen_cell_id_count += 1
+
+            # Start execution of the expression.
+            self.lib_mojo_jupyter.startMojoExecution(
+                ctypes.c_void_p(self.mojo_kernel),
+                ctypes.c_char_p(cell_id.encode("utf-8")),
+                ctypes.c_char_p(code.encode("utf-8")),
+            )
+
+            wait_for_execution()
             return {
                 "status": "ok",
                 "execution_count": self.execution_count,
                 "payload": [],
                 "user_expressions": {},
             }
+        except KeyboardInterrupt:
+            # Interrupt the current kernel execution.
+            self.lib_mojo_jupyter.interruptMojoExecution(
+                ctypes.c_void_p(self.mojo_kernel)
+            )
+            wait_for_execution()
+
+            # TODO: When Mojo actually has debug info again, we should emit the
+            # current stack frame here.
+            return {
+                "status": "error",
+                "execution_count": self.execution_count,
+            }
+
         except:
             traceback.print_exc()
             self._send_internal_error_message()

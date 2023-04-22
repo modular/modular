@@ -161,6 +161,9 @@ public:
   /// time to flush any collected output.
   bool checkExecutionFinished();
 
+  /// Interrupt the currently running execution.
+  void interruptExecution();
+
 private:
   /// Initialize the target.
   LogicalResult initializeTarget(const char *mojoReplExe);
@@ -242,6 +245,10 @@ MODULAR_EXPORT void startMojoExecution(MojoKernel *kernel, const char *cellId,
 
 MODULAR_EXPORT int checkMojoExecutionFinished(MojoKernel *kernel) {
   return kernel->checkExecutionFinished();
+}
+
+MODULAR_EXPORT void interruptMojoExecution(MojoKernel *kernel) {
+  kernel->interruptExecution();
 }
 
 MODULAR_EXPORT void destroyMojoKernel(MojoKernel *kernel) { delete kernel; }
@@ -455,3 +462,5 @@ bool MojoKernel::checkExecutionFinished() {
   executionState.reset();
   return true;
 }
+
+void MojoKernel::interruptExecution() { process->SendAsyncInterrupt(); }

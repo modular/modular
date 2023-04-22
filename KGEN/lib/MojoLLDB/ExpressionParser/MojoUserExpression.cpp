@@ -358,9 +358,11 @@ sys.modules['{1}'] = expr_module
   llvm::raw_string_ostream escapedPythonExprOS(escapedPythonExpr);
   for (const auto &exprInst : state.getExpressionInstances()) {
     if (exprInst.pythonModuleName) {
+      escapedPythonExprOS.write_escaped("try:\n");
       escapedPythonExprOS.write_escaped(
-          llvm::formatv("from {0} import *\n", *exprInst.pythonModuleName)
+          llvm::formatv("  from {0} import *\n", *exprInst.pythonModuleName)
               .str());
+      escapedPythonExprOS.write_escaped("except:\n  pass\n");
     }
   }
   escapedPythonExprOS.write_escaped(pythonExpr);
