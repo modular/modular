@@ -9,7 +9,6 @@ from Coroutine import Coroutine, _get_coro_resume_fn
 from DType import DType
 from Pointer import Pointer, DTypePointer
 from String import StringRef
-from Vector import UnsafeFixedVector
 from Range import range
 from String import String
 from Tracing import TraceLevel, is_mojo_profiling_disabled
@@ -74,9 +73,9 @@ struct AsyncContext:
 
     @staticmethod
     fn get_chain(ctx: Pointer[AsyncContext]) -> Pointer[Chain]:
-        return __mlir_op.`lit.struct.gep`[
-            _type : Pointer[Chain].pointer_type, field : __mlir_attr.`"chain"`
-        ](ctx.address)
+        return __get_lvalue_as_address(
+            __get_address_as_lvalue(ctx.address).chain
+        )
 
     @staticmethod
     fn complete(ch: Chain):
@@ -188,7 +187,9 @@ struct Runtime:
             _type : __mlir_type.`!pop.scalar<si32>`,
         ](self.ptr)
 
-    fn create_task[type: AnyType](self, handle: Coroutine[type]) -> Task[type]:
+    fn create_task[
+        type: AnyType
+    ](self, owned handle: Coroutine[type]) -> Task[type]:
         """Run the coroutine as a task on the LLCL Runtime."""
         let ctx = handle.get_ctx[AsyncContext]()
         _init_llcl_chain(self, AsyncContext.get_chain(ctx))
@@ -208,12 +209,11 @@ struct Runtime:
             ]()
         )
         _async_execute(handle, self)
-        return Task[type](handle)
+        return Task[type](handle ^)
 
-    fn run[type: AnyType](self, handle: Coroutine[type]) -> type:
-        let t = self.create_task(handle)
+    fn run[type: AnyType](self, owned handle: Coroutine[type]) -> type:
+        let t = self.create_task(handle ^)
         let result = t.wait()
-        t.__del__()
         return result
 
 
@@ -221,27 +221,26 @@ struct Runtime:
 # Task
 # ===----------------------------------------------------------------------===#
 
-# TODO: This should not be implicitly copyable when we have ownership set up!
+
 struct Task[type: AnyType]:
     var handle: Coroutine[type]
 
-    fn __init__(self&, handle: Coroutine[type]):
-        self.handle = handle
+    fn __init__(self&, owned handle: Coroutine[type]):
+        self.handle = handle ^
 
     fn get(self) -> type:
         """Get the task's result value."""
         return self.handle.get()
 
-    fn __del__(self):
+    fn __del___(owned self):
         """Destroy the memory associated with a task. This must be manually
         called when a task goes out of scope.
         """
-        let ctx = self.handle.get_ctx[AsyncContext]()
-        let chainPtr: Pointer[Chain] = __mlir_op.`lit.struct.gep`[
-            _type : Pointer[Chain].pointer_type, field : __mlir_attr.`"chain"`
-        ](ctx.address)
+        let ctx: Pointer[AsyncContext] = self.handle.get_ctx[AsyncContext]()
+        let chainPtr: Pointer[Chain] = AsyncContext.get_chain(ctx)
         _del_llcl_chain(chainPtr)
-        self.handle.__del__()
+        # FIXME(#13073): We should be able to write `_ = self.handle` instead.
+        self.handle._keep()
 
     @always_inline
     fn __await__(self) -> type:
@@ -282,20 +281,40 @@ struct TaskGroupContext:
     var task_group: Pointer[TaskGroup]
 
 
-# FIXME(traits): This shouldn't be a register_passable type but we need this
-# until we have traits for proper parametric types.
-@register_passable
+struct TaskGroupTask[type: AnyType]:
+    """A task that belongs to a taskgroup. This object retains ownership of the
+    underlying coroutine handle, which can be used to query the results of the
+    task once the taskground completes.
+    """
+
+    var handle: Coroutine[type]
+
+    fn __init__(self&, owned handle: Coroutine[type]):
+        self.handle = handle ^
+
+    fn get(self) -> type:
+        """Get the task's result value. This should only be called once the
+        task result is available. I.e., when the taskgroup completes.
+
+        Returns:
+            The task's result value.
+        """
+        return self.handle.get()
+
+
 struct TaskGroup:
     var counter: Atomic[DType.index]
     var chain: Chain
     var rt: Runtime
 
-    fn __init__(rt: Runtime) -> TaskGroup:
+    fn __init__(self&, rt: Runtime):
         var chain = Chain()
         _init_llcl_chain(rt, Pointer[Chain].address_of(chain))
-        return TaskGroup {counter: 1, chain: chain, rt: rt}
+        self.counter = 1
+        self.chain = chain
+        self.rt = rt
 
-    fn __del__(self&):
+    fn __del___(owned self):
         _del_llcl_chain(Pointer[Chain].address_of(self.chain))
 
     @always_inline
@@ -319,7 +338,9 @@ struct TaskGroup:
             paramDecls : __mlir_attr.`#kgen<param.decls[]>`,
         ]()
 
-    fn create_task[type: AnyType](self&, task: Coroutine[type]):
+    fn create_task[
+        type: AnyType
+    ](self&, owned task: Coroutine[type]) -> TaskGroupTask[type]:
         self.counter += 1
         let task_group_txt = task.get_ctx[TaskGroupContext]()
         task_group_txt.store(
@@ -329,6 +350,7 @@ struct TaskGroup:
             }
         )
         _async_execute(task, self.rt)
+        return task ^
 
     @staticmethod
     fn await_body_impl(
@@ -575,6 +597,29 @@ struct AsyncTaskGroupContext:
         self.async_task_group_ptr = async_task_group_ptr
 
 
+struct CoroutineList[type: AnyType]:
+    var data: Pointer[Coroutine[type]]
+    var size: Int
+
+    fn __init__(self&, num_work_items: Int):
+        self.data = Pointer[Coroutine[type]].alloc(num_work_items)
+        self.size = 0
+
+    fn add(self&, owned hdl: Coroutine[type]):
+        __get_address_as_uninit_lvalue(self.data.offset(self.size).address) = (
+            hdl ^
+        )
+        self.size += 1
+
+    fn __len__(self) -> Int:
+        return self.size
+
+    fn destroy(self&):
+        for i in range(self.size):
+            _ = __get_address_as_owned_value(self.data.offset(i).address)
+        self.data.free()
+
+
 struct AsyncTaskGroup:
     """The target of an AsyncTaskGroupPtr. Holds exactly num_work_items
     Coroutines representing tasks. When all tasks are complete out_chain
@@ -587,25 +632,22 @@ struct AsyncTaskGroup:
     # This will be 'forked' on construction to guarantee the correct lifetime.
     var out_chain: OwningOutputChainPtr
     # Vector holding co-routines.
-    var coroutines: UnsafeFixedVector[Coroutine[NoneType]]
+    var coroutines: CoroutineList[NoneType]
 
     @always_inline
     fn __init__(self&, num_work_items: Int, out_chain: OutputChainPtr):
         self.counter = num_work_items
         self.out_chain = out_chain.fork()
-        self.coroutines = UnsafeFixedVector[Coroutine[NoneType]](num_work_items)
+        self.coroutines = num_work_items
 
     # This destroy's self when all the references are gone.
     @always_inline
     fn destroy(self&):
-        for j in range(self.coroutines.__len__()):
-            self.coroutines[j].__del__()
-        self.coroutines.__del__()
+        self.coroutines.destroy()
 
         # Replace the out_chain owned by this value with a null one, so the old
         # value is destroyed.
         self.out_chain = OwningOutputChainPtr()
-
         let self_ptr = Pointer[AsyncTaskGroup].address_of(self)
         self_ptr.free()
 
@@ -632,21 +674,24 @@ struct AsyncTaskGroup:
         ]()
 
     # TODO(#11915): Allow failure of coroutine to propagate error back to out_chain.
-    fn add_task(self&, coroutine: Coroutine[NoneType]):
+    fn add_task(self&, owned coroutine: Coroutine[NoneType]):
         let ctx_ptr = coroutine.get_ctx[AsyncTaskGroupContext]()
         let self_ptr = Pointer[AsyncTaskGroup].address_of(self)
         __get_address_as_uninit_lvalue(ctx_ptr.address) = AsyncTaskGroupContext(
             _get_complete_callback(), self_ptr
         )
         let task_id = self.coroutines.__len__()
-        self.coroutines.append(coroutine)
+        # Take a copy of the handle reference, then move the coroutine onto the
+        # list. Do this before scheduling the coroutine on the taskqueue.
+        let hdl = coroutine._handle
+        self.coroutines.add(coroutine ^)
         __mlir_op.`pop.external_call`[
             _type:None,
             func : __mlir_attr.`@KGEN_CompilerRT_LLCL_OutputChainPtr_ExecuteAsTask`,
         ](
             self.out_chain.ptr,
             _get_coro_resume_fn(),
-            coroutine._handle,
+            hdl,
             task_id,
         )
 
@@ -669,5 +714,5 @@ struct AsyncTaskGroupPtr:
         )
 
     @always_inline
-    fn add_task(self&, coroutine: Coroutine[NoneType]):
-        __get_address_as_lvalue(self.ptr.address).add_task(coroutine)
+    fn add_task(self&, owned coroutine: Coroutine[NoneType]):
+        __get_address_as_lvalue(self.ptr.address).add_task(coroutine ^)
