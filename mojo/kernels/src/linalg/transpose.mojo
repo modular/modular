@@ -134,7 +134,7 @@ fn _transpose_inplace_16x16[
 ](buf0: NDBuffer[2, DimList(rows, cols), type]):
     assert_param[rows == 16]()
     assert_param[cols == 16]()
-    var buf = rebind[
+    let buf = rebind[
         NDBuffer[
             2,
             DimList(16, 16),
