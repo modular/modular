@@ -1300,6 +1300,9 @@ void DestructorInsertion::checkOp(Operation &op) {
 // to be destroyed above this point.
 void DestructorInsertion::markConsumed(Value value, Operation &op) {
   ValueRef valueRef = valueSet.getValueRef(value);
+  if (!valueRef)
+    return;
+
   // If this operation is consuming a sub-element of a value that is already
   // marked to be consumed, then it is being used down below.
   //
@@ -1314,11 +1317,17 @@ void DestructorInsertion::markConsumed(Value value, Operation &op) {
     // ownership tracked for them.
     if (!dtor)
       return;
+
+    ValueInfo &info = valueSet.getValueInfo(valueRef.valueId);
+    if (info.hasErrorDiagnosed)
+      return;
+
     auto diag = mlir::emitError(op.getLoc(), "value ");
     // If some fields are present and others are missing, complain about the
     // first whole field that is missing.
     addBadValueNameToDiag(valueRef, consumedValues, valueSet, diag);
     diag << " cannot be consumed, because it is used later";
+    info.hasErrorDiagnosed = true;
   }
 
   valueRef.markBits(consumedValues, true);
