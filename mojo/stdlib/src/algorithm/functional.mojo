@@ -306,7 +306,7 @@ fn async_parallelize[
     var atg = AsyncTaskGroupPtr(num_work_items, out_chain)
     for i in range(num_work_items):
         let coroutine: Coroutine[NoneType] = task_fn(i)
-        atg.add_task(coroutine)
+        atg.add_task(coroutine ^)
 
 
 # ===----------------------------------------------------------------------===#
