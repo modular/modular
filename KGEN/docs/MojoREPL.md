@@ -92,6 +92,8 @@ $ jupyter-lab
  * `MOJO_JUPYTER_LOG_FILE`: Setting this will cause the jupyter notebook kernel
      to log to the file specified. We recommend providing an absolute path
      here. If this is unspecified, the kernel simply logs to the stderr.
+ * `MOJO_REPL_VERBOSE_LOG`: Setting that will enable `DumpIR` and `DebugLog` log
+     messages. See more in the `Logging` section.
 
 ## Debugging Compiler Issues
 
@@ -162,6 +164,12 @@ events as befits their specific application.
 Feel free to add more event kinds as is appropriate - event kinds ending
 with `Message` are shown to the user in the notebook, while event kinds
 ending in `Log` are not shown to the user.
+
+Lastly, in order to enable the `DumpIR` and `DebugLog` logs, you need to set the
+environment variable `MOJO_REPL_VERBOSE_LOG` or issue the LLDB command
+`:log enable lldb expr`. You can also execute the LLDB command
+`:log enable lldb expr -f /path/to/logs.txt` to output the logs to a file for
+easier debugging.
 
 #### MojoJupyter Log Format
 The JSON format you'll see in the jupyter kernel logs is:
