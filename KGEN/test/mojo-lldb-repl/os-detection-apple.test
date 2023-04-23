@@ -1,0 +1,17 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# UNSUPPORTED: asan
+# REQUIRES: darwin
+# RUN: %lldb -R go -r <%s 2>&1 | FileCheck %s
+
+# Note: in REPL mode, expressions are delimited by empty lines.
+
+from TargetInfo import os_is_macos, os_is_linux
+# CHECK: True
+print(os_is_macos())
+# CHECK: False
+print(os_is_linux())
