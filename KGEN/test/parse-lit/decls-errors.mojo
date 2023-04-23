@@ -222,7 +222,7 @@ fn badCalls(arg: Int):
   # expected-error @+1 {{callee expects 1 input parameter but 0 were provided}}
   parameterizedVariadic()
   # expected-error @+1 {{callee expects 1 input parameter but 0 were provided}}
-  let _ = ParameterizedStruct()
+  let z = ParameterizedStruct()
   # We can't infer `T` with two arguments of different types.
   # expected-error @+1 {{callee expects 1 input parameter but 0 were provided}}
   parameterizedVariadic(1, 2.0)

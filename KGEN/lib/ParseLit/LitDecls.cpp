@@ -1012,7 +1012,7 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
         argTypes.back() = shared.getTypeCheckErrorType();
       }
     }
-  } else if (isa<NoneLiteralNode>(resultTypeExpr)) {
+  } else if (resultTypeExpr->kind == ExprNode::kNoneLiteral) {
     // If the result type is a `None` literal, then convert it to NoneType.
     resultType = shared.getNoneType();
   } else {
@@ -2090,8 +2090,8 @@ static void appendDefaultReturnAndEndOp(LIT::FuncOp func, ASTDecl &funcDecl,
       emitter.builder = b;
       ValueDest resultDest(SLValue(func.getArgument(0)), EC_ReturnValue);
       // Create a dummy node to pass down.
-      ExprNode *noneExpr =
-          shared.allocPersistent<NoneLiteralNode>(funcDecl.getLoc());
+      ExprNode *noneExpr = shared.allocPersistent<SimpleLiteralNode>(
+          ExprNode::kNoneLiteral, funcDecl.getLoc());
       CValue result = emitter.emitConstructorCall(
           objType, {}, noneExpr, CallSyntax::kImplicitConvert, resultDest);
       if (!result || !emitter.emitResult(result, noneExpr, resultDest))

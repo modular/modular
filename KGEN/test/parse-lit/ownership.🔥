@@ -324,17 +324,14 @@ fn testPointerGEP(ptr: __mlir_type[`!pop.pointer<`, Complicated, `>`]) -> Int:
 fn testTakePointeeAsOwned(ptr: __mlir_type[`!pop.pointer<`, MemExample, `>`],
                           i1ptr: __mlir_type.`!pop.pointer<i1>`):
   # This should run the destructor.
-  # TODO: Not great that discard patterns are causing things to need to be movable.
   # CHECK-NEXT: [[PTR:%.*]] = lit.ownership.end.lifetime %ptr
-  # CHECK-NEXT: %_ = lit.varlet.decl "_"
-  # CHECK-NEXT: kgen.call {{.*}}__moveinit__{{.*}}(%_, [[PTR]])
-  # CHECK-NEXT: kgen.call {{.*}}__del___{{.*}}(%_)
+  # CHECK-NEXT: kgen.call {{.*}}__del___{{.*}}([[PTR]])
   _ = __get_address_as_owned_value(ptr)
 
   # This should run the destructor and not get omitted.
   # CHECK-NEXT: [[PTR:%.*]] = lit.ownership.end.lifetime %ptr
   # CHECK-NEXT: kgen.call {{.*}}__del___{{.*}}([[PTR]])
-  __get_address_as_owned_value(ptr)
+  _ = __get_address_as_owned_value(ptr)
 
   # The RValue can be consumed directly.
   # CHECK-NEXT: [[PTR:%.*]] = lit.ownership.end.lifetime %ptr

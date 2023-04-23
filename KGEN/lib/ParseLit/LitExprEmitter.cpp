@@ -863,7 +863,7 @@ CValue ExprEmitter::emitLoadOfLValue(ASTExprAnd<LValue> value,
                                      ValueDest &dest) {
   // If this is a computed LValue emit call to the "getter".
   if (auto dlValue = value.ir.getIfDLValue())
-    return dlValue->emitLoad(dest, value.expr, *this);
+    return dlValue->emitLoad(dest, *this);
 
   // Decay a stored LValue to an MBValue.
   auto slValue = value.ir.getIfSLValue();
@@ -884,7 +884,7 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
 
   // Resolve away DLValue's.
   if (auto dlValue = value.ir.getIfDLValue())
-    return dlValue->emitLoad(dest, value.expr, *this);
+    return dlValue->emitLoad(dest, *this);
 
   switch (valueType.getRegisterPassability(exprLoc, shared)) {
   case StructDeclOp::RP_RegisterPassableTrivial:
@@ -1353,11 +1353,23 @@ SRValue ExprEmitter::emitBoxedIntAsPopScalar(Value numberValue,
 // DLValue implementations
 //===----------------------------------------------------------------------===//
 
+CValue DiscardDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
+  emitter.emitError(expr->getLoc(), "cannot read from discard pattern '_'")
+      << expr->getRange();
+  return {};
+}
+
+void DiscardDLValue::emitStore(ASTExprAnd<CValue> value,
+                               ExprEmitter &emitter) const {
+  // Convert to an RValue to fully evaluate it, but otherwise just discard the
+  // value!
+  (void)emitter.emitRValue(value, EC_Assignment);
+}
+
 CValue StoredAttributeRefDLValue::emitLoad(ValueDest &dest,
-                                           const ExprNode *dlValueExpr,
                                            ExprEmitter &emitter) const {
   // To load x.y, we load x, then then load y out of it.
-  auto base = baseVal.ir->emitLoad(ValueDest::none(), baseVal.expr, emitter);
+  auto base = baseVal.ir->emitLoad(ValueDest::none(), emitter);
   if (!base)
     return {};
   return AttributeRefNode::emitStoredFieldRef({base, baseVal.expr}, getField(),
@@ -1384,7 +1396,7 @@ void StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
 
   // Load the entire base LValue into tmpDecl.
   ValueDest tmpValueDest(SLValue(tmpDecl), EC_AttributeRefBase);
-  auto base = baseVal.ir->emitLoad(tmpValueDest, baseVal.expr, emitter);
+  auto base = baseVal.ir->emitLoad(tmpValueDest, emitter);
   if (!base) {
     tmpValueDest.resetForError();
     return;
@@ -1400,8 +1412,7 @@ void StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
   baseVal.ir->emitStore({SLValue(tmpDecl), expr}, emitter);
 }
 
-CValue SubscriptDLValue::emitLoad(ValueDest &dest, const ExprNode *dlValueExpr,
-                                  ExprEmitter &emitter) const {
+CValue SubscriptDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
   auto methodName =
       isSubscript() ? StringRef("__getitem__") : StringRef("__getattr__");
   auto result = emitter.emitNamedMethodCall(methodName, selfAndIndicesValue,

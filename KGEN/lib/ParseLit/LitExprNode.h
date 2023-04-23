@@ -39,6 +39,7 @@ public:
     kSelfLiteral,    // Self
     kStringLiteral,  // "Hello"
     kNoneLiteral,    // None
+    kDiscardLiteral, // _
     kDeclRef,        // x
     kAttributeRef,   // x.y
     kParen,          // (x+y)

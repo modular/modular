@@ -593,18 +593,29 @@ public:
       : elementType(elementType), expr(expr) {}
   virtual ~BaseDLValue();
 
-  /// This is the RValue type of the value being accessed, inferred from the
-  /// get/set.
+  /// This is the RValue type of the value being accessed if known.  It is
+  /// inferred from the get/set.
   ASTType elementType;
 
   /// This is the expression node we came from.
   const ExprNode *expr;
 
   virtual void print(raw_ostream &os) const = 0;
-  virtual CValue emitLoad(ValueDest &dest, const ExprNode *dlValueExpr,
-                          ExprEmitter &emitter) const = 0;
+  virtual CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const = 0;
   virtual void emitStore(ASTExprAnd<CValue> value,
                          ExprEmitter &emitter) const = 0;
+};
+
+/// This DLValue implementation represents a discard pattern of _.  It discards
+/// its result on store and produces an error if attempting to load it.
+class DiscardDLValue : public BaseDLValue {
+public:
+  DiscardDLValue(ASTType elementType, const ExprNode *expr);
+
+  virtual void print(raw_ostream &os) const override;
+  virtual CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
+  virtual void emitStore(ASTExprAnd<CValue> value,
+                         ExprEmitter &emitter) const override;
 };
 
 /// This DLValue implementation represents a stored attribute projected from
@@ -620,8 +631,7 @@ public:
   StructFieldOp getField() const;
 
   virtual void print(raw_ostream &os) const override;
-  virtual CValue emitLoad(ValueDest &dest, const ExprNode *dlValueExpr,
-                          ExprEmitter &emitter) const override;
+  virtual CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
   virtual void emitStore(ASTExprAnd<CValue> value,
                          ExprEmitter &emitter) const override;
 };
@@ -644,8 +654,7 @@ public:
                    ASTType elementType, const ExprNode *expr);
 
   virtual void print(raw_ostream &os) const override;
-  virtual CValue emitLoad(ValueDest &dest, const ExprNode *dlValueExpr,
-                          ExprEmitter &emitter) const override;
+  virtual CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
   virtual void emitStore(ASTExprAnd<CValue> value,
                          ExprEmitter &emitter) const override;
 };

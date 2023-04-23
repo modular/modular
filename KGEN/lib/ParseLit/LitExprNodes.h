@@ -79,13 +79,19 @@ struct BoolLiteralNode final : public ExprNode {
   AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
 };
 
-struct SelfLiteralNode final : public ExprNode {
-  SelfLiteralNode(SMLoc loc) : ExprNode(kSelfLiteral), loc(loc) {}
+// This node is used for things like 'Self', '_', 'None' expressions etc.
+struct SimpleLiteralNode final : public ExprNode {
+  SimpleLiteralNode(Kind kind, SMLoc loc) : ExprNode(kind), loc(loc) {
+    assert(classof(kind) && "invalid expr kind for this node");
+  }
 
   const SMLoc loc;
 
-  static bool classof(const ExprNode *node) {
-    return node->kind == kSelfLiteral;
+  static bool classof(const ExprNode *node) { return classof(node->kind); }
+
+  static bool classof(Kind kind) {
+    return kind == kSelfLiteral || kind == kNoneLiteral ||
+           kind == kDiscardLiteral;
   }
 
   SMLoc getLoc() const override { return loc; }
@@ -114,20 +120,6 @@ struct StringLiteralNode final : public ExprNode {
   LitSourceRange getRange() const override {
     return {getLoc(), getSMLocFromStringRef(spellings.back())};
   }
-  AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
-};
-
-struct NoneLiteralNode final : public ExprNode {
-  NoneLiteralNode(SMLoc loc) : ExprNode(kNoneLiteral), loc(loc) {}
-
-  const SMLoc loc;
-
-  static bool classof(const ExprNode *node) {
-    return node->kind == kNoneLiteral;
-  }
-  SMLoc getLoc() const override { return loc; }
-  LitSourceRange getRange() const override { return {getLoc(), getLoc()}; }
-
   AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
 };
 
