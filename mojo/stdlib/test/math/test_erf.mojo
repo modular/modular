@@ -6,6 +6,7 @@
 # RUN: mojo %s | FileCheck %s
 
 
+from Activations import _erf
 from DType import DType
 from IO import print
 from Math import erf
@@ -16,24 +17,47 @@ from SIMD import SIMD
 fn test_erf():
     print("== test_erf")
 
+    # Test MLAS erf.
+
     # CHECK: 0.000000
-    print(erf[1, DType.f32](SIMD[DType.f32, 1](0)))
+    print(erf(SIMD[DType.f32, 1](0)))
 
     # CHECK: 0.995322
     # CHECK: 0.995322
-    print(erf[2, DType.f32](SIMD[DType.f32, 2](2)))
+    print(erf(SIMD[DType.f32, 2](2)))
 
     # CHECK: 0.112463
-    print(erf[1, DType.f32](SIMD[DType.f32, 1](0.1)))
+    print(erf(SIMD[DType.f32, 1](0.1)))
 
     # CHECK: -0.112463
-    print(erf[1, DType.f32](SIMD[DType.f32, 1](-0.1)))
+    print(erf(SIMD[DType.f32, 1](-0.1)))
 
     # CHECK: -0.842701
-    print(erf[1, DType.f32](SIMD[DType.f32, 1](-1)))
+    print(erf(SIMD[DType.f32, 1](-1)))
 
     # CHECK: -0.995322
-    print(erf[1, DType.f32](SIMD[DType.f32, 1](-2)))
+    print(erf(SIMD[DType.f32, 1](-2)))
+
+    # Test oneDNN erf.
+
+    # CHECK: 0.000000
+    print(_erf(SIMD[DType.f32, 1](0)))
+
+    # CHECK: 0.995322
+    # CHECK: 0.995322
+    print(_erf(SIMD[DType.f32, 2](2)))
+
+    # CHECK: 0.112463
+    print(_erf(SIMD[DType.f32, 1](0.1)))
+
+    # CHECK: -0.112463
+    print(_erf(SIMD[DType.f32, 1](-0.1)))
+
+    # CHECK: -0.842701
+    print(_erf(SIMD[DType.f32, 1](-1)))
+
+    # CHECK: -0.995322
+    print(_erf(SIMD[DType.f32, 1](-2)))
 
 
 fn main():
