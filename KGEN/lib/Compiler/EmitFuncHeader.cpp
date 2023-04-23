@@ -6,7 +6,7 @@
 
 #include "KGEN/EmitFuncHeader.h"
 #include "KGEN/LowerToObject.h"
-#include "mlir/Support/FileUtilities.h"
+#include "Support/FileSystemExtras.h"
 #include "llvm/Support/FormatAdapters.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/ToolOutputFile.h"
@@ -14,19 +14,10 @@
 using namespace M;
 using namespace KGEN;
 
-/// This allows us to emit a header file for the given func so that we can
-/// `#include` it and get nice autocompletion/etc. in users' IDEs.
-LogicalResult M::KGEN::emitHeader(SymbolTable &symtab,
-                                  const ExportMap &exportedSymbols,
-                                  ObjectCompiler &compiler,
-                                  StringRef filename) {
-  std::string err;
-  auto outFile = mlir::openOutputFile(filename, &err);
-  if (!outFile)
-    return mlir::emitError(symtab.getOp()->getLoc(), err);
-
-  std::filesystem::path filenameOnly(filename.str());
-  filenameOnly = filenameOnly.stem();
+static ErrorOr<std::string>
+generateHeaderContent(SymbolTable &symtab, const ExportMap &exportedSymbols,
+                      ObjectCompiler &compiler, StringRef filename) {
+  std::filesystem::path filePath(filename.str());
 
   llvm::StringLiteral headerFmtStart = R"literal(//===-{0}-===//
 //
@@ -57,20 +48,49 @@ extern "C" {{
 #endif // {0}
 )literal";
 
+  std::string header;
+  llvm::raw_string_ostream headerOs(header);
+
   std::string headerGuard =
-      "__KGEN_" + StringRef(filenameOnly.string()).upper() + "_H";
-  outFile->os() << llvm::formatv(
-      headerFmtStart.data(), llvm::fmt_repeat('-', 80 - 2 * strlen("//===")),
-      headerGuard);
+      "__KGEN_" + StringRef(filePath.stem().string()).upper() + "_H";
+  headerOs << llvm::formatv(headerFmtStart.data(),
+                            llvm::fmt_repeat('-', 80 - 2 * strlen("//===")),
+                            headerGuard);
 
   // Emit the function decls into the header.
-  if (failed(compiler.produceFunctionDecls(symtab, exportedSymbols,
-                                           outFile->os())))
-    return failure();
+  if (failed(compiler.produceFunctionDecls(symtab, exportedSymbols, headerOs)))
+    return Error("failed to produce function decls");
 
-  outFile->os() << llvm::formatv(headerFmtEnd.data(), headerGuard);
+  headerOs << llvm::formatv(headerFmtEnd.data(), headerGuard);
 
-  outFile->keep();
+  return header;
+}
+
+/// This allows us to emit a header file for the given func so that we can
+/// `#include` it and get nice autocompletion/etc. in users' IDEs.
+LogicalResult M::KGEN::emitHeader(SymbolTable &symtab,
+                                  const ExportMap &exportedSymbols,
+                                  ObjectCompiler &compiler,
+                                  StringRef filename) {
+  ErrorOr<std::string> header =
+      generateHeaderContent(symtab, exportedSymbols, compiler, filename);
+  if (failed(header))
+    return mlir::failure();
+
+  if (filename == "-") {
+    llvm::outs() << *header;
+    llvm::outs().flush();
+    return mlir::success();
+  }
+
+  std::filesystem::path filePath(filename.str());
+
+  // Safely process creating the header, taking into account that we may have
+  // different processes trying to produce this header in parallel.
+  if (auto err = writeFileAtomically(filePath,
+                                     [&](raw_ostream &os) { os << *header; });
+      err.isError())
+    return mlir::emitError(symtab.getOp()->getLoc(), err.getError());
 
   return mlir::success();
 }
