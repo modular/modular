@@ -736,11 +736,8 @@ struct NullaryClosure[result_type: AnyType]:
     fn __init__(self&, value: closure_type):
         """Create a nullary closure.
 
-        Arguments:
-          value: the closure value.
-
-        Returns:
-          The nullary closure.
+        Args:
+            value: the closure value.
         """
         self.value = value
 
@@ -748,11 +745,8 @@ struct NullaryClosure[result_type: AnyType]:
     fn __copyinit__(self&, existing: Self):
         """Clone a nullary closure.
 
-        Arguments:
-          self: the value to clone.
-
-        Returns:
-          A new nullary closure.
+        Args:
+            existing: the value to clone.
         """
         self.value = existing.value
 
@@ -761,7 +755,7 @@ struct NullaryClosure[result_type: AnyType]:
         """Call a nullary closure.
 
         Returns:
-          The closure result.
+            The closure result.
         """
         return __mlir_op.`pop.call_indirect`[_type:result_type](self.value)
 
@@ -781,11 +775,8 @@ struct UnaryClosure[
     fn __init__(self&, value: closure_type):
         """Create a unary closure.
 
-        Arguments:
+        Args:
           value: the closure value.
-
-        Returns:
-          The unary closure.
         """
         self.value = value
 
@@ -793,11 +784,8 @@ struct UnaryClosure[
     fn __copyinit__(self&, existing: Self):
         """Clone a unary closure.
 
-        Arguments:
-          self: the value to clone.
-
-        Returns:
-          A new unary closure.
+        Args:
+            existing: the value to clone.
         """
         self.value = existing.value
 
@@ -805,11 +793,11 @@ struct UnaryClosure[
     fn __call__(self, input: input_type) -> result_type:
         """Call a unary closure.
 
-        Arguments:
-          input: the input to the unary closure
+        Args:
+            input: the input to the unary closure
 
         Returns:
-          The unary closure result.
+            The unary closure result.
         """
         return __mlir_op.`pop.call_indirect`[_type:result_type](
             self.value, input
@@ -832,11 +820,8 @@ struct BinaryClosure[
     fn __init__(self&, value: closure_type):
         """Create a binary closure.
 
-        Arguments:
-          value: the closure value.
-
-        Returns:
-          The binary closure.
+        Args:
+            value: the closure value.
         """
         self.value = value
 
@@ -844,11 +829,8 @@ struct BinaryClosure[
     fn __copyinit__(self&, existing: Self):
         """Clone a binary closure.
 
-        Arguments:
-          self: the value to clone.
-
-        Returns:
-          A new binary closure.
+        Args:
+            existing: the value to clone.
         """
         self.value = existing.value
 
@@ -856,12 +838,12 @@ struct BinaryClosure[
     fn __call__(self, lhs: lhs_type, rhs: rhs_type) -> result_type:
         """Call a binary closure.
 
-        Arguments:
-          lhs: the first input to the binary closure.
-          rhs: the second input to the binary closure.
+        Args:
+            lhs: the first input to the binary closure.
+            rhs: the second input to the binary closure.
 
         Returns:
-          The binary closure result.
+            The binary closure result.
         """
         return __mlir_op.`pop.call_indirect`[_type:result_type](
             self.value, lhs, rhs
@@ -893,11 +875,8 @@ struct TernaryClosure[
     fn __init__(self&, value: closure_type):
         """Create a Ternary closure.
 
-        Arguments:
-          value: the closure value.
-
-        Returns:
-          The Ternary closure.
+        Args:
+            value: the closure value.
         """
         self.value = value
 
@@ -905,11 +884,8 @@ struct TernaryClosure[
     fn __copyinit__(self&, existing: Self):
         """Clone a Ternary closure.
 
-        Arguments:
-          self: the value to clone.
-
-        Returns:
-          A new Ternary closure.
+        Args:
+            existing: the value to clone.
         """
         self.value = existing.value
 
@@ -922,13 +898,13 @@ struct TernaryClosure[
     ) -> result_type:
         """Call a Ternary closure.
 
-        Arguments:
-          arg1: the first input to the Ternary closure.
-          arg2: the second input to the Ternary closure.
-          arg3: the third input to the Ternary closure.
+        Args:
+            arg1: the first input to the Ternary closure.
+            arg2: the second input to the Ternary closure.
+            arg3: the third input to the Ternary closure.
 
         Returns:
-          The Ternary closure result.
+            The Ternary closure result.
         """
         return __mlir_op.`pop.call_indirect`[_type:result_type](
             self.value, arg1, arg2, arg3

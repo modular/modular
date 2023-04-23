@@ -36,6 +36,27 @@ fn reduce[
     ) capturing -> SIMD[acc_type, width],
     reduce_fn: fn[width: Int, type: DType] (SIMD[type, width]) -> SIMD[type, 1],
 ](src: Buffer[size, type], init: SIMD[acc_type, 1]) -> SIMD[acc_type, 1]:
+    """Compute a custom reduction of buffer elements.
+
+    Parameters:
+        simd_width: The vector width for the computation.
+        size: The buffer size.
+        type: The buffer elements dtype.
+        acc_type: The dtype of the reduction accumulator.
+        map_fn: A mapping function. This function is used when to combine
+          (accumulate) two chunks of input data: e.g. we load two 8xf32 vectors
+          of elements and need to reduce them to a single 8xf32 vector.
+        reduce_fn: A reduction function. This function is used to reduce a
+          vector to a scalar. E.g. when we got 8xf32 vector and want to reduce
+          it to 1xf32.
+
+    Args:
+        src: The input buffer.
+        init: The initial value to use in accumulator.
+
+    Returns:
+        The computed reduction value.
+    """
     alias unroll_factor = 8  # TODO: search
     # TODO: explicitly unroll like vectorize_unroll does.
     alias unrolled_simd_width = simd_width * unroll_factor
@@ -153,6 +174,26 @@ fn reduce[
     reduce axis are packed into C. i.e. a tensor with dims [D1, D2, ..., Di, ..., Dn]
     reducing across axis i gets packed into a 3D tensor with dims [H, W, C],
     where H=prod(D1,...,Di-1), W = Di, and C = prod(Di+1,...,Dn).
+
+    Parameters:
+        simd_width: The vector width for the computation.
+        rank: The rank of the input/output buffers.
+        input_shape: The input buffer shape.
+        output_shape: The output buffer shape.
+        type: The buffer elements dtype.
+        acc_type: The dtype of the reduction accumulator.
+        map_fn: A mapping function. This function is used when to combine
+          (accumulate) two chunks of input data: e.g. we load two 8xf32 vectors
+          of elements and need to reduce them to a single 8xf32 vector.
+        reduce_fn: A reduction function. This function is used to reduce a
+          vector to a scalar. E.g. when we got 8xf32 vector and want to reduce
+          it to 1xf32.
+        reduce_axis: The axis to reduce across.
+
+    Args:
+        src: The input buffer.
+        dst: The output buffer.
+        init: The initial value to use in accumulator.
     """
 
     let h_dynamic = prod_dims[0, reduce_axis](src)
@@ -219,7 +260,19 @@ fn max[
     size: Dim,
     type: DType,
 ](src: Buffer[size, type]) -> SIMD[type, 1]:
-    """Computes the max element in a buffer."""
+    """Computes the max element in a buffer.
+
+    Parameters:
+        simd_width: The vector width for the computation.
+        size: The buffer size.
+        type: The buffer elements dtype.
+
+    Args:
+        src: The buffer.
+
+    Returns:
+        The maximum of the buffer elements.
+    """
     return reduce[
         simd_width, size, type, type, _simd_max_elementwise, _simd_max
     ](src, src[0])
@@ -236,7 +289,20 @@ fn max[
     src: NDBuffer[rank, input_shape, type],
     dst: NDBuffer[rank, output_shape, type],
 ):
-    """Computes the max across reduce_axis of an NDBuffer."""
+    """Computes the max across reduce_axis of an NDBuffer.
+
+    Parameters:
+        simd_width: The vector width for the computation.
+        rank: The rank of the input/output buffers.
+        input_shape: The input buffer shape.
+        output_shape: The output buffer shape.
+        type: The buffer elements dtype.
+        reduce_axis: The axis to reduce across.
+
+    Args:
+        src: The input buffer.
+        dst: The output buffer.
+    """
     return reduce[
         simd_width,
         rank,
@@ -285,7 +351,19 @@ fn min[
     size: Dim,
     type: DType,
 ](src: Buffer[size, type]) -> SIMD[type, 1]:
-    """Computes the min element in a buffer."""
+    """Computes the min element in a buffer.
+
+    Parameters:
+        simd_width: The vector width for the computation.
+        size: The buffer size.
+        type: The buffer elements dtype.
+
+    Args:
+        src: The buffer.
+
+    Returns:
+        The minimum of the buffer elements.
+    """
     return reduce[
         simd_width, size, type, type, _simd_min_elementwise, _simd_min
     ](src, src[0])
@@ -302,7 +380,20 @@ fn min[
     src: NDBuffer[rank, input_shape, type],
     dst: NDBuffer[rank, output_shape, type],
 ):
-    """Computes the min across reduce_axis of an NDBuffer."""
+    """Computes the min across reduce_axis of an NDBuffer.
+
+    Parameters:
+        simd_width: The vector width for the computation.
+        rank: The rank of the input/output buffers.
+        input_shape: The input buffer shape.
+        output_shape: The output buffer shape.
+        type: The buffer elements dtype.
+        reduce_axis: The axis to reduce across.
+
+    Args:
+        src: The input buffer.
+        dst: The output buffer.
+    """
     return reduce[
         simd_width,
         rank,
@@ -351,7 +442,19 @@ fn sum[
     size: Dim,
     type: DType,
 ](src: Buffer[size, type]) -> SIMD[type, 1]:
-    """Computes the sum element in a buffer."""
+    """Computes the sum of buffer elements.
+
+    Parameters:
+        simd_width: The vector width for the computation.
+        size: The buffer size.
+        type: The buffer elements dtype.
+
+    Args:
+        src: The buffer.
+
+    Returns:
+        The sum of the buffer elements.
+    """
     return reduce[
         simd_width, size, type, type, _simd_sum_elementwise, _simd_sum
     ](src, 0)
@@ -368,7 +471,20 @@ fn sum[
     src: NDBuffer[rank, input_shape, type],
     dst: NDBuffer[rank, output_shape, type],
 ):
-    """Computes the sum across reduce_axis of an NDBuffer."""
+    """Computes the sum across reduce_axis of an NDBuffer.
+
+    Parameters:
+        simd_width: The vector width for the computation.
+        rank: The rank of the input/output buffers.
+        input_shape: The input buffer shape.
+        output_shape: The output buffer shape.
+        type: The buffer elements dtype.
+        reduce_axis: The axis to reduce across.
+
+    Args:
+        src: The input buffer.
+        dst: The output buffer.
+    """
     return reduce[
         simd_width,
         rank,
@@ -417,7 +533,19 @@ fn product[
     size: Dim,
     type: DType,
 ](src: Buffer[size, type]) -> SIMD[type, 1]:
-    """Computes the product element in a buffer."""
+    """Computes the product of the buffer elements.
+
+    Parameters:
+        simd_width: The vector width for the computation.
+        size: The buffer size.
+        type: The buffer elements dtype.
+
+    Args:
+        src: The buffer.
+
+    Returns:
+        The product of the buffer elements.
+    """
     return reduce[
         simd_width, size, type, type, _simd_product_elementwise, _simd_product
     ](src, 1)
@@ -434,7 +562,20 @@ fn product[
     src: NDBuffer[rank, input_shape, type],
     dst: NDBuffer[rank, output_shape, type],
 ):
-    """Computes the product across reduce_axis of an NDBuffer."""
+    """Computes the product across reduce_axis of an NDBuffer.
+
+    Parameters:
+        simd_width: The vector width for the computation.
+        rank: The rank of the input/output buffers.
+        input_shape: The input buffer shape.
+        output_shape: The output buffer shape.
+        type: The buffer elements dtype.
+        reduce_axis: The axis to reduce across.
+
+    Args:
+        src: The input buffer.
+        dst: The output buffer.
+    """
     return reduce[
         simd_width,
         rank,
@@ -478,7 +619,20 @@ fn mean[
     src: NDBuffer[rank, input_shape, type],
     dst: NDBuffer[rank, output_shape, type],
 ):
-    """Computes the mean across reduce_axis of an NDBuffer."""
+    """Computes the mean across reduce_axis of an NDBuffer.
+
+    Parameters:
+        simd_width: The vector width for the computation.
+        rank: The rank of the input/output buffers.
+        input_shape: The input buffer shape.
+        output_shape: The output buffer shape.
+        type: The buffer elements dtype.
+        reduce_axis: The axis to reduce across.
+
+    Args:
+        src: The input buffer.
+        dst: The output buffer.
+    """
 
     sum[
         simd_width,
@@ -512,7 +666,19 @@ fn variance[
     size: Dim,
     type: DType,
 ](src: Buffer[size, type]) -> SIMD[type, 1]:
-    """Computes the variance value of the elements in a buffer."""
+    """Computes the variance value of the elements in a buffer.
+
+    Parameters:
+        simd_width: The vector width for the computation.
+        size: The buffer size.
+        type: The buffer elements dtype.
+
+    Args:
+        src: The buffer.
+
+    Returns:
+        The variance value of the elements in a buffer.
+    """
 
     debug_assert(src.__len__() > 1, "input length must be greater than 1")
 
