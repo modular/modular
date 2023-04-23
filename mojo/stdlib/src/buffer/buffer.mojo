@@ -756,6 +756,15 @@ struct NDBuffer[
         return _compute_nd_index(self, idx)
 
     @always_inline
+    fn __len__(self) -> Int:
+        """Computes the NDBuffer's number of elements.
+
+        Returns:
+            The total number of elements in the NDBuffer.
+        """
+        return self.size()
+
+    @always_inline
     fn size(self) -> Int:
         """Computes the NDBuffer's number of elements.
 
