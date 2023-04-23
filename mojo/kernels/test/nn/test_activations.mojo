@@ -64,10 +64,12 @@ fn test_gelu():
 
     let simd_val = 2 - 0.5 * iota[4, DType.f32]()
 
+    # There is no difference in the results from MLAS and oneDNN gelu.
     # CHECK: [1.954500, 1.399789, 0.841345, 0.345731]
     print(gelu(simd_val))
 
-    # CHECK: [0.841345, 0.580029, 0.345731, 0.149677]
+    # The results from MLAS gelu is [0.841345, 0.580029, 0.345731, 0.149677].
+    # CHECK: [0.841345, 0.580030, 0.345731, 0.149677]
     print(gelu(0.5 * simd_val))
 
     # CHECK: [1.954598, 1.399572, 0.841192, 0.345714]

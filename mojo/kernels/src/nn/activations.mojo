@@ -9,9 +9,11 @@
 from Assert import assert_param_msg, debug_assert
 from Bit import _is_neg
 from DType import DType
-from Math import erf, exp, clamp, max, min, identity, tanh
+from Math import abs, copysign, erf, exp, clamp, max, min, identity, tanh, fma
 from SIMD import SIMD
 from LLCL import OutputChainPtr
+from Polynomial import polynomial_evaluate
+from List import VariadicList
 
 
 @register_passable("trivial")
@@ -233,6 +235,38 @@ fn relu_n1[
 
 
 @always_inline
+fn _erf[
+    simd_width: Int, type: DType
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    """Compute the erf function. This uses the formula 7.1.26 on page 299 from
+    `Abramowitz and Stegun from "Handbook of Mathematical Functions"`.
+    This version is used in oneDNN.
+    """
+    assert_param_msg[
+        type.is_floating_point(), "must be a floating point value"
+    ]()
+    let x_abs = abs(x)
+    # t = 1 / (1 + p * abs(x))
+    let t = 1 / x_abs.fma(0.3275911, 1)
+    # auxiliary value =  t * exp(-x*x)
+    let val_aux = t * exp(-x_abs * x_abs)
+    # r = 1 - polynomial * t * exp(-x*x)
+    let polynomial = polynomial_evaluate[
+        simd_width,
+        type,
+        VariadicList[SIMD[type, simd_width]](
+            0.254829592,
+            -0.284496736,
+            1.421413741,
+            -1.453152027,
+            1.061405429,
+        ),
+    ](t)
+    let r = polynomial.fma(-val_aux, 1)
+    return copysign(r, x)
+
+
+@always_inline
 fn gelu[
     simd_width: Int, type: DType
 ](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
@@ -252,12 +286,16 @@ fn gelu[
     Constraints:
         type must be a floating point type.
     """
-    alias SQRT_2 = 1.4142135623730950488
+    alias inv_SQRT_2 = 0.70710678118
     assert_param_msg[
         type.is_floating_point(),
         "dtype must be a floating point type",
     ]()
-    return 0.5 * x * (1 + erf(x / SQRT_2))
+    # 0.5 * x * (1 + erf(x / SQRT_2))
+    # x_half + x_half * erf_res
+    let x_half = 0.5 * x
+    let erf_res = _erf(x * inv_SQRT_2)
+    return x_half.fma(erf_res, x_half)
 
 
 # ===----------------------------------------------------------------------===#
