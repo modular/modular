@@ -9,12 +9,11 @@
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Support/UnknownLocationDecoder.h"
+#include "Support/FileSystemExtras.h"
 #include "Support/HMAC.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/Base64.h"
 #include "llvm/Support/DynamicLibrary.h"
-#include "llvm/Support/FileUtilities.h"
-#include "llvm/Support/LockFileManager.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Process.h"
 #include <shared_mutex>
@@ -263,59 +262,23 @@ struct FilesystemBackend : public BlobCacheBackend {
     std::filesystem::create_directories(filePath.parent_path(), err);
     if (err)
       return Error(err.message());
-    std::string filePathStr = filePath.string();
 
     // Functor used when we actually need to write out the file.
-    auto writeFile = [&]() -> ErrorOrSuccess {
-      llvm::Error err = llvm::writeFileAtomically(
-          filePathStr + "-%%%%%%%%", filePathStr, [&](raw_ostream &os) {
-            // Copy the data into the file buffer.
-            os.write(obj->getBufferStart(), obj->getBufferSize());
+    auto writeContent = [&](raw_ostream &os) {
+      // Copy the data into the file buffer.
+      os.write(obj->getBufferStart(), obj->getBufferSize());
 
-            // Compute and copy the HMAC as well.
-            BLAKE3Hash hash = hmacBLAKE3(obj->getBuffer(), kIntegrityKey);
-            os.write((const char *)hash.data(), hash.size());
-            return llvm::Error::success();
-          });
-      return err ? Error(llvm::toString(std::move(err))) : ErrorOrSuccess();
+      // Compute and copy the HMAC as well.
+      BLAKE3Hash hash = hmacBLAKE3(obj->getBuffer(), kIntegrityKey);
+      os.write((const char *)hash.data(), hash.size());
     };
 
     // Safely process creating the file, taking into account that we may have
     // different processes trying to produce this file in parallel.
-    while (true) {
-      llvm::LockFileManager lockManager(filePathStr);
-      switch (lockManager) {
-      case llvm::LockFileManager::LFS_Error:
-        return Error("unable to take lock file for '" + filePathStr +
-                     "': " + lockManager.getErrorMessage());
-      case llvm::LockFileManager::LFS_Owned:
-        // We got the lock, and can build the file.
-        return writeFile();
+    if (auto err = writeFileAtomically(filePath, writeContent); err.isError())
+      return err.takeError();
 
-      case llvm::LockFileManager::LFS_Shared:
-        // Another process is touching the file, handle the different
-        // outcomes of this below.
-        break;
-      }
-
-      // Wait for the other process to finish touching the file.
-      switch (lockManager.waitForUnlock()) {
-      case llvm::LockFileManager::Res_Success:
-        // We now have the lock file, and can proceed to build the file if the
-        // other process didn't do it.
-        if (containsImpl(keyHash))
-          return success();
-        return writeFile();
-      case llvm::LockFileManager::Res_OwnerDied:
-        // The owner died, try again to take the file.
-        continue;
-      case llvm::LockFileManager::Res_Timeout:
-        // We timed out when trying to acquire the lock for the file.
-        // TODO: We could try again, but the default timeout is 1.5 minutes.
-        return Error("timed out waiting for lock file for '" + filePathStr +
-                     "'");
-      }
-    }
+    return success();
   }
 
   ErrorOr<bool> containsImpl(StringRef keyHash) const override {

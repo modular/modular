@@ -9,7 +9,7 @@
 #include "LLCL/Runtime/Algorithms.h"
 #include "LowerToObjectImpl.h"
 #include "Support/Compiler/MLIRDenseAttrStorage.h"
-#include "Support/TempFile.h"
+#include "Support/FileSystemExtras.h"
 #include "Support/TimeProfiler.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/BuiltinOps.h"
