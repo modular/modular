@@ -773,15 +773,13 @@ SharedState::createModuleState(StringRef moduleName,
                                FileLineColLoc loc) {
   StringAttr mangledName = getMangledModuleName(getContext(), moduleName);
   Lexer lexer(*this, moduleBuffer);
-  LexerCursor endCursor(
-      {Token::eof, StringRef(moduleBuffer->getBufferEnd() + 1, 0), 0});
 
   // Create a new decl for this module.
   auto moduleBuilder = impl->topLevelDecl->getDeclEndBuilder();
   Operation *fileOp = moduleBuilder.create<FileModuleOp>(loc, mangledName);
   ASTDecl &moduleDecl = declResolver->addDecl(
       fileOp, lexer.getToken().getLoc(), mangledName, impl->topLevelDecl,
-      lexer.getCursor(), endCursor, /*indentation=*/-1);
+      lexer.getCursor(), LexerCursor::getEOF(moduleBuffer), /*indentation=*/-1);
 
   // Auto-import the core Lang modules.
   for (StringRef moduleName : kBuiltinModuleNames) {

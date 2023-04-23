@@ -78,3 +78,10 @@
 
 # expected-error @+1 {{unterminated string}}
 r"AB\"
+
+# // -----
+
+# Issue #12818
+fn inconsistent_indent():
+    let x = 1
+   	let y = 2  # expected-error {{leading indentation uses inconsistent whitespace (tabs and spaces) than previous line}}

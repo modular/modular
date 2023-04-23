@@ -106,7 +106,7 @@ public:
   Lexer(SharedState &sharedState, const LexerCursor &cursor);
 
   /// Move to the next valid token.
-  void lexToken() { curToken = lexTokenImpl(); }
+  void lexToken();
 
   const Token &getToken() const { return curToken; }
 
@@ -123,8 +123,8 @@ public:
   /// handled. `spelling` is known to have been lexed as a string literal token.
   static std::string getStringLiteralValue(StringRef spelling);
 
-  Token emitTokenError(const Twine &message) {
-    return emitErrorAt(getToken().getSpelling().data(), message);
+  void emitTokenError(const Twine &message) {
+    emitErrorAt(getToken().getSpelling().data(), message);
   }
 
   /// Given a location that is at the start of a line, scan backwards to find
@@ -137,31 +137,37 @@ public:
   static size_t getTokenLength(SharedState &shared, SMLoc loc);
 
 private:
-  Token lexTokenImpl();
-
-  // Helpers.
-  Token formToken(Token::Kind kind, const char *tokStart, ssize_t indentation) {
-    return Token(kind, StringRef(tokStart, curPtr - tokStart), indentation);
+  void formToken(Token::Kind kind, const char *tokStart, ssize_t indentation,
+                 size_t tokenStartOffset = 0) {
+    formToken(kind, StringRef(tokStart, curPtr - tokStart), indentation,
+              tokenStartOffset);
   }
-
-  Token emitErrorAt(const char *loc, const Twine &message);
+  void formToken(Token::Kind kind, StringRef spelling, ssize_t indentation,
+                 size_t tokenStartOffset = 0);
+  void emitErrorAt(const char *loc, const Twine &message);
 
   // Lexer implementation methods.
-  Token lexIdentifierOrKeyword(const char *tokStart, ssize_t indentation);
-  Token lexBacktickIdentifier(const char *tokStart, ssize_t indentation);
-  Token lexInteger(const char *tokStart, ssize_t indentation);
-  Token lexFloat(const char *tokStart, ssize_t indentation);
-  Token lexString(const char *tokStart, ssize_t indentation);
+  void lexIdentifierOrKeyword(const char *tokStart, ssize_t indentation);
+  void lexBacktickIdentifier(const char *tokStart, ssize_t indentation);
+  void lexInteger(const char *tokStart, ssize_t indentation);
+  void lexFloat(const char *tokStart, ssize_t indentation);
+  void lexString(const char *tokStart, ssize_t indentation);
   void skipComment();
 
 private:
   Lexer(SharedState &shared, StringRef curBuffer, const char *curPtr);
 
+  /// This is the overall memory buffer that we are lexing from.
   StringRef curBuffer;
+  /// This the start of the next byte to lex.
   const char *curPtr;
-
   /// This is the next token that hasn't been consumed yet.
   Token curToken;
+
+  // This is the start of the last token that was at a beginning of line, and
+  // the indentation (in bytes) of that token.
+  const char *lastLineStart;
+  ssize_t lastLineIndent;
 
   Lexer(const Lexer &) = delete;
   void operator=(const Lexer &) = delete;
@@ -171,30 +177,45 @@ private:
 /// This is the state captured for a lexer cursor.
 class LexerCursor {
 public:
-  LexerCursor() : LexerCursor(Token(Token::eof, StringRef(), 0)) {}
+  LexerCursor()
+      : curPtr(0), curToken(Token(Token::eof, StringRef(), 0)),
+        lastLineStart(nullptr), lastLineIndent(0) {}
   LexerCursor(const Lexer &lexer)
-      : state(lexer.curPtr), curToken(lexer.getToken()) {}
-  LexerCursor(const Token &tok)
-      : state(tok.getSpelling().data()), curToken(tok) {}
+      : curPtr(lexer.curPtr), curToken(lexer.getToken()),
+        lastLineStart(lexer.lastLineStart),
+        lastLineIndent(lexer.lastLineIndent) {}
   LexerCursor(const LexerCursor &cursor) = default;
   LexerCursor &operator=(const LexerCursor &cursor) = default;
 
+  /// Get a cursor that indicates the end of file.  This isn't for continued
+  /// lexing, it is for comparisons.
+  static LexerCursor getEOF(const llvm::MemoryBuffer *buffer) {
+    LexerCursor result;
+    result.curPtr = buffer->getBufferEnd() + 1;
+    result.curToken = Token(Token::eof, StringRef(result.curPtr, 0), 0);
+    return result;
+  }
+
   void restore(Lexer &lexer) const {
-    lexer.curPtr = state;
+    lexer.curPtr = curPtr;
     lexer.curToken = curToken;
+    lexer.lastLineStart = lastLineStart;
+    lexer.lastLineIndent = lastLineIndent;
   }
 
   /// Return an internal pointer that represents the cursor state without the
   /// current token.
-  const char *getState() const { return state; }
+  const char *getState() const { return curPtr; }
   const Token &getToken() const { return curToken; }
 
-  bool operator==(const LexerCursor &rhs) const { return state == rhs.state; }
+  bool operator==(const LexerCursor &rhs) const { return curPtr == rhs.curPtr; }
   bool operator!=(const LexerCursor &rhs) const { return !(*this == rhs); }
 
 private:
-  const char *state;
+  const char *curPtr;
   Token curToken;
+  const char *lastLineStart;
+  ssize_t lastLineIndent;
 };
 
 inline LexerCursor Lexer::getCursor() const { return LexerCursor(*this); }
