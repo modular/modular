@@ -162,6 +162,12 @@ bool MojoUserExpression::Parse(DiagnosticManager &diagnosticManager,
   Process *process = exeCtx.GetProcessPtr();
   auto *exeScope = process ? (ExecutionContextScope *)process : &impl->target;
 
+  // On exit, log all of the diagnostics that were collected.
+  auto broadcastDiagnostics = llvm::make_scope_exit([&] {
+    impl->typeSystem.broadcastDiagnostics(diagnosticManager);
+    diagnosticManager.Clear();
+  });
+
   // If the expression starts with `%python`, the user wants to treat this as a
   // python expression. Otherwise, it should be treated as a Mojo expression.
   StringRef exprText(m_expr_text);
@@ -181,6 +187,8 @@ bool MojoUserExpression::Parse(DiagnosticManager &diagnosticManager,
       m_jit_start_addr, m_jit_end_addr, executionUnit, exeCtx, executionPolicy,
       keepResultInMemory);
   if (!jitError.Success()) {
+    m_jit_start_addr = m_jit_end_addr = LLDB_INVALID_ADDRESS;
+
     const char *errorCStr = jitError.AsCString();
     if (errorCStr && errorCStr[0])
       diagnosticManager.PutString(eDiagnosticSeverityError, errorCStr);

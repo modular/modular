@@ -116,6 +116,53 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
 }
 
 //===----------------------------------------------------------------------===//
+// Diagnostics
+//===----------------------------------------------------------------------===//
+
+namespace {
+/// This class defines a simple raw ostream that can be used to emit colors when
+/// processing diagnostic messages.
+struct DiagnosticStream : public llvm::raw_string_ostream {
+  DiagnosticStream(std::string &msg, bool supportsColors)
+      : llvm::raw_string_ostream(msg) {
+    enable_colors(supportsColors);
+  }
+
+  bool is_displayed() const override { return colors_enabled(); }
+  bool has_colors() const override { return colors_enabled(); }
+};
+} // namespace
+
+/// Format the given diagnostic into a string.
+static std::string formatSMDiagnostic(const llvm::SMDiagnostic &diag,
+                                      bool showColors) {
+  std::string msg;
+  DiagnosticStream msgOS(msg, showColors);
+
+  // Set the default colors for the diagnostic printing. This ensures we use the
+  // correct corresponding color for the diagnostic type.
+  llvm::HighlightColor color;
+  switch (diag.getKind()) {
+  case llvm::SourceMgr::DK_Error:
+    color = llvm::HighlightColor::Error;
+    break;
+  case llvm::SourceMgr::DK_Warning:
+    color = llvm::HighlightColor::Warning;
+    break;
+  case llvm::SourceMgr::DK_Note:
+    color = llvm::HighlightColor::Note;
+    break;
+  case llvm::SourceMgr::DK_Remark:
+    color = llvm::HighlightColor::Remark;
+    break;
+  }
+  llvm::WithColor colorOS(msgOS, color);
+
+  diag.print("", msgOS, showColors, /*ShowKindLabel=*/false);
+  return msg;
+}
+
+//===----------------------------------------------------------------------===//
 // LLDBMojoREPLListener
 //===----------------------------------------------------------------------===//
 
@@ -168,13 +215,10 @@ public:
         severity = eDiagnosticSeverityRemark;
         break;
       }
-      std::string msg;
-      llvm::raw_string_ostream diagnosticStream(msg);
-      diag.print("", diagnosticStream, /*ShowColors=*/false,
-                 /*ShowKindLabel=*/false);
 
-      diagnosticManager.AddDiagnostic(
-          std::make_unique<MojoDiagnostic>(msg, severity));
+      std::string msg = formatSMDiagnostic(diag, options.GetColorizeErrors());
+      diagnosticManager.AddDiagnostic(std::make_unique<MojoDiagnostic>(
+          msg, severity, !diag.getFixIts().empty()));
     }
   }
 
@@ -275,13 +319,6 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   MojoASTDeclRef exprFnDecl = parserContext.parseREPLExpresion(
       listener, expressionId, impl->expr.Text(), exprFnName, variables);
 
-  // Log the received diagnostics to the user.
-  if (!diagnosticManager.Diagnostics().empty()) {
-    impl->typeSystem->debugLog("Emitted diagnostics");
-    for (const auto &diag : diagnosticManager.Diagnostics())
-      impl->typeSystem->logDiagnostic(*cast<MojoDiagnostic>(diag.get()));
-  }
-
   // If the parser supplied a fixed expression, abort processing and use that
   // expression instead.
   if (!impl->expr.GetFixedText().empty() &&
@@ -289,6 +326,13 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
     impl->typeSystem->debugLog(
         "Rewrote the input, next parse will be the fixed code:\n{0}",
         impl->expr.GetFixedText());
+
+    // If we have a fixed expression string, we're going to fail here to let
+    // LLDB retry execution with the fixed expression. Before then, we need to
+    // emit all of the fixed diagnostics that were collected, given that these
+    // won't be shown on the next parse.
+    auto filterFn = [](MojoDiagnostic &diag) { return diag.hadFixits(); };
+    impl->typeSystem->broadcastDiagnostics(diagnosticManager, filterFn);
 
     // Clear the diagnostic manager so we don't re-fix something.
     diagnosticManager.Clear();
@@ -300,6 +344,13 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
     return failure();
   }
   impl->typeSystem->debugLog("Parsed module successfully");
+
+  // Setup a diagnostic handler to process diagnostics emitted during lowering.
+  sourceMgr.setDiagHandler(
+      [](const llvm::SMDiagnostic &diag, void *context) {
+        static_cast<LLDBMojoREPLListener *>(context)->notifyDiagnostics(diag);
+      },
+      &listener);
 
   // Create a clone of the parser module so that we can compile it without
   // thrashing on the current parser state.

@@ -77,6 +77,7 @@ struct MojoExpressionEvaluationOptions : public SBExpressionOptions {
     SetTimeoutInMicroSeconds(0);
 
     ref().SetREPLEnabled(true);
+    ref().SetColorizeErrors(true);
   }
 };
 
@@ -454,12 +455,24 @@ bool MojoKernel::checkExecutionFinished() {
 
   // Process the result.
   auto errorType = executionState->error.GetType();
-  if (errorType == eErrorTypeInvalid)
+  if (errorType == eErrorTypeInvalid) {
     sendOutput("stdout", executionState->result->GetObjectDescription());
-  else if (errorType != eErrorTypeGeneric)
-    sendOutput("stderr", executionState->error.GetCString());
-  else
+  } else if (errorType != eErrorTypeGeneric) {
+    StringRef executionError(executionState->error.GetCString());
+
+    // If the expression failed to parse, LLDB adds in an extra message, strip
+    // that out.
+    executionError.consume_front("expression failed to parse:\n");
+
+    // If the output is simply "unknown error", this indicates that LLDB didn't
+    // have a diagnostic for the specific problem. In these cases, the REPL
+    // ensures that the user is alerted to the problem, so there isn't a need to
+    // add the unhelpful error message.
+    if (executionError != "unknown error")
+      sendOutput("stderr", executionError);
+  } else {
     executionState->error.Clear();
+  }
 
   // Clean up the state now that we're done with it.
   executionState->executionThread.join();
