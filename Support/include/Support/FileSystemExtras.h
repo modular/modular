@@ -4,16 +4,23 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SUPPORT_TEMPFILE_H
-#define SUPPORT_TEMPFILE_H
+#ifndef SUPPORT_FILESYSTEM_EXTRAS_H
+#define SUPPORT_FILESYSTEM_EXTRAS_H
 
-#include "Support/ErrorOr.h"
+#include "LLVMForwardDecls.h"
 #include "Support/ForwardDecls.h"
 #include "llvm/ADT/StringRef.h"
 #include <cstddef>
 #include <filesystem>
 
 namespace M {
+
+/// Safely process creating and writing the file, taking into account that we
+/// may have different processes trying to produce this file in parallel.
+ErrorOr<std::filesystem::path>
+writeFileAtomically(const std::filesystem::path &filePath,
+                    llvm::function_ref<void(raw_ostream &)> writeContent);
+
 /// This class provides a tempfile implementation. The llvm::sys version has
 /// some really odd behavior that is tricky to manage, so we provide our own
 /// implementation.
@@ -51,4 +58,4 @@ private:
 };
 } // namespace M
 
-#endif // SUPPORT_TEMPFILE_H
+#endif // SUPPORT_FILESYSTEM_EXTRAS_H

@@ -10,7 +10,7 @@
 #include "KGEN/ExecutionEngine/ORCCASID.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "Support/ErrorOr.h"
-#include "Support/TempFile.h"
+#include "Support/FileSystemExtras.h"
 #include "llvm/ExecutionEngine/Orc/COFFPlatform.h"
 #include "llvm/ExecutionEngine/Orc/Core.h"
 #include "llvm/ExecutionEngine/Orc/DebugObjectManagerPlugin.h"

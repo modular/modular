@@ -9,11 +9,11 @@ add_modular_library(MSupport
   BuildInfo.cpp
   CommonCLOptions.cpp
   Error.cpp
+  FileSystemExtras.cpp
   HMAC.cpp
   Host.cpp
   MicroBenchmark.cpp
   Target.cpp
-  TempFile.cpp
   TimeProfiler.cpp
   URI.cpp
 
