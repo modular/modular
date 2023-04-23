@@ -42,10 +42,34 @@ lit.func @result_params5<() -> r0>() -> !lit.none {
   lit.end_func
 }
 
+lit.func @if_result_params1<cond: i1 -> r0>(%a: !lit.none) -> !lit.none {
+  // expected-error @below {{result parameters in '@parameter if' may not use fall-through else}}
+  kgen.param.if <cond> {
+    lit.param_return<1>  // expected-note {{one parameter return is here}}
+    kgen.param.yield
+  } else {
+    kgen.param.yield
+  }
+  lit.return %a : !lit.none
+  lit.end_func
+}
+
+lit.func @if_result_params2<cond: i1 -> r0>(%a: !lit.none) -> !lit.none {
+  // expected-error @below {{result parameters must be specified in 'if' and 'else' branches of '@parameter if'}}
+  kgen.param.if <cond> {
+    lit.param_return<1>  // expected-note {{one parameter return is here}}
+    kgen.param.yield
+  } else {
+    %0 = kgen.param.constant: !lit.none = <#lit.none>
+    kgen.param.yield
+  }
+  lit.return %a : !lit.none
+  lit.end_func
+}
 
 
-lit.func @if_result_params<() -> r0>(%a: !lit.none) -> !lit.none {
-  // expected-error @below {{result parameters are not defined along all branches}}
+lit.func @if_result_params3<cond: i1 -> r0>(%a: !lit.none) -> !lit.none {
+  // this is ok because the condition is known true.
   kgen.param.if <1> {
     lit.param_return<1>
     kgen.param.yield
