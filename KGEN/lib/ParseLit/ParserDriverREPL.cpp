@@ -551,7 +551,7 @@ MojoASTDeclRef MojoParserContext::parseREPLExpresion(
   // Wrap the expression text in a function so that we can execute it.
   std::string wrappedExprText =
       wrapExpressionText(replExprFnName, exprText, replVariables,
-                         /*isFirstREPLCell=*/!impl->lastREPLModuleDecl);
+                         /*isFirstREPLCell=*/impl->replModuleDecls.empty());
   listener.notifyWrappedExpr(wrappedExprText);
 
   // TODO: We should print the expression to a file if we need debug
@@ -573,14 +573,16 @@ MojoASTDeclRef MojoParserContext::parseREPLExpresion(
 
   // Before resolving everything in the REPL cell, resolve the body and import
   // as many of the previously defined REPL decls that we can.
-  if (impl->lastREPLModuleDecl) {
+  if (!impl->replModuleDecls.empty()) {
+    ASTDecl *lastModuleDecl = impl->replModuleDecls.back();
+
     // Explicitly import any decls from the previous REPL module that aren't
     // already defined in the current module. We can't use wildcards here
     // because we also want to import _ and other traditionally "hidden" decls
     // from previous cells.
     SmallVector<std::pair<StringAttr, const TinyPtrVector<ASTDecl *>>> fnDecls;
     auto &moduleChildDecls = moduleDecl.getDeclsInScope();
-    for (auto &[name, decls] : impl->lastREPLModuleDecl->getDeclsInScope()) {
+    for (auto &[name, decls] : lastModuleDecl->getDeclsInScope()) {
       auto existingDeclsIt = moduleChildDecls.find(name);
       if (existingDeclsIt == moduleChildDecls.end()) {
         impl->sharedState.declResolver->aliasDecls(decls, name, SMLoc(),
@@ -631,6 +633,13 @@ MojoASTDeclRef MojoParserContext::parseREPLExpresion(
       lookupSingleDecl(moduleDecl, "__mojo_repl_context__"));
 
   // Update the last REPL module decl.
-  impl->lastREPLModuleDecl = &moduleDecl;
+  impl->replModuleDecls.push_back(&moduleDecl);
   return MojoASTDeclRef(&lookupSingleDecl(moduleDecl, replExprFnName));
+}
+
+void MojoParserContext::removeLastREPLExpression() {
+  assert(!impl->replModuleDecls.empty() && "expected at least one REPL module");
+  ASTDecl *moduleDecl = impl->replModuleDecls.pop_back_val();
+  impl->detachedREPLModules.push_back(moduleDecl->getIfOperation());
+  moduleDecl->getIfOperation()->remove();
 }

@@ -333,9 +333,12 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
     // won't be shown on the next parse.
     auto filterFn = [](MojoDiagnostic &diag) { return diag.hadFixits(); };
     impl->typeSystem->broadcastDiagnostics(diagnosticManager, filterFn);
-
-    // Clear the diagnostic manager so we don't re-fix something.
     diagnosticManager.Clear();
+
+    // If the parser was actually successful, make sure to reset it so that we
+    // don't include the un-fixed module in the REPL history.
+    if (exprFnDecl)
+      parserContext.removeLastREPLExpression();
     return failure();
   }
 
@@ -351,6 +354,14 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
         static_cast<LLDBMojoREPLListener *>(context)->notifyDiagnostics(diag);
       },
       &listener);
+
+  // Functor containing various cleanup performed in the case of an error.
+  auto returnErrorCleanup = [&] {
+    // If we encounter an error anywhere during compilation, make sure the
+    // parser doesn't include this expression in the REPL history.
+    parserContext.removeLastREPLExpression();
+    return failure();
+  };
 
   // Create a clone of the parser module so that we can compile it without
   // thrashing on the current parser state.
@@ -377,7 +388,7 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   // Run the elaboration pipeline.
   if (failed(impl->passManager->run(*module))) {
     impl->typeSystem->errorLog("Elaboration failed");
-    return failure();
+    return returnErrorCleanup();
   }
 
   impl->typeSystem->dumpIR("Pre-elaboration module:\n{0}",
@@ -392,7 +403,7 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
       symtab, exportedSymbols, *impl->llvmContext);
   if (!impl->llvmModule) {
     impl->typeSystem->errorLog("Lowering to LLVM failed");
-    return failure();
+    return returnErrorCleanup();
   }
 
   impl->typeSystem->dumpIR("Pre-optimization LLVM module:\n{0}",
@@ -404,11 +415,15 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   if (targetMachineOr.isError()) {
     impl->typeSystem->errorLog("Failed to create the target machine: {0}",
                                targetMachineOr.getError());
-    return failure();
+    return returnErrorCleanup();
   }
 
-  return KGEN::runLLVMOptPasses(*impl->llvmModule, **targetMachineOr,
-                                impl->compilationOptions);
+  if (failed(KGEN::runLLVMOptPasses(*impl->llvmModule, **targetMachineOr,
+                                    impl->compilationOptions))) {
+    impl->typeSystem->errorLog("LLVM optimization failed");
+    return returnErrorCleanup();
+  }
+  return success();
 }
 
 Status MojoExpressionParser::prepareForExecution(
