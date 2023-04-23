@@ -199,7 +199,7 @@ class MojoKernel(Kernel):
         if not self.mojo_kernel:
             raise RuntimeError("Unable to initialize Mojo kernel.")
 
-        self._initialize_repl_matplotlib()
+        self.initialized_python = False
 
     def _send_internal_error_message(self):
         self.output_processor.send_message(
@@ -300,6 +300,11 @@ class MojoKernel(Kernel):
         """Execute a code cell."""
         # TODO: Better propagate errors from the kernel execution, process
         # provided arguments, etc.
+
+        # If we haven't initialized the python environment, do so now.
+        if not self.initialized_python:
+            self.initialized_python = True
+            self._initialize_repl_matplotlib()
 
         # Wait for the currently running execution to finish.
         def wait_for_execution():
