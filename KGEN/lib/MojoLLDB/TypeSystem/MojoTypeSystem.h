@@ -123,8 +123,11 @@ public:
     errorLog(llvm::formatv(fmt.data(), std::forward<Args>(args)...).str());
   }
 
-  /// Log a mojo diagnostic to the appropriate channel(s).
-  void logDiagnostic(const MojoDiagnostic &diag);
+  /// Broadcast the diagnostics within the given diagnostic manager. An optional
+  /// filter function can be provided to determine which diagnostics should be
+  /// included in the output.
+  void broadcastDiagnostics(lldb_private::DiagnosticManager &diagnosticManager,
+                            function_ref<bool(MojoDiagnostic &)> filter = {});
 
   /// This function provides a reasonable default message handling policy. Users
   /// that want different behavior are encouraged to provide their own handler.

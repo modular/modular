@@ -185,17 +185,36 @@ void MojoTypeSystem::errorLog(StringRef message) {
   flushIRDumpAndDebugLog();
 }
 
-void MojoTypeSystem::logDiagnostic(const MojoDiagnostic &diag) {
-  switch (diag.GetSeverity()) {
-  case eDiagnosticSeverityError:
-    errorLog(diag.GetMessage());
-    break;
-  case eDiagnosticSeverityWarning:
-    LLVM_FALLTHROUGH;
-  case eDiagnosticSeverityRemark:
-    debugLog(diag.GetMessage());
-    break;
+void MojoTypeSystem::broadcastDiagnostics(
+    DiagnosticManager &diagnosticManager,
+    function_ref<bool(MojoDiagnostic &)> filter) {
+  debugLog("Emitted diagnostics");
+
+  std::string msg;
+  llvm::raw_string_ostream msgOS(msg);
+  for (const auto &diag : diagnosticManager.Diagnostics()) {
+    auto *mojoDiag = dyn_cast<MojoDiagnostic>(diag.get());
+    if (!mojoDiag || (filter && !filter(*mojoDiag)))
+      continue;
+
+    switch (diag->GetSeverity()) {
+    case eDiagnosticSeverityError:
+      msgOS << "error: ";
+
+      // Log error diagnostics explicitly so they get captured in the error log,
+      // the full diagnostic message will be available in the debug logs.
+      errorLog(diag->GetMessage());
+      break;
+    case eDiagnosticSeverityWarning:
+      msgOS << "warning: ";
+      break;
+    case eDiagnosticSeverityRemark:
+      break;
+    }
+    msgOS << diag->GetMessage() << "\n";
   }
+  if (!msg.empty())
+    broadcastUserMessage(msg);
 }
 
 //===----------------------------------------------------------------------===//
