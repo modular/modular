@@ -172,12 +172,12 @@ namespace {
 class LLDBMojoREPLListener : public MojoParserREPLListener {
 public:
   LLDBMojoREPLListener(
-      MojoTypeSystem &typeSystem, MojoUserExpression &expr,
-      DiagnosticManager &diagnosticManager,
+      StringRef currentModuleName, MojoTypeSystem &typeSystem,
+      MojoUserExpression &expr, DiagnosticManager &diagnosticManager,
       const EvaluateExpressionOptions &options,
       SmallVectorImpl<std::pair<StringRef, mlir::Type>> &newPersistentVariables)
-      : typeSystem(typeSystem), expr(expr),
-        diagnosticManager(diagnosticManager), options(options),
+      : currentModuleName(currentModuleName), typeSystem(typeSystem),
+        expr(expr), diagnosticManager(diagnosticManager), options(options),
         newPersistentVariables(newPersistentVariables) {}
   ~LLDBMojoREPLListener() override = default;
 
@@ -200,9 +200,29 @@ public:
       typeSystem.debugLog("Diagnostic with fixits: {0}, message:\n{1}",
                           diag.getFixIts().size(), diag.getMessage());
 
+      // If this is a warning or remark from a previous module, ignore it. This
+      // removes problems with emitting multiple diagnostics for the same
+      // expression.
+      llvm::SourceMgr::DiagKind diagKind = diag.getKind();
+      if (diagKind == llvm::SourceMgr::DK_Warning ||
+          diagKind == llvm::SourceMgr::DK_Remark) {
+        if (MojoPersistentExpressionState::isExpressionModuleName(
+                diag.getFilename()) &&
+            diag.getFilename() != currentModuleName) {
+          lastDiagnosticIgnored = true;
+          continue;
+        }
+      }
+
+      // If this is a note and the previous diagnostic was ignored, ignore this
+      // as well.
+      if (diagKind == llvm::SourceMgr::DK_Note && lastDiagnosticIgnored)
+        continue;
+      lastDiagnosticIgnored = false;
+
       // Turn the diagnostic severity into LLDB's severity.
       DiagnosticSeverity severity;
-      switch (diag.getKind()) {
+      switch (diagKind) {
       case llvm::SourceMgr::DK_Error:
         severity = eDiagnosticSeverityError;
         break;
@@ -241,11 +261,15 @@ public:
   }
 
 private:
+  StringRef currentModuleName;
   MojoTypeSystem &typeSystem;
   MojoUserExpression &expr;
   DiagnosticManager &diagnosticManager;
   const EvaluateExpressionOptions &options;
   SmallVectorImpl<std::pair<StringRef, mlir::Type>> &newPersistentVariables;
+
+  /// A flag indicating if that the last processed diagnostic was ignored.
+  bool lastDiagnosticIgnored = false;
 };
 } // namespace
 
@@ -312,7 +336,7 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
 
   // Parse the expression.
   std::string expressionId = state.getNextExpressionModuleName();
-  LLDBMojoREPLListener listener(*impl->typeSystem, impl->expr,
+  LLDBMojoREPLListener listener(expressionId, *impl->typeSystem, impl->expr,
                                 diagnosticManager, impl->options,
                                 impl->newPersistentVariables);
   StringRef exprFnName = impl->expr.FunctionName();
