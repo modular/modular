@@ -23,7 +23,16 @@ static size_t getIndentationLevel(StringRef str) {
 
 /// Extract a DocString from a given decl, or None if there is no doc string.
 static std::optional<DocString> getDocString(ASTDecl &decl) {
+  // FIXME: This isn't right, this should be using Lexer::getStringLiteralValue.
   StringRef docStr = decl.getDocString();
+  if (!docStr.empty()) {
+    if (docStr.size() >= 6 &&
+        (docStr.starts_with("\"\"\"") || docStr.starts_with("'''")))
+      docStr = docStr.drop_front(3).drop_back(3);
+    else
+      docStr = docStr.drop_front(1).drop_back(1);
+  }
+
   if (docStr.empty())
     return std::nullopt;
   return DocString(docStr);
@@ -144,15 +153,6 @@ private:
           generate(*childDecl);
       }
     });
-  }
-
-  /// Extract a DocString from a given decl, or None if there is no doc
-  /// string.
-  std::optional<DocString> getDocString(ASTDecl &decl) {
-    StringRef docStr = decl.getDocString();
-    if (docStr.empty())
-      return std::nullopt;
-    return DocString(docStr);
   }
 
   /// Return if the given name should be hidden from the output.

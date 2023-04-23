@@ -114,13 +114,11 @@ importMojoFileImpl(SourceMgr &sourceMgr, SharedState &sharedState,
 
   Lexer lexer(sharedState, sourceBuf);
   auto startSMLoc = lexer.getToken().getLoc();
-  LexerCursor endFileCursor(
-      {Token::eof, StringRef(sourceBuf->getBufferEnd() + 1, 0), 0});
 
   // Create the top-level outer decl, which will contain all things we parse.
   ASTDecl &topLevelDecl = sharedState.declResolver->addDecl(
       *module, startSMLoc, StringAttr(), /*parentDecl=*/nullptr,
-      lexer.getCursor(), endFileCursor, -1);
+      lexer.getCursor(), LexerCursor::getEOF(sourceBuf), -1);
   sharedState.initialize(topLevelDecl);
 
   // If we are emitting debug info, create a file entry for this file.

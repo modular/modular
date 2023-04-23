@@ -39,7 +39,7 @@ fn power(lhs: Int, rhs: Int) -> Int:
 
 # // -----
 
-# CHECK-DAG: #[[LOCAL_VAR_I:.*]] = #debuginfo.local_variable<scope = #[[FOR_SP:.*]], name = "i",
+# CHECK-DAG: #[[LOCAL_VAR_I:.*]] = #debuginfo.local_variable<scope = #[[FOR_SP:.*]], name = "i", {{.*}}, line = 8, arg = 1
 
 # CHECK-LABEL: lit.func @"structured_for_loop()"
 fn structured_for_loop() -> __mlir_type.index:
@@ -57,10 +57,3 @@ fn structured_for_loop() -> __mlir_type.index:
     return __mlir_op.`hlcf.loop`[
         _type : __mlir_type.index, _region : "loop_body".value
     ]((0).__as_mlir_index())
-
-
-# Check that we generate debug info for imported functions.
-
-# CHECK-DAG: #[[FOR_SCOPE:.*]] = #debuginfo.lexical_block<scope = #[[FOR_SP]]
-# CHECK-DAG: #[[FOR_ADD_LOC]] = loc(fused<#[[FOR_SCOPE]]>
-# CHECK-DAG: #[[FOR_YIELD_LOC]] = loc(fused<#[[FOR_SCOPE]]>

@@ -53,11 +53,21 @@ bool Token::isKeyword() const {
 // Lexer
 //===----------------------------------------------------------------------===//
 
+Lexer::Lexer(SharedState &shared, StringRef curBuffer, const char *curPtr)
+    : SharedStateUser(shared), curBuffer(curBuffer), curPtr(curPtr),
+      curToken(Token::eof, StringRef(), 0), lastLineStart(nullptr),
+      lastLineIndent(0) {
+  lexToken();
+}
+
 Lexer::Lexer(SharedState &shared, const llvm::MemoryBuffer *buffer)
     : SharedStateUser(shared), curBuffer(buffer->getBuffer()),
-      curPtr(curBuffer.begin()),
-      // Prime the first token.
-      curToken(lexTokenImpl()) {}
+      curPtr(curBuffer.begin()), curToken(Token::eof, StringRef(), 0),
+      lastLineStart(nullptr), lastLineIndent(0) {
+
+  // Prime the first token.
+  lexToken();
+}
 
 static StringRef getBuffer(SharedState &sharedState,
                            const LexerCursor &cursor) {
@@ -76,16 +86,45 @@ Lexer::Lexer(SharedState &shared, const LexerCursor &cursor)
 }
 
 /// Emit an error message and return a Token::error token.
-Token Lexer::emitErrorAt(const char *loc, const Twine &message) {
+void Lexer::emitErrorAt(const char *loc, const Twine &message) {
   shared.diags.emitError(SMLoc::getFromPointer(loc), message);
-  return formToken(Token::error, loc, -1);
+  formToken(Token::error, loc, -1);
+}
+
+/// This function point is the funnel point for all tokens that are lexed.  This
+/// updates curToken and does other final checking.
+///
+/// The tokenStartOffset field is used to indicate tokens whose spelling is
+/// artificially shifted from the start of the token, notably things like
+/// `x y` are given a spelling of "x y" and don't include the `.
+void Lexer::formToken(Token::Kind kind, StringRef spelling, ssize_t indentation,
+                      size_t tokenStartOffset) {
+  // We're about to form a token.  If the token is at the start of line, make
+  // sure the leading indentation of this token and the previous start of line
+  // match in spelling, then update our current start-of-line marker.
+  if (indentation != -1) {
+    // Check that the leading indentation of these two tokens match.
+    const char *thisLineStart =
+        spelling.data() - indentation - tokenStartOffset;
+    if (memcmp(lastLineStart, thisLineStart,
+               std::min(indentation, lastLineIndent))) {
+      shared.diags.emitError(SMLoc::getFromPointer(spelling.data()),
+                             "leading indentation uses inconsistent whitespace "
+                             "(tabs and spaces) than previous line");
+    }
+
+    lastLineStart = thisLineStart;
+    lastLineIndent = indentation;
+  }
+
+  curToken = Token(kind, spelling, indentation);
 }
 
 //===----------------------------------------------------------------------===//
 // Lexer Implementation Methods
 //===----------------------------------------------------------------------===//
 
-Token Lexer::lexTokenImpl() {
+void Lexer::lexToken() {
   // This keeps track of the indentation of the current token from the start of
   // the line.  The first byte of the file starts with an indentation of zero,
   // but subsequent tokens always start out by following an existing token, so
@@ -95,9 +134,9 @@ Token Lexer::lexTokenImpl() {
   // This is a helper lambda for forming tokens with tokStart and indentation,
   // and optionally incrementing `curPtr` to make some of the conditionals below
   // ergonomic.
-  auto formToken = [&](Token::Kind kind, size_t incr = 0) -> Token {
+  auto formToken = [&](Token::Kind kind, size_t incr = 0) {
     curPtr += incr;
-    return this->formToken(kind, tokStart, indentation);
+    this->formToken(kind, tokStart, indentation);
   };
 
   while (true) {
@@ -301,7 +340,7 @@ Token Lexer::lexTokenImpl() {
 ///
 /// TODO: Python supports unicode in is_potential_identifier_start etc.
 ///
-Token Lexer::lexIdentifierOrKeyword(const char *tokStart, ssize_t indentation) {
+void Lexer::lexIdentifierOrKeyword(const char *tokStart, ssize_t indentation) {
   // Match the rest of the identifier regex: [0-9a-zA-Z_$]*
   while (llvm::isAlpha(*curPtr) || llvm::isDigit(*curPtr) || *curPtr == '_' ||
          *curPtr == '$')
@@ -315,20 +354,22 @@ Token Lexer::lexIdentifierOrKeyword(const char *tokStart, ssize_t indentation) {
 #include "TokenKinds.def"
                          .Default(Token::identifier);
 
-  return Token(kind, spelling, indentation);
+  formToken(kind, tokStart, indentation);
 }
 
 /// Lex an identifier with backtick syntax, e.g. `ide nt if ier` or `fn`.  These
 /// may contain any character other than vertical whitespace and `'s in them and
 /// are otherwise interpreted verbatim as an identifier.
-Token Lexer::lexBacktickIdentifier(const char *tokStart, ssize_t indentation) {
+void Lexer::lexBacktickIdentifier(const char *tokStart, ssize_t indentation) {
   assert(curPtr[-1] == '`');
   while (true) {
     switch (*curPtr++) {
     case '`':
       // Found the end character.
-      return Token(Token::identifier,
-                   StringRef(tokStart + 1, curPtr - tokStart - 2), indentation);
+      formToken(Token::identifier,
+                StringRef(tokStart + 1, curPtr - tokStart - 2), indentation,
+                /*tokenOffset*/ 1);
+      return;
     case '\n':
     case '\r':
     case '\v':
@@ -390,7 +431,7 @@ static bool isOctalDigit(char C) { return C >= '0' && C <= '7'; }
 ///                      quote>
 /// longstringchar  ::=  <any source character except "\">
 /// stringescapeseq ::=  "\" <any source character>
-Token Lexer::lexString(const char *tokStart, ssize_t indentation) {
+void Lexer::lexString(const char *tokStart, ssize_t indentation) {
   curPtr = tokStart;
   bool isRaw = false;
   bool isTripleQuote = false;
@@ -444,7 +485,7 @@ Token Lexer::lexString(const char *tokStart, ssize_t indentation) {
                                      *curPtr)) {
         emitErrorAt(curPtr - 1, "invalid escape sequence");
       } else {
-        if (*curPtr == '\r' && curPtr[1] == '\n') // Windows new line
+        if (*curPtr == '\r' && curPtr[1] == '\n') // Windows newline
           ++curPtr;
         ++curPtr;
       }
@@ -452,15 +493,15 @@ Token Lexer::lexString(const char *tokStart, ssize_t indentation) {
     case '\'':
     case '"':
       // end of short strings.
-      if (curPtr[-1] == quoteChar && !isTripleQuote) {
-        --curPtr;
-        goto done;
-      }
-      // end of long string
-      if ((curPtr[-1] == quoteChar && curPtr[0] == quoteChar &&
-           curPtr[1] == quoteChar)) {
-        ++curPtr;
-        goto done;
+      if (curPtr[-1] == quoteChar) {
+        if (!isTripleQuote)
+          return formToken(Token::string, tokStart, indentation);
+
+        // end of long string
+        if (curPtr[0] == quoteChar && curPtr[1] == quoteChar) {
+          curPtr += 2;
+          return formToken(Token::string, tokStart, indentation);
+        }
       }
       break;
     case '\n':
@@ -468,26 +509,15 @@ Token Lexer::lexString(const char *tokStart, ssize_t indentation) {
       // newline isn't allowed in a short string.
       if (!isTripleQuote)
         return emitErrorAt(tokStart, "unterminated string");
-      // Skip new line
+      // Skip newline.
       break;
     default:
       // Skip over other characters.
       break;
     }
   }
-done:
-  if (curPtr == curBuffer.end())
-    return emitErrorAt(tokStart, "unterminated string");
-  ++curPtr;
 
-  if (!isTripleQuote)
-    return formToken(Token::string, tokStart, indentation);
-
-  // Use only one character quotes: strip the rest when forming the final
-  // string token.
-  tokStart += 2;
-  return {Token::string, StringRef(tokStart, curPtr - tokStart - 2),
-          indentation};
+  return emitErrorAt(tokStart, "unterminated string");
 }
 
 /// Lex a integer number literal.
@@ -510,7 +540,7 @@ done:
 ///   same thing for  bininteger, octinteger and hexinteger
 /// - Python warns if the numeric literal is immediately followed by
 ///   other keyword or identifier.
-Token Lexer::lexInteger(const char *tokStart, ssize_t indentation) {
+void Lexer::lexInteger(const char *tokStart, ssize_t indentation) {
   assert(llvm::isDigit(curPtr[-1]));
 
   if (curPtr[-1] == '0') {
@@ -566,7 +596,7 @@ Token Lexer::lexInteger(const char *tokStart, ssize_t indentation) {
   if (*curPtr == '.' || *curPtr == 'e' || *curPtr == 'E' || *curPtr == 'j' ||
       *curPtr == 'J')
     return lexFloat(tokStart, indentation);
-  return formToken(Token::integer, tokStart, indentation);
+  formToken(Token::integer, tokStart, indentation);
 }
 
 /// Lex a float number literal.
@@ -582,7 +612,7 @@ Token Lexer::lexInteger(const char *tokStart, ssize_t indentation) {
 /// - Python uses the following more restrictive productions, which
 ///   disallows `1__9_` for example:
 ///   digitpart     ::=  digit (["_"] digit)*
-Token Lexer::lexFloat(const char *tokStart, ssize_t indentation) {
+void Lexer::lexFloat(const char *tokStart, ssize_t indentation) {
   assert(*tokStart == '.' || llvm::isDigit(*tokStart));
   // lexFloat could have been called from lexInteger so reset curPtr to undo
   // previous increments done by lexInteger
@@ -608,7 +638,7 @@ Token Lexer::lexFloat(const char *tokStart, ssize_t indentation) {
     while (llvm::isDigit(*curPtr) || *curPtr == '_')
       ++curPtr;
   }
-  return formToken(Token::float_num, tokStart, indentation);
+  formToken(Token::float_num, tokStart, indentation);
 }
 
 static std::string filterUnderscores(StringRef spelling) {
@@ -639,14 +669,19 @@ APFloat Lexer::getFloatLiteralValue(StringRef spelling) {
 
 /// Return the a string value of `spelling` after the escape sequences are
 /// handled. `spelling` is known to have been lexed as a string literal token.
-std::string Lexer::getStringLiteralValue(StringRef spelling) {
+std::string Lexer::getStringLiteralValue(StringRef bytes) {
   bool isRaw = false;
-  if (spelling[0] == 'r' || spelling[0] == 'R') {
+  if (bytes[0] == 'r' || bytes[0] == 'R') {
     isRaw = true;
-    spelling = spelling.drop_front();
+    bytes = bytes.drop_front();
   }
-  // Drop quotes.
-  StringRef bytes = spelling.drop_front().drop_back();
+
+  // Drop quotes and triple quotes.
+  if (bytes.size() >= 6 &&
+      (bytes.starts_with("\"\"\"") || bytes.starts_with("'''")))
+    bytes = bytes.drop_front(3).drop_back(3);
+  else
+    bytes = bytes.drop_front().drop_back();
 
   std::string result;
   result.reserve(bytes.size());
@@ -785,9 +820,7 @@ SMLoc Lexer::findEndOfPreviousLine(SMLoc loc) const {
 
     // Scan from the start of the line to the current position.
     auto *lineStart = curBuffer.data() + nextNewLine;
-    LexerCursor cursor({Token::plus, StringRef(lineStart, 0), 0});
-    Lexer tmpLexer(shared, cursor);
-    tmpLexer.lexToken();
+    Lexer tmpLexer(shared, curBuffer, lineStart);
 
     // If the token is on this line, then there was at least one token on this
     // line.  Report the error at the end of the line.
@@ -798,10 +831,6 @@ SMLoc Lexer::findEndOfPreviousLine(SMLoc loc) const {
     buffer = buffer.take_front(nextNewLine);
   }
 }
-
-Lexer::Lexer(SharedState &shared, StringRef curBuffer, const char *curPtr)
-    : SharedStateUser(shared), curBuffer(curBuffer), curPtr(curPtr),
-      curToken(lexTokenImpl()) {}
 
 /// Given a valid pointer into a source buffer for some token, return the
 /// length of the token by re-lex'ing it.  This is efficient.

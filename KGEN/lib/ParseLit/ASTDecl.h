@@ -122,7 +122,7 @@ public:
   void setDocString(Token docStringTok) {
     assert(docStringTok.is(Token::string) &&
            "doc-string must be a string literal");
-    this->docString = docStringTok.getSpelling().drop_front().drop_back();
+    this->docString = docStringTok.getSpelling();
   }
 
   //===--------------------------------------------------------------------===//
