@@ -17,3 +17,13 @@ let var = 10
 let value = 25
 print(value)
 # CHECK: 25
+
+# Test an error diagnosed in the MLIR pass pipeline, not during the parser.
+fn foo() -> Int:
+    pass
+# CHECK: return expected at end of function with results
+
+# Test an error diagnosed in the MLIR pass pipeline, not during the parser.
+fn foo() -> Int:
+    return 0
+# CHECK-NOT: return expected at end of function with results

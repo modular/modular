@@ -176,6 +176,11 @@ public:
                      StringRef exprText, StringRef replExprFnName,
                      ArrayRef<std::pair<StringRef, Type>> replVariables);
 
+  /// Remove the previously parsed REPL expression. This allows for removing an
+  /// erroneous expression when it is only detected as invalid after it has been
+  /// parsed.
+  void removeLastREPLExpression();
+
 protected:
   /// A struct representing the internal state of the parser.
   struct Impl;

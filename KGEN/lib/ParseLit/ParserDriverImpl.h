@@ -32,8 +32,8 @@ struct MojoParserContext::Impl {
   // REPL State
   //===--------------------------------------------------------------------===//
 
-  /// The decl of the last REPL module to be parsed.
-  KGEN::LIT::ASTDecl *lastREPLModuleDecl = nullptr;
+  /// The decls of each REPL module that have been successfully parsed.
+  SmallVector<KGEN::LIT::ASTDecl *> replModuleDecls;
 
   /// The detached IR created for invalid REPL modules.
   /// TODO: We should restructure the parser to make it clean to drop parsed
