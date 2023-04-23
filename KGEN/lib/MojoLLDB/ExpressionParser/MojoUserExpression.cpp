@@ -325,7 +325,7 @@ static void importPythonSymbolsIntoMojo(StringRef pythonExpr,
       }
     } else if (defRegex.match(line, &matches) ||
                valueRegex.match(line, &matches)) {
-      mojoExprOS << llvm::formatv("var {0} = {1}.{0}\n", matches[1],
+      mojoExprOS << llvm::formatv("let {0} = {1}.{0}\n", matches[1],
                                   moduleName);
     }
   }
@@ -381,13 +381,13 @@ sys.modules['{1}'] = expr_module
 
   // If we haven't initialized python yet, do that as part of this expression.
   if (!state.hasInitializedPython())
-    mojoExprOS << "var __repl_python__ = Python()\n\n";
+    mojoExprOS << "let __repl_python__ = Python()\n\n";
 
   // Evaluate the wrapped python expression.
   mojoExprOS << "__repl_python__.eval(\"";
   mojoExprOS.write_escaped(wrappedPythonExpr);
   mojoExprOS << "\")\n\n"
-             << llvm::formatv("var {0} = Python.import_module(\"{0}\")\n\n",
+             << llvm::formatv("let {0} = Python.import_module(\"{0}\")\n\n",
                               moduleName);
 
   // Import the interesting top-level symbols from the python module into the
