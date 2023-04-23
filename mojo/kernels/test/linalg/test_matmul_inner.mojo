@@ -79,10 +79,10 @@ fn matmul_inner_loop(
 fn test_micro_kernel():
     print("== test_micro_kernel")
 
-    var a = NDBuffer[2, DimList(M, K), type].aligned_stack_allocation[128]()
+    let a = NDBuffer[2, DimList(M, K), type].aligned_stack_allocation[128]()
     a.fill(1)
 
-    var b_packed = NDBuffer[
+    let b_packed = NDBuffer[
         3,
         DimList(
             N // tile_inner_size,
@@ -93,7 +93,7 @@ fn test_micro_kernel():
     ].aligned_stack_allocation[128]()
     b_packed.fill(1)
 
-    var c = NDBuffer[2, DimList(M, N), type].aligned_stack_allocation[128]()
+    let c = NDBuffer[2, DimList(M, N), type].aligned_stack_allocation[128]()
     c.fill(0)
 
     matmul_inner_loop(c, a, b_packed)
