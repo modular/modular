@@ -786,9 +786,14 @@ ParseResult StmtParser::parseForStmt(size_t curIndent) {
   // returns a type that defines __len__ and __next__
   StringAttr target = StringAttr::get(getContext(), getToken().getSpelling());
   SMLoc identifierLocation;
-  if (parseToken(Token::identifier, "expected identifier for target in for",
-                 &identifierLocation))
-    return failure();
+
+  // FIXME: This needs to parse this as an expression and then handle it like a
+  // destructuring pattern.
+  if (!consumeIf(Token::kw__, &identifierLocation)) {
+    if (parseToken(Token::identifier, "expected identifier for target in for",
+                   &identifierLocation))
+      return failure();
+  }
   if (parseToken(Token::kw_in, "expected 'in' after target identifier. Note "
                                "that target lists are not yet supported."))
     return failure();

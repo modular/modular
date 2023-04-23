@@ -81,7 +81,9 @@ public:
   ParseResult parseStarExpression(ExprNode *&result,
                                   Precedence minPrec = Precedence::kLowestExpr);
 
-  ExprNode *getNoneExpr(SMLoc loc) { return alloc<NoneLiteralNode>(loc); };
+  ExprNode *getNoneExpr(SMLoc loc) {
+    return alloc<SimpleLiteralNode>(ExprNode::kNoneLiteral, loc);
+  };
 
 private:
   template <typename T, typename... Args>
@@ -382,6 +384,7 @@ static bool isPrimaryExprToken(Token::Kind tokKind) {
   case Token::kw_False:
   case Token::kw_True:
   case Token::kw_Self:
+  case Token::kw__:
   case Token::float_num:
   case Token::string:
   case Token::kw_None:
@@ -450,8 +453,14 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
     consumeToken(Token::kw_True);
     break;
   case Token::kw_Self:
-    result = alloc<SelfLiteralNode>(getToken().getLoc());
+    result =
+        alloc<SimpleLiteralNode>(ExprNode::kSelfLiteral, getToken().getLoc());
     consumeToken(Token::kw_Self);
+    break;
+  case Token::kw__:
+    result = alloc<SimpleLiteralNode>(ExprNode::kDiscardLiteral,
+                                      getToken().getLoc());
+    consumeToken(Token::kw__);
     break;
   case Token::float_num: // primary -> literal -> floatnumber
     result = alloc<FloatLiteralNode>(getToken().getSpelling());

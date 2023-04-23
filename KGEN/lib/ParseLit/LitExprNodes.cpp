@@ -352,7 +352,26 @@ AnyValue BoolLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
                                      CallSyntax::kImplicitConvert, dest);
 }
 
-AnyValue SelfLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
+AnyValue SimpleLiteralNode::emitIR(ValueDest &dest,
+                                   ExprEmitter &emitter) const {
+  if (kind == kNoneLiteral)
+    return emitter.emitResult(emitter.shared.getNoneAttr(), this, dest);
+
+  // Discard pattern is a DLValue.
+  if (kind == kDiscardLiteral) {
+    // We can only create an implicitly declared value if we have a contextual
+    // type to infer from.
+    ASTType initializerType = dest.getIfLValueInitializerType();
+    if (!initializerType) {
+      emitter.emitError(getLoc(),
+                        "discard pattern requires an initializing expression");
+      return {};
+    }
+    DLValue result(LLCL::RCRef<DiscardDLValue>::create(initializerType, this));
+    return emitter.emitResult(std::move(result), this, dest);
+  }
+
+  assert(kind == kSelfLiteral && "Unknown simple literal kind");
   // Self resolves to the type of the enclosing structure type.
   ASTDecl *structDecl = &emitter.declScope;
   while (!isa<StructDeclOp>(*structDecl)) {
@@ -402,10 +421,6 @@ AnyValue StringLiteralNode::emitIR(ValueDest &dest,
                                      CallSyntax::kImplicitConvert, dest);
 }
 
-AnyValue NoneLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
-  return emitter.emitResult(emitter.shared.getNoneAttr(), this, dest);
-}
-
 /// Emit IR for an unqualified declaration reference "x" looked up in current
 /// context.
 AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
@@ -427,22 +442,6 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return builder.create<VarLetDeclOp>(loc, declIRType, nameAttr, isVar,
                                         isSynth);
   };
-
-  // If the unresolved name is `_`, then we have a discard pattern.  Materialize
-  // a destination to store into.  We cannot just discard the result in
-  // generality, because the value may have a destructor that needs to be run.
-  if (lookup.isFailure() && spelling == "_" && emitter.builder) {
-    // We can only create an implicitly declared value if we have a contextual
-    // type to infer from.
-    if (!dest.getIfLValueInitializerType()) {
-      emitter.emitError(getLoc(),
-                        "discard pattern requires an initializing expression");
-      return {};
-    }
-    auto result = SLValue(
-        createVarDecl(*emitter.builder, /*isVar=*/false, /*isSynth=*/true));
-    return emitter.emitResult(result, this, dest);
-  }
 
   // If that lookup failed, but we can synthesize a variable declaration in this
   // scope, do that.  We can only do this if there is a varDeclCursor,

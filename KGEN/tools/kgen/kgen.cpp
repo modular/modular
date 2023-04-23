@@ -218,7 +218,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   SmallVector<std::string> includedFiles;
 
   if (inputFileName.ends_with(".mojo") || inputFileName.ends_with(".🔥")) {
-    TimingScope litScope = timing.nest("Import Lit");
+    TimingScope litScope = timing.nest("Import Mojo source");
     MojoParserConfig config(ctx, *runtime, compilationOptions);
     config.useMLIRDiagnostics = clOptions.enableMLIRDiagnostics;
     theModule = importMojoFile(mgr, config, litScope, &includedFiles);

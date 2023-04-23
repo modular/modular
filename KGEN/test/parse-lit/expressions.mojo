@@ -80,8 +80,8 @@ fn memoryOnlyOps(a&: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%v2, %a)
   let v2 : MemoryOnlyPair = a
 
-  # CHECK-NEXT: %_ = lit.varlet.decl "_", var = false
-  # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%_, %a)
+  # CHECK-NEXT: %anonymous2A = lit.varlet.decl
+  # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%anonymous2A, %a)
   _ = a
 
   a  # expected-warning {{'MemoryOnlyPair' value is unused}}
@@ -117,12 +117,12 @@ fn memoryOnlyOps(a&: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%mpFloat, [[V2X]])
   let mpFloat : MemoryOnlyF64 = v2.x
 
-  # CHECK: [[TMP:%.*]] = lit.varlet.decl "_", var = false
+  # CHECK: [[TMP:%.*]] = lit.varlet.decl "anonymous*"
   # CHECK-NEXT: kgen.call @{{.*}}inferred_function_with_memory_result{{.*}}([[TMP]]
   _ = inferred_function_with_memory_result(SIMD[DType.f32.value, 4]())
 
   # Memory-only default argument with memory-only result.
-  # CHECK-NEXT: [[TMP:%.*]] = lit.varlet.decl "_", var = false
+  # CHECK-NEXT: [[TMP:%.*]] = lit.varlet.decl "anonymous*"
   # CHECK-NEXT: %[[C42:.*]] = {{.*}}constant: {{.*}}Int = {{.*}} 42
   # CHECK-NEXT: kgen.call @{{.*}}__init__{{.*}}([[TMP]], %[[C42]])
   _ = MemoryOnlyInt()
@@ -310,8 +310,6 @@ struct Boolish:
 fn unary(a: Bool, b: Int, c: Boolish):
   # CHECK: %0 = kgen.call @"$Bool"::@Bool::@"__bool__($Bool::Bool)"(%a)
   # CHECK: %1 = kgen.call @"$Bool"::@Bool::@"__invert__($Bool::Bool)"(%0)
-  # CHECK: %_ = lit.varlet.decl "_", var = false
-  # CHECK: pop.store %1, %_
   _ = not a
 
   # CHECK: [[EQ:%.*]] = kgen.call @"$Int"::@Int::@"__eq__($Int::Int,$Int::Int)"
@@ -406,8 +404,8 @@ fn listValues():
 # CHECK-LABEL: lit.func @"initializers
 fn initializers():
   # CHECK: %0 = kgen.param.constant: @"$Int"::@Int = <#lit.struct<{value: scalar<index> = 42}>>
-  # CHECK: pop.store %0, %_
-  _ = Int{value: (42).value}
+  # CHECK: lit.letreg.decl "a" = %0
+  let a = Int{value: (42).value}
 
   # Issue #7343: Trailing comma ok too.
   _ = Int{value: (42).value,}
@@ -501,7 +499,6 @@ fn patterns():
   # CHECK: [[TMP:%.*]] = pop.load %someInt
 
   (_) = 1.0
-  # CHECK: = kgen.param.constant: {{.*}}FloatLiteral = <{{.*}}"1"
 
   # CHECK: %someF32 = lit.varlet.decl "someF32", var = true
   # CHECK: [[F32:%.*]] = pop.load %someF32

@@ -218,6 +218,15 @@ BaseDLValue::~BaseDLValue() {
 }
 
 //===----------------------------------------------------------------------===//
+// DiscardDLValue
+//===----------------------------------------------------------------------===//
+
+DiscardDLValue::DiscardDLValue(ASTType elementType, const ExprNode *expr)
+    : BaseDLValue(elementType, expr) {}
+
+void DiscardDLValue::print(raw_ostream &os) const { os << "discard pattern"; }
+
+//===----------------------------------------------------------------------===//
 // StoredAttributeRefDLValue
 //===----------------------------------------------------------------------===//
 

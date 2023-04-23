@@ -187,7 +187,7 @@ fn useResultParams():
   _ = hasResultParam
 
   # expected-error-re @+1 {{cannot use parameterized function of type 'fn[Int]() -> None' without binding all its parameters}}
-  _ = hasInputParam
+  var f1 = hasInputParam
 
   # expected-error @+1 {{invalid call to 'hasInputParam': callee expects 1 input parameter but 0 were provided}}
   hasInputParam()

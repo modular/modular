@@ -341,14 +341,10 @@ fn nestedFnInLoop():
 # CHECK-SAME:  %b: !pop.pointer<@"$decls"::@StructWithInit> borrow_in_mem)
 fn ownedConventionMem(owned a: StructWithInit, borrowed b: StructWithInit):
   # CHECK: [[AX:%.*]] = lit.struct.gep %a[x]
-  # CHECK: %_ = lit.varlet.decl
   # CHECK: %1 = pop.load [[AX]]
-  # CHECK: pop.store %1, %_
   _ = a.x
   # CHECK: [[BY:%.*]] = lit.struct.gep %b[y]
-  # CHECK: %__0 = lit.varlet.decl
-  # CHECK: %3 = pop.load [[BY]]
-  # CHECK: pop.store %3, %__0
+  # CHECK: = pop.load [[BY]]
   _ = b.y
 
   # It is ok to mutate owned values.
@@ -378,13 +374,9 @@ fn ownedConventionReg(owned a: RPStructWithInit,
   # CHECK: pop.store %a, %a_0 : !pop.pointer<@"$decls"::@RPStructWithInit>
 
   # CHECK: [[AX:%.*]] = lit.struct.gep %a_0[x]
-  # CHECK: %_ = lit.varlet.decl
-  # CHECK: %1 = pop.load [[AX]]
-  # CHECK: pop.store %1, %_
+  # CHECK:  = pop.load [[AX]]
   _ = a.x
   # CHECK: [[BY:%.*]] = lit.struct.extract %b[y]
-  # CHECK: %__1 = lit.varlet.decl
-  # CHECK: pop.store [[BY]], %__1
   _ = b.y
 
   # CHECK: %t = lit.letreg.decl "t" = %triv
