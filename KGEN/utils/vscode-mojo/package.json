@@ -3,6 +3,7 @@
   "displayName": "Mojo",
   "description": "Mojo Language Extension",
   "version": "0.0.1",
+  "icon": "icon.png",
   "engines": {
     "vscode": "^1.74.0"
   },
@@ -42,6 +43,10 @@
     "languages": [
       {
         "id": "mojo",
+        "icon": {
+          "light": "icon.png",
+          "dark": "icon.png"
+        },
         "aliases": [
           "mojo"
         ],
