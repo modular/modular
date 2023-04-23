@@ -110,6 +110,16 @@ static LogicalResult findParamReturn(Region &region,
 // outside the 'if'.
 static FailureOr<std::optional<ResultParams>>
 checkParamIfResultBindings(ParamIfOp ifOp, unsigned &nameCounter) {
+  // If the parameter if is on a static constant, then only follow one side.
+  if (auto cond = dyn_cast<BoolAttr>(ifOp.getCond())) {
+    Region &liveRegion =
+        cond.getValue() ? ifOp.getThenRegion() : ifOp.getElseRegion();
+    std::optional<ResultParams> params;
+    if (failed(findParamReturn(liveRegion, params, nameCounter)))
+      return failure();
+    return params;
+  }
+
   // Try to find a param return in each branch.
   std::optional<ResultParams> thenParams, elseParams;
   if (failed(findParamReturn(ifOp.getThenRegion(), thenParams, nameCounter)) ||
@@ -117,9 +127,24 @@ checkParamIfResultBindings(ParamIfOp ifOp, unsigned &nameCounter) {
     return failure();
 
   // They must either both have a return, or neither.
-  if (thenParams.has_value() != elseParams.has_value())
-    return emitError(ifOp.getLoc(),
-                     "result parameters are not defined along all branches");
+  if (thenParams.has_value() != elseParams.has_value()) {
+    // If the else block is empty, then the user probably wrote a fallthrough,
+    // which isn't going to work.
+    const char *message;
+    if (isa<ParamYieldOp>(ifOp.getElseRegion().front().front())) {
+      message =
+          "result parameters in '@parameter if' may not use fall-through else";
+    } else {
+      message = "result parameters must be specified in 'if' and 'else' "
+                "branches of '@parameter if'";
+    }
+    auto diag = emitError(ifOp.getLoc(), message);
+    if (thenParams)
+      diag.attachNote(thenParams->loc) << "one parameter return is here";
+    if (elseParams)
+      diag.attachNote(elseParams->loc) << "one parameter return is here";
+    return failure();
+  }
 
   // If there was no definition, it must be elsewhere.
   if (!thenParams)

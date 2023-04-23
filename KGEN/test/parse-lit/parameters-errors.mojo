@@ -215,14 +215,12 @@ fn pass_simd():
     # expected-error @below {{cannot be converted from 'SIMD[f32, bar[8](8)]' to 'SIMD[f32, 8]'}}
     take_simd8(SIMD[DType.f32, bar[8](8)]())
 
-
-##===----------------------------------------------------------------------===##
-# First-class functions as parameters.
-##===----------------------------------------------------------------------===##
-
 ##===----------------------------------------------------------------------===##
 # Alias resolution
 ##===----------------------------------------------------------------------===##
+
+
+alias x : Int # expected-error {{parameter results may only be declared in a function}}
 
 fn testAliases(variable: Int):
   # expected-error @+1 {{declaration must have either a type or an initializer}}
@@ -234,9 +232,6 @@ fn testAliases(variable: Int):
   # TODO(Issue #5975): This isn't getting resolved before the end of body.
   # xpected-error @+1 {{alias 'NotInitialized' was never defined by a result parameter}}
   alias NotInitialized : __mlir_type.index
-
-  if variable != 0:
-    alias x : Int # expected-error {{parameter results may only be declared in a function}}
 
 struct BadAliasStruct:
   alias x: Int # expected-error {{parameter results may only be declared in a function}}

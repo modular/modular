@@ -2439,7 +2439,7 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
 
     // `alias x: Int` is a forward declaration of a return parameter from a
     // function call, so it must occur in a function.
-    if (!isa<LIT::FuncOp>(paramDeclOp->getParentOp())) {
+    if (!isa<LIT::FuncOp>(*decl.getParentDecl())) {
       p.emitError(paramDeclOp.getLoc(),
                   "parameter results may only be declared in a function");
       return failure();
