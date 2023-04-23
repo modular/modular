@@ -158,8 +158,7 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
                                        /*genLocalReproducer=*/true);
   }
 
-  if (!inputFileName.ends_with(".lit") && !inputFileName.ends_with(".mojo") &&
-      !inputFileName.ends_with(".🔥"))
+  if (!inputFileName.ends_with(".mojo") && !inputFileName.ends_with(".🔥"))
     return clOptions.reportError("expected a Mojo file");
   TimingScope mojoScope = timing.nest("Import Mojo");
 

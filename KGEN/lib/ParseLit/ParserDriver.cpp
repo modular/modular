@@ -97,7 +97,7 @@ const KGEN::CompilationOptions &MojoParserContext::getCompilationOptions() {
 // Driver
 //===----------------------------------------------------------------------===//
 
-/// Parse the specified .lit file into the specified MLIR context. Returns the
+/// Parse the specified Mojo file into the specified MLIR context. Returns the
 /// resultant IR, and the decl for the module represented by the input file.
 static std::tuple<OwningOpRef<mlir::ModuleOp>, ASTDecl *>
 importMojoFileImpl(SourceMgr &sourceMgr, SharedState &sharedState,

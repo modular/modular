@@ -824,7 +824,7 @@ def format_file_in_place(
         mode = replace(mode, is_pyi=True)
     elif src.suffix == ".ipynb":
         mode = replace(mode, is_ipynb=True)
-    elif src.suffix in (".lit", ".mojo", ".🔥"):
+    elif src.suffix in (".mojo", ".🔥"):
         mode = replace(mode, target_versions={TargetVersion.MOJO})
 
         # If we're formatting a lit file, we need to run with --fast, as `ast`

@@ -81,9 +81,9 @@ fn main():
     my_list[1] = 23
     my_list[2] = 19
 
-    # CHECK: %$RANGE = lit.varlet.decl {{.*}} : <@"$lit-for"::@my_iter>
+    # CHECK: %$RANGE = lit.varlet.decl {{.*}} : <@"$for-stmt"::@my_iter>
     # CHECK: %14 = kgen.call @{{.*}}__iter__{{.*}}(%my_list)
-    # CHECK: pop.store %14, %$RANGE : !pop.pointer<@"$lit-for"::@my_iter>
+    # CHECK: pop.store %14, %$RANGE : !pop.pointer<@"$for-stmt"::@my_iter>
     for item in my_list:
         printInt(item)
 
