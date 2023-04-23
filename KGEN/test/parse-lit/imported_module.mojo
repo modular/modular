@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# This file is imported by 'import.lit' as part of testing import functionality,
+# This file is imported by 'import.mojo' as part of testing import functionality,
 # and does not include any useful testing by itself.
 
 from SIMD import F64

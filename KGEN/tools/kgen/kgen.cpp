@@ -217,8 +217,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // dependency file.
   SmallVector<std::string> includedFiles;
 
-  if (inputFileName.ends_with(".lit") || inputFileName.ends_with(".mojo") ||
-      inputFileName.ends_with(".🔥")) {
+  if (inputFileName.ends_with(".mojo") || inputFileName.ends_with(".🔥")) {
     TimingScope litScope = timing.nest("Import Lit");
     MojoParserConfig config(ctx, *runtime, compilationOptions);
     config.useMLIRDiagnostics = clOptions.enableMLIRDiagnostics;

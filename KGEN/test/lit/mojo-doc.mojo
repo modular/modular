@@ -12,7 +12,7 @@ spills over to the next line."""
 
 
 # CHECK:  "kind": "module",
-# CHECK:  "name": "lit-doc",
+# CHECK:  "name": "mojo-doc",
 # CHECK:  "summary": "This is a module summary, that spills over to the next line.",
 # CHECK:  "description": "",
 # CHECK:  "children": [

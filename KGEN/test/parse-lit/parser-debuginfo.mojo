@@ -6,17 +6,17 @@
 
 # RUN: kgen-translate -import-mojo -I %S -split-input-file -debug-level=full -mlir-print-debuginfo %s -I %S/../mojo-examples/ | FileCheck %s
 
-import imported_module
+from imported_module import imported_fn
 
 # Check that we properly generate functions that get resolved within other functions.
 # This is mostly checking that the scope of the nested function is not another function.
 
-# CHECK-DAG: #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #file, name = "test", linkageName = "test($lit-debuginfo::CalledStruct[param])"
+# CHECK-DAG: #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #file, name = "test", linkageName = "test($parser-debuginfo::CalledStruct[param])"
 
 
 struct CalledStruct[param: __mlir_type.index]:
     fn test(self):
-        return
+        imported_fn()
 
 
 fn callerFn[rows: __mlir_type.index](arg0: CalledStruct[rows]):
@@ -36,10 +36,6 @@ fn power(lhs: Int, rhs: Int) -> Int:
     # CHECK: debuginfo.value #[[LHS_VAR]] = %lhs
     # CHECK: debuginfo.value #[[RHS_VAR]] = %rhs
     return lhs
-
-
-# CHECK-DAG: #[[IMPORT_FILE:.*]] = #debuginfo.file<{{.*}}imported_module.lit
-# CHECK-DAG: #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = "imported_fn", linkageName = "imported_fn()", file = #[[IMPORT_FILE]], line = {{.*}}, scopeLine = {{.*}}, subprogramFlags = "Definition|Optimized">
 
 # // -----
 

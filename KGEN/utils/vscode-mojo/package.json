@@ -43,11 +43,9 @@
       {
         "id": "mojo",
         "aliases": [
-          "lit",
           "mojo"
         ],
         "extensions": [
-          ".lit",
           ".mojo",
           ".🔥"
         ],

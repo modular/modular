@@ -462,11 +462,6 @@ resolveModulePath(StringRef moduleName,
     std::string path = (Twine(includeDir) + "/" + moduleName + ".mojo").str();
     if (std::filesystem::exists(path))
       return path;
-    // TODO: This is temporary to support both .mojo and .lit files. This will
-    // be removed once we have fully migrated to .mojo files.
-    std::string litPath = (Twine(includeDir) + "/" + moduleName + ".lit").str();
-    if (std::filesystem::exists(litPath))
-      return litPath;
     return std::nullopt;
   };
 
