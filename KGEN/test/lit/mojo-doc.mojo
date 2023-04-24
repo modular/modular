@@ -117,11 +117,11 @@ fn empty_fn():
 # CHECK:  "kind": "function",
 # CHECK:  "name": "fn_with_args",
 # CHECK:  "overloads":
-# CHECK:      "signature": "fn_with_args(arg: $Int::Int)",
+# CHECK:      "signature": "fn_with_args(arg: Int)",
 # CHECK:      "summary": "This is a function summary.",
 # CHECK:      "args":
 # CHECK:          "name": "arg",
-# CHECK:          "type": "$Int::Int",
+# CHECK:          "type": "Int",
 # CHECK:          "description": "This is an argument."
 
 
@@ -140,7 +140,7 @@ fn fn_with_args(arg: Int):
 # CHECK:  "name": "fn_with_overload",
 # CHECK:  "overloads": [
 # CHECK:      "signature": "fn_with_overload()",
-# CHECK:      "signature": "fn_with_overload(arg: $Int::Int)",
+# CHECK:      "signature": "fn_with_overload(arg: Int)",
 
 
 fn fn_with_overload():
@@ -186,10 +186,10 @@ fn fn_with_params[param: __mlir_type.`!kgen.dtype`]():
 # CHECK: "kind": "function",
 # CHECK: "name": "fn_with_params_and_return",
 # CHECK: "overloads":
-# CHECK:     "signature": "fn_with_params_and_return(arg: $Int::Int) -> $Int::Int",
+# CHECK:     "signature": "fn_with_params_and_return(arg: Int) -> Int",
 # CHECK:     "args":
 # CHECK:         "name": "arg",
-# CHECK:         "type": "$Int::Int",
+# CHECK:         "type": "Int",
 # CHECK:         "description": "This is an argument."
 # CHECK:     "returns": "This is a return value."
 

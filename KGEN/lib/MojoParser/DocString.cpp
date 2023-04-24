@@ -268,7 +268,7 @@ private:
     if (selfType && astType.isEqualCanon(*selfType))
       os << "Self";
     else
-      os << astType.getAsString();
+      os << astType.getAsString(/*forDiag=*/true);
 
     // Append the type suffix.
     os << typeSuffix;
