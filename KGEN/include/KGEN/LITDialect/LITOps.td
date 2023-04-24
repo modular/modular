@@ -449,13 +449,8 @@ def LIT_TryRaiseOp : LITOp<"try.raise", [Terminator,
     propagate an error to the except region.
   }];
 
-  let arguments = (ins AnyType:$error, Variadic<AnyType>:$trailing);
-  let assemblyFormat = [{
-    $error (`(` $trailing^ `:` type($trailing) `)`)? attr-dict `:` type($error)
-  }];
-
-  let builders = [OpBuilder<(ins "Value":$error),
-                            [{ build($_builder, $_state, error, {}); }]>];
+  let arguments = (ins Variadic<AnyType>:$operands);
+  let assemblyFormat = "($operands^ `:` type($operands))? attr-dict";
 }
 
 //===----------------------------------------------------------------------===//
