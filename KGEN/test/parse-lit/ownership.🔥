@@ -515,8 +515,8 @@ fn test_result_consume_reg(cond: __mlir_type.i1) -> RegExample:
 
   # Make sure var bindings work the same way even though the IR differs.
 
-  # CHECK: %example2 = lit.varlet.decl
-  # CHECK-NEXT: [[TMP:%.*]] = kgen.call {{.*}}__init__{{.*}}()
+  # CHECK: [[TMP:%.*]] = kgen.call {{.*}}__init__{{.*}}()
+  # CHECK-NEXT: %example2 = lit.varlet.decl
   # CHECK-NEXT: pop.store [[TMP]], %example2
   var example2 = RegExample() # expected-warning {{consider switching to a 'let'}}
 
@@ -608,8 +608,8 @@ struct BigRegExample:
 
 # CHECK-LABEL: lit.func @"bigreg_test
 fn bigreg_test():
-  # CHECK-NEXT: %varThing = lit.varlet.decl "varThing"
   # CHECK-NEXT: %0 = kgen.call {{.*}}__init__()
+  # CHECK-NEXT: %varThing = lit.varlet.decl "varThing"
   # CHECK-NEXT: pop.store %0, %varThing
   var varThing = BigRegExample()
 

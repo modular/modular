@@ -86,8 +86,8 @@ fn memoryOnlyOps(a&: MemoryOnlyPair) -> MemoryOnlyPair:
 
   a  # expected-warning {{'MemoryOnlyPair' value is unused}}
 
-  # CHECK-NEXT: %regX = lit.varlet.decl
   # CHECK-NEXT: [[AX:%.*]] = lit.struct.gep %a[x]
+  # CHECK-NEXT: %regX = lit.varlet.decl
   # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%regX, [[AX]])
   let regX = a.x
 
@@ -112,8 +112,8 @@ fn memoryOnlyOps(a&: MemoryOnlyPair) -> MemoryOnlyPair:
   let v2xx = v2.x.x
 
   # Implicit conversion between memory-only types.
-  # CHECK-NEXT: %mpFloat = lit.varlet.decl
   # CHECK-NEXT: [[V2X:%.*]] = lit.struct.gep %v2[x]
+  # CHECK-NEXT: %mpFloat = lit.varlet.decl
   # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%mpFloat, [[V2X]])
   let mpFloat : MemoryOnlyF64 = v2.x
 
@@ -169,7 +169,7 @@ fn simpleMath(a: Int, b: Int) -> Int:
 
 # CHECK-LABEL: lit.func @"precedence_associativity
 fn precedence_associativity(a: Int):
-  # CHECK-NEXT: %z = lit.varlet.decl "z", var = true
+  # CHECK: %z = lit.varlet.decl "z", var = true
   var z: Int = 0
 
   # CHECK: [[SEVENTEENINT:%.*]] = kgen{{.*}}#lit.struct<{value: scalar<index> = 17}>
@@ -389,16 +389,16 @@ z
 # CHECK-LABEL: lit.func @"listValues()"
 fn listValues():
   # CHECK: %[[LIST:.*]] = kgen.call {{.*}}@ListLiteral::@"__init__
-  # CHECK-NEXT: pop.store %[[LIST:.*]], %a
+  # CHECK: pop.store %[[LIST:.*]], %a
   var a = [1, 2, 2+1]
   # CHECK: %[[LIST:.*]] = kgen.call {{.*}}@ListLiteral::@"__init__
-  # CHECK-NEXT: pop.store %[[LIST:.*]], %a
+  # CHECK: pop.store %[[LIST:.*]], %a
   a = [1, 2, 2+1,]
   # CHECK: %[[LIST:.*]] = kgen.call {{.*}}@ListLiteral::@"__init__
-  # CHECK-NEXT: pop.store %[[LIST:.*]], %a
+  # CHECK: pop.store %[[LIST:.*]], %a
   a = [1, 2, 2+1]
   # CHECK: %[[LIST:.*]] = kgen.call {{.*}}@ListLiteral::@"__init__
-  # CHECK-NEXT: pop.store %[[LIST:.*]], %b
+  # CHECK: pop.store %[[LIST:.*]], %b
   var b = []
 
 # CHECK-LABEL: lit.func @"initializers
@@ -416,8 +416,7 @@ fn initializers():
 
 # CHECK-LABEL: lit.func @"test_if_cond
 def test_if_cond(cond: Bool):
-    # CHECK:      %[[I:.*]] = lit.varlet.decl "i"
-    # CHECK-NEXT: %[[COND:.*]] = pop.load %cond_0
+    # CHECK: %[[COND:.*]] = pop.load %cond_0
     # CHECK: %[[LIT_BOOLI1:.*]] = kgen.call {{.*}}__mlir_i1__{{.*}}(%[[COND]])
     # CHECK-NEXT: %[[IF_RES:.*]] = hlcf.if %[[LIT_BOOLI1]]
     # CHECK-NEXT:   %[[INT_TWO:.*]] = kgen{{.*}}= 2}
@@ -426,6 +425,7 @@ def test_if_cond(cond: Bool):
     # CHECK-NEXT:   %[[INT_THREE:.*]] = kgen{{.*}}= 3}
     # CHECK-NEXT:   hlcf.yield %[[INT_THREE]]
     # CHECK-NEXT: }
+    # CHECK-NEXT: %i = lit.varlet.decl "i"
     # CHECK-NEXT: pop.store %[[IF_RES]], %i
     var i: Int = 2 if cond else 3
 
@@ -925,6 +925,7 @@ fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   hlcf.yield [[CMP_A_B]]
     # CHECK-NEXT: }
+    # CHECK-NEXT: %res = lit.varlet.decl "res"
     # CHECK-NEXT: pop.store %[[IF_A_B]], %res : !pop.pointer<@"$Bool"::@Bool>
     var res = a < b < c < d
 
@@ -1057,8 +1058,8 @@ fn variadic_subscript[idx: Int, *a: Int](*b: Int):
 # CHECK-SAME:   b{{.*}} = variadic_get{{.*}}a, 1
 fn variadic_memory_subscript[*a: Int](*b: TwoParamsStruct[a[0], a[1]]):
     # CHECK: %[[V0:.*]] = pop.variadic.get %b[%idx1]
-    # CHECK-NEXT: __copyinit__{{.*}}%[[V0]]
+    # CHECK: __copyinit__{{.*}}%[[V0]]
     let v0 = b[1]
     # CHECK: %[[V1:.*]] = pop.variadic.get %b[%idx2]
-    # CHECK-NEXT: __copyinit__{{.*}}%[[V1]]
+    # CHECK: __copyinit__{{.*}}%[[V1]]
     var v1 = b[2]

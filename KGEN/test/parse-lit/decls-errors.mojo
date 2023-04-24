@@ -78,6 +78,13 @@ struct StructWithLets:
   let struct_thing : Int # expected-error {{'let' fields in structs are not supported yet}}
 
 
+fn use_before_def():
+    # expected-error @below {{reference to local 'let' declaration before it is defined}}
+    let y = x
+    # expected-note @below {{'let' declaration defined here}}
+    let x = 10
+
+
 ##===----------------------------------------------------------------------===##
 # Functions
 ##===----------------------------------------------------------------------===##

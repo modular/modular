@@ -2329,8 +2329,9 @@ LogicalResult DeclResolver::resolveSignature(VarLetDeclOp varOp, Lexer &lexer,
 
   // Handle the initializer if present.
   if (initExpr) {
-    // We insert after var decl.
-    OpBuilder builder(varOp->getBlock(), ++Block::iterator(varOp));
+    // Insert before the var decl op. Ops can get deleted, so we have to ensure
+    // the insertion point is stable.
+    OpBuilder builder(varOp);
     ExprEmitter emitter(shared, *decl.getParentDecl(), builder,
                         /*varDeclCursor*/ nullptr);
 
@@ -2351,6 +2352,10 @@ LogicalResult DeclResolver::resolveSignature(VarLetDeclOp varOp, Lexer &lexer,
       dest.resetForError();
       return failure();
     }
+
+    // Now move the var decl op to the end of the initializer IR.
+    assert(varOp->hasOneUse() && "Should have one use");
+    varOp->moveBefore(*varOp->user_begin());
 
     assert(!isa_and_nonnull<UnresolvedType>(
                varOp.getType().getResolvedElementType()) &&
