@@ -2032,7 +2032,7 @@ struct ConvIm2ColNHWC[
         ](
             func
         )
-        run(out, input, filter, conv_shape, null_closure, out_chain)
+        Self.run(out, input, filter, conv_shape, null_closure, out_chain)
 
     # Interface method
     @staticmethod
