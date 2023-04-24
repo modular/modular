@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Activations import relu, gelu, sigmoid
+from Activations import relu
 from Buffer import NDBuffer
 from DType import DType
 from Functional import elementwise, unroll
@@ -36,11 +36,9 @@ fn MOGGExport():
     alias _cast = cast
     alias _erf = erf
     alias _exp = exp
-    alias _gelu = gelu
     alias _load_scalar = load_scalar
     alias _mul = mul
     alias _rsqrt = rsqrt
-    alias _sigmoid = sigmoid
     alias _sqrt = sqrt
     alias _sub = sub
     alias _tanh = tanh
