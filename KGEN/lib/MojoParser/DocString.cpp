@@ -336,11 +336,13 @@ private:
     }
 
     // Grab the types of the parameters to the function.
-    llvm::StringMap<std::string> paramToDetail;
-    for (auto [index, value] : llvm::enumerate(funcOp.getInputParams())) {
-      paramToDetail[value.getName()] =
-          generateTypeString(value.getType(), selfType);
-    }
+    SmallVector<std::string> paramTypeDetails;
+    llvm::StringMap<StringRef> paramToDetail;
+    ArrayRef<ParamDeclAttr> params = funcOp.getInputParams();
+    for (ParamDeclAttr param : params)
+      paramTypeDetails.push_back(generateTypeString(param.getType(), selfType));
+    for (auto [index, value] : llvm::enumerate(params))
+      paramToDetail[value.getName()] = paramTypeDetails[index];
 
     // Grab the result type, if it's non-none.
     std::optional<std::string> resultTypeName;
@@ -350,9 +352,9 @@ private:
     }
 
     os.object([&] {
-      os.attribute("signature",
-                   generateFunctionSignature(name, argNames, argTypeDetails,
-                                             resultTypeName));
+      os.attribute("signature", generateFunctionSignature(
+                                    name, argNames, argTypeDetails, params,
+                                    paramTypeDetails, resultTypeName));
 
       // Emit the doc string if present.
       if (std::optional<DocString> docStr = getDocString(decl)) {
@@ -367,26 +369,42 @@ private:
   std::string
   generateFunctionSignature(StringRef name, ArrayRef<StringAttr> argNames,
                             ArrayRef<std::string> argTypes,
+                            ArrayRef<ParamDeclAttr> params,
+                            ArrayRef<std::string> paramTypes,
                             const std::optional<std::string> &resultTypeName) {
     std::string signature;
     llvm::raw_string_ostream signatureOS(signature);
 
+    // Functor used to emit a parameter or type to the signature.
+    auto emitParamOrArg = [&](StringRef name, StringRef type) {
+      // If the argument is variadic, we put the star before the name when
+      // printing a signature.
+      if (type.consume_front("*"))
+        signatureOS << "*";
+      signatureOS << name << ": " << type;
+    };
+
     // Strip off the mangled suffix from the base function name.
     signatureOS << name.split('(').first;
 
+    // Emit the parameters of the function.
+    if (!params.empty()) {
+      signatureOS << "[";
+      interleaveComma(
+          llvm::seq<int>(0, paramTypes.size()), signatureOS, [&](int index) {
+            emitParamOrArg(params[index].getName(), paramTypes[index]);
+          });
+      signatureOS << "]";
+    }
+
+    // Emit the arguments of the function.
     signatureOS << "(";
     interleaveComma(
-        llvm::seq<int>(0, argTypes.size()), signatureOS, [&](int index) {
-          StringRef argType = argTypes[index];
-
-          // If the argument is variadic, we put the star before the
-          // name when printing a signature.
-          if (argType.consume_front("*"))
-            signatureOS << "*";
-          signatureOS << argNames[index].getValue() << ": " << argType;
-        });
+        llvm::seq<int>(0, argTypes.size()), signatureOS,
+        [&](int index) { emitParamOrArg(argNames[index], argTypes[index]); });
     signatureOS << ")";
 
+    // Emit the result type.
     if (resultTypeName)
       signatureOS << " -> " << *resultTypeName;
     return signatureOS.str();
@@ -394,7 +412,7 @@ private:
 
   void processFunctionDocDescription(
       ArrayRef<StringRef> description,
-      const llvm::StringMap<std::string> &paramToDetail,
+      const llvm::StringMap<StringRef> &paramToDetail,
       const llvm::StringMap<StringRef> &argNameToDetail,
       const std::optional<std::string> &returnType) {
     // Process the lines of the description, looking for markers.

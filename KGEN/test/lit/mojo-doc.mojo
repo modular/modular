@@ -72,7 +72,7 @@ struct InMemoryStruct:
 
 # CHECK:      "kind": "function",
 # CHECK:      "name": "fn_with_self_param",
-# CHECK:          "signature": "fn_with_self_param(self: Self)",
+# CHECK:          "signature": "fn_with_self_param[param: Self](self: Self)",
 # CHECK:          "parameters": [
 # CHECK:              "name": "param",
 # CHECK:              "type": "Self",
@@ -165,7 +165,7 @@ fn fn_with_overload(arg: Int):
 # CHECK:  "kind": "function",
 # CHECK:  "name": "fn_with_params",
 # CHECK:  "overloads":
-# CHECK:      "signature": "fn_with_params()",
+# CHECK:      "signature": "fn_with_params[param: __mlir_type.!kgen.dtype]()",
 # CHECK:      "parameters": [
 # CHECK:          "name": "param",
 # CHECK:          "type": "__mlir_type.!kgen.dtype",
