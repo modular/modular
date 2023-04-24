@@ -162,3 +162,29 @@ kgen.generator @main() {
   kgen.return
 }
 
+// COM: Ensure that staged closures follow the global store
+kgen.generator @take_bat(%arg0: !kgen.signature<(index) capturing -> index>) {
+	kgen.return
+}
+kgen.generator @bat(%arg0: index) capturing -> index {
+	%0 = pop.compiler.global_load "bat_binder_context_var_0" : !pop.struct<index>
+	%1 = pop.struct.extract %0[0] : !pop.struct<index>
+	kgen.return %1 : index
+}
+// CHECK: pop.compiler.global_store "bat_binder_context_var_0", %0 : !pop.struct<index>
+// CHECK: %1 = kgen.stage_closure = (%arg1: index) capturing -> index {
+// CHECK: %2 = pop.compiler.global_load "bat_binder_context_var_0" : !pop.struct<index>
+// CHECK: %3 = pop.struct.extract %2[0] : !pop.struct<index>
+// CHECK: kgen.return %3 : index
+// CHECK: } {name = "bat_concrete"}
+// CHECK: kgen.call @take_bat(%1) : (!kgen.signature<(index) capturing -> index>) -> ()
+kgen.generator @bat_binder(%arg0: index) {
+	%2 = kgen.param.constant: <>(index) capturing -> index = <h>
+	kgen.param.declare h: <>(index) capturing -> index = <@bat>
+	%0 = pop.struct.create(%arg0) : !pop.struct<index>
+    pop.compiler.global_store "bat_binder_context_var_0", %0 : !pop.struct<index>
+	kgen.call @take_bat(%2) : (!kgen.signature<(index) capturing -> index>) -> ()
+	kgen.return
+}
+
+

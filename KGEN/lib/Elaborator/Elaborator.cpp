@@ -1752,13 +1752,26 @@ ElaboratorImpl::replaceParamWithConcreteRegionFromOutlinedClosure(
     return {};
   }
 
-  Region &sourceRegion = outlinedFn.getBodyRegion();
-  auto stageClosureOp = rewriter.replaceOpWithNewOp<StageClosureOp>(
-      parameterConstantOp, outlinedFn.getSignature());
+  // To guarantee that the store precedes the load in global memory
+  // load/stores added by outline closures, we write the staged closure
+  // immediately before its first use, if used.
+  Operation::user_range users = parameterConstantOp->getUsers();
+  StageClosureOp stageClosureOp;
+  if (!users.empty()) {
+    Operation *first_user = *users.begin();
+    rewriter.setInsertionPoint(first_user);
+    stageClosureOp = rewriter.create<StageClosureOp>(
+        parameterConstantOp.getLoc(), outlinedFn.getSignature());
+    rewriter.replaceOp(parameterConstantOp, stageClosureOp.getResult());
+  } else {
+    stageClosureOp = rewriter.replaceOpWithNewOp<StageClosureOp>(
+        parameterConstantOp, outlinedFn.getSignature());
+  }
   stageClosureOp->setAttr(
       StringAttr::get(rewriter.getContext(), "name"),
       StringAttr::get(rewriter.getContext(), outlinedFn.getSymName()));
 
+  Region &sourceRegion = outlinedFn.getBodyRegion();
   Region &targetRegion = stageClosureOp.getBodyRegion();
   IRMapping map;
   sourceRegion.cloneInto(&targetRegion, map);

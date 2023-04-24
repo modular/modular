@@ -66,7 +66,7 @@ SymbolConstantAttr callSymbolOfLiftedRegion(StageClosureOp opWithRegion,
     Value from = captures[i];
     BlockArgument newArg =
         sourceRegion.insertArgument((unsigned)0, from.getType(), from.getLoc());
-    from.replaceAllUsesWith(newArg);
+    replaceAllUsesInRegionWith(from, newArg, sourceRegion);
   }
   auto liftedValueSignature =
       FunctionType::get(builder.getContext(), sourceRegion.getArgumentTypes(),
