@@ -27,12 +27,11 @@
 // prioritization in various situations, such as the relative ordering of
 // methods in documentation.
 
-SF(kNew,      "__new__"   ,  -1, kInvalid, kImplicitlyStaticMethod|kSelfResult)
-SF(kInit,     "__init__"  ,  -1, kInvalid, kAllowByRefSelfInstMethod|kInitializer)
+SF(kNew,      "__new__"     ,-1, kInvalid, kImplicitlyStaticMethod|kSelfResult)
+SF(kInit,     "__init__"    ,-1, kInvalid, kAllowByRefSelfInstMethod|kInitializer)
 SF(kCopyInit, "__copyinit__",-1, kInvalid, kAllowByRefSelfInstMethod|kInitializer)
 SF(kMoveInit, "__moveinit__", 2, kInvalid, kAllowByRefSelfInstMethod|kInitializer)
-// TODO: move checking to __del__ without extra _.
-SF(kDel,      "__del__"  ,   1, kInvalid, kRequiresOwnedSelfInstMethod|kNoneResult)
+SF(kDel,      "__del__"     , 1, kInvalid, kRequiresOwnedSelfInstMethod|kNoneResult)
 
 SF(kBool,    "__bool__"  ,   1, kInvalid, kInstMethod)
 SF(kMLIRI1,  "__mlir_i1__",  1, kInvalid, kInstMethod)

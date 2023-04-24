@@ -6,13 +6,13 @@ Mojo🔥 is a first-class programming language that utilizes a number of
 next-generation compiler technologies. The compiler itself has integrated
 caching, is multithreaded, is built to be distributed across a cluster,
 incorporates autotuning features and powerful compile time metaprogramming, and
-is built on top of MLIR. Beyond using MLIR as an implementation detail, Mojo
+is built on top of MLIR. Beside using MLIR as an implementation detail, Mojo
 exposes the full power of MLIR to advanced library developers that want to work
 with exotic hardware.
 
 Mojo is designed to become a superset of Python over time, complementing its
 dynamic features with state of the art systems programming features and lifting
-the vast Python library ecosystem. This allows it to tackle the traditional use
+the vast Python library ecosystem. This allows it to address the traditional use
 cases of C, C++, Rust etc, but also CUDA and other accelerator systems. By
 bringing together the best of dynamic languages and systems languages, we hope
 to provide a **unified** programming model that works across levels of
@@ -39,14 +39,14 @@ overlooked “accelerators” is the host CPU. CPUs today are getting lots of
 tensor-core-like accelerator blocks and other dedicated AI acceleration units,
 but they also importantly serve as the “fall back” to support operations more
 specialized accelerators don’t - things like data loading, pre- and
-post-processing, and integrations with foreign systems. As such, it became
-clear that we couldn’t build a limited “accelerator language”, e.g. one that
-was limited to only working with tensors. We have the north star of growing to
-support the full gamut of general purpose programming over time.
+post-processing, and integrations with foreign systems. Applied AI systems need
+to address all these use cases and it is clear that we couldn’t lift AI with a
+limited “accelerator language” that only worked with specific accelerated use
+cases.
 
-At the same time, while innovating in compiler implementation and code
-generation for current and emerging accelerators is important, we didn’t see a
-need to innovate in syntax or community. We decided to embrace the Python
+While innovating in compiler internals and while support for current and
+emerging accelerators is critical to our mission, we didn’t see a
+need to innovate in *syntax* or *community*. We decided to embrace the Python
 ecosystem because it is so widely used, it is loved by the AI ecosystem, and
 because it is really nice! For more information on the challenges with Python,
 how Mojo compares to other members of the Python family, and other details, see
@@ -56,37 +56,27 @@ the "Detailed Motivation and Related Work" section later in this document.
 
 The Mojo language has lofty goals - we want full compatibility with the Python
 ecosystem, we would like predictable low-level performance and low-level
-control, we want the ability to deploy subsets of code to accelerators, and we
-want to build on some novel ideas in compiler design. We also don’t want
+control, and we need the ability to deploy subsets of code to accelerators. We
+also don’t want
 ecosystem fragmentation - we hope that people find our work to be useful over
 time, and don’t want something like the Python 2 => Python 3 migration to
 happen again. These are no small goals!
 
 Fortunately, while Mojo is a brand new code base, we aren’t really starting
-from scratch conceptually. The use of Python as a unifying force allows us to
-massively simplify our design efforts, because most of the syntax is already
-specified. We can instead focus our efforts on figuring out how the compilation
-model and how the new systems programming features work. Beyond syntax we
-benefit from a tremendous amount of other work on languages and compilers,
-including work in the LLVM ecosystem (e.g. Clang, Rust, Swift, Julia, Zig, Nim,
-etc). We also leverage the MLIR compiler which has unlocked another level of
-innovation in compilers, and Modular has taken that even further forward.
-Another important learning is from the techniques that the Swift programming
-language used to smoothly migrate a massive Objective-C community over to a new
-language. Mojo greatly benefits from all this learning and perspective!
+from scratch conceptually. Embracing Python massively simplifies our design
+efforts, because most of the syntax is already specified. We can instead focus
+our efforts on building the compilation model and designing specific systems
+programming features. We also benefit from tremendous work on other languages
+(e.g. Clang, Rust, Swift, Julia, Zig, Nim, etc), and leverage the massive MLIR
+compiler ecosystem.  We also benefit from experience with the Swift programming
+language, which migrated most of a massive Objective-C community over to a
+new language.
 
-After discussion, we decided that the right long-term goal for Mojo is to
-provide a **superset of Python**, which is compatible with existing programs,
-and to embrace the CPython implementation for long-tail ecosystem enablement.
-We will use modern MLIR based implementation approaches and the Modular
-compiler stack in particular, which allows us to target a wide range of
-hardware devices. Because our implementation details (the compiler backend) is
-completely different from the Python interpreter, we will build a
-first-principles implementation that will be part of the broader Python-like
-language community, but it is itself not “CPython”.
-
+After discussion, we decided that the right *long-term goal* for Mojo is to
+provide a **superset of Python** (i.e. be compatible with existing programs)
+and to embrace the CPython immediately for long-tail ecosystem enablement.
 To a Python programmer, we expect and hope that Mojo will be immediately
-familiar and as good as Python for the things you use it for today, while also
+familiar, while also
 providing new tools for developing systems-level code that enable you to do
 things that Python falls back to C and C++ for. We aren’t trying to convince
 the world that “static is good” or “dynamic is good” - our belief is that both
@@ -101,37 +91,19 @@ today it isn’t very compatible. Mojo doesn’t even support classes yet! That
 said, we have experience with other similar projects that give some insights on
 how this will go assuming that we stay properly focused.
 
-The **Clang** compiler is a C, C++ and Objective-C (and CUDA, OpenCL, …)
-compiler frontend for the LLVM system. Initially its goal was to properly
-implement the respective standards precisely… but that fell apart very early in
-its evolution, when it became clear that real world code depends heavily on
-vendor extensions from GCC and other compilers. As such, Clang quickly evolved
-into being a “compatible replacement” for GCC, MSVC and other existing
-compilers. It is hard to make a direct comparison, but the complexity of the
-Clang problem appears to be an order of magnitude bigger than implementing a
-compatible replacement for Python.
-
-The major lesson learned here is that you need to understand the target,
-understand the compilation model, and build a framework in which you can hang
-the full complexity of the problem. You must plan to implement every weird
-corner case and strange feature, because it is easier to implement these
-features than change the world’s code that depends on them. That said, there
-are lines that can be drawn for egregiously weird cases and some outright bugs
-that aren’t widely used. For example, Clang decided never to implement the [GCC
-Trampolines
-feature](https://stackoverflow.com/questions/8179521/implementation-of-nested-functions)
-because it is a [huge security
-problem](https://nullprogram.com/blog/2019/11/15/). In the case of Python, it
-seems very important that we support the [locals
-builtin](https://www.toppr.com/guides/python-guide/references/methods-and-functions/methods/built-in/locals/python-locals/),
-but we probably don’t have to support taking the address of it, passing it
-around, and calling it at arbitrary locations.
+We have experience with two major but different compatibility journeys: the
+**Clang** compiler is a C, C++ and Objective-C (and CUDA, OpenCL, …) that is
+part of LLVM. A major goal of Clang was to be a “compatible replacement” for
+GCC, MSVC and other existing compilers. It is hard to make a direct comparison,
+but the complexity of the Clang problem appears to be an order of magnitude
+bigger than implementing a compatible replacement for Python.  The journey there
+gives good confidence we can do this right for the Python community.
 
 Another example is the [Swift programming language](https://www.swift.org/),
 which embraced the Objective-C runtime and language ecosystem and progressively
 shifted millions of programmers (and huge amounts of code) incrementally over
 to a completely different programming language. With Swift, we learned
-significant lessons about how to be “run-time compatible” and cooperate with a
+lessons about how to be “run-time compatible” and cooperate with a
 legacy runtime. In the case of Python and Mojo, we expect Mojo to cooperate
 directly with the CPython runtime and have similar support for integrating with
 CPython classes and objects without having to compile the code itself. This
@@ -141,7 +113,7 @@ yield incremental benefit.
 
 Overall, we believe that the north star of compatibility, continued vigilance
 on design, and incremental progress towards full compatibility will get us to
-where we need to be.
+where we need to be in time.
 
 ### Intentional Differences From Python
 
@@ -174,21 +146,23 @@ useful for Objective-C programmers, and we expect Mojo to be a great way to
 implement APIs for CPython as well.
 
 It will take some time to build Mojo and the migration support, but we feel
-confident that this will allow us to focus our energies and avoid distractions
+confident that this will allow us to focus our energies and avoid distractions.
+We also think the relationship with CPython can build from both directions -
+wouldn't it be cool if the CPython team eventually reimplemented the
+interpreter in Mojo instead of C? 🔥
 
 ## Using the Mojo Compiler
 
-The simplest way to run a mojo program is to type “mojo hello.mojo”, for example:
+The simplest way to run a mojo program is to type “mojo hello.🔥”, for
+example:
 
 ```mojo
-    $ cat hello.mojo
-    from IO import print
-    from Range import range
+    $ cat hello.🔥
     def main():
        print("hello world")
        for x in range(9, 0, -3):
            print(x)
-    $ mojo hello.mojo
+    $ mojo hello.🔥
     hello world
     9
     6
@@ -196,24 +170,13 @@ The simplest way to run a mojo program is to type “mojo hello.mojo”, for exa
     $
 ```
 
-There are several missing features that we will build in to make this more
-similar to Python over time, including importing builtin declarations by
-default, adding support for top-level code (instead of requiring the use of a
-`main` function), etc, but this will get you started. (Functions like `print`
-and `range` are imported by default within Mojo notebooks.) There are lots and
-lots of examples of Mojo code in the modular code-base, for example take a look
-in `Kernels/Benchmarks` and `KGEN/test/mojo-examples` for small applications.
+On the other hand, we realize that not everyone is so bold as to be ready for
+emoji file extensions: the Mojo toolchain also fully supports the `.mojo`
+suffix as well.
 
 If you are interested in diving into the more of the internal implementation
 details of Mojo, it can be instructive to look at types in the standard
-library, which are located at `Kernels/mojo-stdlib`. One difference between
-Mojo and Python is that all its standard library types (integers, floating
-point, strings, etc) are implemented in Mojo itself instead of in C or instead
-of being hard coded into the compiler/interpreter. This means that you can go
-look at how `__add__` is implemented for integers if you would like, and you
-can implement your own advanced types using the same technologies that the
-“built in” types use. Mojo is “turtles all the way” down to MLIR operations at
-its base.
+library, example code in notebooks, blogs and other sample code.
 
 ## Basic Systems Programming Extensions
 
@@ -228,9 +191,9 @@ each major component and feature and describes how to use them with examples.
 
 Inside a `'def'` in Mojo, you may assign to a name and it implicitly creates a
 function scope variable just like in Python. This provides a very dynamic and
-low ceremony way to write code, but is a challenge for two reasons: 1) Systems
+low ceremony way to write code, but is a challenge for two reasons: 1) systems
 programmers often want to declare that a value is immutable, and 2) may want to
-control the lifetime of a value, particularly if that value has a destructor.
+get an error if they mistype a variable name in an assignment.
 
 To support this, Mojo supports ‘let’ and ‘var’ declarations which introduce a
 new scoped runtime value: ‘`let`’ is immutable and ‘`var`’ is mutable. These
@@ -280,15 +243,13 @@ with zero abstraction penalties. In Mojo, this is provided by a ``struct``
 declaration.
 
 ‘`struct`’ declarations in Mojo are similar in many ways to classes: they
-support methods, fields, operator overloading, decorators for meta programming
-(TODO), etc. On the other hand, where classes are extremely dynamic with
+support methods, fields, operator overloading, decorators for meta programming,
+etc. On the other hand, where classes are extremely dynamic with
 dynamic dispatch, dynamic method swizzling, and dynamically bound instance
 properties, structs are static, bound at compile time, and are stored inlined
 into their container instead of being implicitly indirect and reference
-counted. Following Mojo’s general approach, we aren’t saying that static is
-better than dynamic: we’re saying that they are both important tools and that
-one should be able to use the right tool for a job. This approach has
-precedent in other languages, e.g. Swift, C# and others.
+counted. This approach has precedent in other languages, e.g. Swift, C# and
+others.
 
 Here’s a simple definition of a struct:
 
@@ -309,7 +270,7 @@ Here’s a simple definition of a struct:
 
 As you can see, Mojo structs are very similar to classes, the biggest
 difference is that all instance properties _must_ be explicitly declared with a
-‘var’ or ‘let’ declaration. This allows the Mojo compiler to lay out and access
+‘var’ or ‘let’ declaration. This allows the Mojo compiler to layout and access
 the value precisely in memory without indirection or other overhead. Struct
 fields are bound statically: they aren’t looked up with a dictionary
 indirection. As such, you cannot ‘`del`’ a method or reassign it at runtime.
@@ -319,13 +280,13 @@ enclosing type that uses it without indirection or other overheads.
 
 One common thing about Mojo and Python is that they both focus on enabling
 expressive API design, and push complexity from the language itself into the
-module ecosystem. Structs in Mojo supercharge this capability by providing
+package ecosystem. Structs in Mojo supercharge this capability by providing
 zero-cost abstraction capabilities typically seen in languages like C++, Swift,
 Rust, and Zig, which compose beautifully with the operator overloading and
 other features that Python has supported for years. These capabilities compose
-to allow **all** the “standard types” (like `Int` and `F32`) to be implemented
-as structs in the standard library instead of being built into the
-language/compiler.
+to allow **all** the “standard types” (like `Int`, `Bool`, `String` and even
+`Tuple`) to be implemented as structs in the standard library instead of being
+built into the language/compiler.
 
 You might be wondering what the “`&`” means on the `self` argument: this
 indicates that the value is mutable, please see the “By-Reference” arguments
@@ -345,7 +306,7 @@ consider the following code:
 ```
 
 If you attempt to run this code, you’ll get a compile time error telling you
-that “4” cannot be converted to ``MyPair``, which is what the rhs of `__lt__`
+that “4” cannot be converted to ``MyPair``, which is what the RHS of `__lt__`
 requires. This is a familiar experience when working with systems programming
 languages, but is not how Python works. Python has a syntactically identical
 feature for “MyPy” type annotations, but they are not enforced by the compiler:
@@ -391,7 +352,7 @@ forces you to keep the type checker happy. This can be a challenge when you
 want to define expressive APIs that “just work” because some methods should
 accept many different static types, and shouldn’t require the user of the API
 to remember different names for all the different use cases. Python handles
-this by accepting arbitrary inputs and using dynamic dispatch to resolve what
+this by accepting arbitrary inputs and uses dynamic dispatch to resolve what
 to do on the fly - this will work in Mojo, but may not give you the
 predictability, control, or performance you might be seeking.
 
@@ -410,19 +371,10 @@ struct Array[T: AnyType]:
     fn __getitem__(self, idx: Range) -> ArraySlice: ...
 ```
 
-The compiler follows the same approach as (e.g.) a C++ compiler does to resolve
-which candidate to pick for a given call: it filters out candidates that cannot
-work for a callsite, then ranks the remaining ones based on the number of
-implicit conversions that are required. If there is an ambiguity, the compiler
-complains. Mojo doesn’t support overloading solely on result type, and doesn’t
-use result type or contextual type information for type inference, keeping
-things simple, fast, and predictable.
-
-Python doesn’t have overloaded methods per-se, but it is fairly common to
-implement the equivalent by writing a generic function and then dynamically
-dispatching based on the types of values that are present in practice. In this
-way, the Mojo approach is similar, but shifts the responsibility up to the
-compiler to resolve.
+Mojo doesn’t support overloading solely on result type, and doesn’t use result
+type or contextual type information for type inference, keeping things simple,
+fast, and predictable.  Mojo will never produce an "expression too complex"
+error, because its type-checker is simple and fast by definition.
 
 ### `'fn'` Definitions
 
@@ -439,13 +391,12 @@ Mojo provides an ‘`fn`’ declaration which is like a “strict mode” for �
 modifier or decorator like '@strict def'. However, we need to take new keywords
 anyway and there is little cost to doing so. Also, in practice in systems
 programming domains, 'fn' is used all the time so it probably makes sense to
-make it first class. We can/should reconsider as we get more experience over
-time.
+make it first class.
 
 ‘`fn`’ and ‘`def`’ are always interchangeable from an interface level: there is
 nothing a ‘def’ can provide that a ‘`fn`’ cannot (or vice versa). The
 difference is that a ‘`fn`’ is more limited and controlled on the _inside_ of
-its body (alternatively, pedantic and strict). Specifically, ‘`fn`’s have a
+its body (alternatively: pedantic and strict). Specifically, ‘`fn`’s have a
 number of limitations compared to ‘`def`’s:
 
 1. Argument values default to being immutable in the body of the function (like
@@ -473,7 +424,7 @@ and already use MyPy-style type annotations in Python to prefer the use of
 implementing some methods with one and others with the other, and allows each
 team or programmer to decide what is best for their use-case.
 
-### The`__copyinit__` Special Method
+### The`__copyinit__` and `__moveinit__` Special Methods
 
 Mojo supports full “value semantics” as seen in languages like C++, and more
 advanced support than languages like Swift and Rust because it supports
@@ -494,16 +445,14 @@ and destroy it when the value is destroyed:
             data[input.length] = 0
             self.data = Pointer[Int8](data)
 
-        def __del__(self):
+        def __del__(owned self):
             self.data.free()
 ```
 
-This string type is implemented in terms of traditional C `malloc()`/`free()`
-calls to show a simple example of how this works. A more realistic string type
-would use inline allocation and other fancy tricks to reduce allocation
-overhead in standard cases, but this is simple and demonstrates the issue.
-
-If you go ahead and try this out, you might be surprised:
+This MyString type is implemented using low level functions to show a
+simple example of how this works - a more realistic implementation would use
+short string optimizations, etc.  However, if you go ahead and try this out, you
+might be surprised:
 
 ```mojo
     fn useStrings():
@@ -538,7 +487,11 @@ implemented like this:
 With this implementation, our code above works correctly and the “b = a” copy
 produces a logically distinct instance of the string with its own lifetime and
 data. The copy is made with the C strdup`()` function as instructed by the
-lines of code above.
+lines of code above.  Mojo also supports the `__moveinit__` method which allows
+both Rust-style moves (which take a value when a lifetime ends) and C++-style
+moves (where the contents of a value is removed but the destructor still runs),
+and allows defining custom move logic.  Please see the "Value Lifecycle"
+document for more information.
 
 Mojo provides full control over the lifetime of a value, including the ability
 to make types copyable, move-only, and not-movable. This is more control than
@@ -552,8 +505,8 @@ convention below.
 One of Python’s most amazing features is its extensible runtime
 meta-programming features. This has enabled a wide range of libraries and
 provides a flexible and extensible programming model that Python programmers
-everywhere benefit from. Unfortunately, these features also come at a cost.
-Because they are evaluated at runtime, they directly impact run-time efficiency
+everywhere benefit from. Unfortunately, these features also come at a cost:
+because they are evaluated at runtime, they directly impact run-time efficiency
 of the underlying code. Because they are not known to the IDE, it is difficult
 for IDE features like code completion to understand them and use them to
 improve the developer experience.
@@ -576,7 +529,8 @@ languages (templates) that are a dual to the _runtime_ language. These are
 notably difficult to learn and have poor compile times and error messages.
 
 4. Some languages (like Swift) build many features into the core language in a
-first class way to provide good ergonomics for common cases.
+first class way to provide good ergonomics for common cases at the expense of
+generality.
 
 5. Some newer languages like Zig integrate a language interpreter into the
 compilation flow, and allow the interpreter to reflect over the AST as it is
@@ -606,11 +560,12 @@ way.
 Let’s take a look at some simple examples.
 
 > Note on naming: after going around in circles on naming, we converged on
-calling these things "parameters". Python programmers use both the words
+calling these things "parameters". Python programmers use the words
 "arguments" and "parameters" fairly interchangeably as near-synonyms for
 "things that get passed into functions". We have currently decided to reclaim
-the word "parameter" and "parameter expression" to mean compile time value, but
-use "argument" and "expression" to refer to runtime values.
+the word "parameter", "parameter expression" to mean compile time value, but
+use "argument" and "expression" to refer to runtime values.  This allows us to
+align around words like "parameterized" and "parametric".
 
 ### Defining parameterized types and functions
 
@@ -628,7 +583,7 @@ programmers.
 Here is a (cut down) version of the SIMD API in the Mojo standard library:
 
 ```mojo
-    struct SIMD[size: Int, type: DType]:
+    struct SIMD[type: DType, size: Int]:
         var value: … # Some low-level MLIR stuff here
 
         # Create a new SIMD from a number of scalars
@@ -654,7 +609,7 @@ before they are needed by the runtime program - but the compile time parameter
 expressions may not use runtime values.
 
 In the case of the `SIMD` excerpt above, there are three declared parameters:
-the SIMD struct is parameterized by a ‘`size`’ parameter and a ‘`type`’
+the SIMD struct is parameterized by a ‘`type`’ parameter and a ‘`size`’
 parameter. The ‘`cast`’ method is further parameterized with a ‘`target`’
 parameter. Because SIMD is a parameterized type, the type of a ‘self’ argument
 carries the parameters - the full type name is “`SIMD[type, size]`”. While it
@@ -664,7 +619,7 @@ this can be verbose: we recommend using the `Self` type (from
 
 ### Using parameterized types and functions
 
-For this type, the ‘size’ specifies the number of elements in a SIMD vector and
+For this type, ‘size’ specifies the number of elements in a SIMD vector and
 the type specifies the element type - for example, you might use a “4xFloat” to
 represent a small floating point vector, or a “32xbfloat16’s” on an AVX-512
 system with the ‘bfloat16’ machine learning type:
@@ -703,7 +658,7 @@ specifying the parameters, the compiler infers its parameters as if you wrote
 its first parameter named “width” but the SIMD type names it “`size`” without
 challenge.
 
-### Parameters expressions are just Mojo code
+### Parameter expressions are just Mojo code
 
 All parameters and parameter expressions are typed using the same type system
 as the runtime program: ‘Int’ and ‘DType’ are implemented in the Mojo standard
@@ -714,8 +669,8 @@ example, you might want to define a helper function to concatenate two SIMD
 vectors:
 
 ```mojo
-    fn concat[len1: Int, len2: Int, ty: DType](
-        lhs: SIMD[ty, len1], rhs: SIMD[ty, len2]) -> SIMD[len1+len2, ty]:
+    fn concat[ty: DType, len1: Int, len2: Int](
+        lhs: SIMD[ty, len1], rhs: SIMD[ty, len2]) -> SIMD[ty, len1+len2]:
           ...
 
     fn use_vectors(a: SIMD[DType.f32, 4], b: SIMD[DType.f16, 8]):
@@ -724,13 +679,10 @@ vectors:
 ```
 
 Note how the result length is the sum of the input vector lengths, and you can
-express that with a simple + operation. In practice, the SIMD type only allows
-power of two length vectors, so this isn’t actually needed in this example, but
-having a powerful and expressive type equations can enable powerful and elegant
-API designs. For a more complex example, take a look at the `SIMD.shuffle`
-method in the standard library: it takes two input SIMD values, a vector
-shuffle mask as a list, and returns a SIMD that matches the length of the
-shuffle mask.
+express that with a simple + operation.  For a more complex example, take a look
+at the `SIMD.shuffle` method in the standard library: it takes two input SIMD
+values, a vector shuffle mask as a list, and returns a SIMD that matches the
+length of the shuffle mask.
 
 ### Powerful Compile-time Programming
 
@@ -742,7 +694,7 @@ reduction” algorithm that sums all elements of a vector recursively into a
 scalar:
 
 ```mojo
-    struct SIMD[size: Int, type: DType]:
+    struct SIMD[type: DType, size: Int]:
         ...
         fn reduce_add(self) -> SIMD[type, 1]:
             @parameter
@@ -752,17 +704,15 @@ scalar:
                 return self[0] + self[1]
 
             # Extract the top/bottom halves, add them, sum the elements.
-            alias half_size = size // 2
-            let lhs = self.slice[half_size](0)
-            let rhs = self.slice[half_size](half_size)
+            let lhs = self.slice[size // 2](0)
+            let rhs = self.slice[size // 2](size // 2)
             return (lhs + rhs).reduce_add()
 ```
 
-This makes use of two new features: “`@parameter if`” is an if statement that
+This makes use of the “`@parameter if`” feature, which is an if statement that
 runs at compile time. It requires that its condition be a valid parameter
 expression, and ensures that only the live branch of the if is compiled into
-the program. This example also introduces the “`alias`” declaration, which is
-like ‘let’ but which is guaranteed to be evaluated at compile time.
+the program.
 
 ### Mojo Types are just Parameter Expressions
 
@@ -795,7 +745,7 @@ Notice that the ‘type’ parameter is being used as the formal type for the
 allow the `DynamicVector` type to provide different APIs based on the different
 use-cases. There are many other cases that benefit from more advanced use
 cases. For example, the parallel processing library defines the
-parallelForEachN algorithm, which executes a closure N times in parallel,
+`parallelForEachN` algorithm, which executes a closure N times in parallel,
 feeding in a value from the context. That value can be of any type:
 
 ```mojo
@@ -811,18 +761,16 @@ feeding in a value from the context. That value can be of any type:
 This is possible because the ‘func’ parameter is allowed to refer to the
 earlier ‘arg_type’ parameter, and that refines its type in turn.
 
-We don’t have full support for variadic parameter lists, but we expect this to
-work soon:
+Another example where this is important is with variadic generics, where an
+algorithm or data structure may need to be defined over a list of heterogenous
+types:
 
 ```mojo
     struct Tuple[*ElementTys: AnyType]:
-       var _storage : ElementTys
+       var _storage : *ElementTys
 ```
 
-which will allow us to fully define Tuple (and related types like Function) in
-the standard library.
-
-> Note: we don't have enough metatype machinery in place yet, but we should be
+> Note: we don't have enough metatype helpers in place yet, but we should be
 able to write something like this in the future, though overloading is still a
 better way to handle this:
 
@@ -837,7 +785,7 @@ struct Array[T: AnyType]:
 
 ### `alias`: Named Parameter Expressions
 
-It is very common to want to name compile time values. Whereas ‘var’ defines a
+It is very common to want to *name* compile time values. Whereas ‘var’ defines a
 runtime value, and ‘let’ defines a runtime constant, we need a way to define a
 compile time temporary value. For this, Mojo uses an ‘`alias`’ declaration. For
 example, the DType struct implements a simple enum using aliases for the
@@ -860,7 +808,7 @@ This allows clients to use ‘DType.f32’ as a parameter expression (which also
 works as a runtime value of course) naturally. Note that this is invoking the
 runtime constructor for DType at compile time.
 
-Type are another common use for alias: because types are just compile time
+Types are another common use for alias: because types are just compile time
 expressions, it is very handy to be able to do things like this:
 
 ```mojo
@@ -886,8 +834,9 @@ the kernel, and many other fiddly details.
 Even vector length can be difficult to manage, because the vector length of a
 typical machine depends on the datatype, and some datatypes like bfloat16 don’t
 have full support on all implementations. Mojo helps by providing an autotune
-expression. For example if you want to write a vector-length-agnostic algorithm
-to a buffer of data, you might write it like this:
+function in the standard library. For example if you want to write a
+vector-length-agnostic algorithm to a buffer of data, you might write it like
+this:
 
 ```mojo
     def exp_buffer[dt: DType](data: ArraySlice[dt]):
@@ -909,9 +858,8 @@ constants - because functions and types are also parameter expressions.
 
 Autotuning is an inherently exponential technique that benefits from internal
 implementation details of the Mojo compiler stack (particularly MLIR,
-integrated caching, and distribution of compilation). That said, it is very
-much a power-user feature and needs continued development and iteration over
-time.
+integrated caching, and distribution of compilation). This is also a power-user
+feature and needs continued development and iteration over time.
 
 TODO: Write up evaluators when their design settles down a little bit.
 
@@ -928,7 +876,7 @@ the standard library.
 In Python all fundamental values are references to objects - a Python
 programmer typically thinks about the programming model as everything being
 reference semantic. However, at the CPython or machine level, we can see that
-the references themselves are actually passed _by-copy_, by copying the pointer
+the references themselves are actually passed _by-copy_, by copying a pointer
 and adjusting reference counts.
 
 This approach provides a comfortable programming model (though which is
@@ -970,7 +918,7 @@ struct Int:
 
 The problem here is that `__iadd__` needs to mutate the internal state of the
 integer. The solution in Mojo is to declare that the argument is passed “by
-reference” by using the & marker on the argument name (self in this case):
+reference” by using the & marker on the argument name (`self` in this case):
 
 ```mojo
 struct Int:
@@ -991,7 +939,7 @@ fn show_mutation():
 
     var a = InlinedFixedVector[16, Int](...)
     a[4] = 7
-    a[4] += 1
+    a[4] += 1    # Mutate an element within the InlinedFixedVector
     print(a[4])  # Prints 8
 
     let y = x
@@ -1023,7 +971,11 @@ fn show_swap():
     print(y)  # Prints 42
 ```
 
-A nice thing about this system is that it all composes correctly.
+A very important aspect of this system is that it all composes correctly.
+
+> Alternative: instead of using the `&` sigil, we could call this an `inout`
+argument.  Such a spelling would align better with other argument convention
+keywords, and is more correct given how Mojo's computed LValues work.
 
 ### “Borrowed” Argument Convention
 
@@ -1077,8 +1029,8 @@ fn try_something_big():
 
 Because the default argument convention is borrowed, we get very simple and
 logical code which does the right thing by default: for example, we don’t want
-to copy all of SomethingBig just to invoke the “`print_id`” method, or when
-calling `useSomethingBig`.
+to copy or move all of SomethingBig just to invoke the “`print_id`” method, or
+when calling `useSomethingBig`.
 
 The borrowed convention is similar and has precedent to other languages. For
 example, the borrowed argument convention is similar in some ways to passing an
@@ -1091,7 +1043,7 @@ prevents code from dynamically forming mutable references to a value when there
 are immutable references outstanding, and prevents having multiple mutable
 references to the same value. You are allowed to have multiple borrows (as the
 call to “`useSomethingBig`” does above) but cannot pass something by mutable
-reference and borrow at the same time.
+reference and borrow at the same time. (TODO: Not currently enabled).
 
 2. Small values like “`Int`”, “`Float`”, and “`SIMD`” are passed directly in
 machine registers instead of through an extra indirection (this is because they
@@ -1108,12 +1060,61 @@ more efficient when passing small values, and Rust defaults to moving values by
 default instead of passing them around by borrow. These policy and syntax
 decisions allows Mojo to provide an arguably easier to use programming model.
 
-### “Owned” Argument Convention
+### “Owned” Argument Convention and postfix `^` operator
 
-TOWRITE: You can opt-in to transferring instances of values.  Similar to ‘move’.
+The final argument convention that Mojo supports is the `owned` argument
+convention.  This convention is used for functions that want to take exclusive
+ownership over a value, and it is often used with the postfix `^` operator.
 
-TODO: Show an example of the consuming version of `__copyinit__` which transfers
-ownership of a value when consume argument convention is wired up correctly.
+For example, consider working with a move-only type like a unique pointer, while
+the borrow convention makes it easy to work with the unique pointer without
+ceremony, at some point you may want to transfer ownership to some other
+function.  This is what the `^` operator does:
+
+```mojo
+fn usePointer():
+  let ptr = SomeUniquePtr(...)
+  use(ptr)        # Perfectly fine to pass to borrowing function.
+  use(ptr)
+  take_ptr(ptr^)  # pass ownership of the `ptr` value to another function.
+
+  use(ptr) # ERROR: ptr is no longer valid here!
+```
+
+For movable types, the `^` operator ends the lifetime of a value binding and
+transfers the value to something else (in this case, the `take_ptr` function).
+To support this, you can define functions as taking owned arguments, e.g. you
+define `take_ptr` like so:
+
+```mojo
+fn take_ptr(owned p: SomeUniquePtr):
+  use(p)
+```
+
+Because it is declared `owned`, the `take_ptr` function knows it has unique
+access to the value.  This is very important for things like unique pointers,
+can be useful to avoid copies, and is a generalization for other cases as well.
+
+For example, you will notably see the `owned` convention on destructors and on
+consuming move initializers, e.g., our `MyString` type from earlier my be
+defined as:
+
+```mojo
+ struct MyString:
+        var data: Pointer[Int8]
+
+        # StringRef has a data + length field
+        def __init__(self&, input: StringRef): ...
+        def __copyinit__(self&, existing: Self): ...
+
+        def __moveinit__(self&, owned existing: Self):
+          self.data = existing.data
+
+        def __del__(owned self):
+            self.data.free()
+```
+
+This is because you need to own a value to destroy it or to steal its parts!
 
 ### `@register_passable` Struct Decorator
 
@@ -1127,24 +1128,22 @@ floating point number!
 
 To solve this, Mojo allows structs to opt-in to being passed in a register
 instead of passing through memory with the `@register_passable` decorator.
-You’ll see this decorator on types like Int in the standard library:
+You’ll see this decorator on types like `Int` in the standard library:
 
 ```mojo
-@register_passable
+@register_passable("trivial")
 struct Int:
    var value: __mlir_type.`!pop.scalar<index>`
-
-   fn __copyinit__(self&, existing: Self):
-       return Self {value: self.value}
 
    fn __init__(value: __mlir_type.`!pop.scalar<index>`) -> Self:
        return Self {value: value}
    ...
 ```
 
-This decorator does not change the fundamental behavior of a type: it still
-needs to have a `__copyinit__` method to be copyable, may still have a
-`__init__` and `__del__` methods, etc. The major effect of this decorator is on
+The basic `@register_passable` decorator does not change the fundamental
+behavior of a type: it still needs to have a `__copyinit__` method to be
+copyable, may still have a `__init__` and `__del__` methods, etc. The major
+effect of this decorator is on
 internal implementation details: `@register_passable` types are typically
 passed in machine registers (subject to the details of the underlying
 architecture of course).
@@ -1168,15 +1167,22 @@ instead of being passed by-pointer.
 We expect that this decorator will be used pervasively on core standard library
 types, but is safe to ignore for general application level code.
 
+The `Int` example above actually uses the "trivial" variant of this decorator.
+It changes the passing convention as described above but also disallows copy
+and move constructors and destructors (synthesizing them all trivially).
+
+> TODO: Trivial needs to be decoupled to its own decorator since it applies to
+memory types as well.
+
 ### How ‘`def`’ argument passing works
 
 Argument passing in `def` functions is sugar for argument passing in `fn`:
 
 1. If there is no explicit type annotation, the compiler defaults to type
-`Object`(which is currently just stubbed out, it isn’t particularly useful
-yet).
+`Object`.
 
-2. Arguments with explicit markers (e.g. by reference) obey their marker.
+2. Arguments with explicit markers (e.g. by reference or owned) obey their
+   marker.
 
 3. Arguments without an argument convention are passed by implicit copy into a
 mutable var with the same name as the argument. Implicit copy requires that the
@@ -1205,9 +1211,7 @@ adjustment, which is eliminated by a move optimization.
 ## Lifetimes
 
 TODO: Explain how returning references work, tied into lifetimes which dovetail
-with parameters.
-
-This is likely to be implemented in ~April.
+with parameters.  This is not enabled yet.
 
 ## Type Traits
 
