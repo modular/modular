@@ -273,6 +273,15 @@ static llvm::Error createReplBreakpoint(Target &target) {
 /// breakpoint to be hit.
 llvm::Error MojoREPL::launchEntryPointProcess(Target &target,
                                               Debugger &debugger) {
+  // The following disables a warning that is thrown when the entry-point is
+  // built with optimizations. This warning pollutes the output and is not
+  // helpful because the entry point is actually an empty program.
+  ExecutionContext ctx;
+  target.CalculateExecutionContext(ctx);
+  target.SetPropertyValue(&ctx, lldb_private::eVarSetOperationAssign,
+                          /*path=*/"process.optimization-warnings",
+                          /*value=*/"false");
+
   ProcessLaunchInfo launchInfo;
   if (target.GetDisableSTDIO())
     launchInfo.GetFlags().Set(lldb::eLaunchFlagDisableSTDIO);
