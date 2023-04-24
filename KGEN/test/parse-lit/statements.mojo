@@ -7,7 +7,7 @@
 # RUN: kgen-translate %s -import-mojo -verify-diagnostics -I %S/../mojo-examples/ | FileCheck %s
 
 
-from prolog import object
+from prolog import object, range
 
 
 ##===----------------------------------------------------------------------===##
@@ -250,6 +250,45 @@ def test_early_return():
     # CHECK: lit.return
     return
     # CHECK: lit.end_func
+
+
+##===----------------------------------------------------------------------===##
+# For
+##===----------------------------------------------------------------------===##
+
+
+struct my_iter:
+    fn __init__(self&): pass
+    fn __next__(self&: my_iter) -> Int: return 0
+    fn __len__(self: my_iter) -> Int: return 0
+
+
+struct MyList:
+    fn __init__(self&): pass
+    fn __iter__(self) -> my_iter: return my_iter()
+
+
+# CHECK-LABEL: lit.func @"main()"
+fn main():
+    let my_list = MyList()
+
+    # CHECK: %$RANGE = lit.varlet.decl "$RANGE"
+    # CHECK: %[[ITER:.*]] = kgen.call @{{.*}}__iter__{{.*}}(%$RANGE, %my_list)
+    for item in my_list:
+        pass
+
+
+# CHECK-LABEL: @"induction_var_scope()"
+fn induction_var_scope():
+    # CHECK: "item"
+    # CHECK: hlcf.loop
+    for item in range(0):
+        # CHECK: pop.load %item
+        # CHECK: "g" = %{{.*}}
+        let g = item
+    for item in range(0):
+        # CHECK: pop.load %item
+        let g = item
 
 
 ##===----------------------------------------------------------------------===##
