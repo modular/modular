@@ -95,6 +95,71 @@ fn test_if_decorator(a: Bool):
     pass
 
 ##===----------------------------------------------------------------------===##
+# For
+##===----------------------------------------------------------------------===##
+
+struct my_iter_no_len:
+    fn __init__(self&): pass
+    fn __next__(self&) -> Int: return 0
+
+
+struct MyList_range_no_len:
+    fn __init__(self&): pass
+    fn __iter__(self) -> my_iter_no_len: return my_iter_no_len()
+
+
+struct my_iter_no_next:
+    fn __init__(self&): pass
+    fn __len__(self) -> Int: return 0
+
+
+struct MyList_range_no_next:
+    fn __init__(self&): pass
+    fn __iter__(self) -> my_iter_no_next: return my_iter_no_next()
+
+
+struct MyList_no_iter:
+    fn __init__(self&): pass
+
+
+struct my_iter_wrong_int:
+    fn __init__(self&): pass
+    fn __next__(self&) -> Int: return 0
+    fn __len__(self: my_iter_wrong_int) -> F32: return 0.0
+
+
+struct MyList_invalid_boxed_type:
+    fn __init__(self&): pass
+    fn __iter__(self) -> my_iter_wrong_int: return my_iter_wrong_int()
+
+
+fn main():
+    let my_list_no_len = MyList_range_no_len()
+    let my_list_no_next = MyList_range_no_next()
+    let my_list_no_iter = MyList_no_iter()
+    let my_list_invalid_int = MyList_invalid_boxed_type()
+
+    # expected-error @+1 {{'my_iter_no_len' does not implement the '__len__' method}}
+    for item in my_list_no_len:
+        pass
+
+    # expected-error @+1 {{'my_iter_no_next' does not implement the '__next__' method}}
+    for item in my_list_no_next:
+        pass
+
+    # expected-error @+1 {{'MyList_no_iter' does not implement the '__iter__' method}}
+    for item in my_list_no_iter:
+        pass
+
+    # expected-error @+1 {{'SIMD[f32, 1]' does not implement the '__as_mlir_index' method}}
+    for item in my_list_invalid_int:
+        pass
+
+    # expected-error @+1 {{expected 'in' after target identifier. Note that target lists are not yet supported.}}
+    for key, item in my_list_no_next:
+        pass
+
+##===----------------------------------------------------------------------===##
 # Raise
 ##===----------------------------------------------------------------------===##
 
