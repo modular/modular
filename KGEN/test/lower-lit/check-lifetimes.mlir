@@ -16,8 +16,8 @@ lit.file_module @"$check_lifetimes" {
       %none = kgen.param.constant: !lit.none = <#lit.none>
       kgen.return %none : !lit.none
     }
-    // fn __del___(owned self): pass
-    lit.func @__del___(%self: !pop.pointer<@"$check_lifetimes"::@Struct> owned_in_mem) -> !lit.none {
+    // fn __del__(owned self): pass
+    lit.func @__del__(%self: !pop.pointer<@"$check_lifetimes"::@Struct> owned_in_mem) -> !lit.none {
       %none = kgen.param.constant: !lit.none = <#lit.none>
       kgen.return %none : !lit.none
     }

@@ -2582,7 +2582,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
 /// returns null if there is no defined destructor.
 static TypedAttr lookupDestructor(ASTDecl &structDecl, SharedState &shared) {
   const TinyPtrVector<ASTDecl *> *entries = structDecl.lookupInCurrentScope(
-      StringAttr::get(shared.getContext(), "__del___"));
+      StringAttr::get(shared.getContext(), "__del__"));
   // If there are no __del__ methods, return null.  This is valid.
   if (!entries)
     return {};
@@ -2633,13 +2633,12 @@ static TypedAttr synthesizeEmptyDtor(StructDeclOp structOp, ASTDecl &structDecl,
   StringAttr selfName = builder.getStringAttr("self");
 
   // Create the empty dtor function.
-  StringAttr name =
-      getMangledName(builder.getStringAttr("__del___"), signature);
+  StringAttr name = getMangledName(builder.getStringAttr("__del__"), signature);
   auto funcOp = builder.create<LIT::FuncOp>(name, signature, selfName);
 
   // Register the dtor in the struct.
   ASTDecl &funcDecl = resolver.addFullyResolvedDecl(
-      funcOp.getOperation(), "__del___", structDecl.getLoc(), &structDecl);
+      funcOp.getOperation(), "__del__", structDecl.getLoc(), &structDecl);
   funcDecl.setSpecialFunctionKind(SpecialFunctionKind::kDel);
 
   // Set up the body.

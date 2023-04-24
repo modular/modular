@@ -519,17 +519,17 @@ struct InvalidMember:
   # expected-error @+1 {{'@register_passable("trivial")' types may not have a '__copyinit__' method}}
   fn __copyinit__(self) -> Self: pass
   # expected-error @+1 {{'@register_passable("trivial")' types may not have a '__del__' method}}
-  fn __del__(self): pass
+  fn __del__(owned self): pass
 
 def noop():  # expected-error {{expected body statements; use 'pass' if none is required}}
 
 struct BadDtor1:
-  fn __del___(self): # expected-error {{self argument must be 'owned'}}
+  fn __del__(self): # expected-error {{self argument must be 'owned'}}
     pass
 
 struct BadDtor:
   fn __init__(self&): pass
-  fn __del___[x: Int](owned self):
+  fn __del__[x: Int](owned self):
     pass
 
 fn bad_destructors():

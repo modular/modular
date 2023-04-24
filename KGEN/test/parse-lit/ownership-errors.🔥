@@ -16,7 +16,7 @@ struct MemExample:
   fn __copyinit__(self&, existing: Self): # expected-note {{'self' declared here}}
     self.x = existing.x
 
-  fn __del___(owned self): pass
+  fn __del__(owned self): pass
 
 fn use(x: MemExample): pass
 
@@ -28,7 +28,7 @@ struct RegExample:
     return RegExample{regstate: 1}
   fn __copyinit__(self) -> Self:
     return RegExample{regstate: 12}
-  fn __del___(owned self):
+  fn __del__(owned self):
     pass
 
 fn use(x: RegExample): pass
@@ -198,7 +198,7 @@ struct MoreComplexExample:
     self.mem = existing.mem
     self.reg = existing.reg
 
-  fn __del___(owned self): pass
+  fn __del__(owned self): pass
 
 fn use(x: MoreComplexExample): pass
 
