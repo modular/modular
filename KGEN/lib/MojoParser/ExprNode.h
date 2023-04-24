@@ -9,8 +9,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LIT_EXPRNODE_H
-#define LIT_EXPRNODE_H
+#ifndef EXPRNODE_H
+#define EXPRNODE_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
 
@@ -19,7 +19,7 @@ using llvm::SMLoc;
 class AnyValue;
 class ASTType;
 class ExprEmitter;
-class LitSourceRange;
+class SourceRange;
 class ValueDest;
 
 //===----------------------------------------------------------------------===//
@@ -138,7 +138,7 @@ public:
   Location getLocation(ExprEmitter &emitter) const;
 
   /// Return the source range spanned by this expression.
-  virtual LitSourceRange getRange() const = 0;
+  virtual SourceRange getRange() const = 0;
 
   /// Return the start or end of the source range.
   llvm::SMLoc getRangeStart() const;
@@ -153,4 +153,4 @@ public:
 
 } // namespace M::KGEN::LIT
 
-#endif // LIT_EXPRNODE_H
+#endif // EXPRNODE_H

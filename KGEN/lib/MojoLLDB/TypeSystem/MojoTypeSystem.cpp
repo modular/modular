@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MojoTypeSystem.h"
-#include "../../ParseLit/ASTType.h"
+#include "../../MojoParser/ASTType.h"
 #include "../ExpressionParser/MojoDiagnostic.h"
 #include "../ExpressionParser/MojoExpressionParser.h"
 #include "../ExpressionParser/MojoExpressionVariable.h"
@@ -14,7 +14,7 @@
 #include "KGEN/InitAllDialects.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LowerToObject.h"
-#include "KGEN/ParseLit.h"
+#include "KGEN/MojoParser.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/SymbolExport.h"
 #include "lldb/API/SBDebugger.h"

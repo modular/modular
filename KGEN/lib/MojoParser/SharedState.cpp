@@ -11,8 +11,8 @@
 #include "SharedState.h"
 #include "ASTDecl.h"
 #include "ASTType.h"
+#include "DeclResolver.h"
 #include "IRValues.h"
-#include "LitDecls.h"
 
 #include "Cache/Buffer.h"
 #include "Cache/CacheDialect/CachedTransform.h"
@@ -22,9 +22,9 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/MojoParser.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPTypes.h"
-#include "KGEN/ParseLit.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
@@ -136,7 +136,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, MojoParserConfig &config,
     // enough for now).
     diBuilder->initializeCompileUnit(
         llvm::dwarf::DW_LANG_C,
-        diBuilder->createFile(diags.getBufferNameIdentifier(), "/"), "Lit",
+        diBuilder->createFile(diags.getBufferNameIdentifier(), "/"), "Mojo",
         /*isOptimized=*/true, options.getDIEmissionKind());
   }
 
@@ -180,20 +180,20 @@ void SharedState::initialize(ASTDecl &topLevelDecl) {
   topLevelDecl.resolvedness = DeclResolvedness::fully;
 }
 
-LitDiagnostic SharedState::emitError(Location loc, const Twine &message) {
+InflightDiag SharedState::emitError(Location loc, const Twine &message) {
   return diags.emitError(loc, message);
 }
 
 /// Emit an error through the parser's logic.
-LitDiagnostic SharedState::emitError(llvm::SMLoc loc, const Twine &message) {
+InflightDiag SharedState::emitError(llvm::SMLoc loc, const Twine &message) {
   return diags.emitError(loc, message);
 }
 
 /// Emit a warning.
-LitDiagnostic SharedState::emitWarning(Location loc, const Twine &message) {
+InflightDiag SharedState::emitWarning(Location loc, const Twine &message) {
   return diags.emitWarning(loc, message);
 }
-LitDiagnostic SharedState::emitWarning(llvm::SMLoc loc, const Twine &message) {
+InflightDiag SharedState::emitWarning(llvm::SMLoc loc, const Twine &message) {
   return diags.emitWarning(loc, message);
 }
 

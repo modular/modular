@@ -8,8 +8,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef AST_TYPE_H
-#define AST_TYPE_H
+#ifndef ASTTYPE_H
+#define ASTTYPE_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Types.h"
@@ -24,7 +24,7 @@ namespace M::KGEN::LIT {
 class ASTDecl;
 class CValue;
 class SharedState;
-class LitDiagnostic;
+class InflightDiag;
 template <typename ValueType>
 struct ASTExprAnd;
 
@@ -116,7 +116,7 @@ public:
   void print(raw_ostream &os, bool forDiag = false) const;
 };
 
-void addToDiagnostic(ASTType type, LitDiagnostic &diag);
+void addToDiagnostic(ASTType type, InflightDiag &diag);
 raw_ostream &operator<<(raw_ostream &os, ASTType type);
 
 } // namespace M::KGEN::LIT
@@ -139,4 +139,4 @@ public:
 
 } // namespace llvm
 
-#endif // AST_TYPE_H
+#endif // ASTTYPE_H

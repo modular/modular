@@ -9,12 +9,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "ASTDecl.h"
+#include "DeclResolver.h"
+#include "ExprEmitter.h"
+#include "ExprNodes.h"
 #include "Lexer.h"
-#include "LitDecls.h"
-#include "LitExprEmitter.h"
-#include "LitExprNodes.h"
 #include "ParserBase.h"
 
+#include "CallEmission.h"
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -23,7 +24,6 @@
 #include "KGEN/POPDialect/POPEnums.h.inc"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
-#include "LitExprCalls.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"
@@ -260,8 +260,7 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
       shared.emitWarning(expr->getLoc())
           << "function pointer was formed but not called, did you forget '()'s?"
           << expr->getRange()
-          << LitFixIt::insertAfterToken(expr->getRange().getEnd(), "()",
-                                        shared);
+          << FixIt::insertAfterToken(expr->getRange().getEnd(), "()", shared);
       return;
     }
   }
@@ -272,7 +271,7 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
     auto loc = expr->getRange().getStart();
     shared.emitWarning(expr->getLoc())
         << "coroutine was never awaited" << expr->getRange()
-        << LitFixIt::insertBeforeToken(loc, "await ");
+        << FixIt::insertBeforeToken(loc, "await ");
     return;
   }
 
@@ -280,7 +279,7 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
   auto startLoc = expr->getRange().getStart();
   shared.emitWarning(expr->getLoc())
       << valueType << " value is unused" << expr->getRange()
-      << LitFixIt::insertBeforeToken(startLoc, "_ = ");
+      << FixIt::insertBeforeToken(startLoc, "_ = ");
 }
 
 /// When `onlySimpleStmt` is true, this parses the simple_stmt production,
@@ -481,8 +480,8 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
   // We don't support formation of tuples / multiple result values yet.
   if (operandExprs.size() != 1) {
     emitError(loc, "tuple return not supported yet")
-        << LitSourceRange(operandExprs.front()->getRangeStart(),
-                          operandExprs.back()->getRangeEnd());
+        << SourceRange(operandExprs.front()->getRangeStart(),
+                       operandExprs.back()->getRangeEnd());
     return success();
   }
 
@@ -558,7 +557,7 @@ ParseResult StmtParser::parseParamReturnStmt(size_t returnIndent) {
   if (exprs.size() != numResultParams) {
     emitError(startLoc, "expected ")
         << numResultParams << " result parameter" << plural(numResultParams)
-        << LitSourceRange(startLoc, endLoc);
+        << SourceRange(startLoc, endLoc);
     return success();
   }
 

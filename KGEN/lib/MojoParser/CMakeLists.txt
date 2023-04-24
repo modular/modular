@@ -4,15 +4,15 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_conversion_library(ParseLit
+add_modular_conversion_library(MojoParser
   ASTType.cpp
+  CallEmission.cpp
+  DeclResolver.cpp
   Diags.cpp
-  IRValues.cpp
-  LitDecls.cpp
   DocString.cpp
-  LitExprCalls.cpp
-  LitExprEmitter.cpp
-  LitExprNodes.cpp
+  ExprEmitter.cpp
+  IRValues.cpp
+  ExprNodes.cpp
   Lexer.cpp
   ParserBase.cpp
   ParserDriver.cpp

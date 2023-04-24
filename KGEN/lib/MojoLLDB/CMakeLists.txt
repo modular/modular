@@ -32,7 +32,7 @@ add_modular_library(MojoLLDB SHARED
   KGENEmitObject
   LLCLRuntimeGlobals
   MVersion
-  ParseLit
+  MojoParser
 
   MLIRBuiltinToLLVMIRTranslation
 

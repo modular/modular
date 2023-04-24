@@ -21,9 +21,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "DeclResolver.h"
+#include "ExprNodes.h"
 #include "Lexer.h"
-#include "LitDecls.h"
-#include "LitExprNodes.h"
 #include "ParserBase.h"
 #include "llvm/Support/SaveAndRestore.h"
 
@@ -642,7 +642,7 @@ ParseResult ExprParser::parsePrefixLBrace(DictionaryNode *&result,
     auto loc = getToken().getLoc();
     if (consumeIf(Token::equal)) {
       emitTokenError("expected ':' after dictionary key, not '='")
-          << LitFixIt::replaceToken(loc, ":");
+          << FixIt::replaceToken(loc, ":");
       return success();
     }
     return parseToken(Token::colon, "expected ':' in dictionary");
@@ -753,7 +753,7 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
     auto loc = getToken().getLoc();
     if (getToken().is(Token::equal))
       emitTokenError("expected ':' in subscript slice, not '='")
-          << LitFixIt::replaceToken(loc, ":");
+          << FixIt::replaceToken(loc, ":");
     consumeToken();
     return loc;
   };

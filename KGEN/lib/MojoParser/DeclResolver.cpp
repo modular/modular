@@ -8,16 +8,16 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "LitDecls.h"
+#include "DeclResolver.h"
 #include "ASTDecl.h"
+#include "CallEmission.h"
 #include "DocString.h"
+#include "ExprEmitter.h"
+#include "ExprNodes.h"
 #include "IRValues.h"
 #include "Lexer.h"
-#include "LitExprCalls.h"
-#include "LitExprEmitter.h"
-#include "LitExprNodes.h"
-#include "LitParameterEvaluator.h"
 #include "ParserBase.h"
+#include "ParserParamEvaluator.h"
 
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -484,7 +484,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     return success(!decl.hasReferenceError);
   }
 
-  auto emitError = [&](SMLoc loc, const Twine &message) -> LitDiagnostic {
+  auto emitError = [&](SMLoc loc, const Twine &message) -> InflightDiag {
     return this->emitError(loc, message);
   };
 
@@ -583,17 +583,17 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
 }
 
 //===----------------------------------------------------------------------===//
-// LitParameterEvaluator implementation
+// ParserParamEvaluator implementation
 //===----------------------------------------------------------------------===//
 
-LitParameterEvaluator::LitParameterEvaluator(
-    DeclResolver &resolver, ArrayRef<ParamBindAttr> paramValues)
+ParserParamEvaluator::ParserParamEvaluator(DeclResolver &resolver,
+                                           ArrayRef<ParamBindAttr> paramValues)
     : ParameterEvaluator(paramValues), InterpreterState(/*target=*/nullptr),
       resolver(resolver) {}
 
 FailureOr<TypedAttr>
-LitParameterEvaluator::evaluateFunctionCall(SymbolRefAttr symbol,
-                                            ArrayRef<Attribute> arguments) {
+ParserParamEvaluator::evaluateFunctionCall(SymbolRefAttr symbol,
+                                           ArrayRef<Attribute> arguments) {
   ErrorOr<Region *> body = lookupFunctionBody(symbol);
   if (body.isError()) {
     // Swallow the error.
@@ -614,7 +614,7 @@ LitParameterEvaluator::evaluateFunctionCall(SymbolRefAttr symbol,
 }
 
 FailureOr<TypedAttr>
-LitParameterEvaluator::evaluateExpression(ParamOperatorAttr op) {
+ParserParamEvaluator::evaluateExpression(ParamOperatorAttr op) {
   if (op.getOpcode() != POC::Apply)
     return failure();
 
@@ -636,7 +636,7 @@ LitParameterEvaluator::evaluateExpression(ParamOperatorAttr op) {
 }
 
 ErrorOr<Region *>
-LitParameterEvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
+ParserParamEvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
   ASTDecl *decl = resolver.getDeclForFuncSymbol(symbol);
   if (!decl)
     return Error("function not found: " + mlir::debugString(symbol));
@@ -665,7 +665,7 @@ LitParameterEvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
   return &func.getBodyRegion();
 }
 
-Type LitParameterEvaluator::refineType(Type type) {
+Type ParserParamEvaluator::refineType(Type type) {
   mlir::AttrTypeReplacer replacer;
   replacer.addReplacement([&](ParamOperatorAttr op) -> TypedAttr {
     FailureOr<TypedAttr> result = evaluateExpression(op);
@@ -742,7 +742,7 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
     SMLoc starLoc = p.getToken().getLoc();
     if (p.getToken().getKind() == Token::star) {
       if (vararg != VarArgKind::VarArg) {
-        LitDiagnostic diag = p.emitError(
+        InflightDiag diag = p.emitError(
             starLoc, "only variadic arguments' types can be unpacked");
         if (name) {
           diag.attachNote(identifierLoc)
@@ -1178,8 +1178,8 @@ static void rejectDecorators(ArrayRef<ExprNode *> decoratorExprs, ASTDecl &decl,
   if (!decoratorExprs.empty())
     shared.emitError(decoratorExprs[0]->getLoc(),
                      "decorators not supported on this statement")
-        << LitSourceRange(decoratorExprs.front()->getRangeStart(),
-                          decoratorExprs.back()->getRangeEnd());
+        << SourceRange(decoratorExprs.front()->getRangeStart(),
+                       decoratorExprs.back()->getRangeEnd());
 }
 
 //===----------------------------------------------------------------------===//
@@ -1251,12 +1251,12 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
   // it don't type check, and we clear our special function information.  This
   // reduces cascade errors.
   auto emitErrorLoc = [&](SMLoc loc,
-                          const Twine &message = Twine()) -> LitDiagnostic {
+                          const Twine &message = Twine()) -> InflightDiag {
     fnInfo = SpecialFunctionInfo();
     decl.hasReferenceError = true;
     return shared.emitError(loc, message);
   };
-  auto emitError = [&](const Twine &message = Twine()) -> LitDiagnostic {
+  auto emitError = [&](const Twine &message = Twine()) -> InflightDiag {
     fnInfo = SpecialFunctionInfo();
     decl.hasReferenceError = true;
     return shared.emitError(funcOp.getLoc(), message);
@@ -1323,7 +1323,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
       } else {
         // In an 'fn' we report an error.
         emitErrorLoc(arg.loc, "'fn' parameter type must be specified")
-            << LitSourceRange(arg.loc, arg.loc);
+            << SourceRange(arg.loc, arg.loc);
         type = shared.getTypeCheckErrorType();
       }
     }
@@ -1383,7 +1383,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
     } else if (fnInfo.requiresOwnedSelfInstMethod()) {
       if (args[selfArgNumber].convention != ParsedArgument::kConventionOwned) {
         emitErrorLoc(args[selfArgNumber].loc, "self argument must be 'owned'")
-            << LitFixIt::insertBeforeToken(args[selfArgNumber].loc, "owned ");
+            << FixIt::insertBeforeToken(args[selfArgNumber].loc, "owned ");
         args[selfArgNumber].convention = ParsedArgument::kConventionOwned;
       }
     } else if (!fnInfo.allowsByRefSelfInstMethod() &&
@@ -1415,7 +1415,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
   case SpecialFunctionKind::kNew:
     emitError("'__new__' is not supported on structs; use '__init__' instead");
     break;
-  case SpecialFunctionKind::kLitBool:
+  case SpecialFunctionKind::kMLIRI1:
     if (!resultType.mlirType.isSignlessInteger(1))
       emitError() << name << " result type must be __mlir_type.i1";
     break;
@@ -1435,7 +1435,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
       auto diag = emitErrorLoc(selfArgLoc, "'self' in struct ")
                   << name << " must be passed as mutable reference";
       if (args[0].convention == ParsedArgument::kConventionUnspec)
-        diag << LitFixIt::insertAfterToken(selfArgLoc, "&", shared);
+        diag << FixIt::insertAfterToken(selfArgLoc, "&", shared);
     }
 
     // Regardless force it to init_self so recovery follows the fix-it.
@@ -2224,7 +2224,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
                "method";
         diag.attachNote(argDecl.getLoc())
             << "consider passing by reference instead"
-            << LitFixIt::insertAfterToken(argDecl.getLoc(), "&", shared);
+            << FixIt::insertAfterToken(argDecl.getLoc(), "&", shared);
         break;
       }
 

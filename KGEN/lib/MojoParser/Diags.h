@@ -27,9 +27,9 @@ namespace M::KGEN::LIT {
 using llvm::SMFixIt;
 using llvm::SMLoc;
 using llvm::SourceMgr;
-class LitDiagnostic;
-class LitSourceRange;
-class LitFixIt;
+class InflightDiag;
+class SourceRange;
+class FixIt;
 class SharedState;
 
 class Diags {
@@ -51,12 +51,12 @@ public:
   void clear() { errorEmitted = diagnosticEmitted = false; }
 
   /// Emit an error.
-  LitDiagnostic emitError(Location loc, const Twine &message);
-  LitDiagnostic emitError(llvm::SMLoc loc, const Twine &message);
+  InflightDiag emitError(Location loc, const Twine &message);
+  InflightDiag emitError(llvm::SMLoc loc, const Twine &message);
 
   /// Emit a warning.
-  LitDiagnostic emitWarning(Location loc, const Twine &message);
-  LitDiagnostic emitWarning(llvm::SMLoc loc, const Twine &message);
+  InflightDiag emitWarning(Location loc, const Twine &message);
+  InflightDiag emitWarning(llvm::SMLoc loc, const Twine &message);
 
   /// Encode the specified source location information into a Location object
   /// for attachment to the IR or error reporting.  This always returns a
@@ -85,7 +85,7 @@ public:
   const bool useMLIRDiagnostics;
 
 private:
-  friend class LitDiagnostic;
+  friend class InflightDiag;
   Diags(const Diags &) = delete;
 
   /// This is set to true if an error occurred at any point processing the
@@ -103,37 +103,37 @@ private:
 ///
 /// Each diagnostic is made up of a primary message and is optionally followed
 /// by any number of note messages.
-class LitDiagnostic {
+class InflightDiag {
 public:
-  LitDiagnostic(Location loc, Diags &diags, bool isWarning);
-  ~LitDiagnostic();
-  LitDiagnostic(LitDiagnostic &&other);
+  InflightDiag(Location loc, Diags &diags, bool isWarning);
+  ~InflightDiag();
+  InflightDiag(InflightDiag &&other);
 
   /// Abandon emission of this message, this will make it be a noop when its
   /// destructor runs.
   void abandon() { diags = nullptr; }
 
-  // LitDiagnostic always converts to failure.  This allows certain patterns to
+  // InflightDiag always converts to failure.  This allows certain patterns to
   // be more ergonomic.
   operator LogicalResult() const { return failure(); }
   operator ParseResult() const { return failure(); }
 
   /// Add a note to this diagnostic at the specified location, and change the
   /// emission point to start filling it in.
-  LitDiagnostic attachNote(Location loc) &&;
-  LitDiagnostic &attachNote(Location loc) &;
-  LitDiagnostic attachNote(SMLoc loc) &&;
-  LitDiagnostic &attachNote(SMLoc loc) &;
+  InflightDiag attachNote(Location loc) &&;
+  InflightDiag &attachNote(Location loc) &;
+  InflightDiag attachNote(SMLoc loc) &&;
+  InflightDiag &attachNote(SMLoc loc) &;
 
   // Insertion operations for various things that contribute to the current
   // messages.  These are implemented with addToDiagnostic methods.
   template <typename Arg>
-  LitDiagnostic &operator<<(Arg &&value) & {
+  InflightDiag &operator<<(Arg &&value) & {
     addToDiagnostic(std::forward<Arg>(value), *this);
     return *this;
   }
   template <typename Arg>
-  LitDiagnostic operator<<(Arg value) && {
+  InflightDiag operator<<(Arg value) && {
     addToDiagnostic(std::forward<Arg>(value), *this);
     return std::move(*this);
   }
@@ -141,8 +141,8 @@ public:
   /// This method can be used by addToDiagnostic impls to add things to the
   /// diagnostic.
   void addText(const Twine &text);
-  void addSourceRange(LitSourceRange range);
-  void addFixIt(LitFixIt fixIt);
+  void addSourceRange(SourceRange range);
+  void addFixIt(FixIt fixIt);
 
 private:
   void emitMLIRDiagnostic();
@@ -179,16 +179,16 @@ private:
 /// e.g. complaining about a format character in a string literal.  In those
 /// cases, you may use a 'byte-level' string, which uses a half-open range and
 /// is not extended to include the end of the token.
-class LitSourceRange {
+class SourceRange {
 public:
   /// Build a null range.
-  LitSourceRange() = default;
+  SourceRange() = default;
 
   /// Build a normal token-start range.
-  LitSourceRange(SMLoc start, SMLoc end);
+  SourceRange(SMLoc start, SMLoc end);
 
   /// Build a byte-level range.
-  static LitSourceRange getByteLevel(SMLoc start, SMLoc end);
+  static SourceRange getByteLevel(SMLoc start, SMLoc end);
 
   SMLoc getStart() const;
   SMLoc getEnd() const;
@@ -205,39 +205,39 @@ private:
 /// in the parser must always follow the logic that would have happened if the
 /// FixIt was applied so the user doesn't get a different downstream error after
 /// applyign the FixIt hint.
-class LitFixIt {
+class FixIt {
 public:
-  LitFixIt(LitSourceRange range, const Twine &replacement);
+  FixIt(SourceRange range, const Twine &replacement);
 
   /// This constructor creates a fixit that replaces the one token at the
   /// specified location with some text.
-  static LitFixIt replaceToken(SMLoc loc, const Twine &text);
+  static FixIt replaceToken(SMLoc loc, const Twine &text);
 
   /// This constructor creates a fixit that inserts some text before the token
   /// at the specified location, without replacing the token.
-  static LitFixIt insertBeforeToken(SMLoc loc, const Twine &text);
+  static FixIt insertBeforeToken(SMLoc loc, const Twine &text);
 
   /// This constructor creates a fixit that inserts some text after the token
   /// at the specified location.
-  static LitFixIt insertAfterToken(SMLoc loc, const Twine &text,
-                                   SharedState &shared);
+  static FixIt insertAfterToken(SMLoc loc, const Twine &text,
+                                SharedState &shared);
 
   /// This is the source range to remove.
-  LitSourceRange range;
+  SourceRange range;
   /// This is what to replace it with.
   std::string replacement;
 };
 
 // These methods enable adding common types to the current diagnostic.
-void addToDiagnostic(const Twine &text, LitDiagnostic &diag);
-void addToDiagnostic(char text, LitDiagnostic &diag);
-void addToDiagnostic(size_t number, LitDiagnostic &diag);
-void addToDiagnostic(StringAttr attr, LitDiagnostic &diag);
+void addToDiagnostic(const Twine &text, InflightDiag &diag);
+void addToDiagnostic(char text, InflightDiag &diag);
+void addToDiagnostic(size_t number, InflightDiag &diag);
+void addToDiagnostic(StringAttr attr, InflightDiag &diag);
 
 /// This adds a source range highlight.
-void addToDiagnostic(LitSourceRange range, LitDiagnostic &diag);
+void addToDiagnostic(SourceRange range, InflightDiag &diag);
 /// This adds a fixit hint.
-void addToDiagnostic(LitFixIt fixIt, LitDiagnostic &diag);
+void addToDiagnostic(FixIt fixIt, InflightDiag &diag);
 
 } // namespace M::KGEN::LIT
 

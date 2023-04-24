@@ -17,7 +17,7 @@ add_modular_mlir_library(KGENCompiler
 
   KGENElaborator
   KGENTransforms
-  ParseLit
+  MojoParser
   LowerLIT
 
   KGENDialect

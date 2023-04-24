@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LIT_PARAMETER_EVALUATOR_H
-#define LIT_PARAMETER_EVALUATOR_H
+#ifndef PARSER_PARAM_EVALUATOR_H
+#define PARSER_PARAM_EVALUATOR_H
 
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "Support/Interpreter/InterpreterInterface.h"
@@ -20,11 +20,11 @@
 namespace M::KGEN::LIT {
 class DeclResolver;
 
-class LitParameterEvaluator : public ParameterEvaluator,
-                              public InterpreterState {
+class ParserParamEvaluator : public ParameterEvaluator,
+                             public InterpreterState {
 public:
-  LitParameterEvaluator(DeclResolver &resolver,
-                        ArrayRef<ParamBindAttr> paramValues = {});
+  ParserParamEvaluator(DeclResolver &resolver,
+                       ArrayRef<ParamBindAttr> paramValues = {});
 
   /// Attempt to evaluate 'apply' expressions.
   FailureOr<TypedAttr> evaluateExpression(ParamOperatorAttr op) override;
@@ -45,4 +45,4 @@ private:
 
 } // namespace M::KGEN::LIT
 
-#endif // LIT_PARAMETER_EVALUATOR_H
+#endif // PARSER_PARAM_EVALUATOR_H

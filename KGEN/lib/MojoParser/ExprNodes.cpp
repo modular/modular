@@ -9,12 +9,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "LitExprNodes.h"
+#include "ExprNodes.h"
 #include "ASTDecl.h"
+#include "CallEmission.h"
+#include "ExprEmitter.h"
 #include "IRValues.h"
-#include "LitExprCalls.h"
-#include "LitExprEmitter.h"
-#include "LitParameterEvaluator.h"
+#include "ParserParamEvaluator.h"
 #include "SharedState.h"
 #include "SpecialFunctions.h"
 
@@ -259,7 +259,7 @@ static PValue resolveParamDeclareValue(ParamDeclareOp param,
       assert(structDecl.getInputParams().size() == bindings.size() &&
              "mismatch in # struct parameters and # bindings");
 
-      LitParameterEvaluator evaluator(*shared.declResolver, bindings);
+      ParserParamEvaluator evaluator(*shared.declResolver, bindings);
       return PValue(evaluator.getReboundAttribute(param.getValue()));
     }
 
@@ -504,7 +504,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
       emitter.emitError(getLoc(), "cannot access method '")
           << spelling << "' directly; did you mean '" << replacement << "'?"
-          << getRange() << LitFixIt::insertBeforeToken(getLoc(), replacement);
+          << getRange() << FixIt::insertBeforeToken(getLoc(), replacement);
       return {};
     }
 
@@ -575,7 +575,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (auto fieldOp = dyn_cast<StructFieldOp>(decl)) {
     emitter.emitError(getLoc(), "cannot access instance field '")
         << spelling << "' directly; did you mean 'self.'?" << getRange()
-        << LitFixIt::insertBeforeToken(getLoc(), "self.");
+        << FixIt::insertBeforeToken(getLoc(), "self.");
     return {};
   }
 
@@ -1673,8 +1673,8 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
   // though, and are emitted in lexical order.
 
   // Perform parameter substitution if there are input parameters.
-  LitParameterEvaluator paramEvaluator(emitter.getDeclResolver(),
-                                       initType.getParamBindings());
+  ParserParamEvaluator paramEvaluator(emitter.getDeclResolver(),
+                                      initType.getParamBindings());
 
   // Build a mapping of field names to field decls for fast lookup.
   SmallDenseMap<StringAttr, StructFieldOp> fieldNameMap;

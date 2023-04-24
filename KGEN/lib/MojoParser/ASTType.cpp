@@ -10,8 +10,8 @@
 
 #include "ASTType.h"
 #include "ASTDecl.h"
+#include "ExprNode.h"
 #include "IRValues.h"
-#include "LitExprNode.h"
 #include "SharedState.h"
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
@@ -426,7 +426,7 @@ std::string ASTType::getAsString(bool forDiag) const {
   return os.str();
 }
 
-void LIT::addToDiagnostic(ASTType type, LitDiagnostic &diag) {
+void LIT::addToDiagnostic(ASTType type, InflightDiag &diag) {
   diag << '\'' << type.getAsString(/*forDiag=*/true) << '\'';
 }
 

@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This implements the base class for Lit file parsers, logic that is shared
+// This implements the base class for Mojo file parsers, logic that is shared
 // between expression and statement parsing in particular.
 //
 //===----------------------------------------------------------------------===//
@@ -13,7 +13,7 @@
 using namespace M::KGEN::LIT;
 using namespace M;
 
-LitDiagnostic ParserBase::emitError(SMLoc loc, const Twine &message) {
+InflightDiag ParserBase::emitError(SMLoc loc, const Twine &message) {
   auto diag = shared.emitError(loc, message);
 
   // If we hit a parse error in response to a lexer error, then the lexer
