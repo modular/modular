@@ -53,7 +53,7 @@ fn test_matrix_dynamic():
     for i in range(16):
         a[i] = i
     test(m)
-    vec.__del__()
+    vec.del_old()
 
 
 fn main():
