@@ -815,16 +815,18 @@ void StructGEPOp::build(OpBuilder &builder, OperationState &result,
 //===----------------------------------------------------------------------===//
 
 static ParseResult parseExceptRegion(OpAsmParser &p, Region &region) {
-  OpAsmParser::Argument arg;
-  if (p.parseLParen() || p.parseArgument(arg, /*allowType=*/true) ||
-      p.parseRParen() || p.parseRegion(region, arg))
+  SmallVector<OpAsmParser::Argument> args;
+  if (p.parseArgumentList(args, AsmParser::Delimiter::Paren,
+                          /*allowType=*/true) ||
+      p.parseRegion(region, args))
     return failure();
   return success();
 }
 
 static void printExceptRegion(OpAsmPrinter &p, Operation *op, Region &region) {
   p << '(';
-  p.printRegionArgument(region.getArgument(0));
+  llvm::interleaveComma(region.getArguments(), p,
+                        [&](BlockArgument arg) { p.printRegionArgument(arg); });
   p << ") ";
   p.printRegion(region, /*printEntryBlockArgs=*/false);
 }
@@ -888,7 +890,6 @@ bool TryRaiseOp::isParentNode(Operation *op) { return isa<TryOp>(op); }
 void TryRaiseOp::getBranchTargets(
     ArrayRef<Attribute> operands,
     SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
-  assert(operands.size() == 1);
   targets.emplace_back(1, (*this)->getOperands());
 }
 
