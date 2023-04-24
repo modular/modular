@@ -103,7 +103,16 @@ class Model:
 
     @property
     def input_metadata(self) -> List["TensorSpec"]:
-        """Metadata about the input tensors that the model expects."""
+        """
+        Metadata about the input tensors that the model accepts.
+
+        You can use this to query the tensor shapes and data types like this:
+
+        .. code-block::
+
+            for tensor in model.input_metadata:
+                print(f'shape: {tensor.shape}, dtype: {tensor.dtype}')
+        """
         return [TensorSpec._init(spec) for spec in self._impl.input_metadata]
 
     @property
@@ -201,7 +210,12 @@ class InferenceSession:
 
 
 class TensorSpec:
-    """Represents a tensor's specifications, namely its shape and data type."""
+    """
+    Defines the properties of tensor, namely its shape and data type.
+
+    You can get a list of ``TensorSpec`` objects that specify the input tensors
+    of a :obj:`Model` from :func:`Model.input_metadata`.
+    """
 
     _impl: _TensorSpec
 
