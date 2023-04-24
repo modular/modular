@@ -119,11 +119,40 @@ private:
   //===--------------------------------------------------------------------===//
   // Utils
 
+  /// Return an ordering priority number for the given decl name. Lower numbers
+  /// are ordered first.
+  static unsigned getDeclNamePriority(StringRef name) {
+    // If the name is a special function, use that as the priority.
+    SpecialFunctionKind specialFnKind = SpecialFunctionInfo::getKind(name);
+    if (specialFnKind != SpecialFunctionKind::kNormal)
+      return static_cast<unsigned>(specialFnKind);
+
+    // Otherwise, we can't discern any priorty from the name.
+    return std::numeric_limits<unsigned>::max();
+  }
+
+  /// Given the names of two decls, returns if `lhs` should be ordered before
+  /// `rhs`.
+  static bool compareDeclNames(StringRef lhs, StringRef rhs) {
+    // If the names are the same, we don't need to do anything.
+    if (lhs == rhs)
+      return false;
+
+    // First compare the priority of the names.
+    unsigned lhsPriority = getDeclNamePriority(lhs);
+    unsigned rhsPriority = getDeclNamePriority(rhs);
+    if (lhsPriority != rhsPriority)
+      return lhsPriority < rhsPriority;
+
+    // Then compare the names themselves.
+    return lhs < rhs;
+  }
+
   void generateJSONForChildren(ASTDecl &decl) {
     SmallVector<std::pair<StringAttr, TinyPtrVector<ASTDecl *>>> children(
         decl.getDeclsInScope().begin(), decl.getDeclsInScope().end());
     llvm::sort(children, [](auto &lhs, auto &rhs) {
-      return lhs.first.getValue() < rhs.first.getValue();
+      return compareDeclNames(lhs.first, rhs.first);
     });
 
     // Skip declarations that were imported from other scopes.

@@ -22,6 +22,10 @@
 //   NUMOPERANDS is the number of operands required (when not -1).
 //   EXPRNODE is the normal ExprNode::Kind this corresponds to.
 //   FLAGS are various flags used to customize type checking behavior.
+//
+// The ordering of functions below is treated as significant, and is used for
+// prioritization in various situations, such as the relative ordering of
+// methods in documentation.
 
 SF(kNew,      "__new__"   ,  -1, kInvalid, kImplicitlyStaticMethod|kSelfResult)
 SF(kInit,     "__init__"  ,  -1, kInvalid, kAllowByRefSelfInstMethod|kInitializer)

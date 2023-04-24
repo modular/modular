@@ -21,6 +21,13 @@ spills over to the next line."""
 # CHECK:  "name": "InMemoryStruct",
 # CHECK:  "children": [
 
+# Check that special functions are ordered first, and with the correct
+# prioritization (i.e. not just name based).
+# CHECK:  "kind": "function",
+# CHECK:  "name": "__init__",
+# CHECK:  "name": "__copyinit__",
+# CHECK:  "name": "__del___",
+
 # CHECK:  "kind": "function",
 # CHECK:  "name": "fn_with_by_conventions",
 # CHECK:  "overloads"
@@ -42,7 +49,13 @@ spills over to the next line."""
 
 
 struct InMemoryStruct:
+    fn __init__(self&):
+        pass
+
     fn __copyinit__(self&, existing: Self):
+        pass
+
+    fn __del___(owned self):
         pass
 
     fn fn_with_by_conventions(
