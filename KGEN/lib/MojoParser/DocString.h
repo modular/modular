@@ -66,7 +66,8 @@ private:
 ///   "description": "...",
 ///   "parameters": [
 ///     {
-///       "signature": "bar: Int",
+///       "name": "bar",
+///       "type": "Int",
 ///       "description": "...",
 ///     }
 ///   ],
@@ -84,13 +85,15 @@ private:
 ///       "description": "...",
 ///       "args": [
 ///         {
-///           "signature": "foo: Int",
+///           "name": "foo",
+///           "type": "Int",
 ///           "description": "...",
 ///         }
 ///       ]
 ///       "parameters": [
 ///         {
-///           "signature": "bar: Int",
+///           "name": "bar",
+///           "type": "Int",
 ///           "description": "...",
 ///         }
 ///       ],

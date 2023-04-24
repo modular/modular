@@ -28,11 +28,13 @@ spills over to the next line."""
 # CHECK:      "summary": "This is a function summary.",
 # CHECK:      "args"
 # CHECK:        {
-# CHECK:          "signature": "arg: Self&",
+# CHECK:          "name": "arg",
+# CHECK:          "type": "Self&",
 # CHECK:          "description": "This is a by-ref argument."
 # CHECK:        },
 # CHECK:        {
-# CHECK:          "signature": "*args: Self&",
+# CHECK:          "name": "args",
+# CHECK:          "type": "*Self&",
 # CHECK:          "description": "This is a variadic argument."
 # CHECK:        }
 # CHECK:      "returns": "This is a by-ref return value.",
@@ -62,7 +64,8 @@ struct InMemoryStruct:
 # CHECK:  "name": "ParameterClass",
 # CHECK:  "summary": "This is a class summary.",
 # CHECK:  "parameters": [
-# CHECK:      "signature": "_type: __mlir_type.!kgen.dtype",
+# CHECK:      "name": "_type",
+# CHECK:      "type": "__mlir_type.!kgen.dtype",
 # CHECK:      "description": "This is a parameter."
 # CHECK:  ],
 # CHECK:  "description": "The is some kind of description.\n",
@@ -71,7 +74,8 @@ struct InMemoryStruct:
 # CHECK:      "name": "fn_with_self_param",
 # CHECK:          "signature": "fn_with_self_param(self: Self)",
 # CHECK:          "parameters": [
-# CHECK:              "signature": "param: Self",
+# CHECK:              "name": "param",
+# CHECK:              "type": "Self",
 # CHECK:              "description": "This is a Self parameter."
 
 
@@ -116,7 +120,8 @@ fn empty_fn():
 # CHECK:      "signature": "fn_with_args(arg: $Int::Int)",
 # CHECK:      "summary": "This is a function summary.",
 # CHECK:      "args":
-# CHECK:          "signature": "arg: $Int::Int",
+# CHECK:          "name": "arg",
+# CHECK:          "type": "$Int::Int",
 # CHECK:          "description": "This is an argument."
 
 
@@ -162,7 +167,8 @@ fn fn_with_overload(arg: Int):
 # CHECK:  "overloads":
 # CHECK:      "signature": "fn_with_params()",
 # CHECK:      "parameters": [
-# CHECK:          "signature": "param: __mlir_type.!kgen.dtype",
+# CHECK:          "name": "param",
+# CHECK:          "type": "__mlir_type.!kgen.dtype",
 # CHECK:          "description": "This is a parameter."
 
 
@@ -182,7 +188,8 @@ fn fn_with_params[param: __mlir_type.`!kgen.dtype`]():
 # CHECK: "overloads":
 # CHECK:     "signature": "fn_with_params_and_return(arg: $Int::Int) -> $Int::Int",
 # CHECK:     "args":
-# CHECK:         "signature": "arg: $Int::Int",
+# CHECK:         "name": "arg",
+# CHECK:         "type": "$Int::Int",
 # CHECK:         "description": "This is an argument."
 # CHECK:     "returns": "This is a return value."
 
