@@ -197,7 +197,8 @@ private:
         // If it's a known entry, process it, otherwise skip it.
         if (auto it = entryMap.find(argName); it != entryMap.end()) {
           os.object([&] {
-            os.attribute("signature", it->second);
+            os.attribute("name", it->first());
+            os.attribute("type", it->second);
             os.attribute("description", fullArgDesc);
           });
         }
@@ -227,11 +228,10 @@ private:
   // Types
 
   /// Generate a documentation string for the given type, with an optional
-  /// value convention, parent struct "Self" type, and variable name.
+  /// value convention, parent struct "Self" type.
   std::string generateTypeString(
       Type type, std::optional<ASTType> selfType = std::nullopt,
-      std::optional<ValueInputConvention> convention = std::nullopt,
-      StringRef variableName = "") {
+      std::optional<ValueInputConvention> convention = std::nullopt) {
     std::string typeName;
     llvm::raw_string_ostream os(typeName);
     ASTType astType(type);
@@ -241,10 +241,6 @@ private:
       astType = astType.getVariadicElementType();
       os << "*";
     }
-
-    // Process the variable name if present.
-    if (!variableName.empty())
-      os << variableName << ": ";
 
     // Process the convention if present.
     StringRef typeSuffix;
@@ -328,23 +324,22 @@ private:
       selfType = decl.getParentDecl()->getSelfType();
 
     // Grab the types of the arguments to the function.
-    SmallVector<std::string> argTypeNames;
+    SmallVector<std::string> argTypeDetails;
     for (auto [index, argType] : llvm::enumerate(argTypes)) {
-      argTypeNames.push_back(generateTypeString(
-          argType, selfType, argConventions[index], argNames[index]));
+      argTypeDetails.push_back(
+          generateTypeString(argType, selfType, argConventions[index]));
     }
     llvm::StringMap<StringRef> argNameToDetail;
     for (auto [index, value] : llvm::enumerate(argNames)) {
-      if (index < argTypeNames.size())
-        argNameToDetail[value] = argTypeNames[index];
+      if (index < argTypeDetails.size())
+        argNameToDetail[value] = argTypeDetails[index];
     }
 
     // Grab the types of the parameters to the function.
     llvm::StringMap<std::string> paramToDetail;
     for (auto [index, value] : llvm::enumerate(funcOp.getInputParams())) {
       paramToDetail[value.getName()] =
-          generateTypeString(value.getType(), selfType,
-                             /*convention=*/std::nullopt, value.getName());
+          generateTypeString(value.getType(), selfType);
     }
 
     // Grab the result type, if it's non-none.
@@ -355,8 +350,9 @@ private:
     }
 
     os.object([&] {
-      os.attribute("signature", generateFunctionSignature(name, argTypeNames,
-                                                          resultTypeName));
+      os.attribute("signature",
+                   generateFunctionSignature(name, argNames, argTypeDetails,
+                                             resultTypeName));
 
       // Emit the doc string if present.
       if (std::optional<DocString> docStr = getDocString(decl)) {
@@ -369,7 +365,8 @@ private:
 
   /// Generate a string for the signature of a function, given its components.
   std::string
-  generateFunctionSignature(StringRef name, ArrayRef<std::string> argTypeNames,
+  generateFunctionSignature(StringRef name, ArrayRef<StringAttr> argNames,
+                            ArrayRef<std::string> argTypes,
                             const std::optional<std::string> &resultTypeName) {
     std::string signature;
     llvm::raw_string_ostream signatureOS(signature);
@@ -378,7 +375,16 @@ private:
     signatureOS << name.split('(').first;
 
     signatureOS << "(";
-    interleaveComma(argTypeNames, signatureOS);
+    interleaveComma(
+        llvm::seq<int>(0, argTypes.size()), signatureOS, [&](int index) {
+          StringRef argType = argTypes[index];
+
+          // If the argument is variadic, we put the star before the
+          // name when printing a signature.
+          if (argType.consume_front("*"))
+            signatureOS << "*";
+          signatureOS << argNames[index].getValue() << ": " << argType;
+        });
     signatureOS << ")";
 
     if (resultTypeName)
@@ -425,11 +431,8 @@ private:
 
         // Grab the types of the parameters to the struct.
         llvm::StringMap<std::string> paramToDetail;
-        for (auto [index, value] : llvm::enumerate(structOp.getInputParams())) {
-          paramToDetail[value.getName()] =
-              generateTypeString(value.getType(), /*selfType=*/std::nullopt,
-                                 /*convention=*/std::nullopt, value.getName());
-        }
+        for (auto [index, value] : llvm::enumerate(structOp.getInputParams()))
+          paramToDetail[value.getName()] = generateTypeString(value.getType());
         processStructDocDescription(docStr->getDescription(), paramToDetail);
       }
 
