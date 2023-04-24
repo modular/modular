@@ -16,7 +16,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/LowerToObject.h"
-#include "KGEN/ParseLit.h"
+#include "KGEN/MojoParser.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Runtime/RuntimeCLOptions.h"
 #include "Support/CommonCLOptions.h"

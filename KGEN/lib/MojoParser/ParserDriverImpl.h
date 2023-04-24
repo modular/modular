@@ -4,10 +4,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LIB_KGEN_PARSELIT_PARSERDRIVERIMPL_H
-#define LIB_KGEN_PARSELIT_PARSERDRIVERIMPL_H
+#ifndef PARSERDRIVERIMPL_H
+#define PARSERDRIVERIMPL_H
 
-#include "KGEN/ParseLit.h"
+#include "KGEN/MojoParser.h"
 #include "SharedState.h"
 
 namespace M {
@@ -42,4 +42,4 @@ struct MojoParserContext::Impl {
 };
 } // namespace M
 
-#endif // LIB_KGEN_PARSELIT_PARSERDRIVERIMPL_H
+#endif // PARSERDRIVERIMPL_H

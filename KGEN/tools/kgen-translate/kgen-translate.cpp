@@ -6,7 +6,7 @@
 
 #include "KGEN/CLOptions.h"
 #include "KGEN/CompilationOptions.h"
-#include "KGEN/ParseLit.h"
+#include "KGEN/MojoParser.h"
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Runtime/WorkQueue.h"

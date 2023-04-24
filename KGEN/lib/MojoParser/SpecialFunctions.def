@@ -31,7 +31,7 @@ SF(kMoveInit, "__moveinit__", 2, kInvalid, kAllowByRefSelfInstMethod|kInitialize
 SF(kDel,      "__del___"  ,   1, kInvalid, kRequiresOwnedSelfInstMethod|kNoneResult)
 
 SF(kBool,    "__bool__"  ,   1, kInvalid, kInstMethod)
-SF(kLitBool, "__mlir_i1__",   1, kInvalid, kInstMethod)
+SF(kMLIRI1,  "__mlir_i1__",  1, kInvalid, kInstMethod)
 SF(kAwait,   "__await__" ,   1, kAwait,   kAllowByRefSelfInstMethod)
 
 SF(kGetItem, "__getitem__", -1, kInvalid,kAllowByRefSelfInstMethod)

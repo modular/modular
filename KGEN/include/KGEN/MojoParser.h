@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_PARSELIT_H
-#define KGEN_PARSELIT_H
+#ifndef KGEN_MOJOPARSER_H
+#define KGEN_MOJOPARSER_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include <string>
@@ -210,4 +210,4 @@ LogicalResult generateMojoDoc(llvm::SourceMgr &sourceMgr,
                               mlir::TimingScope &ts);
 } // namespace M
 
-#endif // KGEN_PARSELIT_H
+#endif // KGEN_MOJOPARSER_H

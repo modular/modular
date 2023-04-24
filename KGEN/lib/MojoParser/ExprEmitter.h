@@ -4,11 +4,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LIT_EXPREMITTER_H
-#define LIT_EXPREMITTER_H
+#ifndef EXPREMITTER_H
+#define EXPREMITTER_H
 
+#include "ExprNode.h"
 #include "IRValues.h"
-#include "LitExprNode.h"
 #include "mlir/IR/Builders.h"
 #include "llvm/ADT/TinyPtrVector.h"
 #include "llvm/Support/SMLoc.h"
@@ -435,4 +435,4 @@ public:
 
 } // namespace M::KGEN::LIT
 
-#endif // LIT_EXPREMITTER_H
+#endif // EXPREMITTER_H

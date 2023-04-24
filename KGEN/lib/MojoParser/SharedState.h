@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file provides the base class for Lit file parsers that is common between
+// This file provides the base class for Mojo parsers that is common between
 // expression and statement parsing.
 //
 //===----------------------------------------------------------------------===//
@@ -48,7 +48,7 @@ inline const char *plural(size_t value, const char *one = "",
   return value == 1 ? one : other;
 }
 
-/// This is state shared across multiple different instances of LitParser
+/// This is state shared across multiple different instances of Parser
 /// which are always shared across them.
 class SharedState {
 public:
@@ -84,12 +84,12 @@ public:
   NoneAttr getNoneAttr() const;
 
   /// Emit an error.
-  LitDiagnostic emitError(Location loc, const Twine &message = {});
-  LitDiagnostic emitError(llvm::SMLoc loc, const Twine &message = {});
+  InflightDiag emitError(Location loc, const Twine &message = {});
+  InflightDiag emitError(llvm::SMLoc loc, const Twine &message = {});
 
   /// Emit a warning.
-  LitDiagnostic emitWarning(Location loc, const Twine &message = {});
-  LitDiagnostic emitWarning(llvm::SMLoc loc, const Twine &message = {});
+  InflightDiag emitWarning(Location loc, const Twine &message = {});
+  InflightDiag emitWarning(llvm::SMLoc loc, const Twine &message = {});
 
   /// Inflate a lightweight SMLoc into an MLIR Location object for addition
   /// into the IR.
@@ -269,18 +269,18 @@ public:
   }
 
   /// Emit an error.
-  LitDiagnostic emitError(Location loc, const Twine &message = {}) {
+  InflightDiag emitError(Location loc, const Twine &message = {}) {
     return shared.emitError(loc, message);
   }
-  LitDiagnostic emitError(llvm::SMLoc loc, const Twine &message = {}) {
+  InflightDiag emitError(llvm::SMLoc loc, const Twine &message = {}) {
     return shared.emitError(loc, message);
   }
 
   /// Emit a warning.
-  LitDiagnostic emitWarning(Location loc, const Twine &message = {}) {
+  InflightDiag emitWarning(Location loc, const Twine &message = {}) {
     return shared.emitWarning(loc, message);
   }
-  LitDiagnostic emitWarning(llvm::SMLoc loc, const Twine &message = {}) {
+  InflightDiag emitWarning(llvm::SMLoc loc, const Twine &message = {}) {
     return shared.emitWarning(loc, message);
   }
 };

@@ -8,10 +8,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "LitExprCalls.h"
+#include "CallEmission.h"
 #include "ASTDecl.h"
-#include "LitExprEmitter.h"
-#include "LitParameterEvaluator.h"
+#include "ExprEmitter.h"
+#include "ParserParamEvaluator.h"
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
@@ -368,7 +368,7 @@ ParameterExprArrayAttr InputParamBindings::verifyBindings(
   // the value provided to 'indices' should actually depend on the specified
   // value of 'rank'.  We use a ParameterEvaluator to keep track of the mapping
   // so far and remap types on demand.
-  LitParameterEvaluator evaluator(emitter.getDeclResolver());
+  ParserParamEvaluator evaluator(emitter.getDeclResolver());
   size_t nextBinding = 0;
   bool isPackVararg = packVarargs && !callOperands.empty();
   for (auto [idx, typeX] : llvm::enumerate(actualParamTypes)) {
@@ -623,7 +623,7 @@ struct OverloadFitness {
   /// Add explanation for why this candidate doesn't work to the specified
   /// diagnostic.
   void diagnose(SignatureType signature, const OverloadSet &callable,
-                ArrayRef<ASTExprAnd<AnyValue>> operands, LitDiagnostic &diag);
+                ArrayRef<ASTExprAnd<AnyValue>> operands, InflightDiag &diag);
 };
 } // namespace
 
@@ -733,9 +733,9 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
   size_t numImplicitConversions = 0;
   bool passesVarargArgument = false;
 
-  // Use a LitParameterEvaluator to substitute 'apply' expressions in the
+  // Use a ParserParamEvaluator to substitute 'apply' expressions in the
   // argument types.
-  LitParameterEvaluator evaluator(emitter.getDeclResolver());
+  ParserParamEvaluator evaluator(emitter.getDeclResolver());
   for (auto [expectedArgIdxX, unboundExpectedType] :
        llvm::enumerate(signature.getValueInputs())) {
     size_t expectedArgIdx = expectedArgIdxX; // Workaround lambda problem.
@@ -903,7 +903,7 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
 void OverloadFitness::diagnose(SignatureType signature,
                                const OverloadSet &callable,
                                ArrayRef<ASTExprAnd<AnyValue>> operands,
-                               LitDiagnostic &diag) {
+                               InflightDiag &diag) {
   auto describePayloadArgumentNo = [&]() {
     // If this is a method syntax call, don't count the receiver.
     if (callable.syntax == CallSyntax::kMethodCall) {
@@ -1609,7 +1609,7 @@ CValue OverloadSet::emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
         << baseName
         << "' in parameter expression because it has a parameter result";
     for (auto &resultParam : resultParams) {
-      diag << LitSourceRange(resultParam.second, resultParam.second);
+      diag << SourceRange(resultParam.second, resultParam.second);
       resultParam.first->hasReferenceError = true;
     }
     return {};
@@ -1661,7 +1661,7 @@ CValue ExprEmitter::emitIndirectCall(CValue callee,
 static FailureOr<TypedAttr>
 inlineFunctionCallIntoPValue(AnyValue callee,
                              ArrayRef<ASTExprAnd<AnyValue>> argumentValues,
-                             LitParameterEvaluator &evaluator) {
+                             ParserParamEvaluator &evaluator) {
   auto calleePR = callee.getIfPValue();
   if (!calleePR)
     return failure();
@@ -1927,9 +1927,9 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
   size_t nextOperandIdx = 0;
   size_t nextDefaultIdx = 0;
 
-  // Use a LitParameterEvaluator to fold only 'apply' expressions. Emit a rebind
+  // Use a ParserParamEvaluator to fold only 'apply' expressions. Emit a rebind
   // if the refined type is different than the expected type.
-  LitParameterEvaluator evaluator(getDeclResolver());
+  ParserParamEvaluator evaluator(getDeclResolver());
   for (auto [idx, expectedTypeX, conventionX] : llvm::zip(
            llvm::seq<unsigned>(0, calleeSig.getValueInputs().size()),
            calleeSig.getValueInputs(), calleeSig.getValueInputConventions())) {

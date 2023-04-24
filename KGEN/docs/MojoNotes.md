@@ -281,7 +281,7 @@ this, for example, Python allows:
 
 To handle all these problems we have a two phase resolution of expressions: we
 first parse them into a bump pointer allocated tree data structure (defined
-in `LitExprNodes.h`) and we can then "codegen" them into SSA expressions or into
+in `ExprNodes.h`) and we can then "codegen" them into SSA expressions or into
 a type.  This second phase is what performs name lookup etc, which means we can
 parse the expression (and then ignore it) even before name binding.
 

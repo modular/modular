@@ -8,8 +8,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LITDECLS_H
-#define LITDECLS_H
+#ifndef DECLRESOLVER_H
+#define DECLRESOLVER_H
 
 #include "IRValues.h"
 #include "SharedState.h"
@@ -316,4 +316,4 @@ struct ParsedArgument {
 
 } // namespace M::KGEN::LIT
 
-#endif // LITDECLS_H
+#endif // DECLRESOLVER_H

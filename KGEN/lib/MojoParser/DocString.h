@@ -21,7 +21,7 @@ namespace M::KGEN::LIT {
 // DocString
 //===----------------------------------------------------------------------===//
 
-/// This class represents a processed Lit doc string.
+/// This class represents a processed Mojo doc string.
 class DocString {
 public:
   /// Construct a new DocString from a given raw doc-string.

@@ -9,12 +9,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "ASTDecl.h"
+#include "DeclResolver.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/MojoParser.h"
 #include "KGEN/POPDialect/POPOps.h"
-#include "KGEN/ParseLit.h"
 #include "Lexer.h"
-#include "LitDecls.h"
 #include "ParserDriverImpl.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"

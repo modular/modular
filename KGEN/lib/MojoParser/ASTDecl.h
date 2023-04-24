@@ -8,11 +8,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LIT_DECL_AST_H
-#define LIT_DECL_AST_H
+#ifndef ASTDECL_H
+#define ASTDECL_H
 
+#include "DeclResolver.h"
 #include "Lexer.h"
-#include "LitDecls.h"
 #include "SharedState.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Builders.h"
@@ -261,4 +261,4 @@ struct CastInfo<T, const M::KGEN::LIT::ASTDecl>
 
 } // namespace llvm
 
-#endif // LIT_DECL_AST_H
+#endif // ASTDECL_H

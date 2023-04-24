@@ -8,8 +8,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LIT_EXPRCALLS_H
-#define LIT_EXPRCALLS_H
+#ifndef CALLEMISSION_H
+#define CALLEMISSION_H
 
 #include "IRValues.h"
 
@@ -258,4 +258,4 @@ inline OverloadSet &ORValue::operator*() {
 
 } // namespace M::KGEN::LIT
 
-#endif // LIT_EXPRCALLS_H
+#endif // CALLEMISSION_H

@@ -18,23 +18,23 @@ using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
 //===----------------------------------------------------------------------===//
-// LitSourceRange implementation
+// SourceRange implementation
 //===----------------------------------------------------------------------===//
 
-LitSourceRange::LitSourceRange(SMLoc start, SMLoc end)
+SourceRange::SourceRange(SMLoc start, SMLoc end)
     : start(start.getPointer()), end(end.getPointer()) {
   assert(start.isValid() == end.isValid() &&
          "Start and End should either both be valid or both be invalid!");
 }
 
-LitSourceRange LitSourceRange::getByteLevel(SMLoc start, SMLoc end) {
-  auto result = LitSourceRange(start, end);
+SourceRange SourceRange::getByteLevel(SMLoc start, SMLoc end) {
+  auto result = SourceRange(start, end);
   result.byteLevel = true;
   return result;
 }
 
-SMLoc LitSourceRange::getStart() const { return SMLoc::getFromPointer(start); }
-SMLoc LitSourceRange::getEnd() const { return SMLoc::getFromPointer(end); }
+SMLoc SourceRange::getStart() const { return SMLoc::getFromPointer(start); }
+SMLoc SourceRange::getEnd() const { return SMLoc::getFromPointer(end); }
 
 //===----------------------------------------------------------------------===//
 // SourceMgrLocationMapper implementation
@@ -163,22 +163,22 @@ StringAttr Diags::getBufferNameIdentifier() const {
 }
 
 /// Emit an error through the parser's logic.
-LitDiagnostic Diags::emitError(Location loc, const Twine &message) {
+InflightDiag Diags::emitError(Location loc, const Twine &message) {
   diagnosticEmitted = errorEmitted = true;
-  return LitDiagnostic(loc, *this, /*isWarning=*/false) << message;
+  return InflightDiag(loc, *this, /*isWarning=*/false) << message;
 }
 
 /// Emit an error through the parser's logic.
-LitDiagnostic Diags::emitError(llvm::SMLoc loc, const Twine &message) {
+InflightDiag Diags::emitError(llvm::SMLoc loc, const Twine &message) {
   return emitError(translateLocation(loc), message);
 }
 
 /// Emit a warning.
-LitDiagnostic Diags::emitWarning(Location loc, const Twine &message) {
+InflightDiag Diags::emitWarning(Location loc, const Twine &message) {
   diagnosticEmitted = true;
-  return LitDiagnostic(loc, *this, /*isWarning=*/true) << message;
+  return InflightDiag(loc, *this, /*isWarning=*/true) << message;
 }
-LitDiagnostic Diags::emitWarning(llvm::SMLoc loc, const Twine &message) {
+InflightDiag Diags::emitWarning(llvm::SMLoc loc, const Twine &message) {
   return emitWarning(translateLocation(loc), message);
 }
 
@@ -201,31 +201,31 @@ Location Diags::translateLocation(SMLoc loc) const {
 }
 
 //===----------------------------------------------------------------------===//
-// LitDiagnostic Implementation
+// InflightDiag Implementation
 //===----------------------------------------------------------------------===//
 
 /// Each message in a diagnostic must have a location and text, and may
 /// have any number of highlighted ranges and fixit hints.
-struct LitDiagnostic::Message {
+struct InflightDiag::Message {
   Location loc;
   std::string text;
   std::vector<SMRange> ranges;
   std::vector<SMFixIt> fixIts;
 };
 
-LitDiagnostic::LitDiagnostic(LitDiagnostic &&other)
+InflightDiag::InflightDiag(InflightDiag &&other)
     : messages(std::move(other.messages)), diags(other.diags),
       isWarning(other.isWarning) {
   // Do not emit the other diagnostic.
   other.diags = nullptr;
 }
 
-LitDiagnostic::LitDiagnostic(Location loc, Diags &diags, bool isWarning)
+InflightDiag::InflightDiag(Location loc, Diags &diags, bool isWarning)
     : diags(&diags), isWarning(isWarning) {
   messages.push_back({loc, /*message=*/"", /*ranges=*/{}, /*fixIts=*/{}});
 }
 
-LitDiagnostic::~LitDiagnostic() {
+InflightDiag::~InflightDiag() {
   // If the diagnostic got abandoned, just drop it.
   if (!diags)
     return;
@@ -237,7 +237,7 @@ LitDiagnostic::~LitDiagnostic() {
 }
 
 /// Build the MLIR diagnostic and hand it off to its diagnostic machinery.
-void LitDiagnostic::emitMLIRDiagnostic() {
+void InflightDiag::emitMLIRDiagnostic() {
   Location loc = messages.front().loc;
   InFlightDiagnostic mlirDiag =
       isWarning ? mlir::emitWarning(loc) : mlir::emitError(loc);
@@ -247,7 +247,7 @@ void LitDiagnostic::emitMLIRDiagnostic() {
 }
 
 /// Print the diagnostic + each note through SourceMgr.
-void LitDiagnostic::emitSourceMgrDiagnostic() {
+void InflightDiag::emitSourceMgrDiagnostic() {
   auto &sourceMgr = diags->sourceMgr;
 
   SourceMgr::DiagKind kind =
@@ -256,7 +256,7 @@ void LitDiagnostic::emitSourceMgrDiagnostic() {
     auto loc =
         diags->sourceMgrMapper->convertLocToSMLoc(sourceMgr, message.loc);
 
-    // If we have an exotic MLIR location, give up.  Lit shouldn't be producing
+    // If we have an exotic MLIR location, give up.  Mojo shouldn't be producing
     // these, so just pick a weird-but-valid location.
     if (!loc.isValid())
       loc = sourceMgr.FindLocForLineAndColumn(sourceMgr.getMainFileID(), 0, 0);
@@ -270,16 +270,16 @@ void LitDiagnostic::emitSourceMgrDiagnostic() {
 
 /// Add a note to this diagnostic at the specified location, and change the
 /// emission point to start filling it in.
-LitDiagnostic LitDiagnostic::attachNote(Location loc) && {
+InflightDiag InflightDiag::attachNote(Location loc) && {
   messages.push_back({loc, /*message=*/"", /*ranges=*/{}, /*fixIts=*/{}});
   return std::move(*this);
 }
-LitDiagnostic &LitDiagnostic::attachNote(Location loc) & {
+InflightDiag &InflightDiag::attachNote(Location loc) & {
   messages.push_back({loc, /*message=*/"", /*ranges=*/{}, /*fixIts=*/{}});
   return *this;
 }
 
-LitDiagnostic LitDiagnostic::attachNote(SMLoc loc) && {
+InflightDiag InflightDiag::attachNote(SMLoc loc) && {
   // If the diagnostic has been detached then we cannot translate the location,
   // but we don't care if we are anyway.
   if (!diags)
@@ -287,7 +287,7 @@ LitDiagnostic LitDiagnostic::attachNote(SMLoc loc) && {
   return std::move(*this).attachNote(diags->translateLocation(loc));
 }
 
-LitDiagnostic &LitDiagnostic::attachNote(SMLoc loc) & {
+InflightDiag &InflightDiag::attachNote(SMLoc loc) & {
   // If the diagnostic has been detached then we cannot translate the location,
   // but we don't care if we are anyway.
   if (!diags)
@@ -295,14 +295,14 @@ LitDiagnostic &LitDiagnostic::attachNote(SMLoc loc) & {
   return attachNote(diags->translateLocation(loc));
 }
 
-void LitDiagnostic::addText(const Twine &text) {
+void InflightDiag::addText(const Twine &text) {
   messages.back().text += text.str();
 }
 
-static SMRange translateToSMRange(LitSourceRange range, Diags *diags) {
+static SMRange translateToSMRange(SourceRange range, Diags *diags) {
   SMRange byteLevelRange{range.getStart(), range.getEnd()};
 
-  // LitSourceRange typically represents the end of range in terms of the start
+  // SourceRange typically represents the end of range in terms of the start
   // of the end location.  Convert to a SMRange with a byte-level end position
   // if needed.
   if (diags && !range.isByteLevel() && diags && !diags->useMLIRDiagnostics &&
@@ -311,39 +311,39 @@ static SMRange translateToSMRange(LitSourceRange range, Diags *diags) {
   return byteLevelRange;
 }
 
-void LitDiagnostic::addSourceRange(LitSourceRange range) {
+void InflightDiag::addSourceRange(SourceRange range) {
   messages.back().ranges.push_back(translateToSMRange(range, diags));
 }
 
-void LitDiagnostic::addFixIt(LitFixIt fixIt) {
+void InflightDiag::addFixIt(FixIt fixIt) {
   messages.back().fixIts.push_back(
       SMFixIt(translateToSMRange(fixIt.range, diags), fixIt.replacement));
 }
 
-LitFixIt::LitFixIt(LitSourceRange range, const Twine &replacement)
+FixIt::FixIt(SourceRange range, const Twine &replacement)
     : range(range), replacement(replacement.str()) {}
 
 /// This constructor creates a fixit that replaces the one token at the
 /// specified location with some text.
-LitFixIt LitFixIt::replaceToken(SMLoc loc, const Twine &text) {
-  return LitFixIt({loc, loc}, text);
+FixIt FixIt::replaceToken(SMLoc loc, const Twine &text) {
+  return FixIt({loc, loc}, text);
 }
 
 /// This constructor creates a fixit that inserts some text before the token
 /// at the specified location, without replacing the token.
-LitFixIt LitFixIt::insertBeforeToken(SMLoc loc, const Twine &text) {
+FixIt FixIt::insertBeforeToken(SMLoc loc, const Twine &text) {
   // Set the replacement range to an empty byte-level range before the token.
-  return LitFixIt(LitSourceRange::getByteLevel(loc, loc), text);
+  return FixIt(SourceRange::getByteLevel(loc, loc), text);
 }
 
 /// This constructor creates a fixit that inserts some text after the token
 /// at the specified location.
-LitFixIt LitFixIt::insertAfterToken(SMLoc loc, const Twine &text,
-                                    SharedState &shared) {
+FixIt FixIt::insertAfterToken(SMLoc loc, const Twine &text,
+                              SharedState &shared) {
   // Find end of token.
   size_t tokenSize = Lexer::getTokenLength(shared, loc);
   loc = SMLoc::getFromPointer(loc.getPointer() + tokenSize);
-  return LitFixIt(LitSourceRange::getByteLevel(loc, loc), text);
+  return FixIt(SourceRange::getByteLevel(loc, loc), text);
 }
 
 //===----------------------------------------------------------------------===//
@@ -351,30 +351,30 @@ LitFixIt LitFixIt::insertAfterToken(SMLoc loc, const Twine &text,
 //===----------------------------------------------------------------------===//
 
 // Allow inserting string-like things.
-void LIT::addToDiagnostic(const Twine &text, LitDiagnostic &diag) {
+void LIT::addToDiagnostic(const Twine &text, InflightDiag &diag) {
   diag.addText(text);
 }
 
-void LIT::addToDiagnostic(char text, LitDiagnostic &diag) {
+void LIT::addToDiagnostic(char text, InflightDiag &diag) {
   diag.addText(Twine(text));
 }
 
-void LIT::addToDiagnostic(size_t number, LitDiagnostic &diag) {
+void LIT::addToDiagnostic(size_t number, InflightDiag &diag) {
   diag.addText(Twine(number));
 }
 
-void LIT::addToDiagnostic(StringAttr attr, LitDiagnostic &diag) {
+void LIT::addToDiagnostic(StringAttr attr, InflightDiag &diag) {
   diag.addText(Twine("'"));
   diag.addText(attr.getValue());
   diag.addText(Twine("'"));
 }
 
 /// This adds a source range highlight.
-void LIT::addToDiagnostic(LitSourceRange range, LitDiagnostic &diag) {
+void LIT::addToDiagnostic(SourceRange range, InflightDiag &diag) {
   diag.addSourceRange(range);
 }
 
 /// This adds a fixit hint.
-void LIT::addToDiagnostic(LitFixIt fixIt, LitDiagnostic &diag) {
+void LIT::addToDiagnostic(FixIt fixIt, InflightDiag &diag) {
   diag.addFixIt(fixIt);
 }

@@ -117,7 +117,7 @@ TOK_KEYWORD(del)
 TOK_KEYWORD(elif)
 TOK_KEYWORD(else)
 TOK_KEYWORD(except)
-TOK_KEYWORD(fn)  // Lit extension.
+TOK_KEYWORD(fn)  // Mojo extension.
 TOK_KEYWORD(False)
 TOK_KEYWORD(finally)
 TOK_KEYWORD(for)

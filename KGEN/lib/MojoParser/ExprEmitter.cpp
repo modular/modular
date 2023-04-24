@@ -9,11 +9,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "LitExprEmitter.h"
+#include "ExprEmitter.h"
 #include "ASTDecl.h"
-#include "LitExprCalls.h"
-#include "LitExprNodes.h"
-#include "LitParameterEvaluator.h"
+#include "CallEmission.h"
+#include "ExprNodes.h"
+#include "ParserParamEvaluator.h"
 #include "SpecialFunctions.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -637,7 +637,7 @@ static AnyValue refineResultValue(AnyValue value, SMLoc loc,
   else
     return value;
 
-  LitParameterEvaluator evaluator(emitter.getDeclResolver());
+  ParserParamEvaluator evaluator(emitter.getDeclResolver());
   Type refinedType = evaluator.refineType(valueType);
   if (refinedType == valueType)
     return value;

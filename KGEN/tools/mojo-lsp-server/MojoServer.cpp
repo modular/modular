@@ -7,7 +7,7 @@
 #include "MojoServer.h"
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "KGEN/ParseLit.h"
+#include "KGEN/MojoParser.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinOps.h"

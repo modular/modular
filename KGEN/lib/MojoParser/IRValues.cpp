@@ -9,8 +9,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "IRValues.h"
-#include "LitExprCalls.h"
-#include "LitExprNode.h"
+#include "CallEmission.h"
+#include "ExprNode.h"
 
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/LITDialect/LITOps.h"

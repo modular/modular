@@ -598,14 +598,14 @@ private:
       auto &[element, seenLoc] = it;
       if (seenLoc.isValid())
         continue;
-      LitDiagnostic diag = sharedState.emitWarning(loc)
-                           << tag << " '" << element << "' is not documented";
+      InflightDiag diag = sharedState.emitWarning(loc)
+                          << tag << " '" << element << "' is not documented";
 
       // Attach a fixit to add the element to the doc string.
       SMLoc prevEndLoc = (i == 0) ? sectionEndLoc : elementDocEndLocs[i - 1];
       diag.addFixIt(
-          LitFixIt(LitSourceRange::getByteLevel(prevEndLoc, prevEndLoc),
-                   "\n" + indentStr + std::string(4, ' ') + element + ":"));
+          FixIt(SourceRange::getByteLevel(prevEndLoc, prevEndLoc),
+                "\n" + indentStr + std::string(4, ' ') + element + ":"));
       elementDocEndLocs[i] = prevEndLoc;
     }
   }
