@@ -172,7 +172,7 @@ struct Runtime:
     fn __init__(ptr: ptr_type) -> Runtime:
         return Runtime {ptr: ptr}
 
-    fn __del__(self):
+    fn del_old(self):
         """Destroys the LLCL Runtime. Note that this must be explicitly called
         when the Runtime goes out of scope.
         """
@@ -233,7 +233,7 @@ struct Task[type: AnyType]:
         """Get the task's result value."""
         return self.handle.get()
 
-    fn __del___(owned self):
+    fn __del__(owned self):
         """Destroy the memory associated with a task. This must be manually
         called when a task goes out of scope.
         """
@@ -315,7 +315,7 @@ struct TaskGroup:
         self.chain = chain
         self.rt = rt
 
-    fn __del___(owned self):
+    fn __del__(owned self):
         _del_llcl_chain(Pointer[Chain].address_of(self.chain))
 
     @always_inline
@@ -552,7 +552,7 @@ struct OwningOutputChainPtr:
         return OwningOutputChainPtr {ptr: ptr}
 
     @always_inline("nodebug")
-    fn __del___(owned self):
+    fn __del__(owned self):
         """Destroys the LLCL::OutputChain."""
         __mlir_op.`pop.external_call`[
             func : __mlir_attr.`@KGEN_CompilerRT_LLCL_OutputChainPtr_Destroy`,
