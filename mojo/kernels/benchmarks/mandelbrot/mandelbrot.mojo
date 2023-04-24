@@ -164,4 +164,4 @@ fn main():
 
     print(m[0, 0])
     # draw_mandelbrot[height, width](m)
-    vec.__del__()
+    vec.del_old()

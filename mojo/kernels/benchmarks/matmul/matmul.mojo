@@ -32,7 +32,7 @@ struct Matrix:
         self.rows = rows
         self.cols = cols
 
-    fn __del___(owned self):
+    fn __del__(owned self):
         self.data.free()
 
     fn __getitem__(self, row: Int, col: Int) -> F32:
