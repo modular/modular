@@ -93,7 +93,7 @@ fn __sub__(self: Int, a: Int): pass
 # Test differences between fn and def.
 fn testFn(a: Int, b): # expected-error {{'fn' parameter type must be specified}}
   a = a  # expected-error {{expression must be mutable in assignment}}
-  c = a  # expected-error {{use of unknown declaration 'c', `fn` declarations require explicit variable declarations}}
+  c = a  # expected-error {{use of unknown declaration 'c', 'fn' declarations require explicit variable declarations}}
 
 fn missingColon()  # expected-error {{expected ':' in function definition}}
   # Don't get confused by comments or blank lines!
@@ -478,8 +478,17 @@ fn unqualifiedNameLookup(a: StructWithField):
 struct DirectInstanceReference:
   var value: Int
   fn fxn(self):
-    # expected-error @+1 {{cannot access instance field 'value' directly; did you mean `self.`?}}
+    # expected-error @+1 {{cannot access instance field 'value' directly; did you mean 'self.'?}}
     var xx = value
+
+  @staticmethod
+  fn stat():
+    _ = fxn  # expected-error {{cannot access method 'fxn' directly; did you mean 'Self.'?}}
+
+  fn direct_ref(self):
+    fxn(self) # expected-error {{cannot access method 'fxn' directly; did you mean 'self.'?}}
+    stat() # expected-error {{cannot access method 'stat' directly; did you mean 'Self.'?}}
+
 
 fn field_indexes(a: DirectInstanceReference):
   a.badField = 42 # expected-error {{'DirectInstanceReference' value has no attribute 'badField'}}
@@ -525,6 +534,7 @@ struct BadDtor:
 
 fn bad_destructors():
   var x = BadDtor()
+
 
 
 ##===----------------------------------------------------------------------===##
