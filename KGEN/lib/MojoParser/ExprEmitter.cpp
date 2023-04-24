@@ -67,7 +67,11 @@ const char *LIT::getContextMessage(ExprContext context) {
   case EC_BoolParamCondition:
     return " in '@parameter if' condition";
   case EC_ForIterator:
-    return " in for iterator expression";
+    return " in 'for' iterator expression";
+  case EC_WithContextMgr:
+    return " in 'with' context manager";
+  case EC_WithExitResult:
+    return " in 'with' call to '__exit__' on context manager";
   case EC_RaiseValue:
     return " in raised value";
   case EC_ReturnResultParamList:

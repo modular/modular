@@ -394,7 +394,7 @@ def raiseErrorInIf(cond: Bool, err: Error):
 fn raiseErrorInTry(err: Error):
     # CHECK: lit.try {
     try:
-        # CHECK-NEXT: %[[ERR:.*]] = kgen.call {{.*}}@Error::@"__copyinit__
+        # CHECK-NEXT: = kgen.call {{.*}}@Error::@"__copyinit__
         # CHECK-NEXT: lit.raise {{.*}} : <@"$Error"::@Error>
         raise err
     except:
@@ -426,6 +426,86 @@ fn raise_string() raises:
    # CHECK-NEXT: %1 = pop.variant.create %0
    # CHECK-NEXT: lit.return %1
    raise "thing"
+
+
+##===----------------------------------------------------------------------===##
+# With
+##===----------------------------------------------------------------------===##
+
+struct ExampleCM:
+  fn __enter__(self) -> Int:
+    return 42
+  fn __exit__(self):
+    pass # normal
+  fn __exit__(self, err: Error) -> Bool:
+    return True # Raise
+
+fn noop(a: Int): pass
+
+
+# FIXME: Shouldn't have to be 'raises'.
+# CHECK-LABEL: lit.func @"testWith1
+fn testWith1(a: ExampleCM) raises:
+  # CHECK-NEXT: %val = lit.varlet.decl
+  # CHECK-NEXT: [[TARGET:%.*]] = kgen.call {{.*}}__enter__{{.*}}(%a)
+  # CHECK-NEXT: pop.store [[TARGET]], %val
+  # CHECK-NEXT: lit.try {
+  with a as val:
+    # CHECK-NEXT: [[VAL:%.*]] = pop.load %val
+    # CHECK-NEXT: kgen.call {{.*}}noop{{.*}}([[VAL]])
+    noop(val)
+
+  # Test a with with no target.
+
+  # CHECK: [[TARGET:%.*]] = kgen.call {{.*}}__enter__{{.*}}(%a)
+  # CHECK-NEXT: lit.try {
+  with a:
+    # CHECK-NEXT: kgen.param.constant: {{.*}}42
+    # CHECK-NEXT: kgen.call {{.*}}noop
+    noop(42)
+
+
+
+# CHECK-LABEL: lit.func @"testWith2
+fn testWith2(a: ExampleCM) raises:
+  # CHECK-NEXT: %val = lit.varlet.decl
+  # CHECK-NEXT: [[TARGET:%.*]] = kgen.call {{.*}}__enter__{{.*}}(%a)
+  # CHECK-NEXT: pop.store [[TARGET]], %val
+  # CHECK-NEXT: lit.try {
+  with a as val:
+    # CHECK-NEXT: [[VAL:%.*]] = pop.load %val
+    # CHECK-NEXT: kgen.call {{.*}}noop{{.*}}([[VAL]])
+    noop(val)
+
+    # CHECK-NEXT: %5 = kgen.call {{.*}}raise_string()
+    # CHECK-NEXT: %6 = pop.variant.is !lit.none, %5
+    # CHECK-NEXT: hlcf.if %6 -> !lit.none {
+    # CHECK-NEXT:    = pop.variant.get
+    # CHECK-NEXT:   hlcf.yield
+    # CHECK-NEXT: } else {
+    # CHECK-NEXT:   pop.variant.get
+    # CHECK-NEXT:   lit.raise
+    # CHECK-NEXT:   kgen.unreachable
+    # CHECK-NEXT: }
+    raise_string()
+    # CHECK-NEXT: lit.try.yield
+  # CHECK-NEXT: } except (%arg0: !kgen.declref<@"$Error"::@Error>) {
+  # CHECK-NEXT:   %3 = kgen.call {{.*}}__exit__{{.*}}(%a, %arg0)
+  # CHECK-NEXT:   %4 = kgen.call {{.*}}__mlir_i1__{{.*}}(%3)
+  # CHECK-NEXT:   hlcf.if %4 {
+  # CHECK-NEXT:     hlcf.yield
+  # CHECK-NEXT:   } else {
+  # CHECK-NEXT:     pop.variant.create %arg0
+  # CHECK-NEXT:     lit.return
+  # CHECK-NEXT:     hlcf.yield
+  # CHECK-NEXT:   }
+  # CHECK-NEXT:   lit.try.yield
+  # CHECK-NEXT: } else {
+  # CHECK-NEXT:   kgen.call {{.*}}__exit__{{.*}}(%a)
+  # CHECK-NEXT:   lit.try.yield
+  # CHECK-NEXT: }
+  # CHECK-NEXT: kgen.param.constant: !lit.none = <#lit.none>
+
 
 ##===----------------------------------------------------------------------===##
 
