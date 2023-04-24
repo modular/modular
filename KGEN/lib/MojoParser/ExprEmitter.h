@@ -44,6 +44,8 @@ enum ExprContext {
   EC_BoolCondition,         // if x  /  while x  /  x and y  /  a if x else b
   EC_BoolParamCondition,    // @parameter if x
   EC_ForIterator,           // for x internal details
+  EC_WithContextMgr,        // with x:
+  EC_WithExitResult,        // with (result of __exit__ call)
   EC_RaiseValue,            // raise x
   EC_ReturnResultParamList, // return[x] y
   EC_ReturnValue,           // return x;

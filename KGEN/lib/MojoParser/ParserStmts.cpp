@@ -104,6 +104,7 @@ struct StmtParser : public ParserBase {
   ParseResult parseWhileStmt(size_t curIndent);
   ParseResult parseForStmt(size_t curIndent);
   ParseResult parseTryStmt(size_t curIndent);
+  ParseResult parseWithStmt(size_t curIndent);
 
   // Simple statements.
   ParseResult parseReturnStmt(size_t returnIndent);
@@ -291,9 +292,9 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
 ///
 /// compound_stmt ::= if_stmt
 ///                 | while_stmt
-///                 | for_stmt [TODO]
-///                 | try_stmt [TODO]
-///                 | with_stmt [TODO]
+///                 | for_stmt
+///                 | try_stmt
+///                 | with_stmt
 ///                 | match_stmt [TODO]
 ///                 | funcdef
 ///                 | structdef
@@ -370,6 +371,10 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     rejectDecorator(); // Decorators not allowed.
     rejectSimpleStmt();
     return parseTryStmt(stmtIndent);
+  case Token::kw_with:
+    rejectDecorator(); // Decorators not allowed.
+    rejectSimpleStmt();
+    return parseWithStmt(stmtIndent);
   case Token::kw_async:
   case Token::kw_def:
   case Token::kw_fn:
@@ -784,13 +789,13 @@ ParseResult StmtParser::parseForStmt(size_t curIndent) {
   // the [starred_list] needs to be a sequence with a __iter__ method that
   // returns a type that defines __len__ and __next__
   StringAttr target = StringAttr::get(getContext(), getToken().getSpelling());
-  SMLoc identifierLocation;
 
-  // FIXME: This needs to parse this as an expression and then handle it like a
-  // destructuring pattern.
-  if (!consumeIf(Token::kw__, &identifierLocation)) {
-    if (parseToken(Token::identifier, "expected identifier for target in for",
-                   &identifierLocation))
+  // FIXME: This needs to parse this as a target expression and then handle it
+  // like a destructuring pattern.
+  SMLoc targetLoc;
+  if (!consumeIf(Token::kw__, &targetLoc)) {
+    if (parseToken(Token::identifier, "expected identifier for target in 'for'",
+                   &targetLoc))
       return failure();
   }
   if (parseToken(Token::kw_in, "expected 'in' after target identifier. Note "
@@ -869,7 +874,7 @@ ParseResult StmtParser::parseForStmt(size_t curIndent) {
     return {};
   }
   getDeclResolver().addFullyResolvedDecl(nextCall.getIfSRValue(), target,
-                                         identifierLocation, &containingDecl);
+                                         targetLoc, &containingDecl);
   if (failed(parseLocalScopeSuite(curIndent)))
     return failure();
   builder.create<HLCF::ContinueOp>(forLoc);
@@ -968,6 +973,139 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
   }
   builder.create<TryYieldOp>(translateLocation(getToken().getLoc()));
 
+  return success();
+}
+
+/// with_stmt ::=
+///    "with" ( "(" with_stmt_contents ","? ")" | with_stmt_contents ) ":" suite
+/// with_stmt_contents ::=  with_item ("," with_item)*
+/// with_item          ::=  expression ["as" target]
+ParseResult StmtParser::parseWithStmt(size_t curIndent) {
+  SMLoc smLoc = consumeToken(Token::kw_with).getLoc();
+  Location loc = shared.translateLocation(smLoc);
+
+  // With statements are just sugar for other constructs.  We desugar this:
+  //     with EXPRESSION as TARGET:
+  //       SUITE
+  // Into:
+  //     contextMgr = EXPRESSION
+  //     TARGET = contextMgr.__enter__()
+  //     try {
+  //       SUITE
+  //     } except(errorVal : Error) {
+  //       hlcf.if (contextMgr.__exit__(errorVal)) {
+  //         hlcf.yield
+  //       } else {
+  //         raise errorVal
+  //       }
+  //       try.yield
+  //     } else {
+  //       contextMgr.__exit__()
+  //     }
+
+  // Parse and emit the context mgr.
+  // TODO: Generalize to multiple of them.
+  ExprNode *contextExp = nullptr;
+  if (parseExpression(contextExp, std::nullopt))
+    return failure();
+
+  // FIXME: This needs to parse this as a target expression and then handle it
+  // like a destructuring pattern.
+  VarLetDeclOp target;
+  SMLoc targetLoc;
+  ValueDest enterDest(EC_WithContextMgr);
+  if (consumeIf(Token::kw_as)) {
+    StringAttr name = StringAttr::get(getContext(), getToken().getSpelling());
+    if (parseToken(Token::identifier,
+                   "expected identifier for target in 'with'", &targetLoc))
+      return failure();
+    target = builder.create<VarLetDeclOp>(
+        shared.translateLocation(targetLoc),
+        POP::PointerType::get(UnresolvedType::get(getContext())), name,
+        /*isVar*/ false, /*isSynth=*/false);
+    enterDest = ValueDest(target, EC_WithContextMgr);
+  }
+
+  if (parseToken(Token::colon, "expected ':' after 'with' expression"))
+    return failure();
+
+  AnyValue contextRV = getEmitter().emitExpr(contextExp, EC_WithContextMgr);
+
+  // Emit the call to __enter__ and (if 'as TARGET' was specified), bind to
+  // result to a named TARGET vardecl, inferring its type.
+  CValue enterResult = getEmitter().emitNamedMethodCall(
+      "__enter__", {{contextRV, contextExp}}, enterDest,
+      CallSyntax::kMethodCall, contextExp);
+  if (!enterResult)
+    enterDest.resetForError();
+
+  // Inject the target into our scope if asked for.
+  if (target) {
+    auto &targetDecl = getDeclResolver().addFullyResolvedDecl(
+        SLValue(target), target.getNameAttr(), targetLoc, &containingDecl);
+    if (!enterResult)
+      targetDecl.hasReferenceError = true;
+  }
+
+  // Restore the builder to its current insertion point after parsing.
+  llvm::SaveAndRestore builderSaver(builder);
+  auto tryOp = builder.create<TryOp>(loc);
+
+  // Parse the body suite into the try region.
+  builder.createBlock(&tryOp.getTryRegion());
+  if (parseLocalScopeSuite(curIndent))
+    return failure();
+  builder.create<TryYieldOp>(loc);
+
+  // Set up the error block.
+  ASTDecl *errorTypeDecl = shared.getBuiltinErrorType(smLoc);
+  if (!errorTypeDecl)
+    return failure();
+
+  ASTType errorType = errorTypeDecl->getSelfType();
+  if (!errorType.isRegisterPassable(smLoc, shared)) {
+    emitError(loc) << errorType << " is not a @register_passable type";
+    return failure();
+  }
+
+  // Set up the except region.  Pseudo code:
+  //  except(%val : Error) {
+  //    hlcf.if (
+
+  Block *exceptBlock = builder.createBlock(&tryOp.getExceptRegion());
+  SRValue errorVal = exceptBlock->addArgument(errorType, loc);
+
+  // Pass the error value to the __exit__ method.
+  // TODO: this isn't using the same convention that Python does.  We support
+  // overloading though and this is going to be way better for anything real
+  // that wants to implement this, can can support both styles when we need to.
+  CValue exitResult = getEmitter().emitNamedMethodCall(
+      "__exit__", {{contextRV, contextExp}, {errorVal, contextExp}},
+      ValueDest::none(), CallSyntax::kMethodCall, contextExp);
+  CValue boolResult;
+  RValue exitI1RVal = getEmitter().emitI1({exitResult, contextExp}, boolResult);
+  SRValue exitI1Val =
+      getEmitter().emitSRValue({exitI1RVal, contextExp}, EC_WithExitResult);
+  // If __exit__ returns false, then re-raise the error.
+  auto ifOp = builder.create<HLCF::IfOp>(loc, exitI1Val);
+  builder.create<TryYieldOp>(loc);
+
+  builder.createBlock(&ifOp.getThenRegion());
+  // On true, nothing is to be done.
+  builder.create<HLCF::YieldOp>(loc);
+
+  // On false, we reraise the error.
+  builder.createBlock(&ifOp.getElseRegion());
+  if (failed(getEmitter().emitRaise(errorVal, loc)))
+    emitError(loc, "cannot raise error in a context that cannot raise");
+  builder.create<HLCF::YieldOp>(loc);
+
+  // Set up the else block to call __exit__ and ignore the result.
+  builder.createBlock(&tryOp.getElseRegion());
+  (void)getEmitter().emitNamedMethodCall("__exit__", {{contextRV, contextExp}},
+                                         ValueDest::none(),
+                                         CallSyntax::kMethodCall, contextExp);
+  builder.create<TryYieldOp>(loc);
   return success();
 }
 
