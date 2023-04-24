@@ -90,6 +90,12 @@ fn main():
 
 # CHECK-LABEL: @"induction_var_scope()"
 fn induction_var_scope():
+    # CHECK: "item"
+    # CHECK: hlcf.loop
     for item in range(0):
+        # CHECK: pop.load %item
         # CHECK: "g" = %{{.*}}
+        let g = item
+    for item in range(0):
+        # CHECK: pop.load %item
         let g = item

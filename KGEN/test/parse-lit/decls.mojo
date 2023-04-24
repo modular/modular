@@ -336,12 +336,13 @@ fn adaptiveNestedFns(a: Int, b: Int):
 fn nestedFnInLoop():
     # CHECK: hlcf.loop
     for i in range(10):
-      # CHECK: [[I:%.*]] = kgen.call @{{.*}}__next__
+      # CHECK: kgen.call @{{.*}}__next__
       # CHECK: lit.func *"foo()"
       @always_inline
       @noncapturing
       fn foo() -> Int:
-          # CHECK-NEXT: return [[I]]
+          # CHECK: %[[I:.*]] = pop.load %i
+          # CHECK-NEXT: return %[[I]]
           return i
       # CHECK: kgen.call_param[() -> {{.*}}@Int{{.*}}: *"foo()"]()
       let result = foo()
