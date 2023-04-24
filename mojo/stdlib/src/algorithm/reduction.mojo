@@ -603,9 +603,14 @@ fn mean[
 
     debug_assert(src.__len__() != 0, "input must not be empty")
 
-    return (SIMD[type, 1](sum[simd_width, size, type](src)) / src.__len__())[
-        0
-    ].value
+    let total = sum[simd_width, size, type](src)
+    let buffer_len = src.__len__()
+
+    @parameter
+    if type.is_integral():
+        return total // buffer_len
+    else:
+        return total / buffer_len
 
 
 fn mean[
@@ -644,16 +649,28 @@ fn mean[
     ](src, dst)
 
     let n = src.dim[reduce_axis]()
-    let n_recip = SIMD[type, 1](1) / n
     let dst_1d = dst.flatten()
 
-    @always_inline
-    fn div[simd_width: Int](idx: Int):
-        let elem = dst_1d.simd_load[simd_width](idx)
-        let to_store = elem * n_recip
-        dst_1d.simd_store[simd_width](idx, to_store)
+    @parameter
+    if type.is_integral():
 
-    vectorize[simd_width, div](dst_1d.__len__())
+        @always_inline
+        fn normalize_integral[simd_width: Int](idx: Int):
+            let elem = dst_1d.simd_load[simd_width](idx)
+            let to_store = elem // n
+            dst_1d.simd_store[simd_width](idx, to_store)
+
+        vectorize[simd_width, normalize_integral](dst_1d.__len__())
+    else:
+        let n_recip = SIMD[type, 1](1) / n
+
+        @always_inline
+        fn normalize_floating[simd_width: Int](idx: Int):
+            let elem = dst_1d.simd_load[simd_width](idx)
+            let to_store = elem * n_recip
+            dst_1d.simd_store[simd_width](idx, to_store)
+
+        vectorize[simd_width, normalize_floating](dst_1d.__len__())
 
 
 # ===----------------------------------------------------------------------===#
