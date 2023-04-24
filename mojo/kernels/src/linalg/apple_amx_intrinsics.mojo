@@ -56,138 +56,138 @@ struct amx_detail:
     # immediate values via meta parameters.
     @staticmethod
     fn _set():
-        _no_op_imms[__mlir_attr.`17:si32`, __mlir_attr.`0:si32`]()
+        Self._no_op_imms[__mlir_attr.`17:si32`, __mlir_attr.`0:si32`]()
 
     @staticmethod
     fn _clr():
-        _no_op_imms[__mlir_attr.`17:si32`, __mlir_attr.`1:si32`]()
+        Self._no_op_imms[__mlir_attr.`17:si32`, __mlir_attr.`1:si32`]()
 
     @staticmethod
     fn ldx(gpr: Int):
-        _op_gpr[__mlir_attr.`0:si32`](gpr)
+        Self._op_gpr[__mlir_attr.`0:si32`](gpr)
 
     @staticmethod
     fn ldy(gpr: Int):
-        _op_gpr[__mlir_attr.`1:si32`](gpr)
+        Self._op_gpr[__mlir_attr.`1:si32`](gpr)
 
     @staticmethod
     fn stx(gpr: Int):
-        _op_gpr[__mlir_attr.`2:si32`](gpr)
+        Self._op_gpr[__mlir_attr.`2:si32`](gpr)
 
     @staticmethod
     fn sty(gpr: Int):
-        _op_gpr[__mlir_attr.`3:si32`](gpr)
+        Self._op_gpr[__mlir_attr.`3:si32`](gpr)
 
     @staticmethod
     fn ldz(gpr: Int):
-        _op_gpr[__mlir_attr.`4:si32`](gpr)
+        Self._op_gpr[__mlir_attr.`4:si32`](gpr)
 
     @staticmethod
     fn stz(gpr: Int):
-        _op_gpr[__mlir_attr.`5:si32`](gpr)
+        Self._op_gpr[__mlir_attr.`5:si32`](gpr)
 
     @staticmethod
     fn ldzi(gpr: Int):
-        _op_gpr[__mlir_attr.`6:si32`](gpr)
+        Self._op_gpr[__mlir_attr.`6:si32`](gpr)
 
     @staticmethod
     fn stzi(gpr: Int):
-        _op_gpr[__mlir_attr.`7:si32`](gpr)
+        Self._op_gpr[__mlir_attr.`7:si32`](gpr)
 
     @staticmethod
     fn extrx(gpr: Int):
         """
         Extracts a row or moves it to x, result in amx0.
         """
-        _op_gpr[__mlir_attr.`8:si32`](gpr)
+        Self._op_gpr[__mlir_attr.`8:si32`](gpr)
 
     @staticmethod
     fn extry(gpr: Int):
         """
         Extracts a row or moves it to y, result in amx0.
         """
-        _op_gpr[__mlir_attr.`9:si32`](gpr)
+        Self._op_gpr[__mlir_attr.`9:si32`](gpr)
 
     @staticmethod
     fn fma64(gpr: Int):
         """
         f64 matrix multiply and add.
         """
-        _op_gpr[__mlir_attr.`10:si32`](gpr)
+        Self._op_gpr[__mlir_attr.`10:si32`](gpr)
 
     @staticmethod
     fn fsm64(gpr: Int):
         """
         f64 matrix multiply and subtract.
         """
-        _op_gpr[__mlir_attr.`11:si32`](gpr)
+        Self._op_gpr[__mlir_attr.`11:si32`](gpr)
 
     @staticmethod
     fn fma32(gpr: Int):
         """
         f32 matrix multiply and add.
         """
-        _op_gpr[__mlir_attr.`12:si32`](gpr)
+        Self._op_gpr[__mlir_attr.`12:si32`](gpr)
 
     @staticmethod
     fn fsm32(gpr: Int):
         """
         f32 matrix multiply and subtract.
         """
-        _op_gpr[__mlir_attr.`13:si32`](gpr)
+        Self._op_gpr[__mlir_attr.`13:si32`](gpr)
 
     @staticmethod
     fn mac16(gpr: Int):
         """
         si16 matrix multiply and add.
         """
-        _op_gpr[__mlir_attr.`14:si32`](gpr)
+        Self._op_gpr[__mlir_attr.`14:si32`](gpr)
 
     @staticmethod
     fn fma16(gpr: Int):
         """
         f16 matrix multiply and subtract.
         """
-        _op_gpr[__mlir_attr.`15:si32`](gpr)
+        Self._op_gpr[__mlir_attr.`15:si32`](gpr)
 
     @staticmethod
     fn fms16(gpr: Int):
         """
         f16 matrix multiply and add.
         """
-        _op_gpr[__mlir_attr.`16:si32`](gpr)
+        Self._op_gpr[__mlir_attr.`16:si32`](gpr)
 
     @staticmethod
     fn vecint(gpr: Int):
         """
         horizontal ui16 multiply `z0[i] += x0[i] + y0[i]`
         """
-        _op_gpr[__mlir_attr.`18:si32`](gpr)
+        Self._op_gpr[__mlir_attr.`18:si32`](gpr)
 
     @staticmethod
     fn vecfp(gpr: Int):
         """
         horizontal f16 multiply `z0[i] += x0[i] + y0[i]`
         """
-        _op_gpr[__mlir_attr.`19:si32`](gpr)
+        Self._op_gpr[__mlir_attr.`19:si32`](gpr)
 
     @staticmethod
     fn matint(gpr: Int):
         """
         ui16 matrix multiply
         """
-        _op_gpr[__mlir_attr.`20:si32`](gpr)
+        Self._op_gpr[__mlir_attr.`20:si32`](gpr)
 
     @staticmethod
     fn matfp(gpr: Int):
         """
         f16 matrix multiply
         """
-        _op_gpr[__mlir_attr.`21:si32`](gpr)
+        Self._op_gpr[__mlir_attr.`21:si32`](gpr)
 
     @staticmethod
     fn genlut(gpr: Int):
-        _op_gpr[__mlir_attr.`22:si32`](gpr)
+        Self._op_gpr[__mlir_attr.`22:si32`](gpr)
 
     # Apple.amx.LoadStore is a set of utilities that are thin wrappers around
     # the inline assembly calls, and they provide an easier interface to use
@@ -228,37 +228,37 @@ struct amx_detail:
     fn store_x[
         row_count: Int, type: DType
     ](src: DTypePointer[type], start_index: Int):
-        ldx(_encode_load_store[row_count, type](src, start_index))
+        Self.ldx(Self._encode_load_store[row_count, type](src, start_index))
 
     @staticmethod
     fn store_y[
         row_count: Int, type: DType
     ](src: DTypePointer[type], start_index: Int):
-        ldy(_encode_load_store[row_count, type](src, start_index))
+        Self.ldy(Self._encode_load_store[row_count, type](src, start_index))
 
     @staticmethod
     fn store_z[
         row_count: Int, type: DType
     ](src: DTypePointer[type], start_index: Int):
-        ldz(_encode_load_store[row_count, type](src, start_index))
+        Self.ldz(Self._encode_load_store[row_count, type](src, start_index))
 
     @staticmethod
     fn read_x[
         row_count: Int, type: DType
     ](src: DTypePointer[type], start_index: Int):
-        stx(_encode_load_store[row_count, type](src, start_index))
+        Self.stx(Self._encode_load_store[row_count, type](src, start_index))
 
     @staticmethod
     fn read_y[
         row_count: Int, type: DType
     ](src: DTypePointer[type], start_index: Int):
-        sty(_encode_load_store[row_count, type](src, start_index))
+        Self.sty(Self._encode_load_store[row_count, type](src, start_index))
 
     @staticmethod
     fn load_z[
         row_count: Int, type: DType
     ](src: DTypePointer[type], start_index: Int):
-        stz(_encode_load_store[row_count, type](src, start_index))
+        Self.stz(Self._encode_load_store[row_count, type](src, start_index))
 
     @staticmethod
     fn transpose_z_to_x_or_y[
@@ -326,7 +326,7 @@ struct amx_detail:
             0x8000000004004000 if is_x_destination else 0x8000000010004000
         )
 
-        extry(operand)
+        Self.extry(operand)
 
     @staticmethod
     fn fma[
@@ -379,7 +379,7 @@ struct amx_detail:
             | ((1 << 63) if is_row_mode else 0)
         )
 
-        fma32(operand)
+        Self.fma32(operand)
 
     @staticmethod
     fn dot_at_b(
@@ -444,35 +444,35 @@ struct amx_detail:
         memcpy[DType.f32](b_buffer, b_pointer, buffer_bytecount)
         memset_zero[DType.f32](c_buffer, buffer_bytecount)
 
-        _set()
+        Self._set()
 
         # TODO(#8365) use `i` in all for loops below
         for i0 in range(8):
-            ldx((i0 << 56) | b_buffer.offset(i0 * b.dim[0]()).__as_index())
-            ldy((i0 << 56) | a_buffer.offset(i0 * a.dim[0]()).__as_index())
+            Self.ldx((i0 << 56) | b_buffer.offset(i0 * b.dim[0]()).__as_index())
+            Self.ldy((i0 << 56) | a_buffer.offset(i0 * a.dim[0]()).__as_index())
 
-        fma32(1 << 27)
+        Self.fma32(1 << 27)
 
         for i1 in range(1, 8):
-            fma32((i1 << 6 << 10) | (i1 << 6))
+            Self.fma32((i1 << 6 << 10) | (i1 << 6))
 
         for i2 in range(8):
-            ldx(
+            Self.ldx(
                 (i2 << 56) | b_buffer.offset((i2 + 8) * b.dim[0]()).__as_index()
             )
-            ldy(
+            Self.ldy(
                 (i2 << 56) | a_buffer.offset((i2 + 8) * a.dim[0]()).__as_index()
             )
 
         for i3 in range(8):
-            fma32((i3 << 6 << 10) | (i3 << 6))
+            Self.fma32((i3 << 6 << 10) | (i3 << 6))
 
         for i4 in range(0, 64, 4):
-            stz(
+            Self.stz(
                 (i4 << 56)
                 | c_buffer.offset((i4 >> 2) * c.dim[0]()).__as_index()
             )
 
-        _clr()
+        Self._clr()
 
         memcpy[DType.f32](c_pointer, c_buffer, buffer_bytecount)

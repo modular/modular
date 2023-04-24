@@ -1440,7 +1440,7 @@ struct TiledMatmul[
             func
         )
 
-        run(
+        Self.run(
             c,
             a,
             b,
