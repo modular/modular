@@ -162,13 +162,13 @@ def var_decls() -> None:
   # CHECK: kgen.param.constant: @"$StringLiteral"::@StringLiteral = <#lit.struct<{value: string = "hello"}>>
   let const_str = "hello"
 
-  # CHECK: %str = lit.varlet.decl {{.*}} : <{{.*}}@StringLiteral>
   # CHECK: [[CONST:%.*]] = kgen.param.constant: {{.*}} = "hello"
+  # CHECK: %str = lit.varlet.decl {{.*}} : <{{.*}}@StringLiteral>
   # CHECK: pop.store [[CONST]], %str
   var str = "hello"
 
-  # CHECK: %z = lit.varlet.decl {{.*}} : <index>
   # CHECK-NEXT: [[TMP:%.*]] = pop.load %x : !pop.pointer<index>
+  # CHECK: %z = lit.varlet.decl {{.*}} : <index>
   # CHECK-NEXT: pop.store [[TMP]], %z
   var z = x
   z = (42).__as_mlir_index()

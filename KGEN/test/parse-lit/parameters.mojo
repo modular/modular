@@ -39,11 +39,11 @@ fn take_3index(a: Int, b: Int, c: Int) -> Int:
 fn fancy_signature[dt: DType, size: Int]
   (x: OurSIMD[size, dt], exp: (OurSIMD)[size, dt]) -> Int:
 
-  # CHECK: %local = lit.varlet.decl "local", var = true
   # CHECK: %[[TMP1:.*]] = kgen.param.constant{{.*}}Int = <size>
   # CHECK: %[[TMP2:.*]] = kgen.param.constant{{.*}}Int = <size>
   # CHECK: %[[TMP3:.*]] = kgen.param.constant{{.*}}Int = <size>
   # CHECK: %[[RES:.*]] = kgen.call @"$parameters"::@"take_3index{{.*}}(%[[TMP1]], %[[TMP2]], %[[TMP3]])
+  # CHECK: %local = lit.varlet.decl "local", var = true
   # CHECK: pop.store %[[RES]], %local : !pop.pointer<@"$Int"::@Int>
   var local = take_3index(size, size, size)
 
@@ -102,8 +102,8 @@ struct TestParamStruct[A: __mlir_type.index]:
 
 # Test that we support partially bound parameters.
 fn testTestParamStruct(a: TestParamStruct[(4).__as_mlir_index()]):
-  # CHECK: %arg11 = lit.varlet.decl {{.*}} : <@"$parameters"::@TestParamStruct<A = 11>>
   # CHECK: %0 = kgen.call @"$parameters"::@TestParamStruct::@"__init__{{.*}}<11>() : () ownedresult -> !kgen.declref<@"$parameters"::@TestParamStruct<A = 11>>
+  # CHECK: %arg11 = lit.varlet.decl {{.*}} : <@"$parameters"::@TestParamStruct<A = 11>>
   # CHECK: pop.store %0, %arg11 : !pop.pointer<@"$parameters"::@TestParamStruct<A = 11>>
   var arg11 = TestParamStruct[(11).__as_mlir_index()]()
 
