@@ -83,6 +83,13 @@ struct StmtParser : public ParserBase {
   /// Push a debug info lexical block to represent a local variable scope.
   void pushLocalScope(DebugInfo::DIBuilder::ScopeGuard &scopeGuard);
 
+  /// A local decl put in a scope when entering a new scope.
+  struct ScopeDecl {
+    DeclIRValue value;
+    SMLoc loc;
+    StringRef name;
+  };
+
   // Expression emission.
 
   ExprEmitter getEmitter(bool allowImplicitVarDecl = false) {
@@ -96,7 +103,8 @@ struct StmtParser : public ParserBase {
   }
 
   ParseResult parseSuite(ssize_t curIndent);
-  ParseResult parseLocalScopeSuite(ssize_t curIndent);
+  ParseResult parseLocalScopeSuite(ssize_t curIndent,
+                                   ArrayRef<ScopeDecl> decls = {});
   ParseResult parseStmt(bool onlySimpleStmt, bool &parsedCompound,
                         size_t curIndent);
 
@@ -221,7 +229,8 @@ ParseResult StmtParser::parseSuite(ssize_t curIndent) {
   return success();
 }
 
-ParseResult StmtParser::parseLocalScopeSuite(ssize_t curIndent) {
+ParseResult StmtParser::parseLocalScopeSuite(ssize_t curIndent,
+                                             ArrayRef<ScopeDecl> decls) {
   // If we are generating debug info, push a local scope for the suite.
   DebugInfo::DIBuilder::ScopeGuard scopeGuard;
   if (shared.diBuilder)
@@ -233,6 +242,12 @@ ParseResult StmtParser::parseLocalScopeSuite(ssize_t curIndent) {
   (void)getLocation(loc);
   curDeclScope = &getDeclResolver().addFullyResolvedDecl(nullptr, StringAttr(),
                                                          loc, curDeclScope);
+
+  // Add the scope variables.
+  for (const ScopeDecl &decl : decls) {
+    getDeclResolver().addFullyResolvedDecl(decl.value, decl.name, decl.loc,
+                                           curDeclScope);
+  }
 
   // Forward to the normal suite parse method.
   return parseSuite(curIndent);
@@ -462,7 +477,7 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     return success();
 
   // Emit a warning if the result is a value we should warn when unused.
-  auto funcOp = getBlockParentOfType<LIT::FuncOp>(builder.getInsertionBlock());
+  auto funcOp = dyn_cast<LIT::FuncOp>(parentDecl);
   if (!funcOp || !funcOp.getIsDef())
     diagnoseIgnoredResult(expr, result, shared);
   return success();
@@ -877,16 +892,25 @@ ParseResult StmtParser::parseForStmt(size_t curIndent) {
   builder.create<HLCF::BreakOp>(forLoc);
 
   // Create the body. Add Target element to the continue block by calling next
+  // method. Emit the result into an implicitly declared variable at the current
+  // scope.
+  builder.setInsertionPoint(loopOp);
+  auto funcOp = dyn_cast<LIT::FuncOp>(parentDecl);
+  auto varDeclOp = builder.create<VarLetDeclOp>(
+      forLoc, POP::PointerType::get(UnresolvedType::get(getContext())), target,
+      /*isVar=*/funcOp && funcOp.getIsDef(), /*isSynth=*/true);
+
   builder.setInsertionPointAfter(condOp);
-  AnyValue nextCall = getEmitter().emitNamedMethodCall(
-      "__next__", {{SLValue(rangeRef), seqExp}}, ValueDest::none(),
-      CallSyntax::kImplicitConvert, seqExp);
-  if (!nextCall) {
+  ValueDest ivarDest(varDeclOp, EC_ForIterator);
+  if (!getEmitter().emitNamedMethodCall("__next__",
+                                        {{SLValue(rangeRef), seqExp}}, ivarDest,
+                                        CallSyntax::kImplicitConvert, seqExp)) {
+    ivarDest.resetForError();
     return {};
   }
-  getDeclResolver().addFullyResolvedDecl(nextCall.getIfSRValue(), target,
-                                         targetLoc, curDeclScope);
-  if (failed(parseLocalScopeSuite(curIndent)))
+
+  if (failed(parseLocalScopeSuite(curIndent,
+                                  ScopeDecl{&*varDeclOp, targetLoc, target})))
     return failure();
   builder.create<HLCF::ContinueOp>(forLoc);
 
@@ -904,7 +928,6 @@ ParseResult StmtParser::parseForStmt(size_t curIndent) {
 /// try_stmt ::= "try" ":" suite "except" [identifier] ":" suite
 ///              ["else" suite]
 ParseResult StmtParser::parseTryStmt(size_t curIndent) {
-  auto func = getBlockParentOfType<LIT::FuncOp>(builder.getInsertionBlock());
   SMLoc loc = consumeToken(Token::kw_try).getLoc();
 
   // Restore the builder to its current insertion point after parsing.
@@ -951,27 +974,27 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
 
   // If an identifier was declared for the error value, add a declaration that
   // references it.
+  SmallVector<ScopeDecl> decls;
   if (errName) {
-    if (func.getIsDef()) {
+    auto func = dyn_cast<LIT::FuncOp>(parentDecl);
+    if (func && func.getIsDef()) {
       // If we are parsing inside a 'def', create a mutable LValue to allow
       // reassignment.
       auto varDecl = builder.create<VarLetDeclOp>(
           errVal.getLoc(), POP::PointerType::get(errVal.getType()), errName,
-          /*isVar*/ true, /*isSynth=*/true);
-      getDeclResolver().addFullyResolvedDecl(DeclIRValue(varDecl), errName,
-                                             errValLoc, curDeclScope);
+          /*isVar=*/true, /*isSynth=*/true);
+      decls.push_back(ScopeDecl{DeclIRValue(varDecl), errValLoc, errName});
       builder.create<POP::StoreOp>(errVal.getLoc(), errVal, varDecl,
                                    /*alignment=*/std::nullopt);
     } else {
       // If we are parsing inside an 'fn', the error declaration is an BValue,
       // because any reference to it needs to copy/move out.
-      getDeclResolver().addFullyResolvedDecl(SBValue(errVal), errName,
-                                             errValLoc, curDeclScope);
+      decls.push_back(ScopeDecl{SBValue(errVal), errValLoc, errName});
     }
   }
 
   // Parse the except suite.
-  if (parseLocalScopeSuite(curIndent))
+  if (parseLocalScopeSuite(curIndent, decls))
     return failure();
   builder.create<TryYieldOp>(translateLocation(getToken().getLoc()));
 
@@ -1443,8 +1466,6 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
 
     // Emit the vardecl at the current insertion point.  Unlike implicitly
     // declared variables, let/var declarations are always correctly scoped.
-    // TODO (Issue#5005): Maintain scopes correctly so we don't have a conflict
-    // between things like "if cond: var x = 1 else var x = 2"
     auto varType = POP::PointerType::get(unresolvedType);
     declOp = builder.create<VarLetDeclOp>(loc, varType, name, isVar,
                                           /*isSynth=*/false);

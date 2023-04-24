@@ -71,10 +71,7 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
                          Value value) -> Value {
     if (LLVM_LIKELY(value))
       return value;
-    // If the value is undefined, materialize an undef operation and emit
-    // a warning.
-    op->emitWarning("load of uninitialized memory").attachNote(alloc.getLoc())
-        << "memory allocated here";
+    // If the value is undefined, materialize an undef operation.
     return OpBuilder(op).create<UndefOp>(op->getLoc(), getAllocType(alloc));
   };
 
