@@ -1002,6 +1002,8 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   //     } else {
   //       contextMgr.__exit__()
   //     }
+  // We elide the try and except logic when in a context that doesn't support
+  // raising an error (like a non-raising fn).
 
   // Parse and emit the context mgr.
   // TODO: Generalize to multiple of them.
@@ -1045,6 +1047,36 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
         SLValue(target), target.getNameAttr(), targetLoc, &containingDecl);
     if (!enterResult)
       targetDecl.hasReferenceError = true;
+  }
+
+  // This emits the call to the 'contextMgr.__exit__()' methods on the context
+  // managers in the normal path.
+  auto emitNormalExitLogic = [&]() {
+    (void)getEmitter().emitNamedMethodCall(
+        "__exit__", {{contextRV, contextExp}}, ValueDest::none(),
+        CallSyntax::kMethodCall, contextExp);
+  };
+
+  // If we're in a non-raising region, then we have a simple pattern to emit:
+  //     contextMgr = EXPRESSION
+  //     TARGET = contextMgr.__enter__()
+  //     SUITE
+  //     contextMgr.__exit__()
+  auto [_, inExceptRegion] = findParentTry(builder.getInsertionBlock());
+
+  if (!inExceptRegion) {
+    auto funcOp =
+        getBlockParentOfType<LIT::FuncOp>(builder.getInsertionBlock());
+    inExceptRegion = funcOp.isThrows();
+  }
+
+  if (!inExceptRegion) {
+    // Parse the body suite.
+    if (parseLocalScopeSuite(curIndent))
+      return failure();
+
+    emitNormalExitLogic();
+    return success();
   }
 
   // Restore the builder to its current insertion point after parsing.
@@ -1102,9 +1134,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
 
   // Set up the else block to call __exit__ and ignore the result.
   builder.createBlock(&tryOp.getElseRegion());
-  (void)getEmitter().emitNamedMethodCall("__exit__", {{contextRV, contextExp}},
-                                         ValueDest::none(),
-                                         CallSyntax::kMethodCall, contextExp);
+  emitNormalExitLogic();
   builder.create<TryYieldOp>(loc);
   return success();
 }

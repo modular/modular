@@ -443,31 +443,29 @@ struct ExampleCM:
 fn noop(a: Int): pass
 
 
-# FIXME: Shouldn't have to be 'raises'.
-# CHECK-LABEL: lit.func @"testWith1
-fn testWith1(a: ExampleCM) raises:
+# CHECK-LABEL: lit.func @"testWithNonRaising
+fn testWithNonRaising(a: ExampleCM):
   # CHECK-NEXT: %val = lit.varlet.decl
   # CHECK-NEXT: [[TARGET:%.*]] = kgen.call {{.*}}__enter__{{.*}}(%a)
   # CHECK-NEXT: pop.store [[TARGET]], %val
-  # CHECK-NEXT: lit.try {
   with a as val:
     # CHECK-NEXT: [[VAL:%.*]] = pop.load %val
     # CHECK-NEXT: kgen.call {{.*}}noop{{.*}}([[VAL]])
     noop(val)
+  # CHECK-NEXT: kgen.call {{.*}}__exit__{{.*}}(%a)
 
   # Test a with with no target.
 
-  # CHECK: [[TARGET:%.*]] = kgen.call {{.*}}__enter__{{.*}}(%a)
-  # CHECK-NEXT: lit.try {
+  # CHECK-NEXT: kgen.call {{.*}}__enter__{{.*}}(%a)
   with a:
     # CHECK-NEXT: kgen.param.constant: {{.*}}42
     # CHECK-NEXT: kgen.call {{.*}}noop
     noop(42)
+  # CHECK-NEXT: kgen.call {{.*}}__exit__{{.*}}(%a)
+  # CHECK-NEXT: kgen.param.constant: !lit.none = <#lit.none>
 
-
-
-# CHECK-LABEL: lit.func @"testWith2
-fn testWith2(a: ExampleCM) raises:
+# CHECK-LABEL: lit.func @"testWithRaising
+fn testWithRaising(a: ExampleCM) raises:
   # CHECK-NEXT: %val = lit.varlet.decl
   # CHECK-NEXT: [[TARGET:%.*]] = kgen.call {{.*}}__enter__{{.*}}(%a)
   # CHECK-NEXT: pop.store [[TARGET]], %val
