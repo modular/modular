@@ -241,7 +241,7 @@ wrapExpressionText(StringRef wrappedFnName, StringRef exprText,
   exprOSIndented << "struct __mojo_repl_context__:\n";
   for (auto &[name, type] : variables) {
     exprOSIndented << llvm::formatv(
-        "  var {0}: Pointer[Pointer[__mlir_type.`{1}`]]\n", name, type);
+        "  var `{0}`: Pointer[Pointer[__mlir_type.`{1}`]]\n", name, type);
   }
   if (variables.empty())
     exprOSIndented << "  pass\n";
@@ -260,10 +260,10 @@ wrapExpressionText(StringRef wrappedFnName, StringRef exprText,
                  << "(__mojo_repl_arg&: __mojo_repl_context__):\n"
                     "  try:\n"
                     "    __mojo_repl_expr_impl__(__mojo_repl_arg";
-  for (auto &var : variables) {
+  for (auto &[name, type] : variables) {
     exprOSIndented << formatv(
-        ", __get_address_as_lvalue(__mojo_repl_arg.{0}.load().address)",
-        var.first);
+        ", __get_address_as_lvalue(__mojo_repl_arg.`{0}`.load().address)",
+        name);
   }
   exprOSIndented << ")\n"
                     "  except error:\n"
@@ -273,10 +273,8 @@ wrapExpressionText(StringRef wrappedFnName, StringRef exprText,
   // Finally we can generate the actual expression function.
   exprOSIndented
       << "def __mojo_repl_expr_impl__(__mojo_repl_arg&: __mojo_repl_context__";
-  for (auto &var : variables) {
-    exprOSIndented << llvm::formatv(", {0}&: __mlir_type.`{1}`", var.first,
-                                    var.second);
-  }
+  for (auto &[name, type] : variables)
+    exprOSIndented << llvm::formatv(", `{0}`&: __mlir_type.`{1}`", name, type);
   exprOSIndented << ") -> None:\n";
 
   // Splat out the main body code inside of a nested def. This will allow for us

@@ -1,0 +1,15 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# RUN: %lldb -R go -r <%s 2>&1 | FileCheck %s
+
+# Note: in REPL mode, expressions are delimited by empty lines.
+
+# CHECK: ($Int::Int) ^ weird name =
+let `^ weird name` = 12
+
+# CHECK: 12
+print(`^ weird name`)
