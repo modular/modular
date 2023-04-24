@@ -335,7 +335,7 @@ struct TaskGroup:
             _type : __mlir_type[
                 `(!pop.pointer<`, TaskGroup, `>) -> `, NoneType
             ],
-            callee:_task_complete,
+            callee : Self._task_complete,
             paramDecls : __mlir_attr.`#kgen<param.decls[]>`,
         ]()
 
@@ -346,7 +346,7 @@ struct TaskGroup:
         let task_group_txt = task.get_ctx[TaskGroupContext]()
         task_group_txt.store(
             TaskGroupContext {
-                callback: _get_complete_callback(),
+                callback: Self._get_complete_callback(),
                 task_group: Pointer[TaskGroup].address_of(self),
             }
         )
@@ -365,7 +365,7 @@ struct TaskGroup:
         let cur_hdl = __mlir_op.`pop.coroutine.opaque_handle`()
 
         __mlir_region await_body():
-            await_body_impl(cur_hdl, self)
+            Self.await_body_impl(cur_hdl, self)
 
         __mlir_op.`pop.coroutine.await`[_region : "await_body".value]()
 
@@ -670,7 +670,7 @@ struct AsyncTaskGroup:
             _type : __mlir_type[
                 `(!pop.pointer<`, AsyncTaskGroup, `>) -> `, NoneType
             ],
-            callee:_task_complete,
+            callee : Self._task_complete,
             paramDecls : __mlir_attr.`#kgen<param.decls[]>`,
         ]()
 
@@ -679,7 +679,7 @@ struct AsyncTaskGroup:
         let ctx_ptr = coroutine.get_ctx[AsyncTaskGroupContext]()
         let self_ptr = Pointer[AsyncTaskGroup].address_of(self)
         __get_address_as_uninit_lvalue(ctx_ptr.address) = AsyncTaskGroupContext(
-            _get_complete_callback(), self_ptr
+            Self._get_complete_callback(), self_ptr
         )
         let task_id = self.coroutines.__len__()
         # Take a copy of the handle reference, then move the coroutine onto the
