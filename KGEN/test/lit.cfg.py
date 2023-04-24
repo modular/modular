@@ -23,9 +23,11 @@ config.test_source_root = os.path.dirname(__file__)
 # test_exec_root: The root path where tests should be run.
 config.test_exec_root = os.path.join(config.modular_obj_root, "KGEN", "test")
 
-
 config.substitutions.append(
-    ("%lldb", config.asan_lib_inject_env + " " + which("lldb")),
+    (
+        "%lldb",
+        which("lldb"),
+    ),
 )
 
 tool_dirs = [
