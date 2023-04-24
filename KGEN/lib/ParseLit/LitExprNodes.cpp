@@ -477,7 +477,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       auto diag = emitter.emitError(getLoc()) << "use of unknown declaration '"
                                               << spelling << "'" << getRange();
       if (funcContext)
-        diag << ", `fn` declarations require explicit variable declarations";
+        diag << ", 'fn' declarations require explicit variable declarations";
       return {};
     }
 
@@ -490,7 +490,24 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   // Functions form an address, and may be overloaded.
-  if (isa<LIT::FuncOp>(*decls[0])) {
+  if (auto firstCandidate = dyn_cast<LIT::FuncOp>(*decls[0])) {
+    // Reject unqualified struct method references.
+    if (isa<StructDeclOp>(*decls[0]->getParentDecl())) {
+      const char *replacement = "self.";
+      // References to static methods can always use capital Self.
+      if (firstCandidate.getIsStatic())
+        replacement = "Self.";
+      // Referecnes /from/ static methods can only use capital Self.
+      if (auto curFn = dyn_cast<FuncOp>(emitter.declScope))
+        if (curFn.getIsStatic())
+          replacement = "Self.";
+
+      emitter.emitError(getLoc(), "cannot access method '")
+          << spelling << "' directly; did you mean '" << replacement << "'?"
+          << getRange() << LitFixIt::insertBeforeToken(getLoc(), replacement);
+      return {};
+    }
+
     // When unqualified name lookup finds a method on a struct, we bind in the
     // parameters from the enclosing struct.
     ParamBindArrayAttr paramBindings;
@@ -557,7 +574,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Reject unqualified struct field references.
   if (auto fieldOp = dyn_cast<StructFieldOp>(decl)) {
     emitter.emitError(getLoc(), "cannot access instance field '")
-        << spelling << "' directly; did you mean `self.`?" << getRange()
+        << spelling << "' directly; did you mean 'self.'?" << getRange()
         << LitFixIt::insertBeforeToken(getLoc(), "self.");
     return {};
   }

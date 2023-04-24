@@ -218,22 +218,22 @@ fn main():
 
     # expected-error @+1 {{'my_iter_no_len' does not implement the '__len__' method}}
     for item in my_list_no_len:
-        # expected-error @+1 {{use of unknown declaration 'item', `fn` declarations require explicit variable declarations}}
+        # expected-error @+1 {{use of unknown declaration 'item', 'fn' declarations require explicit variable declarations}}
         printInt(item)
 
     # expected-error @+1 {{'my_iter_no_next' does not implement the '__next__' method}}
     for item in my_list_no_next:
-        # expected-error @+1 {{use of unknown declaration 'item', `fn` declarations require explicit variable declarations}}
+        # expected-error @+1 {{use of unknown declaration 'item', 'fn' declarations require explicit variable declarations}}
         printInt(item)
 
     # expected-error @+1 {{'MyList_no_iter' does not implement the '__iter__' method}}
     for item in my_list_no_iter:
-        # expected-error @+1 {{use of unknown declaration 'item', `fn` declarations require explicit variable declarations}}
+        # expected-error @+1 {{use of unknown declaration 'item', 'fn' declarations require explicit variable declarations}}
         printInt(item)
 
     # expected-error @+1 {{'MyInteger' does not implement the '__as_mlir_index' method}}
     for item in my_list_invalid_int:
-        # expected-error @+1 {{use of unknown declaration 'item', `fn` declarations require explicit variable declarations}}
+        # expected-error @+1 {{use of unknown declaration 'item', 'fn' declarations require explicit variable declarations}}
         printInt(item)
 
     # expected-error @+1 {{expected 'in' after target identifier. Note that target lists are not yet supported.}}
