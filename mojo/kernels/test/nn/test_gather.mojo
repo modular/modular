@@ -79,7 +79,7 @@ fn test_gather():
             vector_width,
         ](output, input, indices, out_chain.borrow())
         out_chain.wait()
-        rt.__del__()
+        rt.del_old()
 
         print(output[StaticIntTuple[2](0, 0)])
         print(output[StaticIntTuple[2](2, 0)])
@@ -153,7 +153,7 @@ fn test_gather_3d():
             vector_width,
         ](output, input, indices, out_chain.borrow())
         out_chain.wait()
-        rt.__del__()
+        rt.del_old()
 
         print(output[StaticIntTuple[4](0, 0, 0, 0)])
         print(output[StaticIntTuple[4](2, 0, 0, 0)])
@@ -231,7 +231,7 @@ fn test_gather_empty_indices():
             vector_width,
         ](output, input, indices, out_chain.borrow())
         out_chain.wait()
-        rt.__del__()
+        rt.del_old()
 
     _test_gather[DType.si32]()
     _test_gather[DType.si64]()
