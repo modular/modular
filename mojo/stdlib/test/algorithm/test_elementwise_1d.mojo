@@ -48,12 +48,12 @@ fn test_elementwise_1d():
         StaticIntTuple[1](num_elements), out_chain.borrow()
     )
     out_chain.wait()
-    rt.__del__()
+    rt.del_old()
 
     # CHECK: 0.841345
     print(vector[0])
 
-    buf.__del__()
+    buf.del_old()
 
 
 fn main():

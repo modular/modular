@@ -360,7 +360,7 @@ fn parallelize[func: fn (Int) capturing -> None](num_work_items: Int):
     let out_chain = OwningOutputChainPtr(rt)
     async_parallelize[coarsed_func](out_chain.borrow(), core_count)
     out_chain.wait()
-    rt.__del__()
+    rt.del_old()
 
 
 # ===----------------------------------------------------------------------===#

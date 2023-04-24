@@ -76,7 +76,7 @@ fn test_elementwise[
         out_chain.borrow(),
     )
     out_chain.wait()
-    runtime.__del__()
+    runtime.del_old()
 
     for i2 in range(min(numelems, 64)):
         print(out_buffer.data.offset(i2).load())
