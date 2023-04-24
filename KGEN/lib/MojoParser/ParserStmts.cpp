@@ -55,12 +55,13 @@ static OpT getBlockParentOfType(Block *block) {
 namespace {
 struct StmtParser : public ParserBase {
   StmtParser(Lexer &lexer, ASTDecl &containingDecl)
-      : ParserBase(lexer), containingDecl(containingDecl),
+      : ParserBase(lexer), parentDecl(containingDecl),
+        curDeclScope(&containingDecl),
         builder(containingDecl.getDeclEndBuilder()) {
 
     // If we are parsing into a 'def', then we need a position to synthesize
     // variable definitions at the top of the function.
-    if (auto funcOp = dyn_cast<LIT::FuncOp>(containingDecl)) {
+    if (auto funcOp = dyn_cast<LIT::FuncOp>(getParentDecl())) {
       if (funcOp.getIsDef()) {
         // Create the varDeclCursor with an arbitrary op.  We delete it on
         // destruction of this statement parser.
@@ -76,7 +77,7 @@ struct StmtParser : public ParserBase {
       varDeclCursor->erase();
   }
 
-  const ASTDecl &getDecl() const { return containingDecl; }
+  ASTDecl &getParentDecl() { return parentDecl; }
   OpBuilder &getBuilder() { return builder; }
 
   /// Push a debug info lexical block to represent a local variable scope.
@@ -85,13 +86,13 @@ struct StmtParser : public ParserBase {
   // Expression emission.
 
   ExprEmitter getEmitter(bool allowImplicitVarDecl = false) {
-    return ExprEmitter(shared, containingDecl, builder,
+    return ExprEmitter(shared, *curDeclScope, builder,
                        allowImplicitVarDecl ? varDeclCursor : nullptr);
   }
 
   /// Get an expression emitter for a parameter expression.
   ExprEmitter getParamEmitter(ExprContext context) {
-    return ExprEmitter(shared, containingDecl, context, nullptr);
+    return ExprEmitter(shared, *curDeclScope, context, nullptr);
   }
 
   ParseResult parseSuite(ssize_t curIndent);
@@ -124,8 +125,10 @@ struct StmtParser : public ParserBase {
   ParseResult parseMLIRRegionStmt(LexerCursor startCursor, size_t curIndent);
 
 private:
-  /// This is declaration / scope that we're parsing into.
-  ASTDecl &containingDecl;
+  /// This is parent declaration / scope that we're parsing into.
+  ASTDecl &parentDecl;
+  /// This is the current declaration / scope.
+  ASTDecl *curDeclScope;
 
   /// This is the builder that we are constructing IR into.
   OpBuilder builder;
@@ -223,6 +226,13 @@ ParseResult StmtParser::parseLocalScopeSuite(ssize_t curIndent) {
   DebugInfo::DIBuilder::ScopeGuard scopeGuard;
   if (shared.diBuilder)
     pushLocalScope(scopeGuard);
+
+  // Push a new local variable scope for the subsequent suite.
+  llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
+  SMLoc loc;
+  (void)getLocation(loc);
+  curDeclScope = &getDeclResolver().addFullyResolvedDecl(nullptr, StringAttr(),
+                                                         loc, curDeclScope);
 
   // Forward to the normal suite parse method.
   return parseSuite(curIndent);
@@ -464,7 +474,7 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
 
 /// return_stmt ::= "return" [expression_list]
 ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
-  auto decl = dyn_cast<LIT::FuncOp>(containingDecl);
+  auto decl = dyn_cast<LIT::FuncOp>(getParentDecl());
   auto loc = consumeToken(Token::kw_return).getLoc();
 
   // If there is an expression list present, parse it.
@@ -528,14 +538,15 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
     resultSRValue = builder.create<POP::VariantCreateOp>(
         mlirLoc, decl.getResultType(), resultSRValue);
 
-  ExprEmitter::emitNormalReturn(builder, mlirLoc, resultSRValue, getDecl());
+  ExprEmitter::emitNormalReturn(builder, mlirLoc, resultSRValue,
+                                getParentDecl());
   return success();
 }
 
 /// param_return_stmt ::= "param_return" "[" expression ("," expression)* "]"
 ParseResult StmtParser::parseParamReturnStmt(size_t returnIndent) {
   SMLoc loc = consumeToken(Token::kw_param_return).getLoc();
-  auto decl = dyn_cast<LIT::FuncOp>(containingDecl);
+  auto decl = dyn_cast<LIT::FuncOp>(getParentDecl());
   if (!decl) {
     emitError(loc, "invalid context for parameter return");
     return success();
@@ -874,7 +885,7 @@ ParseResult StmtParser::parseForStmt(size_t curIndent) {
     return {};
   }
   getDeclResolver().addFullyResolvedDecl(nextCall.getIfSRValue(), target,
-                                         targetLoc, &containingDecl);
+                                         targetLoc, curDeclScope);
   if (failed(parseLocalScopeSuite(curIndent)))
     return failure();
   builder.create<HLCF::ContinueOp>(forLoc);
@@ -948,14 +959,14 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
           errVal.getLoc(), POP::PointerType::get(errVal.getType()), errName,
           /*isVar*/ true, /*isSynth=*/true);
       getDeclResolver().addFullyResolvedDecl(DeclIRValue(varDecl), errName,
-                                             errValLoc, &containingDecl);
+                                             errValLoc, curDeclScope);
       builder.create<POP::StoreOp>(errVal.getLoc(), errVal, varDecl,
                                    /*alignment=*/std::nullopt);
     } else {
       // If we are parsing inside an 'fn', the error declaration is an BValue,
       // because any reference to it needs to copy/move out.
       getDeclResolver().addFullyResolvedDecl(SBValue(errVal), errName,
-                                             errValLoc, &containingDecl);
+                                             errValLoc, curDeclScope);
     }
   }
 
@@ -1044,7 +1055,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   // Inject the target into our scope if asked for.
   if (target) {
     auto &targetDecl = getDeclResolver().addFullyResolvedDecl(
-        SLValue(target), target.getNameAttr(), targetLoc, &containingDecl);
+        SLValue(target), target.getNameAttr(), targetLoc, curDeclScope);
     if (!enterResult)
       targetDecl.hasReferenceError = true;
   }
@@ -1292,7 +1303,7 @@ ParseResult StmtParser::parseFromImportStmt() {
 
   // Check for a wildcard import.
   if (consumeIf(Token::star)) {
-    containingDecl.addUnresolvedWildCardImport(
+    getParentDecl().addUnresolvedWildCardImport(
         builder.getStringAttr(moduleName), importLoc);
     return success();
   }
@@ -1320,7 +1331,7 @@ ParseResult StmtParser::parseFromImportStmt() {
         builder.getStringAttr(moduleName), importDestNameAttr,
         builder.getStringAttr(importSourceName));
     getDeclResolver().addDecl(
-        importDecl, importSourceNameLoc, importDestNameAttr, &containingDecl,
+        importDecl, importSourceNameLoc, importDestNameAttr, curDeclScope,
         getLexer().getCursor(), getLexer().getCursor(), /*indentation=*/-1);
 
     // Check for more elements to import.
@@ -1368,7 +1379,7 @@ ParseResult StmtParser::parseImportStmt() {
         translateLocation(importLoc), builder.getStringAttr(moduleName),
         importDestNameAttr, /*declName=*/StringAttr());
     getDeclResolver().addDecl(importDecl, importLoc, importDestNameAttr,
-                              &containingDecl, getLexer().getCursor(),
+                              curDeclScope, getLexer().getCursor(),
                               getLexer().getCursor(), /*indentation=*/-1);
   } while (consumeIf(Token::comma));
   return success();
@@ -1399,8 +1410,8 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
   // Skip the body of this definition: go to a token at the start of the next
   // line at the same indent level (or less) as the current definition.
   skipUntilIndentation(curIndent);
-  getDeclResolver().addDecl(funcDecl, loc, baseName, &containingDecl,
-                            startCursor, getLexer().getCursor(), curIndent);
+  getDeclResolver().addDecl(funcDecl, loc, baseName, curDeclScope, startCursor,
+                            getLexer().getCursor(), curIndent);
   return success();
 }
 
@@ -1421,13 +1432,13 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
   auto unresolvedType = UnresolvedType::get(getContext());
   // If we're in a struct, then this is a field declaration.
   Operation *declOp;
-  if (isa<StructDeclOp>(containingDecl)) {
+  if (isa<StructDeclOp>(getParentDecl())) {
     // TODO: implement support for constant struct fields when we have a
     // stronger init model with Definitive Initialization.
     if (!isVar)
       emitError(loc, "'let' fields in structs are not supported yet");
     declOp = builder.create<StructFieldOp>(loc, name, unresolvedType);
-  } else if (isa<LIT::FuncOp>(containingDecl)) {
+  } else if (isa<LIT::FuncOp>(getParentDecl())) {
     // Otherwise this is a local let/var definition.
 
     // Emit the vardecl at the current insertion point.  Unlike implicitly
@@ -1444,7 +1455,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
 
   // Remember that we parsed this declaration so we can finish type checking it
   // when it gets referenced.
-  getDeclResolver().addDecl(declOp, smLoc, name, &containingDecl, startCursor,
+  getDeclResolver().addDecl(declOp, smLoc, name, curDeclScope, startCursor,
                             getLexer().getCursor(), stmtIndent);
 
   return success();
@@ -1471,7 +1482,7 @@ ParseResult StmtParser::parseAliasDeclStmt(LexerCursor startCursor,
 
   // Remember that we parsed this declaration so we can finish type checking it
   // when it gets referenced.
-  getDeclResolver().addDecl(declOp, smLoc, name, &containingDecl, startCursor,
+  getDeclResolver().addDecl(declOp, smLoc, name, curDeclScope, startCursor,
                             getLexer().getCursor(), stmtIndent);
   return success();
 }
@@ -1479,7 +1490,7 @@ ParseResult StmtParser::parseAliasDeclStmt(LexerCursor startCursor,
 ParseResult StmtParser::parseStructStmt(LexerCursor startCursor,
                                         size_t curIndent) {
   // We don't support structs in structs (yet?).
-  if (isa<StructDeclOp>(containingDecl))
+  if (isa<StructDeclOp>(getParentDecl()))
     emitTokenError("nested struct not supported here");
 
   auto smLoc = consumeToken(Token::kw_struct).getLoc();
@@ -1497,7 +1508,7 @@ ParseResult StmtParser::parseStructStmt(LexerCursor startCursor,
 
   // Remember that we parsed this declaration so we can finish type checking it
   // when it gets referenced.
-  getDeclResolver().addDecl(newStruct, smLoc, nameAttr, &containingDecl,
+  getDeclResolver().addDecl(newStruct, smLoc, nameAttr, curDeclScope,
                             startCursor, getLexer().getCursor(), curIndent);
   return success();
 }
@@ -1534,8 +1545,8 @@ ParseResult StmtParser::parseMLIRRegionStmt(LexerCursor startCursor,
   // Create the decl corresponding to the region declaration.
   auto op = builder.create<UnboundRegionOp>(translateLocation(loc));
   ASTDecl &decl =
-      getDeclResolver().addDecl(op, loc, identifier, &containingDecl,
-                                startCursor, getLexer().getCursor(), curIndent);
+      getDeclResolver().addDecl(op, loc, identifier, curDeclScope, startCursor,
+                                getLexer().getCursor(), curIndent);
   decl.resolvedness = DeclResolvedness::fully;
 
   // Parse the argument list if present.

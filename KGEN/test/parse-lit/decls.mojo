@@ -23,6 +23,20 @@ fn test_var():
   b = 12
 
 
+# CHECK-LABEL: lit.func @"test_var_let_scopes
+fn test_var_let_scopes(cond: Bool):
+  # CHECK: lit.letreg.decl "c"
+  # CHECK: if
+  let c = 10
+  if cond:
+      # CHECK: lit.letreg.decl "c"
+      let c = 11
+  # CHECK: else
+  else:
+      # CHECK: lit.letreg.decl "c"
+      let c = 12
+
+
 ##===----------------------------------------------------------------------===##
 # closures
 ##===----------------------------------------------------------------------===##
