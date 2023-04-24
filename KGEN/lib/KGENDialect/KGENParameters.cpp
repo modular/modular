@@ -458,7 +458,8 @@ static LogicalResult recordDecl(ParameterUseDefGraph &g, ParamDeclAttr decl,
   // If this parameter has already been declared in an operation in the same
   // scope, we have an error.
   if (paramDecl.scope && scope.isAncestor(paramDecl.scope)) {
-    return (op->emitError("redeclaration of parameter ") << decl.getName())
+    return (emitError(op->getLoc(), "redeclaration of parameter ")
+            << decl.getName())
                .attachNote(paramDecl.declOp->getLoc())
            << "previous declaration here";
   }
@@ -474,7 +475,8 @@ static FailureOr<ParamDefinition *>
 recordDef(ParameterUseDefGraph &g, ParamDeclAttr decl, Operation *op) {
   ParamDefinition &paramDef = g.defs[decl.getName()];
   if (paramDef.defOp) {
-    return (op->emitError("redefinition of parameter ") << decl.getName())
+    return (emitError(op->getLoc(), "redefinition of parameter ")
+            << decl.getName())
                .attachNote(paramDef.defOp->getLoc())
            << "see previous definition here";
   }
@@ -494,7 +496,8 @@ static void emitCycleError(ParameterUseDefGraph &g,
 
   // Emit the error on the container operation with notes indicating the
   // problem.
-  InFlightDiagnostic diag = g.scope->getParentOp()->emitError(
+  InFlightDiagnostic diag = emitError(
+      g.scope->getParentOp()->getLoc(),
       "cyclic reference between expressions defining and using parameters");
 
   // An SCC may contain multiple different cyclic paths.  We diagnose the first
@@ -679,7 +682,7 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
       continue;
     auto it = defs.find(param);
     if (it == defs.end())
-      return decls.find(param)->second.declOp->emitError("parameter ")
+      return emitError(decls.find(param)->second.declOp->getLoc(), "parameter ")
              << param << " has no definition";
   }
 
