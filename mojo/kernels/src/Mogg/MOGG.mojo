@@ -287,7 +287,7 @@ fn simd_load_strided[
     buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
     index: StaticIntTuple[rank],
 ) -> SIMD[type, simd_width]:
-    var flat_index = _compute_flat_index[type, rank, rank](buffer, index)
+    let flat_index = _compute_flat_index[type, rank, rank](buffer, index)
 
     let stride = buffer.dynamic_stride[rank - 1]
 
