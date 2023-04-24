@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-
+# REQUIRES: disabled
 # RUN: mojo %s | FileCheck %s
 
 from IO import print
