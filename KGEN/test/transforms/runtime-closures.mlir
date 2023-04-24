@@ -53,3 +53,29 @@ kgen.func @constant_in(%arg0: index, %arg1: index) {
     kgen.call @take_closure_no_args(%0) : (!kgen.signature<() capturing -> index>) -> ()
     kgen.return
 }
+
+// -----
+
+// COM: Ensure that captures are replaced only in stage closure region.
+kgen.func @user(%arg0: !pop.pointer<struct<pointer<scalar<index>>, scalar<index>, scalar<index>>>) {
+      kgen.return
+}
+
+// CHECK: kgen.func @nested_function(%arg0: !pop.pointer<struct<pointer<scalar<index>>, scalar<index>, scalar<index>>>) {
+// CHECK: %0 = kgen.call @user(%arg0) : (!pop.pointer<struct<pointer<scalar<index>>, scalar<index>, scalar<index>>>) -> index
+// CHECK: kgen.return
+kgen.func @bind_nested_function(%arg0: index) {
+    %4 = pop.stack_allocation 1 x !pop.struct<pointer<scalar<index>>, scalar<index>, scalar<index>>
+    %W = kgen.call @user(%4) : (!pop.pointer<struct<pointer<scalar<index>>, scalar<index>, scalar<index>>>) -> index
+    %9 = kgen.stage_closure = () capturing -> () {
+      %11 = kgen.call @user(%4) : (!pop.pointer<struct<pointer<scalar<index>>, scalar<index>, scalar<index>>>) -> index
+      kgen.return
+    } {name = "nested_function"}
+    kgen.return
+}
+
+kgen.func @main() {
+    %idx39 = index.constant 39
+    kgen.call @bind_nested_function(%idx39) : (index) -> ()
+    kgen.return
+}
