@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# UNSUPPORTED: asan
 # REQUIRES: darwin
 # RUN: %lldb -R go -r <%s 2>&1 | FileCheck %s
 
