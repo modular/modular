@@ -195,7 +195,7 @@ low ceremony way to write code, but is a challenge for two reasons: 1) systems
 programmers often want to declare that a value is immutable, and 2) may want to
 get an error if they mistype a variable name in an assignment.
 
-To support this, Mojo supports 'let' and 'var' declarations which introduce a
+To support this, Mojo supports `let` and `var` declarations which introduce a
 new scoped runtime value: `let` is immutable and `var` is mutable. These
 values use lexical scoping and support name shadowing:
 
@@ -652,10 +652,10 @@ fn rsqrt[width: Int, dt: DType](x: SIMD[dt, width]) -> SIMD[dt, width]:
 ```
 
 The Mojo compiler is fairly smart about type inference with parameters. Note
-that this function is able to call the parametric "`sqrt(x)`" function without
+that this function is able to call the parametric `sqrt(x)` function without
 specifying the parameters, the compiler infers its parameters as if you wrote
-"`sqrt[width,type](x)`" explicitly. Also note that "`rsqrt`" chose to define
-its first parameter named "width" but the SIMD type names it "`size`" without
+`sqrt[width,type](x)` explicitly. Also note that `rsqrt` chose to define
+its first parameter named "width" but the SIMD type names it `size` without
 challenge.
 
 ### Parameter expressions are just Mojo code
@@ -709,7 +709,7 @@ struct SIMD[type: DType, size: Int]:
         return (lhs + rhs).reduce_add()
 ```
 
-This makes use of the "`@parameter if`" feature, which is an if statement that
+This makes use of the `@parameter if` feature, which is an if statement that
 runs at compile time. It requires that its condition be a valid parameter
 expression, and ensures that only the live branch of the if is compiled into
 the program.
@@ -783,10 +783,10 @@ struct Array[T: AnyType]:
 
 ### `alias`: Named Parameter Expressions
 
-It is very common to want to *name* compile time values. Whereas 'var' defines a
-runtime value, and 'let' defines a runtime constant, we need a way to define a
+It is very common to want to *name* compile time values. Whereas `var` defines a
+runtime value, and `let` defines a runtime constant, we need a way to define a
 compile time temporary value. For this, Mojo uses an `alias` declaration. For
-example, the DType struct implements a simple enum using aliases for the
+example, the `DType` struct implements a simple enum using aliases for the
 enumerators like this (the actual internal implementation details vary a bit):
 
 ```mojo
@@ -802,7 +802,7 @@ struct DType:
     alias f32 = DType(15)
 ```
 
-This allows clients to use 'DType.f32' as a parameter expression (which also
+This allows clients to use `DType.f32` as a parameter expression (which also
 works as a runtime value of course) naturally. Note that this is invoking the
 runtime constructor for DType at compile time.
 
@@ -816,7 +816,7 @@ alias UI8 = SIMD[DType.ui8, 1]
 var x : F32   # F32 works like a "typedef"
 ```
 
-Like 'var' and 'let', aliases obey scope and you can use local aliases within
+Like `var` and `let`, aliases obey scope and you can use local aliases within
 functions as you'd expect.
 
 ### Autotuning / Adaptive compilation
@@ -830,16 +830,16 @@ the available hardware features, the sizes of the cache, what gets fused into
 the kernel, and many other fiddly details.
 
 Even vector length can be difficult to manage, because the vector length of a
-typical machine depends on the datatype, and some datatypes like bfloat16 don't
-have full support on all implementations. Mojo helps by providing an autotune
-function in the standard library. For example if you want to write a
+typical machine depends on the datatype, and some datatypes like `bfloat16`
+don't have full support on all implementations. Mojo helps by providing an
+`autotune` function in the standard library. For example if you want to write a
 vector-length-agnostic algorithm to a buffer of data, you might write it like
 this:
 
 ```mojo
 def exp_buffer[dt: DType](data: ArraySlice[dt]):
     # Pick vector length for this dtype and hardware
-    alias vector_len = autotune(4, 1, 8, 16, 32)
+    alias vector_len = autotune(1, 4, 8, 16, 32)
 
     # Use it as the vectorization length
     vectorize[exp[dt, vector_len]](data)
@@ -902,7 +902,7 @@ requiring a massive annotation burden.
 
 Let's start with the simple case: passing mutable references to values vs
 passing immutable references. As we already know, arguments that are passed to
-fn's are immutable by default:
+`fn`'s are immutable by default:
 
 ```mojo
 struct Int:
@@ -916,7 +916,7 @@ struct Int:
 
 The problem here is that `__iadd__` needs to mutate the internal state of the
 integer. The solution in Mojo is to declare that the argument is passed "by
-reference" by using the & marker on the argument name (`self` in this case):
+reference" by using the `&` marker on the argument name (`self` in this case):
 
 ```mojo
 struct Int:
@@ -984,7 +984,7 @@ passing arguments to functions is to pass with the "borrowed" argument
 convention. You can spell this out explicitly if you'd like:
 
 ```mojo
-fn useSomethingBig(borrowed a: SomethingBig, b: SomethingBig):
+fn use_something_big(borrowed a: SomethingBig, b: SomethingBig):
     """'a' and 'b' are passed the same, because 'borrowed' is the default."""
     a.print_id()
     b.print_id()
@@ -1022,13 +1022,13 @@ fn try_something_big():
     # We still want to do useful things with it though!
     big.print_id()
     # Do other things with it.
-    useSomethingBig(big, big)
+    use_something_big(big, big)
 ```
 
 Because the default argument convention is borrowed, we get very simple and
 logical code which does the right thing by default: for example, we don't want
 to copy or move all of SomethingBig just to invoke the "`print_id`" method, or
-when calling `useSomethingBig`.
+when calling `use_something_big`.
 
 The borrowed convention is similar and has precedent to other languages. For
 example, the borrowed argument convention is similar in some ways to passing an
@@ -1040,7 +1040,7 @@ C++ in two important ways though:
 prevents code from dynamically forming mutable references to a value when there
 are immutable references outstanding, and prevents having multiple mutable
 references to the same value. You are allowed to have multiple borrows (as the
-call to "`useSomethingBig`" does above) but cannot pass something by mutable
+call to "`use_something_big`" does above) but cannot pass something by mutable
 reference and borrow at the same time. (TODO: Not currently enabled).
 
 2. Small values like "`Int`", "`Float`", and "`SIMD`" are passed directly in
