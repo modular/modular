@@ -159,9 +159,9 @@ example:
 ```mojo
 $ cat hello.🔥
 def main():
-   print("hello world")
-   for x in range(9, 0, -3):
-       print(x)
+    print("hello world")
+    for x in range(9, 0, -3):
+        print(x)
 $ mojo hello.🔥
 hello world
 9
@@ -209,7 +209,7 @@ def your_function(a, b):
         stuff()
 ```
 
-'let' and 'var' declarations support type specifiers as well as patterns, and
+`let` and `var` declarations support type specifiers as well as patterns, and
 late initialization:
 
 ```mojo
@@ -217,9 +217,7 @@ def your_function():
     let x: Int8 = 42
     let y: Int64 = 17
 
-    var (a, b) = (x, y)
-
-    var z: Int8
+    let z: Int8
     if x != 0:
         z = 1
     else:
@@ -227,7 +225,7 @@ def your_function():
     use(z)
 ```
 
-Note that 'var' and 'let' are completely opt-in when in 'def' declarations: you
+Note that `var` and `let` are completely opt-in when in 'def' declarations: you
 may also use implicitly declared values as normal in Python, and they get
 function scope.
 
@@ -270,7 +268,7 @@ struct MyPair:
 
 As you can see, Mojo structs are very similar to classes, the biggest
 difference is that all instance properties *must* be explicitly declared with a
-'var' or 'let' declaration. This allows the Mojo compiler to layout and access
+`var` or `let` declaration. This allows the Mojo compiler to layout and access
 the value precisely in memory without indirection or other overhead. Struct
 fields are bound statically: they aren't looked up with a dictionary
 indirection. As such, you cannot `del` a method or reassign it at runtime.
@@ -320,13 +318,13 @@ pass values in registers, and generally be as efficient as C for argument
 passing and other low level details. This also is the foundation of the safety
 and predictability guarantees that Mojo provides to systems programmers.
 
-#### A note on "Int" vs "int"
+#### A note on `Int` vs `int`
 
 You might note that Mojo uses a capital-`Int` type defined in its standard
 library, which differs in case from the lower-case-`int` that is used by MyPy.
-This is intentional, and a good thing. The Mojo standard library "Int" is
+This is intentional, and a good thing. The Mojo standard library `Int` is
 defined to be a fixed width integer sized to match the CPU register (like
-`ssize_t` in C). In contrast, the Python "int" type is a boxed object that
+`ssize_t` in C). In contrast, the Python `int` type is a boxed object that
 supports arbitrary precision arithmetic, and has a somewhat broader API - e.g.
 support for object identity tests.
 
@@ -400,7 +398,7 @@ its body (alternatively: pedantic and strict). Specifically, `fn`s have a
 number of limitations compared to `def`s:
 
 1. Argument values default to being immutable in the body of the function (like
-a 'let'), instead of mutable (like a 'var'). This catches accidental mutations,
+a `let`), instead of mutable (like a `var`). This catches accidental mutations,
 and permits the use of non-copyable types as arguments.
 
 2. Argument values require a type specification (except for `self` in a
@@ -411,10 +409,10 @@ unknown return type. Note that both can be explicitly declared to return
 
 3. Implicit declaration of local variables is disabled, so all locals must be
 declared. This catches name typos and dovetails with the scoping provided by
-'let' and 'var'.
+`let` and `var`.
 
 4. Both support raising exceptions, but this must be explicitly declared on a
-'fn' with the `raises` keyword.
+`fn` with the `raises` keyword.
 
 Programming patterns will vary widely across teams, and this level of
 strictness will not be for everyone. We expect that folks who are used to C++
@@ -946,7 +944,7 @@ fn show_mutation():
 
 Mojo implements the in-place mutation of the InlinedFixedVector element by
 emitting a call to `__getitem__` into a temporary buffer, followed by a store
-with `__setitem__` after the call. Mutation of the 'let' value fails because it
+with `__setitem__` after the call. Mutation of the `let` value fails because it
 isn't possible to form a mutable reference to an immutable value. Similarly,
 the compiler rejects attempts to use a subscript with a by-ref argument if it
 implements `__getitem__` but not `__setitem__`.
