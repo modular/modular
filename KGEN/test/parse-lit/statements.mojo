@@ -461,9 +461,10 @@ fn rethrowsToRethrow():
 # Issue #12358
 # CHECK-LABEL: lit.func @"raise_string
 fn raise_string() raises:
-   # CHECK-NEXT: %0 = kgen.param.constant: @"$Error"::@Error =
-   # CHECK-NEXT: %1 = pop.variant.create %0
-   # CHECK-NEXT: lit.return %1
+   # CHECK-NEXT: %0 = kgen.param.constant: @"$StringLiteral"::@StringLiteral = <#lit.struct<{value: string = "thing"}>>
+   # CHECK-NEXT: %1 = kgen.call @"$Error"::@Error::@"__init__($StringLiteral::StringLiteral)"(%0) : (!kgen.declref<@"$StringLiteral"::@StringLiteral> borrow) ownedresult -> !kgen.declref<@"$Error"::@Error>
+   # CHECK-NEXT: %2 = pop.variant.create %1 : !kgen.declref<@"$Error"::@Error> -> !pop.variant<@"$Error"::@Error, !lit.none>
+   # CHECK-NEXT: lit.return %2 : !pop.variant<@"$Error"::@Error, !lit.none>
    raise "thing"
 
 
