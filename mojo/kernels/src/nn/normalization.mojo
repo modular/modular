@@ -25,10 +25,11 @@ fn layer_norm[
         mytype, width
     ],
     shape: DimList,
+    inner_dim: DimList,
 ](
     out_buf: NDBuffer[2, shape, type],
-    gamma: SIMD[type, 1],
-    beta: SIMD[type, 1],
+    gamma_buf: NDBuffer[1, inner_dim, type],
+    beta_buf: NDBuffer[1, inner_dim, type],
     eps: SIMD[type, 1],
 ):
     """Computes layernorm(elementwise_fn(x)) across the last dimension of x, where layernorm is
@@ -72,11 +73,19 @@ fn layer_norm[
             out_slice, mean_val, 0
         )  # use biased estimator
 
-        let norm_factor = 1 / sqrt(var_val + eps) * gamma
+        let norm_factor = 1 / sqrt(var_val + eps)
 
         fn _normalize[simd_width: Int](idx: Int):
             let out_val = out_slice.simd_load[simd_width](idx)
-            let norm_val = (out_val - mean_val) * norm_factor + beta
+            let norm_val = (
+                out_val - mean_val
+            ) * norm_factor * gamma_buf.simd_load[simd_width](
+                idx
+            ) + beta_buf.simd_load[
+                simd_width
+            ](
+                idx
+            )
             out_slice.simd_store(idx, norm_val)
 
         vectorize[simd_width, _normalize](n)
