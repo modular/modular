@@ -1,4 +1,4 @@
-# Mojo’s “Value Lifecycle”: Birth, life and death of a value
+# Mojo’s "Value Lifecycle": Birth, life and death of a value
 
 One of the subtle aspects of a programming language is its approach to defining
 types, what capabilities those types can expose, and how
@@ -10,17 +10,17 @@ components of its ownership and memory safety model.
 Mojo isn’t the first language to try to pin this down - there are many languages
 to learn from including C++, Rust, Swift and many more.  Each of these has
 different tradeoffs: C++, for example, is very powerful but often accused of
-“getting the defaults wrong” which leads to bugs and mis-features.  Swift is
+"getting the defaults wrong" which leads to bugs and mis-features.  Swift is
 easy to work with, but has a less predictable model that copies values a lot and
-is dependent on an “ARC optimizer” for performance. Rust started with strong
+is dependent on an "ARC optimizer" for performance. Rust started with strong
 value ownership goals to satisfy its borrow checker, but relies on values being
 movable, and makes it challenging to express custom move constructors. In
 Python, everything is a reference to a class, so it has never really faced these
 issues.
 
 We aimed to learn from these and other languages to provide a model that is very
-powerful while still easy to learn and understand, and without requiring “best
-effort” and difficult-to-predict optimization passes.  We use C++ as the primary
+powerful while still easy to learn and understand, and without requiring "best
+effort" and difficult-to-predict optimization passes.  We use C++ as the primary
 comparison point in examples because it is widely known but occasionally
 reference other languages if they provide a better comparison point.
 
@@ -52,10 +52,10 @@ struct NoInstances:
 
 Mojo types do not get default constructors, move constructors, memberwise
 initializers or anything else by default, so it is impossible to create an
-instance of this “`NoInstances`” type.  In order to get them you need to define
+instance of this `NoInstances` type.  In order to get them you need to define
 an `__init__` method or use a decorator that synthesizes an initializer.  As
-shown, these types can be useful as “namespaces”, because you can refer to
-static members like “`NoInstances.my_int`” or “`NoInstances.print_hello()`” even
+shown, these types can be useful as "namespaces", because you can refer to
+static members like `NoInstances.my_int` or `NoInstances.print_hello()` even
 though you cannot instantiate an instance of the type.
 
 ### Non-movable and non-copyable types
@@ -71,33 +71,33 @@ struct Atomic:
     var state: Int
 
     fn __init__(self&, state: Int = 0):
-      self.state = state
+        self.state = state
 
     fn __iadd__(self&, rhs: Int):
-      #...atomic magic...
+        #...atomic magic...
 
     fn get_value(self) -> Int:
-      return atomic_load_int(self.state)
+        return atomic_load_int(self.state)
 ```
 
 This class defines an initializer but no copy or move constructors, so once it
 is initialized it can never be moved or copied.  This is safe and useful because
-Mojo's ownership system is fully “address correct” - when this is initialized
+Mojo's ownership system is fully "address correct" - when this is initialized
 onto the stack or in the field of some other type, it never needs to move.
 
 Note that Mojo’s approach just controls the builtin operations like `a = b`
 copies and the `x^` consume operator.  One useful pattern that can be used for
-types like this is to add an explicit `copy()` method (a non-“dunder” method)
+types like this is to add an explicit `copy()` method (a non-"dunder" method)
 which can be useful to explicitly make copies of an instance when it is known
 safe to the programmer.
 
-### Unique “move-only” types
+### Unique "move-only" types
 
 If we take one more step up the ladder of capabilities, we will encounter types
-that are “unique” - there are many examples of this in C++, e.g. types like
+that are "unique" - there are many examples of this in C++, e.g. types like
 `std::unique_ptr`, or even a `FileDescriptor` type that owns an underlying POSIX
 file descriptor.  These types are pervasive in languages like Rust, where
-copying is discouraged, but “move” is free. In Mojo, you can declare these by
+copying is discouraged, but "move" is free. In Mojo, you can declare these by
 implementing the `__moveinit__` method with a consuming existing like this:
 
 ```mojo
@@ -107,29 +107,29 @@ struct FileDescriptor:
 
     # This is the new.
     fn __moveinit__(self&, consuming existing: Self):
-      self.fd = existing.fd
+        self.fd = existing.fd
 
     # This takes ownership of a POSIX file descriptor.
     fn __init__(self&, fd: Int):
-      self.fd = fd
+        self.fd = fd
 
     fn __init__(self&, path: String):
-      # Error handling omitted, call the open(2) syscall.
-      self = FileDescriptor(open(path, ...))
+        # Error handling omitted, call the open(2) syscall.
+        self = FileDescriptor(open(path, ...))
 
     fn __del__(owned self):
-      close(self.fd)   # pseudo code, call close(2)
+        close(self.fd)   # pseudo code, call close(2)
 
     fn dup(self) -> Self:
-      # Invoke the dup(2) system call.
-      return Self(dup(self.fd))
+        # Invoke the dup(2) system call.
+        return Self(dup(self.fd))
     fn read(...): ...
     fn write(...): ...
 ```
 
 
-The new concept is that we added a “consuming move constructor” which is named
-“`__moveinit__`”.  The consuming move initializer takes ownership of an existing
+The new concept is that we added a "consuming move constructor" which is named
+`__moveinit__`.  The consuming move initializer takes ownership of an existing
 `FileDescriptor`, and moves its internal implementation details over to a new
 instance.  This is because instances of `FileDescriptor` may exist at different
 locations, and they can be logically moved around - stealing the body of one
@@ -139,35 +139,35 @@ Here is an egregious example that will invoke this multiple times:
 
 ```mojo
 fn egregious_moves(owned fd1: FileDescriptor):
-   # fd1 and fd2 have different addresses in memory, but the
-   # consume operator moves unique ownership from fd1 to fd2.
-   let fd2 = fd1^
+    # fd1 and fd2 have different addresses in memory, but the
+    # consume operator moves unique ownership from fd1 to fd2.
+    let fd2 = fd1^
 
-   # Do it again, a use of fd2 after this point will produce an error.
-   let fd3 = fd2^
+    # Do it again, a use of fd2 after this point will produce an error.
+    let fd3 = fd2^
 
-   # We can do this all day…
-   let fd4 = fd3^
-   fd4.read(...)
-   # fd4.__del__() runs here
+    # We can do this all day...
+    let fd4 = fd3^
+    fd4.read(...)
+    # fd4.__del__() runs here
 ```
 
 Note how ownership of the value is transferred between various values that own
 it, using the postfix-`^` ‘consume’ operator to destroy a previous binding.  If
 you are familiar with C++, the simple way to think about the consume operator is
-like “`std::move`”, but in this case, we can see that it is able to move things
+like `std::move`, but in this case, we can see that it is able to move things
 without resetting them to a state that can be destroyed: in C++, if your move
-operator failed to change the old value’s “fd” instance, it would get closed
+operator failed to change the old value’s `fd` instance, it would get closed
 twice.
 
 Mojo tracks the liveness of values and allows you to define custom move
 constructors.  This is rarely needed, but extremely powerful when it is.  For
 example, some types like the
 <code>[llvm::SmallVector type](https://llvm.org/docs/ProgrammersManual.html#llvm-adt-smallvector-h)</code>
-use the “inline storage” optimization technique, and they may want to be
-implemented with an “inner pointer” into their instance.  This is a well known
+use the "inline storage" optimization technique, and they may want to be
+implemented with an "inner pointer" into their instance.  This is a well known
 trick to reduce pressure on the malloc memory allocator, but it means that a
-“move” operation needs custom logic to update the pointer when that happens.
+"move" operation needs custom logic to update the pointer when that happens.
 
 With Mojo, this is as simple as implementing a custom `__moveinit__` method.
 This is something that is also easy to implement in C++ (though, with
@@ -180,7 +180,7 @@ temporaries and the corresponding copy/move operations.  If this is
 inappropriate for your type, you should use explicit methods like `copy()`
 instead of the dunder methods.
 
-### Types that support a “Stealing Move”
+### Types that support a "Stealing Move"
 
 One challenge with memory safe languages is that they need to provide a
 predictable programming model around what the compiler is able to track, and
@@ -190,12 +190,12 @@ first example below are to different array elements, it is (in general)
 impossible to reason about the second example:
 
 ```c++
-    std::pair<T, T> getValues1(MutableArray<T> &array) {
-      return { std::move(array[0]), std::move(array[1]) };
-    }
-    std::pair<T, T> getValues2(MutableArray<T> &array, size_t i, size_t j) {
-      return { std::move(array[i]), std::move(array[j]) };
-    }
+std::pair<T, T> getValues1(MutableArray<T> &array) {
+    return { std::move(array[0]), std::move(array[1]) };
+}
+std::pair<T, T> getValues2(MutableArray<T> &array, size_t i, size_t j) {
+    return { std::move(array[i]), std::move(array[j]) };
+}
 ```
 
 The problem here is that there is simply no way (looking at just the function
@@ -212,19 +212,19 @@ without having to work around its type system. As seen above, it doesn’t force
 types to be copyable, movable or even constructable, but it does want types to
 express their full contract and it wants to enable fluent design patterns that
 programmers expect from languages like C++.  The (well known) observation here
-is that many objects have contents that can be “stolen” without needing to
-disable their destructor, either because they have a “null state” (like an
+is that many objects have contents that can be "stolen" without needing to
+disable their destructor, either because they have a "null state" (like an
 optional type or nullable pointer) or because they have a null value that is
 efficient to create and a no-op to destroy (e.g. `std::vector` can have a null
 pointer for its data).
 
 To support these use-cases, the consume operator supports arbitrary LValues, and
-when applied to one, it invokes the “stealing move constructor”.  This
+when applied to one, it invokes the "stealing move constructor".  This
 constructor must set up the new value to be in a live state, and can mutate the
 old value, but needs to put it into a state where its destructor will still
 work.  For example, if we want to put our `FileDescriptor` into a vector and
-move out of it, we might choose to extend it to know that “-1” is a sentinel
-that means that it is “null”.  We can implement this like so:
+move out of it, we might choose to extend it to know that `-1` is a sentinel
+that means that it is "null".  We can implement this like so:
 
 ```mojo
 # This is a simple wrapper around POSIX-style fcntl.h functions.
@@ -245,7 +245,7 @@ struct FileDescriptor:
             close(self.fd)   # pseudo code, call close(2)
 ```
 
-Notice how the “stealing move” constructor takes the file descriptor from an
+Notice how the "stealing move" constructor takes the file descriptor from an
 existing value, and mutates that value so that its destructor won’t do anything.
 This technique has tradeoffs, and is therefore not the best for every type.  We
 can see that it adds one (inexpensive) branch to the destructor, because it has
@@ -279,28 +279,28 @@ In Mojo, you can do this by implementing the `__copyinit__` method.  Here is an
 example of that using a simple `String` in pseudo code:
 
 ```mojo
-    struct MyString:
-        var data: Pointer[Int8]
+struct MyString:
+    var data: Pointer[Int8]
 
-        # StringRef is a pointer + length and works with StringLiteral.
-        def __init__(self&, input: StringRef):
-          self.data = …
+    # StringRef is a pointer + length and works with StringLiteral.
+    def __init__(self&, input: StringRef):
+        self.data = ...
 
-        # Copy the string by deep copying the underlying malloc'd data.
-        def __copyinit__(self&, existing: Self):
-          self.data = strdup(existing.data)
+    # Copy the string by deep copying the underlying malloc'd data.
+    def __copyinit__(self&, existing: Self):
+        self.data = strdup(existing.data)
 
-        # This isn't required, but optimizes unneeded copies.
-        def __moveinit__(self&, owned existing: Self):
-          self.data = existing.data
+    # This isn't required, but optimizes unneeded copies.
+    def __moveinit__(self&, owned existing: Self):
+        self.data = existing.data
 
-        def __del__(owned self):
-            free(self.data.address)
+    def __del__(owned self):
+        free(self.data.address)
 
-        def __add__(self, rhs: MyString) -> MyString: ...
+    def __add__(self, rhs: MyString) -> MyString: ...
 ```
 
-This simple type is a pointer to a “null terminated” string data allocated with
+This simple type is a pointer to a "null terminated" string data allocated with
 malloc, using old-school C APIs for clarity.  It implements the `__copyinit__`
 which maintains the invariant that each instance of MyString owns their
 underlying pointer and frees it on destruction.  This implementation builds on
@@ -309,26 +309,26 @@ allows it to completely eliminate temporary copies in some common cases.  You
 can see this behavior in this code sequence:
 
 ```mojo
-    fn test_my_string():
-        var s1 = MyString("hello ")
+fn test_my_string():
+    var s1 = MyString("hello ")
 
-        var s2 = s1    # s2.__copyinit__(s1) runs here
+    var s2 = s1    # s2.__copyinit__(s1) runs here
 
-        print(s1)
+    print(s1)
 
-        var s3 = s1^   # s3.__moveinit__(s1) runs here
+    var s3 = s1^   # s3.__moveinit__(s1) runs here
 
-        print(s2)
-        # s2.__del__() runs here
-        print(s3)
-        # s3.__del__() runs here
+    print(s2)
+    # s2.__del__() runs here
+    print(s3)
+    # s3.__del__() runs here
 ```
 
 In this case you can see both why a copy constructor is needed: without one, the
-duplication of the “`s1`” value into “`s2`” would be an error - because you
+duplication of the `s1` value into `s2` would be an error - because you
 cannot have two live instances of the same non-copyable type.  The move
-constructor is optional, but helps the assignment into “`s3`”: without it, the
-compiler would invoke the copy constructor from s1, then destroy the old "`s1`"
+constructor is optional, but helps the assignment into `s3`: without it, the
+compiler would invoke the copy constructor from s1, then destroy the old `s1`
 instance.  This is logically correct, but introduces extra runtime overhead.
 
 Mojo destroys values eagerly, which allows it to use frequently transform
@@ -338,8 +338,8 @@ of `std::move`.
 
 ### Trivial Types
 
-The most flexible types are ones that are just “bags of bits”.  These types are
-“trivial” because they can be copied, moved, and destroyed without invoking
+The most flexible types are ones that are just "bags of bits".  These types are
+"trivial" because they can be copied, moved, and destroyed without invoking
 custom code.  Types like these are arguably the most common basic type that
 surrounds us: things like integers and floating point values are all trivial.
 From a language perspective, Mojo doesn’t need special support for these, it
@@ -355,15 +355,15 @@ are trivial in another way: they are tiny, and should be passed around in the
 registers of a CPU, not indirectly in memory.
 
 As such, Mojo provides a struct decorator that solves all of these problems.
-You can implement a type with the “`@register_passable("trivial")`” decorator,
+You can implement a type with the `@register_passable("trivial")` decorator,
 and this tells Mojo that the type should be copyable and movable, but that it
 has no user-defined logic for doing this.  It also tells Mojo to prefer to pass
 the value in CPU registers, which can lead to efficiency benefits.
 
 TODO: This decorator is due for a reconsideration.  Lack of custom logic
-copy/move/destroy logic, and “passability in a register” are orthogonal concerns
+copy/move/destroy logic, and "passability in a register" are orthogonal concerns
 and should be split.  This former logic should be subsumed into a more general
-“`@value("trivial")`” decorator which is orthogonal from “`@register_passable`”.
+`@value("trivial")` decorator which is orthogonal from `@register_passable`.
 
 ### Boilerplate eliminating decorators
 
@@ -378,13 +378,13 @@ values lifetime ends, for example, a simple string might look like this (in
 pseudo code):
 
 ```mojo
-    struct MyString:
-        var data: Pointer[Int8]
+struct MyString:
+    var data: Pointer[Int8]
 
-        def __init__(self&, input: StringRef): ...
-        def __add__(self, rhs: MyString) -> MyString: ...
-        def __del__(owned self):
-            free(self.data.address)
+    def __init__(self&, input: StringRef): ...
+    def __add__(self, rhs: MyString) -> MyString: ...
+    def __del__(owned self):
+        free(self.data.address)
 ```
 
 The Mojo compiler automatically invokes the destructor when the value is dead,
@@ -393,24 +393,24 @@ compiler static analysis to reason about your code and decide when to insert
 calls to the destructor.  For example:
 
 ```mojo
-    fn use_strings():
-        var a = MyString("hello a")
-        var b = MyString("hello b")
-        print(a)
-        # a.__del__() runs here
+fn use_strings():
+    var a = MyString("hello a")
+    var b = MyString("hello b")
+    print(a)
+    # a.__del__() runs here
 
 
-        print(b)
-        # b.__del__() runs here
+    print(b)
+    # b.__del__() runs here
 
-        a = MyString("temporary a")
-        # a.__del__() runs here
+    a = MyString("temporary a")
+    # a.__del__() runs here
 
-        other_stuff()
+    other_stuff()
 
-        a = MyString("final a")
-        print(a)
-        # a.__del__() runs here
+    a = MyString("final a")
+    print(a)
+    # a.__del__() runs here
 ```
 
 
@@ -454,8 +454,8 @@ The Mojo design has a number of strong advantages over the C++ model:
    die as soon as possible, avoiding confusing situations where the compiler
    thinks a value could still be alive and interfere with another value, but
    that isn’t clear to the user.
-5. Destroying values at last use composes nicely with “move” optimization,
-   which transforms a “copy+del” pair into a “move” of a value, a generalization
+5. Destroying values at last use composes nicely with "move" optimization,
+   which transforms a "copy+del" pair into a "move" of a value, a generalization
    of C++ move optimizations like NRVO.
 6. Destroying values at the end of scope in C++ is problematic for some common
    patterns like tail recursion, because the destructor calls happen after the
@@ -474,26 +474,26 @@ entirely, making the generated code faster and avoiding ambiguity.
 
 In addition to Mojo’s lifetime analysis being fully control flow aware, it is
 also fully field sensitive (each field of a structure is tracked independently).
-It separately keeps track of whether a “whole object” is initialized with an
+It separately keeps track of whether a "whole object" is initialized with an
 initializer or destroyed with a whole object destructor.  For example, consider
 this code:
 
 ```mojo
-    struct TwoStrings:
-      var str1: MyString
-      var str2: MyString
-      fn __init__(self&): …
-      fn __del__(owned self): ...
+struct TwoStrings:
+    var str1: MyString
+    var str2: MyString
+    fn __init__(self&): ...
+    fn __del__(owned self): ...
 
-    fn use_two_strings():
-        var ts = TwoStrings()
-        # ts.str1.__del__() runs here
+fn use_two_strings():
+    var ts = TwoStrings()
+    # ts.str1.__del__() runs here
 
-        other_stuff()
+    other_stuff()
 
-        ts.str1 = MyString("hello a")     # Overwrite ts.str1
-        print(ts.str1)
-        # ts.__del__() runs here
+    ts.str1 = MyString("hello a")     # Overwrite ts.str1
+    print(ts.str1)
+    # ts.__del__() runs here
 ```
 
 Note that the `ts.str1` field is immediately destroyed after being set up,
@@ -501,16 +501,16 @@ because Mojo knows that it will be overwritten down below.  You can also see
 this when using the consume operator, for example:
 
 ```mojo
-    fn consume_and_use_two_strings():
-        var ts = TwoStrings()
-        consume(ts.str1^)
+fn consume_and_use_two_strings():
+    var ts = TwoStrings()
+    consume(ts.str1^)
 
-        # ts is partially initialized here!
-        other_stuff()
+    # ts is partially initialized here!
+    other_stuff()
 
-        ts.str1 = MyString()  # All together now
-        use(ts)               # This is ok
-        # ts.__del__() runs here
+    ts.str1 = MyString()  # All together now
+    use(ts)               # This is ok
+    # ts.__del__() runs here
 ```
 
 Notice that the code consumes one of the fields: for the duration of
@@ -526,16 +526,16 @@ means that it isn’t possible to create an object by initializing its fields, n
 is it possible to tear down an object by destroying its fields:
 
 ```mojo
-    fn consume_and_use_two_strings():
-        var ts = TwoStrings()
-        consume(ts.str1^)
-        consume(ts.str2^)
-        # Error: cannot run the 'ts' destructor without initialized fields.
+fn consume_and_use_two_strings():
+    var ts = TwoStrings()
+    consume(ts.str1^)
+    consume(ts.str2^)
+    # Error: cannot run the 'ts' destructor without initialized fields.
 
-        var ts2 : TwoStrings
-        ts2.str1 = MyString()  # All together now
-        ts2.str2 = MyString()  # All together now
-        use(ts2) # Error: 'ts2' isn't fully initialized
+    var ts2 : TwoStrings
+    ts2.str1 = MyString()  # All together now
+    ts2.str2 = MyString()  # All together now
+    use(ts2) # Error: 'ts2' isn't fully initialized
 ```
 
 While we could allow patterns like this to happen, we reject this because a
@@ -547,7 +547,7 @@ require all full value initialization to go through initializers and be
 destroyed with their full value destructor.
 
 For what it's worth, Mojo does internally have an equivalent of the Rust
-"[mem::forget](https://doc.rust-lang.org/std/mem/fn.forget.html)” function which
+"[mem::forget](https://doc.rust-lang.org/std/mem/fn.forget.html)" function which
 explicitly disables a destructor, and has a corresponding internal feature for
 "blessing" an object, but they aren’t exposed for user consumption at this
 point.
@@ -561,30 +561,31 @@ that you can use ‘self’ as a whole object as soon as all the fields are
 initialized:
 
 ```mojo
-    struct TwoStrings:
-      var str1: MyString
-      var str2: MyString
-      fn __init__(self&, cond: Bool, other: MyString):
+struct TwoStrings:
+    var str1: MyString
+    var str2: MyString
+
+    fn __init__(self&, cond: Bool, other: MyString):
         self.str1 = MyString()
         if cond:
-          self.str2 = other
-          use(self)  # Safe to use immediately!
-          # self.str2.__del__(): destroyed because overwritten below.
+            self.str2 = other
+            use(self)  # Safe to use immediately!
+            # self.str2.__del__(): destroyed because overwritten below.
 
         self.str2 = self.str1
-          use(self)  # Safe to use immediately!
+        use(self)  # Safe to use immediately!
 ```
 
 Similarly, it is completely safe for initializers in Mojo to completely
 overwrite `self`, e.g. by delegating to other initializers:
 
 ```mojo
-    struct TwoStrings:
-      var str1: MyString
-      var str2: MyString
+struct TwoStrings:
+    var str1: MyString
+    var str2: MyString
 
-      fn __init__(self&): ...
-      fn __init__(self&, cond: Bool, other: MyString):
+    fn __init__(self&): ...
+    fn __init__(self&, cond: Bool, other: MyString):
         self = TwoStrings()  # basic
         self.str1 = MyString("fancy")
 ```
@@ -595,13 +596,13 @@ A final bit of magic exists for the ‘owned’ arguments of a destructor and mo
 initializer.  To recap, these methods are defined like this:
 
 ```mojo
-    struct TwoStrings:
-      var str1: MyString
-      var str2: MyString
-      fn __init__(...)
+struct TwoStrings:
+    var str1: MyString
+    var str2: MyString
+    fn __init__(...)
 
-      fn __moveinit__(self&, owned existing: Self): ...
-      fn __del__(owned self): ...
+    fn __moveinit__(self&, owned existing: Self): ...
+    fn __del__(owned self): ...
 ```
 
 These methods face an interesting but obscure problem: both of these methods are
@@ -619,13 +620,13 @@ This means that the whole object may be used before the field values are
 consumed, for example, this works as you expect:
 
 ```mojo
-    struct TwoStrings:
-      var str1: MyString
-      var str2: MyString
-      fn __init__(...)
+struct TwoStrings:
+    var str1: MyString
+    var str2: MyString
+    fn __init__(...)
+    fn __moveinit__(self&, owned existing: Self): ...
 
-      fn __moveinit__(self&, owned existing: Self): ...
-      fn __del__(owned self):
+    fn __del__(owned self):
         log(self)       # Self is still whole
         # self.str2.__del__(): Mojo destroys str2 since it isn't used
 
@@ -639,14 +640,15 @@ within the destructor or move initializer itself.  You can do this by assigning
 to the discard pattern:
 
 ```mojo
-      fn __del__(owned self):
-        log(self) # Self is still whole
+fn __del__(owned self):
+    log(self) # Self is still whole
 
-        consume(^str1)
-        _ = self.str2
-        # self.str2.__del__(): Mojo destroys str2 after its last use.
+    consume(^str1)
+    _ = self.str2
+    # self.str2.__del__(): Mojo destroys str2 after its last use.
 ```
-In this case, if “consume” implicitly refers to some value in “str2” somehow,
+
+In this case, if "consume" implicitly refers to some value in `str2` somehow,
 
 this will ensure that str2 isn’t destroyed until the last use when it is
 accessed by the `_` pattern.
