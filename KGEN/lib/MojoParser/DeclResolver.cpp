@@ -1815,14 +1815,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   if (transivelyCaptures)
     effects = effects | FnEffects::Capturing;
 
-  // We know the result type of the function is register passable (because
-  // otherwise it would be promoted to an argument).  If the result of the
-  // function is a non-trivial type, mark the function effect as having an owned
-  // result so ownership tracking will notice it.
-  if (resultType.getRegisterPassability(decl.getLoc(), shared) !=
-      StructDeclOp::RP_RegisterPassableTrivial)
-    effects = effects | FnEffects::OwnedResult;
-
   // If the function raises, it implicitly gets a variant result type.
   if (bitEnumContainsAny(effects, FnEffects::Throws)) {
     if (ASTDecl *errorType = shared.getBuiltinErrorType(decl.getLoc())) {
