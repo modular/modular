@@ -2285,15 +2285,27 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
 AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   RValue condRVal = emitter.emitExprI1(condExpr, EC_BoolCondition);
+
+  // Inside a parameter context, emit conditional expression.
+  if (!emitter.builder) {
+    PValue condPVal =
+        emitter.emitPValue({condRVal, condExpr}, EC_BoolCondition);
+    PValue truePVal = emitter.emitExprPValue(trueExpr, EC_BoolCondition);
+    PValue falsePVal = emitter.emitExprPValue(falseExpr, EC_BoolCondition);
+    if (!condPVal || !truePVal || !falsePVal)
+      return {};
+
+    auto value =
+        ParamOperatorAttr::get(POC::Cond, {condPVal, truePVal, falsePVal});
+    return emitter.emitResult(value, this, dest);
+  }
+
+  // Otherwise, emit HLCF::IfOp.
   Value condValue =
       emitter.emitSRValue({AnyValue(condRVal), condExpr}, EC_BoolCondition);
 
   if (!condValue)
     return {};
-
-  if (!emitter.builder)
-    return emitter.emitErrorForDynamicValueInParameter(
-        this, "TODO(#6626): cannot emit if/else");
 
   Location ifLoc = getLocation(emitter);
   // At this point we don't know the type of trueExpr / falseExpr, use

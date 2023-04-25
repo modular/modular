@@ -734,11 +734,11 @@ LogicalResult ParamOperatorAttr::verify(
     llvm::function_ref<mlir::InFlightDiagnostic()> emitError, POC opcode,
     ArrayRef<TypedAttr> operands, Type type) {
   // All the operand types must match except for 'bind_signature' and 'apply'.
-  if (!llvm::is_contained({POC::BindSignature, POC::Apply, POC::Rebind,
-                           POC::Evaluate, POC::TargetHasFeature,
-                           POC::TargetGetField, POC::BuildInfoGetField,
-                           POC::GetSizeOf, POC::GetAlignOf, POC::VariadicGet},
-                          opcode) &&
+  if (!llvm::is_contained(
+          {POC::BindSignature, POC::Apply, POC::Rebind, POC::Evaluate,
+           POC::TargetHasFeature, POC::TargetGetField, POC::BuildInfoGetField,
+           POC::GetSizeOf, POC::GetAlignOf, POC::VariadicGet, POC::Cond},
+          opcode) &&
       !llvm::all_of(operands, [&](auto operand) {
         return operand.getType() == operands.front().getType();
       }))
@@ -887,6 +887,17 @@ LogicalResult ParamOperatorAttr::verify(
                          << elType << " but got " << type;
     break;
   }
+  case POC::Cond:
+    if (operands.size() != 3)
+      return emitError() << "conditional expressions must have three operands";
+    if (!operands[0].getType().isInteger(1))
+      return emitError() << "conditional expression operand 0 must be i1";
+    if (operands[1].getType() != operands[2].getType())
+      return emitError() << "conditional expression operands 1 and 2 must have "
+                            "the same type";
+    if (operands[1].getType() != type)
+      return emitError() << "result type should match operands 1 and 2 types";
+    break;
   }
   return success();
 }
@@ -1669,6 +1680,17 @@ static TypedAttr simplifyVariadicGet(ArrayRef<TypedAttr> operands,
   return variadic.getValues()[index.getInt()];
 }
 
+static TypedAttr simplifyCond(ArrayRef<TypedAttr> operands) {
+  auto c = dyn_cast<IntegerAttr>(operands[0]);
+  if (!c)
+    return {};
+  if (c.getValue().isOne())
+    return operands[1];
+  if (c.getValue().isZero())
+    return operands[2];
+  return {};
+}
+
 /// Construct a parameter operator attribute, folding it if possible.
 static TypedAttr getParamOperator(MLIRContext *context, POC opcode,
                                   ArrayRef<TypedAttr> operandsIn,
@@ -1765,6 +1787,9 @@ static TypedAttr getParamOperator(MLIRContext *context, POC opcode,
   case POC::VariadicGet:
     result = simplifyVariadicGet(operands, resultType);
     break;
+  case POC::Cond:
+    result = simplifyCond(operands);
+    break;
   }
 
   // If we folded to an operand, return it.
@@ -1793,7 +1818,9 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
   // All operands must have the same type.  The result type is usually the
   // same as the operands, but is i1 for comparisons (overridden below).
   Type resultType;
-  if (opcode != POC::BindSignature)
+  if (opcode == POC::Cond)
+    resultType = operandsIn[1].getType();
+  else if (opcode != POC::BindSignature)
     resultType = operandsIn.front().getType();
   assert(llvm::is_contained({POC::BindSignature, POC::Apply, POC::Evaluate,
                              POC::TargetHasFeature, POC::TargetGetField,

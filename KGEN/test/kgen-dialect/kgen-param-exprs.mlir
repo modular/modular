@@ -163,6 +163,13 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
   // CHECK: constant = <2>
   kgen.param.constant = <variadic_get(:variadic<index> [1, 2], 1)>
 
+  // CHECK: kgen.param.constant = <cond(int1 ? p1 : p2)>
+  %41 = kgen.param.constant = <cond(int1 ?  p1 : p2)>
+  // CHECK: constant = <p1>
+  %42 = kgen.param.constant = <cond(1 ?  p1 : p2)>
+  // CHECK: constant = <p2>
+  %43 = kgen.param.constant = <cond(0 ?  p1 : p2)>
+
   kgen.return
 }
 
