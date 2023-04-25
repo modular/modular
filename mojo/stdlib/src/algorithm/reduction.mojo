@@ -682,8 +682,14 @@ fn variance[
     simd_width: Int,
     size: Dim,
     type: DType,
-](src: Buffer[size, type]) -> SIMD[type, 1]:
-    """Computes the variance value of the elements in a buffer.
+](
+    src: Buffer[size, type],
+    mean_value: SIMD[type, 1],
+    correction: Int = 1,
+) -> SIMD[type, 1]:
+    """Computes the variance value of the elements in a buffer, given a mean to
+    avoid a second pass over the data.
+    variance = sum((x - E(x))^2) / (size - correction)
 
     Parameters:
         simd_width: The vector width for the computation.
@@ -692,14 +698,13 @@ fn variance[
 
     Args:
         src: The buffer.
+        mean_val: The mean value of the buffer.
+        correction: Normalize variance by size - correction.
 
     Returns:
         The variance value of the elements in a buffer.
     """
-
     debug_assert(src.__len__() > 1, "input length must be greater than 1")
-
-    let mean_value = mean[simd_width, size, type](src)
 
     @always_inline
     fn _simd_variance_elementwise[
@@ -710,11 +715,38 @@ fn variance[
         acc_type, simd_width
     ]:
         """Helper function that computes the equation $sum (x_i - u)^2 + y$"""
-        let mean_simd = SIMD[type, simd_width](mean_value).cast[acc_type]()
+        let mean_simd = SIMD[type, simd_width].splat(mean_value).cast[
+            acc_type
+        ]()
         let diff = y.cast[acc_type]() - mean_simd
         return x + diff * diff
 
     let numerator: SIMD[type, 1] = reduce[
         simd_width, size, type, type, _simd_variance_elementwise, _simd_sum
     ](src, 0)
-    return (numerator / (src.__len__() - 1))[0].value
+    return numerator / (src.__len__() - correction)
+
+
+fn variance[
+    simd_width: Int,
+    size: Dim,
+    type: DType,
+](src: Buffer[size, type], correction: Int = 1) -> SIMD[type, 1]:
+    """Computes the variance value of the elements in a buffer.
+    variance(src) = sum((x - E(x))^2) / (size - correction)
+
+    Parameters:
+        simd_width: The vector width for the computation.
+        size: The buffer size.
+        type: The buffer elements dtype.
+
+    Args:
+        src: The buffer.
+        correction: Normalize variance by size - correction (Default=1).
+
+    Returns:
+        The variance value of the elements in a buffer.
+    """
+
+    let mean_value = mean[simd_width, size, type](src)
+    return variance[simd_width](src, mean_value, correction)

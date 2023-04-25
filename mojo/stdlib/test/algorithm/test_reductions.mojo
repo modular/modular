@@ -72,7 +72,7 @@ fn test_mean_variance():
     print(mean[simd_width](vector))
 
     # CHECK: 841.666687
-    print(variance[simd_width](vector))
+    print(variance[simd_width](vector, 1))
 
 
 fn test_3d_reductions():
