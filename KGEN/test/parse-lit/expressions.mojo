@@ -1005,13 +1005,13 @@ struct ParamType[a: Int]: pass
 # CHECK-SAME: %f2: {{.*}}(!kgen.declref<@"$expressions"::@RegType>) ownedresult -> !kgen.declref<@"$expressions"::@RegType>
 # CHECK-SAME: %f3: {{.*}}(!pop.pointer<@"$expressions"::@MemoryType> owned_in_mem) -> !lit.none
 # CHECK-SAME: %f4: {{.*}}(!pop.pointer<@"$Int"::@Int> byref) -> !lit.none
-# CHECK-SAME: %f5: {{.*}}(!kgen.declref<@"$Int"::@Int> borrow) throws -> !lit.none
-# CHECK-SAME: %f6: {{.*}}(!kgen.declref<@"$Int"::@Int> borrow) throws|async|capturing -> !lit.none
-# CHECK-SAME: %f7: {{.*}}(!kgen.variadic<@"$Int"::@Int> borrow) throws|vararg -> !lit.none
+# CHECK-SAME: %f5: {{.*}}(!kgen.declref<@"$Int"::@Int> borrow) throws -> !pop.variant<@"$Error"::@Error, !lit.none>
+# CHECK-SAME: %f6: {{.*}}(!kgen.declref<@"$Int"::@Int> borrow) throws|async|capturing -> !pop.variant<@"$Error"::@Error, !lit.none>
+# CHECK-SAME: %f7: {{.*}}(!kgen.variadic<@"$Int"::@Int> borrow) throws|vararg -> !pop.variant<@"$Error"::@Error, !lit.none>
 # CHECK-SAME: %f8: {{.*}}<@"$Int"::@Int>(!kgen.declref<@"$expressions"::@ParamType<a: @"$Int"::@Int = *(0,0)>> borrow) -> !lit.none
 # CHECK-SAME: %f9: {{.*}}<[] -> @"$Int"::@Int>() -> !lit.none
-# CHECK-SAME: %f10: {{.*}}<<@"$Int"::@Int, @"$expressions"::@ParamType<a: @"$Int"::@Int = *(0,0)>>() throws -> !lit.none
-# CHECK-SAME: %f11: {{.*}}<<variadic<!kgen.mlirtype>>(!pop.pack<*(0,0)> borrow) throws|async|packvararg|param_vararg -> !lit.none
+# CHECK-SAME: %f10: {{.*}}<<@"$Int"::@Int, @"$expressions"::@ParamType<a: @"$Int"::@Int = *(0,0)>>() throws -> !pop.variant<@"$Error"::@Error, !lit.none>
+# CHECK-SAME: %f11: {{.*}}<<variadic<!kgen.mlirtype>>(!pop.pack<*(0,0)> borrow) throws|async|packvararg|param_vararg -> !pop.variant<@"$Error"::@Error, !lit.none>
 # CHECK-SAME: %f12: {{.*}}<(!kgen.declref<@"$Int"::@Int> borrow = #lit.struct<{value: scalar<index> = 10}>, !kgen.declref<@"$StringLiteral"::@StringLiteral> borrow = #lit.struct<{value: string = "foo"}>) -> !lit.none>
 fn function_types(
   f0: fn(Int) -> Int,

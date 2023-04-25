@@ -2436,6 +2436,24 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   SmallVector<ValueInputConvention> inputConventions = map_to_vector(
       args, [](const ParsedArgument &arg) { return arg.kgenConvention; });
 
+  if (bitEnumContainsAny(effects, FnEffects::Throws)) {
+    if (ASTDecl *errorType = emitter.shared.getBuiltinErrorType(resultLoc)) {
+      resultType =
+          POP::VariantType::get({errorType->getSelfType(), resultType});
+
+      // FIXME(#12604): Cannot return Error from raising function.
+      if (cast<POP::VariantType>(resultType.mlirType).getNumTypes() == 1) {
+        emitter.emitError(
+            resultLoc, "cannot return and raise the same type from a function");
+        return {};
+      }
+    } else {
+      emitter.emitError(resultLoc,
+                        "internal error: could not find builtin 'Error' type");
+      return {};
+    }
+  }
+
   // Build the signature type.
   Builder b(emitter.getContext());
   auto inputParamsAttr = b.getAttr<ParamDeclArrayAttr>(inputParamDecls);

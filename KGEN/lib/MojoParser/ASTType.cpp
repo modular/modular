@@ -387,13 +387,17 @@ void ASTType::print(raw_ostream &os, bool forDiag) const {
       if (enabled)
         os << ' ' << effect;
     os << " -> ";
+    Type resultType = sig.getValueResults().front();
     if (inMemResult) {
       ASTType(cast<POP::PointerType>(inMemResult).getElementType())
           .print(os, forDiag);
-    } else if (isa<NoneType>(sig.getValueResults().front())) {
+    } else if (isa<NoneType>(resultType)) {
       os << "None";
+    } else if (sig.isThrows()) {
+      ASTType(cast<POP::VariantType>(resultType).getTypes().back())
+          .print(os, forDiag);
     } else {
-      ASTType(sig.getValueResults().front()).print(os, forDiag);
+      ASTType(resultType).print(os, forDiag);
     }
   } else if (auto paramRef = dyn_cast<ParamRefType>(type)) {
     if (auto indexRef = dyn_cast<ParamIndexRefAttr>(paramRef.getParam()))
