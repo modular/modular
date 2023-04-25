@@ -7,7 +7,6 @@
 add_modular_mlir_library(KGENElaborator
   Elaborator.cpp
   IREvaluator.cpp
-  SelectFastestFunction.cpp
 
   DEPENDS
   KGENVersion
@@ -16,9 +15,7 @@ add_modular_mlir_library(KGENElaborator
   DebugInfoDialect
   CacheDialect
   KGENCLOptions
-  KGENCompilerRT
   KGENDialect
-  KGENExecutionEngine
   LITDialect
   InterpreterInterface
   MLIRIR

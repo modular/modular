@@ -27,6 +27,13 @@ namespace M::KGEN {
 void populateGenerateLibraryFilePasses(mlir::PassManager &pm,
                                        LLCL::Runtime &runtime);
 
+/// Create an instance of the elaborator pass using the given configuration.
+/// The created elaborator pass uses a default specialization executor that
+/// JITs and executes in-process.
+std::unique_ptr<Pass> createElaborateGeneratorsWithDefaultJIT(
+    LLCL::Runtime &runtime, TargetInfoAttr target = {},
+    BuildInfoAttr build = {}, const CompilationOptions &options = {});
+
 /// This populates the passes to produce a fully concrete KGEN module. That
 /// means it runs pre-elaboration, elaboration, and then the post-elaboration
 /// cleanup passes. Its purpose is to populate the passes used to produce the

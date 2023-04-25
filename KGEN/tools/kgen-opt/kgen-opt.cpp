@@ -13,6 +13,7 @@
 #include "KGEN/HLCFDialect/Analysis/DataFlow.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/InitAllDialects.h"
+#include "KGEN/KGENCompiler.h"
 #include "KGEN/KGENPasses.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
@@ -100,6 +101,10 @@ int main(int argc, char **argv) {
       LLCL::createSingleThreadWorkQueue());
   // Register the EmitLLVM pass with the runtime instance.
   KGEN::registerEmitLLVMPass(runtime);
+
+  // Register the elaborator with the provided runtime.
+  mlir::registerPass(
+      [&]() { return KGEN::createElaborateGeneratorsWithDefaultJIT(runtime); });
 
   KGEN::registerPasses();
   KGEN::registerLowerToLLVMPipeline();
