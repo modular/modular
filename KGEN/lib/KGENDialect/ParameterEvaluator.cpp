@@ -67,6 +67,25 @@ ParameterEvaluator::evaluateExpression(ParamOperatorAttr op) {
   return failure();
 }
 
+/// Rebind conditional expression evaluating either true or false clause.
+static Attribute getReboundCond(Attribute attr, ParameterEvaluator &eval) {
+  auto op = dyn_cast<ParamOperatorAttr>(attr);
+  if (!op || op.getOpcode() != POC::Cond)
+    return {};
+
+  auto operands = op.getOperands();
+  Attribute cond = eval.getReboundAttribute(operands[0]);
+
+  // If condition is a constant rebind only one of the clauses.
+  if (auto c = dyn_cast<IntegerAttr>(cond)) {
+    if (c.getValue().isZero())
+      return eval.getReboundAttribute(operands[2]);
+    else
+      return eval.getReboundAttribute(operands[1]);
+  }
+  return {};
+}
+
 /// Get the specified attribute with any nested parameter expressions rewritten.
 Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
   // These are common leaf attributes that we know are never parameterized.
@@ -110,6 +129,8 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
   } else if (isa<MLIROpAttr>(attr)) {
     // Expression functions and MLIR operation expressions are isolated from
     // above, so don't collect from them.
+  } else if (auto newAttr = getReboundCond(attr, *this)) {
+    result = newAttr;
   } else {
     SmallVector<Attribute, 16> newAttrs;
     SmallVector<Type, 16> newTypes;

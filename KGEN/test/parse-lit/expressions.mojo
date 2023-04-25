@@ -436,6 +436,13 @@ def test_if_cond(cond: Bool):
     if cond:     # 'if' stmt, not an 'if' expression.
         i = i+i
 
+# CHECK-LABEL: lit.func @"test_param_if_cond()"<cond: @"$Bool"::@Bool>() -> !kgen.declref<@"$Int"::@Int> {
+fn test_param_if_cond[cond: Bool]() -> Int:
+# CHECK: kgen.param.declare i: @"$Int"::@Int = <cond(apply(:<>(!kgen.declref<@"$Bool"::@Bool> borrow) -> i1 @"$Bool"::@Bool::@"__mlir_i1__($Bool::Bool)", cond) ? #lit.struct<{value: scalar<index> = 2}> : #lit.struct<{value: scalar<index> = 3}>)>
+# CHECK-NEXT:  %[[I:.*]] = kgen.param.constant: @"$Int"::@Int = <i>
+  alias i = 2 if cond else 3
+  return i
+
 # CHECK-LABEL: lit.func @"callable_mv{{.*}}"<callable: (!kgen.declref<@"$Int"::@Int>) -> !kgen.declref<@"$Int"::@Int>>(%a: !kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int>
 fn callable_mv[callable: __mlir_type[`!kgen.signature<(`,Int,`) -> `,Int,`>`]](a: Int) -> Int:
   # CHECK-NEXT: kgen.call_param[(!kgen.declref<@"$Int"::@Int>) -> !kgen.declref<@"$Int"::@Int>: callable](%a)
