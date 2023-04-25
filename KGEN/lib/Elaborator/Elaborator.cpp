@@ -26,7 +26,6 @@
 #include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Support/Semaphore.h"
-#include "SelectFastestFunction.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
@@ -1022,9 +1021,11 @@ public:
       LLCL::Runtime &runtime, LLCL::AsyncSideEffectMap &map,
       LLCL::RCRef<Cache::BlobCache<Cache::TransformCacheKey>> transformCache,
       LLCL::RCRef<Cache::BlobCache<Cache::RegionCacheKey>> regionCache,
-      bool enableSearch = false, bool testDiagnostics = false)
+      EvaluatorExecutorFnRef evaluatorExecutorFn, bool enableSearch = false,
+      bool testDiagnostics = false)
       : Elaborator(analysis, paramCache, target, runtime, map,
-                   transformCache.copy(), regionCache.copy(), enableSearch),
+                   transformCache.copy(), regionCache.copy(),
+                   evaluatorExecutorFn, enableSearch),
         root(analysis.getTopLevelOp<ModuleOp>(), IREvaluator(*this), alloc,
              logger),
         evalSemaphore(1), testDiagnostics(testDiagnostics) {}
@@ -2392,14 +2393,15 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
 // M::KGEN::elaborateGenerators
 //===----------------------------------------------------------------------===//
 
-LogicalResult M::elaborateGenerators(mlir::SymbolTableAnalysis &analysis,
+LogicalResult M::elaborateGenerators(mlir::SymbolTableAnalysis &symtab,
                                      ParameterCollector::Analysis &paramCache,
                                      LLCL::Runtime &runtime,
                                      TargetInfoAttr target,
                                      ArrayRef<GeneratorOp> primaryGenerators,
+                                     EvaluatorExecutorFnRef evaluatorExecutorFn,
                                      bool enableSearch, bool testDiagnostics) {
   TimeTraceScope<> traceScope("elaborate-generators");
-  ModuleOp theModule = analysis.getTopLevelOp<ModuleOp>();
+  ModuleOp theModule = symtab.getTopLevelOp<ModuleOp>();
 
   AsyncSideEffectMap asyncMap(runtime);
 
@@ -2420,9 +2422,9 @@ LogicalResult M::elaborateGenerators(mlir::SymbolTableAnalysis &analysis,
           regionCacheBackendOr.takeValue());
 
   // Now, construct and run the elaborator.
-  ElaboratorImpl impl(
-      analysis, paramCache, target, transformCache->getRuntime(), asyncMap,
-      transformCache.copy(), regionCache.copy(), enableSearch, testDiagnostics);
+  ElaboratorImpl impl(symtab, paramCache, target, transformCache->getRuntime(),
+                      asyncMap, transformCache.copy(), regionCache.copy(),
+                      evaluatorExecutorFn, enableSearch, testDiagnostics);
   return impl.run(primaryGenerators);
 }
 
@@ -2445,9 +2447,10 @@ public:
   ElaborateGeneratorsPass(const ElaborateGeneratorsOptions &options = {},
                           LLCL::Runtime *runtime = nullptr,
                           TargetInfoAttr target = nullptr,
-                          BuildInfoAttr build = nullptr)
+                          BuildInfoAttr build = nullptr,
+                          EvaluatorExecutorFn evaluatorExecutorFn = {})
       : ElaborateGeneratorsBase(options), runtime(runtime), target(target),
-        build(build) {}
+        build(build), evaluatorExecutorFn(std::move(evaluatorExecutorFn)) {}
 
   LogicalResult initialize(MLIRContext *ctx) override {
     // Default to the host target if one was not specified
@@ -2462,7 +2465,12 @@ public:
     // Default to the host build if one was not specified
     if (!build)
       build = BuildInfoAttr::getForCurrentBuild(ctx);
-
+    // Default the evaluator to selecting the first specialization.
+    if (!evaluatorExecutorFn) {
+      evaluatorExecutorFn =
+          [](KGEN::FuncOp evaluator, SymbolTable &symtab, TargetInfoAttr target,
+             ArrayRef<KGEN::FuncOp> specializations) { return 0; };
+    }
     return success();
   }
 
@@ -2519,8 +2527,8 @@ public:
     }
 
     if (failed(elaborateGenerators(analysis, paramCache, *rt, target,
-                                   primaryGenerators, shouldDoSearch,
-                                   testDiagnostics)))
+                                   primaryGenerators, evaluatorExecutorFn,
+                                   shouldDoSearch, testDiagnostics)))
       return signalPassFailure();
   }
 
@@ -2531,13 +2539,16 @@ private:
   TargetInfoAttr target;
   /// The build target.
   BuildInfoAttr build;
+  /// The functor used for evaluating generator specializations.
+  EvaluatorExecutorFn evaluatorExecutorFn;
 };
 } // namespace
 
 std::unique_ptr<mlir::Pass>
 KGEN::createElaborateGenerators(LLCL::Runtime &runtime, TargetInfoAttr target,
                                 BuildInfoAttr build,
-                                const ElaborateGeneratorsOptions &options) {
-  return std::make_unique<ElaborateGeneratorsPass>(options, &runtime, target,
-                                                   build);
+                                const ElaborateGeneratorsOptions &options,
+                                EvaluatorExecutorFn evaluatorExecutorFn) {
+  return std::make_unique<ElaborateGeneratorsPass>(
+      options, &runtime, target, build, std::move(evaluatorExecutorFn));
 }

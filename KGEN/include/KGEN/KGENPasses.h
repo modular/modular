@@ -8,6 +8,7 @@
 #define KGEN_KGENPASSES_H
 
 #include "CompilationOptions.h"
+#include "KGEN/Elaborator.h"
 #include "Support/LLVMForwardDecls.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/Pass/Pass.h"
@@ -125,7 +126,8 @@ void registerEmitLLVMPass(LLCL::Runtime &rt);
 std::unique_ptr<mlir::Pass>
 createElaborateGenerators(LLCL::Runtime &runtime, TargetInfoAttr target,
                           BuildInfoAttr build,
-                          const ElaborateGeneratorsOptions &options = {});
+                          const ElaborateGeneratorsOptions &options = {},
+                          EvaluatorExecutorFn evaluatorExecutorFn = {});
 
 //===----------------------------------------------------------------------===//
 // Inlining

@@ -10,7 +10,6 @@
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
-#include "SelectFastestFunction.h"
 #include "Support/MDialect/MTypeInterfaces.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -144,9 +143,8 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
       }
     }
 
-    auto bestOr =
-        evaluateSpecializations(*evaluator, *symtab, elaborator->getRuntime(),
-                                elaborator->getTarget(), options);
+    auto bestOr = elaborator->getEvaluatorExecutorFn()(
+        *evaluator, *symtab, elaborator->getTarget(), options);
     if (bestOr.isError()) {
       emitError(
           ErrorTree(UnknownLoc::get(op.getContext()), bestOr.takeError()));

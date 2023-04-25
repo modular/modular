@@ -21,7 +21,17 @@ class Runtime;
 } // namespace LLCL
 namespace KGEN {
 class GeneratorOp;
+class FuncOp;
 } // namespace KGEN
+
+/// This function provides support for executing a given specialization
+/// evaluator, and returning either the index of the best specialization, or
+/// error.
+using EvaluatorExecutorFn = std::function<ErrorOr<size_t>(
+    KGEN::FuncOp evaluator, SymbolTable &symtab, TargetInfoAttr target,
+    ArrayRef<KGEN::FuncOp> specializations)>;
+using EvaluatorExecutorFnRef = function_ref<ErrorOr<size_t>(
+    KGEN::FuncOp, SymbolTable &, TargetInfoAttr, ArrayRef<KGEN::FuncOp>)>;
 
 /// Elaborate generators in the specified module, incorporating implementation
 /// logic from the specified library.  On error, diagnostics are emitted and the
@@ -31,6 +41,7 @@ elaborateGenerators(mlir::SymbolTableAnalysis &symtab,
                     KGEN::ParameterCollector::Analysis &paramCache,
                     LLCL::Runtime &runtime, TargetInfoAttr target,
                     ArrayRef<KGEN::GeneratorOp> generators,
+                    EvaluatorExecutorFnRef evaluatorExecutorFn,
                     bool enableSearch = false, bool testDiagnostics = false);
 
 } // namespace M

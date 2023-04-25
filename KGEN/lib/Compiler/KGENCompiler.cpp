@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/KGENCompiler.h"
+#include "KGEN/CompilerRT.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENPasses.h"
 #include "KGEN/LowerToObject.h"
@@ -16,6 +17,9 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
+#include "llvm/Target/TargetMachine.h"
+
+#define DEBUG_TYPE "kgen-compiler"
 
 using namespace M;
 using namespace KGEN;
@@ -64,6 +68,112 @@ void KGEN::populateGenerateLibraryFilePasses(mlir::PassManager &pm,
   pm.addNestedPass<GeneratorOp>(createConstraintReduction());
 }
 
+/// A default specialization evaluator that JITs and invokes the specialized
+/// functions with the provided evaluator.
+static ErrorOr<size_t>
+evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
+                        LLCL::Runtime &runtime, TargetInfoAttr target,
+                        const CompilationOptions &options,
+                        ArrayRef<FuncOp> specializations) {
+  auto tmOr = createTargetMachine(options, true);
+  if (tmOr.isError())
+    return tmOr.takeError();
+
+  // Create the execution engine.
+  UNWRAP_ERROR(
+      engine,
+      ExecutionEngine::createWithStandardLayers(
+          ExecutionEngineOptions{/*registerDebugPlugins=*/false}, **tmOr));
+
+  // Create the object compiler so we can add its layer to the execution engine.
+  mlir::PassManager mgr(target.getContext());
+  auto compilerOr =
+      ObjectCompiler::create(runtime, mgr, ".kgen_cache", options);
+  if (failed(compilerOr))
+    return compilerOr.takeError();
+  engine->addLayer<ObjectCompilerLayer>(std::move(*compilerOr),
+                                        engine->getLinkingLayer());
+
+  // TODO (8082): This should not be necessary.
+  std::vector<std::pair<StringLiteral, void *>> compilerRTFunctions;
+  registerIntelAMX(compilerRTFunctions);
+  registerLLCL(compilerRTFunctions);
+  registerPython(compilerRTFunctions);
+  registerMemory(compilerRTFunctions);
+  registerPrint(compilerRTFunctions);
+  registerRandom(compilerRTFunctions);
+  registerSystem(compilerRTFunctions);
+  registerTracing(compilerRTFunctions);
+  for (auto [name, ptr] : compilerRTFunctions)
+    if (auto err = engine->add<StaticSymbolLayer>("evaluateSpecializations",
+                                                  name, ptr))
+      return err.takeError();
+
+  // We only want the funcs passed-in and the evaluator to be code-generated.
+  SmallVector<FuncOp> funcsToCompile(specializations);
+  funcsToCompile.push_back(evaluator);
+
+  // Create the set of symbols to export.
+  llvm::MapVector<StringAttr, ExportedSymbol> exportedSymbols;
+  for (auto e : funcsToCompile) {
+    StringAttr symName = e.getSymNameAttr();
+    exportedSymbols.insert({symName, ExportedSymbol(symName)});
+  }
+
+  // Add the exported symbols to the ObjectCompilerLayer. This will not actually
+  // compile anything - that happens at lookup time.
+  if (auto err = engine->add<ObjectCompilerLayer>("evaluateSpecializations",
+                                                  symtab, exportedSymbols))
+    return err.takeError();
+
+  SmallVector<void *> candidatePtrs;
+  {
+    TimeTraceScope<> traceScope("compile-specializations");
+    // Get pointers to all the candidates.
+    for (FuncOp candidate : specializations) {
+      UNWRAP_ERROR(func, engine->lookup(candidate.getNameAttr()));
+      candidatePtrs.push_back(func.getFunctionPointer());
+    }
+  }
+
+  // Lookup the evaluator function
+  UNWRAP_ERROR(evaluatorFunc, engine->lookup(evaluator.getNameAttr()));
+
+  // Invoke the evaluator.
+  ssize_t bestIdx;
+  {
+    TimeTraceScope<> traceScope("execute-specializations");
+    bestIdx = evaluatorFunc.invoke<ssize_t, void **, ssize_t>(
+        candidatePtrs.data(), candidatePtrs.size());
+  }
+  if (bestIdx == -1)
+    return Error("user-provided evaluator returned failure");
+  if (bestIdx < 0 || static_cast<size_t>(bestIdx) >= candidatePtrs.size())
+    return Error("user-provided evaluator returned an erroneous result");
+
+  LLVM_DEBUG({
+    llvm::dbgs() << "Fastest implementation:\n";
+    specializations[bestIdx]->print(llvm::dbgs());
+    llvm::dbgs() << "\n";
+  });
+
+  // Return the best kernel.
+  return bestIdx;
+}
+
+std::unique_ptr<Pass> KGEN::createElaborateGeneratorsWithDefaultJIT(
+    LLCL::Runtime &runtime, TargetInfoAttr target, BuildInfoAttr build,
+    const CompilationOptions &options) {
+  return createElaborateGenerators(
+      runtime, target, build, {options.enableSearch},
+      [=, &runtime](KGEN::FuncOp evaluator, SymbolTable &symtab,
+                    TargetInfoAttr target,
+                    ArrayRef<KGEN::FuncOp> specializations) {
+        return evaluateSpecializations(evaluator, symtab, runtime, target,
+                                       options, specializations);
+      });
+}
+
 void KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
                                          LLCL::Runtime &runtime,
                                          TargetInfoAttr target,
@@ -78,8 +188,8 @@ void KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
   pm.addPass(createLiftAndFoldApply());
 
   // After elaboration, we have no use for the parameter verifier anymore.
-  pm.addPass(createElaborateGenerators(runtime, target, build,
-                                       {options.enableSearch}));
+  pm.addPass(
+      createElaborateGeneratorsWithDefaultJIT(runtime, target, build, options));
 
   populatePostElaborationPasses(pm, runtime, options);
 }

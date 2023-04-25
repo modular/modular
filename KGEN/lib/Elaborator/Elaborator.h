@@ -8,6 +8,7 @@
 #define KGEN_ELABORATOR_ELABORATOR_H
 
 #include "Cache/CacheDialect/CachedTransform.h"
+#include "KGEN/Elaborator.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "LLCL/CompilerSupport/AsyncSideEffectMap.h"
@@ -30,11 +31,12 @@ public:
       LLCL::Runtime &runtime, LLCL::AsyncSideEffectMap &map,
       LLCL::RCRef<Cache::BlobCache<Cache::TransformCacheKey>> transformCache,
       LLCL::RCRef<Cache::BlobCache<Cache::RegionCacheKey>> regionCache,
-      bool enableSearch = false)
+      EvaluatorExecutorFnRef evaluatorExecutorFn, bool enableSearch = false)
       : analysis(analysis), paramCache(paramCache), target(target),
         runtime(runtime), asyncMap(map),
         transformCache(std::move(transformCache)),
-        regionCache(std::move(regionCache)), enableSearch(enableSearch) {}
+        regionCache(std::move(regionCache)),
+        evaluatorExecutorFn(evaluatorExecutorFn), enableSearch(enableSearch) {}
 
   virtual ~Elaborator() = default;
 
@@ -70,6 +72,11 @@ public:
   /// Return the LLCL runtime.
   LLCL::Runtime &getRuntime() { return runtime; }
 
+  /// Return the evaluator to use when specializing generators.
+  EvaluatorExecutorFnRef getEvaluatorExecutorFn() const {
+    return evaluatorExecutorFn;
+  }
+
 protected:
   /// This symbol table analysis allows efficient lookups across the module.
   mlir::SymbolTableAnalysis &analysis;
@@ -92,6 +99,9 @@ protected:
   /// These are the caches the Elaborator will use to run its operations.
   LLCL::RCRef<Cache::BlobCache<Cache::TransformCacheKey>> transformCache;
   LLCL::RCRef<Cache::BlobCache<Cache::RegionCacheKey>> regionCache;
+
+  /// The functor used for evaluating generator specializations.
+  EvaluatorExecutorFnRef evaluatorExecutorFn;
 
   /// Enable search during interface elaboration. This defaults to `false`
   /// because we want search to be opt-in.
