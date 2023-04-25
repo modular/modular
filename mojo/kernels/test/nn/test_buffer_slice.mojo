@@ -275,10 +275,10 @@ fn test_slice_steps():
 fn test_slice_1D():
     print("== test_slice_1D")
 
-    # CHECK-NEXT: In shape: (64, )
-    # CHECK-NEXT: In strides: (1, )
-    # CHECK-NEXT: New shape: (4, )
-    # CHECK-NEXT: New strides: (4, )
+    # CHECK-NEXT: In shape: (64,)
+    # CHECK-NEXT: In strides: (1,)
+    # CHECK-NEXT: New shape: (4,)
+    # CHECK-NEXT: New strides: (4,)
     # CHECK-NEXT: 16.000000
     # CHECK-NEXT: 20.000000
     # CHECK-NEXT: 24.000000
@@ -294,10 +294,10 @@ fn test_slice_1D():
 fn test_slice_empty():
     print("== test_slice_empty")
 
-    # CHECK-NEXT: In shape: (64, )
-    # CHECK-NEXT: In strides: (1, )
-    # CHECK-NEXT: New shape: (0, )
-    # CHECK-NEXT: New strides: (1, )
+    # CHECK-NEXT: In shape: (64,)
+    # CHECK-NEXT: In strides: (1,)
+    # CHECK-NEXT: New shape: (0,)
+    # CHECK-NEXT: New strides: (1,)
 
     # print(torch.arange(0, 64)[8:8:1].flatten())
     test_slice[DType.f32, 64, 1, DimList.create_unknown[1]()](
@@ -387,10 +387,10 @@ fn test_slice_negative():
 fn test_slice_negative_step_1D():
     print("== test_slice_negative_step_1D")
 
-    # CHECK: In shape: (15, )
-    # CHECK-NEXT: In strides: (1, )
-    # CHECK-NEXT: New shape: (6, )
-    # CHECK-NEXT: New strides: (-1, )
+    # CHECK: In shape: (15,)
+    # CHECK-NEXT: In strides: (1,)
+    # CHECK-NEXT: New shape: (6,)
+    # CHECK-NEXT: New strides: (-1,)
 
     # CHECK-NEXT: 14.000000
     # CHECK-NEXT: 13.000000
