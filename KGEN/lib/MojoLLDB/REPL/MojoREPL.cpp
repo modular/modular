@@ -75,14 +75,18 @@ static void flushInferiorStderrAndStdout(lldb::ProcessSP &process) {
   Status status;
   {
     lldb::StreamSP out(debugger.GetAsyncOutputStream());
-    while ((count = process->GetSTDOUT(buffer, kBufferSize, status)) > 0)
+    while ((count = process->GetSTDOUT(buffer, kBufferSize - 1, status)) > 0) {
+      buffer[count] = '\0';
       out->Write(buffer, count);
+    }
     out->Flush();
   }
   {
     lldb::StreamSP err(debugger.GetAsyncErrorStream());
-    while ((count = process->GetSTDERR(buffer, kBufferSize - 1, status)) > 0)
+    while ((count = process->GetSTDERR(buffer, kBufferSize - 1, status)) > 0) {
+      buffer[count] = '\0';
       err->Write(buffer, count);
+    }
     err->Flush();
   }
 }
@@ -92,11 +96,6 @@ static void eventThreadFunction(const lldb::TargetSP &target,
   lldb::ProcessSP process(target->GetProcessSP());
   assert(process->IsValid() &&
          "A valid process should already exist for the REPL");
-  lldb::ListenerSP listener =
-      Listener::MakeListener("mojo-repl.process-listener");
-  process->AddListener(listener, Process::eBroadcastBitStateChanged |
-                                     Process::eBroadcastBitSTDOUT |
-                                     Process::eBroadcastBitSTDERR);
   // Get a pointer to the mojo type system. We need that to read the various log
   // messages.
   auto typeSystemOr =
@@ -109,7 +108,14 @@ static void eventThreadFunction(const lldb::TargetSP &target,
   if (!typeSystem)
     llvm::report_fatal_error("must be able to get the mojo type system");
 
-  typeSystem->AddListener(listener, MojoTypeSystem::eAllMessagesMask);
+  lldb::ListenerSP processListener =
+      Listener::MakeListener("mojo-repl.process-listener");
+  process->AddListener(processListener, Process::eBroadcastBitStateChanged |
+                                            Process::eBroadcastBitSTDOUT |
+                                            Process::eBroadcastBitSTDERR);
+  lldb::ListenerSP typeSystemListener =
+      Listener::MakeListener("mojo-repl.type-system-listener");
+  typeSystem->AddListener(typeSystemListener, MojoTypeSystem::eAllMessagesMask);
 
   // Construct the debug message cache, and pull out the error raw_ostream now.
   std::deque<std::pair<MojoTypeSystem::MessageKind, std::string>> debugMessages;
@@ -130,35 +136,39 @@ static void eventThreadFunction(const lldb::TargetSP &target,
   };
   lldb::EventSP event;
   while (!stopEventThread) {
-    // We retry if we didn't get any events in the last second.
-    if (!listener->GetEvent(event, std::chrono::seconds(0)))
-      continue;
+    {
+      lldb::EventSP event;
+      if (typeSystemListener->GetEvent(event, std::chrono::seconds(0))) {
+        // Handle the mojo type system events by logging them to the debugger
+        // stderr.
+        MojoTypeSystem::handleEvent(event, debugMessages, reportMessage,
+                                    sendUserOutput);
 
-    // If the event broadcaster was the mojo type system, handle it separately.
-    // The event bitmasks may overlap, so we have to distinguish by checking
-    // which broadcaster sent the message.
-    if (event->GetBroadcaster() == typeSystem.get()) {
-      // Handle the mojo type system events by logging them to the debugger
-      // stderr.
-      MojoTypeSystem::handleEvent(event, debugMessages, reportMessage,
-                                  sendUserOutput);
-
-      // Flush the error stream immediately - otherwise it only shows up when we
-      // shut down the repl.
-      errorStream->Flush();
-      continue;
+        // Flush the error stream immediately - otherwise it only shows up when
+        // we shut down the repl.
+        errorStream->Flush();
+      }
     }
-
-    const uint32_t eventMask = event->GetType();
-    if (eventMask & Process::eBroadcastBitStateChanged) {
-      if (shouldStopListeningToEvents(
-              Process::ProcessEventData::GetStateFromEvent(event.get())))
-        break;
-    } else if ((eventMask & Process::eBroadcastBitSTDOUT) ||
-               (eventMask & Process::eBroadcastBitSTDERR)) {
-      flushInferiorStderrAndStdout(process);
+    {
+      lldb::EventSP event;
+      if (processListener->GetEvent(event, std::chrono::seconds(0))) {
+        const uint32_t eventMask = event->GetType();
+        if (eventMask & Process::eBroadcastBitStateChanged) {
+          if (shouldStopListeningToEvents(
+                  Process::ProcessEventData::GetStateFromEvent(event.get()))) {
+            break;
+          }
+        } else if ((eventMask & Process::eBroadcastBitSTDOUT) ||
+                   (eventMask & Process::eBroadcastBitSTDERR)) {
+          flushInferiorStderrAndStdout(process);
+        }
+      }
     }
+    std::this_thread::sleep_for(std::chrono::duration<double>(0.05));
   }
+  // We flush the inferior's stream one last time in case the process got some
+  // output after the previous loop was told to stop by the REPL's destructor.
+  flushInferiorStderrAndStdout(process);
 }
 
 //===----------------------------------------------------------------------===//
