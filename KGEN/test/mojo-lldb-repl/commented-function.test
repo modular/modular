@@ -23,3 +23,5 @@ foo()
 # CHECK: foo defined
 # CHECK-NEXT: foo
 # CHECK-NEXT: bar
+
+print("flush")
