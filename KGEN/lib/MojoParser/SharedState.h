@@ -186,6 +186,8 @@ public:
   static constexpr StringLiteral kBuiltinTypeAliasesModuleName = "TypeAliases";
   /// The name of the builtin string module.
   static constexpr StringLiteral kBuiltinStringModuleName = "StringLiteral";
+  /// The name of the builtin string ref module.
+  static constexpr StringLiteral kBuiltinStringRefModuleName = "StringRef";
   /// The name of the builtin slice module.
   static constexpr StringLiteral kBuiltinSliceModuleName = "BuiltinSlice";
   /// The name of the builtin list module.
@@ -201,7 +203,7 @@ public:
       kBuiltinErrorModuleName,       kBuiltinIntModuleName,
       kBuiltinTypeAliasesModuleName, kBuiltinStringModuleName,
       kBuiltinSliceModuleName,       kBuiltinListModuleName,
-      kBuiltinDoubleModuleName};
+      kBuiltinDoubleModuleName,      kBuiltinStringRefModuleName};
 
   /// Resolve a builtin module type.
   ASTDecl *resolveBuiltinModuleType(llvm::SMLoc loc, StringRef moduleName,
