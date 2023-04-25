@@ -1225,12 +1225,35 @@ bottom-est level of the standard library. This level of the stack is inhabited
 by narrow features that require experience with compiler internals to
 understand and utilize effectively.
 
-### `@always_inline` decorator
+TOWRITE: Each builtin decorator should be mentioned.  Eventually decorators
+should appear in the API docs.
 
-TOWRITE: Each decorator should be mentioned.
+> TODO: We need to decide how to namespace these, should these go into a 'mojo'
+package or something?
+
+### `@always_inline` decorator
 
 `@always_inline("nodebug")`: same thing but without debug information so you
 don’t step into the + method on Int.
+
+### Magic operators
+
+C++ code has a number of magic operators that intersect with value lifecycle, things like "placement new", "placement delete" and "operator=" that reassign over an existing value.  Mojo is a safe language when you use all its language features and compose on top of safe constructs, but of any stack is a world of C-style pointers and rampant unsafety.  Mojo is a pragmatic language, and since we are interested in both interoperating with C/C++ and in implementing safe constructs like String directly in Mojo itself, we need a way to express unsafe things.
+
+The Mojo standard library `Pointer[element_type]` type is implemented with an
+underlying `!pop.pointer<element_type>` type in MLIR, and we desire a way to
+implement these C++-equivalent unsafe constructs in Mojo.  Eventually these will
+migrate to all being methods on the Pointer type, but until then, some need to
+be exposed as builtin operators.
+
+TODO: document all of these:
+
+```
+__get_address_as_lvalue(x)
+__get_address_as_uninit_lvalue(x)
+__get_lvalue_as_address(x):  use Pointer.address_of instead
+__get_address_as_owned_value(x)
+```
 
 ### Direct Access to MLIR
 
