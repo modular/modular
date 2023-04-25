@@ -36,14 +36,14 @@ class ModelKind(str, Enum):
 
 @dataclass
 class TensorFlowLoadOptions:
-    """Configures how to load TensorFlow saved models."""
+    """Configures how to load TensorFlow models."""
 
     exported_name: str = field(default="serving_default")
-    """The exported name from the TF model's signature."""
+    """The exported name from the TensorFlow model's signature."""
 
     compatibility_mode: bool = field(default=False)
     """Indicates whether or not the model will fall back to using
-    TF kernels."""
+    TensorFlow kernels."""
 
 
 @dataclass
@@ -52,7 +52,7 @@ class TorchLoadOptions:
 
 
 class Model:
-    """A loaded model that you can execute with the Modular Engine.
+    """A loaded model that you can execute.
 
     You should not instantiate this class directly. Instead create a
     :obj:`Model` by passing your model file to :func:`InferenceSession.load()`.
@@ -71,8 +71,7 @@ class Model:
         return model
 
     def execute(self, *args) -> None:
-        """Executes the model with the provided input tensors and returns
-        outputs as tensors.
+        """Executes the model with the provided input and returns outputs.
 
         Parameters
         ----------
@@ -97,8 +96,9 @@ class Model:
     def init(self) -> None:
         """Initializes the loaded model and prepares it for execution.
 
-        Calling this is optional to warm-up the model; you can instead just
-        call :func:`execute()` and it will call this for you."""
+        Calling this is optional to initialize the model for a faster first-time
+        execution. You can instead just call :func:`execute()` and it will call
+        this for you."""
         self._impl.load()
 
     @property
@@ -108,7 +108,7 @@ class Model:
 
         You can use this to query the tensor shapes and data types like this:
 
-        .. code-block::
+        .. code-block:: python
 
             for tensor in model.input_metadata:
                 print(f'shape: {tensor.shape}, dtype: {tensor.dtype}')
@@ -173,7 +173,7 @@ class InferenceSession:
         Parameters
         ----------
         model_path: Union[str, pathlib.Path]
-            Path to a model. May be a Tensorflow model in the SavedModel
+            Path to a model. May be a TensorFlow model in the SavedModel
             format or a traceable PyTorch model.
 
         Returns
@@ -211,7 +211,7 @@ class InferenceSession:
 
 class TensorSpec:
     """
-    Defines the properties of tensor, namely its shape and data type.
+    Defines the properties of a tensor, namely its shape and data type.
 
     You can get a list of ``TensorSpec`` objects that specify the input tensors
     of a :obj:`Model` from :func:`Model.input_metadata`.
@@ -229,13 +229,13 @@ class TensorSpec:
     def shape(self) -> List[int]:
         """The shape of the tensor as a list of integers.
 
-        If a dimension is indeterminate for a certain axis, like the first
+        If a dimension is indeterminate for a certain axis, such as the first
         axis of a batched tensor, that axis is denoted by ``None``."""
         return self._impl.shape
 
     @property
     def dtype(self) -> DType:
-        """Returns the data type of the tensor"""
+        """A tensor data type."""
         return DType._from(self._impl.dtype)
 
 
