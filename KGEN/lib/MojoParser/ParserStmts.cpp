@@ -1501,6 +1501,10 @@ ParseResult StmtParser::parseAliasDeclStmt(LexerCursor startCursor,
   // same indent level (or less) as the current definition.
   skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
 
+  // Skip the trailing docstring if it has one. We treat these as part of the
+  // alias decl.
+  (void)consumeIf(Token::string);
+
   // Remember that we parsed this declaration so we can finish type checking it
   // when it gets referenced.
   getDeclResolver().addDecl(declOp, smLoc, name, curDeclScope, startCursor,

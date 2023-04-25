@@ -103,6 +103,14 @@ private:
 ///   ]
 /// }
 ///
+/// Alias:
+///  {
+///    "kind": "alias",
+///    "name": "...",
+///    "value": "...",
+///    "summary": "...",
+///    "description": "..."
+///  }
 ///
 void generateMojoDocJSON(ASTDecl &decl, raw_ostream &os);
 

@@ -222,6 +222,10 @@ public:
     return {Attribute::getFromOpaquePointer(ptr)};
   }
 
+  /// Pretty print the pvalue for use by diagnostics and other high level
+  /// situations.
+  void printForDiag(raw_ostream &os) const;
+
   void dump() const;
 
 private:

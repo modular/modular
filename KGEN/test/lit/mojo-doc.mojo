@@ -111,6 +111,21 @@ struct ParameterClass[_type: __mlir_type.`!kgen.dtype`]:
         return
 
 
+# CHECK: "kind": "alias",
+# CHECK: "name": "alias_Type",
+# CHECK: "value": "Int",
+# CHECK: "summary": "An example alias of a Type",
+alias alias_Type = Int
+"""An example alias of a Type"""
+
+# CHECK:  "kind": "alias",
+# CHECK:  "name": "alias_Value",
+# CHECK:  "value": "10",
+# CHECK:  "summary": "An example alias of a Value",
+alias alias_Value = 10
+"""An example alias of a Value"""
+
+
 # CHECK:  "name": "empty_fn",
 # CHECK:  "overloads": [
 # CHECK:      "signature": "empty_fn()",

@@ -430,6 +430,10 @@ std::string ASTType::getAsString(bool forDiag) const {
   return os.str();
 }
 
+void PValue::printForDiag(raw_ostream &os) const {
+  printParam(os, *this, /*forDiag=*/true);
+}
+
 void LIT::addToDiagnostic(ASTType type, InflightDiag &diag) {
   diag << '\'' << type.getAsString(/*forDiag=*/true) << '\'';
 }

@@ -2457,6 +2457,9 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
     // The check that the alias was specified is handled when the function body
     // has been fully resolved.
     rejectDecorators(decoratorExprs, decl, shared);
+
+    // Process the doc string of the alias.
+    p.parseDocString(decl);
     return success();
   }
 
@@ -2486,6 +2489,9 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
             ParamDeclAttr::get(paramDeclOp.getName(), type));
   paramDeclOp->setAttrs(attrs.getDictionary(decl.getContext()));
   rejectDecorators(decoratorExprs, decl, shared);
+
+  // Process the doc string of the alias.
+  p.parseDocString(decl);
   return success();
 }
 
