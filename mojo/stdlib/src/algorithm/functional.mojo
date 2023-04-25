@@ -506,24 +506,24 @@ fn invoke[
 # tile
 # ===----------------------------------------------------------------------===#
 
+alias Static1DTileUnitFunc = fn[width: Int] (Int) capturing -> None
 """
 Signature of a 1d tiled function that performs some work with a static tile size
 and an offset. i.e. func<tile_size: Int> (offset: Int)
 """
-alias Static1DTileUnitFunc = fn[width: Int] (Int) capturing -> None
 
+alias Dynamic1DTileUnitFunc = fn (Int, Int) capturing -> None
 """
 Signature of a 1d tiled function that performs some work with a dynamic tile size
   and an offset. i.e. func(offset: Int, tile_size: Int)
 """
-alias Dynamic1DTileUnitFunc = fn (Int, Int) capturing -> None
 
 
+alias BinaryTile1DTileUnitFunc = fn[width: Int] (Int, Int) capturing -> None
 """
 Signature of a tiled function that performs some work with a dynamic tile size
 and a secondary static tile size.
 """
-alias BinaryTile1DTileUnitFunc = fn[width: Int] (Int, Int) capturing -> None
 
 
 @always_inline
@@ -663,14 +663,15 @@ fn tile[
 # tile2d
 # ===----------------------------------------------------------------------===#
 
+
+alias Static2DTileUnitFunc = fn[tile_x: Int, tile_y: Int] (
+    Int, Int
+) capturing -> None
 """
 Signature of a 2d tiled function that performs some work with a static tile size
 and an offset. i.e.
 func<tile_size_x: Int, tile_size_y: Int> (offset_x: Int, offset_y: Int)
 """
-alias Static2DTileUnitFunc = fn[tile_x: Int, tile_y: Int] (
-    Int, Int
-) capturing -> None
 
 
 @always_inline
@@ -1002,13 +1003,13 @@ fn unswitch[
 # TileWithUnswitch
 # ===----------------------------------------------------------------------===#
 
+alias Static1DTileUnswitchUnitFunc = fn[width: Int, sw: Bool] (
+    Int, Int
+) capturing -> None
 """
 Signature of a tiled function that performs some work with a static tile size
   and an offset. i.e. func<tile_size: Int> (offset: Int)
 """
-alias Static1DTileUnswitchUnitFunc = fn[width: Int, sw: Bool] (
-    Int, Int
-) capturing -> None
 
 
 @always_inline
