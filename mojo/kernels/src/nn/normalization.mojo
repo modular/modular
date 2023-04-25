@@ -21,10 +21,11 @@ from Math import sqrt
 fn layer_norm[
     simd_width: Int,
     type: DType,
-    elementwise_fn: fn[width: Int] (Int, Int) capturing -> None,
+    input_fn: fn[mytype: DType, width: Int] (Int, Int) capturing -> SIMD[
+        mytype, width
+    ],
     shape: DimList,
 ](
-    x_buf: NDBuffer[2, shape, type],
     out_buf: NDBuffer[2, shape, type],
     gamma: SIMD[type, 1],
     beta: SIMD[type, 1],
@@ -39,11 +40,11 @@ fn layer_norm[
 
     Parameters:
         simd_width: The vector width for the computation.
+        input_fn: Function called to generate an input value.
         shape: The x and out buffers' shape.
         type: The x and out buffers' elements dtype.
 
     Args:
-        x_buf: The input buffer.
         out_buf: The output buffer.
         gamma: The gamma value to use in the layernorm calculation.
         beta: The beta value to use in the layernorm calculation.
@@ -55,15 +56,16 @@ fn layer_norm[
 
     for i in range(m):
         let start_coord = StaticIntTuple[2](i, 0)
-        let x_slice = Buffer[shape.at[1](), type](x_buf._offset(start_coord), n)
         let out_slice = Buffer[shape.at[1](), type](
             out_buf._offset(start_coord), n
         )
 
-        fn elementwise_wrapper[simd_width: Int](idx: Int):
-            elementwise_fn[simd_width](idx, i)
+        fn input_gen_wrapper[simd_width: Int](idx: Int):
+            out_slice.simd_store[simd_width](
+                idx, input_fn[type, simd_width](idx, i)
+            )
 
-        vectorize[simd_width, elementwise_wrapper](n)
+        vectorize[simd_width, input_gen_wrapper](n)
 
         let mean_val = mean[simd_width](out_slice)
         let var_val = variance[simd_width](
