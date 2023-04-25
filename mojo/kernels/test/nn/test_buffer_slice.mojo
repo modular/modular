@@ -50,7 +50,7 @@ fn print_elements[
 
 # slice_dim
 fn test_slice[
-    numelems: Int, outer_rank: Int, static_shape: DimList
+    dtype: DType, numelems: Int, outer_rank: Int, static_shape: DimList
 ](
     dims: DimList,
     starts: StaticIntTuple[outer_rank],
@@ -60,17 +60,13 @@ fn test_slice[
 ):
 
     # Isn't always used but is used for the output buffer if we copy.
-    var output_mem = _raw_stack_allocation[numelems, DType.f32, 1]()
+    var output_mem = _raw_stack_allocation[numelems, dtype, 1]()
 
-    var memory1 = _raw_stack_allocation[numelems, DType.f32, 1]()
-    var in_tensor = NDBuffer[
-        outer_rank,
-        rebind[DimList](static_shape),
-        DType.f32,
-    ](
+    var memory1 = _raw_stack_allocation[numelems, dtype, 1]()
+    var in_tensor = NDBuffer[outer_rank, rebind[DimList](static_shape), dtype,](
         memory1.address,
         dims,
-        DType.f32,
+        dtype,
     )
 
     _printf("In shape: ")
@@ -103,17 +99,15 @@ fn test_slice[
         let step_val = SIMD[DType.index, 1](steps[dim])
         step_tensor.data.offset(dim).store(step_val)
 
-    var x: F32 = 0.0
+    var x: SIMD[dtype, 1] = 0
     for i in range(numelems):
-        in_tensor.data.offset(i).store(SIMD[DType.f32, 1](x.value))
-        x += 1.0
+        in_tensor.data.offset(i).store(SIMD[dtype, 1](x))
+        x += 1
 
     # Perform the slice even if we are testing the copy so we get the target size.
-    let sliced = slice_as_view[DType.f32, DType.index, outer_rank](
+    let sliced = slice_as_view[dtype, DType.index, outer_rank](
         rebind[
-            NDBuffer[
-                outer_rank, DimList.create_unknown[outer_rank](), DType.f32
-            ]
+            NDBuffer[outer_rank, DimList.create_unknown[outer_rank](), dtype]
         ](in_tensor),
         start_tensor,
         end_tensor,
@@ -121,31 +115,31 @@ fn test_slice[
     )
 
     if not use_copy:
-        print_elements[DType.f32, outer_rank](sliced)
+        print_elements[dtype, outer_rank](sliced)
     else:
         print("As copy")
 
         var output_buffer = NDBuffer[
             outer_rank,
             rebind[DimList](static_shape),
-            DType.f32,
+            dtype,
         ](
             output_mem.address,
             rebind[StaticIntTuple[outer_rank]](sliced.dynamic_shape),
-            DType.f32,
+            dtype,
         )
 
         let runtime = Runtime(1)
         let out_chain = OwningOutputChainPtr(runtime)
-        slice_as_copy[DType.f32, DType.index, outer_rank](
+        slice_as_copy[dtype, DType.index, outer_rank](
             rebind[
                 NDBuffer[
-                    outer_rank, DimList.create_unknown[outer_rank](), DType.f32
+                    outer_rank, DimList.create_unknown[outer_rank](), dtype
                 ]
             ](output_buffer),
             rebind[
                 NDBuffer[
-                    outer_rank, DimList.create_unknown[outer_rank](), DType.f32
+                    outer_rank, DimList.create_unknown[outer_rank](), dtype
                 ]
             ](in_tensor),
             start_tensor,
@@ -155,10 +149,10 @@ fn test_slice[
         )
         out_chain.wait()
 
-        print_elements[DType.f32, outer_rank](
+        print_elements[dtype, outer_rank](
             rebind[
                 NDBuffer[
-                    outer_rank, DimList.create_unknown[outer_rank](), DType.f32
+                    outer_rank, DimList.create_unknown[outer_rank](), dtype
                 ]
             ](output_buffer)
         )
@@ -184,7 +178,27 @@ fn test_slice_basic():
     # CHECK-NEXT: 63.000000
 
     # print(torch.arange(0, 64).reshape(4, 4, 4)[2:4:1, 2:4:1, 2:4:1].flatten())
-    test_slice[64, 3, DimList.create_unknown[3]()](
+    test_slice[DType.f32, 64, 3, DimList.create_unknown[3]()](
+        DimList(4, 4, 4),
+        Index(2, 2, 2),
+        Index(4, 4, 4),
+        Index(1, 1, 1),
+        False,
+    )
+
+    # CHECK-NEXT: In shape: (4, 4, 4)
+    # CHECK-NEXT: In strides: (16, 4, 1)
+    # CHECK-NEXT: New shape: (2, 2, 2)
+    # CHECK-NEXT: New strides: (16, 4, 1)
+    # CHECK-NEXT: 42
+    # CHECK-NEXT: 43
+    # CHECK-NEXT: 46
+    # CHECK-NEXT: 47
+    # CHECK-NEXT: 58
+    # CHECK-NEXT: 59
+    # CHECK-NEXT: 62
+    # CHECK-NEXT: 63
+    test_slice[DType.ui8, 64, 3, DimList.create_unknown[3]()](
         DimList(4, 4, 4),
         Index(2, 2, 2),
         Index(4, 4, 4),
@@ -221,7 +235,7 @@ fn test_slice_identity():
     # print(torch.arange(0, 16).reshape(2, 2, 4)[0:2:1, 0:2:1, 0:4:1].flatten())
 
     # Check slicing along all dimensions returns the original tensor.
-    test_slice[16, 3, DimList.create_unknown[3]()](
+    test_slice[DType.f32, 16, 3, DimList.create_unknown[3]()](
         DimList(2, 2, 4),
         Index(0, 0, 0),
         Index(2, 2, 4),
@@ -248,7 +262,7 @@ fn test_slice_steps():
     # CHECK-NEXT: 22.000000
 
     # print(torch.arange(0, 64).reshape(2, 4, 8)[0:2:2, 0:4:2, 0:8:2].flatten())
-    test_slice[64, 3, DimList.create_unknown[3]()](
+    test_slice[DType.f32, 64, 3, DimList.create_unknown[3]()](
         DimList(2, 4, 8),
         Index(0, 0, 0),
         Index(2, 4, 8),
@@ -271,7 +285,7 @@ fn test_slice_1D():
     # CHECK-NEXT: 28.000000
 
     # print(torch.arange(0, 64)[16:30:4].flatten())
-    test_slice[64, 1, DimList.create_unknown[1]()](
+    test_slice[DType.f32, 64, 1, DimList.create_unknown[1]()](
         DimList(64), Index(16), Index(30), Index(4), False
     )
 
@@ -286,7 +300,7 @@ fn test_slice_empty():
     # CHECK-NEXT: New strides: (1, )
 
     # print(torch.arange(0, 64)[8:8:1].flatten())
-    test_slice[64, 1, DimList.create_unknown[1]()](
+    test_slice[DType.f32, 64, 1, DimList.create_unknown[1]()](
         DimList(64), Index(8), Index(8), Index(1), False
     )
 
@@ -305,7 +319,7 @@ fn test_slice_4D():
     # CHECK-NEXT: 55.000000
 
     # print(torch.arange(0, 64).reshape(2, 4, 4, 2)[1:2:1, 2:4:2, 0:4:1, 1:2:1].flatten())
-    test_slice[64, 4, DimList.create_unknown[4]()](
+    test_slice[DType.f32, 64, 4, DimList.create_unknown[4]()](
         DimList(2, 4, 4, 2),
         Index(1, 2, 0, 1),
         Index(2, 4, 4, 2),
@@ -331,7 +345,7 @@ fn test_slice_copy():
     # CHECK-NEXT: 55.000000
 
     # print(torch.arange(0, 64).reshape(2, 4, 4, 2)[1:2:1, 2:4:2, 0:4:1, 1:2:1].flatten())
-    test_slice[64, 4, DimList.create_unknown[4]()](
+    test_slice[DType.f32, 64, 4, DimList.create_unknown[4]()](
         DimList(2, 4, 4, 2),
         Index(1, 2, 0, 1),
         Index(2, 4, 4, 2),
@@ -360,7 +374,7 @@ fn test_slice_negative():
     # CHECK-NEXT: 23.000000
 
     # print(torch.arange(0, 64).reshape(2, 4, 4, 2)[-2:-1:1, -4:-1:2, -4:4:1, -1:2:1].flatten())
-    test_slice[64, 4, DimList.create_unknown[4]()](
+    test_slice[DType.f32, 64, 4, DimList.create_unknown[4]()](
         DimList(2, 4, 4, 2),
         Index(-2, -4, -4, -1),
         Index(-1, -1, 4, 2),
@@ -386,7 +400,7 @@ fn test_slice_negative_step_1D():
     # CHECK-NEXT: 9.000000
 
     # print(np.arange(0, 15)[14:8:-1])
-    test_slice[15, 1, DimList.create_unknown[1]()](
+    test_slice[DType.f32, 15, 1, DimList.create_unknown[1]()](
         DimList(
             15,
         ),
@@ -422,7 +436,7 @@ fn test_slice_negative_step_2D():
     # CHECK-NEXT: 34.000000
 
     # print(np.arange(0, 64).reshape(16, 4)[14:6:-2, -1:1:-1])
-    test_slice[64, 2, DimList.create_unknown[2]()](
+    test_slice[DType.f32, 64, 2, DimList.create_unknown[2]()](
         DimList(16, 4),
         Index(14, -1),
         Index(6, 1),
@@ -450,7 +464,7 @@ fn test_slice_negative_step_3D():
     # CHECK-NEXT: 45.000000
 
     # print(np.arange(0, 64).reshape(8, 2, 4)[-1:4:-2, :, 4:0:-2])
-    test_slice[64, 3, DimList.create_unknown[3]()](
+    test_slice[DType.f32, 64, 3, DimList.create_unknown[3]()](
         DimList(8, 2, 4),
         Index(-1, 0, -1),
         Index(4, 2, 0),
@@ -476,7 +490,7 @@ fn test_slice_negative_step_4D():
     # CHECK-NEXT: 45.000000
 
     # print(np.arange(0, 64).reshape(2, 4, 2, 4)[-1:0:-1, -1:0:-2, -1:0:-1, -1:0:-1].stride)
-    test_slice[64, 4, DimList.create_unknown[4]()](
+    test_slice[DType.f32, 64, 4, DimList.create_unknown[4]()](
         DimList(2, 4, 2, 4),
         Index(-1, -1, -1, -1),
         Index(0, 0, 0, 0),
@@ -497,7 +511,7 @@ fn test_slice_negative_step_2():
     # CHECK-NEXT: 8.000000
 
     # print(np.arange(0, 9).reshape(3,3)[3:-2:-1, 3:-2:-1])
-    test_slice[9, 2, DimList.create_unknown[2]()](
+    test_slice[DType.f32, 9, 2, DimList.create_unknown[2]()](
         DimList(3, 3),
         Index(3, 3),
         Index(-2, -2),
@@ -521,7 +535,7 @@ fn test_slice_negative_step_3():
     # CHECK-NEXT: 4.000000
 
     # print(np.arange(0, 9).reshape(3,3)[3:-3:-1, 3:-3:-1])
-    test_slice[9, 2, DimList.create_unknown[2]()](
+    test_slice[DType.f32, 9, 2, DimList.create_unknown[2]()](
         DimList(3, 3),
         Index(3, 3),
         Index(-3, -3),
@@ -550,7 +564,7 @@ fn test_slice_negative_step_4():
     # CHECK-NEXT: 0.000000
 
     # print(np.arange(0, 9).reshape(3,3)[3:-3:-1, 3:-3:-1])
-    test_slice[9, 2, DimList.create_unknown[2]()](
+    test_slice[DType.f32, 9, 2, DimList.create_unknown[2]()](
         DimList(3, 3),
         Index(3, 3),
         Index(-4, -4),
@@ -574,7 +588,7 @@ fn test_truncated_last_dim():
     # CHECK-NEXT: 8.000000
 
     # print(torch.arange(0, 9).reshape(3,3)[1:56:1, 0:234567:2])
-    test_slice[9, 2, DimList.create_unknown[2]()](
+    test_slice[DType.f32, 9, 2, DimList.create_unknown[2]()](
         DimList(3, 3),
         Index(1, 0),
         Index(56, 234567),
@@ -600,7 +614,7 @@ fn test_truncated_last_dim_reverse():
     # CHECK-NEXT: 0.000000
 
     # print(np.arange(0, 9).reshape(3,3)[323534:-242:-1, 435432:-3242:-2])
-    test_slice[9, 2, DimList.create_unknown[2]()](
+    test_slice[DType.f32, 9, 2, DimList.create_unknown[2]()](
         DimList(3, 3),
         Index(323534, 435432),
         Index(-242, -3242),
@@ -624,7 +638,7 @@ fn test_last_dim_edge():
     # CHECK-NEXT: 4.000000
 
     # print(np.arange(0, 9).reshape(3,3)[2:0:-1, 2:0:-1]
-    test_slice[9, 2, DimList.create_unknown[2]()](
+    test_slice[DType.f32, 9, 2, DimList.create_unknown[2]()](
         DimList(3, 3),
         Index(2, 2),
         Index(0, 0),
@@ -648,7 +662,7 @@ fn test_last_dim_edge_2():
     # CHECK-NEXT: 4.000000
 
     # print(np.arange(0, 9).reshape(3,3)[3:0:-1, 3:0:-1])
-    test_slice[9, 2, DimList.create_unknown[2]()](
+    test_slice[DType.f32, 9, 2, DimList.create_unknown[2]()](
         DimList(3, 3),
         Index(3, 3),
         Index(0, 0),
@@ -672,7 +686,7 @@ fn test_last_dim_edge_3():
     # CHECK-NEXT: 4.000000
 
     # print(np.arange(0, 9).reshape(3,3)[4:0:-1, 4:0:-1])
-    test_slice[9, 2, DimList.create_unknown[2]()](
+    test_slice[DType.f32, 9, 2, DimList.create_unknown[2]()](
         DimList(3, 3),
         Index(4, 4),
         Index(0, 0),
@@ -701,7 +715,7 @@ fn test_last_dim_edge_4():
     # CHECK-NEXT: 0.000000
 
     # print(np.arange(0, 9).reshape(3,3)[4:-4:-1, 4:-4:-1])
-    test_slice[9, 2, DimList.create_unknown[2]()](
+    test_slice[DType.f32, 9, 2, DimList.create_unknown[2]()](
         DimList(3, 3),
         Index(4, 4),
         Index(-4, -4),
@@ -725,7 +739,7 @@ fn test_out_of_bounds():
     # CHECK-NEXT: 7.000000
 
     # print(np.arange(0, 9).reshape(3, 3)[1:5:1, -5:-1:1])
-    test_slice[9, 2, DimList.create_unknown[2]()](
+    test_slice[DType.f32, 9, 2, DimList.create_unknown[2]()](
         DimList(3, 3),
         Index(1, -5),
         Index(5, -1),
