@@ -6,7 +6,6 @@
 """This module provides tracing utilities."""
 
 from BuildInfo import build_info_llcl_max_profiling_level
-from String import StringRef
 
 
 # ===----------------------------------------------------------------------===#
@@ -139,9 +138,9 @@ fn trace_range_push[
         func : __mlir_attr.`@KGEN_CompilerRT_TimeTraceProfilerBegin`,
         _type:None,
     ](
-        name.data.address,
+        name.data,
         name.length.value,
-        detail.data.address,
+        detail.data,
         detail.length.value,
     )
 

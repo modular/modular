@@ -9,7 +9,6 @@ from Atomic import Atomic
 from Coroutine import Coroutine, _get_coro_resume_fn
 from DType import DType
 from Pointer import Pointer, DTypePointer
-from String import StringRef
 from Range import range
 from String import String
 from Tracing import TraceLevel, is_mojo_profiling_disabled
@@ -165,7 +164,7 @@ struct Runtime:
             func : __mlir_attr.`@KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile`,
         ](
             numThreads,
-            profileFilename.data.address,
+            profileFilename.data,
             profileFilename.length.value,
         )
 
@@ -447,7 +446,7 @@ struct OutputChainPtr:
             _type:None,
         ](
             self.ptr,
-            message.data.address,
+            message.data,
             message.length.value,
         )
 
@@ -476,7 +475,7 @@ struct OutputChainPtr:
             _type:None,
         ](
             self.ptr,
-            label.data.address,
+            label.data,
             label.length.value,
         )
 
@@ -495,9 +494,9 @@ struct OutputChainPtr:
             _type:None,
         ](
             self.ptr,
-            label.data.address,
+            label.data,
             label.length.value,
-            detail.data.address,
+            detail.data,
             detail.length.value,
         )
 
