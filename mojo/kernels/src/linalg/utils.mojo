@@ -18,19 +18,25 @@ from BuildInfo import is_relwithdebinfo_build, is_debug_build
 # The largest kernel for AVX is 4x3 which needs 16 registers and gives the best result.
 # For AVX512 a 5x4, 5x5, or 6x4 kernel can be used, 5x4 gives the best result.
 # For the Graviton 2 a 5x3 kernel gives the best result.
-fn get_matmul_a_row_size() -> Int:
+fn get_matmul_a_row_size[critical_stride: Bool]() -> Int:
     @parameter
     if has_neon():
-        return 8
+        if critical_stride:
+            return 4
+        else:
+            return 8
     elif has_avx512f():
         return 5
     return 4
 
 
-fn get_matmul_pack_inner_size() -> Int:
+fn get_matmul_pack_inner_size[critical_stride: Bool]() -> Int:
     @parameter
     if has_neon():
-        return 2
+        if critical_stride:
+            return 4
+        else:
+            return 2
     elif has_avx512f():
         return 4
     return 3
@@ -62,7 +68,7 @@ fn get_packB_unroll_factor() -> Int:
 
 @always_inline
 fn get_matmul_num_tasks[
-    simd_size: Int
+    simd_size: Int, critical_stride: Bool
 ](m: Int, n: Int, k: Int, max_num_tasks: Int) -> Int:
     """Compute the number of tasks for parallel matmul.
     The max number of tasks is typically the number of threads/cores."""
@@ -76,8 +82,12 @@ fn get_matmul_num_tasks[
     # support partition in k dim yet. E.x. 32x32x1024 uses 16 threads by min
     # task complexity but we only want it to use <= 4 threads for now since
     # M and N are very small.
-    let max_row_tasks = div_ceil(m, 2 * get_matmul_a_row_size())
-    let max_col_tasks = div_ceil(n, get_matmul_pack_inner_size() * simd_size)
+    let max_row_tasks = div_ceil(
+        m, 2 * get_matmul_a_row_size[critical_stride]()
+    )
+    let max_col_tasks = div_ceil(
+        n, get_matmul_pack_inner_size[critical_stride]() * simd_size
+    )
     num_tasks = min(num_tasks, max_row_tasks * max_col_tasks)
 
     return num_tasks
@@ -145,19 +155,21 @@ fn partition_work(
 
 
 fn get_partitioned_matmul[
-    heuristic: PartitionHeuristic
+    heuristic: PartitionHeuristic, critical_stride: Bool
 ](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
     # TODO: Add oneDNN/MLAS partition heuristic and use the parameter if below.
     @parameter
     if heuristic == PartitionHeuristic.MOJO:
         return get_partitioned_matmul_mojo[
-            get_matmul_a_row_size(),
-            get_matmul_pack_inner_size() * dtype_simd_width[DType.f32](),
+            get_matmul_a_row_size[critical_stride](),
+            get_matmul_pack_inner_size[critical_stride]()
+            * dtype_simd_width[DType.f32](),
         ](m, n, k, task_id, num_tasks)
     else:
         return get_partitioned_matmul_im2col[
-            get_matmul_a_row_size(),
-            get_matmul_pack_inner_size() * dtype_simd_width[DType.f32](),
+            get_matmul_a_row_size[critical_stride](),
+            get_matmul_pack_inner_size[critical_stride]()
+            * dtype_simd_width[DType.f32](),
         ](m, n, k, task_id, num_tasks)
 
 
