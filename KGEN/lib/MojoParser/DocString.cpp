@@ -6,6 +6,7 @@
 
 #include "DocString.h"
 #include "ASTDecl.h"
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "mlir/Support/IndentedOstream.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -111,8 +112,9 @@ public:
   JSONGenerator(raw_ostream &os) : os(os, /*IndentSize=*/2) {}
 
   void generate(ASTDecl &decl) {
-    TypeSwitch<ASTDecl &>(decl).Case<FileModuleOp, FuncOp, StructDeclOp>(
-        [&](auto op) { generateJSONFor(decl, op); });
+    TypeSwitch<ASTDecl &>(decl)
+        .Case<FileModuleOp, LIT::FuncOp, ParamDeclareOp, StructDeclOp>(
+            [&](auto op) { generateJSONFor(decl, op); });
   }
 
 private:
@@ -164,17 +166,17 @@ private:
     };
 
     os.attributeArray("children", [&] {
-      for (auto &child : children) {
-        if (shouldHideName(child.first))
+      for (auto &[name, decls] : children) {
+        if (shouldHideName(name))
           continue;
-        auto filteredChildren = filterChildren(child.second);
+        auto filteredChildren = filterChildren(decls);
         if (filteredChildren.empty())
           continue;
 
         // If the children are functions, generate all of the overloads under a
         // single object.
-        if (isa<FuncOp>(**filteredChildren.begin())) {
-          generateJSONForFunctions(child.first, filteredChildren);
+        if (isa<LIT::FuncOp>(**filteredChildren.begin())) {
+          generateJSONForFunctions(name, filteredChildren);
           continue;
         }
 
@@ -305,10 +307,32 @@ private:
   }
 
   //===--------------------------------------------------------------------===//
+  // Alias Generation
+
+  void generateJSONFor(ASTDecl &decl, ParamDeclareOp paramOp) {
+    os.object([&] {
+      os.attribute("kind", "alias");
+      os.attribute("name", paramOp.getName().getValue());
+
+      // Pretty print the value.
+      std::string valueStr;
+      llvm::raw_string_ostream valueOS(valueStr);
+      PValue(paramOp.getValue()).printForDiag(valueOS);
+      os.attribute("value", valueOS.str());
+
+      // Emit the doc string if present.
+      if (std::optional<DocString> docStr = getDocString(decl)) {
+        os.attribute("summary", docStr->getSummary());
+        os.attribute("description", llvm::join(docStr->getDescription(), "\n"));
+      }
+    });
+  }
+
+  //===--------------------------------------------------------------------===//
   // Function Generation
 
   /// Generate documentation for the given function.
-  void generateJSONFor(ASTDecl &decl, FuncOp funcOp) {
+  void generateJSONFor(ASTDecl &decl, LIT::FuncOp funcOp) {
     // Strip off the mangled suffix from the base function name.
     StringRef name =
         funcOp.getName().take_until([](char c) { return c == '('; });
@@ -321,13 +345,14 @@ private:
       os.attribute("name", name);
       os.attributeArray("overloads", [&] {
         for (auto *decl : decls)
-          generateJSONForOverload(*decl, cast<FuncOp>(*decl), name);
+          generateJSONForOverload(*decl, cast<LIT::FuncOp>(*decl), name);
       });
     });
   }
 
   /// Generate a sub-section for the overload described by the given function.
-  void generateJSONForOverload(ASTDecl &decl, FuncOp funcOp, StringRef name) {
+  void generateJSONForOverload(ASTDecl &decl, LIT::FuncOp funcOp,
+                               StringRef name) {
     SignatureType signature = funcOp.getSignature();
 
     auto argTypes = funcOp.getArgumentTypes();
@@ -555,7 +580,7 @@ public:
   void validate(ASTDecl &decl) {
     std::optional<DocString> docStr = getDocString(decl);
     if (docStr && !decl.hasReferenceError) {
-      TypeSwitch<ASTDecl &>(decl).Case<FuncOp, StructDeclOp>(
+      TypeSwitch<ASTDecl &>(decl).Case<LIT::FuncOp, StructDeclOp>(
           [&](auto op) { validateDecl(decl, op, *docStr); });
     }
   }
@@ -712,7 +737,7 @@ private:
   // Functions
 
   /// Validate documentation for the given function.
-  void validateDecl(ASTDecl &decl, FuncOp funcOp, DocString &docStr) {
+  void validateDecl(ASTDecl &decl, LIT::FuncOp funcOp, DocString &docStr) {
     SignatureType signature = funcOp.getSignature();
     auto argNames = funcOp.getValueParamNames();
     bool hasResultType = !funcOp.getResultType().isa<LIT::NoneType>();
