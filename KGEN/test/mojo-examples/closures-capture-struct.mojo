@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: disabled
+
 # RUN: mojo %s | FileCheck %s
 
 from IO import print
@@ -31,6 +31,7 @@ fn test_take_closure_and_print(x: Int):
     let capture_struct_closure: fn (Int) capturing -> Int = FOO
     let u: Int = 3
     take_closure_and_print(capture_struct_closure, u)
+    v.del_old()
 
 
 fn main():
