@@ -20,7 +20,6 @@ from Vector import DynamicVector
 from Buffer import Buffer, NDBuffer
 from Matrix import Matrix
 from List import Dim, DimList
-from String import StringRef
 from LLCL import num_cores, Runtime, TaskGroup
 from Functional import parallelize
 from Math import iota
