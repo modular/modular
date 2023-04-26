@@ -19,12 +19,68 @@ from TargetInfo import dtype_sizeof
 # ===----------------------------------------------------------------------===#
 # reduce
 # ===----------------------------------------------------------------------===#
-# Implements a simd reduction.
-# Consists of 3 steps:
-#   1. Iterate over simd_width size chunks of src and use map_fn to update a simd accumulator.
-#   2. Reduce the simd accumulator into a single scalar using reduce_fn.
-#   3. Iterate over the remainder of src and apply the map_fn on simd elements
-#      with simd_width=1.
+
+
+@always_inline
+fn map_reduce[
+    simd_width: Int,
+    size: Dim,
+    type: DType,
+    acc_type: DType,
+    input_gen_fn: fn[type: DType, width: Int] (Int) capturing -> SIMD[
+        type, width
+    ],
+    reduce_vec_to_vec_fn: fn[width: Int, acc_type: DType, type: DType] (
+        SIMD[acc_type, width], SIMD[type, width]
+    ) capturing -> SIMD[acc_type, width],
+    reduce_vec_to_scalar_fn: fn[width: Int, type: DType] (
+        SIMD[type, width]
+    ) -> SIMD[type, 1],
+](dst: Buffer[size, type], init: SIMD[acc_type, 1]) -> SIMD[acc_type, 1]:
+    """Store the result of calling input_gen_fn in dst and simultaneously reduce
+    the result using a custom reduction function.
+
+    Parameters:
+        simd_width: The vector width for the computation.
+        size: The buffer size.
+        type: The buffer elements dtype.
+        acc_type: The dtype of the reduction accumulator.
+        input_gen_fn: A function that generates inputs to reduce.
+        reduce_vec_to_vec_fn: A mapping function. This function is used when to combine
+          (accumulate) two chunks of input data: e.g. we load two 8xf32 vectors
+          of elements and need to reduce them to a single 8xf32 vector.
+        reduce_vec_to_scalar_fn: A reduction function. This function is used to reduce a
+          vector to a scalar. E.g. when we got 8xf32 vector and want to reduce
+          it to 1xf32.
+
+    Args:
+        dst: The output buffer.
+        init: The initial value to use in accumulator.
+
+    Returns:
+        The computed reduction value.
+    """
+    alias unroll_factor = 8  # TODO: search
+    # TODO: explicitly unroll like vectorize_unroll does.
+    alias unrolled_simd_width = simd_width * unroll_factor
+    var acc_simd = SIMD[acc_type, unrolled_simd_width].splat(init)
+    let len = dst.__len__()
+    let vector_end = (len // unrolled_simd_width) * unrolled_simd_width
+    for i in range(0, vector_end, unrolled_simd_width):
+        let val_simd = input_gen_fn[type, unrolled_simd_width](i)
+        dst.simd_store(i, val_simd)
+        acc_simd = reduce_vec_to_vec_fn[unrolled_simd_width, acc_type, type](
+            acc_simd, val_simd
+        )
+
+    var acc = reduce_vec_to_scalar_fn[unrolled_simd_width, acc_type](acc_simd)
+    for ii in range(vector_end, len):  # TODO(#8365) use `i`
+        let val = input_gen_fn[type, 1](ii)
+        dst[ii] = val
+        acc = reduce_vec_to_vec_fn[1, acc_type, type](acc, val)
+    return acc[0].value
+
+
 @always_inline
 fn reduce[
     simd_width: Int,
