@@ -10,7 +10,7 @@ from DType import DType
 from Functional import elementwise, unroll
 from Intrinsics import strided_load
 from Index import StaticIntTuple
-from IO import print, _printf
+from IO import print
 from List import Dim, DimList
 from LLCL import Runtime, OutputChainPtr
 from Math import add, div, erf, exp, mul, rsqrt, sqrt, sub, tanh, fma
@@ -472,13 +472,9 @@ fn mark_output_chain_ready(out_chain: OutputChainPtr):
 fn print_buffer_info[
     type: DType, rank: Int
 ](buffer: NDBuffer[rank, DimList.create_unknown[rank](), type]):
-    _printf("Rank: ")
-    print(rank)
-    _printf("Shape: ")
-    print(buffer.dynamic_shape)
-
-    _printf("Strides: ")
-    print(buffer.dynamic_stride)
+    print("Rank:", rank)
+    print("Shape:", buffer.dynamic_shape)
+    print("Strides:", buffer.dynamic_stride)
 
 
 # ===----------------------------------------------------------------------===#
