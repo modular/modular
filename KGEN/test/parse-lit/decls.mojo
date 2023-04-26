@@ -486,18 +486,18 @@ struct VarArgsParameterizedStruct[*Is: Int]:
 
 # CHECK-LABEL: lit.func @"callVariadic
 fn callVariadic[p: Int](x: Int):
-  # CHECK: %0 = kgen.param.constant: variadic<@"$Int"::@Int> = <[]>
-  # CHECK: %1 = kgen.call @"$decls"::@"variadics($Int::Int*)"(%0)
+  # CHECK: %variadic = kgen.param.constant: variadic<@"$Int"::@Int> = <[]>
+  # CHECK: call @"$decls"::@"variadics($Int::Int*)"(%variadic)
   variadics()
-  # CHECK: %2 = kgen.param.constant: variadic<@"$Int"::@Int> = <[{{.*}}7{{.*}}11{{.*}}13{{.*}}]>
-  # CHECK: %3 = kgen.call @"$decls"::@"variadics($Int::Int*)"(%2)
+  # CHECK: %variadic_0 = kgen.param.constant: variadic<@"$Int"::@Int> = <[{{.*}}7{{.*}}11{{.*}}13{{.*}}]>
+  # CHECK: call @"$decls"::@"variadics($Int::Int*)"(%variadic_0)
   variadics(7, 11, 13)
-  # CHECK: %4 = pop.variadic.create [%x]
-  # CHECK: %5 = kgen.call @"$decls"::@"variadics($Int::Int*)"(%4)
+  # CHECK: %[[VAR:.*]] = pop.variadic.create [%x]
+  # CHECK: call @"$decls"::@"variadics($Int::Int*)"(%[[VAR]])
   variadics(x)
-  # CHECK: %6 = kgen.param.constant: @"$Int
-  # CHECK: %7 = pop.variadic.create [%x, %6]
-  # CHECK: %8 = kgen.call @"$decls"::@"variadics($Int::Int*)"(%7)
+  # CHECK: %[[CST:.*]] = kgen.param.constant: @"$Int
+  # CHECK: %[[VAR:.*]] = pop.variadic.create [%x, %[[CST]]]
+  # CHECK: call @"$decls"::@"variadics($Int::Int*)"(%[[VAR]])
   variadics(x, 1)
 
   # CHECK: @"variadics($Int::Int*)", []

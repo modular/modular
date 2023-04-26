@@ -11,7 +11,7 @@
 // CHECK: kgen.func @"recurse,axis=0"(%arg0: index) -> index {
 // CHECK-NEXT:    kgen.return %arg0 : index
 
-// CHECK:    %1 = kgen.call @"recurse,axis=2"(%idx42) : (index) -> index
+// CHECK:    kgen.call @"recurse,axis=2"(%idx42) : (index) -> index
 
 module {
   kgen.generator @recurse<axis>(%arg0: index) -> index {

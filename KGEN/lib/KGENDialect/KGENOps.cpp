@@ -71,6 +71,17 @@ LogicalResult ParamConstantOp::verify() {
                        << " does not match result type " << getType();
 }
 
+void ParamConstantOp::getAsmResultNames(
+    function_ref<void(Value, StringRef)> setNameFn) {
+  // If the type of the value has a registered pretty name, use that for the SSA
+  // value name.
+  std::optional<StringRef> name =
+      getContext()->getLoadedDialect<KGENDialect>()->getTypeName(
+          getType().getTypeID());
+  if (name)
+    setNameFn(getResult(), *name);
+}
+
 //===----------------------------------------------------------------------===//
 // ParamDeclareOp
 //===----------------------------------------------------------------------===//
