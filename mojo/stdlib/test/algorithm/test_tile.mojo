@@ -7,7 +7,7 @@
 
 from Functional import tile, unswitch, tile_and_unswitch
 from List import VariadicList
-from IO import print, _printf
+from IO import print
 from Index import Index, StaticIntTuple
 from Range import range
 
@@ -189,8 +189,7 @@ fn test_tile_and_unswitch():
         tile_size: Int, static_switch: Bool
     ](data_idx: Int, upperbound: Int):
         print(Index(data_idx, tile_size, upperbound))
-        _printf("Unswitched: ")
-        print(static_switch)
+        print("Unswitched:", static_switch)
 
     # CHECK: (0, 4, 6)
     # CHECK: Unswitched: True
