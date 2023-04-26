@@ -42,6 +42,7 @@ enum ExprContext {
   EC_DefaultArgument,       // def f(arg = x):
   EC_DefArgumentShadow,     // def f(x: Int):    -> var shadow slot.
   EC_BoolCondition,         // if x  /  while x  /  x and y  /  a if x else b
+  EC_CondExpr,              // x if a else y
   EC_BoolParamCondition,    // @parameter if x
   EC_ForIterator,           // for x internal details
   EC_WithContextMgr,        // with x:
@@ -138,6 +139,15 @@ public:
   static ValueDest &none() {
     static ValueDest dummy;
     return dummy;
+  }
+
+  /// This duplicates the ValueDest, which should only be used when the client
+  /// plans to emit to the same dest multiple times (e.g. in conditional logic).
+  ValueDest duplicate() const {
+    ValueDest result;
+    result.representation = representation;
+    result.context = context;
+    return result;
   }
 
   ~ValueDest() {

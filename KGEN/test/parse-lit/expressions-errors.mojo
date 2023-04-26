@@ -194,10 +194,6 @@ struct WeirdBoolishMem:
 fn badAnd(a: Bool, b: WeirdBoolish, c: WeirdBoolishMem):
   _ = a and b # expected-error {{cannot find common type between 'Bool' and 'WeirdBoolish'}}
 
-  # Issue #12010
-  # expected-error @+1 {{cannot load non-register passable type into SSA register}}
-  _ = c if not c else c
-
   # expected-error @+1 {{cannot load non-register passable type into SSA register}}
   _ = c and c
 
