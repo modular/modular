@@ -820,8 +820,8 @@ def KGEN_ExportOp : KGENOp<"export", [
     UnitAttr:$isCExport
   );
   let assemblyFormat = [{
-      $exported (`to` `C` $isCExport^)? custom<ExportOp>(ref($exported), $alias)
-      attr-dict
+    $exported (`to` `C` $isCExport^)? custom<ExportOp>(ref($exported), $alias)
+    attr-dict
   }];
   let hasVerifier = 1;
 }
@@ -835,7 +835,6 @@ def KGEN_CallSignatureOp : KGENOp<"call_signature", [
     "arguments", "cast<SignatureType>($_self).getValueInputs()">,
     CalleeResultTypes]> {
   let summary = "Call a signature typed instance";
-
   let description = [{
     The `kgen.call_signature` operation takes an SSA value of `!kgen.signature`
     type and invokes it with the provided operands as arguments.
@@ -848,15 +847,13 @@ def KGEN_CallSignatureOp : KGENOp<"call_signature", [
     ```
   }];
 
-  let arguments = (ins
-    KGEN_SignatureType:$callee,
-    Variadic<AnyType>:$arguments
-  );
+  let arguments = (ins KGEN_SignatureType:$callee,
+                       Variadic<AnyType>:$arguments);
   let results = (outs Variadic<AnyType>:$results);
   let assemblyFormat = [{
-     $callee `(` $arguments `)` `:`
-     custom<CallSignature>(type($callee), type($arguments), type($results))
-      attr-dict
+    $callee `(` $arguments `)` `:`
+    custom<CallSignature>(type($callee), type($arguments), type($results))
+    attr-dict
   }];
 }
 
@@ -864,49 +861,49 @@ def KGEN_CallSignatureOp : KGENOp<"call_signature", [
 // StageClosureOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_StageClosureOp : KGENOp<"stage_closure",
-    [Pure, FunctionOpInterface]> {
+def KGEN_StageClosureOp : KGENOp<"stage_closure", [Pure, FunctionOpInterface]> {
   let summary = "Stage a closure declaring a concrete region";
   let description = [{
-      The `kgen.stage_closure` operation declares a named concrete region.
-      The region can capture values from its parent region. This op
-      allows us to model nested callable functions within their original
-      scope before lifting them into functions so that we may perform
-      transformations that depend on the original structure of the scopes.
+    The `kgen.stage_closure` operation declares a named concrete region. The
+    region can capture values from its parent region. This operation models
+    nested callable functions within their original scope before lifting them
+    into functions so that we may perform transformations that depend on the
+    original structure of the scopes.
 
     ```mlir
-    kgen.stage_closure = () capturing -> index {
-      kgen.return %7 : index
-    } { name = my_nested_fn }
+    %0 = kgen.stage_closure = () capturing -> index {
+      kgen.return %arg0 : index
+    }
     ```
-    }];
-    let results = (outs KGEN_SignatureType:$result);
-    let regions = (region SizedRegion<1>:$bodyRegion);
+  }];
+  let results = (outs KGEN_SignatureType:$result);
+  let regions = (region SizedRegion<1>:$bodyRegion);
 
-    let extraClassDeclaration = [{
-        FunctionType getFunctionType();
-        ArrayRef<Type> getArgumentTypes();
-        ArrayRef<Type> getResultTypes();
+  let assemblyFormat = [{
+    custom<StageClosureOp>(type($result), $bodyRegion) attr-dict
+  }];
 
-        TypeAttr getFunctionTypeAttr() { return TypeAttr::get(getFunctionType()); }
-        void setFunctionTypeAttr(TypeAttr type) {
-          llvm_unreachable("can't opaquely set the function type");
-        }
-        ArrayAttr getArgAttrsAttr() { return {}; }
-        ArrayAttr getResAttrsAttr() { return {}; }
-        Attribute removeArgAttrsAttr() { llvm_unreachable("no argument attrs"); }
-        Attribute removeResAttrsAttr() { llvm_unreachable("no result attrs"); }
-        void setArgAttrsAttr(ArrayAttr attrs) {
-          llvm_unreachable("no argument attrs");
-        }
-        void setResAttrsAttr(ArrayAttr attrs) {
-          llvm_unreachable("no result attrs");
-        }
-        bool isOptionalSymbol() { return true; }
-    }];
-    let assemblyFormat = [{
-        custom<StageClosureOp>(type($result), $bodyRegion) attr-dict
-    }];
+  let extraClassDeclaration = [{
+    FunctionType getFunctionType();
+    ArrayRef<Type> getArgumentTypes();
+    ArrayRef<Type> getResultTypes();
+
+    TypeAttr getFunctionTypeAttr() { return TypeAttr::get(getFunctionType()); }
+    void setFunctionTypeAttr(TypeAttr type) {
+      llvm_unreachable("can't opaquely set the function type");
+    }
+    ArrayAttr getArgAttrsAttr() { return {}; }
+    ArrayAttr getResAttrsAttr() { return {}; }
+    Attribute removeArgAttrsAttr() { llvm_unreachable("no argument attrs"); }
+    Attribute removeResAttrsAttr() { llvm_unreachable("no result attrs"); }
+    void setArgAttrsAttr(ArrayAttr attrs) {
+      llvm_unreachable("no argument attrs");
+    }
+    void setResAttrsAttr(ArrayAttr attrs) {
+      llvm_unreachable("no result attrs");
+    }
+    bool isOptionalSymbol() { return true; }
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -917,23 +914,23 @@ def KGEN_CreateClosureOp : KGENOp<"create_closure", [
     Pure, DeclareOpInterfaceMethods<KGEN_CallOpInterface>]> {
   let summary = "Create a closure from variables and a function.";
   let description = [{
-      The `kgen.create_closure` operation represents the instantiation of
-      a closure. This op allows us to model closure creation
-      in terms of a function and local captured variables.
+    The `kgen.create_closure` operation represents the instantiation of
+    a closure. This operation modelas closure creation in terms of a function
+    and local captured variables.
 
-        ```mlir
-        %0 = kgen.create_closure @h(%idx98) :
-              (!kgen.signature<(index) -> index>, index) ->
-              (!kgen.signature<() capturing -> index>)
-        ```
+    ```mlir
+    %idx0 = index.constant 0
+    %0 = kgen.create_closure @h(%idx0) :
+      (!kgen.signature<(index) -> index>, index) ->
+      (!kgen.signature<() capturing -> index>)
+    ```
   }];
 
   let arguments = (ins KGEN_SymbolConstantAttr:$callee,
-                     Variadic<AnyType>:$captures
-  );
+                       Variadic<AnyType>:$captures);
   let results = (outs KGEN_SignatureType:$result);
   let assemblyFormat = [{
-      custom<CreateClosureOp>($callee, $captures, type($captures), type($result))
-       attr-dict
+    custom<CreateClosureOp>($callee, $captures, type($captures), type($result))
+    attr-dict
   }];
 }
