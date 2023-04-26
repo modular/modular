@@ -228,7 +228,7 @@ wrapExpressionText(StringRef wrappedFnName, StringRef exprText,
 
   // Insert a preamble of imports used by the expression wrapper.
   if (isFirstREPLCell) {
-    exprOSIndented << "from IO import _printf, print\n"
+    exprOSIndented << "from IO import print\n"
                    << "from Len import len\n"
                    << "from Pointer import Pointer\n"
                    << "from PythonInterface import Python\n"
@@ -267,8 +267,7 @@ wrapExpressionText(StringRef wrappedFnName, StringRef exprText,
   }
   exprOSIndented << ")\n"
                     "  except error:\n"
-                    "    _printf(\"Error: \")\n"
-                    "    print(error.value)\n\n";
+                    "    print(\"Error:\", error.value)\n\n";
 
   // Finally we can generate the actual expression function.
   exprOSIndented
