@@ -14,7 +14,13 @@ from SIMD import SIMD
 from Index import StaticIntTuple
 from StaticTuple import StaticTuple
 from TypeUtilities import rebind
-from Reductions import mean, variance
+from Reductions import (
+    mean,
+    variance,
+    map_reduce,
+    _simd_sum,
+    _simd_sum_elementwise,
+)
 from Math import sqrt
 
 
@@ -35,9 +41,8 @@ fn layer_norm[
     """Computes layernorm(elementwise_fn(x)) across the last dimension of x, where layernorm is
     defined as $(x-mean(x))/(sqrt(var(x)+eps)*gamma + beta$.
 
-    Currently performs 4 passes over the input data, which is NOT efficient, but
-    this will be reduced to 2 in the future by fusing the add, mean, and variance
-    loops using Welford's algorithm.
+    Currently performs 3 passes over the input data. This can be reduced to 2 by
+    fusing the add, mean, and variance loops using Welford's algorithm.
 
     Parameters:
         simd_width: The vector width for the computation.
@@ -61,14 +66,29 @@ fn layer_norm[
             out_buf._offset(start_coord), n
         )
 
-        fn input_gen_wrapper[simd_width: Int](idx: Int):
-            out_slice.simd_store[simd_width](
-                idx, input_fn[type, simd_width](idx, i)
-            )
+        fn input_gen_wrapper[
+            return_type: DType, simd_width: Int
+        ](idx: Int) -> SIMD[return_type, simd_width]:
+            return input_fn[return_type, simd_width](idx, i)
 
-        vectorize[simd_width, input_gen_wrapper](n)
+        let sum_val = map_reduce[
+            simd_width,
+            shape.at[1](),
+            type,
+            type,
+            input_gen_wrapper,
+            _simd_sum_elementwise,
+            _simd_sum,
+        ](out_slice, 0)
 
-        let mean_val = mean[simd_width](out_slice)
+        fn _sum_to_mean() -> SIMD[type, 1]:
+            @parameter
+            if type.is_integral():
+                return sum_val // n
+            return sum_val / n
+
+        let mean_val = _sum_to_mean()
+
         let var_val = variance[simd_width](
             out_slice, mean_val, 0
         )  # use biased estimator
