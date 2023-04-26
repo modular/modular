@@ -12,12 +12,12 @@ fn testMLIR():
   var a : __mlir_type
 
   var x: __mlir_type.index
-  x += x # expected-error {{'__mlir_type.index' does not implement the '__iadd__' method}}
+  x += x # expected-error {{'index' does not implement the '__iadd__' method}}
 
   # expected-error @+1 {{'index.add' op expected 2 operands, but found 0}}
   __mlir_op.`index.add`()
 
-  # expected-error @+1 {{MLIR type '__mlir_type.index' has no attributes}}
+  # expected-error @+1 {{MLIR type 'index' has no attributes}}
   __mlir_op.`index.add`(x, x).x
 
   # expected-error @+1 {{operation already has attributes}}
@@ -46,7 +46,7 @@ fn testMLIR():
   # expected-error @+1 {{MLIR attribute is not a TypedAttr: #index<cmp_predicate eq>}}
   __mlir_attr.`#index<cmp_predicate eq>`
 
-  # expected-error @+1 {{cannot use initializer syntax on MLIR type '__mlir_type.index'}}
+  # expected-error @+1 {{cannot use initializer syntax on MLIR type 'index'}}
   _ = __mlir_type.index(42)
 
 # Issue #7307: Error message can be improved when a user accidentally uses = instead of :

@@ -26,7 +26,7 @@ fn bind_fat_to_thin_main():
     fn g(y: __mlir_type.index) -> __mlir_type.index:
         return x
 
-    # expected-error @below {{'fn(__mlir_type.index) capturing -> __mlir_type.index' value cannot be converted to 'fn(__mlir_type.index) -> __mlir_type.index' in call parameter}}
+    # expected-error @below {{'fn(index) capturing -> index' value cannot be converted to 'fn(index) -> index' in call parameter}}
     alias Bound = bind_fat_to_thin_target[g]
     Bound((3).__as_mlir_index())
 
@@ -131,10 +131,10 @@ fn badCall():
 
 
 fn missing_ret_val() -> __mlir_type.index:
-  return # expected-error {{'None' value cannot be converted to '__mlir_type.index' in return}}
+  return # expected-error {{'None' value cannot be converted to 'index' in return}}
 
 fn ret_type_mismatch() -> __mlir_type.index:
-  return 4.0 # expected-error {{'FloatLiteral' value cannot be converted to '__mlir_type.index' in return}}
+  return 4.0 # expected-error {{'FloatLiteral' value cannot be converted to 'index' in return}}
 
 async fn testAsyncVoid(): pass
 async fn testAsyncInt() -> Int: return 42
@@ -271,7 +271,7 @@ fn badPackCalls():
   examplePack[Int](1, 2)
   # expected-error @+1 {{invalid call to 'examplePack': callee expects 2 arguments, but 1 was specified}}
   examplePack[Int, F32](1)
-  # expected-error-re @+1 {{invalid call to 'examplePack': argument #1 cannot be converted from '__mlir_type.index' to 'SIMD[{{.*}}f32{{.*}}]'}}
+  # expected-error-re @+1 {{invalid call to 'examplePack': argument #1 cannot be converted from 'index' to 'SIMD[{{.*}}f32{{.*}}]'}}
   examplePack[Int, F32](1, (2).__as_mlir_index())
   # expected-warning @below {{could not infer parameter type for this value, because it is not concrete}}
   # expected-error @below {{invalid call to 'examplePack': callee expects 1 input parameter but 0 were provided}}
