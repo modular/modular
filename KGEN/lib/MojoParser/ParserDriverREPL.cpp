@@ -380,15 +380,24 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
     // variable for the address and ensure it gets preserved. For now, we just
     // malloc the memory.
     mlir::Type indexType = structBuilder.getIndexType();
+    // Compute the size of the type.
     Attribute sizeOfAttr = KGEN::ParamOperatorAttr::get(
         POC::GetSizeOf,
         {KGEN::ParameterizedTypeConstantAttr::get(elementType), targetAttr},
         indexType);
     Value sizeOf = builder.create<KGEN::ParamConstantOp>(indexType, sizeOfAttr);
+    // Compute the alignment of the type.
+    Attribute alignOfAttr = KGEN::ParamOperatorAttr::get(
+        POC::GetAlignOf,
+        {KGEN::ParameterizedTypeConstantAttr::get(elementType), targetAttr},
+        indexType);
+    Value alignOf =
+        builder.create<KGEN::ParamConstantOp>(indexType, alignOfAttr);
+    // Allocate an aligned blob for the variable.
     auto mallocCall = builder.create<POP::ExternalCallOp>(
         POP::PointerType::get(POP::SIMDType::get(
             1, builder.getAttr<KGEN::DTypeConstantAttr>(KGENDType::invalid))),
-        "malloc", sizeOf);
+        "KGEN_CompilerRT_AlignedAlloc", ArrayRef<Value>{alignOf, sizeOf});
     Value mallocResult = mallocCall.getResult(0);
     Value mallocCast =
         builder.create<POP::PointerBitcastOp>(type, mallocResult);
