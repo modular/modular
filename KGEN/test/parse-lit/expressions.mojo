@@ -998,7 +998,9 @@ fn test_call_method():
     let value = CallableStruct(5)
     _ = value(2)
 
-struct MemoryType: pass
+struct MemoryType:
+  fn __copyinit__(self&, existing: Self):
+    pass
 
 @register_passable
 struct RegType: pass
@@ -1046,7 +1048,6 @@ struct TwoParamsStruct[a: Int, b: Int]:
     fn __copyinit__(self&, existing: Self):
         pass
 
-
 # CHECK-LABEL: lit.func @"variadic_subscript
 fn variadic_subscript[idx: Int, *a: Int](*b: Int):
     # CHECK-NEXT: declare v0: {{.*}}Int = <variadic_get(:variadic<{{.*}}Int> a, 2)>
@@ -1070,3 +1071,16 @@ fn variadic_memory_subscript[*a: Int](*b: TwoParamsStruct[a[0], a[1]]):
     # CHECK: %[[V1:.*]] = pop.variadic.get %b[%idx2]
     # CHECK: __copyinit__{{.*}}%[[V1]]
     var v1 = b[2]
+
+# CHECK-LABEL: lit.func @"testMemoryOnlyConds
+# Issue (#13379)
+fn testMemoryOnlyConds(cond: __mlir_type.i1, a: MemoryType, b: MemoryType) -> MemoryType:
+# CHECK: hlcf.if %cond {
+# CHECK:   %1 = kgen.call {{.*}}__copyinit__{{.*}}(%__result__, %b)
+# CHECK:   hlcf.yield
+# CHECK: } else {
+# CHECK:   %1 = kgen.call {{.*}}__copyinit__{{.*}}(%__result__, %b)
+# CHECK:   hlcf.yield
+# CHECK: }
+# CHECK: %0 = kgen.param.constant: !lit.none = <#lit.none>
+    return a if cond else b

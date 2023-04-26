@@ -2350,33 +2350,75 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // a dummy one and fix it later.
   auto ifOp = emitter.builder->create<HLCF::IfOp>(
       ifLoc, TypeRange{condValue.getType()}, condValue);
-  emitter.builder->createBlock(&ifOp.getThenRegion());
-  emitter.builder->createBlock(&ifOp.getElseRegion());
 
-  emitter.builder = ifOp.getThenBodyBuilder();
-  SRValue trueVal = emitter.emitExprSRValue(trueExpr, EC_BoolCondition);
-  if (!trueVal)
+  // Emit the trueVal and falseVal's but don't check for error or emit the yield
+  // yet.
+  emitter.builder->createBlock(&ifOp.getThenRegion());
+  CValue trueVal = emitter.emitExprCValue(trueExpr, EC_CondExpr);
+
+  emitter.builder->createBlock(&ifOp.getElseRegion());
+  CValue falseVal = emitter.emitExprCValue(falseExpr, EC_CondExpr);
+
+  if (!trueVal || !falseVal) {
+    emitter.builder->setInsertionPointAfter(ifOp);
     return {};
-  emitter.builder->create<HLCF::YieldOp>(ifLoc, trueVal);
-  emitter.builder = ifOp.getElseBodyBuilder();
-  SRValue falseVal = emitter.emitExprSRValue(falseExpr, EC_BoolCondition);
-  if (!falseVal)
-    return {};
-  emitter.builder->create<HLCF::YieldOp>(ifLoc, falseVal);
-  emitter.builder->setInsertionPointAfter(ifOp);
+  }
 
   /// TODO(subtyping): With subtypes, we can find intersection types, e.g. a
-  /// common superclass.
-  if (!trueVal.getType().isEqualCanon(falseVal.getType())) {
+  /// common superclass.  We could also try converting LHS to RHS and RHS to LHS
+  /// here that would allow "1.0 if cond else 2" for example.
+  if (!trueVal.getRValueType().isEqualCanon(falseVal.getRValueType())) {
     emitter.emitError(getLoc(), "true value of type ")
-        << trueVal.getType() << " is not compatible with false value "
-        << falseVal.getType() << " in conditional" << trueExpr->getRange()
+        << trueVal.getRValueType() << " is not compatible with false value "
+        << falseVal.getRValueType() << " in conditional" << trueExpr->getRange()
         << falseExpr->getRange();
     return {};
   }
-  // Ensure the correct type is used.
-  ifOp->getResult(0).setType(trueVal.getType());
-  return emitter.emitResult(SRValue(ifOp.getResult(0)), this, dest);
+
+  // Ok, we now know if the types were register_passable or not, so finish up
+  // the logic.  register_passable values get merged together as SSA registers
+  // in the 'if' result.
+  if (trueVal.getRValueType().isRegisterPassable(trueExpr->getLoc(),
+                                                 emitter.shared)) {
+    // Finish false.
+    auto falseSR = emitter.emitSRValue({falseVal, falseExpr}, EC_BoolCondition);
+    if (!falseSR)
+      return {};
+    emitter.builder->create<HLCF::YieldOp>(ifLoc, falseSR);
+    // Finish true.
+    emitter.builder->setInsertionPointToEnd(&ifOp.getThenBlock());
+    auto trueSR = emitter.emitSRValue({trueVal, trueExpr}, EC_BoolCondition);
+    if (!trueSR)
+      return {};
+    emitter.builder->create<HLCF::YieldOp>(ifLoc, trueSR);
+    emitter.builder->setInsertionPointAfter(ifOp);
+    // Ensure the correct type is used.
+    ifOp->getResult(0).setType(trueVal.getType());
+    return emitter.emitResult(SRValue(ifOp.getResult(0)), this, dest);
+  }
+
+  // If we have a memory only type, then we don't need the 'if' result.  There
+  // is no way to remove results after creating it, so we create a new IfOp and
+  // everything over.
+  auto otherDest = dest.duplicate();
+  bool hadError = !emitter.emitResult(falseVal, falseExpr, dest);
+  emitter.builder->create<HLCF::YieldOp>(ifLoc);
+
+  emitter.builder->setInsertionPointToEnd(&ifOp.getThenBlock());
+  auto result = emitter.emitResult(falseVal, falseExpr, otherDest);
+  emitter.builder->create<HLCF::YieldOp>(ifLoc);
+
+  // Create thew new 'if' that doesn't return anything.
+  emitter.builder->setInsertionPointAfter(ifOp);
+  auto newIfOp =
+      emitter.builder->create<HLCF::IfOp>(ifLoc, TypeRange{}, condValue);
+  newIfOp.getThenRegion().takeBody(ifOp.getThenRegion());
+  newIfOp.getElseRegion().takeBody(ifOp.getElseRegion());
+  ifOp->erase();
+
+  if (hadError)
+    return {};
+  return result;
 }
 
 /// Emit the comparison expression with operator ops[opIdx] and operands:

@@ -64,6 +64,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in def argument shadow";
   case EC_BoolCondition:
     return " in boolean condition";
+  case EC_CondExpr:
+    return " in 'if' expression value";
   case EC_BoolParamCondition:
     return " in '@parameter if' condition";
   case EC_ForIterator:
