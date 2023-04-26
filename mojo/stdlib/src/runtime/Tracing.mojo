@@ -135,7 +135,7 @@ fn trace_range_push[
     # Pushe the trace range from the stack. This is only enabled if the LLCL
     # profiling is enabled.
     __mlir_op.`pop.external_call`[
-        func : __mlir_attr.`@KGEN_CompilerRT_TimeTraceProfilerBegin`,
+        func : "KGEN_CompilerRT_TimeTraceProfilerBegin".value,
         _type:None,
     ](
         name.data,
@@ -168,7 +168,7 @@ fn trace_range_pop[type: TraceType, level: TraceLevel]():
     # Pop the trace range from the stack. This is only enabled if the LLCL
     # profiling is enabled.
     __mlir_op.`pop.external_call`[
-        func : __mlir_attr.`@KGEN_CompilerRT_TimeTraceProfilerEnd`,
+        func : "KGEN_CompilerRT_TimeTraceProfilerEnd".value,
         _type:None,
     ]()
 
