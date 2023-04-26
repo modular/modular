@@ -74,13 +74,16 @@ struct StructOperationLowerer : public mlir::IRRewriter {
 
   /// Materialize destination conversions.
   template <typename OpT>
-  void materializeLowering(OpT op);
+  LogicalResult materializeLowering(OpT op);
 
   /// The struct decl map.
   StructDeclarations &structDecls;
 
   /// The type converter.
   mlir::AttrTypeReplacer replacer;
+
+  /// Set to the value of an invalid DeclRefType.
+  DeclRefType errDeclRef;
 };
 } // namespace
 
@@ -132,7 +135,11 @@ StructOperationLowerer::StructOperationLowerer(MLIRContext *ctx,
 PointerUnion<POP::StructType, Type>
 StructOperationLowerer::substituteStructRef(DeclRefType ref) {
   auto it = structDecls.fields.find(ref.getName());
-  assert(it != structDecls.fields.end());
+  if (LLVM_UNLIKELY(it == structDecls.fields.end())) {
+    // This indicates that the type does not reference a struct.
+    errDeclRef = ref;
+    return Type(ref);
+  }
 
   // Substitute parameters into the field types.
   ParameterEvaluator evaluator(ref.getParamValues());
@@ -244,7 +251,7 @@ static Value getCastedToType(Value value, Type destType, OpBuilder &b) {
 }
 
 template <typename OpT>
-void StructOperationLowerer::materializeLowering(OpT op) {
+LogicalResult StructOperationLowerer::materializeLowering(OpT op) {
   setInsertionPoint(op);
   SmallVector<Value> castedOperands;
   castedOperands.reserve(op->getNumOperands());
@@ -263,6 +270,13 @@ void StructOperationLowerer::materializeLowering(OpT op) {
   if (result.getType() != resultType)
     result = getCastedToType(result, resultType, *this);
   replaceOp(op, {result});
+
+  if (LLVM_UNLIKELY(errDeclRef)) {
+    return op.emitError("operation contains a declref type that does not refer "
+                        "to a struct: ")
+           << errDeclRef;
+  }
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -300,11 +314,14 @@ void LowerStructsPass::runOnOperation() {
   StructOperationLowerer structLowerer(&getContext(), structDecls);
 
   // Lower KGEN struct operations.
-  getOperation()->walk([&](Operation *op) {
-    llvm::TypeSwitch<Operation *>(op)
+  WalkResult result = getOperation()->walk([&](Operation *op) -> WalkResult {
+    return llvm::TypeSwitch<Operation *, LogicalResult>(op)
         .Case<StructCreateOp, StructInsertOp, StructExtractOp, StructGEPOp>(
-            [&](auto op) { structLowerer.materializeLowering(op); });
+            [&](auto op) { return structLowerer.materializeLowering(op); })
+        .Default([](auto) { return success(); });
   });
+  if (result.wasInterrupted())
+    return signalPassFailure();
 
   // Build a converter to handle updating converted types within debug info
   // constructs.
@@ -335,20 +352,29 @@ void LowerStructsPass::runOnOperation() {
   // Type references can be used in nested types. Walk through all the types and
   // rewrite them in-place to use the lowered types. Walk pre-order, and while
   // doing so, erase any trivial casts left over from the type conversion.
-  std::function<void(Operation *)> replaceTypes = [&](Operation *op) {
+  std::function<LogicalResult(Operation *)> replaceTypes =
+      [&](Operation *op) -> LogicalResult {
     structLowerer.replacer.replaceElementsIn(
         op, /*replaceAttrs=*/true, /*replaceLocs=*/true, /*replaceTypes=*/true);
+    if (LLVM_UNLIKELY(structLowerer.errDeclRef)) {
+      return op->emitError("operation contains a declref type that does not "
+                           "refer to a struct: ")
+             << structLowerer.errDeclRef;
+    }
     if (auto cast = dyn_cast<mlir::UnrealizedConversionCastOp>(op)) {
       // Fold trivial casts.
       if (cast.getOperandTypes() == cast.getResultTypes()) {
         cast.replaceAllUsesWith(cast.getOperands());
         cast.erase();
       }
-      return;
+      return success();
     }
     for (Region &region : op->getRegions())
       for (Operation &op : llvm::make_early_inc_range(region.getOps()))
-        replaceTypes(&op);
+        if (failed(replaceTypes(&op)))
+          return failure();
+    return success();
   };
-  replaceTypes(getOperation());
+  if (failed(replaceTypes(getOperation())))
+    return signalPassFailure();
 }
