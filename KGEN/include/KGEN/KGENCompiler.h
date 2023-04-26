@@ -43,6 +43,14 @@ void populateElaborateModulePasses(mlir::PassManager &pm,
                                    TargetInfoAttr target, BuildInfoAttr build,
                                    const CompilationOptions &options);
 
+/// This populates the passes to produce a fully concrete KGEN module. It is the
+/// same as the function above, but allows the user to specify their own JIT.
+void populateElaborateModulePasses(mlir::PassManager &pm,
+                                   LLCL::Runtime &runtime,
+                                   TargetInfoAttr target, BuildInfoAttr build,
+                                   EvaluatorExecutorFn evaluatorExecutorFn,
+                                   const CompilationOptions &options);
+
 /// This populates the post-elaboration optimization and simplification passes.
 /// These passes are intended to run immediately after the elaborator.
 void populatePostElaborationPasses(mlir::PassManager &pm,

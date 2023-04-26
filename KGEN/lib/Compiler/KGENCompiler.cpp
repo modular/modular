@@ -194,6 +194,25 @@ void KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
   populatePostElaborationPasses(pm, runtime, options);
 }
 
+void KGEN::populateElaborateModulePasses(
+    mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
+    BuildInfoAttr build, EvaluatorExecutorFn evaluatorExecutorFn,
+    const CompilationOptions &options) {
+  populateGenerateLibraryFilePasses(pm, runtime);
+
+  // Only outline closures just before elaboration - they aren't really
+  // necessary until elaboration happens.
+  pm.addPass(createOutlineClosures());
+  pm.addPass(createVerifyParameters());
+  pm.addPass(createLiftAndFoldApply());
+
+  // After elaboration, we have no use for the parameter verifier anymore.
+  pm.addPass(createElaborateGenerators(
+      runtime, target, build, {options.enableSearch}, evaluatorExecutorFn));
+
+  populatePostElaborationPasses(pm, runtime, options);
+}
+
 void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
                                          LLCL::Runtime &runtime,
                                          const CompilationOptions &options) {
