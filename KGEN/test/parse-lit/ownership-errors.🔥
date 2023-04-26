@@ -231,18 +231,23 @@ fn fieldConsumeError(owned w: MoreComplexExample,
   _ = y.mem^
   y.mem = MemExample()
 
-  # expected-error @+1 {{value 'z.mem' cannot be consumed, because it is used later}}
+  # expected-error @+1 {{value 'z.mem' cannot be consumed, because 'z' is used later}}
   _ = z.mem^
   _ = z.mem^
   z.mem = MemExample()
 
-  # expected-error @+1 {{value 'w.mem' cannot be consumed, because it is used later}}
+  # expected-error @+1 {{value 'w.mem' cannot be consumed, because 'w' is used later}}
   _ = w.mem^
   use(w)
 
   # expected-error @+1 {{field 'twoRegsRP.reg1' destroyed out of the middle of a value, preventing the overall value from being destroyed}}
   var twoRegsRP = TwoRegsRP()
   _ = twoRegsRP.reg1^
+
+  var single1 = MemExample()
+  _ = single1^  # expected-error {{value 'single1' cannot be consumed, because it is used later}}
+  _ = single1
+
 
 ##===----------------------------------------------------------------------===##
 # var -> let and incorrect let warnings
