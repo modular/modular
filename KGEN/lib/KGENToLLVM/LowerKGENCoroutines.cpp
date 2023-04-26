@@ -575,8 +575,8 @@ lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
   // FIXME: For some reason, `call_intrinsic` fails to resolve the overload.
   b.create<POP::ExternalCallOp>(
       suspendRetType, "llvm.coro.suspend.async.sl_p0p0p0s", suspendAsyncArgs,
-      TypeAttr::get(b.getFunctionType(
-          {cache.i32Type, cache.i8PtrType, cache.i8PtrType}, suspendRetType)));
+      b.getFunctionType({cache.i32Type, cache.i8PtrType, cache.i8PtrType},
+                        suspendRetType));
   op.erase();
   return success();
 }

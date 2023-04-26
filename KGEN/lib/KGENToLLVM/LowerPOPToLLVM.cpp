@@ -1544,7 +1544,7 @@ public:
         getTypeConverter()->getOptions().useBarePtrCallConv, conversion);
 
     // Lookup an existing function.
-    auto func = symtab.lookup<LLVM::LLVMFuncOp>(op.getFuncAttr().getAttr());
+    auto func = symtab.lookup<LLVM::LLVMFuncOp>(op.getCallee().getValue());
     if (func && func.getFunctionType() != signature)
       return op.emitError("existing function with conflicting signature")
                  .attachNote(func.getLoc())
@@ -1554,7 +1554,7 @@ public:
     if (!func) {
       OpBuilder::InsertionGuard guard(rewriter);
       rewriter.clearInsertionPoint();
-      func = rewriter.create<LLVM::LLVMFuncOp>(op.getLoc(), op.getFunc(),
+      func = rewriter.create<LLVM::LLVMFuncOp>(op.getLoc(), op.getCallee(),
                                                signature);
       symtab.insert(func);
     }
