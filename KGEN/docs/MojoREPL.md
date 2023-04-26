@@ -16,9 +16,9 @@ instructions, please refer to each section for more detailed information.
 
 ### LLDB Command Line REPL
 
-In addition to providing the underpinning technology, LLDB can also be used as
-a command line driver for interacting with the REPL. To start an interactive
-REPL session within LLDB, Mojo provides a convenient utility with the necessary
+In addition to providing the underpinning technology, LLDB can also be used as a
+command line driver for interacting with the REPL. To start an interactive REPL
+session within LLDB, Mojo provides a convenient utility with the necessary
 setup:
 
 ```shell
@@ -69,14 +69,13 @@ VSCode provides a powerful suite of notebook functionality, which can be easily
 integrated with the Mojo Kernel. To change the kernel within a notebook, simply
 pick `Select Kernel` in the upper right of the notebook, and select Mojo.
 Depending on your setup, you may need to find the kernel via:
- `> Select Another Kernel > Jupyter Kernel > Mojo`
+`> Select Another Kernel > Jupyter Kernel > Mojo`
 
 #### JupyterLab Notebooks
 
 JupyterLab is the latest web-based interactive development environment for
 notebooks provided by the Jupyter Project. The kernel should be available
-directly, but you may need to initialize Jupyter first if you haven't
-already:
+directly, but you may need to initialize Jupyter first if you haven't already:
 
 ```shell
 # Setup JupyterLab and the Mojo Jupyter extension.
@@ -86,16 +85,114 @@ $ jupyter-init
 $ jupyter-lab
 ```
 
+## Features
+
+### `%python` expressions
+
+The Mojo REPL provides built in support for evaluating full Python expressions,
+written natively in Python. To execute a Python expression, simply use `%python`
+as the first line of the expression. Try running the following:
+
+```python
+%python
+import sys
+print(f"Python version {sys.version}")
+```
+
+These Python expressions execute in the same environment as Mojo expressions,
+meaning that all of the execution state is accessible via Mojo’s python interop.
+This allows for easily composing both Mojo and Python.
+
+As part of executing in the same environment, the Mojo REPL will also
+automatically expose information written in python expressions to the Mojo
+environment. For example, any variables, functions, or imports defined within a
+python expression are directly available for access by future Mojo expressions.
+
+## Limitations and Sharp Edges
+
+Mojo is still young and growing fast, and this also applies to the REPL
+environment. We aim to provide a powerful REPL experience that developers have
+come to expect, but we’re still building there one step at a time. Below are a
+few caveats and limitations of the current REPL environment, many of which will
+be improved as we develop Mojo.
+
+### Unable to redefine implicit variables
+
+Mojo provides support for defining implicit variables. These variables are
+defined by assigning to a name, not by using the `let` or `var`:
+
+```mojo
+def foo():
+  # Here we've defined a new variable named `a`.
+  a = 10
+```
+
+The REPL is currently unable to discern when an implicit variable is being
+assigned to a new value, and when a new variable was intended to be defined. For
+example, consider the following expression:
+
+```mojo
+struct S:
+  var value: Int
+
+  fn __init__(self&, x : Int):
+    self.value = x
+
+s = S(10)
+print(s.value)
+```
+
+Consider we re-execute this expression after adding a new field to S:
+
+```mojo
+struct S:
+  var value: Int
+  var value2: Int
+
+  fn __init__(self&, x : Int):
+    self.value = x
+    self.value2 = 15
+
+s = S(10)
+print(s.value)
+```
+
+When executing this second expression, the REPL will misidentify the intention
+that `s = S(10)` is a new variable using the updated S type, and emit an error
+about a missing conversion from the S type from the new expression and the S
+type from the old expression.
+
+**Workaround:**
+
+This issue only applies to implicit variables. Those defined with `let` and
+`var` may be freely redefined as many times as desired. If an implicit variable
+needs to be overwritten, consider using `let` or `var` to introduce the variable
+for now.
+
+### Variable lifetimes behave unexpectedly
+
+Variables defined in the “top scope” of the REPL currently behave slightly
+differently than those defined within a `def` or `fn`, meaning that the powerful
+ownership modeling provided by Mojo may behave unexpectedly and/or result in
+errors associated with these variables.
+
+**Workaround:**
+
+This behavior only applies to top-level variables. Variables defined within a
+`def` or `fn` should behave exactly as expected, and can be used to fully play
+around with the Mojo’s powerful ownership model as intended.
+
 ## Configuration
 
 ### Environment Variables
- * `MOJO_JUPYTER_LOG_FILE`: Setting this will cause the jupyter notebook kernel
-     to log to the file specified. We recommend providing an absolute path
-     here. If this is unspecified, the kernel simply logs to the stderr.
- * `MOJO_JUPYTER_JSON_LOGS`: Setting this will cause the jupyter notebook kernel
-     to produce logs in JSON format instead of plain text.
- * `MOJO_REPL_VERBOSE_LOG`: Setting that will enable `DumpIR` and `DebugLog` log
-     messages. See more in the `Logging` section.
+
+- `MOJO_JUPYTER_LOG_FILE`: Setting this will cause the jupyter notebook kernel
+  to log to the file specified. We recommend providing an absolute path here. If
+  this is unspecified, the kernel simply logs to the stderr.
+- `MOJO_JUPYTER_JSON_LOGS`: Setting this will cause the jupyter notebook kernel
+  to produce logs in JSON format instead of plain text.
+- `MOJO_REPL_VERBOSE_LOG`: Setting that will enable `DumpIR` and `DebugLog` log
+  messages. See more in the `Logging` section.
 
 ## Debugging Compiler Issues
 
@@ -122,8 +219,8 @@ jupyter environment.
 $ mojo-jupyter-executor notebook.ipynb
 ```
 
-The executor also has a REPL mode, where you can execute an individual cell at
-a time. You can start the executor in this mode by running:
+The executor also has a REPL mode, where you can execute an individual cell at a
+time. You can start the executor in this mode by running:
 
 ```shell
 $ mojo-jupyter-executor
@@ -140,32 +237,33 @@ You will see a command prompt, where you can run simple commands like so:
 ```
 
 The number in square brackets is the 'cell ID' - this does not auto-increment
-because you might want to (for example) dump the logs from a previous command
-in the same cell. You can control which cell you're in with the special
-commands `:next-cell` and `:prev-cell`. These increment and decrement the cell
-counter, respectively. You can also cleanly exit the REPL mode by running
-`:exit`.
+because you might want to (for example) dump the logs from a previous command in
+the same cell. You can control which cell you're in with the special commands
+`:next-cell` and `:prev-cell`. These increment and decrement the cell counter,
+respectively. You can also cleanly exit the REPL mode by running `:exit`.
 
 ## `MojoREPL` Developer Guide
 
 ### Logging
-You can log information by using the methods on `MojoTypeSystem`. The way
-we log is by emitting events to the LLDB event handler interface.
+
+You can log information by using the methods on `MojoTypeSystem`. The way we log
+is by emitting events to the LLDB event handler interface.
 
 The way we treat event kinds is as follows (list in `MojoTypeSystem.h`):
-* `BroadcastUserMessage` events are flushed to the user's stderr immediately.
-* `DebugLog` events are buffered internally until either a
-  `FlushDebugAndIRDump` or an `ErrorLog` are sent.
-* `DumpIR` events are treated the same as `DebugLog`.
-* `ErrorLog` events are flushed immediately.
 
-Events are mostly handled by `MojoTypeSystem::handleEvent`, which implements
-the behavior above. A new user can do whatever they want with the various
-events as befits their specific application.
+- `BroadcastUserMessage` events are flushed to the user's stderr immediately.
+- `DebugLog` events are buffered internally until either a `FlushDebugAndIRDump`
+  or an `ErrorLog` are sent.
+- `DumpIR` events are treated the same as `DebugLog`.
+- `ErrorLog` events are flushed immediately.
 
-Feel free to add more event kinds as is appropriate - event kinds ending
-with `Message` are shown to the user in the notebook, while event kinds
-ending in `Log` are not shown to the user.
+Events are mostly handled by `MojoTypeSystem::handleEvent`, which implements the
+behavior above. A new user can do whatever they want with the various events as
+befits their specific application.
+
+Feel free to add more event kinds as is appropriate - event kinds ending with
+`Message` are shown to the user in the notebook, while event kinds ending in
+`Log` are not shown to the user.
 
 Lastly, in order to enable the `DumpIR` and `DebugLog` logs, you need to set the
 environment variable `MOJO_REPL_VERBOSE_LOG` or issue the LLDB command
@@ -174,6 +272,7 @@ environment variable `MOJO_REPL_VERBOSE_LOG` or issue the LLDB command
 easier debugging.
 
 #### MojoJupyter Log Format
+
 If the environment variable `MOJO_JUPYTER_JSON_LOGS` is set, the JSON format
 you'll see in the jupyter kernel logs is:
 
@@ -195,9 +294,10 @@ If an expression starts with `:`, then the rest of the text is handled as an
 LLDB command.
 
 Moreover, we support a set of Mojo commands inside the LLDB command tree, which
-do things like dumping internal logs. Again, feel free to add new commands,
-just please document them here!
+do things like dumping internal logs. Again, feel free to add new commands, just
+please document them here!
 
 Current Mojo commands:
-* `:mojo dump-logs` - This command sends a `FlushIRAndDebugLog` event, which
-   instructs the various clients to flush their debug log caches immediately.
+
+- `:mojo dump-logs` - This command sends a `FlushIRAndDebugLog` event, which
+  instructs the various clients to flush their debug log caches immediately.
