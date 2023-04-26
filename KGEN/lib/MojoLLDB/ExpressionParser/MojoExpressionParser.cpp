@@ -246,6 +246,9 @@ public:
   // Queries
 
   bool shouldPersistVariable(StringRef name, mlir::Type type) override {
+    // Check if we were requested not to persist anything.
+    if (options.GetSuppressPersistentResult())
+      return false;
     // Only consider variables that were written by users, not those generated
     // by LLDB, which start with __lldb.
     if (name.starts_with("__lldb"))

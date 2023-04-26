@@ -34,7 +34,8 @@ using OpaqueMojoKernel = void *;
 MODULAR_EXPORT OpaqueMojoKernel initMojoKernel(OutputFn outputFn,
                                                const char *mojoReplExe);
 MODULAR_EXPORT void startMojoExecution(OpaqueMojoKernel kernel,
-                                       const char *cellId, const char *code);
+                                       const char *cellId, const char *code,
+                                       int storeHistory);
 MODULAR_EXPORT int checkMojoExecutionFinished(OpaqueMojoKernel kernel);
 MODULAR_EXPORT void destroyMojoKernel(OpaqueMojoKernel kernel);
 
@@ -61,7 +62,7 @@ public:
 
   /// Start a new cell execution.
   void startExecution(const char *cellId, const char *code) {
-    startMojoExecution(kernel, cellId, code);
+    startMojoExecution(kernel, cellId, code, /*storeHistory=*/true);
   }
 
   /// Check if the current execution has finished.

@@ -387,20 +387,22 @@ sys.modules['{1}'] = expr_module
   std::string mojoExpr;
   llvm::raw_string_ostream mojoExprOS(mojoExpr);
 
-  // If we haven't initialized python yet, do that as part of this expression.
-  if (!state.hasInitializedPython())
-    mojoExprOS << "let __repl_python__ = Python()\n\n";
-
   // Evaluate the wrapped python expression.
-  mojoExprOS << "__repl_python__.eval(\"";
+  mojoExprOS << "var __lldb_repl_python__ = Python()\n\n";
+  mojoExprOS << "__lldb_repl_python__.eval(\"";
   mojoExprOS.write_escaped(wrappedPythonExpr);
-  mojoExprOS << "\")\n\n"
-             << llvm::formatv("let {0} = Python.import_module(\"{0}\")\n\n",
-                              moduleName);
+  mojoExprOS << "\")\n\n";
 
-  // Import the interesting top-level symbols from the python module into the
-  // mojo context.
-  importPythonSymbolsIntoMojo(pythonExpr, moduleName, mojoExprOS);
+  // If persistent results are enabled, we also import top-level symbols from
+  // the python module into the mojo context.
+  if (!m_options.GetSuppressPersistentResult()) {
+    mojoExprOS << llvm::formatv("let {0} = Python.import_module(\"{0}\")\n\n",
+                                moduleName);
+
+    // Import the interesting top-level symbols from the python module into the
+    // mojo context.
+    importPythonSymbolsIntoMojo(pythonExpr, moduleName, mojoExprOS);
+  }
 
   // Now that we've got a Mojo expression, parse it the way we would any other
   // expression.

@@ -244,7 +244,7 @@ class MojoKernel(Kernel):
 
         # Directly execute the python expression within the REPL. This will
         # ensure it gets initialized before any user expressions are sent.
-        self.do_execute(exec_string)
+        self.do_execute(exec_string, silent=True, store_history=False)
 
     def __del__(self):
         """Destroy the Mojo kernel."""
@@ -333,6 +333,7 @@ class MojoKernel(Kernel):
                 ctypes.c_void_p(self.mojo_kernel),
                 ctypes.c_char_p(cell_id.encode("utf-8")),
                 ctypes.c_char_p(code.encode("utf-8")),
+                ctypes.c_int(store_history),
             )
 
             wait_for_execution()

@@ -155,8 +155,9 @@ public:
   LogicalResult initialize(const char *mojoReplExe);
 
   /// Start execution of the given cell identifier and expression string.
-  /// Returns the state of the expression execution.
-  void startExecution(StringRef cellId, const char *expr);
+  /// `storeHistory` indicates if variables and state from this expression
+  /// should be persisted. Returns the state of the expression execution.
+  void startExecution(StringRef cellId, const char *expr, int storeHistory);
 
   /// Check if the current expression has finished execution, also taking this
   /// time to flush any collected output.
@@ -240,8 +241,8 @@ MODULAR_EXPORT MojoKernel *initMojoKernel(OutputFn outputFn,
 }
 
 MODULAR_EXPORT void startMojoExecution(MojoKernel *kernel, const char *cellId,
-                                       const char *code) {
-  kernel->startExecution(cellId, code);
+                                       const char *code, int storeHistory) {
+  kernel->startExecution(cellId, code, storeHistory);
 }
 
 MODULAR_EXPORT int checkMojoExecutionFinished(MojoKernel *kernel) {
@@ -356,13 +357,15 @@ LogicalResult MojoKernel::launchReplProcess() {
 // Execution
 //===----------------------------------------------------------------------===//
 
-void MojoKernel::startExecution(StringRef cellId, const char *expr) {
+void MojoKernel::startExecution(StringRef cellId, const char *expr,
+                                int storeHistory) {
   executionState.emplace(initializeCellForExecution(cellId));
 
   // Start execution of the expression in a separate thread, so that way the
   // calling client can control waiting for the expression to complete.
-  executionState->executionThread = std::thread([this, expr = std::string(
-                                                           expr)]() mutable {
+  executionState->executionThread = std::thread([this, storeHistory,
+                                                 expr = std::string(
+                                                     expr)]() mutable {
     LLVM_DEBUG(llvm::dbgs() << "Executing expression: " << expr << "\n");
 
     // If the expression starts with `:`, then it is an LLDB command,
@@ -376,8 +379,11 @@ void MojoKernel::startExecution(StringRef cellId, const char *expr) {
       sendOutput("output", result.GetOutputData());
       sendOutput("error", result.GetErrorData());
     } else {
-      value =
-          SBTarget(target).EvaluateExpression(expr.data(), exprOpts).GetSP();
+      MojoExpressionEvaluationOptions options = exprOpts;
+      if (!storeHistory)
+        options.SetSuppressPersistentResult(true);
+
+      value = SBTarget(target).EvaluateExpression(expr.data(), options).GetSP();
     }
 
     executionState->result = value.GetSP();
