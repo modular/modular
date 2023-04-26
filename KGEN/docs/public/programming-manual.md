@@ -2,7 +2,7 @@
 title: Mojo🔥 programming manual
 ---
 
-Mojo🔥 is a first-class programming language that utilizes a number of
+Mojo is a first-class programming language that utilizes a number of
 next-generation compiler technologies. The compiler itself has integrated
 caching, is multithreaded, is built to be distributed across a cluster,
 incorporates autotuning features and powerful compile time metaprogramming, and
