@@ -100,10 +100,10 @@ fn fn_with_overload(arg: Int):
 # CHECK:  "kind": "function",
 # CHECK:  "name": "fn_with_params",
 # CHECK:  "overloads":
-# CHECK:      "signature": "fn_with_params[param: __mlir_type.!kgen.dtype]()",
+# CHECK:      "signature": "fn_with_params[param: dtype]()",
 # CHECK:      "parameters": [
 # CHECK:          "name": "param",
-# CHECK:          "type": "__mlir_type.!kgen.dtype",
+# CHECK:          "type": "dtype",
 # CHECK:          "description": "This is a parameter."
 
 
@@ -204,7 +204,7 @@ struct InMemoryStruct:
 # CHECK:  "summary": "This is a class summary.",
 # CHECK:  "parameters": [
 # CHECK:      "name": "_type",
-# CHECK:      "type": "__mlir_type.!kgen.dtype",
+# CHECK:      "type": "dtype",
 # CHECK:      "description": "This is a parameter."
 # CHECK:  ],
 # CHECK:  "description": "The is some kind of description.\n",

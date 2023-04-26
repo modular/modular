@@ -202,6 +202,11 @@ ParseResult KGEN::parseKGENType(AsmParser &parser, Type &type) {
   return parser.parseType(type);
 }
 
+void KGEN::printKGENType(raw_ostream &os, Type type) {
+  StreamAsmPrinter p(os);
+  printKGENType(p, type);
+}
+
 void KGEN::printKGENType(AsmPrinter &p, Type type) {
   // Handle other special cases for parameters here.  These each are sugar for a
   // kgen type.

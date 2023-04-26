@@ -14,14 +14,14 @@ from Coroutine import Coroutine
 ##===----------------------------------------------------------------------===##
 
 def invalid_conversion(a: Int, b: __mlir_type.index):
-  b = a # expected-error {{'Int' value cannot be converted to '__mlir_type.index' in assignment}}
+  b = a # expected-error {{'Int' value cannot be converted to 'index' in assignment}}
 
 struct NotBoolConvertible:
   pass
 
 # Issue #6600
 fn negBuiltinType(x: __mlir_type.f64) :
-    # expected-error @+1 {{'__mlir_type.f64' does not implement the '__neg__' method}}
+    # expected-error @+1 {{'f64' does not implement the '__neg__' method}}
     _ = -x
 
 # expected-note @+1 {{function declared here}}
@@ -359,5 +359,5 @@ fn lvalue_utilities(a: __mlir_type.index, b&: GetSettable):
   __get_address_as_lvalue(addr) = 42
 
   let addr2 : __mlir_type.index
-  # expected-error @+1 {{operand must have '!pop.pointer<T>' type, not '__mlir_type.index'}}
+  # expected-error @+1 {{operand must have '!pop.pointer<T>' type, not 'index'}}
   __get_address_as_lvalue(addr2) = 42

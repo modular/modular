@@ -87,7 +87,7 @@ fn badReboundType[type: __mlir_type.`!kgen.dtype`,
   pass
 
 fn badCallReboundType[val: __mlir_type.`!pop.scalar<f32>`]():
-  # expected-error @+1 {{'__mlir_type.!pop.scalar<f32>' value cannot be converted to '__mlir_type.!pop.scalar<f64>' in call parameter}}
+  # expected-error @+1 {{'scalar<f32>' value cannot be converted to 'scalar<f64>' in call parameter}}
   badReboundType[__mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`, val]()
 
 fn partialBindSignature[callable: __mlir_type.`!kgen.signature<<index, index>() -> ()>`, a: __mlir_type.index]():
@@ -172,7 +172,7 @@ fn useResultParams():
   hasResultParam[1 -> e]()
 
   alias f: __mlir_type.f32 # expected-note {{alias forward declared here}}
-  # expected-error @+1 {{result parameter returns type 'Int' but forward declaration is of type '__mlir_type.f32'}}
+  # expected-error @+1 {{result parameter returns type 'Int' but forward declaration is of type 'f32'}}
   hasResultParam[1 -> f]()
 
   var varNotAlias : __mlir_type.f32 # expected-note {{'varNotAlias' declared here}}

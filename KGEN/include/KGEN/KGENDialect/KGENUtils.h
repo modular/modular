@@ -68,6 +68,7 @@ ParseResult parseKGENType(AsmParser &parser, T &type) {
 
 /// Print `type` using KGEN specific type sugars.
 void printKGENType(AsmPrinter &p, Type type);
+void printKGENType(raw_ostream &os, Type type);
 
 /// Parse a "colon type" production if present or default to `index` type if
 /// not.  This is commonly used in our parameter representation.

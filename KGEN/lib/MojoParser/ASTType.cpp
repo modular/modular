@@ -407,7 +407,11 @@ void ASTType::print(raw_ostream &os, bool forDiag) const {
   } else if (isa<MLIRTypeType>(type)) {
     os << "AnyType";
   } else {
-    os << "__mlir_type." << type;
+    // Use KGEN pretty printing when printing bare MLIR types for diagnostics.
+    if (forDiag)
+      printKGENType(os, type);
+    else
+      os << "__mlir_type." << type;
   }
 }
 
