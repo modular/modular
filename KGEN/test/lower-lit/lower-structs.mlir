@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -lower-structs -allow-unregistered-dialect -split-input-file | FileCheck %s
+// RUN: kgen-opt %s -lower-structs -allow-unregistered-dialect -split-input-file -verify-diagnostics | FileCheck %s
 
 // CHECK-NOT: lit.struct.decl
 lit.struct.decl @SmallVector<N, T: type> {
@@ -185,4 +185,15 @@ lit.struct.decl @SIMD<size> {
 
 lit.struct.decl @UnaryClosure<input_type: type> {
   lit.struct.field value : !pop.closure<(!kgen.paramref<input_type>) -> ()>
+}
+
+// -----
+
+kgen.generator @not_a_struct() {
+  kgen.return
+}
+
+// expected-error @below {{operation contains a declref type that does not refer to a struct}}
+kgen.generator @bad_declref(%arg0: !kgen.declref<@not_a_struct<a = 1>>) {
+  kgen.return
 }
