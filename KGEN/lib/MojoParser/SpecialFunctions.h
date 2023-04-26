@@ -28,9 +28,9 @@ public:
   const char *name = nullptr;
   SpecialFunctionKind kind = SpecialFunctionKind::kNormal;
 
-  /// This is the number of operands that this special function requires, or -1
+  /// This is the number of arguments that this special function requires, or -1
   /// if variadic.
-  int numOperands = -1;
+  int numArguments = -1;
   unsigned flags = 0;
 
   /// This is a bitmask of flags that describes requirements of the special

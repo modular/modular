@@ -92,7 +92,7 @@ fn use_before_def():
 def func():
   never_declared_fn() # expected-error {{use of unknown declaration 'never_declared_fn'}}
 
-# expected-error @+1 {{special function must have 2 operands}}
+# expected-error @+1 {{special function '__add__' must have 2 operands}}
 fn __add__(): pass
 # expected-error @+1 {{special function must be a method}}
 fn __sub__(self: Int, a: Int): pass
@@ -300,12 +300,15 @@ def kw8[*Ts: __mlir_type.`!kgen.mlirtype`](*a: *Ts, *b: *Ts): pass # expected-er
 ##===----------------------------------------------------------------------===##
 
 # expected-note @+1 {{previous definition here}}
-def fn_redecl():
-  pass
-
+def fn_redecl(): pass
 # expected-error @+1 {{redefinition of function 'fn_redecl' with identical signature}}
-def fn_redecl():
-  pass
+def fn_redecl(): pass
+
+# Issue #13346
+# expected-note @+1 {{previous definition here}}
+def fn_redecl2() -> Int: pass
+# expected-error @+1 {{redefinition of function 'fn_redecl2' cannot overload on return type only}}
+def fn_redecl2() -> F32: pass
 
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: argument #0 cannot be converted from 'TestOverloading' to 'Int'}}
@@ -421,7 +424,7 @@ struct SpecialFunctions:
   fn __new__() -> Self:
     pass
 
-  # expected-error @+1 {{special function must have 2 operands}}
+  # expected-error @+1 {{special function '__add__' must have 2 operands}}
   fn __add__(self):
     pass
 
@@ -438,14 +441,13 @@ struct SpecialFunctions:
 
 @register_passable
 struct WrongType:
-  # expected-error @+1 {{'__init__' on @register_passable type must return Self}}
+  # expected-error @+1 {{'__init__' result type must be 'WrongType'}}
   def __init__(self): pass
 
-  # expected-error @+2 {{'__init__' on @register_passable type must return Self}}
-  # expected-error @+1 {{self argument must be present in instance method}}
+  # expected-error @+1 {{'__init__' result type must be 'WrongType'}}
   def __init__() -> Int: pass
 
-  # expected-error @+1 {{'__copyinit__' on @register_passable type must return Self}}
+  # expected-error @+1 {{special function '__copyinit__' must have 1 operand}}
   fn __copyinit__(self&, existing&: Int): pass
 
   fn __copyinit__(self&) -> WrongType: pass
@@ -458,15 +460,21 @@ struct WrongSelfType[a: Int]:
   fn badMethod(self: Int): pass
   fn goodMethod(self&: WrongSelfType[a]): pass
 
-  # expected-error @+1 {{special function must have 2 operands}}
+  # Issue #13358
+  # expected-error @+1 {{special function '__copyinit__' must have 2 operands}}
+  fn __copyinit__(self&, other: Self, moar: Int): pass
+
+  # expected-error @+1 {{special function '__add__' must have 2 operands}}
   fn __add__(self): pass
 
 # Issue #6587: [Lit] Recursive constructors crash kgen
 struct BadInit[size: __mlir_type.index]:
   fn __init__(self&, elem: BadInit[(1).__as_mlir_index()]):
     var x : __mlir_type[`!pop.simd<`, size, `, f32>`]
-    # expected-error @+1 {{'__mlir_type.!pop.simd<size, f32>' value cannot be converted to 'BadInit[size]'}}
     self = x
+
+  # expected-error @+1 {{'__init__' result type must be elided (or None)}}
+  fn __init__(self&) -> Self: pass
 
 struct StructWithField:
   var field: __mlir_type.index
