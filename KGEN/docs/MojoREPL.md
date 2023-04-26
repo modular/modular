@@ -182,6 +182,12 @@ This behavior only applies to top-level variables. Variables defined within a
 `def` or `fn` should behave exactly as expected, and can be used to fully play
 around with the Mojo’s powerful ownership model as intended.
 
+### REPL environment defaults to `def`
+
+The REPL environment runs all expressions within a `def` environment, not an 
+`fn` one. This shouldn't have much if any significance for most user code, but
+is a potential foot-gun that devs should be aware of.
+
 ## Configuration
 
 ### Environment Variables
@@ -241,6 +247,25 @@ because you might want to (for example) dump the logs from a previous command in
 the same cell. You can control which cell you're in with the special commands
 `:next-cell` and `:prev-cell`. These increment and decrement the cell counter,
 respectively. You can also cleanly exit the REPL mode by running `:exit`.
+
+You can also execute LLDB commands in the jupyter executor the same way you
+would in the REPL - by running `:<command>`. For debugging a crash, it's often
+useful to run:
+
+```shell
+[0] > :settings set target.process.unwind-on-error-in-expressions false
+[0] > :settings set target.process.ignore-breakpoints-in-expressions false
+```
+
+These two commands allow you to set breakpoints within the code running in your
+expressions, and inspect the thread state at the point of failure.
+
+### Future Projects
+
+- [ ] The `mojo-jupyter-executor` can execute a notebook - it'd be great to
+  integrate that mode and the REPL mode better. For one, we could do things
+  like the `settings set` commands above, but also we could [drop into a
+  REPL when a cell fails](https://github.com/modularml/modular/issues/13436)
 
 ## `MojoREPL` Developer Guide
 
