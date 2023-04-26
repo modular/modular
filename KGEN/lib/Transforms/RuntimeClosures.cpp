@@ -107,6 +107,6 @@ void RuntimeClosuresPass::runOnOperation() {
         callSymbolOfLiftedRegion(stageClosure, captures, symtab);
     rewriter.setInsertionPoint(stageClosure);
     rewriter.replaceOpWithNewOp<CreateClosureOp>(
-        stageClosure, stageClosure.getType(), symbol, ValueRange(captures));
+        stageClosure, stageClosure.getType(), symbol, captures);
   });
 }
