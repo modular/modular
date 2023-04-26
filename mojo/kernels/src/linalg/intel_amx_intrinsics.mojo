@@ -127,7 +127,7 @@ fn _tile_storeconfig(mem_addr: DTypePointer[void]):
 
 fn init_intel_amx() -> Bool:
     return __mlir_op.`pop.external_call`[
-        func : __mlir_attr.`@KGEN_CompilerRT_Init_Intel_AMX`,
+        func : "KGEN_CompilerRT_Init_Intel_AMX".value,
         _type : __mlir_type[`!pop.scalar<bool>`],
     ]()
 
