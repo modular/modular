@@ -10,6 +10,7 @@ from Coroutine import Coroutine, _get_coro_resume_fn
 from DType import DType
 from Pointer import Pointer, DTypePointer
 from Range import range
+from Intrinsics import external_call
 from String import String
 from Tracing import TraceLevel, is_mojo_profiling_disabled
 
@@ -25,10 +26,7 @@ fn num_cores() -> Int:
     Returns:
         Int: The number of cores on the system
     """
-    return __mlir_op.`pop.external_call`[
-        func : "KGEN_CompilerRT_CoreCount".value,
-        _type : __mlir_type.index,
-    ]()
+    return external_call["KGEN_CompilerRT_CoreCount", __mlir_type.index]()
 
 
 # ===----------------------------------------------------------------------===#
@@ -89,41 +87,33 @@ struct AsyncContext:
 
 
 fn _init_llcl_chain(rt: Runtime, chain: Pointer[Chain]):
-    __mlir_op.`pop.external_call`[
-        _type:None,
-        func : "KGEN_CompilerRT_LLCL_InitializeChain".value,
-    ](rt.ptr, chain.address)
+    external_call["KGEN_CompilerRT_LLCL_InitializeChain", NoneType](
+        rt.ptr, chain.address
+    )
 
 
 fn _del_llcl_chain(chain: Pointer[Chain]):
-    __mlir_op.`pop.external_call`[
-        _type:None,
-        func : "KGEN_CompilerRT_LLCL_DestroyChain".value,
-    ](chain.address)
+    external_call["KGEN_CompilerRT_LLCL_DestroyChain", NoneType](chain.address)
 
 
 fn _async_and_then(hdl: __mlir_type.`!pop.pointer<i8>`, chain: Pointer[Chain]):
-    __mlir_op.`pop.external_call`[
-        _type:None, func : "KGEN_CompilerRT_LLCL_AndThen".value
-    ](_get_coro_resume_fn(), chain.address, hdl)
+    external_call["KGEN_CompilerRT_LLCL_AndThen", NoneType](
+        _get_coro_resume_fn(), chain.address, hdl
+    )
 
 
 fn _async_execute[type: AnyType](handle: Coroutine[type], rt: Runtime):
-    __mlir_op.`pop.external_call`[
-        _type:None, func : "KGEN_CompilerRT_LLCL_Execute".value
-    ](_get_coro_resume_fn(), handle._handle, rt.ptr)
+    external_call["KGEN_CompilerRT_LLCL_Execute", NoneType](
+        _get_coro_resume_fn(), handle._handle, rt.ptr
+    )
 
 
 fn _async_wait(chain: Pointer[Chain]):
-    __mlir_op.`pop.external_call`[
-        _type:None, func : "KGEN_CompilerRT_LLCL_Wait".value
-    ](chain.address)
+    external_call["KGEN_CompilerRT_LLCL_Wait", NoneType](chain.address)
 
 
 fn _async_complete(chain: Pointer[Chain]):
-    __mlir_op.`pop.external_call`[
-        _type:None, func : "KGEN_CompilerRT_LLCL_Complete".value
-    ](chain.address)
+    external_call["KGEN_CompilerRT_LLCL_Complete", NoneType](chain.address)
 
 
 # ===----------------------------------------------------------------------===#
@@ -150,18 +140,16 @@ struct Runtime:
 
     fn __init__(numThreads: Int) -> Runtime:
         """Construct an LLCL Runtime with the specified number of threads."""
-        return __mlir_op.`pop.external_call`[
-            _type:ptr_type,
-            func : "KGEN_CompilerRT_LLCL_CreateRuntime".value,
-        ](numThreads)
+        return external_call["KGEN_CompilerRT_LLCL_CreateRuntime", ptr_type](
+            numThreads
+        )
 
     fn __init__(numThreads: Int, profileFilename: StringRef) -> Runtime:
         """Construct an LLCL Runtime with the specified number of threads
         that writes tracing events to profileFilename.
         """
-        return __mlir_op.`pop.external_call`[
-            _type:ptr_type,
-            func : "KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile".value,
+        return external_call[
+            "KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile", ptr_type
         ](
             numThreads,
             profileFilename.data,
@@ -175,16 +163,13 @@ struct Runtime:
         """Destroys the LLCL Runtime. Note that this must be explicitly called
         when the Runtime goes out of scope.
         """
-        __mlir_op.`pop.external_call`[
-            _type:None,
-            func : "KGEN_CompilerRT_LLCL_DestroyRuntime".value,
-        ](self.ptr)
+        external_call["KGEN_CompilerRT_LLCL_DestroyRuntime", NoneType](self.ptr)
 
     fn parallelism_level(self) -> Int:
         """Gets the parallism level of the Runtime."""
-        return __mlir_op.`pop.external_call`[
-            func : "KGEN_CompilerRT_LLCL_ParallelismLevel".value,
-            _type : __mlir_type.`!pop.scalar<si32>`,
+        return external_call[
+            "KGEN_CompilerRT_LLCL_ParallelismLevel",
+            __mlir_type.`!pop.scalar<si32>`,
         ](self.ptr)
 
     fn create_task[
@@ -413,17 +398,16 @@ struct OutputChainPtr:
         """Returns a pointer to a fresh heap-allocated LLCL::OutputChain
         containing a 'fork' of this.
         """
-        return __mlir_op.`pop.external_call`[
-            func : "KGEN_CompilerRT_LLCL_OutputChainPtr_CreateFork".value,
-            _type:OwningOutputChainPtr,
+        return external_call[
+            "KGEN_CompilerRT_LLCL_OutputChainPtr_CreateFork",
+            OwningOutputChainPtr,
         ](self.ptr)
 
     @always_inline
     fn get_runtime(self) -> Runtime:
         """Returns the runtime managing the output chain."""
-        return __mlir_op.`pop.external_call`[
-            func : "KGEN_CompilerRT_LLCL_OutputChainPtr_GetRuntime".value,
-            _type : Runtime.ptr_type,
+        return external_call[
+            "KGEN_CompilerRT_LLCL_OutputChainPtr_GetRuntime", Runtime.ptr_type
         ](self.ptr)
 
     @always_inline
@@ -431,9 +415,8 @@ struct OutputChainPtr:
         """Marks the output chain as being ready.
         The underlying LLCL::OutputChain is not moved.
         """
-        __mlir_op.`pop.external_call`[
-            func : "KGEN_CompilerRT_LLCL_OutputChainPtr_MarkReady".value,
-            _type:None,
+        external_call[
+            "KGEN_CompilerRT_LLCL_OutputChainPtr_MarkReady", NoneType
         ](self.ptr)
 
     @always_inline
@@ -441,9 +424,8 @@ struct OutputChainPtr:
         """Marks the output chain as having an error with message.
         The underlying LLCL::OutputChain is not moved.
         """
-        __mlir_op.`pop.external_call`[
-            func : "KGEN_CompilerRT_LLCL_OutputChainPtr_MarkError".value,
-            _type:None,
+        external_call[
+            "KGEN_CompilerRT_LLCL_OutputChainPtr_MarkError", NoneType
         ](
             self.ptr,
             message.data,
@@ -456,10 +438,9 @@ struct OutputChainPtr:
 
         FOR USE IN TEST CODE ONLY. Kernels should never await.
         """
-        __mlir_op.`pop.external_call`[
-            func : "KGEN_CompilerRT_LLCL_OutputChainPtr_Await".value,
-            _type:None,
-        ](self.ptr)
+        external_call["KGEN_CompilerRT_LLCL_OutputChainPtr_Await", NoneType](
+            self.ptr
+        )
 
     @always_inline
     fn trace[level: TraceLevel](self, label: StringRef):
@@ -470,10 +451,7 @@ struct OutputChainPtr:
         @parameter
         if is_mojo_profiling_disabled[level]():
             return
-        __mlir_op.`pop.external_call`[
-            func : "KGEN_CompilerRT_LLCL_OutputChainPtr_Trace".value,
-            _type:None,
-        ](
+        external_call["KGEN_CompilerRT_LLCL_OutputChainPtr_Trace", NoneType](
             self.ptr,
             label.data,
             label.length.value,
@@ -489,9 +467,8 @@ struct OutputChainPtr:
         @parameter
         if is_mojo_profiling_disabled[level]():
             return
-        __mlir_op.`pop.external_call`[
-            func : "KGEN_CompilerRT_LLCL_OutputChainPtr_TraceDetailed".value,
-            _type:None,
+        external_call[
+            "KGEN_CompilerRT_LLCL_OutputChainPtr_TraceDetailed", NoneType
         ](
             self.ptr,
             label.data,
@@ -544,19 +521,17 @@ struct OwningOutputChainPtr:
         The LLCL::OutputChain will have an empty location and an unemplaced
         AsyncValueRef<Chain>.
         """
-        let ptr = __mlir_op.`pop.external_call`[
-            func : "KGEN_CompilerRT_LLCL_OutputChainPtr_CreateEmpty".value,
-            _type:ptr_type,
+        let ptr = external_call[
+            "KGEN_CompilerRT_LLCL_OutputChainPtr_CreateEmpty", ptr_type
         ](rt.ptr)
         return OwningOutputChainPtr {ptr: ptr}
 
     @always_inline("nodebug")
     fn __del__(owned self):
         """Destroys the LLCL::OutputChain."""
-        __mlir_op.`pop.external_call`[
-            func : "KGEN_CompilerRT_LLCL_OutputChainPtr_Destroy".value,
-            _type:None,
-        ](self.ptr)
+        external_call["KGEN_CompilerRT_LLCL_OutputChainPtr_Destroy", NoneType](
+            self.ptr
+        )
 
     @always_inline
     fn borrow(self) -> OutputChainPtr:
@@ -569,10 +544,9 @@ struct OwningOutputChainPtr:
 
         FOR USE IN TEST CODE ONLY. Kernels should never await.
         """
-        __mlir_op.`pop.external_call`[
-            func : "KGEN_CompilerRT_LLCL_OutputChainPtr_Await".value,
-            _type:None,
-        ](self.ptr)
+        external_call["KGEN_CompilerRT_LLCL_OutputChainPtr_Await", NoneType](
+            self.ptr
+        )
 
 
 # ===----------------------------------------------------------------------===#
@@ -685,9 +659,8 @@ struct AsyncTaskGroup:
         # list. Do this before scheduling the coroutine on the taskqueue.
         let hdl = coroutine._handle
         self.coroutines.add(coroutine ^)
-        __mlir_op.`pop.external_call`[
-            _type:None,
-            func : "KGEN_CompilerRT_LLCL_OutputChainPtr_ExecuteAsTask".value,
+        external_call[
+            "KGEN_CompilerRT_LLCL_OutputChainPtr_ExecuteAsTask", NoneType
         ](
             self.out_chain.ptr,
             _get_coro_resume_fn(),
