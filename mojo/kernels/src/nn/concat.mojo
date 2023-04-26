@@ -321,4 +321,4 @@ fn concat(
         else:
             _concat_parallel(output, axis, inputs, out_chain)
 
-    output.type.dispatch_mo_arithmetic[dispatch_on_dtype](out_chain)
+    output.type._dispatch_mo_arithmetic[dispatch_on_dtype](out_chain)
