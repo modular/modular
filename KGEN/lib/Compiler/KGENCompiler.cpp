@@ -179,19 +179,15 @@ void KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
                                          TargetInfoAttr target,
                                          BuildInfoAttr build,
                                          const CompilationOptions &options) {
-  populateGenerateLibraryFilePasses(pm, runtime);
-
-  // Only outline closures just before elaboration - they aren't really
-  // necessary until elaboration happens.
-  pm.addPass(createOutlineClosures());
-  pm.addPass(createVerifyParameters());
-  pm.addPass(createLiftAndFoldApply());
-
-  // After elaboration, we have no use for the parameter verifier anymore.
-  pm.addPass(
-      createElaborateGeneratorsWithDefaultJIT(runtime, target, build, options));
-
-  populatePostElaborationPasses(pm, runtime, options);
+  return populateElaborateModulePasses(
+      pm, runtime, target, build,
+      [=, &runtime](KGEN::FuncOp evaluator, SymbolTable &symtab,
+                    TargetInfoAttr target,
+                    ArrayRef<KGEN::FuncOp> specializations) {
+        return evaluateSpecializations(evaluator, symtab, runtime, target,
+                                       options, specializations);
+      },
+      options);
 }
 
 void KGEN::populateElaborateModulePasses(
