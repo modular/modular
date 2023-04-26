@@ -4,11 +4,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# UNSUPPORTED: asan
 # RUN: %lldb -R go -r <%s 2>&1 | FileCheck %s
 
 # Note: in REPL mode, expressions are delimited by empty lines.
 
-%python
-import matplotlib
-# CHECK-NOT: ModuleNotFoundError: No module named 'matplotlib'
+fn foo():
+    var value = 10
+# CHECK: ] warning:
+
+# Check that we don't re-emit the previous warning in the next expression.
+let somethingelse = 10
+# CHECK-NOT: ] warning

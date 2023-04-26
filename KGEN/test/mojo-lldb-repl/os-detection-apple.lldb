@@ -4,24 +4,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# UNSUPPORTED: asan
+# REQUIRES: darwin
 # RUN: %lldb -R go -r <%s 2>&1 | FileCheck %s
 
 # Note: in REPL mode, expressions are delimited by empty lines.
 
-# some comment
-def foo():
-  print("foo")
-  # another comment
-# a tricky comment
-  print("bar")
-  # another comment
-# some other comment
-print("foo defined")
-
-foo()
-# CHECK: foo defined
-# CHECK-NEXT: foo
-# CHECK-NEXT: bar
-
-print("flush")
+from TargetInfo import os_is_macos, os_is_linux
+# CHECK: True
+print(os_is_macos())
+# CHECK: False
+print(os_is_linux())

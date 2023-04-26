@@ -5,17 +5,29 @@
 # ===----------------------------------------------------------------------=== #
 
 import os
+import platform
 from shutil import which
 
 from lit.llvm import llvm_config
 
 # Configuration file for the 'lit' test runner.
 
+
+def configure_lldb_tests(config):
+    lldb_env = ""
+    if config.llvm_use_sanitizer and platform.system() == "Darwin":
+        lldb_env = config.asan_lib_inject_env
+
+    config.substitutions.append(
+        ("%lldb", lldb_env + " " + which("lldb")),
+    )
+
+
 # name: The name of this test suite.
 config.name = "KGEN"
 
 # suffixes: A list of file extensions to treat as test files.
-config.suffixes = [".mlir", ".mojo", ".test", ".🔥"]
+config.suffixes = [".mlir", ".mojo", ".test", ".🔥", ".lldb"]
 
 # test_source_root: The root path where tests are located.
 config.test_source_root = os.path.dirname(__file__)
@@ -23,12 +35,7 @@ config.test_source_root = os.path.dirname(__file__)
 # test_exec_root: The root path where tests should be run.
 config.test_exec_root = os.path.join(config.modular_obj_root, "KGEN", "test")
 
-config.substitutions.append(
-    (
-        "%lldb",
-        which("lldb"),
-    ),
-)
+configure_lldb_tests(config)
 
 tool_dirs = [
     config.modular_tools_dir,
