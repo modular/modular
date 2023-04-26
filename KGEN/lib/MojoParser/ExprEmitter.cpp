@@ -532,12 +532,19 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
 
   auto location = expr->getLocation(*this);
   // Materialize index integer constants as a special case.
-  if (auto intAttr = dyn_cast<IntegerAttr>(attr))
+  if (auto intAttr = dyn_cast<IntegerAttr>(attr)) {
     if (intAttr.getType().isIndex()) {
       auto cst = builder->create<mlir::index::ConstantOp>(
           location, intAttr.getValue().getSExtValue());
       return SRValue(cst);
     }
+  }
+
+  // Materialize signatures as closures.
+  if (auto sig = dyn_cast<SignatureType>(attr.getType())) {
+    return SRValue(
+        builder->create<CreateClosureOp>(location, sig, attr, ValueRange()));
+  }
 
   // Otherwise, emit a generalized parameter constant.
   return SRValue(builder->create<ParamConstantOp>(location, attr));

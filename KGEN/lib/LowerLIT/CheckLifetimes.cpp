@@ -837,16 +837,17 @@ void UninitializedValueScan::checkOp(Operation &op) {
   if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
     SignatureType signature = call.getCalleeType();
     ValueRange operands;
-    if (isa<CallOp, CallParamOp, AsyncCallOp>(op))
+    if (isa<CallOp, CallParamOp, AsyncCallOp, CreateClosureOp>(op)) {
       operands = call->getOperands();
-    else if (isa<POP::CallIndirectOp>(op))
+    } else if (isa<POP::CallIndirectOp>(op)) {
       operands = call->getOperands().drop_front();
-    else {
+    } else {
       assert(isa<AddressOfOp>(op) && "Unknown call op");
       return; // AddressOf isn't a use of any SSA values.
     }
 
-    assert(signature.getValueInputConventions().size() == operands.size());
+    assert(isa<CreateClosureOp>(op) ||
+           signature.getValueInputConventions().size() == operands.size());
     for (auto [convention, operand] :
          llvm::zip(signature.getValueInputConventions(), operands)) {
       switch (convention) {
@@ -1181,7 +1182,7 @@ void DestructorInsertion::checkOp(Operation &op) {
   if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
     SignatureType signature = call.getCalleeType();
     ValueRange operands;
-    if (isa<CallOp, CallParamOp, AsyncCallOp>(op))
+    if (isa<CallOp, CallParamOp, AsyncCallOp, CreateClosureOp>(op))
       operands = call->getOperands();
     else if (isa<POP::CallIndirectOp>(op))
       operands = call->getOperands().drop_front();
@@ -1194,7 +1195,8 @@ void DestructorInsertion::checkOp(Operation &op) {
     if (signature.hasOwnedRegisterResult())
       checkDef(op.getResult(0), op);
 
-    assert(signature.getValueInputConventions().size() == operands.size());
+    assert(isa<CreateClosureOp>(op) ||
+           signature.getValueInputConventions().size() == operands.size());
     for (auto [convention, operand] :
          llvm::zip(signature.getValueInputConventions(), operands)) {
       switch (convention) {

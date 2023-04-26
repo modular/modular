@@ -65,7 +65,7 @@ fn take_closure_no_param_main():
     fn g(y: __mlir_type.index) -> __mlir_type.index:
         return x
 
-    # CHECK: %0 = kgen.param.constant: <>(index borrow) capturing -> index = <*"g(__mlir_type.index)">
+    # CHECK: %0 = kgen.create_closure [<>(index borrow) capturing -> index: *"g(__mlir_type.index)"]()
     # CHECK: %W = lit.letreg.decl "W" = %0 : !kgen.signature<(index borrow) capturing -> index>
     let W = g
     # CHECK: %1 = kgen.call @"$decls"::@"take_closure{{.*}}"(%W, %idx3) : (!kgen.signature<(index borrow) capturing -> index> borrow, index borrow) -> !lit.none
@@ -83,7 +83,7 @@ fn take_closure_with_param_main():
         return x
 
     # CHECK: kgen.param.declare Bound: <>(index borrow) capturing -> index = <bind_signature(:<index>(index borrow) capturing -> index *"g(__mlir_type.index)", 3)>
-    # CHECK: %0 = kgen.param.constant: <>(index borrow) capturing -> index = <Bound>
+    # CHECK: %0 = kgen.create_closure [<>(index borrow) capturing -> index: Bound]()
     alias Bound = g[(3).__as_mlir_index()]
 
     # CHECK: %value = lit.letreg.decl "value" = %0 : !kgen.signature<(index borrow) capturing -> index>
@@ -91,7 +91,7 @@ fn take_closure_with_param_main():
     # CHECK: %1 = kgen.call @"$decls"::@"take_closure{{.*}}"(%value, %x) : (!kgen.signature<(index borrow) capturing -> index> borrow, index borrow) -> !lit.none
     take_closure(value, x)
 
-    # CHECK: %2 = kgen.param.constant: <>(index borrow) capturing -> index = <bind_signature(:<index, index>(index borrow) capturing -> index *"h(__mlir_type.index)", 1, 8)>
+    # CHECK: %2 = kgen.create_closure [<>(index borrow) capturing -> index: bind_signature(:<index, index>(index borrow) capturing -> index *"h(__mlir_type.index)", 1, 8)]()
     # CHECK: %Q = lit.letreg.decl "Q" = %2 : !kgen.signature<(index borrow) capturing -> index>
     let Q = h[(1).__as_mlir_index(), (8).__as_mlir_index()]
     take_closure(Q, x)
@@ -210,14 +210,14 @@ fn callOverload(a: Int):
   # CHECK:  %1 = kgen.call @"$decls"::@"testThing($Int::Int,$Int::Int)"(%a, %a)
   _ = testThing(a, a)
 
-  # CHECK: %2 = kgen.param.constant: {{.*}} = <@"$decls"::@"testThing($Int::Int)">
+  # CHECK: %2 = kgen.create_closure [{{.*}}: @"$decls"::@"testThing($Int::Int)"]()
   var f1 : IntToF32Type = testThing
 
-  # CHECK: %3 = kgen.param.constant: {{.*}} = <@"$decls"::@"testThing($Int::Int)">
+  # CHECK: %3 = kgen.create_closure [{{.*}}: @"$decls"::@"testThing($Int::Int)"]()
   # CHECK-NEXT: pop.store %3, %f1
   f1 = testThing
 
-  # CHECK: = kgen.param.constant: {{.*}} = <@"$decls"::@"testThing($Int::Int)">
+  # CHECK: = kgen.create_closure [{{.*}}: @"$decls"::@"testThing($Int::Int)"]()
   let f2 : IntToF32Type = testThing
 
   # CHECK: kgen.call @"$decls"::@"takeIntToF32Param()"<:<>(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<{{.*}}SIMD{{.*}}f32{{.*}}> @"$decls"::@"testThing($Int::Int)">()

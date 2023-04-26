@@ -198,7 +198,7 @@ kgen.func @call_it() {
 
 // -----
 
-kgen.func @fat_closure() capturing -> index {
+kgen.func @capturing_closure() capturing -> index {
   %0 = pop.compiler.global_load "var" : index
   kgen.return %0 : index
 }
@@ -208,6 +208,25 @@ kgen.func @caller() {
   %0 = index.constant 0
   pop.compiler.global_store "var", %0 : index
   // CHECK: pop.compiler.global_load "var"
-  %1 = kgen.call @fat_closure() : () capturing -> index
+  %1 = kgen.call @capturing_closure() : () capturing -> index
+  kgen.return
+}
+
+// -----
+
+kgen.func @callee(%arg0: index, %arg1: index) capturing {
+  "use"(%arg0, %arg1) : (index, index) -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @caller
+kgen.func @caller() {
+  %idx0 = index.constant 0
+  // CHECK: %0 = kgen.stage_closure = (%arg0: index loc({{.*}})) capturing
+  // CHECK-NEXT: "use"(%idx0, %arg0)
+  %0 = kgen.create_closure [(index, index) capturing -> (): @callee](%idx0)
+
+  // CHECK: call_signature %0(%idx0)
+  kgen.call_signature %0(%idx0) : (index) capturing -> ()
   kgen.return
 }
