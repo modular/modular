@@ -13,7 +13,7 @@ from Index import StaticIntTuple
 from IO import print
 from List import Dim, DimList
 from LLCL import Runtime, OutputChainPtr
-from Math import add, div, erf, exp, mul, rsqrt, sqrt, sub, tanh, fma
+from Math import add, div, erf, exp, pow, mul, rsqrt, sqrt, sub, tanh, fma, abs
 from Pointer import Pointer, DTypePointer
 from Range import range
 from SIMD import SIMD
@@ -32,12 +32,14 @@ fn MOGGExport():
     alias _dtype_si32 = DTypeSI32TypeDef
     alias _dtype_si64 = DTypeSI64TypeDef
     alias _to_buffer = to_buffer
+    alias _abs = abs_wrapped
     alias _add = add
     alias _div = div
     alias _cast = cast
     alias _erf = erf
     alias _exp = exp
     alias _gelu = gelu
+    alias _pow = pow_wrapped
     alias _load_scalar = load_scalar
     alias _mul = mul
     alias _rsqrt = rsqrt
@@ -417,6 +419,18 @@ fn simd_width_to_int[simd_width: __mlir_type.index]() -> Int:
 
 
 # ===----------------------------------------------------------------------===#
+# Abs wrapper op
+# ===----------------------------------------------------------------------===#
+
+# Call abs, needed as it has multiple overloads which can't be aliased
+@always_inline
+fn abs_wrapped[
+    type: DType, simd_width: Int
+](value: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    return abs(value)
+
+
+# ===----------------------------------------------------------------------===#
 # Cast op
 # ===----------------------------------------------------------------------===#
 
@@ -426,6 +440,20 @@ fn cast[
     type: DType, new_type: DType, simd_width: Int
 ](value: SIMD[type, simd_width],) -> SIMD[new_type, simd_width]:
     return value.cast[new_type]()
+
+
+# ===----------------------------------------------------------------------===#
+# Pow wrapper op
+# ===----------------------------------------------------------------------===#
+
+# Call pow, needed as it has multiple overloads which can't be aliased
+@always_inline
+fn pow_wrapped[
+    type: DType, simd_width: Int
+](value: SIMD[type, simd_width], power: SIMD[type, simd_width]) -> SIMD[
+    type, simd_width
+]:
+    return pow[simd_width, type, type](value, power)
 
 
 # ===----------------------------------------------------------------------===#
