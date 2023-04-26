@@ -151,39 +151,69 @@ private:
   }
 
   void generateJSONForChildren(ASTDecl &decl) {
-    SmallVector<std::pair<StringAttr, TinyPtrVector<ASTDecl *>>> children(
-        decl.getDeclsInScope().begin(), decl.getDeclsInScope().end());
-    llvm::sort(children, [](auto &lhs, auto &rhs) {
-      return compareDeclNames(lhs.first, rhs.first);
-    });
+    using ChildrenVecT =
+        SmallVector<std::pair<StringAttr, TinyPtrVector<ASTDecl *>>>;
+    ChildrenVecT aliases, functions, structs;
 
-    // Skip declarations that were imported from other scopes.
-    // TODO: We should note that these are imported/aliases.
-    auto filterChildren = [&](TinyPtrVector<ASTDecl *> &children) {
-      return llvm::make_filter_range(children, [&](ASTDecl *child) {
-        return child->getParentDecl() == &decl;
+    // Bucket the different types of children.
+    const auto &declsInScope = decl.getDeclsInScope();
+    for (auto &[name, decls] : declsInScope) {
+      if (shouldHideName(name) || decls.empty())
+        continue;
+
+      if (isa<ParamDeclareOp>(**decls.begin()))
+        aliases.emplace_back(name, decls);
+      else if (isa<LIT::FuncOp>(**decls.begin()))
+        functions.emplace_back(name, decls);
+      else if (isa<StructDeclOp>(**decls.begin()))
+        structs.emplace_back(name, decls);
+    }
+
+    // Functor used to generically process a bucket of children.
+    auto processChildren = [&](StringRef tag, ChildrenVecT &children,
+                               auto &&processChildFn) {
+      llvm::sort(children, [](auto &lhs, auto &rhs) {
+        return compareDeclNames(lhs.first, rhs.first);
+      });
+
+      // Skip declarations that were imported from other scopes.
+      // TODO: We should note that these are imported/aliases.
+      auto filterChildren = [&](TinyPtrVector<ASTDecl *> &children) {
+        return llvm::make_filter_range(children, [&](ASTDecl *child) {
+          return child->getParentDecl() == &decl;
+        });
+      };
+
+      os.attributeArray(tag, [&] {
+        for (auto &[name, decls] : children) {
+          auto filteredChildren = filterChildren(decls);
+          if (!filteredChildren.empty())
+            processChildFn(name, filteredChildren);
+        }
       });
     };
 
-    os.attributeArray("children", [&] {
-      for (auto &[name, decls] : children) {
-        if (shouldHideName(name))
-          continue;
-        auto filteredChildren = filterChildren(decls);
-        if (filteredChildren.empty())
-          continue;
+    // Functor used to process all of the given children.
+    auto processAllChildrenFn = [&](StringRef name, auto &&children) {
+      for (auto &childDecl : children)
+        generate(*childDecl);
+    };
 
-        // If the children are functions, generate all of the overloads under a
-        // single object.
-        if (isa<LIT::FuncOp>(**filteredChildren.begin())) {
-          generateJSONForFunctions(name, filteredChildren);
-          continue;
-        }
+    // Process aliases.
+    if (!aliases.empty())
+      processChildren("aliases", aliases, processAllChildrenFn);
 
-        for (auto &childDecl : filteredChildren)
-          generate(*childDecl);
-      }
-    });
+    // Process functions.
+    if (!functions.empty()) {
+      auto processFn = [&](StringRef name, auto &&children) {
+        generateJSONForFunctions(name, children);
+      };
+      processChildren("functions", functions, processFn);
+    }
+
+    // Process structs.
+    if (!structs.empty())
+      processChildren("structs", structs, processAllChildrenFn);
   }
 
   /// Return if the given name should be hidden from the output.

@@ -50,13 +50,15 @@ private:
 /// in the following format:
 ///
 /// Module:
-///  {
-///    "kind": "module",
-///    "name": "...",
-///    "summary": "...",
-///    "description": "...",
-///    "children": [ ... ]
-///  }
+/// {
+///   "kind": "module",
+///   "name": "...",
+///   "summary": "...",
+///   "description": "...",
+///   "aliases": [ ... ],
+///   "functions": [ ... ],
+///   "structs": [ ... ]
+/// }
 ///
 /// Struct:
 /// {
@@ -71,7 +73,9 @@ private:
 ///       "description": "...",
 ///     }
 ///   ],
-///   "children": [ ... ]
+///   "aliases": [ ... ],
+///   "functions": [ ... ],
+///   "structs": [ ... ]
 /// }
 ///
 /// Function:
