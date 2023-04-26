@@ -7,7 +7,7 @@
 from Assert import assert_param, debug_assert
 from Buffer import NDBuffer, _raw_stack_allocation
 from Functional import tile, tile_and_unswitch, vectorize_unroll
-from IO import print, _printf
+from IO import print
 from Index import Index, StaticIntTuple
 from List import VariadicList, Dim, DimList
 from Math import div_ceil, min, max
@@ -1120,23 +1120,29 @@ struct MatmulGenerator[
             dynamic_state(MatmulDynamicState[data_type]): the current dynamic
         state.
         """
-        _printf("global offset: ")
-        print(dynamic_state.global_offset.as_index())
-        _printf("dynamic tile bound: ")
-        print(dynamic_state.valid_tile_bound.as_index())
-        _printf("static tile bound: ")
-        print(static_state.static_gemm_shape._as_gemm_shape().as_index())
-        _printf("transpose a and b: ")
-        print(static_state.static_data_layout.transpose_a)
-        print(static_state.static_data_layout.transpose_b)
-        _printf("packed a,b,c: ")
-        print(static_state.a_packed)
-        print(static_state.b_packed)
-        print(static_state.c_packed)
-        _printf("unswitched m,n,k: ")
-        print(static_state.static_gemm_switch.M)
-        print(static_state.static_gemm_switch.N)
-        print(static_state.static_gemm_switch.K)
+        print("global offset:", dynamic_state.global_offset.as_index())
+        print("dynamic tile bound:", dynamic_state.valid_tile_bound.as_index())
+        print(
+            "static tile bound:",
+            static_state.static_gemm_shape._as_gemm_shape().as_index(),
+        )
+        print(
+            "transpose a and b:",
+            static_state.static_data_layout.transpose_a,
+            static_state.static_data_layout.transpose_b,
+        )
+        print(
+            "packed a,b,c:",
+            static_state.a_packed,
+            static_state.b_packed,
+            static_state.c_packed,
+        )
+        print(
+            "unswitched m,n,k:",
+            static_state.static_gemm_switch.M,
+            static_state.static_gemm_switch.N,
+            static_state.static_gemm_switch.K,
+        )
         print("---------------------------\n")
 
 
