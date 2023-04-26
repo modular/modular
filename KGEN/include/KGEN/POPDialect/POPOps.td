@@ -1626,19 +1626,27 @@ def POP_ExternalCallOp : POPOp<"external_call"> {
     ```
   }];
 
-  let arguments = (ins FlatSymbolRefAttr:$func, Variadic<AnyType>:$operands,
+  let arguments = (ins AttrOfType<KGEN_StringType>:$func,
+                       Variadic<AnyType>:$operands,
                        OptionalAttr<TypeAttrOf<FunctionType>>:$variadicType);
   let results = (outs Variadic<AnyType>:$results);
 
   let assemblyFormat = [{
-    $func `(` operands `)` ($variadicType^)? attr-dict `:`
-    functional-type(operands, results)
+    custom<ExternalCallee>($func) `(` operands `)` ($variadicType^)? attr-dict
+    `:` functional-type(operands, results)
+  }];
+
+  let extraClassDeclaration = [{
+    // Get the name of the concrete callee.
+    StringAttr getCallee() { return cast<StringAttr>(getFunc()); }
   }];
 
   let builders = [
     OpBuilder<(ins "StringRef":$func, "ValueRange":$operands)>,
     OpBuilder<(ins "TypeRange":$results, "StringRef":$func,
-                   "ValueRange":$operands)>
+                   "ValueRange":$operands)>,
+    OpBuilder<(ins "TypeRange":$results, "StringRef":$func,
+                   "ValueRange":$operands, "FunctionType":$variadicType)>
   ];
 }
 

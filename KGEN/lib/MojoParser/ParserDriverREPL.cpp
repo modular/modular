@@ -389,7 +389,7 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
     auto mallocCall = builder.create<POP::ExternalCallOp>(
         POP::PointerType::get(POP::SIMDType::get(
             1, builder.getAttr<KGEN::DTypeConstantAttr>(KGENDType::invalid))),
-        "malloc", sizeOf, /*variadicType=*/TypeAttr());
+        "malloc", sizeOf);
     Value mallocResult = mallocCall.getResult(0);
     Value mallocCast =
         builder.create<POP::PointerBitcastOp>(type, mallocResult);

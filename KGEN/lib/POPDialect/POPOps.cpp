@@ -577,6 +577,36 @@ void StackAllocationOp::build(OpBuilder &b, OperationState &state, Type result,
 // ExternalCallOp
 //===---------------------------------------------------------------------===//
 
+static ParseResult parseExternalCallee(AsmParser &p, TypedAttr &callee) {
+  StringAttr concreteCallee;
+  // Try `@foo`.
+  if (succeeded(p.parseOptionalSymbolName(concreteCallee))) {
+    callee = StringAttr::get(concreteCallee.getValue(),
+                             StringType::get(p.getContext()));
+    return success();
+  }
+  // Otherwise, parse a string expression inside square brackets.
+  if (p.parseLSquare() ||
+      parseParamValue(p, callee, StringType::get(p.getContext())) ||
+      p.parseRSquare())
+    return failure();
+  return success();
+}
+
+static void printExternalCallee(AsmPrinter &p, Operation *op,
+                                TypedAttr callee) {
+  // Print a symbol name if the callee is concrete.
+  if (auto concrete = dyn_cast<StringAttr>(callee)) {
+    p.printSymbolName(concrete);
+    return;
+  }
+  // Otherwise, print the string expression in square brackets to disambiguate
+  // `callee(` as a parameter operator.
+  p << '[';
+  printParamValue(p, callee);
+  p << ']';
+}
+
 void ExternalCallOp::build(OpBuilder &b, OperationState &state, StringRef func,
                            ValueRange operands) {
   build(b, state, {}, func, operands);
@@ -585,7 +615,17 @@ void ExternalCallOp::build(OpBuilder &b, OperationState &state, StringRef func,
 void ExternalCallOp::build(OpBuilder &b, OperationState &state,
                            TypeRange results, StringRef func,
                            ValueRange operands) {
-  build(b, state, results, func, operands, /*variadicType=*/nullptr);
+  build(b, state, results,
+        StringAttr::get(func, StringType::get(b.getContext())), operands,
+        TypeAttr());
+}
+
+void ExternalCallOp::build(OpBuilder &b, OperationState &state,
+                           TypeRange results, StringRef func,
+                           ValueRange operands, FunctionType variadicType) {
+  build(b, state, results,
+        StringAttr::get(func, StringType::get(b.getContext())), operands,
+        TypeAttr::get(variadicType));
 }
 
 //===----------------------------------------------------------------------===//
