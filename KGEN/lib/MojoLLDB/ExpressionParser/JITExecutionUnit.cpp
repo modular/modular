@@ -185,8 +185,8 @@ struct JITExecutionUnit::Impl {
 // JITExecutionUnit
 //===----------------------------------------------------------------------===//
 
-JITExecutionUnit::JITExecutionUnit(std::unique_ptr<llvm::LLVMContext> &context,
-                                   std::unique_ptr<llvm::Module> &module,
+JITExecutionUnit::JITExecutionUnit(std::unique_ptr<llvm::LLVMContext> context,
+                                   std::unique_ptr<llvm::Module> module,
                                    ConstString &name,
                                    const lldb::TargetSP &target,
                                    const SymbolContext &symCtx,

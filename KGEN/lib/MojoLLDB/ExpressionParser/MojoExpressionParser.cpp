@@ -477,8 +477,8 @@ Status MojoExpressionParser::prepareForExecution(
   // Build the IR execution unit responsible for executing the generated IR.
   ConstString functionName(impl->expr.FunctionName());
   executionUnit = std::make_shared<JITExecutionUnit>(
-      impl->llvmContext, module, functionName, exeCtx.GetTargetSP(), sc,
-      features);
+      std::move(impl->llvmContext), std::move(module), functionName,
+      exeCtx.GetTargetSP(), sc, features);
 
   // Extract the function information for the expression entry point.
   Status error = executionUnit->getRunnableInfo(funcAddr, funcEnd);
