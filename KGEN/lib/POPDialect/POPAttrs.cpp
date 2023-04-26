@@ -64,9 +64,14 @@ const llvm::fltSemantics &DTypeValue::getFloatSemantics(KGENDType dtype) {
   }
 }
 
+DTypeValue::DTypeValue(APInt data, KGENDType dtype) : data(data), dtype(dtype) {
+  assert(dtype.isAddress() || dtype.isIndex() ||
+         data.getBitWidth() == dtype.getWidthInBits());
+}
+
 DTypeValue::DTypeValue(APSInt value, KGENDType dtype)
     : DTypeValue(APInt(value), dtype) {
-  assert(dtype.isInt() && value.getBitWidth() == dtype.getIntegerWidthInBits());
+  assert(dtype.isInt());
 }
 
 DTypeValue::DTypeValue(APFloat value, KGENDType dtype)
@@ -75,7 +80,7 @@ DTypeValue::DTypeValue(APFloat value, KGENDType dtype)
 }
 
 DTypeValue::DTypeValue(bool value, KGENDType dtype)
-    : DTypeValue(APInt(1, value), dtype) {
+    : DTypeValue(APInt(8, value), dtype) {
   assert(dtype.isBool());
 }
 

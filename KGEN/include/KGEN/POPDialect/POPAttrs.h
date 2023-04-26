@@ -42,8 +42,7 @@ public:
   DTypeValue(int64_t value, KGENDType dtype);
 
   /// Raw data constructor.
-  DTypeValue(APInt data, KGENDType dtype)
-      : data(std::move(data)), dtype(dtype) {}
+  DTypeValue(APInt data, KGENDType dtype);
 
   /// Compare two dtype values.
   bool operator==(const DTypeValue &rhs) const {
