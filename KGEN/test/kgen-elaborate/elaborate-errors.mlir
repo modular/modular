@@ -240,7 +240,6 @@ kgen.generator @closure_with_invalid_scope() {
     kgen.param.assert <eq(2, 3)>, B
     kgen.return %idx4 : index
   }
-  %0 = kgen.param.constant: <>() capturing -> index = <bind_signature(:<dtype>() capturing -> index k, si32)>
+  %0 = kgen.create_closure[<>() capturing -> index: bind_signature(:<dtype>() capturing -> index k, si32)]()
   kgen.return
 }
-

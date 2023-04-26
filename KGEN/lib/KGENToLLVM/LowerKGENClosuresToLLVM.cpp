@@ -239,6 +239,13 @@ public:
   LogicalResult
   matchAndRewrite(CreateClosureOp op, CreateClosureOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
+    if (!op.getType().isCapturing() && op.getCaptures().empty()) {
+      rewriter.replaceOpWithNewOp<LLVM::AddressOfOp>(
+          op, convertType(op.getType()),
+          cast<FlatSymbolRefAttr>(
+              cast<SymbolConstantAttr>(op.getCallee()).getSymbol()));
+      return success();
+    }
 
     // Generate the function wrapper and populate it with extract and invoke the
     // original callee

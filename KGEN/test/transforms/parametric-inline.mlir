@@ -726,7 +726,7 @@ kgen.generator @nodebug_inline_me<T: type>(%arg0: !kgen.paramref<T>) always_inli
 // COM: https://github.com/modularml/modular/issues/8586
 
 kgen.generator @unroll<func: <index>() -> ()>() always_inline {
-  kgen.param.constant: <index>() -> () = <func>
+  kgen.param.constant: () -> () = <bind_signature(:<index>() -> () func, 1)>
   kgen.return
 }
 
@@ -759,7 +759,7 @@ kgen.generator @main() {
     // CHECK: kgen.param.declare.region nested_func = <idx>() {
       // CHECK: kgen.call_param[() -> (): func]
     // CHECK: kgen.param.declare func0: <index>() -> () = <nested_func>
-    // CHECK: kgen.param.constant: <index>() -> () = <func0>
+    // CHECK: kgen.param.constant: () -> () = <bind_signature(:<index>() -> () func0, 1)>
   // CHECK: kgen.call_param[() -> (): func_wrapper]
   kgen.call @pass_it() : () -> ()
 
@@ -769,7 +769,7 @@ kgen.generator @main() {
     // CHECK: kgen.param.declare.region nested_func = <idx>() {
       // CHECK: kgen.call_param[() -> (): func1]
     // CHECK: kgen.param.declare func0: <index>() -> () = <nested_func>
-    // CHECK: kgen.param.constant: <index>() -> () = <func0>
+    // CHECK: kgen.param.constant: () -> () = <bind_signature(:<index>() -> () func0, 1)>
   // CHECK: kgen.call_param[() -> (): func_wrapper0]
   kgen.call @pass_it() : () -> ()
   kgen.return

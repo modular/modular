@@ -736,10 +736,21 @@ static void inlineCallToConcreteRegion(KGENCallOpInterface call, Region *callee,
          "callee region must resolve to a single block");
 
   OpBuilder b(call);
-  if (auto asyncCall = dyn_cast<LIT::AsyncCallOp>(call.getOperation())) {
-    auto asyncExec =
-        b.create<LIT::AsyncExecuteOp>(call.getLoc(), asyncCall.getType());
-    b.createBlock(&asyncExec->getRegions().front());
+  Operation *scope = nullptr;
+  if (isa<CallOp, CallParamOp>(&*call)) {
+    // No scope.
+  } else if (auto asyncCall = dyn_cast<LIT::AsyncCallOp>(&*call)) {
+    scope = b.create<LIT::AsyncExecuteOp>(call.getLoc(), asyncCall.getType());
+    b.createBlock(&scope->getRegions().front());
+  } else if (auto createClosure = dyn_cast<CreateClosureOp>(&*call)) {
+    scope = b.create<StageClosureOp>(call.getLoc(), createClosure.getType());
+    b.createBlock(&scope->getRegions().front());
+    for (BlockArgument arg :
+         callee->getArguments().drop_front(createClosure.getCaptures().size()))
+      b.getInsertionBlock()->addArgument(arg.getType(), arg.getLoc());
+  } else {
+    llvm::report_fatal_error("unhandled call operation in elaborator '" +
+                             call->getName().getStringRef() + "'");
   }
 
   for (auto [callArg, genArg] :
@@ -773,17 +784,24 @@ static void inlineCallToConcreteRegion(KGENCallOpInterface call, Region *callee,
   Operation *returnOp = map.lookup(terminator);
   // If the remapped return isn't parented under the call's region, then we know
   // it's inside another scope - so use the results of that scope.
-  if (returnOp->getParentRegion() != call->getParentRegion()) {
-    // Replace the returnOp with a LIT::AsyncReturnOp.
-    returnOp->replaceAllUsesWith(b.create<LIT::AsyncReturnOp>(
-        returnOp->getLoc(), returnOp->getOperands()));
-    // And replace the call uses with the results of the AsyncExecuteOp itself.
-    call->replaceAllUsesWith(
-        returnOp->getParentOfType<LIT::AsyncExecuteOp>()->getResults());
+  if (scope) {
+    if (auto asyncExec = dyn_cast<LIT::AsyncExecuteOp>(scope)) {
+      // Replace the returnOp with a LIT::AsyncReturnOp.
+      returnOp->replaceAllUsesWith(b.create<LIT::AsyncReturnOp>(
+          returnOp->getLoc(), returnOp->getOperands()));
+    } else if (isa<StageClosureOp>(scope)) {
+      returnOp->replaceAllUsesWith(
+          b.create<ReturnOp>(returnOp->getLoc(), returnOp->getOperands()));
+    } else {
+      llvm::report_fatal_error("unhandled call operation in elaborator '" +
+                               call->getName().getStringRef() + "'");
+    }
+    // And replace the call uses with the results of the AsyncExecuteOp
+    // itself.
+    call->replaceAllUsesWith(scope->getResults());
   } else {
     call->replaceAllUsesWith(returnOp->getOperands());
   }
-
   returnOp->erase();
   call->erase();
 }
@@ -1841,12 +1859,6 @@ ElaboratorImpl::processCallOp(KGENCallOpInterface call,
   IRMapping map;
   inlineCallToConcreteRegion(call, region, map, AlwaysInlineLevel::Enabled);
 
-  // Set any bindings on the region in the evaluator context.
-  for (auto [decl, value] :
-       llvm::zip(region->getParentOfType<DeclInterface>().getInputParams(),
-                 decl.getParamValues()))
-    parent->evaluator.setOrOverwriteParameterValue(decl, value);
-
   // Collect all the ops to process *in the region*.
   std::vector<Operation *> opsToRewriteInRegion;
   collectOpsToProcess(region, *regionGraph, opsToRewriteInRegion);
@@ -1855,8 +1867,19 @@ ElaboratorImpl::processCallOp(KGENCallOpInterface call,
       opsToRewriteInRegion, [&](Operation *op) { return map.lookup(op); });
 
   // Process the ops we just collected.
-  if (failed(processScope(parent, opsToRewrite)))
-    return parent->error->copy();
+  {
+    llvm::SaveAndRestore<IREvaluator> save(parent->evaluator);
+    parent->evaluator.clearCache();
+
+    // Set any bindings on the region in the evaluator context.
+    for (auto [decl, value] :
+         llvm::zip(region->getParentOfType<DeclInterface>().getInputParams(),
+                   decl.getParamValues()))
+      parent->evaluator.setOrOverwriteParameterValue(decl, value);
+
+    if (failed(processScope(parent, opsToRewrite)))
+      return parent->error->copy();
+  }
 
   return std::nullopt;
 }

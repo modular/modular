@@ -867,12 +867,17 @@ static std::pair<Operation *, bool> inlineRegion(IRMapping &map,
 
   mlir::IRRewriter b{OpBuilder(call)};
   Operation *scope;
-  if (isa<CallOp>(call.getOperation())) {
+  if (isa<CallOp>(&*call)) {
     scope = b.create<HLCF::LoopOp>(call.getLoc(), call->getResultTypes(),
                                    ValueRange(), label);
-  } else {
-    auto asyncCall = cast<LIT::AsyncCallOp>(call.getOperation());
+  } else if (auto asyncCall = dyn_cast<LIT::AsyncCallOp>(&*call)) {
     scope = b.create<LIT::AsyncExecuteOp>(call.getLoc(), asyncCall.getType());
+  } else if (auto createClosure = dyn_cast<CreateClosureOp>(&*call)) {
+    scope = b.create<StageClosureOp>(call.getLoc(), createClosure.getType());
+  } else {
+    llvm::report_fatal_error("unknown call operation '" +
+                             call->getName().getStringRef() +
+                             "' in inlining pass -- please file a bug!");
   }
 
   Region &scopeBody = scope->getRegion(0);
@@ -882,7 +887,7 @@ static std::pair<Operation *, bool> inlineRegion(IRMapping &map,
     for (auto [value, arg] :
          llvm::zip(call->getOperands(), scopeBody.getArguments()))
       arg.replaceAllUsesWith(value);
-    scopeBody.front().eraseArguments(0, scopeBody.getNumArguments());
+    scopeBody.front().eraseArguments(0, call->getNumOperands());
   } else {
     b.createBlock(&scopeBody);
     for (auto [value, arg] :
@@ -895,10 +900,17 @@ static std::pair<Operation *, bool> inlineRegion(IRMapping &map,
   unsigned numReturns = 0;
   scopeBody.walk([&](ReturnOp op) {
     b.setInsertionPoint(op);
-    if (isa<CallOp>(call.getOperation()))
+    if (isa<CallOp>(&*call)) {
       b.replaceOpWithNewOp<HLCF::BreakOp>(op, op.getOperands(), label);
-    else
+    } else if (isa<CreateClosureOp>(*&call)) {
+      // Just `return` is ok.
+    } else if (isa<LIT::AsyncCallOp>(&*call)) {
       b.replaceOpWithNewOp<LIT::AsyncReturnOp>(op, op.getOperands());
+    } else {
+      llvm::report_fatal_error("unknown call operation '" +
+                               call->getName().getStringRef() +
+                               "' in inlining pass -- please file a bug!");
+    }
 
     ++numReturns;
   });
@@ -1208,7 +1220,7 @@ static void updateScopeDebugInfoFrom(Operation *scope, IntegerAttr tag,
       }
 
       op->setLoc(callLoc);
-      if (isa<HLCF::LoopOp, LIT::AsyncExecuteOp>(op)) {
+      if (isa<HLCF::LoopOp, LIT::AsyncExecuteOp, StageClosureOp>(op)) {
         auto tag = op->getAttrOfType<IntegerAttr>(updateAttrName);
         if (tag) {
           updateScopeDebugInfoFrom(op, tag, updateAttrName);
@@ -1222,7 +1234,7 @@ static void updateScopeDebugInfoFrom(Operation *scope, IntegerAttr tag,
   } else {
     body.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
       op->setLoc(mlir::CallSiteLoc::get(op->getLoc(), callLoc));
-      if (isa<HLCF::LoopOp, LIT::AsyncExecuteOp>(op)) {
+      if (isa<HLCF::LoopOp, LIT::AsyncExecuteOp, StageClosureOp>(op)) {
         auto tag = op->getAttrOfType<IntegerAttr>(updateAttrName);
         if (tag) {
           updateScopeDebugInfoFrom(op, tag, updateAttrName);
@@ -1244,7 +1256,7 @@ static void updateScopeDebugInfo(FuncOp func, StringAttr updateAttrName) {
   TimeTraceScope updateScopeDebugInfo(
       "updateScopeDebugInfo", [&func] { return func.getSymName().str(); });
   func.getBody()->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
-    if (!isa<HLCF::LoopOp, LIT::AsyncExecuteOp>(op))
+    if (!isa<HLCF::LoopOp, LIT::AsyncExecuteOp, StageClosureOp>(op))
       return WalkResult::advance();
     auto tag = op->getAttrOfType<IntegerAttr>(updateAttrName);
     if (!tag)

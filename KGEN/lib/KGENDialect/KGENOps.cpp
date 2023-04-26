@@ -65,6 +65,16 @@ static void printParamConstantOpValue(OpAsmPrinter &p, Operation *,
 }
 
 LogicalResult ParamConstantOp::verify() {
+  // Forbid the materialization of parameter capturing closures.
+  if (auto sig = dyn_cast<SignatureType>(getType())) {
+    if (sig.isCapturing())
+      return emitOpError("cannot be used to materialize capturing closures; "
+                         "use `kgen.create_closure` instead");
+    if (!sig.getResultParamTypes().empty() || !sig.getInputParamTypes().empty())
+      return emitOpError("cannot materialize parametric signatures; fully bind "
+                         "the signature first");
+  }
+
   if (getValue().getType() == getType())
     return success();
   return emitOpError() << "parameter type " << getValue().getType()
