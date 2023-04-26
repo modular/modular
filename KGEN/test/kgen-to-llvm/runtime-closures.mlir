@@ -30,7 +30,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
   // CHECK:  %11 = builtin.unrealized_conversion_cast %10 : !kgen.signature<() capturing -> index> to !llvm.struct<(ptr, ptr)>
   llvm.func internal @main_closure_arg() -> !llvm.array<0 x i1> {
     %idx98 = index.constant 98
-    %0 = kgen.create_closure @h(%idx98) : (!kgen.signature<(index) -> index>, index) -> !kgen.signature<() capturing -> index>
+    %0 = kgen.create_closure [(index) -> index: @h](%idx98)
     %1 = builtin.unrealized_conversion_cast %0 : !kgen.signature<() capturing -> index> to !llvm.struct<(ptr, ptr)>
     %2 = llvm.call @take_closure_no_args(%1) {fastmathFlags = #llvm.fastmath<contract>} : (!llvm.struct<(ptr, ptr)>) -> !llvm.array<0 x i1>
     %3 = llvm.mlir.undef : !llvm.array<0 x i1>

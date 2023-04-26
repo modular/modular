@@ -82,6 +82,12 @@ void ParamConstantOp::getAsmResultNames(
     setNameFn(getResult(), *name);
 }
 
+OpFoldResult ParamConstantOp::fold(FoldAdaptor adaptor) {
+  auto constants = adaptor.getOperands();
+  assert(constants.empty() && "kgen.param.constant has no operands");
+  return getValueAttr();
+}
+
 //===----------------------------------------------------------------------===//
 // ParamDeclareOp
 //===----------------------------------------------------------------------===//
@@ -755,16 +761,6 @@ void CallParamOp::concretizeCallee(mlir::IRRewriter &b,
 }
 
 //===----------------------------------------------------------------------===//
-// ParamConstantOp
-//===----------------------------------------------------------------------===//
-
-OpFoldResult ParamConstantOp::fold(FoldAdaptor adaptor) {
-  auto constants = adaptor.getOperands();
-  assert(constants.empty() && "kgen.param.constant has no operands");
-  return getValueAttr();
-}
-
-//===----------------------------------------------------------------------===//
 // ParamIfOp
 //===----------------------------------------------------------------------===//
 
@@ -1022,57 +1018,93 @@ static void printStageClosureOp(OpAsmPrinter &p, Operation *op,
 void CreateClosureOp::concretizeCallee(mlir::IRRewriter &b,
                                        SymbolConstantAttr callee,
                                        TypeRange resultTypes) {
-  b.replaceOpWithNewOp<CreateClosureOp>(*this, resultTypes, callee,
+  assert(resultTypes.size() == 1);
+  b.replaceOpWithNewOp<CreateClosureOp>(*this, resultTypes.front(), callee,
                                         getOperands());
 }
 
+void CreateClosureOp::build(OpBuilder &b, OperationState &state, Type type,
+                            TypedAttr callee, ValueRange captures) {
+  build(b, state, type, callee, captures,
+        ParamDeclArrayAttr::get(b.getContext(), {}));
+}
+
 static ParseResult
-parseCreateClosureOp(OpAsmParser &p, SymbolConstantAttr &callee,
-                     SmallVectorImpl<OpAsmParser::UnresolvedOperand> &captures,
-                     SmallVectorImpl<Type> &captureTypes, Type &resultType) {
-  StringAttr functionName;
-  if (p.parseSymbolName(functionName) ||
-      p.parseOperandList(captures, AsmParser::Delimiter::Paren) ||
-      p.parseColon())
-    return failure();
-
-  SymbolRefAttr symbolRef = SymbolRefAttr::get(functionName, {});
-  ::mlir::FunctionType functionType;
-  if (p.parseType(functionType))
-    return ::mlir::failure();
-
-  if (functionType.getInputs().size() == 0) {
-    p.emitError(p.getCurrentLocation(),
-                "CreateClosure must have at least one argument");
-    return failure();
-  }
-  Type symbolType = functionType.getInputs().front();
-  if (!symbolType.isa<SignatureType>()) {
-    p.emitError(p.getCurrentLocation(),
-                "CreateClosure must accept a signature type");
-    return failure();
+parseClosureResultType(AsmParser &p, TypedAttr callee,
+                       ArrayRef<OpAsmParser::UnresolvedOperand> captures,
+                       Type &resultType, SmallVectorImpl<Type> &captureTypes) {
+  auto sig = cast<SignatureType>(callee.getType());
+  unsigned numArgs = captures.size();
+  if (numArgs > sig.getValueInputs().size()) {
+    return p.emitError(p.getCurrentLocation(), "provided ")
+           << numArgs << " operands but callee only has "
+           << sig.getValueInputs().size() << " to bind";
   }
 
-  llvm::append_range(captureTypes, functionType.getInputs().slice(1));
-  resultType = functionType.getResult(0);
-  callee =
-      SymbolConstantAttr::get(symbolRef, {}, cast<SignatureType>(symbolType));
+  // The captures are the first N operands.
+  for (unsigned i = 0; i != numArgs; ++i)
+    captureTypes.push_back(sig.getValueInputs()[i]);
+  SmallVector<Type> newArgTypes;
+  SmallVector<ValueInputConvention> newInputConvs;
+  for (unsigned i = numArgs, e = sig.getValueInputs().size(); i != e; ++i) {
+    newArgTypes.push_back(sig.getValueInputs()[i]);
+    newInputConvs.push_back(sig.getValueInputConventions()[i]);
+  }
+
+  ArrayRef<TypedAttr> newDefaultArgs = sig.getDefaultArguments();
+  if (newArgTypes.size() < newDefaultArgs.size())
+    newDefaultArgs = newDefaultArgs.take_back(newArgTypes.size());
+
+  FnEffects effects = sig.getFnEffects();
+  if (!captures.empty())
+    effects = effects | FnEffects::Capturing;
+  resultType = SignatureType::get(
+      sig.getInputParamTypes(), sig.getResultParamTypes(),
+      p.getBuilder().getFunctionType(newArgTypes, sig.getValueResults()),
+      MetadataAttr::get(p.getContext(), newInputConvs, newDefaultArgs,
+                        effects));
   return success();
 }
 
-static void printCreateClosureOp(OpAsmPrinter &p, Operation *op,
-                                 SymbolConstantAttr callee, ValueRange captures,
-                                 TypeRange captureTypes, Type resultType) {
-  p << callee.getSymbol();
-  p << '(';
-  p.printOperands(captures);
-  p << ") : ";
-  SignatureType calleeSignatureType = callee.getType();
-  SmallVector<Type> types;
-  types.push_back(calleeSignatureType);
-  llvm::append_range(types, captureTypes);
-  printSignature(p, SignatureType::get(FunctionType::get(
-                        op->getContext(), TypeRange(types), resultType)));
+static void printClosureResultType(AsmPrinter &p, Operation *op,
+                                   TypedAttr callee, ValueRange captures,
+                                   Type resultType, TypeRange captureTypes) {}
+
+LogicalResult CreateClosureOp::verify() {
+  SignatureType sig = getCalleeType();
+  if (getNumOperands() > sig.getValueInputs().size()) {
+    return emitOpError("provided ")
+           << getNumOperands() << " operands but callee only has "
+           << sig.getValueInputs().size() << " to bind";
+  }
+  unsigned expectedArgs = sig.getValueInputs().size() - getNumOperands();
+  if (getType().getValueInputs().size() != expectedArgs) {
+    return emitOpError("result signature has ")
+           << getType().getValueInputs().size() << " arguments but expected "
+           << expectedArgs;
+  }
+
+  for (auto [i, type, argType] :
+       llvm::enumerate(getOperandTypes(),
+                       sig.getValueInputs().take_front(getNumOperands()))) {
+    if (type != argType) {
+      return emitOpError("operand #")
+             << i << " has type " << type
+             << " but callee argument type expected " << argType;
+    }
+  }
+  for (auto [i, type, argType] :
+       llvm::enumerate(getType().getValueInputs(),
+                       sig.getValueInputs().drop_front(getNumOperands()))) {
+    if (type != argType) {
+      return emitOpError("result signature argument #")
+             << i << " type is " << argType << " but expected to be " << type;
+    }
+  }
+
+  if (!getCaptures().empty() && !getType().isCapturing())
+    return emitOpError("has captures, so result signature must be 'capturing'");
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

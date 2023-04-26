@@ -1747,9 +1747,12 @@ ElaboratorImpl::replaceParamWithConcreteRegionFromOutlinedClosure(
   FuncOp &outlinedFn = concreteCandidates.front();
   mlir::IRRewriter rewriter{OpBuilder(parameterConstantOp)};
   if (!outlinedFn.getSignature().isCapturing()) {
-    rewriter.replaceOpWithNewOp<CreateClosureOp>(parameterConstantOp,
-                                                 outlinedFn.getSignature(),
-                                                 calleeSymbol, ValueRange());
+    rewriter.replaceOpWithNewOp<CreateClosureOp>(
+        parameterConstantOp, outlinedFn.getSignature(),
+        SymbolConstantAttr::get(
+            FlatSymbolRefAttr::get(outlinedFn.getSymNameAttr()),
+            outlinedFn.getSignature()),
+        ValueRange());
     return {};
   }
 

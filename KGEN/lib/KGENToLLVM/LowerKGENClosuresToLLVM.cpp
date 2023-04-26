@@ -86,7 +86,7 @@ private:
   LLVM::LLVMFuncOp
   generateWrapperFunction(CreateClosureOp op,
                           ConversionPatternRewriter &rewriter) const {
-    SignatureType calleeSignature = op.getCalleeAttr().getType();
+    SignatureType calleeSignature = op.getCalleeType();
     FunctionType calleeType = calleeSignature.getValues();
     MLIRContext *context = getContext();
 
@@ -146,8 +146,9 @@ private:
       envCalleeType = typeConverter->convertType(sigType.getValues());
 
     SmallVector<Value> liftedNestedFunctionCallArgs(
-        op.getCallee().getType().getValues().getNumInputs());
-    auto flatSymbol = dyn_cast<FlatSymbolRefAttr>(op.getCallee().getSymbol());
+        op.getCalleeType().getValues().getNumInputs());
+    auto flatSymbol = dyn_cast<FlatSymbolRefAttr>(
+        cast<SymbolConstantAttr>(op.getCallee()).getSymbol());
     if (!flatSymbol)
       return emitError(op.getLoc(),
                        "cannot lower call to nested symbol to LLVM");
@@ -169,7 +170,7 @@ private:
     }
     size_t numCaptures = op.getCaptures().size();
     size_t numberDynamicArgs =
-        op.getCallee().getType().getValues().getNumInputs() - numCaptures;
+        op.getCalleeType().getValues().getNumInputs() - numCaptures;
     for (size_t i = 0; i < numberDynamicArgs; i++)
       liftedNestedFunctionCallArgs[i + numCaptures] =
           wrapperFnBody.getArgument(i + 1);

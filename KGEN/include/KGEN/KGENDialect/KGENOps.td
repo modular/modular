@@ -912,8 +912,7 @@ def KGEN_StageClosureOp : KGENOp<"stage_closure", [Pure, FunctionOpInterface]> {
 // CreateClosureOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_CreateClosureOp : KGENOp<"create_closure", [
-    Pure, DeclareOpInterfaceMethods<KGEN_CallOpInterface>]> {
+def KGEN_CreateClosureOp : KGEN_CallOpBase<"create_closure"> {
   let summary = "Create a closure from variables and a function.";
   let description = [{
     The `kgen.create_closure` operation represents the instantiation of
@@ -922,17 +921,24 @@ def KGEN_CreateClosureOp : KGENOp<"create_closure", [
 
     ```mlir
     %idx0 = index.constant 0
-    %0 = kgen.create_closure @h(%idx0) :
-      (!kgen.signature<(index) -> index>, index) ->
-      (!kgen.signature<() capturing -> index>)
+    %0 = kgen.create_closure [(index) -> index: @h](%idx0)
     ```
   }];
 
-  let arguments = (ins KGEN_SymbolConstantAttr:$callee,
-                       Variadic<AnyType>:$captures);
+  let arguments = (ins AttrOfType<KGEN_SignatureType>:$callee,
+                       Variadic<AnyType>:$captures,
+                       KGEN_ParamDeclArrayAttr:$paramDecls);
   let results = (outs KGEN_SignatureType:$result);
   let assemblyFormat = [{
-    custom<CreateClosureOp>($callee, $captures, type($captures), type($result))
+    custom<ParametricCallee>($callee, $paramDecls) `(` $captures `)`
+    custom<ClosureResultType>(ref($callee), ref($captures), type($result),
+                              type($captures))
     attr-dict
   }];
+
+  let builders = [
+    OpBuilder<(ins "Type":$type, "TypedAttr":$callee, "ValueRange":$captures)>
+  ];
+
+  let hasVerifier = 1;
 }

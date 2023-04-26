@@ -2036,10 +2036,10 @@ kgen.generator @callee<a: !pop.struct<index>>(
 
 // CHECK-LABEL: kgen.func @unbox_in_result_sig
 kgen.generator @unbox_in_result_sig() {
-  // CHECK-NEXT: %0 = kgen.create_closure @callee() : (!kgen.signature<(!pop.array<2, index>) -> ()>) -> !kgen.signature<(!pop.array<2, index>) -> ()>
+  // CHECK-NEXT: kgen.create_closure [(!pop.array<2, index>) -> (): @"callee,a=#pop.struct<2>"]()
   kgen.param.declare a = <2>
   kgen.param.declare fn: <!pop.struct<index>>(
-    !pop.array< apply(:(!pop.struct<index>) -> index @unbox, *(0,0)), index>
+    !pop.array<apply(:(!pop.struct<index>) -> index @unbox, *(0,0)), index>
   ) -> () = <@callee>
   kgen.param.constant: (
     !pop.array<apply(:(!pop.struct<index>) -> index @unbox,
@@ -2239,5 +2239,23 @@ kgen.generator @param_cond() -> () {
   %6 = kgen.param.constant: index = <cond(cond_false ?
         apply(:(index) -> index @add_param<3>, 0) : apply(:(index) -> index @add_param<4>, 0))>
 
+  kgen.return
+}
+
+// -----
+
+// CHECK: kgen.func @"callee,a=1"
+// CHECK: kgen.func @"callee,a=2"
+
+kgen.generator @callee<a>(%arg0: index) {
+  kgen.return
+}
+
+kgen.generator @entry(%arg0: index) {
+  // CHECK: create_closure [(index) -> (): @"callee,a=1"]
+  kgen.create_closure [(index) -> (): @callee<1>]()
+  kgen.param.declare fn: (index) -> () = <@callee<2>>
+  // CHECK: create_closure [(index) -> (): @"callee,a=2"]
+  kgen.create_closure [(index) -> (): fn](%arg0)
   kgen.return
 }
