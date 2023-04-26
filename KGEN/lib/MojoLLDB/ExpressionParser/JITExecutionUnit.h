@@ -41,8 +41,8 @@ class JITExecutionUnit : public std::enable_shared_from_this<JITExecutionUnit>,
                          public lldb_private::IRMemoryMap,
                          public lldb_private::ObjectFileJITDelegate {
 public:
-  JITExecutionUnit(std::unique_ptr<llvm::LLVMContext> &context,
-                   std::unique_ptr<llvm::Module> &module,
+  JITExecutionUnit(std::unique_ptr<llvm::LLVMContext> context,
+                   std::unique_ptr<llvm::Module> module,
                    lldb_private::ConstString &name,
                    const lldb::TargetSP &target,
                    const lldb_private::SymbolContext &symCtx,
