@@ -189,15 +189,18 @@ each major component and feature and describes how to use them with examples.
 
 ### `let` and `var` declarations
 
-Inside a `def` in Mojo, you may assign to a name and it implicitly creates a
-function scope variable just like in Python. This provides a very dynamic and
-low ceremony way to write code, but is a challenge for two reasons: 1) systems
-programmers often want to declare that a value is immutable, and 2) may want to
-get an error if they mistype a variable name in an assignment.
+Inside a `def` in Mojo, you may assign a value to a name and it implicitly
+creates a function scope variable just like in Python. This provides a very
+dynamic and low-ceremony way to write code, but it is a challenge for two
+reasons:
 
-To support this, Mojo supports `let` and `var` declarations which introduce a
-new scoped runtime value: `let` is immutable and `var` is mutable. These
-values use lexical scoping and support name shadowing:
+1) Systems programmers often want to declare that a value is immutable.
+2) They may want to get an error if they mistype a variable name in an
+assignment.
+
+To support this, Mojo provides scoped runtime value declarations: `let` is
+immutable and `var` is mutable. These values use lexical scoping and support
+name shadowing:
 
 ```mojo
 def your_function(a, b):
@@ -225,9 +228,9 @@ def your_function():
     use(z)
 ```
 
-Note that `var` and `let` are completely opt-in when in 'def' declarations: you
-may also use implicitly declared values as normal in Python, and they get
-function scope.
+Note that `let` and `var` are completely opt-in when in `def` declarations. You
+can still use implicitly declared values as with Python, and they get
+function scope as usual.
 
 ### `struct` Types
 
@@ -236,18 +239,17 @@ stack that powers many systems programming languages. This allows us to expose
 low-level control over data layout, indirection-free access to fields, as well
 as low-level tricks for bit-swizzling and other niche tricks. One extremely
 important feature of modern systems programming languages is the ability to
-build high level and safe abstractions on top of these low-level shenanigans,
-with zero abstraction penalties. In Mojo, this is provided by a ``struct``
-declaration.
+build high-level and safe abstractions on top of these low-level shenanigans,
+with zero abstraction penalties. In Mojo, this is provided by the `struct`
+type.
 
-`struct` declarations in Mojo are similar in many ways to classes: they
-support methods, fields, operator overloading, decorators for meta programming,
-etc. On the other hand, where classes are extremely dynamic with
-dynamic dispatch, dynamic method swizzling, and dynamically bound instance
-properties, structs are static, bound at compile time, and are stored inlined
-into their container instead of being implicitly indirect and reference
-counted. This approach has precedent in other languages, e.g. Swift, C# and
-others.
+A `struct` in Mojo is similar in many ways to a Python `class`: they both support
+methods, fields, operator overloading, decorators for meta programming, etc. On
+the other hand, where classes are extremely dynamic with dynamic dispatch,
+dynamic method swizzling, and dynamically bound instance properties, structs
+are static, bound at compile time, and are stored inlined into their container
+instead of being implicitly indirect and reference-counted. This approach has
+precedent in other languages such as Swift, C# and others.
 
 Here's a simple definition of a struct:
 
@@ -266,67 +268,44 @@ struct MyPair:
                self.second < rhs.second)
 ```
 
-As you can see, Mojo structs are very similar to classes, the biggest
-difference is that all instance properties *must* be explicitly declared with a
-`var` or `let` declaration. This allows the Mojo compiler to layout and access
-the value precisely in memory without indirection or other overhead. Struct
-fields are bound statically: they aren't looked up with a dictionary
-indirection. As such, you cannot `del` a method or reassign it at runtime.
-This enables the Mojo compiler to perform guaranteed static dispatch, use
-guaranteed static access to fields, and inline `MyPair` into the stack frame or
-enclosing type that uses it without indirection or other overheads.
+The biggest difference compared to a Python `class` is that all instance properties in
+a `struct` **must** be explicitly declared with a `var` or `let` declaration.
+This allows the Mojo compiler to layout and access property values
+precisely in memory without indirection or other overhead.
 
-One common thing about Mojo and Python is that they both focus on enabling
+Struct fields are bound statically: they aren't looked up in a dictionary.
+As such, you cannot `del` a method or reassign it at runtime. This
+enables the Mojo compiler to perform guaranteed static dispatch, use guaranteed
+static access to fields, and inline a struct into the stack frame or enclosing
+type that uses it without indirection or other overheads.
+
+Both Python and Mojo focus on enabling
 expressive API design, and push complexity from the language itself into the
 package ecosystem. Structs in Mojo supercharge this capability by providing
 zero-cost abstraction capabilities typically seen in languages like C++, Swift,
 Rust, and Zig, which compose beautifully with the operator overloading and
 other features that Python has supported for years. These capabilities compose
-to allow **all** the "standard types" (like `Int`, `Bool`, `String` and even
+to allow *all* the "standard types" (like `Int`, `Bool`, `String` and even
 `Tuple`) to be implemented as structs in the standard library instead of being
 built into the language/compiler.
 
-You might be wondering what the "`&`" means on the `self` argument: this
-indicates that the value is mutable, please see the "By-Reference" arguments
-section below.
+:::{.callout-note}
 
-### Strong type checking
+If you're wondering what the `&` means on the `self` argument: this
+indicates that the value is mutable, which is explained below in
+[By-reference arguments](#by-reference-arguments).
 
-Another feature of structs is that a `struct` definition defines a
-compile-time-bound name, and references to that name in a type context are
-treated as a strong specification for the value being defined. For example,
-consider the following code:
+:::
 
-```mojo
-def pairTest() -> Bool:
-    let p = MyPair(1, 2)
-    return p < 4 # gives a compile time error
-```
+#### `Int` vs `int`
 
-If you attempt to run this code, you'll get a compile time error telling you
-that "4" cannot be converted to ``MyPair``, which is what the RHS of `__lt__`
-requires. This is a familiar experience when working with systems programming
-languages, but is not how Python works. Python has a syntactically identical
-feature for "MyPy" type annotations, but they are not enforced by the compiler:
-instead they are hints that inform static analysis. By tying types to specific
-declarations, we are able to handle both the classical type annotation hints as
-well as the strong type specifications without breaking compatibility.
-
-Beyond type checking, strong types are also very important for code generation.
-Because we know that these types are correct, we can specialize on the types,
-pass values in registers, and generally be as efficient as C for argument
-passing and other low level details. This also is the foundation of the safety
-and predictability guarantees that Mojo provides to systems programmers.
-
-#### A note on `Int` vs `int`
-
-You might note that Mojo uses a capital-`Int` type defined in its standard
-library, which differs in case from the lower-case-`int` that is used by MyPy.
-This is intentional, and a good thing. The Mojo standard library `Int` is
-defined to be a fixed width integer sized to match the CPU register (like
-`ssize_t` in C). In contrast, the Python `int` type is a boxed object that
-supports arbitrary precision arithmetic, and has a somewhat broader API - e.g.
-support for object identity tests.
+You might note that Mojo uses a capital `Int` type defined in its standard
+library, which differs in case from the lower-case `int` that is used by
+[MyPy](https://mypy.readthedocs.io/). This is intentional, and a good thing.
+The Mojo standard library `Int` is defined to be a fixed width integer sized to
+match the CPU register (like `ssize_t` in C). In contrast, the Python `int`
+type is a boxed object that supports arbitrary precision arithmetic, and has a
+somewhat broader API - e.g. support for object identity tests.
 
 Mojo does this for two reasons:
 
@@ -343,25 +322,63 @@ As an additional minor point, `Int` is just a struct built into the standard
 library type, so it is nice that it can follow the naming conventions of user
 defined types.
 
+
+### Strong type checking
+
+Although you can still use dynamic types just like in Python, Mojo also allows
+you to use strong type checking in your program. This should be familiar to
+any systems programmer as it provides predictability, control, and safety for
+your code.
+
+One of the primary ways to employ strong type checking is with Mojo's `struct`
+type. A `struct` definition in Mojo defines a compile-time-bound name, and
+references to that name in a type context are treated as a strong specification
+for the value being defined. For example, consider the following code that uses
+the `MyPair` struct shown above:
+
+```mojo
+def pairTest() -> Bool:
+    let p = MyPair(1, 2)
+    return p < 4 # gives a compile time error
+```
+
+When you run this code, you'll get a compile time error telling you that "4"
+cannot be converted to `MyPair`, which is what the RHS of `MyPair.__lt__`
+requires.
+
+This is a familiar experience when working with systems programming languages,
+but it's not how Python works. Python has a syntactically identical feature for
+[MyPy](https://mypy.readthedocs.io/) type annotations, but they are not
+enforced by the compiler: instead they are hints that inform static analysis.
+By tying types to specific declarations, Mojo is able to handle both the
+classical type annotation hints as well as the strong type specifications
+without breaking compatibility.
+
+Beyond type checking, strong types are also very important for code generation.
+Because we know that these types are correct, we can specialize on the types,
+pass values in registers, and generally be as efficient as C for argument
+passing and other low level details. This also is the foundation of the safety
+and predictability guarantees that Mojo provides to systems programmers.
+
+
 ### Overloaded functions & methods
 
-While strong type checking is good for predictability, control, and safety, it
-forces you to keep the type checker happy. This can be a challenge when you
-want to define expressive APIs that "just work" because some methods should
-accept many different static types, and shouldn't require the user of the API
-to remember different names for all the different use cases. Python handles
-this by accepting arbitrary inputs and uses dynamic dispatch to resolve what
-to do on the fly - this will work in Mojo, but may not give you the
-predictability, control, or performance you might be seeking.
+Also like Python, you can define functions in Mojo without specifying
+argument data types and let Mojo infer them. This is nice when you want
+expressive APIs that just work by accepting arbitrary inputs and let dynamic
+dispatch decide how to handle the data. However, when you want to ensure
+type safety as discussed above, Mojo also offers full support for overloaded
+functions and methods.
 
-To solve this problem, Mojo offers full support for "overloaded methods". This
-is a common feature seen in many programming languages (including C++, Java,
-Swift, etc) where you can define the same function name with multiple different
-signatures. When resolving a function call, Mojo will try each candidate and
-use the one that works (if only one works), pick the closest match (if it can
-determine a close match) or report the call as being ambiguous if it can't
-figure out which one to pick. In the latter case, you can resolve the ambiguity
-by adding an explicit cast on the call site. Let's look at an example:
+Essentially, this allows you to define multiple functions with the same name
+but with different arguments. This is a common feature seen in many languages
+such as C++, Java, and Swift.
+
+When resolving a function call, Mojo tries each candidate and use the one that
+works (if only one works), or it picks the closest match (if it can determine a
+close match), or it reports that the call as ambiguous if it can't figure
+out which one to pick. In the latter case, you can resolve the ambiguity by
+adding an explicit cast on the call site. Let's look at an example:
 
 ```mojo
 struct Array[T: AnyType]:
@@ -369,10 +386,18 @@ struct Array[T: AnyType]:
     fn __getitem__(self, idx: Range) -> ArraySlice: ...
 ```
 
+You can overload methods in structs and classes, and overload module-level
+functions.
+
 Mojo doesn't support overloading solely on result type, and doesn't use result
 type or contextual type information for type inference, keeping things simple,
 fast, and predictable.  Mojo will never produce an "expression too complex"
 error, because its type-checker is simple and fast by definition.
+
+Again, if you leave your argument names without type definitions, then the
+function behaves just like Python with dynamic types. As soon as you define a
+single argument type, Mojo will look for overload candidates and resolve
+function calls as described above.
 
 ### `fn` Definitions
 
@@ -417,8 +442,8 @@ declared. This catches name typos and dovetails with the scoping provided by
 Programming patterns will vary widely across teams, and this level of
 strictness will not be for everyone. We expect that folks who are used to C++
 and already use MyPy-style type annotations in Python to prefer the use of
-'fn's, but higher level programmers and ML researchers to continue to use
-'def'. Mojo allows you to freely intermix 'def' and 'fn' declarations, e.g.
+`fn`s, but higher level programmers and ML researchers to continue to use
+`def`. Mojo allows you to freely intermix `def` and `fn` declarations, e.g.
 implementing some methods with one and others with the other, and allows each
 team or programmer to decide what is best for their use-case.
 
