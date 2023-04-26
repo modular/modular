@@ -15,106 +15,12 @@ spills over to the next line."""
 # CHECK:  "name": "mojo-doc",
 # CHECK:  "summary": "This is a module summary, that spills over to the next line.",
 # CHECK:  "description": "",
-# CHECK:  "children": [
 
-# CHECK:  "kind": "struct",
-# CHECK:  "name": "InMemoryStruct",
-# CHECK:  "children": [
-
-# Check that special functions are ordered first, and with the correct
-# prioritization (i.e. not just name based).
-# CHECK:  "kind": "function",
-# CHECK:  "name": "__init__",
-# CHECK:  "name": "__copyinit__",
-# CHECK:  "name": "__del___",
-
-# CHECK:  "kind": "function",
-# CHECK:  "name": "fn_with_by_conventions",
-# CHECK:  "overloads"
-# CHECK:      "signature": "fn_with_by_conventions(self: Self&, arg: Self&, *args: Self&) -> Self&",
-# CHECK:      "summary": "This is a function summary.",
-# CHECK:      "args"
-# CHECK:        {
-# CHECK:          "name": "arg",
-# CHECK:          "type": "Self&",
-# CHECK:          "description": "This is a by-ref argument."
-# CHECK:        },
-# CHECK:        {
-# CHECK:          "name": "args",
-# CHECK:          "type": "*Self&",
-# CHECK:          "description": "This is a variadic argument."
-# CHECK:        }
-# CHECK:      "returns": "This is a by-ref return value.",
-# CHECK:      "description": ""
-
-
-struct InMemoryStruct:
-    fn __init__(self&):
-        pass
-
-    fn __copyinit__(self&, existing: Self):
-        pass
-
-    fn __del___(owned self):
-        pass
-
-    fn fn_with_by_conventions(
-        self&, arg&: InMemoryStruct, *args&: InMemoryStruct
-    ) -> InMemoryStruct:
-        """This is a function summary.
-
-        Args:
-            arg: This is a by-ref argument.
-            args: This is a variadic argument.
-
-        Returns:
-            This is a by-ref return value.
-        """
-        return arg
-
-
-# CHECK:  "kind": "struct",
-# CHECK:  "name": "ParameterClass",
-# CHECK:  "summary": "This is a class summary.",
-# CHECK:  "parameters": [
-# CHECK:      "name": "_type",
-# CHECK:      "type": "__mlir_type.!kgen.dtype",
-# CHECK:      "description": "This is a parameter."
-# CHECK:  ],
-# CHECK:  "description": "The is some kind of description.\n",
-
-# CHECK:      "kind": "function",
-# CHECK:      "name": "fn_with_self_param",
-# CHECK:          "signature": "fn_with_self_param[param: Self](self: Self)",
-# CHECK:          "parameters": [
-# CHECK:              "name": "param",
-# CHECK:              "type": "Self",
-# CHECK:              "description": "This is a Self parameter."
-
-
-@register_passable
-struct ParameterClass[_type: __mlir_type.`!kgen.dtype`]:
-    """This is a class summary.
-
-    The is some kind of description.
-
-    Parameters:
-        _type: This is a parameter.
-    """
-
-    fn fn_with_self_param[param: ParameterClass[_type]](self):
-        """A summary.
-
-        Parameters:
-            param: This is a Self parameter.
-        """
-        return
-
-
-# CHECK: "kind": "alias",
-# CHECK: "name": "alias_Type",
-# CHECK: "value": "Int",
-# CHECK: "summary": "An example alias of a Type",
+# CHECK:  "aliases": [
+# CHECK:  "kind": "alias",
+# CHECK:  "name": "alias_Type",
+# CHECK:  "value": "Int",
+# CHECK:  "summary": "An example alias of a Type",
 alias alias_Type = Int
 """An example alias of a Type"""
 
@@ -126,6 +32,7 @@ alias alias_Value = 10
 """An example alias of a Value"""
 
 
+# CHECK:  "functions": [
 # CHECK:  "name": "empty_fn",
 # CHECK:  "overloads": [
 # CHECK:      "signature": "empty_fn()",
@@ -234,3 +141,97 @@ fn fn_with_params_and_return(arg: Int) -> Int:
         This is a return value.
     """
     return arg
+
+
+# CHECK:  "structs": [
+# CHECK:  "kind": "struct",
+# CHECK:  "name": "InMemoryStruct",
+
+# Check that special functions are ordered first, and with the correct
+# prioritization (i.e. not just name based).
+# CHECK:  "kind": "function",
+# CHECK:  "name": "__init__",
+# CHECK:  "name": "__copyinit__",
+# CHECK:  "name": "__del___",
+
+# CHECK:  "kind": "function",
+# CHECK:  "name": "fn_with_by_conventions",
+# CHECK:  "overloads"
+# CHECK:      "signature": "fn_with_by_conventions(self: Self&, arg: Self&, *args: Self&) -> Self&",
+# CHECK:      "summary": "This is a function summary.",
+# CHECK:      "args"
+# CHECK:        {
+# CHECK:          "name": "arg",
+# CHECK:          "type": "Self&",
+# CHECK:          "description": "This is a by-ref argument."
+# CHECK:        },
+# CHECK:        {
+# CHECK:          "name": "args",
+# CHECK:          "type": "*Self&",
+# CHECK:          "description": "This is a variadic argument."
+# CHECK:        }
+# CHECK:      "returns": "This is a by-ref return value.",
+# CHECK:      "description": ""
+
+
+struct InMemoryStruct:
+    fn __init__(self&):
+        pass
+
+    fn __copyinit__(self&, existing: Self):
+        pass
+
+    fn __del___(owned self):
+        pass
+
+    fn fn_with_by_conventions(
+        self&, arg&: InMemoryStruct, *args&: InMemoryStruct
+    ) -> InMemoryStruct:
+        """This is a function summary.
+
+        Args:
+            arg: This is a by-ref argument.
+            args: This is a variadic argument.
+
+        Returns:
+            This is a by-ref return value.
+        """
+        return arg
+
+
+# CHECK:  "kind": "struct",
+# CHECK:  "name": "ParameterClass",
+# CHECK:  "summary": "This is a class summary.",
+# CHECK:  "parameters": [
+# CHECK:      "name": "_type",
+# CHECK:      "type": "__mlir_type.!kgen.dtype",
+# CHECK:      "description": "This is a parameter."
+# CHECK:  ],
+# CHECK:  "description": "The is some kind of description.\n",
+
+# CHECK:      "kind": "function",
+# CHECK:      "name": "fn_with_self_param",
+# CHECK:          "signature": "fn_with_self_param[param: Self](self: Self)",
+# CHECK:          "parameters": [
+# CHECK:              "name": "param",
+# CHECK:              "type": "Self",
+# CHECK:              "description": "This is a Self parameter."
+
+
+@register_passable
+struct ParameterClass[_type: __mlir_type.`!kgen.dtype`]:
+    """This is a class summary.
+
+    The is some kind of description.
+
+    Parameters:
+        _type: This is a parameter.
+    """
+
+    fn fn_with_self_param[param: ParameterClass[_type]](self):
+        """A summary.
+
+        Parameters:
+            param: This is a Self parameter.
+        """
+        return
