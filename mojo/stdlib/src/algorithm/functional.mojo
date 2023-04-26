@@ -728,7 +728,11 @@ fn tile[
 
 
 struct NullaryClosure[result_type: AnyType]:
-    """A struct representing a 0-arguments closure."""
+    """A struct representing a 0-arguments closure.
+
+    Parameters:
+        result_type: The type of the closure's return value.
+    """
 
     alias closure_type = __mlir_type[`!pop.closure<() -> `, result_type, `>`]
     var value: closure_type
@@ -765,7 +769,12 @@ struct UnaryClosure[
     input_type: AnyType,
     result_type: AnyType,
 ]:
-    """A struct representing a single argument closure."""
+    """A struct representing a single argument closure.
+
+    Parameters:
+        input_type: The type of the closure's input value.
+        result_type: The type of the closure's return value.
+    """
 
     alias closure_type = __mlir_type[
         `!pop.closure<(`, input_type, `) -> `, result_type, `>`
@@ -810,7 +819,13 @@ struct BinaryClosure[
     rhs_type: AnyType,
     result_type: AnyType,
 ]:
-    """A struct representing a two arguments closure."""
+    """A struct representing a two arguments closure.
+
+    Parameters:
+        lhs_type: The type of the closure's 1st input value.
+        rhs_type: The type of the closure's 2nd input value.
+        result_type: The type of the closure's return value.
+    """
 
     alias closure_type = __mlir_type[
         `!pop.closure<(`, lhs_type, `, `, rhs_type, `) -> `, result_type, `>`
@@ -857,7 +872,14 @@ struct TernaryClosure[
     arg3_type: AnyType,
     result_type: AnyType,
 ]:
-    """A struct representing a three arguments closure."""
+    """A struct representing a three arguments closure.
+
+    Parameters:
+        arg1_type: The type of the closure's 1st input value.
+        arg2_type: The type of the closure's 2nd input value.
+        arg3_type: The type of the closure's 3rd input value.
+        result_type: The type of the closure's return value.
+    """
 
     alias closure_type = __mlir_type[
         `!pop.closure<(`,
