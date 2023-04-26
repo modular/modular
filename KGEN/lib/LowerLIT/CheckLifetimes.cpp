@@ -633,7 +633,7 @@ static void addBadValueNameToDiag(ValueRef valueRef, const BitVector &bits,
 
   diag << "'" << valueEntry.getName().str();
   // If the whole value is missing, then don't add any field information.
-  if (valueRef.isAllMissing(bits)) {
+  if (valueSet.getFullValueRef(valueRef.valueId).isAllMissing(bits)) {
     diag << "'";
     return;
   }
@@ -1431,22 +1431,37 @@ void DestructorInsertion::markConsumed(Value value, Operation &op) {
   //   _ = a.x^
   //   use(a.x)
   if (!valueRef.isAllMissing(consumedValues)) {
-    SymbolConstantAttr dtor = valueSet.typeDeclInfo.getDestructorForType(
-        valueRef.getValueType(value));
     // Trivial types don't have __copyinit__ methods, and therefore cannot have
     // ownership tracked for them.
-    if (!dtor)
+    if (!valueSet.typeDeclInfo.getDestructorForType(
+            valueRef.getValueType(value)))
       return;
 
     ValueInfo &info = valueSet.getValueInfo(valueRef.valueId);
     if (info.hasErrorDiagnosed)
       return;
+    ValueRef fullValueRef = valueSet.getFullValueRef(valueRef.valueId);
 
     auto diag = mlir::emitError(op.getLoc(), "value ");
-    // If some fields are present and others are missing, complain about the
-    // first whole field that is missing.
-    addBadValueNameToDiag(valueRef, consumedValues, valueSet, diag);
-    diag << " cannot be consumed, because it is used later";
+    // Use a clear bitvector of the right size so we print the entire value
+    // being referenced even if only part of it is missing.
+    BitVector allMissing(consumedValues.size(), true);
+    valueRef.markBits(allMissing, false);
+    addBadValueNameToDiag(valueRef, allMissing, valueSet, diag);
+    diag << " cannot be consumed, because ";
+
+    if (valueRef.isAllPresent(consumedValues) &&
+        (valueRef == fullValueRef ||
+         !fullValueRef.isAllPresent(consumedValues))) {
+      diag << "it";
+    } else {
+      // If some fields are present and others are missing, complain about the
+      // first whole field that is missing.
+      auto aliveValues = consumedValues;
+      aliveValues.flip();
+      addBadValueNameToDiag(valueRef, aliveValues, valueSet, diag);
+    }
+    diag << " is used later";
     info.hasErrorDiagnosed = true;
   }
 
