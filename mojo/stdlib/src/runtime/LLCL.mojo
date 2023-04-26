@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""This module implements the low level concurrency library."""
+"""INTERNAL: This module implements the low level concurrency library."""
 
 from Atomic import Atomic
 from Coroutine import Coroutine, _get_coro_resume_fn
