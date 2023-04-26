@@ -25,132 +25,6 @@ language, fit for consumption by Mojo programmers. It assumes knowledge of
 Python and systems programming concepts, but does not expect the reader to be a
 compiler nerd.
 
-## High level motivation for a new language
-
-Mojo started with the goal of bringing an innovative programming model to
-accelerators and other heterogeneous systems that are pervasive in machine
-learning. This drove the need for powerful compile-time metaprogramming, the
-integration of adaptive compilation techniques, caching throughout the
-compilation flow, and other things that are not supported by existing
-languages.
-
-While accelerators are important, one of the most prevalent and sometimes
-overlooked "accelerators" is the host CPU. CPUs today are getting lots of
-tensor-core-like accelerator blocks and other dedicated AI acceleration units,
-but they also importantly serve as the "fall back" to support operations more
-specialized accelerators don't - things like data loading, pre- and
-post-processing, and integrations with foreign systems. Applied AI systems need
-to address all these use cases and it is clear that we couldn't lift AI with a
-limited "accelerator language" that only worked with specific accelerated use
-cases.
-
-While innovating in compiler internals and while support for current and
-emerging accelerators is critical to our mission, we didn't see a
-need to innovate in *syntax* or *community*. We decided to embrace the Python
-ecosystem because it is so widely used, it is loved by the AI ecosystem, and
-because it is really nice! For more information on the challenges with Python,
-how Mojo compares to other members of the Python family, and other details, see
-the "Detailed Motivation and Related Work" section later in this document.
-
-## Mojo as a member of the Python family
-
-The Mojo language has lofty goals - we want full compatibility with the Python
-ecosystem, we would like predictable low-level performance and low-level
-control, and we need the ability to deploy subsets of code to accelerators. We
-also don't want
-ecosystem fragmentation - we hope that people find our work to be useful over
-time, and don't want something like the Python 2 => Python 3 migration to
-happen again. These are no small goals!
-
-Fortunately, while Mojo is a brand new code base, we aren't really starting
-from scratch conceptually. Embracing Python massively simplifies our design
-efforts, because most of the syntax is already specified. We can instead focus
-our efforts on building the compilation model and designing specific systems
-programming features. We also benefit from tremendous work on other languages
-(e.g. Clang, Rust, Swift, Julia, Zig, Nim, etc), and leverage the massive MLIR
-compiler ecosystem.  We also benefit from experience with the Swift programming
-language, which migrated most of a massive Objective-C community over to a
-new language.
-
-After discussion, we decided that the right *long-term goal* for Mojo is to
-provide a **superset of Python** (i.e. be compatible with existing programs)
-and to embrace the CPython immediately for long-tail ecosystem enablement.
-To a Python programmer, we expect and hope that Mojo will be immediately
-familiar, while also
-providing new tools for developing systems-level code that enable you to do
-things that Python falls back to C and C++ for. We aren't trying to convince
-the world that "static is good" or "dynamic is good" - our belief is that both
-are good when used for the right applications, and that the language should
-enable the programmer to make the call.
-
-### How compatible is Mojo with Python really?
-
-Mojo has many core features of Python including async/await, error handling,
-variadics, etc, but… it is still very early and missing many features - so
-today it isn't very compatible. Mojo doesn't even support classes yet! That
-said, we have experience with other similar projects that give some insights on
-how this will go assuming that we stay properly focused.
-
-We have experience with two major but different compatibility journeys: the
-**Clang** compiler is a C, C++ and Objective-C (and CUDA, OpenCL, …) that is
-part of LLVM. A major goal of Clang was to be a "compatible replacement" for
-GCC, MSVC and other existing compilers. It is hard to make a direct comparison,
-but the complexity of the Clang problem appears to be an order of magnitude
-bigger than implementing a compatible replacement for Python.  The journey there
-gives good confidence we can do this right for the Python community.
-
-Another example is the [Swift programming language](https://www.swift.org/),
-which embraced the Objective-C runtime and language ecosystem and progressively
-shifted millions of programmers (and huge amounts of code) incrementally over
-to a completely different programming language. With Swift, we learned
-lessons about how to be "run-time compatible" and cooperate with a
-legacy runtime. In the case of Python and Mojo, we expect Mojo to cooperate
-directly with the CPython runtime and have similar support for integrating with
-CPython classes and objects without having to compile the code itself. This
-will allow us to talk to a massive ecosystem of existing code, but provide a
-progressive migration approach where incremental work put in for migration will
-yield incremental benefit.
-
-Overall, we believe that the north star of compatibility, continued vigilance
-on design, and incremental progress towards full compatibility will get us to
-where we need to be in time.
-
-### Intentional Differences From Python
-
-While compatibility and migratability are key to success, we also want Mojo to
-be a first class language on its own, and cannot be hobbled by not being able
-to introduce new keywords or add a few grammar productions. As such, our
-approach to compatibility is two fold:
-
-1. We plan to utilize CPython to run all existing Python3 code "out of the box"
-without modification and use its runtime, unmodified, for full compatibility
-with the entire ecosystem. Running code this way will get no benefit from Mojo,
-but the sheer existence and availability of this ecosystem will rapidly
-accelerate the bring-up of Mojo, and leverage the fact that Python is really
-great for high level programming already.
-
-2. We will provide a mechanical migrator that provides very good compatibility
-for people who want to move Python code to Mojo. For example, Mojo provides a
-backtick feature that allows use of any keyword as an identifier, providing a
-trivial mechanical migration path for code that uses those keywords as
-identifiers or keyword arguments. Code that migrates to Mojo can then utilize
-the advanced systems programming features.
-
-Together, this allows Mojo to integrate well in a mostly-CPython world, but
-allows Mojo programmers to be able to progressively move code (a module or file
-at a time) to Mojo. This approach was used and proved by the Objective-C to
-Swift migration that Apple performed. Swift code is able to subclass and
-utilize Objective-C classes, and programmers were able to adopt Swift
-incrementally in their applications. Swift also supports building APIs that are
-useful for Objective-C programmers, and we expect Mojo to be a great way to
-implement APIs for CPython as well.
-
-It will take some time to build Mojo and the migration support, but we feel
-confident that this will allow us to focus our energies and avoid distractions.
-We also think the relationship with CPython can build from both directions -
-wouldn't it be cool if the CPython team eventually reimplemented the
-interpreter in Mojo instead of C? 🔥
-
 ## Using the Mojo Compiler
 
 The simplest way to run a mojo program is to type "mojo hello.🔥", for
@@ -1229,6 +1103,653 @@ These copies typically add no overhead, because small types like Object
 references are cheap to copy. The expensive part is the reference count
 adjustment, which is eliminated by a move optimization.
 
+## "Value Lifecycle": Birth, life and death of a value
+
+Now that we have an understanding of the different ingredients that can go into
+building functions and the types system, we can look at how to put together
+together to model important types that you may want to express in Mojo.
+
+Many existing languages express design points with different tradeoffs: C++, for
+example, is very powerful but often accused of
+"getting the defaults wrong" which leads to bugs and mis-features.  Swift is
+easy to work with, but has a less predictable model that copies values a lot and
+is dependent on an "ARC optimizer" for performance. Rust started with strong
+value ownership goals to satisfy its borrow checker, but relies on values being
+movable, which makes it challenging to express custom move constructors and
+can put a lot of stress on `memcpy` performance. In Python, everything is a
+reference to a class, so it has never really faced these issues.
+
+For Mojo, we benefit from learning from these existing systems, and aim to
+provide a model that is very powerful while still easy to learn and understand.
+We also don't want to require "best effort" and difficult-to-predict
+optimization passes built into a "sufficiently smart" compiler.
+
+To explore these issues, we look at different value classifications and the
+relevant Mojo features that go into expressing them, and build from the
+bottom-up.  We use C++ as the primary comparison point in examples because it is
+widely known but occasionally reference other languages if they provide a better
+comparison point.
+
+### Types that cannot be instantiated
+
+The most bare-bones type in Mojo is one that doesn't allow you to create
+instances of it: these types have no initializer at all, and if they have a
+destructor, it will never be invoked (because there cannot be instances to
+destroy):
+
+```mojo
+struct NoInstances:
+    var state: Int  # Pretty useless
+
+    alias my_int = Int
+
+    @staticmethod
+    fn print_hello():
+        print("hello world")
+```
+
+Mojo types do not get default constructors, move constructors, memberwise
+initializers or anything else by default, so it is impossible to create an
+instance of this `NoInstances` type.  In order to get them you need to define
+an `__init__` method or use a decorator that synthesizes an initializer.  As
+shown, these types can be useful as "namespaces", because you can refer to
+static members like `NoInstances.my_int` or `NoInstances.print_hello()` even
+though you cannot instantiate an instance of the type.
+
+### Non-movable and non-copyable types
+
+If we take a step up the ladder of sophistication, you’ll get to types that can
+be instantiated, but once so they are pinned to an address in memory and cannot
+be implicitly moved or copied.  This can be useful to implement types like
+atomic operations (e.g. `std::atomic` in C++) or other types where the memory
+address of the value is its identity and critical to its purpose:
+
+```mojo
+struct Atomic:
+    var state: Int
+
+    fn __init__(self&, state: Int = 0):
+        self.state = state
+
+    fn __iadd__(self&, rhs: Int):
+        #...atomic magic...
+
+    fn get_value(self) -> Int:
+        return atomic_load_int(self.state)
+```
+
+This class defines an initializer but no copy or move constructors, so once it
+is initialized it can never be moved or copied.  This is safe and useful because
+Mojo's ownership system is fully "address correct" - when this is initialized
+onto the stack or in the field of some other type, it never needs to move.
+
+Note that Mojo’s approach just controls the builtin operations like `a = b`
+copies and the `x^` consume operator.  One useful pattern that can be used for
+types like this is to add an explicit `copy()` method (a non-"dunder" method)
+which can be useful to explicitly make copies of an instance when it is known
+safe to the programmer.
+
+### Unique "move-only" types
+
+If we take one more step up the ladder of capabilities, we will encounter types
+that are "unique" - there are many examples of this in C++, e.g. types like
+`std::unique_ptr`, or even a `FileDescriptor` type that owns an underlying POSIX
+file descriptor.  These types are pervasive in languages like Rust, where
+copying is discouraged, but "move" is free. In Mojo, you can declare these by
+implementing the `__moveinit__` method with a consuming existing like this:
+
+```mojo
+# This is a simple wrapper around POSIX-style fcntl.h functions.
+struct FileDescriptor:
+    var fd: Int
+
+    # This is the new.
+    fn __moveinit__(self&, consuming existing: Self):
+        self.fd = existing.fd
+
+    # This takes ownership of a POSIX file descriptor.
+    fn __init__(self&, fd: Int):
+        self.fd = fd
+
+    fn __init__(self&, path: String):
+        # Error handling omitted, call the open(2) syscall.
+        self = FileDescriptor(open(path, ...))
+
+    fn __del__(owned self):
+        close(self.fd)   # pseudo code, call close(2)
+
+    fn dup(self) -> Self:
+        # Invoke the dup(2) system call.
+        return Self(dup(self.fd))
+    fn read(...): ...
+    fn write(...): ...
+```
+
+The new concept is that we added a "consuming move constructor" which is named
+`__moveinit__`.  The consuming move initializer takes ownership of an existing
+`FileDescriptor`, and moves its internal implementation details over to a new
+instance.  This is because instances of `FileDescriptor` may exist at different
+locations, and they can be logically moved around - stealing the body of one
+value and moving it another.
+
+Here is an egregious example that will invoke this multiple times:
+
+```mojo
+fn egregious_moves(owned fd1: FileDescriptor):
+    # fd1 and fd2 have different addresses in memory, but the
+    # consume operator moves unique ownership from fd1 to fd2.
+    let fd2 = fd1^
+
+    # Do it again, a use of fd2 after this point will produce an error.
+    let fd3 = fd2^
+
+    # We can do this all day...
+    let fd4 = fd3^
+    fd4.read(...)
+    # fd4.__del__() runs here
+```
+
+Note how ownership of the value is transferred between various values that own
+it, using the postfix-`^` ‘consume’ operator to destroy a previous binding.  If
+you are familiar with C++, the simple way to think about the consume operator is
+like `std::move`, but in this case, we can see that it is able to move things
+without resetting them to a state that can be destroyed: in C++, if your move
+operator failed to change the old value’s `fd` instance, it would get closed
+twice.
+
+Mojo tracks the liveness of values and allows you to define custom move
+constructors.  This is rarely needed, but extremely powerful when it is.  For
+example, some types like the
+<code>[llvm::SmallVector type](https://llvm.org/docs/ProgrammersManual.html#llvm-adt-smallvector-h)</code>
+use the "inline storage" optimization technique, and they may want to be
+implemented with an "inner pointer" into their instance.  This is a well known
+trick to reduce pressure on the malloc memory allocator, but it means that a
+"move" operation needs custom logic to update the pointer when that happens.
+
+With Mojo, this is as simple as implementing a custom `__moveinit__` method.
+This is something that is also easy to implement in C++ (though, with
+boilerplate in the cases where you don’t need custom logic) but is difficult to
+implement in other popular memory safe languages.
+
+One additional note is that while the Mojo compiler provides good predictability
+and control, it is also very sophisticated.  It reserves the rights to eliminate
+temporaries and the corresponding copy/move operations.  If this is
+inappropriate for your type, you should use explicit methods like `copy()`
+instead of the dunder methods.
+
+### Types that support a "Stealing Move"
+
+One challenge with memory safe languages is that they need to provide a
+predictable programming model around what the compiler is able to track, and
+static analysis in a compiler is inherently limited.  For example, while it is
+possible for a compiler to understand the that the two array accesses in the
+first example below are to different array elements, it is (in general)
+impossible to reason about the second example:
+
+```c++
+std::pair<T, T> getValues1(MutableArray<T> &array) {
+    return { std::move(array[0]), std::move(array[1]) };
+}
+std::pair<T, T> getValues2(MutableArray<T> &array, size_t i, size_t j) {
+    return { std::move(array[i]), std::move(array[j]) };
+}
+```
+
+The problem here is that there is simply no way (looking at just the function
+body above) to know or prove that the dynamic values of `i` and `j` are not the
+same.  While it is possible to maintain dynamic state to track whether
+individual elements of the array are live, this often would cause significant
+runtime expense (even when move/consumes are not used), which is something that
+Mojo and other systems programming languages are not keen to do.  There are a
+variety of ways to deal with this, including some pretty complicated solutions
+that aren’t always easy to learn.
+
+Mojo takes a pragmatic approach to let Mojo programmers get their job done
+without having to work around its type system. As seen above, it doesn’t force
+types to be copyable, movable or even constructable, but it does want types to
+express their full contract and it wants to enable fluent design patterns that
+programmers expect from languages like C++.  The (well known) observation here
+is that many objects have contents that can be "stolen" without needing to
+disable their destructor, either because they have a "null state" (like an
+optional type or nullable pointer) or because they have a null value that is
+efficient to create and a no-op to destroy (e.g. `std::vector` can have a null
+pointer for its data).
+
+To support these use-cases, the consume operator supports arbitrary LValues, and
+when applied to one, it invokes the "stealing move constructor".  This
+constructor must set up the new value to be in a live state, and can mutate the
+old value, but needs to put it into a state where its destructor will still
+work.  For example, if we want to put our `FileDescriptor` into a vector and
+move out of it, we might choose to extend it to know that `-1` is a sentinel
+that means that it is "null".  We can implement this like so:
+
+```mojo
+# This is a simple wrapper around POSIX-style fcntl.h functions.
+struct FileDescriptor:
+    var fd: Int
+
+    # This is the new key capability.
+    fn __moveinit__(self&, existing&: Self):
+        self.fd = existing.fd
+        existing.fd = -1  # neutralize 'existing'.
+
+    fn __moveinit__(self&, consuming existing: Self): # as above
+    fn __init__(self&, fd: Int): # as above
+    fn __init__(self&, path: String): # as above
+
+    fn __del__(owning self):
+        if self.fd != -1:
+            close(self.fd)   # pseudo code, call close(2)
+```
+
+Notice how the "stealing move" constructor takes the file descriptor from an
+existing value, and mutates that value so that its destructor won’t do anything.
+This technique has tradeoffs, and is therefore not the best for every type.  We
+can see that it adds one (inexpensive) branch to the destructor, because it has
+to check for the sentinel case.  It is also generally considered bad form to
+make types like this nullable, because a more general feature like an
+`Optional[T]` type is a better way to handle this.
+
+That said, we plan to implement `Optional[T]` in Mojo itself, and `Optional`
+needs this functionality.  We also believe that the library authors understand
+their domain problem better than language designers do, and generally prefer to
+give library authors full power over that domain.  As such you can choose (but
+don’t have to) to make your types participate in this behavior in an opt-in way.
+
+### Copyable Types
+
+The next step up from moveable types are copyable types.  Copyable types are
+also very common - programmers generally expect things like strings, and arrays
+to be copyable, and every Python Object reference is copyable - by copying the
+pointer and adjusting the reference count.
+
+There are many ways to implement copyable types.  One can implement reference
+semantic types like Python or Java, where you propagate shared pointers around,
+one can use immutable data structures that are easily shareable because they are
+never mutated once created, and one can implement deep value semantics through
+lazy copy-on-write like Swift does.  Each of these approaches has different
+tradeoffs, and Mojo takes the opinion that while we want a few common sets of
+collection types, that we can also support a wide range of specialized ones that
+focus on particular use cases.
+
+In Mojo, you can do this by implementing the `__copyinit__` method.  Here is an
+example of that using a simple `String` in pseudo code:
+
+```mojo
+struct MyString:
+    var data: Pointer[Int8]
+
+    # StringRef is a pointer + length and works with StringLiteral.
+    def __init__(self&, input: StringRef):
+        self.data = ...
+
+    # Copy the string by deep copying the underlying malloc'd data.
+    def __copyinit__(self&, existing: Self):
+        self.data = strdup(existing.data)
+
+    # This isn't required, but optimizes unneeded copies.
+    def __moveinit__(self&, owned existing: Self):
+        self.data = existing.data
+
+    def __del__(owned self):
+        free(self.data.address)
+
+    def __add__(self, rhs: MyString) -> MyString: ...
+```
+
+This simple type is a pointer to a "null terminated" string data allocated with
+malloc, using old-school C APIs for clarity.  It implements the `__copyinit__`
+which maintains the invariant that each instance of MyString owns their
+underlying pointer and frees it on destruction.  This implementation builds on
+tricks we’ve seen above, and implements a `__moveinit__` constructor, which
+allows it to completely eliminate temporary copies in some common cases.  You
+can see this behavior in this code sequence:
+
+```mojo
+fn test_my_string():
+    var s1 = MyString("hello ")
+
+    var s2 = s1    # s2.__copyinit__(s1) runs here
+
+    print(s1)
+
+    var s3 = s1^   # s3.__moveinit__(s1) runs here
+
+    print(s2)
+    # s2.__del__() runs here
+    print(s3)
+    # s3.__del__() runs here
+```
+
+In this case you can see both why a copy constructor is needed: without one, the
+duplication of the `s1` value into `s2` would be an error - because you
+cannot have two live instances of the same non-copyable type.  The move
+constructor is optional, but helps the assignment into `s3`: without it, the
+compiler would invoke the copy constructor from s1, then destroy the old `s1`
+instance.  This is logically correct, but introduces extra runtime overhead.
+
+Mojo destroys values eagerly, which allows it to use frequently transform
+copy+destroy pairs into a move operation, which can lead to much better
+performance than C++ without requiring the need for pervasive micro-management
+of `std::move`.
+
+### Trivial Types
+
+The most flexible types are ones that are just "bags of bits".  These types are
+"trivial" because they can be copied, moved, and destroyed without invoking
+custom code.  Types like these are arguably the most common basic type that
+surrounds us: things like integers and floating point values are all trivial.
+From a language perspective, Mojo doesn’t need special support for these, it
+would be perfectly fine for type authors to implement these things as no-ops,
+and allow the inliner to just make them go away.
+
+There are two reasons that approach would be suboptimal: one is that we don’t
+want the boilerplate of having to define a bunch of methods on trivial types,
+and second, we don’t want the compile time overhead of generating and pushing
+around a bunch of function calls, only to have them inline away to nothing.
+Furthermore, there is an orthogonal concern, which is that many of these types
+are trivial in another way: they are tiny, and should be passed around in the
+registers of a CPU, not indirectly in memory.
+
+As such, Mojo provides a struct decorator that solves all of these problems.
+You can implement a type with the `@register_passable("trivial")` decorator,
+and this tells Mojo that the type should be copyable and movable, but that it
+has no user-defined logic for doing this.  It also tells Mojo to prefer to pass
+the value in CPU registers, which can lead to efficiency benefits.
+
+TODO: This decorator is due for a reconsideration.  Lack of custom logic
+copy/move/destroy logic, and "passability in a register" are orthogonal concerns
+and should be split.  This former logic should be subsumed into a more general
+`@value("trivial")` decorator which is orthogonal from `@register_passable`.
+
+### Boilerplate eliminating decorators
+
+TODO: Describe the `@value` /  `@mojo.value` struct decorator.  This synthesizes
+copy/move/memberwise constructors based on the availability of stored
+properties, it takes string arguments that customize its behavior.
+
+## Behavior of Destructors
+
+Any struct in Mojo can have a destructor, which is automatically run when the
+values lifetime ends, for example, a simple string might look like this (in
+pseudo code):
+
+```mojo
+struct MyString:
+    var data: Pointer[Int8]
+
+    def __init__(self&, input: StringRef): ...
+    def __add__(self, rhs: MyString) -> MyString: ...
+    def __del__(owned self):
+        free(self.data.address)
+```
+
+The Mojo compiler automatically invokes the destructor when the value is dead,
+and provides strong guarantees about when the destructor is run.  Mojo uses
+compiler static analysis to reason about your code and decide when to insert
+calls to the destructor.  For example:
+
+```mojo
+fn use_strings():
+    var a = MyString("hello a")
+    var b = MyString("hello b")
+    print(a)
+    # a.__del__() runs here
+
+
+    print(b)
+    # b.__del__() runs here
+
+    a = MyString("temporary a")
+    # a.__del__() runs here
+
+    other_stuff()
+
+    a = MyString("final a")
+    print(a)
+    # a.__del__() runs here
+```
+
+In the code above you’ll see that the `a` and `b` values are created early on,
+and each initialization of a value is matched with a call to a destructor.
+Notice also where the calls are happening: in the `b` variable for example, Mojo
+keeps the value live across the (unrelated) print of the `a` variable until the
+print of the `b` variable, and destroys it immediately after that call.  The `a`
+value is destroyed immediately after its first print, and immediately after
+reassigning it a new (unused) temporary value, and after its final print.
+
+Mojo destroys values using an **"As Soon As Possible"** (ASAP) policy, behaving
+like
+a hyper-active garbage collector that is run after every call - and when we say
+every call, we mean it!  Code that uses internal expressions (like `a+b+c+d`)
+will destroy the intermediate expressions eagerly when they are not needed -
+destruction is not deferred to the end of the statement like in C++. Mojo
+fully understands control flow, including loops, ifs, and try/except of course.
+
+Now, this may be surprising to a C++ programmer: this invalidates the use of the
+[RAII pattern](https://en.cppreference.com/w/cpp/language/raii) that C++
+programmers use widely.  So, why does Mojo destroy things so eagerly, instead of
+using C++-style scoped destruction?  Well I’m glad you asked, there are many
+good reasons!
+
+The Mojo design has a number of strong advantages over the C++ model:
+
+1. Recall that Python doesn’t really have scopes beyond the whole function, and
+   Mojo needs to provide a workable model that behaves correctly in the presence
+   of Python-style ‘def’s.
+2. Because Python doesn’t provide strong guarantees on object destruction, it
+   doesn’t encourage the RAII pattern.  To solve for the RAII pattern, Mojo (and
+   Python) provides a <code>[with
+   statement](https://docs.python.org/3/reference/compound_stmts.html#the-with-statement)</code> that provides scoped access to resources,
+   which is more deliberate and more syntactically clear than RAII.
+3. The Mojo approach eliminates the need for types to implement re-assignment
+   operators, like `operator=(const T&)` and `operator=(T&&)` in C++, making it
+   easier to define types and eliminating a concept.
+4. Mojo does not allow mutable references to overlap with other mutable
+   references or with immutable borrows.  One major way that it provides a
+   predictable programming model is by making sure that references to objects
+   die as soon as possible, avoiding confusing situations where the compiler
+   thinks a value could still be alive and interfere with another value, but
+   that isn’t clear to the user.
+5. Destroying values at last use composes nicely with "move" optimization,
+   which transforms a "copy+del" pair into a "move" of a value, a generalization
+   of C++ move optimizations like NRVO.
+6. Destroying values at the end of scope in C++ is problematic for some common
+   patterns like tail recursion, because the destructor calls happen after the
+   tail call. This can be a significant performance and memory problem for
+   certain functional programming patterns.
+
+The Mojo approach is more similar to how Rust and Swift work, because they both
+have strong value ownership tracking and provide memory safety.  One difference
+is that their implementation requires the use of a [dynamic "drop
+flag"](https://doc.rust-lang.org/nomicon/drop-flags.html) - they maintain hidden
+shadow variables to keep track of the state of your values to provide safety.
+These are often optimized away, but the Mojo approach eliminates this overhead
+entirely, making the generated code faster and avoiding ambiguity.
+
+### Field Sensitive Lifetime Management
+
+In addition to Mojo’s lifetime analysis being fully control flow aware, it is
+also fully field sensitive (each field of a structure is tracked independently).
+It separately keeps track of whether a "whole object" is initialized with an
+initializer or destroyed with a whole object destructor.  For example, consider
+this code:
+
+```mojo
+struct TwoStrings:
+    var str1: MyString
+    var str2: MyString
+    fn __init__(self&): ...
+    fn __del__(owned self): ...
+
+fn use_two_strings():
+    var ts = TwoStrings()
+    # ts.str1.__del__() runs here
+
+    other_stuff()
+
+    ts.str1 = MyString("hello a")     # Overwrite ts.str1
+    print(ts.str1)
+    # ts.__del__() runs here
+```
+
+Note that the `ts.str1` field is immediately destroyed after being set up,
+because Mojo knows that it will be overwritten down below.  You can also see
+this when using the consume operator, for example:
+
+```mojo
+fn consume_and_use_two_strings():
+    var ts = TwoStrings()
+    consume(ts.str1^)
+
+    # ts is partially initialized here!
+    other_stuff()
+
+    ts.str1 = MyString()  # All together now
+    use(ts)               # This is ok
+    # ts.__del__() runs here
+```
+
+Notice that the code consumes one of the fields: for the duration of
+`other_stuff()` the `str1` field is completely uninitialized.  Fortunately for
+the code above, `str1` is reinitialized before it is used by the `use` function
+- and if it weren’t, Mojo will reject the code with an uninitialized field
+error.
+
+Mojo's rule on this is powerful and intentionally straightforward: fields can be
+temporarily consumed, but the "whole object" must be constructed with the
+aggregate type’s initializer, and destroyed with the aggregate destructor.  This
+means that it isn’t possible to create an object by initializing its fields, nor
+is it possible to tear down an object by destroying its fields:
+
+```mojo
+fn consume_and_use_two_strings():
+    var ts = TwoStrings()
+    consume(ts.str1^)
+    consume(ts.str2^)
+    # Error: cannot run the 'ts' destructor without initialized fields.
+
+    var ts2 : TwoStrings
+    ts2.str1 = MyString()  # All together now
+    ts2.str2 = MyString()  # All together now
+    use(ts2) # Error: 'ts2' isn't fully initialized
+```
+
+While we could allow patterns like this to happen, we reject this because "a
+value is more than a sum of its parts".  Consider a `FileDescriptor` that
+contains an POSIX file descriptor as an integer value for example - there is a
+big difference between destroying the integer (a noop!) and destroying the
+`FileDescriptor` (it might call the `close()` system call).  Because of this, we
+require all full value initialization to go through initializers and be
+destroyed with their full value destructor.
+
+For what it's worth, Mojo does internally have an equivalent of the Rust
+"[mem::forget](https://doc.rust-lang.org/std/mem/fn.forget.html)" function which
+explicitly disables a destructor, and has a corresponding internal feature for
+"blessing" an object, but they aren’t exposed for user consumption at this
+point.
+
+### Field lifetimes in `__init__`
+
+The behavior of an `__init__` method works almost like any other method - there
+is a small bit of magic though, in that it knows that the fields of an object
+are uninitialized, but it believes the full object is initialized.  This means
+that you can use ‘self’ as a whole object as soon as all the fields are
+initialized:
+
+```mojo
+struct TwoStrings:
+    var str1: MyString
+    var str2: MyString
+
+    fn __init__(self&, cond: Bool, other: MyString):
+        self.str1 = MyString()
+        if cond:
+            self.str2 = other
+            use(self)  # Safe to use immediately!
+            # self.str2.__del__(): destroyed because overwritten below.
+
+        self.str2 = self.str1
+        use(self)  # Safe to use immediately!
+```
+
+Similarly, it is completely safe for initializers in Mojo to completely
+overwrite `self`, e.g. by delegating to other initializers:
+
+```mojo
+struct TwoStrings:
+    var str1: MyString
+    var str2: MyString
+
+    fn __init__(self&): ...
+    fn __init__(self&, cond: Bool, other: MyString):
+        self = TwoStrings()  # basic
+        self.str1 = MyString("fancy")
+```
+
+### Field lifetimes of `owned` arguments in `__del__ `and `__moveinit__`
+
+A final bit of magic exists for the ‘owned’ arguments of a destructor and move
+initializer.  To recap, these methods are defined like this:
+
+```mojo
+struct TwoStrings:
+    var str1: MyString
+    var str2: MyString
+    fn __init__(...)
+
+    fn __moveinit__(self&, owned existing: Self): ...
+    fn __del__(owned self): ...
+```
+
+These methods face an interesting but obscure problem: both of these methods are
+in charge of dismantling the `owned existing`/`self` value, either in destroying
+sub-elements that have to do with them, or using them to implement deletion
+logic for their own type.  The move constructor wants to create a new `self`
+instance by stealing parts from an existing instance.  As such, they both want
+to consume and transform elements of the ‘owned’ value, and definitely don’t
+want the owned values destructor to run!  The most egregious example of this is
+the `__del__` method, which would turn into an infinite loop.
+
+To solve this problem, Mojo handles these two methods specially, by assuming
+that their whole values are destroyed upon reaching any return from the method.
+This means that the whole object may be used before the field values are
+consumed, for example, this works as you expect:
+
+```mojo
+struct TwoStrings:
+    var str1: MyString
+    var str2: MyString
+    fn __init__(...)
+    fn __moveinit__(self&, owned existing: Self): ...
+
+    fn __del__(owned self):
+        log(self)       # Self is still whole
+        # self.str2.__del__(): Mojo destroys str2 since it isn't used
+
+        consume(^str1)
+        # Everything has now been consumed, no destructor is run on self.
+```
+
+You should not generally have to think about this, but if you have logic with
+inner pointers into members, you may need to keep them alive for some logic
+within the destructor or move initializer itself.  You can do this by assigning
+to the discard pattern:
+
+```mojo
+fn __del__(owned self):
+    log(self) # Self is still whole
+
+    consume(^str1)
+    _ = self.str2
+    # self.str2.__del__(): Mojo destroys str2 after its last use.
+```
+
+In this case, if "consume" implicitly refers to some value in `str2` somehow,
+
+this will ensure that str2 isn’t destroyed until the last use when it is
+accessed by the `_` pattern.
+
 ## Lifetimes
 
 TODO: Explain how returning references work, tied into lifetimes which dovetail
@@ -1282,189 +1803,3 @@ TOWRITE: Mojo is zero cost abstractions piled up, turtles all the way down to
 MLIR.
 
 How to use `__mlir_type`, `__mlir_op`, `__mlir_type` with some simple examples.
-
-## Detailed Motivation and Related Work
-
-Mojo started with the goal of bringing an innovative programming model to
-accelerators and other heterogeneous systems that are pervasive in machine
-learning. That said, one of the most important and prevalent "accelerators" is
-actually the host CPU. These CPUs are getting lots of tensor-core-like
-accelerator blocks and other dedicated AI acceleration units, but they also
-importantly serve as the "fall back" to support operations the accelerators
-don't. This includes tasks like data loading, pre- and post-processing, and
-integrations with foreign systems written (e.g.) in C++.
-
-As such, it became clear that we couldn't build a limited accelerator language
-that targets a narrow subset of the problem (e.g. just work for tensors). We
-needed to support the full gamut of general purpose programming. At the same
-time, we didn't see a need to innovate in syntax or community, and so we
-decided to embrace and complete the Python ecosystem.
-
-### Why Python?
-
-Python is the dominant force in both the field ML and also countless other
-fields. It is easy to learn, known by important cohorts of programmers (e.g.
-data scientists), has an amazing community, has tons of valuable packages, and
-has a wide variety of good tooling. Python supports development of beautiful
-and expressive APIs through its dynamic programming features.
-
-Arguably, machine learning is what really propelled Python to being such a
-dominant programming language. This happened when frameworks like TensorFlow
-and PyTorch embraced it as a frontend to their high-performance runtimes
-implemented in C++. This was a good decision, because it opened the door for a
-wide range of data scientists and researchers to work in the AI space with high
-productivity, and relative ease of entry.
-
-For Modular today, Python is a non-negotiable part of our API surface stack -
-this is dictated by our customers. Given that everything else in our stack is
-negotiable, it stands to reason that we should start from a "Python First"
-approach.
-
-More subjectively, we feel that Python is a beautiful language - designed with
-simple and composable abstractions, eschews needless punctuation that is
-redundant-in-practice with indentation, and built with powerful (dynamic)
-metaprogramming features that are a runway to extend to what we need for
-Modular. We hope that those in the Python ecosystem see our new direction as
-taking Python ahead to the next level - completing it - instead of trying to
-compete with it.
-
-### What's wrong with Python?
-
-Python has well known problems - most obviously, poor low-level performance and
-cpython implementation decisions like the GIL. While there are many active
-projects underway to improve these obvious challenges, the issues brought by
-Python go deeper and particularly impact the AI field. Instead of talking about
-those technical limitations, we'll talk about the implications of these
-limitations here in 2023.
-
-Note that everywhere we refer to Python in this section is referring to the
-cpython implementation. We'll talk about other implementations in a bit.
-
-#### The Two-World Problem
-
-For a variety of reasons, Python isn't suitable for systems programming.
-Fortunately, Python has amazing strengths as a glue layer, and low-level
-bindings to C and C++ allow building libraries in C, C++ and many other
-languages with better performance characteristics. This is what has enabled
-things like numpy, TensorFlow and PyTorch and a vast number of other libraries
-in the ecosystem.
-
-Unfortunately, while this approach is an effective way to building high
-performance Python libraries, its approach comes with a cost: building these
-hybrid libraries is very complicated, requiring low-level understanding of the
-internals of cpython, requires knowledge of C/C++/… programming (undermining
-one of the original goals of using Python in the first place), makes it
-difficult to evolve large frameworks, and (in the case of ML) pushes the world
-towards "graph based" programming models which have worse fundamental usability
-than "eager mode" systems. TensorFlow was an exemplar of this, but much of the
-effort in PyTorch 2 is focused around discovering graphs to enable more
-aggressive compilation methods.
-
-Beyond the fundamental nature of the two-world problem in terms of system
-complexity, it makes everything else in the ecosystem more complicated.
-Debuggers generally can't step across Python and C code, and those that can
-aren't widely accepted. Package ecosystems need to deal with C/C++ code etc
-instead of a single world. Projects like PyTorch with significant C++
-investments are intentionally trying to move more of their codebase to Python
-because they know it gains usability.
-
-#### The Three-World and N-World Problem
-
-The two-world problem is commonly felt across the Python ecosystem, but things
-are even worse for developers of machine learning frameworks. AI is pervasively
-accelerated, and those accelerators use bespoke programming languages like
-CUDA. While CUDA is a relative of C++, it has its own special problems and
-limitations, and does not have consistent tools like debuggers or profilers. It
-is also effectively vendor locked to a single hardware maker!
-
-The AI world has an incredible amount of innovation on the hardware front, and
-as a consequence, complexity is spiraling out of control. There are now many
-attempts to build limited programming systems for accelerators (OpenCL, Sycl,
-OneAPI, …) as well as use aspects of Python syntax to make accelerator
-programming look like Python (OpenAI's Triton and many others). This complexity
-explosion is continuing to increase and none of these systems solve the
-fundamental fragmentation in tools and ecosystem that is hurting the industry
-so badly.
-
-#### Mobile and Server Deployment
-
-Another challenge for the Python ecosystem is one of deployment. There are many
-facets to this, including folks who want to carefully control dependencies,
-some folks prefer to be able to deploy hermetically compiled "a.out" files, and
-multithreading and performance are also very important. These are areas where
-we would like to see the Python ecosystem take steps forward.
-
-### Attempts to "fix" Python
-
-There are many many approaches to fix Python, including recent work to speed up
-Python and replace the GIL, languages that look like Python but are subsets of
-it, and embedded DSLs that integrate with Python but that are not first class
-languages. While we cannot do an exhaustive list of all the efforts, we can
-talk about some of the challenges in these areas, and why they aren't suitable
-for Modular's use.
-
-#### Improving CPython and JIT compiling Python
-
-Recently, significant energy has been put into improving CPython performance
-and other implementation issues, and this is showing huge results for the
-community. This work is fantastic because it incrementally improves the current
-CPython implementation. Python 3.11 has delivered improvements of 10-60% faster
-than Python 3.10 through internal improvements, and [Python
-3.12](https://github.com/faster-cpython/ideas/wiki/Python-3.12-Goals) aims to
-go further with a trace optimizer. Many other projects are attempting to tame
-the GIL, and projects like PyPy (among many others) have used JIT compilation
-and tracing approaches to speed up Python.
-
-These are great efforts, but are not helpful in getting a unified language onto
-an accelerator. Many accelerators these days support very limited dynamic
-features, and often do so with terrible performance. Furthermore, systems
-programmers don't just seek "performance" they also typically want a lot of
-"**predictability and control**" over how a computation happens.
-
-While we are a fan of these approaches, and feel they are valuable and exciting
-to the community, they unfortunately do not satisfy our needs. We are looking
-to eliminate the need to use C or C++ within Python libraries, we seek the
-highest performance possible, and we cannot accept dynamic features at all in
-some cases, so these approaches don't help.
-
-#### Python Subsets and other Python-like Languages
-
-There are many attempts to build a "deployable" Python, one example is
-TorchScript from the PyTorch project. These are useful in that they often
-provide low-dependence deployment solutions, reduce dynamic features, and
-sometimes have high performance. Because they use the base Python syntax, they
-can be easier to learn than a novel language.
-
-On the other hand, these languages have not seen wide adoption - because they
-are a subset, they generally don't interoperate with the Python ecosystem, do
-not have fantastic tooling (e.g. debuggers), and often change out inconvenient
-behavior in Python (e.g. infinite precision integers) unilaterally, which
-breaks compatibility and fragments the ecosystem.
-
-The challenges with these approaches is that they attempt to solve a weak point
-of Python, but aren't as good at Python's strong points. At best, these can
-provide a new alternative to C and C++, but without solving the dynamic use
-cases of Python, they cannot solve the "two world problem". This approach
-drives fragmentation, and incompatibility makes *migration* difficult to
-impossible - recall how challenging the **Python 2** to **Python 3** migration
-was.
-
-#### Embedded DSLs in Python
-
-Another common approach is to build an embedded DSL in Python, typically
-installed with a Python decorator. There are many examples of this, e.g. the
-`@tf.function` decorator in TensorFlow, the `@triton.jit` in OpenAI's Triton
-programming model, etc. A major benefit of these systems is that they maintain
-compatibility with all of the Python ecosystem tooling, and integrate natively
-into Python logic, allowing an embedded mini language to co-exist with the
-strengths of Python for dynamic use cases.
-
-Unfortunately, the embedded mini-languages provided by these systems often have
-surprising limitations, don't integrate well with debuggers and other workflow
-tooling, and do not support the level of native language integration that we
-seek for a language that unifies heterogeneous compute and is the primary way
-to write large scale kernels and systems. We hope to move the usability of the
-overall system forward by simplifying things and making it more consistent.
-Embedded DSLs are an expedient way to get demos up and running, but we are
-willing to put in the additional effort and work to provide better usability
-and predictability for our use-case.
