@@ -25,41 +25,11 @@ if (PIP_INSTALL_DEPS_RESULT)
   message(FATAL_ERROR "Installation of Python dependencies failed in Python unit test configuration.")
 endif()
 
-if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64)$")
-  set(HOST_ARCH x86_64)
-elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
-  set(HOST_ARCH aarch64)
-else()
-  message(FATAL_ERROR "Unsupported target architecture: ${CMAKE_SYSTEM_PROCESSOR}")
-endif()
-
 # Set up ASAN only if enabled since otherwise errors occur in non-ASAN builds.
 if (LLVM_USE_SANITIZER)
   set(PYTHON_API_TESTS_ASAN_ENV "LSAN_OPTIONS=detect_leaks=0")
   if (UNIX)
-    if (APPLE)
-      set(INJECT_LIB_ENV_VAR DYLD_INSERT_LIBRARIES)
-      set(ASAN_RT_LIB_NAME libclang_rt.asan_osx_dynamic.dylib)
-    else()
-      set(INJECT_LIB_ENV_VAR LD_PRELOAD)
-      if (${CMAKE_CXX_COMPILER_ID} MATCHES "Clang")
-        set(ASAN_RT_LIB_NAME libclang_rt.asan-${HOST_ARCH}.so)
-      elseif (${CMAKE_CXX_COMPILER_ID} MATCHES "GNU")
-        set(ASAN_RT_LIB_NAME libasan.so)
-      endif()
-    endif()
-
-    execute_process(
-      COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=${ASAN_RT_LIB_NAME}
-      OUTPUT_VARIABLE ASAN_RT_LIB_PATH
-      OUTPUT_STRIP_TRAILING_WHITESPACE
-      RESULT_VARIABLE PRINT_FILENAME_RESULT
-    )
-    if (PRINT_FILENAME_RESULT)
-      message(FATAL_ERROR "Failed to get ASAN runtime library path.")
-    endif()
-
-    list(APPEND PYTHON_API_TESTS_ASAN_ENV "${INJECT_LIB_ENV_VAR}=${ASAN_RT_LIB_PATH}")
+    list(APPEND PYTHON_API_TESTS_ASAN_ENV "${ASAN_LIB_INJECT_ENV}")
   endif()
 endif()
 
