@@ -304,7 +304,7 @@ struct TaskGroup:
 
     @always_inline
     fn _counter_decr(self&) -> Int:
-        let prev: Int = self.counter.isub(1).value
+        let prev: Int = self.counter.fetch_sub(1).value
         return prev - 1
 
     fn _task_complete(self&):
@@ -627,7 +627,7 @@ struct AsyncTaskGroup:
 
     @always_inline
     fn _counter_decr(self&) -> Int:
-        let prev: Int = self.counter.isub(1).value
+        let prev: Int = self.counter.fetch_sub(1).value
         return prev - 1
 
     fn _task_complete(self&):
