@@ -42,11 +42,20 @@ public:
                                         StringRef basePath,
                                         CompilationOptions options);
 
+  /// Allow the user to update the pass manager. This is useful when you'd like
+  /// to use the same ObjectCompiler instance with multiple PassManager objects.
+  /// This applies to the elaboration pipeline because we'd like to share the
+  /// ObjectCompiler between during-elaboration and post-elaboration
+  /// compilation, but need different pass managers for each.
+  // TODO: Remove me in favor of restoring the state of the pass manager after
+  //   the LLVM compile.
+  void updatePassManager(mlir::PassManager &newPM) { mgr = &newPM; }
+
   /// Lower all exported `kgen.func` to llvm. Returns the LLVM module on
   /// success, and nullptr on failure.
   std::unique_ptr<llvm::Module>
   lowerAllFuncsToLLVM(SymbolTable &symtab, const ExportMap &exportedSymbols,
-                      llvm::LLVMContext &ctx);
+                      llvm::LLVMContext &ctx, bool isJIT = false);
 
   /// Slices the call graph for all exported symbols to produce a standalone
   /// archive.
@@ -103,7 +112,7 @@ private:
   LLCL::Runtime &runtime;
 
   /// The configured MLIR pass manager to use.
-  mlir::PassManager &mgr;
+  mlir::PassManager *mgr;
 
   /// The compilation options to use.
   CompilationOptions options;

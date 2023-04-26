@@ -60,7 +60,7 @@ ObjectCompiler::ObjectCompiler(
     CompilationOptions options)
     : transformCache(
           decltype(this->transformCache)::create(std::move(transformCache))),
-      runtime(runtime), mgr(mgr), options(std::move(options)) {}
+      runtime(runtime), mgr(&mgr), options(std::move(options)) {}
 
 //===----------------------------------------------------------------------===//
 // compileLLVMToObject
