@@ -114,10 +114,10 @@ kgen.generator @raise2Closures() {
 // CHECK-NEXT:    kgen.return %1 : !kgen.paramref<T>
 
 // CHECK-LABEL: kgen.generator @raiseParamClosure() -> f32
-// CHECK-NEXT:    %0 = kgen.param.constant: scalar<f32> = <"0">
-// CHECK-NEXT:    %1 = pop.cast_to_builtin %0 : !pop.scalar<f32> to f32
-// CHECK-NEXT:    %2 = kgen.call @parametrizedClosure<:type f32>(%1) : (f32) -> f32
-// CHECK-NEXT:    kgen.return %2 : f32
+// CHECK-NEXT:    %simd = kgen.param.constant: scalar<f32> = <"0">
+// CHECK-NEXT:    %0 = pop.cast_to_builtin %simd : !pop.scalar<f32> to f32
+// CHECK-NEXT:    %1 = kgen.call @parametrizedClosure<:type f32>(%0) : (f32) -> f32
+// CHECK-NEXT:    kgen.return %1 : f32
 
 
 kgen.generator @parametrizedClosure<T: type>(%arg0: !kgen.paramref<T>) -> !kgen.paramref<T> {

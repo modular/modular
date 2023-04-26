@@ -57,11 +57,16 @@ def KGENDialect : Dialect {
     template <typename TypeT>
     void registerMnemonicType();
 
+    /// Get the "name" of the type, if it has registered one.
+    std::optional<StringRef> getTypeName(TypeID id);
+
   private:
     /// The map of keyword parsers.
     llvm::StringMap<TypeParseFn> typeParseFns;
     /// A map of pretty type printers.
     DenseMap<TypeID, TypePrintFn> typePrintFns;
+    /// A map containing the "names" of types.
+    DenseMap<TypeID, StringRef> typeNames;
 
     /// Allow the type pretty printer and parser utilities to access the
     /// pretty functions.

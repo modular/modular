@@ -65,6 +65,14 @@ void KGENDialect::registerPrettyType(StringRef keyword, TypeParseFn parse,
   registerKeywordParser(keyword, parse);
   if (!typePrintFns.try_emplace(id, print).second)
     llvm::report_fatal_error("duplicate printer for: " + keyword);
+  typeNames.try_emplace(id, keyword);
+}
+
+std::optional<StringRef> KGENDialect::getTypeName(TypeID id) {
+  auto it = typeNames.find(id);
+  if (it == typeNames.end())
+    return {};
+  return it->second;
 }
 
 //===----------------------------------------------------------------------===//

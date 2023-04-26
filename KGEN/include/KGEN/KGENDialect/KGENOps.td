@@ -15,6 +15,7 @@ include "KGEN/KGENDialect/KGENInterfaces.td"
 include "KGEN/KGENDialect/KGENTypes.td"
 include "KGEN/HLCFDialect/HLCFInterfaces.td"
 include "mlir/IR/FunctionInterfaces.td"
+include "mlir/IR/OpAsmInterface.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/CallInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
@@ -287,7 +288,8 @@ def KGEN_CallParamOp : KGEN_CallOpBase<"call_param",
 // ParamConstantOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_ParamConstantOp : KGENOp<"param.constant", [Pure, ConstantLike]> {
+def KGEN_ParamConstantOp : KGENOp<"param.constant", [Pure, ConstantLike,
+    DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>]> {
   let summary = [{
     The `kgen.param.constant` operation materializes the value of a parameter
     expression as an SSA value that may be used by other operations.

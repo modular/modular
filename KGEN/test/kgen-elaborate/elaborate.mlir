@@ -302,16 +302,16 @@ kgen.generator @parametricTypes(%arg0: !pop.scalar<ui64>, %arg1: !pop.simd<2, f3
 }
 
 // CHECK-LABEL: kgen.func @"takeUnary,dt=si32,fn=doubleExample"()
-// CHECK: %0 = kgen.param.constant
-// CHECK: %1 = pop.cast
+// CHECK: %simd = kgen.param.constant
+// CHECK: %0 = pop.cast %simd
+// CHECK: %1 = kgen.call @"doubleExample,dt=si32"(%0) : (!pop.scalar<si32>) -> !pop.scalar<si32>
 // CHECK: %2 = kgen.call @"doubleExample,dt=si32"(%1) : (!pop.scalar<si32>) -> !pop.scalar<si32>
-// CHECK: %3 = kgen.call @"doubleExample,dt=si32"(%2) : (!pop.scalar<si32>) -> !pop.scalar<si32>
 
 // CHECK-LABEL: kgen.func @"takeUnary,dt=f32,fn=nopExample"() {
-// CHECK:    %0 = kgen.param.constant
-// CHECK:    %1 = pop.cast
-// CHECK:    %2 = kgen.call @"nopExample,dt=f32"(%1) : (!pop.scalar<f32>) -> !pop.scalar<f32>
-// CHECK:    %3 = kgen.call @"nopExample,dt=f32"(%2) : (!pop.scalar<f32>) -> !pop.scalar<f32>
+// CHECK: %simd = kgen.param.constant
+// CHECK: %0 = pop.cast %simd
+// CHECK: %1 = kgen.call @"nopExample,dt=f32"(%0) : (!pop.scalar<f32>) -> !pop.scalar<f32>
+// CHECK: %2 = kgen.call @"nopExample,dt=f32"(%1) : (!pop.scalar<f32>) -> !pop.scalar<f32>
 
 // COM: These are disabled because we don't handle regions for now
 // XCHECK-LABEL: kgen.func @"takeUnary,dt=si32,fn=test_region_concrete_region_1"() {
