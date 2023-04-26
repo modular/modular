@@ -12,7 +12,7 @@ from DType import DType
 from Functional import elementwise
 from Math import mul
 from List import Dim, DimList
-from IO import print, _printf
+from IO import print
 from Index import StaticIntTuple, Index
 from LLCL import Runtime, OwningOutputChainPtr
 from TypeUtilities import rebind
@@ -24,10 +24,8 @@ from Slice import slice_as_view, slice_as_copy
 fn print_elements[
     type: DType, in_rank: Int
 ](tensor: NDBuffer[in_rank, DimList.create_unknown[in_rank](), type]):
-    _printf("New shape: ")
-    print(tensor.dynamic_shape)
-    _printf("New strides: ")
-    print(tensor.dynamic_stride)
+    print("New shape:", tensor.dynamic_shape)
+    print("New strides:", tensor.dynamic_stride)
 
     @always_inline
     fn print_elements_lambda[
@@ -69,10 +67,8 @@ fn test_slice[
         dtype,
     )
 
-    _printf("In shape: ")
-    print(in_tensor.dynamic_shape)
-    _printf("In strides: ")
-    print(in_tensor.dynamic_stride)
+    print("In shape:", in_tensor.dynamic_shape)
+    print("In strides:", in_tensor.dynamic_stride)
 
     var start_tensor_mem = _raw_stack_allocation[outer_rank, DType.index, 1]()
     var start_tensor = Buffer[Dim(), DType.index](
