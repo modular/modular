@@ -640,6 +640,44 @@ static ASTType parseMLIRType(StringRef name, const ExprNode *node,
   if (!result)
     shared.emitError(node->getLoc(), "unknown MLIR type: ")
         << name << node->getRange();
+
+  // The parser is sensitive to certain "builtin" types and expects them to
+  // follow certain invariants. For handwritten MLIR types, this is not always
+  // guaranteed, so verify them here.
+  if (auto sig = dyn_cast_or_null<SignatureType>(result)) {
+    // Verify argument conventions.
+    for (auto [i, argType, conv] : llvm::enumerate(
+             sig.getValueInputs(), sig.getValueInputConventions())) {
+      Type type = argType;
+      if (sig.isVararg(i)) {
+        auto variadic = dyn_cast<VariadicType>(type);
+        if (!variadic) {
+          shared.emitError(node->getLoc(), "argument #")
+              << i
+              << " in manually specified signature type should be a "
+                 "`!kgen.variadic`";
+          return {};
+        }
+        type = ASTType(variadic.getElementType());
+      }
+      switch (conv) {
+      default:
+        break;
+      case ValueInputConvention::BorrowedInMem:
+      case ValueInputConvention::ByRef:
+      case ValueInputConvention::ByRefResult:
+      case ValueInputConvention::OwnedInMem:
+        if (!isa<POP::PointerType>(type)) {
+          shared.emitError(node->getLoc(), "argument #")
+              << i
+              << " in manually specified signature type should be a "
+                 "`!pop.pointer`";
+          return {};
+        }
+        break;
+      }
+    }
+  }
   return result;
 }
 

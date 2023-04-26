@@ -174,7 +174,7 @@ bool ASTType::isMovableFrom(ASTExprAnd<CValue> value,
 /// Given a POP::PointerType, return the element as an ASTType.  This aborts
 /// if the current type isn't a pointer.
 ASTType ASTType::getPointerElementType() const {
-  return ASTType(llvm::cast<POP::PointerType>(mlirType).getElementType());
+  return ASTType(cast<POP::PointerType>(mlirType).getElementType());
 }
 
 /// Given a VariadicType, return the element as an ASTType.  This aborts if
