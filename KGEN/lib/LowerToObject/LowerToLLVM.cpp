@@ -55,31 +55,31 @@ static void attachXRayAttributes(llvm::Module &module,
 std::unique_ptr<llvm::Module>
 ObjectCompiler::lowerAllFuncsToLLVM(SymbolTable &symtab,
                                     const ExportMap &exportedSymbols,
-                                    llvm::LLVMContext &ctx) {
+                                    llvm::LLVMContext &ctx, bool isJIT) {
   OwningOpRef<ModuleOp> module =
       produceStandaloneModule(symtab, exportedSymbols);
-  return lowerAllFuncsToLLVM(ctx, *module, /*isJIT=*/false);
+  return lowerAllFuncsToLLVM(ctx, *module, isJIT);
 }
 
 std::unique_ptr<llvm::Module>
 ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module,
                                     bool isJIT) {
   TimeTraceScope<> traceScope("lower-to-llvm");
-  mgr.clear();
+  mgr->clear();
 
   // We only need to run the post-elaboration passes if we are JITing. In
   // non-JIT mode, we know the passes have already been run.
   if (isJIT)
-    populatePostElaborationPasses(mgr, runtime, options);
+    populatePostElaborationPasses(*mgr, runtime, options);
 
   // If we aren't generating debug information, make sure it's been stripped.
   if (options.debugLevel == CompilationOptions::kNoDebug)
-    mgr.addNestedPass<KGEN::FuncOp>(DebugInfo::createDebugInfoStrip());
+    mgr->addNestedPass<KGEN::FuncOp>(DebugInfo::createDebugInfoStrip());
 
   LowerToLLVMOptions llvmOptions(options.getDIEmissionKind(),
                                  options.debugAtLevel);
-  buildLowerToLLVMPipeline(mgr, llvmOptions);
-  if (failed(mgr.run(module)))
+  buildLowerToLLVMPipeline(*mgr, llvmOptions);
+  if (failed(mgr->run(module)))
     return nullptr;
 
   // Translate the operation into an LLVM module.
