@@ -2098,7 +2098,7 @@ struct ConvIm2ColNHWC[
         # TODO (#12624): Closure captures some state on the stack so this needs
         # to be synchronous in order to keep that state alive
         __mlir_op.`pop.external_call`[
-            func : __mlir_attr.`@KGEN_CompilerRT_LLCL_OutputChainPtr_Await`,
+            func : "KGEN_CompilerRT_LLCL_OutputChainPtr_Await".value,
             _type:None,
         ](out_chain.ptr)
 
