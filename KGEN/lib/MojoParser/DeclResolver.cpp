@@ -1296,15 +1296,20 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
         emitError() << name
                     << " is not supported for @register_passable types, they "
                        "are always movable by copying a register";
-      } else if (!resultType.isEqualCanon(selfType))
-        emitError() << name << " on @register_passable type must return Self";
+      }
 
       // This form of __init__ is implicitly static, it doesn't take a 'self'.
       if (fnInfo.kind == SpecialFunctionKind::kInit)
         funcOp.setIsStatic(true);
+      else // __moveinit__ and __copyinit__ expect one argument.
+        fnInfo.numArguments = 1;
+      fnInfo.flags |= SpecialFunctionInfo::kSelfResult;
     } else {
-      if (!resultType.isEqualCanon(shared.getNoneType()))
-        emitError() << name << " on memory-only type must return None";
+      // __moveinit__ and __copyinit__ expect two arguments and must return
+      // None.
+      if (fnInfo.kind != SpecialFunctionKind::kInit)
+        fnInfo.numArguments = 2;
+      fnInfo.flags |= SpecialFunctionInfo::kNoneResult;
     }
   }
 
@@ -1360,13 +1365,14 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
     funcOp.setIsStatic(false);
   }
 
-  // Verify the operand count lines up.
-  if (fnInfo.numOperands != -1 &&
-      fnInfo.numOperands + std::max(selfArgNumber, ssize_t(0)) !=
+  // Verify the argument count lines up.
+  if (fnInfo.kind != SpecialFunctionKind::kNormal &&
+      fnInfo.numArguments != -1 &&
+      fnInfo.numArguments + std::max(selfArgNumber, ssize_t(0)) !=
           ssize_t(args.size())) {
-    size_t numOperands = fnInfo.numOperands;
-    emitError("special function must have ")
-        << numOperands << " operand" << plural(numOperands);
+    size_t numArguments = fnInfo.numArguments;
+    emitError("special function ") << name << " must have " << numArguments
+                                   << " operand" << plural(numArguments);
   }
 
   // Check other invariants based on method flags.
@@ -1889,13 +1895,23 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // Bulk update the attributes.
   funcOp->setAttrs(attrs.getDictionary(funcOp.getContext()));
 
+  // Set the symbol and notice if we are redeclaring something.
   if (Operation *existing = shared.setResolvedDeclSymbol(funcOp)) {
-    // If the thing is adaptive, then we actually don't want to error.
-    if (!cast<LIT::FuncOp>(existing).getIsAdaptive()) {
-      // On redefinition this is an overload of the same name and same
-      // signature.
+    const char *errorMessage = nullptr;
+    auto existingFunc = cast<LIT::FuncOp>(existing);
+    if (existingFunc.getResultType() != funcOp.getResultType()) {
+      errorMessage = " cannot overload on return type only";
+    } else if (existingFunc.getIsAdaptive()) {
+      // If the thing is adaptive and exact matches, then we actually don't want
+      // to error.
+    } else {
+      errorMessage = " with identical signature";
+    }
+
+    // On redefinition this is an overload of the same name.
+    if (errorMessage) {
       auto diag = p.emitError(funcOp.getLoc(), "redefinition of function ")
-                  << baseName << " with identical signature";
+                  << baseName << errorMessage;
       diag.attachNote(existing->getLoc()) << "previous definition here";
       decl.hasReferenceError = true;
     }
