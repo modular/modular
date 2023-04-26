@@ -4,15 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# UNSUPPORTED: asan
 # RUN: %lldb -R go -r <%s 2>&1 | FileCheck %s
 
 # Note: in REPL mode, expressions are delimited by empty lines.
 
-# Initially define an integer value of 10.
-let value = 10
-# CHECK: ($Int::Int) value
-
-# Check that we can redefine this in a followup expression.
-let value = True
-# CHECK: ($Bool::Bool) value
+%python
+import matplotlib
+# CHECK-NOT: ModuleNotFoundError: No module named 'matplotlib'
