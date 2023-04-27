@@ -14,6 +14,7 @@
 import argparse
 import ctypes
 import json
+from enum import IntEnum
 import os
 import shutil
 import time
@@ -31,6 +32,16 @@ from ipykernel.kernelbase import Kernel
 # Special start and end output markers that denote a display message.
 display_start = "%%%%%%%DISPLAY_START"
 display_end = "%%%%%%%DISPLAY_END"
+
+
+class ExecutionFinishedState(IntEnum):
+    """
+    Copied from MojoJupyter/Kernel.cpp - models the possible states of a kernel execution.
+    """
+
+    NotFinished = 0
+    FinishedSuccess = 1
+    FinishedError = 2
 
 
 class OutputProcessor:
@@ -307,7 +318,7 @@ class MojoKernel(Kernel):
             self._initialize_repl_matplotlib()
 
         # Wait for the currently running execution to finish.
-        def wait_for_execution():
+        def wait_for_execution() -> ExecutionFinishedState:
             # Wait for the execution to finish.
             while True:
                 # Sleep for a bit to avoid busy spinning while waiting for the
@@ -315,11 +326,11 @@ class MojoKernel(Kernel):
                 time.sleep(0.05)
 
                 # Poll the kernel to see if the execution has finished.
-                result: bool = self.lib_mojo_jupyter.checkMojoExecutionFinished(
+                result: int = self.lib_mojo_jupyter.checkMojoExecutionFinished(
                     ctypes.c_void_p(self.mojo_kernel),
                 )
-                if result:
-                    break
+                if result != ExecutionFinishedState.NotFinished:
+                    return ExecutionFinishedState(result)
 
         try:
             # jupyter on the cli doesn't provide a cell id, so we need to
@@ -336,7 +347,10 @@ class MojoKernel(Kernel):
                 ctypes.c_int(store_history),
             )
 
-            wait_for_execution()
+            finish_state = wait_for_execution()
+            if finish_state == ExecutionFinishedState.FinishedError:
+                return {"status": "error"}
+
             return {
                 "status": "ok",
                 "execution_count": self.execution_count,
