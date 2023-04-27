@@ -19,7 +19,6 @@ from Functional import (
     unroll2,
     async_parallelize,
     tile,
-    BinaryClosure,
     unswitch,
 )
 from Image import ImageData, Image2DLayout, ImageShape
@@ -2001,7 +2000,7 @@ struct ConvIm2ColNHWC[
     var col_start_idx: Int
     var total_col_count: Int
 
-    var elementwise_epilogue_fn: BinaryClosure[GemmShape, GemmShape, NoneType]
+    var elementwise_epilogue_fn: fn (GemmShape, GemmShape) capturing -> None
 
     # Interface method
     @staticmethod
@@ -2012,26 +2011,10 @@ struct ConvIm2ColNHWC[
         conv_shape: ConvShape,
         out_chain: OutputChainPtr,
     ):
-        let func = __mlir_op.`kgen.addressof`[
-            _type : __mlir_type[
-                `(`,
-                GemmShape,
-                `,`,
-                GemmShape,
-                `) -> `,
-                NoneType,
-            ],
-            callee:null_epilogue,
-            paramDecls : __mlir_attr.`#kgen<param.decls[]>`,
-        ]()
+        fn func(offset: GemmShape, tile_len: GemmShape):
+            return null_epilogue(offset, tile_len)
 
-        let null_closure: BinaryClosure[
-            GemmShape, GemmShape, NoneType
-        ] = __mlir_op.`pop.partial_apply`[
-            boundInputs : __mlir_attr.`array<i64>`
-        ](
-            func
-        )
+        let null_closure = func
         Self.run(out, input, filter, conv_shape, null_closure, out_chain)
 
     # Interface method
@@ -2041,7 +2024,7 @@ struct ConvIm2ColNHWC[
         input: NDBuffer[4, shape_input, type],
         filter: NDBuffer[4, shape_filter, type],
         conv_shape: ConvShape,
-        elementwise_epilogue_fn: BinaryClosure[GemmShape, GemmShape, NoneType],
+        elementwise_epilogue_fn: fn (GemmShape, GemmShape) capturing -> None,
         out_chain: OutputChainPtr,
     ):
         """Interface function to run im2col convolution on the given images and
@@ -2110,7 +2093,7 @@ struct ConvIm2ColNHWC[
         gemm_shape: GemmShape,
         num_tasks: Int,
         task_id: Int,
-        elementwise_epilogue_fn: BinaryClosure[GemmShape, GemmShape, NoneType],
+        elementwise_epilogue_fn: fn (GemmShape, GemmShape) capturing -> None,
     ):
         """Constructor of an instance of the im2col conv2d operator.
 
