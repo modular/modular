@@ -14,6 +14,13 @@ main two being the [LLDB REPL](#lldb-command-line-repl), and a
 [Jupyter Notebook](#jupyter-notebook). Each entry point contains specific setup
 instructions, please refer to each section for more detailed information.
 
+## Important definitions
+
+- Cell: an entry in a notebook which contains code that can be evaluated by the
+  Mojo REPL.
+- Expression: piece of code that can be evaluated by the Mojo REPL. It can
+  originate from a notebook cell or provided by the user via the CLI REPL.
+
 ### LLDB Command Line REPL
 
 In addition to providing the underpinning technology, LLDB can also be used as a
@@ -87,14 +94,14 @@ $ jupyter-lab
 
 ## Features
 
-### `%python` expressions
+### `%%python` expressions
 
 The Mojo REPL provides built in support for evaluating full Python expressions,
-written natively in Python. To execute a Python expression, simply use `%python`
-as the first line of the expression. Try running the following:
+written natively in Python. To execute a Python expression, simply use
+`%%python` as the first line of the expression. Try running the following:
 
 ```python
-%python
+%%python
 import sys
 print(f"Python version {sys.version}")
 ```

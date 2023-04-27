@@ -8,6 +8,6 @@
 
 # Note: in REPL mode, expressions are delimited by empty lines.
 
-%python
+%%python
 import matplotlib
 # CHECK-NOT: ModuleNotFoundError: No module named 'matplotlib'
