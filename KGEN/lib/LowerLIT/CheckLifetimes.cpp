@@ -834,13 +834,17 @@ void UninitializedValueScan::checkOp(Operation &op) {
 
   // If this is a call, investigate each of the operands along with the
   // argument convention effects.
-  if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
-    SignatureType signature = call.getCalleeType();
+  if (isa<CallSignatureOp, KGENCallOpInterface>(op)) {
+    SignatureType signature;
+    if (auto directCall = dyn_cast<KGENCallOpInterface>(op))
+      signature = directCall.getCalleeType();
+    else
+      signature = cast<CallSignatureOp>(op).getCallee().getType();
     ValueRange operands;
     if (isa<CallOp, CallParamOp, AsyncCallOp, CreateClosureOp>(op)) {
-      operands = call->getOperands();
-    } else if (isa<POP::CallIndirectOp>(op)) {
-      operands = call->getOperands().drop_front();
+      operands = op.getOperands();
+    } else if (isa<CallSignatureOp>(op)) {
+      operands = cast<CallSignatureOp>(op).getArguments();
     } else {
       assert(isa<AddressOfOp>(op) && "Unknown call op");
       return; // AddressOf isn't a use of any SSA values.
@@ -1179,14 +1183,18 @@ void DestructorInsertion::checkOp(Operation &op) {
 
   // If this is a call, investigate each of the operands along with the
   // argument convention effects.
-  if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
-    SignatureType signature = call.getCalleeType();
+  if (isa<CallSignatureOp, KGENCallOpInterface>(op)) {
+    SignatureType signature;
+    if (auto directCall = dyn_cast<KGENCallOpInterface>(op))
+      signature = directCall.getCalleeType();
+    else
+      signature = cast<CallSignatureOp>(op).getCallee().getType();
     ValueRange operands;
-    if (isa<CallOp, CallParamOp, AsyncCallOp, CreateClosureOp>(op))
-      operands = call->getOperands();
-    else if (isa<POP::CallIndirectOp>(op))
-      operands = call->getOperands().drop_front();
-    else {
+    if (isa<CallOp, CallParamOp, AsyncCallOp, CreateClosureOp>(op)) {
+      operands = op.getOperands();
+    } else if (isa<CallSignatureOp>(op)) {
+      operands = cast<CallSignatureOp>(op).getArguments();
+    } else {
       assert(isa<AddressOfOp>(op) && "Unknown call op");
       return; // AddressOf isn't a use of any SSA values.
     }
