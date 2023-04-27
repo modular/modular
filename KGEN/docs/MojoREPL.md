@@ -279,6 +279,10 @@ the same cell. You can control which cell you're in with the special commands
 `:next-cell` and `:prev-cell`. These increment and decrement the cell counter,
 respectively. You can also cleanly exit the REPL mode by running `:exit`.
 
+If you are in REPL mode and you'd like to execute a notebook, you can run
+`:notebook /path/to/notebook`. This mode behaves as if the `--debug-on-failure`
+flag is set, and drops you into debug mode if a cell fails.
+
 You can also execute LLDB commands in the jupyter executor the same way you
 would in the REPL - by running `:<command>`. For debugging a crash, it's often
 useful to run:
