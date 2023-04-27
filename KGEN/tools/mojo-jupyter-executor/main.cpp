@@ -104,6 +104,7 @@ static void executeAsREPL(MojoKernel &kernel, StringRef currentCell = "") {
   std::string cellPrefix =
       currentCell.empty() ? "[0] > " : ("[" + currentCell + "] > ").str();
   std::cout << cellPrefix;
+  std::string expression;
   for (std::string line; std::getline(std::cin, line);) {
     // Allow the program to exit cleanly.
     if (line == ":exit")
@@ -130,9 +131,16 @@ static void executeAsREPL(MojoKernel &kernel, StringRef currentCell = "") {
         continue;
     }
 
-    kernel.startExecution(cellPrefix.c_str(), line.c_str());
+    // Add the individual lines to the full expression - this allows us to
+    // support multiline expressions in REPL mode.
+    expression += line + "\n";
+    if (!StringRef(line).rtrim().empty())
+      continue;
+
+    kernel.startExecution(cellPrefix.c_str(), expression.c_str());
     while (!kernel.hasExecutionFinished())
       continue;
+    expression.clear();
   }
 }
 
