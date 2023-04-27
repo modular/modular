@@ -607,3 +607,11 @@ def func_overloaded(x: Bool):
 from Pointer import DTypePointer # expected-note {{previous definition here}}
 struct DTypePointer: # expected-error {{invalid redefinition of 'DTypePointer'}}
     pass
+
+# Issue #13321.
+struct copy_init_def:
+  var field: Int
+
+  # expected-error @+1 {{cannot define copy/move constructor as 'def'; 'def' implicitly raises}}
+  def __copyinit__(self&, existing: Self):
+    self.field = existing.field
