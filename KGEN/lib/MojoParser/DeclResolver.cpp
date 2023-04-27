@@ -1439,6 +1439,13 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
   case SpecialFunctionKind::kInit:
   case SpecialFunctionKind::kCopyInit:
   case SpecialFunctionKind::kMoveInit: {
+    if (fnInfo.kind != SpecialFunctionKind::kInit && funcOp.getIsDef()) {
+      emitError("cannot define copy/move constructor as 'def'; 'def' implicitly"
+                " raises")
+          << FixIt::replaceToken(decl.getLoc(), "fn");
+      break;
+    }
+
     // This only applies to memory-only types, register-passable types are
     // handled differently.
     if (ASTType(selfType).isRegisterPassable(decl.getLoc(), shared))
