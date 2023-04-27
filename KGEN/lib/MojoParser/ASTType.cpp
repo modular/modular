@@ -406,6 +406,14 @@ void ASTType::print(raw_ostream &os, bool forDiag) const {
       os << getParamAsString(paramRef.getParam());
   } else if (isa<MLIRTypeType>(type)) {
     os << "AnyType";
+  } else if (auto fnType = dyn_cast<FunctionType>(type)) {
+    os << "fn (";
+    llvm::interleaveComma(fnType.getInputs(), os,
+                          [&](Type type) { ASTType(type).print(os, forDiag); });
+    os << ") -> (";
+    llvm::interleaveComma(fnType.getResults(), os,
+                          [&](Type type) { ASTType(type).print(os, forDiag); });
+    os << ")";
   } else {
     // Use KGEN pretty printing when printing bare MLIR types for diagnostics.
     if (forDiag)

@@ -97,6 +97,23 @@ fn fn_with_overload(arg: Int):
     return
 
 
+# CHECK: "kind": "function",
+# CHECK: "name": "fn_with_parameter_references",
+# CHECK: "overloads":
+# CHECK:     "signature": "fn_with_parameter_references[arg1_type: AnyType, arg2_type: AnyType](func: fn (arg1_type, arg2_type) -> (), arg1: arg1_type, arg2: arg2_type)"
+
+
+fn fn_with_parameter_references[
+    arg1_type: AnyType,
+    arg2_type: AnyType,
+](
+    func: __mlir_type[`(`, arg1_type, `,`, arg2_type, `) -> ()`],
+    arg1: arg1_type,
+    arg2: arg2_type,
+):
+    pass
+
+
 # CHECK:  "kind": "function",
 # CHECK:  "name": "fn_with_params",
 # CHECK:  "overloads":
