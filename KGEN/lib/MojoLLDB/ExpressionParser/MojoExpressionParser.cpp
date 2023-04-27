@@ -22,6 +22,7 @@
 #include "lldb/Target/ExecutionContextScope.h"
 #include "lldb/Target/StackFrame.h"
 #include "lldb/Target/Target.h"
+#include "lldb/Target/ThreadPlanCallFunction.h"
 #include "lldb/Utility/LLDBLog.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Pass/PassManager.h"
@@ -42,8 +43,33 @@ struct MojoExpressionParser::Impl {
   Impl(ExecutionContextScope *exeScope, MojoUserExpression &expr,
        const EvaluateExpressionOptions &options);
 
+  /// Compile the list of functions to LLVM and return the module. This produces
+  /// a 'standalone' module.
+  ErrorOr<std::unique_ptr<llvm::Module>>
+  compileFuncsToLLVM(SymbolTable &symtab,
+                     ArrayRef<KGEN::FuncOp> funcsToCompile);
+
+  /// Given an evaluator, set of specializations, and a symbol table, construct
+  /// a JITExecutionUnit. This function handles compiling the specializations to
+  /// LLVM, adding the LLVM module to the MCJIT, and doing any interfacing with
+  /// the JITExecutionUnit necessary.
+  ErrorOr<std::shared_ptr<JITExecutionUnit>>
+  produceExecutionUnit(ExecutionContext &exeCtx, KGEN::FuncOp evaluator,
+                       SymbolTable &symtab,
+                       ArrayRef<KGEN::FuncOp> specializations);
+
+  /// Callback that the elaborator can use to evaluate specializations and
+  /// perform search using the LLDB JIT.
+  ErrorOr<size_t>
+  evaluateSpecializations(KGEN::FuncOp evaluator, SymbolTable &symtab,
+                          TargetInfoAttr target,
+                          ArrayRef<KGEN::FuncOp> specializations);
+
   /// The expression being parsed.
   MojoUserExpression &expr;
+
+  /// The execution context scope.
+  ExecutionContextScope *exeScope;
 
   /// The type system associated with the evaluation of the current expression.
   MojoTypeSystem *typeSystem = nullptr;
@@ -51,8 +77,11 @@ struct MojoExpressionParser::Impl {
   /// The compilation options to use when compiling.
   const KGEN::CompilationOptions *compilationOptions = nullptr;
 
-  /// The pass manager to use when compiling.
-  std::unique_ptr<mlir::PassManager> passManager;
+  /// The pass manager to use (a) during elaboration, and (b) when compiling.
+  /// They have to be different because the ObjectCompiler modifies the pass
+  /// manager while it's compiling things and there's no good way to restore the
+  /// state.
+  std::unique_ptr<mlir::PassManager> duringElaborationPM, fullCompilationPM;
 
   /// The llvm context to use when compiling.
   std::unique_ptr<llvm::LLVMContext> llvmContext;
@@ -74,7 +103,7 @@ struct MojoExpressionParser::Impl {
 MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
                                  MojoUserExpression &expr,
                                  const EvaluateExpressionOptions &options)
-    : expr(expr), options(options) {
+    : expr(expr), exeScope(exeScope), options(options) {
   // Bail out if we don't have a valid execution context.
   lldb::TargetSP target = exeScope ? exeScope->CalculateTarget() : nullptr;
   if (!target)
@@ -90,6 +119,7 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
   typeSystem = llvm::cast<MojoTypeSystem>(typeSystemOr.get().get());
   compilationOptions = &typeSystem->getParserContext().getCompilationOptions();
   MLIRContext *ctx = typeSystem->getMLIRContext();
+  llvmContext = std::make_unique<llvm::LLVMContext>();
 
   // Compute the target info to use for compilation.
   ErrorOr<TargetInfoAttr> targetInfoOr = getTargetInfoFor(
@@ -101,19 +131,287 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
 
   // Build the compilation pipeline.
   BuildInfoAttr buildInfo = BuildInfoAttr::getForCurrentBuild(ctx);
-  passManager =
+  fullCompilationPM =
       std::make_unique<mlir::PassManager>(ctx, ModuleOp::getOperationName());
-  populateElaborateModulePasses(*passManager, typeSystem->getRuntime(),
-                                targetInfo, buildInfo, compilationOptions);
+  populateElaborateModulePasses(
+      *fullCompilationPM, typeSystem->getRuntime(), targetInfo, buildInfo,
+      [&](KGEN::FuncOp evaluator, SymbolTable &symtab, TargetInfoAttr target,
+          ArrayRef<KGEN::FuncOp> specializations) {
+        return evaluateSpecializations(evaluator, symtab, target,
+                                       specializations);
+      },
+      compilationOptions);
 
   // Create the compiler instance.
   auto compilerOr =
-      ObjectCompiler::create(typeSystem->getRuntime(), *passManager,
+      ObjectCompiler::create(typeSystem->getRuntime(), *fullCompilationPM,
                              ".kgen_cache", *compilationOptions);
   if (failed(compilerOr))
     return;
   compiler = std::make_unique<KGEN::ObjectCompiler>(std::move(*compilerOr));
+
+  // Now create the pass manager we need during elaboration. They have
+  // to be different so the pass managers don't clash.
+  duringElaborationPM =
+      std::make_unique<mlir::PassManager>(ctx, ModuleOp::getOperationName());
 }
+
+ErrorOr<std::unique_ptr<llvm::Module>>
+MojoExpressionParser::Impl::compileFuncsToLLVM(
+    mlir::SymbolTable &symtab, ArrayRef<KGEN::FuncOp> funcsToCompile) {
+  // Create the set of symbols to export.
+  KGEN::ExportMap exports;
+  for (auto e : funcsToCompile) {
+    StringAttr symName = e.getSymNameAttr();
+    typeSystem->debugLog("[evaluateSpecializations] Exporting {0}",
+                         symName.getValue());
+    exports.insert({symName, ExportedSymbol(symName)});
+  }
+
+  // Create the target machine so we can run the optimizer.
+  auto targetMachineOr =
+      KGEN::createTargetMachine(compilationOptions, /*isJIT=*/true);
+  if (targetMachineOr.isError()) {
+    typeSystem->errorLog(
+        "[evaluateSpecializations] Failed to create the target machine: {0}",
+        targetMachineOr.getError());
+    return M::Error("failed to create the target machine");
+  }
+
+  // Lower everything to LLVM and run the optimizer.
+  auto module = compiler->lowerAllFuncsToLLVM(symtab, exports, *llvmContext,
+                                              /*isJIT=*/true);
+  if (!module) {
+    typeSystem->errorLog("[evaluateSpecializations] failed to lower to LLVM");
+    return M::Error("failed to lower to LLVM");
+  }
+
+  if (failed(KGEN::runLLVMOptPasses(*module, **targetMachineOr,
+                                    compilationOptions))) {
+    typeSystem->errorLog("[evaluateSpecializations] LLVM optimization failed");
+    return M::Error("LLVM optimization failed");
+  }
+
+  return module;
+}
+
+ErrorOr<std::shared_ptr<JITExecutionUnit>>
+MojoExpressionParser::Impl::produceExecutionUnit(
+    ExecutionContext &exeCtx, KGEN::FuncOp evaluator, SymbolTable &symtab,
+    ArrayRef<KGEN::FuncOp> specializations) {
+  // Grab the thread we want for execution.
+  auto &threadList = exeCtx.GetProcessPtr()->GetThreadList();
+  exeCtx.SetThreadSP(threadList.GetExpressionExecutionThread());
+
+  SmallVector<FuncOp> funcsToCompile(specializations);
+  funcsToCompile.push_back(evaluator);
+
+  auto moduleOr = compileFuncsToLLVM(symtab, funcsToCompile);
+  if (moduleOr.isError())
+    return moduleOr.takeError();
+  std::unique_ptr<llvm::Module> module = std::move(*moduleOr);
+
+  // Extract the target features.
+  SmallVector<StringRef> splitFeatures;
+  StringRef(compilationOptions->targetFeatures).split(splitFeatures, ",");
+  std::vector<std::string> features(splitFeatures.begin(), splitFeatures.end());
+
+  // Pull together the symbol context.
+  SymbolContext sc;
+  if (const lldb::StackFrameSP &frame = exeCtx.GetFrameSP())
+    sc = frame->GetSymbolContext(lldb::eSymbolContextEverything);
+  else if (const lldb::TargetSP &target = exeCtx.GetTargetSP())
+    sc.target_sp = target;
+
+  // Now JIT the LLVM module.
+  ConstString name(evaluator.getSymName());
+  auto executionUnit = std::make_shared<JITExecutionUnit>(
+      std::move(llvmContext), std::move(module), name, exeCtx.GetTargetSP(), sc,
+      features);
+
+  // Refresh the LLVM context in the impl.
+  llvmContext = std::make_unique<llvm::LLVMContext>();
+  return executionUnit;
+}
+
+namespace {
+/// RAII wrapper for an allocation in the inferior (target) process.
+struct InferiorProcessAllocation {
+  /// Alloc a memory block on creation.
+  InferiorProcessAllocation(lldb::ProcessSP p, size_t size,
+                            lldb::Permissions permissions, Status &error)
+      : process(std::move(p)), allocAddr(LLDB_INVALID_ADDRESS) {
+    allocAddr = process->CallocateMemory(size, permissions, error);
+  }
+
+  /// These objects are non-copyable.
+  InferiorProcessAllocation(const InferiorProcessAllocation &other) = delete;
+  InferiorProcessAllocation &
+  operator=(const InferiorProcessAllocation &other) = delete;
+
+  /// These objects are move-able, but only one can own the allocAddr to avoid
+  /// double-free.
+  InferiorProcessAllocation(InferiorProcessAllocation &&other)
+      : process(std::move(other.process)) {
+    std::swap(allocAddr, other.allocAddr);
+  }
+
+  /// Converts to lldb::addr_t so that we can use it without modification.
+  /*implicit*/ operator lldb::addr_t() { return allocAddr; }
+
+  /// Leak memory intentionally so we can inspect it after a failure.
+  void leak() { allocAddr = LLDB_INVALID_ADDRESS; }
+
+  /// Dealloc on destruction, assuming we have a valid address.
+  ~InferiorProcessAllocation() {
+    if (allocAddr != LLDB_INVALID_ADDRESS)
+      process->DeallocateMemory(allocAddr);
+  }
+
+  lldb::ProcessSP process;
+  lldb::addr_t allocAddr;
+};
+} // namespace
+
+ErrorOr<size_t> MojoExpressionParser::Impl::evaluateSpecializations(
+    KGEN::FuncOp evaluator, SymbolTable &symtab, TargetInfoAttr target,
+    ArrayRef<KGEN::FuncOp> specializations) {
+  // Update the pass manager to be the one we use during elaboration. At scope
+  // exit, reset it to the one we are using outside elaboration.
+  compiler->updatePassManager(*duringElaborationPM);
+  auto resetPM = llvm::make_scope_exit(
+      [&]() { compiler->updatePassManager(*fullCompilationPM); });
+
+  typeSystem->debugLog(
+      "[evaluateSpecializations] Got {0} specializations to evaluate",
+      specializations.size());
+
+  // Get the execution context.
+  ExecutionContext exeCtx;
+  exeScope->CalculateExecutionContext(exeCtx);
+
+  // Produce the execution unit - this adds objects to the JIT.
+  auto executionUnitOr =
+      produceExecutionUnit(exeCtx, evaluator, symtab, specializations);
+  if (executionUnitOr.isError())
+    return executionUnitOr.takeError();
+  std::shared_ptr<JITExecutionUnit> executionUnit = std::move(*executionUnitOr);
+
+  // Extract the function information for the expression entry point.
+  lldb::addr_t funcAddr, funcEnd;
+  Status error = executionUnit->getRunnableInfo(funcAddr, funcEnd);
+  if (error.Fail())
+    return M::Error(llvm::toString(error.ToError()));
+
+  typeSystem->debugLog("[evaluateSpecializations] Evaluator at {0}",
+                       (void *)funcAddr);
+
+  // Compute the target info to use for the persistent variable state.
+  lldb_private::Process *process = exeCtx.GetProcessPtr();
+  size_t addressByteSize = process->GetAddressByteSize();
+
+  // Pull together all the specialization addresses.
+  SmallVector<lldb::addr_t> specializationAddrs;
+  for (KGEN::FuncOp s : specializations) {
+    auto fn = llvm::find_if(executionUnit->getJittedFunctions(),
+                            [&](const JITExecutionUnit::JittedFunction &fn) {
+                              return fn.name == ConstString(s.getName());
+                            });
+    if (fn == executionUnit->getJittedFunctions().end()) {
+      typeSystem->errorLog(
+          "[evaluateSpecializations] could not find specialization {0}",
+          s.getName());
+      return M::Error("could not find specialization " + s.getName());
+    }
+
+    assert(fn->remoteAddr != LLDB_INVALID_ADDRESS &&
+           "remote addr must be resolved by now");
+    specializationAddrs.push_back(fn->remoteAddr);
+  }
+
+  // Allocate space for the specializations. We have to alloc enough space for
+  // `specializationAddrs.size()` pointers, and then write them to that spot.
+  auto allocForSpecializations = InferiorProcessAllocation(
+      exeCtx.GetProcessSP(), addressByteSize * specializationAddrs.size(),
+      lldb::Permissions::ePermissionsReadable |
+          lldb::Permissions::ePermissionsWritable,
+      error);
+  if (error.Fail())
+    return M::Error(llvm::toString(error.ToError()));
+
+  // Write the addresses to the allocation we made for the specializations.
+  for (auto [index, sa] : llvm::enumerate(specializationAddrs)) {
+    exeCtx.GetProcessRef().WritePointerToMemory(
+        allocForSpecializations + index * addressByteSize, sa, error);
+    if (error.Fail())
+      return M::Error(llvm::toString(error.ToError()));
+  }
+
+  // Allocate space for the out-parameter pointer we use.
+  auto allocForBest =
+      InferiorProcessAllocation(exeCtx.GetProcessSP(), addressByteSize,
+                                lldb::Permissions::ePermissionsReadable |
+                                    lldb::Permissions::ePermissionsWritable,
+                                error);
+  if (error.Fail())
+    return M::Error(llvm::toString(error.ToError()));
+
+  // Find lldb_evaluate_specializations now.
+  bool missingWeak;
+  lldb::addr_t lldbEvaluateSpecializationsAddr = executionUnit->findSymbol(
+      ConstString("lldb_evaluate_specializations"), missingWeak);
+  typeSystem->debugLog(
+      "[evaluateSpecializations] lldb_evaluate_specializations at {0}",
+      (void *)lldbEvaluateSpecializationsAddr);
+
+  EvaluateExpressionOptions opts;
+  // Disable timeout because the evaluator could take a very long time.
+  opts.SetTimeout(Timeout<std::micro>(std::nullopt));
+  opts.SetOneThreadTimeout(Timeout<std::micro>(std::nullopt));
+
+  // Create the thread plan to call `lldb_evaluate_specializations`.
+  lldb::ThreadPlanSP callPlan(new ThreadPlanCallFunction(
+      exeCtx.GetThreadRef(), lldbEvaluateSpecializationsAddr,
+      typeSystem->GetBuiltinTypeByName(ConstString("void")),
+      {funcAddr, allocForSpecializations, (lldb::addr_t)specializations.size(),
+       allocForBest},
+      opts));
+
+  StreamString ss;
+  if (!callPlan || !callPlan->ValidatePlan(&ss)) {
+    typeSystem->errorLog(ss.GetString());
+    return M::Error("could not set up the expression");
+  }
+
+  typeSystem->debugLog(
+      "-- [evaluateSpecializations] Execution of expression begins --");
+
+  DiagnosticManager diagnosticManager;
+  lldb::ExpressionResults executionResult =
+      exeCtx.GetProcessRef().RunThreadPlan(exeCtx, callPlan, opts,
+                                           diagnosticManager);
+
+  typeSystem->debugLog("-- [evaluateSpecializations] Execution of expression "
+                       "completed --");
+
+  if (executionResult != lldb::eExpressionCompleted) {
+    allocForSpecializations.leak();
+    allocForBest.leak();
+    typeSystem->errorLog(
+        "[evaluateSpecializations] Couldn't execute function; result was {0}",
+        Process::ExecutionResultAsCString(executionResult));
+    return M::Error("couldn't execute the evaluator");
+  }
+
+  // Read the memory from the allocation for 'best'.
+  uint64_t bestVar = exeCtx.GetProcessRef().ReadUnsignedIntegerFromMemory(
+      allocForBest, sizeof(uint64_t), 0, error);
+  if (error.Fail())
+    return M::Error(llvm::toString(error.ToError()));
+
+  typeSystem->debugLog("[evaluateSpecializations] Got best = {0}", bestVar);
+  return bestVar;
+};
 
 //===----------------------------------------------------------------------===//
 // Diagnostics
@@ -404,7 +702,7 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   // Log the pre-elaboration module.
   std::string preElaborationModule;
   llvm::raw_string_ostream preElaborationStream(preElaborationModule);
-  impl->passManager->enableIRPrinting(
+  impl->fullCompilationPM->enableIRPrinting(
       [](Pass *pass, Operation *) {
         return pass->getName() == "ElaborateGenerators";
       },
@@ -413,7 +711,7 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
       /*out=*/preElaborationStream);
 
   // Run the elaboration pipeline.
-  if (failed(impl->passManager->run(*module))) {
+  if (failed(impl->fullCompilationPM->run(*module))) {
     impl->typeSystem->errorLog("Elaboration failed");
     return returnErrorCleanup();
   }
@@ -425,7 +723,6 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   // Lower the module to LLVM IR.
   SymbolTable symtab(*module);
   ExportMap exportedSymbols = getExportedSymbols(*module);
-  impl->llvmContext = std::make_unique<llvm::LLVMContext>();
   impl->llvmModule = impl->compiler->lowerAllFuncsToLLVM(
       symtab, exportedSymbols, *impl->llvmContext);
   if (!impl->llvmModule) {
@@ -479,6 +776,9 @@ Status MojoExpressionParser::prepareForExecution(
 
   // Build the IR execution unit responsible for executing the generated IR.
   ConstString functionName(impl->expr.FunctionName());
+  // NOTE: impl->llvmContext will be nullptr after this! Luckily, expressions
+  // are generally destroyed shortly after this, so we don't have to be too
+  // concerned - just something to be aware of.
   executionUnit = std::make_shared<JITExecutionUnit>(
       std::move(impl->llvmContext), std::move(module), functionName,
       exeCtx.GetTargetSP(), sc, features);
