@@ -163,7 +163,8 @@ def KGEN_ListType : KGENType<"List", "list", [
 //===----------------------------------------------------------------------===//
 
 def KGEN_SignatureType : KGENType<"Signature", "signature", [
-    DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
+    DeclareTypeInterfaceMethods<ParameterTypeInterface>,
+    DeclareTypeInterfaceMethods<DataLayoutInterface>]> {
   let summary = "The signature for a parameterized declaration";
   let description = [{
     This type describes the signature for a parameterized declaration, which
@@ -197,7 +198,7 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     ArrayRef<Type> getValueResults() const;
 
     /// Get the callable function effects.
-    FnEffects getFnEffects() { return getMetadata().getFnEffects(); }
+    FnEffects getFnEffects() const { return getMetadata().getFnEffects(); }
     /// Get the function input argument conventions.
     ArrayRef<ValueInputConvention> getValueInputConventions() {
       return getMetadata().getInputConventions();
@@ -240,7 +241,7 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
 
     /// Return true if the function captures state, which means
     /// it requires a context pointer.
-    bool isCapturing() {
+    bool isCapturing() const {
       return bitEnumContainsAny(getFnEffects(), FnEffects::Capturing);
     }
 

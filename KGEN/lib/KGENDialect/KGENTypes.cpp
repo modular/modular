@@ -404,6 +404,18 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
   return metadata.verifySignature(emitError, inputParams, resultParams, values);
 }
 
+std::optional<int64_t> SignatureType::getTypeSize(TargetInfoAttr target) const {
+  // Non-capturing closures are function pointers. Capturing closures contain
+  // a function pointer and a capture state pointer.
+  return (isCapturing() ? 2 : 1) *
+         llvm::divideCeil(target.getDataLayout().getPointerBitWidth(), 8);
+}
+
+std::optional<int64_t>
+SignatureType::getTypeAlign(TargetInfoAttr target) const {
+  return target.getDataLayout().getPointerABIAlign();
+}
+
 //===----------------------------------------------------------------------===//
 // IndexRefRemapper
 //===----------------------------------------------------------------------===//
