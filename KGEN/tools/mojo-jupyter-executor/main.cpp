@@ -84,6 +84,10 @@ private:
 };
 } // namespace
 
+/// Forward declaration so that the REPL mode can call into the notebook mode.
+static LogicalResult executeNotebook(MojoKernel &kernel, StringRef notebookPath,
+                                     bool debugOnFailure);
+
 //===----------------------------------------------------------------------===//
 // REPL Executor
 //===----------------------------------------------------------------------===//
@@ -93,7 +97,8 @@ private:
 /// will tell you the current 'cell'. This does not change automatically because
 /// we need to be able to (for example) print the logs generated for the current
 /// cell. In order to switch cells, you can use `:next-cell` or
-/// `:prev-cell`. In order to exit cleanly, use `:exit`.
+/// `:prev-cell`. In order to exit cleanly, use `:exit`. If you want to begin
+/// executing a notebook, use `:notebook /path/to/notebook`.
 static void executeAsREPL(MojoKernel &kernel, StringRef currentCell = "") {
   int idx = 0;
   std::string cellPrefix =
@@ -116,6 +121,13 @@ static void executeAsREPL(MojoKernel &kernel, StringRef currentCell = "") {
     if (line == ":prev-cell") {
       cellPrefix = "[" + std::to_string(--idx) + "] > ";
       continue;
+    }
+
+    StringRef lineRef(line);
+    if (lineRef.consume_front(":notebook")) {
+      if (failed(executeNotebook(kernel, lineRef.ltrim().str(),
+                                 /*debugOnFailure=*/true)))
+        continue;
     }
 
     kernel.startExecution(cellPrefix.c_str(), line.c_str());
