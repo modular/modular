@@ -889,10 +889,14 @@ static std::pair<Operation *, bool> inlineRegion(IRMapping &map,
       arg.replaceAllUsesWith(value);
     scopeBody.front().eraseArguments(0, call->getNumOperands());
   } else {
-    b.createBlock(&scopeBody);
+    Block *block = b.createBlock(&scopeBody);
     for (auto [value, arg] :
          llvm::zip(call->getOperands(), region.getArguments()))
       map.map(arg, value);
+    for (BlockArgument trailing :
+         region.getArguments().drop_front(call->getNumOperands()))
+      map.map(trailing,
+              block->addArgument(trailing.getType(), trailing.getLoc()));
     for (Operation &op : region.getOps())
       b.clone(op, map);
   }

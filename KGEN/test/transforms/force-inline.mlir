@@ -247,3 +247,25 @@ kgen.func @caller() {
   kgen.call @has_closure() : () -> ()
   kgen.return
 }
+
+// -----
+
+kgen.func @two_callers(%arg0: index, %arg1: index) always_inline {
+  kgen.return
+}
+
+// CHECK: kgen.func @caller0
+kgen.func @caller0() {
+  %idx0 = index.constant 0
+  // CHECK: stage_closure = (%arg0: index loc({{.*}}) capturing
+  kgen.create_closure [(index, index) -> (): @two_callers](%idx0)
+  kgen.return
+}
+
+// CHECK: kgen.func @caller1
+kgen.func @caller1() {
+  %idx0 = index.constant 0
+  // CHECK: stage_closure = (%arg0: index loc({{.*}})) capturing
+  kgen.create_closure [(index, index) -> (): @two_callers](%idx0)
+  kgen.return
+}
