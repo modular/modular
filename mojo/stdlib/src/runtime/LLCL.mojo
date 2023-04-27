@@ -159,7 +159,7 @@ struct Runtime:
     fn __init__(ptr: ptr_type) -> Runtime:
         return Runtime {ptr: ptr}
 
-    fn del_old(self):
+    fn _del_old(self):
         """Destroys the LLCL Runtime. Note that this must be explicitly called
         when the Runtime goes out of scope.
         """

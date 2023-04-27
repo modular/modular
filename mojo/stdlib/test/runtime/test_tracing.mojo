@@ -33,7 +33,7 @@ fn test_tracing[level: TraceLevel]():
         let task = rt.create_task[Int](test_tracing_add_two_of_them(rt, 10, 20))
         _ = task.wait()
 
-    rt.del_old()
+    rt._del_old()
 
 
 fn main():

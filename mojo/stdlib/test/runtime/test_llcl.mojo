@@ -47,7 +47,7 @@ fn test_runtime_task():
     let task = rt.create_task[Int](test_llcl_add_two_of_them(rt, 10, 20))
     # CHECK: 33
     print(task.wait())
-    rt.del_old()
+    rt._del_old()
 
 
 # CHECK-LABEL: test_runtime_taskgroup
@@ -71,7 +71,7 @@ fn test_runtime_taskgroup():
     tg.wait()
     # CHECK: 6
     print(t0.get() + t1.get())
-    rt.del_old()
+    rt._del_old()
 
 
 # CHECK-LABEL: test_runtime_asynctaskgroup
@@ -93,7 +93,7 @@ fn test_runtime_asynctaskgroup():
     out_chain.wait()
     # CHECK: 2
     print(Int(completed.value))
-    rt.del_old()
+    rt._del_old()
 
 
 fn main():
