@@ -22,7 +22,8 @@ add_modular_testsuite(check-kgen
   kgen-translate
   mojo-lsp-server
   mojo
-
-  DEPENDS
-  MojoLLDB
 )
+
+if(LLDB_FOUND)
+  add_dependencies(check-kgen MojoLLDB)
+endif()

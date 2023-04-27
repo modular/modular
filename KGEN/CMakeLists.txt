@@ -31,15 +31,23 @@ add_subdirectory(lib/CLOptions)
 add_subdirectory(lib/Elaborator)
 add_subdirectory(lib/Compiler)
 add_subdirectory(lib/LowerToObject)
-add_subdirectory(lib/MojoLLDB)
-add_subdirectory(lib/MojoJupyter)
+
+if(LLDB_FOUND)
+  add_subdirectory(lib/MojoLLDB)
+  add_subdirectory(lib/MojoJupyter)
+endif()
+
 add_subdirectory(tools/kgen)
 add_subdirectory(tools/kgen-opt)
 add_subdirectory(tools/kgen-execute)
 add_subdirectory(tools/kgen-translate)
 add_subdirectory(tools/mojo-lsp-server)
-add_subdirectory(tools/mojo-jupyter-executor)
-add_subdirectory(tools/mojo-repl-entry-point)
+
+if(LLDB_FOUND)
+  add_subdirectory(tools/mojo-jupyter-executor)
+  add_subdirectory(tools/mojo-repl-entry-point)
+endif()
+
 add_subdirectory(tools/mojo)
 
 # This function reads ${KGEN_LINK_LIBS} and puts the include flags into
