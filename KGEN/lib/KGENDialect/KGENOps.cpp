@@ -991,27 +991,38 @@ void CreateClosureOp::concretizeCallee(mlir::IRRewriter &b,
                                         getOperands());
 }
 
+void CreateClosureOp::build(OpBuilder &b, OperationState &state,
+                            TypedAttr callee, ValueRange captures) {
+  build(b, state, callee, captures,
+        ParamDeclArrayAttr::get(b.getContext(), {}));
+}
+
 void CreateClosureOp::build(OpBuilder &b, OperationState &state, Type type,
                             TypedAttr callee, ValueRange captures) {
   build(b, state, type, callee, captures,
         ParamDeclArrayAttr::get(b.getContext(), {}));
 }
 
-static ParseResult
-parseClosureResultType(AsmParser &p, TypedAttr callee,
-                       ArrayRef<OpAsmParser::UnresolvedOperand> captures,
-                       Type &resultType, SmallVectorImpl<Type> &captureTypes) {
-  auto sig = cast<SignatureType>(callee.getType());
+LogicalResult CreateClosureOp::inferReturnTypes(
+    MLIRContext *ctx, std::optional<Location> loc, ValueRange captures,
+    DictionaryAttr attributes, RegionRange regions,
+    SmallVectorImpl<Type> &results) {
+  auto callee = dyn_cast_or_null<TypedAttr>(attributes.get("callee"));
+  if (!callee)
+    return mlir::emitOptionalError(
+        loc, "'create_closure' expected TypedAttr 'callee'");
+  auto sig = dyn_cast<SignatureType>(callee.getType());
+  if (!sig)
+    return mlir::emitOptionalError(
+        loc, "'create_closure' attribute 'callee' must have SignatureType");
+
   unsigned numArgs = captures.size();
   if (numArgs > sig.getValueInputs().size()) {
-    return p.emitError(p.getCurrentLocation(), "provided ")
-           << numArgs << " operands but callee only has "
-           << sig.getValueInputs().size() << " to bind";
+    return mlir::emitOptionalError(loc, "provided ", numArgs,
+                                   " operands but callee only has ",
+                                   sig.getValueInputs().size(), " to bind");
   }
 
-  // The captures are the first N operands.
-  for (unsigned i = 0; i != numArgs; ++i)
-    captureTypes.push_back(sig.getValueInputs()[i]);
   SmallVector<Type> newArgTypes;
   SmallVector<ValueInputConvention> newInputConvs;
   for (unsigned i = numArgs, e = sig.getValueInputs().size(); i != e; ++i) {
@@ -1026,17 +1037,37 @@ parseClosureResultType(AsmParser &p, TypedAttr callee,
   FnEffects effects = sig.getFnEffects();
   if (!captures.empty())
     effects = effects | FnEffects::Capturing;
-  resultType = SignatureType::get(
+  results.push_back(SignatureType::get(
       sig.getInputParamTypes(), sig.getResultParamTypes(),
-      p.getBuilder().getFunctionType(newArgTypes, sig.getValueResults()),
-      MetadataAttr::get(p.getContext(), newInputConvs, newDefaultArgs,
-                        effects));
+      OpBuilder(ctx).getFunctionType(newArgTypes, sig.getValueResults()),
+      MetadataAttr::get(ctx, newInputConvs, newDefaultArgs, effects)));
+  return mlir::success();
+}
+
+static ParseResult
+parseClosureCaptureTypes(AsmParser &p, TypedAttr callee,
+                         ArrayRef<OpAsmParser::UnresolvedOperand> captures,
+                         SmallVectorImpl<Type> &captureTypes) {
+  auto sig = dyn_cast<SignatureType>(callee.getType());
+  if (!sig)
+    return p.emitError(p.getCurrentLocation(),
+                       "expected type of callee to be SignatureType");
+
+  unsigned numArgs = captures.size();
+  if (numArgs > sig.getValueInputs().size()) {
+    return p.emitError(p.getCurrentLocation(), "provided ")
+           << numArgs << " operands but callee only has "
+           << sig.getValueInputs().size() << " to bind";
+  }
+
+  for (unsigned i = 0; i != numArgs; ++i)
+    captureTypes.push_back(sig.getValueInputs()[i]);
   return success();
 }
 
-static void printClosureResultType(AsmPrinter &p, Operation *op,
-                                   TypedAttr callee, ValueRange captures,
-                                   Type resultType, TypeRange captureTypes) {}
+static void printClosureCaptureTypes(AsmPrinter &p, Operation *,
+                                     TypedAttr callee, ValueRange captures,
+                                     TypeRange captureTypes) {}
 
 LogicalResult CreateClosureOp::verify() {
   SignatureType sig = getCalleeType();

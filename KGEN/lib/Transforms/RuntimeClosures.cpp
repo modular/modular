@@ -72,7 +72,11 @@ SymbolConstantAttr callSymbolOfLiftedRegion(StageClosureOp opWithRegion,
       FunctionType::get(builder.getContext(), sourceRegion.getArgumentTypes(),
                         signatureType.getValueResults());
 
-  auto liftedSignature = SignatureType::get(liftedValueSignature);
+  auto noTypes = TypeArrayAttr::get(signatureType.getContext(), {});
+  auto liftedSignature = SignatureType::get(
+      noTypes, noTypes, liftedValueSignature,
+      MetadataAttr::get(signatureType.getContext(),
+                        sourceRegion.getNumArguments(), FnEffects::Capturing));
   builder.setInsertionPoint(opWithRegion->getParentOfType<FuncOp>());
 
   std::string name = "stage_closure";

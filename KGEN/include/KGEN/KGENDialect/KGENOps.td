@@ -874,7 +874,8 @@ def KGEN_StageClosureOp : KGENOp<"stage_closure", [Pure, FunctionOpInterface]> {
 // CreateClosureOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_CreateClosureOp : KGEN_CallOpBase<"create_closure"> {
+def KGEN_CreateClosureOp : KGEN_CallOpBase<"create_closure",
+    [DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
   let summary = "Create a closure from variables and a function.";
   let description = [{
     The `kgen.create_closure` operation represents the instantiation of
@@ -893,12 +894,12 @@ def KGEN_CreateClosureOp : KGEN_CallOpBase<"create_closure"> {
   let results = (outs KGEN_SignatureType:$result);
   let assemblyFormat = [{
     custom<ParametricCallee>($callee, $paramDecls) `(` $captures `)`
-    custom<ClosureResultType>(ref($callee), ref($captures), type($result),
-                              type($captures))
+    custom<ClosureCaptureTypes>(ref($callee), ref($captures), type($captures))
     attr-dict
   }];
 
   let builders = [
+    OpBuilder<(ins "TypedAttr":$callee, "ValueRange":$captures)>,
     OpBuilder<(ins "Type":$type, "TypedAttr":$callee, "ValueRange":$captures)>
   ];
 
