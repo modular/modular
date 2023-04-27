@@ -2041,13 +2041,13 @@ kgen.generator @unbox_in_result_sig() {
   kgen.param.declare fn: <!pop.struct<index>>(
     !pop.array<apply(:(!pop.struct<index>) -> index @unbox, *(0,0)), index>
   ) -> () = <@callee>
-  kgen.param.constant: (
+  kgen.create_closure[(
     !pop.array<apply(:(!pop.struct<index>) -> index @unbox,
                      apply(:(index) -> !pop.struct<index> @box, a)),
-               index>) -> () =
-    <bind_signature(:<!pop.struct<index>>(
+               index>) -> ():
+    bind_signature(:<!pop.struct<index>>(
       !pop.array<apply(:(!pop.struct<index>) -> index @unbox, *(0,0)), index>
-     ) -> () fn, apply(:(index) -> !pop.struct<index> @box, a))>
+     ) -> () fn, apply(:(index) -> !pop.struct<index> @box, a))]()
   kgen.return
 }
 
