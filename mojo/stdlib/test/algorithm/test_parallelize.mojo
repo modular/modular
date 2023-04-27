@@ -42,7 +42,7 @@ fn test_async_parallelize():
     let out_chain = OwningOutputChainPtr(rt)
     async_parallelize[parallel_fn](out_chain.borrow(), num_work_items)
     out_chain.wait()
-    rt.del_old()
+    rt._del_old()
 
     # CHECK-NOT: ERROR
     for ii in range(vector.__len__()):  # TODO(#8365) use `i`
