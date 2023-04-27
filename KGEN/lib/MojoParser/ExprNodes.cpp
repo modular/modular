@@ -301,15 +301,11 @@ AnyValue IntLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Convert this to an instance of Int. Int must be in scope since it is
   // auto-imported.
-  ASTDecl *decl = emitter.shared.getBuiltinIntType(getLoc());
-  if (!decl) {
-    emitter.emitError(getLoc(),
-                      "internal error: could not find builtin 'Int' type");
+  ASTType type = emitter.shared.getBuiltinIntType(getLoc());
+  if (!type)
     return {};
-  }
 
-  return emitter.emitConstructorCall(decl->getSelfType(),
-                                     {{AnyValue(attr), this}}, this,
+  return emitter.emitConstructorCall(type, {{AnyValue(attr), this}}, this,
                                      CallSyntax::kImplicitConvert, dest);
 }
 
@@ -319,17 +315,12 @@ AnyValue FloatLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   auto attr = FloatAttr::get(FloatType::getF64(emitter.getContext()),
                              APFloat(value.convertToDouble()));
 
-  // Convert this to an instance of FloatLiteral. FloatLiteral must be in scope
-  // since it is auto-imported.
-  ASTDecl *decl = emitter.shared.getBuiltinDoubleType(getLoc());
-  if (!decl) {
-    emitter.emitError(
-        getLoc(), "internal error: could not find builtin 'FloatLiteral' type");
+  // Convert this to an instance of Double.
+  ASTType type = emitter.shared.getBuiltinDoubleType(getLoc());
+  if (!type)
     return {};
-  }
 
-  return emitter.emitConstructorCall(decl->getSelfType(),
-                                     {{AnyValue(attr), this}}, this,
+  return emitter.emitConstructorCall(type, {{AnyValue(attr), this}}, this,
                                      CallSyntax::kImplicitConvert, dest);
 }
 
@@ -341,15 +332,11 @@ AnyValue BoolLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Convert this to an instance of Bool. Bool must be in scope since it is
   // auto-imported.
-  ASTDecl *decl = emitter.shared.getBuiltinBoolType(getLoc());
-  if (!decl) {
-    emitter.emitError(getLoc(),
-                      "internal error: could not find builtin 'Bool' type");
+  ASTType type = emitter.shared.getBuiltinBoolType(getLoc());
+  if (!type)
     return {};
-  }
 
-  return emitter.emitConstructorCall(decl->getSelfType(),
-                                     {{AnyValue(boolAttr), this}}, this,
+  return emitter.emitConstructorCall(type, {{AnyValue(boolAttr), this}}, this,
                                      CallSyntax::kImplicitConvert, dest);
 }
 
@@ -409,16 +396,11 @@ AnyValue StringLiteralNode::emitIR(ValueDest &dest,
   auto attr = StringAttr::get(value, StringType::get(emitter.getContext()));
 
   // Convert this to an instance of StringLiteral.
-  ASTDecl *decl = emitter.shared.getBuiltinStringLiteral(getLoc());
-  if (!decl) {
-    emitter.emitError(
-        getLoc(),
-        "internal error: could not find builtin 'StringLiteral' type");
+  ASTType type = emitter.shared.getBuiltinStringLiteralType(getLoc());
+  if (!type)
     return {};
-  }
 
-  return emitter.emitConstructorCall(decl->getSelfType(),
-                                     {{AnyValue(attr), this}}, this,
+  return emitter.emitConstructorCall(type, {{AnyValue(attr), this}}, this,
                                      CallSyntax::kImplicitConvert, dest);
 }
 
@@ -946,20 +928,16 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     };
 
     // Emit the value as a StringLiteral.
-    ASTDecl *decl = emitter.shared.getBuiltinStringLiteral(getLoc());
-    if (!decl) {
-      emitter.emitError(
-          getLoc(),
-          "internal error: could not find builtin 'StringLiteral' type");
+    ASTType type = emitter.shared.getBuiltinStringLiteralType(getLoc());
+    if (!type)
       return {};
-    }
 
     auto attr =
         StringAttr::get(attrSpelling, StringType::get(emitter.getContext()));
     ValueDest keyDest(EC_AttributeRefBase);
-    AnyValue key = emitter.emitConstructorCall(
-        decl->getSelfType(), {{AnyValue(attr), this}}, this,
-        CallSyntax::kImplicitConvert, keyDest);
+    AnyValue key =
+        emitter.emitConstructorCall(type, {{AnyValue(attr), this}}, this,
+                                    CallSyntax::kImplicitConvert, keyDest);
     if (!key)
       return {};
 
@@ -1298,13 +1276,11 @@ AnyValue SliceNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return {};
 
   // Lookup the builtin slice type and emit a constructor call.
-  ASTDecl *decl = emitter.shared.getBuiltinSliceType(getLoc());
-  if (!decl) {
-    emitter.emitError(getLoc(),
-                      "internal error: could not find builtin 'slice' type");
+  ASTType type = emitter.shared.getBuiltinSliceType(getLoc());
+  if (!type)
     return {};
-  }
-  return emitter.emitConstructorCall(decl->getSelfType(), ctorArgs, this,
+
+  return emitter.emitConstructorCall(type, ctorArgs, this,
                                      CallSyntax::kImplicitConvert, dest);
 }
 
@@ -1665,7 +1641,7 @@ AnyValue ParenNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 /// Both tuple literals and list literals are emitted as heterogenous sequences,
 /// with each element type encoded in a variadic type parameter.
 static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
-                                         ASTDecl *decl, const ExprNode *node,
+                                         ASTType type, const ExprNode *node,
                                          ArrayRef<ExprNode *> exprs) {
   // Emit each of the tuple elements.
   SmallVector<ASTExprAnd<AnyValue>> elements;
@@ -1675,35 +1651,30 @@ static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
       return {};
   }
 
+  // The ASTType will carry around parameters bound, we want to unbind them so
+  // they can be inferred from the elements.
+  type = DeclRefType::get(type.getDecl(emitter.shared)->getSymbolRef());
+
   // Emit a call to the builtin type constructor as an implicit conversion.
   // The type parameters are inferred from the element types.
-  return emitter.emitConstructorCall(DeclRefType::get(decl->getSymbolRef()),
-                                     elements, node,
+  return emitter.emitConstructorCall(type, elements, node,
                                      CallSyntax::kImplicitConvert, dest);
 }
 
 AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Lookup the builtin TupleLiteral type, in order to call its constructor.
-  // TupleLiteral must be in scope, since it is auto-imported.
-  ASTDecl *decl = emitter.shared.getBuiltinTupleLiteral(getLoc());
-  if (!decl) {
-    emitter.emitError(
-        getLoc(), "internal error: could not find builtin 'TupleLiteral' type");
+  ASTType type = emitter.shared.getBuiltinTupleLiteralType(getLoc());
+  if (!type)
     return {};
-  }
-  return emitHeterogenousSequence(dest, emitter, decl, this, exprs);
+  return emitHeterogenousSequence(dest, emitter, type, this, exprs);
 }
 
 AnyValue ListNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Lookup the builtin ListLiteral type, in order to call its constructor.
-  // ListLiteral must be in scope, since it is auto-imported.
-  ASTDecl *decl = emitter.shared.getBuiltinListLiteral(getLoc());
-  if (!decl) {
-    emitter.emitError(
-        getLoc(), "internal error: could not find builtin 'ListLiteral' type");
+  ASTType type = emitter.shared.getBuiltinListLiteralType(getLoc());
+  if (!type)
     return {};
-  }
-  return emitHeterogenousSequence(dest, emitter, decl, this, exprs);
+  return emitHeterogenousSequence(dest, emitter, type, this, exprs);
 }
 
 AnyValue DictionaryNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
@@ -2529,19 +2500,16 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       args, [](const ParsedArgument &arg) { return arg.kgenConvention; });
 
   if (bitEnumContainsAny(effects, FnEffects::Throws)) {
-    if (ASTDecl *errorType = emitter.shared.getBuiltinErrorType(resultLoc)) {
-      resultType =
-          POP::VariantType::get({errorType->getSelfType(), resultType});
+    Type errorType = emitter.shared.getBuiltinErrorType(resultLoc);
+    if (!errorType)
+      return {};
 
-      // FIXME(#12604): Cannot return Error from raising function.
-      if (cast<POP::VariantType>(resultType.mlirType).getNumTypes() == 1) {
-        emitter.emitError(
-            resultLoc, "cannot return and raise the same type from a function");
-        return {};
-      }
-    } else {
-      emitter.emitError(resultLoc,
-                        "internal error: could not find builtin 'Error' type");
+    resultType = POP::VariantType::get({errorType, resultType});
+
+    // FIXME(#12604): Cannot return Error from raising function.
+    if (cast<POP::VariantType>(resultType.mlirType).getNumTypes() == 1) {
+      emitter.emitError(
+          resultLoc, "cannot return and raise the same type from a function");
       return {};
     }
   }

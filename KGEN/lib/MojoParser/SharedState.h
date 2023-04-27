@@ -205,26 +205,18 @@ public:
       kBuiltinSliceModuleName,       kBuiltinListModuleName,
       kBuiltinDoubleModuleName,      kBuiltinStringRefModuleName};
 
-  /// Resolve a builtin module type.
-  ASTDecl *resolveBuiltinModuleType(llvm::SMLoc loc, StringRef moduleName,
-                                    StringRef typeName);
+  /// Get a builtin type, or emit an error and return null if invalid.
+  ASTType getBuiltinBoolType(llvm::SMLoc loc);
+  ASTType getBuiltinTupleLiteralType(llvm::SMLoc loc);
+  ASTType getBuiltinErrorType(llvm::SMLoc loc);
+  ASTType getBuiltinIntType(llvm::SMLoc loc);
+  ASTType getBuiltinStringLiteralType(llvm::SMLoc loc);
+  ASTType getBuiltinSliceType(llvm::SMLoc loc);
+  ASTType getBuiltinListLiteralType(llvm::SMLoc loc);
+  ASTType getBuiltinDoubleType(llvm::SMLoc loc);
 
-  /// Get the builtin Bool type.
-  ASTDecl *getBuiltinBoolType(llvm::SMLoc loc);
-  /// Get the builtin TupleLiteral type.
-  ASTDecl *getBuiltinTupleLiteral(llvm::SMLoc loc);
-  /// Get the builtin Error type.
-  ASTDecl *getBuiltinErrorType(llvm::SMLoc loc);
-  /// Get the builtin Int type.
-  ASTDecl *getBuiltinIntType(llvm::SMLoc loc);
-  /// Get the builtin String type.
-  ASTDecl *getBuiltinStringLiteral(llvm::SMLoc loc);
-  /// Get the builtin Slice type.
-  ASTDecl *getBuiltinSliceType(llvm::SMLoc loc);
-  /// Get the builtin ListLiteral type.
-  ASTDecl *getBuiltinListLiteral(llvm::SMLoc loc);
-  /// Get the builtin FloatLiteral type.
-  ASTDecl *getBuiltinDoubleType(llvm::SMLoc loc);
+  struct Impl;
+  Impl &getImpl() const { return *impl; }
 
 private:
   /// The internal state of an imported module.
@@ -252,7 +244,6 @@ private:
   /// This is used for memory that lives as long as the global parser does.
   llvm::BumpPtrAllocator persistentAllocator;
 
-  struct Impl;
   std::unique_ptr<Impl> impl;
 };
 
