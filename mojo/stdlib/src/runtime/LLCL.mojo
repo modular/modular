@@ -6,7 +6,7 @@
 """INTERNAL: This module implements the low level concurrency library."""
 
 from Atomic import Atomic
-from Coroutine import Coroutine, _get_coro_resume_fn
+from Coroutine import Coroutine, _coro_resume_fn
 from DType import DType
 from Pointer import Pointer, DTypePointer
 from Range import range
@@ -64,9 +64,9 @@ struct AsyncContext:
     to available.
     """
 
-    alias callback_fn_type = __mlir_type[`(`, Chain, `) -> `, NoneType]
+    alias callback_fn_type = fn (Chain) -> None
 
-    var callback: callback_fn_type
+    var callback: fn (Chain) -> None
     var chain: Chain
 
     @staticmethod
@@ -98,13 +98,13 @@ fn _del_llcl_chain(chain: Pointer[Chain]):
 
 fn _async_and_then(hdl: __mlir_type.`!pop.pointer<i8>`, chain: Pointer[Chain]):
     external_call["KGEN_CompilerRT_LLCL_AndThen", NoneType](
-        _get_coro_resume_fn(), chain.address, hdl
+        _coro_resume_fn, chain.address, hdl
     )
 
 
 fn _async_execute[type: AnyType](handle: Coroutine[type], rt: Runtime):
     external_call["KGEN_CompilerRT_LLCL_Execute", NoneType](
-        _get_coro_resume_fn(), handle._handle, rt.ptr
+        _coro_resume_fn, handle._handle, rt.ptr
     )
 
 
@@ -178,21 +178,7 @@ struct Runtime:
         """Run the coroutine as a task on the LLCL Runtime."""
         let ctx = handle.get_ctx[AsyncContext]()
         _init_llcl_chain(self, AsyncContext.get_chain(ctx))
-        let callbackPtr: Pointer[
-            AsyncContext.callback_fn_type
-        ] = __mlir_op.`lit.struct.gep`[
-            _type : Pointer[AsyncContext.callback_fn_type].pointer_type,
-            field : __mlir_attr.`"callback"`,
-        ](
-            ctx.address
-        )
-        callbackPtr.store(
-            __mlir_op.`kgen.addressof`[
-                _type : AsyncContext.callback_fn_type,
-                callee : AsyncContext.complete,
-                paramDecls : __mlir_attr.`#kgen<param.decls[]>`,
-            ]()
-        )
+        __get_address_as_lvalue(ctx.address).callback = AsyncContext.complete
         _async_execute(handle, self)
         return Task[type](handle ^)
 
@@ -258,9 +244,7 @@ struct Task[type: AnyType]:
 # until we have traits for proper parametric types.
 @register_passable("trivial")
 struct TaskGroupContext:
-    alias tg_callback_fn_type = __mlir_type[
-        `(!pop.pointer<`, TaskGroup, `>) -> `, NoneType
-    ]
+    alias tg_callback_fn_type = fn (& TaskGroup) -> None
 
     var callback: tg_callback_fn_type
     var task_group: Pointer[TaskGroup]
@@ -311,18 +295,6 @@ struct TaskGroup:
         if self._counter_decr() == 0:
             _async_complete(Pointer[Chain].address_of(self.chain))
 
-    @staticmethod
-    fn _get_complete_callback() -> __mlir_type[
-        `(!pop.pointer<`, TaskGroup, `>) -> `, NoneType
-    ]:
-        return __mlir_op.`kgen.addressof`[
-            _type : __mlir_type[
-                `(!pop.pointer<`, TaskGroup, `>) -> `, NoneType
-            ],
-            callee : Self._task_complete,
-            paramDecls : __mlir_attr.`#kgen<param.decls[]>`,
-        ]()
-
     fn create_task[
         type: AnyType
     ](self&, owned task: Coroutine[type]) -> TaskGroupTask[type]:
@@ -330,7 +302,7 @@ struct TaskGroup:
         let task_group_txt = task.get_ctx[TaskGroupContext]()
         task_group_txt.store(
             TaskGroupContext {
-                callback: Self._get_complete_callback(),
+                callback: Self._task_complete,
                 task_group: Pointer[TaskGroup].address_of(self),
             }
         )
@@ -555,9 +527,7 @@ struct OwningOutputChainPtr:
 
 
 struct AsyncTaskGroupContext:
-    alias tg_callback_fn_type = __mlir_type[
-        `(!pop.pointer<`, AsyncTaskGroup, `>) -> `, NoneType
-    ]
+    alias tg_callback_fn_type = fn (& AsyncTaskGroup) -> None
 
     var callback: tg_callback_fn_type
     var async_task_group_ptr: Pointer[AsyncTaskGroup]
@@ -635,24 +605,12 @@ struct AsyncTaskGroup:
             self.out_chain.borrow().mark_ready()
             self.destroy()
 
-    @staticmethod
-    fn _get_complete_callback() -> __mlir_type[
-        `(!pop.pointer<`, AsyncTaskGroup, `>) -> `, NoneType
-    ]:
-        return __mlir_op.`kgen.addressof`[
-            _type : __mlir_type[
-                `(!pop.pointer<`, AsyncTaskGroup, `>) -> `, NoneType
-            ],
-            callee : Self._task_complete,
-            paramDecls : __mlir_attr.`#kgen<param.decls[]>`,
-        ]()
-
     # TODO(#11915): Allow failure of coroutine to propagate error back to out_chain.
     fn add_task(self&, owned coroutine: Coroutine[NoneType]):
         let ctx_ptr = coroutine.get_ctx[AsyncTaskGroupContext]()
         let self_ptr = Pointer[AsyncTaskGroup].address_of(self)
         __get_address_as_uninit_lvalue(ctx_ptr.address) = AsyncTaskGroupContext(
-            Self._get_complete_callback(), self_ptr
+            Self._task_complete, self_ptr
         )
         let task_id = self.coroutines.__len__()
         # Take a copy of the handle reference, then move the coroutine onto the
@@ -661,12 +619,7 @@ struct AsyncTaskGroup:
         self.coroutines.add(coroutine ^)
         external_call[
             "KGEN_CompilerRT_LLCL_OutputChainPtr_ExecuteAsTask", NoneType
-        ](
-            self.out_chain.ptr,
-            _get_coro_resume_fn(),
-            hdl,
-            task_id,
-        )
+        ](self.out_chain.ptr, _coro_resume_fn, hdl, task_id)
 
 
 struct AsyncTaskGroupPtr:
