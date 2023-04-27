@@ -181,7 +181,19 @@ public:
   /// every reference to 'x' because the type will be bogus.
   bool hasReferenceError = false;
 
+  /// Return any decorators that need to be processed as part of body resolution
+  /// phase for a decl.
+  ArrayRef<LexerCursor> getBodyDecorators(SharedState &state) const;
+
+  /// During signature resolution, this is called with any decorators that need
+  /// to persist until body resolution.
+  void setBodyDecorators(ArrayRef<LexerCursor> decorators, SharedState &state);
+
 private:
+  /// This is set to true if there is an entry for body-decorators in a backing
+  /// hashtable.  Clients should use "getBodyDecorators().
+  bool hasBodyDecorators = false;
+
   /// For LIT::FuncOp's with a signature resolved, this tracks whether the
   /// current function is a special function like __init__.
   uint8_t specialFunctionKind = 0;

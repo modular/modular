@@ -111,6 +111,11 @@ struct SharedState::Impl {
 
   /// Flag indicating if we should validate doc strings while parsing.
   bool validateDocStrings = false;
+
+  /// This keeps track of body decorators for a given declaration, this is
+  /// logically part of ASTDecl, but is stored out of line to reduce its size
+  /// since these are uncommon.
+  DenseMap<const ASTDecl *, std::vector<LexerCursor>> bodyDecorators;
 };
 
 SharedState::SharedState(llvm::SourceMgr &sourceMgr, MojoParserConfig &config,
@@ -278,6 +283,29 @@ Operation *SharedState::setResolvedDeclSymbol(Operation *declOp) {
 }
 
 mlir::DominanceInfo &SharedState::getDomInfo() { return impl->domInfo; }
+
+//===----------------------------------------------------------------------===//
+// ASTDecl
+//===----------------------------------------------------------------------===//
+
+/// Return any decorators that need to be processed as part of body resolution
+/// phase for a decl.
+ArrayRef<LexerCursor> ASTDecl::getBodyDecorators(SharedState &state) const {
+  if (!hasBodyDecorators)
+    return {};
+  return state.getImpl().bodyDecorators[this];
+}
+
+/// During signature resolution, this is called with any decorators that need
+/// to persist until body resolution.
+void ASTDecl::setBodyDecorators(ArrayRef<LexerCursor> decorators,
+                                SharedState &state) {
+  if (decorators.empty())
+    return;
+
+  state.getImpl().bodyDecorators.insert({this, decorators.vec()});
+  hasBodyDecorators = true;
+}
 
 //===----------------------------------------------------------------------===//
 // ModuleState

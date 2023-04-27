@@ -182,8 +182,10 @@ public:
 
   /// Parse and return a set of decorators for the specified declaration or
   /// statement at the specified indentation level.
-  SmallVector<ExprNode *> parseDecorators(ASTDecl &decl);
-  SmallVector<ExprNode *> parseDecorators(ssize_t indention);
+  SmallVector<std::pair<ExprNode *, LexerCursor>>
+  parseDecorators(ASTDecl &decl);
+  SmallVector<std::pair<ExprNode *, LexerCursor>>
+  parseDecorators(ssize_t indention);
 
   /// Expression parsing.  Each of these take a `stmtIndent` specifier that
   /// indicates the indentation level of the start of the statement that
