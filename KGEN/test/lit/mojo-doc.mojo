@@ -169,12 +169,17 @@ fn fn_with_params_and_return(arg: Int) -> Int:
 # CHECK:  "kind": "function",
 # CHECK:  "name": "__init__",
 # CHECK:  "name": "__copyinit__",
+
+# CHECK: "name": "__add__",
+# CHECK: "overloads":
+# CHECK:      "signature": "__add__(self: Self, other: Self) -> Self"
+
 # CHECK:  "name": "__del___",
 
 # CHECK:  "kind": "function",
 # CHECK:  "name": "fn_with_by_conventions",
 # CHECK:  "overloads"
-# CHECK:      "signature": "fn_with_by_conventions(self: Self&, arg: Self&, *args: Self&) -> Self&",
+# CHECK:      "signature": "fn_with_by_conventions(self: Self&, arg: Self&, *args: Self&) -> Self",
 # CHECK:      "summary": "This is a function summary.",
 # CHECK:      "args"
 # CHECK:        {
@@ -200,6 +205,9 @@ struct InMemoryStruct:
 
     fn __del___(owned self):
         pass
+
+    fn __add__(self, other: Self) -> Self:
+        return other
 
     fn fn_with_by_conventions(
         self&, arg&: InMemoryStruct, *args&: InMemoryStruct
