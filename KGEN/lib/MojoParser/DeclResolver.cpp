@@ -2558,7 +2558,7 @@ static bool processStructSignatureDecorator(ExprNode *decorator,
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
     if (declRef->spelling == "register_passable") {
       structOp.setRegisterPassable(StructDeclOp::RP_RegisterPassable);
-      return true;
+      return false; // Process again at body resolution.
     }
   }
 
@@ -2572,7 +2572,7 @@ static bool processStructSignatureDecorator(ExprNode *decorator,
         if (string && string->getValue() == "trivial") {
           structOp.setRegisterPassable(
               StructDeclOp::RP_RegisterPassableTrivial);
-          return true;
+          return false; // Process again at body resolution.
         }
       }
     }
@@ -2708,23 +2708,124 @@ static TypedAttr synthesizeEmptyDtor(StructDeclOp structOp, ASTDecl &structDecl,
   return funcOp.getBoundReference();
 }
 
+struct StructBodyDecorators : public SharedStateUser {
+  StructBodyDecorators(
+      StructDeclOp structOp, ASTDecl &structDecl, DeclResolver &resolver,
+      ArrayRef<std::pair<StructFieldOp, ASTDecl *>> structFields)
+      : SharedStateUser(resolver.shared), structOp(structOp),
+        structDecl(structDecl), resolver(resolver), structFields(structFields) {
+  }
+
+  void processBodyDecorator(LexerCursor decoratorCursor) {
+    // Don't run decorators if the struct is invalid.
+    if (structDecl.hasReferenceError)
+      return;
+
+    Lexer lexer(resolver.shared, decoratorCursor);
+    ParserBase parser(lexer);
+    ExprNode *expr = nullptr;
+    if (failed(parser.parseExpression(expr, structDecl.getIndentation())))
+      return;
+
+    processDecorator(expr);
+  }
+
+private:
+  void processValueDecorator();
+  void processRegisterPassableDecorator(bool isTrivial);
+  void processDecorator(ExprNode *expr);
+
+  StructDeclOp structOp;
+  ASTDecl &structDecl;
+  DeclResolver &resolver;
+  ArrayRef<std::pair<StructFieldOp, ASTDecl *>> structFields;
+};
+
 /// Process the @value body decorator on structs.  This synthesizes the
 /// memberwise init, copy ctor and move ctor if requested.
-static void processStructValueDecorator(StructDeclOp structOp,
-                                        DeclResolver &resolver) {
+void StructBodyDecorators::processValueDecorator() {
   // TODO: something great :)
 }
 
-static void processStructBodyDecorator(ExprNode *decorator,
-                                       StructDeclOp structOp,
-                                       DeclResolver &resolver) {
+/// Process the @register_passable decorator on structs.  This finalizes
+/// semantic checks.
+void StructBodyDecorators::processRegisterPassableDecorator(bool isTrivial) {
+  auto structPassability = isTrivial ? StructDeclOp::RP_RegisterPassableTrivial
+                                     : StructDeclOp::RP_RegisterPassable;
+
+  for (auto [fieldOp, fieldDecl] : structFields) {
+    ASTType fieldType = fieldOp.getType();
+
+    // Register-passable structs may only contain register-passable stored
+    // values.
+    // TODO(traits): We need to type constrain mlirtype parameters to being
+    // register-only types to support things like this correctly:
+    //  struct P[T: mlirtype]:
+    //    var storage : T
+
+    // If the field is at least as register-passable as the container then
+    // we're happy.
+    if (fieldType.getRegisterPassability(fieldDecl->getLoc(), resolver.shared) <
+        structPassability) {
+      StringRef trivialSuffix;
+      if (isTrivial)
+        trivialSuffix = "(\"trivial\")";
+
+      auto diag = resolver.emitError(structOp.getLoc())
+                  << "all members of '@register_passable" << trivialSuffix
+                  << "' struct must themselves be '@register_passable"
+                  << trivialSuffix << "'";
+      diag.attachNote(fieldDecl->getLoc())
+          << fieldOp.getNameAttr() << " declared with type " << fieldType;
+
+      // We cannot support IRGen'ing references to this type, since it will
+      // break invariant about being register passable without being composed
+      // of such types.
+      fieldDecl->getParentDecl()->hasReferenceError = true;
+      return;
+    }
+  }
+
+  // Trivial types may not have __copyinit__ or __del__ members.
+  if (isTrivial) {
+    auto rejectMemberIfPresent = [&](StringRef name) {
+      auto nameAttr = StringAttr::get(resolver.getContext(), name);
+      if (auto member = structDecl.lookupInCurrentScope(nameAttr))
+        resolver.emitError((*member)[0]->getLoc())
+            << "'@register_passable(\"trivial\")' types may not have a "
+            << nameAttr << " method";
+    };
+
+    rejectMemberIfPresent("__copyinit__");
+    rejectMemberIfPresent("__del__");
+  }
+}
+
+void StructBodyDecorators::processDecorator(ExprNode *decorator) {
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
     if (declRef->spelling == "value")
-      return processStructValueDecorator(structOp, resolver);
+      return processValueDecorator();
+
+    if (declRef->spelling == "register_passable")
+      return processRegisterPassableDecorator(
+          /*isTrivial*/ false);
 
     resolver.emitError(decorator->getLoc(), "unsupported decorator: '@")
         << declRef->spelling << "'" << declRef->getRange();
     return;
+  }
+
+  // `x()` forms.
+  if (auto callNode = dyn_cast<CallNode>(decorator)) {
+    if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee)) {
+      // @register_passable("trivial")
+      if (declRef->spelling == "register_passable" &&
+          callNode->args.size() == 1) {
+        auto *string = dyn_cast<StringLiteralNode>(callNode->args[0]);
+        if (string && string->getValue() == "trivial")
+          return processRegisterPassableDecorator(/*isTrivial*/ true);
+      }
+    }
   }
 
   resolver.emitError(decorator->getLoc(), "unsupported decorator")
@@ -2739,10 +2840,11 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   // Mark the declaration as fully resolved so we can lookup into it.
   structDecl.resolvedness = DeclResolvedness::fully;
 
-  uint8_t registerPassability = structOp.getRegisterPassable();
-
   // Track whether any field needs destruction, if so, we need a __del__ method.
   bool needsDtorForFields = false;
+
+  /// This collects all the resolved struct fields.
+  SmallVector<std::pair<StructFieldOp, ASTDecl *>> structFields;
 
   // Now that the body is completely resolved, check the declared fields for
   // extra invariants.
@@ -2760,64 +2862,13 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     needsDtorForFields |=
         fieldType.hasDestructor(fieldASTDecl.getLoc(), shared);
 
-    // Register-passable structs may only contain register-passable stored
-    // values.
-    // TODO(traits): We need to type constrain mlirtype parameters to being
-    // register-only types to support things like this correctly:
-    //  struct P[T: mlirtype]:
-    //    var storage : T
-    if (registerPassability != StructDeclOp::RP_MemoryOnly) {
-      // If the field is at least as register-passable as the container then
-      // we're happy.
-      if (fieldType.getRegisterPassability(fieldASTDecl.getLoc(), shared) <
-          registerPassability) {
-        StringRef trivialSuffix;
-        if (registerPassability == StructDeclOp::RP_RegisterPassableTrivial)
-          trivialSuffix = "(\"trivial\")";
-
-        auto diag = emitError(structOp.getLoc())
-                    << "all members of '@register_passable" << trivialSuffix
-                    << "' struct must themselves be '@register_passable"
-                    << trivialSuffix << "'";
-        diag.attachNote(fieldASTDecl.getLoc())
-            << field.getNameAttr() << " declared with type " << fieldType;
-
-        // We cannot support IRGen'ing references to this type, since it will
-        // break invariant about being register passable without being composed
-        // of such types.
-        structDecl.hasReferenceError = true;
-        return failure();
-      }
-    }
-  }
-
-  // Trivial types may not have __copyinit__ or __del__ members.
-  if (registerPassability == StructDeclOp::RP_RegisterPassableTrivial) {
-    auto rejectMemberIfPresent = [&](StringRef name) {
-      auto nameAttr = StringAttr::get(getContext(), name);
-      if (auto member = structDecl.lookupInCurrentScope(nameAttr))
-        emitError((*member)[0]->getLoc())
-            << "'@register_passable(\"trivial\")' types may not have a "
-            << nameAttr << " method";
-    };
-
-    rejectMemberIfPresent("__copyinit__");
-    rejectMemberIfPresent("__del__");
+    structFields.push_back({field, &fieldASTDecl});
   }
 
   // If there are any body decorators, resolve them now.
   for (auto decoratorCursor : structDecl.getBodyDecorators(shared)) {
-    Lexer lexer(shared, decoratorCursor);
-    ParserBase parser(lexer);
-    ExprNode *expr = nullptr;
-    if (failed(parser.parseExpression(expr, structDecl.getIndentation())))
-      continue;
-
-    processStructBodyDecorator(expr, structOp, *this);
-
-    // If any decorator puked, stop running others.
-    if (structDecl.hasReferenceError)
-      return success();
+    StructBodyDecorators(structOp, structDecl, *this, structFields)
+        .processBodyDecorator(decoratorCursor);
   }
 
   if (structDecl.hasReferenceError)
