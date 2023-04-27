@@ -228,7 +228,7 @@ class MojoKernel(Kernel):
         # `display_start` and `display_end` that provide the begin/end markers
         # it should use.
         exec_string = (
-            "%python\n\n"
+            "%%python\n\n"
             f'display_start = "{display_start}"\n'
             f'display_end = "{display_end}"\n'
             f'backend_str = """{backend_string}"""\n\n'

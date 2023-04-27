@@ -168,10 +168,10 @@ bool MojoUserExpression::Parse(DiagnosticManager &diagnosticManager,
     diagnosticManager.Clear();
   });
 
-  // If the expression starts with `%python`, the user wants to treat this as a
+  // If the expression starts with `%%python`, the user wants to treat this as a
   // python expression. Otherwise, it should be treated as a Mojo expression.
   StringRef exprText(m_expr_text);
-  if (!exprText.consume_front("%python\n")) {
+  if (!exprText.consume_front("%%python\n")) {
     if (failed(wrapTextAndParseExpression(diagnosticManager, exeCtx, exeScope,
                                           impl->persistentState)))
       return false;

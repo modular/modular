@@ -9,15 +9,15 @@
 
 # Note: in REPL mode, expressions are delimited by empty lines.
 
-%python
+%%python
 def foo():
   return "this is sparta"
 # CHECK: ($PythonObject::PythonObject) foo =
 
-%python
+%%python
 x = foo()
 # CHECK-NEXT: ($PythonObject::PythonObject) x =
 
-%python
+%%python
 print(x)
 # CHECK-NOT: lldb_python_module
