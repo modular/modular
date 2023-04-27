@@ -118,8 +118,8 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
       return matchParams(actual.getElementType(), expected.getElementType());
 
   // Handle VariadicType
-  if (auto actual = dyn_cast<KGEN::VariadicType>(actualType))
-    if (auto expected = dyn_cast<KGEN::VariadicType>(expectedType))
+  if (auto actual = dyn_cast<VariadicType>(actualType))
+    if (auto expected = dyn_cast<VariadicType>(expectedType))
       return matchParams(actual.getElementType(), expected.getElementType());
 
   // If the types trivial match then we're done and there is no inference to do.
@@ -253,6 +253,14 @@ PValue ParameterInferenceState::infer(SignatureType signature,
         // TODO: Consider implicit conversions?
         if (auto c = operand.ir.getIfCValue())
           return matchTypes(c.getRValueType(), expectedType);
+        // Consider the types of ORValues with single candidates.
+        if (auto o = operand.ir.getIfORValue()) {
+          if (o->fnDecls.size() == 1) {
+            return matchTypes(
+                cast<LIT::FuncOp>(*o->fnDecls.front()).getSignature(),
+                expectedType);
+          }
+        }
         return success();
       }
     };
@@ -820,18 +828,28 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
 
         // If the argument is an overload set, see if it can be resolve to the
         // right type.
+        CValue argVal;
         if (auto orValue = operand.ir.getIfORValue()) {
-          // Intentionally copy the overload set since we need to mutate it to
-          // test for filtering.
-          OverloadSet setCopy(*orValue);
-          if (failed(setCopy.filterOverloadSetForValueType(
-                  expectedType, /*emitDiagnosticOnFailure=*/false, emitter)))
-            return {kArgWrongType, providedValueIdx, expectedType, newBindings};
-          break;
+          // If the overload set contains just a single candidate, it can be
+          // used in implicit conversions. Materialize the function as a PValue.
+          if (orValue->fnDecls.size() == 1) {
+            argVal = orValue->fnDecls.front()->getFuncAsPValue();
+          } else {
+
+            // Intentionally copy the overload set since we need to mutate it to
+            // test for filtering.
+            OverloadSet setCopy(*orValue);
+            if (failed(setCopy.filterOverloadSetForValueType(
+                    expectedType, /*emitDiagnosticOnFailure=*/false, emitter)))
+              return {kArgWrongType, providedValueIdx, expectedType,
+                      newBindings};
+            break;
+          }
+        } else {
+          argVal = operand.ir.getIfCValue();
+          assert(argVal && "we handled ORValue above");
         }
 
-        auto argVal = operand.ir.getIfCValue();
-        assert(argVal && "we handled ORValue above");
         auto argType = argVal.getRValueType();
         // Otherwise, we pass as an r-value.  If the argument types match, then
         // they are good.
@@ -1944,10 +1962,9 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     // opportunistically later if we can.
     if (convention == ValueInputConvention::ByRefResult) {
       assert(idx == 0 && calleeSig.hasMemoryOnlyResult());
-      auto resultTmp = builder->create<VarLetDeclOp>(loc, expectedType,
-                                                     "__call_result_tmp__",
-                                                     /*isVar=*/true,
-                                                     /*isSynth=*/true);
+      auto resultTmp = builder->create<VarLetDeclOp>(
+          loc, expectedType, "__call_result_tmp__", /*isVar=*/true,
+          /*isSynth=*/true);
       argumentValues.push_back({SLValue(resultTmp), callExpr});
       continue;
     }

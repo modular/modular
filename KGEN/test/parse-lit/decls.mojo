@@ -347,6 +347,19 @@ fn nestedFnInLoop():
       # CHECK: kgen.call_param[() -> {{.*}}@Int{{.*}}: *"foo()"]()
       let result = foo()
 
+
+fn paramRefFunc[T: AnyType](x: T):
+    pass
+
+# CHECK-LABEL: lit.func @"orvalueInferType()"
+fn orvalueInferType():
+    @noncapturing
+    fn func(x: __mlir_type.index) -> __mlir_type.index:
+        return x
+
+    # CHECK: call {{.*}}paramRefFunc{{.*}}<:type !kgen.signature<(index borrow) -> index>>
+    paramRefFunc(func)
+
 ##===----------------------------------------------------------------------===##
 # Conventions
 ##===----------------------------------------------------------------------===##
