@@ -1,4 +1,4 @@
-// RUN: kgen-opt -split-input-file -pass-pipeline='builtin.module(lower-kgen-to-llvm,lower-control-flow,lower-pop-closures-to-llvm,llvm.func(lower-pop-to-llvm))' %s -verify-diagnostics
+// RUN: kgen-opt -split-input-file -pass-pipeline='builtin.module(lower-kgen-to-llvm,lower-control-flow,llvm.func(lower-pop-to-llvm))' %s -verify-diagnostics
 
 module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
   // expected-error @below {{cannot run on operations with CFG regions}}
