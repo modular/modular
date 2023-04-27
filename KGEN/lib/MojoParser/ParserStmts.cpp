@@ -700,15 +700,13 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
   // If we had an error, emit it.
   Value errorVal;
   if (errorExpr) {
-    ASTDecl *errorType = shared.getBuiltinErrorType(loc);
-    if (!errorType) {
-      emitError(loc, "could not find the builtin 'Error' type");
+    ASTType errorType = shared.getBuiltinErrorType(loc);
+    if (!errorType)
       return success();
-    }
 
     // TODO: Support memory-only error values.
-    errorVal = getEmitter().emitExprSRValue(errorExpr, EC_RaiseValue,
-                                            errorType->getSelfType());
+    errorVal =
+        getEmitter().emitExprSRValue(errorExpr, EC_RaiseValue, errorType);
     if (!errorVal)
       return success();
   } else {
@@ -958,11 +956,7 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
   if (parseToken(Token::colon, "expected ':' after 'except'"))
     return failure();
 
-  ASTDecl *errorTypeDecl = shared.getBuiltinErrorType(errValLoc);
-  if (!errorTypeDecl)
-    return failure();
-
-  ASTType errorType = errorTypeDecl->getSelfType();
+  ASTType errorType = shared.getBuiltinErrorType(errValLoc);
   if (!errorType.isRegisterPassable(errValLoc, shared)) {
     emitError(errValLoc) << errorType << " is not a @register_passable type";
     return failure();
@@ -1124,11 +1118,9 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   builder.create<TryYieldOp>(loc);
 
   // Set up the error block.
-  ASTDecl *errorTypeDecl = shared.getBuiltinErrorType(smLoc);
-  if (!errorTypeDecl)
+  ASTType errorType = shared.getBuiltinErrorType(smLoc);
+  if (!errorType)
     return failure();
-
-  ASTType errorType = errorTypeDecl->getSelfType();
   if (!errorType.isRegisterPassable(smLoc, shared)) {
     emitError(loc) << errorType << " is not a @register_passable type";
     return failure();

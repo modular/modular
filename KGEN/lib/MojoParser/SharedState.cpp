@@ -555,53 +555,61 @@ SharedState::ModuleState &SharedState::importModuleState(StringRef moduleName,
   return createModuleState(moduleName, moduleBuffer, fileLoc);
 }
 
-ASTDecl *SharedState::resolveBuiltinModuleType(llvm::SMLoc loc,
-                                               StringRef moduleName,
-                                               StringRef typeName) {
-  StringAttr moduleStrAttr = getMangledModuleName(getContext(), moduleName);
-  auto it = impl->importedModules.find(moduleStrAttr);
-  if (it == impl->importedModules.end())
-    return nullptr;
-  ASTDecl &moduleDecl = *it->second->decl;
-  LookupResult lookup = lookupAndResolveDecl(typeName, loc, moduleDecl,
-                                             /*searchParentScopes=*/false);
-  if (lookup.isFailure() || lookup.getIfSuccess().empty())
-    return nullptr;
-  return lookup.getIfSuccess()[0];
+static ASTType resolveBuiltinModuleType(llvm::SMLoc loc, StringRef moduleName,
+                                        StringRef typeName,
+                                        SharedState &shared) {
+  StringAttr moduleStrAttr =
+      getMangledModuleName(shared.getContext(), moduleName);
+  auto &impl = shared.getImpl();
+  auto it = impl.importedModules.find(moduleStrAttr);
+  if (it != impl.importedModules.end()) {
+    ASTDecl &moduleDecl = *it->second->decl;
+    LookupResult lookup =
+        shared.lookupAndResolveDecl(typeName, loc, moduleDecl,
+                                    /*searchParentScopes=*/false);
+    if (!lookup.isFailure() && !lookup.getIfSuccess().empty())
+      return lookup.getIfSuccess()[0]->getSelfType();
+  }
+
+  shared.emitError(loc, "internal error: could not find builtin '")
+      << typeName << "' type";
+  return {};
 }
 
-ASTDecl *SharedState::getBuiltinBoolType(llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(loc, kBuiltinBoolModuleName, "Bool");
+ASTType SharedState::getBuiltinBoolType(llvm::SMLoc loc) {
+  return resolveBuiltinModuleType(loc, kBuiltinBoolModuleName, "Bool", *this);
 }
 
-ASTDecl *SharedState::getBuiltinTupleLiteral(llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(loc, kBuiltinTupleModuleName, "TupleLiteral");
+ASTType SharedState::getBuiltinTupleLiteralType(llvm::SMLoc loc) {
+  return resolveBuiltinModuleType(loc, kBuiltinTupleModuleName, "TupleLiteral",
+                                  *this);
 }
 
-ASTDecl *SharedState::getBuiltinErrorType(llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(loc, kBuiltinErrorModuleName, "Error");
+ASTType SharedState::getBuiltinErrorType(llvm::SMLoc loc) {
+  return resolveBuiltinModuleType(loc, kBuiltinErrorModuleName, "Error", *this);
 }
 
-ASTDecl *SharedState::getBuiltinIntType(llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(loc, kBuiltinIntModuleName, "Int");
+ASTType SharedState::getBuiltinIntType(llvm::SMLoc loc) {
+  return resolveBuiltinModuleType(loc, kBuiltinIntModuleName, "Int", *this);
 }
 
-ASTDecl *SharedState::getBuiltinStringLiteral(llvm::SMLoc loc) {
+ASTType SharedState::getBuiltinStringLiteralType(llvm::SMLoc loc) {
   return resolveBuiltinModuleType(loc, kBuiltinStringModuleName,
-                                  "StringLiteral");
+                                  "StringLiteral", *this);
 }
 
-ASTDecl *SharedState::getBuiltinSliceType(llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(loc, kBuiltinSliceModuleName, "slice");
+ASTType SharedState::getBuiltinSliceType(llvm::SMLoc loc) {
+  return resolveBuiltinModuleType(loc, kBuiltinSliceModuleName, "slice", *this);
 }
 
-ASTDecl *SharedState::getBuiltinListLiteral(llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(loc, kBuiltinListModuleName, "ListLiteral");
+ASTType SharedState::getBuiltinListLiteralType(llvm::SMLoc loc) {
+  return resolveBuiltinModuleType(loc, kBuiltinListModuleName, "ListLiteral",
+                                  *this);
 }
 
-ASTDecl *SharedState::getBuiltinDoubleType(llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(loc, kBuiltinDoubleModuleName,
-                                  "FloatLiteral");
+ASTType SharedState::getBuiltinDoubleType(llvm::SMLoc loc) {
+  return resolveBuiltinModuleType(loc, kBuiltinDoubleModuleName, "FloatLiteral",
+                                  *this);
 }
 
 void SharedState::loadModulesFromCache(
