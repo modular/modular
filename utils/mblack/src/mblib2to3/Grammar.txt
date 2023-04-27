@@ -197,7 +197,7 @@ dictsetmaker: ( ((test ':' asexpr_test | '**' expr)
 
 classdef: ('class' | STRUCT) NAME [metaparams] ['(' [arglist] ')'] ':' suite
 typeconv: ['&'|'*'|'owned'|'borrowed'] ['*'] test
-functype: [ASYNC] ('def' | FN) [metaparams] '(' [typeconv (',' typeconv)*] ')' NAME* '->' test
+functype: [ASYNC] ('def' | FN) [metaparams] '(' [typeconv (',' typeconv)*] ')' NAME* ['->' test]
 
 arglist: argument (',' argument)* [',']
 
