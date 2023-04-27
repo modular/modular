@@ -16,7 +16,7 @@ using namespace M;
 ErrorOr<std::filesystem::path>
 M::writeFileAtomically(const std::filesystem::path &filePath,
                        llvm::function_ref<void(raw_ostream &)> writeContent) {
-  std::string filePathStr = filePath.native();
+  std::string filePathStr = filePath.string();
 
   // A helper function to write the content into the file.
   auto writeFile = [&]() -> ErrorOr<std::filesystem::path> {

@@ -11,6 +11,7 @@
 #include "llvm/Support/CodeGen.h"
 
 #include <memory>
+#include <string>
 
 namespace llvm {
 class TargetMachine;
