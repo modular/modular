@@ -898,21 +898,27 @@ static std::pair<Operation *, bool> inlineRegion(IRMapping &map,
   }
 
   unsigned numReturns = 0;
-  scopeBody.walk([&](ReturnOp op) {
-    b.setInsertionPoint(op);
-    if (isa<CallOp>(&*call)) {
-      b.replaceOpWithNewOp<HLCF::BreakOp>(op, op.getOperands(), label);
-    } else if (isa<CreateClosureOp>(*&call)) {
-      // Just `return` is ok.
-    } else if (isa<LIT::AsyncCallOp>(&*call)) {
-      b.replaceOpWithNewOp<LIT::AsyncReturnOp>(op, op.getOperands());
-    } else {
-      llvm::report_fatal_error("unknown call operation '" +
-                               call->getName().getStringRef() +
-                               "' in inlining pass -- please file a bug!");
-    }
+  scopeBody.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+    if (isa<ReturnOp>(op)) {
+      b.setInsertionPoint(op);
+      if (isa<CallOp>(&*call)) {
+        b.replaceOpWithNewOp<HLCF::BreakOp>(op, op->getOperands(), label);
+      } else if (isa<CreateClosureOp>(*&call)) {
+        // Just `return` is ok.
+      } else if (isa<LIT::AsyncCallOp>(&*call)) {
+        b.replaceOpWithNewOp<LIT::AsyncReturnOp>(op, op->getOperands());
+      } else {
+        llvm::report_fatal_error("unknown call operation '" +
+                                 call->getName().getStringRef() +
+                                 "' in inlining pass -- please file a bug!");
+      }
 
-    ++numReturns;
+      ++numReturns;
+      return WalkResult::skip();
+    }
+    if (isa<LIT::AsyncExecuteOp, StageClosureOp>(op))
+      return WalkResult::skip();
+    return WalkResult::advance();
   });
   b.replaceOp(call, scope->getResults());
   assert(numReturns > 0);
@@ -1212,11 +1218,10 @@ static void updateScopeDebugInfoFrom(Operation *scope, IntegerAttr tag,
   // If the scope represents an `always_inline_no_debug` function, just nuke all
   // debug info and locations from here.
   if (noDebug) {
-    std::vector<Operation *> valueOps;
     body.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
       if (isa<DebugInfo::ValueOp>(op)) {
-        valueOps.push_back(op);
-        return WalkResult::advance();
+        op->erase();
+        return WalkResult::skip();
       }
 
       op->setLoc(callLoc);
@@ -1229,8 +1234,6 @@ static void updateScopeDebugInfoFrom(Operation *scope, IntegerAttr tag,
       }
       return WalkResult::advance();
     });
-    for (Operation *op : valueOps)
-      op->erase();
   } else {
     body.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
       op->setLoc(mlir::CallSiteLoc::get(op->getLoc(), callLoc));

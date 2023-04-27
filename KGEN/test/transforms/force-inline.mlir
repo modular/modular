@@ -230,3 +230,20 @@ kgen.func @caller() {
   kgen.call_signature %0(%idx0) : (index) capturing -> ()
   kgen.return
 }
+
+// -----
+
+kgen.func @has_closure() always_inline {
+  kgen.stage_closure = () {
+    kgen.return
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @caller
+kgen.func @caller() {
+  // CHECK: kgen.stage_closure
+  // CHECK-NEXT: kgen.return
+  kgen.call @has_closure() : () -> ()
+  kgen.return
+}
