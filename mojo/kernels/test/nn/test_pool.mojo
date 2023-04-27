@@ -128,7 +128,7 @@ fn pool(pool_method: Int):
             out_chain.borrow(),
         )
     out_chain.wait()
-    runtime.del_old()
+    runtime._del_old()
 
     print_buffer(output_buffer)
 

@@ -43,7 +43,7 @@ fn print_elements[
     )
 
     out_chain.wait()
-    runtime.del_old()
+    runtime._del_old()
 
 
 # slice_dim
@@ -153,7 +153,7 @@ fn test_slice[
             ](output_buffer)
         )
 
-        runtime.del_old()
+        runtime._del_old()
 
 
 # CHECK-LABEL: == test_slice_basic
