@@ -31,7 +31,7 @@ fn test_take_closure_and_print(x: Int):
     let capture_struct_closure: fn (Int) capturing -> Int = FOO
     let u: Int = 3
     take_closure_and_print(capture_struct_closure, u)
-    v.del_old()
+    v._del_old()
 
 
 fn main():
