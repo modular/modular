@@ -2530,7 +2530,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     typeEmitter.emitError(getLoc(), "failed to construct signature type");
     return {};
   }
-  return ASTType(signature);
+  return emitter.emitResult(ASTType(signature), this, dest);
 }
 
 AnyValue AddressConvertNode::emitIR(ValueDest &dest,
