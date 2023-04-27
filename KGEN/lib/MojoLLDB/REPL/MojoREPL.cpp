@@ -134,41 +134,43 @@ static void eventThreadFunction(const lldb::TargetSP &target,
   auto sendUserOutput = [errorStream](StringRef message) {
     errorStream->AsRawOstream() << "[User] " << message << "\n";
   };
-  lldb::EventSP event;
-  while (!stopEventThread) {
-    {
-      lldb::EventSP event;
-      if (typeSystemListener->GetEvent(event, std::chrono::seconds(0))) {
-        // Handle the mojo type system events by logging them to the debugger
-        // stderr.
-        MojoTypeSystem::handleEvent(event, debugMessages, reportMessage,
-                                    sendUserOutput);
 
-        // Flush the error stream immediately - otherwise it only shows up when
-        // we shut down the repl.
-        errorStream->Flush();
-      }
+  // Single run that processes pending events. It returns true if the listener
+  // loop should resume, or false if the inferior can't execute more
+  // expressions and the loop should stop.
+  auto processEvents = [&]() -> bool {
+    lldb::EventSP event;
+    while (typeSystemListener->GetEvent(event, std::chrono::seconds(0))) {
+      // Handle the mojo type system events by logging them to the debugger
+      // stderr.
+      MojoTypeSystem::handleEvent(event, debugMessages, reportMessage,
+                                  sendUserOutput);
+
+      // Flush the error stream immediately - otherwise it only shows up when
+      // we shut down the repl.
+      errorStream->Flush();
     }
-    {
-      lldb::EventSP event;
-      if (processListener->GetEvent(event, std::chrono::seconds(0))) {
-        const uint32_t eventMask = event->GetType();
-        if (eventMask & Process::eBroadcastBitStateChanged) {
-          if (shouldStopListeningToEvents(
-                  Process::ProcessEventData::GetStateFromEvent(event.get()))) {
-            break;
-          }
-        } else if ((eventMask & Process::eBroadcastBitSTDOUT) ||
-                   (eventMask & Process::eBroadcastBitSTDERR)) {
-          flushInferiorStderrAndStdout(process);
+    while (processListener->GetEvent(event, std::chrono::seconds(0))) {
+      const uint32_t eventMask = event->GetType();
+      if (eventMask & Process::eBroadcastBitStateChanged) {
+        if (shouldStopListeningToEvents(
+                Process::ProcessEventData::GetStateFromEvent(event.get()))) {
+          return false;
         }
+      } else if ((eventMask & Process::eBroadcastBitSTDOUT) ||
+                 (eventMask & Process::eBroadcastBitSTDERR)) {
+        flushInferiorStderrAndStdout(process);
       }
     }
-    std::this_thread::sleep_for(std::chrono::duration<double>(0.05));
-  }
-  // We flush the inferior's stream one last time in case the process got some
-  // output after the previous loop was told to stop by the REPL's destructor.
-  flushInferiorStderrAndStdout(process);
+    return true;
+  };
+
+  while (!stopEventThread && processEvents())
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+
+  // We fetch the events one last time in case the processes emitted some after
+  // the previous loop was told to stop by the REPL's destructor.
+  processEvents();
 }
 
 //===----------------------------------------------------------------------===//
