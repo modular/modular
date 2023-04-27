@@ -17,6 +17,7 @@ from LLCL import (
     AsyncTaskGroupPtr,
 )
 from Math import div_ceil, min, max
+from Numerics import FlushDenormals
 from Range import range
 
 # ===----------------------------------------------------------------------===#
@@ -301,7 +302,8 @@ fn async_parallelize[
 
     @always_inline
     async fn task_fn(i: Int):
-        func(i)
+        with FlushDenormals() as flush_denorm:
+            func(i)
 
     var atg = AsyncTaskGroupPtr(num_work_items, out_chain)
     for i in range(num_work_items):
