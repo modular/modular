@@ -143,44 +143,6 @@ class KGEN_CallOpBase<string mnemonic, list<Trait> traits = []>
       CallLikeOperation;
 
 //===----------------------------------------------------------------------===//
-// AddressOf
-//===----------------------------------------------------------------------===//
-
-def KGEN_AddressOfOp : KGEN_CallOpBase<"addressof"> {
-  let summary = "Get the address of a function.";
-  let description = [{
-    The `kgen.addressof` operation references a parametric function and returns
-    an address to a concrete instance of that function.
-
-    Example:
-
-    ```mlir
-    kgen.generator @foo<size>(index) -> index
-
-    // Take the address of the generator. This will be resolved to the address
-    // of the selected implemented of the interface post-elaboration.
-    %0 = kgen.addressof @foo<size = 5> : (index) -> index
-    ```
-  }];
-
-  let arguments = (ins KGEN_SymbolConstantAttr:$callee,
-                       KGEN_ParamDeclArrayAttr:$paramDecls);
-  let results = (outs FunctionType:$result);
-  let assemblyFormat = [{
-    custom<AddressOfOp>($callee, $paramDecls, type($result)) attr-dict
-  }];
-
-  let extraClassDeclaration = [{
-    /// Return the symbol reference to the callee.
-    SymbolRefAttr getCalleeSymbol() { return getCallee().getSymbol(); };
-    /// Return the bound input parameter values.
-    ArrayRef<TypedAttr> getParamValues() {
-      return getCallee().getParamValues();
-    }
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // CallOp
 //===----------------------------------------------------------------------===//
 

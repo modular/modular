@@ -181,11 +181,3 @@ kgen.func @return_none() -> !kgen.list<i1[0]> {
   %list = pop.list.create() : <i1[0]>
   kgen.return %list : !kgen.list<i1[0]>
 }
-
-// CHECK-LABEL: @list_in_fn_type
-kgen.func @list_in_fn_type() -> (() -> !kgen.list<i1[0]>) {
-  // CHECK-NEXT: %0 = kgen.addressof @return_none : () -> !pop.array<0, i1>
-  %0 = kgen.addressof @return_none : () -> !kgen.list<i1[0]>
-  // CHECK-NEXT: return %0 : () -> !pop.array<0, i1>
-  kgen.return %0 : () -> !kgen.list<i1[0]>
-}

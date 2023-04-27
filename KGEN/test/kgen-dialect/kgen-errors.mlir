@@ -462,41 +462,6 @@ kgen.generator @give_it_B<C>() {
   kgen.return
 }
 
-
-// -----
-
-kgen.func @addressof_invalid_callee() {
-  // expected-error @below {{@does_not_exist does not reference a KGEN declaration}}
-  %0 = kgen.addressof @does_not_exist : () -> ()
-  kgen.return
-}
-
-// -----
-
-// expected-note @below {{@nullary declared here}}
-kgen.func @nullary() {
-  kgen.return
-}
-
-kgen.func @addressof_mismatched_signature() {
-  // expected-error @below {{symbol use has 1 argument but @nullary expects 0}}
-  %0 = kgen.addressof @nullary : (index) -> ()
-  kgen.return
-}
-
-// -----
-
-kgen.generator @generator<size>() {
-  kgen.return
-}
-
-// expected-note @below {{within 'kgen.func' @addressof_parametric_in_func}}
-kgen.func @addressof_parametric_in_func() {
-  // expected-error @below {{'kgen.addressof' op cannot reference generator with input parameters from within a concrete 'kgen.func'}}
-  %0 = kgen.addressof @generator<1> : () -> ()
-  kgen.return
-}
-
 // -----
 
 kgen.generator @bar<F>() {

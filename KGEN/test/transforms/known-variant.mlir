@@ -96,25 +96,6 @@ kgen.func @do_not_rewrite() -> !pop.variant<index> {
 
 // CHECK-LABEL: kgen.func @call
 kgen.func @call() {
-  // CHECK-NEXT: addressof @do_not_rewrite : () -> !pop.variant<index>
-  %0 = kgen.addressof @do_not_rewrite : () -> !pop.variant<index>
-  kgen.return
-}
-
-kgen.export @call
-
-// -----
-
-// CHECK-LABEL: kgen.func @do_not_rewrite
-// CHECK-SAME: -> !pop.variant<index>
-kgen.func @do_not_rewrite() -> !pop.variant<index> {
-  %0 = index.constant 0
-  %1 = pop.variant.create %0 : index -> !pop.variant<index>
-  kgen.return %1 : !pop.variant<index>
-}
-
-// CHECK-LABEL: kgen.func @call
-kgen.func @call() {
   // CHECK-NEXT: constant: () -> !pop.variant<index> = <@do_not_rewrite>
   %0 = kgen.param.constant: () -> !pop.variant<index> = <@do_not_rewrite>
   kgen.return

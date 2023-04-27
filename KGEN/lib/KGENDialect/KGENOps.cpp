@@ -652,48 +652,6 @@ ArrayAttr FuncOp::getCallableArgAttrs() { return nullptr; }
 ArrayAttr FuncOp::getCallableResAttrs() { return nullptr; }
 
 //===----------------------------------------------------------------------===//
-// AddressOfOp
-//===----------------------------------------------------------------------===//
-
-static ParseResult parseAddressOfOp(OpAsmParser &p,
-                                    SymbolConstantAttr &calleeCst,
-                                    ParamDeclArrayAttr &paramDecls,
-                                    Type &resultType) {
-  SymbolRefAttr callee;
-  ParameterExprArrayAttr paramValues;
-  TypeArrayAttr resultParamTypes;
-  SignatureType signature;
-  if (p.parseAttribute(callee) ||
-      parseCallOpParams(p, paramValues, paramDecls, resultParamTypes) ||
-      p.parseColon())
-    return failure();
-
-  if (parseSignatureValues(p, TypeArrayAttr::get(p.getContext(), {}),
-                           resultParamTypes, signature))
-    return failure();
-  calleeCst = SymbolConstantAttr::get(callee, paramValues, signature);
-  resultType = signature.getValues();
-  return success();
-}
-
-static void printAddressOfOp(OpAsmPrinter &p, Operation *op,
-                             SymbolConstantAttr calleeCst,
-                             ParamDeclArrayAttr paramDecls, Type resultType) {
-  p << calleeCst.getSymbol();
-  printCallOpParams(p, op, calleeCst.getParamValues(), paramDecls,
-                    calleeCst.getType().getResultParamTypes());
-  p << " : ";
-  printSignatureValues(p, calleeCst.getType());
-}
-
-void AddressOfOp::concretizeCallee(mlir::IRRewriter &b,
-                                   SymbolConstantAttr callee,
-                                   TypeRange resultTypes) {
-  b.replaceOpWithNewOp<AddressOfOp>(*this, resultTypes.front(), callee,
-                                    ArrayRef<ParamDeclAttr>());
-}
-
-//===----------------------------------------------------------------------===//
 // CallOp
 //===----------------------------------------------------------------------===//
 

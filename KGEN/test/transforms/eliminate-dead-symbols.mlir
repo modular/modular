@@ -23,7 +23,7 @@ kgen.func @someOp() {
 // CHECK: @exported
 kgen.func @exported() {
   kgen.call @used() : () -> ()
-  kgen.addressof @addr : () -> ()
+  kgen.call @addr() : () -> ()
   "some.op"() {foo=@someOp} : () -> ()
   kgen.return
 }

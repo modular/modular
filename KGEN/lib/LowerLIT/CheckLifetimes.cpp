@@ -846,8 +846,8 @@ void UninitializedValueScan::checkOp(Operation &op) {
     } else if (isa<CallSignatureOp>(op)) {
       operands = cast<CallSignatureOp>(op).getArguments();
     } else {
-      assert(isa<AddressOfOp>(op) && "Unknown call op");
-      return; // AddressOf isn't a use of any SSA values.
+      llvm::report_fatal_error("unknown call operation: " +
+                               op.getName().getStringRef());
     }
 
     assert(isa<CreateClosureOp>(op) ||
@@ -1195,8 +1195,8 @@ void DestructorInsertion::checkOp(Operation &op) {
     } else if (isa<CallSignatureOp>(op)) {
       operands = cast<CallSignatureOp>(op).getArguments();
     } else {
-      assert(isa<AddressOfOp>(op) && "Unknown call op");
-      return; // AddressOf isn't a use of any SSA values.
+      llvm::report_fatal_error("unknown call operation: " +
+                               op.getName().getStringRef());
     }
 
     // If the result is defining an owned register value, treat it as a def.
