@@ -27,6 +27,14 @@ using namespace M;
 // Kernel C-API
 //===----------------------------------------------------------------------===//
 
+/// This is copied from Kernel.cpp so we have symbolic names for the possible
+/// output states.
+enum ExecutionFinishedState : int {
+  kNotFinished = 0,
+  kFinishedSuccessfully = 1,
+  kFinishedError = 2,
+};
+
 using OutputFn = void (*)(const char *, const char *);
 
 using OpaqueMojoKernel = void *;
@@ -66,7 +74,7 @@ public:
   }
 
   /// Check if the current execution has finished.
-  bool hasExecutionFinished() const {
+  int hasExecutionFinished() const {
     return checkMojoExecutionFinished(kernel);
   }
 
@@ -86,30 +94,31 @@ private:
 /// we need to be able to (for example) print the logs generated for the current
 /// cell. In order to switch cells, you can use `:next-cell` or
 /// `:prev-cell`. In order to exit cleanly, use `:exit`.
-static void executeAsREPL(MojoKernel &kernel) {
+static void executeAsREPL(MojoKernel &kernel, StringRef currentCell = "") {
   int idx = 0;
-  std::cout << "[" << idx << "] > ";
+  std::string cellPrefix =
+      currentCell.empty() ? "[0] > " : ("[" + currentCell + "] > ").str();
+  std::cout << cellPrefix;
   for (std::string line; std::getline(std::cin, line);) {
     // Allow the program to exit cleanly.
     if (line == ":exit")
       break;
 
     // Print the prompt at the end.
-    auto scope =
-        llvm::make_scope_exit([&]() { std::cout << "[" << idx << "] > "; });
+    auto scope = llvm::make_scope_exit([&]() { std::cout << cellPrefix; });
 
     // Allow the user control over which cell is executing. This is useful for
     // things like executing an expression, and then dumping the logs.
     if (line == ":next-cell") {
-      ++idx;
+      cellPrefix = "[" + std::to_string(++idx) + "] > ";
       continue;
     }
     if (line == ":prev-cell") {
-      --idx;
+      cellPrefix = "[" + std::to_string(--idx) + "] > ";
       continue;
     }
 
-    kernel.startExecution(std::to_string(idx).c_str(), line.c_str());
+    kernel.startExecution(cellPrefix.c_str(), line.c_str());
     while (!kernel.hasExecutionFinished())
       continue;
   }
@@ -119,8 +128,8 @@ static void executeAsREPL(MojoKernel &kernel) {
 // Jupyter Executor
 //===----------------------------------------------------------------------===//
 
-static LogicalResult executeNotebook(MojoKernel &kernel,
-                                     StringRef notebookPath) {
+static LogicalResult executeNotebook(MojoKernel &kernel, StringRef notebookPath,
+                                     bool debugOnFailure) {
   std::string errorMsg;
   std::unique_ptr<llvm::MemoryBuffer> notebookFile =
       mlir::openInputFile(notebookPath, &errorMsg);
@@ -166,9 +175,23 @@ static LogicalResult executeNotebook(MojoKernel &kernel,
     code += "\n\n";
 
     // Execute the cell code.
-    kernel.startExecution(("cell_" + Twine(index)).str().c_str(), code.c_str());
-    while (!kernel.hasExecutionFinished())
-      continue;
+    std::string cellName = ("notebook_cell_" + Twine(index)).str();
+    kernel.startExecution(cellName.c_str(), code.c_str());
+    // If we finish with an error and we're in debug mode, drop into REPL mode
+    // in the current cell.
+    int finishState;
+    do {
+      finishState = kernel.hasExecutionFinished();
+
+      // We hit an error, exit failure.
+      if (finishState == kFinishedError) {
+        // Drop into REPL mode if requested.
+        if (debugOnFailure)
+          executeAsREPL(kernel, cellName);
+
+        return failure();
+      }
+    } while (finishState == kNotFinished);
   }
   return success();
 }
@@ -182,6 +205,9 @@ int main(int argc, char *argv[]) {
       llvm::cl::desc("Optional notebook to execute, if not present the "
                      "executor will run in REPL mode"),
       llvm::cl::Positional, llvm::cl::Optional);
+  llvm::cl::opt<bool> debugOnFailure(
+      "debug-on-failure", llvm::cl::desc("Drop into REPL mode on cell failure"),
+      llvm::cl::init(false));
   llvm::cl::ParseCommandLineOptions(argc, argv);
 
   // Determine the path of the repl entry point.
@@ -200,7 +226,7 @@ int main(int argc, char *argv[]) {
 
   // If we have a notebook path, execute it, otherwise run in REPL mode.
   if (notebookPath.getNumOccurrences()) {
-    if (failed(executeNotebook(kernel, notebookPath)))
+    if (failed(executeNotebook(kernel, notebookPath, debugOnFailure)))
       return 1;
   } else {
     executeAsREPL(kernel);

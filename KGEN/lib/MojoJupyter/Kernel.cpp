@@ -61,6 +61,18 @@ static MojoTypeSystem &getMojoTypeSystem(const TargetSP &target) {
       "The Mojo type system plug-in must have already been registered.");
 }
 
+/// These values were chosen because both `finished` and `error` are 'truthy',
+/// and indicate that the execution has finished. Therefore, only clients that
+/// care if there was an error have to do anything with it.
+///
+/// When updating this enum, please take care to also update the enums in
+/// mojo-jupyter-executor/main.cpp and mojokernel.py.
+enum ExecutionFinishedState : int {
+  kNotFinished = 0,
+  kFinishedSuccessfully = 1,
+  kFinishedError = 2,
+};
+
 //===----------------------------------------------------------------------===//
 // MojoExpressionEvaluationOptions
 //===----------------------------------------------------------------------===//
@@ -161,7 +173,7 @@ public:
 
   /// Check if the current expression has finished execution, also taking this
   /// time to flush any collected output.
-  bool checkExecutionFinished();
+  ExecutionFinishedState checkExecutionFinished();
 
   /// Interrupt the currently running execution.
   void interruptExecution();
@@ -407,36 +419,36 @@ void MojoKernel::startExecution(StringRef cellId, const char *expr,
 
   // Start execution of the expression in a separate thread, so that way the
   // calling client can control waiting for the expression to complete.
-  executionState->executionThread = std::thread([this, storeHistory,
-                                                 expr = std::string(
-                                                     expr)]() mutable {
-    LLVM_DEBUG(llvm::dbgs() << "Executing expression: " << expr << "\n");
+  executionState->executionThread =
+      std::thread([this, storeHistory, expr = std::string(expr)]() mutable {
+        LLVM_DEBUG(llvm::dbgs() << "Executing expression: " << expr << "\n");
 
-    // If the expression starts with `:`, then it is an LLDB command,
-    // otherwise it is a Mojo expression.
-    SBValue value;
-    if (StringRef command(expr); command.consume_front(":")) {
-      CommandReturnObject result(/*colors=*/false);
-      target->GetDebugger().GetCommandInterpreter().HandleCommand(
-          command.rtrim().str().c_str(),
-          /*add_to_history=*/lldb_private::eLazyBoolNo, result);
-      sendOutput("output", result.GetOutputData());
-      if (!result.GetErrorData().empty())
-        sendOutput("error", result.GetErrorData());
-    } else {
-      MojoExpressionEvaluationOptions options = exprOpts;
-      if (!storeHistory)
-        options.SetSuppressPersistentResult(true);
+        // If the expression starts with `:`, then it is an LLDB command,
+        // otherwise it is a Mojo expression.
+        SBValue value;
+        if (StringRef command(expr); command.consume_front(":")) {
+          CommandReturnObject result(/*colors=*/false);
+          target->GetDebugger().GetCommandInterpreter().HandleCommand(
+              command.rtrim().str().c_str(),
+              /*add_to_history=*/lldb_private::eLazyBoolNo, result);
+          sendOutput("output", result.GetOutputData());
+          if (!result.GetErrorData().empty())
+            sendOutput("error", result.GetErrorData());
+        } else {
+          MojoExpressionEvaluationOptions options = exprOpts;
+          if (!storeHistory)
+            options.SetSuppressPersistentResult(true);
 
-      value = SBTarget(target).EvaluateExpression(expr.data(), options).GetSP();
-    }
+          value =
+              SBTarget(target).EvaluateExpression(expr.data(), options).GetSP();
+        }
 
-    executionState->result = value.GetSP();
-    executionState->error = value.GetError();
+        executionState->result = value.GetSP();
+        executionState->error = value.GetError();
 
-    // Mark the execution as finished.
-    executionState->finished = true;
-  });
+        // Mark the execution as finished.
+        executionState->finished = true;
+      });
 }
 
 void MojoKernel::flushLLDBStreams() {
@@ -490,20 +502,21 @@ void MojoKernel::flushLLDBStreams() {
   }
 }
 
-bool MojoKernel::checkExecutionFinished() {
+ExecutionFinishedState MojoKernel::checkExecutionFinished() {
   if (!executionState)
-    return true;
+    return kFinishedSuccessfully;
 
   // Check to see if the expression is still executing.
   if (!executionState->finished) {
     flushLLDBStreams();
-    return false;
+    return kNotFinished;
   }
   flushLLDBStreams();
 
   // The expression has finished executing, process the results.
   LLVM_DEBUG(llvm::dbgs() << "Finished executing expression\n");
 
+  ExecutionFinishedState finishState = kFinishedSuccessfully;
   // Process the result.
   auto errorType = executionState->error.GetType();
   if (errorType == eErrorTypeInvalid) {
@@ -521,14 +534,21 @@ bool MojoKernel::checkExecutionFinished() {
     // add the unhelpful error message.
     if (executionError != "unknown error")
       sendOutput("stderr", executionError);
+
+    // Set the finish state to an error.
+    finishState = kFinishedError;
   } else {
+    // eErrorTypeGeneric can be thrown if the expression doesn't have a result,
+    // even if it succeeded.
+    // TODO: Revisit this once we have more TypeSystem functionality
+    //   implemented.
     executionState->error.Clear();
   }
 
   // Clean up the state now that we're done with it.
   executionState->executionThread.join();
   executionState.reset();
-  return true;
+  return finishState;
 }
 
 void MojoKernel::interruptExecution() { process->SendAsyncInterrupt(); }

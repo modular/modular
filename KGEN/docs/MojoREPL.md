@@ -291,7 +291,19 @@ useful to run:
 These two commands allow you to set breakpoints within the code running in your
 expressions, and inspect the thread state at the point of failure.
 
-### jupyter-cli-executor
+### `--debug-on-failure`
+
+When launching the `mojo-jupyter-executor` with a notebook, you can specify 
+`--debug-on-failure` and the executor will automatically drop you into REPL
+mode if a notebook cell fails. We set `unwind-on-error-in-expressions` to
+`false` by default, so this should allow you to trace up the stack in case of
+a crash by running LLDB expressions.
+
+### Future Projects
+
+Empty for now, please add ideas here!
+
+## jupyter-cli-executor
 
 The `jupyter-cli-executor` is another tool that can be used to execute Mojo or
 Python notebooks in the CLI. Unlike `mojo-jupyter-executor`, it uses a Jupyter
@@ -299,13 +311,6 @@ server, thus mimicking the Jupyter UI environment as closely as possible.
 However, it is very difficult to debug and might be flaky in the CI due to
 limitations in parallel executions, therefore it should only be preferred over
 `mojo-jupyter-executor` if going through the Jupyter server is a requirement.
-
-### Future Projects
-
-- [ ] The `mojo-jupyter-executor` can execute a notebook - it'd be great to
-  integrate that mode and the REPL mode better. For one, we could do things
-  like the `settings set` commands above, but also we could [drop into a
-  REPL when a cell fails](https://github.com/modularml/modular/issues/13436)
 
 ## `MojoREPL` Developer Guide
 
