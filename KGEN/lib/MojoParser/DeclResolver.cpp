@@ -1710,8 +1710,9 @@ static bool isMainFunction(StringAttr &name, LIT::FuncOp func,
              .isEqualCanon(shared.getNoneType());
 }
 
-/// funcdef ::=  [decorators] "def" identifier [meta_signature]
-///              "(" [argument_list] ")" ["->" expression] ":" suite
+/// funcdef   ::=  [decorators] def_or_fn identifier [meta_signature]
+///                "(" [argument_list] ")" ["->" expression] ":" suite
+/// def_or_fn ::= "def" | "fn"
 ///
 LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
                                              ASTDecl &decl) {
