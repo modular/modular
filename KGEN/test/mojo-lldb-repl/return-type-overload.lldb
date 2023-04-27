@@ -1,0 +1,30 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# RUN: %lldb -R go -r <%s | FileCheck %s
+
+# Note: in REPL mode, expressions are delimited by empty lines.
+
+from SIMD import F32, F64
+
+fn foo() -> F32:
+  return 3.14
+# CHECK: 3.14
+print(foo())
+
+fn foo() -> F64:
+  return 1.23
+# CHECK: 1.23
+print(foo())
+
+fn bar(b: Bool) -> F32:
+  return 1.111
+
+fn bar(f: F32) -> F32:
+  return 2.222
+
+# CHECK: 1.111
+print(bar(True))

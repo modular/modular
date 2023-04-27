@@ -325,8 +325,19 @@ LogicalResult DeclResolver::aliasDeclsImpl(
         if (isAdaptive)
           return true;
 
-        // Otherwise, check that the signatures don't match.
-        return declOp.getFullSignature() != existingOp.getFullSignature();
+        SignatureType declSignature = declOp.getFullSignature();
+        SignatureType existingSignature = existingOp.getFullSignature();
+        // If the value input types match exactly *and* the input parameter
+        // types match exactly, then we don't want to merge this decl into the
+        // set.
+        if (declSignature.getValueInputs() ==
+                existingSignature.getValueInputs() &&
+            declSignature.getInputParamTypes() ==
+                existingSignature.getInputParamTypes())
+          return false;
+
+        // We can merge the decl into the set.
+        return true;
       });
     };
     if (llvm::all_of(decls, canMergeDecl)) {
