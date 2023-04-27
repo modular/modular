@@ -259,6 +259,45 @@ MODULAR_EXPORT void destroyMojoKernel(MojoKernel *kernel) { delete kernel; }
 // Initialization
 //===----------------------------------------------------------------------===//
 
+/// We want to restrict the set of LLDB commands that can be executed on the
+/// notebook as a way to prevent external users from affecting the host
+/// environment (e.g. killing or spawning processes, inspecting the entry-point,
+/// etc.)
+static void removeUnwantedCommands(Debugger &debugger) {
+  auto isAllowed = [](const CommandObjectSP &obj) {
+    /// The following list can grow as needed, but just be mindful of any
+    /// possible vulnerability, as LLDB has more permissions than regular
+    /// processes.
+    static auto kAllowedCommands = {
+        "apropos",
+        "help",
+        "mojo",
+        // This is very useful for us to debug issues in the expression
+        // evaluator.
+        "log",
+    };
+    return llvm::any_of(kAllowedCommands, [&](StringRef allowed) {
+      return obj->GetCommandName().starts_with(allowed);
+    });
+  };
+
+  CommandInterpreter &interpreter = debugger.GetCommandInterpreter();
+
+  CommandObject::CommandMap aliases = interpreter.GetAliases();
+  for (auto &[name, obj] : aliases) {
+    CommandObjectSP actualCommand =
+        static_cast<CommandAlias *>(obj.get())->GetUnderlyingCommand();
+    if (!isAllowed(actualCommand))
+      interpreter.RemoveAlias(name);
+  }
+
+  CommandObject::CommandMap commands = interpreter.GetCommands();
+  for (auto &[name, obj] : commands) {
+    if (!isAllowed(obj))
+      interpreter.RemoveCommand(name);
+  }
+}
+
 LogicalResult MojoKernel::initialize(const char *mojoReplExe) {
   // Initialize a new debugger instance.
   // We need to initialize with SBDebugger because that's the only way we can
@@ -266,6 +305,11 @@ LogicalResult MojoKernel::initialize(const char *mojoReplExe) {
   SBDebugger::Initialize();
   debugger = Debugger::CreateInstance();
   debugger->SetAsyncExecution(false);
+
+  // For security reasons on public Jupyter notebooks, we want to remove some
+  // commands that might give users ways to perform unwanted actions on the
+  // host.
+  removeUnwantedCommands(*debugger);
 
   // Initialize the Mojo LLDB plugin. We expect the plugin to be adjacent to the
   // MojoJupyter library.
@@ -280,9 +324,9 @@ LogicalResult MojoKernel::initialize(const char *mojoReplExe) {
     return reportKernelError("unable to locate libMojoLLDB plugin");
 
   CommandReturnObject result(/*colors=*/false);
-  debugger->GetCommandInterpreter().HandleCommand(
-      ("plugin load " + mojoPlugin.GetPath()).c_str(),
-      /*add_to_history=*/eLazyBoolNo, result);
+  Status err;
+  if (!debugger->LoadPlugin(mojoPlugin, err))
+    return reportKernelError(err.AsCString());
 
   // Initialize the target.
   if (failed(initializeTarget(mojoReplExe)))
@@ -377,7 +421,8 @@ void MojoKernel::startExecution(StringRef cellId, const char *expr,
           command.rtrim().str().c_str(),
           /*add_to_history=*/lldb_private::eLazyBoolNo, result);
       sendOutput("output", result.GetOutputData());
-      sendOutput("error", result.GetErrorData());
+      if (!result.GetErrorData().empty())
+        sendOutput("error", result.GetErrorData());
     } else {
       MojoExpressionEvaluationOptions options = exprOpts;
       if (!storeHistory)
