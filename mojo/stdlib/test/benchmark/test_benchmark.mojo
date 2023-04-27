@@ -7,7 +7,7 @@
 
 from Benchmark import Benchmark
 from IO import print
-from Time import now
+from Time import now, sleep
 from Range import range
 
 
@@ -17,8 +17,7 @@ fn test_benchmark():
 
     @always_inline
     fn time_me():
-        for i in range(100):
-            print("")
+        sleep(0.002)
         return
 
     # check that benchmark_function returns after max_time_ns is hit.
