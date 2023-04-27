@@ -12,7 +12,6 @@ add_modular_conversion_library(KGENToLLVM
   LowerKGENToLLVM.cpp
   LowerKGENList.cpp
   LowerPOPToLLVM.cpp
-  LowerPOPClosuresToLLVM.cpp
   LowerKGENClosuresToLLVM.cpp
 
   DEPENDS

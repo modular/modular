@@ -267,20 +267,6 @@ def LowerGlobalPOPToLLVM : Pass<"lower-global-pop-to-llvm", "mlir::ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
-// LowerPOPClosuresToLLVM
-//===----------------------------------------------------------------------===//
-
-def LowerPOPClosuresToLLVM : Pass<"lower-pop-closures-to-llvm", "mlir::ModuleOp"> {
-  let summary = "Lower `pop` dialect closures to the `llvm` dialect.";
-  let description = [{
-    Lowers ops that contain `!pop.closure` type into LLVM dialect. For now,
-    those ops are `!pop.partial_apply` and `!pop.call_indirect`.
-  }];
-
-  let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
-}
-
-//===----------------------------------------------------------------------===//
 // LowerControlFlow
 //===----------------------------------------------------------------------===//
 
