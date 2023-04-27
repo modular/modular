@@ -208,7 +208,7 @@ around with the Mojo’s powerful ownership model as intended.
 
 ### REPL environment defaults to `def`
 
-The REPL environment runs all expressions within a `def` environment, not an 
+The REPL environment runs all expressions within a `def` environment, not an
 `fn` one. This shouldn't have much if any significance for most user code, but
 is a potential foot-gun that devs should be aware of.
 
@@ -283,6 +283,15 @@ useful to run:
 
 These two commands allow you to set breakpoints within the code running in your
 expressions, and inspect the thread state at the point of failure.
+
+### jupyter-cli-executor
+
+The `jupyter-cli-executor` is another tool that can be used to execute Mojo or
+Python notebooks in the CLI. Unlike `mojo-jupyter-executor`, it uses a Jupyter
+server, thus mimicking the Jupyter UI environment as closely as possible.
+However, it is very difficult to debug and might be flaky in the CI due to
+limitations in parallel executions, therefore it should only be preferred over
+`mojo-jupyter-executor` if going through the Jupyter server is a requirement.
 
 ### Future Projects
 
