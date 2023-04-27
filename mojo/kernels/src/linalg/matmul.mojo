@@ -15,7 +15,7 @@ from Buffer import (
     partial_simd_store,
     _raw_stack_allocation,
 )
-from Functional import tile, unswitch, unroll, unroll2, BinaryClosure, vectorize
+from Functional import tile, unswitch, unroll, unroll2, vectorize
 from Index import Index, StaticIntTuple
 from List import Dim, DimList, VariadicList
 from Math import min, fma, div_ceil
@@ -64,6 +64,7 @@ struct MatmulConfig:
     var prefetch_b_distance_k: Int
 
 
+@closure
 fn null_epilogue(offset: GemmShape, tile_len: GemmShape):
     pass
 
@@ -1375,7 +1376,7 @@ struct TiledMatmul[
         config, value_type, transpose_b, b_packed
     ]
 
-    var elementwise_epilogue_fn: BinaryClosure[GemmShape, GemmShape, NoneType]
+    var elementwise_epilogue_fn: fn (GemmShape, GemmShape) capturing -> None
 
     fn __init__(
         self&,
@@ -1388,7 +1389,7 @@ struct TiledMatmul[
         b_tile_generator: BTileGenerator[
             config, value_type, transpose_b, b_packed
         ],
-        elementwise_epilogue_fn: BinaryClosure[GemmShape, GemmShape, NoneType],
+        elementwise_epilogue_fn: fn (GemmShape, GemmShape) capturing -> None,
     ):
         self.c = c
         self.a = a
@@ -1418,33 +1419,11 @@ struct TiledMatmul[
         global_tile_shape: GemmShape,
         global_tile_offset: GemmShape = GemmShape {M: 0, N: 0, K: 0},
     ):
-
-        let func = __mlir_op.`kgen.addressof`[
-            _type : __mlir_type[
-                `(`,
-                GemmShape,
-                `,`,
-                GemmShape,
-                `) -> `,
-                NoneType,
-            ],
-            callee:null_epilogue,
-            paramDecls : __mlir_attr.`#kgen<param.decls[]>`,
-        ]()
-
-        let null_closure: BinaryClosure[
-            GemmShape, GemmShape, NoneType
-        ] = __mlir_op.`pop.partial_apply`[
-            boundInputs : __mlir_attr.`array<i64>`
-        ](
-            func
-        )
-
         Self.run(
             c,
             a,
             b,
-            null_closure,
+            null_epilogue,
             global_tile_shape,
             global_tile_offset,
         )
@@ -1455,7 +1434,7 @@ struct TiledMatmul[
         c: NDBuffer[2, config.shape_c, accum_type],
         a: NDBuffer[2, config.shape_a, value_type],
         b: NDBuffer[2, config.shape_b, value_type],
-        elementwise_epilogue_fn: BinaryClosure[GemmShape, GemmShape, NoneType],
+        elementwise_epilogue_fn: fn (GemmShape, GemmShape) capturing -> None,
         global_tile_shape: GemmShape,
         global_tile_offset: GemmShape,
     ):
