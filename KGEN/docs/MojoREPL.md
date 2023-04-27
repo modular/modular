@@ -169,6 +169,30 @@ This issue only applies to implicit variables. Those defined with `let` and
 needs to be overwritten, consider using `let` or `var` to introduce the variable
 for now.
 
+### The REPL's automatic value printer shows empty values.
+
+When executing expressions in the REPL, LLDB will try to dump the top-level
+variables that were created by the expression as shown below:
+
+```
+  1> let a_number = 12345
+  2. let a_string = "Mojo"
+  3.
+($Int::Int) a_number =
+($StringLiteral::StringLiteral) a_string =
+```
+
+Currently LLDB knows how to print the type of these variables but is unable to
+print the corresponding values, which is a feature the team will eventually
+work on. Once implemented, we can also provide a similar feature for the last
+dangling expression executed in a notebook cell, matching the experience of
+Python notebooks.
+
+**Workaround:**
+
+For the time being, variable inspection can only be done via `print()`. This is
+not ideal for complex types, but is acceptable for simpler ones.
+
 ### Variable lifetimes behave unexpectedly
 
 Variables defined in the “top scope” of the REPL currently behave slightly
@@ -293,7 +317,7 @@ Feel free to add more event kinds as is appropriate - event kinds ending with
 Lastly, in order to enable the `DumpIR` and `DebugLog` logs, you need to set the
 environment variable `MOJO_REPL_VERBOSE_LOG` or issue the LLDB command
 `:log enable lldb expr`. You can also execute the LLDB command
-`:log enable lldb expr -f /path/to/logs.txt` to output the logs to a file for
+`:log enable lldb expr -f /tmp/logs.txt` to output the logs to a file for
 easier debugging.
 
 #### MojoJupyter Log Format
@@ -326,3 +350,14 @@ Current Mojo commands:
 
 - `:mojo dump-logs` - This command sends a `FlushIRAndDebugLog` event, which
   instructs the various clients to flush their debug log caches immediately.
+
+### Testing
+
+We support llvm-lit tests in our CI for both the REPL and the jupyter
+environments. They are located in `kgen/test/mojo-lldb-repl` and
+`Kernels/examples` respectively.
+
+As a trick, when debugging llvm-lit test issues, you can produce helpful logs
+by including the expression `:log enable lldb expr -f /tmp/logs.txt` directly in
+the test file in the case of a REPL test, or as a new cell in a jupyter test.
+This won't affect the data stream received by FileCheck.
