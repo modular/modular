@@ -2011,11 +2011,7 @@ struct ConvIm2ColNHWC[
         conv_shape: ConvShape,
         out_chain: OutputChainPtr,
     ):
-        fn func(offset: GemmShape, tile_len: GemmShape):
-            return null_epilogue(offset, tile_len)
-
-        let null_closure = func
-        Self.run(out, input, filter, conv_shape, null_closure, out_chain)
+        Self.run(out, input, filter, conv_shape, null_epilogue, out_chain)
 
     # Interface method
     @staticmethod
