@@ -118,6 +118,32 @@ fn throws_main() raises:
     let W = g
     take_closure_raises(W, (3).__as_mlir_index())
 
+
+@register_passable
+struct BoxedInt:
+    var value: Int
+
+    fn __init__(value: Int) -> Self:
+        return Self{value: value}
+
+    fn __copyinit__(existing: Self) -> Self:
+        return Self{value: existing.value}
+
+    fn boxedAdd(self, rhs: Int) -> Int:
+        return self.value + rhs
+
+
+fn member_method_reference():
+    let x = BoxedInt(3)
+    # CHECK: %[[SELF:.*]] = kgen.call {{.*}}__copyinit__
+    # CHECK: %[[C:.*]] = kgen.create_closure [{{.*}}boxedAdd{{.*}}](%[[SELF]])
+    # CHECK: lit.letreg.decl "closure" = %[[C]]
+    let closure = x.boxedAdd
+    # CHECK: %[[CST:.*]] = kgen.param.constant
+    # CHECK: call_signature %closure(%[[CST]])
+    _ = closure(2)
+
+
 ##===----------------------------------------------------------------------===##
 # let
 ##===----------------------------------------------------------------------===##

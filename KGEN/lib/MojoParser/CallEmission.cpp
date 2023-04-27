@@ -1538,18 +1538,10 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
   assert(firstArgIRType == firstArgValue.getType() &&
          "base types should always structurally line up");
 
-  // For an instance value, we have to partially apply the callee to the first
-  // argument of the reference.  Materialize callee as a SRValue for
-  // partial_apply.
-  auto calleeDRVal = emitter.emitSRValue({AnyValue(directSymbolAttr), expr},
-                                         EC_CallCalleeValue);
-
   // Partial apply wants to know what operands to bind, we always bind the first
   // one.
-  auto zeroAttr = emitter.builder->getAttr<mlir::DenseI64ArrayAttr>(0);
-  auto result = SRValue(emitter.builder->create<POP::PartialApplyOp>(
-      expr->getLocation(emitter), calleeDRVal, mlir::ValueRange(firstArgValue),
-      zeroAttr));
+  auto result = SRValue(emitter.builder->create<CreateClosureOp>(
+      expr->getLocation(emitter), directSymbolAttr, firstArgValue));
   return emitter.emitCResult(result, expr, dest);
 }
 
