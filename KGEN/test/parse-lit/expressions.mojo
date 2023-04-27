@@ -138,6 +138,20 @@ fn memoryOnlyOps(a&: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: lit.return [[NONEVAL]]
   return v2
 
+struct DummyFunc:
+    fn __init__(self&, f: def(Int)):
+        pass
+
+# CHECK-LABEL: lit.func @"implicit_func_conversion()"
+fn implicit_func_conversion():
+    @noncapturing
+    def take_int(x: Int):
+        pass
+
+    # CHECK: %0 = kgen.create_closure
+    # CHECK: call {{.*}}DummyFunc::@"__init__{{.*}}(%f, %0)
+    var f: DummyFunc = take_int
+
 # CHECK-LABEL: lit.struct.decl @M
 @register_passable
 struct M:

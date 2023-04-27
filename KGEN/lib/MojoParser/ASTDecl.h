@@ -62,6 +62,9 @@ public:
     return dyn_cast_or_null<Operation *>(irValue);
   }
 
+  /// If the IRValue is a function, return it as a PValue.
+  PValue getFuncAsPValue() const;
+
   llvm::SMLoc getLoc() const { return loc; }
   ASTDecl *getParentDecl() const { return parentDecl; }
 

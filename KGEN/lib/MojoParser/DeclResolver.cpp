@@ -98,6 +98,11 @@ BValue ASTDecl::getIfBValue() const {
   return {};
 }
 
+PValue ASTDecl::getFuncAsPValue() const {
+  return SymbolConstantAttr::get(getSymbolRef(),
+                                 cast<LIT::FuncOp>(*this).getSignature());
+}
+
 /// Return the SymbolRefAttr for a declaration, including all scoping that may
 /// be needed, making it unique for every declaration.  This returns null for
 /// named values that do not have a declaration.
