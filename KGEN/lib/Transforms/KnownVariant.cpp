@@ -164,12 +164,7 @@ void PruneImpossibleVariantsPass::runOnOperation() {
     if (auto constant = dyn_cast<ParamConstantOp>(op)) {
       if (auto symbol = dyn_cast<SymbolConstantAttr>(constant.getValue()))
         refd.insert(cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr());
-    } else if (auto addressOf = dyn_cast<AddressOfOp>(op)) {
-      refd.insert(
-          cast<FlatSymbolRefAttr>(addressOf.getCalleeSymbol()).getAttr());
 
-      // Replace `pop.variant.is` ops on variants with known types with
-      // constants.
     } else if (auto is = dyn_cast<VariantIsOp>(op)) {
       auto *cv = solver.lookupState<Lattice<ConstantValue>>(is.getResult());
       if (!cv || cv->getValue().isUninitialized() ||

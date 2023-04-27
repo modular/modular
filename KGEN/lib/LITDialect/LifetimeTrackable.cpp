@@ -69,8 +69,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
   /// defined but needing to be destroyed by the end of function.
   if (OpResult res = dyn_cast<OpResult>(v)) {
     if (auto call = dyn_cast<KGENCallOpInterface>(res.getOwner())) {
-      if (call.getCalleeType().hasOwnedRegisterResult() &&
-          !isa<AddressOfOp>(res.getOwner())) {
+      if (call.getCalleeType().hasOwnedRegisterResult()) {
         name = StringAttr::get(v.getContext(), "<call result>");
         isIndirect = false;
         startsUninit = true;

@@ -507,26 +507,6 @@ kgen.generator @test_paramref_type_rewrite() {
 
 // -----
 
-kgen.generator @bar<T:type>(%a: !kgen.paramref<T>) -> !kgen.paramref<T> {
-  kgen.return %a : !kgen.paramref<T>
-}
-
-kgen.generator @baz<() -> result>() {
-  kgen.param.result_bind<50>
-  kgen.return
-}
-
-// CHECK-LABEL: kgen.func @parametric_addressof
-kgen.generator @parametric_addressof() {
-  // CHECK-NEXT: kgen.addressof @"bar,T=i32" : (i32) -> i32
-  kgen.addressof @bar<:type i32> : (i32) -> i32
-  // CHECK-NEXT: kgen.addressof @baz : () -> ()
-  kgen.addressof @baz<[] -> result> : () -> ()
-  kgen.return
-}
-
-// -----
-
 // This takes a parameter function that uses a contextual type instead of
 // to-be-bound types.
 // CHECK-LABEL: kgen.func @"takeFnContextualType,ty=index,fn=sillyFn"() -> index {

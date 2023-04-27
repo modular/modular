@@ -84,25 +84,6 @@ struct ConvertKGENFunc : public ConvertSymbolOpToLLVM<FuncOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertKGENAddressOf
-//===----------------------------------------------------------------------===//
-
-struct ConvertKGENAddressOf : public ConvertPOPToLLVMPattern<AddressOfOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(AddressOfOp op, AddressOfOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    Type funcPtrType = getTypeConverter()->convertType(op.getType());
-    if (!funcPtrType)
-      return op.emitError("failed to convert function type");
-    rewriter.replaceOpWithNewOp<LLVM::AddressOfOp>(
-        op, funcPtrType, cast<FlatSymbolRefAttr>(op.getCalleeSymbol()));
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // ConvertKGENCall
 //===----------------------------------------------------------------------===//
 
@@ -261,7 +242,6 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
                                        SymbolTable &symtab) {
   patterns.insert<
       // clang-format off
-      ConvertKGENAddressOf,
       ConvertKGENCall,
       ConvertKGENReturn,
       ConvertKGENUnreachable,

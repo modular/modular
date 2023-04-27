@@ -52,14 +52,6 @@ kgen.func @reference_me(%a: i64) -> i64 {
   kgen.return %a : i64
 }
 
-// CHECK-LABEL: llvm.func internal @addressof
-// CHECK-SAME: -> !llvm.ptr<func<i64 (i64)>>
-kgen.func @addressof() -> ((i64) -> i64) {
-  // CHECK: llvm.mlir.addressof @reference_me : !llvm.ptr<func<i64 (i64)>>
-  %0 = kgen.addressof @reference_me : (i64) -> i64
-  kgen.return %0 : (i64) -> i64
-}
-
 // CHECK-LABEL: @address_dtype
 // CHECK-SAME: %[[ARG0:.*]]: !llvm.ptr,
 // CHECK-SAME: %[[ARG1:.*]]: !llvm.vec<4 x ptr>
