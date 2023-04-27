@@ -26,14 +26,6 @@ from typing import Optional, Union
 version_string = _mecore.__version__
 
 
-class ModelKind(str, Enum):
-    """The model format."""
-
-    PYTORCH_MODEL = "PyTorch Model"
-    TENSORFLOW_MODEL = "TensorFlow Model"
-    UNKNOWN_MODEL = "Unknown Model"
-
-
 @dataclass
 class TensorFlowLoadOptions:
     """Configures how to load TensorFlow models."""
@@ -61,13 +53,11 @@ class Model:
     """
 
     _impl: _Model
-    _kind: ModelKind
 
     @classmethod
-    def _init(cls, _core_model, _kind: ModelKind):
+    def _init(cls, _core_model):
         model = cls()
         model._impl = _core_model
-        model._kind = _kind
         return model
 
     def execute(self, *args) -> None:
@@ -114,11 +104,6 @@ class Model:
                 print(f'shape: {tensor.shape}, dtype: {tensor.dtype}')
         """
         return [TensorSpec._init(spec) for spec in self._impl.input_metadata]
-
-    @property
-    def kind(self) -> str:
-        """The :obj:`ModelKind` value."""
-        return self._kind.value
 
 
 class DType(Enum):
@@ -199,14 +184,7 @@ class InferenceSession:
         model_path = Path(str(model_path))
         _model = self._impl.compile(model_path, options_dict)
 
-        if model_path.suffix == ".onnx":
-            model_kind = ModelKind.PYTORCH_MODEL
-        elif os.path.isdir(model_path):
-            model_kind = ModelKind.TENSORFLOW_MODEL
-        else:
-            model_kind = ModelKind.UNKNOWN_MODEL
-
-        return Model._init(_model, model_kind)
+        return Model._init(_model)
 
 
 class TensorSpec:
