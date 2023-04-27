@@ -362,22 +362,28 @@ kgen.generator @param_canonicalize<p1, p2>() {
 // CHECK-LABEL: kgen.generator @datalayout_operators()
 kgen.generator @datalayout_operators() {
   // CHECK-NEXT: <4>
-  %0 = kgen.param.constant = <get_sizeof(i32, #target)>
+  kgen.param.constant = <get_sizeof(i32, #target)>
   // CHECK-NEXT: <3>
-  %1 = kgen.param.constant = <get_sizeof(i20, #target)>
+  kgen.param.constant = <get_sizeof(i20, #target)>
   // CHECK-NEXT: <8>
-  %2 = kgen.param.constant = <get_sizeof(f64, #target)>
+  kgen.param.constant = <get_sizeof(f64, #target)>
   // CHECK-NEXT: <8>
-  %3 = kgen.param.constant = <get_sizeof(index, #target)>
+  kgen.param.constant = <get_sizeof(index, #target)>
+  // CHECK-NEXT: <8>
+  kgen.param.constant = <get_sizeof(!kgen.signature<() -> ()>, #target)>
+  // CHECK-NEXT: <16>
+  kgen.param.constant = <get_sizeof(!kgen.signature<() capturing -> ()>, #target)>
 
   // CHECK-NEXT: <4>
-  %4 = kgen.param.constant = <get_alignof(i32, #target)>
+  kgen.param.constant = <get_alignof(i32, #target)>
   // CHECK-NEXT: <4>
-  %5 = kgen.param.constant = <get_alignof(i20, #target)>
+  kgen.param.constant = <get_alignof(i20, #target)>
   // CHECK-NEXT: <8>
-  %6 = kgen.param.constant = <get_alignof(f64, #target)>
+  kgen.param.constant = <get_alignof(f64, #target)>
   // CHECK-NEXT: <8>
-  %7 = kgen.param.constant = <get_alignof(index, #target)>
+  kgen.param.constant = <get_alignof(index, #target)>
+  // CHECK-NEXT: <8>
+  kgen.param.constant = <get_alignof(!kgen.signature<() -> ()>, #target)>
 
   kgen.return
 }
