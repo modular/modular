@@ -1172,30 +1172,36 @@ void ParserBase::parseDocString(ASTDecl &decl) {
 // Decorator support logic
 //===----------------------------------------------------------------------===//
 
-SmallVector<ExprNode *> ParserBase::parseDecorators(ASTDecl &decl) {
+SmallVector<std::pair<ExprNode *, LexerCursor>>
+ParserBase::parseDecorators(ASTDecl &decl) {
   return parseDecorators(decl.getParentDecl()->getIndentation());
 }
 
-SmallVector<ExprNode *> ParserBase::parseDecorators(ssize_t indentation) {
-  SmallVector<ExprNode *> result;
+SmallVector<std::pair<ExprNode *, LexerCursor>>
+ParserBase::parseDecorators(ssize_t indentation) {
+  SmallVector<std::pair<ExprNode *, LexerCursor>> result;
   if (getToken().getIndentation())
     indentation = getToken().getIndentation().value();
   while (consumeIf(Token::at)) {
     ExprNode *decoratorExpr;
+    LexerCursor cursor = lexer.getCursor();
     if (parseExpression(decoratorExpr, indentation))
       break;
-    result.push_back(decoratorExpr);
+    result.push_back({decoratorExpr, cursor});
   }
   return result;
 }
 
-static void rejectDecorators(ArrayRef<ExprNode *> decoratorExprs, ASTDecl &decl,
-                             SharedState &shared) {
-  if (!decoratorExprs.empty())
-    shared.emitError(decoratorExprs[0]->getLoc(),
-                     "decorators not supported on this statement")
-        << SourceRange(decoratorExprs.front()->getRangeStart(),
-                       decoratorExprs.back()->getRangeEnd());
+static void
+rejectDecorators(ArrayRef<std::pair<ExprNode *, LexerCursor>> decoratorExprs,
+                 ASTDecl &decl, SharedState &shared) {
+  if (decoratorExprs.empty())
+    return;
+
+  shared.emitError(decoratorExprs[0].first->getLoc(),
+                   "decorators not supported on this statement")
+      << SourceRange(decoratorExprs.front().first->getRangeStart(),
+                     decoratorExprs.back().first->getRangeEnd());
 }
 
 //===----------------------------------------------------------------------===//
@@ -1544,13 +1550,11 @@ static StringAttr getMangledName(StringAttr baseName, SignatureType signature) {
 namespace {
 struct FnDecorators : public SharedStateUser {
   FnDecorators(ASTDecl &decl, SharedState &shared)
-      : SharedStateUser(shared), decl(decl), funcOp(cast<LIT::FuncOp>(decl)),
-        isMethod(isa<StructDeclOp>(*decl.getParentDecl())) {}
+      : SharedStateUser(shared), decl(decl), funcOp(cast<LIT::FuncOp>(decl)) {}
 
-  void apply(SmallVector<ExprNode *> &decoratorExprs);
+  void apply(SmallVector<std::pair<ExprNode *, LexerCursor>> &decoratorExprs);
   void applyLate(SymbolRefAttr symbolName, StringRef unmangledName,
-                 SmallVector<ExprNode *> &decoratorExprs,
-                 SignatureType &signature);
+                 ExprNode *decorator, SignatureType &signature);
 
 private:
   void applyAdaptive(const DeclRefNode &node);
@@ -1562,7 +1566,6 @@ private:
 
   ASTDecl &decl;
   LIT::FuncOp funcOp;
-  const bool isMethod;
 };
 } // namespace
 
@@ -1588,9 +1591,10 @@ void FnDecorators::applyRaises(const DeclRefNode &node) {
 }
 
 // Apply all signature decorators.
-void FnDecorators::apply(SmallVector<ExprNode *> &decoratorExprs) {
-  SmallVector<ExprNode *> unprocessed;
-  for (ExprNode *decorator : decoratorExprs) {
+void FnDecorators::apply(
+    SmallVector<std::pair<ExprNode *, LexerCursor>> &decoratorExprs) {
+  SmallVector<std::pair<ExprNode *, LexerCursor>> unprocessed;
+  for (auto [decorator, cursor] : decoratorExprs) {
     bool processedIt = false;
 
     // Process all the decorators we know about.
@@ -1624,14 +1628,14 @@ void FnDecorators::apply(SmallVector<ExprNode *> &decoratorExprs) {
     }
 
     if (!processedIt)
-      unprocessed.push_back(decorator);
+      unprocessed.push_back({decorator, cursor});
   }
   decoratorExprs = unprocessed;
 }
 
 void FnDecorators::applyLateExport(Location loc, SymbolRefAttr symbolName,
                                    StringRef aliasName) {
-  if (isMethod) {
+  if (isa<StructDeclOp>(*decl.getParentDecl())) {
     emitError(funcOp.getLoc(), "methods cannot be exported");
     return;
   }
@@ -1663,36 +1667,34 @@ void FnDecorators::applyLateExport(Location loc, SymbolRefAttr symbolName,
 }
 
 void FnDecorators::applyLate(SymbolRefAttr symbolName, StringRef unmangledName,
-                             SmallVector<ExprNode *> &decoratorExprs,
-                             SignatureType &signature) {
-  // Scan through and process decorator expressions that are in the late pass.
-  for (ExprNode *decorator : decoratorExprs) {
-    Location loc = translateLocation(decorator->getLoc());
-    // Process all the decorators we know about.
-    if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
-      if (declRef->spelling == "export") {
-        applyLateExport(loc, symbolName, unmangledName);
-      } else if (declRef->spelling == "noncapturing") {
-        signature = signature.getWithFnEffects(
-            bitEnumClear(signature.getFnEffects(), FnEffects::Capturing));
-      } else if (declRef->spelling == "closure") {
-        signature = signature.getWithFnEffects(signature.getFnEffects() |
-                                               FnEffects::Capturing);
-      } else {
-        emitError(decorator->getLoc(), "unsupported decorator: @")
-            << declRef->spelling << declRef->getRange();
-      }
-      continue;
-    } else if (auto callNode = dyn_cast<CallNode>(decorator)) {
-      if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee))
-        if (declRef->spelling == "export") {
-          applyLateExport(loc, symbolName, *callNode);
-          continue;
-        }
+                             ExprNode *decorator, SignatureType &signature) {
+  Location loc = translateLocation(decorator->getLoc());
+  // Process all the decorators we know about.
+  if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
+    if (declRef->spelling == "export") {
+      applyLateExport(loc, symbolName, unmangledName);
+    } else if (declRef->spelling == "noncapturing") {
+      signature = signature.getWithFnEffects(
+          bitEnumClear(signature.getFnEffects(), FnEffects::Capturing));
+    } else if (declRef->spelling == "closure") {
+      signature = signature.getWithFnEffects(signature.getFnEffects() |
+                                             FnEffects::Capturing);
+    } else {
+      emitError(decorator->getLoc(), "unsupported decorator: @")
+          << declRef->spelling << declRef->getRange();
     }
-    emitError(decorator->getLoc(), "unsupported decorator")
-        << decorator->getRange();
+    return;
   }
+
+  if (auto callNode = dyn_cast<CallNode>(decorator)) {
+    if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee))
+      if (declRef->spelling == "export") {
+        applyLateExport(loc, symbolName, *callNode);
+        return;
+      }
+  }
+  emitError(decorator->getLoc(), "unsupported decorator")
+      << decorator->getRange();
 }
 
 /// A valid main function must have signature main().
@@ -1714,7 +1716,7 @@ static bool isMainFunction(StringAttr &name, LIT::FuncOp func,
 LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
                                              ASTDecl &decl) {
   ParserBase p(lexer);
-  SmallVector<ExprNode *> decoratorExprs = p.parseDecorators(decl);
+  auto decoratorExprs = p.parseDecorators(decl);
   assert(p.getToken().isAny(Token::kw_async, Token::kw_def, Token::kw_fn) &&
          "not a function definition?");
   FnEffects effects =
@@ -1977,10 +1979,12 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
   // FIXME: Handle "late" decorators somehow else. They should be "body
   // decorators" that are applied after the decl is fully resolved.
-  FnDecorators(decl, shared)
-      .applyLate(symbolName, baseName, decoratorExprs, signature);
-  if (funcOp.getSignature() != signature)
-    funcOp.setSignature(signature);
+  for (auto [decorator, cursor] : decoratorExprs) {
+    FnDecorators(decl, shared)
+        .applyLate(symbolName, baseName, decorator, signature);
+    if (funcOp.getSignature() != signature)
+      funcOp.setSignature(signature);
+  }
 
   // If this is a nested function, set its parameter declaration. It will be
   // referenced via parameter references instead of symbol references.
@@ -2333,7 +2337,7 @@ ParseResult DeclResolver::resolveBody(LIT::FileModuleOp op, Lexer &lexer,
 LogicalResult DeclResolver::resolveSignature(VarLetDeclOp varOp, Lexer &lexer,
                                              ASTDecl &decl) {
   ParserBase p(lexer);
-  SmallVector<ExprNode *> decorators = p.parseDecorators(decl);
+  auto decorators = p.parseDecorators(decl);
 
   p.consumeToken(); // eat the let/var.
   if (p.parseToken(Token::identifier, "internal error: checked by stmt parser"))
@@ -2448,7 +2452,7 @@ ParseResult DeclResolver::resolveBody(LetRegDeclOp op, Lexer &lexer,
 LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
                                              Lexer &lexer, ASTDecl &decl) {
   ParserBase p(lexer);
-  SmallVector<ExprNode *> decoratorExprs = p.parseDecorators(decl);
+  auto decoratorExprs = p.parseDecorators(decl);
 
   // Parse the type if present.
   if (p.parseToken(Token::kw_alias, "internal error: checked by stmt parser") ||
@@ -2545,13 +2549,45 @@ ParseResult DeclResolver::resolveBody(AliasForwardDeclOp aliasFwdDeclOp,
 // Struct Decl implementation
 //===----------------------------------------------------------------------===//
 
+/// Process a decorator that is resolved at the signature phase of resolution
+/// and return true, otherwise return false if it is an unknown or body
+/// decorator.
+static bool processStructSignatureDecorator(ExprNode *decorator,
+                                            StructDeclOp structOp,
+                                            DeclResolver &resolver) {
+  if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
+    if (declRef->spelling == "register_passable") {
+      structOp.setRegisterPassable(StructDeclOp::RP_RegisterPassable);
+      return true;
+    }
+  }
+
+  // `x()` forms.
+  if (auto callNode = dyn_cast<CallNode>(decorator)) {
+    if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee)) {
+      // @register_passable("trivial")
+      if (declRef->spelling == "register_passable" &&
+          callNode->args.size() == 1) {
+        auto *string = dyn_cast<StringLiteralNode>(callNode->args[0]);
+        if (string && string->getValue() == "trivial") {
+          structOp.setRegisterPassable(
+              StructDeclOp::RP_RegisterPassableTrivial);
+          return true;
+        }
+      }
+    }
+  }
+  // Not handled in signature phase.
+  return false;
+}
+
 /// structdef ::=
 ///   [decorators] "struct" identifier [meta_signature] ":" suite
 ///
 LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
                                              Lexer &lexer, ASTDecl &decl) {
   ParserBase p(lexer);
-  SmallVector<ExprNode *> decoratorExprs = p.parseDecorators(decl);
+  auto decoratorExprs = p.parseDecorators(decl);
 
   SmallVector<ParamDeclAttr> inputParamDecls;
   SmallVector<ParamDeclAttr> resultParamDecls;
@@ -2580,38 +2616,12 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   // Structs are memory-only unless they opt-in to being passed in registers.
   structOp.setRegisterPassable(StructDeclOp::RP_MemoryOnly);
 
-  // Now that we have the basic struct set up, process any known decorators.
-  for (ExprNode *decorator : decoratorExprs) {
-    if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
-      if (declRef->spelling == "register_passable") {
-        structOp.setRegisterPassable(StructDeclOp::RP_RegisterPassable);
-        continue;
-      }
-      emitError(decorator->getLoc(), "unsupported decorator: @")
-          << declRef->spelling << declRef->getRange();
-      continue;
-    }
-
-    // `x()` forms.
-    if (auto callNode = dyn_cast<CallNode>(decorator)) {
-      if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee)) {
-        // @register_passable("trivial")
-        if (declRef->spelling == "register_passable" &&
-            callNode->args.size() == 1) {
-          auto *string = dyn_cast<StringLiteralNode>(callNode->args[0]);
-          if (string && string->getValue() == "trivial") {
-            structOp.setRegisterPassable(
-                StructDeclOp::RP_RegisterPassableTrivial);
-            continue;
-          }
-        }
-      }
-    }
-
-    emitError(decorator->getLoc(), "unsupported decorator")
-        << decorator->getRange();
-  }
-
+  // Now that we have the basic struct set up, process signature decorators.
+  SmallVector<LexerCursor> bodyDecorators;
+  for (auto [decorator, cursor] : decoratorExprs)
+    if (!processStructSignatureDecorator(decorator, structOp, *this))
+      bodyDecorators.push_back(cursor);
+  decl.setBodyDecorators(bodyDecorators, shared);
   return success();
 }
 
@@ -2698,6 +2708,29 @@ static TypedAttr synthesizeEmptyDtor(StructDeclOp structOp, ASTDecl &structDecl,
   return funcOp.getBoundReference();
 }
 
+/// Process the @value body decorator on structs.  This synthesizes the
+/// memberwise init, copy ctor and move ctor if requested.
+static void processStructValueDecorator(StructDeclOp structOp,
+                                        DeclResolver &resolver) {
+  // TODO: something great :)
+}
+
+static void processStructBodyDecorator(ExprNode *decorator,
+                                       StructDeclOp structOp,
+                                       DeclResolver &resolver) {
+  if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
+    if (declRef->spelling == "value")
+      return processStructValueDecorator(structOp, resolver);
+
+    resolver.emitError(decorator->getLoc(), "unsupported decorator: '@")
+        << declRef->spelling << "'" << declRef->getRange();
+    return;
+  }
+
+  resolver.emitError(decorator->getLoc(), "unsupported decorator")
+      << decorator->getRange();
+}
+
 ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
                                       ASTDecl &structDecl) {
   if (ParserBase::parseSuite(structDecl, lexer))
@@ -2772,19 +2805,34 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     rejectMemberIfPresent("__del__");
   }
 
+  // If there are any body decorators, resolve them now.
+  for (auto decoratorCursor : structDecl.getBodyDecorators(shared)) {
+    Lexer lexer(shared, decoratorCursor);
+    ParserBase parser(lexer);
+    ExprNode *expr = nullptr;
+    if (failed(parser.parseExpression(expr, structDecl.getIndentation())))
+      continue;
+
+    processStructBodyDecorator(expr, structOp, *this);
+
+    // If any decorator puked, stop running others.
+    if (structDecl.hasReferenceError)
+      return success();
+  }
+
+  if (structDecl.hasReferenceError)
+    return success();
+
   // Now that the struct body has been resolved, check to see if there is a
-  // destructor and install it if so.
-  if (!structDecl.hasReferenceError) {
-    // Check to see if we have an explicitly declared destructor.  If so, attach
-    // it to the type.
-    if (auto dtorAttr = lookupDestructor(structDecl, shared)) {
-      structOp.setDestructorAttr(dtorAttr);
-    } else if (needsDtorForFields) {
-      // If one of the fields needs to be destroyed, then we synthesize an empty
-      // del function so that lifetime checking can handle field destruction.
-      structOp.setDestructorAttr(
-          synthesizeEmptyDtor(structOp, structDecl, *this));
-    }
+  // destructor and install it into the StructDeclOp if so.
+  if (auto dtorAttr = lookupDestructor(structDecl, shared)) {
+    // Check to see if we have an explicitly declared destructor.
+    structOp.setDestructorAttr(dtorAttr);
+  } else if (needsDtorForFields) {
+    // If one of the fields needs to be destroyed, then we synthesize an empty
+    // del function so that lifetime checking can handle field destruction.
+    structOp.setDestructorAttr(
+        synthesizeEmptyDtor(structOp, structDecl, *this));
   }
 
   return success();
@@ -2800,7 +2848,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
 LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
                                              Lexer &lexer, ASTDecl &decl) {
   ParserBase p(lexer);
-  SmallVector<ExprNode *> decoratorExprs = p.parseDecorators(decl);
+  auto decoratorExprs = p.parseDecorators(decl);
 
   ASTType type;
   // Parse the type if present.

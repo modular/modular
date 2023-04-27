@@ -1175,7 +1175,7 @@ ParseResult StmtParser::parseIfStmt(LexerCursor startCursor, size_t curIndent) {
   // We parse the decorators for the 'if' if they exist.
   if (startCursor != getLexer().getCursor()) {
     startCursor.restore(getLexer());
-    for (auto *decorator : parseDecorators(curIndent)) {
+    for (auto [decorator, cursor] : parseDecorators(curIndent)) {
       // Handle recognized decorators.
       if (auto *dre = dyn_cast<DeclRefNode>(decorator)) {
         if (dre->spelling == "parameter") {
