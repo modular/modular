@@ -92,8 +92,10 @@ fn unroll2[
     """
 
     @always_inline
+    @parameter
     fn outer_func_wrapper[idx0: Int]():
         @always_inline
+        @parameter
         fn inner_func_wrapper[idx1: Int]():
             func[idx0, idx1]()
 
@@ -125,6 +127,7 @@ fn unroll3[
     """
 
     @always_inline
+    @parameter
     fn func_wrapper[idx0: Int, idx1: Int]():
         alias _idx1 = idx1 // dim2
         alias _idx2 = idx1 % dim2
@@ -233,8 +236,10 @@ fn vectorize_unroll[
     alias scalar_func_impl = _variadic_get(scalar_func_impls, 0)
 
     @always_inline
+    @parameter
     fn unrolled_func(unrolled_simd_idx: Int):
         @always_inline
+        @parameter
         fn unroll_iter[idx: Int]():
             vector_func_impl(unrolled_simd_idx + idx * simd_width)
 
@@ -301,6 +306,7 @@ fn async_parallelize[
         return
 
     @always_inline
+    @parameter
     async fn task_fn(i: Int):
         with FlushDenormals():
             func(i)
@@ -351,6 +357,7 @@ fn parallelize[func: fn (Int) capturing -> None](num_work_items: Int):
     let chunk_size = max(div_ceil(num_work_items, core_count), 1)
 
     @always_inline
+    @parameter
     fn coarsed_func(thread_idx: Int):
         for i in range(
             chunk_size * thread_idx,
@@ -422,6 +429,7 @@ fn tile[
     var current_offset: Int = offset
 
     @always_inline
+    @parameter
     fn static_tile_impl[idx: Int]():
         # Get the tile size to proceed with.
         alias tile_size = tile_size_list[idx]
@@ -504,6 +512,7 @@ fn tile[
     alias num_tiles = secondary_tile_size_list.__len__()
 
     @always_inline
+    @parameter
     fn static_tile_impl[idx: Int]():
         alias secondary_tile_size = secondary_tile_size_list[idx]
         let primary_tile_size = primary_tile_size_list[idx]
@@ -564,12 +573,14 @@ fn tile[
     alias num_tiles_y = tile_sizes_y.__len__()
 
     @always_inline
+    @parameter
     fn tile_on_y[idx_y: Int]():
         alias tile_size_y = tile_sizes_y[idx_y]
         while current_offset_y <= upperbound_y - tile_size_y:
             current_offset_x = offset_x
 
             @always_inline
+            @parameter
             fn tile_on_x[idx_x: Int]():
                 alias tile_size_x = tile_sizes_x[idx_x]
                 while current_offset_x <= upperbound_x - tile_size_x:
@@ -658,6 +669,7 @@ fn unswitch[
     if dynamic_switch_a:
 
         @always_inline
+        @parameter
         fn switched_a_true[static_switch: Bool]():
             switched_func[True, static_switch]()
 
@@ -665,6 +677,7 @@ fn unswitch[
     else:
 
         @always_inline
+        @parameter
         fn switched_a_false[static_switch: Bool]():
             switched_func[False, static_switch]()
 
@@ -711,6 +724,7 @@ fn tile_and_unswitch[
     var current_offset: Int = offset
 
     @always_inline
+    @parameter
     fn static_tile_impl[idx: Int]():
         # Get the tile size to proceed with.
         let tile_size = tile_size_list[idx]
@@ -842,6 +856,7 @@ fn elementwise[
     let chunk_size = div_ceil(problem_size, num_workers)
 
     @always_inline
+    @parameter
     fn task_func(i: Int):
         let start_offset = i * chunk_size
         let end_offset = min((i + 1) * chunk_size, problem_size)
@@ -852,6 +867,7 @@ fn elementwise[
             return
 
         @always_inline
+        @parameter
         fn func_wrapper[simd_width: Int](idx: Int):
             let offset = start_offset + idx
             func[simd_width, rank](offset)
@@ -903,6 +919,7 @@ fn _get_nd_indices_from_flat_index[
     var curr_index = flat_index
 
     @always_inline
+    @parameter
     fn compute_shape[idx: Int]():
         alias i = rank - idx - 2
         out[i] = curr_index % shape[i]
@@ -953,6 +970,7 @@ fn elementwise[
     let chunk_size = div_ceil(parallelism_size, num_workers)
 
     @always_inline
+    @parameter
     fn task_func(i: Int):
         let start_parallel_offset = i * chunk_size
         let end_parallel_offset = min((i + 1) * chunk_size, parallelism_size)
@@ -969,6 +987,7 @@ fn elementwise[
             )
 
             @always_inline
+            @parameter
             fn func_wrapper[simd_width: Int](idx: Int):
                 # The inner most dimension is vectorized, so we set it
                 # to the index offset.

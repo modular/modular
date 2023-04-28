@@ -38,6 +38,7 @@ fn test_elementwise_1d():
         let chunk_size = div_ceil(vector.__len__(), num_work_items)
 
         @always_inline
+        @parameter
         fn func[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
             let elem = vector.simd_load[simd_width](idx[0])
             let val = gelu(exp(erf(tanh(elem))))

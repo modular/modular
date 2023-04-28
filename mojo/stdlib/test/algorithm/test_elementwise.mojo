@@ -63,6 +63,7 @@ fn test_elementwise[
         x += 1.0
 
     @always_inline
+    @parameter
     fn func[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
         var index = rebind[StaticIntTuple[outer_rank]](idx)
         var in1 = buffer1.simd_load[simd_width](index)

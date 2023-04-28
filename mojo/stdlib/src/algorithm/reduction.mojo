@@ -27,6 +27,7 @@ from TargetInfo import dtype_sizeof
 
 
 @always_inline
+@parameter
 fn map_reduce[
     simd_width: Int,
     size: Dim,
@@ -87,6 +88,7 @@ fn map_reduce[
 
 
 @always_inline
+@parameter
 fn reduce[
     simd_width: Int,
     size: Dim,
@@ -136,6 +138,7 @@ fn reduce[
 
 
 @always_inline
+@parameter
 fn reduce_boolean[
     simd_width: Int,
     size: Dim,
@@ -188,6 +191,7 @@ fn reduce_boolean[
 
 
 @always_inline
+@parameter
 fn _reduce_3D[
     simd_width: Int,
     input_shape: DimList,
@@ -218,6 +222,7 @@ fn _reduce_3D[
     if c == 1:
 
         @always_inline
+        @parameter
         fn reduce_inner_axis():
             alias sz = input_shape.at[1]()
             # TODO: parallelize
@@ -237,6 +242,7 @@ fn _reduce_3D[
 
     # The width of this should be a multiple of the cache line size in order to
     # reuse the full cache line when an element of C is loaded.
+    @parameter
     fn get_unroll_factor[simd_width: Int, dtype_size: Int]() -> Int:
         alias cache_line_size = 64
         alias unroll_factor = cache_line_size // (simd_width * dtype_size)
@@ -248,6 +254,7 @@ fn _reduce_3D[
     for i in range(h):
 
         @always_inline
+        @parameter
         fn reduce_w_chunked[simd_width: Int](idx: Int):
             var accum = SIMD[acc_type, simd_width].splat(init)
             for j in range(w):
@@ -261,6 +268,7 @@ fn _reduce_3D[
 
 
 @always_inline
+@parameter
 fn reduce[
     simd_width: Int,
     rank: Int,
@@ -355,6 +363,7 @@ fn _simd_max[
 
 @always_inline
 @closure
+@parameter
 fn _simd_max_elementwise[
     simd_width: Int,
     acc_type: DType,
@@ -446,6 +455,7 @@ fn _simd_min[
 
 @always_inline
 @closure
+@parameter
 fn _simd_min_elementwise[
     simd_width: Int,
     acc_type: DType,
@@ -537,6 +547,7 @@ fn _simd_sum[
 
 @always_inline
 @closure
+@parameter
 fn _simd_sum_elementwise[
     simd_width: Int,
     acc_type: DType,
@@ -628,6 +639,7 @@ fn _simd_product[
 
 @always_inline
 @closure
+@parameter
 fn _simd_product_elementwise[
     simd_width: Int,
     acc_type: DType,
@@ -768,6 +780,7 @@ fn mean[
     if type.is_integral():
 
         @always_inline
+        @parameter
         fn normalize_integral[simd_width: Int](idx: Int):
             let elem = dst_1d.simd_load[simd_width](idx)
             let to_store = elem // n
@@ -778,6 +791,7 @@ fn mean[
         let n_recip = SIMD[type, 1](1) / n
 
         @always_inline
+        @parameter
         fn normalize_floating[simd_width: Int](idx: Int):
             let elem = dst_1d.simd_load[simd_width](idx)
             let to_store = elem * n_recip
@@ -820,6 +834,7 @@ fn variance[
     debug_assert(src.__len__() > 1, "input length must be greater than 1")
 
     @always_inline
+    @parameter
     fn _simd_variance_elementwise[
         simd_width: Int,
         acc_type: DType,
@@ -888,6 +903,7 @@ fn all_true[
     """
 
     @always_inline
+    @parameter
     fn _reduce_fn[
         simd_width: Int, type: DType
     ](val: SIMD[type, simd_width]) -> Bool:
@@ -897,6 +913,7 @@ fn all_true[
         return _all_true(val != 0)
 
     @always_inline
+    @parameter
     fn _continue_fn(val: Bool) -> Bool:
         return val
 
@@ -928,6 +945,7 @@ fn any_true[
     """
 
     @always_inline
+    @parameter
     fn _reduce_fn[
         simd_width: Int, type: DType
     ](val: SIMD[type, simd_width]) -> Bool:
@@ -937,6 +955,7 @@ fn any_true[
         return _any_true(val != 0)
 
     @always_inline
+    @parameter
     fn _continue_fn(val: Bool) -> Bool:
         return not val
 
@@ -969,6 +988,7 @@ fn none_true[
     """
 
     @always_inline
+    @parameter
     fn _reduce_fn[
         simd_width: Int, type: DType
     ](val: SIMD[type, simd_width]) -> Bool:
@@ -978,6 +998,7 @@ fn none_true[
         return _none_true(val != 0)
 
     @always_inline
+    @parameter
     fn _continue_fn(val: Bool) -> Bool:
         return val
 

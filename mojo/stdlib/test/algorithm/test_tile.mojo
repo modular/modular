@@ -120,10 +120,12 @@ fn test_unswitched_tile():
 
     # A tiled function that takes a start and a dynamic boundary.
     @always_inline
+    @parameter
     fn switched_tile[tile_size: Int](start: Int, bound: Int):
         # Inside each unit there's either a per-element check or a unswitched
         #  tile level check.
         @always_inline
+        @parameter
         fn switched_tile_unit[static_switch: Bool]():
             for i in range(start, start + tile_size):
                 if static_switch or i < bound:
@@ -147,6 +149,7 @@ fn test_unswitched_2d_tile():
     print("test_unswitched_2d_tile")
 
     # A tiled function that takes a start and a dynamic boundary.
+    @parameter
     @always_inline
     fn switched_tile[
         tile_size_x: Int, tile_size_y: Int
@@ -156,6 +159,7 @@ fn test_unswitched_2d_tile():
         # Inside each unit there's either a per-element check or a unswitched
         #  tile level check.
         @always_inline
+        @parameter
         fn switched_tile_unit[static_switch0: Bool, static_switch1: Bool]():
             for i in range(start[0], start[0] + tile_size[0]):
                 for j in range(start[1], start[1] + tile_size[1]):
@@ -183,6 +187,8 @@ fn test_unswitched_2d_tile():
 # CHECK-LABEL: test_tile_and_unswitch
 fn test_tile_and_unswitch():
     print("test_tile_and_unswitch")
+
+    @parameter
     # Helper workgroup function to test static workgroup tiling.
     @always_inline
     fn print_number_static_unswitched[

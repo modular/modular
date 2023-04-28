@@ -22,7 +22,7 @@ fn test_map():
     vector[3] = 4.0
     vector[4] = 5.0
 
-    @always_inline
+    @parameter
     fn add_two(idx: Int):
         vector[idx] = vector[idx] + 2
 
@@ -39,7 +39,7 @@ fn test_map():
     # CHECK: 7.00
     print(vector[4])
 
-    @always_inline
+    @parameter
     fn add(idx: Int):
         vector[idx] = vector[idx] + vector[idx]
 

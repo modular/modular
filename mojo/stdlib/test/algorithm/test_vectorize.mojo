@@ -27,6 +27,7 @@ fn test_vectorize():
     vector[4] = 5.0
 
     @always_inline
+    @parameter
     fn add_two[simd_width: Int](idx: Int):
         vector.simd_store[simd_width](
             idx, vector.simd_load[simd_width](idx) + 2
@@ -46,6 +47,7 @@ fn test_vectorize():
     print(vector[4])
 
     @always_inline
+    @parameter
     fn add[simd_width: Int](idx: Int):
         vector.simd_store[simd_width](
             idx,
@@ -80,12 +82,14 @@ fn test_vectorize_unroll():
         ref[i] = i
 
     @always_inline
+    @parameter
     fn double_ref[simd_width: Int](idx: Int):
         ref.simd_store[simd_width](
             idx,
             ref.simd_load[simd_width](idx) + ref.simd_load[simd_width](idx),
         )
 
+    @parameter
     @always_inline
     fn double_vec[simd_width: Int](idx: Int):
         vec.simd_store[simd_width](

@@ -90,6 +90,7 @@ fn test_3d_reductions():
     alias simd_width = 4
 
     @always_inline
+    @parameter
     fn _test_3d_reductions[
         input_shape: DimList,
         output_shape: DimList,
