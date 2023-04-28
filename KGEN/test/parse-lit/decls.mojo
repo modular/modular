@@ -43,11 +43,13 @@ fn test_var_let_scopes(cond: Bool):
 
 fn fat_signature_types():
     let x = (4).__as_mlir_index()
-    # CHECK: lit.func *"g(__mlir_type.index)"(%y: index borrow) capturing -> index {
+    # CHECK: lit.func *"g(__mlir_type.index)"(%y: index borrow) capturing -> index
+    @parameter
     fn g(y: __mlir_type.index) -> __mlir_type.index:
         return x
 
-    # CHECK: lit.func *"h(__mlir_type.index,__mlir_type.index)"<N>(%y: index borrow, %z: index borrow) capturing -> index {
+    # CHECK: lit.func *"h(__mlir_type.index,__mlir_type.index)"<N>(%y: index borrow, %z: index borrow) capturing -> index
+    @parameter
     fn h[N: __mlir_type.index](y: __mlir_type.index, z: __mlir_type.index) -> __mlir_type.index:
         return x
 
@@ -62,6 +64,7 @@ fn take_closure(
 fn take_closure_no_param_main():
     let x = (4).__as_mlir_index()
 
+    @parameter
     fn g(y: __mlir_type.index) -> __mlir_type.index:
         return x
 
@@ -76,9 +79,11 @@ fn take_closure_with_param_main():
     let x = (4).__as_mlir_index()
     let w = (5).__as_mlir_index()
 
+    @parameter
     fn h[N: __mlir_type.index, M: __mlir_type.index](y: __mlir_type.index) -> __mlir_type.index:
         return x
 
+    @parameter
     fn g[N: __mlir_type.index](y: __mlir_type.index) -> __mlir_type.index:
         return x
 
@@ -111,7 +116,8 @@ fn take_closure_raises(
 fn throws_main() raises:
     let x = (4).__as_mlir_index()
 
-    # CHECK: lit.func *"g(__mlir_type.index)"(%y: index borrow) throws|capturing -> !pop.variant<@{{.*}}::@Error, index> {
+    # CHECK: lit.func *"g(__mlir_type.index)"(%y: index borrow) throws|capturing -> !pop.variant<@{{.*}}::@Error, index>
+    @parameter
     fn g(y: __mlir_type.index) raises -> __mlir_type.index:
         return x
 
@@ -153,16 +159,16 @@ fn capture_by_copy():
     # CHECK-NEXT: %[[COPY:.*]] = kgen.call {{.*}}__copyinit__{{.*}}(%[[VAL]])
     # CHECK-NEXT: pop.store %[[COPY]], %[[TMP]]
     # CHECK-NEXT: %[[RAW:.*]] = pop.load %[[TMP]]
-    # CHECK-NEXT: lit.func *"value_closure()"
-    @nonparametric
-    fn value_closure():
+    # CHECK-NEXT: lit.func *"value_closure
+    fn value_closure(x: Int):
+        let arg = x
         # CHECK-NEXT: %[[STATE:.*]] = pop.stack_allocation
         # CHECK-NEXT: pop.store %[[RAW]], %[[STATE]]
         let capture = c
-    # CHECK: %[[CLS:.*]] = kgen.create_closure{{.*}}*"value_closure()"
+    # CHECK: %[[CLS:.*]] = kgen.create_closure{{.*}}*"value_closure
 
-    # CHECK: call_signature %[[CLS]]()
-    value_closure()
+    # CHECK: call_signature %[[CLS]](
+    value_closure(10)
 
 
 ##===----------------------------------------------------------------------===##
@@ -226,7 +232,7 @@ def var_decls() -> None:
 # fn/def
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.func @"empty_def()"() -> !lit.none {
+# CHECK-LABEL: lit.func @"empty_def()"() -> !lit.none
 # CHECK: lit.end_func
 fn empty_def():
   pass
@@ -308,7 +314,7 @@ fn variadic_params():
 
 
 # Test that pointers don't get confused with by-ref arguments.
-# CHECK-LABEL: lit.func @"testPointerArgs{{.*}}(%ptr: !pop.pointer<si32> borrow) -> si32 {
+# CHECK-LABEL: lit.func @"testPointerArgs{{.*}}(%ptr: !pop.pointer<si32> borrow) -> si32
 fn testPointerArgs(ptr: __mlir_type.`!pop.pointer<si32>`) -> __mlir_type.si32:
   # CHECK-NEXT: %0 = pop.load %ptr : !pop.pointer<si32>
   return __mlir_op.`pop.load`[_type: __mlir_type.si32](ptr)
@@ -322,7 +328,7 @@ struct NoDebugInlineTest:
     return
 
 # CHECK-LABEL: lit.func @"testAlwaysInlineNoDebug
-# CHECK-SAME: always_inline_no_debug {
+# CHECK-SAME: always_inline_no_debug
 @always_inline("nodebug")
 fn testAlwaysInlineNoDebug():
   pass
@@ -349,7 +355,7 @@ fn callReturnParam() -> __mlir_type.index:
   # CHECK-NEXT: return %0
   return returnParameter[(3).__as_mlir_index()]()
 
-# CHECK: lit.func @"pleaseInline()"() -> index always_inline {
+# CHECK: lit.func @"pleaseInline()"() -> index always_inline
 @always_inline
 fn pleaseInline() -> __mlir_type.index:
   return (1).__as_mlir_index()
@@ -367,11 +373,13 @@ fn testInlineByRef(a&: AlwaysInlineByRef):
 fn adaptiveNestedFns(a: Int, b: Int):
     # CHECK: lit.func *"nestedFn{{.*}}"{{.*}}isAdaptive
     @adaptive
+    @parameter
     fn nestedFn(d: Int) -> Int:
         return a + d
 
     # CHECK: lit.func *"nestedFn{{.*}}_0"{{.*}}isAdaptive
     @adaptive
+    @parameter
     fn nestedFn(d: Int) -> Int:
         return b + d
 
@@ -661,7 +669,7 @@ def implicit_return_obj():
 # raises specifier.
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.func @"defAlwaysRaises()"() throws -> !pop.variant<@{{.*}}::@Error, @"$Int"::@Int> attributes {isDef}
+# CHECK-LABEL: lit.func @"defAlwaysRaises()"() throws -> !pop.variant<@{{.*}}::@Error, @"$Int"::@Int> attributes {isDef
 def defAlwaysRaises() -> Int:
     # CHECK: [[RESULT:%.*]] = kgen{{.*}}#lit.struct<{value: scalar<index> = 0}>
     # CHECK-NEXT: %1 = pop.variant.create [[RESULT]]
@@ -750,7 +758,7 @@ struct StructExample:
 
   fn __init__() -> Self: return Self{}
 
-  # CHECK: lit.func @"static($Int::Int)"(%x: !kgen.declref<@"$Int"::@Int> borrow) -> !lit.none attributes {isStatic} {
+  # CHECK: lit.func @"static($Int::Int)"(%x: !kgen.declref<@"$Int"::@Int> borrow) -> !lit.none attributes {{.*}} isStatic
   @staticmethod
   fn static(x: Int):
     # CHECK: %0 = {{.*}}#lit.struct<{value: scalar<index> = 4}>
@@ -761,8 +769,6 @@ struct StructExample:
   # CHECK: lit.func @"mutatingMethod($decls::StructExample&)"(%self: !pop.pointer<@"$decls"::@StructExample> byref) -> !lit.none
   fn mutatingMethod(self&):
     pass
-# CHECK: }
-# CHECK-NEXT: }
 
 # CHECK: lit.func @"callStatic{{.*}}(%a: !kgen.declref<@"$Int"::@Int> borrow)
 fn callStatic(a: Int):
@@ -865,6 +871,7 @@ async fn awaitable() -> Int:
 fn topLevelFunction() -> Int:
   var a = 0
   # CHECK: lit.func *"nestedFunction()"
+  @parameter
   fn nestedFunction() -> Int:
     # CHECK-NEXT: pop.load %a
     return a
@@ -879,6 +886,7 @@ struct SomeStruct:
   fn someMethod(self) -> Int:
     var a = 0
     # CHECK: lit.func *"nestedFunction()"
+    @parameter
     fn nestedFunction() -> Int:
       # CHECK-NEXT: pop.load %a
       return a
@@ -906,6 +914,7 @@ fn topLevelParamFn[a_param: __mlir_type.index]():
   nestedFunction[(2).__as_mlir_index()]()
 
   let value = 0
+  @parameter
   fn capturingNestedFunction() -> Int:
     return value
   # CHECK: declare fatRef: <>() capturing -> {{.*}}@Int> = <*"capturingNestedFunction()">

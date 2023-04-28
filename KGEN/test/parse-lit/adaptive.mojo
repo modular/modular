@@ -8,28 +8,28 @@
 
 
 @adaptive
-# CHECK: lit.func @"foo()"() -> !lit.none attributes {isAdaptive}
+# CHECK: lit.func @"foo()"() -> !lit.none attributes {isAdaptive
 fn foo():
     let b = 3
     return
 
 
 @adaptive
-# CHECK: lit.func @"foo()_0"() -> !lit.none attributes {isAdaptive}
+# CHECK: lit.func @"foo()_0"() -> !lit.none attributes {isAdaptive
 fn foo():
     let b = 5
     return
 
 
 @adaptive
-# CHECK: lit.func @"bar()"() -> !lit.none attributes {isAdaptive}
+# CHECK: lit.func @"bar()"() -> !lit.none attributes {isAdaptive
 fn bar():
     let b = 7
     return
 
 
 @adaptive
-# CHECK: lit.func @"bar()_0"() -> !lit.none attributes {isAdaptive}
+# CHECK: lit.func @"bar()_0"() -> !lit.none attributes {isAdaptive
 fn bar():
     let b = 9
     return

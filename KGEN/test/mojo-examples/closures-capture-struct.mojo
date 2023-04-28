@@ -22,6 +22,7 @@ fn test_take_closure_and_print(x: Int):
     v.push_back(1)
     v.push_back(2)
 
+    @parameter
     fn FOO(y: Int) -> Int:
         print(v[1])
         return y

@@ -44,7 +44,7 @@ struct MemoryOnlyPair:
 
   # CHECK: lit.func @"__copyinit__{{.*}}"(
   # CHECK-SAME: %self: !pop.pointer<@"$expressions"::@MemoryOnlyPair> init_self,
-  # CHECK-SAME: %existing: !pop.pointer<@"$expressions"::@MemoryOnlyPair> borrow_in_mem) -> !lit.none {
+  # CHECK-SAME: %existing: !pop.pointer<@"$expressions"::@MemoryOnlyPair> borrow_in_mem) -> !lit.none
   fn __copyinit__(self&, existing: MemoryOnlyPair):
     # CHECK-NEXT: %0 = lit.struct.gep %existing[x]
     # CHECK-NEXT: %1 = lit.struct.gep %self[x]
@@ -450,7 +450,7 @@ def test_if_cond(cond: Bool):
     if cond:     # 'if' stmt, not an 'if' expression.
         i = i+i
 
-# CHECK-LABEL: lit.func @"test_param_if_cond()"<cond: @"$Bool"::@Bool>() -> !kgen.declref<@"$Int"::@Int> {
+# CHECK-LABEL: lit.func @"test_param_if_cond()"<cond: @"$Bool"::@Bool>() -> !kgen.declref<@"$Int"::@Int>
 fn test_param_if_cond[cond: Bool]() -> Int:
 # CHECK: kgen.param.declare i: @"$Int"::@Int = <cond(apply(:<>(!kgen.declref<@"$Bool"::@Bool> borrow) -> i1 @"$Bool"::@Bool::@"__mlir_i1__($Bool::Bool)", cond) ? #lit.struct<{value: scalar<index> = 2}> : #lit.struct<{value: scalar<index> = 3}>)>
 # CHECK-NEXT:  %[[I:.*]] = kgen.param.constant: @"$Int"::@Int = <i>
@@ -969,12 +969,12 @@ fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
     # CHECK-NEXT: pop.store %[[IF]], %res : !pop.pointer<@"$Bool"::@Bool>
     res = a < b < c and d < e
 
-# CHECK-LABEL: lit.func @"foo_adaptive(){{.*}} {isAdaptive}
+# CHECK-LABEL: lit.func @"foo_adaptive(){{.*}} {isAdaptive
 @adaptive
 fn foo_adaptive[x: Int]() -> Int:
    return 0
 
-# CHECK-LABEL: lit.func @"foo_adaptive()_0{{.*}} {isAdaptive}
+# CHECK-LABEL: lit.func @"foo_adaptive()_0{{.*}} {isAdaptive
 @adaptive
 fn foo_adaptive[x: Int]() -> Int:
   return 1

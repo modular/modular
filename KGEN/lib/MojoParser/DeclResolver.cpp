@@ -1628,10 +1628,8 @@ void FnDecorators::apply(
         funcOp.setAlwaysInlineLevel(AlwaysInlineLevel::Enabled);
       else if (declRef->spelling == "adaptive")
         applyAdaptive(*declRef);
-      else if (declRef->spelling == "nonparametric")
-        funcOp.setIsNonParametric(true);
       else if (declRef->spelling == "parameter")
-        ; // no-op right now
+        funcOp.setIsParametric(true);
       else
         processedIt = false;
     }
@@ -1845,18 +1843,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   if (funcOp->getParentOfType<FuncOp>())
     effects = effects | FnEffects::Capturing;
 
-  // `@nonparametric` closures cannot be parametric. This decorator can only be
-  // applied to nested functions that are not `@noncapturing`.
-  if (funcOp.getIsNonParametric()) {
-    if (!inputParamDecls.empty() || !resultParamDecls.empty()) {
-      emitError(funcOp.getLoc(),
-                "nonparametric closure cannot have input or result parameters");
-    }
-    if (!funcOp->getParentOfType<FuncOp>() ||
-        !bitEnumContainsAny(effects, FnEffects::Capturing))
-      emitError(funcOp.getLoc(), "only closures can be declared nonparametric");
-  }
-
   // Now that all the structural properties are determined, perform any
   // name-binding specific checks over the declaration.  This happens after
   // decorator processing because that is how defs work in Python.  This also
@@ -2031,9 +2017,22 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     return p.emitError(funcOp.getLoc(), "cannot mark a function with capturing "
                                         "closure parameters as @noncapturing");
 
+  if (!funcOp->getParentOfType<FuncOp>() || !signature.isCapturing())
+    funcOp.setIsParametric(true);
+
   // Upon fully resolving a nonparametric closure, immediately materialize it
   // as a runtime value. It cannot be used as a parameter.
-  if (funcOp.getIsNonParametric()) {
+  if (!funcOp.getIsParametric()) {
+    if (funcOp.getIsAdaptive()) {
+      decl.hasReferenceError = true;
+      return emitError(funcOp.getLoc(),
+                       "nonparametric closure cannot be marked @adaptive");
+    }
+    if (!inputParamDecls.empty() || !resultParamDecls.empty()) {
+      emitError(funcOp.getLoc(),
+                "nonparametric closure cannot have input or result parameters");
+    }
+
     // Fully resolve the body so we can swap the IR value of the decl. Later on,
     // we will need this to determine the capture signature.
     decl.resolvedness = DeclResolvedness::signature;

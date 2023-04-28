@@ -17,6 +17,7 @@ fn take_closure_and_print(
 
 
 fn test_take_closure_and_print(x: __mlir_type.index):
+    @parameter
     fn h(y: __mlir_type.index) -> __mlir_type.index:
         let pop_x = __mlir_op.`pop.cast_from_builtin`[
             _type : __mlir_type.`!pop.scalar<index>`
@@ -30,6 +31,7 @@ fn test_take_closure_and_print(x: __mlir_type.index):
         )
         return result
 
+    @parameter
     fn thin(y: __mlir_type.index) -> __mlir_type.index:
         let pop_x = __mlir_op.`pop.cast_from_builtin`[
             _type : __mlir_type.`!pop.scalar<index>`
