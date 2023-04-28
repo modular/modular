@@ -488,9 +488,8 @@ void DeclResolver::resolveAll() {
   // We can do this in any order, but choose to use the order they are
   // discovered so diagnostics are mostly top-down.  Resolving declarations
   // may cause more entries to be added to this list.
-  for (size_t i = 0; i != parsedDeclList.size(); ++i) {
+  for (size_t i = 0; i != parsedDeclList.size(); ++i)
     (void)resolveFully(*parsedDeclList[i], parsedDeclList[i]->getLoc());
-  }
 }
 
 void DeclResolver::registerAndCheckExport(ExportOp exportOp) {
@@ -701,14 +700,9 @@ ParserParamEvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
     return Error("function is parametric");
 
   // Make sure to fully resolve the body and everything within it.
-  if (failed(resolver.resolveFully(*decl, decl->getLoc())))
+  if (failed(resolver.resolveFully(*decl, decl->getLoc())) ||
+      failed(resolver.recursivelyResolveFully(*decl, decl->getLoc())))
     return Error("failed to fully resolve function");
-  for (auto [name, childDecls] : decl->getDeclsInScope()) {
-    for (ASTDecl *childDecl : childDecls) {
-      if (failed(resolver.resolveFully(*childDecl, childDecl->getLoc())))
-        return Error("failed to fully resolve function");
-    }
-  }
   return &func.getBodyRegion();
 }
 
@@ -2023,6 +2017,23 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // Upon fully resolving a nonparametric closure, immediately materialize it
   // as a runtime value. It cannot be used as a parameter.
   if (!funcOp.getIsParametric()) {
+    // Fully resolve the body so we can swap the IR value of the decl. Later on,
+    // we will need this to determine the capture signature.
+    decl.resolvedness = DeclResolvedness::signature;
+    if (failed(resolveBody(funcOp, lexer, decl)))
+      return failure();
+    decl.resolvedness = DeclResolvedness::fully;
+    if (failed(recursivelyResolveFully(decl, decl.getLoc())))
+      return failure();
+
+    // If the function doesn't actually capture anything, don't demote it to a
+    // runtime value.
+    bool hasCapture = false;
+    mlir::visitUsedValuesDefinedAbove(funcOp.getBodyRegion(),
+                                      [&](OpOperand *) { hasCapture = true; });
+    if (!hasCapture)
+      return success();
+
     if (funcOp.getIsAdaptive()) {
       decl.hasReferenceError = true;
       return emitError(funcOp.getLoc(),
@@ -2033,12 +2044,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
                 "nonparametric closure cannot have input or result parameters");
     }
 
-    // Fully resolve the body so we can swap the IR value of the decl. Later on,
-    // we will need this to determine the capture signature.
-    decl.resolvedness = DeclResolvedness::signature;
-    if (failed(resolveBody(funcOp, lexer, decl)))
-      return failure();
-    decl.resolvedness = DeclResolvedness::fully;
     OpBuilder b(funcOp.getContext());
     b.setInsertionPointAfter(funcOp);
     decl.irValue = SBValue(b.create<CreateClosureOp>(
@@ -2347,6 +2352,27 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     });
   }
 
+  return success();
+}
+
+LogicalResult DeclResolver::recursivelyResolveFully(ASTDecl &decl,
+                                                    llvm::SMLoc loc) {
+  // Collect decls currently in scope.
+  std::vector<ASTDecl *> initialDecls;
+  for (auto &[name, decls] : decl.declsInScope)
+    for (ASTDecl *decl : decls)
+      initialDecls.push_back(decl);
+  // Start resolving the decls. If any more decls get added, keep resolving
+  // them and no more are added.
+  size_t start = parsedDeclList.size();
+  ArrayRef<ASTDecl *> declsToResolve = initialDecls;
+  while (!declsToResolve.empty()) {
+    for (ASTDecl *decl : declsToResolve)
+      if (failed(resolveFully(*decl, loc)))
+        return failure();
+    declsToResolve = ArrayRef(parsedDeclList).drop_front(start);
+    start = parsedDeclList.size();
+  }
   return success();
 }
 
