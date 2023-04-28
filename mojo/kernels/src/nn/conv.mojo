@@ -618,6 +618,7 @@ struct PackIm2ColNCHW[
         alias loop_iters = block_size // simd_size
 
         @always_inline
+        @parameter
         fn body[idx: Int]():
             alias col_idx = idx * simd_size
             # calculate input index
@@ -704,6 +705,7 @@ struct PackIm2ColNCHW[
 
         # Vector index for filling the simd elements.
         @always_inline
+        @parameter
         fn body[idx: Int]():
             alias vec_idx = idx
             # Calculate the current output and input indices.
@@ -1550,6 +1552,7 @@ struct ConvNHWCInnerLoopFilterPacked[
             let r_s = Index(r_s_c[0], r_s_c[1])
 
             @always_inline
+            @parameter
             fn body[idx: Int]():
                 alias row_idx = idx
                 let m_offset = self.global_offset.M + row_idx
@@ -1599,6 +1602,7 @@ struct ConvNHWCInnerLoopFilterPacked[
         """
 
         @always_inline
+        @parameter
         fn outer_body[idx0: Int, idx1: Int]():
             c_local.simd_store[simd_size](
                 Index(idx0, idx1 * simd_size),
@@ -1632,6 +1636,7 @@ struct ConvNHWCInnerLoopFilterPacked[
         """
 
         @always_inline
+        @parameter
         fn outer_body[idx0: Int, idx1: Int]():
             alias col_idx = idx1 * simd_size
 
@@ -1694,6 +1699,7 @@ struct ConvNHWCInnerLoopFilterPacked[
         """
 
         @always_inline
+        @parameter
         fn outer_body[idx0: Int, idx1: Int]():
             alias col_idx = idx1 * simd_size
             let global_idx_pair = (
@@ -1781,6 +1787,7 @@ struct ConvNHWCInnerLoopFilterPacked[
         let n_outer_idx = tile_n_k_idx[0] // pack_inner_size
 
         @always_inline
+        @parameter
         fn outer_body[idx0: Int, idx1: Int]():
             alias col_idx = idx0 * simd_size
             let c_idx = Index(idx1, col_idx)
@@ -2027,6 +2034,7 @@ struct ConvIm2ColNHWC[
         )
 
         @always_inline
+        @parameter
         fn task_func(task_id: Int):
             let conv = ConvIm2ColNHWC[
                 shape_input,
@@ -2212,8 +2220,10 @@ struct ConvIm2ColNHWC[
         var k_idx: Int = 0
 
         @always_inline
+        @parameter
         fn k_iteration(k_offset: Int, k_tile_size: Int):
             @always_inline
+            @parameter
             fn outer_n_switch[last_k_tile: Bool]():
                 self._outer_n_loop[last_k_tile](
                     b_packed,
@@ -2249,10 +2259,13 @@ struct ConvIm2ColNHWC[
         var k_idx: Int = 0
 
         @always_inline
+        @parameter
         fn k_iteration(channel_start: Int, channel_size: Int):
             @always_inline
+            @parameter
             fn k_iteration_helper(k_offset: Int, k_tile_size: Int):
                 @always_inline
+                @parameter
                 fn outer_n_switch[last_k_tile: Bool]():
                     self._outer_n_loop[last_k_tile](
                         b_packed,
@@ -2289,6 +2302,7 @@ struct ConvIm2ColNHWC[
         let valid_col_end: Int = self.col_start_idx + self.total_col_count
         let tile_n: Int = self.tile_n_k[0]
 
+        @parameter
         fn m_loop[tile_inner: Int](col_idx: Int, tile_size_n: Int):
             # Remap buffer indices for current tile.
             let remapped_bpacked = self._view_buffer_as(
@@ -2338,6 +2352,7 @@ struct ConvIm2ColNHWC[
         #  on this tile.
         # TODO: this could be in finer granularity.
         @always_inline
+        @parameter
         fn outer_m_helper_switch[skip_col_bound: Bool]():
             self._outer_m_loop_helper[
                 last_k_tile,
@@ -2508,6 +2523,7 @@ struct ConvIm2ColNHWC[
         var row_idx = start_idx
 
         @always_inline
+        @parameter
         fn m_loop_switch[use_padding: Bool]():
             while row_idx <= (valid_row_count - RowSize):
                 let current_offset = global_offset + GemmShape(row_idx, 0, 0)

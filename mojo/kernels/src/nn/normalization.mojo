@@ -66,6 +66,7 @@ fn layer_norm[
             out_buf._offset(start_coord), n
         )
 
+        @parameter
         fn input_gen_wrapper[
             return_type: DType, simd_width: Int
         ](idx: Int) -> SIMD[return_type, simd_width]:
@@ -81,6 +82,7 @@ fn layer_norm[
             _simd_sum,
         ](out_slice, 0)
 
+        @parameter
         fn _sum_to_mean() -> SIMD[type, 1]:
             @parameter
             if type.is_integral():
@@ -95,6 +97,7 @@ fn layer_norm[
 
         let norm_factor = 1 / sqrt(var_val + eps)
 
+        @parameter
         fn _normalize[simd_width: Int](idx: Int):
             let out_val = out_slice.simd_load[simd_width](idx)
             let norm_val = (

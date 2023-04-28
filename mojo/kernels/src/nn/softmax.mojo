@@ -122,6 +122,7 @@ fn _softmax_2_pass_step2[
     #   end for
 
     @always_inline
+    @parameter
     fn _step_2[simd_width: Int](idx: Int):
         let running_max_simd = SIMD[type, simd_width].splat(running_max)
         let running_sum_simd = SIMD[type, simd_width].splat(running_sum)
@@ -216,6 +217,7 @@ fn _softmax_3_pass_step_2[
     var accum_simd: SIMD[type, outer_simd_width] = 0
 
     @always_inline
+    @parameter
     fn step_2[simd_width: Int](idx: Int):
         var elem = input.simd_load[simd_width](idx) - SIMD[
             type, simd_width
@@ -253,6 +255,7 @@ fn _softmax_3_pass_step_3[
     let accum_proc = accum_proc_func[1, type](accum)
 
     @always_inline
+    @parameter
     fn step_3[simd_width: Int](idx: Int):
         let accum_simd = SIMD[type, simd_width].splat(accum_proc)
         var elem = output.simd_load[simd_width](idx)

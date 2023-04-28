@@ -54,6 +54,7 @@ fn _canonical_reshape(
 ) -> _CanonicallyReshapedBuffer:
     var elsize = -1
 
+    @parameter
     fn know_type[type: DType]():
         elsize = dtype_sizeof[type]()
 
@@ -100,6 +101,7 @@ fn _concat_parallel(
     alias parallel_chunk_size = 64 * KB  # TODO autotune
     let num_chunks = div_ceil(total_output_bytes, parallel_chunk_size)
 
+    @parameter
     fn do_chunk(chunk_index: Int):
         # "Amount" refers to byte-offsets into logical copy order, not into
         # output buffer.
@@ -300,10 +302,12 @@ fn concat(
     _check_input_consistency(axis, inputs)
 
     @always_inline
+    @parameter
     fn dispatch_serial[type: DType](unused_thread_idx: Int):
         _concat_serial[type](output.to_buffer[type](), axis, inputs)
 
     @always_inline
+    @parameter
     fn dispatch_on_dtype[type: DType]():
         alias KB = 1024
         alias min_work_for_parallel = 128 * KB  # TODO: autotune

@@ -98,6 +98,7 @@ fn gather_reduce[
     ](indices)
 
     @always_inline
+    @parameter
     fn task_func(task_id: Int):
         alias unroll_factor = 2
         alias prefetch_offset = 6
@@ -118,6 +119,7 @@ fn gather_reduce[
         for i in range(start_slice, end_slice):
 
             @always_inline
+            @parameter
             fn _accum_in_place[simd_width: Int](k: Int):
                 var accum = SIMD[type, simd_width](reduce_init)
                 for j in range(indices.dim[1]()):
@@ -205,6 +207,7 @@ fn gather[
     )
 
     @always_inline
+    @parameter
     fn task_func(task_id: Int):
         let output = output_bind
         let input = input_bind
@@ -229,6 +232,7 @@ fn gather[
             )
 
             @always_inline
+            @parameter
             fn func_wrapper[simd_width: Int](idx: Int):
                 output_row_ptr.simd_store[simd_width](
                     idx, input_row_ptr.simd_load[simd_width](idx)
@@ -265,6 +269,7 @@ fn gather[
     assert_param[axis == 1]()
 
     @always_inline
+    @parameter
     fn task_func(task_id: Int):
         for i in range(output.dim[0]()):
             for j in range(output.dim[1]()):
@@ -305,6 +310,7 @@ fn gather_nd[
     let inner_dynamic = prod_dims[axis + 1, input_rank](input)
 
     @always_inline
+    @parameter
     fn task_func(task_id: Int):
         for s in range(indices_size):
             let tuple_s = indices.get_nd_index(s)

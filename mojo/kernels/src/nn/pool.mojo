@@ -100,6 +100,7 @@ struct Pool2d[
         let work_block_size = div_ceil(work, num_tasks)
 
         @always_inline
+        @parameter
         fn task_func(task_id: Int):
 
             # Create an instance of the pooling op.
@@ -125,6 +126,7 @@ struct Pool2d[
             let offset = task_id * work_block_size
 
             @always_inline
+            @parameter
             fn func_wrapper[simd_width: Int](idx: Int):
                 var values = SIMD[type, simd_width](0)
 

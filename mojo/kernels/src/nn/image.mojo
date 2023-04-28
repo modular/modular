@@ -137,6 +137,7 @@ struct ImageData[
         let image_shape = ImageShape.__init__[shape, type, static_layout](self)
 
         @always_inline
+        @parameter
         fn _compute_index_nchw() -> Int:
             # Index [N,C,H,W]
             var idx = n
@@ -146,6 +147,7 @@ struct ImageData[
             return idx
 
         @always_inline
+        @parameter
         fn _compute_index_nhwc() -> Int:
             # Index [N,H,W,C]
             var idx = n
@@ -177,6 +179,7 @@ struct ImageData[
         let image_shape = ImageShape.__init__[shape, type, static_layout](self)
 
         @always_inline
+        @parameter
         fn _compute_index_nchw() -> StaticIntTuple[4]:
             # Index [N,C,H,W]
             var lidx = idx
@@ -190,6 +193,7 @@ struct ImageData[
             return StaticIntTuple[4](n_idx, c_idx, h_idx, w_idx)
 
         @always_inline
+        @parameter
         fn _compute_index_nhwc() -> StaticIntTuple[4]:
             # Index [N,H,W,C]
             var lidx = idx

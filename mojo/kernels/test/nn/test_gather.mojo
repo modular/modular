@@ -28,6 +28,7 @@ fn test_gather():
     print("== test_gather")
 
     @always_inline
+    @parameter
     fn _test_gather[indices_type: DType]():
         alias num_rows = 16
         alias row_size = 4
@@ -101,6 +102,7 @@ fn test_gather_3d():
     print("== test_gather_3d\n")
 
     @always_inline
+    @parameter
     fn _test_gather[indices_type: DType]():
         alias num_rows = 16
         alias row_size = 4
@@ -175,6 +177,7 @@ fn test_gather_empty_indices():
     print("== test_gather_empty_indices")
 
     @always_inline
+    @parameter
     fn _test_gather[indices_type: DType]():
         alias num_rows = 16
         alias row_size = 4

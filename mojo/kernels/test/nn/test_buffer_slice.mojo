@@ -28,6 +28,7 @@ fn print_elements[
     print("New strides:", tensor.dynamic_stride)
 
     @always_inline
+    @parameter
     fn print_elements_lambda[
         simd_width: Int, rank: Int
     ](idx: StaticIntTuple[rank]):

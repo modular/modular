@@ -100,6 +100,7 @@ fn slice_as_copy[
 
     # Copy lambda sliced view into output buffer.
     @always_inline
+    @parameter
     fn copy[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
         let index = rebind[StaticIntTuple[in_rank]](idx)
         output.simd_store[simd_width](
