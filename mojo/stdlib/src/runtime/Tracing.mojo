@@ -13,6 +13,7 @@ from BuildInfo import build_info_llcl_max_profiling_level
 # ===----------------------------------------------------------------------===#
 
 
+@value
 @register_passable("trivial")
 struct TraceType:
     alias OTHER = TraceType(0)
@@ -21,10 +22,6 @@ struct TraceType:
     alias MOJO = TraceType(3)
 
     var value: Int
-
-    @always_inline("nodebug")
-    fn __init__(value: Int) -> TraceType:
-        return TraceType {value: value}
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: TraceType) -> Bool:
@@ -40,6 +37,7 @@ struct TraceType:
 # ===----------------------------------------------------------------------===#
 
 
+@value
 @register_passable("trivial")
 struct TraceLevel:
     alias ALWAYS = TraceLevel(0)
@@ -47,10 +45,6 @@ struct TraceLevel:
     alias THREAD = TraceLevel(2)
 
     var value: Int
-
-    @always_inline("nodebug")
-    fn __init__(value: Int) -> Self:
-        return Self {value: value}
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: TraceLevel) -> Bool:
@@ -178,6 +172,7 @@ fn trace_range_pop[type: TraceType, level: TraceLevel]():
 # ===----------------------------------------------------------------------===#
 
 
+@value
 struct Trace[level: TraceLevel]:
     alias trace_type = TraceType.MOJO
 
@@ -190,10 +185,6 @@ struct Trace[level: TraceLevel]:
 
     fn __init__(self&, name: StringRef):
         self = Self(name, "")
-
-    fn __init__(self&, name: StringRef, detail: StringRef):
-        self.name = name
-        self.detail = detail
 
     fn __enter__(self):
         trace_range_push[trace_type, level](self.name, self.detail)
