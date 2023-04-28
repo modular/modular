@@ -197,6 +197,10 @@ fn badAnd(a: Bool, b: WeirdBoolish, c: WeirdBoolishMem):
   # expected-error @+1 {{cannot load non-register passable type into SSA register}}
   _ = c and c
 
+fn badParamAnd[a: Bool, b: WeirdBoolish]():
+  #expected-error @+1 {{cannot emit parameter and/or with different operand types in alias initializer}}
+  alias c = a and b
+
 # expected-error @+1 {{'Self' type may only be used inside a type}}
 fn badSelf(a: Self):
   # expected-error @+1 {{'Self' type may only be used inside a type}}

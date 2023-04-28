@@ -2145,9 +2145,24 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
   Location ifLoc = getLocation(emitter);
 
   if (!emitter.builder) {
-    return emitter.emitErrorForDynamicValueInParameter(
-        this, "TODO(#6626): cannot emit short-circuit and/or");
-    return {};
+    PValue lhsPVal = emitter.emitExprPValue(lhs, EC_OperatorOperandValue);
+    RValue lhsI1Val = emitter.emitExprI1(lhs, EC_BoolCondition);
+    PValue lhsI1PVal = emitter.emitPValue({lhsI1Val, lhs}, EC_BoolCondition);
+    PValue rhsPVal = emitter.emitExprPValue(rhs, EC_BoolCondition);
+    if (!lhsI1PVal || !lhsPVal || !rhsPVal)
+      return {};
+
+    if (!lhsPVal.getType().isEqualCanon(rhsPVal.getType()))
+      return emitter.emitErrorForDynamicValueInParameter(
+          this, "cannot emit parameter and/or with different "
+                "operand types");
+
+    if (kind == kBoolOr) // and/or swap true/false operands
+      std::swap(lhsPVal, rhsPVal);
+
+    auto value =
+        ParamOperatorAttr::get(POC::Cond, {lhsI1PVal, rhsPVal, lhsPVal});
+    return emitter.emitResult(value, this, dest);
   }
 
   // Emit the LHS value and capture the result of calling __bool__ in case we
