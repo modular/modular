@@ -18,9 +18,11 @@ from Range import range
 fn test_sync_coro():
     print("== test_sync_coro")
 
+    @parameter
     async fn test_llcl_add[lhs: Int](rhs: Int) -> Int:
         return lhs + rhs
 
+    @parameter
     async fn test_llcl_add_two_of_them(a: Int, b: Int) -> Int:
         let t0 = Coroutine[Int](test_llcl_add[5](a))
         let t1 = Coroutine[Int](test_llcl_add[2](b))
@@ -35,9 +37,11 @@ fn test_sync_coro():
 fn test_runtime_task():
     print("== test_runtime_task")
 
+    @parameter
     async fn test_llcl_add[lhs: Int](rhs: Int) -> Int:
         return lhs + rhs
 
+    @parameter
     async fn test_llcl_add_two_of_them(rt: Runtime, a: Int, b: Int) -> Int:
         let t0 = rt.create_task[Int](test_llcl_add[1](a))
         let t1 = rt.create_task[Int](test_llcl_add[2](b))
@@ -53,9 +57,11 @@ fn test_runtime_task():
 fn test_runtime_taskgroup():
     print("== test_runtime_taskgroup")
 
+    @parameter
     async fn return_value[value: Int]() -> Int:
         return value
 
+    @parameter
     async fn run_as_group(rt: Runtime) -> Int:
         var tg = TaskGroup(rt)
         let t0 = tg.create_task[Int](return_value[1]())
@@ -80,6 +86,7 @@ fn test_runtime_asynctaskgroup():
     let ptr = Pointer[Atomic[DType.index]].address_of(completed)
 
     @always_inline
+    @parameter
     async fn run(ptr: Pointer[Atomic[DType.index]]):
         __get_address_as_lvalue(ptr.address) += 1
 

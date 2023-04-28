@@ -17,12 +17,14 @@ fn _max_profiling_level_plus_one() -> Int:
 
 
 fn test_tracing[level: TraceLevel]():
+    @parameter
     async fn test_tracing_add[lhs: Int](rhs: Int) -> Int:
         var result = Int()
         with Trace[level]("trace event 2", "detail event 2"):
             result = lhs + rhs
         return result
 
+    @parameter
     async fn test_tracing_add_two_of_them(rt: Runtime, a: Int, b: Int) -> Int:
         var t0 = rt.create_task[Int](test_tracing_add[1](a))
         var t1 = rt.create_task[Int](test_tracing_add[2](b))
