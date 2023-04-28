@@ -26,6 +26,7 @@
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "Support/Compiler/OperationUtils.h"
 #include "Support/STLExtras.h"
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"
@@ -558,42 +559,103 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return failure();
   };
 
+  // Narrow the decl to a CValue, and dig out the underlying MLIR value so we
+  // can check if it is captured in a function.
+  Value mlirValue;
+  CValue value;
+
   // 'let' declarations resolve to an SBvalue when they are register_passable.
   if (auto letDecl = dyn_cast<LetRegDeclOp>(decl)) {
     if (failed(checkDominance(letDecl, /*letOrVar=*/true)))
       return {};
-    return emitter.emitResult(SBValue(letDecl.getResult()), this, dest);
-  }
+    mlirValue = letDecl.getResult();
+    value = SBValue(mlirValue);
 
-  // Variable references resolve to an MBValue or LValue addressing the
-  // memory.
-  if (auto var = dyn_cast<VarLetDeclOp>(decl)) {
+    // Variable references resolve to an MBValue or LValue addressing the
+    // memory.
+  } else if (auto var = dyn_cast<VarLetDeclOp>(decl)) {
     if (failed(checkDominance(var, /*letOrVar=*/false)))
       return {};
     // We handle both var and let's as mutable lvalues and let check lifetimes
     // diagnose any problems.  This allows us to handle late-initialized lets.
-    return emitter.emitResult(LValue(var.getResult()), this, dest);
-  }
+    mlirValue = var.getResult();
+    value = LValue(mlirValue);
 
-  // RValue's and LValues always resolve to their known value.
-  if (auto rvalue = decl.getIfRValue())
-    return emitter.emitResult(rvalue, this, dest);
-  if (auto bvalue = decl.getIfBValue())
-    return emitter.emitResult(bvalue, this, dest);
-  if (auto lvalue = decl.getIfLValue())
-    return emitter.emitResult(lvalue, this, dest);
+    // RValue's and LValues always resolve to their known value.
+  } else if (auto rvalue = decl.getIfRValue()) {
+    if (auto mrValue = rvalue.getIfMRValue())
+      mlirValue = mrValue;
+    else
+      mlirValue = rvalue.getIfSRValue();
+    value = rvalue;
+  } else if (auto bvalue = decl.getIfBValue()) {
+    if (auto mbValue = bvalue.getIfMBValue())
+      mlirValue = mbValue;
+    else
+      mlirValue = bvalue.getIfSBValue();
+    value = bvalue;
+  } else if (auto lvalue = decl.getIfLValue()) {
+    mlirValue = lvalue;
+    value = lvalue;
 
-  // Reject unqualified struct field references.
-  if (auto fieldOp = dyn_cast<StructFieldOp>(decl)) {
+    // Reject unqualified struct field references.
+  } else if (auto fieldOp = dyn_cast<StructFieldOp>(decl)) {
     emitter.emitError(getLoc(), "cannot access instance field '")
         << spelling << "' directly; did you mean 'self.'?" << getRange()
         << FixIt::insertBeforeToken(getLoc(), "self.");
     return {};
+  } else {
+    emitter.emitError(getLoc(), "use of declaration \"")
+        << spelling << "\" as a value isn't supported yet" << getRange();
+    return {};
   }
 
-  emitter.emitError(getLoc(), "use of declaration \"")
-      << spelling << "\" as a value isn't supported yet" << getRange();
-  return {};
+  // If this is a capture inside a nonparametric function, emit a copy.
+  if (auto func =
+          getBlockParentOfType<FuncOp>(emitter.builder->getInsertionBlock());
+      func && func.getIsNonParametric()) {
+    assert(mlirValue && "unexpected PValue");
+    Operation *parent = mlirValue.getDefiningOp();
+    if (!parent)
+      parent = cast<BlockArgument>(mlirValue).getOwner()->getParentOp();
+    if (parent->getParentRegion()->isProperAncestor(&func.getBodyRegion())) {
+      // This is a captured value. Emit a copy and bind the name within the
+      // function to the copied value.
+      OpBuilder::InsertionGuard guard(*emitter.builder);
+      emitter.builder->setInsertionPoint(func);
+      // Emit a raw stack allocation.
+      Location loc = emitter.translateLocation(getLoc());
+      auto ptrType = POP::PointerType::get(value.getRValueType());
+      Value tmp =
+          emitter.builder->create<POP::StackAllocationOp>(loc, ptrType, 1);
+      ValueDest copyDest(SLValue(tmp), EC_CaptureCopy);
+      if (!emitter.emitCopyOfValue({value, this}, copyDest)) {
+        copyDest.resetForError();
+        return {};
+      }
+      // Rig the closure formation into emitting a memcpy of the raw value
+      // by causing the whole value to cross the closure boundary.
+      Value rawBytes = emitter.builder->create<POP::LoadOp>(loc, tmp);
+
+      // Redeclare the value inside the closure region using a raw stack
+      // allocation. We want the lifetime tracker to ignore this: the object
+      // will live inside the closure.
+      emitter.builder->setInsertionPointToStart(func.getBody());
+      Value localDecl =
+          emitter.builder->create<POP::StackAllocationOp>(loc, ptrType, 1);
+      // Copy the raw bytes in.
+      emitter.builder->create<POP::StoreOp>(loc, rawBytes, localDecl);
+
+      // Bind the copy to the name.
+      emitter.getDeclResolver().addFullyResolvedDecl(
+          DeclIRValue(MBValue(localDecl)), spelling, getLoc(),
+          emitter.getDeclResolver().getDeclForFuncSymbol(
+              getFullyResolvedSymbolRef(func)));
+      value = MBValue(localDecl);
+    }
+  }
+
+  return emitter.emitResult(value, this, dest);
 }
 
 /// This uses the MLIR parser to turn the specified MLIR type name into an MLIR

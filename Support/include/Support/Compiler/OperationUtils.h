@@ -29,6 +29,14 @@ std::string getUniqueSymbolName(std::string baseName, SymbolTable &symtab,
 /// Check if ident is a valid C identifier: it contains only the
 /// characters in the set [0-9a-zA-Z_] and it cannot start with a '_'.
 bool isCIdentifier(StringRef ident);
+
+/// Return the nearest parent operation of the block of the given kind.
+template <typename OpT>
+OpT getBlockParentOfType(Block *block) {
+  if (auto op = dyn_cast<OpT>(block->getParentOp()))
+    return op;
+  return block->getParentOp()->getParentOfType<OpT>();
+}
 } // namespace M
 
 #endif // SUPPORT_COMPILER_OPERATIONUTILS_H

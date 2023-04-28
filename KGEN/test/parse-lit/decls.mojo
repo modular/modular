@@ -144,6 +144,23 @@ fn member_method_reference():
     _ = closure(2)
 
 
+# CHECK-LABEL: lit.func @"capture_by_copy()"
+fn capture_by_copy():
+    var c: BoxedInt = 2
+
+    # CHECK: %[[TMP:.*]] = pop.stack_allocation
+    # CHECK-NEXT: %[[VAL:.*]] = pop.load %c
+    # CHECK-NEXT: %[[COPY:.*]] = kgen.call {{.*}}__copyinit__{{.*}}(%[[VAL]])
+    # CHECK-NEXT: pop.store %[[COPY]], %[[TMP]]
+    # CHECK-NEXT: %[[RAW:.*]] = pop.load %[[TMP]]
+    # CHECK-NEXT: lit.func *"value_closure()"
+    @nonparametric
+    fn value_closure():
+        # CHECK-NEXT: %[[STATE:.*]] = pop.stack_allocation
+        # CHECK-NEXT: pop.store %[[RAW]], %[[STATE]]
+        let capture = c
+
+
 ##===----------------------------------------------------------------------===##
 # let
 ##===----------------------------------------------------------------------===##
