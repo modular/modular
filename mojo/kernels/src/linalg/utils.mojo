@@ -93,6 +93,7 @@ fn get_matmul_num_tasks[
     return num_tasks
 
 
+@value
 struct SubMatmulConfig:
     """Static configuration of sub-matrices in parallel matmul."""
 
@@ -101,10 +102,6 @@ struct SubMatmulConfig:
 
     # Dimension of sub-matrices.
     var shape: StaticIntTuple[3]
-
-    fn __init__(self&, offset: StaticIntTuple[3], shape: StaticIntTuple[3]):
-        self.offset = offset
-        self.shape = shape
 
     fn __copyinit__(self&, existing: Self):
         self.offset = existing.offset

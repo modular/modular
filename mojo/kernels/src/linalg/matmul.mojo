@@ -164,6 +164,7 @@ struct MatmulOperandLayout:
     var pack_b_inner_size: Int
 
 
+@value
 @register_passable("trivial")
 struct GemmShape:
     """Helper class to unpack gemm dimension and layout."""
@@ -258,19 +259,6 @@ struct GemmShape:
         if idx == 2:
             self.K = value
             return
-
-    fn __init__(m: Int, n: Int, k: Int) -> GemmShape:
-        """Constructor of a gemm shape record by directly supplying the values.
-
-        Args:
-            m: M dimension of the gemm shape.
-            n: N dimension of the gemm shape.
-            k: K dimension of the gemm shape.
-
-        Returns:
-            The constructed shape record.
-        """
-        return GemmShape {M: m, N: n, K: k}
 
     fn __init__(index: StaticIntTuple[3]) -> GemmShape:
         """Constructor of a gemm shape record from a index tuple.
@@ -392,6 +380,7 @@ fn round_down_to_block[block_size: Int](original_size: Int) -> Int:
 # ===----------------------------------------------------------------------=== #
 
 
+@value
 struct PackMatrixRows[
     # original matrix shape list
     original_shape: DimList,
@@ -419,22 +408,6 @@ struct PackMatrixRows[
     var valid_data_dim: StaticIntTuple[2]
     # valid multiple-of-simd data bound within the tile.
     var valid_simd_dim: StaticIntTuple[2]
-
-    fn __init__(
-        self&,
-        packed_matrix: NDBuffer[3, packed_shape, type],
-        original_matrix: NDBuffer[2, original_shape, type],
-        global_offset: StaticIntTuple[2],
-        pack_tile_dim: StaticIntTuple[2],
-        valid_data_dim: StaticIntTuple[2],
-        valid_simd_dim: StaticIntTuple[2],
-    ):
-        self.packed_matrix = packed_matrix
-        self.original_matrix = original_matrix
-        self.global_offset = global_offset
-        self.pack_tile_dim = pack_tile_dim
-        self.valid_data_dim = valid_data_dim
-        self.valid_simd_dim = valid_simd_dim
 
     fn __copyinit__(self&, existing: Self):
         self.packed_matrix = existing.packed_matrix
@@ -648,6 +621,7 @@ struct PackMatrixRows[
             row_idx += simd_size
 
 
+@value
 struct PackMatrixCols[
     # original matrix shape list
     original_shape: DimList,
@@ -673,20 +647,6 @@ struct PackMatrixCols[
     var pack_tile_dim: StaticIntTuple[2]
     # valid data bound within the tile.
     var valid_data_dim: StaticIntTuple[2]
-
-    fn __init__(
-        self&,
-        packed_matrix: NDBuffer[3, packed_shape, type],
-        original_matrix: NDBuffer[2, original_shape, type],
-        global_offset: StaticIntTuple[2],
-        pack_tile_dim: StaticIntTuple[2],
-        valid_data_dim: StaticIntTuple[2],
-    ):
-        self.packed_matrix = packed_matrix
-        self.original_matrix = original_matrix
-        self.global_offset = global_offset
-        self.pack_tile_dim = pack_tile_dim
-        self.valid_data_dim = valid_data_dim
 
     # Interface function:
     @staticmethod
@@ -1343,6 +1303,7 @@ fn calculate_tile_n_k[
 
 # Tiled Matmul Implementation.
 # TODO: not yet supporting transpose_a
+@value
 struct TiledMatmul[
     config: MatmulConfig,
     accum_type: DType,
@@ -1377,28 +1338,6 @@ struct TiledMatmul[
     ]
 
     var elementwise_epilogue_fn: fn (GemmShape, GemmShape) capturing -> None
-
-    fn __init__(
-        self&,
-        c: NDBuffer[2, config.shape_c, accum_type],
-        a: NDBuffer[2, config.shape_a, value_type],
-        b: NDBuffer[2, config.shape_b, value_type],
-        tile_n_k: StaticIntTuple[2],
-        global_tile_offset: GemmShape,
-        global_tile_shape: GemmShape,
-        b_tile_generator: BTileGenerator[
-            config, value_type, transpose_b, b_packed
-        ],
-        elementwise_epilogue_fn: fn (GemmShape, GemmShape) capturing -> None,
-    ):
-        self.c = c
-        self.a = a
-        self.b = b
-        self.tile_n_k = tile_n_k
-        self.global_tile_shape = global_tile_shape
-        self.global_tile_offset = global_tile_offset
-        self.b_tile_generator = b_tile_generator
-        self.elementwise_epilogue_fn = elementwise_epilogue_fn
 
     fn __copyinit__(self&, existing: Self):
         self.c = existing.c

@@ -14,6 +14,7 @@ from SIMD import SIMD
 from TargetInfo import dtype_alignof
 
 
+@value
 struct Matrix[
     shape: DimList,
     type: DType,
@@ -27,18 +28,6 @@ struct Matrix[
 
     fn __copyinit__(self&, existing: Self):
         self.data = existing.data
-
-    fn __init__(self&, data: NDBuffer[2, shape, type]):
-        """Constructor of a matrix based on a buffer and a transpose flag.
-
-        Args:
-            data: The buffer containing the matrix data.
-
-        Returns:
-            The constructed matrix.
-        """
-
-        self.data = data
 
     fn __init__(self&, dptr: DTypePointer[type]):
         """Constructor of a matrix from a DTypePointer.
