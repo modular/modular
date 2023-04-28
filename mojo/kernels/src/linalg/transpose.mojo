@@ -504,6 +504,7 @@ fn parallel_memcpy[
     num_tasks: Int,
     out_chain: OutputChainPtr,
 ):
+    @parameter
     @always_inline
     fn _parallel_copy(thread_id: Int):
         let begin = task_size * thread_id
@@ -543,6 +544,7 @@ fn _process_tile[
     let input_vals: StaticTuple[tile_size_n, SIMD[type, tile_size_m]]
     let output_vals: StaticTuple[tile_size_m, SIMD[type, tile_size_n]]
 
+    @parameter
     @always_inline
     fn load_input_vals[count: Int]():
         input_vals[count] = in_ptr.simd_load[tile_size_m](
@@ -551,12 +553,14 @@ fn _process_tile[
 
     unroll[tile_size_n, load_input_vals]()
 
+    @parameter
     @always_inline
     fn compute_output_vals[m: Int, n: Int]():
         output_vals[m][n] = input_vals[n][m]
 
     unroll2[tile_size_m, tile_size_n, compute_output_vals]()
 
+    @parameter
     @always_inline
     fn store_output_vals[count: Int]():
         out_ptr.simd_store[tile_size_n](
@@ -595,6 +599,7 @@ fn _transpose_2d_serial_tiled[
     let N = simplified_input_shape[simplified_rank - 2]
     let M = simplified_input_shape[simplified_rank - 1]
 
+    @parameter
     @always_inline
     fn process_tile[tile_size_m: Int, tile_size_n: Int](m: Int, n: Int):
         _process_tile[tile_size_m, tile_size_n, type](
@@ -675,6 +680,7 @@ fn _transpose_2d_parallel_tiled[
 
     let work_block_size = div_ceil(work, num_tasks)
 
+    @parameter
     @always_inline
     fn _parallel_tile(thread_id: Int):
         let n_tile_begin = work_block_size * thread_id
@@ -788,6 +794,7 @@ fn _transpose_4d_swap_middle_helper[
 
         let work_block_size = div_ceil(work, num_tasks)
 
+        @parameter
         @always_inline
         fn _parallel_copy(thread_id: Int):
             let begin = work_block_size * thread_id
