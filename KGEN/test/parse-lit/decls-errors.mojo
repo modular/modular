@@ -161,7 +161,7 @@ fn cant_raise_return(a: Error) raises -> Error:
 fn top_level_fn():
     @noncapturing
     # expected-error @below {{cannot mark a function with capturing closure parameters as @noncapturing}}
-    fn not_really_thin[func: __mlir_type.`!kgen.signature<() capturing -> index>`]():
+    fn not_really_thin[func: fn() capturing -> Int]():
         return
     return
 

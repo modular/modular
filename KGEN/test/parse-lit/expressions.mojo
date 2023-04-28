@@ -457,14 +457,14 @@ fn test_param_if_cond[cond: Bool]() -> Int:
   alias i = 2 if cond else 3
   return i
 
-# CHECK-LABEL: lit.func @"callable_mv{{.*}}"<callable: (!kgen.declref<@"$Int"::@Int>) -> !kgen.declref<@"$Int"::@Int>>(%a: !kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int>
-fn callable_mv[callable: __mlir_type[`!kgen.signature<(`,Int,`) -> `,Int,`>`]](a: Int) -> Int:
-  # CHECK-NEXT: kgen.call_param[(!kgen.declref<@"$Int"::@Int>) -> !kgen.declref<@"$Int"::@Int>: callable](%a)
+# CHECK-LABEL: lit.func @"callable_mv($Int::Int)"<callable: <>(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int>>(%a: !kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int>
+fn callable_mv[callable: fn (Int) -> Int](a: Int) -> Int:
+  # CHECK-NEXT: kgen.call_param[<>(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int>: callable](%a)
   return callable(a)
 
-# CHECK-LABEL: lit.func @"callable_mv_inputs{{.*}}"<callable: <@"$Int"::@Int>(!kgen.declref<@"$Int"::@Int>) -> !kgen.declref<@"$Int"::@Int>, b: @"$Int"::@Int>(%a: !kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int>
-fn callable_mv_inputs[callable: __mlir_type[`!kgen.signature<<`,Int,`>(`,Int,`) -> `,Int,`>`], b: Int](a: Int) -> Int:
-  # CHECK-NEXT: kgen.call_param[(!kgen.declref<@"$Int"::@Int>) -> !kgen.declref<@"$Int"::@Int>: bind_signature(:<@"$Int"::@Int>(!kgen.declref<@"$Int"::@Int>) -> !kgen.declref<@"$Int"::@Int> callable, b)](%a)
+# CHECK-LABEL: lit.func @"callable_mv_inputs{{.*}}"<callable: <@"$Int"::@Int>(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int>, b: @"$Int"::@Int>(%a: !kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int>
+fn callable_mv_inputs[callable: fn[x: Int](Int) -> Int, b: Int](a: Int) -> Int:
+  # CHECK-NEXT: kgen.call_param[<>(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int>: bind_signature(:<@"$Int"::@Int>(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int> callable, b)](%a)
   return callable[b](a)
 
 # CHECK-LABEL: lit.func @"takeIndexParam()"<a: @"$Int"::@Int>() -> !kgen.declref<@"$Int"::@Int>
@@ -481,9 +481,9 @@ fn returnIndex2() -> Int:
   # CHECK-NEXT: return %0
   return takeIndexParam[returnIndex()]()
 
-# CHECK-LABEL: lit.func @"callInParam()"<callable: <@"$Int"::@Int>(!kgen.declref<@"$Int"::@Int>) -> !kgen.declref<@"$Int"::@Int>>() -> !kgen.declref<@"$Int"::@Int>
-fn callInParam[callable: __mlir_type[`!kgen.signature<<`,Int,`>(`,Int,`) -> `,Int,`>`]]() -> Int:
-  # CHECK-NEXT: %0 = kgen.call @"$expressions"::@"takeIndexParam()"<:@"$Int"::@Int apply(:(!kgen.declref<@"$Int"::@Int>) -> !kgen.declref<@"$Int"::@Int> bind_signature(:<@"$Int"::@Int>(!kgen.declref<@"$Int"::@Int>) -> !kgen.declref<@"$Int"::@Int> callable, #lit.struct<{value: scalar<index> = 1}>), #lit.struct<{value: scalar<index> = 1}>)>() : () -> !kgen.declref<@"$Int"::@Int>
+# CHECK-LABEL: lit.func @"callInParam()"<callable: <@"$Int"::@Int>(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int>>() -> !kgen.declref<@"$Int"::@Int>
+fn callInParam[callable: fn[x: Int](Int) -> Int]() -> Int:
+  # CHECK-NEXT: %0 = kgen.call @"$expressions"::@"takeIndexParam()"<:@"$Int"::@Int apply(:<>(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int> bind_signature(:<@"$Int"::@Int>(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int> callable, #lit.struct<{value: scalar<index> = 1}>), #lit.struct<{value: scalar<index> = 1}>)>() : () -> !kgen.declref<@"$Int"::@Int>
   # CHECK-NEXT: return %0
   return takeIndexParam[callable[1](1)]()
 

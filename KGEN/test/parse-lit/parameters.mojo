@@ -344,7 +344,7 @@ fn callableWithParam[type: __mlir_type.`!kgen.dtype`]():
 
 # CHECK-LABEL: lit.func @"takeCallable2
 fn takeCallable2[
-      func: __mlir_type.`!kgen.signature<<dtype>() -> !lit.none>`
+      func: fn[dt: __mlir_type.`!kgen.dtype`]() -> None
   ]():
       pass
 
