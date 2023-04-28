@@ -133,9 +133,7 @@ fn _pad_impl[
             return
 
         _fill(pre_pad_start_ptr, constant.value, pre_pad)
-        let elem_bytes = dtype_sizeof[type]()
-        let non_pad_bytes = non_pad * elem_bytes
-        memcpy(non_pad_start_ptr, input_start_ptr, non_pad_bytes)
+        memcpy(non_pad_start_ptr, input_start_ptr, non_pad)
         _fill(post_pad_start_ptr, constant.value, post_pad)
         return
 

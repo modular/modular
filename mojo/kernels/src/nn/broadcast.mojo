@@ -76,8 +76,7 @@ fn broadcast[
     if input_output_have_same_shape:
         let src_ptr = input.data
         let dst_ptr = output.data
-        let elem_size = dtype_sizeof[type]()
-        memcpy(dst_ptr, src_ptr, input.size() * elem_size)
+        memcpy(dst_ptr, src_ptr, input.size())
         return
 
     alias init_axis = 0
@@ -186,9 +185,7 @@ fn _tile_1d[
     """
     Repeat data from `src_ptr[:tile_num_elems]` in `init_dst_ptr` for `n` times
     """
-    let elem_bytes = dtype_sizeof[type]()
-    let bytes_to_copy = tile_num_elems * elem_bytes
     var dst_ptr = init_dst_ptr
     for i in range(n):
-        memcpy(dst_ptr, src_ptr, bytes_to_copy)
+        memcpy(dst_ptr, src_ptr, tile_num_elems)
         dst_ptr = dst_ptr.offset(tile_num_elems)
