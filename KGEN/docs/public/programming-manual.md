@@ -321,7 +321,7 @@ and already use MyPy-style type annotations in Python to prefer the use of
 implementing some methods with one and others with the other, and allows each
 team or programmer to decide what is best for their use-case.
 
-### The `__copyinit__` and `__moveinit__` Special Methods
+### The `__copyinit__` and `__moveinit__` special methods
 
 Mojo supports full "value semantics" as seen in languages like C++ and Swift,
 and it makes defining simple aggregates of fields very easy with its `@value`
@@ -334,8 +334,8 @@ the new `__copyinit__` and `__moveinit__` special methods.
 
 These low-level customization hooks can be useful when doing low level systems
 programming, e.g. with manual memory management.  For example, consider a
-dynamic string type that needs to allocate memory for
-the string data when constructed and destroy it when the value is destroyed:
+dynamic string type that needs to allocate memory for the string data when
+constructed and destroy it when the value is destroyed:
 
 ```mojo
 struct MyString:
@@ -1535,8 +1535,10 @@ Mojo's approach (described above) provides simple and predictable hooks that
 give you the ability to express exotic low-level things like `Atomic` correctly.
 This is great for control and for a simple programming model, but most structs
 we all write are simple aggregations of other types, and we don't want to have
-to write a lot of boilerplate for them!  To solve this, Mojo provides a `@value`
-decorator for structs that synthesizes the boilerplate for you.
+to write a lot of boilerplate for them! To solve this, Mojo provides a `@value`
+decorator for structs that synthesizes the boilerplate for you. `@value` can be
+thought of as an extension of Python's `@dataclass` handling the new
+`__moveinit__` and `__copyinit__` Mojo methods.
 
 The `@value` decorator takes a look at the fields of your type, and generates
 members that are missing.  Consider a simple struct like this, for example:
