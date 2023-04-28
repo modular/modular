@@ -312,7 +312,7 @@ struct ValueRef {
   /// Given a field ref with fields, return a sub-field that starts at the
   /// specified bit offset and has the specified size.
   ValueRef getSubfield(unsigned offset, unsigned width) const {
-    assert(startBit + offset + width < endBit && "Not a valid subfield");
+    assert(startBit + offset + width <= endBit && "Not a valid subfield");
     return ValueRef(valueId, startBit + offset, startBit + offset + width,
                     isIndirect);
   }
@@ -886,6 +886,18 @@ void UninitializedValueScan::checkOp(Operation &op) {
       checkDef(op.getResult(0), op);
 
     return;
+  }
+
+  // The lit.ownership.mark.destroyed op consumes the whole object bit of a
+  // value only, but not its fields.
+  if (auto markDestroyed = dyn_cast<LIT::OwnershipMarkDestroyedOp>(op)) {
+    if (auto valueRef = valueSet.getValueRef(markDestroyed.getValue())) {
+      valueRef = valueRef.getSubfield(valueRef.getNumBits() - 1, 1);
+      // If the consumed bit is live then all is good, otherwise there is an
+      // error and it will be diagnosed below.
+      if (valueRef.isAllPresent(liveValues))
+        return;
+    }
   }
 
   // If this operation has a direct use of a value we are tracking, consider

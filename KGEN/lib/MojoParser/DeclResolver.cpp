@@ -2983,6 +2983,104 @@ static void synthesizeMemberwiseInit(
   builder.create<LIT::EndFuncOp>();
 }
 
+/// This synthesizes a __copyinit__/__moveinit__ method that recursively
+/// copies/moves each field of a struct.
+static void synthesizeCopyMoveInit(
+    bool isMove, SMLoc decoratorLoc, ASTDecl &structDecl, bool isMemoryOnly,
+    ArrayRef<std::pair<StructFieldOp, ASTDecl *>> structFields,
+    DeclResolver &resolver) {
+  StructDeclOp structOp = cast<StructDeclOp>(structDecl);
+  auto builder = ImplicitLocOpBuilder::atBlockEnd(
+      resolver.translateLocation(decoratorLoc), &structOp.getFields().front());
+
+  // The signature of __copyinit__ is either:
+  //   fn __copyinit__(self&, borrowed existing: Self) -> None
+  //   fn __copyinit__(borrowed existing: Self) -> Self
+  // The signature of __moveinit__ (only for memory types) is:
+  //   fn __moveinit__(self&, owned existing: Self) -> None
+  SmallVector<Type> argTypes;
+  SmallVector<ValueInputConvention> argConventions;
+  SmallVector<StringAttr> argNames;
+  Type resultType;
+
+  // Figure out the type of the 'self' argument/result.
+  ASTType selfType = structDecl.getSelfType();
+  if (isMemoryOnly) {
+    argNames.push_back(builder.getStringAttr("self"));
+    argTypes.push_back(POP::PointerType::get(selfType));
+    argConventions.push_back(ValueInputConvention::InitSelf);
+
+    argNames.push_back(builder.getStringAttr("existing"));
+    argTypes.push_back(POP::PointerType::get(selfType));
+    argConventions.push_back(isMove ? ValueInputConvention::OwnedInMem
+                                    : ValueInputConvention::BorrowedInMem);
+    resultType = resolver.shared.getNoneType();
+  } else {
+    argNames.push_back(builder.getStringAttr("existing"));
+    argTypes.push_back(selfType);
+    argConventions.push_back(ValueInputConvention::BorrowedInReg);
+    resultType = selfType;
+  }
+
+  // Create the FuncOp and ASTDecl for the method.
+  auto [funcOp, funcDecl] = synthesizeMethodInStruct(
+      isMove ? "__moveinit__" : "__copyinit__", argTypes, argConventions,
+      argNames, resultType, builder, structDecl, resolver);
+
+  // Set up the body.
+  Block *body = funcOp.getBody();
+  builder.setInsertionPointToStart(body);
+  ExprEmitter emitter(resolver.shared, funcDecl, builder,
+                      /*varDeclCursor*/ nullptr);
+  DeclRefNode srcExpr(StringRef(decoratorLoc.getPointer(), 1));
+
+  // For a memory-only initializer, we emit a bunch of copies/moves to fields
+  // indexing self.
+  if (isMemoryOnly) {
+    BlockArgument selfArg = body->addArgument(argTypes[0], funcOp.getLoc());
+    BlockArgument existingArg = body->addArgument(argTypes[1], funcOp.getLoc());
+
+    for (auto [fieldOp, fieldDecl] : structFields) {
+      auto selfField = builder.create<StructGEPOp>(selfArg, fieldOp);
+      auto existingField = builder.create<StructGEPOp>(existingArg, fieldOp);
+      CValue src = isMove ? CValue(MRValue(existingField))
+                          : CValue(MBValue(existingField));
+      emitter.emitStoreToLValue({src, &srcExpr}, SLValue(selfField),
+                                EC_AttributeRefBase);
+    }
+
+    // Finish off the function with a return + lit.endfunc.
+    appendDefaultReturnAndEndOp(funcOp, funcDecl, resolver.shared);
+    return;
+  }
+
+  funcOp.setIsStatic(true);
+
+  // Otherwise, extract all the values and finish with a struct create.  We know
+  // all the subfields must be register passable.
+  BlockArgument existingArg = body->addArgument(argTypes[0], funcOp.getLoc());
+
+  SmallVector<Value> fieldVals;
+  SmallVector<StringAttr> fieldNames;
+  for (auto [fieldOp, fieldDecl] : structFields) {
+    auto extractVal = builder.create<StructExtractOp>(existingArg, fieldOp);
+    // Emit an SBValue -> SRValue conversion to get ownership of the value.
+    auto copiedVal =
+        emitter.emitSRValue({SBValue(extractVal), &srcExpr}, EC_CallArgValue);
+    if (!copiedVal)
+      return;
+    fieldVals.push_back(copiedVal);
+    fieldNames.push_back(fieldOp.getNameAttr());
+  }
+
+  auto result = SRValue(builder.create<StructCreateOp>(
+      selfType.mlirType, fieldVals,
+      StringArrayAttr::get(emitter.getContext(), fieldNames)));
+
+  ExprEmitter::emitNormalReturn(builder, structOp.getLoc(), result, funcDecl);
+  builder.create<LIT::EndFuncOp>();
+}
+
 /// Process the @value body decorator on structs.  This synthesizes the
 /// memberwise init, copy ctor and move ctor if requested.
 void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc) {
@@ -3017,6 +3115,19 @@ void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc) {
     synthesizeMemberwiseInit(decoratorLoc, structDecl, isMemoryOnly,
                              structFields, resolver);
   }
+
+  // If the struct is not already copyable, but its members are, add a
+  // __copyinit__ method.
+  if (isCopyable && !structDecl.getSelfType().isCopyable(decoratorLoc, shared))
+    synthesizeCopyMoveInit(/*isMove=*/false, decoratorLoc, structDecl,
+                           isMemoryOnly, structFields, resolver);
+
+  // If the struct is not already movable and is memory-only, synthesize a move
+  // operation.
+  if (isMemoryOnly && isMovable &&
+      !structDecl.getSelfType().isMovable(decoratorLoc, shared))
+    synthesizeCopyMoveInit(/*isMove=*/true, decoratorLoc, structDecl,
+                           isMemoryOnly, structFields, resolver);
 }
 
 /// Process the @register_passable decorator on structs.  This finalizes

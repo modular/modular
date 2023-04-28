@@ -813,6 +813,33 @@ struct ValueMem:
 # CHECK-NEXT: pop.store %b, %1
 # CHECK-NEXT: kgen.param.constant: !lit.none
 
+# CHECK: lit.func @"__copyinit__
+# CHECK-SAME: (%self: !pop.pointer<{{.*}}@ValueMem> init_self,
+# CHECK-SAME:  %existing: !pop.pointer<@"$decls"::@ValueMem> borrow_in_mem)
+# CHECK-NEXT: %0 = lit.struct.gep %self[a]
+# CHECK-NEXT: %1 = lit.struct.gep %existing[a]
+# CHECK-NEXT: %2 = pop.load %1
+# CHECK-NEXT: pop.store %2, %0
+# CHECK-NEXT: %3 = lit.struct.gep %self[b]
+# CHECK-NEXT: %4 = lit.struct.gep %existing[b]
+# CHECK-NEXT: %5 = pop.load %4
+# CHECK-NEXT: %6 = kgen.call {{.*}}__copyinit__{{.*}}(%5)
+# CHECK-NEXT: pop.store %6, %3
+# CHECK-NEXT: kgen.param.constant: !lit.none
+
+# CHECK: lit.func @"__moveinit__
+# CHECK-SAME: (%self: !pop.pointer<{{.*}}@ValueMem> init_self,
+# CHECK-SAME:  %existing: !pop.pointer<@"$decls"::@ValueMem> owned_in_mem)
+# CHECK-NEXT: %0 = lit.struct.gep %self[a]
+# CHECK-NEXT: %1 = lit.struct.gep %existing[a]
+# CHECK-NEXT: %2 = lit.load.consume %1
+# CHECK-NEXT: pop.store %2, %0
+# CHECK-NEXT: %3 = lit.struct.gep %self[b]
+# CHECK-NEXT: %4 = lit.struct.gep %existing[b]
+# CHECK-NEXT: %5 = lit.load.consume %4
+# CHECK-NEXT: pop.store %5, %3
+# CHECK-NEXT: kgen.param.constant: !lit.none
+
 # CHECK-LABEL: lit.struct.decl @ValueReg
 @value
 @register_passable
@@ -827,6 +854,16 @@ struct ValueReg:
 # CHECK-NEXT: %0 = lit.struct.create(a=%a, b=%b)
 # CHECK-NEXT: lit.return %0
 # CHECK-NEXT: lit.end_func
+
+# CHECK: lit.func @"__copyinit__
+# CHECK-SAME: (%existing: !kgen.declref<@"$decls"::@ValueReg> borrow)
+# CHECK-SAME:  -> !kgen.declref<@"$decls"::@ValueReg> attributes {isStatic}
+# CHECK-NEXT: %0 = lit.struct.extract %existing[a]
+# CHECK-NEXT: %1 = lit.struct.extract %existing[b]
+# CHECK-NEXT: %2 = kgen.call {{.*}}__copyinit__{{.*}}(%1)
+# CHECK-NEXT: %3 = lit.struct.create(a=%0, b=%2)
+# CHECK-NEXT: lit.return %3
+
 
 ##===----------------------------------------------------------------------===##
 # async/await
