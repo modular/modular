@@ -10,6 +10,7 @@ from Range import range
 from Time import now
 
 
+@value
 struct Benchmark:
     """A benchmark harness.
 
