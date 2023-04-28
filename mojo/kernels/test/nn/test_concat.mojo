@@ -72,8 +72,8 @@ fn test_concat():
     # CHECK-COUNT-2: 0.000000
     # CHECK-COUNT-4: 1.000000
     # CHECK-COUNT-6: 2.000000
-    for ii in range(out_sz):
-        print(output[ii])
+    for i in range(out_sz):
+        print(output[i])
 
 
 fn test_concat_parallel():
@@ -132,8 +132,8 @@ fn test_concat_parallel():
     # CHECK-COUNT-2: 0.000000
     # CHECK-COUNT-4: 1.000000
     # CHECK-COUNT-6: 2.000000
-    for ii in range(out_sz):
-        print(output[ii])
+    for i in range(out_sz):
+        print(output[i])
 
 
 fn main():

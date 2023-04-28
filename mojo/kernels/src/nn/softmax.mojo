@@ -92,8 +92,8 @@ fn _softmax_2_pass_step1[
     var running_max = running_max_vec.reduce_max()
     var running_sum = running_sum_vec.reduce_add()
 
-    for ii in range(vector_end, len):  # TODO(#8365) use `i`
-        let elem = input[ii]
+    for i in range(vector_end, len):
+        let elem = input[i]
         let new_max = running_max.max(elem)
         running_sum = running_sum * exp[1, type](running_max - new_max) + exp[
             1, type

@@ -51,8 +51,8 @@ fn test_gather():
             indices_type,
         ].aligned_stack_allocation[64]()
 
-        for ii in range(num_indices):
-            indices[StaticIntTuple[1](ii)] = ii // 2
+        for i in range(num_indices):
+            indices[StaticIntTuple[1](i)] = i // 2
 
         # create output
         var output = NDBuffer[
@@ -124,8 +124,8 @@ fn test_gather_3d():
             indices_type,
         ].aligned_stack_allocation[64]()
 
-        for ii in range(num_indices):
-            indices[StaticIntTuple[2](ii, 0)] = ii // 2
+        for i in range(num_indices):
+            indices[StaticIntTuple[2](i, 0)] = i // 2
 
         # create output
         var output = NDBuffer[
@@ -201,8 +201,8 @@ fn test_gather_empty_indices():
             indices_type,
         ].aligned_stack_allocation[indices_size]()
 
-        for ii in range(num_indices):
-            indices[StaticIntTuple[1](ii)] = ii // 2
+        for i in range(num_indices):
+            indices[StaticIntTuple[1](i)] = i // 2
 
         # create output
         var output = NDBuffer[

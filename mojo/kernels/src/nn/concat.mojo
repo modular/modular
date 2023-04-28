@@ -218,8 +218,8 @@ fn _concat[
     let c = product(inputs[0].shape, axis + 1, rank)
 
     var w_out: Int = 0
-    for ii in range(inputs.__len__()):
-        w_out += inputs[ii].dim(axis)
+    for i in range(inputs.__len__()):
+        w_out += inputs[i].dim(axis)
 
     let stride_h_out = w_out * c
     let stride_w_out = c

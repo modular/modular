@@ -42,8 +42,8 @@ fn _split[
     let c = product(outputs[0].shape, axis + 1, rank)
 
     var w_in: Int = 0
-    for ii in range(outputs.__len__()):
-        w_in += outputs[ii].dim(axis)
+    for i in range(outputs.__len__()):
+        w_in += outputs[i].dim(axis)
 
     let stride_h_in = w_in * c
     let stride_w_in = c
