@@ -2029,6 +2029,22 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     return p.emitError(funcOp.getLoc(), "cannot mark a function with capturing "
                                         "closure parameters as @noncapturing");
 
+  // Upon fully resolving a nonparametric closure, immediately materialize it
+  // as a runtime value. It cannot be used as a parameter.
+  if (funcOp.getIsNonParametric()) {
+    // Fully resolve the body so we can swap the IR value of the decl. Later on,
+    // we will need this to determine the capture signature.
+    decl.resolvedness = DeclResolvedness::signature;
+    if (failed(resolveBody(funcOp, lexer, decl)))
+      return failure();
+    decl.resolvedness = DeclResolvedness::fully;
+    OpBuilder b(funcOp.getContext());
+    b.setInsertionPointAfter(funcOp);
+    decl.irValue = SBValue(b.create<CreateClosureOp>(
+        funcOp.getLoc(), funcOp.getSignature(),
+        ParamDeclRefAttr::get(*funcOp.getParamDecl()), ValueRange()));
+  }
+
   return success();
 }
 
