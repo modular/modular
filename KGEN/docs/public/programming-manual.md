@@ -740,7 +740,9 @@ vector-length-agnostic algorithm to a buffer of data, you might write it like
 this:
 
 ```mojo
-def exp_buffer[dt: DType](data: ArraySlice[dt]):
+from Autotune import autotune
+
+def exp_buffer_impl[dt: DType](data: ArraySlice[dt]):
     # Pick vector length for this dtype and hardware
     alias vector_len = autotune(1, 4, 8, 16, 32)
 
@@ -748,7 +750,7 @@ def exp_buffer[dt: DType](data: ArraySlice[dt]):
     vectorize[exp[dt, vector_len]](data)
 ```
 
-When compiling instantiations of this code Mojo forks compilation of this
+When compiling instantiations of this code, Mojo forks compilation of this
 algorithm and decides which value to use by measuring what works best in
 practice for the target hardware. It evaluates the different values of the
 `vector_len` expression and picks the fastest one according to a user-defined
@@ -757,12 +759,71 @@ individually, it might pick a different vector length for F32 than for SI8, for
 example. This simple feature is pretty powerful - going beyond simple integer
 constants - because functions and types are also parameter expressions.
 
+Users can instrument the search of `exp_buffer_impl` by providing a performance
+evaluator and using the `search` standard library function. `search` takes an
+evaluator and a forked function and returns the fastest implementation selected
+by the evaluator as a parameter result.
+
+```mojo
+from Autotune import search
+
+fn exp_buffer[dt: DType](data: ArraySlice[dt]):
+    # Forward declare the result parameter.
+    alias best_impl: fn(ArraySlice[dt]) -> None
+
+    # Perform search!
+    search[
+      fn(ArraySlice[dt]) -> None,
+      exp_buffer_impl[dt],
+      exp_evaluator[dt] -> best_impl
+    ]()
+
+    # Call the selected implementation
+    best_impl(data)
+```
+
+In this example, we provided `exp_evaluator` to the search function as the
+performance evaluator. Performance evaluators are invoked with a list of
+candidate functions and should return the index of the best one. Mojo's
+standard library provides a `Benchmark` module that you can use to time
+functions.
+
+```mojo
+from Benchmark import Benchmark
+
+fn exp_evaluator[dt: DType](
+    fns: Pointer[fn(ArraySlice[dt]) -> None],
+    num: Int
+):
+    var best_idx = -1
+    var best_time = -1
+    for i in range(num):
+        candidate = fns[i]
+        let buf = Buffer[dt]()
+
+        # Benchmark this candidate.
+        fn setup():
+            buf.fill_random()
+        fn wrapper():
+            candidate(buf)
+        let cur_time = Benchmark(2).run[wrapper, setup]()
+
+        # Track the index of the fastest candidate.
+        if best_idx < 0:
+            best_idx = i
+            best_time = cur_time
+        elif best_time > cur_time:
+            best_idx = f_idx
+            best_time = cur_time
+
+    # Return the fastest implementation.
+    return best_idx
+```
+
 Autotuning is an inherently exponential technique that benefits from internal
 implementation details of the Mojo compiler stack (particularly MLIR,
 integrated caching, and distribution of compilation). This is also a power-user
 feature and needs continued development and iteration over time.
-
-TODO: Write up evaluators when their design settles down a little bit.
 
 ## Argument Passing Control and Memory Ownership
 
@@ -1828,6 +1889,14 @@ package or something?
 
 `@always_inline("nodebug")`: same thing but without debug information so you
 don't step into the + method on Int.
+
+### `@parameter` decorator
+
+The `@parameter` decorator can be placed on nested functions that capture
+runtime values to create "parametric" capturing closures. This is an unsafe
+feature in Mojo, because we do not currently model the lifetimes of
+capture-by-reference. A particular aspect of this feature is that it allows
+closures that captures runtime values to be passed as parameter values.
 
 ### Magic operators
 
