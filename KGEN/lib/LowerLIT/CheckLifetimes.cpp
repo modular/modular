@@ -505,6 +505,11 @@ ValueRef ValueSet::getValueRef(Value value) const {
   if (auto load = value.getDefiningOp<POP::LoadOp>())
     if (auto valueRef = getValueRef(load.getPtr())) {
       if (valueRef.isIndirect) {
+        // We don't track trivial types, so make sure there is a destructor for
+        // the type loaded out.
+        if (!typeDeclInfo.getDestructorForType(load.getType()))
+          return {};
+
         valueRef.isIndirect = false;
         return valueRef;
       }
@@ -1583,6 +1588,11 @@ void DestructorInsertion::destroyValueIfNeeded(
   // an error.  We cannot run the destructor on the whole object if one of the
   // fields is missing.
   if (!consumedValues.test(valueRef.endBit - 1)) {
+    // Trivial types don't have __copyinit__ methods, and therefore cannot have
+    // ownership tracked for them.
+    if (!valueSet.typeDeclInfo.getDestructorForType(valueType))
+      return;
+
     ValueInfo &valueEntry = valueSet.getValueInfo(valueRef.valueId);
     if (valueEntry.hasErrorDiagnosed)
       return; // Only report one error per symbolic value.
