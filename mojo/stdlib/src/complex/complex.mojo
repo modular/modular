@@ -13,6 +13,7 @@ alias ComplexF32 = ComplexSIMD[DType.f32, 1]
 alias ComplexF64 = ComplexSIMD[DType.f64, 1]
 
 
+@value
 @register_passable("trivial")
 struct ComplexSIMD[type: DType, size: Int]:
     """Represents a complex SIMD value.
@@ -26,18 +27,6 @@ struct ComplexSIMD[type: DType, size: Int]:
 
     var re: SIMD[type, size]
     var im: SIMD[type, size]
-
-    fn __init__(re: SIMD[type, size], im: SIMD[type, size]) -> Self:
-        """Construct a complex value.
-
-        Args:
-            re: The real component.
-            im: The imaginary component.
-
-        Returns:
-            The constructed Complex object.
-        """
-        return Self {re: re, im: im}
 
     fn __add__(self, rhs: Self) -> Self:
         """Add two complex values.
