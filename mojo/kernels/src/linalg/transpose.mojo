@@ -8,8 +8,15 @@
 from Assert import assert_param
 from Buffer import Buffer, NDBuffer
 from DType import DType
-from Functional import unroll, async_parallelize, vectorize
-from Index import StaticIntTuple
+from Functional import (
+    unroll,
+    async_parallelize,
+    vectorize,
+    unroll2,
+    tile,
+    unswitch,
+)
+from Index import StaticIntTuple, StaticTuple
 from Intrinsics import strided_load, strided_store
 from List import DimList, VariadicList
 from LLCL import OutputChainPtr
@@ -19,6 +26,7 @@ from Pointer import DTypePointer
 from Range import range
 from TargetInfo import dtype_sizeof, dtype_simd_width
 from TypeUtilities import rebind
+from SIMD import SIMD
 
 
 fn _transpose_inplace_4x4[
@@ -363,111 +371,581 @@ fn _fill_strides[
     unroll[rank - 1, _fill_stride_at_idx]()
 
 
-fn transpose[
-    rank: Int,
-    output_shape: DimList,
-    input_shape: DimList,
-    type: DType,
+# ===------------------------------------------------------------------=== #
+# Transpose Permutation simplification
+# ===------------------------------------------------------------------=== #
+@always_inline
+fn _collapse_unpermuted_dims[
+    rank: Int, tuple_size: Int
 ](
-    output: NDBuffer[rank, output_shape, type],
-    input: NDBuffer[rank, input_shape, type],
-    perms: DTypePointer[DType.index],
+    simplified_shape&: StaticIntTuple[tuple_size],
+    simplified_perms&: StaticIntTuple[tuple_size],
+    dim: Int,
 ):
+    let merged_dim = simplified_perms[dim]
+    simplified_shape[merged_dim] = (
+        simplified_shape[merged_dim] * simplified_shape[merged_dim + 1]
+    )
+
+    for j in range(merged_dim + 1, rank - 1):
+        simplified_shape[j] = simplified_shape[j + 1]
+
+    for i in range(rank):
+        if simplified_perms[i] > merged_dim:
+            simplified_perms[i] -= 1
+    for k in range(dim + 1, rank - 1):
+        simplified_perms[k] = simplified_perms[k + 1]
+    simplified_shape[rank - 1] = 0
+    simplified_perms[rank - 1] = 0
+
+
+@always_inline
+fn _delete_size_1_dim[
+    rank: Int, tuple_size: Int
+](
+    simplified_shape&: StaticIntTuple[tuple_size],
+    simplified_perms&: StaticIntTuple[tuple_size],
+    dim: Int,
+):
+    for j in range(dim, rank - 1):
+        simplified_shape[j] = simplified_shape[j + 1]
+
+    let deleted_perm = simplified_perms[dim]
+    for k in range(dim, rank - 1):
+        simplified_perms[k] = simplified_perms[k + 1]
+
+    for i in range(rank):
+        if simplified_perms[i] > deleted_perm:
+            simplified_perms[i] -= 1
+    simplified_shape[rank - 1] = 0
+    simplified_perms[rank - 1] = 0
+
+
+@always_inline
+fn _simplify_transpose_perms_impl[
+    rank: Int, tuple_size: Int
+](
+    simplified_rank&: Int,
+    simplified_shape&: StaticIntTuple[tuple_size],
+    simplified_perms&: StaticIntTuple[tuple_size],
+):
+    @parameter
+    if rank < 2:
+        return
+
+    else:
+        for i in range(rank - 1):
+            if simplified_perms[i] + 1 == simplified_perms[i + 1]:
+                _collapse_unpermuted_dims[rank](
+                    simplified_shape, simplified_perms, i
+                )
+                simplified_rank -= 1
+                _simplify_transpose_perms_impl[rank - 1, tuple_size](
+                    simplified_rank, simplified_shape, simplified_perms
+                )
+                return
+            if simplified_shape[i] == 1:
+                _delete_size_1_dim[rank](simplified_shape, simplified_perms, i)
+                simplified_rank -= 1
+                _simplify_transpose_perms_impl[rank - 1, tuple_size](
+                    simplified_rank, simplified_shape, simplified_perms
+                )
+                return
+
+
+@always_inline
+fn _simplify_transpose_perms[
+    rank: Int
+](
+    simplified_rank&: Int,
+    simplified_shape&: StaticIntTuple[rank],
+    simplified_perms&: StaticIntTuple[rank],
+):
+    """Simplify the given permutation pattern.
+
+    In some cases a permutation can be modeled by another permutation of a smaller rank.
+    For instance, if we have
+        shape=[1,3,200,200], perm = [0, 2, 3, 1]
+    Then it is equvalent to:
+        shape=[1,3,40000], perm = [0, 2, 1]
+    Which in its turn is equvalent to:
+        shape=[3,40000], perm = [1, 0]
+
+    This function takes the original shape, permutation, and rank by reference,
+    and updates their values to simplified ones.
     """
-    Permute the axis of `input` based on `perms`, and place the result in
-    `output`.
-
-    Example:
-        transpose(output, input, [2, 0, 1])
-        # guarantees output[x, y, z] = input[z, x, y]
-
-    Parameters:
-        rank: The rank of input and output buffers.
-        output_shape: The shape of the output buffer.
-        input_shape: The shape of the input buffer.
-        type: The dtype of buffer elements.
-
-    Args:
-        output: The output buffer.
-        input: The input buffer.
-        perms: Permutation of the input axes.
-    """
-    transpose[rank, output_shape, input_shape, type](
-        output, input, perms, OutputChainPtr()
+    _simplify_transpose_perms_impl[rank, rank](
+        simplified_rank, simplified_shape, simplified_perms
     )
 
 
-fn transpose[
-    rank: Int,
-    output_shape: DimList,
-    input_shape: DimList,
-    type: DType,
+@always_inline
+fn _convert_transpose_perms_to_static_int_tuple[
+    rank: Int
+](perms: DTypePointer[DType.index]) -> StaticIntTuple[rank]:
+    var simplified_perms = StaticIntTuple[rank]()
+    # TODO: unroll
+    for j in range(rank):
+        simplified_perms[j] = perms.load(j)[0].value
+    return simplified_perms
+
+
+# ===------------------------------------------------------------------=== #
+# Functional additions
+# ===------------------------------------------------------------------=== #
+# TODO: Move to Memory.mojo
+fn parallel_memcpy[
+    type: DType
 ](
-    output: NDBuffer[rank, output_shape, type],
-    input: NDBuffer[rank, input_shape, type],
-    perms: DTypePointer[DType.index],
+    src_ptr: DTypePointer[type],
+    dst_ptr: DTypePointer[type],
+    size: Int,
+    task_size: Int,
+    num_tasks: Int,
     out_chain: OutputChainPtr,
 ):
-    """
-    Permute the axis of `input` based on `perms`, and place the result in
-    `output`.
+    @always_inline
+    fn _parallel_copy(thread_id: Int):
+        let begin = task_size * thread_id
+        let end = min(
+            task_size * (thread_id + 1),
+            size,
+        )
+        if begin >= size:
+            return
+        let to_copy = end - begin
+        if to_copy <= 0:
+            return
 
-    Example:
-        transpose(output, input, [2, 0, 1])
-        # guarantees output[x, y, z] = input[z, x, y]
+        memcpy(dst_ptr.offset(begin), src_ptr.offset(begin), to_copy)
 
-    Parameters:
-        rank: The rank of input and output buffers.
-        output_shape: The shape of the output buffer.
-        input_shape: The shape of the input buffer.
-        type: The dtype of buffer elements.
+    async_parallelize[_parallel_copy](out_chain, num_tasks)
 
-    Args:
-        output: The output buffer.
-        input: The input buffer.
-        perms: Permutation of the input axes.
-        out_chain: The chain to attach to.
-    """
-    # Compute `permuted_input_strides`
-    let input_strides = DTypePointer[DType.index].alloc(rank)
-    let permuted_input_strides = DTypePointer[DType.index].alloc(rank)
-    _fill_strides(input, input_strides)
-    _permute_data[rank, DType.index](
-        input_strides, permuted_input_strides, perms
+
+# ===------------------------------------------------------------------=== #
+#  Transpose special cases
+# ===------------------------------------------------------------------=== #
+@always_inline
+fn _process_tile[
+    tile_size_m: Int, tile_size_n: Int, type: DType
+](
+    m: Int,
+    n: Int,
+    M: Int,
+    N: Int,
+    out_ptr: DTypePointer[type],
+    in_ptr: DTypePointer[type],
+):
+
+    let input_tile_offset = M * n + m
+    let output_tile_offset = N * m + n
+
+    let input_vals: StaticTuple[tile_size_n, SIMD[type, tile_size_m]]
+    let output_vals: StaticTuple[tile_size_m, SIMD[type, tile_size_n]]
+
+    @always_inline
+    fn load_input_vals[count: Int]():
+        input_vals[count] = in_ptr.simd_load[tile_size_m](
+            input_tile_offset + M * count
+        )
+
+    unroll[tile_size_n, load_input_vals]()
+
+    @always_inline
+    fn compute_output_vals[m: Int, n: Int]():
+        output_vals[m][n] = input_vals[n][m]
+
+    unroll2[tile_size_m, tile_size_n, compute_output_vals]()
+
+    @always_inline
+    fn store_output_vals[count: Int]():
+        out_ptr.simd_store[tile_size_n](
+            output_tile_offset + N * count, output_vals[count]
+        )
+
+    unroll[tile_size_m, store_output_vals]()
+
+
+fn _transpose_2d_serial_tiled[
+    rank: Int,
+    output_shape: DimList,
+    input_shape: DimList,
+    type: DType,
+](
+    output: NDBuffer[rank, output_shape, type],
+    input: NDBuffer[rank, input_shape, type],
+    perms: DTypePointer[DType.index],
+    simplified_input_shape: StaticIntTuple[rank],
+    simplified_rank: Int,
+    offset: Int,
+    out_chain: OutputChainPtr,
+):
+    alias simd_width = dtype_simd_width[type]()
+
+    @parameter
+    if rank < 2:
+        return
+    # The input tile is MxN, the output tile is NxM.
+    # We want to do:
+    #   output[m, n] = input[n, m]
+    # This is equvalent to:
+    #   output[n*M + m] = input[m*N + n]
+    # And we also have a global offset which needs to be added to both output
+    # and input pointers.
+    let N = simplified_input_shape[simplified_rank - 2]
+    let M = simplified_input_shape[simplified_rank - 1]
+
+    @always_inline
+    fn process_tile[tile_size_m: Int, tile_size_n: Int](m: Int, n: Int):
+        _process_tile[tile_size_m, tile_size_n, type](
+            m, n, M, N, output.data.offset(offset), input.data.offset(offset)
+        )
+
+    alias tile_size = simd_width if simd_width <= 16 else 1
+    tile[
+        process_tile,
+        VariadicList[Int](tile_size, 1),
+        VariadicList[Int](tile_size, 1),
+    ](0, 0, M, N)
+
+
+@always_inline
+fn _should_run_parallel(
+    M: Int, N: Int, simd_width: Int, min_work_per_task: Int
+) -> Bool:
+    if N == 1:
+        return False
+
+    # Check if we can tile the space evenly
+    if (N % simd_width) != 0 or (M % simd_width) != 0:
+        return False
+
+    let work_per_row = M * simd_width
+    if min_work_per_task > work_per_row:
+        # We will have to process several rows in each thread
+        if (min_work_per_task % work_per_row) != 0:
+            return False
+        let rows_per_worker = div_ceil(min_work_per_task, work_per_row)
+        if N // rows_per_worker < 4:
+            return False
+
+    return True
+
+
+fn _transpose_2d_parallel_tiled[
+    rank: Int,
+    output_shape: DimList,
+    input_shape: DimList,
+    type: DType,
+](
+    output: NDBuffer[rank, output_shape, type],
+    input: NDBuffer[rank, input_shape, type],
+    perms: DTypePointer[DType.index],
+    simplified_input_shape: StaticIntTuple[rank],
+    simplified_rank: Int,
+    offset: Int,
+    out_chain: OutputChainPtr,
+):
+    @parameter
+    if rank < 2:
+        return
+
+    alias simd_width = dtype_simd_width[type]()
+    let N = simplified_input_shape[simplified_rank - 2]
+    let M = simplified_input_shape[simplified_rank - 1]
+    alias min_work_per_task = 1024
+    alias tile_size_m = simd_width if simd_width <= 16 else 1
+    alias tile_size_n = simd_width if simd_width <= 16 else 1
+
+    let n_unit_size = simd_width
+    let m_unit_size = simd_width
+
+    let n_tiles = N // n_unit_size
+    let m_tiles = M // m_unit_size
+
+    var rows_per_worker = 1  # Row in terms of tiles, i.e. we still take simd_width elements
+    if min_work_per_task > M * simd_width:
+        rows_per_worker = min_work_per_task // (M * simd_width)
+
+    var work = div_ceil(n_tiles, rows_per_worker)
+
+    let num_threads = out_chain.get_runtime().parallelism_level()
+
+    let num_tasks = min(work, num_threads)
+
+    let work_block_size = div_ceil(work, num_tasks)
+
+    @always_inline
+    fn _parallel_tile(thread_id: Int):
+        let n_tile_begin = work_block_size * thread_id
+        let n_tile_end = min(work_block_size * (thread_id + 1), work)
+
+        for n_tile in range(n_tile_begin, n_tile_end):
+            for m_tile in range(m_tiles):
+                let m = tile_size_m * m_tile
+                let n = tile_size_n * n_tile
+                _process_tile[tile_size_m, tile_size_n, type](
+                    m,
+                    n,
+                    M,
+                    N,
+                    output.data.offset(offset),
+                    input.data.offset(offset),
+                )
+
+    async_parallelize[_parallel_tile](out_chain, num_tasks)
+
+
+fn transpose_2d[
+    rank: Int,
+    output_shape: DimList,
+    input_shape: DimList,
+    type: DType,
+](
+    output: NDBuffer[rank, output_shape, type],
+    input: NDBuffer[rank, input_shape, type],
+    perms: DTypePointer[DType.index],
+    simplified_input_shape: StaticIntTuple[rank],
+    simplified_rank: Int,
+    offset: Int,
+    out_chain: OutputChainPtr,
+):
+    @parameter
+    if rank < 2:
+        return
+
+    alias simd_width = dtype_simd_width[type]()
+    let N = simplified_input_shape[simplified_rank - 2]
+    let M = simplified_input_shape[simplified_rank - 1]
+    alias min_work_per_task = 1024
+
+    if out_chain and _should_run_parallel(M, N, simd_width, min_work_per_task):
+        _transpose_2d_parallel_tiled[rank, output_shape, input_shape](
+            output,
+            input,
+            perms,
+            simplified_input_shape,
+            simplified_rank,
+            offset,
+            out_chain,
+        )
+    else:
+        _transpose_2d_serial_tiled[rank, output_shape, input_shape](
+            output,
+            input,
+            perms,
+            simplified_input_shape,
+            simplified_rank,
+            offset,
+            out_chain,
+        )
+        if out_chain:
+            out_chain.mark_ready()
+        return
+
+
+fn _transpose_4d_swap_middle_helper[
+    type: DType,
+](
+    dst_ptr: DTypePointer[type],
+    src_ptr: DTypePointer[type],
+    L: Int,
+    M: Int,
+    N: Int,
+    K: Int,
+    out_chain: OutputChainPtr,
+):
+    let work = L * M * N
+    let memcpy_block_size = K
+    let total_size = L * M * N * K
+
+    alias KB = 1024
+
+    # TODO: These parameters might be tuned
+    alias min_work_per_task = 1 * KB
+    alias min_work_for_parallel = 4 * min_work_per_task
+
+    # TODO: take into account dimension K for parallelization.
+    #
+    # E.g. if we're transposing 2x3x8192 -> 3x2x8192, then parallelizing just
+    # on dimensions M and N is not enough.
+    if not out_chain or total_size <= min_work_for_parallel:
+        for l in range(L):
+            for m in range(M):
+                for n in range(N):
+                    # We want to do:
+                    #   output[l, n, m, k] = input[l, m, n, k]
+                    let in_off = l * M * N * K + m * N * K + n * K
+                    let out_off = l * M * N * K + n * M * K + m * K
+                    memcpy(dst_ptr.offset(out_off), src_ptr.offset(in_off), K)
+        if out_chain:
+            out_chain.mark_ready()
+        return
+    else:
+        let num_threads = out_chain.get_runtime().parallelism_level()
+
+        let num_tasks = min(work, num_threads)
+
+        let work_block_size = div_ceil(work, num_tasks)
+
+        @always_inline
+        fn _parallel_copy(thread_id: Int):
+            let begin = work_block_size * thread_id
+            let end = min(work_block_size * (thread_id + 1), work)
+            for block_idx in range(begin, end):
+                let l = block_idx // (M * N)
+                let block_idx_mn = block_idx % (M * N)
+                let m = block_idx_mn // N
+                let n = block_idx_mn % N
+
+                let in_off = l * M * N * K + m * N * K + n * K
+                let out_off = l * M * N * K + n * M * K + m * K
+                memcpy(dst_ptr.offset(out_off), src_ptr.offset(in_off), K)
+
+        async_parallelize[_parallel_copy](out_chain, num_tasks)
+
+
+fn transpose_4d_swap_middle[
+    rank: Int,
+    output_shape: DimList,
+    input_shape: DimList,
+    type: DType,
+](
+    output: NDBuffer[rank, output_shape, type],
+    input: NDBuffer[rank, input_shape, type],
+    perms: DTypePointer[DType.index],
+    simplified_input_shape: StaticIntTuple[rank],
+    simplified_rank: Int,
+    out_chain: OutputChainPtr,
+):
+    @parameter
+    if rank < 4:
+        return
+    # The input tile is LxMxNxK, the output tile is LxNxMxK.
+    # We want to do:
+    #   output[l, n, m, k] = input[l, m, n, k]
+    let L = simplified_input_shape[simplified_rank - 4]
+    let M = simplified_input_shape[simplified_rank - 3]
+    let N = simplified_input_shape[simplified_rank - 2]
+    let K = simplified_input_shape[simplified_rank - 1]
+    let src_ptr = input.data.offset(0)
+    let dst_ptr = output.data.offset(0)
+    _transpose_4d_swap_middle_helper[type](
+        dst_ptr, src_ptr, L, M, N, K, out_chain
     )
-    # Compute `output_strides `
-    let output_strides = DTypePointer[DType.index].alloc(rank)
-    _fill_strides(output, output_strides)
-    # Kickoff; for intuition on permuted input strides, note that
-    #   transpose(output, input, [2, 0, 1])
-    # guarantees
-    #   (let isx denote input_stride_x, etc.)
-    #   output[x, y, z] = input[z, x, y]
-    # ~ output.at(offset(x*isx + y*isy + z*isz)) = input.at(offset(z*osx + x*osy + y*osz))
-    # ~ output.at(offset(x*isx + y*isy + z*isz)) = input.at(offset(x*osy + y*osz + z*osx))
-    # ~ output.at(offset([x, y, z], output_strides)) = input.at(offset([x, y, z], permuted_input_strides))
-    # ~ output.at(offset(index, output_strides)) = input.at(offset(index, permuted_input_strides))
-    alias init_axis = 0
-    _copy_with_strides[rank, output_shape, type](
-        init_axis,
-        output,
-        input.data,
-        permuted_input_strides,
-        output_strides,
-        0,  # input_offset
-        0,  # output_offset
-        out_chain,
+
+
+fn transpose_3d_swap_outer[
+    rank: Int,
+    output_shape: DimList,
+    input_shape: DimList,
+    type: DType,
+](
+    output: NDBuffer[rank, output_shape, type],
+    input: NDBuffer[rank, input_shape, type],
+    perms: DTypePointer[DType.index],
+    simplified_input_shape: StaticIntTuple[rank],
+    simplified_rank: Int,
+    out_chain: OutputChainPtr,
+):
+    @parameter
+    if rank < 3:
+        return
+    # The input tile is MxNxK, the output tile is NxMxK.
+    # We want to do:
+    #   output[n, m, k] = input[m, n, k]
+    # We use a 4d helper function for this, pretending that we have an outer
+    # dimensions L=1.
+    let M = simplified_input_shape[simplified_rank - 3]
+    let N = simplified_input_shape[simplified_rank - 2]
+    let K = simplified_input_shape[simplified_rank - 1]
+    let src_ptr = input.data.offset(0)
+    let dst_ptr = output.data.offset(0)
+    _transpose_4d_swap_middle_helper[type](
+        dst_ptr, src_ptr, 1, M, N, K, out_chain
     )
-    # TODO: We need to figure out a better way to do this, since we do not want
-    # to await here, but then we cannot free until all threads have used the
-    # strides. We need an out_chain.andThen(...) mechanism.
+
+
+fn transpose_3d_swap_inner[
+    rank: Int,
+    output_shape: DimList,
+    input_shape: DimList,
+    type: DType,
+](
+    output: NDBuffer[rank, output_shape, type],
+    input: NDBuffer[rank, input_shape, type],
+    perms: DTypePointer[DType.index],
+    simplified_input_shape: StaticIntTuple[rank],
+    simplified_rank: Int,
+    out_chain: OutputChainPtr,
+):
+    @parameter
+    if rank < 3:
+        return
+    # simplified perms must be 0, 2, 1
+    var offset = 0
+    let step = simplified_input_shape[rank - 2] * simplified_input_shape[
+        rank - 1
+    ]
+    # TODO: parallelize this loop
+    for i in range(simplified_input_shape[0]):
+        _transpose_2d_serial_tiled[rank, output_shape, input_shape, type](
+            output,
+            input,
+            perms,
+            simplified_input_shape,
+            simplified_rank,
+            offset,
+            out_chain,
+        )
+        offset += step
     if out_chain:
-        out_chain.wait()
-    input_strides.free()
-    permuted_input_strides.free()
-    output_strides.free()
+        out_chain.mark_ready()
 
 
+fn transpose_trivial_memcpy[
+    rank: Int,
+    output_shape: DimList,
+    input_shape: DimList,
+    type: DType,
+](
+    output: NDBuffer[rank, output_shape, type],
+    input: NDBuffer[rank, input_shape, type],
+    out_chain: OutputChainPtr,
+):
+    let src_ptr = input.data.offset(0)
+    let dst_ptr = output.data.offset(0)
+
+    alias KB = 1024
+    alias min_work_per_task = 1 * KB
+    alias min_work_for_parallel = 4 * min_work_per_task
+
+    let total_size = output.size()
+
+    if not out_chain or total_size <= min_work_for_parallel:
+        memcpy(dst_ptr, src_ptr, total_size)
+        if out_chain:
+            out_chain.mark_ready()
+    else:
+        let work_units = div_ceil(total_size, min_work_per_task)
+        let num_tasks = min(
+            work_units, out_chain.get_runtime().parallelism_level()
+        )
+        let work_block_size = div_ceil(work_units, num_tasks)
+
+        parallel_memcpy[type](
+            dst_ptr,
+            src_ptr,
+            total_size,
+            work_block_size * min_work_per_task,
+            num_tasks,
+            out_chain,
+        )
+
+
+# ===------------------------------------------------------------------=== #
+#  Transpose generic strided implementation
+# ===------------------------------------------------------------------=== #
 fn _copy_with_strides[
     rank: Int,
     output_shape: DimList,
@@ -594,3 +1072,213 @@ fn _copy_with_strides[
                 next_output_offset += output_axis_stride
 
         async_parallelize[_parallel_copy](out_chain, num_tasks)
+
+
+fn transpose_strided[
+    rank: Int,
+    output_shape: DimList,
+    input_shape: DimList,
+    type: DType,
+](
+    output: NDBuffer[rank, output_shape, type],
+    input: NDBuffer[rank, input_shape, type],
+    perms: DTypePointer[DType.index],
+    out_chain: OutputChainPtr,
+):
+    # Compute `permuted_input_strides`
+    let input_strides = DTypePointer[DType.index].alloc(rank)
+    let permuted_input_strides = DTypePointer[DType.index].alloc(rank)
+    _fill_strides(input, input_strides)
+    _permute_data[rank, DType.index](
+        input_strides, permuted_input_strides, perms
+    )
+    # Compute `output_strides`
+    let output_strides = DTypePointer[DType.index].alloc(rank)
+    _fill_strides(output, output_strides)
+    # Kickoff; for intuition on permuted input strides, note that
+    #   transpose(output, input, [2, 0, 1])
+    # guarantees
+    #   (let isx denote input_stride_x, etc.)
+    #   output[x, y, z] = input[z, x, y]
+    # ~ output.at(offset(x*isx + y*isy + z*isz)) = input.at(offset(z*osx + x*osy + y*osz))
+    # ~ output.at(offset(x*isx + y*isy + z*isz)) = input.at(offset(x*osy + y*osz + z*osx))
+    # ~ output.at(offset([x, y, z], output_strides)) = input.at(offset([x, y, z], permuted_input_strides))
+    # ~ output.at(offset(index, output_strides)) = input.at(offset(index, permuted_input_strides))
+    alias init_axis = 0
+    _copy_with_strides[rank, output_shape, type](
+        init_axis,
+        output,
+        input.data,
+        permuted_input_strides,
+        output_strides,
+        0,  # input_offset
+        0,  # output_offset
+        out_chain,
+    )
+    # TODO: We need to figure out a better way to do this, since we do not want
+    # to await here, but then we cannot free until all threads have used the
+    # strides. We need an out_chain.andThen(...) mechanism.
+    if out_chain:
+        out_chain.wait()
+    input_strides.free()
+    permuted_input_strides.free()
+    output_strides.free()
+
+
+# ===------------------------------------------------------------------=== #
+#  Transpose entry points
+# ===------------------------------------------------------------------=== #
+fn transpose[
+    rank: Int,
+    output_shape: DimList,
+    input_shape: DimList,
+    type: DType,
+](
+    output: NDBuffer[rank, output_shape, type],
+    input: NDBuffer[rank, input_shape, type],
+    perms: DTypePointer[DType.index],
+):
+    """
+    Permute the axis of `input` based on `perms`, and place the result in
+    `output`.
+
+    Example:
+        transpose(output, input, [2, 0, 1])
+        # guarantees output[x, y, z] = input[z, x, y]
+
+    Parameters:
+        rank: The rank of input and output buffers.
+        output_shape: The shape of the output buffer.
+        input_shape: The shape of the input buffer.
+        type: The dtype of buffer elements.
+
+    Args:
+        output: The output buffer.
+        input: The input buffer.
+        perms: Permutation of the input axes.
+    """
+    transpose[rank, output_shape, input_shape, type](
+        output, input, perms, OutputChainPtr()
+    )
+
+
+fn transpose[
+    rank: Int,
+    output_shape: DimList,
+    input_shape: DimList,
+    type: DType,
+](
+    output: NDBuffer[rank, output_shape, type],
+    input: NDBuffer[rank, input_shape, type],
+    perms: DTypePointer[DType.index],
+    out_chain: OutputChainPtr,
+):
+    """
+    Permute the axis of `input` based on `perms`, and place the result in
+    `output`.
+
+    Example:
+        transpose(output, input, [2, 0, 1])
+        # guarantees output[x, y, z] = input[z, x, y]
+
+    Parameters:
+        rank: The rank of input and output buffers.
+        output_shape: The shape of the output buffer.
+        input_shape: The shape of the input buffer.
+        type: The dtype of buffer elements.
+
+    Args:
+        output: The output buffer.
+        input: The input buffer.
+        perms: Permutation of the input axes.
+        out_chain: The chain to attach to.
+    """
+
+    # If either input or output is not-contiguous, we need to use a general
+    # strided implementation of transpose
+    if not output.is_contiguous or not input.is_contiguous:
+        transpose_strided[rank, output_shape, input_shape, type](
+            output, input, perms, out_chain
+        )
+        return
+
+    # If they are contiguous, we can try to recognize common special cases in
+    # the desired permutation.
+    # E.g.
+    #   shape=[1,3,200,200], perm = [0, 2, 3, 1]
+    # is equvalent to
+    #   shape=[1,3,40000], perm = [0, 2, 1]
+    #
+    # And that just swaps two inner dimensions.
+    var simplified_perms = _convert_transpose_perms_to_static_int_tuple[rank](
+        perms
+    )
+    var simplified_shape = input.get_shape()
+    var simplified_rank = rank
+    _simplify_transpose_perms[rank](
+        simplified_rank, simplified_shape, simplified_perms
+    )
+
+    if simplified_rank == 1:
+        # memcpy
+        transpose_trivial_memcpy[rank, output_shape, input_shape, type](
+            output, input, out_chain
+        )
+    elif simplified_rank == 2:
+        # tiled transpose
+        transpose_2d[rank, output_shape, input_shape, type](
+            output,
+            input,
+            perms,
+            simplified_shape,
+            simplified_rank,
+            0,
+            out_chain,
+        )
+    elif rank >= 3 and simplified_rank == 3:
+        if (
+            simplified_perms[0] == 0
+            and simplified_perms[1] == 2
+            and simplified_perms[2] == 1
+        ):
+            # batched tiled transpose
+            transpose_3d_swap_inner[rank, output_shape, input_shape, type](
+                output,
+                input,
+                perms,
+                simplified_shape,
+                simplified_rank,
+                out_chain,
+            )
+        elif (
+            simplified_perms[0] == 1
+            and simplified_perms[1] == 0
+            and simplified_perms[2] == 2
+        ):
+            transpose_3d_swap_outer[rank, output_shape, input_shape, type](
+                output,
+                input,
+                perms,
+                simplified_shape,
+                simplified_rank,
+                out_chain,
+            )
+    elif rank >= 4 and simplified_rank == 4:
+        if (
+            simplified_perms[0] == 0
+            and simplified_perms[1] == 2
+            and simplified_perms[2] == 1
+            and simplified_perms[3] == 3
+        ):
+            transpose_4d_swap_middle[rank, output_shape, input_shape, type](
+                output,
+                input,
+                perms,
+                simplified_shape,
+                simplified_rank,
+                out_chain,
+            )
+    else:
+        transpose_strided[rank, output_shape, input_shape, type](
+            output, input, perms, out_chain
+        )

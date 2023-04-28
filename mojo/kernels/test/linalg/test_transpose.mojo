@@ -10,7 +10,7 @@ from DType import DType
 from Index import Index, StaticIntTuple
 from IO import print
 from List import DimList
-from Transpose import transpose, transpose_inplace
+from Transpose import transpose, transpose_inplace, _simplify_transpose_perms
 from Range import range
 
 
@@ -508,6 +508,120 @@ fn test_transpose_si64():
     print(output[2, 1, 1])
 
 
+# CHECK-LABEL: test_simplify_perm
+fn test_simplify_perm():
+    print("== test_simplify_perm")
+    var perm = StaticIntTuple[4](0, 2, 3, 1)
+    var shape = StaticIntTuple[4](8, 3, 200, 200)
+    var rank = 4
+    _simplify_transpose_perms[4](rank, shape, perm)
+    # CHECK: 0, 2, 1
+    print(perm)
+    # CHECK: 8, 3, 40000
+    print(shape)
+    # CHECK: 3
+    print(rank)
+
+    rank = 4
+    perm = StaticIntTuple[4](0, 2, 3, 1)
+    shape = StaticIntTuple[4](1, 3, 200, 200)
+    _simplify_transpose_perms[4](rank, shape, perm)
+    # CHECK: 1, 0
+    print(perm)
+    # CHECK: 3, 40000
+    print(shape)
+    # CHECK: 2
+    print(rank)
+
+    rank = 4
+    perm = StaticIntTuple[4](0, 2, 1, 3)
+    shape = StaticIntTuple[4](8, 3, 200, 200)
+    _simplify_transpose_perms[4](rank, shape, perm)
+    # CHECK: 0, 2, 1, 3
+    print(perm)
+    # CHECK: 8, 3, 200, 200
+    print(shape)
+    # CHECK: 4
+    print(rank)
+
+    rank = 4
+    perm = StaticIntTuple[4](0, 2, 1, 3)
+    shape = StaticIntTuple[4](1, 3, 200, 200)
+    _simplify_transpose_perms[4](rank, shape, perm)
+    # CHECK: 1, 0, 2
+    print(perm)
+    # CHECK: 3, 200, 200
+    print(shape)
+    # CHECK: 3
+    print(rank)
+
+    rank = 4
+    perm = StaticIntTuple[4](2, 1, 0, 3)
+    shape = StaticIntTuple[4](1, 3, 200, 200)
+    _simplify_transpose_perms[4](rank, shape, perm)
+    # CHECK: 1, 0, 2
+    print(perm)
+    # CHECK: 3, 200, 200
+    print(shape)
+    # CHECK: 3
+    print(rank)
+
+    rank = 4
+    perm = StaticIntTuple[4](3, 2, 1, 0)
+    shape = StaticIntTuple[4](1, 3, 200, 200)
+    _simplify_transpose_perms[4](rank, shape, perm)
+    # CHECK: 2, 1, 0
+    print(perm)
+    # CHECK: 3, 200, 200
+    print(shape)
+    # CHECK: 3
+    print(rank)
+
+    rank = 4
+    perm = StaticIntTuple[4](0, 2, 1, 3)
+    shape = StaticIntTuple[4](1, 3, 1, 200)
+    _simplify_transpose_perms[4](rank, shape, perm)
+    # CHECK: 0
+    print(perm)
+    # CHECK: 600
+    print(shape)
+    # CHECK: 1
+    print(rank)
+
+    rank = 2
+    var perm2 = StaticIntTuple[2](0, 1)
+    var shape2 = StaticIntTuple[2](20, 30)
+    _simplify_transpose_perms[2](rank, shape2, perm2)
+    # CHECK: 0
+    print(perm2)
+    # CHECK: 600
+    print(shape2)
+    # CHECK: 1
+    print(rank)
+
+    rank = 2
+    perm2 = StaticIntTuple[2](1, 0)
+    shape2 = StaticIntTuple[2](20, 30)
+    _simplify_transpose_perms[2](rank, shape2, perm2)
+    # CHECK: 1, 0
+    print(perm2)
+    # CHECK: 20, 30
+    print(shape2)
+    # CHECK: 2
+    print(rank)
+
+    rank = 2
+    perm2 = StaticIntTuple[2](1, 0)
+    shape2 = StaticIntTuple[2](20, 1)
+    _simplify_transpose_perms[2](rank, shape2, perm2)
+    # CHECK: 0
+    print(perm2)
+    # CHECK: 20
+    print(shape2)
+    # CHECK: 1
+    print(rank)
+
+
 fn main():
     test_transpose_4x4()
     test_transpose_8x8()
@@ -517,3 +631,4 @@ fn main():
     test_transpose_3d_identity()
     test_transpose_3d()
     test_transpose_si64()
+    test_simplify_perm()
