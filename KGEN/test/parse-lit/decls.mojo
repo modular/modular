@@ -159,6 +159,10 @@ fn capture_by_copy():
         # CHECK-NEXT: %[[STATE:.*]] = pop.stack_allocation
         # CHECK-NEXT: pop.store %[[RAW]], %[[STATE]]
         let capture = c
+    # CHECK: %[[CLS:.*]] = kgen.create_closure{{.*}}*"value_closure()"
+
+    # CHECK: call_signature %[[CLS]]()
+    value_closure()
 
 
 ##===----------------------------------------------------------------------===##
