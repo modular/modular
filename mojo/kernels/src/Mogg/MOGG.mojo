@@ -128,6 +128,7 @@ fn to_buffer[
     var stride: Int = 1
 
     @always_inline
+    @parameter
     fn body[idx: Int]():
         # Start from the back so we can accumulate the strides.
         let i = rank - 1 - idx
@@ -156,6 +157,7 @@ fn elementwise_wrapper[
     alias unroll_factor: Int = 1
 
     @always_inline
+    @parameter
     fn description_fn() -> String:
         let name_str = String("name=") + trace_description
         let shape_str = String("shape=") + String("x").join[rank](
@@ -193,6 +195,7 @@ fn _compute_flat_index[
     var flat_index: Int = 0
 
     @always_inline
+    @parameter
     fn body[idx: Int]():
         flat_index = fma(index[idx], buffer.dynamic_stride[idx], flat_index)
 
@@ -343,6 +346,7 @@ fn broadcast_to_tensor[
 
     # New dimensions are always broadcast.
     @always_inline
+    @parameter
     fn add_new_dims[i: Int]():
         @parameter
         if target_rank >= original_rank:
@@ -354,6 +358,7 @@ fn broadcast_to_tensor[
 
     # Broadcast in dimensions the original started with.
     @always_inline
+    @parameter
     fn broadcast_dim[small_index: Int]():
         # We are traversing as if they are the same size.
         let big_index = small_index + offset
@@ -474,6 +479,7 @@ fn transpose[
     var new_stride = StaticIntTuple[rank]()
 
     @always_inline
+    @parameter
     fn body[i: Int]():
         let dim = perms[i].to_int()
         new_shape[i] = input.dynamic_shape[dim]
