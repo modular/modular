@@ -209,18 +209,6 @@ struct Naive2dConvolution[
     var input_shape: ImageShape
     var filter_shape: ImageShape
 
-    fn __copyinit__(self&, existing: Self):
-        self.output = existing.output
-        self.input = existing.input
-        self.filter = existing.filter
-        self.pad_h = existing.pad_h
-        self.pad_w = existing.pad_w
-        self.stride = existing.stride
-        self.dilation = existing.dilation
-        self.output_shape = existing.output_shape
-        self.input_shape = existing.input_shape
-        self.filter_shape = existing.filter_shape
-
     @staticmethod
     fn run(
         output: ImageData[static_output_shape, type, static_data_layout],
@@ -463,18 +451,6 @@ struct PackIm2ColNCHW[
     # Padding parameters for (H, W) dimensions.
     var pad_low: StaticIntTuple[2]
     var pad_high: StaticIntTuple[2]
-
-    fn __copyinit__(self&, existing: Self):
-        self.packed_matrix = existing.packed_matrix
-        self.origin_image = existing.origin_image
-        self.conv_shape = existing.conv_shape
-        self.global_offset = existing.global_offset
-        self.pack_tile_kn_dim = existing.pack_tile_kn_dim
-        self.batch_idx = existing.batch_idx
-        self.image_output_shape = existing.image_output_shape
-        self.im2col_output_shape = existing.im2col_output_shape
-        self.pad_low = existing.pad_low
-        self.pad_high = existing.pad_high
 
     @staticmethod
     fn run(
@@ -1473,17 +1449,6 @@ struct ConvNHWCInnerLoopFilterPacked[
     ]
 
     var input_base_pointer: DTypePointer[value_type]
-
-    fn __copyinit__(self&, existing: Self):
-        self.c = existing.c
-        self.input = existing.input
-        self.b_packed = existing.b_packed
-        self.global_offset = existing.global_offset
-        self.tile_n_k = existing.tile_n_k
-        self.c_bound = existing.c_bound
-        self.conv_shape = existing.conv_shape
-        self.offset_table = existing.offset_table
-        self.input_base_pointer = existing.input_base_pointer
 
     @staticmethod
     fn run(
