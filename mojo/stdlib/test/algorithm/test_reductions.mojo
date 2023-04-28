@@ -7,11 +7,21 @@
 
 from Buffer import Buffer, NDBuffer
 from DType import DType
-from Reductions import sum, product, max, min, mean, variance
 from Index import StaticIntTuple
 from IO import print
-from Range import range
 from List import DimList
+from Range import range
+from Reductions import (
+    all_true,
+    any_true,
+    max,
+    mean,
+    min,
+    none_true,
+    product,
+    sum,
+    variance,
+)
 
 
 # CHECK-LABEL: test_reductions
@@ -86,7 +96,7 @@ fn test_3d_reductions():
         reduce_axis: Int,
     ]():
         let input = NDBuffer[3, input_shape, DType.f32].stack_allocation()
-        var output = NDBuffer[3, output_shape, DType.f32].stack_allocation()
+        let output = NDBuffer[3, output_shape, DType.f32].stack_allocation()
         output.fill(0)
 
         for i in range(input.size()):
@@ -141,8 +151,66 @@ fn test_3d_reductions():
     ]()
 
 
+# CHECK-LABEL: test_boolean
+fn test_boolean():
+    print("== test_boolean")
+
+    alias simd_width = 2
+    alias size = 5
+
+    # Create a mem of size size
+    let vector = Buffer[size, DType.bool].stack_allocation()
+    vector[0] = True.value
+    vector[1] = False.value
+    vector[2] = False.value
+    vector[3] = False.value
+    vector[4] = True.value
+
+    # CHECK: False
+    print(all_true[simd_width](vector))
+
+    # CHECK: True
+    print(any_true[simd_width](vector))
+
+    # CHECK: False
+    print(none_true[simd_width](vector))
+
+    ###################################################
+    # Check with all the elements set to True
+    ###################################################
+
+    for i in range(size):
+        vector[i] = True.value
+
+    # CHECK: True
+    print(all_true[simd_width](vector))
+
+    # CHECK: True
+    print(any_true[simd_width](vector))
+
+    # CHECK: False
+    print(none_true[simd_width](vector))
+
+    ###################################################
+    # Check with all the elements set to False
+    ###################################################
+
+    for i in range(size):
+        vector[i] = False.value
+
+    # CHECK: False
+    print(all_true[simd_width](vector))
+
+    # CHECK: False
+    print(any_true[simd_width](vector))
+
+    # CHECK: True
+    print(none_true[simd_width](vector))
+
+
 fn main():
     test_reductions()
     test_product()
     test_mean_variance()
     test_3d_reductions()
+    test_boolean()

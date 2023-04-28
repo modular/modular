@@ -10,8 +10,13 @@ from Buffer import Buffer, NDBuffer, prod_dims
 from DType import DType
 from Functional import vectorize
 from Index import StaticIntTuple
-from Numerics import inf, neginf
 from List import DimList, Dim
+from Math import (
+    all_true as _all_true,
+    any_true as _any_true,
+    none_true as _none_true,
+)
+from Numerics import inf, neginf
 from Range import range
 from SIMD import SIMD
 from TargetInfo import dtype_sizeof
@@ -128,6 +133,58 @@ fn reduce[
     for i in range(vector_end, len):
         acc = map_fn[1, acc_type, type](acc, src[i])
     return acc[0].value
+
+
+@always_inline
+fn reduce_boolean[
+    simd_width: Int,
+    size: Dim,
+    type: DType,
+    reduce_fn: fn[width: Int, type: DType] (
+        SIMD[type, width]
+    ) capturing -> Bool,
+    continue_fn: fn (Bool) capturing -> Bool,
+](src: Buffer[size, type], init: Bool) -> Bool:
+    """Compute a bool reduction of buffer elements. The reduction will early
+    exit if the `continue_fn` returns False.
+
+    Parameters:
+        simd_width: The vector width for the computation.
+        size: The buffer size.
+        type: The buffer elements dtype.
+        reduce_fn: A boolean reduction function. This function is used to reduce
+          a vector to a scalar. E.g. when we got 8xf32 vector and want to reduce
+          it to a bool.
+        continue_fn: A function to indicate whether we want to continue
+          processing the rest of the iterations. This takes the result of the
+          reduce_fn and returns True to continue processing and False to early
+          exit.
+
+    Args:
+        src: The input buffer.
+        init: The initial value to use.
+
+    Returns:
+        The computed reduction value.
+    """
+    alias unroll_factor = 8  # TODO: search
+    # TODO: explicitly unroll like vectorize_unroll does.
+    alias unrolled_simd_width = simd_width * unroll_factor
+    let len = src.__len__()
+    let vector_end = (len // unrolled_simd_width) * unrolled_simd_width
+    var curr = init
+    for i in range(0, vector_end, unrolled_simd_width):
+        curr = reduce_fn[unrolled_simd_width, type](
+            src.simd_load[unrolled_simd_width](i)
+        )
+        if not continue_fn(curr):
+            return curr
+
+    for ii in range(vector_end, len):  # TODO(#8365) use `i`
+        curr = reduce_fn[1, type](src[ii])
+        if not continue_fn(curr):
+            return curr
+    return curr
 
 
 @always_inline
@@ -806,3 +863,124 @@ fn variance[
 
     let mean_value = mean[simd_width, size, type](src)
     return variance[simd_width](src, mean_value, correction)
+
+
+# ===----------------------------------------------------------------------===#
+# all_true
+# ===----------------------------------------------------------------------===#
+
+
+fn all_true[
+    simd_width: Int, size: Dim, type: DType
+](src: Buffer[size, type]) -> Bool:
+    """Returns True if all the elements in a buffer are True and False otherwise.
+
+    Parameters:
+        simd_width: The vector width for the computation.
+        size: The buffer size.
+        type: The buffer elements dtype.
+
+    Args:
+        src: The buffer.
+
+    Returns:
+        True if all of the elements of the buffer are True and False otherwise.
+    """
+
+    @always_inline
+    fn _reduce_fn[
+        simd_width: Int, type: DType
+    ](val: SIMD[type, simd_width]) -> Bool:
+        @parameter
+        if type == DType.bool:
+            return _all_true(val.cast[DType.bool]())
+        return _all_true(val != 0)
+
+    @always_inline
+    fn _continue_fn(val: Bool) -> Bool:
+        return val
+
+    return reduce_boolean[simd_width, size, type, _reduce_fn, _continue_fn](
+        src, False
+    )
+
+
+# ===----------------------------------------------------------------------===#
+# any_true
+# ===----------------------------------------------------------------------===#
+
+
+fn any_true[
+    simd_width: Int, size: Dim, type: DType
+](src: Buffer[size, type]) -> Bool:
+    """Returns True if any the elements in a buffer are True and False otherwise.
+
+    Parameters:
+        simd_width: The vector width for the computation.
+        size: The buffer size.
+        type: The buffer elements dtype.
+
+    Args:
+        src: The buffer.
+
+    Returns:
+        True if any of the elements of the buffer are True and False otherwise.
+    """
+
+    @always_inline
+    fn _reduce_fn[
+        simd_width: Int, type: DType
+    ](val: SIMD[type, simd_width]) -> Bool:
+        @parameter
+        if type == DType.bool:
+            return _any_true(val.cast[DType.bool]())
+        return _any_true(val != 0)
+
+    @always_inline
+    fn _continue_fn(val: Bool) -> Bool:
+        return not val
+
+    return reduce_boolean[simd_width, size, type, _reduce_fn, _continue_fn](
+        src, False
+    )
+
+
+# ===----------------------------------------------------------------------===#
+# none_true
+# ===----------------------------------------------------------------------===#
+
+
+fn none_true[
+    simd_width: Int, size: Dim, type: DType
+](src: Buffer[size, type]) -> Bool:
+    """Returns True if none of the elements in a buffer are True and False
+    otherwise.
+
+    Parameters:
+        simd_width: The vector width for the computation.
+        size: The buffer size.
+        type: The buffer elements dtype.
+
+    Args:
+        src: The buffer.
+
+    Returns:
+        True if none of the elements of the buffer are True and False otherwise.
+    """
+
+    @always_inline
+    fn _reduce_fn[
+        simd_width: Int, type: DType
+    ](val: SIMD[type, simd_width]) -> Bool:
+        @parameter
+        if type == DType.bool:
+            return _none_true(val.cast[DType.bool]())
+        return _none_true(val != 0)
+
+    @always_inline
+    fn _continue_fn(val: Bool) -> Bool:
+        return val
+
+    return reduce_boolean[simd_width, size, type, _reduce_fn, _continue_fn](
+        src, True
+    )
