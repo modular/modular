@@ -160,6 +160,30 @@ fn fn_with_params_and_return(arg: Int) -> Int:
     return arg
 
 
+# CHECK:  "kind": "function",
+# CHECK:  "name": "fn_with_variant",
+# CHECK:  "overloads":
+# CHECK:      "signature": "fn_with_variant(arg: Variant[Error, None])",
+# CHECK:      "summary": "This is a function summary.",
+# CHECK:      "args":
+# CHECK:          "name": "arg",
+# CHECK:          "type": "Variant[Error, None]",
+# CHECK:          "description": "This is an argument."
+
+
+fn fn_with_variant(
+    arg: __mlir_type[`!pop.variant<`, Error, `, `, NoneType, `>`]
+):
+    """This is a function summary.
+
+    The is some kind of description.
+
+    Args:
+        arg: This is an argument.
+    """
+    return
+
+
 # CHECK:  "structs": [
 # CHECK:  "kind": "struct",
 # CHECK:  "name": "InMemoryStruct",

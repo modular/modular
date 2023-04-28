@@ -430,6 +430,11 @@ void ASTType::print(raw_ostream &os, bool forDiag) const {
     llvm::interleaveComma(fnType.getResults(), os,
                           [&](Type type) { ASTType(type).print(os, forDiag); });
     os << ")";
+  } else if (auto variantType = dyn_cast<POP::VariantType>(type)) {
+    os << "Variant[";
+    llvm::interleaveComma(variantType.getParameterizedElementTypes(), os,
+                          [&](Type type) { ASTType(type).print(os, forDiag); });
+    os << "]";
   } else {
     // Use KGEN pretty printing when printing bare MLIR types for diagnostics.
     if (forDiag)
