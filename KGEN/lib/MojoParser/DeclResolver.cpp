@@ -1630,6 +1630,8 @@ void FnDecorators::apply(
         applyAdaptive(*declRef);
       else if (declRef->spelling == "nonparametric")
         funcOp.setIsNonParametric(true);
+      else if (declRef->spelling == "parameter")
+        ; // no-op right now
       else
         processedIt = false;
     }

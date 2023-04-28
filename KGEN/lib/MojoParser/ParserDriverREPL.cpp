@@ -278,7 +278,8 @@ wrapExpressionText(StringRef wrappedFnName, StringRef exprText,
 
   // Splat out the main body code inside of a nested def. This will allow for us
   // to redefine previous variables transparently.
-  exprOSIndented << "  def __mojo_repl_expr_body__() -> None:\n";
+  exprOSIndented << "  @parameter\n"
+                 << "  def __mojo_repl_expr_body__() -> None:\n";
 
   // The following is the other chunk of code just written by the user.
   exprOSIndented << kMainBodyBlockBegin;
