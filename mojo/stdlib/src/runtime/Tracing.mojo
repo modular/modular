@@ -179,10 +179,6 @@ struct Trace[level: TraceLevel]:
     var name: StringRef
     var detail: StringRef
 
-    fn __copyinit__(self&, existing: Self):
-        self.name = existing.name
-        self.detail = existing.detail
-
     fn __init__(self&, name: StringRef):
         self = Self(name, "")
 
