@@ -826,3 +826,16 @@ fn result_reg4(owned a: RegMovableCopyable) -> RegMovableCopyable:
   # CHECK-NEXT: %2 = lit.ownership.end.lifetime %x
   # CHECK-NEXT: kgen.return %2
   return x^
+
+
+fn takeOwnedInt(owned x: Int): pass
+
+# CHECK-LABEL: lit.func @"passFieldToOwnedInt
+fn passFieldToOwnedInt(owned a: MemExample):
+  # CHECK-NEXT: %0 = lit.struct.gep %a[x]
+  # CHECK-NEXT: %1 = pop.load %0
+  # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}(%a)
+  # CHECK-NEXT: kgen.call {{.*}}takeOwnedInt{{.*}}(%1)
+  takeOwnedInt(a.x)
+
+  # CHECK-NEXT: kgen.param.constant: !lit.none
