@@ -257,7 +257,12 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
   // LValue on demand.
   if (!emitter.builder) {
     representation = NullRepresentation();
-    emitter.emitError(loc, "cannot synthesize lvalue")
+    bool isRegisterPassable =
+        resultType.isRegisterPassable(loc, emitter.shared);
+    emitter.emitError(loc, "cannot synthesize lvalue of ")
+        << (isRegisterPassable ? "register-passable "
+                               : "non-register-passable ")
+        << "type " << resultType.getAsString(/*forDiag=*/true)
         << getContextMessage(emitter.paramContext);
     return {};
   }
