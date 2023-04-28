@@ -306,6 +306,7 @@ def kw6(a, *):       pass # expected-error {{'*' marker is not allowed at end of
 def kw7(*a: Int, *b: Int): pass # expected-error {{cannot have two '*' markers in the same argument list}}
 # expected-error @+1 {{TODO: keyword arguments not supported yet}}
 def kw8[*Ts: __mlir_type.`!kgen.mlirtype`](*a: *Ts, *b: *Ts): pass # expected-error {{cannot have two '*' markers in the same argument list}}
+fn kw9(*a: Int, b: Int): pass # expected-error {{TODO: keyword arguments not supported yet}}
 
 ##===----------------------------------------------------------------------===##
 # Function Overloading
