@@ -15,6 +15,7 @@ from Pointer import Pointer
 # ===----------------------------------------------------------------------===#
 
 
+@value
 @register_passable("trivial")
 struct Dim:
     """A static or dynamic dimension modeled with an optional integer.
@@ -26,18 +27,6 @@ struct Dim:
 
     alias type = __mlir_type[`!pop.variant<i1, `, Int, `>`]
     var value: type
-
-    @always_inline
-    fn __init__(value: type) -> Dim:
-        """Create a dimension from its underlying value type.
-
-        Args:
-            value: The underlying value.
-
-        Returns:
-            A dimension value.
-        """
-        return Dim {value: value}
 
     @always_inline
     fn __init__(value: Int) -> Dim:
@@ -190,15 +179,6 @@ struct DimList:
             A dimension list.
         """
         return VariadicList[Dim](values)
-
-    @always_inline("nodebug")
-    fn __clone__(self&) -> Self:
-        """Copy a dimension list.
-
-        Returns:
-            A dimension list.
-        """
-        return Self {value: self.value}
 
     @always_inline("nodebug")
     fn at[i: Int](self) -> Dim:

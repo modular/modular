@@ -54,6 +54,7 @@ fn _raw_stack_allocation[
 # ===----------------------------------------------------------------------===#
 
 # This type is "async safe" (see async_parallelize).
+@value
 @register_passable
 struct Buffer[size: Dim, type: DType]:
     """Defines a Buffer which can be parametrized on a static size and Dtype.
@@ -560,6 +561,7 @@ fn _compute_ndbuffer_stride[
 # ===----------------------------------------------------------------------===#
 
 # This type is "async safe" (see async_parallelize).
+@value
 @register_passable("trivial")
 struct NDBuffer[
     rank: Int,
@@ -581,7 +583,7 @@ struct NDBuffer[
     var is_contiguous: Bool
 
     @always_inline
-    fn __init__() -> NDBuffer[rank, shape, type]:
+    fn __init__() -> Self:
         """Default initializer for NDBuffer. By default the fields are all
         inialized to 0.
 
@@ -601,7 +603,7 @@ struct NDBuffer[
     @always_inline
     fn __init__(
         ptr: __mlir_type[`!pop.pointer<scalar<`, type.value, `>>`],
-    ) -> NDBuffer[rank, shape, type]:
+    ) -> Self:
         """Constructor for NDBuffer with statically known rank, shapes and
         type.
 
