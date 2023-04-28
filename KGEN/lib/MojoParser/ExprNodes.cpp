@@ -615,11 +615,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
           getBlockParentOfType<FuncOp>(emitter.builder->getInsertionBlock());
       func && !func.getIsParametric()) {
     assert(mlirValue && "unexpected PValue");
-    Operation *parent = mlirValue.getDefiningOp();
-    if (!parent)
-      parent = cast<BlockArgument>(mlirValue).getOwner()->getParentOp();
-    if (parent != func &&
-        parent->getParentRegion()->isProperAncestor(&func.getBodyRegion())) {
+    if (mlirValue.getParentRegion()->isProperAncestor(&func.getBodyRegion())) {
       // This is a captured value. Emit a copy and bind the name within the
       // function to the copied value.
       OpBuilder::InsertionGuard guard(*emitter.builder);
