@@ -43,11 +43,10 @@ fn test_runtime_task():
         let t1 = rt.create_task[Int](test_llcl_add[2](b))
         return await t0 + await t1
 
-    let rt = Runtime(4)
-    let task = rt.create_task[Int](test_llcl_add_two_of_them(rt, 10, 20))
-    # CHECK: 33
-    print(task.wait())
-    rt._del_old()
+    with Runtime(4) as rt:
+        let task = rt.create_task[Int](test_llcl_add_two_of_them(rt, 10, 20))
+        # CHECK: 33
+        print(task.wait())
 
 
 # CHECK-LABEL: test_runtime_taskgroup
@@ -64,14 +63,13 @@ fn test_runtime_taskgroup():
         await tg
         return t0.get() + t1.get()
 
-    let rt = Runtime(4)
-    var tg = TaskGroup(rt)
-    let t0 = tg.create_task[Int](run_as_group(rt))
-    let t1 = tg.create_task[Int](run_as_group(rt))
-    tg.wait()
-    # CHECK: 6
-    print(t0.get() + t1.get())
-    rt._del_old()
+    with Runtime(4) as rt:
+        var tg = TaskGroup(rt)
+        let t0 = tg.create_task[Int](run_as_group(rt))
+        let t1 = tg.create_task[Int](run_as_group(rt))
+        tg.wait()
+        # CHECK: 6
+        print(t0.get() + t1.get())
 
 
 # CHECK-LABEL: test_runtime_asynctaskgroup
@@ -85,15 +83,14 @@ fn test_runtime_asynctaskgroup():
     async fn run(ptr: Pointer[Atomic[DType.index]]):
         __get_address_as_lvalue(ptr.address) += 1
 
-    let rt = Runtime(4)
-    var out_chain = OwningOutputChainPtr(rt)
-    var atg = AsyncTaskGroupPtr(2, out_chain.borrow())
-    atg.add_task(run(ptr))
-    atg.add_task(run(ptr))
-    out_chain.wait()
-    # CHECK: 2
-    print(Int(completed.value))
-    rt._del_old()
+    with Runtime(4) as rt:
+        var out_chain = OwningOutputChainPtr(rt)
+        var atg = AsyncTaskGroupPtr(2, out_chain.borrow())
+        atg.add_task(run(ptr))
+        atg.add_task(run(ptr))
+        out_chain.wait()
+        # CHECK: 2
+        print(Int(completed.value))
 
 
 fn main():

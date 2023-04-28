@@ -159,9 +159,18 @@ struct Runtime:
     fn __init__(ptr: ptr_type) -> Runtime:
         return Runtime {ptr: ptr}
 
-    fn _del_old(self):
+    fn __enter__(self) -> Self:
+        return self
+
+    fn __exit__(self):
         """Destroys the LLCL Runtime. Note that this must be explicitly called
-        when the Runtime goes out of scope.
+        when the Runtime goes out of the context.
+        """
+        self._destroy()
+
+    fn _destroy(self):
+        """Destroys the LLCL Runtime. Note that this must be explicitly called
+        when the Runtime goes out of the context.
         """
         external_call["KGEN_CompilerRT_LLCL_DestroyRuntime", NoneType](self.ptr)
 

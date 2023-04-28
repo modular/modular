@@ -28,12 +28,12 @@ fn test_tracing[level: TraceLevel]():
         var t1 = rt.create_task[Int](test_tracing_add[2](b))
         return await t0 + await t1
 
-    let rt = Runtime(4, "-")
-    with Trace[level]("trace event 1", "detail event 1"):
-        let task = rt.create_task[Int](test_tracing_add_two_of_them(rt, 10, 20))
-        _ = task.wait()
-
-    rt._del_old()
+    with Runtime(4, "-") as rt:
+        with Trace[level]("trace event 1", "detail event 1"):
+            let task = rt.create_task[Int](
+                test_tracing_add_two_of_them(rt, 10, 20)
+            )
+            _ = task.wait()
 
 
 fn main():
