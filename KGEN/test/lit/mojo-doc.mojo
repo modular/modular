@@ -50,6 +50,25 @@ fn empty_fn():
 
 
 # CHECK:  "kind": "function",
+# CHECK:  "name": "fn_that_raises",
+# CHECK:  "overloads":
+# CHECK:      "signature": "fn_that_raises() -> Int"
+# CHECK:      "summary": "This is a function summary."
+# CHECK:      "returns": "an Int."
+
+
+def fn_that_raises() -> Int:
+    """This is a function summary.
+
+    The is some kind of description.
+
+    Returns:
+        an Int.
+    """
+    return 33
+
+
+# CHECK:  "kind": "function",
 # CHECK:  "name": "fn_with_args",
 # CHECK:  "overloads":
 # CHECK:      "signature": "fn_with_args(arg: Int)",
