@@ -34,16 +34,15 @@ fn print_elements[
         var index = rebind[StaticIntTuple[in_rank]](idx)
         print(tensor[index])
 
-    let runtime = Runtime(1)
-    let out_chain = OwningOutputChainPtr(runtime)
+    with Runtime(1) as runtime:
+        let out_chain = OwningOutputChainPtr(runtime)
 
-    elementwise[in_rank, 1, 1, print_elements_lambda](
-        rebind[StaticIntTuple[in_rank]](tensor.dynamic_shape),
-        out_chain.borrow(),
-    )
+        elementwise[in_rank, 1, 1, print_elements_lambda](
+            rebind[StaticIntTuple[in_rank]](tensor.dynamic_shape),
+            out_chain.borrow(),
+        )
 
-    out_chain.wait()
-    runtime._del_old()
+        out_chain.wait()
 
 
 # slice_dim
@@ -125,35 +124,33 @@ fn test_slice[
             dtype,
         )
 
-        let runtime = Runtime(1)
-        let out_chain = OwningOutputChainPtr(runtime)
-        slice_as_copy[dtype, DType.index, outer_rank](
-            rebind[
-                NDBuffer[
-                    outer_rank, DimList.create_unknown[outer_rank](), dtype
-                ]
-            ](output_buffer),
-            rebind[
-                NDBuffer[
-                    outer_rank, DimList.create_unknown[outer_rank](), dtype
-                ]
-            ](in_tensor),
-            start_tensor,
-            end_tensor,
-            step_tensor,
-            out_chain.borrow(),
-        )
-        out_chain.wait()
+        with Runtime(1) as runtime:
+            let out_chain = OwningOutputChainPtr(runtime)
+            slice_as_copy[dtype, DType.index, outer_rank](
+                rebind[
+                    NDBuffer[
+                        outer_rank, DimList.create_unknown[outer_rank](), dtype
+                    ]
+                ](output_buffer),
+                rebind[
+                    NDBuffer[
+                        outer_rank, DimList.create_unknown[outer_rank](), dtype
+                    ]
+                ](in_tensor),
+                start_tensor,
+                end_tensor,
+                step_tensor,
+                out_chain.borrow(),
+            )
+            out_chain.wait()
 
-        print_elements[dtype, outer_rank](
-            rebind[
-                NDBuffer[
-                    outer_rank, DimList.create_unknown[outer_rank](), dtype
-                ]
-            ](output_buffer)
-        )
-
-        runtime._del_old()
+            print_elements[dtype, outer_rank](
+                rebind[
+                    NDBuffer[
+                        outer_rank, DimList.create_unknown[outer_rank](), dtype
+                    ]
+                ](output_buffer)
+            )
 
 
 # CHECK-LABEL: == test_slice_basic

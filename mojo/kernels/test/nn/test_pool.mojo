@@ -87,48 +87,47 @@ fn pool(pool_method: Int):
     var stride = StaticIntTuple[2](2, 3)
     var dilation = StaticIntTuple[2](1, 1)
 
-    let runtime = Runtime()
-    let out_chain = OwningOutputChainPtr(runtime)
-    if pool_method == PoolMethod.MAX:
-        Pool2d[
-            out_shape,
-            in_shape,
-            DType.f32,
-            Image2DLayout.NCHW,
-            max_pool_init_fn[DType.f32],
-            max_pool_update_fn[DType.f32],
-            max_pool_reduce_fn[DType.f32],
-        ].run(
-            output,
-            input,
-            pad_h,
-            pad_w,
-            filter,
-            stride,
-            dilation,
-            out_chain.borrow(),
-        )
-    else:
-        Pool2d[
-            out_shape,
-            in_shape,
-            DType.f32.value,
-            Image2DLayout.NCHW,
-            avg_pool_init_fn[DType.f32],
-            avg_pool_update_fn[DType.f32],
-            avg_pool_reduce_fn[DType.f32],
-        ].run(
-            output,
-            input,
-            pad_h,
-            pad_w,
-            filter,
-            stride,
-            dilation,
-            out_chain.borrow(),
-        )
-    out_chain.wait()
-    runtime._del_old()
+    with Runtime() as runtime:
+        let out_chain = OwningOutputChainPtr(runtime)
+        if pool_method == PoolMethod.MAX:
+            Pool2d[
+                out_shape,
+                in_shape,
+                DType.f32,
+                Image2DLayout.NCHW,
+                max_pool_init_fn[DType.f32],
+                max_pool_update_fn[DType.f32],
+                max_pool_reduce_fn[DType.f32],
+            ].run(
+                output,
+                input,
+                pad_h,
+                pad_w,
+                filter,
+                stride,
+                dilation,
+                out_chain.borrow(),
+            )
+        else:
+            Pool2d[
+                out_shape,
+                in_shape,
+                DType.f32.value,
+                Image2DLayout.NCHW,
+                avg_pool_init_fn[DType.f32],
+                avg_pool_update_fn[DType.f32],
+                avg_pool_reduce_fn[DType.f32],
+            ].run(
+                output,
+                input,
+                pad_h,
+                pad_w,
+                filter,
+                stride,
+                dilation,
+                out_chain.borrow(),
+            )
+        out_chain.wait()
 
     print_buffer(output_buffer)
 

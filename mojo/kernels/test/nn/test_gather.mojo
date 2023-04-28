@@ -64,22 +64,21 @@ fn test_gather():
         # Test gather
         alias vector_width = simd_width[__mlir_type.`!pop.scalar<f32>`]()
 
-        let rt = Runtime(4)
-        let out_chain = OwningOutputChainPtr(rt)
-        gather[
-            2,
-            DimList(num_indices, row_size),
-            2,
-            DimList(num_rows, row_size),
-            1,
-            DimList(num_indices),
-            DType.f32,
-            indices_type,
-            0,
-            vector_width,
-        ](output, input, indices, out_chain.borrow())
-        out_chain.wait()
-        rt._del_old()
+        with Runtime(4) as rt:
+            let out_chain = OwningOutputChainPtr(rt)
+            gather[
+                2,
+                DimList(num_indices, row_size),
+                2,
+                DimList(num_rows, row_size),
+                1,
+                DimList(num_indices),
+                DType.f32,
+                indices_type,
+                0,
+                vector_width,
+            ](output, input, indices, out_chain.borrow())
+            out_chain.wait()
 
         print(output[StaticIntTuple[2](0, 0)])
         print(output[StaticIntTuple[2](2, 0)])
@@ -138,22 +137,21 @@ fn test_gather_3d():
         # Test gather
         alias vector_width = simd_width[__mlir_type.`!pop.scalar<f32>`]()
 
-        let rt = Runtime(4)
-        let out_chain = OwningOutputChainPtr(rt)
-        gather_nd[
-            4,
-            DimList(num_indices, 1, row_size, 1),
-            3,
-            DimList(num_rows, row_size, 1),
-            2,
-            DimList(num_indices, 1),
-            DType.f32,
-            indices_type,
-            0,
-            vector_width,
-        ](output, input, indices, out_chain.borrow())
-        out_chain.wait()
-        rt._del_old()
+        with Runtime(4) as rt:
+            let out_chain = OwningOutputChainPtr(rt)
+            gather_nd[
+                4,
+                DimList(num_indices, 1, row_size, 1),
+                3,
+                DimList(num_rows, row_size, 1),
+                2,
+                DimList(num_indices, 1),
+                DType.f32,
+                indices_type,
+                0,
+                vector_width,
+            ](output, input, indices, out_chain.borrow())
+            out_chain.wait()
 
         print(output[StaticIntTuple[4](0, 0, 0, 0)])
         print(output[StaticIntTuple[4](2, 0, 0, 0)])
@@ -216,22 +214,21 @@ fn test_gather_empty_indices():
         # Test gather
         alias vector_width = simd_width[__mlir_type.`!pop.scalar<f32>`]()
 
-        let rt = Runtime(4)
-        let out_chain = OwningOutputChainPtr(rt)
-        gather[
-            2,
-            DimList(num_indices, row_size),
-            2,
-            DimList(num_rows, row_size),
-            1,
-            DimList(num_indices),
-            DType.f32,
-            indices_type,
-            0,
-            vector_width,
-        ](output, input, indices, out_chain.borrow())
-        out_chain.wait()
-        rt._del_old()
+        with Runtime(4) as rt:
+            let out_chain = OwningOutputChainPtr(rt)
+            gather[
+                2,
+                DimList(num_indices, row_size),
+                2,
+                DimList(num_rows, row_size),
+                1,
+                DimList(num_indices),
+                DType.f32,
+                indices_type,
+                0,
+                vector_width,
+            ](output, input, indices, out_chain.borrow())
+            out_chain.wait()
 
     _test_gather[DType.si32]()
     _test_gather[DType.si64]()
