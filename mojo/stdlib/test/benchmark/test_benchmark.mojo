@@ -16,6 +16,7 @@ fn test_benchmark():
     print("== test_benchmark")
 
     @always_inline
+    @parameter
     fn time_me():
         sleep(0.002)
         return
