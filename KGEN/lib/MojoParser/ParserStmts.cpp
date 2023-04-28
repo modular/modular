@@ -24,6 +24,7 @@
 #include "KGEN/POPDialect/POPEnums.h.inc"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"
@@ -37,14 +38,6 @@
 using namespace M::KGEN::LIT;
 using namespace M::KGEN;
 using namespace M;
-
-/// Return the nearest parent operation of the block of the given kind.
-template <typename OpT>
-static OpT getBlockParentOfType(Block *block) {
-  if (auto op = dyn_cast<OpT>(block->getParentOp()))
-    return op;
-  return block->getParentOp()->getParentOfType<OpT>();
-}
 
 //===----------------------------------------------------------------------===//
 // StmtParser

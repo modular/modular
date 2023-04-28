@@ -511,7 +511,8 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
         /*paramDecls=*/ParamDeclArrayAttr::get(context, {}),
         /*resultParams=*/ParamDeclArrayAttr::get(context, {}),
         ConstraintArrayAttr::get(context, {}), /*isStatic=*/mlir::UnitAttr(),
-        /*isAdaptive=*/mlir::UnitAttr(), /*UnitAttr=*/mlir::UnitAttr(),
+        /*isAdaptive=*/mlir::UnitAttr(), /*isParameter=*/mlir::UnitAttr(),
+        /*isDef=*/mlir::UnitAttr(),
         AlwaysInlineLevelAttr::get(context, AlwaysInlineLevel::Disabled));
   result.regions[0]->push_back(new Block());
 }

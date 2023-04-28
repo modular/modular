@@ -1596,7 +1596,6 @@ struct FnDecorators : public SharedStateUser {
 
 private:
   void applyAdaptive(const DeclRefNode &node);
-  void applyRaises(const DeclRefNode &node);
   void applyLateExport(Location loc, StringRef aliasName);
   void applyLateExport(Location loc, const CallNode &callNode);
 
@@ -1613,19 +1612,6 @@ void FnDecorators::applyAdaptive(const DeclRefNode &node) {
   funcOp.setIsAdaptive(true);
 }
 
-void FnDecorators::applyRaises(const DeclRefNode &node) {
-  if (funcOp.getIsDef()) {
-    emitError(node.getLoc(), "methods defined with 'def' always raise")
-        << node.getRange();
-    return;
-  }
-
-  // Set the 'throws' bit.
-  auto origSig = funcOp.getSignature();
-  funcOp.setSignature(
-      origSig.getWithFnEffects(origSig.getFnEffects() | FnEffects::Throws));
-}
-
 // Apply all signature decorators.
 void FnDecorators::apply(
     SmallVector<std::pair<ExprNode *, LexerCursor>> &decoratorExprs) {
@@ -1638,12 +1624,12 @@ void FnDecorators::apply(
       processedIt = true;
       if (declRef->spelling == "staticmethod")
         funcOp.setIsStatic(true);
-      else if (declRef->spelling == "raises")
-        applyRaises(*declRef);
       else if (declRef->spelling == "always_inline")
         funcOp.setAlwaysInlineLevel(AlwaysInlineLevel::Enabled);
       else if (declRef->spelling == "adaptive")
         applyAdaptive(*declRef);
+      else if (declRef->spelling == "nonparametric")
+        funcOp.setIsNonParametric(true);
       else
         processedIt = false;
     }
@@ -1839,7 +1825,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // Okay, apply them now.
   FnDecorators(decl, shared).apply(decoratorExprs);
 
-  // Emitt he argument and result types.
+  // Emit the argument and result types.
   SmallVector<Type> argTypes;
   SmallVector<TypedAttr> defaults;
   auto reportError = [&] {
@@ -1853,6 +1839,22 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   if (!resultType)
     return failure();
 
+  // Nested functions are capturing by default.
+  if (funcOp->getParentOfType<FuncOp>())
+    effects = effects | FnEffects::Capturing;
+
+  // `@nonparametric` closures cannot be parametric. This decorator can only be
+  // applied to nested functions that are not `@noncapturing`.
+  if (funcOp.getIsNonParametric()) {
+    if (!inputParamDecls.empty() || !resultParamDecls.empty()) {
+      emitError(funcOp.getLoc(),
+                "nonparametric closure cannot have input or result parameters");
+    }
+    if (!funcOp->getParentOfType<FuncOp>() ||
+        !bitEnumContainsAny(effects, FnEffects::Capturing))
+      emitError(funcOp.getLoc(), "only closures can be declared nonparametric");
+  }
+
   // Now that all the structural properties are determined, perform any
   // name-binding specific checks over the declaration.  This happens after
   // decorator processing because that is how defs work in Python.  This also
@@ -1865,10 +1867,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // Handle function effects.
   SmallVector<Location> argLocs;
   SmallVector<StringAttr> argNames;
-
-  // Nested functions are capturing by default.
-  if (funcOp->getParentOfType<FuncOp>())
-    effects = effects | FnEffects::Capturing;
 
   // Any function that contains a capturing closure as a parameter is itself
   // capturing.

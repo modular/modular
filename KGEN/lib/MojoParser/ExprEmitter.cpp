@@ -98,6 +98,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in parameter list";
   case EC_Destructor:
     return " in '__del__' resolution";
+  case EC_CaptureCopy:
+    return " in capture-by-copy";
   }
 }
 

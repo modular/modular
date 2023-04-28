@@ -62,6 +62,7 @@ def LIT_FuncOp : LITOp<"func", [
     ConstraintArrayAttr:$constraints,
     UnitAttr:$isStatic,
     UnitAttr:$isAdaptive,
+    UnitAttr:$isNonParametric,
     UnitAttr:$isDef,  // Present if 'def' absent if 'fn'.
     KGEN_AlwaysInlineLevelAttr:$alwaysInlineLevel
   );
