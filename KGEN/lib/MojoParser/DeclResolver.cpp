@@ -1116,8 +1116,13 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
     // Emit default argument values.
     if (const ExprNode *initExpr = arg.initExpr) {
       seenInitExpr = true;
+      Type argType = type;
+      if (isDef && !argType)
+        // Within a `def` and without any type expression specified, convert the
+        // default argument to `object` type.
+        argType = shared.lookupObjectType(arg.loc, scope);
       PValue value =
-          typeEmitter.emitExprPValue(initExpr, EC_DefaultArgument, type);
+          typeEmitter.emitExprPValue(initExpr, EC_DefaultArgument, argType);
       if (!value)
         return {};
       defaults.push_back(value);
