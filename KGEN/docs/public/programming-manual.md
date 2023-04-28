@@ -321,15 +321,21 @@ and already use MyPy-style type annotations in Python to prefer the use of
 implementing some methods with one and others with the other, and allows each
 team or programmer to decide what is best for their use-case.
 
-### The`__copyinit__` and `__moveinit__` Special Methods
+### The `__copyinit__` and `__moveinit__` Special Methods
 
-Mojo supports full "value semantics" as seen in languages like C++, and more
-advanced support than languages like Swift and Rust because it supports
-non-movable types like Atomic. This is accessed by implementing special methods
-like `__init__` and `__del__` on structs, which give control over the lifetime
-of the logical value maintained by that struct. For example, consider a dynamic
-string type that needs to allocate memory for the string data when constructed
-and destroy it when the value is destroyed:
+Mojo supports full "value semantics" as seen in languages like C++ and Swift,
+and it makes defining simple aggregates of fields very easy with its `@value`
+decorator (described in more detail below).
+
+For advanced use cases, Mojo allows you to define custom constructors (using
+Python's existing `__init__` special method), custom destructors (using the
+existing `__del__` special method) and custom copy and move constructors using
+the new `__copyinit__` and `__moveinit__` special methods.
+
+These low-level customization hooks can be useful when doing low level systems
+programming, e.g. with manual memory management.  For example, consider a
+dynamic string type that needs to allocate memory for
+the string data when constructed and destroy it when the value is destroyed:
 
 ```mojo
 struct MyString:
@@ -346,7 +352,7 @@ struct MyString:
         self.data.free()
 ```
 
-This MyString type is implemented using low level functions to show a
+This `MyString` type is implemented using low level functions to show a
 simple example of how this works - a more realistic implementation would use
 short string optimizations, etc.  However, if you go ahead and try this out, you
 might be surprised:
@@ -362,9 +368,9 @@ fn useStrings():
     print(a)   # Should print "Goodbye"
 ```
 
-The compiler isn't allowing us to make a copy of our string: MyString contains
-an instance of Pointer (which is equivalent to a low-level C pointer), and Mojo
-can't know "what the pointer means" or "how to copy it" - this is one reason
+The compiler isn't allowing us to make a copy of our string: `MyString` contains
+an instance of `Pointer` (which is equivalent to a low-level C pointer), and
+Mojo can't know "what the pointer means" or "how to copy it" - this is one reason
 why application level programmers should use higher level types like arrays and
 slices! More generally, some types (like atomic numbers) cannot be copied or
 moved around at all, because their address provides an **identity** just like a
@@ -388,7 +394,7 @@ lines of code above.  Mojo also supports the `__moveinit__` method which allows
 both Rust-style moves (which take a value when a lifetime ends) and C++-style
 moves (where the contents of a value is removed but the destructor still runs),
 and allows defining custom move logic.  Please see the "Value Lifecycle"
-document for more information.
+section below for more information.
 
 Mojo provides full control over the lifetime of a value, including the ability
 to make types copyable, move-only, and not-movable. This is more control than
@@ -1462,11 +1468,56 @@ copy/move/destroy logic, and "passability in a register" are orthogonal concerns
 and should be split.  This former logic should be subsumed into a more general
 `@value("trivial")` decorator which is orthogonal from `@register_passable`.
 
-### Boilerplate eliminating decorators
+### `@value` decorator
 
-TODO: Describe the `@value` /  `@mojo.value` struct decorator.  This synthesizes
-copy/move/memberwise constructors based on the availability of stored
-properties, it takes string arguments that customize its behavior.
+Mojo's approach (described above) provides simple and predictable hooks that
+give you the ability to express exotic low-level things like `Atomic` correctly.
+This is great for control and for a simple programming model, but most structs
+we all write are simple aggregations of other types, and we don't want to have
+to write a lot of boilerplate for them!  To solve this, Mojo provides a `@value`
+decorator for structs that synthesizes the boilerplate for you.
+
+The `@value` decorator takes a look at the fields of your type, and generates
+members that are missing.  Consider a simple struct like this, for example:
+
+```mojo
+@value
+struct MyPet:
+    var name: String
+    var age: Int
+```
+
+Mojo will notice that you do not have a memberwise initializer, a move
+constructor or a copy constructor and will synthesize these for you as if you
+had written:
+
+```mojo
+fn __init__(self&, owned name: String, age: Int):
+    self.name = name^
+    self.age = age
+
+fn __copyinit__(self&, existing: Self):
+    self.name = existing.name
+    self.age = existing.age
+
+fn __moveinit__(self&, owned existing: Self):
+    self.name = existing.name^
+    self.age = existing.age
+```
+
+If your type contains any move-only fields, it cannot (and therefore will not)
+generate a copy constructor for you of course.  Mojo only synthesizes these for
+you when they don't exist, so it is ok to override its behavior by defining your
+own version of these.  For example, it is fairly common to want to define a
+custom copy constructor but use the default memberwise and move constructor.
+
+There is no way to suppress generation of specific methods or customize
+generation at this time, but we can add arguments to the `@value` generator to
+do this if there is demand.
+
+Note that the `@value` decorator only works on types whose members are copyable
+and/or movable.  If you have something like `Atomic` in your struct, then it
+probably isn't a value type, and you don't want these members anyway.
 
 ## Behavior of Destructors
 
