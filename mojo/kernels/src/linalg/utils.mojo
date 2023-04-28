@@ -22,7 +22,7 @@ fn get_matmul_a_row_size[critical_stride: Bool]() -> Int:
     @parameter
     if has_neon():
         if critical_stride:
-            return 4
+            return 8
         else:
             return 8
     elif has_avx512f():
@@ -34,7 +34,7 @@ fn get_matmul_pack_inner_size[critical_stride: Bool]() -> Int:
     @parameter
     if has_neon():
         if critical_stride:
-            return 4
+            return 2
         else:
             return 2
     elif has_avx512f():
