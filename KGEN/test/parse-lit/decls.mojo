@@ -170,6 +170,12 @@ fn capture_by_copy():
     # CHECK: call_signature %[[CLS]](
     value_closure(10)
 
+    # CHECK: lit.func *"doesnt_capture
+    fn doesnt_capture(x: Int):
+        let arg = x
+    # CHECK: kgen.param.declare f: {{.*}} = <*"doesnt_capture
+    alias f = doesnt_capture
+
 
 ##===----------------------------------------------------------------------===##
 # let
