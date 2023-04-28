@@ -103,10 +103,6 @@ struct SubMatmulConfig:
     # Dimension of sub-matrices.
     var shape: StaticIntTuple[3]
 
-    fn __copyinit__(self&, existing: Self):
-        self.offset = existing.offset
-        self.shape = existing.shape
-
     @always_inline
     fn is_valid(self) -> Bool:
         return self.shape > Index(0, 0, 0)

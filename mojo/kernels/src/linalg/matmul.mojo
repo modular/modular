@@ -411,14 +411,6 @@ struct PackMatrixRows[
     # valid multiple-of-simd data bound within the tile.
     var valid_simd_dim: StaticIntTuple[2]
 
-    fn __copyinit__(self&, existing: Self):
-        self.packed_matrix = existing.packed_matrix
-        self.original_matrix = existing.original_matrix
-        self.global_offset = existing.global_offset
-        self.pack_tile_dim = existing.pack_tile_dim
-        self.valid_data_dim = existing.valid_data_dim
-        self.valid_simd_dim = existing.valid_simd_dim
-
     # Interface method:
     #  run the packing and store to the given buffer.
     @staticmethod
@@ -692,13 +684,6 @@ struct PackMatrixCols[
 
         instance._pack()
 
-    fn __copyinit__(self&, existing: Self):
-        self.packed_matrix = existing.packed_matrix
-        self.original_matrix = existing.original_matrix
-        self.global_offset = existing.global_offset
-        self.pack_tile_dim = existing.pack_tile_dim
-        self.valid_data_dim = existing.valid_data_dim
-
     @always_inline
     fn _pack_helper[
         skip_row_bound: Bool, skip_col_bound: Bool
@@ -881,14 +866,6 @@ struct MatmulInnerLoopBPacked[
             - Index(global_offset.M, global_offset.N),
         )
         instance._run_inner_loop()
-
-    fn __copyinit__(self&, existing: Self):
-        self.c = existing.c
-        self.a = existing.a
-        self.b_packed = existing.b_packed
-        self.global_offset = existing.global_offset
-        self.tile_n_k = existing.tile_n_k
-        self.c_bound = existing.c_bound
 
     fn _initialize_c_tile(
         self,
@@ -1356,16 +1333,6 @@ struct TiledMatmul[
 
     var elementwise_epilogue_fn: fn (GemmShape, GemmShape) capturing -> None
 
-    fn __copyinit__(self&, existing: Self):
-        self.c = existing.c
-        self.a = existing.a
-        self.b = existing.b
-        self.tile_n_k = existing.tile_n_k
-        self.global_tile_shape = existing.global_tile_shape
-        self.global_tile_offset = existing.global_tile_offset
-        self.b_tile_generator = existing.b_tile_generator
-        self.elementwise_epilogue_fn = existing.elementwise_epilogue_fn
-
     # Interface method
     @staticmethod
     fn run(
@@ -1770,6 +1737,7 @@ fn pack_b[
                 dst_offset += tile_n * tile_k
 
 
+@value
 struct BTileGenerator[
     config: MatmulConfig,
     type: DType,
@@ -1787,16 +1755,6 @@ struct BTileGenerator[
     ]  # packed layout if b_packed is True
     var b_tile_stack_ptr: DTypePointer[type]
     var tile_n_k: StaticIntTuple[2]
-
-    fn __init__(
-        self&,
-        b: NDBuffer[2, config.shape_b, type],
-        b_tile_stack_ptr: DTypePointer[type],
-        tile_n_k: StaticIntTuple[2],
-    ):
-        self.b = b
-        self.b_tile_stack_ptr = b_tile_stack_ptr
-        self.tile_n_k = tile_n_k
 
     # needs to be always_inline so b_tile_stack_ptr gets allocated on caller's stack
     @always_inline
@@ -1822,11 +1780,6 @@ struct BTileGenerator[
         return BTileGenerator[config, type, transpose_b, b_packed](
             b, b_tile_stack_ptr, tile_n_k
         )
-
-    fn __copyinit__(self&, existing: Self):
-        self.b = existing.b
-        self.b_tile_stack_ptr = existing.b_tile_stack_ptr
-        self.tile_n_k = existing.tile_n_k
 
     fn get_tile[
         inner_size: Int

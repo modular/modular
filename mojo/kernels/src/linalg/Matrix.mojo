@@ -26,9 +26,6 @@ struct Matrix[
 
     var data: NDBuffer[2, shape, type]
 
-    fn __copyinit__(self&, existing: Self):
-        self.data = existing.data
-
     fn __init__(self&, dptr: DTypePointer[type]):
         """Constructor of a matrix from a DTypePointer.
 
