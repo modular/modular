@@ -133,27 +133,20 @@ public:
   //===--------------------------------------------------------------------===//
 
   /// Look up a name in this declaration's scope only: return null on failure.
-  const TinyPtrVector<ASTDecl *> *lookupInCurrentScope(StringAttr name) const {
-    assert((resolvedness == DeclResolvedness::fully ||
-            // FIXME(Issue#5975): FuncOp shouldn't be special cased.
-            isa<FuncOp>(*this)) &&
-           "cannot perform lookup in a decl that isn't fully resolved");
-    auto it = declsInScope.find(name);
-    if (it != declsInScope.end() && !it->second.empty())
-      return &it->second;
-    return nullptr;
-  }
+  ArrayRef<ASTDecl *> lookupInCurrentScope(StringAttr name) const;
+  ArrayRef<ASTDecl *> lookupInCurrentScope(StringRef name) const;
 
   /// Perform a lookup in this declaration's scope and all parent scopes,
   /// returning the nearest target or null if nothing is found.
-  const TinyPtrVector<ASTDecl *> *lookup(StringAttr name) const {
+  ArrayRef<ASTDecl *> lookup(StringAttr name) const {
     const ASTDecl *curScope = this;
     while (curScope) {
-      if (auto *result = curScope->lookupInCurrentScope(name))
+      ArrayRef<ASTDecl *> result = curScope->lookupInCurrentScope(name);
+      if (!result.empty())
         return result;
       curScope = curScope->parentDecl;
     }
-    return nullptr;
+    return {};
   }
 
   /// Return the set of declarations in this scope.

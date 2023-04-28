@@ -318,8 +318,7 @@ static std::string unwrapExpressionText(StringRef exprText) {
 
 // Simple utility functor for looking up a decl that's known to exist.
 static ASTDecl &lookupSingleDecl(ASTDecl &decl, StringRef name) {
-  return *decl.lookupInCurrentScope(StringAttr::get(decl.getContext(), name))
-              ->front();
+  return *decl.lookupInCurrentScope(name).front();
 }
 
 /// Process all of the top-level variables defined within the expression body to

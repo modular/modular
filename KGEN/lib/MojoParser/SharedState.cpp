@@ -363,16 +363,17 @@ auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
   auto nameAttr = StringAttr::get(getContext(), name);
 
   // Look up the name.
-  auto lookupInScope = [&](ASTDecl &scope) -> const TinyPtrVector<ASTDecl *> * {
+  auto lookupInScope = [&](ASTDecl &scope) -> ArrayRef<ASTDecl *> {
     // Check if we already have a declaration for this name in the current
     // scope.
-    if (auto *result = scope.lookupInCurrentScope(nameAttr))
+    auto result = scope.lookupInCurrentScope(nameAttr);
+    if (!result.empty())
       return result;
 
     // If the lookup failed, try to resolve any wildcard imports in the scope.
     // Don't try wildcard imports if we wouldn't import this name anyways.
     if (name.startswith("_"))
-      return nullptr;
+      return {};
 
     // We don't know if these imports will actually provide the decl we are
     // looking for, so we have to try until we find one that does.
@@ -388,36 +389,36 @@ auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
         continue;
       // Re-check the lookup in the scope now that the wildcard import has
       // been resolved.
-      if (auto *result = scope.lookupInCurrentScope(nameAttr))
+      result = scope.lookupInCurrentScope(nameAttr);
+      if (!result.empty())
         return result;
     }
 
-    return nullptr;
+    return {};
   };
 
-  auto getEntry = [&]() {
-    const TinyPtrVector<ASTDecl *> *e;
-    if (searchParentScopes) {
-      ASTDecl *curSearchScope = &scope;
-      do {
-        if ((e = lookupInScope(*curSearchScope)))
-          break;
-      } while ((curSearchScope = curSearchScope->parentDecl));
-    } else {
-      e = lookupInScope(scope);
-    }
-    return e;
+  auto getEntry = [&]() -> ArrayRef<ASTDecl *> {
+    if (!searchParentScopes)
+      return lookupInScope(scope);
+
+    ASTDecl *curSearchScope = &scope;
+    do {
+      ArrayRef<ASTDecl *> e = lookupInScope(*curSearchScope);
+      if (!e.empty())
+        return e;
+    } while ((curSearchScope = curSearchScope->parentDecl));
+    return {};
   };
 
-  const TinyPtrVector<ASTDecl *> *entry = getEntry();
+  ArrayRef<ASTDecl *> entry = getEntry();
 
   // If nothing was found, return a failure.
-  if (!entry)
+  if (entry.empty())
     return LookupResult::getFailure();
 
   // If the lookup succeeded, make sure the signature for the referenced decls
   // are understood.
-  for (auto *decl : *entry) {
+  for (auto *decl : entry) {
     if (failed(
             declResolver->resolve(*decl, DeclResolvedness::signature, loc))) {
       // If the decl was erroneous somehow, then don't form a reference to it,
@@ -430,13 +431,13 @@ auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
   entry = getEntry();
   // If we are resolving an unresolved import, do another lookup now that import
   // has been resolved. The scope map should be updated with the proper decls.
-  if (!entry->empty() && isa<UnresolvedImportOp>(*entry->front()))
+  if (!entry.empty() && isa<UnresolvedImportOp>(*entry.front()))
     return lookupAndResolveDecl(name, loc, scope, searchParentScopes);
 
   // We return a pointer into the TinyPtrVector entry in the scope.  This should
   // be stable because you can't perform a lookup into a decl that has unknown
   // entries, and we just resolved all the signatures for all the decls.
-  return LookupResult::getSuccess(*entry);
+  return LookupResult::getSuccess(entry);
 }
 
 /// Perform a name lookup for a member in the specified type.

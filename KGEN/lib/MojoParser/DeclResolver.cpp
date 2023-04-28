@@ -64,6 +64,22 @@ static ParseResult parseType(ParserBase &p, ASTType &result, ASTDecl &declScope,
 // ASTDecl
 //===----------------------------------------------------------------------===//
 
+ArrayRef<ASTDecl *> ASTDecl::lookupInCurrentScope(StringRef name) const {
+  return lookupInCurrentScope(StringAttr::get(getContext(), name));
+}
+
+/// Look up a name in this declaration's scope only: return null on failure.
+ArrayRef<ASTDecl *> ASTDecl::lookupInCurrentScope(StringAttr name) const {
+  assert((resolvedness == DeclResolvedness::fully ||
+          // FIXME(Issue#5975): FuncOp shouldn't be special cased.
+          isa<FuncOp>(*this)) &&
+         "cannot perform lookup in a decl that isn't fully resolved");
+  auto it = declsInScope.find(name);
+  if (it != declsInScope.end() && !it->second.empty())
+    return it->second;
+  return {};
+}
+
 MLIRContext *ASTDecl::getContext() const {
   if (auto *op = getIfOperation())
     return op->getContext();
@@ -2179,11 +2195,10 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
       continue;
 
     // Figure out which decl corresponds to this argument so we can finish it.
-    const TinyPtrVector<ASTDecl *> *argDeclList =
-        decl.lookupInCurrentScope(argName);
-    assert(argDeclList && argDeclList->size() == 1 &&
+    ArrayRef<ASTDecl *> argDeclList = decl.lookupInCurrentScope(argName);
+    assert(argDeclList.size() == 1 &&
            "Argument should be added by signature resolution");
-    ASTDecl &argDecl = *argDeclList->front();
+    ASTDecl &argDecl = *argDeclList[0];
 
     // This function sets the argument decl to be fully resolved with the
     // specified IR representation.
@@ -2631,27 +2646,25 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
 /// This returns the destructor if successful, diagnoses an error if not, and
 /// returns null if there is no defined destructor.
 static TypedAttr lookupDestructor(ASTDecl &structDecl, SharedState &shared) {
-  const TinyPtrVector<ASTDecl *> *entries = structDecl.lookupInCurrentScope(
-      StringAttr::get(shared.getContext(), "__del__"));
+  auto dels = shared.lookupAndResolveDecl(
+      "__del__", structDecl.getLoc(), structDecl, /*searchParentScopes=*/false);
+  ArrayRef<ASTDecl *> entries = dels.getIfSuccess();
   // If there are no __del__ methods, return null.  This is valid.
-  if (!entries)
+  if (entries.empty())
     return {};
-  if (entries->size() != 1) {
+  if (entries.size() != 1) {
     auto diag = shared.emitError(structDecl.getLoc(),
                                  "invalid overloaded '__del__' method");
-    for (auto candidate : *entries)
+    for (auto candidate : entries)
       diag.attachNote(candidate->getLoc()) << "candidate declared here";
     return {};
   }
-  ASTDecl &delDecl = *(*entries)[0];
+  ASTDecl &delDecl = *entries[0];
   LIT::FuncOp func = dyn_cast<LIT::FuncOp>(delDecl);
   if (!func) {
-    shared.emitError((*entries)[0]->getLoc(), "'__del__' must be a method");
+    shared.emitError(delDecl.getLoc(), "'__del__' must be a method");
     return {};
   }
-  if (failed(
-          shared.declResolver->resolveSignature(delDecl, structDecl.getLoc())))
-    return {};
   return func.getBoundReference();
 }
 
@@ -2791,8 +2804,9 @@ void StructBodyDecorators::processRegisterPassableDecorator(bool isTrivial) {
   if (isTrivial) {
     auto rejectMemberIfPresent = [&](StringRef name) {
       auto nameAttr = StringAttr::get(resolver.getContext(), name);
-      if (auto member = structDecl.lookupInCurrentScope(nameAttr))
-        resolver.emitError((*member)[0]->getLoc())
+      auto members = structDecl.lookupInCurrentScope(nameAttr);
+      if (!members.empty())
+        resolver.emitError(members[0]->getLoc())
             << "'@register_passable(\"trivial\")' types may not have a "
             << nameAttr << " method";
     };
@@ -2851,10 +2865,9 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   // extra invariants.
   for (StructFieldOp field : structOp.getFieldDecls()) {
     // Make sure the field is signature resolved so we can get its type.
-    auto fieldEntry = structDecl.lookupInCurrentScope(field.getNameAttr());
-    assert(fieldEntry && fieldEntry->size() == 1 &&
-           "field decls cannot be overloaded");
-    ASTDecl &fieldASTDecl = *fieldEntry->front();
+    auto fieldEntries = structDecl.lookupInCurrentScope(field.getNameAttr());
+    assert(fieldEntries.size() == 1 && "field decls cannot be overloaded");
+    ASTDecl &fieldASTDecl = *fieldEntries[0];
     if (failed(resolveSignature(fieldASTDecl, fieldASTDecl.getLoc())))
       continue;
     ASTType fieldType(field.getType());

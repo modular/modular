@@ -325,6 +325,7 @@ public:
   static LookupResult getErroneous() { return {kErroneous, {}}; }
 
   ArrayRef<ASTDecl *> getIfSuccess() const { return decls; }
+  bool isSuccess() const { return kind == kSuccess; }
   bool isFailure() const { return kind == kFailure; }
   bool isErroneous() const { return kind == kErroneous; }
 };
