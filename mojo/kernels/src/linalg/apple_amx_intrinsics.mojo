@@ -446,31 +446,29 @@ struct amx_detail:
 
         Self._set()
 
-        # TODO(#8365) use `i` in all for loops below
-        for i0 in range(8):
-            Self.ldx((i0 << 56) | b_buffer.offset(i0 * b.dim[0]()).__as_index())
-            Self.ldy((i0 << 56) | a_buffer.offset(i0 * a.dim[0]()).__as_index())
+        for i in range(8):
+            Self.ldx((i << 56) | b_buffer.offset(i * b.dim[0]()).__as_index())
+            Self.ldy((i << 56) | a_buffer.offset(i * a.dim[0]()).__as_index())
 
         Self.fma32(1 << 27)
 
-        for i1 in range(1, 8):
-            Self.fma32((i1 << 6 << 10) | (i1 << 6))
+        for i in range(1, 8):
+            Self.fma32((i << 6 << 10) | (i << 6))
 
-        for i2 in range(8):
+        for i in range(8):
             Self.ldx(
-                (i2 << 56) | b_buffer.offset((i2 + 8) * b.dim[0]()).__as_index()
+                (i << 56) | b_buffer.offset((i + 8) * b.dim[0]()).__as_index()
             )
             Self.ldy(
-                (i2 << 56) | a_buffer.offset((i2 + 8) * a.dim[0]()).__as_index()
+                (i << 56) | a_buffer.offset((i + 8) * a.dim[0]()).__as_index()
             )
 
-        for i3 in range(8):
-            Self.fma32((i3 << 6 << 10) | (i3 << 6))
+        for i in range(8):
+            Self.fma32((i << 6 << 10) | (i << 6))
 
-        for i4 in range(0, 64, 4):
+        for i in range(0, 64, 4):
             Self.stz(
-                (i4 << 56)
-                | c_buffer.offset((i4 >> 2) * c.dim[0]()).__as_index()
+                (i << 56) | c_buffer.offset((i >> 2) * c.dim[0]()).__as_index()
             )
 
         Self._clr()

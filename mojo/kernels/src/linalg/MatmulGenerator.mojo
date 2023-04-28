@@ -461,7 +461,7 @@ struct MatmulStaticState:
     fn initialize[
         data_type: MatmulDataType, data_layout: MatmulOperandLayout
     ]() -> Self:
-        """Factory utiity defining the default values for the static states."""
+        """Factory utility defining the default values for the static states."""
 
         return Self {
             static_gemm_switch: GemmSwitch.all_false(),

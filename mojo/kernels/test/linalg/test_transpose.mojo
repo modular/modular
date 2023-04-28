@@ -117,11 +117,10 @@ fn test_transpose_8x8():
 
     transpose_inplace[num_rows, num_cols, DType.index](matrix)
 
-    # TODO(#8365) use `i` and `j`
-    for ii in range(num_rows):
-        for jj in range(num_cols):
-            let expected: Int = jj * num_rows + ii
-            let actual: Int = matrix[ii, jj][0].value
+    for i in range(num_rows):
+        for j in range(num_cols):
+            let expected: Int = j * num_rows + i
+            let actual: Int = matrix[i, j][0].value
             # CHECK-NOT: Transpose 8x8 failed
             if expected != actual:
                 print("Transpose 8x8 failed")
@@ -147,11 +146,10 @@ fn test_transpose_16x16():
 
     transpose_inplace[num_rows, num_cols, DType.index](matrix)
 
-    # TODO(#8365) use `i` and `j`
-    for ii in range(num_rows):
-        for jj in range(num_cols):
-            let expected: Int = jj * num_rows + ii
-            let actual: Int = matrix[ii, jj][0].value
+    for i in range(num_rows):
+        for j in range(num_cols):
+            let expected: Int = j * num_rows + i
+            let actual: Int = matrix[i, j][0].value
             # CHECK-NOT: Transpose 16x16 failed
             if expected != actual:
                 print("Transpose 16x16 failed")

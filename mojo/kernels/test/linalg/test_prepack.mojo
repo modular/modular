@@ -251,9 +251,9 @@ fn test_prepack():
     # CHECK-NEXT: 0.000000
     # CHECK-NEXT: 0.000000
 
-    for ii in range(dst_buf.dim[0]()):
-        for jj in range(dst_buf.dim[1]()):
-            print(dst_buf[StaticIntTuple[2](ii, jj)])
+    for i in range(dst_buf.dim[0]()):
+        for j in range(dst_buf.dim[1]()):
+            print(dst_buf[StaticIntTuple[2](i, j)])
 
 
 fn main():
