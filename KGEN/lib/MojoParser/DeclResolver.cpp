@@ -2652,6 +2652,49 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   return success();
 }
 
+/// This method creates a FuncOp for a method inside of a struct with the
+/// specified value signature information.  It handles the mechanics of creating
+/// the function but also of registering it with the DeclResolver.
+static std::pair<LIT::FuncOp, ASTDecl &>
+synthesizeMethodInStruct(StringRef name, ArrayRef<Type> argTypes,
+                         ArrayRef<ValueInputConvention> argConventions,
+                         ArrayRef<StringAttr> argNames, Type resultType,
+                         ImplicitLocOpBuilder &builder, ASTDecl &structDecl,
+                         DeclResolver &resolver) {
+  StructDeclOp structOp = cast<StructDeclOp>(structDecl);
+
+  // Get the signature for the function.
+  auto fnType = builder.getFunctionType(argTypes, resultType);
+  // TODO: Should raise if anything we invoke raises.
+  auto metadata = builder.getAttr<MetadataAttr>(
+      argConventions, /*no default args=*/ArrayRef<TypedAttr>(), FnEffects());
+  auto signature = SignatureType::get({}, {}, fnType, metadata);
+
+  // Create the empty function.
+  StringAttr nameAttr = getMangledName(builder.getStringAttr(name), signature);
+  auto funcOp = builder.create<LIT::FuncOp>(nameAttr, signature, argNames);
+
+  // Register the method in the struct.
+  ASTDecl &funcDecl = resolver.addFullyResolvedDecl(
+      funcOp.getOperation(), name, structDecl.getLoc(), &structDecl);
+  funcDecl.setSpecialFunctionKind(SpecialFunctionInfo::getKind(name));
+
+  // Set the symbol and notice if we are redeclaring something.
+  if (Operation *existing = resolver.finalizeFuncSignature(funcOp, funcDecl)) {
+    resolver.emitError(
+        existing->getLoc(),
+        "internal compiler error: synthesized member that already exists");
+  }
+
+  // If the struct is register_passable("trivial"), make this
+  // @always_inline("nodebug").
+  if (structOp.getRegisterPassable() ==
+      StructDeclOp::RP_RegisterPassableTrivial)
+    funcOp.setAlwaysInlineLevel(AlwaysInlineLevel::EnabledNoDebug);
+
+  return {funcOp, funcDecl};
+}
+
 /// Look up the __del__ destructor for the specified `type` which is needed
 /// for the specified declaration (typically a var or argument declaration).
 /// This returns the destructor if successful, diagnoses an error if not, and
@@ -2698,29 +2741,12 @@ static TypedAttr synthesizeEmptyDtor(StructDeclOp structOp, ASTDecl &structDecl,
     convention = ValueInputConvention::OwnedInMem;
   }
 
-  // Get the signature for the function.  This is (owned selfType)->None.
-  auto fnType = builder.getFunctionType(selfType.mlirType,
-                                        resolver.shared.getNoneType().mlirType);
-  auto metadata = builder.getAttr<MetadataAttr>(
-      convention, /*no default args=*/ArrayRef<TypedAttr>(), FnEffects());
-  auto signature = SignatureType::get({}, {}, fnType, metadata);
   StringAttr selfName = builder.getStringAttr("self");
 
-  // Create the empty dtor function.
-  StringAttr name = getMangledName(builder.getStringAttr("__del__"), signature);
-  auto funcOp = builder.create<LIT::FuncOp>(name, signature, selfName);
-
-  // Register the dtor in the struct.
-  ASTDecl &funcDecl = resolver.addFullyResolvedDecl(
-      funcOp.getOperation(), "__del__", structDecl.getLoc(), &structDecl);
-  funcDecl.setSpecialFunctionKind(SpecialFunctionKind::kDel);
-
-  // Set the symbol and notice if we are redeclaring something.
-  if (Operation *existing = resolver.finalizeFuncSignature(funcOp, funcDecl)) {
-    resolver.emitError(
-        existing->getLoc(),
-        "internal compiler error: synthesized member that already exists");
-  }
+  // Create the FuncOp and ASTDecl for the method.
+  auto [funcOp, funcDecl] = synthesizeMethodInStruct(
+      "__del__", selfType.mlirType, convention, selfName,
+      resolver.shared.getNoneType(), builder, structDecl, resolver);
 
   // Set up the body.
   Block *body = funcOp.getBody();
@@ -2830,6 +2856,8 @@ hasMemberwiseInit(SMLoc loc, ASTDecl &structDecl, bool isMemoryOnly,
   return false;
 }
 
+/// This synthesizes an __init__ method that accepts values for every field of
+/// a struct, making it easy for external clients to initialize it.
 static void synthesizeMemberwiseInit(
     SMLoc decoratorLoc, ASTDecl &structDecl, bool isMemoryOnly,
     ArrayRef<std::pair<StructFieldOp, ASTDecl *>> structFields,
@@ -2880,35 +2908,10 @@ static void synthesizeMemberwiseInit(
     argNames.push_back(fieldOp.getNameAttr());
   }
 
-  // Get the signature for the function.
-  auto fnType = builder.getFunctionType(argTypes, resultType);
-  // TODO: Should raise if anything we invoke raises.
-  auto metadata = builder.getAttr<MetadataAttr>(
-      argConventions, /*no default args=*/ArrayRef<TypedAttr>(), FnEffects());
-  auto signature = SignatureType::get({}, {}, fnType, metadata);
-
-  // Create the empty function.
-  StringAttr name =
-      getMangledName(builder.getStringAttr("__init__"), signature);
-  auto funcOp = builder.create<LIT::FuncOp>(name, signature, argNames);
-
-  // Register the method in the struct.
-  ASTDecl &funcDecl = resolver.addFullyResolvedDecl(
-      funcOp.getOperation(), "__init__", structDecl.getLoc(), &structDecl);
-  funcDecl.setSpecialFunctionKind(SpecialFunctionKind::kInit);
-
-  // If the struct is register_passable("trivial"), make this
-  // @always_inline("nodebug").
-  if (structOp.getRegisterPassable() ==
-      StructDeclOp::RP_RegisterPassableTrivial)
-    funcOp.setAlwaysInlineLevel(AlwaysInlineLevel::EnabledNoDebug);
-
-  // Set the symbol and notice if we are redeclaring something.
-  if (Operation *existing = resolver.finalizeFuncSignature(funcOp, funcDecl)) {
-    resolver.emitError(
-        existing->getLoc(),
-        "internal compiler error: synthesized member that already exists");
-  }
+  // Create the FuncOp and ASTDecl for the method.
+  auto [funcOp, funcDecl] =
+      synthesizeMethodInStruct("__init__", argTypes, argConventions, argNames,
+                               resultType, builder, structDecl, resolver);
 
   // Set up the body.
   Block *body = funcOp.getBody();
@@ -2962,6 +2965,7 @@ static void synthesizeMemberwiseInit(
   ExprEmitter::emitNormalReturn(builder, structOp.getLoc(), result, funcDecl);
   builder.create<LIT::EndFuncOp>();
 }
+
 /// Process the @value body decorator on structs.  This synthesizes the
 /// memberwise init, copy ctor and move ctor if requested.
 void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc) {
