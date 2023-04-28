@@ -505,7 +505,7 @@ fn _copy_with_strides[
         var src_ptr = input.offset(input_offset)
         var dst_ptr = output.data.offset(output_offset)
         if input_axis_stride == 1 and output_axis_stride == 1:
-            memcpy(dst_ptr, src_ptr, axis_dim * dtype_sizeof[type]())
+            memcpy(dst_ptr, src_ptr, axis_dim)
         else:
 
             @always_inline
