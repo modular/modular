@@ -431,10 +431,11 @@ private:
 
     // Grab the result type, if it's non-none.
     std::optional<std::string> resultTypeName;
-    if (!resultType.isa<LIT::NoneType>()) {
-      resultTypeName =
-          generateTypeString(resultType, selfType, resultConvention);
-    }
+    if (!resultType.isa<LIT::NoneType>())
+      resultTypeName = generateTypeString(
+          funcOp.isThrows() ? funcOp.getResultTypeWithoutErrorVariant()
+                            : resultType,
+          selfType, resultConvention);
 
     os.object([&] {
       os.attribute("signature", generateFunctionSignature(
@@ -660,41 +661,39 @@ private:
     bool emittedUnexpectedOrderWarning = false;
     ptrdiff_t nextEltIndex = 0;
     SmallVector<SMLoc> elementDocEndLocs(elements.size());
-    process2ColumnDocSection(
-        lines, [&](StringRef paramName, SMLoc docEndLoc) {
-          SMLoc paramLoc = SMLoc::getFromPointer(paramName.data());
-          size_t currentEltIndex = nextEltIndex++;
+    process2ColumnDocSection(lines, [&](StringRef paramName, SMLoc docEndLoc) {
+      SMLoc paramLoc = SMLoc::getFromPointer(paramName.data());
+      size_t currentEltIndex = nextEltIndex++;
 
-          auto it = elements.find(paramName);
-          if (it == elements.end()) {
-            sharedState.emitWarning(paramLoc)
-                << "unknown " << tag << " '" << paramName << "' in doc string";
-            return;
-          }
+      auto it = elements.find(paramName);
+      if (it == elements.end()) {
+        sharedState.emitWarning(paramLoc)
+            << "unknown " << tag << " '" << paramName << "' in doc string";
+        return;
+      }
 
-          // If we have already seen this element, emit a warning.
-          if (std::exchange(it->second, paramLoc).isValid()) {
-            sharedState.emitWarning(paramLoc) << "duplicate " << tag << " '"
-                                              << paramName << "' in doc string";
-            return;
-          }
+      // If we have already seen this element, emit a warning.
+      if (std::exchange(it->second, paramLoc).isValid()) {
+        sharedState.emitWarning(paramLoc)
+            << "duplicate " << tag << " '" << paramName << "' in doc string";
+        return;
+      }
 
-          // Ensure the elements are in the same order as the decl.
-          if (!emittedUnexpectedOrderWarning) {
-            size_t expectedEltIndex = it - elements.begin();
-            if (currentEltIndex != expectedEltIndex) {
-              sharedState.emitWarning(paramLoc)
-                  << "'" << paramName << "' is defined at index "
-                  << expectedEltIndex
-                  << ", but specified in doc string at index "
-                  << currentEltIndex;
-              emittedUnexpectedOrderWarning = true;
-            }
-          }
+      // Ensure the elements are in the same order as the decl.
+      if (!emittedUnexpectedOrderWarning) {
+        size_t expectedEltIndex = it - elements.begin();
+        if (currentEltIndex != expectedEltIndex) {
+          sharedState.emitWarning(paramLoc)
+              << "'" << paramName << "' is defined at index "
+              << expectedEltIndex << ", but specified in doc string at index "
+              << currentEltIndex;
+          emittedUnexpectedOrderWarning = true;
+        }
+      }
 
-          // Record the location of the end of the doc string for this element.
-          elementDocEndLocs[it - elements.begin()] = docEndLoc;
-        });
+      // Record the location of the end of the doc string for this element.
+      elementDocEndLocs[it - elements.begin()] = docEndLoc;
+    });
 
     // Emit warnings for any elements that were not documented.
     StringRef indentStr =
