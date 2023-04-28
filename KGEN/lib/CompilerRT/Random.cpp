@@ -10,23 +10,23 @@
 #include "llvm/ADT/StringRef.h"
 
 COMPILERRT_EXPORT double KGEN_CompilerRT_RandomDouble(double min, double max) {
-  double value;
-  M::fillWithRandomFloats<double>(value, min, max);
-  return value;
+  static std::default_random_engine randEngine(/*seed=*/0);
+  std::uniform_real_distribution<double> dist(min, max);
+  return dist(randEngine);
 }
 
 COMPILERRT_EXPORT int64_t KGEN_CompilerRT_RandomSInt64(int64_t min,
                                                        int64_t max) {
-  int64_t value;
-  M::fillWithRandomInts<int64_t>(value, min, max);
-  return value;
+  static std::default_random_engine randEngine(/*seed=*/0);
+  std::uniform_int_distribution<int64_t> dist(min, max);
+  return dist(randEngine);
 }
 
 COMPILERRT_EXPORT uint64_t KGEN_CompilerRT_RandomUInt64(uint64_t min,
                                                         uint64_t max) {
-  uint64_t value;
-  M::fillWithRandomInts<uint64_t>(value, min, max);
-  return value;
+  static std::default_random_engine randEngine(/*seed=*/0);
+  std::uniform_int_distribution<uint64_t> dist(min, max);
+  return dist(randEngine);
 }
 
 void M::KGEN::registerRandom(
