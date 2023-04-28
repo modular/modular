@@ -82,6 +82,11 @@ public:
   /// a copy constructor. Note: this resolves the body of a struct type.
   bool isCopyable(llvm::SMLoc loc, SharedState &shared) const;
 
+  /// Return true if this type is movable from its own type, either because it
+  /// is trivial or has a move constructor from self. Note: this resolves the
+  /// body of a struct type.
+  bool isMovable(llvm::SMLoc loc, SharedState &shared) const;
+
   /// Return whether this type is movable, either because it is trivial, a
   /// register passable type, or has a move constructor that works with the
   /// specified input value.  Note: this resolves the body of a struct type.

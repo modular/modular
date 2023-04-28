@@ -563,6 +563,10 @@ fn bad_destructors():
   var x = BadDtor()
 
 
+@value # expected-error {{'@value' cannot synthesize members: 'x' has non-copyable, non-movable type 'InMemStruct'}}
+struct CantSynthesize:
+  var x : InMemStruct # expected-note {{'x' declared here}}
+
 
 ##===----------------------------------------------------------------------===##
 # Class

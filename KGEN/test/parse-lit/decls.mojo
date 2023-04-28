@@ -770,10 +770,36 @@ struct DelegatingInitMem:
 # Struct @value decorator
 ##===----------------------------------------------------------------------===##
 
+# CHECK-LABEL: lit.struct.decl @ValueMem
 @value
 struct ValueMem:
+  var a: Int # Trivial
+  var b: StructExample # Copy ctor
+
+# CHECK: lit.func @"__init__
+# CHECK-SAME: (%self: !pop.pointer<{{.*}}@ValueMem> init_self,
+# CHECK-SAME:     %a: !kgen.declref<@"$Int"::@Int> borrow,
+# CHECK-SAME:    %b: !kgen.declref<{{.*}}::@StructExample>) -> !lit.none {
+# CHECK-NEXT: %0 = lit.struct.gep %self[a]
+# CHECK-NEXT: pop.store %a, %0
+# CHECK-NEXT: %1 = lit.struct.gep %self[b]
+# CHECK-NEXT: pop.store %b, %1
+# CHECK-NEXT: kgen.param.constant: !lit.none
+
+# CHECK-LABEL: lit.struct.decl @ValueReg
+@value
+@register_passable
+struct ValueReg:
   var a: Int
-  var b: Int
+  var b: StructExample
+
+# CHECK: lit.func @"__init__
+# CHECK-SAME: (%a: !kgen.declref<@"$Int"::@Int> borrow,
+# CHECK-SAME:  %b: !kgen.declref<@"$decls"::@StructExample>)
+# CHECK-SAME:    -> !kgen.declref<@"$decls"::@ValueReg>
+# CHECK-NEXT: %0 = lit.struct.create(a=%a, b=%b)
+# CHECK-NEXT: lit.return %0
+# CHECK-NEXT: lit.end_func
 
 ##===----------------------------------------------------------------------===##
 # async/await
