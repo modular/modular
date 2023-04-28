@@ -337,6 +337,7 @@ struct Buffer[size: Dim, type: DType]:
             return
 
         @always_inline
+        @parameter
         fn _fill[simd_width: Int](idx: Int):
             self.simd_store[simd_width](idx, SIMD[type, simd_width].splat(val))
 
@@ -417,6 +418,7 @@ fn _compute_nd_index[
     result[rank - 1] = index
 
     @always_inline
+    @parameter
     fn body[idx: Int]():
         result[rank - idx - 2] = result[rank - idx - 1] // buf.dim(
             rank - idx - 1
@@ -457,6 +459,7 @@ fn _compute_ndbuffer_offset[
     var result: Int = 0
 
     @always_inline
+    @parameter
     fn body[idx: Int]():
         result = fma(buf.stride(idx), index[idx], result)
 
@@ -515,6 +518,7 @@ fn _compute_ndbuffer_offset[
     var result: Int = 0
 
     @always_inline
+    @parameter
     fn body[idx: Int]():
         result = fma(buf.stride(idx), index[idx], result)
 
@@ -548,6 +552,7 @@ fn _compute_ndbuffer_stride[
     stride[rank - 1] = 1
 
     @always_inline
+    @parameter
     fn body[idx: Int]():
         alias i = rank - idx - 1
         stride[i - 1] = shape[i] * stride[i]
@@ -738,6 +743,7 @@ struct NDBuffer[
         """
         var res = StaticIntTuple[rank]()
 
+        @parameter
         @always_inline
         fn _fill[idx: Int]():
             res[idx] = self.dim[idx]()
@@ -775,6 +781,7 @@ struct NDBuffer[
         """
         var product: Int = 1
 
+        @parameter
         @always_inline
         fn _compute_product[idx: Int]():
             product *= self.dim[idx]()
@@ -1616,6 +1623,7 @@ struct DynamicRankBuffer:
         var result = StaticIntTuple[rank]()
 
         @always_inline
+        @parameter
         fn _fill[idx: Int]():
             result.__setitem__[idx](self.dim(idx))
 
@@ -1635,6 +1643,7 @@ fn prod_dims[
     var product: Int = 1
 
     @always_inline
+    @parameter
     fn _compute_product[idx: Int]():
         product *= x.dim[idx + start_dim]()
 
