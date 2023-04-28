@@ -1552,7 +1552,9 @@ static StringAttr getMangledName(StringAttr baseName, SignatureType signature) {
     // If this had adjustments added to it because of its argument convention /
     // variadic state, strip them off.
     ASTType type = argType;
-    if (signature.isVararg(argNo))
+    // FIXME(#13015, #13603): In general, we shouldn't be checking for variadic
+    // types specifically, but this is a quick stop-gap to address a crash.
+    if (signature.isVararg(argNo) && isa<VariadicType>(type.mlirType))
       type = type.getVariadicElementType();
     if (convention != ValueInputConvention::OwnedInReg &&
         convention != ValueInputConvention::BorrowedInReg)
