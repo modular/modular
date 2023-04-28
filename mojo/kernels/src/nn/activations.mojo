@@ -28,6 +28,7 @@ struct ActivationType:
     alias SIGMOID = ActivationType(6)
     alias SIGN = ActivationType(7)
     alias TANH = ActivationType(8)
+    alias GELU_APPROX_SIGMOID = ActivationType(9)
 
     @always_inline("nodebug")
     fn __init__(value: Int) -> ActivationType:
@@ -57,6 +58,8 @@ struct ActivationType:
             func[ActivationType.GELU]()
         elif self == ActivationType.GELU_APPROX:
             func[ActivationType.GELU_APPROX]()
+        elif self == ActivationType.GELU_APPROX_SIGMOID:
+            func[ActivationType.GELU_APPROX_SIGMOID]()
         elif self == ActivationType.SIGMOID:
             func[ActivationType.SIGMOID]()
         elif self == ActivationType.SIGN:
@@ -84,6 +87,8 @@ fn dispatch_activation_fn[
         return gelu(val)
     elif activation == ActivationType.GELU_APPROX:
         return gelu_approximate(val)
+    elif activation == ActivationType.GELU_APPROX_SIGMOID:
+        return gelu_approximate_sigmoid(val)
     elif activation == ActivationType.SIGMOID:
         return sigmoid(val)
     elif activation == ActivationType.SIGN:
@@ -330,6 +335,33 @@ fn gelu_approximate[
     ]()
     let x3 = x * x * x
     return 0.5 * x * (1 + tanh(SQRT_TWO_OVER_PI * (x + 0.044715 * x3)))
+
+
+@always_inline
+fn gelu_approximate_sigmoid[
+    simd_width: Int, type: DType
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    """Compute the approximate GELU Op using the equation
+    $x*sigmoid(1.702x)$.
+
+    Parameters:
+        simd_width: SIMD width used for the computation.
+        type: dtype used for the computation.
+
+    Args:
+        x (SIMD[type, size]): The value to compute the GELU operation on.
+
+    Returns:
+        SIMD[type, size]: The result of the approximate GELU operation.
+
+    Constraints:
+        type must be a floating point type.
+    """
+    assert_param_msg[
+        type.is_floating_point(),
+        "dtype must be a floating point type",
+    ]()
+    return x * sigmoid(x * 1.702)
 
 
 # ===----------------------------------------------------------------------===#
