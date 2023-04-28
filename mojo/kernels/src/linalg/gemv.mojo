@@ -44,6 +44,7 @@ fn gemv[
     while row_idx < vector_end_row:
 
         @always_inline
+        @parameter
         fn _set_zero[idx: Int]():
             let zero = SIMD[type, col_block_size](0)
             accums.simd_store[col_block_size](Index(idx, 0), zero)
@@ -54,6 +55,7 @@ fn gemv[
         while col_idx < vector_end_col:
 
             @always_inline
+            @parameter
             fn _do_accum[idx: Int]():
                 # Row `idx`
                 let accum_idx = Index(idx, 0)
@@ -77,6 +79,7 @@ fn gemv[
         ].aligned_stack_allocation[64]()
 
         @always_inline
+        @parameter
         fn body[idx: Int]():
             let accum_idx = Index(idx, 0)
             let curr_accum = accums.simd_load[col_block_size](accum_idx)

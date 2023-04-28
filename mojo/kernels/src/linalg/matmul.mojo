@@ -83,6 +83,7 @@ fn activation_epilogue[
         return
 
     @always_inline
+    @parameter
     fn activation_on_col_chunk[col_chunk_size: Int](idx_n: Int):
         let n_coord = idx_n + offset.N
         for idx_m in range(tile_len.M):
@@ -113,6 +114,7 @@ fn bias_activation_epilogue[
     bias: NDBuffer[1, shape_bias, type],
 ):
     @always_inline
+    @parameter
     fn bias_col_chunk[col_chunk_size: Int](idx_n: Int):
         let n_coord = idx_n + offset.N
         let bias_val = bias.simd_load[col_chunk_size](n_coord)
@@ -504,6 +506,7 @@ struct PackMatrixRows[
         # Fill the simd_size x simd_size transpose buffer
         #  with un-transposed data.
         @always_inline
+        @parameter
         fn body[idx: Int]():
             alias inner_row_idx = idx
             # Check that the current row has valid data.
@@ -547,6 +550,7 @@ struct PackMatrixRows[
         # Write to packed space:
         #  transposed_inner_row_idx now corresponds to the original column idx.
         @always_inline
+        @parameter
         fn transposed_inner_row_body[idx: Int]():
             let transposed_data = transpose_buffer.simd_load[simd_size](
                 Index(idx, 0)
@@ -598,6 +602,7 @@ struct PackMatrixRows[
 
         # An unswitch-able unit function that transpose packs a small tile.
         @always_inline
+        @parameter
         fn transpose_pack_unit[static_switch0: Bool, static_switch1: Bool]():
             self._transpose_pack_helper[
                 # skip_row_bound, skip_col_bound
@@ -713,6 +718,7 @@ struct PackMatrixCols[
         alias unroll_factor = get_packB_unroll_factor()
 
         @always_inline
+        @parameter
         fn pack_vector(row_idx: Int, col_idx: Int):
             let global_idx = self.global_offset + Index(row_idx, col_idx)
             var data = SIMD[type, simd_size](0)
@@ -746,10 +752,12 @@ struct PackMatrixCols[
             )
 
         @always_inline
+        @parameter
         fn pack_body[idx: Int]():
             pack_vector(row_start + idx, col_start)
 
         @always_inline
+        @parameter
         fn prefetch_body[idx: Int]():
             let global_row_idx = (
                 self.global_offset[0] + row_start + unroll_factor + idx
@@ -779,6 +787,7 @@ struct PackMatrixCols[
         var col_idx: Int = 0
 
         @always_inline
+        @parameter
         fn pack_unit[skip_row_bound: Bool, skip_col_bound: Bool]():
             self._pack_helper[skip_row_bound, skip_col_bound](
                 row_idx, valid_row_count, col_idx
@@ -898,6 +907,7 @@ struct MatmulInnerLoopBPacked[
         """
 
         @always_inline
+        @parameter
         fn outer_body[idx0: Int, idx1: Int]():
             c_local.aligned_simd_store[
                 simd_size, alignof[SIMD[accum_type, simd_size]]()
@@ -932,6 +942,7 @@ struct MatmulInnerLoopBPacked[
         alias is_row_aligned = shape_c.at[1]().is_multiple[alignment]()
 
         @always_inline
+        @parameter
         fn outer_body[idx0: Int, idx1: Int]():
             let global_idx_pair = (
                 Index(self.global_offset.M, self.global_offset.N)
@@ -1000,6 +1011,7 @@ struct MatmulInnerLoopBPacked[
         alias is_row_aligned = shape_c.at[1]().is_multiple[alignment]()
 
         @always_inline
+        @parameter
         fn outer_body[idx0: Int, idx1: Int]():
             let global_idx_pair = (
                 Index(self.global_offset.M, self.global_offset.N)
@@ -1079,6 +1091,7 @@ struct MatmulInnerLoopBPacked[
         if prefetch_b_distance > 0:
 
             @always_inline
+            @parameter
             fn prefetch_body[idx: Int]():
                 self.b_packed.prefetch[
                     PrefetchOptions().for_read().high_locality().to_data_cache()
@@ -1092,6 +1105,7 @@ struct MatmulInnerLoopBPacked[
 
         # Loop over local accumulator tiles.
         @always_inline
+        @parameter
         fn _do[idx: Int]():
             alias idx_outer = idx
             let global_m = self.global_offset.M + idx_outer
@@ -1100,6 +1114,7 @@ struct MatmulInnerLoopBPacked[
             ]()
 
             @always_inline
+            @parameter
             fn outer_body[idx0: Int, idx1: Int]():
                 let b_val = self.b_packed.simd_load[simd_size](
                     n_outer_idx,
@@ -1150,6 +1165,7 @@ struct MatmulInnerLoopBPacked[
         @parameter
         if prefetch_b_distance > 0:
 
+            @parameter
             @always_inline
             fn prefetch_body[idx: Int]():
                 self.b_packed.prefetch[
@@ -1163,6 +1179,7 @@ struct MatmulInnerLoopBPacked[
             unroll[pack_inner_size // simd_size, prefetch_body]()
 
         # Loop over local accumulator tiles.
+        @parameter
         @always_inline
         fn outer_body[idx0: Int, idx1: Int]():
             alias alignment = alignof[SIMD[accum_type, simd_size]]()
@@ -1452,6 +1469,7 @@ struct TiledMatmul[
             min(sub_tile_n, knm_bounds.N), min(sub_tile_k, knm_bounds.K)
         )
 
+        @parameter
         @always_inline
         fn row_iteration[tile_size: Int](row_offset: Int):
             MatmulInnerLoopBPacked[
@@ -1514,6 +1532,7 @@ struct TiledMatmul[
         #  no need to check boundary when loading C
         #  on this tile.
         # TODO: this could be in finer granularity.
+        @parameter
         @always_inline
         fn unswitched_mloop[static_switch: Bool]():
             self._outer_m_loop_helper[
@@ -1543,6 +1562,7 @@ struct TiledMatmul[
         )
         let tile_n: Int = self.tile_n_k[0]
 
+        @parameter
         @always_inline
         fn m_loop[secondary_tile_size: Int](col_idx: Int, tile_size_n: Int):
             self._outer_m_loop[last_k_tile, secondary_tile_size](
@@ -1584,8 +1604,10 @@ struct TiledMatmul[
         """
         # Each tiled iteration on the k dimension.
         @always_inline
+        @parameter
         fn k_iteration(k_offset: Int, k_tile_size: Int):
             @always_inline
+            @parameter
             fn outer_n_loop[last_k_tile: Bool]():
                 self._outer_n_loop[last_k_tile](
                     GemmShape(0, 0, k_offset) + self.global_tile_offset,

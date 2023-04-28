@@ -314,6 +314,7 @@ fn _permute_data[
     """
 
     @always_inline
+    @parameter
     fn body[idx: Int]():
         let perm_axis = perms.load(idx)[0].value
         let perm_data = input.load(perm_axis)
@@ -351,6 +352,7 @@ fn _fill_strides[
     strides[rank - 1] = 1
 
     @always_inline
+    @parameter
     fn _fill_stride_at_idx[idx: Int]():
         alias axis = rank - idx - 2
         let next_axis_stride = strides[axis + 1]
@@ -507,6 +509,7 @@ fn _copy_with_strides[
         else:
 
             @always_inline
+            @parameter
             fn _copy[simd_width: Int](offset: Int):
                 strided_store[simd_width, type](
                     strided_load[simd_width, type](src_ptr, input_axis_stride),
@@ -563,6 +566,7 @@ fn _copy_with_strides[
         let work_block_size = div_ceil(work, num_tasks)
 
         @always_inline
+        @parameter
         fn _parallel_copy(thread_id: Int):
 
             var next_input_offset = (

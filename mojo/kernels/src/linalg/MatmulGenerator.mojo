@@ -108,6 +108,7 @@ struct StaticGemmShape:
         """
 
         @always_inline
+        @parameter
         fn _convert_unknown(value: Dim) -> Int:
             if value:
                 return value.get()
@@ -980,6 +981,7 @@ struct MatmulGenerator[
         alias current_action = actions[current_action_idx]
 
         @always_inline
+        @parameter
         fn static_tiled_func[tile_size: Int](local_offset: Int):
             Self._generate[
                 # static tile action puts a static tile size and an unswitch
@@ -1038,6 +1040,7 @@ struct MatmulGenerator[
         ]()
 
         @always_inline
+        @parameter
         fn dynamic_tiled_func(local_offset: Int, tile_size: Int):
             # dynamic tile only updates the dynamic offset and bound.
             Self._generate[static_state, current_action_idx + 1, actions,](
@@ -1084,6 +1087,7 @@ struct MatmulGenerator[
         alias current_action = actions[current_action_idx]
 
         @always_inline
+        @parameter
         fn dynamic_switched_func[
             static_switch: Bool
         ](local_offset: Int, upperbound: Int, tile_size: Int):
@@ -1182,6 +1186,7 @@ struct TiledMatmulGenerated[
 
         # Define an no-op epilog function.
         @always_inline
+        @parameter
         fn epilog_no_op(dynamic_state: MatmulDynamicState[data_type]):
             return
 
@@ -1292,6 +1297,7 @@ struct TiledMatmulBiasGenerated[
         #  2. Would be nice not to have to define this epilog inplace, current
         #  bottleneck is `data_type`.
         @always_inline
+        @parameter
         fn epilog_bias(dynamic_state: MatmulDynamicState[data_type]):
             # This check ensures that we only add the bias once
             if not (
@@ -1304,6 +1310,7 @@ struct TiledMatmulBiasGenerated[
 
             # Loop over the current tile.
             @always_inline
+            @parameter
             fn bias_col_chunk[col_chunk_size: Int](idx_n: Int):
                 let n_coord = idx_n + dynamic_state.global_offset.N
                 let bias_val = bias.simd_load[col_chunk_size](n_coord)

@@ -231,6 +231,7 @@ fn get_partitioned_matmul_im2col[
     micro_kernel_n: Int,
 ](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
     @always_inline
+    @noncapturing
     fn int_sqrt_floor(val: Int) -> Int:
         return Int(sqrt(F32(val)).cast[DType.index]().value)
 
