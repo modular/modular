@@ -101,8 +101,8 @@ fn test_3d_reductions():
             reduce_axis,
         ](input, output)
 
-        for ii in range(output.size()):
-            print(output.flatten()[ii])
+        for i in range(output.size()):
+            print(output.flatten()[i])
 
     # CHECK: 6.000000
     # CHECK-NEXT: 22.000000

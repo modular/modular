@@ -74,9 +74,9 @@ fn map_reduce[
         )
 
     var acc = reduce_vec_to_scalar_fn[unrolled_simd_width, acc_type](acc_simd)
-    for ii in range(vector_end, len):  # TODO(#8365) use `i`
-        let val = input_gen_fn[type, 1](ii)
-        dst[ii] = val
+    for i in range(vector_end, len):
+        let val = input_gen_fn[type, 1](i)
+        dst[i] = val
         acc = reduce_vec_to_vec_fn[1, acc_type, type](acc, val)
     return acc[0].value
 
@@ -125,8 +125,8 @@ fn reduce[
         )
 
     var acc = reduce_fn[unrolled_simd_width, acc_type](acc_simd)
-    for ii in range(vector_end, len):  # TODO(#8365) use `i`
-        acc = map_fn[1, acc_type, type](acc, src[ii])
+    for i in range(vector_end, len):
+        acc = map_fn[1, acc_type, type](acc, src[i])
     return acc[0].value
 
 

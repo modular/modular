@@ -44,9 +44,9 @@ fn test_async_parallelize():
         out_chain.wait()
 
     # CHECK-NOT: ERROR
-    for ii in range(vector.__len__()):  # TODO(#8365) use `i`
-        let expected_val = ii + 2
-        if Int(vector[ii].value) != expected_val:
+    for i in range(vector.__len__()):
+        let expected_val = i + 2
+        if Int(vector[i].value) != expected_val:
             print("ERROR: Expecting the result to be i + 2")
 
 
