@@ -613,12 +613,13 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // If this is a capture inside a nonparametric function, emit a copy.
   if (auto func =
           getBlockParentOfType<FuncOp>(emitter.builder->getInsertionBlock());
-      func && func.getIsNonParametric()) {
+      func && !func.getIsParametric()) {
     assert(mlirValue && "unexpected PValue");
     Operation *parent = mlirValue.getDefiningOp();
     if (!parent)
       parent = cast<BlockArgument>(mlirValue).getOwner()->getParentOp();
-    if (parent->getParentRegion()->isProperAncestor(&func.getBodyRegion())) {
+    if (parent != func &&
+        parent->getParentRegion()->isProperAncestor(&func.getBodyRegion())) {
       // This is a captured value. Emit a copy and bind the name within the
       // function to the copied value.
       OpBuilder::InsertionGuard guard(*emitter.builder);
@@ -646,11 +647,16 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       // Copy the raw bytes in.
       emitter.builder->create<POP::StoreOp>(loc, rawBytes, localDecl);
 
+      // If the parent function was malformed somehow, it may not get added
+      // to the symbol table.
+      ASTDecl *parentDecl = emitter.getDeclResolver().getDeclForFuncSymbol(
+          getFullyResolvedSymbolRef(func));
+      if (!parentDecl)
+        return {};
+
       // Bind the copy to the name.
       emitter.getDeclResolver().addFullyResolvedDecl(
-          DeclIRValue(MBValue(localDecl)), spelling, getLoc(),
-          emitter.getDeclResolver().getDeclForFuncSymbol(
-              getFullyResolvedSymbolRef(func)));
+          DeclIRValue(MBValue(localDecl)), spelling, getLoc(), parentDecl);
       value = MBValue(localDecl);
     }
   }

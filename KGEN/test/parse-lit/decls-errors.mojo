@@ -14,21 +14,20 @@ from Pointer import Pointer
 # Closures
 ##===----------------------------------------------------------------------===##
 
-fn bind_fat_to_thin_target[
-    g: __mlir_type.`!kgen.signature<(index borrow) -> index>`
-](x: __mlir_type.index):
+fn bind_fat_to_thin_target[g: fn(Int) -> Int](x: Int):
     pass
 
 
 fn bind_fat_to_thin_main():
-    let x = (4).__as_mlir_index()
+    let x = 4
 
-    fn g(y: __mlir_type.index) -> __mlir_type.index:
+    @parameter
+    fn g(y: Int) -> Int:
         return x
 
-    # expected-error @below {{'fn(index) capturing -> index' value cannot be converted to 'fn(index) -> index' in call parameter}}
+    # expected-error @below {{'fn(Int) capturing -> Int' value cannot be converted to 'fn(Int) -> Int' in call parameter}}
     alias Bound = bind_fat_to_thin_target[g]
-    Bound((3).__as_mlir_index())
+    Bound(3)
 
 ##===----------------------------------------------------------------------===##
 # Var / Let
@@ -258,6 +257,7 @@ fn invalidStarExpression(*x: *): pass
 fn invalidPackType(*x: *Int): pass
 
 fn invalidParameterPack[*Ts: __mlir_type.`!kgen.mlirtype`]():
+  @parameter
   # expected-error @+1 {{parameters may not be variadic packs}}
   fn invalid[*Us: *Ts](): pass
 

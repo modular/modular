@@ -24,7 +24,7 @@ struct OurSIMD[size: Int, dt: DType]:
 struct StructWithIntParam[size: Int]:
   pass
 
-# CHECK-LABEL: lit.func @"paramArith{{.*}}"<x>() -> !lit.none {
+# CHECK-LABEL: lit.func @"paramArith{{.*}}"<x>() -> !lit.none
 fn paramArith[x: __mlir_type.index]():
   # CHECK: kgen.call @"$Assert"::@"assert_param()"{{.*}}eq(x, -99)
   assert_param[x == (-100).__as_mlir_index()+(1).__as_mlir_index()]()
@@ -35,7 +35,7 @@ fn take_3index(a: Int, b: Int, c: Int) -> Int:
 # CHECK-LABEL: lit.func @"fancy_signature
 # CHECK-SAME: <dt: @"$DType"::@DType, size: @"$Int"::@Int>
 # CHECK-SAME: (%x: !kgen.declref<@"$parameters"::@OurSIMD<size: @"$Int"::@Int = size, dt: @"$DType"::@DType = dt>> borrow,
-# CHECK-SAME:  %exp: !kgen.declref<@"$parameters"::@OurSIMD<size: @"$Int"::@Int = size, dt: @"$DType"::@DType = dt>> borrow) -> !kgen.declref<@"$Int"::@Int> {
+# CHECK-SAME:  %exp: !kgen.declref<@"$parameters"::@OurSIMD<size: @"$Int"::@Int = size, dt: @"$DType"::@DType = dt>> borrow) -> !kgen.declref<@"$Int"::@Int>
 fn fancy_signature[dt: DType, size: Int]
   (x: OurSIMD[size, dt], exp: (OurSIMD)[size, dt]) -> Int:
 
@@ -153,7 +153,7 @@ struct Pair[dt: DType]:
   var a : OurSIMD[42, dt]
   var b : Int
 
-  # CHECK: lit.func @"__init__{{.*}} -> !kgen.declref<@"$parameters"::@Pair<dt: @"$DType"::@DType = dt>> attributes {isStatic}
+  # CHECK: lit.func @"__init__{{.*}} -> !kgen.declref<@"$parameters"::@Pair<dt: @"$DType"::@DType = dt>> attributes {{.*}} isStatic
   fn __init__(a: OurSIMD[42, dt]) -> Pair[dt]:
     # CHECK: [[TMP:%.*]] = kgen.call {{.*}}__copyinit__{{.*}}(%a)
     # CHECK: %1 = kgen.param.constant: @"$Int"::@Int {{.*}} 4
@@ -206,11 +206,11 @@ fn fnWithCall[array: __mlir_type[`!pop.array<10, f32>`]]():
    # CHECK:  kgen.call @"$parameters"::@"fnToCall()"<10, :array<10, f32> array>()
    fnToCall[(10).__as_mlir_index(), array]()
 
-# CHECK-LABEL: lit.func @"meta_str()"<type: {{.*}}@StringLiteral>() -> !lit.none {
+# CHECK-LABEL: lit.func @"meta_str()"<type: {{.*}}@StringLiteral>() -> !lit.none
 fn meta_str[type: StringLiteral]():
   pass
 
-# CHECK-LABEL: lit.func @"str_input_param()"() -> !lit.none {
+# CHECK-LABEL: lit.func @"str_input_param()"() -> !lit.none
 fn str_input_param():
   # CHECK: %0 = kgen.call @"$parameters"::@"meta_str()"<:{{.*}}@StringLiteral {{.*}}"123"{{.*}}>() : () -> !lit.none
   meta_str["123"]()
@@ -354,7 +354,7 @@ fn passFunctionParam2():
   #CHECK-SAME: <:<dtype>() -> !lit.none {{.*}}@"callableWithParam()">() : () -> !lit.none
   takeCallable2[callableWithParam]()
 
-# CHECK-LABEL: lit.func @"my_assert_param()"<cond: i1, message: {{.*}}@StringLiteral>() -> !lit.none {
+# CHECK-LABEL: lit.func @"my_assert_param()"<cond: i1, message: {{.*}}@StringLiteral>() -> !lit.none
 fn my_assert_param[cond: __mlir_type.i1, message: StringLiteral]():
     #CHECK: kgen.param.assert <cond>, #lit.struct.extract<{{.*}}message, "value">
     __mlir_op.`kgen.param.assert`[cond:cond, message:message.value]()

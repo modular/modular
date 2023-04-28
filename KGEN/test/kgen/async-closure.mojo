@@ -18,6 +18,7 @@ async fn just_call_it[func: async fn[a: Int] (Int) capturing -> Int]() -> Int:
 
 
 fn foobar[pref: Int](a: Int):
+    @parameter
     async fn but_async[c: Int](b: Int) -> Int:
         return a + b + c
 
