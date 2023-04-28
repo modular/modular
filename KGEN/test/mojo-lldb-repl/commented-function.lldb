@@ -23,4 +23,4 @@ foo()
 # CHECK-NEXT: foo
 # CHECK-NEXT: bar
 
-print("flush")
+:platform shell sleep 3
