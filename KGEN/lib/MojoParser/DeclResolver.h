@@ -135,8 +135,13 @@ public:
     return *it->second;
   }
 
+  /// This registers the finalized function with the DeclResolver after its
+  /// signature has been resolved and its mangled name is available.  This
+  /// returns an existing function if there is a redefinition problem.
+  Operation *finalizeFuncSignature(LIT::FuncOp funcOp, ASTDecl &decl);
+
   void registerAndCheckExport(ExportOp exportOp);
-  void exportMain(ASTDecl *containingDecl, SymbolRefAttr symbolName);
+  void exportMain(ASTDecl &funcDecl);
 
   ASTDecl *getDeclForFuncSymbol(SymbolRefAttr attr) const {
     auto it = declForFuncSymbol.find(attr);

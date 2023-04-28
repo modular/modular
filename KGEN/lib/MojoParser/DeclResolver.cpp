@@ -177,6 +177,19 @@ DeclResolver::~DeclResolver() {
     decl->~ASTDecl();
 }
 
+/// This registers the finalized function with the DeclResolver after its
+/// signature has been resolved and its mangled name is available.  This
+/// returns an existing function if there is a redefinition problem.
+Operation *DeclResolver::finalizeFuncSignature(LIT::FuncOp funcOp,
+                                               ASTDecl &decl) {
+  // Remember the mapping from its fully mangled symbol so we can find its AST
+  // representation and body from IR references.
+  declForFuncSymbol[getFullyResolvedSymbolRef(funcOp)] = &decl;
+
+  // Install it in the symbol table and check for redefinition while doing so.
+  return shared.setResolvedDeclSymbol(funcOp);
+}
+
 /// Add a new declaration that needs to be resolved.
 ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
                                ASTDecl *parentDecl, LexerCursor cursor,
@@ -492,8 +505,10 @@ void DeclResolver::registerAndCheckExport(ExportOp exportOp) {
   exportedSymbolNames.insert({aliasName, exportOp.getLoc()});
 }
 
-void DeclResolver::exportMain(ASTDecl *containingDecl,
-                              SymbolRefAttr symbolName) {
+void DeclResolver::exportMain(ASTDecl &funcDecl) {
+  ASTDecl *containingDecl = funcDecl.getParentDecl();
+  auto symbolName = getFullyResolvedSymbolRef(cast<LIT::FuncOp>(funcDecl));
+
   StringAttr mainAttr = StringAttr::get(getContext(), kMainSymbolName);
   // If main has an explicit @export decorator we are done.
   if (exportedSymbolNames.count(mainAttr))
@@ -1574,16 +1589,14 @@ struct FnDecorators : public SharedStateUser {
       : SharedStateUser(shared), decl(decl), funcOp(cast<LIT::FuncOp>(decl)) {}
 
   void apply(SmallVector<std::pair<ExprNode *, LexerCursor>> &decoratorExprs);
-  void applyLate(SymbolRefAttr symbolName, StringRef unmangledName,
-                 ExprNode *decorator, SignatureType &signature);
+  void applyLate(StringRef unmangledName, ExprNode *decorator,
+                 SignatureType &signature);
 
 private:
   void applyAdaptive(const DeclRefNode &node);
   void applyRaises(const DeclRefNode &node);
-  void applyLateExport(Location loc, SymbolRefAttr symbolName,
-                       StringRef aliasName);
-  void applyLateExport(Location loc, SymbolRefAttr symbolName,
-                       const CallNode &callNode);
+  void applyLateExport(Location loc, StringRef aliasName);
+  void applyLateExport(Location loc, const CallNode &callNode);
 
   ASTDecl &decl;
   LIT::FuncOp funcOp;
@@ -1654,12 +1667,13 @@ void FnDecorators::apply(
   decoratorExprs = unprocessed;
 }
 
-void FnDecorators::applyLateExport(Location loc, SymbolRefAttr symbolName,
-                                   StringRef aliasName) {
+void FnDecorators::applyLateExport(Location loc, StringRef aliasName) {
   if (isa<StructDeclOp>(*decl.getParentDecl())) {
     emitError(funcOp.getLoc(), "methods cannot be exported");
     return;
   }
+
+  auto symbolName = getFullyResolvedSymbolRef(funcOp);
 
   ASTDecl *containingDecl = decl.getParentDecl();
   auto builder = containingDecl->getDeclEndBuilder();
@@ -1669,8 +1683,7 @@ void FnDecorators::applyLateExport(Location loc, SymbolRefAttr symbolName,
   getDeclResolver().registerAndCheckExport(exportOp);
 }
 
-void FnDecorators::applyLateExport(Location loc, SymbolRefAttr symbolName,
-                                   const CallNode &node) {
+void FnDecorators::applyLateExport(Location loc, const CallNode &node) {
   if (node.args.size() != 1 || !isa<StringLiteralNode>(node.args.front())) {
     emitError(
         node.getLoc(),
@@ -1684,16 +1697,16 @@ void FnDecorators::applyLateExport(Location loc, SymbolRefAttr symbolName,
     emitError(loc, aliasName) << " is not a valid C identifier";
     return;
   }
-  applyLateExport(loc, symbolName, aliasName);
+  applyLateExport(loc, aliasName);
 }
 
-void FnDecorators::applyLate(SymbolRefAttr symbolName, StringRef unmangledName,
-                             ExprNode *decorator, SignatureType &signature) {
+void FnDecorators::applyLate(StringRef unmangledName, ExprNode *decorator,
+                             SignatureType &signature) {
   Location loc = translateLocation(decorator->getLoc());
   // Process all the decorators we know about.
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
     if (declRef->spelling == "export") {
-      applyLateExport(loc, symbolName, unmangledName);
+      applyLateExport(loc, unmangledName);
     } else if (declRef->spelling == "noncapturing") {
       signature = signature.getWithFnEffects(
           bitEnumClear(signature.getFnEffects(), FnEffects::Capturing));
@@ -1710,7 +1723,7 @@ void FnDecorators::applyLate(SymbolRefAttr symbolName, StringRef unmangledName,
   if (auto callNode = dyn_cast<CallNode>(decorator)) {
     if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee))
       if (declRef->spelling == "export") {
-        applyLateExport(loc, symbolName, *callNode);
+        applyLateExport(loc, *callNode);
         return;
       }
   }
@@ -1940,7 +1953,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   funcOp->setAttrs(attrs.getDictionary(funcOp.getContext()));
 
   // Set the symbol and notice if we are redeclaring something.
-  if (Operation *existing = shared.setResolvedDeclSymbol(funcOp)) {
+  if (Operation *existing = finalizeFuncSignature(funcOp, decl)) {
     const char *errorMessage = nullptr;
     auto existingFunc = cast<LIT::FuncOp>(existing);
     if (existingFunc.getResultType() != funcOp.getResultType()) {
@@ -1961,14 +1974,9 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     }
   }
 
-  // Remember the mapping from its fully mangled symbol so we can find its AST
-  // representation and body from IR references.
-  SymbolRefAttr symbolName = getFullyResolvedSymbolRef(funcOp);
-  declForFuncSymbol[symbolName] = &decl;
-
   // If have a main function, fn main(), export it automatically.
   if (!inAStruct && isMainFunction(baseName, funcOp, shared))
-    getDeclResolver().exportMain(decl.getParentDecl(), symbolName);
+    getDeclResolver().exportMain(decl);
 
   // Generate a debug subprogram for this function.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
@@ -2002,8 +2010,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // FIXME: Handle "late" decorators somehow else. They should be "body
   // decorators" that are applied after the decl is fully resolved.
   for (auto [decorator, cursor] : decoratorExprs) {
-    FnDecorators(decl, shared)
-        .applyLate(symbolName, baseName, decorator, signature);
+    FnDecorators(decl, shared).applyLate(baseName, decorator, signature);
     if (funcOp.getSignature() != signature)
       funcOp.setSignature(signature);
   }
@@ -2031,8 +2038,7 @@ static SLValue makeArgLValueVarSlot(CValue argValue, StringAttr argName,
                                     ASTDecl &parentDecl, OpBuilder &builder,
                                     SMLoc loc, SharedState &shared) {
   // Emit the initializer expression into the slot.
-  ExprEmitter emitter(shared, parentDecl, builder,
-                      /*varDeclCursor*/ nullptr);
+  ExprEmitter emitter(shared, parentDecl, builder, /*varDeclCursor*/ nullptr);
 
   ASTType declType = argValue.getRValueType();
   Type varType = POP::PointerType::get(declType);
@@ -2709,6 +2715,13 @@ static TypedAttr synthesizeEmptyDtor(StructDeclOp structOp, ASTDecl &structDecl,
       funcOp.getOperation(), "__del__", structDecl.getLoc(), &structDecl);
   funcDecl.setSpecialFunctionKind(SpecialFunctionKind::kDel);
 
+  // Set the symbol and notice if we are redeclaring something.
+  if (Operation *existing = resolver.finalizeFuncSignature(funcOp, funcDecl)) {
+    resolver.emitError(
+        existing->getLoc(),
+        "internal compiler error: synthesized member that already exists");
+  }
+
   // Set up the body.
   Block *body = funcOp.getBody();
   BlockArgument arg = body->addArgument(selfType, structOp.getLoc());
@@ -2750,7 +2763,7 @@ struct StructBodyDecorators : public SharedStateUser {
   }
 
 private:
-  void processValueDecorator();
+  void processValueDecorator(SMLoc decoratorLoc);
   void processRegisterPassableDecorator(bool isTrivial);
   void processDecorator(ExprNode *expr);
 
@@ -2760,10 +2773,229 @@ private:
   ArrayRef<std::pair<StructFieldOp, ASTDecl *>> structFields;
 };
 
+/// Check to see if the specified struct already has a memberwise initializer
+/// with the specified fields.
+static bool
+hasMemberwiseInit(SMLoc loc, ASTDecl &structDecl, bool isMemoryOnly,
+                  ArrayRef<std::pair<StructFieldOp, ASTDecl *>> structFields,
+                  SharedState &shared) {
+  LookupResult inits =
+      shared.lookupAndResolveDecl("__init__", loc, structDecl,
+                                  /*searchParentScopes=*/false);
+  // Check all the available candidates to see if they have any memberwise inits
+  // yet.
+  for (ASTDecl *decl : inits.getIfSuccess()) {
+    // Don't synthesize if we see anything fishy.
+    if (decl->hasReferenceError)
+      return true;
+    auto func = dyn_cast<LIT::FuncOp>(*decl);
+    if (!func)
+      continue;
+    auto signature = func.getSignature();
+
+    ArrayRef<Type> inputTypes = signature.getValueInputs();
+    ArrayRef<ValueInputConvention> convs = signature.getValueInputConventions();
+
+    // If this is @register_passable struct, we'd have an init like:
+    //   fn __init__(field1: Int, field2: Mem) -> Self
+    // If memory-only, we should have:
+    //   fn __init__(self&, field1: Int, field2: Mem)
+    // The result type of all inits / self are already checked.
+    if (isMemoryOnly) {
+      inputTypes = inputTypes.drop_front();
+      convs = convs.drop_front();
+    }
+    // TODO: Handle default arguments.
+    if (inputTypes.size() != structFields.size())
+      continue;
+
+    bool isMatch = true;
+    for (auto [type, conv, field] :
+         llvm::zip(inputTypes, convs, structFields)) {
+      // Strip the pointer type if present.
+      Type argType = type;
+      if (conv != ValueInputConvention::OwnedInReg &&
+          conv != ValueInputConvention::BorrowedInReg)
+        argType = ASTType(argType).getPointerElementType();
+      StructFieldOp op = field.first;
+      if (argType != op.getType()) {
+        isMatch = false;
+        break;
+      }
+    }
+    if (isMatch)
+      return true;
+  }
+
+  return false;
+}
+
+static void synthesizeMemberwiseInit(
+    SMLoc decoratorLoc, ASTDecl &structDecl, bool isMemoryOnly,
+    ArrayRef<std::pair<StructFieldOp, ASTDecl *>> structFields,
+    DeclResolver &resolver) {
+  StructDeclOp structOp = cast<StructDeclOp>(structDecl);
+  auto builder = ImplicitLocOpBuilder::atBlockEnd(
+      resolver.translateLocation(decoratorLoc), &structOp.getFields().front());
+
+  SmallVector<Type> argTypes;
+  SmallVector<ValueInputConvention> argConventions;
+  SmallVector<StringAttr> argNames;
+  Type resultType;
+
+  // Figure out the type of the 'self' argument/result.
+  ASTType selfType = structDecl.getSelfType();
+  if (isMemoryOnly) {
+    argTypes.push_back(POP::PointerType::get(selfType));
+    argConventions.push_back(ValueInputConvention::InitSelf);
+    argNames.push_back(builder.getStringAttr("self"));
+    resultType = resolver.shared.getNoneType();
+  } else {
+    resultType = selfType;
+  }
+
+  // We declare all of the operands to the init constructor as owned.  This
+  // enables it to work with move-only fields, and, for copyable types, forces
+  // the copy into the caller, which can then be elided with a consume or
+  // RValue.
+  for (auto [fieldOp, fieldDecl] : structFields) {
+    ASTType fieldType = fieldOp.getType();
+    ValueInputConvention conv;
+    switch (fieldType.getRegisterPassability(decoratorLoc, resolver.shared)) {
+    default:
+      llvm_unreachable("unknown case");
+    case StructDeclOp::RP_MemoryOnly:
+      fieldType = POP::PointerType::get(fieldType);
+      conv = ValueInputConvention::OwnedInMem;
+      break;
+    case StructDeclOp::RP_RegisterPassable:
+      conv = ValueInputConvention::OwnedInReg;
+      break;
+    case StructDeclOp::RP_RegisterPassableTrivial:
+      conv = ValueInputConvention::BorrowedInReg;
+      break;
+    }
+    argTypes.push_back(fieldType);
+    argConventions.push_back(conv);
+    argNames.push_back(fieldOp.getNameAttr());
+  }
+
+  // Get the signature for the function.
+  auto fnType = builder.getFunctionType(argTypes, resultType);
+  // TODO: Should raise if anything we invoke raises.
+  auto metadata = builder.getAttr<MetadataAttr>(
+      argConventions, /*no default args=*/ArrayRef<TypedAttr>(), FnEffects());
+  auto signature = SignatureType::get({}, {}, fnType, metadata);
+
+  // Create the empty function.
+  StringAttr name =
+      getMangledName(builder.getStringAttr("__init__"), signature);
+  auto funcOp = builder.create<LIT::FuncOp>(name, signature, argNames);
+
+  // Register the method in the struct.
+  ASTDecl &funcDecl = resolver.addFullyResolvedDecl(
+      funcOp.getOperation(), "__init__", structDecl.getLoc(), &structDecl);
+  funcDecl.setSpecialFunctionKind(SpecialFunctionKind::kInit);
+
+  // If the struct is register_passable("trivial"), make this
+  // @always_inline("nodebug").
+  if (structOp.getRegisterPassable() ==
+      StructDeclOp::RP_RegisterPassableTrivial)
+    funcOp.setAlwaysInlineLevel(AlwaysInlineLevel::EnabledNoDebug);
+
+  // Set the symbol and notice if we are redeclaring something.
+  if (Operation *existing = resolver.finalizeFuncSignature(funcOp, funcDecl)) {
+    resolver.emitError(
+        existing->getLoc(),
+        "internal compiler error: synthesized member that already exists");
+  }
+
+  // Set up the body.
+  Block *body = funcOp.getBody();
+  builder.setInsertionPointToStart(body);
+  ExprEmitter emitter(resolver.shared, funcDecl, builder,
+                      /*varDeclCursor*/ nullptr);
+
+  // For a memory-only initializer, we emit a bunch of stores to fields indexing
+  // self.
+  if (isMemoryOnly) {
+    BlockArgument selfArg = body->addArgument(argTypes[0], funcOp.getLoc());
+    for (size_t idx = 1, e = argTypes.size(); idx != e; ++idx) {
+      // Add the block argument, get it as an RValue since it is owned.
+      BlockArgument arg = body->addArgument(argTypes[idx], funcOp.getLoc());
+      CValue argVal;
+      if (argConventions[idx] == ValueInputConvention::OwnedInReg)
+        argVal = SRValue(arg);
+      else if (argConventions[idx] == ValueInputConvention::BorrowedInReg)
+        argVal = SBValue(arg);
+      else
+        argVal = MRValue(arg);
+
+      // Project self to the right field and store the RValue.
+      StructFieldOp field = structFields[idx - 1].first;
+      auto fieldPtr = builder.create<StructGEPOp>(selfArg, field);
+      DeclRefNode srcExpr(StringRef(decoratorLoc.getPointer(), 1));
+      emitter.emitStoreToLValue({argVal, &srcExpr}, SLValue(fieldPtr),
+                                EC_AttributeRefBase);
+    }
+
+    // Finish off the function with a return + lit.endfunc.
+    appendDefaultReturnAndEndOp(funcOp, funcDecl, resolver.shared);
+    return;
+  }
+
+  funcOp.setIsStatic(true);
+
+  // Otherwise, emit all the values and finish with a struct create.  We know
+  // all the subfields must be register passable.
+  SmallVector<Value> fieldVals;
+  for (size_t idx = 0, e = argTypes.size(); idx != e; ++idx) {
+    // Add the block argument, get it as an RValue since it is owned.
+    BlockArgument arg = body->addArgument(argTypes[idx], structOp.getLoc());
+    fieldVals.push_back(arg);
+  }
+
+  auto result = SRValue(builder.create<StructCreateOp>(
+      selfType.mlirType, fieldVals,
+      StringArrayAttr::get(emitter.getContext(), argNames)));
+
+  ExprEmitter::emitNormalReturn(builder, structOp.getLoc(), result, funcDecl);
+  builder.create<LIT::EndFuncOp>();
+}
 /// Process the @value body decorator on structs.  This synthesizes the
 /// memberwise init, copy ctor and move ctor if requested.
-void StructBodyDecorators::processValueDecorator() {
-  // TODO: something great :)
+void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc) {
+  // Check to see the classification of the fields, the result type will be
+  // copyable/movable iff all the fields are.
+  bool isCopyable = true, isMovable = true;
+  for (auto [fieldOp, fieldDecl] : structFields) {
+    ASTType fieldType(fieldOp.getType());
+    isCopyable &= fieldType.isCopyable(fieldDecl->getLoc(), shared);
+    isMovable &= fieldType.isMovable(fieldDecl->getLoc(), shared);
+
+    // If this field is neither copyable or movable, then we cannot do
+    // anything in this decorator.
+    if (!isCopyable && !isMovable) {
+      auto diag =
+          emitError(decoratorLoc, "'@value' cannot synthesize members: ")
+          << fieldOp.getNameAttr() << " has non-copyable, non-movable type "
+          << fieldType;
+      diag.attachNote(fieldDecl->getLoc())
+          << fieldOp.getNameAttr() << " declared here";
+      return;
+    }
+  }
+
+  bool isMemoryOnly =
+      structOp.getRegisterPassable() == StructDeclOp::RP_MemoryOnly;
+
+  // Ok, we know the struct has copyable or movable fields.  Check to see if
+  // it has a memberwise initializer.
+  if (!hasMemberwiseInit(decoratorLoc, structDecl, isMemoryOnly, structFields,
+                         shared)) {
+    synthesizeMemberwiseInit(decoratorLoc, structDecl, isMemoryOnly,
+                             structFields, resolver);
+  }
 }
 
 /// Process the @register_passable decorator on structs.  This finalizes
@@ -2784,13 +3016,13 @@ void StructBodyDecorators::processRegisterPassableDecorator(bool isTrivial) {
 
     // If the field is at least as register-passable as the container then
     // we're happy.
-    if (fieldType.getRegisterPassability(fieldDecl->getLoc(), resolver.shared) <
+    if (fieldType.getRegisterPassability(fieldDecl->getLoc(), shared) <
         structPassability) {
       StringRef trivialSuffix;
       if (isTrivial)
         trivialSuffix = "(\"trivial\")";
 
-      auto diag = resolver.emitError(structOp.getLoc())
+      auto diag = emitError(structOp.getLoc())
                   << "all members of '@register_passable" << trivialSuffix
                   << "' struct must themselves be '@register_passable"
                   << trivialSuffix << "'";
@@ -2808,12 +3040,11 @@ void StructBodyDecorators::processRegisterPassableDecorator(bool isTrivial) {
   // Trivial types may not have __copyinit__ or __del__ members.
   if (isTrivial) {
     auto rejectMemberIfPresent = [&](StringRef name) {
-      auto nameAttr = StringAttr::get(resolver.getContext(), name);
-      auto members = structDecl.lookupInCurrentScope(nameAttr);
+      auto members = structDecl.lookupInCurrentScope(name);
       if (!members.empty())
         resolver.emitError(members[0]->getLoc())
-            << "'@register_passable(\"trivial\")' types may not have a "
-            << nameAttr << " method";
+            << "'@register_passable(\"trivial\")' types may not have a '"
+            << name << "' method";
     };
 
     rejectMemberIfPresent("__copyinit__");
@@ -2824,13 +3055,13 @@ void StructBodyDecorators::processRegisterPassableDecorator(bool isTrivial) {
 void StructBodyDecorators::processDecorator(ExprNode *decorator) {
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
     if (declRef->spelling == "value")
-      return processValueDecorator();
+      return processValueDecorator(decorator->getRangeStart());
 
     if (declRef->spelling == "register_passable")
       return processRegisterPassableDecorator(
           /*isTrivial*/ false);
 
-    resolver.emitError(decorator->getLoc(), "unsupported decorator: '@")
+    emitError(decorator->getLoc(), "unsupported decorator: '@")
         << declRef->spelling << "'" << declRef->getRange();
     return;
   }
@@ -2848,7 +3079,7 @@ void StructBodyDecorators::processDecorator(ExprNode *decorator) {
     }
   }
 
-  resolver.emitError(decorator->getLoc(), "unsupported decorator")
+  emitError(decorator->getLoc(), "unsupported decorator")
       << decorator->getRange();
 }
 
@@ -2860,7 +3091,8 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   // Mark the declaration as fully resolved so we can lookup into it.
   structDecl.resolvedness = DeclResolvedness::fully;
 
-  // Track whether any field needs destruction, if so, we need a __del__ method.
+  // Track whether any field needs destruction, if so, we need a __del__
+  // method.
   bool needsDtorForFields = false;
 
   /// This collects all the resolved struct fields.
@@ -2875,11 +3107,11 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     ASTDecl &fieldASTDecl = *fieldEntries[0];
     if (failed(resolveSignature(fieldASTDecl, fieldASTDecl.getLoc())))
       continue;
-    ASTType fieldType(field.getType());
 
-    // If any field of this struct has a destructor, then the struct needs one.
+    // If any field of this struct has a destructor, then the struct needs
+    // one.
     needsDtorForFields |=
-        fieldType.hasDestructor(fieldASTDecl.getLoc(), shared);
+        ASTType(field.getType()).hasDestructor(fieldASTDecl.getLoc(), shared);
 
     structFields.push_back({field, &fieldASTDecl});
   }
