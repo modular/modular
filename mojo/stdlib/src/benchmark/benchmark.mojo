@@ -24,12 +24,6 @@ struct Benchmark:
     var min_time_ns: Int
     var max_time_ns: Int
 
-    fn __copyinit__(self&, existing: Self):
-        self.num_warmup = existing.num_warmup
-        self.max_iters = existing.max_iters
-        self.min_time_ns = existing.min_time_ns
-        self.max_time_ns = existing.max_time_ns
-
     fn __init__(
         self&,
         num_warmup: Int = 2,
