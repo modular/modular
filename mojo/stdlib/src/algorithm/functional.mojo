@@ -302,7 +302,7 @@ fn async_parallelize[
 
     @always_inline
     async fn task_fn(i: Int):
-        with FlushDenormals() as flush_denorm:
+        with FlushDenormals():
             func(i)
 
     var atg = AsyncTaskGroupPtr(num_work_items, out_chain)
@@ -358,11 +358,10 @@ fn parallelize[func: fn (Int) capturing -> None](num_work_items: Int):
         ):
             func(i)
 
-    let rt = Runtime(core_count)
-    let out_chain = OwningOutputChainPtr(rt)
-    async_parallelize[coarsed_func](out_chain.borrow(), core_count)
-    out_chain.wait()
-    rt._del_old()
+    with Runtime(core_count) as rt:
+        let out_chain = OwningOutputChainPtr(rt)
+        async_parallelize[coarsed_func](out_chain.borrow(), core_count)
+        out_chain.wait()
 
 
 # ===----------------------------------------------------------------------===#

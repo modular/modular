@@ -38,11 +38,10 @@ fn test_async_parallelize():
 
         map[add_two](end - start)
 
-    let rt = Runtime(num_work_items)
-    let out_chain = OwningOutputChainPtr(rt)
-    async_parallelize[parallel_fn](out_chain.borrow(), num_work_items)
-    out_chain.wait()
-    rt._del_old()
+    with Runtime(num_work_items) as rt:
+        let out_chain = OwningOutputChainPtr(rt)
+        async_parallelize[parallel_fn](out_chain.borrow(), num_work_items)
+        out_chain.wait()
 
     # CHECK-NOT: ERROR
     for ii in range(vector.__len__()):  # TODO(#8365) use `i`

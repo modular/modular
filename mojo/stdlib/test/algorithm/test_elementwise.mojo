@@ -69,14 +69,13 @@ fn test_elementwise[
         var in2 = buffer2.simd_load[simd_width](index)
         out_buffer.simd_store[simd_width](index, mul(in1, in2))
 
-    let runtime = Runtime(4)
-    let out_chain = OwningOutputChainPtr(runtime)
-    elementwise[outer_rank, 1, 1, func](
-        rebind[StaticIntTuple[outer_rank]](out_buffer.dynamic_shape),
-        out_chain.borrow(),
-    )
-    out_chain.wait()
-    runtime._del_old()
+    with Runtime(4) as runtime:
+        let out_chain = OwningOutputChainPtr(runtime)
+        elementwise[outer_rank, 1, 1, func](
+            rebind[StaticIntTuple[outer_rank]](out_buffer.dynamic_shape),
+            out_chain.borrow(),
+        )
+        out_chain.wait()
 
     for i2 in range(min(numelems, 64)):
         print(out_buffer.data.offset(i2).load())

@@ -22,38 +22,37 @@ from TargetInfo import dtype_sizeof
 fn test_elementwise_1d():
     print("== test_elementwise_1d")
 
-    let rt = Runtime()
-    let num_work_items = rt.parallelism_level()
+    with Runtime() as rt:
+        let num_work_items = rt.parallelism_level()
 
-    alias num_elements = 64
-    let buf = UnsafeFixedVector[
-        __mlir_type[`!pop.scalar<`, DType.f32.value, `>`]
-    ](num_elements)
+        alias num_elements = 64
+        let buf = UnsafeFixedVector[
+            __mlir_type[`!pop.scalar<`, DType.f32.value, `>`]
+        ](num_elements)
 
-    let vector = Buffer[num_elements, DType.f32](buf.data.address)
+        let vector = Buffer[num_elements, DType.f32](buf.data.address)
 
-    for i in range(vector.__len__()):
-        vector[i] = i
+        for i in range(vector.__len__()):
+            vector[i] = i
 
-    let chunk_size = div_ceil(vector.__len__(), num_work_items)
+        let chunk_size = div_ceil(vector.__len__(), num_work_items)
 
-    @always_inline
-    fn func[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
-        let elem = vector.simd_load[simd_width](idx[0])
-        let val = gelu(exp(erf(tanh(elem))))
-        vector.simd_store[simd_width](idx[0], val)
+        @always_inline
+        fn func[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
+            let elem = vector.simd_load[simd_width](idx[0])
+            let val = gelu(exp(erf(tanh(elem))))
+            vector.simd_store[simd_width](idx[0], val)
 
-    let out_chain = OwningOutputChainPtr(rt)
-    elementwise[1, dtype_sizeof[DType.f32](), 8, func](
-        StaticIntTuple[1](num_elements), out_chain.borrow()
-    )
-    out_chain.wait()
-    rt._del_old()
+        let out_chain = OwningOutputChainPtr(rt)
+        elementwise[1, dtype_sizeof[DType.f32](), 8, func](
+            StaticIntTuple[1](num_elements), out_chain.borrow()
+        )
+        out_chain.wait()
 
-    # CHECK: 0.841345
-    print(vector[0])
+        # CHECK: 0.841345
+        print(vector[0])
 
-    buf._del_old()
+        buf._del_old()
 
 
 fn main():
