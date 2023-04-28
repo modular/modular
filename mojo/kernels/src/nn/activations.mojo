@@ -16,6 +16,7 @@ from Polynomial import polynomial_evaluate
 from List import VariadicList
 
 
+@value
 @register_passable("trivial")
 struct ActivationType:
     var value: Int
@@ -29,10 +30,6 @@ struct ActivationType:
     alias SIGN = ActivationType(7)
     alias TANH = ActivationType(8)
     alias GELU_APPROX_SIGMOID = ActivationType(9)
-
-    @always_inline("nodebug")
-    fn __init__(value: Int) -> ActivationType:
-        return ActivationType {value: value}
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: ActivationType) -> Bool:

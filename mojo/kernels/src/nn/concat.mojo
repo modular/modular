@@ -22,14 +22,11 @@ from TargetInfo import dtype_sizeof
 # ===----------------------------------------------------------------------===#
 
 
+@value
 @register_passable("trivial")
 struct _Span:
     var start: Int
     var end: Int
-
-    @always_inline("nodebug")
-    fn __init__(start: Int, end: Int) -> Self:
-        return Self {start: start, end: end}
 
     @always_inline("nodebug")
     fn empty(self) -> Bool:
@@ -43,16 +40,13 @@ struct _Span:
         }
 
 
+@value
 @register_passable("trivial")
 struct _CanonicallyReshapedBuffer:
     var data: DTypePointer[DType.ui8]
     var h: Int
     var w: Int
     var c: Int
-
-    @always_inline("nodebug")
-    fn __init__(data: DTypePointer[DType.ui8], h: Int, w: Int, c: Int) -> Self:
-        return Self {data: data, h: h, w: w, c: c}
 
 
 fn _canonical_reshape(

@@ -184,6 +184,7 @@ fn get_conv2d_shape[
     }
 
 
+@value
 struct Naive2dConvolution[
     static_output_shape: DimList,
     static_filter_shape: DimList,
@@ -426,6 +427,7 @@ fn conv_one_dimensional_padding(
     return Index(0, 0)
 
 
+@value
 struct PackIm2ColNCHW[
     # original matrix shape list
     static_original_shape: DimList,
@@ -923,6 +925,7 @@ struct PackIm2ColNCHW[
 #  Could drastically clean up when non-inlined closure is supported or without
 #   language support the conv op and matmul op should share a "gemm skeleton"
 #   library to de-duplicate.
+@value
 @register_passable("trivial")
 struct ConvIm2ColNCHW[
     shape_input: DimList,
@@ -1428,6 +1431,7 @@ struct ConvIm2ColNCHW[
 #  Could drastically clean up when non-inlined closure is supported or without
 #   language support the conv op and matmul op should share a "gemm skeleton"
 #   library to de-duplicate.
+@value
 struct ConvNHWCInnerLoopFilterPacked[
     shape_input: DimList,
     shape_c: DimList,
@@ -1467,30 +1471,6 @@ struct ConvNHWCInnerLoopFilterPacked[
     ]
 
     var input_base_pointer: DTypePointer[value_type]
-
-    fn __init__(
-        self&,
-        c: NDBuffer[2, shape_c, accum_type],
-        input: NDBuffer[4, shape_input, value_type],
-        b_packed: NDBuffer[3, packed_shape, value_type],
-        global_offset: GemmShape,
-        tile_n_k: StaticIntTuple[2],
-        c_bound: StaticIntTuple[2],
-        conv_shape: ConvShape,
-        offset_table: NDBuffer[
-            2, DimList(MAX_NUM_CHANNELS_TILE, a_row_size), DType.index
-        ],
-        input_base_pointer: DTypePointer[value_type],
-    ):
-        self.c = c
-        self.input = input
-        self.b_packed = b_packed
-        self.global_offset = global_offset
-        self.tile_n_k = tile_n_k
-        self.c_bound = c_bound
-        self.conv_shape = conv_shape
-        self.offset_table = offset_table
-        self.input_base_pointer = input_base_pointer
 
     fn __copyinit__(self&, existing: Self):
         self.c = existing.c

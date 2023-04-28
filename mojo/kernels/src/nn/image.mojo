@@ -12,19 +12,12 @@ from List import DimList
 from SIMD import SIMD
 
 # Padding handling method.
-@register_passable
+@value
+@register_passable("trivial")
 struct PadHandling:
     var value: Int
     alias EXCLUDE_PAD = PadHandling(0)  # Do not count padding.
     alias INCLUDE_PAD = PadHandling(2)  # Count padding.
-
-    @always_inline("nodebug")
-    fn __clone__(self&) -> Self:
-        return Self {value: self.value}
-
-    @always_inline("nodebug")
-    fn __init__(value: Int) -> PadHandling:
-        return PadHandling {value: value}
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: PadHandling) -> Bool:
@@ -36,6 +29,7 @@ struct PadHandling:
 
 
 # Data layout encoding.
+@value
 @register_passable("trivial")
 struct Image2DLayout:
     var value: Int
@@ -43,10 +37,6 @@ struct Image2DLayout:
     alias NHWC = Image2DLayout(0)  # channels last layout.
     alias NCHW = Image2DLayout(1)  # channels first layout.
     alias RSCF = Image2DLayout(2)  # TF filter layout for channels last input.
-
-    @always_inline("nodebug")
-    fn __init__(value: Int) -> Image2DLayout:
-        return Image2DLayout {value: value}
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: Image2DLayout) -> Bool:
@@ -69,9 +59,7 @@ struct ImageData[
     var data: NDBuffer[4, shape, type]
     var dynamic_layout: Image2DLayout
 
-    fn __init__(
-        data: NDBuffer[4, shape, type], layout: Image2DLayout
-    ) -> ImageData[shape, type, static_layout]:
+    fn __init__(data: NDBuffer[4, shape, type], layout: Image2DLayout) -> Self:
         """Construct of an image data instance with dynamic layout param.
 
         Args:
@@ -82,17 +70,11 @@ struct ImageData[
             An ImageData instance.
         """
         assert_param[static_layout == Image2DLayout.UNKNOWN]()
-        return ImageData[shape, type, static_layout] {
-            data: data, dynamic_layout: layout
-        }
+        return Self {data: data, dynamic_layout: layout}
 
-    fn __init__(
-        data: NDBuffer[4, shape, type]
-    ) -> ImageData[shape, type, static_layout]:
+    fn __init__(data: NDBuffer[4, shape, type]) -> Self:
         assert_param[static_layout != Image2DLayout.UNKNOWN]()
-        return ImageData[shape, type, static_layout] {
-            data: data, dynamic_layout: static_layout
-        }
+        return Self {data: data, dynamic_layout: static_layout}
 
     fn to_static_layout[
         new_static_layout: Image2DLayout
@@ -261,6 +243,7 @@ struct ImageData[
         return self.data.size()
 
 
+@value
 @register_passable("trivial")
 struct ImageShape:
     """A data-layout agnostic representation of tensor shapes used in conv2d."""

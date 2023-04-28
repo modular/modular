@@ -17,19 +17,12 @@ from SIMD import SIMD
 from TargetInfo import dtype_simd_width
 
 # Pooling method.
+@value
 @register_passable("trivial")
 struct PoolMethod:
     var value: Int
     alias MAX = PoolMethod(0)  # Max pooling.
     alias AVG = PoolMethod(1)  # Average pooling not counting padded regions.
-
-    @always_inline("nodebug")
-    fn __clone__(self&) -> Self:
-        return Self {value: self.value}
-
-    @always_inline("nodebug")
-    fn __init__(value: Int) -> PoolMethod:
-        return PoolMethod {value: value}
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: PoolMethod) -> Bool:
