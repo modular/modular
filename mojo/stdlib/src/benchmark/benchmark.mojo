@@ -100,7 +100,7 @@ struct Benchmark:
             n = min(n, 1000_000_000)
 
             tic = now()
-            for __ in range(n):  # TODO(#8365)
+            for __ in range(n):
                 func()
             toc = now()
 
