@@ -373,6 +373,19 @@ fn andOr(a: Boolish, b: Boolish, x: Bool):
   # CHECK: }
    _ = a or x
 
+# CHECK-LABEL: lit.func @"paramAndOr
+fn paramAndOr[a: Boolish, b: Boolish]():
+  # Short circuiting AND returns second operand when the first is false-y, first
+  # otherwise.
+
+  # CHECK: kgen.param.declare c: @"$expressions"::@Boolish = <cond(apply(:<>(!kgen.declref<@"$Bool"::@Bool> borrow) -> i1 @"$Bool"::@Bool::@"__mlir_i1__($Bool::Bool)", apply(:<>(!kgen.declref<@"$expressions"::@Boolish> borrow) -> !kgen.declref<@"$Bool"::@Bool> @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)", a)) ? b : a)>
+  alias c = a and b
+
+  # Short circuiting OR returns first operand when it is true-y, second
+  # otherwise.
+
+  # CHECK: kgen.param.declare d: @"$expressions"::@Boolish = <cond(apply(:<>(!kgen.declref<@"$Bool"::@Bool> borrow) -> i1 @"$Bool"::@Bool::@"__mlir_i1__($Bool::Bool)", apply(:<>(!kgen.declref<@"$expressions"::@Boolish> borrow) -> !kgen.declref<@"$Bool"::@Bool> @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)", a)) ? a : b)>
+  alias d = a or b
 
 # CHECK-LABEL: lit.func @"do_math
 fn do_math(a: Int, b: Int, c: Int) -> Int:
