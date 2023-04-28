@@ -50,11 +50,32 @@ fn empty_fn():
 
 
 # CHECK:  "kind": "function",
+# CHECK:  "name": "fn_that_async",
+# CHECK:  "overloads":
+# CHECK:      "signature": "fn_that_async() -> Int"
+# CHECK:      "summary": "This is a function summary."
+# CHECK:      "returns": "an Int."
+# CHECL:      "async": true
+
+
+async fn fn_that_async() -> Int:
+    """This is a function summary.
+
+    The is some kind of description.
+
+    Returns:
+        an Int.
+    """
+    return 33
+
+
+# CHECK:  "kind": "function",
 # CHECK:  "name": "fn_that_raises",
 # CHECK:  "overloads":
 # CHECK:      "signature": "fn_that_raises() -> Int"
 # CHECK:      "summary": "This is a function summary."
 # CHECK:      "returns": "an Int."
+# CHECL:      "raises": true
 
 
 def fn_that_raises() -> Int:

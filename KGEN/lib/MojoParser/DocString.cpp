@@ -448,6 +448,10 @@ private:
         processFunctionDocDescription(docStr->getDescription(), paramToDetail,
                                       argNameToDetail, resultTypeName);
       }
+      if (funcOp.isThrows())
+        os.attribute("raises", true);
+      if (funcOp.isAsync())
+        os.attribute("async", true);
     });
   }
 
