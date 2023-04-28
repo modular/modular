@@ -120,8 +120,7 @@ bool ASTType::isCopyable(llvm::SMLoc loc, SharedState &shared) const {
       StructDeclOp::RP_RegisterPassableTrivial)
     return true;
 
-  auto copyName = StringAttr::get(shared.getContext(), "__copyinit__");
-  return typeDecl->lookupInCurrentScope(copyName) != nullptr;
+  return !typeDecl->lookupInCurrentScope("__copyinit__").empty();
 }
 
 /// Return true if this type is movable, either because it is trivial, a
@@ -141,17 +140,15 @@ bool ASTType::isMovableFrom(ASTExprAnd<CValue> value,
   if (isRegisterPassable(loc, shared))
     return true;
 
-  auto moveName = StringAttr::get(shared.getContext(), "__moveinit__");
-  const TinyPtrVector<ASTDecl *> *moveDecls =
-      typeDecl->lookupInCurrentScope(moveName);
-  if (!moveDecls)
-    return false;
-
   // Check all the available candidate to see if we have one that cooperates
   // with this value kind.
-  for (ASTDecl *decl : *moveDecls) {
+  auto moveInits =
+      shared.lookupAndResolveDecl("__moveinit__", value.expr->getLoc(),
+                                  *typeDecl, /*searchParentScopes=*/false);
+
+  for (ASTDecl *decl : moveInits.getIfSuccess()) {
     auto func = dyn_cast<LIT::FuncOp>(*decl);
-    if (!func || failed(shared.declResolver->resolveFully(*decl, loc)))
+    if (!func)
       continue;
 
     auto signature = func.getSignature();
