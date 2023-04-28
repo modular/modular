@@ -247,7 +247,7 @@ function(add_kgen_kernel target)
   )
 endfunction()
 
-function(add_mojo_doc doc_filename output_file output_directory)
+function(add_mojo_doc visibility doc_filename output_file output_directory)
   _setup_libs()
 
   set(GEN_DOC_JSON_FILE ${MODULAR_BINARY_DIR}/docs/${output_directory}${output_file}.mojodoc.json)
@@ -281,7 +281,11 @@ function(add_mojo_doc doc_filename output_file output_directory)
   )
 
   add_custom_target(${output_file}DocGen DEPENDS ${GEN_DOC_FILE})
-  add_dependencies(modular-doc ${output_file}DocGen)
+  if("${visibility}" STREQUAL "PUBLIC")
+    add_dependencies(modular-doc ${output_file}DocGen)
+  else()
+    add_dependencies(modular-internal-doc ${output_file}DocGen)
+  endif()
 endfunction()
 
 # Testing infrastructure
