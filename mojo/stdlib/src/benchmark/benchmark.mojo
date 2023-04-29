@@ -20,9 +20,15 @@ struct Benchmark:
     """
 
     var num_warmup: Int
+    """The number of warmup iterations to perform before the main benchmark
+    loop."""
     var max_iters: Int
+    """The maximum number of iterations to perform during the main benchmark
+    loop."""
     var min_time_ns: Int
+    """The minimum time (in ns) to spend within the main benchmark loop."""
     var max_time_ns: Int
+    """The maximum time (in ns) to spend within the main benchmark loop."""
 
     fn __init__(
         self&,
@@ -38,10 +44,10 @@ struct Benchmark:
 
         Args:
             num_warmup: Number of warmup iterations to run before starting
-              benchmarking.
-            max_iters: Max number of iterations to run.
-            min_time_ns: Upper bound on benchmarking time in ns.
-            max_time_ns: Lower bound on benchmarking time in ns.
+              benchmarking (default 2).
+            max_iters: Max number of iterations to run (default 100_000).
+            min_time_ns: Upper bound on benchmarking time in ns (default 500ms).
+            max_time_ns: Lower bound on benchmarking time in ns (default 1s).
         """
         self.num_warmup = num_warmup
         self.max_iters = max_iters
@@ -53,13 +59,13 @@ struct Benchmark:
         """Benchmark the given function.
 
         Benchmarking continues until min_tims_ns has elapsed and either
-        max_time_ns OR max_iters is hit.
+        `max_time_ns` or `max_iters` is achieved.
 
         Parameters:
             func: The function to benchmark.
 
         Returns:
-            Average execution time of func in ns.
+            average execution time of func in ns.
         """
 
         # run for specified number of warmup iterations
