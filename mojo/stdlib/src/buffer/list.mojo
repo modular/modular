@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""This module provides utilities for working with static and variadic lists."""
+"""Provides utilities for working with static and variadic lists."""
 
 from Assert import assert_param, assert_param_msg
 from TypeUtilities import rebind

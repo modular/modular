@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""Implements the Buffer class."""
 
 from Assert import assert_param, debug_assert, assert_param_msg
 from DType import DType
