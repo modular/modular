@@ -825,7 +825,7 @@ fn variance[
 
     Args:
         src: The buffer.
-        mean_val: The mean value of the buffer.
+        mean_value: The mean value of the buffer.
         correction: Normalize variance by size - correction.
 
     Returns:
