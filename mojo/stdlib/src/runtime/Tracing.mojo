@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""This module provides tracing utilities."""
+"""Provides tracing utilities."""
 
 from BuildInfo import build_info_llcl_max_profiling_level
 
