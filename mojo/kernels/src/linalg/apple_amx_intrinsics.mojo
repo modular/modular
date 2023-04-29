@@ -414,7 +414,7 @@ struct amx_detail:
 
         # TODO: We can elide the copy if the data is already is already aligned.
 
-        let buffer_bytecount = c.size() * sizeof[__mlir_type.f32]()
+        let buffer_bytecount = c.size()
 
         alias c256 = (256).__as_mlir_index()
         alias c128 = (128).__as_mlir_index()
