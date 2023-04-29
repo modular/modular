@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""This module implements higher-order functions."""
+"""Implements higher-order functions."""
 
 from Assert import assert_param_msg
 from Coroutine import Coroutine

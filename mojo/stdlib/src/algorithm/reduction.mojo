@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""This module implements SIMD reductions."""
+"""Implements SIMD reductions."""
 
 from Assert import assert_param_msg, debug_assert
 from Buffer import Buffer, NDBuffer, prod_dims
