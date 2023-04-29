@@ -490,8 +490,8 @@ fn tile[
     primary_tile_size_list: VariadicList[Int],
     primary_cleanup_tile: Int,
 ):
-    """A generator that launches work groups in specified list of tile sizes until the
-    sum of primary_tile_sizes has exceeded the upperbound.
+    """A generator that launches work groups in specified list of tile sizes
+    until the sum of primary_tile_sizes has exceeded the upperbound.
 
     Parameters:
         secondary_tile_size_list: List of static tile sizes to launch work.
@@ -614,11 +614,17 @@ fn unswitch[switched_func: SwitchedFunction](dynamic_switch: Bool):
     pass but extended to functional patterns. The pattern facilitates the
     following code transformation that reduces the number of branches in the
     generated code
+
         Before:
+        ```
             for i in range(...)
                 if i < xxx:
                     ...
+        ```
+
         After:
+
+        ```
             if i < ...
                 for i in range(...)
                     ...
@@ -626,6 +632,8 @@ fn unswitch[switched_func: SwitchedFunction](dynamic_switch: Bool):
                 for i in range(...)
                     if i < xxx:
                         ...
+        ```
+
     This unswitch function genralizes that pattern with the help of meta parame-
     ters and can be used to perform both loop unswitching and other tile predic-
     ate lifting like in simd and amx.
