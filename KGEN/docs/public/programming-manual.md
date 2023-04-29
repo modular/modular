@@ -349,11 +349,7 @@ struct MyString:
         self.data.free()
 ```
 
-<<<<<<< HEAD
-This MyString type is implemented using low-level functions to show a
-=======
-This `MyString` type is implemented using low level functions to show a
->>>>>>> main
+This `MyString` type is implemented using low-level functions to show a
 simple example of how this works - a more realistic implementation would use
 short string optimizations, etc.  However, if you go ahead and try this out, you
 might be surprised:
