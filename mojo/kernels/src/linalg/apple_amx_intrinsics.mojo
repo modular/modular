@@ -414,8 +414,6 @@ struct amx_detail:
 
         # TODO: We can elide the copy if the data is already is already aligned.
 
-        let buffer_bytecount = c.size()
-
         alias c256 = (256).__as_mlir_index()
         alias c128 = (128).__as_mlir_index()
         let a_buffer: DTypePointer[
@@ -440,9 +438,10 @@ struct amx_detail:
             _type : __mlir_type.`!pop.pointer<scalar<f32>>`,
         ]()
 
-        memcpy[DType.f32](a_buffer, a_pointer, buffer_bytecount)
-        memcpy[DType.f32](b_buffer, b_pointer, buffer_bytecount)
-        memset_zero[DType.f32](c_buffer, buffer_bytecount)
+        let num_elements = c.num_elements()
+        memcpy[DType.f32](a_buffer, a_pointer, num_elements)
+        memcpy[DType.f32](b_buffer, b_pointer, num_elements)
+        memset_zero[DType.f32](c_buffer, num_elements)
 
         Self._set()
 
@@ -473,4 +472,4 @@ struct amx_detail:
 
         Self._clr()
 
-        memcpy[DType.f32](c_pointer, c_buffer, buffer_bytecount)
+        memcpy[DType.f32](c_pointer, c_buffer, num_elements)
