@@ -103,7 +103,7 @@ fn test_vectorize_unroll():
     vectorize_unroll[simd_width, unroll_factor, double_vec](vec.__len__())
     vectorize[simd_width, double_ref](ref.__len__())
 
-    let err = memcmp(vec.data, ref.data, ref.bytecount())
+    let err = memcmp(vec.data, ref.data, ref.__len__())
     # CHECK: 0
     print(err)
 
