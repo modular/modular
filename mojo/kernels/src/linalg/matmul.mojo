@@ -27,6 +27,7 @@ from SIMD import SIMD
 from TargetInfo import has_neon, alignof, dtype_simd_width
 from Transpose import transpose_inplace
 from Intrinsics import PrefetchOptions
+from IO import print
 
 
 @register_passable("trivial")
@@ -66,6 +67,11 @@ struct MatmulConfig:
 
 @closure
 fn null_epilogue(offset: GemmShape, tile_len: GemmShape):
+    pass
+
+
+@closure
+fn null_rowwise_epilogue(offset: Int, num_rows: Int):
     pass
 
 
@@ -1306,6 +1312,7 @@ struct TiledMatmul[
     transpose_b: Bool,
     b_packed: Bool,
     elementwise_epilogue_enabled: Bool,
+    rowwise_epilogue_enabled: Bool,
 ]:
     """Tiled matmul implementation integrating packing, inner loop and tile
     partitions.
@@ -1333,6 +1340,8 @@ struct TiledMatmul[
 
     var elementwise_epilogue_fn: fn (GemmShape, GemmShape) capturing -> None
 
+    var rowwise_epilogue_fn: fn (Int, Int) capturing -> None
+
     # Interface method
     @staticmethod
     fn run(
@@ -1347,6 +1356,26 @@ struct TiledMatmul[
             a,
             b,
             null_epilogue,
+            null_rowwise_epilogue,
+            global_tile_shape,
+            global_tile_offset,
+        )
+
+    @staticmethod
+    fn run(
+        c: NDBuffer[2, config.shape_c, accum_type],
+        a: NDBuffer[2, config.shape_a, value_type],
+        b: NDBuffer[2, config.shape_b, value_type],
+        elementwise_epilogue_fn: fn (GemmShape, GemmShape) capturing -> None,
+        global_tile_shape: GemmShape,
+        global_tile_offset: GemmShape,
+    ):
+        Self.run(
+            c,
+            a,
+            b,
+            elementwise_epilogue_fn,
+            null_rowwise_epilogue,
             global_tile_shape,
             global_tile_offset,
         )
@@ -1358,6 +1387,7 @@ struct TiledMatmul[
         a: NDBuffer[2, config.shape_a, value_type],
         b: NDBuffer[2, config.shape_b, value_type],
         elementwise_epilogue_fn: fn (GemmShape, GemmShape) capturing -> None,
+        rowwise_epilogue_fn: fn (Int, Int) capturing -> None,
         global_tile_shape: GemmShape,
         global_tile_offset: GemmShape,
     ):
@@ -1385,6 +1415,7 @@ struct TiledMatmul[
             transpose_b,
             b_packed,
             elementwise_epilogue_enabled,
+            rowwise_epilogue_enabled,
         ](
             c,
             a,
@@ -1396,12 +1427,16 @@ struct TiledMatmul[
                 b, tile_n_k
             ),
             elementwise_epilogue_fn,
+            rowwise_epilogue_fn,
         )
 
         matmul._run()
 
     fn _outer_m_loop_helper[
-        last_k_tile: Bool, skip_col_bound: Bool, m_loop_pack_inner_size: Int
+        last_n_tile: Bool,
+        last_k_tile: Bool,
+        skip_col_bound: Bool,
+        m_loop_pack_inner_size: Int,
     ](self, global_offset: GemmShape, sub_tile_n: Int, sub_tile_k: Int,):
         """
         Helper function: Pack a subtile of B and iterate through all the rows
@@ -1468,6 +1503,12 @@ struct TiledMatmul[
                     },
                 )
 
+            @parameter
+            if rowwise_epilogue_enabled & last_n_tile & last_k_tile:
+                self.rowwise_epilogue_fn(
+                    global_offset.M + row_offset, tile_size
+                )
+
         tile[row_iteration, VariadicList[Int](config.a_row_size, 4, 3, 2, 1)](
             0,  # starting row offset
             knm_bounds.M,  # row bound
@@ -1475,7 +1516,7 @@ struct TiledMatmul[
 
     #  Pack a subtile of B and iterate through all the rows of C.
     fn _outer_m_loop[
-        last_k_tile: Bool, m_loop_pack_inner_size: Int
+        last_n_tile: Bool, last_k_tile: Bool, m_loop_pack_inner_size: Int
     ](self, global_offset: GemmShape, sub_tile_n: Int, sub_tile_k: Int,):
         """Pack a subtile of B and iterate through all the rows
         of C.
@@ -1503,6 +1544,7 @@ struct TiledMatmul[
         @always_inline
         fn unswitched_mloop[static_switch: Bool]():
             self._outer_m_loop_helper[
+                last_n_tile,
                 last_k_tile,
                 static_switch,  # skip_col_bound
                 m_loop_pack_inner_size,
@@ -1532,10 +1574,20 @@ struct TiledMatmul[
         @parameter
         @always_inline
         fn m_loop[secondary_tile_size: Int](col_idx: Int, tile_size_n: Int):
-            self._outer_m_loop[last_k_tile, secondary_tile_size](
-                global_offset + GemmShape(0, col_idx, 0),
-                tile_size_n,
-                sub_tile_k,
+            @parameter
+            @always_inline
+            fn m_loop_switch[last_n_tile: Bool]():
+                self._outer_m_loop[
+                    last_n_tile, last_k_tile, secondary_tile_size
+                ](
+                    global_offset + GemmShape(0, col_idx, 0),
+                    tile_size_n,
+                    sub_tile_k,
+                )
+
+            unswitch[m_loop_switch](
+                self.global_tile_offset.N + col_idx + tile_size_n
+                >= self.global_tile_shape.N
             )
 
         # if b is packed, the packing was performed offline using a single inner
