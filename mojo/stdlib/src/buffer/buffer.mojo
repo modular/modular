@@ -321,7 +321,7 @@ struct Buffer[size: Dim, type: DType]:
     @always_inline
     fn zero(self):
         """Set all bytes of the Buffer to 0."""
-        memset_zero(self.data, self.bytecount())
+        memset_zero(self.data, self.__len__())
 
     fn simd_fill[simd_width: Int](self, val: SIMD[type, 1]):
         """Assigns val to all elements in chunks of size simd_width.
@@ -765,6 +765,15 @@ struct NDBuffer[
 
     @always_inline
     fn __len__(self) -> Int:
+        """Computes the NDBuffer's number of elements.
+
+        Returns:
+            The total number of elements in the NDBuffer.
+        """
+        return self.size()
+
+    @always_inline
+    fn num_elements(self) -> Int:
         """Computes the NDBuffer's number of elements.
 
         Returns:
@@ -1239,7 +1248,7 @@ struct NDBuffer[
             The buffer must be contiguous.
         """
         debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
-        memset_zero(self.data, self.bytecount())
+        memset_zero(self.data, self.__len__())
 
     fn simd_fill[simd_width: Int](self, val: SIMD[type, 1]):
         """Assigns val to all elements in chunks of size simd_width.
