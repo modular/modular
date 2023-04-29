@@ -18,9 +18,10 @@ from SIMD import SIMD
 from StaticTuple import StaticTuple
 from TargetInfo import dtype_sizeof, dtype_simd_width, dtype_alignof
 
-# The maximum tensor rank for any tensor shape.
-# This value must match kMaxRank in Support/include/Support/ML/TensorShape.h
-alias max_rank = 5
+alias _MAX_RANK = 5
+"""The maximum tensor rank for any tensor shape.
+This value must match kMaxRank in Support/include/Support/ML/TensorShape.h
+"""
 
 # ===----------------------------------------------------------------------===#
 # Utilities
@@ -1419,18 +1420,18 @@ struct DynamicRankBuffer:
 
     It is not as efficient as the statically ranked buffer, but is useful when
     interacting with external functions. In particular the shape is represented
-    as a fixed (ie max_rank) array of dimensions to simplify the ABI."""
+    as a fixed (ie _MAX_RANK) array of dimensions to simplify the ABI."""
 
     var data: DTypePointer[DType.invalid.value]
     var rank: Int
-    var shape: StaticIntTuple[max_rank]
+    var shape: StaticIntTuple[_MAX_RANK]
     var type: DType
 
     @always_inline
     fn __init__(
         data: DTypePointer[DType.invalid.value],
         rank: Int,
-        shape: StaticIntTuple[max_rank],
+        shape: StaticIntTuple[_MAX_RANK],
         type: DType,
     ) -> DynamicRankBuffer:
         """Construct DynamicRankBuffer.
@@ -1536,7 +1537,7 @@ struct DynamicRankBuffer:
               will be called.
         """
         debug_assert(
-            self.rank > 0 and self.rank <= max_rank,
+            self.rank > 0 and self.rank <= _MAX_RANK,
             "rank must be positive and less or equal to 5",
         )
 
@@ -1577,7 +1578,7 @@ struct DynamicRankBuffer:
         Args:
             out_chain: The output chain.
         """
-        if self.rank <= 0 or self.rank > max_rank:
+        if self.rank <= 0 or self.rank > _MAX_RANK:
             out_chain.mark_error(
                 "invalid rank, the rank bust be positive and less than or"
                 " equal to 5"
