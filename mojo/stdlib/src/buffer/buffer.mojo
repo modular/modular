@@ -33,7 +33,8 @@ fn _raw_stack_allocation[
     type: DType,
     alignment: Int,
 ]() -> DTypePointer[type]:
-    """Allocates data buffer space on the stack given a data type and number of elements.
+    """Allocates data buffer space on the stack given a data type and number of
+    elements.
 
     Parameters:
         count: number of elements to allocate memory for.
@@ -60,11 +61,18 @@ struct Buffer[size: Dim, type: DType]:
     """Defines a Buffer which can be parametrized on a static size and Dtype.
 
     The Buffer does not own its underlying pointer.
+
+    Parameters:
+      size: the static size (if known) of the Buffer.
+      type: the element type of the Buffer.
     """
 
     var data: DTypePointer[type]
+    """The underlying data pointer of the data."""
     var dynamic_size: Int
+    """The dynamic size of the buffer."""
     var dtype: DType
+    """The dynamic data type of the buffer."""
 
     @always_inline
     fn __init__() -> Buffer[size, type]:
@@ -76,7 +84,7 @@ struct Buffer[size: Dim, type: DType]:
         """
 
         return Self {
-            data: DTypePointer[type].get_null(),
+            data: DTypePointer[type](),
             dynamic_size: 0,
             dtype: type,
         }
