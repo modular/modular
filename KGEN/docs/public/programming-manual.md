@@ -131,7 +131,7 @@ differences are as follows:
 
 - Mojo structs are are static: they are bound at compile time (you cannot add methods at runtime). Structs allow you to trade flexibility for performance while being safe and easy to use.
 
-Here's a simple definition of a struct: 
+Here's a simple definition of a struct:
 
 ```mojo
 struct MyPair:
@@ -1169,6 +1169,106 @@ def. The 'c' argument gets an implicit Object type, and is mutable in the body.
 These copies typically add no overhead, because small types like Object
 references are cheap to copy. The expensive part is the reference count
 adjustment, which is eliminated by a move optimization.
+
+## Python Integration
+
+It's easy to use the Python you know and love within Mojo code.
+You can import Python modules into your
+Mojo programs and create Python types from Mojo types.
+No wrappers or other work is necessary: you just import and go.
+
+### Importing Python Modules Into Mojo
+
+Suppose you have the following Python code that you want to call
+in Mojo.
+
+##### /path/to/module/example1.py
+
+```python
+import numpy as np
+
+def my_algorithm(a, b):
+    c = np.matmul(a, b) + a + b
+    return c
+```
+
+You can call this code in Mojo by adding the file's path to the Python path,
+importing the module, and calling the methods in that module
+as though you are writing Python:
+
+##### example1.mojo
+
+```mojo
+from PythonInterface import Python
+
+# This is a Mojo function not a Python function.  To show this, we use 'let'
+# keywords in the body, but they are optional of course.
+def main() -> None:
+    # add directories to the PYTHONPATH so you can import your custom modules
+    Python.add_to_path("/path/to/module")
+
+    # import modules from your Python environment
+    let np = Python.import_module("numpy")
+    let example1 = Python.import_module("example1")
+    let builtins = Python.import_module("builtins")
+
+    # call Python code!
+    let size = 3
+    let a = np.random.rand(size, size)
+    let b = np.random.rand(size, size)
+    let c = example1.my_algorithm(a, b)
+    _ = builtins.print(c)
+
+    # prints first row of c
+    _ = builtins.print(c[0])
+
+```
+
+If you've used Python from other languages, you might be struck how you
+don't need to worry about memory management and everything "just works".
+This is because Mojo was designed for Python.
+
+### Python objects from Mojo
+
+Mojo primitive types can be converted into Python objects implicitly.
+Today we support lists, tuples, integers, floats, booleans, and strings.
+
+##### /path/to/module/example2.py
+
+```python
+
+def type_printer(my_list, my_tuple, my_int, my_string, my_float):
+    print(type(my_list))
+    print(type(my_tuple))
+    print(type(my_int))
+    print(type(my_string))
+    print(type(my_float))
+```
+
+##### /path/to/module/example2.mojo
+
+```mojo
+from PythonInterface import Python
+
+def main() -> None:
+    Python.add_to_path("/path/to/module")
+    example2 = Python.import_module("foo")
+    example2.type_printer([0, 3], (False, True), 4, "orange", 3.4)
+```
+
+#### output
+
+```python
+<class 'list'>
+<class 'tuple'>
+<class 'int'>
+<class 'str'>
+<class 'float'>
+```
+
+Mojo doesn't have a standard Dictionary yet, so it is not yet possible
+to create a Python dictionary from a Mojo dictionary. You can work with
+Python dictionaries in Mojo though!
 
 ## "Value Lifecycle": Birth, life and death of a value
 
