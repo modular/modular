@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""The module provides implementation for Complex type."""
+"""Implements the Complex type."""
 
 from DType import DType
 from SIMD import SIMD
