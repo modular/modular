@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: mojo %s | FileCheck %s
 
-from Buffer import Buffer, NDBuffer, DynamicRankBuffer, max_rank
+from Buffer import Buffer, NDBuffer, DynamicRankBuffer, _MAX_RANK
 from IO import print
 from Concat import concat, _concat_parallel
 from DType import DType
@@ -32,9 +32,9 @@ fn test_concat():
     x2.fill(1)
     let x3 = Buffer[x3_sz, type].stack_allocation()
     x3.fill(2)
-    let s1 = StaticIntTuple[max_rank](2, 2, 1, 2, 0)
-    let s2 = StaticIntTuple[max_rank](2, 2, 2, 2, 0)
-    let s3 = StaticIntTuple[max_rank](2, 2, 3, 2, 0)
+    let s1 = StaticIntTuple[_MAX_RANK](2, 2, 1, 2, 0)
+    let s2 = StaticIntTuple[_MAX_RANK](2, 2, 2, 2, 0)
+    let s3 = StaticIntTuple[_MAX_RANK](2, 2, 3, 2, 0)
 
     let x1_dyn = DynamicRankBuffer(
         x1.data.bitcast[DType.invalid.value](), rank, s1, type
@@ -92,9 +92,9 @@ fn test_concat_parallel():
     x2.fill(1)
     let x3 = Buffer[x3_sz, type].stack_allocation()
     x3.fill(2)
-    let s1 = StaticIntTuple[max_rank](2, 2, 1, 2, 0)
-    let s2 = StaticIntTuple[max_rank](2, 2, 2, 2, 0)
-    let s3 = StaticIntTuple[max_rank](2, 2, 3, 2, 0)
+    let s1 = StaticIntTuple[_MAX_RANK](2, 2, 1, 2, 0)
+    let s2 = StaticIntTuple[_MAX_RANK](2, 2, 2, 2, 0)
+    let s3 = StaticIntTuple[_MAX_RANK](2, 2, 3, 2, 0)
 
     let x1_dyn = DynamicRankBuffer(
         x1.data.bitcast[DType.invalid.value](), rank, s1, type
