@@ -234,7 +234,9 @@ wrapExpressionText(StringRef wrappedFnName, StringRef exprText,
                    << "from PythonInterface import Python\n"
                    << "from PythonObject import PythonObject\n"
                    << "from Object import object\n"
-                   << "from Range import range\n\n";
+                   << "from SIMD import SIMD, SI8, UI8, SI16, UI16, SI32, "
+                      "UI32, SI64, UI64, F8, F16, F32, F64\n"
+                   << "from Range import range\n";
   }
 
   // Build the input struct, which contains each of the persistent variables.
