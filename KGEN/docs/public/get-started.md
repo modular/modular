@@ -1,6 +1,6 @@
 ---
 title: Try Mojo🔥
-description: We built a Jupyter Hub that runs Mojo and you can sign up to get access.
+description: An introduction to the Mojo Playground, where you can try Mojo in a virtual environment.
 ---
 
 The Mojo language is still very young, but we want your feedback!
