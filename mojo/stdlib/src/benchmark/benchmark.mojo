@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""The module implements 'Benchmark' class for runtime benchmarking."""
+"""Implements the Benchmark class for runtime benchmarking."""
 
 from Math import min, max
 from Range import range
