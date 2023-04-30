@@ -1,0 +1,21 @@
+# LLDB init file for the LIT tests.
+
+# Disable Spotlight lookup. The testsuite creates
+# different binaries with the same UUID, because they only
+# differ in the debug info, which is not being hashed.
+settings set symbols.enable-external-lookup false
+
+# Testsuite runs in parallel and the host can have also other load.
+settings set plugin.process.gdb-remote.packet-timeout 60
+
+# Prevent comments in LLDB commands to be echoed.
+settings set interpreter.echo-comment-commands false
+
+# Use a cache dir inside the build folder instead of using the system one.
+settings set symbols.clang-modules-cache-path "@LLDB_TEST_MODULE_CACHE_LLDB@"
+
+# Inherit the TCC permissions from the inferior's parent.
+settings set target.inherit-tcc true
+
+# Kill rather than detach from the inferior if something goes wrong.
+settings set target.detach-on-error false
