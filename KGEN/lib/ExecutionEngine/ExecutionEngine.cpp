@@ -165,7 +165,7 @@ static ErrorOrSuccess writeORCRTToFile(BufferRef &buf, std::string &outPath) {
   path = path / "liborc_rt-%%%%%%%.a";
   outPath = path.string();
 
-  auto tmpfileOr = TempFile::create(path.native());
+  auto tmpfileOr = TempFile::create(path.string());
   if (tmpfileOr.isError())
     return tmpfileOr.takeError();
 
