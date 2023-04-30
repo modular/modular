@@ -17,7 +17,7 @@ using namespace M;
 
 /// Wrapper function to avoid return type ABI issues when attempting to evaluate
 /// specializations. Simply returns the evaluator's result as an out-param.
-MODULAR_EXPORT MODULAR_ATTRIBUTE_USED void
+MODULAR_EXPORT LLVM_ATTRIBUTE_USED void
 lldb_evaluate_specializations(ssize_t (*evaluator)(void **, ssize_t),
                               void **specializations,
                               int64_t numSpecializations, uint64_t *best) {
