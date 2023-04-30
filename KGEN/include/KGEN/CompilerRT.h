@@ -19,7 +19,7 @@
 // Initialize.cpp
 //===----------------------------------------------------------------------===//
 
-MODULAR_EXPORT MODULAR_ATTRIBUTE_USED bool KGEN_CompilerRT_Initialize();
+MODULAR_EXPORT LLVM_ATTRIBUTE_USED bool KGEN_CompilerRT_Initialize();
 
 //===----------------------------------------------------------------------===//
 // InitIntelAMX.cpp
@@ -32,7 +32,7 @@ void registerIntelAMX(
 } // namespace M::KGEN
 
 #if defined(__x86_64__) && defined(__linux__)
-MODULAR_EXPORT MODULAR_ATTRIBUTE_USED bool KGEN_CompilerRT_Init_Intel_AMX();
+MODULAR_EXPORT LLVM_ATTRIBUTE_USED bool KGEN_CompilerRT_Init_Intel_AMX();
 #endif
 
 //===----------------------------------------------------------------------===//
@@ -44,7 +44,7 @@ namespace M::KGEN {
 void registerLLCL(std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);
 } // namespace M::KGEN
 
-MODULAR_EXPORT MODULAR_ATTRIBUTE_USED void KGEN_CompilerRT_LLCL_Dummy();
+MODULAR_EXPORT LLVM_ATTRIBUTE_USED void KGEN_CompilerRT_LLCL_Dummy();
 
 //===----------------------------------------------------------------------===//
 // Memory.cpp
@@ -55,7 +55,7 @@ namespace M::KGEN {
 void registerMemory(std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);
 } // namespace M::KGEN
 
-MODULAR_EXPORT MODULAR_ATTRIBUTE_USED void *
+MODULAR_EXPORT LLVM_ATTRIBUTE_USED void *
 KGEN_CompilerRT_AlignedAlloc(ssize_t alignment, ssize_t size);
 
 //===----------------------------------------------------------------------===//
@@ -67,7 +67,7 @@ namespace M::KGEN {
 void registerPrint(std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);
 } // namespace M::KGEN
 
-MODULAR_EXPORT MODULAR_ATTRIBUTE_USED void
+MODULAR_EXPORT LLVM_ATTRIBUTE_USED void
 KGEN_CompilerRT_PrintToStdErr(const char *data, ssize_t size);
 
 //===----------------------------------------------------------------------===//
@@ -79,7 +79,7 @@ namespace M::KGEN {
 void registerRandom(std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);
 } // namespace M::KGEN
 
-MODULAR_EXPORT MODULAR_ATTRIBUTE_USED double
+MODULAR_EXPORT LLVM_ATTRIBUTE_USED double
 KGEN_CompilerRT_RandomDouble(double min, double max);
 
 //===----------------------------------------------------------------------===//
@@ -91,7 +91,7 @@ namespace M::KGEN {
 void registerSystem(std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);
 } // namespace M::KGEN
 
-MODULAR_EXPORT MODULAR_ATTRIBUTE_USED size_t KGEN_CompilerRT_CoreCount();
+MODULAR_EXPORT LLVM_ATTRIBUTE_USED size_t KGEN_CompilerRT_CoreCount();
 
 //===----------------------------------------------------------------------===//
 // Tracing.cpp
@@ -103,8 +103,7 @@ void registerTracing(
     std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);
 } // namespace M::KGEN
 
-MODULAR_EXPORT MODULAR_ATTRIBUTE_USED void
-KGEN_CompilerRT_TimeTraceProfilerEnd();
+MODULAR_EXPORT LLVM_ATTRIBUTE_USED void KGEN_CompilerRT_TimeTraceProfilerEnd();
 
 //===----------------------------------------------------------------------===//
 // Python.cpp
@@ -115,7 +114,7 @@ namespace M::KGEN {
 void registerPython(std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);
 } // namespace M::KGEN
 
-MODULAR_EXPORT MODULAR_ATTRIBUTE_USED void *
+MODULAR_EXPORT LLVM_ATTRIBUTE_USED void *
 KGEN_CompilerRT_Python_GetGlobalPython(ssize_t objSize, void (*initFn)(void *));
 
 //===----------------------------------------------------------------------===//
@@ -126,7 +125,7 @@ KGEN_CompilerRT_Python_GetGlobalPython(ssize_t objSize, void (*initFn)(void *));
 /// into things that include this header. We only need to 'call' one function
 /// from each .cpp file. Note that this function should never actually be
 /// called!
-MODULAR_VISIBILITY_EXPORT MODULAR_ATTRIBUTE_USED inline void
+MODULAR_VISIBILITY_EXPORT LLVM_ATTRIBUTE_USED inline void
 KGEN_CompilerRT_dummylinkageinit() {
   KGEN_CompilerRT_Initialize();
 #if defined(__x86_64__) && defined(__linux__)
