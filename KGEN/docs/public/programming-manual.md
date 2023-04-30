@@ -9,7 +9,7 @@ the entire Python library ecosystem.
 
 Mojo achieves this feat by utilizing next-generation compiler technologies with
 integrated caching, multithreading, and cloud distribution technologies.
-Furthermore, Mojo's autotuning and compile-time metaprogramming features allow
+Furthermore, Mojo's autotuning and compile-time meta-programming features allow
 you to write code that is portable to even the most exotic hardware.
 
 More importantly, **Mojo allows you to leverage the entire Python ecosystem**
@@ -424,7 +424,7 @@ and tools integration.
 expansion features, enabling syntactic extension and boilerplate reduction with
 somewhat better tooling integration.
 
-3. Some older languages like C++ have very large and complex metaprogramming
+3. Some older languages like C++ have very large and complex meta-programming
 languages (templates) that are a dual to the *runtime* language. These are
 notably difficult to learn and have poor compile times and error messages.
 
@@ -439,7 +439,7 @@ extensibility and generality.
 
 For Modular's work in AI, high-performance machine learning kernels, and
 accelerators, we need high abstraction capabilities provided by advanced
-metaprogramming systems. We needed high-level zero-cost abstractions,
+meta-programming systems. We needed high-level zero-cost abstractions,
 expressive libraries, and large-scale integration of multiple variants of
 algorithms. We want library developers to be able to extend the system, just
 like they do in Python, providing an extensible developer platform.
@@ -450,7 +450,7 @@ language ecosystem that is difficult to teach. We can learn from these previous
 systems but also have new technologies to build on top of, including MLIR and
 fine-grained language-integrated caching technologies.
 
-As such, Mojo supports a full compile-time metaprogramming functionality built
+As such, Mojo supports a full compile-time meta-programming functionality built
 into the compiler as a separate stage of compilation - after parsing, semantic
 analysis, and IR generation, but before lowering to target-specific code. It
 uses the same host language for runtime programs as it does for metaprograms,
@@ -1913,14 +1913,14 @@ struct TwoStrings:
     fn __del__(owned self): ...
 ```
 
-These methods face an interesting but obscure problem: both of these methods are
-in charge of dismantling the `owned existing`/`self` value, either in destroying
-sub-elements that have to do with them, or using them to implement deletion
-logic for their own type.  The move constructor wants to create a new `self`
-instance by stealing parts from an existing instance.  As such, they both want
-to consume and transform elements of the ‘owned’ value and definitely don’t
-want the owned values destructor to run!  The most egregious example of this is
-the `__del__` method, which would turn into an infinite loop.
+These methods face an interesting but obscure problem: both of these methods
+are in charge of dismantling the `owned existing`/`self` value, either in
+destroying sub-elements that have to do with them, or using them to implement
+deletion logic for their own type. The move constructor wants to create a new
+`self` instance by stealing parts from an existing instance. As such, they both
+want to consume and transform elements of the ‘owned’ value and definitely
+don’t want the owned values destructor to run! The most egregious example of
+this is the `__del__` method, which would turn into an infinite loop.
 
 To solve this problem, Mojo handles these two methods specially by assuming
 that their whole values are destroyed upon reaching any return from the method.
@@ -1978,11 +1978,13 @@ bottom-est level of the standard library. This level of the stack is inhabited
 by narrow features that require experience with compiler internals to
 understand and utilize effectively.
 
+<!--
 TOWRITE: Each builtin decorator should be mentioned. Eventually, decorators
 should appear in the API docs.
 
 > TODO: We need to decide how to namespace these, should these go into a 'mojo'
 package or something?
+-->
 
 ### `@always_inline` decorator
 
@@ -2007,18 +2009,22 @@ implement these C++-equivalent unsafe constructs in Mojo.  Eventually, these wil
 migrate to all being methods on the Pointer type, but until then, some need to
 be exposed as builtin operators.
 
+<!--
 TODO: document all of these:
 
-```
+```mojo
 __get_address_as_lvalue(x)
 __get_address_as_uninit_lvalue(x)
 __get_lvalue_as_address(x):  use Pointer.address_of instead
 __get_address_as_owned_value(x)
 ```
+-->
 
 ### Direct Access to MLIR
 
-TOWRITE: Mojo is zero-cost abstractions piled up, turtles all the way down to
+Mojo provides full access to the MLIR dialects and ecosystem. Please take a
+look at the [Low level IR in Mojo](/mojo/notebooks/BoolMLIR.html) to learn
+how to use the `__mlir_type`, `__mlir_op`, `__mlir_type` constructs. All of
+the builtins and standard library is implemented by just calling the underlying
+MLIR constructs and in that Mojo effectively serves as syntax sugar on top of
 MLIR.
-
-How to use `__mlir_type`, `__mlir_op`, `__mlir_type` with some simple examples.
