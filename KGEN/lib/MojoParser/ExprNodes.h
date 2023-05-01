@@ -164,15 +164,38 @@ struct AttributeRefNode final : public ExprNode {
                                    ValueDest &dest, ExprEmitter &emitter);
 };
 
+struct CallArgument {
+  /// This specifies what "kind" of argument this is, these are always present
+  /// in a specific order, and any of these may be missing.
+  enum Kind {
+    kPositional, ///< Positional argument like foo(x)
+    kStar,       ///< Splat list of positional values like: foo(*x)
+    kKeyword,    ///< Keyword argument: foo(arg=x)
+    kStarStar,   ///< Splat list of keywrod values like: foo(**x)
+  } kind = kPositional;
+
+  /// This is the expression for the value, and is always present.
+  ExprNode *expr = nullptr;
+
+  /// This is the name of a keyword argument when kind=kKeyword, else null.
+  StringAttr name;
+
+  SMLoc getLoc() const { return expr->getLoc(); }
+
+  /// Return true if this is a positional argument with a string literal
+  /// containing the specified string.
+  bool isPositionalStringLiteral(StringRef str) const;
+};
+
 struct CallNode final : public ExprNode {
-  CallNode(ExprNode *callee, SMLoc lparenLoc, ArrayRef<ExprNode *> args,
+  CallNode(ExprNode *callee, SMLoc lparenLoc, ArrayRef<CallArgument> args,
            SMLoc rparenLoc)
       : ExprNode(kCall), callee(callee), lparenLoc(lparenLoc), args(args),
         rparenLoc(rparenLoc) {}
 
   ExprNode *const callee;
   const SMLoc lparenLoc;
-  const ArrayRef<ExprNode *> args;
+  const ArrayRef<CallArgument> args;
   const SMLoc rparenLoc;
 
   static bool classof(const ExprNode *node) { return node->kind == kCall; }

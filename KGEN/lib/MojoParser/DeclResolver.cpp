@@ -1635,8 +1635,7 @@ void FnDecorators::apply(
         // @always_inline("nodebug")
         if (declRef->spelling == "always_inline" &&
             callNode->args.size() == 1 &&
-            isa<StringLiteralNode>(callNode->args[0]) &&
-            cast<StringLiteralNode>(callNode->args[0])->getValue() == "nodebug")
+            callNode->args[0].isPositionalStringLiteral("nodebug"))
           funcOp.setAlwaysInlineLevel(AlwaysInlineLevel::EnabledNoDebug);
         else
           processedIt = false;
@@ -1666,7 +1665,8 @@ void FnDecorators::applyLateExport(Location loc, StringRef aliasName) {
 }
 
 void FnDecorators::applyLateExport(Location loc, const CallNode &node) {
-  if (node.args.size() != 1 || !isa<StringLiteralNode>(node.args.front())) {
+  if (node.args.size() != 1 || node.args[0].kind != CallArgument::kPositional ||
+      !isa<StringLiteralNode>(node.args[0].expr)) {
     emitError(
         node.getLoc(),
         "@export requires a string specifying the name of the exported symbol")
@@ -1674,7 +1674,7 @@ void FnDecorators::applyLateExport(Location loc, const CallNode &node) {
     return;
   }
   std::string aliasName =
-      cast<StringLiteralNode>(node.args.front())->getValue();
+      cast<StringLiteralNode>(node.args[0].expr)->getValue();
   if (!isCIdentifier(aliasName)) {
     emitError(loc, aliasName) << " is not a valid C identifier";
     return;
@@ -2637,13 +2637,10 @@ static bool processStructSignatureDecorator(ExprNode *decorator,
     if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee)) {
       // @register_passable("trivial")
       if (declRef->spelling == "register_passable" &&
-          callNode->args.size() == 1) {
-        auto *string = dyn_cast<StringLiteralNode>(callNode->args[0]);
-        if (string && string->getValue() == "trivial") {
-          structOp.setRegisterPassable(
-              StructDeclOp::RP_RegisterPassableTrivial);
-          return false; // Process again at body resolution.
-        }
+          callNode->args.size() == 1 &&
+          callNode->args[0].isPositionalStringLiteral("trivial")) {
+        structOp.setRegisterPassable(StructDeclOp::RP_RegisterPassableTrivial);
+        return false; // Process again at body resolution.
       }
     }
   }
@@ -3229,11 +3226,9 @@ void StructBodyDecorators::processDecorator(ExprNode *decorator) {
     if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee)) {
       // @register_passable("trivial")
       if (declRef->spelling == "register_passable" &&
-          callNode->args.size() == 1) {
-        auto *string = dyn_cast<StringLiteralNode>(callNode->args[0]);
-        if (string && string->getValue() == "trivial")
-          return processRegisterPassableDecorator(/*isTrivial*/ true);
-      }
+          callNode->args.size() == 1 &&
+          callNode->args[0].isPositionalStringLiteral("trivial"))
+        return processRegisterPassableDecorator(/*isTrivial*/ true);
     }
   }
 
