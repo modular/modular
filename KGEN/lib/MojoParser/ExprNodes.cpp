@@ -2439,9 +2439,10 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   /// TODO(subtyping): With subtypes, we can find intersection types, e.g. a
   /// common superclass.  We could also try converting LHS to RHS and RHS to LHS
   /// here that would allow "1.0 if cond else 2" for example.
-  if (!trueVal.getRValueType().isEqualCanon(falseVal.getRValueType())) {
+  auto resultType = trueVal.getRValueType();
+  if (!resultType.isEqualCanon(falseVal.getRValueType())) {
     emitter.emitError(getLoc(), "true value of type ")
-        << trueVal.getRValueType() << " is not compatible with false value "
+        << resultType << " is not compatible with false value "
         << falseVal.getRValueType() << " in conditional" << trueExpr->getRange()
         << falseExpr->getRange();
     return {};
@@ -2450,8 +2451,7 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Ok, we now know if the types were register_passable or not, so finish up
   // the logic.  register_passable values get merged together as SSA registers
   // in the 'if' result.
-  if (trueVal.getRValueType().isRegisterPassable(trueExpr->getLoc(),
-                                                 emitter.shared)) {
+  if (resultType.isRegisterPassable(trueExpr->getLoc(), emitter.shared)) {
     // Finish false.
     auto falseSR = emitter.emitSRValue({falseVal, falseExpr}, EC_BoolCondition);
     if (!falseSR)
@@ -2469,18 +2469,26 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return emitter.emitResult(SRValue(ifOp.getResult(0)), this, dest);
   }
 
-  // If we have a memory only type, then we don't need the 'if' result.  There
-  // is no way to remove results after creating it, so we create a new IfOp and
-  // everything over.
-  auto otherDest = dest.duplicate();
-  bool hadError = !emitter.emitResult(falseVal, falseExpr, dest);
+  // If we have a memory only type, we have to handle the various issues with
+  // the ValueDest.  It may specify an SLValue to emit into, it may be ambiguous
+  // (like a call argument) or it may even be something like a DLValue.  We
+  // handle this by projecting the ValueDest to an SLValue if we can, but
+  // otherwise using a scratch buffer if not.
+  emitter.builder->setInsertionPoint(ifOp);
+  SLValue destBuffer = dest.getSLValueForResult(getLoc(), resultType, emitter);
+
+  emitter.builder->setInsertionPointToEnd(&ifOp.getElseBlock());
+  ValueDest falseDest(destBuffer, EC_CondExpr);
+  auto falseResult = emitter.emitResult(falseVal, falseExpr, falseDest);
   emitter.builder->create<HLCF::YieldOp>(ifLoc);
 
   emitter.builder->setInsertionPointToEnd(&ifOp.getThenBlock());
-  auto result = emitter.emitResult(falseVal, falseExpr, otherDest);
+  ValueDest trueDest(destBuffer, EC_CondExpr);
+  auto result = emitter.emitResult(trueVal, falseExpr, trueDest);
   emitter.builder->create<HLCF::YieldOp>(ifLoc);
 
-  // Create thew new 'if' that doesn't return anything.
+  // MemoryOnly results don't need the 'if' result.  There is no way to remove
+  // results after creating it, so we create a new IfOp and move IR over.
   emitter.builder->setInsertionPointAfter(ifOp);
   auto newIfOp =
       emitter.builder->create<HLCF::IfOp>(ifLoc, TypeRange{}, condValue);
@@ -2488,9 +2496,7 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   newIfOp.getElseRegion().takeBody(ifOp.getElseRegion());
   ifOp->erase();
 
-  if (hadError)
-    return {};
-  return result;
+  return emitter.emitCResult(MRValue(destBuffer), this, dest);
 }
 
 /// Emit the comparison expression with operator ops[opIdx] and operands:
