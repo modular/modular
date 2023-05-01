@@ -103,6 +103,9 @@ static LogicalResult getCTypeForType(FuncOp func, Type t,
   }
 
   if (auto array = dyn_cast<POP::ArrayType>(t)) {
+    if (!*array.getResolvedSize())
+      return success();
+
     if (failed(getCTypeForType(func, array.getResolvedElementType(), types)))
       return failure();
     types.back() += ("[" + Twine(*array.getResolvedSize()) + "]").str();
@@ -120,7 +123,7 @@ static LogicalResult getCTypeForType(FuncOp func, Type t,
     return success();
   }
 
-  if (auto variadic = dyn_cast<KGEN::VariadicType>(t)) {
+  if (auto variadic = dyn_cast<VariadicType>(t)) {
     types.push_back("void *");
     types.push_back("ssize_t");
     return success();
@@ -131,17 +134,6 @@ static LogicalResult getCTypeForType(FuncOp func, Type t,
     return success();
   }
 
-  // Check for !kgen.list<i1[0]> which the lowering of !lit.none and it
-  // corresponds to void.
-  if (auto listType = dyn_cast<ListType>(t)) {
-    SmallVector<std::string> elType;
-    if (failed(
-            getCTypeForType(func, listType.getResolvedElementType(), elType)))
-      return failure();
-    for (int64_t i = 0, e = *listType.getResolvedLength(); i != e; ++i)
-      types.append(elType);
-    return success();
-  }
   if (!t.isa<IndexType, IntegerType, FloatType>())
     return func.emitError("unsupported argument type: ") << t;
   if (!t.isIndex() && !llvm::isPowerOf2_64(t.getIntOrFloatBitWidth()))

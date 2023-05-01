@@ -2,10 +2,6 @@
 
 // Test proper handling of debug types.
 
-// CHECK-DAG: ![[LIST_ELEMENT_TYPE:.*]] = !debuginfo.unresolved<index>
-// CHECK-DAG: ![[LIST:.*]] = !debuginfo.array<2 x ![[LIST_ELEMENT_TYPE]]>
-!listTest = !kgen.list<index[2]>
-
 // CHECK-DAG: ![[MEMBER_TYPE:.*]] = !debuginfo.unresolved<!pop.array<2, simd<4, f32>>>
 // CHECK-DAG: ![[MEMBER:.*]] = !debuginfo.member<data: ![[MEMBER_TYPE]]>
 // CHECK-DAG: ![[STRUCT:.*]] = !debuginfo.struct<SmallVector(![[MEMBER]])>
@@ -16,8 +12,6 @@ lit.struct.decl @SmallVector<N, T: type> {
 
 // CHECK: "test.types"
 "test.types"() {
-  // CHECK-SAME: listType = ![[LIST]]
-  listType = !debuginfo.unresolved<!listTest>,
   // CHECK-SAME: structType = ![[STRUCT]]
   structType = !debuginfo.unresolved<!structTest>
 } : () -> ()

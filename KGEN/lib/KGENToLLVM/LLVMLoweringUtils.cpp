@@ -909,6 +909,4 @@ POPToLLVMDebugInfoTypeConverter::POPToLLVMDebugInfoTypeConverter(
       return baseType;
     return DebugInfo::DIVectorType::get(baseType, *size);
   });
-
-  // TODO: Add debug generation for variant and dtype.
 }

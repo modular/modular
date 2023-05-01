@@ -84,7 +84,7 @@ public:
 static bool moduleExportsMain(ModuleOp theModule, SymbolTable &symtab,
                               bool &isDef) {
   MLIRContext *ctx = theModule.getContext();
-  auto emptyListType = ListType::get(IntegerType::get(ctx, 1), 0);
+  auto noneType = POP::ArrayType::get(0, IntegerType::get(ctx, 1));
   for (auto exportOp : theModule.getOps<ExportOp>()) {
     // Is there an exported "main"?
     if (exportOp.getAlias() != "main")
@@ -96,7 +96,7 @@ static bool moduleExportsMain(ModuleOp theModule, SymbolTable &symtab,
     FunctionType funcType = func.getFunctionType();
     if (funcType.getNumInputs() != 0 || funcType.getNumResults() != 1)
       continue;
-    if (dyn_cast<ListType>(funcType.getResult(0)) == emptyListType) {
+    if (funcType.getResult(0) == noneType) {
       isDef = false;
       return true;
     }
@@ -115,7 +115,7 @@ static bool moduleExportsMain(ModuleOp theModule, SymbolTable &symtab,
         POP::SIMDType::get(1, DTypeConstantAttr::get(ctx, KGENDType::index))});
     if (variantElementTys[0] != ConcreteTypeConstantAttr::get(errorType))
       return false;
-    if (variantElementTys[1] == ConcreteTypeConstantAttr::get(emptyListType)) {
+    if (variantElementTys[1] == ConcreteTypeConstantAttr::get(noneType)) {
       isDef = true;
       return true;
     }

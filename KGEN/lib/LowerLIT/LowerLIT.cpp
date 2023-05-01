@@ -12,6 +12,7 @@
 #include "KGEN/KGENPasses.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
@@ -247,11 +248,12 @@ static void lowerAttributesAndTypes(Operation *op) {
       [](SymbolRefAttr ref) { return flattenSymbolRefAttr(ref); });
 
   // Lower `!lit.none` to `list<i1[0]>`, which will eventually become nothing.
-  auto emptyList = ListType::get(IntegerType::get(op->getContext(), 1), 0);
+  auto emptyList =
+      POP::ArrayType::get(0, IntegerType::get(op->getContext(), 1));
   replacer.addReplacement([&](KGEN::LIT::NoneType type) { return emptyList; });
   // Lower `#lit.none` to `[]`.
   replacer.addReplacement([&](LIT::NoneAttr attr) {
-    return ListAttr::get(attr.getContext(), {}, emptyList);
+    return POP::ArrayAttr::get(attr.getContext(), {}, emptyList);
   });
 
   // Remove all input conventions.
