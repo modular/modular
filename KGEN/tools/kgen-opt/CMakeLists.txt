@@ -17,6 +17,7 @@ add_modular_tool(kgen-opt
   KGENDialect
   KGENEmitObject
   KGENCompilerRT
+  KGENCompiler
   POPDialect
   KGENToLLVM
   KGENElaborator

@@ -204,7 +204,7 @@ AsyncValueRef<Chain> Cache::inflateConstant(Operation *constant,
 
       // Return the new DenseResourceElementsAttr.
       auto newAttr = DenseResourceElementsAttr::get(
-          cacheAttr.getType(),
+          cast<ShapedType>(cacheAttr.getType()),
           resourceManager.insert(name.getValue(), std::move(blob)));
       return newAttr;
     });

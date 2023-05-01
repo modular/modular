@@ -179,7 +179,6 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // Set up the dialects in the context.
   ctx->appendDialectRegistry(registry);
-  ctx->loadAllAvailableDialects();
   // Allow unregistered dialects, we will verify we know what to do with it
   // later.
   ctx->allowUnregisteredDialects();

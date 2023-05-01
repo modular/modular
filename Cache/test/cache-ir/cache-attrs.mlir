@@ -5,7 +5,7 @@
 // CHECK-SAME: "YWI1MzBhMTNlNDU5MTQ5ODJiNzlmOWI3ZTNmYmE5OTRjZmQxZjNmYjIyZjcxY2VhMWFmYmYwMmI0NjBjNmQxZAo="
 // CHECK-SAME: i32
 "no.align"() {
-  attr = #cache.constant_hash<"YWI1MzBhMTNlNDU5MTQ5ODJiNzlmOWI3ZTNmYmE5OTRjZmQxZjNmYjIyZjcxY2VhMWFmYmYwMmI0NjBjNmQxZAo=" : i32>
+  attr = #cache.constant_hash<"YWI1MzBhMTNlNDU5MTQ5ODJiNzlmOWI3ZTNmYmE5OTRjZmQxZjNmYjIyZjcxY2VhMWFmYmYwMmI0NjBjNmQxZAo=" : tensor<1xi32>>
 } : () -> ()
 
 // CHECK-LABEL: with.align
@@ -14,7 +14,7 @@
 // CHECK-SAME: align = 1234 : i32
 // CHECK-SAME: i32
 "with.align"() {
-  attr = #cache.constant_hash<"YWI1MzBhMTNlNDU5MTQ5ODJiNzlmOWI3ZTNmYmE5OTRjZmQxZjNmYjIyZjcxY2VhMWFmYmYwMmI0NjBjNmQxZAo=", {align=1234:i32} : i32>
+  attr = #cache.constant_hash<"YWI1MzBhMTNlNDU5MTQ5ODJiNzlmOWI3ZTNmYmE5OTRjZmQxZjNmYjIyZjcxY2VhMWFmYmYwMmI0NjBjNmQxZAo=", {align=1234:i32} : tensor<1xi32>>
 } : () -> ()
 
 // CHECK-LABEL: no.callees

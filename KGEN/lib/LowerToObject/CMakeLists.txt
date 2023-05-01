@@ -25,7 +25,6 @@ add_modular_mlir_library(KGENEmitObject
   KGENDialect
   KGENToLLVM
   KGENTransforms
-  KGENCompiler
   LowerLIT
 
   MCache

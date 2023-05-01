@@ -23,7 +23,8 @@ class CacheAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
 
 def Cache_ConstantHashAttr : CacheAttr<"ConstantHash", "constant_hash",
     [ElementsAttrInterface, TypedAttrInterface,
-     DeclareAttrInterfaceMethods<ReplaceableAttrInterface>]> {
+     DeclareAttrInterfaceMethods<ReplaceableAttrInterface>
+     ]> {
   let summary = "A non-parametrized hash.";
   let description = [{
     This attribute holds a simple hash - it cannot be parametrized. This is
@@ -45,7 +46,7 @@ def Cache_ConstantHashAttr : CacheAttr<"ConstantHash", "constant_hash",
     ```
   }];
 
-  let parameters = (ins AttributeSelfTypeParameter<"", "Type">:$type,
+  let parameters = (ins AttributeSelfTypeParameter<"", "ShapedType">:$type,
                         StringRefParameter<"">:$hash,
                         "DictionaryAttr":$additionalData);
   let hasCustomAssemblyFormat = 1;

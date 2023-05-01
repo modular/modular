@@ -93,7 +93,8 @@ LogicalResult ControlFlowConverter::lowerNode(ControlFlowNode node,
       }
       // Lower the terminator.
       if (isa<ControlFlowTerminator>(block.getTerminator()))
-        if (failed(lowerTerminator(block.getTerminator(), termId)))
+        if (failed(lowerTerminator(
+                cast<ControlFlowTerminator>(block.getTerminator()), termId)))
           return failure();
       // Defer nested nodes.
       for (Operation &op : block.without_terminator())
@@ -149,7 +150,7 @@ LogicalResult ControlFlowConverter::lowerNode(ControlFlowNode node,
 
   // Process nested nodes.
   for (Operation *node : nestedNodes)
-    if (failed(lowerNode(node, termId)))
+    if (failed(lowerNode(cast<ControlFlowNode>(node), termId)))
       return failure();
   return success();
 }
@@ -227,7 +228,7 @@ lowerControlFlowTree(Operation *root, const ControlFlowTree &tree,
   converter.blocks.reserve(tree.ops.size());
 
   unsigned termId = 0;
-  return converter.lowerNode(root, termId);
+  return converter.lowerNode(cast<ControlFlowNode>(root), termId);
 }
 
 static LogicalResult
@@ -241,7 +242,8 @@ lowerControlFlowToLLVM(Operation *op, ControlFlowTreeAnalysis &analysis,
   });
 
   for (Operation *root : roots) {
-    const ControlFlowTree &tree = analysis.getOrCreate(root);
+    const ControlFlowTree &tree =
+        analysis.getOrCreate(cast<ControlFlowNode>(root));
     if (failed(lowerControlFlowTree(root, tree, typeConverter)))
       return failure();
   }

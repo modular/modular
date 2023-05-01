@@ -179,6 +179,7 @@ def M_AlignedBytesAttr : MAttr<"AlignedBytes", "aligned_bytes", [
     /// ElementsAttr interface implementation.
     using ContiguousIterableTypesT = std::tuple<uint8_t>;
     FailureOr<const uint8_t*> try_value_begin_impl(OverloadToken<uint8_t>) const;
+    ShapedType getType() const;
   }];
 }
 

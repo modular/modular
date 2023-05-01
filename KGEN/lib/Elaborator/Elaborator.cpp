@@ -14,6 +14,7 @@
 #include "Elaborator.h"
 #include "IREvaluator.h"
 #include "KGEN/CLOptions.h"
+#include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENDType.h"
@@ -30,8 +31,10 @@
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "Support/MDialect/MAttrs.h"
+#include "Support/MDialect/MDialect.h"
 #include "Support/STLExtras.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Verifier.h"
@@ -837,7 +840,7 @@ processParamApplyOp(ParamApplyOp op, FuncOp func, ExpansionTreeNode *parent) {
         parent->evaluator.concretizeParameterExpr(op.getLoc(), operand);
     if (value.isError())
       return value.takeError();
-    operands.push_back(value.takeValue());
+    operands.push_back(cast<TypedAttr>(value.takeValue()));
   }
   ErrorTreeOr<TypedAttr> result =
       parent->evaluator.evaluateFunction(func, operands);
@@ -983,7 +986,7 @@ static StringAttr mangleParameterValues(GeneratorOp generator,
   auto inputParamDecls = generator.getInputParamsAttr();
   for (auto [inputDecl, value] : llvm::zip(inputParamDecls, inputParamValues)) {
     os << ',' << inputDecl.getName().str() << '=';
-    printParameterValue(value, os);
+    printParameterValue(cast<TypedAttr>(value), os);
   }
   return b.getStringAttr(result);
 }
@@ -1502,7 +1505,8 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
   ArrayAttr inputParamKey = *resolvedCallParamsOr;
 
   // Lookup the callee.
-  FuncInterface calleeOp = lookup(calleeSymbol.getSymbol());
+  FuncInterface calleeOp =
+      cast<FuncInterface>(lookup(calleeSymbol.getSymbol()));
   if (!calleeOp) {
     return ErrorTree(user.getLoc(), "could not find callee '" +
                                         mlir::debugString(calleeSymbol) + "'");
@@ -1595,7 +1599,8 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
     newNode->bindings[{calleeOp, inputParamKey}] = c;
 
     if (std::optional<ErrorTree> err = completeCallProcessing(
-            map.lookup(user.getOperation()), decls, c, newNode, logger))
+            cast<KGENCallOpInterface>(map.lookup(user.getOperation())), decls,
+            c, newNode, logger))
       return err;
 
     LLVM_DEBUG(newNode->print(logger << "New Op "));

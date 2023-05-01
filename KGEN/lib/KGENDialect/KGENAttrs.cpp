@@ -1013,9 +1013,9 @@ static Attribute simplifyAdd(SmallVectorImpl<TypedAttr> &operands) {
            c2 = decomposedOperands.back().second;
       // Fill in missing constant multiplicands with 1.
       if (!c1)
-        c1 = getOneOfType(type);
+        c1 = cast<TypedAttr>(getOneOfType(type));
       if (!c2)
-        c2 = getOneOfType(type);
+        c2 = cast<TypedAttr>(getOneOfType(type));
       // Re-add the "a"*(c1+c2) expression to the operand list and
       // re-canonicalize.
       auto constant = ParamOperatorAttr::get(POC::Add, c1, c2);
@@ -1725,7 +1725,7 @@ static TypedAttr getParamOperator(MLIRContext *context, POC opcode,
 
   // If we folded to an operand, return it.
   if (result)
-    return result;
+    return cast<TypedAttr>(result);
 
   return ParamOperatorAttr::Base::get(context, opcode, operands, resultType);
 }

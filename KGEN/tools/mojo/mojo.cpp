@@ -383,7 +383,6 @@ int main(int argc, char **argv) {
 
   // Set up the dialects in the context.
   context.appendDialectRegistry(registry);
-  context.loadAllAvailableDialects();
 
   // If all we're doing is demangling a name, then don't do anything else. This
   // has to be done before the input is added to the source manager.

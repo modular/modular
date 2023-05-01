@@ -52,7 +52,7 @@ void CacheDialect::registerAttributes() {
 // This custom parse/print pair is only needed because of #5422
 Attribute ConstantHashAttr::parse(AsmParser &parser, Type type) {
   std::vector<char> bytes;
-  Type parsedType;
+  ShapedType parsedType;
   if (parser.parseLess() || parser.parseBase64Bytes(&bytes))
     return nullptr;
 
@@ -89,7 +89,7 @@ ReplaceableAttrIndex ConstantHashAttr::convertToIndex(size_t idx) const {
 
 ReplaceableAttr
 HashIndexAttr::convertFromIndex(ArrayRef<Attribute> attrs) const {
-  return attrs[getIndex()];
+  return llvm::cast<ReplaceableAttr>(attrs[getIndex()]);
 }
 
 //===----------------------------------------------------------------------===//

@@ -72,12 +72,6 @@ public:
     return Error(errorMsg);
   }
 
-  cl::opt<bool> verifyDiagnostics{
-      "verify-diagnostics",
-      cl::desc("Check that emitted diagnostics match "
-               "expected-* lines on the corresponding line"),
-      cl::init(false)};
-
 private:
   /// This tells LLVM to print stack traces on crashes, and also handles
   /// multibyte command line options on windows.
@@ -92,6 +86,12 @@ private:
 class CommonCLOptions : public CLOptionsBase {
 public:
   using CLOptionsBase::CLOptionsBase;
+
+  cl::opt<bool> verifyDiagnostics{
+      "verify-diagnostics",
+      cl::desc("Check that emitted diagnostics match "
+               "expected-* lines on the corresponding line"),
+      cl::init(false)};
 
   // Specify the input file for a given binary
   cl::opt<std::string> inputFilename{llvm::cl::Positional,

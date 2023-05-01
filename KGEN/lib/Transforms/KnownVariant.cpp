@@ -172,7 +172,7 @@ void PruneImpossibleVariantsPass::runOnOperation() {
         return;
       OpBuilder b(is);
       Value value = b.create<ParamConstantOp>(
-          is.getLoc(), cv->getValue().getConstantValue());
+          is.getLoc(), cast<TypedAttr>(cv->getValue().getConstantValue()));
       is.replaceAllUsesWith(value);
       is->erase();
 

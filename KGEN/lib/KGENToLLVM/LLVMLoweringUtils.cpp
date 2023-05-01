@@ -556,25 +556,25 @@ static Value convertSIMDAttr(ImplicitLocOpBuilder &b,
     SmallVector<APInt> values;
     for (const POP::DTypeValue &value : simd.getValues())
       values.emplace_back(1, value.getBoolVal());
-    return asConst(IntArrayElementsAttr::get(
-        VectorType::get(values.size(), b.getI1Type()), values));
+    return asConst(cast<TypedAttr>(IntArrayElementsAttr::get(
+        VectorType::get(values.size(), b.getI1Type()), values)));
   }
   if (dtype.isInt()) {
     SmallVector<APInt> values;
     for (const POP::DTypeValue &value : simd.getValues())
       values.push_back(value.getIntVal());
-    return asConst(IntArrayElementsAttr::get(
+    return asConst(cast<TypedAttr>(IntArrayElementsAttr::get(
         VectorType::get(values.size(),
                         b.getIntegerType(dtype.getIntegerWidthInBits())),
-        values));
+        values)));
   }
   if (dtype.isIndex() || dtype.isAddress()) {
     SmallVector<APInt> values;
     auto indexType = cast<IntegerType>(tc.getIndexType());
     for (const POP::DTypeValue &value : simd.getValues())
       values.push_back(APInt(indexType.getWidth(), value.getIndexVal()));
-    Value addr = asConst(IntArrayElementsAttr::get(
-        VectorType::get(values.size(), indexType), values));
+    Value addr = asConst(cast<TypedAttr>(IntArrayElementsAttr::get(
+        VectorType::get(values.size(), indexType), values)));
     if (dtype.isIndex())
       return addr;
     return b.create<LLVM::IntToPtrOp>(
@@ -585,10 +585,10 @@ static Value convertSIMDAttr(ImplicitLocOpBuilder &b,
   SmallVector<APFloat> values;
   for (const POP::DTypeValue &value : simd.getValues())
     values.push_back(value.getFloatVal());
-  return asConst(FloatArrayElementsAttr::get(
+  return asConst(cast<TypedAttr>(FloatArrayElementsAttr::get(
       VectorType::get(values.size(),
                       getEquivalentFloatType(b.getContext(), dtype)),
-      values));
+      values)));
 }
 
 /// Copied from LLVM::createGlobalString but now takes a symbol table so the
