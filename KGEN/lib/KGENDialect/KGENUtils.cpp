@@ -1863,7 +1863,7 @@ LogicalResult KGEN::checkResultArgumentTypes(Operation *op,
   if (failed(checkResultParameterTypes(
           op, resultParams, cast<DeclInterface>(func.getOperation()))))
     return failure();
-  return checkResultTypes(op, func.getResultTypes());
+  return checkOperandTypes(op, func.getResultTypes());
 }
 
 llvm::MapVector<StringAttr, ExportedSymbol>

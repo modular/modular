@@ -8,19 +8,58 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/TypeUtilities.h"
 
-mlir::LogicalResult M::checkResultTypes(Operation *op,
-                                        TypeRange expectedTypes) {
+using namespace M;
+
+LogicalResult M::checkOperandTypes(Operation *op, TypeRange expectedTypes) {
   if (op->getNumOperands() != expectedTypes.size()) {
-    return op->emitOpError("expected ")
-           << expectedTypes.size() << " operands for enclosing op";
+    return op->emitOpError() << "expected " << expectedTypes.size()
+                             << " operands, but given " << op->getNumOperands();
   }
 
   for (size_t i = 0, e = op->getNumOperands(); i != e; ++i) {
     auto t = op->getOperand(i).getType();
     if (t != expectedTypes[i]) {
-      return op->emitOpError("operand #")
-             << i << " has type " << t << " but should be " << expectedTypes[i];
+      return op->emitOpError() << "operand #" << i << " has type " << t
+                               << " but expected " << expectedTypes[i];
     }
   }
-  return mlir::success();
+  return success();
+}
+
+LogicalResult M::checkArgumentTypes(Operation *op, StringRef blockName,
+                                    Block *block, TypeRange expectedTypes) {
+  if (block->getNumArguments() != expectedTypes.size()) {
+    return op->emitOpError()
+           << "expected " << expectedTypes.size() << " arguments to '"
+           << blockName << "' block, but given " << block->getNumArguments();
+  }
+
+  for (size_t i = 0, e = block->getNumArguments(); i != e; ++i) {
+    auto t = block->getArgument(i).getType();
+    if (t != expectedTypes[i]) {
+      return op->emitOpError()
+             << "block '" << blockName << "' argument #" << i << " has type "
+             << t << " but expected " << expectedTypes[i];
+    }
+  }
+  return success();
+}
+
+LogicalResult M::checkMatchingTypes(Operation *op, StringRef context,
+                                    TypeRange actualTypes,
+                                    TypeRange expectedTypes) {
+  if (actualTypes.size() != expectedTypes.size()) {
+    return op->emitOpError()
+           << "expected " << expectedTypes.size() << " " << context
+           << " types, but given " << actualTypes.size();
+  }
+
+  for (size_t i = 0, e = actualTypes.size(); i != e; ++i) {
+    if (actualTypes[i] != expectedTypes[i]) {
+      return op->emitOpError()
+             << "actual " << context << " type #" << i << " is "
+             << actualTypes[i] << " but expected " << expectedTypes[i];
+    }
+  }
+  return success();
 }

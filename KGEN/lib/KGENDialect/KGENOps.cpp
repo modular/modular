@@ -40,7 +40,7 @@ static LogicalResult checkReturnArguments(T op) {
   // If we have a return op, then we can check the argument types. Otherwise, we
   // just don't have the return op.
   if (ReturnOp returnOp = dyn_cast<ReturnOp>(body.front().getTerminator()))
-    return checkResultTypes(returnOp, op.getResultTypes());
+    return checkOperandTypes(returnOp, op.getResultTypes());
   return success();
 }
 
@@ -186,7 +186,7 @@ printRegionDeclaration(OpAsmPrinter &p, Operation *op, ParamDeclAttr paramDecl,
 
 LogicalResult ParamDeclareRegionOp::verifyRegions() {
   auto returnOp = cast<ReturnOp>(getBody()->getTerminator());
-  if (failed(checkResultTypes(returnOp, getResultTypes())))
+  if (failed(checkOperandTypes(returnOp, getResultTypes())))
     return failure();
   if (getBody()->getArgumentTypes() != getArgumentTypes())
     return emitOpError(
@@ -815,7 +815,7 @@ void ParamIfOp::collectParameterUsesBelow(
 //===----------------------------------------------------------------------===//
 
 LogicalResult ParamYieldOp::verify() {
-  return checkResultTypes(
+  return checkOperandTypes(
       *this, cast<ParamIfOp>((*this)->getParentOp()).getResultTypes());
 }
 
