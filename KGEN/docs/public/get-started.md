@@ -15,24 +15,25 @@ access over time.
 
 ## Get started
 
-1. First you need to [sign up for access to the Mojo
-    Playground](https://www.modular.com/sign-up/).
+1. [Sign up for access to the Mojo
+    Playground](https://www.modular.com/get-started/).
 
-    You’ll immediately receive an automated email to acknowledge your request,
-    but we will slowly roll out access, so please be patient.
+    You’ll immediately receive an email to acknowledge your request,
+    but we're gradually rolling out access, so please be patient.
 
-2. When you receive access, [log in to the
+2. When you receive access, [log in to the Mojo
     Playground](https://playground.modular.com) using the email
-    address you provided in request form.
+    address you provided in the above form.
 
 ## What to expect
 
 + The Mojo Playground is a [JupyterHub](https://jupyter.org/hub) environment in
 which everybody has access to the same Mojo standard library, but each user has
 a private volume in which you can write and save your own Mojo programs.
-+ We've included a handful of notebooks to teach you some
-of Mojo's features. (If you don't have access yet, you can actually read the
-[rendered notebooks here](/mojo/notebooks/)).
++ We've included a handful of notebooks to show you Mojo basics and demonstrate
+its capabilities. The first one, "Hello, Mojo," is a walkthrough of all
+the major language features. (If you don't have access yet, you can read the
+[rendered notebooks here](/mojo/notebooks/).)
 + The number of vCPU cores available in your cloud instance may vary, so
 baseline performance is not representative of the language. However, as you
 will see in the [`Matmul.ipynb`](/mojo/notebooks/Matmul.html) notebook, Mojo's
@@ -41,8 +42,8 @@ relative performance over Python is significant.
 ## Tips
 
 + **Rename the included notebooks** if you make any changes. These files will
-be reset upon any server refresh or update, sorry. If you rename them then your
-changes will be safe.
+reset upon any server refresh or update, sorry. So if you rename the files,
+your changes will be safe.
 + You can use `%%python` at the top of a notebook cell and write normal Python
 code. Variables, functions, and imports defined in a Python cell are available
 for access in future Mojo cells.
@@ -52,7 +53,9 @@ for access in future Mojo cells.
 + Did we mention that the included notebooks will lose your changes?<br>
 **Rename the files if you want to save your changes.**
 + The Mojo environment does not have network access, so you cannot install
-other tools or Python packages.
+other tools or Python packages. However, we've included a variety of popular
+Python packages, such as `numpy`, `pandas`, and `matplotlib` (see how to
+[import Python modules](/mojo/programming-manual.html#python-integration)).
 + Redefining implicit variables is not supported (variables without a `let` or
 `var` in front). If you’d like to redefine a variable across notebook cells,
 please introduce the variable with either `let` or `var`.
