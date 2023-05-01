@@ -184,16 +184,16 @@ struct TypeParameter[type: __mlir_type.`!kgen.mlirtype`]:
     pass
 
 # Test that parameter decls can refine subsequent ones in the same param list.
-# CHECK-LABEL: lit.struct.decl @ParamSubst<rank, shape: list<index[rank]>>
+# CHECK-LABEL: lit.struct.decl @ParamSubst<type: type, shape: variadic<type>>
 struct ParamSubst[
-    rank: __mlir_type.index,
-    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    type: AnyType,
+    shape: __mlir_type[`!kgen.variadic<`, type,`>`],
   ]: pass
 
 # CHECK-LABEL: lit.func @"testParamSubst
 fn testParamSubst():
-  # CHECK: %xx = lit.varlet.decl {{.*}} : <@"$parameters"::@ParamSubst<rank = 2, shape: list<index[2]> = [1, 2]>>
-  var xx : ParamSubst[(2).__as_mlir_index(), __mlir_attr.`#kgen<list[1, 2]> : !kgen.list<index[2]>`]
+  # CHECK: %xx = lit.varlet.decl {{.*}} : <@"$parameters"::@ParamSubst<type: type = index, shape: variadic<index> = [1, 2]>>
+  var xx : ParamSubst[__mlir_type.index, __mlir_attr.`#kgen.variadic<1, 2> : !kgen.variadic<index>`]
 
 
 # Test parameter substitution.
@@ -544,10 +544,10 @@ struct Abstraction[a: Int]:
       return
 
 # CHECK-LABEL: lit.func @"testDependentType()"
-# CHECK-SAME: shape: list<index[apply{{.*}}@Int::@"__as_mlir_index
+# CHECK-SAME: shape: array<apply{{.*}}@Int::@"__as_mlir_index
 fn testDependentType[
     rank: Int,
-    shape: __mlir_type[`!kgen.list<index[`, rank.__as_mlir_index(), `]>`],
+    shape: __mlir_type[`!pop.array<`, rank.__as_mlir_index(), `, index>`],
 ]():
     pass
 
@@ -562,8 +562,8 @@ fn testParameterEvaluator():
   # CHECK-NEXT: %2 = kgen.rebind %y : {{.*}}@Abstraction<a: {{.*}} scalar<index> = 3}
   # CHECK-NEXT: kgen.call {{.*}}@Abstraction::@"pull{{.*}}"<{{.*}}>(%2)
   Abstraction[1].pull[2](y)
-  # CHECK-NEXT: kgen.call {{.*}}@"testDependentType()"<:{{.*}} = 1{{.*}}, :list<index[apply{{.*}}__as_mlir_index{{.*}} rebind(:list<index[1]>
-  testDependentType[1, __mlir_attr.`#kgen<list[0]> : !kgen.list<index[1]>`]()
+  # CHECK-NEXT: kgen.call {{.*}}@"testDependentType()"<:{{.*}} = 1{{.*}}, :array<apply{{.*}}__as_mlir_index{{.*}} rebind(:array<1, index>
+  testDependentType[1, __mlir_attr.`#pop.array<0> : !pop.array<1, index>`]()
 
 
 fn takeAbstraction2(value: Abstraction[2]):
