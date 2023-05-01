@@ -2138,6 +2138,10 @@ AnyValue BinOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return emitAssign(dest, emitter);
   if (isAssignmentStmt()) // `x += y`
     return emitInplace(dest, emitter);
+  if (kind == kWalrus) {
+    emitter.emitError(getLoc(), "':=' operator not implemented yet");
+    return {};
+  }
 
   // Othewise we emit the LHS followed by the RHS.
   AnyValue lhsRV = emitter.emitExpr(lhs, EC_OperatorOperandValue);

@@ -42,8 +42,10 @@ enum class Precedence {
   // in parens, they are only allowed as a top level statement.
   kAssignStmt,
 
-  kLowestExpr, // Lowest expression precedence (most loosely bound).
-  kIfElse,     // infix: if - else
+  kAssignExpr, // "assignment_expression" precedence
+  kWalrus,     // infix: := (walrus)
+  kExpression, // "expression" precedence
+  kIfElse,     // infix: if - else + lambda.
   kBoolOr,     // infix: or
   kBoolAnd,    // infix: and
   kBoolNot,    // prefix: not
@@ -75,11 +77,18 @@ public:
   // Expressions.
   ParseResult parseExpressionList(SmallVectorImpl<ExprNode *> &results,
                                   ArrayRef<Token::Kind> terminators,
+                                  bool allowStarredItem,
                                   bool *hadTrailingComma = nullptr);
+  ParseResult parseStarredList(SmallVectorImpl<ExprNode *> &results,
+                               ArrayRef<Token::Kind> terminators,
+                               bool *hadTrailingComma = nullptr) {
+    return parseExpressionList(results, terminators, /*allowStartedItem=*/true,
+                               hadTrailingComma);
+  }
+
   ParseResult parseExpression(ExprNode *&result,
-                              Precedence minPrec = Precedence::kLowestExpr);
-  ParseResult parseStarExpression(ExprNode *&result,
-                                  Precedence minPrec = Precedence::kLowestExpr);
+                              Precedence minPrec = Precedence::kExpression);
+  ParseResult parseStarredItem(ExprNode *&result);
 
   ExprNode *getNoneExpr(SMLoc loc) {
     return alloc<SimpleLiteralNode>(ExprNode::kNoneLiteral, loc);
@@ -145,16 +154,25 @@ bool ExprParser::isTokenStartOfNextStatement() {
 // Parsing rules
 //===----------------------------------------------------------------------===//
 
+/// If 'allowStarredItem' is true, this parses a starred_list, otherwise an
+/// expression_list.
+///
 /// expression_list ::= expression ("," expression)* [","]
+/// starred_list       ::=  starred_item ("," starred_item)* [","]
+/// starred_item       ::=  assignment_expression | "*" or_expr
 ParseResult
 ExprParser::parseExpressionList(SmallVectorImpl<ExprNode *> &results,
                                 ArrayRef<Token::Kind> terminators,
-                                bool *hadTrailingComma) {
-  return parseCommaSeparatedList(
-      [&]() -> ParseResult {
-        return parseExpression(results.emplace_back(nullptr));
-      },
-      terminators, hadTrailingComma);
+                                bool allowStarredItem, bool *hadTrailingComma) {
+  auto parseItem = [&]() -> ParseResult {
+    ExprNode *&result = results.emplace_back(nullptr);
+
+    if (allowStarredItem)
+      return parseStarredItem(result);
+    return parseExpression(result, Precedence::kExpression);
+  };
+
+  return parseCommaSeparatedList(parseItem, terminators, hadTrailingComma);
 }
 
 namespace {
@@ -170,33 +188,33 @@ struct InfixInfo {
     default:
       return {Precedence::kInvalid, ExprNode::kLastBinOp, false};
     case Token::equal:
-      return {Precedence::kLowestExpr, ExprNode::kAssign, false};
+      return {Precedence::kAssignExpr, ExprNode::kAssign, false};
     case Token::plus_equal:
-      return {Precedence::kLowestExpr, ExprNode::kIAdd, false};
+      return {Precedence::kAssignExpr, ExprNode::kIAdd, false};
     case Token::minus_equal:
-      return {Precedence::kLowestExpr, ExprNode::kISub, false};
+      return {Precedence::kAssignExpr, ExprNode::kISub, false};
     case Token::star_equal:
-      return {Precedence::kLowestExpr, ExprNode::kIMul, false};
+      return {Precedence::kAssignExpr, ExprNode::kIMul, false};
     case Token::at_equal:
-      return {Precedence::kLowestExpr, ExprNode::kIMatMul, false};
+      return {Precedence::kAssignExpr, ExprNode::kIMatMul, false};
     case Token::slash_equal:
-      return {Precedence::kLowestExpr, ExprNode::kITrueDiv, false};
+      return {Precedence::kAssignExpr, ExprNode::kITrueDiv, false};
     case Token::percent_equal:
-      return {Precedence::kLowestExpr, ExprNode::kIMod, false};
+      return {Precedence::kAssignExpr, ExprNode::kIMod, false};
     case Token::amp_equal:
-      return {Precedence::kLowestExpr, ExprNode::kIAnd, false};
+      return {Precedence::kAssignExpr, ExprNode::kIAnd, false};
     case Token::pipe_equal:
-      return {Precedence::kLowestExpr, ExprNode::kIOr, false};
+      return {Precedence::kAssignExpr, ExprNode::kIOr, false};
     case Token::circumflex_equal:
-      return {Precedence::kLowestExpr, ExprNode::kIXor, false};
+      return {Precedence::kAssignExpr, ExprNode::kIXor, false};
     case Token::less_less_equal:
-      return {Precedence::kLowestExpr, ExprNode::kILShift, false};
+      return {Precedence::kAssignExpr, ExprNode::kILShift, false};
     case Token::right_right_equal:
-      return {Precedence::kLowestExpr, ExprNode::kIRShift, false};
+      return {Precedence::kAssignExpr, ExprNode::kIRShift, false};
     case Token::star_star_equal:
-      return {Precedence::kLowestExpr, ExprNode::kIPow, false};
+      return {Precedence::kAssignExpr, ExprNode::kIPow, false};
     case Token::slash_slash_equal:
-      return {Precedence::kLowestExpr, ExprNode::kIFloorDiv, false};
+      return {Precedence::kAssignExpr, ExprNode::kIFloorDiv, false};
     case Token::plus:
       return {Precedence::kSum, ExprNode::kAdd, false};
     case Token::minus:
@@ -249,6 +267,8 @@ struct InfixInfo {
       return {Precedence::kPower, ExprNode::kPow, true};
     case Token::kw_await:
       return {Precedence::kAwait, ExprNode::kAwait, false};
+    case Token::colon_equal:
+      return {Precedence::kWalrus, ExprNode::kWalrus, false};
     }
   }
 };
@@ -312,19 +332,17 @@ ParseResult ExprParser::parseExpression(ExprNode *&expr, Precedence minPrec) {
   return success();
 }
 
-/// star_expression ::= '*' bitwise_or | expression
-ParseResult ExprParser::parseStarExpression(ExprNode *&expr,
-                                            Precedence minPrec) {
+/// starred_item ::= assignment_expression | '*' bitwise_or
+ParseResult ExprParser::parseStarredItem(ExprNode *&expr) {
   SMLoc starLoc;
   if (consumeIf(Token::star, &starLoc)) {
-    ExprNode *subExpr = nullptr;
-    if (parseExpression(subExpr, minPrec))
+    if (parseExpression(expr, Precedence::kOr))
       return failure();
-    expr = alloc<UnaryOpNode>(ExprNode::kUnpack, starLoc, subExpr);
+    expr = alloc<UnaryOpNode>(ExprNode::kUnpack, starLoc, expr);
     return success();
   }
 
-  return parseExpression(expr, minPrec);
+  return parseExpression(expr, Precedence::kAssignExpr);
 }
 
 static ExprNode::Kind getUnaryOpKind(Token::Kind tokKind) {
@@ -590,7 +608,7 @@ ParseResult ExprParser::parsePrefixLParen(ExprNode *&result, SMLoc lparenLoc) {
 
   // Empty parens is a tuple.
   if (!consumeIf(Token::r_paren, &rparenLoc)) {
-    if (parseExpressionList(exprs, Token::r_paren, &hadTrailingComma) ||
+    if (parseStarredList(exprs, Token::r_paren, &hadTrailingComma) ||
         parseToken(Token::r_paren, "expected ')' in parenthesized expression",
                    &rparenLoc))
       return failure();
@@ -606,8 +624,6 @@ ParseResult ExprParser::parsePrefixLParen(ExprNode *&result, SMLoc lparenLoc) {
 }
 
 /// list_display ::=  "[" [starred_list | comprehension [TODO]] "]"
-/// starred_list       ::=  starred_item ("," starred_item)* [","]
-/// starred_item       ::=  assignment_expression[TODO] | "*" or_expr [TODO]
 ParseResult ExprParser::parsePrefixLSquare(ExprNode *&result,
                                            SMLoc lsquareLoc) {
   SMLoc rsquareLoc;
@@ -618,7 +634,7 @@ ParseResult ExprParser::parsePrefixLSquare(ExprNode *&result,
     return success();
   }
 
-  if (parseExpressionList(exprs, Token::r_square) || getLocation(rsquareLoc) ||
+  if (parseStarredList(exprs, Token::r_square) || getLocation(rsquareLoc) ||
       parseToken(Token::r_square, "expected ']' in list expression"))
     return failure();
   result =
@@ -743,8 +759,8 @@ ParseResult ExprParser::parseCallSuffix(ExprNode *&result, SMLoc lparenLoc) {
         cursor.restore(lexer);
       }
 
-      // FIXME: This should be parseAssignmentExpression, which allows :=.
-      return parseExpression(arg.expr);
+      // Parse this as an assignment_expression, allowing := operator.
+      return parseExpression(arg.expr, Precedence::kAssignExpr);
     };
 
     // TODO: Handle comprehension argument.
@@ -1011,7 +1027,8 @@ ParserBase::parseExpressionList(SmallVectorImpl<ExprNode *> &results,
                                 std::optional<size_t> stmtIndent,
                                 bool *hadTrailingSep) {
   return ExprParser(getLexer(), stmtIndent)
-      .parseExpressionList(results, Token::Kind::eof, hadTrailingSep);
+      .parseExpressionList(results, Token::Kind::eof,
+                           /*allowStarredList=*/false, hadTrailingSep);
 }
 
 /// Expression parsing.  Each of these take a `stmtIndent` specifier that
@@ -1024,12 +1041,19 @@ ParserBase::parseExpressionList(SmallVectorImpl<ExprNode *> &results,
 ParseResult ParserBase::parseExpression(ExprNode *&result,
                                         std::optional<size_t> stmtIndent) {
   return ExprParser(getLexer(), stmtIndent)
-      .parseExpression(result, Precedence::kLowestExpr);
+      .parseExpression(result, Precedence::kExpression);
 }
 
-ParseResult ParserBase::parseStarExpression(ExprNode *&result) {
+ParseResult ParserBase::parseStarredItem(ExprNode *&result) {
+  return ExprParser(getLexer(), std::nullopt).parseStarredItem(result);
+}
+
+ParseResult ParserBase::parseStarredList(SmallVectorImpl<ExprNode *> &results,
+                                         std::optional<size_t> stmtIndent,
+                                         bool *hadTrailingSep) {
   return ExprParser(getLexer(), std::nullopt)
-      .parseStarExpression(result, Precedence::kLowestExpr);
+      .parseExpressionList(results, Token::Kind::eof,
+                           /*allowStarredList=*/true, hadTrailingSep);
 }
 
 /// assignment_stmt ::=

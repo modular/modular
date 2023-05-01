@@ -197,9 +197,12 @@ public:
   ParseResult parseExpressionList(SmallVectorImpl<ExprNode *> &results,
                                   std::optional<size_t> stmtIndent,
                                   bool *hadTrailingComma);
+  ParseResult parseStarredList(SmallVectorImpl<ExprNode *> &results,
+                               std::optional<size_t> stmtIndent,
+                               bool *hadTrailingComma);
   ParseResult parseExpression(ExprNode *&expr,
                               std::optional<size_t> stmtIndent);
-  ParseResult parseStarExpression(ExprNode *&expr);
+  ParseResult parseStarredItem(ExprNode *&expr);
   /// Parse an expression, allowing `=`, and `+=`.
   ParseResult parseExpressionOrAssignmentStmt(ExprNode *&expr,
                                               std::optional<size_t> stmtIndent);

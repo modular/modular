@@ -99,7 +99,8 @@ public:
     kLShift,
     kRShift,
     kPow,
-    kAssign,
+    kWalrus, // x := y, aka assignment_expression
+    kAssign, // x = y
     // Inplace operators.
     kIAdd,
     kISub,

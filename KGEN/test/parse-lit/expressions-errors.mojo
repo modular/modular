@@ -170,7 +170,7 @@ def no_unused_values_in_def():
 
 fn takeKeywordArgs(i: Int, j: Int): pass
 
-fn testKWargs():
+def testKWargs():
   # expected-error @+1 {{keyword arguments are not supported yet}}
   takeKeywordArgs(j = 42, i = 1)
   # expected-error @+1 {{positional argument follows keyword argument}}
@@ -292,6 +292,12 @@ fn call_async_fn_in_param():
     alias await_it = await awaitable
     # expected-error @below {{cannot await inside a non-async function}}
     await Coroutine[Int](async_function())
+
+
+def doWalrus():
+  # expected-error @+1 {{':=' operator not implemented yet}}
+  bad_assignment0(1, abc := 42)
+
 
 ##===----------------------------------------------------------------------===##
 # Computed Properties and Subscripts
