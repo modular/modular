@@ -65,8 +65,8 @@ struct ComplexSubstitution[type: __mlir_type.`!kgen.dtype`]:
 
 # Issue #6374: [Lit] Add support for type placeholder
 fn typePlaceholder():
-    # CHECK: %x = lit.varlet.decl {{.*}} : <!kgen.list<i32[2]>>
-    var x: __mlir_type[`!kgen.list<`, __mlir_type.i32, `[2]>`]
+    # CHECK: %x = lit.varlet.decl {{.*}} : <!kgen.variadic<i32>>
+    var x: __mlir_type[`!kgen.variadic<`, __mlir_type.i32, `>`]
 
 
 # CHECK-LABEL: lit.func @"fancierSubstitutions
@@ -87,16 +87,13 @@ fn fancierSubstitutions():
 fn testAttrConcatWithoutType[
     length: __mlir_type.index,
 ]():
-    # CHECK: kgen.param.declare x: list<index[2]> = <[1, length]>
+    # CHECK: kgen.param.declare x: variadic<index> = <[1, length]>
     alias x = __mlir_attr[
-        `#kgen<list[`,
+        `#kgen.variadic<`,
         +(1).__as_mlir_index(),
         `,`,
         length,
-        `]> : `,
-        `!kgen.list<index[`,
-        +(2).__as_mlir_index(),
-        `]>`,
+        `> : !kgen.variadic<index>`,
     ]
 
 
