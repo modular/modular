@@ -793,7 +793,7 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
       vararg = VarArgKind::PackVarArg;
     }
     ExprNode *typeExprNode;
-    if (p.parseStarExpression(typeExprNode))
+    if (p.parseStarredItem(typeExprNode))
       return failure();
     typeExpr = typeExprNode;
   }
