@@ -3,7 +3,7 @@
 lit.struct.decl @Error {}
 
 // CHECK-LABEL: kgen.generator @return_raise_or
-// CHECK-SAME: -> !pop.variant<@Error, !kgen.list<i1[0]>>
+// CHECK-SAME: -> !pop.variant<@Error, array<0, i1>>
 lit.func @return_raise_or(%cond: i1, %err: !kgen.declref<@Error>) -> !pop.variant<@Error, !lit.none> {
   hlcf.if %cond {
     // CHECK: %[[ERR:.*]] = pop.variant.create %arg1

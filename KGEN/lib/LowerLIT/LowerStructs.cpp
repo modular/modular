@@ -335,16 +335,10 @@ void LowerStructsPass::runOnOperation() {
   debugTypeConverter.addConversion([&](DeclRefType type) -> DebugInfo::DIType {
     return structLowerer.buildDebugInfoForStructRef(type, debugTypeConverter);
   });
-  debugTypeConverter.addConversion([&](ListType type) -> std::optional<Type> {
-    Type elementType = type.getResolvedElementType();
-    if (!elementType)
-      return std::nullopt;
-
-    // Treat a list as an array for the sake of debugging.
-    return DebugInfo::DIArrayType::get(
-        debugTypeConverter.convertDebugType(elementType),
-        *type.getResolvedLength());
-  });
+  debugTypeConverter.addConversion(
+      [&](LIT::NoneType type) -> std::optional<Type> {
+        return DebugInfo::DIUnspecifiedType::get(type.getContext(), "void");
+      });
 
   structLowerer.replacer.addReplacement([&](DebugInfo::DIType type) -> Type {
     return debugTypeConverter.convertDebugType(type);

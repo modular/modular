@@ -4,7 +4,6 @@
 // RUN: kgen %s -emit-header -func="someMetaScalarKernel" | FileCheck %s --check-prefixes=SCALARMETA
 // RUN: kgen %s -emit-header -func="nestedParametricStruct" | FileCheck %s --check-prefixes=STRUCT
 // RUN: kgen %s -emit-header -func="litNoneKernel" | FileCheck %s --check-prefixes=VOID
-// RUN: kgen %s -emit-header -func="listOneElem" | FileCheck %s --check-prefixes=LISTF32
 // RUN: kgen %s -emit-header -func="oneElemStruct" | FileCheck %s --check-prefixes=ONESTRUCT
 // RUN: kgen %s -emit-header -func="twoElemStruct" | FileCheck %s --check-prefixes=TWOSTRUCT
 // RUN: kgen %s -emit-header -func="oneVariadic" | FileCheck %s --check-prefixes=ONEVARIADIC
@@ -48,19 +47,12 @@ kgen.func @nestedParametricStruct(%a: !kgen.declref<@Bar>) {
 // STRUCT: extern void nestedParametricStruct(float, double)
 
 
-kgen.func @litNoneKernel() -> !kgen.list<i1[0]> {
-  %0 = kgen.param.constant: list<i1[0]> = <[]>
-  kgen.return %0 : !kgen.list<i1[0]>
+kgen.func @litNoneKernel() -> !pop.array<0, i1> {
+  %0 = kgen.param.constant: array<0, i1> = <[]>
+  kgen.return %0 : !pop.array<0, i1>
 }
 
 // VOID: extern void litNoneKernel();
-
-kgen.func @listOneElem() -> !kgen.list<f32[1]> {
-  %0 = kgen.param.constant: list<f32[1]> = <[1.0]>
-  kgen.return %0 : !kgen.list<f32[1]>
-}
-
-// LISTF32: extern float listOneElem();
 
 kgen.func @oneElemStruct(%arg0: i32) -> !pop.struct<i32> {
   %0 = kgen.param.constant: struct<i32> = <{ 0 }>
@@ -97,7 +89,6 @@ kgen.export @someNDBufferKernel to C
 kgen.export @someMetaScalarKernel to C
 kgen.export @nestedParametricStruct to C
 kgen.export @litNoneKernel to C
-kgen.export @listOneElem to C
 kgen.export @oneElemStruct to C
 kgen.export @twoElemStruct to C
 kgen.export @oneVariadic to C
