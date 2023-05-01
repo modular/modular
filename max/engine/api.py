@@ -26,19 +26,6 @@ from typing import Optional, Union
 version_string = _mecore.__version__
 
 
-@dataclass
-class TensorFlowLoadOptions:
-    """Configures how to load TensorFlow models."""
-
-    exported_name: str = field(default="serving_default")
-    """The exported name from the TensorFlow model's signature."""
-
-
-@dataclass
-class TorchLoadOptions:
-    """Configures how to load PyTorch models."""
-
-
 class Model:
     """A loaded model that you can execute.
 
@@ -142,13 +129,7 @@ class InferenceSession:
             config = {"num_threads": num_threads}
         self._impl = _InferenceSession(config)
 
-    def load(
-        self,
-        model_path: Union[str, Path],
-        options: Optional[
-            Union[TensorFlowLoadOptions, TorchLoadOptions]
-        ] = None,
-    ) -> Model:
+    def load(self, model_path: Union[str, Path]) -> Model:
         """Loads a trained model and compiles it for inference.
 
         Parameters
@@ -167,18 +148,8 @@ class InferenceSession:
         RuntimeError
             If the path provided is invalid.
         """
-        options_dict = {}
-        if options:
-            options_dict = asdict(options)
-            if isinstance(options, TensorFlowLoadOptions):
-                options_dict["type"] = "tf"
-            elif isinstance(options, TorchLoadOptions):
-                options_dict["type"] = "torch"
-            else:
-                raise TypeError("Invalid compilation options object.")
-
         model_path = Path(str(model_path))
-        _model = self._impl.compile(model_path, options_dict)
+        _model = self._impl.compile(model_path)
 
         return Model._init(_model)
 
