@@ -528,11 +528,6 @@ kgen.generator @apply_error<fn: () -> ()>() {
 
 // -----
 
-// expected-error @below {{list attribute type requires 2 elements but value has 1}}
-"some.op"() {a = #kgen<list[1]> : !kgen.list<index[2]>} : () -> ()
-
-// -----
-
 // expected-note @+1 {{callee declared here}}
 kgen.generator @callee(%owned: !pop.pointer<i32> byref) {
   kgen.return
@@ -747,14 +742,10 @@ kgen.generator @bad_evaluator() {
 
 // -----
 
-kgen.func @stage_closure() -> !kgen.list<i1[0]> {
-    %idx98 = index.constant 98
-    // expected-error @below {{staged closures cannot have parameters}}
-    %0 = kgen.stage_closure = <n : ui32>() capturing -> index {
-      kgen.return %idx98 : index
-    } { name = "k" }
-    %3 = kgen.param.constant: list<i1[0]> = <[]>
-    kgen.return %3 : !kgen.list<i1[0]>
+kgen.func @stage_closure() {
+  // expected-error @below {{staged closures cannot have parameters}}
+  %0 = kgen.stage_closure = <n : ui32>() capturing -> index {
+  } { name = "k" }
 }
 
 // -----

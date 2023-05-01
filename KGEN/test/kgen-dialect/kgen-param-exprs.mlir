@@ -148,15 +148,6 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
   // CHECK: = kgen.param.constant = <mul_nuw(mul(p2, 2), p1, 42)>
   %40 = kgen.param.constant = <mul_nuw(p1, 42, add(p2, p2))>
 
-  // CHECK: list_size = <2>
-  kgen.param.declare list_size = <2>
-  // CHECK: list_input: list<index[2]>
-  kgen.param.declare list_input: list<index[2]> = <[1, 2]>
-  // CHECK: list_output: list<index[list_size]> = <rebind(:list<index[2]> list_input)>
-  kgen.param.declare list_output: list<index[list_size]> = <rebind(:list<index[2]> list_input)>
-  // CHECK: list_rebound: list<index[2]> = <list_input>
-  kgen.param.declare list_rebound: list<index[2]> = <rebind(:list<index[2]> list_input)>
-
   kgen.param.declare args: variadic<si32> = <[1, 2]>
   // CHECK: constant: si32 = <variadic_get(:variadic<si32> args, 2)>
   kgen.param.constant: si32 = <variadic_get(:variadic<si32> args, 2)>
@@ -351,10 +342,6 @@ kgen.generator @param_canonicalize<p1, p2>() {
   kgen.param.declare unknownEqIndex: i1 = <eq(?, 1)>
   // CHECK: = <1>
   kgen.param.declare unknownEqItselfIndex: i1 = <eq(?, ?)>
-
-  // CHECK: <eq(:list<index[2]> list, [1, 2])>
-  kgen.param.declare list: list<index[2]> = <[3, 4]>
-  kgen.param.declare compareLists: i1 = <eq(:list<index[2]> [1, 2], list)>
 
   kgen.return
 }

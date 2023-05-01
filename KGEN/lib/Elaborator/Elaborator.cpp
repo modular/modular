@@ -959,14 +959,8 @@ static void printParameterValue(TypedAttr value, raw_ostream &os) {
       os << symbolConstant.getSymbol();
   } else if (auto stringConstant = dyn_cast<StringAttr>(value)) {
     os << stringConstant.strref();
-  } else if (auto listConstant = dyn_cast<ListAttr>(value)) {
-    os << '[';
-    llvm::interleave(
-        listConstant.getValues(), os,
-        [&](TypedAttr value) { printParameterValue(value, os); }, ",");
-    os << ']';
   } else {
-    value.print(os, /*elideType=*/true);
+    os << getParamAsString(value);
   }
 }
 

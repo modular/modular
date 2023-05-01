@@ -10,7 +10,6 @@ add_modular_conversion_library(KGENToLLVM
   LowerControlFlow.cpp
   LowerKGENCoroutines.cpp
   LowerKGENToLLVM.cpp
-  LowerKGENList.cpp
   LowerPOPToLLVM.cpp
   LowerKGENClosuresToLLVM.cpp
 

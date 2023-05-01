@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -lower-structs -lower-kgen-list -allow-unregistered-dialect -split-input-file | FileCheck %s
+// RUN: kgen-opt %s -lower-structs -allow-unregistered-dialect -split-input-file | FileCheck %s
 
 // Test proper handling of debug types.
 
@@ -44,24 +44,24 @@ lit.struct.decl @SmallVector<N, T: type> {
   file = #file,
   line = 10,
   arg = 1
-> : !debuginfo.unresolved<!kgen.list<i32[3]>>
+> : !debuginfo.unresolved<!pop.array<3, i32>>
 #local_variable1 = #debuginfo.local_variable<
   scope = #subprogram,
   name = "bar",
   file = #file,
   line = 10,
   arg = 1
-> : !debuginfo.unresolved<!kgen.list<i32[3]>>
+> : !debuginfo.unresolved<!pop.array<3, i32>>
 
 kgen.func @foo() {
   // CHECK-DAG: %[[LIST:.*]] = kgen.param.constant: array<3, i32> = <[1, 2, 3]>
 
   // CHECK: debuginfo.value #local_variable = %[[LIST]]
-  %values = kgen.param.constant: list<i32[3]> = <[1, 2, 3]>
-  debuginfo.value #local_variable = %values : !kgen.list<i32[3]>
+  %values = kgen.param.constant: array<3, i32> = <[1, 2, 3]>
+  debuginfo.value #local_variable = %values : !pop.array<3, i32>
   // CHECK-DAG: %[[EMPTY:.*]] = kgen.param.constant: array<0, i32> = <[]>
   // CHECK: debuginfo.value #local_variable1 = %[[EMPTY]]
-  %empty = kgen.param.constant: list<i32[0]> = <[]>
-  debuginfo.value #local_variable1 = %empty : !kgen.list<i32[0]>
+  %empty = kgen.param.constant: array<0, i32> = <[]>
+  debuginfo.value #local_variable1 = %empty : !pop.array<0, i32>
   kgen.return
 }

@@ -197,14 +197,6 @@ kgen.func @pack_index_out_of_bounds(%pack: !pop.pack<[si8, ui8]>) {
 
 // -----
 
-kgen.func @list_index_out_of_bounds(%list : !kgen.list<index[0]>) {
-  // expected-error @below {{'pop.list.get' op list index out-of-range}}
-  %0 = pop.list.get %list[0] : <index[0]>
-  kgen.return
-}
-
-// -----
-
 kgen.func @struct_gep_type(%a: !pop.pointer<struct<i32>>) {
   // expected-error @below {{'pop.struct.gep' op element index 1 out of bounds (>=1)}}
   %0 = "pop.struct.gep"(%a) { index = 1 : index } : (!pop.pointer<struct<i32>>) -> !pop.pointer<i32>
@@ -216,13 +208,5 @@ kgen.func @struct_gep_type(%a: !pop.pointer<struct<i32>>) {
 kgen.func @struct_gep_type(%a: !pop.pointer<struct<i32>>) {
   // expected-error @below {{'pop.struct.gep' op result type 'i64' does not match struct element type at index 0: 'i32'}}
   %0 = "pop.struct.gep"(%a) { index = 0 : index } : (!pop.pointer<struct<i32>>) -> !pop.pointer<i64>
-  kgen.return
-}
-
-// -----
-
-kgen.func @invalid_list_create_arg_num_mismatch(%idx: index) {
-  // expected-error @below {{'pop.list.create' op expected result list to have 2 elements}}
-  %0 = pop.list.create(%idx, %idx) : <index[3]>
   kgen.return
 }

@@ -581,31 +581,6 @@ kgen.func @variant_create_get(%a: i32) -> i32 {
   kgen.return %1 : i32
 }
 
-// CHECK-LABEL: @list_get
-kgen.func @list_get() -> i32 {
-  // CHECK-NEXT: constant: i32 = <2>
-  %0 = kgen.param.constant: list<i32[2]> = <[1, 2]>
-  %1 = pop.list.get %0[1] : <i32[2]>
-  kgen.return %1 : i32
-}
-
-// CHECK-LABEL: @list_create
-kgen.func @list_create() -> !kgen.list<i32[2]> {
-  // CHECK-NEXT: constant: list<i32[2]> = <[1, 2]>
-  %0 = kgen.param.constant: i32 = <1>
-  %1 = kgen.param.constant: i32 = <2>
-  %2 = pop.list.create(%0, %1) : <i32[2]>
-  kgen.return %2 : !kgen.list<i32[2]>
-}
-
-// CHECK-LABEL: @list_get_create
-kgen.func @list_get_create(%arg0: i32, %arg1: i32) -> i32 {
-  %0 = pop.list.create(%arg0, %arg1) : <i32[2]>
-  %1 = pop.list.get %0[1] : <i32[2]>
-  // CHECK-NEXT: return %arg1
-  kgen.return %1 : i32
-}
-
 // CHECK-LABEL: @index_to_pointer
 kgen.func @index_to_pointer() -> (!pop.pointer<i8>, !pop.scalar<address>) {
   // CHECK-DAG: #M.pointer<1>
