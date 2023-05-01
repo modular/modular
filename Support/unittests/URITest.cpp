@@ -27,6 +27,20 @@ TEST(URITest, filesystem) {
   EXPECT_EQ(std::filesystem::path(uriAbs.getPath().str()), absolutePath);
 }
 
+TEST(URITest, parseWindowsPath) {
+  ErrorOr<URI> uriOr = URI::parse("c:\foo\bar");
+  EXPECT_FALSE(uriOr.isError());
+  EXPECT_EQ((*uriOr).getScheme(), "file");
+  EXPECT_TRUE((*uriOr).getAuthority().empty());
+  EXPECT_EQ((*uriOr).getPath(), "c:\foo\bar");
+
+  uriOr = URI::parse("Z:/foo/bar");
+  EXPECT_FALSE(uriOr.isError());
+  EXPECT_EQ((*uriOr).getScheme(), "file");
+  EXPECT_TRUE((*uriOr).getAuthority().empty());
+  EXPECT_EQ((*uriOr).getPath(), "Z:/foo/bar");
+}
+
 TEST(URITest, parseS3) {
   ErrorOr<URI> uriOr = URI::parse("s3://bucketname/a/path");
   EXPECT_FALSE(uriOr.isError());

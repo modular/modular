@@ -29,8 +29,9 @@ bool isValidScheme(llvm::StringRef scheme) {
 ErrorOr<URI> URI::parse(llvm::StringRef uri) {
   URI u;
   auto pos = uri.find(':');
-  if (pos == llvm::StringRef::npos) {
-    //  This is not a URI, assume it is a local filesystem path.
+  if (pos == llvm::StringRef::npos || (pos == 1 && llvm::isAlpha(uri[0]))) {
+    // This is not a URI, or scheme is a single letter (which can happen on
+    // Windows with filesystem paths), so we assume it is a filesystem path.
     u.scheme = "file";
   } else {
     u.scheme = uri.substr(0, pos);
