@@ -1099,15 +1099,28 @@ fn variadic_memory_subscript[*a: Int](*b: TwoParamsStruct[a[0], a[1]]):
     # CHECK: __copyinit__{{.*}}%[[V1]]
     var v1 = b[2]
 
+fn takeMemory(a: MemoryType): pass
+
 # CHECK-LABEL: lit.func @"testMemoryOnlyConds
 # Issue (#13379)
 fn testMemoryOnlyConds(cond: __mlir_type.i1, a: MemoryType, b: MemoryType) -> MemoryType:
-# CHECK: hlcf.if %cond {
-# CHECK:   %1 = kgen.call {{.*}}__copyinit__{{.*}}(%__result__, %b)
-# CHECK:   hlcf.yield
-# CHECK: } else {
-# CHECK:   %1 = kgen.call {{.*}}__copyinit__{{.*}}(%__result__, %b)
-# CHECK:   hlcf.yield
-# CHECK: }
-# CHECK: %0 = kgen.param.constant: !lit.none = <#lit.none>
-    return a if cond else b
+  # CHECK-NEXT: %anonymous2A = lit.varlet.decl
+  # CHECK-NEXT: hlcf.if %cond {
+  # CHECK-NEXT:    kgen.call {{.*}}__copyinit__{{.*}}(%anonymous2A, %a)
+  # CHECK-NEXT:   hlcf.yield
+  # CHECK-NEXT: } else {
+  # CHECK-NEXT:   %2 = kgen.call {{.*}}__copyinit__{{.*}}(%anonymous2A, %b)
+  # CHECK-NEXT:   hlcf.yield
+  # CHECK-NEXT: }
+  # CHECK-NEXT: kgen.call {{.*}}takeMemory{{.*}}(%anonymous2A)
+  takeMemory(a if cond else b)
+
+  # CHECK-NEXT: hlcf.if %cond {
+  # CHECK-NEXT:   kgen.call {{.*}}__copyinit__{{.*}}(%__result__, %a)
+  # CHECK-NEXT:   hlcf.yield
+  # CHECK-NEXT: } else {
+  # CHECK-NEXT:   kgen.call {{.*}}__copyinit__{{.*}}(%__result__, %b)
+  # CHECK-NEXT:   hlcf.yield
+  # CHECK-NEXT: }
+  # CHECK-NEXT: kgen.param.constant: !lit.none = <#lit.none>
+  return a if cond else b

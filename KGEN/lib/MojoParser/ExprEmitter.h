@@ -142,15 +142,6 @@ public:
     return dummy;
   }
 
-  /// This duplicates the ValueDest, which should only be used when the client
-  /// plans to emit to the same dest multiple times (e.g. in conditional logic).
-  ValueDest duplicate() const {
-    ValueDest result;
-    result.representation = representation;
-    result.context = context;
-    return result;
-  }
-
   ~ValueDest() {
     assert(!isSpecified() && "ValueDest destroyed without being emitted into");
   }
