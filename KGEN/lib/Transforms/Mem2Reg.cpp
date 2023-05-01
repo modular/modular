@@ -270,4 +270,7 @@ void Mem2RegPass::runOnOperation() {
     for (StackAllocationOp alloc : llvm::make_first_range(entryState))
       alloc.erase();
   }
+
+  // Control-flow is not modified.
+  markAnalysesPreserved<HLCF::CFGAnalysis>();
 }

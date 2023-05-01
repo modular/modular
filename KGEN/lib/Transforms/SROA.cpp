@@ -4,10 +4,10 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/HLCFDialect/Analysis/CFG.h"
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
-
-#include "KGEN/KGENDialect/KGENOps.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/Pass/Pass.h"
 
@@ -417,4 +417,7 @@ void SROAPass::runOnOperation() {
     for (Operation *op : toDelete)
       op->erase();
   }
+
+  // Control-flow is not modified.
+  markAnalysesPreserved<HLCF::CFGAnalysis>();
 }
