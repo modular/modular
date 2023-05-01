@@ -1427,17 +1427,6 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
   if (parser.parseOptionalAttrDictWithKeyword(parsedAttributes))
     return failure();
 
-  // If this is a generator, see if it is an implementation of a generator
-  // interface.
-  if (opKind == GeneratorOrFuncKind::generator &&
-      succeeded(parser.parseOptionalKeyword("implements"))) {
-    SymbolRefAttr implementsAttr;
-    if (parser.parseAttribute(implementsAttr,
-                              parser.getBuilder().getType<::mlir::NoneType>(),
-                              "implements", result.attributes))
-      return failure();
-  }
-
   // Disallow attributes that are inferred from elsewhere in the attribute
   // dictionary.
   for (StringRef disallowed : GeneratorOp::getAttributeNames()) {
