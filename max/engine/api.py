@@ -33,10 +33,6 @@ class TensorFlowLoadOptions:
     exported_name: str = field(default="serving_default")
     """The exported name from the TensorFlow model's signature."""
 
-    compatibility_mode: bool = field(default=False)
-    """Indicates whether or not the model will fall back to using
-    TensorFlow kernels."""
-
 
 @dataclass
 class TorchLoadOptions:
