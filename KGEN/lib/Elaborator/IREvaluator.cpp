@@ -54,7 +54,7 @@ IREvaluator::evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
   }
 
   // Apply operators only return one result.
-  return result.getValue().front();
+  return cast<TypedAttr>(result.getValue().front());
 }
 
 //===----------------------------------------------------------------------===//

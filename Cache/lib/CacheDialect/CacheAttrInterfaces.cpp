@@ -18,7 +18,8 @@ struct SymbolRefReplaceableAttr
   /// Convert a SymbolRefAttr to an index by simply returning a symbol of the
   /// index, like `@"0"`.
   ReplaceableAttrIndex convertToIndex(Attribute attr, size_t idx) const {
-    return SymbolRefAttr::get(StringAttr::get(attr.getContext(), Twine(idx)));
+    return cast<ReplaceableAttrIndex>(
+        SymbolRefAttr::get(StringAttr::get(attr.getContext(), Twine(idx))));
   }
 };
 
@@ -38,7 +39,7 @@ struct SymbolRefReplaceableAttrIndex
             10, index);
     if (!err)
       return cast<ReplaceableAttr>(attrs[index]);
-    return attr;
+    return cast<ReplaceableAttr>(attr);
   }
 };
 } // namespace

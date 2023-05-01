@@ -18,5 +18,6 @@ add_modular_tool(kgen-execute
   MLIRBuiltinToLLVMIRTranslation
   MLIRParser
   KGENEmitObject
+  KGENCompiler
   KGENExecutionEngine
   KGENCompilerRT)

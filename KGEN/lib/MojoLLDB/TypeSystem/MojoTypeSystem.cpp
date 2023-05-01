@@ -50,7 +50,6 @@ struct MojoTypeSystem::Impl {
 
     // Set up the dialects in the context.
     mlirContext.appendDialectRegistry(registry);
-    mlirContext.loadAllAvailableDialects();
 
     // Allow unregistered dialects, we will verify we know what to do with it
     // later.

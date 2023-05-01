@@ -174,13 +174,14 @@ PointwiseValue::getAsConstraintSpec(ParamDeclRefAttr param) const {
   if (auto valueArray = dyn_cast<ArrayAttr>(value)) {
     SmallVector<TypedAttr> operands;
     operands.push_back(param);
-    llvm::append_range(operands, valueArray);
+    for (Attribute attr : valueArray)
+      operands.push_back(cast<TypedAttr>(attr));
     expr = ParamOperatorAttr::get(POC::In, operands);
   } else {
     assert(isEquivalence() || ParameterAttr::isSimpleConstant(value));
     // We add pointwise equality constraints and equivalence constraints with
     // equals.
-    expr = ParamOperatorAttr::get(POC::EQ, param, value);
+    expr = ParamOperatorAttr::get(POC::EQ, param, cast<TypedAttr>(value));
   }
   return ConstraintAttr::get(expr, message, loc);
 }
@@ -200,7 +201,7 @@ LogicalResult PointwiseValue::mergeIn(PointwiseValue other,
       SmallVector<TypedAttr> result;
       for (auto value : valueSet)
         if (elements.count(value))
-          result.push_back(value);
+          result.push_back(cast<TypedAttr>(value));
 
       // If one set is a superset of the other, take the smaller set.
       if (result.size() == valueSet.size())

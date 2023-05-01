@@ -99,8 +99,6 @@ int main(int argc, char **argv) {
   LLCL::Runtime runtime(
       LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
       LLCL::createSingleThreadWorkQueue());
-  // Register the EmitLLVM pass with the runtime instance.
-  KGEN::registerEmitLLVMPass(runtime);
 
   // Register the elaborator with the provided runtime.
   mlir::registerPass(
@@ -112,6 +110,6 @@ int main(int argc, char **argv) {
   // Init CompilerRT.
   KGEN_CompilerRT_Initialize();
 
-  return failed(mlir::MlirOptMain(argc, argv, "kgen optimizer driver", registry,
-                                  /*preloadDialectsInContext=*/true));
+  return failed(
+      mlir::MlirOptMain(argc, argv, "kgen optimizer driver", registry));
 }

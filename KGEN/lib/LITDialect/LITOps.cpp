@@ -759,7 +759,8 @@ void StructExtractOp::build(OpBuilder &builder, OperationState &result,
 
 OpFoldResult StructExtractOp::fold(FoldAdaptor adaptor) {
   if (auto value = adaptor.getContainer())
-    return StructExtractAttr::get(value, getFieldAttr(), getType());
+    return StructExtractAttr::get(cast<TypedAttr>(value), getFieldAttr(),
+                                  getType());
 
   // Fold
   //  %S = lit.struct.create(a=%a, b=%b)

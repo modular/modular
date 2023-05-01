@@ -279,31 +279,17 @@ def ElaborateGenerators : Pass<"elaborate-generators", "mlir::ModuleOp"> {
     funcs.
   }];
 
-  let dependentDialects = ["::M::KGEN::KGENDialect"];
+  let dependentDialects = [
+    "HLCF::HLCFDialect",
+    "MDialect",
+    "mlir::LLVM::LLVMDialect"
+  ];
 
   let options = [
     Option<"shouldDoSearch", "enable-search", "bool", "false",
            "If true, benchmark implementations to find the fastest one.">,
     Option<"testDiagnostics", "test-diagnostics", "bool", "false",
            "If true, emit additional interesting diagnostics.">
-  ];
-}
-
-//===----------------------------------------------------------------------===//
-// EmitLLVM
-//===----------------------------------------------------------------------===//
-
-def EmitLLVM : Pass<"emit-llvm", "mlir::ModuleOp"> {
-  let summary = "emit LLVM IR";
-  let description = [{
-    This pass emits the LLVM IR for the concrete KGEN. If no file is provided
-    then the IR will be printed to stdout.
-  }];
-
-  let dependentDialects = ["::M::KGEN::KGENDialect"];
-
-  let options = [
-    Option<"output", "output", "std::string", "", "Output file path.">,
   ];
 }
 
@@ -340,6 +326,8 @@ def AlwaysInlineParametric : Pass<"always-inline-param", "mlir::ModuleOp"> {
     'always_inline(nodebug)'. This pass can only run on parametric KGEN IR.
   }];
 
+  let dependentDialects = ["HLCF::HLCFDialect"];
+
   let options = [
     Option<"nodebugOnly", "nodebug-only", "bool", "false",
            "If true, only `always_inline_no_debug` functions are inlined.">
@@ -372,6 +360,8 @@ def ForceInline : Pass<"force-inline", "mlir::ModuleOp"> {
     appropriate for functions marked 'always_inline(nodebug)'. This pass must
     run on concrete KGEN IR.
   }];
+
+  let dependentDialects = ["HLCF::HLCFDialect"];
 
   let options = [
     Option<"updateDebugInfo", "update-debug-info", "bool", "true",

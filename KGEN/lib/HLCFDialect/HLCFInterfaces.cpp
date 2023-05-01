@@ -142,7 +142,7 @@ static LogicalResult verifyIfRoot(Operation *op) {
     root = op;
   else
     return success();
-  return ControlFlowVerifier(root).verifyNode(op);
+  return ControlFlowVerifier(root).verifyNode(cast<ControlFlowNode>(op));
 }
 
 //===----------------------------------------------------------------------===//

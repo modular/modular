@@ -206,7 +206,7 @@ def KGEN_CallOpInterface : OpInterface<"KGENCallOpInterface"> {
     }
   }];
 
-  let verify = [{ return impl::verifyCallOp($_op); }];
+  let verify = [{ return impl::verifyCallOp(cast<KGENCallOpInterface>($_op)); }];
   let verifyWithRegions = 1;
 }
 

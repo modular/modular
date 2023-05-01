@@ -49,7 +49,7 @@ void ControlFlowTree::buildTree(ControlFlowNode node, unsigned &nodeId,
       if (!isa<ControlFlowNode>(op))
         continue;
       ++nodeId;
-      buildTree(&op, nodeId, nodeIds);
+      buildTree(cast<ControlFlowNode>(op), nodeId, nodeIds);
     }
   }
 

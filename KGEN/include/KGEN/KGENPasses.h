@@ -105,10 +105,6 @@ void buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
 /// Register the lower to LLVM pipeline.
 void registerLowerToLLVMPipeline();
 
-/// Create/register the EmitLLVM pass with the given runtime.
-std::unique_ptr<mlir::Pass> createEmitLLVMPass(LLCL::Runtime &rt);
-void registerEmitLLVMPass(LLCL::Runtime &rt);
-
 //===----------------------------------------------------------------------===//
 // Generated Pass Classes and Registration
 //===----------------------------------------------------------------------===//

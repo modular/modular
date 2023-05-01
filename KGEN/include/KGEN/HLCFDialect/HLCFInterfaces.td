@@ -34,7 +34,7 @@ def ControlFlowNode : OpInterface<"ControlFlowNode"> {
       (ins "std::optional<unsigned>":$target)>
   ];
 
-  let verify = [{ return verifyControlFlowNode($_op); }];
+  let verify = [{ return verifyControlFlowNode(cast<ControlFlowNode>($_op)); }];
 }
 
 def ControlFlowTerminator : OpInterface<"ControlFlowTerminator"> {
@@ -62,7 +62,9 @@ def ControlFlowTerminator : OpInterface<"ControlFlowTerminator"> {
            "SmallVectorImpl<HLCF::ControlFlowTarget> &":$targets)>
   ];
 
-  let verify = [{ return verifyControlFlowTerminator($_op); }];
+  let verify = [{
+    return verifyControlFlowTerminator(cast<ControlFlowTerminator>($_op));
+  }];
 }
 
 #endif // HLCFINTERFACES_TD

@@ -139,7 +139,7 @@ ParseResult KGEN::parseStringParam(AsmParser &p, TypedAttr &value) {
 
 /// Print a parameter of type kgen.string.
 void KGEN::printStringParam(AsmPrinter &p, Operation *op, Attribute value) {
-  return printParamValue(p, value);
+  return printParamValue(p, cast<TypedAttr>(value));
 }
 
 /// Parse a non-empty parameter list without the surrounding braces.
@@ -293,7 +293,7 @@ ParseResult KGEN::parseParamValueDefaultingToIndex(AsmParser &p,
 
 /// Print a parameter value that is known to have `dtype` type.
 void KGEN::printDTypeParamValue(AsmPrinter &p, Attribute value) {
-  printParamValue(p, value);
+  printParamValue(p, cast<TypedAttr>(value));
 }
 
 /// Parse a parameter value that is known to have `dtype` type.
@@ -303,7 +303,7 @@ ParseResult KGEN::parseDTypeParamValue(AsmParser &p, TypedAttr &value) {
 
 /// Print a parameter value that is known to have `type` type.
 void KGEN::printTypeParamValue(AsmPrinter &p, Attribute value) {
-  printParamValue(p, value);
+  printParamValue(p, cast<TypedAttr>(value));
 }
 
 /// Parse a parameter value that is known to have `type` type.
@@ -313,11 +313,11 @@ ParseResult KGEN::parseTypeParamValue(AsmParser &p, TypedAttr &value) {
 
 /// Print an attribute value that is known to have index type.
 void KGEN::printIndexParamValue(AsmPrinter &p, Operation *op, Attribute value) {
-  printParamValue(p, value);
+  printParamValue(p, cast<TypedAttr>(value));
 }
 
 void KGEN::printIndexParamValue(AsmPrinter &p, Attribute value) {
-  printParamValue(p, value);
+  printParamValue(p, cast<TypedAttr>(value));
 }
 
 /// Parse a parameter value that is known to be an index type.

@@ -94,10 +94,11 @@ static void liftAndFoldApply(Region *body, ImplicitLocOpBuilder &b,
     if (!existing) {
       // Explicit recurse on the operator.
       Type type = replacer.replace(op.getType());
-      TypedAttr callee = replacer.replace(op.getOperands().front());
+      TypedAttr callee =
+          cast<TypedAttr>(replacer.replace(op.getOperands().front()));
       SmallVector<TypedAttr> operands;
       for (TypedAttr operand : op.getOperands().drop_front())
-        operands.push_back(replacer.replace(operand));
+        operands.push_back(cast<TypedAttr>(replacer.replace(operand)));
 
       // Generate a name for the lifted parameter.
       auto decl = ParamDeclAttr::get(

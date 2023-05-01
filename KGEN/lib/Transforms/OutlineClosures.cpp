@@ -273,7 +273,7 @@ void OutlineClosuresPass::runOnOperation() {
       // Create the decl that replaces the regionDecl with its parameter being
       // this new partial binding.
       b.create<ParamDeclareOp>(regionDecl.getLoc(), regionDecl.getParamDecl(),
-                               bindSignature);
+                               cast<TypedAttr>(bindSignature));
 
       // And we can drop the regionDecl now, we're done with it.
       regionDecl->erase();

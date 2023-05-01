@@ -381,16 +381,19 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
     // Compute the size of the type.
     Attribute sizeOfAttr = KGEN::ParamOperatorAttr::get(
         POC::GetSizeOf,
-        {KGEN::ParameterizedTypeConstantAttr::get(elementType), targetAttr},
+        {KGEN::ParameterizedTypeConstantAttr::get(elementType),
+         cast<TypedAttr>(targetAttr)},
         indexType);
-    Value sizeOf = builder.create<KGEN::ParamConstantOp>(indexType, sizeOfAttr);
+    Value sizeOf = builder.create<KGEN::ParamConstantOp>(
+        indexType, cast<TypedAttr>(sizeOfAttr));
     // Compute the alignment of the type.
     Attribute alignOfAttr = KGEN::ParamOperatorAttr::get(
         POC::GetAlignOf,
-        {KGEN::ParameterizedTypeConstantAttr::get(elementType), targetAttr},
+        {cast<TypedAttr>(KGEN::ParameterizedTypeConstantAttr::get(elementType)),
+         cast<TypedAttr>(targetAttr)},
         indexType);
-    Value alignOf =
-        builder.create<KGEN::ParamConstantOp>(indexType, alignOfAttr);
+    Value alignOf = builder.create<KGEN::ParamConstantOp>(
+        indexType, cast<TypedAttr>(alignOfAttr));
     // Allocate an aligned blob for the variable.
     auto mallocCall = builder.create<POP::ExternalCallOp>(
         POP::PointerType::get(POP::SIMDType::get(

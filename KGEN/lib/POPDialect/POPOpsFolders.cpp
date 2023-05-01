@@ -766,7 +766,7 @@ OpFoldResult StructCreateOp::fold(FoldAdaptor adaptor) {
 
 OpFoldResult StructExtractOp::fold(FoldAdaptor adaptor) {
   if (auto container = adaptor.getContainer())
-    return StructExtractAttr::get(container, getIndexAttr());
+    return StructExtractAttr::get(cast<TypedAttr>(container), getIndexAttr());
   if (auto structCreate = getOperand().getDefiningOp<StructCreateOp>())
     return structCreate.getOperand(adaptor.getIndex().getSExtValue());
   return {};
@@ -1213,7 +1213,7 @@ OpFoldResult VariadicAppendOp::fold(FoldAdaptor adaptor) {
   SmallVector<TypedAttr> values;
   values.reserve(variadic.getValues().size() + 1);
   for (Attribute varVal : variadic.getValues())
-    values.push_back(varVal);
+    values.push_back(cast<TypedAttr>(varVal));
   values.push_back(value);
   return VariadicAttr::get(values, getType());
 }

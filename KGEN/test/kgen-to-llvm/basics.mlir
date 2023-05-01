@@ -100,4 +100,11 @@ kgen.func @pack_constant() {
   kgen.return
 }
 
+// CHECK-LABEL: @test_unreachable
+kgen.func @test_unreachable() -> !pop.simd<1, f32> {
+  // CHECK-NEXT: llvm.trap
+  // CHECK-NEXT: llvm.unreachable
+  kgen.unreachable
+}
+
 }

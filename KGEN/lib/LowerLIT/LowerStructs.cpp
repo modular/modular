@@ -110,7 +110,7 @@ StructOperationLowerer::StructOperationLowerer(MLIRContext *ctx,
 
     SmallVector<TypedAttr> values;
     for (auto [name, value] : attr.getValues())
-      values.push_back(replacer.replace(value));
+      values.push_back(cast<TypedAttr>(replacer.replace(value)));
     return POP::StructAttr::get(values, cast<POP::StructType>(newType));
   });
 
@@ -127,7 +127,7 @@ StructOperationLowerer::StructOperationLowerer(MLIRContext *ctx,
     }
 
     return POP::StructExtractAttr::get(
-        structValue,
+        cast<TypedAttr>(structValue),
         IntegerAttr::get(IndexType::get(attr.getContext()), fieldNo));
   });
 }
