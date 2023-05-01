@@ -25,7 +25,6 @@
 //===----------------------------------------------------------------------===//
 
 namespace M::KGEN {
-class ListType;
 class StringType;
 class TypeArrayAttr;
 class VariadicType;

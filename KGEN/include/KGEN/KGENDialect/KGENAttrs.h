@@ -27,7 +27,6 @@ class TargetInfoAttr;
 namespace KGEN {
 class BuildInfoType;
 class KGENDType;
-class ListType;
 class SignatureType;
 class TargetType;
 class VariadicType;

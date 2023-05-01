@@ -283,34 +283,34 @@ kgen.generator @innermostCapturesThroughMid<A>() {
   kgen.return
 }
 
-// CHECK-LABEL: kgen.generator @paramCaptureNestedInParamRefType_Fn<N, Vs: list<i32[N]>>
-// CHECK: constant: list<i32[N]> = <Vs>
-// CHECK: declare Fn: () -> () = <@paramCaptureNestedInParamRefType_Fn<N, :list<i32[N]> Vs>>
+// CHECK-LABEL: kgen.generator @paramCaptureNestedInParamRefType_Fn<N, Vs: array<N, i32>>
+// CHECK: constant: array<N, i32> = <Vs>
+// CHECK: declare Fn: () -> () = <@paramCaptureNestedInParamRefType_Fn<N, :array<N, i32> Vs>>
 
-kgen.generator @paramCaptureNestedInParamRefType<N, Vs: list<i32[N]>>() {
+kgen.generator @paramCaptureNestedInParamRefType<N, Vs: array<N, i32>>() {
   kgen.param.declare.region Fn = () {
-    kgen.param.constant: list<i32[N]> = <Vs>
+    kgen.param.constant: array<N, i32> = <Vs>
     kgen.return
   }
   kgen.return
 }
 
 // CHECK-LABEL: @left_to_right_dependency_CaptureThemAll
-// CHECK-SAME: <F: type, G: type, H: type, I: type, J: type, A,
-// CHECK-SAME:  L: list<!pop.struct<F, G, H, I, J>[A]>, B: type,
-// CHECK-SAME:  E: list<!kgen.list<!kgen.list<B[A]>[A]>[A]>,
-// CHECK-SAME:  D: list<!kgen.list<B[A]>[A]>, C: list<B[A]>
+// CHECK-SAME: <A, F: type, G: type, H: type, I: type, J: type,
+// CHECK-SAME:  L: array<A, struct<F, G, H, I, J>>, B: type,
+// CHECK-SAME:  E: array<A, array<A, array<A, B>>>,
+// CHECK-SAME:  D: array<A, array<A, B>>, C: array<A, B>
 kgen.generator @left_to_right_dependency<
-    A, B: type, C: list<B[A]>, D: list<!kgen.list<B[A]>[A]>,
-    E: list<!kgen.list<!kgen.list<B[A]>[A]>[A]>,
+    A, B: type, C: array<A, B>, D: array<A, array<A, B>>,
+    E: array<A, array<A, array<A, B>>>,
     F: type, G: type, H: type, I: type, J: type,
-    K: struct<F, G, H, I, J>, L: list<!pop.struct<F, G, H, I, J>[A]>>() {
+    K: struct<F, G, H, I, J>, L: array<A, struct<F, G, H, I, J>>>() {
   kgen.param.declare.region CaptureThemAll = () {
     "use"() {
-      a = #kgen.param.decl.ref<"L"> : !kgen.list<!pop.struct<F, G, H, I, J>[A]>,
-      b = #kgen.param.decl.ref<"E"> : !kgen.list<!kgen.list<!kgen.list<B[A]>[A]>[A]>,
-      c = #kgen.param.decl.ref<"D"> : !kgen.list<!kgen.list<B[A]>[A]>,
-      d = #kgen.param.decl.ref<"C"> : !kgen.list<B[A]>
+      a = #kgen.param.decl.ref<"L"> : !pop.array<A, struct<F, G, H, I, J>>,
+      b = #kgen.param.decl.ref<"E"> : !pop.array<A, array<A, array<A, B>>>,
+      c = #kgen.param.decl.ref<"D"> : !pop.array<A, array<A, B>>,
+      d = #kgen.param.decl.ref<"C"> : !pop.array<A, B>
     } : () -> ()
     kgen.return
   }

@@ -525,7 +525,7 @@ kgen.generator @pop_simd_insertelement<size, type: dtype>(
 }
 
 // CHECK-LABEL: @pop_simd_shuffle
-kgen.generator @pop_simd_shuffle<size, mask: list<index[size]>>(%a: !pop.simd<size, f32>, %b: !pop.simd<size, f32>) {
+kgen.generator @pop_simd_shuffle<size, mask: variadic<index>>(%a: !pop.simd<size, f32>, %b: !pop.simd<size, f32>) {
   // CHECK: pop.simd.shuffle <size, f32> %{{.*}}, %{{.*}} -> <2, f32> [1, 2]
   %0 = pop.simd.shuffle <size, f32> %a, %b -> <2, f32> [1, 2]
   // CHECK: pop.simd.shuffle <size, f32> %{{.*}}, %{{.*}} -> <4, f32> [1, 2, 3, 4]
@@ -909,20 +909,6 @@ kgen.generator @variant_type<N, T: type>(%a: !pop.simd<N, f32>) -> !kgen.paramre
 // CHECK-SAME: !pop.variant<i32, f32>
 kgen.generator @variant_canonicalize(%arg0: !pop.variant<i32, i32, f32, f32>) {
   kgen.return
-}
-
-// CHECK-LABEL: @list_get
-kgen.generator @list_get<N, A>(%list: !kgen.list<index[N]>) -> index {
-  // CHECK-NEXT: pop.list.get %arg0[A] : <index[N]>
-  %0 = pop.list.get %list[A] : <index[N]>
-  kgen.return %0 : index
-}
-
-// CHECK-LABEL: @list_create
-kgen.generator @list_create(%arg0: index) -> !kgen.list<index[1]> {
-  // CHECK-NEXT: %0 = pop.list.create(%arg0)
-  %0 = pop.list.create(%arg0) : <index[1]>
-  kgen.return %0 : !kgen.list<index[1]>
 }
 
 // CHECK-LABEL: @call_intrinsic

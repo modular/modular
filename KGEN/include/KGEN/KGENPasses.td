@@ -152,20 +152,6 @@ def OutlineClosures : Pass<"outline-closures", "mlir::ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
-// LowerKGENList
-//===----------------------------------------------------------------------===//
-
-def LowerKGENList : Pass<"lower-kgen-list", "FuncOp"> {
-  let summary = "Lower !kgen.list to !pop.array.";
-  let description = [{
-    The `lower-kgen-list` pass eliminates the !kgen.list type and operations
-    that work on it.
-  }];
-
-  let dependentDialects = ["POP::POPDialect"];
-}
-
-//===----------------------------------------------------------------------===//
 // LowerKGENToLLVM
 //===----------------------------------------------------------------------===//
 

@@ -584,22 +584,22 @@ kgen.generator @dependent_types() {
   // CHECK-NEXT: declare rank = <4>
   kgen.param.declare rank = <4>
   // CHECK: declare rank0 = <1>
-  // CHECK-NEXT: declare shape: list<index[rank0]> = <rebind(:list<index[1]> [2])>
-  // CHECK-NEXT: call @call_me<rank0, :list<index[rank0]> shape>
-  // CHECK-NEXT: declare output: list<index[1]> = <rebind(:list<index[rank0]> shape)>
-  kgen.call @callee<1, :list<index[1]> [2] -> output: list<index[1]>>() : () -> ()
+  // CHECK-NEXT: declare shape: array<rank0, index> = <rebind(:array<1, index> [2])>
+  // CHECK-NEXT: call @call_me<rank0, :array<rank0, index> shape>
+  // CHECK-NEXT: declare output: array<1, index> = <rebind(:array<rank0, index> shape)>
+  kgen.call @callee<1, :array<1, index> [2] -> output: array<1, index>>() : () -> ()
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @call_me
-kgen.generator @call_me<rank, shape: list<index[rank]>>() {
+kgen.generator @call_me<rank, shape: array<rank, index>>() {
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<rank, shape: list<index[rank]> -> output: list<index[rank]>>() always_inline {
-  kgen.call @call_me<rank, :list<index[rank]> shape>() : () -> ()
-  kgen.param.result_bind<:list<index[rank]> shape>
+kgen.generator @callee<rank, shape: array<rank, index> -> output: array<rank, index>>() always_inline {
+  kgen.call @call_me<rank, :array<rank, index> shape>() : () -> ()
+  kgen.param.result_bind<:array<rank, index> shape>
   kgen.return
 }
 
@@ -650,15 +650,15 @@ kgen.generator @callee<A, B>() always_inline {
 // -----
 
 // CHECK-LABEL: kgen.generator @parent
-kgen.generator @parent<rank, shape: list<index[rank]>>() {
-  // CHECK: declare another: list<index[rank0]> = <shape0>
-  kgen.call @mid<rank, :list<index[rank]> shape>() : () -> ()
+kgen.generator @parent<rank, shape: array<rank, index>>() {
+  // CHECK: declare another: array<rank0, index> = <shape0>
+  kgen.call @mid<rank, :array<rank, index> shape>() : () -> ()
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @mid
-kgen.generator @mid<rank, shape: list<index[rank]>>() always_inline {
-  kgen.param.declare another: list<index[rank]> = <shape>
+kgen.generator @mid<rank, shape: array<rank, index>>() always_inline {
+  kgen.param.declare another: array<rank, index> = <shape>
   kgen.return
 }
 

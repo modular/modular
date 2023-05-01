@@ -263,39 +263,6 @@ def KGEN_MetadataAttr : KGENAttr<"Metadata", "metadata"> {
 }
 
 //===----------------------------------------------------------------------===//
-// ListAttr
-//===----------------------------------------------------------------------===//
-
-def KGEN_ListAttr : KGEN_ExprAttr<"List", "list"> {
-  let summary = "homogenous list attribute";
-  let description = [{
-    The `#kgen.list` attribute contains a variable number of attributes of the
-    same type. The type of this attribute must always be a `!kgen.list`.
-
-    Example:
-
-    ```mlir
-    #kgen.list<fooParam, 1, add(lhsParam, 2)> : !kgen.list<index>
-    ```
-  }];
-
-  let parameters = (ins OptionalArrayRefParameter<"TypedAttr">:$values,
-                        AttributeSelfTypeParameter<"", "ListType">:$type);
-  let assemblyFormat = [{
-    `[` (`]`) : (custom<ListValue>($values, ref($type))^ `]`)?
-  }];
-
-  let builders = [
-    AttrBuilderWithInferredContext<(ins "ArrayRef<TypedAttr>":$values,
-                                        "ListType":$type), [{
-      return get(type.getContext(), values, type);
-    }]>
-  ];
-
-  let genVerifyDecl = 1;
-}
-
-//===----------------------------------------------------------------------===//
 // VariadicAttr
 //===----------------------------------------------------------------------===//
 

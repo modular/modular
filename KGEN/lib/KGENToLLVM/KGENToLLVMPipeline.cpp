@@ -21,9 +21,6 @@ void M::KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
                                        const LowerToLLVMOptions &options) {
   using mlir::LLVM::LLVMFuncOp;
 
-  // Run KGEN lowering passes.
-  pm.addNestedPass<FuncOp>(createLowerKGENList());
-
   // Run all LLVM lowering passes.
   pm.addPass(createLowerKGENToLLVM());
   pm.addPass(createLowerRuntimeClosures());

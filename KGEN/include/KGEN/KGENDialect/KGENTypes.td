@@ -99,66 +99,6 @@ def KGEN_StringType : KGENType<"String", "string",
 }
 
 //===----------------------------------------------------------------------===//
-// ListType
-//===----------------------------------------------------------------------===//
-
-def KGEN_ListType : KGENType<"List", "list", [
-    DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
-  let summary = "homogenous list type";
-  let description = [{
-    The `!kgen.list` type represents a homogenous sized list. The list type is
-    the building block for variadic parameters. Lists have special behaviour in
-    lowering. List operands to operations are expanded in-place during
-    lowering, and consequently it has no runtime representation.
-
-    Example:
-
-    ```mlir
-    %out = "foo.op"(%list) : (!kgen.list<index[N]>) -> !kgen.list<index[M]>
-    ```
-
-    Could become:
-
-    ```mlir
-    %out:2 = "foo.op"(%0, %1, %2) : (index, index, index) -> (index, index)
-    ```
-
-    List constants can be materialized with `kgen.param.constant`.
-
-    Example:
-
-    ```mlir
-    %list = kgen.param.constant: list<index[3]> = <[1, 2, 3]>
-    ```
-  }];
-
-  let parameters = (ins "TypedAttr":$elementType, "TypedAttr":$length);
-  let assemblyFormat = [{
-    `<` custom<TypeParamValue>($elementType) `[`
-    custom<IndexParamValue>($length) `]` `>`
-  }];
-
-  let genVerifyDecl = 1;
-
-  let builders = [
-    TypeBuilderWithInferredContext<(ins "TypedAttr":$elementType,
-                                        "TypedAttr":$length)>,
-    TypeBuilderWithInferredContext<(ins "Type":$elementType,
-                                        "int64_t":$length)>,
-    TypeBuilderWithInferredContext<(ins "Type":$elementType,
-                                        "TypedAttr":$length)>
-  ];
-
-  let extraClassDeclaration = [{
-    /// Try to narrow the length expression to an integer.
-    std::optional<int64_t> getResolvedLength() const;
-    /// Try to narrow the type expression of the list element type to an MLIR
-    /// type.
-    Type getResolvedElementType() const;
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // SignatureType
 //===----------------------------------------------------------------------===//
 

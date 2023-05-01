@@ -701,32 +701,6 @@ bool PointerToIndexOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
 }
 
 //===----------------------------------------------------------------------===//
-// ListGetOp
-//===----------------------------------------------------------------------===//
-
-LogicalResult ListGetOp::verify() {
-  auto index = dyn_cast<IntegerAttr>(getIndex());
-  std::optional<int64_t> length = getList().getType().getResolvedLength();
-  if (!index || !length)
-    return success();
-  if (index.getInt() < 0 || index.getInt() >= *length)
-    return emitOpError("list index out-of-range");
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
-// ListCreateOp
-//===----------------------------------------------------------------------===//
-
-LogicalResult ListCreateOp::verify() {
-  if (getResult().getType().getLength() !=
-      Builder(getContext()).getIndexAttr(getNumOperands()))
-    return emitOpError("expected result list to have ")
-           << getNumOperands() << " elements";
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
 // CastToBuiltinOp
 //===----------------------------------------------------------------------===//
 

@@ -35,7 +35,6 @@ void KGENDialect::registerTypes() {
       +[](AsmPrinter &p, Type) { p << "type"; });
   registerMnemonicType<DTypeType>();
   registerMnemonicType<StringType>();
-  registerMnemonicType<ListType>();
   registerMnemonicType<VariadicType>();
   registerMnemonicType<TargetType>();
   registerMnemonicType<BuildInfoType>();
@@ -77,45 +76,6 @@ LogicalResult MLIRTypeType::printValue(AsmPrinter &p, TypedAttr value) const {
     return failure();
   p << type.getValue();
   return success();
-}
-
-//===----------------------------------------------------------------------===//
-// ListType
-//===----------------------------------------------------------------------===//
-
-ListType ListType::get(TypedAttr elementType, TypedAttr length) {
-  return get(elementType.getContext(), elementType, length);
-}
-
-ListType ListType::get(Type elementType, int64_t length) {
-  return get(TypeConstantAttr::get(elementType),
-             Builder(elementType.getContext()).getIndexAttr(length));
-}
-
-ListType ListType::get(Type elementType, TypedAttr length) {
-  return get(TypeConstantAttr::get(elementType), length);
-}
-
-LogicalResult ListType::verify(function_ref<InFlightDiagnostic()> emitError,
-                               TypedAttr elementType, TypedAttr length) {
-  if (!llvm::isa<MLIRTypeType>(elementType.getType()))
-    return emitError()
-           << "expected element type expression to be a '!kgen.mlirtype'";
-  if (!llvm::isa<IndexType>(length.getType()))
-    return emitError() << "expected length expression to be an 'index'";
-  return success();
-}
-
-std::optional<int64_t> ListType::getResolvedLength() const {
-  if (auto length = llvm::dyn_cast<IntegerAttr>(getLength()))
-    return length.getInt();
-  return {};
-}
-
-Type ListType::getResolvedElementType() const {
-  if (auto type = llvm::dyn_cast<ConcreteTypeConstantAttr>(getElementType()))
-    return type.getValue();
-  return {};
 }
 
 //===----------------------------------------------------------------------===//

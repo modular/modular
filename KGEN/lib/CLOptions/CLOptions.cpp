@@ -6,6 +6,7 @@
 
 #include "KGEN/CLOptions.h"
 #include "KGEN/ExecutionEngine.h"
+#include "KGEN/POPDialect/POPTypes.h"
 #include "mlir/Support/DebugStringHelper.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Regex.h"
@@ -19,25 +20,25 @@ using namespace KGEN;
 //===--------------------------------------------------------------------===//
 
 /// Check that `t` returns exactly one type, and it's of type
-/// `!kgen.list<i1[0]>`, which is what mojo uses as it's 'None' type.
+/// `!pop.array<0, i1>`, which is what mojo uses as it's 'None' type.
 static bool returnTypeIsMojoNone(FunctionType t) {
   if (t.getNumResults() != 1)
     return false;
 
   Type res = t.getResult(0);
-  auto list = dyn_cast<KGEN::ListType>(res);
-  // Not a list, can't be !kgen.list<i1[0]>.
-  if (!list)
+  auto array = dyn_cast<POP::ArrayType>(res);
+  // Not an array.
+  if (!array)
     return false;
-  auto intTy = dyn_cast_if_present<IntegerType>(list.getResolvedElementType());
-  // Not a list of integers, can't be !kgen.list<i1[0]>.
+  auto intTy = dyn_cast_if_present<IntegerType>(array.getResolvedElementType());
+  // Not an array of integers.
   if (!intTy)
     return false;
-  // Not a list of i1, can't be !kgen.list<i1[0]>.
+  // Not an array of i1.
   if (intTy.getIntOrFloatBitWidth() != 1)
     return false;
-  // List is not length 0, or length is unresolved, can't be !kgen.list<i1[0]>.
-  if (auto len = list.getResolvedLength(); !len || *len != 0)
+  // List is not length 0, or length is unresolved.
+  if (auto len = array.getResolvedSize(); !len || *len != 0)
     return false;
 
   // OK, it is the thing we want.

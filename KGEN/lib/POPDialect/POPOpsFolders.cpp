@@ -1003,41 +1003,6 @@ OpFoldResult VariantGetOp::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
-// ListGetOp
-//===----------------------------------------------------------------------===//
-
-OpFoldResult ListGetOp::fold(FoldAdaptor adaptor) {
-  auto operands = adaptor.getOperands();
-  auto index = dyn_cast<IntegerAttr>(getIndex());
-  if (!index)
-    return {};
-
-  if (auto list = dyn_cast_or_null<ListAttr>(operands[0]))
-    return list.getValues()[index.getInt()];
-
-  // Canonicalize `get(create(x)) -> x`.
-  if (auto create = getList().getDefiningOp<ListCreateOp>())
-    return create.getOperands()[index.getInt()];
-
-  return {};
-}
-
-//===----------------------------------------------------------------------===//
-// ListCreateOp
-//===----------------------------------------------------------------------===//
-
-OpFoldResult ListCreateOp::fold(FoldAdaptor adaptor) {
-  auto operands = adaptor.getOperands();
-  SmallVector<TypedAttr> values;
-  for (Attribute operand : operands) {
-    if (!operand)
-      return {};
-    values.push_back(cast<TypedAttr>(operand));
-  }
-  return ListAttr::get(values, getType());
-}
-
-//===----------------------------------------------------------------------===//
 // IndexToPointerOp
 //===----------------------------------------------------------------------===//
 
