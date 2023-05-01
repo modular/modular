@@ -701,31 +701,78 @@ ParseResult ExprParser::parseAttributeRefSuffix(ExprNode *&result,
 }
 
 /// call ::=  primary "(" [argument_list [","] | comprehension] ")"
+/// argument_list ::= argument ("," argument)*
+/// argument      ::= assignment_expression
+/// argument      ::= "*" expression
+/// argument      ::= identifier "=" expression
+/// argument      ::= "**" expression
 ///
-/// argument_list        ::=  positional_arguments ["," starred_and_keywords]
-///                             ["," keywords_arguments]
-///                           | starred_and_keywords ["," keywords_arguments]
-///                           | keywords_arguments
-/// positional_arguments ::=  positional_item ("," positional_item)*
-/// positional_item      ::=  assignment_expression | "*" expression
-/// starred_and_keywords ::=  ("*" expression | keyword_item)
-///                           ("," "*" expression | "," keyword_item)*
-/// keywords_arguments   ::=  (keyword_item | "**" expression)
-///                           ("," keyword_item | "," "**" expression)*
-/// keyword_item         ::=  identifier "=" expression
+/// The official Python grammar is super complicated, but the constraint is
+/// just that you can't have position arguments after keyword arguments. This
+/// is easier to enforce imperatively than with BNF.
 ParseResult ExprParser::parseCallSuffix(ExprNode *&result, SMLoc lparenLoc) {
-  SmallVector<ExprNode *> args;
+  SmallVector<CallArgument> args;
   SMLoc rparenLoc;
-  // TODO: Handle comprehension arguments, stars, etc.
   if (!consumeIf(Token::r_paren, &rparenLoc)) {
     // Expressions continue maximally because we are within ()'s.
     llvm::SaveAndRestore<std::optional<size_t>> X(stmtIndent, std::nullopt);
-    if (parseExpressionList(args, Token::r_paren) || getLocation(rparenLoc) ||
-        parseToken(Token::r_paren, "expected ')' in call argument list")) {
+
+    // Parse an argument.
+    auto parseArgument = [&]() -> ParseResult {
+      CallArgument &arg = args.emplace_back(CallArgument());
+
+      if (consumeIf(Token::star)) {
+        arg.kind = CallArgument::kStar;
+        return parseExpression(arg.expr);
+      }
+      if (consumeIf(Token::star_star)) {
+        arg.kind = CallArgument::kStarStar;
+        return parseExpression(arg.expr);
+      }
+
+      // Check for a keyword argument.  We need look-ahead to determine whether
+      // the token after the identifier is an equal sign.
+      if (getToken().is(Token::identifier)) {
+        auto cursor = lexer.getCursor();
+        (void)parseIdentifier(arg.name, "<<already know this is identifier>>");
+        if (consumeIf(Token::equal)) {
+          arg.kind = CallArgument::kKeyword;
+          return parseExpression(arg.expr);
+        }
+        // Otherwise, we consumed the base expression, just pop it back off.
+        cursor.restore(lexer);
+      }
+
+      // FIXME: This should be parseAssignmentExpression, which allows :=.
+      return parseExpression(arg.expr);
+    };
+
+    // TODO: Handle comprehension argument.
+    if (parseCommaSeparatedList(parseArgument, Token::r_paren) ||
+        parseToken(Token::r_paren, "expected ')' in call argument list",
+                   &rparenLoc)) {
       return failure();
     }
   }
-  result = alloc<CallNode>(result, lparenLoc, copyArrayRef<ExprNode *>(args),
+
+  // The official Python grammar is super complicated, but the constraint is
+  // just that you can't have positional arguments after keyword arguments. This
+  // is easier to enforce with a bool than with BNF.
+  bool sawKeywordArg = false;
+  for (auto &arg : args) {
+    // We have a positional / non-keyword argument.  Python syntactically
+    // rejects these to reduce ambiguity so we do the same.
+    if (arg.kind == CallArgument::kPositional && sawKeywordArg) {
+      emitError(arg.getLoc(), "positional argument follows keyword argument");
+      return failure();
+    }
+    if (arg.kind == CallArgument::kKeyword ||
+        arg.kind == CallArgument::kStarStar)
+      sawKeywordArg = true;
+  }
+
+  // Otherwise we're good to go.
+  result = alloc<CallNode>(result, lparenLoc, copyArrayRef<CallArgument>(args),
                            rparenLoc);
   return success();
 }

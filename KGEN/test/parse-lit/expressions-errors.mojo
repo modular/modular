@@ -165,6 +165,18 @@ def no_unused_values_in_def():
   _ # expected-error {{discard pattern requires an initializing expression}}
 
 ##===----------------------------------------------------------------------===##
+# Keyword arguments
+##===----------------------------------------------------------------------===##
+
+fn takeKeywordArgs(i: Int, j: Int): pass
+
+fn testKWargs():
+  # expected-error @+1 {{keyword arguments are not supported yet}}
+  takeKeywordArgs(j = 42, i = 1)
+  # expected-error @+1 {{positional argument follows keyword argument}}
+  takeKeywordArgs(j = 42, 1)
+
+##===----------------------------------------------------------------------===##
 # Tuples
 ##===----------------------------------------------------------------------===##
 

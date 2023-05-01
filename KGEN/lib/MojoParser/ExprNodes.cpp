@@ -405,6 +405,13 @@ AnyValue StringLiteralNode::emitIR(ValueDest &dest,
                                      CallSyntax::kImplicitConvert, dest);
 }
 
+/// Return true if this is a positional argument with a string literal
+/// containing the specified string.
+bool CallArgument::isPositionalStringLiteral(StringRef str) const {
+  auto *strExpr = dyn_cast<StringLiteralNode>(expr);
+  return kind == kPositional && strExpr && strExpr->getValue() == str;
+}
+
 /// Check that the operation dominates the current builder insertion point.
 static bool dominatesInsertionPoint(mlir::DominanceInfo &domInfo, Operation *op,
                                     OpBuilder &b) {
@@ -1085,8 +1092,13 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
 
   // Emit all the arguments so we can encode them as SSA values.
   SmallVector<Value> opOperands;
-  for (ExprNode *operand : call.args) {
-    Value value = emitter.emitExprSRValue(operand, EC_MLIRMagic);
+  for (CallArgument argument : call.args) {
+    if (argument.kind != CallArgument::kPositional) {
+      emitter.emitError(argument.getLoc(),
+                        "MLIR operators only support position arguments");
+      return {};
+    }
+    Value value = emitter.emitExprSRValue(argument.expr, EC_MLIRMagic);
     if (!value)
       return {};
     opOperands.push_back(value);
@@ -1287,8 +1299,19 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   /// Emit all the operands that we'll need.
   SmallVector<ASTExprAnd<AnyValue>> operands;
-  for (ExprNode *arg : args) {
-    operands.push_back({arg->emitIR(ValueDest::none(), emitter), arg});
+  for (CallArgument arg : args) {
+    if (arg.kind == CallArgument::kKeyword) {
+      emitter.emitError(arg.getLoc(),
+                        "keyword arguments are not supported yet");
+      return {};
+    }
+    if (arg.kind != CallArgument::kPositional) {
+      emitter.emitError(arg.getLoc(),
+                        "unpacked arguments are not supported yet");
+      return {};
+    }
+    ExprNode *expr = arg.expr;
+    operands.push_back({expr->emitIR(ValueDest::none(), emitter), expr});
     if (!operands.back())
       return {};
   }
