@@ -807,6 +807,7 @@ struct MatmulInnerLoopBPacked[
     # Skip the output c space boundary check if True.
     skip_boundary_check: Bool,
     prefetch_b_distance: Int,
+    critical_stride: Bool,
 ]:
     """Inner loop implementation for mlas-style tiled matmul. Accumulates a
     tile of input defined by (a_row_size, TileN, TileK).
@@ -1189,7 +1190,7 @@ struct MatmulInnerLoopBPacked[
         """Utility funcion on the inner loop. Run the inner kernel on the whole
         (a_row_size, TileN, TileK) tile.
         """
-        assert_param[not has_neon()]()
+        assert_param[not has_neon() or critical_stride]()
         # Allocate accumulation buffer.
         let c_local = NDBuffer[
             2,
@@ -1218,7 +1219,7 @@ struct MatmulInnerLoopBPacked[
         """Utility funcion on the inner loop. Run the inner kernel on the whole
         (a_row_size, TileN, TileK) tile.
         """
-        assert_param[has_neon()]()
+        assert_param[has_neon() and not critical_stride]()
         # Allocate accumulation buffer.
         let c_local = NDBuffer[
             2,
@@ -1313,6 +1314,7 @@ struct TiledMatmul[
     b_packed: Bool,
     elementwise_epilogue_enabled: Bool,
     rowwise_epilogue_enabled: Bool,
+    critical_stride: Bool,
 ]:
     """Tiled matmul implementation integrating packing, inner loop and tile
     partitions.
@@ -1416,6 +1418,7 @@ struct TiledMatmul[
             b_packed,
             elementwise_epilogue_enabled,
             rowwise_epilogue_enabled,
+            critical_stride,
         ](
             c,
             a,
@@ -1485,6 +1488,7 @@ struct TiledMatmul[
                 m_loop_pack_inner_size,
                 skip_col_bound,
                 config.prefetch_b_distance_k,
+                critical_stride,
             ].run(
                 self.c,
                 self.a,

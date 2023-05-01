@@ -63,6 +63,7 @@ fn matmul_inner_loop(
         pack_inner_size * simd_size,
         True,  # skip bound check
         prefetch_b_distance_k,
+        False,  # critical_stride
     ].run(
         c,
         a,
