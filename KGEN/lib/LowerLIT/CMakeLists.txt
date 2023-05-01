@@ -8,7 +8,7 @@ add_modular_conversion_library(LowerLIT
   CheckLifetimes.cpp
   ConstraintReduction.cpp
   ConstraintSet.cpp
-  LowerAsyncFunctions.cpp
+  LowerClosures.cpp
   LowerLIT.cpp
   LowerStructs.cpp
   LowerSemanticCF.cpp
