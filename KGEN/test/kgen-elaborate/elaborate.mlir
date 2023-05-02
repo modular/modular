@@ -2213,11 +2213,11 @@ kgen.generator @param_cond() -> () {
   kgen.param.declare cond_true : i1 = <1>
 
   // COM: This should NOT evaluate @add_param<2> during parameter evaluation
-  %5 = kgen.param.constant: index = <cond(cond_true ?
-        apply(:(index) -> index @add_param<1>, 0) : apply(:(index) -> index @add_param<2>, 0))>
+  %5 = kgen.param.constant: index = <cond(cond_true,
+        apply(:(index) -> index @add_param<1>, 0), apply(:(index) -> index @add_param<2>, 0))>
   // COM: This should NOT evaluate @add_param<3> during parameter evaluation
-  %6 = kgen.param.constant: index = <cond(cond_false ?
-        apply(:(index) -> index @add_param<3>, 0) : apply(:(index) -> index @add_param<4>, 0))>
+  %6 = kgen.param.constant: index = <cond(cond_false,
+        apply(:(index) -> index @add_param<3>, 0), apply(:(index) -> index @add_param<4>, 0))>
 
   kgen.return
 }

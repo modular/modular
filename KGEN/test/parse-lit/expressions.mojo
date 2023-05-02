@@ -378,13 +378,13 @@ fn paramAndOr[a: Boolish, b: Boolish]():
   # Short circuiting AND returns second operand when the first is false-y, first
   # otherwise.
 
-  # CHECK: kgen.param.declare c: @"$expressions"::@Boolish = <cond(apply(:<>(!kgen.declref<@"$Bool"::@Bool> borrow) -> i1 @"$Bool"::@Bool::@"__mlir_i1__($Bool::Bool)", apply(:<>(!kgen.declref<@"$expressions"::@Boolish> borrow) -> !kgen.declref<@"$Bool"::@Bool> @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)", a)) ? b : a)>
+  # CHECK: kgen.param.declare c: @"$expressions"::@Boolish = <cond(apply(:<>(!kgen.declref<@"$Bool"::@Bool> borrow) -> i1 @"$Bool"::@Bool::@"__mlir_i1__($Bool::Bool)", apply(:<>(!kgen.declref<@"$expressions"::@Boolish> borrow) -> !kgen.declref<@"$Bool"::@Bool> @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)", a)), b, a)>
   alias c = a and b
 
   # Short circuiting OR returns first operand when it is true-y, second
   # otherwise.
 
-  # CHECK: kgen.param.declare d: @"$expressions"::@Boolish = <cond(apply(:<>(!kgen.declref<@"$Bool"::@Bool> borrow) -> i1 @"$Bool"::@Bool::@"__mlir_i1__($Bool::Bool)", apply(:<>(!kgen.declref<@"$expressions"::@Boolish> borrow) -> !kgen.declref<@"$Bool"::@Bool> @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)", a)) ? a : b)>
+  # CHECK: kgen.param.declare d: @"$expressions"::@Boolish = <cond(apply(:<>(!kgen.declref<@"$Bool"::@Bool> borrow) -> i1 @"$Bool"::@Bool::@"__mlir_i1__($Bool::Bool)", apply(:<>(!kgen.declref<@"$expressions"::@Boolish> borrow) -> !kgen.declref<@"$Bool"::@Bool> @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)", a)), a, b)>
   alias d = a or b
 
 # CHECK-LABEL: lit.func @"do_math
@@ -465,7 +465,7 @@ def test_if_cond(cond: Bool):
 
 # CHECK-LABEL: lit.func @"test_param_if_cond()"<cond: @"$Bool"::@Bool>() -> !kgen.declref<@"$Int"::@Int>
 fn test_param_if_cond[cond: Bool]() -> Int:
-# CHECK: kgen.param.declare i: @"$Int"::@Int = <cond(apply(:<>(!kgen.declref<@"$Bool"::@Bool> borrow) -> i1 @"$Bool"::@Bool::@"__mlir_i1__($Bool::Bool)", cond) ? #lit.struct<{value: scalar<index> = 2}> : #lit.struct<{value: scalar<index> = 3}>)>
+# CHECK: kgen.param.declare i: @"$Int"::@Int = <cond(apply(:<>(!kgen.declref<@"$Bool"::@Bool> borrow) -> i1 @"$Bool"::@Bool::@"__mlir_i1__($Bool::Bool)", cond), #lit.struct<{value: scalar<index> = 2}>, #lit.struct<{value: scalar<index> = 3}>)>
 # CHECK-NEXT:  %[[I:.*]] = kgen.param.constant: @"$Int"::@Int = <i>
   alias i = 2 if cond else 3
   return i

@@ -654,9 +654,8 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
   case (uint32_t)POC::Cond:
     if (parseParamValue(p, operands.emplace_back(),
                         IntegerType::get(p.getContext(), 1)) ||
-        p.parseQuestion() ||
-        parseParamValue(p, operands.emplace_back(), type) || p.parseColon() ||
-        parseParamValue(p, operands.emplace_back(), type))
+        p.parseComma() || parseParamValue(p, operands.emplace_back(), type) ||
+        p.parseComma() || parseParamValue(p, operands.emplace_back(), type))
       return failure();
     return success();
   }
@@ -916,9 +915,9 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
 
   case POC::Cond:
     printParamValue(p, operands[0]);
-    p << " ? ";
+    p << ", ";
     printParamValue(p, operands[1]);
-    p << " : ";
+    p << ", ";
     printParamValue(p, operands[2]);
     break;
   }
