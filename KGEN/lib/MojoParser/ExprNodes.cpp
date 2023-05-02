@@ -734,35 +734,6 @@ static ASTType parseMLIRType(StringRef name, const ExprNode *node,
   return result;
 }
 
-/// Perform substitutions of the specified bindings into the symbol, returning,
-/// in symConstAttrs, the resultant SymbolConstant attr for each adaptive
-/// function overload.
-/// On failure it produces an error message and returns failure.
-AnyValue AttributeRefNode::emitAdaptiveSet(ORValue overloads, ValueDest &dest,
-                                           ExprEmitter &emitter) const {
-  SmallVector<TypedAttr> symConstAttrs;
-  for (ASTDecl *fnDecl : overloads->fnDecls) {
-    auto funcOp = cast<LIT::FuncOp>(*fnDecl);
-    if (!funcOp.getIsAdaptive()) {
-      auto diag = emitter.emitError(getLoc(),
-                                    "cannot form a reference to non @adaptive "
-                                    "declaration of '")
-                  << overloads->baseName << "'" << getRange();
-      diag.attachNote(funcOp.getLoc()) << "declared here";
-      return {};
-    }
-    TypedAttr symbolAttr = overloads->getBoundConstAttrFor(funcOp, emitter);
-    if (!symbolAttr)
-      return {};
-    symConstAttrs.push_back(symbolAttr);
-  }
-
-  auto attr =
-      VariadicAttr::get(emitter.getContext(), symConstAttrs,
-                        VariadicType::get(symConstAttrs.front().getType()));
-  return emitter.emitResult(attr, this, dest);
-}
-
 /// Emit a reference to a stored field with a base that is known not to be a
 /// dynamic lvalue.
 CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
@@ -928,7 +899,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Handle __adaptive_set.
   if (auto overloads = baseAnyVal.getIfORValue())
     if (attrSpelling == "__adaptive_set")
-      return emitAdaptiveSet(overloads, dest, emitter);
+      return emitter.emitResult(overloads->getAdaptiveSet(emitter), this, dest);
 
   // Otherwise must have a concrete type.
   CValue baseVal = emitter.emitCValue({baseAnyVal, this}, ValueDest::none());

@@ -191,7 +191,7 @@ public:
   PValue() {}
   PValue(TypedAttr v) : storage(v) {}
   PValue(Attribute value) : storage(value) {
-    assert(isa<TypedAttr>(value) && "invalid value attribute");
+    assert((!value || isa<TypedAttr>(value)) && "invalid value attribute");
   }
 
   PValue(Type value);
