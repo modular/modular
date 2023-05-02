@@ -216,16 +216,23 @@ public:
                   ExprEmitter &emitter);
 
   /// Filter down and complete this overload set based on knowledge that we need
-  /// to produce a function pointer with the specified type.
-  LogicalResult filterOverloadSetForValueType(ASTType functionType,
-                                              bool emitDiagnosticOnFailure,
-                                              ExprEmitter &emitter);
+  /// to produce a function pointer with the specified type.  This returns a
+  /// PValue for the callee if resolvable or null if not.
+  PValue filterOverloadSetForValueType(ASTType functionType,
+                                       bool emitDiagnosticOnFailure,
+                                       ExprEmitter &emitter) const;
 
 private:
   /// Resolve the callee into either a single PValue callee (if there's only
   /// one decl provided) or a variadic that contains all the possible adaptive
   /// overloads.
-  PValue getCallee(ExprEmitter &emitter) const;
+  PValue getCallee(ExprEmitter &emitter) const {
+    return getCallee(fnDecls, inputParamBindings, expr, emitter);
+  }
+
+  static PValue getCallee(ArrayRef<ASTDecl *> fnDecls,
+                          InputParamBindings inputParamBindings,
+                          const ExprNode *expr, ExprEmitter &emitter);
 };
 
 /// This provides a wrapper around OverloadSet which is reference counted,
