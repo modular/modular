@@ -110,14 +110,16 @@ def LowerLIT : Pass<"lower-lit", "mlir::ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
-// LowerAsyncFunctions
+// LowerClosures
 //===----------------------------------------------------------------------===//
 
-def LowerAsyncFunctions : Pass<"lower-async-functions", "mlir::ModuleOp"> {
-  let summary = "Lower `async` functions by generating coroutine machinery.";
+def LowerClosures : Pass<"lower-closures", "mlir::ModuleOp"> {
+  let summary = "Lower `async` functions and closures.";
   let description = [{
-    The `lower-async-functions` pass transforms `async` functions into normal
-    `kgen.func` by adding the required POP-level coroutine machinery.
+    The `lower-closures` pass transforms `async` functions into normal
+    `kgen.func` by adding the required POP-level coroutine machinery, and it
+    lowers inline closure operations like `lit.async.execute` and
+    `kgen.stage_closure` by lifting their regions into top-level functions.
   }];
 
   let dependentDialects = ["POPDialect"];
@@ -539,22 +541,6 @@ def SimplifyCF : Pass<"simplify-cf", "KGEN::FuncOp"> {
       some_ops
     ```
   }];
-}
-
-//===----------------------------------------------------------------------===//
-// RuntimeClosures
-//===----------------------------------------------------------------------===//
-
-def RuntimeClosures : Pass<"runtime-closures", "ModuleOp"> {
-  let summary = "Lowers kgen.signature types into kgen closures";
-
-  let description = [{
-    Lift regions of StageClosures into functions.
-    Replace occurrences of StageClosure with CreateClosure, which has a
-    list of captures and a function symbol.
-  }];
-
-  let dependentDialects = ["KGENDialect"];
 }
 
 //===----------------------------------------------------------------------===//
