@@ -20,10 +20,11 @@ using namespace LLCL;
 // Operation Transformations
 //===----------------------------------------------------------------------===//
 
-void Cache::writeOperationToCacheKey(Operation *op, WriteableBufferRef key) {
+LogicalResult Cache::writeOperationToCacheKey(Operation *op,
+                                              WriteableBufferRef key) {
   // Use bytecode when writing cache keys to ensure determinism across different
   // builds.
-  mlir::writeBytecodeToFile(op, *key);
+  return mlir::writeBytecodeToFile(op, *key);
 }
 
 /// Run a pass manager's passes as a cached transform.
@@ -71,7 +72,10 @@ AnyAsyncValueRef Cache::cachedTransform(Operation *target,
             if (pmResult.isError())
               return std::move(out).setToError(pmResult.takeDiagnostic());
 
-            mlir::writeBytecodeToFile(op, *buf);
+            if (failed(mlir::writeBytecodeToFile(op, *buf))) {
+              return std::move(out).setToError(getMLIRDiagnostic(
+                  "failed to write bytecode file", op->getLoc()));
+            }
             std::move(out).emplace();
           });
       return out;

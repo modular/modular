@@ -1035,7 +1035,11 @@ void SharedState::cacheParsedModules() {
 
           // Write the module to the cache.
           auto writeableTransformResult = Cache::WriteableBuffer::get();
-          mlir::writeBytecodeToFile(moduleOp, *writeableTransformResult);
+          if (failed(mlir::writeBytecodeToFile(moduleOp,
+                                               *writeableTransformResult))) {
+            return std::move(out).setToError(LLCL::getMLIRDiagnostic(
+                "failed to write bytecode file", moduleOp.getLoc()));
+          }
           auto insertResult = transformCache->insert(
               std::move(keyBuffer), std::move(writeableTransformResult));
           insertResult.andThenSync(

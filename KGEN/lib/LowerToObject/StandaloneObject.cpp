@@ -483,8 +483,9 @@ ErrorOr<ElementsAttr> ObjectCompiler::produceStandaloneArchiveAttr(
   WriteableBufferRef produceStandaloneArchiveKey = WriteableBuffer::get();
   options.print(*produceStandaloneArchiveKey << "produceStandaloneArchive(");
   *produceStandaloneArchiveKey << ")";
-  mlir::writeBytecodeToFile(module.getOperation(),
-                            *produceStandaloneArchiveKey);
+  if (failed(mlir::writeBytecodeToFile(module.getOperation(),
+                                       *produceStandaloneArchiveKey)))
+    return Error("failed to write bytecode file");
   // Hash it so the name isn't enormous.
   auto hash = llvm::BLAKE3::hash(
       ArrayRef((const uint8_t *)produceStandaloneArchiveKey->getBufferStart(),

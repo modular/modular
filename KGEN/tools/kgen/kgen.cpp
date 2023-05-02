@@ -116,7 +116,8 @@ static LogicalResult emitModuleIR(ModuleOp theModule, const CLOptions &opts) {
     if (!outFile)
       return failure();
 
-    mlir::writeBytecodeToFile(theModule, outFile->os());
+    if (failed(mlir::writeBytecodeToFile(theModule, outFile->os())))
+      return failure();
     outFile->keep();
   }
 

@@ -357,7 +357,8 @@ ErrorOrSuccess KGENCompilerLayer::add(StringRef libName, ModuleOp theModule) {
     // Construct the input key to the transform.
     auto transformKey = Cache::WriteableBuffer::get();
     pm.printAsTextualPipeline(*transformKey);
-    mlir::writeBytecodeToFile(theModule, *transformKey);
+    if (failed(mlir::writeBytecodeToFile(theModule, *transformKey)))
+      return Error("failed to write bytecode file");
 
     // Attempt to find the buffer in the cache, and if it's not found then run
     // the transform and insert it.
@@ -376,7 +377,8 @@ ErrorOrSuccess KGENCompilerLayer::add(StringRef libName, ModuleOp theModule) {
       }
       // Put the thing into the cache.
       auto transformed = Cache::WriteableBuffer::get();
-      mlir::writeBytecodeToFile(theModule, *transformed);
+      if (failed(mlir::writeBytecodeToFile(theModule, *transformed)))
+        return Error("failed to write bytecode file");
       transformCache->insert(std::move(transformKey), std::move(transformed));
       // And we're done. Can't return yet though, have to pass through the rest
       // of the function.
