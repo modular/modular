@@ -184,10 +184,6 @@ public:
   /// function without the parameters specified.  They can be bound later.
   TypedAttr getBoundConstantAttr(ExprEmitter &emitter) const;
 
-  /// Get a bound SymbolConstantAttr for a specific overload.
-  TypedAttr getBoundConstAttrFor(LIT::FuncOp funcOp,
-                                 ExprEmitter &emitter) const;
-
   /// Evaluate the fnDecls candidates and see if there is an unambiguous
   /// candidate that works with the specified parameter bindings and provided
   /// arguments.  If so, replace fnDecls with a single entry that works and
@@ -223,15 +219,20 @@ public:
                                        bool emitDiagnosticOnFailure,
                                        ExprEmitter &emitter) const;
 
+  /// Resolve the callee into either a single PValue callee (if there's only one
+  /// decl provided) or a variadic that contains all the possible adaptive
+  /// overloads.
+  PValue getAdaptiveSet(ExprEmitter &emitter);
+
 private:
   /// Resolve the callee into either a single PValue callee (if there's only
   /// one decl provided) or a variadic that contains all the possible adaptive
   /// overloads.
   PValue getCallee(ExprEmitter &emitter) const {
-    return getCallee(fnDecls, inputParamBindings, expr, emitter);
+    return getCallee(fnDecls, baseName, inputParamBindings, expr, emitter);
   }
 
-  static PValue getCallee(ArrayRef<ASTDecl *> fnDecls,
+  static PValue getCallee(ArrayRef<ASTDecl *> fnDecls, StringRef baseName,
                           InputParamBindings inputParamBindings,
                           const ExprNode *expr, ExprEmitter &emitter);
 };

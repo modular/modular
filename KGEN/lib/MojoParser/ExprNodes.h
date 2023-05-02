@@ -154,8 +154,6 @@ struct AttributeRefNode final : public ExprNode {
     return {base->getRangeStart(), getAttributeNameLoc()};
   }
   AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
-  AnyValue emitAdaptiveSet(ORValue overloads, ValueDest &dest,
-                           ExprEmitter &emitter) const;
 
   /// Emit a reference to a stored field with a base that is known not to be a
   /// dynamic lvalue.

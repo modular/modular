@@ -1243,14 +1243,15 @@ PValue OverloadSet::filterOverloadSetForValueType(ASTType functionType,
   if (validCandidates.size() == 1 ||
       (!validCandidates.empty() && allMarkedAdaptive())) {
     if (inputParamBindings.bindings.empty())
-      return getCallee(validCandidates, inputParamBindings, expr, emitter);
+      return getCallee(validCandidates, baseName, inputParamBindings, expr,
+                       emitter);
 
     auto candidateType = cast<LIT::FuncOp>(*fnDecls.front()).getFullSignature();
 
     InputParamBindings newBindings;
     for (TypedAttr bind : getBindingsForSignature(candidateType))
       newBindings.addPrechecked(bind);
-    return getCallee(validCandidates, newBindings, expr, emitter);
+    return getCallee(validCandidates, baseName, newBindings, expr, emitter);
   }
 
   // If we aren't to emit a diagnostic, just return the failure.
@@ -1274,75 +1275,16 @@ PValue OverloadSet::filterOverloadSetForValueType(ASTType functionType,
   return {};
 }
 
-/// Resolve the callee into either a single PValue callee (if there's only one
-/// decl provided) or a variadic that contains all the possible adaptive
-/// overloads. Because adaptive overloads must all have the same signature, this
-/// also returns the signature type that they all share.
-PValue OverloadSet::getCallee(ArrayRef<ASTDecl *> fnDecls,
-                              InputParamBindings inputParamBindings,
-                              const ExprNode *expr, ExprEmitter &emitter) {
-  assert(!fnDecls.empty() &&
-         "cannot get the callee when no callees have been resolved");
-  // Get the parameter bindings, if there are any.
-  ParameterExprArrayAttr bindArray = {};
-  if (!inputParamBindings.bindings.empty()) {
-    SmallVector<TypedAttr> binds;
-    for (const InputParamBindings::Binding &b : inputParamBindings.bindings)
-      binds.push_back(b.value);
-    assert(binds.size() == inputParamBindings.bindings.size() &&
-           "some bindings were not bindings?");
-    bindArray = ParameterExprArrayAttr::get(emitter.getContext(), binds);
-  }
-  if (fnDecls.size() == 1) {
-    TypedAttr callee =
-        cast<LIT::FuncOp>(*fnDecls.front()).getBoundReference(bindArray);
-    return PValue(callee);
-  }
-
-  if (!emitter.builder)
-    return emitter.emitErrorForDynamicValueInParameter(
-        expr, "TODO: cannot call adaptive function in parameter contexts");
-
-  // Otherwise, we have to construct a list to be called.
-  SmallVector<TypedAttr> symbols = map_to_vector(fnDecls, [&](ASTDecl *decl) {
-    return cast<LIT::FuncOp>(*decl).getBoundReference(bindArray);
-  });
-  // Pull out the type, and construct a list attr to be returned.
-  auto calleeType = symbols.front().getType();
-  auto variadic = VariadicAttr::getChecked(
-      [&] {
-        return mlir::emitError(emitter.translateLocation(expr->getLoc()));
-      },
-      symbols, VariadicType::get(calleeType));
-  if (!variadic)
-    return {};
-
-  // If the callee is a list, create a param.fork op and create a
-  // CallParam on that. Mangle the declared parameter name with the line and
-  // column number to ensure uniqueness.
-  unsigned bufferID =
-      emitter.getSourceMgr().FindBufferContainingLoc(expr->getLoc());
-  auto [line, col] =
-      emitter.getSourceMgr().getLineAndColumn(expr->getLoc(), bufferID);
-
-  StringRef name = cast<LIT::FuncOp>(*fnDecls.front()).getName();
-  StringAttr declName = emitter.builder->getStringAttr(
-      Twine("(adaptive)") + name + Twine(line) + "_" + Twine(col));
-  auto decl =
-      ParamDeclAttr::get(declName, variadic.getType().getResolvedElementType());
-  emitter.builder->create<ParamForkOp>(
-      emitter.translateLocation(expr->getLoc()), decl, variadic);
-  return PValue(ParamDeclRefAttr::get(decl));
-}
-
 /// Utility function to perform substitutions of the specified callable bindings
 /// into the symbol for the given function declaration. It returns the resultant
 /// SymbolConstantAttr or produces an error message and returns null.
-TypedAttr OverloadSet::getBoundConstAttrFor(LIT::FuncOp funcOp,
-                                            ExprEmitter &emitter) const {
+static TypedAttr getBoundConstAttrFor(LIT::FuncOp funcOp, StringRef baseName,
+                                      InputParamBindings inputParamBindings,
+                                      const ExprNode *expr,
+                                      ExprEmitter &emitter) {
 
-  // If there are no input parameters specified and if we allow unbound symbols,
-  // just return the unbound symbol.
+  // If there are no input parameters specified and if we allow unbound
+  // symbols, just return the unbound symbol.
   if (inputParamBindings.bindings.empty())
     return funcOp.getBoundReference();
 
@@ -1359,6 +1301,84 @@ TypedAttr OverloadSet::getBoundConstAttrFor(LIT::FuncOp funcOp,
 
   // Now that we checked the types match, form the binding.
   return funcOp.getBoundReference(newBindings);
+}
+
+/// Perform substitutions of the specified bindings into the symbol, returning,
+/// in symConstAttrs, the resultant SymbolConstant attr for each adaptive
+/// function overload. On failure it produces an error message and returns null.
+static VariadicAttr getAdaptiveSet(ArrayRef<ASTDecl *> fnDecls,
+                                   StringRef baseName,
+                                   InputParamBindings inputParamBindings,
+                                   const ExprNode *expr, ExprEmitter &emitter) {
+  SmallVector<TypedAttr> symConstAttrs;
+  for (ASTDecl *fnDecl : fnDecls) {
+    auto funcOp = cast<LIT::FuncOp>(*fnDecl);
+    if (!funcOp.getIsAdaptive()) {
+      auto diag = emitter.emitError(expr->getLoc(),
+                                    "cannot form a reference to non @adaptive "
+                                    "declaration of '")
+                  << baseName << "'" << expr->getRange();
+      diag.attachNote(funcOp.getLoc()) << "declared here";
+      return {};
+    }
+    TypedAttr symbolAttr = getBoundConstAttrFor(
+        funcOp, baseName, inputParamBindings, expr, emitter);
+    if (!symbolAttr)
+      return {};
+    symConstAttrs.push_back(symbolAttr);
+  }
+
+  return VariadicAttr::get(emitter.getContext(), symConstAttrs,
+                           VariadicType::get(symConstAttrs.front().getType()));
+}
+
+/// Resolve the callee into either a single PValue callee (if there's only one
+/// decl provided) or a variadic that contains all the possible adaptive
+/// overloads.
+PValue OverloadSet::getAdaptiveSet(ExprEmitter &emitter) {
+  return ::getAdaptiveSet(fnDecls, baseName, inputParamBindings, expr, emitter);
+}
+
+/// Resolve the callee into either a single PValue callee (if there's only one
+/// decl provided) or a variadic that contains all the possible adaptive
+/// overloads. Because adaptive overloads must all have the same signature, this
+/// also returns the signature type that they all share.
+PValue OverloadSet::getCallee(ArrayRef<ASTDecl *> fnDecls, StringRef baseName,
+                              InputParamBindings inputParamBindings,
+                              const ExprNode *expr, ExprEmitter &emitter) {
+  assert(!fnDecls.empty() &&
+         "cannot get the callee when no callees have been resolved");
+  if (fnDecls.size() == 1) {
+    auto funcOp = cast<LIT::FuncOp>(*fnDecls.front());
+    return getBoundConstAttrFor(funcOp, baseName, inputParamBindings, expr,
+                                emitter);
+  }
+
+  VariadicAttr variadicSetAttr =
+      ::getAdaptiveSet(fnDecls, baseName, inputParamBindings, expr, emitter);
+  if (!variadicSetAttr)
+    return {};
+
+  // If the callee is a list, create a param.fork op and create a
+  // CallParam on that. Mangle the declared parameter name with the line and
+  // column number to ensure uniqueness.
+  unsigned bufferID =
+      emitter.getSourceMgr().FindBufferContainingLoc(expr->getLoc());
+  auto [line, col] =
+      emitter.getSourceMgr().getLineAndColumn(expr->getLoc(), bufferID);
+
+  if (!emitter.builder)
+    return emitter.emitErrorForDynamicValueInParameter(
+        expr, "TODO: cannot call adaptive function in parameter contexts");
+
+  StringRef name = cast<LIT::FuncOp>(*fnDecls.front()).getName();
+  StringAttr declName = emitter.builder->getStringAttr(
+      Twine("(adaptive)") + name + Twine(line) + "_" + Twine(col));
+  auto decl = ParamDeclAttr::get(
+      declName, variadicSetAttr.getType().getResolvedElementType());
+  emitter.builder->create<ParamForkOp>(
+      emitter.translateLocation(expr->getLoc()), decl, variadicSetAttr);
+  return PValue(ParamDeclRefAttr::get(decl));
 }
 
 /// Perform substitutions of the specified bindings into the symbol, returning
@@ -1380,7 +1400,8 @@ TypedAttr OverloadSet::getBoundConstantAttr(ExprEmitter &emitter) const {
     return {};
   }
 
-  return getBoundConstAttrFor(cast<LIT::FuncOp>(*fnDecls[0]), emitter);
+  return getBoundConstAttrFor(cast<LIT::FuncOp>(*fnDecls[0]), baseName,
+                              inputParamBindings, expr, emitter);
 }
 
 //===----------------------------------------------------------------------===//
