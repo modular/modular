@@ -184,6 +184,14 @@ void MojoTypeSystem::errorLog(StringRef message) {
   flushIRDumpAndDebugLog();
 }
 
+void MojoTypeSystem::crashLog(StringRef message) {
+  lldb::EventSP event =
+      std::make_shared<Event>(eCrashLog, new EventDataBytes(message));
+  BroadcastEvent(event);
+  // When we hit an error, we want to flush the debug logs as well.
+  flushIRDumpAndDebugLog();
+}
+
 void MojoTypeSystem::broadcastDiagnostics(
     DiagnosticManager &diagnosticManager,
     function_ref<bool(MojoDiagnostic &)> filter) {
@@ -239,6 +247,8 @@ static std::string stringifyType(MojoTypeSystem::MessageKind type) {
     typeStrs.push_back("DebugLog");
   if (type & MojoTypeSystem::eErrorLog)
     typeStrs.push_back("ErrorLog");
+  if (type & MojoTypeSystem::eCrashLog)
+    typeStrs.push_back("CrashLog");
 
   std::string out;
   llvm::raw_string_ostream outStream(out);
@@ -266,7 +276,8 @@ void MojoTypeSystem::handleEvent(
     // If it's a user message broadcast, send that output.
     sendUserOutput(getStringFromEvent(event));
     addEventToDebugMessageCache();
-  } else if (event->GetType() & MojoTypeSystem::eErrorLog) {
+  } else if (event->GetType() &
+             (MojoTypeSystem::eErrorLog | MojoTypeSystem::eCrashLog)) {
     // If it's an error log, send that output as well.
     reportMessage(stringifyType(MessageKind(event->GetType())),
                   getStringFromEvent(event));

@@ -87,8 +87,10 @@ public:
     eFlushIRAndDebugLog = (1u << 3),
     /// A log message that we should always flush to the stderr.
     eErrorLog = (1u << 4),
+    /// A log message that we show on a crash.
+    eCrashLog = (1u << 5),
     /// A mask that we can use to listen for all MojoTypeSystem messages.
-    eAllMessagesMask = (1u << 5) - 1,
+    eAllMessagesMask = (1u << 6) - 1,
   };
 
   void broadcastUserMessage(StringRef message);
@@ -121,6 +123,15 @@ public:
   template <typename... Args>
   void errorLog(StringRef fmt, Args &&...args) {
     errorLog(llvm::formatv(fmt.data(), std::forward<Args>(args)...).str());
+  }
+
+  /// Log an error message, copying the underlying bytes into the Event object
+  /// (to avoid lifetime issues).
+  void crashLog(StringRef message);
+  /// Use llvm::formatv to log a message.
+  template <typename... Args>
+  void crashLog(StringRef fmt, Args &&...args) {
+    crashLog(llvm::formatv(fmt.data(), std::forward<Args>(args)...).str());
   }
 
   /// Broadcast the diagnostics within the given diagnostic manager. An optional

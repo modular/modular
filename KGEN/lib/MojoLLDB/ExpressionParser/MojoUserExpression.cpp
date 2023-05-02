@@ -247,7 +247,7 @@ static void dumpTraceOnSignal(void *cookie) {
   llvm::raw_string_ostream trace(traceStr);
   llvm::sys::PrintStackTrace(trace);
   // This will also flush the debug logs.
-  typeSystem->errorLog("Backtrace:\n{0}", traceStr);
+  typeSystem->crashLog("Backtrace:\n{0}", traceStr);
 }
 
 /// Register the trace dumping signal handler exactly once.
