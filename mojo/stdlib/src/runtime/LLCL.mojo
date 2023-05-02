@@ -49,8 +49,6 @@ struct Chain:
         return self.storage != Pointer[Int].get_null()
 
 
-# FIXME(traits): This shouldn't be a register_passable type but we need this
-# until we have traits for proper parametric types.
 @register_passable("trivial")
 struct AsyncContext:
     """This struct models the coroutine context contained in every coroutine
@@ -219,8 +217,7 @@ struct Task[type: AnyType]:
         let ctx: Pointer[AsyncContext] = self.handle.get_ctx[AsyncContext]()
         let chainPtr: Pointer[Chain] = AsyncContext.get_chain(ctx)
         _del_llcl_chain(chainPtr)
-        # FIXME(#13073): We should be able to write `_ = self.handle` instead.
-        self.handle._keep()
+        _ = self.handle ^
 
     @always_inline
     fn __await__(self) -> type:
@@ -249,8 +246,7 @@ struct Task[type: AnyType]:
 # TaskGroup
 # ===----------------------------------------------------------------------===#
 
-# FIXME(traits): This shouldn't be a register_passable type but we need this
-# until we have traits for proper parametric types.
+
 @register_passable("trivial")
 struct TaskGroupContext:
     alias tg_callback_fn_type = fn (& TaskGroup) -> None
