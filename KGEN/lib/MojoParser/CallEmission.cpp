@@ -835,12 +835,9 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
           if (orValue->fnDecls.size() == 1) {
             argVal = orValue->fnDecls.front()->getFuncAsPValue();
           } else {
-
-            // Intentionally copy the overload set since we need to mutate it to
-            // test for filtering.
-            OverloadSet setCopy(*orValue);
-            if (failed(setCopy.filterOverloadSetForValueType(
-                    expectedType, /*emitDiagnosticOnFailure=*/false, emitter)))
+            argVal = orValue->filterOverloadSetForValueType(
+                expectedType, /*emitDiagnosticOnFailure=*/false, emitter);
+            if (!argVal)
               return {kArgWrongType, providedValueIdx, expectedType,
                       newBindings};
             break;
@@ -1163,14 +1160,22 @@ LogicalResult OverloadSet::filterOverloadSet(
 
 /// Filter down and complete this overload set based on knowledge that we need
 /// to produce a function pointer with the specified type.
-LogicalResult OverloadSet::filterOverloadSetForValueType(
-    ASTType functionType, bool emitDiagnosticOnFailure, ExprEmitter &emitter) {
+PValue OverloadSet::filterOverloadSetForValueType(ASTType functionType,
+                                                  bool emitDiagnosticOnFailure,
+                                                  ExprEmitter &emitter) const {
   // If the target type is something weird then don't filter.  Let the error be
   // reported another way.
   if (!isa<SignatureType>(functionType.mlirType)) {
-    if (!emitDiagnosticOnFailure)
-      return failure();
-    return success();
+    if (emitDiagnosticOnFailure) {
+      auto diag = emitter.emitError(expr->getLoc())
+                  << "cannot convert function to non-function type "
+                  << functionType;
+      for (ASTDecl *candidate : fnDecls)
+        diag.attachNote(cast<LIT::FuncOp>(*candidate)->getLoc())
+            << "candidate declared here with type "
+            << ASTType(cast<LIT::FuncOp>(*candidate).getFullSignature());
+    }
+    return {};
   }
 
   // TODO: This is using an exact match which is perhaps too specific of a
@@ -1182,7 +1187,8 @@ LogicalResult OverloadSet::filterOverloadSetForValueType(
   //
   // We could also support generating a lambda for fancy implicit conversions
   // and subtyping some day.
-  auto getBindingsForSignature = [&](SignatureType candidateType) {
+  auto getBindingsForSignature =
+      [&](SignatureType candidateType) -> ParameterExprArrayAttr {
     // Apply any bound parameters to the candidate's type since they will be
     // applied when a reference is made.
     // TODO: Parameter inference.
@@ -1194,7 +1200,7 @@ LogicalResult OverloadSet::filterOverloadSetForValueType(
         /*don't emit diagnostics*/ nullptr, candidateType.hasParamVarargs());
   };
 
-  auto isValidCandidate = [&](SignatureType candidateType) {
+  auto isValidCandidate = [&](SignatureType candidateType) -> bool {
     // Apply any bound parameters to the candidate's type since they will be
     // applied when a reference is made.  We only do this if there are some
     // bindings present, because (unlike normal function calls) the result type
@@ -1232,27 +1238,24 @@ LogicalResult OverloadSet::filterOverloadSetForValueType(
       return cast<LIT::FuncOp>(*decl).getIsAdaptive();
     });
   };
+
+  // If we resolved to a single candidate or an adaptive set, then we succeed.
   if (validCandidates.size() == 1 ||
       (!validCandidates.empty() && allMarkedAdaptive())) {
-    // Mutate our state to represent what we've learned.  We have one callee
-    // and we have valid predetermined parameter bindings.
-    fnDecls = std::move(validCandidates);
+    if (inputParamBindings.bindings.empty())
+      return getCallee(validCandidates, inputParamBindings, expr, emitter);
 
-    if (!inputParamBindings.bindings.empty()) {
-      auto candidateType =
-          cast<LIT::FuncOp>(*fnDecls.front()).getFullSignature();
-      auto newBindings = getBindingsForSignature(candidateType);
-      inputParamBindings.bindings.clear();
-      for (TypedAttr bind : newBindings)
-        inputParamBindings.addPrechecked(bind);
-    }
+    auto candidateType = cast<LIT::FuncOp>(*fnDecls.front()).getFullSignature();
 
-    return success();
+    InputParamBindings newBindings;
+    for (TypedAttr bind : getBindingsForSignature(candidateType))
+      newBindings.addPrechecked(bind);
+    return getCallee(validCandidates, newBindings, expr, emitter);
   }
 
   // If we aren't to emit a diagnostic, just return the failure.
   if (!emitDiagnosticOnFailure)
-    return failure();
+    return {};
 
   auto diag = emitter.emitError(expr->getLoc());
   if (validCandidates.empty()) {
@@ -1268,14 +1271,16 @@ LogicalResult OverloadSet::filterOverloadSetForValueType(
         << "candidate declared here with type "
         << ASTType(cast<LIT::FuncOp>(*candidate).getFullSignature());
 
-  return failure();
+  return {};
 }
 
 /// Resolve the callee into either a single PValue callee (if there's only one
 /// decl provided) or a variadic that contains all the possible adaptive
 /// overloads. Because adaptive overloads must all have the same signature, this
 /// also returns the signature type that they all share.
-PValue OverloadSet::getCallee(ExprEmitter &emitter) const {
+PValue OverloadSet::getCallee(ArrayRef<ASTDecl *> fnDecls,
+                              InputParamBindings inputParamBindings,
+                              const ExprNode *expr, ExprEmitter &emitter) {
   assert(!fnDecls.empty() &&
          "cannot get the callee when no callees have been resolved");
   // Get the parameter bindings, if there are any.
@@ -1320,10 +1325,11 @@ PValue OverloadSet::getCallee(ExprEmitter &emitter) const {
   auto [line, col] =
       emitter.getSourceMgr().getLineAndColumn(expr->getLoc(), bufferID);
 
-  auto decl = ParamDeclAttr::get(
-      emitter.builder->getStringAttr("(adaptive)" + baseName + Twine(line) +
-                                     "_" + Twine(col)),
-      variadic.getType().getResolvedElementType());
+  StringRef name = cast<LIT::FuncOp>(*fnDecls.front()).getName();
+  StringAttr declName = emitter.builder->getStringAttr(
+      Twine("(adaptive)") + name + Twine(line) + "_" + Twine(col));
+  auto decl =
+      ParamDeclAttr::get(declName, variadic.getType().getResolvedElementType());
   emitter.builder->create<ParamForkOp>(
       emitter.translateLocation(expr->getLoc()), decl, variadic);
   return PValue(ParamDeclRefAttr::get(decl));
@@ -1455,11 +1461,13 @@ OverloadSet::OverloadSet(ASTType type, StringRef methodName,
 CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
   // If we have an overload set with multiple possibilities, we'll fail to emit
   // this as a CRValue.  Try to resolve it based on the destination's type.
+  PValue directSymbolAttr;
   if (fnDecls.size() > 1) {
     if (ASTType expectedType = dest.resolveImpliedType(
             expr->getLoc(), /*no implied type*/ Type(), emitter)) {
-      if (failed(filterOverloadSetForValueType(
-              expectedType, /*emitDiagnosticOnFailure=*/true, emitter)))
+      directSymbolAttr = filterOverloadSetForValueType(
+          expectedType, /*emitDiagnosticOnFailure=*/true, emitter);
+      if (!directSymbolAttr)
         return {};
     }
   }
@@ -1467,13 +1475,16 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
   // We allow unbound symbols here which can be emitted as an PValue.  In the
   // case where we are partially applying, that will force the unbound symbol
   // into a SRValue which will catch symbols that are not fully bound.
-  auto directSymbolAttr = getBoundConstantAttr(emitter);
-  if (!directSymbolAttr)
-    return {};
+  if (!directSymbolAttr) {
+    directSymbolAttr = getBoundConstantAttr(emitter);
+    if (!directSymbolAttr)
+      return {};
+  }
 
   // Verify that the target has no result parameters.  We have no way to bind
   // these indirectly.
-  auto calleeSignature = cast<SignatureType>(directSymbolAttr.getType());
+  auto calleeSignature =
+      cast<SignatureType>(directSymbolAttr.getType().mlirType);
   if (!calleeSignature.getResultParamTypes().empty()) {
     emitter.emitError(expr->getLoc(),
                       "calls with result parameters must be called directly")
@@ -1577,7 +1588,7 @@ CValue OverloadSet::emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
                                /*emitDiagnosticOnFailure=*/true, emitter)))
     return {};
 
-  CRValue callee = getCallee(emitter);
+  PValue callee = getCallee(emitter);
   if (!callee)
     return {};
 
