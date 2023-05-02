@@ -66,14 +66,6 @@ class Model:
         # The type would likely be Union[np.ndarray, torch.Tensor, tf.Tensor]
         return self._impl.execute(*args)
 
-    def init(self) -> None:
-        """Initializes the loaded model and prepares it for execution.
-
-        Calling this is optional to initialize the model for a faster first-time
-        execution. You can instead just call :func:`execute()` and it will call
-        this for you."""
-        self._impl.load()
-
     @property
     def input_metadata(self) -> List["TensorSpec"]:
         """
@@ -150,7 +142,7 @@ class InferenceSession:
         """
         model_path = Path(str(model_path))
         _model = self._impl.compile(model_path)
-
+        _model.load()
         return Model._init(_model)
 
 
