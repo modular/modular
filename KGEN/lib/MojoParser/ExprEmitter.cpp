@@ -1427,9 +1427,8 @@ void StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
       emitter.builder->create<StructGEPOp>(loc, tmpDecl, getField());
   emitter.emitStoreToLValue(value, SLValue(fieldPtr), EC_AttributeRefBase);
 
-  // Store the whole result back.
-  // TODO(moves): This could move the value.
-  baseVal.ir->emitStore({SLValue(tmpDecl), expr}, emitter);
+  // Store the whole result back, transfering ownership as an MRValue.
+  baseVal.ir->emitStore({MRValue(tmpDecl), expr}, emitter);
 }
 
 CValue SubscriptDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
