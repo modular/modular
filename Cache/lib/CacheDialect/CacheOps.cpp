@@ -364,7 +364,10 @@ static AsyncValueRef<Chain> cacheSingleRegion(Region &r, Operation *op,
         // Create a place to store the bytecode.
         WriteableBufferRef bytecode = WriteableBuffer::get();
         // Store the container in bytecode.
-        mlir::writeBytecodeToFile(container, *bytecode);
+        if (failed(mlir::writeBytecodeToFile(container, *bytecode))) {
+          return std::move(out).setToError(getMLIRDiagnostic(
+              "failed to write bytecode file", container.getLoc()));
+        }
         auto hashOr =
             cache->insert(&container.getBodyRegion(), std::move(bytecode));
         // Keeping references is safe here because all the memory is owned by
