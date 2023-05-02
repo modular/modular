@@ -13,6 +13,14 @@ To provide the best experience possible, the Mojo Playground currently supports
 a limited number of people. We plan to scale up quickly so everybody can get
 access over time.
 
+<style>
+    img.screenshot {
+        width: 95%
+    }
+</style>
+
+![](images/mojo-playground.png){.screenshot}
+
 ## Get started
 
 1. [Sign up for access to the Mojo
@@ -35,6 +43,8 @@ the major language features. (If you don't have access yet, you can read the
 baseline performance is not representative of the language. However, as you
 will see in the [`Matmul.ipynb`](/mojo/notebooks/Matmul.html) notebook, Mojo's
 relative performance over Python is significant.
++ There might be some bugs. Please [report issues and feedback on
+GitHub](https://github.com/modularml/mojo/issues).
 
 ## Tips
 
