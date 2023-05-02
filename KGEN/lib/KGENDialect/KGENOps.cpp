@@ -1005,8 +1005,8 @@ void CreateClosureOp::build(OpBuilder &b, OperationState &state, Type type,
 
 LogicalResult CreateClosureOp::inferReturnTypes(
     MLIRContext *ctx, std::optional<Location> loc, ValueRange captures,
-    DictionaryAttr attributes, RegionRange regions,
-    SmallVectorImpl<Type> &results) {
+    DictionaryAttr attributes, mlir::OpaqueProperties properties,
+    RegionRange regions, SmallVectorImpl<Type> &results) {
   auto callee = dyn_cast_or_null<TypedAttr>(attributes.get("callee"));
   if (!callee)
     return mlir::emitOptionalError(

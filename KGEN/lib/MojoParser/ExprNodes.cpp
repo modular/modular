@@ -1148,8 +1148,8 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
       return failure();
     if (failed(inferTypesItf->inferReturnTypes(
             context, state.location, state.operands,
-            DictionaryAttr::get(context, state.attributes), state.regions,
-            state.types)))
+            DictionaryAttr::get(context, state.attributes),
+            state.getRawProperties(), state.regions, state.types)))
       return failure();
     return success(
         llvm::all_of(state.types, [](Type t) { return t != Type(); }));

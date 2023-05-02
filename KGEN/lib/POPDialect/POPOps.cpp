@@ -53,6 +53,7 @@ static Type getBoolOfSameParentType(Type type) {
 LogicalResult CmpOp::inferReturnTypes(MLIRContext *ctx,
                                       std::optional<Location> loc,
                                       ValueRange operands, DictionaryAttr attrs,
+                                      mlir::OpaqueProperties properties,
                                       RegionRange regions,
                                       SmallVectorImpl<Type> &types) {
   Type argType = operands[0].getType();
@@ -239,7 +240,8 @@ inferStructElementType(function_ref<LogicalResult(const Twine &)> emitError,
 
 LogicalResult StructExtractOp::inferReturnTypes(
     MLIRContext *context, std::optional<Location> loc, ValueRange operands,
-    DictionaryAttr attrs, RegionRange regions, SmallVectorImpl<Type> &types) {
+    DictionaryAttr attrs, mlir::OpaqueProperties properties,
+    RegionRange regions, SmallVectorImpl<Type> &types) {
   auto emitError = [&](const Twine &msg) -> LogicalResult {
     return mlir::emitOptionalError(loc, msg);
   };
@@ -300,7 +302,8 @@ LogicalResult StructGEPOp::verify() {
 
 LogicalResult StructGEPOp::inferReturnTypes(
     MLIRContext *context, std::optional<Location> loc, ValueRange operands,
-    DictionaryAttr attrs, RegionRange regions, SmallVectorImpl<Type> &types) {
+    DictionaryAttr attrs, mlir::OpaqueProperties properties,
+    RegionRange regions, SmallVectorImpl<Type> &types) {
   auto emitError = [&](const Twine &msg) -> LogicalResult {
     return mlir::emitOptionalError(loc, msg);
   };
