@@ -814,12 +814,13 @@ fn slice_expression(a: Slicable, i: Int):
 # This is an array that has elements of MemoryOnlyInt.
 struct MemoryOnlyIntArray:
   fn __getitem__(self&, x: Int) -> MemoryOnlyInt: pass
-  fn __setitem__(self&, x: Int, value: MemoryOnlyInt): pass
+  fn __setitem__(self&, x: Int, owned value: MemoryOnlyInt): pass
 
 # CHECK-LABEL: lit.func @"testMemoryOnlyIntArray
-fn testMemoryOnlyIntArray(arr&: MemoryOnlyIntArray, x: Int, moi: MemoryOnlyInt):
-  # CHECK: kgen.call {{.*}}__setitem__{{.*}}(%arr, %x, %moi)
-  arr[x] = moi
+fn testMemoryOnlyIntArray(arr&: MemoryOnlyIntArray, x: Int, owned moi: MemoryOnlyInt):
+  # CHECK: %0 = lit.ownership.end.lifetime %moi
+  # CHECK: kgen.call {{.*}}__setitem__{{.*}}(%arr, %x, %0)
+  arr[x] = moi^
   # CHECK: [[ANON:%.*]] = lit.varlet.decl "anonymous*"
   # CHECK: kgen.call {{.*}}__getitem__{{.*}}([[ANON]], %arr, %x)
   # CHECK: kgen.call {{.*}}__setitem__{{.*}}(%arr, %x, [[ANON]])
@@ -838,6 +839,14 @@ fn testMemoryOnlyIntArray(arr&: MemoryOnlyIntArray, x: Int, moi: MemoryOnlyInt):
   # CHECK: kgen.call @"{{.*}}__init__{{.*}}([[ANON]],
   # CHECK: kgen.call {{.*}}"__setitem__{{.*}}(%arr, %x, [[ANON]])
   arr[x] = MemoryOnlyInt(42)
+
+  # CHECK: [[STORETMP:%.*]] = lit.varlet.decl "__store_tmp__"
+  # CHECK: kgen.call {{.*}}__getitem__{{.*}}([[STORETMP]], %arr, %x)
+  # CHECK: [[XP:%.*]] = lit.struct.gep [[STORETMP]][x]
+  # CHECK:  pop.store {{.*}}, [[XP]]
+  # CHECK: kgen.call {{.*}}__setitem__{{.*}}(%arr, %x, [[STORETMP]])
+  arr[x].x += 1
+
 
 # Check a load from a SIMD field works.
 # CHECK-LABEL: lit.func @"testSIMDGetter
