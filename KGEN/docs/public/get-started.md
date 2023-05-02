@@ -18,9 +18,6 @@ access over time.
 1. [Sign up for access to the Mojo
     Playground](https://www.modular.com/get-started/).
 
-    You’ll immediately receive an email to acknowledge your request,
-    but we're gradually rolling out access, so please be patient.
-
 2. When you receive access, [log in to the Mojo
     Playground](https://playground.modular.com) using the email
     address you provided in the above form.
