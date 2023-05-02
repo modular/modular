@@ -68,3 +68,20 @@ kgen.func @memory_ops_untouched(%input: !pop.pointer<index>, %output: !pop.point
   }
   kgen.return
 }
+
+// CHECK-LABEL: @hoist_loop_index
+kgen.func @hoist_loop_index(%arg0: index, %cond: i1) {
+  // CHECK-NEXT: hlcf.loop
+  hlcf.loop (%arg1 = %arg0 : index) {
+    // CHECK-NEXT: index.add
+    // CHECK-NEXT: hlcf.if
+    hlcf.if %cond {
+      %0 = index.add %arg1, %arg0
+      hlcf.yield
+    } else {
+      hlcf.yield
+    }
+    hlcf.break
+  }
+  kgen.return
+}
