@@ -330,6 +330,7 @@ The way we treat event kinds is as follows (list in `MojoTypeSystem.h`):
   or an `ErrorLog` are sent.
 - `DumpIR` events are treated the same as `DebugLog`.
 - `ErrorLog` events are flushed immediately.
+- `CrashLog` events are flushed immediately.
 
 Events are mostly handled by `MojoTypeSystem::handleEvent`, which implements the
 behavior above. A new user can do whatever they want with the various events as
