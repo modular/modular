@@ -1956,13 +1956,13 @@ static SpecialFunctionInfo getOpSpecialFunctions(ExprNode::Kind kind,
 /// function call.
 /// A special function call is one where the` kind` must corresponds to a valid
 /// SpecialFunctionInfo when we invoke getOpSpecialFunctions(kind).
-/// `callNode` is the call like expression that results in the call.
+/// `callExpr` is the call like expression that results in the call.
 //
 /// This is an utility function to share code between BinOpNone and
 /// ChainedCmpOpNode since the latter is a sequence of binary operations.
 static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
                               ASTExprAnd<AnyValue> rhs, ExprNode::Kind kind,
-                              ValueDest &dest, const ExprNode *callNode,
+                              ValueDest &dest, const ExprNode *callExpr,
                               ExprEmitter &emitter) {
 
   // FIXME: We currently hack in index type support as transition to proper
@@ -1976,13 +1976,13 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
       switch (kind) {
       default:
         emitter.emitError(
-            callNode->getLoc(),
+            callExpr->getLoc(),
             "cannot emit this binary operator in parameter context yet")
-            << callNode->getRange();
+            << callExpr->getRange();
         return {};
       case ExprNode::kSub: {
         auto value = ParamOperatorAttr::getSub(lhsParam, rhsParam);
-        return emitter.emitResult(value, callNode, dest);
+        return emitter.emitResult(value, callExpr, dest);
       }
       case ExprNode::kAdd:
         opcode = POC::Add;
@@ -2036,9 +2036,11 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
       auto value = ParamOperatorAttr::get((POC)opcode, lhsParam, rhsParam);
       if (needsInvert)
         value = ParamOperatorAttr::getNot(value);
-      return emitter.emitResult(value, callNode, dest);
-    } else if (isa<MLIRTypeType>(lhsParam.getType().mlirType) &&
-               isa<MLIRTypeType>(rhsParam.getType().mlirType)) {
+      return emitter.emitResult(value, callExpr, dest);
+    }
+
+    if (isa<MLIRTypeType>(lhsParam.getType().mlirType) &&
+        isa<MLIRTypeType>(rhsParam.getType().mlirType)) {
       // FIXME: MLIR types should be wrapped in their own custom type too.
       if (kind == ExprNode::Kind::kCmpEQ)
         return ParamOperatorAttr::get(POC::EQ,
@@ -2054,11 +2056,11 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
   // Check to see if we have a forward version of this function on the primary
   // receiver.
   if (auto lhsCV = lhs.ir.getIfCValue()) {
-    OverloadSet callee(lhsCV.getRValueType(), specialFnInfo.name, argValues,
-                       callNode, CallSyntax::kOperator, emitter,
-                       /*no error*/ {});
-    if (callee)
-      return callee.emitCall(argValues, dest, emitter);
+    if (PValue callee = OverloadSet::lookup(
+            lhsCV.getRValueType(), specialFnInfo.name, argValues, callExpr,
+            CallSyntax::kOperator, emitter,
+            /*no error*/ {}))
+      return emitter.emitIndirectCall(callee, argValues, dest, callExpr);
   }
 
   // Check to see if we have the reverse version of this operator.
@@ -2067,11 +2069,11 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
     // Swap the operand order.
     std::swap(argValues[0], argValues[1]);
     if (auto rhsCV = rhs.ir.getIfCValue()) {
-      OverloadSet callee(rhsCV.getRValueType(), reversedFnInfo.name, argValues,
-                         callNode, CallSyntax::kReversedOperator, emitter,
-                         /*no error*/ {});
-      if (callee)
-        return callee.emitCall(argValues, dest, emitter);
+      if (PValue callee = OverloadSet::lookup(
+              rhsCV.getRValueType(), reversedFnInfo.name, argValues, callExpr,
+              CallSyntax::kReversedOperator, emitter,
+              /*no error*/ {}))
+        return emitter.emitIndirectCall(callee, argValues, dest, callExpr);
     }
 
     // Swap these back so we emit the right error.
@@ -2080,7 +2082,7 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
 
   // Emit an error complaining about the forward version of the operator.
   return emitter.emitNamedMethodCall(specialFnInfo.name, argValues, dest,
-                                     CallSyntax::kOperator, callNode);
+                                     CallSyntax::kOperator, callExpr);
 }
 
 /// Emit a simple assignment statement. Python evaluates the RHS of an

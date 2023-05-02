@@ -1037,14 +1037,13 @@ CValue ExprEmitter::emitNamedMethodCall(
     }
   };
 
-  OverloadSet callee(type, methodName, callNode, syntax, shared,
-                     emitNoMethodError);
-
   // If the type doesn't have the specified method, emit an error.
-  if (callee.isNull())
+  PValue callee = OverloadSet::lookup(type, methodName, argValues, callNode,
+                                      syntax, *this, emitNoMethodError);
+  if (!callee)
     return {};
 
-  return callee.emitCall(argValues, dest, *this);
+  return emitIndirectCall(callee, argValues, dest, callNode);
 }
 
 /// Return true if 'value' may be implicitly converted to 'requiredType'

@@ -1433,27 +1433,29 @@ OverloadSet::OverloadSet(ASTType type, StringRef methodName,
 
 /// Form an OverloadSet with a lookup of a named method on the specified type,
 /// filtered to match a concrete operand set.
-/// If successful, this provides a non-null OverloadSet.
-OverloadSet::OverloadSet(ASTType type, StringRef methodName,
-                         ArrayRef<ASTExprAnd<AnyValue>> operands,
-                         const ExprNode *callExpr, CallSyntax syntax,
-                         ExprEmitter &emitter,
-                         std::function<void()> errorHandler)
-    : OverloadSet(type, methodName, callExpr, syntax, emitter.shared,
-                  errorHandler) {
+/// If successful, this provides a non-null PValue for a single callee.
+PValue OverloadSet::lookup(ASTType type, StringRef methodName,
+                           ArrayRef<ASTExprAnd<AnyValue>> operands,
+                           const ExprNode *callExpr, CallSyntax syntax,
+                           ExprEmitter &emitter,
+                           std::function<void()> errorHandler) {
+  OverloadSet ovSet(type, methodName, callExpr, syntax, emitter.shared,
+                    errorHandler);
 
   // If the core lookup failed, don't filter.
-  if (isNull())
-    return;
+  if (ovSet.isNull())
+    return {};
 
   // Filter the overload set with the actual operands list.  If this fails,
   // report an error (if we have an error handler) and reset to a null state so
   // the client can check this.
   bool shouldPrintError = bool(errorHandler);
-  if (failed(filterOverloadSet(operands, /*allowImplicitConversions=*/true,
-                               /*emitDiagnosticOnFailure=*/shouldPrintError,
-                               emitter)))
-    fnDecls.clear();
+  if (failed(ovSet.filterOverloadSet(
+          operands, /*allowImplicitConversions=*/true,
+          /*emitDiagnosticOnFailure=*/shouldPrintError, emitter)))
+    return {};
+
+  return ovSet.getCallee(emitter);
 }
 
 /// Emit this as a CRValue if it can be resolved, otherwise emit an ambiguity
