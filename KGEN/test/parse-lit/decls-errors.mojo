@@ -40,7 +40,7 @@ def var_decl_without_type():
   # expected-error @+1 {{declaration must have either a type or an initializer}}
   var x
 
-  # expected-error @below {{SIMD[f32, 16]' value cannot be converted to 'SIMD[f32, 8]'}}
+  # expected-error @below {{'SIMD[f32, 16]' value cannot be converted to 'SIMD[f32, 8]'}}
   let z: SIMD[DType.f32, 8] = SIMD[DType.f32, 16]()
 
 def var_decl():

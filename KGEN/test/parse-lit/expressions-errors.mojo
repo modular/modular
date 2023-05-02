@@ -6,7 +6,7 @@
 
 # RUN: kgen-translate -import-mojo -verify-diagnostics %s -I %S/../mojo-examples/
 
-from prolog import DType, F32, object
+from prolog import DType, F32, object, SIMD
 from Coroutine import Coroutine
 
 ##===----------------------------------------------------------------------===##
@@ -54,6 +54,10 @@ fn test_func_type():
     alias f6: fn[*Ts: AnyType](owned* *Ts) capturing -> None = test_func_type
     # expected-error @below {{fn[AnyType](*&$0) capturing -> None}}
     alias f7: fn[T: AnyType](*&T) capturing -> None = test_func_type
+
+    alias type = DType.f32
+    # expected-error @below {{SIMD[DType(type.value), 32]}}
+    alias value: SIMD[type.value, 32] = SIMD[DType.f32, 32]()
 
 
 ##===----------------------------------------------------------------------===##

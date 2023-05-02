@@ -208,11 +208,14 @@ static void printSymbol(raw_ostream &os, SymbolRefAttr symbol, bool forDiag) {
     else
       leaf = symbol.getNestedReferences().back().getAttr();
     // Demangle the function name.
-    size_t sigMangleStart = leaf.getValue().find('(');
-    if (sigMangleStart != std::string::npos)
-      os << leaf.getValue().take_front(sigMangleStart);
-    else
-      os << leaf.getValue();
+    StringRef name = leaf.getValue();
+    if (size_t mangleStart = name.find('('); mangleStart != std::string::npos)
+      name = name.take_front(mangleStart);
+    // For constructors, print the type name instead.
+    // TODO: Handle other dunder methods.
+    if (name == "__init__" && symbol.getNestedReferences().size() == 2)
+      name = symbol.getNestedReferences().front().getValue();
+    os << name;
   } else {
     os << symbol.getRootReference().strref();
     for (FlatSymbolRefAttr nestedRef : symbol.getNestedReferences())
@@ -281,6 +284,11 @@ static void printParam(raw_ostream &os, TypedAttr param, bool forDiag) {
   }
   if (auto typeAttr = dyn_cast<TypeConstantAttr>(param)) {
     ASTType(typeAttr.getValue()).print(os, forDiag);
+    return;
+  }
+  if (auto extractAttr = dyn_cast<LIT::StructExtractAttr>(param)) {
+    printParam(os, extractAttr.getStructValue(), forDiag);
+    os << '.' << extractAttr.getField().getValue();
     return;
   }
 
