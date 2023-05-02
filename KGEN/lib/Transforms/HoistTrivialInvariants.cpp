@@ -23,17 +23,15 @@ namespace M::KGEN {
 
 namespace {
 struct HoistTrivialInvariants
-    : M::KGEN::impl::HoistTrivialInvariantsBase<HoistTrivialInvariants> {
+    : impl::HoistTrivialInvariantsBase<HoistTrivialInvariants> {
   void runOnOperation() override;
 };
 
 /// Hoist invariant operations to the earlest legal point we can within the
 /// function. Either to the start if they use only input arguments or to the
 /// producer of whichever operand is dominated by all other operands.
-static void moveInvariants(KGEN::FuncOp func, Operation *opWithRegion,
+static void moveInvariants(FuncOp func, Operation *opWithRegion,
                            iterator_range<Region::OpIterator> range) {
-  Block &entryBlock = func.getBodyRegion().front();
-
   // Move the invariants.
   for (Operation &op : llvm::make_early_inc_range(range)) {
     // This pass only will hoist
@@ -50,19 +48,7 @@ static void moveInvariants(KGEN::FuncOp func, Operation *opWithRegion,
     // be hoisted back in.
     bool safe = true;
     for (Value operand : op.getOperands()) {
-      Operation *parent = operand.getDefiningOp();
-
-      // Only allow hoisting ops with block argument operands if those operands
-      // are function level.
-      if (auto blockArg = dyn_cast<BlockArgument>(operand)) {
-        if (blockArg.getOwner() != &entryBlock) {
-          safe = false;
-          break;
-        }
-        continue;
-      }
-
-      if (parent->getParentOp() == opWithRegion) {
+      if (operand.getParentRegion()->getParentOp() == opWithRegion) {
         safe = false;
         break;
       }
@@ -72,37 +58,44 @@ static void moveInvariants(KGEN::FuncOp func, Operation *opWithRegion,
       continue;
 
     // The operand which is dominated by all others.
-    Operation *leastDominatingOperand = nullptr;
-    bool allOperandsAreBlocks = true;
-
+    PointerUnion<Operation *, Region *> leastDominatingOperand = nullptr;
     mlir::DominanceInfo domTree;
 
     // Traverse again to avoid touching dom info on region variant ops.
     for (Value operand : op.getOperands()) {
-      Operation *parent = operand.getDefiningOp();
-
-      // Don't need any domanince info for block args.
-      if (isa<BlockArgument>(operand))
-        continue;
-
-      allOperandsAreBlocks = false;
-
-      // Find the insertion point.
-      if (!leastDominatingOperand) {
-        leastDominatingOperand = parent;
-      } else {
-        if (domTree.dominates(leastDominatingOperand, parent))
+      if (Operation *parent = operand.getDefiningOp()) {
+        if (!leastDominatingOperand) {
           leastDominatingOperand = parent;
+        } else if (auto *op = leastDominatingOperand.dyn_cast<Operation *>()) {
+          if (domTree.dominates(op, parent))
+            leastDominatingOperand = parent;
+        } else if (leastDominatingOperand.get<Region *>()->isAncestor(
+                       parent->getParentRegion())) {
+          leastDominatingOperand = parent;
+        }
+      } else {
+        Region *region = operand.getParentRegion();
+        if (!leastDominatingOperand) {
+          leastDominatingOperand = region;
+        } else if (auto *op = leastDominatingOperand.dyn_cast<Operation *>()) {
+          if (op->getParentRegion()->isProperAncestor(region))
+            leastDominatingOperand = region;
+        } else if (leastDominatingOperand.get<Region *>()->isProperAncestor(
+                       region)) {
+          leastDominatingOperand = region;
+        }
       }
     }
 
-    // If we are moving an operation that only uses the function block args we
-    // hoist to the start of the function. Otherwise hoist to the earliest legal
-    // point.
-    if (allOperandsAreBlocks)
-      op.moveAfter(&entryBlock, entryBlock.begin());
-    else if (leastDominatingOperand)
-      op.moveAfter(leastDominatingOperand);
+    // Hoist to the earliest legal point. This is the start of the region if the
+    // least dominating operand is a block argument. Otherwise, move to the
+    // start of the region.
+    if (!leastDominatingOperand)
+      op.moveBefore(func.getBody(), func.getBody()->begin());
+    else if (auto *region = leastDominatingOperand.dyn_cast<Region *>())
+      op.moveBefore(&region->front(), region->front().begin());
+    else
+      op.moveAfter(leastDominatingOperand.get<Operation *>());
   }
 }
 
