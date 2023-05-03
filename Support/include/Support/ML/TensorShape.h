@@ -78,9 +78,8 @@ class TensorShapeStorage {
 public:
   // Default construct to zero-D shape.
   TensorShapeStorage() {
-    representation.rep32.kind = RepKind::k32;
-    representation.rep32.rank = 0;
-    representation.rep32.auxiliary = 0;
+    memset(&representation, 0, sizeof(representation));
+    representation.repOutOfLine.kind = RepKind::k32;
   }
   ~TensorShapeStorage() {
     if (isOutOfLine())
