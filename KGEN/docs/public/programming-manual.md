@@ -1,6 +1,11 @@
 ---
 title: Mojo🔥 programming manual
 description: A comprehensive tour of Mojo language features with code examples.
+website:
+  open-graph:
+    image: /static/images/mojo-social-card.png
+  twitter-card:
+    image: /static/images/mojo-social-card.png
 ---
 
 Mojo is a programming language that is as easy to use as Python but with the

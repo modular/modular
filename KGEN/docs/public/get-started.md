@@ -1,6 +1,11 @@
 ---
 title: Try Mojo🔥
 description: An introduction to the Mojo Playground, where you can try Mojo in a virtual environment.
+website:
+  open-graph:
+    image: /static/images/mojo-social-card.png
+  twitter-card:
+    image: /static/images/mojo-social-card.png
 ---
 
 The Mojo language is still very young, but we want your feedback!
