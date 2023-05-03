@@ -30,6 +30,10 @@ access over time.
     Playground](https://playground.modular.com) using the email
     address you provided in the above form.
 
+3. Chat with us on [Discord](http://discord.gg/modular), report [issues on
+    GitHub](https://github.com/modularml/mojo), and feel free to share your Mojo
+    code with others.
+
 ## What to expect
 
 + The Mojo Playground is a [JupyterHub](https://jupyter.org/hub) environment in
