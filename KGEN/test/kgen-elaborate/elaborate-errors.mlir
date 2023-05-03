@@ -252,8 +252,7 @@ kgen.generator @evaluator(%fns: !pop.pointer<() -> ()>, %size: index) -> index {
 }
 
 kgen.generator @no_valid_specializations() {
-  kgen.param.declare false: i1 = <0>
-  kgen.param.assert <false>, "none"
+  kgen.param.assert <0>, "none"
   kgen.return
 }
 

@@ -558,7 +558,9 @@ def KGEN_UnreachableOp : KGENOp<"unreachable", [Terminator,
 // ParamAssertOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_ParamAssertOp : KGENOp<"param.assert", []> {
+def KGEN_ParamAssertOp : KGENOp<"param.assert",
+    [DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric"]>]>,
+    NoParamDecls {
   let summary = "check a parameter expression at elaboration time";
   let description = [{
     The `kgen.param.assert` operation ensures that a parameter expression is
