@@ -4,7 +4,7 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_mlir_library(KGENCompilerRT
+add_modular_library(KGENCompilerRT
   InitIntelAMX.cpp
   Initialize.cpp
   LLCL.cpp
@@ -20,3 +20,5 @@ add_modular_mlir_library(KGENCompilerRT
   MSupport
   LLCLRuntime
 )
+
+target_compile_definitions(KGENCompilerRT PRIVATE MODULAR_BUILDING_COMPILERRT)

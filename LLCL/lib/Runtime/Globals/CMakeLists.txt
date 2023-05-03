@@ -21,3 +21,5 @@ target_include_directories(LLCLRuntimeGlobals
   PUBLIC
   ${CMAKE_SOURCE_DIR}/LLCL/include
 )
+
+target_compile_definitions(LLCLRuntimeGlobals PRIVATE MODULAR_BUILDING_LIBRARY)
