@@ -164,7 +164,10 @@ public:
   }
 
   /// Initialize the kernel.
-  LogicalResult initialize(const char *mojoReplExe);
+  ///
+  /// If `lldbInitFile` is not null, LLDB will silently execute all the commands
+  /// in this file upon initialization of the kernel.
+  LogicalResult initialize(const char *mojoReplExe, const char *lldbInitFile);
 
   /// Start execution of the given cell identifier and expression string.
   /// `storeHistory` indicates if variables and state from this expression
@@ -245,9 +248,10 @@ private:
 //===----------------------------------------------------------------------===//
 
 MODULAR_EXPORT MojoKernel *initMojoKernel(OutputFn outputFn,
-                                          const char *mojoReplExe) {
+                                          const char *mojoReplExe,
+                                          const char *lldbInitFile) {
   std::unique_ptr<MojoKernel> kernel = std::make_unique<MojoKernel>(outputFn);
-  if (failed(kernel->initialize(mojoReplExe)))
+  if (failed(kernel->initialize(mojoReplExe, lldbInitFile)))
     return nullptr;
   return kernel.release();
 }
@@ -310,13 +314,34 @@ static void removeUnwantedCommands(Debugger &debugger) {
   }
 }
 
-LogicalResult MojoKernel::initialize(const char *mojoReplExe) {
+static void runLLDBInitFile(Debugger &debugger, FileSpec lldbInitFile) {
+  CommandInterpreterRunOptions options;
+  CommandReturnObject result(/*colors=*/false);
+  options.SetAddToHistory(false);
+  options.SetEchoCommands(false);
+  options.SetPrintErrors(true);
+  options.SetSilent(true);
+  debugger.GetCommandInterpreter().HandleCommandsFromFile(lldbInitFile, options,
+                                                          result);
+  if (!result.Succeeded()) {
+    llvm::errs() << result.GetOutputData() << "\n";
+    llvm::errs() << result.GetErrorData() << "\n";
+    exit(EXIT_FAILURE);
+  }
+}
+
+LogicalResult MojoKernel::initialize(const char *mojoReplExe,
+                                     const char *lldbInitFile) {
   // Initialize a new debugger instance.
   // We need to initialize with SBDebugger because that's the only way we can
   // support loading public plugins like MojoLLDB.
   SBDebugger::Initialize();
   debugger = Debugger::CreateInstance();
   debugger->SetAsyncExecution(false);
+
+  // If we got an LLDB init file, we execute it before anything else.
+  if (lldbInitFile)
+    runLLDBInitFile(*debugger, FileSpec(lldbInitFile));
 
   // For security reasons on public Jupyter notebooks, we want to remove some
   // commands that might give users ways to perform unwanted actions on the

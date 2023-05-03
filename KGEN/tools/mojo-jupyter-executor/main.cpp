@@ -40,7 +40,8 @@ using OutputFn = void (*)(const char *, const char *);
 using OpaqueMojoKernel = void *;
 
 MODULAR_EXPORT OpaqueMojoKernel initMojoKernel(OutputFn outputFn,
-                                               const char *mojoReplExe);
+                                               const char *mojoReplExe,
+                                               const char *lldbInitFile);
 MODULAR_EXPORT void startMojoExecution(OpaqueMojoKernel kernel,
                                        const char *cellId, const char *code,
                                        int storeHistory);
@@ -54,8 +55,9 @@ MODULAR_EXPORT void destroyMojoKernel(OpaqueMojoKernel kernel);
 namespace {
 class MojoKernel {
 public:
-  MojoKernel(OutputFn outputFn, const char *mojoReplExe)
-      : kernel(initMojoKernel(outputFn, mojoReplExe)) {}
+  MojoKernel(OutputFn outputFn, const char *mojoReplExe,
+             const char *lldbInitFile)
+      : kernel(initMojoKernel(outputFn, mojoReplExe, lldbInitFile)) {}
   ~MojoKernel() {
     if (kernel)
       destroyMojoKernel(kernel);
@@ -228,6 +230,10 @@ int main(int argc, char *argv[]) {
   llvm::cl::opt<bool> debugOnFailure(
       "debug-on-failure", llvm::cl::desc("Drop into REPL mode on cell failure"),
       llvm::cl::init(false));
+  llvm::cl::opt<std::string> lldbInitFile(
+      "lldb-init-file", llvm::cl::init(""),
+      llvm::cl::desc("Optional LLDB initialization file."),
+      llvm::cl::value_desc("filename"), llvm::cl::Optional, llvm::cl::Hidden);
   llvm::cl::ParseCommandLineOptions(argc, argv);
 
   // Determine the path of the repl entry point.
@@ -242,7 +248,7 @@ int main(int argc, char *argv[]) {
       [](const char *kind, const char *msg) {
         llvm::outs() << "[" << kind << "] " << msg << "\n";
       },
-      exePath.c_str());
+      exePath.c_str(), !lldbInitFile.empty() ? lldbInitFile.c_str() : nullptr);
 
   // If we have a notebook path, execute it, otherwise run in REPL mode.
   if (notebookPath.getNumOccurrences()) {

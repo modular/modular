@@ -14,11 +14,11 @@
 import argparse
 import ctypes
 import json
-from enum import IntEnum
 import os
 import shutil
 import time
 import traceback
+from enum import IntEnum
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -194,7 +194,9 @@ class MojoKernel(Kernel):
         # The type of the output callback function. It takes a name and a
         # message.
         self.output_callback_type: ctypes.CFUNCTYPE = ctypes.CFUNCTYPE(
-            None, ctypes.c_char_p, ctypes.c_char_p
+            None,
+            ctypes.c_char_p,
+            ctypes.c_char_p,
         )
         self.output_processor = OutputProcessor(self)
         self.output_callback = self.output_callback_type(
@@ -205,6 +207,7 @@ class MojoKernel(Kernel):
             self.lib_mojo_jupyter.initMojoKernel(
                 self.output_callback,
                 ctypes.c_char_p(self.mojoReplExe.encode("utf-8")),
+                ctypes.c_char_p(None),  # lldbInitFile
             )
         )
         if not self.mojo_kernel:
