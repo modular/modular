@@ -453,6 +453,13 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
   return failure();
 }
 
+/// This operation defines no parameters.
+void ParamAssertOp::walkDefinitions(
+    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {}
+
+/// This operation is implicitly parametric.
+bool ParamAssertOp::isImplicitlyParametric() { return true; }
+
 //===----------------------------------------------------------------------===//
 // custom<CallOpParams>
 //===----------------------------------------------------------------------===//
