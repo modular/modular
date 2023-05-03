@@ -60,10 +60,10 @@ class Model:
         RuntimeError
             If the input tensors don't match what the model expects.
         """
-
-        # TODO(10070): Fix above docstring after all desired tensor types are supported.
-        # The type would likely be Union[np.ndarray, torch.Tensor, tf.Tensor]
         return self._impl.execute(*args)
+
+    def __repr__(self) -> str:
+        return f"Model(inputs={self.input_metadata})"
 
     @property
     def input_metadata(self) -> List["TensorSpec"]:
@@ -101,6 +101,9 @@ class DType(Enum):
         obj = cls.__dict__[dtype.name]
         return obj
 
+    def __repr__(self) -> str:
+        return self.name
+
 
 class InferenceSession:
     """Manages an inference session in which you can load and run models.
@@ -116,9 +119,19 @@ class InferenceSession:
 
     def __init__(self, num_threads: Optional[int] = None):
         config = {}
+        self.num_threads = num_threads
         if num_threads:
             config = {"num_threads": num_threads}
         self._impl = _InferenceSession(config)
+
+    def __repr__(self) -> str:
+        if self.num_threads:
+            return (
+                "<modular engine"
+                f" InferenceSession(num_threads={self.num_threads})>"
+            )
+        else:
+            return "<modular engine InferenceSession>"
 
     def load(self, model_path: Union[str, Path]) -> Model:
         """Loads a trained model and compiles it for inference.
@@ -160,6 +173,14 @@ class TensorSpec:
         tensor_spec = cls()
         tensor_spec._impl = _core_tensor_spec
         return tensor_spec
+
+    def __repr__(self) -> str:
+        return f"TensorSpec(shape={self.shape}, dtype={self.dtype})"
+
+    def __str__(self) -> str:
+        mlir_shape = [str(dim) if dim else "-1" for dim in self.shape]
+        shape_str = "x".join(mlir_shape)
+        return f"{shape_str}x{self.dtype.name}"
 
     @property
     def shape(self) -> List[int]:
