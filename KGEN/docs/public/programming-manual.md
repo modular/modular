@@ -341,7 +341,7 @@ struct MyString:
     # StringRef has a data + length field
     def __init__(self&, input: StringRef):
         let data = Pointer[Int8].alloc(input.length+1)
-        data.memcpy(first.data, input.length)
+        data.memcpy(input.data, input.length)
         data[input.length] = 0
         self.data = Pointer[Int8](data)
 
