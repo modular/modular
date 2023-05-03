@@ -172,18 +172,11 @@ ParseResult parseOptionalAlwaysInline(OpAsmParser &parser,
                                       AlwaysInlineLevelAttr &attr);
 void printOptionalAlwaysInline(OpAsmPrinter &p, AlwaysInlineLevelAttr level);
 
-void printOptionalConstraints(OpAsmPrinter &p, Operation *op,
-                              ArrayRef<ConstraintAttr> constraints);
-
 /// Parse and print a constraint specification if present.
 ParseResult parseOptionalConstraints(OpAsmParser &p,
                                      ConstraintArrayAttr &constraints);
-
-// FIXME: Remove this when next LLVM integrate lands.
 void printOptionalConstraints(OpAsmPrinter &p, Operation *op,
                               ArrayRef<ConstraintAttr> constraints);
-void printOptionalConstraints(OpAsmPrinter &p, Operation *op,
-                              ConstraintArrayAttr constraints);
 
 /// Parse and print a parameter binding list if present.
 ParseResult parseParamBinds(AsmParser &p, ParamBindArrayAttr &paramBinds);

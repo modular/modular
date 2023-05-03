@@ -1344,11 +1344,6 @@ void KGEN::printOptionalConstraints(OpAsmPrinter &p, Operation *op,
   p << ">";
 }
 
-void KGEN::printOptionalConstraints(OpAsmPrinter &p, Operation *op,
-                                    ConstraintArrayAttr constraints) {
-  return printOptionalConstraints(p, op, constraints.getValue());
-}
-
 /// Parse the always_inline related keywords if present.
 ParseResult KGEN::parseOptionalAlwaysInline(OpAsmParser &parser,
                                             AlwaysInlineLevelAttr &attr) {
