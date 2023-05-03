@@ -587,6 +587,11 @@ struct NDBuffer[
 
     NDBuffer can be parametrized on rank, static dimensions and Dtype. It does
     not own its underlying pointer.
+
+    Parameters:
+        rank: The rank of the buffer.
+        shape: the static size (if known) of the buffer.
+        type: the element type of the buffer.
     """
 
     var data: DTypePointer[type]
