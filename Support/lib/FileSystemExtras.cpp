@@ -82,8 +82,10 @@ TempFile::TempFile(TempFile &&other)
 }
 
 TempFile::~TempFile() {
-  if (fd != -1)
-    llvm::sys::fs::closeFile((llvm::sys::fs::file_t &)fd);
+  if (fd != -1) {
+    llvm::sys::fs::file_t nativeID = llvm::sys::fs::convertFDToNativeFile(fd);
+    llvm::sys::fs::closeFile(nativeID);
+  }
 
   if (!keepFile) {
     std::error_code ec;
