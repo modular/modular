@@ -243,3 +243,25 @@ kgen.generator @closure_with_invalid_scope() {
   %0 = kgen.create_closure[<>() capturing -> index: bind_signature(:<dtype>() capturing -> index k, si32)]()
   kgen.return
 }
+
+// -----
+
+kgen.generator @evaluator(%fns: !pop.pointer<() -> ()>, %size: index) -> index {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+kgen.generator @no_valid_specializations() {
+  kgen.param.declare false: i1 = <0>
+  kgen.param.assert <false>, "none"
+  kgen.return
+}
+
+kgen.export @entry
+// expected-error @below {{no viable expansions found}}
+kgen.generator @entry() {
+  // expected-note @below {{function has no valid specializations to evaluate}}
+  kgen.param.declare f: () -> () = <evaluate(:variadic<!kgen.signature<() -> ()>> [@no_valid_specializations],
+                                             :(!pop.pointer<() -> ()>, index) -> index @evaluator)>
+  kgen.return
+}
