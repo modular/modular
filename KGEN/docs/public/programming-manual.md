@@ -34,9 +34,11 @@ grows and becomes more broadly available, we intend for it to be friendly and
 accessible to everyone, including beginner programmers. It's just not there
 today.
 
-## Using the Mojo Compiler
+## Using the Mojo compiler
 
-You can run a Mojo program from a terminal just like you can with Python. So if you have a file named `hello.mojo` (or `hello.🔥`—yes, the file extension can be an emoji!), just type `mojo hello.mojo`:
+You can run a Mojo program from a terminal just like you can with Python. So if
+you have a file named `hello.mojo` (or `hello.🔥`—yes, the file extension can
+be an emoji!), just type `mojo hello.mojo`:
 
 ```mojo
 $ cat hello.🔥
@@ -52,15 +54,13 @@ hello world
 $
 ```
 
-On the other hand, we realize that emoji file extensions might be too
-adventurous for some folks. No worries! For those who like to keep it classic,
-the Mojo toolchain supports `.mojo` suffix as well.
+Again, you can use either the emoji or the `.mojo` suffix.
 
 If you are interested in diving into the internal implementation
 details of Mojo, it can be instructive to look at types in the standard
 library, example code in notebooks, blogs and other sample code.
 
-## Basic Systems Programming Extensions
+## Basic systems programming extensions
 
 Given our goal of compatibility and Python's strength with high-level
 applications and dynamic APIs, we don't have to spend much time explaining
@@ -114,7 +114,7 @@ Note that `let` and `var` are completely opt-in when in `def` declarations. You
 can still use implicitly declared values as with Python, and they get
 function scope as usual.
 
-### `struct` Types
+### `struct` types
 
 Mojo is based on MLIR and LLVM, which offer a cutting-edge compiler and code
 generation system used in many programming languages. This lets us have better
@@ -270,7 +270,7 @@ function behaves just like Python with dynamic types. As soon as you define a
 single argument type, Mojo will look for overload candidates and resolve
 function calls as described above.
 
-### `fn` Definitions
+### `fn` definitions
 
 The extensions above are the cornerstone that provides low-level programming
 and provide abstraction capabilities, but many systems programmers prefer more
@@ -400,7 +400,7 @@ you are curious how `existing` can be passed into the `__copyinit__` method
 without itself creating a copy, check out the section on "Borrowed" argument
 convention below.
 
-## Parameterization: Compile time meta-programming
+## Parameterization: compile time meta-programming
 
 One of Python's most amazing features is its extensible runtime
 meta-programming features. This has enabled a wide range of libraries and
@@ -584,7 +584,7 @@ at the `SIMD.shuffle` method in the standard library: it takes two input SIMD
 values, a vector shuffle mask as a list, and returns a SIMD that matches the
 length of the shuffle mask.
 
-### Powerful Compile-time Programming
+### Powerful compile-time programming
 
 While simple expressions are useful, sometimes you want to write imperative
 compile-time logic with control flow. For example, the "isclose" function in
@@ -614,7 +614,7 @@ runs at compile time. It requires that its condition be a valid parameter
 expression, and ensures that only the live branch of the if is compiled into
 the program.
 
-### Mojo Types are just Parameter Expressions
+### Mojo types are just parameter expressions
 
 While we've shown how you can use parameter expressions within types, in both
 Python and Mojo, type annotations can themselves be arbitrary expressions.
@@ -681,7 +681,7 @@ struct Array[T: AnyType]:
        ...
 ```
 
-### `alias`: Named Parameter Expressions
+### `alias`: named parameter expressions
 
 It is very common to want to *name* compile-time values. Whereas `var` defines a
 runtime value, and `let` defines a runtime constant, we need a way to define a
@@ -822,7 +822,7 @@ details of the Mojo compiler stack (particularly MLIR, integrated caching, and
 distribution of compilation). This is a power-user feature and needs continued
 development and iteration over time.
 
-## Argument Passing Control and Memory Ownership
+## Argument passing control and memory ownership
 
 In both Python and Mojo, much of the language revolves around function calls: a
 lot of the (apparently) built-in functionality is implemented in the standard
@@ -859,7 +859,7 @@ the Rust language provides, but they work somewhat differently in order to make
 Mojo easier to learn and integrate better into the Python ecosystem without
 requiring a massive annotation burden.
 
-### By-Reference Arguments
+### By-reference arguments
 
 Let's start with the simple case: passing mutable references to values vs
 passing immutable references. As we already know, arguments that are passed to
@@ -936,7 +936,7 @@ A very important aspect of this system is that it all composes correctly.
 argument.  Such a spelling would align better with other argument convention
 keywords, and is more correct given how Mojo's computed LValues work.
 
-### "Borrowed" Argument Convention
+### "Borrowed" argument convention
 
 Now that we know how by-reference argument passing works, you may wonder how
 by-value argument passing works and how that interacts with the `__copyinit__`
@@ -1019,7 +1019,7 @@ more efficient when passing small values, and Rust defaults to moving values by
 default instead of passing them around by borrow. These policy and syntax
 decisions allow Mojo to provide an easier to use programming model.
 
-### "Owned" Argument Convention and postfix `^` operator
+### "Owned" argument convention and postfix `^` operator
 
 The final argument convention that Mojo supports is the `owned` argument
 convention.  This convention is used for functions that want to take exclusive
@@ -1075,7 +1075,7 @@ struct MyString:
 
 This is because you need to own a value to destroy it or to steal its parts!
 
-### `@register_passable` Struct Decorator
+### `@register_passable` struct decorator
 
 As described above, the default model for working with values is
 they live in memory so they have an identity, which means they are passed
@@ -1167,73 +1167,82 @@ These copies typically add no overhead, because small types like Object
 references are cheap to copy. The expensive part is the reference count
 adjustment, which is eliminated by a move optimization.
 
-## Python Integration
+## Python integration
 
-It's easy to use the Python you know and love within Mojo code.
-You can import Python modules into your
-Mojo programs and create Python types from Mojo types.
-No wrappers or other work is necessary: you just import and go.
+It's easy to use Python modules you know and love in Mojo. You can import
+any Python module into your Mojo program and create Python types from Mojo
+types.
 
-### Importing Python Modules Into Mojo
+### Importing Python modules
 
-Suppose you have the following Python code that you want to call
-in Mojo.
-
-##### /path/to/module/example1.py
-
-```python
-import numpy as np
-
-def my_algorithm(a, b):
-    c = np.matmul(a, b) + a + b
-    return c
-```
-
-You can call this code in Mojo by adding the file's path to the Python path,
-importing the module, and calling the methods in that module
-as though you are writing Python:
-
-##### example1.mojo
+To import a Python module in Mojo, just call `Python.import_module()` with the
+module name:
 
 ```mojo
 from PythonInterface import Python
 
-# This is a Mojo function not a Python function.  To show this, we use 'let'
-# keywords in the body, but they are optional of course.
-def main() -> None:
-    # add directories to the PYTHONPATH so you can import your custom modules
-    Python.add_to_path("/path/to/module")
+# This is equivalent to Python's `import numpy as np`
+let np = Python.import_module("numpy")
 
-    # import modules from your Python environment
-    let np = Python.import_module("numpy")
-    let example1 = Python.import_module("example1")
-    let builtins = Python.import_module("builtins")
-
-    # call Python code!
-    let size = 3
-    let a = np.random.rand(size, size)
-    let b = np.random.rand(size, size)
-    let c = example1.my_algorithm(a, b)
-    _ = builtins.print(c)
-
-    # prints first row of c
-    _ = builtins.print(c[0])
-
+# Now use numpy as if writing in Python
+a = np.array([1, 2, 3])
 ```
 
-If you've used Python from other languages, you might be struck how you
-don't need to worry about memory management and everything "just works".
-This is because Mojo was designed for Python.
+Yes, this imports Python NumPy, and you can import _any other Python module_.
 
-### Python objects from Mojo
+However, remember that you're working with a Python object, so some Mojo
+functions like `print()` won't work. If you want to print a Python
+type in Mojo, you need to use Python's built-in `print()` function:
 
-Mojo primitive types can be converted into Python objects implicitly.
+```mojo
+a = np.array([1, 2, 3])
+builtins = Python.import_module("builtins")
+builtins.print(a)
+```
+
+Currently, you cannot import individual members (such as a single Python class
+or function)—you must import the whole Python module and then access members
+through the module name.
+
+#### Importing local Python modules
+
+If you have some local Python code you want to use in Mojo, just add
+the directory to the Python path and then import the module.
+
+For example, suppose you have a Python file like this:
+
+```{.python filename="mypython.py"}
+import numpy as np
+
+def my_algorithm(a, b):
+    array_a = np.random.rand(a, a)
+    return array_a + b
+```
+
+Here's how you can import it and use it in Mojo:
+
+```{.mojo filename="mojo-code.mojo"}
+from PythonInterface import Python
+
+Python.add_to_path("path/to/module")
+let mypython = Python.import_module("mypython")
+let builtins = Python.import_module("builtins")
+
+let c = mypython.my_algorithm(2, 3)
+builtins.print(c)
+```
+
+There's no need to worry about memory management when using Python in Mojo.
+Everything just works because Mojo was designed for Python from the beginning.
+
+### Mojo types in Python
+
+Mojo primitive types implicitly convert into Python objects.
 Today we support lists, tuples, integers, floats, booleans, and strings.
 
-##### /path/to/module/example2.py
+For example, given this Python function that prints Python types:
 
-```python
-
+```{.python filename="mypython2.py"}
 def type_printer(my_list, my_tuple, my_int, my_string, my_float):
     print(type(my_list))
     print(type(my_tuple))
@@ -1242,18 +1251,17 @@ def type_printer(my_list, my_tuple, my_int, my_string, my_float):
     print(type(my_float))
 ```
 
-##### /path/to/module/example2.mojo
+You can import it and pass it Mojo types, no problem:
 
-```mojo
+```{.mojo filename="mojo-code.mojo"}
 from PythonInterface import Python
 
-def main() -> None:
-    Python.add_to_path("/path/to/module")
-    example2 = Python.import_module("foo")
-    example2.type_printer([0, 3], (False, True), 4, "orange", 3.4)
+Python.add_to_path("/path/to/module")
+let mypython2 = Python.import_module("mypython2")
+mypython2.type_printer([0, 3], (False, True), 4, "orange", 3.4)
 ```
 
-#### output
+It will output the types after implicit conversion to Python types:
 
 ```python
 <class 'list'>
@@ -1441,7 +1449,7 @@ temporaries and the corresponding copy/move operations.  If this is
 inappropriate for your type, you should use explicit methods like `copy()`
 instead of the dunder methods.
 
-### Types that support a "Stealing Move"
+### Types that support a "stealing move"
 
 One challenge with memory-safe languages is that they need to provide a
 predictable programming model around what the compiler is able to track, and
@@ -1520,7 +1528,7 @@ their domain problem better than language designers do, and generally prefer to
 give library authors full power over that domain.  As such you can choose (but
 don’t have to) to make your types participate in this behavior in an opt-in way.
 
-### Copyable Types
+### Copyable types
 
 The next step up from moveable types are copyable types.  Copyable types are
 also very common - programmers generally expect things like strings and arrays
@@ -1597,7 +1605,7 @@ copy+destroy pairs into a move operation, which can lead to much better
 performance than C++ without requiring the need for pervasive micro-management
 of `std::move`.
 
-### Trivial Types
+### Trivial types
 
 The most flexible types are ones that are just "bags of bits".  These types are
 "trivial" because they can be copied, moved, and destroyed without invoking
@@ -1679,7 +1687,7 @@ Note that the `@value` decorator only works on types whose members are copyable
 and/or movable.  If you have something like `Atomic` in your struct, then it
 probably isn't a value type, and you don't want these members anyway.
 
-## Behavior of Destructors
+## Behavior of destructors
 
 Any struct in Mojo can have a destructor, which is automatically run when the
 values lifetime ends. For example, a simple string might look like this (in
@@ -1778,7 +1786,7 @@ shadow variables to keep track of the state of your values to provide safety.
 These are often optimized away, but the Mojo approach eliminates this overhead
 entirely, making the generated code faster and avoiding ambiguity.
 
-### Field Sensitive Lifetime Management
+### Field sensitive lifetime management
 
 In addition to Mojo’s lifetime analysis being fully control flow aware, it is
 also fully field sensitive (each field of a structure is tracked independently).
@@ -1966,12 +1974,12 @@ accessed by the `_` pattern.
 TODO: Explain how returning references work, tied into lifetimes which dovetail
 with parameters.  This is not enabled yet.
 
-## Type Traits
+## Type traits
 
 This is a feature very much like Rust traits or Swift protocols or Haskell type
 classes. Note, this is not implemented yet.
 
-## Advanced/Obscure Mojo Features
+## Advanced/Obscure Mojo features
 
 This section describes power-user features that are important for building the
 bottom-est level of the standard library. This level of the stack is inhabited
@@ -2020,7 +2028,7 @@ __get_address_as_owned_value(x)
 ```
 -->
 
-### Direct Access to MLIR
+### Direct access to MLIR
 
 Mojo provides full access to the MLIR dialects and ecosystem. Please take a
 look at the [Low level IR in Mojo](/mojo/notebooks/BoolMLIR.html) to learn
