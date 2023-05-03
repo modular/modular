@@ -513,7 +513,7 @@ private:
   /// This is a global counter of the number of AsyncValue instances currently
   /// live in the process.  This is intended to be used for debugging only, and
   /// is only kept in sync if `isAllocationTrackingEnabled()` returns true.
-  static std::atomic<ssize_t> totalAllocatedAsyncValues;
+  MODULAR_CXX_EXPORT static std::atomic<ssize_t> totalAllocatedAsyncValues;
 };
 
 //===----------------------------------------------------------------------===//
