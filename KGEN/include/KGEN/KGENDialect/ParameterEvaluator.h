@@ -109,7 +109,7 @@ public:
   /// Add an input parameter binding.
   void addInputValue(Attribute value) { inputParamValues.push_back(value); }
   /// Add a result parameter binding.
-  void addResultValue(Attribute value) { inputParamValues.push_back(value); }
+  void addResultValue(Attribute value) { resultParamValues.push_back(value); }
   /// Set the relative input depth.
   void setInputDepth(size_t depth) { inputDepth = depth; }
 
