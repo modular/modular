@@ -147,9 +147,13 @@ evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
         candidatePtrs.data(), candidatePtrs.size());
   }
   if (bestIdx == -1)
-    return Error("user-provided evaluator returned failure");
-  if (bestIdx < 0 || static_cast<size_t>(bestIdx) >= candidatePtrs.size())
-    return Error("user-provided evaluator returned an erroneous result");
+    return Error("user-provided evaluator returned failure (-1)");
+  if (bestIdx < 0)
+    return Error("user-provided evaluator returned an erroneous result: " +
+                 Twine(bestIdx));
+  if (static_cast<size_t>(bestIdx) >= candidatePtrs.size())
+    return Error("user-provided evaluator returned an out-of-bounds result: " +
+                 Twine(bestIdx));
 
   LLVM_DEBUG({
     llvm::dbgs() << "Fastest implementation:\n";

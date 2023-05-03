@@ -143,6 +143,12 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
       }
     }
 
+    if (options.empty()) {
+      emitError({*errorLoc,
+                 Error("function has no valid specializations to evaluate")});
+      return failure();
+    }
+
     auto bestOr = elaborator->getEvaluatorExecutorFn()(
         *evaluator, *symtab, elaborator->getTarget(), options);
     if (bestOr.isError()) {
