@@ -122,7 +122,7 @@ private:
     for (Type argTy : wrapperFnArgTypes)
       wrapperFnBody->addArgument(argTy, op.getLoc());
     rewriter.clearInsertionPoint();
-    LLVM::LLVMFuncOp wrapperFn = rewriter.create<LLVM::LLVMFuncOp>(
+    auto wrapperFn = rewriter.create<LLVM::LLVMFuncOp>(
         op.getLoc(), "closure_wrapper_fn", wrapperFnType);
     wrapperFn.getBody().push_back(wrapperFnBody);
     return wrapperFn;
@@ -253,7 +253,7 @@ public:
     Block::iterator oldInsertionPoint = rewriter.getInsertionPoint();
     rewriter.clearInsertionPoint();
     LLVM::LLVMFuncOp wrapperFn = this->generateWrapperFunction(op, rewriter);
-    symtab.insert(wrapperFn);
+    StringAttr name = symtab.insert(wrapperFn);
     CreateClosureTypes types;
     if (failed(CreateClosureTypes::createClosureTypes(types, op,
                                                       *getTypeConverter())))
@@ -268,6 +268,20 @@ public:
     rewriter.setInsertionPoint(oldInsertionBlock, oldInsertionPoint);
     if (failed(generateClosureStruct(rewriter, op, adaptor, wrapperFn, types)))
       return failure();
+
+    // Update the subprogram scopes within the wrapper function.
+    if (auto sp =
+            DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(wrapperFn)) {
+      auto newSp = DebugInfo::DISubprogramAttr::get(
+          sp.getContext(), sp.getCompileUnit(), sp.getScope(), name, name,
+          sp.getFile(), sp.getLine(), sp.getScopeLine(),
+          sp.getSubprogramFlags(), sp.getType());
+      DebugInfo::DIAttrTypeReplacer replacer;
+      replacer.addReplacement(
+          [&](DebugInfo::DISubprogramAttr attr) { return newSp; });
+      replacer.recursivelyReplaceElementsIn(wrapperFn);
+    }
+
     return success();
   }
 };

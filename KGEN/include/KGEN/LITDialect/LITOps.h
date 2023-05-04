@@ -64,7 +64,8 @@ struct MangledSymbol {
   /// names.
   static MangledSymbol mangle(mlir::SymbolOpInterface op);
   /// Demangle this mangled name by parsing it into its component parts.
-  static FailureOr<MangledSymbol> demangle(StringAttr mangled);
+  static FailureOr<MangledSymbol> demangle(StringAttr mangled,
+                                           bool parseSignature = true);
 
   /// The format for a mangled name is roughly:
   ///  $<module name>::<struct name>[::<struct name>]

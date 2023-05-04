@@ -11,6 +11,7 @@
 #include "KGEN/LowerToObject.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
+#include "Support/DebugInfoDialect/Transforms/Passes.h"
 #include "mlir/Bytecode/BytecodeReader.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -221,6 +222,11 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
   pm.addPass(createForceInline(
       runtime,
       {options.debugLevel != CompilationOptions::DebugInfoLevel::kNoDebug}));
+
+  if (options.debugLevel == CompilationOptions::DebugInfoLevel::kSynthetic)
+    pm.addPass(createSynthesizeDebugInfo());
+  else if (options.debugLevel == CompilationOptions::kNoDebug)
+    pm.addNestedPass<FuncOp>(DebugInfo::createDebugInfoStrip());
 
   pm.addNestedPass<FuncOp>(createSimplifyCF());
   pm.addNestedPass<FuncOp>(createCleanupCompilerGlobals());

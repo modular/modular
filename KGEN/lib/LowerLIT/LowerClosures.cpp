@@ -10,6 +10,7 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "Support/Compiler/OperationUtils.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Threading.h"
@@ -32,6 +33,27 @@ struct LockedSymbolTable {
   llvm::sys::SmartRWMutex<true> mutex;
 };
 } // namespace
+
+//===----------------------------------------------------------------------===//
+// updateSubprogramScope
+//===----------------------------------------------------------------------===//
+
+/// Update the subprogram attribute of a derivative function, if there is one,
+/// with the new function name.
+static void updateSubprogramScope(StringAttr name, FuncOp func) {
+  auto sp = DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(func);
+  if (!sp)
+    return;
+
+  auto newSp = DebugInfo::DISubprogramAttr::get(
+      sp.getContext(), sp.getCompileUnit(), sp.getScope(), name, name,
+      sp.getFile(), sp.getLine(), sp.getScopeLine(), sp.getSubprogramFlags(),
+      sp.getType());
+  DebugInfo::DIAttrTypeReplacer replacer;
+  replacer.addReplacement(
+      [&](DebugInfo::DISubprogramAttr attr) { return newSp; });
+  replacer.recursivelyReplaceElementsIn(func);
+}
 
 //===----------------------------------------------------------------------===//
 // liftClosureRegion
@@ -127,6 +149,8 @@ static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
       ArrayRef<ParamDeclAttr>(), captures);
   op.replaceAllUsesWith(call);
   op.erase();
+
+  updateSubprogramScope(name, lifted);
 }
 
 //===----------------------------------------------------------------------===//
@@ -178,6 +202,8 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
       SymbolConstantAttr::get(FlatSymbolRefAttr::get(name), sig), captures);
   op.replaceAllUsesWith(create.getResult());
   op.erase();
+
+  updateSubprogramScope(name, lifted);
 }
 
 //===----------------------------------------------------------------------===//
