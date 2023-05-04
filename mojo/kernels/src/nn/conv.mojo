@@ -33,7 +33,7 @@ from Matmul import (
     calculate_tile_n_k,
     PackMatrixCols,
     PackMatrixRows,
-    null_epilogue,
+    null_elementwise_epilogue,
 )
 from MatmulUtils import (
     get_matmul_prefetch_b_distance_k,
@@ -1964,7 +1964,9 @@ struct ConvIm2ColNHWC[
         conv_shape: ConvShape,
         out_chain: OutputChainPtr,
     ):
-        Self.run(out, input, filter, conv_shape, null_epilogue, out_chain)
+        Self.run(
+            out, input, filter, conv_shape, null_elementwise_epilogue, out_chain
+        )
 
     # Interface method
     @staticmethod
