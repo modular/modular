@@ -1835,7 +1835,7 @@ ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent) {
   auto eraseIfScopes = [op](ParameterUseDefGraph &graph) mutable {
     // Erase any regions from the nested scopes that belong either to this op or
     // under this op.
-    for (auto [r, _] : graph.nestedScopes)
+    for (auto &[r, _] : graph.nestedScopes)
       if (op->isAncestor(r->getParentOp()))
         graph.nestedScopes.erase(r);
 
