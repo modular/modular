@@ -293,7 +293,7 @@ def ElaborateGenerators : Pass<"elaborate-generators", "mlir::ModuleOp"> {
            "If true, benchmark implementations to find the fastest one.">,
     Option<"testDiagnostics", "test-diagnostics", "bool", "false",
            "If true, emit additional interesting diagnostics.">,
-    Option<"maxDepth", "max-depth", "unsigned", "128",
+    Option<"maxDepth", "max-depth", "unsigned", "256",
            "The maximum elaborator instantiation depth.">,
   ];
 }
