@@ -30,3 +30,6 @@
 
 # RUN: not mojo -demangle "\$aModule::AStruct::BStruct(!invalid.type)" 2>&1 | FileCheck -check-prefix="FAILURE" %s
 # FAILURE: mojo: demangling failed
+
+# RUN: mojo -demangle 'Mod::AStruct::foo($Int::Int)' | FileCheck -check-prefix=MANGLEDTYPE  %s
+# MANGLEDTYPE: Mangled: "Mod::AStruct::foo($Int::Int)" - Module: (none), Structs: ["Mod", "AStruct"], Symbol: "foo"
