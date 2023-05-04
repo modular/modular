@@ -31,12 +31,12 @@ public:
       LLCL::Runtime &runtime, LLCL::AsyncSideEffectMap &map,
       LLCL::RCRef<Cache::BlobCache<Cache::TransformCacheKey>> transformCache,
       LLCL::RCRef<Cache::BlobCache<Cache::RegionCacheKey>> regionCache,
-      EvaluatorExecutorFnRef evaluatorExecutorFn, bool enableSearch = false)
+      EvaluatorExecutorFnRef evaluatorExecutorFn)
       : analysis(analysis), paramCache(paramCache), target(target),
         runtime(runtime), asyncMap(map),
         transformCache(std::move(transformCache)),
         regionCache(std::move(regionCache)),
-        evaluatorExecutorFn(evaluatorExecutorFn), enableSearch(enableSearch) {}
+        evaluatorExecutorFn(evaluatorExecutorFn) {}
 
   virtual ~Elaborator() = default;
 
@@ -102,10 +102,6 @@ protected:
 
   /// The functor used for evaluating generator specializations.
   EvaluatorExecutorFnRef evaluatorExecutorFn;
-
-  /// Enable search during interface elaboration. This defaults to `false`
-  /// because we want search to be opt-in.
-  bool enableSearch = false;
 };
 
 } // namespace M::KGEN

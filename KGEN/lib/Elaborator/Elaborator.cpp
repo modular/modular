@@ -129,6 +129,7 @@ public:
   static ExpansionTreeNode *
   create(Operation *op, ArrayAttr inputParams, ExpansionTreeNode *parent,
          const IREvaluator &evaluator, unsigned expansionDepth,
+         unsigned maxDepth,
          std::optional<ParameterUseDefGraph> paramGraph = std::nullopt);
 
 private:
@@ -285,14 +286,18 @@ public:
 
 // TODO: need to find a way to order these, insert them right before/after
 // something else maybe?
-ExpansionTreeNode *
-ExpansionTreeNode::create(Operation *op, ArrayAttr inputParams,
-                          ExpansionTreeNode *parent,
-                          const IREvaluator &evaluator, unsigned expansionDepth,
-                          std::optional<ParameterUseDefGraph> paramGraph) {
+ExpansionTreeNode *ExpansionTreeNode::create(
+    Operation *op, ArrayAttr inputParams, ExpansionTreeNode *parent,
+    const IREvaluator &evaluator, unsigned expansionDepth, unsigned maxDepth,
+    std::optional<ParameterUseDefGraph> paramGraph) {
   auto *out = new (parent->alloc.Allocate())
       ExpansionTreeNode(op, inputParams, parent, evaluator,
-                        std::move(paramGraph), expansionDepth + 1);
+                        std::move(paramGraph), ++expansionDepth);
+  if (expansionDepth > maxDepth) {
+    out->error = ErrorTree(op->getLoc(),
+                           "elaborator expansion is " + Twine(maxDepth + 1) +
+                               " levels deep - infinite recursion?");
+  }
   assert(out->distanceFromRoot() <= 3 &&
          "Should have at most 3 hops to the root");
   parent->expansions.push_back(out);
@@ -307,12 +312,6 @@ ExpansionTreeNode::ExpansionTreeNode(
       paramGraph(std::move(paramGraph)), parent(parent),
       bindings(parent->bindings), alloc(parent->alloc),
       expansionDepth(expansionDepth), logger(parent->logger) {
-  // TODO: make this configurable?
-  if (expansionDepth > 128) {
-    error = ErrorTree(
-        op->getLoc(),
-        "elaborator expansion is 129 levels deep - infinite recursion?");
-  }
   LLVM_DEBUG(print(logger << "Constructing "));
 }
 
@@ -1036,14 +1035,14 @@ public:
       LLCL::Runtime &runtime, LLCL::AsyncSideEffectMap &map,
       LLCL::RCRef<Cache::BlobCache<Cache::TransformCacheKey>> transformCache,
       LLCL::RCRef<Cache::BlobCache<Cache::RegionCacheKey>> regionCache,
-      EvaluatorExecutorFnRef evaluatorExecutorFn, bool enableSearch = false,
-      bool testDiagnostics = false)
+      EvaluatorExecutorFnRef evaluatorExecutorFn,
+      const ElaboratorConfig &config)
       : Elaborator(analysis, paramCache, target, runtime, map,
                    transformCache.copy(), regionCache.copy(),
-                   evaluatorExecutorFn, enableSearch),
+                   evaluatorExecutorFn),
         root(analysis.getTopLevelOp<ModuleOp>(), IREvaluator(*this), alloc,
              logger),
-        evalSemaphore(1), testDiagnostics(testDiagnostics) {}
+        evalSemaphore(1), config(config) {}
 
   ErrorTreeOr<FuncOp>
   getConcreteFunction(Location loc, SymbolRefAttr symbolRef,
@@ -1067,6 +1066,20 @@ public:
   }
   Operation *lookup(SymbolRefAttr symbol) {
     return lookup(symbol.getRootReference());
+  }
+
+  /// Create a top-level expansion tree node.
+  ExpansionTreeNode *createRootNode(FuncInterface funcItf, ArrayAttr inputs) {
+    return ExpansionTreeNode::create(funcItf, inputs, &root, IREvaluator(*this),
+                                     0, config.maxDepth);
+  }
+  /// Create an expansion tree node with a parent node.
+  ExpansionTreeNode *
+  createNode(Operation *op, ArrayAttr inputs, ExpansionTreeNode *parent,
+             unsigned depth, const IREvaluator &evaluator,
+             std::optional<ParameterUseDefGraph> graph = std::nullopt) {
+    return ExpansionTreeNode::create(op, inputs, parent, evaluator, depth,
+                                     config.maxDepth, std::move(graph));
   }
 
   /// Once a concrete function has finished specializing, finish processing the
@@ -1178,9 +1191,8 @@ private:
   //               too.
   Semaphore evalSemaphore;
 
-  /// If this is true, emit diagnostics for certain conditions that are
-  /// interesting to test for.
-  bool testDiagnostics;
+  /// The elaborator config.
+  ElaboratorConfig config;
 
   /// Remove parameter declare regions after generator elaboration.
   SmallVector<OwningOpRef<ParamDeclareRegionOp>> paramDeclareRegionOps;
@@ -1251,8 +1263,7 @@ ElaboratorImpl::getConcreteFunction(Location loc, SymbolRefAttr symbolRef,
 
   // Otherwise, if the node doesn't exist, then create a new one.
   if (!node) {
-    node =
-        ExpansionTreeNode::create(funcItf, vals, &root, IREvaluator(*this), 0);
+    node = createRootNode(funcItf, vals);
     topLevelTrees[{funcItf, vals}] = node;
   }
 
@@ -1297,8 +1308,7 @@ ElaboratorImpl::getAllConcreteFunctions(Location loc, SymbolRefAttr symbolRef,
 
   // Otherwise, if the node doesn't exist, then create a new one.
   if (!node) {
-    node =
-        ExpansionTreeNode::create(funcItf, vals, &root, IREvaluator(*this), 0);
+    node = createRootNode(funcItf, vals);
     topLevelTrees[{funcItf, vals}] = node;
   }
 
@@ -1366,7 +1376,7 @@ ElaboratorImpl::processParamForkOp(ExpansionTreeNode *parent, ParamForkOp op,
 
     // If search is disabled, break after the first successful parameter.
     atLeastOneSuccessful = true;
-    if (!enableSearch)
+    if (!config.enableSearch)
       break;
   }
 
@@ -1398,10 +1408,10 @@ ElaboratorImpl::spawnParamForkClone(ParamForkOp forkOp, Attribute value,
                                            ++forkParentNode->op->getIterator());
 
   // Hook this new clone up correctly.
-  auto newFuncNode = ExpansionTreeNode::create(
-      newFunc, forkParentNode->inputParams, forkParentNode->parent,
-      forkParentNode->evaluator, forkParentNode->expansionDepth,
-      forkParentNode->paramGraph->copy(map));
+  auto newFuncNode =
+      createNode(newFunc, forkParentNode->inputParams, forkParentNode->parent,
+                 forkParentNode->expansionDepth, forkParentNode->evaluator,
+                 forkParentNode->paramGraph->copy(map));
 
   // Change the future of this func by resolving the forkOp in the new func
   // to the specified value.
@@ -1439,9 +1449,8 @@ ElaboratorImpl::createCalleeNode(std::pair<Operation *, ArrayAttr> &&key,
   if (!node) {
     // Use the parent of the call to show the expansion depth, and inherit the
     // evaluator from the root.
-    node =
-        ExpansionTreeNode::create(key.first, key.second, &root,
-                                  IREvaluator(*this), parent->expansionDepth);
+    node = createNode(key.first, key.second, &root, parent->expansionDepth,
+                      IREvaluator(*this));
     if (node->error)
       return ErrorTreeOr<ExpansionTreeNode *>(std::move(node->error).value());
 
@@ -1591,9 +1600,9 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
     LLVM_DEBUG(c->print(logger << "Concrete Implementation "));
 
     // This is a sibling to the parent, and it clones the parent's evaluator.
-    auto newNode = ExpansionTreeNode::create(
-        newOp, parent->inputParams, parent->parent, parent->evaluator,
-        parent->expansionDepth, parent->paramGraph->copy(map));
+    auto newNode = createNode(newOp, parent->inputParams, parent->parent,
+                              parent->expansionDepth, parent->evaluator,
+                              parent->paramGraph->copy(map));
     newNode->bindings = parent->bindings;
     // Bind this concrete impl to this callee for this node.
     newNode->bindings[{calleeOp, inputParamKey}] = c;
@@ -1999,7 +2008,7 @@ ElaboratorImpl::specializeGenerator(ExpansionTreeNode *genNode) {
   if (!genNode->expansions.empty() && !genNode->error.has_value()) {
     LLVM_DEBUG(logger << "Result: Generator has already been specialized (node "
                          "is known to be concrete)\n");
-    if (testDiagnostics)
+    if (config.testDiagnostics)
       generator.emitRemark("Generator has already been specialized");
     return std::nullopt;
   }
@@ -2025,7 +2034,7 @@ ElaboratorImpl::specializeGenerator(ExpansionTreeNode *genNode) {
       if ((*found)->parent != genNode)
         genNode->takeExpansion(*found);
 
-      if (testDiagnostics)
+      if (config.testDiagnostics)
         generator.emitRemark("Generator has already been specialized");
       return std::nullopt;
     }
@@ -2052,9 +2061,8 @@ ElaboratorImpl::specializeGenerator(ExpansionTreeNode *genNode) {
 
   // The node for this new func is simply the child of the node for the
   // generator.
-  auto newFuncNode =
-      ExpansionTreeNode::create(newFunc, genNode->inputParams, genNode,
-                                evaluator, genNode->expansionDepth);
+  auto newFuncNode = createNode(newFunc, genNode->inputParams, genNode,
+                                genNode->expansionDepth, evaluator);
   newFuncNode->knownRegions = genNode->knownRegions;
   // Map from the generator to the new function for the parameter graph copy.
   map.map(generator.getOperation(), newFunc.getOperation());
@@ -2109,8 +2117,7 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
     ExpansionTreeNode *generatorNode =
         topLevelTrees.lookup({gen, emptyInputParamKey});
     if (!generatorNode) {
-      generatorNode = ExpansionTreeNode::create(gen, emptyInputParamKey, &root,
-                                                IREvaluator(*this), 0);
+      generatorNode = createRootNode(gen, emptyInputParamKey);
       topLevelTrees[{gen, emptyInputParamKey}] = generatorNode;
     }
 
@@ -2251,7 +2258,7 @@ LogicalResult M::elaborateGenerators(mlir::SymbolTableAnalysis &symtab,
                                      TargetInfoAttr target,
                                      ArrayRef<GeneratorOp> primaryGenerators,
                                      EvaluatorExecutorFnRef evaluatorExecutorFn,
-                                     bool enableSearch, bool testDiagnostics) {
+                                     const ElaboratorConfig &config) {
   TimeTraceScope<> traceScope("elaborate-generators");
   ModuleOp theModule = symtab.getTopLevelOp<ModuleOp>();
 
@@ -2276,7 +2283,7 @@ LogicalResult M::elaborateGenerators(mlir::SymbolTableAnalysis &symtab,
   // Now, construct and run the elaborator.
   ElaboratorImpl impl(symtab, paramCache, target, transformCache->getRuntime(),
                       asyncMap, transformCache.copy(), regionCache.copy(),
-                      evaluatorExecutorFn, enableSearch, testDiagnostics);
+                      evaluatorExecutorFn, config);
   return impl.run(primaryGenerators);
 }
 
@@ -2378,9 +2385,10 @@ public:
       setBuildInfo(theModule, build);
     }
 
-    if (failed(elaborateGenerators(analysis, paramCache, *rt, target,
-                                   primaryGenerators, evaluatorExecutorFn,
-                                   shouldDoSearch, testDiagnostics)))
+    if (failed(elaborateGenerators(
+            analysis, paramCache, *rt, target, primaryGenerators,
+            evaluatorExecutorFn,
+            ElaboratorConfig{shouldDoSearch, testDiagnostics, maxDepth})))
       return signalPassFailure();
   }
 
