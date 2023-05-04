@@ -7,9 +7,276 @@
 from DType import DType
 from Index import StaticIntTuple, Index
 from Math import div_ceil, max, min, sqrt
+from List import DimList
 from SIMD import F32
 from TargetInfo import has_avx512f, has_neon, os_is_macos, dtype_simd_width
 from BuildInfo import is_relwithdebinfo_build, is_debug_build
+from Buffer import NDBuffer, DynamicRankBuffer
+
+
+@register_passable("trivial")
+struct MatmulConfig:
+    """Static configuration of tiled matmul algorithms."""
+
+    # Static shape info of Operand A.
+    var shape_a: DimList
+
+    # Static shape info of Operand B.
+    var shape_b: DimList
+
+    # Static shape info of Operand C.
+    var shape_c: DimList
+
+    # Static packed shape info of the packed buffer.
+    var packed_shape: DimList
+
+    # Static packed shape info of the bias vector.
+    var shape_bias: DimList
+
+    # Static info on simd vector size.
+    var simd_size: Int
+
+    # Static loop unrolling size on M dimension.
+    var a_row_size: Int
+
+    # Static inner dimension of packed data layout.
+    var pack_inner_size: Int
+
+    # Static info on number of elements to pack in the packing routine.
+    var pack_data_size: Int
+
+    # Prefetch distance for packed b vectors in micro kernels.
+    var prefetch_b_distance_k: Int
+
+
+@register_passable("trivial")
+struct MatmulDataType:
+    """Record describing the data types of the matrices in a matmul"""
+
+    # The data type of the result (matrix C), and the accumulator.
+    var accum_type: DType
+
+    # The data type of the operands (matrix A and B).
+    var value_type: DType
+
+
+@register_passable("trivial")
+struct MatmulOperandLayout:
+    """Record describing the data layouts of the matmul operands as well as
+    intermediate matrices.
+    """
+
+    # Indicates if the input matrix A is transposed.
+    var transpose_a: Bool
+
+    # Indicates if the input matrix B is transposed.
+    var transpose_b: Bool
+
+    # Indicates if the input matrix A is pre-packed.
+    var a_packed: Bool
+
+    # Indicates if the input matrix B is pre-packed.
+    var b_packed: Bool
+
+    # The inner dimension size for packed A matrix if B is pre-packed.
+    var pack_a_inner_size: Int
+
+    # The inner dimension size for packed B matrix if B is pre-packed.
+    var pack_b_inner_size: Int
+
+
+@value
+@register_passable("trivial")
+struct GemmShape:
+    """Helper class to unpack gemm dimension and layout."""
+
+    var M: Int
+    var N: Int
+    var K: Int
+
+    # Construct from dynamic shaped input.
+    @staticmethod
+    fn get[
+        transpose_a: Bool,
+        transpose_b: Bool,
+        shape_c: DimList,
+        shape_a: DimList,
+        shape_b: DimList,
+        accum_type: DType,
+        value_type: DType,
+    ](
+        c: NDBuffer[2, shape_c, accum_type],
+        a: NDBuffer[2, shape_a, value_type],
+        b: NDBuffer[2, shape_b, value_type],
+    ) -> GemmShape:
+        """Constructor of a gemm shape record from input buffers.
+
+        M, N, and K are intentionally calculated using `a` and `c` ONLY. This
+        is because `b` may be padded to a multiple of the tile size if it has
+        been pre-packed.
+
+        Args:
+            c: Buffer with allocated output space.
+            a: Buffer containing matrix operand A.
+            b: Buffer containing matrix operand B.
+        """
+        return GemmShape(
+            c.dim[0](), c.dim[1](), a.dim[0]() if transpose_a else a.dim[1]()
+        )
+
+    @staticmethod
+    fn get[
+        config: MatmulConfig,
+        layout: MatmulOperandLayout,
+        data_type: MatmulDataType,
+    ](
+        c: NDBuffer[2, config.shape_c, data_type.accum_type],
+        a: NDBuffer[2, config.shape_a, data_type.value_type],
+        b: NDBuffer[2, config.shape_b, data_type.value_type],
+    ) -> GemmShape:
+        """Constructor of a gemm shape record from input buffers.
+
+        Args:
+            c: Buffer with allocated output space.
+            a: Buffer containing matrix operand A.
+            b: Buffer containing matrix operand B.
+        """
+        return GemmShape(
+            c.dim[0](),
+            c.dim[1](),
+            a.dim[0]() if layout.transpose_a else a.dim[1](),
+        )
+
+    @staticmethod
+    fn get(
+        c: DynamicRankBuffer,
+        a: DynamicRankBuffer,
+        b: DynamicRankBuffer,
+        transpose_a: Bool,
+        transpose_b: Bool,
+    ) -> GemmShape:
+        return GemmShape(
+            c.dim(0),
+            c.dim(1),
+            a.dim(0) if transpose_a else a.dim(1),
+        )
+
+    # TODO: re-enable using StaticIntTuple.
+    @always_inline
+    fn __getitem__(self, idx: Int) -> Int:
+        if idx == 0:
+            return self.M
+        if idx == 1:
+            return self.N
+        return self.K
+
+    fn __setitem__(self&, idx: Int, value: Int):
+        if idx == 0:
+            self.M = value
+            return
+        if idx == 1:
+            self.N = value
+            return
+        if idx == 2:
+            self.K = value
+            return
+
+    fn __init__(index: StaticIntTuple[3]) -> GemmShape:
+        """Constructor of a gemm shape record from a index tuple.
+
+        Args:
+            index (StaticIntTuple): The int tuple containing the index(m,n,k).
+
+        Returns:
+            The constructed shape record.
+        """
+        return GemmShape(
+            index[0],
+            index[1],
+            index[2],
+        )
+
+    fn as_index(self) -> StaticIntTuple[3]:
+        """Utility to convert the underlying data to an index tuple. So that the
+        utilities such as elementwise add can be used.
+
+        Returns:
+            The constructed index tuple.
+        """
+        return Index(self.M, self.N, self.K)
+
+    fn __add__(self, rhs: GemmShape) -> GemmShape:
+        """Coordinate-wise addition of two gemm shape records.
+
+        Args:
+            rhs: Another gemm shape record to add with.
+        """
+        return self.as_index() + rhs.as_index()
+
+    fn __sub__(self, rhs: GemmShape) -> GemmShape:
+        """Coordinate-wise subtraction of two gemm shape records.
+
+        Args:
+            rhs: Another gemm shape record to subtract with.
+        """
+        return self.as_index() - rhs.as_index()
+
+
+# Helper heuristic function to decide on tile size
+#  Returns (TileN, TileK)
+fn calculate_tile_n_k[
+    # Max number of element to cache.
+    pack_cache_size: Int,
+    # Inner size of data layout.
+    pack_inner_size: Int,
+](n: Int, k: Int) -> StaticIntTuple[2]:
+    """Helper heuristic function to decide on tile size to partition the matmul
+    given the cache size and desired data layout.
+        Args:
+            pack_cache_size: Allocated space for packing elements, configuring as a
+                function of target cache size desired.
+            pack_inner_size: The desired inner dimension of the packed data
+                layout.
+            gemm_shape: The shape of the matmul problem size based on runtime
+                input.
+        Returns:
+            The calculated tile size to partition the matmul as (TileN, TileK)
+    """
+
+    # Make sure outer dimension is at least 2
+    let least_tile_n: Int = pack_inner_size * 2
+
+    # Max tile K size based on smallest Tile N.
+    let largest_tile_k = pack_cache_size // least_tile_n
+
+    # Prioritize shape on K dimension, so try to fit in the whole
+    #  input on the tile.
+    let tile_k = min(largest_tile_k, k)
+
+    # Calculate number of InnerSize to fit in tile_n dimension,
+    #  guranteed to be at least 2.
+    let max_tile_n_in_inner_size = pack_cache_size // tile_k // pack_inner_size
+    let full_data_tile_n_in_inner_size = div_ceil(n, pack_inner_size)
+    let tile_n_in_inner_size = min(
+        max_tile_n_in_inner_size, full_data_tile_n_in_inner_size
+    )
+
+    # Calculate tile_n size.
+    let tile_n = tile_n_in_inner_size * pack_inner_size
+
+    return Index(tile_n, tile_k)
+
+
+fn calculate_tile_n_k[
+    # Max number of element to cache.
+    pack_cache_size: Int,
+    # Inner size of data layout.
+    pack_inner_size: Int,
+](global_tile_shape: GemmShape) -> StaticIntTuple[2]:
+    return calculate_tile_n_k[pack_cache_size, pack_inner_size](
+        global_tile_shape.N, global_tile_shape.K
+    )
+
 
 # The number of registers used for the inner kernel is:
 #   x86:  a_row_size*pack_inner_size + 1*pack_inner_size + 1

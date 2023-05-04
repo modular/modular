@@ -18,8 +18,15 @@ from Buffer import (
 from Functional import tile, unswitch, unroll, unroll2, vectorize
 from Index import Index, StaticIntTuple
 from List import Dim, DimList, VariadicList
-from Math import min, fma, div_ceil
-from MatmulUtils import get_packB_unroll_factor
+from Math import min, fma, div_ceil, align_down
+from MatmulUtils import (
+    get_packB_unroll_factor,
+    MatmulConfig,
+    MatmulDataType,
+    MatmulOperandLayout,
+    GemmShape,
+    calculate_tile_n_k,
+)
 from Matrix import Matrix
 from Pointer import DTypePointer
 from Range import range
@@ -28,41 +35,6 @@ from TargetInfo import has_neon, alignof, dtype_simd_width
 from Transpose import transpose_inplace
 from Intrinsics import PrefetchOptions
 from IO import print
-
-
-@register_passable("trivial")
-struct MatmulConfig:
-    """Static configuration of tiled matmul algorithms."""
-
-    # Static shape info of Operand A.
-    var shape_a: DimList
-
-    # Static shape info of Operand B.
-    var shape_b: DimList
-
-    # Static shape info of Operand C.
-    var shape_c: DimList
-
-    # Static packed shape info of the packed buffer.
-    var packed_shape: DimList
-
-    # Static packed shape info of the bias vector.
-    var shape_bias: DimList
-
-    # Static info on simd vector size.
-    var simd_size: Int
-
-    # Static loop unrolling size on M dimension.
-    var a_row_size: Int
-
-    # Static inner dimension of packed data layout.
-    var pack_inner_size: Int
-
-    # Static info on number of elements to pack in the packing routine.
-    var pack_data_size: Int
-
-    # Prefetch distance for packed b vectors in micro kernels.
-    var prefetch_b_distance_k: Int
 
 
 @closure
@@ -136,179 +108,6 @@ fn bias_activation_epilogue[
     vectorize[simd_width, bias_col_chunk](tile_len.N)
 
 
-@register_passable("trivial")
-struct MatmulDataType:
-    """Record describing the data types of the matrices in a matmul"""
-
-    # The data type of the result (matrix C), and the accumulator.
-    var accum_type: DType
-
-    # The data type of the operands (matrix A and B).
-    var value_type: DType
-
-
-@register_passable("trivial")
-struct MatmulOperandLayout:
-    """Record describing the data layouts of the matmul operands as well as
-    intermediate matrices.
-    """
-
-    # Indicates if the input matrix A is transposed.
-    var transpose_a: Bool
-
-    # Indicates if the input matrix B is transposed.
-    var transpose_b: Bool
-
-    # Indicates if the input matrix A is pre-packed.
-    var a_packed: Bool
-
-    # Indicates if the input matrix B is pre-packed.
-    var b_packed: Bool
-
-    # The inner dimension size for packed A matrix if B is pre-packed.
-    var pack_a_inner_size: Int
-
-    # The inner dimension size for packed B matrix if B is pre-packed.
-    var pack_b_inner_size: Int
-
-
-@value
-@register_passable("trivial")
-struct GemmShape:
-    """Helper class to unpack gemm dimension and layout."""
-
-    var M: Int
-    var N: Int
-    var K: Int
-
-    # Construct from dynamic shaped input.
-    @staticmethod
-    fn get[
-        transpose_a: Bool,
-        transpose_b: Bool,
-        shape_c: DimList,
-        shape_a: DimList,
-        shape_b: DimList,
-        accum_type: DType,
-        value_type: DType,
-    ](
-        c: NDBuffer[2, shape_c, accum_type],
-        a: NDBuffer[2, shape_a, value_type],
-        b: NDBuffer[2, shape_b, value_type],
-    ) -> GemmShape:
-        """Constructor of a gemm shape record from input buffers.
-
-        M, N, and K are intentionally calculated using `a` and `c` ONLY. This
-        is because `b` may be padded to a multiple of the tile size if it has
-        been pre-packed.
-
-        Args:
-            c: Buffer with allocated output space.
-            a: Buffer containing matrix operand A.
-            b: Buffer containing matrix operand B.
-        """
-        return GemmShape(
-            c.dim[0](), c.dim[1](), a.dim[0]() if transpose_a else a.dim[1]()
-        )
-
-    @staticmethod
-    fn get[
-        config: MatmulConfig,
-        layout: MatmulOperandLayout,
-        data_type: MatmulDataType,
-    ](
-        c: NDBuffer[2, config.shape_c, data_type.accum_type],
-        a: NDBuffer[2, config.shape_a, data_type.value_type],
-        b: NDBuffer[2, config.shape_b, data_type.value_type],
-    ) -> GemmShape:
-        """Constructor of a gemm shape record from input buffers.
-
-        Args:
-            c: Buffer with allocated output space.
-            a: Buffer containing matrix operand A.
-            b: Buffer containing matrix operand B.
-        """
-        return GemmShape(
-            c.dim[0](),
-            c.dim[1](),
-            a.dim[0]() if layout.transpose_a else a.dim[1](),
-        )
-
-    @staticmethod
-    fn get(
-        c: DynamicRankBuffer,
-        a: DynamicRankBuffer,
-        b: DynamicRankBuffer,
-        transpose_a: Bool,
-        transpose_b: Bool,
-    ) -> GemmShape:
-        return GemmShape(
-            c.dim(0),
-            c.dim(1),
-            a.dim(0) if transpose_a else a.dim(1),
-        )
-
-    # TODO: re-enable using StaticIntTuple.
-    @always_inline
-    fn __getitem__(self, idx: Int) -> Int:
-        if idx == 0:
-            return self.M
-        if idx == 1:
-            return self.N
-        return self.K
-
-    fn __setitem__(self&, idx: Int, value: Int):
-        if idx == 0:
-            self.M = value
-            return
-        if idx == 1:
-            self.N = value
-            return
-        if idx == 2:
-            self.K = value
-            return
-
-    fn __init__(index: StaticIntTuple[3]) -> GemmShape:
-        """Constructor of a gemm shape record from a index tuple.
-
-        Args:
-            index (StaticIntTuple): The int tuple containing the index(m,n,k).
-
-        Returns:
-            The constructed shape record.
-        """
-        return GemmShape(
-            index[0],
-            index[1],
-            index[2],
-        )
-
-    fn as_index(self) -> StaticIntTuple[3]:
-        """Utility to convert the underlying data to an index tuple. So that the
-        utilities such as elementwise add can be used.
-
-        Returns:
-            The constructed index tuple.
-        """
-        return Index(self.M, self.N, self.K)
-
-    fn __add__(self, rhs: GemmShape) -> GemmShape:
-        """Coordinate-wise addition of two gemm shape records.
-
-        Args:
-            rhs: Another gemm shape record to add with.
-        """
-        return self.as_index() + rhs.as_index()
-
-    fn __sub__(self, rhs: GemmShape) -> GemmShape:
-        """Coordinate-wise subtraction of two gemm shape records.
-
-        Args:
-            rhs: Another gemm shape record to subtract with.
-        """
-        return self.as_index() - rhs.as_index()
-
-
 @always_inline
 fn naive_matmul[
     shape_a: DimList,
@@ -359,28 +158,6 @@ fn naive_matmul[
             c.data.offset(m * gemm_shape.N).address, n
         )
         epilogue_rowise_func[accum_type](m, row)
-
-
-# ===----------------------------------------------------------------------=== #
-# Utilities.
-# ===----------------------------------------------------------------------=== #
-
-# Utility to compute inner block size that's divisible
-#  by the block size, e.g. simd_size or TileSize.
-fn round_down_to_block[block_size: Int](original_size: Int) -> Int:
-    """Tile computation utility. Computes the largest multiple of block size
-    below original_size.
-        e.g. round_down_to_block[128](512+1) = 512
-
-    Args:
-        block_size (mlir_index): The block size to round down to.
-        original_size (StaticIntTuple): The original size before rounding.
-
-    Returns:
-        The rounded data size.
-    """
-    let num_of_blocks = original_size // block_size
-    return num_of_blocks * block_size
 
 
 # ===----------------------------------------------------------------------=== #
@@ -450,17 +227,19 @@ struct PackMatrixRows[
             pack_tile_dim,
             valid_data_dim,
             Index(
-                round_down_to_block[simd_size](
+                align_down(
                     min(
                         valid_data_dim[0],
                         pack_tile_dim[0],
-                    )
+                    ),
+                    simd_size,
                 ),
-                round_down_to_block[simd_size](
+                align_down(
                     min(
                         valid_data_dim[1],
                         pack_tile_dim[1],
-                    )
+                    ),
+                    simd_size,
                 ),
             ),
         )
@@ -1246,62 +1025,6 @@ struct MatmulInnerLoopBPacked[
             self._store_c_tile(c_local, Index(0, idx_n))
 
 
-# Helper heuristic function to decide on tile size
-#  Returns (TileN, TileK)
-fn calculate_tile_n_k[
-    # Max number of element to cache.
-    pack_cache_size: Int,
-    # Inner size of data layout.
-    pack_inner_size: Int,
-](n: Int, k: Int) -> StaticIntTuple[2]:
-    """Helper heuristic function to decide on tile size to partition the matmul
-    given the cache size and desired data layout.
-        Args:
-            pack_cache_size: Allocated space for packing elements, configuring as a
-                function of target cache size desired.
-            pack_inner_size: The desired inner dimension of the packed data
-                layout.
-            gemm_shape: The shape of the matmul problem size based on runtime
-                input.
-        Returns:
-            The calculated tile size to partition the matmul as (TileN, TileK)
-    """
-
-    # Make sure outer dimension is at least 2
-    let least_tile_n: Int = pack_inner_size * 2
-
-    # Max tile K size based on smallest Tile N.
-    let largest_tile_k = pack_cache_size // least_tile_n
-
-    # Prioritize shape on K dimension, so try to fit in the whole
-    #  input on the tile.
-    let tile_k = min(largest_tile_k, k)
-
-    # Calculate number of InnerSize to fit in tile_n dimension,
-    #  guranteed to be at least 2.
-    let max_tile_n_in_inner_size = pack_cache_size // tile_k // pack_inner_size
-    let full_data_tile_n_in_inner_size = div_ceil(n, pack_inner_size)
-    let tile_n_in_inner_size = min(
-        max_tile_n_in_inner_size, full_data_tile_n_in_inner_size
-    )
-
-    # Calculate tile_n size.
-    let tile_n = tile_n_in_inner_size * pack_inner_size
-
-    return Index(tile_n, tile_k)
-
-
-fn calculate_tile_n_k[
-    # Max number of element to cache.
-    pack_cache_size: Int,
-    # Inner size of data layout.
-    pack_inner_size: Int,
-](global_tile_shape: GemmShape) -> StaticIntTuple[2]:
-    return calculate_tile_n_k[pack_cache_size, pack_inner_size](
-        global_tile_shape.N, global_tile_shape.K
-    )
-
-
 # Tiled Matmul Implementation.
 # TODO: not yet supporting transpose_a
 @value
@@ -1433,12 +1156,11 @@ struct TiledMatmul[
             rowwise_epilogue_fn,
         )
 
-        matmul._run()
+        matmul._outer_k_loop()
 
-    fn _outer_m_loop_helper[
+    fn _outer_m_loop[
         last_n_tile: Bool,
         last_k_tile: Bool,
-        skip_col_bound: Bool,
         m_loop_pack_inner_size: Int,
     ](self, global_offset: GemmShape, sub_tile_n: Int, sub_tile_k: Int,):
         """
@@ -1446,8 +1168,6 @@ struct TiledMatmul[
             of C.
 
             Args:
-                skip_col_bound(i1): Column dimension boundary check will be
-                    statically skipped if true.
                 m_loop_pack_inner_size(index): Inner dimension of the packed data
                     layout.
                 b_packed(NDBuffer): B matrix in packed layout.
@@ -1461,100 +1181,69 @@ struct TiledMatmul[
             self.global_tile_shape + self.global_tile_offset - global_offset
         )
 
-        let b_packed_tile = self.b_tile_generator.get_tile[
-            m_loop_pack_inner_size
-        ](
-            global_offset,
-            Index(sub_tile_n, sub_tile_k),
-            Index(knm_bounds.N, knm_bounds.K),
-        )
-
-        # Launch the MLoop
-        let sub_tile_n_k = Index(
-            min(sub_tile_n, knm_bounds.N), min(sub_tile_k, knm_bounds.K)
-        )
-
         @parameter
         @always_inline
-        fn row_iteration[tile_size: Int](row_offset: Int):
-            MatmulInnerLoopBPacked[
-                config.shape_a,
-                config.shape_c,
-                config.packed_shape,
-                accum_type,
-                value_type,
-                config.simd_size,
-                tile_size,
-                m_loop_pack_inner_size,
-                skip_col_bound,
-                config.prefetch_b_distance_k,
-                critical_stride,
-            ].run(
-                self.c,
-                self.a,
-                b_packed_tile,
-                global_offset + GemmShape(row_offset, 0, 0),
-                self.global_tile_offset + self.global_tile_shape,
-                sub_tile_n_k,
+        fn unswitch_residual_n[skip_col_bound: Bool]():
+            let b_packed_tile = self.b_tile_generator.get_tile[
+                m_loop_pack_inner_size
+            ](
+                global_offset,
+                Index(sub_tile_n, sub_tile_k),
+                Index(knm_bounds.N, knm_bounds.K),
+            )
+
+            # Launch the MLoop
+            let sub_tile_n_k = Index(
+                min(sub_tile_n, knm_bounds.N), min(sub_tile_k, knm_bounds.K)
             )
 
             @parameter
-            if elementwise_epilogue_enabled & last_k_tile:
-                self.elementwise_epilogue_fn(
+            @always_inline
+            fn row_iteration[tile_size: Int](row_offset: Int):
+                MatmulInnerLoopBPacked[
+                    config.shape_a,
+                    config.shape_c,
+                    config.packed_shape,
+                    accum_type,
+                    value_type,
+                    config.simd_size,
+                    tile_size,
+                    m_loop_pack_inner_size,
+                    skip_col_bound,
+                    config.prefetch_b_distance_k,
+                    critical_stride,
+                ].run(
+                    self.c,
+                    self.a,
+                    b_packed_tile,
                     global_offset + GemmShape(row_offset, 0, 0),
-                    GemmShape {
-                        M: tile_size, N: sub_tile_n_k[0], K: sub_tile_n_k[1]
-                    },
+                    self.global_tile_offset + self.global_tile_shape,
+                    sub_tile_n_k,
                 )
 
-            @parameter
-            if rowwise_epilogue_enabled & last_n_tile & last_k_tile:
-                self.rowwise_epilogue_fn(
-                    global_offset.M + row_offset, tile_size
-                )
+                @parameter
+                if elementwise_epilogue_enabled & last_k_tile:
+                    self.elementwise_epilogue_fn(
+                        global_offset + GemmShape(row_offset, 0, 0),
+                        GemmShape {
+                            M: tile_size, N: sub_tile_n_k[0], K: sub_tile_n_k[1]
+                        },
+                    )
 
-        tile[row_iteration, VariadicList[Int](config.a_row_size, 4, 3, 2, 1)](
-            0,  # starting row offset
-            knm_bounds.M,  # row bound
-        )
+                @parameter
+                if rowwise_epilogue_enabled & last_n_tile & last_k_tile:
+                    self.rowwise_epilogue_fn(
+                        global_offset.M + row_offset, tile_size
+                    )
 
-    #  Pack a subtile of B and iterate through all the rows of C.
-    fn _outer_m_loop[
-        last_n_tile: Bool, last_k_tile: Bool, m_loop_pack_inner_size: Int
-    ](self, global_offset: GemmShape, sub_tile_n: Int, sub_tile_k: Int,):
-        """Pack a subtile of B and iterate through all the rows
-        of C.
+            tile[
+                row_iteration, VariadicList[Int](config.a_row_size, 4, 3, 2, 1)
+            ](
+                0,  # starting row offset
+                knm_bounds.M,  # row bound
+            )
 
-        Args:
-            m_loop_pack_inner_size(index): Inner dimension of the packed data
-                layout.
-            b_packed(NDBuffer): B matrix in packed layout.
-            global_offset(GemmShape): 3D global offset within the whole
-                matmul problem space.
-            sub_tile_n(Int): Dynamic tile size to use on N dimension.
-            sub_tile_k(Int): Dynamic tile size to use on K dimension.
-        """
-        let valid_col_count = (
-            self.global_tile_shape.N
-            + self.global_tile_offset.N
-            - global_offset.N
-        )
-
-        # The whole subtile is within valid columns,
-        #  no need to check boundary when loading C
-        #  on this tile.
-        # TODO: this could be in finer granularity.
-        @parameter
-        @always_inline
-        fn unswitched_mloop[static_switch: Bool]():
-            self._outer_m_loop_helper[
-                last_n_tile,
-                last_k_tile,
-                static_switch,  # skip_col_bound
-                m_loop_pack_inner_size,
-            ](global_offset, sub_tile_n, sub_tile_k)
-
-        unswitch[unswitched_mloop](valid_col_count >= sub_tile_n)
+        unswitch[unswitch_residual_n](knm_bounds[1] > sub_tile_n)
 
     # Iterate on the N dimension of the gemm space.
     fn _outer_n_loop[
@@ -1672,12 +1361,6 @@ struct TiledMatmul[
             DimList(tile_n // n_inner_size, tile_k, n_inner_size),
             value_type,
         )
-
-    fn _run(self):
-        """Wrapper utility function: Allocates packing space on the stack and
-        run the matmul routine on the whole problem space.
-        """
-        self._outer_k_loop()
 
 
 fn pack_b[
