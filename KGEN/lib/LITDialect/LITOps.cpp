@@ -176,7 +176,9 @@ FailureOr<LIT::MangledSymbol> LIT::MangledSymbol::demangle(StringAttr mangled) {
   StringRef m = mangled.getValue();
   // Get the first separator.
   size_t separator = m.find("::");
-  for (; separator != std::string::npos; separator = m.find("::")) {
+  size_t firstParen = m.find('(');
+  for (; separator != std::string::npos && separator < firstParen;
+       separator = m.find("::"), firstParen = m.find('(')) {
     StringRef current = m.take_front(separator);
     // Drop until the separator.
     m = m.drop_front(separator);
@@ -190,7 +192,6 @@ FailureOr<LIT::MangledSymbol> LIT::MangledSymbol::demangle(StringAttr mangled) {
       out.structNames.push_back(StringAttr::get(mangled.getContext(), current));
   }
   // Get the name of the func and the types of its arguments.
-  size_t firstParen = m.find('(');
   if (firstParen == std::string::npos)
     firstParen = m.size();
   out.symName = StringAttr::get(mangled.getContext(), m.take_front(firstParen));
@@ -200,6 +201,11 @@ FailureOr<LIT::MangledSymbol> LIT::MangledSymbol::demangle(StringAttr mangled) {
     out.signature = nullptr;
     return out;
   }
+
+  // If there are more mangled symbols, then there are Mojo types we cannot
+  // parse in general.
+  if (separator != std::string::npos)
+    return out;
 
   // If we *have* a signature, parse it out.
   FailureOr<FunctionType> sigOr =

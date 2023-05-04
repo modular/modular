@@ -74,7 +74,7 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module,
 
   // If we aren't generating debug information, make sure it's been stripped.
   if (options.debugLevel == CompilationOptions::kNoDebug)
-    mgr->addNestedPass<KGEN::FuncOp>(DebugInfo::createDebugInfoStrip());
+    mgr->addNestedPass<FuncOp>(DebugInfo::createDebugInfoStrip());
 
   LowerToLLVMOptions llvmOptions(options.getDIEmissionKind(),
                                  options.debugAtLevel);
