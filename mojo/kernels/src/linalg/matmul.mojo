@@ -38,7 +38,7 @@ from IO import print
 
 
 @closure
-fn null_epilogue(offset: GemmShape, tile_len: GemmShape):
+fn null_elementwise_epilogue(offset: GemmShape, tile_len: GemmShape):
     pass
 
 
@@ -47,19 +47,14 @@ fn null_rowwise_epilogue(offset: Int, num_rows: Int):
     pass
 
 
-fn activation_epilogue[
+fn elementwise_epilogue_c_tile[
     simd_width: Int,
     type: DType,
     shape_c: DimList,
-    activation_type: ActivationType,
-    activation_dispatch: fn[act: ActivationType, width: Int, type: DType] (
-        SIMD[type, width]
-    ) -> SIMD[type, width],
+    func: fn[width: Int, type: DType] (
+        StaticIntTuple[2], SIMD[type, width]
+    ) capturing -> None,
 ](offset: GemmShape, tile_len: GemmShape, c: NDBuffer[2, shape_c, type],):
-    @parameter
-    if activation_type == ActivationType.IDENTITY:
-        return
-
     @always_inline
     @parameter
     fn activation_on_col_chunk[col_chunk_size: Int](idx_n: Int):
@@ -68,44 +63,9 @@ fn activation_epilogue[
             let m_coord = idx_m + offset.M
             let c_coord = Index(m_coord, n_coord)
             let c_val = c.simd_load[col_chunk_size](c_coord)
-            let activation = activation_dispatch[
-                activation_type, col_chunk_size, type
-            ](c_val)
-            c.simd_store[col_chunk_size](c_coord, activation)
+            func[col_chunk_size, type](c_coord, c_val)
 
     vectorize[simd_width, activation_on_col_chunk](tile_len.N)
-
-
-fn bias_activation_epilogue[
-    simd_width: Int,
-    type: DType,
-    shape_c: DimList,
-    shape_bias: DimList,
-    activation_type: ActivationType,
-    activation_dispatch: fn[act: ActivationType, width: Int, type: DType] (
-        SIMD[type, width]
-    ) -> SIMD[type, width],
-](
-    offset: GemmShape,
-    tile_len: GemmShape,
-    c: NDBuffer[2, shape_c, type],
-    bias: NDBuffer[1, shape_bias, type],
-):
-    @always_inline
-    @parameter
-    fn bias_col_chunk[col_chunk_size: Int](idx_n: Int):
-        let n_coord = idx_n + offset.N
-        let bias_val = bias.simd_load[col_chunk_size](n_coord)
-        for idx_m in range(tile_len.M):
-            let m_coord = idx_m + offset.M
-            let c_coord = Index(m_coord, n_coord)
-            let c_val = c.simd_load[col_chunk_size](c_coord)
-            let activation = activation_dispatch[
-                activation_type, col_chunk_size, type
-            ](c_val + bias_val)
-            c.simd_store[col_chunk_size](c_coord, activation)
-
-    vectorize[simd_width, bias_col_chunk](tile_len.N)
 
 
 @always_inline
@@ -1080,7 +1040,7 @@ struct TiledMatmul[
             c,
             a,
             b,
-            null_epilogue,
+            null_elementwise_epilogue,
             null_rowwise_epilogue,
             global_tile_shape,
             global_tile_offset,
