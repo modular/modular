@@ -186,6 +186,12 @@ struct ParameterUseDefGraph {
   /// Print the graph to llvm::errs().
   void dump() const;
 
+  /// Disable implicit copying.
+  ParameterUseDefGraph(const ParameterUseDefGraph &) = delete;
+  ParameterUseDefGraph &operator=(const ParameterUseDefGraph &) = delete;
+  ParameterUseDefGraph(ParameterUseDefGraph &&) = default;
+  ParameterUseDefGraph &operator=(ParameterUseDefGraph &&) = default;
+
 private:
   /// Calculate the parameter use-def graph and perform verification if a symbol
   /// table is provided.
