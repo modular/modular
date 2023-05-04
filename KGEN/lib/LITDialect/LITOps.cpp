@@ -170,7 +170,8 @@ static FailureOr<FunctionType> parseMangledSignature(MLIRContext *ctx,
   return FunctionType::get(ctx, inputTypes, resultTypes);
 }
 
-FailureOr<LIT::MangledSymbol> LIT::MangledSymbol::demangle(StringAttr mangled) {
+FailureOr<LIT::MangledSymbol>
+LIT::MangledSymbol::demangle(StringAttr mangled, bool parseSignature) {
   MangledSymbol out;
   out.mangled = mangled;
   StringRef m = mangled.getValue();
@@ -205,6 +206,9 @@ FailureOr<LIT::MangledSymbol> LIT::MangledSymbol::demangle(StringAttr mangled) {
   // If there are more mangled symbols, then there are Mojo types we cannot
   // parse in general.
   if (separator != std::string::npos)
+    return out;
+
+  if (!parseSignature)
     return out;
 
   // If we *have* a signature, parse it out.

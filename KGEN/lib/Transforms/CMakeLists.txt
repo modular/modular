@@ -15,6 +15,7 @@ add_modular_conversion_library(KGENTransforms
   OutlineClosures.cpp
   SimplifyCF.cpp
   SROA.cpp
+  SyntheticDebugInfo.cpp
   VerifyParameters.cpp
 
   DEPENDS

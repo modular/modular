@@ -282,9 +282,10 @@ def ElaborateGenerators : Pass<"elaborate-generators", "mlir::ModuleOp"> {
   }];
 
   let dependentDialects = [
+    "DebugInfo::DebugInfoDialect",
     "HLCF::HLCFDialect",
     "MDialect",
-    "mlir::LLVM::LLVMDialect"
+    "mlir::LLVM::LLVMDialect",
   ];
 
   let options = [
@@ -595,4 +596,21 @@ def LowerRuntimeClosures : Pass<"lower-runtime-closures", "mlir::ModuleOp"> {
   }];
 
   let dependentDialects = ["KGENDialect", "POP::POPDialect"];
+}
+
+//===----------------------------------------------------------------------===//
+// SynthesizeDebugInfo
+//===----------------------------------------------------------------------===//
+
+def SynthesizeDebugInfo : Pass<"synth-debuginfo", "mlir::ModuleOp"> {
+  let summary = "Synthesize debuginfo from IR locations";
+
+  let description = [{
+    This pass generates synthetic debuginfo from the IR, using file locations
+    present on the operations in the IR. This pass is a workaround debuginfo
+    being broken pre-elaboration due to parameters. If there are no file
+    locations in the IR, this pass will fail.
+  }];
+
+  let dependentDialects = ["DebugInfo::DebugInfoDialect"];
 }

@@ -24,6 +24,9 @@ public:
     /// Disable debug info generation.
     kNoDebug,
 
+    /// Generate synthetic debug info.
+    kSynthetic,
+
     /// Emit only debug info necessary for generating line number tables.
     kLineTablesOnly,
 
@@ -95,6 +98,7 @@ public:
     switch (debugLevel) {
     case kNoDebug:
       return DebugInfo::EmissionKind::None;
+    case kSynthetic:
     case kLineTablesOnly:
       return DebugInfo::EmissionKind::LineTablesOnly;
     case kFullDebugInfo:
