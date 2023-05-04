@@ -33,16 +33,26 @@ using EvaluatorExecutorFn = std::function<ErrorOr<size_t>(
 using EvaluatorExecutorFnRef = function_ref<ErrorOr<size_t>(
     KGEN::FuncOp, SymbolTable &, TargetInfoAttr, ArrayRef<KGEN::FuncOp>)>;
 
+/// Elaborator config.
+struct ElaboratorConfig {
+  /// Enable search during interface elaboration. This defaults to `false`
+  /// because we want search to be opt-in.
+  bool enableSearch;
+  /// If this is true, emit diagnostics for certain conditions that are
+  /// interesting to test for.
+  bool testDiagnostics;
+  /// The maximum instantiation depth before the elaborator gives up.
+  unsigned maxDepth;
+};
+
 /// Elaborate generators in the specified module, incorporating implementation
 /// logic from the specified library.  On error, diagnostics are emitted and the
 /// primary file isn't completely lowered.
-LogicalResult
-elaborateGenerators(mlir::SymbolTableAnalysis &symtab,
-                    KGEN::ParameterCollector::Analysis &paramCache,
-                    LLCL::Runtime &runtime, TargetInfoAttr target,
-                    ArrayRef<KGEN::GeneratorOp> generators,
-                    EvaluatorExecutorFnRef evaluatorExecutorFn,
-                    bool enableSearch = false, bool testDiagnostics = false);
+LogicalResult elaborateGenerators(
+    mlir::SymbolTableAnalysis &symtab,
+    KGEN::ParameterCollector::Analysis &paramCache, LLCL::Runtime &runtime,
+    TargetInfoAttr target, ArrayRef<KGEN::GeneratorOp> generators,
+    EvaluatorExecutorFnRef evaluatorExecutorFn, const ElaboratorConfig &config);
 
 } // namespace M
 
