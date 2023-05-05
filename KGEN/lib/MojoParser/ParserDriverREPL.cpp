@@ -255,7 +255,7 @@ wrapExpressionText(StringRef wrappedFnName, StringRef exprText,
   // Generate a wrapper function to handle the extracting function arguments as
   // references.
   exprOSIndented << "fn " << wrappedFnName
-                 << "(__mojo_repl_arg&: __mojo_repl_context__):\n"
+                 << "(inout __mojo_repl_arg: __mojo_repl_context__):\n"
                     "  try:\n"
                     "    __mojo_repl_expr_impl__(__mojo_repl_arg";
   for (auto &[name, type] : variables) {
@@ -268,10 +268,11 @@ wrapExpressionText(StringRef wrappedFnName, StringRef exprText,
                     "    print(\"Error:\", error.value)\n\n";
 
   // Finally we can generate the actual expression function.
-  exprOSIndented
-      << "def __mojo_repl_expr_impl__(__mojo_repl_arg&: __mojo_repl_context__";
+  exprOSIndented << "def __mojo_repl_expr_impl__(inout __mojo_repl_arg: "
+                    "__mojo_repl_context__";
   for (auto &[name, type] : variables)
-    exprOSIndented << llvm::formatv(", `{0}`&: __mlir_type.`{1}`", name, type);
+    exprOSIndented << llvm::formatv(", inout `{0}`: __mlir_type.`{1}`", name,
+                                    type);
   exprOSIndented << ") -> None:\n";
 
   // Splat out the main body code inside of a nested def. This will allow for us

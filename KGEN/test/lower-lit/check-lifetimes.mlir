@@ -6,7 +6,7 @@ lit.file_module @check_lifetimes {
     //   var a: __mlir_type.index
     lit.struct.field a : index
 
-    //   fn __init__(self&: Self):
+    //   fn __init__(inout self: Self):
     //     self.a = 1
     lit.func @"__init__check_lifetimes:Struct=&)"(%self: !pop.pointer<@check_lifetimes::@Struct> init_self) -> !lit.none attributes {isStatic} {
       %0 = lit.struct.gep %self[a] : <index> from <@check_lifetimes::@Struct>
@@ -17,7 +17,7 @@ lit.file_module @check_lifetimes {
       kgen.return %none : !lit.none
     }
 
-    // fn __copyinit__(self&, existing: Self):
+    // fn __copyinit__(inout self, existing: Self):
     lit.func @__copyinit__(
         %self: !pop.pointer<@check_lifetimes::@Struct> init_self,
         %existing: !pop.pointer<@check_lifetimes::@Struct> borrow_in_mem) -> !lit.none {

@@ -1,19 +1,19 @@
 # RUN: kgen %s -verify-diagnostics -emit-asm
 
 struct Empty:
-  fn __init__(self&): pass
-  fn __copyinit__(self&, existing: Self): pass
+  fn __init__(inout self): pass
+  fn __copyinit__(inout self, existing: Self): pass
 
 struct MemExample:
   var x: Int
   var y: Int
 
   # expected-error @+1 {{use of uninitialized value 'self.x'}}
-  fn __init__(self&):  # expected-note {{'self' declared here}}
+  fn __init__(inout self):  # expected-note {{'self' declared here}}
     pass
 
   # expected-error @+1 {{use of uninitialized value 'self.y'}}
-  fn __copyinit__(self&, existing: Self): # expected-note {{'self' declared here}}
+  fn __copyinit__(inout self, existing: Self): # expected-note {{'self' declared here}}
     self.x = existing.x
 
   fn __del__(owned self): pass
@@ -163,11 +163,11 @@ fn use_of_uninit_raise(cond: Bool, err: Error):
 struct TwoRegs:
   var reg1: RegExample
   var reg2: RegExample
-  fn __init__(self&):
+  fn __init__(inout self):
     self.reg1 = RegExample()
     self.reg2 = RegExample()
 
-  fn __copyinit__(self&, existing: Self):
+  fn __copyinit__(inout self, existing: Self):
     self.reg1 = existing.reg1
     self.reg2 = existing.reg2
 
@@ -188,13 +188,13 @@ struct MoreComplexExample:
   var mem: MemExample
   var reg: TwoRegs
 
-  fn __init__(self&):
+  fn __init__(inout self):
     var result : MoreComplexExample # expected-note {{'result' declared here}}
     result.mem = MemExample()
     result.reg.reg2 = RegExample()
     self = result  # expected-error {{use of uninitialized value 'result.reg.reg1'}}
 
-  fn __copyinit__(self&, existing: Self):
+  fn __copyinit__(inout self, existing: Self):
     self.mem = existing.mem
     self.reg = existing.reg
 

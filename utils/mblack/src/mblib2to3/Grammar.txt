@@ -57,7 +57,7 @@ typedargslist: tfpdef ['=' test] (',' tfpdef ['=' test])* ',' '/' [
                      [',' ['**' tname [',']]] | '**' tname [','])
                      | tfpdef ['=' test] (',' tfpdef ['=' test])* [','])
 
-tname: ['owned'] NAME [metaparams] [':' test]
+tname: ['owned'|'borrowed'|'inout'] NAME [metaparams] [':' test]
 tname_star: NAME [':' (test|star_expr)]
 tfpdef: tname | '(' tfplist ')'
 tfplist: tfpdef (',' tfpdef)* [',']
@@ -196,7 +196,7 @@ dictsetmaker: ( ((test ':' asexpr_test | '**' expr)
 		 (comp_for | (',' (test [':=' test] | star_expr))* [','])) )
 
 classdef: ('class' | STRUCT) NAME [metaparams] ['(' [arglist] ')'] ':' suite
-typeconv: ['&'|'*'|'owned'|'borrowed'] ['*'] test
+typeconv: ['&'|'*'|'owned'|'borrowed'|'inout'] ['*'] test
 functype: [ASYNC] ('def' | FN) [metaparams] '(' [typeconv (',' typeconv)*] ')' NAME* ['->' test]
 
 arglist: argument (',' argument)* [',']

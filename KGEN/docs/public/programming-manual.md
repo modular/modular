@@ -143,7 +143,7 @@ Here's a simple definition of a struct:
 struct MyPair:
     var first: Int
     var second: Int
-    def __init__(self&, first: Int, second: Int):
+    def __init__(inout self, first: Int, second: Int):
         self.first = first
         self.second = second
     def __lt__(self, rhs: MyPair) -> Bool:
@@ -176,9 +176,9 @@ when writing your code.
 
 :::{.callout-note}
 
-If you're wondering what the `&` means on the `self` argument: this
-indicates that the value is mutable, which is explained below in
-[By-reference arguments](#by-reference-arguments).
+If you're wondering what the `inout` means on the `self` argument: this
+indicates that the argument is mutable and changes are visibible to the caller.
+Please see [inout arguments](#inout-arguments) for more information.
 
 :::
 
@@ -344,7 +344,7 @@ struct MyString:
     var data: Pointer[Int8]
 
     # StringRef has a data + length field
-    def __init__(self&, input: StringRef):
+    def __init__(inout self, input: StringRef):
         let data = Pointer[Int8].alloc(input.length+1)
         data.memcpy(input.data, input.length)
         data[input.length] = 0
@@ -385,7 +385,7 @@ implemented like this:
 ```mojo
 struct MyString:
     ...
-    def __copyinit__(self&, existing: Self):
+    def __copyinit__(inout self, existing: Self):
         self.data = Pointer(strdup(self.data.address))
 ```
 
@@ -492,7 +492,7 @@ struct SIMD[type: DType, size: Int]:
     var value: … # Some low-level MLIR stuff here
 
     # Create a new SIMD from a number of scalars
-    fn __init__(self&, *elems: SIMD[type, 1]):  ...
+    fn __init__(inout self, *elems: SIMD[type, 1]):  ...
 
     # Fill a SIMD with a duplicated scalar value.
     @staticmethod
@@ -630,11 +630,11 @@ C++ `std::vector` class like this:
 ```mojo
 struct DynamicVector[type: AnyType]:
     ...
-    fn reserve(self&, new_capacity: Int): ...
-    fn push_back(self&, value: type): ...
-    fn pop_back(self&): ...
+    fn reserve(inout self, new_capacity: Int): ...
+    fn push_back(inout self, value: type): ...
+    fn pop_back(inout self): ...
     fn __getitem__(self, i: Int) -> type: ...
-    fn __setitem__(self&, i: Int, value: type): ...
+    fn __setitem__(inout self, i: Int, value: type): ...
 
 fn use_vector():
     var v = DynamicVector[Int]()
@@ -864,7 +864,7 @@ the Rust language provides, but they work somewhat differently in order to make
 Mojo easier to learn and integrate better into the Python ecosystem without
 requiring a massive annotation burden.
 
-### By-reference arguments
+### `inout` arguments
 
 Let's start with the simple case: passing mutable references to values vs
 passing immutable references. As we already know, arguments that are passed to
@@ -881,17 +881,17 @@ struct Int:
 ```
 
 The problem here is that `__iadd__` needs to mutate the internal state of the
-integer. The solution in Mojo is to declare that the argument is passed "by
-reference" by using the `&` marker on the argument name (`self` in this case):
+integer. The solution in Mojo is to declare that the argument is passed "inout"
+by using the `inout` marker on the argument name (`self` in this case):
 
 ```mojo
 struct Int:
     # ...
-    fn __iadd__(self&, rhs: Int):
+    fn __iadd__(inout self, rhs: Int):
         self = self + rhs    # OK
 ```
 
-Because this argument is passed by-reference, the 'self' argument is mutable in
+Because this argument is passed inout, the 'self' argument is mutable in
 the callee, and any changes are visible in the caller - even if the caller has
 a non-trivial computation to access it, like an array subscript:
 
@@ -914,15 +914,15 @@ Mojo implements the in-place mutation of the InlinedFixedVector element by
 emitting a call to `__getitem__` into a temporary buffer, followed by a store
 with `__setitem__` after the call. Mutation of the `let` value fails because it
 isn't possible to form a mutable reference to an immutable value. Similarly,
-the compiler rejects attempts to use a subscript with a by-ref argument if it
+the compiler rejects attempts to use a subscript with a inout argument if it
 implements `__getitem__` but not `__setitem__`.
 
 There is nothing special about 'self' in Mojo, and you can have multiple
-different by-ref arguments. For example, you can define and use a swap function
+different inout arguments. For example, you can define and use a swap function
 like this:
 
 ```mojo
-fn swap(lhs&: Int, rhs&: Int):
+fn swap(inout lhs: Int, inout rhs: Int):
     let tmp = lhs
     lhs = rhs
     rhs = tmp
@@ -937,13 +937,9 @@ fn show_swap():
 
 A very important aspect of this system is that it all composes correctly.
 
-> Alternative: instead of using the `&` sigil, we could call this an `inout`
-argument.  Such a spelling would align better with other argument convention
-keywords, and is more correct given how Mojo's computed LValues work.
-
 ### "Borrowed" argument convention
 
-Now that we know how by-reference argument passing works, you may wonder how
+Now that we know how inout argument passing works, you may wonder how
 by-value argument passing works and how that interacts with the `__copyinit__`
 method, which implements copy constructors. In Mojo, the default convention for
 passing arguments to functions is to pass with the "borrowed" argument
@@ -971,10 +967,10 @@ above:
 struct SomethingBig:
     var id_number: Int
     var huge: InlinedArray[Int, 100000]
-    fn __init__(self&): …
+    fn __init__(inout self): …
 
-    # self is passed by-reference for mutation as described above.
-    fn set_id(self&, number: Int):
+    # self is passed inout for mutation as described above.
+    fn set_id(inout self, number: Int):
         self.id_number = number
 
     # Arguments like self are passed as borrowed by default.
@@ -1068,10 +1064,10 @@ struct MyString:
     var data: Pointer[Int8]
 
     # StringRef has a data + length field
-    def __init__(self&, input: StringRef): ...
-    def __copyinit__(self&, existing: Self): ...
+    def __init__(inout self, input: StringRef): ...
+    def __copyinit__(inout self, existing: Self): ...
 
-    def __moveinit__(self&, owned existing: Self):
+    def __moveinit__(inout self, owned existing: Self):
         self.data = existing.data
 
     def __del__(owned self):
@@ -1126,7 +1122,7 @@ instead of being passed by-pointer.
 
 4. The `__init__` and `__copyinit__` methods of this type are implicitly static
 (like `__new__` in Python) and returns its result by-value instead of taking
-`self&`.
+`inout self`.
 
 We expect that this decorator will be used pervasively on core standard library
 types, but is safe to ignore for general application level code.
@@ -1155,10 +1151,10 @@ type have a `__copyinit__` method.
 These functions are equivalent (other than keyword argument label to callers):
 
 ```mojo
-def example(a&: Int, b: Int, c):
+def example(inout a: Int, b: Int, c):
     ...
 
-fn example(a&: Int, b_in: Int, c_in: Object):
+fn example(inout a: Int, b_in: Int, c_in: Object):
     var b = b_in
     var c = c_in
     ...
@@ -1345,10 +1341,10 @@ address of the value is its identity and critical to its purpose:
 struct Atomic:
     var state: Int
 
-    fn __init__(self&, state: Int = 0):
+    fn __init__(inout self, state: Int = 0):
         self.state = state
 
-    fn __iadd__(self&, rhs: Int):
+    fn __iadd__(inout self, rhs: Int):
         #...atomic magic...
 
     fn get_value(self) -> Int:
@@ -1381,14 +1377,14 @@ struct FileDescriptor:
     var fd: Int
 
     # This is the new.
-    fn __moveinit__(self&, consuming existing: Self):
+    fn __moveinit__(inout self, consuming existing: Self):
         self.fd = existing.fd
 
     # This takes ownership of a POSIX file descriptor.
-    fn __init__(self&, fd: Int):
+    fn __init__(inout self, fd: Int):
         self.fd = fd
 
-    fn __init__(self&, path: String):
+    fn __init__(inout self, path: String):
         # Error handling omitted, call the open(2) syscall.
         self = FileDescriptor(open(path, ...))
 
@@ -1506,13 +1502,13 @@ struct FileDescriptor:
     var fd: Int
 
     # This is the new key capability.
-    fn __moveinit__(self&, existing&: Self):
+    fn __moveinit__(inout self, inout existing: Self):
         self.fd = existing.fd
         existing.fd = -1  # neutralize 'existing'.
 
-    fn __moveinit__(self&, consuming existing: Self): # as above
-    fn __init__(self&, fd: Int): # as above
-    fn __init__(self&, path: String): # as above
+    fn __moveinit__(inout self, consuming existing: Self): # as above
+    fn __init__(inout self, fd: Int): # as above
+    fn __init__(inout self, path: String): # as above
 
     fn __del__(owning self):
         if self.fd != -1:
@@ -1557,15 +1553,15 @@ struct MyString:
     var data: Pointer[Int8]
 
     # StringRef is a pointer + length and works with StringLiteral.
-    def __init__(self&, input: StringRef):
+    def __init__(inout self, input: StringRef):
         self.data = ...
 
     # Copy the string by deep copying the underlying malloc'd data.
-    def __copyinit__(self&, existing: Self):
+    def __copyinit__(inout self, existing: Self):
         self.data = strdup(existing.data)
 
     # This isn't required, but optimizes unneeded copies.
-    def __moveinit__(self&, owned existing: Self):
+    def __moveinit__(inout self, owned existing: Self):
         self.data = existing.data
 
     def __del__(owned self):
@@ -1665,15 +1661,15 @@ constructor or a copy constructor and will synthesize these for you as if you
 had written:
 
 ```mojo
-fn __init__(self&, owned name: String, age: Int):
+fn __init__(inout self, owned name: String, age: Int):
     self.name = name^
     self.age = age
 
-fn __copyinit__(self&, existing: Self):
+fn __copyinit__(inout self, existing: Self):
     self.name = existing.name
     self.age = existing.age
 
-fn __moveinit__(self&, owned existing: Self):
+fn __moveinit__(inout self, owned existing: Self):
     self.name = existing.name^
     self.age = existing.age
 ```
@@ -1702,7 +1698,7 @@ pseudo code):
 struct MyString:
     var data: Pointer[Int8]
 
-    def __init__(self&, input: StringRef): ...
+    def __init__(inout self, input: StringRef): ...
     def __add__(self, rhs: MyString) -> MyString: ...
     def __del__(owned self):
         free(self.data.address)
@@ -1803,7 +1799,7 @@ this code:
 struct TwoStrings:
     var str1: MyString
     var str2: MyString
-    fn __init__(self&): ...
+    fn __init__(inout self): ...
     fn __del__(owned self): ...
 
 fn use_two_strings():
@@ -1886,7 +1882,7 @@ struct TwoStrings:
     var str1: MyString
     var str2: MyString
 
-    fn __init__(self&, cond: Bool, other: MyString):
+    fn __init__(inout self, cond: Bool, other: MyString):
         self.str1 = MyString()
         if cond:
             self.str2 = other
@@ -1905,8 +1901,8 @@ struct TwoStrings:
     var str1: MyString
     var str2: MyString
 
-    fn __init__(self&): ...
-    fn __init__(self&, cond: Bool, other: MyString):
+    fn __init__(inout self): ...
+    fn __init__(inout self, cond: Bool, other: MyString):
         self = TwoStrings()  # basic
         self.str1 = MyString("fancy")
 ```
@@ -1922,7 +1918,7 @@ struct TwoStrings:
     var str2: MyString
     fn __init__(...)
 
-    fn __moveinit__(self&, owned existing: Self): ...
+    fn __moveinit__(inout self, owned existing: Self): ...
     fn __del__(owned self): ...
 ```
 
@@ -1945,7 +1941,7 @@ struct TwoStrings:
     var str1: MyString
     var str2: MyString
     fn __init__(...)
-    fn __moveinit__(self&, owned existing: Self): ...
+    fn __moveinit__(inout self, owned existing: Self): ...
 
     fn __del__(owned self):
         log(self)       # Self is still whole

@@ -4,13 +4,13 @@
 # CHECK-LABEL: lit.struct.decl @MemExample
 struct MemExample:
   var x : Int
-  fn __init__(self&): self.x = 42; pass
+  fn __init__(inout self): self.x = 42; pass
   fn noop(self): pass
 
-  fn __moveinit__(self&, owned existing: Self):
+  fn __moveinit__(inout self, owned existing: Self):
     self.x = existing.x
 
-  fn __copyinit__(self&, existing: Self):
+  fn __copyinit__(inout self, existing: Self):
     self.x = existing.x
 
   # Destructor should not recurse.
@@ -298,7 +298,7 @@ fn thing_that_raises(value: Int, c: Bool) raises -> MemExample:
     raise Error("TypeError: cannot invert values of this type")
 
 struct Parameterized[level: Int]:
-    fn __init__(self&): pass
+    fn __init__(inout self): pass
 
     fn __del__(owned self):
         pass
@@ -376,7 +376,7 @@ struct FieldSensitiveMemExample:
   var f2 : MemExample
 
   # CHECK: lit.func @"__init__
-  fn __init__(self&):
+  fn __init__(inout self):
     # CHECK-NEXT: %0 = lit.struct.gep %self[f1]
     # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%0)
     self.f1 = MemExample()
@@ -387,15 +387,15 @@ struct FieldSensitiveMemExample:
     # CHECK-NEXT: kgen.return
 
  # CHECK: lit.func @"__init__
-  fn __init__(self&, a: MemExample, b: MemExample):
+  fn __init__(inout self, a: MemExample, b: MemExample):
     self.f1 = a
     self.f2 = b
 
-  fn __copyinit__(self&, existing: Self):
+  fn __copyinit__(inout self, existing: Self):
     self = Self(existing.f1, existing.f2)
 
  # CHECK-LABEL: lit.func @"mutate
- fn mutate(self&):
+ fn mutate(inout self):
     # CHECK-NEXT: %0 = lit.struct.gep %self[f1]
     # CHECK-NEXT: kgen.call @{{.*}}@"__del__{{.*}}(%0)
 
@@ -405,7 +405,7 @@ struct FieldSensitiveMemExample:
     # CHECK-NEXT: kgen.param.constant: !lit.none = <#lit.none>
 
  # CHECK-LABEL: lit.func @"mutate2
- fn mutate2(self&):
+ fn mutate2(inout self):
     # Disable the dtor of 'f1' before we overwrite it to show we can do this.
     # CHECK-NEXT: %0 = lit.struct.gep %self[f1]
     # CHECK-NEXT: lit.ownership.def.lvalue %0
@@ -686,10 +686,10 @@ struct ExoticDelExample:
 struct MemoryUniqueMovable:
   var state: MemExample
 
-  fn __init__(self&): self.state = MemExample()
+  fn __init__(inout self): self.state = MemExample()
 
   # CHECK: lit.func @"__moveinit__
-  fn __moveinit__(self&, owned existing: Self):
+  fn __moveinit__(inout self, owned existing: Self):
     # Mercilously steal 'existing's state which could be interesting.
 
     # CHECK-NEXT: %0 = lit.struct.gep %existing[state]
@@ -708,10 +708,10 @@ struct MemoryUniqueMovable:
 struct MemoryDestroyMovable:
   var state: MemExample
 
-  fn __init__(self&): self.state = MemExample()
+  fn __init__(inout self): self.state = MemExample()
 
   # CHECK: lit.func @"__moveinit__
-  fn __moveinit__(self&, existing&: Self):
+  fn __moveinit__(inout self, inout existing: Self):
     # Take 'existing's state which could be interesting.
     # CHECK-NEXT: %0 = lit.struct.gep %existing[state]
     # CHECK-NEXT: %1 = lit.ownership.end.lifetime %0
@@ -734,19 +734,19 @@ struct MemoryDestroyMovable:
 struct MemoryMovableCopyable:
   var state: MemExample
 
-  fn __init__(self&): self.state = MemExample()
+  fn __init__(inout self): self.state = MemExample()
 
-  fn __moveinit__(self&, existing&: Self):
+  fn __moveinit__(inout self, inout existing: Self):
     # Take 'existing's state which could be interesting.
     self.state = existing.state^
     # Replace it with a default initialized one that can be destructed.
     existing.state = MemExample()
 
-  fn __moveinit__(self&, owned existing: Self):
+  fn __moveinit__(inout self, owned existing: Self):
     # Mercilously steal 'existing's state which could be interesting.
     self.state = existing.state^
 
-  fn __copyinit__(self&, existing: Self): self.state = existing.state
+  fn __copyinit__(inout self, existing: Self): self.state = existing.state
   fn __del__(owned self): pass
 
 # CHECK-LABEL: lit.func @"result_mem1
@@ -845,5 +845,5 @@ fn passFieldToOwnedInt(owned a: MemExample):
 struct MyGenericType[Type: AnyType]:
     var value: Type
 
-    fn __init__(self&, v: Type):
+    fn __init__(inout self, v: Type):
         self.value = v

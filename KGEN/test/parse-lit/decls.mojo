@@ -299,7 +299,7 @@ fn callOverload(a: Int):
 
 
 struct VariadicStruct[*Ts: AnyType]:
-    fn __init__(self&):
+    fn __init__(inout self):
         pass
 
     @staticmethod
@@ -369,7 +369,7 @@ fn pleaseInline() -> __mlir_type.index:
 # https://github.com/modularml/modular/issues/8500
 struct AlwaysInlineByRef:
   @always_inline("nodebug")
-  fn doByRef(self&):
+  fn doByRef(inout self):
     pass
 
 fn testInlineByRef(a&: AlwaysInlineByRef):
@@ -527,10 +527,10 @@ struct VaList[EltType: __mlir_type.`!kgen.mlirtype`]:
   alias StorageType =  __mlir_type[`!kgen.variadic<`, EltType, `>`]
   var value: StorageType
 
-  fn __copyinit__(self&, existing: Self):
+  fn __copyinit__(inout self, existing: Self):
     self.value = existing.value
 
-  fn __init__(self&, value: StorageType):
+  fn __init__(inout self, value: StorageType):
     self.value = value
 
   fn size(self) -> __mlir_type.index:
@@ -551,11 +551,11 @@ fn variadics(*a: Int):
 fn parameterizedVariadic[T: __mlir_type.`!kgen.mlirtype`](*args: T): pass
 
 struct ParameterizedStruct[T: __mlir_type.`!kgen.mlirtype`]:
-    fn __init__(self&, *args: T):
+    fn __init__(inout self, *args: T):
       pass
 
 struct VarArgsParameterizedStruct[*Is: Int]:
-    fn __init__(self&):
+    fn __init__(inout self):
         pass
 
 # CHECK-LABEL: lit.func @"callVariadic
@@ -592,7 +592,7 @@ fn callVariadic[p: Int](x: Int):
 struct Tuple[*Ts: __mlir_type.`!kgen.mlirtype`]:
     var elements: __mlir_type[`!pop.pack<`, Ts, `>`]
 
-    fn __init__(self&, *args: *Ts):
+    fn __init__(inout self, *args: *Ts):
         self.elements = args
 
 # CHECK-LABEL: lit.func @"pack(__mlir_type.!pop.pack<*(0,0)>)"<Ts: variadic<!kgen.mlirtype>>(%args: !pop.pack<Ts>)
@@ -723,7 +723,7 @@ struct StructWithInit:
 
   # CHECK: lit.func @"__init__($decls::StructWithInit=&,$Int::Int)"
   # CHECK-SAME: (%self: !pop.pointer<@"$decls"::@StructWithInit> init_self,
-  fn __init__(self&, a: Int):
+  fn __init__(inout self, a: Int):
     # CHECK: %0 = lit.struct.gep %self[x]
     # CHECK: pop.store %a, %0
     self.x = a
@@ -739,7 +739,7 @@ struct StructWithInit:
   # Not very useful, but this form also works, so test it.
   # CHECK: lit.func @"__init__
   # CHECK-SAME: (%self: !pop.pointer<@"$decls"::@StructWithInit> init_self,
-  fn __init__(self&, a: Int, b: Int):
+  fn __init__(inout self, a: Int, b: Int):
     # CHECK: hlcf.if
     if a == b:
       # CHECK:  kgen.call {{.*}}__init__{{.*}}(%self, %a)
@@ -753,7 +753,7 @@ struct StructWithInit:
       self.x = a
       self.y = b
 
-  fn __init__(self&):
+  fn __init__(inout self):
     self = Self(0)
 
 # CHECK-LABEL: lit.struct.decl @StructExample
@@ -773,7 +773,7 @@ struct StructExample:
     pass
 
   # CHECK: lit.func @"mutatingMethod($decls::StructExample&)"(%self: !pop.pointer<@"$decls"::@StructExample> byref) -> !lit.none
-  fn mutatingMethod(self&):
+  fn mutatingMethod(inout self):
     pass
 
 # CHECK: lit.func @"callStatic{{.*}}(%a: !kgen.declref<@"$Int"::@Int> borrow)
@@ -791,12 +791,12 @@ struct DelegatingInitMem:
   var value: Int
 
   # CHECK: lit.func @"__init__{{.*}}(%self
-  fn __init__(self&, value: Bool):
+  fn __init__(inout self, value: Bool):
     # CHECK: x
     # CHECK: kgen.call @{{.*}}__init__{{.*}}(%self, %0)
     self.__init__(42)
 
-  fn __init__(self&, value: Int):
+  fn __init__(inout self, value: Int):
     self.value = value
 
 ##===----------------------------------------------------------------------===##
@@ -894,10 +894,10 @@ async fn call_struct_async(f: StructWithAsync):
     _ = f.do_something()
 
 struct Awaitable:
-  fn __init__(self&):
+  fn __init__(inout self):
     pass
 
-  fn __await__(self&) -> Int:
+  fn __await__(inout self) -> Int:
     return 0
 
 # CHECK-LABEL: lit.func @"awaitable()"

@@ -30,7 +30,7 @@ struct MemIntPair:
     var first: Int
     var second: Int
 
-    fn __init__(self&, first: Int, second: Int):
+    fn __init__(inout self, first: Int, second: Int):
         self.first = first
         self.second = second
 

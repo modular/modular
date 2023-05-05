@@ -52,7 +52,7 @@ struct Parameterized[p1: Int]:
   fn b[p2: Int, p2: Int, p3: Int](self): # Cannot shadow parameter names.
     pass
 
-  fn __init__(self&):
+  fn __init__(inout self):
     pass
 
   # expected-note @+2 {{'method' declared here}}

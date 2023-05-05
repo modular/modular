@@ -17,7 +17,7 @@ print(12
 struct Foo[
     *Ts: AnyType
     ]:
-  fn __init__(self&):
+  fn __init__(inout self):
     pass
   fn foo(self):
     print("called foo")

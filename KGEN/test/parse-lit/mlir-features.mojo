@@ -112,7 +112,7 @@ struct MyPointer[eltType: __mlir_type.`!kgen.mlirtype`]:
 
 
 # CHECK-LABEL: getAddressOf{{.*}}"<T: type>(%arg: !pop.pointer<T> byref)
-fn getAddressOf[T: __mlir_type.`!kgen.mlirtype`](arg&: T) -> MyPointer[T]:
+fn getAddressOf[T: __mlir_type.`!kgen.mlirtype`](inout arg: T) -> MyPointer[T]:
     return __mlir_op.`pop.pointer.bitcast`[_type : MyPointer[T].StorageTy](
         __get_lvalue_as_address(arg)
     )

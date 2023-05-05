@@ -725,18 +725,17 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
                                   bool omitName) {
   loc = p.getToken().getLoc();
 
-  // The owned/borrowed keyword sets convention.
-  // NOTE: We might consider a postfix ^ syntax after the language bakes out
-  // more, that is probably going to be tightly coupled to ownership transfer,
-  // but this is more explicit for now.
+  // Any owned/borrowed/inout keyword sets convention.
   if (p.consumeIf(Token::kw_owned))
     convention = kConventionOwned;
-
-  SMLoc borrowLoc;
-  if (p.consumeIf(Token::kw_borrowed, &borrowLoc)) {
-    if (convention != kConventionUnspec)
-      p.emitError(borrowLoc, "argument already has a convention specified");
+  else if (p.consumeIf(Token::kw_borrowed))
     convention = kConventionBorrowed;
+  else if (p.consumeIf(Token::kw_inout))
+    convention = kConventionInOut;
+  while (p.getToken().isAny(Token::kw_owned, Token::kw_borrowed,
+                            Token::kw_inout)) {
+    p.emitTokenError("argument already has a convention specified");
+    p.consumeToken();
   }
 
   markerInfo = KWArgMarkerInfo::kNotMarker;
@@ -774,7 +773,7 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
     if (convention != kConventionUnspec)
       p.emitError(ampLoc, "argument already has a convention specified");
     else
-      convention = kConventionByRef;
+      convention = kConventionInOut;
   }
 
   // Parse an optional type annotation: `":" ["*"] expression`. Omit the colon
@@ -1043,7 +1042,7 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
       ParsedArgument resultArg;
       resultArg.loc = resultLoc;
       resultArg.name = StringAttr::get(shared.getContext(), "__result__");
-      resultArg.convention = ParsedArgument::kConventionByRefResult;
+      resultArg.convention = ParsedArgument::kConventionInOutResult;
       args.insert(args.begin(), resultArg);
       skipIndex = 1;
       argTypes.push_back(shared.lookupObjectType(resultLoc, scope));
@@ -1077,7 +1076,7 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
       ParsedArgument resultArg;
       resultArg.loc = resultTypeExpr->getLoc();
       resultArg.name = StringAttr::get(shared.getContext(), "__result__");
-      resultArg.convention = ParsedArgument::kConventionByRefResult;
+      resultArg.convention = ParsedArgument::kConventionInOutResult;
       resultArg.typeExpr = resultTypeExpr;
       args.insert(args.begin(), resultArg);
       argTypes.push_back(resultType);
@@ -1167,10 +1166,10 @@ void ParsedArgument::computeArgumentConventions(
       else
         arg.kgenConvention = ValueInputConvention::BorrowedInMem;
       break;
-    case ParsedArgument::kConventionByRef:
+    case ParsedArgument::kConventionInOut:
       arg.kgenConvention = ValueInputConvention::ByRef;
       break;
-    case ParsedArgument::kConventionByRefResult:
+    case ParsedArgument::kConventionInOutResult:
       arg.kgenConvention = ValueInputConvention::ByRefResult;
       break;
     case ParsedArgument::kConventionInitSelfResult:
@@ -1318,7 +1317,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
   // because it is returned in memory.
   bool hasMemoryResult =
       !args.empty() &&
-      args[0].convention == ParsedArgument::kConventionByRefResult;
+      args[0].convention == ParsedArgument::kConventionInOutResult;
 
   // If this definition is a struct/class member, compute the self type.
   ASTType selfType;
@@ -1496,7 +1495,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
     SMLoc selfArgLoc = args[0].loc;
     // __init__/__copyinit__/__moveinit__ must take their self argument by-ref
     // syntactically.
-    if (args[0].convention != ParsedArgument::kConventionByRef) {
+    if (args[0].convention != ParsedArgument::kConventionInOut) {
       auto diag = emitErrorLoc(selfArgLoc, "'self' in struct ")
                   << name << " must be passed as mutable reference";
       if (args[0].convention == ParsedArgument::kConventionUnspec)
@@ -1511,7 +1510,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
         emitErrorLoc(args[1].loc,
                      "existing value argument must be passed as borrowed");
     } else if (fnInfo.kind == SpecialFunctionKind::kMoveInit) {
-      if (args[1].convention != ParsedArgument::kConventionByRef &&
+      if (args[1].convention != ParsedArgument::kConventionInOut &&
           args[1].convention != ParsedArgument::kConventionOwned) {
         emitErrorLoc(
             args[1].loc,
@@ -2118,7 +2117,7 @@ void ExprEmitter::emitNormalReturn(OpBuilder &builder, Location loc,
     auto func = cast<LIT::FuncOp>(funcDecl);
     assert(func.getBody()->getNumArguments() == 2 &&
            "__moveinit__ should have to arguments");
-    // Don't change `__moveinit__(owned self, existing&: Self)`.
+    // Don't change `__moveinit__(owned self, inout existing: Self)`.
     if (func.getSignature().getInputConvention(1) !=
         ValueInputConvention::OwnedInMem)
       break;
@@ -2864,7 +2863,7 @@ hasMemberwiseInit(SMLoc loc, ASTDecl &structDecl, bool isMemoryOnly,
     // If this is @register_passable struct, we'd have an init like:
     //   fn __init__(field1: Int, field2: Mem) -> Self
     // If memory-only, we should have:
-    //   fn __init__(self&, field1: Int, field2: Mem)
+    //   fn __init__(inout self, field1: Int, field2: Mem)
     // The result type of all inits / self are already checked.
     if (isMemoryOnly) {
       inputTypes = inputTypes.drop_front();
@@ -3016,10 +3015,10 @@ static void synthesizeCopyMoveInit(
       resolver.translateLocation(decoratorLoc), &structOp.getFields().front());
 
   // The signature of __copyinit__ is either:
-  //   fn __copyinit__(self&, borrowed existing: Self) -> None
+  //   fn __copyinit__(inout self, borrowed existing: Self) -> None
   //   fn __copyinit__(borrowed existing: Self) -> Self
   // The signature of __moveinit__ (only for memory types) is:
-  //   fn __moveinit__(self&, owned existing: Self) -> None
+  //   fn __moveinit__(inout self, owned existing: Self) -> None
   SmallVector<Type> argTypes;
   SmallVector<ValueInputConvention> argConventions;
   SmallVector<StringAttr> argNames;
