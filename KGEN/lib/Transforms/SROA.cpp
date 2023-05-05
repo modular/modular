@@ -262,9 +262,8 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
     int64_t numElems = *containerTy.getResolvedSize();
     newAllocas.reserve(numElems);
 
-    Type elem = containerTy.getResolvedElementType();
+    Type elem = containerTy.getElementAsType();
     auto asPtr = PointerType::get(elem);
-
     for (int64_t i = 0; i < numElems; ++i) {
       Value v = builder.create<StackAllocationOp>(alloc.getLoc(), asPtr, 1);
       newAllocas.push_back(v);
@@ -402,12 +401,12 @@ void SROAPass::runOnOperation() {
         // Replace stack of N with N stacks of 1.
         ReplaceStack replacer{builder, alloc};
         changed |= replacer.run(toDelete);
-      } else if (auto structTy = dyn_cast<POP::StructType>(
-                     ptrType.getResolvedElementType())) {
+      } else if (auto structTy =
+                     dyn_cast<POP::StructType>(ptrType.getElementAsType())) {
         ReplaceStructs replacer{builder, alloc, structTy};
         changed |= replacer.run(toDelete);
-      } else if (auto arrayTy = dyn_cast<POP::ArrayType>(
-                     ptrType.getResolvedElementType())) {
+      } else if (auto arrayTy =
+                     dyn_cast<POP::ArrayType>(ptrType.getElementAsType())) {
         ReplaceArray replacer{builder, alloc, arrayTy};
         changed |= replacer.run(toDelete);
       }

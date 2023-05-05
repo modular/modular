@@ -145,7 +145,7 @@ LogicalResult SIMDShuffleOp::verify() {
   if (!size)
     return success();
   auto maskType = cast<VariadicType>(getMask().getType());
-  if (maskType.getResolvedElementType() != Builder(getContext()).getIndexType())
+  if (!isa<IndexType>(maskType.getElementAsType()))
     return emitOpError("expected mask to be a list of indices");
   auto mask = dyn_cast_or_null<VariadicAttr>(getMask());
   if (!mask)
@@ -295,9 +295,8 @@ void StructReplaceOp::build(OpBuilder &b, OperationState &state, Value value,
 
 LogicalResult StructGEPOp::verify() {
   return verifyStructValueType(
-      *this,
-      cast<StructType>(getContainer().getType().getResolvedElementType()),
-      getIndexAttr(), ParamRefType::get(getType().getElementType()), "result");
+      *this, cast<StructType>(getContainer().getType().getElementAsType()),
+      getIndexAttr(), getType().getElementAsType(), "result");
 }
 
 LogicalResult StructGEPOp::inferReturnTypes(
@@ -312,7 +311,7 @@ LogicalResult StructGEPOp::inferReturnTypes(
   auto pointerType = dyn_cast<PointerType>(operands.front().getType());
   if (!pointerType)
     return emitError("expected pointer operand");
-  auto structType = dyn_cast<StructType>(pointerType.getResolvedElementType());
+  auto structType = dyn_cast<StructType>(pointerType.getElementAsType());
   FailureOr<TypedAttr> type =
       inferStructElementType<StructExtractOp>(emitError, structType, attrs);
   if (succeeded(type))
@@ -395,7 +394,7 @@ static Type getPointerToArrayElementType(Type arrayPtr) {
   auto ptr = dyn_cast<PointerType>(arrayPtr);
   if (!ptr)
     return Type();
-  auto array = dyn_cast<POP::ArrayType>(ptr.getResolvedElementType());
+  auto array = dyn_cast<POP::ArrayType>(ptr.getElementAsType());
   return array ? PointerType::get(array.getElementType()) : Type();
 }
 
@@ -648,14 +647,14 @@ static ParseResult parseGlobalConstantOpValue(OpAsmParser &p, TypedAttr &value,
 
 static void printGlobalConstantOpValue(OpAsmPrinter &p, Operation *,
                                        TypedAttr value, Type type) {
-  printColonTypeOrIndex(p, cast<PointerType>(type).getResolvedElementType());
+  printColonTypeOrIndex(p, cast<PointerType>(type).getElementAsType());
   p << " = <";
   printParamValue(p, value);
   p << ">";
 }
 
 LogicalResult GlobalConstantOp::verify() {
-  if (getResult().getType().getResolvedElementType())
+  if (!isa<ParamRefType>(getResult().getType().getElementAsType()))
     return success();
   return emitOpError("must have a concrete element type");
 }
@@ -772,7 +771,7 @@ static Type getCmpXChgResultType(Type type) {
   auto pointerType = dyn_cast<PointerType>(type);
   if (!pointerType)
     return nullptr;
-  auto eltType = pointerType.getResolvedElementType();
+  auto eltType = pointerType.getElementAsType();
   auto boolType =
       SIMDType::get(1, DTypeConstantAttr::get(type.getContext(), DType::kBool));
   return POP::StructType::get({eltType, boolType});

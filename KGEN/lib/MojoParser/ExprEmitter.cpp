@@ -213,7 +213,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
     representation = LValueBufferTaken(); // Buffer used!
 
     auto varOp = cast<VarLetDeclOp>(opDest);
-    assert(isa<UnresolvedType>(varOp.getType().getResolvedElementType()) &&
+    assert(isa<UnresolvedType>(varOp.getType().getElementAsType()) &&
            "Cannot resolve an already-resolved vardecl");
     varOp.getResult().setType(POP::PointerType::get(resultType));
     return SLValue(varOp);

@@ -2459,8 +2459,7 @@ LogicalResult DeclResolver::resolveSignature(VarLetDeclOp varOp, Lexer &lexer,
     assert(varOp->hasOneUse() && "Should have one use");
     varOp->moveBefore(*varOp->user_begin());
 
-    assert(!isa_and_nonnull<UnresolvedType>(
-               varOp.getType().getResolvedElementType()) &&
+    assert(!isa<UnresolvedType>(varOp.getType().getElementAsType()) &&
            "RValue emission should have inferred var type");
 
   } else if (parsedType) {

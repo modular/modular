@@ -839,3 +839,11 @@ fn passFieldToOwnedInt(owned a: MemExample):
   takeOwnedInt(a.x)
 
   # CHECK-NEXT: kgen.param.constant: !lit.none
+
+
+# Generic type: Issue #14018
+struct MyGenericType[Type: AnyType]:
+    var value: Type
+
+    fn __init__(self&, v: Type):
+        self.value = v

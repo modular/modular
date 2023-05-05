@@ -89,16 +89,13 @@ static LogicalResult getCTypeForType(FuncOp func, Type t,
   }
 
   if (auto ptr = dyn_cast<POP::PointerType>(t)) {
-    if (Type type = ptr.getResolvedElementType()) {
-      ErrorOr<std::string> elementaryType = getCTypeForElementary(type);
-      // If the type is not elementary, then pass it as an opaque pointer.
-      if (elementaryType.isError())
-        types.push_back("void *");
-      else
-        types.push_back(elementaryType.takeValue() + "*");
-    } else {
+    ErrorOr<std::string> elementaryType =
+        getCTypeForElementary(ptr.getElementAsType());
+    // If the type is not elementary, then pass it as an opaque pointer.
+    if (elementaryType.isError())
       types.push_back("void *");
-    }
+    else
+      types.push_back(elementaryType.takeValue() + "*");
     return success();
   }
 
@@ -106,7 +103,7 @@ static LogicalResult getCTypeForType(FuncOp func, Type t,
     if (!*array.getResolvedSize())
       return success();
 
-    if (failed(getCTypeForType(func, array.getResolvedElementType(), types)))
+    if (failed(getCTypeForType(func, array.getElementAsType(), types)))
       return failure();
     types.back() += ("[" + Twine(*array.getResolvedSize()) + "]").str();
     return success();

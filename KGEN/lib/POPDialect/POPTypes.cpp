@@ -40,10 +40,14 @@ std::optional<int64_t> POP::ArrayType::getResolvedSize() const {
   return {};
 }
 
-Type POP::ArrayType::getResolvedElementType() const {
-  if (auto typeCst = dyn_cast_if_present<TypeConstantAttr>(getElementType()))
+Type POP::ArrayType::getElementAsType() const {
+  TypedAttr eltType = getElementType();
+  if (!eltType)
+    return {};
+  if (auto typeCst = dyn_cast_if_present<TypeConstantAttr>(eltType))
     return typeCst.getValue();
-  return nullptr;
+  assert(::isa<MLIRTypeType>(eltType.getType()));
+  return ParamRefType::get(eltType);
 }
 
 POP::ArrayType POP::ArrayType::get(TypedAttr size, TypedAttr elementType) {
@@ -73,11 +77,11 @@ POP::ArrayType POP::ArrayType::get(ValueRange elements) {
 /// aligned element.
 std::optional<int64_t>
 POP::ArrayType::getTypeSize(TargetInfoAttr target) const {
-  Type elementType = getResolvedElementType();
   std::optional<int64_t> size = getResolvedSize();
-  if (!elementType || !size)
+  if (!size)
     return {};
 
+  Type elementType = getElementAsType();
   std::optional<int64_t> elementAllocSize =
       DataLayoutInterface::getTypeAllocSize(target, elementType);
   if (!elementAllocSize)
@@ -89,15 +93,13 @@ POP::ArrayType::getTypeSize(TargetInfoAttr target) const {
 /// The alignment of the array is the alignment of the element type.
 std::optional<int64_t>
 POP::ArrayType::getTypeAlign(TargetInfoAttr target) const {
-  Type elementType = getResolvedElementType();
-  if (!elementType)
-    return {};
+  Type elementType = getElementAsType();
   return DataLayoutInterface::getTypeABIAlign(target, elementType);
 }
 
 ErrorOrSuccess POP::ArrayType::writeTo(TypedAttr value, int64_t addr,
                                        InterpreterState &state) const {
-  auto dl = getResolvedElementType().cast<DataLayoutInterface>();
+  auto dl = getElementAsType().cast<DataLayoutInterface>();
   // Store each element spaced apart by padding according to its alignment.
   int64_t offset = llvm::alignTo(*dl.getTypeSize(state.getTarget()),
                                  *dl.getTypeAlign(state.getTarget()));
@@ -112,8 +114,8 @@ ErrorOrSuccess POP::ArrayType::writeTo(TypedAttr value, int64_t addr,
 
 ErrorOr<TypedAttr> POP::ArrayType::readFrom(int64_t addr,
                                             InterpreterState &state) const {
-  Type elemType = getResolvedElementType();
-  auto dl = getResolvedElementType().cast<DataLayoutInterface>();
+  Type elemType = getElementAsType();
+  auto dl = elemType.cast<DataLayoutInterface>();
   int64_t offset = llvm::alignTo(*dl.getTypeSize(state.getTarget()),
                                  *dl.getTypeAlign(state.getTarget()));
   SmallVector<TypedAttr> values;
@@ -137,10 +139,13 @@ LogicalResult PointerType::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
-Type PointerType::getResolvedElementType() const {
-  if (auto typeCst = llvm::dyn_cast<TypeConstantAttr>(getElementType()))
+Type PointerType::getElementAsType() const {
+  TypedAttr elemType = getElementType();
+  if (auto typeCst = llvm::dyn_cast<TypeConstantAttr>(elemType))
     return typeCst.getValue();
-  return nullptr;
+  assert(::isa<MLIRTypeType>(elemType.getType()) &&
+         "parameter expr must have metatype type");
+  return ParamRefType::get(elemType);
 }
 
 PointerType PointerType::get(TypedAttr elementType) {
@@ -462,8 +467,8 @@ POP::PackType::verify(function_ref<InFlightDiagnostic()> emitError,
     return emitError() << "expected an operand of variadic type, but got "
                        << variadic.getType();
 
-  Type elementType = type.getResolvedElementType();
-  if (!elementType || !::isa<MLIRTypeType>(elementType))
+  Type elementType = type.getElementAsType();
+  if (!::isa<MLIRTypeType>(elementType))
     return emitError() << "expected a variadic type with a "
                           "!kgen.mlirtype element type, but got "
                        << elementType;
@@ -494,9 +499,7 @@ POP::PackType::getTypeAlign(TargetInfoAttr target) const {
   auto variadicType = ::dyn_cast<VariadicType>(variadic.getType());
   if (!variadicType)
     return {};
-  Type type = variadicType.getResolvedElementType();
-  if (!type)
-    return {};
+  Type type = variadicType.getElementAsType();
   return DataLayoutInterface::getTypeABIAlign(target, type);
 }
 

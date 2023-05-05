@@ -62,9 +62,8 @@ def POP_ArrayType : POPType<"Array", "array", [
   let extraClassDeclaration = [{
     /// Try to narrow the size expression to an integer.
     std::optional<int64_t> getResolvedSize() const;
-    /// Try to narrow the type expression of the array element type to an MLIR
-    /// type.
-    Type getResolvedElementType() const;
+    /// Return the elementType attribute as a type.
+    Type getElementAsType() const;
   }];
 }
 
@@ -120,12 +119,12 @@ def POP_PointerType : POPType<"Pointer", "pointer",
   ];
 
   let extraClassDeclaration = [{
-    /// Try to narrow the type expression of the pointer type to an MLIR type.
-    Type getResolvedElementType() const;
+    /// Return the elementType attribute as a type.
+    Type getElementAsType() const;
 
     /// Get the element type as the provided type.
     template <typename ElTy>
-    ElTy getElementTypeAs() { return getResolvedElementType().cast<ElTy>(); }
+    ElTy getElementAs() { return getElementAsType().cast<ElTy>(); }
   }];
 }
 
@@ -139,7 +138,7 @@ class PointerElementType<string lhs, string rhs> : TypesMatchWith<
 class PointerOf<Type type> : ConfinedType<POP_PointerType,
     [CPred<"$_self.cast<POP::PointerType>().getElementType()">,
      SubstLeaves<"$_self",
-      "$_self.cast<POP::PointerType>().getResolvedElementType()",
+      "$_self.cast<POP::PointerType>().getElementAsType()",
       type.predicate>],
     "pointer to " # type.summary> {
   let cppClassName = "::M::KGEN::POP::PointerType";

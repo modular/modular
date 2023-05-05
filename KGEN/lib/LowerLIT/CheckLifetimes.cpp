@@ -489,12 +489,11 @@ ValueRef ValueSet::getValueRef(Value value) const {
       return {};
 
     // Figure out what subset of elements we have indexed to.
-    auto containerType =
-        structGEP.getContainer().getType().getResolvedElementType();
+    auto containerType = structGEP.getContainer().getType().getElementAsType();
     unsigned fieldOffset = typeDeclInfo.getFieldIndex(
         cast<DeclRefType>(containerType), structGEP.getFieldAttr());
     unsigned startBit = baseVal.startBit + fieldOffset;
-    auto resultType = structGEP.getType().getResolvedElementType();
+    auto resultType = structGEP.getType().getElementAsType();
     return ValueRef{baseVal.valueId, startBit,
                     startBit + typeDeclInfo.getNumFieldsInType(resultType),
                     /*isIndirect=*/true};
