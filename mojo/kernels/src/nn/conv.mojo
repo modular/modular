@@ -249,7 +249,7 @@ struct Naive2dConvolution[
         naive2d_convolution._outer_loop()
 
     fn __init__(
-        self&,
+        inout self,
         output: ImageData[static_output_shape, type, static_data_layout],
         input: ImageData[static_input_shape, type, static_data_layout],
         filter: ImageData[static_filter_shape, type, static_filter_layout],
@@ -491,7 +491,7 @@ struct PackIm2ColNCHW[
                 self._pack_zeros_for_k(k_idx)
 
     fn __init__(
-        self&,
+        inout self,
         origin_image: NDBuffer[4, static_original_shape, type],
         packed_matrix: NDBuffer[3, static_packed_shape, type],
         conv_shape: ConvShape,
@@ -1030,7 +1030,7 @@ struct ConvIm2ColNCHW[
             a: NDBuffer[2, DimList.create_unknown[2](), type](),
         }
 
-    fn _run_implicit_matmul(self&):
+    fn _run_implicit_matmul(inout self):
         """Wrapper utility funciton: Allocates packing space on the stack and
         run the matmul routine on the whole problem space.
         """
@@ -1057,7 +1057,7 @@ struct ConvIm2ColNCHW[
             self.batch_idx += 1
 
     # Iterate over the K dimension of the gemm space.
-    fn _outer_k_loop(self&, b_packed: NDBuffer[3, packed_shape, type]):
+    fn _outer_k_loop(inout self, b_packed: NDBuffer[3, packed_shape, type]):
         """Iterate on the K dimension of the whole problem space.
 
         Args:
@@ -1351,7 +1351,7 @@ struct ConvIm2ColNCHW[
             row_idx += RowSize
         return row_idx
 
-    fn _initialize_buffer_view(self&):
+    fn _initialize_buffer_view(inout self):
         """Initializes the internal gemm operand tensors with the translated
         dynamic gemm shapes from convolution shapes.
         """
@@ -2037,7 +2037,7 @@ struct ConvIm2ColNHWC[
         )
 
     fn __init__(
-        self&,
+        inout self,
         out: NDBuffer[4, shape_output, type],
         input: NDBuffer[4, shape_input, type],
         filter: NDBuffer[4, shape_filter, type],
