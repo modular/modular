@@ -96,7 +96,7 @@ bool ParameterAttr::compare(Attribute lhs, Attribute rhs) {
     if (auto result = llvm::cast<ParameterAttr>(lhs).isLessThan(rhs))
       return *result;
     if (auto result = llvm::cast<ParameterAttr>(rhs).isLessThan(lhs))
-      return *result;
+      return !*result;
     return false;
   }
   if (isSimpleConstant(lhs))
