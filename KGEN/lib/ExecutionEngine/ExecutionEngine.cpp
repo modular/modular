@@ -17,11 +17,13 @@
 #include "llvm/ExecutionEngine/Orc/DebuggerSupportPlugin.h"
 #include "llvm/ExecutionEngine/Orc/ELFNixPlatform.h"
 #include "llvm/ExecutionEngine/Orc/EPCDebugObjectRegistrar.h"
+#include "llvm/ExecutionEngine/Orc/EPCDynamicLibrarySearchGenerator.h"
 #include "llvm/ExecutionEngine/Orc/MachOPlatform.h"
 #include "llvm/ExecutionEngine/Orc/ObjectLinkingLayer.h"
 #include "llvm/IR/Mangler.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/Base64.h"
+#include "llvm/Support/Process.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/TargetParser/Host.h"
 
@@ -169,16 +171,14 @@ static ErrorOrSuccess writeORCRTToFile(BufferRef &buf, std::string &outPath) {
   if (tmpfileOr.isError())
     return tmpfileOr.takeError();
 
-  TempFile tmpFile = tmpfileOr.takeValue();
-
   // Write the runtime to the temp file.
-  llvm::raw_fd_ostream tmp(tmpFile.getPath().string(), ec);
+  llvm::raw_fd_ostream tmp(tmpfileOr->getFD(), /*shouldClose=*/false);
   if (ec)
     return Error(ec.message());
 
   tmp << buf->getBuffer();
-  outPath = tmpFile.getPath().string();
-  tmpFile.keep();
+  outPath = tmpfileOr->getPath().string();
+  tmpfileOr->keep();
   return success();
 }
 
@@ -196,16 +196,20 @@ setupPlatform(StringRef orcRTPath, const llvm::DataLayout &dataLayout,
   // No path to the orc runtime, exit early.
   if (orcRTPath.empty())
     return success();
+  const llvm::Triple &tt = session.getTargetTriple();
 
   // Add the current process symbols in.
-  if (auto generator =
-          llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
-              dataLayout.getGlobalPrefix()))
-    platformStdlib.addGenerator(std::move(*generator));
-  else
-    return Error(toString(generator.takeError()));
+  // NOTE: COFF JIT currently doesn't support in process symbols, as it can
+  // currently hit conflicts with symbols in the current COFF ORC runtime.
+  if (!tt.isOSBinFormatCOFF()) {
+    if (auto generator =
+            llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
+                dataLayout.getGlobalPrefix()))
+      platformStdlib.addGenerator(std::move(*generator));
+    else
+      return Error(toString(generator.takeError()));
+  }
 
-  const llvm::Triple &tt = session.getTargetTriple();
   // TODO: (#10184) Ensure we have no memory leaks on linux platforms.
   if (tt.isOSBinFormatELF())
     return success();
@@ -226,25 +230,29 @@ setupPlatform(StringRef orcRTPath, const llvm::DataLayout &dataLayout,
       return Error(toString(platform.takeError()));
   } else if (tt.isOSBinFormatCOFF()) {
     // Windows needs some help to load dylibs, apparently.
-    auto loadDynamicLibrary = [tt,
-                               &dataLayout](llvm::orc::JITDylib &jd,
-                                            StringRef dllName) -> llvm::Error {
+    auto loadDynamicLibrary = [&session](llvm::orc::JITDylib &jd,
+                                         StringRef dllName) -> llvm::Error {
       if (!dllName.endswith_insensitive(".dll"))
         return llvm::make_error<llvm::StringError>(
             "DLLName not ending with .dll", llvm::inconvertibleErrorCode());
 
-      if (auto dylibGeneratorOr =
-              llvm::orc::DynamicLibrarySearchGenerator::Load(
-                  dllName.data(), dataLayout.getGlobalPrefix()))
-        jd.addGenerator(std::move(*dylibGeneratorOr));
-      else
-        return dylibGeneratorOr.takeError();
+      // Get or create a dylib for this DLL.
+      auto *libJD = session.getJITDylibByName(dllName);
+      if (!libJD) {
+        auto generatorOr = llvm::orc::EPCDynamicLibrarySearchGenerator::Load(
+            session, dllName.data());
+        if (!generatorOr)
+          return generatorOr.takeError();
+        libJD = &session.createBareJITDylib(dllName.str());
+        libJD->addGenerator(std::move(*generatorOr));
+      }
+      jd.addToLinkOrder(*libJD);
       return llvm::Error::success();
     };
 
     if (auto platform = llvm::orc::COFFPlatform::Create(
             session, cast<llvm::orc::ObjectLinkingLayer>(objLinkingLayer),
-            platformStdlib, orcRTPath.data(), loadDynamicLibrary))
+            platformStdlib, orcRTPath.data(), std::move(loadDynamicLibrary)))
       session.setPlatform(std::move(*platform));
     else
       return Error(toString(platform.takeError()));
@@ -283,16 +291,20 @@ ExecutionEngine::create(ExecutionEngineOptions options,
                         const llvm::TargetMachine &tm) {
   // Create the data layout from the target machine.
   const llvm::DataLayout &layout = tm.createDataLayout();
+  const llvm::Triple &tt = tm.getTargetTriple();
 
   // Construct the ExecutionSession. The user may have passed in an
   // ExecutorProcessControl that we need to use.
   std::unique_ptr<llvm::orc::ExecutorProcessControl> epc =
       std::move(options.epc);
   if (!epc) {
-    auto epcOr = llvm::orc::SelfExecutorProcessControl::Create();
-    if (!epcOr)
-      return Error(toString(epcOr.takeError()));
-    epc = std::move(*epcOr);
+    auto pageSize = llvm::sys::Process::getPageSize();
+    if (!pageSize)
+      return Error(toString(pageSize.takeError()));
+    epc = std::make_unique<llvm::orc::SelfExecutorProcessControl>(
+        std::make_shared<llvm::orc::SymbolStringPool>(),
+        std::make_unique<llvm::orc::DynamicThreadPoolTaskDispatcher>(), tt,
+        *pageSize, /*MemMgr=*/nullptr);
   }
   auto sessionPtr =
       std::make_unique<llvm::orc::ExecutionSession>(std::move(epc));
@@ -300,8 +312,6 @@ ExecutionEngine::create(ExecutionEngineOptions options,
   // Now we can actually create the ExecutionEngine.
   auto ee = std::unique_ptr<ExecutionEngine>(
       new ExecutionEngine(std::move(sessionPtr), layout));
-
-  const llvm::Triple &tt = tm.getTargetTriple();
 
   // Get the ORC runtime binary.
   auto orcRTBuf = getORCRT();
@@ -447,6 +457,8 @@ void ExecutionEngine::addToSearchOrder(StringRef name,
                                        llvm::orc::JITDylib *dylib) {
   auto [_, didInsert] = knownDylibs.insert(name);
   assert(didInsert && "must have uniquely-named dylibs");
-  searchOrder.emplace_back(dylib,
-                           llvm::orc::JITDylibLookupFlags::MatchAllSymbols);
+
+  // Use higher preference for newer dylibs.
+  searchOrder.insert(searchOrder.begin(),
+                     {dylib, llvm::orc::JITDylibLookupFlags::MatchAllSymbols});
 }
