@@ -42,8 +42,9 @@ static bool matchesAnyPrefix(StringRef line, const Prefixes &prefixes) {
 
 static bool isFunctionOrStructDeclaration(StringRef code) {
   static constexpr auto kPrefixes = {
-      "fn ",     "def ",   "struct ",           "@adaptive", "@always_inline",
-      "@export", "@value", "@register_passable"};
+      "fn ",      "def ",    "struct ", "@adaptive",          "@always_inline",
+      "@closure", "@export", "@value",  "@register_passable",
+  };
   return matchesAnyPrefix(code, kPrefixes);
 }
 
