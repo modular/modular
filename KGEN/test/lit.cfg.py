@@ -55,7 +55,6 @@ tools = [
     "llvm-objdump",
     "kgen",
     "kgen-opt",
-    "kgen-execute",
     "kgen-translate",
     "mojo",
     "mojo-lsp-server",

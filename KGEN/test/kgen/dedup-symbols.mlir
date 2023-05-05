@@ -1,4 +1,4 @@
-// RUN: kgen-execute -execute -func="kernel:()" %s | FileCheck %s
+// RUN: kgen -execute -func="kernel:()" %s | FileCheck %s
 
 kgen.func @nested1() {
   kgen.return

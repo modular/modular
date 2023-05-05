@@ -1,4 +1,4 @@
-// RUN: kgen-execute %s -execute -func="exec_exp:f32()" -func="void:()" | FileCheck %s
+// RUN: kgen %s -execute -func="exec_exp:f32()" -func="void:()" | FileCheck %s
 
 kgen.func @"exp_intrinsic_f32,type=f32"(%arg0: f32) -> f32 {
   %0 = "llvm.intr.exp"(%arg0) : (f32) -> f32

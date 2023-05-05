@@ -1,4 +1,4 @@
-// RUN: not kgen-execute %s -execute -func="unhandled:i31()" 2>&1 >/dev/null | FileCheck -check-prefix=BADSIG %s
+// RUN: not kgen %s -execute -func="unhandled:i31()" 2>&1 >/dev/null | FileCheck -check-prefix=BADSIG %s
 
 // BADSIG: unhandled signature: i31()
 kgen.func @unhandled() -> i31 {
