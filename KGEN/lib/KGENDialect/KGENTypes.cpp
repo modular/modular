@@ -548,10 +548,13 @@ LogicalResult VariadicType::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
-Type VariadicType::getResolvedElementType() const {
-  if (auto typeCst = llvm::dyn_cast<TypeConstantAttr>(getElementType()))
+Type VariadicType::getElementAsType() const {
+  TypedAttr eltType = getElementType();
+  if (auto typeCst = llvm::dyn_cast<TypeConstantAttr>(eltType))
     return typeCst.getValue();
-  return nullptr;
+  assert(::isa<MLIRTypeType>(eltType.getType()) &&
+         "parameter expr must have metatype type");
+  return ParamRefType::get(eltType);
 }
 
 VariadicType VariadicType::get(TypedAttr elementType) {

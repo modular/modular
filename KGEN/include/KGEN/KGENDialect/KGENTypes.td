@@ -346,8 +346,8 @@ def KGEN_VariadicType : KGENType<"Variadic", "variadic", [
   ];
 
   let extraClassDeclaration = [{
-    /// Try to narrow the type expression of the element type to an MLIR type.
-    Type getResolvedElementType() const;
+    /// Return the elementType attribute as a type.
+    Type getElementAsType() const;
   }];
 }
 

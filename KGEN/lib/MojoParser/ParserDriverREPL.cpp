@@ -356,7 +356,7 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
   // Returns nullptr otherwise.
   auto checkInsertPersistentVar = [&](Operation *varOp, StringAttr name,
                                       POP::PointerType type) {
-    mlir::Type elementType = type.getResolvedElementType();
+    mlir::Type elementType = type.getElementAsType();
 
     // Check if the variable should be persisted.
     if (!listener.shouldPersistVariable(name, elementType))

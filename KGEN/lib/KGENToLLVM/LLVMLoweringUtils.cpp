@@ -149,19 +149,17 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
   // Convert pointer types to LLVM pointer types. If the element type is
   // unspecified, return an opaque pointer.
   addConversion([=](POP::PointerType pointer) -> std::optional<Type> {
-    if (Type type = pointer.getResolvedElementType())
-      if (Type elementType = convertType(type))
-        return LLVM::LLVMPointerType::get(elementType);
+    if (Type elementType = convertType(pointer.getElementAsType()))
+      return LLVM::LLVMPointerType::get(elementType);
     return LLVM::LLVMPointerType::get(pointer.getContext());
   });
 
   // Convert array types to LLVM array types.
   addConversion([=](POP::ArrayType array) -> std::optional<Type> {
     std::optional<int64_t> size = array.getResolvedSize();
-    Type elementType = array.getResolvedElementType();
-    if (!size || !elementType)
+    if (!size)
       return {};
-    elementType = convertType(elementType);
+    Type elementType = convertType(array.getElementAsType());
     if (!elementType)
       return {};
     return LLVM::LLVMArrayType::get(elementType, *size);
@@ -276,10 +274,7 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
   // Variadic types are converted to a struct representing a pointer to the
   // elements of the sequence, and the sequence size.
   addConversion([=](KGEN::VariadicType variadic) -> std::optional<Type> {
-    Type elementType = variadic.getResolvedElementType();
-    if (!elementType)
-      return {};
-    Type convertedType = convertType(elementType);
+    Type convertedType = convertType(variadic.getElementAsType());
     if (!convertedType)
       return {};
 
@@ -759,8 +754,7 @@ Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b,
   // Convert variadic sequence constants to an LLVM struct constant.
   if (auto variadic = dyn_cast<KGEN::VariadicAttr>(attr)) {
     // 1. Allocate space for an array of elements.
-    Type elementType =
-        tc.convertType(variadic.getType().getResolvedElementType());
+    Type elementType = tc.convertType(variadic.getType().getElementAsType());
     if (!elementType)
       return {};
 

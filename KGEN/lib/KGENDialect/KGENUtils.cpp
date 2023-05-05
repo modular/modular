@@ -635,8 +635,7 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
     if (!varTy)
       return p.emitError(p.getCurrentLocation(),
                          "expected a variadic type for 'get_all_impls'");
-    auto sigTy =
-        dyn_cast_or_null<SignatureType>(varTy.getResolvedElementType());
+    auto sigTy = dyn_cast<SignatureType>(varTy.getElementAsType());
     if (!sigTy)
       return p.emitError(
           p.getCurrentLocation(),

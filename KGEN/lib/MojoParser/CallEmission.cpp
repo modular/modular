@@ -1374,8 +1374,8 @@ PValue OverloadSet::getCallee(ArrayRef<ASTDecl *> fnDecls, StringRef baseName,
   StringRef name = cast<LIT::FuncOp>(*fnDecls.front()).getName();
   StringAttr declName = emitter.builder->getStringAttr(
       Twine("(adaptive)") + name + Twine(line) + "_" + Twine(col));
-  auto decl = ParamDeclAttr::get(
-      declName, variadicSetAttr.getType().getResolvedElementType());
+  auto decl = ParamDeclAttr::get(declName,
+                                 variadicSetAttr.getType().getElementAsType());
   emitter.builder->create<ParamForkOp>(
       emitter.translateLocation(expr->getLoc()), decl, variadicSetAttr);
   return PValue(ParamDeclRefAttr::get(decl));

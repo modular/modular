@@ -731,9 +731,9 @@ ErrorTreeOr<SuccessType>
 StackAllocationOp::interpret(ArrayRef<Attribute> operands,
                              InterpreterState &state) {
   auto count = dyn_cast<IntegerAttr>(getCount());
-  Type type = cast<PointerType>(getType()).getResolvedElementType();
-  if (!count || !type)
+  if (!count)
     return ErrorTree(getLoc(), "not concrete");
+  Type type = cast<PointerType>(getType()).getElementAsType();
   std::optional<int64_t> size =
       DataLayoutInterface::getTypeAllocSize(state.getTarget(), type);
   if (!size)
@@ -799,7 +799,7 @@ POP::StructGEPOp::interpret(ArrayRef<Attribute> operands,
     return ErrorTree(getLoc(), "non-constant inputs");
 
   int64_t offset = 0;
-  auto structType = getContainer().getType().getElementTypeAs<StructType>();
+  auto structType = getContainer().getType().getElementAs<StructType>();
 
   // Move the address over the elements before the one we are reading.
   unsigned index = getIndexAttr().getInt();
@@ -900,8 +900,8 @@ ErrorTreeOr<SuccessType> ArrayGEPOp::interpret(ArrayRef<Attribute> operands,
   if (!ptr || !index)
     return ErrorTree(getLoc(), "non-constant inputs");
 
-  auto arrayType = getArray().getType().getElementTypeAs<POP::ArrayType>();
-  auto dl = cast<DataLayoutInterface>(arrayType.getResolvedElementType());
+  auto arrayType = getArray().getType().getElementAs<POP::ArrayType>();
+  auto dl = cast<DataLayoutInterface>(arrayType.getElementAsType());
   int64_t addr =
       ptr.getAddr() +
       index.getInt() * (llvm::alignTo(*dl.getTypeSize(state.getTarget()),

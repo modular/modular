@@ -535,7 +535,7 @@ LogicalResult ConvertPOPStackAllocation::matchAndRewrite(
 
   // Compute the bytecount of the allocated buffer.
   std::optional<int64_t> typeAllocSize = DataLayoutInterface::getTypeAllocSize(
-      target, cast<PointerType>(op.getType()).getResolvedElementType());
+      target, cast<PointerType>(op.getType()).getElementAsType());
   if (!typeAllocSize)
     return op.emitError("could not get size of variadic element");
 
@@ -814,7 +814,7 @@ LogicalResult ConvertPOPVariadicCreate::matchAndRewrite(
     VariadicCreateOp op, VariadicCreateOpAdaptor adaptor,
     ConversionPatternRewriter &rewriter) const {
   // 1. Allocate space for an array of elements.
-  Type opElementType = op.getType().getResolvedElementType();
+  Type opElementType = op.getType().getElementAsType();
   std::optional<int64_t> typeAllocSize =
       DataLayoutInterface::getTypeAllocSize(target, opElementType);
   std::optional<int64_t> typeABIAlign =
