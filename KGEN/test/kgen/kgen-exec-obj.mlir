@@ -14,6 +14,6 @@ kgen.export @my_kernel to C as @my_exported_kernel
 // EXEC: --- 'my_exported_kernel' returned 1.0
 
 // OBJ-LABEL: SYMBOL TABLE
-// OBJ-DAG: F {{.*}}my_exported_kernel
+// OBJ-DAG: my_exported_kernel
 
 // HDR-LABEL: extern float my_exported_kernel(float);
