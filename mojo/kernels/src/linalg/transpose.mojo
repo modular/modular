@@ -378,8 +378,8 @@ fn _fill_strides[
 fn _collapse_unpermuted_dims[
     rank: Int, tuple_size: Int
 ](
-    simplified_shape&: StaticIntTuple[tuple_size],
-    simplified_perms&: StaticIntTuple[tuple_size],
+    inout simplified_shape: StaticIntTuple[tuple_size],
+    inout simplified_perms: StaticIntTuple[tuple_size],
     dim: Int,
 ):
     let merged_dim = simplified_perms[dim]
@@ -403,8 +403,8 @@ fn _collapse_unpermuted_dims[
 fn _delete_size_1_dim[
     rank: Int, tuple_size: Int
 ](
-    simplified_shape&: StaticIntTuple[tuple_size],
-    simplified_perms&: StaticIntTuple[tuple_size],
+    inout simplified_shape: StaticIntTuple[tuple_size],
+    inout simplified_perms: StaticIntTuple[tuple_size],
     dim: Int,
 ):
     for j in range(dim, rank - 1):
@@ -425,9 +425,9 @@ fn _delete_size_1_dim[
 fn _simplify_transpose_perms_impl[
     rank: Int, tuple_size: Int
 ](
-    simplified_rank&: Int,
-    simplified_shape&: StaticIntTuple[tuple_size],
-    simplified_perms&: StaticIntTuple[tuple_size],
+    inout simplified_rank: Int,
+    inout simplified_shape: StaticIntTuple[tuple_size],
+    inout simplified_perms: StaticIntTuple[tuple_size],
 ):
     @parameter
     if rank < 2:
@@ -457,9 +457,9 @@ fn _simplify_transpose_perms_impl[
 fn _simplify_transpose_perms[
     rank: Int
 ](
-    simplified_rank&: Int,
-    simplified_shape&: StaticIntTuple[rank],
-    simplified_perms&: StaticIntTuple[rank],
+    inout simplified_rank: Int,
+    inout simplified_shape: StaticIntTuple[rank],
+    inout simplified_perms: StaticIntTuple[rank],
 ):
     """Simplify the given permutation pattern.
 
