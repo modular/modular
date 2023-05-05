@@ -204,6 +204,16 @@ LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
 // createTargetMachine
 //===----------------------------------------------------------------------===//
 
+/// Return the code model to use given the target triple.
+static std::optional<llvm::CodeModel::Model>
+getCodeModel(const llvm::Triple &triple) {
+  // When compiling on coff, use a large code model to account for large
+  // relocations at JIT time.
+  if (triple.isOSBinFormatCOFF())
+    return llvm::CodeModel::Large;
+  return std::nullopt;
+}
+
 ErrorOr<std::unique_ptr<llvm::TargetMachine>>
 KGEN::createTargetMachine(const CompilationOptions &options, bool isJIT) {
   std::string errorMessage;
@@ -213,11 +223,12 @@ KGEN::createTargetMachine(const CompilationOptions &options, bool isJIT) {
     return Error("no target exists for '" + options.targetTriple +
                  "': " + errorMessage);
 
+  llvm::Triple targetTriple(options.targetTriple);
   std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
       options.targetTriple, options.targetCpu, options.targetFeatures,
-      /*Options=*/{},
-      /*RM=*/llvm::Reloc::Model::PIC_,
-      /*CM=*/std::nullopt, /*OL=*/options.getCodeGenOptLevel(), /*JIT=*/isJIT));
+      /*Options=*/{}, /*RM=*/llvm::Reloc::Model::PIC_,
+      /*CM=*/getCodeModel(targetTriple), /*OL=*/options.getCodeGenOptLevel(),
+      /*JIT=*/isJIT));
   if (!machine)
     return Error("unable to create target machine");
 
@@ -238,9 +249,10 @@ ErrorOr<TargetInfoAttr> KGEN::getTargetInfoFor(MLIRContext *ctx,
   if (!target)
     return Error("could not construct host target info: " + errorMessage);
 
-  std::unique_ptr<llvm::TargetMachine> machine(
-      target->createTargetMachine(targetTriple, cpu, features, /*Options=*/{},
-                                  /*RM=*/llvm::Reloc::Model::PIC_, /*CM=*/{}));
+  llvm::Triple triple(targetTriple);
+  std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
+      targetTriple, cpu, features, /*Options=*/{},
+      /*RM=*/llvm::Reloc::Model::PIC_, /*CM=*/getCodeModel(triple)));
   if (!machine)
     return Error("failed to create target machine for data layout lookup");
 
@@ -249,8 +261,8 @@ ErrorOr<TargetInfoAttr> KGEN::getTargetInfoFor(MLIRContext *ctx,
   assert(!dl.isError() && "failed to parse LLVM data layout?");
 
   // Return a TargetInfoAttr built for the host.
-  return TargetInfoAttr::get(ctx, llvm::Triple(targetTriple), cpu, features,
-                             std::move(*dl), kPreferredSIMDBitWidth);
+  return TargetInfoAttr::get(ctx, triple, cpu, features, std::move(*dl),
+                             kPreferredSIMDBitWidth);
 }
 
 //===----------------------------------------------------------------------===//
@@ -346,7 +358,8 @@ static ExportMap getAllSymbols(ModuleOp theModule) {
 /// symbols from `mr` to a new MaterializationResponsibility we can forward to
 /// JITLink. For symbols that are in the object, but not in `mr`, notify the
 /// delegate that these symbols are also being code-generated so that we don't
-/// re-emit anything.
+/// re-emit anything. Returns nullptr if there were no symbols requiring
+/// materialization.
 static ErrorOr<std::unique_ptr<llvm::orc::MaterializationResponsibility>>
 processObjectFile(llvm::orc::MaterializationResponsibility &mr,
                   llvm::orc::ExecutionSession &session,
@@ -376,6 +389,14 @@ processObjectFile(llvm::orc::MaterializationResponsibility &mr,
     if ((flags & llvm::object::BasicSymbolRef::SF_Undefined))
       continue;
 
+    // Check that it's a function symbol.
+    auto typeOr = symbol.getType();
+    if (!typeOr)
+      return Error(llvm::toString(typeOr.takeError()));
+    auto type = *typeOr;
+    if (type != llvm::object::SymbolRef::ST_Function)
+      continue;
+
     llvm::orc::SymbolStringPtr namePtr = session.intern(*name);
     // If the MR doesn't already have this symbol in it, add it as a
     // callable. We're resolving it, so we may as well provide the
@@ -387,6 +408,8 @@ processObjectFile(llvm::orc::MaterializationResponsibility &mr,
                << "Delegating \"" << *namePtr << "\" to JITLink\n");
     symbolNames.insert(namePtr);
   }
+  if (symbolNames.empty() && symbolFlags.empty())
+    return nullptr;
 
   // Define all these symbols as 'materializing'.
   if (auto e = mr.defineMaterializing(symbolFlags))
@@ -459,6 +482,9 @@ void ObjectCompilerLayer::emit(
       error = delegatedOr.takeError();
       return mr->failMaterialization();
     }
+    // Check if we didn't have any symbols to delegate to the JIT.
+    if (!*delegatedOr)
+      continue;
 
     // And delegate these symbols to JITLink.
     baseLayer.emit(std::move(*delegatedOr), std::move(objectBuf));
