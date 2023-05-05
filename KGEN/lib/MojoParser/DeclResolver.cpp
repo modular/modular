@@ -767,15 +767,6 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
     }
   }
 
-  // Process any convention markers.
-  SMLoc ampLoc;
-  if (p.consumeIf(Token::amp, &ampLoc)) { // '&' => by-ref
-    if (convention != kConventionUnspec)
-      p.emitError(ampLoc, "argument already has a convention specified");
-    else
-      convention = kConventionInOut;
-  }
-
   // Parse an optional type annotation: `":" ["*"] expression`. Omit the colon
   // if a name was not specified.
   if (!name || p.consumeIf(Token::colon)) {

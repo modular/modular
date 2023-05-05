@@ -274,7 +274,7 @@ struct InMemoryStruct:
         return other
 
     fn fn_with_by_conventions(
-        inout self, inout arg: InMemoryStruct, *args&: InMemoryStruct
+        inout self, inout arg: InMemoryStruct, inout *args: InMemoryStruct
     ) -> InMemoryStruct:
         """This is a function summary.
 

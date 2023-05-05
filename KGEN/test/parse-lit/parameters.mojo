@@ -114,7 +114,7 @@ fn testTestParamStruct(a: TestParamStruct[(4).__as_mlir_index()]):
 # CHECK-LABEL: lit.func @"testSIMD(
 fn testSIMD(a: SIMD[DType.f64, 1],
             b: SIMD[DType.si32, 1],
-            ref&: SIMD[DType.si32, 1]):
+            inout ref: SIMD[DType.si32, 1]):
   # CHECK: %field1 = lit.varlet.decl {{.*}} : <scalar<f64>>
   var field1 = a.value
   # CHECK: %field2 = lit.varlet.decl {{.*}} : <scalar<si32>>

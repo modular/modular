@@ -478,6 +478,9 @@ def generate_tokens(
         "var": VAR,
         "let": LET,
         "__mlir_region": MLIR_REGION,
+        "owned": OWNED,
+        "borrowed": BORROWED,
+        "inout": INOUT,
     }
 
     strstart: Tuple[int, int]
