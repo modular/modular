@@ -1,4 +1,4 @@
-// RUN: kgen-execute %s -execute -func="main_capturing_region:index()" -func="closure_arg:index()" | FileCheck %s
+// RUN: kgen %s -execute -func="main_capturing_region:index()" -func="closure_arg:index()" | FileCheck %s
 
 kgen.func @capturing_region(%arg0: index) -> index {
     %idx4 = index.constant 4
