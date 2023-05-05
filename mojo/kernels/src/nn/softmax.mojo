@@ -27,8 +27,8 @@ fn reduce_add_simd[
     step_simd_width: Int,
     type: DType,
 ](
-    scalar&: SIMD[type, 1],
-    vector&: SIMD[type, simd_width],
+    inout scalar: SIMD[type, 1],
+    inout vector: SIMD[type, simd_width],
     val: SIMD[type, step_simd_width],
 ):
     """This functions adds val to either the scalar value or the vector value
