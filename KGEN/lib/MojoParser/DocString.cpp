@@ -57,7 +57,10 @@ DocString::DocString(StringRef rawDocString) {
 
   // Determine the minimum indentation (first line doesn't count).
   size_t indent = std::numeric_limits<size_t>::max();
-  for (StringRef line : lines.drop_front()) {
+  for (StringRef &line : lines.drop_front()) {
+    // Trim out any carriage returns.
+    line = line.trim("\r");
+
     if (line.empty())
       continue;
     indent = std::min(indent, getIndentationLevel(line));
@@ -67,7 +70,7 @@ DocString::DocString(StringRef rawDocString) {
 
   // Remove the necessary indentation from all but the first line, which has all
   // leading whitespace removed.
-  lines[0] = lines[0].ltrim();
+  lines[0] = lines[0].ltrim().rtrim("\r");
   if (indent) {
     for (size_t i = 1; i < lines.size(); ++i)
       if (!lines[i].empty())
