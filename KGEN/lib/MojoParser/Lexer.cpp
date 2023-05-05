@@ -456,6 +456,9 @@ void Lexer::lexString(const char *tokStart, ssize_t indentation) {
       if (isRaw) {
         if (curPtr == curBuffer.end())
           return emitErrorAt(tokStart, "unterminated string");
+        // Handle trailing windows style newline.
+        if (*curPtr == '\r' && curPtr[1] == '\n')
+          ++curPtr;
         ++curPtr;
         break;
       }
@@ -689,6 +692,12 @@ std::string Lexer::getStringLiteralValue(StringRef bytes) {
     auto c = bytes[i++];
     if (c != '\\' || isRaw) {
       result.push_back(c);
+
+      // Handle trailing windows style newline.
+      if (c == '\r' && i < end && bytes[i] == '\n') {
+        result.push_back('\n');
+        ++i;
+      }
       continue;
     }
 

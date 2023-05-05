@@ -683,11 +683,11 @@ fn strings():
 world"
 
     # COM: match newline hex values via regex since they vary between OSs
-    # CHECK: "hello \\\{{[0-9A-Z]+}}world"
+    # CHECK: "hello \\{{[\\0-9A-Z]+}}world"
     a = r"hello \
 world"
 
-    # CHECK:  "1'\0A2"
+    # CHECK:  "1'{{(\\0D)?}}\0A2"
     a = """1'
 2"""
 
@@ -695,7 +695,7 @@ world"
     a = '''1"\
 2'''
 
-    # CHECK:   "1\22\0A2"
+    # CHECK:   "1\22{{(\\0D)?}}\0A2"
     a = '''1"
 2'''
 
