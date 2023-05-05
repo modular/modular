@@ -15,22 +15,22 @@ struct my_iter:
     var end: Int
     var list: MyList
 
-    fn __copyinit__(self&, existing: Self):
+    fn __copyinit__(inout self, existing: Self):
         self.start = existing.start
         self.end = existing.end
         self.list = existing.list
 
-    fn __init__(self&, list: MyList):
+    fn __init__(inout self, list: MyList):
         self.start = 0
         self.end = list.size
         self.list = list
 
-    fn __next__(self&: my_iter) -> Int:
+    fn __next__(inout self: my_iter) -> Int:
         let result: Int = self.start
         self.start += 1
         return self.list[result]
 
-    fn __len__(self&: my_iter) -> Int:
+    fn __len__(inout self: my_iter) -> Int:
         if self.start < self.end:
             return self.end - self.start
         return 0
@@ -40,23 +40,23 @@ struct MyList:
     var start: Pointer[Int]
     var size: Int
 
-    fn __copyinit__(self&, existing: Self):
+    fn __copyinit__(inout self, existing: Self):
         self.start = existing.start
         self.size = existing.size
 
-    fn __init__(self&, ptr: Pointer[Int], size: Int):
+    fn __init__(inout self, ptr: Pointer[Int], size: Int):
         self.start = ptr
         self.size = size
 
-    fn __setitem__(self&, idx: Int, val: Int):
+    fn __setitem__(inout self, idx: Int, val: Int):
         let ptr = self.start + idx
         ptr.store(val)
 
-    fn __getitem__(self&, idx: Int) -> Int:
+    fn __getitem__(inout self, idx: Int) -> Int:
         let ptr = self.start + idx
         return ptr.load()
 
-    fn __iter__(self&) -> my_iter:
+    fn __iter__(inout self) -> my_iter:
         return my_iter(self)
 
 

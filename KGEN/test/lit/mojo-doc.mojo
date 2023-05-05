@@ -261,10 +261,10 @@ fn fn_with_variant(
 
 
 struct InMemoryStruct:
-    fn __init__(self&):
+    fn __init__(inout self):
         pass
 
-    fn __copyinit__(self&, existing: Self):
+    fn __copyinit__(inout self, existing: Self):
         pass
 
     fn __del___(owned self):
@@ -274,7 +274,7 @@ struct InMemoryStruct:
         return other
 
     fn fn_with_by_conventions(
-        self&, arg&: InMemoryStruct, *args&: InMemoryStruct
+        inout self, inout arg: InMemoryStruct, *args&: InMemoryStruct
     ) -> InMemoryStruct:
         """This is a function summary.
 

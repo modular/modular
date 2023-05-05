@@ -284,13 +284,13 @@ def test_early_return():
 
 
 struct my_iter:
-    fn __init__(self&): pass
-    fn __next__(self&: my_iter) -> Int: return 0
+    fn __init__(inout self): pass
+    fn __next__(inout self: my_iter) -> Int: return 0
     fn __len__(self: my_iter) -> Int: return 0
 
 
 struct MyList:
-    fn __init__(self&): pass
+    fn __init__(inout self): pass
     fn __iter__(self) -> my_iter: return my_iter()
 
 

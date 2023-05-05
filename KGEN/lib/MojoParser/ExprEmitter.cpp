@@ -863,8 +863,9 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
          "TODO: memory-only parameter expressions not supported yet");
 
   // Otherwise, assign with a move constructor.
-  // Memory-only __moveinit__ has signature `(self&, existing&: Self)` or
-  // `(self&, owned existing: Self)`.
+  // Memory-only __moveinit__ has signature `(inout self, inout existing: Self)`
+  // or
+  // `(inout self, owned existing: Self)`.
   ASTExprAnd<AnyValue> operands[] = {ASTExprAnd<AnyValue>{destPtr, value.expr},
                                      value};
   if (!emitNamedMethodCall("__moveinit__", operands,
@@ -927,7 +928,7 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
                                CallSyntax::kImplicitConvert, value.expr);
 
   case StructDeclOp::RP_MemoryOnly:
-    // Memory-only __copyinit__ has signature: `(self&, existing: Self)`.
+    // Memory-only __copyinit__ has signature: `(inout self, existing: Self)`.
     SLValue destBuffer = dest.getSLValueForResult(exprLoc, valueType, *this);
     if (!destBuffer)
       return {};

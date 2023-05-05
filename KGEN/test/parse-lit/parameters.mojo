@@ -436,7 +436,7 @@ fn fnWithVariadics[*b: Int]():
 # CHECK-LABEL: lit.struct.decl @StructWithVariadics
 # CHECK-SAME: <b: variadic<@"$Int"::@Int>>
 struct StructWithVariadics[*b: Int]:
-    fn __init__(self&, i: Int):
+    fn __init__(inout self, i: Int):
         pass
 
 # CHECK-LABEL: lit.func @"useParamVariadics

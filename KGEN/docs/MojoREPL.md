@@ -142,7 +142,7 @@ example, consider the following expression:
 struct S:
   var value: Int
 
-  fn __init__(self&, x : Int):
+  fn __init__(inout self, x : Int):
     self.value = x
 
 s = S(10)
@@ -156,7 +156,7 @@ struct S:
   var value: Int
   var value2: Int
 
-  fn __init__(self&, x : Int):
+  fn __init__(inout self, x : Int):
     self.value = x
     self.value2 = 15
 
@@ -297,7 +297,7 @@ expressions, and inspect the thread state at the point of failure.
 
 ### `--debug-on-failure`
 
-When launching the `mojo-jupyter-executor` with a notebook, you can specify 
+When launching the `mojo-jupyter-executor` with a notebook, you can specify
 `--debug-on-failure` and the executor will automatically drop you into REPL
 mode if a notebook cell fails. We set `unwind-on-error-in-expressions` to
 `false` by default, so this should allow you to trace up the stack in case of

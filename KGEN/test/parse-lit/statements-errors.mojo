@@ -76,7 +76,7 @@ def elif_parse_error(a: Bool):
     pass
 
 struct NotBoolConvertible:
-  fn __copyinit__(self&, existing: Self):
+  fn __copyinit__(inout self, existing: Self):
     pass
 
 def test_bool_context(a: NotBoolConvertible):
@@ -99,37 +99,37 @@ fn test_if_decorator(a: Bool):
 ##===----------------------------------------------------------------------===##
 
 struct my_iter_no_len:
-    fn __init__(self&): pass
-    fn __next__(self&) -> Int: return 0
+    fn __init__(inout self): pass
+    fn __next__(inout self) -> Int: return 0
 
 
 struct MyList_range_no_len:
-    fn __init__(self&): pass
+    fn __init__(inout self): pass
     fn __iter__(self) -> my_iter_no_len: return my_iter_no_len()
 
 
 struct my_iter_no_next:
-    fn __init__(self&): pass
+    fn __init__(inout self): pass
     fn __len__(self) -> Int: return 0
 
 
 struct MyList_range_no_next:
-    fn __init__(self&): pass
+    fn __init__(inout self): pass
     fn __iter__(self) -> my_iter_no_next: return my_iter_no_next()
 
 
 struct MyList_no_iter:
-    fn __init__(self&): pass
+    fn __init__(inout self): pass
 
 
 struct my_iter_wrong_int:
-    fn __init__(self&): pass
-    fn __next__(self&) -> Int: return 0
+    fn __init__(inout self): pass
+    fn __next__(inout self) -> Int: return 0
     fn __len__(self: my_iter_wrong_int) -> F32: return 0.0
 
 
 struct MyList_invalid_boxed_type:
-    fn __init__(self&): pass
+    fn __init__(inout self): pass
     fn __iter__(self) -> my_iter_wrong_int: return my_iter_wrong_int()
 
 

@@ -192,7 +192,7 @@ def defaultArgumentUntyped(a = 1): pass
 struct NonRegisterPassableStruct:
     var value: Int
 
-    fn __init__(self&, value: Int):
+    fn __init__(inout self, value: Int):
         self.value = value
 
 # expected-error @below {{cannot synthesize lvalue of non-register-passable type NonRegisterPassableStruct in default argument}}
@@ -211,13 +211,13 @@ fn noDefaultVariadics(*a: Int = 42): pass
 # expected-note @+1 {{function declared here}}
 fn exampleVariadic(a: F32, *b: Int): pass
 # expected-note @+1 {{function declared here}}
-fn exampleByRefVariadic(a: F32, *b&: Int): pass
+fn exampleByRefVariadic(a: F32, inout *b: Int): pass
 # expected-note @+1 {{function declared here}}
 fn parameterizedVariadic[T: __mlir_type.`!kgen.mlirtype`](*args: T): pass
 
 struct ParameterizedStruct[T: __mlir_type.`!kgen.mlirtype`]:
     # expected-note @+1 {{function declared here}}
-    def __init__(self&, *args: T):
+    def __init__(inout self, *args: T):
         pass
 
 fn badCalls(arg: Int):
@@ -266,7 +266,7 @@ fn invalidParameterPack[*Ts: __mlir_type.`!kgen.mlirtype`]():
 fn invalidArgumentUnpack[*Ts: __mlir_type.`!kgen.mlirtype`](x: *Ts): pass
 
 # expected-error @+1 {{argument already has a convention specified}}
-fn invalidOwned(owned x&: Int): pass
+fn invalidOwned(owned inout x: Int): pass
 
 # expected-note @+1 {{function declared here}}
 fn examplePack[*Ts: __mlir_type.`!kgen.mlirtype`](*args: *Ts):
@@ -341,12 +341,12 @@ fn overloadIntF32(a: Int, b: Int): pass
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: callee expects 2 arguments}}
 # expected-note @below {{argument #1 must be mutable in order to pass as a by-ref argument}}
-fn overloadIntF32(a: Int, b&: F32): pass
+fn overloadIntF32(a: Int, inout b: F32): pass
 
 # expected-note @below {{callee expects at least 3 arguments, but 1 was specified}}
 # expected-note @below {{callee expects at least 3 arguments, but 2 were specified}}
 # expected-note @below {{candidate declared here}}
-fn overloadIntF32(a: Int, b&: F32, c: Int, *args: Int): pass
+fn overloadIntF32(a: Int, inout b: F32, c: Int, *args: Int): pass
 
 struct TestOverloading:
   var a: Int   # expected-note {{cannot overload with this non-function definition}}
@@ -371,7 +371,7 @@ fn badTakesAtLeastOneInt():
 
 
 struct ConvertibleFromInt:
-  fn __init__(self&, value: Int):
+  fn __init__(inout self, value: Int):
     pass
 
 # expected-note @below {{candidate declared here}}
@@ -422,7 +422,7 @@ struct Rec[param: Rec]: # expected-error {{only @register_passable types are sup
   pass
 
 # expected-error @+1 {{'def' statement must be on its own line}}
-struct Struct: def foo(self&): pass
+struct Struct: def foo(inout self): pass
 
 struct ReturnFromStruct:
   # expected-error @+1 {{cannot return from this context}}
@@ -446,7 +446,7 @@ struct SpecialFunctions:
   fn __iadd__(a: SpecialFunctions, b: SpecialFunctions): pass
 
   # expected-error @+1 {{'__iadd__' result type must be elided (or None)}}
-  fn __iadd__(self&, rhs: SpecialFunctions) -> SpecialFunctions: pass
+  fn __iadd__(inout self, rhs: SpecialFunctions) -> SpecialFunctions: pass
 
   fn failures(self):
     self+self # Supports this, even though it isn't valid.  Shouldn't crash.
@@ -461,33 +461,33 @@ struct WrongType:
   def __init__() -> Int: pass
 
   # expected-error @+1 {{special function '__copyinit__' must have 1 operand}}
-  fn __copyinit__(self&, existing&: Int): pass
+  fn __copyinit__(inout self, inout existing: Int): pass
 
-  fn __copyinit__(self&) -> WrongType: pass
+  fn __copyinit__(inout self) -> WrongType: pass
 
   # expected-error @+1 {{'__moveinit__' is not supported for @register_passable types, they are always movable by copying a register}}
-  fn __moveinit__(self&) -> Self: pass
+  fn __moveinit__(inout self) -> Self: pass
 
 struct WrongSelfType[a: Int]:
   # expected-error @+1 {{'self' argument must have type 'WrongSelfType[a]'}}
   fn badMethod(self: Int): pass
-  fn goodMethod(self&: WrongSelfType[a]): pass
+  fn goodMethod(inout self: WrongSelfType[a]): pass
 
   # Issue #13358
   # expected-error @+1 {{special function '__copyinit__' must have 2 operands}}
-  fn __copyinit__(self&, other: Self, moar: Int): pass
+  fn __copyinit__(inout self, other: Self, moar: Int): pass
 
   # expected-error @+1 {{special function '__add__' must have 2 operands}}
   fn __add__(self): pass
 
 # Issue #6587: [Lit] Recursive constructors crash kgen
 struct BadInit[size: __mlir_type.index]:
-  fn __init__(self&, elem: BadInit[(1).__as_mlir_index()]):
+  fn __init__(inout self, elem: BadInit[(1).__as_mlir_index()]):
     var x : __mlir_type[`!pop.simd<`, size, `, f32>`]
     self = x
 
   # expected-error @+1 {{'__init__' result type must be elided (or None)}}
-  fn __init__(self&) -> Self: pass
+  fn __init__(inout self) -> Self: pass
 
 struct StructWithField:
   var field: __mlir_type.index
@@ -556,7 +556,7 @@ struct BadDtor1:
     pass
 
 struct BadDtor:
-  fn __init__(self&): pass
+  fn __init__(inout self): pass
   fn __del__[x: Int](owned self):
     pass
 
@@ -630,5 +630,5 @@ struct copy_init_def:
   var field: Int
 
   # expected-error @+1 {{cannot define copy/move constructor as 'def'; 'def' implicitly raises}}
-  def __copyinit__(self&, existing: Self):
+  def __copyinit__(inout self, existing: Self):
     self.field = existing.field

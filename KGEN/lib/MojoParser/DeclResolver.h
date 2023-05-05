@@ -248,11 +248,11 @@ struct ParsedArgument {
   // Specify argument passing convention, e.g. owned/byref etc.
   enum {
     kConventionUnspec = 0,         // Nothing specified
-    kConventionByRef = 1,          // x&
+    kConventionInOut = 1,          // x&
     kConventionOwned = 2,          // owned x
     kConventionBorrowed = 3,       // borrowed x
-    kConventionByRefResult = 4,    // No syntax: result slot
-    kConventionInitSelfResult = 5, // No syntax: __init__(self&) argument
+    kConventionInOutResult = 4,    // No syntax: result slot
+    kConventionInitSelfResult = 5, // No syntax: __init__(inout self) argument
   } convention = kConventionUnspec;
 
   // After type checking, this will hold the KGEN convention to use.

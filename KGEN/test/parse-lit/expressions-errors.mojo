@@ -46,14 +46,14 @@ fn test_func_type():
     alias f2: fn[a: Int]() -> MemType = test_func_type
     # expected-error @below {{fn[Int](owned Int) -> MemType}}
     alias f3: fn[a: Int](owned Int) -> MemType = test_func_type
-    # expected-error @below {{fn[Int](*&Int) -> None}}
-    alias f4: fn[a: Int](*&Int) -> None = test_func_type
+    # expected-error @below {{fn[Int](inout *Int) -> None}}
+    alias f4: fn[a: Int](inout *Int) -> None = test_func_type
     # expected-error @below {{fn(*MemType) raises capturing -> None}}
     alias f5: def(*MemType) capturing -> None = test_func_type
-    # expected-error @below {{fn[*AnyType](owned* *$0) capt}}
+    # expected-error @below {{fn[*AnyType](owned * *$0) capt}}
     alias f6: fn[*Ts: AnyType](owned* *Ts) capturing -> None = test_func_type
-    # expected-error @below {{fn[AnyType](*&$0) capturing -> None}}
-    alias f7: fn[T: AnyType](*&T) capturing -> None = test_func_type
+    # expected-error @below {{fn[AnyType](inout *$0) capturing -> None}}
+    alias f7: fn[T: AnyType](inout *T) capturing -> None = test_func_type
 
     alias type = DType.f32
     # expected-error @below {{SIMD[DType(type.value), 32]}}
@@ -68,29 +68,29 @@ fn assignRValue():
   42 = 17 # expected-error {{expression must be mutable in assignment}}
 
 struct LValuesRvalues:
-  fn __init__(self&): pass
-  fn __copyinit__(self&, existing: Self): pass
+  fn __init__(inout self): pass
+  fn __copyinit__(inout self, existing: Self): pass
 
   def normalMethod(self): pass
   # expected-note @+1 {{function declared here}}
-  def mutatingMethod(self&) -> None: pass
+  def mutatingMethod(inout self) -> None: pass
   # expected-note @+1 {{function declared here}}
-  def takesByRef(self, x&: LValuesRvalues): pass
+  def takesByRef(self, inout x: LValuesRvalues): pass
 
   def normalMethod3(self, a: F32): pass
 
 struct MemoryPrimaryPair:
   var x: Int
   var y: Int
-  fn __init__(self&):
+  fn __init__(inout self):
     self.x = 0
     self.y = 0
-  fn __copyinit__(self&, existing: Self):
+  fn __copyinit__(inout self, existing: Self):
     self.x = existing.x
     self.y = existing.y
 
 struct NonCopyable:
-  fn __init__(self&): pass
+  fn __init__(inout self): pass
 
 # expected-note @+1 {{function declared here}}
 fn generic_on_type_bad[T: __mlir_type.`!kgen.mlirtype`](a: T): pass
@@ -134,7 +134,7 @@ def testLValuesRvalues() -> None:
   generic_on_type_ok[MemoryPrimaryPair]()
 
 # expected-note @+1 {{function declared here}}
-fn badRef(val&: Int):
+fn badRef(inout val: Int):
   var x = F32(1.0)
   # expected-error-re @+1 {{invalid call to 'badRef': l-value of type 'SIMD[{{.*}}f32{{.*}}]' cannot be converted to reference of type 'Int'}}
   badRef(x)
@@ -203,7 +203,7 @@ struct WeirdBoolish:
 
 struct WeirdBoolishMem:
   fn __bool__(self) -> Int: return 0
-  fn __copyinit__(self&, existing: Self):
+  fn __copyinit__(inout self, existing: Self):
     pass;
 
 
@@ -342,7 +342,7 @@ fn testSubscripts(a: WeirdArray, b: MultiSetItem, c: IncompatElementTypes):
 
 
 struct GetAttrNotString:
-    fn __init__(self&):
+    fn __init__(inout self):
         pass
 
     # expected-note @below {{function declared here}}
@@ -374,7 +374,7 @@ struct GetSettable:
   fn __setitem__(self, x: Int, y: Int): pass
 
 
-fn lvalue_utilities(a: __mlir_type.index, b&: GetSettable):
+fn lvalue_utilities(a: __mlir_type.index, inout b: GetSettable):
   # expected-error @+1 {{expression must be mutable}}
   let addr : __mlir_type.`!pop.pointer<index>` = __get_lvalue_as_address(a)
 

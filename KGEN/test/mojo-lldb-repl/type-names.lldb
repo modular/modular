@@ -15,7 +15,7 @@ let x = 12
 let y = "foo"
 
 struct Bar:
-  fn __init__(self&):
+  fn __init__(inout self):
     pass
 
 # CHECK: (Bar) z =

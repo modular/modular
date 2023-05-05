@@ -374,13 +374,19 @@ void ASTType::print(raw_ostream &os, bool forDiag) const {
           convention == ValueInputConvention::OwnedInReg) {
         os << "owned";
         needSpace = true;
+      } else if (convention == ValueInputConvention::ByRef) {
+        os << "inout";
+        needSpace = true;
       }
+
       if (sig.isVararg(i) || sig.isPackVararg(i)) {
+        if (needSpace) {
+          os << ' ';
+          needSpace = false;
+        }
         os << '*';
         needSpace = sig.isPackVararg(i);
       }
-      if (convention == ValueInputConvention::ByRef)
-        os << '&';
       if (needSpace)
         os << ' ';
       if (sig.isPackVararg(i)) {

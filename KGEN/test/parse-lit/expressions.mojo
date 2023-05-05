@@ -17,14 +17,14 @@ struct MemoryOnlyInt:
   var x: Int
 
   # CHECK-LABEL: lit.func @"__init__
-  fn __init__(self&, a: Int = 42):
+  fn __init__(inout self, a: Int = 42):
     # CHECK: %0 = lit.struct.gep %self[x]
     # CHECK: %1 = {{.*}}constant: {{.*}}Int = {{.*}} 1
     # CHECK: pop.store %1, %0
     self.x = 1
 
   # CHECK-LABEL: lit.func @"__copyinit__
-  fn __copyinit__(self&, existing: Self):
+  fn __copyinit__(inout self, existing: Self):
     self.x = existing.x
 
   @staticmethod
@@ -34,7 +34,7 @@ struct MemoryOnlyInt:
 # This type is used to test implicit conversion from MemoryOnlyInt
 struct MemoryOnlyF64:
   var x: FloatLiteral
-  fn __init__(self&, value: MemoryOnlyInt):
+  fn __init__(inout self, value: MemoryOnlyInt):
     self.x = 1.0
 
 # CHECK-LABEL: lit.struct.decl @MemoryOnlyPair
@@ -45,7 +45,7 @@ struct MemoryOnlyPair:
   # CHECK: lit.func @"__copyinit__{{.*}}"(
   # CHECK-SAME: %self: !pop.pointer<@"$expressions"::@MemoryOnlyPair> init_self,
   # CHECK-SAME: %existing: !pop.pointer<@"$expressions"::@MemoryOnlyPair> borrow_in_mem) -> !lit.none
-  fn __copyinit__(self&, existing: MemoryOnlyPair):
+  fn __copyinit__(inout self, existing: MemoryOnlyPair):
     # CHECK-NEXT: %0 = lit.struct.gep %existing[x]
     # CHECK-NEXT: %1 = lit.struct.gep %self[x]
     # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%1, %0)
@@ -71,7 +71,7 @@ fn inferred_function_with_memory_result[
   width: Int](x: SIMD[DType.f32.value, width]) -> MemoryOnlyInt: pass
 
 # CHECK-LABEL: lit.func @"memoryOnlyOps
-fn memoryOnlyOps(a&: MemoryOnlyPair) -> MemoryOnlyPair:
+fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: %v1 = lit.varlet.decl {{.*}} : <@"$expressions"::@MemoryOnlyPair>
   # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%v1, %a)
   var v1 = a
@@ -139,7 +139,7 @@ fn memoryOnlyOps(a&: MemoryOnlyPair) -> MemoryOnlyPair:
   return v2
 
 struct DummyFunc:
-    fn __init__(self&, f: def(Int)):
+    fn __init__(inout self, f: def(Int)):
         pass
 
 # CHECK-LABEL: lit.func @"implicit_func_conversion()"
@@ -547,7 +547,7 @@ fn patterns():
   (someSIMD) += someSIMD
 
 # CHECK-LABEL: lit.func @"byval_byref_function($Int::Int,$Int::Int&)"(%a: !kgen.declref<@"$Int"::@Int> borrow, %b: !pop.pointer<@"$Int"::@Int> byref) -> !lit.none
-fn byval_byref_function(a: Int, b&: Int):
+fn byval_byref_function(a: Int, inout b: Int):
   # CHECK-NEXT: pop.store %a, %b
   b = a
 
@@ -777,7 +777,7 @@ fn testWeirdArray(a: WeirdArray, idx: Int, f: F32):
 
 
 struct Slicable:
-    fn __init__(self&):
+    fn __init__(inout self):
         pass
 
     fn __getitem__(self, s: slice):
@@ -813,11 +813,11 @@ fn slice_expression(a: Slicable, i: Int):
 
 # This is an array that has elements of MemoryOnlyInt.
 struct MemoryOnlyIntArray:
-  fn __getitem__(self&, x: Int) -> MemoryOnlyInt: pass
-  fn __setitem__(self&, x: Int, owned value: MemoryOnlyInt): pass
+  fn __getitem__(inout self, x: Int) -> MemoryOnlyInt: pass
+  fn __setitem__(inout self, x: Int, owned value: MemoryOnlyInt): pass
 
 # CHECK-LABEL: lit.func @"testMemoryOnlyIntArray
-fn testMemoryOnlyIntArray(arr&: MemoryOnlyIntArray, x: Int, owned moi: MemoryOnlyInt):
+fn testMemoryOnlyIntArray(inout arr: MemoryOnlyIntArray, x: Int, owned moi: MemoryOnlyInt):
   # CHECK: %0 = lit.ownership.end.lifetime %moi
   # CHECK: kgen.call {{.*}}__setitem__{{.*}}(%arr, %x, %0)
   arr[x] = moi^
@@ -868,23 +868,23 @@ struct MyInlineIntInit:
     var intVal: MemoryOnlyInt
     # CHECK-LABEL: lit.func @"__init__($expressions::MyInlineIntInit=&,$expressions::MemoryOnlyInt)"
     # CHECK-SAME: (%self: !pop.pointer<@"$expressions"::@MyInlineIntInit> init_self, %intVal: !pop.pointer<@"$expressions"::@MemoryOnlyInt> borrow_in_mem) -> !lit.none
-    fn __init__(self&, intVal: MemoryOnlyInt):
+    fn __init__(inout self, intVal: MemoryOnlyInt):
         # CHECK: %0 = lit.struct.gep %self[intVal]
         # CHECK: kgen.call {{.*}}__copyinit__{{.*}}(%0, %intVal)
         self.intVal = intVal
 
 struct IndexArray:
-  fn __getitem__(self&, x: Int) -> Int: pass
-  fn __setitem__(self&, x: Int, value: Int): pass
+  fn __getitem__(inout self, x: Int) -> Int: pass
+  fn __setitem__(inout self, x: Int, value: Int): pass
 
 struct IndexArrayArray:
-  fn __getitem__(self&, x: Int) -> IndexArray: pass
-  fn __setitem__(self&, x: Int, value: IndexArray): pass
+  fn __getitem__(inout self, x: Int) -> IndexArray: pass
+  fn __setitem__(inout self, x: Int, value: IndexArray): pass
 
-fn takeInOutInt(a&: Int): pass
+fn takeInOutInt(inout a: Int): pass
 
  # CHECK-LABEL: lit.func @"testWritebacks
-fn testWritebacks(a&: IndexArray, b&: IndexArrayArray):
+fn testWritebacks(inout a: IndexArray, inout b: IndexArrayArray):
   # CHECK: %anonymous2A = lit.varlet.decl "anonymous*", var = true
   # CHECK-NEXT: %[[V0:.*]] = {{.*}}constant{{.*}} = 0
   # CHECK-NEXT: %[[V1:.*]] = kgen.call {{.*}}__getitem__{{.*}}(%a, %[[V0]])
@@ -925,7 +925,7 @@ struct ConstDynamicObject:
         return 0
 
 struct DynamicObject:
-    fn __init__(self&):
+    fn __init__(inout self):
         pass
 
     fn __getattr__(self, name: StringLiteral) -> Int:
@@ -1010,7 +1010,7 @@ fn test_adaptive_set():
     # CHECK-SAME: <[@"{{.*}}foo_adaptive()"<:@"$Int"::@Int {{.*}}1{{.*}}>, @"{{.*}}foo_adaptive()_0"<:@"$Int"::@Int {{.*}}1{{.*}}>]>
     alias bound = foo_adaptive[1].__adaptive_set
 
-fn lvalue_utilities(a&: Int):
+fn lvalue_utilities(inout a: Int):
   # Get the address of the specified physical lvalue as a pop.pointer value.
   let addr : __mlir_type[`!pop.pointer<`,Int,`>`] = __get_lvalue_as_address(a)
 
@@ -1021,7 +1021,7 @@ fn lvalue_utilities(a&: Int):
 struct CallableStruct:
     var value: Int
 
-    fn __init__(self&, value: Int):
+    fn __init__(inout self, value: Int):
         self.value = value
 
     fn __call__(self, rhs: Int) -> Int:
@@ -1035,7 +1035,7 @@ fn test_call_method():
     _ = value(2)
 
 struct MemoryType:
-  fn __copyinit__(self&, existing: Self):
+  fn __copyinit__(inout self, existing: Self):
     pass
 
 @register_passable
@@ -1063,7 +1063,7 @@ fn function_types(
   f1: fn(MemoryType) -> MemoryType,
   f2: fn(owned RegType) -> RegType,
   f3: fn(owned MemoryType) -> None,
-  f4: fn(&Int) -> None,
+  f4: fn(inout Int) -> None,
   f5: fn(Int) raises -> None,
   f6: async fn(Int) capturing raises -> None,
   f7: def(*Int) -> None,
@@ -1081,7 +1081,7 @@ fn func_with_decorator(): pass
 
 
 struct TwoParamsStruct[a: Int, b: Int]:
-    fn __copyinit__(self&, existing: Self):
+    fn __copyinit__(inout self, existing: Self):
         pass
 
 # CHECK-LABEL: lit.func @"variadic_subscript
