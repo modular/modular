@@ -1,35 +1,35 @@
-# RUN: mojo -demangle "\$aModule::main()" | FileCheck -check-prefix="SIMPLE" %s
+# RUN: mojo -demangle '$aModule::main()' | FileCheck -check-prefix="SIMPLE" %s
 # SIMPLE: Mangled: "$aModule::main()" - Module: aModule, Structs: [], Symbol: "main", Signature: () -> ()
 
-# RUN: mojo -demangle "\$aModule::AStruct::main()" | FileCheck -check-prefix="STRUCT" %s
+# RUN: mojo -demangle '$aModule::AStruct::main()' | FileCheck -check-prefix="STRUCT" %s
 # STRUCT: Mangled: "$aModule::AStruct::main()" - Module: aModule, Structs: ["AStruct"], Symbol: "main", Signature: () -> ()
 
-# RUN: mojo -demangle "\$aModule::AStruct::BStruct::main()" | FileCheck -check-prefix="NESTED" %s
+# RUN: mojo -demangle '$aModule::AStruct::BStruct::main()' | FileCheck -check-prefix="NESTED" %s
 # NESTED: Mangled: "$aModule::AStruct::BStruct::main()" - Module: aModule, Structs: ["AStruct", "BStruct"], Symbol: "main", Signature: () -> ()
 
-# RUN: mojo -demangle "\$aModule::AStruct::BStruct::main(index,!pop.struct<dtype>)" | FileCheck -check-prefix="NESTED2" %s
+# RUN: mojo -demangle '$aModule::AStruct::BStruct::main(index,!pop.struct<dtype>)' | FileCheck -check-prefix="NESTED2" %s
 # NESTED2: Mangled: "$aModule::AStruct::BStruct::main(index,!pop.struct<dtype>)" - Module: aModule, Structs: ["AStruct", "BStruct"], Symbol: "main", Signature: (index, !pop.struct<dtype>) -> ()
 
-# RUN: mojo -demangle "AStruct::main()" | FileCheck -check-prefix="NOMODULE" %s
+# RUN: mojo -demangle 'AStruct::main()' | FileCheck -check-prefix="NOMODULE" %s
 # NOMODULE: Mangled: "AStruct::main()" - Module: (none), Structs: ["AStruct"], Symbol: "main", Signature: () -> ()
 
-# RUN: mojo -demangle "main()" | FileCheck -check-prefix="NOMODULE2" %s
+# RUN: mojo -demangle 'main()' | FileCheck -check-prefix="NOMODULE2" %s
 # NOMODULE2: Mangled: "main()" - Module: (none), Structs: [], Symbol: "main", Signature: () -> ()
 
-# RUN: mojo -demangle "main(index,index)!pop.struct<index,index>" | FileCheck -check-prefix="NOMODULE3" %s
+# RUN: mojo -demangle 'main(index,index)!pop.struct<index,index>' | FileCheck -check-prefix="NOMODULE3" %s
 # NOMODULE3: Mangled: "main(index,index)!pop.struct<index,index>" - Module: (none), Structs: [], Symbol: "main", Signature: (index, index) -> !pop.struct<index, index>
 
-# RUN: mojo -demangle "main()!pop.struct<index,index>" | FileCheck -check-prefix="NOMODULE4" %s
+# RUN: mojo -demangle 'main()!pop.struct<index,index>' | FileCheck -check-prefix="NOMODULE4" %s
 # NOMODULE4: Mangled: "main()!pop.struct<index,index>" - Module: (none), Structs: [], Symbol: "main", Signature: () -> !pop.struct<index, index>
 
-# RUN: mojo -demangle "\$aModule::AStruct" | FileCheck -check-prefix="NOFUNC" %s
+# RUN: mojo -demangle '$aModule::AStruct' | FileCheck -check-prefix="NOFUNC" %s
 # NOFUNC: Mangled: "$aModule::AStruct" - Module: aModule, Structs: [], Symbol: "AStruct", Signature: (none)
 
-# RUN: mojo -demangle "\$aModule::AStruct::BStruct" | FileCheck -check-prefix="NESTEDNOFUNC" %s
+# RUN: mojo -demangle '$aModule::AStruct::BStruct' | FileCheck -check-prefix="NESTEDNOFUNC" %s
 # NESTEDNOFUNC: Mangled: "$aModule::AStruct::BStruct" - Module: aModule, Structs: ["AStruct"], Symbol: "BStruct", Signature: (none)
 
-# RUN: not mojo -demangle "\$aModule::AStruct::BStruct(!invalid.type)" 2>&1 | FileCheck -check-prefix="FAILURE" %s
-# FAILURE: mojo: demangling failed
+# RUN: not mojo -demangle '$aModule::AStruct::BStruct(!invalid.type)' 2>&1 | FileCheck -check-prefix="FAILURE" %s
+# FAILURE: demangling failed
 
 # RUN: mojo -demangle 'Mod::AStruct::foo($Int::Int)' | FileCheck -check-prefix=MANGLEDTYPE  %s
 # MANGLEDTYPE: Mangled: "Mod::AStruct::foo($Int::Int)" - Module: (none), Structs: ["Mod", "AStruct"], Symbol: "foo"
