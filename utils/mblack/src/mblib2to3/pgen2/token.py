@@ -96,6 +96,9 @@ ALIAS: Final = 63
 LET: Final = 64
 VAR: Final = 65
 MLIR_REGION: Final = 66
+OWNED: Final = 67
+BORROWED: Final = 68
+INOUT: Final = 69
 NT_OFFSET: Final = 256
 # --end constants--
 

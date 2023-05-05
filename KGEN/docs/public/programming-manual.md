@@ -1016,8 +1016,8 @@ every call site to being declarative on a type.
 Rust is another important language and the Mojo and Rust borrow checkers
 enforce the same exclusivity invariants. The major difference between Rust and
 Mojo is that no sigil is required on the caller side to pass by borrow, Mojo is
-more efficient when passing small values, and Rust defaults to moving values by
-default instead of passing them around by borrow. These policy and syntax
+more efficient when passing small values, and Rust defaults to moving values
+instead of passing them around by borrow. These policy and syntax
 decisions allow Mojo to provide an easier to use programming model.
 
 ### "Owned" argument convention and postfix `^` operator

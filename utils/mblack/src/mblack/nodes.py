@@ -127,6 +127,7 @@ TEST_DESCENDANTS: Final = {
     syms.power,
 }
 TYPED_NAMES: Final = {syms.tname, syms.tname_star}
+CONVENTIONS: Final = {token.OWNED, token.BORROWED, token.INOUT}
 ASSIGNMENTS: Final = {
     "=",
     "+=",
@@ -307,13 +308,15 @@ def whitespace(leaf: Leaf, *, complex_subscript: bool) -> str:  # noqa: C901
             # previously found it's a typed argument.  So, we're using that, too.
             return prev.prefix
 
-        elif prev.type != token.COMMA:
+        elif prev.type != token.COMMA and prev.type not in CONVENTIONS:
             return NO
 
     elif p.type in TYPED_NAMES:
         # type names
         if not prev:
             prevp = preceding_leaf(p)
+            if prevp and prevp.type in CONVENTIONS:
+                return SPACE
             if not prevp or prevp.type != token.COMMA:
                 return NO
 

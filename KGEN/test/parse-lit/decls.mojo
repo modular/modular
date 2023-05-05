@@ -372,7 +372,7 @@ struct AlwaysInlineByRef:
   fn doByRef(inout self):
     pass
 
-fn testInlineByRef(a&: AlwaysInlineByRef):
+fn testInlineByRef(inout a: AlwaysInlineByRef):
   a.doByRef()
 
 # CHECK-LABEL: lit.func @"adaptiveNestedFns
