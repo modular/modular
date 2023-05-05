@@ -27,7 +27,7 @@ struct Matrix:
     var rows: Int
     var cols: Int
 
-    fn __init__(self&, rows: Int, cols: Int):
+    fn __init__(inout self, rows: Int, cols: Int):
         self.data = DTypePointer[DType.f32].alloc(rows * cols)
         self.rows = rows
         self.cols = cols
@@ -38,7 +38,7 @@ struct Matrix:
     fn __getitem__(self, row: Int, col: Int) -> F32:
         return self.data.load(row * self.cols + col)
 
-    fn __setitem__(self&, row: Int, col: Int, val: F32):
+    fn __setitem__(inout self, row: Int, col: Int, val: F32):
         self.data.store(row * self.cols + col, val)
 
 
