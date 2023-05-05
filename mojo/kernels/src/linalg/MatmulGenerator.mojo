@@ -76,7 +76,7 @@ struct StaticGemmShape:
             return self.K
         return 0
 
-    fn __setitem__(self&, idx: Int, value: Dim):
+    fn __setitem__(inout self, idx: Int, value: Dim):
         if idx == GemmIdentifiers.DimM:
             self.M = value
             return
@@ -149,7 +149,7 @@ struct GemmSwitch:
         """
         return Self {M: False, N: False, K: False}
 
-    fn __setitem__(self&, idx: Int, value: Bool):
+    fn __setitem__(inout self, idx: Int, value: Bool):
         """Setter utility based on indices from `GemmIdentifiers.
 
         Args:
@@ -319,7 +319,7 @@ struct MatmulDynamicState[data_type: MatmulDataType]:
         return dynamic_state
 
     @always_inline
-    fn _allocate_buffers(self&):
+    fn _allocate_buffers(inout self):
         """Allocate space for packing and maybe other intermediate data space."""
         # TODO: read these data out from matmul config.
         self.packed_b = _raw_stack_allocation[

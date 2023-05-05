@@ -566,7 +566,7 @@ struct MatmulInnerLoopBPacked[
     var c_bound: StaticIntTuple[2]
 
     fn __init__(
-        self&,
+        inout self,
         c: NDBuffer[2, shape_c, accum_type],
         a: NDBuffer[2, shape_a, value_type],
         b_packed: NDBuffer[3, packed_shape, value_type],

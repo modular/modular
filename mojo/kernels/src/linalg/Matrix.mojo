@@ -26,7 +26,7 @@ struct Matrix[
 
     var data: NDBuffer[2, shape, type]
 
-    fn __init__(self&, dptr: DTypePointer[type]):
+    fn __init__(inout self, dptr: DTypePointer[type]):
         """Constructor of a matrix from a DTypePointer.
 
         Args:
@@ -38,7 +38,7 @@ struct Matrix[
         self.data = dptr.address
 
     fn __init__(
-        self&, ptr: Pointer[__mlir_type[`!pop.scalar<`, type.value, `>`]]
+        inout self, ptr: Pointer[__mlir_type[`!pop.scalar<`, type.value, `>`]]
     ):
         """Constructor of a matrix from a Pointer.
 

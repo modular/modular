@@ -170,7 +170,7 @@ struct GemmShape:
             return self.N
         return self.K
 
-    fn __setitem__(self&, idx: Int, value: Int):
+    fn __setitem__(inout self, idx: Int, value: Int):
         if idx == 0:
             self.M = value
             return
