@@ -203,7 +203,7 @@ struct Runtime:
 struct Task[type: AnyType]:
     var handle: Coroutine[type]
 
-    fn __init__(self&, owned handle: Coroutine[type]):
+    fn __init__(inout self, owned handle: Coroutine[type]):
         self.handle = handle ^
 
     fn get(self) -> type:
@@ -263,7 +263,7 @@ struct TaskGroupTask[type: AnyType]:
 
     var handle: Coroutine[type]
 
-    fn __init__(self&, owned handle: Coroutine[type]):
+    fn __init__(inout self, owned handle: Coroutine[type]):
         self.handle = handle ^
 
     fn get(self) -> type:
@@ -281,7 +281,7 @@ struct TaskGroup:
     var chain: Chain
     var rt: Runtime
 
-    fn __init__(self&, rt: Runtime):
+    fn __init__(inout self, rt: Runtime):
         var chain = Chain()
         _init_llcl_chain(rt, Pointer[Chain].address_of(chain))
         self.counter = 1
@@ -292,17 +292,17 @@ struct TaskGroup:
         _del_llcl_chain(Pointer[Chain].address_of(self.chain))
 
     @always_inline
-    fn _counter_decr(self&) -> Int:
+    fn _counter_decr(inout self) -> Int:
         let prev: Int = self.counter.fetch_sub(1).value
         return prev - 1
 
-    fn _task_complete(self&):
+    fn _task_complete(inout self):
         if self._counter_decr() == 0:
             _async_complete(Pointer[Chain].address_of(self.chain))
 
     fn create_task[
         type: AnyType
-    ](self&, owned task: Coroutine[type]) -> TaskGroupTask[type]:
+    ](inout self, owned task: Coroutine[type]) -> TaskGroupTask[type]:
         self.counter += 1
         let task_group_txt = task.get_ctx[TaskGroupContext]()
         task_group_txt.store(
@@ -322,7 +322,7 @@ struct TaskGroup:
         task_group._task_complete()
 
     @always_inline
-    fn __await__(self&):
+    fn __await__(inout self):
         let cur_hdl = __mlir_op.`pop.coroutine.opaque_handle`()
 
         __mlir_region await_body():
@@ -330,7 +330,7 @@ struct TaskGroup:
 
         __mlir_op.`pop.coroutine.await`[_region : "await_body".value]()
 
-    fn wait(self&):
+    fn wait(inout self):
         self._task_complete()
         _async_wait(Pointer[Chain].address_of(self.chain))
 
@@ -538,7 +538,7 @@ struct AsyncTaskGroupContext:
     var async_task_group_ptr: Pointer[AsyncTaskGroup]
 
     fn __init__(
-        self&,
+        inout self,
         callback: tg_callback_fn_type,
         async_task_group_ptr: Pointer[AsyncTaskGroup],
     ):
@@ -550,11 +550,11 @@ struct CoroutineList[type: AnyType]:
     var data: Pointer[Coroutine[type]]
     var size: Int
 
-    fn __init__(self&, num_work_items: Int):
+    fn __init__(inout self, num_work_items: Int):
         self.data = Pointer[Coroutine[type]].alloc(num_work_items)
         self.size = 0
 
-    fn add(self&, owned hdl: Coroutine[type]):
+    fn add(inout self, owned hdl: Coroutine[type]):
         __get_address_as_uninit_lvalue(self.data.offset(self.size).address) = (
             hdl ^
         )
@@ -563,7 +563,7 @@ struct CoroutineList[type: AnyType]:
     fn __len__(self) -> Int:
         return self.size
 
-    fn destroy(self&):
+    fn destroy(inout self):
         for i in range(self.size):
             _ = __get_address_as_owned_value(self.data.offset(i).address)
         self.data.free()
@@ -584,14 +584,14 @@ struct AsyncTaskGroup:
     var coroutines: CoroutineList[NoneType]
 
     @always_inline
-    fn __init__(self&, num_work_items: Int, out_chain: OutputChainPtr):
+    fn __init__(inout self, num_work_items: Int, out_chain: OutputChainPtr):
         self.counter = num_work_items
         self.out_chain = out_chain.fork()
         self.coroutines = num_work_items
 
     # This destroy's self when all the references are gone.
     @always_inline
-    fn destroy(self&):
+    fn destroy(inout self):
         self.coroutines.destroy()
 
         # Replace the out_chain owned by this value with a null one, so the old
@@ -601,17 +601,17 @@ struct AsyncTaskGroup:
         self_ptr.free()
 
     @always_inline
-    fn _counter_decr(self&) -> Int:
+    fn _counter_decr(inout self) -> Int:
         let prev: Int = self.counter.fetch_sub(1).value
         return prev - 1
 
-    fn _task_complete(self&):
+    fn _task_complete(inout self):
         if self._counter_decr() == 0:
             self.out_chain.borrow().mark_ready()
             self.destroy()
 
     # TODO(#11915): Allow failure of coroutine to propagate error back to out_chain.
-    fn add_task(self&, owned coroutine: Coroutine[NoneType]):
+    fn add_task(inout self, owned coroutine: Coroutine[NoneType]):
         let ctx_ptr = coroutine.get_ctx[AsyncTaskGroupContext]()
         let self_ptr = Pointer[AsyncTaskGroup].address_of(self)
         __get_address_as_uninit_lvalue(ctx_ptr.address) = AsyncTaskGroupContext(
@@ -638,12 +638,12 @@ struct AsyncTaskGroupPtr:
     var ptr: Pointer[AsyncTaskGroup]
 
     @always_inline
-    fn __init__(self&, num_work_items: Int, out_chain: OutputChainPtr):
+    fn __init__(inout self, num_work_items: Int, out_chain: OutputChainPtr):
         self.ptr = Pointer[AsyncTaskGroup].alloc(1)
         __get_address_as_uninit_lvalue(self.ptr.address) = AsyncTaskGroup(
             num_work_items, out_chain
         )
 
     @always_inline
-    fn add_task(self&, owned coroutine: Coroutine[NoneType]):
+    fn add_task(inout self, owned coroutine: Coroutine[NoneType]):
         __get_address_as_lvalue(self.ptr.address).add_task(coroutine ^)

@@ -179,7 +179,7 @@ struct Trace[level: TraceLevel]:
     var name: StringRef
     var detail: StringRef
 
-    fn __init__(self&, name: StringRef):
+    fn __init__(inout self, name: StringRef):
         self = Self(name, "")
 
     fn __enter__(self):
