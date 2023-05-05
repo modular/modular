@@ -249,7 +249,7 @@ struct Task[type: AnyType]:
 
 @register_passable("trivial")
 struct TaskGroupContext:
-    alias tg_callback_fn_type = fn (& TaskGroup) -> None
+    alias tg_callback_fn_type = fn (inout TaskGroup) -> None
 
     var callback: tg_callback_fn_type
     var task_group: Pointer[TaskGroup]
@@ -316,7 +316,7 @@ struct TaskGroup:
 
     @staticmethod
     fn await_body_impl(
-        hdl: __mlir_type.`!pop.pointer<i8>`, task_group&: TaskGroup
+        hdl: __mlir_type.`!pop.pointer<i8>`, inout task_group: TaskGroup
     ):
         _async_and_then(hdl, Pointer[Chain].address_of(task_group.chain))
         task_group._task_complete()
@@ -532,7 +532,7 @@ struct OwningOutputChainPtr:
 
 
 struct AsyncTaskGroupContext:
-    alias tg_callback_fn_type = fn (& AsyncTaskGroup) -> None
+    alias tg_callback_fn_type = fn (inout AsyncTaskGroup) -> None
 
     var callback: tg_callback_fn_type
     var async_task_group_ptr: Pointer[AsyncTaskGroup]
