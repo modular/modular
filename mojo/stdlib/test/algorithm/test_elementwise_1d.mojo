@@ -30,7 +30,7 @@ fn test_elementwise_1d():
             __mlir_type[`!pop.scalar<`, DType.f32.value, `>`]
         ](num_elements)
 
-        let vector = Buffer[num_elements, DType.f32](buf.data.address)
+        let vector = Buffer[num_elements, DType.f32](buf.data)
 
         for i in range(vector.__len__()):
             vector[i] = i

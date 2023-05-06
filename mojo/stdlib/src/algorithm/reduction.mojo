@@ -229,7 +229,7 @@ fn _reduce_3D[
             # TODO: parallelize
             for i in range(h):
                 let offset = src._offset(StaticIntTuple[3](i, 0, 0))
-                let input = Buffer[sz, type](offset.address, w)
+                let input = Buffer[sz, type](offset, w)
                 let val = reduce[
                     simd_width, sz, type, acc_type, map_fn, reduce_fn
                 ](input, init)
