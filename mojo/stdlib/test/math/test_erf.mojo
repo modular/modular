@@ -13,9 +13,9 @@ from Math import erf
 from SIMD import SIMD
 
 
-# CHECK-LABEL: test_erf
-fn test_erf():
-    print("== test_erf")
+# CHECK-LABEL: test_erf_f32
+fn test_erf_f32():
+    print("== test_erf_f32")
 
     # Test MLAS erf.
 
@@ -60,5 +60,53 @@ fn test_erf():
     print(_erf(SIMD[DType.f32, 1](-2)))
 
 
+# CHECK-LABEL: test_erf_f64
+fn test_erf_f64():
+    print("== test_erf_f64")
+
+    # Test MLAS erf.
+
+    # CHECK: 0.000000
+    print(erf(SIMD[DType.f64, 1](0)))
+
+    # CHECK: 0.995322
+    # CHECK: 0.995322
+    print(erf(SIMD[DType.f64, 2](2)))
+
+    # CHECK: 0.112463
+    print(erf(SIMD[DType.f64, 1](0.1)))
+
+    # CHECK: -0.112463
+    print(erf(SIMD[DType.f64, 1](-0.1)))
+
+    # CHECK: -0.842701
+    print(erf(SIMD[DType.f64, 1](-1)))
+
+    # CHECK: -0.995322
+    print(erf(SIMD[DType.f64, 1](-2)))
+
+    # Test oneDNN erf.
+
+    # CHECK: 0.000000
+    print(_erf(SIMD[DType.f64, 1](0)))
+
+    # CHECK: 0.995322
+    # CHECK: 0.995322
+    print(_erf(SIMD[DType.f64, 2](2)))
+
+    # CHECK: 0.112463
+    print(_erf(SIMD[DType.f64, 1](0.1)))
+
+    # CHECK: -0.112463
+    print(_erf(SIMD[DType.f64, 1](-0.1)))
+
+    # CHECK: -0.842701
+    print(_erf(SIMD[DType.f64, 1](-1)))
+
+    # CHECK: -0.995322
+    print(_erf(SIMD[DType.f64, 1](-2)))
+
+
 fn main():
-    test_erf()
+    test_erf_f32()
+    test_erf_f64()
