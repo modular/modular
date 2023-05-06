@@ -26,7 +26,7 @@ from Range import range
 fn _fill[
     type: DType
 ](dst: DTypePointer[type], value: SIMD[type, 1], count: Int):
-    _ = Buffer[Dim(), type](dst.address, count).fill(value)
+    _ = Buffer[Dim(), type](dst, count).fill(value)
 
 
 fn pad[

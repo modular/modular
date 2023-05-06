@@ -32,7 +32,7 @@ fn print_elements[
     fn print_elements_lambda[
         simd_width: Int, rank: Int
     ](idx: StaticIntTuple[rank]):
-        var index = rebind[StaticIntTuple[in_rank]](idx)
+        let index = rebind[StaticIntTuple[in_rank]](idx)
         print(tensor[index])
 
     with Runtime(1) as runtime:
@@ -58,11 +58,11 @@ fn test_slice[
 ):
 
     # Isn't always used but is used for the output buffer if we copy.
-    var output_mem = _raw_stack_allocation[numelems, dtype, 1]()
+    let output_mem = _raw_stack_allocation[numelems, dtype, 1]()
 
-    var memory1 = _raw_stack_allocation[numelems, dtype, 1]()
-    var in_tensor = NDBuffer[outer_rank, rebind[DimList](static_shape), dtype,](
-        memory1.address,
+    let memory1 = _raw_stack_allocation[numelems, dtype, 1]()
+    let in_tensor = NDBuffer[outer_rank, rebind[DimList](static_shape), dtype,](
+        memory1,
         dims,
         dtype,
     )
@@ -70,20 +70,14 @@ fn test_slice[
     print("In shape:", in_tensor.dynamic_shape)
     print("In strides:", in_tensor.dynamic_stride)
 
-    var start_tensor_mem = _raw_stack_allocation[outer_rank, DType.index, 1]()
-    var start_tensor = Buffer[Dim(), DType.index](
-        start_tensor_mem.address, outer_rank
-    )
+    let start_tensor_mem = _raw_stack_allocation[outer_rank, DType.index, 1]()
+    let start_tensor = Buffer[Dim(), DType.index](start_tensor_mem, outer_rank)
 
-    var end_tensor_mem = _raw_stack_allocation[outer_rank, DType.index, 1]()
-    var end_tensor = Buffer[Dim(), DType.index](
-        end_tensor_mem.address, outer_rank
-    )
+    let end_tensor_mem = _raw_stack_allocation[outer_rank, DType.index, 1]()
+    let end_tensor = Buffer[Dim(), DType.index](end_tensor_mem, outer_rank)
 
-    var step_tensor_mem = _raw_stack_allocation[outer_rank, DType.index, 1]()
-    var step_tensor = Buffer[Dim(), DType.index](
-        step_tensor_mem.address, outer_rank
-    )
+    let step_tensor_mem = _raw_stack_allocation[outer_rank, DType.index, 1]()
+    let step_tensor = Buffer[Dim(), DType.index](step_tensor_mem, outer_rank)
 
     for dim in range(outer_rank):
         let start_val = SIMD[DType.index, 1](starts[dim])
@@ -115,7 +109,7 @@ fn test_slice[
     else:
         print("As copy")
 
-        var output_buffer = NDBuffer[
+        let output_buffer = NDBuffer[
             outer_rank,
             rebind[DimList](static_shape),
             dtype,
