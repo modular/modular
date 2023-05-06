@@ -236,7 +236,7 @@ static llvm::Expected<lldb::TargetSP> createMojoReplTarget(Debugger &debugger) {
       debugger, replEntryPointPath.c_str(), llvm::sys::getDefaultTargetTriple(),
       eLoadDependentsYes, /*platform_options=*/nullptr, target);
   if (!error.Success()) {
-    return createStringError("failed to create REPL target: %s",
+    return createStringError("failed to create REPL target: {0}",
                              error.AsCString());
   }
   return target;
