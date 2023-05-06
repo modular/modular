@@ -28,7 +28,7 @@ version_string = _mecore.__version__
 class Model:
     """A loaded model that you can execute.
 
-    You should not instantiate this class directly. Instead create a
+    You should not instantiate this class directly. Instead, create a
     :obj:`Model` by passing your model file to :func:`InferenceSession.load()`.
     Then you can run the model by passing your input data to
     :func:`Model.execute()`.
