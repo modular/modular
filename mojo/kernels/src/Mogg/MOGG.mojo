@@ -139,7 +139,7 @@ fn to_buffer[
     unroll[rank, body]()
 
     return NDBuffer[rank, DimList.create_unknown[rank](), type](
-        data, shape_tuple, type, stride_tuple
+        DTypePointer[type](data), shape_tuple, type, stride_tuple
     )
 
 
