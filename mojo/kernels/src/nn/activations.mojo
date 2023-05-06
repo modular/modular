@@ -30,6 +30,8 @@ struct ActivationType:
     alias SIGN = ActivationType(7)
     alias TANH = ActivationType(8)
     alias GELU_APPROX_SIGMOID = ActivationType(9)
+    alias ELU = ActivationType(10)
+    alias SIGMOID_GRAD = ActivationType(11)
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: ActivationType) -> Bool:
@@ -45,6 +47,8 @@ struct ActivationType:
     ](self, out_chain: OutputChainPtr):
         if self == ActivationType.IDENTITY:
             func[ActivationType.IDENTITY]()
+        elif self == ActivationType.ELU:
+            func[ActivationType.ELU]()
         elif self == ActivationType.RELU:
             func[ActivationType.RELU]()
         elif self == ActivationType.RELU6:
@@ -59,6 +63,8 @@ struct ActivationType:
             func[ActivationType.GELU_APPROX_SIGMOID]()
         elif self == ActivationType.SIGMOID:
             func[ActivationType.SIGMOID]()
+        elif self == ActivationType.SIGMOID_GRAD:
+            func[ActivationType.SIGMOID_GRAD]()
         elif self == ActivationType.SIGN:
             func[ActivationType.SIGN]()
         elif self == ActivationType.TANH:
@@ -74,6 +80,8 @@ fn dispatch_activation_fn[
     @parameter
     if activation == ActivationType.IDENTITY:
         return identity(val)
+    elif activation == ActivationType.ELU:
+        return elu(val)
     elif activation == ActivationType.RELU:
         return relu(val)
     elif activation == ActivationType.RELU6:
@@ -88,6 +96,8 @@ fn dispatch_activation_fn[
         return gelu_approximate_sigmoid(val)
     elif activation == ActivationType.SIGMOID:
         return sigmoid(val)
+    elif activation == ActivationType.SIGMOID_GRAD:
+        return sigmoid_grad(val)
     elif activation == ActivationType.SIGN:
         return sign(val)
     elif activation == ActivationType.TANH:
@@ -125,7 +135,7 @@ fn sign[
         type: dtype used for the computation.
 
     Args:
-        x (SIMD[type, simd_width]): The value to compute the sign operation on.
+        x : The value to compute the sign operation on.
 
     Returns:
         SIMD[type, simd_width]: The result of the sign operation.
@@ -133,6 +143,30 @@ fn sign[
     let is_neg_mask = _is_neg(x)
     let is_zero_mask = x == 0
     return is_neg_mask.select[type](-1, is_zero_mask.select[type](0, 1))
+
+
+# ===----------------------------------------------------------------------===#
+# elu
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn elu[
+    simd_width: Int, type: DType
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    """Compute the Elu Op using the equation $z if z >= 0 else alpha*(e^z -1)$.
+
+    Parameters:
+        simd_width: SIMD width used for the computation.
+        type: dtype used for the computation.
+
+    Args:
+        x : The value to compute the ELU operation on.
+
+    Returns:
+        SIMD[type, simd_width]: The result of the ELU operation.
+    """
+    return (x >= 0).select(x, exp(x) - 1)
 
 
 # ===----------------------------------------------------------------------===#
@@ -151,7 +185,7 @@ fn relu[
         type: dtype used for the computation.
 
     Args:
-        x (SIMD[type, simd_width]): The value to compute the RELU operation on.
+        x : The value to compute the RELU operation on.
 
     Returns:
         SIMD[type, simd_width]: The result of the RELU operation.
@@ -175,7 +209,7 @@ fn relu6[
         type: dtype used for the computation.
 
     Args:
-        x (SIMD[type, simd_width]): The value to compute the RELU6 operation on.
+        x : The value to compute the RELU6 operation on.
 
     Returns:
         SIMD[type, simd_width]: The result of the RELU6 operation.
@@ -199,7 +233,7 @@ fn prelu[
         type: dtype used for the computation.
 
     Args:
-        x (SIMD[type, simd_width]): The value to compute the PRELU operation on.
+        x : The value to compute the PRELU operation on.
 
     Returns:
         SIMD[type, simd_width]: The result of the PRELU operation.
@@ -223,7 +257,7 @@ fn relu_n1[
         type: dtype used for the computation.
 
     Args:
-        x (SIMD[type, simd_width]): The value to compute the RELU N1 operation on.
+        x : The value to compute the RELU N1 operation on.
 
     Returns:
         SIMD[type, simd_width]: The result of the RELU N1 operation.
@@ -280,7 +314,7 @@ fn gelu[
         type: dtype used for the computation.
 
     Args:
-        x (SIMD[type, size]): The value to compute the GELU operation on.
+        x : The value to compute the GELU operation on.
 
     Returns:
         SIMD[type, size]: The result of the GELU operation.
@@ -317,7 +351,7 @@ fn gelu_approximate[
         type: dtype used for the computation.
 
     Args:
-        x (SIMD[type, size]): The value to compute the GELU operation on.
+        x : The value to compute the GELU operation on.
 
     Returns:
         SIMD[type, size]: The result of the approximate GELU operation.
@@ -346,7 +380,7 @@ fn gelu_approximate_sigmoid[
         type: dtype used for the computation.
 
     Args:
-        x (SIMD[type, size]): The value to compute the GELU operation on.
+        x : The value to compute the GELU operation on.
 
     Returns:
         SIMD[type, size]: The result of the approximate GELU operation.
@@ -377,11 +411,38 @@ fn sigmoid[
         type: dtype used for the computation.
 
     Args:
-        x (SIMD[type, size]): The value to compute the sigmoid operation on.
+        x : The value to compute the sigmoid operation on.
 
     Returns:
-        SIMD[type, size]: The result of the approximate sigmoid operation.
+        SIMD[type, size]: The result of the sigmoid operation.
     """
 
     let ex = exp(x)
     return ex / (ex + 1)
+
+
+# ===----------------------------------------------------------------------===#
+# sigmoid_grad
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn sigmoid_grad[
+    simd_width: Int, type: DType
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    """Compute the Sigmoid Grad Op using the equation
+    $(1-sigmoid(x))*sigmoid(x)$.
+
+    Parameters:
+        simd_width: SIMD width used for the computation.
+        type: dtype used for the computation.
+
+    Args:
+        x : The value to compute the sigmoid grad operation on.
+
+    Returns:
+        The result of the sigmoid grad operation.
+    """
+
+    let s = sigmoid(x)
+    return (1 - s) * s

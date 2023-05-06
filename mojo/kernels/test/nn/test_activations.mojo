@@ -5,10 +5,26 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: mojo %s | FileCheck %s
 
-from Activations import relu, relu_n1, prelu, gelu, gelu_approximate
+from Activations import elu, relu, relu_n1, prelu, gelu, gelu_approximate
 from DType import DType
 from IO import print
 from Math import iota
+
+# CHECK-LABEL: test_elu
+fn test_elu():
+    print("== test_elu")
+
+    let simd_val = iota[4, DType.f32]()
+
+    # CHECK: [0.000000, 1.000000, 2.000000, 3.000000]
+    print(elu(simd_val))
+
+    # CHECK: [-0.864665, -0.632120, 0.000000, 1.000000]
+    print(elu(simd_val - 2))
+
+    # CHECK: [0.000000, 0.500000, 1.000000, 1.500000]
+    print(elu(0.5 * simd_val))
+
 
 # CHECK-LABEL: test_relu
 fn test_relu():
@@ -80,6 +96,7 @@ fn test_gelu():
 
 
 fn main():
+    test_elu()
     test_relu()
     test_relu_n1()
     test_prelu()
