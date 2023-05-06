@@ -17,14 +17,6 @@ kgen.func @simd_constant() {
 // -----
 
 kgen.func @simd_constant() {
-  // expected-error @below {{cannot convert 1e+100 to f16}}
-  %0 = kgen.param.constant: scalar<f16> = <<"1e+100">>
-  kgen.return
-}
-
-// -----
-
-kgen.func @simd_constant() {
   // expected-error @below {{expected 'true' or 'false' for bool literal}}
   %0 = kgen.param.constant: scalar<bool> = <<e>>
   kgen.return

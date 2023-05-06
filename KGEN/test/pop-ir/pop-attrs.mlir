@@ -17,6 +17,10 @@ kgen.generator @simd_constants<N, value: !pop.simd<N, si32>>() {
   // CHECK: scalar<f32> = <"0.100000001">
   %6 = kgen.param.constant: scalar<f32> = <"0.1">
 
+
+  // CHECK: scalar<f16> = <"1.7285E-5">
+  kgen.param.constant: scalar<f16> = <"1.7285E-5">
+
   // CHECK: #pop.simd<1, 2>
   "simd.const"() {a = #pop.simd<1, 2> : !pop.simd<2, si32>} : () -> ()
   // CHECK: #pop<simd 1>
