@@ -135,7 +135,7 @@ differences are as follows:
 
 - Python classes are dynamic: they allow for dynamic dispatch, monkey-patching (or "swizzling"), and dynamically binding instance properties at runtime.
 
-- Mojo structs are are static: they are bound at compile time (you cannot add methods at runtime). Structs allow you to trade flexibility for performance while being safe and easy to use.
+- Mojo structs are static: they are bound at compile time (you cannot add methods at runtime). Structs allow you to trade flexibility for performance while being safe and easy to use.
 
 Here's a simple definition of a struct:
 
