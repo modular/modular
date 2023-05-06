@@ -171,9 +171,12 @@ parseDTypeValue(AsmParser &p, KGENDType dtype) {
       p.emitError(loc, "failed to parse floating point value");
       return failure();
     }
-    if (*status != APFloat::opOK && *status != APFloat::opInexact) {
+    if (*status != APFloat::opOK && !(*status & APFloat::opInexact)) {
+      SmallVector<char> c;
+      apFp.toString(c);
       p.emitError(loc, "cannot convert ")
-          << strVal << " to " << dtype.getAsString();
+          << strVal << " to " << dtype.getAsString() << ": got "
+          << StringRef(c.data(), c.size());
       return failure();
     }
     return DTypeValue(apFp, dtype);
