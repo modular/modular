@@ -1180,7 +1180,7 @@ struct TiledMatmul[
                 )
 
                 @parameter
-                if elementwise_epilogue_enabled & last_k_tile:
+                if elementwise_epilogue_enabled and last_k_tile:
                     self.elementwise_epilogue_fn(
                         global_offset + GemmShape(row_offset, 0, 0),
                         GemmShape {
@@ -1189,7 +1189,7 @@ struct TiledMatmul[
                     )
 
                 @parameter
-                if rowwise_epilogue_enabled & last_n_tile & last_k_tile:
+                if rowwise_epilogue_enabled and last_n_tile and last_k_tile:
                     self.rowwise_epilogue_fn(
                         global_offset.M + row_offset, tile_size
                     )
@@ -1496,7 +1496,7 @@ struct BTileGenerator[
         )
 
         @parameter
-        if transpose_b & (not b_packed):
+        if transpose_b and not b_packed:
             PackMatrixRows[
                 config.shape_b,
                 config.packed_shape,
@@ -1514,7 +1514,7 @@ struct BTileGenerator[
                 Index(valid_data_dim_nk[0], valid_data_dim_nk[1]),
             )
             return packed_b
-        elif (not transpose_b) & (not b_packed):
+        elif (not transpose_b) and (not b_packed):
             PackMatrixCols[
                 config.shape_b,
                 config.packed_shape,
@@ -1531,7 +1531,7 @@ struct BTileGenerator[
                 # Valid amount of input from the starting offset.
                 Index(valid_data_dim_nk[1], valid_data_dim_nk[0]),
             )
-        elif b_packed & (not transpose_b):
+        elif b_packed and not transpose_b:
             # Need to use tile_k that generator was initialized with.
             # When packing is done online, tile_dim_nk can vary in each call to
             # get_tile (if handling a residual K tile), but packing assumes that
