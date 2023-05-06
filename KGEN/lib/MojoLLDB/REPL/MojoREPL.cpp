@@ -230,10 +230,24 @@ static llvm::Expected<lldb::TargetSP> createMojoReplTarget(Debugger &debugger) {
                              replEntryPointPath.c_str());
   }
 
+  // Compute a generic triple for the REPL target.
+  llvm::Triple targetTriple = HostInfo::GetArchitecture().GetTriple();
+  llvm::SmallString<16> osName;
+  llvm::raw_svector_ostream os(osName);
+
+  // Use the most generic sub-architecture.
+  targetTriple.setArch(targetTriple.getArch());
+  os << llvm::Triple::getOSTypeName(targetTriple.getOS());
+
+  // Override the stub's minimum deployment target to the host os version.
+  if (targetTriple.isOSDarwin())
+    os << HostInfo::GetOSVersion().getAsString();
+  targetTriple.setOSName(os.str());
+
   // Create a target for the repl executable.
   lldb::TargetSP target;
   Status error = debugger.GetTargetList().CreateTarget(
-      debugger, replEntryPointPath.c_str(), llvm::sys::getDefaultTargetTriple(),
+      debugger, replEntryPointPath.c_str(), targetTriple.getTriple(),
       eLoadDependentsYes, /*platform_options=*/nullptr, target);
   if (!error.Success()) {
     return createStringError("failed to create REPL target: {0}",
