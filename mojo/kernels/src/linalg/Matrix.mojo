@@ -35,7 +35,7 @@ struct Matrix[
         Returns:
             The constructed matrix.
         """
-        self.data = dptr.address
+        self.data = dptr
 
     fn __init__(
         inout self, ptr: Pointer[__mlir_type[`!pop.scalar<`, type.value, `>`]]
@@ -49,7 +49,7 @@ struct Matrix[
             The constructed matrix.
         """
         let dptr = DTypePointer[type](ptr.address)
-        self = Self(NDBuffer[2, shape, type](dptr.address))
+        self = Self(NDBuffer[2, shape, type](dptr))
 
     @staticmethod
     @always_inline

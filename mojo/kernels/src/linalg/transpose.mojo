@@ -342,7 +342,7 @@ fn _fill_strides[
 
     Note that `buf` is only used for querying its dimensions.
     """
-    _fill_strides(buf, Buffer[rank, DType.index](strides.address))
+    _fill_strides(buf, Buffer[rank, DType.index](strides))
 
 
 fn _fill_strides[

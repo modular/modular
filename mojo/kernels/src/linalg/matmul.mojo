@@ -114,9 +114,7 @@ fn naive_matmul[
             c_val = epilogue_elemwise_func[accum_type](m, n, c_val)
             matrix_c[m, n] = c_val
             n += 1
-        let row = Buffer[Dim(), accum_type](
-            c.data.offset(m * gemm_shape.N).address, n
-        )
+        let row = Buffer[Dim(), accum_type](c.data.offset(m * gemm_shape.N), n)
         epilogue_rowise_func[accum_type](m, row)
 
 

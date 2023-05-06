@@ -47,8 +47,7 @@ fn test_matrix_dynamic():
     let vec = DynamicVector[__mlir_type[`!pop.scalar<`, DType.si32.value, `>`]](
         16
     )
-    let dptr = DTypePointer[DType.si32](vec.data.address)
-    let a = Buffer[16, DType.si32](dptr.address)
+    let a = Buffer[16, DType.si32](vec.data)
     let m = Matrix[DimList(4, 4), DType.si32, False](vec.data)
     for i in range(16):
         a[i] = i
