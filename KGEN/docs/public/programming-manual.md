@@ -186,9 +186,13 @@ Please see [inout arguments](#inout-arguments) for more information.
 
 In Mojo, you might notice that we use `Int` (with a capital "I"), which is
 different from Python's `int` (with a lowercase "i"). This difference is on
-purpose, and it's actually a good thing! Let me explain why:
+purpose, and it's actually a good thing!
 
-In Python, the `int` type can handle really big numbers and has some extra features, like checking if two numbers are the same object. But this comes with some extra baggage that can slow things down. Mojo's `Int` is different. It's designed to be simple, fast, and tuned for your computer's hardware to handle quickly.
+In Python, the `int` type can handle really big numbers and has some extra
+features, like checking if two numbers are the same object. But this comes with
+some extra baggage that can slow things down. Mojo's `Int` is different. It's
+designed to be simple, fast, and tuned for your computer's hardware to handle
+quickly.
 
 We made this choice for two main reasons:
 
@@ -237,7 +241,7 @@ details. This is the foundation of the safety and predictability guarantees
 Mojo provides to systems programmers.
 
 
-### Overloaded functions & methods
+### Overloaded functions and methods
 
 Like Python, you can define functions in Mojo without specifying argument data
 types and Mojo will handle them dynamically. This is nice when you want
