@@ -14,7 +14,7 @@ from List import Dim, DimList, VariadicList
 from LLCL import OutputChainPtr
 from Math import fma, min, max, iota
 from Memory import stack_allocation, memset_zero
-from Pointer import DTypePointer
+from Pointer import Pointer, DTypePointer
 from SIMD import SIMD
 from StaticTuple import StaticTuple
 from TargetInfo import dtype_sizeof, dtype_simd_width, dtype_alignof
@@ -77,7 +77,7 @@ struct Buffer[size: Dim, type: DType]:
     """The dynamic data type of the buffer."""
 
     @always_inline
-    fn __init__() -> Buffer[size, type]:
+    fn __init__() -> Self:
         """Default initializer for Buffer. By default the fields are all
         inialized to 0.
 
@@ -93,8 +93,8 @@ struct Buffer[size: Dim, type: DType]:
 
     @always_inline
     fn __init__(
-        ptr: __mlir_type[`!pop.pointer<scalar<`, type.value, `>>`]
-    ) -> Buffer[size, type]:
+        ptr: Pointer[__mlir_type[`!pop.scalar<`, type.value, `>`]]
+    ) -> Self:
         """Constructor for a Buffer with statically known size and type.
 
         Constraints:
@@ -108,15 +108,30 @@ struct Buffer[size: Dim, type: DType]:
         """
         # Construct a Buffer type with statically known size
         assert_param_msg[size.has_value(), "must have known size"]()
-        return Buffer[size, type] {
-            data: DTypePointer[type](ptr), dynamic_size: size.get(), dtype: type
-        }
+        return Self {data: ptr.address, dynamic_size: size.get(), dtype: type}
+
+    @always_inline
+    fn __init__(ptr: DTypePointer[type]) -> Self:
+        """Constructor for a Buffer with statically known size and type.
+
+        Constraints:
+            The size is known.
+
+        Args:
+            ptr: Pointer to the data.
+
+        Returns:
+            The buffer object.
+        """
+        # Construct a Buffer type with statically known size
+        assert_param_msg[size.has_value(), "must have known size"]()
+        return Self {data: ptr, dynamic_size: size.get(), dtype: type}
 
     @always_inline
     fn __init__(
-        ptr: __mlir_type[`!pop.pointer<scalar<`, type.value, `>>`],
+        ptr: Pointer[__mlir_type[`!pop.scalar<`, type.value, `>`]],
         in_size: Int,
-    ) -> Buffer[size, type]:
+    ) -> Self:
         """Constructor for a Buffer with statically known type.
 
         Constraints:
@@ -136,15 +151,13 @@ struct Buffer[size: Dim, type: DType]:
                 in_size == size.get(),
                 "if static size is known, static size must equal dynamic size",
             )
-        return Buffer[size, type] {
-            data: DTypePointer[type](ptr), dynamic_size: in_size, dtype: type
-        }
+        return Self {data: ptr.address, dynamic_size: in_size, dtype: type}
 
     @always_inline
     fn __init__(
         ptr: DTypePointer[type],
         in_size: Int,
-    ) -> Buffer[size, type]:
+    ) -> Self:
         """Constructor for a Buffer with statically known type.
 
         Constraints:
@@ -164,9 +177,7 @@ struct Buffer[size: Dim, type: DType]:
                 in_size == size.get(),
                 "if static size is known, static size must equal dynamic size",
             )
-        return Buffer[size, type] {
-            data: ptr, dynamic_size: in_size, dtype: type
-        }
+        return Self {data: ptr, dynamic_size: in_size, dtype: type}
 
     @always_inline
     fn __len__(self) -> Int:
@@ -367,7 +378,7 @@ struct Buffer[size: Dim, type: DType]:
 
     @staticmethod
     @always_inline
-    fn aligned_stack_allocation[alignment: Int]() -> Buffer[size, type]:
+    fn aligned_stack_allocation[alignment: Int]() -> Self:
         """Constructs a buffer instance backed by stack allocated memory space.
 
         Parameters:
@@ -378,7 +389,7 @@ struct Buffer[size: Dim, type: DType]:
         """
         assert_param_msg[size.has_value(), "must have known size"]()
         let data_pointer = _raw_stack_allocation[size.get(), type, alignment]()
-        return Buffer[size, type](data_pointer.address)
+        return Self(data_pointer)
 
     @staticmethod
     @always_inline
@@ -622,7 +633,37 @@ struct NDBuffer[
 
     @always_inline
     fn __init__(
-        ptr: __mlir_type[`!pop.pointer<scalar<`, type.value, `>>`],
+        ptr: Pointer[__mlir_type[`!pop.scalar<`, type.value, `>`]],
+    ) -> Self:
+        """Constructor for NDBuffer with statically known rank, shapes and
+        type.
+
+        Constraints:
+            The rank, shapes, and type are known.
+
+        Args:
+            ptr: Pointer to the data.
+
+        Returns:
+            The NDBuffer object.
+        """
+        assert_param_msg[
+            shape.all_known[rank](),
+            "dimensions must all be known",
+        ]()
+
+        return Self {
+            data: ptr.address,
+            _rank: rank,
+            dynamic_shape: shape,
+            dynamic_dtype: type,
+            dynamic_stride: _compute_ndbuffer_stride[rank](shape),
+            is_contiguous: True,
+        }
+
+    @always_inline
+    fn __init__(
+        ptr: DTypePointer[type],
     ) -> Self:
         """Constructor for NDBuffer with statically known rank, shapes and
         type.
@@ -681,6 +722,35 @@ struct NDBuffer[
 
     @always_inline
     fn __init__(
+        ptr: Pointer[__mlir_type[`!pop.scalar<`, type.value, `>`]],
+        dynamic_shape: StaticIntTuple[rank],
+        dynamic_dtype: DType,
+    ) -> NDBuffer[rank, shape, type]:
+        """Constructor for NDBuffer with statically known rank, but dynamic
+        shapes and type.
+
+        Constraints:
+            The rank is known.
+
+        Args:
+            ptr: Pointer to the data.
+            dynamic_shape: A static tuple of size 'rank' representing shapes.
+            dynamic_dtype: Dtype for the buffer.
+
+        Returns:
+            The NDBuffer object.
+        """
+        return NDBuffer[rank, shape, type] {
+            data: ptr.address,
+            _rank: rank,
+            dynamic_shape: dynamic_shape,
+            dynamic_dtype: dynamic_dtype,
+            dynamic_stride: _compute_ndbuffer_stride[rank](dynamic_shape),
+            is_contiguous: True,
+        }
+
+    @always_inline
+    fn __init__(
         ptr: DTypePointer[type],
         dynamic_shape: StaticIntTuple[rank],
         dynamic_dtype: DType,
@@ -706,6 +776,38 @@ struct NDBuffer[
             dynamic_dtype: dynamic_dtype,
             dynamic_stride: _compute_ndbuffer_stride[rank](dynamic_shape),
             is_contiguous: True,
+        }
+
+    @always_inline
+    fn __init__(
+        ptr: Pointer[__mlir_type[`!pop.scalar<`, type.value, `>`]],
+        dynamic_shape: StaticIntTuple[rank],
+        dynamic_dtype: DType,
+        dynamic_stride: StaticIntTuple[rank],
+    ) -> NDBuffer[rank, shape, type]:
+        """Constructor for strided NDBuffer with statically known rank, but
+        dynamic shapes and type.
+
+        Constraints:
+            The rank is known.
+
+        Args:
+            ptr: Pointer to the data.
+            dynamic_shape: A static tuple of size 'rank' representing shapes.
+            dynamic_dtype: Dtype for the buffer.
+            dynamic_stride: A static tuple of size 'rank' representing strides.
+
+        Returns:
+            The NDBuffer object.
+        """
+        return NDBuffer[rank, shape, type] {
+            data: ptr.address,
+            _rank: rank,
+            dynamic_shape: dynamic_shape,
+            dynamic_dtype: dynamic_dtype,
+            dynamic_stride: dynamic_stride,
+            is_contiguous: _compute_ndbuffer_stride[rank](dynamic_shape)
+            == dynamic_stride,
         }
 
     @always_inline
@@ -1244,7 +1346,7 @@ struct NDBuffer[
             Constructed Buffer object.
         """
         debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
-        return Buffer[Dim(), type](self.data.address, self.size())
+        return Buffer[Dim(), type](self.data, self.size())
 
     @always_inline
     fn bytecount(self) -> Int:
@@ -1308,7 +1410,7 @@ struct NDBuffer[
         let data_pointer = _raw_stack_allocation[
             shape.product[rank]().get(), type, alignment
         ]()
-        return NDBuffer[rank, shape, type](data_pointer.address)
+        return NDBuffer[rank, shape, type](data_pointer)
 
     @staticmethod
     @always_inline
