@@ -70,11 +70,11 @@ struct MojoTypeSystem::Impl {
     }
 
     // Compute the target information for the expression.
-    // TODO: Populate cpu features properly here.
+    // TODO: Populate cpu information properly here.
     ArchSpec targetArch = target.GetArchitecture();
     if (targetArch.IsValid())
       compilationOptions.targetTriple = targetArch.GetTriple().str();
-    compilationOptions.targetCpu = targetArch.GetClangTargetCPU();
+    compilationOptions.targetCpu = llvm::sys::getHostCPUName();
 
     // Configure the parser context.
     MojoParserConfig parserConfig(&mlirContext, *runtime, compilationOptions);

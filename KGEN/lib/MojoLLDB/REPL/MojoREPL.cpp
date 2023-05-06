@@ -22,6 +22,7 @@
 #include "lldb/Host/HostInfo.h"
 #include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
+#include "llvm/TargetParser/Host.h"
 
 using namespace M;
 using namespace M::KGEN::Mojo;
@@ -229,24 +230,10 @@ static llvm::Expected<lldb::TargetSP> createMojoReplTarget(Debugger &debugger) {
                              replEntryPointPath.c_str());
   }
 
-  // Compute a generic triple for the REPL target.
-  llvm::Triple targetTriple = HostInfo::GetArchitecture().GetTriple();
-  llvm::SmallString<16> osName;
-  llvm::raw_svector_ostream os(osName);
-
-  // Use the most generic sub-architecture.
-  targetTriple.setArch(targetTriple.getArch());
-  os << llvm::Triple::getOSTypeName(targetTriple.getOS());
-
-  // Override the stub's minimum deployment target to the host os version.
-  if (targetTriple.isOSDarwin())
-    os << HostInfo::GetOSVersion().getAsString();
-  targetTriple.setOSName(os.str());
-
   // Create a target for the repl executable.
   lldb::TargetSP target;
   Status error = debugger.GetTargetList().CreateTarget(
-      debugger, replEntryPointPath.c_str(), targetTriple.getTriple(),
+      debugger, replEntryPointPath.c_str(), llvm::sys::getDefaultTargetTriple(),
       eLoadDependentsYes, /*platform_options=*/nullptr, target);
   if (!error.Success()) {
     return createStringError("failed to create REPL target: %s",
