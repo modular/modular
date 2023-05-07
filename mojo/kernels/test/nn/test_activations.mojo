@@ -74,11 +74,51 @@ fn test_prelu():
     print(prelu(0.5 * simd_val, 0.5))
 
 
-# CHECK-LABEL: test_gelu
-fn test_gelu():
-    print("== test_gelu")
+# CHECK-LABEL: test_gelu_f16
+fn test_gelu_f16():
+    print("== test_gelu_f16")
+
+    let simd_val = 2 - 0.5 * iota[4, DType.f16]()
+
+    # CHECK: [1.955078, 1.399414, 0.841309, 0.345703]
+    print(gelu(simd_val))
+
+    # CHECK: [0.841309, 0.580078, 0.345703, 0.149658]
+    print(gelu(0.5 * simd_val))
+
+    # CHECK: [1.955078, 1.399414, 0.841309, 0.345703]
+    print(gelu_approximate(simd_val))
+
+    # CHECK: [0.841309, 0.580078, 0.345703, 0.149658]
+    print(gelu_approximate(0.5 * simd_val))
+
+
+# CHECK-LABEL: test_gelu_f32
+fn test_gelu_f32():
+    print("== test_gelu_f32")
 
     let simd_val = 2 - 0.5 * iota[4, DType.f32]()
+
+    # There is no difference in the results from MLAS and oneDNN gelu.
+    # CHECK: [1.954500, 1.399789, 0.841345, 0.345731]
+    print(gelu(simd_val))
+
+    # The results from MLAS gelu is [0.841345, 0.580029, 0.345731, 0.149677].
+    # CHECK: [0.841345, 0.580030, 0.345731, 0.149677]
+    print(gelu(0.5 * simd_val))
+
+    # CHECK: [1.954598, 1.399572, 0.841192, 0.345714]
+    print(gelu_approximate(simd_val))
+
+    # CHECK: [0.841192, 0.579961, 0.345714, 0.149675]
+    print(gelu_approximate(0.5 * simd_val))
+
+
+# CHECK-LABEL: test_gelu_f64
+fn test_gelu_f64():
+    print("== test_gelu_f64")
+
+    let simd_val = 2 - 0.5 * iota[4, DType.f64]()
 
     # There is no difference in the results from MLAS and oneDNN gelu.
     # CHECK: [1.954500, 1.399789, 0.841345, 0.345731]
@@ -100,4 +140,6 @@ fn main():
     test_relu()
     test_relu_n1()
     test_prelu()
-    test_gelu()
+    test_gelu_f16()
+    test_gelu_f32()
+    test_gelu_f64()
