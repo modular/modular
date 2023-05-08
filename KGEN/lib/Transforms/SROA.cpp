@@ -239,7 +239,8 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
           // Allow GEPs through only if the index is constant.
           if (auto gep = dyn_cast<POP::ArrayGEPOp>(loadUser)) {
             APInt index;
-            if (!matchPattern(gep.getIndex(), mlir::m_ConstantInt(&index)))
+            if (!matchPattern(gep.getIndex(), mlir::m_ConstantInt(&index)) ||
+                index.isNegative())
               return false;
           }
         }
@@ -248,7 +249,8 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
       // We only support array GEPs of constant array indexing.
       if (auto gep = dyn_cast<POP::ArrayGEPOp>(user)) {
         APInt index;
-        if (!matchPattern(gep.getIndex(), mlir::m_ConstantInt(&index)))
+        if (!matchPattern(gep.getIndex(), mlir::m_ConstantInt(&index)) ||
+            index.isNegative())
           return false;
       }
     }
@@ -309,7 +311,8 @@ struct ReplaceStack : public Replacer<ReplaceStack, POP::StackAllocationOp> {
       // We only support offsets with constant terms.
       if (auto offset = dyn_cast<POP::OffsetOp>(user)) {
         APInt index;
-        if (!matchPattern(offset.getIndex(), mlir::m_ConstantInt(&index)))
+        if (!matchPattern(offset.getIndex(), mlir::m_ConstantInt(&index)) ||
+            index.isNegative())
           return false;
       }
     }
