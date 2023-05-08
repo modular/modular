@@ -254,9 +254,9 @@ This allows you to define multiple functions with the same name but with
 different arguments. This is a common feature seen in many languages, such as
 C++, Java, and Swift.
 
-When resolving a function call, Mojo tries each candidate and use the one that
+When resolving a function call, Mojo tries each candidate and uses the one that
 works (if only one works), or it picks the closest match (if it can determine a
-close match), or it reports that the call as ambiguous if it can't figure
+close match), or it reports that the call is ambiguous if it can't figure
 out which one to pick. In the latter case, you can resolve the ambiguity by
 adding an explicit cast on the call site. Let's look at an example:
 
@@ -536,16 +536,16 @@ system with the 'bfloat16' machine learning type:
 ```mojo
 fn funWithSIMD():
     # Make a vector of 4 floats.
-    let smallVec = SIMD[DType.f32, 4](1.0, 2.0, 3.0, 4.0)
+    let small_vec = SIMD[DType.f32, 4](1.0, 2.0, 3.0, 4.0)
 
     # Make a big vector containing 1.0 in bfloat16 format.
-    let bigVec = SIMD[DType.bf16, 32].splat(1.0)
+    let big_vec = SIMD[DType.bf16, 32].splat(1.0)
 
     # Do some math and convert the elements to float32.
-    let biggerVec = (bigVec+bigVec).cast[DType.f32]()
+    let bigger_vec = (big_vec+big_vec).cast[DType.f32]()
 
     # You can write types out explicitly if you want of course.
-    let biggerVec2 : SIMD[DType.f32, 32] = biggerVec
+    let bigger_vec2 : SIMD[DType.f32, 32] = bigger_vec
 ```
 
 Note that the "cast" method needs an additional parameter to indicate what type
