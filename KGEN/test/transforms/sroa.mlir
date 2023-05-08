@@ -302,3 +302,24 @@ kgen.func @store_arg(
   pop.store %2, %arg2 : !pop.pointer<pointer<array<2, index>>>
   kgen.return
 }
+
+kgen.func @negArrayGep() {
+  // CHECK: kgen.param.constant = <-1>
+  // CHECK-NEXT: pop.stack_allocation 1 x !pop.array<2, index>
+  // CHECK-NEXT: pop.array.gep
+  %0 = kgen.param.constant = <-1>
+  %array = pop.stack_allocation 1 x !pop.array<2, index>
+  %gep = pop.array.gep %array[%0] : <array<2, index>>
+  kgen.return
+}
+
+
+kgen.func @negOffsetGep() {
+  // CHECK: kgen.param.constant = <-1>
+  // CHECK-NEXT: pop.stack_allocation 2 x index
+  // CHECK-NEXT: pop.offset
+  %0 = kgen.param.constant = <-1>
+  %alloc = pop.stack_allocation 2 x index
+  %offset = pop.offset %alloc[%0] : !pop.pointer<index>
+  kgen.return
+}
