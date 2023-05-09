@@ -286,7 +286,10 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
         "Crash recovered: CrashRecoveryContext::RetCode (on POSIX: "
         "signal number + 128) = {0}",
         crc.RetCode);
-    diagnosticManager.PutString(eDiagnosticSeverityError, "crash detected");
+    diagnosticManager.PutString(
+        eDiagnosticSeverityError,
+        "The Mojo REPL has crashed and attempted recovery. If the REPL "
+        "behaves inconsistently, please restart to ensure correct behavior.");
     return failure();
   }
 
