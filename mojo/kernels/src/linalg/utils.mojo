@@ -12,6 +12,11 @@ from SIMD import F32
 from TargetInfo import has_avx512f, has_neon, os_is_macos, dtype_simd_width
 from BuildInfo import is_relwithdebinfo_build, is_debug_build
 from Buffer import NDBuffer, DynamicRankBuffer
+from SIMD import SIMD
+
+alias elementwise_lambda_fn_sig_type = fn[width: Int, type: DType] (
+    StaticIntTuple[2], SIMD[type, width]
+) capturing -> None
 
 
 @register_passable("trivial")
