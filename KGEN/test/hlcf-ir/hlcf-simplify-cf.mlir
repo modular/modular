@@ -89,10 +89,12 @@ kgen.func @remove_trivial_loop_5(%cond: i1, %arg0: index, %arg1: index) -> index
 }
 
 // CHECK-LABEL: @remove_trivial_loop_6
-// This loop can't be removed because the break is to the outer loop.
+// This loop can be removed even though the break is to the outer loop.
 kgen.func @remove_trivial_loop_6(%cond: i1, %arg0: index, %arg1: index) -> index {
-  // CHECK-COUNT-2: hlcf.loop
-  // CHECK:         return
+  // TODO: We should be able to delete both loops here, but we only manage to
+  // delete the inner one now.
+  // CHECK-NOT: hlcf.loop {
+  // CHECK:     return
   hlcf.loop "outer" {
     hlcf.loop {
       hlcf.break "outer"
@@ -143,6 +145,64 @@ kgen.func @remove_trivial_loop_9(%cond: i1) {
   hlcf.loop {
     hlcf.loop {
       hlcf.break
+    }
+    hlcf.break
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: @remove_trivial_loop_10
+kgen.func @remove_trivial_loop_10(%cond: i1) {
+  // CHECK-NOT:  hlcf.loop
+  // CHECK-NEXT: return
+  hlcf.loop {
+    hlcf.loop {
+     kgen.return
+    }
+    hlcf.break
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: @remove_trivial_loop_11
+// Only the outer loop can be removed.
+kgen.func @remove_trivial_loop_11(%cond: i1) {
+  // CHECK:      hlcf.loop
+  // CHECK-NOT:  hlcf.loop
+  // CHECK: return
+  hlcf.loop () {
+    hlcf.loop () {
+      hlcf.if %cond {
+        hlcf.continue
+      } else {
+        kgen.return
+      }
+      hlcf.break
+    }
+    hlcf.break
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: @remove_trivial_loop_12
+// Only the outer loop can be removed.
+kgen.func @remove_trivial_loop_12(%cond: i1) {
+  // CHECK:      hlcf.loop
+  // CHECK-NOT:  hlcf.loop
+  // CHECK-NEXT:   hlcf.if
+  // CHECK-NEXT:     hlcf.yield
+  // CHECK-NEXT:   else
+  // CHECK-NEXT:     hlcf.break
+  // CHECK:        kgen.return
+  // CHECK:      kgen.return
+  hlcf.loop () {
+    hlcf.loop () {
+      hlcf.if %cond {
+        hlcf.yield
+      } else {
+        hlcf.break
+      }
+      kgen.return
     }
     hlcf.break
   }

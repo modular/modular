@@ -36,8 +36,8 @@ private:
   /// Outer loops stack for the walk.
   SmallVector<LoopOp> parentLoops;
 
-  /// Number of break or continue ops that lead to the current or outer loops
-  /// (breaks and continues in inner loops don't count).
+  /// Number of break or continue ops that lead to the current loop (breaks and
+  /// continues in inner loops don't count).
   DenseMap<LoopOp, int> jumpsCount;
 };
 } // namespace
@@ -50,9 +50,8 @@ LoopOp SimplifyCF::getOrFindTargetLoop(Operation *op, StringAttr label) {
 
   assert(!parentLoops.empty());
   for (auto loop : llvm::reverse(parentLoops)) {
-    ++jumpsCount[loop];
-
     if (isMatchingLoop(loop, label)) {
+      ++jumpsCount[loop];
       targetLoopMap[op] = loop;
       return loop;
     }
@@ -77,13 +76,20 @@ LoopOp SimplifyCF::getOrFindTargetLoop(Operation *op, StringAttr label) {
 void SimplifyCF::tryRemovingLoop(LoopOp loop) {
   Block &body = loop.getBody().front();
 
-  // Check that the body ends with a break.
-  BreakOp term = dyn_cast<BreakOp>(body.getTerminator());
-  if (!term)
+  // If the loop has more than just one break or continue in it, we can't remove
+  // it.
+  if (jumpsCount.at(loop) > 1)
     return;
 
-  // ..and that the break target is this loop.
-  if (getOrFindTargetLoop(term, term.getLabelAttr()) != loop)
+  // Check that the body ends with a break or return.
+  Operation *term = body.getTerminator();
+  if (!isa<BreakOp, KGEN::ReturnOp>(term))
+    return;
+
+  // If the loop body ends with return, but jumpsCount is 1, it means that there
+  // is a break or continue somewhere inside the loop body - we can't deal with
+  // that.
+  if (isa<KGEN::ReturnOp>(term) && jumpsCount.at(loop) != 0)
     return;
 
   // All the checks passed, the loop now can be removed!
@@ -130,6 +136,6 @@ void SimplifyCF::runOnOperation() {
 
   // If a loop has just one jump, we can try removing it.
   for (LoopOp loop : loopsInOrder)
-    if (jumpsCount.at(loop) == 1)
+    if (jumpsCount[loop] <= 1)
       tryRemovingLoop(loop);
 }
