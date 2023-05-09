@@ -200,9 +200,10 @@ void MojoTypeSystem::broadcastDiagnostics(
   std::string msg;
   llvm::raw_string_ostream msgOS(msg);
   for (const auto &diag : diagnosticManager.Diagnostics()) {
-    auto *mojoDiag = dyn_cast<MojoDiagnostic>(diag.get());
-    if (!mojoDiag || (filter && !filter(*mojoDiag)))
-      continue;
+    if (auto *mojoDiag = dyn_cast<MojoDiagnostic>(diag.get())) {
+      if (filter && !filter(*mojoDiag))
+        continue;
+    }
 
     switch (diag->GetSeverity()) {
     case eDiagnosticSeverityError:
