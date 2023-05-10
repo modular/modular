@@ -88,7 +88,7 @@ public:
 
 static MojoTypeSystem &getMojoTypeSystem(Target &target) {
   if (auto typeSystemOr =
-          target.GetScratchTypeSystemForLanguage(eLanguageTypeMojo))
+          target.GetScratchTypeSystemForLanguage(lldb::eLanguageTypeMojo))
     return *llvm::cast<MojoTypeSystem>(typeSystemOr.get().get());
   llvm::report_fatal_error(
       "The Mojo type system plug-in must have already been registered.");
@@ -231,7 +231,7 @@ static void dumpTraceOnSignal(void *cookie) {
   if (!currentTarget)
     return;
   auto typeSystemOr =
-      currentTarget->GetScratchTypeSystemForLanguage(eLanguageTypeMojo);
+      currentTarget->GetScratchTypeSystemForLanguage(lldb::eLanguageTypeMojo);
   if (!typeSystemOr)
     return;
 

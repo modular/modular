@@ -50,12 +50,12 @@ using OutputFn = void (*)(const char *, const char *);
 static MojoPersistentExpressionState *
 getPersistentExpressionState(const TargetSP &target) {
   return static_cast<MojoPersistentExpressionState *>(
-      target->GetPersistentExpressionStateForLanguage(eLanguageTypeMojo));
+      target->GetPersistentExpressionStateForLanguage(lldb::eLanguageTypeMojo));
 }
 
 static MojoTypeSystem &getMojoTypeSystem(const TargetSP &target) {
   if (auto typeSystemOr =
-          target->GetScratchTypeSystemForLanguage(eLanguageTypeMojo))
+          target->GetScratchTypeSystemForLanguage(lldb::eLanguageTypeMojo))
     return *static_cast<MojoTypeSystem *>(typeSystemOr.get().get());
   llvm::report_fatal_error(
       "The Mojo type system plug-in must have already been registered.");
@@ -80,7 +80,7 @@ enum ExecutionFinishedState : int {
 namespace {
 struct MojoExpressionEvaluationOptions : public SBExpressionOptions {
   MojoExpressionEvaluationOptions() {
-    SetLanguage(eLanguageTypeMojo);
+    SetLanguage(lldb::eLanguageTypeMojo);
     SetUnwindOnError(false);
     SetGenerateDebugInfo(true);
 

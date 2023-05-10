@@ -7,7 +7,6 @@
 #ifndef KGEN_LIB_MOJOLLDB_REPL_MOJOREPL_H
 #define KGEN_LIB_MOJOLLDB_REPL_MOJOREPL_H
 
-#include "../Plugin.h"
 #include "lldb/Expression/REPL.h"
 #include "lldb/Utility/Status.h"
 #include "lldb/lldb-public.h"
@@ -46,7 +45,7 @@ protected:
     return lldb_private::ConstString("repl.mojo");
   }
 
-  lldb::LanguageType GetLanguage() override { return eLanguageTypeMojo; }
+  lldb::LanguageType GetLanguage() override { return lldb::eLanguageTypeMojo; }
 
   //===--------------------------------------------------------------------===//
   // Source Code Handling

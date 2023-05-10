@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "CommandObjectMojo.h"
-#include "../Plugin.h"
 #include "../TypeSystem/MojoTypeSystem.h"
 #include "lldb/Target/Target.h"
 
@@ -78,7 +77,7 @@ CommandDumpLogs::getMojoTypeSystem(SBDebugger &debugger,
 
   TargetSP target = TargetExtractor(sbTarget).getSP();
   auto typeSystemOr =
-      target->GetScratchTypeSystemForLanguage(eLanguageTypeMojo);
+      target->GetScratchTypeSystemForLanguage(lldb::eLanguageTypeMojo);
   if (!typeSystemOr) {
     result.SetError(llvm::toString(typeSystemOr.takeError()).c_str());
     return nullptr;
