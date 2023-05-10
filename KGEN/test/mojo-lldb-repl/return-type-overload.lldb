@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %lldb -R MOJO -r <%s | FileCheck %s
+# RUN: %repl <%s | FileCheck %s
 
 # Note: in REPL mode, expressions are delimited by empty lines.
 

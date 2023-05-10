@@ -23,11 +23,8 @@ def configure_lldb_tests(config):
     # during initialization that set it up for a correct execution during tests.
     config.substitutions.append(
         (
-            "%lldb",
-            (
-                f"{lldb_env} {lldb_path} --source-quietly -S"
-                f" {config.lit_lldb_init}"
-            ),
+            "%repl",
+            f"{lldb_env} mojo-repl --source-quietly -S {config.lit_lldb_init}",
         )
     )
 
