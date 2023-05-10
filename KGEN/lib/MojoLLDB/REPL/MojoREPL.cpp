@@ -21,6 +21,7 @@
 #include "lldb/Host/HostInfo.h"
 #include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/TargetParser/Host.h"
 
 using namespace M;
@@ -47,55 +48,8 @@ static llvm::Error createStringError(const char *format, Args &&...args) {
 // Target event listening
 //===----------------------------------------------------------------------===//
 
-static bool shouldStopListeningToEvents(lldb::StateType state) {
-  switch (state) {
-  case lldb::eStateConnected:
-  case lldb::eStateAttaching:
-  case lldb::eStateLaunching:
-  case lldb::eStateStepping:
-  case lldb::eStateSuspended:
-  case lldb::eStateStopped:
-  case lldb::eStateRunning:
-  case lldb::eStateCrashed:
-    return false;
-  case lldb::eStateInvalid:
-  case lldb::eStateDetached:
-  case lldb::eStateExited:
-  case lldb::eStateUnloaded:
-    // Only in these states we can't execute more expressions.
-    return true;
-  }
-}
-
-static void flushInferiorStderrAndStdout(lldb::ProcessSP &process) {
-  constexpr size_t kBufferSize = 1024;
-  char buffer[kBufferSize];
-  size_t count;
-  lldb_private::Debugger &debugger = process->GetTarget().GetDebugger();
-  Status status;
-  {
-    lldb::StreamSP out(debugger.GetAsyncOutputStream());
-    while ((count = process->GetSTDOUT(buffer, kBufferSize - 1, status)) > 0) {
-      buffer[count] = '\0';
-      out->Write(buffer, count);
-    }
-    out->Flush();
-  }
-  {
-    lldb::StreamSP err(debugger.GetAsyncErrorStream());
-    while ((count = process->GetSTDERR(buffer, kBufferSize - 1, status)) > 0) {
-      buffer[count] = '\0';
-      err->Write(buffer, count);
-    }
-    err->Flush();
-  }
-}
-
 static void eventThreadFunction(const lldb::TargetSP &target,
                                 const std::atomic_bool &stopEventThread) {
-  lldb::ProcessSP process(target->GetProcessSP());
-  assert(process->IsValid() &&
-         "A valid process should already exist for the REPL");
   // Get a pointer to the mojo type system. We need that to read the various log
   // messages.
   auto typeSystemOr =
@@ -108,18 +62,13 @@ static void eventThreadFunction(const lldb::TargetSP &target,
   if (!typeSystem)
     llvm::report_fatal_error("must be able to get the mojo type system");
 
-  lldb::ListenerSP processListener =
-      Listener::MakeListener("mojo-repl.process-listener");
-  process->AddListener(processListener, Process::eBroadcastBitStateChanged |
-                                            Process::eBroadcastBitSTDOUT |
-                                            Process::eBroadcastBitSTDERR);
   lldb::ListenerSP typeSystemListener =
       Listener::MakeListener("mojo-repl.type-system-listener");
   typeSystem->AddListener(typeSystemListener, MojoTypeSystem::eAllMessagesMask);
 
   // Construct the debug message cache, and pull out the error raw_ostream now.
   std::deque<std::pair<MojoTypeSystem::MessageKind, std::string>> debugMessages;
-  auto errorStream = process->GetTarget().GetDebugger().GetAsyncErrorStream();
+  auto errorStream = target->GetDebugger().GetAsyncErrorStream();
   // Report a message to the error stream.
   auto reportMessage = [errorStream](StringRef type, StringRef message) {
     // If the LLDB Expression logs are enabled, we should send our message
@@ -138,7 +87,7 @@ static void eventThreadFunction(const lldb::TargetSP &target,
   // Single run that processes pending events. It returns true if the listener
   // loop should resume, or false if the inferior can't execute more
   // expressions and the loop should stop.
-  auto processEvents = [&]() -> bool {
+  auto processEvents = [&] {
     lldb::EventSP event;
     while (typeSystemListener->GetEvent(event, std::chrono::seconds(0))) {
       // Handle the mojo type system events by logging them to the debugger
@@ -150,23 +99,15 @@ static void eventThreadFunction(const lldb::TargetSP &target,
       // we shut down the repl.
       errorStream->Flush();
     }
-    while (processListener->GetEvent(event, std::chrono::seconds(0))) {
-      const uint32_t eventMask = event->GetType();
-      if (eventMask & Process::eBroadcastBitStateChanged) {
-        if (shouldStopListeningToEvents(
-                Process::ProcessEventData::GetStateFromEvent(event.get()))) {
-          return false;
-        }
-      } else if ((eventMask & Process::eBroadcastBitSTDOUT) ||
-                 (eventMask & Process::eBroadcastBitSTDERR)) {
-        flushInferiorStderrAndStdout(process);
-      }
-    }
-    return true;
+    if (lldb::ProcessSP process = target->GetProcessSP())
+      target->GetDebugger().FlushProcessOutput(*process, /*flush_stdout=*/true,
+                                               /*flush_stdout=*/true);
   };
 
-  while (!stopEventThread && processEvents())
+  while (!stopEventThread) {
+    processEvents();
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
 
   // We fetch the events one last time in case the processes emitted some after
   // the previous loop was told to stop by the REPL's destructor.
@@ -371,10 +312,23 @@ createInstanceFromDebugger(Debugger &debugger, const char *replOptions) {
   if (llvm::Error error = MojoREPL::launchEntryPointProcess(**target, debugger))
     return error;
 
+  // Start the debugger's default event handler thread.
+  debugger.StartEventHandlerThread();
+
+  // Destroy the process and the event handler thread after a fatal error.
+  auto cleanupOnError = llvm::make_scope_exit([&]() {
+    if (lldb::ProcessSP process = (**target).GetProcessSP())
+      process->Destroy(/*force_kill=*/false);
+    debugger.StopEventHandlerThread();
+  });
+
   // The process is active and stopped, we can build the REPL now.
   lldb::REPLSP repl = std::make_shared<MojoREPL>(**target);
   repl->SetCompilerOptions(replOptions);
   (*target)->SetREPL(lldb::eLanguageTypeMojo, repl);
+
+  // Disable the cleanup, since we have a valid repl session now.
+  cleanupOnError.release();
 
   if (isatty(STDIN_FILENO))
     printf("Welcome to Mojo.\nType :help for assistance.\n");
