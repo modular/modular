@@ -258,6 +258,7 @@ function(add_mojo_doc visibility doc_filename output_file output_directory)
 
     COMMAND $<TARGET_FILE:mojo> -doc-gen
     -o ${GEN_DOC_JSON_FILE} ${KGEN_INCLUDE_FLAGS} ${doc_filename}
+    -I ${KERNELS_BINARY_DIR}/mojo/Python
 
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     DEPENDS mojo ${doc_filename} ${KGEN_LIB_DEPENDS}
