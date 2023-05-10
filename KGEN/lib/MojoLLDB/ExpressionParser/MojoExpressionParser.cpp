@@ -111,7 +111,7 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
 
   // Grab the type system from the target, bailing out if we can't.
   auto typeSystemOr =
-      target->GetScratchTypeSystemForLanguage(eLanguageTypeMojo);
+      target->GetScratchTypeSystemForLanguage(lldb::eLanguageTypeMojo);
   if (!typeSystemOr) {
     llvm::consumeError(typeSystemOr.takeError());
     return;

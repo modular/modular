@@ -133,14 +133,14 @@ LLCL::Runtime &MojoTypeSystem::getRuntime() { return *impl->runtime; }
 static lldb::TypeSystemSP createInstance(lldb::LanguageType language,
                                          Module *module, Target *target) {
   // TODO: Support creating a type system from a module.
-  if (language != eLanguageTypeMojo || !target)
+  if (language != lldb::eLanguageTypeMojo || !target)
     return nullptr;
   return std::make_shared<MojoTypeSystem>(*target);
 }
 
 void MojoTypeSystem::Initialize() {
   LanguageSet languages;
-  languages.Insert(eLanguageTypeMojo);
+  languages.Insert(lldb::eLanguageTypeMojo);
   PluginManager::RegisterPlugin(getPluginNameStatic(), "Mojo TypeSystem",
                                 createInstance, languages, languages);
 }

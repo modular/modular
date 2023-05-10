@@ -7,7 +7,6 @@
 #ifndef KGEN_LIB_MOJOLLDB_TYPESYSTEM_MOJOTYPESYSTEM_H
 #define KGEN_LIB_MOJOLLDB_TYPESYSTEM_MOJOTYPESYSTEM_H
 
-#include "../Plugin.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/SymbolExport.h"
@@ -51,7 +50,7 @@ public:
 
   /// Return if the given language is supported by this type system.
   bool SupportsLanguage(lldb::LanguageType language) override {
-    return language == eLanguageTypeMojo;
+    return language == lldb::eLanguageTypeMojo;
   }
 
   //===--------------------------------------------------------------------===//
@@ -221,7 +220,7 @@ public:
 
   lldb::LanguageType
   GetMinimumLanguage(lldb::opaque_compiler_type_t type) override {
-    return eLanguageTypeMojo;
+    return lldb::eLanguageTypeMojo;
   }
 
   lldb::Format GetFormat(lldb::opaque_compiler_type_t type) override;
@@ -314,7 +313,7 @@ public:
   }
 
   lldb::LanguageType DeclContextGetLanguage(void *) override {
-    return eLanguageTypeMojo;
+    return lldb::eLanguageTypeMojo;
   }
 
   //===--------------------------------------------------------------------===//

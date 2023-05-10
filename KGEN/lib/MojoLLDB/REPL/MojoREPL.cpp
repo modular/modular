@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "MojoREPL.h"
-#include "../Plugin.h"
 #include "../TypeSystem/MojoTypeSystem.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/SymbolExport.h"
@@ -100,7 +99,7 @@ static void eventThreadFunction(const lldb::TargetSP &target,
   // Get a pointer to the mojo type system. We need that to read the various log
   // messages.
   auto typeSystemOr =
-      target->GetScratchTypeSystemForLanguage(eLanguageTypeMojo);
+      target->GetScratchTypeSystemForLanguage(lldb::eLanguageTypeMojo);
   if (!typeSystemOr)
     llvm::report_fatal_error("must be able to get the mojo type system");
 
@@ -375,7 +374,7 @@ createInstanceFromDebugger(Debugger &debugger, const char *replOptions) {
   // The process is active and stopped, we can build the REPL now.
   lldb::REPLSP repl = std::make_shared<MojoREPL>(**target);
   repl->SetCompilerOptions(replOptions);
-  (*target)->SetREPL(eLanguageTypeMojo, repl);
+  (*target)->SetREPL(lldb::eLanguageTypeMojo, repl);
 
   if (isatty(STDIN_FILENO))
     printf("Welcome to Mojo.\nType :help for assistance.\n");
@@ -408,7 +407,7 @@ static lldb::REPLSP createInstance(Status &error, lldb::LanguageType language,
 
 void MojoREPL::Initialize() {
   LanguageSet languages;
-  languages.Insert(eLanguageTypeMojo);
+  languages.Insert(lldb::eLanguageTypeMojo);
   PluginManager::RegisterPlugin(getPluginNameStatic(), "Mojo language REPL",
                                 createInstance, languages);
 }
