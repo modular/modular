@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %lldb -R MOJO -r <%s 2>%t | FileCheck %s -check-prefix=CHECK
+# RUN: %repl <%s 2>%t | FileCheck %s -check-prefix=CHECK
 # RUN: cat %t | FileCheck %s -check-prefix=CHECK-STDERR
 
 # Note: in REPL mode, expressions are delimited by empty lines.

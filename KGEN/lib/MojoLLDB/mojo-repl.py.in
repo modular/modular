@@ -1,6 +1,7 @@
 #!$<TARGET_FILE:Python3::Interpreter>
 import shutil
 import subprocess
+import sys
 
 if __name__ == "__main__":
   lldb_path = shutil.which("lldb")
@@ -8,5 +9,4 @@ if __name__ == "__main__":
     print("Can't find 'lldb' - please run 'build-llvm lldb && build MojoLLDB'")
     exit(1)
 
-  subprocess.run([lldb_path, "-R", "go", "-r"])
-
+  subprocess.run([lldb_path, "-R", "mojo", "-r", *sys.argv[1:]])
