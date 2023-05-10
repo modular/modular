@@ -2295,7 +2295,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
                "method";
         diag.attachNote(argDecl.getLoc())
             << "consider passing by reference instead"
-            << FixIt::insertAfterToken(argDecl.getLoc(), "&", shared);
+            << FixIt::insertBeforeToken(argDecl.getLoc(), "inout ");
         break;
       }
 

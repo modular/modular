@@ -1381,7 +1381,7 @@ struct FileDescriptor:
     var fd: Int
 
     # This is the new.
-    fn __moveinit__(inout self, consuming existing: Self):
+    fn __moveinit__(inout self, owned existing: Self):
         self.fd = existing.fd
 
     # This takes ownership of a POSIX file descriptor.
@@ -1510,7 +1510,7 @@ struct FileDescriptor:
         self.fd = existing.fd
         existing.fd = -1  # neutralize 'existing'.
 
-    fn __moveinit__(inout self, consuming existing: Self): # as above
+    fn __moveinit__(inout self, owned existing: Self): # as above
     fn __init__(inout self, fd: Int): # as above
     fn __init__(inout self, path: String): # as above
 
