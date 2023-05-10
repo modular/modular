@@ -2,8 +2,7 @@
 
 // Test proper handling of debug types.
 
-// CHECK-DAG: ![[MEMBER_TYPE:.*]] = !debuginfo.unresolved<!pop.array<2, simd<4, f32>>>
-// CHECK-DAG: ![[MEMBER:.*]] = !debuginfo.member<data: ![[MEMBER_TYPE]]>
+// CHECK-DAG: ![[MEMBER:.*]] = !debuginfo.member<data: !pop.array<2, simd<4, f32>>>
 // CHECK-DAG: ![[STRUCT:.*]] = !debuginfo.struct<SmallVector(![[MEMBER]])>
 lit.struct.decl @SmallVector<N, T: type> {
   lit.struct.field data: !pop.array<N, T>
