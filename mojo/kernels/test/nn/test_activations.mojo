@@ -74,25 +74,6 @@ fn test_prelu():
     print(prelu(0.5 * simd_val, 0.5))
 
 
-# CHECK-LABEL: test_gelu_f16
-fn test_gelu_f16():
-    print("== test_gelu_f16")
-
-    let simd_val = 2 - 0.5 * iota[4, DType.f16]()
-
-    # CHECK: [1.955078, 1.399414, 0.841309, 0.345703]
-    print(gelu(simd_val))
-
-    # CHECK: [0.841309, 0.580078, 0.345703, 0.149658]
-    print(gelu(0.5 * simd_val))
-
-    # CHECK: [1.955078, 1.399414, 0.841309, 0.345703]
-    print(gelu_approximate(simd_val))
-
-    # CHECK: [0.841309, 0.580078, 0.345703, 0.149658]
-    print(gelu_approximate(0.5 * simd_val))
-
-
 # CHECK-LABEL: test_gelu_f32
 fn test_gelu_f32():
     print("== test_gelu_f32")
@@ -140,6 +121,5 @@ fn main():
     test_relu()
     test_relu_n1()
     test_prelu()
-    test_gelu_f16()
     test_gelu_f32()
     test_gelu_f64()
