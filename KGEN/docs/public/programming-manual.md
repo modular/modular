@@ -140,12 +140,10 @@ differences are as follows:
 Here's a simple definition of a struct:
 
 ```mojo
+@value
 struct MyPair:
     var first: Int
     var second: Int
-    def __init__(inout self, first: Int, second: Int):
-        self.first = first
-        self.second = second
     def __lt__(self, rhs: MyPair) -> Bool:
         return self.first < rhs.first or
               (self.first == rhs.first and
