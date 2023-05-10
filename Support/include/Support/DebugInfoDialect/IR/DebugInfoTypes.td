@@ -50,7 +50,7 @@ def DebugInfo_DIArrayType : DIType<"DIArray", "array"> {
       return $_get(elementType.getContext(), elementType, elementCount);
     }]>
   ];
-  let assemblyFormat = "`<` $elementCount `x` $elementType `>`";
+  let assemblyFormat = "`<` $elementCount `x` custom<DIType>($elementType) `>`";
 }
 
 //===----------------------------------------------------------------------===//
@@ -123,7 +123,9 @@ def DebugInfo_DIMemberType : DIType<"DIMember", "member"> {
       return $_get(name.getContext(), name, type);
     }]>
   ];
-  let assemblyFormat = "`<` custom<Name>($name) `` `:` $type `>`";
+  let assemblyFormat = [{
+    `<` custom<Name>($name) `` `:` custom<DIType>($type) `>`
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -157,7 +159,8 @@ def DebugInfo_PointerType : DIType<"DIPointer", "ptr"> {
     }]>
   ];
   let assemblyFormat = [{
-    `<` $elementType ` ` `{` struct($sizeInBits, $alignInBits) `}` `>`
+    `<` custom<DIType>($elementType) ` ` `{` struct($sizeInBits, $alignInBits)
+    `}` `>`
   }];
 }
 
@@ -227,7 +230,7 @@ def DebugInfo_DISubroutineType : DIType<"DISubroutine", "subroutine"> {
   ];
   let assemblyFormat = [{
     `<`
-      `(` (`)`):($argumentTypes^ `)`)? `->` `(` (`)`):($resultTypes^ `)`)? ``
+      custom<DITypes>($argumentTypes) `->` custom<DITypes>($resultTypes) ``
        `:` $callingConvention
     `>`
   }];
@@ -324,7 +327,7 @@ def DebugInfo_DIVectorType : DIType<"DIVector", "vector"> {
       return $_get(elementType.getContext(), elementType, elementCount);
     }]>
   ];
-  let assemblyFormat = "`<` $elementCount `x` $elementType `>`";
+  let assemblyFormat = "`<` $elementCount `x` custom<DIType>($elementType) `>`";
 }
 
 #endif // DEBUGINFOTYPES_TD

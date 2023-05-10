@@ -27,6 +27,43 @@ void DebugInfoDialect::registerTypes() {
 }
 
 //===----------------------------------------------------------------------===//
+// custom<DIType>
+//===----------------------------------------------------------------------===//
+
+static void printDIType(AsmPrinter &printer, DIType type) {
+  // Strip unresolved types during printing.
+  if (auto diMLIRTy = dyn_cast<DIUnresolvedMLIRType>(type))
+    printer.printType(diMLIRTy.getType());
+  else
+    printer.printType(type);
+}
+
+static ParseResult parseDIType(AsmParser &parser, DIType &type) {
+  Type rawType;
+  if (failed(parser.parseType(rawType)))
+    return failure();
+
+  // If the type is not a DI type, wrap it as an unresolved type.
+  if (!(type = dyn_cast<DIType>(rawType)))
+    type = DIUnresolvedMLIRType::get(rawType);
+  return success();
+}
+
+static void printDITypes(AsmPrinter &printer, ArrayRef<DIType> types) {
+  printer << "(";
+  llvm::interleaveComma(types, printer,
+                        [&](DIType type) { printDIType(printer, type); });
+  printer << ")";
+}
+
+static ParseResult parseDITypes(AsmParser &parser,
+                                SmallVectorImpl<DIType> &types) {
+  return parser.parseCommaSeparatedList(AsmParser::Delimiter::Paren, [&]() {
+    return parseDIType(parser, types.emplace_back());
+  });
+}
+
+//===----------------------------------------------------------------------===//
 // DIType
 //===----------------------------------------------------------------------===//
 
