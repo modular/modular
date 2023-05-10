@@ -397,8 +397,14 @@ private:
 
     // Check for a by-ref result type, which gets modeled as the first argument
     // (as it needs to be passed through memory).
+    // If that's the case we should use that type as the return type. In other
+    // cases we want to use the usual return type, but we also want to unpack it
+    // in case of throwing functions. E.g. we want 'int' instead of
+    // 'Variant[Error, int]'.
+    bool unpackVariant = funcOp.isThrows();
     if (!argConventions.empty() &&
         argConventions.front() == ValueInputConvention::ByRefResult) {
+      unpackVariant = false;
       resultType = argTypes.front();
       argTypes = argTypes.drop_front();
       argNames = argNames.drop_front();
@@ -436,8 +442,8 @@ private:
     std::optional<std::string> resultTypeName;
     if (!resultType.isa<LIT::NoneType>())
       resultTypeName = generateTypeString(
-          funcOp.isThrows() ? funcOp.getResultTypeWithoutErrorVariant()
-                            : resultType,
+          unpackVariant ? funcOp.getResultTypeWithoutErrorVariant()
+                        : resultType,
           selfType, resultConvention);
 
     os.object([&] {
