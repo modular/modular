@@ -92,6 +92,9 @@ $ jupyter-init
 $ jupyter-lab
 ```
 
+NOTE: On macOS, if you have an ASAN build, this command will not run. You
+should use mojo-jupyter-executor for that.
+
 ## Features
 
 ### `%%python` expressions
