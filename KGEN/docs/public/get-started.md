@@ -35,9 +35,9 @@ access over time.
     Playground](https://playground.modular.com) using the email
     address you provided in the above form.
 
-3. Chat with us on [Discord](http://discord.gg/modular), report [issues on
-    GitHub](https://github.com/modularml/mojo), and feel free to share your Mojo
-    code with others.
+3. Share feedback, ideas, issues, or just chat with other users in our
+    [Mojo community](/mojo/community.html). Also feel free to share
+    your Mojo code with others.
 
 ## What to expect
 
