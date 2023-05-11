@@ -13,6 +13,7 @@ add_modular_tool(cache-opt
   LLCLRuntimeGlobals
   MCache
   MSupport
+  MSupportGlobals
   MLIRFuncDialect
   MLIRArithDialect
   MLIROptLib

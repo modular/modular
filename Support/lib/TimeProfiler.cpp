@@ -7,6 +7,7 @@
 #include "Support/TimeProfiler.h"
 
 #include "Config/Version.h"
+#include "Support/Globals/GlobalProfilerContext.h"
 #include "Support/Host.h"
 
 #include "llvm/ADT/DenseSet.h"
@@ -38,7 +39,8 @@ using ClockType = ProfilerEntry<true>::ClockType;
 using TimePointType = ProfilerEntry<true>::TimePointType;
 using DurationType = duration<ClockType::rep, ClockType::period>;
 
-namespace {
+namespace M {
+
 struct TimeTraceThreadProfiler {
   explicit TimeTraceThreadProfiler(unsigned timeTraceGranularity)
       : tid(llvm::get_threadid()), timeTraceGranularity(timeTraceGranularity) {
@@ -108,9 +110,6 @@ struct GlobalProfilerContext {
         pid(llvm::sys::Process::getProcessId()),
         beginningOfTime(system_clock::now()), startTime(ClockType::now()) {}
 
-  /// The main profiler context instance.
-  static GlobalProfilerContext *instance;
-
   /// The minimum time granularity (in microseconds) for time trace profiler.
   unsigned timeTraceGranularity = 0;
 
@@ -137,26 +136,27 @@ struct GlobalProfilerContext {
 
   SmallVector<std::string> inputShapes;
 };
-} // anonymous namespace
+} // namespace M
 
 static int reportError(Twine errorMessage) {
   llvm::errs() << errorMessage << "\n";
   return EXIT_FAILURE;
 }
 
-GlobalProfilerContext *GlobalProfilerContext::instance = nullptr;
-
 TimeTraceThreadProfiler *ThreadProfilerContext::get() {
   static thread_local ThreadProfilerContext instance;
-  if (!instance.profiler && GlobalProfilerContext::instance) {
-    auto &ctx = *GlobalProfilerContext::instance;
-    std::lock_guard<std::mutex> lock(ctx.lock);
+  if (!instance.profiler) {
+    if (auto *ctx = Globals::getGlobalProfilerContext()) {
+      std::lock_guard<std::mutex> lock(ctx->lock);
 
-    // Add this profiler to the main context.
-    ctx.profilers.emplace_back(
-        std::make_unique<TimeTraceThreadProfiler>(ctx.timeTraceGranularity));
-    ctx.threadProfilerContexts.insert(&instance);
-    instance.profiler = ctx.profilers.back().get();
+      // Add this profiler to the main context.
+      instance.profiler =
+          ctx->profilers
+              .emplace_back(std::make_unique<TimeTraceThreadProfiler>(
+                  ctx->timeTraceGranularity))
+              .get();
+      ctx->threadProfilerContexts.insert(&instance);
+    }
   }
   return instance.profiler;
 }
@@ -164,7 +164,7 @@ TimeTraceThreadProfiler *ThreadProfilerContext::get() {
 ThreadProfilerContext::~ThreadProfilerContext() {
   // The current thread is dying, so try to pass over ownership of the
   // profiler to the main context.
-  if (auto *ctx = GlobalProfilerContext::instance) {
+  if (auto *ctx = Globals::getGlobalProfilerContext()) {
     std::lock_guard<std::mutex> lock(ctx->lock);
     ctx->threadProfilerContexts.erase(this);
   }
@@ -176,31 +176,32 @@ ThreadProfilerContext::~ThreadProfilerContext() {
 
 void M::Detail::timeTraceProfilerInitialize(unsigned timeTraceGranularity,
                                             StringRef procName) {
-  assert(!GlobalProfilerContext::instance &&
+  assert(!Globals::getGlobalProfilerContext() &&
          "profiler should not be initialized");
-  GlobalProfilerContext::instance = new GlobalProfilerContext(
-      timeTraceGranularity, llvm::sys::path::filename(procName));
+  Globals::setGlobalProfilerContext(new GlobalProfilerContext(
+      timeTraceGranularity, llvm::sys::path::filename(procName)));
 
   // Prep the profiler for the main thread.
   ThreadProfilerContext::get();
 }
 
 void M::Detail::timeTraceProfilerDestroy() {
-  assert(GlobalProfilerContext::instance && "profiler should be initialized");
-
-  { // Clear out any dangling pointers in thread profiler contexts.
-    std::lock_guard<std::mutex> guard(GlobalProfilerContext::instance->lock);
-    for (auto *tpc : GlobalProfilerContext::instance->threadProfilerContexts)
+  assert(Globals::getGlobalProfilerContext() &&
+         "profiler should be initialized");
+  if (auto *ctx = Globals::exchangeGlobalProfilerContext(
+          nullptr)) { // Clear out any dangling pointers in thread profiler
+                      // contexts.
+    std::lock_guard<std::mutex> guard(ctx->lock);
+    for (auto *tpc : ctx->threadProfilerContexts)
       tpc->profiler = nullptr;
+    delete ctx;
   }
-
-  delete GlobalProfilerContext::instance;
-  GlobalProfilerContext::instance = nullptr;
 }
 
 void M::Detail::timeTraceProfilerAddInputShape(const std::string &shape) {
-  assert(GlobalProfilerContext::instance && "profiler should be initialized");
-  GlobalProfilerContext::instance->inputShapes.push_back(shape);
+  assert(Globals::getGlobalProfilerContext() &&
+         "profiler should be initialized");
+  Globals::getGlobalProfilerContext()->inputShapes.push_back(shape);
 }
 
 //===----------------------------------------------------------------------===//
@@ -211,8 +212,9 @@ void M::Detail::timeTraceProfilerAddInputShape(const std::string &shape) {
 // https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU/preview
 
 void M::Detail::timeTraceProfilerWriteTrace(llvm::raw_pwrite_stream &os) {
-  assert(GlobalProfilerContext::instance && "profiler should be initialized");
-  auto &ctx = *GlobalProfilerContext::instance;
+  assert(Globals::getGlobalProfilerContext() &&
+         "profiler should be initialized");
+  auto &ctx = *Globals::getGlobalProfilerContext();
   std::lock_guard<std::mutex> lock(ctx.lock);
   auto profilers = llvm::make_pointee_range(ctx.profilers);
   assert(llvm::all_of(profilers,
@@ -382,8 +384,9 @@ struct Event {
 } // namespace
 
 void M::Detail::timeTraceProfilerWriteEventStream(llvm::raw_pwrite_stream &os) {
-  assert(GlobalProfilerContext::instance && "profiler should be initialized");
-  auto &ctx = *GlobalProfilerContext::instance;
+  assert(Globals::getGlobalProfilerContext() &&
+         "profiler should be initialized");
+  auto &ctx = *Globals::getGlobalProfilerContext();
   std::lock_guard<std::mutex> lock(ctx.lock);
 
   std::vector<Event> events;
@@ -408,7 +411,8 @@ void M::Detail::timeTraceProfilerWriteEventStream(llvm::raw_pwrite_stream &os) {
 
 ErrorOrSuccess M::Detail::timeTraceProfilerWrite(StringRef preferredFileName,
                                                  StringRef fallbackFileName) {
-  assert(GlobalProfilerContext::instance && "profiler should be initialized");
+  assert(Globals::getGlobalProfilerContext() &&
+         "profiler should be initialized");
 
   // Set up filename base.
   std::string path = preferredFileName.str();

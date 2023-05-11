@@ -18,4 +18,5 @@ add_modular_unittest(
   LINK_LIBS PRIVATE
   LLCLRuntime
   LLCLRuntimeGlobals
+  MSupportGlobals
 )
