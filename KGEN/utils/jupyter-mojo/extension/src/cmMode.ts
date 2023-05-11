@@ -61,7 +61,9 @@ export function defineCodeMirrorMode(codeMirror: ICodeMirror) {
     console.log(conf);
 
     var delimiters = /^[\(\)\[\]\{\}@,:=;\.\\]/;
-    var operators = [ /^([-+*/%\/&|^]=?|[<>=]+|\/\/=?|\*\*=?|!=|[~!@]|\.\.\.)/];
+    var operators = [
+      /^([-+*/%\/&|^]=?|[<>=]+|\/\/=?|\*\*=?|!=|[~!@]|\.\.\.|borrowed|inout|owned)/
+    ];
     for (var i = 0; i < operators.length; i++)
       if (!operators[i])
         operators.splice(i--, 1);
