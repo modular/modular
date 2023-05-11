@@ -21,6 +21,7 @@ add_modular_tool(mojo
   KGENExecutionEngine
   LITDialect
   LLCLRuntimeGlobals
+  MSupportGlobals
   POPDialect
   MVersion
 

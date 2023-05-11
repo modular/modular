@@ -30,4 +30,5 @@ add_modular_unittest(
   LLCLRuntime
   LLCLRuntimeGlobals
   MSupportML
+  MSupportGlobals
 )

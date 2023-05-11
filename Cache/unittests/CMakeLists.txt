@@ -25,6 +25,7 @@ add_modular_unittest(
   LLCLRuntimeGlobals
   LLCLSupport
   MSupport
+  MSupportGlobals
   MCache
 
   MLIRFuncDialect

@@ -10,5 +10,6 @@ add_modular_tool(mojo-jupyter-executor
   LINK_LIBS PUBLIC
   KGENCompilerRT
   LLCLRuntimeGlobals
+  MSupportGlobals
   MojoJupyter
 )

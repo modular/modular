@@ -10,6 +10,7 @@ add_modular_tool(kgen-translate
   LINK_LIBS PRIVATE
   KGENCLOptions
   LLCLRuntimeGlobals
+  MSupportGlobals
   MojoParser
   MLIRBuiltinToLLVMIRTranslation
   MLIRTranslateLib

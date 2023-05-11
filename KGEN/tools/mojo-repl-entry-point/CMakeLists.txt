@@ -12,6 +12,7 @@ add_modular_tool(mojo-repl-entry-point
   LINK_LIBS PUBLIC
   KGENCompilerRT
   LLCLRuntimeGlobals
+  MSupportGlobals
 )
 
 if (Python3_FOUND)
