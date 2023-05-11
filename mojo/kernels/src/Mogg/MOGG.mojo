@@ -7,7 +7,7 @@
 from Activations import relu, gelu, sigmoid
 from Buffer import NDBuffer
 from DType import DType
-from Functional import elementwise, unroll
+from Functional import elementwise, unroll, vectorize
 from Intrinsics import strided_load
 from Index import StaticIntTuple
 from IO import print
@@ -65,6 +65,7 @@ fn MOGGExport():
 
     alias _test_many_ranks_and_types = test_many_ranks_and_types
     alias _test_one_rank_many_tensor = test_one_rank_many_tensor
+    alias _test_3D_in_out_lambda = test_3D_in_out_lambda
 
 
 # ===----------------------------------------------------------------------===#
@@ -93,8 +94,8 @@ fn OutputChainPtrDef(ty: OutputChainPtr) -> OutputChainPtr:
 
 
 fn SimdTypeDef[
-    type: DType, simd_width: Int
-](ty: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    type: DType, width: Int
+](ty: SIMD[type, width]) -> SIMD[type, width]:
     return ty
 
 
@@ -555,3 +556,40 @@ fn test_one_rank_many_tensor[
     many arguments.
     """
     return tensor1
+
+
+fn test_3D_in_out_lambda[
+    type: DType,
+    simd_width: Int,
+    input_0_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
+    output_0_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank], SIMD[type, width]
+    ) capturing -> None,
+](
+    tensor1: NDBuffer[3, DimList.create_unknown[3](), type],
+    output: NDBuffer[3, DimList.create_unknown[3](), type],
+    out_chain: OutputChainPtr,
+) -> NDBuffer[3, DimList.create_unknown[3](), type]:
+    """
+    Used as a target to test passing input and output lambdas.
+    """
+
+    for x in range(0, tensor1.dim[0]()):
+        for y in range(0, tensor1.dim[1]()):
+
+            @always_inline
+            @parameter
+            fn func_wrapper[simd_width: Int](idx: Int):
+                let indices = StaticIntTuple[3](x, y, idx)
+                let result = input_0_fn[type, simd_width, 3](indices)
+                output_0_fn[type, simd_width, 3](indices, result)
+
+            vectorize[
+                simd_width,
+                func_wrapper,
+            ](tensor1.dim[2]())
+
+    out_chain.mark_ready()
+    return output
