@@ -303,6 +303,7 @@ kgen.func @store_arg(
   kgen.return
 }
 
+// CHECK-LABEL: kgen.func @negArrayGep
 kgen.func @negArrayGep() {
   // CHECK: kgen.param.constant = <-1>
   // CHECK-NEXT: pop.stack_allocation 1 x !pop.array<2, index>
@@ -313,12 +314,34 @@ kgen.func @negArrayGep() {
   kgen.return
 }
 
-
+// CHECK-LABEL: kgen.func @negOffsetGep
 kgen.func @negOffsetGep() {
   // CHECK: kgen.param.constant = <-1>
   // CHECK-NEXT: pop.stack_allocation 2 x index
   // CHECK-NEXT: pop.offset
   %0 = kgen.param.constant = <-1>
+  %alloc = pop.stack_allocation 2 x index
+  %offset = pop.offset %alloc[%0] : !pop.pointer<index>
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @oobArrayGep
+kgen.func @oobArrayGep() {
+  // CHECK: kgen.param.constant = <2>
+  // CHECK-NEXT: pop.stack_allocation 1 x !pop.array<2, index>
+  // CHECK-NEXT: pop.array.gep
+  %0 = kgen.param.constant = <2>
+  %array = pop.stack_allocation 1 x !pop.array<2, index>
+  %gep = pop.array.gep %array[%0] : <array<2, index>>
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @oobOffsetGep
+kgen.func @oobOffsetGep() {
+  // CHECK: kgen.param.constant = <2>
+  // CHECK-NEXT: pop.stack_allocation 2 x index
+  // CHECK-NEXT: pop.offset
+  %0 = kgen.param.constant = <2>
   %alloc = pop.stack_allocation 2 x index
   %offset = pop.offset %alloc[%0] : !pop.pointer<index>
   kgen.return
