@@ -14,7 +14,7 @@ the entire Python library ecosystem.
 
 Mojo achieves this feat by utilizing next-generation compiler technologies with
 integrated caching, multithreading, and cloud distribution technologies.
-Furthermore, Mojo's autotuning and compile-time meta-programming features allow
+Furthermore, Mojo's autotuning and compile-time metaprogramming features allow
 you to write code that is portable to even the most exotic hardware.
 
 More importantly, **Mojo allows you to leverage the entire Python ecosystem**
@@ -130,12 +130,12 @@ these complex, low-level operations without any performance loss. In Mojo, this
 is provided by the `struct` type.
 
 A `struct` in Mojo is similar to a Python `class`: they both support methods,
-fields, operator overloading, decorators for meta programming, etc. Their
+fields, operator overloading, decorators for metaprogramming, etc. Their
 differences are as follows:
 
 - Python classes are dynamic: they allow for dynamic dispatch, monkey-patching (or "swizzling"), and dynamically binding instance properties at runtime.
 
-- Mojo structs are static: they are bound at compile time (you cannot add methods at runtime). Structs allow you to trade flexibility for performance while being safe and easy to use.
+- Mojo structs are static: they are bound at compile-time (you cannot add methods at runtime). Structs allow you to trade flexibility for performance while being safe and easy to use.
 
 Here's a simple definition of a struct:
 
@@ -175,8 +175,9 @@ when writing your code.
 :::{.callout-note}
 
 If you're wondering what the `inout` means on the `self` argument: this
-indicates that the argument is mutable and changes are visibible to the caller.
-Please see [inout arguments](#inout-arguments) for more information.
+indicates that the argument is mutable and changes made inside the function are
+visible to the caller. For details, see below about
+[inout arguments](#inout-arguments).
 
 :::
 
@@ -217,7 +218,7 @@ the `MyPair` struct shown above:
 ```mojo
 def pairTest() -> Bool:
     let p = MyPair(1, 2)
-    return p < 4 # gives a compile time error
+    return p < 4 # gives a compile-time error
 ```
 
 When you run this code, you'll get a compile-time error telling you that "4"
@@ -281,7 +282,7 @@ function calls as described above.
 
 The extensions above are the cornerstone that provides low-level programming
 and provide abstraction capabilities, but many systems programmers prefer more
-control and predictability than what 'def' in Mojo provides. To recap, 'def' is
+control and predictability than what `def` in Mojo provides. To recap, `def` is
 defined by necessity to be very dynamic, flexible and generally compatible with
 Python: arguments are mutable, local variables are implicitly declared on first
 use, and scoping isn't enforced. This is great for high level programming and
@@ -289,16 +290,16 @@ scripting, but is not always great for systems programming. To complement this,
 Mojo provides an `fn` declaration which is like a "strict mode" for `def`.
 
 > Alternative: instead of using a new keyword like `fn`, we could instead add a
-modifier or decorator like '@strict def'. However, we need to take new keywords
+modifier or decorator like `@strict def`. However, we need to take new keywords
 anyway and there is little cost to doing so. Also, in practice in systems
-programming domains, 'fn' is used all the time so it probably makes sense to
+programming domains, `fn` is used all the time so it probably makes sense to
 make it first class.
 
 `fn` and `def` are always interchangeable from an interface level: there is
-nothing a 'def' can provide that a `fn` cannot (or vice versa). The
+nothing a `def` can provide that a `fn` cannot (or vice versa). The
 difference is that a `fn` is more limited and controlled on the *inside* of
 its body (alternatively: pedantic and strict). Specifically, `fn`s have a
-number of limitations compared to `def`s:
+number of limitations compared to `def` functions:
 
 1. Argument values default to being immutable in the body of the function (like
 a `let`), instead of mutable (like a `var`). This catches accidental mutations,
@@ -308,7 +309,7 @@ and permits the use of non-copyable types as arguments.
 method), catching accidental omission of type specifications. Similarly, a
 missing return type specifier is interpreted as returning `None` instead of an
 unknown return type. Note that both can be explicitly declared to return
-"`object`", which allows one to opt-in to the behavior of a `def` if desired.
+`object`, which allows one to opt-in to the behavior of a `def` if desired.
 
 3. Implicit declaration of local variables is disabled, so all locals must be
 declared. This catches name typos and dovetails with the scoping provided by
@@ -325,7 +326,7 @@ and already use MyPy-style type annotations in Python to prefer the use of
 implementing some methods with one and others with the other, and allows each
 team or programmer to decide what is best for their use-case.
 
-### The `__copyinit__` and `__moveinit__` special methods
+### The `__copyinit__` and `__moveinit__` special methods {#copy-and-move}
 
 Mojo supports full "value semantics" as seen in languages like C++ and Swift,
 and it makes defining simple aggregates of fields very easy with its `@value`
@@ -372,15 +373,14 @@ fn useStrings():
     print(a)   # Should print "Goodbye"
 ```
 
-The compiler isn't allowing us to make a copy of our string: `MyString` contains
-an instance of `Pointer` (which is equivalent to a low-level C pointer), and
-Mojo can't know "what the pointer means" or "how to copy it" - this is one reason
-why application level programmers should use higher level types like arrays and
-slices! More generally, some types (like atomic numbers) cannot be copied or
-moved around because their address provides an **identity** just like a
-class instance does.
+The Mojo compiler doesn't allow us to copy the string from `a` to `b` because
+it doesn't know how to. `MyString` contains an instance of `Pointer` (which is
+equivalent to a low-level C pointer) and Mojo doesn't know what kind of data it
+points to or how to copy it. More generally, some types (like atomic numbers)
+cannot be copied or moved around because their address provides an **identity**
+just like a class instance does.
 
-In this case, we do want our string to be copyable around. To enable this, we
+In this case, we do want our string to be copyable. To enable this, we
 implement the `__copyinit__` special method, which is conventionally
 implemented like this:
 
@@ -391,26 +391,26 @@ struct MyString:
         self.data = Pointer(strdup(self.data.address))
 ```
 
-With this implementation, our code above works correctly, and the "b = a" copy
+With this implementation, our code above works correctly, and the `b = a` copy
 produces a logically distinct instance of the string with its own lifetime and
-data. The copy is made with the C strdup`()` function as instructed by the
+data. The copy is made with the C-style `strdup()` function as instructed by the
 lines of code above.  Mojo also supports the `__moveinit__` method, which allows
 both Rust-style moves (which take a value when a lifetime ends) and C++-style
-moves (where the contents of a value are removed but the destructor still runs)
-and allows defining custom move logic.  Please see the "Value Lifecycle"
-section below for more information.
+moves (where the contents of a value are removed, but the destructor still runs)
+and allows defining custom move logic. For more discussion about value
+lifetimes, see the [Value lifecycle](#value-lifecycle) section below.
 
 Mojo provides full control over the lifetime of a value, including the ability
 to make types copyable, move-only, and not-movable. This is more control than
-languages like Swift and Rust, which require values to at least be movable. If
-you are curious how `existing` can be passed into the `__copyinit__` method
-without itself creating a copy, check out the section on "Borrowed" argument
-convention below.
+languages like Swift and Rust offer, which require values to at least be
+movable. If you are curious how `existing` can be passed into the
+`__copyinit__` method without itself creating a copy, check out the section on
+[Borrowed arguments](#borrowed-arguments) below.
 
-## Parameterization: compile time meta-programming
+## Parameterization: compile-time metaprogramming
 
 One of Python's most amazing features is its extensible runtime
-meta-programming features. This has enabled a wide range of libraries and
+metaprogramming features. This has enabled a wide range of libraries and
 provides a flexible and extensible programming model that Python programmers
 everywhere benefit from. Unfortunately, these features also come at a cost:
 because they are evaluated at runtime, they directly impact run-time efficiency
@@ -418,7 +418,7 @@ of the underlying code. Because they are not known to the IDE, it is difficult
 for IDE features like code completion to understand them and use them to
 improve the developer experience.
 
-Outside the Python ecosystem, static meta-programming is also an important part
+Outside the Python ecosystem, static metaprogramming is also an important part
 of development, enabling the development of new programming paradigms and
 advanced libraries. There are many examples of prior art in this space, with
 different tradeoffs, for example:
@@ -431,7 +431,7 @@ and tools integration.
 expansion features, enabling syntactic extension and boilerplate reduction with
 somewhat better tooling integration.
 
-3. Some older languages like C++ have very large and complex meta-programming
+3. Some older languages like C++ have very large and complex metaprogramming
 languages (templates) that are a dual to the *runtime* language. These are
 notably difficult to learn and have poor compile times and error messages.
 
@@ -446,7 +446,7 @@ extensibility and generality.
 
 For Modular's work in AI, high-performance machine learning kernels, and
 accelerators, we need high abstraction capabilities provided by advanced
-meta-programming systems. We needed high-level zero-cost abstractions,
+metaprogramming systems. We needed high-level zero-cost abstractions,
 expressive libraries, and large-scale integration of multiple variants of
 algorithms. We want library developers to be able to extend the system, just
 like they do in Python, providing an extensible developer platform.
@@ -457,37 +457,39 @@ language ecosystem that is difficult to teach. We can learn from these previous
 systems but also have new technologies to build on top of, including MLIR and
 fine-grained language-integrated caching technologies.
 
-As such, Mojo supports a full compile-time meta-programming functionality built
-into the compiler as a separate stage of compilation - after parsing, semantic
+As such, Mojo supports compile-time metaprogramming built
+into the compiler as a separate stage of compilation—after parsing, semantic
 analysis, and IR generation, but before lowering to target-specific code. It
 uses the same host language for runtime programs as it does for metaprograms,
-and leverages MLIR to represent and evaluate these programs in a predictable
-way.
+and leverages MLIR to represent and evaluate these programs predictably.
 
 Let's take a look at some simple examples.
 
-> Note on naming: after going around in circles on naming, we converged on
-calling these things "parameters". Python programmers use the words
-"arguments" and "parameters" fairly interchangeably as near-synonyms for
-"things that get passed into functions". We have currently decided to reclaim
-the word "parameter", "parameter expression" to mean compile time value, but
-use "argument" and "expression" to refer to runtime values.  This allows us to
-align around words like "parameterized" and "parametric".
+:::{.callout-note}
+
+**About "parameters":** Python developers use the words "arguments" and
+"parameters" fairly interchangeably for "things that are passed into
+functions." We decided to reclaim "parameter" and "parameter expression" to
+represent a compile-time value in Mojo, and continue to use "argument" and
+"expression" to refer to runtime values. This allows us to align around words
+like "parameterized" and "parametric" for compile-time metaprogramming.
+
+:::
 
 ### Defining parameterized types and functions
 
 Mojo structs and functions may each be parameterized, but an example can help
 motivate why we care. Let's look at a
-"[SIMD](https://en.wikipedia.org/wiki/Single_instruction,_multiple_data)" type,
+[SIMD](https://en.wikipedia.org/wiki/Single_instruction,_multiple_data) type,
 which represents a low-level vector register in hardware that holds multiple
 instances of a scalar data-type. Hardware accelerators these days are getting
 exotic datatypes, and it isn't uncommon to work with CPUs that have 512-bit or
 longer SIMD vectors. There is a lot of diversity in hardware (including many
-brands like SSE, AVX-512, NEON, SVE, RVV, etc) but many operations are common
-and used by numerics and ML kernel developers - this type exposes them to Mojo
-programmers.
+brands like SSE, AVX-512, NEON, SVE, RVV, etc.) but many operations are common
+and used by numerics and ML kernel developers—the `SIMD` type exposes them to
+Mojo programmers.
 
-Here is a (cut down) version of the SIMD API in the Mojo standard library:
+Here is a (cut down) version of the `SIMD` API in the Mojo standard library:
 
 ```mojo
 struct SIMD[type: DType, size: Int]:
@@ -509,27 +511,27 @@ struct SIMD[type: DType, size: Int]:
 
 Parameters in Mojo are declared in square brackets using an extended version of
 the [PEP695 syntax](https://peps.python.org/pep-0695/). They are named and have
-types like normal values in a Mojo program, but they are evaluated at compile
-time instead of runtime by the target program. The runtime program may use the
-value of parameters - because the parameters are resolved at compile time
-before they are needed by the runtime program - but the compile time parameter
-expressions may not use runtime values.
+types like normal values in a Mojo program, but they are evaluated at
+compile-time instead of runtime by the target program. The runtime program may
+use the value of parameters—because the parameters are resolved at compile-time
+before they are needed by the runtime program—but the compile-time
+parameter expressions may not use runtime values.
 
 In the case of the `SIMD` excerpt above, there are three declared parameters:
-the SIMD struct is parameterized by a `type` parameter and a `size`
+the `SIMD` struct is parameterized by a `type` parameter and a `size`
 parameter. The `cast` method is further parameterized with a `target`
-parameter. Because SIMD is a parameterized type, the type of a 'self' argument
-carries the parameters - the full type name is "`SIMD[type, size]`". While it
-is always valid to write this out (as shown in the return type of `splat`),
-this can be verbose: we recommend using the `Self` type (from
+parameter. Because `SIMD` is a parameterized type, the type of a `self` argument
+carries the parameters—the full type name is `SIMD[type, size]`. While it
+is always valid to write this out (as shown in the return type of `splat()`),
+this can be verbose, so we recommend using the `Self` type (from
 [PEP673](https://peps.python.org/pep-0673/)) like the `__add__` example does.
 
 ### Using parameterized types and functions
 
-For this type, 'size' specifies the number of elements in a SIMD vector, and
-the type specifies the element type - for example, you might use a "4xFloat" to
-represent a small floating point vector or a "32xbfloat16's" on an AVX-512
-system with the 'bfloat16' machine learning type:
+For the `SIMD` type, `size` specifies the number of elements in a SIMD vector,
+and `type` specifies the element type—for example, you might use a
+"4xFloat" to represent a small floating-point vector or a "32xbfloat16" on an
+AVX-512 system with the "bfloat16" machine learning type:
 
 ```mojo
 fn funWithSIMD():
@@ -546,12 +548,12 @@ fn funWithSIMD():
     let bigger_vec2 : SIMD[DType.f32, 32] = bigger_vec
 ```
 
-Note that the "cast" method needs an additional parameter to indicate what type
-to cast to: that is handled by parameterizing the call to "cast". The example
-above shows the use of concrete types, but the major power of parameters comes
-from the ability to define parametric algorithms and types, e.g. it is quite
-easy to define parametric algorithms, e.g. ones that are length- and
-DType-agnostic:
+Note that the `cast()` method needs an additional parameter to indicate what
+type to cast to: that is handled by parameterizing the call to `cast()`. The
+example above shows the use of concrete types, but the major power of
+parameters comes from the ability to define parametric algorithms and types.
+For example, it's quite easy to define parametric algorithms, such as those
+that are length- and DType-agnostic:
 
 ```mojo
 fn rsqrt[width: Int, dt: DType](x: SIMD[dt, width]) -> SIMD[dt, width]:
@@ -559,19 +561,19 @@ fn rsqrt[width: Int, dt: DType](x: SIMD[dt, width]) -> SIMD[dt, width]:
 ```
 
 The Mojo compiler is fairly smart about type inference with parameters. Note
-that this function is able to call the parametric `sqrt(x)` function without
+that this function is able to call the parametric `sqrt()` function without
 specifying the parameters, the compiler infers its parameters as if you wrote
-`sqrt[width,type](x)` explicitly. Also note that `rsqrt` chose to define
-its first parameter named "width" but the SIMD type names it `size` without
+`sqrt[width,type](x)` explicitly. Also note that `rsqrt()` chose to define
+its first parameter named `width` but the SIMD type names it `size` without
 challenge.
 
 ### Parameter expressions are just Mojo code
 
 All parameters and parameter expressions are typed using the same type system
-as the runtime program: 'Int' and 'DType' are implemented in the Mojo standard
+as the runtime program: `Int` and `DType` are implemented in the Mojo standard
 library as structs. Parameters are quite powerful, supporting the use of
-expressions with operators, function calls etc at compile time, just like a
-runtime program. This enables the use of many 'dependent type' features, for
+expressions with operators, function calls at compile-time, and more, just like a
+runtime program. This enables the use of many "dependent type" features. For
 example, you might want to define a helper function to concatenate two SIMD
 vectors:
 
@@ -586,19 +588,19 @@ fn use_vectors(a: SIMD[DType.f32, 4], b: SIMD[DType.f16, 8]):
 ```
 
 Note how the resulting length is the sum of the input vector lengths, and you can
-express that with a simple + operation.  For a more complex example, take a look
-at the `SIMD.shuffle` method in the standard library: it takes two input SIMD
+express that with a simple `+` operation. For a more complex example, take a look
+at the `SIMD.shuffle()` method in the standard library: it takes two input SIMD
 values, a vector shuffle mask as a list, and returns a SIMD that matches the
 length of the shuffle mask.
 
 ### Powerful compile-time programming
 
 While simple expressions are useful, sometimes you want to write imperative
-compile-time logic with control flow. For example, the "isclose" function in
-Math.mojo uses exact equality for integers but "close" comparison for floating
-point. You can even do compile time recursion, e.g. here is an example "tree
-reduction" algorithm that sums all elements of a vector recursively into a
-scalar:
+compile-time logic with control flow. For example, the `isclose()` function in
+the Mojo `Math` module uses exact equality for integers but "close" comparison
+for floating-point. You can even do compile-time recursion. For instance, here
+is an example "tree reduction" algorithm that sums all elements of a vector
+recursively into a scalar:
 
 ```mojo
 struct SIMD[type: DType, size: Int]:
@@ -616,17 +618,17 @@ struct SIMD[type: DType, size: Int]:
         return (lhs + rhs).reduce_add()
 ```
 
-This makes use of the `@parameter if` feature, which is an if statement that
-runs at compile time. It requires that its condition be a valid parameter
-expression, and ensures that only the live branch of the if is compiled into
-the program.
+This makes use of the `@parameter if` feature, which is an `if` statement that
+runs at compile-time. It requires that its condition be a valid parameter
+expression, and ensures that only the live branch of the `if` statement is
+compiled into the program.
 
 ### Mojo types are just parameter expressions
 
 While we've shown how you can use parameter expressions within types, in both
 Python and Mojo, type annotations can themselves be arbitrary expressions.
 Types in Mojo have a special metatype type, allowing type-parametric algorithms
-and functions to be defined, for example one can define an algorithm like the
+and functions to be defined. For example, you can define an algorithm like the
 C++ `std::vector` class like this:
 
 ```mojo
@@ -647,8 +649,8 @@ fn use_vector():
     print(v[0])      # Prints 123
 ```
 
-Notice that the 'type' parameter is being used as the formal type for the
-'value' arguments and the return type of the `__getitem__` function. Parameters
+Notice that the `type` parameter is used as the formal type for the
+`value` arguments and the return type of the `__getitem__` function. Parameters
 allow the `DynamicVector` type to provide different APIs based on the different
 use-cases. There are many other cases that benefit from more advanced use
 cases. For example, the parallel processing library defines the
@@ -665,11 +667,11 @@ fn parallelize[
         func(i, arg)
 ```
 
-This is possible because the 'func' parameter is allowed to refer to the
-earlier 'arg_type' parameter, and that refines its type in turn.
+This is possible because the `func` parameter is allowed to refer to the
+earlier `arg_type` parameter, and that refines its type in turn.
 
 Another example where this is important is with variadic generics, where an
-algorithm or data structure may need to be defined over a list of heterogenous
+algorithm or data structure may need to be defined over a list of heterogeneous
 types:
 
 ```mojo
@@ -692,7 +694,7 @@ struct Array[T: AnyType]:
 
 It is very common to want to *name* compile-time values. Whereas `var` defines a
 runtime value, and `let` defines a runtime constant, we need a way to define a
-compile time temporary value. For this, Mojo uses an `alias` declaration. For
+compile-time temporary value. For this, Mojo uses an `alias` declaration. For
 example, the `DType` struct implements a simple enum using aliases for the
 enumerators like this (the actual internal implementation details vary a bit):
 
@@ -711,9 +713,9 @@ struct DType:
 
 This allows clients to use `DType.f32` as a parameter expression (which also
 works as a runtime value) naturally. Note that this is invoking the
-runtime constructor for DType at compile time.
+runtime constructor for DType at compile-time.
 
-Types are another common use for alias: because types are compile time
+Types are another common use for alias: because types are compile-time
 expressions, it is handy to be able to do things like this:
 
 ```mojo
@@ -832,120 +834,75 @@ development and iteration over time.
 ## Argument passing control and memory ownership
 
 In both Python and Mojo, much of the language revolves around function calls: a
-lot of the (apparently) built-in functionality is implemented in the standard
-library with "dunder" methods. Mojo takes this a step further than Python, by
-putting the most basic things (like integers and the object type itself) into
-the standard library.
+lot of the (apparently) built-in behaviors are implemented in the standard
+library with "dunder" (double-underscore) methods. Inside these
+magic functions is where a lot of memory ownership is determined through
+argument passing.
+
+Let's review some details about how Python and Mojo pass arguments:
+
++ All values passed into a *Python* `def` function use reference semantics. This
+means the function can modify mutable objects passed into it and those changes
+are visible outside the function. However, the behavior is sometimes surprising
+for the uninitiated, because you can change the object that an argument points
+to and that change is not visible outside the function.
+
++ All values passed into a *Mojo* `def` function use value semantics by default.
+Compared to Python, this is an important difference: A Mojo `def` function
+receives a copy of all arguments—it can modify arguments inside the function,
+but the changes are **not** visible outside the function.
+
++ All values passed into a Mojo [`fn` function](#fn-definitions) are immutable
+references by default. This means the function can read the original object (it
+is *not* a copy), but it cannot modify the object at all.
+
+This convention for immutable argument passing in a Mojo `fn` is called
+"borrowing." In the following sections, we'll explain how you can change the
+argument passing behavior in Mojo, for both `def` and `fn` functions.
 
 ### Why argument conventions are important
 
-In Python all fundamental values are references to objects - a Python
-programmer typically thinks about the programming model as everything being
-reference semantic. However, at the CPython or machine level, we can see that
-the references themselves are actually passed *by-copy*, by copying a pointer
-and adjusting reference counts.
+In Python, all fundamental values are references to objects—as described above,
+a Python function can modify the original object. Thus, Python developers are
+used to thinking about everything as reference semantic. However, at the
+CPython or machine level, you can see that the references themselves are
+actually passed *by-copy*—Python copies a pointer and adjusts reference counts.
 
-This approach provides a comfortable programming model (though which is
-occasionally surprising due to reference sharing) but it requires all values to
-be heap allocated. Mojo classes (TODO: will) follow the same reference-semantic
-implementation approach as Python, but this isn't practical for simpler types
-like integers in a systems programming context. In these scenarios, you want
-these values to live on the stack or even in hardware registers. As such, Mojo
-structs are always inlined into their container, whether that be as the field
-of another type or into the stack frame of the containing function.
+This Python approach provides a comfortable programming model for most people,
+but it requires all values to be heap-allocated (and results are occasionally
+surprising results due to reference sharing). Mojo classes (TODO: will) follow
+the same reference-semantic approach for most objects, but this isn't practical
+for simple types like integers in a systems programming context. In these
+scenarios, we want the values to live on the stack or even in hardware
+registers. As such, Mojo structs are always inlined into their container,
+whether that be as the field of another type or into the stack frame of the
+containing function.
 
-This raises an interesting question: how do you implement methods that need to
-mutate `self` of a structure type, e.g. "`__iadd__"`? How does "`let"` work and
+This raises some interesting questions: How do you implement methods that need to
+mutate `self` of a structure type, such as `__iadd__`? How does `let` work, and
 how does it prevent mutation? How are the lifetimes of these values controlled
 to keep Mojo a memory-safe language?
 
 The answer is that the Mojo compiler uses dataflow analysis and type
 annotations to provide full control over value copies, aliasing of references,
-and mutation control. The features provided are similar in many ways to what
-the Rust language provides, but they work somewhat differently in order to make
-Mojo easier to learn and integrate better into the Python ecosystem without
-requiring a massive annotation burden.
+and mutation control. These features are similar in many ways to features in
+the Rust language, but they work somewhat differently in order to make
+Mojo easier to learn, and they integrate better into the Python ecosystem
+without requiring a massive annotation burden.
 
-### `inout` arguments
+In the following sections, you'll learn about how you can control memory
+ownership for objects passed into Mojo `fn` functions.
 
-Let's start with the simple case: passing mutable references to values vs
-passing immutable references. As we already know, arguments that are passed to
-`fn`'s are immutable by default:
+### Immutable arguments (`borrowed`) {#borrowed-arguments}
 
-```mojo
-struct Int:
-    # self and rhs are both immutable in __add__.
-    fn __add__(self, rhs: Int) -> Int: ...
+A borrowed object is an **immutable reference** to an object that a function
+receives, instead of receiving a copy of the object. So the
+callee function has full read-and-execute access to the object, but it cannot
+modify it (the caller still has exclusive "ownership" of the object).
 
-    # ... but this cannot work for __iadd__
-    fn __iadd__(self, rhs: Int):
-        self = self + rhs  # ERROR: cannot assign to self!
-```
-
-The problem here is that `__iadd__` needs to mutate the internal state of the
-integer. The solution in Mojo is to declare that the argument is passed "inout"
-by using the `inout` marker on the argument name (`self` in this case):
-
-```mojo
-struct Int:
-    # ...
-    fn __iadd__(inout self, rhs: Int):
-        self = self + rhs    # OK
-```
-
-Because this argument is passed inout, the 'self' argument is mutable in
-the callee, and any changes are visible in the caller - even if the caller has
-a non-trivial computation to access it, like an array subscript:
-
-```mojo
-fn show_mutation():
-    var x = 42
-    x += 1
-    print(x)    # prints 43 of course
-
-    var a = InlinedFixedVector[16, Int](...)
-    a[4] = 7
-    a[4] += 1    # Mutate an element within the InlinedFixedVector
-    print(a[4])  # Prints 8
-
-    let y = x
-    y += 1       # ERROR: Cannot mutate 'let' value
-```
-
-Mojo implements the in-place mutation of the InlinedFixedVector element by
-emitting a call to `__getitem__` into a temporary buffer, followed by a store
-with `__setitem__` after the call. Mutation of the `let` value fails because it
-isn't possible to form a mutable reference to an immutable value. Similarly,
-the compiler rejects attempts to use a subscript with a inout argument if it
-implements `__getitem__` but not `__setitem__`.
-
-There is nothing special about 'self' in Mojo, and you can have multiple
-different inout arguments. For example, you can define and use a swap function
-like this:
-
-```mojo
-fn swap(inout lhs: Int, inout rhs: Int):
-    let tmp = lhs
-    lhs = rhs
-    rhs = tmp
-
-fn show_swap():
-    var x = 42
-    var y = 12
-    swap(x, y)
-    print(x)  # Prints 12
-    print(y)  # Prints 42
-```
-
-A very important aspect of this system is that it all composes correctly.
-
-### "Borrowed" argument convention
-
-Now that we know how inout argument passing works, you may wonder how
-by-value argument passing works and how that interacts with the `__copyinit__`
-method, which implements copy constructors. In Mojo, the default convention for
-passing arguments to functions is to pass with the "borrowed" argument
-convention. You can spell this out explicitly if you'd like:
+Although this is the default behavior for `fn` arguments, you can explicitly
+define it with the `borrowed` keyword if you'd like (you can also apply
+`borrowed` to `def` arguments):
 
 ```mojo
 fn use_something_big(borrowed a: SomethingBig, b: SomethingBig):
@@ -955,13 +912,11 @@ fn use_something_big(borrowed a: SomethingBig, b: SomethingBig):
 ```
 
 This default applies to all arguments uniformly, including the `self` argument
-of methods. The borrowed convention passes an *immutable reference* to the
-value from the caller's context instead of copying the value. This is much
-more efficient when passing large values or when passing expensive values like
-a reference counted pointer (which is the default for Python/Mojo classes),
-because the copy constructor and destructor don't have to be invoked when
-passing the argument. Here is a more elaborate example building on the code
-above:
+of methods. This is much more efficient when passing large values or when
+passing expensive values like a reference-counted pointer (which is the default
+for Python/Mojo classes), because the copy constructor and destructor don't
+have to be invoked when passing the argument. Here is a more elaborate example
+building on the code above:
 
 ```mojo
 # A type that is so expensive to copy around we don't even have a
@@ -989,77 +944,169 @@ fn try_something_big():
     use_something_big(big, big)
 ```
 
-Because the default argument convention is borrowed, we get simple and
-logical code that does the right thing by default: for example, we don't want
-to copy or move all of `SomethingBig` just to invoke the "`print_id`" method, or
-when calling `use_something_big`.
+Because the default argument convention for `fn` functions is `borrowed`, Mojo
+has simple and logical code that does the right thing by default. For example,
+we don't want to copy or move all of `SomethingBig` just to invoke the
+`print_id()` method, or when calling `use_something_big()`.
 
-The borrowed convention is similar and has precedent in other languages. For
-example, the borrowed argument convention is similar in some ways to passing an
-argument by "`const&`" in C++. This avoids a copy of the value and disables
-mutability in the callee. The borrowed convention differs from "`const&`" in
-C++ in two important ways though:
+This borrowed argument convention is similar in some ways to passing an
+argument by `const&` in C++, which avoids a copy of the value and disables
+mutability in the callee. However, the borrowed convention differs from
+`const&` in C++ in two important ways:
 
 1. The Mojo compiler implements a borrow checker (similar to Rust) that
 prevents code from dynamically forming mutable references to a value when there
-are immutable references outstanding, and prevents having multiple mutable
+are immutable references outstanding, and it prevents multiple mutable
 references to the same value. You are allowed to have multiple borrows (as the
-call to "`use_something_big`" does above) but cannot pass something by mutable
+call to `use_something_big` does above) but you cannot pass something by mutable
 reference and borrow at the same time. (TODO: Not currently enabled).
 
-2. Small values like "`Int`", "`Float`", and "`SIMD`" are passed directly in
-machine registers instead of through an extra indirection (this is because they
-are declared with the "`@register_passable`" decorator, see below). This is a
-[significant performance
+2. Small values like `Int`, `Float`, and `SIMD` are passed directly in machine
+registers instead of through an extra indirection (this is because they are
+declared with the [`@register_passable`
+decorator](#register_passable-struct-decorator)). This is a [significant
+performance
 enhancement](https://www.forrestthewoods.com/blog/should-small-rust-structs-be-passed-by-copy-or-by-borrow/)
 when compared to languages like C++ and Rust, and moves this optimization from
 every call site to being declarative on a type.
 
-Rust is another important language and the Mojo and Rust borrow checkers
-enforce the same exclusivity invariants. The major difference between Rust and
-Mojo is that no sigil is required on the caller side to pass by borrow, Mojo is
-more efficient when passing small values, and Rust defaults to moving values
-instead of passing them around by borrow. These policy and syntax
-decisions allow Mojo to provide an easier to use programming model.
+Similar to Rust, Mojo's borrow checker enforces the exclusivity of invariants.
+The major difference between Rust and Mojo is that Mojo does not require a
+sigil on the caller side to pass by borrow. Also, Mojo is more efficient when
+passing small values, and Rust defaults to moving values instead of passing
+them around by borrow. These policy and syntax decisions allow Mojo to provide
+an easier-to-use programming model.
 
-### "Owned" argument convention and postfix `^` operator
+### Mutable arguments (`inout`) {#inout-arguments}
+
+On the other hand, if you define an `fn` function and want an argument to be
+mutable (so that changes to the argument *inside* the function are visible
+*outside* the function), you must declare the argument as mutable with the
+`inout` keyword.
+
+Consider the following example, in which the `__iadd__` function tries
+to modify `self`:
+
+```mojo
+struct Int:
+    # self and rhs are both immutable in __add__.
+    fn __add__(self, rhs: Int) -> Int: ...
+
+    # ... but this cannot work for __iadd__
+    fn __iadd__(self, rhs: Int):
+        self = self + rhs  # ERROR: cannot assign to self!
+```
+
+The problem here is that `self` is immutable because this is a Mojo `fn`
+function, so it can't change the internal state of the argument. The solution
+is to declare that the argument is mutable by adding the `inout` keyword
+on the `self` argument name:
+
+```mojo
+struct Int:
+    # ...
+    fn __iadd__(inout self, rhs: Int):
+        self = self + rhs    # OK
+```
+
+:::{.callout-note}
+
+**Tip:** When you see `inout`, it means that any changes made to the argument
+_**in**side_ the function are visible _**out**side_ the function.
+
+:::
+
+Now the `self` argument is mutable in the function and any changes are visible
+in the caller—even if the caller has a non-trivial computation to access it,
+like an array subscript:
+
+```mojo
+fn show_mutation():
+    var x = 42
+    x += 1
+    print(x)    # prints 43 of course
+
+    var a = InlinedFixedVector[16, Int](...)
+    a[4] = 7
+    a[4] += 1    # Mutate an element within the InlinedFixedVector
+    print(a[4])  # Prints 8
+
+    let y = x
+    y += 1       # ERROR: Cannot mutate 'let' value
+```
+
+Mojo implements the in-place mutation of the above `InlinedFixedVector` element
+by emitting a call to `__getitem__` into a temporary buffer, followed by a
+store with `__setitem__` after the call. Mutation of the `let` value fails
+because it isn't possible to form a mutable reference to an immutable value.
+Similarly, the compiler rejects attempts to use a subscript with an `inout`
+argument if it implements `__getitem__` but not `__setitem__`.
+
+Of course, you can declare multiple `inout` arguments. For example, you can
+define and use a swap function like this:
+
+```mojo
+fn swap(inout lhs: Int, inout rhs: Int):
+    let tmp = lhs
+    lhs = rhs
+    rhs = tmp
+
+fn show_swap():
+    var x = 42
+    var y = 12
+    swap(x, y)
+    print(x)  # Prints 12
+    print(y)  # Prints 42
+```
+
+A very important aspect of this system is that it all composes correctly.
+
+:::{.callout-note}
+
+Notice that we don't call this argument passing "by reference." Although the
+`inout` convention is conceptually the same, we don't call it by-reference
+passing because the implementation may actually pass values using pointers.
+
+:::
+
+
+### Transfer arguments (`owned` and `^`) {#owned-arguments}
 
 The final argument convention that Mojo supports is the `owned` argument
-convention.  This convention is used for functions that want to take exclusive
+convention. This convention is used for functions that want to take exclusive
 ownership over a value, and it is often used with the postfix `^` operator.
 
-For example, consider working with a move-only type like a unique pointer. While
-the borrow convention makes it easy to work with the unique pointer without
-ceremony, at some point you may want to transfer ownership to some other
-function.  This is what the `^` operator does:
+For example, imagine you're working with a move-only type like a unique
+pointer. While the borrow convention makes it easy to work with the unique
+pointer without ceremony, at some point you might want to transfer ownership to
+some other function. This is what the `^` "transfer" operator does:
 
 ```mojo
 fn usePointer():
     let ptr = SomeUniquePtr(...)
     use(ptr)        # Perfectly fine to pass to borrowing function.
-    use(ptr)
-    take_ptr(ptr^)  # pass ownership of the `ptr` value to another function.
+    take_ptr(ptr^)  # Pass ownership of the `ptr` value to another function.
 
     use(ptr) # ERROR: ptr is no longer valid here!
 ```
 
 For movable types, the `^` operator ends the lifetime of a value binding and
-transfers the value to something else (in this case, the `take_ptr` function).
-To support this, you can define functions as taking owned arguments, e.g. you
-define `take_ptr` like so:
+transfers the value ownership to something else (in this case, the `take_ptr()`
+function). To support this, you can define functions as taking `owned`
+arguments. For example, you define `take_ptr()` like so:
 
 ```mojo
 fn take_ptr(owned p: SomeUniquePtr):
     use(p)
 ```
 
-Because it is declared `owned`, the `take_ptr` function knows it has unique
+Because it is declared `owned`, the `take_ptr()` function knows it has unique
 access to the value.  This is very important for things like unique pointers,
-can be useful to avoid copies, and is a generalization for other cases as well.
+and it's useful when you want to avoid copies.
 
 For example, you will notably see the `owned` convention on destructors and on
-consuming move initializers, e.g., our `MyString` type from earlier my be
-defined as:
+consuming move initializers. For example, our `MyString` type from earlier can
+be defined as follows:
 
 ```mojo
 struct MyString:
@@ -1076,7 +1123,8 @@ struct MyString:
         self.data.free()
 ```
 
-This is because you need to own a value to destroy it or to steal its parts!
+Specifying `owned` in the `__del__` function is important because you must
+own a value to destroy it.
 
 ### `@register_passable` struct decorator
 
@@ -1278,7 +1326,7 @@ Mojo doesn't have a standard Dictionary yet, so it is not yet possible
 to create a Python dictionary from a Mojo dictionary. You can work with
 Python dictionaries in Mojo though!
 
-## "Value Lifecycle": Birth, life and death of a value
+## "Value Lifecycle": Birth, life and death of a value {#value-lifecycle}
 
 Now that we have an understanding of the different ingredients that can go into
 building functions and the types system, we can look at how to put together
@@ -1620,7 +1668,7 @@ and allow the inliner to just make them go away.
 
 There are two reasons that approach would be suboptimal: one is that we don’t
 want the boilerplate of having to define a bunch of methods on trivial types,
-and second, we don’t want the compile time overhead of generating and pushing
+and second, we don’t want the compile-time overhead of generating and pushing
 around a bunch of function calls, only to have them inline away to nothing.
 Furthermore, there is an orthogonal concern, which is that many of these types
 are trivial in another way: they are tiny, and should be passed around in the
@@ -1866,7 +1914,7 @@ require all full-value initialization to go through initializers and be
 destroyed with their full-value destructor.
 
 For what it's worth, Mojo does internally have an equivalent of the Rust
-"[mem::forget](https://doc.rust-lang.org/std/mem/fn.forget.html)" function, which
+[`mem::forget`](https://doc.rust-lang.org/std/mem/fn.forget.html) function, which
 explicitly disables a destructor and has a corresponding internal feature for
 "blessing" an object, but they aren’t exposed for user consumption at this
 point.
