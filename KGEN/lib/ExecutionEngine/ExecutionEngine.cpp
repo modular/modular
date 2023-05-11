@@ -52,10 +52,10 @@ MaterializationLayer::getOrCreateDylib(StringRef libName) {
     return M::Error(toString(dylibOr.takeError()));
   llvm::orc::JITDylib &dylib = *dylibOr;
 
-  // Resolve symbols that are statically linked in the current process.
+  // Resolve symbols that are statically linked in the target process.
   dylib.addGenerator(
-      cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
-          dataLayout.getGlobalPrefix(), getCurrentProcessSymbolFilter())));
+      cantFail(llvm::orc::EPCDynamicLibrarySearchGenerator::GetForTargetProcess(
+          session, getTargetProcessSymbolFilter())));
 
   // Add the dylib to the search order.
   addToSearchOrder(libName, &dylib);
