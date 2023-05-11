@@ -1074,7 +1074,7 @@ passing because the implementation may actually pass values using pointers.
 
 The final argument convention that Mojo supports is the `owned` argument
 convention. This convention is used for functions that want to take exclusive
-ownership over a value, and it is often used with the postfix `^` operator.
+ownership over a value, and it is often used with the postfixed `^` operator.
 
 For example, imagine you're working with a move-only type like a unique
 pointer. While the borrow convention makes it easy to work with the unique
@@ -1105,7 +1105,7 @@ access to the value.  This is very important for things like unique pointers,
 and it's useful when you want to avoid copies.
 
 For example, you will notably see the `owned` convention on destructors and on
-consuming move initializers. For example, our `MyString` type from earlier can
+consuming move constructor. For example, our `MyString` type from earlier can
 be defined as follows:
 
 ```mojo
@@ -1329,7 +1329,7 @@ Python dictionaries in Mojo though!
 ## "Value Lifecycle": Birth, life and death of a value {#value-lifecycle}
 
 Now that we have an understanding of the different ingredients that can go into
-building functions and the types system, we can look at how to put together
+building functions and the types system, we can look at how to put them
 together to model important types that you may want to express in Mojo.
 
 Many existing languages express design points with different tradeoffs: C++, for
@@ -1340,7 +1340,7 @@ is dependent on an "ARC optimizer" for performance. Rust started with strong
 value ownership goals to satisfy its borrow checker, but relies on values being
 movable, which makes it challenging to express custom move constructors and
 can put a lot of stress on `memcpy` performance. In Python, everything is a
-reference to a class, so it has never really faced these issues.
+reference to a class, so it never really faces issues with types.
 
 For Mojo, we benefit from learning from these existing systems, and aim to
 provide a model that is very powerful while still easy to learn and understand.
@@ -1349,9 +1349,9 @@ optimization passes built into a "sufficiently smart" compiler.
 
 To explore these issues, we look at different value classifications and the
 relevant Mojo features that go into expressing them, and build from the
-bottom-up.  We use C++ as the primary comparison point in examples because it is
-widely known but occasionally reference other languages if they provide a better
-comparison point.
+bottom-up. We use C++ as the primary comparison point in examples because it is
+widely known, but we occasionally reference other languages if they provide a
+better comparison point.
 
 ### Types that cannot be instantiated
 
@@ -1382,10 +1382,10 @@ though you cannot instantiate an instance of the type.
 ### Non-movable and non-copyable types
 
 If we take a step up the ladder of sophistication, we’ll get to types that can
-be instantiated, but once they are pinned to an address in memory and cannot
+be instantiated, but once they are pinned to an address in memory, they cannot
 be implicitly moved or copied.  This can be useful to implement types like
-atomic operations (e.g., `std::atomic` in C++) or other types where the memory
-address of the value is its identity and critical to its purpose:
+atomic operations (such as `std::atomic` in C++) or other types where the memory
+address of the value is its identity and is critical to its purpose:
 
 ```mojo
 struct Atomic:
@@ -1406,27 +1406,28 @@ is initialized it can never be moved or copied.  This is safe and useful because
 Mojo's ownership system is fully "address correct" - when this is initialized
 onto the stack or in the field of some other type, it never needs to move.
 
-Note that Mojo’s approach just controls the builtin operations like `a = b`
-copies and the `x^` consume operator. One useful pattern that can be used for
-types like this is to add an explicit `copy()` method (a non-"dunder" method),
-which can be useful to explicitly make copies of an instance when it is known
-safe to the programmer.
+Note that Mojo’s approach controls only the built-in move operations, such as
+`a = b` copies and the [`^` transfer operator](#owned-arguments). One
+useful pattern you can use for your own types (like `Atomic` above) is to add
+an explicit `copy()` method (a non-"dunder" method). This can be useful to make
+explicit copies of an instance when it is known safe to the programmer.
 
 ### Unique "move-only" types
 
 If we take one more step up the ladder of capabilities, we will encounter types
-that are "unique" - there are many examples of this in C++, e.g. types like
+that are "unique" - there are many examples of this in C++, such as types like
 `std::unique_ptr` or even a `FileDescriptor` type that owns an underlying POSIX
 file descriptor. These types are pervasive in languages like Rust, where
-copying is discouraged, but "move" is free. In Mojo, you can declare these by
-implementing the `__moveinit__` method with a consuming existing like this:
+copying is discouraged, but "move" is free. In Mojo, you can implement these
+kinds of moves by defining the `__moveinit__` method to take ownership of a
+unique type. For example:
 
 ```mojo
 # This is a simple wrapper around POSIX-style fcntl.h functions.
 struct FileDescriptor:
     var fd: Int
 
-    # This is the new.
+    # This is how we move our unique type.
     fn __moveinit__(inout self, owned existing: Self):
         self.fd = existing.fd
 
@@ -1448,19 +1449,18 @@ struct FileDescriptor:
     fn write(...): ...
 ```
 
-The new concept is that we added a "consuming move constructor" which is named
-`__moveinit__`.  The consuming move initializer takes ownership of an existing
+The consuming move constructor (`__moveinit__`) takes ownership of an existing
 `FileDescriptor`, and moves its internal implementation details over to a new
 instance.  This is because instances of `FileDescriptor` may exist at different
-locations, and they can be logically moved around - stealing the body of one
-value and moving it another.
+locations, and they can be logically moved around—stealing the body of one
+value and moving it into another.
 
-Here is an egregious example that will invoke this multiple times:
+Here is an egregious example that will invoke `__moveinit__` multiple times:
 
 ```mojo
 fn egregious_moves(owned fd1: FileDescriptor):
     # fd1 and fd2 have different addresses in memory, but the
-    # consume operator moves unique ownership from fd1 to fd2.
+    # transfer operator moves unique ownership from fd1 to fd2.
     let fd2 = fd1^
 
     # Do it again, a use of fd2 after this point will produce an error.
@@ -1473,12 +1473,12 @@ fn egregious_moves(owned fd1: FileDescriptor):
 ```
 
 Note how ownership of the value is transferred between various values that own
-it, using the postfix-`^` ‘consume’ operator to destroy a previous binding.  If
-you are familiar with C++, the simple way to think about the consume operator is
-like `std::move`, but in this case, we can see that it is able to move things
-without resetting them to a state that can be destroyed: in C++, if your move
-operator failed to change the old value’s `fd` instance, it would get closed
-twice.
+it, using the postfix-`^` "transfer" operator, which destroys a previous
+binding and transfer ownership to a new constant. If you are familiar with C++,
+the simple way to think about the transfer operator is like `std::move`, but in
+this case, we can see that it is able to move things without resetting them to
+a state that can be destroyed: in C++, if your move operator failed to change
+the old value’s `fd` instance, it would get closed twice.
 
 Mojo tracks the liveness of values and allows you to define custom move
 constructors. This is rarely needed, but extremely powerful when it is. For
@@ -1522,7 +1522,7 @@ The problem here is that there is simply no way (looking at just the function
 body above) to know or prove that the dynamic values of `i` and `j` are not the
 same.  While it is possible to maintain dynamic state to track whether
 individual elements of the array are live, this often causes significant
-runtime expense (even when move/consumes are not used), which is something that
+runtime expense (even when move/transfers are not used), which is something that
 Mojo and other systems programming languages are not keen to do.  There are a
 variety of ways to deal with this, including some pretty complicated solutions
 that aren’t always easy to learn.
@@ -1538,13 +1538,14 @@ optional type or nullable pointer) or because they have a null value that is
 efficient to create and a no-op to destroy (e.g. `std::vector` can have a null
 pointer for its data).
 
-To support these use-cases, the consume operator supports arbitrary LValues,
-and when applied to one, it invokes the "stealing move constructor". This
-constructor must set up the new value to be in a live state, and can mutate the
-old value, but needs to put it into a state where its destructor will still
-work. For example, if we want to put our `FileDescriptor` into a vector and
-move out of it, we might choose to extend it to know that `-1` is a sentinel
-which means that it is "null". We can implement this like so:
+To support these use-cases, the [`^` transfer operator](#owned-arguments)
+supports arbitrary LValues, and when applied to one, it invokes the "stealing
+move constructor." This constructor must set up the new value to be in a live
+state, and it can mutate the old value, but it must put the old value into a
+state where its destructor still works. For example, if we want to put our
+`FileDescriptor` into a vector and move out of it, we might choose to extend it
+to know that `-1` is a sentinel which means that it is "null". We can implement
+this like so:
 
 ```mojo
 # This is a simple wrapper around POSIX-style fcntl.h functions.
@@ -1581,7 +1582,7 @@ don’t have to) to make your types participate in this behavior in an opt-in wa
 
 ### Copyable types
 
-The next step up from moveable types are copyable types.  Copyable types are
+The next step up from movable types are copyable types.  Copyable types are
 also very common - programmers generally expect things like strings and arrays
 to be copyable, and every Python Object reference is copyable - by copying the
 pointer and adjusting the reference count.
@@ -1592,11 +1593,11 @@ one can use immutable data structures that are easily shareable because they are
 never mutated once created, and one can implement deep value semantics through
 lazy copy-on-write as Swift does.  Each of these approaches has different
 tradeoffs, and Mojo takes the opinion that while we want a few common sets of
-collection types, that we can also support a wide range of specialized ones that
+collection types, we can also support a wide range of specialized ones that
 focus on particular use cases.
 
 In Mojo, you can do this by implementing the `__copyinit__` method.  Here is an
-example of that using a simple `String` in pseudo code:
+example of that using a simple `String` in pseudo-code:
 
 ```mojo
 struct MyString:
@@ -1622,8 +1623,8 @@ struct MyString:
 
 This simple type is a pointer to a "null-terminated" string data allocated with
 malloc, using old-school C APIs for clarity. It implements the `__copyinit__`,
-which maintains the invariant that each instance of MyString owns their
-underlying pointer and frees it on destruction. This implementation builds on
+which maintains the invariant that each instance of `MyString` owns its
+underlying pointer and frees it upon destruction. This implementation builds on
 tricks we’ve seen above, and implements a `__moveinit__` constructor, which
 allows it to completely eliminate temporary copies in some common cases. You
 can see this behavior in this code sequence:
@@ -1651,9 +1652,9 @@ constructor is optional but helps the assignment into `s3`: without it, the
 compiler would invoke the copy constructor from s1, then destroy the old `s1`
 instance.  This is logically correct but introduces extra runtime overhead.
 
-Mojo destroys values eagerly, which allows it to use frequently transform
-copy+destroy pairs into a move operation, which can lead to much better
-performance than C++ without requiring the need for pervasive micro-management
+Mojo destroys values eagerly, which allows it to transform
+copy+destroy pairs into single move operations, which can lead to much better
+performance than C++ without requiring the need for pervasive micromanagement
 of `std::move`.
 
 ### Trivial types
@@ -1730,7 +1731,7 @@ you when they don't exist, so it is ok to override its behavior by defining your
 own version of these.  For example, it is fairly common to want to define a
 custom copy constructor but use the default memberwise and move constructor.
 
-There is no way to suppress generation of specific methods or customize
+There is no way to suppress the generation of specific methods or customize
 generation at this time, but we can add arguments to the `@value` generator to
 do this if there is demand.
 
@@ -1821,10 +1822,10 @@ The Mojo design has a number of strong advantages over the C++ model:
    die as soon as possible, avoiding confusing situations where the compiler
    thinks a value could still be alive and interfere with another value, but
    that isn’t clear to the user.
-5. Destroying values at last use composes nicely with "move" optimization,
-   which transforms a "copy+del" pair into a "move" of a value, a generalization
+5. Destroying values at last-use composes nicely with "move" optimization,
+   which transforms a "copy+del" pair into a "move" operation, a generalization
    of C++ move optimizations like NRVO.
-6. Destroying values at the end of scope in C++ is problematic for some common
+6. Destroying values at end-of-scope in C++ is problematic for some common
    patterns like tail recursion because the destructor calls happen after the
    tail call. This can be a significant performance and memory problem for
    certain functional programming patterns.
@@ -1865,7 +1866,7 @@ fn use_two_strings():
 
 Note that the `ts.str1` field is immediately destroyed after being set up,
 because Mojo knows that it will be overwritten down below.  You can also see
-this when using the consume operator, for example:
+this when using the [transfer operator](#owned-arguments), for example:
 
 ```mojo
 fn consume_and_use_two_strings():
@@ -1880,17 +1881,17 @@ fn consume_and_use_two_strings():
     # ts.__del__() runs here
 ```
 
-Notice that the code consumes one of the fields: for the duration of
-`other_stuff()`, the `str1` field is completely uninitialized.  Fortunately for
-the code above, `str1` is reinitialized before it is used by the `use` function
-- and if it weren’t, Mojo would reject the code with an uninitialized field
-error.
+Notice that the code transfers ownership of one of the fields: for the duration
+of `other_stuff()`, the `str1` field is completely uninitialized because
+ownership was transferred to `consume()`. Fortunately for the code above,
+`str1` is reinitialized before it is used by the `use()` function - and if it
+weren’t, Mojo would reject the code with an uninitialized field error.
 
-Mojo's rule on this is powerful and intentionally straightforward: fields can be
-temporarily consumed, but the "whole object" must be constructed with the
-aggregate type’s initializer and destroyed with the aggregate destructor.  This
-means that it isn’t possible to create an object by initializing its fields, nor
-is it possible to tear down an object by destroying its fields:
+Mojo's rule on this is powerful and intentionally straight-forward: fields can
+be temporarily transferred, but the "whole object" must be constructed with the
+aggregate type’s initializer and destroyed with the aggregate destructor. This
+means that it isn’t possible to create an object by initializing its fields,
+nor is it possible to tear down an object by destroying its fields:
 
 ```mojo
 fn consume_and_use_two_strings():
@@ -1908,7 +1909,7 @@ fn consume_and_use_two_strings():
 While we could allow patterns like this to happen, we reject this because "a
 value is more than a sum of its parts".  Consider a `FileDescriptor` that
 contains a POSIX file descriptor as an integer value. For example - there is a
-big difference between destroying the integer (a noop!) and destroying the
+big difference between destroying the integer (a no-op!) and destroying the
 `FileDescriptor` (it might call the `close()` system call).  Because of this, we
 require all full-value initialization to go through initializers and be
 destroyed with their full-value destructor.
@@ -1957,7 +1958,7 @@ struct TwoStrings:
         self.str1 = MyString("fancy")
 ```
 
-### Field lifetimes of `owned` arguments in `__del__ `and `__moveinit__`
+### Field lifetimes of `owned` arguments in `__del__ ` and `__moveinit__`
 
 A final bit of magic exists for the ‘owned’ arguments of a destructor and move
 initializer.  To recap, these methods are defined like this:
@@ -1977,14 +1978,14 @@ are in charge of dismantling the `owned existing`/`self` value, either in
 destroying sub-elements that have to do with them, or using them to implement
 deletion logic for their own type. The move constructor wants to create a new
 `self` instance by stealing parts from an existing instance. As such, they both
-want to consume and transform elements of the ‘owned’ value and definitely
-don’t want the owned values destructor to run! The most egregious example of
+want to own and transform elements of the `owned` value and definitely
+don’t want the owned value's destructor to run. The most egregious example of
 this is the `__del__` method, which would turn into an infinite loop.
 
 To solve this problem, Mojo handles these two methods specially by assuming
 that their whole values are destroyed upon reaching any return from the method.
 This means that the whole object may be used before the field values are
-consumed. For example, this works as you expect:
+transferred. For example, this works as you expect:
 
 ```mojo
 struct TwoStrings:
@@ -1997,8 +1998,8 @@ struct TwoStrings:
         log(self)       # Self is still whole
         # self.str2.__del__(): Mojo destroys str2 since it isn't used
 
-        consume(^str1)
-        # Everything has now been consumed, no destructor is run on self.
+        consume(str1^)
+        # Everything has now been transferred, no destructor is run on self.
 ```
 
 You should not generally have to think about this, but if you have logic with
@@ -2010,14 +2011,13 @@ to the discard pattern:
 fn __del__(owned self):
     log(self) # Self is still whole
 
-    consume(^str1)
+    consume(str1^)
     _ = self.str2
     # self.str2.__del__(): Mojo destroys str2 after its last use.
 ```
 
-In this case, if "consume" implicitly refers to some value in `str2` somehow,
-
-this will ensure that str2 isn’t destroyed until the last use when it is
+In this case, if `consume()` implicitly refers to some value in `str2` somehow,
+this will ensure that `str2` isn’t destroyed until the last use when it is
 accessed by the `_` pattern.
 
 ## Lifetimes
@@ -2056,7 +2056,7 @@ The `@parameter` decorator can be placed on nested functions that capture
 runtime values to create "parametric" capturing closures. This is an unsafe
 feature in Mojo, because we do not currently model the lifetimes of
 capture-by-reference. A particular aspect of this feature is that it allows
-closures that captures runtime values to be passed as parameter values.
+closures that capture runtime values to be passed as parameter values.
 
 ### Magic operators
 
@@ -2066,7 +2066,7 @@ The Mojo standard library `Pointer[element_type]` type is implemented with an
 underlying `!pop.pointer<element_type>` type in MLIR, and we desire a way to
 implement these C++-equivalent unsafe constructs in Mojo.  Eventually, these will
 migrate to all being methods on the Pointer type, but until then, some need to
-be exposed as builtin operators.
+be exposed as built-in operators.
 
 <!--
 TODO: document all of these:
@@ -2082,8 +2082,8 @@ __get_address_as_owned_value(x)
 ### Direct access to MLIR
 
 Mojo provides full access to the MLIR dialects and ecosystem. Please take a
-look at the [Low level IR in Mojo](/mojo/notebooks/BoolMLIR.html) to learn
-how to use the `__mlir_type`, `__mlir_op`, `__mlir_type` constructs. All of
-the builtins and standard library is implemented by just calling the underlying
-MLIR constructs and in that Mojo effectively serves as syntax sugar on top of
-MLIR.
+look at the [Low level IR in Mojo](/mojo/notebooks/BoolMLIR.html) to learn how
+to use the `__mlir_type`, `__mlir_op`, and `__mlir_type` constructs. All of the
+built-in and standard library APIs are implemented by just calling the
+underlying MLIR constructs, and in doing so, Mojo effectively serves as syntax
+sugar on top of MLIR.
