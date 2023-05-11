@@ -242,6 +242,11 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
             if (!matchPattern(gep.getIndex(), mlir::m_ConstantInt(&index)) ||
                 index.isNegative())
               return false;
+
+            // Oddly this comes up. Guard against out of range accesses.
+            if (static_cast<int64_t>(index.getLimitedValue()) >=
+                *containerTy.getResolvedSize())
+              return false;
           }
         }
       }
@@ -251,6 +256,11 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
         APInt index;
         if (!matchPattern(gep.getIndex(), mlir::m_ConstantInt(&index)) ||
             index.isNegative())
+          return false;
+
+        // Oddly this comes up. Guard against out of range accesses.
+        if (static_cast<int64_t>(index.getLimitedValue()) >=
+            *containerTy.getResolvedSize())
           return false;
       }
     }
@@ -313,6 +323,11 @@ struct ReplaceStack : public Replacer<ReplaceStack, POP::StackAllocationOp> {
         APInt index;
         if (!matchPattern(offset.getIndex(), mlir::m_ConstantInt(&index)) ||
             index.isNegative())
+          return false;
+
+        // Oddly this comes up. Guard against out of range accesses.
+        if (static_cast<int64_t>(index.getLimitedValue()) >=
+            cast<IntegerAttr>(alloc.getCount()).getInt())
           return false;
       }
     }
