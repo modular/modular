@@ -2570,3 +2570,219 @@ struct ConvIm2ColNHWC[
             ),
             type,
         )
+
+
+struct ConvDirectNHWC[
+    shape_input: DimList,
+    shape_filter: DimList,
+    shape_output: DimList,
+    type: DType,
+    simd_size: Int,
+]:
+
+    var output: NDBuffer[4, shape_output, type]
+    var input: NDBuffer[4, shape_input, type]
+    var filter: NDBuffer[4, shape_filter, type]
+    var conv_shape: ConvShape
+
+    var batch_idx: Int
+
+    alias h_inner_tile = 8
+    alias w_inner_tile = 8
+    alias c_inner_tile = 4
+    alias f_unroll = 4
+
+    @staticmethod
+    fn run(
+        output: NDBuffer[4, shape_output, type],
+        input: NDBuffer[4, shape_input, type],
+        filter: NDBuffer[4, shape_filter, type],
+        conv_shape: ConvShape,
+        out_chain: OutputChainPtr,
+    ):
+        @parameter
+        @always_inline
+        fn task_func(task_id: Int):
+            var instance = ConvDirectNHWC[
+                shape_input,
+                shape_filter,
+                shape_output,
+                type,
+                simd_size,
+            ](
+                output,
+                input,
+                filter,
+                conv_shape,
+                0,
+            )
+
+            while instance.batch_idx < conv_shape.n:
+                instance._outer_loop()
+                instance.batch_idx += 1
+
+        async_parallelize[task_func](out_chain, 1)
+
+    fn __init__(
+        inout self,
+        output: NDBuffer[4, shape_output, type],
+        input: NDBuffer[4, shape_input, type],
+        filter: NDBuffer[4, shape_filter, type],
+        conv_shape: ConvShape,
+        batch_idx: Int,
+    ):
+        self.output = output
+        self.input = input
+        self.filter = filter
+        self.conv_shape = conv_shape
+        self.batch_idx = batch_idx
+
+    fn _outer_loop(self):
+        var ho: Int = 0
+        while ho <= (self.conv_shape.out_h - h_inner_tile):
+            self._outer_w_loop(ho, h_inner_tile)
+            ho += h_inner_tile
+
+        if ho < self.conv_shape.out_h:
+            self._outer_w_loop(ho, self.conv_shape.out_h - ho)
+
+    fn _outer_w_loop(self, ho: Int, ho_tile_size: Int):
+        var wo: Int = 0
+        while wo <= (self.conv_shape.out_w - w_inner_tile):
+            self._inner_tile_loop(
+                Index(ho_tile_size, w_inner_tile),  # tile size
+                Index(ho, wo),  # offset
+            )
+            wo += w_inner_tile
+        if wo < self.conv_shape.out_w:
+            self._inner_tile_loop(
+                Index(ho_tile_size, self.conv_shape.out_w - wo),  # tile size
+                Index(ho, wo),  # offset
+            )
+
+    fn _inner_tile_loop(
+        self,
+        h_w_inner_tile_size: StaticIntTuple[2],
+        ho_wo_offset: StaticIntTuple[2],
+    ):
+        for h_inner in range(0, h_w_inner_tile_size[0]):
+            for r in range(0, self.conv_shape.r):
+                for w_inner in range(0, h_w_inner_tile_size[1]):
+                    let ho_wo = ho_wo_offset + Index(h_inner, w_inner)
+                    if r == 0:  # This assumes that s always start from 0.
+                        self._initialize_output(ho_wo)
+
+                    for s in range(0, self.conv_shape.s):
+                        let r_s = Index(r, s)
+                        let hi_wi = _ho_wo_to_hi_wi(ho_wo, r_s, self.conv_shape)
+                        if hi_wi < Index(
+                            self.conv_shape.h, self.conv_shape.w
+                        ) and hi_wi >= Index(0, 0):
+                            self._inner_micro_loop_helper(hi_wi, ho_wo, r_s)
+
+    fn _inner_micro_loop_helper(
+        self,
+        hi_wi: StaticIntTuple[2],
+        ho_wo: StaticIntTuple[2],
+        r_s: StaticIntTuple[2],
+    ):
+        @parameter
+        @always_inline
+        fn do_work[tile_size: Int](cstart: Int) -> Int:
+            var cidx = cstart
+            while cidx <= self.conv_shape.c - tile_size:
+                self._inner_micro_loop[tile_size](hi_wi, ho_wo, r_s, cidx)
+                cidx += tile_size
+            return cidx
+
+        var c_offset: Int = 0
+        # c_offset = do_work[c_inner_tile](c_offset)
+        # c_offset = do_work[4](c_offset)
+        # c_offset = do_work[3](c_offset)
+        c_offset = do_work[2](c_offset)
+        c_offset = do_work[1](c_offset)
+
+    fn _initialize_output(self, ho_wo: StaticIntTuple[2]):
+        let output_pointer = self.output._offset(
+            Index(
+                self.batch_idx,
+                ho_wo[0],
+                ho_wo[1],
+                0,
+            )
+        )
+        var fo: Int = 0
+        while fo <= (self.conv_shape.f - f_unroll * simd_size):
+            for init_fi in range(0, f_unroll * simd_size, simd_size):
+                output_pointer.offset(fo + init_fi).simd_store[simd_size](
+                    SIMD[type, simd_size](0)
+                )
+            fo += f_unroll * simd_size
+        while fo < self.conv_shape.f:
+            output_pointer.offset(fo).simd_store[1](0)
+            fo += 1
+
+    fn _inner_micro_loop[
+        c_tile_size: Int
+    ](
+        self,
+        hi_wi: StaticIntTuple[2],
+        ho_wo: StaticIntTuple[2],
+        r_s: StaticIntTuple[2],
+        c_offset: Int,
+    ):
+        let input_pointer = self.input._offset(
+            Index(
+                self.batch_idx,
+                hi_wi[0],
+                hi_wi[1],
+                c_offset,
+            )
+        )
+        var filter_pointer = self.filter._offset(
+            Index(r_s[0], r_s[1], c_offset, 0)
+        )
+        let out_pointer = self.output._offset(
+            Index(
+                self.batch_idx,
+                ho_wo[0],
+                ho_wo[1],
+                0,
+            )
+        )
+
+        var fo: Int = 0
+        while fo <= (self.conv_shape.f - f_unroll * simd_size):
+            for c in range(0, c_tile_size):
+                let input_scalar = input_pointer.offset(c).load()
+                let input_vector = SIMD[type, simd_size](input_scalar)
+
+                for fi in range(0, f_unroll * simd_size, simd_size):
+                    let output_vector = out_pointer.offset(fo + fi).simd_load[
+                        simd_size
+                    ]()
+                    let filter_vector = filter_pointer.offset(
+                        (fo + fi) + c * self.conv_shape.f
+                    ).simd_load[simd_size]()
+                    let accumulate_vector = input_vector.fma(
+                        filter_vector, output_vector
+                    )
+                    out_pointer.offset(fo + fi).simd_store[simd_size](
+                        accumulate_vector
+                    )
+            fo += f_unroll * simd_size
+
+        while fo < self.conv_shape.f:
+            for c1 in range(0, c_tile_size):
+                let input_scalar1 = input_pointer.offset(c1).load()
+                let output_scalar = out_pointer.offset(fo).simd_load[1]()
+                let filter_scalar = filter_pointer.offset(
+                    fo + c1 * self.conv_shape.f
+                ).simd_load[1]()
+                let accumulate_scalar = input_scalar1.fma(
+                    filter_scalar, output_scalar
+                )
+                out_pointer.offset(fo).simd_store[1](accumulate_scalar)
+            fo += 1
+
+        filter_pointer += self.conv_shape.f
