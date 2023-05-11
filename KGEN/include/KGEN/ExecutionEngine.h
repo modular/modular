@@ -126,8 +126,8 @@ protected:
   /// coming from the current process. The MaterializationLayer automatically
   /// adds visiblity to current process symbols when creating a new dylib, so
   /// this allows layers to customize that behavior.
-  virtual std::function<bool(const llvm::orc::SymbolStringPtr &)>
-  getCurrentProcessSymbolFilter() {
+  virtual llvm::unique_function<bool(const llvm::orc::SymbolStringPtr &)>
+  getTargetProcessSymbolFilter() {
     return {};
   }
 
