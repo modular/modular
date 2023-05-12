@@ -10,6 +10,7 @@ add_modular_mlir_library(KGENElaborator
 
   DEPENDS
   KGENVersion
+  MLIRKGENPasses
 
   LINK_LIBS PUBLIC
   DebugInfoDialect

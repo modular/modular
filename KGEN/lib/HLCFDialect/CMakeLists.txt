@@ -15,6 +15,7 @@ add_modular_dialect_library(HLCFDialect
 
   DEPENDS
   MLIRHLCFIncGen
+  MLIRKGENIncGen
 
   LINK_LIBS PUBLIC
   HLCFAnalysis
