@@ -2391,8 +2391,8 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return {};
 
   Location ifLoc = getLocation(emitter);
-  // At this point we don't know the type of trueExpr / falseExpr, use
-  // a dummy one and fix it later.
+  // At this point since we don't know the type of trueExpr / falseExpr, use a
+  // dummy type for the 'if' result.  We'll fix it later.
   auto ifOp = emitter.builder->create<HLCF::IfOp>(
       ifLoc, TypeRange{condValue.getType()}, condValue);
 
@@ -2409,16 +2409,48 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return {};
   }
 
-  /// TODO(subtyping): With subtypes, we can find intersection types, e.g. a
-  /// common superclass.  We could also try converting LHS to RHS and RHS to LHS
-  /// here that would allow "1.0 if cond else 2" for example.
+  /// If the types disagree, then we need to emit a conversion to a common type.
+  /// See if one is convertible to the other, and if so, emit a conversion to
+  /// get to a common type.
   auto resultType = trueVal.getRValueType();
-  if (!resultType.isEqualCanon(falseVal.getRValueType())) {
-    emitter.emitError(getLoc(), "true value of type ")
-        << resultType << " is not compatible with false value "
-        << falseVal.getRValueType() << " in conditional" << trueExpr->getRange()
-        << falseExpr->getRange();
-    return {};
+  auto otherType = falseVal.getRValueType();
+  if (!resultType.isEqualCanon(otherType)) {
+    bool trueConvertibleToFalse =
+        emitter.canImplicitlyConvertToType({trueVal, trueExpr}, otherType);
+    bool falseConvertibleToFalse =
+        emitter.canImplicitlyConvertToType({falseVal, falseExpr}, resultType);
+    if (trueConvertibleToFalse && !falseConvertibleToFalse) {
+      emitter.builder->setInsertionPointToEnd(&ifOp.getThenBlock());
+      trueVal = emitter.emitCValue({trueVal, trueExpr}, EC_CondExpr, otherType);
+      if (!trueVal)
+        return {};
+      resultType = otherType;
+    } else if (!trueConvertibleToFalse && falseConvertibleToFalse) {
+      emitter.builder->setInsertionPointToEnd(&ifOp.getElseBlock());
+      falseVal =
+          emitter.emitCValue({falseVal, falseExpr}, EC_CondExpr, resultType);
+      if (!falseVal)
+        return {};
+    } else if (!trueConvertibleToFalse && !falseConvertibleToFalse) {
+      emitter.emitError(getLoc(), "true value of type ")
+          << resultType << " is not compatible with false value "
+          << falseVal.getRValueType() << " in conditional"
+          << trueExpr->getRange() << falseExpr->getRange();
+      return {};
+    } else {
+      auto diag =
+          emitter.emitError(getLoc(), "ambiguous if: true value has type ")
+          << resultType << " and false value has type "
+          << falseVal.getRValueType() << ", and both convert to each other"
+          << trueExpr->getRange() << falseExpr->getRange();
+      diag.attachNote(getLoc())
+          << "you could disambiguate by casting true value to "
+          << falseVal.getRValueType() << trueExpr->getRange();
+      diag.attachNote(getLoc())
+          << "you could disambiguate by casting false value to "
+          << trueVal.getRValueType() << falseExpr->getRange();
+      return {};
+    }
   }
 
   // Ok, we now know if the types were register_passable or not, so finish up
@@ -2426,6 +2458,7 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // in the 'if' result.
   if (resultType.isRegisterPassable(trueExpr->getLoc(), emitter.shared)) {
     // Finish false.
+    emitter.builder->setInsertionPointToEnd(&ifOp.getElseBlock());
     auto falseSR = emitter.emitSRValue({falseVal, falseExpr}, EC_BoolCondition);
     if (!falseSR)
       return {};
