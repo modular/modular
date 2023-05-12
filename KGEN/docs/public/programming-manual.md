@@ -104,10 +104,10 @@ late initialization:
 
 ```mojo
 def your_function():
-    let x: Int8 = 42
-    let y: Int64 = 17
+    let x: SI8 = 42
+    let y: SI64 = 17
 
-    let z: Int8
+    let z: SI8
     if x != 0:
         z = 1
     else:
@@ -347,14 +347,14 @@ constructed and destroy it when the value is destroyed:
 
 ```mojo
 struct MyString:
-    var data: Pointer[Int8]
+    var data: Pointer[UI8]
 
     # StringRef has a data + length field
     def __init__(inout self, input: StringRef):
-        let data = Pointer[Int8].alloc(input.length+1)
+        let data = Pointer[UI8].alloc(input.length+1)
         data.memcpy(input.data, input.length)
         data[input.length] = 0
-        self.data = Pointer[Int8](data)
+        self.data = Pointer[UI8](data)
 
     def __del__(owned self):
         self.data.free()
@@ -690,7 +690,7 @@ be defined as follows:
 
 ```mojo
 struct MyString:
-    var data: Pointer[Int8]
+    var data: Pointer[UI8]
 
     # StringRef has a data + length field
     def __init__(inout self, input: StringRef): ...
@@ -1136,7 +1136,7 @@ enumerators like this (the actual internal implementation details vary a bit):
 
 ```mojo
 struct DType:
-    var value : Int8
+    var value : UI8
     alias invalid = DType(0)
     alias bool = DType(1)
     alias si8 = DType(2)
@@ -1543,7 +1543,7 @@ example of that using a simple `String` in pseudo-code:
 
 ```mojo
 struct MyString:
-    var data: Pointer[Int8]
+    var data: Pointer[UI8]
 
     # StringRef is a pointer + length and works with StringLiteral.
     def __init__(inout self, input: StringRef):
@@ -1689,7 +1689,7 @@ pseudo code):
 
 ```mojo
 struct MyString:
-    var data: Pointer[Int8]
+    var data: Pointer[UI8]
 
     def __init__(inout self, input: StringRef): ...
     def __add__(self, rhs: MyString) -> MyString: ...
