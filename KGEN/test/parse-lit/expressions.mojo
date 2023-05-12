@@ -1101,24 +1101,47 @@ fn variadic_subscript[idx: Int, *a: Int](*b: Int):
 # CHECK-SAME:   a{{.*}} = variadic_get{{.*}}a, 0
 # CHECK-SAME:   b{{.*}} = variadic_get{{.*}}a, 1
 fn variadic_memory_subscript[*a: Int](*b: TwoParamsStruct[a[0], a[1]]):
-    # CHECK: %[[V0:.*]] = pop.variadic.get %b[%idx1]
-    # CHECK: __copyinit__{{.*}}%[[V0]]
+    # CHECK: [[V0:%.*]] = pop.variadic.get %b[%idx1]
+    # CHECK: __copyinit__{{.*}}[[V0]]
     let v0 = b[1]
-    # CHECK: %[[V1:.*]] = pop.variadic.get %b[%idx2]
-    # CHECK: __copyinit__{{.*}}%[[V1]]
+    # CHECK: [[V1:%.*]] = pop.variadic.get %b[%idx2]
+    # CHECK: __copyinit__{{.*}}[[V1]]
     var v1 = b[2]
 
 fn takeMemory(a: MemoryType): pass
 
-# CHECK-LABEL: lit.func @"testMemoryOnlyConds
-# Issue (#13379)
-fn testMemoryOnlyConds(cond: __mlir_type.i1, a: MemoryType, b: MemoryType) -> MemoryType:
+# CHECK-LABEL: lit.func @"testConds
+fn testConds(cond: __mlir_type.i1, a: MemoryType, b: MemoryType, m: M, i: Int) -> MemoryType:
+  # Implicit conversions.
+  # Mojo Issue #49: https://github.com/modularml/mojo/issues/49
+
+  # CHECK-NEXT: hlcf.if %cond -> !kgen.declref<@"$expressions"::@M> {
+  # CHECK-NEXT:   [[V:%.*]] = kgen.call {{.*}}__copyinit__{{.*}}(%m)
+  # CHECK-NEXT:   hlcf.yield [[V]]
+  # CHECK-NEXT: } else {
+  # CHECK-NEXT:   [[V:%.*]] = kgen.call {{.*}}__init__{{.*}}(%i)
+  # CHECK-NEXT:   hlcf.yield [[V]]
+  # CHECK-NEXT: }
+  _ = m if cond else i
+
+  # CHECK-NEXT: hlcf.if %cond -> !kgen.declref<@"$expressions"::@M> {
+  # CHECK-NEXT:   [[V:%.*]] = kgen.call {{.*}}__init__{{.*}}(%i)
+  # CHECK-NEXT:   hlcf.yield [[V]]
+  # CHECK-NEXT: } else {
+  # CHECK-NEXT:   [[V:%.*]] = kgen.call {{.*}}__copyinit__{{.*}}(%m)
+  # CHECK-NEXT:   hlcf.yield [[V]]
+  # CHECK-NEXT: }
+  _ = i if cond else m
+
+  # Memory only conds.
+  # Issue (#13379)
+
   # CHECK-NEXT: %anonymous2A = lit.varlet.decl
   # CHECK-NEXT: hlcf.if %cond {
-  # CHECK-NEXT:    kgen.call {{.*}}__copyinit__{{.*}}(%anonymous2A, %a)
+  # CHECK-NEXT:   kgen.call {{.*}}__copyinit__{{.*}}(%anonymous2A, %a)
   # CHECK-NEXT:   hlcf.yield
   # CHECK-NEXT: } else {
-  # CHECK-NEXT:   %2 = kgen.call {{.*}}__copyinit__{{.*}}(%anonymous2A, %b)
+  # CHECK-NEXT:   kgen.call {{.*}}__copyinit__{{.*}}(%anonymous2A, %b)
   # CHECK-NEXT:   hlcf.yield
   # CHECK-NEXT: }
   # CHECK-NEXT: kgen.call {{.*}}takeMemory{{.*}}(%anonymous2A)
