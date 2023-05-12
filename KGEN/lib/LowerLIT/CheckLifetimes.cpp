@@ -1350,20 +1350,34 @@ void DestructorInsertion::checkOp(Operation &op) {
     // consumed values from the else branch.  See if they disagree.
     BitVector disagreements = consumedValues;
     disagreements ^= thenConsumedValues;
+
+    // If they agree, then we're done if not, we'll have to destroy fields to
+    // make them agree.
     if (disagreements.none())
       return;
 
-    // If the true branch consumed values that the false branch didn't, then we
-    // need to destroy those corresponding values in the false branch.
-    BitVector consumedInThenButNotElse = thenConsumedValues;
-    consumedInThenButNotElse &= disagreements;
+    // If we are in a dryrun, just compute the union of the two sets.
+    if (dryRun) {
+      consumedValues |= disagreements;
+      return;
+    }
+
+    // Otherwise we have to emit destructors to get the branches to line up.
+    // If the true branch consumed values that the false branch didn't, then
+    // we need to destroy those corresponding values in the false branch.
     BitVector consumedInElseButNotThen = consumedValues;
     consumedInElseButNotThen &= disagreements;
-    destroyValuesAtEntry(consumedInThenButNotElse, op.getRegion(1).front(),
-                         op.getLoc());
-    consumedValues = thenConsumedValues;
     destroyValuesAtEntry(consumedInElseButNotThen, op.getRegion(0).front(),
                          op.getLoc());
+
+    BitVector consumedInThenButNotElse = thenConsumedValues;
+    consumedInThenButNotElse &= disagreements;
+    destroyValuesAtEntry(consumedInThenButNotElse, op.getRegion(1).front(),
+                         op.getLoc());
+
+    // Restore consumedValues to the merged set.
+    consumedValues = thenConsumedValues;
+    consumedValues |= consumedInElseButNotThen;
     return;
   }
 
@@ -1582,9 +1596,65 @@ void DestructorInsertion::destroyValueIfNeeded(
   if (valueRef.isAllPresent(consumedValues))
     return;
 
+  // Get the type for the value so we can poke at it.  If trivial, then we don't
+  // have any work to do.
+  DeclRefType valueType = dyn_cast<DeclRefType>(valueRef.getValueType(value));
+  if (!valueType) {
+    valueRef.markBits(consumedValues, true);
+    return;
+  }
+
   // If the entire value needs to be destroyed, then emit a destructor for the
   // whole value.
-  if (valueRef.isAllMissing(consumedValues)) {
+  if (!consumedValues.test(valueRef.endBit - 1)) {
+    // Trivial types don't have __del__ methods.
+    if (!valueSet.typeDeclInfo.getDestructorForType(valueType)) {
+      valueRef.markBits(consumedValues, true);
+      return;
+    }
+
+    // If a field of a value we must destroy is already destroyed, then we have
+    // an error, because we cannot run the destructor on the whole object if one
+    // of the fields is missing.
+    if (!valueRef.isAllMissing(consumedValues)) {
+      // Be careful about trivial fields: they don't have correctly tracked
+      // lifetimes, and should never be reported as the error for why a value
+      // is early destructed.
+      unsigned nextBit = 0;
+      for (auto field : valueSet.typeDeclInfo.getStructDeclForType(valueType)
+                            .getFieldDecls()) {
+        unsigned numBits =
+            valueSet.typeDeclInfo.getNumFieldsInType(field.getType());
+        // If this field has consumed bits, and if has trivial type, force it
+        // back to being non-consumed.  This can allow the proper correctness
+        // check to work and make the error diagnostic more accurate.
+        ValueRef subFieldBits = valueRef.getSubfield(nextBit, numBits);
+        if (!subFieldBits.isAllMissing(consumedValues) &&
+            !valueSet.typeDeclInfo.getDestructorForType(
+                field.getReboundType(valueType)))
+          subFieldBits.markBits(consumedValues, false);
+        nextBit += numBits;
+      }
+
+      if (!valueRef.isAllMissing(consumedValues)) {
+        ValueInfo &valueEntry = valueSet.getValueInfo(valueRef.valueId);
+        if (valueEntry.hasErrorDiagnosed)
+          return; // Only report one error per symbolic value.
+        valueEntry.hasErrorDiagnosed = true;
+
+        auto diag = mlir::emitError(builder.getLoc(), "field ");
+        auto aliveValues = consumedValues;
+        aliveValues.flip();
+        // If some fields are present and others are missing, complain about the
+        // first whole field that is missing.
+        addBadValueNameToDiag(valueRef, aliveValues, valueSet, diag);
+        diag << " destroyed out of the middle of a value, preventing the "
+                "overall "
+                "value from being destroyed";
+        valueRef.markBits(consumedValues, false);
+      }
+    }
+
     emitDestructorCallAt(value, valueRef, builder);
     valueRef.markBits(consumedValues, true);
     return;
@@ -1593,33 +1663,6 @@ void DestructorInsertion::destroyValueIfNeeded(
   // Otherwise, we must have an indirect value where some fields are present and
   // some are missing.  Recursively walk the type and destroy just the fields
   // that are missing.
-  DeclRefType valueType = cast<DeclRefType>(valueRef.getValueType(value));
-
-  // If a field of a value is destroyed but the whole value is not, then we have
-  // an error.  We cannot run the destructor on the whole object if one of the
-  // fields is missing.
-  if (!consumedValues.test(valueRef.endBit - 1)) {
-    // Trivial types don't have __copyinit__ methods, and therefore cannot have
-    // ownership tracked for them.
-    if (!valueSet.typeDeclInfo.getDestructorForType(valueType))
-      return;
-
-    ValueInfo &valueEntry = valueSet.getValueInfo(valueRef.valueId);
-    if (valueEntry.hasErrorDiagnosed)
-      return; // Only report one error per symbolic value.
-    valueEntry.hasErrorDiagnosed = true;
-
-    auto diag = mlir::emitError(builder.getLoc(), "field ");
-    auto aliveValues = consumedValues;
-    aliveValues.flip();
-    // If some fields are present and others are missing, complain about the
-    // first whole field that is missing.
-    addBadValueNameToDiag(valueRef, aliveValues, valueSet, diag);
-    diag << " destroyed out of the middle of a value, preventing the overall "
-            "value from being destroyed";
-    return;
-  }
-
   LIT::StructDeclOp structDecl =
       valueSet.typeDeclInfo.getStructDeclForType(valueType);
 
@@ -1686,15 +1729,22 @@ void DestructorInsertion::emitDestructorCallAt(Value value, ValueRef valueRef,
 }
 
 /// Destroy any values whose bits are indicated in the specified set.  Insert
-/// the destructor calls at the entry to the specified block.
+/// the destructor calls at the entry to the specified block.  This leaves the
+/// consumedValues set in an unpredictable state, and is not safe in dryRun
+/// mode.
 void DestructorInsertion::destroyValuesAtEntry(const BitVector &entries,
                                                Block &block, Location loc) {
-  // Don't bother destroying anything if the block is unreachable or we are just
-  // doing a dry run to compute consume sets.
-  if (isa<UnreachableOp>(block.front()) || dryRun) {
-    consumedValues |= entries;
+  assert(!dryRun && "shouldn't be called in a dry run");
+
+  // Don't bother destroying anything if the block is unreachable.
+  if (isa<UnreachableOp>(block.front()))
     return;
-  }
+
+  // We *only* want to destroy the values in entries, not any other values that
+  // may be partially overlapped, so mark all the other things as "already
+  // destroyed".
+  consumedValues = entries;
+  consumedValues.flip();
 
   // As we scan through bits, we walk through corresponding ValueInfos to know
   // what we are working with.
@@ -1714,38 +1764,10 @@ void DestructorInsertion::destroyValuesAtEntry(const BitVector &entries,
     // whole value so we know the MLIR value.
     ValueRef fullValueRef = valueSet.getFullValueRef(nextValueInfo);
 
-    // If it is the entire value, emit a destructor call for it and mark those
-    // bits consumed.
-    if (fullValueRef.isAllPresent(entries)) {
-      destroyValueIfNeeded(valueInfos[nextValueInfo].value, fullValueRef, block,
-                           block.begin(), loc);
-    } else {
-      // If not, then we need to carefully destroy just the subfields requested.
-      // We cannot let destroyValueIfNeeded destroy other fields of the overall
-      // value that happen to be unconsumed.
-      unsigned valSize = fullValueRef.getNumBits();
-      // Note: would really like a BitVector::slice operation.
-      llvm::SmallBitVector origConsumed(valSize);
-      for (size_t i = 0, overallBit = fullValueRef.startBit; i != valSize;
-           ++i, ++overallBit) {
-        origConsumed[i] = consumedValues[overallBit];
-        // If we are not to destroy this, pretend it is already destroyed.
-        if (!entries[overallBit])
-          consumedValues[overallBit] = true;
-      }
-
-      // Destroy anything in the value that needs to go.
-      destroyValueIfNeeded(valueInfos[nextValueInfo].value, fullValueRef, block,
-                           block.begin(), loc);
-
-      // Restore any bits we fibbed about.
-      for (size_t i = 0, overallBit = fullValueRef.startBit; i != valSize;
-           ++i, ++overallBit) {
-        // If we are not to destroy this, pretend it is already destroyed.
-        if (!entries[overallBit])
-          consumedValues[overallBit] = origConsumed[i];
-      }
-    }
+    // Emit destructor calls for the entire value or the correct subfields that
+    // need to be destroyed.
+    destroyValueIfNeeded(valueInfos[nextValueInfo].value, fullValueRef, block,
+                         block.begin(), loc);
 
     // Find the next object to destroy.
     nextToDestroy = entries.find_next(fullValueRef.endBit - 1);
