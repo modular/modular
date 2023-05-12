@@ -842,6 +842,432 @@ Mojo doesn't have a standard Dictionary yet, so it is not yet possible
 to create a Python dictionary from a Mojo dictionary. You can work with
 Python dictionaries in Mojo though!
 
+
+## Parameterization: compile-time metaprogramming
+
+One of Python's most amazing features is its extensible runtime
+metaprogramming features. This has enabled a wide range of libraries and
+provides a flexible and extensible programming model that Python programmers
+everywhere benefit from. Unfortunately, these features also come at a cost:
+because they are evaluated at runtime, they directly impact run-time efficiency
+of the underlying code. Because they are not known to the IDE, it is difficult
+for IDE features like code completion to understand them and use them to
+improve the developer experience.
+
+Outside the Python ecosystem, static metaprogramming is also an important part
+of development, enabling the development of new programming paradigms and
+advanced libraries. There are many examples of prior art in this space, with
+different tradeoffs, for example:
+
+1. Preprocessors (e.g. C preprocessor, Lex/YACC, etc) are perhaps the heaviest
+handed. They are fully general but the worst in terms of developer experience
+and tools integration.
+
+2. Some languages (like Lisp and Rust) support (sometimes "hygienic") macro
+expansion features, enabling syntactic extension and boilerplate reduction with
+somewhat better tooling integration.
+
+3. Some older languages like C++ have very large and complex metaprogramming
+languages (templates) that are a dual to the *runtime* language. These are
+notably difficult to learn and have poor compile times and error messages.
+
+4. Some languages (like Swift) build many features into the core language in a
+first-class way to provide good ergonomics for common cases at the expense of
+generality.
+
+5. Some newer languages like Zig integrate a language interpreter into the
+compilation flow, and allow the interpreter to reflect over the AST as it is
+compiled. This allows many of the same features as a macro system with better
+extensibility and generality.
+
+For Modular's work in AI, high-performance machine learning kernels, and
+accelerators, we need high abstraction capabilities provided by advanced
+metaprogramming systems. We needed high-level zero-cost abstractions,
+expressive libraries, and large-scale integration of multiple variants of
+algorithms. We want library developers to be able to extend the system, just
+like they do in Python, providing an extensible developer platform.
+
+That said, we are not willing to sacrifice developer experience (including
+compile times and error messages) nor are we interested in building a parallel
+language ecosystem that is difficult to teach. We can learn from these previous
+systems but also have new technologies to build on top of, including MLIR and
+fine-grained language-integrated caching technologies.
+
+As such, Mojo supports compile-time metaprogramming built
+into the compiler as a separate stage of compilation—after parsing, semantic
+analysis, and IR generation, but before lowering to target-specific code. It
+uses the same host language for runtime programs as it does for metaprograms,
+and leverages MLIR to represent and evaluate these programs predictably.
+
+Let's take a look at some simple examples.
+
+:::{.callout-note}
+
+**About "parameters":** Python developers use the words "arguments" and
+"parameters" fairly interchangeably for "things that are passed into
+functions." We decided to reclaim "parameter" and "parameter expression" to
+represent a compile-time value in Mojo, and continue to use "argument" and
+"expression" to refer to runtime values. This allows us to align around words
+like "parameterized" and "parametric" for compile-time metaprogramming.
+
+:::
+
+### Defining parameterized types and functions
+
+Mojo structs and functions may each be parameterized, but an example can help
+motivate why we care. Let's look at a
+[SIMD](https://en.wikipedia.org/wiki/Single_instruction,_multiple_data) type,
+which represents a low-level vector register in hardware that holds multiple
+instances of a scalar data-type. Hardware accelerators these days are getting
+exotic datatypes, and it isn't uncommon to work with CPUs that have 512-bit or
+longer SIMD vectors. There is a lot of diversity in hardware (including many
+brands like SSE, AVX-512, NEON, SVE, RVV, etc.) but many operations are common
+and used by numerics and ML kernel developers—the `SIMD` type exposes them to
+Mojo programmers.
+
+Here is a (cut down) version of the `SIMD` API in the Mojo standard library:
+
+```mojo
+struct SIMD[type: DType, size: Int]:
+    var value: … # Some low-level MLIR stuff here
+
+    # Create a new SIMD from a number of scalars
+    fn __init__(inout self, *elems: SIMD[type, 1]):  ...
+
+    # Fill a SIMD with a duplicated scalar value.
+    @staticmethod
+    fn splat(x: SIMD[type, 1]) -> SIMD[type, size]: ...
+
+    # Cast the elements of the SIMD to a different elt type.
+    fn cast[target: DType](self) -> SIMD[target, size]: ...
+
+    # Many standard operators are supported.
+    fn __add__(self, rhs: Self) -> Self: ...
+```
+
+Parameters in Mojo are declared in square brackets using an extended version of
+the [PEP695 syntax](https://peps.python.org/pep-0695/). They are named and have
+types like normal values in a Mojo program, but they are evaluated at
+compile-time instead of runtime by the target program. The runtime program may
+use the value of parameters—because the parameters are resolved at compile-time
+before they are needed by the runtime program—but the compile-time
+parameter expressions may not use runtime values.
+
+In the case of the `SIMD` excerpt above, there are three declared parameters:
+the `SIMD` struct is parameterized by a `type` parameter and a `size`
+parameter. The `cast` method is further parameterized with a `target`
+parameter. Because `SIMD` is a parameterized type, the type of a `self` argument
+carries the parameters—the full type name is `SIMD[type, size]`. While it
+is always valid to write this out (as shown in the return type of `splat()`),
+this can be verbose, so we recommend using the `Self` type (from
+[PEP673](https://peps.python.org/pep-0673/)) like the `__add__` example does.
+
+### Using parameterized types and functions
+
+For the `SIMD` type, `size` specifies the number of elements in a SIMD vector,
+and `type` specifies the element type—for example, you might use a
+"4xFloat" to represent a small floating-point vector or a "32xbfloat16" on an
+AVX-512 system with the "bfloat16" machine learning type:
+
+```mojo
+fn funWithSIMD():
+    # Make a vector of 4 floats.
+    let small_vec = SIMD[DType.f32, 4](1.0, 2.0, 3.0, 4.0)
+
+    # Make a big vector containing 1.0 in bfloat16 format.
+    let big_vec = SIMD[DType.bf16, 32].splat(1.0)
+
+    # Do some math and convert the elements to float32.
+    let bigger_vec = (big_vec+big_vec).cast[DType.f32]()
+
+    # You can write types out explicitly if you want of course.
+    let bigger_vec2 : SIMD[DType.f32, 32] = bigger_vec
+```
+
+Note that the `cast()` method needs an additional parameter to indicate what
+type to cast to: that is handled by parameterizing the call to `cast()`. The
+example above shows the use of concrete types, but the major power of
+parameters comes from the ability to define parametric algorithms and types.
+For example, it's quite easy to define parametric algorithms, such as those
+that are length- and DType-agnostic:
+
+```mojo
+fn rsqrt[width: Int, dt: DType](x: SIMD[dt, width]) -> SIMD[dt, width]:
+    return 1 / sqrt(x)
+```
+
+The Mojo compiler is fairly smart about type inference with parameters. Note
+that this function is able to call the parametric `sqrt()` function without
+specifying the parameters, the compiler infers its parameters as if you wrote
+`sqrt[width,type](x)` explicitly. Also note that `rsqrt()` chose to define
+its first parameter named `width` but the SIMD type names it `size` without
+challenge.
+
+### Parameter expressions are just Mojo code
+
+All parameters and parameter expressions are typed using the same type system
+as the runtime program: `Int` and `DType` are implemented in the Mojo standard
+library as structs. Parameters are quite powerful, supporting the use of
+expressions with operators, function calls at compile-time, and more, just like a
+runtime program. This enables the use of many "dependent type" features. For
+example, you might want to define a helper function to concatenate two SIMD
+vectors:
+
+```mojo
+fn concat[ty: DType, len1: Int, len2: Int](
+    lhs: SIMD[ty, len1], rhs: SIMD[ty, len2]) -> SIMD[ty, len1+len2]:
+      ...
+
+fn use_vectors(a: SIMD[DType.f32, 4], b: SIMD[DType.f16, 8]):
+    let x = concat(a, a)  # Length = 8
+    let y = concat(b, b)  # Length = 16
+```
+
+Note how the resulting length is the sum of the input vector lengths, and you can
+express that with a simple `+` operation. For a more complex example, take a look
+at the `SIMD.shuffle()` method in the standard library: it takes two input SIMD
+values, a vector shuffle mask as a list, and returns a SIMD that matches the
+length of the shuffle mask.
+
+### Powerful compile-time programming
+
+While simple expressions are useful, sometimes you want to write imperative
+compile-time logic with control flow. For example, the `isclose()` function in
+the Mojo `Math` module uses exact equality for integers but "close" comparison
+for floating-point. You can even do compile-time recursion. For instance, here
+is an example "tree reduction" algorithm that sums all elements of a vector
+recursively into a scalar:
+
+```mojo
+struct SIMD[type: DType, size: Int]:
+    ...
+    fn reduce_add(self) -> SIMD[type, 1]:
+        @parameter
+        if size == 1:
+            return self[0]
+        elif size == 2:
+            return self[0] + self[1]
+
+        # Extract the top/bottom halves, add them, sum the elements.
+        let lhs = self.slice[size // 2](0)
+        let rhs = self.slice[size // 2](size // 2)
+        return (lhs + rhs).reduce_add()
+```
+
+This makes use of the `@parameter if` feature, which is an `if` statement that
+runs at compile-time. It requires that its condition be a valid parameter
+expression, and ensures that only the live branch of the `if` statement is
+compiled into the program.
+
+### Mojo types are just parameter expressions
+
+While we've shown how you can use parameter expressions within types, in both
+Python and Mojo, type annotations can themselves be arbitrary expressions.
+Types in Mojo have a special metatype type, allowing type-parametric algorithms
+and functions to be defined. For example, you can define an algorithm like the
+C++ `std::vector` class like this:
+
+```mojo
+struct DynamicVector[type: AnyType]:
+    ...
+    fn reserve(inout self, new_capacity: Int): ...
+    fn push_back(inout self, value: type): ...
+    fn pop_back(inout self): ...
+    fn __getitem__(self, i: Int) -> type: ...
+    fn __setitem__(inout self, i: Int, value: type): ...
+
+fn use_vector():
+    var v = DynamicVector[Int]()
+    v.push_back(17)
+    v.push_back(42)
+    v[0] = 123
+    print(v[1])      # Prints 42
+    print(v[0])      # Prints 123
+```
+
+Notice that the `type` parameter is used as the formal type for the
+`value` arguments and the return type of the `__getitem__` function. Parameters
+allow the `DynamicVector` type to provide different APIs based on the different
+use-cases. There are many other cases that benefit from more advanced use
+cases. For example, the parallel processing library defines the
+`parallelForEachN` algorithm, which executes a closure N times in parallel,
+feeding in a value from the context. That value can be of any type:
+
+```mojo
+fn parallelize[
+    arg_type: AnyType,
+    func: fn(Int, arg_type) -> None,
+](rt: Runtime, num_work_items: Int, arg: arg_type):
+    # Not actually parallel: see Functional.mojo for real impl.
+    for i in range(num_work_items):
+        func(i, arg)
+```
+
+This is possible because the `func` parameter is allowed to refer to the
+earlier `arg_type` parameter, and that refines its type in turn.
+
+Another example where this is important is with variadic generics, where an
+algorithm or data structure may need to be defined over a list of heterogeneous
+types:
+
+```mojo
+struct Tuple[*ElementTys: AnyType]:
+    var _storage : *ElementTys
+```
+
+> Note: we don't have enough metatype helpers in place yet, but we should be
+able to write something like this in the future, though overloading is still a
+better way to handle this:
+
+```mojo
+struct Array[T: AnyType]:
+    fn __getitem__[IndexType: AnyType](self, idx: IndexType)
+       -> (ArraySlice[T] if issubclass(IndexType, Range) else T):
+       ...
+```
+
+### `alias`: named parameter expressions
+
+It is very common to want to *name* compile-time values. Whereas `var` defines a
+runtime value, and `let` defines a runtime constant, we need a way to define a
+compile-time temporary value. For this, Mojo uses an `alias` declaration. For
+example, the `DType` struct implements a simple enum using aliases for the
+enumerators like this (the actual internal implementation details vary a bit):
+
+```mojo
+struct DType:
+    var value : Int8
+    alias invalid = DType(0)
+    alias bool = DType(1)
+    alias si8 = DType(2)
+    alias ui8 = DType(3)
+    alias si16 = DType(4)
+    alias ui16 = DType(5)
+    ...
+    alias f32 = DType(15)
+```
+
+This allows clients to use `DType.f32` as a parameter expression (which also
+works as a runtime value) naturally. Note that this is invoking the
+runtime constructor for DType at compile-time.
+
+Types are another common use for alias: because types are compile-time
+expressions, it is handy to be able to do things like this:
+
+```mojo
+alias F32 = SIMD[DType.f32, 1]
+alias UI8 = SIMD[DType.ui8, 1]
+
+var x : F32   # F32 works like a "typedef"
+```
+
+Like `var` and `let`, aliases obey scope, and you can use local aliases within
+functions as you'd expect.
+
+### Autotuning / Adaptive compilation
+
+Mojo parameter expressions allow you to write portable parametric algorithms
+like you can do in other languages, but when writing high-performance code you
+still have to pick concrete values to use for the parameters. For example, when
+writing high-performance numeric algorithms, you might want to use memory
+tiling to accelerate the algorithm, but the dimensions to use depend highly on
+the available hardware features, the sizes of the cache, what gets fused into
+the kernel, and many other fiddly details.
+
+Even vector length can be difficult to manage, because the vector length of a
+typical machine depends on the datatype, and some datatypes like `bfloat16`
+don't have full support on all implementations. Mojo helps by providing an
+`autotune` function in the standard library. For example if you want to write a
+vector-length-agnostic algorithm to a buffer of data, you might write it like
+this:
+
+```mojo
+from Autotune import autotune
+
+def exp_buffer_impl[dt: DType](data: ArraySlice[dt]):
+    # Pick vector length for this dtype and hardware
+    alias vector_len = autotune(1, 4, 8, 16, 32)
+
+    # Use it as the vectorization length
+    vectorize[exp[dt, vector_len]](data)
+```
+
+When compiling instantiations of this code, Mojo forks compilation of this
+algorithm and decides which value to use by measuring what works best in
+practice for the target hardware. It evaluates the different values of the
+`vector_len` expression and picks the fastest one according to a user-defined
+performance evaluator. Because it measures and evaluates each option
+individually, it might pick a different vector length for F32 than for SI8, for
+example. This simple feature is pretty powerful - going beyond simple integer
+constants - because functions and types are also parameter expressions.
+
+Users can instrument the search of `exp_buffer_impl` by providing a performance
+evaluator and using the `search` standard library function. `search` takes an
+evaluator and a forked function and returns the fastest implementation selected
+by the evaluator as a parameter result.
+
+```mojo
+from Autotune import search
+
+fn exp_buffer[dt: DType](data: ArraySlice[dt]):
+    # Forward declare the result parameter.
+    alias best_impl: fn(ArraySlice[dt]) -> None
+
+    # Perform search!
+    search[
+      fn(ArraySlice[dt]) -> None,
+      exp_buffer_impl[dt],
+      exp_evaluator[dt] -> best_impl
+    ]()
+
+    # Call the selected implementation
+    best_impl(data)
+```
+
+In this example, we provided `exp_evaluator` to the search function as the
+performance evaluator. Performance evaluators are invoked with a list of
+candidate functions and should return the index of the best one. Mojo's
+standard library provides a `Benchmark` module that you can use to time
+functions.
+
+```mojo
+from Benchmark import Benchmark
+
+fn exp_evaluator[dt: DType](
+    fns: Pointer[fn(ArraySlice[dt]) -> None],
+    num: Int
+):
+    var best_idx = -1
+    var best_time = -1
+    for i in range(num):
+        candidate = fns[i]
+        let buf = Buffer[dt]()
+
+        # Benchmark this candidate.
+        fn setup():
+            buf.fill_random()
+        fn wrapper():
+            candidate(buf)
+        let cur_time = Benchmark(2).run[wrapper, setup]()
+
+        # Track the index of the fastest candidate.
+        if best_idx < 0:
+            best_idx = i
+            best_time = cur_time
+        elif best_time > cur_time:
+            best_idx = f_idx
+            best_time = cur_time
+
+    # Return the fastest implementation.
+    return best_idx
+```
+
+Autotuning has an exponential runtime. It benefits from internal implementation
+details of the Mojo compiler stack (particularly MLIR, integrated caching, and
+distribution of compilation). This is a power-user feature and needs continued
+development and iteration over time.
+
+
 ## "Value Lifecycle": Birth, life and death of a value {#value-lifecycle}
 
 Now that we have an understanding of the different ingredients that can go into
@@ -1545,431 +1971,6 @@ with parameters.  This is not enabled yet.
 
 This is a feature very much like Rust traits or Swift protocols or Haskell type
 classes. Note, this is not implemented yet.
-
-
-## Parameterization: compile-time metaprogramming
-
-One of Python's most amazing features is its extensible runtime
-metaprogramming features. This has enabled a wide range of libraries and
-provides a flexible and extensible programming model that Python programmers
-everywhere benefit from. Unfortunately, these features also come at a cost:
-because they are evaluated at runtime, they directly impact run-time efficiency
-of the underlying code. Because they are not known to the IDE, it is difficult
-for IDE features like code completion to understand them and use them to
-improve the developer experience.
-
-Outside the Python ecosystem, static metaprogramming is also an important part
-of development, enabling the development of new programming paradigms and
-advanced libraries. There are many examples of prior art in this space, with
-different tradeoffs, for example:
-
-1. Preprocessors (e.g. C preprocessor, Lex/YACC, etc) are perhaps the heaviest
-handed. They are fully general but the worst in terms of developer experience
-and tools integration.
-
-2. Some languages (like Lisp and Rust) support (sometimes "hygienic") macro
-expansion features, enabling syntactic extension and boilerplate reduction with
-somewhat better tooling integration.
-
-3. Some older languages like C++ have very large and complex metaprogramming
-languages (templates) that are a dual to the *runtime* language. These are
-notably difficult to learn and have poor compile times and error messages.
-
-4. Some languages (like Swift) build many features into the core language in a
-first-class way to provide good ergonomics for common cases at the expense of
-generality.
-
-5. Some newer languages like Zig integrate a language interpreter into the
-compilation flow, and allow the interpreter to reflect over the AST as it is
-compiled. This allows many of the same features as a macro system with better
-extensibility and generality.
-
-For Modular's work in AI, high-performance machine learning kernels, and
-accelerators, we need high abstraction capabilities provided by advanced
-metaprogramming systems. We needed high-level zero-cost abstractions,
-expressive libraries, and large-scale integration of multiple variants of
-algorithms. We want library developers to be able to extend the system, just
-like they do in Python, providing an extensible developer platform.
-
-That said, we are not willing to sacrifice developer experience (including
-compile times and error messages) nor are we interested in building a parallel
-language ecosystem that is difficult to teach. We can learn from these previous
-systems but also have new technologies to build on top of, including MLIR and
-fine-grained language-integrated caching technologies.
-
-As such, Mojo supports compile-time metaprogramming built
-into the compiler as a separate stage of compilation—after parsing, semantic
-analysis, and IR generation, but before lowering to target-specific code. It
-uses the same host language for runtime programs as it does for metaprograms,
-and leverages MLIR to represent and evaluate these programs predictably.
-
-Let's take a look at some simple examples.
-
-:::{.callout-note}
-
-**About "parameters":** Python developers use the words "arguments" and
-"parameters" fairly interchangeably for "things that are passed into
-functions." We decided to reclaim "parameter" and "parameter expression" to
-represent a compile-time value in Mojo, and continue to use "argument" and
-"expression" to refer to runtime values. This allows us to align around words
-like "parameterized" and "parametric" for compile-time metaprogramming.
-
-:::
-
-### Defining parameterized types and functions
-
-Mojo structs and functions may each be parameterized, but an example can help
-motivate why we care. Let's look at a
-[SIMD](https://en.wikipedia.org/wiki/Single_instruction,_multiple_data) type,
-which represents a low-level vector register in hardware that holds multiple
-instances of a scalar data-type. Hardware accelerators these days are getting
-exotic datatypes, and it isn't uncommon to work with CPUs that have 512-bit or
-longer SIMD vectors. There is a lot of diversity in hardware (including many
-brands like SSE, AVX-512, NEON, SVE, RVV, etc.) but many operations are common
-and used by numerics and ML kernel developers—the `SIMD` type exposes them to
-Mojo programmers.
-
-Here is a (cut down) version of the `SIMD` API in the Mojo standard library:
-
-```mojo
-struct SIMD[type: DType, size: Int]:
-    var value: … # Some low-level MLIR stuff here
-
-    # Create a new SIMD from a number of scalars
-    fn __init__(inout self, *elems: SIMD[type, 1]):  ...
-
-    # Fill a SIMD with a duplicated scalar value.
-    @staticmethod
-    fn splat(x: SIMD[type, 1]) -> SIMD[type, size]: ...
-
-    # Cast the elements of the SIMD to a different elt type.
-    fn cast[target: DType](self) -> SIMD[target, size]: ...
-
-    # Many standard operators are supported.
-    fn __add__(self, rhs: Self) -> Self: ...
-```
-
-Parameters in Mojo are declared in square brackets using an extended version of
-the [PEP695 syntax](https://peps.python.org/pep-0695/). They are named and have
-types like normal values in a Mojo program, but they are evaluated at
-compile-time instead of runtime by the target program. The runtime program may
-use the value of parameters—because the parameters are resolved at compile-time
-before they are needed by the runtime program—but the compile-time
-parameter expressions may not use runtime values.
-
-In the case of the `SIMD` excerpt above, there are three declared parameters:
-the `SIMD` struct is parameterized by a `type` parameter and a `size`
-parameter. The `cast` method is further parameterized with a `target`
-parameter. Because `SIMD` is a parameterized type, the type of a `self` argument
-carries the parameters—the full type name is `SIMD[type, size]`. While it
-is always valid to write this out (as shown in the return type of `splat()`),
-this can be verbose, so we recommend using the `Self` type (from
-[PEP673](https://peps.python.org/pep-0673/)) like the `__add__` example does.
-
-### Using parameterized types and functions
-
-For the `SIMD` type, `size` specifies the number of elements in a SIMD vector,
-and `type` specifies the element type—for example, you might use a
-"4xFloat" to represent a small floating-point vector or a "32xbfloat16" on an
-AVX-512 system with the "bfloat16" machine learning type:
-
-```mojo
-fn funWithSIMD():
-    # Make a vector of 4 floats.
-    let small_vec = SIMD[DType.f32, 4](1.0, 2.0, 3.0, 4.0)
-
-    # Make a big vector containing 1.0 in bfloat16 format.
-    let big_vec = SIMD[DType.bf16, 32].splat(1.0)
-
-    # Do some math and convert the elements to float32.
-    let bigger_vec = (big_vec+big_vec).cast[DType.f32]()
-
-    # You can write types out explicitly if you want of course.
-    let bigger_vec2 : SIMD[DType.f32, 32] = bigger_vec
-```
-
-Note that the `cast()` method needs an additional parameter to indicate what
-type to cast to: that is handled by parameterizing the call to `cast()`. The
-example above shows the use of concrete types, but the major power of
-parameters comes from the ability to define parametric algorithms and types.
-For example, it's quite easy to define parametric algorithms, such as those
-that are length- and DType-agnostic:
-
-```mojo
-fn rsqrt[width: Int, dt: DType](x: SIMD[dt, width]) -> SIMD[dt, width]:
-    return 1 / sqrt(x)
-```
-
-The Mojo compiler is fairly smart about type inference with parameters. Note
-that this function is able to call the parametric `sqrt()` function without
-specifying the parameters, the compiler infers its parameters as if you wrote
-`sqrt[width,type](x)` explicitly. Also note that `rsqrt()` chose to define
-its first parameter named `width` but the SIMD type names it `size` without
-challenge.
-
-### Parameter expressions are just Mojo code
-
-All parameters and parameter expressions are typed using the same type system
-as the runtime program: `Int` and `DType` are implemented in the Mojo standard
-library as structs. Parameters are quite powerful, supporting the use of
-expressions with operators, function calls at compile-time, and more, just like a
-runtime program. This enables the use of many "dependent type" features. For
-example, you might want to define a helper function to concatenate two SIMD
-vectors:
-
-```mojo
-fn concat[ty: DType, len1: Int, len2: Int](
-    lhs: SIMD[ty, len1], rhs: SIMD[ty, len2]) -> SIMD[ty, len1+len2]:
-      ...
-
-fn use_vectors(a: SIMD[DType.f32, 4], b: SIMD[DType.f16, 8]):
-    let x = concat(a, a)  # Length = 8
-    let y = concat(b, b)  # Length = 16
-```
-
-Note how the resulting length is the sum of the input vector lengths, and you can
-express that with a simple `+` operation. For a more complex example, take a look
-at the `SIMD.shuffle()` method in the standard library: it takes two input SIMD
-values, a vector shuffle mask as a list, and returns a SIMD that matches the
-length of the shuffle mask.
-
-### Powerful compile-time programming
-
-While simple expressions are useful, sometimes you want to write imperative
-compile-time logic with control flow. For example, the `isclose()` function in
-the Mojo `Math` module uses exact equality for integers but "close" comparison
-for floating-point. You can even do compile-time recursion. For instance, here
-is an example "tree reduction" algorithm that sums all elements of a vector
-recursively into a scalar:
-
-```mojo
-struct SIMD[type: DType, size: Int]:
-    ...
-    fn reduce_add(self) -> SIMD[type, 1]:
-        @parameter
-        if size == 1:
-            return self[0]
-        elif size == 2:
-            return self[0] + self[1]
-
-        # Extract the top/bottom halves, add them, sum the elements.
-        let lhs = self.slice[size // 2](0)
-        let rhs = self.slice[size // 2](size // 2)
-        return (lhs + rhs).reduce_add()
-```
-
-This makes use of the `@parameter if` feature, which is an `if` statement that
-runs at compile-time. It requires that its condition be a valid parameter
-expression, and ensures that only the live branch of the `if` statement is
-compiled into the program.
-
-### Mojo types are just parameter expressions
-
-While we've shown how you can use parameter expressions within types, in both
-Python and Mojo, type annotations can themselves be arbitrary expressions.
-Types in Mojo have a special metatype type, allowing type-parametric algorithms
-and functions to be defined. For example, you can define an algorithm like the
-C++ `std::vector` class like this:
-
-```mojo
-struct DynamicVector[type: AnyType]:
-    ...
-    fn reserve(inout self, new_capacity: Int): ...
-    fn push_back(inout self, value: type): ...
-    fn pop_back(inout self): ...
-    fn __getitem__(self, i: Int) -> type: ...
-    fn __setitem__(inout self, i: Int, value: type): ...
-
-fn use_vector():
-    var v = DynamicVector[Int]()
-    v.push_back(17)
-    v.push_back(42)
-    v[0] = 123
-    print(v[1])      # Prints 42
-    print(v[0])      # Prints 123
-```
-
-Notice that the `type` parameter is used as the formal type for the
-`value` arguments and the return type of the `__getitem__` function. Parameters
-allow the `DynamicVector` type to provide different APIs based on the different
-use-cases. There are many other cases that benefit from more advanced use
-cases. For example, the parallel processing library defines the
-`parallelForEachN` algorithm, which executes a closure N times in parallel,
-feeding in a value from the context. That value can be of any type:
-
-```mojo
-fn parallelize[
-    arg_type: AnyType,
-    func: fn(Int, arg_type) -> None,
-](rt: Runtime, num_work_items: Int, arg: arg_type):
-    # Not actually parallel: see Functional.mojo for real impl.
-    for i in range(num_work_items):
-        func(i, arg)
-```
-
-This is possible because the `func` parameter is allowed to refer to the
-earlier `arg_type` parameter, and that refines its type in turn.
-
-Another example where this is important is with variadic generics, where an
-algorithm or data structure may need to be defined over a list of heterogeneous
-types:
-
-```mojo
-struct Tuple[*ElementTys: AnyType]:
-    var _storage : *ElementTys
-```
-
-> Note: we don't have enough metatype helpers in place yet, but we should be
-able to write something like this in the future, though overloading is still a
-better way to handle this:
-
-```mojo
-struct Array[T: AnyType]:
-    fn __getitem__[IndexType: AnyType](self, idx: IndexType)
-       -> (ArraySlice[T] if issubclass(IndexType, Range) else T):
-       ...
-```
-
-### `alias`: named parameter expressions
-
-It is very common to want to *name* compile-time values. Whereas `var` defines a
-runtime value, and `let` defines a runtime constant, we need a way to define a
-compile-time temporary value. For this, Mojo uses an `alias` declaration. For
-example, the `DType` struct implements a simple enum using aliases for the
-enumerators like this (the actual internal implementation details vary a bit):
-
-```mojo
-struct DType:
-    var value : Int8
-    alias invalid = DType(0)
-    alias bool = DType(1)
-    alias si8 = DType(2)
-    alias ui8 = DType(3)
-    alias si16 = DType(4)
-    alias ui16 = DType(5)
-    ...
-    alias f32 = DType(15)
-```
-
-This allows clients to use `DType.f32` as a parameter expression (which also
-works as a runtime value) naturally. Note that this is invoking the
-runtime constructor for DType at compile-time.
-
-Types are another common use for alias: because types are compile-time
-expressions, it is handy to be able to do things like this:
-
-```mojo
-alias F32 = SIMD[DType.f32, 1]
-alias UI8 = SIMD[DType.ui8, 1]
-
-var x : F32   # F32 works like a "typedef"
-```
-
-Like `var` and `let`, aliases obey scope, and you can use local aliases within
-functions as you'd expect.
-
-### Autotuning / Adaptive compilation
-
-Mojo parameter expressions allow you to write portable parametric algorithms
-like you can do in other languages, but when writing high-performance code you
-still have to pick concrete values to use for the parameters. For example, when
-writing high-performance numeric algorithms, you might want to use memory
-tiling to accelerate the algorithm, but the dimensions to use depend highly on
-the available hardware features, the sizes of the cache, what gets fused into
-the kernel, and many other fiddly details.
-
-Even vector length can be difficult to manage, because the vector length of a
-typical machine depends on the datatype, and some datatypes like `bfloat16`
-don't have full support on all implementations. Mojo helps by providing an
-`autotune` function in the standard library. For example if you want to write a
-vector-length-agnostic algorithm to a buffer of data, you might write it like
-this:
-
-```mojo
-from Autotune import autotune
-
-def exp_buffer_impl[dt: DType](data: ArraySlice[dt]):
-    # Pick vector length for this dtype and hardware
-    alias vector_len = autotune(1, 4, 8, 16, 32)
-
-    # Use it as the vectorization length
-    vectorize[exp[dt, vector_len]](data)
-```
-
-When compiling instantiations of this code, Mojo forks compilation of this
-algorithm and decides which value to use by measuring what works best in
-practice for the target hardware. It evaluates the different values of the
-`vector_len` expression and picks the fastest one according to a user-defined
-performance evaluator. Because it measures and evaluates each option
-individually, it might pick a different vector length for F32 than for SI8, for
-example. This simple feature is pretty powerful - going beyond simple integer
-constants - because functions and types are also parameter expressions.
-
-Users can instrument the search of `exp_buffer_impl` by providing a performance
-evaluator and using the `search` standard library function. `search` takes an
-evaluator and a forked function and returns the fastest implementation selected
-by the evaluator as a parameter result.
-
-```mojo
-from Autotune import search
-
-fn exp_buffer[dt: DType](data: ArraySlice[dt]):
-    # Forward declare the result parameter.
-    alias best_impl: fn(ArraySlice[dt]) -> None
-
-    # Perform search!
-    search[
-      fn(ArraySlice[dt]) -> None,
-      exp_buffer_impl[dt],
-      exp_evaluator[dt] -> best_impl
-    ]()
-
-    # Call the selected implementation
-    best_impl(data)
-```
-
-In this example, we provided `exp_evaluator` to the search function as the
-performance evaluator. Performance evaluators are invoked with a list of
-candidate functions and should return the index of the best one. Mojo's
-standard library provides a `Benchmark` module that you can use to time
-functions.
-
-```mojo
-from Benchmark import Benchmark
-
-fn exp_evaluator[dt: DType](
-    fns: Pointer[fn(ArraySlice[dt]) -> None],
-    num: Int
-):
-    var best_idx = -1
-    var best_time = -1
-    for i in range(num):
-        candidate = fns[i]
-        let buf = Buffer[dt]()
-
-        # Benchmark this candidate.
-        fn setup():
-            buf.fill_random()
-        fn wrapper():
-            candidate(buf)
-        let cur_time = Benchmark(2).run[wrapper, setup]()
-
-        # Track the index of the fastest candidate.
-        if best_idx < 0:
-            best_idx = i
-            best_time = cur_time
-        elif best_time > cur_time:
-            best_idx = f_idx
-            best_time = cur_time
-
-    # Return the fastest implementation.
-    return best_idx
-```
-
-Autotuning has an exponential runtime. It benefits from internal implementation
-details of the Mojo compiler stack (particularly MLIR, integrated caching, and
-distribution of compilation). This is a power-user feature and needs continued
-development and iteration over time.
 
 
 ## Advanced/Obscure Mojo features
