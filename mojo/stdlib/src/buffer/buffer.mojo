@@ -1766,6 +1766,22 @@ fn prod_dims[
     shape: DimList,
     type: DType,
 ](x: NDBuffer[rank, shape, type]) -> Int:
+    """Compute the product of a slice of the given buffer's dimensions.
+
+    Parameters:
+        start_dim: The index at which to begin computing the product.
+        end_dim: The index at which to stop computing the product.
+        rank: The rank of the NDBuffer.
+        shape: The shape of the NDBuffer.
+        type: The element-type of the NDBuffer.
+
+    Args:
+        x: The NDBuffer whose dimensions will be multiplied.
+
+    Returns:
+        The product of the specified slice of the buffer's dimensions.
+    """
+
     var product: Int = 1
 
     @always_inline
