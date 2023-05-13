@@ -80,6 +80,20 @@ def DeclInterface : OpInterface<"DeclInterface"> {
   ];
 }
 
+def DefinesResultTypes : OpInterface<"DefinesResultTypes"> {
+  let description = [{
+    This interface represents an operation that defines region(s) that should
+    evaluate to the same type. A Function is an example of an operation that
+    defines a return type.
+  }];
+
+  let cppNamespace = "::M::KGEN";
+  let methods = [
+    InterfaceMethod<[{Return the operation's expected return types
+      }], "ArrayRef<Type>", "getResultTypes", (ins)>,
+  ];
+}
+
 def FuncInterface : OpInterface<"FuncInterface"> {
   let description = [{
     This interface represents an operation that defines a KGEN function. A KGEN

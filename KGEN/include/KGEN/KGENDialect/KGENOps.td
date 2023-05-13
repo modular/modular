@@ -827,7 +827,7 @@ def KGEN_CallSignatureOp : KGENOp<"call_signature", [
 // StageClosureOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_StageClosureOp : KGENOp<"stage_closure", [Pure, FunctionOpInterface]> {
+def KGEN_StageClosureOp : KGENOp<"stage_closure", [Pure, DefinesResultTypes]> {
   let summary = "Stage a closure declaring a concrete region";
   let description = [{
     The `kgen.stage_closure` operation declares a named concrete region. The
@@ -850,25 +850,9 @@ def KGEN_StageClosureOp : KGENOp<"stage_closure", [Pure, FunctionOpInterface]> {
   }];
 
   let extraClassDeclaration = [{
-    FunctionType getFunctionType();
-    ArrayRef<Type> getArgumentTypes();
-    ArrayRef<Type> getResultTypes();
-
-    TypeAttr getFunctionTypeAttr() { return TypeAttr::get(getFunctionType()); }
-    void setFunctionTypeAttr(TypeAttr type) {
-      llvm_unreachable("can't opaquely set the function type");
+    ArrayRef<Type> getResultTypes() {
+       return getResult().getType().getValues().getResults();
     }
-    ArrayAttr getArgAttrsAttr() { return {}; }
-    ArrayAttr getResAttrsAttr() { return {}; }
-    Attribute removeArgAttrsAttr() { llvm_unreachable("no argument attrs"); }
-    Attribute removeResAttrsAttr() { llvm_unreachable("no result attrs"); }
-    void setArgAttrsAttr(ArrayAttr attrs) {
-      llvm_unreachable("no argument attrs");
-    }
-    void setResAttrsAttr(ArrayAttr attrs) {
-      llvm_unreachable("no result attrs");
-    }
-    bool isOptionalSymbol() { return true; }
   }];
 }
 

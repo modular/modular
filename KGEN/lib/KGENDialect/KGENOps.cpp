@@ -385,9 +385,15 @@ static LogicalResult verifyReturnTypes(TypeRange lhs, TypeRange rhs,
 }
 
 LogicalResult ReturnOp::verify() {
-  auto function = (*this)->getParentOfType<mlir::FunctionOpInterface>();
-  return verifyReturnTypes(getOperandTypes(), function.getResultTypes(), *this,
-                           function);
+  auto definesResultTypes = (*this)->getParentOfType<DefinesResultTypes>();
+  if (!definesResultTypes) {
+    auto function = (*this)->getParentOfType<mlir::FunctionOpInterface>();
+    return verifyReturnTypes(getOperandTypes(), function.getResultTypes(),
+                             *this, function);
+  }
+  return verifyReturnTypes(getOperandTypes(),
+                           definesResultTypes.getResultTypes(), *this,
+                           definesResultTypes);
 }
 
 //===----------------------------------------------------------------------===//
@@ -948,18 +954,6 @@ static void printCallSignature(OpAsmPrinter &p, Operation *op, Type calleeType,
 //===----------------------------------------------------------------------===//
 // StageClosureOp
 //===----------------------------------------------------------------------===//
-
-FunctionType StageClosureOp::getFunctionType() {
-  return getResult().getType().getValues();
-}
-
-ArrayRef<Type> StageClosureOp::getArgumentTypes() {
-  return getResult().getType().getValueInputs();
-}
-
-ArrayRef<Type> StageClosureOp::getResultTypes() {
-  return getResult().getType().getValueResults();
-}
 
 static ParseResult parseStageClosureOp(OpAsmParser &p, Type &resultType,
                                        Region &body) {

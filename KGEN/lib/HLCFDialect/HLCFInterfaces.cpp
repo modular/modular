@@ -172,7 +172,8 @@ LogicalResult HLCF::verifyControlFlowTerminator(ControlFlowTerminator op) {
 
   // Special case kgen.return and kgen.unreachable.
   if ((op->hasTrait<OpTrait::ReturnLike>() || isa<KGEN::UnreachableOp>(op)) &&
-      isa<mlir::FunctionOpInterface>(parent))
+      (isa<mlir::FunctionOpInterface>(parent) ||
+       isa<KGEN::DefinesResultTypes>(parent)))
     return success();
 
   return (op->emitOpError("expected parent operation to be a control-flow "
