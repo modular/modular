@@ -16,6 +16,8 @@ from BuildInfo import build_info_llcl_max_profiling_level
 @value
 @register_passable("trivial")
 struct TraceType:
+    """An enum-like struct specifying the type of tracing to perform."""
+
     alias OTHER = TraceType(0)
     alias LLCL = TraceType(1)
     alias MEM = TraceType(2)
@@ -40,6 +42,8 @@ struct TraceType:
 @value
 @register_passable("trivial")
 struct TraceLevel:
+    """An enum-like struct specifying the level of tracing to perform."""
+
     alias ALWAYS = TraceLevel(0)
     alias OP = TraceLevel(1)
     alias THREAD = TraceLevel(2)
@@ -90,11 +94,13 @@ fn is_profiling_disabled[type: TraceType, level: TraceLevel]() -> Bool:
 
 @always_inline
 fn is_mojo_profiling_enabled[level: TraceLevel]() -> Bool:
+    """Returns whether Mojo profiling is enabled for the specified level."""
     return is_profiling_enabled[TraceType.MOJO, level]()
 
 
 @always_inline
 fn is_mojo_profiling_disabled[level: TraceLevel]() -> Bool:
+    """Returns whether Mojo profiling is disabled for the specified level."""
     return is_profiling_disabled[TraceType.MOJO, level]()
 
 
@@ -174,6 +180,8 @@ fn trace_range_pop[type: TraceType, level: TraceLevel]():
 
 @value
 struct Trace[level: TraceLevel]:
+    """An object representing a specific Mojo trace."""
+
     alias trace_type = TraceType.MOJO
 
     var name: StringRef
