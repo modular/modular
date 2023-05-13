@@ -1208,6 +1208,13 @@ ParserBase::parseDecorators(ssize_t indentation) {
     if (parseExpression(decoratorExpr, indentation))
       break;
     result.push_back({decoratorExpr, cursor});
+
+    if (!getToken().getIndentation() ||
+        ssize_t(getToken().getIndentation().value()) > indentation) {
+      emitTokenError("unexpected tokens after decorator, each need to be on "
+                     "their own line");
+      skipUntilIndentation(indentation);
+    }
   }
   return result;
 }
