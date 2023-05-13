@@ -214,7 +214,7 @@ fn badAnd(a: Bool, b: WeirdBoolish, c: WeirdBoolishMem):
   _ = c and c
 
 fn badParamAnd[a: Bool, b: WeirdBoolish]():
-  #expected-error @+1 {{cannot emit parameter and/or with different operand types in alias initializer}}
+  #expected-error @+1 {{value of type 'Bool' is not compatible with value of type 'WeirdBoolish'}}
   alias c = a and b
 
 # expected-error @+1 {{'Self' type may only be used inside a type}}
@@ -275,12 +275,12 @@ fn dict_parse_errors(a: Int):
 
 
 fn bad_exprs(cond: Bool, f32: F32, c1: Conv1, c2: Conv2):
-  # expected-error-re @+1 {{true value of type 'SIMD[{{.*}}f32{{.*}}]' is not compatible with false value 'Conv1' in conditional}}
+  # expected-error-re @+1 {{value of type 'SIMD[{{.*}}f32{{.*}}]' is not compatible with value of type 'Conv1'}}
   _ = f32 if cond else c1
 
-  # expected-error @below {{ambiguous if: true value has type 'Conv1' and false value has type 'Conv2', and both convert to each other}}
-  # expected-note @below {{you could disambiguate by casting true value to 'Conv2'}}
-  # expected-note @below {{you could disambiguate by casting false value to 'Conv1'}}
+  # expected-error @below {{ambiguous merge: left value has type 'Conv1' and right value has type 'Conv2', and both convert to each other}}
+  # expected-note @below {{you could disambiguate by casting the left value to 'Conv2'}}
+  # expected-note @below {{or cast the right value to 'Conv1'}}
   _ = c1 if cond else c2
 
   alias idx : __mlir_type.index = (4).__as_mlir_index()

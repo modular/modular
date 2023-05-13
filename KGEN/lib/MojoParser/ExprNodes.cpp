@@ -2125,18 +2125,70 @@ AnyValue BinOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   return emitBinOpCall({lhsRV, lhs}, {rhsRV, rhs}, kind, dest, this, emitter);
 }
 
-/// This method emits the `x and y`, `x or y` operators.  These are interesting
-/// in Python:
+/// Given two values that need to match, try to coerce one to the other if they
+/// disagree on type.  This emits an error and returns failure if the request is
+/// ambiguous or impossible.
+template <typename ValueType>
+static ParseResult
+coerceTypesToEachOther(SMLoc loc, ValueType &lhs, const ExprNode *lhsExpr,
+                       ValueType &rhs, const ExprNode *rhsExpr,
+                       ExprEmitter &emitter,
+                       std::function<ValueType(ASTExprAnd<AnyValue> value,
+                                               ASTType destType, bool isLHS)>
+                           convert) {
+  if (!lhs || !rhs)
+    return failure();
+
+  ASTType lhsType = lhs.getRValueType(), rhsType = rhs.getRValueType();
+
+  // If the types already match, then we're done.
+  if (lhsType.isEqualCanon(rhsType))
+    return success();
+
+  bool lhsConvertibleToRHS =
+      emitter.canImplicitlyConvertToType({lhs, lhsExpr}, rhsType);
+  bool rhsConvertibleToLHS =
+      emitter.canImplicitlyConvertToType({rhs, rhsExpr}, lhsType);
+  if (lhsConvertibleToRHS && !rhsConvertibleToLHS) {
+    lhs = convert({lhs, lhsExpr}, rhsType, /*isLHS*/ true);
+    return failure(!lhs);
+  }
+
+  if (!lhsConvertibleToRHS && rhsConvertibleToLHS) {
+    rhs = convert({rhs, rhsExpr}, lhsType, /*isLHS*/ false);
+    return failure(!rhs);
+  }
+
+  if (!lhsConvertibleToRHS && !rhsConvertibleToLHS) {
+    emitter.emitError(loc, "value of type ")
+        << lhsType << " is not compatible with value of type " << rhsType
+        << lhsExpr->getRange() << rhsExpr->getRange();
+    return failure();
+  }
+
+  auto diag = emitter.emitError(loc, "ambiguous merge: left value has type ")
+              << lhsType << " and right value has type " << rhsType
+              << ", and both convert to each other" << lhsExpr->getRange()
+              << rhsExpr->getRange();
+  diag.attachNote(loc) << "you could disambiguate by casting the left value to "
+                       << rhsType << lhsExpr->getRange();
+  diag.attachNote(loc) << "or cast the right value to " << lhsType
+                       << rhsExpr->getRange();
+  return failure();
+}
+
+/// This method emits the `x and y`, `x or y` operators.  These are
+/// interesting in Python:
 ///
-///   "Note that neither `and` nor `or` restrict the value and type they return
-///   to False and True, but rather return the last evaluated argument. This is
-///   sometimes useful, e.g., if `s` is a string that should be replaced by a
-///   default value if it is empty, the expression `s or 'foo'` yields the
-///   desired value.
+///   "Note that neither `and` nor `or` restrict the value and type they
+///   return to False and True, but rather return the last evaluated argument.
+///   This is sometimes useful, e.g., if `s` is a string that should be
+///   replaced by a default value if it is empty, the expression `s or 'foo'`
+///   yields the desired value.
 ///
-/// Unlike Python, we have static types that could disagree.  Our policy on this
-/// is to either return the pre-Bool'ified value when their types agree, or to
-/// return the common Bool type if they don't.
+/// Unlike Python, we have static types that could disagree.  Our policy on
+/// this is to either return the pre-Bool'ified value when their types agree,
+/// or to return the common Bool type if they don't.
 ///
 /// TODO(subtyping): With subtypes, we can find intersection types, e.g. a
 /// common superclass.
@@ -2149,13 +2201,17 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
     RValue lhsI1Val = emitter.emitExprI1(lhs, EC_BoolCondition);
     PValue lhsI1PVal = emitter.emitPValue({lhsI1Val, lhs}, EC_BoolCondition);
     PValue rhsPVal = emitter.emitExprPValue(rhs, EC_BoolCondition);
-    if (!lhsI1PVal || !lhsPVal || !rhsPVal)
+    if (!lhsI1PVal)
       return {};
 
-    if (!lhsPVal.getType().isEqualCanon(rhsPVal.getType()))
-      return emitter.emitErrorForDynamicValueInParameter(
-          this, "cannot emit parameter and/or with different "
-                "operand types");
+    // Coerce the true/false values into a compatible type if they disagree.
+    auto convertValue = [&](ASTExprAnd<AnyValue> value, ASTType type,
+                            bool isLHS) -> PValue {
+      return emitter.emitPValue(value, EC_CondExpr, type);
+    };
+    if (coerceTypesToEachOther<PValue>(getLoc(), lhsPVal, lhs, rhsPVal, rhs,
+                                       emitter, convertValue))
+      return {};
 
     if (kind == kBoolOr) // and/or swap true/false operands
       std::swap(lhsPVal, rhsPVal);
@@ -2250,13 +2306,13 @@ AnyValue UnaryOpNode::emitConsume(AnyValue argValue, ValueDest &dest,
     return emitter.emitResult(MRValue(newVal), this, dest);
   };
 
-  // The consume expression expects the result to be a ownable value that it can
-  // launder into an RValue.
+  // The consume expression expects the result to be a ownable value that it
+  // can launder into an RValue.
   if (auto sl = argValue.getIfSLValue()) {
     if (auto result = handleLifetimeEnd(sl, /*isRegister=*/false))
       return result;
-    // TODO: When we support explicit move operations and have an lvalue, we can
-    // invoke it.
+    // TODO: When we support explicit move operations and have an lvalue, we
+    // can invoke it.
   }
   if (auto mb = argValue.getIfMBValue())
     if (auto result = handleLifetimeEnd(mb, /*isRegister=*/false))
@@ -2326,14 +2382,15 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   } else if (kind == kUnpack) {
     if (auto pValue = exprRep.getIfPValue()) {
       // There are two distinct cases of unpacking:
-      // 1. Unpacking within an expression list, e.g. `a = [1, 2]; b = (0, *a)`,
-      //    with the result being a tuple `b` with 3 elements `0, 1, 2`. This is
-      //    handled with the special function `__iter__`.
+      // 1. Unpacking within an expression list, e.g. `a = [1, 2]; b = (0,
+      // *a)`,
+      //    with the result being a tuple `b` with 3 elements `0, 1, 2`. This
+      //    is handled with the special function `__iter__`.
       // 2. Unpacking in a type annotation, e.g. `*args: *Ts`, with the result
-      //    being akin to the types of `Ts` being mapped to the type annotations
-      //    for the arguments `args`: `args[0]: Ts[0], args[1]: Ts[1], ...`.
-      //    This is not handled with a special function of any kind, and so is
-      //    handled here.
+      //    being akin to the types of `Ts` being mapped to the type
+      //    annotations for the arguments `args`: `args[0]: Ts[0], args[1]:
+      //    Ts[1], ...`. This is not handled with a special function of any
+      //    kind, and so is handled here.
       if (!isa<VariadicType>(pValue.get().getType())) {
         emitter.emitError(getLoc(), "only variadic types may be unpacked");
         return {};
@@ -2373,13 +2430,23 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (!emitter.builder) {
     PValue condPVal =
         emitter.emitPValue({condRVal, condExpr}, EC_BoolCondition);
-    PValue truePVal = emitter.emitExprPValue(trueExpr, EC_BoolCondition);
-    PValue falsePVal = emitter.emitExprPValue(falseExpr, EC_BoolCondition);
-    if (!condPVal || !truePVal || !falsePVal)
+    if (!condPVal)
+      return {};
+
+    PValue trueVal = emitter.emitExprPValue(trueExpr, EC_BoolCondition);
+    PValue falseVal = emitter.emitExprPValue(falseExpr, EC_BoolCondition);
+
+    // Coerce the true/false values into a compatible type.
+    auto convertValue = [&](ASTExprAnd<AnyValue> value, ASTType type,
+                            bool isLHS) -> PValue {
+      return emitter.emitPValue(value, EC_CondExpr, type);
+    };
+    if (coerceTypesToEachOther<PValue>(getLoc(), trueVal, trueExpr, falseVal,
+                                       falseExpr, emitter, convertValue))
       return {};
 
     auto value =
-        ParamOperatorAttr::get(POC::Cond, {condPVal, truePVal, falsePVal});
+        ParamOperatorAttr::get(POC::Cond, {condPVal, trueVal, falseVal});
     return emitter.emitResult(value, this, dest);
   }
 
@@ -2396,8 +2463,8 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   auto ifOp = emitter.builder->create<HLCF::IfOp>(
       ifLoc, TypeRange{condValue.getType()}, condValue);
 
-  // Emit the trueVal and falseVal's but don't check for error or emit the yield
-  // yet.
+  // Emit the trueVal and falseVal's but don't check for error or emit the
+  // yield yet.
   emitter.builder->createBlock(&ifOp.getThenRegion());
   CValue trueVal = emitter.emitExprCValue(trueExpr, EC_CondExpr);
 
@@ -2409,49 +2476,20 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return {};
   }
 
-  /// If the types disagree, then we need to emit a conversion to a common type.
-  /// See if one is convertible to the other, and if so, emit a conversion to
-  /// get to a common type.
+  /// If the types disagree, then we need to emit a conversion to a common
+  /// type. See if one is convertible to the other, and if so, emit a
+  /// conversion to get to a common type.
+  auto convertValue = [&](ASTExprAnd<AnyValue> value, ASTType type,
+                          bool isLHS) -> CValue {
+    Block &b = isLHS ? ifOp.getThenBlock() : ifOp.getElseBlock();
+    emitter.builder->setInsertionPointToEnd(&b);
+    return emitter.emitCValue(value, EC_CondExpr, type);
+  };
+  if (coerceTypesToEachOther<CValue>(getLoc(), trueVal, trueExpr, falseVal,
+                                     falseExpr, emitter, convertValue))
+    return {};
+
   auto resultType = trueVal.getRValueType();
-  auto otherType = falseVal.getRValueType();
-  if (!resultType.isEqualCanon(otherType)) {
-    bool trueConvertibleToFalse =
-        emitter.canImplicitlyConvertToType({trueVal, trueExpr}, otherType);
-    bool falseConvertibleToFalse =
-        emitter.canImplicitlyConvertToType({falseVal, falseExpr}, resultType);
-    if (trueConvertibleToFalse && !falseConvertibleToFalse) {
-      emitter.builder->setInsertionPointToEnd(&ifOp.getThenBlock());
-      trueVal = emitter.emitCValue({trueVal, trueExpr}, EC_CondExpr, otherType);
-      if (!trueVal)
-        return {};
-      resultType = otherType;
-    } else if (!trueConvertibleToFalse && falseConvertibleToFalse) {
-      emitter.builder->setInsertionPointToEnd(&ifOp.getElseBlock());
-      falseVal =
-          emitter.emitCValue({falseVal, falseExpr}, EC_CondExpr, resultType);
-      if (!falseVal)
-        return {};
-    } else if (!trueConvertibleToFalse && !falseConvertibleToFalse) {
-      emitter.emitError(getLoc(), "true value of type ")
-          << resultType << " is not compatible with false value "
-          << falseVal.getRValueType() << " in conditional"
-          << trueExpr->getRange() << falseExpr->getRange();
-      return {};
-    } else {
-      auto diag =
-          emitter.emitError(getLoc(), "ambiguous if: true value has type ")
-          << resultType << " and false value has type "
-          << falseVal.getRValueType() << ", and both convert to each other"
-          << trueExpr->getRange() << falseExpr->getRange();
-      diag.attachNote(getLoc())
-          << "you could disambiguate by casting true value to "
-          << falseVal.getRValueType() << trueExpr->getRange();
-      diag.attachNote(getLoc())
-          << "you could disambiguate by casting false value to "
-          << trueVal.getRValueType() << falseExpr->getRange();
-      return {};
-    }
-  }
 
   // Ok, we now know if the types were register_passable or not, so finish up
   // the logic.  register_passable values get merged together as SSA registers
@@ -2476,10 +2514,10 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   // If we have a memory only type, we have to handle the various issues with
-  // the ValueDest.  It may specify an SLValue to emit into, it may be ambiguous
-  // (like a call argument) or it may even be something like a DLValue.  We
-  // handle this by projecting the ValueDest to an SLValue if we can, but
-  // otherwise using a scratch buffer if not.
+  // the ValueDest.  It may specify an SLValue to emit into, it may be
+  // ambiguous (like a call argument) or it may even be something like a
+  // DLValue.  We handle this by projecting the ValueDest to an SLValue if we
+  // can, but otherwise using a scratch buffer if not.
   emitter.builder->setInsertionPoint(ifOp);
   SLValue destBuffer = dest.getSLValueForResult(getLoc(), resultType, emitter);
 
@@ -2683,8 +2721,8 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
     return {};
   }
 
-  // If this is a user defined type with ownership, emit lifetime intrinsics for
-  // it, if not, we don't need/want them.
+  // If this is a user defined type with ownership, emit lifetime intrinsics
+  // for it, if not, we don't need/want them.
   auto pointeeType = ASTType(pointerType).getPointerElementType();
   bool needsLifetime = isa<DeclRefType>(pointeeType.mlirType);
 

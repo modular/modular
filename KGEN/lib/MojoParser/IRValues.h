@@ -210,6 +210,7 @@ public:
 
   /// Return the type for the contained representation, or null if null.
   ASTType getType() const { return get().getType(); }
+  ASTType getRValueType() const { return getType(); }
 
   /// If this value /is/ a type (i.e., if it has metatype type) return it.
   ASTType getIfTypeValue() const;
