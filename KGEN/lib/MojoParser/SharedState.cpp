@@ -53,25 +53,37 @@ static void adjustTokenEndPoint(SharedState &shared, SMLoc &loc);
 
 /// Return the path containing the standard library. Returns nullopt if the
 /// standard library cannot be found.
-static std::optional<std::string> getAutoImportPath() {
+static void getAutoImportPaths(SmallVector<std::string> &paths) {
   // TODO: Eventually we should resolve the standard library path to an actual
   // install of lit, for now though try to resolve the standard library path
   // within modular.
-
-  // Check if we already have the path set.
-  if (auto envDir = llvm::sys::Process::GetEnv("MODULAR_PATH"))
-    return (std::filesystem::path(*envDir) / "Kernels" / "mojo").string();
-
-  // Otherwise, try to find modular relative to the current directory.
+  std::optional<std::filesystem::path> modularRoot = std::nullopt;
   std::filesystem::path path = std::filesystem::current_path();
   while (!path.empty()) {
-    if (path.stem() == "modular")
-      return (path / "Kernels" / "mojo").string();
+    if (path.stem() == "modular") {
+      modularRoot = path;
+      break;
+    }
     if (!path.has_parent_path())
       break;
     path = path.parent_path();
   }
-  return std::nullopt;
+  auto addPath = [&](StringRef env,
+                     std::filesystem::path const &relativePathFromEnv,
+                     std::filesystem::path const &relativePathFromRoot) {
+    if (auto src = llvm::sys::Process::GetEnv(env))
+      paths.push_back(
+          (std::filesystem::path(*src) / relativePathFromEnv).string());
+    else {
+      if (modularRoot)
+        paths.push_back((*modularRoot / relativePathFromRoot).string());
+    }
+  };
+  std::filesystem::path kernelsMojo("Kernels/mojo");
+  addPath("MODULAR_PATH", kernelsMojo, kernelsMojo);
+  std::filesystem::path buildKernelsMojo("build/Kernels/mojo");
+  std::filesystem::path derivedBuildKernelsMojo(".derived/build/Kernels/mojo");
+  addPath("MODULAR_DERIVED_PATH", buildKernelsMojo, derivedBuildKernelsMojo);
 }
 
 struct SharedState::Impl {
@@ -83,7 +95,7 @@ struct SharedState::Impl {
 
   /// The auto import path (e.g. path to the stdlib), or nullopt if it is not
   /// available.
-  std::optional<std::string> autoImportDir;
+  SmallVector<std::string> autoImportDirs;
 
   /// The top-level decl containing everything being parsed.
   ASTDecl *topLevelDecl = nullptr;
@@ -124,7 +136,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, MojoParserConfig &config,
       options(config.options),
       declResolver(std::make_unique<DeclResolver>(*this)),
       runtime(config.runtime), impl(std::make_unique<Impl>()) {
-  impl->autoImportDir = getAutoImportPath();
+  getAutoImportPaths(impl->autoImportDirs);
   impl->validateDocStrings = config.validateDocStrings;
 
   config.context->loadDialect<DebugInfo::DebugInfoDialect, HLCF::HLCFDialect,
@@ -488,7 +500,7 @@ ASTType SharedState::lookupObjectType(llvm::SMLoc loc, ASTDecl &context) {
 /// module cannot be found.
 static std::optional<std::string>
 resolveModulePath(StringRef moduleName,
-                  const std::optional<std::string> &autoImportDir,
+                  const SmallVector<std::string> &autoImportDirs,
                   llvm::SourceMgr &sourceMgr, llvm::SMLoc includeLoc) {
   // Python has lots of magic rules surrounding how modules get resolved. For
   // now, we just use the available include directories within the source
@@ -501,13 +513,13 @@ resolveModulePath(StringRef moduleName,
   };
 
   // Check the auto import directory first.
-  if (autoImportDir) {
-    if (auto path = checkPath(*autoImportDir))
+  for (auto &rawPath : autoImportDirs) {
+    if (auto path = checkPath(rawPath))
       return path;
     // Cannot find the file, then check child directories of the auto import
     // directory.
     for (auto &childDir :
-         std::filesystem::recursive_directory_iterator(*autoImportDir))
+         std::filesystem::recursive_directory_iterator(rawPath))
       if (childDir.is_directory())
         if (auto path = checkPath(childDir.path().string()))
           return path;
@@ -557,7 +569,7 @@ SharedState::ModuleState &SharedState::importModuleState(StringRef moduleName,
 
   // Resolve the path for this module.
   std::optional<std::string> modulePath =
-      resolveModulePath(moduleName, impl->autoImportDir, getSourceMgr(), loc);
+      resolveModulePath(moduleName, impl->autoImportDirs, getSourceMgr(), loc);
   if (!modulePath) {
     emitError(loc, "unable to locate module '") << moduleName << "'";
 
