@@ -757,16 +757,6 @@ a = np.array([1, 2, 3])
 
 Yes, this imports Python NumPy, and you can import _any other Python module_.
 
-However, remember that you're working with a Python object, so some Mojo
-functions like `print()` won't work. If you want to print a Python
-type in Mojo, you need to use Python's built-in `print()` function:
-
-```mojo
-a = np.array([1, 2, 3])
-builtins = Python.import_module("builtins")
-builtins.print(a)
-```
-
 Currently, you cannot import individual members (such as a single Python class
 or function)—you must import the whole Python module and then access members
 through the module name.
