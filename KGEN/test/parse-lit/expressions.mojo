@@ -320,8 +320,12 @@ struct Boolish:
   fn __copyinit__(self) -> Self: pass
   fn __bool__(self) -> Bool: return True
 
+struct MemBoolish:
+  fn __copyinit__(inout self, existing: Self): pass
+  fn __bool__(self) -> Bool: return True
+
 # CHECK-LABEL: @"unary
-fn unary(a: Bool, b: Int, c: Boolish):
+fn unary(a: Bool, b: Int, c: Boolish, d: MemBoolish):
   # CHECK: %0 = kgen.call @"$Bool"::@Bool::@"__bool__($Bool::Bool)"(%a)
   # CHECK: %1 = kgen.call @"$Bool"::@Bool::@"__invert__($Bool::Bool)"(%0)
   _ = not a
@@ -331,12 +335,16 @@ fn unary(a: Bool, b: Int, c: Boolish):
   # CHECK:  = kgen.call @"$Bool"::@Bool::@"__invert__($Bool::Bool)"([[EQBOOL]])
   _ = not b == 0
 
-  # CHECK: [[BOOL:%.*]] = kgen.call @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)"(%c)
+  # CHECK: [[BOOL:%.*]] = kgen.call {{.*}}__bool__{{.*}}(%c)
   # CHECK:  = kgen.call @"$Bool"::@Bool::@"__invert__($Bool::Bool)"([[BOOL]])
   _ = not c
 
+  # CHECK: [[BOOL:%.*]] = kgen.call {{.*}}@"__bool__{{.*}}(%d)
+  # CHECK-NEXT: kgen.call {{.*}}__invert__{{.*}}([[BOOL]])
+  _ = not d
+
 # CHECK-LABEL: lit.func @"andOr
-fn andOr(a: Boolish, b: Boolish, x: Bool):
+fn andOr(a: Boolish, b: Boolish, c: Bool, d: MemBoolish):
   # Short circuiting AND returns second operand when the first is false-y, first
   # otherwise.
 
@@ -371,7 +379,8 @@ fn andOr(a: Boolish, b: Boolish, x: Bool):
   # CHECK: } else {
   # CHECK:   hlcf.yield
   # CHECK: }
-   _ = a or x
+  _ = a or c
+
 
 # CHECK-LABEL: lit.func @"paramAndOr
 fn paramAndOr[a: Boolish, b: Boolish]():
@@ -440,9 +449,8 @@ fn initializers():
   # Issue #12067, suffix stuff ok.
   _ = Int{ value: (1).value }.value
 
-
 # CHECK-LABEL: lit.func @"test_if_cond
-def test_if_cond(cond: Bool):
+fn test_if_cond(owned cond: Bool, memCond: MemBoolish):
     # CHECK: %[[COND:.*]] = pop.load %cond_0
     # CHECK: %[[LIT_BOOLI1:.*]] = kgen.call {{.*}}__mlir_i1__{{.*}}(%[[COND]])
     # CHECK-NEXT: %[[IF_RES:.*]] = hlcf.if %[[LIT_BOOLI1]]
@@ -461,13 +469,17 @@ def test_if_cond(cond: Bool):
     cond = True
     i += i
     if cond:     # 'if' stmt, not an 'if' expression.
-        i = i+i
+        i += 1
 
-# CHECK-LABEL: lit.func @"test_param_if_cond()"<cond: @"$Bool"::@Bool>() -> !kgen.declref<@"$Int"::@Int>
+# CHECK-LABEL: lit.func @"test_param_if_cond
 fn test_param_if_cond[cond: Bool]() -> Int:
-# CHECK: kgen.param.declare i: @"$Int"::@Int = <cond(apply(:<>(!kgen.declref<@"$Bool"::@Bool> borrow) -> i1 @"$Bool"::@Bool::@"__mlir_i1__($Bool::Bool)", cond), #lit.struct<{value: scalar<index> = 2}>, #lit.struct<{value: scalar<index> = 3}>)>
-# CHECK-NEXT:  %[[I:.*]] = kgen.param.constant: @"$Int"::@Int = <i>
+  # CHECK: kgen.param.declare i: @"$Int"::@Int = <cond(apply(:<>(!kgen.declref<@"$Bool"::@Bool> borrow) -> i1 @"$Bool"::@Bool::@"__mlir_i1__($Bool::Bool)", cond), #lit.struct<{value: scalar<index> = 2}>, #lit.struct<{value: scalar<index> = 3}>)>
   alias i = 2 if cond else 3
+
+  # CHECK-NEXT: kgen.param.declare j: @"$FloatLiteral"::@FloatLiteral = <cond(apply(:<>(!kgen.declref<@"$Bool"::@Bool> borrow) -> i1 @"$Bool"::@Bool::@"__mlir_i1__($Bool::Bool)", cond), #lit.struct<{value: scalar<f64> = "2"}>, #lit.struct<{value: scalar<f64> = "3"}>)>
+  alias j = 2.0 if cond else 3
+
+  # CHECK-NEXT:  %[[I:.*]] = kgen.param.constant: @"$Int"::@Int = <i>
   return i
 
 # CHECK-LABEL: lit.func @"callable_mv($Int::Int)"<callable: <>(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int>>(%a: !kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int>
