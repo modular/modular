@@ -57,18 +57,27 @@ struct ParamStruct_Order[
 
 
 struct StructWithMissingMethod:
-    """This defines a method with a missing doc string."""
+    """This defines methods with missing doc strings."""
 
     # expected-warning @below {{public symbol 'method_with_missing_doc_string($parser-doc-errors::StructWithMissingMethod)' is missing a doc string}}
     fn method_with_missing_doc_string(self):
         pass
 
+    fn _private_method_with_no_doc_string(self):
+        pass
+
+    # expected-warning @below {{public symbol '__init__($parser-doc-errors::StructWithMissingMethod=&)' is missing a doc string}}
+    fn __init__(inout self):
+        pass
+
 
 # expected-warning @below {{public symbol 'fn_missing_doc_string()' is missing a doc string}}
-fn fn_missing_doc_string(): pass
+fn fn_missing_doc_string():
+    pass
 
 
-fn _fn_private_no_doc_string(): pass
+fn _fn_private_no_doc_string():
+    pass
 
 
 fn fn_args_invalid(arg: ArgStruct):
@@ -142,6 +151,11 @@ fn fn_nested_fn():
     The nested struct and function do not include doc strings, but neither
     should be reported as invalid.
     """
-    fn nested_fn(): pass
-    struct NestedStruct: pass
+
+    fn nested_fn():
+        pass
+
+    struct NestedStruct:
+        pass
+
     return

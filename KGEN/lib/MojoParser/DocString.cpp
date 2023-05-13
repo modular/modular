@@ -45,14 +45,23 @@ static bool requiresDocString(StructDeclOp op) {
   return !op.getName().starts_with("_") && isa<FileModuleOp>(op->getParentOp());
 }
 
+// Given a function name such as "__init__($module::Struct=&)", returns whether
+// it is similar to the naming scheme used for "dunder methods"
+// (double-underscore methods). That is, returns whether the function identifier
+// begins and ends with double underscores. Using a heuristic such as this one
+// is simpler than listing out all the dunder methods recognized by Mojo.
+static bool isDunderLike(StringRef name) {
+  return name.starts_with("__") && name.split("(").first.ends_with("__");
+}
+
 // If a function matches all of the following conditions, it requires a doc
 // string:
 // 1. It's a "public" function, meaning its name does not start with an
-//    underscore.
+//    underscore, unless it's a dunder method such as `__init__`.
 // 2. It's defined at the top level of a module, or as a method on a struct that
 //    requires a doc string.
 static bool requiresDocString(LIT::FuncOp op) {
-  if (op.getName().starts_with("_"))
+  if (op.getName().starts_with("_") && !isDunderLike(op.getName()))
     return false;
 
   Operation *parent = op->getParentOp();
