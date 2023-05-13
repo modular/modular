@@ -7,6 +7,7 @@
 # RUN: kgen-translate -import-mojo -mojo-doc-validate -verify-diagnostics %s
 
 
+# expected-warning @below {{public symbol 'ArgStruct' is missing a doc string}}
 struct ArgStruct:
     pass
 
@@ -53,6 +54,21 @@ struct ParamStruct_Order[
     """
 
     pass
+
+
+struct StructWithMissingMethod:
+    """This defines a method with a missing doc string."""
+
+    # expected-warning @below {{public symbol 'method_with_missing_doc_string($parser-doc-errors::StructWithMissingMethod)' is missing a doc string}}
+    fn method_with_missing_doc_string(self):
+        pass
+
+
+# expected-warning @below {{public symbol 'fn_missing_doc_string()' is missing a doc string}}
+fn fn_missing_doc_string(): pass
+
+
+fn _fn_private_no_doc_string(): pass
 
 
 fn fn_args_invalid(arg: ArgStruct):
@@ -117,4 +133,15 @@ fn fn_args_return():
     Returns:
       This returns nothing.
     """
+    return
+
+
+fn fn_nested_fn():
+    """This is a function that defines a nested struct and function.
+
+    The nested struct and function do not include doc strings, but neither
+    should be reported as invalid.
+    """
+    fn nested_fn(): pass
+    struct NestedStruct: pass
     return
