@@ -39,6 +39,28 @@ static std::optional<DocString> getDocString(ASTDecl &decl) {
   return DocString(docStr);
 }
 
+// A struct requires a doc string if it's defined at the top level of a module,
+// unless its name begins with an underscore.
+static bool requiresDocString(StructDeclOp op) {
+  return !op.getName().starts_with("_") && isa<FileModuleOp>(op->getParentOp());
+}
+
+// If a function matches all of the following conditions, it requires a doc
+// string:
+// 1. It's a "public" function, meaning its name does not start with an
+//    underscore.
+// 2. It's defined at the top level of a module, or as a method on a struct that
+//    requires a doc string.
+static bool requiresDocString(LIT::FuncOp op) {
+  if (op.getName().starts_with("_"))
+    return false;
+
+  Operation *parent = op->getParentOp();
+  StructDeclOp parentStruct = dyn_cast<StructDeclOp>(parent);
+  return isa<FileModuleOp>(parent) ||
+         (parentStruct && requiresDocString(parentStruct));
+}
+
 //===----------------------------------------------------------------------===//
 // DocString
 //===----------------------------------------------------------------------===//
@@ -624,9 +646,16 @@ public:
 
   void validate(ASTDecl &decl) {
     std::optional<DocString> docStr = getDocString(decl);
-    if (docStr && !decl.hasReferenceError) {
-      TypeSwitch<ASTDecl &>(decl).Case<LIT::FuncOp, StructDeclOp>(
-          [&](auto op) { validateDecl(decl, op, *docStr); });
+    if (!decl.hasReferenceError) {
+      TypeSwitch<ASTDecl &>(decl).Case<LIT::FuncOp, StructDeclOp>([&](auto op) {
+        if (!docStr) {
+          if (requiresDocString(op))
+            sharedState.emitWarning(op.getLoc(), "public symbol '")
+                << op.getName() << "' is missing a doc string";
+          return;
+        }
+        validateDecl(decl, op, *docStr);
+      });
     }
   }
 
