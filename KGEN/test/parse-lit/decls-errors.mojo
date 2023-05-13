@@ -170,6 +170,12 @@ fn top_level_fn():
 def use_non_copyable_type(a: ThingWithStaticMethod):
   pass
 
+# Issue #14191
+# expected-error @+1 {{unexpected tokens after decorator, each need to be on their own line}}
+@always_inline wqeqwe
+fn issue14191() -> Int:
+    return 1
+
 ##===----------------------------------------------------------------------===##
 # Default Arguments, Varargs, and Packs
 ##===----------------------------------------------------------------------===##
