@@ -1089,14 +1089,12 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
 }
 
 /// Emit the specified expression as a condition, converting it to an MLIR I1
-/// value that we can test directly, and also returning the intermediate
-/// result of calling `__bool__` (which is typically a Bool or object type, but
-/// not guaranteed).  This reports and error and returns null on error.
-RValue ExprEmitter::emitI1(ASTExprAnd<CValue> value, CValue &boolResult) {
+/// value that we can test directly (note it may be either an dynamic or
+/// PValue). This reports and error and returns null on error.
+RValue ExprEmitter::emitI1(ASTExprAnd<CValue> value) {
   if (!value.ir)
     return {};
 
-  boolResult = value.ir;
   ASTType valueRValueType = value.ir.getRValueType();
 
   // If this is already an 'i1', then we're done.
@@ -1114,16 +1112,14 @@ RValue ExprEmitter::emitI1(ASTExprAnd<CValue> value, CValue &boolResult) {
                    [&]() { /*no error*/ })) {
     // Use the __bool__ method to convert the user defined type to
     // something that is a Bool or other type that implements __mlir_i1__.
-    boolResult = emitNamedMethodCall("__bool__", {{value.ir, value.expr}},
-                                     ValueDest::none(),
-                                     CallSyntax::kImplicitConvert, value.expr);
-    if (!boolResult)
-      return {};
+    value.ir = emitNamedMethodCall("__bool__", {{value.ir, value.expr}},
+                                   ValueDest::none(),
+                                   CallSyntax::kImplicitConvert, value.expr);
   }
 
   // Then we use __mlir_i1__ to convert to an i1 value.
   CValue litBoolCall = emitNamedMethodCall(
-      "__mlir_i1__", {{boolResult, value.expr}}, ValueDest::none(),
+      "__mlir_i1__", {{value.ir, value.expr}}, ValueDest::none(),
       CallSyntax::kImplicitConvert, value.expr);
 
   return emitRValue({litBoolCall, value.expr}, EC_BoolCondition);
@@ -1342,8 +1338,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
 /// value that we can test directly.  This reports and error and returns null on
 /// error.
 RValue ExprEmitter::emitExprI1(const ExprNode *condExpr, ExprContext context) {
-  CValue boolTmp; // we don't care about the intermediate Bool value.
-  return emitI1({emitExprCValue(condExpr, context), condExpr}, boolTmp);
+  return emitI1({emitExprCValue(condExpr, context), condExpr});
 }
 
 SRValue ExprEmitter::emitBoxedIntAsPopScalar(Value numberValue,

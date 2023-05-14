@@ -321,6 +321,7 @@ struct Boolish:
   fn __bool__(self) -> Bool: return True
 
 struct MemBoolish:
+  fn __init__(inout self, value: Boolish): pass
   fn __copyinit__(inout self, existing: Self): pass
   fn __bool__(self) -> Bool: return True
 
@@ -348,39 +349,71 @@ fn andOr(a: Boolish, b: Boolish, c: Bool, d: MemBoolish):
   # Short circuiting AND returns second operand when the first is false-y, first
   # otherwise.
 
-  # CHECK: [[BOOL:%.*]] = kgen.call {{.*}}__bool__{{.*}}(%0)
+  # CHECK: [[BOOL:%.*]] = kgen.call {{.*}}__bool__{{.*}}(%a)
   # CHECK: [[I1:%.*]] = kgen.call {{.*}}__mlir_i1__{{.*}}([[BOOL]])
   # CHECK: hlcf.if [[I1]] -> !kgen.declref<@"$expressions"::@Boolish> {
   # CHECK:   [[TMP:%.*]] = kgen.call {{.*}}__copyinit__{{.*}}(%b)
   # CHECK:   hlcf.yield [[TMP]]
   # CHECK: } else {
-  # CHECK:   hlcf.yield %0
+  # CHECK:   [[TMP:%.*]] = kgen.call {{.*}}__copyinit__{{.*}}(%a)
+  # CHECK:   hlcf.yield [[TMP]]
   # CHECK: }
   _ = a and b
 
   # Short circuiting OR returns first operand when it is true-y, second
-  # otherwise.
+  # otherwise.  Boolish is defined with copy ctor so it must be invoked.
 
-  # CHECK: [[ABOOL:%.*]] = kgen.call @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)"(
-  # CHECK: [[I1:%.*]] = kgen.call {{.*}}@Bool::@"__mlir_i1__{{.*}}([[ABOOL]])
-  # CHECK:  = hlcf.if [[I1]] -> !kgen.declref<@"$expressions"::@Boolish> {
-  # CHECK:   hlcf.yield
-  # CHECK: } else {
-  # CHECK:   hlcf.yield
-  # CHECK: }
+  # CHECK-NEXT: [[ABOOL:%.*]] = kgen.call @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)"(
+  # CHECK-NEXT: [[I1:%.*]] = kgen.call {{.*}}@Bool::@"__mlir_i1__{{.*}}([[ABOOL]])
+  # CHECK-NEXT:  = hlcf.if [[I1]] -> !kgen.declref<@"$expressions"::@Boolish> {
+  # CHECK-NEXT:   [[TMP:%.*]] = kgen.call {{.*}}__copyinit__{{.*}}(%a)
+  # CHECK-NEXT:   hlcf.yield [[TMP]]
+  # CHECK-NEXT: } else {
+  # CHECK-NEXT:   [[TMP:%.*]] = kgen.call {{.*}}__copyinit__{{.*}}(%b)
+  # CHECK-NEXT:   hlcf.yield [[TMP]]
+  # CHECK-NEXT: }
   _ = a or b
 
   # Testing two different logic'y types returns the common bool type if present.
 
-  # CHECK: [[ABOOL:%.*]] = kgen.call {{.*}}__bool__
-  # CHECK: [[I1:%.*]] = kgen.call {{.*}}__mlir_i1__{{.*}}([[ABOOL]])
-  # CHECK:  = hlcf.if [[I1]] -> !kgen.declref<@"$Bool"::@Bool> {
-  # CHECK:   hlcf.yield
-  # CHECK: } else {
-  # CHECK:   hlcf.yield
-  # CHECK: }
-  _ = a or c
+  # CHECK-NEXT: [[ABOOL:%.*]] = kgen.call {{.*}}__bool__{{.*}}(%a)
+  # CHECK-NEXT: [[I1:%.*]] = kgen.call {{.*}}__mlir_i1__{{.*}}([[ABOOL]])
+  # CHECK-NEXT:  = hlcf.if [[I1]] -> !kgen.declref<@"$Bool"::@Bool> {
+  # CHECK-NEXT:   hlcf.yield %c
+  # CHECK-NEXT: } else {
+  # CHECK-NEXT:   [[ABOOL:%.*]] = kgen.call {{.*}}__init__{{.*}}([[I1]])
+  # CHECK-NEXT:   hlcf.yield [[ABOOL]]
+  # CHECK-NEXT: }
+  _ = a and c
 
+  # Check incompatible types that are nevertheless boolish.
+
+  # CHECK-NEXT: [[BBOOL:%.*]] = kgen.call {{.*}}__bool__{{.*}}(%b)
+  # CHECK-NEXT: [[BI1:%.*]] = kgen.call {{.*}}__mlir_i1__{{.*}}([[BBOOL]])
+  # CHECK-NEXT: = hlcf.if [[BI1]] -> !kgen.declref<@"$Bool"::@Bool> {
+  # CHECK-NEXT:    [[TMP:%.*]] = kgen.call {{.*}}@Bool::@"__init__{{.*}}([[BI1]])
+  # CHECK-NEXT:    hlcf.yield [[TMP]]
+  # CHECK-NEXT:  } else {
+  # CHECK-NEXT:    hlcf.yield %c
+  # CHECK-NEXT:  }
+  _ = b or c
+
+  # Check memory-only boolish types.
+  # Boolish and MemBoolish has a common type of MemBoolish.
+
+  # CHECK-NEXT: [[DBOOL:%.*]] = kgen.call {{.*}}__bool__{{.*}}(%d)
+  # CHECK-NEXT: [[DI1:%.*]] = kgen.call {{.*}}__mlir_i1__{{.*}}([[DBOOL]])
+  # CHECK-NEXT: [[IFRESULT:%.*]] = lit.varlet.decl {{.*}} <@"$expressions"::@MemBoolish>
+  # CHECK-NEXT: hlcf.if [[DI1]] {
+  # CHECK-NEXT:   kgen.call {{.*}}__copyinit__{{.*}}([[IFRESULT]], %d)
+  # CHECK-NEXT:   hlcf.yield
+  # CHECK-NEXT: } else {
+  # CHECK-NEXT:   [[TMPMEM:%.*]] = lit.varlet.decl
+  # CHECK-NEXT:   kgen.call {{.*}}__init__{{.*}}([[TMPMEM]], %b)
+  # CHECK-NEXT:   kgen.call {{.*}}__copyinit__{{.*}}([[IFRESULT]], [[TMPMEM]])
+  # CHECK-NEXT:   hlcf.yield
+  # CHECK-NEXT: }
+  _ = d or b
 
 # CHECK-LABEL: lit.func @"paramAndOr
 fn paramAndOr[a: Boolish, b: Boolish]():
