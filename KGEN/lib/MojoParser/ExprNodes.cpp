@@ -812,12 +812,7 @@ emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
     return {};
   }
 
-  // If we just have a getter, emit this as a call to the getter immediately.
-  // The getter is allowed to return a reference if it has a physical lvalue.
-  if (setter.isNull())
-    return getter.emitCall(callArgs, dest, emitter);
-
-  // Ok, we have a setter and may have a getter.  Check to see if there is one
+  // Ok, we have a getter and/or setter.  Check to see if there is one
   // specific known element type.
   ASTType elementType;
   if (!getter.isNull()) {
@@ -826,16 +821,19 @@ emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
     // that the type was intended to be subscriptable, but whine about index
     // values and base type if they aren't actually compatible at this usage
     // site.
-    if (failed(getter.filterOverloadSet(
-            callArgs, /*allowImplicitConversions=*/true,
-            /*emitDiagnosticOnFailure=*/true, emitter)))
+    PValue getterCallee =
+        getter.filterOverloadSet(callArgs, /*allowImplicitConversions=*/true,
+                                 /*emitDiagnosticOnFailure=*/true, emitter);
+    if (!getterCallee)
       return {};
 
-    assert(getter.fnDecls.size() == 1 && "Should be resolved");
-    auto directSymbolAttr = getter.getBoundConstantAttr(emitter);
-    if (!directSymbolAttr)
-      return {}; // Getter invalid.
-    auto sigType = cast<SignatureType>(directSymbolAttr.getType());
+    // If we /just/ have a getter, emit this as a call to the getter
+    // immediately. The getter is allowed to return a reference if it has a
+    // physical lvalue.
+    if (setter.isNull())
+      return emitter.emitIndirectCall(getterCallee, callArgs, dest, node);
+
+    auto sigType = cast<SignatureType>(getterCallee.getType().mlirType);
     if (sigType.hasMemoryOnlyResult())
       elementType =
           ASTType(sigType.getValueInputs()[0]).getPointerElementType();
