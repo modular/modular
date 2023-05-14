@@ -165,9 +165,9 @@ public:
               CallSyntax syntax, SharedState &shared,
               std::function<void()> errorHandler);
 
-  /// Form an OverloadSet with a lookup of a named method on the specified type,
-  /// filtered to match a concrete operand set.
-  /// If successful, this provides a non-null PValue for a single callee.
+  /// Lookup of a named named method on the specified type, filtered to match a
+  /// concrete operand set. If successful, this provides a non-null PValue for a
+  /// single callee.
   static PValue lookup(ASTType type, StringRef methodName,
                        ArrayRef<ASTExprAnd<AnyValue>> operands,
                        const ExprNode *callExpr, CallSyntax syntax,
@@ -186,17 +186,12 @@ public:
 
   /// Evaluate the fnDecls candidates and see if there is an unambiguous
   /// candidate that works with the specified parameter bindings and provided
-  /// arguments.  If so, replace fnDecls with a single entry that works and
-  /// return success.  If not, generate a diagnostic (when
-  /// `emitDiagnosticOnFailure` is true) and return failure.
-  ///
-  /// On success and when `validCandidate` is non-null, `*validCandidate` is
-  /// filled in with symbol for the valid callee along with its parameter
-  /// bindings.
-  LogicalResult filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> operands,
-                                  bool allowImplicitConversions,
-                                  bool emitDiagnosticOnFailure,
-                                  ExprEmitter &emitter);
+  /// arguments.  If so, return the single entry that works.  If not, generate a
+  /// diagnostic (when `emitDiagnosticOnFailure` is true) and return null.
+  PValue filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> operands,
+                           bool allowImplicitConversions,
+                           bool emitDiagnosticOnFailure,
+                           ExprEmitter &emitter) const;
 
   /// Emit this as a CValue if it can be resolved, otherwise emit an ambiguity
   /// error and return null.
@@ -228,10 +223,6 @@ private:
   /// Resolve the callee into either a single PValue callee (if there's only
   /// one decl provided) or a variadic that contains all the possible adaptive
   /// overloads.
-  PValue getCallee(ExprEmitter &emitter) const {
-    return getCallee(fnDecls, baseName, inputParamBindings, expr, emitter);
-  }
-
   static PValue getCallee(ArrayRef<ASTDecl *> fnDecls, StringRef baseName,
                           InputParamBindings inputParamBindings,
                           const ExprNode *expr, ExprEmitter &emitter);

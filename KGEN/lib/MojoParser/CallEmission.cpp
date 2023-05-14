@@ -1037,11 +1037,12 @@ void OverloadFitness::diagnose(SignatureType signature,
 
 /// Evaluate the fnDecls candidates and see if there is an unambiguous
 /// candidate that works with the specified parameter bindings and provided
-/// arguments.  If so, replace fnDecls with a single entry that works and
-/// return success.  If not, generate a diagnostic and return failure.
-LogicalResult OverloadSet::filterOverloadSet(
-    ArrayRef<ASTExprAnd<AnyValue>> operands, bool allowImplicitConversions,
-    bool emitDiagnosticOnFailure, ExprEmitter &emitter) {
+/// arguments.  If so, return the single entry that works.  If not, generate a
+/// diagnostic (when `emitDiagnosticOnFailure` is true) and return null.
+PValue OverloadSet::filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> operands,
+                                      bool allowImplicitConversions,
+                                      bool emitDiagnosticOnFailure,
+                                      ExprEmitter &emitter) const {
   // Evaluate the fitness of each candidate in our overload set.
   SmallVector<OverloadFitness> evaluations;
   bool anyValid = false;
@@ -1063,7 +1064,7 @@ LogicalResult OverloadSet::filterOverloadSet(
         evaluations[0].diagnose(fnDecl.getFullSignature(), *this, operands,
                                 diag);
         diag.attachNote(fnDecl.getLoc()) << "function declared here";
-        return failure();
+        return {};
       }
 
       // Otherwise emit an error, and a note for what is wrong with each
@@ -1076,7 +1077,7 @@ LogicalResult OverloadSet::filterOverloadSet(
         diag.attachNote(fnDecl->getLoc()) << "candidate not viable: ";
         eval.diagnose(fnDecl.getFullSignature(), *this, operands, diag);
       }
-      return failure();
+      return {};
     }
   }
 
@@ -1107,14 +1108,11 @@ LogicalResult OverloadSet::filterOverloadSet(
     });
   };
   if (newFnDecls.size() == 1 || (!newFnDecls.empty() && allMarkedAdaptive())) {
-    // Mutate our state to represent what we've learned.  We have one callee
-    // and we have valid predetermined parameter bindings.
-    fnDecls = std::move(newFnDecls);
-    inputParamBindings.bindings.clear();
+    // On success, wrap things up into one callee.
+    InputParamBindings newBindings;
     for (TypedAttr bind : oneFitness.paramBindings)
-      inputParamBindings.addPrechecked(bind);
-
-    return success();
+      newBindings.addPrechecked(bind);
+    return getCallee(newFnDecls, baseName, newBindings, expr, emitter);
   }
 
   // Otherwise, we have multiple viable candidates that are ambiguous because
@@ -1155,7 +1153,7 @@ LogicalResult OverloadSet::filterOverloadSet(
             << "candidate declared here";
     }
   }
-  return failure();
+  return {};
 }
 
 /// Filter down and complete this overload set based on knowledge that we need
@@ -1452,9 +1450,9 @@ OverloadSet::OverloadSet(ASTType type, StringRef methodName,
       syntax);
 }
 
-/// Form an OverloadSet with a lookup of a named method on the specified type,
-/// filtered to match a concrete operand set.
-/// If successful, this provides a non-null PValue for a single callee.
+/// Lookup of a named named method on the specified type, filtered to match a
+/// concrete operand set. If successful, this provides a non-null PValue for a
+/// single callee.
 PValue OverloadSet::lookup(ASTType type, StringRef methodName,
                            ArrayRef<ASTExprAnd<AnyValue>> operands,
                            const ExprNode *callExpr, CallSyntax syntax,
@@ -1471,12 +1469,9 @@ PValue OverloadSet::lookup(ASTType type, StringRef methodName,
   // report an error (if we have an error handler) and reset to a null state so
   // the client can check this.
   bool shouldPrintError = bool(errorHandler);
-  if (failed(ovSet.filterOverloadSet(
-          operands, /*allowImplicitConversions=*/true,
-          /*emitDiagnosticOnFailure=*/shouldPrintError, emitter)))
-    return {};
-
-  return ovSet.getCallee(emitter);
+  return ovSet.filterOverloadSet(operands, /*allowImplicitConversions=*/true,
+                                 /*emitDiagnosticOnFailure=*/shouldPrintError,
+                                 emitter);
 }
 
 /// Emit this as a CRValue if it can be resolved, otherwise emit an ambiguity
@@ -1606,20 +1601,15 @@ CValue OverloadSet::emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
 
   // Check the direct callees to see if they can be unambiguously resolved
   // with the bindings list and specified arguments.
-  if (failed(filterOverloadSet(operands,
-                               /*allowImplicitConversions=*/true,
-                               /*emitDiagnosticOnFailure=*/true, emitter)))
-    return {};
-
-  PValue callee = getCallee(emitter);
+  PValue callee = filterOverloadSet(operands,
+                                    /*allowImplicitConversions=*/true,
+                                    /*emitDiagnosticOnFailure=*/true, emitter);
   if (!callee)
     return {};
 
   SignatureType calleeSig = cast<SignatureType>(callee.getType().mlirType);
 
   // Check declarations for the result parameters and collect them here.
-  SmallVector<ParamDeclAttr> resultParamDecls;
-
   assert(calleeSig.getResultParamTypes().size() == resultParams.size() &&
          "We know that the callee is type checked");
 
@@ -1629,6 +1619,7 @@ CValue OverloadSet::emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   //
   // TODO: We don't remap input parameters types into output parameter types.
   // We surely handle this wrong: `fn x[a: type -> a]():` for example.
+  SmallVector<ParamDeclAttr> resultParamDecls;
   for (auto [type, declAndLoc] :
        llvm::zip(calleeSig.getResultParamTypes(), resultParams)) {
     auto forwardDecl = cast<AliasForwardDeclOp>(*declAndLoc.first);
@@ -1678,6 +1669,8 @@ CValue ExprEmitter::emitIndirectCall(CValue callee,
     return emitNamedMethodCall("__call__", callOperands, dest,
                                CallSyntax::kDirectCall, callExpr);
   }
+
+  assert(calleeSig.getResultParamTypes().empty());
 
   // If we have a function pointer, resolve it to an RValue.
   CRValue calleeRV = emitCRValue({callee, callExpr}, EC_CallCalleeValue);

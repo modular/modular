@@ -1082,10 +1082,11 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
 
   // This needs to call filterOverloadSet manually because we cannot allow
   // implicit conversions here.
-  return succeeded(callee.filterOverloadSet(args,
-                                            /*allowImplicitConversions=*/false,
-                                            /*emitDiagnosticOnFailure=*/false,
-                                            *this));
+  PValue calleeFn =
+      callee.filterOverloadSet(args,
+                               /*allowImplicitConversions=*/false,
+                               /*emitDiagnosticOnFailure=*/false, *this);
+  return !calleeFn.isNull();
 }
 
 /// Emit the specified expression as a condition, converting it to an MLIR I1
@@ -1295,9 +1296,10 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
     args = argsWithSelf;
   }
 
-  if (failed(callee.filterOverloadSet(
-          args, allowImplicitConversion,
-          /*emitDiagnosticOnFailure=*/!hasCustomErrorReporting, *this))) {
+  PValue calleeFn = callee.filterOverloadSet(
+      args, allowImplicitConversion,
+      /*emitDiagnosticOnFailure=*/!hasCustomErrorReporting, *this);
+  if (!calleeFn) {
     if (hasCustomErrorReporting)
       errorHandler();
     return {};
@@ -1306,12 +1308,11 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
   // If we successfully resolve the overload set, we know the call will succeed,
   // do it.
   if (!isMemoryOnly)
-    return callee.emitCall(args, dest, *this);
+    return emitCallUnchecked(calleeFn, args, {}, dest, expr);
 
-  auto calleeAttr = callee.getBoundConstantAttr(*this);
-  assert(calleeAttr && isa<SignatureType>(calleeAttr.getType()) &&
-         "Fully resolved call should have a concrete callee");
-  auto calleeSig = cast<SignatureType>(calleeAttr.getType());
+  // We need to invoke memory-only constructors specially since the buffer is
+  // exposed.
+  auto calleeSig = cast<SignatureType>(calleeFn.getType().mlirType);
   auto firstArgRVType =
       ASTType(calleeSig.getValueInputs()[0]).getPointerElementType();
 
@@ -1324,7 +1325,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
     return {};
 
   // Emit the call, but not into 'dest', typically init will return None.
-  CValue result = callee.emitCall(args, ValueDest::none(), *this);
+  CValue result = emitIndirectCall(calleeFn, args, ValueDest::none(), expr);
   if (!result)
     return {};
 
