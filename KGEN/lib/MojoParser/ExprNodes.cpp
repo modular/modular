@@ -2126,8 +2126,8 @@ AnyValue BinOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 }
 
 /// Given two values that need to match, try to coerce one to the other if they
-/// disagree on type.  This emits an error and returns failure if the request is
-/// ambiguous or impossible.
+/// disagree on type.  This emits an error (when loc is non-null) and returns
+/// failure if the request is ambiguous or impossible.
 template <typename ValueType>
 static ParseResult
 coerceTypesToEachOther(SMLoc loc, ValueType &lhs, const ExprNode *lhsExpr,
@@ -2159,6 +2159,11 @@ coerceTypesToEachOther(SMLoc loc, ValueType &lhs, const ExprNode *lhsExpr,
     return failure(!rhs);
   }
 
+  // Otherwise we have an error.  If we have no source location, we just return
+  // failure without returning an error.
+  if (!loc.isValid())
+    return failure();
+
   if (!lhsConvertibleToRHS && !rhsConvertibleToLHS) {
     emitter.emitError(loc, "value of type ")
         << lhsType << " is not compatible with value of type " << rhsType
@@ -2187,11 +2192,9 @@ coerceTypesToEachOther(SMLoc loc, ValueType &lhs, const ExprNode *lhsExpr,
 ///   yields the desired value.
 ///
 /// Unlike Python, we have static types that could disagree.  Our policy on
-/// this is to either return the pre-Bool'ified value when their types agree,
-/// or to return the common Bool type if they don't.
-///
-/// TODO(subtyping): With subtypes, we can find intersection types, e.g. a
-/// common superclass.
+/// this is to either return the pre-Bool'ified value when their types agree (or
+/// can be converted to each other unambiguously) or to return the common Bool
+/// type if they don't.
 ///
 AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
   Location ifLoc = getLocation(emitter);
@@ -2207,7 +2210,7 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
     // Coerce the true/false values into a compatible type if they disagree.
     auto convertValue = [&](ASTExprAnd<AnyValue> value, ASTType type,
                             bool isLHS) -> PValue {
-      return emitter.emitPValue(value, EC_CondExpr, type);
+      return emitter.emitPValue(value, EC_OperatorOperandValue, type);
     };
     if (coerceTypesToEachOther<PValue>(getLoc(), lhsPVal, lhs, rhsPVal, rhs,
                                        emitter, convertValue))
@@ -2221,19 +2224,16 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
     return emitter.emitResult(value, this, dest);
   }
 
-  // Emit the LHS value and capture the result of calling __bool__ in case we
-  // need it.
-  CValue lhsBool;
-  // FIXME: Support memory-only bool convertible types as well.
-  SRValue lhsRV = emitter.emitExprSRValue(lhs, EC_OperatorOperandValue);
-  RValue lhsI1Value = emitter.emitI1({lhsRV, lhs}, lhsBool);
-  Value lhsI1SRValue =
+  // Emit the LHS value as a bool/i1 value.
+  CValue lhsV = emitter.emitExprCValue(lhs, EC_OperatorOperandValue);
+  RValue lhsI1Value = emitter.emitI1({lhsV, lhs});
+  SRValue lhsI1SRValue =
       emitter.emitSRValue({AnyValue(lhsI1Value), lhs}, EC_BoolCondition);
   if (!lhsI1SRValue)
     return {};
 
   auto ifOp = emitter.builder->create<HLCF::IfOp>(
-      ifLoc, TypeRange{lhsBool.getType()}, lhsI1SRValue);
+      ifLoc, TypeRange{lhsV.getType()}, lhsI1SRValue);
   emitter.builder->createBlock(&ifOp.getThenRegion());
   emitter.builder->createBlock(&ifOp.getElseRegion());
 
@@ -2243,46 +2243,96 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
     std::swap(trueBuilder, falseBuilder);
 
   emitter.builder = trueBuilder;
-  SRValue rhsRV = emitter.emitExprSRValue(rhs, EC_BoolCondition);
-  if (!rhsRV)
+  CValue rhsV = emitter.emitExprCValue(rhs, EC_BoolCondition);
+  if (!rhsV)
     return {};
 
-  // Now that we know lhsRV and rhsRV we can tell if they have common types.
-  // If so, we use that as the result of the 'if'.
-  if (lhsRV.getType().isEqualCanon(rhsRV.getType())) {
-    emitter.builder->create<HLCF::YieldOp>(ifLoc, rhsRV);
-    // Emit the false side.
-    emitter.builder = falseBuilder;
-    emitter.builder->create<HLCF::YieldOp>(ifLoc, lhsRV);
-    ifOp->getResult(0).setType(lhsRV.getType());
-  } else {
-    // Otherwise, check to see if their boolean versions are compatible.
-    auto rhsBool = emitter.emitNamedMethodCall(
-        "__bool__", {{rhsRV, rhs}}, ValueDest::none(),
-        CallSyntax::kImplicitConvert, this);
-    if (!rhsBool)
+  /// If the types disagree, then we need to emit a conversion to a common
+  /// type. See if one is convertible to the other, and if so, emit a
+  /// conversion to get to a common type.
+  auto convertValue = [&](ASTExprAnd<AnyValue> value, ASTType type,
+                          bool isLHS) -> CValue {
+    emitter.builder = isLHS ? falseBuilder : trueBuilder;
+    return emitter.emitCValue(value, EC_OperatorOperandValue, type);
+  };
+  // Try to find compatibility between the raw values.  Pass in a null SMLoc so
+  // that an error isn't diagnosed with an error message.
+  if (coerceTypesToEachOther<CValue>(SMLoc(), lhsV, lhs, rhsV, rhs, emitter,
+                                     convertValue)) {
+    // If the two types are incompatible or ambiguously convertible to each
+    // other, then the user wrote something like `if someInt and someString`.
+    // This has no common type to return, but the result should still be
+    // boolean-ish.  Handle this by extracting the boolean result out of the
+    // second argument and converting that to a proper Bool result.
+    ASTType boolType = emitter.shared.getBuiltinBoolType(getLoc());
+    if (!boolType)
       return {};
-    if (!lhsBool.getType().isEqualCanon(rhsBool.getType())) {
-      emitter.emitError(getLoc(), "cannot find common type between ")
-          << lhsRV.getType() << " and " << rhsRV.getType() << lhs->getRange()
-          << rhs->getRange();
-      return {};
+
+    // If the RHS is already a Bool, we're good, otherwise convert to i1 then
+    // back to Bool with a ctor.
+    if (!rhsV.getRValueType().isEqualCanon(boolType)) {
+      RValue rhsI1Value = emitter.emitI1({rhsV, rhs});
+      rhsV = convertValue({rhsI1Value, rhs}, boolType, /*isLHS=*/false);
     }
-    auto rhsBoolDRVal = emitter.emitSRValue({rhsBool, rhs}, EC_BoolCondition);
-    if (!rhsBoolDRVal)
+
+    // Similarly, if the LHS was already a Bool then use it, otherwise convert
+    // the i1 we already have back to Bool with a ctor.
+    if (!lhsV.getRValueType().isEqualCanon(boolType))
+      lhsV = convertValue({lhsI1SRValue, lhs}, boolType, /*isLHS=*/true);
+
+    if (!lhsV || !rhsV)
       return {};
-    emitter.builder->create<HLCF::YieldOp>(ifLoc, rhsBoolDRVal);
-    // Emit the false side.
-    emitter.builder = falseBuilder;
-    auto lhsBoolDRVal = emitter.emitSRValue({lhsBool, lhs}, EC_BoolCondition);
-    if (!lhsBoolDRVal)
-      return {};
-    emitter.builder->create<HLCF::YieldOp>(ifLoc, lhsBoolDRVal);
-    ifOp->getResult(0).setType(lhsBool.getType());
   }
 
+  // Now we know they have common types.
+  auto resultType = lhsV.getRValueType();
+  if (resultType.isRegisterPassable(lhs->getLoc(), emitter.shared)) {
+    emitter.builder = trueBuilder;
+    auto rhsSR = emitter.emitSRValue({rhsV, rhs}, EC_OperatorOperandValue);
+    if (!rhsSR)
+      return {};
+    emitter.builder->create<HLCF::YieldOp>(ifLoc, rhsSR);
+    // Emit the false side.
+    emitter.builder = falseBuilder;
+    auto lhsSR = emitter.emitSRValue({lhsV, rhs}, EC_OperatorOperandValue);
+    if (!lhsSR)
+      return {};
+    emitter.builder->create<HLCF::YieldOp>(ifLoc, lhsSR);
+    ifOp->getResult(0).setType(lhsSR.getType());
+    emitter.builder->setInsertionPointAfter(ifOp);
+    return emitter.emitResult(SRValue(ifOp.getResult(0)), this, dest);
+  }
+
+  // If we have a memory only type, we have to handle the various issues with
+  // the ValueDest.  It may specify an SLValue to emit into, it may be
+  // ambiguous (like a call argument) or it may even be something like a
+  // DLValue.  We handle this by projecting the ValueDest to an SLValue if we
+  // can, but otherwise using a scratch buffer if not.
+  emitter.builder->setInsertionPoint(ifOp);
+  SLValue destBuffer = dest.getSLValueForResult(getLoc(), resultType, emitter);
+
+  emitter.builder = falseBuilder;
+  ValueDest falseDest(destBuffer, EC_CondExpr);
+  if (!emitter.emitResult(lhsV, lhs, falseDest))
+    falseDest.resetForError();
+  emitter.builder->create<HLCF::YieldOp>(ifLoc);
+
+  emitter.builder = trueBuilder;
+  ValueDest trueDest(destBuffer, EC_CondExpr);
+  if (!emitter.emitResult(rhsV, rhs, trueDest))
+    trueDest.resetForError();
+  emitter.builder->create<HLCF::YieldOp>(ifLoc);
+
+  // MemoryOnly results don't need the 'if' result.  There is no way to remove
+  // results after creating it, so we create a new IfOp and move IR over.
   emitter.builder->setInsertionPointAfter(ifOp);
-  return emitter.emitResult(SRValue(ifOp.getResult(0)), this, dest);
+  auto newIfOp =
+      emitter.builder->create<HLCF::IfOp>(ifLoc, TypeRange{}, lhsI1SRValue);
+  newIfOp.getThenRegion().takeBody(ifOp.getThenRegion());
+  newIfOp.getElseRegion().takeBody(ifOp.getElseRegion());
+  ifOp->erase();
+
+  return emitter.emitCResult(MRValue(destBuffer), this, dest);
 }
 
 /// Emit the x^ expression.
@@ -2489,11 +2539,10 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
                                      falseExpr, emitter, convertValue))
     return {};
 
-  auto resultType = trueVal.getRValueType();
-
   // Ok, we now know if the types were register_passable or not, so finish up
   // the logic.  register_passable values get merged together as SSA registers
   // in the 'if' result.
+  auto resultType = trueVal.getRValueType();
   if (resultType.isRegisterPassable(trueExpr->getLoc(), emitter.shared)) {
     // Finish false.
     emitter.builder->setInsertionPointToEnd(&ifOp.getElseBlock());
@@ -2523,12 +2572,14 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   emitter.builder->setInsertionPointToEnd(&ifOp.getElseBlock());
   ValueDest falseDest(destBuffer, EC_CondExpr);
-  auto falseResult = emitter.emitResult(falseVal, falseExpr, falseDest);
+  if (!emitter.emitResult(falseVal, falseExpr, falseDest))
+    falseDest.resetForError();
   emitter.builder->create<HLCF::YieldOp>(ifLoc);
 
   emitter.builder->setInsertionPointToEnd(&ifOp.getThenBlock());
   ValueDest trueDest(destBuffer, EC_CondExpr);
-  auto result = emitter.emitResult(trueVal, falseExpr, trueDest);
+  if (!emitter.emitResult(trueVal, falseExpr, trueDest))
+    trueDest.resetForError();
   emitter.builder->create<HLCF::YieldOp>(ifLoc);
 
   // MemoryOnly results don't need the 'if' result.  There is no way to remove
@@ -2559,15 +2610,14 @@ AnyValue ChainedCmpOpNode::emitNextCmp(ExprEmitter &emitter, size_t opIdx,
                                        SRValue lastCmpExpr,
                                        SRValue lastExpr) const {
   Location ifLoc = lastCmpExpr.getLoc();
-  CValue boolResult;
   OpBuilder lastBuilder = emitter.builder.value();
-  RValue lastCmpI1Value = emitter.emitI1({lastCmpExpr, this}, boolResult);
+  RValue lastCmpI1Value = emitter.emitI1({lastCmpExpr, this});
   SRValue lastCmpI1RValue =
       emitter.emitSRValue({AnyValue(lastCmpI1Value), this}, EC_BoolCondition);
   if (!lastCmpI1RValue)
     return {};
   auto ifOp = emitter.builder->create<HLCF::IfOp>(
-      ifLoc, boolResult.getType().mlirType, lastCmpI1RValue);
+      ifLoc, lastCmpI1RValue.getType().mlirType, lastCmpI1RValue);
   emitter.builder->createBlock(&ifOp.getThenRegion());
   SRValue exprValue =
       emitter.emitExprSRValue(exprs[opIdx + 1], EC_OperatorOperandValue);

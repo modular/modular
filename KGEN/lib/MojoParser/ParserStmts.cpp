@@ -1133,8 +1133,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   CValue exitResult = getEmitter().emitNamedMethodCall(
       "__exit__", {{contextRV, contextExp}, {errorVal, contextExp}},
       ValueDest::none(), CallSyntax::kMethodCall, contextExp);
-  CValue boolResult;
-  RValue exitI1RVal = getEmitter().emitI1({exitResult, contextExp}, boolResult);
+  RValue exitI1RVal = getEmitter().emitI1({exitResult, contextExp});
   SRValue exitI1Val =
       getEmitter().emitSRValue({exitI1RVal, contextExp}, EC_WithExitResult);
   // If __exit__ returns false, then re-raise the error.

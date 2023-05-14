@@ -195,23 +195,10 @@ def tuple_return():
 # Other Specific expression forms
 ##===----------------------------------------------------------------------===##
 
-# TODO: Implement support for logical operators on memory-only types.
 @register_passable
 struct WeirdBoolish:
-  fn __bool__(self) -> Int: return 0
+  fn __bool__(self) -> Bool: return False
   fn __copyinit__(self) -> Self: pass;
-
-struct WeirdBoolishMem:
-  fn __bool__(self) -> Int: return 0
-  fn __copyinit__(inout self, existing: Self):
-    pass;
-
-
-fn badAnd(a: Bool, b: WeirdBoolish, c: WeirdBoolishMem):
-  _ = a and b # expected-error {{cannot find common type between 'Bool' and 'WeirdBoolish'}}
-
-  # expected-error @+1 {{cannot load non-register passable type into SSA register}}
-  _ = c and c
 
 fn badParamAnd[a: Bool, b: WeirdBoolish]():
   #expected-error @+1 {{value of type 'Bool' is not compatible with value of type 'WeirdBoolish'}}

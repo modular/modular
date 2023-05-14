@@ -335,11 +335,9 @@ public:
                                   ASTType requiredType);
 
   /// Emit the specified expression as a condition, converting it to an MLIR
-  /// I1 value that we can test directly, and also returning the
-  /// intermediate result of calling `__bool__` (which is typically a Bool
-  /// or object type, but not guaranteed).  This reports and error and
-  /// returns null on error.
-  RValue emitI1(ASTExprAnd<CValue> expr, CValue &boolResult);
+  /// I1 value that we can test directly.  This reports and error and returns
+  /// null on error.
+  RValue emitI1(ASTExprAnd<CValue> expr);
 
   //===--------------------------------------------------------------------===//
   // Emission helpers for various value classifications.
