@@ -42,6 +42,28 @@ using namespace lldb_private;
 using namespace M;
 using namespace M::KGEN::Mojo;
 
+namespace {
+/// Utility class for constructing a lldb::SBDebugger from a lldb::DebuggerSP
+class SBDebuggerExtractor : public SBDebugger {
+public:
+  SBDebuggerExtractor(const DebuggerSP &debugger) : SBDebugger(debugger) {}
+};
+
+/// Utility class for constructing a lldb::SBTarget from a lldb::TargetSP
+class SBTargetExtractor : public SBTarget {
+public:
+  SBTargetExtractor(const TargetSP &target) : SBTarget(target) {}
+};
+
+/// Utility class for constructing a lldb::SBValue from a lldb::ValueObjectSP
+class SBValueExtractor : public SBValue {
+public:
+  SBValueExtractor(const ValueObjectSP &value) : SBValue(value) {}
+  SBValueExtractor(const SBValue &value) : SBValue(value) {}
+  ValueObjectSP GetSP() const { return SBValue::GetSP(); }
+};
+
+} // namespace
 /// An output function used to send output to the Jupyter kernel. The first
 /// argument is the output type, and the second is the output string.
 using OutputFn = void (*)(const char *, const char *);
@@ -158,9 +180,9 @@ public:
   ~MojoKernel() {
     if (process->IsValid())
       process->Destroy(/*force_kill=*/true);
-    SBDebugger sbdebugger(debugger);
-    SBDebugger::Destroy(sbdebugger);
-    SBDebugger::Terminate();
+    SBDebuggerExtractor sbdebugger(debugger);
+    SBDebuggerExtractor::Destroy(sbdebugger);
+    SBDebuggerExtractor::Terminate();
   }
 
   /// Initialize the kernel.
@@ -464,11 +486,13 @@ void MojoKernel::startExecution(StringRef cellId, const char *expr,
           if (!storeHistory)
             options.SetSuppressPersistentResult(true);
 
-          value =
-              SBTarget(target).EvaluateExpression(expr.data(), options).GetSP();
+          value = SBValueExtractor(
+              SBValueExtractor(SBTargetExtractor(target).EvaluateExpression(
+                                   expr.data(), options))
+                  .GetSP());
         }
 
-        executionState->result = value.GetSP();
+        executionState->result = SBValueExtractor(value).GetSP();
         executionState->error = value.GetError();
 
         // Mark the execution as finished.
