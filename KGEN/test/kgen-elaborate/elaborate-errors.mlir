@@ -1,7 +1,7 @@
 // RUN: kgen-opt %s -elaborate-generators="enable-search=true" -verify-diagnostics -split-input-file -allow-unregistered-dialect
 
 // This yields a verification error when elaborated.
-// expected-error @+1 {{no viable expansions found}}
+// expected-error @below {{no viable expansions found}}
 kgen.generator @local_verif_error() {
 
   kgen.param.declare ty : dtype = <f32>
@@ -17,14 +17,15 @@ kgen.generator @local_verif_error() {
 
 // Recursive expansions.
 
-// expected-note-re @+1 {{elaborator expansion is {{[0-9]+}} levels deep - infinite recursion?}}
+// expected-note @below {{no viable expansions found}}
+// expected-note-re @below {{elaborator expansion is {{[0-9]+}} levels deep - infinite recursion?}}
 kgen.generator @genItf3<x>() {
   // expected-note @+1 {{call expansion failed}}
   kgen.call @genItf3<add(x, 1)>() : () -> ()
   kgen.return
 }
 
-// expected-error @+1 {{no viable expansions found}}
+// expected-error @below {{no viable expansions found}}
 kgen.generator @use_Itf3two() {
   // expected-note @+1 {{call expansion failed}}
   kgen.call @genItf3<2>() : () -> ()
@@ -136,6 +137,7 @@ kgen.generator @brokenVLenAssert() {
 
 // -----
 
+// expected-note @below {{no viable expansions found}}
 kgen.generator @paramRecurse<in -> out>() {
   kgen.param.if <eq(in, 0) -> v> {
     kgen.param.result_bind<0>
@@ -162,7 +164,7 @@ kgen.generator @caller() {
 
 // COM: Unused `kgen.param.declare` should not be ignored.
 
-// expected-note @below {{no successful concrete nodes}}
+// expected-note @below {{no viable expansions found}}
 kgen.generator @fail_if_zero<value>() -> index {
   %0 = index.constant 0
   // expected-note @below {{constraint failed: must not be zero!}}
@@ -251,7 +253,9 @@ kgen.generator @evaluator(%fns: !pop.pointer<() -> ()>, %size: index) -> index {
   kgen.return %idx0 : index
 }
 
+// expected-note @below {{no viable expansions found}}
 kgen.generator @no_valid_specializations() {
+  // expected-note @below {{constraint failed: none}}
   kgen.param.assert <0>, "none"
   kgen.return
 }
@@ -259,7 +263,6 @@ kgen.generator @no_valid_specializations() {
 kgen.export @entry
 // expected-error @below {{no viable expansions found}}
 kgen.generator @entry() {
-  // expected-note @below {{function has no valid specializations to evaluate}}
   kgen.param.declare f: () -> () = <evaluate(:variadic<!kgen.signature<() -> ()>> [@no_valid_specializations],
                                              :(!pop.pointer<() -> ()>, index) -> index @evaluator)>
   kgen.return

@@ -35,6 +35,7 @@
 #include "mlir/Support/DebugStringHelper.h"
 #include "mlir/Support/IndentedOstream.h"
 #include "mlir/Transforms/RegionUtils.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/SaveAndRestore.h"
@@ -107,392 +108,70 @@ private:
 } // namespace
 
 //===----------------------------------------------------------------------===//
-// ExpansionTreeNode
+// ExpansionGraph
 //===----------------------------------------------------------------------===//
 
 namespace {
-/// This struct is a node in the expansion tree that describes the elaboration.
-/// In general, we try to limit effects to a single subtree. The only exception
-/// is that creating new generators/funcs generally are children of the root -
-/// this is because they're semi-independent of the current node and will
-/// elaborate to something concrete we can simply refer to. We try to track
-/// dependencies in order to make that graph explicit.
-struct ExpansionTreeNode {
-public:
-  static ExpansionTreeNode *
-  create(Operation *op, ArrayAttr inputParams, ExpansionTreeNode *parent,
-         const IREvaluator &evaluator, unsigned expansionDepth,
-         unsigned maxDepth,
-         std::optional<ParameterUseDefGraph> paramGraph = std::nullopt);
+struct ParamNode;
 
-private:
-  /// Construct an expansion tree node. The node adds itself to its parent's
-  /// children list, and inherits its parent's evaluator.
-  ExpansionTreeNode(Operation *op, ArrayAttr inputParams,
-                    ExpansionTreeNode *parent, const IREvaluator &evaluator,
-                    std::optional<ParameterUseDefGraph> paramGraph,
-                    unsigned expansionDepth);
-
-public:
-  /// Construct an expansion tree node without a parent. This should only be
-  /// used for the tree root.
-  ExpansionTreeNode(ModuleOp op, const IREvaluator &evaluator,
-                    llvm::SpecificBumpPtrAllocator<ExpansionTreeNode> &alloc,
-                    Logger &logger)
-      : op(op), evaluator(evaluator), paramGraph(std::nullopt), alloc(alloc),
-        expansionDepth(0), logger(logger) {}
-
-  /// Return the name of the operation this node represents.
-  StringAttr getNameAttr() { return op.getNameAttr(); }
-
-  /// Get the root of the tree. This is useful for when you need to add a new
-  /// generator to multi-version a call, for example. There is always a single
-  /// root.
-  ExpansionTreeNode *getRoot();
-
-  /// Compute the distance of this node from the root of the tree. Used to
-  /// enforce invariants about the tree's structure regarding its depth.
-  size_t distanceFromRoot();
-
-  /// Check if we are at the root of the tree. There must be a single root.
-  bool isRoot() { return getRoot() == this; }
-
-  /// Return true if this can be resolved to at least one concrete value.
-  bool isConcrete();
-
-  /// Return the first concrete node in the subtree rooted on `this`. This is
-  /// often called from a node that is either concrete, or only has one
-  /// concretization. For generality in cases where the full list of concrete
-  /// nodes is required, use getAllConcrete below. Returns an error if there are
-  /// no concretizations of this node.
-  ErrorTreeOr<ExpansionTreeNode *> getFirstConcreteNode();
-
-  /// Get the first concrete FuncOp. This finds the first concrete node in the
-  /// subtree, and returns its op cast to a FuncOp. This is always safe because
-  /// if the node has been concretized, then the op is a FuncOp.
-  ErrorTreeOr<FuncOp> getFirstConcrete() {
-    auto concNode = getFirstConcreteNode();
-    if (concNode.isError())
-      return concNode.takeError();
-
-    return cast<FuncOp>((*concNode)->op);
-  }
-
-  /// Get all the concrete nodes in the tree rooted on `this`. This is useful
-  /// when you have something like a GeneratorInterface that can concretize to
-  /// multiple valid generators, and from that multiple functions.
-  void getAllConcreteNodes(std::vector<ExpansionTreeNode *> &concrete);
-
-  /// Get all the concrete functions in the tree rooted on `this`. Exactly the
-  /// same as `getAllConcreteNodes` above, but only returns the FuncOp. Useful
-  /// when you don't need the full ExpansionTreeNode.
-  void getAllConcrete(std::vector<FuncOp> &concrete);
-
-  /// Trims children that failed out of the subtree rooted on `this`. This is
-  /// useful for looking at the final state of a tree after resolution has
-  /// occurred - specifically in cases where we may have a failed expansion due
-  /// to a param.assert, for example.
-  void trimFailedExpansions(DenseSet<Operation *> &toErase);
-
-  /// Collect all the errors in my subtree into a single error tree.
-  void collectSubtreeErrors(ErrorTree &tree);
+/// This struct represents a concrete instantiation of a generator -- generators
+/// may have multiple concrete instantiations -- and contains the current state
+/// of elaboration for that concrete instance.
+struct ImplNode {
+  /// Create a new generator implementation node.
+  ImplNode(FuncOp func, ParamNode *parent, IREvaluator &&evaluator,
+           ParameterUseDefGraph &&graph)
+      : func(func), parent(parent), evaluator(std::move(evaluator)),
+        paramGraph(std::move(graph)) {}
 
   /// Take the provided error and set this node to an `error` state. Erase all
   /// state dominated by this node.
-  void setToError(ErrorTree &&err);
-
-  /// Update the debug info on the concretization of the current node. This
-  /// means, if there are child nodes, update their debug info. This should be
-  /// called after the operations are renamed at the end of the pass.
-  void updateDebugInfo();
+  void setToError(ErrorTree &&err) {
+    assert(!error && "impl node already has an error");
+    error = std::move(err);
+  }
 
   /// Print this tree to the provided indented stream. This preserves any
   /// indentation provided by the caller to make it possible to nest things
   /// nicely.
   void print(mlir::raw_indented_ostream &os, bool printBindings = true);
 
-  /// Dump this node to llvm::errs().
-  LLVM_DUMP_METHOD void dump() {
-    mlir::raw_indented_ostream os(llvm::errs());
-    print(os);
-  }
+  /// This function represents a concrete instantiation of a generator.
+  FuncOp func;
+  /// The parent expansion tree node.
+  ParamNode *parent;
 
-  /// Each node is rooted on an op that defines a symbol.
-  mlir::SymbolOpInterface op;
-  /// The tree node is uniqued by the pair [op, inputParams]. This is the input
-  /// parameter storage.
-  ArrayAttr inputParams;
-  /// When you have result parameters, we need to store them to access them from
-  /// outer scopes.
-  ArrayAttr resultParams;
   /// The evaluator is shared with scopes below, but not scopes above,
   /// generally. That's why it's copied rather than taking a reference.
   IREvaluator evaluator;
-
-  /// Keep track of the nested parameter scopes within this op. This is optional
-  /// because for example, the root module does not have one of these.
-  std::optional<ParameterUseDefGraph> paramGraph;
-
-  /// Set of known parameter regions. Maps a string attr (name) to a
-  /// ParameterUseDefGraph for the original region in its original context. This
-  /// is needed because we inline the region directly and collect the ops we
-  /// need to process from the original region.
-  DenseMap<StringAttr, ParameterUseDefGraph *> knownRegions;
-
-  /// Parent node. This is useful for setting parameters on the parent's scope,
-  /// for example. Each node must have one parent.
-  ExpansionTreeNode *parent = nullptr;
+  /// Keep track of the nested parameter scopes within this function.
+  ParameterUseDefGraph paramGraph;
 
   /// Calls to the same interface/generator should resolve to the same thing in
   /// each func.
-  DenseMap<std::pair<Operation *, ArrayAttr>, ExpansionTreeNode *> bindings;
-
+  DenseMap<std::pair<ArrayAttr, GeneratorOp>, ImplNode *> bindings;
+  /// When you have result parameters, we need to store them to access them from
+  /// outer scopes.
+  ArrayAttr resultParams;
   /// An error contained by this node. This allows us to delay error handling in
   /// cases where an error is recoverable.
   std::optional<ErrorTree> error;
 
-  /// The children of a node are specializations. They may not be fully concrete
-  /// in the case of e.g. an interface - where the children are generators that
-  /// themselves have children.
-  std::vector<ExpansionTreeNode *> expansions;
-
-  /// The allocator to use for allocating new children.
-  llvm::SpecificBumpPtrAllocator<ExpansionTreeNode> &alloc;
-
-  /// The expansion depth - we use this to track recursion.
-  unsigned expansionDepth;
-
-  /// A logger to use for this node.
-  Logger &logger;
+  /// The current state of elaboration on the function.
+  enum { FRESH, IN_PROGRESS, DONE } status = FRESH;
 };
-} // namespace
 
-// TODO: need to find a way to order these, insert them right before/after
-// something else maybe?
-ExpansionTreeNode *ExpansionTreeNode::create(
-    Operation *op, ArrayAttr inputParams, ExpansionTreeNode *parent,
-    const IREvaluator &evaluator, unsigned expansionDepth, unsigned maxDepth,
-    std::optional<ParameterUseDefGraph> paramGraph) {
-  auto *out = new (parent->alloc.Allocate())
-      ExpansionTreeNode(op, inputParams, parent, evaluator,
-                        std::move(paramGraph), ++expansionDepth);
-  if (expansionDepth > maxDepth) {
-    out->error = ErrorTree(op->getLoc(),
-                           "elaborator expansion is " + Twine(maxDepth + 1) +
-                               " levels deep - infinite recursion?");
-  }
-  assert(out->distanceFromRoot() <= 3 &&
-         "Should have at most 3 hops to the root");
-  parent->expansions.push_back(out);
-  return parent->expansions.back();
-}
-
-ExpansionTreeNode::ExpansionTreeNode(
-    Operation *op, ArrayAttr inputParams, ExpansionTreeNode *parent,
-    const IREvaluator &evaluator,
-    std::optional<ParameterUseDefGraph> paramGraph, unsigned expansionDepth)
-    : op(op), inputParams(inputParams), evaluator(evaluator),
-      paramGraph(std::move(paramGraph)), parent(parent),
-      bindings(parent->bindings), alloc(parent->alloc),
-      expansionDepth(expansionDepth), logger(parent->logger) {
-  LLVM_DEBUG(print(logger << "Constructing "));
-}
-
-bool ExpansionTreeNode::isConcrete() {
-  if (expansions.empty())
-    return !error.has_value();
-
-  for (auto &c : expansions)
-    if (c->isConcrete())
-      return true;
-
-  return false;
-}
-
-ExpansionTreeNode *ExpansionTreeNode::getRoot() {
-  if (parent)
-    return parent->getRoot();
-
-  return this;
-}
-
-size_t ExpansionTreeNode::distanceFromRoot() {
-  size_t result = 0;
-  ExpansionTreeNode *ptr = this;
-  while (ptr != getRoot()) {
-    ptr = ptr->parent;
-    ++result;
-  }
-
-  return result;
-}
-
-ErrorTreeOr<ExpansionTreeNode *> ExpansionTreeNode::getFirstConcreteNode() {
-  // If I have no children, then I am error or concrete myself.
-  if (expansions.empty()) {
-    if (error)
-      return error->copy();
-    return this;
-  }
-
-  // Return the first successful child.
-  for (auto &c : expansions) {
-    auto concNode = c->getFirstConcreteNode();
-    if (!concNode.isError())
-      return concNode;
-  }
-
-  // Otherwise, collect up all the errors in my children and report them.
-  ErrorTree out(op.getLoc(), "no successful concrete nodes");
-  for (auto &c : expansions)
-    out.addCause(c->error->copy());
-
-  return out;
-}
-
-// TODO: make these iterative, not recursive?
-void ExpansionTreeNode::getAllConcreteNodes(
-    std::vector<ExpansionTreeNode *> &concrete) {
-  // Only deal with leaves - we have to check and see if the error has been
-  // set for this leaf.
-  if (expansions.empty() && !error)
-    return concrete.push_back(this);
-
-  for (auto &ch : expansions)
-    ch->getAllConcreteNodes(concrete);
-}
-
-void ExpansionTreeNode::getAllConcrete(std::vector<FuncOp> &concrete) {
-  // If I am concrete, add my concrete impl and return. If I have an error,
-  // then do nothing.
-  if (expansions.empty() && !error)
-    return concrete.push_back(cast<FuncOp>(op));
-
-  // Otherwise, recurse into my children.
-  for (auto &ch : expansions)
-    ch->getAllConcrete(concrete);
-}
-
-void ExpansionTreeNode::trimFailedExpansions(DenseSet<Operation *> &toErase) {
-  // If I am concrete, hold an error, and am unique, then erase my op and move
-  // along.
-  if (expansions.empty()) {
-    if (!error)
-      return;
-    LLVM_DEBUG(print(logger.scope("Erasing Failed Node")));
-    if (op)
-      toErase.insert(op);
-    return;
-  }
-  auto _ = logger.scope("Trimming Failed Children");
-  // Only log the op if we have it - it may have already been deleted.
-  LLVM_DEBUG({
-    if (op)
-      logger.logOp("Op", op);
-  });
-
-  // Post-order trimming here - visit children first.
-  for (auto &ch : expansions)
-    ch->trimFailedExpansions(toErase);
-
-  size_t numChildren = expansions.size();
-  // Erase children that failed.
-  auto newEnd = llvm::remove_if(expansions,
-                                [](auto &ch) { return ch->error.has_value(); });
-
-  // If I've just erased all my children, then I have failed. Propagate the
-  // error up.
-  if (newEnd == expansions.begin() && numChildren != 0) {
-    error = ErrorTree(op.getLoc(), "no viable expansions found");
-    collectSubtreeErrors(*error);
-  }
-
-  // Finally, actually erase the vector.
-  expansions.erase(newEnd, expansions.end());
-}
-
-void ExpansionTreeNode::collectSubtreeErrors(ErrorTree &tree) {
-  if (expansions.empty() && error)
-    tree.addCause(error->copy());
-
-  for (auto &ch : expansions)
-    ch->collectSubtreeErrors(tree);
-}
-
-void ExpansionTreeNode::setToError(ErrorTree &&err) {
-  // Take the error as the error in this node.
-  this->error = std::move(err);
-  // Trim the children if this has any by setting them to error.
-  for (ExpansionTreeNode *child : expansions)
-    child->setToError(this->error->copy());
-
-  // Erase the op if it's a FuncOp - can't erase generators cause different
-  // input params can mean different things.
-  if (llvm::isa_and_present<FuncOp>(op)) {
-    op->erase();
-    op = nullptr;
-  }
-}
-
-void ExpansionTreeNode::updateDebugInfo() {
-  for (auto &child : expansions)
-    child->updateDebugInfo();
-
-  if (!expansions.empty() || !op || error.has_value())
-    return;
-
-  auto oldFuncSp = DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(op);
-  if (!oldFuncSp)
-    return;
-
-  auto newFuncSp = DebugInfo::DISubprogramAttr::get(
-      oldFuncSp.getContext(), oldFuncSp.getCompileUnit(), oldFuncSp.getScope(),
-      op.getNameAttr(), op.getNameAttr(), oldFuncSp.getFile(),
-      oldFuncSp.getLine(), oldFuncSp.getScopeLine(),
-      oldFuncSp.getSubprogramFlags(), oldFuncSp.getType());
-  DebugInfo::DIAttrTypeReplacer replacer;
-  replacer.addReplacement(
-      [&](DebugInfo::DISubprogramAttr attr) { return newFuncSp; });
-  replacer.recursivelyReplaceElementsIn(op);
-}
-
-void ExpansionTreeNode::print(mlir::raw_indented_ostream &os,
-                              bool printBindings) {
-  // If we don't have an op, don't bother printing anything.
-  if (!op) {
-    // Only print the top level error.
-    if (error)
-      os << "Error: " << error->getError() << "\n";
-    return;
-  }
-
-  bool isRoot = (parent == nullptr);
-  os << "ExpansionTreeNode <" << (isRoot ? "Root" : getNameAttr().getValue())
-     << ">";
+void ImplNode::print(mlir::raw_indented_ostream &os, bool printBindings) {
+  os << "ImplNode <" << func.getSymName() << ">";
   auto _ = os.scope(" {\n", "}\n");
-
-  // Don't print the operation if this is the root (no need to dump the whole
-  // module).
-  if (!isRoot) {
-    {
-      auto opScope = os.scope("Op: {\n", "}\n");
-      op->print(os);
-      os << "\n";
-    }
-    if (inputParams && !inputParams.empty())
-      os << "InputParams: " << inputParams << "\n";
-    if (resultParams && !resultParams.empty())
-      os << "ResultParams: " << resultParams << "\n";
-    {
-      auto regionScope = os.scope("Known Regions: {\n", "}\n");
-      for (auto &[name, _] : knownRegions)
-        os << name << "\n";
-    }
+  if (func) {
+    auto opScope = os.scope("Op: {\n", "}\n");
+    func.print(os);
+    os << "\n";
   }
-
-  // Print the bindings only if requested - this is so we don't recurse
-  // infinitely to print the bindings of a recursive call.
-  if (printBindings) {
+  if (resultParams && !resultParams.empty())
+    os << "ResultParams: " << resultParams << "\n";
+  {
     auto _ = os.scope("Bindings: {\n", "}\n");
     for (const auto &[_, bind] : bindings) {
       if (bind != this)
@@ -501,20 +180,146 @@ void ExpansionTreeNode::print(mlir::raw_indented_ostream &os,
         os << "Self\n";
     }
   }
-
   // Errors are leaves.
   if (error) {
     // Only print the top level error.
     os << "Error: " << error->getError() << "\n";
     return;
   }
+}
+
+/// This struct is a node in the expansion tree that describes the elaboration.
+/// In general, we try to limit effects to a single subtree. The only exception
+/// is that creating new generators/funcs generally are children of the root -
+/// this is because they're semi-independent of the current node and will
+/// elaborate to something concrete we can simply refer to. We try to track
+/// dependencies in order to make that graph explicit.
+struct ParamNode {
+  /// Create an expansion tree node to represent a generator instantiation.
+  ParamNode(GeneratorOp gen, ArrayAttr vals) : gen(gen), inputParams(vals) {}
+
+  /// Return the first concrete node in the subtree rooted on `this`. This is
+  /// often called from a node that is either concrete, or only has one
+  /// concretization. For generality in cases where the full list of concrete
+  /// nodes is required, use getAllConcrete below. Returns an error if there are
+  /// no concretizations of this node.
+  ErrorTreeOr<ImplNode *> getFirstConcreteNode();
+
+  /// Get the first concrete FuncOp. This finds the first concrete node in the
+  /// subtree, and returns its op cast to a FuncOp. This is always safe because
+  /// if the node has been concretized, then the op is a FuncOp.
+  ErrorTreeOr<FuncOp> getFirstConcreteFunc();
+
+  /// Get all the concrete nodes in the tree rooted on `this`. This is useful
+  /// when you have something like a GeneratorInterface that can concretize to
+  /// multiple valid generators, and from that multiple functions.
+  void getAllConcreteNodes(std::vector<ImplNode *> &nodes);
+
+  /// Get all the concrete functions in the tree rooted on `this`. Exactly the
+  /// same as `getAllConcreteNodes` above, but only returns the FuncOp. Useful
+  /// when you don't need the full ParamNode.
+  void getAllConcreteFuncs(std::vector<FuncOp> &funcs);
+
+  /// Print this tree to the provided indented stream. This preserves any
+  /// indentation provided by the caller to make it possible to nest things
+  /// nicely.
+  void print(mlir::raw_indented_ostream &os, bool printBindings = true);
+
+  /// The generator represented by this node.
+  GeneratorOp gen;
+  /// The input parameters with which the generator is being instantiated.
+  ArrayAttr inputParams;
+
+  /// The children of a node are specializations. They may not be fully concrete
+  /// in the case of e.g. an interface - where the children are generators that
+  /// themselves have children.
+  std::vector<std::unique_ptr<ImplNode>> impls;
+
+  /// The current state of the node. This flag is used to break recursion.
+  enum { FRESH, IN_PROGRESS, DONE } status = FRESH;
+};
+
+void ParamNode::print(mlir::raw_indented_ostream &os, bool printBindings) {
+  os << "ImplNode <" << gen.getSymName() << ">";
+  auto _ = os.scope(" {\n", "}\n");
+  {
+    auto opScope = os.scope("Op: {\n", "}\n");
+    gen.print(os);
+    os << "\n";
+  }
+  if (inputParams && !inputParams.empty())
+    os << "InputParams: " << inputParams << "\n";
 
   // Print the children.
-  if (!expansions.empty()) {
+  if (!impls.empty()) {
     auto childrenScope = os.scope("Children: {\n", "}\n");
-    for (auto &child : expansions)
-      child->print(os);
+    for (ImplNode &child : llvm::make_pointee_range(impls))
+      child.print(os);
   }
+}
+
+/// This struct represents the expansion of a callgraph during elaboration.
+struct ExpansionGraph {
+  /// Map from generator instantiation to expansion tree node.
+  DenseMap<std::pair<ArrayAttr, GeneratorOp>, std::unique_ptr<ParamNode>> nodes;
+
+  /// Map from concrete function to implementation node.
+  DenseMap<FuncOp, ImplNode *> concreteNodes;
+
+  /// Fork the expansion of a concrete node.
+  ImplNode *fork(ImplNode *cur, IRMapping &map, SymbolTable &symtab) {
+    auto clone = cast<FuncOp>(cur->func->clone(map));
+    symtab.insert(clone, ++cur->func->getIterator());
+    auto n = std::make_unique<ImplNode>(clone, cur->parent,
+                                        IREvaluator(cur->evaluator),
+                                        cur->paramGraph.copy(map));
+    ImplNode *result = n.get();
+    cur->parent->impls.push_back(std::move(n));
+    concreteNodes.try_emplace(clone, result);
+    return result;
+  }
+
+  /// Get or create the node for a generator instantiation.
+  ParamNode *getOrCreate(ArrayAttr values, GeneratorOp gen) {
+    std::unique_ptr<ParamNode> &n = nodes[{values, gen}];
+    if (!n)
+      n = std::make_unique<ParamNode>(gen, values);
+    return n.get();
+  }
+};
+
+} // namespace
+
+ErrorTreeOr<ImplNode *> ParamNode::getFirstConcreteNode() {
+  if (impls.empty())
+    return ErrorTree(gen.getLoc(), "no viable expansions found");
+
+  ErrorTree err(gen.getLoc(), "no successful concrete nodes");
+  for (ImplNode &impl : llvm::make_pointee_range(impls)) {
+    if (!impl.error)
+      return &impl;
+    err.addCause(impl.error->copy());
+  }
+  return std::move(err);
+}
+
+ErrorTreeOr<FuncOp> ParamNode::getFirstConcreteFunc() {
+  ErrorTreeOr<ImplNode *> impl = getFirstConcreteNode();
+  if (impl.isError())
+    return impl.takeError();
+  return impl.takeValue()->func;
+}
+
+void ParamNode::getAllConcreteNodes(std::vector<ImplNode *> &nodes) {
+  for (ImplNode &impl : llvm::make_pointee_range(impls))
+    if (!impl.error)
+      nodes.push_back(&impl);
+}
+
+void ParamNode::getAllConcreteFuncs(std::vector<FuncOp> &funcs) {
+  for (ImplNode &impl : llvm::make_pointee_range(impls))
+    if (!impl.error)
+      funcs.push_back(impl.func);
 }
 
 //===----------------------------------------------------------------------===//
@@ -546,8 +351,8 @@ static std::optional<ErrorTree> processParamDeclareOp(IREvaluator &evaluator,
 
 /// Process a `kgen.param.result_bind` operation by setting the result parameter
 /// values of the parent operation.
-static std::optional<ErrorTree>
-processParamResultBindOp(ParamResultBindOp op, ExpansionTreeNode *parentNode) {
+static std::optional<ErrorTree> processParamResultBindOp(ParamResultBindOp op,
+                                                         ImplNode *parentNode) {
   // Concretize the result parameter values.
   IREvaluator &evaluator = parentNode->evaluator;
   SmallVector<Attribute> resultParams;
@@ -559,8 +364,7 @@ processParamResultBindOp(ParamResultBindOp op, ExpansionTreeNode *parentNode) {
   auto parentDecl = op->getParentOfType<DeclInterface>();
   bool isFunc = isa<FuncOp>(parentDecl.getOperation());
   if (isFunc)
-    resultParamDecls =
-        cast<GeneratorOp>(parentNode->parent->op).getResultParams();
+    resultParamDecls = parentNode->parent->gen.getResultParams();
   else
     resultParamDecls = parentDecl.getResultParams();
 
@@ -809,117 +613,6 @@ static StringAttr getMangledRegionParamName(ParamDeclareRegionOp decl) {
 }
 
 //===----------------------------------------------------------------------===//
-// completeCallProcessing
-//===----------------------------------------------------------------------===//
-
-/// Complete processing of a `kgen.param.apply` operation by invoking the
-/// interpreter on the concrete callee and binding its result.
-static std::optional<ErrorTree>
-processParamApplyOp(ParamApplyOp op, FuncOp func, ExpansionTreeNode *parent) {
-  SmallVector<TypedAttr> operands;
-  for (TypedAttr operand : op.getOperands()) {
-    ErrorTreeOr<Attribute> value =
-        parent->evaluator.concretizeParameterExpr(op.getLoc(), operand);
-    if (value.isError())
-      return value.takeError();
-    operands.push_back(cast<TypedAttr>(value.takeValue()));
-  }
-  ErrorTreeOr<TypedAttr> result =
-      parent->evaluator.evaluateFunction(func, operands);
-  if (result.isError())
-    return result.takeError();
-
-  // Bind the result and erase the operation.
-  parent->evaluator.setOrOverwriteParameterValue(op.getParamDecl(),
-                                                 result.takeValue());
-  op.erase();
-  return {};
-}
-
-/// Complete processing of a generator user by resolving any bound result types
-/// or parameters in the parent scope. This is the step that propagates result
-/// parameters from the inner scope to the outer scope.
-static std::optional<ErrorTree>
-completeCallProcessing(KGENCallOpInterface user, ArrayRef<ParamDeclAttr> decls,
-                       ExpansionTreeNode *thisNode,
-                       ExpansionTreeNode *parentNode, Logger &logger) {
-
-  // Add the callee's bindings to the parent of the call. This ensures that we
-  // don't re-bind something we've already bound.
-  for (const auto &[k, v] : thisNode->bindings) {
-    auto &oldV = parentNode->bindings[k];
-    assert(!oldV || oldV == v);
-    oldV = v;
-  }
-
-  ErrorTreeOr<FuncOp> newCalleeFuncOr = thisNode->getFirstConcrete();
-  if (newCalleeFuncOr.isError())
-    return {};
-
-  FuncOp newCalleeFunc = *newCalleeFuncOr;
-
-  // If this is a `kgen.param.apply`, bind its result here.
-  if (auto apply = dyn_cast<ParamApplyOp>(*user))
-    return processParamApplyOp(apply, newCalleeFunc, parentNode);
-
-  // Resolve any bound result types.
-  SmallVector<Type> resultTypes;
-  for (auto result : user->getResultTypes()) {
-    ErrorTreeOr<Type> typeOr =
-        parentNode->evaluator.concretizeParameterExpr(user.getLoc(), result);
-    if (typeOr.isError()) {
-      thisNode->setToError(typeOr.takeError());
-      return {};
-    }
-
-    resultTypes.push_back(typeOr.takeValue());
-  }
-
-  // Save the user's location before we delete the op.
-  Location userLoc = user.getLoc();
-
-  // Now that we resolved the call to a new thing, build a new call to replace
-  // the old one.
-  mlir::IRRewriter b{OpBuilder(user)};
-  auto newCallee = SymbolConstantAttr::get(
-      FlatSymbolRefAttr::get(newCalleeFunc.getNameAttr()),
-      newCalleeFunc.getSignature());
-  user.concretizeCallee(b, newCallee, resultTypes);
-
-  // Get the result params from the concretization of this node, if we have
-  // them.
-  auto concreteNodeOr = thisNode->getFirstConcreteNode();
-  assert(!concreteNodeOr.isError() &&
-         "This should be called from a concrete node in this case");
-
-  // If we don't have the result parameters yet, then either no result
-  // parameters are necessary, or we have another problem entirely wherein we
-  // could not complete the callee's result parameter resolution at all - likely
-  // meaning we're in an infinite recursive loop. Essentially, we came back to
-  // the same combination of generator + input parameters without resolving the
-  // result parameters yet.
-  ArrayAttr resultParams = (*concreteNodeOr)->resultParams;
-  if (!resultParams && !decls.empty()) {
-    thisNode->setToError(
-        ErrorTree(userLoc, "could not resolve callee's necessary result "
-                           "parameters, infinite recursive loop?"));
-    return {};
-  }
-  // No decls, so we don't have to do anything.
-  if (decls.empty())
-    return {};
-
-  // Bind the result parameters to the output parameter decls.
-  assert(decls.size() == resultParams.size());
-  for (auto [decl, bindValue] : llvm::zip(decls, resultParams)) {
-    LLVM_DEBUG(thisNode->logger << "Binding " << decl << " to " << bindValue
-                                << "\n");
-    parentNode->evaluator.setOrOverwriteParameterValue(decl, bindValue);
-  }
-  return {};
-}
-
-//===----------------------------------------------------------------------===//
 // printParameterValue
 //===----------------------------------------------------------------------===//
 
@@ -1018,8 +711,6 @@ public:
                  EvaluatorExecutorFnRef evaluatorExecutorFn,
                  const ElaboratorConfig &config)
       : Elaborator(analysis, paramCache, target, evaluatorExecutorFn),
-        root(analysis.getTopLevelOp<ModuleOp>(), IREvaluator(*this), alloc,
-             logger),
         config(config) {}
 
   ErrorTreeOr<FuncOp>
@@ -1046,24 +737,10 @@ public:
     return lookup(symbol.getRootReference());
   }
 
-  /// Create a top-level expansion tree node.
-  ExpansionTreeNode *createRootNode(FuncInterface funcItf, ArrayAttr inputs) {
-    return ExpansionTreeNode::create(funcItf, inputs, &root, IREvaluator(*this),
-                                     0, config.maxDepth);
-  }
-  /// Create an expansion tree node with a parent node.
-  ExpansionTreeNode *
-  createNode(Operation *op, ArrayAttr inputs, ExpansionTreeNode *parent,
-             unsigned depth, const IREvaluator &evaluator,
-             std::optional<ParameterUseDefGraph> graph = std::nullopt) {
-    return ExpansionTreeNode::create(op, inputs, parent, evaluator, depth,
-                                     config.maxDepth, std::move(graph));
-  }
-
   /// Once a concrete function has finished specializing, finish processing the
   /// function and call the verifier.
   void finalizeAndVerifyFunction(mlir::SymbolTableAnalysis &analysis,
-                                 ExpansionTreeNode *node, FuncOp func);
+                                 ImplNode *node);
 
   /// Process a kgen.param.fork op. This will create a clone for each value of
   /// the parameter search, and will mark the parent as an error. This results
@@ -1071,7 +748,7 @@ public:
   /// will have its children be the successfully concretized parameter search
   /// nodes.
   std::optional<ErrorTree>
-  processParamForkOp(ExpansionTreeNode *parent, ParamForkOp op,
+  processParamForkOp(ImplNode *parent, ParamForkOp op,
                      ArrayRef<Operation *> remainingWorklist);
 
   /// Spawn a clone for kgen.param.fork. This creates a new FuncOp that is a
@@ -1079,26 +756,30 @@ public:
   /// kgen.param.fork with a param.declare to allow specialization to succeed.
   std::optional<ErrorTree>
   spawnParamForkClone(ParamForkOp forkOp, Attribute value,
-                      ExpansionTreeNode *forkParentNode,
+                      ImplNode *forkParentNode,
                       ArrayRef<Operation *> remainingWorklist);
 
   /// Process a call op by binding any necessary input parameters from the
   /// symbol or the call and passing them on to processGeneratorUser.
   std::optional<ErrorTree>
-  processCallOp(KGENCallOpInterface call, ExpansionTreeNode *parent,
+  processCallOp(KGENCallOpInterface call, ImplNode *parent,
                 ArrayRef<Operation *> remainingWorklist);
 
   /// Process a generator user. In general, this is anything that can call into
   /// a generator and might therefore need to be multi-versioned.
-  std::optional<ErrorTree> processGeneratorUser(
-      KGENCallOpInterface user, SymbolConstantAttr calleeSymbol,
-      ExpansionTreeNode *parent, ArrayRef<Operation *> remainingWorklist);
+  std::optional<ErrorTree>
+  processGeneratorUser(KGENCallOpInterface user,
+                       SymbolConstantAttr calleeSymbol, ImplNode *parent,
+                       ArrayRef<Operation *> remainingWorklist);
 
-  /// Create a node for a callee and concretize it if needed.
-  ErrorTreeOr<ExpansionTreeNode *>
-  createCalleeNode(std::pair<Operation *, ArrayAttr> &&key,
-                   SymbolConstantAttr calleeSymbol, ExpansionTreeNode *parent,
-                   Operation *user);
+  /// Complete processing of a generator user by resolving any bound result
+  /// types or parameters in the parent scope. This is the step that propagates
+  /// result parameters from the inner scope to the outer scope.
+  std::optional<ErrorTree> completeCallProcessing(KGENCallOpInterface user,
+                                                  ArrayRef<ParamDeclAttr> decls,
+                                                  ImplNode *thisNode,
+                                                  ImplNode *parentNode,
+                                                  Logger &logger);
 
   /// Resolve call input parameters - this is a complex function because calls
   /// can have regions. We take the body of those regions and put it into a
@@ -1109,7 +790,7 @@ public:
   /// - we have to interact with the module symbol table to put these regions
   /// into top-level generators.
   ErrorTreeOr<ArrayAttr>
-  resolveCallInputParams(Operation *call, ExpansionTreeNode *parentNode,
+  resolveCallInputParams(Operation *call, IREvaluator &evaluator,
                          ArrayRef<TypedAttr> inputValues);
 
   /// Process a param.declare.region op by creating a generator with the correct
@@ -1117,23 +798,22 @@ public:
   /// don't know what the actual input parameters are supposed to be until then.
   std::optional<ErrorTree>
   processParamDeclareRegionOp(ParamDeclareRegionOp regionDecl,
-                              ExpansionTreeNode *parent);
+                              ImplNode *parent);
 
   /// Process a param.if op by evaluating the condition and elaborating and
   /// inlining only the branch that was taken. If one of the branches had an
   /// early return, this will split the block after the return and avoid
   /// elaborating the rest of the function.
-  std::optional<ErrorTree> processParamIfOp(ParamIfOp op,
-                                            ExpansionTreeNode *parent);
+  std::optional<ErrorTree> processParamIfOp(ParamIfOp op, ImplNode *parent);
 
   /// Process a worklist of ops. Returns failure if the scope produced an error.
-  LogicalResult processScope(ExpansionTreeNode *parentNode,
+  LogicalResult processScope(ImplNode *parentNode,
                              ArrayRef<Operation *> worklist);
 
   /// Specializes the generator at `genNode`. Essentially instantiates a new
   /// function with the same body, and specializes it. The new function is by
   /// definition the expansion tree child of this generator.
-  std::optional<ErrorTree> specializeGenerator(ExpansionTreeNode *genNode);
+  ErrorTreeOr<SuccessType> specializeGenerator(ParamNode *genNode);
 
   /// Given a list of primary generators (i.e. generators with no input
   /// parameters), run the elaborator. This will generate an expansion tree
@@ -1147,13 +827,7 @@ private:
   /// A logger used to emit information during the elaboration process.
   Logger logger;
 
-  /// The allocator we use to allocate children in the expansion tree.
-  llvm::SpecificBumpPtrAllocator<ExpansionTreeNode> alloc;
-  /// The root of the expansion tree.
-  ExpansionTreeNode root;
   /// Hash table to speed up lookups of generators in the expansion tree.
-  DenseMap<std::pair<Operation *, ArrayAttr>, ExpansionTreeNode *>
-      topLevelTrees;
   /// Hash table of known ParameterUseDefGraphs. This ensures we only compute a
   /// graph once for each generator. This is extra state generated by
   /// specializeGenerator that is *required for correctness* - this will cause
@@ -1162,10 +836,17 @@ private:
   /// proper data structure.
   DenseMap<GeneratorOp, std::unique_ptr<ParameterUseDefGraph>> knownGraphs;
 
+  /// The callgraph being expanded.
+  ExpansionGraph g;
+
+  /// The current depth of the elaborator.
+  size_t depth = 0;
+
   /// The elaborator config.
   ElaboratorConfig config;
 
   /// Remove parameter declare regions after generator elaboration.
+  DenseMap<StringAttr, ParameterUseDefGraph *> knownRegions;
   SmallVector<OwningOpRef<ParamDeclareRegionOp>> paramDeclareRegionOps;
 };
 } // namespace
@@ -1173,10 +854,12 @@ private:
 //===----------------------------------------------------------------------===//
 // finalizeAndVerifyFunction
 //===----------------------------------------------------------------------===//
+
 void ElaboratorImpl::finalizeAndVerifyFunction(
-    mlir::SymbolTableAnalysis &analysis, ExpansionTreeNode *node, FuncOp func) {
+    mlir::SymbolTableAnalysis &analysis, ImplNode *node) {
   TimeTraceScope<> traceScope("finalizeAndVerifyFunction");
   // Erase any unreachable blocks that might have arisen.
+  FuncOp func = node->func;
   mlir::IRRewriter b(func.getContext());
   (void)mlir::eraseUnreachableBlocks(b, func.getBodyRegion());
 
@@ -1216,7 +899,7 @@ void ElaboratorImpl::finalizeAndVerifyFunction(
 ErrorTreeOr<FuncOp>
 ElaboratorImpl::getConcreteFunction(Location loc, SymbolRefAttr symbolRef,
                                     ArrayRef<TypedAttr> paramValues) {
-  auto funcItf = lookup<GeneratorOp>(symbolRef);
+  auto gen = lookup<GeneratorOp>(symbolRef);
 
   SmallVector<Attribute> inputParams;
   for (TypedAttr value : paramValues)
@@ -1225,26 +908,15 @@ ElaboratorImpl::getConcreteFunction(Location loc, SymbolRefAttr symbolRef,
   auto vals = ArrayAttr::get(symbolRef.getContext(), inputParams);
 
   // Lookup the node if it already exists.
-  ExpansionTreeNode *node = topLevelTrees.lookup({funcItf, vals});
+  ParamNode *node = g.getOrCreate(vals, gen);
   // If the node has already been elaborated, just use that result.
-  if (node && node->isConcrete())
-    return node->getFirstConcrete();
-
-  // Otherwise, if the node doesn't exist, then create a new one.
-  if (!node) {
-    node = createRootNode(funcItf, vals);
-    topLevelTrees[{funcItf, vals}] = node;
+  if (node->status != ParamNode::DONE) {
+    ErrorTreeOr<SuccessType> err = specializeGenerator(node);
+    if (err.isError())
+      return err.takeError();
   }
 
-  for (auto [decl, value] :
-       llvm::zip(cast<DeclInterface>(*funcItf).getInputParams(), vals))
-    node->evaluator.setOrOverwriteParameterValue(decl, value);
-
-  if (auto gen = dyn_cast<GeneratorOp>(funcItf.getOperation())) {
-    if (auto err = specializeGenerator(node))
-      return std::move(*err);
-  }
-  return node->getFirstConcrete();
+  return node->getFirstConcreteFunc();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1255,11 +927,7 @@ std::optional<ErrorTree>
 ElaboratorImpl::getAllConcreteFunctions(Location loc, SymbolRefAttr symbolRef,
                                         ArrayRef<TypedAttr> paramValues,
                                         std::vector<FuncOp> &funcs) {
-  auto funcItf = lookup<FuncInterface>(symbolRef);
-  if (auto func = dyn_cast<FuncOp>(funcItf.getOperation())) {
-    funcs.push_back(func);
-    return std::nullopt;
-  }
+  auto gen = lookup<GeneratorOp>(symbolRef);
 
   SmallVector<Attribute> inputParams;
   for (TypedAttr value : paramValues)
@@ -1268,28 +936,13 @@ ElaboratorImpl::getAllConcreteFunctions(Location loc, SymbolRefAttr symbolRef,
   auto vals = ArrayAttr::get(symbolRef.getContext(), inputParams);
 
   // Lookup the node if it already exists.
-  ExpansionTreeNode *node = topLevelTrees.lookup({funcItf, vals});
-  // If the node has already been elaborated, just use that result.
-  if (node && node->isConcrete()) {
-    node->getAllConcrete(funcs);
-    return std::nullopt;
+  ParamNode *node = g.getOrCreate(vals, gen);
+  if (node->status != ImplNode::DONE) {
+    ErrorTreeOr<SuccessType> err = specializeGenerator(node);
+    if (err.isError())
+      return err.takeError();
   }
-
-  // Otherwise, if the node doesn't exist, then create a new one.
-  if (!node) {
-    node = createRootNode(funcItf, vals);
-    topLevelTrees[{funcItf, vals}] = node;
-  }
-
-  for (auto [decl, value] :
-       llvm::zip(cast<DeclInterface>(*funcItf).getInputParams(), vals))
-    node->evaluator.setOrOverwriteParameterValue(decl, value);
-
-  if (auto gen = dyn_cast<GeneratorOp>(funcItf.getOperation())) {
-    if (auto err = specializeGenerator(node))
-      return std::move(*err);
-  }
-  node->getAllConcrete(funcs);
+  node->getAllConcreteFuncs(funcs);
   return std::nullopt;
 }
 
@@ -1299,7 +952,7 @@ ElaboratorImpl::getAllConcreteFunctions(Location loc, SymbolRefAttr symbolRef,
 
 /// Process a kgen.param.fork op.
 std::optional<ErrorTree>
-ElaboratorImpl::processParamForkOp(ExpansionTreeNode *parent, ParamForkOp op,
+ElaboratorImpl::processParamForkOp(ImplNode *parent, ParamForkOp op,
                                    ArrayRef<Operation *> remainingWorklist) {
   auto _ = logger.scope("Processing ParamForkOp");
   LLVM_DEBUG(logger.scope("Options") << op.getValuesAttr() << "\n");
@@ -1365,22 +1018,16 @@ ElaboratorImpl::processParamForkOp(ExpansionTreeNode *parent, ParamForkOp op,
 /// Spawn a clone from a kgen.param.fork op.
 std::optional<ErrorTree>
 ElaboratorImpl::spawnParamForkClone(ParamForkOp forkOp, Attribute value,
-                                    ExpansionTreeNode *forkParentNode,
+                                    ImplNode *forkParentNode,
                                     ArrayRef<Operation *> remainingWorklist) {
   auto _ = logger.scope("Spawning ParamForkClone for '", value, "'");
 
   // Start by cloning the current WIP func to a new copy of it.
   IRMapping map;
-  auto newFunc = cast<FuncOp>(forkParentNode->op->clone(map));
-  // Insert into the symbol table - this will also unique the name for us.
-  analysis.getTopLevelSymbolTable().insert(newFunc,
-                                           ++forkParentNode->op->getIterator());
 
   // Hook this new clone up correctly.
-  auto newFuncNode =
-      createNode(newFunc, forkParentNode->inputParams, forkParentNode->parent,
-                 forkParentNode->expansionDepth, forkParentNode->evaluator,
-                 forkParentNode->paramGraph->copy(map));
+  ImplNode *newFuncNode =
+      g.fork(forkParentNode, map, analysis.getTopLevelSymbolTable());
 
   // Change the future of this func by resolving the forkOp in the new func
   // to the specified value.
@@ -1401,93 +1048,49 @@ ElaboratorImpl::spawnParamForkClone(ParamForkOp forkOp, Attribute value,
   // And finally, process the rest of the worklist in this new scope. If we've
   // hit an error case, don't try and finish processing. Return to the upper
   // function that this hit an error.
-  if (failed(processScope(newFuncNode, remaining)))
+  newFuncNode->status = ImplNode::IN_PROGRESS;
+  LogicalResult result = processScope(newFuncNode, remaining);
+  newFuncNode->status = ImplNode::DONE;
+  if (failed(result))
     return newFuncNode->error->copy();
 
-  finalizeAndVerifyFunction(analysis, newFuncNode, newFunc);
+  finalizeAndVerifyFunction(analysis, newFuncNode);
   return std::nullopt;
-}
-
-ErrorTreeOr<ExpansionTreeNode *>
-ElaboratorImpl::createCalleeNode(std::pair<Operation *, ArrayAttr> &&key,
-                                 SymbolConstantAttr calleeSymbol,
-                                 ExpansionTreeNode *parent, Operation *user) {
-  // Find the tree node that corresponds to the thing we're calling.
-  ExpansionTreeNode *node = topLevelTrees.lookup(key);
-  // If we haven't found this callee yet, we have to add it to the tree!
-  if (!node) {
-    // Use the parent of the call to show the expansion depth, and inherit the
-    // evaluator from the root.
-    node = createNode(key.first, key.second, &root, parent->expansionDepth,
-                      IREvaluator(*this));
-    if (node->error)
-      return ErrorTreeOr<ExpansionTreeNode *>(std::move(node->error).value());
-
-    topLevelTrees[key] = node;
-
-    // Set the region parameters on the callee by performing the name rebind and
-    // handling any parameter captures. This can't be pushed into
-    // specializeGenerator below because it requires passing specific values
-    // from the caller's node to the callee's node.
-    for (TypedAttr bind : calleeSymbol.getParamValues()) {
-      ErrorTreeOr<Attribute> attrValue =
-          parent->evaluator.concretizeParameterExpr(user->getLoc(), bind);
-      if (attrValue.isError())
-        return ErrorTreeOr<ExpansionTreeNode *>(attrValue.takeError());
-
-      Attribute value = attrValue.takeValue();
-      if (auto region = dyn_cast<RegionAttr>(value)) {
-        // Set the known regions correctly by updating the name.
-        ParameterUseDefGraph *graph =
-            parent->knownRegions.lookup(region.getRegionName());
-        node->knownRegions[region.getRegionName()] = graph;
-
-        // Do the same for any potential parameter captures.
-        for (ParamDeclRefAttr param : graph->usesFromAbove) {
-          ErrorTreeOr<Attribute> attr =
-              parent->evaluator.concretizeParameterExpr(user->getLoc(), param);
-          if (attr.isError())
-            return ErrorTreeOr<ExpansionTreeNode *>(attr.takeError());
-
-          node->evaluator.setOrOverwriteParameterValue(param.getName(), *attr);
-        }
-      }
-    }
-
-    if (isa<GeneratorOp>(key.first)) {
-      if (auto err = specializeGenerator(node))
-        return ErrorTreeOr<ExpansionTreeNode *>(std::move(err).value());
-    }
-  }
-  return ErrorTreeOr<ExpansionTreeNode *>(node);
 }
 
 //===----------------------------------------------------------------------===//
 // ElaboratorImpl::processGeneratorUser
 //===----------------------------------------------------------------------===//
 
-/// Process a generator user like a call.
 std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
-    KGENCallOpInterface user, SymbolConstantAttr calleeSymbol,
-    ExpansionTreeNode *parent, ArrayRef<Operation *> remainingWorklist) {
+    KGENCallOpInterface user, SymbolConstantAttr calleeSymbol, ImplNode *parent,
+    ArrayRef<Operation *> remainingWorklist) {
   auto _ = logger.scope("Processing Generator User");
   LLVM_DEBUG(logger.logOp("User", user));
 
   assert(remainingWorklist.empty() || remainingWorklist.front() != user);
 
   // Add in the mapping for parameters in the calls.
-  auto resolvedCallParamsOr =
-      resolveCallInputParams(user, parent, calleeSymbol.getParamValues());
+  auto resolvedCallParamsOr = resolveCallInputParams(
+      user, parent->evaluator, calleeSymbol.getParamValues());
   if (resolvedCallParamsOr.isError())
     return resolvedCallParamsOr.takeError();
   ArrayAttr inputParamKey = *resolvedCallParamsOr;
 
   // Lookup the callee.
-  FuncInterface calleeOp =
-      cast<FuncInterface>(lookup(calleeSymbol.getSymbol()));
+  auto calleeOp = lookup(calleeSymbol.getSymbol());
   if (!calleeOp) {
     return ErrorTree(user.getLoc(), "could not find callee '" +
                                         mlir::debugString(calleeSymbol) + "'");
+  }
+
+  ArrayRef<ParamDeclAttr> decls = user.getParamDecls();
+  if (auto func = dyn_cast<FuncOp>(calleeOp)) {
+    auto it = g.concreteNodes.find(func);
+    if (it == g.concreteNodes.end())
+      return ErrorTree(user.getLoc(), "concrete callee doesn't have a node "
+                                      "(compiler bug -- file an issue!)");
+    return completeCallProcessing(user, decls, it->second, parent, logger);
   }
 
   LLVM_DEBUG({
@@ -1496,8 +1099,8 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
   });
 
   // If we already have a binding for this, we're done.
-  ArrayRef<ParamDeclAttr> decls = user.getParamDecls();
-  auto found = parent->bindings.find({calleeOp, inputParamKey});
+  auto gen = cast<GeneratorOp>(calleeOp);
+  auto found = parent->bindings.find({inputParamKey, gen});
   if (found != parent->bindings.end()) {
     LLVM_DEBUG(
         found->getSecond()->print(logger.scope("Result: Existing Binding")));
@@ -1506,21 +1109,19 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
   }
 
   // Find the tree node that corresponds to the thing we're calling.
-  ErrorTreeOr<ExpansionTreeNode *> maybeCalleeNode =
-      createCalleeNode({calleeOp, inputParamKey}, calleeSymbol, parent, user);
-  if (maybeCalleeNode.isError())
-    return maybeCalleeNode.takeError();
-  ExpansionTreeNode *calleeNode = maybeCalleeNode.takeValue();
-  LLVM_DEBUG(calleeNode->print(logger));
+  ParamNode *calleeNode = g.getOrCreate(inputParamKey, gen);
+  ErrorTreeOr<SuccessType> err = specializeGenerator(calleeNode);
+  if (err.isError())
+    return ErrorTree(user.getLoc(), "call expansion failed", err.takeError());
 
   // Complete processing for all the leaves of this subtree.
-  std::vector<ExpansionTreeNode *> concrete;
+  std::vector<ImplNode *> concrete;
   calleeNode->getAllConcreteNodes(concrete);
 
   // If the concrete thing has bindings, they must be consistent with the
   // parent's bindings for us to consider it. Remove nodes from the vector that
   // have bindings that are inconsistent with the parent.
-  auto newEnd = llvm::remove_if(concrete, [&](ExpansionTreeNode *node) {
+  auto newEnd = llvm::remove_if(concrete, [&](ImplNode *node) {
     bool hasConsistentBindings = llvm::all_of(node->bindings, [&](auto pair) {
       // The binding is only inconsistent if it (a) does exist and (b) is
       // different.
@@ -1545,7 +1146,9 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
   if (concrete.empty()) {
     ErrorTree out(user.getLoc(),
                   "call expansion failed - no concrete specializations");
-    calleeNode->collectSubtreeErrors(out);
+    for (ImplNode &impl : llvm::make_pointee_range(calleeNode->impls))
+      if (impl.error)
+        out.addCause(impl.error->copy());
     return std::move(out);
   }
 
@@ -1559,22 +1162,16 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
   for (auto *c : llvm::drop_begin(concrete)) {
     // Clone the parent.
     IRMapping map;
-    Operation *newOp = parent->op->clone(map);
-    // Insert it into the symbol table.
-    analysis.getTopLevelSymbolTable().insert(newOp,
-                                             ++parent->op->getIterator());
 
     auto _ = logger.scope("New Multi-Versioning Op");
-    logger.logOp("Op", newOp);
+    logger.logOp("Op", c->func);
     LLVM_DEBUG(c->print(logger << "Concrete Implementation "));
 
     // This is a sibling to the parent, and it clones the parent's evaluator.
-    auto newNode = createNode(newOp, parent->inputParams, parent->parent,
-                              parent->expansionDepth, parent->evaluator,
-                              parent->paramGraph->copy(map));
+    ImplNode *newNode = g.fork(parent, map, analysis.getTopLevelSymbolTable());
     newNode->bindings = parent->bindings;
     // Bind this concrete impl to this callee for this node.
-    newNode->bindings[{calleeOp, inputParamKey}] = c;
+    newNode->bindings[{inputParamKey, gen}] = c;
 
     if (std::optional<ErrorTree> err = completeCallProcessing(
             cast<KGENCallOpInterface>(map.lookup(user.getOperation())), decls,
@@ -1590,16 +1187,115 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
 
     // Process the rest of the worklist in this new scope. If the scope
     // processing failed, do nothing.
+    newNode->status = ImplNode::IN_PROGRESS;
     if (succeeded(processScope(newNode, remaining)))
-      finalizeAndVerifyFunction(analysis, newNode, cast<FuncOp>(newOp));
+      finalizeAndVerifyFunction(analysis, newNode);
+    newNode->status = ImplNode::DONE;
   }
 
   // Bind this concrete impl to this callee for this node.
-  parent->bindings[{calleeOp, inputParamKey}] = concrete.front();
+  parent->bindings[{inputParamKey, gen}] = concrete.front();
 
   // Call completeGeneratorUserProcessing on the first concrete thing. This will
   // flow nested bindings upward correctly.
   return completeCallProcessing(user, decls, concrete.front(), parent, logger);
+}
+
+//===----------------------------------------------------------------------===//
+// completeCallProcessing
+//===----------------------------------------------------------------------===//
+
+/// Complete processing of a `kgen.param.apply` operation by invoking the
+/// interpreter on the concrete callee and binding its result.
+static std::optional<ErrorTree>
+processParamApplyOp(ParamApplyOp op, FuncOp func, IREvaluator &evaluator) {
+  SmallVector<TypedAttr> operands;
+  for (TypedAttr operand : op.getOperands()) {
+    ErrorTreeOr<Attribute> value =
+        evaluator.concretizeParameterExpr(op.getLoc(), operand);
+    if (value.isError())
+      return value.takeError();
+    operands.push_back(cast<TypedAttr>(value.takeValue()));
+  }
+  ErrorTreeOr<TypedAttr> result = evaluator.evaluateFunction(func, operands);
+  if (result.isError())
+    return result.takeError();
+
+  // Bind the result and erase the operation.
+  evaluator.setOrOverwriteParameterValue(op.getParamDecl(), result.takeValue());
+  op.erase();
+  return {};
+}
+
+std::optional<ErrorTree> ElaboratorImpl::completeCallProcessing(
+    KGENCallOpInterface user, ArrayRef<ParamDeclAttr> decls, ImplNode *thisNode,
+    ImplNode *parentNode, Logger &logger) {
+
+  // Add the callee's bindings to the parent of the call. This ensures that we
+  // don't re-bind something we've already bound.
+  for (const auto &[k, v] : thisNode->bindings) {
+    auto &oldV = parentNode->bindings[k];
+    assert(!oldV || oldV == v);
+    oldV = v;
+  }
+
+  if (thisNode->error)
+    return {};
+
+  FuncOp newCalleeFunc = thisNode->func;
+
+  // If this is a `kgen.param.apply`, bind its result here.
+  if (auto apply = dyn_cast<ParamApplyOp>(*user))
+    return processParamApplyOp(apply, newCalleeFunc, parentNode->evaluator);
+
+  // Resolve any bound result types.
+  SmallVector<Type> resultTypes;
+  for (auto result : user->getResultTypes()) {
+    ErrorTreeOr<Type> typeOr =
+        parentNode->evaluator.concretizeParameterExpr(user.getLoc(), result);
+    if (typeOr.isError()) {
+      thisNode->setToError(typeOr.takeError());
+      return {};
+    }
+
+    resultTypes.push_back(typeOr.takeValue());
+  }
+
+  // Save the user's location before we delete the op.
+  Location userLoc = user.getLoc();
+
+  // Now that we resolved the call to a new thing, build a new call to replace
+  // the old one.
+  mlir::IRRewriter b{OpBuilder(user)};
+  auto newCallee = SymbolConstantAttr::get(
+      FlatSymbolRefAttr::get(newCalleeFunc.getNameAttr()),
+      newCalleeFunc.getSignature());
+  user.concretizeCallee(b, newCallee, resultTypes);
+
+  // If we don't have the result parameters yet, then either no result
+  // parameters are necessary, or we have another problem entirely wherein we
+  // could not complete the callee's result parameter resolution at all - likely
+  // meaning we're in an infinite recursive loop. Essentially, we came back to
+  // the same combination of generator + input parameters without resolving the
+  // result parameters yet.
+  ArrayAttr resultParams = thisNode->resultParams;
+  if (!resultParams && !decls.empty()) {
+    thisNode->setToError(
+        ErrorTree(userLoc, "could not resolve callee's necessary result "
+                           "parameters, infinite recursive loop?"));
+    return {};
+  }
+  // No decls, so we don't have to do anything.
+  if (decls.empty())
+    return {};
+
+  // Bind the result parameters to the output parameter decls.
+  assert(decls.size() == resultParams.size());
+  for (auto [decl, bindValue] : llvm::zip(decls, resultParams)) {
+    LLVM_DEBUG(logger << "Binding " << decl << " to " << bindValue << "\n");
+    parentNode->evaluator.setOrOverwriteParameterValue(decl, bindValue);
+  }
+  return {};
 }
 
 //===----------------------------------------------------------------------===//
@@ -1608,10 +1304,9 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
 
 /// Resolve input params on a call_param op.
 ErrorTreeOr<ArrayAttr>
-ElaboratorImpl::resolveCallInputParams(Operation *call,
-                                       ExpansionTreeNode *parentNode,
+ElaboratorImpl::resolveCallInputParams(Operation *call, IREvaluator &evaluator,
                                        ArrayRef<TypedAttr> inputValues) {
-  LLVM_DEBUG(logger.logOp("Resolving Call Input Params", call);
+  LLVM_DEBUG(logger.logOp("Resolving Call Input Param", call);
              logger << " with input bindings: ";
              llvm::interleaveComma(inputValues, logger); logger << "\n");
 
@@ -1619,7 +1314,7 @@ ElaboratorImpl::resolveCallInputParams(Operation *call,
   for (TypedAttr param : inputValues) {
     // Fold the parameter expression in this context to a simple constant.
     ErrorTreeOr<Attribute> valueOr =
-        parentNode->evaluator.concretizeParameterExpr(call->getLoc(), param);
+        evaluator.concretizeParameterExpr(call->getLoc(), param);
     if (valueOr.isError())
       return valueOr.takeError();
 
@@ -1636,8 +1331,7 @@ ElaboratorImpl::resolveCallInputParams(Operation *call,
 
 /// Process a call_param op.
 std::optional<ErrorTree>
-ElaboratorImpl::processCallOp(KGENCallOpInterface call,
-                              ExpansionTreeNode *parent,
+ElaboratorImpl::processCallOp(KGENCallOpInterface call, ImplNode *parent,
                               ArrayRef<Operation *> remainingWorklist) {
   ErrorTreeOr<Attribute> symbol = parent->evaluator.concretizeParameterExpr(
       call.getLoc(), call.getCallee());
@@ -1654,8 +1348,7 @@ ElaboratorImpl::processCallOp(KGENCallOpInterface call,
         "concrete parameter must be a SymbolConstantAttr or a RegionAttr");
 
   // OK we found a region, put it into the machinery.
-  ParameterUseDefGraph *regionGraph =
-      parent->knownRegions.lookup(decl.getRegionName());
+  ParameterUseDefGraph *regionGraph = knownRegions.lookup(decl.getRegionName());
   Region *region = regionGraph->scope;
   LLVM_DEBUG(logger.logOp("Inlining call to parameter region:",
                           region->getParentOp()));
@@ -1698,7 +1391,7 @@ ElaboratorImpl::processCallOp(KGENCallOpInterface call,
 /// region.
 std::optional<ErrorTree>
 ElaboratorImpl::processParamDeclareRegionOp(ParamDeclareRegionOp regionDecl,
-                                            ExpansionTreeNode *parent) {
+                                            ImplNode *parent) {
   StringAttr regionName = getMangledRegionParamName(regionDecl);
   // Set the region's parameter decl as the value for this name. That will
   // signal to the call_param handler that it needs to inline the region it
@@ -1712,11 +1405,11 @@ ElaboratorImpl::processParamDeclareRegionOp(ParamDeclareRegionOp regionDecl,
                         operationIsIsolatedFromAbove(regionDecl)),
           cast<SignatureType>(regionDecl.getParamDecl().getType())));
   auto found =
-      parent->paramGraph->nestedScopes.find(&regionDecl.getBodyRegion());
-  assert(found != parent->paramGraph->nestedScopes.end() &&
+      parent->paramGraph.nestedScopes.find(&regionDecl.getBodyRegion());
+  assert(found != parent->paramGraph.nestedScopes.end() &&
          "must have a nested region");
   LLVM_DEBUG(logger << "Storing known region: " << regionName << "\n");
-  parent->knownRegions[regionName] = &found->getSecond();
+  knownRegions[regionName] = &found->getSecond();
   return std::nullopt;
 }
 
@@ -1724,8 +1417,8 @@ ElaboratorImpl::processParamDeclareRegionOp(ParamDeclareRegionOp regionDecl,
 // ElaboratorImpl::processParamIfOp
 //===----------------------------------------------------------------------===//
 
-std::optional<ErrorTree>
-ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent) {
+std::optional<ErrorTree> ElaboratorImpl::processParamIfOp(ParamIfOp op,
+                                                          ImplNode *parent) {
   // Check the condition expression.
   auto errorOrValue =
       parent->evaluator.concretizeParameterExpr(op.getLoc(), op.getCond());
@@ -1744,8 +1437,8 @@ ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent) {
   else
     toProcess = &op.getElseRegion();
 
-  auto foundNestedScope = parent->paramGraph->nestedScopes.find(toProcess);
-  if (foundNestedScope == parent->paramGraph->nestedScopes.end())
+  auto foundNestedScope = parent->paramGraph.nestedScopes.find(toProcess);
+  if (foundNestedScope == parent->paramGraph.nestedScopes.end())
     return ErrorTree(op.getLoc(), "expected a nested parameter scope");
 
   ParameterUseDefGraph &uses = foundNestedScope->getSecond();
@@ -1809,7 +1502,7 @@ ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent) {
   // We always erase this op and its nested scopes from the parameter graph -
   // it's been handled, and we don't want anyone else touching it later
   // considering we're about to delete the op itself.
-  ParameterUseDefGraph &paramGraph = *parent->paramGraph;
+  ParameterUseDefGraph &paramGraph = parent->paramGraph;
   auto eraseIfScopes = [op](ParameterUseDefGraph &graph) mutable {
     // Erase any regions from the nested scopes that belong either to this op or
     // under this op.
@@ -1830,7 +1523,7 @@ ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent) {
     eraseIfScopes(graph);
   op->erase();
   LLVM_DEBUG(
-      logger.logOp("param.if parent scope (after processing)", parent->op));
+      logger.logOp("param.if parent scope (after processing)", parent->func));
   return std::nullopt;
 }
 
@@ -1838,7 +1531,7 @@ ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent) {
 // ElaboratorImpl::processScope
 //===----------------------------------------------------------------------===//
 
-LogicalResult ElaboratorImpl::processScope(ExpansionTreeNode *parentNode,
+LogicalResult ElaboratorImpl::processScope(ImplNode *parentNode,
                                            ArrayRef<Operation *> worklist) {
   LLVM_DEBUG({
     auto _ = logger.scope("Operations to Rewrite");
@@ -1892,6 +1585,10 @@ LogicalResult ElaboratorImpl::processScope(ExpansionTreeNode *parentNode,
       result = processGenericOp(parentNode->evaluator, op);
     }
 
+    // If the parent node was set to error, then just bail.
+    if (parentNode->error)
+      return failure();
+
     // If we have an error, log it and set the parent node to an error. This
     // will perform any required cleanup.
     if (result) {
@@ -1899,10 +1596,6 @@ LogicalResult ElaboratorImpl::processScope(ExpansionTreeNode *parentNode,
       parentNode->setToError(std::move(*result));
       return failure();
     }
-
-    // If the parent node was set to error, then just bail.
-    if (parentNode->error)
-      return failure();
   }
 
   for (ParamDeclareRegionOp paramDeclareRegionOp : declareRegionOps) {
@@ -1926,9 +1619,27 @@ static StringRef tryGettingShortName(StringRef s) {
   return s.split('(').first.rsplit(':').second;
 }
 
-std::optional<ErrorTree>
-ElaboratorImpl::specializeGenerator(ExpansionTreeNode *genNode) {
-  GeneratorOp generator = cast<GeneratorOp>(genNode->op);
+ErrorTreeOr<SuccessType>
+ElaboratorImpl::specializeGenerator(ParamNode *genNode) {
+  ++depth;
+  auto decDepth = llvm::make_scope_exit([&] { --depth; });
+  if (depth > config.maxDepth) {
+    return ErrorTree(genNode->gen.getLoc(),
+                     "elaborator expansion is " + Twine(config.maxDepth + 1) +
+                         " levels deep - infinite recursion?");
+  }
+
+  // If this generator node is already concrete and has no error, don't
+  // re-concretize.
+  if (genNode->status == ParamNode::DONE ||
+      genNode->status == ParamNode::IN_PROGRESS) {
+    if (config.testDiagnostics)
+      genNode->gen.emitRemark("Generator has already been specialized");
+    return success();
+  }
+
+  genNode->status = ParamNode::IN_PROGRESS;
+  GeneratorOp generator = genNode->gen;
 
   TimeTraceScope<> traceScope(
       "specializeGenerator:" + tryGettingShortName(generator.getName()).str(),
@@ -1961,48 +1672,16 @@ ElaboratorImpl::specializeGenerator(ExpansionTreeNode *genNode) {
   auto inputParamDecls = generator.getInputParams();
   assert(inputParamValues.size() == inputParamDecls.size() &&
          "incorrect # input parameter values");
-  IREvaluator &evaluator = genNode->evaluator;
+  IREvaluator evaluator(*this);
   for (auto [decl, val] : llvm::zip(inputParamDecls, inputParamValues))
     evaluator.setOrOverwriteParameterValue(decl, val);
 
   // If the generator's constraints don't satisfy, set an error and move on.
   if (auto err =
-          KGEN::evaluateConstraints(generator.getConstraints(), evaluator)) {
-    genNode->setToError(std::move(err.value()));
-    return std::nullopt;
-  }
+          KGEN::evaluateConstraints(generator.getConstraints(), evaluator))
+    return std::move(err.value());
 
-  // If this generator node is already concrete and has no error, don't
-  // re-concretize.
-  if (!genNode->expansions.empty() && !genNode->error.has_value()) {
-    LLVM_DEBUG(logger << "Result: Generator has already been specialized (node "
-                         "is known to be concrete)\n");
-    if (config.testDiagnostics)
-      generator.emitRemark("Generator has already been specialized");
-    return std::nullopt;
-  }
-
-  // Check if we have a FuncOp parented under the top level module.
   StringAttr mangledName = mangleParameterValues(generator, inputParamValues);
-  if (Operation *op = lookup(mangledName)) {
-    // See if we can find this node (func + input params) in the root.
-    // The top level thing will be a generator, so check its expansions for a
-    // node that has this op and these input parameters.
-    auto found = llvm::find_if(root.expansions, [&](ExpansionTreeNode *e) {
-      return e->op == op && e->inputParams == genNode->inputParams;
-    });
-    // If we found the node in the root's expansion list, then we should not
-    // re-specialize.
-    if (found != root.expansions.end()) {
-      // Great, already specialized this node - we're all done.
-      LLVM_DEBUG(logger << "Result: Generator has already been specialized "
-                           "(found concrete func under the root)\n");
-
-      if (config.testDiagnostics)
-        generator.emitRemark("Generator has already been specialized");
-      return std::nullopt;
-    }
-  }
 
   // TODO (low prio): Some day we could mangle "instantiated from here"
   // information into the location.
@@ -2023,33 +1702,44 @@ ElaboratorImpl::specializeGenerator(ExpansionTreeNode *genNode) {
   IRMapping map;
   generator.getBodyRegion().cloneInto(&newFunc.getBodyRegion(), map);
 
-  // The node for this new func is simply the child of the node for the
-  // generator.
-  auto newFuncNode = createNode(newFunc, genNode->inputParams, genNode,
-                                genNode->expansionDepth, evaluator);
-  newFuncNode->knownRegions = genNode->knownRegions;
   // Map from the generator to the new function for the parameter graph copy.
   map.map(generator.getOperation(), newFunc.getOperation());
   // Copy over the parameter use-def graph for this clone.
-  newFuncNode->paramGraph = genNodeGraph->copy(map);
-  ParameterUseDefGraph &uses = newFuncNode->paramGraph.value();
+  ParameterUseDefGraph childGraph = genNodeGraph->copy(map);
+
+  // The node for this new func is simply the child of the node for the
+  // generator.
+  auto childNode = std::make_unique<ImplNode>(
+      newFunc, genNode, std::move(evaluator), std::move(childGraph));
+  g.concreteNodes.try_emplace(newFunc, childNode.get());
+  ImplNode *newFuncNode = childNode.get();
+  genNode->impls.push_back(std::move(childNode));
+  ParameterUseDefGraph &uses = newFuncNode->paramGraph;
 
   // Kick off the expansion for the new function.
-  FuncOp func = cast<FuncOp>(newFuncNode->op);
 
-  auto funcScope = logger.scope("Specializing Function: @", func.getName());
-  logger.logOp("Function", func);
+  auto funcScope = logger.scope("Specializing Function: @", newFunc.getName());
+  logger.logOp("Function", newFunc);
 
   std::vector<Operation *> opsToRewrite;
-  collectOpsToProcess(&func.getBodyRegion(), uses, opsToRewrite);
+  collectOpsToProcess(&newFunc.getBodyRegion(), uses, opsToRewrite);
   opsToRewrite.push_back(newFunc);
   llvm::append_range(opsToRewrite, uses.paramOps);
 
   // Process the worklist. Only finalize the function if this succeeded.
+  newFuncNode->status = ImplNode::IN_PROGRESS;
   if (succeeded(processScope(newFuncNode, opsToRewrite)))
-    finalizeAndVerifyFunction(analysis, newFuncNode, func);
+    finalizeAndVerifyFunction(analysis, newFuncNode);
+  newFuncNode->status = ImplNode::DONE;
 
-  return std::nullopt;
+  genNode->status = ParamNode::DONE;
+  ErrorTree err(genNode->gen.getLoc(), "no viable expansions found");
+  for (ImplNode &impl : llvm::make_pointee_range(genNode->impls)) {
+    if (!impl.error)
+      return success();
+    err.addCause(impl.error->copy());
+  }
+  return std::move(err);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2066,87 +1756,51 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
       return op.emitError("unlowered lit.func discovered in KGEN elaborator");
 
   auto emptyInputParamKey = ArrayAttr::get(theModule.getContext(), {});
+  bool failed = false;
   for (auto gen : primaryGenerators) {
     LLVM_DEBUG(logger.logOp("Elaborating primary generator", gen));
     // This has no input parameters, so we can create the expansion node with
     // no input parameters.
-    ExpansionTreeNode *generatorNode =
-        topLevelTrees.lookup({gen, emptyInputParamKey});
-    if (!generatorNode) {
-      generatorNode = createRootNode(gen, emptyInputParamKey);
-      topLevelTrees[{gen, emptyInputParamKey}] = generatorNode;
-    }
+    ParamNode *generatorNode = g.getOrCreate(emptyInputParamKey, gen);
 
     // Now we can begin to construct the expansion tree rooted at this
-    // generator.
-    if (auto err = specializeGenerator(generatorNode)) {
-      err->emit([](Location loc) { return mlir::emitError(loc); });
-      return failure();
+    // generator. Emit as many errors as possible.
+    ErrorTreeOr<SuccessType> err = specializeGenerator(generatorNode);
+    if (err.isError()) {
+      err.takeError().emit([](Location loc) { return mlir::emitError(loc); });
+      failed = true;
     }
   }
+  if (failed)
+    return failure();
 
   // Cleanup pass - we want to remove generators and interfaces by replacing
   // them with their concrete implementations. Only handle the primary
   // generators - everything else we don't care about.
   DenseMap<StringAttr, StringAttr> funcsToRename;
-  bool failed = !root.isConcrete();
   // We have to walk all the generators in the module because we have to rename
   // each one to its first implementation.
-  for (auto gen : theModule.getOps<GeneratorOp>()) {
-    ExpansionTreeNode *genNode =
-        topLevelTrees.lookup({gen, emptyInputParamKey});
-    if (!genNode)
-      continue;
-
-    // If this primary generator failed (or we already knew we failed), then the
-    // whole thing has failed. Just stop processing at this point.
-    if (failed || !genNode->isConcrete()) {
-      if (!llvm::is_contained(primaryGenerators, gen)) {
-        continue;
-      } else {
-        failed = true;
-        break;
-      }
-    }
+  SymbolTable &symtab = analysis.getTopLevelSymbolTable();
+  for (auto gen : llvm::make_early_inc_range(theModule.getOps<GeneratorOp>())) {
+    ParamNode *genNode = g.getOrCreate(emptyInputParamKey, gen);
 
     // Add all concrete functions, and rename the first one.
     std::vector<FuncOp> concreteFuncs;
-    genNode->getAllConcrete(concreteFuncs);
-    for (auto c : concreteFuncs)
-      analysis.getTopLevelSymbolTable().insert(c, genNode->op->getIterator());
+    genNode->getAllConcreteFuncs(concreteFuncs);
+    for (FuncOp c : concreteFuncs)
+      analysis.getTopLevelSymbolTable().insert(c, genNode->gen->getIterator());
 
-    funcsToRename[concreteFuncs.front().getNameAttr()] = genNode->getNameAttr();
+    if (!concreteFuncs.empty())
+      funcsToRename[concreteFuncs.front().getNameAttr()] =
+          genNode->gen.getSymNameAttr();
+    symtab.erase(gen);
   }
 
-  // Trim the expansion tree and erase ops we don't need/want.
-  DenseSet<Operation *> toErase;
-
-  // If we have failed, emit your errors and return failure.
-  if (failed) {
-    for (auto gen : primaryGenerators) {
-      ExpansionTreeNode *genNode =
-          topLevelTrees.lookup({gen, emptyInputParamKey});
-      assert(genNode && "We must have a node for a primary generator");
-      genNode->trimFailedExpansions(toErase);
-      if (genNode->error)
-        genNode->error->emit([](Location loc) { return mlir::emitError(loc); });
-    }
-    return failure();
-  }
-
-  LLVM_DEBUG(root.print(logger.scope("Expansion Tree")));
-  root.trimFailedExpansions(toErase);
-  LLVM_DEBUG(root.print(logger.scope("Trimmed Expansion Tree")));
-
-  for (Operation *op : toErase)
-    op->erase();
-
-  SymbolTable &symtab = analysis.getTopLevelSymbolTable();
-  for (Operation &op : llvm::make_early_inc_range(theModule.getOps())) {
-    if (isa<GeneratorOp>(op)) {
-      symtab.erase(&op);
-      continue;
-    }
+  for (ParamNode &node :
+       llvm::make_pointee_range(llvm::make_second_range(g.nodes))) {
+    for (ImplNode &impl : llvm::make_pointee_range(node.impls))
+      if (impl.error)
+        symtab.erase(impl.func);
   }
 
   // Perform any renaming at the end.  We cannot use the
@@ -2164,7 +1818,6 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
     if (auto func = dyn_cast<FuncOp>(op)) {
       if (auto newName = funcsToRename.lookup(func.getNameAttr())) {
         // Keep the symbol table up-to-date with the new name.
-        // TODO: We should upstream something for this.
         symtab.remove(func);
         func.setSymNameAttr(newName);
         symtab.insert(func, op->getIterator());
@@ -2185,14 +1838,7 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
     return WalkResult::advance();
   });
 
-  // Update the debug info for everything now that we've done renaming etc.
-  root.updateDebugInfo();
-
-  if (root.isConcrete())
-    LLVM_DEBUG(logger.logOp("Finished successfully", theModule));
-
-  // We were only successful if the root could be concretized.
-  return success(root.isConcrete());
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
