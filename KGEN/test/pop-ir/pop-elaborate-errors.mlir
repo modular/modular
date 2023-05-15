@@ -16,7 +16,7 @@ kgen.generator @impl(%a: !pop.simd<4, f32>) {
 // -----
 
 // expected-note @below {{failed to interpret function @out_of_range_read}}
-kgen.func @out_of_range_read() -> i32 {
+kgen.generator @out_of_range_read() -> i32 {
   %0 = pop.stack_allocation 0 x i32
   // expected-note @below {{failed to interpret operation pop.load}}
   // expected-note @below {{memory access size 4 is out-of-bounds}}

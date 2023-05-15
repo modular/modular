@@ -25,17 +25,10 @@ class IREvaluator;
 class Elaborator {
 public:
   /// Initialize the elaborator and its symbol table.
-  Elaborator(
-      mlir::SymbolTableAnalysis &analysis,
-      ParameterCollector::Analysis &paramCache, TargetInfoAttr target,
-      LLCL::Runtime &runtime, LLCL::AsyncSideEffectMap &map,
-      LLCL::RCRef<Cache::BlobCache<Cache::TransformCacheKey>> transformCache,
-      LLCL::RCRef<Cache::BlobCache<Cache::RegionCacheKey>> regionCache,
-      EvaluatorExecutorFnRef evaluatorExecutorFn)
+  Elaborator(mlir::SymbolTableAnalysis &analysis,
+             ParameterCollector::Analysis &paramCache, TargetInfoAttr target,
+             EvaluatorExecutorFnRef evaluatorExecutorFn)
       : analysis(analysis), paramCache(paramCache), target(target),
-        runtime(runtime), asyncMap(map),
-        transformCache(std::move(transformCache)),
-        regionCache(std::move(regionCache)),
         evaluatorExecutorFn(evaluatorExecutorFn) {}
 
   virtual ~Elaborator() = default;
@@ -61,17 +54,6 @@ public:
   /// Get the target associated with this instance of the elaborator.
   TargetInfoAttr getTarget() { return target; }
 
-  /// Inflate the provided function.
-  ErrorOrSuccess inflateFunc(FuncOp func) {
-    asyncMap.mapChained(func, [&](LLCL::AnyAsyncValueRef ch) {
-      return Cache::inflateOp(func, regionCache.copy(), std::move(ch));
-    });
-    return asyncMap.await(func);
-  }
-
-  /// Return the LLCL runtime.
-  LLCL::Runtime &getRuntime() { return runtime; }
-
   /// Return the evaluator to use when specializing generators.
   EvaluatorExecutorFnRef getEvaluatorExecutorFn() const {
     return evaluatorExecutorFn;
@@ -86,19 +68,6 @@ protected:
 
   /// The target we are compiling code for.
   TargetInfoAttr target;
-
-  /// This provides a runtime reference for the Elaborator and all its
-  /// functionality.
-  LLCL::Runtime &runtime;
-
-  /// This gives us a map of operation -> in-flight side effect. This is
-  /// important because we do async mutations on the IR and we may need await
-  /// those mutations to materialize.
-  LLCL::AsyncSideEffectMap &asyncMap;
-
-  /// These are the caches the Elaborator will use to run its operations.
-  LLCL::RCRef<Cache::BlobCache<Cache::TransformCacheKey>> transformCache;
-  LLCL::RCRef<Cache::BlobCache<Cache::RegionCacheKey>> regionCache;
 
   /// The functor used for evaluating generator specializations.
   EvaluatorExecutorFnRef evaluatorExecutorFn;
