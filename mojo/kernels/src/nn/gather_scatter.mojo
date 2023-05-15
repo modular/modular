@@ -127,17 +127,16 @@ fn gather_reduce[
                     for j in range [0,indices.dim[1])"""
                     let idx = indices[i, j].value
 
-                    # TODO (#13523): Prefetching degrades perf by 30% on dlrm-rm1-multihot shapes
-                    # # prefetch next k
-                    # let next_idx = indices._offset(
-                    #     StaticIntTuple[indices_rank](i, j)
-                    # ).load()
-                    # input.prefetch[
-                    #     PrefetchOptions()
-                    #     .for_read()
-                    #     .high_locality()
-                    #     .to_data_cache()
-                    # ]((next_idx + prefetch_offset).value, 0)
+                    # prefetch next k
+                    let next_idx_ptr = indices._offset(
+                        StaticIntTuple[indices_rank](i, j)
+                    ) + prefetch_offset
+                    input.prefetch[
+                        PrefetchOptions()
+                        .for_read()
+                        .high_locality()
+                        .to_data_cache()
+                    ](next_idx_ptr.load().value, 0)
 
                     let in_idx = StaticIntTuple[2](idx, k)
 
