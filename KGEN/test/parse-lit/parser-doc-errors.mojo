@@ -159,3 +159,41 @@ fn fn_nested_fn():
         pass
 
     return
+
+
+fn fn_raises_with_return_type(x: Int) raises -> Int:
+    """This is a function that raises, with an explicit return type.
+
+    Because it raises, it implicitly has a memory-only `__result__` argument.
+    However, this doc string should not document this hidden argument.
+
+    Args:
+        x: An explicit argument.
+
+    Returns:
+        Zero.
+    """
+    return 0
+
+
+struct object:
+    """This definition of `object` is required because the compiler performs a
+    lookup of an "object" type for `def` functions. We cannot
+    `from Object import object` because doing so would `-doc-validate` the
+    `Object.mojo` file and all its dependencies."""
+
+    def __init__(inout self):
+        """The constructor for our fake `object` type."""
+        pass
+
+
+def def_implicit_object_return_type(x: Int):
+    """This is a `def` function with no explicit return type.
+
+    Because it implicitly returns an object, it has a hidden `__result__`
+    argument. However, this doc string should not document this hidden argument.
+
+    Args:
+        x: An explicit argument.
+    """
+    pass
