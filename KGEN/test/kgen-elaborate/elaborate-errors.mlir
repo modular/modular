@@ -85,7 +85,7 @@ kgen.generator @sizeof_unknown() {
 // -----
 
 // expected-note @below {{failed to interpret function @cant_interpret}}
-kgen.func @cant_interpret(%arg0: index) -> index {
+kgen.generator @cant_interpret(%arg0: index) -> index {
   // expected-note @below {{failed to fold operation some.op(1 : index)}}
   %0 = "some.op"(%arg0) : (index) -> index
   kgen.return %0 : index
@@ -101,14 +101,14 @@ kgen.generator @interp_func() {
 // -----
 
 // expected-note @below {{failed to interpret function @fails_to_interpret}}
-kgen.func @fails_to_interpret() {
+kgen.generator @fails_to_interpret() {
   // expected-note @below {{failed to fold operation some.op()}}
   "some.op"() : () -> ()
   kgen.return
 }
 
 // expected-note @below {{failed to interpret function @passthrough}}
-kgen.func @passthrough() -> index {
+kgen.generator @passthrough() -> index {
   // expected-note @below {{failed to evaluate call}}
   kgen.call @fails_to_interpret() : () -> ()
   %idx0 = index.constant 0

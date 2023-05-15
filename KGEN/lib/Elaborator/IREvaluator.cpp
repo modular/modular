@@ -26,20 +26,12 @@ ErrorOr<Region *> IREvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
   auto func = elaborator->getAnalysis().getTopLevelSymbolTable().lookup<FuncOp>(
       cast<FlatSymbolRefAttr>(symbol).getAttr());
 
-  // Make sure the function is inflated.
-  if (auto err = elaborator->inflateFunc(func))
-    return err.takeError();
-
   // Now we can return the function body.
   return &func.getBodyRegion();
 }
 
 ErrorTreeOr<TypedAttr>
 IREvaluator::evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
-  // Make sure the function is inflated.
-  if (auto err = elaborator->inflateFunc(func))
-    return ErrorTree(func.getLoc(), err.takeError());
-
   // Evaluate the function body.
   SmallVector<Attribute> arguments;
   for (TypedAttr input : inputs)
@@ -149,6 +141,8 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
       return failure();
     }
 
+    // FIXME: This should acquire a semaphore shared across all compiler
+    // processes to ensure search is performed in isolation.
     auto bestOr = elaborator->getEvaluatorExecutorFn()(
         *evaluator, *symtab, elaborator->getTarget(), options);
     if (bestOr.isError()) {

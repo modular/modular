@@ -1,6 +1,6 @@
 // RUN: kgen-opt -split-input-file -elaborate-generators %s | FileCheck %s
 
-kgen.func @store_load_pointer(%arg0: i32) -> i32 {
+kgen.generator @store_load_pointer(%arg0: i32) -> i32 {
   %0 = pop.stack_allocation 1 x i32
   pop.store %arg0, %0 : !pop.pointer<i32>
   %1 = pop.stack_allocation 1 x !pop.pointer<i32>
@@ -17,7 +17,7 @@ kgen.generator @store_load<T: type>(%arg0: !kgen.paramref<T>) -> !kgen.paramref<
   kgen.return %1 : !kgen.paramref<T>
 }
 
-kgen.func @i24_pair_bitcast(%arg0: !pop.array<2, i24>) -> i64 {
+kgen.generator @i24_pair_bitcast(%arg0: !pop.array<2, i24>) -> i64 {
   %0 = pop.stack_allocation 2 x i24
   %1 = pop.pointer.bitcast %0 : !pop.pointer<i24> to !pop.pointer<array<2, i24>>
   pop.store %arg0, %1 : !pop.pointer<array<2, i24>>
@@ -35,7 +35,7 @@ kgen.generator @bitcast<I: type, O: type>(%arg0: !kgen.paramref<I>) -> !kgen.par
 }
 
 // COM: Store the variant and sneakily read its discriminator's raw value.
-kgen.func @variant_bitcast_discr(%arg0: !pop.variant<i32, i64>) -> i8 {
+kgen.generator @variant_bitcast_discr(%arg0: !pop.variant<i32, i64>) -> i8 {
   %0 = pop.stack_allocation 1 x !pop.variant<i32, i64>
   pop.store %arg0, %0 : !pop.pointer<variant<i32, i64>>
   %1 = pop.pointer.bitcast %0 : !pop.pointer<variant<i32, i64>> to !pop.pointer<struct<i64, i8>>

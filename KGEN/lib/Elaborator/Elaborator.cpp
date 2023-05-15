@@ -23,17 +23,11 @@
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LowerToObject.h"
-#include "LLCL/CompilerSupport/AsyncSideEffectMap.h"
-#include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
-#include "LLCL/Runtime/Algorithms.h"
-#include "LLCL/Support/Semaphore.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
-#include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "Support/MDialect/MAttrs.h"
 #include "Support/MDialect/MDialect.h"
 #include "Support/STLExtras.h"
-#include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/PatternMatch.h"
@@ -41,7 +35,6 @@
 #include "mlir/Support/DebugStringHelper.h"
 #include "mlir/Support/IndentedOstream.h"
 #include "mlir/Transforms/RegionUtils.h"
-#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/SaveAndRestore.h"
@@ -203,16 +196,6 @@ public:
 
   /// Collect all the errors in my subtree into a single error tree.
   void collectSubtreeErrors(ErrorTree &tree);
-
-  /// Take the provided node as a child and set the parent to `this`.
-  void takeExpansion(ExpansionTreeNode *child) {
-    // Erase the child from the vector of its original parent.
-    auto found = llvm::find(child->parent->expansions, child);
-    child->parent->expansions.erase(found);
-    // Re-parent it under this parent.
-    child->parent = this;
-    expansions.push_back(child);
-  }
 
   /// Take the provided error and set this node to an `error` state. Erase all
   /// state dominated by this node.
@@ -1029,20 +1012,15 @@ static void collectOpsToProcess(Region *scope, const ParameterUseDefGraph &uses,
 namespace {
 class ElaboratorImpl : public Elaborator {
 public:
-  ElaboratorImpl(
-      mlir::SymbolTableAnalysis &analysis,
-      ParameterCollector::Analysis &paramCache, TargetInfoAttr target,
-      LLCL::Runtime &runtime, LLCL::AsyncSideEffectMap &map,
-      LLCL::RCRef<Cache::BlobCache<Cache::TransformCacheKey>> transformCache,
-      LLCL::RCRef<Cache::BlobCache<Cache::RegionCacheKey>> regionCache,
-      EvaluatorExecutorFnRef evaluatorExecutorFn,
-      const ElaboratorConfig &config)
-      : Elaborator(analysis, paramCache, target, runtime, map,
-                   transformCache.copy(), regionCache.copy(),
-                   evaluatorExecutorFn),
+  ElaboratorImpl(mlir::SymbolTableAnalysis &analysis,
+                 ParameterCollector::Analysis &paramCache,
+                 TargetInfoAttr target,
+                 EvaluatorExecutorFnRef evaluatorExecutorFn,
+                 const ElaboratorConfig &config)
+      : Elaborator(analysis, paramCache, target, evaluatorExecutorFn),
         root(analysis.getTopLevelOp<ModuleOp>(), IREvaluator(*this), alloc,
              logger),
-        evalSemaphore(1), config(config) {}
+        config(config) {}
 
   ErrorTreeOr<FuncOp>
   getConcreteFunction(Location loc, SymbolRefAttr symbolRef,
@@ -1184,13 +1162,6 @@ private:
   /// proper data structure.
   DenseMap<GeneratorOp, std::unique_ptr<ParameterUseDefGraph>> knownGraphs;
 
-  /// Evaluation semaphore - this ensures we benchmark one thing at a time. We
-  /// initialize it to 1 so that the first thing to evaluate something doesn't
-  /// block.
-  // TODO (#7826): Make this a NamedSemaphore so it's unique across processes
-  //               too.
-  Semaphore evalSemaphore;
-
   /// The elaborator config.
   ElaboratorConfig config;
 
@@ -1245,9 +1216,7 @@ void ElaboratorImpl::finalizeAndVerifyFunction(
 ErrorTreeOr<FuncOp>
 ElaboratorImpl::getConcreteFunction(Location loc, SymbolRefAttr symbolRef,
                                     ArrayRef<TypedAttr> paramValues) {
-  auto funcItf = lookup<FuncInterface>(symbolRef);
-  if (auto func = dyn_cast<FuncOp>(funcItf.getOperation()))
-    return func;
+  auto funcItf = lookup<GeneratorOp>(symbolRef);
 
   SmallVector<Attribute> inputParams;
   for (TypedAttr value : paramValues)
@@ -2029,11 +1998,6 @@ ElaboratorImpl::specializeGenerator(ExpansionTreeNode *genNode) {
       LLVM_DEBUG(logger << "Result: Generator has already been specialized "
                            "(found concrete func under the root)\n");
 
-      // If we have the node and its parentage is incorrect, then take it as a
-      // child.
-      if ((*found)->parent != genNode)
-        genNode->takeExpansion(*found);
-
       if (config.testDiagnostics)
         generator.emitRemark("Generator has already been specialized");
       return std::nullopt;
@@ -2069,14 +2033,6 @@ ElaboratorImpl::specializeGenerator(ExpansionTreeNode *genNode) {
   // Copy over the parameter use-def graph for this clone.
   newFuncNode->paramGraph = genNodeGraph->copy(map);
   ParameterUseDefGraph &uses = newFuncNode->paramGraph.value();
-
-  // Inflate the function and then specialize it.
-  asyncMap.mapChained(
-      newFunc, [newFunc, regionCache = regionCache.copy()](auto ch) mutable {
-        return Cache::inflateOp(newFunc, std::move(regionCache), std::move(ch));
-      });
-  if (auto err = asyncMap.await(newFunc))
-    return ErrorTree(newFunc.getLoc(), err.takeError());
 
   // Kick off the expansion for the new function.
   FuncOp func = cast<FuncOp>(newFuncNode->op);
@@ -2191,15 +2147,6 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
       symtab.erase(&op);
       continue;
     }
-
-    /// Non viable funcs or inlined funcs will be left with an invalid body.
-    /// Remove them at the end of elaboration.
-    if (auto func = dyn_cast<FuncOp>(op)) {
-      // Make sure all funcs are inflated at the end of this, even if they
-      // didn't participate in elaboration.
-      asyncMap.map(func, Cache::inflateOp(func, regionCache.copy(),
-                                          asyncMap.getChain(func)));
-    }
   }
 
   // Perform any renaming at the end.  We cannot use the
@@ -2281,9 +2228,7 @@ LogicalResult M::elaborateGenerators(mlir::SymbolTableAnalysis &symtab,
           regionCacheBackendOr.takeValue());
 
   // Now, construct and run the elaborator.
-  ElaboratorImpl impl(symtab, paramCache, target, transformCache->getRuntime(),
-                      asyncMap, transformCache.copy(), regionCache.copy(),
-                      evaluatorExecutorFn, config);
+  ElaboratorImpl impl(symtab, paramCache, target, evaluatorExecutorFn, config);
   return impl.run(primaryGenerators);
 }
 
