@@ -753,6 +753,7 @@ let np = Python.import_module("numpy")
 
 # Now use numpy as if writing in Python
 a = np.array([1, 2, 3])
+print(a)
 ```
 
 Yes, this imports Python NumPy, and you can import _any other Python module_.
@@ -783,10 +784,9 @@ from PythonInterface import Python
 
 Python.add_to_path("path/to/module")
 let mypython = Python.import_module("mypython")
-let builtins = Python.import_module("builtins")
 
 let c = mypython.my_algorithm(2, 3)
-builtins.print(c)
+print(c)
 ```
 
 There's no need to worry about memory management when using Python in Mojo.
