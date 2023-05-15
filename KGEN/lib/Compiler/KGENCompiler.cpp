@@ -230,6 +230,7 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
 
   pm.addNestedPass<FuncOp>(createSimplifyCF());
   pm.addNestedPass<FuncOp>(createCleanupCompilerGlobals());
+  pm.addNestedPass<FuncOp>(createSROA());
   pm.addNestedPass<FuncOp>(createMem2Reg());
   pm.addNestedPass<FuncOp>(mlir::createCSEPass());
 
@@ -249,6 +250,11 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
 
   pm.addNestedPass<FuncOp>(createSROA());
   pm.addNestedPass<FuncOp>(createMem2Reg());
+  pm.addNestedPass<FuncOp>(mlir::createCanonicalizerPass(cannConfig));
+  pm.addNestedPass<FuncOp>(createFoldGlobalConstLoads());
+  pm.addNestedPass<FuncOp>(createSROA());
+  pm.addNestedPass<FuncOp>(createMem2Reg());
+  pm.addNestedPass<FuncOp>(mlir::createCanonicalizerPass(cannConfig));
   pm.addNestedPass<FuncOp>(createSROA());
   pm.addNestedPass<FuncOp>(createMem2Reg());
   pm.addNestedPass<FuncOp>(mlir::createCanonicalizerPass(cannConfig));

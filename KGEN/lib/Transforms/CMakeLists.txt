@@ -7,6 +7,7 @@
 add_modular_conversion_library(KGENTransforms
   CleanupCompilerGlobals.cpp
   EliminateDeadSymbols.cpp
+  FoldGlobalConstLoads.cpp
   HoistTrivialInvariants.cpp
   Inlining.cpp
   KnownVariant.cpp
