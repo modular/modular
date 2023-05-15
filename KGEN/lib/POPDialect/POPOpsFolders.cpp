@@ -9,6 +9,7 @@
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "Support/MDialect/MAttrs.h"
+#include "mlir/IR/PatternMatch.h"
 
 using namespace M;
 using namespace KGEN;
@@ -911,6 +912,33 @@ ErrorTreeOr<SuccessType> ArrayGEPOp::interpret(ArrayRef<Attribute> operands,
       index.getInt() * (llvm::alignTo(*dl.getTypeSize(state.getTarget()),
                                       *dl.getTypeAlign(state.getTarget())));
   state.mapResults(PointerAttr::get(addr, PointerType::get(dl)));
+  return success();
+}
+
+LogicalResult ArrayGEPOp::canonicalize(ArrayGEPOp op,
+                                       PatternRewriter &rewriter) {
+  PointerType ptrToArray = op.getArray().getType();
+  std::optional<int64_t> size =
+      ptrToArray.getElementAs<ArrayType>().getResolvedSize();
+
+  // We are only going to canonicalize scalars.
+  if (!size || *size != 1)
+    return rewriter.notifyMatchFailure(op, "Size is not known to be scalar");
+
+  // Don't repeatedly canonicalize already constant values.
+  if (op.getIndex().getDefiningOp() &&
+      op.getIndex().getDefiningOp()->hasTrait<OpTrait::ConstantLike>())
+    return rewriter.notifyMatchFailure(op,
+                                       "ArrayGEP index is already constant.");
+
+  // Otherwise we have gep into a array of one element with a dynamic value. It
+  // is undefined behaviour for that to be anything but `0` so we can replace it
+  // with the constant `0`. This frees the use to be DCE'd and unblocks other
+  // optimizations.
+  auto zero = rewriter.create<KGEN::ParamConstantOp>(op.getLoc(),
+                                                     rewriter.getIndexAttr(0));
+  rewriter.replaceOpWithNewOp<ArrayGEPOp>(op, op.getType(), op.getArray(),
+                                          zero);
   return success();
 }
 

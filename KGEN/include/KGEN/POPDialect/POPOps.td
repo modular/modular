@@ -1127,6 +1127,7 @@ def POP_ArrayGEPOp : POPOp<"array.gep", [Pure,
   let arguments = (ins PointerOf<POP_ArrayType>:$array, Index:$index);
   let results = (outs POP_PointerType:$result);
   let assemblyFormat = "$array `[` $index `]` attr-dict `:` type($array)";
+  let hasCanonicalizeMethod = 1;
 }
 
 //===----------------------------------------------------------------------===//
