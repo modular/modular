@@ -540,6 +540,25 @@ kgen.func @array_get() -> index {
   kgen.return %1 : index
 }
 
+// CHECK-LABEL: @array_gep
+kgen.func @array_gep(%array: !pop.pointer<array<1, index>>, %idx: index) -> !pop.pointer<index> {
+  // CHECK: (%[[ARRAY:.*]]: !pop.pointer<array<1, index>>, %[[IDX:.*]]: index)
+  // CHECK-NEXT: %[[ZERO:.*]] = kgen.param.constant = <0>
+  // CHECK-NEXT: %[[GEP:.*]] = pop.array.gep %[[ARRAY]][%[[ZERO]]]
+  // CHECK-NEXT: kgen.return %[[GEP]]
+  %1 = pop.array.gep %array[%idx] : !pop.pointer<array<1, index>>
+  kgen.return %1 : !pop.pointer<index>
+}
+
+// CHECK-LABEL: @array_gep_unchanged
+kgen.func @array_gep_unchanged(%array: !pop.pointer<array<2, index>>, %idx: index) -> !pop.pointer<index> {
+  // CHECK: (%[[ARRAY:.*]]: !pop.pointer<array<2, index>>, %[[IDX:.*]]: index)
+  // CHECK-NEXT: %[[GEP:.*]] = pop.array.gep %[[ARRAY]][%[[IDX]]]
+  // CHECK-NEXT: kgen.return %[[GEP]]
+  %1 = pop.array.gep %array[%idx] : !pop.pointer<array<2, index>>
+  kgen.return %1 : !pop.pointer<index>
+}
+
 // CHECK-LABEL: @array_replace
 kgen.func @array_replace() -> !pop.array<2, index> {
   // CHECK-NEXT: constant: array<2, index> = <[0, 1]>
