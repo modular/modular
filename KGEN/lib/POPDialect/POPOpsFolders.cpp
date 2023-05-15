@@ -606,6 +606,10 @@ OpFoldResult CastOp::fold(FoldAdaptor adaptor) {
 //===----------------------------------------------------------------------===//
 
 OpFoldResult SIMDExtractElementOp::fold(FoldAdaptor adaptor) {
+  // Extracting from a scalar is always going to return the scalar.
+  if (getVector().getType().isScalar())
+    return getVector();
+
   auto operands = adaptor.getOperands();
   auto vec = dyn_cast_if_present<SIMDAttr>(operands[0]);
   auto idx = dyn_cast_if_present<IntegerAttr>(operands[1]);
