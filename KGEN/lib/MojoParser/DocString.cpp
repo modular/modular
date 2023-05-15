@@ -8,6 +8,7 @@
 #include "ASTDecl.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "SpecialFunctions.h"
 #include "mlir/Support/IndentedOstream.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/JSON.h"
@@ -46,22 +47,21 @@ static bool requiresDocString(StructDeclOp op) {
 }
 
 // Given a function name such as "__init__($module::Struct=&)", returns whether
-// it is similar to the naming scheme used for "dunder methods"
-// (double-underscore methods). That is, returns whether the function identifier
-// begins and ends with double underscores. Using a heuristic such as this one
-// is simpler than listing out all the dunder methods recognized by Mojo.
-static bool isDunderLike(StringRef name) {
-  return name.starts_with("__") && name.split("(").first.ends_with("__");
+// it is a "special function," also known as a "dunder method"
+// (double-underscore method).
+static bool isSpecialFunction(StringRef name) {
+  return SpecialFunctionInfo::getKind(name.split("(").first) !=
+         SpecialFunctionKind::kNormal;
 }
 
 // If a function matches all of the following conditions, it requires a doc
 // string:
 // 1. It's a "public" function, meaning its name does not start with an
-//    underscore, unless it's a dunder method such as `__init__`.
+//    underscore, unless it's a special function such as `__init__`.
 // 2. It's defined at the top level of a module, or as a method on a struct that
 //    requires a doc string.
 static bool requiresDocString(LIT::FuncOp op) {
-  if (op.getName().starts_with("_") && !isDunderLike(op.getName()))
+  if (op.getName().starts_with("_") && !isSpecialFunction(op.getName()))
     return false;
 
   Operation *parent = op->getParentOp();
