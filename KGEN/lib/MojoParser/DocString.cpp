@@ -820,15 +820,18 @@ private:
   /// Validate documentation for the given function.
   void validateDecl(ASTDecl &decl, LIT::FuncOp funcOp, DocString &docStr) {
     SignatureType signature = funcOp.getSignature();
-    auto argNames = funcOp.getValueParamNames();
-    bool hasResultType = !funcOp.getResultType().isa<LIT::NoneType>();
-    if (!hasResultType && signature.hasMemoryOnlyResult()) {
-      argNames = argNames.drop_front();
-      hasResultType = true;
-    }
 
-    // If this is a method, drop the self argument. We don't expect this to be
-    // explicitly documented.
+    // In general, each function argument must be documented, but exceptions are
+    // pruned from the list below.
+    ArrayRef<StringAttr> argNames = funcOp.getValueParamNames();
+    // The compiler can insert an implicit `__result__` argument, which stores
+    // memory-only results, at the beginning of an argument list.  Because these
+    // arguments are hidden artifacts of the compiler, they don't need to be
+    // documented.
+    if (signature.hasMemoryOnlyResult())
+      argNames = argNames.drop_front();
+    // Methods take `self` as an explicit first argument, for which
+    // documentation isn't required.
     if (isa<StructDeclOp>(funcOp->getParentOp()) && !funcOp.getIsStatic())
       argNames = argNames.drop_front();
 
@@ -855,10 +858,10 @@ private:
       } else if (section == "Parameters") {
         processParameters(loc, seenParameters, description);
       } else if (section == "Returns") {
-        if (!hasResultType) {
+        if (!signature.hasMemoryOnlyResult() &&
+            funcOp.getResultTypeWithoutErrorVariant().isa<LIT::NoneType>())
           sharedState.emitWarning(loc, "unexpected 'Returns' in doc string for "
                                        "function with no results");
-        }
       }
     };
     processDocSections(description, sections, processFn);
