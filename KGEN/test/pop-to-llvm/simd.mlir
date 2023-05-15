@@ -296,14 +296,6 @@ kgen.func @simd_extractelement(%vec: !pop.simd<4, f32>, %idx: index) -> !pop.sca
   kgen.return %0 : !pop.scalar<f32>
 }
 
-// CHECK-LABEL: @simd_extractelement_1xf32
-kgen.func @simd_extractelement_1xf32(%vec: !pop.scalar<f32>, %idx: index) -> !pop.scalar<f32> {
-  // CHECK: %[[F32_VAL:.*]] = builtin.unrealized_conversion_cast %[[E:..*]] : !pop.scalar<f32> to f32
-  // CHECK: %[[RESULT:.*]] = builtin.unrealized_conversion_cast %[[F32_VAL]] : f32 to !pop.scalar<f32>
-  %0 = pop.simd.extractelement %vec[%idx] : !pop.scalar<f32>
-  kgen.return %0 : !pop.scalar<f32>
-}
-
 // CHECK-LABEL: @simd_insertelement
 kgen.func @simd_insertelement(%val: !pop.scalar<f32>, %vec: !pop.simd<4, f32>, %idx: index) -> !pop.simd<4, f32> {
   // CHECK: %[[VEC:.*]] = builtin.unrealized_conversion_cast

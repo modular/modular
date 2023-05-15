@@ -454,6 +454,14 @@ kgen.func @simd_extractelement() -> (!pop.scalar<si8>) {
   kgen.return %1 : !pop.scalar<si8>
 }
 
+// CHECK-LABEL: @simd_extractelement_scalar
+kgen.func @simd_extractelement_scalar(%scalar : !pop.scalar<f32>, %arg : index) -> (!pop.scalar<f32>) {
+  // CHECK: (%[[SCALAR:.*]]: !pop.scalar<f32>, %[[ARG:.*]]: index)
+  // CHECK-NEXT: kgen.return %[[SCALAR]]
+  %1 = pop.simd.extractelement %scalar[%arg] : !pop.scalar<f32>
+  kgen.return %1 : !pop.scalar<f32>
+}
+
 // CHECK-LABEL: @simd_insertelement
 kgen.func @simd_insertelement() -> (!pop.simd<2, si8>) {
   // CHECK-NEXT: <30, 20>
