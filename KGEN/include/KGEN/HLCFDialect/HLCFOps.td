@@ -238,7 +238,7 @@ def HLCF_SwitchOp : HLCFParentOp<"switch",
     ```
   }];
 
-  let arguments = (ins Index:$arg, DenseI64ArrayAttr:$caseValues);
+  let arguments = (ins Index:$arg, DenseI32ArrayAttr:$caseValues);
   let results = (outs Variadic<AnyType>:$results);
   let regions = (region SizedRegion<1>:$defaultRegion,
                         VariadicRegion<SizedRegion<1>>:$caseRegions);
