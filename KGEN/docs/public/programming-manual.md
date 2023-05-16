@@ -830,8 +830,36 @@ It will output the types after implicit conversion to Python types:
 
 Mojo doesn't have a standard Dictionary yet, so it is not yet possible
 to create a Python dictionary from a Mojo dictionary. You can work with
-Python dictionaries in Mojo though!
+Python dictionaries in Mojo though! To create a Python dictionary, use the 
+`dict` method:
 
+```mojo
+from PythonInterface import Python
+from PythonObject import PythonObject
+from IO import print
+from Range import range
+
+def main() -> None:
+    let dictionary = Python.dict()
+    dictionary["fruit"] = "apple"
+    dictionary["starch"] = "potato"
+    let keys: PythonObject = ["fruit", "starch", "protein"]
+    let N: Int = keys.__len__().to_index()
+    print(N, "items")
+    for i in range(N):
+        if Python.is_type(dictionary.get(keys[i]), Python.none()):
+            print(keys[i], "is not in dictionary")
+        else:
+            print(keys[i], "is included")
+```
+
+The output:
+```text
+3 items
+fruit is included
+starch is included
+protein is not in dictionary
+```
 
 ## Parameterization: compile-time metaprogramming
 
