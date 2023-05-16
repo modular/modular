@@ -14,10 +14,12 @@
 namespace M {
 
 /// Parse a parenthesized operand list with types included, e.g.
-/// `(%a: i32, %b: f32)`.
+/// `(%a: i32, %b: f32)`. For operands without type annotation, use
+/// `optDefaultType`.
 ParseResult
 parseParenOperandList(OpAsmParser &parser, OperationState &result,
-                      SmallVectorImpl<OpAsmParser::Argument> &argumentInfo);
+                      SmallVectorImpl<OpAsmParser::Argument> &argumentInfo,
+                      Type optDefaultType = {});
 
 } // namespace M
 
