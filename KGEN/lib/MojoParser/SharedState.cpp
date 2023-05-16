@@ -54,36 +54,32 @@ static void adjustTokenEndPoint(SharedState &shared, SMLoc &loc);
 /// Return the path containing the standard library. Returns nullopt if the
 /// standard library cannot be found.
 static void getAutoImportPaths(SmallVector<std::string> &paths) {
-  // TODO: Eventually we should resolve the standard library path to an actual
-  // install of lit, for now though try to resolve the standard library path
-  // within modular.
-  std::optional<std::filesystem::path> modularRoot = std::nullopt;
+  // Check if we already have the path set.
+  if (auto envDir = llvm::sys::Process::GetEnv("MODULAR_PATH"))
+    paths.push_back(
+        (std::filesystem::path(*envDir) / "Kernels" / "mojo").string());
+
+  if (auto envDir = llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH"))
+    paths.push_back(
+        (std::filesystem::path(*envDir) / "build" / "Kernels" / "mojo")
+            .string());
+
+  // If a path was specified via envvar, we're done here.
+  if (!paths.empty())
+    return;
+
+  // Otherwise, try to find modular relative to the current directory.
   std::filesystem::path path = std::filesystem::current_path();
   while (!path.empty()) {
     if (path.stem() == "modular") {
-      modularRoot = path;
-      break;
+      paths = {(path / "Kernels" / "mojo").string(),
+               (path / ".derived" / "build" / "Kernels" / "mojo").string()};
+      return;
     }
     if (!path.has_parent_path())
       break;
     path = path.parent_path();
   }
-  auto addPath = [&](StringRef env,
-                     std::filesystem::path const &relativePathFromEnv,
-                     std::filesystem::path const &relativePathFromRoot) {
-    if (auto src = llvm::sys::Process::GetEnv(env))
-      paths.push_back(
-          (std::filesystem::path(*src) / relativePathFromEnv).string());
-    else {
-      if (modularRoot)
-        paths.push_back((*modularRoot / relativePathFromRoot).string());
-    }
-  };
-  std::filesystem::path kernelsMojo("Kernels/mojo");
-  addPath("MODULAR_PATH", kernelsMojo, kernelsMojo);
-  std::filesystem::path buildKernelsMojo("build/Kernels/mojo");
-  std::filesystem::path derivedBuildKernelsMojo(".derived/build/Kernels/mojo");
-  addPath("MODULAR_DERIVED_PATH", buildKernelsMojo, derivedBuildKernelsMojo);
 }
 
 struct SharedState::Impl {
