@@ -411,6 +411,7 @@ def LIT_TryOp : LITOp<"try", [DeclareOpInterfaceMethods<ControlFlowNode>]> {
     ```
   }];
 
+  let arguments = (ins OptionalAttr<IndexAttr>:$finallyLabel);
   let regions = (region SizedRegion<1>:$tryRegion, SizedRegion<1>:$exceptRegion,
                         SizedRegion<1>:$elseRegion,
                         SizedRegion<1>:$finallyRegion);
@@ -421,7 +422,9 @@ def LIT_TryOp : LITOp<"try", [DeclareOpInterfaceMethods<ControlFlowNode>]> {
     `finally` $finallyRegion attr-dict
   }];
 
-  let builders = [OpBuilder<(ins), [{ build($_builder, $_state, {}); }]>];
+  let builders = [
+    OpBuilder<(ins), [{ build($_builder, $_state, {}, IntegerAttr()); }]>
+  ];
 
   let hasVerifier = 1;
 }
@@ -455,6 +458,22 @@ def LIT_TryRaiseOp : LITOp<"try.raise", [Terminator,
   }];
 
   let arguments = (ins Variadic<AnyType>:$operands);
+  let assemblyFormat = "($operands^ `:` type($operands))? attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
+// TryFinalizeOp
+//===----------------------------------------------------------------------===//
+
+def LIT_TryFinalizeOp : LITOp<"try.finalize", [Terminator,
+    DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
+  let summary = "Branch to the finally block of the enclosing try operation.";
+  let description = [{
+    The `lit.try.finalize` operation is used within the 'try', 'except', and
+    'else' regions of a `lit.try` operation to branch to its 'finally' region.
+  }];
+
+  let arguments = (ins IndexAttr:$finallyLabel, Variadic<AnyType>:$operands);
   let assemblyFormat = "($operands^ `:` type($operands))? attr-dict";
 }
 

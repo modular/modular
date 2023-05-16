@@ -1,0 +1,99 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# RUN: mojo %s | FileCheck %s
+
+from IO import print
+
+
+def try_it(c0: Bool, c1: Bool) -> StringLiteral:
+    try:
+        try:
+            print("try")
+            return "dead code"
+        finally:
+            print("finally")
+            if c0:
+                return "true!"
+            return "false!"
+    finally:
+        print("finally again!")
+        if c1:
+            return "interrupt!"
+
+
+struct MyCtxtMgr:
+    var handle: Bool
+
+    fn __init__(inout self, handle: Bool = True):
+        self.handle = handle
+
+    fn __enter__(self):
+        pass
+
+    fn __exit__(self):
+        print("exit!")
+
+    fn __exit__(self, err: Error) -> Bool:
+        print("exit error!")
+        return self.handle
+
+
+fn with_no_throw() -> Int:
+    with MyCtxtMgr():
+        return 1
+
+
+def with_it() -> Int:
+    with MyCtxtMgr():
+        return 2
+
+
+def with_it_err(handle: Bool) -> Int:
+    with MyCtxtMgr(handle):
+        raise Error()
+    return 3
+
+
+def main() -> None:
+    # CHECK-LABEL: == try-finally
+    print("== try-finally")
+    # CHECK-NEXT: try
+    # CHECK-NEXT: finally
+    # CHECK-NEXT: finally again!
+    # CHECK-NEXT: true!
+    print(try_it(True, False))
+    # CHECK-NEXT: try
+    # CHECK-NEXT: finally
+    # CHECK-NEXT: finally again!
+    # CHECK-NEXT: false!
+    print(try_it(False, False))
+    # CHECK-NEXT: try
+    # CHECK-NEXT: finally
+    # CHECK-NEXT: finally again!
+    # CHECK-NEXT: interrupt!
+    print(try_it(True, True))
+    # CHECK-NEXT: try
+    # CHECK-NEXT: finally
+    # CHECK-NEXT: finally again!
+    # CHECK-NEXT: interrupt!
+    print(try_it(False, True))
+
+    # CHECK-NEXT: exit!
+    # CHECK-NEXT: 1
+    print(with_no_throw())
+    # CHECK-NEXT: exit!
+    # CHECK-NEXT: 2
+    print(with_it())
+    # CHECK-NEXT: exit error!
+    # CHECK-NEXT: 3
+    print(with_it_err(True))
+    try:
+        # CHECK-NEXT: exit error!
+        print(with_it_err(False))
+    except:
+        # CHECK-NEXT: an error was raised
+        print("an error was raised")

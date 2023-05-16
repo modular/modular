@@ -312,8 +312,10 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
         eraseOpToEndOfBlock(firstExceptOp);
       } else {
         // The except and else blocks execute without protection from the try.
+        bool exceptBreaks = false;
         lowerSemanticCFForBlock(tryOp.getExceptRegion().front(), doesRaise,
-                                doesBreak, tryFallsThrough);
+                                exceptBreaks, tryFallsThrough);
+        doesBreak |= exceptBreaks;
       }
 
       // If there is an 'else' block that is unreachable, complain and remove
@@ -326,14 +328,20 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
                       "'else' logic in 'try' is unreachable");
         eraseOpToEndOfBlock(firstElseOp);
       } else {
-        lowerSemanticCFForBlock(tryOp.getElseRegion().front(), doesRaise,
-                                doesBreak, tryFallsThrough);
+        bool elseRaises = false, elseBreaks = false, elseFallsThrough = false;
+        lowerSemanticCFForBlock(tryOp.getElseRegion().front(), elseRaises,
+                                elseBreaks, elseFallsThrough);
+        doesRaise |= elseRaises;
+        doesBreak |= elseBreaks;
+        tryFallsThrough |= elseFallsThrough;
       }
 
       // Fallthrough of the finally region is not significant.
-      bool unused;
-      lowerSemanticCFForBlock(tryOp.getFinallyRegion().front(), doesRaise,
-                              doesBreak, unused);
+      bool unused = false, finallyRaises = false, finallyBreaks = false;
+      lowerSemanticCFForBlock(tryOp.getFinallyRegion().front(), finallyRaises,
+                              finallyBreaks, unused);
+      doesRaise |= finallyRaises;
+      doesBreak |= finallyBreaks;
 
       // If the try doesn't fall through, diagnose unreachable code after it.
       if (!tryFallsThrough) {

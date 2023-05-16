@@ -106,7 +106,11 @@ def LowerLIT : Pass<"lower-lit", "mlir::ModuleOp"> {
     and diagnoses any errors that are found along the way.
   }];
 
-  let dependentDialects = ["KGENDialect"];
+  let dependentDialects = [
+    "KGENDialect",
+    "HLCF::HLCFDialect",
+    "mlir::index::IndexDialect",
+  ];
 }
 
 //===----------------------------------------------------------------------===//

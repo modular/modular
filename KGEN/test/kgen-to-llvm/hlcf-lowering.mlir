@@ -176,4 +176,47 @@ kgen.func @switch(%arg0: index) {
   kgen.return
 }
 
+// COM: Ensure raising inside anything other than the try region of a `lit.try`
+// COM: will not branch back to the except.
+
+// CHECK-LABEL: @reraise_in_try
+kgen.func @reraise_in_try(%err: i32) {
+  // CHECK-NEXT: br ^bb1
+  lit.try {
+    // CHECK-NEXT: ^bb1:
+    // CHECK-NEXT: br ^bb2
+    lit.try {
+      // CHECK-NEXT: ^bb2:
+      // CHECK: br ^bb3(%{{.*}} : i32)
+      lit.try.raise %err :i32
+    } except (%arg0: i32) {
+      // CHECK-NEXT: ^bb3(%{{.*}}: i32):
+      // CHECK: br ^bb4(%{{.*}} : i32)
+      lit.try.raise %arg0 :i32
+    } else {
+      kgen.unreachable
+    } finally {
+      lit.try.yield
+    }
+    kgen.unreachable
+  } except (%arg0: i32) {
+    // CHECK-NEXT: ^bb4(%{{.*}}: i32):
+    // CHECK: outer.except
+    "outer.except"() : () -> ()
+    // CHECK: br ^bb5
+    lit.try.yield
+  } else {
+    kgen.unreachable
+  } finally {
+    // CHECK-NEXT: ^bb5
+    // CHECK: outer.finally
+    "outer.finally"() : () -> ()
+    // CHECK-NEXT: br ^bb6
+    lit.try.yield
+  }
+  // CHECK-NEXT: ^bb6:
+  // CHECK-NEXT: return
+  kgen.return
+}
+
 }

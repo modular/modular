@@ -901,12 +901,32 @@ void TryYieldOp::getBranchTargets(
 // TryRaiseOp
 //===----------------------------------------------------------------------===//
 
-bool TryRaiseOp::isParentNode(Operation *op) { return isa<TryOp>(op); }
+bool TryRaiseOp::isParentNode(Operation *op) {
+  if (auto tryOp = dyn_cast<TryOp>(op))
+    return tryOp.getTryRegion().isAncestor((*this)->getParentRegion());
+  return false;
+}
 
 void TryRaiseOp::getBranchTargets(
     ArrayRef<Attribute> operands,
     SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
-  targets.emplace_back(1, (*this)->getOperands());
+  targets.emplace_back(1, getOperands());
+}
+
+//===----------------------------------------------------------------------===//
+// TryFinalizeOp
+//===----------------------------------------------------------------------===//
+
+bool TryFinalizeOp::isParentNode(Operation *op) {
+  if (auto tryOp = dyn_cast<TryOp>(op))
+    return tryOp.getFinallyLabelAttr() == getFinallyLabelAttr();
+  return false;
+}
+
+void TryFinalizeOp::getBranchTargets(
+    ArrayRef<Attribute> operands,
+    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
+  targets.emplace_back(3, getOperands());
 }
 
 //===----------------------------------------------------------------------===//

@@ -499,3 +499,42 @@ lit.func @pointlessTry() -> !lit.none {
   lit.return %0 :  !lit.none
   lit.end_func
 }
+
+// CHECK-LABEL: lit.func @reraise_in_try
+lit.func @reraise_in_try(%err: !kgen.declref<@Error>) {
+  // CHECK-NEXT: lit.try
+  lit.try {
+    // CHECK-NEXT: lit.try
+    lit.try {
+      // CHECK-NEXT: lit.try.raise %err
+      lit.raise %err : <@Error>
+      lit.try.yield
+    // CHECK-NEXT: except
+    } except (%reraise: !kgen.declref<@Error>) {
+      // CHECK-NEXT: lit.try.raise %arg0
+      lit.raise %reraise : <@Error>
+      lit.try.yield
+    // CHECK-NEXT: else
+    } else {
+      // CHECK-NEXT: unreachable
+      lit.try.yield
+    // CHECK-NEXT: finally
+    } finally {
+      // CHECK-NEXT: yield
+      lit.try.yield
+    }
+    // CHECK: unreachable
+    lit.try.yield
+  // CHECK-NEXT: except
+  } except (%arg0: !kgen.declref<@Error>) {
+    // CHECK-NEXT: yield
+    lit.try.yield
+  // CHECK-NEXT: else
+  } else {
+    // CHECK-NEXT: unreachable
+    lit.try.yield
+  } finally {
+    lit.try.yield
+  }
+  kgen.return
+}
