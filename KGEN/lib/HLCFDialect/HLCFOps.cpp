@@ -146,20 +146,20 @@ Operation *IfOp::getElseTerminator() { return getElseBlock().getTerminator(); }
 //===----------------------------------------------------------------------===//
 
 static ParseResult
-parseSwitchCases(OpAsmParser &p, mlir::DenseI64ArrayAttr &caseValues,
+parseSwitchCases(OpAsmParser &p, mlir::DenseI32ArrayAttr &caseValues,
                  SmallVectorImpl<std::unique_ptr<Region>> &caseRegions) {
-  SmallVector<int64_t> values;
+  SmallVector<int32_t> values;
   while (succeeded(p.parseOptionalKeyword("case"))) {
     if (p.parseInteger(values.emplace_back()) ||
         p.parseRegion(*caseRegions.emplace_back(std::make_unique<Region>())))
       return failure();
   }
-  caseValues = p.getBuilder().getDenseI64ArrayAttr(values);
+  caseValues = p.getBuilder().getDenseI32ArrayAttr(values);
   return success();
 }
 
 static void printSwitchCases(OpAsmPrinter &p, Operation *op,
-                             ArrayRef<int64_t> caseValues,
+                             ArrayRef<int32_t> caseValues,
                              MutableArrayRef<Region> caseRegions) {
   assert(caseValues.size() == caseRegions.size());
   for (auto [value, region] : llvm::zip(caseValues, caseRegions)) {
@@ -183,7 +183,7 @@ void SwitchOp::getEntryTargets(ArrayRef<Attribute> operands,
     // Default branch.
     targets.emplace_back(0);
   } else {
-    for (int64_t i = 0; i < getNumRegions(); ++i)
+    for (int32_t i = 0, e = getNumRegions(); i < e; ++i)
       targets.emplace_back(i);
   }
 }
@@ -215,8 +215,8 @@ ErrorTreeOr<SuccessType> SwitchOp::interpret(ArrayRef<Attribute> operands,
 LogicalResult SwitchOp::verify() {
   if (!llvm::is_sorted(getCaseValues()))
     return emitOpError("expected case values to be sorted");
-  DenseSet<int64_t> seenValues;
-  for (int64_t caseValue : getCaseValues()) {
+  DenseSet<int32_t> seenValues;
+  for (int32_t caseValue : getCaseValues()) {
     if (!seenValues.insert(caseValue).second)
       return emitOpError("duplicate case value: ") << caseValue;
   }

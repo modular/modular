@@ -125,6 +125,14 @@ LogicalResult ControlFlowConverter::lowerNode(ControlFlowNode node,
     b.create<LLVM::CondBrOp>(node->getLoc(), cond.getCond(), entries.front(),
                              ValueRange(), entries.back(), ValueRange());
     b.eraseOp(node);
+  } else if (auto sw = dyn_cast<SwitchOp>(node.getOperation())) {
+    auto arg = b.create<mlir::UnrealizedConversionCastOp>(
+        node->getLoc(), typeConverter.getIndexType(), sw.getArg());
+    b.create<LLVM::SwitchOp>(node->getLoc(), arg.getResult(0), entries.front(),
+                             ValueRange(), sw.getCaseValues(),
+                             ArrayRef(entries).drop_front(),
+                             SmallVector<ValueRange>(entries.size() - 1));
+    b.eraseOp(node);
   } else {
     SmallVector<ControlFlowTarget, 1> targets;
     node.getEntryTargets(
