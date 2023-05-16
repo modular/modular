@@ -1,7 +1,7 @@
 // RUN: kgen-opt %s -canonicalize -allow-unregistered-dialect | FileCheck %s
 
 // CHECK-LABEL: @terminators_conditionally_pure
-func.func @terminators_conditionally_pure(%arg0: i1) {
+kgen.func @terminators_conditionally_pure(%arg0: i1) {
   hlcf.loop {
     // CHECK: {b}
     hlcf.if %arg0 {
@@ -37,7 +37,7 @@ func.func @terminators_conditionally_pure(%arg0: i1) {
 
     hlcf.break
   }
-  return
+  kgen.return
 }
 
 // CHECK-LABEL: @fold_if_return
