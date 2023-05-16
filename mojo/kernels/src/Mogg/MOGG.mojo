@@ -29,6 +29,7 @@ fn MOGGExport():
     alias _simd_typedef = SimdTypeDef
     alias _index_typedef = IndexTypeDef
     alias _dtype_f32 = DTypeF32TypeDef
+    alias _dtype_f64 = DTypeF64TypeDef
     alias _dtype_si32 = DTypeSI32TypeDef
     alias _dtype_si64 = DTypeSI64TypeDef
     alias _to_buffer = to_buffer
@@ -75,6 +76,10 @@ fn MOGGExport():
 
 fn DTypeF32TypeDef(ty: DType.type) -> DType.type:
     return DType.f32.value
+
+
+fn DTypeF64TypeDef(ty: DType.type) -> DType.type:
+    return DType.f64.value
 
 
 fn DTypeSI32TypeDef(ty: DType.type) -> DType.type:
