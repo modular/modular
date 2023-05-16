@@ -142,6 +142,92 @@ Operation *IfOp::getThenTerminator() { return getThenBlock().getTerminator(); }
 Operation *IfOp::getElseTerminator() { return getElseBlock().getTerminator(); }
 
 //===----------------------------------------------------------------------===//
+// SwitchOp
+//===----------------------------------------------------------------------===//
+
+static ParseResult
+parseSwitchCases(OpAsmParser &p, mlir::DenseI64ArrayAttr &caseValues,
+                 SmallVectorImpl<std::unique_ptr<Region>> &caseRegions) {
+  SmallVector<int64_t> values;
+  while (succeeded(p.parseOptionalKeyword("case"))) {
+    if (p.parseInteger(values.emplace_back()) ||
+        p.parseRegion(*caseRegions.emplace_back(std::make_unique<Region>())))
+      return failure();
+  }
+  caseValues = p.getBuilder().getDenseI64ArrayAttr(values);
+  return success();
+}
+
+static void printSwitchCases(OpAsmPrinter &p, Operation *op,
+                             ArrayRef<int64_t> caseValues,
+                             MutableArrayRef<Region> caseRegions) {
+  assert(caseValues.size() == caseRegions.size());
+  for (auto [value, region] : llvm::zip(caseValues, caseRegions)) {
+    p.printNewline();
+    p << "case " << value << ' ';
+    p.printRegion(region);
+  }
+}
+
+void SwitchOp::getEntryTargets(ArrayRef<Attribute> operands,
+                               SmallVectorImpl<ControlFlowTarget> &targets) {
+  assert(operands.size() == 1);
+  if (auto cond = dyn_cast_or_null<IntegerAttr>(operands.front())) {
+    for (auto [i, caseValue] : llvm::enumerate(getCaseValues())) {
+      if (cond.getInt() == caseValue) {
+        // Matching case branch.
+        targets.emplace_back(i + 1);
+        return;
+      }
+    }
+    // Default branch.
+    targets.emplace_back(0);
+  } else {
+    for (int64_t i = 0; i < getNumRegions(); ++i)
+      targets.emplace_back(i);
+  }
+}
+
+ValueRange SwitchOp::getEntryArguments(std::optional<unsigned> target) {
+  if (!target)
+    return getResults();
+  return {};
+}
+
+ErrorTreeOr<SuccessType> SwitchOp::interpret(ArrayRef<Attribute> operands,
+                                             InterpreterState &state) {
+  auto cond = dyn_cast_if_present<IntegerAttr>(operands[0]);
+  if (!cond)
+    return ErrorTree(getLoc(), "non-constant switch index");
+
+  for (auto [i, caseValue] : llvm::enumerate(getCaseValues())) {
+    if (cond.getInt() == caseValue) {
+      // Matching case branch.
+      state.transferControlFlowTo(&getCaseRegions()[i].front(), {});
+      return success();
+    }
+  }
+  // Default branch.
+  state.transferControlFlowTo(&getDefaultRegion().front(), {});
+  return success();
+}
+
+LogicalResult SwitchOp::verify() {
+  if (!llvm::is_sorted(getCaseValues()))
+    return emitOpError("expected case values to be sorted");
+  DenseSet<int64_t> seenValues;
+  for (int64_t caseValue : getCaseValues()) {
+    if (!seenValues.insert(caseValue).second)
+      return emitOpError("duplicate case value: ") << caseValue;
+  }
+  if (getCaseValues().size() != getCaseRegions().size()) {
+    return emitOpError("has ") << getCaseValues().size() << " case values but "
+                               << getCaseRegions().size() << " case regions";
+  }
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ContinueOp
 //===----------------------------------------------------------------------===//
 
@@ -202,20 +288,19 @@ ErrorTreeOr<SuccessType> BreakOp::interpret(ArrayRef<Attribute> operands,
 // YieldOp
 //===----------------------------------------------------------------------===//
 
-bool YieldOp::isParentNode(Operation *op) { return isa<IfOp>(op); }
+bool YieldOp::isParentNode(Operation *op) { return isa<IfOp, SwitchOp>(op); }
 
 void YieldOp::getBranchTargets(ArrayRef<Attribute> operands,
                                SmallVectorImpl<ControlFlowTarget> &targets) {
   assert(operands.size() == getNumOperands());
-  // Branch to after the if operation.
+  // Branch to after the parent operation.
   targets.emplace_back(std::nullopt, getOperands());
 }
 
 ErrorTreeOr<SuccessType> YieldOp::interpret(ArrayRef<Attribute> operands,
                                             InterpreterState &state) {
-  auto ifOp = cast<IfOp>(getOperation()->getParentOp());
   state.setReturnValues(operands);
-  state.transferControlFlowTo(ifOp);
+  state.transferControlFlowTo((*this)->getParentOp());
   return success();
 }
 

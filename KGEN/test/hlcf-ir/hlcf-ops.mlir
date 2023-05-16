@@ -117,3 +117,25 @@ func.func @labelled_loops(%cond: i1, %arg0: index, %arg1: i32) {
   }
   return
 }
+
+// CHECK-LABEL: @switch
+func.func @switch(%arg0: index, %arg1: i32, %arg2: i64) {
+  // CHECK-NEXT: hlcf.switch %arg0
+  hlcf.switch %arg0
+  // CHECK-NEXT: default {
+  default {
+    // CHECK-NEXT: return
+    kgen.return
+  }
+  // CHECK: case 2 {
+  case 2 {
+    // CHECK-NEXT: yield
+    hlcf.yield
+  }
+  // CHECK: hlcf.switch %arg0 -> i32, i64
+  %0:2 = hlcf.switch %arg0 -> i32, i64
+  default {
+    hlcf.yield %arg1, %arg2 : i32, i64
+  }
+  return
+}

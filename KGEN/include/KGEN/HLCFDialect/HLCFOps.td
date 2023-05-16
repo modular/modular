@@ -200,6 +200,59 @@ def HLCF_IfOp : HLCFParentOp<"if"> {
 }
 
 //===----------------------------------------------------------------------===//
+// SwitchOp
+//===----------------------------------------------------------------------===//
+
+def HLCF_SwitchOp : HLCFParentOp<"switch",
+    [DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+  let summary = "switch operation";
+  let description = [{
+    The `hlcf.switch` operation accepts an index-valued argument and branches to
+    one of its regions based on its value. If there is no matching corresponding
+    region, the default branch is taken.
+
+    Example:
+
+    ```mlir
+    hlcf.switch %s
+    default {
+      hlcf.yield
+    }
+    case 0 {
+      hlcf.break
+    }
+    case 42 {
+      kgen.return
+    }
+    ```
+
+    The operation can optionally return variadic results.
+
+    Example:
+
+    ```mlir
+    hlcf.switch %s -> (i32, i64)
+    default {
+      hlcf.yield %arg0, %arg1 : i32, i64
+    }
+    ```
+  }];
+
+  let arguments = (ins Index:$arg, DenseI64ArrayAttr:$caseValues);
+  let results = (outs Variadic<AnyType>:$results);
+  let regions = (region SizedRegion<1>:$defaultRegion,
+                        VariadicRegion<SizedRegion<1>>:$caseRegions);
+
+  let assemblyFormat = [{
+    $arg (`->` type($results)^)? `\n`
+    `` `default` $defaultRegion custom<SwitchCases>($caseValues, $caseRegions)
+    attr-dict
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // ContinueOp
 //===----------------------------------------------------------------------===//
 
@@ -282,7 +335,8 @@ def HLCF_BreakOp : HLCFTerminatorOp<"break", [
 // YieldOp
 //===----------------------------------------------------------------------===//
 
-def HLCF_YieldOp : HLCFTerminatorOp<"yield", [Pure, HasParent<"IfOp">,
+def HLCF_YieldOp : HLCFTerminatorOp<"yield", [Pure,
+    ParentOneOf<["IfOp", "SwitchOp"]>,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "conditional yield operation";
   let description = [{
