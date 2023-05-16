@@ -36,6 +36,7 @@
 #include "mlir/Support/IndentedOstream.h"
 #include "mlir/Transforms/RegionUtils.h"
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/SmallVectorExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/SaveAndRestore.h"
@@ -1040,8 +1041,8 @@ ElaboratorImpl::spawnParamForkClone(ParamForkOp forkOp, Attribute value,
   newFork->erase();
 
   // Map to the new ops.
-  auto remaining = map_to_vector(remainingWorklist,
-                                 [&](Operation *op) { return map.lookup(op); });
+  auto remaining = llvm::map_to_vector(
+      remainingWorklist, [&](Operation *op) { return map.lookup(op); });
 
   // And finally, process the rest of the worklist in this new scope. If we've
   // hit an error case, don't try and finish processing. Return to the upper
@@ -1180,7 +1181,7 @@ ErrorTreeOrSuccess ElaboratorImpl::processGeneratorUser(
 
     // We have to finish specializing this thing now. Map to the new ops and
     // process the remaining scope.
-    auto remaining = map_to_vector(
+    auto remaining = llvm::map_to_vector(
         remainingWorklist, [&](Operation *op) { return map.lookup(op); });
 
     // Process the rest of the worklist in this new scope. If the scope
@@ -1360,7 +1361,7 @@ ElaboratorImpl::processCallOp(KGENCallOpInterface call, ImplNode *parent,
   std::vector<Operation *> opsToRewriteInRegion;
   collectOpsToProcess(region, *regionGraph, opsToRewriteInRegion);
   llvm::append_range(opsToRewriteInRegion, regionGraph->paramOps);
-  auto opsToRewrite = map_to_vector(
+  auto opsToRewrite = llvm::map_to_vector(
       opsToRewriteInRegion, [&](Operation *op) { return map.lookup(op); });
 
   // Process the ops we just collected.

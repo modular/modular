@@ -11,12 +11,12 @@
 #include "Support/Host.h"
 #include "Support/MDialect/MDialect.h"
 #include "Support/MDialect/MTypes.h"
-#include "Support/STLExtras.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "llvm/ADT/APSInt.h"
+#include "llvm/ADT/SmallVectorExtras.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/MC/TargetRegistry.h"
@@ -559,13 +559,13 @@ ElementsAttr M::getAttrForTensorDataCopy(
 }
 
 SmallVector<int64_t> M::getIntBlob(IntArrayElementsAttr intElemsAttr) {
-  return map_to_vector(intElemsAttr.getValues(), [](const llvm::APInt &dim) {
-    return dim.getSExtValue();
-  });
+  return llvm::map_to_vector(
+      intElemsAttr.getValues(),
+      [](const llvm::APInt &dim) { return dim.getSExtValue(); });
 }
 
 SmallVector<float> M::getFloatBlob(FloatArrayElementsAttr floatElemsAttr) {
-  return map_to_vector(
+  return llvm::map_to_vector(
       floatElemsAttr.getValues(),
       [](const llvm::APFloat &dim) { return dim.convertToFloat(); });
 }
@@ -660,9 +660,9 @@ AlignedBytesType AlignedBytesAttr::getAlignedBytesType() const {
 /// parsing the data layout string.
 DataLayout::DataLayout(StringRef dlSpecStr)
     : intAbiAlign{{1, 1}, {8, 1}, {16, 2}, {32, 4}, {64, 4}},
-      fpAbiAlign{{16, 2}, {32, 4}, {64, 8}, {128, 16}},
-      vecAbiAlign{{64, 8}, {128, 16}}, ptrWidth(64), ptrAbiAlign(8),
-      dlSpecStr(dlSpecStr) {}
+      fpAbiAlign{{16, 2}, {32, 4}, {64, 8}, {128, 16}}, vecAbiAlign{{64, 8},
+                                                                    {128, 16}},
+      ptrWidth(64), ptrAbiAlign(8), dlSpecStr(dlSpecStr) {}
 
 /// Checked version of split to ensure mandatory subparts.
 static ErrorOr<std::pair<StringRef, StringRef>> checkedSplit(StringRef str,

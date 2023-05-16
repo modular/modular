@@ -8,9 +8,9 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
-#include "Support/STLExtras.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/Pass.h"
+#include "llvm/ADT/SmallVectorExtras.h"
 #include "llvm/BinaryFormat/Dwarf.h"
 
 using namespace M;
@@ -77,8 +77,8 @@ static LogicalResult synthesizeDebugInfo(ModuleOp module) {
       return mlir::emitError(func.getLoc()) << "did not find a FileLineColLoc";
     // Generate the subprogram type.
     auto spType = DebugInfo::DISubroutineType::get(
-        ctx, map_to_vector(func.getArgumentTypes(), toDIType),
-        map_to_vector(func.getResultTypes(), toDIType));
+        ctx, llvm::map_to_vector(func.getArgumentTypes(), toDIType),
+        llvm::map_to_vector(func.getResultTypes(), toDIType));
 
     DebugInfo::DIBuilder::ScopeGuard fileGuard =
         dib.pushFile(fileLoc.getFilename(), "/");

@@ -30,10 +30,10 @@
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
-#include "Support/STLExtras.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Transforms/RegionUtils.h"
+#include "llvm/ADT/SmallVectorExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/SaveAndRestore.h"
@@ -1978,7 +1978,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
       return DebugInfo::DIUnresolvedMLIRType::get(type);
     };
     auto type = DebugInfo::DISubroutineType::get(
-        getContext(), map_to_vector(argTypes, mapUnresolvedType),
+        getContext(), llvm::map_to_vector(argTypes, mapUnresolvedType),
         mapUnresolvedType(resultType.mlirType));
     diScopeGuard = diBuilder->pushSubprogram(
         baseName, funcOp.getNameAttr(), diBuilder->createFile(fileLineCol),
