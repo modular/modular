@@ -72,9 +72,10 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
   if (op.getOpcode() == POC::GetAllImpls) {
     auto symbol = cast<SymbolConstantAttr>(op.getOperand(0));
     std::vector<FuncOp> funcs;
-    if (auto err = elaborator->getAllConcreteFunctions(
-            *errorLoc, symbol.getSymbol(), symbol.getParamValues(), funcs)) {
-      emitError(std::move(*err));
+    if (ErrorTreeOrSuccess err = elaborator->getAllConcreteFunctions(
+            *errorLoc, symbol.getSymbol(), symbol.getParamValues(), funcs);
+        err.isError()) {
+      emitError(err.takeError());
       return failure();
     }
 
@@ -127,10 +128,11 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
     auto optionsVariadic = cast<VariadicAttr>(op.getOperands().front());
     for (TypedAttr option : optionsVariadic.getValues()) {
       auto optionSym = cast<SymbolConstantAttr>(option);
-      if (auto err = elaborator->getAllConcreteFunctions(
+      if (ErrorTreeOrSuccess err = elaborator->getAllConcreteFunctions(
               *errorLoc, optionSym.getSymbol(), optionSym.getParamValues(),
-              options)) {
-        emitError(err->copy());
+              options);
+          err.isError()) {
+        emitError(err.takeError());
         return failure();
       }
     }

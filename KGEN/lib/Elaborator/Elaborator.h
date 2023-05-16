@@ -43,7 +43,7 @@ public:
   /// Get all the concrete functions for the given symbol. If the symbol is a
   /// function already, append it to the list and move on, otherwise,
   /// elaborate it and append all the concrete implementations.
-  virtual std::optional<ErrorTree>
+  virtual ErrorTreeOrSuccess
   getAllConcreteFunctions(Location loc, SymbolRefAttr symbolRef,
                           ArrayRef<TypedAttr> paramValues,
                           std::vector<FuncOp> &funcs) = 0;
