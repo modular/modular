@@ -1,7 +1,7 @@
 // RUN: kgen-opt -test-dataflow %s 2>%t
 // RUN: cat %t | FileCheck %s
 
-func.func @simple_if(%cond: i1) -> (index, index) {
+kgen.func @simple_if(%cond: i1) -> (index, index) {
   %0 = hlcf.if %cond -> index {
     %1 = index.constant 0
     hlcf.yield %1 : index
@@ -18,10 +18,10 @@ func.func @simple_if(%cond: i1) -> (index, index) {
   }
 
   // CHECK: simple_if(<UNKNOWN>, 2 : index)
-  return {print_operand_constants = "simple_if"} %0, %2 : index, index
+  kgen.return {print_operand_constants = "simple_if"} %0, %2 : index, index
 }
 
-func.func @simple_loop() -> (index, index) {
+kgen.func @simple_loop() -> (index, index) {
   %0 = index.constant 0
   %1 = hlcf.loop () -> index {
     hlcf.break %0 : index
@@ -38,10 +38,10 @@ func.func @simple_loop() -> (index, index) {
   }
 
   // CHECK: simple_loop(0 : index, 1 : index)
-  return {print_operand_constants = "simple_loop"} %1, %2 : index, index
+  kgen.return {print_operand_constants = "simple_loop"} %1, %2 : index, index
 }
 
-func.func private @multiple_returns(%cond: i1) -> index {
+kgen.func @multiple_returns(%cond: i1) -> index attributes {sym_visibility = "private"} {
   hlcf.if %cond {
     %0 = index.constant 0
     kgen.return %0 : index
@@ -52,17 +52,17 @@ func.func private @multiple_returns(%cond: i1) -> index {
   %0 = hlcf.loop () -> index {
     hlcf.continue
   }
-  return %0 : index
+  kgen.return %0 : index
 }
 
-func.func @call_multiple_returns() -> index {
+kgen.func @call_multiple_returns() -> index {
   %0 = index.bool.constant true
-  %1 = call @multiple_returns(%0) : (i1) -> index
+  %1 = kgen.call @multiple_returns(%0) : (i1) -> index
   // CHECK: multiple_returns(0 : index)
-  return {print_operand_constants = "multiple_returns"} %1 : index
+  kgen.return {print_operand_constants = "multiple_returns"} %1 : index
 }
 
-func.func @unreachable_return() -> index {
+kgen.func @unreachable_return() -> index {
   %0 = hlcf.loop () -> index {
     %0 = index.bool.constant false
     hlcf.if %0 {
@@ -74,10 +74,10 @@ func.func @unreachable_return() -> index {
     hlcf.break %1 : index
   }
   // CHECK: unreachable(<UNINITIALIZED>)
-  return {print_operand_constants = "unreachable"} %0 : index
+  kgen.return {print_operand_constants = "unreachable"} %0 : index
 }
 
-func.func @return_and_terminator(%cond: i1) -> index {
+kgen.func @return_and_terminator(%cond: i1) -> index {
   %0 = hlcf.if %cond -> index {
     %c0 = index.constant 0
     kgen.return %c0 : index
@@ -86,5 +86,5 @@ func.func @return_and_terminator(%cond: i1) -> index {
     hlcf.yield %c1 : index
   }
   // CHECK: return_yield(1 : index)
-  return {print_operand_constants = "return_yield"} %0 : index
+  kgen.return {print_operand_constants = "return_yield"} %0 : index
 }

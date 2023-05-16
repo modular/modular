@@ -1,17 +1,17 @@
 // RUN: kgen-opt %s -allow-unregistered-dialect -verify-diagnostics -split-input-file
 
-func.func @loop_args() {
+kgen.func @loop_args() {
   // expected-error @below {{'hlcf.loop' op operand types do not match body region argument types}}
   "hlcf.loop"() ({
   ^bb0(%arg0: i32):
     kgen.return
   }) : () -> ()
-  return
+  kgen.return
 }
 
 // -----
 
-func.func @return_not_in_func(%arg0: i1) {
+kgen.func @return_not_in_func(%arg0: i1) {
   "foo.region"() ({
     // expected-note @below {{see control-flow root here}}
     hlcf.if %arg0 {
@@ -27,7 +27,7 @@ func.func @return_not_in_func(%arg0: i1) {
 // -----
 
 // expected-note @below {{see function here}}
-func.func @return_mismatch_result_count(%arg0: i32) {
+kgen.func @return_mismatch_result_count(%arg0: i32) {
   hlcf.loop {
     // expected-error @below {{'kgen.return' op specifies 1 results but surrounding function expects 0}}
     kgen.return %arg0 : i32
@@ -37,7 +37,7 @@ func.func @return_mismatch_result_count(%arg0: i32) {
 // -----
 
 // expected-note @below {{see function here}}
-func.func @return_mismatch_result_count(%arg0: i32) -> i64 {
+kgen.func @return_mismatch_result_count(%arg0: i32) -> i64 {
   hlcf.loop {
     // expected-error @below {{'kgen.return' op operand #0 type 'i32' does not match expected result type 'i64'}}
     kgen.return %arg0 : i32
@@ -46,7 +46,7 @@ func.func @return_mismatch_result_count(%arg0: i32) -> i64 {
 
 // -----
 
-func.func @yield_mismatch(%arg0: i1, %arg1 : i32) {
+kgen.func @yield_mismatch(%arg0: i1, %arg1 : i32) {
   // expected-note @below {{to end of parent operation here}}
   %0 = hlcf.if %arg0 -> i64 {
     // expected-error @below {{'hlcf.yield' op branch input #0 has type 'i32' but target expected 'i64' along control-flow edge from here}}
@@ -59,7 +59,7 @@ func.func @yield_mismatch(%arg0: i1, %arg1 : i32) {
 // -----
 
 // expected-note @below {{see control-flow root here}}
-func.func @break_no_loop(%arg0: i1) {
+kgen.func @break_no_loop(%arg0: i1) {
   hlcf.if %arg0 {
     kgen.return
   } else {
@@ -70,7 +70,7 @@ func.func @break_no_loop(%arg0: i1) {
 
 // -----
 
-func.func @break_wrong_types(%arg0: i32) {
+kgen.func @break_wrong_types(%arg0: i32) {
   // expected-note @below {{to end of parent operation here}}
   %0 = hlcf.loop () -> i64 {
     // expected-error @below {{'hlcf.break' op branch input #0 has type 'i32' but target expected 'i64' along control-flow edge from here}}
@@ -80,7 +80,7 @@ func.func @break_wrong_types(%arg0: i32) {
 
 // -----
 
-func.func @continue_wrong_types(%arg0: i32, %arg1 : i64) {
+kgen.func @continue_wrong_types(%arg0: i32, %arg1 : i64) {
   hlcf.loop (%0 = %arg0 : i32) -> () {
     // expected-error @below {{'hlcf.continue' op branch input #0 has type 'i64' but target expected 'i32' along control-flow edge from here}}
     // expected-note @below {{to beginning of region #0 here}}
@@ -90,7 +90,7 @@ func.func @continue_wrong_types(%arg0: i32, %arg1 : i64) {
 
 // -----
 
-func.func @labelled_break_mismatch(%arg0: i32) {
+kgen.func @labelled_break_mismatch(%arg0: i32) {
   // expected-note @below {{to end of parent operation here}}
   hlcf.loop "foo" () -> index {
     hlcf.loop () -> i32 {
@@ -99,5 +99,5 @@ func.func @labelled_break_mismatch(%arg0: i32) {
     }
     hlcf.continue
   }
-  return
+  kgen.return
 }
