@@ -11,13 +11,13 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "Support/Compiler/OperationUtils.h"
-#include "Support/STLExtras.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Transforms/RegionUtils.h"
+#include "llvm/ADT/SmallVectorExtras.h"
 #include "llvm/Support/Debug.h"
 
 using namespace M;
@@ -100,7 +100,7 @@ void OutlineClosuresPass::runOnOperation() {
       StringAttr globalVar = nullptr;
       POP::StructType structType = nullptr;
       if (!isolated) {
-        structType = b.getType<POP::StructType>(map_to_vector(
+        structType = b.getType<POP::StructType>(llvm::map_to_vector(
             captures, [](Value capture) { return capture.getType(); }));
 
         LLVM_DEBUG(llvm::dbgs()

@@ -27,7 +27,6 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "Support/Compiler/OperationUtils.h"
-#include "Support/STLExtras.h"
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
@@ -35,6 +34,7 @@
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/Verifier.h"
+#include "llvm/ADT/SmallVectorExtras.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -2695,7 +2695,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   ParsedArgument::computeArgumentConventions(emitter.shared, args, argTypes);
 
-  SmallVector<ValueInputConvention> inputConventions = map_to_vector(
+  SmallVector<ValueInputConvention> inputConventions = llvm::map_to_vector(
       args, [](const ParsedArgument &arg) { return arg.kgenConvention; });
 
   if (bitEnumContainsAny(effects, FnEffects::Throws)) {
