@@ -514,28 +514,33 @@ fn testWithNonRaising(a: ExampleCM):
   # CHECK-NEXT: %val = lit.varlet.decl
   # CHECK-NEXT: [[TARGET:%.*]] = kgen.call {{.*}}__enter__{{.*}}(%a)
   # CHECK-NEXT: pop.store [[TARGET]], %val
+  # CHECK-NEXT: lit.try
   with a as val:
     # CHECK-NEXT: [[VAL:%.*]] = pop.load %val
     # CHECK-NEXT: kgen.call {{.*}}noop{{.*}}([[VAL]])
     noop(val)
+  # CHECK: finally
   # CHECK-NEXT: kgen.call {{.*}}__exit__{{.*}}(%a)
 
   # Test a with with no target.
 
-  # CHECK-NEXT: kgen.call {{.*}}__enter__{{.*}}(%a)
+  # CHECK: kgen.call {{.*}}__enter__{{.*}}(%a)
+  # CHECK-NEXT: lit.try
   with a:
     # CHECK-NEXT: kgen.param.constant: {{.*}}42
     # CHECK-NEXT: kgen.call {{.*}}noop
     noop(42)
+  # CHECK: finally
   # CHECK-NEXT: kgen.call {{.*}}__exit__{{.*}}(%a)
-  # CHECK-NEXT: kgen.param.constant: !lit.none = <#lit.none>
 
 # CHECK-LABEL: lit.func @"testWithRaising
 fn testWithRaising(a: ExampleCM) raises:
   # CHECK-NEXT: %val = lit.varlet.decl
   # CHECK-NEXT: [[TARGET:%.*]] = kgen.call {{.*}}__enter__{{.*}}(%a)
   # CHECK-NEXT: pop.store [[TARGET]], %val
-  # CHECK-NEXT: lit.try {
+  # CHECK: pop.store %true, %__with_exc__ : !pop.pointer<i1>
+  # CHECK-NEXT: lit.try
+  # CHECK-NEXT: lit.try
   with a as val:
     # CHECK-NEXT: [[VAL:%.*]] = pop.load %val
     # CHECK-NEXT: kgen.call {{.*}}noop{{.*}}([[VAL]])
@@ -554,21 +559,24 @@ fn testWithRaising(a: ExampleCM) raises:
     raise_string()
     # CHECK-NEXT: lit.try.yield
   # CHECK-NEXT: } except (%arg0: !kgen.declref<@"$Error"::@Error>) {
+  # CHECK:        pop.store %false, %__with_exc__
   # CHECK-NEXT:   %3 = kgen.call {{.*}}__exit__{{.*}}(%a, %arg0)
   # CHECK-NEXT:   %4 = kgen.call {{.*}}__mlir_i1__{{.*}}(%3)
   # CHECK-NEXT:   hlcf.if %4 {
   # CHECK-NEXT:     hlcf.yield
   # CHECK-NEXT:   } else {
-  # CHECK-NEXT:     pop.variant.create %arg0
-  # CHECK-NEXT:     lit.return
+  # CHECK-NEXT:     lit.raise %arg0
   # CHECK-NEXT:     hlcf.yield
   # CHECK-NEXT:   }
   # CHECK-NEXT:   lit.try.yield
-  # CHECK-NEXT: } else {
-  # CHECK-NEXT:   kgen.call {{.*}}__exit__{{.*}}(%a)
-  # CHECK-NEXT:   lit.try.yield
-  # CHECK-NEXT: }
-  # CHECK-NEXT: kgen.param.constant: !lit.none = <#lit.none>
+  # CHECK:      } finally {
+  # CHECK:    } except
+  # CHECK-NEXT:  pop.variant.create %arg0
+  # CHECK-NEXT:  lit.return
+  # CHECK:    } finally {
+  # CHECK-NEXT: %[[EXC:.*]] = pop.load %__with_exc__
+  # CHECK-NEXT: hlcf.if %[[EXC]]
+  # CHECK-NEXT:   call {{.*}}__exit__{{.*}}(%a)
 
 
 ##===----------------------------------------------------------------------===##

@@ -293,12 +293,19 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
       // Diagnose unneeded code.
       if (!tryBodyRaises) {
         Operation &firstOpInExcept = tryOp.getExceptRegion().front().front();
-        if (!firstOpInExcept.hasTrait<OpTrait::IsTerminator>())
-          emitWarning(
-              firstOpInExcept.getLoc(),
-              "'except' logic is unreachable, try doesn't raise an exception");
-        else
-          emitWarning(tryOp->getLoc(), "try body doesn't raise an exception");
+        // If the finally region is not empty, then this could be a
+        // try-finally pattern.
+        if (&tryOp.getFinallyRegion().front().front() ==
+            tryOp.getFinallyRegion().front().getTerminator()) {
+          if (!firstOpInExcept.hasTrait<OpTrait::IsTerminator>()) {
+            emitWarning(firstOpInExcept.getLoc(),
+                        "'except' logic is unreachable, try doesn't raise an "
+                        "exception");
+
+          } else {
+            emitWarning(tryOp->getLoc(), "try body doesn't raise an exception");
+          }
+        }
 
         Operation *firstExceptOp = &tryOp.getExceptRegion().front().front();
         OpBuilder(firstExceptOp).create<UnreachableOp>(firstExceptOp->getLoc());
@@ -322,6 +329,11 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
         lowerSemanticCFForBlock(tryOp.getElseRegion().front(), doesRaise,
                                 doesBreak, tryFallsThrough);
       }
+
+      // Fallthrough of the finally region is not significant.
+      bool unused;
+      lowerSemanticCFForBlock(tryOp.getFinallyRegion().front(), doesRaise,
+                              doesBreak, unused);
 
       // If the try doesn't fall through, diagnose unreachable code after it.
       if (!tryFallsThrough) {

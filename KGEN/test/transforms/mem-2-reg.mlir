@@ -220,7 +220,12 @@ kgen.func @try_region() {
     %3 = pop.load %1 : !pop.pointer<index>
     "use"(%2, %3) : (index, index) -> ()
     lit.try.yield
-  // CHECK: }
+  // CHECK: finally
+  } finally {
+  // CHECK-NEXT: ^bb0(%arg0: index):
+    // CHECK-NEXT: yield %arg0
+    lit.try.yield
+  // CHECK-NEXT: }
   }
   // CHECK-NEXT: "use"(%idx3)
   pop.store %idx3, %0 : !pop.pointer<index>
@@ -243,6 +248,8 @@ kgen.func @try_raise(%err: index) -> index {
     // CHECK: yield %arg2
     lit.try.yield
   } else {
+    lit.try.yield
+  } finally {
     lit.try.yield
   }
   %1 = pop.load %0 : !pop.pointer<index>

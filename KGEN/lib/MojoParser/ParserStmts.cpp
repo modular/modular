@@ -919,11 +919,11 @@ ParseResult StmtParser::parseForStmt(size_t curIndent) {
 /// try_stmt ::= "try" ":" suite "except" [identifier] ":" suite
 ///              ["else" suite]
 ParseResult StmtParser::parseTryStmt(size_t curIndent) {
-  SMLoc loc = consumeToken(Token::kw_try).getLoc();
+  Location loc = translateLocation(consumeToken(Token::kw_try).getLoc());
 
   // Restore the builder to its current insertion point after parsing.
   llvm::SaveAndRestore builderSaver(builder);
-  auto tryOp = builder.create<TryOp>(translateLocation(loc));
+  auto tryOp = builder.create<TryOp>(loc);
   if (parseToken(Token::colon, "expected ':' after 'try'"))
     return failure();
 
@@ -933,66 +933,90 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
     return failure();
   builder.create<TryYieldOp>(translateLocation(getToken().getLoc()));
 
-  SMLoc errValLoc;
-  if (parseToken(Token::kw_except, "expected 'except' after try block",
-                 &errValLoc))
-    return failure();
-
-  // Parse an optional identifier to bind the error.
-  StringAttr errName;
-  if (getToken().is(Token::identifier)) {
-    Token idTok = consumeToken(Token::identifier);
-    errName = StringAttr::get(getContext(), idTok.getSpelling());
-    errValLoc = idTok.getLoc();
-  }
-
-  if (parseToken(Token::colon, "expected ':' after 'except'"))
-    return failure();
-
+  SMLoc errValLoc = getToken().getLoc();
   ASTType errorType = shared.getBuiltinErrorType(errValLoc);
   if (!errorType.isRegisterPassable(errValLoc, shared)) {
     emitError(errValLoc) << errorType << " is not a @register_passable type";
     return failure();
   }
 
-  Block *exceptBlock = builder.createBlock(&tryOp.getExceptRegion());
-  Value errVal =
-      exceptBlock->addArgument(errorType, translateLocation(errValLoc));
+  bool hasFinally = false;
+  if (getToken().is(Token::kw_except)) {
+    errValLoc = consumeToken().getLoc();
 
-  // If an identifier was declared for the error value, add a declaration that
-  // references it.
-  SmallVector<ScopeDecl> decls;
-  if (errName) {
-    auto func = dyn_cast<LIT::FuncOp>(parentDecl);
-    if (func && func.getIsDef()) {
-      // If we are parsing inside a 'def', create a mutable LValue to allow
-      // reassignment.
-      auto varDecl = builder.create<VarLetDeclOp>(
-          errVal.getLoc(), POP::PointerType::get(errVal.getType()), errName,
-          /*isVar=*/true, /*isSynth=*/true);
-      decls.push_back(ScopeDecl{DeclIRValue(varDecl), errValLoc, errName});
-      builder.create<POP::StoreOp>(errVal.getLoc(), errVal, varDecl,
-                                   /*alignment=*/std::nullopt);
-    } else {
-      // If we are parsing inside an 'fn', the error declaration is an BValue,
-      // because any reference to it needs to copy/move out.
-      decls.push_back(ScopeDecl{SBValue(errVal), errValLoc, errName});
+    // Parse an optional identifier to bind the error.
+    StringAttr errName;
+    if (getToken().is(Token::identifier)) {
+      Token idTok = consumeToken(Token::identifier);
+      errName = StringAttr::get(getContext(), idTok.getSpelling());
+      errValLoc = idTok.getLoc();
     }
+
+    if (parseToken(Token::colon, "expected ':' after 'except'"))
+      return failure();
+
+    Block *exceptBlock = builder.createBlock(&tryOp.getExceptRegion());
+    Value errVal =
+        exceptBlock->addArgument(errorType, translateLocation(errValLoc));
+
+    // If an identifier was declared for the error value, add a declaration that
+    // references it.
+    SmallVector<ScopeDecl> decls;
+    if (errName) {
+      auto func = dyn_cast<LIT::FuncOp>(parentDecl);
+      if (func && func.getIsDef()) {
+        // If we are parsing inside a 'def', create a mutable LValue to allow
+        // reassignment.
+        auto varDecl = builder.create<VarLetDeclOp>(
+            errVal.getLoc(), POP::PointerType::get(errVal.getType()), errName,
+            /*isVar=*/true, /*isSynth=*/true);
+        decls.push_back(ScopeDecl{DeclIRValue(varDecl), errValLoc, errName});
+        builder.create<POP::StoreOp>(errVal.getLoc(), errVal, varDecl,
+                                     /*alignment=*/std::nullopt);
+      } else {
+        // If we are parsing inside an 'fn', the error declaration is an BValue,
+        // because any reference to it needs to copy/move out.
+        decls.push_back(ScopeDecl{SBValue(errVal), errValLoc, errName});
+      }
+    }
+
+    // Parse the except suite.
+    if (parseLocalScopeSuite(curIndent, decls))
+      return failure();
+    builder.create<TryYieldOp>(translateLocation(getToken().getLoc()));
+
+    // Parse the else suite if present. Otherwise, leave it as empty.
+    builder.createBlock(&tryOp.getElseRegion());
+    if (consumeIf(Token::kw_else)) {
+      if (parseToken(Token::colon, "expected ':' after 'else'") ||
+          parseLocalScopeSuite(curIndent))
+        return failure();
+    }
+    builder.create<TryYieldOp>(translateLocation(getToken().getLoc()));
+
+    hasFinally = consumeIf(Token::kw_finally);
+  } else {
+    hasFinally = consumeIf(Token::kw_finally);
+    if (!hasFinally)
+      return emitTokenError("expected 'except' or 'finally' block");
+    // Stub out the 'except' and 'else' regions.
+    Block *exceptBlock = builder.createBlock(&tryOp.getExceptRegion());
+    Value errVal =
+        exceptBlock->addArgument(errorType, translateLocation(errValLoc));
+    if (failed(getEmitter().emitRaise(SRValue(errVal), loc)))
+      emitError(loc, "cannot raise error in a context that cannot raise");
+    builder.create<TryYieldOp>(loc);
+
+    builder.createBlock(&tryOp.getElseRegion());
+    builder.create<TryYieldOp>(loc);
   }
-
-  // Parse the except suite.
-  if (parseLocalScopeSuite(curIndent, decls))
-    return failure();
-  builder.create<TryYieldOp>(translateLocation(getToken().getLoc()));
-
-  // Parse the else suite if present. Otherwise, leave it as empty.
-  builder.createBlock(&tryOp.getElseRegion());
-  if (consumeIf(Token::kw_else)) {
-    if (parseToken(Token::colon, "expected ':' after 'else'") ||
+  builder.createBlock(&tryOp.getFinallyRegion());
+  if (hasFinally) {
+    if (parseToken(Token::colon, "expected ':' after 'finally'") ||
         parseLocalScopeSuite(curIndent))
       return failure();
   }
-  builder.create<TryYieldOp>(translateLocation(getToken().getLoc()));
+  builder.create<TryYieldOp>(loc);
 
   return success();
 }
@@ -1079,9 +1103,11 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   };
 
   // If we're in a non-raising region, then we have a simple pattern to emit:
-  //     contextMgr = EXPRESSION
-  //     TARGET = contextMgr.__enter__()
+  //   contextMgr = EXPRESSION
+  //   TARGET = contextMgr.__enter__()
+  //   try:
   //     SUITE
+  //   finally:
   //     contextMgr.__exit__()
   auto [_, inExceptRegion] = findParentTry(builder.getInsertionBlock());
 
@@ -1091,26 +1117,59 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     inExceptRegion = funcOp.isThrows();
   }
 
+  // Restore the builder to its current insertion point after parsing.
+  llvm::SaveAndRestore builderSaver(builder);
+  auto tryOp = builder.create<TryOp>(loc);
+  // Stub the 'except' and 'else' regions.
+  Block *parentExceptBlock = builder.createBlock(&tryOp.getExceptRegion());
+  builder.create<TryYieldOp>(loc);
+  builder.createBlock(&tryOp.getElseRegion());
+  builder.create<TryYieldOp>(loc);
+  builder.createBlock(&tryOp.getTryRegion());
+
   if (!inExceptRegion) {
     // Parse the body suite.
     if (parseLocalScopeSuite(curIndent))
       return failure();
+    builder.create<TryYieldOp>(loc);
 
+    builder.createBlock(&tryOp.getFinallyRegion());
     emitNormalExitLogic();
+    builder.create<TryYieldOp>(loc);
+    // Stub out the except argument.
+    parentExceptBlock->addArgument(builder.getI1Type(), loc);
     return success();
   }
 
-  // Restore the builder to its current insertion point after parsing.
-  llvm::SaveAndRestore builderSaver(builder);
-  auto tryOp = builder.create<TryOp>(loc);
+  // Otherwise, we have to emit a conditional finally. PEP343 states that the
+  // general 'with' statement corresponds to:
+  //   contextMgr = EXPRESSION
+  //   TARGET = contextMgr.__enter__()
+  //   exc = True
+  //   try:
+  //     try:
+  //       SUITE
+  //     except e:
+  //       exc = False
+  //       if not contextMgr.__exit__(e):
+  //         raise e
+  //   finally:
+  //     if exc:
+  //       contextMGr.__exit__()
 
-  // Parse the body suite into the try region.
-  builder.createBlock(&tryOp.getTryRegion());
-  if (parseLocalScopeSuite(curIndent))
-    return failure();
-  builder.create<TryYieldOp>(loc);
+  Value excVar;
+  {
+    // Insert the flag and initialize it to 'True'.
+    OpBuilder::InsertionGuard g(builder);
+    builder.setInsertionPoint(tryOp);
+    excVar = builder.create<VarLetDeclOp>(
+        loc, POP::PointerType::get(builder.getI1Type()), "__with_exc__",
+        /*isVar=*/true, /*isSynth=*/true);
+    builder.create<POP::StoreOp>(
+        loc, builder.create<mlir::index::BoolConstantOp>(loc, true), excVar);
+  }
 
-  // Set up the error block.
+  // Lookup the error type.
   ASTType errorType = shared.getBuiltinErrorType(smLoc);
   if (!errorType)
     return failure();
@@ -1119,17 +1178,44 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     return failure();
   }
 
+  // Re-raise any exceptions thrown in the nested try.
+  {
+    OpBuilder::InsertionGuard g(builder);
+    builder.setInsertionPointToStart(parentExceptBlock);
+    Value errVal = parentExceptBlock->addArgument(errorType, loc);
+    if (failed(getEmitter().emitRaise(SRValue(errVal), loc)))
+      emitError(loc, "cannot raise error in a context that cannot raise");
+  }
+
+  // Generate the nested try. Stub the 'else' and 'finally' regions.
+  auto nestedTryOp = builder.create<TryOp>(loc);
+  builder.create<TryYieldOp>(loc);
+  builder.createBlock(&nestedTryOp.getElseRegion());
+  builder.create<TryYieldOp>(loc);
+  builder.createBlock(&nestedTryOp.getFinallyRegion());
+  builder.create<TryYieldOp>(loc);
+
+  // Parse the body into the try region.
+  builder.createBlock(&nestedTryOp.getTryRegion());
+  if (parseLocalScopeSuite(curIndent))
+    return failure();
+  builder.create<TryYieldOp>(loc);
+
   // Set up the except region.  Pseudo code:
   //  except(%val : Error) {
   //    hlcf.if (
 
-  Block *exceptBlock = builder.createBlock(&tryOp.getExceptRegion());
+  Block *exceptBlock = builder.createBlock(&nestedTryOp.getExceptRegion());
   SRValue errorVal = exceptBlock->addArgument(errorType, loc);
+
+  // Set the flag to 'False'.
+  builder.create<POP::StoreOp>(
+      loc, builder.create<mlir::index::BoolConstantOp>(loc, false), excVar);
 
   // Pass the error value to the __exit__ method.
   // TODO: this isn't using the same convention that Python does.  We support
   // overloading though and this is going to be way better for anything real
-  // that wants to implement this, can can support both styles when we need to.
+  // that wants to implement this. We can support both styles when we need to.
   CValue exitResult = getEmitter().emitNamedMethodCall(
       "__exit__", {{contextRV, contextExp}, {errorVal, contextExp}},
       ValueDest::none(), CallSyntax::kMethodCall, contextExp);
@@ -1144,16 +1230,23 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   // On true, nothing is to be done.
   builder.create<HLCF::YieldOp>(loc);
 
-  // On false, we reraise the error.
+  // On false, we re-raise the error.
   builder.createBlock(&ifOp.getElseRegion());
   if (failed(getEmitter().emitRaise(errorVal, loc)))
     emitError(loc, "cannot raise error in a context that cannot raise");
   builder.create<HLCF::YieldOp>(loc);
 
-  // Set up the else block to call __exit__ and ignore the result.
-  builder.createBlock(&tryOp.getElseRegion());
-  emitNormalExitLogic();
+  // Emit the conditional call to __exit__.
+  builder.createBlock(&tryOp.getFinallyRegion());
+  auto excIf =
+      builder.create<HLCF::IfOp>(loc, builder.create<POP::LoadOp>(loc, excVar));
   builder.create<TryYieldOp>(loc);
+  builder.createBlock(&excIf.getThenRegion());
+  emitNormalExitLogic();
+  builder.create<HLCF::YieldOp>(loc);
+  // Stub the 'else' region.
+  builder.createBlock(&excIf.getElseRegion());
+  builder.create<HLCF::YieldOp>(loc);
   return success();
 }
 
