@@ -328,8 +328,8 @@ void ParamNode::getAllConcreteFuncs(std::vector<FuncOp> &funcs) {
 
 /// Process a param.declare op by setting its parameter value in the provided
 /// evaluator.
-static std::optional<ErrorTree> processParamDeclareOp(IREvaluator &evaluator,
-                                                      ParamDeclareOp op) {
+static ErrorTreeOrSuccess processParamDeclareOp(IREvaluator &evaluator,
+                                                ParamDeclareOp op) {
   // Simplify the input expression.
   auto errorOrValue =
       evaluator.concretizeParameterExpr(op.getLoc(), op.getValue());
@@ -342,7 +342,7 @@ static std::optional<ErrorTree> processParamDeclareOp(IREvaluator &evaluator,
 
   // The kgen.param.declare operation serves no other purpose: remove it.
   op->erase();
-  return std::nullopt;
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -351,8 +351,8 @@ static std::optional<ErrorTree> processParamDeclareOp(IREvaluator &evaluator,
 
 /// Process a `kgen.param.result_bind` operation by setting the result parameter
 /// values of the parent operation.
-static std::optional<ErrorTree> processParamResultBindOp(ParamResultBindOp op,
-                                                         ImplNode *parentNode) {
+static ErrorTreeOrSuccess processParamResultBindOp(ParamResultBindOp op,
+                                                   ImplNode *parentNode) {
   // Concretize the result parameter values.
   IREvaluator &evaluator = parentNode->evaluator;
   SmallVector<Attribute> resultParams;
@@ -383,15 +383,14 @@ static std::optional<ErrorTree> processParamResultBindOp(ParamResultBindOp op,
     parentNode->resultParams = ArrayAttr::get(op.getContext(), resultParams);
 
   op.erase();
-  return {};
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
 // processRebindOp
 //===----------------------------------------------------------------------===//
 
-static std::optional<ErrorTree> processRebindOp(IREvaluator &evaluator,
-                                                RebindOp op) {
+static ErrorTreeOrSuccess processRebindOp(IREvaluator &evaluator, RebindOp op) {
   ErrorTreeOr<Type> outType =
       evaluator.concretizeParameterExpr(op.getLoc(), op.getType());
   if (outType.isError())
@@ -402,7 +401,7 @@ static std::optional<ErrorTree> processRebindOp(IREvaluator &evaluator,
   }
   op.replaceAllUsesWith(op.getOperand());
   op.erase();
-  return {};
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -411,8 +410,8 @@ static std::optional<ErrorTree> processRebindOp(IREvaluator &evaluator,
 
 /// Process a param.assert op by folding its parameter expression and checking
 /// its constraint. Returns the appropriate error if the constraint failed.
-static std::optional<ErrorTree> processParamAssertOp(IREvaluator &evaluator,
-                                                     ParamAssertOp op) {
+static ErrorTreeOrSuccess processParamAssertOp(IREvaluator &evaluator,
+                                               ParamAssertOp op) {
   // Check the condition expression.
   auto errorOrValue =
       evaluator.concretizeParameterExpr(op.getLoc(), op.getCond());
@@ -437,7 +436,7 @@ static std::optional<ErrorTree> processParamAssertOp(IREvaluator &evaluator,
 
   // The kgen.param.assert op serves no further purpose, so we can remove it.
   op->erase();
-  return std::nullopt;
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -445,14 +444,14 @@ static std::optional<ErrorTree> processParamAssertOp(IREvaluator &evaluator,
 //===----------------------------------------------------------------------===//
 
 /// Handle location concretization.
-static std::optional<ErrorTree> processLocation(IREvaluator &evaluator,
-                                                Operation *op) {
+static ErrorTreeOrSuccess processLocation(IREvaluator &evaluator,
+                                          Operation *op) {
   ErrorTreeOr<Attribute> value = evaluator.concretizeParameterExpr(
       op->getLoc(), op->getLoc(), /*allowUnknown=*/true);
   if (value.isError())
     return value.takeError();
   op->setLoc(cast<Location>(value.takeValue()));
-  return std::nullopt;
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -461,8 +460,8 @@ static std::optional<ErrorTree> processLocation(IREvaluator &evaluator,
 
 /// Unknown operations are allowed to use types and attributes with parameter
 /// references.  Substitute in concrete values for their references.
-static std::optional<ErrorTree> processGenericOp(IREvaluator &evaluator,
-                                                 Operation *op) {
+static ErrorTreeOrSuccess processGenericOp(IREvaluator &evaluator,
+                                           Operation *op) {
   // Scan all the attributes and types to look for uses of parameters.  We let
   // the walker scan the region hierarchy.
   SmallVector<NamedAttribute> newAttrs;
@@ -479,8 +478,8 @@ static std::optional<ErrorTree> processGenericOp(IREvaluator &evaluator,
   if (changedAttrs)
     op->setAttrs(newAttrs);
 
-  if (std::optional<ErrorTree> err = processLocation(evaluator, op))
-    return std::move(*err);
+  if (ErrorTreeOrSuccess err = processLocation(evaluator, op); err.isError())
+    return err.takeError();
 
   // Check the types of results to find any parameters embedded in their
   // types.  We don't have to check operands because they are always checked
@@ -507,7 +506,7 @@ static std::optional<ErrorTree> processGenericOp(IREvaluator &evaluator,
     }
   }
 
-  return std::nullopt;
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -717,7 +716,7 @@ public:
   getConcreteFunction(Location loc, SymbolRefAttr symbolRef,
                       ArrayRef<TypedAttr> paramValues) override;
 
-  std::optional<ErrorTree>
+  ErrorTreeOrSuccess
   getAllConcreteFunctions(Location loc, SymbolRefAttr symbolRef,
                           ArrayRef<TypedAttr> paramValues,
                           std::vector<FuncOp> &funcs) override;
@@ -747,27 +746,26 @@ public:
   /// in a very clean model where the parent of the current parent (a generator)
   /// will have its children be the successfully concretized parameter search
   /// nodes.
-  std::optional<ErrorTree>
+  ErrorTreeOrSuccess
   processParamForkOp(ImplNode *parent, ParamForkOp op,
                      ArrayRef<Operation *> remainingWorklist);
 
   /// Spawn a clone for kgen.param.fork. This creates a new FuncOp that is a
   /// sibling to the parent of the kgen.param.fork op. It replaces the
   /// kgen.param.fork with a param.declare to allow specialization to succeed.
-  std::optional<ErrorTree>
+  ErrorTreeOrSuccess
   spawnParamForkClone(ParamForkOp forkOp, Attribute value,
                       ImplNode *forkParentNode,
                       ArrayRef<Operation *> remainingWorklist);
 
   /// Process a call op by binding any necessary input parameters from the
   /// symbol or the call and passing them on to processGeneratorUser.
-  std::optional<ErrorTree>
-  processCallOp(KGENCallOpInterface call, ImplNode *parent,
-                ArrayRef<Operation *> remainingWorklist);
+  ErrorTreeOrSuccess processCallOp(KGENCallOpInterface call, ImplNode *parent,
+                                   ArrayRef<Operation *> remainingWorklist);
 
   /// Process a generator user. In general, this is anything that can call into
   /// a generator and might therefore need to be multi-versioned.
-  std::optional<ErrorTree>
+  ErrorTreeOrSuccess
   processGeneratorUser(KGENCallOpInterface user,
                        SymbolConstantAttr calleeSymbol, ImplNode *parent,
                        ArrayRef<Operation *> remainingWorklist);
@@ -775,11 +773,11 @@ public:
   /// Complete processing of a generator user by resolving any bound result
   /// types or parameters in the parent scope. This is the step that propagates
   /// result parameters from the inner scope to the outer scope.
-  std::optional<ErrorTree> completeCallProcessing(KGENCallOpInterface user,
-                                                  ArrayRef<ParamDeclAttr> decls,
-                                                  ImplNode *thisNode,
-                                                  ImplNode *parentNode,
-                                                  Logger &logger);
+  ErrorTreeOrSuccess completeCallProcessing(KGENCallOpInterface user,
+                                            ArrayRef<ParamDeclAttr> decls,
+                                            ImplNode *thisNode,
+                                            ImplNode *parentNode,
+                                            Logger &logger);
 
   /// Resolve call input parameters - this is a complex function because calls
   /// can have regions. We take the body of those regions and put it into a
@@ -796,7 +794,7 @@ public:
   /// Process a param.declare.region op by creating a generator with the correct
   /// captures. We don't specialize the generator until the call-site because we
   /// don't know what the actual input parameters are supposed to be until then.
-  std::optional<ErrorTree>
+  ErrorTreeOrSuccess
   processParamDeclareRegionOp(ParamDeclareRegionOp regionDecl,
                               ImplNode *parent);
 
@@ -804,7 +802,7 @@ public:
   /// inlining only the branch that was taken. If one of the branches had an
   /// early return, this will split the block after the return and avoid
   /// elaborating the rest of the function.
-  std::optional<ErrorTree> processParamIfOp(ParamIfOp op, ImplNode *parent);
+  ErrorTreeOrSuccess processParamIfOp(ParamIfOp op, ImplNode *parent);
 
   /// Process a worklist of ops. Returns failure if the scope produced an error.
   LogicalResult processScope(ImplNode *parentNode,
@@ -813,7 +811,7 @@ public:
   /// Specializes the generator at `genNode`. Essentially instantiates a new
   /// function with the same body, and specializes it. The new function is by
   /// definition the expansion tree child of this generator.
-  ErrorTreeOr<SuccessType> specializeGenerator(ParamNode *genNode);
+  ErrorTreeOrSuccess specializeGenerator(ParamNode *genNode);
 
   /// Given a list of primary generators (i.e. generators with no input
   /// parameters), run the elaborator. This will generate an expansion tree
@@ -911,8 +909,7 @@ ElaboratorImpl::getConcreteFunction(Location loc, SymbolRefAttr symbolRef,
   ParamNode *node = g.getOrCreate(vals, gen);
   // If the node has already been elaborated, just use that result.
   if (node->status != ParamNode::DONE) {
-    ErrorTreeOr<SuccessType> err = specializeGenerator(node);
-    if (err.isError())
+    if (ErrorTreeOrSuccess err = specializeGenerator(node); err.isError())
       return err.takeError();
   }
 
@@ -923,7 +920,7 @@ ElaboratorImpl::getConcreteFunction(Location loc, SymbolRefAttr symbolRef,
 // ElaboratorImpl::getAllConcreteFunctions
 //===----------------------------------------------------------------------===//
 
-std::optional<ErrorTree>
+ErrorTreeOrSuccess
 ElaboratorImpl::getAllConcreteFunctions(Location loc, SymbolRefAttr symbolRef,
                                         ArrayRef<TypedAttr> paramValues,
                                         std::vector<FuncOp> &funcs) {
@@ -938,12 +935,11 @@ ElaboratorImpl::getAllConcreteFunctions(Location loc, SymbolRefAttr symbolRef,
   // Lookup the node if it already exists.
   ParamNode *node = g.getOrCreate(vals, gen);
   if (node->status != ImplNode::DONE) {
-    ErrorTreeOr<SuccessType> err = specializeGenerator(node);
-    if (err.isError())
+    if (ErrorTreeOrSuccess err = specializeGenerator(node); err.isError())
       return err.takeError();
   }
   node->getAllConcreteFuncs(funcs);
-  return std::nullopt;
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -951,7 +947,7 @@ ElaboratorImpl::getAllConcreteFunctions(Location loc, SymbolRefAttr symbolRef,
 //===----------------------------------------------------------------------===//
 
 /// Process a kgen.param.fork op.
-std::optional<ErrorTree>
+ErrorTreeOrSuccess
 ElaboratorImpl::processParamForkOp(ImplNode *parent, ParamForkOp op,
                                    ArrayRef<Operation *> remainingWorklist) {
   auto _ = logger.scope("Processing ParamForkOp");
@@ -991,8 +987,10 @@ ElaboratorImpl::processParamForkOp(ImplNode *parent, ParamForkOp op,
       continue;
 
     // Otherwise, spawn a clone for this value. If that fails, continue.
-    if (auto err = spawnParamForkClone(op, value, parent, remainingWorklist)) {
-      errors.push_back(std::move(*err));
+    if (ErrorTreeOrSuccess err =
+            spawnParamForkClone(op, value, parent, remainingWorklist);
+        err.isError()) {
+      errors.push_back(err.takeError());
       continue;
     }
 
@@ -1008,7 +1006,7 @@ ElaboratorImpl::processParamForkOp(ImplNode *parent, ParamForkOp op,
 
   // The parent has to be deleted.
   parent->setToError(ErrorTree(op.getLoc(), "param fork base node"));
-  return std::nullopt;
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1016,7 +1014,7 @@ ElaboratorImpl::processParamForkOp(ImplNode *parent, ParamForkOp op,
 //===----------------------------------------------------------------------===//
 
 /// Spawn a clone from a kgen.param.fork op.
-std::optional<ErrorTree>
+ErrorTreeOrSuccess
 ElaboratorImpl::spawnParamForkClone(ParamForkOp forkOp, Attribute value,
                                     ImplNode *forkParentNode,
                                     ArrayRef<Operation *> remainingWorklist) {
@@ -1055,14 +1053,14 @@ ElaboratorImpl::spawnParamForkClone(ParamForkOp forkOp, Attribute value,
     return newFuncNode->error->copy();
 
   finalizeAndVerifyFunction(analysis, newFuncNode);
-  return std::nullopt;
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
 // ElaboratorImpl::processGeneratorUser
 //===----------------------------------------------------------------------===//
 
-std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
+ErrorTreeOrSuccess ElaboratorImpl::processGeneratorUser(
     KGENCallOpInterface user, SymbolConstantAttr calleeSymbol, ImplNode *parent,
     ArrayRef<Operation *> remainingWorklist) {
   auto _ = logger.scope("Processing Generator User");
@@ -1110,8 +1108,7 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
 
   // Find the tree node that corresponds to the thing we're calling.
   ParamNode *calleeNode = g.getOrCreate(inputParamKey, gen);
-  ErrorTreeOr<SuccessType> err = specializeGenerator(calleeNode);
-  if (err.isError())
+  if (ErrorTreeOrSuccess err = specializeGenerator(calleeNode); err.isError())
     return ErrorTree(user.getLoc(), "call expansion failed", err.takeError());
 
   // Complete processing for all the leaves of this subtree.
@@ -1173,9 +1170,10 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
     // Bind this concrete impl to this callee for this node.
     newNode->bindings[{inputParamKey, gen}] = c;
 
-    if (std::optional<ErrorTree> err = completeCallProcessing(
+    if (ErrorTreeOrSuccess err = completeCallProcessing(
             cast<KGENCallOpInterface>(map.lookup(user.getOperation())), decls,
-            c, newNode, logger))
+            c, newNode, logger);
+        err.isError())
       return err;
 
     LLVM_DEBUG(newNode->print(logger << "New Op "));
@@ -1207,8 +1205,8 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
 
 /// Complete processing of a `kgen.param.apply` operation by invoking the
 /// interpreter on the concrete callee and binding its result.
-static std::optional<ErrorTree>
-processParamApplyOp(ParamApplyOp op, FuncOp func, IREvaluator &evaluator) {
+static ErrorTreeOrSuccess processParamApplyOp(ParamApplyOp op, FuncOp func,
+                                              IREvaluator &evaluator) {
   SmallVector<TypedAttr> operands;
   for (TypedAttr operand : op.getOperands()) {
     ErrorTreeOr<Attribute> value =
@@ -1227,7 +1225,7 @@ processParamApplyOp(ParamApplyOp op, FuncOp func, IREvaluator &evaluator) {
   return {};
 }
 
-std::optional<ErrorTree> ElaboratorImpl::completeCallProcessing(
+ErrorTreeOrSuccess ElaboratorImpl::completeCallProcessing(
     KGENCallOpInterface user, ArrayRef<ParamDeclAttr> decls, ImplNode *thisNode,
     ImplNode *parentNode, Logger &logger) {
 
@@ -1330,7 +1328,7 @@ ElaboratorImpl::resolveCallInputParams(Operation *call, IREvaluator &evaluator,
 //===----------------------------------------------------------------------===//
 
 /// Process a call_param op.
-std::optional<ErrorTree>
+ErrorTreeOrSuccess
 ElaboratorImpl::processCallOp(KGENCallOpInterface call, ImplNode *parent,
                               ArrayRef<Operation *> remainingWorklist) {
   ErrorTreeOr<Attribute> symbol = parent->evaluator.concretizeParameterExpr(
@@ -1380,7 +1378,7 @@ ElaboratorImpl::processCallOp(KGENCallOpInterface call, ImplNode *parent,
       return parent->error->copy();
   }
 
-  return std::nullopt;
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1389,7 +1387,7 @@ ElaboratorImpl::processCallOp(KGENCallOpInterface call, ImplNode *parent,
 
 /// Process a param.declare.region by creating a generator for the contained
 /// region.
-std::optional<ErrorTree>
+ErrorTreeOrSuccess
 ElaboratorImpl::processParamDeclareRegionOp(ParamDeclareRegionOp regionDecl,
                                             ImplNode *parent) {
   StringAttr regionName = getMangledRegionParamName(regionDecl);
@@ -1410,15 +1408,15 @@ ElaboratorImpl::processParamDeclareRegionOp(ParamDeclareRegionOp regionDecl,
          "must have a nested region");
   LLVM_DEBUG(logger << "Storing known region: " << regionName << "\n");
   knownRegions[regionName] = &found->getSecond();
-  return std::nullopt;
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
 // ElaboratorImpl::processParamIfOp
 //===----------------------------------------------------------------------===//
 
-std::optional<ErrorTree> ElaboratorImpl::processParamIfOp(ParamIfOp op,
-                                                          ImplNode *parent) {
+ErrorTreeOrSuccess ElaboratorImpl::processParamIfOp(ParamIfOp op,
+                                                    ImplNode *parent) {
   // Check the condition expression.
   auto errorOrValue =
       parent->evaluator.concretizeParameterExpr(op.getLoc(), op.getCond());
@@ -1524,7 +1522,7 @@ std::optional<ErrorTree> ElaboratorImpl::processParamIfOp(ParamIfOp op,
   op->erase();
   LLVM_DEBUG(
       logger.logOp("param.if parent scope (after processing)", parent->func));
-  return std::nullopt;
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1554,7 +1552,7 @@ LogicalResult ElaboratorImpl::processScope(ImplNode *parentNode,
     auto _ = logger.scope("Processing: '", op->getName(), "'");
     logger.logOp("Op", op);
 
-    std::optional<ErrorTree> result = std::nullopt;
+    ErrorTreeOrSuccess result = success();
     if (auto declare = dyn_cast<ParamDeclareOp>(op)) {
       TimeTraceScope<EnableTracing> traceScope("processParamDeclareOp");
       result = processParamDeclareOp(parentNode->evaluator, declare);
@@ -1591,9 +1589,10 @@ LogicalResult ElaboratorImpl::processScope(ImplNode *parentNode,
 
     // If we have an error, log it and set the parent node to an error. This
     // will perform any required cleanup.
-    if (result) {
-      LLVM_DEBUG(logger.scope("Result: Failure") << result->getError());
-      parentNode->setToError(std::move(*result));
+    if (result.isError()) {
+      LLVM_DEBUG(logger.scope("Result: Failure")
+                 << result.getError().getError());
+      parentNode->setToError(result.takeError());
       return failure();
     }
   }
@@ -1619,8 +1618,7 @@ static StringRef tryGettingShortName(StringRef s) {
   return s.split('(').first.rsplit(':').second;
 }
 
-ErrorTreeOr<SuccessType>
-ElaboratorImpl::specializeGenerator(ParamNode *genNode) {
+ErrorTreeOrSuccess ElaboratorImpl::specializeGenerator(ParamNode *genNode) {
   ++depth;
   auto decDepth = llvm::make_scope_exit([&] { --depth; });
   if (depth > config.maxDepth) {
@@ -1765,8 +1763,8 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
 
     // Now we can begin to construct the expansion tree rooted at this
     // generator. Emit as many errors as possible.
-    ErrorTreeOr<SuccessType> err = specializeGenerator(generatorNode);
-    if (err.isError()) {
+    if (ErrorTreeOrSuccess err = specializeGenerator(generatorNode);
+        err.isError()) {
       err.takeError().emit([](Location loc) { return mlir::emitError(loc); });
       failed = true;
     }

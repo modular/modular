@@ -9,6 +9,7 @@
 
 #include "Support/ADT/SmartVariant.h"
 #include "Support/Error.h"
+#include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Location.h"
 
@@ -153,6 +154,19 @@ public:
 private:
   /// This type is backed by a variant of an error and the value type.
   SmartVariant<ErrorTree, T> value;
+};
+
+/// This type is used for APIs that either succeed (with no result value) or can
+/// return an ErrorTree.
+class [[nodiscard]] ErrorTreeOrSuccess : public ErrorTreeOr<Detail::Empty> {
+public:
+  using ErrorTreeOr::ErrorTreeOr;
+  /// This allows initialization from success().
+  /*implicit*/ ErrorTreeOrSuccess(SuccessType success)
+      : ErrorTreeOr(Detail::Empty()) {}
+
+  /// Allow default initialization to success.
+  ErrorTreeOrSuccess() : ErrorTreeOr(Detail::Empty()) {}
 };
 
 } // namespace M
