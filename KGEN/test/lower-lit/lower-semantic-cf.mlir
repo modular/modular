@@ -51,6 +51,13 @@ lit.file_module @FileModule {
         %tmp3 = pop.variant.create %a : i32 -> !pop.variant<@Error, i32>
         lit.return %tmp3 : !pop.variant<@Error, i32>
         lit.try.yield
+      // CHECK-NEXT: finally
+      } finally {
+        // CHECK-NEXT: %[[R:.*]] = pop.variant.create %a
+        // CHECK-NEXT: kgen.return %[[R]]
+        %tmp1 = pop.variant.create %a : i32 -> !pop.variant<@Error, i32>
+        lit.return %tmp1 : !pop.variant<@Error, i32>
+        lit.try.yield
       // CHECK-NEXT: }
       }
 
@@ -173,13 +180,12 @@ lit.func @raise_raise() throws -> !pop.variant<@Error, index> {
     lit.try.yield
   } else {
     lit.try.yield
+  } finally {
+    lit.try.yield
   }
 
   lit.end_func
 }
-
-
-
 
 // CHECK-LABEL: @no_return_throws
 // CHECK-SAME ) -> !pop.variant<@Error, !lit.none>
@@ -224,6 +230,8 @@ lit.func @ref(%e: !kgen.declref<@Error>,
     %none = kgen.param.constant: !lit.none = <#lit.none>
     %tmp2 = pop.variant.create %none : !lit.none -> !pop.variant<@Error, !lit.none>
     lit.return %tmp2 : !pop.variant<@Error, !lit.none>
+    lit.try.yield
+  } finally {
     lit.try.yield
   }
   // CHECK: kgen.unreachable
@@ -483,6 +491,8 @@ lit.func @pointlessTry() -> !lit.none {
   } except (%err: !kgen.declref<@Error>) {
     lit.try.yield
   } else {
+    lit.try.yield
+  } finally {
     lit.try.yield
   }
   %0 = kgen.param.constant: !lit.none = <#lit.none>

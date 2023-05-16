@@ -405,16 +405,20 @@ def LIT_TryOp : LITOp<"try", [DeclareOpInterfaceMethods<ControlFlowNode>]> {
       lit.try.yield
     } else {
       lit.try.yield
+    } finally {
+      lit.try.yield
     }
     ```
   }];
 
   let regions = (region SizedRegion<1>:$tryRegion, SizedRegion<1>:$exceptRegion,
-                        SizedRegion<1>:$elseRegion);
+                        SizedRegion<1>:$elseRegion,
+                        SizedRegion<1>:$finallyRegion);
   let results = (outs Variadic<AnyType>:$results);
   let assemblyFormat = [{
     (`->` type($results)^)? $tryRegion `except`
-    custom<ExceptRegion>($exceptRegion) `else` $elseRegion attr-dict
+    custom<ExceptRegion>($exceptRegion) `else` $elseRegion
+    `finally` $finallyRegion attr-dict
   }];
 
   let builders = [OpBuilder<(ins), [{ build($_builder, $_state, {}); }]>];

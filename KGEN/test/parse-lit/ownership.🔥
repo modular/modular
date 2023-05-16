@@ -150,7 +150,9 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
     a = MemExample()
     # CHECK-NEXT: lit.try.yield
   # CHECK-NEXT: } else {
-  # CHECK-NEXT:      kgen.unreachable
+  # CHECK-NEXT:   kgen.unreachable
+  # CHECK-NEXT: } finally {
+  # CHECK-NEXT:   lit.try.yield
   # CHECK-NEXT: }
   # CHECK-NEXT: kgen.call @{{.*}}noop{{.*}}(%a)
   a.noop()  # ok
@@ -169,7 +171,9 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
   except:
     pass
   # CHECK-NEXT: } else {
-  # CHECK-NEXT:      kgen.unreachable
+  # CHECK-NEXT:   kgen.unreachable
+  # CHECK-NEXT: } finally {
+  # CHECK-NEXT:   lit.try.yield
   # CHECK-NEXT: }
 
   # CHECK-NEXT: kgen.call @{{.*}}__init__{{.*}}(%b)
@@ -189,7 +193,9 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
   except:
     pass
   # CHECK-NEXT: } else {
-  # CHECK-NEXT:      kgen.unreachable
+  # CHECK-NEXT:   kgen.unreachable
+  # CHECK-NEXT: } finally {
+  # CHECK-NEXT:   lit.try.yield
   # CHECK-NEXT: }
   # CHECK-NEXT: kgen.call @{{.*}}noop{{.*}}(%c)
   c.noop()
@@ -213,6 +219,8 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
     # CHECK-NEXT: kgen.call @{{.*}}__init__{{.*}}(%d)
     d = MemExample()
     # CHECK-NEXT: lit.try.yield
+  # CHECK-NEXT: } finally {
+  # CHECK-NEXT:   lit.try.yield
   # CHECK-NEXT: }
 
   # CHECK-NEXT: kgen.call @{{.*}}noop{{.*}}(%d)

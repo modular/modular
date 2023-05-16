@@ -139,7 +139,10 @@ lit.func @try_op(%err: !kgen.declref<@Error>, %int: !kgen.declref<@Int>) -> !kge
   } else {
     // CHECK-NEXT: lit.try.yield
     lit.try.yield
-  // CHECK-NEXT: }
+  // CHECK-NEXT: } finally {
+  } finally {
+    // CHECK-NEXT: lit.try.yield
+    lit.try.yield
   }
   kgen.return %int : !kgen.declref<@Int>
 }
@@ -167,6 +170,10 @@ lit.func @try_in_loop(%cond: i1) {
       hlcf.break
     // CHECK-NEXT: else
     } else {
+      // CHECK-NEXT: lit.try.yield
+      lit.try.yield
+    // CHECK-NEXT: finally
+    } finally {
       // CHECK-NEXT: lit.try.yield
       lit.try.yield
     }
@@ -228,6 +235,8 @@ lit.func @lexical_terminators(%cond: i1, %err: !kgen.declref<@Error>) throws -> 
     lit.try.yield
   } else {
     lit.try.yield
+  } finally {
+    lit.try.yield
   }
   // CHECK: lit.raise %err : <@Error>
   lit.try {
@@ -236,6 +245,8 @@ lit.func @lexical_terminators(%cond: i1, %err: !kgen.declref<@Error>) throws -> 
   } except (%e: !kgen.declref<@Error>) {
     lit.try.yield
   } else {
+    lit.try.yield
+  } finally {
     lit.try.yield
   }
   // CHECK: lit.end_func

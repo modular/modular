@@ -876,7 +876,7 @@ void TryYieldOp::getBranchTargets(
     region = region->getParentRegion();
 
   // The region indices of the try operation.
-  enum { TRY, EXCEPT, ELSE };
+  enum { TRY, EXCEPT, ELSE, FINALLY };
   switch (region->getRegionNumber()) {
   case TRY:
     // Yield from the 'try' region branches to the 'else' region.
@@ -884,8 +884,12 @@ void TryYieldOp::getBranchTargets(
     break;
   case EXCEPT:
   case ELSE:
-    // Yield from either the 'except' or 'else' regions branches back to the
-    // parent operation.
+    // Yield from either the 'except' or 'else' regions branches to the finally
+    // region.
+    targets.emplace_back(FINALLY, getOperands());
+    break;
+  case FINALLY:
+    // Yield from 'finally' branches back to the parent operation.
     targets.emplace_back(std::nullopt, getOperands());
     break;
   default:
