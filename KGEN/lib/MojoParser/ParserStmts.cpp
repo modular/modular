@@ -1003,8 +1003,8 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
     Block *exceptBlock = builder.createBlock(&tryOp.getExceptRegion());
     Value errVal =
         exceptBlock->addArgument(errorType, translateLocation(errValLoc));
-    if (failed(getEmitter().emitRaise(SRValue(errVal), loc)))
-      emitError(loc, "cannot raise error in a context that cannot raise");
+    // Propagate the error if it is possible in this context.
+    (void)getEmitter().emitRaise(SRValue(errVal), loc);
     builder.create<TryYieldOp>(loc);
 
     builder.createBlock(&tryOp.getElseRegion());
