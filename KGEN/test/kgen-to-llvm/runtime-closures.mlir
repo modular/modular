@@ -36,7 +36,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
     %3 = llvm.mlir.undef : !llvm.array<0 x i1>
     llvm.return %3 : !llvm.array<0 x i1>
   }
-  // CHECK:  llvm.func @closure_wrapper_fn(%arg0: !llvm.ptr) -> i64 {
+  // CHECK:  llvm.func internal @closure_wrapper_fn(%arg0: !llvm.ptr) -> i64 {
   // CHECK:  %0 = llvm.bitcast %arg0 : !llvm.ptr to !llvm.ptr<struct<(i64)>>
   // CHECK:  %1 = llvm.getelementptr %0[0, 0] : (!llvm.ptr<struct<(i64)>>) -> !llvm.ptr<i64>
   // CHECK:  %2 = llvm.load %1 : !llvm.ptr<i64>
