@@ -379,6 +379,32 @@ def tryExceptArgDef():
         eatError(err)
 
 
+# CHECK-LABEL: lit.func @"tryFinally
+fn tryFinally():
+    # CHECK-NEXT: lit.try
+    try:
+        # CHECK-NEXT: lit.try.yield
+        pass
+    # CHECK-NEXT: except
+    # CHECK-NEXT: lit.try.yield
+    # CHECK: finally
+    finally:
+        # CHECK: lit.return
+        return
+    # CHECK: lit.try {
+    try:
+        # CHECK-NEXT: lit.try
+        try:
+            # CHECK-NEXT: lit.try.yield
+            pass
+        # CHECK-NEXT: except (%arg0:
+        # CHECK-NEXT: lit.raise %arg0
+        finally:
+            pass
+    except:
+        pass
+
+
 def maybeRaises() -> Int:
     return 0
 

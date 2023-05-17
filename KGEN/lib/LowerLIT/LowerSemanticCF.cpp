@@ -336,12 +336,13 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
         tryFallsThrough |= elseFallsThrough;
       }
 
-      // Fallthrough of the finally region is not significant.
-      bool unused = false, finallyRaises = false, finallyBreaks = false;
+      bool finallyFallsThrough = false, finallyRaises = false,
+           finallyBreaks = false;
       lowerSemanticCFForBlock(tryOp.getFinallyRegion().front(), finallyRaises,
-                              finallyBreaks, unused);
+                              finallyBreaks, finallyFallsThrough);
       doesRaise |= finallyRaises;
       doesBreak |= finallyBreaks;
+      tryFallsThrough &= finallyFallsThrough;
 
       // If the try doesn't fall through, diagnose unreachable code after it.
       if (!tryFallsThrough) {

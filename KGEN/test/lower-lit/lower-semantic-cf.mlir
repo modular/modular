@@ -538,3 +538,24 @@ lit.func @reraise_in_try(%err: !kgen.declref<@Error>) {
   }
   kgen.return
 }
+
+// CHECK-LABEL: lit.func @finally_breaks
+lit.func @finally_breaks() -> index {
+  lit.try {
+    lit.try.yield
+  } except (%e: index) {
+    lit.try.yield
+  } else {
+    lit.try.yield
+  // CHECK: finally
+  } finally {
+    // CHECK-NEXT: %idx0 = index.constant 0
+    %idx0 = index.constant 0
+    // CHECK-NEXT: kgen.return %idx0
+    lit.return %idx0 : index
+    lit.try.yield
+  // CHECK-NEXT: }
+  }
+  // CHECK-NEXT: kgen.unreachable
+  lit.end_func
+}
