@@ -123,7 +123,8 @@ private:
       wrapperFnBody->addArgument(argTy, op.getLoc());
     rewriter.clearInsertionPoint();
     auto wrapperFn = rewriter.create<LLVM::LLVMFuncOp>(
-        op.getLoc(), "closure_wrapper_fn", wrapperFnType);
+        op.getLoc(), "closure_wrapper_fn", wrapperFnType,
+        LLVM::Linkage::Internal);
     wrapperFn.getBody().push_back(wrapperFnBody);
     return wrapperFn;
   }
