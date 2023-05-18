@@ -919,22 +919,6 @@ void TryRaiseOp::getBranchTargets(
 }
 
 //===----------------------------------------------------------------------===//
-// TryFinalizeOp
-//===----------------------------------------------------------------------===//
-
-bool TryFinalizeOp::isParentNode(Operation *op) {
-  if (auto tryOp = dyn_cast<TryOp>(op))
-    return tryOp.getFinallyLabelAttr() == getFinallyLabelAttr();
-  return false;
-}
-
-void TryFinalizeOp::getBranchTargets(
-    ArrayRef<Attribute> operands,
-    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
-  targets.emplace_back(3, getOperands());
-}
-
-//===----------------------------------------------------------------------===//
 // LetRegDeclOp / VarLetDeclOp
 //===----------------------------------------------------------------------===//
 
