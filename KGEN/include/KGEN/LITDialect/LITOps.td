@@ -409,22 +409,33 @@ def LIT_TryOp : LITOp<"try", [DeclareOpInterfaceMethods<ControlFlowNode>]> {
       lit.try.yield
     }
     ```
+
+    The 'finally' region is only present during semantic control-flow
+    representation mode and is not modeled through the HLCF abstraction.
   }];
 
   let arguments = (ins OptionalAttr<IndexAttr>:$finallyLabel);
   let regions = (region SizedRegion<1>:$tryRegion, SizedRegion<1>:$exceptRegion,
                         SizedRegion<1>:$elseRegion,
-                        SizedRegion<1>:$finallyRegion);
+                        VariadicRegion<SizedRegion<1>>:$finallyRegions);
   let results = (outs Variadic<AnyType>:$results);
   let assemblyFormat = [{
     (`->` type($results)^)? $tryRegion `except`
     custom<ExceptRegion>($exceptRegion) `else` $elseRegion
-    `finally` $finallyRegion attr-dict
+    (`finally` $finallyRegions^)? attr-dict
   }];
 
   let builders = [
-    OpBuilder<(ins), [{ build($_builder, $_state, {}, IntegerAttr()); }]>
+    OpBuilder<(ins), [{ build($_builder, $_state, {}, IntegerAttr(), 1); }]>
   ];
+
+  let extraClassDeclaration = [{
+    /// Get the finally region, assuming it is present.
+    Region &getFinallyRegion() { return getFinallyRegions().front(); }
+
+    /// Return true if the finally block is trivial.
+    bool hasTrivialFinally();
+  }];
 
   let hasVerifier = 1;
 }

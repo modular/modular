@@ -64,148 +64,8 @@ static FlatSymbolRefAttr flattenSymbolRefAttr(SymbolRefAttr ref) {
   return SymbolRefAttr::get(ref.getContext(), nameOS.str());
 }
 
-/// Get the parent operation of a terminator.
-static Operation *getParentNode(HLCF::ControlFlowTerminator term) {
-  Operation *op = term->getParentOp();
-  while (!term.isParentNode(op))
-    op = op->getParentOp();
-  return op;
-}
-
-/// Insert 'finally' block logic on a `lit.try` operation.
-static void lowerTryFinally(TryOp tryOp, int64_t &counter) {
-  // If the finally block is empty, there is nothing to do.
-  Operation *finallyTerm = tryOp.getFinallyRegion().front().getTerminator();
-  bool finallyYields = isa<TryYieldOp>(finallyTerm);
-  if (finallyYields && llvm::hasSingleElement(tryOp.getFinallyRegion().front()))
-    return;
-
-  SmallVector<HLCF::ControlFlowTerminator> exits;
-  // FIXME: Re-traversing `lit.try` operations is N^2. This could be computed
-  // in one pass over the IR.
-  auto checkRegion = [&](Operation *op) {
-    // Control-flow will never cross nested functions.
-    if (isa<ParamDeclareRegionOp>(op))
-      return WalkResult::skip();
-
-    // Check for a terminator that will branch past the enclosing try operation.
-    auto term = dyn_cast<HLCF::ControlFlowTerminator>(op);
-    if (!term)
-      return WalkResult::advance();
-    Operation *node = getParentNode(term);
-    // Track the terminator if it is exiting.
-    if (node->isProperAncestor(tryOp))
-      exits.push_back(term);
-    return WalkResult::advance();
-  };
-
-  // Route exiting branches from the 'try', 'except', and 'else' regions through
-  // the finally region.
-  tryOp.getTryRegion().walk(checkRegion);
-  tryOp.getExceptRegion().walk(checkRegion);
-  tryOp.getElseRegion().walk(checkRegion);
-
-  // If there are no exiting terminators, there is nothing to do.
-  if (exits.empty())
-    return;
-
-  // Generate a label for the try. This label will be used to relate `lit.try`
-  // and `lit.try.finalize` operations, since they can cross multiple
-  // control-flow operations, including other `lit.try` operations, like in the
-  // case of a try-finally nested inside another. The label only needs to be
-  // unique at the current function level, because control-flow cannot cross
-  // function definitions.
-  mlir::IRRewriter b{OpBuilder(tryOp.getContext())};
-  IntegerAttr label = b.getIndexAttr(counter++);
-  tryOp.setFinallyLabelAttr(label);
-
-  // If the 'finally' region ends with an exiting terminator, then all seen
-  // exiting terminators will never "execute".
-  if (!finallyYields) {
-    for (HLCF::ControlFlowTerminator term : exits) {
-      b.setInsertionPoint(term);
-      b.replaceOpWithNewOp<TryFinalizeOp>(term, label, ValueRange());
-    }
-    return;
-  }
-
-  // Add the `lit.try.yield` operations in the 'except' and 'else' regions that
-  // branch to the 'finally' region.
-  auto addYield = [&](Region &region) {
-    if (auto yield = dyn_cast<TryYieldOp>(region.front().getTerminator()))
-      exits.push_back(yield);
-  };
-  addYield(tryOp.getElseRegion());
-  addYield(tryOp.getExceptRegion());
-
-  // Of the exiting terminators, only returns have operands at this compilation
-  // stage, and they are all the same type.
-  SmallVector<Type> argTypes;
-  for (HLCF::ControlFlowTerminator term : exits) {
-    if (auto ret = dyn_cast<KGEN::ReturnOp>(&*term)) {
-      if (argTypes.empty())
-        argTypes.assign(ret->operand_type_begin(), ret->operand_type_end());
-      assert(TypeRange(argTypes) == ret.getOperandTypes() && "invalid return");
-    }
-  }
-
-  // Rewrite the terminators. The `lit.try.yield` operations are at the end.
-  llvm::MapVector<mlir::OperationName, int64_t> termSw;
-  SmallVector<Value> operands;
-  for (HLCF::ControlFlowTerminator term : llvm::reverse(exits)) {
-    auto [_, sw] = *termSw.insert({term->getName(), termSw.size()}).first;
-    b.setInsertionPoint(term);
-    operands.clear();
-    operands.push_back(b.create<mlir::index::ConstantOp>(term.getLoc(), sw));
-    if (term->getNumOperands()) {
-      operands.append(term->operand_begin(), term->operand_end());
-    } else {
-      // Insert undef values for other terminators. The values will not be used.
-      for (Type type : argTypes)
-        operands.push_back(b.create<UndefOp>(term.getLoc(), type));
-    }
-    b.replaceOpWithNewOp<TryFinalizeOp>(term, label, operands);
-  }
-
-  // Wire up the finally block. Generate a switch statement at the end of the
-  // finally that branches to the appropriate terminator.
-  Block &finally = tryOp.getFinallyRegion().front();
-  Value sw = finally.addArgument(b.getIndexType(), tryOp.getLoc());
-  SmallVector<Value> retVals;
-  for (Type type : argTypes)
-    retVals.push_back(finally.addArgument(type, tryOp.getLoc()));
-
-  b.setInsertionPoint(finally.getTerminator());
-  auto swOp = b.create<HLCF::SwitchOp>(
-      tryOp.getLoc(), TypeRange(), sw,
-      llvm::to_vector(llvm::seq<int32_t>(0, termSw.size())), termSw.size());
-
-  // The default block is dead code.
-  b.createBlock(&swOp.getDefaultRegion());
-  b.create<HLCF::YieldOp>(tryOp.getLoc());
-
-  // Populate the rest of the case regions.
-  for (auto [name, region] :
-       llvm::zip(llvm::make_first_range(termSw), swOp.getCaseRegions())) {
-    b.createBlock(&region);
-    // Specially handle return and yield.
-    if (name.getStringRef() == TryYieldOp::getOperationName()) {
-      b.create<HLCF::YieldOp>(tryOp.getLoc());
-    } else if (name.getStringRef() == KGEN::ReturnOp::getOperationName()) {
-      b.create<KGEN::ReturnOp>(tryOp.getLoc(), retVals);
-    } else {
-      OperationState state(tryOp.getLoc(), name);
-      b.create(state);
-    }
-  }
-
-  return;
-}
-
 static void lowerLITOps(LIT::FuncOp func,
                         DebugInfo::DISubprogramAttr funcSpAttr) {
-  int64_t tryLabelCounter = 0;
-
   // Check if we are building debug info for source variables.
   bool buildingDebugVars =
       funcSpAttr && funcSpAttr.getCompileUnit().getEmissionKind() ==
@@ -248,8 +108,6 @@ static void lowerLITOps(LIT::FuncOp func,
         buildDebugInfoValue(allocOp->getNextNode(), allocOp.getLoc(), varName,
                             funcSpAttr.getFile(), allocOp, varType);
       }
-    } else if (auto tryOp = dyn_cast<TryOp>(op)) {
-      lowerTryFinally(tryOp, tryLabelCounter);
     }
   });
 }

@@ -151,8 +151,6 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
     # CHECK-NEXT: lit.try.yield
   # CHECK-NEXT: } else {
   # CHECK-NEXT:   kgen.unreachable
-  # CHECK-NEXT: } finally {
-  # CHECK-NEXT:   lit.try.yield
   # CHECK-NEXT: }
   # CHECK-NEXT: kgen.call @{{.*}}noop{{.*}}(%a)
   a.noop()  # ok
@@ -172,8 +170,6 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
     pass
   # CHECK-NEXT: } else {
   # CHECK-NEXT:   kgen.unreachable
-  # CHECK-NEXT: } finally {
-  # CHECK-NEXT:   lit.try.yield
   # CHECK-NEXT: }
 
   # CHECK-NEXT: kgen.call @{{.*}}__init__{{.*}}(%b)
@@ -194,8 +190,6 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
     pass
   # CHECK-NEXT: } else {
   # CHECK-NEXT:   kgen.unreachable
-  # CHECK-NEXT: } finally {
-  # CHECK-NEXT:   lit.try.yield
   # CHECK-NEXT: }
   # CHECK-NEXT: kgen.call @{{.*}}noop{{.*}}(%c)
   c.noop()
@@ -219,13 +213,45 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
     # CHECK-NEXT: kgen.call @{{.*}}__init__{{.*}}(%d)
     d = MemExample()
     # CHECK-NEXT: lit.try.yield
-  # CHECK-NEXT: } finally {
-  # CHECK-NEXT:   lit.try.yield
   # CHECK-NEXT: }
 
   # CHECK-NEXT: kgen.call @{{.*}}noop{{.*}}(%d)
   d.noop()
   # CHECK-NEXT: kgen.call @{{.*}}__del__{{.*}}(%d)
+
+# CHECK-LABEL: lit.func @"chris_lifetime_example
+fn chris_lifetime_example(a: Bool, b: Bool):
+    let x : MemExample
+    # CHECK: lit.try
+    try:
+        # CHECK-NEXT: lit.try
+        try:
+            # CHECK: hlcf.if
+            if a:
+                # CHECK: __init__{{.*}}(%x)
+                x = MemExample()
+                # CHECK: lit.try.raise
+                raise Error()
+        # CHECK: except
+            # CHECK: hlcf.if
+                # CHECK-NEXT: __del__{{.*}}(%x)
+                # CHECK: return
+            # CHECK: else
+            # CHECK: lit.try.raise
+        # CHECK: else
+            # CHECK: hlcf.if
+                # CHECK: return
+            # CHECK: else
+        finally:
+            if b:
+                return
+    # CHECK: except
+    except:
+        # CHECK: %[[DEAD:.*]] = lit.ownership.end.lifetime %x
+        # CHECK: __del__{{.*}}(%[[DEAD]])
+        _ = x^
+    # CHECK: else
+        # CHECK-NEXT: lit.try.yield
 
 # CHECK-LABEL: lit.func @"loop_example
 fn loop_example(cond1: __mlir_type.i1, cond2: __mlir_type.i1):
