@@ -58,6 +58,29 @@ def with_it_err(handle: Bool) -> Int:
     return 3
 
 
+@value
+struct MemoryType:
+    fn __del__(owned self):
+        print("delete")
+
+
+fn chris_lifetime_example(a: Bool, b: Bool):
+    print("start")
+    let x: MemoryType
+    try:
+        try:
+            if a:
+                x = MemoryType()
+                raise Error()
+        finally:
+            if b:
+                print("early")
+                return
+    except:
+        _ = x ^
+    print("normal")
+
+
 def main() -> None:
     # CHECK-LABEL: == try-finally
     print("== try-finally")
@@ -97,3 +120,15 @@ def main() -> None:
     except:
         # CHECK-NEXT: an error was raised
         print("an error was raised")
+
+    # CHECK-NEXT: start
+    # CHECK-NEXT: delete
+    # CHECK-NEXT: normal
+    chris_lifetime_example(True, False)
+    # CHECK-NEXT: start
+    # CHECK-NEXT: early
+    chris_lifetime_example(False, True)
+    # CHECK-NEXT: start
+    # CHECK-NEXT: delete
+    # CHECK-NEXT: early
+    chris_lifetime_example(True, True)

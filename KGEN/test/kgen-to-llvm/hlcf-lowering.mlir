@@ -195,8 +195,6 @@ kgen.func @reraise_in_try(%err: i32) {
       lit.try.raise %arg0 :i32
     } else {
       kgen.unreachable
-    } finally {
-      lit.try.yield
     }
     kgen.unreachable
   } except (%arg0: i32) {
@@ -207,14 +205,8 @@ kgen.func @reraise_in_try(%err: i32) {
     lit.try.yield
   } else {
     kgen.unreachable
-  } finally {
-    // CHECK-NEXT: ^bb5
-    // CHECK: outer.finally
-    "outer.finally"() : () -> ()
-    // CHECK-NEXT: br ^bb6
-    lit.try.yield
   }
-  // CHECK-NEXT: ^bb6:
+  // CHECK-NEXT: ^bb5:
   // CHECK-NEXT: return
   kgen.return
 }

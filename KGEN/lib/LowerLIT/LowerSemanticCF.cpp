@@ -24,6 +24,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "Support/STLExtras.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Matchers.h"
 
@@ -198,6 +199,79 @@ static LogicalResult lowerParamResults(LIT::FuncOp func) {
 // Semantic control flow lowering.
 //===----------------------------------------------------------------------===//
 
+/// Get the parent operation of a terminator.
+static Operation *getParentNode(HLCF::ControlFlowTerminator term) {
+  Operation *op = term->getParentOp();
+  while (!term.isParentNode(op))
+    op = op->getParentOp();
+  return op;
+}
+
+/// Insert 'finally' block logic on a `lit.try` operation by finding all
+/// terminators that exit the try regions and pasting the finally clause before
+/// it. Try operations must be processed post-order, so that the order in which
+/// the finally clauses are pasted is correct.
+static LIT::TryOp lowerTryFinally(LIT::TryOp tryOp) {
+  Block &finallyBlock = tryOp.getFinallyRegion().front();
+
+  auto pasteFinally = [&](Operation *term) {
+    OpBuilder b(term);
+    IRMapping map;
+    for (Operation &op : finallyBlock.without_terminator())
+      b.clone(op, map);
+    // If the finally block terminator exits, then the current terminator is
+    // dead code.
+    if (!isa<LIT::TryYieldOp>(finallyBlock.getTerminator())) {
+      b.clone(*finallyBlock.getTerminator(), map);
+      term->erase();
+    }
+  };
+
+  // FIXME: Re-traversing `lit.try` operations is N^2. This could be computed
+  // in one pass over the IR.
+  auto checkRegion = [&](Operation *op) {
+    // Control-flow will never cross nested functions.
+    if (isa<ParamDeclareRegionOp>(op))
+      return WalkResult::skip();
+
+    // Check for a terminator that will branch past the enclosing try operation.
+    auto term = dyn_cast<HLCF::ControlFlowTerminator>(op);
+    if (!term)
+      return WalkResult::advance();
+    Operation *node = getParentNode(term);
+    if (node->isProperAncestor(tryOp))
+      pasteFinally(term);
+    return WalkResult::advance();
+  };
+
+  // Route exiting branches from the 'try', 'except', and 'else' regions through
+  // the finally region. Nothing to do if the 'finally' region is trivial.
+  if (!tryOp.hasTrivialFinally()) {
+    tryOp.getTryRegion().walk(checkRegion);
+    tryOp.getExceptRegion().walk(checkRegion);
+    tryOp.getElseRegion().walk(checkRegion);
+    // Paste the finally block at the exits of the else and except regions if
+    // they are not terminated by an exit.
+    if (auto yield = dyn_cast<LIT::TryYieldOp>(
+            tryOp.getExceptRegion().front().getTerminator()))
+      pasteFinally(yield);
+    if (auto yield = dyn_cast<LIT::TryYieldOp>(
+            tryOp.getElseRegion().front().getTerminator()))
+      pasteFinally(yield);
+  }
+
+  // Clear the finally region by rebuilding the operation without it.
+  OperationState state(tryOp.getLoc(), tryOp->getName());
+  for (unsigned i = 0; i < 3; ++i) {
+    state.regions.emplace_back(std::make_unique<Region>())
+        ->takeBody(tryOp->getRegion(i));
+  }
+  OpBuilder b(tryOp);
+  auto newTry = cast<LIT::TryOp>(b.create(state));
+  tryOp.erase();
+  return newTry;
+}
+
 /// This recursive function transforms the specified block:
 ///   1) It transforms any semantic CF ops like lit.break into terminators like
 ///      hlcf.break.
@@ -236,7 +310,7 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
                                 std::next(Block::iterator(&op)));
   };
 
-  for (Operation &op : block) {
+  for (Operation &op : llvm::make_early_inc_range(block)) {
     // Look for semantic terminators and turn them into real terminators.
     if (auto returnOp = dyn_cast<LIT::ReturnOp>(op)) {
       auto b = handleSemanticTerminatorOp(op, "return statement");
@@ -295,8 +369,7 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
         Operation &firstOpInExcept = tryOp.getExceptRegion().front().front();
         // If the finally region is not empty, then this could be a
         // try-finally pattern.
-        if (&tryOp.getFinallyRegion().front().front() ==
-            tryOp.getFinallyRegion().front().getTerminator()) {
+        if (tryOp.hasTrivialFinally()) {
           if (!firstOpInExcept.hasTrait<OpTrait::IsTerminator>()) {
             emitWarning(firstOpInExcept.getLoc(),
                         "'except' logic is unreachable, try doesn't raise an "
@@ -336,6 +409,8 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
         tryFallsThrough |= elseFallsThrough;
       }
 
+      // The 'finally' block must fallthrough for the try to fallthrough. Also,
+      // it is transparent to raises and breaks.
       bool finallyFallsThrough = false, finallyRaises = false,
            finallyBreaks = false;
       lowerSemanticCFForBlock(tryOp.getFinallyRegion().front(), finallyRaises,
@@ -343,6 +418,9 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
       doesRaise |= finallyRaises;
       doesBreak |= finallyBreaks;
       tryFallsThrough &= finallyFallsThrough;
+
+      // Modify the body of the try to implement 'finally' logic.
+      tryOp = lowerTryFinally(tryOp);
 
       // If the try doesn't fall through, diagnose unreachable code after it.
       if (!tryFallsThrough) {

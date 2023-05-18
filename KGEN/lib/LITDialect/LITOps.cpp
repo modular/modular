@@ -861,6 +861,12 @@ ValueRange TryOp::getEntryArguments(std::optional<unsigned> target) {
   return getRegion(*target).getArguments();
 }
 
+bool TryOp::hasTrivialFinally() {
+  Block &finally = getFinallyRegion().front();
+  return llvm::hasSingleElement(finally) &&
+         isa<TryYieldOp>(finally.getTerminator());
+}
+
 //===----------------------------------------------------------------------===//
 // TryYieldOp
 //===----------------------------------------------------------------------===//
@@ -884,13 +890,12 @@ void TryYieldOp::getBranchTargets(
     break;
   case EXCEPT:
   case ELSE:
-    // Yield from either the 'except' or 'else' regions branches to the finally
-    // region.
-    targets.emplace_back(FINALLY, getOperands());
+    // Yield from either the 'except' or 'else' regions branches back to the
+    // parent operation.
+    targets.emplace_back(std::nullopt, getOperands());
     break;
   case FINALLY:
-    // Yield from 'finally' branches back to the parent operation.
-    targets.emplace_back(std::nullopt, getOperands());
+    // The finally region is a no-op according to HLCF.
     break;
   default:
     llvm_unreachable("unknown lit.try region");

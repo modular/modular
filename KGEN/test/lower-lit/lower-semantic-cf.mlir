@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -lower-semantic-cf -verify-parameters -verify-diagnostics | FileCheck %s
+// RUN: kgen-opt %s -lower-semantic-cf -verify-parameters -verify-diagnostics -allow-unregistered-dialect | FileCheck %s
 
 lit.struct.decl @Error {}
 
@@ -51,14 +51,9 @@ lit.file_module @FileModule {
         %tmp3 = pop.variant.create %a : i32 -> !pop.variant<@Error, i32>
         lit.return %tmp3 : !pop.variant<@Error, i32>
         lit.try.yield
-      // CHECK-NEXT: finally
-      } finally {
-        // CHECK-NEXT: %[[R:.*]] = pop.variant.create %a
-        // CHECK-NEXT: kgen.return %[[R]]
-        %tmp1 = pop.variant.create %a : i32 -> !pop.variant<@Error, i32>
-        lit.return %tmp1 : !pop.variant<@Error, i32>
-        lit.try.yield
       // CHECK-NEXT: }
+      } finally {
+        lit.try.yield
       }
 
       // CHECK-NEXT: kgen.unreachable
@@ -170,16 +165,22 @@ lit.func @if_false_raise() throws -> !pop.variant<@Error, index> {
 
 // CHECK-LABEL: lit.func @raise_raise
 lit.func @raise_raise() throws -> !pop.variant<@Error, index> {
+  // CHECK: lit.try
   lit.try {
     %err = lit.struct.create () : () -> !kgen.declref<@Error>
+    // CHECK: lit.try.raise
     lit.raise %err : <@Error>
     lit.try.yield
+  // CHECK-NEXT: except
   } except (%err: !kgen.declref<@Error>) {
     %tmp = pop.variant.create %err : !kgen.declref<@Error> -> !pop.variant<@Error, index>
+    // CHECK: kgen.return
     lit.return %tmp : !pop.variant<@Error, index>
     lit.try.yield
+  // CHECK-NEXT: else
   } else {
     lit.try.yield
+  // CHECK-NOT: finally
   } finally {
     lit.try.yield
   }
@@ -518,9 +519,8 @@ lit.func @reraise_in_try(%err: !kgen.declref<@Error>) {
     } else {
       // CHECK-NEXT: unreachable
       lit.try.yield
-    // CHECK-NEXT: finally
+    // CHECK-NOT: finally
     } finally {
-      // CHECK-NEXT: yield
       lit.try.yield
     }
     // CHECK: unreachable
@@ -541,21 +541,126 @@ lit.func @reraise_in_try(%err: !kgen.declref<@Error>) {
 
 // CHECK-LABEL: lit.func @finally_breaks
 lit.func @finally_breaks() -> index {
+  // CHECK-LABEL: lit.try
   lit.try {
+    // CHECK-NEXT: lit.try.yield
     lit.try.yield
+  // CHECK-NEXT: except
   } except (%e: index) {
+    // CHECK-NEXT: unreachable
     lit.try.yield
+  // CHECK-NEXT: else
   } else {
+    // CHECK: kgen.return %idx0
     lit.try.yield
-  // CHECK: finally
+  // CHECK-NOT: finally
   } finally {
-    // CHECK-NEXT: %idx0 = index.constant 0
     %idx0 = index.constant 0
-    // CHECK-NEXT: kgen.return %idx0
     lit.return %idx0 : index
     lit.try.yield
-  // CHECK-NEXT: }
   }
-  // CHECK-NEXT: kgen.unreachable
+  // CHECK: kgen.unreachable
   lit.end_func
+}
+
+// CHECK-LABEL: lit.func @try_finally
+lit.func @try_finally(%arg0: i1, %arg1: i32, %arg2: i64) -> (i32, i64) {
+  // CHECK-NEXT: hlcf.loop
+  hlcf.loop {
+    // CHECK-NEXT: lit.try
+    lit.try {
+      // CHECK-NEXT: hlcf.if %arg0
+      hlcf.if %arg0 {
+        // CHECK: clean.up
+        // CHECK-NEXT: break
+        hlcf.break
+      // CHECK-NEXT: else
+      } else {
+        // CHECK-NEXT: yield
+        hlcf.yield
+      }
+      // CHECK: clean.up
+      // CHECK-NEXT: return %arg1, %arg2
+      kgen.return %arg1, %arg2 : i32, i64
+    // CHECK-NEXT: except
+    } except (%err: index) {
+      // CHECK-NEXT: unreachable
+      lit.try.yield
+    // CHECK-NEXT: else
+    } else {
+      // CHECK-NEXT: unreachable
+      lit.try.yield
+    // CHECK-NOT: finally
+    } finally {
+      "clean.up"() : () -> ()
+      lit.try.yield
+    }
+    // CHECK: unreachable
+    hlcf.break
+  }
+  // CHECK: return %arg1, %arg2
+  kgen.return %arg1, %arg2 : i32, i64
+}
+
+// CHECK-LABEL: lit.func @try_finally_return
+lit.func @try_finally_return(%arg0: index, %arg1: index, %arg2: i1) -> index {
+  // CHECK-NEXT: hlcf.loop
+  hlcf.loop {
+    // CHECK-NEXT: lit.try
+    lit.try {
+      // CHECK-NEXT: hlcf.if %arg2
+      hlcf.if %arg2 {
+        // CHECK-NEXT: return %arg1
+        hlcf.break
+      // CHECK-NEXT: else
+      } else {
+        // CHECK-NEXT: return %arg1
+        hlcf.continue
+      }
+      // CHECK: unreachable
+      kgen.return %arg0 : index
+    } except (%err: index) {
+      lit.try.yield
+    } else {
+      lit.try.yield
+    } finally {
+      kgen.return %arg1 : index
+    }
+    hlcf.break
+  }
+  kgen.return %arg1 : index
+}
+
+// CHECK-LABEL: lit.func @nested_try_finally
+lit.func @nested_try_finally() {
+  // CHECK-NEXT: lit.try
+  lit.try {
+    // CHECK-NEXT: lit.try
+    lit.try {
+      // CHECK-NEXT: clean.up0
+      // CHECK-NEXT: clean.up1
+      // CHECK-NEXT: return
+      kgen.return
+    } except (%err: index) {
+      lit.try.yield
+    // CHECK: else
+    } else {
+      lit.try.yield
+    } finally {
+      "clean.up0"() : () -> ()
+      lit.try.yield
+    }
+    lit.try.yield
+  } except (%err: index) {
+    lit.try.yield
+  // CHECK: else
+  } else {
+    // CHECK-NEXT: unreachable
+    lit.try.yield
+  } finally {
+    "clean.up1"() : () -> ()
+    lit.try.yield
+  }
+  // CHECK: unreachable
+  kgen.return
 }
