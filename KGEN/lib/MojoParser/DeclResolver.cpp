@@ -2701,9 +2701,16 @@ synthesizeMethodInStruct(StringRef name, ArrayRef<Type> argTypes,
 
   // Get the signature for the function.
   auto fnType = builder.getFunctionType(argTypes, resultType);
+
+  FnEffects fnEffects = FnEffects();
+  // If the result of the function is a non-trivial type, mark the function
+  // effect as having an owned result so ownership tracking will notice it.
+  if (!ASTType(resultType).isTrivial(structDecl.getLoc(), resolver.shared))
+    fnEffects = fnEffects | FnEffects::OwnedResult;
+
   // TODO: Should raise if anything we invoke raises.
   auto metadata = builder.getAttr<MetadataAttr>(
-      argConventions, /*no default args=*/ArrayRef<TypedAttr>(), FnEffects());
+      argConventions, /*no default args=*/ArrayRef<TypedAttr>(), fnEffects);
   auto signature = SignatureType::get({}, {}, fnType, metadata);
 
   // Create the empty function.

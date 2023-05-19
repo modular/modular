@@ -74,6 +74,10 @@ public:
   /// Return the StructDeclOp::RegisterPassable enum for this type.
   uint8_t getRegisterPassability(llvm::SMLoc loc, SharedState &shared) const;
 
+  /// Return true if this type is a 'trivial' type, that is one that can be
+  /// passed around by copying the bits, and whose destructor is a noop.
+  bool isTrivial(llvm::SMLoc loc, SharedState &shared) const;
+
   /// Return true if this type needs to be destroyed.  This is false for trivial
   /// types like Int.  Note: this resolves the body of a struct type.
   bool hasDestructor(llvm::SMLoc loc, SharedState &shared) const;
