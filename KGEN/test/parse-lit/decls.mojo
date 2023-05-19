@@ -855,7 +855,7 @@ struct ValueReg:
 
 # CHECK: lit.func @"__init__
 # CHECK-SAME: (%a: !kgen.declref<@"$Int"::@Int> borrow,
-# CHECK-SAME:  %b: !kgen.declref<@"$decls"::@StructExample>)
+# CHECK-SAME:  %b: !kgen.declref<@"$decls"::@StructExample>) ownedresult
 # CHECK-SAME:    -> !kgen.declref<@"$decls"::@ValueReg>
 # CHECK-NEXT: %0 = lit.struct.create(a=%a, b=%b)
 # CHECK-NEXT: lit.return %0

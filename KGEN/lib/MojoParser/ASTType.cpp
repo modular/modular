@@ -80,6 +80,13 @@ uint8_t ASTType::getRegisterPassability(llvm::SMLoc loc,
   return structOp.getRegisterPassable();
 }
 
+/// Return true if this type is a 'trivial' type, that is one that can be
+/// passed around by copying the bits, and whose destructor is a noop.
+bool ASTType::isTrivial(llvm::SMLoc loc, SharedState &shared) const {
+  return getRegisterPassability(loc, shared) ==
+         StructDeclOp::RP_RegisterPassableTrivial;
+}
+
 /// Return true if this type is a register-passable type that can be passed
 /// around and copied in SSA values instead of having to live in memory.
 ///
