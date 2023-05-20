@@ -14,7 +14,10 @@ from Coroutine import Coroutine
 ##===----------------------------------------------------------------------===##
 
 def invalid_conversion(a: Int, b: __mlir_type.index):
-  b = a # expected-error {{'Int' value cannot be converted to 'index' in assignment}}
+  b = a # expected-error {{cannot implicitly convert 'Int' value to 'index' in assignment}}
+
+  # expected-error @+1 {{cannot use initializer syntax on MLIR type 'index'}}
+  _ = __mlir_type.index(4)
 
 struct NotBoolConvertible:
   pass
@@ -251,7 +254,7 @@ fn dict_expression(a: Int):
   _ = MyIntPair{a: a, **a}
   # expected-error @+1 {{no value for field 'b' specified}}
   _ = MyIntPair{a: 4}
-  # expected-error @+1 {{'FloatLiteral' value cannot be converted to 'Int' in field initializer}}
+  # expected-error @+1 {{cannot implicitly convert 'FloatLiteral' value to 'Int' in field initializer}}
   _ = MyIntPair{a: 4.0, b: 4}
   _ = MyIntPair{a: 4, b: 4}
 
@@ -333,7 +336,7 @@ fn testSubscripts(a: WeirdArray, b: MultiSetItem, c: IncompatElementTypes):
   b[1] = 4
 
   let tmp : Int = c[1]
-  # expected-error-re @+1 {{'SIMD[{{.*}}f32{{.*}}]' value cannot be converted to 'Int' in assignment}}
+  # expected-error-re @+1 {{cannot implicitly convert 'SIMD[f32, 1]' value to 'Int' in assignment}}
   c[1] = F32(4.0)
   c[1] = tmp
 
@@ -384,3 +387,11 @@ fn lvalue_utilities(a: __mlir_type.index, inout b: GetSettable):
   let addr2 : __mlir_type.index
   # expected-error @+1 {{operand must have '!pop.pointer<T>' type, not 'index'}}
   __get_address_as_lvalue(addr2) = 42
+
+
+fn test_int_to_int_error(a: Int):
+  # expected-error @+1 {{cannot construct 'Int' with itself, you can remove the constructor call}}
+  _ = Int(a)
+
+  # expected-error @+1 {{cannot construct 'GetAttrNotString' from 'Int' value in assignment}}
+  _ = GetAttrNotString(a)

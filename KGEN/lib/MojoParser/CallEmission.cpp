@@ -1079,6 +1079,7 @@ PValue OverloadSet::filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> operands,
       }
       return {};
     }
+    return {};
   }
 
   // Ok, we have at least one valid candidate, filter the list to the ones with

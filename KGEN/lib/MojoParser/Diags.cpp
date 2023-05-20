@@ -323,6 +323,12 @@ void InflightDiag::addFixIt(FixIt fixIt) {
 FixIt::FixIt(SourceRange range, const Twine &replacement)
     : range(range), replacement(replacement.str()) {}
 
+/// This constructor creates a fixit that removes the specified token.
+FixIt FixIt::remove(SMLoc loc) { return FixIt({loc, loc}, Twine()); }
+
+/// This constructor creates a fixit that removes the specified token range.
+FixIt FixIt::remove(SourceRange range) { return FixIt(range, Twine()); }
+
 /// This constructor creates a fixit that replaces the one token at the
 /// specified location with some text.
 FixIt FixIt::replaceToken(SMLoc loc, const Twine &text) {
