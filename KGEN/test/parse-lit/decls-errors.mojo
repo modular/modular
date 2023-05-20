@@ -25,7 +25,7 @@ fn bind_fat_to_thin_main():
     fn g(y: Int) -> Int:
         return x
 
-    # expected-error @below {{'fn(Int) capturing -> Int' value cannot be converted to 'fn(Int) -> Int' in call parameter}}
+    # expected-error @below {{cannot pass 'fn(Int) capturing -> Int' value, parameter expected 'fn(Int) -> Int'}}
     alias Bound = bind_fat_to_thin_target[g]
     Bound(3)
 
@@ -34,13 +34,13 @@ fn bind_fat_to_thin_main():
 ##===----------------------------------------------------------------------===##
 
 def var_decl_without_type():
-  # expected-error @+1 {{'FloatLiteral' value cannot be converted to 'ReturnFromStruct'}}
+  # expected-error @+1 {{cannot implicitly convert 'FloatLiteral' value to 'ReturnFromStruct' in 'var' initializer}}
   var y : ReturnFromStruct = 1.0
 
   # expected-error @+1 {{declaration must have either a type or an initializer}}
   var x
 
-  # expected-error @below {{'SIMD[f32, 16]' value cannot be converted to 'SIMD[f32, 8]'}}
+  # expected-error @below {{cannot implicitly convert 'SIMD[f32, 16]' value to 'SIMD[f32, 8]' in 'let' initializer}}
   let z: SIMD[DType.f32, 8] = SIMD[DType.f32, 16]()
 
 def var_decl():
@@ -130,10 +130,10 @@ fn badCall():
 
 
 fn missing_ret_val() -> __mlir_type.index:
-  return # expected-error {{'None' value cannot be converted to 'index' in return}}
+  return # expected-error {{cannot implicitly convert 'None' value to 'index' in return value}}
 
 fn ret_type_mismatch() -> __mlir_type.index:
-  return 4.0 # expected-error {{'FloatLiteral' value cannot be converted to 'index' in return}}
+  return 4.0 # expected-error {{cannot implicitly convert 'FloatLiteral' value to 'index' in return value}}
 
 async fn testAsyncVoid(): pass
 async fn testAsyncInt() -> Int: return 42
@@ -189,7 +189,7 @@ fn defaultArgumentUnknownDeclaration(a: Int = unknown): pass
 # expected-error @+1 {{use of unknown declaration 'a'}}
 fn defaultArgumentReferencesArgument(a: Int = 0, b: Int = a): pass
 
-# expected-error @+1 {{'FloatLiteral' value cannot be converted to 'Int' in default argument}}
+# expected-error @+1 {{cannot implicitly convert 'FloatLiteral' value to 'Int' in default argument}}
 fn defaultArgumentBadType(a: Int = 1.0): pass
 
 # expected-error @below {{cannot synthesize lvalue of non-register-passable type object in default argument}}
@@ -252,7 +252,7 @@ fn badCalls(arg: Int):
   parameterizedVariadic(1, 2.0)
 
 fn badError(a: ParameterizedStruct[Int]):
-  # expected-error @+1 {{'ParameterizedStruct[Int]' value cannot be converted to 'ParameterizedStruct[Bool]' in 'let' initializer}}
+  # expected-error @+1 {{cannot implicitly convert 'ParameterizedStruct[Int]' value to 'ParameterizedStruct[Bool]' in 'let' initializer}}
   let b: ParameterizedStruct[Bool] = a
 
 
@@ -490,6 +490,7 @@ struct WrongSelfType[a: Int]:
 struct BadInit[size: __mlir_type.index]:
   fn __init__(inout self, elem: BadInit[(1).__as_mlir_index()]):
     var x : __mlir_type[`!pop.simd<`, size, `, f32>`]
+    # expected-error @+1 {{cannot implicitly convert 'simd<size, f32>' value to 'BadInit[size]' in assignment}}
     self = x
 
   # expected-error @+1 {{'__init__' result type must be elided (or None)}}

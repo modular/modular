@@ -87,7 +87,7 @@ fn badReboundType[type: __mlir_type.`!kgen.dtype`,
   pass
 
 fn badCallReboundType[val: __mlir_type.`!pop.scalar<f32>`]():
-  # expected-error @+1 {{'scalar<f32>' value cannot be converted to 'scalar<f64>' in call parameter}}
+  # expected-error @+1 {{cannot pass 'scalar<f32>' value, parameter expected 'scalar<f64>'}}
   badReboundType[__mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`, val]()
 
 fn partialBindSignature[callable: __mlir_type.`!kgen.signature<<index, index>() -> ()>`, a: __mlir_type.index]():
@@ -100,7 +100,7 @@ def generic_fn[a: DType, b: Int](c : Int):
 
 def call_generic[dt: DType]():
   generic_fn[dt, 1, 42](57) # expected-error {{invalid call to 'generic_fn': callee expects 2 input parameters but 3 were provided}}
-  generic_fn[1, dt](57) # expected-error {{'Int' value cannot be converted to 'DType' in call parameter}}
+  generic_fn[1, dt](57) # expected-error {{cannot pass 'Int' value, parameter expected 'DType'}}
 
 fn meta_param_then_param_redef[
       dt: __mlir_type.index # expected-note {{previous definition here}}
@@ -133,7 +133,7 @@ fn callVariadic():
   variadicIntParams[1]() # OK
   variadicIntParams[1, 2]() # OK
 
-  variadicIntParams[1.0]() # expected-error {{'FloatLiteral' value cannot be converted to 'Int' in call parameter}}
+  variadicIntParams[1.0]() # expected-error {{cannot pass 'FloatLiteral' value, parameter expected 'Int'}}
 
 
 
@@ -198,7 +198,7 @@ fn useResultParams():
   alias x = hasResultParam[1 -> h]()
 
 fn incorrectParameterReturnType[()-> a: Int]():
-  # expected-error @+1 {{'FloatLiteral' value cannot be converted to 'Int' in return parameter}}
+  # expected-error @+1 {{cannot implicitly convert 'FloatLiteral' value to 'Int' in return parameter}}
   param_return[4.0]
 
 # expected-note @below {{function declared here}}
@@ -238,7 +238,7 @@ struct BadAliasStruct:
 
 
 fn testConversionQoI():
-  # expected-error @+1 {{'FloatLiteral' value cannot be converted to 'Int' in alias}}
+  # expected-error @+1 {{cannot implicitly convert 'FloatLiteral' value to 'Int' in alias initializer}}
   alias intVal : Int = 1.2
 
 

@@ -209,6 +209,12 @@ class FixIt {
 public:
   FixIt(SourceRange range, const Twine &replacement);
 
+  /// This constructor creates a fixit that removes the specified token.
+  static FixIt remove(SMLoc loc);
+
+  /// This constructor creates a fixit that removes the specified token range.
+  static FixIt remove(SourceRange range);
+
   /// This constructor creates a fixit that replaces the one token at the
   /// specified location with some text.
   static FixIt replaceToken(SMLoc loc, const Twine &text);

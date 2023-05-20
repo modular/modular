@@ -690,27 +690,6 @@ static AnyValue refineResultValue(AnyValue value, SMLoc loc,
   return SRValue(rebind(srValue));
 }
 
-/// Emit a conversion from the specified value to the specified destination
-/// type, plopping the value into the designated value destination.  We know the
-/// types mismatch so the conversion must be emitted.
-static AnyValue emitConversionTo(CValue value, const ExprNode *expr,
-                                 ASTType expectedType, ValueDest &dest,
-                                 ExprEmitter &emitter) {
-
-  auto errorHandler = [&]() {
-    emitter.emitError(expr->getLoc())
-        << value.getRValueType() << " value cannot be converted to "
-        << expectedType << getContextMessage(dest.getContext())
-        << expr->getRange();
-  };
-
-  // We disable implicit conversions though, to prevent converting T -> S -> U
-  // in one step, and to avoid infinite conversion cycles.
-  return emitter.emitConstructorCall(
-      expectedType, {{value, expr}}, expr, CallSyntax::kImplicitConvert, dest,
-      errorHandler, /*allowImplicitConversion=*/false);
-}
-
 /// Emit the specified value into the current destination if present.  This
 /// accepts (and silently propagates) null values.
 ///
@@ -750,8 +729,13 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
   // conversions.
   if (ASTType requiredType =
           dest.resolveImpliedType(expr->getLoc(), rvalueType, *this)) {
-    if (!requiredType.isEqualCanon(rvalueType))
-      return emitConversionTo(cValue, expr, requiredType, dest, *this);
+    if (!requiredType.isEqualCanon(rvalueType)) {
+      // We disable implicit conversions  prevent converting T -> S -> U in one
+      // step, and to avoid infinite conversion cycles.
+      return emitConstructorCall(requiredType, {{cValue, expr}}, expr,
+                                 CallSyntax::kImplicitConvert, dest,
+                                 /*allowImplicitConversion=*/false);
+    }
   }
 
   // If the destination is just a required type, then we now know it must agree
@@ -1256,30 +1240,18 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr) {
 /// type.  If `allowImplicitConversion` is true, the provided args are allowed
 /// to implicitly convert to the expectations of the constructor signatures.
 CValue ExprEmitter::emitConstructorCall(ASTType type,
-                                        ArrayRef<ASTExprAnd<AnyValue>> args,
+                                        ArrayRef<ASTExprAnd<AnyValue>> origArgs,
                                         const ExprNode *expr, CallSyntax syntax,
                                         ValueDest &dest,
-                                        std::function<void()> errorHandler,
                                         bool allowImplicitConversion) {
-  bool hasCustomErrorReporting = true;
-  if (!errorHandler) {
-    errorHandler = [&]() {
-      auto diag = emitError(expr->getLoc(), "")
-                  << type << " does not implement an '__init__' method"
-                  << expr->getRange();
-    };
-    hasCustomErrorReporting = false;
-  }
 
   // Check to see if we can invoke an __init__ method to convert it.
-  OverloadSet callee(type, "__init__", expr, CallSyntax::kImplicitConvert,
-                     shared, errorHandler);
-
-  if (callee.isNull())
-    return {};
+  OverloadSet callee(type, "__init__", expr, syntax, shared,
+                     /*errorHandler*/ {});
 
   // Init for memory-only types get their self argument implicitly initialized
   // and passed in as the first argument.
+  ArrayRef<ASTExprAnd<AnyValue>> args = origArgs;
   bool isMemoryOnly = !type.isRegisterPassable(expr->getLoc(), shared);
   SmallVector<ASTExprAnd<AnyValue>> argsWithSelf;
   if (isMemoryOnly) {
@@ -1296,12 +1268,83 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
     args = argsWithSelf;
   }
 
-  PValue calleeFn = callee.filterOverloadSet(
-      args, allowImplicitConversion,
-      /*emitDiagnosticOnFailure=*/!hasCustomErrorReporting, *this);
+  // Try to resolve the overload set to exactly one candidate, but don't emit an
+  // error on failure (we typically want to customize the error).
+  PValue calleeFn =
+      callee.filterOverloadSet(args, allowImplicitConversion,
+                               /*emitDiagnosticOnFailure=*/false, *this);
   if (!calleeFn) {
-    if (hasCustomErrorReporting)
-      errorHandler();
+    // If the dest type is invalid, then an error has already been reported.
+    if (isa<TypeCheckErrorType>(type.mlirType))
+      return {};
+
+    // If we failed to resolve the set, then try to emit a tailored error.  If
+    // constructing from one value, then this is a type conversion (either
+    // implicit or explicit).
+    if (origArgs.size() == 1 && origArgs[0].ir.getIfCValue()) {
+      ASTType operandType = origArgs[0].ir.getIfCValue().getRValueType();
+
+      // Reject Int(x) where x is already an Int with an error + fixit.
+      if (syntax == CallSyntax::kTypeCall && operandType.isEqualCanon(type) &&
+          isa<CallNode>(expr)) {
+        const CallNode &callNode = *cast<CallNode>(expr);
+        // This removes the constructor call, but does not remove the parens
+        // because we don't want to introduce precedence problems.
+        emitError(expr->getLoc())
+            << "cannot construct " << type
+            << " with itself, you can remove the constructor call"
+            << origArgs[0].expr->getRange()
+            << FixIt::remove(callNode.callee->getRange());
+        return {};
+      }
+
+      if (syntax != CallSyntax::kImplicitConvert) {
+        emitError(expr->getLoc())
+            << "cannot construct " << type << " from " << operandType
+            << " value" << getContextMessage(dest.getContext())
+            << expr->getRange();
+        return {};
+      }
+
+      // Handle common type mismatches with a tailored error.
+      if (dest.getContext() == EC_CallParamValue ||
+          dest.getContext() == EC_CallArgValue) {
+        auto diag = emitError(expr->getLoc())
+                    << "cannot pass " << operandType << " value, "
+                    << ((dest.getContext() == EC_CallParamValue) ? "parameter"
+                                                                 : "argument")
+                    << " expected " << type << expr->getRange();
+        return {};
+      }
+
+      emitError(expr->getLoc())
+          << "cannot implicitly convert " << operandType << " value to " << type
+          << getContextMessage(dest.getContext()) << expr->getRange();
+      return {};
+    }
+
+    // If the type has no candidates, complain about that.
+    if (callee.isNull()) {
+      if (!type.getDecl(shared)) {
+        emitError(expr->getLoc(), "MLIR type ")
+            << type
+            << " must be created with an MLIR operation, not constructor "
+               "syntax"
+            << getContextMessage(dest.getContext()) << expr->getRange();
+        return {};
+      }
+
+      emitError(expr->getLoc(), "")
+          << type << " does not implement any '__init__' methods"
+          << getContextMessage(dest.getContext()) << expr->getRange();
+      return {};
+    }
+
+    // Otherwise, do it again to emit a generic overload set error.
+    calleeFn =
+        callee.filterOverloadSet(args, allowImplicitConversion,
+                                 /*emitDiagnosticOnFailure=*/true, *this);
+    assert(!calleeFn && "This should fail if it failed before");
     return {};
   }
 

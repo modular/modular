@@ -395,7 +395,6 @@ public:
   CValue emitConstructorCall(ASTType type, ArrayRef<ASTExprAnd<AnyValue>> args,
                              const ExprNode *expr, CallSyntax syntax,
                              ValueDest &dest,
-                             std::function<void()> errorHandler = {},
                              bool allowImplicitConversion = true);
 
   /// Emit the specified expression as a condition, converting it to an MLIR I1
