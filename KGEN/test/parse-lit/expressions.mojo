@@ -675,8 +675,8 @@ def basic_assignments(a: Int, b: Int, c: M, d: M):
 # Literals
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.func @"tmp
-def tmp():
+# CHECK-LABEL: lit.func @"literals
+def literals():
     a = 5             # CHECK: 5
     a = 55            # CHECK: 55
     a = 10500         # CHECK: 10500
@@ -717,6 +717,7 @@ def tmp():
     c = False         # CHECK: @Bool = <#lit.struct<{value: scalar<bool> = false}>>
     c = True          # CHECK: @Bool = <#lit.struct<{value: scalar<bool> = true}>>
 
+# CHECK-LABEL: lit.func @"strings
 fn strings():
    """
       Various tests on strings
@@ -769,6 +770,15 @@ world"
     a = "A\"B"             # CHECK: "A\22B"
     a = 'A\'B'             # CHECK: "A'B"
     a = r"A\zB"            # CHECK: "A\\zB"
+
+    # Issue #201: https://github.com/modularml/mojo/issues/201
+    # CHECK: lit.func *"hello{{.*}} {
+    fn hello() -> StringLiteral:
+        # CHECK: string = "123"
+        return "123"
+        # lit.end_func
+    """other comment"""
+
 
 ##===----------------------------------------------------------------------===##
 # Tuples
