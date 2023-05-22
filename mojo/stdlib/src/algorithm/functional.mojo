@@ -305,6 +305,13 @@ fn async_parallelize[
         out_chain.mark_ready()
         return
 
+    # We have 1 task, execute inline.
+    if num_work_items == 1:
+        with FlushDenormals():
+            func(0)
+        out_chain.mark_ready()
+        return
+
     @always_inline
     @parameter
     async fn task_fn(i: Int):
