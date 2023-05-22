@@ -7,6 +7,7 @@
 add_modular_library(MojoLLDB SHARED
   Plugin.cpp
 
+  Commands/CommandObjectLLVMDebug.cpp
   Commands/CommandObjectMojo.cpp
   ExpressionParser/JITExecutionUnit.cpp
   ExpressionParser/JITUserExpression.cpp

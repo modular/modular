@@ -9,6 +9,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "Commands/CommandObjectLLVMDebug.h"
 #include "Commands/CommandObjectMojo.h"
 #include "REPL/MojoREPL.h"
 #include "Support/SymbolExport.h"
@@ -53,6 +54,7 @@ MODULAR_VISIBILITY_EXPORT bool PluginInitialize(SBDebugger debugger) {
     return false;
 
   registerMojoCommands(debugger);
+  registerLLVMDebugCommands(debugger);
   return true;
 }
 } // namespace lldb
