@@ -1206,10 +1206,9 @@ fn transpose[
     # If either input or output is not-contiguous, we need to use a general
     # strided implementation of transpose
     if not output.is_contiguous or not input.is_contiguous:
-        transpose_strided[rank, output_shape, input_shape, type](
+        return transpose_strided[rank, output_shape, input_shape, type](
             output, input, perms, out_chain
         )
-        return
 
     # If they are contiguous, we can try to recognize common special cases in
     # the desired permutation.
@@ -1230,12 +1229,12 @@ fn transpose[
 
     if simplified_rank == 1:
         # memcpy
-        transpose_trivial_memcpy[rank, output_shape, input_shape, type](
+        return transpose_trivial_memcpy[rank, output_shape, input_shape, type](
             output, input, out_chain
         )
     elif simplified_rank == 2:
         # tiled transpose
-        transpose_2d[rank, output_shape, input_shape, type](
+        return transpose_2d[rank, output_shape, input_shape, type](
             output,
             input,
             perms,
@@ -1251,7 +1250,9 @@ fn transpose[
             and simplified_perms[2] == 1
         ):
             # batched tiled transpose
-            transpose_3d_swap_inner[rank, output_shape, input_shape, type](
+            return transpose_3d_swap_inner[
+                rank, output_shape, input_shape, type
+            ](
                 output,
                 input,
                 perms,
@@ -1264,7 +1265,9 @@ fn transpose[
             and simplified_perms[1] == 0
             and simplified_perms[2] == 2
         ):
-            transpose_3d_swap_outer[rank, output_shape, input_shape, type](
+            return transpose_3d_swap_outer[
+                rank, output_shape, input_shape, type
+            ](
                 output,
                 input,
                 perms,
@@ -1279,7 +1282,9 @@ fn transpose[
             and simplified_perms[2] == 1
             and simplified_perms[3] == 3
         ):
-            transpose_4d_swap_middle[rank, output_shape, input_shape, type](
+            return transpose_4d_swap_middle[
+                rank, output_shape, input_shape, type
+            ](
                 output,
                 input,
                 perms,
@@ -1287,7 +1292,6 @@ fn transpose[
                 simplified_rank,
                 out_chain,
             )
-    else:
-        transpose_strided[rank, output_shape, input_shape, type](
-            output, input, perms, out_chain
-        )
+    transpose_strided[rank, output_shape, input_shape, type](
+        output, input, perms, out_chain
+    )
