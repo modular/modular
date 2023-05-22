@@ -588,6 +588,17 @@ fn test_simplify_perm():
     # CHECK: 1
     print(rank)
 
+    rank = 4
+    perm = StaticIntTuple[4](0, 3, 1, 2)
+    shape = StaticIntTuple[4](9, 1, 2, 3)
+    _simplify_transpose_perms[4](rank, shape, perm)
+    # CHECK: 0, 2, 1
+    print(perm)
+    # CHECK: 9, 2, 3
+    print(shape)
+    # CHECK: 3
+    print(rank)
+
     rank = 2
     var perm2 = StaticIntTuple[2](0, 1)
     var shape2 = StaticIntTuple[2](20, 30)

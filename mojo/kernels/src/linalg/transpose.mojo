@@ -407,16 +407,18 @@ fn _delete_size_1_dim[
     inout simplified_perms: StaticIntTuple[tuple_size],
     dim: Int,
 ):
-    for j in range(dim, rank - 1):
-        simplified_shape[j] = simplified_shape[j + 1]
+    for i in range(dim, rank - 1):
+        simplified_shape[i] = simplified_shape[i + 1]
 
-    let deleted_perm = simplified_perms[dim]
-    for k in range(dim, rank - 1):
-        simplified_perms[k] = simplified_perms[k + 1]
-
-    for i in range(rank):
-        if simplified_perms[i] > deleted_perm:
+    var found_deleted: Bool = False
+    for i in range(rank - 1):
+        if simplified_perms[i] == dim:
+            found_deleted = True
+        if found_deleted:
+            simplified_perms[i] = simplified_perms[i + 1]
+        if simplified_perms[i] > dim:
             simplified_perms[i] -= 1
+
     simplified_shape[rank - 1] = 0
     simplified_perms[rank - 1] = 0
 
@@ -891,9 +893,9 @@ fn transpose_3d_swap_inner[
         return
     # simplified perms must be 0, 2, 1
     var offset = 0
-    let step = simplified_input_shape[rank - 2] * simplified_input_shape[
-        rank - 1
-    ]
+    let step = simplified_input_shape[
+        simplified_rank - 2
+    ] * simplified_input_shape[simplified_rank - 1]
     # TODO: parallelize this loop
     for i in range(simplified_input_shape[0]):
         _transpose_2d_serial_tiled[rank, output_shape, input_shape, type](
