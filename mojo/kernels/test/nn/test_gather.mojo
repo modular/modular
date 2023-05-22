@@ -86,15 +86,15 @@ fn test_gather():
         print(output[StaticIntTuple[2](6, 0)])
         print(output[StaticIntTuple[2](15, 0)])
 
-    # CHECK: 0.000000
-    # CHECK-NEXT: 1.000000
-    # CHECK-NEXT: 3.000000
-    # CHECK-NEXT: 7.000000
+    # CHECK: 0.0
+    # CHECK-NEXT: 1.0
+    # CHECK-NEXT: 3.0
+    # CHECK-NEXT: 7.0
     _test_gather[DType.si32]()
-    # CHECK: 0.000000
-    # CHECK-NEXT: 1.000000
-    # CHECK-NEXT: 3.000000
-    # CHECK-NEXT: 7.000000
+    # CHECK: 0.0
+    # CHECK-NEXT: 1.0
+    # CHECK-NEXT: 3.0
+    # CHECK-NEXT: 7.0
     _test_gather[DType.si64]()
 
 
@@ -160,15 +160,15 @@ fn test_gather_3d():
         print(output[StaticIntTuple[4](6, 0, 0, 0)])
         print(output[StaticIntTuple[4](15, 0, 0, 0)])
 
-    # CHECK: 0.000000
-    # CHECK-NEXT: 1.000000
-    # CHECK-NEXT: 3.000000
-    # CHECK-NEXT: 7.000000
+    # CHECK: 0.0
+    # CHECK-NEXT: 1.0
+    # CHECK-NEXT: 3.0
+    # CHECK-NEXT: 7.0
     _test_gather[DType.si32]()
-    # CHECK: 0.000000
-    # CHECK-NEXT: 1.000000
-    # CHECK-NEXT: 3.000000
-    # CHECK-NEXT: 7.000000
+    # CHECK: 0.0
+    # CHECK-NEXT: 1.0
+    # CHECK-NEXT: 3.0
+    # CHECK-NEXT: 7.0
     _test_gather[DType.si64]()
 
 

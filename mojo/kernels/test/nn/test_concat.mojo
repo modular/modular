@@ -63,15 +63,15 @@ fn test_concat():
     out_chain.wait()
 
     # CHECK: == test_concat
-    # CHECK-COUNT-2: 0.000000
-    # CHECK-COUNT-4: 1.000000
-    # CHECK-COUNT-6: 2.000000
-    # CHECK-COUNT-2: 0.000000
-    # CHECK-COUNT-4: 1.000000
-    # CHECK-COUNT-6: 2.000000
-    # CHECK-COUNT-2: 0.000000
-    # CHECK-COUNT-4: 1.000000
-    # CHECK-COUNT-6: 2.000000
+    # CHECK-COUNT-2: 0.0
+    # CHECK-COUNT-4: 1.0
+    # CHECK-COUNT-6: 2.0
+    # CHECK-COUNT-2: 0.0
+    # CHECK-COUNT-4: 1.0
+    # CHECK-COUNT-6: 2.0
+    # CHECK-COUNT-2: 0.0
+    # CHECK-COUNT-4: 1.0
+    # CHECK-COUNT-6: 2.0
     for i in range(out_sz):
         print(output[i])
 
@@ -123,15 +123,15 @@ fn test_concat_parallel():
     out_chain.wait()
 
     # CHECK: == test_concat_parallel
-    # CHECK-COUNT-2: 0.000000
-    # CHECK-COUNT-4: 1.000000
-    # CHECK-COUNT-6: 2.000000
-    # CHECK-COUNT-2: 0.000000
-    # CHECK-COUNT-4: 1.000000
-    # CHECK-COUNT-6: 2.000000
-    # CHECK-COUNT-2: 0.000000
-    # CHECK-COUNT-4: 1.000000
-    # CHECK-COUNT-6: 2.000000
+    # CHECK-COUNT-2: 0.0
+    # CHECK-COUNT-4: 1.0
+    # CHECK-COUNT-6: 2.0
+    # CHECK-COUNT-2: 0.0
+    # CHECK-COUNT-4: 1.0
+    # CHECK-COUNT-6: 2.0
+    # CHECK-COUNT-2: 0.0
+    # CHECK-COUNT-4: 1.0
+    # CHECK-COUNT-6: 2.0
     for i in range(out_sz):
         print(output[i])
 
