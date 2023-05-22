@@ -1544,7 +1544,8 @@ def POP_MemsetOp : POPOp<"memset"> {
 // ExternalCallOp
 //===----------------------------------------------------------------------===//
 
-def POP_ExternalCallOp : POPOp<"external_call"> {
+def POP_ExternalCallOp : POPOp<"external_call",
+    [DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "call an external function";
   let description = [{
     The `pop.external_call` operation invokes an externally-defined function,
@@ -1565,15 +1566,26 @@ def POP_ExternalCallOp : POPOp<"external_call"> {
     pop.external_call @printf(%fmt, %v0, %v1) (!pop.pointer<scalar<si8>>) -> ()
       : (!pop.pointer<scalar<si8>>, !pop.scalar<f32>, !pop.scalar<ui32>) -> ()
     ```
+
+    If possible, it is recommended that the provenance of the function be
+    provided. This can be specified with:
+
+    ```mlir
+    kgen.link "libc.a" as @libc
+
+    %0 = pop.external_call @sqrt(%arg) from @libc : (!pop.scalar<f64>) -> !pop.scalar<f64>
+    ```
   }];
 
   let arguments = (ins AttrOfType<KGEN_StringType>:$func,
                        Variadic<AnyType>:$operands,
-                       OptionalAttr<TypeAttrOf<FunctionType>>:$variadicType);
+                       OptionalAttr<TypeAttrOf<FunctionType>>:$variadicType,
+                       OptionalAttr<FlatSymbolRefAttr>:$importedFrom);
   let results = (outs Variadic<AnyType>:$results);
 
   let assemblyFormat = [{
-    custom<ExternalCallee>($func) `(` operands `)` ($variadicType^)? attr-dict
+    custom<ExternalCallee>($func) `(` operands `)` ($variadicType^)?
+    (`from` $importedFrom^)? attr-dict
     `:` functional-type(operands, results)
   }];
 
@@ -1587,7 +1599,12 @@ def POP_ExternalCallOp : POPOp<"external_call"> {
     OpBuilder<(ins "TypeRange":$results, "StringRef":$func,
                    "ValueRange":$operands)>,
     OpBuilder<(ins "TypeRange":$results, "StringRef":$func,
-                   "ValueRange":$operands, "FunctionType":$variadicType)>
+                   "ValueRange":$operands, "FunctionType":$variadicType)>,
+    OpBuilder<(ins "TypeRange":$results, "StringRef":$func,
+                     "ValueRange":$operands, "StringRef":$importedFrom)>,
+    OpBuilder<(ins "TypeRange":$results, "StringRef":$func,
+                   "ValueRange":$operands, "FunctionType":$variadicType,
+                   "StringRef":$importedFrom)>
   ];
 }
 

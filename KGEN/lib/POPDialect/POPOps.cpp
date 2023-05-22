@@ -619,7 +619,7 @@ void ExternalCallOp::build(OpBuilder &b, OperationState &state,
                            ValueRange operands) {
   build(b, state, results,
         StringAttr::get(func, StringType::get(b.getContext())), operands,
-        TypeAttr());
+        TypeAttr(), FlatSymbolRefAttr());
 }
 
 void ExternalCallOp::build(OpBuilder &b, OperationState &state,
@@ -627,7 +627,39 @@ void ExternalCallOp::build(OpBuilder &b, OperationState &state,
                            ValueRange operands, FunctionType variadicType) {
   build(b, state, results,
         StringAttr::get(func, StringType::get(b.getContext())), operands,
-        TypeAttr::get(variadicType));
+        TypeAttr::get(variadicType), FlatSymbolRefAttr());
+}
+
+void ExternalCallOp::build(OpBuilder &b, OperationState &state,
+                           TypeRange results, StringRef func,
+                           ValueRange operands, StringRef importedFrom) {
+  build(b, state, results,
+        StringAttr::get(func, StringType::get(b.getContext())), operands,
+        TypeAttr(), FlatSymbolRefAttr::get(b.getContext(), importedFrom));
+}
+
+void ExternalCallOp::build(OpBuilder &b, OperationState &state,
+                           TypeRange results, StringRef func,
+                           ValueRange operands, FunctionType variadicType,
+                           StringRef importedFrom) {
+  build(b, state, results,
+        StringAttr::get(func, StringType::get(b.getContext())), operands,
+        TypeAttr::get(variadicType),
+        FlatSymbolRefAttr::get(b.getContext(), importedFrom));
+}
+
+LogicalResult
+ExternalCallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+  auto importedFrom = getImportedFromAttr();
+  if (!importedFrom)
+    return success();
+
+  auto linkOp = symbolTable.lookupSymbolIn(
+      (*this)->getParentOfType<ModuleOp>(), importedFrom.getAttr());
+  if (!linkOp)
+    return emitError("expected valid symbol for 'from' directive");
+
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

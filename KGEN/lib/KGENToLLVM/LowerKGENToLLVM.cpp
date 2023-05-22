@@ -540,6 +540,7 @@ void LowerKGENToLLVMPass::runOnOperation() {
   target.addLegalOp<mlir::UnrealizedConversionCastOp>();
   target.addLegalOp<KGEN::CallSignatureOp>();
   target.addLegalOp<KGEN::CreateClosureOp>();
+  target.addLegalOp<KGEN::LinkOp>();
 
   // Capture all the public symbols declared by kgen.export declarations.
   llvm::MapVector<StringAttr, ExportedSymbol> publicSymbols =

@@ -891,3 +891,27 @@ def KGEN_CreateClosureOp : KGEN_CallOpBase<"create_closure",
 
   let hasVerifier = 1;
 }
+
+//===----------------------------------------------------------------------===//
+// LinkOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_LinkOp : KGENOp<"link", [HasParent<"mlir::ModuleOp">, Symbol]> {
+  let summary = "Link directive.";
+  let description = [{
+    The `kgen.link` operation defines a symbol that can be used to import
+    C functions from other libraries. The `kgen.link` directives are uniqued
+    by their symbol name - it is illegal to attempt to link more than one
+    library as a given symbol name.
+
+    For example:
+    ```mlir
+    kgen.link "/path/to/musl.libc.a" as @libc
+    ```
+  }];
+
+  let arguments = (ins SymbolNameAttr:$sym_name,
+                       StrAttr:$linkPath);
+
+  let assemblyFormat = "$linkPath `as` $sym_name attr-dict";
+}
