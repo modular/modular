@@ -566,21 +566,24 @@ fn get_pack_data_size[type: DType]() -> Int:
     """
     alias KB = 1024
 
+    @parameter
     if is_relwithdebinfo_build() or is_debug_build():
         # Only use the large cache size for release build as debug build may
         # contain additional data could cause stack overflow.
         # Restrict it to 4K.
         return 4 * KB // dtype_sizeof[type]()
 
+    @parameter
     if os_is_macos():
         # Macos has lower stack limit so lower this allocation too.
         # Restrict it to 64K.
         return 64 * KB // dtype_sizeof[type]()
 
-    # TODO: This should be 1/2 of L2 cache size on Intel.
-    # Graviton 2 and Skylake server have a 1 MiB L1 cache
-    # AMD Rome has a 512 KiB L2 cache
-    # return half the cache size as 4 byte elements
+    @parameter
     if has_neon() or has_avx512f():
+        # TODO: This should be 1/2 of L2 cache size on Intel. Graviton 2 and
+        # Skylake server have a 1 MiB L1 cache AMD Rome has a 512 KiB L2 cache
+        # return half the cache size as 4 byte elements
         return 512 * KB // dtype_sizeof[type]()
+
     return 256 * KB // dtype_sizeof[type]()
