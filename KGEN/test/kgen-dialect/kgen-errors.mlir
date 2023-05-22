@@ -775,3 +775,11 @@ kgen.generator @variadic_get() {
   // expected-error @below {{custom op 'kgen.param.constant' 'variadic_get' result type should be variadic element type: expected 'si32' but got 'index'}}
   kgen.param.constant = <variadic_get(:variadic<si32> [], 1)>
 }
+
+// -----
+
+kgen.generator @unknown_extern() {
+  // expected-error @below {{expected valid symbol for 'from' directive}}
+  pop.external_call @unk() from @unlinked : () -> ()
+  kgen.return
+}
