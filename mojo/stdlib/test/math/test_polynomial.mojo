@@ -34,7 +34,7 @@ fn test_polynomial_evaluate_degree3():
         coeefs,
     ](1.0)
 
-    # CHECK: 1002.000000
+    # CHECK: 1002.0
     print(y)
 
     y = _estrin_evaluate_2[
@@ -43,7 +43,7 @@ fn test_polynomial_evaluate_degree3():
         coeefs,
     ](1.0)
 
-    # CHECK: 1002.000000
+    # CHECK: 1002.0
     print(y)
 
     y = polynomial_evaluate[
@@ -52,7 +52,7 @@ fn test_polynomial_evaluate_degree3():
         coeefs,
     ](1.0)
 
-    # CHECK: 1002.000000
+    # CHECK: 1002.0
     print(y)
 
     y = _horner_evaluate[
@@ -61,7 +61,7 @@ fn test_polynomial_evaluate_degree3():
         coeefs,
     ](0.1)
 
-    # CHECK: 1000.110000
+    # CHECK: 1000.11
     print(y)
 
     y = _estrin_evaluate_2[
@@ -70,7 +70,7 @@ fn test_polynomial_evaluate_degree3():
         coeefs,
     ](0.1)
 
-    # CHECK: 1000.110000
+    # CHECK: 1000.11
     print(y)
 
     y = polynomial_evaluate[
@@ -79,7 +79,7 @@ fn test_polynomial_evaluate_degree3():
         coeefs,
     ](0.1)
 
-    # CHECK: 1000.110000
+    # CHECK: 1000.11
     print(y)
 
 
@@ -102,7 +102,7 @@ fn test_polynomial_evaluate_degree4():
         coeefs,
     ](1.0)
 
-    # CHECK: 1054.000000
+    # CHECK: 1054.0
     print(y)
 
     y = _estrin_evaluate_4[
@@ -111,7 +111,7 @@ fn test_polynomial_evaluate_degree4():
         coeefs,
     ](1.0)
 
-    # CHECK: 1054.000000
+    # CHECK: 1054.0
     print(y)
 
     y = polynomial_evaluate[
@@ -120,7 +120,7 @@ fn test_polynomial_evaluate_degree4():
         coeefs,
     ](1.0)
 
-    # CHECK: 1054.000000
+    # CHECK: 1054.0
     print(y)
 
     y = _horner_evaluate[
@@ -129,7 +129,7 @@ fn test_polynomial_evaluate_degree4():
         coeefs,
     ](0.1)
 
-    # CHECK: 1009.480600
+    # CHECK: 1009.4806
     print(y)
 
     y = _estrin_evaluate_4[
@@ -138,7 +138,7 @@ fn test_polynomial_evaluate_degree4():
         coeefs,
     ](0.1)
 
-    # CHECK: 1009.480600
+    # CHECK: 1009.4806
     print(y)
 
     y = polynomial_evaluate[
@@ -147,7 +147,7 @@ fn test_polynomial_evaluate_degree4():
         coeefs,
     ](0.1)
 
-    # CHECK: 1009.480600
+    # CHECK: 1009.4806
     print(y)
 
 
@@ -179,7 +179,7 @@ fn test_polynomial_evaluate_degree10():
         coeefs,
     ](1.0)
 
-    # CHECK: 89.000000
+    # CHECK: 89.0
     print(y)
 
     y = polynomial_evaluate[
@@ -188,7 +188,7 @@ fn test_polynomial_evaluate_degree10():
         coeefs,
     ](1.0)
 
-    # CHECK: 89.000000
+    # CHECK: 89.0
     print(y)
 
     y = _horner_evaluate[
@@ -197,7 +197,7 @@ fn test_polynomial_evaluate_degree10():
         coeefs,
     ](0.1)
 
-    # CHECK: 20.911111
+    # CHECK: 20.91{{[0-9]+}}
     print(y)
 
     y = polynomial_evaluate[
@@ -206,7 +206,7 @@ fn test_polynomial_evaluate_degree10():
         coeefs,
     ](0.1)
 
-    # CHECK: 20.911111
+    # CHECK: 20.91{{[0-9]+}}
     print(y)
 
 

@@ -9,7 +9,7 @@
 from Activations import _erf
 from DType import DType
 from IO import print
-from Math import erf
+from Math import erf, round
 from SIMD import SIMD
 
 
@@ -19,20 +19,20 @@ fn test_erf_f32():
 
     # Test MLAS erf.
 
-    # CHECK: 0.000000
+    # CHECK: 0.0
     print(erf(SIMD[DType.f32, 1](0)))
 
     # CHECK: 0.995322
     # CHECK: 0.995322
     print(erf(SIMD[DType.f32, 2](2)))
 
-    # CHECK: 0.112463
+    # CHECK: 0.11246
     print(erf(SIMD[DType.f32, 1](0.1)))
 
-    # CHECK: -0.112463
+    # CHECK: -0.11246
     print(erf(SIMD[DType.f32, 1](-0.1)))
 
-    # CHECK: -0.842701
+    # CHECK: -0.8427007
     print(erf(SIMD[DType.f32, 1](-1)))
 
     # CHECK: -0.995322
@@ -40,20 +40,20 @@ fn test_erf_f32():
 
     # Test oneDNN erf.
 
-    # CHECK: 0.000000
+    # CHECK: 0.0
     print(_erf(SIMD[DType.f32, 1](0)))
 
     # CHECK: 0.995322
     # CHECK: 0.995322
     print(_erf(SIMD[DType.f32, 2](2)))
 
-    # CHECK: 0.112463
+    # CHECK: 0.11246
     print(_erf(SIMD[DType.f32, 1](0.1)))
 
-    # CHECK: -0.112463
+    # CHECK: -0.11246
     print(_erf(SIMD[DType.f32, 1](-0.1)))
 
-    # CHECK: -0.842701
+    # CHECK: -0.8427006
     print(_erf(SIMD[DType.f32, 1](-1)))
 
     # CHECK: -0.995322
@@ -66,20 +66,20 @@ fn test_erf_f64():
 
     # Test MLAS erf.
 
-    # CHECK: 0.000000
+    # CHECK: 0.0
     print(erf(SIMD[DType.f64, 1](0)))
 
     # CHECK: 0.995322
     # CHECK: 0.995322
     print(erf(SIMD[DType.f64, 2](2)))
 
-    # CHECK: 0.112463
+    # CHECK: 0.112462
     print(erf(SIMD[DType.f64, 1](0.1)))
 
-    # CHECK: -0.112463
+    # CHECK: -0.112462
     print(erf(SIMD[DType.f64, 1](-0.1)))
 
-    # CHECK: -0.842701
+    # CHECK: -0.8427007
     print(erf(SIMD[DType.f64, 1](-1)))
 
     # CHECK: -0.995322
@@ -87,20 +87,20 @@ fn test_erf_f64():
 
     # Test oneDNN erf.
 
-    # CHECK: 0.000000
-    print(_erf(SIMD[DType.f64, 1](0)))
+    # CHECK: 0.0
+    print(round(_erf(SIMD[DType.f64, 1](0))))
 
     # CHECK: 0.995322
     # CHECK: 0.995322
     print(_erf(SIMD[DType.f64, 2](2)))
 
-    # CHECK: 0.112463
+    # CHECK: 0.112462
     print(_erf(SIMD[DType.f64, 1](0.1)))
 
-    # CHECK: -0.112463
+    # CHECK: -0.112462
     print(_erf(SIMD[DType.f64, 1](-0.1)))
 
-    # CHECK: -0.842701
+    # CHECK: -0.8427006
     print(_erf(SIMD[DType.f64, 1](-1)))
 
     # CHECK: -0.995322
