@@ -61,6 +61,21 @@ kgen.generator @struct_gep_load(%arg0: !pop.struct<i8, i16, i32>) -> i32 {
   kgen.return %3 : i32
 }
 
+kgen.generator @bitcast_offset() -> !pop.struct<scalar<ui8>, scalar<ui8>>{
+  %x = pop.stack_allocation 1 x !pop.scalar<si64>
+  %0 = kgen.param.constant: scalar<si64> = <5>
+  pop.store %0, %x : !pop.pointer<scalar<si64>>
+  %1 = pop.pointer.bitcast %x : !pop.pointer<scalar<si64>> to !pop.pointer<scalar<ui8>>
+  %2 = pop.load %1 : !pop.pointer<scalar<ui8>>
+  %idx1 = index.constant 1
+  %3 = pop.offset %1[%idx1] : !pop.pointer<scalar<ui8>>
+  %4 = pop.load %3 : !pop.pointer<scalar<ui8>>
+  %5 = pop.struct.create(%2, %4) : !pop.struct<scalar<ui8>, scalar<ui8>>
+  kgen.return %5 : !pop.struct<scalar<ui8>, scalar<ui8>>
+}
+
+kgen.export @do_it
+
 // CHECK-LABEL: kgen.func @do_it
 kgen.generator @do_it() {
   // CHECK-NEXT: <555>
@@ -133,6 +148,10 @@ kgen.generator @do_it() {
   // CHECK-NEXT: <56>
   kgen.param.constant: i32 = <apply(
     :(!pop.struct<i8, i16, i32>) -> i32 @struct_gep_load, { 12, 34, 56 })>
+
+  // CHECK-NEXT: <{ 5, 0 }>
+  kgen.param.constant: struct<scalar<ui8>, scalar<ui8>> = <apply(
+    :() -> !pop.struct<scalar<ui8>, scalar<ui8>> @bitcast_offset)>
 
   kgen.return
 }
