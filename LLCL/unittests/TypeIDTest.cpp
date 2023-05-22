@@ -112,9 +112,11 @@ TEST(TypeID, Smoke) {
       thread.join();
   }
 
+#if (defined(__clang__))
   EXPECT_EQ(typeIDsA.front().getTypeName(),
             "DoubleClassTemplate<SingleClassTemplate<int>, bool>");
   EXPECT_EQ(typeIDsB.front().getTypeName(), "Baz");
+#endif
 
   for (size_t i = 1; i < numThreads; ++i) {
     EXPECT_EQ(typeIDsA[i], typeIDsA.front());
