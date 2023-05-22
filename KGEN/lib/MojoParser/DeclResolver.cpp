@@ -80,6 +80,15 @@ ArrayRef<ASTDecl *> ASTDecl::lookupInCurrentScope(StringAttr name) const {
   return {};
 }
 
+void ASTDecl::dump() const {
+  // The value is either an operation or a type of MLIR `Value`.
+  TypeSwitch<DeclIRValue>(getIRValue())
+      .Case<Operation *>([](Operation *op) { op->dump(); })
+      .Case<PValue, SRValue, MRValue, SBValue, MBValue, SLValue>(
+          [](auto v) { v.dump(); })
+      .Default([](DeclIRValue v) { llvm::errs() << "<null decl>\n"; });
+}
+
 MLIRContext *ASTDecl::getContext() const {
   if (auto *op = getIfOperation())
     return op->getContext();
@@ -2542,7 +2551,7 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
 
     // `alias x: Int` is a forward declaration of a return parameter from a
     // function call, so it must occur in a function.
-    if (!isa<LIT::FuncOp>(*decl.getParentDecl())) {
+    if (!paramDeclOp->getParentOfType<LIT::FuncOp>()) {
       p.emitError(paramDeclOp.getLoc(),
                   "parameter results may only be declared in a function");
       return failure();

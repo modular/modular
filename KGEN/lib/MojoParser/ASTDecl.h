@@ -47,6 +47,9 @@ public:
   DeclIRValue getIRValue() const { return irValue; }
   void setIRValue(DeclIRValue value) { irValue = value; }
 
+  /// Dump the underlying IR value.
+  void dump() const;
+
   /// If this declaration is defined by its value (e.g. a parameter value or an
   /// SSA value) then return it.
   CRValue getIfRValue() const;
