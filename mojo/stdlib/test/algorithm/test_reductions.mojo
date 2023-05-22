@@ -37,13 +37,13 @@ fn test_reductions():
     for i in range(size):
         vector[i] = i + 1
 
-    # CHECK: 1.000000
+    # CHECK: 1.0
     print(min[simd_width](vector))
 
-    # CHECK: 100.000000
+    # CHECK: 100.0
     print(max[simd_width](vector))
 
-    # CHECK: 5050.000000
+    # CHECK: 5050.0
     print(sum[simd_width](vector))
 
 
@@ -61,7 +61,7 @@ fn test_product():
     for i in range(size):
         vector[i] = i + 1
 
-    # CHECK: 3628800.000000
+    # CHECK: 3628800.0
     print(product[simd_width](vector))
 
 
@@ -78,7 +78,7 @@ fn test_mean_variance():
     for i in range(size):
         vector[i] = i + 1
 
-    # CHECK: 50.500000
+    # CHECK: 50.5
     print(mean[simd_width](vector))
 
     # CHECK: 841.666687
@@ -115,36 +115,36 @@ fn test_3d_reductions():
         for i in range(output.size()):
             print(output.flatten()[i])
 
-    # CHECK: 6.000000
-    # CHECK-NEXT: 22.000000
-    # CHECK-NEXT: 38.000000
-    # CHECK-NEXT: 54.000000
+    # CHECK: 6.0
+    # CHECK-NEXT: 22.0
+    # CHECK-NEXT: 38.0
+    # CHECK-NEXT: 54.0
     _test_3d_reductions[
         DimList(2, 2, 4),
         DimList(2, 2, 1),
         2,
     ]()
-    # CHECK: 4.000000
-    # CHECK-NEXT: 6.000000
-    # CHECK-NEXT: 8.000000
-    # CHECK-NEXT: 10.000000
-    # CHECK-NEXT: 20.000000
-    # CHECK-NEXT: 22.000000
-    # CHECK-NEXT: 24.000000
-    # CHECK-NEXT: 26.000000
+    # CHECK: 4.0
+    # CHECK-NEXT: 6.0
+    # CHECK-NEXT: 8.0
+    # CHECK-NEXT: 10.0
+    # CHECK-NEXT: 20.0
+    # CHECK-NEXT: 22.0
+    # CHECK-NEXT: 24.0
+    # CHECK-NEXT: 26.0
     _test_3d_reductions[
         DimList(2, 2, 4),
         DimList(2, 1, 4),
         1,
     ]()
-    # CHECK: 8.000000
-    # CHECK-NEXT: 10.000000
-    # CHECK-NEXT: 12.000000
-    # CHECK-NEXT: 14.000000
-    # CHECK-NEXT: 16.000000
-    # CHECK-NEXT: 18.000000
-    # CHECK-NEXT: 20.000000
-    # CHECK-NEXT: 22.000000
+    # CHECK: 8.0
+    # CHECK-NEXT: 10.0
+    # CHECK-NEXT: 12.0
+    # CHECK-NEXT: 14.0
+    # CHECK-NEXT: 16.0
+    # CHECK-NEXT: 18.0
+    # CHECK-NEXT: 20.0
+    # CHECK-NEXT: 22.0
     _test_3d_reductions[
         DimList(2, 2, 4),
         DimList(1, 2, 4),

@@ -50,7 +50,7 @@ fn test_elementwise_1d():
         )
         out_chain.wait()
 
-        # CHECK: 0.841345
+        # CHECK: 0.84134{{[0-9]+}}
         print(vector[0])
 
         buf._del_old()

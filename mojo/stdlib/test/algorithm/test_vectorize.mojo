@@ -35,15 +35,15 @@ fn test_vectorize():
 
     vectorize[2, add_two](vector.__len__())
 
-    # CHECK: 3.00
+    # CHECK: 3.0
     print(vector[0])
-    # CHECK: 4.00
+    # CHECK: 4.0
     print(vector[1])
-    # CHECK: 5.00
+    # CHECK: 5.0
     print(vector[2])
-    # CHECK: 6.00
+    # CHECK: 6.0
     print(vector[3])
-    # CHECK: 7.00
+    # CHECK: 7.0
     print(vector[4])
 
     @always_inline
@@ -57,15 +57,15 @@ fn test_vectorize():
 
     vectorize[2, add](vector.__len__())
 
-    # CHECK: 6.00
+    # CHECK: 6.0
     print(vector[0])
-    # CHECK: 8.00
+    # CHECK: 8.0
     print(vector[1])
-    # CHECK: 10.00
+    # CHECK: 10.0
     print(vector[2])
-    # CHECK: 12.00
+    # CHECK: 12.0
     print(vector[3])
-    # CHECK: 14.00
+    # CHECK: 14.0
     print(vector[4])
 
 
