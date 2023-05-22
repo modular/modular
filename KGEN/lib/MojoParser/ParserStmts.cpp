@@ -1553,8 +1553,12 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
 
   // Remember that we parsed this declaration so we can finish type checking it
   // when it gets referenced.
-  getDeclResolver().addDecl(declOp, smLoc, name, curDeclScope, startCursor,
-                            getLexer().getCursor(), stmtIndent);
+  ASTDecl &decl =
+      getDeclResolver().addDecl(declOp, smLoc, name, curDeclScope, startCursor,
+                                getLexer().getCursor(), stmtIndent);
+  // Parse docstrings for struct fields here.
+  if (isa<StructFieldOp>(declOp))
+    parseDocString(decl);
 
   return success();
 }
