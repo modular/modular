@@ -7,6 +7,7 @@
 #ifndef KGEN_LIB_MOJOLLDB_REPL_MOJOREPL_H
 #define KGEN_LIB_MOJOLLDB_REPL_MOJOREPL_H
 
+#include "../TypeSystem/MojoTypeSystem.h"
 #include "lldb/Expression/REPL.h"
 #include "lldb/Utility/Status.h"
 #include "lldb/lldb-public.h"
@@ -78,10 +79,27 @@ protected:
                    lldb_private::ExpressionVariable *var = nullptr) override;
 
 private:
+  llvm::Error OnExpressionEvaluated(
+      const lldb_private::ExecutionContext &exe_ctx, llvm::StringRef code,
+      const lldb_private::EvaluateExpressionOptions &expr_options,
+      lldb::ExpressionResults execution_results,
+      const lldb::ValueObjectSP &result_valobj_sp,
+      const lldb_private::Status &error) override;
+
+  /// Flush TypeSystem events and the inferior's stdout/stderr streams.
+  void flushTypeSystemEventsAndProcessStreams();
+
+  lldb::TargetSP getTarget() { return targetWP.lock(); }
+
   /// This thread will listen to events in the underlying target and assumes
   /// there is only one target at a time.
   std::thread eventThread;
   std::atomic_bool stopEventThread = false;
+  lldb::ListenerSP typeSystemListener;
+  lldb::TargetWP targetWP;
+  std::deque<std::pair<MojoTypeSystem::MessageKind, std::string>> debugMessages;
+  lldb::StreamSP errorStream;
+  std::mutex flushStreamsMutex;
 };
 } // namespace M::KGEN::Mojo
 
