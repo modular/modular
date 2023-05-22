@@ -291,20 +291,29 @@ fn useResultParams(i: Int):
   # CHECK: kgen.call @"$parameters"::@"just_result_params()"<[] -> c>()
   just_result_params[() -> c]()
 
+# CHECK-LABEL: lit.func @"testParamInIf
+fn testParamInIf(c: Bool):
+    # CHECK: hlcf.if
+    if c:
+        # CHECK-NEXT: alias.fwd.decl "x"
+        alias x: __mlir_type.index
+        # CHECK-NEXT: call {{.*}}<[] -> x>
+        just_result_params[() -> x]()
+
 # Issue #6904: Parameter results don't get implicit conversions
-# CHECK: lit.func @"testResultParamConversion
+# CHECK-LABEL: lit.func @"testResultParamConversion
 fn testResultParamConversion[() -> b: Int](a: Int):
   # CHECK: lit.param_return<:@"$Int"::@Int #lit.struct<{{.*}} 4}
   param_return[4]
 
-# lit.func @"testResultParamThrowing()"<() -> b:
+# CHECK-LABEL: lit.func @"testResultParamThrowing()"<() -> b:
 fn testResultParamThrowing[() -> b: Int]() raises:
   # CHECK: lit.param_return<:@"$Int"::@Int #lit.struct<{{.*}} 1}
   param_return[1]
   # CHECK: lit.return %1 : !pop.variant<@{{.*}}::@Error, !lit.none>
   raise Error()
 
-# lit.func @"testMultipleParamReturn()"<a: {{.*}} -> b:
+# CHECK-LABEL: lit.func @"testMultipleParamReturn()"<a: {{.*}} -> b:
 fn testMultipleParamReturn[a: Bool -> b: Int]():
     # CHECK: kgen.param.if
     @parameter
