@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "MojoREPL.h"
-#include "../TypeSystem/MojoTypeSystem.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/SymbolExport.h"
 #include "lldb/API/SBBroadcaster.h"
@@ -48,12 +47,84 @@ static llvm::Error createStringError(const char *format, Args &&...args) {
 // Target event listening
 //===----------------------------------------------------------------------===//
 
-static void eventThreadFunction(const lldb::TargetSP &target,
-                                const std::atomic_bool &stopEventThread) {
-  // Get a pointer to the mojo type system. We need that to read the various log
-  // messages.
+void MojoREPL::flushTypeSystemEventsAndProcessStreams() {
+  std::scoped_lock<std::mutex> lock(flushStreamsMutex);
+
+  lldb::TargetSP target = getTarget();
+
+  // Report a message to the error stream.
+  auto reportMessage = [&](StringRef type, StringRef message) {
+    // If the LLDB Expression logs are enabled, we should send our message
+    // there. This has the benefit of being able to automatically send our logs
+    // to a file if the LLDB log has been configured to do so. And if not, they
+    // will appear in the error stream anyway.
+    if (Log *log = GetLog(LLDBLog::Expressions)) {
+      LLDB_LOG(log, "[{0}] {1}", type, message);
+    } else {
+      errorStream->AsRawOstream() << "[" << type << "] " << message << "\n";
+      errorStream->Flush();
+    }
+  };
+
+  auto sendUserOutput = [&](StringRef message) {
+    errorStream->AsRawOstream() << "[User] " << message << "\n";
+    errorStream->Flush();
+  };
+
+  lldb::EventSP event;
+  while (typeSystemListener->GetEvent(event, std::chrono::seconds(0))) {
+    // Handle the mojo type system events by logging them to error stream.
+    MojoTypeSystem::handleEvent(event, debugMessages, reportMessage,
+                                sendUserOutput);
+  }
+
+  if (lldb::ProcessSP process = target->GetProcessSP()) {
+    target->GetDebugger().FlushProcessOutput(*process, /*flush_stdout=*/true,
+                                             /*flush_stdout=*/true);
+  }
+}
+
+static void eventThreadFunction(
+    const std::atomic_bool &stopEventThread,
+    std::function<void(void)> flushTypeSystemEventsAndProcessStreams) {
+  while (!stopEventThread) {
+    flushTypeSystemEventsAndProcessStreams();
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+
+  // We flush one last time in case the process emitted some messages after the
+  // previous loop was told to stop by the REPL's destructor. Otherwise the
+  // debugger might exit before the messages are displayed to the user.
+  flushTypeSystemEventsAndProcessStreams();
+}
+
+llvm::Error MojoREPL::OnExpressionEvaluated(
+    const ExecutionContext &exe_ctx, llvm::StringRef code,
+    const EvaluateExpressionOptions &expr_options,
+    lldb::ExpressionResults execution_results,
+    const lldb::ValueObjectSP &result_valobj_sp, const Status &error) {
+  // We flush right after an expression was evaluated but before the next one is
+  // executed. Otherwise we might have a race condition when executing
+  // expressions in batch mode, in which the events of an expression are merged
+  // with the events of a subsequent expression. This makes this method a
+  // synchronization point between event processing and the REPL.
+  flushTypeSystemEventsAndProcessStreams();
+  return llvm::Error::success();
+}
+
+//===----------------------------------------------------------------------===//
+// MojoREPL
+//===----------------------------------------------------------------------===//
+
+MojoREPL::MojoREPL(Target &target)
+    : REPL(eKindGo, target), typeSystemListener(Listener::MakeListener(
+                                 "mojo-repl.type-system-listener")),
+      targetWP(target.shared_from_this()),
+      errorStream(target.GetDebugger().GetAsyncErrorStream()) {
+  // Get a pointer to the mojo type system. We need that to read the various
+  // log messages.
   auto typeSystemOr =
-      target->GetScratchTypeSystemForLanguage(lldb::eLanguageTypeMojo);
+      target.GetScratchTypeSystemForLanguage(lldb::eLanguageTypeMojo);
   if (!typeSystemOr)
     llvm::report_fatal_error("must be able to get the mojo type system");
 
@@ -62,65 +133,11 @@ static void eventThreadFunction(const lldb::TargetSP &target,
   if (!typeSystem)
     llvm::report_fatal_error("must be able to get the mojo type system");
 
-  lldb::ListenerSP typeSystemListener =
-      Listener::MakeListener("mojo-repl.type-system-listener");
   typeSystem->AddListener(typeSystemListener, MojoTypeSystem::eAllMessagesMask);
 
-  // Construct the debug message cache, and pull out the error raw_ostream now.
-  std::deque<std::pair<MojoTypeSystem::MessageKind, std::string>> debugMessages;
-  auto errorStream = target->GetDebugger().GetAsyncErrorStream();
-  // Report a message to the error stream.
-  auto reportMessage = [errorStream](StringRef type, StringRef message) {
-    // If the LLDB Expression logs are enabled, we should send our message
-    // there. This has the benefit of being able to automatically send our logs
-    // to a file if the LLDB log has been configured to do so. And if not, they
-    // will appear in the error stream anyway.
-    if (Log *log = GetLog(LLDBLog::Expressions))
-      LLDB_LOG(log, "[{0}] {1}", type, message);
-    else
-      errorStream->AsRawOstream() << "[" << type << "] " << message << "\n";
-  };
-  auto sendUserOutput = [errorStream](StringRef message) {
-    errorStream->AsRawOstream() << "[User] " << message << "\n";
-  };
-
-  // Single run that processes pending events. It returns true if the listener
-  // loop should resume, or false if the inferior can't execute more
-  // expressions and the loop should stop.
-  auto processEvents = [&] {
-    lldb::EventSP event;
-    while (typeSystemListener->GetEvent(event, std::chrono::seconds(0))) {
-      // Handle the mojo type system events by logging them to the debugger
-      // stderr.
-      MojoTypeSystem::handleEvent(event, debugMessages, reportMessage,
-                                  sendUserOutput);
-
-      // Flush the error stream immediately - otherwise it only shows up when
-      // we shut down the repl.
-      errorStream->Flush();
-    }
-    if (lldb::ProcessSP process = target->GetProcessSP())
-      target->GetDebugger().FlushProcessOutput(*process, /*flush_stdout=*/true,
-                                               /*flush_stdout=*/true);
-  };
-
-  while (!stopEventThread) {
-    processEvents();
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-  }
-
-  // We fetch the events one last time in case the processes emitted some after
-  // the previous loop was told to stop by the REPL's destructor.
-  processEvents();
-}
-
-//===----------------------------------------------------------------------===//
-// MojoREPL
-//===----------------------------------------------------------------------===//
-
-MojoREPL::MojoREPL(Target &target) : REPL(eKindGo, target) {
   eventThread = std::thread([this] {
-    eventThreadFunction(m_target.shared_from_this(), stopEventThread);
+    eventThreadFunction(stopEventThread,
+                        [this]() { flushTypeSystemEventsAndProcessStreams(); });
   });
 }
 
@@ -231,7 +248,7 @@ llvm::Error MojoREPL::launchEntryPointProcess(Target &target,
   // helpful because the entry point is actually an empty program.
   ExecutionContext ctx;
   target.CalculateExecutionContext(ctx);
-  target.SetPropertyValue(&ctx, lldb_private::eVarSetOperationAssign,
+  target.SetPropertyValue(&ctx, eVarSetOperationAssign,
                           /*path=*/"process.optimization-warnings",
                           /*value=*/"false");
 
