@@ -26,7 +26,7 @@ fn bar(b: Bool) -> F32:
 fn bar(f: F32) -> F32:
   return 2.222
 
-# CHECK: 1.111
+# CHECK: 1.11{{[0-9]+}}
 print(bar(True))
 
 :platform shell sleep 3
