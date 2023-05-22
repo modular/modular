@@ -99,7 +99,7 @@ fn test_micro_kernel():
 
     matmul_inner_loop(c, a, b_packed)
 
-    # CHECK: 64.000000
+    # CHECK: 64.0
     print(c[0, 0])
 
 
