@@ -323,7 +323,7 @@ struct MatmulDynamicState[data_type: MatmulDataType]:
         """Allocate space for packing and maybe other intermediate data space."""
         # TODO: read these data out from matmul config.
         self.packed_b = _raw_stack_allocation[
-            get_pack_data_size(),  # Count.
+            get_pack_data_size[data_type.value_type](),  # Count.
             data_type.value_type,  # Data type.
             simd_byte_width(),  # Alignment.
         ]()

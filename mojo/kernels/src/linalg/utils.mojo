@@ -9,7 +9,13 @@ from Index import StaticIntTuple, Index
 from Math import div_ceil, max, min, sqrt
 from List import DimList
 from SIMD import F32
-from TargetInfo import has_avx512f, has_neon, os_is_macos, dtype_simd_width
+from TargetInfo import (
+    has_avx512f,
+    has_neon,
+    os_is_macos,
+    dtype_simd_width,
+    dtype_sizeof,
+)
 from BuildInfo import is_relwithdebinfo_build, is_debug_build
 from Buffer import NDBuffer, DynamicRankBuffer
 from SIMD import SIMD
@@ -553,27 +559,28 @@ fn get_partitioned_matmul_im2col[
     )
 
 
-fn get_pack_data_size() -> Int:
+fn get_pack_data_size[type: DType]() -> Int:
     """Utility to compute the number of elements to pack in each tile.
     Returns:
         The number of elements to pack.
     """
+    alias KB = 1024
 
     if is_relwithdebinfo_build() or is_debug_build():
         # Only use the large cache size for release build as debug build may
-        #  contain additional data could cause stack overflow.
-        return 1024
+        # contain additional data could cause stack overflow.
+        # Restrict it to 4K.
+        return 4 * KB // dtype_sizeof[type]()
 
     if os_is_macos():
-        # TODO: macos has lower stack limit so lower this allocation too.
-        return 16 * 1024
+        # Macos has lower stack limit so lower this allocation too.
+        # Restrict it to 64K.
+        return 64 * KB // dtype_sizeof[type]()
 
     # TODO: This should be 1/2 of L2 cache size on Intel.
     # Graviton 2 and Skylake server have a 1 MiB L1 cache
     # AMD Rome has a 512 KiB L2 cache
     # return half the cache size as 4 byte elements
-    if has_neon():
-        return 128 * 1024
-    elif has_avx512f():
-        return 128 * 1024
-    return 64 * 1024
+    if has_neon() or has_avx512f():
+        return 512 * KB // dtype_sizeof[type]()
+    return 256 * KB // dtype_sizeof[type]()
