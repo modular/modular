@@ -95,20 +95,22 @@ evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
   engine->addLayer<ObjectCompilerLayer>(std::move(*compilerOr),
                                         engine->getLinkingLayer());
 
-  // TODO (8082): This should not be necessary.
-  std::vector<std::pair<StringLiteral, void *>> compilerRTFunctions;
-  registerIntelAMX(compilerRTFunctions);
-  registerLLCL(compilerRTFunctions);
-  registerPython(compilerRTFunctions);
-  registerMemory(compilerRTFunctions);
-  registerPrint(compilerRTFunctions);
-  registerRandom(compilerRTFunctions);
-  registerSystem(compilerRTFunctions);
-  registerTracing(compilerRTFunctions);
-  for (auto [name, ptr] : compilerRTFunctions)
-    if (auto err = engine->add<StaticSymbolLayer>("evaluateSpecializations",
-                                                  name, ptr))
-      return err.takeError();
+  if (!options.explicitLinking) {
+    // TODO (8082): This should not be necessary.
+    std::vector<std::pair<StringLiteral, void *>> compilerRTFunctions;
+    registerIntelAMX(compilerRTFunctions);
+    registerLLCL(compilerRTFunctions);
+    registerPython(compilerRTFunctions);
+    registerMemory(compilerRTFunctions);
+    registerPrint(compilerRTFunctions);
+    registerRandom(compilerRTFunctions);
+    registerSystem(compilerRTFunctions);
+    registerTracing(compilerRTFunctions);
+    for (auto [name, ptr] : compilerRTFunctions)
+      if (auto err = engine->add<StaticSymbolLayer>("evaluateSpecializations",
+                                                    name, ptr))
+        return err.takeError();
+  }
 
   // We only want the funcs passed-in and the evaluator to be code-generated.
   SmallVector<FuncOp> funcsToCompile(specializations);

@@ -69,13 +69,15 @@ public:
       bool enableXRayInstrumentation = false,
       std::string targetTriple = llvm::sys::getDefaultTargetTriple(),
       std::string targetCpu = llvm::sys::getHostCPUName().str(),
-      std::string targetFeatures = getHostCPUFeatures())
+      std::string targetFeatures = getHostCPUFeatures(),
+      std::vector<std::string> linkDirs = {}, bool explicitLinking = false)
       : enableSearch(enableSearch), optimizationLevel(optimizationLevel),
         debugLevel(debugLevel), debugAtLevel(debugAtLevel),
         sanitizers(sanitizers),
         enableXRayInstrumentation(enableXRayInstrumentation),
         targetTriple(std::move(targetTriple)), targetCpu(std::move(targetCpu)),
-        targetFeatures(std::move(targetFeatures)) {}
+        targetFeatures(std::move(targetFeatures)),
+        linkDirs(std::move(linkDirs)), explicitLinking(explicitLinking) {}
 
   /// Return the corresponding codegen optimization level for the current option
   /// set.
@@ -136,6 +138,10 @@ public:
     }
     if (enableXRayInstrumentation)
       os << ", enableXRayInstrumentation";
+
+    os << ", linkDirs: [";
+    llvm::interleaveComma(linkDirs, os);
+    os << "]";
     os << " }";
   }
 
@@ -151,6 +157,8 @@ public:
   std::string targetTriple = llvm::sys::getDefaultTargetTriple();
   std::string targetCpu = llvm::sys::getHostCPUName().str();
   std::string targetFeatures = getHostCPUFeatures();
+  std::vector<std::string> linkDirs = {};
+  bool explicitLinking = false;
 
   std::string saveTempsPrefix = "";
 };

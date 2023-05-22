@@ -276,19 +276,21 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return failure(clOptions.reportError(engineOr.getError()));
   std::unique_ptr<ExecutionEngine> engine = std::move(*engineOr);
 
-  // TODO (8082): This should not be necessary.
-  std::vector<std::pair<StringLiteral, void *>> compilerRTFunctions;
-  registerIntelAMX(compilerRTFunctions);
-  registerLLCL(compilerRTFunctions);
-  registerPython(compilerRTFunctions);
-  registerMemory(compilerRTFunctions);
-  registerPrint(compilerRTFunctions);
-  registerRandom(compilerRTFunctions);
-  registerSystem(compilerRTFunctions);
-  registerTracing(compilerRTFunctions);
-  for (auto [name, ptr] : compilerRTFunctions)
-    if (auto err = engine->add<StaticSymbolLayer>("exec", name, ptr))
-      return failure(clOptions.reportError(err.getError()));
+  if (!clOptions.enableExplicitLinking) {
+    // TODO (8082): This should not be necessary.
+    std::vector<std::pair<StringLiteral, void *>> compilerRTFunctions;
+    registerIntelAMX(compilerRTFunctions);
+    registerLLCL(compilerRTFunctions);
+    registerPython(compilerRTFunctions);
+    registerMemory(compilerRTFunctions);
+    registerPrint(compilerRTFunctions);
+    registerRandom(compilerRTFunctions);
+    registerSystem(compilerRTFunctions);
+    registerTracing(compilerRTFunctions);
+    for (auto [name, ptr] : compilerRTFunctions)
+      if (auto err = engine->add<StaticSymbolLayer>("exec", name, ptr))
+        return failure(clOptions.reportError(err.getError()));
+  }
 
   // Add the object compiler layer.
   auto compiler =
