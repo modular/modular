@@ -16,3 +16,5 @@ target_include_directories(MSupportGlobals
   PUBLIC
   ${CMAKE_SOURCE_DIR}/Support/include
 )
+
+target_compile_definitions(MSupportGlobals PRIVATE MODULAR_BUILDING_LIBRARY)
