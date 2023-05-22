@@ -40,26 +40,26 @@ static std::optional<DocString> getDocString(ASTDecl &decl) {
   return DocString(docStr);
 }
 
-// A struct requires a doc string if it's defined at the top level of a module,
-// unless its name begins with an underscore.
+/// A struct requires a doc string if it's defined at the top level of a module,
+/// unless its name begins with an underscore.
 static bool requiresDocString(StructDeclOp op) {
   return !op.getName().starts_with("_") && isa<FileModuleOp>(op->getParentOp());
 }
 
-// Given a function name such as "__init__($module::Struct=&)", returns whether
-// it is a "special function," also known as a "dunder method"
-// (double-underscore method).
+/// Given a function name such as "__init__($module::Struct=&)", returns whether
+/// it is a "special function," also known as a "dunder method"
+/// (double-underscore method).
 static bool isSpecialFunction(StringRef name) {
   return SpecialFunctionInfo::getKind(name.split("(").first) !=
          SpecialFunctionKind::kNormal;
 }
 
-// If a function matches all of the following conditions, it requires a doc
-// string:
-// 1. It's a "public" function, meaning its name does not start with an
-//    underscore, unless it's a special function such as `__init__`.
-// 2. It's defined at the top level of a module, or as a method on a struct that
-//    requires a doc string.
+/// If a function matches all of the following conditions, it requires a doc
+/// string:
+/// 1. It's a "public" function, meaning its name does not start with an
+///    underscore, unless it's a special function such as `__init__`.
+/// 2. It's defined at the top level of a module, or as a method on a struct
+///    that requires a doc string.
 static bool requiresDocString(LIT::FuncOp op) {
   if (op.getName().starts_with("_") && !isSpecialFunction(op.getName()))
     return false;
@@ -68,6 +68,16 @@ static bool requiresDocString(LIT::FuncOp op) {
   StructDeclOp parentStruct = dyn_cast<StructDeclOp>(parent);
   return isa<FileModuleOp>(parent) ||
          (parentStruct && requiresDocString(parentStruct));
+}
+
+/// If a struct field matches all of the following conditions, it requires a doc
+/// string:
+/// 1. It's a "public" field, meaning its name does not start with an
+///    underscore.
+/// 2. Its parent struct requires a doc string.
+static bool requiresDocString(StructFieldOp op) {
+  return !op.getName().starts_with("_") &&
+         requiresDocString(cast<StructDeclOp>(op->getParentOp()));
 }
 
 //===----------------------------------------------------------------------===//
@@ -147,8 +157,8 @@ public:
 
   void generate(ASTDecl &decl) {
     TypeSwitch<ASTDecl &>(decl)
-        .Case<FileModuleOp, LIT::FuncOp, ParamDeclareOp, StructDeclOp>(
-            [&](auto op) { generateJSONFor(decl, op); });
+        .Case<FileModuleOp, LIT::FuncOp, ParamDeclareOp, StructDeclOp,
+              StructFieldOp>([&](auto op) { generateJSONFor(decl, op); });
   }
 
 private:
@@ -187,7 +197,7 @@ private:
   void generateJSONForChildren(ASTDecl &decl) {
     using ChildrenVecT =
         SmallVector<std::pair<StringAttr, TinyPtrVector<ASTDecl *>>>;
-    ChildrenVecT aliases, functions, structs;
+    ChildrenVecT aliases, functions, structs, fields;
 
     // Bucket the different types of children.
     const auto &declsInScope = decl.getDeclsInScope();
@@ -201,6 +211,8 @@ private:
         functions.emplace_back(name, decls);
       else if (isa<StructDeclOp>(**decls.begin()))
         structs.emplace_back(name, decls);
+      else if (isa<StructFieldOp>(**decls.begin()))
+        fields.emplace_back(name, decls);
     }
 
     // Functor used to generically process a bucket of children.
@@ -236,6 +248,10 @@ private:
     // Process aliases.
     if (!aliases.empty())
       processChildren("aliases", aliases, processAllChildrenFn);
+
+    // Process fields.
+    if (!fields.empty())
+      processChildren("fields", fields, processAllChildrenFn);
 
     // Process functions.
     if (!functions.empty()) {
@@ -384,6 +400,28 @@ private:
       llvm::raw_string_ostream valueOS(valueStr);
       PValue(paramOp.getValue()).printForDiag(valueOS);
       os.attribute("value", valueOS.str());
+
+      // Emit the doc string if present.
+      if (std::optional<DocString> docStr = getDocString(decl)) {
+        os.attribute("summary", docStr->getSummary());
+        os.attribute("description", llvm::join(docStr->getDescription(), "\n"));
+      }
+    });
+  }
+
+  //===--------------------------------------------------------------------===//
+  // Field Generation
+
+  void generateJSONFor(ASTDecl &decl, StructFieldOp fieldOp) {
+    os.object([&] {
+      os.attribute("kind", "field");
+      os.attribute("name", fieldOp.getName());
+
+      // Pretty print the value.
+      std::string valueStr;
+      llvm::raw_string_ostream typeOS(valueStr);
+      ASTType(fieldOp.getType()).print(typeOS, /*forDiag=*/true);
+      os.attribute("value", typeOS.str());
 
       // Emit the doc string if present.
       if (std::optional<DocString> docStr = getDocString(decl)) {
@@ -656,15 +694,16 @@ public:
   void validate(ASTDecl &decl) {
     std::optional<DocString> docStr = getDocString(decl);
     if (!decl.hasReferenceError) {
-      TypeSwitch<ASTDecl &>(decl).Case<LIT::FuncOp, StructDeclOp>([&](auto op) {
-        if (!docStr) {
-          if (requiresDocString(op))
-            sharedState.emitWarning(op.getLoc(), "public symbol '")
-                << op.getName() << "' is missing a doc string";
-          return;
-        }
-        validateDecl(decl, op, *docStr);
-      });
+      TypeSwitch<ASTDecl &>(decl)
+          .Case<LIT::FuncOp, StructDeclOp, StructFieldOp>([&](auto op) {
+            if (!docStr) {
+              if (requiresDocString(op))
+                sharedState.emitWarning(op.getLoc(), "public symbol '")
+                    << op.getName() << "' is missing a doc string";
+              return;
+            }
+            validateDecl(decl, op, *docStr);
+          });
     }
   }
 
@@ -814,7 +853,7 @@ private:
     }
   }
 
-  //===----------------------------------------------------------------------===//
+  //===--------------------------------------------------------------------===//
   // Functions
 
   /// Validate documentation for the given function.
@@ -867,7 +906,7 @@ private:
     processDocSections(description, sections, processFn);
   }
 
-  //===----------------------------------------------------------------------===//
+  //===--------------------------------------------------------------------===//
   // Structs
 
   void validateDecl(ASTDecl &decl, StructDeclOp structOp, DocString &docStr) {
@@ -886,6 +925,13 @@ private:
         processParameters(loc, seenParameters, description);
     };
     processDocSections(description, sections, processFn);
+  }
+
+  //===--------------------------------------------------------------------===//
+  // Fields
+
+  void validateDecl(ASTDecl &decl, StructFieldOp fieldOp, DocString &docStr) {
+    // Nothing to do.
   }
 
   /// Reference to the main shared state.
