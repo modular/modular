@@ -9,6 +9,7 @@
 #include "Support/SIMD.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/raw_ostream.h"
+#include <llvm/ADT/STLExtras.h>
 
 using namespace M;
 
@@ -21,6 +22,8 @@ void BuildInfo::print(llvm::raw_ostream &os) const {
      << llvm::format("0%04o", llclMaxProfilingLevel);
   os << "\nsimd-bitwidth: " << simdBitWidth;
   os << "\npreferred-mem-alignment: " << preferredMemoryAlignment;
+  os << "\nllvm-targets: ";
+  llvm::interleaveComma(llvmTargets, os);
   os << "\n";
 }
 
@@ -33,6 +36,7 @@ void BuildInfo::print(llvm::json::OStream &json) const {
   json.attribute("llcl-max-profiling-level", llclMaxProfilingLevel);
   json.attribute("simd-bitwidth", simdBitWidth);
   json.attribute("preferred-mem-alignment", preferredMemoryAlignment);
+  json.attribute("llvm-targets", llvm::json::Array(llvmTargets));
   json.objectEnd();
 }
 
@@ -59,6 +63,9 @@ void BuildInfo::print(BuildProperty property, llvm::raw_ostream &os) const {
   case BuildProperty::PreferredMemoryAlignment:
     os << preferredMemoryAlignment;
     break;
+  case BuildProperty::LLVMTargets:
+    llvm::interleaveComma(llvmTargets, os);
+    break;
   }
   os << "\n";
 }
@@ -74,6 +81,8 @@ BuildInfo M::getBuildInfo() {
   buildInfo.llclMaxProfilingLevel = MODULAR_LLCL_MAX_PROFILING_LEVEL;
   buildInfo.simdBitWidth = kPreferredSIMDBitWidth;
   buildInfo.preferredMemoryAlignment = kPreferredMemoryAlignment;
+
+  StringRef(LLVM_TARGETS_BUILT).split(buildInfo.llvmTargets, " ");
 
   return buildInfo;
 }

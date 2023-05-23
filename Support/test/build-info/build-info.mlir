@@ -5,6 +5,7 @@
 // RUN: build-info --query=llcl-max-profiling-level | FileCheck %s --check-prefix=CHECK-LLCL-MAX-PROFILING-LEVEL
 // RUN: build-info --query=simd-bitwidth | FileCheck %s --check-prefix=CHECK-SIMD-WIDTH
 // RUN: build-info --query=preferred-memory-alignment | FileCheck %s --check-prefix=CHECK-PREFERRED-MEM-ALIGNMENT
+// RUN: build-info --query=llvm-targets | FileCheck %s --check-prefix=CHECK-LLVM-TARGETS
 
 // CHECK-MODULAR-VERSION: {{.*}}
 // CHECK-GIT-REVISION: {{.*}}
@@ -13,3 +14,4 @@
 // CHECK-LLCL-MAX-PROFILING-LEVEL: {{[0-9]+}}
 // CHECK-SIMD-WIDTH: {{[0-9]+}}
 // CHECK-PREFERRED-MEM-ALIGNMENT: {{[0-9]+}}
+// CHECK-LLVM-TARGETS: {{.*}}
