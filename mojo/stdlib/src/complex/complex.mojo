@@ -26,7 +26,9 @@ struct ComplexSIMD[type: DType, size: Int]:
     """
 
     var re: SIMD[type, size]
+    """The real part of the complex SIMD value."""
     var im: SIMD[type, size]
+    """The imaginary part of the complex SIMD value."""
 
     fn __add__(self, rhs: Self) -> Self:
         """Add two complex values.
