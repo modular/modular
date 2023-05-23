@@ -134,10 +134,10 @@ A `struct` in Mojo is similar to a Python `class`: they both support methods,
 fields, operator overloading, decorators for metaprogramming, etc. Their
 differences are as follows:
 
-+ Python classes are dynamic: they allow for dynamic dispatch, monkey-patching
+- Python classes are dynamic: they allow for dynamic dispatch, monkey-patching
 (or "swizzling"), and dynamically binding instance properties at runtime.
 
-+ Mojo structs are static: they are bound at compile-time (you cannot add
+- Mojo structs are static: they are bound at compile-time (you cannot add
 methods at runtime). Structs allow you to trade flexibility for performance
 while being safe and easy to use.
 
@@ -429,18 +429,18 @@ argument passing.
 
 Let's review some details about how Python and Mojo pass arguments:
 
-+ All values passed into a *Python* `def` function use reference semantics. This
+- All values passed into a *Python* `def` function use reference semantics. This
 means the function can modify mutable objects passed into it and those changes
 are visible outside the function. However, the behavior is sometimes surprising
 for the uninitiated, because you can change the object that an argument points
 to and that change is not visible outside the function.
 
-+ All values passed into a *Mojo* `def` function use value semantics by default.
+- All values passed into a *Mojo* `def` function use value semantics by default.
 Compared to Python, this is an important difference: A Mojo `def` function
 receives a copy of all arguments—it can modify arguments inside the function,
 but the changes are **not** visible outside the function.
 
-+ All values passed into a Mojo [`fn` function](#fn-definitions) are immutable
+- All values passed into a Mojo [`fn` function](#fn-definitions) are immutable
 references by default. This means the function can read the original object (it
 is *not* a copy), but it cannot modify the object at all.
 
@@ -717,9 +717,9 @@ own a value to destroy it.
 
 Mojo's `def` function is essentially just sugaring for the `fn` function:
 
-+ A `def` argument without an explicit type annotation defaults to `Object`.
+- A `def` argument without an explicit type annotation defaults to `Object`.
 
-+ A `def` argument without a convention keyword (such as `inout` or `owned`) is
+- A `def` argument without a convention keyword (such as `inout` or `owned`) is
 passed by implicit copy into a mutable var with the same name as the argument.
 (This requires that the type have a `__copyinit__` method.)
 

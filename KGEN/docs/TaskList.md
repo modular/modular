@@ -6,7 +6,6 @@ Modular Confidential (obviously)
 
 This document outlines tasks for the implementation work to bring up the [Generative Kernel Compiler + Language](https://docs.google.com/document/u/1/d/12J0o1z4NgJvsWsi6LsHuGhZUBeRYPrJ9WdLHJCO0nYk/edit).  This document describes the implementation effort in granular chunks.  It is intended to be a working document that we evolve over time.
 
-
 # Tasks to be implemented
 
 This section contains tasks that have basic scoping and decomposition but that haven't been fully implemented.  When the broad area is complete they should be moved to the end of the document, in the “Tasks Completed” section.
@@ -15,36 +14,29 @@ This section contains tasks that have basic scoping and decomposition but that h
 
 One nice thing about our approach is that generators are allowed to fail for a variety of reasons.  One key one is that we want them to fail when they are not relevant to the target hardware, e.g. they’re using a specific VNNI feature but codegen’ing for a chip that doesn’t have it.  We need to have a model that controls this, including less exotic things like vector length.  IMO we should not allow LLVM to legalize unsupported vector lengths for us, even though it can.
 
-
 ## ❌ Define more interesting generators
 
 Actual generators for memset and erf: this means we need to implement math, and the “decision tree found by search” that memset needs, dynamic switches over dtype, things like scf.for, buffer partitioning operations, etc.
-
 
 ## ❌ Dynamic programming to cache things
 
 As we build things up we will start caring about the execution time of search.  We’ll want to cache kernels and take advantage of hierarchy.  This will drive the need to be able to evaluate microkernels in isolation from the greater kernel.  We may be able to “push down” the input data constraints (e.g. histogram of lengths) to microkernels but will also want to be able to just allow users to define their own metrics (e.g. FLOPS for expected dimensions).
 
-
-# To be scoped:
+# To be scoped
 
 This doc doesn’t include a lot of things that we’ll eventually want to add.
-
 
 ## ✅ Multidimensional tensors
 
 I hear that these are a thing, and so are a lot of other data types with implicit parallelism (e.g. tables, trees, etc), they will be added later.  The key observation is that the “buffer” type we need for 1D operations isn’t hard coded into the system.  It is a type and set of operations that allow kernel authors to express algorithms.  Once this is proven we can add new types and operations for more complicated algorithms.
 
-
 ## ⚠️Quantization types + generators support
 
 One nice thing about having an extensible platform is that we can re-discuss old topics like quantization types and how they get codegen’d, and can play with models for them.  Reimplementing stuff like the Ruy/XNNPACK kernels with something simple is a good starting point, but is not covered in the milestones above.
 
-
 ## ⚠️Fancy search algorithms
 
 With good infra, we can explore a wide range of different search and search space pruning, and black box optimization, and ML and other ways of exploring search spaces. For now, let’s brute force it to prioritize other infra, and come back to this when things get more established.  We will want to eventually support multiple pluggable/modular search algorithms.
-
 
 ## ⚠️Higher order generators
 
@@ -62,9 +54,9 @@ We need to define a new top-level directory with the usual include/lib/tools/tes
 
 The hardest part of this is to decide on a name for the project, something I deftly dodged in the design doc.  Some options:
 
-* One name I considered but didn’t like is “corn” or “popcorn” given it has kernels, pro: there is an emoji, con: it sounds dumb.
-* Abdul suggest “kgen”, pronounced 🍤 Cajun, contraction of  kernel generator.
-* Tatiana suggests  “kir” kernel intermediate representation
+- One name I considered but didn’t like is “corn” or “popcorn” given it has kernels, pro: there is an emoji, con: it sounds dumb.
+- Abdul suggest “kgen”, pronounced 🍤 Cajun, contraction of  kernel generator.
+- Tatiana suggests  “kir” kernel intermediate representation
 
 ✅ We are going with kgen for now, we can rename it when marketing comes up with a better name.
 
@@ -100,35 +92,43 @@ For our own sanity as compiler engineers I think it makes sense to parse and pri
 
 ✅ This should allow us to use things like:
 
-     `kgen.generator @foo<t1: !kgen.dtype>(...`
+```mojo
+kgen.generator @foo<t1: !kgen.dtype>(...
+```
 
 and:
 
-     `kgen.generate @foo<t1: !kgen.dtype = f32>(...`
+```mojo
+kgen.generate @foo<t1: !kgen.dtype = f32>(...
+```
 
 ✅[Issue #980](https://github.com/modularml/modular/issues/980) We can further sugar this by knowing about kgen type contexts, printing this as:
 
-     `kgen.generator @foo<t1: dtype>(...`
+```mojo
+kgen.generator @foo<t1: dtype>(...
+```
 
 and:
 
-     `kgen.generate @foo<t1: dtype = f32>(...`
+```mojo
+kgen.generate @foo<t1: dtype = f32>(...
+```
 
 ## ✅ New Parameterized Types
 
 Given a parameterization system, we need to build parameterized types, specifically these to start (take a look at `hw.Int` and `hw.Array` in CIRCT, which have parameterized widths):
 
 1. ✅[Issue #978](https://github.com/modularml/modular/issues/978) `meta.scalar<x>` where x is a `dtype`: represents a concrete scalar type like `scalar<f32>` but also things like `scalar<someparameter>` in parameterized type contexts.
-2. ✅[Issue #1009](https://github.com/modularml/modular/issues/1009) `meta.buffer<size, x> `here size is an `index` and x is a dtype, an analog of “memref” (I still regret the name “memref” btw :))
+2. ✅[Issue #1009](https://github.com/modularml/modular/issues/1009) `meta.buffer<size, x>` here size is an `index` and x is a dtype, an analog of “memref” (I still regret the name “memref” btw :))
 3. ✅`meta.simd<size, ty>` where size is an `index` and `ty` is a `dtype`.  The integer can be an arbitrary parameter expression of course.
 4. ✅[Issue #1663](https://github.com/modularml/modular/issues/1663) `pop.pointer<T>` for boundless pointer arithmetic.
 5. Not initially, but we’ll need other types for nD arrays etc.
 
 In addition to the types themselves, we need supporting infrastructure for working with them, including:
 
-* ✅[Issue #979](https://github.com/modularml/modular/issues/979) In addition, we need some verification infrastructure, e.g. making sure that parameters are defined in scope in the kernel etc.
-* ✅[Issue #1221](https://github.com/modularml/modular/issues/1221) - Operations to cast these to/from concrete types.
-* ✅[Issue #1249](https://github.com/modularml/modular/issues/1249) - Need a meta.buffer.address operation
+- ✅[Issue #979](https://github.com/modularml/modular/issues/979) In addition, we need some verification infrastructure, e.g. making sure that parameters are defined in scope in the kernel etc.
+- ✅[Issue #1221](https://github.com/modularml/modular/issues/1221) - Operations to cast these to/from concrete types.
+- ✅[Issue #1249](https://github.com/modularml/modular/issues/1249) - Need a meta.buffer.address operation
 
 Note that we **do not** generally want to define operations that work on meta.scalar and meta.simd types for arithmetic.  These operations should themselves be kernels.
 
@@ -181,9 +181,11 @@ Generator interfaces should have the same functionality to allow constraining al
 
 1. ✅[Issue #1087](https://github.com/modularml/modular/issues/1087) We need to add a “constraints” property to generators and generator interfaces that hold an array of boolean expressions.  Syntactically it can look like this:
 
-    `constraints <in(vecLen, 2,4,8,16,32), notequals(type, bf16)>`
+     ```mojo
+     constraints <in(vecLen, 2,4,8,16,32), notequals(type, bf16)>
+     ```
 
-    on kernels in the main design doc.  Eventually expression syntax in general can [move to infix syntax](https://github.com/modularml/modular/issues/1395), e.g.:  `constraints <vecLen `∈` {2,4,8,16,32}, type != bf16>`
+    on kernels in the main design doc.  Eventually expression syntax in general can [move to infix syntax](https://github.com/modularml/modular/issues/1395), e.g.:  `constraints <vecLen` ∈ `{2,4,8,16,32}, type != bf16>`
 
 2. ✅[Issue #1396](https://github.com/modularml/modular/issues/1396) When we have an IR representation for constraints, the elaborator needs to start using them to prune generation.
 3. ✅Generators failing leads to a new set of challenges with error reporting: when we fail to generate /any/ variant of a kernel, we need to report an elaboration “stack trace” of why expansion failed.  This means we need to revamp error diagnoses and tracking.

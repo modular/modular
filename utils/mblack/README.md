@@ -1,3 +1,4 @@
+<!-- markdownlint-disable -->
 [comment]: # (===----------------------------------------------------------------------===)
 [comment]: # ()
 [comment]: # (This file is Modular Inc proprietary.)

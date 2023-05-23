@@ -224,7 +224,7 @@ something is represented, it is helpful to ask MLIR to print IR in with the
 understand how to do a comparison, which uses a custom attribute for the
 comparison condition code.   I used:
 
-```
+```sh
 $ kgen-opt  --mlir-print-op-generic KGEN/test/pop-ir/pop-ops.mlir | grep pop.cmp
     %0 = "pop.cmp"(%arg0, %arg1) {pred = #pop<cmp_pred ge>} : (!pop.scalar<f32>, !pop.scalar<f32>) -> !pop.scalar<bool>
 ...
@@ -253,7 +253,7 @@ an implementation of this interface because they can return multiple types.
 To support this, Mojo allows you to define a `_type` attribute with the
 result type to use, e.g. to cast an index value to `i1` you can use:
 
-```
+```mojo
   # CHECK: [[TMP:%.*]] = pop.load %idxConstant
   # CHECK: [[TMP2:%.*]] = index.castu [[TMP:%.*]] : index to i1
   var i1Cast = __mlir_op.`index.castu`[_type: __mlir_type.i1](idxConstant))
@@ -302,7 +302,7 @@ As such, we currently handle this by parsing the source file in three phases:
 
 Let's take a look at an example to illustrate how this works:
 
-```
+```mojo
 struct Int:   # Eventually defined by stdlib.
   pass
 
@@ -328,7 +328,7 @@ resolution of types and value expressions.
 
 It parses and builds IR for these declarations:
 
-```
+```mojo
 struct Int:
   SKIPPED
 
@@ -347,7 +347,7 @@ struct Color:
 In the second pass we reparse the type expressions (which is nicely efficient
 given how our parser works), allowing us to "see" this much of the example:
 
-```
+```mojo
 struct Int:
   SKIPPED
 
