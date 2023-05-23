@@ -22,7 +22,7 @@ namespace {
 /// check that the return types match.
 class ControlFlowVerifier {
 public:
-  explicit ControlFlowVerifier(Operation *root) : root(root) {}
+  explicit ControlFlowVerifier(KGEN::FunctionLike root) : root(root) {}
 
   /// Verify a node.
   LogicalResult verifyNode(ControlFlowNode op);
@@ -35,7 +35,7 @@ private:
   ControlFlowNode findNearestParentFor(ControlFlowTerminator op);
 
   /// The root of the control-flow tree.
-  Operation *root;
+  KGEN::FunctionLike root;
 
   /// The current stack of control-flow scopes.
   SmallVector<ControlFlowNode> scopes;
@@ -106,14 +106,8 @@ static LogicalResult verifyReturnTypes(TypeRange lhs, TypeRange rhs,
 LogicalResult ControlFlowVerifier::verifyTerminator(ControlFlowTerminator op) {
   // Returns are modeled differently. Handle them here.
   if (isa<KGEN::ReturnOp>(*op)) {
-    auto func = dyn_cast<KGEN::FunctionLike>(root);
-    if (!func) {
-      return op->emitOpError("is not nested within a function")
-                 .attachNote(root->getLoc())
-             << "see control-flow root here";
-    }
-    return verifyReturnTypes(op->getOperandTypes(), func.getResultTypes(), op,
-                             func);
+    return verifyReturnTypes(op->getOperandTypes(), root.getResultTypes(), op,
+                             root);
   }
 
   ControlFlowNode parent = findNearestParentFor(op);
@@ -157,19 +151,6 @@ LogicalResult ControlFlowVerifier::verifyNode(ControlFlowNode op) {
   return success();
 }
 
-static LogicalResult verifyIfRoot(Operation *op) {
-  // Verify the operation if is a root operation or if it is the root of a
-  // subtree rooted at a function.
-  Operation *root;
-  if (isa<KGEN::FunctionLike>(op->getParentOp()))
-    root = op->getParentOp();
-  else if (!isa<ControlFlowNode>(op->getParentOp()))
-    root = op;
-  else
-    return success();
-  return ControlFlowVerifier(root).verifyNode(cast<ControlFlowNode>(op));
-}
-
 //===----------------------------------------------------------------------===//
 // Interface Verifiers
 //===----------------------------------------------------------------------===//
@@ -184,9 +165,7 @@ LogicalResult HLCF::verifyControlFlowNode(ControlFlowNode op) {
       if (block.empty())
         return op->emitOpError("unexpected empty block");
   }
-
-  // If this operation is a root, verify the tree starting from here.
-  return verifyIfRoot(op);
+  return success();
 }
 
 LogicalResult HLCF::verifyControlFlowTerminator(ControlFlowTerminator op) {
@@ -206,6 +185,14 @@ LogicalResult HLCF::verifyControlFlowTerminator(ControlFlowTerminator op) {
           << parent->getName() << "'")
              .attachNote(parent->getLoc())
          << "see invalid parent here";
+}
+
+LogicalResult HLCF::verifyControlFlow(KGEN::FunctionLike root) {
+  ControlFlowVerifier verifier(root);
+  for (auto node : root.getBodyRegion().getOps<ControlFlowNode>())
+    if (failed(verifier.verifyNode(node)))
+      return failure();
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

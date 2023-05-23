@@ -14,12 +14,17 @@
 // Interface Verifiers
 //===----------------------------------------------------------------------===//
 
+namespace M::KGEN {
+class FunctionLike;
+} // namespace M::KGEN
+
 namespace M::HLCF {
 class ControlFlowNode;
 class ControlFlowTerminator;
 
 LogicalResult verifyControlFlowNode(ControlFlowNode op);
 LogicalResult verifyControlFlowTerminator(ControlFlowTerminator op);
+LogicalResult verifyControlFlow(KGEN::FunctionLike root);
 } // namespace M::HLCF
 
 //===----------------------------------------------------------------------===//

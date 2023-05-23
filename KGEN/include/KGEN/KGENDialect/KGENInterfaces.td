@@ -99,7 +99,12 @@ def FunctionLike : OpInterface<"FunctionLike"> {
     InterfaceMethod<[{
       Get the expected result types of the region.
     }], "ArrayRef<Type>", "getResultTypes", (ins)>,
+    InterfaceMethod<[{
+      Return the function-like region of the operation.
+    }], "Region &", "getBodyRegion", (ins)>,
   ];
+
+  let verify = [{ return HLCF::verifyControlFlow(cast<FunctionLike>($_op)); }];
 }
 
 def FuncInterface : OpInterface<"FuncInterface"> {
