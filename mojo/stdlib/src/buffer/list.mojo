@@ -27,6 +27,8 @@ struct Dim:
 
     alias type = __mlir_type[`!pop.variant<i1, `, Int, `>`]
     var value: type
+    """Either a boolean indicating that the dimension is dynamic, or the static
+    value of the dimension."""
 
     @always_inline
     fn __init__(value: Int) -> Dim:
@@ -155,6 +157,7 @@ struct DimList:
     static value or not have a value, which represents a dynamic dimension."""
 
     var value: VariadicList[Dim]
+    """The underlying storage for the list of dimensions."""
 
     @always_inline("nodebug")
     fn __init__(values: VariadicList[Dim]) -> Self:
@@ -531,6 +534,7 @@ struct VariadicList[type: AnyType]:
 
     alias StorageType = __mlir_type[`!kgen.variadic<`, type, `>`]
     var value: StorageType
+    """The underlying storage for the variadic list."""
 
     @always_inline
     fn __init__(*value: type) -> Self:
@@ -590,6 +594,8 @@ struct VariadicListMem[type: AnyType]:
 
     alias StorageType = __mlir_type[`!kgen.variadic<!pop.pointer<`, type, `>>`]
     var value: StorageType
+    """The underlying storage, a variadic list of pointers to elements of the
+    given type."""
 
     @always_inline
     fn __init__(value: StorageType) -> Self:
