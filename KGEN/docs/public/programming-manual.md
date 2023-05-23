@@ -81,9 +81,10 @@ creates a function scope variable just like in Python. This provides a very
 dynamic and low-ceremony way to write code, but it is a challenge for two
 reasons:
 
-1) Systems programmers often want to declare that a value is immutable for type-safety and performance.
+1) Systems programmers often want to declare that a value is immutable for
+    type-safety and performance.
 2) They may want to get an error if they mistype a variable name in an
-assignment.
+    assignment.
 
 To support this, Mojo provides scoped runtime value declarations: `let` is
 immutable, and `var` is mutable. These values use lexical scoping and support
@@ -133,9 +134,12 @@ A `struct` in Mojo is similar to a Python `class`: they both support methods,
 fields, operator overloading, decorators for metaprogramming, etc. Their
 differences are as follows:
 
-+ Python classes are dynamic: they allow for dynamic dispatch, monkey-patching (or "swizzling"), and dynamically binding instance properties at runtime.
++ Python classes are dynamic: they allow for dynamic dispatch, monkey-patching
+(or "swizzling"), and dynamically binding instance properties at runtime.
 
-+ Mojo structs are static: they are bound at compile-time (you cannot add methods at runtime). Structs allow you to trade flexibility for performance while being safe and easy to use.
++ Mojo structs are static: they are bound at compile-time (you cannot add
+methods at runtime). Structs allow you to trade flexibility for performance
+while being safe and easy to use.
 
 Here's a simple definition of a struct:
 
@@ -195,9 +199,14 @@ quickly.
 
 We made this choice for two main reasons:
 
-1. We want to give programmers who need to work closely with computer hardware (systems programmers) a transparent and reliable way to interact with hardware. We don't want to rely on fancy tricks (like JIT compilers) to make things faster.
+1. We want to give programmers who need to work closely with computer hardware
+(systems programmers) a transparent and reliable way to interact with hardware.
+We don't want to rely on fancy tricks (like JIT compilers) to make things
+faster.
 
-2. We want Mojo to work well with Python without causing any issues. By using a different name (Int instead of int), we can keep both types in Mojo without changing how Python's int works.
+2. We want Mojo to work well with Python without causing any issues. By using a
+different name (Int instead of int), we can keep both types in Mojo without
+changing how Python's int works.
 
 As a bonus, `Int` follows the same naming style as other custom data types you
 might create in Mojo. Additionally, `Int` is a `struct` that's included in
@@ -325,8 +334,9 @@ and already use MyPy-style type annotations in Python to prefer the use of
 implementing some methods with one and others with the other, and allows each
 team or programmer to decide what is best for their use-case.
 
-For more about argument behavior in Mojo functions, see the section below
-about [Argument passing control and memory ownership](#argument-passing-control-and-memory-ownership).
+For more about argument behavior in Mojo functions, see the section below about
+[Argument passing control and memory
+ownership](#argument-passing-control-and-memory-ownership).
 
 ### The `__copyinit__` and `__moveinit__` special methods {#copy-and-move}
 
@@ -456,10 +466,10 @@ registers. As such, Mojo structs are always inlined into their container,
 whether that be as the field of another type or into the stack frame of the
 containing function.
 
-This raises some interesting questions: How do you implement methods that need to
-mutate `self` of a structure type, such as `__iadd__`? How does `let` work, and
-how does it prevent mutation? How are the lifetimes of these values controlled
-to keep Mojo a memory-safe language?
+This raises some interesting questions: How do you implement methods that need
+to mutate `self` of a structure type, such as `__iadd__`? How does `let` work,
+and how does it prevent mutation? How are the lifetimes of these values
+controlled to keep Mojo a memory-safe language?
 
 The answer is that the Mojo compiler uses dataflow analysis and type
 annotations to provide full control over value copies, aliasing of references,
@@ -590,7 +600,7 @@ struct Int:
 :::{.callout-note}
 
 **Tip:** When you see `inout`, it means that any changes made to the argument
-_**in**side_ the function are visible _**out**side_ the function.
+**in**side the function are visible **out**side the function.
 
 :::
 
@@ -1024,8 +1034,8 @@ challenge.
 All parameters and parameter expressions are typed using the same type system
 as the runtime program: `Int` and `DType` are implemented in the Mojo standard
 library as structs. Parameters are quite powerful, supporting the use of
-expressions with operators, function calls at compile-time, and more, just like a
-runtime program. This enables the use of many "dependent type" features. For
+expressions with operators, function calls at compile-time, and more, just like
+a runtime program. This enables the use of many "dependent type" features. For
 example, you might want to define a helper function to concatenate two SIMD
 vectors:
 
@@ -1039,11 +1049,11 @@ fn use_vectors(a: SIMD[DType.f32, 4], b: SIMD[DType.f16, 8]):
     let y = concat(b, b)  # Length = 16
 ```
 
-Note how the resulting length is the sum of the input vector lengths, and you can
-express that with a simple `+` operation. For a more complex example, take a look
-at the `SIMD.shuffle()` method in the standard library: it takes two input SIMD
-values, a vector shuffle mask as a list, and returns a SIMD that matches the
-length of the shuffle mask.
+Note how the resulting length is the sum of the input vector lengths, and you
+can express that with a simple `+` operation. For a more complex example, take
+a look at the `SIMD.shuffle()` method in the standard library: it takes two
+input SIMD values, a vector shuffle mask as a list, and returns a SIMD that
+matches the length of the shuffle mask.
 
 ### Powerful compile-time programming
 
@@ -1439,8 +1449,8 @@ the old value’s `fd` instance, it would get closed twice.
 
 Mojo tracks the liveness of values and allows you to define custom move
 constructors. This is rarely needed, but extremely powerful when it is. For
-example, some types like the <code>[llvm::SmallVector
-type](https://llvm.org/docs/ProgrammersManual.html#llvm-adt-smallvector-h)</code>
+example, some types like the [`llvm::SmallVector
+type`](https://llvm.org/docs/ProgrammersManual.html#llvm-adt-smallvector-h)
 use the "inline storage" optimization technique, and they may want to be
 implemented with an "inner pointer" into their instance. This is a well-known
 trick to reduce pressure on the malloc memory allocator, but it means that a
@@ -1602,12 +1612,12 @@ fn test_my_string():
     # s3.__del__() runs here
 ```
 
-In this case, you can see both why a copy constructor is needed: without one, the
-duplication of the `s1` value into `s2` would be an error - because you
-cannot have two live instances of the same non-copyable type.  The move
+In this case, you can see both why a copy constructor is needed: without one,
+the duplication of the `s1` value into `s2` would be an error - because you
+cannot have two live instances of the same non-copyable type. The move
 constructor is optional but helps the assignment into `s3`: without it, the
 compiler would invoke the copy constructor from s1, then destroy the old `s1`
-instance.  This is logically correct but introduces extra runtime overhead.
+instance. This is logically correct but introduces extra runtime overhead.
 
 Mojo destroys values eagerly, which allows it to transform
 copy+destroy pairs into single move operations, which can lead to much better
@@ -1740,11 +1750,12 @@ fn use_strings():
 
 In the code above, you’ll see that the `a` and `b` values are created early on,
 and each initialization of a value is matched with a call to a destructor.
-Notice also where the calls are happening: in the `b` variable. For example, Mojo
-keeps the value live across the (unrelated) print of the `a` variable until the
-print of the `b` variable and destroys it immediately after that call.  The `a`
-value is destroyed immediately after its first print, and immediately after
-reassigning it a new (unused) temporary value, and after its final print.
+Notice also where the calls are happening: in the `b` variable. For example,
+Mojo keeps the value live across the (unrelated) print of the `a` variable
+until the print of the `b` variable and destroys it immediately after that
+call. The `a` value is destroyed immediately after its first print, and
+immediately after reassigning it a new (unused) temporary value, and after its
+final print.
 
 Mojo destroys values using an **"As Soon As Possible"** (ASAP) policy, behaving
 like
@@ -1763,29 +1774,27 @@ good reasons!
 The Mojo design has a number of strong advantages over the C++ model:
 
 1. Recall that Python doesn’t really have scopes beyond the whole function, and
-   Mojo needs to provide a workable model that behaves correctly in the presence
-   of Python-style ‘def’s.
-2. Because Python doesn’t provide strong guarantees on object destruction, it
-   doesn’t encourage the RAII pattern.  To solve for the RAII pattern, Mojo (and
-   Python) provides a <code>[with
-   statement](https://docs.python.org/3/reference/compound_stmts.html#the-with-statement)</code> that provides scoped access to resources,
-   which is more deliberate and more syntactically clear than RAII.
-3. The Mojo approach eliminates the need for types to implement re-assignment
-   operators, like `operator=(const T&)` and `operator=(T&&)` in C++, making it
-   easier to define types and eliminating a concept.
-4. Mojo does not allow mutable references to overlap with other mutable
-   references or with immutable borrows.  One major way that it provides a
-   predictable programming model is by making sure that references to objects
-   die as soon as possible, avoiding confusing situations where the compiler
-   thinks a value could still be alive and interfere with another value, but
-   that isn’t clear to the user.
-5. Destroying values at last-use composes nicely with "move" optimization,
-   which transforms a "copy+del" pair into a "move" operation, a generalization
-   of C++ move optimizations like NRVO.
-6. Destroying values at end-of-scope in C++ is problematic for some common
-   patterns like tail recursion because the destructor calls happen after the
-   tail call. This can be a significant performance and memory problem for
-   certain functional programming patterns.
+Mojo needs to provide a workable model that behaves correctly in the presence
+of Python-style ‘def’s. 2. Because Python doesn’t provide strong guarantees on
+object destruction, it doesn’t encourage the RAII pattern. To solve for the
+RAII pattern, Mojo (and Python) provides a [`with`
+statement](https://docs.python.org/3/reference/compound_stmts.html#the-with-statement)
+that provides scoped access to resources, which is more deliberate and more
+syntactically clear than RAII. 3. The Mojo approach eliminates the need for
+types to implement re-assignment operators, like `operator=(const T&)` and
+`operator=(T&&)` in C++, making it easier to define types and eliminating a
+concept. 4. Mojo does not allow mutable references to overlap with other
+mutable references or with immutable borrows. One major way that it provides a
+predictable programming model is by making sure that references to objects die
+as soon as possible, avoiding confusing situations where the compiler thinks a
+value could still be alive and interfere with another value, but that isn’t
+clear to the user. 5. Destroying values at last-use composes nicely with "move"
+optimization, which transforms a "copy+del" pair into a "move" operation, a
+generalization of C++ move optimizations like NRVO. 6. Destroying values at
+end-of-scope in C++ is problematic for some common patterns like tail recursion
+because the destructor calls happen after the tail call. This can be a
+significant performance and memory problem for certain functional programming
+patterns.
 
 The Mojo approach is more similar to how Rust and Swift work, because they both
 have strong value ownership tracking and provide memory safety.  One difference
@@ -1872,9 +1881,9 @@ require all full-value initialization to go through initializers and be
 destroyed with their full-value destructor.
 
 For what it's worth, Mojo does internally have an equivalent of the Rust
-[`mem::forget`](https://doc.rust-lang.org/std/mem/fn.forget.html) function, which
-explicitly disables a destructor and has a corresponding internal feature for
-"blessing" an object, but they aren’t exposed for user consumption at this
+[`mem::forget`](https://doc.rust-lang.org/std/mem/fn.forget.html) function,
+which explicitly disables a destructor and has a corresponding internal feature
+for "blessing" an object, but they aren’t exposed for user consumption at this
 point.
 
 ### Field lifetimes in `__init__`
@@ -2075,13 +2084,20 @@ closures that capture runtime values to be passed as parameter values.
 
 ### Magic operators
 
-C++ code has a number of magic operators that intersect with value lifecycle, things like "placement new", "placement delete" and "operator=" that reassign over an existing value.  Mojo is a safe language when you use all its language features and compose on top of safe constructs, but of any stack is a world of C-style pointers and rampant unsafety.  Mojo is a pragmatic language, and since we are interested in both interoperating with C/C++ and in implementing safe constructs like String directly in Mojo itself, we need a way to express unsafe things.
+C++ code has a number of magic operators that intersect with value lifecycle,
+things like "placement new", "placement delete" and "operator=" that reassign
+over an existing value. Mojo is a safe language when you use all its language
+features and compose on top of safe constructs, but of any stack is a world of
+C-style pointers and rampant unsafety. Mojo is a pragmatic language, and since
+we are interested in both interoperating with C/C++ and in implementing safe
+constructs like String directly in Mojo itself, we need a way to express unsafe
+things.
 
 The Mojo standard library `Pointer[element_type]` type is implemented with an
 underlying `!pop.pointer<element_type>` type in MLIR, and we desire a way to
-implement these C++-equivalent unsafe constructs in Mojo.  Eventually, these will
-migrate to all being methods on the Pointer type, but until then, some need to
-be exposed as built-in operators.
+implement these C++-equivalent unsafe constructs in Mojo. Eventually, these
+will migrate to all being methods on the Pointer type, but until then, some
+need to be exposed as built-in operators.
 
 <!--
 TODO: document all of these:
