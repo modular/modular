@@ -35,7 +35,7 @@ class LITOp<string mnemonic, list<Trait> traits = []> :
 //===----------------------------------------------------------------------===//
 
 def LIT_FuncOp : LITOp<"func", [
-    DefinesResultTypes, FunctionOpInterface, Symbol, SymbolTable, SingleBlock,
+    FunctionLike, FunctionOpInterface, Symbol, SymbolTable, SingleBlock,
     DeclareOpInterfaceMethods<CallableOpInterface>,
     DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>,
     DeclareOpInterfaceMethods<ParamOpInterface, ["collectParameterUses"]>,
