@@ -477,7 +477,11 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
     if (deadRegion) {
       Block &deadBlock = deadRegion->front();
       Operation *firstDeadOp = &deadBlock.front();
-      if (!firstDeadOp->hasTrait<OpTrait::IsTerminator>())
+      // Warn about unreachable code in an 'if', but not in a '@parameter if'.
+      // It serves the function of ifdef's, and conditions are often
+      // known-statically true/false.
+      if (!isa<ParamIfOp>(op) &&
+          !firstDeadOp->hasTrait<OpTrait::IsTerminator>())
         emitWarning(firstDeadOp->getLoc(), "unreachable code after 'if ")
             << (constantCondValue ? "True'" : "False'");
       eraseOpToEndOfBlock(&deadBlock.front());
