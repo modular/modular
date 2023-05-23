@@ -195,5 +195,8 @@ def def_implicit_object_return_type(x: Int):
 
     Args:
         x: An explicit argument.
+
+    Returns:
+        Implicitly, this returns a None object.
     """
     pass

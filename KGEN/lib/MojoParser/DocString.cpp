@@ -18,6 +18,10 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
+/// Within a doc string, the "Returns" section describes the results of a
+/// function.
+static constexpr const char *kReturns = "Returns";
+
 /// Return the indentation level of the first line of the string.
 static size_t getIndentationLevel(StringRef str) {
   return str.size() - str.ltrim().size();
@@ -591,7 +595,7 @@ private:
       } else if (description[line] == "Parameters:") {
         generateArraySection("parameters", description, line, lineE,
                              paramToDetail);
-      } else if (description[line] == "Returns:") {
+      } else if (description[line] == (Twine(kReturns) + ":").str()) {
         if (returnType)
           generateParagraphSection("returns", description, line, lineE);
       } else if (description[line] == "Constraints:") {
@@ -687,6 +691,20 @@ void M::KGEN::LIT::generateMojoDocJSON(ASTDecl &decl, raw_ostream &os) {
 //===----------------------------------------------------------------------===//
 
 namespace {
+/// Used to specify the level of validation to perform for doc strings. The idea
+/// is that some doc strings, such as ones added to non-public functions, act as
+/// code comments, and do not require the same degree of strict validation as
+/// doc strings for publicly exported symbols.
+enum class ValidationKind {
+  /// Perform basic checks, such as that when arguments are documented, they use
+  /// the correct names.
+  Normal,
+  /// Perform strict checks: doc strings are required, and those doc strings
+  /// must include relevant sections, such as a "returns" section for functions
+  /// that have results.
+  Strict,
+};
+
 class DocStringValidator {
 public:
   DocStringValidator(SharedState &sharedState) : sharedState(sharedState) {}
@@ -696,13 +714,16 @@ public:
     if (!decl.hasReferenceError) {
       TypeSwitch<ASTDecl &>(decl)
           .Case<LIT::FuncOp, StructDeclOp, StructFieldOp>([&](auto op) {
+            ValidationKind validation = requiresDocString(op)
+                                            ? ValidationKind::Strict
+                                            : ValidationKind::Normal;
             if (!docStr) {
-              if (requiresDocString(op))
+              if (validation == ValidationKind::Strict)
                 sharedState.emitWarning(op.getLoc(), "public symbol '")
                     << op.getName() << "' is missing a doc string";
               return;
             }
-            validateDecl(decl, op, *docStr);
+            validateDecl(decl, op, *docStr, validation);
           });
     }
   }
@@ -857,7 +878,8 @@ private:
   // Functions
 
   /// Validate documentation for the given function.
-  void validateDecl(ASTDecl &decl, LIT::FuncOp funcOp, DocString &docStr) {
+  void validateDecl(ASTDecl &decl, LIT::FuncOp funcOp, DocString &docStr,
+                    ValidationKind validation) {
     SignatureType signature = funcOp.getSignature();
 
     // In general, each function argument must be documented, but exceptions are
@@ -888,28 +910,38 @@ private:
     DenseMap<StringRef, SMLoc> sections = {
         {"Args", SMLoc()},
         {"Parameters", SMLoc()},
-        {"Returns", SMLoc()},
+        {kReturns, SMLoc()},
     };
     ArrayRef<StringRef> description = docStr.getDescription();
+    bool hasResults =
+        signature.hasMemoryOnlyResult() ||
+        !funcOp.getResultTypeWithoutErrorVariant().isa<LIT::NoneType>();
     auto processFn = [&](StringRef section, SMLoc loc) mutable {
       if (section == "Args") {
         processArguments(loc, seenArguments, description);
       } else if (section == "Parameters") {
         processParameters(loc, seenParameters, description);
-      } else if (section == "Returns") {
-        if (!signature.hasMemoryOnlyResult() &&
-            funcOp.getResultTypeWithoutErrorVariant().isa<LIT::NoneType>())
+      } else if (section == kReturns) {
+        if (!hasResults)
           sharedState.emitWarning(loc, "unexpected 'Returns' in doc string for "
                                        "function with no results");
       }
     };
     processDocSections(description, sections, processFn);
+
+    if (!sections[kReturns].isValid() && hasResults &&
+        validation == ValidationKind::Strict) {
+      sharedState.emitWarning(
+          funcOp.getLoc(),
+          "function has results, but no 'Returns' in doc string");
+    }
   }
 
   //===--------------------------------------------------------------------===//
   // Structs
 
-  void validateDecl(ASTDecl &decl, StructDeclOp structOp, DocString &docStr) {
+  void validateDecl(ASTDecl &decl, StructDeclOp structOp, DocString &docStr,
+                    ValidationKind validation) {
     // Grab the parameters to the struct.
     llvm::MapVector<StringRef, SMLoc> seenParameters;
     for (auto [index, value] : llvm::enumerate(structOp.getInputParams()))
@@ -930,7 +962,8 @@ private:
   //===--------------------------------------------------------------------===//
   // Fields
 
-  void validateDecl(ASTDecl &decl, StructFieldOp fieldOp, DocString &docStr) {
+  void validateDecl(ASTDecl &decl, StructFieldOp fieldOp, DocString &docStr,
+                    ValidationKind validation) {
     // Nothing to do.
   }
 
