@@ -725,7 +725,11 @@ fn mean[
     size: Dim,
     type: DType,
 ](src: Buffer[size, type]) -> SIMD[type, 1]:
-    """Computes the mean value of the elements in a buffer."""
+    """Computes the mean value of the elements in a buffer.
+
+    Returns:
+        The mean value of the elements in the given buffer.
+    """
 
     debug_assert(src.__len__() != 0, "input must not be empty")
 
