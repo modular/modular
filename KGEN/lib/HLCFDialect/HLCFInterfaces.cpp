@@ -80,15 +80,40 @@ ControlFlowVerifier::findNearestParentFor(ControlFlowTerminator op) {
   return nullptr;
 }
 
+/// Verify two type ranges match between a return operation and a function.
+static LogicalResult verifyReturnTypes(TypeRange lhs, TypeRange rhs,
+                                       Operation *op, Operation *parent) {
+  if (lhs.size() != rhs.size()) {
+    return (op->emitOpError("specifies ")
+            << lhs.size() << " results but surrounding function expects "
+            << rhs.size())
+               .attachNote(parent->getLoc())
+           << "see function here";
+  }
+  for (auto [idx, lhsType, rhsType] :
+       llvm::zip(llvm::seq<unsigned>(0, lhs.size()), lhs, rhs)) {
+    if (lhsType == rhsType)
+      continue;
+    return (op->emitOpError("operand #")
+            << idx << " type " << lhsType
+            << " does not match expected result type " << rhsType)
+               .attachNote(parent->getLoc())
+           << "see function here";
+  }
+  return success();
+}
+
 LogicalResult ControlFlowVerifier::verifyTerminator(ControlFlowTerminator op) {
-  // Returns are modelled differently. Handle them here.
-  if (op->hasTrait<mlir::OpTrait::ReturnLike>()) {
-    if (!isa<mlir::FunctionOpInterface>(root)) {
+  // Returns are modeled differently. Handle them here.
+  if (isa<KGEN::ReturnOp>(*op)) {
+    auto func = dyn_cast<KGEN::DefinesResultTypes>(root);
+    if (!func) {
       return op->emitOpError("is not nested within a function")
                  .attachNote(root->getLoc())
              << "see control-flow root here";
     }
-    return success();
+    return verifyReturnTypes(op->getOperandTypes(), func.getResultTypes(), op,
+                             func);
   }
 
   ControlFlowNode parent = findNearestParentFor(op);
@@ -136,7 +161,7 @@ static LogicalResult verifyIfRoot(Operation *op) {
   // Verify the operation if is a root operation or if it is the root of a
   // subtree rooted at a function.
   Operation *root;
-  if (isa<mlir::FunctionOpInterface>(op->getParentOp()))
+  if (isa<KGEN::DefinesResultTypes>(op->getParentOp()))
     root = op->getParentOp();
   else if (!isa<ControlFlowNode>(op->getParentOp()))
     root = op;
@@ -170,10 +195,10 @@ LogicalResult HLCF::verifyControlFlowTerminator(ControlFlowTerminator op) {
   if (isa<ControlFlowNode>(parent))
     return success();
 
-  // Special case kgen.return and kgen.unreachable.
-  if ((op->hasTrait<OpTrait::ReturnLike>() || isa<KGEN::UnreachableOp>(op)) &&
-      (isa<mlir::FunctionOpInterface>(parent) ||
-       isa<KGEN::DefinesResultTypes>(parent)))
+  // Special case `kgen.return` and `kgen.unreachable`. These are the only
+  // terminators allowed for a function-like.
+  if (isa<KGEN::ReturnOp, KGEN::UnreachableOp>(op) &&
+      isa<KGEN::DefinesResultTypes>(parent))
     return success();
 
   return (op->emitOpError("expected parent operation to be a control-flow "

@@ -34,7 +34,7 @@ def KGEN_FuncOp : KGENOp<"func", [
     HasParent<"mlir::ModuleOp">, FunctionOpInterface, Symbol, IsolatedFromAbove,
     SingleBlock, DeclareOpInterfaceMethods<CallableOpInterface>,
     DeclareOpInterfaceMethods<SymbolUserOpInterface>, DeclInterface,
-    FuncInterface]> {
+    FuncInterface, DefinesResultTypes]> {
   let summary = "Concrete function definition.";
   let description = [{
     The `kgen.func` operation represents a concrete KGEN function. It has no
@@ -70,7 +70,6 @@ def KGEN_FuncOp : KGENOp<"func", [
 
   let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
-  let hasRegionVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -80,7 +79,7 @@ def KGEN_FuncOp : KGENOp<"func", [
 def KGEN_GeneratorOp : KGENOp<"generator", [
     HasParent<"mlir::ModuleOp">, FunctionOpInterface, Symbol, IsolatedFromAbove,
     SingleBlock, DeclareOpInterfaceMethods<CallableOpInterface>, DeclInterface,
-    FuncInterface]> {
+    FuncInterface, DefinesResultTypes]> {
   let summary = "Function generator definition.";
   let description = [{
     The `kgen.generator` operation defines a function generator. A generator is
@@ -128,7 +127,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
   ];
 
   let hasCustomAssemblyFormat = 1;
-  let hasRegionVerifier = 1;
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -520,10 +519,7 @@ def KGEN_ReturnOp : KGENOp<"return", [Terminator, ReturnLike,
 
   let arguments = (ins Variadic<AnyType>:$operands);
   let assemblyFormat = "attr-dict ($operands^ `:` type($operands))?";
-
-  let hasVerifier = 1;
 }
-
 
 //===----------------------------------------------------------------------===//
 // UnreachableOp

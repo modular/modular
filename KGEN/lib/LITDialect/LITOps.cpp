@@ -434,12 +434,11 @@ ArrayAttr LIT::FuncOp::getCallableArgAttrs() { return nullptr; }
 
 ArrayAttr LIT::FuncOp::getCallableResAttrs() { return nullptr; }
 
-LogicalResult LIT::FuncOp::verifyRegions() {
+LogicalResult LIT::FuncOp::verify() {
   // Check that the number of argument labels matches the number of argument
   // types.
   if (getValueParamNames().size() != getFunctionType().getNumInputs())
     return emitOpError("incorrect number of value parameter labels");
-
   return success();
 }
 
