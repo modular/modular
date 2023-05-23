@@ -13,6 +13,8 @@
 
 #include "Config/Version.h"
 #include "Support/LLVMForwardDecls.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
 
 #include <string>
 
@@ -30,6 +32,7 @@ enum class BuildProperty {
   LLCLMaxProfilingLevel,
   SIMDBitWidth,
   PreferredMemoryAlignment,
+  LLVMTargets,
 };
 
 struct BuildInfo {
@@ -45,6 +48,7 @@ struct BuildInfo {
   // host info).
   size_t simdBitWidth;
   size_t preferredMemoryAlignment;
+  SmallVector<StringRef> llvmTargets;
 
   void print(llvm::raw_ostream &os) const;
   void print(llvm::json::OStream &json) const;
