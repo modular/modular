@@ -326,9 +326,7 @@ LogicalResult ParamResultBindOp::verify() {
 // ReturnOp
 //===----------------------------------------------------------------------===//
 
-bool ReturnOp::isParentNode(Operation *op) {
-  return isa<DefinesResultTypes>(op);
-}
+bool ReturnOp::isParentNode(Operation *op) { return isa<FunctionLike>(op); }
 
 void ReturnOp::getBranchTargets(
     ArrayRef<Attribute> operands,

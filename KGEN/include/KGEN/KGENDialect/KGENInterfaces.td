@@ -80,17 +80,25 @@ def DeclInterface : OpInterface<"DeclInterface"> {
   ];
 }
 
-def DefinesResultTypes : OpInterface<"DefinesResultTypes"> {
+def FunctionLike : OpInterface<"FunctionLike"> {
   let description = [{
-    This interface represents an operation that defines region(s) that should
-    evaluate to the same type. A Function is an example of an operation that
-    defines a return type.
+    The `FunctionLike` interface represents an operation whose regions behave
+    like functions in terms of control-flow:
+
+    - the region executes with a stack,
+    - region arguments are passed into the region through the stack, and
+    - region results are returned via the stack.
+
+    This interface specifies the required result types of the region, allowing
+    it to be terminated by a `kgen.return` or `kgen.unreachable`, if the
+    function never returns.
   }];
 
   let cppNamespace = "::M::KGEN";
   let methods = [
-    InterfaceMethod<[{Return the operation's expected return types
-      }], "ArrayRef<Type>", "getResultTypes", (ins)>,
+    InterfaceMethod<[{
+      Get the expected result types of the region.
+    }], "ArrayRef<Type>", "getResultTypes", (ins)>,
   ];
 }
 

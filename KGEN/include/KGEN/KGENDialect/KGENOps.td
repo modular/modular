@@ -34,7 +34,7 @@ def KGEN_FuncOp : KGENOp<"func", [
     HasParent<"mlir::ModuleOp">, FunctionOpInterface, Symbol, IsolatedFromAbove,
     SingleBlock, DeclareOpInterfaceMethods<CallableOpInterface>,
     DeclareOpInterfaceMethods<SymbolUserOpInterface>, DeclInterface,
-    FuncInterface, DefinesResultTypes]> {
+    FuncInterface, FunctionLike]> {
   let summary = "Concrete function definition.";
   let description = [{
     The `kgen.func` operation represents a concrete KGEN function. It has no
@@ -79,7 +79,7 @@ def KGEN_FuncOp : KGENOp<"func", [
 def KGEN_GeneratorOp : KGENOp<"generator", [
     HasParent<"mlir::ModuleOp">, FunctionOpInterface, Symbol, IsolatedFromAbove,
     SingleBlock, DeclareOpInterfaceMethods<CallableOpInterface>, DeclInterface,
-    FuncInterface, DefinesResultTypes]> {
+    FuncInterface, FunctionLike]> {
   let summary = "Function generator definition.";
   let description = [{
     The `kgen.generator` operation defines a function generator. A generator is
@@ -319,7 +319,7 @@ def KGEN_ParamDeclareOp : KGENOp<"param.declare",
 //===----------------------------------------------------------------------===//
 
 def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
-    DeclInterface, FuncInterface, FunctionOpInterface, DefinesResultTypes,
+    DeclInterface, FuncInterface, FunctionOpInterface, FunctionLike,
     DeclareOpInterfaceMethods<ParamOpInterface, ["collectParameterUses"]>,
     SingleBlock
   ]>, OneParamDecl {
@@ -821,7 +821,7 @@ def KGEN_CallSignatureOp : KGENOp<"call_signature", [
 // StageClosureOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_StageClosureOp : KGENOp<"stage_closure", [Pure, DefinesResultTypes]> {
+def KGEN_StageClosureOp : KGENOp<"stage_closure", [Pure, FunctionLike]> {
   let summary = "Stage a closure declaring a concrete region";
   let description = [{
     The `kgen.stage_closure` operation declares a named concrete region. The

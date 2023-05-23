@@ -106,7 +106,7 @@ static LogicalResult verifyReturnTypes(TypeRange lhs, TypeRange rhs,
 LogicalResult ControlFlowVerifier::verifyTerminator(ControlFlowTerminator op) {
   // Returns are modeled differently. Handle them here.
   if (isa<KGEN::ReturnOp>(*op)) {
-    auto func = dyn_cast<KGEN::DefinesResultTypes>(root);
+    auto func = dyn_cast<KGEN::FunctionLike>(root);
     if (!func) {
       return op->emitOpError("is not nested within a function")
                  .attachNote(root->getLoc())
@@ -161,7 +161,7 @@ static LogicalResult verifyIfRoot(Operation *op) {
   // Verify the operation if is a root operation or if it is the root of a
   // subtree rooted at a function.
   Operation *root;
-  if (isa<KGEN::DefinesResultTypes>(op->getParentOp()))
+  if (isa<KGEN::FunctionLike>(op->getParentOp()))
     root = op->getParentOp();
   else if (!isa<ControlFlowNode>(op->getParentOp()))
     root = op;
@@ -198,7 +198,7 @@ LogicalResult HLCF::verifyControlFlowTerminator(ControlFlowTerminator op) {
   // Special case `kgen.return` and `kgen.unreachable`. These are the only
   // terminators allowed for a function-like.
   if (isa<KGEN::ReturnOp, KGEN::UnreachableOp>(op) &&
-      isa<KGEN::DefinesResultTypes>(parent))
+      isa<KGEN::FunctionLike>(parent))
     return success();
 
   return (op->emitOpError("expected parent operation to be a control-flow "
