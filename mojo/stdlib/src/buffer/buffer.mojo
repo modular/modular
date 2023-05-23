@@ -606,12 +606,18 @@ struct NDBuffer[
     """
 
     var data: DTypePointer[type]
-    # This is added just to make it aligned with the zap.ndbuffer
+    """The underlying data for the buffer. The pointer is not owned by the
+    NDBuffer."""
     var _rank: Int
+    """The dynamic value of the rank."""
     var dynamic_shape: StaticIntTuple[rank]
+    """The dynamic value of the shape."""
     var dynamic_dtype: DType
+    """The dynamic dtype."""
     var dynamic_stride: StaticIntTuple[rank]
+    """The dynamic stride of the buffer."""
     var is_contiguous: Bool
+    """True if the contents of the buffer are contiguous in memory."""
 
     @always_inline
     fn __init__() -> Self:
@@ -1531,9 +1537,13 @@ struct DynamicRankBuffer:
     as a fixed (ie _MAX_RANK) array of dimensions to simplify the ABI."""
 
     var data: DTypePointer[DType.invalid.value]
+    """The pointer to the buffer."""
     var rank: Int
+    """The buffer rank. Has a max value of `_MAX_RANK`."""
     var shape: StaticIntTuple[_MAX_RANK]
+    """The dynamic shape of the buffer."""
     var type: DType
+    """The dynamic dtype of the buffer."""
 
     @always_inline
     fn __init__(
