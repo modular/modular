@@ -281,10 +281,61 @@ function(add_mojo_doc visibility doc_filename output_file output_directory)
   )
 
   add_custom_target(${output_file}DocGen DEPENDS ${GEN_DOC_FILE})
+  set(is_public FALSE)
   if("${visibility}" STREQUAL "PUBLIC")
+    set(is_public TRUE)
+  endif()
+
+  if (is_public)
     add_dependencies(modular-doc ${output_file}DocGen)
   else()
     add_dependencies(modular-internal-doc ${output_file}DocGen)
+  endif()
+
+  # Add a custom target that does the following:
+  # 1. Invokes `mojo -doc-validate` on the given Mojo file, writing any and all
+  #    output to a temporary file.
+  # 2. Invokes a CMake script that searches that output file for `-doc-validate`
+  #    warnings originating from the given Mojo file.
+  #
+  # This is a hack to work around the fact that `mojo -doc-validate foo.mojo`
+  # not only validates the documentation for `foo.mojo`, but also all of its
+  # transitive imports. Here, the custom target `fooDocValidate` will only fail
+  # if a `-doc-validate` warning is produced from within `foo.mojo`, not any of
+  # its imported files.
+
+  # Invoke `mojo -doc-validate` and pipe all output to a file ending in
+  # `warnings.txt`.
+  set(DOC_VALIDATE_WARNINGS_FILE ${GEN_DOC_JSON_FILE}.warnings.txt)
+  add_custom_command(
+    OUTPUT "${DOC_VALIDATE_WARNINGS_FILE}"
+
+    COMMAND $<TARGET_FILE:mojo> -doc-gen -doc-validate
+    -o /dev/null ${KGEN_INCLUDE_FLAGS} ${doc_filename}
+    -I ${KERNELS_BINARY_DIR}/mojo/Python
+    > "${DOC_VALIDATE_WARNINGS_FILE}" 2>&1
+
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    DEPENDS mojo ${doc_filename} ${KGEN_LIB_DEPENDS}
+  )
+
+  # Add a `DocValidate` target that checks the `-doc-validate` output for
+  # warnings output from within the original Mojo file.
+  get_filename_component(doc_filename_we ${doc_filename} NAME_WE)
+  add_custom_target("${doc_filename_we}DocValidate"
+    COMMAND
+      ${CMAKE_COMMAND} -DPATH="${DOC_VALIDATE_WARNINGS_FILE}"
+                       -DPATTERN="${doc_filename}:[0-9]*:[0-9]*: warning:"
+      -P ${MODULAR_SOURCE_DIR}/KGEN/CheckPatternInFile.cmake
+
+    DEPENDS "${DOC_VALIDATE_WARNINGS_FILE}"
+  )
+
+  # Only add PUBLIC Mojo files to the top-level doc validation target.
+  # This ensures that `modular-doc-validate` only fails when our public
+  # libraries are legitimately missing documentation.
+  if (is_public)
+    add_dependencies(modular-doc-validate "${doc_filename_we}DocValidate")
   endif()
 endfunction()
 
