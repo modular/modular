@@ -36,15 +36,15 @@ TO WRITE:
   control dependencies into data dependencies. (link to a dedicated explainer
   doc on control dependencies).
 
- - Location and Diagnostic.
+- Location and Diagnostic.
 
 ## Introduction to LLCL/Runtime/Algorithms.h
 
 TO WRITE:
 
- - Generally use this instead of poking at WorkQueue directly.
+- Generally use this instead of poking at WorkQueue directly.
 
- - addTask, await.  Parallel for loop, map reduce ...
+- addTask, await.  Parallel for loop, map reduce ...
 
- - If this gets larger and more detailed, it may make sense to split it out to
+- If this gets larger and more detailed, it may make sense to split it out to
    its own doc.

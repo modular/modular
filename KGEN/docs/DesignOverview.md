@@ -67,23 +67,23 @@ problem. This effort will consume significant resources over time, so we should
 make sure to keep a North Star in mind that will make it worthwhile. In no
 particular order, we would like to demonstrate:
 
-* **Replace existing tech**: There are a wide range of existing ML frameworks
+- **Replace existing tech**: There are a wide range of existing ML frameworks
 and kernel libraries out there, which come with their own oddities, historical
 mistakes, and non-orthogonal behavior. We need to provide drop-in replacements
 for their behavior despite this. While we expect to define a cleaner world in
 the future, we should embrace existing systems first.
 
-* **Performance**: Generated kernels shouldn’t be used until they meet or
+- **Performance**: Generated kernels shouldn’t be used until they meet or
 exceed existing expert tuned kernels in apples-to-apples comparisons. We should
 not depend on novel kernel fusion or specialization to achieve performance,
 they should enhance performance beyond the baseline.
 
-* **HW generality**: While we may focus on CPUs to ground the initial bring-up
+- **HW generality**: While we may focus on CPUs to ground the initial bring-up
 work, dedicated HW blocks and accelerators are inherent to the ML domain, we
 need to be able to express arbitrary accelerator features and utilize them
 effectively.
 
-* **Modularity + reuse**: Supporting the cross product between a wide range of
+- **Modularity + reuse**: Supporting the cross product between a wide range of
 hardware and a wide range of kernels is only possible with a massive amount of
 reuse across macro architectures. For example, many architectures benefit from
 the [im2col
@@ -91,42 +91,42 @@ transform](https://towardsdatascience.com/how-are-convolutions-actually-performe
 it should be expressed in one place, not in the implementation of convolution
 for many architectures.
 
-* **Velocity**: The time to bring up and tune a new architecture or variant
+- **Velocity**: The time to bring up and tune a new architecture or variant
 should be proportional to the difference between the new architecture and
 already-supported ones, not proportional to the size of the kernel library.
 
-* **Generality**: Tensors are not enough! We should grow to support many
+- **Generality**: Tensors are not enough! We should grow to support many
 parallel data structures beyond dense tensors, e.g. trees and tabular data, and
 of course sparse and ragged tensors.
 
-* **Open extensibility**: It is important that "users" can build on and extend
+- **Open extensibility**: It is important that "users" can build on and extend
 our system without hacking the compiler’s source code. We don’t expect the
 framework and all the kernels to be open source, but users will want to invent
 new algorithms, experiment with new numerics, and access low-level hardware
 features.
 
-* **Progressive disclosure of complexity**: we want the kernel authoring system
+- **Progressive disclosure of complexity**: we want the kernel authoring system
 to be reasonably easy to learn for high-level kernel design, but we want future
 experts at HW partners to be able to fully exploit their architecture.
 
-* **Embrace assembly blobs and C++**: we are building a pragmatic system and
+- **Embrace assembly blobs and C++**: we are building a pragmatic system and
 want people to be able to "get stuff done" even when the underlying system
 isn’t cooperative. We also need to integrate with legacy systems and suboptimal
 backend compilers. We will surely need to support hacks for benchmarks, and
 handwritten microkernels for inner loops and weird accelerators.
 
-* **AOT + JIT**: JIT compilers are great for generality and flexibility, but
+- **AOT + JIT**: JIT compilers are great for generality and flexibility, but
 not all targets (e.g. iOS) allow JIT compilers, and others (e.g. embedded
 platforms) cannot support them due to lack of runtime or other considerations.
 Both AOT and JIT compilation are important.
 
-* **Fast compiles**: While some scenarios may allow extreme compile times, the
+- **Fast compiles**: While some scenarios may allow extreme compile times, the
 normal usage scenarios should be real time. We should develop the system with
 the assumption that we need to compile a model in seconds, not hours or days.
 While search is important for what we are doing, our goals imply that we cannot
 use it for everything.
 
-* **Sub-settable**: the operator set should not be monolithic, we should be
+- **Sub-settable**: the operator set should not be monolithic, we should be
 able to deploy different subsets of kernels for different products. We should
 also eventually be able to slice out unnecessary `dtypes`, e.g. complex number
 support, f64, etc.
@@ -189,8 +189,8 @@ differentiate our work from Halide/TVM and even CUDA, and provides a clear
 
 There is a lot of ground to cover here, so we will discuss each of these in
 their own macro section below, and intersperse discussion about tooling. As is
-typical, we need to focus on building things the "right way" from the bottom up
-- we shouldn’t race to build out 5% of each subsystem ahead of its natural
+typical, we need to focus on building things the "right way" from the bottom
+up—we shouldn’t race to build out 5% of each subsystem ahead of its natural
 time.
 
 ## "Buffer Level" Kernel generation
@@ -243,7 +243,7 @@ It became too hard to write this paper without forward references to concepts,
 so here is a high level definition of key terms and concepts, which are
 explained in more detail in subsequent sections:
 
-* **Kernel** vs **Microkernel** vs **Function**: these are an implementation of
+- **Kernel** vs **Microkernel** vs **Function**: these are an implementation of
 an algorithm that does computation against memory objects like memory buffers
 of a certain layout. These terms may be used interchangeably (and shouldn’t
 have an implementation difference in our system), but "microkernel" tends to
@@ -252,29 +252,29 @@ larger operator kernel implementation. Algorithmically
 interchangeable/equivalent/replaceable kernels are sometimes referred to as
 "codelets" in literature.
 
-* Function **Generator**: a program (usually expressed in MLIR form) that is
+- Function **Generator**: a program (usually expressed in MLIR form) that is
 (in general) parameterized and is executed to generate a non-parametric
 implementation of a function. Fixed implementations (e.g. a panel dot product
 implemented in assembly) are just a degenerate case of a generator with no
 parameters.
 
-* Generator **Interface Declaration**: microkernels are (in general)
+- Generator **Interface Declaration**: microkernels are (in general)
 implemented multiple times in multiple different ways. An interface declaration
 can stand alone from the implementations, allowing clients and implementations
 to be type checked.
 
-* Generator **Parameter Arguments**: the generator is (in general) a meta
+- Generator **Parameter Arguments**: the generator is (in general) a meta
 program embedded in MLIR that generates a function, and "parameters" are the
 values that this meta program is allowed to act on. These parameters are not
 SSA values in MLIR, they are encoded into MLIR attributes.
 
-* Generator **Parameter Results** - These values are returned by a generator to
+- Generator **Parameter Results** - These values are returned by a generator to
 its invoker as parameters, allowing them to adapt to behavior in the generated
 sub-kernel. For example, a panel dot product generator could return "I
 processed a 3x5 panel of memory", which causes the invoking for loop to step by
 3 and 5 on each dimension.
 
-* Generator **Constraints** - Generators are allowed to be _[partial
+- Generator **Constraints** - Generators are allowed to be _[partial
 functions](https://en.wikipedia.org/wiki/Partial_function)_ from the interface
 declaration to a concrete implementation. Constraints indicate limitations on
 their parameters, e.g. "this implementation only works with dtype=float32", or
@@ -282,7 +282,7 @@ their parameters, e.g. "this implementation only works with dtype=float32", or
 modulo 128" etc. Constraints will eventually be upward propagated from kernel
 implementations out to the operator graph (XLA-style).
 
-* **Generator/Function Arguments** - These are SSA argument values in MLIR,
+- **Generator/Function Arguments** - These are SSA argument values in MLIR,
 used for three things: 1) Buffers and other user defined types for structured
 abstractions over memory, like linear memory, N-dimensional tensors with
 layouts, and eventually other higher level data types like trees and tables. 2)
@@ -291,7 +291,7 @@ may be modeled as constants there, they are dynamic values for the runtime
 implementation of the kernel. 3) Very small micro kernels at the bottom of the
 stack (e.g. add two integers) use arguments for their inputs.
 
-* **Generator/Function Results**- These are SSA result values in MLIR, used for
+- **Generator/Function Results**- These are SSA result values in MLIR, used for
 two things: 1) dynamically allocated result buffers, e.g. those that have data
 dependent shapes. 2) Very small micro kernels at the bottom of the stack (e.g.
 add two integers) use results for their outputs.
@@ -529,7 +529,6 @@ time. This design point was explored in the CIRCT project for parametric
 verilog (e.g.
 [circt/test/Dialect/HW/parameters.mlir](https://github.com/llvm/circt/blob/main/test/Dialect/HW/parameters.mlir)) - our needs are more general but the same
 basic approach should suffice.
-
 
 #### Order of generator evaluation
 
@@ -951,11 +950,11 @@ In addition to code generation of high performance kernels, there is a lot we
 can do with kernel descriptions in IR form, a machine analyzable/transformable
 format. For example:
 
-* We can extract shape functions for operators by using code slicing to extract
+- We can extract shape functions for operators by using code slicing to extract
 the computation from the kernel description. This ensures we have a single
 source of truth for our kernels + shape functions.
 
-* We can derive the "what ops+dtypes are supported by this target" set from the
+- We can derive the "what ops+dtypes are supported by this target" set from the
 kernel library statically, and encode that data into a table that is used by
 the device graph partitioner (using standard algorithms). This keeps a single
 source of truth, instead of redundantly encoding this in the graph partitioner.
@@ -963,14 +962,14 @@ This is a small thing, but is the bit of magic that allows you to progressively
 implement a few micro kernels for a new target and have the operator set start
 lighting up incrementally.
 
-* We can detect "invocation independent computation", e.g. a lookup table that
+- We can detect "invocation independent computation", e.g. a lookup table that
 only depends on known-constant-at-the-graph-level operator attributes. This
 computation can be automatically sliced out of the main kernel computation into
 a "prepare-like" function that computes the lookup table into a custom struct
 at initialization time, rather than computing it every invocation of the
 kernel.
 
-* We can implement "kernels generators" with MLIR compiler APIs to provide
+- We can implement "kernels generators" with MLIR compiler APIs to provide
 things that are fancier than parameterized expansions. We should be able to
 encode many halide-esque operators (e.g. vectorize, parallelize, etc) as
 compiler transformations and provide a really interesting and flexible
@@ -979,24 +978,24 @@ region of IR as a parameter and produce a new one. I’m particularly interested
 in exposing an [ISPC-style](https://ispc.github.io/) SPMD transformation as a
 generator.
 
-* We can generate backwards versions of kernels automatically, using widely
+- We can generate backwards versions of kernels automatically, using widely
 understood techniques used in Tensor Comprehensions and other systems.
 
-* We can extract metadata about the operations, e.g. whether they are
+- We can extract metadata about the operations, e.g. whether they are
 associative, side effectful, etc.
 
-* We can synthesize versions of the kernels for other considerations, e.g. code
+- We can synthesize versions of the kernels for other considerations, e.g. code
 size. This can be useful for constant folding operators within the compiler.
 
-* Given our multiple theoretically identical implementations of the same
+- Given our multiple theoretically identical implementations of the same
 algorithms, we can do a lot of testing and correctness checking. The formal
 method people would love to crawl all over this to prove various things, find
 bugs in implementations, and more.
 
-* We can rapidly experiment with novel numeric techniques, new quantization
+- We can rapidly experiment with novel numeric techniques, new quantization
 approaches, etc.
 
-* Specialization of kernels and operators when static data is known about the
+- Specialization of kernels and operators when static data is known about the
 target model is very easy. For example, if a model only uses float32 or int8,
 we can strip away all the support for other dtypes, producing a much thinner
 kernel library. This can be useful for deployment considerations as well as
@@ -1047,7 +1046,6 @@ That said, it also isn’t magic.  It assumes that expert kernel programmers wil
 Furthermore, we as Modular have another goal: we want our system to be extensible by customers, partners, and academics without having access to our compiler source code.  This implies that we want a user-supportable surface area: compiler frameworks have notoriously fragile APIs, and we will want to continuously evolve our design over time.
 
 Finally, we also care about usability and understandability of the kernel components in the libraries we generate.  This implies that we want to be able to **holistically design** our system in a vertically integrated way, making the components feel native with each other.
-
 
 ### Extend Existing Systems or Build New?
 

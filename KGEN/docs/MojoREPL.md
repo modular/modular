@@ -179,7 +179,7 @@ This issue only applies to implicit variables. Those defined with `let` and
 needs to be overwritten, consider using `let` or `var` to introduce the variable
 for now.
 
-### The REPL's automatic value printer shows empty values.
+### The REPL's automatic value printer shows empty values
 
 When executing expressions in the REPL, LLDB will try to dump the top-level
 variables that were created by the expression as shown below:
@@ -256,14 +256,14 @@ kernel and execute each cell individually, as you would expect in a normal
 jupyter environment.
 
 ```shell
-$ mojo-jupyter-executor notebook.ipynb
+mojo-jupyter-executor notebook.ipynb
 ```
 
 The executor also has a REPL mode, where you can execute an individual cell at a
 time. You can start the executor in this mode by running:
 
 ```shell
-$ mojo-jupyter-executor
+mojo-jupyter-executor
 ```
 
 You will see a command prompt, where you can run simple commands like so:

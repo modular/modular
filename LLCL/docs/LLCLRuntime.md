@@ -4,8 +4,8 @@ This document introduces the `M::LLCL::Runtime`, some of the design points, key
 configuration points and rationale for how it works.  For more details on
 datatypes and more specialized topics please see:
 
- - [`AsyncValue` type documentation](AsyncValue.md)
- - [Non-blocking work queues](WorkQueueNonblocking.md)
+- [`AsyncValue` type documentation](AsyncValue.md)
+- [Non-blocking work queues](WorkQueueNonblocking.md)
 
 ## Library-based Design
 
@@ -133,7 +133,7 @@ When building data intensive applications (for example allocating tensor data in
 machine learning application), it is a good idea to allocate that data with the
 `Runtime` you're executing within.
 
-### Do not use `Allocator` for tiny allocations!
+### Do not use `Allocator` for tiny allocations
 
 While the `Allocator` interface is important for large-scale allocations, it
 does provide a tiny bit of overhead (a vtable indirection) and isn't intended

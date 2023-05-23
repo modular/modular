@@ -71,7 +71,7 @@ This design is a consequence of why you only see parens for empty argument
 lists, and why (if you're working on the compiler parser itself) we should
 support parens in the result type parser.
 
-## Structure of parameter definitions and uses.
+## Structure of parameter definitions and uses
 
 The kgen dialect and system is defined in a way that makes it moderately open
 for extension, but for that to work, operations need to follow some conventions
@@ -254,8 +254,9 @@ the following syntax:
 
 Lastly, the call instruction might have regions (sort of lambda functions) attached to it.
 Definitions of regions look similarly to definitions of usual functions, except:
- * we do not specify return value type for regions,
- * the name of the region should match the name of the corresponding parameter.
+
+- we do not specify return value type for regions,
+- the name of the region should match the name of the corresponding parameter.
 
 For example, a region might look like the following:
 

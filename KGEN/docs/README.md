@@ -40,7 +40,6 @@ operations, but then the kernel can only target LLVM.
 
 ## Detailed Documentation
 
-
 See these breakout docs:
 
 - [Generative Kernel Compiler Design Overview](DesignOverview.md)
