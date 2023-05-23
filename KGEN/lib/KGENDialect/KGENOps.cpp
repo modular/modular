@@ -28,22 +28,6 @@
 using namespace M;
 using namespace KGEN;
 
-/// This checks the arguments of the return op against the result parameters and
-/// the result types iff the body of the op has not been cached.
-template <typename T>
-static LogicalResult checkReturnArguments(T op) {
-  Region &body = op.getBodyRegion();
-  // Don't crash on malformed IR.
-  if (body.empty())
-    return success();
-
-  // If we have a return op, then we can check the argument types. Otherwise, we
-  // just don't have the return op.
-  if (ReturnOp returnOp = dyn_cast<ReturnOp>(body.front().getTerminator()))
-    return checkOperandTypes(returnOp, op.getResultTypes());
-  return success();
-}
-
 //===----------------------------------------------------------------------===//
 // custom<ParamConstantOpValue>
 //===----------------------------------------------------------------------===//
@@ -342,7 +326,9 @@ LogicalResult ParamResultBindOp::verify() {
 // ReturnOp
 //===----------------------------------------------------------------------===//
 
-bool ReturnOp::isParentNode(Operation *op) { return isa<FuncInterface>(op); }
+bool ReturnOp::isParentNode(Operation *op) {
+  return isa<DefinesResultTypes>(op);
+}
 
 void ReturnOp::getBranchTargets(
     ArrayRef<Attribute> operands,
@@ -351,48 +337,14 @@ void ReturnOp::getBranchTargets(
   targets.emplace_back(std::nullopt, getOperands());
 }
 
-/// Verify two type ranges match between a return operation and a function.
-static LogicalResult verifyReturnTypes(TypeRange lhs, TypeRange rhs,
-                                       Operation *op, Operation *parent) {
-  if (lhs.size() != rhs.size()) {
-    return (op->emitOpError("specifies ")
-            << lhs.size() << " results but surrounding function expects "
-            << rhs.size())
-               .attachNote(parent->getLoc())
-           << "see function here";
-  }
-  for (auto [idx, lhsType, rhsType] :
-       llvm::zip(llvm::seq<unsigned>(0, lhs.size()), lhs, rhs)) {
-    if (lhsType == rhsType)
-      continue;
-    return (op->emitOpError("operand #")
-            << idx << " type " << lhsType
-            << " does not match expected result type " << rhsType)
-               .attachNote(parent->getLoc())
-           << "see function here";
-  }
-  return success();
-}
-
-LogicalResult ReturnOp::verify() {
-  auto definesResultTypes = (*this)->getParentOfType<DefinesResultTypes>();
-  if (!definesResultTypes) {
-    auto function = (*this)->getParentOfType<mlir::FunctionOpInterface>();
-    return verifyReturnTypes(getOperandTypes(), function.getResultTypes(),
-                             *this, function);
-  }
-  return verifyReturnTypes(getOperandTypes(),
-                           definesResultTypes.getResultTypes(), *this,
-                           definesResultTypes);
-}
-
 //===----------------------------------------------------------------------===//
 // UnreachableOp
 //===----------------------------------------------------------------------===//
 
-// Unreachable can terminate any control flow operation.
+/// Unreachable can terminate any control flow operation.
 bool UnreachableOp::isParentNode(Operation *op) { return true; }
 
+/// No branch targets.
 void UnreachableOp::getBranchTargets(
     ArrayRef<Attribute> operands,
     SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {}
@@ -554,11 +506,7 @@ ParseResult GeneratorOp::parse(OpAsmParser &parser, OperationState &result) {
 // Print the GeneratorOp using the shared printing logic.
 void GeneratorOp::print(OpAsmPrinter &p) { printGeneratorOrFunc(p, *this); }
 
-LogicalResult GeneratorOp::verifyRegions() {
-  if (failed(verifyOneBlockOrCached(*this)))
-    return failure();
-  return checkReturnArguments(*this);
-}
+LogicalResult GeneratorOp::verify() { return verifyOneBlockOrCached(*this); }
 
 Region *GeneratorOp::getCallableRegion() { return &getBodyRegion(); }
 
@@ -635,13 +583,7 @@ LogicalResult FuncOp::verify() {
                       return inputConv == ValueInputConvention::OwnedInReg;
                     }))
     return emitOpError("can only have default value input conventions");
-  return success();
-}
-
-LogicalResult FuncOp::verifyRegions() {
-  if (failed(verifyOneBlockOrCached(*this)))
-    return failure();
-  return checkReturnArguments(*this);
+  return verifyOneBlockOrCached(*this);
 }
 
 Region *FuncOp::getCallableRegion() { return &getBodyRegion(); }

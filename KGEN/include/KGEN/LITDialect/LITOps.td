@@ -35,7 +35,7 @@ class LITOp<string mnemonic, list<Trait> traits = []> :
 //===----------------------------------------------------------------------===//
 
 def LIT_FuncOp : LITOp<"func", [
-    FunctionOpInterface, Symbol, SymbolTable, SingleBlock,
+    DefinesResultTypes, FunctionOpInterface, Symbol, SymbolTable, SingleBlock,
     DeclareOpInterfaceMethods<CallableOpInterface>,
     DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>,
     DeclareOpInterfaceMethods<ParamOpInterface, ["collectParameterUses"]>,
@@ -91,7 +91,7 @@ def LIT_FuncOp : LITOp<"func", [
   ];
 
   let hasCustomAssemblyFormat = 1;
-  let hasRegionVerifier = 1;
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
