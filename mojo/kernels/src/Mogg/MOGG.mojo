@@ -13,7 +13,21 @@ from Index import StaticIntTuple
 from IO import print
 from List import Dim, DimList
 from LLCL import Runtime, OutputChainPtr
-from Math import add, div, erf, exp, pow, mul, rsqrt, sqrt, sub, tanh, fma, abs
+from Math import (
+    add,
+    div,
+    erf,
+    exp,
+    pow,
+    mul,
+    rsqrt,
+    sqrt,
+    sub,
+    tanh,
+    fma,
+    abs,
+    log1p,
+)
 from Pointer import Pointer, DTypePointer
 from Range import range
 from SIMD import SIMD
@@ -40,6 +54,7 @@ fn MOGGExport():
     alias _erf = erf
     alias _exp = exp
     alias _gelu = gelu
+    alias _log1p = log1p
     alias _pow = pow_wrapped
     alias _load_scalar = load_scalar
     alias _mul = mul
