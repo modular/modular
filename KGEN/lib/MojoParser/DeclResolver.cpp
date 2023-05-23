@@ -2633,7 +2633,7 @@ static bool processStructSignatureDecorator(ExprNode *decorator,
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
     if (declRef->spelling == "register_passable") {
       structOp.setRegisterPassable(StructDeclOp::RP_RegisterPassable);
-      return false; // Process again at body resolution.
+      return true;
     }
   }
 
@@ -2645,7 +2645,7 @@ static bool processStructSignatureDecorator(ExprNode *decorator,
           callNode->args.size() == 1 &&
           callNode->args[0].isPositionalStringLiteral("trivial")) {
         structOp.setRegisterPassable(StructDeclOp::RP_RegisterPassableTrivial);
-        return false; // Process again at body resolution.
+        return true;
       }
     }
   }
@@ -3165,12 +3165,29 @@ void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc) {
                            isMemoryOnly, structFields, resolver);
 }
 
+void StructBodyDecorators::processDecorator(ExprNode *decorator) {
+  if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
+    if (declRef->spelling == "value")
+      return processValueDecorator(decorator->getRangeStart());
+
+    emitError(decorator->getLoc(), "unsupported decorator: '@")
+        << declRef->spelling << "'" << declRef->getRange();
+    return;
+  }
+
+  emitError(decorator->getLoc(), "unsupported decorator")
+      << decorator->getRange();
+}
+
 /// Process the @register_passable decorator on structs.  This finalizes
 /// semantic checks.
-void StructBodyDecorators::processRegisterPassableDecorator(bool isTrivial) {
-  auto structPassability = isTrivial ? StructDeclOp::RP_RegisterPassableTrivial
-                                     : StructDeclOp::RP_RegisterPassable;
+static void processRegisterPassableDecorator(
+    StructDeclOp structOp, ASTDecl &structDecl,
+    ArrayRef<std::pair<StructFieldOp, ASTDecl *>> structFields,
+    DeclResolver &resolver, StructDeclOp::RegisterPassable structPassability) {
 
+  bool isTrivial =
+      structPassability == StructDeclOp::RP_RegisterPassableTrivial;
   for (auto [fieldOp, fieldDecl] : structFields) {
     ASTType fieldType = fieldOp.getType();
 
@@ -3183,13 +3200,13 @@ void StructBodyDecorators::processRegisterPassableDecorator(bool isTrivial) {
 
     // If the field is at least as register-passable as the container then
     // we're happy.
-    if (fieldType.getRegisterPassability(fieldDecl->getLoc(), shared) <
+    if (fieldType.getRegisterPassability(fieldDecl->getLoc(), resolver.shared) <
         structPassability) {
       StringRef trivialSuffix;
       if (isTrivial)
         trivialSuffix = "(\"trivial\")";
 
-      auto diag = emitError(structOp.getLoc())
+      auto diag = resolver.emitError(structOp.getLoc())
                   << "all members of '@register_passable" << trivialSuffix
                   << "' struct must themselves be '@register_passable"
                   << trivialSuffix << "'";
@@ -3217,35 +3234,6 @@ void StructBodyDecorators::processRegisterPassableDecorator(bool isTrivial) {
     rejectMemberIfPresent("__copyinit__");
     rejectMemberIfPresent("__del__");
   }
-}
-
-void StructBodyDecorators::processDecorator(ExprNode *decorator) {
-  if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
-    if (declRef->spelling == "value")
-      return processValueDecorator(decorator->getRangeStart());
-
-    if (declRef->spelling == "register_passable")
-      return processRegisterPassableDecorator(
-          /*isTrivial*/ false);
-
-    emitError(decorator->getLoc(), "unsupported decorator: '@")
-        << declRef->spelling << "'" << declRef->getRange();
-    return;
-  }
-
-  // `x()` forms.
-  if (auto callNode = dyn_cast<CallNode>(decorator)) {
-    if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee)) {
-      // @register_passable("trivial")
-      if (declRef->spelling == "register_passable" &&
-          callNode->args.size() == 1 &&
-          callNode->args[0].isPositionalStringLiteral("trivial"))
-        return processRegisterPassableDecorator(/*isTrivial*/ true);
-    }
-  }
-
-  emitError(decorator->getLoc(), "unsupported decorator")
-      << decorator->getRange();
 }
 
 ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
@@ -3279,6 +3267,16 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
         ASTType(field.getType()).hasDestructor(fieldASTDecl.getLoc(), shared);
 
     structFields.push_back({field, &fieldASTDecl});
+  }
+
+  // If the struct is @register_passable, check invariants imposed by it before
+  // checking other decorators.  This ensures that we reject invalid
+  // register_passable types before processing them.
+  if (auto passability = structOp.getRegisterPassable()) {
+    // TODO: Split trivial and register_passable appart.
+    processRegisterPassableDecorator(
+        structOp, structDecl, structFields, *this,
+        (StructDeclOp::RegisterPassable)passability);
   }
 
   // If there are any body decorators, resolve them now.

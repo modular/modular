@@ -639,3 +639,15 @@ struct copy_init_def:
   # expected-error @+1 {{cannot define copy/move constructor as 'def'; 'def' implicitly raises}}
   def __copyinit__(inout self, existing: Self):
     self.field = existing.field
+
+
+# Order of declaration processing.
+# https://github.com/modularml/mojo/issues/235
+@value
+struct Inner:
+    pass
+
+@value
+@register_passable
+struct Outer: # expected-error {{all members of '@register_passable' struct must themselves be '@register_passable'}}
+    var inner: Inner # expected-note {{'inner' declared with type 'Inner'}}
