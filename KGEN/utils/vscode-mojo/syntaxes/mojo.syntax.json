@@ -280,7 +280,7 @@
           }
         },
         {
-          "match": "\\b(var|let|alias|owned|borrowed|inout) \\s*([[:alpha:]_]\\w*)\\b",
+          "match": "\\b(var|let|alias) \\s*([[:alpha:]_]\\w*)\\b",
           "captures": {
             "1": {
               "name": "storage.modifier.declaration.python"
@@ -1162,6 +1162,10 @@
           "contentName": "meta.function.lambda.parameters.python",
           "patterns": [
             {
+              "name": "comment.typehint.type.notation.python",
+              "match": "owned|borrowed|inout"
+            },
+            {
               "name": "keyword.operator.positional.parameter.python",
               "match": "/"
             },
@@ -1322,6 +1326,10 @@
         }
       },
       "patterns": [
+        {
+          "name": "comment.typehint.type.notation.python",
+          "match": "owned|borrowed|inout"
+        },
         {
           "name": "keyword.operator.positional.parameter.python",
           "match": "/"
