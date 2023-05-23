@@ -1824,10 +1824,6 @@ LogicalResult KGEN::verifyOneBlockOrCached(Operation *op) {
       return op->emitError()
              << "must have a body region or it must be elided into the cache";
   }
-
-  if (numBlocks > 1)
-    return op->emitError() << "does not support > 1 block in its body";
-
   return success();
 }
 

@@ -58,7 +58,7 @@ def KGEN_FuncOp : KGENOp<"func", [
   let arguments = (ins SymbolNameAttr:$sym_name,
                        TypeAttrOf<KGEN_SignatureType>:$signature,
                        KGEN_AlwaysInlineLevelAttr:$alwaysInlineLevel);
-  let regions = (region AnyRegion:$bodyRegion);
+  let regions = (region MaxSizedRegion<1>:$bodyRegion);
 
   let extraClassDeclaration = [{
     using OpTrait::SingleBlock<FuncOp>::getBody;
@@ -111,7 +111,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
                        KGEN_ParamDeclArrayAttr:$resultParams,
                        ConstraintArrayAttr:$constraints,
                        KGEN_AlwaysInlineLevelAttr:$alwaysInlineLevel);
-  let regions = (region AnyRegion:$bodyRegion);
+  let regions = (region MaxSizedRegion<1>:$bodyRegion);
 
   let extraClassDeclaration = [{
     using OpTrait::SingleBlock<GeneratorOp>::getBody;

@@ -17,7 +17,7 @@ using namespace M;
 
 /// Provide a virtual "invalid space" for the interpreter's memory. This is so
 /// that an address of 0 can actually be considered a null pointer.
-static constexpr int64_t invalidMemOffset = 10000000;
+static constexpr int64_t invalidMemOffset = 10'000'000;
 
 int64_t InterpreterState::allocateMemory(size_t size) {
   int64_t addr = memory.size() + invalidMemOffset;
