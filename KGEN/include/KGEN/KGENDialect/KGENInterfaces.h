@@ -7,6 +7,7 @@
 #ifndef KGEN_KGENDIALECT_KGENINTERFACES_H
 #define KGEN_KGENDIALECT_KGENINTERFACES_H
 
+#include "KGEN/HLCFDialect/HLCFInterfaces.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "Support/LLVMCompilerForwardDecls.h"

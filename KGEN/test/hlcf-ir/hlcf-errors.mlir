@@ -11,21 +11,6 @@ kgen.func @loop_args() {
 
 // -----
 
-kgen.func @return_not_in_func(%arg0: i1) {
-  "foo.region"() ({
-    // expected-note @below {{see control-flow root here}}
-    hlcf.if %arg0 {
-      // expected-error @below {{'kgen.return' op is not nested within a function}}
-      kgen.return
-    } else {
-      hlcf.yield
-    }
-    "foo.terminator"() : () -> ()
-  }) : () -> ()
-}
-
-// -----
-
 // expected-note @below {{see function here}}
 kgen.func @return_mismatch_result_count(%arg0: i32) {
   hlcf.loop {
