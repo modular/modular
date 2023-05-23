@@ -320,9 +320,9 @@ def KGEN_ParamDeclareOp : KGENOp<"param.declare",
 //===----------------------------------------------------------------------===//
 
 def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
-    DeclInterface, FuncInterface, FunctionOpInterface,
-    SingleBlockImplicitTerminator<"ReturnOp">,
-    DeclareOpInterfaceMethods<ParamOpInterface, ["collectParameterUses"]>
+    DeclInterface, FuncInterface, FunctionOpInterface, DefinesResultTypes,
+    DeclareOpInterfaceMethods<ParamOpInterface, ["collectParameterUses"]>,
+    SingleBlock
   ]>, OneParamDecl {
   let summary = "declare a region parameter";
   let description = [{
@@ -390,8 +390,6 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
     /// Region body op doesn't form a symbol.
     bool isOptionalSymbol() { return true; }
   }];
-
-  let hasRegionVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

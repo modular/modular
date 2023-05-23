@@ -184,16 +184,6 @@ printRegionDeclaration(OpAsmPrinter &p, Operation *op, ParamDeclAttr paramDecl,
   p.printRegion(body, /*printEntryBlockArgs=*/false);
 }
 
-LogicalResult ParamDeclareRegionOp::verifyRegions() {
-  auto returnOp = cast<ReturnOp>(getBody()->getTerminator());
-  if (failed(checkOperandTypes(returnOp, getResultTypes())))
-    return failure();
-  if (getBody()->getArgumentTypes() != getArgumentTypes())
-    return emitOpError(
-        "function type argument types mismatch body argument types");
-  return success();
-}
-
 bool ParamDeclareRegionOp::isIsolatedFromAbove(unsigned regionNum) {
   assert(regionNum == 0);
   return getIsolated();
