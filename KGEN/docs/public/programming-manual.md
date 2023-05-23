@@ -133,9 +133,9 @@ A `struct` in Mojo is similar to a Python `class`: they both support methods,
 fields, operator overloading, decorators for metaprogramming, etc. Their
 differences are as follows:
 
-- Python classes are dynamic: they allow for dynamic dispatch, monkey-patching (or "swizzling"), and dynamically binding instance properties at runtime.
++ Python classes are dynamic: they allow for dynamic dispatch, monkey-patching (or "swizzling"), and dynamically binding instance properties at runtime.
 
-- Mojo structs are static: they are bound at compile-time (you cannot add methods at runtime). Structs allow you to trade flexibility for performance while being safe and easy to use.
++ Mojo structs are static: they are bound at compile-time (you cannot add methods at runtime). Structs allow you to trade flexibility for performance while being safe and easy to use.
 
 Here's a simple definition of a struct:
 
@@ -238,7 +238,6 @@ are accurate, we can optimize the code based on those types, pass values in
 registers, and be as efficient as C for argument passing and other low-level
 details. This is the foundation of the safety and predictability guarantees
 Mojo provides to systems programmers.
-
 
 ### Overloaded functions and methods
 
@@ -409,7 +408,6 @@ languages like Swift and Rust offer, which require values to at least be
 movable. If you are curious how `existing` can be passed into the
 `__copyinit__` method without itself creating a copy, check out the section on
 [Borrowed arguments](#borrowed-arguments) below.
-
 
 ## Argument passing control and memory ownership
 
@@ -649,7 +647,6 @@ passing because the implementation may actually pass values using pointers.
 
 :::
 
-
 ### Transfer arguments (`owned` and `^`) {#owned-arguments}
 
 The final argument convention that Mojo supports is the `owned` argument
@@ -756,7 +753,7 @@ a = np.array([1, 2, 3])
 print(a)
 ```
 
-Yes, this imports Python NumPy, and you can import _any other Python module_.
+Yes, this imports Python NumPy, and you can import *any other Python module*.
 
 Currently, you cannot import individual members (such as a single Python class
 or function)—you must import the whole Python module and then access members
@@ -830,7 +827,7 @@ It will output the types after implicit conversion to Python types:
 
 Mojo doesn't have a standard Dictionary yet, so it is not yet possible
 to create a Python dictionary from a Mojo dictionary. You can work with
-Python dictionaries in Mojo though! To create a Python dictionary, use the 
+Python dictionaries in Mojo though! To create a Python dictionary, use the
 `dict` method:
 
 ```mojo
@@ -854,6 +851,7 @@ def main() -> None:
 ```
 
 The output:
+
 ```text
 3 items
 fruit is included
@@ -1284,7 +1282,6 @@ Autotuning has an exponential runtime. It benefits from internal implementation
 details of the Mojo compiler stack (particularly MLIR, integrated caching, and
 distribution of compilation). This is a power-user feature and needs continued
 development and iteration over time.
-
 
 ## "Value Lifecycle": Birth, life and death of a value {#value-lifecycle}
 
@@ -1918,7 +1915,7 @@ struct TwoStrings:
         self.str1 = MyString("fancy")
 ```
 
-### Field lifetimes of `owned` arguments in `__del__ ` and `__moveinit__`
+### Field lifetimes of `owned` arguments in `__del__` and `__moveinit__`
 
 A final bit of magic exists for the ‘owned’ arguments of a destructor and move
 initializer.  To recap, these methods are defined like this:
@@ -1989,7 +1986,6 @@ with parameters.  This is not enabled yet.
 
 This is a feature very much like Rust traits or Swift protocols or Haskell type
 classes. Note, this is not implemented yet.
-
 
 ## Advanced/Obscure Mojo features
 
