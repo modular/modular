@@ -480,21 +480,28 @@ M::Cache::getLocalDefaultBackendChain(LLCL::Runtime &runtime,
   std::error_code ec;
   std::filesystem::path base = cacheDir;
   if (!base.is_absolute()) {
-
     // Default to the .derived directory.
     auto derivedOr = llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH");
+    auto installOr = llvm::sys::Process::GetEnv("MODULAR_INSTALL_DIR");
     if (derivedOr.has_value()) {
       base = std::filesystem::absolute(*derivedOr, ec) / cacheDir;
-    } else {
-      // Check if MODULAR_INSTALL_DIR environment variable is set.
-      auto installOr = llvm::sys::Process::GetEnv("MODULAR_INSTALL_DIR");
-      if (installOr.has_value())
-        base = std::filesystem::absolute(*installOr, ec) / cacheDir;
-      else
-        base = std::filesystem::absolute(MODULAR_DERIVED_DIR, ec) / cacheDir;
+      if (ec)
+        return Error("failed to get absolute path to derived dir: " +
+                     ec.message());
+    } else if (installOr.has_value()) {
+      base = std::filesystem::absolute(*installOr, ec) / cacheDir;
+      if (ec)
+        return Error("failed to get absolute path to installed dir: " +
+                     ec.message());
+    } else { // this branch is taken by external users using the C API package.
+      auto dirPath = findDirInEnvPath(cacheDir.string());
+      if (dirPath) {
+        base = std::filesystem::absolute(*dirPath, ec) / cacheDir;
+      }
+      if (ec)
+        return Error("failed to get absolute path to directory specified by " +
+                     *dirPath + ec.message());
     }
-    if (ec)
-      return Error("getting absolute path to derived dir: " + ec.message());
   }
 
   // Erase everything that lives in basePath other than `base/version` if
