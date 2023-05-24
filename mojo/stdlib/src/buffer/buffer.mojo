@@ -1748,6 +1748,9 @@ struct DynamicRankBuffer:
     fn dim(self, idx: Int) -> Int:
         """Get given dimension.
 
+        Args:
+            idx: The dimension index.
+
         Returns:
             The buffer size on the given dimension.
         """
