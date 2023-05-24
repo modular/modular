@@ -187,7 +187,7 @@ struct DimList:
     fn at[i: Int](self) -> Dim:
         """Get the dimension at a specified index.
 
-        ParamArgs:
+        Parameters:
             i: The dimension index.
 
         Returns:
@@ -210,6 +210,9 @@ struct DimList:
 
         If any are dynamic, the result is a dynamic dimension value.
 
+        Parameters:
+            length: The number of elements in the list.
+
         Returns:
             The product of all the dimensions.
         """
@@ -222,7 +225,7 @@ struct DimList:
         If any in the range are dynamic, the result is a dynamic dimension
         value.
 
-        ParamArgs:
+        Parameters:
             start: The starting index.
             end: The end index.
 
@@ -246,6 +249,9 @@ struct DimList:
         """Determine whether the dimension list contains a specified dimension
         value.
 
+        Parameters:
+            length: The number of elements in the list.
+
         Args:
             value: The value to find.
 
@@ -258,6 +264,9 @@ struct DimList:
     fn all_known[length: Int](self) -> Bool:
         """Determine whether all dimensions are statically known.
 
+        Parameters:
+            length: The number of elements in the list.
+
         Returns:
             True if all dimensions have a static value.
         """
@@ -267,6 +276,9 @@ struct DimList:
     @staticmethod
     fn create_unknown[length: Int]() -> Self:
         """Create a dimension list of all dynamic dimension values.
+
+        Parameters:
+            length: The number of elements in the list.
 
         Returns:
             A list of all dynamic dimension values.
@@ -530,6 +542,9 @@ struct VariadicList[type: AnyType]:
     """A utility class to access variadic function arguments. Provides a "list"
     view of the function argument so that the size of the argument list and each
     individual argument can be accessed.
+
+    Parameters:
+        type: The type of the elements in the list.
     """
 
     alias StorageType = __mlir_type[`!kgen.variadic<`, type, `>`]
@@ -590,6 +605,9 @@ struct VariadicListMem[type: AnyType]:
     types that may have ownership. It exposes pointers to the elements in a way
     that can be enumerated.  Each element may be accessed with
     `__get_address_as_lvalue`.
+
+    Parameters:
+        type: The type of the elements in the list.
     """
 
     alias StorageType = __mlir_type[`!kgen.variadic<!pop.pointer<`, type, `>>`]
