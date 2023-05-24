@@ -8,7 +8,6 @@
 #include "KGEN/CompilerRT.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENPasses.h"
-#include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/LowerToObject.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
@@ -378,7 +377,6 @@ ErrorOrSuccess KGENCompilerLayer::add(StringRef libName, ModuleOp theModule) {
     pm.printAsTextualPipeline(*transformKey);
     if (failed(mlir::writeBytecodeToFile(theModule, *transformKey)))
       return Error("failed to write bytecode file");
-    *transformKey << KGEN_VERSION_STRING;
 
     // Attempt to find the buffer in the cache, and if it's not found then run
     // the transform and insert it.
