@@ -494,10 +494,10 @@ int main(int argc, char **argv) {
   llvm::cl::SetVersionPrinter([](raw_ostream &os) {
     ModularVersion version = getModularVersion();
     os << "KGEN compiler:\n  ";
-    os << "Modular version " << version.major << '.' << version.minor << '.'
+    os << "Modular version: " << version.major << '.' << version.minor << '.'
        << version.patch << "\n  ";
-    os << "Git SHA " << version.revision << "\n  ";
-    os << "Build config " << version.buildType << "\n\n";
+    os << "Git SHA: " << version.revision << "\n  ";
+    os << "Build config: " << version.buildType << "\n\n";
 
     // Print the host target config.
     llvm::sys::printDefaultTargetAndDetectedCPU(os);
