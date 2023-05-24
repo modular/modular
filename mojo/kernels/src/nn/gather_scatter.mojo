@@ -127,17 +127,22 @@ fn gather_reduce[
                     for j in range [0,indices.dim[1])"""
                     let idx = indices[i, j].value
 
-                    # TODO (#13523): Prefetching degrades perf by 30% on dlrm-rm1-multihot shapes
-                    # # prefetch next k
-                    # let next_idx = indices._offset(
-                    #     StaticIntTuple[indices_rank](i, j)
-                    # ).load()
-                    # input.prefetch[
-                    #     PrefetchOptions()
-                    #     .for_read()
-                    #     .high_locality()
-                    #     .to_data_cache()
-                    # ]((next_idx + prefetch_offset).value, 0)
+                    # min so that we don't read beyond end of indices
+                    let clamped_prefetch_offset = min(
+                        prefetch_offset,
+                        indices.dim[0]() * indices.dim[1]()
+                        - (i * indices.dim[1]() + j)
+                        - 1,
+                    )
+                    let next_idx_ptr = indices._offset(
+                        StaticIntTuple[indices_rank](i, j)
+                    ) + clamped_prefetch_offset
+                    input.prefetch[
+                        PrefetchOptions()
+                        .for_read()
+                        .high_locality()
+                        .to_data_cache()
+                    ](next_idx_ptr.load().to_int(), 0)
 
                     let in_idx = StaticIntTuple[2](idx, k)
 
@@ -222,9 +227,16 @@ fn gather[
         let row_size = input.dim[1]()
 
         for i in range(start_offset, end_offset):
+            # min so that we don't read beyond end of indices
+            let clamped_prefetch_offset = min(
+                prefetch_offset, indices_len - i - 1
+            )
+            let next_idx_ptr = indices._offset(
+                StaticIntTuple[indices_rank](i)
+            ) + clamped_prefetch_offset
             input.prefetch[
                 PrefetchOptions().for_read().high_locality().to_data_cache()
-            ](indices[i + prefetch_offset].to_int(), 0)
+            ](next_idx_ptr.load().to_int(), 0)
 
             let output_row_ptr = output.data.offset(i * row_size)
             let input_row_ptr = input.data.offset(
