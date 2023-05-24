@@ -115,7 +115,7 @@ standard library.
 
 There are a few different components of this, which we explain here:
 
-**Types**
+**Types:**
 
 User defined types in Mojo are defined as structs (and eventually classes,
 variants, etc).  These all turn into an MLIR `lit.struct.decl` operation, and
@@ -158,7 +158,7 @@ user defined types like `Bool`, `Int` and `F32` respectively.  Note that values
 of MLIR type don't have any methods or properties on them, they are useful as
 storage types and as input and outputs of MLIR operations.
 
-**Attributes**
+**Attributes:**
 
 MLIR's attribute system is a powerful, [extensible by
 dialects](https://mlir.llvm.org/docs/AttributesAndTypes/), and a key part of the
@@ -190,7 +190,7 @@ attribute of `!kgen.dtype` type.
 When used in the attribute list of an operation (see below), you have access to
 arbitrary attributes, you aren't limited to TypedAttr.
 
-**Operations**
+**Operations:**
 
 Of course, a big part of MLIR is the definition of dialect operations, which
 define the core compute plane.  Mojo gives you direct access to this with

@@ -2,53 +2,51 @@
 
 Modular Confidential (obviously)
 
-# Introduction
-
 This document outlines tasks for the implementation work to bring up the [Generative Kernel Compiler + Language](https://docs.google.com/document/u/1/d/12J0o1z4NgJvsWsi6LsHuGhZUBeRYPrJ9WdLHJCO0nYk/edit).  This document describes the implementation effort in granular chunks.  It is intended to be a working document that we evolve over time.
 
-# Tasks to be implemented
+## Tasks to be implemented
 
 This section contains tasks that have basic scoping and decomposition but that haven't been fully implemented.  When the broad area is complete they should be moved to the end of the document, in the “Tasks Completed” section.
 
-## ❌ Define a model for the target machine
+### ❌ Define a model for the target machine
 
 One nice thing about our approach is that generators are allowed to fail for a variety of reasons.  One key one is that we want them to fail when they are not relevant to the target hardware, e.g. they’re using a specific VNNI feature but codegen’ing for a chip that doesn’t have it.  We need to have a model that controls this, including less exotic things like vector length.  IMO we should not allow LLVM to legalize unsupported vector lengths for us, even though it can.
 
-## ❌ Define more interesting generators
+### ❌ Define more interesting generators
 
 Actual generators for memset and erf: this means we need to implement math, and the “decision tree found by search” that memset needs, dynamic switches over dtype, things like scf.for, buffer partitioning operations, etc.
 
-## ❌ Dynamic programming to cache things
+### ❌ Dynamic programming to cache things
 
 As we build things up we will start caring about the execution time of search.  We’ll want to cache kernels and take advantage of hierarchy.  This will drive the need to be able to evaluate microkernels in isolation from the greater kernel.  We may be able to “push down” the input data constraints (e.g. histogram of lengths) to microkernels but will also want to be able to just allow users to define their own metrics (e.g. FLOPS for expected dimensions).
 
-# To be scoped
+## To be scoped
 
 This doc doesn’t include a lot of things that we’ll eventually want to add.
 
-## ✅ Multidimensional tensors
+### ✅ Multidimensional tensors
 
 I hear that these are a thing, and so are a lot of other data types with implicit parallelism (e.g. tables, trees, etc), they will be added later.  The key observation is that the “buffer” type we need for 1D operations isn’t hard coded into the system.  It is a type and set of operations that allow kernel authors to express algorithms.  Once this is proven we can add new types and operations for more complicated algorithms.
 
-## ⚠️Quantization types + generators support
+### ⚠️Quantization types + generators support
 
 One nice thing about having an extensible platform is that we can re-discuss old topics like quantization types and how they get codegen’d, and can play with models for them.  Reimplementing stuff like the Ruy/XNNPACK kernels with something simple is a good starting point, but is not covered in the milestones above.
 
-## ⚠️Fancy search algorithms
+### ⚠️Fancy search algorithms
 
 With good infra, we can explore a wide range of different search and search space pruning, and black box optimization, and ML and other ways of exploring search spaces. For now, let’s brute force it to prioritize other infra, and come back to this when things get more established.  We will want to eventually support multiple pluggable/modular search algorithms.
 
-## ⚠️Higher order generators
+### ⚠️Higher order generators
 
 Eventually we’ll want generators that can take regions, e.g. a “vectorize” op that takes a region and width and attempts to vectorize it (e.g. using the [ISPC approach](https://ispc.github.io/) to SPMD’ify arbitrary code).  This will make it possible to define an algorithm (e.g. erf) in scalar code and product the simd versions directly from the scalar spec.
 
 This raises some interesting representational questions but also a huge amount of power and flexibility.  Even lowerings like scf.for could be done this way in principle.
 
-# Tasks completed - for historical reference
+## Tasks completed - for historical reference
 
 This section gives an overview of the major technology components we need to build, in roughly bottom-up order.
 
-## ✅ A new library/framework in the Modular repo
+### ✅ A new library/framework in the Modular repo
 
 We need to define a new top-level directory with the usual include/lib/tools/test structure of any module in the Modular repo.  This stuff generally depends on MLIR and other compiler’y things, but most libraries here won’t depend on runtime stuff - it generates machine code which integrates with runtime, and will surely eventually have libraries that depend on runtime stuff.
 
@@ -62,7 +60,7 @@ The hardest part of this is to decide on a name for the project, something I def
 
 This will also end up being a name for a dialect that has container things.
 
-## ✅ Metaprogram parameter infrastructure
+### ✅ Metaprogram parameter infrastructure
 
 One of the key things we need to do is describe both a program and a metaprogram in the same IR.  The “kgen” dialect will therefore need to define the containers and enough to describe the metaprogram, see e.g. [some examples in the design doc](https://docs.google.com/document/d/12J0o1z4NgJvsWsi6LsHuGhZUBeRYPrJ9WdLHJCO0nYk/edit#heading=h.9yy1dcksqpx).  CIRCT proved a reasonable implementation approach for this, so I refer to it below but am open to other better models if they exist ([example CIRCT mlir file](https://github.com/llvm/circt/blob/main/test/Dialect/HW/parameters.mlir)).  This includes things like:
 
@@ -79,7 +77,7 @@ One of the key things we need to do is describe both a program and a metaprogram
 
 This infrastructure has a lot of moving pieces and a bunch of subtleties to it, e.g. the canonicalization of expressions and the pretty printing/parsing logic needs to be built.  Verification logic needs to be put in place early, it will make all the subsequent work easier.
 
-## ✅ Type system for ‘DType’ parameters
+### ✅ Type system for ‘DType’ parameters
 
 The parameter type system allows parameters of arbitrary MLIR types, but we need to decide how to handle dtypes, which are very common in parameter lists.  One simple (but yucky) way to handle them is as an `i8` parameter with magic constants corresponding to `DType`, but this will make reading the IR really annoying and difficult.
 
@@ -114,7 +112,7 @@ and:
 kgen.generate @foo<t1: dtype = f32>(...
 ```
 
-## ✅ New Parameterized Types
+### ✅ New Parameterized Types
 
 Given a parameterization system, we need to build parameterized types, specifically these to start (take a look at `hw.Int` and `hw.Array` in CIRCT, which have parameterized widths):
 
@@ -132,7 +130,7 @@ In addition to the types themselves, we need supporting infrastructure for worki
 
 Note that we **do not** generally want to define operations that work on meta.scalar and meta.simd types for arithmetic.  These operations should themselves be kernels.
 
-## ✅ Support for dynamic shapes + dtypes in buffers
+### ✅ Support for dynamic shapes + dtypes in buffers
 
 ✅[Issue #1082](https://github.com/modularml/modular/issues/1082) In addition to parametric types with known-at-meta-programming time, the meta.buffer type also needs to support for dynamic size and element type.  These can be modeled in MLIR as null parameters for where they are unknown, for example, we should be able to write:
 
@@ -159,7 +157,7 @@ kgen.generator @algo(%dest: !buffer<?, ?>, %other : !buffer<1024, f32>) {
 
 The first one returns an i8 value corresponding to the enums in `DType`.  The latter should return the “index” type, which corresponds to a size_t.  These should all get `fold()`ers for when the parameter value is actually a known constant integer value. Note that we should not add support for dynamic SIMD length or dynamic SIMD datatypes.  See [this for rationale](https://github.com/modularml/modular/blob/main/KGEN/docs/README.md#support-for-dynamic-shapes).
 
-## ✅ Generator interface declarations and instances
+### ✅ Generator interface declarations and instances
 
 One key idea in the design is that we can have multiple implementations of a generator interface.  This means that we need to be able to separate the declaration of a generator interface from the implementations of it.  We need, for example:
 
@@ -173,7 +171,7 @@ One key idea in the design is that we can have multiple implementations of a gen
     meta.call @thing<i32>(%dstCast)
     ```
 
-## ✅ Constraints for Generators + Interfaces
+### ✅ Constraints for Generators + Interfaces
 
 An individual generator is a parameterized function that produces a kernel based on the inputs, but it may not be a total function: some inputs may be invalid for the generator.  Generator constraints allow defining boolean conditions that control the validity of the generator w.r.t. its input parameters.  This allows the kernel elaborator to prune a generator from expansion early, without wasting time exploring it or the recursive expansions it may kick off.
 
@@ -191,7 +189,7 @@ Generator interfaces should have the same functionality to allow constraining al
 3. ✅Generators failing leads to a new set of challenges with error reporting: when we fail to generate /any/ variant of a kernel, we need to report an elaboration “stack trace” of why expansion failed.  This means we need to revamp error diagnoses and tracking.
 4. ✅We should support kgen.param.assert as a generalized assertion that works against arbitrary parameter expressions, even those that aren’t direct generator parameters.
 
-## ✅ Build compiler elaboration algorithm to run the generator
+### ✅ Build compiler elaboration algorithm to run the generator
 
 Given the ability to describe things, and given multiple implementations and basic parameters, we need the compiler infrastructure that walks the tree of expansions.  In time this will be done with search, but initially we should just **generate all** of the possible implementations of the kernels exhaustively.
 
@@ -204,7 +202,7 @@ This will require handling the order of generator logic, diagnosing cyclic param
 5. ✅Walk the call tree bottom-up generating fully specialized implementations of the kernels, dropping them into the target MLIR file (leaving the library unmodified).  The result of this should be fully specialized and have all parameters eliminated.  This will generate all possible implementations of the kernels.
 6. ✅Track bindings for each kernel to keep track of which direction a multiway expansion goes for an interface site, to make sure it expands consistently within any given kernel.
 
-## ✅ Infra to run a kernel and measure the time
+### ✅ Infra to run a kernel and measure the time
 
 ✅[Issue #1610](https://github.com/modularml/modular/issues/1610) (JIT and execute)
 
@@ -216,7 +214,7 @@ From there we’ll need the ability to collect realistic data to compare against
 
 At this point the system will be able to decide which is a GOOD generated kernel.
 
-## ✅ Design/define/implement various UX and tooling things
+### ✅ Design/define/implement various UX and tooling things
 
 ✅[Issue #2125](https://github.com/modularml/modular/issues/2125) (Refactor Elaborator)
 
@@ -228,7 +226,7 @@ We will want a live and responsive system which is playful, eventually (long ter
 
 Similarly, while everything can start out as one massive .mlir file, that will eventually stop being ok.
 
-## ✅ Define library of basic constructs
+### ✅ Define library of basic constructs
 
 ✅[Issue 1088](https://github.com/modularml/modular/issues/1088) (scalar and SIMD add),  ✅[Issue 1089](https://github.com/modularml/modular/issues/1089) (buffer add op)
 
@@ -252,7 +250,7 @@ Building on top of the LLVM dialect is convenient because we can talk to target 
 
 Pounding this out shouldn’t be too hard given our narrow kernel goals for the first milestone, but this is effectively “defining the standard library” which will take some discussion.  As a trivial example, do we separate fadd and iadd given that we’re working with signful dtypes?
 
-## ✅ Add higher level “lit” Dialect
+### ✅ Add higher level “lit” Dialect
 
 As we start writing more kernels, doing so at a high level will become painful for a variety of reasons.  We want the kgen level to be simple to analyze and transform - it should support things like the elaborator and static analysis tools that work on a type checked metaprogram.  Achieving this means defining a higher level dialect that gets desugared down to kgen.
 
@@ -260,7 +258,7 @@ As we start writing more kernels, doing so at a high level will become painful f
 
 ✅We need some sort of module system and an “`kgen.include`” operation.  This will raise questions like “how does separate compilation work”, “is the imported thing kgen or lit level of abstraction, etc.
 
-## ✅ Add a “parametric operations” Dialect “pop”
+### ✅ Add a “parametric operations” Dialect “pop”
 
 ✅[Issue #1250](https://github.com/modularml/modular/issues/1250) One issue we have is that these dialects do not support parametric types, and defining overloads (like the fadd example above) for every integer width will be a huge pain for us humans, and not be great for compile time.  The reason we need to do this is that the LLVM dialect (for example) doesn’t support parametric types.  We could solve this by adding a “parametric operations” (pop) dialect that allows things like this:
 
@@ -277,7 +275,7 @@ The annoyance here is that this requires a significant amount of work for each d
 
 While doing this, we should also reconsider the signless design:  Our new pop dialect could adopt signful types, which could make writing type generic kernels much easier (e.g. don’t have to write a divs and divu version of the same kernel).
 
-## ✅ Add support for full type parametricity
+### ✅ Add support for full type parametricity
 
 ✅ [Issue #2504](https://github.com/modularml/modular/issues/2504) Add
 full support for type parameters:  With the support above, we have the ability to make scalar and vector operations that are generic over their

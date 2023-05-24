@@ -184,7 +184,7 @@ for now.
 When executing expressions in the REPL, LLDB will try to dump the top-level
 variables that were created by the expression as shown below:
 
-```
+```text
   1> let a_number = 12345
   2. let a_string = "Mojo"
   3.
