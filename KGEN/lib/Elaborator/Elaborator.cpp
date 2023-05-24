@@ -1413,6 +1413,9 @@ ElaboratorImpl::processParamDeclareRegionOp(ParamDeclareRegionOp regionDecl,
          "must have a nested region");
   LLVM_DEBUG(logger << "Storing known region: " << regionName << "\n");
   knownRegions[regionName] = &found->getSecond();
+  regionDecl->remove();
+  paramDeclareRegionOps.push_back(
+      OwningOpRef<ParamDeclareRegionOp>(regionDecl));
   return success();
 }
 
@@ -1546,7 +1549,6 @@ LogicalResult ElaboratorImpl::processScope(ImplNode *parentNode,
 
   // Processing an op may generate more stuff, or even delete the op being
   // processed.
-  SmallVector<ParamDeclareRegionOp> declareRegionOps;
   while (!worklist.empty()) {
     Operation *op = worklist.back();
     worklist.pop_back();
@@ -1563,7 +1565,6 @@ LogicalResult ElaboratorImpl::processScope(ImplNode *parentNode,
     } else if (auto paramDeclareRegionOp = dyn_cast<ParamDeclareRegionOp>(op)) {
       TimeTraceScope<EnableTracing> traceScope("processParamDeclareRegionOp");
       result = processParamDeclareRegionOp(paramDeclareRegionOp, parentNode);
-      declareRegionOps.push_back(paramDeclareRegionOp);
     } else if (auto bind = dyn_cast<ParamResultBindOp>(op)) {
       TimeTraceScope<EnableTracing> traceScope("processParamResultBindOp");
       result = processParamResultBindOp(bind, parentNode);
@@ -1599,12 +1600,6 @@ LogicalResult ElaboratorImpl::processScope(ImplNode *parentNode,
       parentNode->setToError(result.takeError());
       return failure();
     }
-  }
-
-  for (ParamDeclareRegionOp paramDeclareRegionOp : declareRegionOps) {
-    paramDeclareRegionOp->remove();
-    paramDeclareRegionOps.push_back(
-        OwningOpRef<ParamDeclareRegionOp>(paramDeclareRegionOp));
   }
   LLVM_DEBUG(parentNode->print(logger << "Completed processing "));
   return success();
