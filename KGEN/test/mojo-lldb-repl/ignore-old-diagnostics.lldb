@@ -15,5 +15,3 @@ fn foo():
 # Check that we don't re-emit the previous warning in the next expression.
 let somethingelse = 10
 # CHECK-NOT: ] warning
-
-:platform shell sleep 3

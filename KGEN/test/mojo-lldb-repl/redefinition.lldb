@@ -15,5 +15,3 @@ let value = 10
 # Check that we can redefine this in a followup expression.
 let value = True
 # CHECK: ($Bool::Bool) value
-
-:platform shell sleep 3

@@ -21,5 +21,3 @@ let `^ weird name` = 12
 
 # CHECK: 12
 print(`^ weird name`)
-
-:platform shell sleep 3

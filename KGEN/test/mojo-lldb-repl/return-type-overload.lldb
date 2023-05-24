@@ -28,5 +28,3 @@ fn bar(f: F32) -> F32:
 
 # CHECK: 1.11{{[0-9]+}}
 print(bar(True))
-
-:platform shell sleep 3
