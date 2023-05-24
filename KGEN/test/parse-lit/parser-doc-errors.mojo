@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo -mojo-doc-validate -verify-diagnostics %s
+# RUN: kgen-translate -import-mojo -o /dev/null -mojo-doc-validate -verify-diagnostics %s
 
 
 # expected-warning @below {{public symbol 'ArgStruct' is missing a doc string}}
