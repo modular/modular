@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "CommandObjectMojo.h"
+#include "../ScriptingBridge/SBClassUtils.h"
 #include "../TypeSystem/MojoTypeSystem.h"
 #include "lldb/Target/Target.h"
 
@@ -13,15 +14,6 @@ using namespace M::KGEN::Mojo;
 using namespace lldb;
 
 namespace {
-/// Utility class for exposing the `lldb_private::Target` pointer from a
-/// `SBTarget`.
-class TargetExtractor : public SBTarget {
-public:
-  TargetExtractor(const SBTarget &target) : SBTarget(target) {}
-
-  TargetSP getSP() { return SBTarget::GetSP(); }
-};
-
 //===----------------------------------------------------------------------===//
 // CommandHelp: help
 //===----------------------------------------------------------------------===//
@@ -75,7 +67,7 @@ CommandDumpLogs::getMojoTypeSystem(SBDebugger &debugger,
     return nullptr;
   }
 
-  TargetSP target = TargetExtractor(sbTarget).getSP();
+  TargetSP target = SBTargetUtils::getSP(sbTarget);
   auto typeSystemOr =
       target->GetScratchTypeSystemForLanguage(lldb::eLanguageTypeMojo);
   if (!typeSystemOr) {
