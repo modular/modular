@@ -321,24 +321,32 @@ static void importPythonSymbolsIntoMojo(StringRef pythonExpr,
   llvm::Regex importAsRegex(R"(^import ([_0-9a-zA-Z\.]+) as ([_0-9a-zA-Z]+)$)");
   llvm::Regex defRegex(R"(^def ([_0-9a-zA-Z]+)\()");
   llvm::Regex valueRegex(R"(^([_0-9a-zA-Z]+) =)");
+
+  // As python allows redefining variables, we'll extract only one declaration
+  // of a given variable name.
+  llvm::StringMap<std::string> declarations;
+
   for (StringRef line : lines) {
     SmallVector<StringRef, 2> matches;
     if (importRegex.match(line, &matches)) {
-      mojoExprOS << llvm::formatv("let {0} = Python.import_module(\"{0}\")\n",
-                                  matches[1]);
+      declarations[matches[1]] =
+          llvm::formatv("Python.import_module(\"{0}\")", matches[1]);
     } else if (importAsRegex.match(line, &matches)) {
       // Private import aliases (starting with a leading underscore) should not
       // be exposed to mojo.
       if (!matches[2].starts_with("_")) {
-        mojoExprOS << llvm::formatv("let {0} = Python.import_module(\"{1}\")\n",
-                                    matches[2], matches[1]);
+        declarations[matches[2]] =
+            llvm::formatv("Python.import_module(\"{0}\")", matches[1]);
       }
     } else if (defRegex.match(line, &matches) ||
                valueRegex.match(line, &matches)) {
-      mojoExprOS << llvm::formatv("let {0} = {1}.{0}\n", matches[1],
-                                  moduleName);
+      declarations[matches[1]] =
+          llvm::formatv("{0}.{1}", moduleName, matches[1]);
     }
   }
+
+  for (const auto &[name, value] : declarations)
+    mojoExprOS << llvm::formatv("let {0} = {1}\n", name, value);
 }
 
 LogicalResult MojoUserExpression::wrapTextAndParsePythonExpression(
