@@ -3,7 +3,7 @@
 This document explains some of the concepts behind `AsyncValue` and related
 types like `AsyncValueRef<T>`.
 
-# `AsyncValue`
+## `AsyncValue`
 
 [`AsyncValue`](../include/LLCL/Runtime/AsyncValue.h) is conceptually similar to
 [std::future](https://en.cppreference.com/w/cpp/thread/future), except that
@@ -23,7 +23,7 @@ with the [`RCRef`](../include/LLCL/Support/RCRef.h) and
 [`AsyncValueRef<T>`](../include/LLCL/Runtime/AsyncValueRef.h) classes whenever
 possible to maintain their lifetime.
 
-## Types and type erasure
+### Types and type erasure
 
 An `AsyncValue` will eventually resolve to hold a value of some C++ type, but
 this is dynamic and can happen after construction.  The `AsyncValue` type itself
@@ -46,7 +46,7 @@ types, but all types need to be registered before use with
 storage of the payloads and data, and allows limited type reflection with the
 `->isType<T>()` predicate.
 
-## Access to the `M::LLCL::Runtime` for an `AsyncValue`
+### Access to the `M::LLCL::Runtime` for an `AsyncValue`
 
 The LLCL runtime is designed to support multiple instances of a runtime in a
 process at the same time, so some things (for example allocating a new `AsyncValue`)
@@ -63,7 +63,7 @@ with `Runtime&`.
 The consequence of this is that having an `AsyncValue` at hand gives you access
 to the `Runtime&` that you need.
 
-## Chaining work together with `andThenSync`
+### Chaining work together with `andThenSync`
 
 One of the most common things to do when building a series of asynchronous
 computations is to enqueue work that occurs when a value becomes available.
@@ -136,7 +136,7 @@ you have an `AsyncValueRef` or just an untyped `RCRef`.  Because these are
 passed in as a const reference, you will need to `.copy()` them if you want
 to extend the lifetime of the reference.
 
-## The states of `AsyncValue`
+### The states of `AsyncValue`
 
 `AsyncValue` may be in four possible states: "unconstructed", "unconstructed
 (with inline waiter)",
@@ -167,7 +167,7 @@ an error.  You may create an `AsyncValue` directly in this state with the
 unconstructed `AsyncValue` had a problem, and transition it to this state with
 the `setToError` method.
 
-## Indirect Async Values
+### Indirect Async Values
 
 Beyond these four core states, you may run into a situation where you need to
 create an `AsyncValue` before knowing what C++ type it will contain.  In this
