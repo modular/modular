@@ -11,6 +11,7 @@
 
 #include "../MojoLLDB/ExpressionParser/MojoExpressionVariable.h"
 #include "../MojoLLDB/REPL/MojoREPL.h"
+#include "../MojoLLDB/ScriptingBridge/SBClassUtils.h"
 #include "../MojoLLDB/TypeSystem/MojoTypeSystem.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LogicalResult.h"
@@ -42,28 +43,6 @@ using namespace lldb_private;
 using namespace M;
 using namespace M::KGEN::Mojo;
 
-namespace {
-/// Utility class for constructing a lldb::SBDebugger from a lldb::DebuggerSP
-class SBDebuggerExtractor : public SBDebugger {
-public:
-  SBDebuggerExtractor(const DebuggerSP &debugger) : SBDebugger(debugger) {}
-};
-
-/// Utility class for constructing a lldb::SBTarget from a lldb::TargetSP
-class SBTargetExtractor : public SBTarget {
-public:
-  SBTargetExtractor(const TargetSP &target) : SBTarget(target) {}
-};
-
-/// Utility class for constructing a lldb::SBValue from a lldb::ValueObjectSP
-class SBValueExtractor : public SBValue {
-public:
-  SBValueExtractor(const ValueObjectSP &value) : SBValue(value) {}
-  SBValueExtractor(const SBValue &value) : SBValue(value) {}
-  ValueObjectSP GetSP() const { return SBValue::GetSP(); }
-};
-
-} // namespace
 /// An output function used to send output to the Jupyter kernel. The first
 /// argument is the output type, and the second is the output string.
 using OutputFn = void (*)(const char *, const char *);
@@ -146,7 +125,7 @@ public:
     ExpressionExecutionState(KernelCellState &cellState)
         : finished(false), cellState(cellState) {}
     SBError error;
-    ValueObjectSP result;
+    SBValue result;
     std::thread executionThread;
     std::atomic<bool> finished;
     KernelCellState &cellState;
@@ -180,9 +159,9 @@ public:
   ~MojoKernel() {
     if (process->IsValid())
       process->Destroy(/*force_kill=*/true);
-    SBDebuggerExtractor sbdebugger(debugger);
-    SBDebuggerExtractor::Destroy(sbdebugger);
-    SBDebuggerExtractor::Terminate();
+    SBDebugger sbdebugger = SBDebuggerUtils::create(debugger);
+    SBDebugger::Destroy(sbdebugger);
+    SBDebugger::Terminate();
   }
 
   /// Initialize the kernel.
@@ -486,13 +465,11 @@ void MojoKernel::startExecution(StringRef cellId, const char *expr,
           if (!storeHistory)
             options.SetSuppressPersistentResult(true);
 
-          value = SBValueExtractor(
-              SBValueExtractor(SBTargetExtractor(target).EvaluateExpression(
-                                   expr.data(), options))
-                  .GetSP());
+          value = SBTargetUtils::create(target).EvaluateExpression(expr.data(),
+                                                                   options);
         }
 
-        executionState->result = SBValueExtractor(value).GetSP();
+        executionState->result = value;
         executionState->error = value.GetError();
 
         // Mark the execution as finished.
@@ -569,7 +546,7 @@ ExecutionFinishedState MojoKernel::checkExecutionFinished() {
   // Process the result.
   auto errorType = executionState->error.GetType();
   if (errorType == eErrorTypeInvalid) {
-    sendOutput("stdout", executionState->result->GetObjectDescription());
+    sendOutput("stdout", executionState->result.GetObjectDescription());
   } else if (errorType != eErrorTypeGeneric) {
     StringRef executionError(executionState->error.GetCString());
 
