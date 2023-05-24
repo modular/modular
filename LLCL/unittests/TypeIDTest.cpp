@@ -83,6 +83,9 @@ TEST(TypeID, typeName) {
                 typeNameFor<SingleClassTemplate<int>>());
   static_assert("std::__cxx11::basic_string<char>"sv ==
                 typeNameFor<std::string>());
+#elif (defined(_MSC_VER))
+  static_assert("void"sv == typeNameFor<void>());
+  static_assert("int"sv == typeNameFor<int>());
 #endif
 }
 
