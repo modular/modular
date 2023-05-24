@@ -22,5 +22,3 @@ foo()
 # CHECK: foo defined
 # CHECK-NEXT: foo
 # CHECK-NEXT: bar
-
-:platform shell sleep 3

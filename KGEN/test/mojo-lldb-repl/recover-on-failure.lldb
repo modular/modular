@@ -27,5 +27,3 @@ fn foo() -> Int:
 fn foo() -> Int:
     return 0
 # CHECK-STDERR-NOT: return expected at end of function with results
-
-:platform shell sleep 3

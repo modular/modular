@@ -11,5 +11,3 @@
 %%python
 import matplotlib
 # CHECK-NOT: ModuleNotFoundError: No module named 'matplotlib'
-
-:platform shell sleep 3

@@ -21,5 +21,3 @@ x = foo()
 %%python
 print(x)
 # CHECK-NOT: lldb_python_module
-
-:platform shell sleep 3

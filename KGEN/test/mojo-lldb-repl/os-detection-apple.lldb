@@ -14,5 +14,3 @@ from TargetInfo import os_is_macos, os_is_linux
 print(os_is_macos())
 # CHECK: False
 print(os_is_linux())
-
-:platform shell sleep 3

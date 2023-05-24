@@ -26,5 +26,3 @@ let z = Bar()
 from DType import DType
 var dtype = DType.bool
 var dtype_value = dtype.get_value()
-
-:platform shell sleep 3

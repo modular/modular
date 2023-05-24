@@ -80,5 +80,3 @@ alias unary_fn_type = __mlir_type[
 # CHECK-NOT: error
 fn using_alias(callback: unary_fn_type):
   pass
-
-:platform shell sleep 3
