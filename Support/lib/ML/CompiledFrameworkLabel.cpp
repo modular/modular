@@ -17,6 +17,7 @@ const char *CompiledFrameworkLabel::getAsOpNameOrNull() const {
   case kTensorFlowModel:
   case kTFLiteModel:
   case kONNXModel:
+  case kPyTorchModel:
     return "mgp.model";
   case kFauxModel:
     // TODO(#6190): Support mgp.model for faux.
@@ -38,6 +39,8 @@ const char *CompiledFrameworkLabel::getAsFrameworkNameOrNull() const {
     return nullptr;
   case kONNXModel:
     return "onnx";
+  case kPyTorchModel:
+    return "pytorch";
   }
   llvm::report_fatal_error("missing case");
 }
@@ -67,6 +70,8 @@ CompiledFrameworkLabel::getLabelForOpName(StringRef opName,
       return CompiledFrameworkLabel{kTensorFlowModel};
     else if (frameworkName == "onnx")
       return CompiledFrameworkLabel{kONNXModel};
+    else if (frameworkName == "pytorch")
+      return CompiledFrameworkLabel{kPyTorchModel};
   }
   llvm::errs() << opName << " & " << frameworkName << "\n";
   return CompiledFrameworkLabel{kUnknown};
@@ -84,6 +89,8 @@ const char *CompiledFrameworkLabel::getAsString() const {
     return "compiled Faux model";
   case kONNXModel:
     return "compiled ONNX model";
+  case kPyTorchModel:
+    return "compiled PyTorch model";
   }
   llvm::report_fatal_error("missing case");
 };
