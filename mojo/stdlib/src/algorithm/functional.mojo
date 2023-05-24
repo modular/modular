@@ -566,6 +566,7 @@ fn tile[
         workgroup_function: funtion that is invoked for each tile and offset.
         tile_sizes_x: list of tile sizes to use for the first parameter of workgroup_function.
         tile_sizes_y: list of tile sizes to use for the second parameter of workgroup_function.
+
     Args:
         offset_x: initial x offset passed to workgroup_function.
         offset_y: initial y offset passed to workgroup_function.

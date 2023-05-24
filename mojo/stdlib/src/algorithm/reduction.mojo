@@ -727,6 +727,9 @@ fn mean[
 ](src: Buffer[size, type]) -> SIMD[type, 1]:
     """Computes the mean value of the elements in a buffer.
 
+    Args:
+        src: The buffer of elements for which the mean is computed.
+
     Returns:
         The mean value of the elements in the given buffer.
     """
