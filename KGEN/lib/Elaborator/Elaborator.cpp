@@ -691,7 +691,7 @@ static void collectOpsToProcess(Region *scope, const ParameterUseDefGraph &uses,
       continue;
     defOps.insert(it->second.defOp);
   }
-  llvm::append_range(opsToRewrite, llvm::reverse(defOps.getArrayRef()));
+  llvm::append_range(opsToRewrite, defOps.getArrayRef());
 }
 
 //===----------------------------------------------------------------------===//
@@ -807,7 +807,7 @@ public:
 
   /// Process a worklist of ops. Returns failure if the scope produced an error.
   LogicalResult processScope(ImplNode *parentNode,
-                             ArrayRef<Operation *> worklist);
+                             std::vector<Operation *> worklist);
 
   /// Specializes the generator at `genNode`. Essentially instantiates a new
   /// function with the same body, and specializes it. The new function is by
@@ -1041,14 +1041,15 @@ ElaboratorImpl::spawnParamForkClone(ParamForkOp forkOp, Attribute value,
   newFork->erase();
 
   // Map to the new ops.
-  auto remaining = llvm::map_to_vector(
-      remainingWorklist, [&](Operation *op) { return map.lookup(op); });
+  std::vector<Operation *> remaining;
+  for (Operation *op : remainingWorklist)
+    remaining.push_back(map.lookup(op));
 
   // And finally, process the rest of the worklist in this new scope. If we've
   // hit an error case, don't try and finish processing. Return to the upper
   // function that this hit an error.
   newFuncNode->status = ImplNode::IN_PROGRESS;
-  LogicalResult result = processScope(newFuncNode, remaining);
+  LogicalResult result = processScope(newFuncNode, std::move(remaining));
   newFuncNode->status = ImplNode::DONE;
   if (failed(result))
     return newFuncNode->error->copy();
@@ -1181,13 +1182,14 @@ ErrorTreeOrSuccess ElaboratorImpl::processGeneratorUser(
 
     // We have to finish specializing this thing now. Map to the new ops and
     // process the remaining scope.
-    auto remaining = llvm::map_to_vector(
-        remainingWorklist, [&](Operation *op) { return map.lookup(op); });
+    std::vector<Operation *> remaining;
+    for (Operation *op : remainingWorklist)
+      remaining.push_back(map.lookup(op));
 
     // Process the rest of the worklist in this new scope. If the scope
     // processing failed, do nothing.
     newNode->status = ImplNode::IN_PROGRESS;
-    if (succeeded(processScope(newNode, remaining)))
+    if (succeeded(processScope(newNode, std::move(remaining))))
       finalizeAndVerifyFunction(analysis, newNode);
     newNode->status = ImplNode::DONE;
   }
@@ -1359,10 +1361,12 @@ ElaboratorImpl::processCallOp(KGENCallOpInterface call, ImplNode *parent,
 
   // Collect all the ops to process *in the region*.
   std::vector<Operation *> opsToRewriteInRegion;
+  llvm::append_range(opsToRewriteInRegion,
+                     llvm::reverse(regionGraph->paramOps));
   collectOpsToProcess(region, *regionGraph, opsToRewriteInRegion);
-  llvm::append_range(opsToRewriteInRegion, regionGraph->paramOps);
-  auto opsToRewrite = llvm::map_to_vector(
-      opsToRewriteInRegion, [&](Operation *op) { return map.lookup(op); });
+  std::vector<Operation *> opsToRewrite;
+  for (Operation *op : opsToRewriteInRegion)
+    opsToRewrite.push_back(map.lookup(op));
 
   // Process the ops we just collected.
   {
@@ -1375,7 +1379,7 @@ ElaboratorImpl::processCallOp(KGENCallOpInterface call, ImplNode *parent,
                    decl.getParamValues()))
       parent->evaluator.setOrOverwriteParameterValue(decl, value);
 
-    if (failed(processScope(parent, opsToRewrite)))
+    if (failed(processScope(parent, std::move(opsToRewrite))))
       return parent->error->copy();
   }
 
@@ -1447,8 +1451,7 @@ ErrorTreeOrSuccess ElaboratorImpl::processParamIfOp(ParamIfOp op,
 
   // Only process the ops in the branch that we ended up taking.
   std::vector<Operation *> opsToRewrite;
-  collectOpsToProcess(toProcess, uses, opsToRewrite);
-  for (Operation *paramOp : uses.paramOps) {
+  for (Operation *paramOp : llvm::reverse(uses.paramOps)) {
     // Check if this op is in a region that is a child of the region we care
     // about. If not, don't process it.
     if (!toProcess->isAncestor(paramOp->getParentRegion()))
@@ -1456,12 +1459,13 @@ ErrorTreeOrSuccess ElaboratorImpl::processParamIfOp(ParamIfOp op,
 
     opsToRewrite.push_back(paramOp);
   }
+  collectOpsToProcess(toProcess, uses, opsToRewrite);
 
   SmallVector<Attribute> resultParamValues;
   {
     llvm::SaveAndRestore<IREvaluator> save(parent->evaluator);
     parent->evaluator.clearCache();
-    if (failed(processScope(parent, opsToRewrite)))
+    if (failed(processScope(parent, std::move(opsToRewrite))))
       return parent->error->copy();
     for (ParamDeclAttr resultParam : op.getResultParams())
       resultParamValues.push_back(
@@ -1531,7 +1535,7 @@ ErrorTreeOrSuccess ElaboratorImpl::processParamIfOp(ParamIfOp op,
 //===----------------------------------------------------------------------===//
 
 LogicalResult ElaboratorImpl::processScope(ImplNode *parentNode,
-                                           ArrayRef<Operation *> worklist) {
+                                           std::vector<Operation *> worklist) {
   LLVM_DEBUG({
     auto _ = logger.scope("Operations to Rewrite");
     for (Operation *op : worklist)
@@ -1543,13 +1547,12 @@ LogicalResult ElaboratorImpl::processScope(ImplNode *parentNode,
   // Processing an op may generate more stuff, or even delete the op being
   // processed.
   SmallVector<ParamDeclareRegionOp> declareRegionOps;
-  for (auto iter = worklist.begin(), end = worklist.end(); iter != end;
-       ++iter) {
-    Operation *op = *iter;
+  while (!worklist.empty()) {
+    Operation *op = worklist.back();
+    worklist.pop_back();
     if (!op->getBlock()->isEntryBlock() && op->getBlock()->hasNoPredecessors())
       continue;
 
-    ArrayRef<Operation *> remainingWorklist(iter + 1, end);
     auto _ = logger.scope("Processing: '", op->getName(), "'");
     logger.logOp("Op", op);
 
@@ -1566,7 +1569,7 @@ LogicalResult ElaboratorImpl::processScope(ImplNode *parentNode,
       result = processParamResultBindOp(bind, parentNode);
     } else if (auto fork = dyn_cast<ParamForkOp>(op)) {
       TimeTraceScope<EnableTracing> traceScope("processParamForkOp");
-      result = processParamForkOp(parentNode, fork, remainingWorklist);
+      result = processParamForkOp(parentNode, fork, worklist);
     } else if (auto rebindOp = dyn_cast<RebindOp>(op)) {
       TimeTraceScope<EnableTracing> traceScope("processRebindOp");
       result = processRebindOp(parentNode->evaluator, rebindOp);
@@ -1578,7 +1581,7 @@ LogicalResult ElaboratorImpl::processScope(ImplNode *parentNode,
       result = processParamIfOp(ifOp, parentNode);
     } else if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
       TimeTraceScope<EnableTracing> traceScope("processCallOp");
-      result = processCallOp(call, parentNode, remainingWorklist);
+      result = processCallOp(call, parentNode, worklist);
     } else {
       TimeTraceScope<EnableTracing> traceScope("processGenericOp");
       result = processGenericOp(parentNode->evaluator, op);
@@ -1721,13 +1724,13 @@ ErrorTreeOrSuccess ElaboratorImpl::specializeGenerator(ParamNode *genNode) {
   logger.logOp("Function", newFunc);
 
   std::vector<Operation *> opsToRewrite;
-  collectOpsToProcess(&newFunc.getBodyRegion(), uses, opsToRewrite);
+  llvm::append_range(opsToRewrite, llvm::reverse(uses.paramOps));
   opsToRewrite.push_back(newFunc);
-  llvm::append_range(opsToRewrite, uses.paramOps);
+  collectOpsToProcess(&newFunc.getBodyRegion(), uses, opsToRewrite);
 
   // Process the worklist. Only finalize the function if this succeeded.
   newFuncNode->status = ImplNode::IN_PROGRESS;
-  if (succeeded(processScope(newFuncNode, opsToRewrite)))
+  if (succeeded(processScope(newFuncNode, std::move(opsToRewrite))))
     finalizeAndVerifyFunction(analysis, newFuncNode);
   newFuncNode->status = ImplNode::DONE;
 
