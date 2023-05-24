@@ -10,6 +10,8 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FileUtilities.h"
 #include "llvm/Support/LockFileManager.h"
+#include "llvm/Support/Path.h"
+#include "llvm/Support/Process.h"
 
 using namespace M;
 
@@ -63,6 +65,38 @@ M::writeFileAtomically(const std::filesystem::path &filePath,
     }
   }
   return filePath;
+}
+
+// llvm::sys::Process has a function called `llvm::sys::Process::FindInEnvPath`
+// which looks for files (and files only) in PATH like environment variables.
+// The version here is inspired by the original and has a similar contract but
+// looks only for directories instead.
+std::optional<std::string>
+M::findDirInEnvPath(StringRef subdirName, StringRef envName, char separator) {
+  assert(!llvm::sys::path::is_absolute(subdirName));
+  std::optional<std::string> foundPath;
+  std::optional<std::string> optPath = llvm::sys::Process::GetEnv(envName);
+  if (!optPath)
+    return {};
+
+  const char envPathSeparatorStr[] = {separator, '\0'};
+  SmallVector<StringRef, 8> dirs;
+  StringRef(*optPath).split(dirs, envPathSeparatorStr);
+
+  for (StringRef dir : dirs) {
+    if (dir.empty())
+      continue;
+
+    SmallString<128> dirPath(dir);
+    llvm::sys::path::append(dirPath, subdirName);
+    if (llvm::sys::fs::exists(Twine(dirPath)) &&
+        llvm::sys::fs::is_directory(Twine(dirPath))) {
+      foundPath = std::string(dirPath.str());
+      break;
+    }
+  }
+
+  return foundPath;
 }
 
 ErrorOr<TempFile> TempFile::create(StringRef model) {
