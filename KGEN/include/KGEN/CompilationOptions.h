@@ -139,6 +139,9 @@ public:
     if (enableXRayInstrumentation)
       os << ", enableXRayInstrumentation";
 
+    if (explicitLinking)
+      os << ", explicitLinking";
+
     os << ", linkDirs: [";
     llvm::interleaveComma(linkDirs, os);
     os << "]";

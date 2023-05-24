@@ -363,12 +363,9 @@ static ExportMap getAllSymbols(ModuleOp theModule) {
 static ErrorOr<std::unique_ptr<llvm::orc::MaterializationResponsibility>>
 processObjectFile(llvm::orc::MaterializationResponsibility &mr,
                   llvm::orc::ExecutionSession &session,
-                  llvm::MemoryBufferRef objectBuf) {
-  // Now create the object file so we can iterate its symbols.
-  auto objOr = llvm::object::ObjectFile::createObjectFile(objectBuf);
-  if (!objOr)
-    return Error(llvm::toString(objOr.takeError()));
-  std::unique_ptr<llvm::object::ObjectFile> obj = std::move(*objOr);
+                  llvm::object::ObjectFile *obj) {
+  LLVM_DEBUG(llvm::dbgs() << "Processing object file '" << obj->getFileName()
+                          << "'\n");
 
   // Pull out any symbols in the object that we want to delegate.
   llvm::orc::SymbolNameSet symbolNames;
@@ -401,15 +398,31 @@ processObjectFile(llvm::orc::MaterializationResponsibility &mr,
     // If the MR doesn't already have this symbol in it, add it as a
     // callable. We're resolving it, so we may as well provide the
     // definition we have.
-    if (!mr.getSymbols().contains(namePtr))
-      symbolFlags[namePtr] = llvm::JITSymbolFlags::Callable;
+    if (!mr.getSymbols().contains(namePtr)) {
+      LLVM_DEBUG(llvm::dbgs() << "Notify MR that '" << *namePtr
+                              << "' will be materialized\n");
+      // Translate the symbol flags.
+      llvm::JITSymbolFlags symFlags = llvm::JITSymbolFlags::Callable;
+      if (flags & llvm::object::BasicSymbolRef::SF_Weak)
+        symFlags |= llvm::JITSymbolFlags::Weak;
+      if (flags & llvm::object::BasicSymbolRef::SF_Common)
+        symFlags |= llvm::JITSymbolFlags::Common;
+      if (flags & llvm::object::BasicSymbolRef::SF_Absolute)
+        symFlags |= llvm::JITSymbolFlags::Absolute;
+      if (flags & llvm::object::BasicSymbolRef::SF_Exported)
+        symFlags |= llvm::JITSymbolFlags::Exported;
 
-    LLVM_DEBUG(llvm::dbgs()
-               << "Delegating \"" << *namePtr << "\" to JITLink\n");
+      symbolFlags[namePtr] = symFlags;
+    }
+
+    LLVM_DEBUG(llvm::dbgs() << "Delegating '" << *namePtr << "' to JITLink\n");
     symbolNames.insert(namePtr);
   }
-  if (symbolNames.empty() && symbolFlags.empty())
+  if (symbolNames.empty() && symbolFlags.empty()) {
+    LLVM_DEBUG(llvm::dbgs()
+               << "No symbols to delegate to JITLink from this file\n");
     return nullptr;
+  }
 
   // Define all these symbols as 'materializing'.
   if (auto e = mr.defineMaterializing(symbolFlags))
@@ -461,36 +474,124 @@ void ObjectCompilerLayer::emit(
     return onError(archiveOr.takeError());
   std::unique_ptr<llvm::object::Archive> archive = std::move(*archiveOr);
 
-  // Iterate the objects in the archive and delegate those symbols. We want to
-  // ensure that every global symbol that is in the archive is materialized
-  // because future lookups will succeed immediately without having to run
-  // again.
-  llvm::Error err = llvm::Error::success();
-  for (auto &object : archive->children(err)) {
-    if (err)
-      return onError(std::move(err));
+  // Create a set of necessary objects from the requested symbols so we don't
+  // double-add anything.
+  StringSet<> necessaryObjects;
+
+  // Set up a worklist that starts from the set of requested symbols.
+  SmallVector<llvm::orc::SymbolStringPtr> worklist;
+  llvm::append_range(worklist, llvm::make_first_range(mr->getSymbols()));
+  LLVM_DEBUG(llvm::dbgs() << "Initial lookup worklist: [";
+             llvm::interleaveComma(worklist, llvm::dbgs(),
+                                   [](auto ptr) { llvm::dbgs() << *ptr; });
+             llvm::dbgs() << "]\n");
+
+  // We do this iteration/DFS search of dependencies here rather than in
+  // StandaloneObject because here we have a set of symbols we care about, so we
+  // are more likely to (a) get a benefit and (b) it's simpler because there are
+  // fewer symbols to deal with.
+  // TODO: This is really not great - the definition generator infrastructure
+  //   should 'just handle' this. Investigate and see if we could avoid this by
+  //   using the infra better.
+
+  // Vector of binaries we will delegate to JITLink.
+  SmallVector<std::pair<std::unique_ptr<llvm::object::Binary>,
+                        std::unique_ptr<llvm::MemoryBuffer>>>
+      toDelegate;
+  while (!worklist.empty()) {
+    llvm::orc::SymbolStringPtr sym = worklist.pop_back_val();
+    auto childOr = archive->findSym(*sym);
+    if (!childOr)
+      return onError(childOr.takeError());
+
+    // We don't have the symbol in this archive, move on.
+    if (!*childOr) {
+      LLVM_DEBUG(llvm::dbgs()
+                 << "Could not find '" << *sym << "' in this archive\n");
+      continue;
+    }
 
     // Grab the memory buffer for that object.
-    auto bufferRef = object.getBuffer();
+    auto bufferRef = (**childOr).getMemoryBufferRef();
     if (!bufferRef)
       return onError(bufferRef.takeError());
-    auto objectBuf = llvm::MemoryBuffer::getMemBuffer(
-        *bufferRef, /*BufferName=*/"", /*RequiresNullTerminator=*/false);
 
-    auto delegatedOr = processObjectFile(*mr, session, *objectBuf);
+    // Already handled this exact binary, continue. We don't use the file name
+    // because that has the potential to conflict.
+    if (!necessaryObjects.insert(bufferRef->getBuffer()).second)
+      continue;
+
+    std::unique_ptr<llvm::MemoryBuffer> objectBuf =
+        llvm::MemoryBuffer::getMemBuffer(*bufferRef,
+                                         /*RequiresNullTerminator=*/false);
+
+    // Get the child as a binary - that will allow us to look up the symbols
+    // contained in the object.
+    auto binaryOr = (**childOr).getAsBinary();
+    if (!binaryOr)
+      return onError(binaryOr.takeError());
+    std::unique_ptr<llvm::object::Binary> objectBin = std::move(*binaryOr);
+
+    auto *objectFile = dyn_cast<llvm::object::ObjectFile>(objectBin.get());
+    if (!objectFile) {
+      error = Error("archive member " + objectBuf->getBufferIdentifier() +
+                    " was not an object file");
+      return mr->failMaterialization();
+    }
+
+    // If the object file has undefined symbols in it, add those to the
+    // worklist. Don't discriminate here, we don't need to do the full
+    // providence checking. We early-exit if a symbol is defined in a file we're
+    // already going to handle, so we don't have to worry about being
+    // overly-inclusive.
+    for (auto symbol : objectFile->symbols()) {
+      auto flagsOr = symbol.getFlags();
+      if (!flagsOr)
+        return onError(flagsOr.takeError());
+      uint32_t flags = *flagsOr;
+
+      if (!(flags & llvm::object::BasicSymbolRef::SF_Undefined))
+        continue;
+
+      auto nameOr = symbol.getName();
+      if (!nameOr)
+        return onError(nameOr.takeError());
+
+      // Add this undefined symbol to the worklist.
+      LLVM_DEBUG(llvm::dbgs()
+                 << "Undefined symbol found: '" << *nameOr << "'\n");
+      worklist.push_back(session.intern(*nameOr));
+    }
+
+    // Add the object file and its memory buffer to the list of objects to be
+    // delegated to JITLink.
+    toDelegate.emplace_back(std::move(objectBin), std::move(objectBuf));
+  }
+
+  // Now do the delegation in reverse - the objects will be added in the order:
+  // caller -> callee, so reversing ensures symbols will always be defined.
+  for (auto &[bin, buf] : llvm::reverse(toDelegate)) {
+    auto *file = cast<llvm::object::ObjectFile>(bin.get());
+    // Now we can process this object file.
+    auto delegatedOr = processObjectFile(*mr, session, file);
     if (delegatedOr.isError()) {
       error = delegatedOr.takeError();
       return mr->failMaterialization();
     }
-    // Check if we didn't have any symbols to delegate to the JIT.
+
+    // No symbols to delegate, just keep going.
     if (!*delegatedOr)
       continue;
 
-    // And delegate these symbols to JITLink.
-    baseLayer.emit(std::move(*delegatedOr), std::move(objectBuf));
+    // And delegate the symbols we just found in the object file to JITLink.
+    baseLayer.emit(std::move(*delegatedOr), std::move(buf));
   }
-  // At this point the error must be `success`, so consume it.
-  consumeError(std::move(err));
+  LLVM_DEBUG(
+      llvm::dbgs() << "MaterializationResponsibility leftover symbols (should "
+                      "be empty): [";
+      llvm::interleaveComma(mr->getSymbols(), llvm::dbgs(),
+                            [](auto ptr) { llvm::dbgs() << *ptr.getFirst(); });
+      llvm::dbgs() << "]\n";);
 }
 
 llvm::orc::MaterializationUnit::Interface

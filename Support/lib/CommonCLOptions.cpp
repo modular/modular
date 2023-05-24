@@ -85,7 +85,7 @@ LogicalResult CommonCLOptions::emitArchive(StringRef object) const {
   std::unique_ptr<llvm::ToolOutputFile> outFile =
       getOutputFile(/*hasBinaryOutput=*/true);
   if (!outFile)
-    return failure();
+    return failure(reportError("failed to open the output file"));
 
   outFile->os().write(object.begin(), object.size());
   outFile->keep();

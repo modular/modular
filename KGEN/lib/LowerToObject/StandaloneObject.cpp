@@ -5,6 +5,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/LowerToObject.h"
+
+#include "KGEN/KGENVersion/KGENVersion.h"
+#include "KGEN/POPDialect/POPOps.h"
 #include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LowerToObjectImpl.h"
@@ -23,12 +26,13 @@
 #include "llvm/IR/Module.h"
 #include "llvm/Linker/Linker.h"
 #include "llvm/Object/ArchiveWriter.h"
+#include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Program.h"
-#include "llvm/Support/SmallVectorMemoryBuffer.h"
+#include "llvm/Support/SourceMgr.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/SplitModule.h"
@@ -97,6 +101,11 @@ static void sliceDependencies(Operation *op, SymbolTable &sliceSymtab,
             .Case([&](ParamConstantOp op) {
               if (auto symbol = dyn_cast<SymbolConstantAttr>(op.getValue()))
                 return symbol.getSymbol().getRootReference();
+              return StringAttr();
+            })
+            .Case([&](POP::ExternalCallOp op) {
+              if (auto importedFrom = op.getImportedFromAttr())
+                return importedFrom.getAttr();
               return StringAttr();
             })
             .Default({});
@@ -302,6 +311,108 @@ private:
 };
 } // namespace
 
+/// For each external call, map the link directive to the set of functions it
+/// imports. This allows us to pull out only the objects we need from the linked
+/// library when it's an archive, for example.
+static void
+collectLinksAndUsers(SymbolTable &symtab,
+                     DenseMap<StringAttr, llvm::StringSet<>> &linksAndUsers) {
+  ModuleOp theModule = cast<ModuleOp>(symtab.getOp());
+  theModule.walk([&](POP::ExternalCallOp call) {
+    auto importedFromAttr = call.getImportedFromAttr();
+    if (!importedFromAttr)
+      return;
+
+    auto link = symtab.lookup<LinkOp>(importedFromAttr.getAttr());
+    if (link)
+      linksAndUsers[link.getLinkPathAttr()].insert(call.getCallee());
+  });
+}
+
+/// Open the static archive or object specified by the link directive, and add
+/// relevant archive members to the provided list.
+static ErrorOrSuccess
+handleLinkDirective(StringAttr linkPath, const llvm::StringSet<> &users,
+                    llvm::SourceMgr &linkMgr, DenseSet<StringAttr> &processed,
+                    SmallVectorImpl<llvm::NewArchiveMember> &archiveMembers) {
+  // Only pull in each library exactly once.
+  if (!processed.insert(linkPath).second)
+    return success();
+
+  // Pull in the library as an 'include' file. This has the lovely side effect
+  // of holding onto the file for as long as we need it, so we don't have to do
+  // anything after opening the file.
+  std::string filepath;
+  unsigned fileIdx =
+      linkMgr.AddIncludeFile(linkPath.str(), llvm::SMLoc{}, filepath);
+  if (fileIdx == 0)
+    return Error("could not find file at " + linkPath.getValue());
+  llvm::MemoryBufferRef bufferRef =
+      linkMgr.getMemoryBuffer(fileIdx)->getMemBufferRef();
+
+  // Create the binary.
+  auto binaryOr = llvm::object::createBinary(bufferRef);
+  if (!binaryOr)
+    return Error(llvm::toString(binaryOr.takeError()));
+  std::unique_ptr<llvm::object::Binary> binary = std::move(*binaryOr);
+
+  // TODO: Ensure the binary is the correct type.
+
+  // If the binary is an object file, add it to the archive members directly.
+  if (binary->isObject()) {
+    archiveMembers.emplace_back(bufferRef);
+    return success();
+  }
+
+  // Otherwise, expand the archive and add its children to the new member list.
+  auto *archive = cast<llvm::object::Archive>(binary.get());
+
+  // In theory, we could inspect the archive to find the members we actually
+  // need and only add those, but that's a pretty big chunk of the job of a
+  // linker. We do correctness checking here, to ensure the symbols we expect to
+  // find are in the archive. Don't use `findSym` in a loop here because it
+  // basically just iterates all the symbols in the archive for each call, so we
+  // inline the logic here.
+  llvm::StringSet<> foundSymbols;
+  for (auto symbol : archive->symbols()) {
+    StringRef symName = symbol.getName().ltrim('_');
+    if (users.contains(symName))
+      foundSymbols.insert(symName);
+  }
+
+  // Set difference computes A - B, so put `users` first since `foundSymbols` is
+  // a strict subset.
+  llvm::StringSet<> missingSymbols = llvm::set_difference(users, foundSymbols);
+  if (!missingSymbols.empty()) {
+    std::string tmp;
+    llvm::raw_string_ostream stream(tmp);
+    stream << "could not find definitions for symbols: [";
+    llvm::interleaveComma(missingSymbols, stream,
+                          [&](const auto &p) { stream << p.getKey(); });
+    stream << "]";
+    return Error(tmp);
+  }
+
+  // Add all the children in the archive to the new output archive.
+  llvm::Error err = llvm::Error::success();
+  for (auto &child : archive->children(err)) {
+    if (err)
+      return Error(llvm::toString(std::move(err)));
+
+    auto refOr = child.getMemoryBufferRef();
+    if (!refOr)
+      return Error(llvm::toString(refOr.takeError()));
+
+    LLVM_DEBUG(llvm::dbgs() << "Adding object to archive: '"
+                            << refOr->getBufferIdentifier() << "'\n");
+    archiveMembers.emplace_back(*refOr);
+  }
+  // Handle all errors - we didn't hit anything.
+  llvm::handleAllErrors(std::move(err));
+
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // produceStandaloneArchive
 //===----------------------------------------------------------------------===//
@@ -310,12 +421,25 @@ ErrorOr<BufferRef> ObjectCompiler::produceStandaloneArchive(
     SymbolTable &symtab, const ExportMap &exportedSymbols, bool isJIT) {
   TimeTraceScope<> traceScope("produce-standalone-archive");
 
+  // First, pull out the link/external_call map. Do this while we still have the
+  // IR in a recognizable state to make things simple. This map contains a
+  // mapping from library import path to all the symbols imported from that
+  // library.
+  DenseMap<StringAttr, llvm::StringSet<>> linksAndUsers;
+  collectLinksAndUsers(symtab, linksAndUsers);
+
+  // Set up a SourceMgr that we can use to find link files.
+  llvm::SourceMgr linkMgr;
+  linkMgr.setIncludeDirs(options.linkDirs);
+
   // Perform a cache aware transformation to translate the module to an archive
   // file.
   auto runTransformation = [&](Operation *op, WriteableBufferRef buf,
                                LLCL::AnyAsyncValueRef chain) {
     auto output = LLCL::AsyncValueRef<BufferRef>::allocate(runtime);
-    chain.andThenSync([this, op, isJIT, output = output.copy(),
+    chain.andThenSync([this, op, isJIT,
+                       linksAndUsers = std::move(linksAndUsers),
+                       linkMgr = std::move(linkMgr), output = output.copy(),
                        buf = buf.copy()]() mutable {
       // Lower the module to LLVM.
       llvm::LLVMContext ctx;
@@ -340,7 +464,9 @@ ErrorOr<BufferRef> ObjectCompiler::produceStandaloneArchive(
         });
       }
       andThenSyncMoving(
-          cacheResults, [op, buf = buf.copy(), output = output.copy()](
+          cacheResults, [op, linksAndUsers = std::move(linksAndUsers),
+                         linkMgr = std::move(linkMgr), buf = buf.copy(),
+                         output = output.copy()](
                             MutableArrayRef<AnyAsyncValueRef> values) mutable {
             // If any of the cache results failed, propagate the error.
             for (auto &result : values)
@@ -348,9 +474,22 @@ ErrorOr<BufferRef> ObjectCompiler::produceStandaloneArchive(
                 return std::move(output).setToError(result.takeDiagnostic());
             TimeTraceScope<> traceScope("concatenate-object-files");
 
-            // Now that all of the object files have been compiled, merge them
-            // all into a single archive.
             SmallVector<llvm::NewArchiveMember> archiveMembers;
+
+            // Process all the link directives now. We keep a set of
+            // already-processed link directives, so we don't re-process
+            // libraries.
+            DenseSet<StringAttr> processedLinks;
+            for (auto [link, users] : linksAndUsers) {
+              if (auto err = handleLinkDirective(
+                      link, users, linkMgr, processedLinks, archiveMembers)) {
+                return std::move(output).setToError(
+                    LLCL::getMLIRDiagnostic(err.takeError(), op->getLoc()));
+              }
+            }
+
+            // Now that all the object files have been compiled, merge them
+            // all into a single archive.
             SmallVector<std::string> archiveMemberNames(values.size());
             for (auto [index, result] : llvm::enumerate(values)) {
               auto &resultBuf = result.get<BufferRef>();
