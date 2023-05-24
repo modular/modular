@@ -11,7 +11,6 @@
 #ifndef SUPPORT_BUILDINFO_H
 #define SUPPORT_BUILDINFO_H
 
-#include "Config/Version.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
