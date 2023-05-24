@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/BuildInfo.h"
+#include "Config/Version.h"
 #include "Support/AlignedAlloc.h"
 #include "Support/SIMD.h"
 #include "llvm/Support/JSON.h"
