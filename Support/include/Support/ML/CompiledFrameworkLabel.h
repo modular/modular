@@ -50,6 +50,8 @@ public:
     kFauxModel,
     // A compiled ONNX model.
     kONNXModel,
+    // A compiled PyTorch model.
+    kPyTorchModel,
   } value;
 
   /// Returns the top-level operator name representing this framework, or
