@@ -1981,6 +1981,11 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     // before we can do that.  As such, we just use a var decl and replace it
     // opportunistically later if we can.
     if (convention == ValueInputConvention::ByRefResult) {
+      if (!builder) {
+        // TODO: Support memory-primary results in parameter expressions
+        emitError(callExpr->getLoc(), "TODO: memory-primary results are not supported in parameter expressions.");
+        return {};
+      }
       assert(idx == 0 && calleeSig.hasMemoryOnlyResult());
       auto resultTmp = builder->create<VarLetDeclOp>(
           loc, expectedType, "__call_result_tmp__", /*isVar=*/true,

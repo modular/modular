@@ -7,6 +7,7 @@
 # RUN: kgen-translate -import-mojo -verify-diagnostics %s -I %S/../mojo-examples/
 
 from prolog import DType, F32, object, SIMD
+from String import String
 from Coroutine import Coroutine
 
 ##===----------------------------------------------------------------------===##
@@ -62,6 +63,11 @@ fn test_func_type():
     # expected-error @below {{SIMD[DType(type.value), 32]}}
     alias value: SIMD[type.value, 32] = SIMD[DType.f32, 32]()
 
+fn hello_str() -> String:
+    return "hello"
+
+# expected-error @below {{TODO: memory-primary results are not supported in parameter expressions.}}
+alias x = hello_str()
 
 ##===----------------------------------------------------------------------===##
 # LValue and RValues
