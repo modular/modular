@@ -61,7 +61,7 @@ constexpr auto typeNameArray() {
   constexpr std::string_view prefix = "with T = ";
   constexpr std::string_view suffix = "]";
 #elif defined(_MSC_VER)
-  constexpr std::string_view prefix = "type_name_array<";
+  constexpr std::string_view prefix = "typeNameArray<";
   constexpr std::string_view suffix = ">(void)";
 #else
 #error                                                                         \
