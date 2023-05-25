@@ -527,8 +527,8 @@ parametric types) and cleanly partitions them out of the SSA namespace,
 providing clarity about what happens at kernel runtime vs kernel generation
 time. This design point was explored in the CIRCT project for parametric
 verilog (e.g.
-[circt/test/Dialect/HW/parameters.mlir](https://github.com/llvm/circt/blob/main/test/Dialect/HW/parameters.mlir)) - our needs are more general but the same
-basic approach should suffice.
+[circt/test/Dialect/HW/parameters.mlir](https://github.com/llvm/circt/blob/main/test/Dialect/HW/parameters.mlir))—our
+needs are more general but the same basic approach should suffice.
 
 #### Order of generator evaluation
 
@@ -720,7 +720,9 @@ to explore subsets of the search space.
 3. We can exploit redundancy in the tree-based structure with dynamic
 programming techniques.
 
-We should build all of these in time, but the most important one to get architecturally right when building the system is to get the structure of the computation right, which means we should prioritize dynamic programming.
+We should build all of these in time, but the most important one to get
+architecturally right when building the system is to get the structure of the
+computation right, which means we should prioritize dynamic programming.
 
 ### Dynamic Programming / Caching
 
@@ -1034,18 +1036,35 @@ There is a lot that can be said here, more when we get further down the road.
 
 ## New Kernel Language
 
-The system proposed above should support broad-base extensibility in a large number of directions:
+The system proposed above should support broad-base extensibility in a large
+number of directions:
 
 1. It is target independent and should scale to CPUs and many accelerators.
-2. It is ML framework independent, separating all integration issues out and focusing on kernel generation only.
+2. It is ML framework independent, separating all integration issues out and
+   focusing on kernel generation only.
 3. It isn’t specific to one memory layout or other narrow set of assumptions.
-4. It isn’t ML or dense linear algebra specific, it supports a wide range of data types and problem domains.  You can use it to build high performance audio or data kernels.
+4. It isn’t ML or dense linear algebra specific, it supports a wide range of
+   data types and problem domains.  You can use it to build high performance
+   audio or data kernels.
 
-That said, it also isn’t magic.  It assumes that expert kernel programmers will help design and define the architecture of the kernels that are generated.  These folks have deep domain expertise including information about numerics and the target hardware, but they are not necessarily compiler engineers.  We would like these sorts of experts to be able to extend the system without understanding how the compiler internals work (e.g. they shouldn’t have to write .mlir files).
+That said, it also isn’t magic. It assumes that expert kernel programmers will
+help design and define the architecture of the kernels that are generated.
+These folks have deep domain expertise including information about numerics and
+the target hardware, but they are not necessarily compiler engineers. We would
+like these sorts of experts to be able to extend the system without
+understanding how the compiler internals work (e.g. they shouldn’t have to
+write .mlir files).
 
-Furthermore, we as Modular have another goal: we want our system to be extensible by customers, partners, and academics without having access to our compiler source code.  This implies that we want a user-supportable surface area: compiler frameworks have notoriously fragile APIs, and we will want to continuously evolve our design over time.
+Furthermore, we as Modular have another goal: we want our system to be
+extensible by customers, partners, and academics without having access to our
+compiler source code. This implies that we want a user-supportable surface
+area: compiler frameworks have notoriously fragile APIs, and we will want to
+continuously evolve our design over time.
 
-Finally, we also care about usability and understandability of the kernel components in the libraries we generate.  This implies that we want to be able to **holistically design** our system in a vertically integrated way, making the components feel native with each other.
+Finally, we also care about usability and understandability of the kernel
+components in the libraries we generate. This implies that we want to be able
+to **holistically design** our system in a vertically integrated way, making
+the components feel native with each other.
 
 ### Extend Existing Systems or Build New?
 

@@ -34,14 +34,14 @@ Individual parameters:
    type of `b` is `!kgen.dtype`, as such, we don't require their type specifiers
    at all.
 
-3) In cases with take arbitrary types (for example the input list to `kgen.call`, the
-   parameter expression in `kgen.param.constant` etc) we allow specifying a type
-   with `: type = value` syntax which provides full generality for dtypes,
-   strings etc.  However, because almost all parameters are of type 'index',
-   we allow omitting a type with `= value` syntax.  Note that an omitted type
-   defaults to type `index` - it is not inferred from the initializer value
-   (we can't do this for parameter references because of the forward reference
-   issue mentioned above).
+3) In cases with take arbitrary types (for example the input list to
+  `kgen.call`, the parameter expression in `kgen.param.constant` etc) we allow
+  specifying a type with `: type = value` syntax which provides full generality
+  for dtypes, strings etc. However, because almost all parameters are of type
+  'index', we allow omitting a type with `= value` syntax. Note that an omitted
+  type defaults to type `index` - it is not inferred from the initializer value
+  (we can't do this for parameter references because of the forward reference
+  issue mentioned above).
 
 4) We will eventually have an expression evaluator that does constant folding
    etc, and that will need to have an integer width for the `index`
@@ -85,12 +85,12 @@ that attribute must be an `ArrayAttr` of `ParamDeclAttr`s.  This means the
 `paramDecls` attribute name is reserved for this purpose in kgen compatible
 dialects.
 
-Parameter uses, on the other hand, are far more flexible.  Parameters
+Parameter uses, on the other hand, are far more flexible. Parameters
 expressions may occur anywhere in an operation -- including in types of values
-referred to or returned by an operation.  This allows parameterized types,
-allows an open and expressive set of operators that use parameters (for example to
-pass to invoked generators, to materialize as SSA values, to return from the
-function) etc.  There are no limitations on where they occur.
+referred to or returned by an operation. This allows parameterized types,
+allows an open and expressive set of operators that use parameters (for example
+to pass to invoked generators, to materialize as SSA values, to return from the
+function) etc. There are no limitations on where they occur.
 
 Parameter definitions and uses do not follow the standard dominance structure of
 SSA or the MLIR region tree.  Instead, their requirement is that operations
@@ -123,14 +123,13 @@ kgen.generator @algo(%dest: !zap.buffer<?, ?>) {
 ```
 
 Note that we do *not* support dynamic shapes or dtypes for the `!pop.scalar` or
-`!pop.simd` types.  These may be *parameterized* with arithmetic that
-determines the vector length or element, but it may not be dynamic (that is, there
-is no `?` allowed) - parameters are always resolved to static values as part of
-the code generation process.
-This is because these are register-equivalent types, not memory-equivalent
-types.  In the case of the runtime representation of a buffer, the size and
-dtype doesn't affect how the buffer value itself is codegen'd: it is always a
-tuple of `{void*, numElements, dtype}` at runtime.
+`!pop.simd` types. These may be *parameterized* with arithmetic that determines
+the vector length or element, but it may not be dynamic (that is, there is no
+`?` allowed) - parameters are always resolved to static values as part of the
+code generation process. This is because these are register-equivalent types,
+not memory-equivalent types. In the case of the runtime representation of a
+buffer, the size and dtype doesn't affect how the buffer value itself is
+codegen'd: it is always a tuple of `{void*, numElements, dtype}` at runtime.
 
 Because the SIMD/scalar types do not support dynamic shapes or dtypes, they also
 do not need operations like `pop.simd.size`. For any SIMD type, you either have
@@ -252,8 +251,9 @@ the following syntax:
 
 ### Regions
 
-Lastly, the call instruction might have regions (sort of lambda functions) attached to it.
-Definitions of regions look similarly to definitions of usual functions, except:
+Lastly, the call instruction might have regions (sort of lambda functions)
+attached to it. Definitions of regions look similarly to definitions of usual
+functions, except:
 
 - we do not specify return value type for regions,
 - the name of the region should match the name of the corresponding parameter.

@@ -9,9 +9,9 @@ types like `AsyncValueRef<T>`.
 [std::future](https://en.cppreference.com/w/cpp/thread/future), except that
 `AsyncValue` does not let callers wait/block until the value becomes available.
 Instead, the caller enqueues a closure that uses the value with
-`AsyncValue::andThenSync`. `AsyncValue::emplace` will run any enqueued closures when
-the value becomes available. This approach is similar to
-[continuation passing](https://en.wikipedia.org/wiki/Continuation-passing_style).
+`AsyncValue::andThenSync`. `AsyncValue::emplace` will run any enqueued closures
+when the value becomes available. This approach is similar to [continuation
+passing](https://en.wikipedia.org/wiki/Continuation-passing_style).
 
 Another major difference is that `AsyncValue` has built in support for error
 handling: in addition to being completed by a future value, they may also be
@@ -26,13 +26,13 @@ possible to maintain their lifetime.
 ### Types and type erasure
 
 An `AsyncValue` will eventually resolve to hold a value of some C++ type, but
-this is dynamic and can happen after construction.  The `AsyncValue` type itself
+this is dynamic and can happen after construction. The `AsyncValue` type itself
 is therefore type-erased: users can manipulate an `AnyAsyncValueRef` without
-knowing what type it will ultimately contain.  For example, you can enqueue a
-closure with `AsyncValue::andThenSync()` without knowing the actual type that will
-ultimately be contained in the `AsyncValue`. Type information is only needed
-when *accessing* the contained data, for example with `AsyncValue::get<T>()` or
-`AsyncValue::emplace<T>()`.
+knowing what type it will ultimately contain. For example, you can enqueue a
+closure with `AsyncValue::andThenSync()` without knowing the actual type that
+will ultimately be contained in the `AsyncValue`. Type information is only
+needed when *accessing* the contained data, for example with
+`AsyncValue::get<T>()` or `AsyncValue::emplace<T>()`.
 
 `AnyAsyncValueRef` is used when working with a type-erased
 `AsyncValue` and `AsyncValueRef<T>` is used when you know the element type `T`
@@ -49,16 +49,17 @@ storage of the payloads and data, and allows limited type reflection with the
 ### Access to the `M::LLCL::Runtime` for an `AsyncValue`
 
 The LLCL runtime is designed to support multiple instances of a runtime in a
-process at the same time, so some things (for example allocating a new `AsyncValue`)
-require an `M::LLCL::Runtime&` to be handy and around.  This can be awkward,
-because (like an `MLIRContext`) it is almost global state, and it is a pain to
-pass it around everywhere.
+process at the same time, so some things (for example allocating a new
+`AsyncValue`) require an `M::LLCL::Runtime&` to be handy and around. This can
+be awkward, because (like an `MLIRContext`) it is almost global state, and it
+is a pain to pass it around everywhere.
 
 Fortunately, `AsyncValue` instances is that they always know what
-`M::LLCL::Runtime` they came from.  You can access this through the
-`asyncVal->getRuntime()` method which returns a [`CompactRuntimePtr`](../include/LLCL/Runtime/CompactRuntimePtr.h).
-A `CompactRuntimePtr` is a specialized class that can be used interchangably
-with `Runtime&`.
+`M::LLCL::Runtime` they came from. You can access this through the
+`asyncVal->getRuntime()` method which returns a
+[`CompactRuntimePtr`](../include/LLCL/Runtime/CompactRuntimePtr.h). A
+`CompactRuntimePtr` is a specialized class that can be used interchangably with
+`Runtime&`.
 
 The consequence of this is that having an `AsyncValue` at hand gives you access
 to the `Runtime&` that you need.
@@ -78,9 +79,9 @@ void printWhenReady(AnyAsyncValueRef input) {
 }
 ```
 
-If the `AsyncValue` is already ready when the `andThenSync` is executed, then the
-lambda is immediately executed.  Otherwise it is enqueued and run when the value
-becomes available.
+If the `AsyncValue` is already ready when the `andThenSync` is executed, then
+the lambda is immediately executed. Otherwise it is enqueued and run when the
+value becomes available.
 
 The nice thing about this pattern is that it provides the direct ability to
 capture arbitrary state in the the lambda's capture list, and that capture list
@@ -108,12 +109,12 @@ can't just use `input->andThenSync([input = std::move(input), ...` because the
 compiler might evaluate the `std::move` before the load of input for the base
 expression.
 
-Another downside of this style of `andThenSync` is that it is capturing a pointer to
-the value being waited on.  This can increase the size of the lambda and
-increase the chances of an out-of-line representation for the function.  To
-address both of these problems, you can use a form of `andThenSync` that gets passed
-in a reference to the value when it is available.  The same thing as above can
-be expressed as:
+Another downside of this style of `andThenSync` is that it is capturing a
+pointer to the value being waited on. This can increase the size of the lambda
+and increase the chances of an out-of-line representation for the function. To
+address both of these problems, you can use a form of `andThenSync` that gets
+passed in a reference to the value when it is available. The same thing as
+above can be expressed as:
 
 ```c++
 /// When the specified int32_t becomes available, add it to the refcounted
@@ -155,11 +156,11 @@ works exactly like an `kUnconstructed` one, but has its first waiter held in the
 payload field.  Clients of `AsyncValue` will never have to worry about this.
 
 **"Value Available":** This is the state that most `AsyncValue`s achieve where
-they hold a completed C++ value and where all `andThenSync` waiters are notified.
-You can directly create an `AsyncValue` in this state with
-`AsyncValue::createReady<T>` or `AsyncValueRef<T>::createReady`,
-but most cases will create one in unconstructed and transition to this state
-with the `emplace(...)` method.
+they hold a completed C++ value and where all `andThenSync` waiters are
+notified. You can directly create an `AsyncValue` in this state with
+`AsyncValue::createReady<T>` or `AsyncValueRef<T>::createReady`, but most cases
+will create one in unconstructed and transition to this state with the
+`emplace(...)` method.
 
 **"Error":** This state indicates that the computation creating the value had
 an error.  You may create an `AsyncValue` directly in this state with the
