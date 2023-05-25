@@ -54,7 +54,8 @@ bool CompiledFrameworkLabel::isValidOpName(StringRef opName) {
 bool CompiledFrameworkLabel::isValidFrameworkName(StringRef frameworkName) {
   return frameworkName == "tfl" || frameworkName == "tf" ||
          // TODO(#6190): "mgp" isn't really a framework, replace with faux.
-         frameworkName == "mgp" || frameworkName == "onnx";
+         frameworkName == "mgp" || frameworkName == "onnx" ||
+         frameworkName == "pytorch";
 }
 
 CompiledFrameworkLabel
