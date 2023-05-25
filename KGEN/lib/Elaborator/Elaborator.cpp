@@ -738,6 +738,45 @@ static void collectOpsToProcess(Region *scope, const ParameterUseDefGraph &uses,
 }
 
 //===----------------------------------------------------------------------===//
+// ElaborationState
+//===----------------------------------------------------------------------===//
+
+namespace {
+class ElaborationState {
+  enum State { NEW_IMPL_SCOPE, NEW_PARAM_SCOPE, ADVANCE, ERROR };
+
+public:
+  /// Return the elaboration state that indicates an operation was successfully
+  /// processed.
+  static ElaborationState advance() { return ADVANCE; }
+  /// Return the elaboration state that indicates elaboration should be
+  /// pre-empted by a new frame within a function.
+  static ElaborationState skipFrame() { return NEW_IMPL_SCOPE; }
+  /// Return the elaboration state that indicates elaboration should be
+  /// pre-empted by a new parameter node.
+  static ElaborationState skipNode() { return NEW_PARAM_SCOPE; }
+  /// Return the elaboration state that indicates a fatal error has occurred
+  /// during elaboration.
+  static ElaborationState error() { return ERROR; }
+
+  /// Return true if the frame should be skipped.
+  bool shouldSkipFrame() const { return state == NEW_IMPL_SCOPE; }
+  /// Return true if the node should be skipped.
+  bool shouldSkipNode() const { return state == NEW_PARAM_SCOPE; }
+  /// Return true if an error occurred.
+  bool isError() const { return state == ERROR; }
+
+  /// Allow implicit conversion from `LogicalResult`.
+  ElaborationState(LogicalResult result)
+      : state(succeeded(result) ? ADVANCE : ERROR) {}
+
+private:
+  ElaborationState(State state) : state(state) {}
+
+  State state;
+};
+
+//===----------------------------------------------------------------------===//
 // ElaboratorImpl Declaration
 //===----------------------------------------------------------------------===//
 
@@ -745,7 +784,6 @@ static void collectOpsToProcess(Region *scope, const ParameterUseDefGraph &uses,
 /// it walks the IR and specializes operations. This outputs IR that has been
 /// fully specialized/concretized, with the appropriate functions
 /// multi-versioned.
-namespace {
 class ElaboratorImpl : public Elaborator {
 public:
   ElaboratorImpl(mlir::SymbolTableAnalysis &analysis,
@@ -800,7 +838,7 @@ public:
 
   /// Process a call op by binding any necessary input parameters from the
   /// symbol or the call and passing them on to processGeneratorUser.
-  WalkResult processCallOp(ImplNode *parent, KGENCallOpInterface call);
+  ElaborationState processCallOp(ImplNode *parent, KGENCallOpInterface call);
 
   /// Process a generator user. In general, this is anything that can call into
   /// a generator and might therefore need to be multi-versioned.
@@ -838,21 +876,23 @@ public:
   /// inlining only the branch that was taken. If one of the branches had an
   /// early return, this will split the block after the return and avoid
   /// elaborating the rest of the function.
-  WalkResult processParamIfOp(ImplNode *parent, ParamIfOp op);
+  ElaborationState processParamIfOp(ImplNode *parent, ParamIfOp op);
 
   /// Kick off processing of a parameter node starting from a single seed
   /// implementation. This will process new implementations as they arise.
   void processParamNode(ParamNode *pnode);
   /// Process the scopes within an implementation node.
   void processImplNode(ImplNode *inode);
-  /// Process a worklist of ops. Returns interrupt if the scope produced an
-  /// error, and returns skip if the processing of the current scope should be
-  /// pre-empted with a new scope.
-  WalkResult processScope(ImplNode *node, ImplNode::WorkItem &item);
-  /// Process a single operation. Returns interrupt if the scope produced an
-  /// error, and returns skip if the processing of the current should be
-  /// pre-empted with a new scope.
-  WalkResult processOp(ImplNode *node, Operation *op);
+  /// Process a worklist of ops. Returns error if processing the scope resulted
+  /// in an error, returns `skipFrame` if the processing of the current scope scope
+  /// should be pre-empted with a new scope, returns `skipNode` if processing
+  /// the current implementation node should suspended.
+  ElaborationState processScope(ImplNode *node, ImplNode::WorkItem &item);
+  /// Process a single operation. Returns error if processing the scope resulted
+  /// in an error, returns `skipFrame` if the processing of the current scope
+  /// should be pre-empted with a new scope, returns `skipNode` if processing
+  /// the current implementation node should suspended.
+  ElaborationState processOp(ImplNode *node, Operation *op);
 
   /// Specializes the generator at `genNode`. Essentially instantiates a new
   /// function with the same body, and specializes it. The new function is by
@@ -1376,14 +1416,14 @@ ElaboratorImpl::resolveCallInputParams(Operation *call, IREvaluator &evaluator,
 //===----------------------------------------------------------------------===//
 
 /// Process a call_param op.
-WalkResult ElaboratorImpl::processCallOp(ImplNode *parent,
-                                         KGENCallOpInterface call) {
+ElaborationState ElaboratorImpl::processCallOp(ImplNode *parent,
+                                               KGENCallOpInterface call) {
   ErrorTreeOr<Attribute> symbol =
       parent->getEvaluator().concretizeParameterExpr(call.getLoc(),
                                                      call.getCallee());
   if (symbol.isError()) {
     parent->setToError(symbol.takeError());
-    return WalkResult::interrupt(); // fatal error
+    return ElaborationState::error();
   }
 
   if (auto sym = dyn_cast<SymbolConstantAttr>(*symbol))
@@ -1394,7 +1434,7 @@ WalkResult ElaboratorImpl::processCallOp(ImplNode *parent,
     parent->setToError(ErrorTree(call.getLoc(),
                                  "concrete parameter must be a symbol or a "
                                  "region (compiler bug, please report!)"));
-    return WalkResult::interrupt(); // fatal error
+    return ElaborationState::error();
   }
 
   // OK we found a region, put it into the machinery.
@@ -1434,7 +1474,7 @@ WalkResult ElaboratorImpl::processCallOp(ImplNode *parent,
     item.evaluator.setOrOverwriteParameterValue(decl, value);
 
   parent->stack.push_back(std::move(item));
-  return WalkResult::skip();
+  return ElaborationState::skipFrame();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1479,13 +1519,14 @@ ElaboratorImpl::processParamDeclareRegionOp(ImplNode *parent,
 // ElaboratorImpl::processParamIfOp
 //===----------------------------------------------------------------------===//
 
-WalkResult ElaboratorImpl::processParamIfOp(ImplNode *parent, ParamIfOp op) {
+ElaborationState ElaboratorImpl::processParamIfOp(ImplNode *parent,
+                                                  ParamIfOp op) {
   // Check the condition expression.
   auto errorOrValue =
       parent->getEvaluator().concretizeParameterExpr(op.getLoc(), op.getCond());
   if (errorOrValue.isError()) {
     parent->setToError(errorOrValue.takeError());
-    return WalkResult::interrupt(); // fatal error
+    return ElaborationState::error();
   }
 
   // Take whichever branch the condition indicated, and simply inline those ops
@@ -1498,10 +1539,10 @@ WalkResult ElaboratorImpl::processParamIfOp(ImplNode *parent, ParamIfOp op) {
 
   auto foundNestedScope = parent->paramGraph.nestedScopes.find(&toProcess);
   if (foundNestedScope == parent->paramGraph.nestedScopes.end()) {
-    parent->setToError(ErrorTree(op.getLoc(),
-                                 "expected a nested parameter scope (compiler "
-                                 "bug -- please file an issue!)"));
-    return WalkResult::interrupt(); // fatal error
+    parent->setToError(ErrorTree(
+        op.getLoc(),
+        "expected a nested parameter scope (compiler bug, please report!)"));
+    return ElaborationState::error();
   }
 
   ParameterUseDefGraph &uses = foundNestedScope->getSecond();
@@ -1603,7 +1644,7 @@ WalkResult ElaboratorImpl::processParamIfOp(ImplNode *parent, ParamIfOp op) {
   };
 
   parent->stack.push_back(std::move(item));
-  return WalkResult::skip();
+  return ElaborationState::skipFrame();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1652,17 +1693,19 @@ void ElaboratorImpl::processImplNode(ImplNode *inode) {
   while (!inode->stack.empty()) {
     ImplNode::WorkItem &item = inode->stack.back();
     [[maybe_unused]] size_t size = inode->stack.size();
-    WalkResult result = processScope(inode, item);
-    if (result.wasInterrupted()) {
+    ElaborationState result = processScope(inode, item);
+    if (result.isError()) {
       // Interrupt indicates a fatal error.
       assert(inode->error && "node processing interrupted but no error set");
       return;
     }
-    if (result.wasSkipped()) {
+    if (result.shouldSkipFrame()) {
       // Skip indicates we need to move to another frame first.
       assert(inode->stack.size() == size + 1 && "skip with no new frame");
       continue;
     }
+    if (result.shouldSkipNode())
+      llvm_unreachable("unsupported at the moment");
     // Advance indicates the current work item's operation list was exhausted.
     assert(inode->stack.size() == size && "new frame with no skip");
     assert(item.ops.empty() && "advance did not exhaust worklist");
@@ -1676,8 +1719,8 @@ void ElaboratorImpl::processImplNode(ImplNode *inode) {
   finalizeAndVerifyFunction(analysis, inode);
 }
 
-WalkResult ElaboratorImpl::processScope(ImplNode *node,
-                                        ImplNode::WorkItem &item) {
+ElaborationState ElaboratorImpl::processScope(ImplNode *node,
+                                              ImplNode::WorkItem &item) {
   LLVM_DEBUG({
     auto _ = logger.scope("Operations to Rewrite");
     for (Operation *op : item.ops)
@@ -1690,18 +1733,18 @@ WalkResult ElaboratorImpl::processScope(ImplNode *node,
   // processed.
   while (!item.ops.empty()) {
     Operation *op = item.ops.back();
-    WalkResult result = processOp(node, op);
-    if (result.wasInterrupted() || result.wasSkipped())
+    ElaborationState result = processOp(node, op);
+    if (result.isError() || result.shouldSkipFrame() || result.shouldSkipNode())
       return result;
     item.ops.pop_back();
   }
   LLVM_DEBUG(node->print(logger << "Completed processing "));
-  return WalkResult::advance();
+  return ElaborationState::advance();
 }
 
-WalkResult ElaboratorImpl::processOp(ImplNode *node, Operation *op) {
+ElaborationState ElaboratorImpl::processOp(ImplNode *node, Operation *op) {
   if (!op->getBlock()->isEntryBlock() && op->getBlock()->hasNoPredecessors())
-    return WalkResult::advance();
+    return ElaborationState::advance();
 
   auto _ = logger.scope("Processing: '", op->getName(), "'");
   logger.logOp("Op", op);
