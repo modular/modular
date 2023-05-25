@@ -51,13 +51,13 @@ LogicalResult M::checkMatchingTypes(Operation *op, StringRef context,
   if (actualTypes.size() != expectedTypes.size()) {
     return op->emitOpError()
            << "expected " << expectedTypes.size() << " " << context
-           << " types, but given " << actualTypes.size();
+           << " entries, but given " << actualTypes.size();
   }
 
   for (size_t i = 0, e = actualTypes.size(); i != e; ++i) {
     if (actualTypes[i] != expectedTypes[i]) {
       return op->emitOpError()
-             << "actual " << context << " type #" << i << " is "
+             << "actual " << context << " #" << i << " has type "
              << actualTypes[i] << " but expected " << expectedTypes[i];
     }
   }
