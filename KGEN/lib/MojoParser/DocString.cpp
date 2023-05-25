@@ -663,6 +663,9 @@ private:
         generateArraySection("parameters", description, line, lineE,
                              paramToDetail);
         continue;
+      } else if (description[line] == (Twine(kConstraints) + ":").str()) {
+        generateParagraphSection("constraints", description, line, lineE);
+        continue;
       }
       pureDescriptionLines.push_back(description[line]);
     }
