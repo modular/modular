@@ -224,8 +224,8 @@ fn fn_returns_section_poor_style() -> Int:
     Returns:
         doesn't start with a capital letter, doesn't end with a period!
     """
-    # expected-warning @-2 {{'Returns' section description should begin with a capital letter or '`', but this begins with 'd'}}
-    # expected-warning @-3 {{'Returns' section description should end with a period '.', but this ends with '!'}}
+    # expected-warning @-2 {{section body should begin with a capital letter or '`', but this begins with 'd'}}
+    # expected-warning @-3 {{section body should end with a period '.', but this ends with '!'}}
     return 0
 
 

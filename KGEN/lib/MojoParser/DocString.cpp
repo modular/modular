@@ -18,6 +18,10 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
+/// Within a doc string, the "Constraints" section describes invariants that
+/// must be true for the struct or function.
+static constexpr const char *kConstraints = "Constraints";
+
 /// Within a doc string, the "Parameters" section lists descriptions of each
 /// parameter.
 static constexpr const char *kParameters = "Parameters";
@@ -616,7 +620,7 @@ private:
       } else if (description[line] == (Twine(kReturns) + ":").str()) {
         if (returnType)
           generateParagraphSection("returns", description, line, lineE);
-      } else if (description[line] == "Constraints:") {
+      } else if (description[line] == (Twine(kConstraints) + ":").str()) {
         generateParagraphSection("constraints", description, line, lineE);
       } else {
         pureDescriptionLines.push_back(description[line]);
@@ -816,15 +820,14 @@ private:
   void validateStyle(StringRef name, const char *first, const char *last) {
     if (!isValidFirstCharacter(*first))
       sharedState.emitWarning(SMLoc::getFromPointer(first), name)
-          << " description should begin with a capital letter or '`', but "
-             "this begins with '"
+          << " should begin with a capital letter or '`', but this begins"
+             " with '"
           << *first << "'";
 
     if (*last != '.')
       sharedState.emitWarning(SMLoc::getFromPointer(last), name)
-          << " description should end with a period '.', but this ends "
-             "with '"
-          << *last << "'";
+          << " should end with a period '.', but this ends with '" << *last
+          << "'";
   }
 
   //===----------------------------------------------------------------------===//
@@ -882,8 +885,8 @@ private:
 
       // Diagnose descriptions with poor style.
       if (validation == ValidationKind::Strict && !paramBody.empty())
-        validateStyle((Twine("'") + paramName + "'").str(), paramBody.begin(),
-                      paramBody.end() - 1);
+        validateStyle((Twine("'") + paramName + "' description").str(),
+                      paramBody.begin(), paramBody.end() - 1);
 
       // Record the location of the end of the doc string for this element.
       elementDocEndLocs[it - elements.begin()] = docEndLoc;
@@ -1000,6 +1003,7 @@ private:
 
     // Process the sections of the doc string.
     DenseMap<StringRef, SMLoc> sections = {
+        {kConstraints, SMLoc()},
         {kArgs, SMLoc()},
         {kParameters, SMLoc()},
         {kReturns, SMLoc()},
@@ -1009,21 +1013,21 @@ private:
         signature.hasMemoryOnlyResult() ||
         !funcOp.getResultTypeWithoutErrorVariant().isa<LIT::NoneType>();
     auto processFn = [&](StringRef section, SMLoc loc) mutable {
-      if (section == kArgs) {
-        processArguments(loc, seenArguments, description, validation);
-      } else if (section == kParameters) {
-        processParameters(loc, seenParameters, description, validation);
-      } else if (section == kReturns) {
-        if (!hasResults)
-          sharedState.emitWarning(loc, "unexpected 'Returns' in doc string for "
-                                       "function with no results");
+      if (section == kArgs)
+        return processArguments(loc, seenArguments, description, validation);
 
-        if (validation == ValidationKind::Strict) {
-          StringRef firstLine = description[1].ltrim();
-          StringRef lastLine = description.back().rtrim();
-          validateStyle("'Returns' section", firstLine.begin(),
-                        lastLine.end() - 1);
-        }
+      if (section == kParameters)
+        return processParameters(loc, seenParameters, description, validation);
+
+      if (section == kReturns && !hasResults)
+        sharedState.emitWarning(loc, "unexpected 'Returns' in doc string for "
+                                     "function with no results");
+
+      // Validate paragraph sections such as "Constraints:" and "Returns:".
+      if (validation == ValidationKind::Strict) {
+        StringRef firstLine = description[1].ltrim();
+        StringRef lastLine = description.back().rtrim();
+        validateStyle("section body", firstLine.begin(), lastLine.end() - 1);
       }
     };
     processDocSections(description, sections, processFn);
