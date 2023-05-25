@@ -20,7 +20,7 @@ namespace M {
 
 /// The maximum tensor rank for any tensor shape.
 /// This value must match max_rank in Kernels/mojo/Stdlib/Buffer.mojo
-constexpr size_t kMaxRank = 5;
+constexpr size_t kMaxRank = 8;
 
 namespace Detail {
 /// This class implements a storage class to hold tensor shapes in a compact
