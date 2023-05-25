@@ -339,6 +339,14 @@ private:
                                 size_t &line, size_t lineE) {
     std::string paragraph;
     llvm::raw_string_ostream paragraphOS(paragraph);
+
+    // A doc string may end with "Header:". This is diagnosed by the validator,
+    // but invalid doc strings may still be emitted as JSON.
+    if (line >= lines.size()) {
+      os.attribute(header, paragraphOS.str());
+      return;
+    }
+
     paragraphOS << lines[++line].trim();
 
     // Merge in additional description lines that have equal or larger
@@ -897,6 +905,14 @@ private:
         continue;
       }
       sectionLoc = lineLoc;
+
+      // Check that text follows the section header. For example, this should
+      // diagnose a doc string that ends with `Returns:"""`.
+      if (lines.size() == 1) {
+        sharedState.emitWarning(sectionLoc,
+                                "'" + section + "' section is empty");
+        break;
+      }
 
       // Process the section.
       processSection(section, lineLoc);
