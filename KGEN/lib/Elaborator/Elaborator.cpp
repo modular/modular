@@ -51,6 +51,60 @@ using namespace KGEN;
 using namespace LLCL;
 
 //===----------------------------------------------------------------------===//
+// printParameterValue
+//===----------------------------------------------------------------------===//
+
+/// Pretty-print the value of a parameter.
+static void printParameterValue(Attribute value, raw_ostream &os) {
+  if (auto intAttr = dyn_cast<IntegerAttr>(value)) {
+    os << intAttr.getValue();
+  } else if (auto floatAttr = dyn_cast<FloatAttr>(value)) {
+    SmallString<32> str;
+    floatAttr.getValue().toString(str);
+    os << str;
+  } else if (auto dtypeAttr = dyn_cast<DTypeConstantAttr>(value)) {
+    os << dtypeAttr.getDType();
+  } else if (auto typeConstant = dyn_cast<ConcreteTypeConstantAttr>(value)) {
+    // NOTE: Could use pretty mangling for common cases, e.g. "simd2xf32" or
+    // something if these get too verbose.
+    os << typeConstant.getValue();
+  } else if (auto symbolConstant = dyn_cast<SymbolConstantAttr>(value)) {
+    if (auto flat = dyn_cast<FlatSymbolRefAttr>(symbolConstant.getSymbol()))
+      os << flat.getValue();
+    else
+      os << symbolConstant.getSymbol();
+  } else if (auto stringConstant = dyn_cast<StringAttr>(value)) {
+    os << stringConstant.strref();
+  } else {
+    os << getParamAsString(value);
+  }
+}
+
+//===----------------------------------------------------------------------===//
+// mangleParameterValues
+//===----------------------------------------------------------------------===//
+
+/// This returns a name to use when the specified generator is specialized
+/// with the specified input parameters.
+static std::string mangleParameterValues(GeneratorOp generator,
+                                         ArrayRef<Attribute> inputParamValues) {
+  Builder b(generator.getContext());
+  if (inputParamValues.empty())
+    return generator.getName().str();
+
+  std::string result;
+  llvm::raw_string_ostream os(result);
+  os << generator.getName();
+
+  auto inputParamDecls = generator.getInputParamsAttr();
+  for (auto [inputDecl, value] : llvm::zip(inputParamDecls, inputParamValues)) {
+    os << ',' << inputDecl.getName().str() << '=';
+    printParameterValue(value, os);
+  }
+  return result;
+}
+
+//===----------------------------------------------------------------------===//
 // Logger
 //===----------------------------------------------------------------------===//
 
@@ -120,8 +174,10 @@ struct ParamNode;
 /// of elaboration for that concrete instance.
 struct ImplNode {
   /// Create a new generator implementation node.
-  ImplNode(FuncOp func, ParamNode *parent, ParameterUseDefGraph &&graph)
-      : func(func), parent(parent), paramGraph(std::move(graph)) {}
+  ImplNode(FuncOp func, ParamNode *parent, ParameterUseDefGraph &&graph,
+           std::string &&baseName)
+      : func(func), parent(parent), paramGraph(std::move(graph)),
+        baseName(std::move(baseName)) {}
 
   /// Take the provided error and set this node to an `error` state. Erase all
   /// state dominated by this node.
@@ -147,6 +203,9 @@ struct ImplNode {
   ParamNode *parent;
   /// Keep track of the nested parameter scopes within this function.
   ParameterUseDefGraph paramGraph;
+  /// The base name of the node to use to create derived names. This may differ
+  /// from the actual name of the function.
+  std::string baseName;
 
   /// Calls to the same interface/generator should resolve to the same thing in
   /// each func.
@@ -302,12 +361,22 @@ struct ExpansionGraph {
   std::vector<ImplNode *> worklist;
 
   /// Fork the expansion of a concrete node.
-  ImplNode *fork(ImplNode *cur, IRMapping &map, SymbolTable &symtab) {
-    // Fork the node and its bindings.
+  ImplNode *fork(ImplNode *cur, IRMapping &map, SymbolTable &symtab,
+                 StringRef forkParam, Attribute value) {
+    // Clone the function and generate a unique name for it.
     auto clone = cast<FuncOp>(cur->func->clone(map));
+    std::string name = cur->baseName;
+    llvm::raw_string_ostream os(name);
+    os << ',';
+    if (!forkParam.empty())
+      os << forkParam << '=';
+    printParameterValue(value, os);
+    clone.setSymName(name);
     symtab.insert(clone, ++cur->func->getIterator());
-    auto n = std::make_unique<ImplNode>(clone, cur->parent,
-                                        cur->paramGraph.copy(map));
+
+    // Fork the node and its bindings.
+    auto n = std::make_unique<ImplNode>(
+        clone, cur->parent, cur->paramGraph.copy(map), std::move(name));
     n->bindings = cur->bindings;
 
     // Copy over the current work stack.
@@ -674,60 +743,6 @@ static StringAttr getMangledRegionParamName(ParamDeclareRegionOp decl) {
   std::string paramName = decl.getParamDecl().getName().getValue().str() + "_" +
                           parentFunc.getNameAttr().getValue().str();
   return StringAttr::get(decl.getContext(), paramName);
-}
-
-//===----------------------------------------------------------------------===//
-// printParameterValue
-//===----------------------------------------------------------------------===//
-
-/// Pretty-print the value of a parameter.
-static void printParameterValue(TypedAttr value, raw_ostream &os) {
-  if (auto intAttr = dyn_cast<IntegerAttr>(value)) {
-    os << intAttr.getValue();
-  } else if (auto floatAttr = dyn_cast<FloatAttr>(value)) {
-    SmallString<32> str;
-    floatAttr.getValue().toString(str);
-    os << str;
-  } else if (auto dtypeAttr = dyn_cast<DTypeConstantAttr>(value)) {
-    os << dtypeAttr.getDType();
-  } else if (auto typeConstant = dyn_cast<ConcreteTypeConstantAttr>(value)) {
-    // NOTE: Could use pretty mangling for common cases, e.g. "simd2xf32" or
-    // something if these get too verbose.
-    os << typeConstant.getValue();
-  } else if (auto symbolConstant = dyn_cast<SymbolConstantAttr>(value)) {
-    if (auto flat = dyn_cast<FlatSymbolRefAttr>(symbolConstant.getSymbol()))
-      os << flat.getValue();
-    else
-      os << symbolConstant.getSymbol();
-  } else if (auto stringConstant = dyn_cast<StringAttr>(value)) {
-    os << stringConstant.strref();
-  } else {
-    os << getParamAsString(value);
-  }
-}
-
-//===----------------------------------------------------------------------===//
-// mangleParameterValues
-//===----------------------------------------------------------------------===//
-
-/// This returns a name to use when the specified generator is specialized
-/// with the specified input parameters.
-static StringAttr mangleParameterValues(GeneratorOp generator,
-                                        ArrayRef<Attribute> inputParamValues) {
-  Builder b(generator.getContext());
-  if (inputParamValues.empty())
-    return b.getStringAttr(generator.getName() + "_concrete");
-
-  std::string result;
-  llvm::raw_string_ostream os(result);
-  os << generator.getName();
-
-  auto inputParamDecls = generator.getInputParamsAttr();
-  for (auto [inputDecl, value] : llvm::zip(inputParamDecls, inputParamValues)) {
-    os << ',' << inputDecl.getName().str() << '=';
-    printParameterValue(cast<TypedAttr>(value), os);
-  }
-  return b.getStringAttr(result);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1124,7 +1139,8 @@ void ElaboratorImpl::spawnParamForkClone(ParamForkOp forkOp, Attribute value,
 
   // Hook this new clone up correctly.
   ImplNode *newFuncNode =
-      g.fork(forkParentNode, map, analysis.getTopLevelSymbolTable());
+      g.fork(forkParentNode, map, analysis.getTopLevelSymbolTable(),
+             forkOp.getParamDecl().getName(), value);
 
   // Change the future of this func by resolving the forkOp in the new func
   // to the specified value.
@@ -1290,7 +1306,8 @@ ElaboratorImpl::processGeneratorUser(KGENCallOpInterface user,
     LLVM_DEBUG(c->print(logger << "Concrete Implementation "));
 
     // This is a sibling to the parent, and it clones the parent's evaluator.
-    ImplNode *newNode = g.fork(parent, map, analysis.getTopLevelSymbolTable());
+    ImplNode *newNode = g.fork(parent, map, analysis.getTopLevelSymbolTable(),
+                               "", c->func.getNameAttr());
     // Bind this concrete impl to this callee for this node.
     newNode->bindings[{inputParamKey, gen}] = c;
 
@@ -1940,13 +1957,15 @@ ElaborationState ElaboratorImpl::specializeGenerator(ParamNode *genNode) {
     return ElaborationState::error();
   }
 
-  StringAttr mangledName = mangleParameterValues(generator, inputParamValues);
+  std::string baseName = mangleParameterValues(generator, inputParamValues);
 
   // TODO (low prio): Some day we could mangle "instantiated from here"
   // information into the location.
   OpBuilder b(generator);
   auto newFunc = b.create<FuncOp>(
-      generator.getLoc(), mangledName,
+      generator.getLoc(),
+      b.getStringAttr(baseName +
+                      Twine(inputParamValues.empty() ? "_concrete" : "")),
       SignatureType::get(TypeArrayAttr::get(generator.getContext(), {}),
                          TypeArrayAttr::get(generator.getContext(), {}),
                          generator.getFunctionType(), generator.getMetadata()),
@@ -1968,8 +1987,8 @@ ElaborationState ElaboratorImpl::specializeGenerator(ParamNode *genNode) {
 
   // The node for this new func is simply the child of the node for the
   // generator.
-  auto childNode =
-      std::make_unique<ImplNode>(newFunc, genNode, std::move(childGraph));
+  auto childNode = std::make_unique<ImplNode>(
+      newFunc, genNode, std::move(childGraph), std::move(baseName));
   g.concreteNodes.try_emplace(newFunc, childNode.get());
   ImplNode *newFuncNode = childNode.get();
   genNode->impls.push_back(std::move(childNode));
@@ -2037,16 +2056,22 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
   for (auto gen : llvm::make_early_inc_range(theModule.getOps<GeneratorOp>())) {
     ParamNode *genNode = g.getOrCreate(emptyInputParamKey, gen, /*depth=*/0);
 
-    // Add all concrete functions, and rename the first one.
+    // Add all concrete functions, and rename the first successful one.
     std::vector<FuncOp> concreteFuncs;
     genNode->getAllConcreteFuncs(concreteFuncs);
     for (FuncOp c : concreteFuncs)
-      analysis.getTopLevelSymbolTable().insert(c, genNode->gen->getIterator());
+      symtab.insert(c, genNode->gen->getIterator());
 
-    if (!concreteFuncs.empty())
-      funcsToRename[concreteFuncs.front().getNameAttr()] =
-          genNode->gen.getSymNameAttr();
-    symtab.erase(gen);
+    symtab.remove(gen);
+    if (!concreteFuncs.empty()) {
+      StringAttr newName = gen.getSymNameAttr();
+      FuncOp first = concreteFuncs.front();
+      funcsToRename[first.getNameAttr()] = newName;
+      symtab.remove(first);
+      concreteFuncs.front().setSymNameAttr(newName);
+      symtab.insert(first);
+    }
+    gen->erase();
   }
 
   for (ParamNode &node :
@@ -2059,36 +2084,15 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
   // Perform any renaming at the end.  We cannot use the
   // SymbolTable::replaceAllSymbolUses method, because it doesn't tolerate
   // unregistered operations.  It also doesn't support batch renaming.
-  theModule->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) -> WalkResult {
-    // If this op is a ParamDeclareRegionOp, delete it. It must be fully handled
-    // at this phase.
-    if (auto regionParam = dyn_cast<ParamDeclareRegionOp>(op)) {
-      regionParam.erase();
-      return WalkResult::skip();
-    }
-
-    // If this is a func being renamed, rename it.
-    if (auto func = dyn_cast<FuncOp>(op)) {
-      if (auto newName = funcsToRename.lookup(func.getNameAttr())) {
-        // Keep the symbol table up-to-date with the new name.
-        symtab.remove(func);
-        func.setSymNameAttr(newName);
-        symtab.insert(func, op->getIterator());
-      }
-      return WalkResult::advance();
-    }
-
+  theModule->walk<mlir::WalkOrder::PreOrder>([&](KGENCallOpInterface call) {
     // If this is a reference to a function that got renamed, update its
     // target.
-    TypeSwitch<Operation *>(op).Case([&](KGENCallOpInterface call) {
-      auto callee = cast<SymbolConstantAttr>(call.getCallee());
-      auto newName = funcsToRename.lookup(
-          cast<FlatSymbolRefAttr>(callee.getSymbol()).getAttr());
-      if (newName)
-        call.updateCallee(SymbolConstantAttr::get(
-            FlatSymbolRefAttr::get(newName), callee.getType()));
-    });
-    return WalkResult::advance();
+    auto callee = cast<SymbolConstantAttr>(call.getCallee());
+    if (StringAttr newName = funcsToRename.lookup(
+            cast<FlatSymbolRefAttr>(callee.getSymbol()).getAttr())) {
+      call.updateCallee(SymbolConstantAttr::get(FlatSymbolRefAttr::get(newName),
+                                                callee.getType()));
+    }
   });
 
   return success();
