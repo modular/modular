@@ -65,8 +65,8 @@ struct Buffer[size: Dim, type: DType]:
     The Buffer does not own its underlying pointer.
 
     Parameters:
-      size: the static size (if known) of the Buffer.
-      type: the element type of the Buffer.
+      size: The static size (if known) of the Buffer.
+      type: The element type of the Buffer.
     """
 
     var data: DTypePointer[type]
@@ -382,7 +382,7 @@ struct Buffer[size: Dim, type: DType]:
         """Constructs a buffer instance backed by stack allocated memory space.
 
         Parameters:
-            alignment: address alignment requirement for the allocation.
+            alignment: Address alignment requirement for the allocation.
 
         Returns:
             Constructed buffer with the allocated space.
@@ -601,8 +601,8 @@ struct NDBuffer[
 
     Parameters:
         rank: The rank of the buffer.
-        shape: the static size (if known) of the buffer.
-        type: the element type of the buffer.
+        shape: The static size (if known) of the buffer.
+        type: The element type of the buffer.
     """
 
     var data: DTypePointer[type]
@@ -960,7 +960,7 @@ struct NDBuffer[
         """Get an element from the buffer from the specified index.
 
         Args:
-            idx: index of the element to retrieve.
+            idx: Index of the element to retrieve.
 
         Returns:
             The value of the element.
@@ -972,7 +972,7 @@ struct NDBuffer[
         """Get an element from the buffer from the specified index.
 
         Args:
-            idx: index of the element to retrieve.
+            idx: Index of the element to retrieve.
 
         Returns:
             The value of the element.
@@ -1408,7 +1408,7 @@ struct NDBuffer[
         """Constructs an NDBuffer instance backed by stack allocated memory space.
 
         Parameters:
-            alignment: address alignment requirement for the allocation.
+            alignment: Address alignment requirement for the allocation.
 
         Returns:
             Constructed NDBuffer with the allocated space.
@@ -1468,9 +1468,9 @@ fn partial_simd_load[
 
     Args:
         storage: Pointer to the address to perform load.
-        lbound: lower bound of valid index within simd (inclusive).
-        rbound: upper bound of valid index within simd (non-inclusive).
-        pad_value: value to fill for out of bound indices.
+        lbound: Lower bound of valid index within simd (inclusive).
+        rbound: Upper bound of valid index within simd (non-inclusive).
+        pad_value: Value to fill for out of bound indices.
 
     Returns:
         The SIMD vector loaded and zero-filled.
@@ -1509,8 +1509,8 @@ fn partial_simd_store[
 
     Args:
         storage: Pointer to the address to perform load.
-        lbound: lower bound of valid index within simd (inclusive).
-        rbound: upper bound of valid index within simd (non-inclusive).
+        lbound: Lower bound of valid index within simd (inclusive).
+        rbound: Upper bound of valid index within simd (non-inclusive).
         data: The vector value to store.
     """
     # Create a mask based on input bounds.
@@ -1555,10 +1555,10 @@ struct DynamicRankBuffer:
         """Construct DynamicRankBuffer.
 
         Args:
-            data: pointer to the underlying data.
-            rank: rank of the buffer.
-            shape: shapes of the buffer.
-            type: dtype of the buffer.
+            data: Pointer to the underlying data.
+            rank: Rank of the buffer.
+            shape: Shapes of the buffer.
+            type: `dtype` of the buffer.
 
         Returns:
             Constructed DynamicRankBuffer.
@@ -1575,7 +1575,7 @@ struct DynamicRankBuffer:
         """Cast DynamicRankBuffer to Buffer.
 
         Parameters:
-            type: dtype of the buffer.
+            type: `dtype` of the buffer.
 
         Returns:
             Constructed Buffer.
@@ -1594,8 +1594,8 @@ struct DynamicRankBuffer:
             Rank of DynamicRankBuffer must equal rank of NDBuffer.
 
         Parameters:
-            rank: rank of the buffer.
-            type: dtype of the buffer.
+            rank: Rank of the buffer.
+            type: `dtype` of the buffer.
 
         Returns:
             Constructed NDBuffer.
@@ -1622,11 +1622,11 @@ struct DynamicRankBuffer:
             Rank of DynamicRankBuffer must equal rank of NDBuffer.
 
         Parameters:
-            rank: rank of the buffer.
-            type: dtype of the buffer.
+            rank: Rank of the buffer.
+            type: `dtype` of the buffer.
 
         Args:
-            stride: strides of the buffer.
+            stride: Strides of the buffer.
 
         Returns:
             Constructed NDBuffer.
