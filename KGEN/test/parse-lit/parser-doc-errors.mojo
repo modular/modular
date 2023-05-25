@@ -94,6 +94,13 @@ fn _fn_private_no_doc_string():
     pass
 
 
+fn fn_poor_style():
+    """this summary should be capitalized and end with a period"""
+    # expected-warning @above {{doc string summary should begin with a capital letter or '`', but this begins with 't'}}
+    # expected-warning @above {{doc string summary should end with a period '.', but this ends with 'd'}}
+    pass
+
+
 fn _fn_private_args_missing(arg: ArgStruct):
     """This is a private function doc string.
 
