@@ -119,7 +119,7 @@ kgen.generator @call_generator_test(%arg0: si32, %arg1: si32)
 
 //===----------------------------------------------------------------------===//
 
-// CHECK-LABEL: @"genItf2,x=0_0"()
+// CHECK-LABEL: @"genItf2,x=0"()
 kgen.generator @genItf2<x>() {
   // CHECK-NEXT: kgen.call @"genItf2_impl0,x=0"
   kgen.param.fork impl : () -> () = <[@genItf2_impl0<x>, @genItf2_impl1<x>]>
@@ -127,7 +127,7 @@ kgen.generator @genItf2<x>() {
   kgen.return
 }
 
-// CHECK-NOT: kgen.func @"genItf2_impl0,x=1"() {
+// CHECK-NOT: kgen.func @"genItf2_impl0,x=1_1"() {
 // CHECK-LABEL: kgen.func @"genItf2_impl0,x=0"() {
 // CHECK-NEXT:   "impl.0"() : () -> ()
 // CHECK-NEXT:   kgen.return
@@ -150,7 +150,7 @@ kgen.generator @genItf2_impl1<x>()
 }
 
 // CHECK-LABEL: kgen.func @use_Itf2zero() {
-// CHECK-NEXT:   kgen.call @"genItf2,x=0_0"() : () -> ()
+// CHECK-NEXT:   kgen.call @"genItf2,x=0"() : () -> ()
 // CHECK-NEXT:   kgen.return
 kgen.generator @use_Itf2zero() {
   kgen.call @genItf2<0>() : () -> ()
@@ -158,7 +158,7 @@ kgen.generator @use_Itf2zero() {
 }
 
 // CHECK-LABEL: kgen.func @use_Itf2one() {
-// CHECK-NEXT:   kgen.call @"genItf2,x=1_3"() : () -> ()
+// CHECK-NEXT:   kgen.call @"genItf2,x=1_1"() : () -> ()
 // CHECK-NEXT:   kgen.return
 // CHECK-NEXT: }
 kgen.generator @use_Itf2one() {
@@ -180,11 +180,11 @@ kgen.generator @use_Itf2one() {
 
 // CHECK-NOT: kgen.func @track_expansions
 
-// CHECK-LABEL: kgen.func @track_expansions_concrete_6
+// CHECK-LABEL: kgen.func @track_expansions_concrete_3
 // CHECK-SAME: (%[[ARG0:.*]]: si32)
 // CHECK-NEXT: kgen.call @"genItf,x=42"
 // CHECK-NEXT: kgen.call @"genItf,x=42"
-// CHECK-NEXT: kgen.call @itfUser_concrete_5(%[[ARG0]])
+// CHECK-NEXT: kgen.call @itfUser_concrete_2(%[[ARG0]])
 
 // CHECK-NOT: kgen.func @track_expansions
 
@@ -1479,19 +1479,19 @@ kgen.generator @someFunc<x>() {
   kgen.return
 }
 
-// CHECK-LABEL: @constexprIfWithSearch_concrete_2()
+// CHECK-LABEL: @constexprIfWithSearch()
 // CHECK-NEXT:   "should.appear"
-// CHECK-NEXT:   "someFunc,x=3"
+// CHECK-NEXT:   "someFunc,x=1"
 // CHECK-NEXT:   param.constant = <42>
 
 // CHECK-LABEL: @constexprIfWithSearch_concrete_1()
 // CHECK-NEXT:   "should.appear"
-// CHECK-NEXT:   "someFunc,x=2"
+// CHECK-NEXT:   "someFunc,x=3"
 // CHECK-NEXT:   param.constant = <42>
 
-// CHECK-LABEL: @constexprIfWithSearch()
+// CHECK-LABEL: @constexprIfWithSearch_concrete_0()
 // CHECK-NEXT:   "should.appear"
-// CHECK-NEXT:   "someFunc,x=1"
+// CHECK-NEXT:   "someFunc,x=2"
 // CHECK-NEXT:   param.constant = <42>
 
 kgen.generator @constexprIfWithSearch() {
@@ -1525,11 +1525,11 @@ kgen.generator @someFunc<x>() {
   kgen.return
 }
 
-// CHECK-LABEL: @multiVersion_concrete_1()
-// CHECK-NEXT: kgen.call @"someFunc,x=2"
-
 // CHECK-LABEL: @multiVersion()
 // CHECK-NEXT: kgen.call @"someFunc,x=1"
+
+// CHECK-LABEL: @multiVersion_concrete_0()
+// CHECK-NEXT: kgen.call @"someFunc,x=2"
 
 kgen.generator @multiVersion() {
   kgen.param.fork x = <[1, 2]>
@@ -1540,8 +1540,8 @@ kgen.generator @multiVersion() {
 // CHECK-LABEL: @constexprIfWithParamSearchCall
 // CHECK-NEXT: kgen.call @multiVersion
 
-// CHECK-LABEL: @constexprIfWithParamSearchCall_concrete_2
-// CHECK-NEXT: kgen.call @multiVersion_concrete_1
+// CHECK-LABEL: @constexprIfWithParamSearchCall_concrete_1
+// CHECK-NEXT: kgen.call @multiVersion_concrete_0
 
 kgen.generator @constexprIfWithParamSearchCall() {
   kgen.param.declare true : i1 = <1>
@@ -1562,20 +1562,20 @@ kgen.generator @someFunc<x -> y>() {
   kgen.return
 }
 
-// CHECK-LABEL: @constexprIfWithReturnedCondition_concrete_2()
-// CHECK-NEXT:   "someFunc,x=3"
+// CHECK-LABEL: @constexprIfWithReturnedCondition()
+// CHECK-NEXT:   "someFunc,x=1"
 // COM: This should be 12 because we have (3 & 2) + 10 == 12
-// CHECK-NEXT:   param.constant = <12>
+// CHECK-NEXT:   param.constant = <20>
 
 // CHECK-LABEL: @constexprIfWithReturnedCondition_concrete_1()
-// CHECK-NEXT:   "someFunc,x=2"
+// CHECK-NEXT:   "someFunc,x=3"
 // COM: This should be 12 because we have (2 & 2) + 10 == 12
 // CHECK-NEXT:   param.constant = <12>
 
-// CHECK-LABEL: @constexprIfWithReturnedCondition()
-// CHECK-NEXT:   "someFunc,x=1"
+// CHECK-LABEL: @constexprIfWithReturnedCondition_concrete_0()
+// CHECK-NEXT:   "someFunc,x=2"
 // COM: This should be 20 because we have (1 & 2) + 20 == 20
-// CHECK-NEXT:   param.constant = <20>
+// CHECK-NEXT:   param.constant = <12>
 
 kgen.generator @constexprIfWithReturnedCondition() {
   kgen.param.fork inParam = <[1, 2, 3]>
@@ -1943,11 +1943,11 @@ kgen.generator @true_inside_false_param_if() {
   kgen.return
 }
 
-// CHECK-LABEL: kgen.func @fork_unreachable_blocks_{{.*}}
-// CHECK-NEXT: kgen.param.constant = <2>
-
 // CHECK-LABEL: kgen.func @fork_unreachable_blocks
 // CHECK-NEXT: kgen.return
+
+// CHECK-LABEL: kgen.func @fork_unreachable_blocks_{{.*}}
+// CHECK-NEXT: kgen.param.constant = <2>
 kgen.generator @fork_unreachable_blocks() {
   kgen.param.fork g = <[1, 2]>
   kgen.param.if <eq(g, 2)> {
@@ -2081,11 +2081,11 @@ kgen.generator @caller() {
   kgen.return
 }
 
-// CHECK-LABEL: kgen.func @two_versions_concrete_1
-// CHECK-NEXT: constant = <2>
-
 // CHECK-LABEL: kgen.func @two_versions
 // CHECK-NEXT: constant = <1>
+
+// CHECK-LABEL: kgen.func @two_versions_concrete_0
+// CHECK-NEXT: constant = <2>
 
 kgen.generator @two_versions(%arg0: index) -> index {
   kgen.param.fork value = <[1, 2]>
@@ -2097,7 +2097,7 @@ kgen.generator @two_versions(%arg0: index) -> index {
 // CHECK-LABEL: kgen.func @param_apply
 // CHECK-NEXT: constant = <2>
 
-// CHECK-LABEL: kgen.func @param_apply_concrete_2
+// CHECK-LABEL: kgen.func @param_apply_concrete_1
 // CHECK-NEXT: constant = <3>
 
 kgen.generator @param_apply() {
