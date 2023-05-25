@@ -108,6 +108,8 @@ DocString::DocString(StringRef rawDocString) {
   if (lines.empty())
     return;
 
+  loc = SMLoc::getFromPointer(lines.front().begin());
+
   // Determine the minimum indentation (first line doesn't count).
   size_t indent = std::numeric_limits<size_t>::max();
   for (StringRef &line : lines.drop_front()) {
@@ -731,6 +733,27 @@ public:
                     << op.getName() << "' is missing a doc string";
               return;
             }
+
+            if (validation == ValidationKind::Strict) {
+              // Check that the summary line is a complete sentence: it begins
+              // with a capital letter (or a punctuator such as '`'), and ends
+              // with a period.
+              StringRef summary = docStr->getSummary();
+              if (!summary.starts_with("`") && !isupper(summary.front()))
+                sharedState.emitWarning(docStr->getLoc(),
+                                        "doc string summary should begin with "
+                                        "a capital letter or '`', but this "
+                                        "begins with '")
+                    << summary.front() << "'";
+
+              if (!summary.ends_with("."))
+                sharedState.emitWarning(
+                    docStr->getLoc(),
+                    "doc string summary should end with a period '.', but this "
+                    "ends with '")
+                    << summary.back() << "'";
+            }
+
             validateDecl(decl, op, *docStr, validation);
           });
     }

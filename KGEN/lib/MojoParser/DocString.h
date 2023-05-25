@@ -33,12 +33,18 @@ public:
   /// Return the fully body description of the doc string.
   ArrayRef<StringRef> getDescription() const { return descriptionLines; }
 
+  /// Return the beginning location of the doc string.
+  SMLoc getLoc() const { return loc; }
+
 private:
   /// The short summary of the doc string.
   std::string summary;
 
   /// The lines comprising the description.
   SmallVector<StringRef> descriptionLines;
+
+  /// The beginning location of the doc string.
+  SMLoc loc;
 };
 
 //===----------------------------------------------------------------------===//
