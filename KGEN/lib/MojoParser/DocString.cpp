@@ -18,6 +18,10 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
+/// Within a doc string, the "Args" section lists descriptions of each function
+/// argument.
+static constexpr const char *kArgs = "Args";
+
 /// Within a doc string, the "Returns" section describes the results of a
 /// function.
 static constexpr const char *kReturns = "Returns";
@@ -590,7 +594,7 @@ private:
     // Process the lines of the description, looking for markers.
     SmallVector<StringRef> pureDescriptionLines;
     for (size_t line = 0, lineE = description.size(); line < lineE; ++line) {
-      if (description[line] == "Args:") {
+      if (description[line] == (Twine(kArgs) + ":").str()) {
         generateArraySection("args", description, line, lineE, argNameToDetail);
       } else if (description[line] == "Parameters:") {
         generateArraySection("parameters", description, line, lineE,
@@ -908,7 +912,7 @@ private:
 
     // Process the sections of the doc string.
     DenseMap<StringRef, SMLoc> sections = {
-        {"Args", SMLoc()},
+        {kArgs, SMLoc()},
         {"Parameters", SMLoc()},
         {kReturns, SMLoc()},
     };
@@ -917,7 +921,7 @@ private:
         signature.hasMemoryOnlyResult() ||
         !funcOp.getResultTypeWithoutErrorVariant().isa<LIT::NoneType>();
     auto processFn = [&](StringRef section, SMLoc loc) mutable {
-      if (section == "Args") {
+      if (section == kArgs) {
         processArguments(loc, seenArguments, description);
       } else if (section == "Parameters") {
         processParameters(loc, seenParameters, description);
@@ -929,11 +933,17 @@ private:
     };
     processDocSections(description, sections, processFn);
 
-    if (!sections[kReturns].isValid() && hasResults &&
-        validation == ValidationKind::Strict) {
-      sharedState.emitWarning(
-          funcOp.getLoc(),
-          "function has results, but no 'Returns' in doc string");
+    if (validation == ValidationKind::Strict) {
+      if (!sections[kArgs].isValid() && !seenArguments.empty()) {
+        sharedState.emitWarning(
+            funcOp.getLoc(),
+            "function takes arguments, but no 'Args' in doc string");
+      }
+      if (!sections[kReturns].isValid() && hasResults) {
+        sharedState.emitWarning(
+            funcOp.getLoc(),
+            "function has results, but no 'Returns' in doc string");
+      }
     }
   }
 
