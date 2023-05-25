@@ -1599,6 +1599,44 @@ kgen.generator @constexprIfWithReturnedCondition() {
 
 // -----
 
+// CHECK-LABEL: kgen.func @"param_if_fork,a=-1"
+// CHECK-NEXT: <1>
+// CHECK-NEXT: <5>
+
+// CHECK-LABEL: kgen.func @"param_if_fork,a=-1_1"
+// CHECK-NEXT: <1>
+// CHECK-NEXT: <6>
+
+// CHECK-LABEL: kgen.func @"param_if_fork,a=-1_0"
+// CHECK-NEXT: <2>
+// CHECK-NEXT: <5>
+
+// CHECK-LABEL: kgen.func @"param_if_fork,a=-1_0_2"
+// CHECK-NEXT: <2>
+// CHECK-NEXT: <6>
+
+kgen.generator @param_if_fork<a: i1>() {
+  kgen.param.if <a -> b> {
+    kgen.param.fork e = <[1, 2]>
+    kgen.param.result_bind<e>
+    kgen.param.yield
+  } else {
+    kgen.param.result_bind<0>
+    kgen.param.yield
+  }
+  kgen.param.fork c = <[5, 6]>
+  kgen.param.constant = <b>
+  kgen.param.constant = <c>
+  kgen.return
+}
+
+kgen.generator @call_it() {
+  kgen.call @param_if_fork<:i1 1>() : () -> ()
+  kgen.return
+}
+
+// -----
+
 // CHECK-LABEL: @"constexprIfInputParam,x=11"
 kgen.generator @constexprIfInputParam<x>() {
   // CHECK-NEXT: "should.appear"

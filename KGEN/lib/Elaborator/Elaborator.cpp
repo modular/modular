@@ -163,9 +163,15 @@ struct ImplNode {
     std::vector<Operation *> ops;
     /// The evaluator to use.
     IREvaluator evaluator;
-    /// The completion callback. Work items need to be clonable, so the capture
-    /// state cannot contain operations.
-    std::function<LogicalResult()> onComplete;
+    /// The completion callback. This function is invoked when the processing of
+    /// a scope completes. The callback should perform any necessary cleanup and
+    /// additional work scheduling if necessary. The callback is passed the
+    /// current node that owns the work item, and it is allowed to set errors,
+    /// access operations, modify bindings and worklists, etc. It is imperative
+    /// that the callback closure does not capture any operation handles but
+    /// that it accessing them through the node. This is because nodes can be
+    /// cloned and the operations get remapped.
+    std::function<LogicalResult(ImplNode *)> onComplete;
   };
 
   /// The current stack of worklists and scopes.
@@ -884,9 +890,9 @@ public:
   /// Process the scopes within an implementation node.
   void processImplNode(ImplNode *inode);
   /// Process a worklist of ops. Returns error if processing the scope resulted
-  /// in an error, returns `skipFrame` if the processing of the current scope scope
-  /// should be pre-empted with a new scope, returns `skipNode` if processing
-  /// the current implementation node should suspended.
+  /// in an error, returns `skipFrame` if the processing of the current scope
+  /// scope should be pre-empted with a new scope, returns `skipNode` if
+  /// processing the current implementation node should suspended.
   ElaborationState processScope(ImplNode *node, ImplNode::WorkItem &item);
   /// Process a single operation. Returns error if processing the scope resulted
   /// in an error, returns `skipFrame` if the processing of the current scope
@@ -1464,7 +1470,7 @@ ElaborationState ElaboratorImpl::processCallOp(ImplNode *parent,
 
   // Push a new work item.
   ImplNode::WorkItem item{std::move(opsToRewrite), parent->getEvaluator(),
-                          [] { return success(); }};
+                          [](ImplNode *) { return success(); }};
 
   // Set any parameter bindings on the region in the evaluator context.
   item.evaluator.clearCache();
@@ -1568,11 +1574,11 @@ ElaborationState ElaboratorImpl::processParamIfOp(ImplNode *parent,
 
   // When the nested scope completes processing, finish processing the current
   // parameter if.
-  item.onComplete = [this, parent, resultBool]() -> LogicalResult {
-    assert(parent->stack.size() >= 2 && "expected at least two work items");
+  item.onComplete = [this, resultBool](ImplNode *node) -> LogicalResult {
+    assert(node->stack.size() >= 2 && "expected at least two work items");
     // Retrieve the current state.
-    ImplNode::WorkItem &curFrame = parent->stack.back();
-    ImplNode::WorkItem &parentFrame = *std::next(parent->stack.rbegin());
+    ImplNode::WorkItem &curFrame = node->stack.back();
+    ImplNode::WorkItem &parentFrame = *std::next(node->stack.rbegin());
     auto op = cast<ParamIfOp>(parentFrame.ops.back());
     LLVM_DEBUG(logger << "Parameter if completion callback: " << op);
 
@@ -1605,16 +1611,16 @@ ElaborationState ElaboratorImpl::processParamIfOp(ImplNode *parent,
       // void at this point.
       op->dropAllDefinedValueUses();
     } else {
-      parent->setToError(ErrorTree(terminator->getLoc(),
-                                   "unknown terminator kind for parameter if "
-                                   "(compiler bug, please report!)"));
+      node->setToError(ErrorTree(terminator->getLoc(),
+                                 "unknown terminator kind for parameter if "
+                                 "(compiler bug, please report!)"));
       return failure();
     }
 
     // We always erase this op and its nested scopes from the parameter graph -
     // it's been handled, and we don't want anyone else touching it later
     // considering we're about to delete the op itself.
-    ParameterUseDefGraph &paramGraph = parent->paramGraph;
+    ParameterUseDefGraph &paramGraph = node->paramGraph;
     auto eraseIfScopes = [op](ParameterUseDefGraph &graph) mutable {
       // Erase any regions from the nested scopes that belong either to this op
       // or under this op.
@@ -1639,7 +1645,7 @@ ElaborationState ElaboratorImpl::processParamIfOp(ImplNode *parent,
     op->erase();
     parentFrame.ops.pop_back();
     LLVM_DEBUG(
-        logger.logOp("param.if parent scope (after processing)", parent->func));
+        logger.logOp("param.if parent scope (after processing)", node->func));
     return success();
   };
 
@@ -1709,7 +1715,7 @@ void ElaboratorImpl::processImplNode(ImplNode *inode) {
     // Advance indicates the current work item's operation list was exhausted.
     assert(inode->stack.size() == size && "new frame with no skip");
     assert(item.ops.empty() && "advance did not exhaust worklist");
-    if (failed(item.onComplete())) {
+    if (failed(item.onComplete(inode))) {
       assert(inode->error && "callback failed but no error set");
       return;
     }
@@ -1898,7 +1904,7 @@ ErrorTreeOrSuccess ElaboratorImpl::specializeGenerator(ParamNode *genNode) {
   collectOpsToProcess(&newFunc.getBodyRegion(), uses, opsToRewrite);
 
   ImplNode::WorkItem item{std::move(opsToRewrite), std::move(evaluator),
-                          [] { return success(); }};
+                          [](ImplNode *) { return success(); }};
   newFuncNode->stack.push_back(std::move(item));
   genNode->worklist.push_back(newFuncNode);
 
