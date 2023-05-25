@@ -19,7 +19,7 @@ from SIMD import SIMD
 from StaticTuple import StaticTuple
 from TargetInfo import dtype_sizeof, dtype_simd_width, dtype_alignof
 
-alias _MAX_RANK = 5
+alias _MAX_RANK = 8
 """The maximum tensor rank for any tensor shape.
 This value must match kMaxRank in Support/include/Support/ML/TensorShape.h
 """
@@ -931,7 +931,7 @@ struct NDBuffer[
         Returns:
             The offset into the NDBuffer given the indices.
         """
-        assert_param[rank <= 5]()
+        assert_param[rank <= _MAX_RANK]()
         return self.data.offset(
             _compute_ndbuffer_offset[rank, shape, type](self, idx)
         )
@@ -950,7 +950,7 @@ struct NDBuffer[
         Returns:
             The offset into the NDBuffer given the indices.
         """
-        assert_param[rank <= 5]()
+        assert_param[rank <= _MAX_RANK]()
         return self.data.offset(
             _compute_ndbuffer_offset[rank, shape, type](self, idx)
         )
@@ -1647,7 +1647,7 @@ struct DynamicRankBuffer:
         """Dispatch the function call based on buffer rank.
 
         Constraints:
-            Rank must be positive and less or equal to 5.
+            Rank must be positive and less or equal to 8.
 
         Parameters:
             func: Function to dispatch. The function should be parametrized on
@@ -1656,7 +1656,7 @@ struct DynamicRankBuffer:
         """
         debug_assert(
             self.rank > 0 and self.rank <= _MAX_RANK,
-            "rank must be positive and less or equal to 5",
+            "rank must be positive and less or equal to 8",
         )
 
         if self.rank == 1:
@@ -1679,6 +1679,18 @@ struct DynamicRankBuffer:
             func[5]()
             return
 
+        if self.rank == 6:
+            func[6]()
+            return
+
+        if self.rank == 7:
+            func[7]()
+            return
+
+        if self.rank == 8:
+            func[8]()
+            return
+
     @always_inline
     fn rank_dispatch[
         func: fn[rank: Int] () capturing -> None
@@ -1686,7 +1698,7 @@ struct DynamicRankBuffer:
         """Dispatch the function call based on buffer rank.
 
         Constraints:
-            Rank must be positive and less or equal to 5.
+            Rank must be positive and less or equal to 8.
 
         Parameters:
             func: Function to dispatch. The function should be parametrized on
@@ -1699,7 +1711,7 @@ struct DynamicRankBuffer:
         if self.rank <= 0 or self.rank > _MAX_RANK:
             out_chain.mark_error(
                 "invalid rank, the rank bust be positive and less than or"
-                " equal to 5"
+                " equal to 8"
             )
             return
 
@@ -1721,6 +1733,18 @@ struct DynamicRankBuffer:
 
         if self.rank == 5:
             func[5]()
+            return
+
+        if self.rank == 6:
+            func[6]()
+            return
+
+        if self.rank == 7:
+            func[7]()
+            return
+
+        if self.rank == 8:
+            func[8]()
             return
 
     @always_inline
