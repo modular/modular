@@ -295,7 +295,9 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
       [&](Operation &op, StringRef stmtKind) -> ImplicitLocOpBuilder {
     // Warn about dead code after the semantic terminator.
     Operation *nextOp = op.getNextNode();
-    if (!nextOp->hasTrait<OpTrait::IsTerminator>()) {
+    // We do report an error on `parameter if` since `parameter if` serves as a
+    // if preprocessor in Mojo.
+    if (!isa<ParamIfOp>(op) && !nextOp->hasTrait<OpTrait::IsTerminator>()) {
       // Don't complain if the location is the same as the enclosing function,
       // it is automatically synthesized.
       auto funcOp = nextOp->getParentOfType<LIT::FuncOp>();
