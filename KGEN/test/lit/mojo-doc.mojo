@@ -245,6 +245,7 @@ fn fn_with_variant(
 # CHECK:  "overloads"
 # CHECK:      "signature": "fn_with_by_conventions(self: Self&, arg: Self&, *args: Self&) -> Self",
 # CHECK:      "summary": "This is a function summary.",
+# CHECK:      "constraints": "This describes the method's constraints.",
 # CHECK:      "args"
 # CHECK:        {
 # CHECK:          "name": "arg",
@@ -278,6 +279,9 @@ struct InMemoryStruct:
     ) -> InMemoryStruct:
         """This is a function summary.
 
+        Constraints:
+            This describes the method's constraints.
+
         Args:
             arg: This is a by-ref argument.
             args: This is a variadic argument.
@@ -291,6 +295,7 @@ struct InMemoryStruct:
 # CHECK:  "kind": "struct",
 # CHECK:  "name": "ParameterClass",
 # CHECK:  "summary": "This is a class summary.",
+# CHECK:  "constraints": "This describes the struct's constraints.",
 # CHECK:  "parameters": [
 # CHECK:      "name": "_type",
 # CHECK:      "type": "dtype",
@@ -312,6 +317,9 @@ struct ParameterClass[_type: __mlir_type.`!kgen.dtype`]:
     """This is a class summary.
 
     The is some kind of description.
+
+    Constraints:
+        This describes the struct's constraints.
 
     Parameters:
         _type: This is a parameter.
