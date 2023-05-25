@@ -723,6 +723,10 @@ enum class ValidationKind {
   Strict,
 };
 
+/// Return whether this character is valid as the first character in a doc
+/// string summary, section body, or argument description.
+static bool isValidFirstCharacter(char c) { return c == '`' || isupper(c); }
+
 class DocStringValidator {
 public:
   DocStringValidator(SharedState &sharedState) : sharedState(sharedState) {}
@@ -747,7 +751,7 @@ public:
               // with a capital letter (or a punctuator such as '`'), and ends
               // with a period.
               StringRef summary = docStr->getSummary();
-              if (!summary.starts_with("`") && !isupper(summary.front()))
+              if (!isValidFirstCharacter(summary.front()))
                 sharedState.emitWarning(docStr->getLoc(),
                                         "doc string summary should begin with "
                                         "a capital letter or '`', but this "
@@ -972,6 +976,21 @@ private:
         if (!hasResults)
           sharedState.emitWarning(loc, "unexpected 'Returns' in doc string for "
                                        "function with no results");
+
+        StringRef firstLine = description[1].ltrim();
+        if (!isValidFirstCharacter(firstLine.front()))
+          sharedState.emitWarning(
+              SMLoc::getFromPointer(firstLine.begin()),
+              "'Returns' section description should begin with a capital "
+              "letter or '`', but this begins with '")
+              << firstLine.front() << "'";
+
+        StringRef lastLine = description.back().rtrim();
+        if (!lastLine.ends_with("."))
+          sharedState.emitWarning(SMLoc::getFromPointer(firstLine.begin()),
+                                  "'Returns' section description should end "
+                                  "with a period '.', but this ends with '")
+              << lastLine.back() << "'";
       }
     };
     processDocSections(description, sections, processFn);
