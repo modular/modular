@@ -783,16 +783,21 @@ private:
   ///     ...
   ///   ElementN: ...
   ///
+  /// The \p processEntry callback is invoked for each entry. It is passed two
+  /// string references: the entry name ("Element1" in the example above), and
+  /// its description (the epllipsis "..." in the example above).
   void process2ColumnDocSection(
       ArrayRef<StringRef> &lines,
-      function_ref<void(StringRef, SMLoc)> processEntryName) {
+      function_ref<void(StringRef, StringRef)> processEntry) {
     size_t sectionIndent = getIndentationLevel(lines[0]);
     lines = lines.drop_front();
     while (!lines.empty()) {
       size_t lineIndent = getIndentationLevel(lines[0]);
       if (lineIndent <= sectionIndent)
         break;
+
       StringRef entryName = lines[0].split(':').first.trim();
+      const char *body = lines[0].split(':').second.ltrim().data();
 
       // Skip additional description lines that have a larger indentation.
       StringRef lastDocLine;
@@ -800,8 +805,26 @@ private:
         lastDocLine = lines[0];
         lines = lines.drop_front();
       } while (!lines.empty() && getIndentationLevel(lines[0]) > lineIndent);
-      processEntryName(entryName, SMLoc::getFromPointer(lastDocLine.end()));
+      processEntry(entryName, StringRef(body, lastDocLine.end() - body));
     }
+  }
+
+  /// Given pointers to the \p first and \p last characters in a portion of a
+  /// doc string, emits warnings (prefixed with the given \p name) if:
+  /// 1. The first character is not either a capital letter or a backtick '`'.
+  /// 2. The last character is not a period.
+  void validateStyle(StringRef name, const char *first, const char *last) {
+    if (!isValidFirstCharacter(*first))
+      sharedState.emitWarning(SMLoc::getFromPointer(first), name)
+          << " description should begin with a capital letter or '`', but "
+             "this begins with '"
+          << *first << "'";
+
+    if (*last != '.')
+      sharedState.emitWarning(SMLoc::getFromPointer(last), name)
+          << " description should end with a period '.', but this ends "
+             "with '"
+          << *last << "'";
   }
 
   //===----------------------------------------------------------------------===//
@@ -810,12 +833,14 @@ private:
   /// Process a parameter or argument section.
   void processParamOrArgs(SMLoc loc, StringRef tag,
                           llvm::MapVector<StringRef, SMLoc> &elements,
-                          ArrayRef<StringRef> &lines) {
+                          ArrayRef<StringRef> &lines,
+                          ValidationKind validation) {
     StringRef sectionLine = lines[0];
     bool emittedUnexpectedOrderWarning = false;
     ptrdiff_t nextEltIndex = 0;
     SmallVector<SMLoc> elementDocEndLocs(elements.size());
-    process2ColumnDocSection(lines, [&](StringRef paramName, SMLoc docEndLoc) {
+    process2ColumnDocSection(lines, [&](StringRef paramName,
+                                        StringRef paramBody) {
       SMLoc paramLoc = SMLoc::getFromPointer(paramName.data());
       size_t currentEltIndex = nextEltIndex++;
 
@@ -845,6 +870,21 @@ private:
         }
       }
 
+      // Diagnose empty element descriptions.
+      SMLoc docEndLoc;
+      if (paramBody.empty()) {
+        sharedState.emitWarning(paramLoc)
+            << "'" << paramName << "' does not have a description";
+        docEndLoc = SMLoc::getFromPointer(paramName.end());
+      } else {
+        docEndLoc = SMLoc::getFromPointer(paramBody.end());
+      }
+
+      // Diagnose descriptions with poor style.
+      if (validation == ValidationKind::Strict && !paramBody.empty())
+        validateStyle((Twine("'") + paramName + "'").str(), paramBody.begin(),
+                      paramBody.end() - 1);
+
       // Record the location of the end of the doc string for this element.
       elementDocEndLocs[it - elements.begin()] = docEndLoc;
     });
@@ -869,12 +909,13 @@ private:
     }
   }
   void processArguments(SMLoc loc, llvm::MapVector<StringRef, SMLoc> &elements,
-                        ArrayRef<StringRef> &lines) {
-    processParamOrArgs(loc, "argument", elements, lines);
+                        ArrayRef<StringRef> &lines, ValidationKind validation) {
+    processParamOrArgs(loc, "argument", elements, lines, validation);
   }
   void processParameters(SMLoc loc, llvm::MapVector<StringRef, SMLoc> &elements,
-                         ArrayRef<StringRef> &lines) {
-    processParamOrArgs(loc, "parameter", elements, lines);
+                         ArrayRef<StringRef> &lines,
+                         ValidationKind validation) {
+    processParamOrArgs(loc, "parameter", elements, lines, validation);
   }
 
   /// Process the sections within the given doc string description.
@@ -969,28 +1010,20 @@ private:
         !funcOp.getResultTypeWithoutErrorVariant().isa<LIT::NoneType>();
     auto processFn = [&](StringRef section, SMLoc loc) mutable {
       if (section == kArgs) {
-        processArguments(loc, seenArguments, description);
+        processArguments(loc, seenArguments, description, validation);
       } else if (section == kParameters) {
-        processParameters(loc, seenParameters, description);
+        processParameters(loc, seenParameters, description, validation);
       } else if (section == kReturns) {
         if (!hasResults)
           sharedState.emitWarning(loc, "unexpected 'Returns' in doc string for "
                                        "function with no results");
 
-        StringRef firstLine = description[1].ltrim();
-        if (!isValidFirstCharacter(firstLine.front()))
-          sharedState.emitWarning(
-              SMLoc::getFromPointer(firstLine.begin()),
-              "'Returns' section description should begin with a capital "
-              "letter or '`', but this begins with '")
-              << firstLine.front() << "'";
-
-        StringRef lastLine = description.back().rtrim();
-        if (!lastLine.ends_with("."))
-          sharedState.emitWarning(SMLoc::getFromPointer(firstLine.begin()),
-                                  "'Returns' section description should end "
-                                  "with a period '.', but this ends with '")
-              << lastLine.back() << "'";
+        if (validation == ValidationKind::Strict) {
+          StringRef firstLine = description[1].ltrim();
+          StringRef lastLine = description.back().rtrim();
+          validateStyle("'Returns' section", firstLine.begin(),
+                        lastLine.end() - 1);
+        }
       }
     };
     processDocSections(description, sections, processFn);
@@ -1028,7 +1061,7 @@ private:
     ArrayRef<StringRef> description = docStr.getDescription();
     auto processFn = [&](StringRef section, SMLoc loc) mutable {
       if (section == kParameters)
-        processParameters(loc, seenParameters, description);
+        processParameters(loc, seenParameters, description, validation);
     };
     processDocSections(description, sections, processFn);
 

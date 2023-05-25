@@ -63,10 +63,9 @@ struct ParamStruct_Order[
 
     Parameters:
         param2: Summary.
-          # expected-warning @above {{'param2' is defined at index 1, but specified in doc string at index 0}}
         param1: Summary.
     """
-
+    # expected-warning @-3 {{'param2' is defined at index 1, but specified in doc string at index 0}}
     pass
 
 
@@ -159,10 +158,34 @@ fn fn_args_order(arg: ArgStruct, arg2: ArgStruct):
 
     Args:
         arg2: This is an argument.
-          # expected-warning @above {{'arg2' is defined at index 1, but specified in doc string at index 0}}
         arg: This is an argument.
     """
+    # expected-warning @-3 {{'arg2' is defined at index 1, but specified in doc string at index 0}}
     return
+
+
+fn fn_args_empty(arg: ArgStruct, arg2: ArgStruct):
+    """This function contains empty argument descriptions.
+
+    Args:
+        arg:
+        arg2:
+    """
+    # expected-warning @-3 {{'arg' does not have a description}}
+    # expected-warning @-3 {{'arg2' does not have a description}}
+    pass
+
+
+fn fn_args_poor_style(arg: ArgStruct, arg2: ArgStruct):
+    """This function contains arguments with poor style.
+
+    Args:
+        arg: `arg` starts with a valid character but doesn't end with a period
+        arg2: this should start with a capital letter.
+    """
+    # expected-warning @-3 {{'arg' description should end with a period '.', but this ends with 'd'}}
+    # expected-warning @-3 {{'arg2' description should begin with a capital letter or '`', but this begins with 't'}}
+    pass
 
 
 fn fn_args_return():
