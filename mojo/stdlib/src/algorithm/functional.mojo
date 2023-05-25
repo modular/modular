@@ -33,7 +33,7 @@ fn map[func: fn (Int) capturing -> None](size: Int):
         func: Function to map.
 
     Args:
-        size: number of elements.
+        size: The number of elements.
     """
     for i in range(size):
         func(i)
@@ -422,7 +422,7 @@ fn tile[
     than 3 from upperbound and then try func[2], and then func[1] etc.
 
     Parameters:
-        workgroup_function: workgroup function that processes one tile of
+        workgroup_function: Workgroup function that processes one tile of
           workload.
         tile_size_list: List of tile sizes to launch work.
 
@@ -460,7 +460,7 @@ fn tile[
     can take the tile size as a runtime value.
 
     Parameters:
-        workgroup_function: workgroup function that processes one tile of
+        workgroup_function: Workgroup function that processes one tile of
           workload.
 
     Args:
@@ -504,7 +504,7 @@ fn tile[
         secondary_tile_size_list: List of static tile sizes to launch work.
         secondary_cleanup_tile: Last static tile to use when primary tile sizes
           don't fit exactly within the upperbound.
-        workgroup_function: workgroup function that processes one tile of
+        workgroup_function: Workgroup function that processes one tile of
           workload.
 
     Args:
@@ -563,15 +563,15 @@ fn tile[
     are reached.
 
     Parameters:
-        workgroup_function: funtion that is invoked for each tile and offset.
-        tile_sizes_x: list of tile sizes to use for the first parameter of workgroup_function.
-        tile_sizes_y: list of tile sizes to use for the second parameter of workgroup_function.
+        workgroup_function: Funtion that is invoked for each tile and offset.
+        tile_sizes_x: List of tile sizes to use for the first parameter of workgroup_function.
+        tile_sizes_y: List of tile sizes to use for the second parameter of workgroup_function.
 
     Args:
-        offset_x: initial x offset passed to workgroup_function.
-        offset_y: initial y offset passed to workgroup_function.
-        upperbound_x: max offset in x dimension passed to workgroup function.
-        upperbound_y: max offset in y dimension passed to workgroup function.
+        offset_x: Initial x offset passed to workgroup_function.
+        offset_y: Initial y offset passed to workgroup_function.
+        upperbound_x: Max offset in x dimension passed to workgroup function.
+        upperbound_y: Max offset in y dimension passed to workgroup function.
     """
     # Initialize where to start on the overall work load.
     var current_offset_x: Int = offset_x
@@ -726,7 +726,7 @@ fn tile_and_unswitch[
     false only on the residue tile.
 
     Parameters:
-        workgroup_function: workgroup function that processes one tile of
+        workgroup_function: Workgroup function that processes one tile of
           workload.
         tile_size_list: List of tile sizes to launch work.
 
@@ -779,7 +779,7 @@ fn tile_and_unswitch[
     and is false only on the residue tile.
 
     Parameters:
-        workgroup_function: workgroup function that processes one tile of
+        workgroup_function: Workgroup function that processes one tile of
           workload.
 
     Args:
