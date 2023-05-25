@@ -6,40 +6,156 @@
 
 #include "Support/Compiler/ParserUtils.h"
 
+#include "llvm/ADT/StringSet.h"
+
 using namespace M;
 
-/// Parse a parenthesized operand list with types included, e.g.
-/// `(%a: i32, %b: f32)`.
-ParseResult
-M::parseParenOperandList(OpAsmParser &parser, OperationState &result,
-                         SmallVectorImpl<OpAsmParser::Argument> &argumentInfo,
-                         Type optDefaultType) {
+ParseResult M::parseParenOperandListWithShadowing(
+    OpAsmParser &parser, OperationState &state,
+    SmallVectorImpl<OpAsmParser::Argument> &argumentInfo) {
+  llvm::SMLoc loc = parser.getCurrentLocation();
+
   auto parseOperandFn = [&]() -> ParseResult {
+    // The operand to capture as part of the ops inputs.
+    OpAsmParser::UnresolvedOperand unresolvedOperand;
+    // The corresponding argument to use for the op's nested blocks.
     OpAsmParser::Argument arg;
 
-    // parse argument name
-    NamedAttrList attrs;
-    if (failed(parser.parseOperand(arg.ssaName, /*allowResultNumber=*/false)))
+    // Parse the input operand.
+    if (parser.parseOperand(unresolvedOperand,
+                            /*allowResultNumber=*/false))
       return failure();
 
-    // parse optional type annotation
-    arg.type = optDefaultType;
-    if (succeeded(parser.parseOptionalColon())) {
-      if (failed(parser.parseType(arg.type)))
+    // Parse an optional 'as' clause to name the nested block
+    // argument. This can be used to given nested blocks a unique argument name
+    // even if the same SSA value is repeated as on operand.
+    if (succeeded(parser.parseOptionalKeyword("as"))) {
+      if (parser.parseOperand(arg.ssaName, /*allowResultNumber=*/false))
         return failure();
-    } else if (!optDefaultType) {
-      return parser.emitError(parser.getCurrentLocation(),
-                              "expected type annotation");
+    } else {
+      // The nested blocks will 'pun' the operand name, presumably without
+      // ambiguity.
+      arg.ssaName = unresolvedOperand;
     }
+
+    // Parse type annotation
+    if (parser.parseColon() || parser.parseType(arg.type))
+      return failure();
+
+    // No block argument attributes.
+    NamedAttrList attrs;
     arg.attrs = attrs.getDictionary(parser.getContext());
 
-    // resolve operand
-    if (failed(parser.resolveOperand(arg.ssaName, arg.type, result.operands)))
-      return failure();
     argumentInfo.push_back(arg);
+
+    // Resolve the input operand into the operation state.
+    if (parser.resolveOperand(unresolvedOperand, arg.type, state.operands))
+      return failure();
+
+    return success();
+  };
+
+  if (parser.parseCommaSeparatedList(OpAsmParser::Delimiter::Paren,
+                                     parseOperandFn, "in operand list"))
+    return failure();
+
+  StringSet<> argumentNames;
+  for (auto arg : argumentInfo)
+    argumentNames.insert(arg.ssaName.name);
+  if (argumentNames.size() != argumentInfo.size())
+    return parser.emitError(
+        loc, "has duplicate SSA values in its operand list which have not been "
+             "renamed apart by 'as' clauses.");
+
+  return success();
+}
+
+ParseResult M::parseParenOperandListWithDefaultType(OpAsmParser &parser,
+                                                    OperationState &state,
+                                                    Type defaultType) {
+  auto parseOperandFn = [&]() -> ParseResult {
+    // The operand to capture as part of the ops inputs.
+    OpAsmParser::UnresolvedOperand unresolvedOperand;
+
+    // Parse the input operand.
+    if (parser.parseOperand(unresolvedOperand,
+                            /*allowResultNumber=*/false))
+      return failure();
+
+    // Parse optional type annotation
+    Type type = defaultType;
+    if (succeeded(parser.parseOptionalColon())) {
+      if (parser.parseType(type))
+        return failure();
+    }
+
+    // Resolve the input operand into the operation state.
+    if (parser.resolveOperand(unresolvedOperand, type, state.operands))
+      return failure();
+
     return success();
   };
 
   return parser.parseCommaSeparatedList(OpAsmParser::Delimiter::Paren,
                                         parseOperandFn, "in operand list");
+}
+
+/// Returns true if all values are distinct.
+static bool allDistinct(const SmallVector<Value> &values) {
+  DenseSet<Value> unique;
+  for (auto value : values)
+    unique.insert(value);
+  return unique.size() == values.size();
+}
+
+ParseResult M::parseRegionWithShadowing(
+    OpAsmParser &parser, const SmallVector<OpAsmParser::Argument> &argumentInfo,
+    Region &region) {
+  return parser.parseRegion(region, argumentInfo,
+                            /*enableNameShadowing=*/true);
+}
+
+void M::printParenOperandListWithShadowing(
+    OpAsmPrinter &printer, const OperandRange &operands,
+    const Block::BlockArgListType &arguments) {
+  assert(operands.size() == arguments.size());
+  bool needAs = !allDistinct(operands);
+  printer << "(";
+  bool first = true;
+  for (auto [op, arg] : llvm::zip(operands, arguments)) {
+    if (first)
+      first = false;
+    else
+      printer << ", ";
+    printer << op;
+    if (needAs)
+      printer << " as " << arg;
+    printer << ": " << op.getType();
+  }
+  printer << ")";
+}
+
+void M::printParenOperandListWithDefaultType(OpAsmPrinter &printer,
+                                             const OperandRange &operands,
+                                             Type defaultType) {
+  auto printArg = [&](Value arg) {
+    printer << arg;
+    if (arg.getType() != defaultType)
+      printer << ": " << arg.getType();
+  };
+  printer << '(';
+  llvm::interleaveComma(operands, printer, printArg);
+  printer << ')';
+}
+
+void M::printRegionWithShadowing(OpAsmPrinter &printer,
+                                 const OperandRange &operands, Region &region) {
+  assert(operands.size() == region.getNumArguments());
+  bool canShadow = allDistinct(operands);
+  if (canShadow) {
+    printer.shadowRegionArgs(region, operands);
+    printer.printRegion(region, /*printEntryBlockArgs=*/false);
+  } else {
+    printer.printRegion(region, /*printEntryBlockArgs=*/false);
+  }
 }
