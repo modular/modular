@@ -65,7 +65,7 @@ struct Benchmark:
             func: The function to benchmark.
 
         Returns:
-            average execution time of func in ns.
+            Average execution time of func in ns.
         """
 
         # run for specified number of warmup iterations
