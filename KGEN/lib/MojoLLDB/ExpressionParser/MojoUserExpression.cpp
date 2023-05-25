@@ -399,9 +399,10 @@ sys.modules['{1}'] = expr_module
 
   // Evaluate the wrapped python expression.
   mojoExprOS << "var __lldb_repl_python__ = Python()\n\n";
-  mojoExprOS << "__lldb_repl_python__.eval(\"";
+  mojoExprOS << "if not __lldb_repl_python__.eval(\"";
   mojoExprOS.write_escaped(wrappedPythonExpr);
-  mojoExprOS << "\")\n\n";
+  mojoExprOS
+      << "\"):\n  raise Error('The Python expression raised an exception')\n";
 
   // If persistent results are enabled, we also import top-level symbols from
   // the python module into the mojo context.
