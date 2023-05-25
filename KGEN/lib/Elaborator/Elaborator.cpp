@@ -213,7 +213,8 @@ void ImplNode::print(mlir::raw_indented_ostream &os, bool printBindings) {
 /// dependencies in order to make that graph explicit.
 struct ParamNode {
   /// Create an expansion tree node to represent a generator instantiation.
-  ParamNode(GeneratorOp gen, ArrayAttr vals) : gen(gen), inputParams(vals) {}
+  ParamNode(GeneratorOp gen, ArrayAttr vals, size_t depth)
+      : gen(gen), inputParams(vals), depth(depth) {}
 
   /// Return the first concrete node in the subtree rooted on `this`. This is
   /// often called from a node that is either concrete, or only has one
@@ -246,14 +247,25 @@ struct ParamNode {
   GeneratorOp gen;
   /// The input parameters with which the generator is being instantiated.
   ArrayAttr inputParams;
+  /// The current depth of the node. The depth varies based on the traversal
+  /// order of the callgraph.
+  size_t depth;
+
+  /// Generators fail immediately if their constrants are not satisfied.
+  /// Constraints are only functions of the input parameters. Save the error
+  /// here if that happens.
+  std::optional<ErrorTree> constraintError;
 
   /// The children of a node are specializations. They may not be fully concrete
   /// in the case of e.g. an interface - where the children are generators that
   /// themselves have children.
   std::vector<std::unique_ptr<ImplNode>> impls;
 
-  /// The worklist of implementation nodes that still need to be processed.
-  std::vector<ImplNode *> worklist;
+  /// The number of in-progress implementations.
+  unsigned numActive = 0;
+
+  /// The list of nodes to schedule once this parameter node is complete.
+  std::vector<ImplNode *> dependents;
 
   /// The current state of the node. This flag is used to break recursion.
   enum { FRESH, IN_PROGRESS, DONE } status = FRESH;
@@ -286,6 +298,9 @@ struct ExpansionGraph {
   /// Map from concrete function to implementation node.
   DenseMap<FuncOp, ImplNode *> concreteNodes;
 
+  /// The current worklist of implementation nodes to process.
+  std::vector<ImplNode *> worklist;
+
   /// Fork the expansion of a concrete node.
   ImplNode *fork(ImplNode *cur, IRMapping &map, SymbolTable &symtab) {
     // Fork the node and its bindings.
@@ -312,10 +327,10 @@ struct ExpansionGraph {
   }
 
   /// Get or create the node for a generator instantiation.
-  ParamNode *getOrCreate(ArrayAttr values, GeneratorOp gen) {
+  ParamNode *getOrCreate(ArrayAttr values, GeneratorOp gen, size_t depth) {
     std::unique_ptr<ParamNode> &n = nodes[{values, gen}];
     if (!n)
-      n = std::make_unique<ParamNode>(gen, values);
+      n = std::make_unique<ParamNode>(gen, values, depth);
     return n.get();
   }
 };
@@ -848,9 +863,9 @@ public:
 
   /// Process a generator user. In general, this is anything that can call into
   /// a generator and might therefore need to be multi-versioned.
-  LogicalResult processGeneratorUser(KGENCallOpInterface user,
-                                     SymbolConstantAttr calleeSymbol,
-                                     ImplNode *parent);
+  ElaborationState processGeneratorUser(KGENCallOpInterface user,
+                                        SymbolConstantAttr calleeSymbol,
+                                        ImplNode *parent);
 
   /// Complete processing of a generator user by resolving any bound result
   /// types or parameters in the parent scope. This is the step that propagates
@@ -884,11 +899,11 @@ public:
   /// elaborating the rest of the function.
   ElaborationState processParamIfOp(ImplNode *parent, ParamIfOp op);
 
-  /// Kick off processing of a parameter node starting from a single seed
-  /// implementation. This will process new implementations as they arise.
-  void processParamNode(ParamNode *pnode);
+  /// Process all implementation nodes on the worklist and any new nodes until
+  /// the worklist is exhausted.
+  void processWorklist();
   /// Process the scopes within an implementation node.
-  void processImplNode(ImplNode *inode);
+  LogicalResult processImplNode(ImplNode *inode);
   /// Process a worklist of ops. Returns error if processing the scope resulted
   /// in an error, returns `skipFrame` if the processing of the current scope
   /// scope should be pre-empted with a new scope, returns `skipNode` if
@@ -900,10 +915,16 @@ public:
   /// the current implementation node should suspended.
   ElaborationState processOp(ImplNode *node, Operation *op);
 
-  /// Specializes the generator at `genNode`. Essentially instantiates a new
-  /// function with the same body, and specializes it. The new function is by
-  /// definition the expansion tree child of this generator.
-  ErrorTreeOrSuccess specializeGenerator(ParamNode *genNode);
+  /// Request specialization of the generator at `genNode`. If the node is ready
+  /// complete, then the function returns `advance` and the concrete functions
+  /// can be retrieved from the node. Otherwise, the function returns
+  /// `skipNode`, indicating that elaboration of the current function should be
+  /// suspended. It returns `error` if the generator constraints were not
+  /// satisfied.
+  ElaborationState specializeGenerator(ParamNode *genNode);
+  /// Request specialization of the generator at `genNode` and block until the
+  /// generator is ready or specialization resulted in an error.
+  ErrorTreeOrSuccess specializeGeneratorAndWait(ParamNode *genNode);
 
   /// Given a list of primary generators (i.e. generators with no input
   /// parameters), run the elaborator. This will generate an expansion tree
@@ -928,9 +949,6 @@ private:
 
   /// The callgraph being expanded.
   ExpansionGraph g;
-
-  /// The current depth of the elaborator.
-  size_t depth = 0;
 
   /// The elaborator config.
   ElaboratorConfig config;
@@ -998,10 +1016,11 @@ ElaboratorImpl::getConcreteFunction(Location loc, SymbolRefAttr symbolRef,
   auto vals = ArrayAttr::get(symbolRef.getContext(), inputParams);
 
   // Lookup the node if it already exists.
-  ParamNode *node = g.getOrCreate(vals, gen);
+  ParamNode *node = g.getOrCreate(vals, gen, /*depth=*/0);
   // If the node has already been elaborated, just use that result.
   if (node->status != ParamNode::DONE) {
-    if (ErrorTreeOrSuccess err = specializeGenerator(node); err.isError())
+    if (ErrorTreeOrSuccess err = specializeGeneratorAndWait(node);
+        err.isError())
       return err.takeError();
   }
 
@@ -1025,9 +1044,10 @@ ElaboratorImpl::getAllConcreteFunctions(Location loc, SymbolRefAttr symbolRef,
   auto vals = ArrayAttr::get(symbolRef.getContext(), inputParams);
 
   // Lookup the node if it already exists.
-  ParamNode *node = g.getOrCreate(vals, gen);
+  ParamNode *node = g.getOrCreate(vals, gen, /*depth=*/0);
   if (node->status != ParamNode::DONE) {
-    if (ErrorTreeOrSuccess err = specializeGenerator(node); err.isError())
+    if (ErrorTreeOrSuccess err = specializeGeneratorAndWait(node);
+        err.isError())
       return err.takeError();
   }
   node->getAllConcreteFuncs(funcs);
@@ -1125,14 +1145,15 @@ void ElaboratorImpl::spawnParamForkClone(ParamForkOp forkOp, Attribute value,
 
   // And finally, push the forked node onto its parent's worklist, so that it
   // will get processed after this function returns.
-  newFuncNode->parent->worklist.push_back(newFuncNode);
+  ++newFuncNode->parent->numActive;
+  g.worklist.push_back(newFuncNode);
 }
 
 //===----------------------------------------------------------------------===//
 // ElaboratorImpl::processGeneratorUser
 //===----------------------------------------------------------------------===//
 
-LogicalResult
+ElaborationState
 ElaboratorImpl::processGeneratorUser(KGENCallOpInterface user,
                                      SymbolConstantAttr calleeSymbol,
                                      ImplNode *parent) {
@@ -1185,12 +1206,27 @@ ElaboratorImpl::processGeneratorUser(KGENCallOpInterface user,
                                   logger);
   }
 
+  // Check for excessive instantiation depth.
+  if (parent->parent->depth > config.maxDepth) {
+    parent->setToError(ErrorTree(parent->parent->gen.getLoc(),
+                                 "elaborator expansion is " +
+                                     Twine(config.maxDepth + 1) +
+                                     " levels deep - infinite recursion?"));
+    return ElaborationState::error();
+  }
+
   // Find the tree node that corresponds to the thing we're calling.
-  ParamNode *calleeNode = g.getOrCreate(inputParamKey, gen);
-  if (ErrorTreeOrSuccess err = specializeGenerator(calleeNode); err.isError()) {
-    parent->setToError(
-        ErrorTree(user.getLoc(), "call expansion failed", err.takeError()));
-    return failure();
+  ParamNode *calleeNode =
+      g.getOrCreate(inputParamKey, gen, parent->parent->depth + 1);
+  ElaborationState result = specializeGenerator(calleeNode);
+  if (result.isError()) {
+    assert(calleeNode->constraintError && "expected a constraint failure");
+    parent->setToError(calleeNode->constraintError->copy());
+    return ElaborationState::error();
+  }
+  if (result.shouldSkipNode()) {
+    calleeNode->dependents.push_back(parent);
+    return ElaborationState::skipNode();
   }
 
   // Complete processing for all the leaves of this subtree.
@@ -1229,9 +1265,11 @@ ElaboratorImpl::processGeneratorUser(KGENCallOpInterface user,
   if (concrete.empty()) {
     ErrorTree out(user.getLoc(),
                   "call expansion failed - no concrete specializations");
+    ErrorTree err(calleeNode->gen.getLoc(), "no viable expansions found");
     for (ImplNode &impl : llvm::make_pointee_range(calleeNode->impls))
       if (impl.error)
-        out.addCause(impl.error->copy());
+        err.addCause(impl.error->copy());
+    out.addCause(std::move(err));
     parent->setToError(std::move(out));
     return failure();
   }
@@ -1274,7 +1312,8 @@ ElaboratorImpl::processGeneratorUser(KGENCallOpInterface user,
 
     // Process the rest of the worklist in this new scope. If the scope
     // processing failed, do nothing.
-    newNode->parent->worklist.push_back(newNode);
+    ++newNode->parent->numActive;
+    g.worklist.push_back(newNode);
   }
 
   // Bind this concrete impl to this callee for this node.
@@ -1657,38 +1696,51 @@ ElaborationState ElaboratorImpl::processParamIfOp(ImplNode *parent,
 // ElaboratorImpl::processScope
 //===----------------------------------------------------------------------===//
 
-void ElaboratorImpl::processParamNode(ParamNode *pnode) {
-  LLVM_DEBUG(pnode->print(logger << "Processing parameter node: ",
-                          /*printBindings=*/false));
-  assert(pnode->worklist.size() == 1 && "expected a single seed node");
-
-  TimeTraceScope<EnableTracing> traceScope("processParamNode", [pnode] {
-    std::string detail;
-    llvm::raw_string_ostream os(detail);
-    os << pnode->gen.getSymName() << pnode->inputParams;
-    return os.str();
-  });
+void ElaboratorImpl::processWorklist() {
+  TimeTraceScope<EnableTracing> traceScope("processWorklist");
 
   // Process implementation nodes until the worklist is empty.
-  while (!pnode->worklist.empty()) {
-    ImplNode *inode = pnode->worklist.back();
-    pnode->worklist.pop_back();
-    processImplNode(inode);
+  while (!g.worklist.empty()) {
+    ImplNode *inode = g.worklist.back();
+    g.worklist.pop_back();
+
+    // If search is disabled, the node could get pre-emptively invalidated by
+    // the code below.
+    if (!config.enableSearch)
+      if (inode->error)
+        continue;
+    assert(!inode->error && "unexpected pre-existing error");
+
+    if (failed(processImplNode(inode)))
+      continue;
 
     // If we are not doing search, return after the first successful candidate.
+    ParamNode *pnode = inode->parent;
+    auto complete = [this, pnode] {
+      LLVM_DEBUG(pnode->print(logger << "Parameter node completed: "));
+      pnode->status = ParamNode::DONE;
+      llvm::append_range(g.worklist, pnode->dependents);
+      pnode->dependents.clear();
+    };
     if (!config.enableSearch && !inode->error) {
+      pnode->numActive = 0;
       for (ImplNode &child : llvm::make_pointee_range(pnode->impls)) {
         if (!child.error && &child != inode) {
           child.setToError(ErrorTree(child.func.getLoc(),
                                      "invalidated because search is disabled"));
         }
       }
-      pnode->worklist.clear();
+      complete();
+
+      // Otherwise, if this is the last active implementation to complete,
+      // re-queue all the dependent nodes.
+    } else if (--pnode->numActive == 0) {
+      complete();
     }
   }
 }
 
-void ElaboratorImpl::processImplNode(ImplNode *inode) {
+LogicalResult ElaboratorImpl::processImplNode(ImplNode *inode) {
   LLVM_DEBUG(inode->print(logger << "Processing implementation node: ",
                           /*printBindings=*/false));
   assert(!inode->stack.empty() && "expected at least one work item");
@@ -1703,26 +1755,30 @@ void ElaboratorImpl::processImplNode(ImplNode *inode) {
     if (result.isError()) {
       // Interrupt indicates a fatal error.
       assert(inode->error && "node processing interrupted but no error set");
-      return;
+      return success();
     }
     if (result.shouldSkipFrame()) {
       // Skip indicates we need to move to another frame first.
       assert(inode->stack.size() == size + 1 && "skip with no new frame");
       continue;
     }
-    if (result.shouldSkipNode())
-      llvm_unreachable("unsupported at the moment");
+    if (result.shouldSkipNode()) {
+      // Node skip indicates to suspend elaboration of the current function and
+      // come back later.
+      return failure();
+    }
     // Advance indicates the current work item's operation list was exhausted.
     assert(inode->stack.size() == size && "new frame with no skip");
     assert(item.ops.empty() && "advance did not exhaust worklist");
     if (failed(item.onComplete(inode))) {
       assert(inode->error && "callback failed but no error set");
-      return;
+      return success();
     }
     inode->stack.pop_back();
   }
   assert(!inode->error && "unexpected error");
   finalizeAndVerifyFunction(analysis, inode);
+  return success();
 }
 
 ElaborationState ElaboratorImpl::processScope(ImplNode *node,
@@ -1797,14 +1853,36 @@ static StringRef tryGettingShortName(StringRef s) {
   return s.split('(').first.rsplit(':').second;
 }
 
-ErrorTreeOrSuccess ElaboratorImpl::specializeGenerator(ParamNode *genNode) {
-  ++depth;
-  auto decDepth = llvm::make_scope_exit([&] { --depth; });
-  if (depth > config.maxDepth) {
-    return ErrorTree(genNode->gen.getLoc(),
-                     "elaborator expansion is " + Twine(config.maxDepth + 1) +
-                         " levels deep - infinite recursion?");
+ErrorTreeOrSuccess
+ElaboratorImpl::specializeGeneratorAndWait(ParamNode *genNode) {
+  ElaborationState result = specializeGenerator(genNode);
+  if (result.isError()) {
+    assert(genNode->constraintError && "expected a constraint error");
+    return genNode->constraintError->copy();
   }
+  if (result.shouldSkipNode()) {
+    // Exhaust the worklist.
+    processWorklist();
+    if (genNode->status != ParamNode::DONE) {
+      return ErrorTree(genNode->gen.getLoc(),
+                       "elaboration exhausted worklist but not all "
+                       "instantiations completed -- infinite recursion?");
+    }
+  }
+  ErrorTree err(genNode->gen.getLoc(), "no viable expansions found");
+  for (ImplNode &impl : llvm::make_pointee_range(genNode->impls)) {
+    if (!impl.error)
+      return success();
+    err.addCause(impl.error->copy());
+  }
+  return std::move(err);
+}
+
+ElaborationState ElaboratorImpl::specializeGenerator(ParamNode *genNode) {
+  // If this generator instantiation is already known to always be invalid,
+  // indicate an error.
+  if (genNode->constraintError)
+    return ElaborationState::error();
 
   // If this generator node is already concrete and has no error, don't
   // re-concretize.
@@ -1812,7 +1890,7 @@ ErrorTreeOrSuccess ElaboratorImpl::specializeGenerator(ParamNode *genNode) {
       genNode->status == ParamNode::IN_PROGRESS) {
     if (config.testDiagnostics)
       genNode->gen.emitRemark("Generator has already been specialized");
-    return success();
+    return ElaborationState::advance();
   }
 
   genNode->status = ParamNode::IN_PROGRESS;
@@ -1855,8 +1933,12 @@ ErrorTreeOrSuccess ElaboratorImpl::specializeGenerator(ParamNode *genNode) {
 
   // If the generator's constraints don't satisfy, set an error and move on.
   if (auto err =
-          KGEN::evaluateConstraints(generator.getConstraints(), evaluator))
-    return std::move(err.value());
+          KGEN::evaluateConstraints(generator.getConstraints(), evaluator)) {
+    // This node is complete. It can never be valid.
+    genNode->status = ParamNode::DONE;
+    genNode->constraintError = std::move(err.value());
+    return ElaborationState::error();
+  }
 
   StringAttr mangledName = mangleParameterValues(generator, inputParamValues);
 
@@ -1906,19 +1988,10 @@ ErrorTreeOrSuccess ElaboratorImpl::specializeGenerator(ParamNode *genNode) {
   ImplNode::WorkItem item{std::move(opsToRewrite), std::move(evaluator),
                           [](ImplNode *) { return success(); }};
   newFuncNode->stack.push_back(std::move(item));
-  genNode->worklist.push_back(newFuncNode);
 
-  // Process the worklist. Only finalize the function if this succeeded.
-  processParamNode(genNode);
-
-  genNode->status = ParamNode::DONE;
-  ErrorTree err(genNode->gen.getLoc(), "no viable expansions found");
-  for (ImplNode &impl : llvm::make_pointee_range(genNode->impls)) {
-    if (!impl.error)
-      return success();
-    err.addCause(impl.error->copy());
-  }
-  return std::move(err);
+  ++newFuncNode->parent->numActive;
+  g.worklist.push_back(newFuncNode);
+  return ElaborationState::skipNode();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1940,11 +2013,12 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
     LLVM_DEBUG(logger.logOp("Elaborating primary generator", gen));
     // This has no input parameters, so we can create the expansion node with
     // no input parameters.
-    ParamNode *generatorNode = g.getOrCreate(emptyInputParamKey, gen);
+    ParamNode *generatorNode =
+        g.getOrCreate(emptyInputParamKey, gen, /*depth=*/0);
 
     // Now we can begin to construct the expansion tree rooted at this
     // generator. Emit as many errors as possible.
-    if (ErrorTreeOrSuccess err = specializeGenerator(generatorNode);
+    if (ErrorTreeOrSuccess err = specializeGeneratorAndWait(generatorNode);
         err.isError()) {
       err.takeError().emit([](Location loc) { return mlir::emitError(loc); });
       failed = true;
@@ -1961,7 +2035,7 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
   // each one to its first implementation.
   SymbolTable &symtab = analysis.getTopLevelSymbolTable();
   for (auto gen : llvm::make_early_inc_range(theModule.getOps<GeneratorOp>())) {
-    ParamNode *genNode = g.getOrCreate(emptyInputParamKey, gen);
+    ParamNode *genNode = g.getOrCreate(emptyInputParamKey, gen, /*depth=*/0);
 
     // Add all concrete functions, and rename the first one.
     std::vector<FuncOp> concreteFuncs;
