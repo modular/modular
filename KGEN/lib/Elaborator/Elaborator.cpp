@@ -120,10 +120,8 @@ struct ParamNode;
 /// of elaboration for that concrete instance.
 struct ImplNode {
   /// Create a new generator implementation node.
-  ImplNode(FuncOp func, ParamNode *parent, IREvaluator &&evaluator,
-           ParameterUseDefGraph &&graph)
-      : func(func), parent(parent), evaluator(std::move(evaluator)),
-        paramGraph(std::move(graph)) {}
+  ImplNode(FuncOp func, ParamNode *parent, ParameterUseDefGraph &&graph)
+      : func(func), parent(parent), paramGraph(std::move(graph)) {}
 
   /// Take the provided error and set this node to an `error` state. Erase all
   /// state dominated by this node.
@@ -137,14 +135,16 @@ struct ImplNode {
   /// nicely.
   void print(mlir::raw_indented_ostream &os, bool printBindings = true);
 
+  /// Get the current active evaluator instance.
+  IREvaluator &getEvaluator() {
+    assert(!stack.empty() && "empty work stack");
+    return stack.back().evaluator;
+  }
+
   /// This function represents a concrete instantiation of a generator.
   FuncOp func;
   /// The parent expansion tree node.
   ParamNode *parent;
-
-  /// The evaluator is shared with scopes below, but not scopes above,
-  /// generally. That's why it's copied rather than taking a reference.
-  IREvaluator evaluator;
   /// Keep track of the nested parameter scopes within this function.
   ParameterUseDefGraph paramGraph;
 
@@ -158,8 +158,18 @@ struct ImplNode {
   /// cases where an error is recoverable.
   std::optional<ErrorTree> error;
 
-  /// The current state of elaboration on the function.
-  enum { FRESH, IN_PROGRESS, DONE } status = FRESH;
+  struct WorkItem {
+    /// The operations to process.
+    std::vector<Operation *> ops;
+    /// The evaluator to use.
+    IREvaluator evaluator;
+    /// The completion callback. Work items need to be clonable, so the capture
+    /// state cannot contain operations.
+    std::function<LogicalResult()> onComplete;
+  };
+
+  /// The current stack of worklists and scopes.
+  std::vector<WorkItem> stack;
 };
 
 void ImplNode::print(mlir::raw_indented_ostream &os, bool printBindings) {
@@ -236,6 +246,9 @@ struct ParamNode {
   /// themselves have children.
   std::vector<std::unique_ptr<ImplNode>> impls;
 
+  /// The worklist of implementation nodes that still need to be processed.
+  std::vector<ImplNode *> worklist;
+
   /// The current state of the node. This flag is used to break recursion.
   enum { FRESH, IN_PROGRESS, DONE } status = FRESH;
 };
@@ -269,11 +282,23 @@ struct ExpansionGraph {
 
   /// Fork the expansion of a concrete node.
   ImplNode *fork(ImplNode *cur, IRMapping &map, SymbolTable &symtab) {
+    // Fork the node and its bindings.
     auto clone = cast<FuncOp>(cur->func->clone(map));
     symtab.insert(clone, ++cur->func->getIterator());
     auto n = std::make_unique<ImplNode>(clone, cur->parent,
-                                        IREvaluator(cur->evaluator),
                                         cur->paramGraph.copy(map));
+    n->bindings = cur->bindings;
+
+    // Copy over the current work stack.
+    for (const ImplNode::WorkItem &item : cur->stack) {
+      std::vector<Operation *> clonedOps;
+      for (Operation *op : item.ops)
+        clonedOps.push_back(map.lookup(op));
+      n->stack.push_back(ImplNode::WorkItem{std::move(clonedOps),
+                                            item.evaluator, item.onComplete});
+    }
+
+    // Track the new node as a new child and concrete node.
     ImplNode *result = n.get();
     cur->parent->impls.push_back(std::move(n));
     concreteNodes.try_emplace(clone, result);
@@ -329,17 +354,18 @@ void ParamNode::getAllConcreteFuncs(std::vector<FuncOp> &funcs) {
 
 /// Process a param.declare op by setting its parameter value in the provided
 /// evaluator.
-static ErrorTreeOrSuccess processParamDeclareOp(IREvaluator &evaluator,
-                                                ParamDeclareOp op) {
+static LogicalResult processParamDeclareOp(ImplNode *inode, ParamDeclareOp op) {
   // Simplify the input expression.
   auto errorOrValue =
-      evaluator.concretizeParameterExpr(op.getLoc(), op.getValue());
-  if (errorOrValue.isError())
-    return errorOrValue.takeError();
+      inode->getEvaluator().concretizeParameterExpr(op.getLoc(), op.getValue());
+  if (errorOrValue.isError()) {
+    inode->setToError(errorOrValue.takeError());
+    return failure();
+  }
 
   // Bind it to the parameter declaration it is setting.
-  evaluator.setOrOverwriteParameterValue(op.getParamDecl(),
-                                         errorOrValue.takeValue());
+  inode->getEvaluator().setOrOverwriteParameterValue(op.getParamDecl(),
+                                                     errorOrValue.takeValue());
 
   // The kgen.param.declare operation serves no other purpose: remove it.
   op->erase();
@@ -352,10 +378,10 @@ static ErrorTreeOrSuccess processParamDeclareOp(IREvaluator &evaluator,
 
 /// Process a `kgen.param.result_bind` operation by setting the result parameter
 /// values of the parent operation.
-static ErrorTreeOrSuccess processParamResultBindOp(ParamResultBindOp op,
-                                                   ImplNode *parentNode) {
+static LogicalResult processParamResultBindOp(ImplNode *node,
+                                              ParamResultBindOp op) {
   // Concretize the result parameter values.
-  IREvaluator &evaluator = parentNode->evaluator;
+  IREvaluator &evaluator = node->getEvaluator();
   SmallVector<Attribute> resultParams;
 
   // Retrieve the required parameter decls from the nearest declaration.
@@ -365,15 +391,17 @@ static ErrorTreeOrSuccess processParamResultBindOp(ParamResultBindOp op,
   auto parentDecl = op->getParentOfType<DeclInterface>();
   bool isFunc = isa<FuncOp>(parentDecl.getOperation());
   if (isFunc)
-    resultParamDecls = parentNode->parent->gen.getResultParams();
+    resultParamDecls = node->parent->gen.getResultParams();
   else
     resultParamDecls = parentDecl.getResultParams();
 
   for (auto [decl, value] : llvm::zip(resultParamDecls, op.getParameters())) {
     ErrorTreeOr<Attribute> concValue =
         evaluator.concretizeParameterExpr(op.getLoc(), value);
-    if (concValue.isError())
-      return concValue.takeError();
+    if (concValue.isError()) {
+      node->setToError(concValue.takeError());
+      return failure();
+    }
     resultParams.push_back(concValue.takeValue());
     evaluator.setOrOverwriteParameterValue(decl, resultParams.back());
   }
@@ -381,7 +409,7 @@ static ErrorTreeOrSuccess processParamResultBindOp(ParamResultBindOp op,
   // If this operation binds values for the result parameters of the generator,
   // set them in the node.
   if (isFunc)
-    parentNode->resultParams = ArrayAttr::get(op.getContext(), resultParams);
+    node->resultParams = ArrayAttr::get(op.getContext(), resultParams);
 
   op.erase();
   return success();
@@ -391,14 +419,18 @@ static ErrorTreeOrSuccess processParamResultBindOp(ParamResultBindOp op,
 // processRebindOp
 //===----------------------------------------------------------------------===//
 
-static ErrorTreeOrSuccess processRebindOp(IREvaluator &evaluator, RebindOp op) {
+static LogicalResult processRebindOp(ImplNode *inode, RebindOp op) {
   ErrorTreeOr<Type> outType =
-      evaluator.concretizeParameterExpr(op.getLoc(), op.getType());
-  if (outType.isError())
-    return outType.takeError();
+      inode->getEvaluator().concretizeParameterExpr(op.getLoc(), op.getType());
+  if (outType.isError()) {
+    inode->setToError(outType.takeError());
+    return failure();
+  }
   if (outType.getValue() != op.getInput().getType()) {
-    return ErrorTree(op.getLoc(), "operand and result type of rebind operation "
-                                  "did not concretize to the same type");
+    inode->setToError(ErrorTree(op.getLoc(),
+                                "operand and result type of rebind operation "
+                                "did not concretize to the same type"));
+    return failure();
   }
   op.replaceAllUsesWith(op.getOperand());
   op.erase();
@@ -411,28 +443,30 @@ static ErrorTreeOrSuccess processRebindOp(IREvaluator &evaluator, RebindOp op) {
 
 /// Process a param.assert op by folding its parameter expression and checking
 /// its constraint. Returns the appropriate error if the constraint failed.
-static ErrorTreeOrSuccess processParamAssertOp(IREvaluator &evaluator,
-                                               ParamAssertOp op) {
+static LogicalResult processParamAssertOp(ImplNode *inode, ParamAssertOp op) {
   // Check the condition expression.
   auto errorOrValue =
-      evaluator.concretizeParameterExpr(op.getLoc(), op.getCond());
-  if (errorOrValue.isError())
-    return errorOrValue.takeError();
+      inode->getEvaluator().concretizeParameterExpr(op.getLoc(), op.getCond());
+  if (errorOrValue.isError()) {
+    inode->setToError(errorOrValue.takeError());
+    return failure();
+  }
 
   // If the constraint evaluated to zero then the assert fails.
   auto resultInt = cast<IntegerAttr>(errorOrValue.takeValue());
   if (resultInt.getValue().isZero()) {
     // Evaluate the string to report it.
-    errorOrValue =
-        evaluator.concretizeParameterExpr(op.getLoc(), op.getMessage());
+    errorOrValue = inode->getEvaluator().concretizeParameterExpr(
+        op.getLoc(), op.getMessage());
 
     StringAttr message;
     if (!errorOrValue.isError())
       message = dyn_cast<StringAttr>(errorOrValue.takeValue());
 
-    return ErrorTree(op.getLoc(),
-                     "constraint failed: " +
-                         (message ? message.getValue() : "<unknown>"));
+    inode->setToError(ErrorTree(
+        op.getLoc(),
+        "constraint failed: " + (message ? message.getValue() : "<unknown>")));
+    return failure();
   }
 
   // The kgen.param.assert op serves no further purpose, so we can remove it.
@@ -461,8 +495,9 @@ static ErrorTreeOrSuccess processLocation(IREvaluator &evaluator,
 
 /// Unknown operations are allowed to use types and attributes with parameter
 /// references.  Substitute in concrete values for their references.
-static ErrorTreeOrSuccess processGenericOp(IREvaluator &evaluator,
-                                           Operation *op) {
+static LogicalResult processGenericOp(ImplNode *inode, Operation *op) {
+  IREvaluator &evaluator = inode->getEvaluator();
+
   // Scan all the attributes and types to look for uses of parameters.  We let
   // the walker scan the region hierarchy.
   SmallVector<NamedAttribute> newAttrs;
@@ -470,8 +505,10 @@ static ErrorTreeOrSuccess processGenericOp(IREvaluator &evaluator,
   for (const NamedAttribute &namedAttr : op->getAttrs()) {
     ErrorTreeOr<Attribute> value = evaluator.concretizeParameterExpr(
         op->getLoc(), namedAttr.getValue(), /*allowUnknown=*/true);
-    if (value.isError())
-      return value.takeError();
+    if (value.isError()) {
+      inode->setToError(value.takeError());
+      return failure();
+    }
 
     newAttrs.emplace_back(namedAttr.getName(), value.takeValue());
     changedAttrs |= namedAttr.getValue() != newAttrs.back().getValue();
@@ -479,8 +516,10 @@ static ErrorTreeOrSuccess processGenericOp(IREvaluator &evaluator,
   if (changedAttrs)
     op->setAttrs(newAttrs);
 
-  if (ErrorTreeOrSuccess err = processLocation(evaluator, op); err.isError())
-    return err.takeError();
+  if (ErrorTreeOrSuccess err = processLocation(evaluator, op); err.isError()) {
+    inode->setToError(err.takeError());
+    return failure();
+  }
 
   // Check the types of results to find any parameters embedded in their
   // types.  We don't have to check operands because they are always checked
@@ -488,8 +527,10 @@ static ErrorTreeOrSuccess processGenericOp(IREvaluator &evaluator,
   for (OpResult result : op->getResults()) {
     ErrorTreeOr<Type> type =
         evaluator.concretizeParameterExpr(op->getLoc(), result.getType());
-    if (type.isError())
-      return type.takeError();
+    if (type.isError()) {
+      inode->setToError(type.takeError());
+      return failure();
+    }
     result.setType(type.takeValue());
   }
 
@@ -500,8 +541,10 @@ static ErrorTreeOrSuccess processGenericOp(IREvaluator &evaluator,
       for (Value arg : block.getArguments()) {
         ErrorTreeOr<Type> type =
             evaluator.concretizeParameterExpr(op->getLoc(), arg.getType());
-        if (type.isError())
-          return type.takeError();
+        if (type.isError()) {
+          inode->setToError(type.takeError());
+          return failure();
+        }
         arg.setType(type.takeValue());
       }
     }
@@ -747,38 +790,31 @@ public:
   /// in a very clean model where the parent of the current parent (a generator)
   /// will have its children be the successfully concretized parameter search
   /// nodes.
-  ErrorTreeOrSuccess
-  processParamForkOp(ImplNode *parent, ParamForkOp op,
-                     ArrayRef<Operation *> remainingWorklist);
+  LogicalResult processParamForkOp(ImplNode *parent, ParamForkOp op);
 
   /// Spawn a clone for kgen.param.fork. This creates a new FuncOp that is a
   /// sibling to the parent of the kgen.param.fork op. It replaces the
   /// kgen.param.fork with a param.declare to allow specialization to succeed.
-  ErrorTreeOrSuccess
-  spawnParamForkClone(ParamForkOp forkOp, Attribute value,
-                      ImplNode *forkParentNode,
-                      ArrayRef<Operation *> remainingWorklist);
+  void spawnParamForkClone(ParamForkOp forkOp, Attribute value,
+                           ImplNode *forkParentNode);
 
   /// Process a call op by binding any necessary input parameters from the
   /// symbol or the call and passing them on to processGeneratorUser.
-  ErrorTreeOrSuccess processCallOp(KGENCallOpInterface call, ImplNode *parent,
-                                   ArrayRef<Operation *> remainingWorklist);
+  WalkResult processCallOp(ImplNode *parent, KGENCallOpInterface call);
 
   /// Process a generator user. In general, this is anything that can call into
   /// a generator and might therefore need to be multi-versioned.
-  ErrorTreeOrSuccess
-  processGeneratorUser(KGENCallOpInterface user,
-                       SymbolConstantAttr calleeSymbol, ImplNode *parent,
-                       ArrayRef<Operation *> remainingWorklist);
+  LogicalResult processGeneratorUser(KGENCallOpInterface user,
+                                     SymbolConstantAttr calleeSymbol,
+                                     ImplNode *parent);
 
   /// Complete processing of a generator user by resolving any bound result
   /// types or parameters in the parent scope. This is the step that propagates
   /// result parameters from the inner scope to the outer scope.
-  ErrorTreeOrSuccess completeCallProcessing(KGENCallOpInterface user,
-                                            ArrayRef<ParamDeclAttr> decls,
-                                            ImplNode *thisNode,
-                                            ImplNode *parentNode,
-                                            Logger &logger);
+  LogicalResult completeCallProcessing(KGENCallOpInterface user,
+                                       ArrayRef<ParamDeclAttr> decls,
+                                       ImplNode *thisNode, ImplNode *node,
+                                       Logger &logger);
 
   /// Resolve call input parameters - this is a complex function because calls
   /// can have regions. We take the body of those regions and put it into a
@@ -795,19 +831,28 @@ public:
   /// Process a param.declare.region op by creating a generator with the correct
   /// captures. We don't specialize the generator until the call-site because we
   /// don't know what the actual input parameters are supposed to be until then.
-  ErrorTreeOrSuccess
-  processParamDeclareRegionOp(ParamDeclareRegionOp regionDecl,
-                              ImplNode *parent);
+  LogicalResult processParamDeclareRegionOp(ImplNode *parent,
+                                            ParamDeclareRegionOp regionDecl);
 
   /// Process a param.if op by evaluating the condition and elaborating and
   /// inlining only the branch that was taken. If one of the branches had an
   /// early return, this will split the block after the return and avoid
   /// elaborating the rest of the function.
-  ErrorTreeOrSuccess processParamIfOp(ParamIfOp op, ImplNode *parent);
+  WalkResult processParamIfOp(ImplNode *parent, ParamIfOp op);
 
-  /// Process a worklist of ops. Returns failure if the scope produced an error.
-  LogicalResult processScope(ImplNode *parentNode,
-                             std::vector<Operation *> worklist);
+  /// Kick off processing of a parameter node starting from a single seed
+  /// implementation. This will process new implementations as they arise.
+  void processParamNode(ParamNode *pnode);
+  /// Process the scopes within an implementation node.
+  void processImplNode(ImplNode *inode);
+  /// Process a worklist of ops. Returns interrupt if the scope produced an
+  /// error, and returns skip if the processing of the current scope should be
+  /// pre-empted with a new scope.
+  WalkResult processScope(ImplNode *node, ImplNode::WorkItem &item);
+  /// Process a single operation. Returns interrupt if the scope produced an
+  /// error, and returns skip if the processing of the current should be
+  /// pre-empted with a new scope.
+  WalkResult processOp(ImplNode *node, Operation *op);
 
   /// Specializes the generator at `genNode`. Essentially instantiates a new
   /// function with the same body, and specializes it. The new function is by
@@ -935,7 +980,7 @@ ElaboratorImpl::getAllConcreteFunctions(Location loc, SymbolRefAttr symbolRef,
 
   // Lookup the node if it already exists.
   ParamNode *node = g.getOrCreate(vals, gen);
-  if (node->status != ImplNode::DONE) {
+  if (node->status != ParamNode::DONE) {
     if (ErrorTreeOrSuccess err = specializeGenerator(node); err.isError())
       return err.takeError();
   }
@@ -948,33 +993,34 @@ ElaboratorImpl::getAllConcreteFunctions(Location loc, SymbolRefAttr symbolRef,
 //===----------------------------------------------------------------------===//
 
 /// Process a kgen.param.fork op.
-ErrorTreeOrSuccess
-ElaboratorImpl::processParamForkOp(ImplNode *parent, ParamForkOp op,
-                                   ArrayRef<Operation *> remainingWorklist) {
+LogicalResult ElaboratorImpl::processParamForkOp(ImplNode *parent,
+                                                 ParamForkOp op) {
   auto _ = logger.scope("Processing ParamForkOp");
   LLVM_DEBUG(logger.scope("Options") << op.getValuesAttr() << "\n");
+
+  IREvaluator &evaluator = parent->getEvaluator();
+  ErrorTreeOr<Attribute> errorOrValue =
+      evaluator.concretizeParameterExpr(op.getLoc(), op.getValuesAttr());
+  if (errorOrValue.isError()) {
+    parent->setToError(errorOrValue.takeError());
+    return failure();
+  }
+
+  auto forkValuesAttr = cast<VariadicAttr>(errorOrValue.takeValue());
+
+  if (forkValuesAttr.getValues().empty()) {
+    parent->setToError(ErrorTree(op.getLoc(), "no candidates found"));
+    return failure();
+  }
 
   // Loop over all the possible candidates that we will search over, spawning
   // N possibilities to explore.
   SmallVector<ErrorTree> errors;
   DenseSet<Attribute> seenValues;
-
-  ErrorTreeOr<Attribute> errorOrValue =
-      parent->evaluator.concretizeParameterExpr(op.getLoc(),
-                                                op.getValuesAttr());
-  if (errorOrValue.isError())
-    return errorOrValue.takeError();
-
-  auto forkValuesAttr = cast<VariadicAttr>(errorOrValue.takeValue());
-
-  if (forkValuesAttr.getValues().empty())
-    return ErrorTree(op.getLoc(), "no candidates found");
-
-  bool atLeastOneSuccessful = false;
-  for (Attribute candidate : forkValuesAttr.getValues()) {
+  for (Attribute candidate : forkValuesAttr.getValues().drop_front()) {
     // Simplify the input expressions.
     ErrorTreeOr<Attribute> errorOrValue =
-        parent->evaluator.concretizeParameterExpr(op.getLoc(), candidate);
+        evaluator.concretizeParameterExpr(op.getLoc(), candidate);
     if (errorOrValue.isError()) {
       errors.push_back(errorOrValue.takeError());
       continue;
@@ -987,26 +1033,14 @@ ElaboratorImpl::processParamForkOp(ImplNode *parent, ParamForkOp op,
     if (!seenValues.insert(value).second)
       continue;
 
-    // Otherwise, spawn a clone for this value. If that fails, continue.
-    if (ErrorTreeOrSuccess err =
-            spawnParamForkClone(op, value, parent, remainingWorklist);
-        err.isError()) {
-      errors.push_back(err.takeError());
-      continue;
-    }
-
-    // If search is disabled, break after the first successful parameter.
-    atLeastOneSuccessful = true;
-    if (!config.enableSearch)
-      break;
+    // Otherwise, spawn a clone for this value.
+    spawnParamForkClone(op, value, parent);
   }
 
-  // If we don't have at least one successful candidate, fail.
-  if (!atLeastOneSuccessful)
-    return ErrorTree(op.getLoc(), "some expansions failed", errors);
-
-  // The parent has to be deleted.
-  parent->setToError(ErrorTree(op.getLoc(), "param fork base node"));
+  // Take the first value for the current function.
+  parent->getEvaluator().setOrOverwriteParameterValue(
+      op.getParamDecl(), forkValuesAttr.getValues().front());
+  op.erase();
   return success();
 }
 
@@ -1015,10 +1049,8 @@ ElaboratorImpl::processParamForkOp(ImplNode *parent, ParamForkOp op,
 //===----------------------------------------------------------------------===//
 
 /// Spawn a clone from a kgen.param.fork op.
-ErrorTreeOrSuccess
-ElaboratorImpl::spawnParamForkClone(ParamForkOp forkOp, Attribute value,
-                                    ImplNode *forkParentNode,
-                                    ArrayRef<Operation *> remainingWorklist) {
+void ElaboratorImpl::spawnParamForkClone(ParamForkOp forkOp, Attribute value,
+                                         ImplNode *forkParentNode) {
   auto _ = logger.scope("Spawning ParamForkClone for '", value, "'");
 
   // Start by cloning the current WIP func to a new copy of it.
@@ -1036,60 +1068,59 @@ ElaboratorImpl::spawnParamForkClone(ParamForkOp forkOp, Attribute value,
                     << "'\n");
 
   // Update the evaluator.
-  newFuncNode->evaluator.setOrOverwriteParameterValue(newFork.getParamDecl(),
-                                                      value);
+  newFuncNode->getEvaluator().setOrOverwriteParameterValue(
+      newFork.getParamDecl(), value);
+
+  // Immediately process the fork operation in the clone by erasing it here.
+  // Take it off the clone's worklist before doing so.
+  assert(newFuncNode->stack.back().ops.back() == newFork);
+  newFuncNode->stack.back().ops.pop_back();
   newFork->erase();
 
-  // Map to the new ops.
-  std::vector<Operation *> remaining;
-  for (Operation *op : remainingWorklist)
-    remaining.push_back(map.lookup(op));
-
-  // And finally, process the rest of the worklist in this new scope. If we've
-  // hit an error case, don't try and finish processing. Return to the upper
-  // function that this hit an error.
-  newFuncNode->status = ImplNode::IN_PROGRESS;
-  LogicalResult result = processScope(newFuncNode, std::move(remaining));
-  newFuncNode->status = ImplNode::DONE;
-  if (failed(result))
-    return newFuncNode->error->copy();
-
-  finalizeAndVerifyFunction(analysis, newFuncNode);
-  return success();
+  // And finally, push the forked node onto its parent's worklist, so that it
+  // will get processed after this function returns.
+  newFuncNode->parent->worklist.push_back(newFuncNode);
 }
 
 //===----------------------------------------------------------------------===//
 // ElaboratorImpl::processGeneratorUser
 //===----------------------------------------------------------------------===//
 
-ErrorTreeOrSuccess ElaboratorImpl::processGeneratorUser(
-    KGENCallOpInterface user, SymbolConstantAttr calleeSymbol, ImplNode *parent,
-    ArrayRef<Operation *> remainingWorklist) {
+LogicalResult
+ElaboratorImpl::processGeneratorUser(KGENCallOpInterface user,
+                                     SymbolConstantAttr calleeSymbol,
+                                     ImplNode *parent) {
   auto _ = logger.scope("Processing Generator User");
   LLVM_DEBUG(logger.logOp("User", user));
 
-  assert(remainingWorklist.empty() || remainingWorklist.front() != user);
-
   // Add in the mapping for parameters in the calls.
   auto resolvedCallParamsOr = resolveCallInputParams(
-      user, parent->evaluator, calleeSymbol.getParamValues());
-  if (resolvedCallParamsOr.isError())
-    return resolvedCallParamsOr.takeError();
+      user, parent->getEvaluator(), calleeSymbol.getParamValues());
+  if (resolvedCallParamsOr.isError()) {
+    parent->setToError(resolvedCallParamsOr.takeError());
+    return failure();
+  }
   ArrayAttr inputParamKey = *resolvedCallParamsOr;
 
   // Lookup the callee.
   auto calleeOp = lookup(calleeSymbol.getSymbol());
   if (!calleeOp) {
-    return ErrorTree(user.getLoc(), "could not find callee '" +
-                                        mlir::debugString(calleeSymbol) + "'");
+    parent->setToError(
+        ErrorTree(user.getLoc(), "could not find callee '" +
+                                     mlir::debugString(calleeSymbol) +
+                                     "' (compiler bug, please report!)"));
+    return failure();
   }
 
   ArrayRef<ParamDeclAttr> decls = user.getParamDecls();
   if (auto func = dyn_cast<FuncOp>(calleeOp)) {
     auto it = g.concreteNodes.find(func);
-    if (it == g.concreteNodes.end())
-      return ErrorTree(user.getLoc(), "concrete callee doesn't have a node "
-                                      "(compiler bug -- file an issue!)");
+    if (it == g.concreteNodes.end()) {
+      parent->setToError(ErrorTree(user.getLoc(),
+                                   "concrete callee doesn't have a node "
+                                   "(compiler bug, please report!)"));
+      return failure();
+    }
     return completeCallProcessing(user, decls, it->second, parent, logger);
   }
 
@@ -1110,8 +1141,11 @@ ErrorTreeOrSuccess ElaboratorImpl::processGeneratorUser(
 
   // Find the tree node that corresponds to the thing we're calling.
   ParamNode *calleeNode = g.getOrCreate(inputParamKey, gen);
-  if (ErrorTreeOrSuccess err = specializeGenerator(calleeNode); err.isError())
-    return ErrorTree(user.getLoc(), "call expansion failed", err.takeError());
+  if (ErrorTreeOrSuccess err = specializeGenerator(calleeNode); err.isError()) {
+    parent->setToError(
+        ErrorTree(user.getLoc(), "call expansion failed", err.takeError()));
+    return failure();
+  }
 
   // Complete processing for all the leaves of this subtree.
   std::vector<ImplNode *> concrete;
@@ -1141,6 +1175,10 @@ ErrorTreeOrSuccess ElaboratorImpl::processGeneratorUser(
   });
   concrete.erase(newEnd, concrete.end());
 
+  assert(config.enableSearch ||
+         concrete.size() <= 1 &&
+             "expected at most 1 successful candidate if search is off");
+
   // If there are no implementations, return the callee's errors.
   if (concrete.empty()) {
     ErrorTree out(user.getLoc(),
@@ -1148,7 +1186,8 @@ ErrorTreeOrSuccess ElaboratorImpl::processGeneratorUser(
     for (ImplNode &impl : llvm::make_pointee_range(calleeNode->impls))
       if (impl.error)
         out.addCause(impl.error->copy());
-    return std::move(out);
+    parent->setToError(std::move(out));
+    return failure();
   }
 
   LLVM_DEBUG({
@@ -1168,30 +1207,28 @@ ErrorTreeOrSuccess ElaboratorImpl::processGeneratorUser(
 
     // This is a sibling to the parent, and it clones the parent's evaluator.
     ImplNode *newNode = g.fork(parent, map, analysis.getTopLevelSymbolTable());
-    newNode->bindings = parent->bindings;
     // Bind this concrete impl to this callee for this node.
     newNode->bindings[{inputParamKey, gen}] = c;
 
-    if (ErrorTreeOrSuccess err = completeCallProcessing(
+    // The call operation in the cloned function wil be handled by
+    // `completeCallProcessing` below, so take it off the clone's worklist
+    // beforehand, since new ops may be added.
+    assert(map.lookup(&*user) == newNode->stack.back().ops.back());
+    newNode->stack.back().ops.pop_back();
+
+    if (failed(completeCallProcessing(
             cast<KGENCallOpInterface>(map.lookup(user.getOperation())), decls,
-            c, newNode, logger);
-        err.isError())
-      return err;
+            c, newNode, logger))) {
+      // If call processing completion failed, then don't enqueue this node.
+      assert(newNode->error && "expected an error on new node");
+      continue;
+    }
 
     LLVM_DEBUG(newNode->print(logger << "New Op "));
 
-    // We have to finish specializing this thing now. Map to the new ops and
-    // process the remaining scope.
-    std::vector<Operation *> remaining;
-    for (Operation *op : remainingWorklist)
-      remaining.push_back(map.lookup(op));
-
     // Process the rest of the worklist in this new scope. If the scope
     // processing failed, do nothing.
-    newNode->status = ImplNode::IN_PROGRESS;
-    if (succeeded(processScope(newNode, std::move(remaining))))
-      finalizeAndVerifyFunction(analysis, newNode);
-    newNode->status = ImplNode::DONE;
+    newNode->parent->worklist.push_back(newNode);
   }
 
   // Bind this concrete impl to this callee for this node.
@@ -1208,55 +1245,63 @@ ErrorTreeOrSuccess ElaboratorImpl::processGeneratorUser(
 
 /// Complete processing of a `kgen.param.apply` operation by invoking the
 /// interpreter on the concrete callee and binding its result.
-static ErrorTreeOrSuccess processParamApplyOp(ParamApplyOp op, FuncOp func,
-                                              IREvaluator &evaluator) {
+static LogicalResult processParamApplyOp(ImplNode *inode, ParamApplyOp op,
+                                         FuncOp func) {
+
   SmallVector<TypedAttr> operands;
   for (TypedAttr operand : op.getOperands()) {
     ErrorTreeOr<Attribute> value =
-        evaluator.concretizeParameterExpr(op.getLoc(), operand);
-    if (value.isError())
-      return value.takeError();
+        inode->getEvaluator().concretizeParameterExpr(op.getLoc(), operand);
+    if (value.isError()) {
+      inode->setToError(value.takeError());
+      return failure();
+    }
     operands.push_back(cast<TypedAttr>(value.takeValue()));
   }
-  ErrorTreeOr<TypedAttr> result = evaluator.evaluateFunction(func, operands);
-  if (result.isError())
-    return result.takeError();
+  ErrorTreeOr<TypedAttr> result =
+      inode->getEvaluator().evaluateFunction(func, operands);
+  if (result.isError()) {
+    inode->setToError(result.takeError());
+    return failure();
+  }
 
   // Bind the result and erase the operation.
-  evaluator.setOrOverwriteParameterValue(op.getParamDecl(), result.takeValue());
+  inode->getEvaluator().setOrOverwriteParameterValue(op.getParamDecl(),
+                                                     result.takeValue());
   op.erase();
-  return {};
+  return success();
 }
 
-ErrorTreeOrSuccess ElaboratorImpl::completeCallProcessing(
+LogicalResult ElaboratorImpl::completeCallProcessing(
     KGENCallOpInterface user, ArrayRef<ParamDeclAttr> decls, ImplNode *thisNode,
-    ImplNode *parentNode, Logger &logger) {
+    ImplNode *node, Logger &logger) {
+  IREvaluator &evaluator = node->getEvaluator();
 
   // Add the callee's bindings to the parent of the call. This ensures that we
   // don't re-bind something we've already bound.
   for (const auto &[k, v] : thisNode->bindings) {
-    auto &oldV = parentNode->bindings[k];
+    auto &oldV = node->bindings[k];
     assert(!oldV || oldV == v);
     oldV = v;
   }
 
   if (thisNode->error)
-    return {};
+    return failure();
 
   FuncOp newCalleeFunc = thisNode->func;
 
   // If this is a `kgen.param.apply`, bind its result here.
   if (auto apply = dyn_cast<ParamApplyOp>(*user))
-    return processParamApplyOp(apply, newCalleeFunc, parentNode->evaluator);
+    return processParamApplyOp(node, apply, newCalleeFunc);
 
   // Resolve any bound result types.
   SmallVector<Type> resultTypes;
   for (auto result : user->getResultTypes()) {
     ErrorTreeOr<Type> typeOr =
-        parentNode->evaluator.concretizeParameterExpr(user.getLoc(), result);
+        evaluator.concretizeParameterExpr(user.getLoc(), result);
     if (typeOr.isError()) {
       thisNode->setToError(typeOr.takeError());
-      return {};
+      return failure();
     }
 
     resultTypes.push_back(typeOr.takeValue());
@@ -1273,6 +1318,9 @@ ErrorTreeOrSuccess ElaboratorImpl::completeCallProcessing(
       newCalleeFunc.getSignature());
   user.concretizeCallee(b, newCallee, resultTypes);
 
+  if (decls.empty())
+    return success();
+
   // If we don't have the result parameters yet, then either no result
   // parameters are necessary, or we have another problem entirely wherein we
   // could not complete the callee's result parameter resolution at all - likely
@@ -1284,19 +1332,16 @@ ErrorTreeOrSuccess ElaboratorImpl::completeCallProcessing(
     thisNode->setToError(
         ErrorTree(userLoc, "could not resolve callee's necessary result "
                            "parameters, infinite recursive loop?"));
-    return {};
+    return failure();
   }
-  // No decls, so we don't have to do anything.
-  if (decls.empty())
-    return {};
 
   // Bind the result parameters to the output parameter decls.
   assert(decls.size() == resultParams.size());
   for (auto [decl, bindValue] : llvm::zip(decls, resultParams)) {
     LLVM_DEBUG(logger << "Binding " << decl << " to " << bindValue << "\n");
-    parentNode->evaluator.setOrOverwriteParameterValue(decl, bindValue);
+    evaluator.setOrOverwriteParameterValue(decl, bindValue);
   }
-  return {};
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1331,22 +1376,26 @@ ElaboratorImpl::resolveCallInputParams(Operation *call, IREvaluator &evaluator,
 //===----------------------------------------------------------------------===//
 
 /// Process a call_param op.
-ErrorTreeOrSuccess
-ElaboratorImpl::processCallOp(KGENCallOpInterface call, ImplNode *parent,
-                              ArrayRef<Operation *> remainingWorklist) {
-  ErrorTreeOr<Attribute> symbol = parent->evaluator.concretizeParameterExpr(
-      call.getLoc(), call.getCallee());
-  if (symbol.isError())
-    return symbol.takeError();
+WalkResult ElaboratorImpl::processCallOp(ImplNode *parent,
+                                         KGENCallOpInterface call) {
+  ErrorTreeOr<Attribute> symbol =
+      parent->getEvaluator().concretizeParameterExpr(call.getLoc(),
+                                                     call.getCallee());
+  if (symbol.isError()) {
+    parent->setToError(symbol.takeError());
+    return WalkResult::interrupt(); // fatal error
+  }
 
   if (auto sym = dyn_cast<SymbolConstantAttr>(*symbol))
-    return processGeneratorUser(call, sym, parent, remainingWorklist);
+    return processGeneratorUser(call, sym, parent);
 
   auto decl = dyn_cast<RegionAttr>(*symbol);
-  if (!decl)
-    return ErrorTree(
-        call.getLoc(),
-        "concrete parameter must be a SymbolConstantAttr or a RegionAttr");
+  if (LLVM_UNLIKELY(!decl)) {
+    parent->setToError(ErrorTree(call.getLoc(),
+                                 "concrete parameter must be a symbol or a "
+                                 "region (compiler bug, please report!)"));
+    return WalkResult::interrupt(); // fatal error
+  }
 
   // OK we found a region, put it into the machinery.
   ParameterUseDefGraph *regionGraph = knownRegions.lookup(decl.getRegionName());
@@ -1357,7 +1406,12 @@ ElaboratorImpl::processCallOp(KGENCallOpInterface call, ImplNode *parent,
   // Inline the call now. We clone them now so that we don't modify the original
   // region in case it's re-used.
   IRMapping map;
+  assert(parent->stack.back().ops.back() == call);
   inlineCallToConcreteRegion(call, region, map, AlwaysInlineLevel::Enabled);
+  // Delete the call operation now, so when the new frame consisting of the
+  // inlined operations has been processed, the elaborator can immediately
+  // continue on to the next operation.
+  parent->stack.back().ops.pop_back();
 
   // Collect all the ops to process *in the region*.
   std::vector<Operation *> opsToRewriteInRegion;
@@ -1368,22 +1422,19 @@ ElaboratorImpl::processCallOp(KGENCallOpInterface call, ImplNode *parent,
   for (Operation *op : opsToRewriteInRegion)
     opsToRewrite.push_back(map.lookup(op));
 
-  // Process the ops we just collected.
-  {
-    llvm::SaveAndRestore<IREvaluator> save(parent->evaluator);
-    parent->evaluator.clearCache();
+  // Push a new work item.
+  ImplNode::WorkItem item{std::move(opsToRewrite), parent->getEvaluator(),
+                          [] { return success(); }};
 
-    // Set any bindings on the region in the evaluator context.
-    for (auto [decl, value] :
-         llvm::zip(region->getParentOfType<DeclInterface>().getInputParams(),
-                   decl.getParamValues()))
-      parent->evaluator.setOrOverwriteParameterValue(decl, value);
+  // Set any parameter bindings on the region in the evaluator context.
+  item.evaluator.clearCache();
+  for (auto [decl, value] : llvm::zip(
+           cast<ParamDeclareRegionOp>(region->getParentOp()).getInputParams(),
+           decl.getParamValues()))
+    item.evaluator.setOrOverwriteParameterValue(decl, value);
 
-    if (failed(processScope(parent, std::move(opsToRewrite))))
-      return parent->error->copy();
-  }
-
-  return success();
+  parent->stack.push_back(std::move(item));
+  return WalkResult::skip();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1392,30 +1443,35 @@ ElaboratorImpl::processCallOp(KGENCallOpInterface call, ImplNode *parent,
 
 /// Process a param.declare.region by creating a generator for the contained
 /// region.
-ErrorTreeOrSuccess
-ElaboratorImpl::processParamDeclareRegionOp(ParamDeclareRegionOp regionDecl,
-                                            ImplNode *parent) {
+LogicalResult
+ElaboratorImpl::processParamDeclareRegionOp(ImplNode *parent,
+                                            ParamDeclareRegionOp regionDecl) {
   StringAttr regionName = getMangledRegionParamName(regionDecl);
   // Set the region's parameter decl as the value for this name. That will
   // signal to the call_param handler that it needs to inline the region it
   // finds for that decl. The region attr itself holds onto a bit that knows if
   // the region is isolated from above (in SSA-land) or not.
-  parent->evaluator.setOrOverwriteParameterValue(
+  parent->getEvaluator().setOrOverwriteParameterValue(
       regionDecl.getParamDecl().getName(),
       RegionAttr::get(
           regionName, {},
           BoolAttr::get(regionDecl.getContext(),
                         operationIsIsolatedFromAbove(regionDecl)),
           cast<SignatureType>(regionDecl.getParamDecl().getType())));
+
+  // Save the known region parameter use-def graph.
   auto found =
       parent->paramGraph.nestedScopes.find(&regionDecl.getBodyRegion());
   assert(found != parent->paramGraph.nestedScopes.end() &&
          "must have a nested region");
   LLVM_DEBUG(logger << "Storing known region: " << regionName << "\n");
   knownRegions[regionName] = &found->getSecond();
+
+  // Transfer ownership to the elaborator.
   regionDecl->remove();
   paramDeclareRegionOps.push_back(
       OwningOpRef<ParamDeclareRegionOp>(regionDecl));
+
   return success();
 }
 
@@ -1423,186 +1479,261 @@ ElaboratorImpl::processParamDeclareRegionOp(ParamDeclareRegionOp regionDecl,
 // ElaboratorImpl::processParamIfOp
 //===----------------------------------------------------------------------===//
 
-ErrorTreeOrSuccess ElaboratorImpl::processParamIfOp(ParamIfOp op,
-                                                    ImplNode *parent) {
+WalkResult ElaboratorImpl::processParamIfOp(ImplNode *parent, ParamIfOp op) {
   // Check the condition expression.
   auto errorOrValue =
-      parent->evaluator.concretizeParameterExpr(op.getLoc(), op.getCond());
-  if (errorOrValue.isError())
-    return errorOrValue.takeError();
+      parent->getEvaluator().concretizeParameterExpr(op.getLoc(), op.getCond());
+  if (errorOrValue.isError()) {
+    parent->setToError(errorOrValue.takeError());
+    return WalkResult::interrupt(); // fatal error
+  }
 
   // Take whichever branch the condition indicated, and simply inline those ops
   // then elaborate them. We can do this by splicing the op list into the parent
   // block. We splice it this way to avoid remapping the ops when we process
   // them later.
-  Region *toProcess = nullptr;
-  auto resultInt = cast<IntegerAttr>(cast<Attribute>(errorOrValue.takeValue()));
+  bool resultBool = cast<BoolAttr>(errorOrValue.takeValue()).getValue();
   // Get the appropriate region.
-  if (!resultInt.getValue().isZero())
-    toProcess = &op.getThenRegion();
-  else
-    toProcess = &op.getElseRegion();
+  Region &toProcess = op->getRegion(!resultBool);
 
-  auto foundNestedScope = parent->paramGraph.nestedScopes.find(toProcess);
-  if (foundNestedScope == parent->paramGraph.nestedScopes.end())
-    return ErrorTree(op.getLoc(), "expected a nested parameter scope");
+  auto foundNestedScope = parent->paramGraph.nestedScopes.find(&toProcess);
+  if (foundNestedScope == parent->paramGraph.nestedScopes.end()) {
+    parent->setToError(ErrorTree(op.getLoc(),
+                                 "expected a nested parameter scope (compiler "
+                                 "bug -- please file an issue!)"));
+    return WalkResult::interrupt(); // fatal error
+  }
 
   ParameterUseDefGraph &uses = foundNestedScope->getSecond();
 
-  LLVM_DEBUG(logger << "Elaborating block:\n";
-             toProcess->front().print(logger));
+  LLVM_DEBUG(logger << "Elaborating block:\n"; toProcess.front().print(logger));
 
   // Only process the ops in the branch that we ended up taking.
   std::vector<Operation *> opsToRewrite;
   for (Operation *paramOp : llvm::reverse(uses.paramOps)) {
     // Check if this op is in a region that is a child of the region we care
     // about. If not, don't process it.
-    if (!toProcess->isAncestor(paramOp->getParentRegion()))
+    if (!toProcess.isAncestor(paramOp->getParentRegion()))
       continue;
 
     opsToRewrite.push_back(paramOp);
   }
-  collectOpsToProcess(toProcess, uses, opsToRewrite);
+  collectOpsToProcess(&toProcess, uses, opsToRewrite);
 
-  SmallVector<Attribute> resultParamValues;
-  {
-    llvm::SaveAndRestore<IREvaluator> save(parent->evaluator);
-    parent->evaluator.clearCache();
-    if (failed(processScope(parent, std::move(opsToRewrite))))
-      return parent->error->copy();
-    for (ParamDeclAttr resultParam : op.getResultParams())
-      resultParamValues.push_back(
-          parent->evaluator.getParameterValues().at(resultParam.getName()));
-  }
-  for (auto [resultParam, value] :
-       llvm::zip(op.getResultParams(), resultParamValues))
-    parent->evaluator.setOrOverwriteParameterValue(resultParam, value);
+  // Push a new node and skip over the current frame until it completes.
+  ImplNode::WorkItem item{std::move(opsToRewrite), parent->getEvaluator(),
+                          nullptr};
+  item.evaluator.clearCache();
 
-  // Splice the ops into the parent. Grab the terminator before the iterators
-  // invalidate.
-  Block::iterator iter = op->getIterator();
-  Operation *terminator = toProcess->front().getTerminator();
-  op->getBlock()->getOperations().splice(iter,
-                                         toProcess->front().getOperations());
+  // When the nested scope completes processing, finish processing the current
+  // parameter if.
+  item.onComplete = [this, parent, resultBool]() -> LogicalResult {
+    assert(parent->stack.size() >= 2 && "expected at least two work items");
+    // Retrieve the current state.
+    ImplNode::WorkItem &curFrame = parent->stack.back();
+    ImplNode::WorkItem &parentFrame = *std::next(parent->stack.rbegin());
+    auto op = cast<ParamIfOp>(parentFrame.ops.back());
+    LLVM_DEBUG(logger << "Parameter if completion callback: " << op);
 
-  // Update the values for the result parameters and do other processing
-  // necessary for param.yield.
-  if (auto yieldOp = dyn_cast<ParamYieldOp>(terminator)) {
-    // RAUW the op's results with the terminator's inputs.
-    op->getResults().replaceAllUsesWith(yieldOp.getOperands());
+    // Bind the result parameters from the nested scope.
+    for (ParamDeclAttr decl : op.getResultParams()) {
+      parentFrame.evaluator.setOrOverwriteParameterValue(
+          decl, curFrame.evaluator.getParameterValues().at(decl.getName()));
+    }
 
-    // Erase the terminator.
-    terminator->erase();
-  } else if (auto hlcfTerm =
-                 dyn_cast<HLCF::ControlFlowTerminator>(terminator)) {
-    // If it's an kgen.return op, we have to split the block after the return.
-    hlcfTerm->getBlock()->splitBlock(++hlcfTerm->getIterator());
-    // Drop all uses of the if op because any of its uses will be null and void
-    // at this point.
-    op->dropAllDefinedValueUses();
-  } else {
-    return ErrorTree(terminator->getLoc(),
-                     "unknown terminator kind for kgen.param.if");
-  }
+    // Splice the ops into the parent. Grab the terminator before the iterators
+    // invalidate.
+    Block::iterator iter = op->getIterator();
+    Block &block = op->getRegion(!resultBool).front();
+    Operation *terminator = block.getTerminator();
+    op->getBlock()->getOperations().splice(iter, block.getOperations());
 
-  // We always erase this op and its nested scopes from the parameter graph -
-  // it's been handled, and we don't want anyone else touching it later
-  // considering we're about to delete the op itself.
-  ParameterUseDefGraph &paramGraph = parent->paramGraph;
-  auto eraseIfScopes = [op](ParameterUseDefGraph &graph) mutable {
-    // Erase any regions from the nested scopes that belong either to this op or
-    // under this op.
-    for (auto &[r, _] : graph.nestedScopes)
-      if (op->isAncestor(r->getParentOp()))
-        graph.nestedScopes.erase(r);
+    // Update the values for the result parameters and do other processing
+    // necessary for param.yield.
+    if (auto yieldOp = dyn_cast<ParamYieldOp>(terminator)) {
+      // RAUW the op's results with the terminator's inputs.
+      op->getResults().replaceAllUsesWith(yieldOp.getOperands());
 
-    // Do the same for nested decls. These two are somehow not always in sync,
-    // so we have to check both separately.
-    auto newEnd = llvm::remove_if(graph.nestedDecls, [&](Region *r) {
-      return op->isAncestor(r->getParentOp());
-    });
-    graph.nestedDecls.erase(newEnd, graph.nestedDecls.end());
+      // Erase the terminator.
+      terminator->erase();
+    } else if (auto hlcfTerm =
+                   dyn_cast<HLCF::ControlFlowTerminator>(terminator)) {
+      // If it's an kgen.return op, we have to split the block after the return.
+      hlcfTerm->getBlock()->splitBlock(++hlcfTerm->getIterator());
+      // Drop all uses of the if op because any of its uses will be null and
+      // void at this point.
+      op->dropAllDefinedValueUses();
+    } else {
+      parent->setToError(ErrorTree(terminator->getLoc(),
+                                   "unknown terminator kind for parameter if "
+                                   "(compiler bug, please report!)"));
+      return failure();
+    }
+
+    // We always erase this op and its nested scopes from the parameter graph -
+    // it's been handled, and we don't want anyone else touching it later
+    // considering we're about to delete the op itself.
+    ParameterUseDefGraph &paramGraph = parent->paramGraph;
+    auto eraseIfScopes = [op](ParameterUseDefGraph &graph) mutable {
+      // Erase any regions from the nested scopes that belong either to this op
+      // or under this op.
+      for (auto &[r, _] : graph.nestedScopes)
+        if (op->isAncestor(r->getParentOp()))
+          graph.nestedScopes.erase(r);
+
+      // Do the same for nested decls. These two are somehow not always in sync,
+      // so we have to check both separately.
+      auto newEnd = llvm::remove_if(graph.nestedDecls, [&](Region *r) {
+        return op->isAncestor(r->getParentOp());
+      });
+      graph.nestedDecls.erase(newEnd, graph.nestedDecls.end());
+    };
+    // Delete references to this nested declaration from all nested graphs.
+    eraseIfScopes(paramGraph);
+    for (auto &[scope, graph] : paramGraph.nestedScopes)
+      eraseIfScopes(graph);
+
+    // The callback to the current frame finishes processing the current
+    // operation, so take it off the parent frame's worklist.
+    op->erase();
+    parentFrame.ops.pop_back();
+    LLVM_DEBUG(
+        logger.logOp("param.if parent scope (after processing)", parent->func));
+    return success();
   };
-  // Delete references to this nested declaration from all nested graphs.
-  eraseIfScopes(paramGraph);
-  for (auto &[scope, graph] : paramGraph.nestedScopes)
-    eraseIfScopes(graph);
-  op->erase();
-  LLVM_DEBUG(
-      logger.logOp("param.if parent scope (after processing)", parent->func));
-  return success();
+
+  parent->stack.push_back(std::move(item));
+  return WalkResult::skip();
 }
 
 //===----------------------------------------------------------------------===//
 // ElaboratorImpl::processScope
 //===----------------------------------------------------------------------===//
 
-LogicalResult ElaboratorImpl::processScope(ImplNode *parentNode,
-                                           std::vector<Operation *> worklist) {
+void ElaboratorImpl::processParamNode(ParamNode *pnode) {
+  LLVM_DEBUG(pnode->print(logger << "Processing parameter node: ",
+                          /*printBindings=*/false));
+  assert(pnode->worklist.size() == 1 && "expected a single seed node");
+
+  TimeTraceScope<EnableTracing> traceScope("processParamNode", [pnode] {
+    std::string detail;
+    llvm::raw_string_ostream os(detail);
+    os << pnode->gen.getSymName() << pnode->inputParams;
+    return os.str();
+  });
+
+  // Process implementation nodes until the worklist is empty.
+  while (!pnode->worklist.empty()) {
+    ImplNode *inode = pnode->worklist.back();
+    pnode->worklist.pop_back();
+    processImplNode(inode);
+
+    // If we are not doing search, return after the first successful candidate.
+    if (!config.enableSearch && !inode->error) {
+      for (ImplNode &child : llvm::make_pointee_range(pnode->impls)) {
+        if (!child.error && &child != inode) {
+          child.setToError(ErrorTree(child.func.getLoc(),
+                                     "invalidated because search is disabled"));
+        }
+      }
+      pnode->worklist.clear();
+    }
+  }
+}
+
+void ElaboratorImpl::processImplNode(ImplNode *inode) {
+  LLVM_DEBUG(inode->print(logger << "Processing implementation node: ",
+                          /*printBindings=*/false));
+  assert(!inode->stack.empty() && "expected at least one work item");
+
+  TimeTraceScope<EnableTracing> traceScope(
+      "processParamNode", [inode] { return inode->func.getSymName().str(); });
+
+  while (!inode->stack.empty()) {
+    ImplNode::WorkItem &item = inode->stack.back();
+    [[maybe_unused]] size_t size = inode->stack.size();
+    WalkResult result = processScope(inode, item);
+    if (result.wasInterrupted()) {
+      // Interrupt indicates a fatal error.
+      assert(inode->error && "node processing interrupted but no error set");
+      return;
+    }
+    if (result.wasSkipped()) {
+      // Skip indicates we need to move to another frame first.
+      assert(inode->stack.size() == size + 1 && "skip with no new frame");
+      continue;
+    }
+    // Advance indicates the current work item's operation list was exhausted.
+    assert(inode->stack.size() == size && "new frame with no skip");
+    assert(item.ops.empty() && "advance did not exhaust worklist");
+    if (failed(item.onComplete())) {
+      assert(inode->error && "callback failed but no error set");
+      return;
+    }
+    inode->stack.pop_back();
+  }
+  assert(!inode->error && "unexpected error");
+  finalizeAndVerifyFunction(analysis, inode);
+}
+
+WalkResult ElaboratorImpl::processScope(ImplNode *node,
+                                        ImplNode::WorkItem &item) {
   LLVM_DEBUG({
     auto _ = logger.scope("Operations to Rewrite");
-    for (Operation *op : worklist)
+    for (Operation *op : item.ops)
       logger << *op << "\n";
   });
   TimeTraceScope<EnableTracing> traceScope(
-      "processScope", std::to_string(worklist.size()) + " ops");
+      "processScope", std::to_string(item.ops.size()) + " ops");
 
   // Processing an op may generate more stuff, or even delete the op being
   // processed.
-  while (!worklist.empty()) {
-    Operation *op = worklist.back();
-    worklist.pop_back();
-    if (!op->getBlock()->isEntryBlock() && op->getBlock()->hasNoPredecessors())
-      continue;
-
-    auto _ = logger.scope("Processing: '", op->getName(), "'");
-    logger.logOp("Op", op);
-
-    ErrorTreeOrSuccess result = success();
-    if (auto declare = dyn_cast<ParamDeclareOp>(op)) {
-      TimeTraceScope<EnableTracing> traceScope("processParamDeclareOp");
-      result = processParamDeclareOp(parentNode->evaluator, declare);
-    } else if (auto paramDeclareRegionOp = dyn_cast<ParamDeclareRegionOp>(op)) {
-      TimeTraceScope<EnableTracing> traceScope("processParamDeclareRegionOp");
-      result = processParamDeclareRegionOp(paramDeclareRegionOp, parentNode);
-    } else if (auto bind = dyn_cast<ParamResultBindOp>(op)) {
-      TimeTraceScope<EnableTracing> traceScope("processParamResultBindOp");
-      result = processParamResultBindOp(bind, parentNode);
-    } else if (auto fork = dyn_cast<ParamForkOp>(op)) {
-      TimeTraceScope<EnableTracing> traceScope("processParamForkOp");
-      result = processParamForkOp(parentNode, fork, worklist);
-    } else if (auto rebindOp = dyn_cast<RebindOp>(op)) {
-      TimeTraceScope<EnableTracing> traceScope("processRebindOp");
-      result = processRebindOp(parentNode->evaluator, rebindOp);
-    } else if (auto assertOp = dyn_cast<ParamAssertOp>(op)) {
-      TimeTraceScope<EnableTracing> traceScope("processParamAssertOp");
-      result = processParamAssertOp(parentNode->evaluator, assertOp);
-    } else if (auto ifOp = dyn_cast<ParamIfOp>(op)) {
-      TimeTraceScope<EnableTracing> traceScope("processParamIfOp");
-      result = processParamIfOp(ifOp, parentNode);
-    } else if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
-      TimeTraceScope<EnableTracing> traceScope("processCallOp");
-      result = processCallOp(call, parentNode, worklist);
-    } else {
-      TimeTraceScope<EnableTracing> traceScope("processGenericOp");
-      result = processGenericOp(parentNode->evaluator, op);
-    }
-
-    // If the parent node was set to error, then just bail.
-    if (parentNode->error)
-      return failure();
-
-    // If we have an error, log it and set the parent node to an error. This
-    // will perform any required cleanup.
-    if (result.isError()) {
-      LLVM_DEBUG(logger.scope("Result: Failure")
-                 << result.getError().getError());
-      parentNode->setToError(result.takeError());
-      return failure();
-    }
+  while (!item.ops.empty()) {
+    Operation *op = item.ops.back();
+    WalkResult result = processOp(node, op);
+    if (result.wasInterrupted() || result.wasSkipped())
+      return result;
+    item.ops.pop_back();
   }
-  LLVM_DEBUG(parentNode->print(logger << "Completed processing "));
-  return success();
+  LLVM_DEBUG(node->print(logger << "Completed processing "));
+  return WalkResult::advance();
+}
+
+WalkResult ElaboratorImpl::processOp(ImplNode *node, Operation *op) {
+  if (!op->getBlock()->isEntryBlock() && op->getBlock()->hasNoPredecessors())
+    return WalkResult::advance();
+
+  auto _ = logger.scope("Processing: '", op->getName(), "'");
+  logger.logOp("Op", op);
+
+  if (auto declare = dyn_cast<ParamDeclareOp>(op)) {
+    TimeTraceScope<EnableTracing> traceScope("processParamDeclareOp");
+    return processParamDeclareOp(node, declare);
+  } else if (auto region = dyn_cast<ParamDeclareRegionOp>(op)) {
+    TimeTraceScope<EnableTracing> traceScope("processParamDeclareRegionOp");
+    return processParamDeclareRegionOp(node, region);
+  } else if (auto bind = dyn_cast<ParamResultBindOp>(op)) {
+    TimeTraceScope<EnableTracing> traceScope("processParamResultBindOp");
+    return processParamResultBindOp(node, bind);
+  } else if (auto fork = dyn_cast<ParamForkOp>(op)) {
+    TimeTraceScope<EnableTracing> traceScope("processParamForkOp");
+    return processParamForkOp(node, fork);
+  } else if (auto rebindOp = dyn_cast<RebindOp>(op)) {
+    TimeTraceScope<EnableTracing> traceScope("processRebindOp");
+    return processRebindOp(node, rebindOp);
+  } else if (auto assertOp = dyn_cast<ParamAssertOp>(op)) {
+    TimeTraceScope<EnableTracing> traceScope("processParamAssertOp");
+    return processParamAssertOp(node, assertOp);
+  } else if (auto ifOp = dyn_cast<ParamIfOp>(op)) {
+    TimeTraceScope<EnableTracing> traceScope("processParamIfOp");
+    return processParamIfOp(node, ifOp);
+  } else if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
+    TimeTraceScope<EnableTracing> traceScope("processCallOp");
+    return processCallOp(node, call);
+  } else {
+    TimeTraceScope<EnableTracing> traceScope("processGenericOp");
+    return processGenericOp(node, op);
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -1706,8 +1837,8 @@ ErrorTreeOrSuccess ElaboratorImpl::specializeGenerator(ParamNode *genNode) {
 
   // The node for this new func is simply the child of the node for the
   // generator.
-  auto childNode = std::make_unique<ImplNode>(
-      newFunc, genNode, std::move(evaluator), std::move(childGraph));
+  auto childNode =
+      std::make_unique<ImplNode>(newFunc, genNode, std::move(childGraph));
   g.concreteNodes.try_emplace(newFunc, childNode.get());
   ImplNode *newFuncNode = childNode.get();
   genNode->impls.push_back(std::move(childNode));
@@ -1723,11 +1854,13 @@ ErrorTreeOrSuccess ElaboratorImpl::specializeGenerator(ParamNode *genNode) {
   opsToRewrite.push_back(newFunc);
   collectOpsToProcess(&newFunc.getBodyRegion(), uses, opsToRewrite);
 
+  ImplNode::WorkItem item{std::move(opsToRewrite), std::move(evaluator),
+                          [] { return success(); }};
+  newFuncNode->stack.push_back(std::move(item));
+  genNode->worklist.push_back(newFuncNode);
+
   // Process the worklist. Only finalize the function if this succeeded.
-  newFuncNode->status = ImplNode::IN_PROGRESS;
-  if (succeeded(processScope(newFuncNode, std::move(opsToRewrite))))
-    finalizeAndVerifyFunction(analysis, newFuncNode);
-  newFuncNode->status = ImplNode::DONE;
+  processParamNode(genNode);
 
   genNode->status = ParamNode::DONE;
   ErrorTree err(genNode->gen.getLoc(), "no viable expansions found");

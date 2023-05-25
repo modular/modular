@@ -1,8 +1,8 @@
 // RUN: kgen-opt %s -split-input-file -elaborate-generators="enable-search=true" -allow-unregistered-dialect | FileCheck %s
 
-// CHECK-LABEL: kgen.func @"even_only,param=16"() {
+// CHECK-LABEL: kgen.func @"even_only,param=72"() {
 // CHECK-NOT: @"even_only,
-// CHECK-LABEL: kgen.func @"even_only,param=72"()
+// CHECK-LABEL: kgen.func @"even_only,param=16"()
 // CHECK-NOT: @"even_only,
 kgen.generator @even_only<param>() {
   kgen.param.assert <eq(and(param, 1), 0)>, "the param shalt be even!"
@@ -96,16 +96,16 @@ kgen.generator @pickSecond() -> index {
   kgen.param.declare chosenImpl : () -> index = <evaluate(:variadic<!kgen.signature<() -> index>> [@pickSecondA, @pickSecondB],
                                                           :(!pop.pointer<!kgen.signature<() -> index>>, index) -> index evaluator)>
   // COM: This is actually not one of the direct options, it's an expansion of one of them.
-  // CHECK-NEXT: kgen.call @pickSecondA_concrete_1()
+  // CHECK-NEXT: kgen.call @pickSecondA_concrete_0()
   %0 = kgen.call_param[() -> index: chosenImpl]()
   kgen.return %0 : index
 }
 
-// CHECK-LABEL: kgen.func @pickSecondA_concrete_1()
-// CHECK-NEXT: kgen.param.constant = <2>
-
 // CHECK-LABEL: kgen.func @pickSecondA()
 // CHECK-NEXT: kgen.param.constant = <1>
+
+// CHECK-LABEL: kgen.func @pickSecondA_concrete_0()
+// CHECK-NEXT: kgen.param.constant = <2>
 
 kgen.generator @pickSecondA() -> index {
   kgen.param.fork f = <[1, 2]>
