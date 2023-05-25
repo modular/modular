@@ -186,6 +186,15 @@ fn fn_args_missing_return() -> Int:
     return 0;
 
 
+fn fn_returns_section_empty() -> Int:
+    """This doc string includes a `Returns:` section, but it's empty.
+
+    # expected-warning @below {{'Returns' section is empty}}
+    Returns:
+    """
+    return 0
+
+
 fn fn_nested_fn():
     """This is a function that defines a nested struct and function.
 
