@@ -12,6 +12,20 @@ struct ArgStruct:
     pass
 
 
+struct _ParamStruct_Private_Missing[_type: __mlir_type.`!kgen.dtype`]:
+    """This is a private struct doc string.
+
+    It doesn't need to include a `Parameters:` section.
+    """
+    pass
+
+
+# expected-warning @below {{struct takes parameters, but no 'Parameters' in doc string}}
+struct ParamStruct_Missing[_type: __mlir_type.`!kgen.dtype`]:
+    """This doc string is missing a `Parameters:` section."""
+    pass
+
+
 struct ParamStruct_Invalid[_type: __mlir_type.`!kgen.dtype`]:
     """This is a class summary.
 
@@ -80,6 +94,20 @@ fn _fn_private_no_doc_string():
     pass
 
 
+fn _fn_private_args_missing(arg: ArgStruct):
+    """This is a private function doc string.
+
+    It doesn't need to include an `Args:` section.
+    """
+    pass
+
+
+# expected-warning @below {{function takes arguments, but no 'Args' in doc string}}
+fn fn_args_missing(arg: ArgStruct):
+    """This doc string is missing an `Args:` section."""
+    return
+
+
 fn fn_args_invalid(arg: ArgStruct):
     """This is a function summary.
 
@@ -143,6 +171,12 @@ fn fn_args_return():
       This returns nothing.
     """
     return
+
+
+# expected-warning @below {{function has results, but no 'Returns' in doc string}}
+fn fn_args_missing_return() -> Int:
+    """This doc string is missing a `Returns:` section."""
+    return 0;
 
 
 fn fn_nested_fn():

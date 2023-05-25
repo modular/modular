@@ -18,6 +18,10 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
+/// Within a doc string, the "Parameters" section lists descriptions of each
+/// parameter.
+static constexpr const char *kParameters = "Parameters";
+
 /// Within a doc string, the "Args" section lists descriptions of each function
 /// argument.
 static constexpr const char *kArgs = "Args";
@@ -596,7 +600,7 @@ private:
     for (size_t line = 0, lineE = description.size(); line < lineE; ++line) {
       if (description[line] == (Twine(kArgs) + ":").str()) {
         generateArraySection("args", description, line, lineE, argNameToDetail);
-      } else if (description[line] == "Parameters:") {
+      } else if (description[line] == (Twine(kParameters) + ":").str()) {
         generateArraySection("parameters", description, line, lineE,
                              paramToDetail);
       } else if (description[line] == (Twine(kReturns) + ":").str()) {
@@ -641,7 +645,7 @@ private:
     // Process the lines of the description, looking for markers.
     SmallVector<StringRef> pureDescriptionLines;
     for (size_t line = 0, lineE = description.size(); line < lineE; ++line) {
-      if (description[line] == "Parameters:") {
+      if (description[line] == (Twine(kParameters) + ":").str()) {
         generateArraySection("parameters", description, line, lineE,
                              paramToDetail);
         continue;
@@ -913,7 +917,7 @@ private:
     // Process the sections of the doc string.
     DenseMap<StringRef, SMLoc> sections = {
         {kArgs, SMLoc()},
-        {"Parameters", SMLoc()},
+        {kParameters, SMLoc()},
         {kReturns, SMLoc()},
     };
     ArrayRef<StringRef> description = docStr.getDescription();
@@ -923,7 +927,7 @@ private:
     auto processFn = [&](StringRef section, SMLoc loc) mutable {
       if (section == kArgs) {
         processArguments(loc, seenArguments, description);
-      } else if (section == "Parameters") {
+      } else if (section == kParameters) {
         processParameters(loc, seenParameters, description);
       } else if (section == kReturns) {
         if (!hasResults)
@@ -934,16 +938,18 @@ private:
     processDocSections(description, sections, processFn);
 
     if (validation == ValidationKind::Strict) {
-      if (!sections[kArgs].isValid() && !seenArguments.empty()) {
+      if (!sections[kParameters].isValid() && !seenParameters.empty())
+        sharedState.emitWarning(
+            funcOp.getLoc(),
+            "function takes parameters, but no 'Parameters' in doc string");
+      if (!sections[kArgs].isValid() && !seenArguments.empty())
         sharedState.emitWarning(
             funcOp.getLoc(),
             "function takes arguments, but no 'Args' in doc string");
-      }
-      if (!sections[kReturns].isValid() && hasResults) {
+      if (!sections[kReturns].isValid() && hasResults)
         sharedState.emitWarning(
             funcOp.getLoc(),
             "function has results, but no 'Returns' in doc string");
-      }
     }
   }
 
@@ -959,14 +965,20 @@ private:
 
     // Process the sections of the doc string.
     DenseMap<StringRef, SMLoc> sections = {
-        {"Parameters", SMLoc()},
+        {kParameters, SMLoc()},
     };
     ArrayRef<StringRef> description = docStr.getDescription();
     auto processFn = [&](StringRef section, SMLoc loc) mutable {
-      if (section == "Parameters")
+      if (section == kParameters)
         processParameters(loc, seenParameters, description);
     };
     processDocSections(description, sections, processFn);
+
+    if (validation == ValidationKind::Strict &&
+        !sections[kParameters].isValid() && !seenParameters.empty())
+      sharedState.emitWarning(
+          structOp.getLoc(),
+          "struct takes parameters, but no 'Parameters' in doc string");
   }
 
   //===--------------------------------------------------------------------===//
