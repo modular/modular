@@ -195,6 +195,17 @@ fn fn_returns_section_empty() -> Int:
     return 0
 
 
+fn fn_returns_section_poor_style() -> Int:
+    """This doc string has a `Returns:` section with poor style.
+
+    Returns:
+        doesn't start with a capital letter, doesn't end with a period!
+    """
+    # expected-warning @-2 {{'Returns' section description should begin with a capital letter or '`', but this begins with 'd'}}
+    # expected-warning @-3 {{'Returns' section description should end with a period '.', but this ends with '!'}}
+    return 0
+
+
 fn fn_nested_fn():
     """This is a function that defines a nested struct and function.
 
@@ -221,7 +232,7 @@ fn fn_raises_with_return_type(x: Int) raises -> Int:
         x: An explicit argument.
 
     Returns:
-        Zero.
+        `0`.
     """
     return 0
 
