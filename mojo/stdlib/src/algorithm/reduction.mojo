@@ -828,9 +828,13 @@ fn variance[
     mean_value: SIMD[type, 1],
     correction: Int = 1,
 ) -> SIMD[type, 1]:
-    """Computes the variance value of the elements in a buffer, given a mean to
-    avoid a second pass over the data.
+    """Given a mean, computes the variance of elements in a buffer.
+
+    The mean value is used to avoid a second pass over the data:
+
+    ```
     variance = sum((x - E(x))^2) / (size - correction)
+    ```
 
     Parameters:
         simd_width: The vector width for the computation.
@@ -875,7 +879,10 @@ fn variance[
     type: DType,
 ](src: Buffer[size, type], correction: Int = 1) -> SIMD[type, 1]:
     """Computes the variance value of the elements in a buffer.
+
+    ```
     variance(src) = sum((x - E(x))^2) / (size - correction)
+    ```
 
     Parameters:
         simd_width: The vector width for the computation.
