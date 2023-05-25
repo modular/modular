@@ -2,10 +2,10 @@
 
 ## Introduction
 
-One of the key problems that a thread pool must solve is how they behave when an
-item of work they execute blocks its thread (for example on I/O).  When this happens,
-the thread is implicitly taken out of the thread pool, and therefore the machine
-ends up being over- or under-utilized.
+One of the key problems that a thread pool must solve is how they behave when
+an item of work they execute blocks its thread (for example on I/O). When this
+happens, the thread is implicitly taken out of the thread pool, and therefore
+the machine ends up being over- or under-utilized.
 
 For example, consider a 4-core machine: you can have 4 threads keeping the
 machine busy, but if one of them blocks on disk or network I/O for 100ms, then
@@ -13,10 +13,10 @@ you've just given up 1/4 of your CPU cycles for 100ms that could be used to
 execute other work in the work queue.
 
 This is a challenging problem to deal with, particularly with large scale
-software systems - most existing code in the world was built on top of
-existing blocking APIs (for example even simple things like `printf` can block!). We
-also face the unfortunate situation where some important OS's (for example like older
-Linux kernels) [don't even support non-blocking async
+software systems - most existing code in the world was built on top of existing
+blocking APIs (for example even simple things like `printf` can block!). We
+also face the unfortunate situation where some important OS's (for example like
+older Linux kernels) [don't even support non-blocking async
 I/O](http://davmac.org/davpage/linux/async-io.html).
 
 There are two major approaches used to solve this problem: adaptive thread
@@ -141,17 +141,19 @@ time is set to 1ms.
 
 ### The "Missing" I/O Subsystem in LLCL
 
-One challenge of building high-performance infrastructure that needs I/O is that
-there is no consistent and portable way to use [asynchronous
-I/O](https://en.wikipedia.org/wiki/Asynchronous_I/O).  You've got things like
-AIO on Linux (which is [surprisingly bad](http://davmac.org/davpage/linux/async-io.html)),
-Windows has [reasonable async
-I/O](https://docs.microsoft.com/en-us/windows/win32/fileio/synchronous-and-asynchronous-i-o) that just has [a few edge
-cases](https://docs.microsoft.com/en-us/troubleshoot/windows/win32/asynchronous-disk-io-synchronous).  New Linux kernels have a new fancy new
-[io_uring API](https://blogs.oracle.com/linux/post/an-introduction-to-the-io-uring-asynchronous-io-framework) that is perfect for
-what we need.
-On the other hand, asynchronous I/O may not even make sense for embedded
-systems.
+One challenge of building high-performance infrastructure that needs I/O is
+that there is no consistent and portable way to use [asynchronous
+I/O](https://en.wikipedia.org/wiki/Asynchronous_I/O). You've got things like
+AIO on Linux (which is [surprisingly
+bad](http://davmac.org/davpage/linux/async-io.html)), Windows has [reasonable
+async
+I/O](https://docs.microsoft.com/en-us/windows/win32/fileio/synchronous-and-asynchronous-i-o)
+that just has [a few edge
+cases](https://docs.microsoft.com/en-us/troubleshoot/windows/win32/asynchronous-disk-io-synchronous).
+New Linux kernels have a new fancy new [io_uring
+API](https://blogs.oracle.com/linux/post/an-introduction-to-the-io-uring-asynchronous-io-framework)
+that is perfect for what we need. On the other hand, asynchronous I/O may not
+even make sense for embedded systems.
 
 At some point we will care enough about this to build a new async I/O subsystem
 and build this into the LLCL.  This should be an optional component that has OS

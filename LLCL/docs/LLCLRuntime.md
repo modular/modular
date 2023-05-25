@@ -16,12 +16,13 @@ and many others.
 
 It has three major differentiating factors:
 
- 1) It follows proper library-based design approaches (for example there are no global
-    parallel-for-each operations that act against an implicit thread pool).
- 2) It is designed to cooperate with other things within the application that are
-    using CPU threads (including multiple instances of itself).
- 3) Its key policies (for example how is a thread pool implemented?) are abstracted
-    from the code that is working with it.
+1) It follows proper library-based design approaches (for example there are no
+   global parallel-for-each operations that act against an implicit thread
+   pool).
+2) It is designed to cooperate with other things within the application that
+   are using CPU threads (including multiple instances of itself).
+3) Its key policies (for example how is a thread pool implemented?) are
+   abstracted from the code that is working with it.
 
 This is very important: we want LLCL-based technology to compose into existing
 applications with other things going on.  A high performance console video game
@@ -33,20 +34,21 @@ concurrent workloads are independent of the underlying execution model.  We want
 these algorithms to be expressible in a way that isn't unduly exposed to the
 operating system details - in fact, many of these can run on bare-metal systems.
 
-On the other hand, we're not providing a virtual machine.  If clients of
-`M::LLCL::Runtime` want to be written in a system specific way, the full machine is
-open and clients are not prevented from doing quirky and exotic things as necessary.
+On the other hand, we're not providing a virtual machine. If clients of
+`M::LLCL::Runtime` want to be written in a system specific way, the full
+machine is open and clients are not prevented from doing quirky and exotic
+things as necessary.
 
 ## LLCL `WorkQueue` / Thread Pool Abstraction
 
-The [M::LLCL::WorkQueue](../include/LLCL/Runtime/WorkQueue.h) class is an abstract
-interface for a work queue, which is usually implemented to execute the submitted
-work in parallel with a thread pool.  This class is intentionally very simple,
-but has a few important design points:
+The [M::LLCL::WorkQueue](../include/LLCL/Runtime/WorkQueue.h) class is an
+abstract interface for a work queue, which is usually implemented to execute
+the submitted work in parallel with a thread pool. This class is intentionally
+very simple, but has a few important design points:
 
 1) It is an abstract interface that may be implemented in many different ways,
-   for systems with different levels of thread abstractions or ones with familiar
-   abstractions but different constraints.
+   for systems with different levels of thread abstractions or ones with
+   familiar abstractions but different constraints.
 
 2) The interface is minimal: you may add work, and may ask that a client thread
    is blocked until some `AsyncValue`s are computed, or until all work has
@@ -65,10 +67,10 @@ facilitate efficient implementation of it for different use-cases.
 
 ### An abstract interface with multiple implementations
 
-`WorkQueue` providing an abstract interface is important for our goals of LLCL as a
-root technology of various library-based designs.  If the bottom of the stack
-doesn't have a proper library-based design, nothing built on top of it will
-either.
+`WorkQueue` providing an abstract interface is important for our goals of LLCL
+as a root technology of various library-based designs. If the bottom of the
+stack doesn't have a proper library-based design, nothing built on top of it
+will either.
 
 Furthermore, there are lots of ways to implement threading, including pthreads,
 Windows threads, fibers, running in an unsynchronized single-thread context,
@@ -90,11 +92,11 @@ algorithms that compose onto this interface are implemented separately, in
 
 ### Designed for non-blocking work
 
-Implementations of `WorkQueue` are allowed to assume that no work items submitted
-to the queue may block (for example on I/O).  This allows a much simpler implementation
-approach and allows more efficient use of the machine.  For an exploration of
-the issues involved here, please see [detailed document on non-blocking
-work queues](WorkQueueNonblocking.md).
+Implementations of `WorkQueue` are allowed to assume that no work items
+submitted to the queue may block (for example on I/O). This allows a much
+simpler implementation approach and allows more efficient use of the machine.
+For an exploration of the issues involved here, please see [detailed document
+on non-blocking work queues](WorkQueueNonblocking.md).
 
 That said, it is very typical for top level clients to want to submit work and
 not embrace the non-blocking approach themselves.  As such, there is a top-level
@@ -104,10 +106,10 @@ queue or other things that are supposed to be non-blocking.
 
 ## LLCL `Allocator` Abstraction
 
-The [`M::LLCL::Allocator`](../include/LLCL/Runtime/Allocator.h) class provides an
-interface for heap allocation.  Similar to the `WorkQueue` class, it is an
-abstract interface that allows algorithmic code to be kept independent of client
-specific policies, allowing both to work together.
+The [`M::LLCL::Allocator`](../include/LLCL/Runtime/Allocator.h) class provides
+an interface for heap allocation. Similar to the `WorkQueue` class, it is an
+abstract interface that allows algorithmic code to be kept independent of
+client specific policies, allowing both to work together.
 
 The core interface is similar to `malloc`/`free`, with a couple of
 refinements: 1) the allocation interface takes an alignment specifier, allowing
@@ -122,16 +124,17 @@ our unit test suite to default the leak tracking allocator, which is very handy
 for finding bugs early.
 
 Another use-case is for large scale server systems, which often have
-multi-socket NUMA CPUs in them.  In these cases, you really want to pin both the
-compute (with `WorkQueue`) and the data (with `Allocator`) to the same socket to
-avoid saturating the relatively low bandwidth inter-socket interconnect between
-the CPUs.  It also allows integration with "huge page" OS features which
-[require fiddly logic to use](https://stackoverflow.com/questions/32652833/how-to-allocate-huge-pages-for-c-application-on-linux)
+multi-socket NUMA CPUs in them. In these cases, you really want to pin both the
+compute (with `WorkQueue`) and the data (with `Allocator`) to the same socket
+to avoid saturating the relatively low bandwidth inter-socket interconnect
+between the CPUs. It also allows integration with "huge page" OS features which
+[require fiddly logic to
+use](https://stackoverflow.com/questions/32652833/how-to-allocate-huge-pages-for-c-application-on-linux)
 but can massively affect latency in some cases by reducing TLB misses.
 
-When building data intensive applications (for example allocating tensor data in a
-machine learning application), it is a good idea to allocate that data with the
-`Runtime` you're executing within.
+When building data intensive applications (for example allocating tensor data
+in a machine learning application), it is a good idea to allocate that data
+with the `Runtime` you're executing within.
 
 ### Do not use `Allocator` for tiny allocations
 
