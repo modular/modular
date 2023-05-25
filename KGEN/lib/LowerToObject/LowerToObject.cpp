@@ -63,6 +63,56 @@ ObjectCompiler::ObjectCompiler(
       runtime(runtime), mgr(&mgr), options(std::move(options)) {}
 
 //===----------------------------------------------------------------------===//
+// Time Trace Instrumentation
+//===----------------------------------------------------------------------===//
+
+/// Given an Any containing an LLVM IR unit, return a string representation of
+/// the name of the unit.
+static std::string getLLVMIRName(llvm::Any &ir) {
+  if (llvm::any_cast<const llvm::Module *>(&ir)) {
+    return ("[module](" +
+            (*llvm::any_cast<const llvm::Module *>(&ir))->getName() + ")")
+        .str();
+  }
+  if (const auto **fn = llvm::any_cast<const llvm::Function *>(&ir))
+    return (*fn)->getName().str();
+  if (const auto **scc = llvm::any_cast<const llvm::LazyCallGraph::SCC *>(&ir))
+    return (*scc)->getName();
+  if (const auto **loop = llvm::any_cast<const llvm::Loop *>(&ir))
+    return (*loop)->getName().str();
+  llvm_unreachable("unknown wrapped IR type");
+}
+
+namespace {
+class LLVMTimeTraceInstrumentation {
+public:
+  LLVMTimeTraceInstrumentation(llvm::PassInstrumentationCallbacks &pic) {
+    pic.registerBeforeNonSkippedPassCallback(
+        [=](StringRef passID, llvm::Any ir) { runBeforePass(passID, ir); });
+    pic.registerAfterPassCallback(
+        [=](StringRef, llvm::Any, const llvm::PreservedAnalyses &) {
+          runAfterPass();
+        },
+        /*ToFront=*/true);
+    pic.registerAfterPassInvalidatedCallback(
+        [=](StringRef, const llvm::PreservedAnalyses &) { runAfterPass(); },
+        true);
+    pic.registerBeforeAnalysisCallback(
+        [=](StringRef passID, llvm::Any ir) { runBeforePass(passID, ir); });
+    pic.registerAfterAnalysisCallback(
+        [=](StringRef, llvm::Any) { runAfterPass(); }, /*ToFront=*/true);
+  }
+
+private:
+  static void runBeforePass(StringRef passID, llvm::Any &ir) {
+    M::timeTraceProfilerBegin(passID, getLLVMIRName(ir));
+  }
+
+  static void runAfterPass() { M::timeTraceProfilerEnd(); }
+};
+} // namespace
+
+//===----------------------------------------------------------------------===//
 // compileLLVMToObject
 //===----------------------------------------------------------------------===//
 
@@ -79,8 +129,12 @@ LogicalResult KGEN::runLLVMOptPasses(llvm::Module &module,
   CGSCCAnalysisManager sccAnalysisMgr;
   ModuleAnalysisManager moduleAnalysisMgr;
 
+  llvm::PassInstrumentationCallbacks pic;
+  LLVMTimeTraceInstrumentation timeTraceInstrumentation(pic);
+
   TargetLibraryInfoImpl targetLibInfo(Triple(module.getTargetTriple()));
-  PassBuilder passBuilder(&targetMachine);
+  PassBuilder passBuilder(&targetMachine, PipelineTuningOptions(),
+                          /*PGOOpt=*/std::nullopt, &pic);
 
   // Specially handle the alias analysis manager so that we can register
   // a custom pipeline of AA passes with it.
