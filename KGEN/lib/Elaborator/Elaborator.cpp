@@ -2155,9 +2155,11 @@ public:
       build = BuildInfoAttr::getForCurrentBuild(ctx);
     // Default the evaluator to selecting the first specialization.
     if (!evaluatorExecutorFn) {
-      evaluatorExecutorFn =
-          [](KGEN::FuncOp evaluator, SymbolTable &symtab, TargetInfoAttr target,
-             ArrayRef<KGEN::FuncOp> specializations) { return 0; };
+      evaluatorExecutorFn = [](KGEN::FuncOp evaluator,
+                               const SymbolTable &symtab, TargetInfoAttr target,
+                               ArrayRef<KGEN::FuncOp> specializations) {
+        return 0;
+      };
     }
     return success();
   }

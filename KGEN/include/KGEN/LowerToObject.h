@@ -54,13 +54,14 @@ public:
   /// Lower all exported `kgen.func` to llvm. Returns the LLVM module on
   /// success, and nullptr on failure.
   std::unique_ptr<llvm::Module>
-  lowerAllFuncsToLLVM(SymbolTable &symtab, const ExportMap &exportedSymbols,
-                      llvm::LLVMContext &ctx, bool isJIT = false);
+  lowerAllFuncsToLLVM(const SymbolTable &symtab,
+                      const ExportMap &exportedSymbols, llvm::LLVMContext &ctx,
+                      bool isJIT = false);
 
   /// Slices the call graph for all exported symbols to produce a standalone
   /// archive.
   ErrorOr<Cache::BufferRef>
-  produceStandaloneArchive(SymbolTable &symtab,
+  produceStandaloneArchive(const SymbolTable &symtab,
                            const ExportMap &exportedSymbols, bool isJIT);
 
   /// Produces a standalone archive as an ElementsAttr that can be used as an
@@ -68,19 +69,19 @@ public:
   /// `isJIT`, which is why it defaults to `true`. Clients should prefer this
   /// method if they intend to store the compiled object in another graph.
   ErrorOr<ElementsAttr>
-  produceStandaloneArchiveAttr(SymbolTable &symtab,
+  produceStandaloneArchiveAttr(const SymbolTable &symtab,
                                const ExportMap &exportedSymbols,
                                TargetInfoAttr target, bool isJIT = true);
 
   /// Slices the call graph for all exported symbols to produce a standalone
   /// assembly file. The assembly output is written to the provided stream.
-  ErrorOrSuccess produceStandaloneAssembly(SymbolTable &symtab,
+  ErrorOrSuccess produceStandaloneAssembly(const SymbolTable &symtab,
                                            const ExportMap &exportedSymbols,
                                            TargetInfoAttr target,
                                            llvm::raw_pwrite_stream &os);
 
   /// Writes function declarations for all exported symbols.
-  LogicalResult produceFunctionDecls(SymbolTable &symtab,
+  LogicalResult produceFunctionDecls(const SymbolTable &symtab,
                                      const ExportMap &exportedSymbols,
                                      raw_ostream &os);
 
@@ -93,7 +94,7 @@ private:
   /// Produce a standalone MLIR module by slicing out the dependencies of the
   /// provided kgen.export ops.
   OwningOpRef<ModuleOp>
-  produceStandaloneModule(SymbolTable &symtab,
+  produceStandaloneModule(const SymbolTable &symtab,
                           const ExportMap &exportedSymbols);
 
   /// Lower the given module to LLVM. Returns the LLVM module on success, and
@@ -155,7 +156,7 @@ public:
   ///
   /// If the export map is empty, then exports are regenerated
   /// by inspecting the module. Otherwise, the exports provided are used.
-  ErrorOrSuccess add(StringRef libName, SymbolTable &symtab,
+  ErrorOrSuccess add(StringRef libName, const SymbolTable &symtab,
                      ExportMap &exports);
 
   /// Look up a generated archive buffer. Returns `nullopt` if nothing was found
@@ -171,7 +172,7 @@ public:
 
   /// Emit a given module. This will immediately run the materialization.
   void emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr,
-            SymbolTable &symtab, const ExportMap &exports);
+            const SymbolTable &symtab, const ExportMap &exports);
 
   /// Notify the layer that this is not for immediate execution. Note that this
   /// *will* cause strange issues if you then go on to try and execute the code
@@ -187,7 +188,7 @@ private:
   /// If the export map is empty, uses `getExportedSymbols` to infer them from
   /// the module.
   llvm::orc::MaterializationUnit::Interface
-  getInterface(SymbolTable &symtab, const ExportMap &exports);
+  getInterface(const SymbolTable &symtab, const ExportMap &exports);
 
   /// Provide an ObjectCompilerMaterializationUnit so that we can do codegen
   /// on-demand.

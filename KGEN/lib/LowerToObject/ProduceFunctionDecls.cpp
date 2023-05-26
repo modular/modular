@@ -144,8 +144,8 @@ static LogicalResult getCTypeForType(FuncOp func, Type t,
 }
 
 /// Emit the C signature of a KGEN func.
-static LogicalResult emitSignature(raw_ostream &os, SymbolTable &symtab,
-                                   FuncOp func, StringAttr symName) {
+static LogicalResult emitSignature(raw_ostream &os, FuncOp func,
+                                   StringAttr symName) {
   SmallVector<std::string> argTys, resTys;
   for (Type type : func.getArgumentTypes())
     if (failed(getCTypeForType(func, type, argTys)))
@@ -180,7 +180,7 @@ static LogicalResult emitSignature(raw_ostream &os, SymbolTable &symtab,
 }
 
 LogicalResult
-ObjectCompiler::produceFunctionDecls(SymbolTable &symtab,
+ObjectCompiler::produceFunctionDecls(const SymbolTable &symtab,
                                      const ExportMap &exportedSymbols,
                                      llvm::raw_ostream &os) {
   auto module = cast<ModuleOp>(symtab.getOp());
@@ -190,7 +190,7 @@ ObjectCompiler::produceFunctionDecls(SymbolTable &symtab,
       continue;
     // The symbol was exported, use its alias name.
     StringAttr aliasName = itExported->second.alias;
-    if (failed(emitSignature(os, symtab, f, aliasName)))
+    if (failed(emitSignature(os, f, aliasName)))
       return mlir::emitError(f.getLoc(),
                              "during header emission for this function");
     os << "\n";

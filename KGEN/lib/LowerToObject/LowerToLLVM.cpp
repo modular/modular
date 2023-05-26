@@ -53,7 +53,7 @@ static void attachXRayAttributes(llvm::Module &module,
 }
 
 std::unique_ptr<llvm::Module>
-ObjectCompiler::lowerAllFuncsToLLVM(SymbolTable &symtab,
+ObjectCompiler::lowerAllFuncsToLLVM(const SymbolTable &symtab,
                                     const ExportMap &exportedSymbols,
                                     llvm::LLVMContext &ctx, bool isJIT) {
   OwningOpRef<ModuleOp> module =
