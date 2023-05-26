@@ -309,6 +309,14 @@ void AsyncValue::andThenOutOfLine(Waiter waiter, WaitersAndState oldValue) {
   }
 
   SpinWaiter<> spinWaiter;
+
+  // If we raced with a transition from the unconstructed state, spin until the
+  // other thread completes the waiter list construction.
+  while (oldValue.getInt() == State::kUnconstructedInitializingInlineWaiter) {
+    spinWaiter.wait();
+    oldValue = loadWaitersAndState();
+  }
+
   while (1) {
     // If we raced with a transition into a ready state then we can just execute
     // the waiter and be done.
