@@ -327,7 +327,8 @@ class ObjectCompilerLayer::ObjectCompilerMaterializationUnit
     : public llvm::orc::MaterializationUnit {
 public:
   ObjectCompilerMaterializationUnit(ObjectCompilerLayer &layer,
-                                    SymbolTable &symtab, ExportMap &exports)
+                                    const SymbolTable &symtab,
+                                    ExportMap &exports)
       : MaterializationUnit(layer.getInterface(symtab, exports)),
         genLayer(layer), symtab(symtab), exports(exports) {}
 
@@ -347,22 +348,12 @@ public:
   /// remove it from the source. This removes the symbol from `symtab`.
   void discard(const llvm::orc::JITDylib &jd,
                const llvm::orc::SymbolStringPtr &name) override {
-    // If the operation exists, erase it. Otherwise, do nothing.
-    auto sym = symtab.lookup<mlir::SymbolOpInterface>(*name);
-    if (!sym)
-      return;
-
-    // If it's in the export map, erase it.
-    auto found = exports.find(sym.getNameAttr());
-    if (found != exports.end())
-      exports.erase(found);
-
-    // Always erase the op.
-    symtab.erase(sym);
+    // TODO: Figure out what to do here for the REPL. Symbols cannot be erased
+    // during elaboration.
   }
 
   ObjectCompilerLayer &genLayer;
-  SymbolTable &symtab;
+  const SymbolTable &symtab;
   ExportMap &exports;
 };
 
@@ -381,7 +372,8 @@ ObjectCompilerLayer::ObjectCompilerLayer(ObjectCompiler &&objCompiler,
           sess, dl, std::move(add)),
       objectCompiler(std::move(objCompiler)), baseLayer(base) {}
 
-ErrorOrSuccess ObjectCompilerLayer::add(StringRef libName, SymbolTable &symtab,
+ErrorOrSuccess ObjectCompilerLayer::add(StringRef libName,
+                                        const SymbolTable &symtab,
                                         ExportMap &exports) {
   auto dylibOr = getOrCreateDylib(libName);
   if (dylibOr.isError())
@@ -495,7 +487,7 @@ processObjectFile(llvm::orc::MaterializationResponsibility &mr,
 
 void ObjectCompilerLayer::emit(
     std::unique_ptr<llvm::orc::MaterializationResponsibility> mr,
-    SymbolTable &symtab, const ExportMap &exports) {
+    const SymbolTable &symtab, const ExportMap &exports) {
   auto theModule = cast<ModuleOp>(symtab.getOp());
 
   auto onError = [&](llvm::Error &&err) {
@@ -649,7 +641,7 @@ void ObjectCompilerLayer::emit(
 }
 
 llvm::orc::MaterializationUnit::Interface
-ObjectCompilerLayer::getInterface(SymbolTable &symtab,
+ObjectCompilerLayer::getInterface(const SymbolTable &symtab,
                                   const ExportMap &exports) {
   llvm::orc::MangleAndInterner mangler(session, dataLayout);
   llvm::orc::SymbolFlagsMap symbols;

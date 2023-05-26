@@ -28,10 +28,10 @@ class FuncOp;
 /// evaluator, and returning either the index of the best specialization, or
 /// error.
 using EvaluatorExecutorFn = std::function<ErrorOr<size_t>(
-    KGEN::FuncOp evaluator, SymbolTable &symtab, TargetInfoAttr target,
+    KGEN::FuncOp evaluator, const SymbolTable &symtab, TargetInfoAttr target,
     ArrayRef<KGEN::FuncOp> specializations)>;
 using EvaluatorExecutorFnRef = function_ref<ErrorOr<size_t>(
-    KGEN::FuncOp, SymbolTable &, TargetInfoAttr, ArrayRef<KGEN::FuncOp>)>;
+    KGEN::FuncOp, const SymbolTable &, TargetInfoAttr, ArrayRef<KGEN::FuncOp>)>;
 
 /// Elaborator config.
 struct ElaboratorConfig {

@@ -119,7 +119,7 @@ static void sliceDependencies(Operation *op, SymbolTable &sliceSymtab,
 }
 
 OwningOpRef<ModuleOp>
-ObjectCompiler::produceStandaloneModule(SymbolTable &symtab,
+ObjectCompiler::produceStandaloneModule(const SymbolTable &symtab,
                                         const ExportMap &exportedSymbols) {
   auto module = cast<ModuleOp>(symtab.getOp());
   // Create a new module for these funcs. This will go away at the end
@@ -315,7 +315,7 @@ private:
 /// imports. This allows us to pull out only the objects we need from the linked
 /// library when it's an archive, for example.
 static void
-collectLinksAndUsers(SymbolTable &symtab,
+collectLinksAndUsers(const SymbolTable &symtab,
                      DenseMap<StringAttr, llvm::StringSet<>> &linksAndUsers) {
   ModuleOp theModule = cast<ModuleOp>(symtab.getOp());
   theModule.walk([&](POP::ExternalCallOp call) {
@@ -418,7 +418,7 @@ handleLinkDirective(StringAttr linkPath, const llvm::StringSet<> &users,
 //===----------------------------------------------------------------------===//
 
 ErrorOr<BufferRef> ObjectCompiler::produceStandaloneArchive(
-    SymbolTable &symtab, const ExportMap &exportedSymbols, bool isJIT) {
+    const SymbolTable &symtab, const ExportMap &exportedSymbols, bool isJIT) {
   TimeTraceScope<> traceScope("produce-standalone-archive");
 
   // First, pull out the link/external_call map. Do this while we still have the
@@ -609,7 +609,7 @@ ObjectCompiler::lowerLLVMModuleToObject(llvm::Module &module, Location loc,
 }
 
 ErrorOr<ElementsAttr> ObjectCompiler::produceStandaloneArchiveAttr(
-    SymbolTable &symtab, const ExportMap &exportedSymbols,
+    const SymbolTable &symtab, const ExportMap &exportedSymbols,
     TargetInfoAttr target, bool isJIT) {
   auto bufferOr = produceStandaloneArchive(symtab, exportedSymbols, isJIT);
   if (bufferOr.isError())
@@ -654,7 +654,7 @@ ErrorOr<ElementsAttr> ObjectCompiler::produceStandaloneArchiveAttr(
 //===----------------------------------------------------------------------===//
 
 ErrorOrSuccess ObjectCompiler::produceStandaloneAssembly(
-    SymbolTable &symtab, const ExportMap &exportedSymbols,
+    const SymbolTable &symtab, const ExportMap &exportedSymbols,
     TargetInfoAttr target, llvm::raw_pwrite_stream &os) {
   TimeTraceScope<> traceScope("produce-standalone-assembly");
 

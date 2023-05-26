@@ -72,7 +72,7 @@ void KGEN::populateGenerateLibraryFilePasses(mlir::PassManager &pm,
 /// A default specialization evaluator that JITs and invokes the specialized
 /// functions with the provided evaluator.
 static ErrorOr<size_t>
-evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
+evaluateSpecializations(FuncOp evaluator, const SymbolTable &symtab,
                         LLCL::Runtime &runtime, TargetInfoAttr target,
                         const CompilationOptions &options,
                         ArrayRef<FuncOp> specializations) {
@@ -173,7 +173,7 @@ std::unique_ptr<Pass> KGEN::createElaborateGeneratorsWithDefaultJIT(
     const CompilationOptions &options) {
   return createElaborateGenerators(
       runtime, target, build, {options.enableSearch},
-      [=, &runtime](KGEN::FuncOp evaluator, SymbolTable &symtab,
+      [=, &runtime](KGEN::FuncOp evaluator, const SymbolTable &symtab,
                     TargetInfoAttr target,
                     ArrayRef<KGEN::FuncOp> specializations) {
         return evaluateSpecializations(evaluator, symtab, runtime, target,
@@ -188,7 +188,7 @@ void KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
                                          const CompilationOptions &options) {
   return populateElaborateModulePasses(
       pm, runtime, target, build,
-      [=, &runtime](KGEN::FuncOp evaluator, SymbolTable &symtab,
+      [=, &runtime](KGEN::FuncOp evaluator, const SymbolTable &symtab,
                     TargetInfoAttr target,
                     ArrayRef<KGEN::FuncOp> specializations) {
         return evaluateSpecializations(evaluator, symtab, runtime, target,

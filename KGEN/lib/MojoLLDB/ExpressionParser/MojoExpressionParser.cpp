@@ -46,7 +46,7 @@ struct MojoExpressionParser::Impl {
   /// Compile the list of functions to LLVM and return the module. This produces
   /// a 'standalone' module.
   ErrorOr<std::unique_ptr<llvm::Module>>
-  compileFuncsToLLVM(SymbolTable &symtab,
+  compileFuncsToLLVM(const SymbolTable &symtab,
                      ArrayRef<KGEN::FuncOp> funcsToCompile);
 
   /// Given an evaluator, set of specializations, and a symbol table, construct
@@ -55,13 +55,13 @@ struct MojoExpressionParser::Impl {
   /// the JITExecutionUnit necessary.
   ErrorOr<std::shared_ptr<JITExecutionUnit>>
   produceExecutionUnit(ExecutionContext &exeCtx, KGEN::FuncOp evaluator,
-                       SymbolTable &symtab,
+                       const SymbolTable &symtab,
                        ArrayRef<KGEN::FuncOp> specializations);
 
   /// Callback that the elaborator can use to evaluate specializations and
   /// perform search using the LLDB JIT.
   ErrorOr<size_t>
-  evaluateSpecializations(KGEN::FuncOp evaluator, SymbolTable &symtab,
+  evaluateSpecializations(KGEN::FuncOp evaluator, const SymbolTable &symtab,
                           TargetInfoAttr target,
                           ArrayRef<KGEN::FuncOp> specializations);
 
@@ -135,8 +135,8 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
       std::make_unique<mlir::PassManager>(ctx, ModuleOp::getOperationName());
   populateElaborateModulePasses(
       *fullCompilationPM, typeSystem->getRuntime(), targetInfo, buildInfo,
-      [&](KGEN::FuncOp evaluator, SymbolTable &symtab, TargetInfoAttr target,
-          ArrayRef<KGEN::FuncOp> specializations) {
+      [&](KGEN::FuncOp evaluator, const SymbolTable &symtab,
+          TargetInfoAttr target, ArrayRef<KGEN::FuncOp> specializations) {
         return evaluateSpecializations(evaluator, symtab, target,
                                        specializations);
       },
@@ -158,7 +158,7 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
 
 ErrorOr<std::unique_ptr<llvm::Module>>
 MojoExpressionParser::Impl::compileFuncsToLLVM(
-    mlir::SymbolTable &symtab, ArrayRef<KGEN::FuncOp> funcsToCompile) {
+    const SymbolTable &symtab, ArrayRef<KGEN::FuncOp> funcsToCompile) {
   // Create the set of symbols to export.
   KGEN::ExportMap exports;
   for (auto e : funcsToCompile) {
@@ -197,7 +197,7 @@ MojoExpressionParser::Impl::compileFuncsToLLVM(
 
 ErrorOr<std::shared_ptr<JITExecutionUnit>>
 MojoExpressionParser::Impl::produceExecutionUnit(
-    ExecutionContext &exeCtx, KGEN::FuncOp evaluator, SymbolTable &symtab,
+    ExecutionContext &exeCtx, KGEN::FuncOp evaluator, const SymbolTable &symtab,
     ArrayRef<KGEN::FuncOp> specializations) {
   // Grab the thread we want for execution.
   auto &threadList = exeCtx.GetProcessPtr()->GetThreadList();
@@ -274,7 +274,7 @@ struct InferiorProcessAllocation {
 } // namespace
 
 ErrorOr<size_t> MojoExpressionParser::Impl::evaluateSpecializations(
-    KGEN::FuncOp evaluator, SymbolTable &symtab, TargetInfoAttr target,
+    KGEN::FuncOp evaluator, const SymbolTable &symtab, TargetInfoAttr target,
     ArrayRef<KGEN::FuncOp> specializations) {
   // Update the pass manager to be the one we use during elaboration. At scope
   // exit, reset it to the one we are using outside elaboration.
