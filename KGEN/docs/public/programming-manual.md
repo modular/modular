@@ -400,7 +400,7 @@ implemented like this:
 struct MyString:
     ...
     def __copyinit__(inout self, existing: Self):
-        self.data = Pointer(strdup(self.data.address))
+        self.data = Pointer(strdup(existing.data.address))
 ```
 
 With this implementation, our code above works correctly, and the `b = a` copy
@@ -1528,7 +1528,7 @@ struct FileDescriptor:
     fn __init__(inout self, fd: Int): # as above
     fn __init__(inout self, path: String): # as above
 
-    fn __del__(owning self):
+    fn __del__(owned self):
         if self.fd != -1:
             close(self.fd)   # pseudo code, call close(2)
 ```
