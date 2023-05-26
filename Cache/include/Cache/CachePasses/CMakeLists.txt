@@ -4,6 +4,4 @@
 #
 ##===----------------------------------------------------------------------===##
 
-set(LLVM_TARGET_DEFINITIONS CachePasses.td)
-mlir_tablegen(CachePasses.h.inc -gen-pass-decls)
-add_public_tablegen_target(MLIRCachePassesIncGen)
+add_modular_passes(MLIRCachePassesIncGen CachePasses Cache/docs/)

@@ -17,7 +17,7 @@ using namespace M::DebugInfo;
 
 namespace M::DebugInfo {
 #define GEN_PASS_DEF_DEBUGINFOSTRIP
-#include "Support/DebugInfoDialect/Transforms/Passes.h.inc"
+#include "Support/DebugInfoDialect/Transforms/Transforms.h.inc"
 } // namespace M::DebugInfo
 
 //===----------------------------------------------------------------------===//

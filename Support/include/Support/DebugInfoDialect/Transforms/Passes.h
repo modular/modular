@@ -16,7 +16,7 @@ namespace M::DebugInfo {
 
 #define GEN_PASS_DECL
 #define GEN_PASS_REGISTRATION
-#include "Support/DebugInfoDialect/Transforms/Passes.h.inc"
+#include "Support/DebugInfoDialect/Transforms/Transforms.h.inc"
 
 } // namespace M::DebugInfo
 

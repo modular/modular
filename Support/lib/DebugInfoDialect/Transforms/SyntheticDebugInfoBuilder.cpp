@@ -423,7 +423,7 @@ LogicalResult DebugInfo::snapshotDebugInfo(Operation *op, StringRef filename,
 
 namespace M::DebugInfo {
 #define GEN_PASS_DEF_DEBUGINFOSNAPSHOT
-#include "Support/DebugInfoDialect/Transforms/Passes.h.inc"
+#include "Support/DebugInfoDialect/Transforms/Transforms.h.inc"
 } // namespace M::DebugInfo
 
 //===----------------------------------------------------------------------===//
