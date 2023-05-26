@@ -356,69 +356,14 @@ ErrorOrSuccess KGENCompilerLayer::add(StringRef libName, ModuleOp theModule) {
   // Populate the passes.
   populateElaborateModulePasses(pm, runtime, target, build, options);
 
-  // TODO(11051): This is how it *should* be done, but because of the stack
-  //   overflow issues, we have to do this manually for now.
-
   // Run the passes as a cached transform. Don't deflate the op as part of this
   // - we don't want that cost right now.
-  //  LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
-  //      theModule, regionCache.copy(), transformCache.copy(),
-  //      runtime.getReadyChain().copy(), pm, /*deflateTarget=*/false);
-  //  LLCL::await(ready);
-  //  if (ready.isError())
-  //    return ready.takeDiagnostic().getMessage().copy();
-
-  { // This should *all* be handled by the snippet above, but because it ends up
-    // being done on a separate thread, we have a smaller stack, and so we hit
-    // the stack overflow bug much more often.
-
-    // Construct the input key to the transform.
-    auto transformKey = Cache::WriteableBuffer::get();
-    pm.printAsTextualPipeline(*transformKey);
-    if (failed(mlir::writeBytecodeToFile(theModule, *transformKey)))
-      return Error("failed to write bytecode file");
-
-    // Attempt to find the buffer in the cache, and if it's not found then run
-    // the transform and insert it.
-    auto found = transformCache->find(
-        transformKey.copy(),
-        LLCL::MLIRLocationDecoder::getEncodedLocation(theModule->getLoc()));
-    LLCL::await(found);
-
-    if (found.isError())
-      return found.takeDiagnostic().getMessage().copy();
-
-    // Didn't find anything, run the transform and put it into the cache.
-    if (!found->has_value()) {
-      if (failed(pm.run(theModule))) {
-        return Error("compilation failed");
-      }
-      // Put the thing into the cache.
-      auto transformed = Cache::WriteableBuffer::get();
-      if (failed(mlir::writeBytecodeToFile(theModule, *transformed)))
-        return Error("failed to write bytecode file");
-      transformCache->insert(std::move(transformKey), std::move(transformed));
-      // And we're done. Can't return yet though, have to pass through the rest
-      // of the function.
-    } else {
-      // We have something stored, pull it out of the cache now.
-      std::unique_ptr<llvm::MemoryBuffer> bytecode =
-          llvm::MemoryBuffer::getMemBuffer((**found)->getBuffer(),
-                                           /*BufferName=*/"",
-                                           /*RequiresNullTerminator=*/false);
-
-      // Create a dummy block that we can use to inflate the cached module into.
-      Block b;
-      if (failed(mlir::readBytecodeFile(
-              *bytecode, &b,
-              mlir::ParserConfig(theModule->getContext(),
-                                 /*verifyAfterParse=*/false)))) {
-        return Error("reading bytecode file failed");
-      }
-      // Take the body from the module we just parsed.
-      theModule.getBodyRegion().takeBody(b.front().getRegion(0));
-    }
-  }
+  LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
+      theModule, regionCache.copy(), transformCache.copy(),
+      runtime.getReadyChain().copy(), pm, /*deflateTarget=*/false);
+  LLCL::await(ready);
+  if (ready.isError())
+    return ready.takeDiagnostic().getMessage().copy();
 
   // Add the materialization unit by computing the exports and the symbol
   // table, and passing those off.
