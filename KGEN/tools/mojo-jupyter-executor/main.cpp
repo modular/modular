@@ -23,6 +23,10 @@
 
 using namespace M;
 
+/// The leak sanitizer shows errors because we load libpython through this
+/// plugin.
+extern "C" const char *__asan_default_options() { return "detect_leaks=0"; }
+
 //===----------------------------------------------------------------------===//
 // Kernel C-API
 //===----------------------------------------------------------------------===//
