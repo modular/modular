@@ -166,6 +166,9 @@ namespace {
 /// vector.
 static thread_local size_t workerIDInTLS = 0;
 
+/// The SharedThreadState for the current thread.
+static thread_local const SharedThreadState *sharedThreadStateInTLS = nullptr;
+
 /// Wrapper around an std::thread created for each worker thread.
 struct WorkQueueThread {
   /// Overall state shared by all threads.
@@ -322,9 +325,10 @@ void WorkQueueThread::runOnThread() {
   // Set the current workerID in thread local storage so we can find it later
   // when re-entering.
   workerIDInTLS = workerID;
+  sharedThreadStateInTLS = &sharedState;
 
-  // Though not needed for interlock, capture the worker's system thread id for
-  // debugging.
+  // Though not needed for interlock, capture the worker's system thread id
+  // for debugging.
   threadID = llvm::get_threadid();
 
   // On systems that support it, give the thread a symbolic name that will show
@@ -550,6 +554,11 @@ private:
   /// Returns the WorkQueueThread corresponding to the caller. If the caller
   /// is a foreign thread the same WorkQueueThread will be returned.
   WorkQueueThread *getCurrentWorkQueueThread() {
+    if (sharedThreadStateInTLS != &sharedState)
+      // Caller is a foreign thread or a worker thread from some other pool.
+      // Use the WorkQueueThread at index 0 to represent it as 'foreign'.
+      return workers;
+
     size_t workerID = workerIDInTLS;
     assert(workerID < numWorkers);
     return workers + workerID;
