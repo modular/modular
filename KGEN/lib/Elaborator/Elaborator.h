@@ -25,10 +25,9 @@ class IREvaluator;
 class Elaborator {
 public:
   /// Initialize the elaborator and its symbol table.
-  Elaborator(mlir::SymbolTableAnalysis &analysis,
-             ParameterCollector::Analysis &paramCache, TargetInfoAttr target,
-             EvaluatorExecutorFnRef evaluatorExecutorFn)
-      : analysis(analysis), paramCache(paramCache), target(target),
+  Elaborator(SymbolTable &symtab, ParameterCollector::Analysis &paramCache,
+             TargetInfoAttr target, EvaluatorExecutorFnRef evaluatorExecutorFn)
+      : symtab(symtab), paramCache(paramCache), target(target),
         evaluatorExecutorFn(evaluatorExecutorFn) {}
 
   virtual ~Elaborator() = default;
@@ -37,20 +36,19 @@ public:
   /// elaborate the generator or interface and return the first concrete
   /// implementation.
   virtual ErrorTreeOr<FuncOp>
-  getConcreteFunction(Location loc, SymbolRefAttr symbolRef,
+  getConcreteFunction(Location loc, FlatSymbolRefAttr symbolRef,
                       ArrayRef<TypedAttr> paramValues) = 0;
 
   /// Get all the concrete functions for the given symbol. If the symbol is a
   /// function already, append it to the list and move on, otherwise,
   /// elaborate it and append all the concrete implementations.
   virtual ErrorTreeOrSuccess
-  getAllConcreteFunctions(Location loc, SymbolRefAttr symbolRef,
+  getAllConcreteFunctions(Location loc, FlatSymbolRefAttr symbolRef,
                           ArrayRef<TypedAttr> paramValues,
                           std::vector<FuncOp> &funcs) = 0;
 
-  /// Get the SymbolTableAnalysis object associated with this instance of the
-  /// elaborator.
-  mlir::SymbolTableAnalysis &getAnalysis() { return analysis; }
+  /// Get the symbol table associated with this instance of the elaborator.
+  SymbolTable &getSymbolTable() { return symtab; }
   /// Get the target associated with this instance of the elaborator.
   TargetInfoAttr getTarget() { return target; }
 
@@ -60,8 +58,8 @@ public:
   }
 
 protected:
-  /// This symbol table analysis allows efficient lookups across the module.
-  mlir::SymbolTableAnalysis &analysis;
+  /// This symbol table allows efficient lookups across the module.
+  SymbolTable &symtab;
 
   /// This is the cached parameter collector analysis.
   ParameterCollector::Analysis &paramCache;

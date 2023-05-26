@@ -23,7 +23,7 @@ using namespace KGEN;
 //===----------------------------------------------------------------------===//
 
 ErrorOr<Region *> IREvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
-  auto func = elaborator->getAnalysis().getTopLevelSymbolTable().lookup<FuncOp>(
+  auto func = elaborator->getSymbolTable().lookup<FuncOp>(
       cast<FlatSymbolRefAttr>(symbol).getAttr());
 
   // Now we can return the function body.
@@ -56,9 +56,7 @@ IREvaluator::evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
 IREvaluator::IREvaluator(Elaborator &elaborator,
                          DenseMap<StringAttr, Attribute> paramValues)
     : ParameterEvaluator(std::move(paramValues)),
-      InterpreterState(elaborator.getTarget()),
-      symtab(&elaborator.getAnalysis().getTopLevelSymbolTable()),
-      elaborator(&elaborator) {}
+      InterpreterState(elaborator.getTarget()), elaborator(&elaborator) {}
 
 FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
   // Try to narrow this operator to an expression we can evaluate. We only need
@@ -73,7 +71,8 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
     auto symbol = cast<SymbolConstantAttr>(op.getOperand(0));
     std::vector<FuncOp> funcs;
     if (ErrorTreeOrSuccess err = elaborator->getAllConcreteFunctions(
-            *errorLoc, symbol.getSymbol(), symbol.getParamValues(), funcs);
+            *errorLoc, cast<FlatSymbolRefAttr>(symbol.getSymbol()),
+            symbol.getParamValues(), funcs);
         err.isError()) {
       emitError(err.takeError());
       return failure();
@@ -117,7 +116,8 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
     auto symbol =
         cast<SymbolConstantAttr>(op.getOperand(op.getNumOperands() - 1));
     ErrorTreeOr<FuncOp> evaluator = elaborator->getConcreteFunction(
-        *errorLoc, symbol.getSymbol(), symbol.getParamValues());
+        *errorLoc, cast<FlatSymbolRefAttr>(symbol.getSymbol()),
+        symbol.getParamValues());
     if (evaluator.isError()) {
       emitError(evaluator.takeError());
       return failure();
@@ -129,8 +129,8 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
     for (TypedAttr option : optionsVariadic.getValues()) {
       auto optionSym = cast<SymbolConstantAttr>(option);
       if (ErrorTreeOrSuccess err = elaborator->getAllConcreteFunctions(
-              *errorLoc, optionSym.getSymbol(), optionSym.getParamValues(),
-              options);
+              *errorLoc, cast<FlatSymbolRefAttr>(optionSym.getSymbol()),
+              optionSym.getParamValues(), options);
           err.isError()) {
         emitError(err.takeError());
         return failure();
@@ -146,7 +146,8 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
     // FIXME: This should acquire a semaphore shared across all compiler
     // processes to ensure search is performed in isolation.
     auto bestOr = elaborator->getEvaluatorExecutorFn()(
-        *evaluator, *symtab, elaborator->getTarget(), options);
+        *evaluator, elaborator->getSymbolTable(), elaborator->getTarget(),
+        options);
     if (bestOr.isError()) {
       emitError(
           ErrorTree(UnknownLoc::get(op.getContext()), bestOr.takeError()));

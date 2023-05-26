@@ -57,9 +57,6 @@ private:
     return ParameterEvaluator::getReboundType(type);
   }
 
-  /// The symbol table to lookup symbol references.
-  SymbolTable *symtab;
-
   /// A reference to the elaborator instance. The elaborator is invoked to
   /// concretize symbol constants prior to interpreting them.
   Elaborator *elaborator;
