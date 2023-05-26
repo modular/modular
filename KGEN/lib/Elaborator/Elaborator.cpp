@@ -822,42 +822,25 @@ private:
 /// multi-versioned.
 class ElaboratorImpl : public Elaborator {
 public:
-  ElaboratorImpl(mlir::SymbolTableAnalysis &analysis,
-                 ParameterCollector::Analysis &paramCache,
+  ElaboratorImpl(SymbolTable &symtab, ParameterCollector::Analysis &paramCache,
                  TargetInfoAttr target,
                  EvaluatorExecutorFnRef evaluatorExecutorFn,
                  const ElaboratorConfig &config)
-      : Elaborator(analysis, paramCache, target, evaluatorExecutorFn),
+      : Elaborator(symtab, paramCache, target, evaluatorExecutorFn),
         config(config) {}
 
   ErrorTreeOr<FuncOp>
-  getConcreteFunction(Location loc, SymbolRefAttr symbolRef,
+  getConcreteFunction(Location loc, FlatSymbolRefAttr symbolRef,
                       ArrayRef<TypedAttr> paramValues) override;
 
   ErrorTreeOrSuccess
-  getAllConcreteFunctions(Location loc, SymbolRefAttr symbolRef,
+  getAllConcreteFunctions(Location loc, FlatSymbolRefAttr symbolRef,
                           ArrayRef<TypedAttr> paramValues,
                           std::vector<FuncOp> &funcs) override;
 
-  /// Lookup a symbol of type T in the symbol table collection.
-  template <typename T>
-  T lookup(SymbolRefAttr symbol) {
-    return analysis.getSymbolTables().lookupSymbolIn<T>(
-        analysis.getTopLevelOp<ModuleOp>(), symbol);
-  }
-
-  /// Lookup a symbol of any type in the symbol table collection.
-  Operation *lookup(StringAttr symbol) {
-    return analysis.getTopLevelSymbolTable().lookup(symbol);
-  }
-  Operation *lookup(SymbolRefAttr symbol) {
-    return lookup(symbol.getRootReference());
-  }
-
   /// Once a concrete function has finished specializing, finish processing the
   /// function and call the verifier.
-  void finalizeAndVerifyFunction(mlir::SymbolTableAnalysis &analysis,
-                                 ImplNode *node);
+  void finalizeAndVerifyFunction(ImplNode *node);
 
   /// Process a kgen.param.fork op. This will create a clone for each value of
   /// the parameter search, and will mark the parent as an error. This results
@@ -947,7 +930,8 @@ public:
   /// specialization completes we will be able to collect all the concrete
   /// implementations for each primary generator and handle any renaming or
   /// fixup that needs to happen to produce the output IR.
-  LogicalResult run(ArrayRef<GeneratorOp> primaryGenerators);
+  LogicalResult run(ModuleOp theModule,
+                    ArrayRef<GeneratorOp> primaryGenerators);
 
 private:
   /// A logger used to emit information during the elaboration process.
@@ -978,8 +962,7 @@ private:
 // finalizeAndVerifyFunction
 //===----------------------------------------------------------------------===//
 
-void ElaboratorImpl::finalizeAndVerifyFunction(
-    mlir::SymbolTableAnalysis &analysis, ImplNode *node) {
+void ElaboratorImpl::finalizeAndVerifyFunction(ImplNode *node) {
   TimeTraceScope<> traceScope("finalizeAndVerifyFunction");
   // Erase any unreachable blocks that might have arisen.
   FuncOp func = node->func;
@@ -1020,9 +1003,9 @@ void ElaboratorImpl::finalizeAndVerifyFunction(
 //===----------------------------------------------------------------------===//
 
 ErrorTreeOr<FuncOp>
-ElaboratorImpl::getConcreteFunction(Location loc, SymbolRefAttr symbolRef,
+ElaboratorImpl::getConcreteFunction(Location loc, FlatSymbolRefAttr symbolRef,
                                     ArrayRef<TypedAttr> paramValues) {
-  auto gen = lookup<GeneratorOp>(symbolRef);
+  auto gen = symtab.lookup<GeneratorOp>(symbolRef.getAttr());
 
   SmallVector<Attribute> inputParams;
   for (TypedAttr value : paramValues)
@@ -1046,11 +1029,10 @@ ElaboratorImpl::getConcreteFunction(Location loc, SymbolRefAttr symbolRef,
 // ElaboratorImpl::getAllConcreteFunctions
 //===----------------------------------------------------------------------===//
 
-ErrorTreeOrSuccess
-ElaboratorImpl::getAllConcreteFunctions(Location loc, SymbolRefAttr symbolRef,
-                                        ArrayRef<TypedAttr> paramValues,
-                                        std::vector<FuncOp> &funcs) {
-  auto gen = lookup<GeneratorOp>(symbolRef);
+ErrorTreeOrSuccess ElaboratorImpl::getAllConcreteFunctions(
+    Location loc, FlatSymbolRefAttr symbolRef, ArrayRef<TypedAttr> paramValues,
+    std::vector<FuncOp> &funcs) {
+  auto gen = symtab.lookup<GeneratorOp>(symbolRef.getAttr());
 
   SmallVector<Attribute> inputParams;
   for (TypedAttr value : paramValues)
@@ -1138,9 +1120,8 @@ void ElaboratorImpl::spawnParamForkClone(ParamForkOp forkOp, Attribute value,
   IRMapping map;
 
   // Hook this new clone up correctly.
-  ImplNode *newFuncNode =
-      g.fork(forkParentNode, map, analysis.getTopLevelSymbolTable(),
-             forkOp.getParamDecl().getName(), value);
+  ImplNode *newFuncNode = g.fork(forkParentNode, map, symtab,
+                                 forkOp.getParamDecl().getName(), value);
 
   // Change the future of this func by resolving the forkOp in the new func
   // to the specified value.
@@ -1186,7 +1167,8 @@ ElaboratorImpl::processGeneratorUser(KGENCallOpInterface user,
   ArrayAttr inputParamKey = *resolvedCallParamsOr;
 
   // Lookup the callee.
-  auto calleeOp = lookup(calleeSymbol.getSymbol());
+  auto calleeOp = symtab.lookup(
+      cast<FlatSymbolRefAttr>(calleeSymbol.getSymbol()).getAttr());
   if (!calleeOp) {
     parent->setToError(
         ErrorTree(user.getLoc(), "could not find callee '" +
@@ -1306,8 +1288,7 @@ ElaboratorImpl::processGeneratorUser(KGENCallOpInterface user,
     LLVM_DEBUG(c->print(logger << "Concrete Implementation "));
 
     // This is a sibling to the parent, and it clones the parent's evaluator.
-    ImplNode *newNode = g.fork(parent, map, analysis.getTopLevelSymbolTable(),
-                               "", c->func.getNameAttr());
+    ImplNode *newNode = g.fork(parent, map, symtab, "", c->func.getNameAttr());
     // Bind this concrete impl to this callee for this node.
     newNode->bindings[{inputParamKey, gen}] = c;
 
@@ -1794,7 +1775,7 @@ LogicalResult ElaboratorImpl::processImplNode(ImplNode *inode) {
     inode->stack.pop_back();
   }
   assert(!inode->error && "unexpected error");
-  finalizeAndVerifyFunction(analysis, inode);
+  finalizeAndVerifyFunction(inode);
   return success();
 }
 
@@ -1973,7 +1954,7 @@ ElaborationState ElaboratorImpl::specializeGenerator(ParamNode *genNode) {
 
   // Insert the newFunc into the symbol table which will then know about it,
   // but it will also auto-rename the symbol for us in the case of conflicts.
-  analysis.getTopLevelSymbolTable().insert(newFunc, generator->getIterator());
+  symtab.insert(newFunc, generator->getIterator());
 
   // Clone the body of the generator into the function.
   // TODO: is there a nice way for us to avoid cloning this?
@@ -2017,10 +1998,10 @@ ElaborationState ElaboratorImpl::specializeGenerator(ParamNode *genNode) {
 // ElaboratorImpl::run
 //===----------------------------------------------------------------------===//
 
-LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
+LogicalResult ElaboratorImpl::run(ModuleOp theModule,
+                                  ArrayRef<GeneratorOp> primaryGenerators) {
   LLVM_DEBUG(logger << "Starting Elaboration\n");
 
-  ModuleOp theModule = analysis.getTopLevelOp<ModuleOp>();
   // Detect common errors early and report them cleanly.
   for (auto &op : theModule.getOps())
     if (op.getName().getStringRef() == "lit.func")
@@ -2052,7 +2033,6 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
   DenseMap<StringAttr, StringAttr> funcsToRename;
   // We have to walk all the generators in the module because we have to rename
   // each one to its first implementation.
-  SymbolTable &symtab = analysis.getTopLevelSymbolTable();
   for (auto gen : llvm::make_early_inc_range(theModule.getOps<GeneratorOp>())) {
     ParamNode *genNode = g.getOrCreate(emptyInputParamKey, gen, /*depth=*/0);
 
@@ -2131,8 +2111,9 @@ LogicalResult M::elaborateGenerators(mlir::SymbolTableAnalysis &symtab,
           regionCacheBackendOr.takeValue());
 
   // Now, construct and run the elaborator.
-  ElaboratorImpl impl(symtab, paramCache, target, evaluatorExecutorFn, config);
-  return impl.run(primaryGenerators);
+  ElaboratorImpl impl(symtab.getTopLevelSymbolTable(), paramCache, target,
+                      evaluatorExecutorFn, config);
+  return impl.run(theModule, primaryGenerators);
 }
 
 //===----------------------------------------------------------------------===//
