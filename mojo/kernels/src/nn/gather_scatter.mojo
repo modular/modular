@@ -101,7 +101,7 @@ fn gather_reduce[
     @parameter
     fn task_func(task_id: Int):
         alias unroll_factor = 2
-        alias prefetch_offset = 6
+        alias prefetch_offset = -1
         alias usimd_width = unroll_factor * simd_width
 
         let output = output_bind
@@ -128,21 +128,23 @@ fn gather_reduce[
                     let idx = indices[i, j].value
 
                     # min so that we don't read beyond end of indices
-                    let clamped_prefetch_offset = min(
-                        prefetch_offset,
-                        indices.dim[0]() * indices.dim[1]()
-                        - (i * indices.dim[1]() + j)
-                        - 1,
-                    )
-                    let next_idx_ptr = indices._offset(
-                        StaticIntTuple[indices_rank](i, j)
-                    ) + clamped_prefetch_offset
-                    input.prefetch[
-                        PrefetchOptions()
-                        .for_read()
-                        .high_locality()
-                        .to_data_cache()
-                    ](next_idx_ptr.load().to_int(), 0)
+                    @parameter
+                    if prefetch_offset > 0:
+                        let clamped_prefetch_offset = min(
+                            prefetch_offset,
+                            indices.dim[0]() * indices.dim[1]()
+                            - (i * indices.dim[1]() + j)
+                            - 1,
+                        )
+                        let next_idx_ptr = indices._offset(
+                            StaticIntTuple[indices_rank](i, j)
+                        ) + clamped_prefetch_offset
+                        input.prefetch[
+                            PrefetchOptions()
+                            .for_read()
+                            .high_locality()
+                            .to_data_cache()
+                        ](next_idx_ptr.load().to_int(), 0)
 
                     let in_idx = StaticIntTuple[2](idx, k)
 
