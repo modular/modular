@@ -17,8 +17,11 @@
 
 namespace M::KGEN::Mojo {
 /// This class implements a MOJO repl plugin for LLDB.
-class MojoREPL : public lldb_private::REPL {
+class MojoREPL : public llvm::RTTIExtends<MojoREPL, lldb_private::REPL> {
 public:
+  // LLVM RTTI support
+  static char ID;
+
   MojoREPL(lldb_private::Target &target);
   ~MojoREPL() override;
 

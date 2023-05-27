@@ -32,12 +32,17 @@ namespace {
 //===----------------------------------------------------------------------===//
 
 /// An expression helper for Mojo expressions.
-class MojoUserExpressionHelper : public ExpressionTypeSystemHelper {
+class MojoUserExpressionHelper
+    : public llvm::RTTIExtends<MojoUserExpressionHelper,
+                               ExpressionTypeSystemHelper> {
 public:
-  MojoUserExpressionHelper(Target &)
-      : ExpressionTypeSystemHelper(eKindGoHelper) {}
-  ~MojoUserExpressionHelper() = default;
+  // LLVM RTTI support
+  static char ID;
+
+  MojoUserExpressionHelper(Target &) {}
 };
+
+char MojoUserExpressionHelper::ID;
 
 //===----------------------------------------------------------------------===//
 // ResultDelegate

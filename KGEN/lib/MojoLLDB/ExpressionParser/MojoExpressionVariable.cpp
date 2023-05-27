@@ -19,17 +19,17 @@ using JittedEntity = JITExecutionUnit::JittedEntity;
 // MojoExpressionVariable
 //===----------------------------------------------------------------------===//
 
+char MojoExpressionVariable::ID;
+
 MojoExpressionVariable::MojoExpressionVariable(ExecutionContextScope *exeScope,
                                                lldb::ByteOrder byteOrder,
-                                               uint32_t addrByteSize)
-    : ExpressionVariable(classofKind()) {
+                                               uint32_t addrByteSize) {
   m_frozen_sp =
       ValueObjectConstResult::Create(exeScope, byteOrder, addrByteSize);
 }
 
 MojoExpressionVariable::MojoExpressionVariable(
-    const lldb::ValueObjectSP &valobj)
-    : ExpressionVariable(classofKind()) {
+    const lldb::ValueObjectSP &valobj) {
   m_frozen_sp = valobj;
 }
 
@@ -37,8 +37,7 @@ MojoExpressionVariable::MojoExpressionVariable(ExecutionContextScope *exeScope,
                                                ConstString name,
                                                const TypeFromUser &type,
                                                lldb::ByteOrder byteOrder,
-                                               uint32_t addrByteSize)
-    : ExpressionVariable(classofKind()) {
+                                               uint32_t addrByteSize) {
   m_frozen_sp =
       ValueObjectConstResult::Create(exeScope, byteOrder, addrByteSize);
   SetName(name);
@@ -48,6 +47,8 @@ MojoExpressionVariable::MojoExpressionVariable(ExecutionContextScope *exeScope,
 //===----------------------------------------------------------------------===//
 // MojoPersistentExpressionState
 //===----------------------------------------------------------------------===//
+
+char MojoPersistentExpressionState::ID;
 
 //===----------------------------------------------------------------------===//
 // Expression Instance
