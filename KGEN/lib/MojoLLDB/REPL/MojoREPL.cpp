@@ -116,9 +116,12 @@ llvm::Error MojoREPL::OnExpressionEvaluated(
 // MojoREPL
 //===----------------------------------------------------------------------===//
 
+char MojoREPL::ID;
+
 MojoREPL::MojoREPL(Target &target)
-    : REPL(eKindGo, target), typeSystemListener(Listener::MakeListener(
-                                 "mojo-repl.type-system-listener")),
+    : llvm::RTTIExtends<MojoREPL, REPL>(target),
+      typeSystemListener(
+          Listener::MakeListener("mojo-repl.type-system-listener")),
       targetWP(target.shared_from_this()),
       errorStream(target.GetDebugger().GetAsyncErrorStream()) {
   // Get a pointer to the mojo type system. We need that to read the various

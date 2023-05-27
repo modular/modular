@@ -22,8 +22,13 @@ namespace M::KGEN::Mojo {
 //===----------------------------------------------------------------------===//
 
 /// This class represents a single Mojo expression variable.
-class MojoExpressionVariable : public lldb_private::ExpressionVariable {
+class MojoExpressionVariable
+    : public llvm::RTTIExtends<MojoExpressionVariable,
+                               lldb_private::ExpressionVariable> {
 public:
+  // LLVM RTTI support
+  static char ID;
+
   MojoExpressionVariable(lldb_private::ExecutionContextScope *exeScope,
                          lldb::ByteOrder byteOrder, uint32_t addrByteSize);
   MojoExpressionVariable(const lldb::ValueObjectSP &valobj);
@@ -36,32 +41,21 @@ public:
   MojoExpressionVariable(const MojoExpressionVariable &) = delete;
   const MojoExpressionVariable &
   operator=(const MojoExpressionVariable &) = delete;
-
-  //--------------------------------------------------------------------------//
-  // llvm casting support
-  //--------------------------------------------------------------------------//
-
-  static LLVMCastKind classofKind() {
-    // TODO: MojoExpressionVariable should use a more open casting mechanism,
-    // but for now just pretend we are Go.
-    return LLVMCastKind::eKindGo;
-  }
-
-  static bool classof(const ExpressionVariable *ev) {
-    return ev->getKind() == classofKind();
-  }
 };
 
 //===----------------------------------------------------------------------===//
 // MojoPersistentExpressionState
 //===----------------------------------------------------------------------===//
 
-/// This class manages persistent values that need to be preserved between
-/// Mojo expression invocations.
+/// This class manages persistent values that need to be preserved between Mojo
+/// expression invocations.
 class MojoPersistentExpressionState
-    : public lldb_private::PersistentExpressionState {
+    : public llvm::RTTIExtends<MojoPersistentExpressionState,
+                               lldb_private::PersistentExpressionState> {
 public:
-  MojoPersistentExpressionState() : PersistentExpressionState(classofKind()) {}
+  // LLVM RTTI support
+  static char ID;
+
   ~MojoPersistentExpressionState() override = default;
 
   //===--------------------------------------------------------------------===//
@@ -164,20 +158,6 @@ public:
 
   /// Lookup a symbol with the provided name.
   lldb::addr_t LookupSymbol(lldb_private::ConstString name) override;
-
-  //===--------------------------------------------------------------------===//
-  // RTTI support
-  //===--------------------------------------------------------------------===//
-
-  static LLVMCastKind classofKind() {
-    // TODO: PersistentExpressionState should use a more open casting mechanism,
-    // but for now just pretend we are Go.
-    return LLVMCastKind::eKindGo;
-  }
-
-  static bool classof(const PersistentExpressionState *pv) {
-    return pv->getKind() == classofKind();
-  }
 
 private:
   /// Instance state associated with successful expression evaluations.
