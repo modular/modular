@@ -16,13 +16,13 @@
 #include "IRValues.h"
 #include "ParserParamEvaluator.h"
 #include "SharedState.h"
-#include "SpecialFunctions.h"
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LifetimeTrackable.h"
+#include "KGEN/LITDialect/SpecialFunctions.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
@@ -1916,7 +1916,7 @@ static SpecialFunctionInfo getOpSpecialFunctions(ExprNode::Kind kind,
     if (info.isReversed() == isReversed)                                       \
       return info;                                                             \
   }
-#include "SpecialFunctions.def"
+#include "KGEN/LITDialect/SpecialFunctions.def"
   // If everything fails we should return "normal".
   return SpecialFunctionInfo::get(SpecialFunctionKind::kNormal);
 }

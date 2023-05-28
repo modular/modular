@@ -9,8 +9,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SPECIAL_FUNCTIONS_H
-#define SPECIAL_FUNCTIONS_H
+#ifndef KGEN_KGENDIALECT_SPECIAL_FUNCTIONS_H
+#define KGEN_KGENDIALECT_SPECIAL_FUNCTIONS_H
 
 namespace M::KGEN::LIT {
 
@@ -108,4 +108,4 @@ public:
 
 } // namespace M::KGEN::LIT
 
-#endif // SPECIAL_FUNCTIONS_H
+#endif // KGEN_KGENDIALECT_SPECIAL_FUNCTIONS_H

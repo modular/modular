@@ -15,6 +15,7 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITTypes.h"
+#include "KGEN/LITDialect/SpecialFunctions.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "Support/Compiler/VerifyUtils.h"
@@ -259,6 +260,44 @@ ArrayRef<ParamDeclAttr> FileModuleOp::getResultParams() { return {}; }
 // FuncOp
 //===----------------------------------------------------------------------===//
 
+/// If this is a special function like __init__ return the enum that
+/// identifies it, otherwise return kNormal.
+SpecialFunctionKind SpecialFunctionInfo::getKind(StringRef name) {
+  if (name.size() < 5 || !name.startswith("__") || !name.endswith("__"))
+    return SpecialFunctionKind::kNormal;
+
+#define SF(ENUM, NAME, NUMOPERANDS, EXPRNODE, FLAGS)                           \
+  if (name == NAME)                                                            \
+    return SpecialFunctionKind::ENUM;
+#include "KGEN/LITDialect/SpecialFunctions.def"
+
+  // Otherwise, this declaration isn't known.
+  return SpecialFunctionKind::kNormal;
+}
+
+/// If this is a special function like __init__ return the enum that
+/// identifies it, otherwise return kNormal.
+const SpecialFunctionInfo &SpecialFunctionInfo::get(SpecialFunctionKind kind) {
+  static const SpecialFunctionInfo infos[] = {
+      {nullptr, SpecialFunctionKind::kNormal, /*numOperands=*/-1, /*flags=*/0},
+#define SF(ENUM, NAME, NUMOPERANDS, EXPRNODE, FLAGS)                           \
+  {NAME, SpecialFunctionKind::ENUM, (NUMOPERANDS), (FLAGS)},
+#include "KGEN/LITDialect/SpecialFunctions.def"
+  };
+
+  assert(unsigned(kind) < sizeof(infos) / sizeof(infos[0]));
+  return infos[unsigned(kind)];
+}
+
+/// Return the SpecialFunctionKind ID that indicates if this is a special
+/// function like __init__ or __radd__.
+SpecialFunctionKind LIT::FuncOp::getSpecialFunctionKind() {
+  return (SpecialFunctionKind)getSpecialFnKind();
+}
+const SpecialFunctionInfo &LIT::FuncOp::getSpecialFunctionInfo() {
+  return SpecialFunctionInfo::get(getSpecialFunctionKind());
+}
+
 /// Returns the result type with the outer variant<> type stripped off if it
 /// is a throwing function.
 Type LIT::FuncOp::getResultTypeWithoutErrorVariant() {
@@ -502,6 +541,8 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
   result.addAttribute(getResultParamsAttrName(result.name), emptyParamDecls);
   result.addAttribute(getConstraintsAttrName(result.name),
                       ConstraintArrayAttr::get(context, {}));
+  result.addAttribute(getSpecialFnKindAttrName(result.name),
+                      builder.getI8IntegerAttr(0));
   result.addAttribute(
       getAlwaysInlineLevelAttrName(result.name),
       AlwaysInlineLevelAttr::get(context, AlwaysInlineLevel::Disabled));
@@ -512,7 +553,8 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
 /// Build a function in a default configuration, used by member synthesization.
 void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
                         StringAttr name, SignatureType signature,
-                        ArrayRef<StringAttr> argNames) {
+                        ArrayRef<StringAttr> argNames,
+                        SpecialFunctionKind specialFnKind) {
   auto context = builder.getContext();
   build(builder, result, name, ParamDeclAttr(),
         StringArrayAttr::get(context, argNames), TypeAttr::get(signature),
@@ -522,7 +564,9 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
         ConstraintArrayAttr::get(context, {}), /*isStatic=*/mlir::UnitAttr(),
         /*isAdaptive=*/mlir::UnitAttr(), /*isParameter=*/mlir::UnitAttr(),
         /*isDef=*/mlir::UnitAttr(),
-        AlwaysInlineLevelAttr::get(context, AlwaysInlineLevel::Disabled));
+        AlwaysInlineLevelAttr::get(context, AlwaysInlineLevel::Disabled),
+        builder.getI8IntegerAttr(uint8_t(specialFnKind)));
+
   result.regions[0]->push_back(new Block());
 }
 

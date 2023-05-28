@@ -14,7 +14,6 @@
 #include "CallEmission.h"
 #include "ExprNodes.h"
 #include "ParserParamEvaluator.h"
-#include "SpecialFunctions.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITAttrs.h"
