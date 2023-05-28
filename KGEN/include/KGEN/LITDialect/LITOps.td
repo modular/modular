@@ -64,7 +64,8 @@ def LIT_FuncOp : LITOp<"func", [
     UnitAttr:$isAdaptive,
     UnitAttr:$isParametric,
     UnitAttr:$isDef,  // Present if 'def' absent if 'fn'.
-    KGEN_AlwaysInlineLevelAttr:$alwaysInlineLevel
+    KGEN_AlwaysInlineLevelAttr:$alwaysInlineLevel,
+    DefaultValuedOptionalAttr<I8Attr, "0">:$specialFnKind
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 
@@ -81,13 +82,19 @@ def LIT_FuncOp : LITOp<"func", [
     /// Return a reference for this function, optionally bound to a set of
     /// parameter bindings.
     TypedAttr getBoundReference(ParameterExprArrayAttr bindings = {});
+
+    /// Return the SpecialFunctionKind ID that indicates if this is a special
+    /// function like __init__ or __radd__.
+    SpecialFunctionKind getSpecialFunctionKind();
+    const SpecialFunctionInfo &getSpecialFunctionInfo();
   }];
 
   let builders = [
     // Create a func with a region and a body block.
     OpBuilder<(ins)>,
     OpBuilder<(ins "StringAttr":$name, "SignatureType":$signature,
-                   "ArrayRef<StringAttr>":$argNames)>,
+                   "ArrayRef<StringAttr>":$argNames,
+                   "SpecialFunctionKind":$specialFnID)>,
   ];
 
   let hasCustomAssemblyFormat = 1;

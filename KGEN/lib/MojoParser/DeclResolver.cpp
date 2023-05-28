@@ -23,10 +23,10 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/LITDialect/SpecialFunctions.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "SharedState.h"
-#include "SpecialFunctions.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
@@ -1244,50 +1244,6 @@ rejectDecorators(ArrayRef<std::pair<ExprNode *, LexerCursor>> decoratorExprs,
 // Function Decl implementation
 //===----------------------------------------------------------------------===//
 
-/// For a LIT::FuncOp, this returns whether the function is a special function
-/// like __init__.
-void ASTDecl::setSpecialFunctionKind(SpecialFunctionKind kind) {
-  assert(isa<LIT::FuncOp>(*this));
-  specialFunctionKind = uint8_t(kind);
-}
-
-SpecialFunctionKind ASTDecl::getSpecialFunctionKind() const {
-  assert(
-      isa<LIT::FuncOp>(*this) && resolvedness >= DeclResolvedness::signature &&
-      "Can only get special function kind from signature resolved functions");
-
-  return SpecialFunctionKind(specialFunctionKind);
-}
-
-/// If this is a special function like __init__ return the enum that
-/// identifies it, otherwise return kNormal.
-SpecialFunctionKind SpecialFunctionInfo::getKind(StringRef name) {
-  if (name.size() < 5 || !name.startswith("__") || !name.endswith("__"))
-    return SpecialFunctionKind::kNormal;
-
-#define SF(ENUM, NAME, NUMOPERANDS, EXPRNODE, FLAGS)                           \
-  if (name == NAME)                                                            \
-    return SpecialFunctionKind::ENUM;
-#include "SpecialFunctions.def"
-
-  // Otherwise, this declaration isn't known.
-  return SpecialFunctionKind::kNormal;
-}
-
-/// If this is a special function like __init__ return the enum that
-/// identifies it, otherwise return kNormal.
-const SpecialFunctionInfo &SpecialFunctionInfo::get(SpecialFunctionKind kind) {
-  static const SpecialFunctionInfo infos[] = {
-      {nullptr, SpecialFunctionKind::kNormal, /*numOperands=*/-1, /*flags=*/0},
-#define SF(ENUM, NAME, NUMOPERANDS, EXPRNODE, FLAGS)                           \
-  {NAME, SpecialFunctionKind::ENUM, (NUMOPERANDS), (FLAGS)},
-#include "SpecialFunctions.def"
-  };
-
-  assert(unsigned(kind) < sizeof(infos) / sizeof(infos[0]));
-  return infos[unsigned(kind)];
-}
-
 /// Now that all the structural properties are determined, perform any
 /// name-binding specific checks over the declaration.  This happens after
 /// decorator processing because that is how defs work in Python.  This also
@@ -1521,7 +1477,8 @@ verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
 
   // If we have a special function kind and didn't have any errors with it,
   // remember which kind it is.
-  decl.setSpecialFunctionKind(fnInfo.kind);
+  if (fnInfo.kind != SpecialFunctionKind::kNormal)
+    funcOp.setSpecialFnKind(uint8_t(fnInfo.kind));
 }
 
 // Mangle 'name', ensuring that overloaded methods get unique symbol names.
@@ -2075,14 +2032,14 @@ static SLValue makeArgLValueVarSlot(CValue argValue, StringAttr argName,
 /// any special logic that goes with it.
 void ExprEmitter::emitNormalReturn(OpBuilder &builder, Location loc,
                                    Value value, const ASTDecl &funcDecl) {
-  switch (funcDecl.getSpecialFunctionKind()) {
+  auto func = cast<LIT::FuncOp>(funcDecl);
+  switch (func.getSpecialFunctionKind()) {
   default:
     break;
 
   /// In the __del__ method for a struct, we need to mark 'self' as being
   /// destroyed before any return operation.
   case SpecialFunctionKind::kDel: {
-    auto func = cast<LIT::FuncOp>(funcDecl);
     assert(func.getBody()->getNumArguments() == 1 &&
            "__del__ should have one argument");
     Value selfArg = func.getBody()->getArgument(0);
@@ -2108,7 +2065,6 @@ void ExprEmitter::emitNormalReturn(OpBuilder &builder, Location loc,
   /// In the __moveinit__ method for a struct, we need to mark 'existing' as
   /// being destroyed before any return operation if it is owned convention.
   case SpecialFunctionKind::kMoveInit: {
-    auto func = cast<LIT::FuncOp>(funcDecl);
     assert(func.getBody()->getNumArguments() == 2 &&
            "__moveinit__ should have to arguments");
     // Don't change `__moveinit__(owned self, inout existing: Self)`.
@@ -2692,7 +2648,8 @@ synthesizeMethodInStruct(StringRef name, ArrayRef<Type> argTypes,
                          ArrayRef<ValueInputConvention> argConventions,
                          ArrayRef<StringAttr> argNames, Type resultType,
                          ImplicitLocOpBuilder &builder, ASTDecl &structDecl,
-                         DeclResolver &resolver) {
+                         DeclResolver &resolver,
+                         SpecialFunctionKind specialFnID) {
   StructDeclOp structOp = cast<StructDeclOp>(structDecl);
 
   // Get the signature for the function.
@@ -2711,12 +2668,12 @@ synthesizeMethodInStruct(StringRef name, ArrayRef<Type> argTypes,
 
   // Create the empty function.
   StringAttr nameAttr = getMangledName(builder.getStringAttr(name), signature);
-  auto funcOp = builder.create<LIT::FuncOp>(nameAttr, signature, argNames);
+  auto funcOp =
+      builder.create<LIT::FuncOp>(nameAttr, signature, argNames, specialFnID);
 
   // Register the method in the struct.
   ASTDecl &funcDecl = resolver.addFullyResolvedDecl(
       funcOp.getOperation(), name, structDecl.getLoc(), &structDecl);
-  funcDecl.setSpecialFunctionKind(SpecialFunctionInfo::getKind(name));
 
   // Set the symbol and notice if we are redeclaring something.
   if (Operation *existing = resolver.finalizeFuncSignature(funcOp, funcDecl)) {
@@ -2783,9 +2740,10 @@ static TypedAttr synthesizeEmptyDtor(StructDeclOp structOp, ASTDecl &structDecl,
   StringAttr selfName = builder.getStringAttr("self");
 
   // Create the FuncOp and ASTDecl for the method.
-  auto [funcOp, funcDecl] = synthesizeMethodInStruct(
-      "__del__", selfType.mlirType, convention, selfName,
-      resolver.shared.getNoneType(), builder, structDecl, resolver);
+  auto [funcOp, funcDecl] =
+      synthesizeMethodInStruct("__del__", selfType.mlirType, convention,
+                               selfName, resolver.shared.getNoneType(), builder,
+                               structDecl, resolver, SpecialFunctionKind::kDel);
 
   // Set up the body.
   Block *body = funcOp.getBody();
@@ -2947,10 +2905,13 @@ static void synthesizeMemberwiseInit(
     argNames.push_back(fieldOp.getNameAttr());
   }
 
+  auto specialFnId =
+      isMemoryOnly ? SpecialFunctionKind::kInit : SpecialFunctionKind::kInitReg;
+
   // Create the FuncOp and ASTDecl for the method.
-  auto [funcOp, funcDecl] =
-      synthesizeMethodInStruct("__init__", argTypes, argConventions, argNames,
-                               resultType, builder, structDecl, resolver);
+  auto [funcOp, funcDecl] = synthesizeMethodInStruct(
+      "__init__", argTypes, argConventions, argNames, resultType, builder,
+      structDecl, resolver, specialFnId);
 
   // Set up the body.
   Block *body = funcOp.getBody();
@@ -3044,10 +3005,18 @@ static void synthesizeCopyMoveInit(
     resultType = selfType;
   }
 
+  SpecialFunctionKind specialFnId;
+  if (isMove) // moveinit doesn't exist for register_passable types.
+    specialFnId = SpecialFunctionKind::kMoveInit;
+  else if (isMemoryOnly)
+    specialFnId = SpecialFunctionKind::kCopyInit;
+  else
+    specialFnId = SpecialFunctionKind::kCopyInitReg;
+
   // Create the FuncOp and ASTDecl for the method.
   auto [funcOp, funcDecl] = synthesizeMethodInStruct(
       isMove ? "__moveinit__" : "__copyinit__", argTypes, argConventions,
-      argNames, resultType, builder, structDecl, resolver);
+      argNames, resultType, builder, structDecl, resolver, specialFnId);
 
   // Set up the body.
   Block *body = funcOp.getBody();

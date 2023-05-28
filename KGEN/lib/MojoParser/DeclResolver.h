@@ -13,9 +13,9 @@
 
 #include "IRValues.h"
 #include "SharedState.h"
-#include "SpecialFunctions.h"
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/LITDialect/SpecialFunctions.h"
 
 namespace M::KGEN {
 class ParamBindArrayAttr;

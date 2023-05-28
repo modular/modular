@@ -33,6 +33,8 @@ class PointerType;
 } // namespace POP
 
 namespace LIT {
+enum class SpecialFunctionKind : uint8_t;
+class SpecialFunctionInfo;
 class NoneType;
 
 /// Return the fully resolved symbol reference for the given declaration,

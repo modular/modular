@@ -25,7 +25,6 @@ class DeclRefType;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {
-enum class SpecialFunctionKind : uint8_t;
 
 /// This is the AST representation (as opposed to the MLIR representation) of a
 /// declaration in a program.  These maintain type checking and other
@@ -158,11 +157,6 @@ public:
     return declsInScope;
   }
 
-  /// For a LIT::FuncOp, this returns whether the function is a special function
-  /// like __init__.
-  void setSpecialFunctionKind(SpecialFunctionKind kind);
-  SpecialFunctionKind getSpecialFunctionKind() const;
-
   //===--------------------------------------------------------------------===//
   // Other State management.
   //===--------------------------------------------------------------------===//
@@ -189,10 +183,6 @@ private:
   /// This is set to true if there is an entry for body-decorators in a backing
   /// hashtable.  Clients should use "getBodyDecorators().
   bool hasBodyDecorators = false;
-
-  /// For LIT::FuncOp's with a signature resolved, this tracks whether the
-  /// current function is a special function like __init__.
-  uint8_t specialFunctionKind = 0;
 
   friend class DeclResolver;
   friend class SharedState;

@@ -812,7 +812,8 @@ struct ValueMem:
 # CHECK: lit.func @"__init__
 # CHECK-SAME: (%self: !pop.pointer<{{.*}}@ValueMem> init_self,
 # CHECK-SAME:     %a: !kgen.declref<@"$Int"::@Int> borrow,
-# CHECK-SAME:    %b: !kgen.declref<{{.*}}::@StructExample>) -> !lit.none {
+# CHECK-SAME:    %b: !kgen.declref<{{.*}}::@StructExample>) -> !lit.none
+# CHECK-SAME:    attributes {specialFnKind = 2 : i8} {
 # CHECK-NEXT: %0 = lit.struct.gep %self[a]
 # CHECK-NEXT: pop.store %a, %0
 # CHECK-NEXT: %1 = lit.struct.gep %self[b]
@@ -863,7 +864,8 @@ struct ValueReg:
 
 # CHECK: lit.func @"__copyinit__
 # CHECK-SAME: (%existing: !kgen.declref<@"$decls"::@ValueReg> borrow)
-# CHECK-SAME:  -> !kgen.declref<@"$decls"::@ValueReg> attributes {isStatic}
+# CHECK-SAME:  -> !kgen.declref<@"$decls"::@ValueReg>
+# CHECK-SAME: attributes {isStatic, specialFnKind = 6 : i8}
 # CHECK-NEXT: %0 = lit.struct.extract %existing[a]
 # CHECK-NEXT: %1 = lit.struct.extract %existing[b]
 # CHECK-NEXT: %2 = kgen.call {{.*}}__copyinit__{{.*}}(%1)
