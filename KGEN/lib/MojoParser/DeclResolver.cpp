@@ -1299,12 +1299,12 @@ const SpecialFunctionInfo &SpecialFunctionInfo::get(SpecialFunctionKind kind) {
 ///
 /// This returns failure (after emitting an error) when a type checking problem
 /// is detected.
-static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
-                                      StringAttr name,
-                                      SmallVector<ParsedArgument> &args,
-                                      MutableArrayRef<Type> argTypes,
-                                      ASTType &resultType, SharedState &shared,
-                                      SpecialFunctionInfo fnInfo) {
+static void
+verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
+                          SmallVector<ParsedArgument> &args,
+                          MutableArrayRef<Type> argTypes, ASTType &resultType,
+                          const FnEffects &effects, SharedState &shared,
+                          SpecialFunctionInfo fnInfo) {
   // On any semantic error we mark the declaration erroneous - so references to
   // it don't type check, and we clear our special function information.  This
   // reduces cascade errors.
@@ -1342,32 +1342,21 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
 
   // __*init__ methods are weird - for memory-primary results we define
   // init in convention Python style, but for @register_passable values, we
-  // return it. In the former case, the first/self argument must be declared as
-  // a by-ref argument, but we need to change it to InitSelf since it is not
-  // initialized coming in.
+  // return it.  We handle this by mapping them to different enumerators so
+  // things downstream have stronger invariants.
   if ((fnInfo.kind == SpecialFunctionKind::kInit ||
        fnInfo.kind == SpecialFunctionKind::kCopyInit ||
        fnInfo.kind == SpecialFunctionKind::kMoveInit) &&
-      selfType) {
-    if (ASTType(selfType).isRegisterPassable(decl.getLoc(), shared)) {
-      if (fnInfo.kind == SpecialFunctionKind::kMoveInit) {
-        emitError() << name
-                    << " is not supported for @register_passable types, they "
-                       "are always movable by copying a register";
-      }
-
-      // This form of __init__ is implicitly static, it doesn't take a 'self'.
-      if (fnInfo.kind == SpecialFunctionKind::kInit)
-        funcOp.setIsStatic(true);
-      else // __moveinit__ and __copyinit__ expect one argument.
-        fnInfo.numArguments = 1;
-      fnInfo.flags |= SpecialFunctionInfo::kSelfResult;
-    } else {
-      // __moveinit__ and __copyinit__ expect two arguments and must return
-      // None.
-      if (fnInfo.kind != SpecialFunctionKind::kInit)
-        fnInfo.numArguments = 2;
-      fnInfo.flags |= SpecialFunctionInfo::kNoneResult;
+      selfType && ASTType(selfType).isRegisterPassable(decl.getLoc(), shared)) {
+    if (fnInfo.kind == SpecialFunctionKind::kCopyInit)
+      fnInfo = SpecialFunctionInfo::get(SpecialFunctionKind::kCopyInitReg);
+    else if (fnInfo.kind == SpecialFunctionKind::kInit)
+      fnInfo = SpecialFunctionInfo::get(SpecialFunctionKind::kInitReg);
+    else {
+      assert(fnInfo.kind == SpecialFunctionKind::kMoveInit);
+      emitError() << name
+                  << " is not supported for @register_passable types, they "
+                     "are always movable by copying a register";
     }
   }
 
@@ -1438,11 +1427,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
     if (!selfType) {
       emitError("special function must be a method");
     } else if (funcOp.getIsStatic()) {
-      // kInit is sometimes static, sometimes a method, depending on whether it
-      // is register passable.
-      // FIXME: We should change register_passable things to work like
-      // everything else.
-      if (fnInfo.kind != SpecialFunctionKind::kInit)
+      if (!(fnInfo.flags & SpecialFunctionInfo::kImplicitlyStaticMethod))
         emitError("special method may not be a static method");
     } else if (fnInfo.requiresOwnedSelfInstMethod()) {
       if (args[selfArgNumber].convention != ParsedArgument::kConventionOwned) {
@@ -1458,18 +1443,29 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
   }
 
   // Some functions like __new__ require a Self result type.
-  if (fnInfo.flags & SpecialFunctionInfo::kSelfResult) {
-    // Note: We could allow omitting result type and default it, at the cost of
-    // extra language magic.
-    if (!declaredResultType.isEqualCanon(selfType))
-      emitError() << name << " result type must be " << selfType;
-  }
+  if (fnInfo.flags & SpecialFunctionInfo::kSelfResult &&
+      !declaredResultType.isEqualCanon(selfType))
+    emitError() << name << " result type must be " << selfType;
 
   // If the function is required to return None, verify that.
   if (fnInfo.hasNoneResult() &&
       !declaredResultType.isEqualCanon(shared.getNoneType())) {
     emitError() << name << " result type must be elided (or None)";
     resultType = shared.getNoneType();
+  }
+
+  // Reject special functions declared as throwing when that is invalid.
+  if (bitEnumContainsAny(effects, FnEffects::Throws) &&
+      fnInfo.flags & SpecialFunctionInfo::kCannotRaise) {
+    // Specialize the error if raising is implicit because it was defined as a
+    // def.
+    if (funcOp.getIsDef()) {
+      emitError() << "cannot define " << name
+                  << " as 'def'; 'def' implicitly raises"
+                  << FixIt::replaceToken(decl.getLoc(), "fn");
+    } else {
+      emitError() << name << " cannot be declared as raising an exception";
+    }
   }
 
   // Diagnose a common errors and handle other special cases.
@@ -1486,18 +1482,9 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
   case SpecialFunctionKind::kInit:
   case SpecialFunctionKind::kCopyInit:
   case SpecialFunctionKind::kMoveInit: {
-    if (fnInfo.kind != SpecialFunctionKind::kInit && funcOp.getIsDef()) {
-      emitError("cannot define copy/move constructor as 'def'; 'def' implicitly"
-                " raises")
-          << FixIt::replaceToken(decl.getLoc(), "fn");
-      break;
-    }
-
-    // This only applies to memory-only types, register-passable types are
-    // handled differently.
-    if (ASTType(selfType).isRegisterPassable(decl.getLoc(), shared))
-      break;
-
+    // The first/self argument is syntactically declared as a by-ref argument,
+    // but we need to change it to InitSelf since it is not initialized coming
+    // in.
     assert(!args.empty() && "arg count already checked above");
     SMLoc selfArgLoc = args[0].loc;
     // __init__/__copyinit__/__moveinit__ must take their self argument by-ref
@@ -1848,7 +1835,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // decorator processing because that is how defs work in Python.  This also
   // fills in any implicitly declared types.
   verifyFunctionNameBinding(decl, funcOp, baseName, args, argTypes, resultType,
-                            shared, fnInfo);
+                            effects, shared, fnInfo);
 
   // Finally now that the full signature has been resolved, build our IR.
 

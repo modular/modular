@@ -28,9 +28,17 @@
 // methods in documentation.
 
 SF(kNew,      "__new__"     ,-1, kInvalid, kImplicitlyStaticMethod|kSelfResult)
-SF(kInit,     "__init__"    ,-1, kInvalid, kAllowByRefSelfInstMethod|kInitializer)
-SF(kCopyInit, "__copyinit__",-1, kInvalid, kAllowByRefSelfInstMethod|kInitializer)
-SF(kMoveInit, "__moveinit__", 2, kInvalid, kAllowByRefSelfInstMethod|kInitializer)
+
+// These are memory style initializer that set up 'self' by assigning into it.
+SF(kInit,     "__init__"    ,-1, kInvalid, kMemInit)
+SF(kCopyInit, "__copyinit__", 2, kInvalid, kMemInit|kCannotRaise)
+SF(kMoveInit, "__moveinit__", 2, kInvalid, kMemInit|kCannotRaise)
+
+// These are the register-passable forms of init methods, these have the same
+// name (eg __init__) as normal init methods but are detected by semantic
+// analysis when they return Self instead of taking it byref.
+SF(kInitReg,     ""         , -1, kInvalid, kRegInit|kImplicitlyStaticMethod)
+SF(kCopyInitReg, ""         , 1, kInvalid, kRegInit|kInstMethod|kCannotRaise)
 SF(kDel,      "__del__"     , 1, kInvalid, kRequiresOwnedSelfInstMethod|kNoneResult)
 
 SF(kBool,    "__bool__"  ,   1, kInvalid, kInstMethod)
