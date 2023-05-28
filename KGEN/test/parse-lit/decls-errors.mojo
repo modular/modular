@@ -469,6 +469,7 @@ struct WrongType:
   # expected-error @+1 {{special function '__copyinit__' must have 1 operand}}
   fn __copyinit__(inout self, inout existing: Int): pass
 
+  # expected-error @+1 {{self argument cannot be passed by reference}}
   fn __copyinit__(inout self) -> WrongType: pass
 
   # expected-error @+1 {{'__moveinit__' is not supported for @register_passable types, they are always movable by copying a register}}
@@ -636,9 +637,14 @@ struct DTypePointer: # expected-error {{invalid redefinition of 'DTypePointer'}}
 struct copy_init_def:
   var field: Int
 
-  # expected-error @+1 {{cannot define copy/move constructor as 'def'; 'def' implicitly raises}}
+  # expected-error @+1 {{cannot define '__copyinit__' as 'def'; 'def' implicitly raises}}
   def __copyinit__(inout self, existing: Self):
     self.field = existing.field
+
+struct copy_init_raises:
+  # expected-error @+1 {{'__copyinit__' cannot be declared as raising an exception}}
+  fn __copyinit__(inout self, existing: Self) raises:
+     pass
 
 
 # Order of declaration processing.

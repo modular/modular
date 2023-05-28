@@ -356,7 +356,7 @@ public:
   RValue emitExprRValue(const ExprNode *expr, ExprContext context,
                         ASTType resultType = {});
 
-  /// This emits the specified value rep as a CRValue.
+  /// This emits the specified value rep as a CValue.
   CValue emitExprCValue(const ExprNode *expr, ExprContext context);
 
   /// This helper emits the specified value rep as an SRValue, materializing

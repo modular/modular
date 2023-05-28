@@ -63,6 +63,14 @@ public:
 
     /// This method is a struct initializer.
     kInitializer = 1 << 7,
+
+    /// This method cannot be declared to raise an error.
+    kCannotRaise = 1 << 8,
+
+    /// Set of flags used for initializers that set up self by-reference.
+    kMemInit = kInitializer | kAllowByRefSelfInstMethod | kNoneResult,
+    /// Set of flags used for initializers that return self in a register.
+    kRegInit = kInitializer | kSelfResult,
   };
 
   /// Return true if this is any kind of instance method.
