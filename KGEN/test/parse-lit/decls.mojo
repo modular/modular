@@ -803,7 +803,9 @@ struct DelegatingInitMem:
 # Struct @value decorator
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.struct.decl @ValueMem
+# CHECK-LABEL: lit.struct.decl @ValueMem attributes {
+# CHECK-SAME: moveInit = #kgen.symbol.constant<{{.*}}ValueMem::@"__moveinit__
+# CHECK-SAME: !kgen.signature<({{.*}} init_self, {{.*}} owned_in_mem)
 @value
 struct ValueMem:
   var a: Int # Trivial

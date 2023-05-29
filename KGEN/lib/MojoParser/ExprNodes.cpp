@@ -1778,7 +1778,7 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
 
   // If this is a memory-only struct, initialize the fields into the result
   // buffer.
-  if (structOp.getRegisterPassable() == StructDeclOp::RP_MemoryOnly) {
+  if (!structOp.isRegisterPassable()) {
     emitter.emitError(getLoc(),
                       "this initializer syntax may only be used with "
                       "'@register_passable' values; use '__init__' instead")

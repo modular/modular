@@ -2718,6 +2718,32 @@ static TypedAttr lookupDestructor(ASTDecl &structDecl, SharedState &shared) {
   return func.getBoundReference();
 }
 
+/// Look up a __moveinit__ impl for the specified `type`.  This returns the
+/// __moveinit__ method if successful, and returns null if there is none.
+static TypedAttr lookupMoveInit(ASTDecl &structDecl, SharedState &shared) {
+  auto moveinits =
+      shared.lookupAndResolveDecl("__moveinit__", structDecl.getLoc(),
+                                  structDecl, /*searchParentScopes=*/false);
+  ArrayRef<ASTDecl *> entries = moveinits.getIfSuccess();
+
+  // It is valid to overload __moveinit__ with both inout and consuming version,
+  // for the transfering and destructive move.  The transfering version is more
+  // useful for lifetime optimization so we prefer it.
+  TypedAttr result;
+  for (auto candidate : entries) {
+    LIT::FuncOp func = dyn_cast<LIT::FuncOp>(*candidate);
+    if (!func ||
+        func.getSpecialFunctionKind() != SpecialFunctionKind::kMoveInit)
+      continue;
+
+    // If we have multiple __moveinit__ implementations, prefer the owned one.
+    if (!result || func.getSignature().getInputConvention(1) ==
+                       ValueInputConvention::OwnedInMem)
+      result = func.getBoundReference();
+  }
+  return result;
+}
+
 /// Given a struct that has no explicitly defined __del__ member, define a new
 /// one with an empty body.  This allows the CheckLifetimes pass to insert field
 /// dels as needed, and makes sure that anything that refers to this struct
@@ -3096,8 +3122,7 @@ void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc) {
     }
   }
 
-  bool isMemoryOnly =
-      structOp.getRegisterPassable() == StructDeclOp::RP_MemoryOnly;
+  bool isMemoryOnly = !structOp.isRegisterPassable();
 
   // Ok, we know the struct has copyable or movable fields.  Check to see if
   // it has a memberwise initializer.
@@ -3255,6 +3280,11 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     structOp.setDestructorAttr(
         synthesizeEmptyDtor(structOp, structDecl, *this));
   }
+  // Similarly, look up a __moveinit__ used by temporary elision.  This can't
+  // be present for @register_passable types.
+  if (!structOp.isRegisterPassable())
+    if (auto moveInitAttr = lookupMoveInit(structDecl, shared))
+      structOp.setMoveInitAttr(moveInitAttr);
 
   return success();
 }

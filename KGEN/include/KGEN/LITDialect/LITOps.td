@@ -167,11 +167,16 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [Symbol, SymbolTable,
     }
     ```
 
-    The `isRegisterPassable` is used to indicate structs that are preferrably
+    The `registerPassable` is used to indicate structs that are preferrably
     passed around as SSA values instead of being processed in memory.  This is
     true for simple values like F32 and Bool but not for complex aggregates like
     a SmallVector that can't be bitwise copied around or a Dictionary that
     shouldn't be.
+
+    This includes a 'destructor' field if the type has a non-trivial destructor,
+    allowing SSA passes to perform lifetime optimizations.  It includes a
+    'moveInit' field if the type implements either of the __moveinit__ special
+    functions.
   }];
 
   let arguments = (ins
@@ -179,7 +184,8 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [Symbol, SymbolTable,
     KGEN_ParamDeclArrayAttr:$inputParams,
     UnitAttr:$paramVarargs,
     DefaultValuedOptionalAttr<I8Attr, "0">:$registerPassable,
-    OptionalAttr<AttrOfType<KGEN_SignatureType>>:$destructor
+    OptionalAttr<AttrOfType<KGEN_SignatureType>>:$destructor,
+    OptionalAttr<AttrOfType<KGEN_SignatureType>>:$moveInit
   );
   let regions = (region SizedRegion<1>:$fields);
   let assemblyFormat = [{
@@ -189,7 +195,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [Symbol, SymbolTable,
   }];
 
   let extraClassDeclaration = [{
-    // This is the value of the 'reisterPassable' field.
+    // This is the value of the 'registerPassable' field.
     enum RegisterPassable : uint8_t {
       RP_MemoryOnly = 0,
       RP_RegisterPassable,
@@ -203,6 +209,10 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [Symbol, SymbolTable,
 
     /// Struct declarations have no result parameters.
     ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
+
+    bool isRegisterPassable() {
+      return getRegisterPassable() != RP_MemoryOnly;
+    }
   }];
 
   let builders = [
