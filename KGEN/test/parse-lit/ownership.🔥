@@ -914,9 +914,9 @@ fn optimizeCopyElision():
 
   # We need one copy of 'x' here, not two + dtor.
 
-  # HECK-NEXT: %anonymous2A = lit.varlet.decl "anonymous*"
-  # HECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%anonymous2A, %x)
-  # HECK-NEXT: kgen.call {{.*}}takeTwo{{.*}}(%anonymous2A, %x)
+  # CHECK-NEXT: %anonymous2A = lit.varlet.decl "anonymous*"
+  # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%anonymous2A, %x)
+  # CHECK-NEXT: kgen.call {{.*}}takeTwo{{.*}}(%anonymous2A, %x)
   takeTwo(x, x)
 
-  # HECK-NEXT: kgen.param.constant: !lit.none
+  # CHECK-NEXT: kgen.param.constant: !lit.none

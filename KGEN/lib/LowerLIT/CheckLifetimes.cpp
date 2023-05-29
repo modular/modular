@@ -1713,6 +1713,94 @@ void DestructorInsertion::destroyValueIfNeeded(
          "Lost track of bits");
 }
 
+/// Return true if the specified 'p1' pointer could point at object or a
+/// subcomponent of 'p2'.  This should return true conservatively.
+// TODO: In the presence of returned references / lifetimes, we will
+// need to be more careful here.
+static bool mightPointTo(Value p1, Value p2) {
+  assert(isa<POP::PointerType>(p2.getType()));
+  // If the value is an integer or other random thing, then it can't point to
+  // anything.
+  if (!isa<POP::PointerType>(p1.getType()))
+    return false;
+
+  Value underlyingP1 = LifetimeTrackable::findUnderlyingValueFromField(p1);
+  Value underlyingP2 = LifetimeTrackable::findUnderlyingValueFromField(p2);
+  return !underlyingP1 || !underlyingP2 || underlyingP1 == underlyingP2;
+}
+
+// Check to see if we can eliminate a temporary being passed as an owned
+// argument to a call.
+//
+// We currently only do this transformation in extremely limited cases: we
+// need to defend against weird situations where "src" doesn't dominate
+// "tmp" and where "src" gets re-initialized before the use of "tmp", e.g.:
+//
+//    %tmp = lit.varlet.decl "anonymous"
+//    kgen.call __copyinit__(%tmp, %src)
+//    kgen.call __del__(%src)   <<<=== Thinking about inserting this.
+//    kgen.call __init__(%src, ...)
+//    use(%tmp)
+//    use(%src)
+//
+// Doing this right requires non-trivial liveness analysis which should
+// itself be part of a standalone SSA pass post-inlining.  For now we'll
+// just catch the most obvious local cases to clean up the IR and provide a
+// "guaranteed" optimization.
+static bool canEntirelyElideMemoryTemporary(CallOp copyInitCall,
+                                            VarLetDeclOp tmpDecl) {
+  Block *tmpBlock = tmpDecl->getBlock();
+  if (copyInitCall->getBlock() != tmpBlock)
+    return false;
+
+  Value srcPointer = copyInitCall.getOperand(1);
+
+  size_t numUses = 0;
+  for (OpOperand &operand : tmpDecl.getResult().getUses()) {
+    CallOp user = dyn_cast<CallOp>(operand.getOwner());
+
+    // Don't handle control flow or other weird cases that are not calls.
+    if (!user || user->getBlock() != tmpBlock)
+      return false;
+
+    // Ignore the copyinit.
+    if (user == copyInitCall.getOperation())
+      continue;
+    // We doing n^2 scanning below, harshly limit it.
+    if (++numUses > 3)
+      return false;
+
+    // The argument convention for the callee must be consuming, not
+    // initializing or anything else.
+    auto convention =
+        user.getCalleeType().getInputConvention(operand.getOperandNumber());
+    if (convention != ValueInputConvention::OwnedInMem)
+      return false;
+
+    // Ok, scan to check that nothing between the copyinit and the user of
+    // the temp use src.
+    for (auto it = ++Block::iterator(copyInitCall), e = tmpBlock->end();;
+         ++it) {
+      // If we ran off the end of the block, then the copyinit doesn't
+      // dominate this use, something weird is going on, bail out.
+      if (it == e)
+        return false;
+
+      // Scan all the operands to see if any of them are related to %src.  We
+      // disallow regions because we don't recurse into them.
+      if (it->getNumRegions() || llvm::any_of(it->getOperands(), [&](Value v) {
+            return mightPointTo(v, srcPointer);
+          }))
+        return false;
+
+      // If we found the user, then we succeed.  Otherwise keep scanning.
+      if (&*it == user.getOperation())
+        break;
+    }
+  }
+  return true;
+}
+
 /// Given the need to destroy the specified value as a result of the specified
 /// operation using it, check to see if the use is a call to the copy ctor for
 /// the value.  If so, try to elide the copy+temporary.  This returns success
@@ -1720,38 +1808,60 @@ void DestructorInsertion::destroyValueIfNeeded(
 LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
                                                         Type destroyedType,
                                                         Operation *opWithUse) {
-  CallOp usingCall = dyn_cast_if_present<CallOp>(opWithUse);
-  if (!usingCall)
+  CallOp copyInitCall = dyn_cast_if_present<CallOp>(opWithUse);
+  if (!copyInitCall)
     return failure();
 
   // See if we can resolve the callee.
   LIT::FuncOp callee =
-      valueSet.typeDeclInfo.getFuncForSymbol(usingCall.getCalleeSymbol());
+      valueSet.typeDeclInfo.getFuncForSymbol(copyInitCall.getCalleeSymbol());
   if (!callee)
     return failure();
 
   // Handle the register_passable case:
-  //   %y = kgen.call __copyinit__(%value) calls.
-  //   kgen.call __del__(%value)   <<<=== Thinking about inserting this.
-  //   use(%y)
+  //   %newVal = kgen.call __copyinit__(%value) calls.
+  //   kgen.call __del__(%value)   <<= Thinking about inserting this.
+  //   kgen.call user(%newVal)     <<= Consuming call.
   if (callee.getSpecialFunctionKind() == SpecialFunctionKind::kCopyInitReg &&
-      usingCall.getOperand(0) == value) {
-    usingCall.getResult(0).replaceAllUsesWith(value);
-    opsToRemove.push_back(usingCall);
+      copyInitCall.getOperand(0) == value) {
+    // Transform into:
+    //   kgen.call user(%value)
+    copyInitCall.getResult(0).replaceAllUsesWith(value);
+    opsToRemove.push_back(copyInitCall);
     return success();
   }
 
   // Otherwise handle memory passable copies like:
   //   %tmp = lit.varlet.decl "anonymous"
   //   kgen.call __copyinit__(%tmp, %src)
-  //   kgen.call __del__(%src)   <<<=== Thinking about inserting this.
-  //   use(%tmp)
-  if (callee.getSpecialFunctionKind() != SpecialFunctionKind::kCopyInit)
+  //   kgen.call __del__(%src)   <<= Thinking about inserting this.
+  //   kgen.call user(%tmp)      <<= Consuming call.
+  if (callee.getSpecialFunctionKind() != SpecialFunctionKind::kCopyInit ||
+      copyInitCall.getOperand(1) != value)
     return failure();
 
-  // Don't delete explicitly declared temporaries, just implicit ones.
-  // VarLetDeclOp varLet = info.value.getDefiningOp<VarLetDeclOp>();
-  // varLet.getIsSynthesized()
+  // We prefer to completely delete the copy if it is into a temporary location
+  // that we can forward.
+  //
+  // Note: we currently delete explicitly declared temporaries, not just
+  // implicit ones.  This is a policy decision, and we should look into
+  // the impact on debug information, but generally one wouldn't want debug
+  // information to block optimizations.
+  if (VarLetDeclOp tmpDecl =
+          copyInitCall.getOperand(0).getDefiningOp<VarLetDeclOp>()) {
+    assert(copyInitCall.getOperand(0).getType() == value.getType() &&
+           copyInitCall.use_empty() && "something strange");
+
+    if (canEntirelyElideMemoryTemporary(copyInitCall, tmpDecl)) {
+      tmpDecl.getResult().replaceAllUsesWith(value);
+      opsToRemove.push_back(copyInitCall);
+      opsToRemove.push_back(tmpDecl);
+      return success();
+    }
+  }
+
+  // If we can't do that, then we can promote to a __moveinit__ call if one
+  // exists.
 
   return failure();
 }
