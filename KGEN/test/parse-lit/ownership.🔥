@@ -35,6 +35,7 @@ struct RegExample:
     return RegExample{}
   fn __copyinit__(self) -> Self:
     return RegExample{}
+  fn noop(self): pass
   # CHECK-LABEL: lit.func @"__del__
   # CHECK-NEXT: %self_0 = lit.varlet.decl "self", var = true
   # CHECK-NEXT: pop.store %self, %self_0
@@ -565,13 +566,9 @@ fn test_result_consume_reg(cond: __mlir_type.i1) -> RegExample:
     # CHECK-NEXT: kgen.return [[TMP2]]
     return example2^
   else: # CHECK-NEXT: } else {
-    # TODO: This isn't doing a return slot optimization.
     # CHECK-NEXT: [[TMP2:%.*]] = pop.load %example2
-    # CHECK-NEXT: [[TMP4:%.*]] = kgen.call {{.*}}__copyinit__{{.*}}([[TMP2]])
-    # CHECK-NEXT: [[TMP3:%.*]] = pop.load %example2
-    # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}([[TMP3]])
-    # CHECK-NEXT: kgen.return [[TMP4]]
-    return example2
+    # CHECK-NEXT: kgen.return [[TMP2]]
+    return example2  # copy/del -> move optimization.
 
 # CHECK: lit.func @"consumeMem
 fn consumeMem(owned x: MemExample):
@@ -836,10 +833,7 @@ fn result_reg2(owned a: RegMovableCopyable) -> RegMovableCopyable:
   # CHECK-NEXT: %a_0 = lit.varlet.decl "a", var = true
   # CHECK-NEXT: pop.store %a, %a_0
   # CHECK-NEXT: %0 = pop.load %a_0
-  # CHECK-NEXT: %1 = kgen.call {{.*}}__copyinit__{{.*}}(%0){{.*}}borrow
-  # CHECK-NEXT: %2 = pop.load %a_0
-  # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}(%2)
-  # CHECK-NEXT: kgen.return %1
+  # CHECK-NEXT: kgen.return %0
   return a
 
 # CHECK-LABEL: lit.func @"result_reg3
@@ -920,3 +914,74 @@ fn optimizeCopyElision():
   takeTwo(x, x)
 
   # CHECK-NEXT: kgen.param.constant: !lit.none
+
+# CHECK-LABEL: lit.func @"optimizeCopyToMove
+fn optimizeCopyToMove():
+   # All the copy ctors should be eliminated in favor of moves.
+
+   # CHECK: %m1 = lit.varlet.decl
+   # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%m1)
+   var m1 = MemExample()                   # expected-warning {{never mutated}}
+   # CHECK-NEXT: kgen.call {{.*}}noop{{.*}}(%m1)
+   m1.noop()
+
+   # CHECK: %m2 = lit.varlet.decl
+   # CHECK-NEXT: kgen.call {{.*}}__moveinit__{{.*}}(%m2, %m1)
+   var m2 = m1                   # expected-warning {{never mutated}}
+   # CHECK-NEXT: kgen.call {{.*}}noop{{.*}}(%m2)
+   m2.noop()
+
+   # CHECK: %m3 = lit.varlet.decl
+   # CHECK-NEXT: kgen.call {{.*}}__moveinit__{{.*}}(%m3, %m2)
+   var m3 = m2                   # expected-warning {{never mutated}}
+   # CHECK-NEXT: kgen.call {{.*}}noop{{.*}}(%m3)
+   m3.noop()
+   # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}(%m3)
+
+   # All the copyinit's should be removed.
+
+   # CHECK-NEXT: [[TMP:%.*]] = kgen.call {{.*}}__init__{{.*}}()
+   # CHECK-NEXT: %r1 = lit.letreg.decl "r1" = [[TMP]]
+   let r1 = RegExample()
+   # CHECK-NEXT: kgen.call {{.*}}noop{{.*}}(%r1)
+   r1.noop()
+
+   # CHECK-NEXT: %r2 = lit.letreg.decl "r2" = %r1
+   let r2 = r1
+   # CHECK-NEXT: kgen.call {{.*}}noop{{.*}}(%r2)
+   r2.noop()
+
+   # CHECK-NEXT: %r3 = lit.letreg.decl "r3" = %r2
+   let r3 = r2
+   # CHECK-NEXT: kgen.call {{.*}}noop{{.*}}(%r3)
+   r3.noop()
+   # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}(%r3)
+
+
+   # CHECK-NEXT: [[TMP:%.*]] = kgen.call {{.*}}__init__{{.*}}()
+   # CHECK-NEXT: %v1 = lit.varlet.decl
+   # CHECK-NEXT: pop.store [[TMP]], %v1
+   var v1 = RegExample()                   # expected-warning {{never mutated}}
+   # CHECK-NEXT: [[TMP:%.*]] = pop.load %v1
+   # CHECK-NEXT: kgen.call {{.*}}noop{{.*}}([[TMP]])
+   v1.noop()
+
+   # CHECK-NEXT: [[TMP:%.*]] = pop.load %v1
+   # CHECK-NEXT: %v2 = lit.varlet.decl
+   # CHECK-NEXT: pop.store [[TMP]], %v2
+   var v2 = v1                   # expected-warning {{never mutated}}
+   # CHECK-NEXT: [[TMP:%.*]] = pop.load %v2
+   # CHECK-NEXT: kgen.call {{.*}}noop{{.*}}([[TMP]])
+   v2.noop()
+
+   # CHECK-NEXT: [[TMP:%.*]] = pop.load %v2
+   # CHECK-NEXT: %v3 = lit.varlet.decl
+   # CHECK-NEXT: pop.store [[TMP]], %v3
+   var v3 = v2                   # expected-warning {{never mutated}}
+   # CHECK-NEXT: [[TMP:%.*]] = pop.load %v3
+   # CHECK-NEXT: kgen.call {{.*}}noop{{.*}}([[TMP]])
+   v3.noop()
+
+   # CHECK-NEXT: [[TMP:%.*]] = pop.load %v3
+   # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}([[TMP]])
+   # CHECK-NEXT: kgen.param.constant: !lit.none
