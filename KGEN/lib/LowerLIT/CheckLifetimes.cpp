@@ -88,6 +88,7 @@ struct TypeDeclInfo {
   /// Given the RValue type for a value that needs to be destroyed, return the
   /// destructor the invoke, or null if there is none.
   SymbolConstantAttr getDestructorForType(Type type) const;
+  SymbolConstantAttr getMoveInitForType(Type type) const;
 
   /// Return the function for a given symbol name if known.
   LIT::FuncOp getFuncForSymbol(SymbolRefAttr symbolRef) const {
@@ -96,7 +97,7 @@ struct TypeDeclInfo {
   }
 
 private:
-  DenseMap<SymbolRefAttr, LIT::StructDeclOp> structMap;
+  DenseMap<SymbolRefAttr, StructDeclOp> structMap;
   DenseMap<SymbolRefAttr, LIT::FuncOp> funcMap;
 
   /// This keeps track of the number of fields in the struct specified by the
@@ -109,13 +110,13 @@ private:
   DenseMap<std::pair<SymbolRefAttr, StringAttr>, unsigned> fieldIndices;
 };
 
-/// Given the RValue type for a value that needs to be destroyed, return the
-/// destructor the invoke, or null if there is none.
-SymbolConstantAttr TypeDeclInfo::getDestructorForType(Type type) const {
+static SymbolConstantAttr
+getSpecialMemberForType(Type type, const TypeDeclInfo *typeDecls,
+                        std::function<TypedAttr(StructDeclOp)> getMember) {
   DeclRefType valueType = dyn_cast<DeclRefType>(type);
   if (!valueType) // Values of raw MLIR type don't have destructors.
     return {};
-  TypedAttr dtorAttr = getStructDeclForType(valueType).getDestructorAttr();
+  TypedAttr dtorAttr = getMember(typeDecls->getStructDeclForType(valueType));
   if (!dtorAttr)
     return {};
 
@@ -136,6 +137,20 @@ SymbolConstantAttr TypeDeclInfo::getDestructorForType(Type type) const {
         llvm_unreachable("incorrect parameters to dtor when inserting");
       });
   return SymbolConstantAttr::get(attr.getSymbol(), paramValues, newSig);
+}
+
+/// Given the RValue type for a value that needs to be destroyed, return the
+/// destructor the invoke, or null if there is none.
+SymbolConstantAttr TypeDeclInfo::getDestructorForType(Type type) const {
+  return getSpecialMemberForType(type, this, [](StructDeclOp structOp) {
+    return structOp.getDestructorAttr();
+  });
+}
+
+SymbolConstantAttr TypeDeclInfo::getMoveInitForType(Type type) const {
+  return getSpecialMemberForType(type, this, [](StructDeclOp structOp) {
+    return structOp.getMoveInitAttr();
+  });
 }
 
 /// Return the total number of flattened fields in the specified type.
@@ -1822,11 +1837,23 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
   //   %newVal = kgen.call __copyinit__(%value) calls.
   //   kgen.call __del__(%value)   <<= Thinking about inserting this.
   //   kgen.call user(%newVal)     <<= Consuming call.
-  if (callee.getSpecialFunctionKind() == SpecialFunctionKind::kCopyInitReg &&
-      copyInitCall.getOperand(0) == value) {
+  if (callee.getSpecialFunctionKind() == SpecialFunctionKind::kCopyInitReg) {
+    // Make sure the destructor is for the source of the copyinit not the result
+    // of the copyinit or something else weird.
+    Value srcValue = copyInitCall.getOperand(0);
+    if (srcValue != value) {
+      // With var's we can have indirect operands.
+      bool isOk = false;
+      if (auto load = srcValue.getDefiningOp<POP::LoadOp>())
+        if (load.getOperand() == value)
+          isOk = true;
+      if (!isOk)
+        return failure();
+    }
+
     // Transform into:
     //   kgen.call user(%value)
-    copyInitCall.getResult(0).replaceAllUsesWith(value);
+    copyInitCall.getResult(0).replaceAllUsesWith(srcValue);
     opsToRemove.push_back(copyInitCall);
     return success();
   }
@@ -1860,9 +1887,28 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
     }
   }
 
-  // If we can't do that, then we can promote to a __moveinit__ call if one
-  // exists.
+  // Otherwise, we can promote to a __moveinit__ call if one exists.
+  SymbolConstantAttr moveInit =
+      valueSet.typeDeclInfo.getMoveInitForType(destroyedType);
+  if (!moveInit)
+    return failure();
 
+  // __moveinit__ has two forms, one that destructively steals from a live
+  // object without destroying it, and one that takes and destroys it.  The
+  // former takes the operand as inout, the later as owned convention.
+  auto moveSig = cast<SignatureType>(moveInit.getType());
+  assert(moveSig.getValueInputs().size() == 2 &&
+         moveSig.getValueInputs()[0] == value.getType() &&
+         moveSig.getValueInputs()[1] == value.getType());
+
+  // Transform the copy into a move.
+  copyInitCall.setCalleeAttr(moveInit);
+
+  // If the __moveinit__ is owned, then we don't need a dtor call.  If it is
+  // stealing, then we need to destroy the husk of the object stolen from.
+  if (moveSig.getInputConvention(1) == ValueInputConvention::OwnedInMem)
+    return success();
+  // We succeeded at the transform, but still need to del.
   return failure();
 }
 
