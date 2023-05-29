@@ -14,6 +14,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LifetimeTrackable.h"
+#include "KGEN/LITDialect/SpecialFunctions.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
@@ -27,20 +28,25 @@ using namespace LIT;
 using llvm::BitVector;
 
 /// Find all the functions and types in the module.
-static std::pair<std::vector<mlir::FunctionOpInterface>,
-                 DenseMap<SymbolRefAttr, LIT::StructDeclOp>>
+static std::tuple<std::vector<mlir::FunctionOpInterface>,
+                  DenseMap<SymbolRefAttr, LIT::FuncOp>,
+                  DenseMap<SymbolRefAttr, LIT::StructDeclOp>>
 collectFunctionsAndTypes(Operation *module) {
   std::vector<mlir::FunctionOpInterface> funcList;
+  DenseMap<SymbolRefAttr, LIT::FuncOp> funcMap;
   DenseMap<SymbolRefAttr, LIT::StructDeclOp> structMap;
   module->walk([&](Operation *op) {
     // Collect functions and nested functions.
-    if (auto funcOp = dyn_cast<mlir::FunctionOpInterface>(op))
+    if (auto funcOp = dyn_cast<mlir::FunctionOpInterface>(op)) {
       funcList.push_back(funcOp);
+      if (auto fOp = dyn_cast<LIT::FuncOp>(op))
+        funcMap[getFullyResolvedSymbolRef(fOp)] = fOp;
+    }
     // Collect structs.
     if (auto structOp = dyn_cast<LIT::StructDeclOp>(op))
       structMap[getFullyResolvedSymbolRef(structOp)] = structOp;
   });
-  return {std::move(funcList), std::move(structMap)};
+  return {std::move(funcList), std::move(funcMap), std::move(structMap)};
 }
 
 //===----------------------------------------------------------------------===//
@@ -53,8 +59,9 @@ collectFunctionsAndTypes(Operation *module) {
 /// an efficient mapping that tells us the number of (fully flattened) fields in
 /// struct.
 struct TypeDeclInfo {
-  TypeDeclInfo(DenseMap<SymbolRefAttr, LIT::StructDeclOp> &&structMap)
-      : structMap(std::move(structMap)) {}
+  TypeDeclInfo(DenseMap<SymbolRefAttr, LIT::StructDeclOp> &&structMap,
+               DenseMap<SymbolRefAttr, LIT::FuncOp> &&funcMap)
+      : structMap(std::move(structMap)), funcMap(std::move(funcMap)) {}
 
   /// Return the total number of flattened fields in the specified type.
   unsigned getNumFieldsInType(Type type);
@@ -82,8 +89,15 @@ struct TypeDeclInfo {
   /// destructor the invoke, or null if there is none.
   SymbolConstantAttr getDestructorForType(Type type) const;
 
+  /// Return the function for a given symbol name if known.
+  LIT::FuncOp getFuncForSymbol(SymbolRefAttr symbolRef) const {
+    auto it = funcMap.find(symbolRef);
+    return it != funcMap.end() ? it->second : LIT::FuncOp();
+  }
+
 private:
   DenseMap<SymbolRefAttr, LIT::StructDeclOp> structMap;
+  DenseMap<SymbolRefAttr, LIT::FuncOp> funcMap;
 
   /// This keeps track of the number of fields in the struct specified by the
   /// (fully flattened) symbol.
@@ -1065,12 +1079,13 @@ namespace {
 /// This helper class implements the third pass over a function body, which
 /// inserts destructors after the last use of values.
 struct DestructorInsertion {
-  DestructorInsertion(ValueSet &valueSet) : valueSet(valueSet) {}
+  DestructorInsertion(ValueSet &valueSet, SmallVector<Operation *> &opsToRemove)
+      : valueSet(valueSet), opsToRemove(opsToRemove) {}
   DestructorInsertion(const DestructorInsertion &existing) = delete;
   DestructorInsertion(DestructorInsertion &&existing) = default;
 
   static DestructorInsertion copy(const DestructorInsertion &existing) {
-    DestructorInsertion result(existing.valueSet);
+    DestructorInsertion result(existing.valueSet, existing.opsToRemove);
     result.consumedValues = existing.consumedValues;
     result.raiseSet = existing.raiseSet;
     result.breakSet = existing.breakSet;
@@ -1089,20 +1104,27 @@ private:
   void checkOp(Operation &op);
   void markConsumed(Value value, Operation &op);
   void checkUse(Value value, Operation &op);
-  void checkUse(Value value, Block &block, Block::iterator insertPt,
-                Location loc);
+  void checkUse(Value value, mlir::ImplicitLocOpBuilder &builder,
+                Operation *opWithUse);
   void checkDef(Value value, Operation &op);
   void destroyValuesAtEntry(const BitVector &entries, Block &block,
                             Location loc);
-  void destroyValueIfNeeded(Value value, ValueRef valueRef, Block &block,
-                            Block::iterator insertPt, Location loc);
   void destroyValueIfNeeded(Value value, ValueRef valueRef,
-                            mlir::ImplicitLocOpBuilder &builder);
+                            mlir::ImplicitLocOpBuilder &builder,
+                            Operation *opWithUse);
+
+  LogicalResult elideCopyDestroyPair(Value value, Type destroyedType,
+                                     Operation *opWithUse);
   void emitDestructorCallAt(Value value, ValueRef valueRef,
-                            mlir::ImplicitLocOpBuilder &builder);
+                            mlir::ImplicitLocOpBuilder &builder,
+                            Operation *opWithUse);
 
   /// This is metadata about all the values we are tracking.
   ValueSet &valueSet;
+
+  /// This is a set of operations that are removed after destructor processing
+  /// has completed.  This is used to elide copy ctors.
+  SmallVector<Operation *> &opsToRemove;
 
   /// This is the set of values known to be used below this point, so they
   /// should not be destroyed if there are uses.  Any use of a value /not/ in
@@ -1178,8 +1200,10 @@ void DestructorInsertion::scanFunction(mlir::FunctionOpInterface func) {
   for (auto [valueID, valueInfo] : llvm::enumerate(valueSet.getValueInfos())) {
     if (valueInfo.startsUninit || valueID == 0)
       continue;
-    checkUse(valueInfo.value, funcBody, funcBody.begin(),
-             valueInfo.value.getLoc());
+
+    mlir::ImplicitLocOpBuilder builder(valueInfo.value.getLoc(), &funcBody,
+                                       funcBody.begin());
+    checkUse(valueInfo.value, builder, /*opWithUse=*/nullptr);
   }
 }
 
@@ -1512,11 +1536,18 @@ void DestructorInsertion::markConsumed(Value value, Operation &op) {
 /// /last/ use of a value, emit a destructor of the overall value.
 void DestructorInsertion::checkUse(Value value, Operation &op) {
   // If needed, emit the destructor immediately after the specified operation.
-  checkUse(value, *op.getBlock(), std::next(Block::iterator(&op)), op.getLoc());
+  auto insertPt = std::next(Block::iterator(&op));
+  mlir::ImplicitLocOpBuilder builder(op.getLoc(), op.getBlock(), insertPt);
+  checkUse(value, builder, /*opWithUse=*/&op);
 }
 
-void DestructorInsertion::checkUse(Value value, Block &block,
-                                   Block::iterator insertPt, Location loc) {
+/// Check a use of a value.  Iff this is the /last/ use of the value, emit a
+/// destructor of the overall value.  The 'opWithUse' value (if present)
+/// indicates the operation performing the use.  This enables copy ctor elision,
+/// but this is null at the start of block/function for example.
+void DestructorInsertion::checkUse(Value value,
+                                   mlir::ImplicitLocOpBuilder &builder,
+                                   Operation *opWithUse) {
   ValueRef valueRef = valueSet.getValueRef(value);
   if (!valueRef)
     return;
@@ -1549,7 +1580,7 @@ void DestructorInsertion::checkUse(Value value, Block &block,
   //   consume(&aggregate)
   //
   // In this case, we need to destroy field1 after this use.
-  destroyValueIfNeeded(value, valueRef, block, insertPt, loc);
+  destroyValueIfNeeded(value, valueRef, builder, /*opWithUse=*/opWithUse);
 }
 
 /// This operation defines the specified value.  If the value is dead on
@@ -1568,12 +1599,11 @@ void DestructorInsertion::checkDef(Value value, Operation &op) {
   valueSet.getValueRef(value).markBits(consumedValues, false);
 }
 
-/// Destroy the specified ValueRef which either itself entirely (or some
-/// sub-fields need to be destroyed).
-void DestructorInsertion::destroyValueIfNeeded(Value value, ValueRef valueRef,
-                                               Block &block,
-                                               Block::iterator insertPt,
-                                               Location loc) {
+/// Recursive version of destroyValueIfNeeded invoked when we know that we are
+/// inserting destructors.
+void DestructorInsertion::destroyValueIfNeeded(
+    Value value, ValueRef valueRef, mlir::ImplicitLocOpBuilder &builder,
+    Operation *opWithUse) {
   assert(valueRef && "Only works on valid refs");
 
   // If we are just computing the consumedValue set, don't actually insert any
@@ -1582,15 +1612,6 @@ void DestructorInsertion::destroyValueIfNeeded(Value value, ValueRef valueRef,
     valueRef.markBits(consumedValues, true);
     return;
   }
-
-  mlir::ImplicitLocOpBuilder builder(loc, &block, insertPt);
-  destroyValueIfNeeded(value, valueRef, builder);
-}
-
-/// Recursive version of destroyValueIfNeeded invoked when we know that we are
-/// inserting destructors.
-void DestructorInsertion::destroyValueIfNeeded(
-    Value value, ValueRef valueRef, mlir::ImplicitLocOpBuilder &builder) {
 
   // If nothing in this value needs destroying, then ignore the request.
   if (valueRef.isAllPresent(consumedValues))
@@ -1655,7 +1676,8 @@ void DestructorInsertion::destroyValueIfNeeded(
       }
     }
 
-    emitDestructorCallAt(value, valueRef, builder);
+    // Ok, everything looks good - actually emit the dtor call here.
+    emitDestructorCallAt(value, valueRef, builder, opWithUse);
     valueRef.markBits(consumedValues, true);
     return;
   }
@@ -1677,7 +1699,8 @@ void DestructorInsertion::destroyValueIfNeeded(
     unsigned numBits =
         valueSet.typeDeclInfo.getNumFieldsInType(field.getType());
     destroyValueIfNeeded(fieldVal->getResult(0),
-                         valueRef.getSubfield(nextBit, numBits), builder);
+                         valueRef.getSubfield(nextBit, numBits), builder,
+                         /*opWithUse=*/nullptr);
 
     // If there was no destructor generated (because the element has no
     // destructor) then remove the unused pointer access.
@@ -1690,19 +1713,74 @@ void DestructorInsertion::destroyValueIfNeeded(
          "Lost track of bits");
 }
 
+/// Given the need to destroy the specified value as a result of the specified
+/// operation using it, check to see if the use is a call to the copy ctor for
+/// the value.  If so, try to elide the copy+temporary.  This returns success
+/// when it can do the elision, failure otherwise.
+LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
+                                                        Type destroyedType,
+                                                        Operation *opWithUse) {
+  CallOp usingCall = dyn_cast_if_present<CallOp>(opWithUse);
+  if (!usingCall)
+    return failure();
+
+  // See if we can resolve the callee.
+  LIT::FuncOp callee =
+      valueSet.typeDeclInfo.getFuncForSymbol(usingCall.getCalleeSymbol());
+  if (!callee)
+    return failure();
+
+  // Handle the register_passable case:
+  //   %y = kgen.call __copyinit__(%value) calls.
+  //   kgen.call __del__(%value)   <<<=== Thinking about inserting this.
+  //   use(%y)
+  if (callee.getSpecialFunctionKind() == SpecialFunctionKind::kCopyInitReg &&
+      usingCall.getOperand(0) == value) {
+    usingCall.getResult(0).replaceAllUsesWith(value);
+    opsToRemove.push_back(usingCall);
+    return success();
+  }
+
+  // Otherwise handle memory passable copies like:
+  //   %tmp = lit.varlet.decl "anonymous"
+  //   kgen.call __copyinit__(%tmp, %src)
+  //   kgen.call __del__(%src)   <<<=== Thinking about inserting this.
+  //   use(%tmp)
+  if (callee.getSpecialFunctionKind() != SpecialFunctionKind::kCopyInit)
+    return failure();
+
+  // Don't delete explicitly declared temporaries, just implicit ones.
+  // VarLetDeclOp varLet = info.value.getDefiningOp<VarLetDeclOp>();
+  // varLet.getIsSynthesized()
+
+  return failure();
+}
+
 /// Emit one destructor call for one entire value or field.  This should only be
 /// called by destroyValueIfNeeded.
+///
+/// The 'opWithUse' value, if present, is the operation using the overall value
+/// being destroyed.  This allows us to perform copy ctor+temp elision.
 void DestructorInsertion::emitDestructorCallAt(Value value, ValueRef valueRef,
-                                               ImplicitLocOpBuilder &builder) {
+                                               ImplicitLocOpBuilder &builder,
+                                               Operation *opWithUse) {
   // We are going to emit a destructor for the specified ValueRef, so all none
   // of the things we are about to destroy should already be destroyed.
   assert(!dryRun && "this inserts!");
   assert(valueRef.isAllMissing(consumedValues) &&
          "cannot have partially consumed object");
 
+  Type destroyedType = valueRef.getValueType(value);
   SymbolConstantAttr dtor =
-      valueSet.typeDeclInfo.getDestructorForType(valueRef.getValueType(value));
-  if (!dtor) // Not all types have destructors.
+      valueSet.typeDeclInfo.getDestructorForType(destroyedType);
+  if (!dtor) // Trivial types don't have destructors, so nothing to do.
+    return;
+
+  // Okay, if there is a destructor, we know that this is a non-trivial value.
+  // Check to see if the operation that we are destroying this for is a
+  // copy-ctor.  If so, try to elide the copy constructor: it is better to
+  // directly use the original value than to copy it and destroy the original.
+  if (succeeded(elideCopyDestroyPair(value, destroyedType, opWithUse)))
     return;
 
   SignatureType signature = cast<SignatureType>(dtor.getType());
@@ -1740,6 +1818,9 @@ void DestructorInsertion::destroyValuesAtEntry(const BitVector &entries,
   if (isa<UnreachableOp>(block.front()))
     return;
 
+  // Any dtor calls will be emitted at the start of the block.
+  mlir::ImplicitLocOpBuilder builder(loc, &block, block.begin());
+
   // We *only* want to destroy the values in entries, not any other values that
   // may be partially overlapped, so mark all the other things as "already
   // destroyed".
@@ -1766,8 +1847,8 @@ void DestructorInsertion::destroyValuesAtEntry(const BitVector &entries,
 
     // Emit destructor calls for the entire value or the correct subfields that
     // need to be destroyed.
-    destroyValueIfNeeded(valueInfos[nextValueInfo].value, fullValueRef, block,
-                         block.begin(), loc);
+    destroyValueIfNeeded(valueInfos[nextValueInfo].value, fullValueRef, builder,
+                         /*opWithUse=*/nullptr);
 
     // Find the next object to destroy.
     nextToDestroy = entries.find_next(fullValueRef.endBit - 1);
@@ -1789,10 +1870,11 @@ struct CheckLifetimes : impl::CheckLifetimesBase<CheckLifetimes> {
 
   void runOnOperation() override {
     // Find all the functions and structs in the module.
-    auto [functionVector, structMap] = collectFunctionsAndTypes(getOperation());
+    auto [functionVector, funcMap, structMap] =
+        collectFunctionsAndTypes(getOperation());
 
     // Process all the structs into TypeDeclInfo.
-    TypeDeclInfo typeDeclInfo(std::move(structMap));
+    TypeDeclInfo typeDeclInfo(std::move(structMap), std::move(funcMap));
 
     // TODO: Do in parallel, watch out for mutations of TypeDeclInfo though!
     bool hadError = false;
@@ -1848,8 +1930,8 @@ LogicalResult CheckLifetimes::processFunction(mlir::FunctionOpInterface func,
   // TODO: How do we want to handle captures in closures?  Their uses
   // effectively form the capture list for the closure.  Should this get
   // materialized by LowerSemanticCF before this pass?
-
-  DestructorInsertion(valueSet).scanFunction(func);
+  SmallVector<Operation *> opsToRemove;
+  DestructorInsertion(valueSet, opsToRemove).scanFunction(func);
 
   // Now that we've looked at all the uses and definitions in the function,
   // diagnose any 'var's that should be written as 'let's with a warning.
@@ -1870,6 +1952,10 @@ LogicalResult CheckLifetimes::processFunction(mlir::FunctionOpInterface func,
              "to "
              "a 'let'";
     }
+
+  // Remove copy ctors and allocations that have been elided.
+  for (Operation *op : opsToRemove)
+    op->erase();
 
   // Return failure if we generated errors for any of the tracked values.
   return failure(llvm::any_of(valueSet.getValueInfos(), [&](ValueInfo &info) {
