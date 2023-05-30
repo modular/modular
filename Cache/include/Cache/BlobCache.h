@@ -40,23 +40,24 @@ public:
   /// Store the object `obj` with hash `keyHash`. This is expected to take
   /// ownership of the data in `obj` on success. Subclasses are expected to
   /// overwrite the current contents on a collision.
-  LLCL::AsyncValueRef<ErrorOrSuccess> insert(BufferRef keyHash, BufferRef obj);
+  virtual LLCL::AsyncValueRef<ErrorOrSuccess> insert(BufferRef keyHash,
+                                                     BufferRef obj);
 
   /// Check if an item with key hash `keyHash` exists in this backend or in any
   /// of the delegates.
-  LLCL::AsyncValueRef<bool>
+  virtual LLCL::AsyncValueRef<bool>
   contains(BufferRef keyHash,
            std::optional<EncodedLocation> loc = std::nullopt);
 
   /// Get the item with key hash `keyHash` from this backend or any of its
   /// delegates. If `buf` is provided, write into that (and return a read-only
   /// reference to it if found).
-  LLCL::AsyncValueRef<std::optional<BufferRef>>
+  virtual LLCL::AsyncValueRef<std::optional<BufferRef>>
   find(BufferRef keyHash, std::optional<WriteableBufferRef> buf = std::nullopt,
        std::optional<EncodedLocation> loc = std::nullopt);
 
   /// Clear out this backend and its delegates.
-  LLCL::AsyncValueRef<ErrorOrSuccess> clear();
+  virtual LLCL::AsyncValueRef<ErrorOrSuccess> clear();
 
   /// Add delegate to the end of the backend chain.
   void appendDelegate(LLCL::RCRef<BlobCacheBackend> d);
@@ -65,23 +66,52 @@ protected:
   /// NOTE: The asynchrony of the cache backend is handled by the
   /// BlobCacheBackend class so the *Impl functions can more or less ignore it.
 
-  /// Subclasses should use this to provide the implementation of actually
-  /// storing an item.
-  virtual ErrorOrSuccess insertImpl(StringRef keyHash, BufferRef obj) = 0;
-  /// Subclasses should use this to provide the implementation of checking if an
-  /// item exists.
-  virtual ErrorOr<bool> containsImpl(StringRef keyHash) const = 0;
-  /// Subclasses should use this to provide the implementation of getting an
-  /// item from storage. If `buf` is provided, write directly into `buf`,
-  /// returning std::nullopt if the item isn't found as usual.
+  /// Subclasses that don't override insert should use this to provide the
+  /// implementation of actually storing an item.
+  virtual ErrorOrSuccess insertImpl(StringRef keyHash, BufferRef obj) {
+    return Error("insertImpl not implemented");
+  }
+  /// Subclasses that don't override contains should use this to provide the
+  /// implementation of checking if an item exists.
+  virtual ErrorOr<bool> containsImpl(StringRef keyHash) const {
+    return Error("containsImpl not implemented");
+  }
+  /// Subclasses that don't override find should use this to provide the
+  /// implementation of getting an item from storage. If `buf` is provided,
+  /// write directly into `buf`, returning std::nullopt if the item isn't found
+  /// as usual.
   virtual ErrorOr<std::optional<BufferRef>>
   findImpl(StringRef keyHash,
-           std::optional<WriteableBufferRef> buf = std::nullopt) const = 0;
+           std::optional<WriteableBufferRef> buf = std::nullopt) const {
+    return Error("findImpl not implemented");
+  }
   /// Subclasses should use this to provide the implementation of clearing the
   /// cache. Subclasses may choose not to provide this, for example, a cloud
   /// storage backend may not wish to actually clear all its storage. Backends
   /// are advised to kick off a clear operation asynchronously.
   virtual ErrorOrSuccess clearImpl() { return success(); }
+
+  /// Use delegate to insert an item and set the status in the provided
+  /// AsyncValue. This is called by the default insert, and can optionally be
+  /// used by subclasses that override insert.
+  void delegateInsert(AsyncValueRef<ErrorOrSuccess> result, BufferRef keyHash,
+                      BufferRef obj);
+
+  /// Use delegate to check if an item exists, and set the status in the
+  /// provided AsyncValue. This is called by the default contains, and can
+  /// optionally be used by subclasses that override contains.
+  void delegateContains(AsyncValueRef<bool> result, BufferRef keyHash);
+
+  /// Use delegate to find an item and set the result in the provided
+  /// AsyncValue. This is called by the default find, and can optionally be used
+  /// by subclasses that override find.
+  void delegateFind(AsyncValueRef<std::optional<BufferRef>> result,
+                    BufferRef keyHash, std::optional<WriteableBufferRef> buf,
+                    llvm::unique_function<EncodedDiagnostic(Error)> getError);
+
+  /// Clear delegate cache. This is called by the default clear, and can
+  /// optionally be used by subclasses that override clear.
+  void delegateClear(AsyncValueRef<ErrorOrSuccess> result);
 
   /// Create a ready AsyncValueRef. This is just nice sugar to clean up the
   /// callsites when we return an AsyncValueRef that's ready to go, such as
