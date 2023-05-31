@@ -414,35 +414,32 @@ struct DylibBackendStub : public BlobCacheBackend {
   create(LLCL::Runtime &runtime, StringRef libPath,
          const DylibBackendConfig *config) {
     auto backendStub = RCRef<DylibBackendStub>::create(runtime);
-    if (auto err = backendStub->load(runtime, libPath, config))
+    if (auto err = backendStub->load(libPath, config)) {
       return err.takeError();
+    }
     return backendStub;
   }
 
   ~DylibBackendStub() {
-    // Release reference to ensure the backend is deleted before closing the
-    // library.
     backend.reset();
     llvm::sys::DynamicLibrary::closeLibrary(dylib);
   }
 
-  AsyncValueRef<ErrorOrSuccess> insert(BufferRef keyHash,
-                                       BufferRef obj) override {
-    return backend->insert(std::move(keyHash), std::move(obj));
+  ErrorOrSuccess insertImpl(StringRef keyHash, Cache::BufferRef obj) override {
+    return backend->insertImpl(keyHash, obj.copy());
   }
 
-  AsyncValueRef<bool> contains(BufferRef keyHash,
-                               std::optional<EncodedLocation> loc) override {
-    return backend->contains(std::move(keyHash), std::move(loc));
+  ErrorOr<bool> containsImpl(StringRef keyHash) const override {
+    return backend->containsImpl(keyHash);
   }
 
-  AsyncValueRef<std::optional<BufferRef>>
-  find(BufferRef keyHash, std::optional<WriteableBufferRef> buf,
-       std::optional<EncodedLocation> loc) override {
-    return backend->find(std::move(keyHash), std::move(buf), std::move(loc));
+  ErrorOr<std::optional<Cache::BufferRef>>
+  findImpl(StringRef keyHash,
+           std::optional<WriteableBufferRef> buf) const override {
+    return backend->findImpl(keyHash, std::move(buf));
   }
 
-  AsyncValueRef<ErrorOrSuccess> clear() override { return backend->clear(); }
+  ErrorOrSuccess clearImpl() override { return backend->clearImpl(); }
 
 private:
   /// So RCRef can access private constructor.
@@ -451,8 +448,7 @@ private:
   explicit DylibBackendStub(LLCL::Runtime &runtime)
       : BlobCacheBackend(runtime) {}
 
-  ErrorOrSuccess load(LLCL::Runtime &runtime, StringRef libPath,
-                      const DylibBackendConfig *config) {
+  ErrorOrSuccess load(StringRef libPath, const DylibBackendConfig *config) {
     std::string errorMsg;
     dylib =
         llvm::sys::DynamicLibrary::getLibrary(libPath.str().c_str(), &errorMsg);
@@ -460,22 +456,26 @@ private:
       return Error("Failed to load library " + libPath + ": " + errorMsg);
     }
 
-    using allocType =
-        LLCL::RCRef<DylibBlobCacheBackend> (*)(LLCL::Runtime * runtime);
+    using allocType = DylibBlobCacheBackend *(*)();
+    using deallocType = void (*)(DylibBlobCacheBackend *);
     auto allocFunc = reinterpret_cast<allocType>(
         dylib.getAddressOfSymbol("M_CAS_allocateBackend"));
-    if (!allocFunc) {
+    auto deleteFunc = reinterpret_cast<deallocType>(
+        dylib.getAddressOfSymbol("M_CAS_deallocateBackend"));
+    if (!allocFunc || !deleteFunc) {
       llvm::sys::DynamicLibrary::closeLibrary(dylib);
-      return Error("M_CAS_allocateBackend symbol not found\n");
+      return Error("M_CAS_allocateBackend or M_CAS_deallocateBackend symbol "
+                   "not found\n");
     }
-    backend = allocFunc(&runtime);
+    backend = std::shared_ptr<DylibBlobCacheBackend>(
+        allocFunc(), [deleteFunc](DylibBlobCacheBackend *p) { deleteFunc(p); });
     return backend->setConfig(config);
   }
 
   /// The dynamic library handle.
   llvm::sys::DynamicLibrary dylib;
-  /// The stub delegates all cache-related operations to this backend.
-  LLCL::RCRef<DylibBlobCacheBackend> backend;
+  /// The stub delegates all cache-related operations to this object.
+  std::shared_ptr<DylibBlobCacheBackend> backend;
 };
 } // namespace
 
