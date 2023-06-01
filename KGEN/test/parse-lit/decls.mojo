@@ -783,6 +783,16 @@ fn raisesReturnsVariant() -> __mlir_type[`!pop.variant<`, Error, `, index>`]:
     ]((1).__as_mlir_index())
 
 
+
+@value
+@register_passable("trivial")
+struct RaisingGetterSetter:
+    fn __getitem__(self, i: Int) raises -> Float32: return 1
+    fn __setitem__(inout self, i: Int, v: Float32) raises: pass
+
+fn test_raising_computed_getter() raises:
+    let a = RaisingGetterSetter()[2]
+
 ##===----------------------------------------------------------------------===##
 # Structs
 ##===----------------------------------------------------------------------===##

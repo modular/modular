@@ -481,29 +481,19 @@ private:
   /// Generate a sub-section for the overload described by the given function.
   void generateJSONForOverload(ASTDecl &decl, LIT::FuncOp funcOp,
                                StringRef name) {
-    SignatureType signature = funcOp.getSignature();
-
     auto argTypes = funcOp.getArgumentTypes();
     auto argNames = funcOp.getValueParamNames();
-    auto argConventions = signature.getValueInputConventions();
-    Type resultType = funcOp.getResultType();
-    std::optional<ValueInputConvention> resultConvention;
+    auto argConventions = funcOp.getSignature().getValueInputConventions();
+    ASTType resultType = funcOp.getUserResultType();
 
     // Check for a by-ref result type, which gets modeled as the first argument
-    // (as it needs to be passed through memory).
-    // If that's the case we should use that type as the return type. In other
-    // cases we want to use the usual return type, but we also want to unpack it
-    // in case of throwing functions. E.g. we want 'int' instead of
-    // 'Variant[Error, int]'.
-    bool unpackVariant = funcOp.isThrows();
+    // (as it needs to be passed through memory), and we don't want to include
+    // it in the normal argument list.
     if (!argConventions.empty() &&
         argConventions.front() == ValueInputConvention::ByRefResult) {
-      unpackVariant = false;
-      resultType = argTypes.front();
       argTypes = argTypes.drop_front();
       argNames = argNames.drop_front();
       argConventions = argConventions.drop_front();
-      resultConvention = ValueInputConvention::ByRefResult;
     }
 
     // If this is a method, grab the expected "Self" type.
@@ -534,11 +524,8 @@ private:
 
     // Grab the result type, if it's non-none.
     std::optional<std::string> resultTypeName;
-    if (!resultType.isa<LIT::NoneType>())
-      resultTypeName = generateTypeString(
-          unpackVariant ? funcOp.getResultTypeWithoutErrorVariant()
-                        : resultType,
-          selfType, resultConvention);
+    if (!resultType.isNoneType())
+      resultTypeName = generateTypeString(resultType, selfType);
 
     os.object([&] {
       os.attribute("signature", generateFunctionSignature(
@@ -977,8 +964,6 @@ private:
   /// Validate documentation for the given function.
   void validateDecl(ASTDecl &decl, LIT::FuncOp funcOp, DocString &docStr,
                     ValidationKind validation) {
-    SignatureType signature = funcOp.getSignature();
-
     // In general, each function argument must be documented, but exceptions are
     // pruned from the list below.
     ArrayRef<StringAttr> argNames = funcOp.getValueParamNames();
@@ -986,7 +971,7 @@ private:
     // memory-only results, at the beginning of an argument list.  Because these
     // arguments are hidden artifacts of the compiler, they don't need to be
     // documented.
-    if (signature.hasMemoryOnlyResult())
+    if (funcOp.getSignature().hasMemoryOnlyResult())
       argNames = argNames.drop_front();
     // Methods take `self` as an explicit first argument, for which
     // documentation isn't required.
@@ -1011,9 +996,8 @@ private:
         {kReturns, SMLoc()},
     };
     ArrayRef<StringRef> description = docStr.getDescription();
-    bool hasResults =
-        signature.hasMemoryOnlyResult() ||
-        !funcOp.getResultTypeWithoutErrorVariant().isa<LIT::NoneType>();
+    bool hasResults = !ASTType(funcOp.getUserResultType()).isNoneType();
+
     auto processFn = [&](StringRef section, SMLoc loc) mutable {
       if (section == kArgs)
         return processArguments(loc, seenArguments, description, validation);

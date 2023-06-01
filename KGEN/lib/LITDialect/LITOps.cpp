@@ -298,11 +298,18 @@ const SpecialFunctionInfo &LIT::FuncOp::getSpecialFunctionInfo() {
   return SpecialFunctionInfo::get(getSpecialFunctionKind());
 }
 
-/// Returns the result type with the outer variant<> type stripped off if it
-/// is a throwing function.
-Type LIT::FuncOp::getResultTypeWithoutErrorVariant() {
-  auto resultType = getResultType();
-  if (isThrows())
+/// Returns the user-defined result type, looking through implicit memory
+/// results and stripping off the variant from error throwing results if needed.
+Type LIT::FuncOp::getUserResultType() {
+  auto sigType = getSignature();
+  // If this function is a memory only type, return the by-ref result.
+  if (sigType.hasMemoryOnlyResult())
+    return cast<POP::PointerType>(getArgumentTypes()[0]).getElementAsType();
+
+  // Otherwise it is the normal result.
+  assert(getResultTypes().size() == 1);
+  auto resultType = getMLIRResultType();
+  if (sigType.isThrows())
     return cast<POP::VariantType>(resultType).getType(1);
   return resultType;
 }

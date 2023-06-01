@@ -64,6 +64,9 @@ public:
   /// the specified other type.
   bool isEqualCanon(ASTType other) const;
 
+  /// Return true if this is a None type.
+  bool isNoneType() const;
+
   /// Return true if this type is a register-passable type that can be passed
   /// around and copied in SSA values instead of having to live in memory.
   ///
@@ -103,6 +106,11 @@ public:
   /// Given a VariadicType, return the element as an ASTType.  This aborts if
   /// the current type isn't a VariadicType.
   ASTType getVariadicElementType() const;
+
+  /// Returns the user-defined result type, looking through implicit memory
+  /// results and stripping off the variant from error throwing results if
+  /// needed.
+  ASTType getSignatureUserResultType() const;
 
   /// Convert this type to a human readable string representation so it can be
   /// printed out for diagnostics.  This may also be inserted into raw_ostream

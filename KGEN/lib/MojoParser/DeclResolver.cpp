@@ -1404,8 +1404,7 @@ verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
     emitError() << name << " result type must be " << selfType;
 
   // If the function is required to return None, verify that.
-  if (fnInfo.hasNoneResult() &&
-      !declaredResultType.isEqualCanon(shared.getNoneType())) {
+  if (fnInfo.hasNoneResult() && !declaredResultType.isNoneType()) {
     emitError() << name << " result type must be elided (or None)";
     resultType = shared.getNoneType();
   }
@@ -1672,8 +1671,7 @@ static bool isMainFunction(StringAttr &name, LIT::FuncOp func,
   return name == kMainSymbolName && signature.getInputParamTypes().empty() &&
          signature.getResultParamTypes().empty() &&
          signature.getValueInputs().empty() &&
-         ASTType(func.getResultTypeWithoutErrorVariant())
-             .isEqualCanon(shared.getNoneType());
+         ASTType(func.getUserResultType()).isNoneType();
 }
 
 /// funcdef   ::=  [decorators] def_or_fn identifier [meta_signature]
@@ -1888,7 +1886,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   if (Operation *existing = finalizeFuncSignature(funcOp, decl)) {
     const char *errorMessage = nullptr;
     auto existingFunc = cast<LIT::FuncOp>(existing);
-    if (existingFunc.getResultType() != funcOp.getResultType()) {
+    if (existingFunc.getMLIRResultType() != funcOp.getMLIRResultType()) {
       errorMessage = " cannot overload on return type only";
     } else if (existingFunc.getIsAdaptive()) {
       // If the thing is adaptive and exact matches, then we actually don't want
@@ -2097,14 +2095,13 @@ static void appendDefaultReturnAndEndOp(LIT::FuncOp func, ASTDecl &funcDecl,
     // Wrap the result value if necessary.
     if (func.isThrows())
       retVal =
-          b.create<POP::VariantCreateOp>(loc, func.getResultType(), retVal);
+          b.create<POP::VariantCreateOp>(loc, func.getMLIRResultType(), retVal);
     ExprEmitter::emitNormalReturn(b, loc, retVal, funcDecl);
   };
 
   // If the function returns None, insert a "return None".
-  Type normalResult = func.getResultTypeWithoutErrorVariant();
-  if (isa<LIT::NoneType>(normalResult) &&
-      !func.getSignature().hasMemoryOnlyResult() &&
+  ASTType normalResult = func.getUserResultType();
+  if (normalResult.isNoneType() &&
       // No default return needed if we ended in a return.
       (body.empty() || !isa<LIT::ReturnOp>(body.back()))) {
     makeNoneReturn();

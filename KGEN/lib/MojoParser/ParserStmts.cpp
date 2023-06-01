@@ -257,7 +257,7 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
   // a value of a type (e.g. a type decorator)
   auto isImplicitlyIgnorableType = [&](ASTType type) -> bool {
     // TODO: This is incorrect for throwing functions that return None.
-    return type.isEqualCanon(shared.getNoneType()) ||
+    return type.isNoneType() ||
            type.isEqualCanon(shared.getTypeCheckErrorType());
   };
 
@@ -518,24 +518,25 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
   auto emitter = getEmitter();
 
   // Materialize the expression values into IR.
-  AnyValue resultValue;
-  if (decl.getSignature().hasMemoryOnlyResult()) {
+  Value resultValue;
+  SignatureType declSig = decl.getSignature();
+  if (declSig.hasMemoryOnlyResult()) {
     // If the result is memory-only, return into the result slot.
     ValueDest resultDest(SLValue(decl.getArgument(0)), EC_ReturnValue);
     if (!operandExprs[0]->emitIR(resultDest, emitter)) {
       resultDest.resetForError();
       return success();
     }
-    resultValue = PValue(shared.getNoneAttr());
+    resultValue = emitter.emitSRValue(
+        {PValue(shared.getNoneAttr()), operandExprs[0]}, EC_ReturnValue);
+
   } else {
-    resultValue = emitter.emitExpr(operandExprs[0], EC_ReturnValue);
+    // Convert the returned value to the returned type of the function.
+    resultValue = emitter.emitExprSRValue(operandExprs[0], EC_ReturnValue,
+                                          decl.getUserResultType());
   }
 
-  // Convert the returned value to the returned type of the function.
-  Value resultSRValue =
-      emitter.emitSRValue({resultValue, operandExprs[0]}, EC_ReturnValue,
-                          decl.getResultTypeWithoutErrorVariant());
-  if (!resultSRValue)
+  if (!resultValue)
     return {};
 
   auto mlirLoc = translateLocation(loc);
@@ -543,11 +544,10 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
   // If this function throws, we silently wrap the result value in the returned
   // variant type.
   if (decl.isThrows())
-    resultSRValue = builder.create<POP::VariantCreateOp>(
-        mlirLoc, decl.getResultType(), resultSRValue);
+    resultValue = builder.create<POP::VariantCreateOp>(
+        mlirLoc, decl.getMLIRResultType(), resultValue);
 
-  ExprEmitter::emitNormalReturn(builder, mlirLoc, resultSRValue,
-                                getParentDecl());
+  ExprEmitter::emitNormalReturn(builder, mlirLoc, resultValue, getParentDecl());
   return success();
 }
 
@@ -659,7 +659,7 @@ LogicalResult ExprEmitter::emitRaise(SRValue errorValue, Location raiseLoc) {
 
   // Otherwise, we are returning the error value from the function.
   Value retVal = builder->create<POP::VariantCreateOp>(
-      raiseLoc, funcOp.getResultType(), errorValue);
+      raiseLoc, funcOp.getMLIRResultType(), errorValue);
   builder->create<LIT::ReturnOp>(raiseLoc, retVal);
   return success();
 }
