@@ -1478,7 +1478,7 @@ fn partial_simd_load[
     # Create a mask based on input bounds.
     let effective_lbound = max(0, lbound)
     let effective_rbound = min(width, rbound)
-    let incr = iota[width, DType.si32.value]()
+    let incr = iota[width, DType.int32.value]()
     let mask = (incr >= effective_lbound) & (incr < effective_rbound)
 
     return masked_load[width, type](storage, mask, pad_value)
@@ -1516,7 +1516,7 @@ fn partial_simd_store[
     # Create a mask based on input bounds.
     let effective_lbound = max(0, lbound)
     let effective_rbound = min(width, rbound)
-    let incr = iota[width, DType.si32.value]()
+    let incr = iota[width, DType.int32.value]()
     let mask = (incr >= effective_lbound) & (incr < effective_rbound)
 
     return masked_store[width, type](data, storage, mask)
