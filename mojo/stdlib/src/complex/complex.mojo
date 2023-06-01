@@ -9,8 +9,8 @@ from DType import DType
 from SIMD import SIMD
 
 
-alias ComplexF32 = ComplexSIMD[DType.f32, 1]
-alias ComplexF64 = ComplexSIMD[DType.f64, 1]
+alias ComplexFloat32 = ComplexSIMD[DType.float32, 1]
+alias ComplexFloat64 = ComplexSIMD[DType.float64, 1]
 
 
 @value
