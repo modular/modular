@@ -17,7 +17,7 @@ from Range import range
 from Vector import DynamicVector
 
 
-fn test(m: Matrix[DimList(4, 4), DType.si32, False]):
+fn test(m: Matrix[DimList(4, 4), DType.int32, False]):
     # CHECK: [0, 1, 2, 3]
     print(m.simd_load[4](0, 0))
     # CHECK: [4, 5, 6, 7]
@@ -27,7 +27,7 @@ fn test(m: Matrix[DimList(4, 4), DType.si32, False]):
     # CHECK: [12, 13, 14, 15]
     print(m.simd_load[4](3, 0))
 
-    let v = iota[4, DType.si32]()
+    let v = iota[4, DType.int32]()
     m.simd_store[4](3, 0, v)
     # CHECK: [0, 1, 2, 3]
     print(m.simd_load[4](3, 0))
@@ -35,8 +35,8 @@ fn test(m: Matrix[DimList(4, 4), DType.si32, False]):
 
 fn test_matrix_static():
     print("== test_matrix_static")
-    let a = Buffer[16, DType.si32].stack_allocation()
-    let m = Matrix[DimList(4, 4), DType.si32, False](a.data)
+    let a = Buffer[16, DType.int32].stack_allocation()
+    let m = Matrix[DimList(4, 4), DType.int32, False](a.data)
     for i in range(16):
         a[i] = i
     test(m)
@@ -44,11 +44,11 @@ fn test_matrix_static():
 
 fn test_matrix_dynamic():
     print("== test_matrix_dynamic")
-    let vec = DynamicVector[__mlir_type[`!pop.scalar<`, DType.si32.value, `>`]](
-        16
-    )
-    let a = Buffer[16, DType.si32](vec.data)
-    let m = Matrix[DimList(4, 4), DType.si32, False](vec.data)
+    let vec = DynamicVector[
+        __mlir_type[`!pop.scalar<`, DType.int32.value, `>`]
+    ](16)
+    let a = Buffer[16, DType.int32](vec.data)
+    let m = Matrix[DimList(4, 4), DType.int32, False](vec.data)
     for i in range(16):
         a[i] = i
     test(m)

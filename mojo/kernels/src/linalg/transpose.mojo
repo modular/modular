@@ -33,7 +33,7 @@ fn _transpose_inplace_4x4[
     rows: Int,
     cols: Int,
     type: DType,
-](buf0: NDBuffer[2, DimList(rows, cols), type]):
+](bufloat0: NDBuffer[2, DimList(rows, cols), type]):
     assert_param[rows == 4]()
     assert_param[cols == 4]()
     let buf = rebind[
@@ -42,7 +42,7 @@ fn _transpose_inplace_4x4[
             DimList(4, 4),
             type,
         ],
-    ](buf0)
+    ](bufloat0)
 
     let row0 = buf.simd_load[4](StaticIntTuple[2](0, 0))
     let row1 = buf.simd_load[4](StaticIntTuple[2](1, 0))
@@ -69,7 +69,7 @@ fn _transpose_inplace_8x8[
     rows: Int,
     cols: Int,
     type: DType,
-](buf0: NDBuffer[2, DimList(rows, cols), type]):
+](bufloat0: NDBuffer[2, DimList(rows, cols), type]):
     assert_param[rows == 8]()
     assert_param[cols == 8]()
     let buf = rebind[
@@ -78,7 +78,7 @@ fn _transpose_inplace_8x8[
             DimList(8, 8),
             type,
         ],
-    ](buf0)
+    ](bufloat0)
 
     let row0 = buf.simd_load[8](StaticIntTuple[2](0, 0))
     let row1 = buf.simd_load[8](StaticIntTuple[2](1, 0))
@@ -139,7 +139,7 @@ fn _transpose_inplace_16x16[
     rows: Int,
     cols: Int,
     type: DType,
-](buf0: NDBuffer[2, DimList(rows, cols), type]):
+](bufloat0: NDBuffer[2, DimList(rows, cols), type]):
     assert_param[rows == 16]()
     assert_param[cols == 16]()
     let buf = rebind[
@@ -148,7 +148,7 @@ fn _transpose_inplace_16x16[
             DimList(16, 16),
             type,
         ],
-    ](buf0)
+    ](bufloat0)
 
     alias permute_0 = VariadicList[Int](
         0, 16, 1, 17, 4, 20, 5, 21, 8, 24, 9, 25, 12, 28, 13, 29

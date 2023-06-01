@@ -6,7 +6,7 @@
 #
 # This file contains wrappers around Apple's AMX assembly instruction set.
 # For information on the Apple AMX instruction set, see
-# https://www.notion.so/modularai/Apple-AMX-Resources-2cc523b9c851498787df946ebb09930e.
+# https://www.notion.so/modularai/Apple-AMX-Resources-2cc523b9c851498787dfloat946ebb09930e.
 #
 # ===----------------------------------------------------------------------===#
 
@@ -111,28 +111,28 @@ struct amx_detail:
     @staticmethod
     fn fma64(gpr: Int):
         """
-        f64 matrix multiply and add.
+        float64 matrix multiply and add.
         """
         Self._op_gpr[__mlir_attr.`10:si32`](gpr)
 
     @staticmethod
     fn fsm64(gpr: Int):
         """
-        f64 matrix multiply and subtract.
+        float64 matrix multiply and subtract.
         """
         Self._op_gpr[__mlir_attr.`11:si32`](gpr)
 
     @staticmethod
     fn fma32(gpr: Int):
         """
-        f32 matrix multiply and add.
+        Float32 matrix multiply and add.
         """
         Self._op_gpr[__mlir_attr.`12:si32`](gpr)
 
     @staticmethod
     fn fsm32(gpr: Int):
         """
-        f32 matrix multiply and subtract.
+        Float32 matrix multiply and subtract.
         """
         Self._op_gpr[__mlir_attr.`13:si32`](gpr)
 
@@ -146,14 +146,14 @@ struct amx_detail:
     @staticmethod
     fn fma16(gpr: Int):
         """
-        f16 matrix multiply and subtract.
+        float16 matrix multiply and subtract.
         """
         Self._op_gpr[__mlir_attr.`15:si32`](gpr)
 
     @staticmethod
     fn fms16(gpr: Int):
         """
-        f16 matrix multiply and add.
+        float16 matrix multiply and add.
         """
         Self._op_gpr[__mlir_attr.`16:si32`](gpr)
 
@@ -167,7 +167,7 @@ struct amx_detail:
     @staticmethod
     fn vecfp(gpr: Int):
         """
-        horizontal f16 multiply `z0[i] += x0[i] + y0[i]`
+        horizontal float16 multiply `z0[i] += x0[i] + y0[i]`
         """
         Self._op_gpr[__mlir_attr.`19:si32`](gpr)
 
@@ -181,7 +181,7 @@ struct amx_detail:
     @staticmethod
     fn matfp(gpr: Int):
         """
-        f16 matrix multiply
+        float16 matrix multiply
         """
         Self._op_gpr[__mlir_attr.`21:si32`](gpr)
 
@@ -303,8 +303,8 @@ struct amx_detail:
                 `> : i1`,
             ]
         ]()
-        # The type must be f32.
-        assert_param[type == DType.f32]()
+        # The type must be Float32.
+        assert_param[type == DType.float32]()
 
         # make the y offset field
         #  shift left by 6 to make this an offset in rows,
@@ -360,8 +360,8 @@ struct amx_detail:
                 `> : i1`,
             ]
         ]()
-        # The type must be f32.
-        assert_param[type == DType.f32]()
+        # The type must be Float32.
+        assert_param[type == DType.float32]()
 
         let is_row_mode = __mlir_attr[
             `#kgen.param.expr<eq,`,
@@ -386,17 +386,17 @@ struct amx_detail:
         c: NDBuffer[
             2,
             DimList(16, 16),
-            DType.f32,
+            DType.float32,
         ],
         a: NDBuffer[
             2,
             DimList(16, 16),
-            DType.f32,
+            DType.float32,
         ],
         b: NDBuffer[
             2,
             DimList(16, 16),
-            DType.f32,
+            DType.float32,
         ],
     ):
         # Performs a 16x16x16 matrix multiply on the given matrices storing the
@@ -417,21 +417,21 @@ struct amx_detail:
         alias c256 = (256).__as_mlir_index()
         alias c128 = (128).__as_mlir_index()
         let a_buffer: DTypePointer[
-            DType.f32
+            DType.float32
         ] = __mlir_op.`pop.stack_allocation`[
             count:c256,
             alignment:c128,
             _type : __mlir_type.`!pop.pointer<scalar<f32>>`,
         ]()
         let b_buffer: DTypePointer[
-            DType.f32
+            DType.float32
         ] = __mlir_op.`pop.stack_allocation`[
             count:c256,
             alignment:c128,
             _type : __mlir_type.`!pop.pointer<scalar<f32>>`,
         ]()
         let c_buffer: DTypePointer[
-            DType.f32
+            DType.float32
         ] = __mlir_op.`pop.stack_allocation`[
             count:c256,
             alignment:c128,
@@ -439,9 +439,9 @@ struct amx_detail:
         ]()
 
         let num_elements = c.num_elements()
-        memcpy[DType.f32](a_buffer, a_pointer, num_elements)
-        memcpy[DType.f32](b_buffer, b_pointer, num_elements)
-        memset_zero[DType.f32](c_buffer, num_elements)
+        memcpy[DType.float32](a_buffer, a_pointer, num_elements)
+        memcpy[DType.float32](b_buffer, b_pointer, num_elements)
+        memset_zero[DType.float32](c_buffer, num_elements)
 
         Self._set()
 
@@ -472,4 +472,4 @@ struct amx_detail:
 
         Self._clr()
 
-        memcpy[DType.f32](c_pointer, c_buffer, num_elements)
+        memcpy[DType.float32](c_pointer, c_buffer, num_elements)

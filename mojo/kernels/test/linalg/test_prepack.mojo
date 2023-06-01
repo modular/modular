@@ -25,7 +25,7 @@ fn test_prepack():
     alias inner_size = 2 * simd_size
     alias n = 12
     alias tile_n = 8
-    alias type = DType.f32.value
+    alias type = DType.float32.value
 
     alias k_padded = div_ceil(k, tile_k) * tile_k
     alias n_padded = div_ceil(n, tile_n) * tile_n

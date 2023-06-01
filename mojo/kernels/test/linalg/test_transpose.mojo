@@ -441,7 +441,7 @@ fn test_transpose_si64():
     #   [4, 5, 6]],
     #  [[7, 8, 9],
     #   [10, 11, 12]]]
-    var input = NDBuffer[3, in_shape, DType.si64].stack_allocation()
+    var input = NDBuffer[3, in_shape, DType.int64].stack_allocation()
     input[StaticIntTuple[3](0, 0, 0)] = 1
     input[StaticIntTuple[3](0, 0, 1)] = 2
     input[StaticIntTuple[3](0, 0, 2)] = 3
@@ -468,7 +468,7 @@ fn test_transpose_si64():
     #  [[-1, -1, -1],
     #   [-1, -1, -1]]]
     alias out_shape = DimList(3, 2, 2)
-    var output = NDBuffer[3, out_shape, DType.si64].stack_allocation()
+    var output = NDBuffer[3, out_shape, DType.int64].stack_allocation()
     output.fill(0)
 
     # transpose

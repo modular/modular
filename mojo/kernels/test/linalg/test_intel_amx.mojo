@@ -69,41 +69,41 @@ fn identity_epilogue_elemwise_func[
 
 
 fn init_matrices(
-    a_ptr: DTypePointer[DType.si8],
-    b_ptr: DTypePointer[DType.si8],
-    c_ptr: DTypePointer[DType.si32],
-    c2_ptr: DTypePointer[DType.si32],
+    a_ptr: DTypePointer[DType.int8],
+    b_ptr: DTypePointer[DType.int8],
+    c_ptr: DTypePointer[DType.int32],
+    c2_ptr: DTypePointer[DType.int32],
 ):
 
-    let a = Buffer[Dim(), DType.si8](a_ptr.address, 1024)
-    let b = Buffer[Dim(), DType.si8](b_ptr.address, 1024)
-    let c = Buffer[Dim(), DType.si32](c_ptr.address, 256)
-    let c2 = Buffer[Dim(), DType.si32](c2_ptr.address, 256)
-    let b2 = Buffer[1024, DType.si8].stack_allocation()
+    let a = Buffer[Dim(), DType.int8](a_ptr.address, 1024)
+    let b = Buffer[Dim(), DType.int8](b_ptr.address, 1024)
+    let c = Buffer[Dim(), DType.int32](c_ptr.address, 256)
+    let c2 = Buffer[Dim(), DType.int32](c2_ptr.address, 256)
+    let b2 = Buffer[1024, DType.int8].stack_allocation()
 
     for i in range(1024):
-        a[i] = SIMD[DType.si8, 1](i & 127)
-        b2[i] = SIMD[DType.si8, 1](i & 127)
+        a[i] = SIMD[DType.int8, 1](i & 127)
+        b2[i] = SIMD[DType.int8, 1](i & 127)
 
-    memset_zero[DType.si32](c.data, 1024)
-    memset_zero[DType.si32](c2.data, 1024)
+    memset_zero[DType.int32](c.data, 1024)
+    memset_zero[DType.int32](c2.data, 1024)
 
-    let b2m = NDBuffer[2, DimList(64, 16), DType.si8](b2.data.address)
-    let bm = NDBuffer[2, DimList(16, 64), DType.si8](b_ptr.address)
+    let b2m = NDBuffer[2, DimList(64, 16), DType.int8](b2.data.address)
+    let bm = NDBuffer[2, DimList(16, 64), DType.int8](b_ptr.address)
     # transpose from 64x16 to 16x64
-    transpose[2, DimList(16, 64), DimList(64, 16), DType.si8](bm, b2m)
+    transpose[2, DimList(16, 64), DimList(64, 16), DType.int8](bm, b2m)
 
-    let b32_ptr = b.data.bitcast[DType.si32]()
-    let b32m = NDBuffer[2, DimList(16, 16), DType.si32](b32_ptr.address)
-    transpose_inplace[16, 16, DType.si32](b32m)
-    let am = NDBuffer[2, DimList(16, 64), DType.si8](a.data.address)
-    let c2m = NDBuffer[2, DimList(16, 16), DType.si32](c2.data.address)
+    let b32_ptr = b.data.bitcast[DType.int32]()
+    let b32m = NDBuffer[2, DimList(16, 16), DType.int32](b32_ptr.address)
+    transpose_inplace[16, 16, DType.int32](b32m)
+    let am = NDBuffer[2, DimList(16, 64), DType.int8](a.data.address)
+    let c2m = NDBuffer[2, DimList(16, 16), DType.int32](c2.data.address)
     naive_matmul[
         DimList(16, 64),
         DimList(64, 16),
         DimList(16, 16),
-        DType.si32,
-        DType.si8,
+        DType.int32,
+        DType.int8,
         False,
         False,
         identity_epilogue_elemwise_func,
@@ -114,11 +114,11 @@ fn init_matrices(
 fn setup_tile_config() -> tileconfig:
     var tc: tileconfig
     let ptr = Pointer.address_of(tc)
-    let tc_ptr = DTypePointer[DType.si8](ptr.bitcast[int8_pop]().address)
+    let tc_ptr = DTypePointer[DType.int8](ptr.bitcast[int8_pop]().address)
     memset_zero(tc_ptr, 64)
 
-    let nrows: SIMD[DType.ui8, 1] = 16
-    let colb: SIMD[DType.ui16, 1] = 64
+    let nrows: SIMD[DType.uint8, 1] = 16
+    let colb: SIMD[DType.uint16, 1] = 64
 
     tc.palette_id = 1
 
@@ -132,16 +132,16 @@ fn setup_tile_config() -> tileconfig:
 
 
 fn main():
-    let a = Buffer[1024, DType.si8].stack_allocation()
-    let b = Buffer[1024, DType.si8].stack_allocation()
-    let c = Buffer[256, DType.si32].stack_allocation()
-    let c2 = Buffer[256, DType.si32].stack_allocation()
+    let a = Buffer[1024, DType.int8].stack_allocation()
+    let b = Buffer[1024, DType.int8].stack_allocation()
+    let c = Buffer[256, DType.int32].stack_allocation()
+    let c2 = Buffer[256, DType.int32].stack_allocation()
 
     init_matrices(a.data, b.data, c.data, c2.data)
-    # print_matrix[16, 64, DType.si8](b.data.bitcast[void]())
+    # print_matrix[16, 64, DType.int8](b.data.bitcast[void]())
 
     _tile_dpbssd_emulated(c.data, a.data, b.data)
-    # print_matrix[16, 16, DType.si32](c.data.bitcast[void]())
+    # print_matrix[16, 16, DType.int32](c.data.bitcast[void]())
     var errors: Int = 0
     errors = memcmp(c.data, c2.data, c.__len__())
     print("Emulated AMX-int8 matmul test.")
@@ -149,7 +149,7 @@ fn main():
     print(errors)
     if errors != 0:
         print("Matrices don't agree!")
-    memset_zero[DType.si32](c.data, 1024)
+    memset_zero[DType.int32](c.data, 1024)
     if os_is_linux() and has_intel_amx() and init_intel_amx():
         print("Hardware AMX-int8 matmul test.")
         var tc = setup_tile_config()

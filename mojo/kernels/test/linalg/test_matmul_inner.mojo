@@ -19,7 +19,7 @@ from List import DimList
 from IO import print
 
 
-alias simd_size: Int = dtype_simd_width[DType.f32]()
+alias simd_size: Int = dtype_simd_width[DType.float32]()
 alias a_row_size: Int = 5
 alias pack_inner_size: Int = 4
 alias prefetch_b_distance_k: Int = 4
@@ -28,7 +28,7 @@ alias M: Int = 64
 alias N: Int = 64
 alias K: Int = 64
 
-alias type = DType.f32
+alias type = DType.float32
 
 alias tile_inner_size: Int = pack_inner_size * simd_size
 

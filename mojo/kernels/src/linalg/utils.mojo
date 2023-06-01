@@ -8,7 +8,7 @@ from DType import DType
 from Index import StaticIntTuple, Index
 from Math import div_ceil, max, min, sqrt
 from List import DimList
-from SIMD import F32
+from SIMD import Float32
 from TargetInfo import (
     has_avx512f,
     has_neon,
@@ -434,13 +434,13 @@ fn get_partitioned_matmul[
         return get_partitioned_matmul_mojo[
             get_matmul_a_row_size[critical_stride](),
             get_matmul_pack_inner_size[critical_stride]()
-            * dtype_simd_width[DType.f32](),
+            * dtype_simd_width[DType.float32](),
         ](m, n, k, task_id, num_tasks)
     else:
         return get_partitioned_matmul_im2col[
             get_matmul_a_row_size[critical_stride](),
             get_matmul_pack_inner_size[critical_stride]()
-            * dtype_simd_width[DType.f32](),
+            * dtype_simd_width[DType.float32](),
         ](m, n, k, task_id, num_tasks)
 
 
@@ -507,7 +507,7 @@ fn get_partitioned_matmul_im2col[
     @always_inline
     @noncapturing
     fn int_sqrt_floor(val: Int) -> Int:
-        return Int(sqrt(F32(val)).cast[DType.index]().value)
+        return Int(sqrt(Float32(val)).cast[DType.index]().value)
 
     # Accessing A is more expensive in im2col than accessing B.
     # Time a factor to M to let the heuristic bias on partitioning M.

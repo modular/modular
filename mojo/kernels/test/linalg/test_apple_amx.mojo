@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 #
 # This file only tests the Apple AMX matmul functionality which is defined as a
-# A^T.B where A and B are 16x16 f32 matrices.
+# A^T.B where A and B are 16x16 Float32 matrices.
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: apple-m1
@@ -14,7 +14,7 @@
 from AppleAMX import amx_detail
 from Buffer import NDBuffer
 from DType import DType
-from SIMD import F32
+from SIMD import Float32
 from Index import StaticIntTuple
 from IO import print
 from List import DimList
@@ -27,7 +27,7 @@ fn fill_a(
     buf: NDBuffer[
         2,
         DimList(16, 16),
-        DType.f32,
+        DType.float32,
     ]
 ):
     # Fills the A matrix with the following values row + 2*col
@@ -35,7 +35,7 @@ fn fill_a(
     let cols = 16
     for i in range(rows):
         for j in range(cols):
-            let val = F32(i + 2 * j)
+            let val = Float32(i + 2 * j)
             buf[StaticIntTuple[2](i, j)] = val.value
 
 
@@ -43,7 +43,7 @@ fn fill_b(
     buf: NDBuffer[
         2,
         DimList(16, 16),
-        DType.f32,
+        DType.float32,
     ]
 ):
     # Fills the A matrix with the following values row/(col + 1) + col
@@ -51,7 +51,7 @@ fn fill_b(
     let cols = 16
     for i in range(rows):
         for j in range(cols):
-            let val = F32(i // (j + 1) + j)
+            let val = Float32(i // (j + 1) + j)
             buf[StaticIntTuple[2](i, j)] = val.value
 
 
@@ -59,7 +59,7 @@ fn clear_c(
     buf: NDBuffer[
         2,
         DimList(16, 16),
-        DType.f32,
+        DType.float32,
     ]
 ):
     buf.zero()
@@ -69,7 +69,7 @@ fn print_matrix(
     buf: NDBuffer[
         2,
         DimList(16, 16),
-        DType.f32,
+        DType.float32,
     ]
 ):
     # Fills the A matrix with the following values row/(col + 1) + col + 3
@@ -88,17 +88,17 @@ fn test_amx_matmul():
     var a_matrix = NDBuffer[
         2,
         DimList(16, 16),
-        DType.f32,
+        DType.float32,
     ].stack_allocation()
     var b_matrix = NDBuffer[
         2,
         DimList(16, 16),
-        DType.f32,
+        DType.float32,
     ].stack_allocation()
     var c_matrix = NDBuffer[
         2,
         DimList(16, 16),
-        DType.f32,
+        DType.float32,
     ].stack_allocation()
 
     fill_a(a_matrix)
