@@ -42,10 +42,10 @@ fn MOGGExport():
     alias _out_chain = OutputChainPtrDef
     alias _simd_typedef = SimdTypeDef
     alias _index_typedef = IndexTypeDef
-    alias _dtype_f32 = DTypeF32TypeDef
-    alias _dtype_f64 = DTypeF64TypeDef
-    alias _dtype_si32 = DTypeSI32TypeDef
-    alias _dtype_si64 = DTypeSI64TypeDef
+    alias _dtype_float32 = DTypeFloat32TypeDef
+    alias _dtype_float64 = DTypeFloat64TypeDef
+    alias _dtype_si32 = DTypeInt32TypeDef
+    alias _dtype_si64 = DTypeInt64TypeDef
     alias _to_buffer = to_buffer
     alias _abs = abs_wrapped
     alias _add = add
@@ -89,20 +89,20 @@ fn MOGGExport():
 # ===----------------------------------------------------------------------===#
 
 
-fn DTypeF32TypeDef(ty: DType.type) -> DType.type:
-    return DType.f32.value
+fn DTypeFloat32TypeDef(ty: DType.type) -> DType.type:
+    return DType.float32.value
 
 
-fn DTypeF64TypeDef(ty: DType.type) -> DType.type:
-    return DType.f64.value
+fn DTypeFloat64TypeDef(ty: DType.type) -> DType.type:
+    return DType.float64.value
 
 
-fn DTypeSI32TypeDef(ty: DType.type) -> DType.type:
-    return DType.si32.value
+fn DTypeInt32TypeDef(ty: DType.type) -> DType.type:
+    return DType.int32.value
 
 
-fn DTypeSI64TypeDef(ty: DType.type) -> DType.type:
-    return DType.si64.value
+fn DTypeInt64TypeDef(ty: DType.type) -> DType.type:
+    return DType.int64.value
 
 
 fn IndexTypeDef(ty: Int) -> Int:
