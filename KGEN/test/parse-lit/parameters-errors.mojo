@@ -6,7 +6,7 @@
 
 # RUN: kgen-translate -import-mojo -verify-diagnostics %s -I %S/../mojo-examples/
 
-from prolog import DType, F32, object, SIMD
+from prolog import DType, Float32, object, SIMD
 
 ##===----------------------------------------------------------------------===##
 # Input parameters
@@ -142,7 +142,7 @@ fn callVariadic():
 ##===----------------------------------------------------------------------===##
 
 # expected-error @+1 {{struct declarations do not support result parameters}}
-struct ResultParams[a: Int -> b: Int, c: F32]:
+struct ResultParams[a: Int -> b: Int, c: Float32]:
   pass
 
 # expected-note @+1 {{function declared here}}
@@ -187,7 +187,7 @@ fn useResultParams():
   _ = hasResultParam
 
   # expected-error-re @+1 {{cannot use parameterized function of type 'fn[Int]() -> None' without binding all its parameters}}
-  var f1 = hasInputParam
+  var float1 = hasInputParam
 
   # expected-error @+1 {{invalid call to 'hasInputParam': callee expects 1 input parameter but 0 were provided}}
   hasInputParam()
@@ -202,7 +202,7 @@ fn incorrectParameterReturnType[()-> a: Int]():
   param_return[4.0]
 
 # expected-note @below {{function declared here}}
-fn take_simd8(x: SIMD[DType.f32, 8]):
+fn take_simd8(x: SIMD[DType.float32, 8]):
     pass
 
 fn add_param_arg[x: Int](y: Int) -> Int:
@@ -210,10 +210,10 @@ fn add_param_arg[x: Int](y: Int) -> Int:
 
 fn pass_simd():
     # expected-error @below {{cannot be converted from 'SIMD[f32, add_param_arg[8](8)]' to 'SIMD[f32, 8]'}}
-    take_simd8(SIMD[DType.f32, add_param_arg[8](8)]())
+    take_simd8(SIMD[DType.float32, add_param_arg[8](8)]())
     alias bar = add_param_arg
     # expected-error @below {{cannot be converted from 'SIMD[f32, bar[8](8)]' to 'SIMD[f32, 8]'}}
-    take_simd8(SIMD[DType.f32, bar[8](8)]())
+    take_simd8(SIMD[DType.float32, bar[8](8)]())
 
 ##===----------------------------------------------------------------------===##
 # Alias resolution

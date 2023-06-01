@@ -6,13 +6,13 @@
 
 # RUN: kgen-translate -import-mojo -verify-diagnostics %s | FileCheck %s
 
-from prolog import DType, F32, Scalar, SIMD
+from prolog import DType, Float32, Scalar, SIMD
 
 # REFERENCE
 #   kgen.generator.interface @erf_scalar<type: dtype>(%in: !pop.scalar<type>) -> !pop.scalar<type>
 #
 #   lit.func @erf_scalar_taylor<type: dtype>(%x: !pop.scalar<type>) -> !pop.scalar<type>
-#     constraints <[in(:dtype type, [f32, f64]), "incorrect element type"]> implements @erf_scalar {
+#     constraints <[in(:dtype type, [float32, float64]), "incorrect element type"]> implements @erf_scalar {
 #     // Compute erf(x) = (2.0*x)/Sqrt(Pi) - (2*x^3)/(3.0*Sqrt(Pi)) in Horner form as
 #     // = x * (- 0.37612638903183752463 * x^2 + 1.1283791670955125739)
 #     // = x * fma(x^2, -0.37612638903183752463, 1.1283791670955125739)
@@ -28,7 +28,7 @@ from prolog import DType, F32, Scalar, SIMD
 fn fma[
     type: DType
 ](x: Scalar[type], y: Scalar[type], z: Scalar[type]) -> Scalar[type]:
-    # use lower level library here, the impl depend on the type of DType, i.e, f32, f64...
+    # use lower level library here, the impl depend on the type of DType, i.e, Float32, float64...
     return x
 
 
@@ -37,19 +37,21 @@ fn erf_scalar_taylor[type: DType](x: Scalar[type]) -> Scalar[type]:
     return x
 
 
-# CHECK-LABEL: lit.func @"fma_f32
-fn fma_f32(x: F32, y: F32, z: F32) -> F32:
+# CHECK-LABEL: lit.func @"fma_float32
+fn fma_float32(x: Float32, y: Float32, z: Float32) -> Float32:
     # CHECK: %0 = kgen.call {{.*}}__mul__{{.*}}(%x, %y)
     # CHECK: %1 = kgen.call {{.*}}__add__{{.*}}(%0, %z)
     # CHECK: lit.return %1
     return x * y + z
 
 
-# CHECK-LABEL: lit.func @"erf_scalar_taylor_f32
-fn erf_scalar_taylor_f32(x: F32) -> F32:
+# CHECK-LABEL: lit.func @"erf_scalar_taylor_float32
+fn erf_scalar_taylor_float32(x: Float32) -> Float32:
     # CHECK: %[[CST:.*]] = kgen.param.constant: {{.*}}FloatLiteral = <{{.*}}"-0.3761{{.*}}>
     # CHECK: kgen.call {{.*}}__init__($FloatLiteral::FloatLiteral){{.*}}(%[[CST]])
-    return x * fma_f32(x * x, -0.37612638903183752463, 1.1283791670955125739)
+    return x * fma_float32(
+        x * x, -0.37612638903183752463, 1.1283791670955125739
+    )
 
 
 ##===----------------------------------------------------------------------===##

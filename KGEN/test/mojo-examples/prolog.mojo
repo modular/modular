@@ -15,7 +15,7 @@
 
 
 from SIMD import SIMD
-from SIMD import F32
+from SIMD import Float32
 from Assert import assert_param, assert_param
 from Range import range
 from IO import print

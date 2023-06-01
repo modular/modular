@@ -6,9 +6,9 @@
 
 # RUN: not mojo %s 2>&1 | FileCheck %s
 
-from SIMD import F32
+from SIMD import Float32
 
 # CHECK: could not find 'fn main()'
 @export
-fn main() -> F32:
+fn main() -> Float32:
     return 0.0

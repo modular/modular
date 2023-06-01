@@ -6,13 +6,13 @@
 
 # RUN: mojo %s -emit-header | FileCheck %s
 
-from SIMD import F32
+from SIMD import Float32
 from IO import print
 
 
 @export
 # CHECK: extern float call_me();
-fn call_me() -> F32:
+fn call_me() -> Float32:
     return 1.0
 
 

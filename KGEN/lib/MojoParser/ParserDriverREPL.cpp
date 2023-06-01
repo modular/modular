@@ -225,15 +225,16 @@ wrapExpressionText(StringRef wrappedFnName, StringRef exprText,
 
   // Insert a preamble of imports used by the expression wrapper.
   if (isFirstREPLCell) {
-    exprOSIndented << "from IO import print\n"
-                   << "from Len import len\n"
-                   << "from Pointer import Pointer\n"
-                   << "from PythonInterface import Python\n"
-                   << "from PythonObject import PythonObject\n"
-                   << "from Object import object\n"
-                   << "from SIMD import SIMD, SI8, UI8, SI16, UI16, SI32, "
-                      "UI32, SI64, UI64, F8, F16, F32, F64\n"
-                   << "from Range import range\n";
+    exprOSIndented
+        << "from IO import print\n"
+        << "from Len import len\n"
+        << "from Pointer import Pointer\n"
+        << "from PythonInterface import Python\n"
+        << "from PythonObject import PythonObject\n"
+        << "from Object import object\n"
+        << "from SIMD import SIMD, Int8, UInt8, Int16, Int16, Int32, "
+           "UInt32, Int64, UInt64, Float8, Float16, Float32, Float64\n"
+        << "from Range import range\n";
   }
 
   // Build the input struct, which contains each of the persistent variables.

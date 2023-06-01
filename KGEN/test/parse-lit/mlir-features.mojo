@@ -14,8 +14,8 @@ fn mlirMagicTest(
     alias a: __mlir_type.index = (1).__as_mlir_index()
     # CHECK: %b = lit.varlet.decl "b", var = true, synth = false : <f64>
     var b: __mlir_type.f64
-    # CHECK: %c = lit.varlet.decl "c", var = true, synth = false : <pointer<pointer<f32>>>
-    var c: __mlir_type.`!pop.pointer<!pop.pointer<f32>>`
+    # CHECK: %c = lit.varlet.decl "c", var = true, synth = false : <pointer<pointer<float32>>>
+    var c: __mlir_type.`!pop.pointer<!pop.pointer<float32>>`
 
     # CHECK: [[TMP:%.*]] = kgen.param.constant: i17 = <4>
     # CHECK: %d = lit.varlet.decl
@@ -134,5 +134,5 @@ fn structured_for_loop() -> __mlir_type.index:
 
     # CHECK: lit.return %0 : index
     return __mlir_op.`hlcf.loop`[
-        _type : __mlir_type.index, _region:"loop_body".value
+        _type : __mlir_type.index, _region : "loop_body".value
     ]((0).__as_mlir_index())

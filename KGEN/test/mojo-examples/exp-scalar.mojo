@@ -6,7 +6,7 @@
 
 # RUN: mojo %s | FileCheck %s
 
-from prolog import F32
+from prolog import Float32
 from IO import print
 
 # Evaluates the exp function using 6th order taylor series expansion. This is
@@ -14,7 +14,7 @@ from IO import print
 #
 # Exp[x] = 1 + x + x^2/2 + x^3/6 + x^4/24 + x^5/120 + x^6/720 + x^7/5040
 #        = 1 + x (1 + x (1/2 + x (1/6 + x (1/24 + (1/120 + x/720) x))))
-fn exp_scalar_taylor_f32(x: F32) -> F32:
+fn exp_scalar_taylor_float32(x: Float32) -> Float32:
     return 1.0 + x * (
         1.0
         + x
@@ -27,6 +27,6 @@ fn exp_scalar_taylor_f32(x: F32) -> F32:
 
 
 fn main():
-    let res = exp_scalar_taylor_f32(2.3)
+    let res = exp_scalar_taylor_float32(2.3)
     # CHECK: 9.88
     print(res)

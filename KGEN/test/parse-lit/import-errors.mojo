@@ -68,7 +68,7 @@ from imported_module import (imported_fn --
 
 from imported_module import *
 
-fn import_of_import(arg: F64):
+fn import_of_import(arg: Float64):
   pass
 
 # // -----

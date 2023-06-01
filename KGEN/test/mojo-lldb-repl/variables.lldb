@@ -11,7 +11,7 @@
 # Check that we can properly define variables with large alignments.
 from DType import DType
 from SIMD import SIMD
-let bigValue = SIMD[DType.f32, 64]()
+let bigValue = SIMD[DType.float32, 64]()
 print(bigValue)
 # CHECK: ($SIMD::SIMD[{f32}, {64}]) bigValue
 
