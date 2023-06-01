@@ -40,8 +40,9 @@ public:
   /// Store the object `obj` with hash `keyHash`. This is expected to take
   /// ownership of the data in `obj` on success. Subclasses are expected to
   /// overwrite the current contents on a collision.
-  virtual LLCL::AsyncValueRef<ErrorOrSuccess> insert(BufferRef keyHash,
-                                                     BufferRef obj);
+  virtual LLCL::AsyncValueRef<LLCL::Chain>
+  insert(BufferRef keyHash, BufferRef obj,
+         std::optional<EncodedLocation> loc = std::nullopt);
 
   /// Check if an item with key hash `keyHash` exists in this backend or in any
   /// of the delegates.
@@ -57,7 +58,8 @@ public:
        std::optional<EncodedLocation> loc = std::nullopt);
 
   /// Clear out this backend and its delegates.
-  virtual LLCL::AsyncValueRef<ErrorOrSuccess> clear();
+  virtual LLCL::AsyncValueRef<LLCL::Chain>
+  clear(std::optional<EncodedLocation> loc = std::nullopt);
 
   /// Add delegate to the end of the backend chain.
   void appendDelegate(LLCL::RCRef<BlobCacheBackend> d);
@@ -94,24 +96,28 @@ protected:
   /// Use delegate to insert an item and set the status in the provided
   /// AsyncValue. This is called by the default insert, and can optionally be
   /// used by subclasses that override insert.
-  void delegateInsert(AsyncValueRef<ErrorOrSuccess> result, BufferRef keyHash,
-                      BufferRef obj);
+  void delegateInsert(LLCL::AsyncValueRef<LLCL::Chain> result,
+                      BufferRef keyHash, BufferRef obj,
+                      std::optional<LLCL::EncodedLocation> loc = std::nullopt);
 
   /// Use delegate to check if an item exists, and set the status in the
   /// provided AsyncValue. This is called by the default contains, and can
   /// optionally be used by subclasses that override contains.
-  void delegateContains(AsyncValueRef<bool> result, BufferRef keyHash);
+  void
+  delegateContains(LLCL::AsyncValueRef<bool> result, BufferRef keyHash,
+                   std::optional<LLCL::EncodedLocation> loc = std::nullopt);
 
   /// Use delegate to find an item and set the result in the provided
   /// AsyncValue. This is called by the default find, and can optionally be used
   /// by subclasses that override find.
-  void delegateFind(AsyncValueRef<std::optional<BufferRef>> result,
+  void delegateFind(LLCL::AsyncValueRef<std::optional<BufferRef>> result,
                     BufferRef keyHash, std::optional<WriteableBufferRef> buf,
-                    llvm::unique_function<EncodedDiagnostic(Error)> getError);
+                    std::optional<EncodedLocation> loc = std::nullopt);
 
   /// Clear delegate cache. This is called by the default clear, and can
   /// optionally be used by subclasses that override clear.
-  void delegateClear(AsyncValueRef<ErrorOrSuccess> result);
+  void delegateClear(LLCL::AsyncValueRef<LLCL::Chain> result,
+                     std::optional<LLCL::EncodedLocation> loc = std::nullopt);
 
   /// Create a ready AsyncValueRef. This is just nice sugar to clean up the
   /// callsites when we return an AsyncValueRef that's ready to go, such as
@@ -199,22 +205,25 @@ public:
   /// user to use a strong hash function! Returns the cache key on success -
   /// this can be used for speeding up future hash computations or simply
   /// discarded.
-  LLCL::AsyncValueRef<ErrorOr<std::string>> insert(KeyTy key, BufferRef obj) {
+  LLCL::AsyncValueRef<std::string>
+  insert(KeyTy key, BufferRef obj,
+         std::optional<EncodedLocation> loc = std::nullopt) {
     std::string keyHash = KeyInfo::hashKey(std::forward<KeyTy>(key));
-    auto insertAsync =
+    LLCL::AsyncValueRef<LLCL::Chain> insertAsync =
         backendList->insert(Buffer::get(keyHash), std::move(obj));
 
     // Allocate a space for the output.
-    auto out = LLCL::AsyncValueRef<ErrorOr<std::string>>::allocate(runtime);
-    insertAsync.andThenSync([keyHash = std::move(keyHash), out = out.copy(),
-                             insertAsync = insertAsync.copy()]() mutable {
-      // If insertion failed, propagate the error. Otherwise, hand over the key
-      // hash.
-      if (insertAsync->isError())
-        std::move(out).emplace(insertAsync->takeError());
-      else
-        std::move(out).emplace(keyHash);
-    });
+    auto out = LLCL::AsyncValueRef<std::string>::allocate(runtime);
+    std::move(insertAsync)
+        .andThenSync([keyHash = std::move(keyHash), out = out.copy()](
+                         AsyncValueRef<LLCL::Chain> &&insertAsync) mutable {
+          // If insertion failed, propagate the error. Otherwise, hand over the
+          // key hash.
+          if (insertAsync.isError())
+            return std::move(out).setToError(insertAsync.takeDiagnostic());
+
+          return std::move(out).emplace(keyHash);
+        });
 
     return out;
   }
@@ -243,7 +252,10 @@ public:
     return backendList->find(std::move(hash), std::move(buf), std::move(loc));
   }
 
-  LLCL::AsyncValueRef<ErrorOrSuccess> clear() { return backendList->clear(); }
+  LLCL::AsyncValueRef<LLCL::Chain>
+  clear(std::optional<EncodedLocation> loc = std::nullopt) {
+    return backendList->clear(std::move(loc));
+  }
 
 private:
   LLCL::Runtime &runtime;

@@ -41,10 +41,10 @@ AnyAsyncValueRef Cache::cachedTransform(EncodedLocation loc,
       transformCache->getRuntime());
   chain.andThenSync([foundOr = foundOr.copy(), keyBuffer = keyBuffer.copy(),
                      transformCache = transformCache.copy(),
-                     loc = loc.copy()]() mutable {
+                     loc = std::move(loc)]() mutable {
     // Find the thing in the cache with the target op's location. This copy of
     // `keyBuffer` is local, so it's safe to move.
-    auto f = transformCache->find(std::move(keyBuffer), loc.copy());
+    auto f = transformCache->find(std::move(keyBuffer), std::move(loc));
     std::move(f).andThenSync(
         [foundOr = foundOr.copy()](
             AsyncValueRef<std::optional<BufferRef>> &&f) mutable {
@@ -58,51 +58,50 @@ AnyAsyncValueRef Cache::cachedTransform(EncodedLocation loc,
   // Allocate space for the output.
   AnyAsyncValueRef out =
       AnyAsyncValueRef::createIndirect(transformCache->getRuntime());
-  std::move(foundOr).andThenSync([out = out.copy(), loc = loc.copy(),
-                                  transformCache = transformCache.copy(),
-                                  transformFn = std::move(transformFn),
-                                  keyBuffer = std::move(keyBuffer),
-                                  cacheHitFn = std::move(cacheHitFn)](
-                                     AsyncValueRef<std::optional<BufferRef>>
-                                         &&foundOr) mutable {
-    if (foundOr.isError())
-      return std::move(out).setToError(foundOr.getPointer()->takeDiagnostic());
+  std::move(foundOr).andThenSync(
+      [out = out.copy(), transformCache = transformCache.copy(),
+       transformFn = std::move(transformFn), keyBuffer = std::move(keyBuffer),
+       cacheHitFn = std::move(cacheHitFn)](
+          AsyncValueRef<std::optional<BufferRef>> &&foundOr) mutable {
+        if (foundOr.isError())
+          return std::move(out).setToError(
+              foundOr.getPointer()->takeDiagnostic());
 
-    if (foundOr->has_value())
-      return std::move(out).resolveIndirect(cacheHitFn(std::move(**foundOr)));
+        if (foundOr->has_value())
+          return std::move(out).resolveIndirect(
+              cacheHitFn(std::move(**foundOr)));
 
-    // No error but no cache hit.
+        // No error but no cache hit.
 
-    // Run the transform.
-    WriteableBufferRef writeableTransformResult = WriteableBuffer::get();
-    auto xform =
-        transformFn(writeableTransformResult.copy(), std::move(foundOr));
+        // Run the transform.
+        WriteableBufferRef writeableTransformResult = WriteableBuffer::get();
+        auto xform =
+            transformFn(writeableTransformResult.copy(), std::move(foundOr));
 
-    // Insert the transform result into the cache.
-    std::move(xform).andThenSync(
-        [loc = std::move(loc), transformCache = transformCache.copy(),
-         out = out.copy(), keyBuffer = std::move(keyBuffer),
-         transformResult = std::move(writeableTransformResult)](
-            AnyAsyncValueRef &&xform) mutable {
-          if (xform.isError())
-            return std::move(out).setToError(xform.takeDiagnostic());
+        // Insert the transform result into the cache.
+        std::move(xform).andThenSync(
+            [transformCache = transformCache.copy(), out = out.copy(),
+             keyBuffer = std::move(keyBuffer),
+             transformResult = std::move(writeableTransformResult)](
+                AnyAsyncValueRef &&xform) mutable {
+              if (xform.isError())
+                return std::move(out).setToError(xform.takeDiagnostic());
 
-          // Only at this point (so the transform has finished successfully)
-          // should we change the transform result ref to be read-only. Again,
-          // this keyBuffer is local, so it's safe to move.
-          auto hashOr = transformCache->insert(std::move(keyBuffer),
-                                               std::move(transformResult));
-          std::move(hashOr).andThenSync(
-              [loc = std::move(loc), out = out.copy(), xform = xform.copy()](
-                  AsyncValueRef<ErrorOr<std::string>> &&hashOr) mutable {
-                if (failed(*hashOr))
-                  return std::move(out).setToError(
-                      EncodedDiagnostic(hashOr->takeError(), std::move(loc)));
+              // Only at this point (so the transform has finished successfully)
+              // should we change the transform result ref to be read-only.
+              // Again, this keyBuffer is local, so it's safe to move.
+              AsyncValueRef<std::string> hashOr = transformCache->insert(
+                  std::move(keyBuffer), std::move(transformResult));
+              std::move(hashOr).andThenSync(
+                  [out = out.copy(), xform = xform.copy()](
+                      AsyncValueRef<std::string> &&hashOr) mutable {
+                    if (hashOr.isError())
+                      return std::move(out).setToError(hashOr.takeDiagnostic());
 
-                return std::move(out).resolveIndirect(xform.copy());
-              });
-        });
-  });
+                    return std::move(out).resolveIndirect(xform.copy());
+                  });
+            });
+      });
 
   return out;
 }
