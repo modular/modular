@@ -54,11 +54,11 @@ fn map_reduce[
         input_gen_fn: A function that generates inputs to reduce.
         reduce_vec_to_vec_fn: A mapping function. This function is used to
           combine (accumulate) two chunks of input data: e.g. we load two
-          `8xf32` vectors of elements and need to reduce them into a single
-          `8xf32` vector.
+          `8xfloat32` vectors of elements and need to reduce them into a single
+          `8xfloat32` vector.
         reduce_vec_to_scalar_fn: A reduction function. This function is used to
-          reduce a vector to a scalar. E.g. when we got `8xf32` vector and want
-          to reduce it to an `f32` scalar.
+          reduce a vector to a scalar. E.g. when we got `8xfloat32` vector and want
+          to reduce it to an `float32` scalar.
 
     Args:
         dst: The output buffer.
@@ -108,11 +108,11 @@ fn reduce[
         type: The buffer elements dtype.
         acc_type: The dtype of the reduction accumulator.
         map_fn: A mapping function. This function is used when to combine
-          (accumulate) two chunks of input data: e.g. we load two 8xf32 vectors
-          of elements and need to reduce them to a single 8xf32 vector.
+          (accumulate) two chunks of input data: e.g. we load two 8xfloat32 vectors
+          of elements and need to reduce them to a single 8xfloat32 vector.
         reduce_fn: A reduction function. This function is used to reduce a
-          vector to a scalar. E.g. when we got 8xf32 vector and want to reduce
-          it to 1xf32.
+          vector to a scalar. E.g. when we got 8xfloat32 vector and want to reduce
+          it to 1xfloat32.
 
     Args:
         src: The input buffer.
@@ -157,7 +157,7 @@ fn reduce_boolean[
         size: The buffer size.
         type: The buffer elements dtype.
         reduce_fn: A boolean reduction function. This function is used to reduce
-          a vector to a scalar. E.g. when we got `8xf32` vector and want to
+          a vector to a scalar. E.g. when we got `8xfloat32` vector and want to
           reduce it to a `bool`.
         continue_fn: A function to indicate whether we want to continue
           processing the rest of the iterations. This takes the result of the
@@ -305,11 +305,11 @@ fn reduce[
         type: The buffer elements dtype.
         acc_type: The dtype of the reduction accumulator.
         map_fn: A mapping function. This function is used when to combine
-          (accumulate) two chunks of input data: e.g. we load two 8xf32 vectors
-          of elements and need to reduce them to a single 8xf32 vector.
+          (accumulate) two chunks of input data: e.g. we load two 8xfloat32 vectors
+          of elements and need to reduce them to a single 8xfloat32 vector.
         reduce_fn: A reduction function. This function is used to reduce a
-          vector to a scalar. E.g. when we got 8xf32 vector and want to reduce
-          it to 1xf32.
+          vector to a scalar. E.g. when we got 8xfloat32 vector and want to reduce
+          it to 1xfloat32.
         reduce_axis: The axis to reduce across.
 
     Args:

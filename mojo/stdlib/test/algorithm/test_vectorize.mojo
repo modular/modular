@@ -18,7 +18,7 @@ fn test_vectorize():
     print("== test_vectorize")
 
     # Create a mem of size 5
-    let vector = Buffer[5, DType.f32].stack_allocation()
+    let vector = Buffer[5, DType.float32].stack_allocation()
 
     vector[0] = 1.0
     vector[1] = 2.0
@@ -74,8 +74,8 @@ fn test_vectorize_unroll():
     print("== test_vectorize_unroll")
 
     alias buf_len = 23
-    let vec = Buffer[buf_len, DType.f32].stack_allocation()
-    let ref = Buffer[buf_len, DType.f32].stack_allocation()
+    let vec = Buffer[buf_len, DType.float32].stack_allocation()
+    let ref = Buffer[buf_len, DType.float32].stack_allocation()
 
     for i in range(buf_len):
         vec[i] = i

@@ -15,50 +15,50 @@ from IO import print
 from Index import StaticIntTuple
 from LLCL import Runtime, OwningOutputChainPtr
 from TypeUtilities import rebind
-from SIMD import F32
+from SIMD import Float32
 from SIMD import SIMD
 
 
 fn test_elementwise[
     numelems: Int, outer_rank: Int, static_shape: DimList
 ](dims: DimList):
-    var memory1 = _raw_stack_allocation[numelems, DType.f32, 1]()
+    var memory1 = _raw_stack_allocation[numelems, DType.float32, 1]()
     var buffer1 = NDBuffer[
         outer_rank,
         rebind[DimList](static_shape),
-        DType.f32,
+        DType.float32,
     ](
         memory1.address,
         dims,
-        DType.f32,
+        DType.float32,
     )
 
-    var memory2 = _raw_stack_allocation[numelems, DType.f32, 1]()
+    var memory2 = _raw_stack_allocation[numelems, DType.float32, 1]()
     var buffer2 = NDBuffer[
         outer_rank,
         rebind[DimList](static_shape),
-        DType.f32,
+        DType.float32,
     ](
         memory2.address,
         dims,
-        DType.f32,
+        DType.float32,
     )
 
-    var memory3 = _raw_stack_allocation[numelems, DType.f32, 1]()
+    var memory3 = _raw_stack_allocation[numelems, DType.float32, 1]()
     var out_buffer = NDBuffer[
         outer_rank,
         rebind[DimList](static_shape),
-        DType.f32,
+        DType.float32,
     ](
         memory3.address,
         dims,
-        DType.f32,
+        DType.float32,
     )
 
-    var x: F32 = 1.0
+    var x: Float32 = 1.0
     for i in range(numelems):
         buffer1.data.offset(i).store(2.0)
-        buffer2.data.offset(i).store(SIMD[DType.f32, 1](x.value))
+        buffer2.data.offset(i).store(SIMD[DType.float32, 1](x.value))
         out_buffer.data.offset(i).store(0.0)
         x += 1.0
 

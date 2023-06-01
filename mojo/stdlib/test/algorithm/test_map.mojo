@@ -14,7 +14,7 @@ from IO import print
 fn test_map():
     print("== test_map")
 
-    let vector = Buffer[5, DType.f32].stack_allocation()
+    let vector = Buffer[5, DType.float32].stack_allocation()
 
     vector[0] = 1.0
     vector[1] = 2.0

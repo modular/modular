@@ -32,7 +32,7 @@ fn test_reductions():
     alias size = 100
 
     # Create a mem of size size
-    let vector = Buffer[size, DType.f32].stack_allocation()
+    let vector = Buffer[size, DType.float32].stack_allocation()
 
     for i in range(size):
         vector[i] = i + 1
@@ -56,7 +56,7 @@ fn test_product():
     alias size = 10
 
     # Create a mem of size size
-    let vector = Buffer[size, DType.f32].stack_allocation()
+    let vector = Buffer[size, DType.float32].stack_allocation()
 
     for i in range(size):
         vector[i] = i + 1
@@ -73,7 +73,7 @@ fn test_mean_variance():
     alias size = 100
 
     # Create a mem of size size
-    let vector = Buffer[size, DType.f32].stack_allocation()
+    let vector = Buffer[size, DType.float32].stack_allocation()
 
     for i in range(size):
         vector[i] = i + 1
@@ -96,8 +96,8 @@ fn test_3d_reductions():
         output_shape: DimList,
         reduce_axis: Int,
     ]():
-        let input = NDBuffer[3, input_shape, DType.f32].stack_allocation()
-        let output = NDBuffer[3, output_shape, DType.f32].stack_allocation()
+        let input = NDBuffer[3, input_shape, DType.float32].stack_allocation()
+        let output = NDBuffer[3, output_shape, DType.float32].stack_allocation()
         output.fill(0)
 
         for i in range(input.size()):
@@ -108,7 +108,7 @@ fn test_3d_reductions():
             3,
             input_shape,
             output_shape,
-            DType.f32,
+            DType.float32,
             reduce_axis,
         ](input, output)
 

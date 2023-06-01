@@ -27,10 +27,10 @@ fn test_elementwise_1d():
 
         alias num_elements = 64
         let buf = UnsafeFixedVector[
-            __mlir_type[`!pop.scalar<`, DType.f32.value, `>`]
+            __mlir_type[`!pop.scalar<`, DType.float32.value, `>`]
         ](num_elements)
 
-        let vector = Buffer[num_elements, DType.f32](buf.data)
+        let vector = Buffer[num_elements, DType.float32](buf.data)
 
         for i in range(vector.__len__()):
             vector[i] = i
@@ -45,7 +45,7 @@ fn test_elementwise_1d():
             vector.simd_store[simd_width](idx[0], val)
 
         let out_chain = OwningOutputChainPtr(rt)
-        elementwise[1, dtype_sizeof[DType.f32](), 8, func](
+        elementwise[1, dtype_sizeof[DType.float32](), 8, func](
             StaticIntTuple[1](num_elements), out_chain.borrow()
         )
         out_chain.wait()
