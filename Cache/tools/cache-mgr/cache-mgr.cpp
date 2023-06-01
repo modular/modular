@@ -28,17 +28,6 @@ namespace {
 /// this tool, and it should be simple to read/write.
 using BinaryBlobCacheKey = Keys::VariantTypeKey<Cache::BufferRef, StringRef>;
 
-/// This provides the list of available targets for which we can generate target
-/// specific keys. A value of None(Default) means the binary is target agnostic
-/// and add it to cache with key. Host means this binary is specific to current
-/// machine, and hence when generating key wrap it with host info.
-enum class BinaryTarget {
-  None = 0,
-  Host,      // Specific to current machines.
-  HostStatic // Specific to current machine, but no info about
-             // thread affinities/number of cores.
-};
-
 /// Describes an input file, or a cached object request. An input file is simply
 /// a path, while a cached object request is `<hash> > <output-path>` or
 /// `key:<key value> > <output-path>`. First format is useful if we are directly
@@ -88,17 +77,13 @@ public:
           "PUT operation. For get specify the key with --input option with a "
           "prefix 'key:'. For eg: key:my-key.")};
 
-  cl::opt<BinaryTarget> target{
+  cl::opt<std::string> target{
       "target",
-      cl::values(
-          clEnumValN(BinaryTarget::None, "none", "Key is target agnostic"),
-          clEnumValN(BinaryTarget::Host, "host",
-                     "Wrap the key with current host information."),
-          clEnumValN(BinaryTarget::HostStatic, "host-static",
-                     "Wrap the key with current host information, but don't "
-                     "consider number of cores or affinities.")),
-      cl::desc("Augment key with information specific to a target hardware."),
-      cl::init(BinaryTarget::None)};
+      cl::desc(
+          "Augment key with information specific to a target hardware (optional). \
+           Accepted values: host, host-static, or a custom target of the format \
+           arch:feature. e.g. x86_64:avx2 or x86_64:avx512f"),
+      cl::init("none")};
 
   /// Specify the target path for the CAS backend.
   cl::opt<std::string> fsPath{
@@ -116,13 +101,33 @@ public:
 };
 } // namespace
 
+static bool isCustomTargetValid(const llvm::StringRef &customTarget) {
+  using namespace M::Cache::Keys;
+  auto [uarch, feature] = customTarget.split(':');
+  return !feature.empty() &&
+         llvm::is_contained(CPUFeatureWrapper::SUPPORTED_ARCHS, uarch) &&
+         llvm::is_contained(CPUFeatureWrapper::SUPPORTED_FEATURES, feature);
+}
+
 /// Wrap the given key with appropriate target info.
-static std::string wrapKey(BinaryBlobCacheKey::KeyTy key, BinaryTarget target) {
-  if (target == BinaryTarget::Host)
+static std::string wrapKey(BinaryBlobCacheKey::KeyTy key,
+                           const std::string &target) {
+  if (target == "none")
+    return BinaryBlobCacheKey::hashKey(std::move(key));
+  if (target == "host")
     return Keys::KeyWithHostInfo<BinaryBlobCacheKey>::hashKey(std::move(key));
-  if (target == BinaryTarget::HostStatic)
+  if (target == "host-static")
     return Keys::KeyWithStaticHostInfo<BinaryBlobCacheKey>::hashKey(
         std::move(key));
+
+  // `target` must be a custom target
+  if (isCustomTargetValid(target)) {
+    std::string hashedKey = BinaryBlobCacheKey::hashKey(std::move(key));
+    return Keys::StringHashedKey::hashKey(hashedKey + target);
+  }
+
+  llvm::errs() << "[WARNING] Unable to understand custom target " << target
+               << " defaulting to unwrapped key.";
   return BinaryBlobCacheKey::hashKey(std::move(key));
 }
 
