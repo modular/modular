@@ -10,7 +10,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: mojo %s -execute | FileCheck %s
 
-from SIMD import SIMD, F64
+from SIMD import SIMD, Float64
 from DType import DType
 from StaticTuple import StaticTuple
 from Functional import unroll
@@ -26,12 +26,14 @@ alias DAYS_PER_YEAR = 365.24
 
 @register_passable("trivial")
 struct Planet:
-    var pos: SIMD[DType.f64, 4]
-    var velocity: SIMD[DType.f64, 4]
-    var mass: F64
+    var pos: SIMD[DType.float64, 4]
+    var velocity: SIMD[DType.float64, 4]
+    var mass: Float64
 
     fn __init__(
-        pos: SIMD[DType.f64, 4], velocity: SIMD[DType.f64, 4], mass: F64
+        pos: SIMD[DType.float64, 4],
+        velocity: SIMD[DType.float64, 4],
+        mass: Float64,
     ) -> Self:
         return Self {
             pos: pos,
@@ -44,7 +46,7 @@ alias NUM_BODIES = 5
 
 
 fn offset_momentum(inout bodies: StaticTuple[NUM_BODIES, Planet]):
-    var p = SIMD[DType.f64, 4]()
+    var p = SIMD[DType.float64, 4]()
 
     @parameter
     fn _iter[i: Int]():
@@ -56,7 +58,7 @@ fn offset_momentum(inout bodies: StaticTuple[NUM_BODIES, Planet]):
     bodies[0] = body
 
 
-fn advance(inout bodies: StaticTuple[NUM_BODIES, Planet], dt: F64):
+fn advance(inout bodies: StaticTuple[NUM_BODIES, Planet], dt: Float64):
     @parameter
     fn _outer[i: Int]():
         @parameter
@@ -86,8 +88,8 @@ fn advance(inout bodies: StaticTuple[NUM_BODIES, Planet], dt: F64):
     unroll[NUM_BODIES, _update]()
 
 
-fn energy(bodies: StaticTuple[NUM_BODIES, Planet]) -> F64:
-    var e: F64 = 0
+fn energy(bodies: StaticTuple[NUM_BODIES, Planet]) -> Float64:
+    var e: Float64 = 0
 
     @parameter
     fn _outer[i: Int]():
@@ -121,13 +123,13 @@ fn run():
     )
 
     let Jupiter = Planet(
-        SIMD[DType.f64, 4](
+        SIMD[DType.float64, 4](
             4.84143144246472090e00,
             -1.16032004402742839e00,
             -1.03622044471123109e-01,
             0,
         ),
-        SIMD[DType.f64, 4](
+        SIMD[DType.float64, 4](
             1.66007664274403694e-03 * DAYS_PER_YEAR,
             7.69901118419740425e-03 * DAYS_PER_YEAR,
             -6.90460016972063023e-05 * DAYS_PER_YEAR,
@@ -137,13 +139,13 @@ fn run():
     )
 
     let Saturn = Planet(
-        SIMD[DType.f64, 4](
+        SIMD[DType.float64, 4](
             8.34336671824457987e00,
             4.12479856412430479e00,
             -4.03523417114321381e-01,
             0,
         ),
-        SIMD[DType.f64, 4](
+        SIMD[DType.float64, 4](
             -2.76742510726862411e-03 * DAYS_PER_YEAR,
             4.99852801234917238e-03 * DAYS_PER_YEAR,
             2.30417297573763929e-05 * DAYS_PER_YEAR,
@@ -153,13 +155,13 @@ fn run():
     )
 
     let Uranus = Planet(
-        SIMD[DType.f64, 4](
+        SIMD[DType.float64, 4](
             1.28943695621391310e01,
             -1.51111514016986312e01,
             -2.23307578892655734e-01,
             0,
         ),
-        SIMD[DType.f64, 4](
+        SIMD[DType.float64, 4](
             2.96460137564761618e-03 * DAYS_PER_YEAR,
             2.37847173959480950e-03 * DAYS_PER_YEAR,
             -2.96589568540237556e-05 * DAYS_PER_YEAR,
@@ -169,13 +171,13 @@ fn run():
     )
 
     let Neptune = Planet(
-        SIMD[DType.f64, 4](
+        SIMD[DType.float64, 4](
             1.53796971148509165e01,
             -2.59193146099879641e01,
             1.79258772950371181e-01,
             0,
         ),
-        SIMD[DType.f64, 4](
+        SIMD[DType.float64, 4](
             2.68067772490389322e-03 * DAYS_PER_YEAR,
             1.62824170038242295e-03 * DAYS_PER_YEAR,
             -9.51592254519715870e-05 * DAYS_PER_YEAR,

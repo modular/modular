@@ -6,9 +6,9 @@
 
 from Range import range
 from Object import object
-from Random import random_f64
+from Random import random_float64
 from IO import print
-from SIMD import F64
+from SIMD import Float64
 from Benchmark import Benchmark
 
 
@@ -29,8 +29,8 @@ def benchmark_matmul():
         a = []
         for j in range(128):
             c.append(0)
-            b.append(random_f64(-5, 5))
-            a.append(random_f64(-5, 5))
+            b.append(random_float64(-5, 5))
+            a.append(random_float64(-5, 5))
         C.append(c)
         B.append(b)
         A.append(a)
@@ -42,7 +42,7 @@ def benchmark_matmul():
         except:
             pass
 
-    print(F64(Benchmark(2).run[test_fn]()) / 1000000000)
+    print(Float64(Benchmark(2).run[test_fn]()) / 1000000000)
 
 
 def matmul(C, A, B, M, N, K):

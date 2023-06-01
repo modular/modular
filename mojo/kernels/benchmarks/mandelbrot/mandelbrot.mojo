@@ -12,7 +12,7 @@
 
 
 from DType import DType
-from SIMD import F32
+from SIMD import Float32
 from SIMD import SIMD
 from IO import print, _printf
 from Range import range
@@ -28,21 +28,21 @@ from Benchmark import Benchmark
 from Assert import assert_param_msg
 from Pointer import Pointer, DTypePointer
 
-alias float_type = DType.f64
-alias int_type = DType.si64
+alias float_type = DType.float64
+alias int_type = DType.int64
 
 
 fn draw_mandelbrot[
     h: __mlir_type.index, w: __mlir_type.index
 ](out: Matrix[DimList(h, w), int_type, False]):
     let sr = StringRef(".,c8M@jawrpogOQEPGJ")
-    let charset = Buffer[Dim(), DType.si8](sr.data.address, sr.length)
+    let charset = Buffer[Dim(), DType.int8](sr.data.address, sr.length)
     for row in range(h):
         for col in range(w):
             let v: Int = out[row, col].value
             if v > 0:
                 let p = charset[v % sr.length]
-                _printf[DType.si8]("%c", p.value)
+                _printf[DType.int8]("%c", p.value)
             else:
                 print("0")
         print("\n")
@@ -133,7 +133,7 @@ fn main():
             m, 1, min_x, max_x, min_y, max_y, rt
         )
 
-    var time: F32
+    var time: Float32
     let ns_per_second: Int = 1_000_000_000
 
     bench_parallel[16]()
