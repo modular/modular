@@ -64,6 +64,9 @@ bool ASTType::isEqualCanon(ASTType other) const {
   return mlirType == other.mlirType;
 }
 
+/// Return true if this is a None type.
+bool ASTType::isNoneType() const { return mlirType.isa<LIT::NoneType>(); }
+
 /// Return the StructDeclOp::RegisterPassable enum for this type.
 uint8_t ASTType::getRegisterPassability(llvm::SMLoc loc,
                                         SharedState &shared) const {
@@ -206,6 +209,22 @@ ASTType ASTType::getVariadicElementType() const {
   return ASTType(cast<VariadicType>(mlirType).getElementType());
 }
 
+/// Returns the user-defined result type, looking through implicit memory
+/// results and stripping off the variant from error throwing results if needed.
+ASTType ASTType::getSignatureUserResultType() const {
+  auto sigType = cast<SignatureType>(mlirType);
+  // If this function is a memory only type, return the by-ref result.
+  if (sigType.hasMemoryOnlyResult())
+    return cast<POP::PointerType>(sigType.getValueInputs()[0]).getElementType();
+
+  // Otherwise it is the normal result.
+  assert(sigType.getValueResults().size() == 1);
+  auto resultType = sigType.getValueResults()[0];
+  if (sigType.isThrows())
+    return cast<POP::VariantType>(resultType).getType(1);
+  return resultType;
+}
+
 /// Pretty print a symbol reference.
 static void printSymbol(raw_ostream &os, SymbolRefAttr symbol, bool forDiag) {
   if (forDiag) {
@@ -331,7 +350,7 @@ void ASTType::print(raw_ostream &os, bool forDiag) const {
       });
       os << ']';
     }
-  } else if (isa<LIT::NoneType>(type)) {
+  } else if (isNoneType()) {
     os << "None";
   } else if (auto sig = dyn_cast<SignatureType>(type)) {
     if (sig.isAsync())

@@ -833,14 +833,7 @@ emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
     if (setter.isNull())
       return emitter.emitIndirectCall(getterCallee, callArgs, dest, node);
 
-    auto sigType = cast<SignatureType>(getterCallee.getType().mlirType);
-    if (sigType.hasMemoryOnlyResult())
-      elementType =
-          ASTType(sigType.getValueInputs()[0]).getPointerElementType();
-    else {
-      assert(sigType.getValueResults().size() == 1);
-      elementType = ASTType(sigType.getValueResults()[0]);
-    }
+    elementType = getterCallee.getType().getSignatureUserResultType();
   } else {
     // If we don't have a getter then check to see if we have a setter.  This is
     // a bit tricky in that the setter candidate set is completely unfiltered.

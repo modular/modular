@@ -72,12 +72,14 @@ def LIT_FuncOp : LITOp<"func", [
   let extraClassDeclaration = [{
     Block *getBody() { return &getFunctionBody().back(); }
 
-    /// Returns the result type, which is guaranteed to be present.
-    Type getResultType() { return getResultTypes().front(); }
+    /// Returns the result type of the MLIR function (not the user defined
+    /// result type).  This is guaranteed to be present.
+    Type getMLIRResultType() { return getResultTypes().front(); }
 
-    /// Returns the result type with the outer variant<> type stripped off if it
-    /// is a throwing function.
-    Type getResultTypeWithoutErrorVariant();
+    /// Returns the user-defined result type, looking through implicit memory
+    /// results and stripping off the variant from error throwing results if
+    /// needed.
+    Type getUserResultType();
 
     /// Return a reference for this function, optionally bound to a set of
     /// parameter bindings.
