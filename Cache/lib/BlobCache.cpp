@@ -22,86 +22,92 @@ using namespace M;
 using namespace Cache;
 using namespace LLCL;
 
+/// Provides a simple way to get an error given an optional encoded location and
+/// a standard Error.
+static EncodedDiagnostic getError(std::optional<EncodedLocation> loc,
+                                  Error err) {
+  if (loc)
+    return {std::move(err), std::move(*loc)};
+
+  return UnknownLocationDecoder::getDiagnostic(std::move(err));
+}
+
 //===----------------------------------------------------------------------===//
 // BlobCacheBackend
 //===----------------------------------------------------------------------===//
 
-AsyncValueRef<ErrorOrSuccess> BlobCacheBackend::insert(BufferRef keyHash,
-                                                       BufferRef obj) {
-  auto result = AsyncValueRef<ErrorOrSuccess>::allocate(runtime);
+AsyncValueRef<Chain>
+BlobCacheBackend::insert(BufferRef keyHash, BufferRef obj,
+                         std::optional<EncodedLocation> loc) {
+  auto result = AsyncValueRef<Chain>::allocate(runtime);
   addTask(runtime, [thisRef = copyRCRef(this), keyHash = keyHash.copy(),
-                    obj = obj.copy(), result = result.copy()]() mutable {
-    if (auto err = thisRef->insertImpl(keyHash->getBuffer(), obj.copy()))
-      return std::move(result).emplace(err.takeError());
+                    obj = obj.copy(), result = result.copy(),
+                    loc = std::move(loc)]() mutable {
+    if (auto err = thisRef->insertImpl(keyHash->getBuffer(), obj.copy())) {
+      return std::move(result).setToError(
+          getError(std::move(loc), err.takeError()));
+    }
 
     return thisRef->delegateInsert(std::move(result), std::move(keyHash),
-                                   std::move(obj));
+                                   std::move(obj), std::move(loc));
   });
   return result;
 }
 
-void BlobCacheBackend::delegateInsert(AsyncValueRef<ErrorOrSuccess> result,
-                                      BufferRef keyHash, BufferRef obj) {
+void BlobCacheBackend::delegateInsert(
+    AsyncValueRef<Chain> result, BufferRef keyHash, BufferRef obj,
+    std::optional<LLCL::EncodedLocation> loc) {
   if (!delegate)
-    return std::move(result).emplace(success());
+    return std::move(result).emplace();
 
-  auto insert = delegate->insert(keyHash.copy(), obj.copy());
+  AsyncValueRef<Chain> insert =
+      delegate->insert(keyHash.copy(), obj.copy(), std::move(loc));
   std::move(insert).andThenSync(
       [thisRef = copyRCRef(this),
        // Safe to move local copy of result.
-       result = std::move(result)](
-          const AsyncValueRef<ErrorOrSuccess> &&insert) mutable {
-        if (failed(*insert))
-          return std::move(result).emplace(insert->takeError());
-        std::move(result).emplace(success());
+       result = std::move(result)](AsyncValueRef<Chain> &&insert) mutable {
+        if (insert.isError())
+          return std::move(result).setToError(insert.takeDiagnostic());
+
+        return std::move(result).emplace();
       });
 }
-
-namespace {
-/// Provides a simple callable that encapsulates an optional EncodedLocation and
-/// returns an EncodedDiagnostic of the correct kind based on if the location
-/// exists or not.
-struct GetError {
-  std::optional<EncodedLocation> loc;
-
-  EncodedDiagnostic operator()(Error err) {
-    if (loc)
-      return {std::move(err), std::move(*loc)};
-
-    return UnknownLocationDecoder::getDiagnostic(std::move(err));
-  }
-};
-} // namespace
 
 AsyncValueRef<bool>
 BlobCacheBackend::contains(BufferRef keyHash,
                            std::optional<EncodedLocation> loc) {
   auto result = AsyncValueRef<bool>::allocate(runtime);
   addTask(runtime, [thisRef = copyRCRef(this), keyHash = keyHash.copy(),
-                    result = result.copy(),
-                    getError = GetError{std::move(loc)}]() mutable {
+                    result = result.copy(), loc = std::move(loc)]() mutable {
     auto containsOr = thisRef->containsImpl(keyHash->getBuffer());
-    if (containsOr.isError())
-      return std::move(result).setToError(getError(containsOr.takeError()));
+    if (containsOr.isError()) {
+      return std::move(result).setToError(
+          getError(std::move(loc), containsOr.takeError()));
+    }
 
     if (*containsOr)
       return std::move(result).emplace(true);
 
-    return thisRef->delegateContains(std::move(result), std::move(keyHash));
+    return thisRef->delegateContains(std::move(result), std::move(keyHash),
+                                     std::move(loc));
   });
   return result;
 }
 
-void BlobCacheBackend::delegateContains(AsyncValueRef<bool> result,
-                                        BufferRef keyHash) {
+void BlobCacheBackend::delegateContains(
+    AsyncValueRef<bool> result, BufferRef keyHash,
+    std::optional<LLCL::EncodedLocation> loc) {
   if (!delegate)
     return std::move(result).emplace(false);
 
-  auto contains = delegate->contains(keyHash.copy());
+  auto contains = delegate->contains(keyHash.copy(), std::move(loc));
   std::move(contains).andThenSync(
       [thisRef = copyRCRef(this),
        // Safe to move local copy of result.
        result = std::move(result)](AsyncValueRef<bool> &&contains) mutable {
+        if (contains.isError())
+          return std::move(result).setToError(contains.takeDiagnostic());
+
         return std::move(result).emplace(*contains);
       });
 }
@@ -112,13 +118,15 @@ BlobCacheBackend::find(BufferRef keyHash, std::optional<WriteableBufferRef> buf,
   auto result = AsyncValueRef<std::optional<BufferRef>>::allocate(runtime);
   addTask(runtime, [thisRef = copyRCRef(this), keyHash = keyHash.copy(),
                     result = result.copy(), buf = std::move(buf),
-                    getError = GetError{std::move(loc)}]() mutable {
+                    loc = std::move(loc)]() mutable {
     // Find it at this level.
     ErrorOr<std::optional<BufferRef>> bufOr = thisRef->findImpl(
         keyHash->getBuffer(),
         (buf ? std::optional<WriteableBufferRef>(buf->copy()) : std::nullopt));
-    if (bufOr.isError())
-      return std::move(result).setToError(getError(bufOr.takeError()));
+    if (bufOr.isError()) {
+      return std::move(result).setToError(
+          getError(std::move(loc), bufOr.takeError()));
+    }
 
     // If we had it, return, and we're done.
     if (bufOr->has_value())
@@ -126,7 +134,7 @@ BlobCacheBackend::find(BufferRef keyHash, std::optional<WriteableBufferRef> buf,
 
     // If we don't have it, try with delegate.
     return thisRef->delegateFind(std::move(result), std::move(keyHash),
-                                 std::move(buf), std::move(getError));
+                                 std::move(buf), std::move(loc));
   });
 
   return result;
@@ -134,18 +142,24 @@ BlobCacheBackend::find(BufferRef keyHash, std::optional<WriteableBufferRef> buf,
 
 void BlobCacheBackend::delegateFind(
     AsyncValueRef<std::optional<BufferRef>> result, BufferRef keyHash,
-    std::optional<WriteableBufferRef> buf,
-    llvm::unique_function<EncodedDiagnostic(Error)> getError) {
+    std::optional<WriteableBufferRef> buf, std::optional<EncodedLocation> loc) {
   // No delegate and we don't have it, return nullopt.
   if (!delegate)
     return std::move(result).emplace(std::nullopt);
 
+  // Create a concrete location we can use here - we always need *a* location,
+  // even if it's unknown.
+  EncodedLocation location = loc.has_value()
+                                 ? std::move(*loc)
+                                 : UnknownLocationDecoder::getEncodedLocation();
+
   auto itemOr = delegate->find(
       keyHash.copy(),
-      (buf ? std::optional<WriteableBufferRef>(buf->copy()) : std::nullopt));
+      (buf ? std::optional<WriteableBufferRef>(buf->copy()) : std::nullopt),
+      location.copy());
   std::move(itemOr).andThenSync(
       [thisRef = copyRCRef(this), keyHash = keyHash.copy(),
-       getError = std::move(getError),
+       location = std::move(location),
        // Safe to move local copy of result.
        result = std::move(result)](
           AsyncValueRef<std::optional<BufferRef>> &&itemOr) mutable {
@@ -160,35 +174,43 @@ void BlobCacheBackend::delegateFind(
 
         // Store the item in our cache level so we can get a cache hit
         // later.
-        if (auto err = thisRef->insertImpl(keyHash->getBuffer(), item.copy()))
-          return std::move(result).setToError(getError(err.takeError()));
+        if (auto err = thisRef->insertImpl(keyHash->getBuffer(), item.copy())) {
+          return std::move(result).setToError(
+              {err.takeError(), std::move(location)});
+        }
 
         // Return the item.
         return std::move(result).emplace(std::move(item));
       });
 }
 
-AsyncValueRef<ErrorOrSuccess> BlobCacheBackend::clear() {
-  auto result = AsyncValueRef<ErrorOrSuccess>::allocate(runtime);
-  addTask(runtime,
-          [thisRef = copyRCRef(this), result = result.copy()]() mutable {
-            if (auto err = thisRef->clearImpl())
-              return std::move(result).emplace(err.takeError());
+AsyncValueRef<Chain>
+BlobCacheBackend::clear(std::optional<EncodedLocation> loc) {
+  auto result = AsyncValueRef<Chain>::allocate(runtime);
+  addTask(runtime, [thisRef = copyRCRef(this), result = result.copy(),
+                    loc = std::move(loc)]() mutable {
+    if (auto err = thisRef->clearImpl()) {
+      return std::move(result).setToError(
+          getError(std::move(loc), err.takeError()));
+    }
 
-            return thisRef->delegateClear(std::move(result));
-          });
+    return thisRef->delegateClear(std::move(result), std::move(loc));
+  });
   return result;
 }
 
-void BlobCacheBackend::delegateClear(AsyncValueRef<ErrorOrSuccess> result) {
+void BlobCacheBackend::delegateClear(AsyncValueRef<Chain> result,
+                                     std::optional<EncodedLocation> loc) {
   if (!delegate)
-    return std::move(result).emplace(success());
+    return std::move(result).emplace();
 
-  auto clear = delegate->clear();
+  auto clear = delegate->clear(std::move(loc));
   std::move(clear).andThenSync(
-      [thisRef = copyRCRef(this),
-       result = result.copy()](AsyncValueRef<ErrorOrSuccess> &&clear) mutable {
-        std::move(result).emplace(std::move(*clear));
+      [result = std::move(result)](AsyncValueRef<Chain> &&clear) mutable {
+        if (clear.isError())
+          return std::move(result).setToError(clear.takeDiagnostic());
+
+        return std::move(result).emplace();
       });
 }
 
@@ -272,8 +294,8 @@ M::Cache::getInMemoryBackend(LLCL::Runtime &runtime) {
 //===----------------------------------------------------------------------===//
 
 namespace {
-/// Provides a filesystem-backed backend that stores the buffers in binary files
-/// on disk.
+/// Provides a filesystem-backed backend that stores the buffers in binary
+/// files on disk.
 struct FilesystemBackend : public BlobCacheBackend {
   explicit FilesystemBackend(LLCL::Runtime &runtime,
                              const std::filesystem::path &basePath)
@@ -282,10 +304,10 @@ struct FilesystemBackend : public BlobCacheBackend {
   ErrorOrSuccess insertImpl(StringRef keyHash, BufferRef obj) override {
     // Get the absolute path and create any directories we need to create.
     std::filesystem::path filePath = getAbsolutePathForKey(keyHash);
-    std::error_code err;
-    std::filesystem::create_directories(filePath.parent_path(), err);
-    if (err)
-      return Error(err.message());
+    std::error_code dirErr;
+    std::filesystem::create_directories(filePath.parent_path(), dirErr);
+    if (dirErr)
+      return Error(dirErr.message());
 
     // Functor used when we actually need to write out the file.
     auto writeContent = [&](raw_ostream &os) {
@@ -297,8 +319,8 @@ struct FilesystemBackend : public BlobCacheBackend {
       os.write((const char *)hash.data(), hash.size());
     };
 
-    // Safely process creating the file, taking into account that we may have
-    // different processes trying to produce this file in parallel.
+    // Safely process creating the file, taking into account that we may
+    // have different processes trying to produce this file in parallel.
     if (auto err = writeFileAtomically(filePath, writeContent); err.isError())
       return err.takeError();
 
@@ -337,14 +359,14 @@ struct FilesystemBackend : public BlobCacheBackend {
     StringRef storedHMAC = contentsAndHMAC.take_back(blake3Bytes);
 
     // Check the computed hmac against the one in the file.
-    if (memcmp(computedHMAC.data(), storedHMAC.data(), blake3Bytes)) {
+    if (memcmp(computedHMAC.data(), storedHMAC.data(), blake3Bytes) != 0) {
       return Error("corrupted file: stored hash and computed hash did not "
                    "match for file '" +
                    Twine(filePath.string()) + "'");
     }
 
-    // Now that we've verified the integrity of the file, return a memory buffer
-    // that holds just the contents.
+    // Now that we've verified the integrity of the file, return a memory
+    // buffer that holds just the contents.
     bufOr = Buffer::getFile(filePath, contents.size(),
                             /*offset=*/0);
     if (failed(bufOr))
@@ -405,9 +427,9 @@ M::Cache::getFilesystemBackend(LLCL::Runtime &runtime,
 //===----------------------------------------------------------------------===//
 
 namespace {
-/// This stub loads a shared library that implements a BlobCacheBackend using
-/// the DylibBlobCacheBackend interface, and delegates backend calls to this
-/// implementation.
+/// This stub loads a shared library that implements a BlobCacheBackend
+/// using the DylibBlobCacheBackend interface, and delegates backend calls
+/// to this implementation.
 struct DylibBackendStub : public BlobCacheBackend {
 
   static ErrorOr<LLCL::RCRef<BlobCacheBackend>>
@@ -420,7 +442,7 @@ struct DylibBackendStub : public BlobCacheBackend {
     return backendStub;
   }
 
-  ~DylibBackendStub() {
+  ~DylibBackendStub() override {
     backend.reset();
     llvm::sys::DynamicLibrary::closeLibrary(dylib);
   }
@@ -517,7 +539,8 @@ M::Cache::getLocalDefaultBackendChain(LLCL::Runtime &runtime,
       if (ec)
         return Error("failed to get absolute path to installed dir: " +
                      ec.message());
-    } else { // this branch is taken by external users using the C API package.
+    } else { // this branch is taken by external users using the C API
+             // package.
       auto dirPath = findDirInEnvPath(cacheDir.string());
       if (dirPath) {
         base = std::filesystem::absolute(*dirPath, ec) / cacheDir;

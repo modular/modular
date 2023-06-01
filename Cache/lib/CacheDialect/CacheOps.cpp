@@ -94,7 +94,9 @@ AsyncValueRef<Chain> Cache::deflateConstant(Operation *constant,
         // the result will be that the last one wins but since it's the same
         // data we still end up with the correct result. The `contains`
         // check is just for the obvious case.
-        auto hashOr = cache->insert(resourceAttr, std::move(resourceData));
+        AsyncValueRef<std::string> hashOr = cache->insert(
+            resourceAttr, std::move(resourceData),
+            MLIRLocationDecoder::getEncodedLocation(constant->getLoc()));
         // This is not great - we have to make this sync because MLIR
         // doesn't really have a good way to handle async here.
         await(hashOr);
@@ -103,13 +105,7 @@ AsyncValueRef<Chain> Cache::deflateConstant(Operation *constant,
           return nullptr;
         }
 
-        if (hashOr->isError()) {
-          std::move(out).setToError(
-              getMLIRDiagnostic(hashOr->takeError(), constant->getLoc()));
-          return nullptr;
-        }
-
-        keyHash = **hashOr;
+        keyHash = *hashOr;
       }
 
       // Create a builder so we can create attrs easier.
@@ -345,11 +341,11 @@ static AsyncValueRef<Chain> cacheSingleRegion(Region &r, Operation *op,
 
   auto out = AsyncValueRef<Chain>::allocate(cache->getRuntime());
   // Store it, but only if we don't already have it.
-  auto contains =
+  AsyncValueRef<bool> contains =
       cache->contains(&container.getBodyRegion(),
                       MLIRLocationDecoder::getEncodedLocation(op->getLoc()));
   std::move(contains).andThenSync(
-      [op, container, attachHash = std::move(attachHash), out = out.copy(),
+      [container, attachHash = std::move(attachHash), out = out.copy(),
        cache = std::move(cache)](AsyncValueRef<bool> &&contains) mutable {
         if (contains.isError())
           return std::move(out).setToError(contains.takeDiagnostic());
@@ -368,21 +364,18 @@ static AsyncValueRef<Chain> cacheSingleRegion(Region &r, Operation *op,
           return std::move(out).setToError(getMLIRDiagnostic(
               "failed to write bytecode file", container.getLoc()));
         }
-        auto hashOr =
+        AsyncValueRef<std::string> hashOr =
             cache->insert(&container.getBodyRegion(), std::move(bytecode));
         // Keeping references is safe here because all the memory is owned by
         // the MLIRContext, which is guaranteed to live longer than any of this.
         std::move(hashOr).andThenSync(
-            [op, attachHash = std::move(attachHash), out = out.copy()](
-                AsyncValueRef<ErrorOr<std::string>> &&hashOr) mutable {
+            [attachHash = std::move(attachHash),
+             out = out.copy()](AsyncValueRef<std::string> &&hashOr) mutable {
               // Check for errors.
               if (hashOr.isError())
                 return std::move(out).setToError(hashOr.takeDiagnostic());
-              if (hashOr->isError())
-                return std::move(out).setToError(
-                    getMLIRDiagnostic(hashOr->takeError(), op->getLoc()));
 
-              attachHash(std::move(**hashOr));
+              attachHash(std::move(*hashOr));
               return std::move(out).emplace();
             });
       });

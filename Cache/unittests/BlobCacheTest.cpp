@@ -72,11 +72,12 @@ TEST_F(BlobCacheTest, ContainItemWhenInserted) {
   zerosDataBuf->write(0);
   BufferRef zerosBuf = std::move(zerosDataBuf);
 
-  auto insertOr = cache->insert("zeros", std::move(zerosBuf));
+  AsyncValueRef<std::string> insertOr =
+      cache->insert("zeros", std::move(zerosBuf));
   insertOr.andThenSync([cache = cache.copy(), insertOr = insertOr.copy()] {
-    EXPECT_FALSE(insertOr->isError()) << insertOr->getError() << '\n';
-    EXPECT_FALSE(insertOr->takeValue().empty())
-        << "expected to receive the hash key\v";
+    EXPECT_FALSE(insertOr.isError())
+        << insertOr.getDiagnostic().getMessage() << '\n';
+    EXPECT_FALSE(insertOr->empty()) << "expected to receive the hash key\v";
 
     auto contains = cache->contains("zeros");
     contains.andThenSync([contains = contains.copy()] {
@@ -92,11 +93,11 @@ TEST_F(BlobCacheTest, FindItemThatExists) {
   zerosDataBuf->write(0);
   BufferRef zerosBuf = std::move(zerosDataBuf);
 
-  auto insertOr = cache->insert("zeros", zerosBuf.copy());
+  AsyncValueRef<std::string> insertOr = cache->insert("zeros", zerosBuf.copy());
   insertOr.andThenSync([cache = cache.copy(), insertOr = insertOr.copy()] {
-    EXPECT_FALSE(insertOr->isError()) << insertOr->getError() << '\n';
-    EXPECT_FALSE(insertOr->takeValue().empty())
-        << "expected to receive the hash key\v";
+    EXPECT_FALSE(insertOr.isError())
+        << insertOr.getDiagnostic().getMessage() << '\n';
+    EXPECT_FALSE(insertOr->empty()) << "expected to receive the hash key\v";
 
     auto contains = cache->contains("zeros");
     contains.andThenSync([contains = contains.copy()] {
@@ -123,11 +124,11 @@ TEST_F(BlobCacheTest, FindItemThatExistsWithPreallocatedBuf) {
   zerosDataBuf->write(0);
   BufferRef zerosBuf = std::move(zerosDataBuf);
 
-  auto insertOr = cache->insert("zeros", zerosBuf.copy());
+  AsyncValueRef<std::string> insertOr = cache->insert("zeros", zerosBuf.copy());
   insertOr.andThenSync([cache = cache.copy(), insertOr = insertOr.copy()] {
-    EXPECT_FALSE(insertOr->isError()) << insertOr->getError() << '\n';
-    EXPECT_FALSE(insertOr->takeValue().empty())
-        << "expected to receive the hash key\v";
+    EXPECT_FALSE(insertOr.isError())
+        << insertOr.getDiagnostic().getMessage() << '\n';
+    EXPECT_FALSE(insertOr->empty()) << "expected to receive the hash key\v";
 
     auto contains = cache->contains("zeros");
     contains.andThenSync([contains = contains.copy()] {
@@ -156,11 +157,11 @@ TEST_F(BlobCacheTest, FindItemThatExistsThenClear) {
   zerosDataBuf->write(0);
   BufferRef zerosBuf = std::move(zerosDataBuf);
 
-  auto insertOr = cache->insert("zeros", zerosBuf.copy());
+  AsyncValueRef<std::string> insertOr = cache->insert("zeros", zerosBuf.copy());
   insertOr.andThenSync([cache = cache.copy(), insertOr = insertOr.copy()] {
-    EXPECT_FALSE(insertOr->isError()) << insertOr->getError() << '\n';
-    EXPECT_FALSE(insertOr->takeValue().empty())
-        << "expected to receive the hash key\v";
+    EXPECT_FALSE(insertOr.isError())
+        << insertOr.getDiagnostic().getMessage() << '\n';
+    EXPECT_FALSE(insertOr->empty()) << "expected to receive the hash key\v";
 
     auto contains = cache->contains("zeros");
     contains.andThenSync([contains = contains.copy()] {
@@ -185,7 +186,8 @@ TEST_F(BlobCacheTest, FindItemThatExistsThenClear) {
 
   auto clearOr = cache->clear();
   clearOr.andThenSync([clearOr = clearOr.copy(), cache = cache.copy()] {
-    EXPECT_FALSE(failed(*clearOr)) << clearOr->getError() << "\n";
+    EXPECT_FALSE(clearOr.isError())
+        << clearOr.getDiagnostic().getMessage() << "\n";
 
     auto contains = cache->contains("zeros");
     contains.andThenSync([contains = contains.copy()] {
@@ -202,9 +204,9 @@ TEST_F(BlobCacheTest, FileSystemFindItemThatExists) {
   zerosDataBuf->write(0);
   BufferRef zerosBuf = std::move(zerosDataBuf);
 
-  auto err = cache->insert("zeros", zerosBuf.copy());
+  AsyncValueRef<std::string> err = cache->insert("zeros", zerosBuf.copy());
   await(err);
-  ASSERT_FALSE(failed(*err)) << err->getError() << '\n';
+  ASSERT_FALSE(err.isError()) << err.getDiagnostic().getMessage() << '\n';
 
   // Reset the cache so that we are forced to look it up from the file system.
   auto fsCache = LLCL::RCRef<BlobCache<StringKeyInfo>>::create(
@@ -231,9 +233,9 @@ TEST_F(BlobCacheTest, FileSystemFindItemThatExistsWithPreallocatedBuffer) {
   zerosDataBuf->write(0);
   BufferRef zerosBuf = std::move(zerosDataBuf);
 
-  auto err = cache->insert("zeros", zerosBuf.copy());
+  AsyncValueRef<std::string> err = cache->insert("zeros", zerosBuf.copy());
   await(err);
-  ASSERT_FALSE(failed(*err)) << err->getError() << '\n';
+  ASSERT_FALSE(err.isError()) << err.getDiagnostic().getMessage() << '\n';
 
   // Reset the cache so that we are forced to look it up from the file system.
   auto fsCache = LLCL::RCRef<BlobCache<StringKeyInfo>>::create(
