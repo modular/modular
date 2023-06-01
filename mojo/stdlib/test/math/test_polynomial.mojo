@@ -22,7 +22,7 @@ fn test_polynomial_evaluate_degree3():
     print("== test_polynomial_evaluate_degree3")
 
     alias simd_width = 1
-    alias coeefs = VariadicList[SIMD[DType.f64, simd_width]](
+    alias coeefs = VariadicList[SIMD[DType.float64, simd_width]](
         1000.0,
         1.0,
         1.0,
@@ -30,7 +30,7 @@ fn test_polynomial_evaluate_degree3():
     # Evaluate 1000 + x + x^2
     var y = _horner_evaluate[
         simd_width,
-        DType.f64,
+        DType.float64,
         coeefs,
     ](1.0)
 
@@ -39,7 +39,7 @@ fn test_polynomial_evaluate_degree3():
 
     y = _estrin_evaluate_2[
         simd_width,
-        DType.f64,
+        DType.float64,
         coeefs,
     ](1.0)
 
@@ -48,7 +48,7 @@ fn test_polynomial_evaluate_degree3():
 
     y = polynomial_evaluate[
         simd_width,
-        DType.f64,
+        DType.float64,
         coeefs,
     ](1.0)
 
@@ -57,7 +57,7 @@ fn test_polynomial_evaluate_degree3():
 
     y = _horner_evaluate[
         simd_width,
-        DType.f64,
+        DType.float64,
         coeefs,
     ](0.1)
 
@@ -66,7 +66,7 @@ fn test_polynomial_evaluate_degree3():
 
     y = _estrin_evaluate_2[
         simd_width,
-        DType.f64,
+        DType.float64,
         coeefs,
     ](0.1)
 
@@ -75,7 +75,7 @@ fn test_polynomial_evaluate_degree3():
 
     y = polynomial_evaluate[
         simd_width,
-        DType.f64,
+        DType.float64,
         coeefs,
     ](0.1)
 
@@ -88,7 +88,7 @@ fn test_polynomial_evaluate_degree4():
     print("== test_polynomial_evaluate_degree4")
 
     alias simd_width = 1
-    alias coeefs = VariadicList[SIMD[DType.f64, simd_width]](
+    alias coeefs = VariadicList[SIMD[DType.float64, simd_width]](
         1000.0,
         99.0,
         -43.0,
@@ -98,7 +98,7 @@ fn test_polynomial_evaluate_degree4():
     # Evalaute 1000 + 99 x - 43 x^2 + 12 x^3 - 14 x^4
     var y = _horner_evaluate[
         simd_width,
-        DType.f64,
+        DType.float64,
         coeefs,
     ](1.0)
 
@@ -107,7 +107,7 @@ fn test_polynomial_evaluate_degree4():
 
     y = _estrin_evaluate_4[
         simd_width,
-        DType.f64,
+        DType.float64,
         coeefs,
     ](1.0)
 
@@ -116,7 +116,7 @@ fn test_polynomial_evaluate_degree4():
 
     y = polynomial_evaluate[
         simd_width,
-        DType.f64,
+        DType.float64,
         coeefs,
     ](1.0)
 
@@ -125,7 +125,7 @@ fn test_polynomial_evaluate_degree4():
 
     y = _horner_evaluate[
         simd_width,
-        DType.f64,
+        DType.float64,
         coeefs,
     ](0.1)
 
@@ -134,7 +134,7 @@ fn test_polynomial_evaluate_degree4():
 
     y = _estrin_evaluate_4[
         simd_width,
-        DType.f64,
+        DType.float64,
         coeefs,
     ](0.1)
 
@@ -143,7 +143,7 @@ fn test_polynomial_evaluate_degree4():
 
     y = polynomial_evaluate[
         simd_width,
-        DType.f64,
+        DType.float64,
         coeefs,
     ](0.1)
 
@@ -157,7 +157,7 @@ fn test_polynomial_evaluate_degree10():
     print("== test_polynomial_evaluate_degree10")
 
     alias simd_width = 1
-    alias coeefs = VariadicList[SIMD[DType.f64, simd_width]](
+    alias coeefs = VariadicList[SIMD[DType.float64, simd_width]](
         20.0,
         9.0,
         1.0,
@@ -175,7 +175,7 @@ fn test_polynomial_evaluate_degree10():
     # 1.0 x^7 + 1.0 x^8 + 43.0 x^9 + 10.0 x^10
     var y = _horner_evaluate[
         simd_width,
-        DType.f64,
+        DType.float64,
         coeefs,
     ](1.0)
 
@@ -184,7 +184,7 @@ fn test_polynomial_evaluate_degree10():
 
     y = polynomial_evaluate[
         simd_width,
-        DType.f64,
+        DType.float64,
         coeefs,
     ](1.0)
 
@@ -193,7 +193,7 @@ fn test_polynomial_evaluate_degree10():
 
     y = _horner_evaluate[
         simd_width,
-        DType.f64,
+        DType.float64,
         coeefs,
     ](0.1)
 
@@ -202,7 +202,7 @@ fn test_polynomial_evaluate_degree10():
 
     y = polynomial_evaluate[
         simd_width,
-        DType.f64,
+        DType.float64,
         coeefs,
     ](0.1)
 

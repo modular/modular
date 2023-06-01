@@ -18,10 +18,10 @@ fn test_ldexp():
     print("== test_ldexp")
 
     # CHECK: 24.0
-    print(ldexp(SIMD[DType.f32, 1](1.5), 4))
+    print(ldexp(SIMD[DType.float32, 1](1.5), 4))
 
     # CHECK: 24.0
-    print(ldexp(SIMD[DType.f64, 1](1.5), SIMD[DType.si32, 1](4)))
+    print(ldexp(SIMD[DType.float64, 1](1.5), SIMD[DType.int32, 1](4)))
 
 
 fn main():
