@@ -6,7 +6,7 @@
 
 # RUN: kgen-translate -import-mojo -verify-diagnostics %s -I %S/../mojo-examples/
 
-from prolog import DType, Error, F32, Int, object
+from prolog import DType, Error, Float32, Int, object
 
 ##===----------------------------------------------------------------------===##
 # Lexical Issues
@@ -125,7 +125,7 @@ struct MyList_no_iter:
 struct my_iter_wrong_int:
     fn __init__(inout self): pass
     fn __next__(inout self) -> Int: return 0
-    fn __len__(self: my_iter_wrong_int) -> F32: return 0.0
+    fn __len__(self: my_iter_wrong_int) -> Float32: return 0.0
 
 
 struct MyList_invalid_boxed_type:

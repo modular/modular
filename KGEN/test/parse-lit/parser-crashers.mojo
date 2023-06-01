@@ -7,7 +7,7 @@
 # RUN: kgen-translate -import-mojo -verify-diagnostics -split-input-file %s
 
 struct Crash1[XXX: __mlir_type.index]:
-  fn __init__(a: __mlir_type.f32)
+  fn __init__(a: __mlir_type.float32)
   # expected-error @-1 {{expected ':' in function definition}}
     pass
 
@@ -16,10 +16,10 @@ struct Crash1[XXX: __mlir_type.index]:
 // -----
 
 # Forward reference needs to get resolved.
-fn printF32(x: F32):
+fn printFloat32(x: Float32):
   pass
 
-struct F32:
+struct Float32:
   var value : __mlir_type.`!pop.scalar<f32>`
 
 // -----

@@ -998,16 +998,16 @@ AVX-512 system with the "bfloat16" machine learning type:
 ```mojo
 fn funWithSIMD():
     # Make a vector of 4 floats.
-    let small_vec = SIMD[DType.f32, 4](1.0, 2.0, 3.0, 4.0)
+    let small_vec = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
 
     # Make a big vector containing 1.0 in bfloat16 format.
     let big_vec = SIMD[DType.bf16, 32].splat(1.0)
 
     # Do some math and convert the elements to float32.
-    let bigger_vec = (big_vec+big_vec).cast[DType.f32]()
+    let bigger_vec = (big_vec+big_vec).cast[DType.float32]()
 
     # You can write types out explicitly if you want of course.
-    let bigger_vec2 : SIMD[DType.f32, 32] = bigger_vec
+    let bigger_vec2 : SIMD[DType.float32, 32] = bigger_vec
 ```
 
 Note that the `cast()` method needs an additional parameter to indicate what
@@ -1044,7 +1044,7 @@ fn concat[ty: DType, len1: Int, len2: Int](
     lhs: SIMD[ty, len1], rhs: SIMD[ty, len2]) -> SIMD[ty, len1+len2]:
       ...
 
-fn use_vectors(a: SIMD[DType.f32, 4], b: SIMD[DType.f16, 8]):
+fn use_vectors(a: SIMD[DType.float32, 4], b: SIMD[DType.float16, 8]):
     let x = concat(a, a)  # Length = 8
     let y = concat(b, b)  # Length = 16
 ```
@@ -1165,15 +1165,15 @@ struct DType:
     var value : UI8
     alias invalid = DType(0)
     alias bool = DType(1)
-    alias si8 = DType(2)
-    alias ui8 = DType(3)
-    alias si16 = DType(4)
-    alias ui16 = DType(5)
+    alias int8 = DType(2)
+    alias uint8 = DType(3)
+    alias int16 = DType(4)
+    alias int16 = DType(5)
     ...
-    alias f32 = DType(15)
+    alias float32 = DType(15)
 ```
 
-This allows clients to use `DType.f32` as a parameter expression (which also
+This allows clients to use `DType.float32` as a parameter expression (which also
 works as a runtime value) naturally. Note that this is invoking the
 runtime constructor for DType at compile-time.
 
@@ -1181,10 +1181,10 @@ Types are another common use for alias: because types are compile-time
 expressions, it is handy to be able to do things like this:
 
 ```mojo
-alias F32 = SIMD[DType.f32, 1]
-alias UI8 = SIMD[DType.ui8, 1]
+alias Float32 = SIMD[DType.float32, 1]
+alias UInt8 = SIMD[DType.uint8, 1]
 
-var x : F32   # F32 works like a "typedef"
+var x : Float32   # Float32 works like a "typedef"
 ```
 
 Like `var` and `let`, aliases obey scope, and you can use local aliases within

@@ -194,7 +194,7 @@ SLValue ValueDest::getDefinedSLValueIfExists(ASTType resultType,
 /// LValue of a different type when the underlying storage requires this. This
 /// is a guarantee from the caller that it is prepared to handle a type
 /// conversion on its side, eliminating a temporary buffer in register-passable
-/// cases like `var x : F32 = 1`.
+/// cases like `var x : Float32 = 1`.
 ///
 /// When `allowIncompatibleTypes` is false, this always returns an LValue of
 /// the requested type, which may return a temporary buffer.  In this case it

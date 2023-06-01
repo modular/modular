@@ -112,9 +112,9 @@ fn testTestParamStruct(a: TestParamStruct[(4).__as_mlir_index()]):
   a.method[(7).__as_mlir_index()](arg11)
 
 # CHECK-LABEL: lit.func @"testSIMD(
-fn testSIMD(a: SIMD[DType.f64, 1],
-            b: SIMD[DType.si32, 1],
-            inout ref: SIMD[DType.si32, 1]):
+fn testSIMD(a: SIMD[DType.float64, 1],
+            b: SIMD[DType.int32, 1],
+            inout ref: SIMD[DType.int32, 1]):
   # CHECK: %field1 = lit.varlet.decl {{.*}} : <scalar<f64>>
   var field1 = a.value
   # CHECK: %field2 = lit.varlet.decl {{.*}} : <scalar<si32>>
@@ -166,16 +166,16 @@ struct Pair[dt: DType]:
 # CHECK: }
 
 # CHECK: useParameterizedField
-fn useParameterizedField[x: Pair[DType.f32]]():
+fn useParameterizedField[x: Pair[DType.float32]]():
   # CHECK: kgen.param.declare y:
-  alias y : OurSIMD[42, DType.f32] = x.a
+  alias y : OurSIMD[42, DType.float32] = x.a
 
 
 # CHECK-LABEL: lit.func @"makePair
-fn makePair(a: OurSIMD[42, DType.f32], b: Int) -> Pair[DType.f32]:
+fn makePair(a: OurSIMD[42, DType.float32], b: Int) -> Pair[DType.float32]:
   # CHECK: [[TMP1:%.*]] = kgen.call {{.*}}__copyinit__{{.*}}(%a)
   # CHECK:  = lit.struct.create(a=[[TMP1]], b=%b)
-  return Pair[DType.f32]{a: a, b: b}
+  return Pair[DType.float32]{a: a, b: b}
 
 # CHECK-LABEL: lit.struct.decl @TypeParameter
 struct TypeParameter[type: __mlir_type.`!kgen.mlirtype`]:
@@ -410,8 +410,8 @@ struct MyDType:
      return True  # TODO: buggy impl :-)
 
   alias ui8 = MyDType((1).__as_mlir_index())
-  alias f32 = MyDType((2).__as_mlir_index())
-  alias f64 = MyDType((3).__as_mlir_index())
+  alias float32 = MyDType((2).__as_mlir_index())
+  alias float64 = MyDType((3).__as_mlir_index())
 
   # CHECK: kgen.param.declare *"ui16": @"$parameters"::@MyDType = <#lit.struct<{state = 7}>>
   alias ui16 = MyDType{state: (7).__as_mlir_index()}
@@ -419,10 +419,10 @@ struct MyDType:
 struct MyVector[size: Int, dtype: MyDType]:
   pass
 
-fn testMyDType[dt: MyDType](a: MyVector[4, MyDType.f32],
+fn testMyDType[dt: MyDType](a: MyVector[4, MyDType.float32],
                             b: MyVector[4, dt]):
 
-   assert_param[dt == MyDType.f64]()
+   assert_param[dt == MyDType.float64]()
 
 # Issue #6828: Unqualified name lookup into structs doesn't work
 # CHECK-LABEL: lit.struct.decl @UnqualAliasLookup<param>

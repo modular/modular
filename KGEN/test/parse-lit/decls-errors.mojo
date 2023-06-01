@@ -6,7 +6,7 @@
 
 # RUN: kgen-translate -import-mojo -verify-diagnostics %s -I %S/../mojo-examples/
 
-from prolog import DType, F32, object, SIMD
+from prolog import DType, Float32, object, SIMD
 from Pointer import Pointer
 
 
@@ -41,7 +41,7 @@ def var_decl_without_type():
   var x
 
   # expected-error @below {{cannot implicitly convert 'SIMD[f32, 16]' value to 'SIMD[f32, 8]' in 'let' initializer}}
-  let z: SIMD[DType.f32, 8] = SIMD[DType.f32, 16]()
+  let z: SIMD[DType.float32, 8] = SIMD[DType.float32, 16]()
 
 def var_decl():
   x = 123        # expected-note {{previous definition here}}
@@ -215,9 +215,9 @@ fn starSpaceStar(* *a: Int): pass
 fn noDefaultVariadics(*a: Int = 42): pass
 
 # expected-note @+1 {{function declared here}}
-fn exampleVariadic(a: F32, *b: Int): pass
+fn exampleVariadic(a: Float32, *b: Int): pass
 # expected-note @+1 {{function declared here}}
-fn exampleByRefVariadic(a: F32, inout *b: Int): pass
+fn exampleByRefVariadic(a: Float32, inout *b: Int): pass
 # expected-note @+1 {{function declared here}}
 fn parameterizedVariadic[T: __mlir_type.`!kgen.mlirtype`](*args: T): pass
 
@@ -233,7 +233,7 @@ fn badCalls(arg: Int):
   exampleVariadic(1.0, 1, 2, 1.0)
 
   var x: Int
-  var y: F32
+  var y: Float32
   # expected-error @+1 {{invalid call to 'exampleByRefVariadic': argument #2 must be mutable in order to pass as a by-ref argument}}
   exampleByRefVariadic(1.0, x, arg)
   # expected-error-re @+1 {{l-value of type 'SIMD[{{.*}}f32{{.*}}]' cannot be converted to reference of type 'Int'}}
@@ -288,9 +288,9 @@ fn badPackCalls():
   # expected-error @+1 {{invalid call to 'examplePack': callee expects 1 argument, but 2 were specified}}
   examplePack[Int](1, 2)
   # expected-error @+1 {{invalid call to 'examplePack': callee expects 2 arguments, but 1 was specified}}
-  examplePack[Int, F32](1)
+  examplePack[Int, Float32](1)
   # expected-error-re @+1 {{invalid call to 'examplePack': argument #1 cannot be converted from 'index' to 'SIMD[{{.*}}f32{{.*}}]'}}
-  examplePack[Int, F32](1, (2).__as_mlir_index())
+  examplePack[Int, Float32](1, (2).__as_mlir_index())
   # expected-warning @below {{could not infer parameter type for this value, because it is not concrete}}
   # expected-error @below {{invalid call to 'examplePack': callee expects 1 input parameter but 0 were provided}}
   examplePack(packArgOverload)
@@ -327,46 +327,46 @@ def fn_redecl(): pass
 # expected-note @+1 {{previous definition here}}
 def fn_redecl2() -> Int: pass
 # expected-error @+1 {{redefinition of function 'fn_redecl2' cannot overload on return type only}}
-def fn_redecl2() -> F32: pass
+def fn_redecl2() -> Float32: pass
 
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: argument #0 cannot be converted from 'TestOverloading' to 'Int'}}
 # expected-note @below {{candidate not viable: callee expects 1 argument}}
-fn overloadIntF32(a: Int): pass
+fn overloadIntFloat32(a: Int): pass
 
 # expected-note @below {{candidate declared here}}
 # expected-note-re @below {{candidate not viable: argument #0 cannot be converted from 'TestOverloading' to 'SIMD[{{.*}}f32{{.*}}]'}}
 # expected-note @below {{candidate not viable: callee expects 1 argument}}
-fn overloadIntF32(a: F32): pass
+fn overloadIntFloat32(a: Float32): pass
 
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: callee expects 2 arguments}}
 # expected-note-re @below {{candidate not viable: argument #1 cannot be converted from 'SIMD[{{.*}}f32{{.*}}]' to 'Int'}}
-fn overloadIntF32(a: Int, b: Int): pass
+fn overloadIntFloat32(a: Int, b: Int): pass
 
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: callee expects 2 arguments}}
 # expected-note @below {{argument #1 must be mutable in order to pass as a by-ref argument}}
-fn overloadIntF32(a: Int, inout b: F32): pass
+fn overloadIntFloat32(a: Int, inout b: Float32): pass
 
 # expected-note @below {{callee expects at least 3 arguments, but 1 was specified}}
 # expected-note @below {{callee expects at least 3 arguments, but 2 were specified}}
 # expected-note @below {{candidate declared here}}
-fn overloadIntF32(a: Int, inout b: F32, c: Int, *args: Int): pass
+fn overloadIntFloat32(a: Int, inout b: Float32, c: Int, *args: Int): pass
 
 struct TestOverloading:
   var a: Int   # expected-note {{cannot overload with this non-function definition}}
   fn a(self):  # expected-error {{invalid redefinition of 'a'}}
     pass
 
-  fn test(self, a: Int, b: F32):
+  fn test(self, a: Int, b: Float32):
     # expected-error @+1 {{cannot form a reference to overloaded declaration}}
-    var bad = overloadIntF32
+    var bad = overloadIntFloat32
 
     # expected-error @+1 {{no matching function in call}}
-    overloadIntF32(self)
+    overloadIntFloat32(self)
     # expected-error @+1 {{no matching function in call}}
-    overloadIntF32(a, b)
+    overloadIntFloat32(a, b)
 
 
 # expected-note @+1 {{function declared here}}
@@ -490,8 +490,8 @@ struct WrongSelfType[a: Int]:
 # Issue #6587: [Lit] Recursive constructors crash kgen
 struct BadInit[size: __mlir_type.index]:
   fn __init__(inout self, elem: BadInit[(1).__as_mlir_index()]):
-    var x : __mlir_type[`!pop.simd<`, size, `, f32>`]
-    # expected-error @+1 {{cannot implicitly convert 'simd<size, f32>' value to 'BadInit[size]' in assignment}}
+    var x : __mlir_type[`!pop.simd<`, size, `, Float32>`]
+    # expected-error @+1 {{cannot implicitly convert 'simd<size, Float32>' value to 'BadInit[size]' in assignment}}
     self = x
 
   # expected-error @+1 {{'__init__' result type must be elided (or None)}}

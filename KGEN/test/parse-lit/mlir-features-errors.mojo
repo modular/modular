@@ -6,7 +6,7 @@
 
 # RUN: kgen-translate -import-mojo -verify-diagnostics %s -I %S/../mojo-examples/
 
-from prolog import DType, Error, F32, object
+from prolog import DType, Error, Float32, object
 
 fn testMLIR():
   var a : __mlir_type

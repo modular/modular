@@ -8,7 +8,7 @@
 
 # CHECK: module {
 
-from prolog import F32, SIMD, DType, object
+from prolog import Float32, SIMD, DType, object
 
 fn noop(): pass
 
@@ -32,7 +32,7 @@ struct MemoryOnlyInt:
     pass
 
 # This type is used to test implicit conversion from MemoryOnlyInt
-struct MemoryOnlyF64:
+struct MemoryOnlyFloat64:
   var x: FloatLiteral
   fn __init__(inout self, value: MemoryOnlyInt):
     self.x = 1.0
@@ -68,7 +68,7 @@ struct MemoryOnlyPair:
     _ = self.y+arg.x
 
 fn inferred_function_with_memory_result[
-  width: Int](x: SIMD[DType.f32.value, width]) -> MemoryOnlyInt: pass
+  width: Int](x: SIMD[DType.float32.value, width]) -> MemoryOnlyInt: pass
 
 # CHECK-LABEL: lit.func @"memoryOnlyOps
 fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
@@ -115,11 +115,11 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: [[V2X:%.*]] = lit.struct.gep %v2[x]
   # CHECK-NEXT: %mpFloat = lit.varlet.decl
   # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%mpFloat, [[V2X]])
-  let mpFloat : MemoryOnlyF64 = v2.x
+  let mpFloat : MemoryOnlyFloat64 = v2.x
 
   # CHECK: [[TMP:%.*]] = lit.varlet.decl "anonymous*"
   # CHECK-NEXT: kgen.call @{{.*}}inferred_function_with_memory_result{{.*}}([[TMP]]
-  _ = inferred_function_with_memory_result(SIMD[DType.f32.value, 4]())
+  _ = inferred_function_with_memory_result(SIMD[DType.float32.value, 4]())
 
   # Memory-only default argument with memory-only result.
   # CHECK-NEXT: [[TMP:%.*]] = lit.varlet.decl "anonymous*"
@@ -233,10 +233,10 @@ fn precedence_associativity(a: Int):
 
   # div tests
   # CHECK: kgen.call {{.*}}__truediv__
-  var r0 = F32(33.0) / F32(42.0)
+  var r0 = Float32(33.0) / Float32(42.0)
 
   # CHECK: kgen.call {{.*}}__truediv__
-  var r1 = F32(33.0) / 42.0
+  var r1 = Float32(33.0) / 42.0
 
 # CHECK-LABEL: lit.func @"reverse_operators
 fn reverse_operators(a: Int):
@@ -252,7 +252,7 @@ fn reverse_operators(a: Int):
   # div tests
   # CHECK: kgen.call {{.*}}__rtruediv__
   # CHECK: kgen.call @"$Int"::@Int::@"__rfloordiv__($Int::Int,$Int::Int)"
-  var r1 = 33.0 / F32(42.0)
+  var r1 = 33.0 / Float32(42.0)
   z = (33).__as_mlir_index() // z
 
   # CHECK: kgen.call @"$Int"::@Int::@"__rmod__($Int::Int,$Int::Int)"
@@ -579,16 +579,16 @@ fn patterns():
 
   (_) = 1.0
 
-  # CHECK: %someF32 = lit.varlet.decl "someF32", var = true
-  # CHECK: [[F32:%.*]] = pop.load %someF32
-  # CHECK: {{%.*}} = kgen.call {{.*}}__iadd__{{.*}}(%someF32, [[F32]])
-  var someF32 : F32
-  (someF32) += someF32
+  # CHECK: %someFloat32 = lit.varlet.decl "someFloat32", var = true
+  # CHECK: [[Float32:%.*]] = pop.load %someFloat32
+  # CHECK: {{%.*}} = kgen.call {{.*}}__iadd__{{.*}}(%someFloat32, [[Float32]])
+  var someFloat32 : Float32
+  (someFloat32) += someFloat32
 
   # CHECK: %someSIMD = lit.varlet.decl "someSIMD", var = true
   # CHECK: [[SIMD:%.*]] = pop.load %someSIMD
   # CHECK: {{%.*}} = kgen.call @"$SIMD"::@SIMD::@"__iadd__{{.*}}(%someSIMD, [[SIMD]])
-  var someSIMD : SIMD[DType.f64, 4]
+  var someSIMD : SIMD[DType.float64, 4]
   (someSIMD) += someSIMD
 
 # CHECK-LABEL: lit.func @"byval_byref_function($Int::Int,$Int::Int&)"(%a: !kgen.declref<@"$Int"::@Int> borrow, %b: !pop.pointer<@"$Int"::@Int> byref) -> !lit.none
@@ -787,7 +787,7 @@ world"
 # CHECK-LABEL: lit.func @"tuples
 # CHECK-SAME: %[[ARGA:.*]]: !kgen.declref<@"$Int"::@Int>
 # CHECK-SAME: %[[ARGB:.*]]: !kgen.declref<@"$SIMD"::@SIMD<{{.*}}f32
-fn tuples(a: Int, b: F32):
+fn tuples(a: Int, b: Float32):
     # CHECK: %[[PACK0:.*]] = kgen.param.constant: !pop.pack<[]> = <<>>
     # CHECK: kgen.call @"{{.*}}@TupleLiteral::@"__init__({{.*}}(%[[PACK0]])
     _ = ()
@@ -809,13 +809,13 @@ struct WeirdArray:
     return 2
   fn __getitem__(self, x: Int, y: Int, z: Int) -> Int:
     return 3
-  fn __getitem__(self, x: F32, *ints: Int) -> F32:
+  fn __getitem__(self, x: Float32, *ints: Int) -> Float32:
     return x
 
  fn __setitem__(self, x: Int, y: Int, value: Int): pass
 
 # CHECK-LABEL: lit.func @"testWeirdArray
-fn testWeirdArray(a: WeirdArray, idx: Int, f: F32):
+fn testWeirdArray(a: WeirdArray, idx: Int, f: Float32):
   # CHECK: kgen.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %idx)
   _ = a[idx]
   # CHECK: kgen.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %idx, %idx)
@@ -1100,33 +1100,33 @@ struct RegType: pass
 struct ParamType[a: Int]: pass
 
 # CHECK-LABEL: lit.func @"function_types
-# CHECK-SAME: %f0: {{.*}}(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int>
-# CHECK-SAME: %f1: {{.*}}(!pop.pointer<@"$expressions"::@MemoryType> byref_result, !pop.pointer<@"$expressions"::@MemoryType> borrow_in_mem) -> !lit.none
-# CHECK-SAME: %f2: {{.*}}(!kgen.declref<@"$expressions"::@RegType>) ownedresult -> !kgen.declref<@"$expressions"::@RegType>
-# CHECK-SAME: %f3: {{.*}}(!pop.pointer<@"$expressions"::@MemoryType> owned_in_mem) -> !lit.none
-# CHECK-SAME: %f4: {{.*}}(!pop.pointer<@"$Int"::@Int> byref) -> !lit.none
-# CHECK-SAME: %f5: {{.*}}(!kgen.declref<@"$Int"::@Int> borrow) throws -> !pop.variant<@"$Error"::@Error, !lit.none>
-# CHECK-SAME: %f6: {{.*}}(!kgen.declref<@"$Int"::@Int> borrow) throws|async|capturing -> !pop.variant<@"$Error"::@Error, !lit.none>
-# CHECK-SAME: %f7: {{.*}}(!kgen.variadic<@"$Int"::@Int> borrow) throws|vararg -> !pop.variant<@"$Error"::@Error, !lit.none>
-# CHECK-SAME: %f8: {{.*}}<@"$Int"::@Int>(!kgen.declref<@"$expressions"::@ParamType<a: @"$Int"::@Int = *(0,0)>> borrow) -> !lit.none
-# CHECK-SAME: %f9: {{.*}}<[] -> @"$Int"::@Int>() -> !lit.none
-# CHECK-SAME: %f10: {{.*}}<<@"$Int"::@Int, @"$expressions"::@ParamType<a: @"$Int"::@Int = *(0,0)>>() throws -> !pop.variant<@"$Error"::@Error, !lit.none>
-# CHECK-SAME: %f11: {{.*}}<<variadic<!kgen.mlirtype>>(!pop.pack<*(0,0)> borrow) throws|async|packvararg|param_vararg -> !pop.variant<@"$Error"::@Error, !lit.none>
-# CHECK-SAME: %f12: {{.*}}<(!kgen.declref<@"$Int"::@Int> borrow = #lit.struct<{value: scalar<index> = 10}>, !kgen.declref<@"$StringLiteral"::@StringLiteral> borrow = #lit.struct<{value: string = "foo"}>) -> !lit.none>
+# CHECK-SAME: %float0: {{.*}}(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int>
+# CHECK-SAME: %float1: {{.*}}(!pop.pointer<@"$expressions"::@MemoryType> byref_result, !pop.pointer<@"$expressions"::@MemoryType> borrow_in_mem) -> !lit.none
+# CHECK-SAME: %float2: {{.*}}(!kgen.declref<@"$expressions"::@RegType>) ownedresult -> !kgen.declref<@"$expressions"::@RegType>
+# CHECK-SAME: %float3: {{.*}}(!pop.pointer<@"$expressions"::@MemoryType> owned_in_mem) -> !lit.none
+# CHECK-SAME: %float4: {{.*}}(!pop.pointer<@"$Int"::@Int> byref) -> !lit.none
+# CHECK-SAME: %float5: {{.*}}(!kgen.declref<@"$Int"::@Int> borrow) throws -> !pop.variant<@"$Error"::@Error, !lit.none>
+# CHECK-SAME: %float6: {{.*}}(!kgen.declref<@"$Int"::@Int> borrow) throws|async|capturing -> !pop.variant<@"$Error"::@Error, !lit.none>
+# CHECK-SAME: %float7: {{.*}}(!kgen.variadic<@"$Int"::@Int> borrow) throws|vararg -> !pop.variant<@"$Error"::@Error, !lit.none>
+# CHECK-SAME: %float8: {{.*}}<@"$Int"::@Int>(!kgen.declref<@"$expressions"::@ParamType<a: @"$Int"::@Int = *(0,0)>> borrow) -> !lit.none
+# CHECK-SAME: %float9: {{.*}}<[] -> @"$Int"::@Int>() -> !lit.none
+# CHECK-SAME: %float10: {{.*}}<<@"$Int"::@Int, @"$expressions"::@ParamType<a: @"$Int"::@Int = *(0,0)>>() throws -> !pop.variant<@"$Error"::@Error, !lit.none>
+# CHECK-SAME: %float11: {{.*}}<<variadic<!kgen.mlirtype>>(!pop.pack<*(0,0)> borrow) throws|async|packvararg|param_vararg -> !pop.variant<@"$Error"::@Error, !lit.none>
+# CHECK-SAME: %float12: {{.*}}<(!kgen.declref<@"$Int"::@Int> borrow = #lit.struct<{value: scalar<index> = 10}>, !kgen.declref<@"$StringLiteral"::@StringLiteral> borrow = #lit.struct<{value: string = "foo"}>) -> !lit.none>
 fn function_types(
-  f0: fn(Int) -> Int,
-  f1: fn(MemoryType) -> MemoryType,
-  f2: fn(owned RegType) -> RegType,
-  f3: fn(owned MemoryType) -> None,
-  f4: fn(inout Int) -> None,
-  f5: fn(Int) raises -> None,
-  f6: async fn(Int) capturing raises -> None,
-  f7: def(*Int) -> None,
-  f8: fn[a: Int](ParamType[a]) -> None,
-  f9: fn[() -> a: Int]() -> None,
-  f10: def[a: Int, b: ParamType[a]]() -> None,
-  f11: async def[*Ts: AnyType](* *Ts) -> None,
-  f12: fn(Int = 10, StringLiteral = "foo") -> None,
+  float0: fn(Int) -> Int,
+  float1: fn(MemoryType) -> MemoryType,
+  float2: fn(owned RegType) -> RegType,
+  float3: fn(owned MemoryType) -> None,
+  float4: fn(inout Int) -> None,
+  float5: fn(Int) raises -> None,
+  float6: async fn(Int) capturing raises -> None,
+  float7: def(*Int) -> None,
+  float8: fn[a: Int](ParamType[a]) -> None,
+  float9: fn[() -> a: Int]() -> None,
+  float10: def[a: Int, b: ParamType[a]]() -> None,
+  float11: async def[*Ts: AnyType](* *Ts) -> None,
+  float12: fn(Int = 10, StringLiteral = "foo") -> None,
 ): pass
 
 alias fn_type_alias = fn() -> None

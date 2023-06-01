@@ -6,7 +6,7 @@
 
 # RUN: kgen-translate -import-mojo -verify-diagnostics %s -I %S/../mojo-examples/
 
-from prolog import DType, F32, object, SIMD
+from prolog import DType, Float32, object, SIMD
 from String import String
 from Coroutine import Coroutine
 
@@ -43,25 +43,25 @@ struct MemType: pass
 
 fn test_func_type():
     # expected-error @below {{fn(Int) -> Int}}
-    alias f0: fn(Int) -> Int = test_func_type
+    alias float0: fn(Int) -> Int = test_func_type
     # expected-error @below {{async fn() -> None}}
-    alias f1: async fn() -> None = test_func_type
+    alias float1: async fn() -> None = test_func_type
     # expected-error @below {{fn[Int]() -> MemType}}
-    alias f2: fn[a: Int]() -> MemType = test_func_type
+    alias float2: fn[a: Int]() -> MemType = test_func_type
     # expected-error @below {{fn[Int](owned Int) -> MemType}}
-    alias f3: fn[a: Int](owned Int) -> MemType = test_func_type
+    alias float3: fn[a: Int](owned Int) -> MemType = test_func_type
     # expected-error @below {{fn[Int](inout *Int) -> None}}
-    alias f4: fn[a: Int](inout *Int) -> None = test_func_type
+    alias float4: fn[a: Int](inout *Int) -> None = test_func_type
     # expected-error @below {{fn(*MemType) raises capturing -> None}}
-    alias f5: def(*MemType) capturing -> None = test_func_type
+    alias float5: def(*MemType) capturing -> None = test_func_type
     # expected-error @below {{fn[*AnyType](owned * *$0) capt}}
-    alias f6: fn[*Ts: AnyType](owned* *Ts) capturing -> None = test_func_type
+    alias float6: fn[*Ts: AnyType](owned* *Ts) capturing -> None = test_func_type
     # expected-error @below {{fn[AnyType](inout *$0) capturing -> None}}
-    alias f7: fn[T: AnyType](inout *T) capturing -> None = test_func_type
+    alias float7: fn[T: AnyType](inout *T) capturing -> None = test_func_type
 
-    alias type = DType.f32
+    alias type = DType.float32
     # expected-error @below {{SIMD[DType(type.value), 32]}}
-    alias value: SIMD[type.value, 32] = SIMD[DType.f32, 32]()
+    alias value: SIMD[type.value, 32] = SIMD[DType.float32, 32]()
 
 fn hello_str() -> String:
     return "hello"
@@ -86,7 +86,7 @@ struct LValuesRvalues:
   # expected-note @+1 {{function declared here}}
   def takesByRef(self, inout x: LValuesRvalues): pass
 
-  def normalMethod3(self, a: F32): pass
+  def normalMethod3(self, a: Float32): pass
 
 struct MemoryPrimaryPair:
   var x: Int
@@ -144,7 +144,7 @@ def testLValuesRvalues() -> None:
 
 # expected-note @+1 {{function declared here}}
 fn badRef(inout val: Int):
-  var x = F32(1.0)
+  var x = Float32(1.0)
   # expected-error-re @+1 {{invalid call to 'badRef': l-value of type 'SIMD[{{.*}}f32{{.*}}]' cannot be converted to reference of type 'Int'}}
   badRef(x)
 
@@ -270,9 +270,9 @@ fn dict_parse_errors(a: Int):
 
 
 
-fn bad_exprs(cond: Bool, f32: F32, c1: Conv1, c2: Conv2):
+fn bad_exprs(cond: Bool, Float32: Float32, c1: Conv1, c2: Conv2):
   # expected-error-re @+1 {{value of type 'SIMD[{{.*}}f32{{.*}}]' is not compatible with value of type 'Conv1'}}
-  _ = f32 if cond else c1
+  _ = Float32 if cond else c1
 
   # expected-error @below {{ambiguous merge: left value has type 'Conv1' and right value has type 'Conv2', and both convert to each other}}
   # expected-note @below {{you could disambiguate by casting the left value to 'Conv2'}}
@@ -322,11 +322,11 @@ struct MultiSetItem:
   # expected-note @+1 {{candidate declared here}}
   fn __setitem__(self, x: Int, y: Int): pass
   # expected-note @+1 {{candidate declared here}}
-  fn __setitem__(self, x: Int, y: F32): pass
+  fn __setitem__(self, x: Int, y: Float32): pass
 
 struct IncompatElementTypes:
   fn __getitem__(self, x: Int) -> Int: pass
-  fn __setitem__(self, x: Int, y: F32): pass
+  fn __setitem__(self, x: Int, y: Float32): pass
 
 fn testSubscripts(a: WeirdArray, b: MultiSetItem, c: IncompatElementTypes):
   # expected-error @+1 {{invalid call to '__getitem__': index cannot be converted from 'FloatLiteral' to 'Int'}}
@@ -343,7 +343,7 @@ fn testSubscripts(a: WeirdArray, b: MultiSetItem, c: IncompatElementTypes):
 
   let tmp : Int = c[1]
   # expected-error-re @+1 {{cannot implicitly convert 'SIMD[f32, 1]' value to 'Int' in assignment}}
-  c[1] = F32(4.0)
+  c[1] = Float32(4.0)
   c[1] = tmp
 
 
