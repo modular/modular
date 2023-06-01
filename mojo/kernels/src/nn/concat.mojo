@@ -43,7 +43,7 @@ struct _Span:
 @value
 @register_passable("trivial")
 struct _CanonicallyReshapedBuffer:
-    var data: DTypePointer[DType.ui8]
+    var data: DTypePointer[DType.uint8]
     var h: Int
     var w: Int
     var c: Int
@@ -64,7 +64,7 @@ fn _canonical_reshape(
     let h = product(buf.shape, 0, axis)
     let w = buf.dim(axis)
     let c = product(buf.shape, axis + 1, rank) * elsize
-    return _CanonicallyReshapedBuffer(buf.data.bitcast[DType.ui8](), h, w, c)
+    return _CanonicallyReshapedBuffer(buf.data.bitcast[DType.uint8](), h, w, c)
 
 
 fn _canonical_reshape_output(
@@ -77,7 +77,10 @@ fn _canonical_reshape_output(
     for i in range(1, inputs.__len__()):
         out_w += inputs[i].dim(axis)
     return _CanonicallyReshapedBuffer(
-        out_buf.data.bitcast[DType.ui8](), input0_canon.h, out_w, input0_canon.c
+        out_buf.data.bitcast[DType.uint8](),
+        input0_canon.h,
+        out_w,
+        input0_canon.c,
     )
 
 

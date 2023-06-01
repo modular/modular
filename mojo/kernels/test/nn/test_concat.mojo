@@ -22,7 +22,7 @@ fn test_concat():
     alias x2_sz = 2 * 2 * 2 * 2
     alias x3_sz = 2 * 2 * 3 * 2
 
-    alias type = DType.f32.value
+    alias type = DType.float32.value
     alias rank = 4
     alias concat_axis = 2
 
@@ -82,7 +82,7 @@ fn test_concat_parallel():
     alias x2_sz = 2 * 2 * 2 * 2
     alias x3_sz = 2 * 2 * 3 * 2
 
-    alias type = DType.f32.value
+    alias type = DType.float32.value
     alias rank = 4
     alias concat_axis = 2
 

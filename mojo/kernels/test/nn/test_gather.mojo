@@ -12,7 +12,7 @@
 
 from Buffer import NDBuffer
 from DType import DType
-from SIMD import F32
+from SIMD import Float32
 from Gather import gather, gather_nd
 from Index import StaticIntTuple
 from IO import print
@@ -37,12 +37,12 @@ fn test_gather():
         var input = NDBuffer[
             2,
             DimList(num_rows, row_size),
-            DType.f32,
+            DType.float32,
         ].aligned_stack_allocation[64]()
 
         for i in range(num_rows):
             for j in range(row_size):
-                input[StaticIntTuple[2](i, j)] = F32(i).value
+                input[StaticIntTuple[2](i, j)] = Float32(i).value
 
         # Setup indices.
         alias num_indices = 16
@@ -59,7 +59,7 @@ fn test_gather():
         var output = NDBuffer[
             2,
             DimList(num_indices, row_size),
-            DType.f32,
+            DType.float32,
         ].aligned_stack_allocation[64]()
 
         # Test gather
@@ -74,7 +74,7 @@ fn test_gather():
                 DimList(num_rows, row_size),
                 1,
                 DimList(num_indices),
-                DType.f32,
+                DType.float32,
                 indices_type,
                 0,
                 vector_width,
@@ -90,12 +90,12 @@ fn test_gather():
     # CHECK-NEXT: 1.0
     # CHECK-NEXT: 3.0
     # CHECK-NEXT: 7.0
-    _test_gather[DType.si32]()
+    _test_gather[DType.int32]()
     # CHECK: 0.0
     # CHECK-NEXT: 1.0
     # CHECK-NEXT: 3.0
     # CHECK-NEXT: 7.0
-    _test_gather[DType.si64]()
+    _test_gather[DType.int64]()
 
 
 fn test_gather_3d():
@@ -111,12 +111,12 @@ fn test_gather_3d():
         var input = NDBuffer[
             3,
             DimList(num_rows, row_size, 1),
-            DType.f32,
+            DType.float32,
         ].aligned_stack_allocation[64]()
 
         for i in range(num_rows):
             for j in range(row_size):
-                input[StaticIntTuple[3](i, j, 0)] = F32(i).value
+                input[StaticIntTuple[3](i, j, 0)] = Float32(i).value
 
         # Setup indices.
         alias num_indices = 16
@@ -133,7 +133,7 @@ fn test_gather_3d():
         var output = NDBuffer[
             4,
             DimList(num_indices, 1, row_size, 1),
-            DType.f32,
+            DType.float32,
         ].aligned_stack_allocation[64]()
 
         # Test gather
@@ -148,7 +148,7 @@ fn test_gather_3d():
                 DimList(num_rows, row_size, 1),
                 2,
                 DimList(num_indices, 1),
-                DType.f32,
+                DType.float32,
                 indices_type,
                 0,
                 vector_width,
@@ -164,12 +164,12 @@ fn test_gather_3d():
     # CHECK-NEXT: 1.0
     # CHECK-NEXT: 3.0
     # CHECK-NEXT: 7.0
-    _test_gather[DType.si32]()
+    _test_gather[DType.int32]()
     # CHECK: 0.0
     # CHECK-NEXT: 1.0
     # CHECK-NEXT: 3.0
     # CHECK-NEXT: 7.0
-    _test_gather[DType.si64]()
+    _test_gather[DType.int64]()
 
 
 # CHECK-LABEL: test_gather_empty_indices
@@ -190,12 +190,12 @@ fn test_gather_empty_indices():
         var input = NDBuffer[
             2,
             DimList(num_rows, row_size),
-            DType.f32,
+            DType.float32,
         ].aligned_stack_allocation[input_size]()
 
         for i in range(num_rows):
             for j in range(row_size):
-                input[StaticIntTuple[2](i, j)] = F32(i).value
+                input[StaticIntTuple[2](i, j)] = Float32(i).value
 
         # Setup indices.
         var indices = NDBuffer[
@@ -211,7 +211,7 @@ fn test_gather_empty_indices():
         var output = NDBuffer[
             2,
             DimList(num_indices, row_size),
-            DType.f32,
+            DType.float32,
         ].aligned_stack_allocation[output_size]()
 
         # Test gather
@@ -226,15 +226,15 @@ fn test_gather_empty_indices():
                 DimList(num_rows, row_size),
                 1,
                 DimList(num_indices),
-                DType.f32,
+                DType.float32,
                 indices_type,
                 0,
                 vector_width,
             ](output, input, indices, out_chain.borrow())
             out_chain.wait()
 
-    _test_gather[DType.si32]()
-    _test_gather[DType.si64]()
+    _test_gather[DType.int32]()
+    _test_gather[DType.int64]()
 
 
 fn main():

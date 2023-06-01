@@ -26,25 +26,25 @@ from Pool import (
     max_pool_reduce_fn,
 )
 from Range import range
-from SIMD import F32
+from SIMD import Float32
 from SIMD import SIMD
 from LLCL import Runtime, OwningOutputChainPtr
 
 
 fn fill_buffer[
     shape: DimList
-](buf: NDBuffer[4, shape, DType.f32.value,]):
+](buf: NDBuffer[4, shape, DType.float32.value,]):
     var s: Int = 1
     for i in range(buf.get_rank()):
         s *= buf.dim(i)
 
     for j in range(s):
-        buf.flatten()[j] = SIMD[DType.f32.value, 1](j)
+        buf.flatten()[j] = SIMD[DType.float32.value, 1](j)
 
 
 fn print_buffer[
     shape: DimList
-](buf: NDBuffer[4, shape, DType.f32,]):
+](buf: NDBuffer[4, shape, DType.float32,]):
     var s: Int = 1
     for i in range(buf.get_rank()):
         s *= buf.dim(i)
@@ -63,21 +63,23 @@ fn pool(pool_method: Int):
     alias out_shape = DimList(2, 2, 2, 2)
 
     # Create an input buffer.
-    var input_buffer = NDBuffer[4, in_shape, DType.f32.value].stack_allocation()
+    var input_buffer = NDBuffer[
+        4, in_shape, DType.float32.value
+    ].stack_allocation()
 
     fill_buffer[in_shape](input_buffer)
 
-    var input = ImageData[in_shape, DType.f32.value, Image2DLayout.NCHW](
+    var input = ImageData[in_shape, DType.float32.value, Image2DLayout.NCHW](
         input_buffer
     )
 
     # Create an output buffer.
     var output_buffer = NDBuffer[
-        4, out_shape, DType.f32.value
+        4, out_shape, DType.float32.value
     ].stack_allocation()
     output_buffer.fill(0)
 
-    var output = ImageData[out_shape, DType.f32.value, Image2DLayout.NCHW](
+    var output = ImageData[out_shape, DType.float32.value, Image2DLayout.NCHW](
         output_buffer
     )
 
@@ -93,11 +95,11 @@ fn pool(pool_method: Int):
             Pool2d[
                 out_shape,
                 in_shape,
-                DType.f32,
+                DType.float32,
                 Image2DLayout.NCHW,
-                max_pool_init_fn[DType.f32],
-                max_pool_update_fn[DType.f32],
-                max_pool_reduce_fn[DType.f32],
+                max_pool_init_fn[DType.float32],
+                max_pool_update_fn[DType.float32],
+                max_pool_reduce_fn[DType.float32],
             ].run(
                 output,
                 input,
@@ -112,11 +114,11 @@ fn pool(pool_method: Int):
             Pool2d[
                 out_shape,
                 in_shape,
-                DType.f32.value,
+                DType.float32.value,
                 Image2DLayout.NCHW,
-                avg_pool_init_fn[DType.f32],
-                avg_pool_update_fn[DType.f32],
-                avg_pool_reduce_fn[DType.f32],
+                avg_pool_init_fn[DType.float32],
+                avg_pool_update_fn[DType.float32],
+                avg_pool_reduce_fn[DType.float32],
             ].run(
                 output,
                 input,

@@ -41,7 +41,7 @@ fn gather_reduce[
     indices: NDBuffer[
         indices_rank,
         indices_shape,
-        DType.si32,
+        DType.int32,
     ],
     reduce_init: SIMD[type, 1],
     out_chain: OutputChainPtr,
@@ -94,7 +94,7 @@ fn gather_reduce[
         input
     )
     let indices_bind = rebind[
-        NDBuffer[indices_rank, indices_shape, DType.si32]
+        NDBuffer[indices_rank, indices_shape, DType.int32]
     ](indices)
 
     @always_inline
