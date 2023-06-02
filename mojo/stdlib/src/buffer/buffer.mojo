@@ -95,7 +95,7 @@ struct Buffer[size: Dim, type: DType]:
     fn __init__(
         ptr: Pointer[__mlir_type[`!pop.scalar<`, type.value, `>`]]
     ) -> Self:
-        """Constructor for a Buffer with statically known size and type.
+        """Constructs a Buffer with statically known size and type.
 
         Constraints:
             The size is known.
@@ -112,7 +112,7 @@ struct Buffer[size: Dim, type: DType]:
 
     @always_inline
     fn __init__(ptr: DTypePointer[type]) -> Self:
-        """Constructor for a Buffer with statically known size and type.
+        """Constructs a Buffer with statically known size and type.
 
         Constraints:
             The size is known.
@@ -132,7 +132,7 @@ struct Buffer[size: Dim, type: DType]:
         ptr: Pointer[__mlir_type[`!pop.scalar<`, type.value, `>`]],
         in_size: Int,
     ) -> Self:
-        """Constructor for a Buffer with statically known type.
+        """Constructs a Buffer with statically known type.
 
         Constraints:
             The size is unknown.
@@ -158,7 +158,7 @@ struct Buffer[size: Dim, type: DType]:
         ptr: DTypePointer[type],
         in_size: Int,
     ) -> Self:
-        """Constructor for a Buffer with statically known type.
+        """Constructs a Buffer with statically known type.
 
         Constraints:
             The size is unknown.
@@ -320,7 +320,7 @@ struct Buffer[size: Dim, type: DType]:
 
     @always_inline
     fn prefetch[params: PrefetchOptions](self, idx: Int):
-        """Prefetch the data at the given index.
+        """Prefetches the data at the given index.
 
         Parameters:
             params: The prefetch configuration.
@@ -332,7 +332,7 @@ struct Buffer[size: Dim, type: DType]:
 
     @always_inline
     fn bytecount(self) -> Int:
-        """Return the size of the Buffer in bytes.
+        """Returns the size of the Buffer in bytes.
 
         Returns:
             The size of the Buffer in bytes.
@@ -341,7 +341,7 @@ struct Buffer[size: Dim, type: DType]:
 
     @always_inline
     fn zero(self):
-        """Set all bytes of the Buffer to 0."""
+        """Sets all bytes of the Buffer to 0."""
         memset_zero(self.data, self.__len__())
 
     fn simd_fill[simd_width: Int](self, val: SIMD[type, 1]):
@@ -641,7 +641,7 @@ struct NDBuffer[
     fn __init__(
         ptr: Pointer[__mlir_type[`!pop.scalar<`, type.value, `>`]],
     ) -> Self:
-        """Constructor for NDBuffer with statically known rank, shapes and
+        """Constructs an NDBuffer with statically known rank, shapes and
         type.
 
         Constraints:
@@ -671,7 +671,7 @@ struct NDBuffer[
     fn __init__(
         ptr: DTypePointer[type],
     ) -> Self:
-        """Constructor for NDBuffer with statically known rank, shapes and
+        """Constructs an NDBuffer with statically known rank, shapes and
         type.
 
         Constraints:
@@ -703,7 +703,7 @@ struct NDBuffer[
         dynamic_shape: StaticIntTuple[rank],
         dynamic_dtype: DType,
     ) -> NDBuffer[rank, shape, type]:
-        """Constructor for NDBuffer with statically known rank, but dynamic
+        """Constructs an NDBuffer with statically known rank, but dynamic
         shapes and type.
 
         Constraints:
@@ -732,7 +732,7 @@ struct NDBuffer[
         dynamic_shape: StaticIntTuple[rank],
         dynamic_dtype: DType,
     ) -> NDBuffer[rank, shape, type]:
-        """Constructor for NDBuffer with statically known rank, but dynamic
+        """Constructs an NDBuffer with statically known rank, but dynamic
         shapes and type.
 
         Constraints:
@@ -761,7 +761,7 @@ struct NDBuffer[
         dynamic_shape: StaticIntTuple[rank],
         dynamic_dtype: DType,
     ) -> NDBuffer[rank, shape, type]:
-        """Constructor for NDBuffer with statically known rank, but dynamic
+        """Constructs an NDBuffer with statically known rank, but dynamic
         shapes and type.
 
         Constraints:
@@ -791,7 +791,7 @@ struct NDBuffer[
         dynamic_dtype: DType,
         dynamic_stride: StaticIntTuple[rank],
     ) -> NDBuffer[rank, shape, type]:
-        """Constructor for strided NDBuffer with statically known rank, but
+        """Constructs a strided NDBuffer with statically known rank, but
         dynamic shapes and type.
 
         Constraints:
@@ -823,7 +823,7 @@ struct NDBuffer[
         dynamic_dtype: DType,
         dynamic_stride: StaticIntTuple[rank],
     ) -> NDBuffer[rank, shape, type]:
-        """Constructor for strided NDBuffer with statically known rank, but
+        """Constructs a strided NDBuffer with statically known rank, but
         dynamic shapes and type.
 
         Constraints:
@@ -957,7 +957,7 @@ struct NDBuffer[
 
     @always_inline
     fn __getitem__(self, *idx: Int) -> SIMD[type, 1]:
-        """Get an element from the buffer from the specified index.
+        """Gets an element from the buffer from the specified index.
 
         Args:
             idx: Index of the element to retrieve.
@@ -969,7 +969,7 @@ struct NDBuffer[
 
     @always_inline
     fn __getitem__(self, idx: StaticIntTuple[rank]) -> SIMD[type, 1]:
-        """Get an element from the buffer from the specified index.
+        """Gets an element from the buffer from the specified index.
 
         Args:
             idx: Index of the element to retrieve.
@@ -1300,7 +1300,7 @@ struct NDBuffer[
 
     @always_inline
     fn dim[index: Int](self) -> Int:
-        """Get the buffer dimension at the given index.
+        """Gets the buffer dimension at the given index.
 
         Parameters:
             index: The number of dimension to get.
@@ -1319,7 +1319,7 @@ struct NDBuffer[
 
     @always_inline
     fn dim(self, index: Int) -> Int:
-        """Get the buffer dimension at the given index.
+        """Gets the buffer dimension at the given index.
 
         Args:
             index: The number of dimension to get.
@@ -1331,7 +1331,7 @@ struct NDBuffer[
 
     @always_inline
     fn stride(self, index: Int) -> Int:
-        """Get the buffer stride at the given index.
+        """Gets the buffer stride at the given index.
 
         Args:
             index: The number of dimension to get the stride for.
@@ -1343,7 +1343,7 @@ struct NDBuffer[
 
     @always_inline
     fn flatten(self) -> Buffer[Dim(), type]:
-        """Construct a flattened Buffer counterpart for this NDBuffer.
+        """Constructs a flattened Buffer counterpart for this NDBuffer.
 
         Constraints:
             The buffer must be contiguous.
@@ -1356,7 +1356,7 @@ struct NDBuffer[
 
     @always_inline
     fn bytecount(self) -> Int:
-        """Return the size of the NDBuffer in bytes.
+        """Returns the size of the NDBuffer in bytes.
 
         Returns:
             The size of the NDBuffer in bytes.
@@ -1365,7 +1365,7 @@ struct NDBuffer[
 
     @always_inline
     fn zero(self):
-        """Set all bytes of the NDBuffer to 0.
+        """Sets all bytes of the NDBuffer to 0.
 
         Constraints:
             The buffer must be contiguous.
@@ -1432,7 +1432,7 @@ struct NDBuffer[
 
     @always_inline
     fn prefetch[params: PrefetchOptions](self, *idx: Int):
-        """Prefetch the data at the given index.
+        """Prefetches the data at the given index.
 
         Parameters:
             params: The prefetch configuration.
@@ -1572,7 +1572,7 @@ struct DynamicRankBuffer:
 
     @always_inline
     fn to_buffer[type: DType](self) -> Buffer[Dim(), type]:
-        """Cast DynamicRankBuffer to Buffer.
+        """Casts DynamicRankBuffer to Buffer.
 
         Parameters:
             type: `dtype` of the buffer.
@@ -1588,7 +1588,7 @@ struct DynamicRankBuffer:
     fn to_ndbuffer[
         rank: Int, type: DType
     ](self) -> NDBuffer[rank, DimList.create_unknown[rank](), type]:
-        """Cast the buffer to NDBuffer.
+        """Casts the buffer to NDBuffer.
 
         Constraints:
             Rank of DynamicRankBuffer must equal rank of NDBuffer.
@@ -1616,7 +1616,7 @@ struct DynamicRankBuffer:
     ](self, stride: StaticIntTuple[rank]) -> NDBuffer[
         rank, DimList.create_unknown[rank](), type
     ]:
-        """Cast the buffer to NDBuffer.
+        """Casts the buffer to NDBuffer.
 
         Constraints:
             Rank of DynamicRankBuffer must equal rank of NDBuffer.
@@ -1644,7 +1644,7 @@ struct DynamicRankBuffer:
 
     @always_inline
     fn rank_dispatch[func: fn[rank: Int] () capturing -> None](self):
-        """Dispatch the function call based on buffer rank.
+        """Dispatches the function call based on buffer rank.
 
         Constraints:
             Rank must be positive and less or equal to 8.
@@ -1695,7 +1695,7 @@ struct DynamicRankBuffer:
     fn rank_dispatch[
         func: fn[rank: Int] () capturing -> None
     ](self, out_chain: OutputChainPtr):
-        """Dispatch the function call based on buffer rank.
+        """Dispatches the function call based on buffer rank.
 
         Constraints:
             Rank must be positive and less or equal to 8.
@@ -1749,7 +1749,7 @@ struct DynamicRankBuffer:
 
     @always_inline
     fn num_elements(self) -> Int:
-        """Get number of elements in the buffer.
+        """Gets number of elements in the buffer.
 
         Returns:
             The number of elements in the buffer.
@@ -1758,7 +1758,7 @@ struct DynamicRankBuffer:
 
     @always_inline
     fn get_shape[rank: Int](self) -> StaticIntTuple[rank]:
-        """Get a static tuple representing the buffer shape.
+        """Gets a static tuple representing the buffer shape.
 
         Parameters:
             rank: Rank of the buffer.
@@ -1770,7 +1770,7 @@ struct DynamicRankBuffer:
 
     @always_inline
     fn dim(self, idx: Int) -> Int:
-        """Get given dimension.
+        """Gets given dimension.
 
         Args:
             idx: The dimension index.
@@ -1803,7 +1803,7 @@ fn prod_dims[
     shape: DimList,
     type: DType,
 ](x: NDBuffer[rank, shape, type]) -> Int:
-    """Compute the product of a slice of the given buffer's dimensions.
+    """Computes the product of a slice of the given buffer's dimensions.
 
     Parameters:
         start_dim: The index at which to begin computing the product.

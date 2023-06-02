@@ -32,7 +32,7 @@ struct Dim:
 
     @always_inline
     fn __init__(value: Int) -> Dim:
-        """Create a statically-known dimension.
+        """Creates a statically-known dimension.
 
         Args:
             value: The static dimension value.
@@ -44,7 +44,7 @@ struct Dim:
 
     @always_inline
     fn __init__(value: __mlir_type.index) -> Dim:
-        """Create a statically-known dimension.
+        """Creates a statically-known dimension.
 
         Args:
             value: The static dimension value.
@@ -56,7 +56,7 @@ struct Dim:
 
     @always_inline
     fn __init__() -> Dim:
-        """Create a dynamic dimension.
+        """Creates a dynamic dimension.
 
         Returns:
             A dimension value with no static value.
@@ -65,7 +65,7 @@ struct Dim:
 
     @always_inline
     fn __bool__(self) -> Bool:
-        """Return True if the dimension has a static value.
+        """Returns True if the dimension has a static value.
 
         Returns:
             Whether the dimension has a static value.
@@ -76,7 +76,7 @@ struct Dim:
 
     @always_inline
     fn has_value(self) -> Bool:
-        """Return True if the dimension has a static value.
+        """Returns True if the dimension has a static value.
 
         Returns:
             Whether the dimension has a static value.
@@ -85,7 +85,7 @@ struct Dim:
 
     @always_inline
     fn is_dynamic(self) -> Bool:
-        """Return True if the dimension has a dynamic value.
+        """Returns True if the dimension has a dynamic value.
 
         Returns:
             Whether the dimension is dynamic.
@@ -94,7 +94,7 @@ struct Dim:
 
     @always_inline
     fn get(self) -> Int:
-        """Get the static dimension value.
+        """Gets the static dimension value.
 
         Returns:
             The static dimension value.
@@ -103,7 +103,7 @@ struct Dim:
 
     @always_inline
     fn is_multiple[alignment: Int](self) -> Bool:
-        """Check if the dimension is aligned.
+        """Checks if the dimension is aligned.
 
         Parameters:
             alignment: The alignment requirement.
@@ -117,7 +117,7 @@ struct Dim:
 
     @always_inline
     fn __mul__(self, rhs: Dim) -> Dim:
-        """Multiply two dimensions.
+        """Multiplies two dimensions.
 
         If either are unknown, the result is unknown as well.
 
@@ -133,7 +133,7 @@ struct Dim:
 
     @always_inline
     fn __eq__(self, rhs: Dim) -> Bool:
-        """Compare two dimensions for equality.
+        """Compares two dimensions for equality.
 
         Args:
             rhs: The other dimension.
@@ -161,7 +161,7 @@ struct DimList:
 
     @always_inline("nodebug")
     fn __init__(values: VariadicList[Dim]) -> Self:
-        """Create a dimension list from the given list of values.
+        """Creates a dimension list from the given list of values.
 
         Args:
             values: The initial dim values list.
@@ -173,7 +173,7 @@ struct DimList:
 
     @always_inline("nodebug")
     fn __init__(*values: Dim) -> Self:
-        """Create a dimension list from the given Dim values.
+        """Creates a dimension list from the given Dim values.
 
         Args:
             values: The initial dim values.
@@ -185,7 +185,7 @@ struct DimList:
 
     @always_inline("nodebug")
     fn at[i: Int](self) -> Dim:
-        """Get the dimension at a specified index.
+        """Gets the dimension at a specified index.
 
         Parameters:
             i: The dimension index.
@@ -206,7 +206,7 @@ struct DimList:
 
     @always_inline
     fn product[length: Int](self) -> Dim:
-        """Compute the product of all the dimensions in the list.
+        """Computes the product of all the dimensions in the list.
 
         If any are dynamic, the result is a dynamic dimension value.
 
@@ -220,7 +220,7 @@ struct DimList:
 
     @always_inline
     fn product_range[start: Int, end: Int](self) -> Dim:
-        """Compute the product of a range of the dimensions in the list.
+        """Computes the product of a range of the dimensions in the list.
 
         If any in the range are dynamic, the result is a dynamic dimension
         value.
@@ -246,7 +246,7 @@ struct DimList:
 
     @always_inline
     fn contains[length: Int](self, value: Dim) -> Bool:
-        """Determine whether the dimension list contains a specified dimension
+        """Determines whether the dimension list contains a specified dimension
         value.
 
         Parameters:
@@ -262,7 +262,7 @@ struct DimList:
 
     @always_inline
     fn all_known[length: Int](self) -> Bool:
-        """Determine whether all dimensions are statically known.
+        """Determines whether all dimensions are statically known.
 
         Parameters:
             length: The number of elements in the list.
@@ -275,7 +275,7 @@ struct DimList:
     @always_inline
     @staticmethod
     fn create_unknown[length: Int]() -> Self:
-        """Create a dimension list of all dynamic dimension values.
+        """Creates a dimension list of all dynamic dimension values.
 
         Parameters:
             length: The number of elements in the list.
@@ -588,7 +588,7 @@ struct VariadicList[type: AnyType]:
 
     @always_inline
     fn __getitem__(self, index: Int) -> type:
-        """Accessor to a single element on the variadic list.
+        """Gets a single element on the variadic list.
 
         Args:
             index: The index of the element to access on the list.
@@ -639,7 +639,7 @@ struct VariadicListMem[type: AnyType]:
 
     @always_inline
     fn __getitem__(self, index: Int) -> __mlir_type[`!pop.pointer<`, type, `>`]:
-        """Accessor to a single element on the variadic list.
+        """Gets a single element on the variadic list.
 
         Args:
             index: The index of the element to access on the list.
