@@ -27,7 +27,7 @@ struct TraceType:
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: TraceType) -> Bool:
-        """Compare for equality.
+        """Compares for equality.
 
         Args:
             rhs: The value to compare.
@@ -39,7 +39,7 @@ struct TraceType:
 
     @always_inline("nodebug")
     fn __ne__(self, rhs: TraceType) -> Bool:
-        """Compare for inequality.
+        """Compares for inequality.
 
         Args:
             rhs: The value to compare.
@@ -68,7 +68,7 @@ struct TraceLevel:
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: TraceLevel) -> Bool:
-        """Compare for equality.
+        """Compares for equality.
 
         Args:
             rhs: The value to compare.
@@ -80,7 +80,7 @@ struct TraceLevel:
 
     @always_inline("nodebug")
     fn __ne__(self, rhs: TraceLevel) -> Bool:
-        """Compare for inequality.
+        """Compares for inequality.
 
         Args:
             rhs: The value to compare.
@@ -92,7 +92,7 @@ struct TraceLevel:
 
     @always_inline("nodebug")
     fn __le__(self, rhs: TraceLevel) -> Bool:
-        """Less than or equal to comparison.
+        """Performs less than or equal to comparison.
 
         Args:
             rhs: The value to compare.
@@ -153,7 +153,7 @@ fn is_mojo_profiling_disabled[level: TraceLevel]() -> Bool:
 fn trace_range_push[
     type: TraceType, level: TraceLevel
 ](name: StringRef, detail: StringRef):
-    """Push a trace event onto a per-thread stack of traces.
+    """Pushes a trace event onto a per-thread stack of traces.
     Should be paired with calls to trace_range_pop().
 
     The modular stack needs to be configured with MODULAR_LLCL_MAX_PROFILING_LEVEL
@@ -192,7 +192,7 @@ fn trace_range_push[
 
 @always_inline
 fn trace_range_pop[type: TraceType, level: TraceLevel]():
-    """Pop a trace event off a per-thread stack of traces.
+    """Pops a trace event off a per-thread stack of traces.
     Should be paired with calls to trace_range_push().
 
     PROFILING_ON must be set to True otherwise this is a noop that will be
@@ -228,7 +228,7 @@ struct Trace[level: TraceLevel]:
     var detail: StringRef
 
     fn __init__(inout self, name: StringRef):
-        """Create a Mojo trace with the given name.
+        """Creates a Mojo trace with the given name.
 
         Args:
             name: The name that is used to identify this Mojo trace.
@@ -236,14 +236,14 @@ struct Trace[level: TraceLevel]:
         self = Self(name, "")
 
     fn __enter__(self):
-        """Enter the trace context.
+        """Enters the trace context.
 
         This pushes this trace event onto a per-thread stack of traces.
         """
         trace_range_push[trace_type, level](self.name, self.detail)
 
     fn __exit__(self):
-        """Exit the trace context.
+        """Exits the trace context.
 
         This pops this trace event off a per-thread stack of traces.
         """
