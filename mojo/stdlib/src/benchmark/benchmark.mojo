@@ -56,7 +56,7 @@ struct Benchmark:
 
     @always_inline
     fn run[func: fn () capturing -> None](self) -> Int:
-        """Benchmark the given function.
+        """Benchmarks the given function.
 
         Benchmarking continues until min_tims_ns has elapsed and either
         `max_time_ns` or `max_iters` is achieved.
