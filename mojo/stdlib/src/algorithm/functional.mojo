@@ -27,7 +27,7 @@ from Range import range
 
 @always_inline
 fn map[func: fn (Int) capturing -> None](size: Int):
-    """Map a function over a range from 0 to size.
+    """Maps a function over a range from 0 to size.
 
     Parameters:
         func: Function to map.
@@ -49,7 +49,7 @@ fn unroll[
     count: Int,
     func: fn[idx: Int] () capturing -> None,
 ]():
-    """Repeatedly evaluate a function `count` times.
+    """Repeatedly evaluates a function `count` times.
 
     Parameters:
         count: A number of repetitions.
@@ -82,7 +82,7 @@ fn unroll2[
     dim1: Int,
     func: fn[idx0: Int, idx1: Int] () capturing -> None,
 ]():
-    """Repeateadly evaluate a 2D nested loop.
+    """Repeateadly evaluates a 2D nested loop.
 
     Parameters:
         dim0: The first dimension size.
@@ -116,7 +116,7 @@ fn unroll3[
     dim2: Int,
     func: fn[idx0: Int, idx1: Int, idx2: Int] () capturing -> None,
 ]():
-    """Repeateadly evaluate a 3D nested loop.
+    """Repeateadly evaluates a 3D nested loop.
 
     Parameters:
         dim0: The first dimension size.
@@ -146,7 +146,7 @@ fn vectorize[
     simd_width: Int,
     func: fn[width: Int] (Int) capturing -> None,
 ](size: Int):
-    """Map a function which is parametrized over a simd_width over a range
+    """Maps a function which is parametrized over a simd_width over a range
     from 0 to size in simd fashion.
 
     Parameters:
@@ -173,7 +173,7 @@ fn vectorize_unroll[
     unroll_factor: Int,
     func: fn[width: Int] (Int) capturing -> NoneType,
 ](size: Int):
-    """Map a function which is parametrized over a simd_width over a range
+    """Maps a function which is parametrized over a simd_width over a range
     from 0 to size in simd fashion and unroll the loop by unroll_factor.
 
     Parameters:
@@ -270,7 +270,7 @@ fn vectorize_unroll[
 fn async_parallelize[
     func: fn (Int) capturing -> None
 ](out_chain: OutputChainPtr, num_work_items: Int):
-    """Execute func(0) ... func(num_work_items-1) as sub-tasks in parallel and
+    """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel and
     return imediatly.
 
     Execute func(0) ... func(num_work_items-1) as sub-tasks in parallel and
@@ -331,7 +331,7 @@ fn async_parallelize[
 
 @always_inline
 fn parallelize[func: fn (Int) capturing -> None]():
-    """Execute func(0) ... func(N-1) as sub-tasks in parallel and block until
+    """Executes func(0) ... func(N-1) as sub-tasks in parallel and block until
     completion. N is chosen to be the number of physical processors on the
     system.
 
@@ -347,7 +347,7 @@ fn parallelize[func: fn (Int) capturing -> None]():
 
 @always_inline
 fn parallelize[func: fn (Int) capturing -> None](num_work_items: Int):
-    """Execute func(0) ... func(num_work_items-1) as sub-tasks in parallel and
+    """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel and
     block until completion.
 
     Execute func(0) ... func(num_work_items-1) as sub-tasks in parallel. This
@@ -616,7 +616,7 @@ alias SwitchedFunction2 = fn[sw0: Bool, sw1: Bool] () capturing -> None
 
 @always_inline
 fn unswitch[switched_func: SwitchedFunction](dynamic_switch: Bool):
-    """Perform a functional unswitch transformation.
+    """Performs a functional unswitch transformation.
 
     Unswitch is a simple pattern that is similar idea to loop unswitching
     pass but extended to functional patterns. The pattern facilitates the
@@ -668,7 +668,7 @@ fn unswitch[switched_func: SwitchedFunction](dynamic_switch: Bool):
 fn unswitch[
     switched_func: SwitchedFunction2
 ](dynamic_switch_a: Bool, dynamic_switch_b: Bool):
-    """Perform a functional 2-predicates unswitch transformation.
+    """Performs a functional 2-predicates unswitch transformation.
 
     Parameters:
         switched_func: The function containing the inner loop logic that has 2
@@ -718,7 +718,7 @@ fn tile_and_unswitch[
     workgroup_function: Static1DTileUnswitchUnitFunc,
     tile_size_list: VariadicList[Int],
 ](offset: Int, upperbound: Int):
-    """Perform time and unswitch functional transformation.
+    """Performs time and unswitch functional transformation.
 
     A variant of static tile given a workgroup function that can be unswitched.
     This generator is a fused version of tile and unswitch, where the static
@@ -771,7 +771,7 @@ alias Dynamic1DTileUnswitchUnitFunc = fn[sw: Bool] (
 fn tile_and_unswitch[
     workgroup_function: Dynamic1DTileUnswitchUnitFunc,
 ](offset: Int, upperbound: Int, tile_size_list: VariadicList[Int]):
-    """Perform time and unswitch functional transformation.
+    """Performs time and unswitch functional transformation.
 
     A variant of dynamic tile given a workgroup function that can be
     unswitched. This generator is a fused version of tile and unswitch, where
@@ -819,7 +819,7 @@ fn tile_and_unswitch[
 
 @always_inline
 fn get_num_workers(problem_size: Int, runtime: Runtime) -> Int:
-    """Return a number of workers to run in parallel.
+    """Returns a number of workers to run in parallel.
 
     Args:
         problem_size: The number of parallel tasks.
@@ -852,7 +852,7 @@ fn elementwise[
     unroll_factor: Int,
     func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
 ](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
-    """Execute func[width, rank](indices) as sub-tasks for a suitable
+    """Executes func[width, rank](indices) as sub-tasks for a suitable
     combination of width and indices so as to cover shape.
 
     Parameters:
@@ -955,7 +955,7 @@ fn elementwise[
     unroll_factor: Int,
     func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
 ](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
-    """Execute func[width, rank](indices) as sub-tasks for a suitable
+    """Executes func[width, rank](indices) as sub-tasks for a suitable
     combination of width and indices so as to cover shape.
 
     All free vars in func must be "async safe", see async_parallelize.

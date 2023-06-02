@@ -43,8 +43,8 @@ fn map_reduce[
         SIMD[type, width]
     ) -> SIMD[type, 1],
 ](dst: Buffer[size, type], init: SIMD[acc_type, 1]) -> SIMD[acc_type, 1]:
-    """Store the result of calling input_gen_fn in dst and simultaneously reduce
-    the result using a custom reduction function.
+    """Stores the result of calling input_gen_fn in dst and simultaneously
+    reduce the result using a custom reduction function.
 
     Parameters:
         simd_width: The vector width for the computation.
@@ -100,7 +100,7 @@ fn reduce[
     ) capturing -> SIMD[acc_type, width],
     reduce_fn: fn[width: Int, type: DType] (SIMD[type, width]) -> SIMD[type, 1],
 ](src: Buffer[size, type], init: SIMD[acc_type, 1]) -> SIMD[acc_type, 1]:
-    """Compute a custom reduction of buffer elements.
+    """Computes a custom reduction of buffer elements.
 
     Parameters:
         simd_width: The vector width for the computation.
@@ -149,7 +149,7 @@ fn reduce_boolean[
     ) capturing -> Bool,
     continue_fn: fn (Bool) capturing -> Bool,
 ](src: Buffer[size, type], init: Bool) -> Bool:
-    """Compute a bool reduction of buffer elements. The reduction will early
+    """Computes a bool reduction of buffer elements. The reduction will early
     exit if the `continue_fn` returns False.
 
     Parameters:
@@ -357,7 +357,7 @@ fn _simd_max[
     simd_width: Int,
     type: DType,
 ](x: SIMD[type, simd_width]) -> SIMD[type, 1]:
-    """Helper function that computes the max element in a simd vector and is
+    """Computes the max element in a simd vector and is
     compatible with the function signature expected by reduce_fn in reduce."""
     return x.reduce_max()
 
@@ -372,7 +372,7 @@ fn _simd_max_elementwise[
 ](x: SIMD[acc_type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
     acc_type, simd_width
 ]:
-    """Helper function that computes the elementwise max of each element in a
+    """Computes the elementwise max of each element in a
     simd vector and is compatible with the function signature expected by map_fn
     in reduce."""
     return x.max(y.cast[acc_type]())
@@ -449,7 +449,7 @@ fn _simd_min[
     simd_width: Int,
     type: DType,
 ](x: SIMD[type, simd_width]) -> SIMD[type, 1]:
-    """Helper function that computes the min element in a simd vector and is
+    """Computes the min element in a simd vector and is
     compatible with the function signature expected by reduce_fn in reduce."""
     return x.reduce_min()
 
@@ -464,7 +464,7 @@ fn _simd_min_elementwise[
 ](x: SIMD[acc_type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
     acc_type, simd_width
 ]:
-    """Helper function that computes the elementwise min of each element in a
+    """Computes the elementwise min of each element in a
     simd vector and is compatible with the function signature expected by map_fn
     in reduce."""
     return x.min(y.cast[acc_type]())
@@ -541,7 +541,7 @@ fn _simd_sum[
     simd_width: Int,
     type: DType,
 ](x: SIMD[type, simd_width]) -> SIMD[type, 1]:
-    """Helper function that computes the sum of elements in a simd vector and is
+    """Computes the sum of elements in a simd vector and is
     compatible with the function signature expected by reduce_fn in reduce."""
     return x.reduce_add()
 
@@ -556,7 +556,7 @@ fn _simd_sum_elementwise[
 ](x: SIMD[acc_type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
     acc_type, simd_width
 ]:
-    """Helper function that computes the elementwise sum of each element in a
+    """Computes the elementwise sum of each element in a
     simd vector and is compatible with the function signature expected by map_fn
     in reduce."""
     return x + y.cast[acc_type]()
@@ -633,7 +633,7 @@ fn _simd_product[
     simd_width: Int,
     type: DType,
 ](x: SIMD[type, simd_width]) -> SIMD[type, 1]:
-    """Helper function that computes the product of elements in a simd vector and is
+    """Computes the product of elements in a simd vector and is
     compatible with the function signature expected by reduce_fn in reduce."""
     return x.reduce_mul()
 
@@ -648,7 +648,7 @@ fn _simd_product_elementwise[
 ](x: SIMD[acc_type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
     acc_type, simd_width
 ]:
-    """Helper function that computes the elementwise product of each element in a
+    """Computes the elementwise product of each element in a
     simd vector and is compatible with the function signature expected by map_fn
     in reduce."""
     return x * y.cast[acc_type]()
@@ -860,7 +860,7 @@ fn variance[
     ](x: SIMD[acc_type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
         acc_type, simd_width
     ]:
-        """Helper function that computes the equation $sum (x_i - u)^2 + y$"""
+        """Computes the equation $sum (x_i - u)^2 + y$"""
         let mean_simd = SIMD[type, simd_width].splat(mean_value).cast[
             acc_type
         ]()
