@@ -31,7 +31,7 @@ struct ComplexSIMD[type: DType, size: Int]:
     """The imaginary part of the complex SIMD value."""
 
     fn __add__(self, rhs: Self) -> Self:
-        """Add two complex values.
+        """Adds two complex values.
 
         Args:
             rhs: Complex value to add.
@@ -42,7 +42,7 @@ struct ComplexSIMD[type: DType, size: Int]:
         return Self {re: self.re + rhs.re, im: self.im + rhs.im}
 
     fn __mul__(self, rhs: Self) -> Self:
-        """Multiple two complex values.
+        """Multiplies two complex values.
 
         Args:
             rhs: Complex value to multiply with.
@@ -74,7 +74,7 @@ struct ComplexSIMD[type: DType, size: Int]:
 
     # fma(self, b, c)
     fn fma(self, b: Self, c: Self) -> Self:
-        """Compute FMA operation.
+        """Computes FMA operation.
 
         Compute fused multiple-add with two other complex values:
         `result = self * b + c`
@@ -93,7 +93,7 @@ struct ComplexSIMD[type: DType, size: Int]:
 
     # fma(self, self, c)
     fn sq_add(self, c: Self) -> Self:
-        """Compute Square-Add operation.
+        """Computes Square-Add operation.
 
         Compute `Self * Self + C`.
 
