@@ -784,19 +784,49 @@ world"
 # Tuples
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.func @"tuples
-# CHECK-SAME: %[[ARGA:.*]]: !kgen.declref<@"$Int"::@Int>
-# CHECK-SAME: %[[ARGB:.*]]: !kgen.declref<@"$SIMD"::@SIMD<{{.*}}f32
-fn tuples(a: Int, b: Float32):
-    # CHECK: %[[PACK0:.*]] = kgen.param.constant: !pop.pack<[]> = <<>>
-    # CHECK: kgen.call @"{{.*}}@TupleLiteral::@"__init__({{.*}}(%[[PACK0]])
+# CHECK-LABEL: lit.func @"tuples_rv
+fn tuples_rv(a: Int, b: Float32):
+    # CHECK: [[PACK0:%.*]] = kgen.param.constant: !pop.pack<[]> = <<>>
+    # CHECK: kgen.call @"{{.*}}@TupleLiteral::@"__init__({{.*}}([[PACK0]])
     _ = ()
-    # CHECK: %[[PACK1:.*]] = pop.pack.create(%[[ARGA]], %[[ARGB]])
-    # CHECK: kgen.call @"{{.*}}@TupleLiteral::@"__init__({{.*}}(%[[PACK1]])
+    # CHECK: [[PACK1:%.*]] = pop.pack.create(%a, %b)
+    # CHECK: kgen.call @"{{.*}}@TupleLiteral::@"__init__({{.*}}([[PACK1]])
     _ = (a, b)
-    # CHECK: %[[PACK2:.*]] = pop.pack.create(%[[ARGA]])
-    # CHECK: kgen.call @"{{.*}}@TupleLiteral::@"__init__({{.*}}(%[[PACK2]])
+    # CHECK: [[PACK2:%.*]] = pop.pack.create(%a)
+    # CHECK: kgen.call @"{{.*}}@TupleLiteral::@"__init__({{.*}}([[PACK2]])
     _ = (a,)
+
+# CHECK-LABEL: lit.func @"tuples_lv
+fn tuples_lv(i0: Int, f0: Float32):
+   var i1 = 1
+   var i2 = 2
+
+   # CHECK: %iTup = lit.varlet.decl "iTup"
+   var iTup : TupleLiteral[Int, Int]
+
+   # Tuple Rvalue
+   # CHECK: [[TUP:%.*]] = kgen.call {{.*}}@TupleLiteral::@"__init__
+   # CHECK: pop.store [[TUP]], %iTup
+   iTup = (i1, i2)
+
+   # Tuple LValue
+   # CHECK: [[TUP:%.*]] = pop.load %iTup
+
+   # FIXME: Why the Rvalue conversion?  We should be able to load directly
+   # without copying it.
+   # CHECK: [[TUP2:%.*]] = kgen.call {{.*}}@"__copyinit__{{.*}}([[TUP]])
+   # CHECK: [[ELT:%.*]] = kgen.call {{.*}}TupleLiteral::@"get{{.*}}([[TUP2]])
+   # CHECK-NEXT: pop.store [[ELT]], %i1
+   # CHECK: [[ELT:%.*]] = kgen.call {{.*}}TupleLiteral::@"get{{.*}}([[TUP2]])
+   # CHECK-NEXT: pop.store [[ELT]], %i2
+   (i1, i2) = iTup
+
+   var f1 : Float32 = 1
+   var f2 : Float32 = 2
+   (i1, f1) = (i0, f0)
+   (i1, i2) = (i2, i1)
+
+
 
 ##===----------------------------------------------------------------------===##
 # Computed Properties and Subscripts

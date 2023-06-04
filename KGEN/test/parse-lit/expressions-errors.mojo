@@ -196,6 +196,20 @@ def testKWargs():
 fn bad_tuple(a: Int):
   _ = (a, a, b)  # expected-error {{use of unknown declaration 'b'}}
 
+  var c: Int
+  var d: Int
+  # expected-error @+1 {{cannot implicitly convert 'TupleLiteral[Int, Int, Int]' value to 'TupleLiteral[Int, Int]' in assignment}}
+  (c, d) = (a, a, a)
+  # expected-error @+1 {{cannot implicitly convert 'TupleLiteral[Int]' value to 'TupleLiteral[Int, Int]' in assignment}}
+  (c, d) = (a,)
+  # expected-error @+1 {{cannot implicitly convert 'Int' value to 'TupleLiteral[Int, Int]' in assignment}}
+  (c, d) = a
+
+  var iTup : TupleLiteral[Int, Int]
+  # expected-error @+1 {{cannot implicitly convert 'TupleLiteral[Int, FloatLiteral]' value to 'TupleLiteral[Int, Int]' in assignment}}
+  iTup = (1, 2.0)
+
+
 def tuple_return():
   return 32, 17 # expected-error {{tuple return not supported yet}}
 
