@@ -811,9 +811,6 @@ fn tuples_lv(i0: Int, f0: Float32):
 
    # Tuple LValue
    # CHECK: [[TUP:%.*]] = pop.load %iTup
-
-   # FIXME: Why the Rvalue conversion?  We should be able to load directly
-   # without copying it.
    # CHECK: [[TUP2:%.*]] = kgen.call {{.*}}@"__copyinit__{{.*}}([[TUP]])
    # CHECK: [[ELT:%.*]] = kgen.call {{.*}}TupleLiteral::@"get{{.*}}([[TUP2]])
    # CHECK-NEXT: pop.store [[ELT]], %i1
@@ -821,10 +818,22 @@ fn tuples_lv(i0: Int, f0: Float32):
    # CHECK-NEXT: pop.store [[ELT]], %i2
    (i1, i2) = iTup
 
-   var f1 : Float32 = 1
-   var f2 : Float32 = 2
-   (i1, f1) = (i0, f0)
+   # Check that the swap idiom is correct, this requires producing a copy of the
+   # whole RValue on the right before extracting from it.
+
+   # CHECK: [[I2VAL:%.*]] = pop.load %i2
+   # CHECK-NEXT: [[I1VAL:%.*]] = pop.load %i1
+   # CHECK-NEXT: [[PACK:%.*]] = pop.pack.create([[I2VAL]], [[I1VAL]])
+   # CHECK-NEXT: [[TUPRV:%.*]] = kgen.call {{.*}}__init__{{.*}}([[PACK]])
+   # CHECK-NEXT: [[I1VAL:%.*]] =  kgen.call{{.*}}get({{.*}}scalar<index> = 0{{.*}}([[TUPRV]])
+   # CHECK-NEXT: pop.store [[I1VAL]], %i1
+   # CHECK-NEXT: [[I2VAL:%.*]] =  kgen.call{{.*}}get({{.*}}scalar<index> = 1{{.*}}([[TUPRV]])
+   # CHECK-NEXT: pop.store [[I2VAL]], %i2
    (i1, i2) = (i2, i1)
+
+   var f1 : Float32 = 1
+   # Mixed element types should work.  Don't need check lines though.
+   (i1, f1) = (i0, f0)
 
 
 
