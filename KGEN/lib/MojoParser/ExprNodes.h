@@ -304,19 +304,25 @@ struct ParenNode final : public ExprNode {
   AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
 };
 
-/// (a, b, c)
+/// `a, b, c` and `a,`.  TupleNode does not carry parens, but is often nested
+/// in a ParenNode.
+///
+/// Note that an empty tuple `()` is represented as a TupleNode no exprs,
+/// and the firstCommaLoc is at the `(`.  It is then wrapped with a ParenNode.
 struct TupleNode final : public ExprNode {
-  TupleNode(SMLoc lparenLoc, ArrayRef<ExprNode *> exprs, SMLoc rparenLoc)
-      : ExprNode(kTuple), lparenLoc(lparenLoc), exprs(exprs),
-        rparenLoc(rparenLoc) {}
+  TupleNode(SMLoc firstCommaLoc, ArrayRef<ExprNode *> exprs)
+      : ExprNode(kTuple), firstCommaLoc(firstCommaLoc), exprs(exprs) {}
 
-  const SMLoc lparenLoc;
+  const SMLoc firstCommaLoc;
   ArrayRef<ExprNode *> exprs;
-  const SMLoc rparenLoc;
 
   static bool classof(const ExprNode *node) { return node->kind == kTuple; }
-  SMLoc getLoc() const override { return lparenLoc; }
-  SourceRange getRange() const override { return {lparenLoc, rparenLoc}; }
+  SMLoc getLoc() const override { return firstCommaLoc; }
+  SourceRange getRange() const override {
+    if (exprs.empty())
+      return {firstCommaLoc, firstCommaLoc};
+    return {exprs.front()->getRangeStart(), exprs.back()->getRangeEnd()};
+  }
   AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
 };
 

@@ -491,7 +491,7 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
       *getToken().getIndentation() > returnIndent) {
     // TODO use hadTrailingSep to return a singleton tuple ex. `return 1,`
     if (parseExpressionList(operandExprs, returnIndent,
-                            /*hadTrailingSep=*/nullptr))
+                            /*firstCommaLoc=*/nullptr))
       return failure();
   } else {
     // If there was no returned value, then default to "return std::nullopt".
@@ -567,9 +567,9 @@ ParseResult StmtParser::parseParamReturnStmt(size_t returnIndent) {
     return success();
   SmallVector<ExprNode *> exprs;
   if (!consumeIf(Token::r_square, &endLoc)) {
-    // TODO use hadTrailingSep to return a singleton tuple ex. `return 1,`
+    // TODO use firstCommaLoc to return a singleton tuple ex. `return 1,`
     if (parseExpressionList(exprs, returnIndent,
-                            /*hasTrailingComma=*/nullptr))
+                            /*firstCommaLoc=*/nullptr))
       return failure();
     if (parseToken(Token::r_square, "expected ']' at end of parameter list",
                    &endLoc))

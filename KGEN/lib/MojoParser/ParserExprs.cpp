@@ -78,12 +78,12 @@ public:
   ParseResult parseExpressionList(SmallVectorImpl<ExprNode *> &results,
                                   ArrayRef<Token::Kind> terminators,
                                   bool allowStarredItem,
-                                  bool *hadTrailingComma = nullptr);
+                                  SMLoc *firstCommaLoc = nullptr);
   ParseResult parseStarredList(SmallVectorImpl<ExprNode *> &results,
                                ArrayRef<Token::Kind> terminators,
-                               bool *hadTrailingComma = nullptr) {
+                               SMLoc *firstCommaLoc = nullptr) {
     return parseExpressionList(results, terminators, /*allowStartedItem=*/true,
-                               hadTrailingComma);
+                               firstCommaLoc);
   }
 
   ParseResult parseExpression(ExprNode *&result,
@@ -163,7 +163,7 @@ bool ExprParser::isTokenStartOfNextStatement() {
 ParseResult
 ExprParser::parseExpressionList(SmallVectorImpl<ExprNode *> &results,
                                 ArrayRef<Token::Kind> terminators,
-                                bool allowStarredItem, bool *hadTrailingComma) {
+                                bool allowStarredItem, SMLoc *firstCommaLoc) {
   auto parseItem = [&]() -> ParseResult {
     ExprNode *&result = results.emplace_back(nullptr);
 
@@ -172,7 +172,7 @@ ExprParser::parseExpressionList(SmallVectorImpl<ExprNode *> &results,
     return parseExpression(result, Precedence::kExpression);
   };
 
-  return parseCommaSeparatedList(parseItem, terminators, hadTrailingComma);
+  return parseCommaSeparatedList(parseItem, terminators, firstCommaLoc);
 }
 
 namespace {
@@ -604,22 +604,24 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
 ParseResult ExprParser::parsePrefixLParen(ExprNode *&result, SMLoc lparenLoc) {
   SMLoc rparenLoc;
   SmallVector<ExprNode *> exprs;
-  bool hadTrailingComma = false;
+  SMLoc firstCommaLoc;
 
   // Empty parens is a tuple.
-  if (!consumeIf(Token::r_paren, &rparenLoc)) {
-    if (parseStarredList(exprs, Token::r_paren, &hadTrailingComma) ||
-        parseToken(Token::r_paren, "expected ')' in parenthesized expression",
-                   &rparenLoc))
-      return failure();
-  }
+  if (consumeIf(Token::r_paren, &rparenLoc)) {
+    // Empty tuples are represented as ParenNode(TupleNode()) where the tuple
+    // has no subexpressions.
+    firstCommaLoc = lparenLoc;
+  } else if (parseStarredList(exprs, Token::r_paren, &firstCommaLoc) ||
+             parseToken(Token::r_paren,
+                        "expected ')' in parenthesized expression", &rparenLoc))
+    return failure();
 
-  // If this is a single expression with no trailing comma, it is parens.
-  if (exprs.size() == 1 && !hadTrailingComma)
-    result = alloc<ParenNode>(lparenLoc, exprs[0], rparenLoc);
-  else // Otherwise it is a tuple.
-    result =
-        alloc<TupleNode>(lparenLoc, copyArrayRef<ExprNode *>(exprs), rparenLoc);
+  // If there was a tuple inside the parens, form it.
+  if (exprs.size() != 1 || firstCommaLoc.isValid())
+    result = alloc<TupleNode>(firstCommaLoc, copyArrayRef<ExprNode *>(exprs));
+  else
+    result = exprs[0];
+  result = alloc<ParenNode>(lparenLoc, result, rparenLoc);
   return success();
 }
 
@@ -1025,10 +1027,10 @@ ParseResult ExprParser::parseAddressConvert(ExprNode *&result) {
 ParseResult
 ParserBase::parseExpressionList(SmallVectorImpl<ExprNode *> &results,
                                 std::optional<size_t> stmtIndent,
-                                bool *hadTrailingSep) {
+                                SMLoc *firstCommaLoc) {
   return ExprParser(getLexer(), stmtIndent)
       .parseExpressionList(results, Token::Kind::eof,
-                           /*allowStarredList=*/false, hadTrailingSep);
+                           /*allowStarredList=*/false, firstCommaLoc);
 }
 
 /// Expression parsing.  Each of these take a `stmtIndent` specifier that
@@ -1046,14 +1048,6 @@ ParseResult ParserBase::parseExpression(ExprNode *&result,
 
 ParseResult ParserBase::parseStarredItem(ExprNode *&result) {
   return ExprParser(getLexer(), std::nullopt).parseStarredItem(result);
-}
-
-ParseResult ParserBase::parseStarredList(SmallVectorImpl<ExprNode *> &results,
-                                         std::optional<size_t> stmtIndent,
-                                         bool *hadTrailingSep) {
-  return ExprParser(getLexer(), std::nullopt)
-      .parseExpressionList(results, Token::Kind::eof,
-                           /*allowStarredList=*/true, hadTrailingSep);
 }
 
 /// assignment_stmt ::=
