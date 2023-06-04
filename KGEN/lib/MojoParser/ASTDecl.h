@@ -139,7 +139,7 @@ public:
   ArrayRef<ASTDecl *> lookupInCurrentScope(StringRef name) const;
 
   /// Perform a lookup in this declaration's scope and all parent scopes,
-  /// returning the nearest target or null if nothing is found.
+  /// returning the nearest target or empty if nothing is found.
   ArrayRef<ASTDecl *> lookup(StringAttr name) const {
     const ASTDecl *curScope = this;
     while (curScope) {

@@ -264,3 +264,19 @@ void SubscriptDLValue::print(raw_ostream &os) const {
   os << (isSubscript() ? "(subscript): " : "(property): ") << elementType
      << " ";
 }
+
+//===----------------------------------------------------------------------===//
+// TupleDLValue
+//===----------------------------------------------------------------------===//
+
+TupleDLValue::TupleDLValue(ArrayRef<ASTExprAnd<AnyValue>> eltLValues,
+                           ASTType tupleType, const ExprNode *expr)
+    : BaseDLValue(tupleType, expr),
+      eltLValues(eltLValues.begin(), eltLValues.end()) {
+  for (auto &elt : eltLValues)
+    assert(elt.ir.getIfLValue() && "element must be an lvalue");
+}
+
+void TupleDLValue::print(raw_ostream &os) const {
+  os << "(tuple lvalue): " << elementType << " ";
+}

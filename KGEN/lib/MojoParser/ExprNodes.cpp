@@ -492,14 +492,14 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   // Functions form an address, and may be overloaded.
-  if (auto firstCandidate = dyn_cast<LIT::FuncOp>(*decls[0])) {
+  if (auto firstCandidate = dyn_cast<FuncOp>(*decls[0])) {
     // Reject unqualified struct method references.
     if (isa<StructDeclOp>(*decls[0]->getParentDecl())) {
       const char *replacement = "self.";
       // References to static methods can always use capital Self.
       if (firstCandidate.getIsStatic())
         replacement = "Self.";
-      // Referecnes /from/ static methods can only use capital Self.
+      // References /from/ static methods can only use capital Self.
       if (auto curFn = dyn_cast<FuncOp>(emitter.declScope))
         if (curFn.getIsStatic())
           replacement = "Self.";
@@ -1692,12 +1692,46 @@ AnyValue ParenNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
                                          ASTType type, const ExprNode *node,
                                          ArrayRef<ExprNode *> exprs) {
+  if (!type) // If we failed to look up the tuple/list type, fail.
+    return {};
+
   // Emit each of the tuple elements.
   SmallVector<ASTExprAnd<AnyValue>> elements;
+  bool allEltsLValue = true;
   for (ExprNode *expr : exprs) {
     elements.push_back({emitter.emitExpr(expr, EC_TupleElement), expr});
     if (!elements.back())
       return {};
+
+    allEltsLValue &= !elements.back().ir.getIfLValue().isNull();
+  }
+
+  // If this is a tuple with all LValue elements, return a DLValue since we can
+  // assign into this expression.
+  // TODO: Add support for list LValues as well.
+  if (allEltsLValue && isa<TupleNode>(node)) {
+    // Bind the correct element types for the tuple to the tuple type.
+    SmallVector<TypedAttr> eltTypes;
+    for (auto elt : elements) {
+      Type eltType = elt.ir.getIfLValue().getRValueType();
+      eltTypes.push_back(ParameterizedTypeConstantAttr::get(eltType));
+    }
+
+    // Get the pack parameter from the TupleLiteral type.
+    ASTDecl &tupleLiteralDecl = *type.getDecl(emitter.shared);
+    auto tupleLiteralStruct = cast<StructDeclOp>(tupleLiteralDecl);
+    assert(tupleLiteralStruct.getInputParams().size() == 1);
+    ParamDeclAttr tupleParam = tupleLiteralStruct.getInputParams()[0];
+
+    // Bind it to a VariadicAttr of the right elements.
+    auto packAttr =
+        VariadicAttr::get(eltTypes, cast<VariadicType>(tupleParam.getType()));
+    auto packBind = ParamBindAttr::get(tupleParam.getName(), packAttr);
+    type = DeclRefType::get(type.getDecl(emitter.shared)->getSymbolRef(),
+                            packBind);
+
+    DLValue result(LLCL::RCRef<TupleDLValue>::create(elements, type, node));
+    return emitter.emitResult(std::move(result), node, dest);
   }
 
   // The ASTType will carry around parameters bound, we want to unbind them so
@@ -1713,16 +1747,12 @@ static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
 AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Lookup the builtin TupleLiteral type, in order to call its constructor.
   ASTType type = emitter.shared.getBuiltinTupleLiteralType(getLoc());
-  if (!type)
-    return {};
   return emitHeterogenousSequence(dest, emitter, type, this, exprs);
 }
 
 AnyValue ListNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Lookup the builtin ListLiteral type, in order to call its constructor.
   ASTType type = emitter.shared.getBuiltinListLiteralType(getLoc());
-  if (!type)
-    return {};
   return emitHeterogenousSequence(dest, emitter, type, this, exprs);
 }
 

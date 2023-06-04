@@ -1489,3 +1489,98 @@ void SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
   emitter.emitNamedMethodCall(methodName, operands, ValueDest::none(),
                               CallSyntax::kSubscript, expr);
 }
+
+/// Loading a tuple RValue loads all the elements and returns a tuple instance.
+CValue TupleDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
+  // Emit a call to the tuple type constructor as an implicit conversion.
+  return emitter.emitConstructorCall(elementType, eltLValues, expr,
+                                     CallSyntax::kImplicitConvert, dest);
+}
+
+/// Storing to a tuple LValue extracts the elements out of the provided value
+/// stores them into each component LValue.
+void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
+                             ExprEmitter &emitter) const {
+  auto emitError = [&]() -> InflightDiag {
+    return (emitter.emitError(expr->getLoc())
+            << value.expr->getRange() << expr->getRange());
+  };
+
+  // If the value is a type with a staticly known length, check that it agrees
+  // with the # of lvalues being assigned into.  Maybe we could generalize this
+  // to invoke a new static get_static_len method or something?
+  // TODO(generalize): Need @parameter fn's for methods
+  // https://github.com/modularml/modular/issues/14945
+  ASTDecl &tupleLiteralDecl = *elementType.getDecl(emitter.shared);
+  ASTType srcRValueType = value.ir.getRValueType();
+
+  // TODO: We need to support storing anything into a tuple that can be
+  // extracted from, even things with dynamic length.  For example, Python
+  // allows "(a, b) = [1, 2]", we need to support PythonObject.  The correct
+  // sequence is to check the len(x) of the argument and see if it is exactly
+  // right, CPython produces these errors at runtime:
+  //   ValueRrror: too many values to unpack (expected 2)
+  //   ValueError: not enough values to unpack (expected 2, got 1)
+  //
+  // We currently require the input be a TupleLiteral.
+  if (srcRValueType.getDecl(emitter.shared) != &tupleLiteralDecl) {
+    emitError() << "cannot unpack value of type " << srcRValueType
+                << " into a tuple";
+    return;
+  }
+
+  assert(srcRValueType.getParamBindings().size() == 1 &&
+         "TupleLiteral has one pack parameter");
+  ParamBindAttr packAttr = srcRValueType.getParamBindings()[0];
+  auto packVariadic = dyn_cast<VariadicAttr>(packAttr.getValue());
+  if (!packVariadic) {
+    emitError() << "cannot unpack value of parametric tuple type "
+                << srcRValueType << " into a fixed arity";
+    return;
+  }
+  if (packVariadic.getValues().size() != eltLValues.size()) {
+    emitError() << "cannot unpack tuple value with "
+                << packVariadic.getValues().size()
+                << " elements into tuple binding with " << eltLValues.size()
+                << " elements";
+    return;
+  }
+
+  // TupleLiteral has a get method with a signature of:
+  //    get[i: Int, T: AnyType](self)
+  // FIXME(Issue #14946): The TupleLiteral.get's T parameter shouldn't exist!
+  //   https://github.com/modularml/modular/issues/14946
+  // For the dynamic case we'd use __get_item__.
+  OverloadSet getDecl(elementType, "get", expr, CallSyntax::kTupleGetItem,
+                      emitter.shared, /*errorHandler*/ {});
+
+  if (getDecl.isNull()) {
+    emitError() << "expected TupleLiteral to have one get method";
+    return;
+  }
+
+  // Bind the TupleLiteral type parameters.
+  getDecl.inputParamBindings.addPrechecked(packVariadic);
+
+  // Ok, we have a tuple with the right number of elements, extract each element
+  // and store into the corresponding lvalue.
+  for (auto [index, lvalue] : llvm::enumerate(eltLValues)) {
+    // Bind the i/T parameters.  Int implicitly constructs from index type.
+    TypedAttr iParam =
+        IntegerAttr::get(IndexType::get(emitter.getContext()), index);
+    getDecl.inputParamBindings.bindings.resize(1);
+    getDecl.inputParamBindings.add(expr, iParam);
+    getDecl.inputParamBindings.add(expr, packVariadic.getValues()[index]);
+
+    // Emit the call to get the item from the tuple into the corresponding
+    // LValue.
+    LValue lv = lvalue.ir.getIfLValue();
+    assert(lv && "Each dest is known to be an lvalue");
+    ValueDest eltDest(lv, EC_TupleElement);
+
+    if (!getDecl.emitCall({{value.ir, value.expr}}, eltDest, emitter)) {
+      eltDest.resetForError();
+      return;
+    }
+  }
+}

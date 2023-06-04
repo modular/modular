@@ -664,6 +664,21 @@ public:
                          ExprEmitter &emitter) const override;
 };
 
+/// This DLValue implementation represents tuple lvalues, e.g. `(a[i], b) = x`.
+class TupleDLValue : public BaseDLValue {
+public:
+  // These are the LValues for the sub-elements.
+  std::vector<ASTExprAnd<AnyValue>> eltLValues;
+
+  TupleDLValue(ArrayRef<ASTExprAnd<AnyValue>> eltLValues, ASTType tupleType,
+               const ExprNode *expr);
+
+  virtual void print(raw_ostream &os) const override;
+  virtual CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
+  virtual void emitStore(ASTExprAnd<CValue> value,
+                         ExprEmitter &emitter) const override;
+};
+
 } // namespace M::KGEN::LIT
 
 namespace llvm {

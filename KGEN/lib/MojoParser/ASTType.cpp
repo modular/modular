@@ -317,6 +317,14 @@ static void printParam(raw_ostream &os, TypedAttr param, bool forDiag) {
     os << '.' << extractAttr.getField().getValue();
     return;
   }
+  if (auto variadicCst = dyn_cast<VariadicAttr>(param)) {
+    // VariadicAttr appears in a pack list, so it doesn't need extra []'s around
+    // it.
+    llvm::interleaveComma(variadicCst.getValues(), os, [&](TypedAttr value) {
+      printParam(os, value, forDiag);
+    });
+    return;
+  }
 
   os << getParamAsString(param);
 }

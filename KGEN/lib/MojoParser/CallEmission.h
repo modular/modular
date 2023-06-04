@@ -46,7 +46,7 @@ public:
   struct Binding {
     /// This is the expression tree that produced the binding in the case of an
     /// Attribute, or null in the case of ParamBindAttr.
-    ExprNode *expr;
+    const ExprNode *expr;
     /// This is the value of the binding.
     TypedAttr value;
     /// This flag is set to true if the value has been type checked.
@@ -70,7 +70,7 @@ public:
   void addPrechecked(TypedAttr precheckedBinding);
 
   /// Add a bound value for a parameter expression bound to a value.
-  void add(ExprNode *expr, TypedAttr value) {
+  void add(const ExprNode *expr, TypedAttr value) {
     bindings.push_back({expr, value, /*typeChecked=*/false});
   }
 
@@ -117,6 +117,7 @@ enum class CallSyntax : uint8_t {
   kAttribute,        // v.x             (where x is not a static member of v).
   kImplicitConvert,  //< Conversion in an argument context
   kDestructor,       //< Destructor due to a value definition.
+  kTupleGetItem,     //< Call to getitem in a tuple assignment.
 };
 
 /// This class represents an unresolved overload set with partially bound
