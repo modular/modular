@@ -1399,9 +1399,10 @@ static ORValue bindParamValuesToDirectCall(ORValue value,
   // If the indices are a single () expression, then we treat this as having
   // no parameters.  This is used with arrow expressions to allow `f[() -> x]`.
   if (indices.size() == 1) {
-    if (auto *tuple = dyn_cast<TupleNode>(indices[0]))
-      if (tuple->exprs.empty())
-        return value;
+    if (auto *paren = dyn_cast<ParenNode>(indices[0]))
+      if (auto *tuple = dyn_cast<TupleNode>(paren->subExpr))
+        if (tuple->exprs.empty())
+          return value;
   }
 
   // Process each subscript entry as a binding.

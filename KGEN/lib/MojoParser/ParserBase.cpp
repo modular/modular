@@ -82,21 +82,23 @@ ParserBase::parseListUntil(Token::Kind rightToken,
 ///
 ParseResult ParserBase::parseSeparatedList(
     Token::Kind separator, const function_ref<ParseResult()> &parseElement,
-    ArrayRef<Token::Kind> terminators, bool *hadTrailingSep) {
-  if (hadTrailingSep)
-    *hadTrailingSep = false;
+    ArrayRef<Token::Kind> terminators, SMLoc *firstCommaLoc) {
+  if (firstCommaLoc)
+    *firstCommaLoc = SMLoc();
   if (parseElement())
     return failure();
-  while (consumeIf(separator)) {
+
+  while (consumeIf(separator, firstCommaLoc)) {
+    // Get the location of the first comma, not subsequent ones.
+    firstCommaLoc = nullptr;
+
     // Empty terminators signals no terminator was given as input so check for
     // "new line": if we have indentation it means we are starting a line
     // after the last separator.
     if (getToken().isAny(terminators) ||
-        (terminators.empty() && getToken().getIndentation().has_value())) {
-      if (hadTrailingSep)
-        *hadTrailingSep = true;
+        (terminators.empty() && getToken().getIndentation().has_value()))
       break;
-    }
+
     if (parseElement())
       return failure();
   }

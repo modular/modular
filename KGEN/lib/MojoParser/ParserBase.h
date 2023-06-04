@@ -145,13 +145,13 @@ public:
   ParseResult
   parseSeparatedList(Token::Kind separator,
                      const function_ref<ParseResult()> &parseElement,
-                     ArrayRef<Token::Kind> terminators, bool *hadTrailingSep);
+                     ArrayRef<Token::Kind> terminators, SMLoc *firstCommaLoc);
   ParseResult
   parseCommaSeparatedList(const function_ref<ParseResult()> &parseElement,
                           ArrayRef<Token::Kind> terminators,
-                          bool *hadTrailingSep = nullptr) {
+                          SMLoc *firstCommaLoc = nullptr) {
     return parseSeparatedList(Token::comma, parseElement, terminators,
-                              hadTrailingSep);
+                              firstCommaLoc);
   }
 
   /// Skip tokens until we get to a token at start of line that has indentation
@@ -196,10 +196,7 @@ public:
   /// trailing punctuator that naturally terminates the expression.
   ParseResult parseExpressionList(SmallVectorImpl<ExprNode *> &results,
                                   std::optional<size_t> stmtIndent,
-                                  bool *hadTrailingComma);
-  ParseResult parseStarredList(SmallVectorImpl<ExprNode *> &results,
-                               std::optional<size_t> stmtIndent,
-                               bool *hadTrailingComma);
+                                  SMLoc *firstCommaLoc);
   ParseResult parseExpression(ExprNode *&expr,
                               std::optional<size_t> stmtIndent);
   ParseResult parseStarredItem(ExprNode *&expr);
