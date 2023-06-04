@@ -2112,7 +2112,11 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
 
       // Make sure the values in the pack stay live across the entire call, not
       // just the pop.variadic.create op.
-      afterCallActions.valuesToKeepAlive.push_back(argVal);
+      bool isTrivial = false;
+      if (auto cv = operand.ir.getIfCValue())
+        isTrivial = cv.getRValueType().isTrivial(callExpr->getLoc(), shared);
+      if (!isTrivial)
+        afterCallActions.valuesToKeepAlive.push_back(argVal);
     }
 
     Location loc = translateLocation(callExpr->getLoc());
