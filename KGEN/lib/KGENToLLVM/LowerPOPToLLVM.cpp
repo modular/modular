@@ -272,11 +272,13 @@ struct ConvertPOPCast : public ConvertPOPToLLVMPattern<CastOp> {
     StringRef opName;
     if (inDType.isBool() || inDType.isInt() || inDType.isIndex()) {
       if (outDType.isBool() || outDType.isInt() || outDType.isIndex()) {
-        if (outByteCount > inByteCount) {
+        // A bool should still become a cast as the bool is only 1 bit but
+        // appears as 1 byte here.
+        if (outByteCount > inByteCount || inDType.isBool()) {
           // Sign or zero extend.
           opName = inDType.isSInt() ? LLVM::SExtOp::getOperationName()
                                     : LLVM::ZExtOp::getOperationName();
-        } else if (outByteCount < inByteCount) {
+        } else if (outByteCount < inByteCount || outDType.isBool()) {
           // Truncate.
           opName = LLVM::TruncOp::getOperationName();
         }
