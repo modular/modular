@@ -229,7 +229,7 @@ fn _compute_flat_index[
 # this `if` as it should be a constant.
 @always_inline
 fn simd_load_1D[
-    simd_width: Int, type: DType, rank: Int
+    type: DType, simd_width: Int, rank: Int
 ](
     buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
     index: StaticIntTuple[rank],
@@ -266,7 +266,7 @@ fn splat[
 # Load a tensor which might splat along the last dimension.
 @always_inline
 fn simd_load_maybe_splat[
-    simd_width: Int, type: DType, rank: Int
+    type: DType, simd_width: Int, rank: Int
 ](
     buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
     index: StaticIntTuple[rank],
@@ -282,7 +282,7 @@ fn simd_load_maybe_splat[
 # Load a tensor which does a splat along the last dimension.
 @always_inline
 fn simd_load_splat[
-    simd_width: Int, type: DType, rank: Int
+    type: DType, simd_width: Int, rank: Int
 ](
     buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
     index: StaticIntTuple[rank],
@@ -297,7 +297,7 @@ fn simd_load_splat[
 
 @always_inline
 fn simd_load[
-    simd_width: Int, type: DType, rank: Int
+    type: DType, simd_width: Int, rank: Int
 ](
     buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
     index: StaticIntTuple[rank],
@@ -308,7 +308,7 @@ fn simd_load[
 
 @always_inline
 fn simd_load_strided[
-    simd_width: Int, type: DType, rank: Int
+    type: DType, simd_width: Int, rank: Int
 ](
     buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
     index: StaticIntTuple[rank],
@@ -320,7 +320,7 @@ fn simd_load_strided[
     # We aren't loading from something of stride == 1 or stride == 0 then
     # we have to use a gather load unfortunately.
     if stride > 1:
-        return strided_load[simd_width, type](
+        return strided_load[type, simd_width](
             buffer.data.offset(flat_index), stride
         )
     else:
@@ -329,7 +329,7 @@ fn simd_load_strided[
 
 @always_inline
 fn simd_store[
-    simd_width: Int, type: DType, rank: Int
+    type: DType, simd_width: Int, rank: Int
 ](
     buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
     index: StaticIntTuple[rank],
@@ -479,7 +479,7 @@ fn pow_wrapped[
 ](value: SIMD[type, simd_width], power: SIMD[type, simd_width]) -> SIMD[
     type, simd_width
 ]:
-    return pow[simd_width, type, type](value, power)
+    return pow[type, type, simd_width](value, power)
 
 
 # ===----------------------------------------------------------------------===#
