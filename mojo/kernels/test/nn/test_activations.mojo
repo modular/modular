@@ -14,7 +14,7 @@ from Math import iota
 fn test_elu():
     print("== test_elu")
 
-    let simd_val = iota[4, DType.float32]()
+    let simd_val = iota[DType.float32, 4]()
 
     # CHECK: [0.0, 1.0, 2.0, 3.0]
     print(elu(simd_val))
@@ -30,7 +30,7 @@ fn test_elu():
 fn test_relu():
     print("== test_relu")
 
-    let simd_val = iota[4, DType.float32]()
+    let simd_val = iota[DType.float32, 4]()
 
     # CHECK: [0.0, 1.0, 2.0, 3.0]
     print(relu(simd_val))
@@ -46,7 +46,7 @@ fn test_relu():
 fn test_relu_n1():
     print("== test_relu_n1")
 
-    let simd_val = iota[4, DType.float32]()
+    let simd_val = iota[DType.float32, 4]()
 
     # CHECK: [0.0, 1.0, 1.0, 1.0]
     print(relu_n1(simd_val))
@@ -62,7 +62,7 @@ fn test_relu_n1():
 fn test_prelu():
     print("== test_prelu")
 
-    let simd_val = iota[4, DType.float32]()
+    let simd_val = iota[DType.float32, 4]()
 
     # CHECK: [0.0, 1.0, 2.0, 3.0]
     print(prelu(simd_val, 2))
@@ -78,7 +78,7 @@ fn test_prelu():
 fn test_gelu_float32():
     print("== test_gelu_float32")
 
-    let simd_val = 2 - 0.5 * iota[4, DType.float32]()
+    let simd_val = 2 - 0.5 * iota[DType.float32, 4]()
 
     # There is no difference in the results from MLAS and oneDNN gelu.
     # CHECK: [1.95449{{[0-9]+}}, 1.39978{{[0-9]+}}, 0.84134{{[0-9]+}}, 0.34573{{[0-9]+}}]
@@ -99,7 +99,7 @@ fn test_gelu_float32():
 fn test_gelu_float64():
     print("== test_gelu_float64")
 
-    let simd_val = 2 - 0.5 * iota[4, DType.float64]()
+    let simd_val = 2 - 0.5 * iota[DType.float64, 4]()
 
     # There is no difference in the results from MLAS and oneDNN gelu.
     # CHECK: [1.95449{{[0-9]+}}, 1.39978{{[0-9]+}}, 0.84134{{[0-9]+}}, 0.34573{{[0-9]+}}]

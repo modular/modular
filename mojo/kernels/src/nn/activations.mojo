@@ -75,7 +75,7 @@ struct ActivationType:
 
 @always_inline
 fn dispatch_activation_fn[
-    activation: ActivationType, simd_width: Int, type: DType
+    activation: ActivationType, type: DType, simd_width: Int
 ](val: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     @parameter
     if activation == ActivationType.IDENTITY:
@@ -114,7 +114,7 @@ fn dispatch_activation_fn[
 
 
 fn _tanh[
-    simd_width: Int, type: DType
+    type: DType, simd_width: Int
 ](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     return tanh(x)
 
@@ -126,7 +126,7 @@ fn _tanh[
 
 @always_inline
 fn sign[
-    simd_width: Int, type: DType
+    type: DType, simd_width: Int
 ](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     """Compute the sign (0, 1) of the input value.
 
@@ -152,7 +152,7 @@ fn sign[
 
 @always_inline
 fn elu[
-    simd_width: Int, type: DType
+    type: DType, simd_width: Int
 ](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     """Compute the Elu Op using the equation $z if z >= 0 else alpha*(e^z -1)$.
 
@@ -176,7 +176,7 @@ fn elu[
 
 @always_inline
 fn relu[
-    simd_width: Int, type: DType
+    type: DType, simd_width: Int
 ](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     """Compute the Relu Op using the equation $max(0, x)$.
 
@@ -200,7 +200,7 @@ fn relu[
 
 @always_inline
 fn relu6[
-    simd_width: Int, type: DType
+    type: DType, simd_width: Int
 ](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     """Compute the Relu6 Op using the equation $min(max(0,x),6)$.
 
@@ -224,7 +224,7 @@ fn relu6[
 
 @always_inline
 fn prelu[
-    simd_width: Int, type: DType
+    type: DType, simd_width: Int
 ](x: SIMD[type, simd_width], alpha: SIMD[type, 1]) -> SIMD[type, simd_width]:
     """Compute the Prelu Op using the equation $max(x,0) + alpha * min(x,0)$.
 
@@ -248,7 +248,7 @@ fn prelu[
 
 @always_inline
 fn relu_n1[
-    simd_width: Int, type: DType
+    type: DType, simd_width: Int
 ](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     """Compute the Relu N1 Op using the equation $max(min(x,1),-1)$.
 
@@ -272,7 +272,7 @@ fn relu_n1[
 
 @always_inline
 fn _erf[
-    simd_width: Int, type: DType
+    type: DType, simd_width: Int
 ](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     """Compute the erf function. This uses the formula 7.1.26 on page 299 from
     `Abramowitz and Stegun from "Handbook of Mathematical Functions"`.
@@ -304,7 +304,7 @@ fn _erf[
 
 @always_inline
 fn gelu[
-    simd_width: Int, type: DType
+    type: DType, simd_width: Int
 ](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     """Compute the GELU Op using the equation
     $0.5 * x * (1 + erf(x / sqrt(2)))$.
@@ -341,7 +341,7 @@ fn gelu[
 
 @always_inline
 fn gelu_approximate[
-    simd_width: Int, type: DType
+    type: DType, simd_width: Int
 ](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     """Compute the approximate GELU Op using the equation
     $0.5 * x * (1 + tanh(sqrt(2 / pi) * (x + 0.044715 * x^3)))$.
@@ -370,7 +370,7 @@ fn gelu_approximate[
 
 @always_inline
 fn gelu_approximate_sigmoid[
-    simd_width: Int, type: DType
+    type: DType, simd_width: Int
 ](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     """Compute the approximate GELU Op using the equation
     $x*sigmoid(1.702x)$.
@@ -402,7 +402,7 @@ fn gelu_approximate_sigmoid[
 
 @always_inline
 fn sigmoid[
-    simd_width: Int, type: DType
+    type: DType, simd_width: Int
 ](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     """Compute the Sigmoid Op using the equation $e^x / (e^x + 1)$.
 
@@ -428,7 +428,7 @@ fn sigmoid[
 
 @always_inline
 fn sigmoid_grad[
-    simd_width: Int, type: DType
+    type: DType, simd_width: Int
 ](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     """Compute the Sigmoid Grad Op using the equation
     $(1-sigmoid(x))*sigmoid(x)$.

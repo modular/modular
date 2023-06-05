@@ -32,7 +32,7 @@ fn gather_reduce[
     gather_axis: Int,
     reduce_axis: Int,
     simd_width: Int,
-    reduce_fn: fn[width: Int, type: DType] (
+    reduce_fn: fn[type: DType, width: Int] (
         SIMD[type, width], SIMD[type, width]
     ) -> SIMD[type, width],
 ](
@@ -149,7 +149,7 @@ fn gather_reduce[
                     let in_idx = StaticIntTuple[2](idx, k)
 
                     let gather_chunk = input.simd_load[simd_width](in_idx)
-                    accum = reduce_fn[simd_width, type](accum, gather_chunk)
+                    accum = reduce_fn[type, simd_width](accum, gather_chunk)
 
                 let out_idx = StaticIntTuple[2](i, k)
                 output.simd_store[simd_width](out_idx, accum)

@@ -91,9 +91,7 @@ fn layer_norm[
 
         let mean_val = _sum_to_mean()
 
-        let var_val = variance[simd_width](
-            out_slice, mean_val, 0
-        )  # use biased estimator
+        let var_val = variance(out_slice, mean_val, 0)  # use biased estimator
 
         let norm_factor = 1 / sqrt(var_val + eps)
 

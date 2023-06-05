@@ -84,9 +84,9 @@ fn _softmax_2_pass_step1[
         let new_max_vec = SIMD[type, simd_width].splat(
             running_max_vec.max(simd_elem).reduce_max()
         )
-        running_sum_vec = running_sum_vec * exp[simd_width, type](
+        running_sum_vec = running_sum_vec * exp(
             running_max_vec - new_max_vec
-        ) + exp[simd_width, type](simd_elem - new_max_vec)
+        ) + exp(simd_elem - new_max_vec)
         running_max_vec = new_max_vec
 
     var running_max = running_max_vec.reduce_max()
@@ -95,9 +95,9 @@ fn _softmax_2_pass_step1[
     for i in range(vector_end, len):
         let elem = input[i]
         let new_max = running_max.max(elem)
-        running_sum = running_sum * exp[1, type](running_max - new_max) + exp[
-            1, type
-        ](elem - new_max)
+        running_sum = running_sum * exp(running_max - new_max) + exp(
+            elem - new_max
+        )
         running_max = new_max
 
     return StaticTuple[2, __mlir_type[`!pop.scalar<`, type.value, `>`]](
@@ -129,8 +129,7 @@ fn _softmax_2_pass_step2[
         let input_val = input.simd_load[simd_width](idx)
         output.simd_store[simd_width](
             idx,
-            exp[simd_width, type](input_val - running_max_simd)
-            / running_sum_simd,
+            exp(input_val - running_max_simd) / running_sum_simd,
         )
 
     vectorize_unroll[simd_width, unroll_factor, _step_2](output.__len__())
@@ -195,10 +194,10 @@ fn _softmax_3_pass_step_2[
     unroll_factor: Int,
     buffer_size: Dim,
     type: DType,
-    pre_update_func: fn[width: Int, type: DType] (SIMD[type, width]) -> SIMD[
+    pre_update_func: fn[type: DType, width: Int] (SIMD[type, width]) -> SIMD[
         type, width
     ],
-    post_update_func: fn[width: Int, type: DType] (SIMD[type, width]) -> SIMD[
+    post_update_func: fn[type: DType, width: Int] (SIMD[type, width]) -> SIMD[
         type, width
     ],
 ](
@@ -223,9 +222,9 @@ fn _softmax_3_pass_step_2[
             type, simd_width
         ].splat(max_val)
 
-        elem = pre_update_func[simd_width, type](elem)
+        elem = pre_update_func[type, simd_width](elem)
         output.simd_store[simd_width](idx, elem)
-        elem = post_update_func[simd_width, type](elem)
+        elem = post_update_func[type, simd_width](elem)
         reduce_add_simd[outer_simd_width, simd_width, type](
             accum_scalar, accum_simd, elem
         )
@@ -240,10 +239,10 @@ fn _softmax_3_pass_step_3[
     unroll_factor: Int,
     buffer_size: Dim,
     type: DType,
-    accum_proc_func: fn[width: Int, type: DType] (SIMD[type, width]) -> SIMD[
+    accum_proc_func: fn[type: DType, width: Int] (SIMD[type, width]) -> SIMD[
         type, width
     ],
-    accum_apply_func: fn[width: Int, type: DType] (
+    accum_apply_func: fn[type: DType, width: Int] (
         SIMD[type, width], SIMD[type, width]
     ) -> SIMD[type, width],
 ](output: Buffer[buffer_size, type], accum: SIMD[type, 1],):
@@ -252,14 +251,14 @@ fn _softmax_3_pass_step_3[
     # for i = 0 to N do
     #   accum_apply_func(Output[b, i], accum)
     # end for
-    let accum_proc = accum_proc_func[1, type](accum)
+    let accum_proc = accum_proc_func[type, 1](accum)
 
     @always_inline
     @parameter
     fn step_3[simd_width: Int](idx: Int):
         let accum_simd = SIMD[type, simd_width].splat(accum_proc)
         var elem = output.simd_load[simd_width](idx)
-        elem = accum_apply_func[simd_width, type](elem, accum_simd)
+        elem = accum_apply_func[type, simd_width](elem, accum_simd)
         output.simd_store[simd_width](idx, elem)
 
     vectorize_unroll[simd_width, unroll_factor, step_3](output.__len__())
@@ -269,16 +268,16 @@ fn _softmax_3_pass_base[
     simd_width: Int,
     buffer_size: Dim,
     type: DType,
-    step2_pre_update_func: fn[width: Int, type: DType] (
+    step2_pre_update_func: fn[type: DType, width: Int] (
         SIMD[type, width]
     ) -> SIMD[type, width],
-    step2_post_update_func: fn[width: Int, type: DType] (
+    step2_post_update_func: fn[type: DType, width: Int] (
         SIMD[type, width]
     ) -> SIMD[type, width],
-    step3_accum_proc_func: fn[width: Int, type: DType] (
+    step3_accum_proc_func: fn[type: DType, width: Int] (
         SIMD[type, width]
     ) -> SIMD[type, width],
-    step3_accum_apply_func: fn[width: Int, type: DType] (
+    step3_accum_apply_func: fn[type: DType, width: Int] (
         SIMD[type, width], SIMD[type, width]
     ) -> SIMD[type, width],
 ](output: Buffer[buffer_size, type], input: Buffer[buffer_size, type]):
@@ -297,7 +296,7 @@ fn _softmax_3_pass_base[
         None
     """
     # STEP 1
-    let max_val = max[simd_width, buffer_size, type](input)
+    let max_val = max(input)
 
     # STEP 2
     alias unroll_factor = 8  # TODO: search

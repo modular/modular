@@ -1627,7 +1627,7 @@ struct ConvNHWCInnerLoopFilterPacked[
             elif (idx0 + tile_idx[0]) < self.c_bound[0]:
                 # Use partial load if row inbound but col not
                 #  in simd bound.
-                c_data = partial_simd_load[simd_size, accum_type](
+                c_data = partial_simd_load[accum_type, simd_size](
                     self.c._offset(global_idx),
                     0,
                     self.c_bound[1] - tile_idx[1] - col_idx,
@@ -1690,7 +1690,7 @@ struct ConvNHWCInnerLoopFilterPacked[
             elif idx0 < (self.c_bound[0] - tile_idx[0]):
                 # Use partial store if row in bound but col not
                 #  in simd bound.
-                partial_simd_store[simd_size, accum_type](
+                partial_simd_store(
                     self.c._offset(global_idx),
                     0,
                     self.c_bound[1] - tile_idx[1] - col_idx,
@@ -1769,7 +1769,7 @@ struct ConvNHWCInnerLoopFilterPacked[
             ]()
             var c_val = c_local.simd_load[simd_size](c_idx)
 
-            c_val = fma[simd_size, accum_type](a_val, b_val, c_val)
+            c_val = fma(a_val, b_val, c_val)
             c_local.simd_store[simd_size](c_idx, c_val)
 
         unroll2[pack_inner_size // simd_size, a_row_size, outer_body]()
