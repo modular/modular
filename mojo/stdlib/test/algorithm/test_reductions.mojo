@@ -38,13 +38,13 @@ fn test_reductions():
         vector[i] = i + 1
 
     # CHECK: 1.0
-    print(min[simd_width](vector))
+    print(min(vector))
 
     # CHECK: 100.0
-    print(max[simd_width](vector))
+    print(max(vector))
 
     # CHECK: 5050.0
-    print(sum[simd_width](vector))
+    print(sum(vector))
 
 
 # We use a smaller vector so that we do not overflow
@@ -62,7 +62,7 @@ fn test_product():
         vector[i] = i + 1
 
     # CHECK: 3628800.0
-    print(product[simd_width](vector))
+    print(product(vector))
 
 
 # CHECK-LABEL: test_mean_variance
@@ -79,10 +79,10 @@ fn test_mean_variance():
         vector[i] = i + 1
 
     # CHECK: 50.5
-    print(mean[simd_width](vector))
+    print(mean(vector))
 
     # CHECK: 841.666687
-    print(variance[simd_width](vector, 1))
+    print(variance(vector, 1))
 
 
 fn test_3d_reductions():
@@ -104,7 +104,6 @@ fn test_3d_reductions():
             input.flatten()[i] = i
 
         sum[
-            simd_width,
             3,
             input_shape,
             output_shape,
@@ -168,13 +167,13 @@ fn test_boolean():
     vector[4] = True.value
 
     # CHECK: False
-    print(all_true[simd_width](vector))
+    print(all_true(vector))
 
     # CHECK: True
-    print(any_true[simd_width](vector))
+    print(any_true(vector))
 
     # CHECK: False
-    print(none_true[simd_width](vector))
+    print(none_true(vector))
 
     ###################################################
     # Check with all the elements set to True
@@ -184,13 +183,13 @@ fn test_boolean():
         vector[i] = True.value
 
     # CHECK: True
-    print(all_true[simd_width](vector))
+    print(all_true(vector))
 
     # CHECK: True
-    print(any_true[simd_width](vector))
+    print(any_true(vector))
 
     # CHECK: False
-    print(none_true[simd_width](vector))
+    print(none_true(vector))
 
     ###################################################
     # Check with all the elements set to False
@@ -200,13 +199,13 @@ fn test_boolean():
         vector[i] = False.value
 
     # CHECK: False
-    print(all_true[simd_width](vector))
+    print(all_true(vector))
 
     # CHECK: False
-    print(any_true[simd_width](vector))
+    print(any_true(vector))
 
     # CHECK: True
-    print(none_true[simd_width](vector))
+    print(none_true(vector))
 
 
 fn main():

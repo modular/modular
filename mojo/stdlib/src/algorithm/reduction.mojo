@@ -19,7 +19,7 @@ from Math import (
 from Numerics import inf, neginf
 from Range import range
 from SIMD import SIMD
-from TargetInfo import dtype_sizeof
+from TargetInfo import dtype_sizeof, dtype_simd_width
 
 # ===----------------------------------------------------------------------===#
 # reduce
@@ -36,10 +36,10 @@ fn map_reduce[
     input_gen_fn: fn[type: DType, width: Int] (Int) capturing -> SIMD[
         type, width
     ],
-    reduce_vec_to_vec_fn: fn[width: Int, acc_type: DType, type: DType] (
+    reduce_vec_to_vec_fn: fn[acc_type: DType, type: DType, width: Int] (
         SIMD[acc_type, width], SIMD[type, width]
     ) capturing -> SIMD[acc_type, width],
-    reduce_vec_to_scalar_fn: fn[width: Int, type: DType] (
+    reduce_vec_to_scalar_fn: fn[type: DType, width: Int] (
         SIMD[type, width]
     ) -> SIMD[type, 1],
 ](dst: Buffer[size, type], init: SIMD[acc_type, 1]) -> SIMD[acc_type, 1]:
@@ -76,15 +76,15 @@ fn map_reduce[
     for i in range(0, vector_end, unrolled_simd_width):
         let val_simd = input_gen_fn[type, unrolled_simd_width](i)
         dst.simd_store(i, val_simd)
-        acc_simd = reduce_vec_to_vec_fn[unrolled_simd_width, acc_type, type](
+        acc_simd = reduce_vec_to_vec_fn[acc_type, type, unrolled_simd_width](
             acc_simd, val_simd
         )
 
-    var acc = reduce_vec_to_scalar_fn[unrolled_simd_width, acc_type](acc_simd)
+    var acc = reduce_vec_to_scalar_fn[acc_type, unrolled_simd_width](acc_simd)
     for i in range(vector_end, len):
         let val = input_gen_fn[type, 1](i)
         dst[i] = val
-        acc = reduce_vec_to_vec_fn[1, acc_type, type](acc, val)
+        acc = reduce_vec_to_vec_fn[acc_type, type, 1](acc, val)
     return acc[0].value
 
 
@@ -95,10 +95,10 @@ fn reduce[
     size: Dim,
     type: DType,
     acc_type: DType,
-    map_fn: fn[width: Int, acc_type: DType, type: DType] (
+    map_fn: fn[acc_type: DType, type: DType, width: Int] (
         SIMD[acc_type, width], SIMD[type, width]
     ) capturing -> SIMD[acc_type, width],
-    reduce_fn: fn[width: Int, type: DType] (SIMD[type, width]) -> SIMD[type, 1],
+    reduce_fn: fn[type: DType, width: Int] (SIMD[type, width]) -> SIMD[type, 1],
 ](src: Buffer[size, type], init: SIMD[acc_type, 1]) -> SIMD[acc_type, 1]:
     """Computes a custom reduction of buffer elements.
 
@@ -128,13 +128,13 @@ fn reduce[
     let len = src.__len__()
     let vector_end = (len // unrolled_simd_width) * unrolled_simd_width
     for i in range(0, vector_end, unrolled_simd_width):
-        acc_simd = map_fn[unrolled_simd_width, acc_type, type](
+        acc_simd = map_fn[acc_type, type, unrolled_simd_width](
             acc_simd, src.simd_load[unrolled_simd_width](i)
         )
 
-    var acc = reduce_fn[unrolled_simd_width, acc_type](acc_simd)
+    var acc = reduce_fn[acc_type, unrolled_simd_width](acc_simd)
     for i in range(vector_end, len):
-        acc = map_fn[1, acc_type, type](acc, src[i])
+        acc = map_fn[acc_type, type, 1](acc, src[i])
     return acc[0].value
 
 
@@ -144,7 +144,7 @@ fn reduce_boolean[
     simd_width: Int,
     size: Dim,
     type: DType,
-    reduce_fn: fn[width: Int, type: DType] (
+    reduce_fn: fn[type: DType, width: Int] (
         SIMD[type, width]
     ) capturing -> Bool,
     continue_fn: fn (Bool) capturing -> Bool,
@@ -178,14 +178,14 @@ fn reduce_boolean[
     let vector_end = (len // unrolled_simd_width) * unrolled_simd_width
     var curr = init
     for i in range(0, vector_end, unrolled_simd_width):
-        curr = reduce_fn[unrolled_simd_width, type](
+        curr = reduce_fn[type, unrolled_simd_width](
             src.simd_load[unrolled_simd_width](i)
         )
         if not continue_fn(curr):
             return curr
 
     for ii in range(vector_end, len):  # TODO(#8365) use `i`
-        curr = reduce_fn[1, type](src[ii])
+        curr = reduce_fn[type, 1](src[ii])
         if not continue_fn(curr):
             return curr
     return curr
@@ -199,10 +199,10 @@ fn _reduce_3D[
     output_shape: DimList,
     type: DType,
     acc_type: DType,
-    map_fn: fn[width: Int, acc_type: DType, type: DType] (
+    map_fn: fn[acc_type: DType, type: DType, width: Int] (
         SIMD[acc_type, width], SIMD[type, width]
     ) capturing -> SIMD[acc_type, width],
-    reduce_fn: fn[width: Int, type: DType] (SIMD[type, width]) -> SIMD[type, 1],
+    reduce_fn: fn[type: DType, width: Int] (SIMD[type, width]) -> SIMD[type, 1],
 ](
     src: NDBuffer[3, input_shape, type],
     dst: NDBuffer[
@@ -262,7 +262,7 @@ fn _reduce_3D[
                 let chunk = src.simd_load[simd_width](
                     StaticIntTuple[3](i, j, idx)
                 )
-                accum = map_fn[simd_width, acc_type, type](accum, chunk)
+                accum = map_fn[acc_type, type, simd_width](accum, chunk)
             dst.simd_store[simd_width](StaticIntTuple[2](i, idx), accum)
 
         vectorize[usimd_width, reduce_w_chunked](c)
@@ -277,10 +277,10 @@ fn reduce[
     output_shape: DimList,
     type: DType,
     acc_type: DType,
-    map_fn: fn[width: Int, acc_type: DType, type: DType] (
+    map_fn: fn[acc_type: DType, type: DType, width: Int] (
         SIMD[acc_type, width], SIMD[type, width]
     ) capturing -> SIMD[acc_type, width],
-    reduce_fn: fn[width: Int, type: DType] (SIMD[type, width]) -> SIMD[type, 1],
+    reduce_fn: fn[type: DType, width: Int] (SIMD[type, width]) -> SIMD[type, 1],
     reduce_axis: Int,
 ](
     src: NDBuffer[rank, input_shape, type],
@@ -354,8 +354,8 @@ fn reduce[
 
 @always_inline
 fn _simd_max[
-    simd_width: Int,
     type: DType,
+    simd_width: Int,
 ](x: SIMD[type, simd_width]) -> SIMD[type, 1]:
     """Computes the max element in a simd vector and is
     compatible with the function signature expected by reduce_fn in reduce."""
@@ -366,9 +366,9 @@ fn _simd_max[
 @closure
 @parameter
 fn _simd_max_elementwise[
-    simd_width: Int,
     acc_type: DType,
     type: DType,
+    simd_width: Int,
 ](x: SIMD[acc_type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
     acc_type, simd_width
 ]:
@@ -378,15 +378,10 @@ fn _simd_max_elementwise[
     return x.max(y.cast[acc_type]())
 
 
-fn max[
-    simd_width: Int,
-    size: Dim,
-    type: DType,
-](src: Buffer[size, type]) -> SIMD[type, 1]:
+fn max[size: Dim, type: DType](src: Buffer[size, type]) -> SIMD[type, 1]:
     """Computes the max element in a buffer.
 
     Parameters:
-        simd_width: The vector width for the computation.
         size: The buffer size.
         type: The buffer elements dtype.
 
@@ -396,13 +391,13 @@ fn max[
     Returns:
         The maximum of the buffer elements.
     """
+    alias simd_width = dtype_simd_width[type]()
     return reduce[
         simd_width, size, type, type, _simd_max_elementwise, _simd_max
     ](src, src[0])
 
 
 fn max[
-    simd_width: Int,
     rank: Int,
     input_shape: DimList,
     output_shape: DimList,
@@ -415,7 +410,6 @@ fn max[
     """Computes the max across reduce_axis of an NDBuffer.
 
     Parameters:
-        simd_width: The vector width for the computation.
         rank: The rank of the input/output buffers.
         input_shape: The input buffer shape.
         output_shape: The output buffer shape.
@@ -426,6 +420,7 @@ fn max[
         src: The input buffer.
         dst: The output buffer.
     """
+    alias simd_width = dtype_simd_width[type]()
     return reduce[
         simd_width,
         rank,
@@ -446,8 +441,7 @@ fn max[
 
 @always_inline
 fn _simd_min[
-    simd_width: Int,
-    type: DType,
+    type: DType, simd_width: Int
 ](x: SIMD[type, simd_width]) -> SIMD[type, 1]:
     """Computes the min element in a simd vector and is
     compatible with the function signature expected by reduce_fn in reduce."""
@@ -458,9 +452,7 @@ fn _simd_min[
 @closure
 @parameter
 fn _simd_min_elementwise[
-    simd_width: Int,
-    acc_type: DType,
-    type: DType,
+    acc_type: DType, type: DType, simd_width: Int
 ](x: SIMD[acc_type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
     acc_type, simd_width
 ]:
@@ -470,15 +462,10 @@ fn _simd_min_elementwise[
     return x.min(y.cast[acc_type]())
 
 
-fn min[
-    simd_width: Int,
-    size: Dim,
-    type: DType,
-](src: Buffer[size, type]) -> SIMD[type, 1]:
+fn min[size: Dim, type: DType](src: Buffer[size, type]) -> SIMD[type, 1]:
     """Computes the min element in a buffer.
 
     Parameters:
-        simd_width: The vector width for the computation.
         size: The buffer size.
         type: The buffer elements dtype.
 
@@ -488,13 +475,13 @@ fn min[
     Returns:
         The minimum of the buffer elements.
     """
+    alias simd_width = dtype_simd_width[type]()
     return reduce[
         simd_width, size, type, type, _simd_min_elementwise, _simd_min
     ](src, src[0])
 
 
 fn min[
-    simd_width: Int,
     rank: Int,
     input_shape: DimList,
     output_shape: DimList,
@@ -507,7 +494,6 @@ fn min[
     """Computes the min across reduce_axis of an NDBuffer.
 
     Parameters:
-        simd_width: The vector width for the computation.
         rank: The rank of the input/output buffers.
         input_shape: The input buffer shape.
         output_shape: The output buffer shape.
@@ -518,6 +504,7 @@ fn min[
         src: The input buffer.
         dst: The output buffer.
     """
+    alias simd_width = dtype_simd_width[type]()
     return reduce[
         simd_width,
         rank,
@@ -538,8 +525,7 @@ fn min[
 
 @always_inline
 fn _simd_sum[
-    simd_width: Int,
-    type: DType,
+    type: DType, simd_width: Int
 ](x: SIMD[type, simd_width]) -> SIMD[type, 1]:
     """Computes the sum of elements in a simd vector and is
     compatible with the function signature expected by reduce_fn in reduce."""
@@ -550,9 +536,7 @@ fn _simd_sum[
 @closure
 @parameter
 fn _simd_sum_elementwise[
-    simd_width: Int,
-    acc_type: DType,
-    type: DType,
+    acc_type: DType, type: DType, simd_width: Int
 ](x: SIMD[acc_type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
     acc_type, simd_width
 ]:
@@ -562,15 +546,10 @@ fn _simd_sum_elementwise[
     return x + y.cast[acc_type]()
 
 
-fn sum[
-    simd_width: Int,
-    size: Dim,
-    type: DType,
-](src: Buffer[size, type]) -> SIMD[type, 1]:
+fn sum[size: Dim, type: DType](src: Buffer[size, type]) -> SIMD[type, 1]:
     """Computes the sum of buffer elements.
 
     Parameters:
-        simd_width: The vector width for the computation.
         size: The buffer size.
         type: The buffer elements dtype.
 
@@ -580,13 +559,13 @@ fn sum[
     Returns:
         The sum of the buffer elements.
     """
+    alias simd_width = dtype_simd_width[type]()
     return reduce[
         simd_width, size, type, type, _simd_sum_elementwise, _simd_sum
     ](src, 0)
 
 
 fn sum[
-    simd_width: Int,
     rank: Int,
     input_shape: DimList,
     output_shape: DimList,
@@ -599,7 +578,6 @@ fn sum[
     """Computes the sum across reduce_axis of an NDBuffer.
 
     Parameters:
-        simd_width: The vector width for the computation.
         rank: The rank of the input/output buffers.
         input_shape: The input buffer shape.
         output_shape: The output buffer shape.
@@ -610,6 +588,7 @@ fn sum[
         src: The input buffer.
         dst: The output buffer.
     """
+    alias simd_width = dtype_simd_width[type]()
     return reduce[
         simd_width,
         rank,
@@ -630,8 +609,7 @@ fn sum[
 
 @always_inline
 fn _simd_product[
-    simd_width: Int,
-    type: DType,
+    type: DType, simd_width: Int
 ](x: SIMD[type, simd_width]) -> SIMD[type, 1]:
     """Computes the product of elements in a simd vector and is
     compatible with the function signature expected by reduce_fn in reduce."""
@@ -642,9 +620,7 @@ fn _simd_product[
 @closure
 @parameter
 fn _simd_product_elementwise[
-    simd_width: Int,
-    acc_type: DType,
-    type: DType,
+    acc_type: DType, type: DType, simd_width: Int
 ](x: SIMD[acc_type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
     acc_type, simd_width
 ]:
@@ -654,15 +630,10 @@ fn _simd_product_elementwise[
     return x * y.cast[acc_type]()
 
 
-fn product[
-    simd_width: Int,
-    size: Dim,
-    type: DType,
-](src: Buffer[size, type]) -> SIMD[type, 1]:
+fn product[size: Dim, type: DType](src: Buffer[size, type]) -> SIMD[type, 1]:
     """Computes the product of the buffer elements.
 
     Parameters:
-        simd_width: The vector width for the computation.
         size: The buffer size.
         type: The buffer elements dtype.
 
@@ -672,13 +643,13 @@ fn product[
     Returns:
         The product of the buffer elements.
     """
+    alias simd_width = dtype_simd_width[type]()
     return reduce[
         simd_width, size, type, type, _simd_product_elementwise, _simd_product
     ](src, 1)
 
 
 fn product[
-    simd_width: Int,
     rank: Int,
     input_shape: DimList,
     output_shape: DimList,
@@ -691,7 +662,6 @@ fn product[
     """Computes the product across reduce_axis of an NDBuffer.
 
     Parameters:
-        simd_width: The vector width for the computation.
         rank: The rank of the input/output buffers.
         input_shape: The input buffer shape.
         output_shape: The output buffer shape.
@@ -702,6 +672,7 @@ fn product[
         src: The input buffer.
         dst: The output buffer.
     """
+    alias simd_width = dtype_simd_width[type]()
     return reduce[
         simd_width,
         rank,
@@ -720,15 +691,10 @@ fn product[
 # ===----------------------------------------------------------------------===#
 
 
-fn mean[
-    simd_width: Int,
-    size: Dim,
-    type: DType,
-](src: Buffer[size, type]) -> SIMD[type, 1]:
+fn mean[size: Dim, type: DType](src: Buffer[size, type]) -> SIMD[type, 1]:
     """Computes the mean value of the elements in a buffer.
 
     Parameters:
-        simd_width: The width of the output SIMD vector.
         size: The size of the input buffer..
         type: The type of the elements of the input buffer and output SIMD
               vector.
@@ -742,7 +708,7 @@ fn mean[
 
     debug_assert(src.__len__() != 0, "input must not be empty")
 
-    let total = sum[simd_width, size, type](src)
+    let total = sum(src)
     let buffer_len = src.__len__()
 
     @parameter
@@ -753,7 +719,6 @@ fn mean[
 
 
 fn mean[
-    simd_width: Int,
     rank: Int,
     input_shape: DimList,
     output_shape: DimList,
@@ -766,7 +731,6 @@ fn mean[
     """Computes the mean across reduce_axis of an NDBuffer.
 
     Parameters:
-        simd_width: The vector width for the computation.
         rank: The rank of the input/output buffers.
         input_shape: The input buffer shape.
         output_shape: The output buffer shape.
@@ -778,14 +742,8 @@ fn mean[
         dst: The output buffer.
     """
 
-    sum[
-        simd_width,
-        rank,
-        input_shape,
-        output_shape,
-        type,
-        reduce_axis,
-    ](src, dst)
+    alias simd_width = dtype_simd_width[type]()
+    sum[rank, input_shape, output_shape, type, reduce_axis](src, dst)
 
     let n = src.dim[reduce_axis]()
     let dst_1d = dst.flatten()
@@ -820,9 +778,7 @@ fn mean[
 
 
 fn variance[
-    simd_width: Int,
-    size: Dim,
-    type: DType,
+    size: Dim, type: DType
 ](
     src: Buffer[size, type],
     mean_value: SIMD[type, 1],
@@ -837,7 +793,6 @@ fn variance[
     ```
 
     Parameters:
-        simd_width: The vector width for the computation.
         size: The buffer size.
         type: The buffer elements dtype.
 
@@ -850,13 +805,14 @@ fn variance[
         The variance value of the elements in a buffer.
     """
     debug_assert(src.__len__() > 1, "input length must be greater than 1")
+    alias simd_width = dtype_simd_width[type]()
 
     @always_inline
     @parameter
     fn _simd_variance_elementwise[
-        simd_width: Int,
         acc_type: DType,
         type: DType,
+        simd_width: Int,
     ](x: SIMD[acc_type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
         acc_type, simd_width
     ]:
@@ -874,9 +830,7 @@ fn variance[
 
 
 fn variance[
-    simd_width: Int,
-    size: Dim,
-    type: DType,
+    size: Dim, type: DType
 ](src: Buffer[size, type], correction: Int = 1) -> SIMD[type, 1]:
     """Computes the variance value of the elements in a buffer.
 
@@ -885,7 +839,6 @@ fn variance[
     ```
 
     Parameters:
-        simd_width: The vector width for the computation.
         size: The buffer size.
         type: The buffer elements dtype.
 
@@ -897,8 +850,8 @@ fn variance[
         The variance value of the elements in a buffer.
     """
 
-    let mean_value = mean[simd_width, size, type](src)
-    return variance[simd_width](src, mean_value, correction)
+    let mean_value = mean(src)
+    return variance(src, mean_value, correction)
 
 
 # ===----------------------------------------------------------------------===#
@@ -906,13 +859,10 @@ fn variance[
 # ===----------------------------------------------------------------------===#
 
 
-fn all_true[
-    simd_width: Int, size: Dim, type: DType
-](src: Buffer[size, type]) -> Bool:
+fn all_true[size: Dim, type: DType](src: Buffer[size, type]) -> Bool:
     """Returns True if all the elements in a buffer are True and False otherwise.
 
     Parameters:
-        simd_width: The vector width for the computation.
         size: The buffer size.
         type: The buffer elements dtype.
 
@@ -926,7 +876,7 @@ fn all_true[
     @always_inline
     @parameter
     fn _reduce_fn[
-        simd_width: Int, type: DType
+        type: DType, simd_width: Int
     ](val: SIMD[type, simd_width]) -> Bool:
         @parameter
         if type == DType.bool:
@@ -938,6 +888,7 @@ fn all_true[
     fn _continue_fn(val: Bool) -> Bool:
         return val
 
+    alias simd_width = dtype_simd_width[type]()
     return reduce_boolean[simd_width, size, type, _reduce_fn, _continue_fn](
         src, False
     )
@@ -948,13 +899,10 @@ fn all_true[
 # ===----------------------------------------------------------------------===#
 
 
-fn any_true[
-    simd_width: Int, size: Dim, type: DType
-](src: Buffer[size, type]) -> Bool:
+fn any_true[size: Dim, type: DType](src: Buffer[size, type]) -> Bool:
     """Returns True if any the elements in a buffer are True and False otherwise.
 
     Parameters:
-        simd_width: The vector width for the computation.
         size: The buffer size.
         type: The buffer elements dtype.
 
@@ -968,7 +916,7 @@ fn any_true[
     @always_inline
     @parameter
     fn _reduce_fn[
-        simd_width: Int, type: DType
+        type: DType, simd_width: Int
     ](val: SIMD[type, simd_width]) -> Bool:
         @parameter
         if type == DType.bool:
@@ -980,6 +928,7 @@ fn any_true[
     fn _continue_fn(val: Bool) -> Bool:
         return not val
 
+    alias simd_width = dtype_simd_width[type]()
     return reduce_boolean[simd_width, size, type, _reduce_fn, _continue_fn](
         src, False
     )
@@ -990,14 +939,11 @@ fn any_true[
 # ===----------------------------------------------------------------------===#
 
 
-fn none_true[
-    simd_width: Int, size: Dim, type: DType
-](src: Buffer[size, type]) -> Bool:
+fn none_true[size: Dim, type: DType](src: Buffer[size, type]) -> Bool:
     """Returns True if none of the elements in a buffer are True and False
     otherwise.
 
     Parameters:
-        simd_width: The vector width for the computation.
         size: The buffer size.
         type: The buffer elements dtype.
 
@@ -1011,7 +957,7 @@ fn none_true[
     @always_inline
     @parameter
     fn _reduce_fn[
-        simd_width: Int, type: DType
+        type: DType, simd_width: Int
     ](val: SIMD[type, simd_width]) -> Bool:
         @parameter
         if type == DType.bool:
@@ -1023,6 +969,7 @@ fn none_true[
     fn _continue_fn(val: Bool) -> Bool:
         return val
 
+    alias simd_width = dtype_simd_width[type]()
     return reduce_boolean[simd_width, size, type, _reduce_fn, _continue_fn](
         src, True
     )
