@@ -14,7 +14,7 @@ from Math import tanh, iota
 fn test_tanh_float32():
     print("== test_tanh_float32")
 
-    let simd_val = 0.5 * iota[4, DType.float32]()
+    let simd_val = 0.5 * iota[DType.float32, 4]()
 
     # CHECK: [0.0, 0.46211{{[0-9]+}}, 0.76159{{[0-9]+}}, 0.90514{{[0-9]+}}]
     print(tanh(simd_val))
@@ -27,7 +27,7 @@ fn test_tanh_float32():
 fn test_tanh_float64():
     print("== test_tanh_float64")
 
-    let simd_val = 0.5 * iota[4, DType.float64]()
+    let simd_val = 0.5 * iota[DType.float64, 4]()
 
     # CHECK: [0.0, 0.46211{{[0-9]+}}, 0.76159{{[0-9]+}}, 0.90514{{[0-9]+}}]
     print(tanh(simd_val))
