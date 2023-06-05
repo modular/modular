@@ -13,14 +13,15 @@
 //    at compile time and at runtime when you just want a size_t like value
 //    which can never be 'unknown'. It can transition to MEF attributes
 //    directly.
-//  - Optional<uint64_t> (aka 'optional form'), where none denotes 'unknown',
+//  - std::optional<uint64_t> (aka 'optional form'), where none denotes
+//  'unknown',
 //    and the value cannot be zero or the sentinel used by the raw form.
 //    This is the representation to use at compile time when you need a size_t
 //    which could also be 'unknown'. However, it cannot transition to MEF
 //    attributes, which requires the use of the 'raw form' below.
 //  - uint64_t (aka 'raw form'), where +max denotes 'unknown', and the value
 //    cannot be zero. This is the representation to use when transitioning to
-//    MEF attributes since they cannot represent the Optional none value.
+//    MEF attributes since they cannot represent the std::optional none value.
 //  - int64_t (aka 'raw signed form'), where the MLIR ShapedType::kDynamicSize
 //    value denotes 'unknown', and the value must otherwise be strictly
 //    positive. This is the representation already chosen by the MLIR
@@ -65,12 +66,12 @@ constexpr size_t kRuntimeUnknownSize = std::numeric_limits<size_t>::max();
 inline bool isValidPlainSize(uint64_t size) { return size != kUnknownSize; }
 
 /// Returns true if size in optional form is specified.
-inline bool hasOptSize(Optional<uint64_t> optSize) {
+inline bool hasOptSize(std::optional<uint64_t> optSize) {
   return optSize.has_value();
 }
 
 /// Returns true if size in optional form is valid.
-inline bool isValidOptSize(Optional<uint64_t> optSize) {
+inline bool isValidOptSize(std::optional<uint64_t> optSize) {
   return !optSize || isValidPlainSize(*optSize);
 }
 
@@ -94,7 +95,7 @@ inline bool hasRuntimeSize(size_t runtimeSize) {
 
 /// Translates size from optional form to raw form.
 /// We assert check for validity, so there's no checking in release builds.
-inline uint64_t optSizeToRawSize(Optional<uint64_t> optSize) {
+inline uint64_t optSizeToRawSize(std::optional<uint64_t> optSize) {
   assert(isValidOptSize(optSize) && "invalid optional size");
   if (!optSize)
     return kUnknownSize;
@@ -105,7 +106,7 @@ inline uint64_t optSizeToRawSize(Optional<uint64_t> optSize) {
 
 /// Translates size from optional form to raw signed form.
 /// We assert check for validity, so there's no checking in release builds.
-inline int64_t optSizeToRawSignedSize(Optional<uint64_t> optSize) {
+inline int64_t optSizeToRawSignedSize(std::optional<uint64_t> optSize) {
   assert(isValidOptSize(optSize) && "invalid optional size");
   if (!optSize)
     return kUnknownSignedSize;
@@ -119,15 +120,15 @@ inline int64_t optSizeToRawSignedSize(Optional<uint64_t> optSize) {
 
 /// Translates size from raw form to optional form.
 /// We assert check for validity, so there's no checking in release builds.
-inline Optional<uint64_t> rawSizeToOptSize(uint64_t rawSize) {
-  return rawSize == kUnknownSize ? Optional<uint64_t>() : rawSize;
+inline std::optional<uint64_t> rawSizeToOptSize(uint64_t rawSize) {
+  return rawSize == kUnknownSize ? std::optional<uint64_t>() : rawSize;
 }
 
 /// Translates size from raw signed form to clean form.
 /// We assert check for validity, so there's no checking in release builds.
-inline Optional<uint64_t> rawSignedSizeToOptSize(int64_t rawSignedSize) {
+inline std::optional<uint64_t> rawSignedSizeToOptSize(int64_t rawSignedSize) {
   return rawSignedSize == kUnknownSignedSize
-             ? Optional<uint64_t>()
+             ? std::optional<uint64_t>()
              : static_cast<uint64_t>(rawSignedSize);
 }
 
@@ -199,20 +200,20 @@ inline bool isValidRawAlign(uint64_t rawAlign) {
 }
 
 /// Returns true if align in optional form is valid.
-inline bool isValidOptAlign(Optional<uint64_t> optAlign) {
+inline bool isValidOptAlign(std::optional<uint64_t> optAlign) {
   return !optAlign || isValidRawAlign(*optAlign);
 }
 
 /// Translates align in optional form to it's llvm::MaybeAlign
 /// representation. We assert check for validity (inside llvm::Align), so
 /// there's no checking in release builds.
-inline llvm::MaybeAlign optAlignToMaybeAlign(Optional<uint64_t> optAlign) {
+inline llvm::MaybeAlign optAlignToMaybeAlign(std::optional<uint64_t> optAlign) {
   return llvm::MaybeAlign(optAlign.value_or(0));
 }
 
 /// Translates align in llvm::MaybeAlign form to it's optional form.
-inline Optional<uint64_t> maybeAlignToOptAlign(llvm::MaybeAlign align) {
-  return align ? align->value() : Optional<uint64_t>();
+inline std::optional<uint64_t> maybeAlignToOptAlign(llvm::MaybeAlign align) {
+  return align ? align->value() : std::optional<uint64_t>();
 }
 
 } // namespace M

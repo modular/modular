@@ -65,7 +65,6 @@ using mlir::isa;
 using mlir::isa_and_nonnull;
 using mlir::iterator_range;
 using mlir::MutableArrayRef;
-using mlir::Optional;
 using mlir::PointerUnion;
 using mlir::raw_ostream;
 using mlir::SmallPtrSet;

@@ -33,7 +33,7 @@ public:
     // Wrap conversions that don't use a derived type to remove the need to
     // explicitly skip DITypes. These are handled automatically.
     replacer.addReplacement([conversion = std::forward<FnT>(conversion)](
-                                Type type) -> Optional<Type> {
+                                Type type) -> std::optional<Type> {
       if (isa<DIType>(type))
         return std::nullopt;
       return conversion(type);

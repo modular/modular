@@ -30,7 +30,7 @@ using namespace M;
 using namespace M::DebugInfo;
 
 /// Try to extract a value name from the given source location.
-static Optional<StringRef> getNameFromLoc(llvm::SMRange loc) {
+static std::optional<StringRef> getNameFromLoc(llvm::SMRange loc) {
   if (!loc.isValid())
     return std::nullopt;
 
@@ -191,7 +191,7 @@ void DebugInfoBuilder::buildDebugInfo(Block *block, bool isFunctionEntryBlock) {
 
       // Try to extract a name for this argument.
       // TODO: Support unnamed arguments?
-      Optional<StringRef> name = getNameFromLoc(argInfo.loc);
+      std::optional<StringRef> name = getNameFromLoc(argInfo.loc);
       if (!name)
         continue;
       blockBuilder.create<ValueOp>(
@@ -226,7 +226,8 @@ void DebugInfoBuilder::buildDebugInfo(Operation *op) {
     unsigned numResultGroups = opDef->resultGroups.size();
     for (auto [index, resultGroup] : llvm::enumerate(opDef->resultGroups)) {
       // TODO: Support unnamed results?
-      Optional<StringRef> name = getNameFromLoc(resultGroup.definition.loc);
+      std::optional<StringRef> name =
+          getNameFromLoc(resultGroup.definition.loc);
       if (!name)
         continue;
       unsigned line = extractLine(resultGroup.definition.loc);

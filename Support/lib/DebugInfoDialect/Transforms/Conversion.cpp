@@ -33,7 +33,7 @@ static std::pair<uint64_t, uint32_t> getIntFloatDebugSizeAlign(unsigned width) {
 DebugInfoTypeConverter::DebugInfoTypeConverter() {
   // Fallback that handle unresolved types.
   replacer.addReplacement(
-      [&](Type type) -> Optional<std::pair<Type, WalkResult>> {
+      [&](Type type) -> std::optional<std::pair<Type, WalkResult>> {
         if (isa<DIType>(type))
           return std::nullopt;
         return std::pair<Type, WalkResult>(DIUnresolvedMLIRType::get(type),
@@ -76,7 +76,7 @@ DIType DebugInfoTypeConverter::convertDebugType(Type type) {
 
 void DebugInfoTypeConverter::addUnresolvedConverter(TypeConverter &converter) {
   replacer.addReplacement(
-      [&](Type type) -> Optional<std::pair<Type, WalkResult>> {
+      [&](Type type) -> std::optional<std::pair<Type, WalkResult>> {
         if (isa<DIType>(type))
           return std::nullopt;
 

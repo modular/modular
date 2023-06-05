@@ -75,7 +75,7 @@ public:
 private:
   /// This tells LLVM to print stack traces on crashes, and also handles
   /// multibyte command line options on windows.
-  Optional<llvm::InitLLVM> llvmInitializer;
+  std::optional<llvm::InitLLVM> llvmInitializer;
 
   /// This is the value of argv[0] when the program launches, used for reporting
   /// error messages.
@@ -105,7 +105,7 @@ public:
   /// buffer, or an error message on failure.
   ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
   openInputFile(StringRef inputFile,
-                Optional<llvm::Align> align = std::nullopt) {
+                std::optional<llvm::Align> align = std::nullopt) {
     align = (inputFileAlignment != 0) ? llvm::Align(inputFileAlignment) : align;
     return CLOptionsBase::openInputFileAligned(
         inputFile, align.value_or(defaultAlignment));
@@ -116,13 +116,13 @@ public:
   /// Takes an optional alignment with priority:
   /// CLI alignment > align argument > default alignment.
   std::unique_ptr<llvm::MemoryBuffer>
-  openInputFileOrExit(Optional<llvm::Align> align = std::nullopt) {
+  openInputFileOrExit(std::optional<llvm::Align> align = std::nullopt) {
     return openInputFileOrExit(inputFilename, align);
   }
 
   std::unique_ptr<llvm::MemoryBuffer>
   openInputFileOrExit(StringRef inputFile,
-                      Optional<llvm::Align> align = std::nullopt) {
+                      std::optional<llvm::Align> align = std::nullopt) {
     auto errorOrInputFile = openInputFile(inputFile, align);
     if (failed(errorOrInputFile))
       exit(reportError(Twine(errorOrInputFile.getError())));
