@@ -30,11 +30,10 @@ works across levels of abstraction, is friendly for novice programmers, and
 scales across many use cases from accelerators through to application
 programming and scripting.
 
-This document is an introduction to the Mojo programming language, fit for
-consumption by Mojo programmers. It assumes knowledge of Python and systems
-programming concepts but it does not expect the reader to be a compiler nerd.
-At the moment, Mojo is still a work in progress and the documentation is
-targeted to developers with systems programming experience. As the language
+This document is an introduction to the Mojo programming language, not a
+complete language guide. It assumes knowledge of Python and systems programming
+concepts. At the moment, Mojo is still a work in progress and the documentation
+is targeted to developers with systems programming experience. As the language
 grows and becomes more broadly available, we intend for it to be friendly and
 accessible to everyone, including beginner programmers. It's just not there
 today.
