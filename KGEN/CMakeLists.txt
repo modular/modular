@@ -322,10 +322,19 @@ function(add_mojo_doc visibility doc_filename output_file output_directory)
   # Add a `DocValidate` target that checks the `-doc-validate` output for
   # warnings output from within the original Mojo file.
   get_filename_component(doc_filename_we ${doc_filename} NAME_WE)
+  string(CONCAT validate_comment
+    "Scanning \"${DOC_VALIDATE_WARNINGS_FILE}\" for warnings originating from "
+    "\"${doc_filename}\".")
+  string(CONCAT failure_message
+    "The following warnings were output when validating the doc strings in "
+    "\"${doc_filename}\":")
   add_custom_target("${doc_filename_we}DocValidate"
+    COMMENT "${validate_comment}"
+
     COMMAND
       ${CMAKE_COMMAND} -DPATH="${DOC_VALIDATE_WARNINGS_FILE}"
-                       -DPATTERN="${doc_filename}:[0-9]*:[0-9]*: warning:"
+      -DPATTERN="${doc_filename}:[0-9]*:[0-9]*: warning:[^\\^]*\\^"
+      -DFAILURE_MESSAGE="${failure_message}"
       -P ${MODULAR_SOURCE_DIR}/KGEN/CheckPatternInFile.cmake
 
     DEPENDS "${DOC_VALIDATE_WARNINGS_FILE}"
