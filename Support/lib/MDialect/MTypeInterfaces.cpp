@@ -20,13 +20,13 @@ namespace {
 struct IntegerLayout
     : public DataLayoutInterface::ExternalModel<IntegerLayout, IntegerType> {
   /// The size of an integer type is its width rounded up to the nearest byte.
-  Optional<int64_t> getTypeSize(Type type, TargetInfoAttr target) const {
+  std::optional<int64_t> getTypeSize(Type type, TargetInfoAttr target) const {
     return llvm::divideCeil(cast<IntegerType>(type).getWidth(), CHAR_BIT);
   }
 
   /// The alignment of an integer type is its width in bytes rounded up to the
   /// nearest power of 2, but capped at the pointer width.
-  Optional<int64_t> getTypeAlign(Type type, TargetInfoAttr target) const {
+  std::optional<int64_t> getTypeAlign(Type type, TargetInfoAttr target) const {
     return target.getDataLayout().getIntegerABIAlign(
         cast<IntegerType>(type).getWidth());
   }
@@ -35,13 +35,13 @@ struct IntegerLayout
 struct FloatLayout
     : public DataLayoutInterface::ExternalModel<FloatLayout, FloatType> {
   /// The size of an integer type is its width in bytes.
-  Optional<int64_t> getTypeSize(Type type, TargetInfoAttr target) const {
+  std::optional<int64_t> getTypeSize(Type type, TargetInfoAttr target) const {
     return cast<FloatType>(type).getWidth() / CHAR_BIT;
   }
 
   /// The alignment of a float type is its width in bytes rounded up to the
   /// nearest power of 2, but capped at the pointer width.
-  Optional<int64_t> getTypeAlign(Type type, TargetInfoAttr target) const {
+  std::optional<int64_t> getTypeAlign(Type type, TargetInfoAttr target) const {
     return target.getDataLayout().getFloatABIAlign(
         cast<FloatType>(type).getWidth());
   }
@@ -50,13 +50,13 @@ struct FloatLayout
 struct FunctionLayout
     : public DataLayoutInterface::ExternalModel<FunctionLayout, FunctionType> {
   /// The size of a function type is the pointer width.
-  Optional<int64_t> getTypeSize(Type type, TargetInfoAttr target) const {
+  std::optional<int64_t> getTypeSize(Type type, TargetInfoAttr target) const {
     return llvm::divideCeil(target.getDataLayout().getPointerBitWidth(),
                             CHAR_BIT);
   }
 
   /// The align of a function type is the pointer width.
-  Optional<int64_t> getTypeAlign(Type type, TargetInfoAttr target) const {
+  std::optional<int64_t> getTypeAlign(Type type, TargetInfoAttr target) const {
     return target.getDataLayout().getPointerABIAlign();
   }
 };
@@ -64,13 +64,13 @@ struct FunctionLayout
 struct IndexLayout
     : public DataLayoutInterface::ExternalModel<IndexLayout, IndexType> {
   /// The size of an index type is the pointer width.
-  Optional<int64_t> getTypeSize(Type type, TargetInfoAttr target) const {
+  std::optional<int64_t> getTypeSize(Type type, TargetInfoAttr target) const {
     return llvm::divideCeil(target.getDataLayout().getPointerBitWidth(),
                             CHAR_BIT);
   }
 
   /// The align of an index type is the pointer width.
-  Optional<int64_t> getTypeAlign(Type type, TargetInfoAttr target) const {
+  std::optional<int64_t> getTypeAlign(Type type, TargetInfoAttr target) const {
     return target.getDataLayout().getPointerABIAlign();
   }
 };

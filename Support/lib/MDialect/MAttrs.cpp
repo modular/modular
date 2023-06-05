@@ -579,7 +579,7 @@ SmallVector<float> M::getFloatBlob(FloatArrayElementsAttr floatElemsAttr) {
 /// requested alignment.
 static ArrayRef<uint8_t>
 copyIntoBytes(mlir::StorageUniquer::StorageAllocator &allocator,
-              ArrayRef<uint8_t> data, Optional<uint64_t> align) {
+              ArrayRef<uint8_t> data, std::optional<uint64_t> align) {
   auto *ptr = static_cast<uint8_t *>(
       allocator.allocate(data.size(), align ? *align : sizeof(uint8_t)));
   std::uninitialized_copy(data.begin(), data.end(), ptr);

@@ -581,7 +581,7 @@ public:
 
   size_t
   GetIndexOfChildMemberWithName(lldb::opaque_compiler_type_t type,
-                                const char *name, bool omitEmptyBaseClasses,
+                                llvm::StringRef name, bool omitEmptyBaseClasses,
                                 std::vector<uint32_t> &childIndexes) override {
     return 0;
   }

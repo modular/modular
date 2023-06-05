@@ -111,7 +111,8 @@ struct ConvertKGENCall : public ConvertPOPToLLVMPattern<CallOp> {
     auto llvmCall = rewriter.create<LLVM::CallOp>(
         op.getLoc(), types, flatSymbol, adaptor.getOperands(),
         LLVM_FASTMATH_FLAGS,
-        /*branch_weights=*/nullptr);
+        /*branch_weights=*/nullptr, /*access_groups=*/nullptr,
+        /*alias_scopes*/ nullptr, /*noalias_scopes*/ nullptr, /*tbaa*/ nullptr);
 
     // Unpack the struct if necessary.
     SmallVector<Value> results;
