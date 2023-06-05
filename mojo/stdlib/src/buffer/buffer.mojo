@@ -1444,7 +1444,7 @@ struct NDBuffer[
 
 
 fn partial_simd_load[
-    width: Int, type: DType
+    type: DType, width: Int
 ](
     storage: DTypePointer[type],
     lbound: Int,
@@ -1463,8 +1463,8 @@ fn partial_simd_load[
     partial_simd_load[4](addr0,1,3) #gives [0 42 43 0]
 
     Parameters:
-        width: The system simd vector size.
         type: The underlying dtype of computation.
+        width: The system simd vector size.
 
     Args:
         storage: Pointer to the address to perform load.
@@ -1478,14 +1478,14 @@ fn partial_simd_load[
     # Create a mask based on input bounds.
     let effective_lbound = max(0, lbound)
     let effective_rbound = min(width, rbound)
-    let incr = iota[width, DType.int32.value]()
+    let incr = iota[DType.int32, width]()
     let mask = (incr >= effective_lbound) & (incr < effective_rbound)
 
-    return masked_load[width, type](storage, mask, pad_value)
+    return masked_load[type, width](storage, mask, pad_value)
 
 
 fn partial_simd_store[
-    width: Int, type: DType
+    type: DType, width: Int
 ](
     storage: DTypePointer[type],
     lbound: Int,
@@ -1504,8 +1504,8 @@ fn partial_simd_store[
         partial_simd_load[4](addr0,1,3, [-1, 42,43, -1]) #gives [0 42 43 0]
 
     Parameters:
-        width: The system simd vector size.
         type: The underlying dtype of computation.
+        width: The system simd vector size.
 
     Args:
         storage: Pointer to the address to perform load.
@@ -1516,10 +1516,10 @@ fn partial_simd_store[
     # Create a mask based on input bounds.
     let effective_lbound = max(0, lbound)
     let effective_rbound = min(width, rbound)
-    let incr = iota[width, DType.int32.value]()
+    let incr = iota[DType.int32, width]()
     let mask = (incr >= effective_lbound) & (incr < effective_rbound)
 
-    return masked_store[width, type](data, storage, mask)
+    return masked_store[type, width](data, storage, mask)
 
 
 # ===----------------------------------------------------------------------===#
