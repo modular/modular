@@ -51,7 +51,7 @@ fn elementwise_epilogue_c_tile[
     simd_width: Int,
     type: DType,
     shape_c: DimList,
-    func: fn[width: Int, type: DType] (
+    func: fn[type: DType, width: Int] (
         StaticIntTuple[2], SIMD[type, width]
     ) capturing -> None,
 ](offset: GemmShape, tile_len: GemmShape, c: NDBuffer[2, shape_c, type],):
@@ -63,7 +63,7 @@ fn elementwise_epilogue_c_tile[
             let m_coord = idx_m + offset.M
             let c_coord = Index(m_coord, n_coord)
             let c_val = c.simd_load[col_chunk_size](c_coord)
-            func[col_chunk_size, type](c_coord, c_val)
+            func[type, col_chunk_size](c_coord, c_val)
 
     vectorize[simd_width, activation_on_col_chunk](tile_len.N)
 
@@ -261,7 +261,7 @@ struct PackMatrixRows[
                 else:
                     # Not skipping col bound, need to to a partial fill of
                     #  the transpose buffer row.
-                    row_data = partial_simd_load[simd_size, type](
+                    row_data = partial_simd_load[type, simd_size](
                         self.original_matrix._offset(row_global_index),
                         0,  # no left bound.
                         read_bound[1],
@@ -464,7 +464,7 @@ struct PackMatrixCols[
             elif col_idx < self.valid_data_dim[1]:
                 # Starting point within bound but cannot load a whole
                 #  vector. Do a partial load.
-                data = partial_simd_load[simd_size, type](
+                data = partial_simd_load[type, simd_size](
                     self.original_matrix._offset(global_idx),
                     0,
                     self.valid_data_dim[1] - col_idx,
@@ -695,7 +695,7 @@ struct MatmulInnerLoopBPacked[
             ] and idx1 * simd_size <= self.c_bound[1]:
                 # Use partial load if row inbound but col not
                 #  in simd bound.
-                c_data = partial_simd_load[simd_size, accum_type](
+                c_data = partial_simd_load[accum_type, simd_size](
                     self.c._offset(global_idx),
                     0,
                     self.c_bound[1] - tile_idx[1] - idx1 * simd_size,
@@ -768,7 +768,7 @@ struct MatmulInnerLoopBPacked[
             ):
                 # Use partial store if row in bound but col not
                 #  in simd bound.
-                partial_simd_store[simd_size, accum_type](
+                partial_simd_store(
                     self.c._offset(global_idx),
                     0,
                     self.c_bound[1] - tile_idx[1] - idx1 * simd_size,
@@ -846,7 +846,7 @@ struct MatmulInnerLoopBPacked[
                 let c_idx = Index(idx_outer, idx1 * simd_size)
                 var c_val = c_local.simd_load[simd_size](c_idx)
 
-                c_val = fma[simd_size, accum_type](a_val[idx0], b_val, c_val)
+                c_val = fma[accum_type, simd_size](a_val[idx0], b_val, c_val)
                 c_local.simd_store[simd_size](c_idx, c_val)
 
             unroll2[a_col_size, pack_inner_size // simd_size, outer_body]()
@@ -917,7 +917,7 @@ struct MatmulInnerLoopBPacked[
 
             var c_val = c_local.aligned_simd_load[simd_size, alignment](c_idx)
 
-            c_val = fma[simd_size, accum_type](a_val, b_val, c_val)
+            c_val = fma[accum_type, simd_size](a_val, b_val, c_val)
             c_local.aligned_simd_store[simd_size, alignment](c_idx, c_val)
 
         unroll2[a_row_size, pack_inner_size // simd_size, outer_body]()

@@ -27,7 +27,7 @@ fn test(m: Matrix[DimList(4, 4), DType.int32, False]):
     # CHECK: [12, 13, 14, 15]
     print(m.simd_load[4](3, 0))
 
-    let v = iota[4, DType.int32]()
+    let v = iota[DType.int32, 4]()
     m.simd_store[4](3, 0, v)
     # CHECK: [0, 1, 2, 3]
     print(m.simd_load[4](3, 0))

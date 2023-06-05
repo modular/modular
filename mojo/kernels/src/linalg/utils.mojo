@@ -20,7 +20,7 @@ from BuildInfo import is_relwithdebinfo_build, is_debug_build
 from Buffer import NDBuffer, DynamicRankBuffer
 from SIMD import SIMD
 
-alias elementwise_lambda_fn_sig_type = fn[width: Int, type: DType] (
+alias elementwise_lambda_fn_sig_type = fn[type: DType, width: Int] (
     StaticIntTuple[2], SIMD[type, width]
 ) capturing -> None
 
