@@ -98,22 +98,11 @@ def Cache_RegionHashArrayAttr :
     ArrayOfAttr<CacheDialect, "RegionHashArray", "regions", "RegionHashAttr">;
 
 //===----------------------------------------------------------------------===//
-// ParametrizedIndexAttrBase
-//===----------------------------------------------------------------------===//
-
-class Cache_ParametrizedIndexAttrBase<string attrName, string mnemonic>
-  : CacheAttr<attrName, mnemonic,
-    [DeclareAttrInterfaceMethods<ReplaceableAttrIndexInterface>]> {
-  let parameters = (ins "uint64_t":$index);
-  let assemblyFormat = "`<` $index `>`";
-}
-
-//===----------------------------------------------------------------------===//
 // HashIndexAttr
 //===----------------------------------------------------------------------===//
 
-def Cache_HashIndexAttr
-  : Cache_ParametrizedIndexAttrBase<"HashIndex", "hash_index"> {
+def Cache_HashIndexAttr : CacheAttr<"HashIndex", "hash_index",
+    [DeclareAttrInterfaceMethods<ReplaceableAttrIndexInterface>]> {
   let summary = "A hash reference.";
   let description = [{
     This attribute is a index into the list of hashes on the RegionHashAttr.
@@ -127,6 +116,37 @@ def Cache_HashIndexAttr
     cache.constant {value=#cache.hash_index<1234>}
     ```
   }];
+
+  let parameters = (ins "uint64_t":$index);
+  let assemblyFormat = "`<` $index `>`";
+}
+
+//===----------------------------------------------------------------------===//
+// TypedHashIndexAttr
+//===----------------------------------------------------------------------===//
+
+def Cache_TypedHashIndexAttr
+  : CacheAttr<"TypedHashIndex", "typed_hash_index", [TypedAttrInterface,
+    DeclareAttrInterfaceMethods<ReplaceableAttrIndexInterface>]> {
+  let summary = "A typed hash reference.";
+  let description = [{
+    This attribute is a index into the list of hashes on the RegionHashAttr.
+    It's used to reference one of the hashes in that list by a replacement for
+    constant-like ops in order to orthogonalize the cache and the constants
+    stored in the graph. This version is typed, for use when replacing typed
+    attributes.
+
+    For example:
+    ```mlir
+    /// Operations won't necessarily verify when this attribute is used!
+    cache.constant {value=#cache.typed_hash_index<1234> : i32}
+    ```
+  }];
+
+   let parameters = (ins AttributeSelfTypeParameter<"", "Type">:$type,
+                         "uint64_t":$index);
+
+   let assemblyFormat = "`<` $index `>`";
 }
 
 #endif // CACHEATTRS_TD

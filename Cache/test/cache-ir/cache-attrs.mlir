@@ -47,3 +47,9 @@ func.func private @afunc()
 "hash.ref"() {
   attr = #cache.hash_index<12338>
 } : () -> ()
+
+// CHECK-LABEL: typed.hash.ref
+// CHECK-SAME: #cache.typed_hash_index<12338> : si32
+"typed.hash.ref"() {
+  attr = #cache.typed_hash_index<12338> : si32
+} : () -> ()

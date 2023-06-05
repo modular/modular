@@ -84,11 +84,16 @@ std::optional<uint64_t> ConstantHashAttr::getOptAlign() const {
 }
 
 ReplaceableAttrIndex ConstantHashAttr::convertToIndex(size_t idx) const {
-  return HashIndexAttr::get(getContext(), idx);
+  return TypedHashIndexAttr::get(getContext(), getType(), idx);
 }
 
 ReplaceableAttr
 HashIndexAttr::convertFromIndex(ArrayRef<Attribute> attrs) const {
+  return llvm::cast<ReplaceableAttr>(attrs[getIndex()]);
+}
+
+ReplaceableAttr
+TypedHashIndexAttr::convertFromIndex(ArrayRef<mlir::Attribute> attrs) const {
   return llvm::cast<ReplaceableAttr>(attrs[getIndex()]);
 }
 
