@@ -8,9 +8,6 @@
 # TODO(#8161) Copied over from TensorFlow/unittests/API/python/CMakeLists.txt
 # Fixing #8161 would help reduce this duplication.
 
-include(AddPyEnv)
-
-pyenv_setup_findpython3_variables("${MODULAR_PYTHON_API_PYTHON_VERSION}" "${MODULAR_PYTHON_API_PYTHON_ROOT}")
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 
 include(AddPyBind11)
