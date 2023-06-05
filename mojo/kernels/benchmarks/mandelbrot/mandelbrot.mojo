@@ -85,7 +85,7 @@ fn mandelbrot[
     @always_inline
     fn worker(row: Int):
         let rowv: SIMD[float_type, simd_width] = row
-        let simd_val = iota[simd_width, float_type]()
+        let simd_val = iota[float_type, simd_width]()
         let scalex = (max_x - min_x) / w
         let scaley = (max_y - min_y) / h
         for col in range(w // simd_width):
