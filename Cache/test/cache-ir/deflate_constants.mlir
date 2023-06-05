@@ -16,7 +16,7 @@
 // NESTED-LABEL: @trivial
 // NESTED-SAME: attributes {region_hashes = #cache<regions[
 // COM: First the hash of the region itself.
-// NESTED-SAME:   "2XLu45AyYLctXxee19F/QSQ+/5snWmsdBRdJ+GEyDA0=" params =
+// NESTED-SAME:   "vwfQzI7WQDQH2Y751QOmC4iObIp59u90cC6w3rMBX2o=" params =
 // COM: Next, the hashes inside (from the deflated constant).
 // NESTED-SAME:   #cache.constant_hash<"ABpMw6fFxznfdZ3ywFY8giTVyom+f7q9mc9WiNKgSRU=", {align = 8 : ui64, name = "aconstant"} : tensor<4xf64>>
 // COM: Next, the symbols referred-to inside the region
