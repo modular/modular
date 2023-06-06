@@ -245,12 +245,6 @@ static OptionalParseResult parseOptionalColonType(AsmParser &parser,
   return OptionalParseResult(parseKGENType(parser, type));
 }
 
-static ParseResult parseColonType(AsmParser &parser, Type &type) {
-  if (parser.parseColon())
-    return failure();
-  return parseKGENType(parser, type);
-}
-
 /// Parse a "colon type" production if present or default to index if not.  This
 /// is commonly used in our parameter representation.
 ParseResult KGEN::parseColonTypeOrIndex(AsmParser &parser, Type &type) {
@@ -613,23 +607,6 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
         return failure();
     return success();
   }
-  case (uint32_t)POC::Evaluate: {
-    auto variadicType = dyn_cast_or_null<VariadicType>(type);
-    if (!variadicType)
-      return p.emitError(p.getCurrentLocation(),
-                         "expected a variadic type for 'evaluate'");
-
-    if (parseParamValue(p, operands.emplace_back(), type))
-      return p.emitError(p.getCurrentLocation(), "expected a symbol attribute");
-
-    if (p.parseComma())
-      return failure();
-    // This the evaluator, which is preceeded by a type.
-    Type evaluatorType;
-    if (parseColonType(p, evaluatorType))
-      return failure();
-    return parseParamValue(p, operands.emplace_back(), evaluatorType);
-  }
   case (uint32_t)POC::GetAllImpls: {
     auto varTy = dyn_cast_or_null<VariadicType>(type);
     if (!varTy)
@@ -889,18 +866,6 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
       p << ", ";
       printParamValue(p, operand);
     }
-    break;
-
-  case POC::Evaluate:
-    // Print the return type of the parameter itself.
-    printColonTypeOrIndexPrefix(p, operands[0].getType());
-    p << " ";
-    // Then print the operands.
-    printParamValue(p, operands.front());
-    p << ", ";
-    // Then print the type of the evaluator and the evaluator.
-    printColonTypeOrIndexPrefix(p, operands.back().getType());
-    printParamValue(p, operands.back());
     break;
 
   case POC::VariadicGet:

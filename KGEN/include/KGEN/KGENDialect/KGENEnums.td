@@ -60,12 +60,11 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   I32EnumAttrCase<"Rebind", 24, "rebind">,
 
   // Evaluator.
-  I32EnumAttrCase<"Evaluate", 25, "evaluate">,
-  I32EnumAttrCase<"GetAllImpls", 26, "get_all_impls">,
-  I32EnumAttrCase<"VariadicGet", 27, "variadic_get">,
+  I32EnumAttrCase<"GetAllImpls", 25, "get_all_impls">,
+  I32EnumAttrCase<"VariadicGet", 26, "variadic_get">,
 
   // Conditional expression.
-  I32EnumAttrCase<"Cond", 28, "cond">
+  I32EnumAttrCase<"Cond", 27, "cond">
 ]>;
 
 //===----------------------------------------------------------------------===//

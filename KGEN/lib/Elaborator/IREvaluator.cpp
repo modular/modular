@@ -114,51 +114,6 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
     return failure();
   }
 
-  if (op.getOpcode() == POC::Evaluate) {
-    // Pull out the evaluator and ensure it's concretized.
-    auto symbol =
-        cast<SymbolConstantAttr>(op.getOperand(op.getNumOperands() - 1));
-    ErrorTreeOr<FuncOp> evaluator = elaborator->getConcreteFunction(
-        *errorLoc, cast<FlatSymbolRefAttr>(symbol.getSymbol()),
-        symbol.getParamValues());
-    if (evaluator.isError()) {
-      emitError(evaluator.takeError());
-      return failure();
-    }
-
-    // Pull out the concrete functions from each option and evaluate them all.
-    std::vector<FuncOp> options;
-    auto optionsVariadic = cast<VariadicAttr>(op.getOperands().front());
-    for (TypedAttr option : optionsVariadic.getValues()) {
-      auto optionSym = cast<SymbolConstantAttr>(option);
-      if (ErrorTreeOrSuccess err = elaborator->getAllConcreteFunctions(
-              *errorLoc, cast<FlatSymbolRefAttr>(optionSym.getSymbol()),
-              optionSym.getParamValues(), options);
-          err.isError()) {
-        emitError(err.takeError());
-        return failure();
-      }
-    }
-
-    if (options.empty()) {
-      emitError({*errorLoc,
-                 Error("function has no valid specializations to evaluate")});
-      return failure();
-    }
-
-    ErrorOr<size_t> bestOr = elaborator->evaluateFunctions(*evaluator, options);
-    if (bestOr.isError()) {
-      emitError(ErrorTree(options.front().getLoc(), bestOr.takeError()));
-      return failure();
-    }
-
-    // Have to create a new symbol constant because the best one could be an
-    // implementation of one of the options.
-    FuncOp best = options[*bestOr];
-    return cast<TypedAttr>(SymbolConstantAttr::get(
-        SymbolRefAttr::get(best.getSymNameAttr()), best.getFullSignature()));
-  }
-
   return failure();
 }
 
