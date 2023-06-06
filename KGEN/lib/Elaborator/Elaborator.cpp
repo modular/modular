@@ -17,8 +17,6 @@
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
-#include "KGEN/KGENDialect/KGENDType.h"
-#include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENPasses.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -34,7 +32,6 @@
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Support/DebugStringHelper.h"
-#include "mlir/Support/IndentedOstream.h"
 #include "mlir/Transforms/RegionUtils.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallVectorExtras.h"
@@ -167,81 +164,6 @@ private:
 // ExpansionGraph
 //===----------------------------------------------------------------------===//
 
-namespace {
-struct ParamNode;
-
-/// This struct represents a concrete instantiation of a generator -- generators
-/// may have multiple concrete instantiations -- and contains the current state
-/// of elaboration for that concrete instance.
-struct ImplNode {
-  /// Create a new generator implementation node.
-  ImplNode(FuncOp func, ParamNode *parent, ParameterUseDefGraph &&graph,
-           std::string &&baseName)
-      : func(func), parent(parent), paramGraph(std::move(graph)),
-        baseName(std::move(baseName)) {}
-
-  /// Take the provided error and set this node to an `error` state. Erase all
-  /// state dominated by this node.
-  void setToError(ErrorTree &&err) {
-    assert(!error && "impl node already has an error");
-    error = std::move(err);
-  }
-
-  /// Print this tree to the provided indented stream. This preserves any
-  /// indentation provided by the caller to make it possible to nest things
-  /// nicely.
-  void print(mlir::raw_indented_ostream &os, bool printBindings = true);
-
-  /// Get the current active evaluator instance.
-  IREvaluator &getEvaluator() {
-    assert(!stack.empty() && "empty work stack");
-    return stack.back().evaluator;
-  }
-
-  /// This function represents a concrete instantiation of a generator.
-  FuncOp func;
-  /// The parent expansion tree node.
-  ParamNode *parent;
-  /// Keep track of the nested parameter scopes within this function.
-  ParameterUseDefGraph paramGraph;
-  /// The base name of the node to use to create derived names. This may differ
-  /// from the actual name of the function.
-  std::string baseName;
-
-  /// Calls to the same interface/generator should resolve to the same thing in
-  /// each func.
-  /// FIXME(#14998): Propagating bindings up the expansion graph is superlinear
-  /// with respect to the depth of the callgraph, because each node retains a
-  /// copy of the map, and each caller node takes the union of its callees'
-  /// maps.
-  DenseMap<std::pair<ArrayAttr, GeneratorOp>, ImplNode *> bindings;
-  /// When you have result parameters, we need to store them to access them from
-  /// outer scopes.
-  ArrayAttr resultParams;
-  /// An error contained by this node. This allows us to delay error handling in
-  /// cases where an error is recoverable.
-  std::optional<ErrorTree> error;
-
-  struct WorkItem {
-    /// The operations to process.
-    std::vector<Operation *> ops;
-    /// The evaluator to use.
-    IREvaluator evaluator;
-    /// The completion callback. This function is invoked when the processing of
-    /// a scope completes. The callback should perform any necessary cleanup and
-    /// additional work scheduling if necessary. The callback is passed the
-    /// current node that owns the work item, and it is allowed to set errors,
-    /// access operations, modify bindings and worklists, etc. It is imperative
-    /// that the callback closure does not capture any operation handles but
-    /// that it accessing them through the node. This is because nodes can be
-    /// cloned and the operations get remapped.
-    std::function<LogicalResult(ImplNode *)> onComplete;
-  };
-
-  /// The current stack of worklists and scopes.
-  std::vector<WorkItem> stack;
-};
-
 void ImplNode::print(mlir::raw_indented_ostream &os, bool printBindings) {
   os << "ImplNode <" << func.getSymName() << ">";
   auto _ = os.scope(" {\n", "}\n");
@@ -269,89 +191,6 @@ void ImplNode::print(mlir::raw_indented_ostream &os, bool printBindings) {
   }
 }
 
-/// This struct is a node in the expansion tree that describes the elaboration.
-/// In general, we try to limit effects to a single subtree. The only exception
-/// is that creating new generators/funcs generally are children of the root -
-/// this is because they're semi-independent of the current node and will
-/// elaborate to something concrete we can simply refer to. We try to track
-/// dependencies in order to make that graph explicit.
-struct ParamNode {
-  /// Create an expansion tree node to represent a generator instantiation.
-  ParamNode(LLCL::Runtime &runtime, GeneratorOp gen, ArrayAttr vals,
-            size_t depth)
-      : gen(gen), inputParams(vals), depth(depth),
-        paramCh(LLCL::AsyncValueRef<LLCL::Chain>::allocate(runtime)) {}
-
-  /// Return the first concrete node in the subtree rooted on `this`. This is
-  /// often called from a node that is either concrete, or only has one
-  /// concretization. For generality in cases where the full list of concrete
-  /// nodes is required, use getAllConcrete below. Returns an error if there are
-  /// no concretizations of this node.
-  ErrorTreeOr<ImplNode *> getFirstConcreteNode();
-
-  /// Get the first concrete FuncOp. This finds the first concrete node in the
-  /// subtree, and returns its op cast to a FuncOp. This is always safe because
-  /// if the node has been concretized, then the op is a FuncOp.
-  ErrorTreeOr<FuncOp> getFirstConcreteFunc();
-
-  /// Get all the concrete nodes in the tree rooted on `this`. This is useful
-  /// when you have something like a GeneratorInterface that can concretize to
-  /// multiple valid generators, and from that multiple functions.
-  void getAllConcreteNodes(std::vector<ImplNode *> &nodes);
-
-  /// Get all the concrete functions in the tree rooted on `this`. Exactly the
-  /// same as `getAllConcreteNodes` above, but only returns the FuncOp. Useful
-  /// when you don't need the full ParamNode.
-  void getAllConcreteFuncs(std::vector<FuncOp> &funcs);
-
-  /// Print this tree to the provided indented stream. This preserves any
-  /// indentation provided by the caller to make it possible to nest things
-  /// nicely.
-  void print(mlir::raw_indented_ostream &os, bool printBindings = true);
-
-  /// The generator represented by this node.
-  GeneratorOp gen;
-  /// The input parameters with which the generator is being instantiated.
-  ArrayAttr inputParams;
-  /// The current depth of the node. The depth varies based on the traversal
-  /// order of the callgraph.
-  size_t depth;
-
-  /// Generators fail immediately if their constrants are not satisfied.
-  /// Constraints are only functions of the input parameters. Save the error
-  /// here if that happens.
-  std::optional<ErrorTree> constraintError;
-
-  /// The children of a node are specializations. They may not be fully concrete
-  /// in the case of e.g. an interface - where the children are generators that
-  /// themselves have children.
-  std::vector<std::unique_ptr<ImplNode>> impls;
-  /// The mutex for accessing the implementation list.
-  llvm::sys::SmartRWMutex<true> implsMutex;
-
-  /// This set contains all parameter nodes that have children which could call
-  /// into this node while the node has not been fully processed. This set is
-  /// used to perform cycle detection, because recursive calls need to be
-  /// specially handled.
-  /// FIXME: Like the bindings map, this set grows with the depth of the
-  /// callgraph, and copying the set into children nodes is superlinear.
-  DenseSet<ParamNode *> incoming;
-
-  /// The number of in-progress implementations.
-  std::atomic<size_t> numActive = 0;
-
-  /// The chain to signal when this parameter node is done processing.
-  LLCL::AsyncValueRef<LLCL::Chain> paramCh;
-
-  /// All nodes are created with `FRESH` status. When a worker has scheduled
-  /// the first child of the node, it is moved to `IN_PROGRESS`. When all
-  /// children complete processing, the state is moved to `DONE`.
-  enum Status { FRESH, IN_PROGRESS, DONE };
-
-  /// The current state of the node. This flag is used to break recursion.
-  std::atomic<Status> status = FRESH;
-};
-
 void ParamNode::print(mlir::raw_indented_ostream &os, bool printBindings) {
   os << "ImplNode <" << gen.getSymName() << ">";
   auto _ = os.scope(" {\n", "}\n");
@@ -371,6 +210,7 @@ void ParamNode::print(mlir::raw_indented_ostream &os, bool printBindings) {
   }
 }
 
+namespace {
 /// This struct represents the expansion of a callgraph during elaboration.
 struct ExpansionGraph {
   ExpansionGraph(LLCL::Runtime &runtime)
@@ -456,7 +296,6 @@ struct ExpansionGraph {
     });
   }
 };
-
 } // namespace
 
 ErrorTreeOr<ImplNode *> ParamNode::getFirstConcreteNode() {
@@ -490,6 +329,46 @@ void ParamNode::getAllConcreteFuncs(std::vector<FuncOp> &funcs) {
     if (!impl.error)
       funcs.push_back(impl.func);
 }
+
+//===----------------------------------------------------------------------===//
+// ElaborationState
+//===----------------------------------------------------------------------===//
+
+namespace {
+class ElaborationState {
+  enum State { NEW_IMPL_SCOPE, NEW_PARAM_SCOPE, ADVANCE, ERROR };
+
+public:
+  /// Return the elaboration state that indicates an operation was successfully
+  /// processed.
+  static ElaborationState advance() { return ADVANCE; }
+  /// Return the elaboration state that indicates elaboration should be
+  /// pre-empted by a new frame within a function.
+  static ElaborationState skipFrame() { return NEW_IMPL_SCOPE; }
+  /// Return the elaboration state that indicates elaboration should be
+  /// pre-empted by a new parameter node.
+  static ElaborationState skipNode() { return NEW_PARAM_SCOPE; }
+  /// Return the elaboration state that indicates a fatal error has occurred
+  /// during elaboration.
+  static ElaborationState error() { return ERROR; }
+
+  /// Return true if the frame should be skipped.
+  bool shouldSkipFrame() const { return state == NEW_IMPL_SCOPE; }
+  /// Return true if the node should be skipped.
+  bool shouldSkipNode() const { return state == NEW_PARAM_SCOPE; }
+  /// Return true if an error occurred.
+  bool isError() const { return state == ERROR; }
+
+  /// Allow implicit conversion from `LogicalResult`.
+  ElaborationState(LogicalResult result)
+      : state(succeeded(result) ? ADVANCE : ERROR) {}
+
+private:
+  ElaborationState(State state) : state(state) {}
+
+  State state;
+};
+} // namespace
 
 //===----------------------------------------------------------------------===//
 // processParamDeclareOp
@@ -826,44 +705,7 @@ static void collectOpsToProcess(Region *scope, const ParameterUseDefGraph &uses,
   llvm::append_range(opsToRewrite, defOps.getArrayRef());
 }
 
-//===----------------------------------------------------------------------===//
-// ElaborationState
-//===----------------------------------------------------------------------===//
-
 namespace {
-class ElaborationState {
-  enum State { NEW_IMPL_SCOPE, NEW_PARAM_SCOPE, ADVANCE, ERROR };
-
-public:
-  /// Return the elaboration state that indicates an operation was successfully
-  /// processed.
-  static ElaborationState advance() { return ADVANCE; }
-  /// Return the elaboration state that indicates elaboration should be
-  /// pre-empted by a new frame within a function.
-  static ElaborationState skipFrame() { return NEW_IMPL_SCOPE; }
-  /// Return the elaboration state that indicates elaboration should be
-  /// pre-empted by a new parameter node.
-  static ElaborationState skipNode() { return NEW_PARAM_SCOPE; }
-  /// Return the elaboration state that indicates a fatal error has occurred
-  /// during elaboration.
-  static ElaborationState error() { return ERROR; }
-
-  /// Return true if the frame should be skipped.
-  bool shouldSkipFrame() const { return state == NEW_IMPL_SCOPE; }
-  /// Return true if the node should be skipped.
-  bool shouldSkipNode() const { return state == NEW_PARAM_SCOPE; }
-  /// Return true if an error occurred.
-  bool isError() const { return state == ERROR; }
-
-  /// Allow implicit conversion from `LogicalResult`.
-  ElaborationState(LogicalResult result)
-      : state(succeeded(result) ? ADVANCE : ERROR) {}
-
-private:
-  ElaborationState(State state) : state(state) {}
-
-  State state;
-};
 
 //===----------------------------------------------------------------------===//
 // ElaboratorImpl Declaration
