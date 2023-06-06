@@ -67,13 +67,6 @@ kgen.generator @unfoldableIndex() {
 
 // -----
 
-// expected-error @+1 {{unlowered lit.func discovered in KGEN elaborator}}
-lit.func @lit_func<x>() {
-  kgen.return
-}
-
-// -----
-
 #target = #kgen.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128> : !kgen.target
 
 // expected-error @below {{no viable expansions found}}

@@ -146,14 +146,7 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
       return failure();
     }
 
-    // FIXME: This should acquire a semaphore shared across all compiler
-    // processes to ensure search is performed in isolation.
-    auto bestOr = elaborator->getSymbolTable().read(
-        [evaluator = *evaluator, this,
-         options = ArrayRef(options)](const SymbolTable &symtab) {
-          return elaborator->getEvaluatorExecutorFn()(
-              evaluator, symtab, elaborator->getTarget(), options);
-        });
+    ErrorOr<size_t> bestOr = elaborator->evaluateFunctions(*evaluator, options);
     if (bestOr.isError()) {
       emitError(ErrorTree(options.front().getLoc(), bestOr.takeError()));
       return failure();
