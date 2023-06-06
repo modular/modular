@@ -920,6 +920,20 @@ public:
   /// symbol or the call and passing them on to processGeneratorUser.
   ElaborationState processCallOp(ImplNode *parent, KGENCallOpInterface call);
 
+  /// Process an evaluate operation by concretizing the evaluator function and
+  /// the function candidates.
+  ElaborationState processEvaluateOp(ImplNode *parent, ParamEvaluateOp op);
+
+  /// Instantiate a generator reference by retrieving the concrete
+  /// implementations of a reference. If this function returns `advance` but
+  /// `inputParamKey` is not populated, then the callee is a direct function
+  /// reference.
+  ElaborationState
+  instantiateGeneratorReference(ImplNode *parent, Operation *user,
+                                SymbolConstantAttr calleeSymbol,
+                                ArrayAttr &inputParamKey, GeneratorOp &gen,
+                                std::vector<ImplNode *> &concrete);
+
   /// Process a generator user. In general, this is anything that can call into
   /// a generator and might therefore need to be multi-versioned.
   ElaborationState processGeneratorUser(KGENCallOpInterface user,
@@ -1160,6 +1174,14 @@ ErrorOr<size_t> ElaboratorImpl::evaluateFunctions(FuncOp evaluator,
     // processes to ensure search is performed in isolation.
     LLCL::await(g.worklistCh);
     // Run evaluator.
+    LLVM_DEBUG({
+      logger << "Starting evaluation of " << options.size()
+             << " candidates with evaluator @" << evaluator.getSymName()
+             << "\n";
+      logger << "Candidates:\n";
+      for (FuncOp opt : options)
+        logger << "  @" << opt.getSymName() << "\n";
+    });
     result = symtab.read([&](const SymbolTable &symtab) {
       return evaluatorExecutorFn(evaluator, symtab, getTarget(), options);
     });
@@ -1267,65 +1289,62 @@ void ElaboratorImpl::spawnParamForkClone(ParamForkOp forkOp, Attribute value,
 }
 
 //===----------------------------------------------------------------------===//
-// ElaboratorImpl::processGeneratorUser
+// ElaboratorImpl::instantiateGeneratorReference
 //===----------------------------------------------------------------------===//
 
-ElaborationState
-ElaboratorImpl::processGeneratorUser(KGENCallOpInterface user,
-                                     SymbolConstantAttr calleeSymbol,
-                                     ImplNode *parent) {
-  auto _ = logger.scope("Processing Generator User");
-  LLVM_DEBUG(logger.logOp("User", user));
-
-  // Add in the mapping for parameters in the calls.
-  auto resolvedCallParamsOr = resolveCallInputParams(
-      user, parent->getEvaluator(), calleeSymbol.getParamValues());
-  if (resolvedCallParamsOr.isError()) {
-    parent->setToError(resolvedCallParamsOr.takeError());
-    return failure();
-  }
-  ArrayAttr inputParamKey = *resolvedCallParamsOr;
-
+ElaborationState ElaboratorImpl::instantiateGeneratorReference(
+    ImplNode *parent, Operation *user, SymbolConstantAttr calleeSymbol,
+    ArrayAttr &inputParamKey, GeneratorOp &gen,
+    std::vector<ImplNode *> &concrete) {
   // Lookup the callee.
   auto calleeOp = symtab.read(
       [name = cast<FlatSymbolRefAttr>(calleeSymbol.getSymbol()).getAttr()](
           const SymbolTable &symtab) { return symtab.lookup(name); });
   if (!calleeOp) {
     parent->setToError(
-        ErrorTree(user.getLoc(), "could not find callee '" +
-                                     mlir::debugString(calleeSymbol) +
-                                     "' (compiler bug, please report!)"));
-    return failure();
+        ErrorTree(user->getLoc(), "could not find callee '" +
+                                      mlir::debugString(calleeSymbol) +
+                                      "' (compiler bug, please report!)"));
+    return ElaborationState::error();
   }
 
-  ArrayRef<ParamDeclAttr> decls = user.getParamDecls();
   if (auto func = dyn_cast<FuncOp>(calleeOp)) {
     ImplNode *node =
         g.concreteNodes.read([func](const DenseMap<FuncOp, ImplNode *> &map) {
           return map.lookup(func);
         });
     if (!node) {
-      parent->setToError(ErrorTree(user.getLoc(),
+      parent->setToError(ErrorTree(user->getLoc(),
                                    "concrete callee doesn't have a node "
                                    "(compiler bug, please report!)"));
-      return failure();
+      return ElaborationState::error();
     }
-    return completeCallProcessing(user, decls, node, parent, logger);
+    concrete.push_back(node);
+    return ElaborationState::advance();
   }
 
+  // Add in the mapping for parameters in the calls.
+  auto resolvedCallParamsOr = resolveCallInputParams(
+      user, parent->getEvaluator(), calleeSymbol.getParamValues());
+  if (resolvedCallParamsOr.isError()) {
+    parent->setToError(resolvedCallParamsOr.takeError());
+    return ElaborationState::error();
+  }
+
+  inputParamKey = resolvedCallParamsOr.takeValue();
   LLVM_DEBUG({
     logger.logOp("Callee", calleeOp);
     logger << "Input Params: " << inputParamKey << "\n";
   });
 
   // If we already have a binding for this, we're done.
-  auto gen = cast<GeneratorOp>(calleeOp);
+  gen = cast<GeneratorOp>(calleeOp);
   auto found = parent->bindings.find({inputParamKey, gen});
   if (found != parent->bindings.end()) {
     LLVM_DEBUG(
         found->getSecond()->print(logger.scope("Result: Existing Binding")));
-    return completeCallProcessing(user, decls, found->getSecond(), parent,
-                                  logger);
+    concrete.push_back(found->getSecond());
+    return ElaborationState::advance();
   }
 
   // Check for excessive instantiation depth.
@@ -1353,7 +1372,6 @@ ElaboratorImpl::processGeneratorUser(KGENCallOpInterface user,
   }
 
   // Complete processing for all the leaves of this subtree.
-  std::vector<ImplNode *> concrete;
   calleeNode->getAllConcreteNodes(concrete);
 
   // If the concrete thing has bindings, they must be consistent with the
@@ -1382,7 +1400,7 @@ ElaboratorImpl::processGeneratorUser(KGENCallOpInterface user,
 
   // If there are no implementations, return the callee's errors.
   if (concrete.empty()) {
-    ErrorTree out(user.getLoc(),
+    ErrorTree out(user->getLoc(),
                   "call expansion failed - no concrete specializations");
     ErrorTree err(calleeNode->gen.getLoc(), "no viable expansions found");
     for (ImplNode &impl : llvm::make_pointee_range(calleeNode->impls))
@@ -1390,7 +1408,7 @@ ElaboratorImpl::processGeneratorUser(KGENCallOpInterface user,
         err.addCause(impl.error->copy());
     out.addCause(std::move(err));
     parent->setToError(std::move(out));
-    return failure();
+    return ElaborationState::error();
   }
 
   LLVM_DEBUG({
@@ -1398,6 +1416,34 @@ ElaboratorImpl::processGeneratorUser(KGENCallOpInterface user,
     for (auto &impl : concrete)
       impl->print(logger);
   });
+  return ElaborationState::advance();
+}
+
+//===----------------------------------------------------------------------===//
+// ElaboratorImpl::processGeneratorUser
+//===----------------------------------------------------------------------===//
+
+ElaborationState
+ElaboratorImpl::processGeneratorUser(KGENCallOpInterface user,
+                                     SymbolConstantAttr calleeSymbol,
+                                     ImplNode *parent) {
+  auto _ = logger.scope("Processing Generator User");
+  LLVM_DEBUG(logger.logOp("User", user));
+
+  std::vector<ImplNode *> concrete;
+  ArrayAttr inputParamKey;
+  GeneratorOp gen;
+  ElaborationState result = instantiateGeneratorReference(
+      parent, user, calleeSymbol, inputParamKey, gen, concrete);
+  if (result.isError() || result.shouldSkipNode())
+    return result;
+
+  // If this resolved to a direct function call, there are no parameters.
+  ArrayRef<ParamDeclAttr> decls = user.getParamDecls();
+  if (!inputParamKey) {
+    return completeCallProcessing(user, decls, concrete.front(), parent,
+                                  logger);
+  }
 
   // There are more concrete things, we have to multi-version the parent!
   for (auto *c : llvm::drop_begin(concrete)) {
@@ -1641,6 +1687,71 @@ ElaborationState ElaboratorImpl::processCallOp(ImplNode *parent,
 
   parent->stack.push_back(std::move(item));
   return ElaborationState::skipFrame();
+}
+
+//===----------------------------------------------------------------------===//
+// ElaboratorImpl::processEvaluateOp
+//===----------------------------------------------------------------------===//
+
+ElaborationState ElaboratorImpl::processEvaluateOp(ImplNode *parent,
+                                                   ParamEvaluateOp op) {
+  IREvaluator &evaluator = parent->getEvaluator();
+  ErrorTreeOr<Attribute> evaluatorFn =
+      evaluator.concretizeParameterExpr(op.getLoc(), op.getEvaluator());
+  if (evaluatorFn.isError()) {
+    parent->setToError(evaluatorFn.takeError());
+    return ElaborationState::error();
+  }
+
+  ArrayAttr inputParamKey;
+  GeneratorOp gen;
+  std::vector<ImplNode *> evaluators;
+  ElaborationState result = instantiateGeneratorReference(
+      parent, op, cast<SymbolConstantAttr>(evaluatorFn.takeValue()),
+      inputParamKey, gen, evaluators);
+  if (result.isError() || result.shouldSkipNode())
+    return result;
+
+  if (evaluators.size() != 1) {
+    parent->setToError(ErrorTree(
+        op.getLoc(), "evaluator did not resolve to a single candidate"));
+    return ElaborationState::error();
+  }
+
+  ErrorTreeOr<Attribute> candidates =
+      evaluator.concretizeParameterExpr(op.getLoc(), op.getCandidates());
+  if (candidates.isError()) {
+    parent->setToError(candidates.takeError());
+    return ElaborationState::error();
+  }
+
+  std::vector<ImplNode *> concrete;
+  for (TypedAttr value : cast<VariadicAttr>(*candidates).getValues()) {
+    ElaborationState result = instantiateGeneratorReference(
+        parent, op, cast<SymbolConstantAttr>(value), inputParamKey, gen,
+        concrete);
+    if (result.isError() || result.shouldSkipNode())
+      return result;
+  }
+
+  std::vector<FuncOp> candidateFns;
+  for (ImplNode *node : concrete)
+    candidateFns.push_back(node->func);
+  ErrorOr<size_t> idx =
+      evaluateFunctions(evaluators.front()->func, candidateFns);
+  if (idx.isError()) {
+    parent->setToError(ErrorTree(op.getLoc(), idx.takeError()));
+    return ElaborationState::error();
+  }
+  FuncOp best = candidateFns[*idx];
+  LLVM_DEBUG(logger << "Evaluator select #" << *idx << " -> @"
+                    << best.getSymName() << "\n");
+  evaluator.setParameterValue(
+      op.getParamDecl(),
+      SymbolConstantAttr::get(SymbolRefAttr::get(best.getSymNameAttr()),
+                              best.getSignature()));
+  op.erase();
+  return ElaborationState::advance();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1932,6 +2043,9 @@ ElaborationState ElaboratorImpl::processOp(ImplNode *node, Operation *op) {
   } else if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
     TimeTraceScope<EnableTracing> traceScope("processCallOp");
     return processCallOp(node, call);
+  } else if (auto evaluate = dyn_cast<ParamEvaluateOp>(op)) {
+    TimeTraceScope<EnableTracing> traceScope("processEvaluateOp");
+    return processEvaluateOp(node, evaluate);
   } else {
     TimeTraceScope<EnableTracing> traceScope("processGenericOp");
     return processGenericOp(node, op);
