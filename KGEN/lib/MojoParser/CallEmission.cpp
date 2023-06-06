@@ -2055,6 +2055,11 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
           {PValue(calleeSig.getDefaultArguments()[nextDefaultIdx]), callExpr});
       ++nextDefaultIdx;
       continue;
+    } else if (idx >= calleeSig.getValueInputs().size() -
+                          calleeSig.getDefaultArguments().size()) {
+      // If we provided a value for an argument with a default value, advance
+      // the index.
+      ++nextDefaultIdx;
     }
 
     // Otherwise, we're applying one or more arguments to this.
