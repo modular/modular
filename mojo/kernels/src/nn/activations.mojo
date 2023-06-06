@@ -347,17 +347,17 @@ fn gelu_approximate[
     $0.5 * x * (1 + tanh(sqrt(2 / pi) * (x + 0.044715 * x^3)))$.
 
     Parameters:
+        type: The `DType` used for the computation.
         simd_width: SIMD width used for the computation.
-        type: dtype used for the computation.
+
+    Constraints:
+        type must be a floating point type.
 
     Args:
         x : The value to compute the GELU operation on.
 
     Returns:
         SIMD[type, size]: The result of the approximate GELU operation.
-
-    Constraints:
-        type must be a floating point type.
     """
     alias SQRT_TWO_OVER_PI = 0.797884560802865
     assert_param_msg[
