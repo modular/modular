@@ -13,6 +13,7 @@
 #include "lldb/Core/Debugger.h"
 #include "lldb/Expression/DiagnosticManager.h"
 #include "lldb/Expression/IRExecutionUnit.h"
+#include "lldb/Interpreter/ScriptInterpreter.h"
 #include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
 #include "mlir/IR/Types.h"
@@ -308,50 +309,137 @@ const std::optional<std::string> &MojoUserExpression::getPythonModuleName() {
   return impl->pythonModuleName;
 }
 
+static std::string createSymbolExtractorPythonCode(StringRef pythonExpr) {
+  const char *rawSymbolsExtractor = R"(
+def __lldb_python_extract_symbols():
+  symbols = []
+
+  import ast
+
+  # The following class visits only top level constructs of the given python
+  # expression. It doesn't traverse recursively the AST.
+  class AssignmentVisitor(ast.NodeVisitor):
+    def visit_FunctionDef(self, node):
+      symbols.append(['declaration', node.name])
+
+    def visit_Assign(self, node):
+      for target in node.targets:
+        if isinstance(target, ast.Name):
+          symbols.append(['declaration', target.id])
+
+    def visit_Import(self, node):
+      for alias in node.names:
+        asname = alias.asname if alias.asname else alias.name
+        symbols.append(['import', asname, alias.name])
+
+    # We remove the default implementation of the following node visitors to
+    # prevent finding assignments recursively.
+    def visit_AsyncFunctionDef(self, node):
+      pass
+
+    def visit_ClassDef(self, node):
+      pass
+
+
+  __lldb_python_ast = ast.parse("{0}")
+  AssignmentVisitor().visit(__lldb_python_ast)
+
+  return symbols
+
+
+# To simplify the parsing logic, we serialize the symbols as a multi-line
+# string, where each line corresponds to a symbol, and each line is made of
+# space-delimited tokens with the following format:
+#
+#   <symbol kind> <symbol name> [other tokens depending on the kind...]
+def __lldb_python_serialize_symbols(symbols):
+  serialized = []
+  for symbol in symbols:
+    serialized.append(' '.join(symbol))
+  return '\n'.join(serialized)
+
+
+__lldb_python_symbols = __lldb_python_serialize_symbols(__lldb_python_extract_symbols())
+  )";
+
+  std::string escapedPythonExpr;
+  llvm::raw_string_ostream escapedPythonExprOS(escapedPythonExpr);
+  escapedPythonExprOS.write_escaped(pythonExpr);
+
+  return llvm::formatv(rawSymbolsExtractor, escapedPythonExpr).str();
+}
+
 /// Import the various top-level python symbols defined in the given python
 /// expression into the current mojo context by emitting binding code to the
 /// given stream.
-static void importPythonSymbolsIntoMojo(StringRef pythonExpr,
-                                        StringRef moduleName,
-                                        raw_ostream &mojoExprOS) {
-  // FIXME: This is an extremely hacky and limited python ast extractor. We
-  // should really be using pythons pre-existing ast utilities, but we currently
-  // don't have that available. When LLDB is built with python enabled, we
-  // should kill all of this logic and use that to ask python for the
-  // interesting bits instead.
-  SmallVector<StringRef> lines;
-  pythonExpr.split(lines, "\n");
+static LogicalResult
+importPythonSymbolsIntoMojo(Debugger &debugger, StringRef pythonExpr,
+                            StringRef moduleName, raw_ostream &mojoExprOS,
+                            DiagnosticManager &diagnosticManager) {
+  // We extract the necessary python symbols using the python ast module, which
+  // requires us to use the LLDB python interpreter.
+  ScriptInterpreter *scriptInterpreter = debugger.GetScriptInterpreter(
+      /*can_create=*/true, lldb::eScriptLanguagePython);
+  if (!scriptInterpreter) {
+    diagnosticManager.PutString(lldb_private::eDiagnosticSeverityWarning,
+                                "persisting Python symbols requires LLDB to be "
+                                "built with Python scripting support.");
+    // We don't fail hard here because we can't expect all LLDB distributions to
+    // have python integration.
+    return success();
+  }
 
-  llvm::Regex importRegex(R"(^import ([_0-9a-zA-Z]+)$)");
-  llvm::Regex importAsRegex(R"(^import ([_0-9a-zA-Z\.]+) as ([_0-9a-zA-Z]+)$)");
-  llvm::Regex defRegex(R"(^def ([_0-9a-zA-Z]+)\()");
-  llvm::Regex valueRegex(R"(^([_0-9a-zA-Z]+) =)");
+  ExecuteScriptOptions excOptions =
+      ExecuteScriptOptions().SetEnableIO(true).SetSetLLDBGlobals(false);
 
-  // As python allows redefining variables, we'll extract only one declaration
-  // of a given variable name.
-  llvm::StringMap<std::string> declarations;
+  // We first execute the code that extracts the symbols we need. Accessing the
+  // result is done later.
+  scriptInterpreter->ExecuteMultipleLines(
+      createSymbolExtractorPythonCode(pythonExpr).c_str(), excOptions);
 
-  for (StringRef line : lines) {
-    SmallVector<StringRef, 2> matches;
-    if (importRegex.match(line, &matches)) {
-      declarations[matches[1]] =
-          llvm::formatv("Python.import_module(\"{0}\")", matches[1]);
-    } else if (importAsRegex.match(line, &matches)) {
+  // Here we access the result, which is a serialized description of each symbol
+  // to extract.
+  char *symbolsStr = nullptr;
+  if (!scriptInterpreter->ExecuteOneLineWithReturn(
+          "__lldb_python_symbols",
+          ScriptInterpreter::eScriptReturnTypeCharStrOrNone, &symbolsStr,
+          excOptions)) {
+    diagnosticManager.PutString(lldb_private::eDiagnosticSeverityError,
+                                "Unable to extract Python symbols into Mojo.");
+    return failure();
+  }
+
+  StringRef symbols(symbolsStr);
+
+  SmallVector<StringRef> symbolLines;
+  symbols.split(symbolLines, '\n');
+
+  // We process the symbols in reverse order so that we honor the last occurence
+  // of a given symbol name.
+  llvm::StringSet<> seenVariables;
+  for (StringRef symbolLine : llvm::reverse(symbolLines)) {
+    SmallVector<StringRef> items;
+    symbolLine.split(items, ' ');
+
+    StringRef kind = items[0];
+    StringRef name = items[1];
+    if (seenVariables.contains(name))
+      continue;
+    seenVariables.insert(name);
+
+    if (kind == "declaration") {
+      mojoExprOS << llvm::formatv("let {0} = {1}.{0}\n", name, moduleName);
+    } else if (kind == "import") {
+      StringRef module = items[2];
       // Private import aliases (starting with a leading underscore) should not
       // be exposed to mojo.
-      if (!matches[2].starts_with("_")) {
-        declarations[matches[2]] =
-            llvm::formatv("Python.import_module(\"{0}\")", matches[1]);
-      }
-    } else if (defRegex.match(line, &matches) ||
-               valueRegex.match(line, &matches)) {
-      declarations[matches[1]] =
-          llvm::formatv("{0}.{1}", moduleName, matches[1]);
+      if (!name.starts_with("_"))
+        mojoExprOS << llvm::formatv("let {0} = Python.import_module(\"{1}\")\n",
+                                    name, module);
     }
   }
 
-  for (const auto &[name, value] : declarations)
-    mojoExprOS << llvm::formatv("let {0} = {1}\n", name, value);
+  return success();
 }
 
 LogicalResult MojoUserExpression::wrapTextAndParsePythonExpression(
@@ -417,7 +505,10 @@ sys.modules['{1}'] = expr_module
 
     // Import the interesting top-level symbols from the python module into the
     // mojo context.
-    importPythonSymbolsIntoMojo(pythonExpr, moduleName, mojoExprOS);
+    if (failed(importPythonSymbolsIntoMojo(exeCtx.GetTargetRef().GetDebugger(),
+                                           pythonExpr, moduleName, mojoExprOS,
+                                           diagnosticManager)))
+      return failure();
   }
 
   // Now that we've got a Mojo expression, parse it the way we would any other
