@@ -23,6 +23,7 @@
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LowerToObject.h"
+#include "LLCL/Support/AwaitingMutex.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/MDialect/MAttrs.h"
