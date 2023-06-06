@@ -302,6 +302,71 @@ void ParamApplyOp::concretizeCallee(mlir::IRRewriter &b,
 }
 
 //===----------------------------------------------------------------------===//
+// ParamEvaluateOp
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseParamEvaluateOp(AsmParser &p, ParamDeclAttr &paramDecl,
+                                        TypedAttr &evaluator,
+                                        TypedAttr &candidates) {
+  SignatureType evaluatorType;
+  if (parseParamDecl(p, paramDecl) || p.parseEqual() ||
+      parseParamValue(p, candidates, VariadicType::get(paramDecl.getType())) ||
+      p.parseKeyword("with") || p.parseLSquare() ||
+      parseKGENType(p, evaluatorType) || p.parseColon() ||
+      parseParamValue(p, evaluator, evaluatorType) || p.parseRSquare())
+    return failure();
+  return success();
+}
+
+static void printParamEvaluateOp(AsmPrinter &p, Operation *op,
+                                 ParamDeclAttr paramDecl, TypedAttr evaluator,
+                                 TypedAttr candidates) {
+  printParamDecl(p, paramDecl);
+  p << " = ";
+  printParamValue(p, candidates);
+  p << " with [";
+  printKGENType(p, evaluator.getType());
+  p << ": ";
+  printParamValue(p, evaluator);
+  p << ']';
+}
+
+void ParamEvaluateOp::walkDefinitions(
+    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {
+  ParamDefValue def;
+  def.exprs.push_back(getEvaluator());
+  def.exprs.push_back(getCandidates());
+  walkDef(getParamDecl(), def);
+}
+
+void ParamEvaluateOp::walkDeclarations(
+    function_ref<void(ParamDeclAttr)> walkDecl) {
+  walkDecl(getParamDecl());
+}
+
+void ParamEvaluateOp::renameDeclarations(ArrayRef<ParamDeclAttr> decls) {
+  assert(decls.size() == 1);
+  setParamDeclAttr(decls.front());
+}
+
+LogicalResult ParamEvaluateOp::verify() {
+  auto sigType = dyn_cast<SignatureType>(
+      cast<VariadicType>(getCandidates().getType()).getElementAsType());
+  if (!sigType)
+    return emitOpError("candidates must be a variadic type of signatures");
+  if (sigType != getParamDecl().getType())
+    return emitOpError("candidates type does not match parameter type");
+  if (!sigType.getInputParamTypes().empty() ||
+      !sigType.getResultParamTypes().empty())
+    return emitOpError("candidates cannot be parametric");
+  auto evalType = cast<SignatureType>(getEvaluator().getType());
+  if (!evalType.getInputParamTypes().empty() ||
+      !evalType.getResultParamTypes().empty())
+    return emitOpError("evaluator cannot be parametric");
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ParamResultBind
 //===----------------------------------------------------------------------===//
 
