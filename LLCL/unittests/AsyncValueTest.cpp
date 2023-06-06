@@ -401,18 +401,17 @@ TEST_P(AsyncValueTest, ArrayMovingSync) {
   refs.emplace_back(AnyAsyncValueRef::allocate<int>(*runtime));
   refs[0].copy().emplace<int>(1);
   refs[1].copy().emplace<int>(2);
-  andThenSyncMoving(
-      llvm::MutableArrayRef(refs),
-      [finished = finished.copy()](
-          llvm::MutableArrayRef<AnyAsyncValueRef> elts) mutable {
-        // `refs` is moved, so each element has refcount 1 when
-        // the completion function is executed.
-        EXPECT_TRUE(elts[0].getPointer()->isUnique());
-        EXPECT_TRUE(elts[1].getPointer()->isUnique());
-        EXPECT_EQ(elts[0].get<int>(), 1);
-        EXPECT_EQ(elts[1].get<int>(), 2);
-        std::move(finished).emplace(3);
-      });
+  andThenSyncMoving(llvm::MutableArrayRef(refs),
+                    [finished = finished.copy()](
+                        llvm::MutableArrayRef<AnyAsyncValueRef> elts) mutable {
+                      // `refs` is moved, so each element has refcount 1 when
+                      // the completion function is executed.
+                      EXPECT_TRUE(elts[0].getPointer()->isUnique());
+                      EXPECT_TRUE(elts[1].getPointer()->isUnique());
+                      EXPECT_EQ(elts[0].get<int>(), 1);
+                      EXPECT_EQ(elts[1].get<int>(), 2);
+                      std::move(finished).emplace(3);
+                    });
   await(finished);
   EXPECT_EQ(finished.get(), 3);
 }
@@ -425,18 +424,17 @@ TEST_P(AsyncValueTest, ArrayMovingAsync) {
   refs.emplace_back(AnyAsyncValueRef::allocate<int>(*runtime));
   refs[0].copy().emplace<int>(1);
   refs[1].copy().emplace<int>(2);
-  andThenAsyncMoving(
-      llvm::MutableArrayRef(refs),
-      [finished = finished.copy()](
-          llvm::MutableArrayRef<AnyAsyncValueRef> elts) mutable {
-        // `refs` is moved, so each element has refcount 1 when
-        // the completion function is executed.
-        EXPECT_TRUE(elts[0].getPointer()->isUnique());
-        EXPECT_TRUE(elts[1].getPointer()->isUnique());
-        EXPECT_EQ(elts[0].get<int>(), 1);
-        EXPECT_EQ(elts[1].get<int>(), 2);
-        std::move(finished).emplace(3);
-      });
+  andThenAsyncMoving(llvm::MutableArrayRef(refs),
+                     [finished = finished.copy()](
+                         llvm::MutableArrayRef<AnyAsyncValueRef> elts) mutable {
+                       // `refs` is moved, so each element has refcount 1 when
+                       // the completion function is executed.
+                       EXPECT_TRUE(elts[0].getPointer()->isUnique());
+                       EXPECT_TRUE(elts[1].getPointer()->isUnique());
+                       EXPECT_EQ(elts[0].get<int>(), 1);
+                       EXPECT_EQ(elts[1].get<int>(), 2);
+                       std::move(finished).emplace(3);
+                     });
   await(finished);
   EXPECT_EQ(finished.get(), 3);
 }
@@ -583,4 +581,66 @@ TEST_P(AsyncValueTest, AwaitWithoutDonating) {
     foreign[i].join();
 
   await(finished);
+}
+
+//===----------------------------------------------------------------------===//
+// addTask
+//===----------------------------------------------------------------------===//
+
+TEST_P(AsyncValueTest, AddTaskOverflow_DeadlockOnFailure) {
+  if (GetParam() != kThreadPool)
+    // Can only observe with the thread pool workqueue.
+    return;
+
+  auto runtime = createRuntime(/*numThreads=*/2);
+
+  // Keep worker 1 occupied so it won't be able to execute any 'extra' tasks.
+  Semaphore workerIsWaiting;
+  Semaphore workerCanRun;
+  auto workerFinished = AsyncValueRef<Chain>::allocate(*runtime);
+  addTask(*runtime, [&workerIsWaiting, &workerCanRun,
+                     workerFinished = workerFinished.copy()]() mutable {
+    workerIsWaiting.post();
+    workerCanRun.wait();
+    std::move(workerFinished).emplace();
+  });
+  workerIsWaiting.wait();
+
+  // Prepare for the 'extra' tasks.
+  constexpr size_t nExtraTasks = 1000; // More than the task queue capacity.
+  llvm::SmallVector<AnyAsyncValueRef> extraFinished;
+  extraFinished.reserve(nExtraTasks);
+  for (size_t i = 0; i < nExtraTasks; ++i)
+    extraFinished.emplace_back(AsyncValueRef<Chain>::allocate(*runtime));
+
+  // Add the main task so the inner addTasks will appear to come from
+  // a 'foreign awaiting' thread.
+  auto mainFinished = AsyncValueRef<Chain>::allocate(*runtime);
+  Semaphore extraCanRun[nExtraTasks];
+  addTask(*runtime, [&runtime, mainFinished = mainFinished.copy(),
+                     &extraFinished, &extraCanRun]() mutable {
+    // Flood the task queue with 'extra' tasks.
+    for (size_t i = 0; i < nExtraTasks; ++i) {
+      addTask(*runtime, [i, extraFinished = extraFinished[i].copy(),
+                         &extraCanRun]() mutable {
+        // Will deadlock if executed immediately by the addTask.
+        extraCanRun[i].wait();
+        std::move(extraFinished).emplace<Chain>();
+      });
+    }
+
+    // The 'extra' tasks can now proceed.
+    for (size_t i = 0; i < nExtraTasks; ++i)
+      extraCanRun[i].post();
+
+    std::move(mainFinished).emplace();
+  });
+
+  // Run the main task.
+  await(mainFinished);
+
+  // Cleanup.
+  workerCanRun.post();
+  await(workerFinished);
+  await(extraFinished);
 }
