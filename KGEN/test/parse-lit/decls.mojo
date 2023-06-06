@@ -566,8 +566,10 @@ fn callDefaultArgument(x: Int) -> Int:
     # CHECK-NEXT: %[[ARG1:.*]] = kgen.param.constant{{.*}} = 3
     # CHECK-NEXT: %[[ARG2:.*]] = kgen.param.constant{{.*}} = 5
     # CHECK-NEXT: kgen.call {{.*}}defaultArgument{{.*}}(%x, %[[ARG1]], %[[ARG2]])
+    # CHECK-NEXT: lit.letreg.decl "a"
     let a = defaultArgument(x)
-    # CHECK: kgen.call {{.*}}defaultArgument{{.*}}(%x, %x, {{.*}})
+    # CHECK-NEXT: %[[ARG2:.*]] = kgen.param.constant{{.*}} = 5
+    # CHECK-NEXT: kgen.call {{.*}}defaultArgument{{.*}}(%x, %x, %[[ARG2]])
     let b = defaultArgument(x, x)
     return a + b
 
