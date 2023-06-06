@@ -498,8 +498,8 @@ OpFoldResult BitcastOp::fold(FoldAdaptor adaptor) {
   if (dtype->isInt()) {
     return foldSIMDOpResult<::detail::kNoIndex>(
         operands, *dtype,
-        [&](APSInt in) { return APSInt(in, dtype->isUInt()); },
-        [&](APFloat in) {
+        [&](const APSInt &in) { return APSInt(in, dtype->isUInt()); },
+        [&](const APFloat &in) {
           return APSInt(in.bitcastToAPInt(), dtype->isUInt());
         });
   }
@@ -509,8 +509,8 @@ OpFoldResult BitcastOp::fold(FoldAdaptor adaptor) {
     return {};
   const llvm::fltSemantics &sem = DTypeValue::getFloatSemantics(*dtype);
   return foldSIMDOpResult<::detail::kNoIndex>(
-      operands, *dtype, [&](APSInt in) { return APFloat(sem, in); },
-      [&](APFloat in) { return APFloat(sem, in.bitcastToAPInt()); });
+      operands, *dtype, [&](const APSInt &in) { return APFloat(sem, in); },
+      [&](const APFloat &in) { return APFloat(sem, in.bitcastToAPInt()); });
 }
 
 //===----------------------------------------------------------------------===//
@@ -553,7 +553,7 @@ OpFoldResult CastOp::fold(FoldAdaptor adaptor) {
     const llvm::fltSemantics &sem = DTypeValue::getFloatSemantics(*dtype);
     return foldSIMDOpResult<::detail::kOtherResult>(
         operands, *dtype,
-        [&](APSInt in) {
+        [&](const APSInt &in) {
           APFloat fp(sem);
           fp.convertFromAPInt(in, in.isSigned(), APFloat::rmNearestTiesToEven);
           return fp;
@@ -570,8 +570,9 @@ OpFoldResult CastOp::fold(FoldAdaptor adaptor) {
     // too large to fit in the integer dtype.
     unsigned width = dtype->getIntegerWidthInBits();
     return foldSIMDOpResult<::detail::kOtherResult>(
-        operands, *dtype, [&](APSInt in) { return in.extOrTrunc(width); },
-        [&](APFloat in) -> std::optional<APSInt> {
+        operands, *dtype,
+        [&](const APSInt &in) { return in.extOrTrunc(width); },
+        [&](const APFloat &in) -> std::optional<APSInt> {
           APSInt iv(width, dtype->isUInt());
           bool ignored;
           if (in.convertToInteger(iv, APFloat::rmTowardZero, &ignored) ==
@@ -585,8 +586,8 @@ OpFoldResult CastOp::fold(FoldAdaptor adaptor) {
     // Cast to index like it's a 64-bit integer. Index-to-index cast is handled
     // by the early exit above.
     return foldSIMDOpResult<::detail::kNoIndex>(
-        operands, *dtype, [](APSInt in) { return in.getSExtValue(); },
-        [](APFloat in) -> std::optional<int64_t> {
+        operands, *dtype, [](const APSInt &in) { return in.getSExtValue(); },
+        [](const APFloat &in) -> std::optional<int64_t> {
           APSInt iv(64, /*isUnsigned=*/false);
           bool ignored;
           if (in.convertToInteger(iv, APFloat::rmTowardZero, &ignored) ==
@@ -598,8 +599,8 @@ OpFoldResult CastOp::fold(FoldAdaptor adaptor) {
   }
   assert(dtype->isBool());
   return foldSIMDOpResult<::detail::kOtherResult>(
-      operands, *dtype, [](APSInt in) { return !in.isZero(); },
-      [](APFloat in) { return !in.isZero(); });
+      operands, *dtype, [](const APSInt &in) { return !in.isZero(); },
+      [](const APFloat &in) { return !in.isZero(); });
 }
 
 //===----------------------------------------------------------------------===//
