@@ -7,6 +7,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENPasses.h"
+#include "Support/Threading/ThreadLocalCache.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Threading.h"
@@ -175,29 +176,16 @@ struct LiftAndFoldApplyPass : impl::LiftAndFoldApplyBase<LiftAndFoldApplyPass> {
 
     // Give each thread a copy of the parameter cache, rather than each work
     // item.
-    DenseMap<uint64_t, ParameterCollector::Analysis> threadCaches;
-    if (getContext().isMultithreadingEnabled())
-      threadCaches.reserve(getContext().getThreadPool().getThreadCount());
-    llvm::sys::SmartRWMutex<true> mutex;
+    ThreadLocalCache<ParameterCollector::Analysis> threadCaches(
+        paramCache, getContext().isMultithreadingEnabled()
+                        ? getContext().getThreadPool().getThreadCount()
+                        : 1);
 
-    auto workFunc = [&paramCache, &mutex, &threadCaches](GeneratorOp func) {
-      // Get the thread-local cache.
-      ParameterCollector::Analysis *cache = nullptr;
-      uint64_t threadId = llvm::get_threadid();
-      {
-        llvm::sys::SmartScopedReader<true> lock(mutex);
-        auto it = threadCaches.find(threadId);
-        if (it != threadCaches.end())
-          cache = &it->second;
-      }
-      if (!cache) {
-        llvm::sys::SmartScopedWriter<true> lock(mutex);
-        // Each thread gets a copy of the saved cache.
-        cache = &threadCaches.try_emplace(threadId, paramCache).first->second;
-      }
+    auto workFunc = [&threadCaches](GeneratorOp func) {
       ParameterUseDefGraph graph(func.getBodyRegion());
-      graph.calculate(*cache);
-      liftAndFoldApply(&func.getBodyRegion(), *cache, graph);
+      ParameterCollector::Analysis &cache = threadCaches.getThreadLocalCache();
+      graph.calculate(cache);
+      liftAndFoldApply(&func.getBodyRegion(), cache, graph);
     };
     mlir::parallelForEach(&getContext(), getOperation().getOps<GeneratorOp>(),
                           workFunc);
