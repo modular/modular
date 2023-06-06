@@ -8,6 +8,7 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/KGENPasses.h"
+#include "Support/Threading/ThreadLocalCache.h"
 #include "Support/TimeProfiler.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -119,34 +120,20 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
 
     // Give each thread a copy of the parameter cache, rather than each work
     // item.
-    DenseMap<uint64_t, ParameterCollector::Analysis> threadCaches;
-    if (getContext().isMultithreadingEnabled())
-      threadCaches.reserve(getContext().getThreadPool().getThreadCount());
-    llvm::sys::SmartRWMutex<true> mutex;
+    ThreadLocalCache<ParameterCollector::Analysis> threadCaches(
+        paramCache, getContext().isMultithreadingEnabled()
+                        ? getContext().getThreadPool().getThreadCount()
+                        : 1);
 
     std::vector<Region *> declRegions;
     for (auto decl : getOperation().getOps<DeclInterface>())
       for (Region &region : decl->getRegions())
         declRegions.push_back(&region);
-    auto workFunc = [&sharedSymtabs, &paramCache, &mutex, &threadCaches,
+    auto workFunc = [&sharedSymtabs, &threadCaches,
                      simplify = bool(simplifyParameters)](Region *declRegion) {
-      // Get the thread-local cache.
-      ParameterCollector::Analysis *cache = nullptr;
-      uint64_t threadId = llvm::get_threadid();
-      {
-        llvm::sys::SmartScopedReader<true> lock(mutex);
-        auto it = threadCaches.find(threadId);
-        if (it != threadCaches.end())
-          cache = &it->second;
-      }
-      if (!cache) {
-        llvm::sys::SmartScopedWriter<true> lock(mutex);
-        // Each thread gets a copy of the saved cache.
-        cache = &threadCaches.try_emplace(threadId, paramCache).first->second;
-      }
-
       ParameterUseDefGraph graph(*declRegion);
-      if (failed(graph.verify(sharedSymtabs, *cache)))
+      if (failed(
+              graph.verify(sharedSymtabs, threadCaches.getThreadLocalCache())))
         return failure();
       if (simplify) {
         TimeTraceScope<> traceScope("propagateTrivialParameters");
@@ -164,9 +151,12 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
     // an input IR, so consolidation is only worthwhile on the first run of the
     // pass, when the cache is empty.
     if (paramCache.parameterLess.empty()) {
-      for (auto &[_, threadCache] : threadCaches)
-        paramCache.parameterLess.insert(threadCache.parameterLess.begin(),
-                                        threadCache.parameterLess.end());
+      threadCaches.consolidate(
+          [](ParameterCollector::Analysis &original,
+             const ParameterCollector::Analysis &threadCache) {
+            original.parameterLess.insert(threadCache.parameterLess.begin(),
+                                          threadCache.parameterLess.end());
+          });
     }
 
     // This pass does not modify any IR, so mark all analyses as preserved. In

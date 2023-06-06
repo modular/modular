@@ -17,6 +17,7 @@
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/STLExtras.h"
+#include "Support/Threading/ThreadLocalCache.h"
 #include "Support/TimeProfiler.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/IRMapping.h"
@@ -43,8 +44,9 @@ namespace {
 /// signature type.
 class AttrTypeMangler {
 public:
-  explicit AttrTypeMangler(DenseSet<const void *> &manglerCache)
-      : manglerCache(manglerCache) {}
+  using Cache = DenseSet<const void *>;
+
+  explicit AttrTypeMangler(Cache &manglerCache) : manglerCache(manglerCache) {}
 
   /// Mangle references within a type.
   Type mangleRefsIn(Type type, bool &hasRefs) {
@@ -109,7 +111,7 @@ private:
   /// The map of mangled declarations.
   DenseMap<StringAttr, StringAttr> mangledDecls;
   /// A cache of attributes and types known to have no parameter references.
-  DenseSet<const void *> manglerCache;
+  Cache &manglerCache;
 };
 } // namespace
 
@@ -303,7 +305,7 @@ void KGEN::inlineGeneratorCall(CallOp call, GeneratorOp callee,
                                ParameterUseDefGraph &topLevelGraph,
                                const ParameterUseDefGraph &calleeParams,
                                const llvm::SetVector<StringAttr> &calleeDecls,
-                               DenseSet<const void *> &manglerCache) {
+                               AttrTypeMangler::Cache &manglerCache) {
   TimeTraceScope<> traceScope("inlineGeneratorCall",
                               [&] { return callee.getSymName().str(); });
 
@@ -719,13 +721,10 @@ struct ParametricInliningGraph
   explicit ParametricInliningGraph(AlwaysInlineLevel level,
                                    LLCL::Runtime &runtime,
                                    ParameterCollector::Analysis &paramCache)
-      : InliningGraphBase(runtime), level(level), paramCache(paramCache) {
-    // Reserve the thread-local cache map so that it never resizes.
-    threadCaches.reserve(runtime.getWorkQueue()->getParallelismLevel());
-  }
-
-  /// Get the parameter cache copy belonging to the thread.
-  ParameterCollector::Analysis &getThreadLocalCache(uint64_t threadId);
+      : InliningGraphBase(runtime), level(level),
+        paramCaches(paramCache, runtime.getWorkQueue()->getParallelismLevel()),
+        manglerCaches(baseManglerCache,
+                      runtime.getWorkQueue()->getParallelismLevel()) {}
 
   /// Only inline functions that satisfy the inlining level.
   bool shouldInline(ParametricInliningGraphNode *node) const {
@@ -740,14 +739,12 @@ struct ParametricInliningGraph
 
   /// The inlining level.
   AlwaysInlineLevel level;
-  /// A parameter collector cache to use.
-  ParameterCollector::Analysis &paramCache;
-  /// The parameter mangler cache.
-  DenseSet<const void *> manglerCache;
-  /// Thread-local copies of the parameter cache.
-  DenseMap<uint64_t, ParameterCollector::Analysis> threadCaches;
-  /// This mutex guards the map of thread-local caches.
-  llvm::sys::SmartRWMutex<true> cacheMutex;
+  /// Base mangler cache instance. It is always empty.
+  AttrTypeMangler::Cache baseManglerCache;
+  /// Thread local parameter collector caches.
+  ThreadLocalCache<ParameterCollector::Analysis> paramCaches;
+  /// Thread local mangler caches.
+  ThreadLocalCache<AttrTypeMangler::Cache> manglerCaches;
 };
 } // namespace
 
@@ -767,40 +764,23 @@ void ParametricInliningGraphNode::calculateParams(
   });
 }
 
-ParameterCollector::Analysis &
-ParametricInliningGraph::getThreadLocalCache(uint64_t threadId) {
-  ParameterCollector::Analysis *cache = nullptr;
-  {
-    llvm::sys::SmartScopedReader<true> lock(cacheMutex);
-    auto it = threadCaches.find(threadId);
-    if (it != threadCaches.end())
-      cache = &it->second;
-  }
-  if (!cache) {
-    llvm::sys::SmartScopedWriter<true> lock(cacheMutex);
-    // Each thread gets a copy of the saved cache.
-    cache = &threadCaches.try_emplace(threadId, paramCache).first->second;
-  }
-  return *cache;
-}
-
 bool ParametricInliningGraph::prepareForInlining(
     ParametricInliningGraphNode *node) {
   // Skip inlining of functions with no callers.
   if (node->callers.empty())
     return false;
-  node->calculateParams(getThreadLocalCache(llvm::get_threadid()));
+  node->calculateParams(paramCaches.getThreadLocalCache());
   return true;
 }
 
 void ParametricInliningGraph::performInlining(
     ParametricInliningGraphNode *caller) {
   ParameterUseDefGraph callerParams(caller->func.getBodyRegion());
-  callerParams.calculate(getThreadLocalCache(llvm::get_threadid()));
+  callerParams.calculate(paramCaches.getThreadLocalCache());
   for (auto [call, callee] : caller->callsites) {
     inlineGeneratorCall(call, callee->func, callee->level, callerParams,
                         callee->calleeParamGraph, callee->allDecls,
-                        manglerCache);
+                        manglerCaches.getThreadLocalCache());
   }
 }
 

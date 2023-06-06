@@ -361,7 +361,7 @@ struct ExpansionGraph {
   std::vector<ImplNode *> worklist;
 
   /// Fork the expansion of a concrete node.
-  ImplNode *fork(ImplNode *cur, IRMapping &map, SymbolTable &symtab,
+  ImplNode *fork(ImplNode *cur, IRMapping &map, Shared<SymbolTable &> &symtab,
                  StringRef forkParam, Attribute value) {
     // Clone the function and generate a unique name for it.
     auto clone = cast<FuncOp>(cur->func->clone(map));
@@ -372,7 +372,8 @@ struct ExpansionGraph {
       os << forkParam << '=';
     printParameterValue(value, os);
     clone.setSymName(name);
-    symtab.insert(clone, ++cur->func->getIterator());
+    symtab.modify([clone, it = ++cur->func->getIterator()](
+                      SymbolTable &symtab) { symtab.insert(clone, it); });
 
     // Fork the node and its bindings.
     auto n = std::make_unique<ImplNode>(
@@ -1005,7 +1006,10 @@ void ElaboratorImpl::finalizeAndVerifyFunction(ImplNode *node) {
 ErrorTreeOr<FuncOp>
 ElaboratorImpl::getConcreteFunction(Location loc, FlatSymbolRefAttr symbolRef,
                                     ArrayRef<TypedAttr> paramValues) {
-  auto gen = symtab.lookup<GeneratorOp>(symbolRef.getAttr());
+  auto gen =
+      symtab.read([name = symbolRef.getAttr()](const SymbolTable &symtab) {
+        return symtab.lookup<GeneratorOp>(name);
+      });
 
   SmallVector<Attribute> inputParams;
   for (TypedAttr value : paramValues)
@@ -1032,7 +1036,10 @@ ElaboratorImpl::getConcreteFunction(Location loc, FlatSymbolRefAttr symbolRef,
 ErrorTreeOrSuccess ElaboratorImpl::getAllConcreteFunctions(
     Location loc, FlatSymbolRefAttr symbolRef, ArrayRef<TypedAttr> paramValues,
     std::vector<FuncOp> &funcs) {
-  auto gen = symtab.lookup<GeneratorOp>(symbolRef.getAttr());
+  auto gen =
+      symtab.read([name = symbolRef.getAttr()](const SymbolTable &symtab) {
+        return symtab.lookup<GeneratorOp>(name);
+      });
 
   SmallVector<Attribute> inputParams;
   for (TypedAttr value : paramValues)
@@ -1167,8 +1174,9 @@ ElaboratorImpl::processGeneratorUser(KGENCallOpInterface user,
   ArrayAttr inputParamKey = *resolvedCallParamsOr;
 
   // Lookup the callee.
-  auto calleeOp = symtab.lookup(
-      cast<FlatSymbolRefAttr>(calleeSymbol.getSymbol()).getAttr());
+  auto calleeOp = symtab.read(
+      [name = cast<FlatSymbolRefAttr>(calleeSymbol.getSymbol()).getAttr()](
+          const SymbolTable &symtab) { return symtab.lookup(name); });
   if (!calleeOp) {
     parent->setToError(
         ErrorTree(user.getLoc(), "could not find callee '" +
@@ -1916,7 +1924,7 @@ ElaborationState ElaboratorImpl::specializeGenerator(ParamNode *genNode) {
   } else {
     auto &uses = knownGraphs[generator] =
         std::make_unique<ParameterUseDefGraph>(generator.getBodyRegion());
-    uses->calculate(paramCache);
+    uses->calculate(paramCache.getThreadLocalCache());
     genNodeGraph = uses.get();
   }
 
@@ -1954,7 +1962,9 @@ ElaborationState ElaboratorImpl::specializeGenerator(ParamNode *genNode) {
 
   // Insert the newFunc into the symbol table which will then know about it,
   // but it will also auto-rename the symbol for us in the case of conflicts.
-  symtab.insert(newFunc, generator->getIterator());
+  symtab.modify([newFunc, it = generator->getIterator()](SymbolTable &symtab) {
+    symtab.insert(newFunc, it);
+  });
 
   // Clone the body of the generator into the function.
   // TODO: is there a nice way for us to avoid cloning this?
@@ -2040,16 +2050,16 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
     std::vector<FuncOp> concreteFuncs;
     genNode->getAllConcreteFuncs(concreteFuncs);
     for (FuncOp c : concreteFuncs)
-      symtab.insert(c, genNode->gen->getIterator());
+      symtab.get().insert(c, genNode->gen->getIterator());
 
-    symtab.remove(gen);
+    symtab.get().remove(gen);
     if (!concreteFuncs.empty()) {
       StringAttr newName = gen.getSymNameAttr();
       FuncOp first = concreteFuncs.front();
       funcsToRename[first.getNameAttr()] = newName;
-      symtab.remove(first);
+      symtab.get().remove(first);
       concreteFuncs.front().setSymNameAttr(newName);
-      symtab.insert(first);
+      symtab.get().insert(first);
     }
     gen->erase();
   }
@@ -2058,7 +2068,7 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
        llvm::make_pointee_range(llvm::make_second_range(g.nodes))) {
     for (ImplNode &impl : llvm::make_pointee_range(node.impls))
       if (impl.error)
-        symtab.erase(impl.func);
+        symtab.get().erase(impl.func);
   }
 
   // Perform any renaming at the end.  We cannot use the

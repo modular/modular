@@ -13,6 +13,8 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "LLCL/CompilerSupport/AsyncSideEffectMap.h"
 #include "Support/Compiler/ErrorTree.h"
+#include "Support/Threading/Shared.h"
+#include "Support/Threading/ThreadLocalCache.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 
 namespace M::KGEN {
@@ -27,8 +29,8 @@ public:
   /// Initialize the elaborator and its symbol table.
   Elaborator(SymbolTable &symtab, ParameterCollector::Analysis &paramCache,
              TargetInfoAttr target, EvaluatorExecutorFnRef evaluatorExecutorFn)
-      : symtab(symtab), paramCache(paramCache), target(target),
-        evaluatorExecutorFn(evaluatorExecutorFn) {}
+      : symtab(symtab), paramCache(paramCache, /*maxNumThreads=*/1),
+        target(target), evaluatorExecutorFn(evaluatorExecutorFn) {}
 
   virtual ~Elaborator() = default;
 
@@ -48,7 +50,7 @@ public:
                           std::vector<FuncOp> &funcs) = 0;
 
   /// Get the symbol table associated with this instance of the elaborator.
-  SymbolTable &getSymbolTable() { return symtab; }
+  Shared<SymbolTable &> &getSymbolTable() { return symtab; }
   /// Get the target associated with this instance of the elaborator.
   TargetInfoAttr getTarget() { return target; }
 
@@ -59,10 +61,10 @@ public:
 
 protected:
   /// This symbol table allows efficient lookups across the module.
-  SymbolTable &symtab;
+  Shared<SymbolTable &> symtab;
 
   /// This is the cached parameter collector analysis.
-  ParameterCollector::Analysis &paramCache;
+  ThreadLocalCache<ParameterCollector::Analysis> paramCache;
 
   /// The target we are compiling code for.
   TargetInfoAttr target;

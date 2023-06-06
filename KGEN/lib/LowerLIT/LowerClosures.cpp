@@ -11,6 +11,7 @@
 #include "KGEN/POPDialect/POPTypes.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
+#include "Support/Threading/Shared.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Threading.h"
@@ -21,18 +22,6 @@
 using namespace M;
 using namespace KGEN;
 using namespace POP;
-
-//===----------------------------------------------------------------------===//
-// LockedSymbolTable
-//===----------------------------------------------------------------------===//
-
-namespace {
-/// A shared symbol table.
-struct LockedSymbolTable {
-  SymbolTable &symtab;
-  llvm::sys::SmartRWMutex<true> mutex;
-};
-} // namespace
 
 //===----------------------------------------------------------------------===//
 // updateSubprogramScope
@@ -110,7 +99,7 @@ static void createCoroutineFinalize(ImplicitLocOpBuilder &b, Value hdl,
 /// `lit.async.execute` operations nested beneath this one when the function
 /// gets called.
 static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
-                              LockedSymbolTable &sharedTable) {
+                              Shared<SymbolTable &> &sharedTable) {
   SmallVector<Value> captures;
   Region &body = op.getBodyRegion();
   liftClosureRegion(body, captures);
@@ -137,10 +126,10 @@ static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
 
   // Insert the function into the symbol table. Lock the symbol table, which
   // also locks the linked list of operations in the module block.
-  {
-    llvm::sys::SmartScopedWriter<true> lock(sharedTable.mutex);
-    name = sharedTable.symtab.insert(lifted, parent->getIterator());
-  }
+  name = sharedTable.modify(
+      [lifted, it = parent->getIterator()](SymbolTable &symtab) {
+        return symtab.insert(lifted, it);
+      });
 
   // Create the call with a dummy callee.
   b.setInsertionPoint(op);
@@ -160,7 +149,7 @@ static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
 /// Lower a closure by closing the region over its captured SSA values and
 /// lifting it into a top-level function.
 static void lowerStageClosure(FuncOp parent, StageClosureOp op,
-                              LockedSymbolTable &sharedTable) {
+                              Shared<SymbolTable &> &sharedTable) {
   Region &body = op.getBodyRegion();
   unsigned numArgs = body.getNumArguments();
   SmallVector<Value> captures;
@@ -191,10 +180,10 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
 
   // Insert the function into the symbol table. Lock the symbol table, which
   // also locks the linked list of operations in the module block.
-  {
-    llvm::sys::SmartScopedWriter<true> lock(sharedTable.mutex);
-    name = sharedTable.symtab.insert(lifted, parent->getIterator());
-  }
+  name = sharedTable.modify(
+      [lifted, it = parent->getIterator()](SymbolTable &symtab) {
+        return symtab.insert(lifted, it);
+      });
 
   b.setInsertionPoint(op);
   auto create = b.create<CreateClosureOp>(
@@ -214,7 +203,7 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
 /// it, marshall results through a `pop.coroutine.promise`, and return the
 /// handle directly.
 static LogicalResult lowerAsyncFunction(FuncOp func,
-                                        LockedSymbolTable &sharedTable) {
+                                        Shared<SymbolTable &> &sharedTable) {
   Value coroHdl;
   ImplicitLocOpBuilder b(func.getLoc(),
                          OpBuilder::atBlockBegin(func.getBody()));
@@ -288,7 +277,7 @@ struct LowerClosuresPass : impl::LowerClosuresBase<LowerClosuresPass> {
   void runOnOperation() override {
     SymbolTable &symtab =
         getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
-    LockedSymbolTable sharedTable{symtab, {}};
+    Shared<SymbolTable &> sharedTable(symtab);
 
     auto eachFn = [&](FuncOp func) {
       return lowerAsyncFunction(func, sharedTable);

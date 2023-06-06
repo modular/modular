@@ -23,8 +23,11 @@ using namespace KGEN;
 //===----------------------------------------------------------------------===//
 
 ErrorOr<Region *> IREvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
-  auto func = elaborator->getSymbolTable().lookup<FuncOp>(
-      cast<FlatSymbolRefAttr>(symbol).getAttr());
+  StringAttr name = cast<FlatSymbolRefAttr>(symbol).getAttr();
+  FuncOp func =
+      elaborator->getSymbolTable().read([name](const SymbolTable &symtab) {
+        return symtab.lookup<FuncOp>(name);
+      });
 
   // Now we can return the function body.
   return &func.getBodyRegion();
@@ -145,12 +148,14 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
 
     // FIXME: This should acquire a semaphore shared across all compiler
     // processes to ensure search is performed in isolation.
-    auto bestOr = elaborator->getEvaluatorExecutorFn()(
-        *evaluator, elaborator->getSymbolTable(), elaborator->getTarget(),
-        options);
+    auto bestOr = elaborator->getSymbolTable().read(
+        [evaluator = *evaluator, this,
+         options = ArrayRef(options)](const SymbolTable &symtab) {
+          return elaborator->getEvaluatorExecutorFn()(
+              evaluator, symtab, elaborator->getTarget(), options);
+        });
     if (bestOr.isError()) {
-      emitError(
-          ErrorTree(UnknownLoc::get(op.getContext()), bestOr.takeError()));
+      emitError(ErrorTree(options.front().getLoc(), bestOr.takeError()));
       return failure();
     }
 
