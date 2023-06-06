@@ -668,16 +668,28 @@ void ThreadPoolWorkQueue::addTask(TaskFunction &&work,
     return;
   }
 
-  // If we failed to add it, then the ring buffer is full: just run the work
-  // item locally on the current stack.
-  // CAUTION: This runs the risk of stack overflow, but we don't have a
-  // choice. CAUTION: Any existing work item's profiling entry will include
-  // execution time to run this work item.
-  if (profiledTask.running.empty())
-    profiledTask.running = WorkProfilerEntry::create("llcl.addTask.now");
-  else
-    profiledTask.running = profiledTask.running.withNameSuffix(".now");
-  callerWorker->doWork</*OnOwningThread=*/false>(std::move(profiledTask));
+  // If we failed to add it, then the ring buffer is full.
+  if (callerWorker->workerID == 0 &&
+      callerWorker->threadID != llvm::get_threadid()) {
+    // Called from a foreign worker which is not within a runItems loop, so
+    // there's no where left to enqueue the task, and we must run it now.
+    // CAUTION: This runs the risk of stack overflow, but we don't have a
+    // choice.
+    // CAUTION: Any existing work item's profiling entry will include
+    // execution time to run this work item.
+    if (profiledTask.running.empty())
+      profiledTask.running = WorkProfilerEntry::create("llcl.addTask.now");
+    else
+      profiledTask.running = profiledTask.running.withNameSuffix(".now");
+    callerWorker->doWork</*OnOwningThread=*/false>(std::move(profiledTask));
+    return;
+  }
+
+  // Called from either a worker thread or the distinguished awaiting
+  // foreign thread. Safe to enqueue directly. Though we've lost task
+  // sharing between workers, this at least protects against stack overflow.
+  // TODO: We've lost the profiling details.
+  callerWorker->addLocalTask(std::move(profiledTask.work));
 }
 
 void ThreadPoolWorkQueue::addLocalTask(M::LLCL::TaskFunction work) {
