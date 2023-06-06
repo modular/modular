@@ -233,7 +233,7 @@ wrapExpressionText(StringRef wrappedFnName, StringRef exprText,
         << "from PythonObject import PythonObject\n"
         << "from Object import object\n"
         << "from SIMD import SIMD, Int8, UInt8, Int16, Int16, Int32, "
-           "UInt32, Int64, UInt64, Float8, Float16, Float32, Float64\n"
+           "UInt32, Int64, UInt64, Float16, Float32, Float64\n"
         << "from Range import range\n";
   }
 
