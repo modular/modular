@@ -213,16 +213,8 @@ ASTType ASTType::getVariadicElementType() const {
 /// results and stripping off the variant from error throwing results if needed.
 ASTType ASTType::getSignatureUserResultType() const {
   auto sigType = cast<SignatureType>(mlirType);
-  // If this function is a memory only type, return the by-ref result.
-  if (sigType.hasMemoryOnlyResult())
-    return cast<POP::PointerType>(sigType.getValueInputs()[0]).getElementType();
-
-  // Otherwise it is the normal result.
-  assert(sigType.getValueResults().size() == 1);
-  auto resultType = sigType.getValueResults()[0];
-  if (sigType.isThrows())
-    return cast<POP::VariantType>(resultType).getType(1);
-  return resultType;
+  return LIT::getSignatureUserResultType(sigType, sigType.getValueInputs(),
+                                         sigType.getValueResults().front());
 }
 
 /// Pretty print a symbol reference.

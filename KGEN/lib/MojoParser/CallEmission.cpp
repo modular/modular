@@ -920,6 +920,24 @@ static void addTypeConversionDetail(InflightDiag &diag, SourceRange payloadLoc,
         << "try resolving the overloaded function first" << payloadLoc;
     return;
   }
+  // Try to detect mismatched byref result type.
+  auto lhsSig = dyn_cast<SignatureType>(payloadType.mlirType);
+  auto rhsSig = dyn_cast<SignatureType>(argType.mlirType);
+  if (lhsSig && rhsSig) {
+    auto getByRefResult = [](SignatureType sig) -> std::pair<bool, Type> {
+      return {sig.hasMemoryOnlyResult(),
+              ASTType(sig).getSignatureUserResultType()};
+    };
+    auto [lhsByRef, lhsRetType] = getByRefResult(lhsSig);
+    auto [rhsByRef, rhsRetType] = getByRefResult(rhsSig);
+    if (lhsByRef == rhsByRef || lhsRetType != rhsRetType)
+      return;
+    // Different result semantics but same result type.
+    diag.attachNote(payloadLoc.getStart())
+        << "memory-primary type bound to generic result type: "
+        << (lhsByRef ? "payload" : "argument") << " returns "
+        << ASTType(lhsRetType) << " by reference";
+  }
 }
 
 /// Add explanation for why this candidate doesn't work to the specified
