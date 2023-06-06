@@ -27,10 +27,8 @@ class IREvaluator;
 class Elaborator {
 public:
   /// Initialize the elaborator and its symbol table.
-  Elaborator(SymbolTable &symtab, ParameterCollector::Analysis &paramCache,
-             TargetInfoAttr target, EvaluatorExecutorFnRef evaluatorExecutorFn)
-      : symtab(symtab), paramCache(paramCache, /*maxNumThreads=*/1),
-        target(target), evaluatorExecutorFn(evaluatorExecutorFn) {}
+  Elaborator(SymbolTable &symtab, TargetInfoAttr target)
+      : symtab(symtab), target(target) {}
 
   virtual ~Elaborator() = default;
 
@@ -49,28 +47,21 @@ public:
                           ArrayRef<TypedAttr> paramValues,
                           std::vector<FuncOp> &funcs) = 0;
 
+  /// Evaluate the given functions using the provided evaluator.
+  virtual ErrorOr<size_t> evaluateFunctions(FuncOp evaluator,
+                                            ArrayRef<FuncOp> options) = 0;
+
   /// Get the symbol table associated with this instance of the elaborator.
   Shared<SymbolTable &> &getSymbolTable() { return symtab; }
   /// Get the target associated with this instance of the elaborator.
   TargetInfoAttr getTarget() { return target; }
 
-  /// Return the evaluator to use when specializing generators.
-  EvaluatorExecutorFnRef getEvaluatorExecutorFn() const {
-    return evaluatorExecutorFn;
-  }
-
 protected:
   /// This symbol table allows efficient lookups across the module.
   Shared<SymbolTable &> symtab;
 
-  /// This is the cached parameter collector analysis.
-  ThreadLocalCache<ParameterCollector::Analysis> paramCache;
-
   /// The target we are compiling code for.
   TargetInfoAttr target;
-
-  /// The functor used for evaluating generator specializations.
-  EvaluatorExecutorFnRef evaluatorExecutorFn;
 };
 
 } // namespace M::KGEN

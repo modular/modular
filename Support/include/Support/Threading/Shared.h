@@ -24,6 +24,7 @@ class Shared {
   using const_reference = std::conditional_t<is_ref, const T, const T &>;
 
 public:
+  Shared() : t() {}
   explicit Shared(T t) : t(std::forward<T>(t)) {}
 
   /// Get read-only access to the resource.

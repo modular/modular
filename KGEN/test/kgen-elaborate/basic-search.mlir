@@ -1,8 +1,8 @@
 // RUN: kgen-opt %s -split-input-file -elaborate-generators="enable-search=true" -allow-unregistered-dialect | FileCheck %s
 
-// CHECK-LABEL: kgen.func @"even_only,param=72"() {
-// CHECK-NOT: @"even_only,
 // CHECK-LABEL: kgen.func @"even_only,param=16"()
+// CHECK-NOT: @"even_only,
+// CHECK-LABEL: kgen.func @"even_only,param=72"()
 // CHECK-NOT: @"even_only,
 kgen.generator @even_only<param>() {
   kgen.param.assert <eq(and(param, 1), 0)>, "the param shalt be even!"
