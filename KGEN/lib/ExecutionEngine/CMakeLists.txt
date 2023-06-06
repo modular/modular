@@ -33,13 +33,6 @@ list(APPEND CMAKE_PREFIX_PATH ${LLVMCompilerRTLibPath})
 find_library(ORC_LIB orc_rt${ORCSuffix} REQUIRED
         HINTS "${MODULAR_SOURCE_DIR}/${LLVMCompilerRTLibPath}")
 
-cache_files(orc-rt-cas
-  BASE_DIR ${MODULAR_DERIVED_DIR}/.kgen_cache/orc
-  HEADER_NAME ${MODULAR_BINARY_DIR}/KGEN/include/KGEN/ExecutionEngine/ORCCASID.h
-  INPUTS ${ORC_LIB}
-  INPUT_NAMES "kOrcRT"
-  RELATIVE_INSTALL_DIR ".kgen_cache/orc")
-
 add_modular_library(KGENExecutionEngine
   ExecutionEngine.cpp
 
@@ -50,11 +43,19 @@ add_modular_library(KGENExecutionEngine
   JITLink
   MC
 
-  DEPENDS
-  orc-rt-cas
-
   LINK_LIBS PUBLIC
   LLCLRuntime
   MCache
   MSupport
   )
+
+if (NOT MODULAR_BUILD_ARCH)
+  cache_files(orc-rt-cas
+  BASE_DIR ${MODULAR_DERIVED_DIR}/.kgen_cache/orc
+  HEADER_NAME ${MODULAR_BINARY_DIR}/KGEN/include/KGEN/ExecutionEngine/ORCCASID.h
+  INPUTS ${ORC_LIB}
+  INPUT_NAMES "kOrcRT"
+  RELATIVE_INSTALL_DIR ".kgen_cache/orc")
+  
+  add_dependencies(KGENExecutionEngine orc-rt-cas)
+endif()
