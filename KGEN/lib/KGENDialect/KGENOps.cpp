@@ -350,15 +350,10 @@ void ParamEvaluateOp::renameDeclarations(ArrayRef<ParamDeclAttr> decls) {
 }
 
 LogicalResult ParamEvaluateOp::verify() {
-  auto sigType = dyn_cast<SignatureType>(
-      cast<VariadicType>(getCandidates().getType()).getElementAsType());
-  if (!sigType)
-    return emitOpError("candidates must be a variadic type of signatures");
+  auto sigType =
+      cast<VariadicType>(getCandidates().getType()).getElementAsType();
   if (sigType != getParamDecl().getType())
     return emitOpError("candidates type does not match parameter type");
-  if (!sigType.getInputParamTypes().empty() ||
-      !sigType.getResultParamTypes().empty())
-    return emitOpError("candidates cannot be parametric");
   auto evalType = cast<SignatureType>(getEvaluator().getType());
   if (!evalType.getInputParamTypes().empty() ||
       !evalType.getResultParamTypes().empty())

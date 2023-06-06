@@ -640,36 +640,15 @@ static LogicalResult verifyApply(ArrayRef<TypedAttr> operands, Type type,
   return success();
 }
 
-static LogicalResult
-verifyEvaluate(ArrayRef<TypedAttr> operands, Type type,
-               function_ref<InFlightDiagnostic()> emitError) {
-  if (operands.size() != 2)
-    return emitError() << "'evaluate' expected an evaluator and a variadic "
-                          "list of implementations to evaluate";
-
-  auto evaluatorSignature = dyn_cast<SignatureType>(operands.back().getType());
-  if (!evaluatorSignature)
-    return emitError()
-           << "'evaluate' evaluator operand must be a signature type";
-  if (!evaluatorSignature.getResultParamTypes().empty() ||
-      !evaluatorSignature.getInputParamTypes().empty())
-    return emitError() << "'evaluate' evaluator cannot be parametric";
-
-  FunctionType func = evaluatorSignature.getValues();
-  if (func.getNumResults() != 1)
-    return emitError() << "'evaluate' evaluator must return one result";
-  return success();
-}
-
 LogicalResult ParamOperatorAttr::verify(
     llvm::function_ref<mlir::InFlightDiagnostic()> emitError, POC opcode,
     ArrayRef<TypedAttr> operands, Type type) {
   // All the operand types must match except for 'bind_signature' and 'apply'.
-  if (!llvm::is_contained(
-          {POC::BindSignature, POC::Apply, POC::Rebind, POC::Evaluate,
-           POC::TargetHasFeature, POC::TargetGetField, POC::BuildInfoGetField,
-           POC::GetSizeOf, POC::GetAlignOf, POC::VariadicGet, POC::Cond},
-          opcode) &&
+  if (!llvm::is_contained({POC::BindSignature, POC::Apply, POC::Rebind,
+                           POC::TargetHasFeature, POC::TargetGetField,
+                           POC::BuildInfoGetField, POC::GetSizeOf,
+                           POC::GetAlignOf, POC::VariadicGet, POC::Cond},
+                          opcode) &&
       !llvm::all_of(operands, [&](auto operand) {
         return operand.getType() == operands.front().getType();
       }))
@@ -792,10 +771,6 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::Rebind:
     if (operands.size() != 1)
       return emitError() << "'rebind' expects one operand";
-    break;
-  case POC::Evaluate:
-    if (failed(verifyEvaluate(operands, type, emitError)))
-      return failure();
     break;
   case POC::GetAllImpls:
     if (operands.size() != 1)
@@ -1710,9 +1685,6 @@ static TypedAttr getParamOperator(MLIRContext *context, POC opcode,
   case POC::Rebind:
     result = simplifyRebind(operands, resultType);
     break;
-  case POC::Evaluate:
-    // Don't need to do anything.
-    break;
   case POC::GetAllImpls:
     // Do nothing.
     break;
@@ -1754,13 +1726,13 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
     resultType = operandsIn[1].getType();
   else if (opcode != POC::BindSignature)
     resultType = operandsIn.front().getType();
-  assert(llvm::is_contained({POC::BindSignature, POC::Apply, POC::Evaluate,
-                             POC::TargetHasFeature, POC::TargetGetField,
-                             POC::BuildInfoGetField, POC::GetSizeOf,
-                             POC::GetAlignOf, POC::VariadicGet},
-                            opcode) ||
-         llvm::all_of(operandsIn.drop_front(),
-                      [&](auto op) { return op.getType() == resultType; }));
+  assert(
+      llvm::is_contained({POC::BindSignature, POC::Apply, POC::TargetHasFeature,
+                          POC::TargetGetField, POC::BuildInfoGetField,
+                          POC::GetSizeOf, POC::GetAlignOf, POC::VariadicGet},
+                         opcode) ||
+      llvm::all_of(operandsIn.drop_front(),
+                   [&](auto op) { return op.getType() == resultType; }));
 
   return getParamOperator(operandsIn.front().getContext(), opcode, operandsIn,
                           resultType);

@@ -582,53 +582,6 @@ kgen.func @no_return() {
 
 // -----
 
-kgen.generator @evaluator<N>() {
-  kgen.return
-}
-
-kgen.generator @f1() {
-  kgen.return
-}
-
-kgen.generator @parametricEvaluator() {
-  // expected-error @below {{'evaluate' evaluator cannot be parametric}}
-  kgen.param.declare chosenImpl : () -> () = <evaluate(:variadic<!kgen.signature<() -> ()>> [@f1], :<index>() -> ()@evaluator)>
-  kgen.return
-}
-
-// -----
-
-kgen.generator @evaluator() -> (index, index) {
-  %0 = kgen.param.constant = <0>
-  %1 = kgen.param.constant = <1>
-  kgen.return %0, %1 : index, index
-}
-
-kgen.generator @f1() {
-  kgen.return
-}
-
-kgen.generator @multiReturnEvaluator() {
-  // expected-error @below {{'evaluate' evaluator must return one result}}
-  kgen.param.declare chosenImpl : () -> () = <evaluate(:variadic<!kgen.signature<() -> ()>> [@f1], :() -> (index, index) @evaluator)>
-  kgen.return
-}
-
-// -----
-
-kgen.generator @evaluator() -> index {
-  kgen.return
-}
-
-kgen.generator @differentType() {
-  kgen.param.declare bad = <3>
-  // expected-error @below {{expected a variadic type for 'evaluate'}}
-  kgen.param.declare chosenImpl : () -> () = <evaluate(:index bad, :() -> index @evaluator)>
-  kgen.return
-}
-
-// -----
-
 kgen.generator @fwd<in -> out>() {
   kgen.param.result_bind<in>
   kgen.return
@@ -729,14 +682,6 @@ kgen.generator @bad_index_ref<fn: <index>(!pop.array<*(0,1), i32>) -> ()>() {
 
 // expected-error @below {{index reference type 'index' does not match parameter type 'i32'}}
 kgen.generator @bad_index_ref<fn: <i32, !pop.array<*(0,0), i32>>() -> ()>() {
-  kgen.return
-}
-
-// -----
-
-kgen.generator @bad_evaluator() {
-  // expected-error @below {{'evaluate' evaluator operand must be a signature type}}
-  kgen.param.declare fn: () -> () = <evaluate(:variadic<!kgen.signature<() -> ()>> [@bad_evaluator], :i32 1)>
   kgen.return
 }
 

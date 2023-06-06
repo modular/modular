@@ -256,7 +256,8 @@ kgen.generator @no_valid_specializations() {
 kgen.export @entry
 // expected-error @below {{no viable expansions found}}
 kgen.generator @entry() {
-  kgen.param.declare f: () -> () = <evaluate(:variadic<!kgen.signature<() -> ()>> [@no_valid_specializations],
-                                             :(!pop.pointer<() -> ()>, index) -> index @evaluator)>
+  // expected-note @below {{call expansion failed - no concrete specialization}}
+  kgen.param.evaluate f: () -> () = [@no_valid_specializations] with
+    [(!pop.pointer<() -> ()>, index) -> index: @evaluator]
   kgen.return
 }
