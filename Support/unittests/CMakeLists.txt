@@ -27,6 +27,7 @@ add_modular_unittest(
   MathExtras.cpp
   MicroBenchmarkTest.cpp
   TensorShapeTest.cpp
+  TensorSpecTest.cpp
   TimeProfilerTest.cpp
   URITest.cpp
 

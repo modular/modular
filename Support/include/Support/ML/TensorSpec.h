@@ -42,6 +42,10 @@ public:
     return getEltType().getSizeInBytes(getNumElements());
   }
 
+  /// This turns the printed form of a TensorSpec back into a TensorSpec or
+  /// failure if it is an unrecognized format.
+  static ErrorOr<TensorSpec> parseFromString(StringRef str);
+
   void print(raw_ostream &os) const;
   std::string getAsString() const;
   void dump() const;
