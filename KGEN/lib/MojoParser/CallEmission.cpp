@@ -912,6 +912,16 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
           ASTType(), newBindings};
 }
 
+/// Attach extra type conversion error detail or hints to the user.
+static void addTypeConversionDetail(InflightDiag &diag, SourceRange payloadLoc,
+                                    ASTType payloadType, ASTType argType) {
+  if (!payloadType) {
+    diag.attachNote(payloadLoc.getStart())
+        << "try resolving the overloaded function first" << payloadLoc;
+    return;
+  }
+}
+
 /// Add explanation for why this candidate doesn't work to the specified
 /// diagnostic. isMethodCall indicates whether the call was written with
 /// `foo(x,y)` syntax or `x.foo(y)` syntax.
@@ -945,16 +955,19 @@ void OverloadFitness::diagnose(SignatureType signature,
 
   // This adds a string describing the type of the payload operand to the
   // diagnostic.
-  auto addPayloadRValueTypeName = [&]() {
-    if (auto cValue = operands[payload].ir.getIfCValue()) {
-      diag << cValue.getRValueType();
-      return;
-    }
+  auto getPayloadRValueType = [&] {
+    if (auto cValue = operands[payload].ir.getIfCValue())
+      return cValue.getRValueType();
     // If this is a single element overload set, then we can use the only
     // candidates type since it must not have worked out.
     const OverloadSet &ovset = *operands[payload].ir.getIfORValue();
     if (ovset.fnDecls.size() == 1)
-      diag << ASTType(cast<LIT::FuncOp>(*ovset.fnDecls[0]).getSignature());
+      return ASTType(cast<LIT::FuncOp>(*ovset.fnDecls[0]).getSignature());
+    return ASTType();
+  };
+  auto addPayloadRValueTypeName = [&]() {
+    if (ASTType type = getPayloadRValueType())
+      diag << type;
     else
       diag << "unknown overload";
   };
@@ -1018,12 +1031,15 @@ void OverloadFitness::diagnose(SignatureType signature,
          << type.getPointerElementType() << operands[payload].expr->getRange();
     return;
 
-  case kArgWrongType:
+  case kArgWrongType: {
     describePayloadArgumentNo();
     diag << " cannot be converted from ";
     addPayloadRValueTypeName();
-    diag << " to " << type << operands[payload].expr->getRange();
+    SourceRange payloadLoc = operands[payload].expr->getRange();
+    diag << " to " << type << payloadLoc;
+    addTypeConversionDetail(diag, payloadLoc, getPayloadRValueType(), type);
     break;
+  }
 
   case kArgGenericMem:
     describePayloadArgumentNo();
@@ -1983,7 +1999,8 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     if (convention == ValueInputConvention::ByRefResult) {
       if (!builder) {
         // TODO: Support memory-primary results in parameter expressions
-        emitError(callExpr->getLoc(), "TODO: memory-primary results are not supported in parameter expressions.");
+        emitError(callExpr->getLoc(), "TODO: memory-primary results are not "
+                                      "supported in parameter expressions.");
         return {};
       }
       assert(idx == 0 && calleeSig.hasMemoryOnlyResult());
