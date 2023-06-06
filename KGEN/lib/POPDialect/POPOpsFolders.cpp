@@ -306,7 +306,7 @@ OpFoldResult RemOp::fold(FoldAdaptor adaptor) {
       [](APFloat lhs, APFloat rhs) -> std::optional<APFloat> {
         if (rhs.isZero())
           return std::nullopt;
-        (void)lhs.remainder(rhs);
+        (void)lhs.mod(rhs);
         return lhs;
       });
 }
