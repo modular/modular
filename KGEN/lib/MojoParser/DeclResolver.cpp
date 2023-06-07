@@ -1801,14 +1801,14 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // Any function that contains a capturing closure as a parameter is itself
   // capturing.
   // TODO: Check struct elements too.
-  bool transivelyCaptures = llvm::any_of(
+  bool transitivelyCaptures = llvm::any_of(
       llvm::concat<ParamDeclAttr>(inputParamDecls, resultParamDecls),
       [](ParamDeclAttr decl) {
         if (auto signature = dyn_cast<SignatureType>(decl.getType()))
           return signature.isCapturing();
         return false;
       });
-  if (transivelyCaptures)
+  if (transitivelyCaptures)
     effects = effects | FnEffects::Capturing;
 
   // If the function raises, it implicitly gets a variant result type.
@@ -1955,7 +1955,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
   // If the user tried to mark a transitive capturing closure as thin, emit an
   // error.
-  if (transivelyCaptures && !signature.isCapturing())
+  if (transitivelyCaptures && !signature.isCapturing())
     return p.emitError(funcOp.getLoc(), "cannot mark a function with capturing "
                                         "closure parameters as @noncapturing");
 
@@ -2004,7 +2004,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
 /// Create a mutable VarDecl for a function argument that captures its value.
 /// argValue specifies the argument with the correct valuetype.
-static SLValue makeArgLValueVarSlot(CValue argValue, StringAttr argName,
+static SLValue makeArgLValueVarSlot(const CValue &argValue, StringAttr argName,
                                     ASTDecl &parentDecl, OpBuilder &builder,
                                     SMLoc loc, SharedState &shared) {
   // Emit the initializer expression into the slot.
