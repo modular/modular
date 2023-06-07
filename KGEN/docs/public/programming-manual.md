@@ -1774,26 +1774,34 @@ The Mojo design has a number of strong advantages over the C++ model:
 
 1. Recall that Python doesn’t really have scopes beyond the whole function, and
 Mojo needs to provide a workable model that behaves correctly in the presence
-of Python-style ‘def’s. 2. Because Python doesn’t provide strong guarantees on
-object destruction, it doesn’t encourage the RAII pattern. To solve for the
-RAII pattern, Mojo (and Python) provides a [`with`
+of Python-style ‘def’s.
+
+2. Because Python doesn’t provide strong guarantees on object destruction, it
+doesn’t encourage the RAII pattern. To solve for the RAII pattern, Mojo (and
+Python) provides a [`with`
 statement](https://docs.python.org/3/reference/compound_stmts.html#the-with-statement)
 that provides scoped access to resources, which is more deliberate and more
-syntactically clear than RAII. 3. The Mojo approach eliminates the need for
-types to implement re-assignment operators, like `operator=(const T&)` and
-`operator=(T&&)` in C++, making it easier to define types and eliminating a
-concept. 4. Mojo does not allow mutable references to overlap with other
-mutable references or with immutable borrows. One major way that it provides a
+syntactically clear than RAII.
+
+3. The Mojo approach eliminates the need for types to implement re-assignment
+operators, like `operator=(const T&)` and `operator=(T&&)` in C++, making it
+easier to define types and eliminating a concept.
+
+4. Mojo does not allow mutable references to overlap with other mutable
+references or with immutable borrows. One major way that it provides a
 predictable programming model is by making sure that references to objects die
 as soon as possible, avoiding confusing situations where the compiler thinks a
 value could still be alive and interfere with another value, but that isn’t
-clear to the user. 5. Destroying values at last-use composes nicely with "move"
-optimization, which transforms a "copy+del" pair into a "move" operation, a
-generalization of C++ move optimizations like NRVO. 6. Destroying values at
-end-of-scope in C++ is problematic for some common patterns like tail recursion
-because the destructor calls happen after the tail call. This can be a
-significant performance and memory problem for certain functional programming
-patterns.
+clear to the user.
+
+5. Destroying values at last-use composes nicely with "move" optimization,
+which transforms a "copy+del" pair into a "move" operation, a generalization of
+C++ move optimizations like NRVO.
+
+6. Destroying values at end-of-scope in C++ is problematic for some common
+patterns like tail recursion because the destructor calls happen after the tail
+call. This can be a significant performance and memory problem for certain
+functional programming patterns.
 
 The Mojo approach is more similar to how Rust and Swift work, because they both
 have strong value ownership tracking and provide memory safety.  One difference
