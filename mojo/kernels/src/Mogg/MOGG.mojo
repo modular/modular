@@ -48,8 +48,10 @@ fn MOGGExport():
     alias _index_typedef = IndexTypeDef
     alias _dtype_float32 = DTypeFloat32TypeDef
     alias _dtype_float64 = DTypeFloat64TypeDef
+    alias _dtype_si16 = DTypeInt16TypeDef
     alias _dtype_si32 = DTypeInt32TypeDef
     alias _dtype_si64 = DTypeInt64TypeDef
+    alias _dtype_ui16 = DTypeUInt16TypeDef
     alias _dtype_bool = DTypeBoolTypeDef
     alias _to_buffer = to_buffer
     alias _abs = abs_wrapped
@@ -106,12 +108,20 @@ fn DTypeFloat64TypeDef(ty: DType.type) -> DType.type:
     return DType.float64.value
 
 
+fn DTypeInt16TypeDef(ty: DType.type) -> DType.type:
+    return DType.int16.value
+
+
 fn DTypeInt32TypeDef(ty: DType.type) -> DType.type:
     return DType.int32.value
 
 
 fn DTypeInt64TypeDef(ty: DType.type) -> DType.type:
     return DType.int64.value
+
+
+fn DTypeUInt16TypeDef(ty: DType.type) -> DType.type:
+    return DType.uint16.value
 
 
 fn DTypeBoolTypeDef(ty: DType.type) -> DType.type:
