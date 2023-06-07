@@ -27,3 +27,9 @@ class bar:
 # CHECK-NEXT: ($PythonObject::PythonObject) platform =
 # CHECK-NEXT: ($PythonObject::PythonObject) sys =
 # CHECK-NOT: ($PythonObject::PythonObject) z =
+
+# Expressions that don't declare symbols shouldn't fail and shouldn't produce
+# output variables.
+%%python
+print(420)
+# CHECK-NOT: ($PythonObject::PythonObject)
