@@ -96,11 +96,6 @@ void ParameterCollector::collectUsesFromAttr(
   // Parameterized type constants are by definition unresolved expressions.
   bool hasNestedConstExpr = isa<ParameterizedTypeConstantAttr>(attr);
 
-  // Otherwise we haven't processed this, check the attribute's type if it has
-  // one.
-  if (auto typedAttr = dyn_cast<TypedAttr>(attr))
-    collectUsesFromType(typedAttr.getType(), uses, hasNestedConstExpr);
-
   // Recursively check for any nested types/attributes, e.g. the elements of an
   // array attribute.
   attr.walkImmediateSubElements(
