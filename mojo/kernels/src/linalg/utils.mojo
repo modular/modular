@@ -254,8 +254,7 @@ fn calculate_tile_n_k[
             The calculated tile size to partition the matmul as (TileN, TileK)
     """
 
-    # Make sure outer dimension is at least 2
-    let least_tile_n: Int = pack_inner_size * 2
+    let least_tile_n: Int = pack_inner_size
 
     # Max tile K size based on smallest Tile N.
     let largest_tile_k = pack_cache_size // least_tile_n
