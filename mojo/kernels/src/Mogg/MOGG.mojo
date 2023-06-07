@@ -22,6 +22,8 @@ from Math import (
     greater,
     greater_equal,
     pow,
+    max,
+    min,
     mul,
     not_equal,
     rsqrt,
@@ -67,6 +69,8 @@ fn MOGGExport():
     alias _log1p = log1p
     alias _pow = pow_wrapped
     alias _load_scalar = load_scalar
+    alias _mogg_max = mogg_max
+    alias _mogg_min = mogg_min
     alias _mul = mul
     alias _not_equal = not_equal
     alias _rsqrt = rsqrt
@@ -540,6 +544,31 @@ fn pow_wrapped[
     type, simd_width
 ]:
     return pow[type, type, simd_width](value, power)
+
+
+# ===----------------------------------------------------------------------===#
+# Max & min ops
+# ===----------------------------------------------------------------------===#
+
+# These need wrappers as we can't take an alias of the ambigious overload.
+
+
+@always_inline
+fn mogg_max[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
+    type, simd_width
+]:
+    return max(x, y)
+
+
+@always_inline
+fn mogg_min[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
+    type, simd_width
+]:
+    return min(x, y)
 
 
 # ===----------------------------------------------------------------------===#
