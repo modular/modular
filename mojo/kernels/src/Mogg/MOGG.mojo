@@ -18,8 +18,12 @@ from Math import (
     div,
     erf,
     exp,
+    equal,
+    greater,
+    greater_equal,
     pow,
     mul,
+    not_equal,
     rsqrt,
     sqrt,
     sub,
@@ -46,6 +50,7 @@ fn MOGGExport():
     alias _dtype_float64 = DTypeFloat64TypeDef
     alias _dtype_si32 = DTypeInt32TypeDef
     alias _dtype_si64 = DTypeInt64TypeDef
+    alias _dtype_bool = DTypeBoolTypeDef
     alias _to_buffer = to_buffer
     alias _abs = abs_wrapped
     alias _add = add
@@ -53,11 +58,15 @@ fn MOGGExport():
     alias _cast = cast
     alias _erf = erf
     alias _exp = exp
+    alias _equal = equal
     alias _gelu = gelu
+    alias _greater = greater
+    alias _greater_equal = greater_equal
     alias _log1p = log1p
     alias _pow = pow_wrapped
     alias _load_scalar = load_scalar
     alias _mul = mul
+    alias _not_equal = not_equal
     alias _rsqrt = rsqrt
     alias _sigmoid = sigmoid
     alias _sqrt = sqrt
@@ -103,6 +112,10 @@ fn DTypeInt32TypeDef(ty: DType.type) -> DType.type:
 
 fn DTypeInt64TypeDef(ty: DType.type) -> DType.type:
     return DType.int64.value
+
+
+fn DTypeBoolTypeDef(ty: DType.type) -> DType.type:
+    return DType.bool.value
 
 
 fn IndexTypeDef(ty: Int) -> Int:
@@ -240,7 +253,7 @@ fn simd_load_1D[
         return splat[type, simd_width](scalar)
 
     let i = stride * index[rank - 1]
-    return buffer.data.simd_load[simd_width](i)
+    return _simd_load_internal[simd_width, type, rank](buffer, i)
 
 
 # If we know the tensor is actually a scalar tensor we can avoid all indexing
@@ -252,7 +265,26 @@ fn load_scalar[
 ](buffer: NDBuffer[rank, DimList.create_unknown[rank](), type]) -> SIMD[
     type, 1
 ]:
-    return buffer.data.load(0)
+    @parameter
+    if type == DType.bool:
+        let v = buffer.data.bitcast[DType.uint8]().load(0)
+        return v.cast[type]()
+    else:
+        return buffer.data.load(0)
+
+
+@always_inline
+fn _simd_load_internal[
+    simd_width: Int, type: DType, rank: Int
+](
+    buffer: NDBuffer[rank, DimList.create_unknown[rank](), type], index: Int
+) -> SIMD[type, simd_width]:
+    @parameter
+    if type == DType.bool:
+        let v = buffer.data.bitcast[DType.uint8]().simd_load[simd_width](index)
+        return v.cast[type]()
+    else:
+        return buffer.data.simd_load[simd_width](index)
 
 
 @always_inline
@@ -276,7 +308,7 @@ fn simd_load_maybe_splat[
     if buffer.dynamic_stride[rank - 1] == 0:
         return buffer.data.load(flat_index)
 
-    return buffer.data.simd_load[simd_width](flat_index)
+    return _simd_load_internal[simd_width, type, rank](buffer, flat_index)
 
 
 # Load a tensor which does a splat along the last dimension.
@@ -303,7 +335,7 @@ fn simd_load[
     index: StaticIntTuple[rank],
 ) -> SIMD[type, simd_width]:
     let flat_index = _compute_flat_index[type, rank, rank](buffer, index)
-    return buffer.data.simd_load[simd_width](flat_index)
+    return _simd_load_internal[simd_width, type, rank](buffer, flat_index)
 
 
 @always_inline
@@ -320,11 +352,19 @@ fn simd_load_strided[
     # We aren't loading from something of stride == 1 or stride == 0 then
     # we have to use a gather load unfortunately.
     if stride > 1:
-        return strided_load[type, simd_width](
-            buffer.data.offset(flat_index), stride
-        )
+
+        @parameter
+        if type == DType.bool:
+            let v = strided_load[DType.uint8, simd_width](
+                buffer.data.bitcast[DType.uint8]().offset(flat_index), stride
+            )
+            return v.cast[type]()
+        else:
+            return strided_load[type, simd_width](
+                buffer.data.offset(flat_index), stride
+            )
     else:
-        return buffer.data.simd_load[simd_width](flat_index)
+        return _simd_load_internal[simd_width, type, rank](buffer, flat_index)
 
 
 @always_inline
@@ -336,7 +376,14 @@ fn simd_store[
     val: SIMD[type, simd_width],
 ):
     let flat_index = _compute_flat_index[type, rank, rank](buffer, index)
-    buffer.data.simd_store[simd_width](flat_index, val)
+
+    # We have to cast bools into their runtime storage type.
+    @parameter
+    if type == DType.bool:
+        let v = val.cast[DType.uint8]()
+        buffer.data.bitcast[DType.uint8]().simd_store[simd_width](flat_index, v)
+    else:
+        buffer.data.simd_store[simd_width](flat_index, val)
 
 
 # ===----------------------------------------------------------------------===#
@@ -347,6 +394,7 @@ fn simd_store[
 @always_inline
 fn broadcast_to_tensor[
     type: DType,
+    target_type: DType,
     original_rank: Int,
     target_rank: Int,
     output_rank: Int,
@@ -354,7 +402,9 @@ fn broadcast_to_tensor[
     original: NDBuffer[
         original_rank, DimList.create_unknown[original_rank](), type
     ],
-    target: NDBuffer[target_rank, DimList.create_unknown[target_rank](), type],
+    target: NDBuffer[
+        target_rank, DimList.create_unknown[target_rank](), target_type
+    ],
 ) -> NDBuffer[output_rank, DimList.create_unknown[output_rank](), type]:
 
     var shape = StaticIntTuple[output_rank]()
