@@ -134,18 +134,30 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
   } else {
     SmallVector<Attribute, 16> newAttrs;
     SmallVector<Type, 16> newTypes;
+    // Stop walking and propagate failures when they occur.
     bool changed = false;
+    bool failed = false;
     attr.walkImmediateSubElements(
         [&](Attribute attr) {
+          if (failed)
+            return;
           Attribute newAttr = getReboundAttribute(attr);
+          if (!newAttr)
+            failed = true;
           changed |= newAttr != attr;
           newAttrs.push_back(newAttr);
         },
         [&](Type type) {
+          if (failed)
+            return;
           Type newType = getReboundType(type);
+          if (!newType)
+            failed = true;
           changed |= newType != type;
           newTypes.push_back(newType);
         });
+    if (failed)
+      return nullptr;
     if (changed)
       result = attr.replaceImmediateSubElements(newAttrs, newTypes);
   }
@@ -154,6 +166,8 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
   if (auto op = dyn_cast<ParamOperatorAttr>(result))
     if (FailureOr<TypedAttr> expr = evaluateExpression(op); succeeded(expr))
       result = *expr;
+  if (!result)
+    return nullptr;
 
   rewritten.try_emplace({rootDepth, attr.getAsOpaquePointer()},
                         result.getAsOpaquePointer());
@@ -174,19 +188,31 @@ Type ParameterEvaluator::getReboundType(Type type) {
   SmallVector<Attribute, 16> newAttrs;
   SmallVector<Type, 16> newTypes;
   bool changed = false;
+  // Stop walking and propagate failures when they occur.
+  bool failed = false;
   rootDepth += isSignature;
   type.walkImmediateSubElements(
       [&](Attribute attr) {
+        if (failed)
+          return;
         Attribute newAttr = getReboundAttribute(attr);
+        if (!newAttr)
+          failed = true;
         changed |= newAttr != attr;
         newAttrs.push_back(newAttr);
       },
       [&](Type type) {
+        if (failed)
+          return;
         Type newType = getReboundType(type);
+        if (!newType)
+          failed = true;
         changed |= newType != type;
         newTypes.push_back(newType);
       });
   rootDepth -= isSignature;
+  if (failed)
+    return nullptr;
   if (changed)
     result = type.replaceImmediateSubElements(newAttrs, newTypes);
 

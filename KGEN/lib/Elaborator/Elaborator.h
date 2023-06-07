@@ -8,6 +8,7 @@
 #define KGEN_ELABORATOR_ELABORATOR_H
 
 #include "Cache/CacheDialect/CachedTransform.h"
+#include "IREvaluator.h"
 #include "KGEN/Elaborator.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
@@ -18,7 +19,6 @@
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 
 namespace M::KGEN {
-class IREvaluator;
 
 //===----------------------------------------------------------------------===//
 // Elaborator
@@ -34,22 +34,18 @@ public:
 
   /// Look up the callee symbol. If it's a FuncOp, return it. Otherwise,
   /// elaborate the generator or interface and return the first concrete
-  /// implementation.
-  virtual ErrorTreeOr<FuncOp>
-  getConcreteFunction(Location loc, FlatSymbolRefAttr symbolRef,
+  /// implementation. Return none if the specialization is not ready yet.
+  virtual std::optional<ErrorTreeOr<FuncOp>>
+  getConcreteFunction(ImplNode *parent, Location loc,
+                      FlatSymbolRefAttr symbolRef,
                       ArrayRef<TypedAttr> paramValues) = 0;
 
   /// Get all the concrete functions for the given symbol. If the symbol is a
   /// function already, append it to the list and move on, otherwise,
   /// elaborate it and append all the concrete implementations.
-  virtual ErrorTreeOrSuccess
-  getAllConcreteFunctions(Location loc, FlatSymbolRefAttr symbolRef,
-                          ArrayRef<TypedAttr> paramValues,
-                          std::vector<FuncOp> &funcs) = 0;
-
-  /// Evaluate the given functions using the provided evaluator.
-  virtual ErrorOr<size_t> evaluateFunctions(FuncOp evaluator,
-                                            ArrayRef<FuncOp> options) = 0;
+  virtual std::optional<ErrorTreeOrSuccess> getAllConcreteFunctions(
+      ImplNode *parent, Location loc, FlatSymbolRefAttr symbolRef,
+      ArrayRef<TypedAttr> paramValues, std::vector<FuncOp> &funcs) = 0;
 
   /// Get the symbol table associated with this instance of the elaborator.
   Shared<SymbolTable &> &getSymbolTable() { return symtab; }

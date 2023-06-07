@@ -157,7 +157,7 @@ kgen.generator @caller() {
 
 // COM: Unused `kgen.param.declare` should not be ignored.
 
-// expected-note @below {{no viable expansions found}}
+// expected-note @below {{no successful concrete nodes}}
 kgen.generator @fail_if_zero<value>() -> index {
   %0 = index.constant 0
   // expected-note @below {{constraint failed: must not be zero!}}
@@ -260,4 +260,19 @@ kgen.generator @entry() {
   kgen.param.evaluate f: () -> () = [@no_valid_specializations] with
     [(!pop.pointer<() -> ()>, index) -> index: @evaluator]
   kgen.return
+}
+
+// -----
+
+// expected-error @below {{no viable expansions found}}
+kgen.generator @export_constraint()
+    // expected-note @below {{constraint failed: False}}
+    constraints <[apply(:(i1) -> i1 @pass, 0), "False"]> {
+  kgen.return
+}
+
+kgen.export @export_constraint
+
+kgen.generator @pass(%arg0: i1) -> i1 {
+  kgen.return %arg0: i1
 }
