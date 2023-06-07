@@ -153,20 +153,13 @@ private:
 /// This is the interface for backends that are implemented in a shared library
 /// and opened with dlopen (or other OS equivalent). This is meant to be
 /// generic.
-class DylibBlobCacheBackend {
+class DylibBlobCacheBackend : public BlobCacheBackend {
 public:
+  DylibBlobCacheBackend(LLCL::Runtime &runtime) : BlobCacheBackend(runtime) {}
+
   virtual ~DylibBlobCacheBackend() = default;
 
   virtual ErrorOrSuccess setConfig(const DylibBackendConfig *config) = 0;
-
-  virtual ErrorOrSuccess insertImpl(StringRef keyHash, BufferRef obj) = 0;
-
-  virtual ErrorOr<bool> containsImpl(StringRef keyHash) const = 0;
-
-  virtual ErrorOr<std::optional<BufferRef>>
-  findImpl(StringRef keyHash, std::optional<WriteableBufferRef> buf) const = 0;
-
-  virtual ErrorOrSuccess clearImpl() = 0;
 };
 
 /// This is the thing that users will interact with. It holds onto the list of
