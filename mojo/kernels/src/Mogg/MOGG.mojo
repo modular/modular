@@ -27,6 +27,7 @@ from Math import (
     mul,
     not_equal,
     rsqrt,
+    select,
     sqrt,
     sub,
     tanh,
@@ -74,6 +75,7 @@ fn MOGGExport():
     alias _mul = mul
     alias _not_equal = not_equal
     alias _rsqrt = rsqrt
+    alias _select = select
     alias _sigmoid = sigmoid
     alias _sqrt = sqrt
     alias _sub = sub
