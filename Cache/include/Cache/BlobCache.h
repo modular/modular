@@ -119,14 +119,6 @@ protected:
   void delegateClear(LLCL::AsyncValueRef<LLCL::Chain> result,
                      std::optional<LLCL::EncodedLocation> loc = std::nullopt);
 
-  /// Create a ready AsyncValueRef. This is just nice sugar to clean up the
-  /// callsites when we return an AsyncValueRef that's ready to go, such as
-  /// reporting an error.
-  template <typename T>
-  LLCL::AsyncValueRef<T> createReady(T &&val) {
-    return LLCL::AsyncValueRef<T>::createReady(runtime, std::forward<T>(val));
-  }
-
 private:
   /// The LLCL runtime we should use for managing asynchrony.
   LLCL::Runtime &runtime;
