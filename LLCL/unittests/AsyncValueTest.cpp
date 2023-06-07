@@ -623,7 +623,7 @@ TEST_P(AsyncValueTest, AddTaskOverflow_DeadlockOnFailure) {
     for (size_t i = 0; i < nExtraTasks; ++i) {
       addTask(*runtime, [i, extraFinished = extraFinished[i].copy(),
                          &extraCanRun]() mutable {
-        // Will deadlock if executed immediately by the addTask.
+        // Will deadlock if addTask runs this item immediately.
         extraCanRun[i].wait();
         std::move(extraFinished).emplace<Chain>();
       });
@@ -642,5 +642,6 @@ TEST_P(AsyncValueTest, AddTaskOverflow_DeadlockOnFailure) {
   // Cleanup.
   workerCanRun.post();
   await(workerFinished);
+  // Will deadlock if an extra task was dropped.
   await(extraFinished);
 }

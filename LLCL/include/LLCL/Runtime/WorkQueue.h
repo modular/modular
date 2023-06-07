@@ -61,8 +61,10 @@ class alignas(hardware_destructive_interference_size) WorkQueue {
 public:
   virtual ~WorkQueue() = default;
 
-  /// Enqueue a work item, usually for later execution, possibly on another
-  /// thread. Thread-safe.
+  /// Enqueue a work item for later execution, possibly on another thread.
+  /// Thread-safe. The work item will NEVER be run immediately. There is no
+  /// intrinsic guarantee of fairness, and the caller is responsible for
+  /// using AsyncValues or other mechanisms to prevent task starvation.
   ///
   /// If enabled, the profilerEntry will be used to record two flavors of
   /// profiling entries:
@@ -78,27 +80,19 @@ public:
   ///    be timed independently of unrelated work items.
   /// Additional details may be added to the profile entries depending on the
   /// work queue implementation.
-  ///
-  /// CAUTION: The work item may be run immediately, on the callers stack,
-  /// if it cannot be enqueued (eg because the queue is full).
-  ///
-  /// TODO: Consider returning AsyncValueRef<Chain>, where the task has been
-  /// enqueued only if the result is ready.
   virtual void addTask(TaskFunction &&work,
                        WorkProfilerEntry &&profilerEntry =
                            AllWorkItemsProfilerEntry::create("llcl.doWork")
                                .copy<WorkProfilerEntry>()) = 0;
 
-  /// Enqueue a block of work to be run 'locally' on the current thread.
+  /// Enqueue a work item for later execution, but on the current thread where
+  /// possible. The work item will NEVER be run immediately.
   ///
   /// This method is appropriate for short running work items where the
   /// cost of thread context switching would likely dominate the cost of
   /// simply executing the block of work. For example, the AsyncValue machinery
   /// uses this method to ensure waiters are executed promptly, but off of
   /// the callers stack.
-  ///
-  /// CAUTION: The work item may be run immediately, on the callers stack,
-  /// if it cannot be enqueued (eg because the queue is full).
   virtual void addLocalTask(TaskFunction work) = 0;
 
   /// Returns when the given values are ready, either as emplaced values or
