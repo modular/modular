@@ -412,7 +412,7 @@ importPythonSymbolsIntoMojo(Debugger &debugger, StringRef pythonExpr,
   StringRef symbols(symbolsStr);
 
   SmallVector<StringRef> symbolLines;
-  symbols.split(symbolLines, '\n');
+  symbols.split(symbolLines, '\n', /*MaxSplit=*/-1, /*keepEmpty=*/false);
 
   // We process the symbols in reverse order so that we honor the last occurence
   // of a given symbol name.
