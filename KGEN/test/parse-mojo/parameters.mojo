@@ -392,7 +392,7 @@ struct A[v: __mlir_type.index]:
 # CHECK-LABEL: lit.func @"testUseOfAliases
 fn testUseOfAliases(a: Bool):
   # This type checks.
-  _ = SIMD[DType(boolDtype), 4].splat(a.value)
+  _ = SIMD[DType(boolDtype), 4].splat(a)
   # CHECK: kgen.param.declare y = <44>
   alias y = A[(2).__as_mlir_index()].member
 
