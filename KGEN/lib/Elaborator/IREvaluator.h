@@ -45,9 +45,11 @@ public:
   /// error if a simple constant cannot be produced (e.g. because there is some
   /// dependence on target information that isn't available). If `allowUnknown`
   /// is set, only unevaluated parameter operators are rejected.
-  ErrorTreeOr<Attribute> concretizeParameterExpr(Location loc, Attribute expr,
-                                                 bool allowUnknown = false);
-  ErrorTreeOr<Type> concretizeParameterExpr(Location loc, Type expr);
+  ErrorTreeOr<Attribute> concretizeParameterExpr(ImplNode *parent, Location loc,
+                                                 Attribute expr,
+                                                 bool allowUnknown);
+  ErrorTreeOr<Type> concretizeParameterExpr(ImplNode *parent, Location loc,
+                                            Type expr, bool allowUnknown);
 
   /// Lookup the body of the referenced function. Ensure the function is
   /// inflated as well.
@@ -69,6 +71,8 @@ private:
   /// concretize symbol constants prior to interpreting them.
   Elaborator *elaborator;
 
+  /// The contextual node being elaborated.
+  ImplNode *parent;
   /// The contextual location of an error.
   std::optional<Location> errorLoc;
   /// The function to use to emit an error.
@@ -82,8 +86,8 @@ private:
 /// Given a generator or interface declaration operation, evaluate any
 /// constraints against inputParamValues. If the constraints are met, return
 /// success, otherwise return why they aren't.
-std::optional<ErrorTree>
-evaluateConstraints(ArrayRef<ConstraintAttr> constraints,
+std::optional<ErrorTreeOrSuccess>
+evaluateConstraints(ImplNode *parent, ArrayRef<ConstraintAttr> constraints,
                     IREvaluator &evaluator);
 
 //===----------------------------------------------------------------------===//
@@ -99,6 +103,10 @@ struct ImplNode {
            std::string &&baseName)
       : func(func), parent(parent), paramGraph(std::move(graph)),
         baseName(std::move(baseName)) {}
+
+  /// Create a special root node. Root nodes can be identified with a null
+  /// function.
+  ImplNode(ParamNode *parent);
 
   /// Take the provided error and set this node to an `error` state. Erase all
   /// state dominated by this node.
@@ -166,6 +174,48 @@ struct ImplNode {
 // ParamNode
 //===----------------------------------------------------------------------===//
 
+/// The state of a parameter node, including the number of tasks waiting on it.
+/// These are stored together in an atomic so that the waiter count and the
+/// state can be transitioned atomically together, preventing erroenous waiters
+/// from being counted due to a race.
+class ParamNodeState {
+  static constexpr uint64_t IN_PROGRESS_BIT = 62;
+  static constexpr uint64_t DONE_BIT = 63;
+
+public:
+  /// All parameter nodes are created with `FRESH` status. When a worker has
+  /// scheduled the first child of the node, it is moved to `IN_PROGRESS`. When
+  /// all children complete processing, the state is moved to `DONE`. Use the
+  /// upper 2 bits to represent the status.
+  enum State { FRESH = 0, IN_PROGRESS = 1, DONE = 3 };
+
+  /// Attempt to mark the status as `IN_PROGRESS`. Return the previous status.
+  State markInProgress() {
+    return static_cast<State>(
+        value.fetch_or(static_cast<uint64_t>(1) << IN_PROGRESS_BIT) >>
+        IN_PROGRESS_BIT);
+  }
+
+  /// Add a waiter. Return true if the task is not `DONE` and the waiter was
+  /// successfully added.
+  bool addWaiter() { return (value.fetch_add(1) >> DONE_BIT) == 0; }
+
+  /// Mark the status as done and return the number of waiters at that time.
+  size_t markDone() {
+    return value.fetch_or(static_cast<uint64_t>(1) << DONE_BIT) << 2 >> 2;
+  }
+
+  /// Reset the state of the node to `FRESH`.
+  void refresh() {
+    value.fetch_xor(static_cast<uint64_t>(1) << IN_PROGRESS_BIT);
+  }
+
+private:
+  /// The upper 2 bits of the value represent the status and the lower 62 bits
+  /// the number of waiting tasks.
+  std::atomic<uint64_t> value = 0;
+};
+
 /// This struct is a node in the expansion tree that describes the elaboration.
 /// In general, we try to limit effects to a single subtree. The only exception
 /// is that creating new generators/funcs generally are children of the root -
@@ -200,6 +250,10 @@ struct ParamNode {
   /// same as `getAllConcreteNodes` above, but only returns the FuncOp. Useful
   /// when you don't need the full ParamNode.
   void getAllConcreteFuncs(std::vector<FuncOp> &funcs);
+
+  /// Return an error if expansion of this parameter node failed. If any
+  /// implementation succeeded, return success instead.
+  ErrorTreeOrSuccess collectErrorsOrSuccess();
 
   /// Print this tree to the provided indented stream. This preserves any
   /// indentation provided by the caller to make it possible to nest things
@@ -240,13 +294,8 @@ struct ParamNode {
   /// The chain to signal when this parameter node is done processing.
   LLCL::AsyncValueRef<LLCL::Chain> paramCh;
 
-  /// All nodes are created with `FRESH` status. When a worker has scheduled
-  /// the first child of the node, it is moved to `IN_PROGRESS`. When all
-  /// children complete processing, the state is moved to `DONE`.
-  enum Status { FRESH, IN_PROGRESS, DONE };
-
   /// The current state of the node. This flag is used to break recursion.
-  std::atomic<Status> status = FRESH;
+  ParamNodeState state;
 };
 
 } // namespace M::KGEN

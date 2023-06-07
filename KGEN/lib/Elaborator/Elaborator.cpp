@@ -164,6 +164,9 @@ private:
 // ExpansionGraph
 //===----------------------------------------------------------------------===//
 
+ImplNode::ImplNode(ParamNode *parent)
+    : parent(parent), paramGraph(parent->gen.getBodyRegion()) {}
+
 void ImplNode::print(mlir::raw_indented_ostream &os, bool printBindings) {
   os << "ImplNode <" << func.getSymName() << ">";
   auto _ = os.scope(" {\n", "}\n");
@@ -214,7 +217,8 @@ namespace {
 /// This struct represents the expansion of a callgraph during elaboration.
 struct ExpansionGraph {
   ExpansionGraph(LLCL::Runtime &runtime)
-      : worklistCh(LLCL::AsyncValueRef<LLCL::Chain>::allocate(runtime)) {}
+      : worklistCh(LLCL::AsyncValueRef<LLCL::Chain>::allocate(runtime)),
+        evalLock(runtime) {}
 
   /// Map from generator instantiation to expansion tree node.
   Shared<
@@ -233,7 +237,7 @@ struct ExpansionGraph {
   /// threads.
   LLCL::AsyncValueRef<LLCL::Chain> worklistCh;
   /// Gate mutex for the evaluation critical section.
-  llvm::sys::SmartRWMutex<true> evaluatorMutex;
+  LLCL::AwaitingMutex evalLock;
 
   /// Fork the expansion of a concrete node.
   ImplNode *fork(ImplNode *cur, IRMapping &map, Shared<SymbolTable &> &symtab,
@@ -330,6 +334,20 @@ void ParamNode::getAllConcreteFuncs(std::vector<FuncOp> &funcs) {
       funcs.push_back(impl.func);
 }
 
+ErrorTreeOrSuccess ParamNode::collectErrorsOrSuccess() {
+  ErrorTree err(gen.getLoc(), "no viable expansions found");
+  if (constraintError) {
+    err.addCause(constraintError->copy());
+    return std::move(err);
+  }
+  for (ImplNode &impl : llvm::make_pointee_range(impls)) {
+    if (!impl.error)
+      return success();
+    err.addCause(impl.error->copy());
+  }
+  return std::move(err);
+}
+
 //===----------------------------------------------------------------------===//
 // ElaborationState
 //===----------------------------------------------------------------------===//
@@ -370,28 +388,36 @@ private:
 };
 } // namespace
 
+#define HANDLE_EVALUATOR_CONC(VAR, INODE, LOC, EXPR)                           \
+  if (auto exprResult = (INODE)->getEvaluator().concretizeParameterExpr(       \
+          INODE, LOC, EXPR, true);                                             \
+      exprResult.isError()) {                                                  \
+    (INODE)->setToError(exprResult.takeError());                               \
+    return ElaborationState::error();                                          \
+  } else if (!*exprResult) {                                                   \
+    return ElaborationState::skipNode();                                       \
+  } else {                                                                     \
+    VAR = *exprResult;                                                         \
+  }
+
 //===----------------------------------------------------------------------===//
 // processParamDeclareOp
 //===----------------------------------------------------------------------===//
 
 /// Process a param.declare op by setting its parameter value in the provided
 /// evaluator.
-static LogicalResult processParamDeclareOp(ImplNode *inode, ParamDeclareOp op) {
+static ElaborationState processParamDeclareOp(ImplNode *inode,
+                                              ParamDeclareOp op) {
   // Simplify the input expression.
-  auto errorOrValue =
-      inode->getEvaluator().concretizeParameterExpr(op.getLoc(), op.getValue());
-  if (errorOrValue.isError()) {
-    inode->setToError(errorOrValue.takeError());
-    return failure();
-  }
+  Attribute value;
+  HANDLE_EVALUATOR_CONC(value, inode, op.getLoc(), op.getValue());
 
   // Bind it to the parameter declaration it is setting.
-  inode->getEvaluator().setOrOverwriteParameterValue(op.getParamDecl(),
-                                                     errorOrValue.takeValue());
+  inode->getEvaluator().setOrOverwriteParameterValue(op.getParamDecl(), value);
 
   // The kgen.param.declare operation serves no other purpose: remove it.
   op->erase();
-  return success();
+  return ElaborationState::advance();
 }
 
 //===----------------------------------------------------------------------===//
@@ -400,8 +426,8 @@ static LogicalResult processParamDeclareOp(ImplNode *inode, ParamDeclareOp op) {
 
 /// Process a `kgen.param.result_bind` operation by setting the result parameter
 /// values of the parent operation.
-static LogicalResult processParamResultBindOp(ImplNode *node,
-                                              ParamResultBindOp op) {
+static ElaborationState processParamResultBindOp(ImplNode *node,
+                                                 ParamResultBindOp op) {
   // Concretize the result parameter values.
   IREvaluator &evaluator = node->getEvaluator();
   SmallVector<Attribute> resultParams;
@@ -418,13 +444,9 @@ static LogicalResult processParamResultBindOp(ImplNode *node,
     resultParamDecls = parentDecl.getResultParams();
 
   for (auto [decl, value] : llvm::zip(resultParamDecls, op.getParameters())) {
-    ErrorTreeOr<Attribute> concValue =
-        evaluator.concretizeParameterExpr(op.getLoc(), value);
-    if (concValue.isError()) {
-      node->setToError(concValue.takeError());
-      return failure();
-    }
-    resultParams.push_back(concValue.takeValue());
+    Attribute resultValue;
+    HANDLE_EVALUATOR_CONC(resultValue, node, op.getLoc(), value);
+    resultParams.push_back(resultValue);
     evaluator.setOrOverwriteParameterValue(decl, resultParams.back());
   }
 
@@ -434,21 +456,17 @@ static LogicalResult processParamResultBindOp(ImplNode *node,
     node->resultParams = ArrayAttr::get(op.getContext(), resultParams);
 
   op.erase();
-  return success();
+  return ElaborationState::advance();
 }
 
 //===----------------------------------------------------------------------===//
 // processRebindOp
 //===----------------------------------------------------------------------===//
 
-static LogicalResult processRebindOp(ImplNode *inode, RebindOp op) {
-  ErrorTreeOr<Type> outType =
-      inode->getEvaluator().concretizeParameterExpr(op.getLoc(), op.getType());
-  if (outType.isError()) {
-    inode->setToError(outType.takeError());
-    return failure();
-  }
-  if (outType.getValue() != op.getInput().getType()) {
+static ElaborationState processRebindOp(ImplNode *inode, RebindOp op) {
+  Type outType;
+  HANDLE_EVALUATOR_CONC(outType, inode, op.getLoc(), op.getType());
+  if (outType != op.getInput().getType()) {
     inode->setToError(ErrorTree(op.getLoc(),
                                 "operand and result type of rebind operation "
                                 "did not concretize to the same type"));
@@ -456,7 +474,7 @@ static LogicalResult processRebindOp(ImplNode *inode, RebindOp op) {
   }
   op.replaceAllUsesWith(op.getOperand());
   op.erase();
-  return success();
+  return ElaborationState::advance();
 }
 
 //===----------------------------------------------------------------------===//
@@ -465,50 +483,26 @@ static LogicalResult processRebindOp(ImplNode *inode, RebindOp op) {
 
 /// Process a param.assert op by folding its parameter expression and checking
 /// its constraint. Returns the appropriate error if the constraint failed.
-static LogicalResult processParamAssertOp(ImplNode *inode, ParamAssertOp op) {
+static ElaborationState processParamAssertOp(ImplNode *inode,
+                                             ParamAssertOp op) {
   // Check the condition expression.
-  auto errorOrValue =
-      inode->getEvaluator().concretizeParameterExpr(op.getLoc(), op.getCond());
-  if (errorOrValue.isError()) {
-    inode->setToError(errorOrValue.takeError());
-    return failure();
-  }
+  Attribute value;
+  HANDLE_EVALUATOR_CONC(value, inode, op.getLoc(), op.getCond());
 
   // If the constraint evaluated to zero then the assert fails.
-  auto resultInt = cast<IntegerAttr>(errorOrValue.takeValue());
+  auto resultInt = cast<IntegerAttr>(value);
   if (resultInt.getValue().isZero()) {
     // Evaluate the string to report it.
-    errorOrValue = inode->getEvaluator().concretizeParameterExpr(
-        op.getLoc(), op.getMessage());
-
-    StringAttr message;
-    if (!errorOrValue.isError())
-      message = dyn_cast<StringAttr>(errorOrValue.takeValue());
-
-    inode->setToError(ErrorTree(
-        op.getLoc(),
-        "constraint failed: " + (message ? message.getValue() : "<unknown>")));
+    HANDLE_EVALUATOR_CONC(value, inode, op.getLoc(), op.getMessage());
+    inode->setToError(
+        ErrorTree(op.getLoc(),
+                  "constraint failed: " + cast<StringAttr>(value).getValue()));
     return failure();
   }
 
   // The kgen.param.assert op serves no further purpose, so we can remove it.
   op->erase();
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
-// processLocation
-//===----------------------------------------------------------------------===//
-
-/// Handle location concretization.
-static ErrorTreeOrSuccess processLocation(IREvaluator &evaluator,
-                                          Operation *op) {
-  ErrorTreeOr<Attribute> value = evaluator.concretizeParameterExpr(
-      op->getLoc(), op->getLoc(), /*allowUnknown=*/true);
-  if (value.isError())
-    return value.takeError();
-  op->setLoc(cast<Location>(value.takeValue()));
-  return success();
+  return ElaborationState::advance();
 }
 
 //===----------------------------------------------------------------------===//
@@ -517,43 +511,33 @@ static ErrorTreeOrSuccess processLocation(IREvaluator &evaluator,
 
 /// Unknown operations are allowed to use types and attributes with parameter
 /// references.  Substitute in concrete values for their references.
-static LogicalResult processGenericOp(ImplNode *inode, Operation *op) {
-  IREvaluator &evaluator = inode->getEvaluator();
-
+static ElaborationState processGenericOp(ImplNode *inode, Operation *op) {
   // Scan all the attributes and types to look for uses of parameters.  We let
   // the walker scan the region hierarchy.
   SmallVector<NamedAttribute> newAttrs;
   bool changedAttrs = false;
   for (const NamedAttribute &namedAttr : op->getAttrs()) {
-    ErrorTreeOr<Attribute> value = evaluator.concretizeParameterExpr(
-        op->getLoc(), namedAttr.getValue(), /*allowUnknown=*/true);
-    if (value.isError()) {
-      inode->setToError(value.takeError());
-      return failure();
-    }
-
-    newAttrs.emplace_back(namedAttr.getName(), value.takeValue());
+    Attribute value;
+    HANDLE_EVALUATOR_CONC(value, inode, op->getLoc(), namedAttr.getValue());
+    newAttrs.emplace_back(namedAttr.getName(), value);
     changedAttrs |= namedAttr.getValue() != newAttrs.back().getValue();
   }
   if (changedAttrs)
     op->setAttrs(newAttrs);
 
-  if (ErrorTreeOrSuccess err = processLocation(evaluator, op); err.isError()) {
-    inode->setToError(err.takeError());
-    return failure();
+  {
+    Attribute value;
+    HANDLE_EVALUATOR_CONC(value, inode, op->getLoc(), op->getLoc());
+    op->setLoc(cast<Location>(value));
   }
 
   // Check the types of results to find any parameters embedded in their
   // types.  We don't have to check operands because they are always checked
   // when being defined.
   for (OpResult result : op->getResults()) {
-    ErrorTreeOr<Type> type =
-        evaluator.concretizeParameterExpr(op->getLoc(), result.getType());
-    if (type.isError()) {
-      inode->setToError(type.takeError());
-      return failure();
-    }
-    result.setType(type.takeValue());
+    Type type;
+    HANDLE_EVALUATOR_CONC(type, inode, op->getLoc(), result.getType());
+    result.setType(type);
   }
 
   // Scan the region list if present.  The walker will automatically recurse
@@ -561,18 +545,14 @@ static LogicalResult processGenericOp(ImplNode *inode, Operation *op) {
   for (Region &region : op->getRegions()) {
     for (Block &block : region) {
       for (Value arg : block.getArguments()) {
-        ErrorTreeOr<Type> type =
-            evaluator.concretizeParameterExpr(op->getLoc(), arg.getType());
-        if (type.isError()) {
-          inode->setToError(type.takeError());
-          return failure();
-        }
-        arg.setType(type.takeValue());
+        Type type;
+        HANDLE_EVALUATOR_CONC(type, inode, op->getLoc(), arg.getType());
+        arg.setType(type);
       }
     }
   }
 
-  return success();
+  return ElaborationState::advance();
 }
 
 //===----------------------------------------------------------------------===//
@@ -725,21 +705,20 @@ public:
         paramCache(paramCache, runtime.getWorkQueue()->getParallelismLevel()),
         evaluatorExecutorFn(evaluatorExecutorFn), runtime(runtime) {}
 
-  ErrorTreeOr<FuncOp>
-  getConcreteFunction(Location loc, FlatSymbolRefAttr symbolRef,
+  std::optional<ErrorTreeOr<FuncOp>>
+  getConcreteFunction(ImplNode *parent, Location loc,
+                      FlatSymbolRefAttr symbolRef,
                       ArrayRef<TypedAttr> paramValues) override;
 
-  ErrorTreeOrSuccess
-  getAllConcreteFunctions(Location loc, FlatSymbolRefAttr symbolRef,
-                          ArrayRef<TypedAttr> paramValues,
-                          std::vector<FuncOp> &funcs) override;
+  std::optional<ErrorTreeOrSuccess> getAllConcreteFunctions(
+      ImplNode *parent, Location loc, FlatSymbolRefAttr symbolRef,
+      ArrayRef<TypedAttr> paramValues, std::vector<FuncOp> &funcs) override;
 
   /// Implement the evaluator hook. This function ensures that all active work
   /// items on the workqueue are completed or suspended before running the
   /// evaluator, to ensure that, at least with respect to this compiler
   /// instance, the machine is quiet.
-  ErrorOr<size_t> evaluateFunctions(FuncOp evaluator,
-                                    ArrayRef<FuncOp> options) override;
+  ErrorOr<size_t> evaluateFunctions(FuncOp evaluator, ArrayRef<FuncOp> options);
 
   /// Once a concrete function has finished specializing, finish processing the
   /// function and call the verifier.
@@ -750,7 +729,7 @@ public:
   /// in a very clean model where the parent of the current parent (a generator)
   /// will have its children be the successfully concretized parameter search
   /// nodes.
-  LogicalResult processParamForkOp(ImplNode *parent, ParamForkOp op);
+  ElaborationState processParamForkOp(ImplNode *parent, ParamForkOp op);
 
   /// Spawn a clone for kgen.param.fork. This creates a new FuncOp that is a
   /// sibling to the parent of the kgen.param.fork op. It replaces the
@@ -785,22 +764,10 @@ public:
   /// Complete processing of a generator user by resolving any bound result
   /// types or parameters in the parent scope. This is the step that propagates
   /// result parameters from the inner scope to the outer scope.
-  LogicalResult completeCallProcessing(KGENCallOpInterface user,
-                                       ArrayRef<ParamDeclAttr> decls,
-                                       ImplNode *thisNode, ImplNode *node,
-                                       Logger &logger);
-
-  /// Resolve call input parameters - this is a complex function because calls
-  /// can have regions. We take the body of those regions and put it into a
-  /// generator with a specially prepared ParameterEvaluator scope and elaborate
-  /// the region that way.
-  ///
-  /// Elaborating region parameters is the most non-local part of the elaborator
-  /// - we have to interact with the module symbol table to put these regions
-  /// into top-level generators.
-  ErrorTreeOr<ArrayAttr>
-  resolveCallInputParams(Operation *call, IREvaluator &evaluator,
-                         ArrayRef<TypedAttr> inputValues);
+  ElaborationState completeCallProcessing(KGENCallOpInterface user,
+                                          ArrayRef<ParamDeclAttr> decls,
+                                          ImplNode *thisNode, ImplNode *node,
+                                          Logger &logger);
 
   /// Process a param.declare.region op by creating a generator with the correct
   /// captures. We don't specialize the generator until the call-site because we
@@ -818,17 +785,21 @@ public:
   /// initial counters.
   void initialScheduleImplNode(ImplNode *inode) {
     ++inode->parent->numActive;
+    g.numWorkItems.fetch_add(1);
     scheduleImplNode(inode);
   }
   /// Signal the worklist to tell it a job has completed or has been taken off
   /// the workqueue.
   void signalWorklist() {
-    if (--g.numWorkItems == 0)
+    if (g.numWorkItems.fetch_sub(1) == 1)
       g.worklistCh.copy().emplace();
   }
   /// Schedule an implementation node on the LLCL work queue.
   void scheduleImplNode(ImplNode *inode);
-  /// Process the scopes within an implementation node.
+  /// Process the scopes within an implementation node. This function returns
+  /// `success` if all scopes completed processing and the node is completely
+  /// elaborated. If the function returns `failure`, that means elaboration of
+  /// the node hit a suspension point and must halt before completion.
   LogicalResult processImplNode(ImplNode *inode);
   /// Process a worklist of ops. Returns error if processing the scope resulted
   /// in an error, returns `skipFrame` if the processing of the current scope
@@ -847,10 +818,8 @@ public:
   /// `skipNode`, indicating that elaboration of the current function should be
   /// suspended. It returns `error` if the generator constraints were not
   /// satisfied.
-  ElaborationState specializeGenerator(ParamNode *genNode, ParamNode *from);
-  /// Request specialization of the generator at `genNode` and block until the
-  /// generator is ready or specialization resulted in an error.
-  ErrorTreeOrSuccess specializeGeneratorAndWait(ParamNode *genNode);
+  ElaborationState specializeGenerator(ImplNode *inode, ParamNode *genNode,
+                                       ParamNode *from);
 
   /// Given a list of primary generators (i.e. generators with no input
   /// parameters), run the elaborator. This will generate an expansion tree
@@ -940,8 +909,9 @@ void ElaboratorImpl::finalizeAndVerifyFunction(ImplNode *node) {
 // ElaboratorImpl::getConcreteFunction
 //===----------------------------------------------------------------------===//
 
-ErrorTreeOr<FuncOp>
-ElaboratorImpl::getConcreteFunction(Location loc, FlatSymbolRefAttr symbolRef,
+std::optional<ErrorTreeOr<FuncOp>>
+ElaboratorImpl::getConcreteFunction(ImplNode *parent, Location loc,
+                                    FlatSymbolRefAttr symbolRef,
                                     ArrayRef<TypedAttr> paramValues) {
   auto gen =
       symtab.read([name = symbolRef.getAttr()](const SymbolTable &symtab) {
@@ -957,12 +927,11 @@ ElaboratorImpl::getConcreteFunction(Location loc, FlatSymbolRefAttr symbolRef,
   // Lookup the node if it already exists.
   ParamNode *node = g.getOrCreate(runtime, vals, gen, /*depth=*/0);
   // If the node has already been elaborated, just use that result.
-  if (node->status != ParamNode::DONE) {
-    if (ErrorTreeOrSuccess err = specializeGeneratorAndWait(node);
-        err.isError())
-      return err.takeError();
-  }
-
+  ElaborationState result = specializeGenerator(parent, node, /*from=*/nullptr);
+  if (result.isError())
+    return node->constraintError->copy();
+  if (result.shouldSkipNode())
+    return std::nullopt;
   return node->getFirstConcreteFunc();
 }
 
@@ -970,9 +939,9 @@ ElaboratorImpl::getConcreteFunction(Location loc, FlatSymbolRefAttr symbolRef,
 // ElaboratorImpl::getAllConcreteFunctions
 //===----------------------------------------------------------------------===//
 
-ErrorTreeOrSuccess ElaboratorImpl::getAllConcreteFunctions(
-    Location loc, FlatSymbolRefAttr symbolRef, ArrayRef<TypedAttr> paramValues,
-    std::vector<FuncOp> &funcs) {
+std::optional<ErrorTreeOrSuccess> ElaboratorImpl::getAllConcreteFunctions(
+    ImplNode *parent, Location loc, FlatSymbolRefAttr symbolRef,
+    ArrayRef<TypedAttr> paramValues, std::vector<FuncOp> &funcs) {
   auto gen =
       symtab.read([name = symbolRef.getAttr()](const SymbolTable &symtab) {
         return symtab.lookup<GeneratorOp>(name);
@@ -986,11 +955,11 @@ ErrorTreeOrSuccess ElaboratorImpl::getAllConcreteFunctions(
 
   // Lookup the node if it already exists.
   ParamNode *node = g.getOrCreate(runtime, vals, gen, /*depth=*/0);
-  if (node->status != ParamNode::DONE) {
-    if (ErrorTreeOrSuccess err = specializeGeneratorAndWait(node);
-        err.isError())
-      return err.takeError();
-  }
+  ElaborationState result = specializeGenerator(parent, node, /*from=*/nullptr);
+  if (result.isError())
+    return node->constraintError->copy();
+  if (result.shouldSkipNode())
+    return std::nullopt;
   node->getAllConcreteFuncs(funcs);
   return success();
 }
@@ -1001,37 +970,45 @@ ErrorTreeOrSuccess ElaboratorImpl::getAllConcreteFunctions(
 
 ErrorOr<size_t> ElaboratorImpl::evaluateFunctions(FuncOp evaluator,
                                                   ArrayRef<FuncOp> options) {
-  // This implements a turnstile for the evaluator. Decrement once for the
-  // current worker.
-  signalWorklist();
   ErrorOr<size_t> result = 0;
-  {
-    // Let in only one thread at a time.
-    llvm::sys::SmartScopedWriter<true> guard(g.evaluatorMutex);
-    // Decrement once again to allow the chain to complete.
+  if (runtime.getWorkQueue()->getParallelismLevel() > 1) {
+    // This implements a turnstile for the evaluator. Decrement once for the
+    // current worker.
     signalWorklist();
-    // Starve the workqueue. This also waits for any threads on their way into
-    // this function to hit the turnstile.
-    // FIXME: This should acquire a semaphore shared across all compiler
-    // processes to ensure search is performed in isolation.
-    LLCL::await(g.worklistCh);
-    // Run evaluator.
-    LLVM_DEBUG({
-      logger << "Starting evaluation of " << options.size()
-             << " candidates with evaluator @" << evaluator.getSymName()
-             << "\n";
-      logger << "Candidates:\n";
-      for (FuncOp opt : options)
-        logger << "  @" << opt.getSymName() << "\n";
-    });
-    result = symtab.read([&](const SymbolTable &symtab) {
-      return evaluatorExecutorFn(evaluator, symtab, getTarget(), options);
-    });
-    // Re-initialize the worklist chain and counter, plus 1 for this current
-    // thread. This is safe to do because there are no other active work items.
-    assert(g.numWorkItems == 0 && "work count underflow");
-    g.numWorkItems = 2;
-    g.worklistCh = LLCL::AsyncValueRef<LLCL::Chain>::allocate(runtime);
+    {
+      // Let in only one thread at a time.
+      std::lock_guard<LLCL::AwaitingMutex> guard(g.evalLock);
+      // Decrement once again to allow the chain to complete.
+      signalWorklist();
+      // Starve the workqueue. This also waits for any threads on their way into
+      // this function to hit the turnstile.
+      // FIXME: This should acquire a semaphore shared across all compiler
+      // processes to ensure search is performed in isolation.
+      LLCL::await(g.worklistCh, /*mayDonate=*/false);
+      // Run evaluator.
+      LLVM_DEBUG({
+        logger << "Starting evaluation of " << options.size()
+               << " candidates with evaluator @" << evaluator.getSymName()
+               << "\n";
+        logger << "Candidates:\n";
+        for (FuncOp opt : options)
+          logger << "  @" << opt.getSymName() << "\n";
+      });
+      result = symtab.read([&](const SymbolTable &symtab) {
+        return evaluatorExecutorFn(evaluator, symtab, getTarget(), options);
+      });
+      // Re-initialize the worklist chain and counter, plus 1 for this current
+      // thread. This is safe to do because there are no other active work
+      // items.
+      assert(g.numWorkItems == 0 && "work count underflow");
+      g.numWorkItems.store(2);
+      g.worklistCh = LLCL::AsyncValueRef<LLCL::Chain>::allocate(runtime);
+    }
+  } else {
+    // The starving turnstile does not work if there is only a single thread.
+    // In that case, we don't need it anyways. Just run the evaluator. Don't
+    // acquire a symbol table lock because this can deadlock.
+    result = evaluatorExecutorFn(evaluator, symtab.get(), getTarget(), options);
   }
   return result;
 }
@@ -1041,20 +1018,15 @@ ErrorOr<size_t> ElaboratorImpl::evaluateFunctions(FuncOp evaluator,
 //===----------------------------------------------------------------------===//
 
 /// Process a kgen.param.fork op.
-LogicalResult ElaboratorImpl::processParamForkOp(ImplNode *parent,
-                                                 ParamForkOp op) {
+ElaborationState ElaboratorImpl::processParamForkOp(ImplNode *parent,
+                                                    ParamForkOp op) {
   auto _ = logger.scope("Processing ParamForkOp");
   LLVM_DEBUG(logger.scope("Options") << op.getValuesAttr() << "\n");
 
-  IREvaluator &evaluator = parent->getEvaluator();
-  ErrorTreeOr<Attribute> errorOrValue =
-      evaluator.concretizeParameterExpr(op.getLoc(), op.getValuesAttr());
-  if (errorOrValue.isError()) {
-    parent->setToError(errorOrValue.takeError());
-    return failure();
-  }
+  Attribute value;
+  HANDLE_EVALUATOR_CONC(value, parent, op.getLoc(), op.getValuesAttr());
 
-  auto forkValuesAttr = cast<VariadicAttr>(errorOrValue.takeValue());
+  auto forkValuesAttr = cast<VariadicAttr>(value);
 
   if (forkValuesAttr.getValues().empty()) {
     parent->setToError(ErrorTree(op.getLoc(), "no candidates found"));
@@ -1065,17 +1037,7 @@ LogicalResult ElaboratorImpl::processParamForkOp(ImplNode *parent,
   // N possibilities to explore.
   SmallVector<ErrorTree> errors;
   DenseSet<Attribute> seenValues;
-  for (Attribute candidate : forkValuesAttr.getValues().drop_front()) {
-    // Simplify the input expressions.
-    ErrorTreeOr<Attribute> errorOrValue =
-        evaluator.concretizeParameterExpr(op.getLoc(), candidate);
-    if (errorOrValue.isError()) {
-      errors.push_back(errorOrValue.takeError());
-      continue;
-    }
-
-    Attribute value = errorOrValue.takeValue();
-
+  for (Attribute value : forkValuesAttr.getValues().drop_front()) {
     // If we've already seen this concrete value before,
     // ignore the duplicate.
     if (!seenValues.insert(value).second)
@@ -1089,7 +1051,7 @@ LogicalResult ElaboratorImpl::processParamForkOp(ImplNode *parent,
   parent->getEvaluator().setOrOverwriteParameterValue(
       op.getParamDecl(), forkValuesAttr.getValues().front());
   op.erase();
-  return success();
+  return ElaborationState::advance();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1166,14 +1128,22 @@ ElaborationState ElaboratorImpl::instantiateGeneratorReference(
   }
 
   // Add in the mapping for parameters in the calls.
-  auto resolvedCallParamsOr = resolveCallInputParams(
-      user, parent->getEvaluator(), calleeSymbol.getParamValues());
-  if (resolvedCallParamsOr.isError()) {
-    parent->setToError(resolvedCallParamsOr.takeError());
-    return ElaborationState::error();
+  {
+    LLVM_DEBUG(logger.logOp("Resolving Call Input Param", user);
+               logger << " with input bindings: ";
+               llvm::interleaveComma(calleeSymbol.getParamValues(), logger);
+               logger << "\n");
+
+    SmallVector<Attribute> boundInputParams;
+    for (TypedAttr param : calleeSymbol.getParamValues()) {
+      // Fold the parameter expression in this context to a simple constant.
+      Attribute value;
+      HANDLE_EVALUATOR_CONC(value, parent, user->getLoc(), param);
+      boundInputParams.push_back(value);
+    }
+    inputParamKey = ArrayAttr::get(user->getContext(), boundInputParams);
   }
 
-  inputParamKey = resolvedCallParamsOr.takeValue();
   LLVM_DEBUG({
     logger.logOp("Callee", calleeOp);
     logger << "Input Params: " << inputParamKey << "\n";
@@ -1201,17 +1171,15 @@ ElaborationState ElaboratorImpl::instantiateGeneratorReference(
   // Find the tree node that corresponds to the thing we're calling.
   ParamNode *calleeNode =
       g.getOrCreate(runtime, inputParamKey, gen, parent->parent->depth + 1);
-  ElaborationState result = specializeGenerator(calleeNode, parent->parent);
+  ElaborationState result =
+      specializeGenerator(parent, calleeNode, parent->parent);
   if (result.isError()) {
     assert(calleeNode->constraintError && "expected a constraint failure");
     parent->setToError(calleeNode->constraintError->copy());
     return ElaborationState::error();
   }
-  if (result.shouldSkipNode()) {
-    calleeNode->paramCh.andThenAsync(
-        [parent, this] { scheduleImplNode(parent); });
+  if (result.shouldSkipNode())
     return ElaborationState::skipNode();
-  }
 
   // Complete processing for all the leaves of this subtree.
   calleeNode->getAllConcreteNodes(concrete);
@@ -1307,13 +1275,16 @@ ElaboratorImpl::processGeneratorUser(KGENCallOpInterface user,
     assert(map.lookup(&*user) == newNode->stack.back().ops.back());
     newNode->stack.back().ops.pop_back();
 
-    if (failed(completeCallProcessing(
-            cast<KGENCallOpInterface>(map.lookup(user.getOperation())), decls,
-            c, newNode, logger))) {
+    ElaborationState result = completeCallProcessing(
+        cast<KGENCallOpInterface>(map.lookup(user.getOperation())), decls, c,
+        newNode, logger);
+    if (result.isError()) {
       // If call processing completion failed, then don't enqueue this node.
       assert(newNode->error && "expected an error on new node");
       continue;
     }
+    if (result.shouldSkipNode())
+      return result;
 
     LLVM_DEBUG(newNode->print(logger << "New Op "));
 
@@ -1336,18 +1307,14 @@ ElaboratorImpl::processGeneratorUser(KGENCallOpInterface user,
 
 /// Complete processing of a `kgen.param.apply` operation by invoking the
 /// interpreter on the concrete callee and binding its result.
-static LogicalResult processParamApplyOp(ImplNode *inode, ParamApplyOp op,
-                                         FuncOp func) {
+static ElaborationState processParamApplyOp(ImplNode *inode, ParamApplyOp op,
+                                            FuncOp func) {
 
   SmallVector<TypedAttr> operands;
   for (TypedAttr operand : op.getOperands()) {
-    ErrorTreeOr<Attribute> value =
-        inode->getEvaluator().concretizeParameterExpr(op.getLoc(), operand);
-    if (value.isError()) {
-      inode->setToError(value.takeError());
-      return failure();
-    }
-    operands.push_back(cast<TypedAttr>(value.takeValue()));
+    Attribute value;
+    HANDLE_EVALUATOR_CONC(value, inode, op.getLoc(), operand);
+    operands.push_back(cast<TypedAttr>(value));
   }
   ErrorTreeOr<TypedAttr> result =
       inode->getEvaluator().evaluateFunction(func, operands);
@@ -1360,10 +1327,10 @@ static LogicalResult processParamApplyOp(ImplNode *inode, ParamApplyOp op,
   inode->getEvaluator().setOrOverwriteParameterValue(op.getParamDecl(),
                                                      result.takeValue());
   op.erase();
-  return success();
+  return ElaborationState::advance();
 }
 
-LogicalResult ElaboratorImpl::completeCallProcessing(
+ElaborationState ElaboratorImpl::completeCallProcessing(
     KGENCallOpInterface user, ArrayRef<ParamDeclAttr> decls, ImplNode *thisNode,
     ImplNode *node, Logger &logger) {
   IREvaluator &evaluator = node->getEvaluator();
@@ -1391,14 +1358,9 @@ LogicalResult ElaboratorImpl::completeCallProcessing(
   // Resolve any bound result types.
   SmallVector<Type> resultTypes;
   for (auto result : user->getResultTypes()) {
-    ErrorTreeOr<Type> typeOr =
-        evaluator.concretizeParameterExpr(user.getLoc(), result);
-    if (typeOr.isError()) {
-      node->setToError(typeOr.takeError());
-      return failure();
-    }
-
-    resultTypes.push_back(typeOr.takeValue());
+    Type type;
+    HANDLE_EVALUATOR_CONC(type, node, user.getLoc(), result);
+    resultTypes.push_back(type);
   }
 
   // Save the user's location before we delete the op.
@@ -1413,7 +1375,7 @@ LogicalResult ElaboratorImpl::completeCallProcessing(
   user.concretizeCallee(b, newCallee, resultTypes);
 
   if (decls.empty())
-    return success();
+    return ElaborationState::advance();
 
   // If we don't have the result parameters yet, then either no result
   // parameters are necessary, or we have another problem entirely wherein we
@@ -1435,36 +1397,8 @@ LogicalResult ElaboratorImpl::completeCallProcessing(
     LLVM_DEBUG(logger << "Binding " << decl << " to " << bindValue << "\n");
     evaluator.setOrOverwriteParameterValue(decl, bindValue);
   }
-  return success();
+  return ElaborationState::advance();
 }
-
-//===----------------------------------------------------------------------===//
-// ElaboratorImpl::resolveCallInputParams
-//===----------------------------------------------------------------------===//
-
-/// Resolve input params on a call_param op.
-ErrorTreeOr<ArrayAttr>
-ElaboratorImpl::resolveCallInputParams(Operation *call, IREvaluator &evaluator,
-                                       ArrayRef<TypedAttr> inputValues) {
-  LLVM_DEBUG(logger.logOp("Resolving Call Input Param", call);
-             logger << " with input bindings: ";
-             llvm::interleaveComma(inputValues, logger); logger << "\n");
-
-  SmallVector<Attribute> boundInputParams;
-  for (TypedAttr param : inputValues) {
-    // Fold the parameter expression in this context to a simple constant.
-    ErrorTreeOr<Attribute> valueOr =
-        evaluator.concretizeParameterExpr(call->getLoc(), param);
-    if (valueOr.isError())
-      return valueOr.takeError();
-
-    Attribute value = valueOr.takeValue();
-    boundInputParams.push_back(value);
-  }
-
-  return ArrayAttr::get(call->getContext(), boundInputParams);
-}
-
 //===----------------------------------------------------------------------===//
 // ElaboratorImpl::processCallOp
 //===----------------------------------------------------------------------===//
@@ -1472,18 +1406,12 @@ ElaboratorImpl::resolveCallInputParams(Operation *call, IREvaluator &evaluator,
 /// Process a call_param op.
 ElaborationState ElaboratorImpl::processCallOp(ImplNode *parent,
                                                KGENCallOpInterface call) {
-  ErrorTreeOr<Attribute> symbol =
-      parent->getEvaluator().concretizeParameterExpr(call.getLoc(),
-                                                     call.getCallee());
-  if (symbol.isError()) {
-    parent->setToError(symbol.takeError());
-    return ElaborationState::error();
-  }
-
-  if (auto sym = dyn_cast<SymbolConstantAttr>(*symbol))
+  Attribute symbol;
+  HANDLE_EVALUATOR_CONC(symbol, parent, call.getLoc(), call.getCallee());
+  if (auto sym = dyn_cast<SymbolConstantAttr>(symbol))
     return processGeneratorUser(call, sym, parent);
 
-  auto decl = dyn_cast<RegionAttr>(*symbol);
+  auto decl = dyn_cast<RegionAttr>(symbol);
   if (LLVM_UNLIKELY(!decl)) {
     parent->setToError(ErrorTree(call.getLoc(),
                                  "concrete parameter must be a symbol or a "
@@ -1538,19 +1466,15 @@ ElaborationState ElaboratorImpl::processCallOp(ImplNode *parent,
 ElaborationState ElaboratorImpl::processEvaluateOp(ImplNode *parent,
                                                    ParamEvaluateOp op) {
   IREvaluator &evaluator = parent->getEvaluator();
-  ErrorTreeOr<Attribute> evaluatorFn =
-      evaluator.concretizeParameterExpr(op.getLoc(), op.getEvaluator());
-  if (evaluatorFn.isError()) {
-    parent->setToError(evaluatorFn.takeError());
-    return ElaborationState::error();
-  }
+  Attribute evaluatorFn;
+  HANDLE_EVALUATOR_CONC(evaluatorFn, parent, op.getLoc(), op.getEvaluator());
 
   ArrayAttr inputParamKey;
   GeneratorOp gen;
   std::vector<ImplNode *> evaluators;
   ElaborationState result = instantiateGeneratorReference(
-      parent, op, cast<SymbolConstantAttr>(evaluatorFn.takeValue()),
-      inputParamKey, gen, evaluators);
+      parent, op, cast<SymbolConstantAttr>(evaluatorFn), inputParamKey, gen,
+      evaluators);
   if (result.isError() || result.shouldSkipNode())
     return result;
 
@@ -1560,15 +1484,11 @@ ElaborationState ElaboratorImpl::processEvaluateOp(ImplNode *parent,
     return ElaborationState::error();
   }
 
-  ErrorTreeOr<Attribute> candidates =
-      evaluator.concretizeParameterExpr(op.getLoc(), op.getCandidates());
-  if (candidates.isError()) {
-    parent->setToError(candidates.takeError());
-    return ElaborationState::error();
-  }
+  Attribute candidates;
+  HANDLE_EVALUATOR_CONC(candidates, parent, op.getLoc(), op.getCandidates());
 
   std::vector<ImplNode *> concrete;
-  for (TypedAttr value : cast<VariadicAttr>(*candidates).getValues()) {
+  for (TypedAttr value : cast<VariadicAttr>(candidates).getValues()) {
     ElaborationState result = instantiateGeneratorReference(
         parent, op, cast<SymbolConstantAttr>(value), inputParamKey, gen,
         concrete);
@@ -1641,18 +1561,14 @@ ElaboratorImpl::processParamDeclareRegionOp(ImplNode *parent,
 ElaborationState ElaboratorImpl::processParamIfOp(ImplNode *parent,
                                                   ParamIfOp op) {
   // Check the condition expression.
-  auto errorOrValue =
-      parent->getEvaluator().concretizeParameterExpr(op.getLoc(), op.getCond());
-  if (errorOrValue.isError()) {
-    parent->setToError(errorOrValue.takeError());
-    return ElaborationState::error();
-  }
+  Attribute value;
+  HANDLE_EVALUATOR_CONC(value, parent, op.getLoc(), op.getCond());
 
   // Take whichever branch the condition indicated, and simply inline those ops
   // then elaborate them. We can do this by splicing the op list into the parent
   // block. We splice it this way to avoid remapping the ops when we process
   // them later.
-  bool resultBool = cast<BoolAttr>(errorOrValue.takeValue()).getValue();
+  bool resultBool = cast<BoolAttr>(value).getValue();
   // Get the appropriate region.
   Region &toProcess = op->getRegion(!resultBool);
 
@@ -1772,7 +1688,6 @@ ElaborationState ElaboratorImpl::processParamIfOp(ImplNode *parent,
 
 void ElaboratorImpl::scheduleImplNode(ImplNode *inode) {
   // Increment the number of scheduled work items.
-  ++g.numWorkItems;
   runtime.getWorkQueue()->addTask([inode, this] {
     // Process the node. If processing the node got pre-empted, then return. It
     // will get scheduled again later.
@@ -1781,7 +1696,7 @@ void ElaboratorImpl::scheduleImplNode(ImplNode *inode) {
       // to complete, then the parameter node is done.
       ParamNode *p = inode->parent;
       if (--p->numActive == 0) {
-        p->status = ParamNode::DONE;
+        g.numWorkItems += p->state.markDone();
         p->paramCh.copy().emplace();
       }
     }
@@ -1793,10 +1708,17 @@ void ElaboratorImpl::scheduleImplNode(ImplNode *inode) {
 LogicalResult ElaboratorImpl::processImplNode(ImplNode *inode) {
   LLVM_DEBUG(inode->print(logger << "Processing implementation node: ",
                           /*printBindings=*/false));
-  assert(!inode->stack.empty() && "expected at least one work item");
 
   TimeTraceScope<EnableTracing> traceScope(
-      "processParamNode", [inode] { return inode->func.getSymName().str(); });
+      "processImplNode", [inode] { return inode->func.getSymName().str(); });
+
+  // Check for a root node.
+  if (!inode->func) {
+    // Begin specialization of the parameter node. Immediately suspend
+    // execution by returning `failure`.
+    (void)specializeGenerator(inode, inode->parent, /*from=*/nullptr);
+    return failure();
+  }
 
   while (!inode->stack.empty()) {
     ImplNode::WorkItem &item = inode->stack.back();
@@ -1813,8 +1735,8 @@ LogicalResult ElaboratorImpl::processImplNode(ImplNode *inode) {
       continue;
     }
     if (result.shouldSkipNode()) {
-      // Node skip indicates to suspend elaboration of the current function and
-      // come back later.
+      // Node skip indicates to suspend elaboration of the current function
+      // and come back later.
       return failure();
     }
     // Advance indicates the current work item's operation list was exhausted.
@@ -1906,42 +1828,21 @@ static StringRef tryGettingShortName(StringRef s) {
   return s.split('(').first.rsplit(':').second;
 }
 
-ErrorTreeOrSuccess
-ElaboratorImpl::specializeGeneratorAndWait(ParamNode *genNode) {
-  ElaborationState result = specializeGenerator(genNode, /*from=*/nullptr);
-  if (result.isError()) {
-    assert(genNode->constraintError && "expected a constraint error");
-    return genNode->constraintError->copy();
-  }
-  if (result.shouldSkipNode()) {
-    LLCL::await(genNode->paramCh);
-    assert(genNode->status == ParamNode::DONE);
-  }
-  ErrorTree err(genNode->gen.getLoc(), "no viable expansions found");
-  for (ImplNode &impl : llvm::make_pointee_range(genNode->impls)) {
-    if (!impl.error)
-      return success();
-    err.addCause(impl.error->copy());
-  }
-  return std::move(err);
-}
-
-ElaborationState ElaboratorImpl::specializeGenerator(ParamNode *genNode,
+ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
+                                                     ParamNode *genNode,
                                                      ParamNode *from) {
-  ParamNode::Status existing = ParamNode::FRESH;
-  if (!genNode->status.compare_exchange_strong(existing,
-                                               ParamNode::IN_PROGRESS)) {
-    if (existing == ParamNode::DONE) {
-      // If this generator instantiation is already known to always be invalid,
-      // indicate an error.
-      if (genNode->constraintError)
-        return ElaborationState::error();
-      // If this generator node is already concrete and has no error, don't
-      // re-concretize.
-      if (config.testDiagnostics)
-        genNode->gen.emitRemark("Generator has already been specialized");
-      return ElaborationState::advance();
-    }
+  switch (genNode->state.markInProgress()) {
+  case ParamNodeState::DONE:
+    // If this generator instantiation is already known to always be invalid,
+    // indicate an error.
+    if (genNode->constraintError)
+      return ElaborationState::error();
+    // If this generator node is already concrete and has no error, don't
+    // re-concretize.
+    if (config.testDiagnostics)
+      genNode->gen.emitRemark("Generator has already been specialized");
+    return ElaborationState::advance();
+  case ParamNodeState::IN_PROGRESS:
     // If the worker hit a parameter node that is already in progress, this
     // could mean two things:
     //
@@ -1985,7 +1886,14 @@ ElaborationState ElaboratorImpl::specializeGenerator(ParamNode *genNode,
     // intra-node parallelism) while correctly handling recursion.
     if (from && from->incoming.contains(genNode))
       return ElaborationState::advance();
-    return ElaborationState::skipNode();
+    if (genNode->state.addWaiter()) {
+      genNode->paramCh.andThenSync([inode, this] { scheduleImplNode(inode); });
+      return ElaborationState::skipNode();
+    }
+    // Raced with node completion.
+    return ElaborationState::advance();
+  default:
+    break;
   }
 
   // Flatten the callgraph up to this point.
@@ -2005,11 +1913,17 @@ ElaborationState ElaboratorImpl::specializeGenerator(ParamNode *genNode,
     evaluator.setOrOverwriteParameterValue(decl, val);
 
   // If the generator's constraints don't satisfy, set an error and move on.
-  if (auto err =
-          KGEN::evaluateConstraints(generator.getConstraints(), evaluator)) {
-    // This node is complete. It can never be valid.
-    genNode->constraintError = std::move(err.value());
-    genNode->status = ParamNode::DONE;
+  std::optional<ErrorTreeOrSuccess> constraintResult =
+      KGEN::evaluateConstraints(inode, generator.getConstraints(), evaluator);
+  if (!constraintResult) {
+    genNode->state.refresh();
+    return ElaborationState::skipNode();
+  }
+  if (constraintResult->isError()) {
+    // This node is complete. It can never be valid. Mark the node as `DONE` and
+    // add its waiter count before emplacing its completion chain.
+    genNode->constraintError = constraintResult->takeError();
+    g.numWorkItems += genNode->state.markDone();
     genNode->paramCh.copy().emplace();
     return ElaborationState::error();
   }
@@ -2105,6 +2019,9 @@ ElaborationState ElaboratorImpl::specializeGenerator(ParamNode *genNode,
                           [](ImplNode *) { return success(); }};
   newFuncNode->stack.push_back(std::move(item));
 
+  [[maybe_unused]] bool added = genNode->state.addWaiter();
+  assert(added);
+  genNode->paramCh.andThenSync([inode, this] { scheduleImplNode(inode); });
   initialScheduleImplNode(newFuncNode);
   return ElaborationState::skipNode();
 }
@@ -2123,27 +2040,47 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
       return op.emitError("unlowered lit.func discovered in KGEN elaborator");
 
   auto emptyInputParamKey = ArrayAttr::get(theModule.getContext(), {});
-  bool failed = false;
-  for (auto gen : primaryGenerators) {
+  std::vector<AnyAsyncValueRef> primaryChs;
+  std::vector<std::unique_ptr<ImplNode>> rootNodes;
+  std::vector<ParamNode *> primaryNodes;
+  primaryChs.reserve(primaryGenerators.size());
+  primaryNodes.reserve(primaryGenerators.size());
+  for (GeneratorOp gen : primaryGenerators) {
     LLVM_DEBUG(logger.logOp("Elaborating primary generator", gen));
     // This has no input parameters, so we can create the expansion node with
     // no input parameters.
-    ParamNode *generatorNode =
+    ParamNode *genNode =
         g.getOrCreate(runtime, emptyInputParamKey, gen, /*depth=*/0);
+    primaryNodes.push_back(genNode);
+
+    // Create a special root node for this primary generator.
+    ImplNode *root =
+        rootNodes.emplace_back(std::make_unique<ImplNode>(genNode)).get();
 
     // Now we can begin to construct the expansion tree rooted at this
     // generator. Emit as many errors as possible.
-    if (ErrorTreeOrSuccess err = specializeGeneratorAndWait(generatorNode);
-        err.isError()) {
-      err.takeError().emit([](Location loc) { return mlir::emitError(loc); });
-      failed = true;
-    }
+    ++g.numWorkItems;
+    scheduleImplNode(root);
+    primaryChs.push_back(genNode->paramCh.copy());
   }
-  // Wait for all work to complete.
+  // Wait for all primary generators to complete, and any straggling work.
+  LLCL::await(primaryChs);
   signalWorklist();
   LLCL::await(g.worklistCh);
+
+  // Check for any errors and emit them. Emit as many errors as possible.
+  bool failed = false;
+  for (ParamNode *genNode : primaryNodes) {
+    ErrorTreeOrSuccess err = genNode->collectErrorsOrSuccess();
+    if (err.isError()) {
+      failed = true;
+      err.takeError().emit([](Location loc) { return mlir::emitError(loc); });
+    }
+  }
   if (failed)
     return failure();
+
+  assert(g.numWorkItems == 0 && "work item undercount");
 
   // Cleanup pass - we want to remove generators and interfaces by replacing
   // them with their concrete implementations. Only handle the primary

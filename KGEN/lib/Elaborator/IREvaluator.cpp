@@ -71,14 +71,19 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
   }
 
   if (op.getOpcode() == POC::GetAllImpls) {
-    auto symbol = cast<SymbolConstantAttr>(op.getOperand(0));
-    std::vector<FuncOp> funcs;
-    if (ErrorTreeOrSuccess err = elaborator->getAllConcreteFunctions(
-            *errorLoc, cast<FlatSymbolRefAttr>(symbol.getSymbol()),
-            symbol.getParamValues(), funcs);
-        err.isError()) {
-      emitError(err.takeError());
+    auto symbol = dyn_cast<SymbolConstantAttr>(op.getOperand(0));
+    if (!symbol)
       return failure();
+    std::vector<FuncOp> funcs;
+    std::optional<ErrorTreeOrSuccess> err = elaborator->getAllConcreteFunctions(
+        parent, *errorLoc, cast<FlatSymbolRefAttr>(symbol.getSymbol()),
+        symbol.getParamValues(), funcs);
+    if (!err) {
+      return TypedAttr();
+    }
+    if (err->isError()) {
+      emitError(err->takeError());
+      return TypedAttr();
     }
 
     std::vector<TypedAttr> refs;
@@ -100,18 +105,21 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
       return failure();
 
     // Lookup the symbol reference and resolve it.
-    ErrorTreeOr<FuncOp> func = elaborator->getConcreteFunction(
-        *errorLoc, ref, symbol.getParamValues());
-    if (func.isError()) {
-      emitError(func.takeError());
-      return failure();
+    std::optional<ErrorTreeOr<FuncOp>> func = elaborator->getConcreteFunction(
+        parent, *errorLoc, ref, symbol.getParamValues());
+    if (!func) {
+      return TypedAttr();
+    }
+    if (func->isError()) {
+      emitError(func->takeError());
+      return TypedAttr();
     }
 
-    ErrorTreeOr<TypedAttr> result = evaluateFunction(*func, operands);
+    ErrorTreeOr<TypedAttr> result = evaluateFunction(**func, operands);
     if (TypedAttr value = result.tryGetValue())
       return value;
     emitError(result.takeError());
-    return failure();
+    return TypedAttr();
   }
 
   return failure();
@@ -120,10 +128,12 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
 /// Given a generic parameter expression, simplify it by folding the
 /// expression according to known parameter values.  This returns an error if
 /// the expression cannot be folded for one reason or another.
-ErrorTreeOr<Attribute> IREvaluator::concretizeParameterExpr(Location loc,
+ErrorTreeOr<Attribute> IREvaluator::concretizeParameterExpr(ImplNode *parent,
+                                                            Location loc,
                                                             Attribute expr,
                                                             bool allowUnknown) {
   // FIXME: Refactor ParameterEvaluator for better error propagation.
+  this->parent = parent;
   errorLoc = loc;
   std::optional<ErrorTree> error;
   emitError = [&](ErrorTree err) { error = std::move(err); };
@@ -131,6 +141,9 @@ ErrorTreeOr<Attribute> IREvaluator::concretizeParameterExpr(Location loc,
   Attribute result = getReboundAttribute(expr);
   if (error)
     return std::move(*error);
+
+  if (!result)
+    return Attribute();
 
   // If we can fold this to a simple constant result, do.
   if (ParameterAttr::isSimpleConstant(result))
@@ -149,9 +162,11 @@ ErrorTreeOr<Attribute> IREvaluator::concretizeParameterExpr(Location loc,
                    "unknown expression to fold: " + getParamAsString(result));
 }
 
-ErrorTreeOr<Type> IREvaluator::concretizeParameterExpr(Location loc,
-                                                       Type expr) {
+ErrorTreeOr<Type> IREvaluator::concretizeParameterExpr(ImplNode *parent,
+                                                       Location loc, Type expr,
+                                                       bool allowUnknown) {
   // FIXME: Refactor ParameterEvaluator for better error propagation.
+  this->parent = parent;
   errorLoc = loc;
   std::optional<ErrorTree> error;
   emitError = [&](ErrorTree err) { error = std::move(err); };
@@ -160,8 +175,12 @@ ErrorTreeOr<Type> IREvaluator::concretizeParameterExpr(Location loc,
   if (error)
     return std::move(*error);
 
+  if (!result)
+    return Type();
+
   if (TypeConstantAttr::isConcreteType(result))
     return result;
+
   return ErrorTree(loc, Error("could not simplify type: " +
                               getParamAsString(TypeConstantAttr::get(result))));
 }
@@ -173,17 +192,20 @@ ErrorTreeOr<Type> IREvaluator::concretizeParameterExpr(Location loc,
 /// Given a generator or interface declaration operation, evaluate any
 /// constraints against inputParamValues.  If the constraints are met, return
 /// success, otherwise return why they aren't.
-std::optional<ErrorTree>
-KGEN::evaluateConstraints(ArrayRef<ConstraintAttr> constraints,
+std::optional<ErrorTreeOrSuccess>
+KGEN::evaluateConstraints(ImplNode *parent,
+                          ArrayRef<ConstraintAttr> constraints,
                           IREvaluator &evaluator) {
   // Each constraint must be foldable, and must fold to true.
   for (ConstraintAttr constraint : constraints) {
     Location loc = constraint.getLoc();
-    ErrorTreeOr<Attribute> result =
-        evaluator.concretizeParameterExpr(loc, constraint.getExpr());
-    if (!result)
+    ErrorTreeOr<Attribute> result = evaluator.concretizeParameterExpr(
+        parent, loc, constraint.getExpr(), /*allowUnknown=*/false);
+    if (result.isError())
       return ErrorTree(loc, "constraint evaluation failure",
                        result.takeError());
+    if (!*result)
+      return std::nullopt;
 
     auto resultInt = dyn_cast<IntegerAttr>(result.takeValue());
     if (!resultInt || resultInt.getValue().getBitWidth() != 1)
@@ -197,5 +219,5 @@ KGEN::evaluateConstraints(ArrayRef<ConstraintAttr> constraints,
   }
 
   // If we made it this far, then everything folded to true.
-  return {};
+  return success();
 }
