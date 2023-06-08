@@ -217,8 +217,7 @@ namespace {
 /// This struct represents the expansion of a callgraph during elaboration.
 struct ExpansionGraph {
   ExpansionGraph(LLCL::Runtime &runtime)
-      : worklistCh(LLCL::AsyncValueRef<LLCL::Chain>::allocate(runtime)),
-        evalLock(runtime) {}
+      : worklistCh(LLCL::AsyncValueRef<LLCL::Chain>::allocate(runtime)) {}
 
   /// Map from generator instantiation to expansion tree node.
   Shared<
@@ -236,8 +235,6 @@ struct ExpansionGraph {
   /// cannot be reliably performed while the compiler is doing work on other
   /// threads.
   LLCL::AsyncValueRef<LLCL::Chain> worklistCh;
-  /// Gate mutex for the evaluation critical section.
-  LLCL::AwaitingMutex evalLock;
 
   /// Fork the expansion of a concrete node.
   ImplNode *fork(ImplNode *cur, IRMapping &map, Shared<SymbolTable &> &symtab,
@@ -714,11 +711,22 @@ public:
       ImplNode *parent, Location loc, FlatSymbolRefAttr symbolRef,
       ArrayRef<TypedAttr> paramValues, std::vector<FuncOp> &funcs) override;
 
+  /// Given a list of primary generators (i.e. generators with no input
+  /// parameters), run the elaborator. This will generate an expansion tree
+  /// rooted on the module with base nodes for each primary generator. Once
+  /// specialization completes we will be able to collect all the concrete
+  /// implementations for each primary generator and handle any renaming or
+  /// fixup that needs to happen to produce the output IR.
+  LogicalResult run(ModuleOp theModule,
+                    ArrayRef<GeneratorOp> primaryGenerators);
+
+private:
   /// Implement the evaluator hook. This function ensures that all active work
   /// items on the workqueue are completed or suspended before running the
   /// evaluator, to ensure that, at least with respect to this compiler
   /// instance, the machine is quiet.
-  ErrorOr<size_t> evaluateFunctions(FuncOp evaluator, ArrayRef<FuncOp> options);
+  ErrorOrSuccess evaluateFunctions(ImplNode *inode, FuncOp evaluator,
+                                   std::vector<FuncOp> options);
 
   /// Once a concrete function has finished specializing, finish processing the
   /// function and call the verifier.
@@ -821,16 +829,10 @@ public:
   ElaborationState specializeGenerator(ImplNode *inode, ParamNode *genNode,
                                        ParamNode *from);
 
-  /// Given a list of primary generators (i.e. generators with no input
-  /// parameters), run the elaborator. This will generate an expansion tree
-  /// rooted on the module with base nodes for each primary generator. Once
-  /// specialization completes we will be able to collect all the concrete
-  /// implementations for each primary generator and handle any renaming or
-  /// fixup that needs to happen to produce the output IR.
-  LogicalResult run(ModuleOp theModule,
-                    ArrayRef<GeneratorOp> primaryGenerators);
+  /// Process all deferred search functions serially, re-queuing nodes as it
+  /// completes. Returns true if there were deferred search functions.
+  bool processDeferredSearchFns();
 
-private:
   /// A logger used to emit information during the elaboration process.
   Logger logger;
 
@@ -855,6 +857,18 @@ private:
 
   /// The functor used for evaluating generator specializations.
   EvaluatorExecutorFnRef evaluatorExecutorFn;
+
+  /// This struct contains information about a deferred search job.
+  struct DeferredSearch {
+    /// Deferred search functor.
+    ElaboratorSearchFn searchFn;
+    /// The node that was suspended.
+    ImplNode *inode;
+    /// The candidates.
+    std::vector<FuncOp> candidates;
+  };
+  /// The deferred search jobs.
+  Shared<std::vector<DeferredSearch>> deferredSearchFns;
 
   /// The LLCL runtime instance to use.
   LLCL::Runtime &runtime;
@@ -968,49 +982,34 @@ std::optional<ErrorTreeOrSuccess> ElaboratorImpl::getAllConcreteFunctions(
 // ElaboratorImpl::evaluateFunctions
 //===----------------------------------------------------------------------===//
 
-ErrorOr<size_t> ElaboratorImpl::evaluateFunctions(FuncOp evaluator,
-                                                  ArrayRef<FuncOp> options) {
-  ErrorOr<size_t> result = 0;
-  if (runtime.getWorkQueue()->getParallelismLevel() > 1) {
-    // This implements a turnstile for the evaluator. Decrement once for the
-    // current worker.
-    signalWorklist();
-    {
-      // Let in only one thread at a time.
-      std::lock_guard<LLCL::AwaitingMutex> guard(g.evalLock);
-      // Decrement once again to allow the chain to complete.
-      signalWorklist();
-      // Starve the workqueue. This also waits for any threads on their way into
-      // this function to hit the turnstile.
-      // FIXME: This should acquire a semaphore shared across all compiler
-      // processes to ensure search is performed in isolation.
-      LLCL::await(g.worklistCh, /*mayDonate=*/false);
-      // Run evaluator.
-      LLVM_DEBUG({
-        logger << "Starting evaluation of " << options.size()
-               << " candidates with evaluator @" << evaluator.getSymName()
-               << "\n";
-        logger << "Candidates:\n";
-        for (FuncOp opt : options)
-          logger << "  @" << opt.getSymName() << "\n";
-      });
-      result = symtab.read([&](const SymbolTable &symtab) {
-        return evaluatorExecutorFn(evaluator, symtab, getTarget(), options);
-      });
-      // Re-initialize the worklist chain and counter, plus 1 for this current
-      // thread. This is safe to do because there are no other active work
-      // items.
-      assert(g.numWorkItems == 0 && "work count underflow");
-      g.numWorkItems.store(2);
-      g.worklistCh = LLCL::AsyncValueRef<LLCL::Chain>::allocate(runtime);
-    }
-  } else {
-    // The starving turnstile does not work if there is only a single thread.
-    // In that case, we don't need it anyways. Just run the evaluator. Don't
-    // acquire a symbol table lock because this can deadlock.
-    result = evaluatorExecutorFn(evaluator, symtab.get(), getTarget(), options);
-  }
-  return result;
+ErrorOrSuccess ElaboratorImpl::evaluateFunctions(ImplNode *inode,
+                                                 FuncOp evaluator,
+                                                 std::vector<FuncOp> options) {
+  TimeTraceScope<> traceScope("evaluateFunctions", [evaluator, options] {
+    std::string detail;
+    llvm::raw_string_ostream os(detail);
+    os << "evaluator: " << FuncOp(evaluator).getSymName() << "\n";
+    for (FuncOp opt : options)
+      os << " - " << opt.getSymName();
+    return os.str();
+  });
+
+  // Cheeky copy. The state of the symbol right at this moment is sufficient to
+  // produce a standalone object for the functions being JIT'd. Acquiring a lock
+  // on the symbol table for the duration of evaluation will deadlock.
+  SymbolTable symtabCopy = symtab.read(
+      [](const SymbolTable &symtab) -> SymbolTable { return symtab; });
+  ErrorOr<ElaboratorSearchFn> searchFn =
+      evaluatorExecutorFn(evaluator, symtabCopy, getTarget(), options);
+  if (searchFn.isError())
+    return searchFn.takeError();
+  // Suspend elaboration. The search has to be performed for isolation.
+  deferredSearchFns.modify([inode, fn = searchFn.takeValue(),
+                            candidates =
+                                std::move(options)](auto &fns) mutable {
+    fns.push_back(DeferredSearch{std::move(fn), inode, std::move(candidates)});
+  });
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1465,7 +1464,6 @@ ElaborationState ElaboratorImpl::processCallOp(ImplNode *parent,
 
 ElaborationState ElaboratorImpl::processEvaluateOp(ImplNode *parent,
                                                    ParamEvaluateOp op) {
-  IREvaluator &evaluator = parent->getEvaluator();
   Attribute evaluatorFn;
   HANDLE_EVALUATOR_CONC(evaluatorFn, parent, op.getLoc(), op.getEvaluator());
 
@@ -1499,21 +1497,15 @@ ElaborationState ElaboratorImpl::processEvaluateOp(ImplNode *parent,
   std::vector<FuncOp> candidateFns;
   for (ImplNode *node : concrete)
     candidateFns.push_back(node->func);
-  ErrorOr<size_t> idx =
-      evaluateFunctions(evaluators.front()->func, candidateFns);
-  if (idx.isError()) {
-    parent->setToError(ErrorTree(op.getLoc(), idx.takeError()));
+  if (ErrorOrSuccess evalResult = evaluateFunctions(
+          parent, evaluators.front()->func, std::move(candidateFns));
+      evalResult.isError()) {
+    parent->setToError(ErrorTree(op.getLoc(), evalResult.takeError()));
     return ElaborationState::error();
   }
-  FuncOp best = candidateFns[*idx];
-  LLVM_DEBUG(logger << "Evaluator select #" << *idx << " -> @"
-                    << best.getSymName() << "\n");
-  evaluator.setParameterValue(
-      op.getParamDecl(),
-      SymbolConstantAttr::get(SymbolRefAttr::get(best.getSymNameAttr()),
-                              best.getSignature()));
-  op.erase();
-  return ElaborationState::advance();
+  // Suspend elaboration. The actual search will be performed in isolation
+  // later.
+  return ElaborationState::skipNode();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1709,9 +1701,6 @@ LogicalResult ElaboratorImpl::processImplNode(ImplNode *inode) {
   LLVM_DEBUG(inode->print(logger << "Processing implementation node: ",
                           /*printBindings=*/false));
 
-  TimeTraceScope<EnableTracing> traceScope(
-      "processImplNode", [inode] { return inode->func.getSymName().str(); });
-
   // Check for a root node.
   if (!inode->func) {
     // Begin specialization of the parameter node. Immediately suspend
@@ -1719,6 +1708,9 @@ LogicalResult ElaboratorImpl::processImplNode(ImplNode *inode) {
     (void)specializeGenerator(inode, inode->parent, /*from=*/nullptr);
     return failure();
   }
+
+  TimeTraceScope traceScope("processImplNode",
+                            [inode] { return inode->func.getSymName().str(); });
 
   while (!inode->stack.empty()) {
     ImplNode::WorkItem &item = inode->stack.back();
@@ -2027,6 +2019,60 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
 }
 
 //===----------------------------------------------------------------------===//
+// ElaboratorImpl::processedDeferredSearchFns
+//===----------------------------------------------------------------------===//
+
+bool ElaboratorImpl::processDeferredSearchFns() {
+  if (deferredSearchFns.get().empty())
+    return false;
+
+  for (DeferredSearch &search : deferredSearchFns.get()) {
+    ImplNode *parent = search.inode;
+    auto op = cast<ParamEvaluateOp>(parent->stack.back().ops.back());
+    parent->stack.back().ops.pop_back();
+
+    auto completeWithError = [&](Error err) {
+      parent->setToError(ErrorTree(op.getLoc(), std::move(err)));
+      ParamNode *p = parent->parent;
+      if (--p->numActive == 0) {
+        g.numWorkItems += p->state.markDone();
+        p->paramCh.copy().emplace();
+      }
+    };
+
+    ErrorOr<ssize_t> bestIdx = search.searchFn();
+    if (bestIdx.isError()) {
+      completeWithError(bestIdx.takeError());
+      continue;
+    }
+    if (*bestIdx == -1) {
+      completeWithError("user-provided evaluator returned failure (-1");
+      continue;
+    }
+    if (*bestIdx < 0 ||
+        *bestIdx >= static_cast<ssize_t>(search.candidates.size())) {
+      completeWithError(
+          "user-provided evaluator returned an out-of-bounds result: " +
+          Twine(*bestIdx));
+      continue;
+    }
+    FuncOp best = search.candidates[*bestIdx];
+    LLVM_DEBUG(logger.logOp("best specialization", best));
+    parent->getEvaluator().setParameterValue(
+        op.getParamDecl(),
+        SymbolConstantAttr::get(SymbolRefAttr::get(best.getSymNameAttr()),
+                                best.getSignature()));
+    // Handle the operation and reschedule the node.
+    op.erase();
+    ++g.numWorkItems;
+    scheduleImplNode(parent);
+  }
+
+  deferredSearchFns.get().clear();
+  return true;
+}
+
+//===----------------------------------------------------------------------===//
 // ElaboratorImpl::run
 //===----------------------------------------------------------------------===//
 
@@ -2063,10 +2109,25 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
     scheduleImplNode(root);
     primaryChs.push_back(genNode->paramCh.copy());
   }
-  // Wait for all primary generators to complete, and any straggling work.
-  LLCL::await(primaryChs);
-  signalWorklist();
-  LLCL::await(g.worklistCh);
+
+  // Process all current work.
+  while (true) {
+    signalWorklist();
+    LLCL::await(g.worklistCh);
+    assert(g.numWorkItems == 0);
+
+    // Check if all primary generators are done. If so, break.
+    if (llvm::all_of(primaryChs, [](auto &ch) { return ch.isReady(); }))
+      break;
+    g.numWorkItems = 1;
+
+    // Re-initialize the worklist chain.
+    g.worklistCh = AsyncValueRef<Chain>::allocate(runtime);
+
+    // Check for deferred search.
+    if (!processDeferredSearchFns())
+      llvm_unreachable("no work left and no deferred search functions?");
+  }
 
   // Check for any errors and emit them. Emit as many errors as possible.
   bool failed = false;
@@ -2167,7 +2228,7 @@ LogicalResult M::elaborateGenerators(mlir::SymbolTableAnalysis &symtab,
       symtab.getTopLevelSymbolTable(), paramCache, target,
       config.enableSearch ? evaluatorExecutorFn
                           : [](FuncOp, const SymbolTable &, TargetInfoAttr,
-                               ArrayRef<FuncOp>) { return 0; },
+                               ArrayRef<FuncOp>) { return [] { return 0; }; },
       runtime, config);
   return impl.run(theModule, primaryGenerators);
 }
@@ -2211,11 +2272,9 @@ public:
       build = BuildInfoAttr::getForCurrentBuild(ctx);
     // Default the evaluator to selecting the first specialization.
     if (!evaluatorExecutorFn) {
-      evaluatorExecutorFn = [](KGEN::FuncOp evaluator,
-                               const SymbolTable &symtab, TargetInfoAttr target,
-                               ArrayRef<KGEN::FuncOp> specializations) {
-        return 0;
-      };
+      evaluatorExecutorFn =
+          [](FuncOp evaluator, const SymbolTable &symtab, TargetInfoAttr target,
+             ArrayRef<FuncOp> specializations) { return [] { return 0; }; };
     }
     return success();
   }
