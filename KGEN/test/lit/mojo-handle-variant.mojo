@@ -1,0 +1,57 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# RUN: mojo %s | FileCheck %s
+from IO import print
+from Range import range
+from Len import len
+
+
+struct S:
+    var v: Int
+
+    fn __init__(inout self, x: Int):
+        print("init", x)
+        self.v = x
+
+    fn __del__(owned self):
+        print("destroy", self.v)
+
+    fn __copyinit__(inout self, existing: Self):
+        self.v = existing.v
+
+
+fn mightThrow() raises:
+    return
+
+
+fn foo(c: Bool):
+    let s = S(len("1234"))
+    try:
+        if c:
+            mightThrow()  # destruct 's' if returns
+            print(s.v)
+    except:
+        pass
+
+
+fn fail(str: StringRef) raises -> S:
+    if len(str) > 5:
+        raise Error(str)
+    return S(len(str))
+
+
+fn main():
+    # CHECK: init 4
+    # CHECK: destroy 4
+    foo(True)
+    # CHECK: exception thrown
+    # CHECK-NOT: init 7
+    # CHECK-NOT: destroy 7
+    try:
+        let x = fail("1234567")
+    except e:
+        print("exception thrown")

@@ -451,7 +451,7 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
     }
 
     // Otherwise we must have an if operation.
-    assert((isa<HLCF::IfOp, ParamIfOp>(op)) &&
+    assert((isa<HLCF::IfOp, ParamIfOp, LIT::HandleVariantOp>(op)) &&
            "Unknown operation with regions");
 
     // If this is a dynamic `if False:` or @parameter if on known condition,
@@ -525,8 +525,8 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
     return;
 
   // If we fell off the bottom, then we have a fall-through terminator.
-  assert((isa<HLCF::YieldOp, LIT::TryYieldOp, ParamYieldOp, LIT::EndFuncOp>(
-      block.back())));
+  assert((isa<HLCF::YieldOp, LIT::TryYieldOp, ParamYieldOp, LIT::EndFuncOp,
+              LIT::YieldOp>(block.back())));
   doesFallThrough = true;
 }
 

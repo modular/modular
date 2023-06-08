@@ -31,6 +31,7 @@
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Dominance.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Transforms/RegionUtils.h"
 #include "llvm/ADT/SmallVectorExtras.h"
@@ -2402,9 +2403,16 @@ LogicalResult DeclResolver::resolveSignature(VarLetDeclOp varOp, Lexer &lexer,
     }
 
     // Now move the var decl op to the end of the initializer IR.
-    assert(varOp->hasOneUse() && "Should have one use");
-    varOp->moveBefore(*varOp->user_begin());
-
+    // This requires us to identify the first use. At this point,
+    // there is either 1 or 2 uses of this varOp within the same
+    // block.
+    Operation *first_user = *varOp->getUsers().begin();
+    if (!varOp->hasOneUse()) {
+      Operation *second_user = *(++varOp->getUsers().begin());
+      if (shared.getDomInfo().dominates(second_user, first_user))
+        first_user = second_user;
+    }
+    varOp->moveBefore(first_user);
     assert(!isa<UnresolvedType>(varOp.getType().getElementAsType()) &&
            "RValue emission should have inferred var type");
 
