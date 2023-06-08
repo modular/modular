@@ -124,8 +124,8 @@ lldb::ExpressionResults JitUserExpression::DoExecute(
   functionStackBottom = functionStackPointer - HostInfo::GetPageSize();
   functionStackTop = functionStackPointer;
 
-  LLDB_LOGF(log,
-            "-- [UserExpression::Execute] Execution of expression begins --");
+  LLDB_LOGF(
+      log, "-- [JITUserExpression::Execute] Execution of expression begins --");
 
   if (exeCtx.GetProcessPtr())
     exeCtx.GetProcessPtr()->SetRunningUserExpression(true);
@@ -137,7 +137,7 @@ lldb::ExpressionResults JitUserExpression::DoExecute(
   if (exeCtx.GetProcessPtr())
     exeCtx.GetProcessPtr()->SetRunningUserExpression(false);
 
-  LLDB_LOGF(log, "-- [UserExpression::Execute] Execution of expression "
+  LLDB_LOGF(log, "-- [JITUserExpression::Execute] Execution of expression "
                  "completed --");
 
   if (executionResult == lldb::eExpressionInterrupted ||
@@ -210,7 +210,7 @@ bool JitUserExpression::FinalizeJITExecution(
     lldb::addr_t functionStackTop) {
   Log *log = GetLog(LLDBLog::Expressions);
 
-  LLDB_LOGF(log, "-- [UserExpression::FinalizeJITExecution] Dematerializing "
+  LLDB_LOGF(log, "-- [JITUserExpression::FinalizeJITExecution] Dematerializing "
                  "after execution --");
 
   if (!dematerializer) {
