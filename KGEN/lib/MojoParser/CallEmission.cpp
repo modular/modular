@@ -2221,7 +2221,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
 
   // Otherwise, materialize PValue and DLValue's as SSA values for emission.
   SmallVector<Value> callArgs;
-
+  SmallVector<Value, 1> byRefResults;
   for (auto [argValAndExpr, conventionX, calleeArgTypeAndIdx] :
        llvm::zip(argumentValues, calleeSig.getValueInputConventions(),
                  llvm::enumerate(calleeSig.getValueInputs()))) {
@@ -2241,6 +2241,8 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       return {};
     if (arg.getType() != calleeArgType)
       arg = builder->create<RebindOp>(loc, calleeArgType, arg);
+    if (conventionX == ValueInputConvention::ByRefResult)
+      byRefResults.push_back(arg);
     callArgs.push_back(arg);
   }
 
@@ -2275,34 +2277,29 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
   if (calleeSig.isThrows()) {
     // Put the insertion point back after we're done building the 'if'.
     OpBuilder::InsertionGuard builderGuard(*builder);
-
     auto callResultTy = cast<POP::VariantType>(callResult.getType());
-    auto normalType = callResultTy.getType(1);
-    auto ifOp = builder->create<HLCF::IfOp>(
-        loc, normalType,
-        builder->create<POP::VariantIsOp>(loc, callResult, normalType));
-
-    // If this a normal value, yield it.
-    builder->createBlock(&ifOp.getThenRegion());
+    Type successType = callResultTy.getType(1);
+    auto handleVariant = builder->create<LIT::HandleVariantOp>(
+        callOp->getLoc(), successType, callResult, ValueRange(byRefResults));
+    Block *successBlock =
+        builder->createBlock(&handleVariant.getSuccessRegion());
+    builder->setInsertionPointToStart(successBlock);
     Value value =
-        builder->create<POP::VariantGetOp>(loc, normalType, callResult);
-    builder->create<HLCF::YieldOp>(loc, value);
+        builder->create<POP::VariantGetOp>(loc, successType, callResult);
+    builder->create<LIT::YieldOp>(loc, value);
 
-    // Otherwise, this is an error, extract the error and throw it.
-    builder->createBlock(&ifOp.getElseRegion());
-    Value err = builder->create<POP::VariantGetOp>(loc, callResultTy.getType(0),
-                                                   callResult);
-
-    if (failed(emitRaise(err, loc))) {
+    Block *errorBlock = builder->createBlock(&handleVariant.getErrorRegion());
+    builder->setInsertionPointToStart(errorBlock);
+    Value error = builder->create<POP::VariantGetOp>(
+        loc, callResultTy.getType(0), callResult);
+    if (failed(emitRaise(error, loc))) {
       emitError(callExpr->getLoc(),
                 "cannot call function that may raise in a context that "
                 "cannot raise");
       return {};
     }
     builder->create<UnreachableOp>(loc);
-
-    // Ok, the call result is the result of the HLCF::If.
-    callResult = ifOp.getResult(0);
+    callResult = handleVariant.getResult(0);
   }
 
   // If there is a memory result slot, the value we filled in is our MRValue
