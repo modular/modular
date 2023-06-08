@@ -21,6 +21,7 @@
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
@@ -62,6 +63,24 @@ static FlatSymbolRefAttr flattenSymbolRefAttr(SymbolRefAttr ref) {
   for (FlatSymbolRefAttr sym : ref.getNestedReferences())
     nameOS << "::" << sym.getValue();
   return SymbolRefAttr::get(ref.getContext(), nameOS.str());
+}
+
+static void lowerHandleVariant(HandleVariantOp handleVariantOp) {
+  TypedValue<POP::VariantType> variantOperand = handleVariantOp.getVariant();
+  mlir::IRRewriter b{OpBuilder(handleVariantOp)};
+  Type successType = variantOperand.getType().getType(1);
+  auto variantIsOp = b.create<POP::VariantIsOp>(handleVariantOp.getLoc(),
+                                                variantOperand, successType);
+  auto ifOp = b.create<HLCF::IfOp>(handleVariantOp.getLoc(),
+                                   TypeRange(successType), variantIsOp);
+  ifOp.getThenRegion().takeBody(handleVariantOp.getSuccessRegion());
+  ifOp.getElseRegion().takeBody(handleVariantOp.getErrorRegion());
+  if (auto litYield = dyn_cast<LIT::YieldOp>(ifOp.getThenRegion().front().getTerminator())) {
+    mlir::IRRewriter b{OpBuilder(litYield)};
+    b.replaceOpWithNewOp<HLCF::YieldOp>(litYield, litYield->getOperands());
+  }
+  b.replaceAllUsesWith(handleVariantOp.getResult(0), ifOp->getResult(0));
+  handleVariantOp->erase();
 }
 
 static void lowerLITOps(LIT::FuncOp func,
@@ -108,6 +127,8 @@ static void lowerLITOps(LIT::FuncOp func,
         buildDebugInfoValue(allocOp->getNextNode(), allocOp.getLoc(), varName,
                             funcSpAttr.getFile(), allocOp, varType);
       }
+    } else if (auto handleVariant = dyn_cast<HandleVariantOp>(op)) {
+      lowerHandleVariant(handleVariant);
     }
   });
 }
