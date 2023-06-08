@@ -1110,6 +1110,56 @@ LogicalResult UnboundRegionOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// HandleVariantOp
+//===----------------------------------------------------------------------===//
+
+/// Return the range of values that should be mapped onto incoming values.
+ValueRange HandleVariantOp::getEntryArguments(std::optional<unsigned> target) {
+  // If there are no targets, then the target region is the region directly
+  // after this operation and the results of this op are the outgoing values to
+  // be bound to the incoming arguments of the subsequent region
+  if (!target)
+    return getResults();
+  assert(*target == 0 || *target == 1);
+  return {};
+}
+
+LogicalResult HandleVariantOp::verify() {
+  if (getVariant().getType().getNumTypes() != 2)
+    return emitOpError("expected the variant to have two types: a success type "
+                       "and an error type");
+  if (!getSuccessRegion().getArguments().empty())
+    return emitOpError("expected success region to have zero arguments");
+  if (!getErrorRegion().getArguments().empty())
+    return emitOpError("expected error region to have zero arguments");
+  return success();
+}
+
+/// The condition that determines which region is entered is dynamic; check both
+/// regions.
+void HandleVariantOp::getEntryTargets(
+    ArrayRef<Attribute> operands,
+    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
+  // TODO: Check for POP::VariantAttr presence to prune targets.
+  targets.emplace_back(0);
+  targets.emplace_back(1);
+}
+
+//===----------------------------------------------------------------------===//
+// YieldOp
+//===----------------------------------------------------------------------===//
+
+bool YieldOp::isParentNode(Operation *op) { return isa<HandleVariantOp>(op); }
+
+void YieldOp::getBranchTargets(
+    ArrayRef<Attribute> operands,
+    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
+  assert(operands.size() == getNumOperands());
+  // Branch to after the parent operation.
+  targets.emplace_back(std::nullopt, getOperands());
+}
+
+//===----------------------------------------------------------------------===//
 // TableGen generated logic.
 //===----------------------------------------------------------------------===//
 

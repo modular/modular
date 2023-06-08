@@ -1002,3 +1002,87 @@ def LIT_OwnershipMarkDestroyedOp : LITOp<"ownership.mark.destroyed"> {
   let results = (outs);
   let assemblyFormat = "$value `:` type($value) attr-dict";
 }
+
+//===----------------------------------------------------------------------===//
+// HandleVariantOp
+//===----------------------------------------------------------------------===//
+
+def LIT_HandleVariantOp : LITOp<"handle_variant",
+    [DeclareOpInterfaceMethods<ControlFlowNode>]> {
+  let summary = "Handle the call to a throwing function responsible for initializing a value.";
+  let description = [{
+    The `lit.handle_variant` op represents an if statement paired with a set of
+    conditionally initialized values. The success region of the `lit.handle_variant`
+    op is executed upon a successful initialization of all values. The error region
+    of the `lit.handle_variant` is executed otherwise.
+
+    Example:
+
+    ```mlir
+    %0 = kgen.call @throwing_callee(%y) :
+      (!pop.pointer<@MyStruct> byref_result) throws ->
+      !pop.variant<@Error, !lit.none>
+    %1 = lit.handle_variant %0, %y : (!pop.variant<@Error, !lit.none>,
+      !pop.pointer<@MyStruct>) -> !lit.none {
+      %7 = pop.variant.get %0 :
+        !pop.variant<@Error, !lit.none> as !lit.none
+      lit.yield %7 : !lit.none
+    } else {
+      %8 = pop.variant.get %0 : !pop.variant<@Error, !lit.none>
+        as !kgen.declref<@Error>
+      %9 = pop.variant.create %8 :
+        !kgen.declref<@Error> -> !pop.variant<@Error, !lit.none>
+  	  kgen.return %9 : !pop.variant<@Error, !lit.none>
+    }
+    ```
+  }];
+  let arguments = (ins
+    POP_VariantType:$variant,
+    Variadic<AnyType>:$maybeInitializedValues
+  );
+  let results = (outs Variadic<AnyType>:$results);
+  let regions = (region SizedRegion<1>:$successRegion,
+                 SizedRegion<1>:$errorRegion);
+
+  let assemblyFormat = [{
+    $variant (`,` $maybeInitializedValues^)? `:` functional-type(operands, results)
+    $successRegion `else` $errorRegion attr-dict
+  }];
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// YieldOp
+//===----------------------------------------------------------------------===//
+
+def LIT_YieldOp : LITOp<"yield", [Pure,
+  Terminator, HasParent<"LIT::HandleVariantOp">,
+  DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
+  let summary = "conditional yield operation";
+  let description = [{
+    The `lit.yield` operation is a control-flow terminator that transfers
+    control-flow to after the parent `handle_variant` operation. The operation
+    expects its operand types to match the types of the results of that
+    operation, if there are any.
+
+    Example:
+
+    ```mlir
+    %1 = lit.handle_variant %0, %x : (!pop.variant<@Error, !lit.none>,
+      !pop.pointer<@MyStruct>) -> !lit.none {
+      %7 = pop.variant.get %0 : !pop.variant<@Error, !lit.none> as !lit.none
+      lit.yield %7 : !lit.none
+    } else {
+      %8 = pop.variant.get %0 : !pop.variant<@Error, !lit.none>
+        as !kgen.declref<@Error>
+      lit.try.raise %8 : !kgen.declref<@Error>
+    }
+    ```
+    This operation can always be marked pure because the control-flow edge from
+    this operation leads only to after the parent operation.
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$operands);
+  let builders = [OpBuilder<(ins), [{ build($_builder, $_state, {}); }]>];
+  let assemblyFormat = "attr-dict ($operands `:` type($operands)^)?";
+}
