@@ -315,3 +315,89 @@ lit.func @ref_it() {
   kgen.param.declare F: <type, () -> !kgen.paramref<*(1,0)>>() -> () = <@OuterParams::@some_func>
   kgen.return
 }
+
+// -----
+
+lit.func @throwing_caller() throws -> !pop.variant<@Error, !lit.none> attributes {isParametric} {
+    %y = lit.varlet.decl "y", var = false, synth = false : <@MyStruct>
+    %0 = kgen.call @throwing_callee(%y) : (!pop.pointer<@MyStruct> byref_result) throws -> !pop.variant<@Error, !lit.none>
+    // CHECK: %1 = lit.handle_variant %0, %y : (!pop.variant<@Error, !lit.none>, !pop.pointer<@MyStruct>) -> !lit.none {
+    // CHECK: %3 = pop.variant.get %0 : !pop.variant<@Error, !lit.none> as !lit.none
+    // CHECK: lit.yield %3 : !lit.none
+    // CHECK: } else {
+    // CHECK: %3 = pop.variant.get %0 : !pop.variant<@Error, !lit.none> as !kgen.declref<@Error>
+    // CHECK: %4 = pop.variant.create %3 : !kgen.declref<@Error> -> !pop.variant<@Error, !lit.none>
+    // CHECK: kgen.return %4 : !pop.variant<@Error, !lit.none>
+    // CHECK: }
+    %1 = lit.handle_variant %0, %y : (!pop.variant<@Error, !lit.none>, !pop.pointer<@MyStruct>) -> !lit.none
+    {
+      %7 = pop.variant.get %0 : !pop.variant<@Error, !lit.none> as !lit.none
+      lit.yield %7 : !lit.none
+    } else {
+      %8 = pop.variant.get %0 : !pop.variant<@Error, !lit.none> as !kgen.declref<@Error>
+      %9 = pop.variant.create %8 : !kgen.declref<@Error> -> !pop.variant<@Error, !lit.none>
+      kgen.return %9 : !pop.variant<@Error, !lit.none>
+    }
+    %6 = kgen.param.constant: !lit.none = <#lit.none>
+    kgen.return %6 : !lit.none
+}
+
+lit.func @caller() -> !lit.none attributes {isParametric} {
+    lit.try {
+      %x = lit.varlet.decl "x", var = false, synth = false : <@MyStruct>
+      %0 = kgen.call @throwing_callee(%x) : (!pop.pointer<@MyStruct> byref_result) throws -> !pop.variant<@Error, !lit.none>
+      // CHECK: %2 = lit.handle_variant %1, %x : (!pop.variant<@Error, !lit.none>, !pop.pointer<@MyStruct>) -> !lit.none {
+      // CHECK: %3 = pop.variant.get %1 : !pop.variant<@Error, !lit.none> as !lit.none
+      // CHECK: lit.yield %3 : !lit.none
+      // CHECK: } else {
+      // CHECK: %3 = pop.variant.get %1 : !pop.variant<@Error, !lit.none> as !kgen.declref<@Error>
+      // CHECK: lit.raise %3 : <@Error>
+      // CHECK: kgen.unreachable
+      // CHECK: }
+      %1 = lit.handle_variant %0, %x : (!pop.variant<@Error, !lit.none>, !pop.pointer<@MyStruct>) -> !lit.none {
+        %7 = pop.variant.get %0 : !pop.variant<@Error, !lit.none> as !lit.none
+        lit.yield %7 : !lit.none
+      } else {
+        %8 = pop.variant.get %0 : !pop.variant<@Error, !lit.none> as !kgen.declref<@Error>
+        lit.raise %8 : !kgen.declref<@Error>
+        kgen.unreachable
+      }
+      lit.try.yield
+    } except (%arg0: !kgen.declref<@Error>) {
+      lit.try.yield
+    } else {
+      lit.try.yield
+    }
+    %6 = kgen.param.constant: !lit.none = <#lit.none>
+    kgen.return %6 : !lit.none
+}
+
+lit.func @caller_register() -> !lit.none attributes {isParametric} {
+    lit.try {
+      %x = lit.varlet.decl "x", var = false, synth = false : <@MyStruct>
+      %0 = kgen.call @throwing_callee(%x) : (!pop.pointer<@MyStruct> byref_result) throws -> !pop.variant<@Error, index>
+      // CHECK: %[[VAR0:.*]] = lit.handle_variant %1 : (!pop.variant<@Error, index>) -> index {
+      // CHECK: %[[VAR1:.*]] = pop.variant.get %1 : !pop.variant<@Error, index> as index
+      // CHECK: lit.yield %[[VAR1]] : index
+      // CHECK: } else {
+      // CHECK: %[[VAR2:.*]] = pop.variant.get %1 : !pop.variant<@Error, index> as !kgen.declref<@Error>
+      // CHECK: lit.raise %[[VAR2]] : <@Error>
+      // CHECK: kgen.unreachable
+      // CHECK: }
+      %1 = lit.handle_variant %0 : (!pop.variant<@Error, index>) -> index {
+        %7 = pop.variant.get %0 : !pop.variant<@Error, index> as index
+        lit.yield %7 : index
+      } else {
+        %8 = pop.variant.get %0 : !pop.variant<@Error, index> as !kgen.declref<@Error>
+        lit.raise %8 : !kgen.declref<@Error>
+        kgen.unreachable
+      }
+      lit.try.yield
+    } except (%arg0: !kgen.declref<@Error>) {
+      lit.try.yield
+    } else {
+      lit.try.yield
+    }
+    %6 = kgen.param.constant: !lit.none = <#lit.none>
+    kgen.return %6 : !lit.none
+}

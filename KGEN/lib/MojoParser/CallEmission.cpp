@@ -2017,8 +2017,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     if (convention == ValueInputConvention::ByRefResult) {
       if (!builder) {
         // TODO: Support memory-primary results in parameter expressions
-        emitError(callExpr->getLoc(), "TODO: memory-primary results are not "
-                                      "supported in parameter expressions.");
+        emitError(callExpr->getLoc(), "TODO: memory-primary results are not supported in parameter expressions.");
         return {};
       }
       assert(idx == 0 && calleeSig.hasMemoryOnlyResult());

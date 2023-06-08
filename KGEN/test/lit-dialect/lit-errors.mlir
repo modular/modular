@@ -259,3 +259,40 @@ lit.func @no_struct_decl(%a: index) {
   %0 = lit.struct.create(x=%a) : (index) -> !kgen.declref<@Bar<a: type = index>>
   lit.end_func
 }
+
+// -----
+
+lit.func @caller() -> !lit.none attributes {isParametric} {
+  lit.try {
+    %i = index.constant 0
+    // expected-error @below {{'lit.handle_variant' op operand #0 must be A parametric variant type., but got 'index'}}
+    %4 = lit.handle_variant %i, %i : (index, index) -> !lit.none {
+      kgen.unreachable
+    } else {
+      kgen.unreachable
+    }
+    lit.try.yield
+  } except (%arg0: !kgen.declref<@Error>) {
+    lit.try.yield
+  } else {
+    lit.try.yield
+  }
+  %6 = kgen.param.constant: !lit.none = <#lit.none>
+  kgen.return %6 : !lit.none
+}
+
+// -----
+
+lit.func @throwing_caller() throws -> !pop.variant<@Error, !lit.none> attributes {isParametric} {
+    %y = lit.varlet.decl "y", var = false, synth = false : <@MyStruct>
+    %0 = kgen.call @throwing_callee(%y) : (!pop.pointer<@MyStruct> byref_result) throws -> !pop.variant<@Error, index, !lit.none>
+    // expected-error @below {{'lit.handle_variant' op expected the variant to have two types: a success type and an error type}}
+    %1 = lit.handle_variant %0, %y : (!pop.variant<@Error, index, !lit.none>, !pop.pointer<@MyStruct>) -> !lit.none
+    {
+      kgen.unreachable
+    } else {
+      kgen.unreachable
+    }
+    %6 = kgen.param.constant: !lit.none = <#lit.none>
+    kgen.return %6 : !lit.none
+}
