@@ -1515,7 +1515,7 @@ void LowerPOPToLLVMPass::runOnOperation() {
 
   // If this function has debug info, update any unresolved pop types.
   if (DebugInfo::extractScope(*func)) {
-    POPToLLVMDebugInfoTypeConverter debugTypeConverter(typeConverter);
+    POPToLLVMDebugInfoTypeConverter debugTypeConverter(typeConverter, targetInfo);
     debugTypeConverter.applyRecursively(*func);
   }
 }
