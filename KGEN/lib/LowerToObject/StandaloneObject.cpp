@@ -315,9 +315,8 @@ private:
 /// imports. This allows us to pull out only the objects we need from the linked
 /// library when it's an archive, for example.
 static void
-collectLinksAndUsers(const SymbolTable &symtab,
+collectLinksAndUsers(ModuleOp theModule, const SymbolTable &symtab,
                      DenseMap<StringAttr, llvm::StringSet<>> &linksAndUsers) {
-  ModuleOp theModule = cast<ModuleOp>(symtab.getOp());
   theModule.walk([&](POP::ExternalCallOp call) {
     auto importedFromAttr = call.getImportedFromAttr();
     if (!importedFromAttr)
@@ -421,12 +420,15 @@ ErrorOr<BufferRef> ObjectCompiler::produceStandaloneArchive(
     const SymbolTable &symtab, const ExportMap &exportedSymbols, bool isJIT) {
   TimeTraceScope<> traceScope("produce-standalone-archive");
 
-  // First, pull out the link/external_call map. Do this while we still have the
-  // IR in a recognizable state to make things simple. This map contains a
-  // mapping from library import path to all the symbols imported from that
-  // library.
+  // Slice out a standalone module for the exported symbols.
+  OwningOpRef<ModuleOp> slicedModule =
+      produceStandaloneModule(symtab, exportedSymbols);
+
+  // Pull out the link/external_call map. Do this while we still have the IR in
+  // a recognizable state to make things simple. This map contains a mapping
+  // from library import path to all the symbols imported from that library.
   DenseMap<StringAttr, llvm::StringSet<>> linksAndUsers;
-  collectLinksAndUsers(symtab, linksAndUsers);
+  collectLinksAndUsers(*slicedModule, symtab, linksAndUsers);
 
   // Set up a SourceMgr that we can use to find link files.
   llvm::SourceMgr linkMgr;
@@ -520,8 +522,6 @@ ErrorOr<BufferRef> ObjectCompiler::produceStandaloneArchive(
   options.print(*produceStandaloneArchiveKey << "produceStandaloneArchive(");
   *produceStandaloneArchiveKey << ")";
 
-  OwningOpRef<ModuleOp> slicedModule =
-      produceStandaloneModule(symtab, exportedSymbols);
   auto output = cachedTransform(
       *slicedModule, transformCache.copy(),
       LLCL::AsyncValueRef<Chain>::createReady(runtime),

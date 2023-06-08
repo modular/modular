@@ -71,7 +71,7 @@ void KGEN::populateGenerateLibraryFilePasses(mlir::PassManager &pm,
 
 /// A default specialization evaluator that JITs and invokes the specialized
 /// functions with the provided evaluator.
-static ErrorOr<size_t>
+static ErrorOr<ElaboratorSearchFn>
 evaluateSpecializations(FuncOp evaluator, const SymbolTable &symtab,
                         LLCL::Runtime &runtime, TargetInfoAttr target,
                         const CompilationOptions &options,
@@ -142,30 +142,13 @@ evaluateSpecializations(FuncOp evaluator, const SymbolTable &symtab,
   // Lookup the evaluator function
   UNWRAP_ERROR(evaluatorFunc, engine->lookup(evaluator.getNameAttr()));
 
-  // Invoke the evaluator.
-  ssize_t bestIdx;
-  {
-    TimeTraceScope<> traceScope("execute-specializations");
-    bestIdx = evaluatorFunc.invoke<ssize_t, void **, ssize_t>(
-        candidatePtrs.data(), candidatePtrs.size());
-  }
-  if (bestIdx == -1)
-    return Error("user-provided evaluator returned failure (-1)");
-  if (bestIdx < 0)
-    return Error("user-provided evaluator returned an erroneous result: " +
-                 Twine(bestIdx));
-  if (static_cast<size_t>(bestIdx) >= candidatePtrs.size())
-    return Error("user-provided evaluator returned an out-of-bounds result: " +
-                 Twine(bestIdx));
-
-  LLVM_DEBUG({
-    llvm::dbgs() << "Fastest implementation:\n";
-    specializations[bestIdx]->print(llvm::dbgs());
-    llvm::dbgs() << "\n";
-  });
-
-  // Return the best kernel.
-  return bestIdx;
+  return
+      [engine = std::move(engine), evaluatorFunc = std::move(evaluatorFunc),
+       candidatePtrs = std::move(candidatePtrs)]() mutable -> ErrorOr<ssize_t> {
+        TimeTraceScope<> traceScope("execute-specializations");
+        return evaluatorFunc.invoke<ssize_t, void **, ssize_t>(
+            candidatePtrs.data(), candidatePtrs.size());
+      };
 }
 
 std::unique_ptr<Pass> KGEN::createElaborateGeneratorsWithDefaultJIT(
@@ -173,9 +156,8 @@ std::unique_ptr<Pass> KGEN::createElaborateGeneratorsWithDefaultJIT(
     const CompilationOptions &options) {
   return createElaborateGenerators(
       runtime, target, build, {options.enableSearch},
-      [=, &runtime](KGEN::FuncOp evaluator, const SymbolTable &symtab,
-                    TargetInfoAttr target,
-                    ArrayRef<KGEN::FuncOp> specializations) {
+      [=, &runtime](FuncOp evaluator, const SymbolTable &symtab,
+                    TargetInfoAttr target, ArrayRef<FuncOp> specializations) {
         return evaluateSpecializations(evaluator, symtab, runtime, target,
                                        options, specializations);
       });
@@ -188,9 +170,8 @@ void KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
                                          const CompilationOptions &options) {
   return populateElaborateModulePasses(
       pm, runtime, target, build,
-      [=, &runtime](KGEN::FuncOp evaluator, const SymbolTable &symtab,
-                    TargetInfoAttr target,
-                    ArrayRef<KGEN::FuncOp> specializations) {
+      [=, &runtime](FuncOp evaluator, const SymbolTable &symtab,
+                    TargetInfoAttr target, ArrayRef<FuncOp> specializations) {
         return evaluateSpecializations(evaluator, symtab, runtime, target,
                                        options, specializations);
       },

@@ -60,7 +60,7 @@ struct MojoExpressionParser::Impl {
 
   /// Callback that the elaborator can use to evaluate specializations and
   /// perform search using the LLDB JIT.
-  ErrorOr<size_t>
+  ErrorOr<ElaboratorSearchFn>
   evaluateSpecializations(KGEN::FuncOp evaluator, const SymbolTable &symtab,
                           TargetInfoAttr target,
                           ArrayRef<KGEN::FuncOp> specializations);
@@ -252,7 +252,7 @@ struct InferiorProcessAllocation {
   /// These objects are move-able, but only one can own the allocAddr to avoid
   /// double-free.
   InferiorProcessAllocation(InferiorProcessAllocation &&other)
-      : process(std::move(other.process)) {
+      : process(std::move(other.process)), allocAddr(LLDB_INVALID_ADDRESS) {
     std::swap(allocAddr, other.allocAddr);
   }
 
@@ -273,7 +273,7 @@ struct InferiorProcessAllocation {
 };
 } // namespace
 
-ErrorOr<size_t> MojoExpressionParser::Impl::evaluateSpecializations(
+ErrorOr<ElaboratorSearchFn> MojoExpressionParser::Impl::evaluateSpecializations(
     KGEN::FuncOp evaluator, const SymbolTable &symtab, TargetInfoAttr target,
     ArrayRef<KGEN::FuncOp> specializations) {
   // Update the pass manager to be the one we use during elaboration. At scope
@@ -383,34 +383,40 @@ ErrorOr<size_t> MojoExpressionParser::Impl::evaluateSpecializations(
     return M::Error("could not set up the expression");
   }
 
-  typeSystem->debugLog(
-      "-- [evaluateSpecializations] Execution of expression begins --");
+  return [this, exeCtx = std::move(exeCtx), callPlan = std::move(callPlan),
+          opts = std::move(opts),
+          allocForSpecializations = std::move(allocForSpecializations),
+          allocForBest = std::move(allocForBest),
+          error = std::move(error)]() mutable -> ErrorOr<ssize_t> {
+    typeSystem->debugLog(
+        "-- [evaluateSpecializations] Execution of expression begins --");
 
-  DiagnosticManager diagnosticManager;
-  lldb::ExpressionResults executionResult =
-      exeCtx.GetProcessRef().RunThreadPlan(exeCtx, callPlan, opts,
-                                           diagnosticManager);
+    DiagnosticManager diagnosticManager;
+    lldb::ExpressionResults executionResult =
+        exeCtx.GetProcessRef().RunThreadPlan(exeCtx, callPlan, opts,
+                                             diagnosticManager);
 
-  typeSystem->debugLog("-- [evaluateSpecializations] Execution of expression "
-                       "completed --");
+    typeSystem->debugLog("-- [evaluateSpecializations] Execution of expression "
+                         "completed --");
 
-  if (executionResult != lldb::eExpressionCompleted) {
-    allocForSpecializations.leak();
-    allocForBest.leak();
-    typeSystem->errorLog(
-        "[evaluateSpecializations] Couldn't execute function; result was {0}",
-        Process::ExecutionResultAsCString(executionResult));
-    return M::Error("couldn't execute the evaluator");
-  }
+    if (executionResult != lldb::eExpressionCompleted) {
+      allocForSpecializations.leak();
+      allocForBest.leak();
+      typeSystem->errorLog(
+          "[evaluateSpecializations] Couldn't execute function; result was {0}",
+          Process::ExecutionResultAsCString(executionResult));
+      return M::Error("couldn't execute the evaluator");
+    }
 
-  // Read the memory from the allocation for 'best'.
-  uint64_t bestVar = exeCtx.GetProcessRef().ReadUnsignedIntegerFromMemory(
-      allocForBest, sizeof(uint64_t), 0, error);
-  if (error.Fail())
-    return M::Error(llvm::toString(error.ToError()));
+    // Read the memory from the allocation for 'best'.
+    uint64_t bestVar = exeCtx.GetProcessRef().ReadUnsignedIntegerFromMemory(
+        allocForBest, sizeof(uint64_t), 0, error);
+    if (error.Fail())
+      return M::Error(llvm::toString(error.ToError()));
 
-  typeSystem->debugLog("[evaluateSpecializations] Got best = {0}", bestVar);
-  return bestVar;
+    typeSystem->debugLog("[evaluateSpecializations] Got best = {0}", bestVar);
+    return bestVar;
+  };
 };
 
 //===----------------------------------------------------------------------===//
