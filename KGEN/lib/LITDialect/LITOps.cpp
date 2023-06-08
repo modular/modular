@@ -1010,10 +1010,9 @@ LogicalResult AsyncCallOp::verify() {
 }
 
 void AsyncCallOp::concretizeCallee(mlir::IRRewriter &b,
-                                   SymbolConstantAttr callee,
-                                   TypeRange resultTypes) {
-  b.replaceOpWithNewOp<AsyncCallOp>(*this, callee, ArrayRef<ParamDeclAttr>(),
-                                    getOperands());
+                                   SymbolConstantAttr callee) {
+  setCalleeAttr(callee);
+  setParamDecls({});
 }
 
 //===----------------------------------------------------------------------===//

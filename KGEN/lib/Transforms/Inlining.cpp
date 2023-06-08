@@ -622,7 +622,7 @@ void InliningGraphBase<DerivedT, NodeT>::build(ModuleOp module,
           cast<FlatSymbolRefAttr>(
               cast<SymbolConstantAttr>(call.getCallee()).getSymbol())
               .getAttr());
-      assert(callee);
+      assert(callee && "invalid IR?");
       NodeT *calleeNode = &nodes.find(callee)->second;
       // Filter calls that do not satisfy the inlining level.
       if (!getDerived().shouldInline(calleeNode))

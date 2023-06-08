@@ -61,10 +61,9 @@ static void sliceDependencies(Operation *op, SymbolTable &sliceSymtab,
       return nullptr;
 
     Operation *symbol = symtab.lookup(name);
-    // If the symbol reference attribute doesn't reference a symbol, ignore it.
-    // Missing symbol references are caught by the verifier.
-    if (!symbol)
-      return nullptr;
+    // If the symbol reference attribute doesn't reference a symbol, somehow
+    // invalid IR made it to the ObjectCompiler.
+    assert(symbol && "invalid IR?");
 
     // Clone the symbol into the new symbol table.
     Operation *copy = symbol->clone();

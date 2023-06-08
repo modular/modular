@@ -294,10 +294,7 @@ void ParamApplyOp::renameDeclarations(ArrayRef<ParamDeclAttr> decls) {
 }
 
 void ParamApplyOp::concretizeCallee(mlir::IRRewriter &b,
-                                    SymbolConstantAttr callee,
-                                    TypeRange resultTypes) {
-  // `resultTypes` refer to the operation's results, of which there are none.
-  assert(resultTypes.empty());
+                                    SymbolConstantAttr callee) {
   setCalleeAttr(callee);
 }
 
@@ -702,10 +699,9 @@ mlir::CallInterfaceCallable CallOp::getCallableForCallee() {
   return getCalleeSymbol();
 }
 
-void CallOp::concretizeCallee(mlir::IRRewriter &b, SymbolConstantAttr callee,
-                              TypeRange resultTypes) {
-  b.replaceOpWithNewOp<CallOp>(*this, resultTypes, callee,
-                               ArrayRef<ParamDeclAttr>(), getOperands());
+void CallOp::concretizeCallee(mlir::IRRewriter &b, SymbolConstantAttr callee) {
+  setCalleeAttr(callee);
+  setParamDecls({});
 }
 
 void CallOp::setCalleeFromCallable(CallInterfaceCallable callee) {
@@ -730,9 +726,8 @@ LogicalResult CallParamOp::canonicalize(CallParamOp op,
 }
 
 void CallParamOp::concretizeCallee(mlir::IRRewriter &b,
-                                   SymbolConstantAttr callee,
-                                   TypeRange resultTypes) {
-  b.replaceOpWithNewOp<CallOp>(*this, resultTypes, callee,
+                                   SymbolConstantAttr callee) {
+  b.replaceOpWithNewOp<CallOp>(*this, getResultTypes(), callee,
                                ArrayRef<ParamDeclAttr>(), getOperands());
 }
 
@@ -980,11 +975,8 @@ static void printStageClosureOp(OpAsmPrinter &p, Operation *op,
 //===----------------------------------------------------------------------===//
 
 void CreateClosureOp::concretizeCallee(mlir::IRRewriter &b,
-                                       SymbolConstantAttr callee,
-                                       TypeRange resultTypes) {
-  assert(resultTypes.size() == 1);
-  b.replaceOpWithNewOp<CreateClosureOp>(*this, resultTypes.front(), callee,
-                                        getOperands());
+                                       SymbolConstantAttr callee) {
+  setCalleeAttr(callee);
 }
 
 void CreateClosureOp::build(OpBuilder &b, OperationState &state,

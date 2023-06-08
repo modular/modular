@@ -13,6 +13,7 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "Support/Compiler/ErrorTree.h"
 #include "Support/Interpreter/InterpreterInterface.h"
+#include "Support/Threading/Shared.h"
 #include "mlir/Support/IndentedOstream.h"
 
 namespace M::KGEN {
@@ -142,7 +143,13 @@ struct ImplNode {
   /// with respect to the depth of the callgraph, because each node retains a
   /// copy of the map, and each caller node takes the union of its callees'
   /// maps.
-  DenseMap<std::pair<ArrayAttr, GeneratorOp>, ImplNode *> bindings;
+  /// FIXME: Recursion creates cycles in the callgraph, which when broken can
+  /// lead to a race on `bindings` when bindings propagation on a node circles
+  /// back at the same time another node is reading the bindings. Making it
+  /// shared prevents crashes, but means bindings propagation across cycles is
+  /// nondeterministic. The only way to correctly propagate bindings in the
+  /// presence of cycles is through fixed-point iteration...
+  Shared<DenseMap<std::pair<ArrayAttr, GeneratorOp>, ImplNode *>> bindings;
   /// When you have result parameters, we need to store them to access them from
   /// outer scopes.
   ArrayAttr resultParams;
@@ -168,6 +175,22 @@ struct ImplNode {
 
   /// The current stack of worklists and scopes.
   std::vector<WorkItem> stack;
+
+  /// The elaborator will asynchronously dispatch elaboration of generator
+  /// instantiations with no result parameters in separate tasks, deferring
+  /// handling of the calls until they are complete. This atomic tracks the
+  /// number of in-flight so-called "dependencies". Upon hitting zero, the
+  /// elaborator will complete processing of this node by handling the calls in
+  /// `dependencies`.
+  std::atomic<size_t> numDependencies = 1;
+  /// This is the list of deferred generator instantiations via calls that need
+  /// to be handled when the implementation node is complete and all its
+  /// dependencies are ready.
+  std::vector<std::pair<KGENCallOpInterface, ParamNode *>> dependencies;
+  /// This flag is set when the implementation node is done processing. A
+  /// separate flag is needed because an error state can cause the node to
+  /// complete early. This flag prevents double-completion.
+  std::atomic<bool> done = false;
 };
 
 //===----------------------------------------------------------------------===//
@@ -208,6 +231,11 @@ public:
   /// Reset the state of the node to `FRESH`.
   void refresh() {
     value.fetch_xor(static_cast<uint64_t>(1) << IN_PROGRESS_BIT);
+  }
+
+  /// Get the current state.
+  State getValue() {
+    return static_cast<State>(value.load() >> IN_PROGRESS_BIT);
   }
 
 private:
@@ -280,14 +308,6 @@ struct ParamNode {
   /// The mutex for accessing the implementation list.
   llvm::sys::SmartRWMutex<true> implsMutex;
 
-  /// This set contains all parameter nodes that have children which could call
-  /// into this node while the node has not been fully processed. This set is
-  /// used to perform cycle detection, because recursive calls need to be
-  /// specially handled.
-  /// FIXME: Like the bindings map, this set grows with the depth of the
-  /// callgraph, and copying the set into children nodes is superlinear.
-  DenseSet<ParamNode *> incoming;
-
   /// The number of in-progress implementations.
   std::atomic<size_t> numActive = 0;
 
@@ -296,6 +316,11 @@ struct ParamNode {
 
   /// The current state of the node. This flag is used to break recursion.
   ParamNodeState state;
+
+  /// This flag is used by cycle detection, which runs DFS and checks for
+  /// already-visited nodes. In order to know when to invalidate the visited
+  /// flag, we set a generation number.
+  unsigned cycleGeneration = 0;
 };
 
 } // namespace M::KGEN

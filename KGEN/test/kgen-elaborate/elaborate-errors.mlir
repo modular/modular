@@ -131,25 +131,28 @@ kgen.generator @brokenVLenAssert() {
 // -----
 
 // expected-note @below {{no viable expansions found}}
-kgen.generator @paramRecurse<in -> out>() {
-  kgen.param.if <eq(in, 0) -> v> {
-    kgen.param.result_bind<0>
-    kgen.param.yield
-  } else {
-    // expected-note @below {{could not resolve callee's necessary result parameters, infinite recursive loop?}}
-    kgen.call @paramRecurse<in -> val>() : () -> ()
-    kgen.param.result_bind<sub(in, 1)>
-    kgen.param.yield
-  }
-  kgen.param.result_bind<v>
+kgen.generator @paramRecurse<() -> out>() {
+  // expected-note @below {{recursive call to function with result parameters}}
+  kgen.call @paramRecurse<[] -> val>() : () -> ()
+  kgen.param.result_bind<0>
   kgen.return
 }
 
+kgen.export @caller
 // expected-error @below {{no viable expansions found}}
 kgen.generator @caller() {
-  kgen.param.constant = <v>
-  // expected-note @below {{call expansion failed}}
-  kgen.call @paramRecurse<3 -> v>() : () -> ()
+  // expected-note @below {{call expansion failed - no concrete specializations}}
+  kgen.call @paramRecurse<[] -> v>() : () -> ()
+  kgen.return
+}
+
+// -----
+
+// expected-error @below {{no viable expansions found}}
+kgen.generator @bad_recursion() {
+  kgen.param.fork N = <[1, 2]>
+  // expected-note @below {{recursive call to function with more than 1 implementation}}
+  kgen.call @bad_recursion() : () -> ()
   kgen.return
 }
 
@@ -258,6 +261,26 @@ kgen.export @entry
 kgen.generator @entry() {
   // expected-note @below {{call expansion failed - no concrete specialization}}
   kgen.param.evaluate f: () -> () = [@no_valid_specializations] with
+    [(!pop.pointer<() -> ()>, index) -> index: @evaluator]
+  kgen.return
+}
+
+// -----
+
+kgen.generator @evaluator(%fns: !pop.pointer<() -> ()>, %size: index) -> index {
+  %idx1 = index.constant 1
+  kgen.return %idx1 : index
+}
+
+kgen.generator @one() {
+  kgen.return
+}
+
+kgen.export @entry
+// expected-error @below {{no viable expansions found}}
+kgen.generator @entry() {
+  // expected-note @below {{user-provided evaluator returned an out-of-bounds result: 1}}
+  kgen.param.evaluate f: () -> () = [@one] with
     [(!pop.pointer<() -> ()>, index) -> index: @evaluator]
   kgen.return
 }

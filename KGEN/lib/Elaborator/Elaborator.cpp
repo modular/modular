@@ -179,7 +179,7 @@ void ImplNode::print(mlir::raw_indented_ostream &os, bool printBindings) {
     os << "ResultParams: " << resultParams << "\n";
   {
     auto _ = os.scope("Bindings: {\n", "}\n");
-    for (const auto &[_, bind] : bindings) {
+    for (const auto &[_, bind] : bindings.get()) {
       if (bind != this)
         bind->print(os, false);
       else
@@ -235,53 +235,6 @@ struct ExpansionGraph {
   /// cannot be reliably performed while the compiler is doing work on other
   /// threads.
   LLCL::AsyncValueRef<LLCL::Chain> worklistCh;
-
-  /// Fork the expansion of a concrete node.
-  ImplNode *fork(ImplNode *cur, IRMapping &map, Shared<SymbolTable &> &symtab,
-                 StringRef forkParam, Attribute value) {
-    // Clone the function and generate a unique name for it.
-    auto clone = cast<FuncOp>(cur->func->clone(map));
-    std::string name = cur->baseName;
-    llvm::raw_string_ostream os(name);
-    os << ',';
-    if (!forkParam.empty())
-      os << forkParam << '=';
-    printParameterValue(value, os);
-    clone.setSymName(name);
-    // Insert the new function at a location relative to the current one. This
-    // ensures all forks are inserted in a deterministic order, regardless of
-    // which occur first.
-    symtab.modify([clone, it = cur->func->getIterator()](SymbolTable &symtab) {
-      symtab.insert(clone, std::next(it));
-    });
-
-    // Fork the node and its bindings.
-    auto n = std::make_unique<ImplNode>(
-        clone, cur->parent, cur->paramGraph.copy(map), std::move(name));
-    n->bindings = cur->bindings;
-
-    // Copy over the current work stack.
-    for (const ImplNode::WorkItem &item : cur->stack) {
-      std::vector<Operation *> clonedOps;
-      for (Operation *op : item.ops)
-        clonedOps.push_back(map.lookup(op));
-      n->stack.push_back(ImplNode::WorkItem{std::move(clonedOps),
-                                            item.evaluator, item.onComplete});
-    }
-
-    // Track the new node as a new child and concrete node.
-    ImplNode *result = n.get();
-    ParamNode *p = cur->parent;
-    {
-      // Multiple forks can happen at the same time.
-      llvm::sys::SmartScopedWriter<true> guard(p->implsMutex);
-      p->impls.push_back(std::move(n));
-    }
-    concreteNodes.modify([clone, result](DenseMap<FuncOp, ImplNode *> &map) {
-      map.try_emplace(clone, result);
-    });
-    return result;
-  }
 
   /// Get or create the node for a generator instantiation.
   ParamNode *getOrCreate(LLCL::Runtime &runtime, ArrayAttr values,
@@ -721,6 +674,9 @@ public:
                     ArrayRef<GeneratorOp> primaryGenerators);
 
 private:
+  /// Fork the expansion of a concrete node.
+  ImplNode *fork(ImplNode *cur, IRMapping &map, StringRef forkParam,
+                 Attribute value);
   /// Implement the evaluator hook. This function ensures that all active work
   /// items on the workqueue are completed or suspended before running the
   /// evaluator, to ensure that, at least with respect to this compiler
@@ -757,11 +713,13 @@ private:
   /// implementations of a reference. If this function returns `advance` but
   /// `inputParamKey` is not populated, then the callee is a direct function
   /// reference.
-  ElaborationState
-  instantiateGeneratorReference(ImplNode *parent, Operation *user,
-                                SymbolConstantAttr calleeSymbol,
-                                ArrayAttr &inputParamKey, GeneratorOp &gen,
-                                std::vector<ImplNode *> &concrete);
+  ElaborationState instantiateGeneratorReference(
+      ImplNode *parent, Operation *user, SymbolConstantAttr calleeSymbol,
+      ArrayAttr &inputParamKey, GeneratorOp &gen,
+      std::vector<ImplNode *> &concrete,
+      function_ref<bool(ParamNode *)> shouldWait = [](ParamNode *) {
+        return true;
+      });
 
   /// Process a generator user. In general, this is anything that can call into
   /// a generator and might therefore need to be multi-versioned.
@@ -774,8 +732,21 @@ private:
   /// result parameters from the inner scope to the outer scope.
   ElaborationState completeCallProcessing(KGENCallOpInterface user,
                                           ArrayRef<ParamDeclAttr> decls,
-                                          ImplNode *thisNode, ImplNode *node,
-                                          Logger &logger);
+                                          ImplNode *thisNode, ImplNode *node);
+
+  /// Complete generator user processing with a list of valid concrete
+  /// implementations with consistent bindings. Multi-version the currente node
+  /// if required.
+  ElaborationState completeGeneratorUserProcessing(
+      KGENCallOpInterface user, ArrayRef<ParamDeclAttr> decls, ImplNode *parent,
+      ArrayAttr inputParamKey, GeneratorOp gen, ArrayRef<ImplNode *> concrete);
+
+  /// Given a user of a completed parameter node, collect concrete
+  /// implementations whose bindings are consistent with the current node.
+  LogicalResult
+  collectConcreteImplementations(Operation *user, ImplNode *parent,
+                                 ParamNode *genNode,
+                                 std::vector<ImplNode *> &concrete);
 
   /// Process a param.declare.region op by creating a generator with the correct
   /// captures. We don't specialize the generator until the call-site because we
@@ -793,7 +764,7 @@ private:
   /// initial counters.
   void initialScheduleImplNode(ImplNode *inode) {
     ++inode->parent->numActive;
-    g.numWorkItems.fetch_add(1);
+    ++g.numWorkItems;
     scheduleImplNode(inode);
   }
   /// Signal the worklist to tell it a job has completed or has been taken off
@@ -809,6 +780,11 @@ private:
   /// elaborated. If the function returns `failure`, that means elaboration of
   /// the node hit a suspension point and must halt before completion.
   LogicalResult processImplNode(ImplNode *inode);
+  /// Complete processing of an implementation node. If all dependencies have
+  /// been completed, this will process them, performing any required
+  /// multi-versioning, and finalize and verify the function, unless an error
+  /// has occurred.
+  void completeImplNodeProcessing(ImplNode *inode);
   /// Process a worklist of ops. Returns error if processing the scope resulted
   /// in an error, returns `skipFrame` if the processing of the current scope
   /// scope should be pre-empted with a new scope, returns `skipNode` if
@@ -827,11 +803,18 @@ private:
   /// suspended. It returns `error` if the generator constraints were not
   /// satisfied.
   ElaborationState specializeGenerator(ImplNode *inode, ParamNode *genNode,
-                                       ParamNode *from);
+                                       ParamNode *from, bool addWaiter);
 
   /// Process all deferred search functions serially, re-queuing nodes as it
   /// completes. Returns true if there were deferred search functions.
   bool processDeferredSearchFns();
+
+  /// Attempt to diagnose concrete recursion and break recursion where possible.
+  /// Return true if recursion was broken at least once. The "generation" is
+  /// used to know whether a visited flag is valid. It must be at least 1,
+  /// because the initial generation is always 0.
+  bool diagnoseAndBreakRecursion(unsigned generation,
+                                 ArrayRef<ParamNode *> roots);
 
   /// A logger used to emit information during the elaboration process.
   Logger logger;
@@ -880,7 +863,74 @@ private:
 } // namespace
 
 //===----------------------------------------------------------------------===//
-// finalizeAndVerifyFunction
+// ElaboratorImpl::fork
+//===----------------------------------------------------------------------===//
+
+ImplNode *ElaboratorImpl::fork(ImplNode *cur, IRMapping &map,
+                               StringRef forkParam, Attribute value) {
+  // Clone the function and generate a unique name for it.
+  auto clone = cast<FuncOp>(cur->func->clone(map));
+  std::string name = cur->baseName;
+  llvm::raw_string_ostream os(name);
+  os << ',';
+  if (!forkParam.empty())
+    os << forkParam << '=';
+  printParameterValue(value, os);
+  clone.setSymName(name);
+  // Insert the new function at a location relative to the current one. This
+  // ensures all forks are inserted in a deterministic order, regardless of
+  // which occur first.
+  symtab.modify([clone, it = cur->func->getIterator()](SymbolTable &symtab) {
+    symtab.insert(clone, std::next(it));
+  });
+
+  // Fork the node and its bindings.
+  auto n = std::make_unique<ImplNode>(
+      clone, cur->parent, cur->paramGraph.copy(map), std::move(name));
+  n->bindings.get() = cur->bindings.read([](auto &map) { return map; });
+
+  // Copy over the current work stack.
+  for (const ImplNode::WorkItem &item : cur->stack) {
+    std::vector<Operation *> clonedOps;
+    for (Operation *op : item.ops)
+      clonedOps.push_back(map.lookup(op));
+    n->stack.push_back(ImplNode::WorkItem{std::move(clonedOps), item.evaluator,
+                                          item.onComplete});
+  }
+
+  // Track the new node as a new child and concrete node.
+  ImplNode *result = n.get();
+  ParamNode *p = cur->parent;
+  {
+    // Multiple forks can happen at the same time.
+    llvm::sys::SmartScopedWriter<true> guard(p->implsMutex);
+    p->impls.push_back(std::move(n));
+  }
+  g.concreteNodes.modify([clone, result](DenseMap<FuncOp, ImplNode *> &map) {
+    map.try_emplace(clone, result);
+  });
+
+  // Clone the current dependencies too. Set the number of dependencies to the
+  // current number of waiting callee nodes, plus 1 to gate.
+  result->numDependencies = 1;
+  for (auto [call, genNode] : cur->dependencies) {
+    result->dependencies.emplace_back(
+        cast<KGENCallOpInterface>(map.lookup(&*call)), genNode);
+    // Add a new dependent on the callee node. If it is already complete, it
+    // will immediately decrement `numDependencies`.
+    if (genNode->state.addWaiter()) {
+      ++result->numDependencies;
+      genNode->paramCh.andThenAsync(
+          [this, inode = result] { completeImplNodeProcessing(inode); });
+    }
+  }
+  assert(result->numDependencies >= 1 && "fork could not have completed");
+
+  return result;
+}
+
+//===----------------------------------------------------------------------===//
+// ElaboratorImpl::finalizeAndVerifyFunction
 //===----------------------------------------------------------------------===//
 
 void ElaboratorImpl::finalizeAndVerifyFunction(ImplNode *node) {
@@ -941,7 +991,8 @@ ElaboratorImpl::getConcreteFunction(ImplNode *parent, Location loc,
   // Lookup the node if it already exists.
   ParamNode *node = g.getOrCreate(runtime, vals, gen, /*depth=*/0);
   // If the node has already been elaborated, just use that result.
-  ElaborationState result = specializeGenerator(parent, node, /*from=*/nullptr);
+  ElaborationState result =
+      specializeGenerator(parent, node, /*from=*/nullptr, /*addWaiter=*/true);
   if (result.isError())
     return node->constraintError->copy();
   if (result.shouldSkipNode())
@@ -969,7 +1020,8 @@ std::optional<ErrorTreeOrSuccess> ElaboratorImpl::getAllConcreteFunctions(
 
   // Lookup the node if it already exists.
   ParamNode *node = g.getOrCreate(runtime, vals, gen, /*depth=*/0);
-  ElaborationState result = specializeGenerator(parent, node, /*from=*/nullptr);
+  ElaborationState result =
+      specializeGenerator(parent, node, /*from=*/nullptr, /*addWaiter=*/true);
   if (result.isError())
     return node->constraintError->copy();
   if (result.shouldSkipNode())
@@ -1036,6 +1088,7 @@ ElaborationState ElaboratorImpl::processParamForkOp(ImplNode *parent,
   // N possibilities to explore.
   SmallVector<ErrorTree> errors;
   DenseSet<Attribute> seenValues;
+  seenValues.reserve(forkValuesAttr.getValues().size());
   for (Attribute value : forkValuesAttr.getValues().drop_front()) {
     // If we've already seen this concrete value before,
     // ignore the duplicate.
@@ -1066,8 +1119,8 @@ void ElaboratorImpl::spawnParamForkClone(ParamForkOp forkOp, Attribute value,
   IRMapping map;
 
   // Hook this new clone up correctly.
-  ImplNode *newFuncNode = g.fork(forkParentNode, map, symtab,
-                                 forkOp.getParamDecl().getName(), value);
+  ImplNode *newFuncNode =
+      fork(forkParentNode, map, forkOp.getParamDecl().getName(), value);
 
   // Change the future of this func by resolving the forkOp in the new func
   // to the specified value.
@@ -1088,6 +1141,8 @@ void ElaboratorImpl::spawnParamForkClone(ParamForkOp forkOp, Attribute value,
 
   // And finally, push the forked node onto its parent's worklist, so that it
   // will get processed after this function returns.
+  assert(forkParentNode->parent->numActive != 0 &&
+         "forking a completed parameter node?");
   initialScheduleImplNode(newFuncNode);
 }
 
@@ -1098,30 +1153,20 @@ void ElaboratorImpl::spawnParamForkClone(ParamForkOp forkOp, Attribute value,
 ElaborationState ElaboratorImpl::instantiateGeneratorReference(
     ImplNode *parent, Operation *user, SymbolConstantAttr calleeSymbol,
     ArrayAttr &inputParamKey, GeneratorOp &gen,
-    std::vector<ImplNode *> &concrete) {
+    std::vector<ImplNode *> &concrete,
+    function_ref<bool(ParamNode *)> shouldWait) {
   // Lookup the callee.
   auto calleeOp = symtab.read(
       [name = cast<FlatSymbolRefAttr>(calleeSymbol.getSymbol()).getAttr()](
           const SymbolTable &symtab) { return symtab.lookup(name); });
-  if (!calleeOp) {
-    parent->setToError(
-        ErrorTree(user->getLoc(), "could not find callee '" +
-                                      mlir::debugString(calleeSymbol) +
-                                      "' (compiler bug, please report!)"));
-    return ElaborationState::error();
-  }
+  assert(calleeOp && "could not find referenced generator, invalid IR?");
 
   if (auto func = dyn_cast<FuncOp>(calleeOp)) {
     ImplNode *node =
         g.concreteNodes.read([func](const DenseMap<FuncOp, ImplNode *> &map) {
           return map.lookup(func);
         });
-    if (!node) {
-      parent->setToError(ErrorTree(user->getLoc(),
-                                   "concrete callee doesn't have a node "
-                                   "(compiler bug, please report!)"));
-      return ElaborationState::error();
-    }
+    assert(node && "concrete callee is missing a node?");
     concrete.push_back(node);
     return ElaborationState::advance();
   }
@@ -1150,11 +1195,12 @@ ElaborationState ElaboratorImpl::instantiateGeneratorReference(
 
   // If we already have a binding for this, we're done.
   gen = cast<GeneratorOp>(calleeOp);
-  auto found = parent->bindings.find({inputParamKey, gen});
-  if (found != parent->bindings.end()) {
-    LLVM_DEBUG(
-        found->getSecond()->print(logger.scope("Result: Existing Binding")));
-    concrete.push_back(found->getSecond());
+  if (ImplNode *existing =
+          parent->bindings.read([inputParamKey, gen](auto &map) {
+            return map.lookup({inputParamKey, gen});
+          })) {
+    LLVM_DEBUG(existing->print(logger.scope("Result: Existing Binding")));
+    concrete.push_back(existing);
     return ElaborationState::advance();
   }
 
@@ -1170,8 +1216,8 @@ ElaborationState ElaboratorImpl::instantiateGeneratorReference(
   // Find the tree node that corresponds to the thing we're calling.
   ParamNode *calleeNode =
       g.getOrCreate(runtime, inputParamKey, gen, parent->parent->depth + 1);
-  ElaborationState result =
-      specializeGenerator(parent, calleeNode, parent->parent);
+  ElaborationState result = specializeGenerator(
+      parent, calleeNode, parent->parent, shouldWait(calleeNode));
   if (result.isError()) {
     assert(calleeNode->constraintError && "expected a constraint failure");
     parent->setToError(calleeNode->constraintError->copy());
@@ -1180,32 +1226,47 @@ ElaborationState ElaboratorImpl::instantiateGeneratorReference(
   if (result.shouldSkipNode())
     return ElaborationState::skipNode();
 
-  // Complete processing for all the leaves of this subtree.
+  return collectConcreteImplementations(user, parent, calleeNode, concrete);
+}
+
+//===----------------------------------------------------------------------===//
+// ElaboratorImpl::collectConcreteImplementations
+//===----------------------------------------------------------------------===//
+
+LogicalResult ElaboratorImpl::collectConcreteImplementations(
+    Operation *user, ImplNode *parent, ParamNode *calleeNode,
+    std::vector<ImplNode *> &concrete) {
+  // Get all valid implementations of the callee node.
   calleeNode->getAllConcreteNodes(concrete);
 
   // If the concrete thing has bindings, they must be consistent with the
   // parent's bindings for us to consider it. Remove nodes from the vector that
   // have bindings that are inconsistent with the parent.
-  auto newEnd = llvm::remove_if(concrete, [&](ImplNode *node) {
-    bool hasConsistentBindings = llvm::all_of(node->bindings, [&](auto pair) {
-      // The binding is only inconsistent if it (a) does exist and (b) is
-      // different.
-      auto found = parent->bindings.find(pair.first);
-      if (found != parent->bindings.end())
-        return found->second == pair.second;
-      // Otherwise, we're good.
-      return true;
+  //
+  // NOTE: A race here is very unlikely. Use coarse-grained locking.
+  parent->bindings.read([&](auto &parentBindings) {
+    auto newEnd = llvm::remove_if(concrete, [&](ImplNode *node) {
+      return node->bindings.read([&](auto &nodeBindings) {
+        bool hasConsistentBindings = llvm::all_of(nodeBindings, [&](auto pair) {
+          // The binding is only inconsistent if it (a) does exist and (b)
+          // is different.
+          if (ImplNode *found = parentBindings.lookup(pair.first))
+            return found == pair.second;
+          // Otherwise, we're good.
+          return true;
+        });
+        // If it has inconsistent bindings
+        if (!hasConsistentBindings && !nodeBindings.empty() &&
+            !parentBindings.empty()) {
+          LLVM_DEBUG(logger << "Removing node for inconsistent bindings: ";
+                     node->print(logger));
+          return true;
+        }
+        return false;
+      });
     });
-    // If it has inconsistent bindings
-    if (!hasConsistentBindings && !node->bindings.empty() &&
-        !parent->bindings.empty()) {
-      LLVM_DEBUG(logger << "Removing node for inconsistent bindings: ";
-                 node->print(logger));
-      return true;
-    }
-    return false;
+    concrete.erase(newEnd, concrete.end());
   });
-  concrete.erase(newEnd, concrete.end());
 
   // If there are no implementations, return the callee's errors.
   if (concrete.empty()) {
@@ -1217,7 +1278,7 @@ ElaborationState ElaboratorImpl::instantiateGeneratorReference(
         err.addCause(impl.error->copy());
     out.addCause(std::move(err));
     parent->setToError(std::move(out));
-    return ElaborationState::error();
+    return failure();
   }
 
   LLVM_DEBUG({
@@ -1225,7 +1286,7 @@ ElaborationState ElaboratorImpl::instantiateGeneratorReference(
     for (auto &impl : concrete)
       impl->print(logger);
   });
-  return ElaborationState::advance();
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1242,18 +1303,57 @@ ElaboratorImpl::processGeneratorUser(KGENCallOpInterface user,
   std::vector<ImplNode *> concrete;
   ArrayAttr inputParamKey;
   GeneratorOp gen;
+  bool wasSkipped = false;
+  ParamNode *calleeNode;
   ElaborationState result = instantiateGeneratorReference(
-      parent, user, calleeSymbol, inputParamKey, gen, concrete);
-  if (result.isError() || result.shouldSkipNode())
+      parent, user, calleeSymbol, inputParamKey, gen, concrete,
+      [&](ParamNode *genNode) {
+        calleeNode = genNode;
+        return wasSkipped = !genNode->gen.getResultParams().empty() ||
+                            isa<ParamApplyOp>(user);
+      });
+  if (result.isError() || (result.shouldSkipNode() && wasSkipped))
     return result;
+
+  for (auto [i, resultType] : llvm::enumerate(user->getResultTypes())) {
+    Type type;
+    HANDLE_EVALUATOR_CONC(type, parent, user.getLoc(), resultType);
+    user->getResult(i).setType(type);
+  }
+
+  // We don't have to suspend elaboration of this node if the instantiation of a
+  // generator with no result parameters is not yet ready. Process it later.
+  if (result.shouldSkipNode()) {
+    // Don't skip when a constraint suspended.
+    if (calleeNode->state.getValue() == ParamNodeState::FRESH)
+      return ElaborationState::skipNode();
+
+    assert(parent->numDependencies >= 1 && "impossible for impl to be done");
+    parent->dependencies.emplace_back(user, calleeNode);
+    if (calleeNode->state.addWaiter()) {
+      ++parent->numDependencies;
+      calleeNode->paramCh.andThenAsync(
+          [this, parent] { completeImplNodeProcessing(parent); });
+    }
+    return ElaborationState::advance();
+  }
 
   // If this resolved to a direct function call, there are no parameters.
   ArrayRef<ParamDeclAttr> decls = user.getParamDecls();
-  if (!inputParamKey) {
-    return completeCallProcessing(user, decls, concrete.front(), parent,
-                                  logger);
-  }
+  if (!inputParamKey)
+    return completeCallProcessing(user, decls, concrete.front(), parent);
 
+  return completeGeneratorUserProcessing(user, decls, parent, inputParamKey,
+                                         gen, concrete);
+}
+
+//===----------------------------------------------------------------------===//
+// ElaboratorImpl::completeGeneratorUserProcessing
+//===----------------------------------------------------------------------===//
+
+ElaborationState ElaboratorImpl::completeGeneratorUserProcessing(
+    KGENCallOpInterface user, ArrayRef<ParamDeclAttr> decls, ImplNode *parent,
+    ArrayAttr inputParamKey, GeneratorOp gen, ArrayRef<ImplNode *> concrete) {
   // There are more concrete things, we have to multi-version the parent!
   for (auto *c : llvm::drop_begin(concrete)) {
     // Clone the parent.
@@ -1264,19 +1364,21 @@ ElaboratorImpl::processGeneratorUser(KGENCallOpInterface user,
     LLVM_DEBUG(c->print(logger << "Concrete Implementation "));
 
     // This is a sibling to the parent, and it clones the parent's evaluator.
-    ImplNode *newNode = g.fork(parent, map, symtab, "", c->func.getNameAttr());
+    ImplNode *newNode = fork(parent, map, "", c->func.getNameAttr());
     // Bind this concrete impl to this callee for this node.
-    newNode->bindings[{inputParamKey, gen}] = c;
+    newNode->bindings.modify([=](auto &map) { map[{inputParamKey, gen}] = c; });
 
     // The call operation in the cloned function wil be handled by
     // `completeCallProcessing` below, so take it off the clone's worklist
     // beforehand, since new ops may be added.
-    assert(map.lookup(&*user) == newNode->stack.back().ops.back());
-    newNode->stack.back().ops.pop_back();
+    if (!newNode->stack.empty()) {
+      assert(map.lookup(&*user) == newNode->stack.back().ops.back());
+      newNode->stack.back().ops.pop_back();
+    }
 
     ElaborationState result = completeCallProcessing(
         cast<KGENCallOpInterface>(map.lookup(user.getOperation())), decls, c,
-        newNode, logger);
+        newNode);
     if (result.isError()) {
       // If call processing completion failed, then don't enqueue this node.
       assert(newNode->error && "expected an error on new node");
@@ -1289,19 +1391,23 @@ ElaboratorImpl::processGeneratorUser(KGENCallOpInterface user,
 
     // Process the rest of the worklist in this new scope. If the scope
     // processing failed, do nothing.
+    assert(newNode->parent->numActive != 0 &&
+           "forking a completed parameter node?");
     initialScheduleImplNode(newNode);
   }
 
   // Bind this concrete impl to this callee for this node.
-  parent->bindings[{inputParamKey, gen}] = concrete.front();
+  parent->bindings.modify([&](auto &map) {
+    map[{inputParamKey, gen}] = concrete.front();
+  });
 
   // Call completeGeneratorUserProcessing on the first concrete thing. This will
   // flow nested bindings upward correctly.
-  return completeCallProcessing(user, decls, concrete.front(), parent, logger);
+  return completeCallProcessing(user, decls, concrete.front(), parent);
 }
 
 //===----------------------------------------------------------------------===//
-// completeCallProcessing
+// ElaboratorImpl::completeCallProcessing
 //===----------------------------------------------------------------------===//
 
 /// Complete processing of a `kgen.param.apply` operation by invoking the
@@ -1329,17 +1435,22 @@ static ElaborationState processParamApplyOp(ImplNode *inode, ParamApplyOp op,
   return ElaborationState::advance();
 }
 
-ElaborationState ElaboratorImpl::completeCallProcessing(
-    KGENCallOpInterface user, ArrayRef<ParamDeclAttr> decls, ImplNode *thisNode,
-    ImplNode *node, Logger &logger) {
-  IREvaluator &evaluator = node->getEvaluator();
-
+ElaborationState
+ElaboratorImpl::completeCallProcessing(KGENCallOpInterface user,
+                                       ArrayRef<ParamDeclAttr> decls,
+                                       ImplNode *thisNode, ImplNode *node) {
   // Add the callee's bindings to the parent of the call. This ensures that we
   // don't re-bind something we've already bound.
-  for (const auto &[k, v] : thisNode->bindings) {
-    auto &oldV = node->bindings[k];
-    assert(!oldV || oldV == v);
-    oldV = v;
+  if (thisNode != node) {
+    thisNode->bindings.read([node](auto &thisNodeBindings) {
+      node->bindings.modify([&](auto &nodeBindings) {
+        for (const auto &[k, v] : thisNodeBindings) {
+          auto &oldV = nodeBindings[k];
+          assert(!oldV || oldV == v);
+          oldV = v;
+        }
+      });
+    });
   }
 
   if (thisNode->error) {
@@ -1354,24 +1465,13 @@ ElaborationState ElaboratorImpl::completeCallProcessing(
   if (auto apply = dyn_cast<ParamApplyOp>(*user))
     return processParamApplyOp(node, apply, newCalleeFunc);
 
-  // Resolve any bound result types.
-  SmallVector<Type> resultTypes;
-  for (auto result : user->getResultTypes()) {
-    Type type;
-    HANDLE_EVALUATOR_CONC(type, node, user.getLoc(), result);
-    resultTypes.push_back(type);
-  }
-
-  // Save the user's location before we delete the op.
-  Location userLoc = user.getLoc();
-
   // Now that we resolved the call to a new thing, build a new call to replace
   // the old one.
   mlir::IRRewriter b{OpBuilder(user)};
   auto newCallee = SymbolConstantAttr::get(
       FlatSymbolRefAttr::get(newCalleeFunc.getNameAttr()),
       newCalleeFunc.getSignature());
-  user.concretizeCallee(b, newCallee, resultTypes);
+  user.concretizeCallee(b, newCallee);
 
   if (decls.empty())
     return ElaborationState::advance();
@@ -1383,18 +1483,13 @@ ElaborationState ElaboratorImpl::completeCallProcessing(
   // the same combination of generator + input parameters without resolving the
   // result parameters yet.
   ArrayAttr resultParams = thisNode->resultParams;
-  if (!resultParams && !decls.empty()) {
-    node->setToError(ErrorTree(userLoc,
-                               "could not resolve callee's necessary result "
-                               "parameters, infinite recursive loop?"));
-    return failure();
-  }
+  assert(resultParams && "expected result parameters to be set");
 
   // Bind the result parameters to the output parameter decls.
   assert(decls.size() == resultParams.size());
   for (auto [decl, bindValue] : llvm::zip(decls, resultParams)) {
     LLVM_DEBUG(logger << "Binding " << decl << " to " << bindValue << "\n");
-    evaluator.setOrOverwriteParameterValue(decl, bindValue);
+    node->getEvaluator().setOrOverwriteParameterValue(decl, bindValue);
   }
   return ElaborationState::advance();
 }
@@ -1678,19 +1773,78 @@ ElaborationState ElaboratorImpl::processParamIfOp(ImplNode *parent,
 // ElaboratorImpl::processScope
 //===----------------------------------------------------------------------===//
 
+void ElaboratorImpl::completeImplNodeProcessing(ImplNode *inode) {
+  // This function counts as a task, so decrement the task counter on exit.
+  auto endTask = llvm::make_scope_exit([this] { signalWorklist(); });
+
+  // If the node resulted in an error or all outstanding dependencies are
+  // done, complete node processing.
+  // assert(inode->numDependencies >= 1 && "impl already done?");
+  if (!inode->error && (--inode->numDependencies != 0))
+    return;
+
+  // If the node has an error state, it could end up completing early. Avoid
+  // double-completion by using a flag.
+  if (inode->done.exchange(true))
+    return;
+
+  if (!inode->error) {
+    // Complete processing of outstanding dependencies. Process in reverse with
+    // `pop_back` so that forks will end up in the same state.
+    while (!inode->dependencies.empty()) {
+      auto [call, genNode] = inode->dependencies.back();
+      inode->dependencies.pop_back();
+
+      // Check for an existing binding.
+      if (ImplNode *existing = inode->bindings.read([p = genNode](auto &map) {
+            return map.lookup({p->inputParams, p->gen});
+          })) {
+        LLVM_DEBUG(existing->print(logger.scope("Result: Existing Binding")));
+        ElaborationState result =
+            completeCallProcessing(call, {}, existing, inode);
+        if (result.isError())
+          break;
+        assert(!result.shouldSkipNode() && !result.shouldSkipFrame() &&
+               "expected all dependencies to be ready");
+        continue;
+      }
+      // Otherwise, get all bound nodes.
+      std::vector<ImplNode *> concrete;
+      if (failed(
+              collectConcreteImplementations(call, inode, genNode, concrete)))
+        break;
+      // Process the multiple concrete nodes. If this causing multi-versioning,
+      // the forks will correctly get rescheduled on the worklists with no
+      // stacks, and then immediately fallthrough to this function.
+      ElaborationState result = completeGeneratorUserProcessing(
+          call, {}, inode, genNode->inputParams, genNode->gen, concrete);
+      if (result.isError())
+        break;
+      assert(!result.shouldSkipNode() && !result.shouldSkipFrame() &&
+             "expected all dependencies to be ready");
+    }
+    if (!inode->error)
+      finalizeAndVerifyFunction(inode);
+  }
+
+  // If this is the last implementation node for its parent parameter node to
+  // complete, then the parameter node is done.
+  ParamNode *p = inode->parent;
+  assert(p->numActive > 0 && "node already done?");
+  if (--p->numActive == 0) {
+    g.numWorkItems += p->state.markDone();
+    p->paramCh.copy().emplace();
+  }
+}
+
 void ElaboratorImpl::scheduleImplNode(ImplNode *inode) {
   // Increment the number of scheduled work items.
   runtime.getWorkQueue()->addTask([inode, this] {
     // Process the node. If processing the node got pre-empted, then return. It
     // will get scheduled again later.
     if (succeeded(processImplNode(inode))) {
-      // If this is the last implementation node for its parent parameter node
-      // to complete, then the parameter node is done.
-      ParamNode *p = inode->parent;
-      if (--p->numActive == 0) {
-        g.numWorkItems += p->state.markDone();
-        p->paramCh.copy().emplace();
-      }
+      ++g.numWorkItems;
+      completeImplNodeProcessing(inode);
     }
     // Signal the worklist that the work is complete.
     signalWorklist();
@@ -1698,17 +1852,19 @@ void ElaboratorImpl::scheduleImplNode(ImplNode *inode) {
 }
 
 LogicalResult ElaboratorImpl::processImplNode(ImplNode *inode) {
-  LLVM_DEBUG(inode->print(logger << "Processing implementation node: ",
-                          /*printBindings=*/false));
-
   // Check for a root node.
   if (!inode->func) {
     // Begin specialization of the parameter node. Immediately suspend
     // execution by returning `failure`.
-    (void)specializeGenerator(inode, inode->parent, /*from=*/nullptr);
+    (void)specializeGenerator(inode, inode->parent, /*from=*/nullptr,
+                              /*addWaiter=*/true);
     return failure();
   }
+  if (inode->stack.empty())
+    return success();
 
+  LLVM_DEBUG(inode->print(logger << "Processing implementation node: ",
+                          /*printBindings=*/false));
   TimeTraceScope traceScope("processImplNode",
                             [inode] { return inode->func.getSymName().str(); });
 
@@ -1741,7 +1897,6 @@ LogicalResult ElaboratorImpl::processImplNode(ImplNode *inode) {
     inode->stack.pop_back();
   }
   assert(!inode->error && "unexpected error");
-  finalizeAndVerifyFunction(inode);
   return success();
 }
 
@@ -1822,7 +1977,8 @@ static StringRef tryGettingShortName(StringRef s) {
 
 ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
                                                      ParamNode *genNode,
-                                                     ParamNode *from) {
+                                                     ParamNode *from,
+                                                     bool addWaiter) {
   switch (genNode->state.markInProgress()) {
   case ParamNodeState::DONE:
     // If this generator instantiation is already known to always be invalid,
@@ -1876,22 +2032,19 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
     // In multi-threaded execution, call resolution is also deferred as late as
     // possible. This maximizes parallelism on the expansion graph (without
     // intra-node parallelism) while correctly handling recursion.
-    if (from && from->incoming.contains(genNode))
+    if (addWaiter) {
+      if (genNode->state.addWaiter()) {
+        genNode->paramCh.andThenSync(
+            [inode, this] { scheduleImplNode(inode); });
+        return ElaborationState::skipNode();
+      }
+      // Raced with node completion.
       return ElaborationState::advance();
-    if (genNode->state.addWaiter()) {
-      genNode->paramCh.andThenSync([inode, this] { scheduleImplNode(inode); });
-      return ElaborationState::skipNode();
     }
-    // Raced with node completion.
-    return ElaborationState::advance();
+    return ElaborationState::skipNode();
   default:
     break;
   }
-
-  // Flatten the callgraph up to this point.
-  genNode->incoming.insert(genNode);
-  if (from)
-    genNode->incoming.insert(from->incoming.begin(), from->incoming.end());
 
   GeneratorOp generator = genNode->gen;
 
@@ -2011,9 +2164,12 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
                           [](ImplNode *) { return success(); }};
   newFuncNode->stack.push_back(std::move(item));
 
-  [[maybe_unused]] bool added = genNode->state.addWaiter();
-  assert(added);
-  genNode->paramCh.andThenSync([inode, this] { scheduleImplNode(inode); });
+  if (addWaiter) {
+    [[maybe_unused]] bool added = genNode->state.addWaiter();
+    assert(added);
+    genNode->paramCh.andThenSync([inode, this] { scheduleImplNode(inode); });
+  }
+  assert(genNode->numActive == 0 && "expected first implementation");
   initialScheduleImplNode(newFuncNode);
   return ElaborationState::skipNode();
 }
@@ -2026,6 +2182,8 @@ bool ElaboratorImpl::processDeferredSearchFns() {
   if (deferredSearchFns.get().empty())
     return false;
 
+  std::vector<ImplNode *> reschedule;
+  reschedule.reserve(deferredSearchFns.get().size());
   for (DeferredSearch &search : deferredSearchFns.get()) {
     ImplNode *parent = search.inode;
     auto op = cast<ParamEvaluateOp>(parent->stack.back().ops.back());
@@ -2033,11 +2191,8 @@ bool ElaboratorImpl::processDeferredSearchFns() {
 
     auto completeWithError = [&](Error err) {
       parent->setToError(ErrorTree(op.getLoc(), std::move(err)));
-      ParamNode *p = parent->parent;
-      if (--p->numActive == 0) {
-        g.numWorkItems += p->state.markDone();
-        p->paramCh.copy().emplace();
-      }
+      ++g.numWorkItems;
+      completeImplNodeProcessing(parent);
     };
 
     ErrorOr<ssize_t> bestIdx = search.searchFn();
@@ -2046,7 +2201,7 @@ bool ElaboratorImpl::processDeferredSearchFns() {
       continue;
     }
     if (*bestIdx == -1) {
-      completeWithError("user-provided evaluator returned failure (-1");
+      completeWithError("user-provided evaluator returned failure (-1)");
       continue;
     }
     if (*bestIdx < 0 ||
@@ -2062,14 +2217,141 @@ bool ElaboratorImpl::processDeferredSearchFns() {
         op.getParamDecl(),
         SymbolConstantAttr::get(SymbolRefAttr::get(best.getSymNameAttr()),
                                 best.getSignature()));
-    // Handle the operation and reschedule the node.
+    // Handle the operation.
+    reschedule.push_back(parent);
     op.erase();
+  }
+  deferredSearchFns.get().clear();
+
+  // Now reschedule the nodes.
+  for (ImplNode *inode : reschedule) {
     ++g.numWorkItems;
-    scheduleImplNode(parent);
+    scheduleImplNode(inode);
+  }
+  return true;
+}
+
+//===----------------------------------------------------------------------===//
+// ElaboratorImpl::diagnoseAndBreakRecursion
+//===----------------------------------------------------------------------===//
+
+bool ElaboratorImpl::diagnoseAndBreakRecursion(unsigned generation,
+                                               ArrayRef<ParamNode *> roots) {
+  // Recursive calls cannot have result parameters, because that makes the
+  // parameter use-def graph cyclic. Therefore, all the edges we care about can
+  // be found in the `dependencies` list.
+  std::vector<ImplNode *> worklist;
+
+  // Visit the node, recursing on the active dependencies on all its impl nodes.
+  // Returns true if this node makes a cycle.
+  bool foundRecursion = false;
+  auto visitParamNode = [&](ParamNode *pnode) {
+    // Ignore completed nodes.
+    if (pnode->state.getValue() == ParamNodeState::DONE)
+      return false;
+
+    if (pnode->cycleGeneration == generation) {
+      // Visited already. This is a cycle.
+      foundRecursion = true;
+      return true;
+    }
+    // Not visited. Mark it as such.
+    pnode->cycleGeneration = generation;
+
+    for (ImplNode &inode : llvm::make_pointee_range(pnode->impls))
+      if (inode.numDependencies != 0)
+        worklist.push_back(&inode);
+    return false;
+  };
+
+  llvm::for_each(roots, visitParamNode);
+  if (worklist.empty())
+    return false;
+
+  // Okay, process the worklist.
+  std::vector<ImplNode *> reschedule;
+  std::vector<ImplNode *> errComplete;
+  while (!worklist.empty()) {
+    ImplNode *inode = worklist.back();
+    worklist.pop_back();
+    llvm::BitVector completed(inode->dependencies.size());
+    bool anyBroken = false;
+    for (auto [idx, dep] : llvm::enumerate(inode->dependencies)) {
+      auto [call, genNode] = dep;
+      if (!visitParamNode(genNode))
+        continue;
+      // This `genNode` is cyclic. Handle the cycle. First, enforce that
+      // recursive functions cannot have multiple implementations.
+      if (genNode->impls.size() > 1) {
+        for (ImplNode &impl : llvm::make_pointee_range(genNode->impls)) {
+          if (impl.error)
+            continue;
+          inode->setToError(ErrorTree(
+              call.getLoc(),
+              "recursive call to function with more than 1 implementation"));
+          errComplete.push_back(inode);
+          continue;
+        }
+      } else {
+        assert(genNode->impls.size() == 1 && "expected at least 1 child");
+        // Break the cycle.
+        (void)completeCallProcessing(call, {}, genNode->impls.front().get(),
+                                     inode);
+        completed.set(idx);
+        anyBroken = true;
+      }
+    }
+    if (anyBroken) {
+      // Complete the broken dependencies and reschedule the node.
+      std::vector<std::pair<KGENCallOpInterface, ParamNode *>> newDeps;
+      for (auto [idx, dep] : llvm::enumerate(inode->dependencies)) {
+        if (!completed.test(idx))
+          newDeps.push_back(dep);
+      }
+      inode->dependencies = std::move(newDeps);
+      inode->numDependencies -= (completed.count() - 1);
+      reschedule.push_back(inode);
+      continue;
+    }
+
+    // Check if the node got stuck on a recursive call to something with result
+    // parameters, since that's illegal but won't show up in `dependencies`.
+    if (inode->stack.empty())
+      continue;
+    if (auto call =
+            dyn_cast<KGENCallOpInterface>(inode->stack.back().ops.back());
+        call && !call.getCalleeType().getResultParamTypes().empty()) {
+      // We should be able to lookup to concrete callee in the evaluator cache.
+      ParameterEvaluator &eval = inode->getEvaluator();
+      auto callee =
+          cast<SymbolConstantAttr>(eval.getReboundAttribute(call.getCallee()));
+      SmallVector<Attribute> inputParams;
+      llvm::append_range(inputParams, callee.getParamValues());
+      ParamNode *calleeNode = g.getOrCreate(
+          runtime, ArrayAttr::get(call.getContext(), inputParams),
+          symtab.get().lookup<GeneratorOp>(
+              cast<FlatSymbolRefAttr>(callee.getSymbol()).getAttr()),
+          /*depth=*/0);
+      if (visitParamNode(calleeNode)) {
+        inode->setToError(
+            ErrorTree(call.getLoc(),
+                      "recursive call to function with result parameters"));
+        errComplete.push_back(inode);
+      }
+    }
   }
 
-  deferredSearchFns.get().clear();
-  return true;
+  // Now reschedule the nodes outside the loop to avoid races.
+  for (ImplNode *inode : reschedule) {
+    ++g.numWorkItems;
+    scheduleImplNode(inode);
+  }
+  for (ImplNode *inode : errComplete) {
+    ++g.numWorkItems;
+    inode->stack.clear();
+    completeImplNodeProcessing(inode);
+  }
+  return foundRecursion;
 }
 
 //===----------------------------------------------------------------------===//
@@ -2111,6 +2393,7 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
   }
 
   // Process all current work.
+  unsigned cycleGeneration = 0;
   while (true) {
     signalWorklist();
     LLCL::await(g.worklistCh);
@@ -2125,8 +2408,13 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
     g.worklistCh = AsyncValueRef<Chain>::allocate(runtime);
 
     // Check for deferred search.
-    if (!processDeferredSearchFns())
-      llvm_unreachable("no work left and no deferred search functions?");
+    if (processDeferredSearchFns())
+      continue;
+    // The only other possibility is a cycle due to recursion.
+    if (diagnoseAndBreakRecursion(++cycleGeneration, primaryNodes))
+      continue;
+    // Anything else indicates a bug/race condition.
+    llvm_unreachable("no work left, no deferred search, and no recursion?");
   }
 
   // Check for any errors and emit them. Emit as many errors as possible.
@@ -2140,8 +2428,6 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
   }
   if (failed)
     return failure();
-
-  assert(g.numWorkItems == 0 && "work item undercount");
 
   // Cleanup pass - we want to remove generators and interfaces by replacing
   // them with their concrete implementations. Only handle the primary
