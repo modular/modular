@@ -255,6 +255,31 @@ fn badError(a: ParameterizedStruct[Int]):
   # expected-error @+1 {{cannot implicitly convert 'ParameterizedStruct[Int]' value to 'ParameterizedStruct[Bool]' in 'let' initializer}}
   let b: ParameterizedStruct[Bool] = a
 
+fn overloadedFunc(x: Int): pass
+fn overloadedFunc(x: Int, y: Int): pass
+
+# expected-note @below {{function declared here}}
+fn takeFuncArgument(f: Int): pass
+
+fn callWithOverloadedArg():
+  # expected-error @below {{invalid call to 'takeFuncArgument': argument #0 cannot be converted from unknown overload to}}
+  # expected-note @below {{try resolving the overloaded function first}}
+  takeFuncArgument(overloadedFunc)
+
+# expected-note @below {{function declared here}}
+fn takeGenericResultFn[T: AnyType](f: fn() -> T): pass
+
+@value
+struct MemType:
+    pass
+
+fn returnMemType() -> MemType:
+    return MemType()
+
+fn passMemTypeResultGeneric():
+    # expected-error @below {{invalid call to 'takeGenericResultFn': argument #0 cannot be converted from 'fn() -> MemType'}}
+    # expected-note @below {{memory-primary type bound to generic result type: payload returns 'MemType' by reference}}
+    takeGenericResultFn[MemType](returnMemType)
 
 # expected-error @+1 {{unexpected token in expression}}
 fn invalidStarExpression(*x: *): pass
