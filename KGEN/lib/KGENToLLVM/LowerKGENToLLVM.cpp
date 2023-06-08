@@ -596,6 +596,6 @@ void LowerKGENToLLVMPass::runOnOperation() {
   }
 
   // Convert the debug info within the IR.
-  POPToLLVMDebugInfoTypeConverter debugTypeConverter(typeConverter);
+  POPToLLVMDebugInfoTypeConverter debugTypeConverter(typeConverter, targetInfo);
   debugTypeConverter.applyRecursively(theModule);
 }

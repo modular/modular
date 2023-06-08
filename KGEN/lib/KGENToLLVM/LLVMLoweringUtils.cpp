@@ -807,7 +807,45 @@ auto buildIntFpDebugType(MLIRContext *ctx, StringRef name, unsigned width,
 }
 
 static DebugInfo::DIType
-buildDebugTypeFromDType(MLIRContext *ctx, uint8_t dtype, unsigned indexWidth) {
+buildDebugTypeFromIntOrIndexOrFloatType(MLIRContext *ctx, Type type,
+                                        POPToLLVMTypeConverter &converter,
+                                        TargetInfoAttr target) {
+  if (type.isIndex())
+    return buildIntFpDebugType<DebugInfo::DIBasicSIntType>(
+        ctx, "index", converter.getIndexTypeBitwidth(),
+        converter.getIndexTypeBitwidth());
+  if (!type.isIntOrIndexOrFloat())
+    return DebugInfo::DIUnresolvedMLIRType::get(ctx, type);
+
+  uint64_t sizeInBits = type.getIntOrFloatBitWidth();
+  int64_t alignInBits = *DataLayoutInterface::getTypeABIAlign(target, type);
+
+  if (type.isUnsignedInteger())
+    return buildIntFpDebugType<DebugInfo::DIBasicUIntType>(
+        ctx, "ui" + std::to_string(sizeInBits), sizeInBits, alignInBits);
+
+  if (type.isSignedInteger())
+    return buildIntFpDebugType<DebugInfo::DIBasicSIntType>(
+        ctx, "si" + std::to_string(sizeInBits), sizeInBits, alignInBits);
+
+  if (type.isSignlessInteger())
+    return buildIntFpDebugType<DebugInfo::DIBasicUIntType>(
+        ctx, "i" + std::to_string(sizeInBits), sizeInBits, alignInBits);
+
+  if (type.isBF16())
+    return buildIntFpDebugType<DebugInfo::DIBasicFloatType>(ctx, "bf16", 16,
+                                                            16);
+
+  if (isa<FloatType>(type))
+    return buildIntFpDebugType<DebugInfo::DIBasicFloatType>(
+        ctx, "f" + std::to_string(sizeInBits), sizeInBits, alignInBits);
+
+  llvm_unreachable(
+      "Can't build DebugType from types that are not IntOrIndexOrFloat.");
+}
+
+static DebugInfo::DIType
+buildDebugTypeFromDType(MLIRContext *ctx, uint8_t dtype, int64_t indexWidth) {
   // Process various builtin dtypes.
   switch (dtype) {
   case DType::kBool:
@@ -879,28 +917,152 @@ buildDebugTypeFromDType(MLIRContext *ctx, uint8_t dtype, unsigned indexWidth) {
   }
 }
 
+static DebugInfo::DIType
+buildDebugTypeFromPOPType(MLIRContext *ctx, Type type,
+                          POPToLLVMTypeConverter &converter,
+                          TargetInfoAttr target);
+
+static DebugInfo::DIType
+buildDebugTypeFromFunctionType(MLIRContext *ctx, FunctionType type,
+                               POPToLLVMTypeConverter &converter,
+                               TargetInfoAttr target) {
+  SmallVector<DebugInfo::DIType> argTypes;
+  for (Type arg : type.getInputs()) {
+    DebugInfo::DIType argDIType =
+        buildDebugTypeFromPOPType(ctx, arg, converter, target);
+    argTypes.push_back(argDIType);
+  }
+
+  SmallVector<DebugInfo::DIType> resultTypes;
+  for (Type result : type.getResults()) {
+    DebugInfo::DIType resultDIType =
+        buildDebugTypeFromPOPType(ctx, result, converter, target);
+    argTypes.push_back(resultDIType);
+  }
+  return DebugInfo::DISubroutineType::get(ctx, argTypes, resultTypes);
+}
+
+static DebugInfo::DIType
+buildDebugStructTypeFromTypeAttrs(MLIRContext *ctx, ArrayRef<TypedAttr> attrs,
+                                  POPToLLVMTypeConverter &converter,
+                                  StringAttr name, TargetInfoAttr target) {
+  SmallVector<DebugInfo::DIMemberType> elementTypes;
+  for (auto [idx, attr] : llvm::enumerate(attrs)) {
+    DebugInfo::DIType mDIType = buildDebugTypeFromPOPType(
+        ctx, cast<TypeConstantAttr>(attr).getValue(), converter, target);
+    DebugInfo::DIMemberType mMemberDIType = DebugInfo::DIMemberType::get(
+        StringAttr::get(ctx, "m" + std::to_string(idx)), mDIType);
+
+    elementTypes.push_back(mMemberDIType);
+  }
+  return DebugInfo::DIStructType::get(name, elementTypes);
+}
+
+static DebugInfo::DIType
+buildDebugTypeFromPOPType(MLIRContext *ctx, Type type,
+                          POPToLLVMTypeConverter &converter,
+                          TargetInfoAttr target) {
+  if (auto arrayType = dyn_cast<POP::ArrayType>(type)) {
+    int64_t size = *arrayType.getResolvedSize();
+    DebugInfo::DIType elementType = buildDebugTypeFromPOPType(
+        ctx, arrayType.getElementAsType(), converter, target);
+    return DebugInfo::DIArrayType::get(elementType, size);
+  }
+
+  if (auto closureType = dyn_cast<POP::ClosureType>(type)) {
+    return buildDebugTypeFromFunctionType(ctx, closureType.getFunc(), converter,
+                                          target);
+  }
+
+  if (auto coroutineType = dyn_cast<POP::CoroutineType>(type)) {
+    return buildDebugTypeFromFunctionType(
+        ctx, coroutineType.getSignature().getValues(), converter, target);
+  }
+
+  if (auto packType = dyn_cast<POP::PackType>(type)) {
+    return buildDebugStructTypeFromTypeAttrs(
+        ctx, packType.getVariadicAttr().getValues(), converter,
+        StringAttr::get(ctx, "pack"), target);
+  }
+
+  if (auto pointerType = dyn_cast<POP::PointerType>(type)) {
+    DebugInfo::DIType elementDIType = buildDebugTypeFromPOPType(
+        ctx, pointerType.getElementAsType(), converter, target);
+    return DebugInfo::DIPointerType::get(elementDIType,
+                                         converter.getPointerBitwidth(),
+                                         converter.getPointerBitwidth());
+  }
+
+  if (auto simdType = dyn_cast<POP::SIMDType>(type)) {
+    int64_t size = *simdType.getResolvedSize();
+    DebugInfo::DIType baseType =
+        buildDebugTypeFromDType(ctx, (*simdType.getResolvedDType()).getValue(),
+                                converter.getIndexTypeBitwidth());
+
+    if (size == 1)
+      return baseType;
+    return DebugInfo::DIVectorType::get(baseType, size);
+  }
+
+  if (auto structType = dyn_cast<POP::StructType>(type)) {
+    return buildDebugStructTypeFromTypeAttrs(
+        ctx, structType.getElementTypes(), converter,
+        StringAttr::get(ctx, "struct"), target);
+  }
+
+  // TODO: Add POP::VariantType DebugInfo conversion with union like
+  // DebugInfoType
+  if (type.isIntOrIndexOrFloat()) {
+    return buildDebugTypeFromIntOrIndexOrFloatType(ctx, type, converter,
+                                                   target);
+  }
+
+  return DebugInfo::DIUnresolvedMLIRType::get(type);
+}
+
 POPToLLVMDebugInfoTypeConverter::POPToLLVMDebugInfoTypeConverter(
-    POPToLLVMTypeConverter &converter) {
+    POPToLLVMTypeConverter &converter, TargetInfoAttr target) {
   // Let the LLVM conversion handle a majority of the debug info generation.
   addUnresolvedConverter(converter);
 
   // Add direct debug info conversions.
-  addConversion([&](POP::SIMDType type) -> std::optional<Type> {
-    // We can only build debug info if the dtype and size have been resolved.
-    std::optional<KGENDType> dtype = type.getResolvedDType();
-    std::optional<int64_t> size = type.getResolvedSize();
-    if (!dtype || !size)
-      return std::nullopt;
+  addConversion([&, target](POP::ArrayType type) {
+    return buildDebugTypeFromPOPType(type.getContext(), type, converter,
+                                     target);
+  });
 
-    // Get the base debug type from the dtype.
-    DebugInfo::DIType baseType = buildDebugTypeFromDType(
-        type.getContext(), dtype->getValue(), converter.getIndexTypeBitwidth());
-    if (!baseType)
-      return std::nullopt;
+  addConversion([&, target](POP::ClosureType type) {
+    return buildDebugTypeFromPOPType(type.getContext(), type, converter,
+                                     target);
+  });
 
-    // Single element SIMD becomes a scalar, multi-element become vectors.
-    if (*size == 1)
-      return baseType;
-    return DebugInfo::DIVectorType::get(baseType, *size);
+  addConversion([&, target](POP::CoroutineType type) {
+    return buildDebugTypeFromPOPType(type.getContext(), type, converter,
+                                     target);
+  });
+
+  addConversion([&, target](POP::PackType type) {
+    return buildDebugTypeFromPOPType(type.getContext(), type, converter,
+                                     target);
+  });
+
+  addConversion([&, target](POP::PointerType type) {
+    return buildDebugTypeFromPOPType(type.getContext(), type, converter,
+                                     target);
+  });
+
+  addConversion([&, target](POP::SIMDType type) {
+    return buildDebugTypeFromPOPType(type.getContext(), type, converter,
+                                     target);
+  });
+
+  addConversion([&, target](POP::StructType type) {
+    return buildDebugTypeFromPOPType(type.getContext(), type, converter,
+                                     target);
+  });
+
+  addConversion([&](POP::VariantType type) {
+    return buildDebugTypeFromPOPType(type.getContext(), type, converter,
+                                     target);
   });
 }
