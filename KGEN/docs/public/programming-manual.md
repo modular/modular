@@ -939,18 +939,26 @@ like "parameterized" and "parametric" for compile-time metaprogramming.
 
 ### Defining parameterized types and functions
 
-Mojo structs and functions may each be parameterized, but an example can help
-motivate why we care. Let's look at a
+You can parameterize structs and functions by specifying parameter names and
+types in square brackets (using an extended version of the [PEP695
+syntax](https://peps.python.org/pep-0695/)). Unlike argument values, parameter
+values are known at compile-time, which enables an additional level of
+abstraction and code reuse, plus compiler optimizations such as
+[autotuning](#autotuning-adaptive-compilation).
+
+For instance, let's look at a
 [SIMD](https://en.wikipedia.org/wiki/Single_instruction,_multiple_data) type,
 which represents a low-level vector register in hardware that holds multiple
-instances of a scalar data-type. Hardware accelerators these days are getting
-exotic datatypes, and it isn't uncommon to work with CPUs that have 512-bit or
-longer SIMD vectors. There is a lot of diversity in hardware (including many
-brands like SSE, AVX-512, NEON, SVE, RVV, etc.) but many operations are common
-and used by numerics and ML kernel developers—the `SIMD` type exposes them to
-Mojo programmers.
+instances of a scalar data-type. Hardware accelerators are constantly
+introducing new vector data types, and even CPUs may have 512-bit or longer SIMD
+vectors. In order to access the SIMD instructions on these processors, the data
+must be shaped into the proper SIMD width (data type) and length (vector size).
 
-Here is a (cut down) version of the `SIMD` API in the Mojo standard library:
+However, it's not feasible to define all the different SIMD variations with
+Mojo's built-in types. So, Mojo's `SIMD` type (defined as a struct) exposes the
+common SIMD operations in its methods, and makes the SIMD data type and size
+values parametric. This allows you to directly map your data to the SIMD vectors
+on any hardware. Here is a (cut down) version of Mojo's `SIMD` type:
 
 ```mojo
 struct SIMD[type: DType, size: Int]:
@@ -970,37 +978,30 @@ struct SIMD[type: DType, size: Int]:
     fn __add__(self, rhs: Self) -> Self: ...
 ```
 
-Parameters in Mojo are declared in square brackets using an extended version of
-the [PEP695 syntax](https://peps.python.org/pep-0695/). They are named and have
-types like normal values in a Mojo program, but they are evaluated at
-compile-time instead of runtime by the target program. The runtime program may
-use the value of parameters—because the parameters are resolved at compile-time
-before they are needed by the runtime program—but the compile-time
-parameter expressions may not use runtime values.
+Defining each SIMD variant with parameters is great for code reuse because the
+`SIMD` type can express all the different vector variants statically, instead of
+requiring the language to pre-define every variant.
 
-In the case of the `SIMD` excerpt above, there are three declared parameters:
-the `SIMD` struct is parameterized by a `type` parameter and a `size`
-parameter. The `cast` method is further parameterized with a `target`
-parameter. Because `SIMD` is a parameterized type, the type of a `self` argument
-carries the parameters—the full type name is `SIMD[type, size]`. While it
-is always valid to write this out (as shown in the return type of `splat()`),
-this can be verbose, so we recommend using the `Self` type (from
+Because `SIMD` is a parameterized type, the `self` argument in its functions
+carries those parameters—the full type name is `SIMD[type, size]`. Although
+it's valid to write this out (as shown in the return type of `splat()`), this
+can be verbose, so we recommend using the `Self` type (from
 [PEP673](https://peps.python.org/pep-0673/)) like the `__add__` example does.
 
 ### Using parameterized types and functions
 
-For the `SIMD` type, `size` specifies the number of elements in a SIMD vector,
-and `type` specifies the element type—for example, you might use a
-"4xFloat" to represent a small floating-point vector or a "32xbfloat16" on an
-AVX-512 system with the "bfloat16" machine learning type:
+You can instantiate parametric types and functions by passing values to the
+parameters in square brackets. For example, for the `SIMD` type above, `type`
+specifies the data type and `size` specifies the length of the SIMD vector (it
+must be a power of 2):
 
 ```mojo
 fn funWithSIMD():
     # Make a vector of 4 floats.
     let small_vec = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
 
-    # Make a big vector containing 1.0 in bfloat16 format.
-    let big_vec = SIMD[DType.bf16, 32].splat(1.0)
+    # Make a big vector containing 1.0 in float16 format.
+    let big_vec = SIMD[DType.float16, 32].splat(1.0)
 
     # Do some math and convert the elements to float32.
     let bigger_vec = (big_vec+big_vec).cast[DType.float32]()
@@ -1009,34 +1010,46 @@ fn funWithSIMD():
     let bigger_vec2 : SIMD[DType.float32, 32] = bigger_vec
 ```
 
-Note that the `cast()` method needs an additional parameter to indicate what
-type to cast to: that is handled by parameterizing the call to `cast()`. The
-example above shows the use of concrete types, but the major power of
-parameters comes from the ability to define parametric algorithms and types.
-For example, it's quite easy to define parametric algorithms, such as those
-that are length- and DType-agnostic:
+Note that the `cast()` method also needs a parameter to specify the type you
+want from the cast (the method definition above expects a `target` parametric
+value). Thus, just like how the `SIMD` struct is a generic type definition, the
+`cast()` method is a generic method definition that gets instantiated at
+compile-time instead of runtime, based on the parameter value.
+
+The `funWithSIMD()` function above shows the use of concrete types (that is, it
+instantiates `SIMD` using known type values), but the major power of parameters
+comes from the ability to define parametric algorithms and types (code that
+uses the parameter values). For example, here's how to define a parametric
+algorithm with `SIMD` that is type- and width-agnostic:
 
 ```mojo
-fn rsqrt[width: Int, dt: DType](x: SIMD[dt, width]) -> SIMD[dt, width]:
+fn rsqrt[dt: DType, width: Int](x: SIMD[dt, width]) -> SIMD[dt, width]:
     return 1 / sqrt(x)
 ```
 
-The Mojo compiler is fairly smart about type inference with parameters. Note
-that this function is able to call the parametric `sqrt()` function without
-specifying the parameters, the compiler infers its parameters as if you wrote
-`sqrt[width,type](x)` explicitly. Also note that `rsqrt()` chose to define
-its first parameter named `width` but the SIMD type names it `size` without
-challenge.
+Notice that the `x` argument is actually a `SIMD` type based on the function
+parameters. The runtime program can use the value of parameters, because the
+parameters are resolved at compile-time before they are needed by the runtime
+program (but compile-time parameter expressions cannot use runtime values).
+
+The Mojo compiler is also smart about type inference with parameters. Note
+that the above function is able to call the parametric
+[`sqrt()`](/mojo/MojoStdlib/Math.html#sqrt) function
+without specifying the parameters—the compiler infers its parameters as if you
+wrote `sqrt[type, simd_width](x)` explicitly. Also note that `rsqrt()` chose to
+define its first parameter named `width` even though the `SIMD` type names it
+`size`, and there is no problem.
 
 ### Parameter expressions are just Mojo code
 
-All parameters and parameter expressions are typed using the same type system
-as the runtime program: `Int` and `DType` are implemented in the Mojo standard
-library as structs. Parameters are quite powerful, supporting the use of
-expressions with operators, function calls at compile-time, and more, just like
-a runtime program. This enables the use of many "dependent type" features. For
-example, you might want to define a helper function to concatenate two SIMD
-vectors:
+A parameter expression is any code expression (such as `a+b`) that occurs where
+a parameter is expected. Parameter expressions support operators and function
+calls, just like runtime code, and all parameter types use the same type
+system as the runtime program (such as `Int` and `DType`).
+
+Because parameter expressions use the same grammar and types as runtime
+Mojo code, you can use many "dependent type" features. For example, you might
+want to define a helper function to concatenate two SIMD vectors:
 
 ```mojo
 fn concat[ty: DType, len1: Int, len2: Int](
@@ -1050,9 +1063,9 @@ fn use_vectors(a: SIMD[DType.float32, 4], b: SIMD[DType.float16, 8]):
 
 Note how the resulting length is the sum of the input vector lengths, and you
 can express that with a simple `+` operation. For a more complex example, take
-a look at the `SIMD.shuffle()` method in the standard library: it takes two
-input SIMD values, a vector shuffle mask as a list, and returns a SIMD that
-matches the length of the shuffle mask.
+a look at the [`SIMD.shuffle()`](/mojo/MojoStdlib/SIMD.html#shuffle) method in
+the standard library: it takes two input SIMD values, a vector shuffle mask as
+a list, and returns a SIMD that matches the length of the shuffle mask.
 
 ### Powerful compile-time programming
 
@@ -1086,8 +1099,8 @@ compiled into the program.
 
 ### Mojo types are just parameter expressions
 
-While we've shown how you can use parameter expressions within types, in both
-Python and Mojo, type annotations can themselves be arbitrary expressions.
+While we've shown how you can use parameter expressions within types,
+type annotations can themselves be arbitrary expressions (just like in Python).
 Types in Mojo have a special metatype type, allowing type-parametric algorithms
 and functions to be defined. For example, you can define an algorithm like the
 C++ `std::vector` class like this:
@@ -1174,7 +1187,7 @@ struct DType:
 
 This allows clients to use `DType.float32` as a parameter expression (which also
 works as a runtime value) naturally. Note that this is invoking the
-runtime constructor for DType at compile-time.
+runtime constructor for `DType` at compile-time.
 
 Types are another common use for alias: because types are compile-time
 expressions, it is handy to be able to do things like this:
@@ -1188,6 +1201,9 @@ var x : Float32   # Float32 works like a "typedef"
 
 Like `var` and `let`, aliases obey scope, and you can use local aliases within
 functions as you'd expect.
+
+By the way, both `None` and `AnyType` are defined as [type
+aliases](/mojo/MojoBuiltin/TypeAliases.html).
 
 ### Autotuning / Adaptive compilation
 
@@ -1222,14 +1238,15 @@ algorithm and decides which value to use by measuring what works best in
 practice for the target hardware. It evaluates the different values of the
 `vector_len` expression and picks the fastest one according to a user-defined
 performance evaluator. Because it measures and evaluates each option
-individually, it might pick a different vector length for F32 than for SI8, for
-example. This simple feature is pretty powerful - going beyond simple integer
-constants - because functions and types are also parameter expressions.
+individually, it might pick a different vector length for Float32 than for
+Int8, for example. This simple feature is pretty powerful—going beyond simple
+integer constants—because functions and types are also parameter expressions.
 
-Users can instrument the search of `exp_buffer_impl` by providing a performance
-evaluator and using the `search` standard library function. `search` takes an
-evaluator and a forked function and returns the fastest implementation selected
-by the evaluator as a parameter result.
+You can instrument the search of `exp_buffer_impl()` by providing a performance
+evaluator and using the [`search()`](/mojo/MojoStdlib/Autotune.html#search)
+standard library function. `search()` takes an evaluator and a forked function
+and returns the fastest implementation selected by the evaluator as a parameter
+result.
 
 ```mojo
 from Autotune import search
