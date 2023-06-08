@@ -305,8 +305,14 @@ fn async_parallelize[
         out_chain.mark_ready()
         return
 
-    # We have 1 task, execute inline.
-    if num_work_items == 1:
+    # If there is a single task, consider executing it in the host thread.
+    # If the runtime has only 1 thread, executing inline is guaranteed to
+    # reduce launch overhead by executing immediately.
+    # If the runtime has more than 1 thread, executing inline may be suboptimal
+    # since it may block other kernel launches that can then execute in parallel.
+    # TODO (#14524): Add heuristic to determine when inlining the func is
+    # appropriate when the runtime has more than 1 thread.
+    if num_work_items == 1 and out_chain.get_runtime().parallelism_level() == 1:
         with FlushDenormals():
             func(0)
         out_chain.mark_ready()
