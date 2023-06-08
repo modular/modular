@@ -67,23 +67,14 @@ ParameterEvaluator::evaluateExpression(ParamOperatorAttr op) {
   return failure();
 }
 
-/// Rebind conditional expression evaluating either true or false clause.
-static Attribute getReboundCond(Attribute attr, ParameterEvaluator &eval) {
-  auto op = dyn_cast<ParamOperatorAttr>(attr);
-  if (!op || op.getOpcode() != POC::Cond)
-    return {};
-
-  auto operands = op.getOperands();
-  Attribute cond = eval.getReboundAttribute(operands[0]);
-
-  // If condition is a constant rebind only one of the clauses.
-  if (auto c = dyn_cast<IntegerAttr>(cond)) {
-    if (c.getValue().isZero())
-      return eval.getReboundAttribute(operands[2]);
-    else
-      return eval.getReboundAttribute(operands[1]);
+/// Return true if this is a `cond` operator.
+static IntegerAttr narrowCondOp(Attribute attr, ParameterEvaluator &eval) {
+  if (auto op = dyn_cast<ParamOperatorAttr>(attr);
+      op && op.getOpcode() == POC::Cond) {
+    return dyn_cast_or_null<IntegerAttr>(
+        eval.getReboundAttribute(op.getOperands().front()));
   }
-  return {};
+  return nullptr;
 }
 
 /// Get the specified attribute with any nested parameter expressions rewritten.
@@ -129,8 +120,15 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
   } else if (isa<MLIROpAttr>(attr)) {
     // Expression functions and MLIR operation expressions are isolated from
     // above, so don't collect from them.
-  } else if (auto newAttr = getReboundCond(attr, *this)) {
-    result = newAttr;
+  } else if (IntegerAttr condVal = narrowCondOp(attr, *this)) {
+    // If condition is a constant rebind only one of the clauses.
+    auto op = cast<ParamOperatorAttr>(attr);
+    if (condVal.getValue().isZero())
+      result = getReboundAttribute(op.getOperands()[2]);
+    else
+      result = getReboundAttribute(op.getOperands()[1]);
+    if (!result)
+      return nullptr;
   } else {
     SmallVector<Attribute, 16> newAttrs;
     SmallVector<Type, 16> newTypes;

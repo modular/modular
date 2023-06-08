@@ -117,6 +117,8 @@ kgen.generator @call_generator_test(%arg0: si32, %arg1: si32)
   kgen.return %0, %1, %2, %4, %5 : si32, si32, si32, index, index
 }
 
+// -----
+
 //===----------------------------------------------------------------------===//
 
 // CHECK-LABEL: @"genItf2,x=0"()
@@ -166,6 +168,8 @@ kgen.generator @use_Itf2one() {
   kgen.return
 }
 
+// -----
+
 //===----------------------------------------------------------------------===//
 
 // Test that expansions are tracked and each ultimate kernel version only allows
@@ -210,6 +214,7 @@ kgen.generator @track_expansions(%arg0: si32) {
   kgen.return
 }
 
+// -----
 
 //===----------------------------------------------------------------------===//
 
@@ -1041,13 +1046,13 @@ kgen.generator @genItf3<x>() {
 // CHECK-NEXT:   "impl.1"() {attr = 4 : index}
 // CHECK-NEXT:   kgen.call @"genItf3,x=3"()
 
-// CHECK-LABEL: kgen.func @"genItf3,x=3"()
-// CHECK-NEXT:   "impl.1"() {attr = 3 : index}
-// CHECK-NEXT:   kgen.call @"genItf3,x=2"()
-
 // CHECK-LABEL: kgen.func @"genItf3,x=2"()
 // CHECK-NEXT:   "impl.1"() {attr = 2 : index}
 // CHECK-NEXT:   kgen.call @"genItf3,x=1"()
+
+// CHECK-LABEL: kgen.func @"genItf3,x=3"()
+// CHECK-NEXT:   "impl.1"() {attr = 3 : index}
+// CHECK-NEXT:   kgen.call @"genItf3,x=2"()
 
 // CHECK-LABEL: kgen.func @"genItf3,x=1"()
 // CHECK-NEXT:   "impl.1"() {attr = 1 : index}
@@ -1865,6 +1870,43 @@ kgen.generator @recurse() {
   kgen.return
 }
 
+// -----
+
+// COM: Tricky recursion order.
+
+// CHECK-LABEL: kgen.func @err
+kgen.generator @err() {
+  // CHECK-NEXT: call @call
+  kgen.call @call() : () -> ()
+  kgen.return
+}
+
+kgen.export @main
+// CHECK-LABEL: kgen.func @main
+kgen.generator @main() {
+  // CHECK-NEXT: call @getattr
+  kgen.call @getattr() : () -> ()
+  // CHECK-NEXT: call @call
+  kgen.call @call() : () -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @getattr
+kgen.generator @getattr() {
+  // CHECK-NEXT: call @err
+  kgen.call @err() : () -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @call
+kgen.generator @call() {
+  // CHECK-NEXT: call @err
+  kgen.call @err() : () -> ()
+  kgen.return
+}
+
+// -----
+
 // CHECK-LABEL: kgen.func @unpack_in_type
 kgen.generator @unpack_in_type() {
   // CHECK-NEXT: !pop.array<1, index>
@@ -2456,4 +2498,25 @@ kgen.generator @bat_binder(%arg0: index) {
 	%2 = kgen.create_closure[<>(index) capturing -> index: h]()
 	kgen.param.declare h: <>(index) capturing -> index = <@bat>
 	kgen.return
+}
+
+// -----
+
+// COM: First instantiation of `@fwd` is inside a constraint.
+
+kgen.generator @fwd(%a: i1) -> i1 {
+  kgen.return %a : i1
+}
+
+kgen.generator @f()
+    constraints <[apply(:(i1) -> i1 @fwd, 1), "true"]> {
+  kgen.return
+}
+
+kgen.export @top
+// CHECK-LABEL: kgen.func @top
+kgen.generator @top() {
+  // CHECK-NEXT: call @f
+  kgen.call @f() : () -> ()
+  kgen.return
 }
