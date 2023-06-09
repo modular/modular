@@ -48,6 +48,7 @@ using namespace mlir;
 namespace {
 /// What to do with a given Mojo file.
 enum class MojoCommand {
+  kDocGen,
   kEmit,
   kEmitHeader,
   kExecute,
@@ -61,6 +62,8 @@ public:
   cl::opt<MojoCommand> cmd{
       cl::desc("The command to execute"),
       cl::values(
+          clEnumValN(MojoCommand::kDocGen, "doc-gen",
+                     "Generate documentation information in json."),
           clEnumValN(MojoCommand::kEmit, "emit", "Emit funcs as object files."),
           clEnumValN(
               MojoCommand::kEmitHeader, "emit-header",
@@ -163,6 +166,14 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   MojoParserConfig parseConfig(ctx, *runtime, compilationOptions);
   parseConfig.validateDocStrings = clOptions.validateDocStrings;
+  if (clOptions.cmd == MojoCommand::kDocGen) {
+    std::unique_ptr<llvm::ToolOutputFile> os =
+        clOptions.getOutputFile(/*hasBinaryOutput=*/false, ".md");
+    if (failed(generateMojoDoc(mgr, parseConfig, os->os(), mojoScope)))
+      return clOptions.reportError("could not generate documentation");
+    os->keep();
+    return EXIT_SUCCESS;
+  }
 
   theModule = importMojoFile(mgr, parseConfig, mojoScope);
   if (!theModule)
