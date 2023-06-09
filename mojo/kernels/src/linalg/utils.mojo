@@ -303,7 +303,7 @@ fn get_matmul_a_row_size[critical_stride: Bool]() -> Int:
         else:
             return 8
     elif has_avx512f():
-        return 5
+        return 6
     return 4
 
 

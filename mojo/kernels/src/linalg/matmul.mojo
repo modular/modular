@@ -901,45 +901,53 @@ struct MatmulInnerLoopBPacked[
         # Global K index.
         let global_k = self.global_offset.K + tile_n_k_idx[1]
 
+        var b_ptr = self.b_packed._offset(
+            Index(n_outer_idx, tile_n_k_idx[1], 0)
+        )
+
         # Prefetch B matrix.
         @parameter
         if prefetch_b_distance > 0:
+            alias prefetch_offset = prefetch_b_distance * pack_inner_size
 
             @parameter
             @always_inline
             fn prefetch_body[idx: Int]():
-                self.b_packed.prefetch[
+                b_ptr.offset(prefetch_offset + idx * simd_size).prefetch[
                     PrefetchOptions().for_read().high_locality().to_data_cache()
-                ](
-                    n_outer_idx,
-                    tile_n_k_idx[1] + prefetch_b_distance,
-                    idx * simd_size,
-                )
+                ]()
 
             unroll[pack_inner_size // simd_size, prefetch_body]()
+
+        # This inner kernels works with non-transposed A.
+        let K = self.a.dim(1)
+        var a_ptr = self.a.data.offset(self.global_offset.M * K + global_k)
 
         # Loop over local accumulator tiles.
         @parameter
         @always_inline
-        fn outer_body[idx0: Int, idx1: Int]():
-            alias alignment = alignof[SIMD[accum_type, simd_size]]()
-            let global_m = self.global_offset.M + idx0
-            let c_idx = Index(idx0, idx1 * simd_size)
+        fn outer_body[idx0: Int]():
+            let a_val = a_ptr.offset(idx0 * K).simd_load[1]().cast[accum_type]()
 
-            let b_val = self.b_packed.aligned_simd_load[simd_size, alignment](
-                n_outer_idx, tile_n_k_idx[1], idx1 * simd_size
-            ).cast[accum_type]()
+            @parameter
+            @always_inline
+            fn inner_body[idx1: Int]():
+                alias alignment = alignof[SIMD[accum_type, simd_size]]()
+                let c_idx = Index(idx0, idx1 * simd_size)
+                var c_val = c_local.aligned_simd_load[simd_size, alignment](
+                    c_idx
+                )
+                let b_val = b_ptr.offset(idx1 * simd_size).aligned_simd_load[
+                    simd_size, alignment
+                ]().cast[accum_type]()
 
-            let a_val = self.a.simd_load[1](global_m, global_k).cast[
-                accum_type
-            ]()
+                c_val = fma[accum_type, simd_size](a_val, b_val, c_val)
 
-            var c_val = c_local.aligned_simd_load[simd_size, alignment](c_idx)
+                c_local.aligned_simd_store[simd_size, alignment](c_idx, c_val)
 
-            c_val = fma[accum_type, simd_size](a_val, b_val, c_val)
-            c_local.aligned_simd_store[simd_size, alignment](c_idx, c_val)
+            unroll[pack_inner_size // simd_size, inner_body]()
 
-        unroll2[a_row_size, pack_inner_size // simd_size, outer_body]()
+        unroll[a_row_size, outer_body]()
 
     @adaptive
     fn _run_inner_loop(self):
@@ -1170,6 +1178,8 @@ struct TiledMatmul[
             )
 
             # Launch the MLoop
+            # The upper bounds apply to runtime packing. For pre-packing, the
+            # tile has been padded to fit (sub_tile_n, sub_tile_k).
             let sub_tile_n_k = Index(
                 min(sub_tile_n, knm_bounds.N), min(sub_tile_k, knm_bounds.K)
             )
@@ -1505,6 +1515,20 @@ struct BTileGenerator[
         tile_dim_nk: StaticIntTuple[2],
         valid_data_dim_nk: StaticIntTuple[2],
     ) -> NDBuffer[3, config.packed_shape, type]:
+        """Get a packed matrix (B) tile.
+
+        Args:
+            global_offset: offset in the global M, N, K dimensions.
+            tile_dim_nk: tile shape based on cache size and matrix dimensions.
+            valid_data_dim_nk: the upper bounds for N and K dimensions.
+
+        valid_data_tile_nk is ignored for pre-packing, where the tile is padded
+        to have shape of tile_dim_nk.
+
+        Returns:
+            A view of the packed tile.
+
+        """
         let tile_shape_nopack = DimList(
             tile_dim_nk[0] // inner_size, tile_dim_nk[1], inner_size
         )
