@@ -665,7 +665,7 @@ LogicalResult ExprEmitter::emitRaise(SRValue errorValue, Location raiseLoc) {
 }
 
 ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
-  auto loc = consumeToken(Token::kw_raise).getLoc();
+  llvm::SMRange loc = consumeToken(Token::kw_raise).getLocRange();
 
   ExprNode *errorExpr = nullptr;
   if (!getToken().getIndentation().has_value() ||
@@ -693,7 +693,7 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
   // If we had an error, emit it.
   Value errorVal;
   if (errorExpr) {
-    ASTType errorType = shared.getBuiltinErrorType(loc);
+    ASTType errorType = shared.getBuiltinErrorType(loc.Start);
     if (!errorType)
       return success();
 
@@ -710,16 +710,25 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
     // rethrowing the current error.  This isn't correct Python semantics, see
     // the caveat above.
     if (!inExceptRegion) {
-      emitError(loc, "no contextual exception to reraise");
+      InflightDiag diag = emitError(loc.Start, "no contextual error to reraise")
+                          << loc;
+      diag.attachNote(loc.Start) << "provide an error to raise or place 'raise'"
+                                    "statement inside an except region";
       return success();
     }
     errorVal = tryOp.getExceptRegion().getArgument(0);
   }
 
   // Emit the logic to raise the error.
-  Location raiseLoc = translateLocation(loc);
-  if (failed(getEmitter().emitRaise(errorVal, raiseLoc)))
-    emitError(loc, "cannot raise error in a context that cannot raise");
+  if (failed(getEmitter().emitRaise(errorVal, translateLocation(loc.Start)))) {
+    InflightDiag diag =
+        emitError(loc.Start, "cannot raise error in this context") << loc;
+    diag.attachNote(loc.Start) << "try surrounding 'raise' in a 'try' block";
+    if (auto func = getBlockParentOfType<LIT::FuncOp>(
+            getEmitter().builder->getInsertionBlock()))
+      diag.attachNote(func.getLoc())
+          << "or mark surrounding function as 'raises'";
+  }
 
   return success();
 }
@@ -1183,8 +1192,9 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     OpBuilder::InsertionGuard g(builder);
     builder.setInsertionPointToStart(parentExceptBlock);
     Value errVal = parentExceptBlock->addArgument(errorType, loc);
-    if (failed(getEmitter().emitRaise(SRValue(errVal), loc)))
-      emitError(loc, "cannot raise error in a context that cannot raise");
+    [[maybe_unused]] LogicalResult result =
+        getEmitter().emitRaise(SRValue(errVal), loc);
+    assert(succeeded(result) && "expected to be in except context");
   }
 
   // Generate the nested try. Stub the 'else' and 'finally' regions.
@@ -1232,8 +1242,8 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
 
   // On false, we re-raise the error.
   builder.createBlock(&ifOp.getElseRegion());
-  if (failed(getEmitter().emitRaise(errorVal, loc)))
-    emitError(loc, "cannot raise error in a context that cannot raise");
+  [[maybe_unused]] LogicalResult result = getEmitter().emitRaise(errorVal, loc);
+  assert(succeeded(result) && "expected to be in except context");
   builder.create<HLCF::YieldOp>(loc);
 
   // Emit the conditional call to __exit__.

@@ -20,6 +20,7 @@
 #include "KGEN/LITDialect/LifetimeTrackable.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
+#include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/STLExtras.h"
 #include "llvm/Support/Debug.h"
@@ -2017,7 +2018,8 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     if (convention == ValueInputConvention::ByRefResult) {
       if (!builder) {
         // TODO: Support memory-primary results in parameter expressions
-        emitError(callExpr->getLoc(), "TODO: memory-primary results are not supported in parameter expressions.");
+        emitError(callExpr->getLoc(), "TODO: memory-primary results are not "
+                                      "supported in parameter expressions.");
         return {};
       }
       assert(idx == 0 && calleeSig.hasMemoryOnlyResult());
@@ -2293,9 +2295,16 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     Value error = builder->create<POP::VariantGetOp>(
         loc, callResultTy.getType(0), callResult);
     if (failed(emitRaise(error, loc))) {
-      emitError(callExpr->getLoc(),
-                "cannot call function that may raise in a context that "
-                "cannot raise");
+      InflightDiag diag =
+          emitError(callExpr->getLoc(), "cannot call function that may raise "
+                                        "in a context that cannot raise")
+          << callExpr->getRange();
+      diag.attachNote(callExpr->getLoc())
+          << "try surrounding the call in a 'try' block";
+      if (auto func =
+              getBlockParentOfType<LIT::FuncOp>(builder->getInsertionBlock()))
+        diag.attachNote(func.getLoc())
+            << "or mark surrounding function as 'raises'";
       return {};
     }
     builder->create<UnreachableOp>(loc);
