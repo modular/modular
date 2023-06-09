@@ -186,6 +186,7 @@ public:
 
   /// Build a normal token-start range.
   SourceRange(SMLoc start, SMLoc end);
+  SourceRange(llvm::SMRange range);
 
   /// Build a byte-level range.
   static SourceRange getByteLevel(SMLoc start, SMLoc end);

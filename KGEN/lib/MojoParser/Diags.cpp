@@ -27,6 +27,8 @@ SourceRange::SourceRange(SMLoc start, SMLoc end)
          "Start and End should either both be valid or both be invalid!");
 }
 
+SourceRange::SourceRange(SMRange range) : SourceRange(range.Start, range.End) {}
+
 SourceRange SourceRange::getByteLevel(SMLoc start, SMLoc end) {
   auto result = SourceRange(start, end);
   result.byteLevel = true;
