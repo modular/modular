@@ -12,7 +12,7 @@ namespace M {
 class SubCommandRegistry;
 
 /// Initializes the `demangle` subcommand and its various options, and registers
-/// its callback function with the registry.
+/// its callback function wih the registry.
 void registerDemangleSubCommand(SubCommandRegistry &registry);
 } // namespace M
 
