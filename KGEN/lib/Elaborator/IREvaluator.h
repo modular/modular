@@ -320,7 +320,8 @@ struct ParamNode {
   /// This flag is used by cycle detection, which runs DFS and checks for
   /// already-visited nodes. In order to know when to invalidate the visited
   /// flag, we set a generation number.
-  unsigned cycleGeneration = 0;
+  uint32_t cycleGeneration = 0;
+  enum { VISITED, DONE } cycleState;
 };
 
 } // namespace M::KGEN
