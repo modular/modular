@@ -6,6 +6,8 @@
 
 #include "mojo-driver.h"
 #include "mojo-demangle.h"
+#include "mojo-doc.h"
+
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/InitLLVM.h"
 
@@ -53,6 +55,7 @@ int main(int argc, char **argv) {
   // Register subcommands and their options.
   SubCommandRegistry registry;
   registerDemangleSubCommand(registry);
+  registerDocSubCommand(registry);
 
   // Parse the command line arguments. This exits the process if invalid
   // arguments are provided, or if `--help` is specified on the command line.

@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: mojo %s -doc-gen | FileCheck %s
+# RUN: mojo-driver doc %s | FileCheck %s
 
 """
 This is a module summary, that
