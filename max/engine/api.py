@@ -20,7 +20,7 @@ else:
     List = list
 
 from dataclasses import asdict, dataclass, field
-from typing import Optional, Union
+from typing import Any, Optional, Tuple, Union
 
 version_string = _mecore.__version__
 
@@ -101,8 +101,77 @@ class DType(Enum):
         obj = cls.__dict__[dtype.name]
         return obj
 
+    def _to(self):
+        return _DType.__dict__[self.name]
+
     def __repr__(self) -> str:
         return self.name
+
+
+class TensorSpec:
+    """
+    Defines the properties of a tensor, namely its shape and data type.
+
+    You can get a list of ``TensorSpec`` objects that specify the input tensors
+    of a :obj:`Model` from :func:`Model.input_metadata`.
+    """
+
+    _impl: _TensorSpec
+
+    def __init__(self, shape: List[Optional[int]], dtype: DType):
+        self._impl = _TensorSpec(shape, dtype._to())
+
+    @classmethod
+    def _init(cls, _core_tensor_spec):
+        tensor_spec = cls([], DType.bool)
+        tensor_spec._impl = _core_tensor_spec
+        return tensor_spec
+
+    def __repr__(self) -> str:
+        return f"TensorSpec(shape={self.shape}, dtype={self.dtype})"
+
+    def __str__(self) -> str:
+        mlir_shape = [str(dim) if dim else "-1" for dim in self.shape]
+        shape_str = "x".join(mlir_shape)
+        return f"{shape_str}x{self.dtype.name}"
+
+    @property
+    def shape(self) -> List[int]:
+        """The shape of the tensor as a list of integers.
+
+        If a dimension is indeterminate for a certain axis, such as the first
+        axis of a batched tensor, that axis is denoted by ``None``."""
+        return self._impl.shape
+
+    @property
+    def dtype(self) -> DType:
+        """A tensor data type."""
+        return DType._from(self._impl.dtype)
+
+
+@dataclass
+class TorchLoadOptions:
+    """Configures how to load PyTorch models."""
+
+    input_specs: List[TensorSpec] = field(default_factory=list)
+    """The tensor specifications (shape and data type) for each of the
+    model inputs. Required for lowering serialized TorchScript models which
+    have no type and shape annotations.
+    """
+
+
+def _unwrap_pybind_objects_dict_factory(data: List[Tuple[str, Any]]):
+    """Unwraps pybind objects from python class wrappers."""
+
+    def convert(value):
+        if isinstance(value, list):
+            return [convert(v) for v in value]
+        if isinstance(value, TensorSpec):
+            # Unwrap TensorSpec to _TensorSpec.
+            return value._impl
+        return value
+
+    return {field: convert(value) for field, value in data}
 
 
 class InferenceSession:
@@ -133,7 +202,11 @@ class InferenceSession:
         else:
             return "<modular engine InferenceSession>"
 
-    def load(self, model_path: Union[str, Path]) -> Model:
+    def load(
+        self,
+        model_path: Union[str, Path],
+        options: Optional[TorchLoadOptions] = None,
+    ) -> Model:
         """Loads a trained model and compiles it for inference.
 
         Parameters
@@ -141,6 +214,9 @@ class InferenceSession:
         model_path: Union[str, pathlib.Path]
             Path to a model. May be a TensorFlow model in the SavedModel
             format or a traceable PyTorch model.
+
+        options: Optional[TorchLoadOptions]
+            Load options for configuring how the model should be compiled.
 
         Returns
         -------
@@ -152,48 +228,24 @@ class InferenceSession:
         RuntimeError
             If the path provided is invalid.
         """
+
+        options_dict = {}
+        if options:
+            # Unwrap dataclass options to a dictionary, and furthermore unwrap
+            # any nested objects that are not pybind classes so that the values
+            # passed to the compile implementation can be interpreted.
+            options_dict = asdict(
+                options, dict_factory=_unwrap_pybind_objects_dict_factory
+            )
+            if isinstance(options, TorchLoadOptions):
+                options_dict["type"] = "torch"
+            else:
+                raise TypeError("Invalid compilation options object.")
+
         model_path = Path(str(model_path))
-        _model = self._impl.compile(model_path)
+        _model = self._impl.compile(model_path, options_dict)
         _model.load()
         return Model._init(_model)
-
-
-class TensorSpec:
-    """
-    Defines the properties of a tensor, namely its shape and data type.
-
-    You can get a list of ``TensorSpec`` objects that specify the input tensors
-    of a :obj:`Model` from :func:`Model.input_metadata`.
-    """
-
-    _impl: _TensorSpec
-
-    @classmethod
-    def _init(cls, _core_tensor_spec):
-        tensor_spec = cls()
-        tensor_spec._impl = _core_tensor_spec
-        return tensor_spec
-
-    def __repr__(self) -> str:
-        return f"TensorSpec(shape={self.shape}, dtype={self.dtype})"
-
-    def __str__(self) -> str:
-        mlir_shape = [str(dim) if dim else "-1" for dim in self.shape]
-        shape_str = "x".join(mlir_shape)
-        return f"{shape_str}x{self.dtype.name}"
-
-    @property
-    def shape(self) -> List[int]:
-        """The shape of the tensor as a list of integers.
-
-        If a dimension is indeterminate for a certain axis, such as the first
-        axis of a batched tensor, that axis is denoted by ``None``."""
-        return self._impl.shape
-
-    @property
-    def dtype(self) -> DType:
-        """A tensor data type."""
-        return DType._from(self._impl.dtype)
 
 
 def remove_annotations(cls):
