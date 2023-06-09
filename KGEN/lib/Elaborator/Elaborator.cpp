@@ -1180,12 +1180,7 @@ ElaborationState ElaboratorImpl::instantiateGeneratorReference(
                logger << "\n");
 
     SmallVector<Attribute> boundInputParams;
-    for (TypedAttr param : calleeSymbol.getParamValues()) {
-      // Fold the parameter expression in this context to a simple constant.
-      Attribute value;
-      HANDLE_EVALUATOR_CONC(value, parent, user->getLoc(), param);
-      boundInputParams.push_back(value);
-    }
+    llvm::append_range(boundInputParams, calleeSymbol.getParamValues());
     inputParamKey = ArrayAttr::get(user->getContext(), boundInputParams);
   }
 
@@ -1313,7 +1308,10 @@ ElaboratorImpl::processGeneratorUser(KGENCallOpInterface user,
         return wasSkipped = !genNode->gen.getResultParams().empty() ||
                             isa<ParamApplyOp>(user);
       });
-  if (result.isError() || (result.shouldSkipNode() && wasSkipped))
+  if (result.isError() ||
+      (result.shouldSkipNode() &&
+       // Don't skip when a constraint suspended.
+       (wasSkipped || calleeNode->state.getValue() == ParamNodeState::FRESH)))
     return result;
 
   for (auto [i, resultType] : llvm::enumerate(user->getResultTypes())) {
@@ -1325,10 +1323,6 @@ ElaboratorImpl::processGeneratorUser(KGENCallOpInterface user,
   // We don't have to suspend elaboration of this node if the instantiation of a
   // generator with no result parameters is not yet ready. Process it later.
   if (result.shouldSkipNode()) {
-    // Don't skip when a constraint suspended.
-    if (calleeNode->state.getValue() == ParamNodeState::FRESH)
-      return ElaborationState::skipNode();
-
     assert(parent->numDependencies >= 1 && "impossible for impl to be done");
     parent->dependencies.emplace_back(user, calleeNode);
     if (calleeNode->state.addWaiter()) {
