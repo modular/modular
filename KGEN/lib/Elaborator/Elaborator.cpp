@@ -764,12 +764,13 @@ private:
   /// initial counters.
   void initialScheduleImplNode(ImplNode *inode) {
     ++inode->parent->numActive;
-    ++g.numWorkItems;
+    g.numWorkItems.fetch_add(1);
     scheduleImplNode(inode);
   }
   /// Signal the worklist to tell it a job has completed or has been taken off
   /// the workqueue.
   void signalWorklist() {
+    assert(g.numWorkItems > 0);
     if (g.numWorkItems.fetch_sub(1) == 1)
       g.worklistCh.copy().emplace();
   }
@@ -1774,19 +1775,14 @@ ElaborationState ElaboratorImpl::processParamIfOp(ImplNode *parent,
 //===----------------------------------------------------------------------===//
 
 void ElaboratorImpl::completeImplNodeProcessing(ImplNode *inode) {
-  // This function counts as a task, so decrement the task counter on exit.
-  auto endTask = llvm::make_scope_exit([this] { signalWorklist(); });
-
   // If the node resulted in an error or all outstanding dependencies are
-  // done, complete node processing.
-  // assert(inode->numDependencies >= 1 && "impl already done?");
-  if (!inode->error && (--inode->numDependencies != 0))
+  // done, complete node processing. Otherwise, if the node has an error state,
+  // it could end up completing early. Avoid double-completion by using a flag.
+  if ((!inode->error && (--inode->numDependencies != 0)) ||
+      inode->done.exchange(true)) {
+    signalWorklist();
     return;
-
-  // If the node has an error state, it could end up completing early. Avoid
-  // double-completion by using a flag.
-  if (inode->done.exchange(true))
-    return;
+  }
 
   if (!inode->error) {
     // Complete processing of outstanding dependencies. Process in reverse with
@@ -1832,9 +1828,10 @@ void ElaboratorImpl::completeImplNodeProcessing(ImplNode *inode) {
   ParamNode *p = inode->parent;
   assert(p->numActive > 0 && "node already done?");
   if (--p->numActive == 0) {
-    g.numWorkItems += p->state.markDone();
+    g.numWorkItems.fetch_add(p->state.markDone());
     p->paramCh.copy().emplace();
   }
+  signalWorklist();
 }
 
 void ElaboratorImpl::scheduleImplNode(ImplNode *inode) {
@@ -1843,7 +1840,7 @@ void ElaboratorImpl::scheduleImplNode(ImplNode *inode) {
     // Process the node. If processing the node got pre-empted, then return. It
     // will get scheduled again later.
     if (succeeded(processImplNode(inode))) {
-      ++g.numWorkItems;
+      g.numWorkItems.fetch_add(1);
       completeImplNodeProcessing(inode);
     }
     // Signal the worklist that the work is complete.
@@ -2068,7 +2065,7 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
     // This node is complete. It can never be valid. Mark the node as `DONE` and
     // add its waiter count before emplacing its completion chain.
     genNode->constraintError = constraintResult->takeError();
-    g.numWorkItems += genNode->state.markDone();
+    g.numWorkItems.fetch_add(genNode->state.markDone());
     genNode->paramCh.copy().emplace();
     return ElaborationState::error();
   }
@@ -2191,7 +2188,7 @@ bool ElaboratorImpl::processDeferredSearchFns() {
 
     auto completeWithError = [&](Error err) {
       parent->setToError(ErrorTree(op.getLoc(), std::move(err)));
-      ++g.numWorkItems;
+      g.numWorkItems.fetch_add(1);
       completeImplNodeProcessing(parent);
     };
 
@@ -2225,7 +2222,7 @@ bool ElaboratorImpl::processDeferredSearchFns() {
 
   // Now reschedule the nodes.
   for (ImplNode *inode : reschedule) {
-    ++g.numWorkItems;
+    g.numWorkItems.fetch_add(1);
     scheduleImplNode(inode);
   }
   return true;
@@ -2237,43 +2234,15 @@ bool ElaboratorImpl::processDeferredSearchFns() {
 
 bool ElaboratorImpl::diagnoseAndBreakRecursion(unsigned generation,
                                                ArrayRef<ParamNode *> roots) {
-  // Recursive calls cannot have result parameters, because that makes the
-  // parameter use-def graph cyclic. Therefore, all the edges we care about can
-  // be found in the `dependencies` list.
-  std::vector<ImplNode *> worklist;
-
-  // Visit the node, recursing on the active dependencies on all its impl nodes.
-  // Returns true if this node makes a cycle.
-  bool foundRecursion = false;
-  auto visitParamNode = [&](ParamNode *pnode) {
-    // Ignore completed nodes.
-    if (pnode->state.getValue() == ParamNodeState::DONE)
-      return false;
-
-    if (pnode->cycleGeneration == generation) {
-      // Visited already. This is a cycle.
-      foundRecursion = true;
-      return true;
-    }
-    // Not visited. Mark it as such.
-    pnode->cycleGeneration = generation;
-
-    for (ImplNode &inode : llvm::make_pointee_range(pnode->impls))
-      if (inode.numDependencies != 0)
-        worklist.push_back(&inode);
-    return false;
-  };
-
-  llvm::for_each(roots, visitParamNode);
-  if (worklist.empty())
-    return false;
-
-  // Okay, process the worklist.
+  std::function<bool(ParamNode *)> visitParamNode = nullptr;
   std::vector<ImplNode *> reschedule;
   std::vector<ImplNode *> errComplete;
-  while (!worklist.empty()) {
-    ImplNode *inode = worklist.back();
-    worklist.pop_back();
+
+  std::function<void(ImplNode *)> visitImplNode = [&](ImplNode *inode) {
+    // Skip completed nodes.
+    if (inode->numDependencies == 0 || inode->error)
+      return;
+
     llvm::BitVector completed(inode->dependencies.size());
     bool anyBroken = false;
     for (auto [idx, dep] : llvm::enumerate(inode->dependencies)) {
@@ -2290,7 +2259,7 @@ bool ElaboratorImpl::diagnoseAndBreakRecursion(unsigned generation,
               call.getLoc(),
               "recursive call to function with more than 1 implementation"));
           errComplete.push_back(inode);
-          continue;
+          break;
         }
       } else {
         assert(genNode->impls.size() == 1 && "expected at least 1 child");
@@ -2311,13 +2280,13 @@ bool ElaboratorImpl::diagnoseAndBreakRecursion(unsigned generation,
       inode->dependencies = std::move(newDeps);
       inode->numDependencies -= (completed.count() - 1);
       reschedule.push_back(inode);
-      continue;
+      return;
     }
 
     // Check if the node got stuck on a recursive call to something with result
     // parameters, since that's illegal but won't show up in `dependencies`.
     if (inode->stack.empty())
-      continue;
+      return;
     if (auto call =
             dyn_cast<KGENCallOpInterface>(inode->stack.back().ops.back());
         call && !call.getCalleeType().getResultParamTypes().empty()) {
@@ -2339,19 +2308,41 @@ bool ElaboratorImpl::diagnoseAndBreakRecursion(unsigned generation,
         errComplete.push_back(inode);
       }
     }
-  }
+  };
+
+  visitParamNode = [&](ParamNode *pnode) -> bool {
+    if (pnode->state.getValue() == ParamNodeState::DONE) {
+      return false;
+    } else if (pnode->cycleGeneration != generation) {
+      pnode->cycleGeneration = generation;
+      pnode->cycleState = ParamNode::VISITED;
+    } else if (pnode->cycleState == ParamNode::VISITED) {
+      return true;
+    } else {
+      assert(pnode->cycleState == ParamNode::DONE);
+      return false;
+    }
+
+    for (ImplNode &inode : llvm::make_pointee_range(pnode->impls))
+      visitImplNode(&inode);
+    pnode->cycleState = ParamNode::DONE;
+    return false;
+  };
+
+  for (ParamNode *root : roots)
+    visitParamNode(root);
 
   // Now reschedule the nodes outside the loop to avoid races.
   for (ImplNode *inode : reschedule) {
-    ++g.numWorkItems;
+    g.numWorkItems.fetch_add(1);
     scheduleImplNode(inode);
   }
   for (ImplNode *inode : errComplete) {
-    ++g.numWorkItems;
+    g.numWorkItems.fetch_add(1);
     inode->stack.clear();
     completeImplNodeProcessing(inode);
   }
-  return foundRecursion;
+  return !reschedule.empty() || !errComplete.empty();
 }
 
 //===----------------------------------------------------------------------===//
@@ -2387,7 +2378,7 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
 
     // Now we can begin to construct the expansion tree rooted at this
     // generator. Emit as many errors as possible.
-    ++g.numWorkItems;
+    g.numWorkItems.fetch_add(1);
     scheduleImplNode(root);
     primaryChs.push_back(genNode->paramCh.copy());
   }
