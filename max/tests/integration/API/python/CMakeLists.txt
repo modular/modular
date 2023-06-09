@@ -12,16 +12,6 @@ find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 
 include(AddPyBind11)
 
-# Install dependencies needed for pytest unit tests.
-execute_process(
-  COMMAND ${Python3_EXECUTABLE} -m pip install -r ${CMAKE_CURRENT_SOURCE_DIR}/pytests/requirements.txt
-  OUTPUT_QUIET
-  RESULT_VARIABLE PIP_INSTALL_DEPS_RESULT
-)
-if (PIP_INSTALL_DEPS_RESULT)
-  message(FATAL_ERROR "Installation of Python dependencies failed in Python unit test configuration.")
-endif()
-
 # Set up ASAN only if enabled since otherwise errors occur in non-ASAN builds.
 if (LLVM_USE_SANITIZER)
   set(PYTHON_API_TESTS_ASAN_ENV "LSAN_OPTIONS=detect_leaks=0")
