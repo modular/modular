@@ -2520,3 +2520,19 @@ kgen.generator @top() {
   kgen.call @f() : () -> ()
   kgen.return
 }
+
+// -----
+
+kgen.export @main
+// CHECK-LABEL: kgen.func @main
+kgen.generator @main() {
+  kgen.param.declare impls: variadic<!kgen.signature<() -> ()>> = <get_all_impls(@foo)>
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @foo
+kgen.generator @foo() {
+  // CHECK-NEXT: call @foo
+  kgen.call @foo() : () -> ()
+  kgen.return
+}

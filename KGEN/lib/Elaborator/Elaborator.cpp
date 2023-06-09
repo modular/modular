@@ -1056,7 +1056,7 @@ ErrorOrSuccess ElaboratorImpl::evaluateFunctions(ImplNode *inode,
       evaluatorExecutorFn(evaluator, symtabCopy, getTarget(), options);
   if (searchFn.isError())
     return searchFn.takeError();
-  // Suspend elaboration. The search has to be performed for isolation.
+  // Suspend elaboration. The search has to be performed in isolation.
   deferredSearchFns.modify([inode, fn = searchFn.takeValue(),
                             candidates =
                                 std::move(options)](auto &fns) mutable {
@@ -2331,6 +2331,14 @@ bool ElaboratorImpl::diagnoseAndBreakRecursion(unsigned generation,
 
   for (ParamNode *root : roots)
     visitParamNode(root);
+
+  if (reschedule.empty() && errComplete.empty()) {
+    // As a last ditch attempt, check all the nodes for any "islands", because
+    // not all dependencies are tracked by `dependencies`. It's not worth paying
+    // the cost for that dependency tracking when recursion is uncommon.
+    for (auto &[_, pnode] : g.nodes.get())
+      visitParamNode(pnode.get());
+  }
 
   // Now reschedule the nodes outside the loop to avoid races.
   for (ImplNode *inode : reschedule) {
