@@ -54,15 +54,10 @@ enum class MojoCommand {
   kExecute,
 };
 
-/// Top-level options for the `mojo` executable, as well as subcommands.
-/// Options for subcommands are collected in separate classes, such as
-/// `DemangleOptions`.
+/// Top-level options for the `mojo` executable.
 class CLOptions : public KGENCommonOptions, public CommonCLOptions {
 public:
   using CommonCLOptions::CommonCLOptions;
-
-  llvm::cl::SubCommand demangle{
-      "demangle", "Demangle the name provided on the command line."};
 
   cl::opt<MojoCommand> cmd{
       cl::desc("The command to execute"),
@@ -80,18 +75,6 @@ public:
   cl::opt<bool> validateDocStrings{
       "doc-validate", cl::desc("Validate doc strings in the input Mojo file."),
       cl::init(false)};
-};
-
-/// Options that apply only to the `demangle` subcommand.
-class DemangleOptions {
-public:
-  /// The user-provided name to demangle.
-  cl::opt<std::string> name;
-
-  /// Initializes `demangle` subcommand options.
-  DemangleOptions(CLOptions &clOptions)
-      : name(llvm::cl::Positional, cl::desc("<name>"),
-             llvm::cl::sub(clOptions.demangle)) {}
 };
 } // namespace
 
@@ -360,7 +343,6 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
 int main(int argc, char **argv) {
   CLOptions clOptions(argc, argv);
-  DemangleOptions demangleOptions(clOptions);
 
   // Override the default version printer.
   llvm::cl::SetVersionPrinter([](raw_ostream &os) {
@@ -402,18 +384,6 @@ int main(int argc, char **argv) {
 
   // Set up the dialects in the context.
   context.appendDialectRegistry(registry);
-
-  // If all we're doing is demangling a name, then don't do anything else. This
-  // has to be done before the input is added to the source manager.
-  if (clOptions.demangle) {
-    auto mangledOr = LIT::MangledSymbol::demangle(
-        StringAttr::get(&context, demangleOptions.name));
-    if (failed(mangledOr))
-      return clOptions.reportError("demangling failed");
-
-    llvm::outs() << *mangledOr << "\n";
-    return EXIT_SUCCESS;
-  }
 
   // Set up the input file.
   llvm::SourceMgr sourceManager;

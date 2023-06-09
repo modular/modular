@@ -48,6 +48,7 @@ if(LLDB_FOUND)
 endif()
 
 add_subdirectory(tools/mojo)
+add_subdirectory(tools/mojo-driver)
 
 # This function reads ${KGEN_LINK_LIBS} and puts the include flags into
 # ${KGEN_INCLUDE_FLAGS}.
