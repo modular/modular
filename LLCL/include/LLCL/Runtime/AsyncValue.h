@@ -95,6 +95,8 @@ public:
   /// an unconstructed state. All pending waiters will be notified the value
   /// is ready.
   ///
+  /// Waiters are never called directly by this method.
+  ///
   /// One ref count will be removed from the AsyncValue just before any
   /// existing waiters are triggered. It is valid for the AsyncValue to have
   /// only a single remaining reference, and thus the waiters may be triggered
@@ -104,7 +106,9 @@ public:
 
   /// Sets the AsyncValue to the kError state. The AsyncValue may be a
   /// ConcreteAsyncValue or IndirectAsyncValue in an unconstructed state.
-  /// All pending waiting will be notified the value is ready.
+  /// All pending waiters will be notified the value is ready.
+  ///
+  /// Waiters are never called directly by this method.
   ///
   /// One ref count will be removed from the AsyncValue just before any
   /// existing waiters are triggered. It is valid for the AsyncValue to have
@@ -112,8 +116,11 @@ public:
   /// after the AsyncValue is deleted.
   void setToErrorAndDecRef(EncodedDiagnostic diagnostic);
 
-  /// Resolve an IndirectAsyncValue to point to the specified new value,
-  /// resolving any waiters whenever newValue becomes ready.
+  /// Resolve an IndirectAsyncValue to point to the specified new value.
+  /// All pending waiters on this value will be notified when the new value
+  /// becomes ready.
+  ///
+  /// Waiters are never called directly by this method.
   ///
   /// One ref count will be removed from the AsyncValue just before any
   /// existing waiters are triggered. It is valid for the AsyncValue to have
@@ -122,7 +129,10 @@ public:
   void resolveIndirectAndDecRef(RCRef<AsyncValue> &&newValue);
 
   /// Resolves an IndirectAsyncValue to contain a concrete AsyncValue with a
-  /// newly initialized value, resolving any waiters.
+  /// newly initialized value. All pending waiters will be notified the value
+  /// is ready.
+  ///
+  /// Waiters are never called directly by this method.
   ///
   /// One ref count will be removed from the AsyncValue just before any
   /// existing waiters are triggered. It is valid for the AsyncValue to have
@@ -142,17 +152,19 @@ public:
   /// that this value transitioned to Available or Error.
   using Waiter = llvm::unique_function<void()>;
 
-  /// Register that waiter should be run when this AsyncValue is ready
-  /// (with an emplaced value or an error).
+  /// Register that waiter should be run when this AsyncValue becomes ready
+  /// (either with an emplaced value, or with an error).
   ///
   /// It is possible for this AsyncValue to have been deleted by the time
   /// the waiter is executed. Prefer the 'ConsumingWaiter' versions of andThen
   /// if the waiter needs access to this AsyncValue.
   ///
-  /// If `IsAsync` is true, the waiter will be run as an asynchronous task,
-  /// using the work queue for this object's runtime. Otherwise, the waiter
-  /// will be run either on the callers thread or the eventually
-  /// emplace/setError callers thread.
+  /// If `IsAsync` is true, the waiter will be scheduled as an independent
+  /// task, using the work queue for this object's runtime. Otherwise, the
+  /// waiter will generally be run on the 'triggering' thread, ie the thread
+  /// which caused this AsyncValue to become ready. However, if the triggering
+  /// thread is a 'foreign' thread not in an await loop then the waiters will
+  /// be run as if `IsAsync` was true.
   template <bool IsAsync>
   void andThen(Waiter &&waiter);
 
