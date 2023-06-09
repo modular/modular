@@ -4,16 +4,21 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef MOJO_DEMANGLE_H
-#define MOJO_DEMANGLE_H
+#ifndef MOJO_DOC_H
+#define MOJO_DOC_H
+
+#include "Support/CommandLine.h"
+#include "mojo-driver.h"
+#include "llvm/Support/CommandLine.h"
 
 namespace M {
 
 class SubCommandRegistry;
 
-/// Initializes the `demangle` subcommand and its various options, and registers
+/// Initializes the `doc` subcommand and its various options, and registers
 /// its callback function with the registry.
-void registerDemangleSubCommand(SubCommandRegistry &registry);
+void registerDocSubCommand(SubCommandRegistry &registry);
+
 } // namespace M
 
-#endif // MOJO_DEMANGLE_H
+#endif // MOJO_DOC_H
