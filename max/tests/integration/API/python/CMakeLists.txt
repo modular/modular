@@ -14,7 +14,7 @@ include(AddPyBind11)
 
 # Install dependencies needed for pytest unit tests.
 execute_process(
-  COMMAND ${Python3_EXECUTABLE} -m pip install --root-user-action=ignore -r ${CMAKE_CURRENT_SOURCE_DIR}/pytests/requirements.txt
+  COMMAND ${Python3_EXECUTABLE} -m pip install -r ${CMAKE_CURRENT_SOURCE_DIR}/pytests/requirements.txt
   OUTPUT_QUIET
   RESULT_VARIABLE PIP_INSTALL_DEPS_RESULT
 )
