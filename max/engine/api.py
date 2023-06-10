@@ -79,6 +79,20 @@ class Model:
         """
         return [TensorSpec._init(spec) for spec in self._impl.input_metadata]
 
+    @property
+    def output_metadata(self) -> List["TensorSpec"]:
+        """
+        Metadata about the output tensors that the model returns.
+
+        You can use this to query the tensor shapes and data types like this:
+
+        .. code-block:: python
+
+            for tensor in model.ouput_metadata:
+                print(f'shape: {tensor.shape}, dtype: {tensor.dtype}')
+        """
+        return [TensorSpec._init(spec) for spec in self._impl.output_metadata]
+
 
 class DType(Enum):
     """The tensor data type."""
