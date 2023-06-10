@@ -222,7 +222,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     MojoParserConfig config(ctx, *runtime, compilationOptions);
     config.useMLIRDiagnostics = clOptions.enableMLIRDiagnostics;
     theModule = importMojoFile(mgr, config, litScope, &includedFiles);
-  } else if (compilationOptions.getDebugInfoLevelForInput()) {
+  } else if (compilationOptions.getDebugInfoLevelForInput() >
+             CompilationOptions::kSynthetic) {
     theModule = DebugInfo::parseSourceFileWithDebugInfo(
         mgr, ctx, compilationOptions.getDIEmissionKind());
   } else {

@@ -144,7 +144,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, MojoParserConfig &config,
   diags.setTokenEndPointAdjustmentFn(
       [=](SMLoc &loc) { adjustTokenEndPoint(*this, loc); });
 
-  if (options.getDebugInfoLevelForInput()) {
+  if (options.getDebugInfoLevelForInput() > CompilationOptions::kSynthetic) {
     diBuilder = std::make_unique<DebugInfo::DIBuilder>(config.context);
 
     // TODO: Dwarf technically has a language for python, but it's not really
